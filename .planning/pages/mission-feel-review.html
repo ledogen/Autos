@@ -1,0 +1,226 @@
+<title>Mission Feel Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+  /* Layout: a ledger. One summary strip, then one row per change — the game's own System-panel
+     look (dark panel, monospace, money in green) carried into the owner's review desk. */
+  :root {
+    --bg: #f3f1ec; --panel: #ffffff; --fg: #1d1f1a; --dim: #5e6358; --line: #d9d6cc;
+    --money: #1d7a33; --warn: #a06800; --bad: #b3261e; --key: #2f6fbd; --chip: #e9e6dd;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #161815; --panel: #1f221d; --fg: #e8e6dc; --dim: #9a9f92; --line: #343830;
+    --money: #6fd37f; --warn: #e3b34a; --bad: #ff6b5e; --key: #7fb0ff; --chip: #2a2e27; color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --bg: #161815; --panel: #1f221d; --fg: #e8e6dc; --dim: #9a9f92; --line: #343830;
+    --money: #6fd37f; --warn: #e3b34a; --bad: #ff6b5e; --key: #7fb0ff; --chip: #2a2e27; color-scheme: dark }
+  body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+         padding-block: 28px 60px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1 { font-family: var(--mono); font-weight: 600; font-size: 22px; letter-spacing: .5px; margin: 0 0 4px; text-wrap: balance; }
+  .sub { color: var(--dim); margin: 0 0 18px; max-width: 70ch; }
+  .strip { display: flex; flex-wrap: wrap; gap: 10px 22px; font-family: var(--mono); font-size: 13px; color: var(--dim);
+           border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 10px 0; margin-bottom: 22px; }
+  .strip b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .strip .keep b { color: var(--money) } .strip .cut b { color: var(--bad) } .strip .later b { color: var(--warn) }
+  .strip .state { margin-left: auto; }
+  h2 { font-family: var(--mono); font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--dim); margin: 30px 0 10px; }
+  .row { display: grid; grid-template-columns: 64px 1fr 190px; gap: 8px 16px; background: var(--panel); border: 1px solid var(--line);
+         padding: 14px 16px; margin-bottom: 10px; align-items: start; }
+  .row.keep { border-left: 4px solid var(--money) } .row.cut { border-left: 4px solid var(--bad); opacity: .75 } .row.later { border-left: 4px solid var(--warn) }
+  .tag { font-family: var(--mono); font-weight: 600; color: var(--key); font-size: 14px; padding-top: 2px; }
+  .what { font-weight: 600; margin: 0 0 4px; }
+  .why { color: var(--dim); margin: 0 0 8px; max-width: 72ch; }
+  .ba { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-family: var(--mono); font-size: 12.5px; margin: 0 0 8px; }
+  .ba span:nth-child(odd) { color: var(--dim); text-transform: uppercase; letter-spacing: 1px; font-size: 11px; padding-top: 2px; }
+  .ba .after { color: var(--money) }
+  .files { font-family: var(--mono); font-size: 12px; color: var(--dim); margin: 0; }
+  .ctl { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .btns { display: flex; gap: 6px; }
+  button { font-family: var(--mono); font-size: 12.5px; padding: 6px 0; flex: 1; border: 1px solid var(--line); background: var(--chip); color: var(--fg); cursor: pointer; border-radius: 3px; }
+  button:focus-visible { outline: 2px solid var(--key); outline-offset: 1px; }
+  button[disabled] { opacity: .45; cursor: default; }
+  button.on.keep { background: var(--money); color: #fff; border-color: var(--money); }
+  button.on.cut { background: var(--bad); color: #fff; border-color: var(--bad); }
+  button.on.later { background: var(--warn); color: #fff; border-color: var(--warn); }
+  textarea { font-family: var(--sans); font-size: 13px; width: 100%; min-height: 54px; resize: vertical; border: 1px solid var(--line); background: var(--bg); color: var(--fg); padding: 6px 8px; border-radius: 3px; box-sizing: border-box; }
+  .saved { font-family: var(--mono); font-size: 11px; color: var(--dim); min-height: 14px; }
+  .note-ro { font-size: 13px; color: var(--dim); white-space: pre-wrap; }
+  @media (max-width: 720px) { .row { grid-template-columns: 56px 1fr; } .ctl { grid-column: 1 / -1; } }
+  @media (prefers-reduced-motion: no-preference) { .row { transition: border-color .2s, opacity .2s; } }
+</style>
+<main>
+  <h1>Mission Feel Review</h1>
+  <p class="sub">Branch <code>feature/game-feel</code> on <code>/Users/ledogen/CodeShit/CarGame-game-feel</code>, served at localhost:3776. One row per change. Mark each keep, cut or later; a note is optional. Verdicts save as you click.</p>
+  <div class="strip">
+    <span class="keep">keep <b id="n-keep">0</b></span>
+    <span class="cut">cut <b id="n-cut">0</b></span>
+    <span class="later">later <b id="n-later">0</b></span>
+    <span>unmarked <b id="n-none">0</b></span>
+    <span class="state" id="state">connecting to the store…</span>
+  </div>
+  <h2>Round 3 — built from your second pass (2026-10-24)</h2>
+  <p class="sub">The overlay simplified to the next rung and one box, the due time moved up, the quit button gone, the damage bar latching. Q-6 and Q-7 answer the two questions you asked.</p>
+  <div id="round3"></div>
+  <h2>Round 2 — built from your notes (2026-10-24)</h2>
+  <p class="sub">Everything you marked keep stays. These are the new changes your feedback asked for, each its own row again. Q rows are answers and open questions — mark them too if you like, the note box is the useful part.</p>
+  <div id="round2"></div>
+  <h2>Questions and answers</h2>
+  <div id="qa"></div>
+  <h2>Round 1 — changed on the branch</h2>
+  <div id="changed"></div>
+  <h2>Round 1 — recommended, not changed</h2>
+  <div id="recs"></div>
+</main>
+<script>
+(() => {
+  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  const R = [
+    { id: 'R-01', what: 'Start cash $10 — "the last paycheck"', why: 'A $0 wallet plus bought haul stock made the always-on yard the first disabled button a new player meets. opening.md already proposed the paycheck as flavour; it is now structural.', before: '$0.00 · yard slider: "can\'t afford the stock"', after: '$10.00 · the slider works on day 1', files: 'economy.js startCash · dialogue.js (card 3) · test/economy.mjs' },
+    { id: 'R-02', what: 'Goal readout: "2 / 6 good deeds" on the HUD, "+1 good deed · 3 / 6" on the result card', why: 'The carrot was never dangled: "no good deeds" named a currency with no stated use. campDeeds (6) is the FEAT-103 gate; the camp reads the same constant when it lands.', before: 'no good deeds', after: '0 / 6 good deeds', files: 'economy.js campDeeds · main.js _renderRunHud, _payRows' },
+    { id: 'R-03', what: 'Pay range on every card', why: 'Reverses the 09-30 base-only quote; restores the 08-17 range. A tip you can see is a tip you can plan toward; one you cannot is a surprise once and hidden information after.', before: 'Base pay $3.63', after: 'Pay $3.63 base · up to $7.27 fast   (haul: $0.25 – $0.51 a bundle · stock $0.13 each)', files: 'economy.js payRange · offer-board.js card() · main.js (Larry\'s panel)' },
+    { id: 'R-04', what: 'The item IS the tip', why: 'A bonus offer paid half cash for an item the player could not value. Now it pays the full base and no cash tip; the item is earned at its gate. One tip slot, two currencies. BONUS_PAY_MULT retired.', before: 'Base pay $2.97 … Bonus: Coffee — C or better', after: 'Pay $5.94 base · TIP · INSTEAD OF CASH: Coffee ($3.00) — C or better · result: Tip Coffee ✓', files: 'economy.js settle · data/offers.js · offer-board.js · main.js _payRows · map2d.js · tests' },
+    { id: 'R-05', what: 'Care premium on fragile tiers ×1.3 / ×1.15 / ×1.0 (PROVISIONAL)', why: 'Fragile paid exactly what a courier note paid over the same road while being slower and risking half the base. A dominated job type is dead content. FEAT-142\'s Collector / Easygoing multiply on top.', before: 'Very fragile mirror, 0.8 km: Base pay $1.56', after: 'the same card at ×1.3', files: 'data/offers.js careMult · offer-board.js _rollSpec' },
+    { id: 'R-06', what: 'Haul stock floor 12 → 14 bundles (the C count)', why: 'A 12 or 13 stock posted a job that could never earn a deed, and nothing said so. S stays 25; "most jobs can\'t reach S" still holds.', before: 'HAUL_STOCK [12, 30]', after: 'HAUL_STOCK [14, 30]', files: 'data/offers.js' },
+    { id: 'R-07', what: 'Reward value on the card: "Compressor ($20)"', why: 'A carrot with no number cannot be weighed against the tip it replaces. Part and shelf prices where they exist, a small table for consumables. A price, never a stat (SM-INV-10).', before: 'Bonus: Coffee — C or better', after: 'Tip: Coffee ($3.00) — C or better', files: 'data/offers.js REWARD_VALUE · offer-board.js rewardValue' },
+    { id: 'R-08', what: 'Card header says COURIER, not DELIVERY', why: 'All four bed/cab types are deliveries; FEAT-89\'s ratified name was never surfaced. The code key `delivery` stays.', before: 'C  DELIVERY', after: 'C  COURIER', files: 'data/map-icons.js FAMILY_LABEL · map2d.js' },
+    { id: 'R-09', what: 'Good-deed line on every card, and the miss named on the result', why: 'The deed rode an internal letter the owner had just ruled off the cards, so haul / freight / fragile paid "+0.5 good deed" or nothing with no readable rule. The deed is now the third promise, stated like the item.', before: '(nothing)', after: 'Good deed: deliver 18+ bundles · half at 14+   ·   arrives 77%+ intact · half at 70%+   ·   result: no good deed (needed 18+ bundles) · 0 / 6', files: 'offer-board.js deedLine · main.js _missionDeedNeed, _payRows · map2d.js' },
+    { id: 'R-10', what: 'Clock wording', why: 'Two clocks in one grammar read as one deadline twice. The board clock is how long the offer stays posted; the other is the window once taken.', before: 'expires in 10h 16m · deliver within 4h 22m', after: 'posted 10h 16m more · 4h 22m to deliver', files: 'offer-board.js · main.js · tests' },
+    { id: 'R-11', what: 'Run intro: three Uncle Larry cards when the run goes live', why: 'Until FEAT-147, nothing told the player what the run is for. The cards say: six deeds and the expedition camp; a deed is a B, a C is half; base + tip, or an item instead. Once per run.', before: '(spawn, silence)', after: '"They take on anyone with six good deeds to their name. That\'s your way out too."', files: 'data/dialogue.js RUN_INTRO · main.js setQuickJobVisible' },
+    { id: 'R-12', what: 'Quick Job hidden in story unless the debug panel is open', why: 'The unpaid calibration rig sat in the corner of every run.', before: '[Quick Job] bottom-right, always', after: 'only with the backtick panel up', files: 'main.js _syncQuickJob' },
+    { id: 'R-13', what: 'Calibration form hidden in story unless the debug panel is open', why: 'Name / note / "how fast did you feel" buried the payoff on every result card. Free roam and Quick Job unchanged.', before: 'form under every result', after: 'result card ends at the money', files: 'main.js mountExportRow' },
+    { id: 'R-14', what: 'Haul picker states the net', why: 'The player was left to subtract the stock cost from the base.', before: '23 bundles · base $5.83 · costs $2.99', after: '23 bundles · stock $2.99 · nets $2.84 base, $8.66 fast  (+ "half a good deed at this count")', files: 'main.js _haulPick, _syncHaulPick' },
+    { id: 'R-15', what: 'Start-circle explainer only on the first two jobs — SUPERSEDED: the line is gone entirely (your second pass, 2026-10-24: the staging readout and the green ring already say it twice)', why: 'Tutorial text on every card forever.', before: 'always', after: 'removed (was: missionCount < 2)', files: 'main.js _renderMissionUI' },
+    { id: 'R-16', what: 'Bug: Larry\'s panel printed "expires in Infinityd NaNh"', why: 'formatGameDuration(Infinity) on a never-expiring offer.', before: 'Base pay $4.85 expires in Infinityd NaNh · deliver within 5h 49m', after: 'Pay $4.85 base · up to $9.70 fast   5h 49m to deliver', files: 'main.js _renderPaperUI' },
+  ]
+  const N = [
+    { id: 'N-01', what: 'FREIGHT_TIP_MULT 0.5', why: 'Freight is now dominated per minute by courier: par already stretches with kg, then the tip is halved. 0.75–1.0 would make it the "reliable earner" the design wants. A number, so your call.' },
+    { id: 'N-02', what: 'Light freight earns no deed', why: 'Now stated on the card ("No good deed: a load under 285 kg"). The heavy-load roster you planned on 10-22 is the real fix.' },
+    { id: 'N-03', what: 'Letters on courier/papers, none on haul/freight/fragile', why: 'Tolerable now that the three promise lines carry the meaning. The cleaner alternative: no letter on any result card, the live rank bar as courier\'s own flavour.' },
+    { id: 'N-04', what: 'FEAT-131 juice in promise order', why: 'Stage the reveal: base, then the tip (a cash count-up, or the item), then the deed tally ticking toward 6.' },
+    { id: 'N-05', what: 'FEAT-103 must land for "6 / 6" to be true', why: 'The HUD and the intro now promise the camp. The alpha cannot ship with the promise and no camp.' },
+    { id: 'N-06', what: 'Residence and farm pads', why: 'A truck teleported onto one tumbles down the hillside (seed 6). Possibly the harness; worth checking POI x/z against the pad.' },
+    { id: 'N-07', what: 'Debug stats overlay in story', why: 'SPIN / SLIP / FPS shows top-left in the dev build. Confirm it is off in the alpha build.' },
+    { id: 'N-08', what: 'Total-loss haul result', why: '"$0.00 / $0.00 / Stock bought −$2.99" with no cause. One line ("the load spilled") would land the lesson.' },
+    { id: 'N-09', what: '"[flavor line]" placeholder', why: 'Author the giver lines or hide the quote until written. Alpha: no stubs.' },
+    { id: 'N-10', what: 'Day cost is invisible', why: 'A "today\'s costs ≈ $7.50" line would make the organizing-problem arithmetic legible. Waits on FEAT-69\'s repair pricing.' },
+  ]
+  const R2 = [
+    { id: 'R-17', what: 'The promise lines in the mission overlay — one format on every type, coloured live', why: 'Your "lsd rewarded if health > 80%" ask, generalised: a dark box under the due time with up to two rows, REWARD [icon] name · condition and DEED 1 · condition, the same grammar as the cards ("if 22+ bundles delivered", "if 80%+ intact", "upon delivery", "if B or better"). The value\'s colour is the feeler: green with margin, amber on the line, red once lost — fragile by health against its line, haul by bundles still aboard (amber at exactly the count), freight green from accept, courier by the letter under the rank bar once the bar is showing (neutral before, so the colour cannot leak the clock early). The fragile reward that floated bare against the sky moved in here; the haul "/ 18 for the item reward" text too.', before: 'fragile: "Reward [icon] if health ≥ 83%" in white text over the sky · haul: "carrying 14 bundles / 18 for the item reward" · freight/courier: nothing', after: 'REWARD [icon] Bed mat · if 22+ bundles delivered  (amber at 22, red at 21)\nDEED 1 if 18+ bundles delivered · 1/2 at 14+  (green → amber → red)', files: 'main.js _promiseRows, _updateJobPromise · index.html #job-promise · offer-board.js gateLine, deedLine' },
+    { id: 'R-18', what: 'Freight always earns at least 1/2 a deed (PROVISIONAL)', why: 'Your N-02 note: "propose 1/2 deed floor. full over ~300 kg whatever it is today". Freight\'s C line is now 0 kg and its B line is the old C (285 kg, half the truck\'s rating): a strapped load always arrives, so it always earns 1/2, and 285 kg+ earns 1. The 10-22 ruling that a light load carries no item still holds — a zero line never gates an item. A/S unchanged (570 / 712).', before: 'freight 712 / 570 / 428 / 285 — under 285 kg: no deed', after: 'freight 712 / 570 / 285 / 0 — "Deed: 1/2 upon delivery — under 285 kg" / "Deed: 1 upon delivery"', files: 'economy.js RANK_TABLE.freight · offer-board.js deedLine + the gate roll · tests' },
+    { id: 'R-19', what: 'Deeds are always numerals, and "Deed:" leads the line', why: 'Your rule: "3", "1", "1/2" — never "one" or "half". Every card line, the picker\'s warning, the result card and the HUD tally print digits. A half on the result says what the whole needed; a miss is red ("no deed") because it is a currency not earned.', before: 'Good deed: deliver 18+ bundles · half at 14+ · result: "+0.5 good deed" / "no good deed (needed …)" in grey', after: 'Deed: 1 if 18+ bundles delivered · 1/2 at 14+ · result: "+1/2 deed (1 needed 18+ bundles) · 2.5 / 6" / "no deed (needed …)" in red', files: 'offer-board.js deedLine · main.js _payRows, _syncHaulPick, Larry\'s panel' },
+    { id: 'R-20', what: 'Pay wording, your spec: range + what moves it, and the result says where each dollar came from', why: '"Pay $3.63 – $7.27 based on speed" on the map card and the parked panel; a bonus offer "Pay $3.63 flat" (the TIP form says what replaces the tip). Haul reads as the trade it is: "Bundle costs $0.13 · sells for $0.25 – $0.51 by speed"; the picker says "cost $2.99 · profit $2.84 – $8.66 by speed" (profit, not nets). Clocks: "available for: 10h 16m" and "time limit: 4h 22m". Fragile adds "damage docks the base" to its terms — see Q-1 for why. The result card\'s rows are now "Base pay $x" (+ "docked for damage" when it was), then "Speed tip $y" or "Tip (item) Coffee ✓".', before: 'Pay $3.63 base · up to $7.27 fast · posted 10h 16m more · 4h 22m to deliver · nets $2.84 base, $8.66 fast · result: Base pay / Tip', after: 'Pay $3.63 – $7.27 based on speed · available for: 10h 16m · time limit: 4h 22m · cost $2.99 · profit $2.84 – $8.66 by speed · result: Base pay / Speed tip', files: 'offer-board.js card() · main.js _syncHaulPick, _payRows, _renderPaperUI · tests' },
+    { id: 'R-21', what: 'Deeds wear one colour everywhere — the story blue (TENTATIVE, you said "not sure")', why: 'The HUD tally, the card\'s deed line (paper blue ink on the map card), the result row and the overlay\'s DEED label are all --accent-story. One CSS line per surface, so cutting it is a four-line revert. Money stays green, the item tip stays gold.', before: 'HUD deeds in the key yellow; deed lines grey', after: 'all four in the story blue', files: 'index.html .rh-deeds, .mp-deed, .jp-deed · map2d.js DEED_INK' },
+    { id: 'R-22', what: 'Courier rank bar shows only near the goal', why: 'Your note: no need to watch it go S > A > B when you are nowhere near. The bar now pops once the route remaining is inside the last quarter of the drive (never under 400 m) and stays from there; before that it is absent. Latched per job so a GPS re-plan cannot take it away. Paper rounds have no one goal and keep the old 15-seconds-before-the-S/A-line rule. The two numbers are RANK_TIMER_PARAMS.nearFrac / nearMinM.', before: 'pops 15 s before the S/A line, wherever you are', after: 'pops in the last 25 % of the route', files: 'rank-timer.js RANK_TIMER_PARAMS · main.js _rankTimerSource, _updateRankTimer' },
+    { id: 'R-23', what: 'Bad news lands live in the top-centre readout, and the haul result names a spill', why: 'Your N-08 note. The running readout turns red and pops: CARGO DESTROYED · park and clean up (fragile), TIRE LOST (the motorist\'s spare), LOAD LOST · nothing left in the bed (haul at zero), "3 BUNDLES LOST · 14 still aboard" for three seconds on a partial spill, OUT OF TIME · park and sign the job off (jobs and paper rounds past the deadline). The result card\'s count row says "(9 spilled on the way)" or, at zero, "the load spilled on the way — nothing arrived".', before: '"1.24 km to go" whatever happened; the result read $0.00 with no cause', after: 'the readout says what just happened, in red; the result says why', files: 'main.js _jobBeat, _renderMissionUI, _renderPaperUI, _payRows · index.html .mh-bad' },
+    { id: 'R-24', what: 'Shop: "For sale", and a new-stock clock', why: 'Yes, it is possible and exact: a roll is a pure function of (run seed, shop, hour, slot), so the future is readable. nextStockH walks each slot from the first hour it will be empty to the first hour that rolls an item and takes the soonest — skipping every empty roll, so the timer never points at nothing. The map card header reads "FOR SALE · NEW STOCK IN 3H 10M"; the shop screen\'s heading too. Only a purchase can make it wrong, and then the true answer is sooner. Nothing is shown when nothing lands within two days.', before: 'ON THE SHELF / On the shelf', after: 'FOR SALE · NEW STOCK IN 3H 10M / For sale · new stock in 3h 10m', files: 'shop-stock.js nextStockH · main.js _shelfNext · map2d.js · service-screen.js' },
+    { id: 'R-25', what: 'Bug: the haul slider stutter loop', why: 'The warning ("too few for the bed mat") was appended to the slider\'s own line; it widened the panel, which moved the slider under the pointer, which changed the value, which dropped the warning — and round again. The warnings now live on their own line with a fixed height under the slider, so nothing the readout says can move it.', before: 'slider jitters at the item\'s count', after: 'a second line: "too few for the Bed mat · deed: 1/2 at this count"', files: 'main.js _syncHaulPick · index.html #mp-pick-note' },
+    { id: 'R-26', what: 'The result card reveal (N-04, "yes pls build it")', why: 'The rows land a beat apart in the promise order — what was delivered, Base pay, then the tip (the cash counts up over 0.7 s; the item just lands), then the deed row with the tally ticking from the old total to the new. No sound yet: FEAT-120\'s payout coin and grade stingers are the audio half, left for that ticket so the two are not built twice.', before: 'the whole card at once', after: 'base · tip counting up · "+1 deed · 2 / 6 → 3 / 6"', files: 'main.js _payRows, _revealResult · index.html .mp-reveal, .mp-tick' },
+    { id: 'R-27', what: 'The SPIN / SLIP / FPS readout hidden in story unless the debug panel is open (N-07)', why: 'Your note: "it should only appear in debug". Free roam keeps it.', before: 'top-left in every story run', after: 'only with the backtick panel up', files: 'main.js _syncDebugHud' },
+  ]
+  const R3 = [
+    { id: 'R-28', what: 'Promise lines show only the NEXT rung', why: 'Your spec: "1 deed. 1/2 below 82%". Each row is what you hold now and the one line that loses it, nothing further down the ladder. Fragile: DEED 1 · below 82% → DEED 1/2 · below 65% → DEED 0. Haul the same in bundles. Freight: DEED 1/2 · upon delivery (its C line is 0 kg, so it never reads 0). Courier: DEED 1 · if slower than B → 1/2 · if slower than C → 0 (see R-34). The reward row reads the same way: REWARD [icon] Bed mat · below 22 bundles. The colour is still the margin to that one line.', before: 'DEED 1 if 18+ bundles delivered · 1/2 at 14+', after: 'DEED 1 · below 18 bundles   (then: DEED 1/2 · below 14 bundles, then: DEED 0)', files: 'main.js _promiseRows' },
+    { id: 'R-29', what: 'The load count joins the box; the spill beat stops repeating it', why: 'Your redundancy note. "carrying 10 bundles" was a bare line of its own; it is now the first row of the same box, CARGO 10 bundles aboard (freight: CARGO 710 kg), so the deed row\'s "below 18 bundles" has its live number right above it. The red beat says only "2 BUNDLES LOST" now — the Cargo row already says what is left.', before: 'bare "carrying 10 bundles" + beat "2 BUNDLES LOST · 10 still aboard"', after: 'CARGO 10 bundles aboard (in the box) + beat "2 BUNDLES LOST"', files: 'main.js _promiseRows, _jobBeat · index.html (#job-cargo removed)' },
+    { id: 'R-30', what: '"Due in" moved up into the top readout, so the overlay is one style', why: 'Your suggestion. The top line now reads "2.39 km to go · due in 4h 10m" (papers: "3 / 8 delivered 5 papers · due in 1h 02m"; staging: "leave the green circle to start · due in 4h 19m"). Under it there is exactly one box, the promise lines. The bare due line and its element are gone.', before: 'readout "2.39 km to go"; bare "Due in: 4h 10m" line; a box', after: 'readout "2.39 km to go · due in 4h 10m"; one box', files: 'main.js _updateJobDue, _dueSuffix, _renderMissionUI, _renderPaperUI · index.html (#job-due removed)' },
+    { id: 'R-31', what: '"Back to free roam" removed from the result cards', why: 'Your ask. The result card is retry (test jobs only) and continue. Leaving story mode stays on the pause menu, where it already was. The button, its listener and its CSS hooks are deleted, not hidden.', before: 'retry · continue · back to free roam', after: 'retry · continue', files: 'main.js, index.html (#mp-quit)' },
+    { id: 'R-32', what: 'Fragile damage bar latches at its peak for 200 ms', why: 'Your spec. A hit past the 1 % line holds the bar at that height for 0.2 s, then the old 0.4 s decay resumes. Below the 1 % line nothing changes. A shock is over in a frame or two, so the decaying bar never quite showed how hard it hit; now the peak is readable. JG_HOLD_S is the knob.', before: 'peak decays from the frame it lands', after: 'peak holds 200 ms, then decays', files: 'main.js _updateFragileG (JG_HOLD_S)' },
+    { id: 'R-33', what: 'A lost reward is struck through, and stays red', why: 'Your note that red next to amber was not clear enough. Once the condition is failed the reward\'s name gets a line through it as well as the red; the "below …" clause drops off because there is no rung left. A deed at 0 is red without the strike (striking a zero reads oddly).', before: 'Bed mat · if 22+ bundles delivered, in red', after: 'B̶e̶d̶ ̶m̶a̶t̶ in red', files: 'main.js _updateJobPromise · index.html .jp-lost' },
+    { id: 'R-34', what: 'Courier\'s deed rung is live for the whole drive, no digits (my answer to your timer question, see Q-6)', why: 'The rank bar still appears only near the goal (R-22). But the deed row now reads the band the clock is in NOW from accept: DEED 1 · if slower than B, flipping to 1/2 · if slower than C the moment the B line passes, and its colour goes amber through the last ten seconds before each line (the rank timer\'s own escalation ramp). So the player always knows what they hold and that a line is close, without a stopwatch. If you would rather this stay neutral until the bar shows (the round-2 behaviour), it is one line to revert.', before: 'DEED 1 if B or better · 1/2 at C, neutral until the bar showed', after: 'DEED 1 · if slower than B (green → amber in the last 10 s → DEED 1/2 · if slower than C)', files: 'main.js _rankTimerSource (_rtLive, _rtLiveInt), _promiseRows' },
+  ]
+  const Q = [
+    { id: 'Q-6', what: 'Courier: expose a timer "x:xx or better for S rank", then let the gauge take over?', why: 'I built the no-digits version (R-34) and recommend stopping there. The digits run into SM-INV-3 as amended 2026-08-17 — "boundary proximity, never a countdown"; rank-timer.js names "3:41 remaining" as the exact banned string — and that rule exists so courier is not a stopwatch game. What the player actually needs is answered by the rung line: what do I hold, what loses it, is the line close (amber). Near the goal the bar adds the fine picture. If you still want the digits, it is one line in _promiseRows (the next line\'s time comes from _rtLayout.bands) plus your amendment to SM-INV-3; say so and I cut it that way.' },
+    { id: 'Q-7', what: 'Is every tip except an item-reward mission based on speed?', why: 'Yes. Courier, haul, freight and fragile all pay their tip from the one time line (splitPayout / splitFragilePayout: the tip is the same function of elapsed ÷ par on every type; freight scales it by FREIGHT_TIP_MULT, fragile docks the BASE by condition, never the tip). Papers tip per customer served, also on the clock. An offer with an item has no cash tip at all — the item IS the tip, which is why its card says "Pay $x flat" and its result row reads "Tip (item)".' },
+    { id: 'Q-1', what: 'Fragile: isn\'t the tip scaled by cargo condition, not speed?', why: 'No — and the card was honest but unclear. The TIP is speed on every type, fragile included (splitFragilePayout: the tip is the courier line at the same ratio whatever the condition). What the condition moves is the BASE: half of it is guaranteed, the other half × health, so a load at 60 % pays 80 % of the base. The card now says "damage docks the base" in its terms. If you would rather the tip read condition and the base be flat, that is a one-function change in economy.js — say so and I will cut it that way.' },
+    { id: 'Q-2', what: 'Missions still start and end at "the job site" — lock it behind 6 deeds, or is the expedition camp a different thing?', why: 'The planning docs disagree with the offer data, so this is yours to call. FEAT-103 and MILESTONES say the camp IS the job site (the ticket "keeps its old job-site name", ASSET-71 is "the job site model — the expedition camp"), and poi.js calls the workSite POI "the job site … until FEAT-103 puts it on the region wall". But data/offers.js treats that same POI as a construction business: it posts courier and freight jobs, receives cinder blocks, concrete and the job box, and is named "{last} Construction". A crew at the wall looking for the Roamer\'s trail has no use for a pallet of cinder blocks. My recommendation: SPLIT them. Keep the construction site as an ordinary client (good content, three freight loads live there), and let FEAT-103 add the camp as its own POI type on the wall, with the six-deed lock. If instead the camp is the job site, I pull workSite from every pool now (re-pointing the three construction loads at farm / residence) and FEAT-103 gates the interaction. I have changed nothing here.' },
+    { id: 'Q-3', what: 'N-03 — "what does the live rank bar show if not letter ranks?"', why: 'It shows the letters: the strip is the S · A · B · C · D bands scrolling under a pointer, and the tile under it is the band you are in. That stays — it is courier\'s own flavour and now (R-22) appears only near the goal. The "cleaner alternative" was about the RESULT card: drop the big letter there too, so every type\'s result reads time → money → deed and the letter lives only on the live bar. Courier\'s result still shows its letter today. Mark keep here to drop it from the result card as well, cut to leave it.' },
+    { id: 'Q-4', what: 'N-06 — "i can teleport to the road outside a residence just fine"', why: 'Agreed and dropped. My harness teleported onto the pad itself, not the road outside it; the tumble was the harness, not the world.' },
+    { id: 'Q-5', what: 'N-10 — the sleep reminder ("shortages increase")', why: 'Cut as you ruled; the one-line reminder at sleep is in FEAT-148 (the owner-authored lines ticket, with the giver flavour lines from N-09) since the words are yours.' },
+  ]
+  const VERDICTS = ['keep', 'cut', 'later']
+  const state = {}        // id → { verdict, note }
+  let db = null, canWrite = true
+  const el = (id) => document.getElementById(id)
+
+  function rowHtml (r, rec) {
+    return `<article class="row" id="row-${r.id}">
+      <div class="tag">${r.id}</div>
+      <div style="min-width:0">
+        <p class="what">${esc(r.what)}</p>
+        <p class="why">${esc(r.why)}</p>
+        ${rec ? '' : `<div class="ba"><span>before</span><span>${esc(r.before)}</span><span>after</span><span class="after">${esc(r.after)}</span></div><p class="files">${esc(r.files)}</p>`}
+      </div>
+      <div class="ctl">
+        <div class="btns">${VERDICTS.map(v => `<button class="${v}" data-id="${r.id}" data-v="${v}" id="btn-${r.id}-${v}">${v}</button>`).join('')}</div>
+        <textarea id="note-${r.id}" placeholder="note (optional)"></textarea>
+        <div class="saved" id="saved-${r.id}"></div>
+      </div>
+    </article>`
+  }
+  el('round3').innerHTML = R3.map(r => rowHtml(r, false)).join('')
+  el('round2').innerHTML = R2.map(r => rowHtml(r, false)).join('')
+  el('qa').innerHTML = Q.map(r => rowHtml(r, true)).join('')
+  el('changed').innerHTML = R.map(r => rowHtml(r, false)).join('')
+  el('recs').innerHTML = N.map(r => rowHtml(r, true)).join('')
+
+  function paint () {
+    const counts = { keep: 0, cut: 0, later: 0, none: 0 }
+    for (const r of [...R3, ...R2, ...Q, ...R, ...N]) {
+      const s = state[r.id] || {}
+      const row = el('row-' + r.id)
+      row.classList.remove('keep', 'cut', 'later')
+      if (s.verdict) { row.classList.add(s.verdict); counts[s.verdict]++ } else counts.none++
+      for (const v of VERDICTS) { const b = el(`btn-${r.id}-${v}`); b.classList.toggle('on', s.verdict === v); b.disabled = !canWrite }
+      const ta = el('note-' + r.id)
+      if (document.activeElement !== ta && (s.note ?? '') !== ta.value) ta.value = s.note ?? ''
+      ta.disabled = !canWrite
+    }
+    for (const k of Object.keys(counts)) el('n-' + k).textContent = counts[k]
+  }
+  paint()
+
+  const timers = {}
+  async function save (id, patch) {
+    state[id] = { ...(state[id] || {}), ...patch }
+    paint()
+    if (!db) return
+    const ref = db.doc('verdicts/' + id)
+    el('saved-' + id).textContent = 'saving…'
+    try {
+      await ref.set({ ...state[id], at: new Date().toISOString() })
+      el('saved-' + id).textContent = 'saved'
+    } catch (e) {
+      el('saved-' + id).textContent = e?.code === 'invalid_argument' ? 'read-only here' : 'not saved — ' + (e?.code || 'error')
+      if (e?.code === 'invalid_argument') { canWrite = false; paint() }
+    }
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-id]')
+    if (!b || !canWrite) return
+    const id = b.dataset.id, v = b.dataset.v
+    save(id, { verdict: state[id]?.verdict === v ? null : v })
+  })
+  document.addEventListener('input', (e) => {
+    const ta = e.target.closest('textarea[id^="note-"]')
+    if (!ta) return
+    const id = ta.id.slice(5)
+    clearTimeout(timers[id])
+    timers[id] = setTimeout(() => save(id, { note: ta.value }), 600)
+  })
+
+  ;(async () => {
+    const use = window.claude?.use
+    db = use ? await use('db') : null
+    if (!db) { el('state').textContent = 'no store in this view — verdicts will not persist'; return }
+    const user = await use('user')
+    const w = await user?.can?.('data.write')
+    if (w === false) { canWrite = false; paint() }
+    el('state').textContent = canWrite ? 'verdicts save to the page' : 'read-only view'
+    db.collection('verdicts').onSnapshot((snap) => {
+      for (const d of snap.docs) { const data = d.data() || {}; state[d.id] = { verdict: data.verdict ?? null, note: data.note ?? '' } }
+      paint()
+    }, (err) => { el('state').textContent = 'store error: ' + (err?.code || 'unknown') })
+  })()
+})()
+</script>

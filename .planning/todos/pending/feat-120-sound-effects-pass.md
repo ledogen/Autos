@@ -268,6 +268,17 @@ status: todo · group: story
 Strapped freight (FEAT-96/97). A ratchet strap tensioned over a box, flexed by hand: creaks and
 groans, plus the ratchet itself. 20 takes.
 
+### Ratchet strap click
+status: todo · group: story
+Accepting a freight or fragile job (FEAT-96/97): the strap going on — a ratchet strap clicking tight,
+6–10 clicks slowing to the last hard one. The owner records this one (2026-10-25). Plays once at
+accept, from the bed (camera-aware mix).
+
+### Ratchet strap release
+status: todo · group: story
+The same strap let off at the job's end — the pawl flipped, the strap whipping slack, the hook dropped
+on the bed floor. The owner records it with the click. Plays once on the result card.
+
 ### Log drag
 status: todo · group: story
 The log-drag mission. Drag a log or heavy branch across dirt and gravel with a rope, steady and in

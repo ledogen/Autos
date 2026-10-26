@@ -130,9 +130,20 @@ function onKey (e) {
   curIdx = items.indexOf(cur)
 }
 
+/** A MENU opens with its highlight already on the first item, so Enter / A acts at once (owner,
+ *  2026-10-25: "story mode" took a wake-up press, "new game" four). Menus only — a CARD appears
+ *  while driving, and the pad's first A on one must place the highlight, never fire a button. */
+function wakeMenu () {
+  const c = menuContainer()
+  if (!c) return
+  const items = [...c.querySelectorAll(ITEMS)].filter(el => el.offsetParent !== null)
+  if (items.length && !items.includes(cur)) { highlight(items[0]); curBox = c; curIdx = 0 }
+}
+
 /** Install once. gamepad.js asks pad.menuActive() each poll to pick its menu key map. */
 export function initMenuNav () {
   window.addEventListener('keydown', onKey, true)   // capture: ahead of the game's own key handlers
+  setInterval(wakeMenu, 100)   // ponytail: a poll, not a hook in every menu opener; 100 ms is under a key repeat
   // The mouse and the highlight agree: pointing at an item moves the highlight to it.
   document.addEventListener('pointerover', (e) => {
     const c = menuContainer() ?? cardContainer()

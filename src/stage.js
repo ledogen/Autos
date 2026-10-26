@@ -74,6 +74,7 @@ const ROCK_N      = 20    // ~50 kg each: a tonne in the bed, so the rear squats
 const ROCK_GAP    = 0.20    // s between rocks: staggered so the 50 kg impulses cannot stack
 const ROCK_DROP_H = 2.6     // m above the bed floor → ~7 m/s at contact: a firm thump, not a launch
 const PARALLAX    = 5 * Math.PI / 180   // rad — cursor-follow orbit limit, both axes
+const LENS_SHIFT_MM = -4.5   // mm of 35 mm film: −4.5 ≈ 10 % of a 16:9 frame to the right (more on a narrower window)
 // Click-drag orbit, layered UNDER the parallax so the resting shot is unchanged until someone drags.
 const DRAG_RAD_PER_PX = 0.006             // rad of orbit per pixel dragged
 const DRAG_ELEV_MIN   = 2 * Math.PI / 180  // rad — lowest camera elevation; the parallax's extra -5°
@@ -189,6 +190,10 @@ export class MenuStage {
     // background so the "empty void" reads as endless rather than as a disc on a black card.
     this.scene.fog = new THREE.FogExp2(COL_VOID, 0.030)
     this.camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 400)
+    // A lens shift, not a camera move: the menu type owns the left of the frame, so the picture slides
+    // right to sit centred in what is left (owner, 2026-10-25). The pivot and every orbit are untouched.
+    this.camera.filmOffset = LENS_SHIFT_MM
+    this.camera.updateProjectionMatrix()
 
     this._camTarget = new THREE.Vector3()
     this._camBase = new THREE.Vector3()

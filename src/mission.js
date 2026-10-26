@@ -740,11 +740,11 @@ export class MissionSystem {
      *        `fetch` (FEAT-102): the POI is a PICKUP and the job comes back here — see fetchRoute.
      * @returns {object|null} the mission, with fromPoi / startZone / endPoiId set
      */
-    planOffer (poi, { rng, dest = null } = {}) {
+    planOffer (poi, { rng, dest = null, minM = 0 } = {}) {
         const anchor = { aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id }
         const tries = this._getRegion() ? REGION_ROLL_TRIES : 1
         let m = null
-        for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest })
+        for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest, minM })
         if (!m) return null
         if (dest?.fetch) m = fetchRoute(m, poi.id)
         m.fromPoi = poi.id
@@ -768,8 +768,11 @@ export class MissionSystem {
      * @param {()=>number} [o.rng] — FEAT-67: the roll's randomness. A board offer passes its own
      *   seeded stream (same offer → same route); Quick Job keeps Math.random (SM-INV-12 run layer).
      * @param {object|null} [o.dest] — FEAT-67: destination wish (see planOffer). Anchored rolls only.
+     * @param {number} [o.minM] — a leg floor in road metres on top of the planner's own (an item
+     *   reward needs the distance, owner 2026-10-25). Anchored POI legs only; the roadside floor
+     *   (LEG_MIN) is above any value passed today.
      */
-    _roll(anchor = null, { rng = Math.random, dest = null } = {}) {
+    _roll(anchor = null, { rng = Math.random, dest = null, minM = 0 } = {}) {
         const road = this._getRoad()
         if (!road) return null
         // The POST-CULL registered network — the roads that actually exist. Planning off the raw
@@ -836,11 +839,12 @@ export class MissionSystem {
             const edgeKey = (x, y) => (x < y ? `${x}|${y}` : `${y}|${x}`)
             const srcEdge = edgeKey(ka, kb)
             if (dest?.kind === 'poi' && dest.pois?.length) {
-                // FEAT-100: a STRICT wish (a thing bound for a class) takes no leg floor. The floor
-                // keeps a free choice of destination from settling on a short hop; a strict wish has
-                // no choice — the one school is wherever it is — and par prices a short leg fairly.
-                // Down to zero hops: the school's road may leave the very node the giver's does.
-                const lo = dest.strict ? 0 : POI_LEG_MIN
+                // Every courier leg takes the POI floor, strict wishes too (owner, 2026-10-25: a
+                // 0.3 km courier rewarding a mounted tire — "increase the courier floor to 1 km").
+                // FEAT-100 had let a strict wish (a thing bound for a class) go down to zero hops;
+                // now the one school being too near means that offer does not plan. `minM` raises
+                // the floor further for an offer carrying an item (data/offers.js BONUS_LEG_MIN_M).
+                const lo = Math.max(POI_LEG_MIN, minM)
                 for (const [ex, other] of pair) {
                     const c = legCandidates(ex, lo)
                     const opts = []
