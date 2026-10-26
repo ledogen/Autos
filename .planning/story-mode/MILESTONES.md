@@ -45,7 +45,7 @@ How the cut works:
 |---|---|
 | FEAT-146 | the run ends: camp (win), death, or throw in the towel — then a summary |
 | FEAT-147 | tutorial + opening: the firing, the uncle, the first day |
-| FEAT-103 | the expedition camp is the win. No unlock and no FEAT-28: the camp sits on the story circle's edge, at the end of a road |
+| FEAT-103 | the expedition camp is the win. No unlock and no FEAT-28: the camp sits on the story circle's edge, at the end of an existing road cut at the wall. The road leading to it stays ordinary for the alpha; its perilous upfit comes after (owner, 2026-10-26) |
 | FEAT-43 | story region — only the slices one region needs; "confinement becomes the unlocked set" is beta |
 | FEAT-114 | haul quantity — built on `feature/mission-recut`, merge it |
 | FEAT-104, FEAT-137 | shop + rotating shelf — built on `feature/parts`, lands with it |
