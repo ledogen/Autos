@@ -4976,8 +4976,10 @@ function _atMomsHouse () {
  * detector, and a fixed precedence: a POI in reach wins (the 18 m lay-by is the specific
  * affordance and it is what you drove onto), then making camp, then mom's door. The prompt follows
  * the same order, so what you see is always what the brake will do.
+ *
+ * `zParked` (BUG-95): the hunt was just armed with the truck already parked — see _toggleCampSeek.
  */
-function _updateParkTriggers () {
+function _updateParkTriggers (zParked = false) {
   const poiEl  = document.getElementById('poi-prompt')
   const campRow = document.getElementById('camp-row')
   const poi = _poiInReach()
@@ -5058,7 +5060,7 @@ function _updateParkTriggers () {
   // ribbon — on the shoulder or further out — before the cab will do for a night.
   const onRoad = seeking && !site && !moms && _truckOnRibbon()
 
-  if (pulled) {
+  if (pulled || (zParked && !site)) {
     if (site) {
       _campUi = { mode: 'confirm', site, moms: false }
       _renderCampUI()
@@ -5122,7 +5124,7 @@ function _updateParkTriggers () {
             :                      'not flat'
   document.getElementById('camp-prompt-text').innerHTML =
       camp.fast ? 'slow down to look for a campsite'
-    : site      ? parkPrompt('park to make camp')
+    : site      ? parkPrompt(parked ? 'park again to make camp' : 'park to make camp')
     : moms      ? why
     : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`
     :             `${why}<br>${parkPrompt('park to sleep in the truck')}`
@@ -5410,7 +5412,12 @@ function _renderCampUI () {
 function _toggleCampSeek () {
   if (document.getElementById('camp-row')?.style.display !== 'flex') return
   _campSeek = !_campSeek
-  _updateParkTriggers()       // repaint now rather than on the next 10 Hz poll
+  // BUG-95 (owner, 2026-10-26): arming the hunt while ALREADY parked counts as the pull where the
+  // answer is the cab or mom's door — the view stays put, so the card just opens. A real campsite
+  // still waits for a re-park: the hunt card previews its vibe and ring first, the prompt says "park
+  // again", and the re-park commits, as when you drive up to one. Safe: the tent (and so Z) never
+  // shows where a POI, pump, shop or fetch owns the brake.
+  _updateParkTriggers(_campSeek && !!vehicleState.parked)   // repaint now rather than on the next 10 Hz poll
 }
 const _campIcon = document.getElementById('camp-icon')
 // mousedown preventDefault keeps focus off the icon: Space is the parking brake, and a focused
@@ -7701,6 +7708,14 @@ document.addEventListener('keydown', e => {
   // The dinner invitation's DECLINE is the same tap (owner, 2026-10-23).
   if (e.key === ' ' && (missionSystem?.state === 'offer'
       || (missionSystem?.state === 'done' && missionSystem.result?.award?.stowed === 'dinner'))) { e.preventDefault(); missionSystem.exit() }
+  // BUG-95 (owner, 2026-10-26): the same tap on a camp card is its BACK — Esc / pad B's button: no
+  // thanks, release the brake, drive off. A MADE camp has no back: leaving it is "break camp", which
+  // the player picks, never a stray tap (_cardBackButton). Not mid-fade — the night is under way —
+  // and not on key repeat, or a Space still held from the park would cancel the card it just opened.
+  if (e.key === ' ' && !e.repeat && _campUi && !_campBusy) {
+    const back = _cardBackButton()
+    if (back) { e.preventDefault(); back.click() }
+  }
   // Shift+R → set the spawn point to the truck's current pose (does not move the truck).
   if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
     if (isTeleportEnabled()) setSpawnHere()
