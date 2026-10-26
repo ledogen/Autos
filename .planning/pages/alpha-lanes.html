@@ -37,9 +37,6 @@
   .meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-family: var(--mono); font-size: 12px; margin: 0 0 10px; }
   .meta span:nth-child(odd) { color: var(--dim); text-transform: uppercase; letter-spacing: 1px; font-size: 10.5px; padding-top: 3px; }
   .meta span:nth-child(even) { min-width: 0; overflow-wrap: anywhere; }
-  .agent { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
-  .agent label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
-  .agent input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; padding: 5px 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 3px; }
   .tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   .task { display: grid; grid-template-columns: 76px 1fr; gap: 4px 10px; align-items: start; padding: 6px 0; border-top: 1px solid var(--line); }
   .task:first-child { border-top: none; }
@@ -67,7 +64,7 @@
 </style>
 <main>
   <h1>Alpha Lanes</h1>
-  <p class="sub">The alpha build order in four lanes, one worktree each, main as the integration branch. Click a task's status to cycle it (todo → doing → done → blocked); notes and the agent name save to the page. The plan of record is the handoff in the repo:
+  <p class="sub">The alpha build order in four lanes, one worktree each, main as the integration branch. Click a task's status to cycle it (todo → doing → done → blocked); notes save to the page; each lane writes its own resume handoff here (<code>lanes/&lt;id&gt;.handoff</code>) before a /clear, and the copy button hands it back. The plan of record is the handoff in the repo:
     <code>.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md</code> (open it from the <a href="http://localhost:8010">dashboard</a> on your machine). Related pages: <a href="https://claude.ai/artifact/YHLoevQnoJ1y5BYmksVVVZ">mission-feel review</a> · <a href="https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu">item setup</a>.</p>
   <div class="strip">
     <span class="doing">doing <b id="n-doing">0</b></span>
@@ -103,7 +100,7 @@
         { id: 'FEAT-128', what: 'Truck shuts off at camp.' },
         { id: 'FEAT-66', what: 'Camp gear renders at the campsite (visible-kit rule).' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then .planning/todos/pending/feat-103-job-site-poi.md. Build FEAT-103\'s alpha slice. Own only Lane A\'s files; merge main in before you start.' },
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then this page\'s Lane A handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/a.handoff here.' },
     { id: 'b', name: 'B — the machine bites back', goal: 'Physics, damage, parts and recovery.',
       wt: '/Users/ledogen/CodeShit/CarGame-machine', branch: 'feature/machine', port: 3282,
       owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, data/parts.js, data/stock-weights.js, physics gates',
@@ -115,7 +112,7 @@
         { id: 'BUG-89/54/92', what: 'Rolled truck slides too far · chassis launched at extreme travel · ABS kick never rumbles the pad.' },
         { id: 'FEAT-150', what: 'Auto shift schedule — hangs in 1st (the hysteresis band vs the 1st→2nd step), lugs 3rd instead of kicking down (kickdownRPM 2400 → ~3200). Owner 10-25; numbers in the ticket.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read ' + HANDOFF + ' § Lane B, then feat-93-hazard-punctures-any-condition.md and feat-94-driving-on-a-flat.md. Build FEAT-93 then FEAT-94. Own only Lane B\'s files.' },
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read ' + HANDOFF + ' § Lane B, then this page\'s Lane B handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/b.handoff here.' },
     { id: 'c', name: 'C — content and polish', goal: 'Models, sound, items. Lane A needs the first two models.',
       wt: '/Users/ledogen/CodeShit/CarGame-content', branch: 'feature/content', port: 3774,
       owns: 'assets/, wip/, src/*-audio.js, data/items.js rows + thumbnails, items.md, FEAT-120/121',
@@ -129,7 +126,7 @@
         { id: 'ASSET-76', what: 'Fire pit re-export at 1.2× (owner 10-25: "20% bigger"); registry box to match.' },
         { id: 'FEAT-120 ↳', what: 'Ratchet strap click (freight accept) + release (job end) — the owner records these; the entries are in the ticket.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read ' + HANDOFF + ' § Lane C. Model ASSET-71 (the expedition camp) per .planning/research/ASSETS.md and ART-STYLE.md, then ASSET-32. Own only Lane C\'s files.' },
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read ' + HANDOFF + ' § Lane C, then this page\'s Lane C handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/c.handoff here.' },
     { id: 's', name: 'Spare — front of mind', goal: 'Whatever you surface; the alpha bugs nobody else owns.',
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
@@ -144,7 +141,7 @@
         { id: 'FEAT-142', what: 'Giver traits — a TRAITS table, 0–2 per offer from its own seeded stream, bottom-left of the card; each moves the quoted pay and terms at accept and settle (Off the books: no deed; The right thing to do: +½ at C+). Nothing in code yet. Open: Wholesale on freight. (minor)' },
         { id: 'FEAT-69', what: 'The economy re-cut, once Lane A gives a run that can finish.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read ' + HANDOFF + ' § Spare. Ask the owner what is front of mind; default to BUG-90.' },
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read ' + HANDOFF + ' § Lane Spare, then this page\'s Lane Spare handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/s.handoff here.' },
   ]
   const OWED = [
     'FEAT-138 hi-lift: its likelihood tier on the shelf (data/stock-weights.js). The torque is approved.',
@@ -162,12 +159,11 @@
     <p class="goal">${esc(l.goal)}</p>
     <div class="meta"><span>worktree</span><span><code>${esc(l.wt)}</code></span><span>branch</span><span><code>${esc(l.branch)}</code></span>
       <span>serve</span><span><a href="http://localhost:${l.port}">localhost:${l.port}</a></span><span>owns</span><span>${esc(l.owns)}</span></div>
-    <div class="agent"><label for="agent-${l.id}">agent</label><input id="agent-${l.id}" data-lane="${l.id}" placeholder="session name, e.g. cargame-5a"></div>
     <ul class="tasks">${l.tasks.map(t => { const id = tid(l, t); return `<li class="task" id="task-${id}">
       <button class="st" data-task="${id}" id="st-${id}">todo</button>
       <div class="what"><span class="id">${esc(t.id)}</span>${esc(t.what)}</div>
       <textarea id="note-${id}" data-task="${id}" placeholder="note"></textarea></li>` }).join('')}</ul>
-    <details><summary>resume prompt</summary><div class="prompt" id="prompt-${l.id}">${esc(l.prompt)}<button data-copy="prompt-${l.id}">copy</button></div></details>
+    <details><summary>resume prompt</summary><div class="prompt" id="prompt-${l.id}">${esc(l.prompt)}<button data-copy="prompt-${l.id}">copy</button></div><div class="saved" id="src-${l.id}"></div></details>
     <div class="saved" id="saved-${l.id}"></div>
   </section>`).join('')
   el('owed').innerHTML = OWED.map(o => `<li>${esc(o)}</li>`).join('')
@@ -175,9 +171,10 @@
   function paint () {
     const counts = { todo: 0, doing: 0, done: 0, blocked: 0 }
     for (const l of LANES) {
-      const li = el('agent-' + l.id), a = state.lanes[l.id]?.agent ?? ''
-      if (document.activeElement !== li && li.value !== a) li.value = a
-      li.disabled = !canWrite
+      const h = (state.lanes[l.id]?.handoff ?? '').trim()
+      const box = el('prompt-' + l.id), text = h || l.prompt
+      if (box.childNodes[0].textContent !== text) box.childNodes[0].textContent = text
+      el('src-' + l.id).textContent = h ? 'the lane\'s own handoff (lanes/' + l.id + '.handoff)' : 'the static prompt — the lane has written no handoff yet'
       for (const t of l.tasks) {
         const id = tid(l, t), s = state.tasks[id] || {}, st = STATES.includes(s.status) ? s.status : 'todo'
         counts[st]++
@@ -225,8 +222,6 @@
   document.addEventListener('input', (e) => {
     const ta = e.target.closest('textarea[data-task]')
     if (ta) { const id = ta.dataset.task; clearTimeout(timers[id]); timers[id] = setTimeout(() => save('tasks', id, laneOf(id), { note: ta.value }), 600); return }
-    const ag = e.target.closest('input[data-lane]')
-    if (ag) { const id = ag.dataset.lane; clearTimeout(timers['L' + id]); timers['L' + id] = setTimeout(() => save('lanes', id, id, { agent: ag.value }), 600) }
   })
   ;(async () => {
     const use = window.claude?.use
@@ -238,7 +233,7 @@
     el('state').textContent = canWrite ? 'changes save to the page' : 'read-only view'
     const onErr = (err) => { el('state').textContent = 'store error: ' + (err?.code || 'unknown') }
     db.collection('tasks').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.tasks[d.id] = { status: x.status ?? 'todo', note: x.note ?? '' } } paint() }, onErr)
-    db.collection('lanes').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.lanes[d.id] = { agent: x.agent ?? '' } } paint() }, onErr)
+    db.collection('lanes').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.lanes[d.id] = { handoff: typeof x.handoff === 'string' ? x.handoff : '' } } paint() }, onErr)
   })()
 })()
 </script>

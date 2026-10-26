@@ -64,7 +64,11 @@ under load, rerun alone) → commit → fast-forward the other lanes. One lane a
 ## The pages
 
 - **Alpha Lanes tracker** https://claude.ai/artifact/8P7QDPAaKxKPtJuf6zvRVH — the owner follows the agents here.
-  Source: `.planning/pages/alpha-lanes.html` (the `LANES[].tasks` array; the `OWED` list). To add or change a task:
+  Source: `.planning/pages/alpha-lanes.html` (the `LANES[].tasks` array; the `OWED` list).
+  **Lanes survive /clear through the page's db, not through session names** (Lane A's design, 2026-10-26):
+  before a /clear a lane commits, sets its task rows, and writes `lanes/<id>.handoff` (plain text) — the page
+  renders that as the lane's resume prompt, falling back to the static prompt when it is empty. The owner pastes
+  whatever the page shows. The agent field is gone. To add or change a task:
   edit the file, `Artifact` `action: "read"` the url once, then publish the file with `url:` that link. Status and
   notes live in its db: `ArtifactData list` collections `tasks` (doc id `<lane>-<TICKET_ID>`, `{status, note}`) and
   `lanes` (`{agent}`). Read them to learn what each agent reports.

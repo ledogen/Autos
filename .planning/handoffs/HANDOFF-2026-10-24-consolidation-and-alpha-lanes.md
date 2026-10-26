@@ -111,6 +111,9 @@ Two mission-board tickets sit here too, each its own task (owner, 2026-10-24: "s
 
 ## Resume prompts (paste one per session)
 
+**Since 2026-10-26 the live prompts are on the tracker page**: before a /clear a lane commits, sets its task rows
+and writes `lanes/<id>.handoff` to the page's db; the page shows that (or these static ones while it is empty).
+
 - **A:** "Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read .planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md § Lane A, then .planning/todos/pending/feat-103-job-site-poi.md. Build FEAT-103's alpha slice. Own only Lane A's files; merge main in before you start."
 - **B:** "Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read the handoff § Lane B, then feat-93-hazard-punctures-any-condition.md and feat-94-driving-on-a-flat.md. Build FEAT-93 then FEAT-94. Own only Lane B's files."
 - **C:** "Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read the handoff § Lane C. Model ASSET-71 (the expedition camp) per .planning/research/ASSETS.md and ART-STYLE.md, then ASSET-32. Own only Lane C's files."
