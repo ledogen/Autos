@@ -252,10 +252,15 @@ Loose panels rattle louder with damage × road roughness. Contact mic on a loose
 sheet-metal offcut on a bolt), shake it at different intensities: 30 s of each. Loop it, gain-driven by
 suspension activity.
 
-### Flat tyre flap and rim grind
+### Flat tyre flap and panel bang
 status: todo · group: truck
-Flap: slap a deflated inner tube / tyre on asphalt rhythmically. Grind: drag a steel rim or hubcap
-edge on concrete (contact mic on the rim). Rate ∝ wheel speed. Follows on from `playTireBlowout`.
+Driving on a flat, two stages that follow FEAT-94's damage (owner, 2026-10-27). While the flat tire
+still has condition left: the carcass FLAPPING. Once it hits 0 (the tire has come apart): the loose
+tread BANGING on that side's body panel, the moment the panel starts taking damage. Both are one hit
+per wheel turn, so the rate is keyed on that wheel's rpm (`wheelOmega`), and gain rises with speed.
+Flap: slap a deflated inner tube / tyre on asphalt rhythmically. Bang: swing a strip of tread or
+rubber flap against a sheet-metal panel (contact mic on the panel). One-shot takes, light to hard,
+retriggered per wheel turn rather than a fixed loop. Follows on from `playTireBlowout`.
 
 ### Stream and pond splash
 status: todo · group: world
