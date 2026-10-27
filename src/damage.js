@@ -537,8 +537,11 @@ export const DAMAGE_PARAMS = {
   // instant it pops. Both are v^2 x dt (SM-INV-5: intensity x time, not distance), so per km the
   // cost goes as speed and limping slowly is a real option. Anchors at 50 km/h (13.9 m/s, v^2 = 193):
   // 2 km shreds a new tire, 4 more km takes the side panel 100% -> 0. Starting values, tune by feel.
+  // Once the tire is gone the RIM is on the road (owner, 2026-10-27): it grinds and goes fast —
+  // 1 km at 50 km/h writes it off, and a bent wheel is already out-of-round (wheelRunoutAtZero).
   durFlatTire:  27800,       // m^2/s — integral of v^2 dt that takes a flat tire 100% -> 0
   durFlatArmor: 55600,       // m^2/s — same, the side panel, once the tire is at 0
+  durFlatRim:   13900,       // m^2/s — same, that corner's wheel, once the tire is at 0
 
   // ── Live tuning multipliers ────────────────────────────────────────────────────────────────
   // Per-class wear SPEED, 1 = the calibrated rate above. These exist so wear can be tuned by feel
@@ -1294,15 +1297,17 @@ export class DamageModel {
       }
     }
 
-    // ── Driving on a flat (FEAT-94): tire first, then the side panel — see durFlatTire ─────────
+    // ── Driving on a flat (FEAT-94): tire first, then the rim + side panel — see durFlatTire ────
+    // rimOnRoad is the published state ("this corner is down to the rim"): tire-audio.js grinds on it.
     const vel = vehicleState.velocity
     const v2 = vel ? vel.x * vel.x + vel.y * vel.y + vel.z * vel.z : 0
-    if (v2 > 0) {
-      for (let i = 0; i < 4; i++) {
-        if (!this.flat[i]) continue
-        if (this.get(TIRE_IDS[i]) > 0) this.wear(TIRE_IDS[i], v2 * dt, P.durFlatTire)
-        else this.wear(i % 2 ? 'armorRight' : 'armorLeft', v2 * dt, P.durFlatArmor)
-      }
+    const onRim = vehicleState.rimOnRoad || (vehicleState.rimOnRoad = [false, false, false, false])
+    for (let i = 0; i < 4; i++) {
+      onRim[i] = this.flat[i] && this.get(TIRE_IDS[i]) <= 0
+      if (!this.flat[i] || v2 <= 0) continue
+      if (!onRim[i]) { this.wear(TIRE_IDS[i], v2 * dt, P.durFlatTire); continue }
+      this.wear(WHEEL_IDS[i], v2 * dt, P.durFlatRim)
+      this.wear(i % 2 ? 'armorRight' : 'armorLeft', v2 * dt, P.durFlatArmor)
     }
 
     // ── Brakes: ∫(friction POWER × time) = the energy the pads actually dissipate ─────────────
@@ -1405,7 +1410,8 @@ export class DamageModel {
     }
 
     // WHEELS have no continuous wear source, by design (owner, 2026-08-20): a wheel is bent by
-    // being HIT, not worn out by driving. A strut-acceleration source was tried and deleted — it
+    // being HIT, not worn out by driving. The one exception is a rim run on the road with no tire
+    // left on it (FEAT-94, above), which is the rim being hit continuously. A strut-acceleration source was tried and deleted — it
     // measured 95,000 minutes to destroy a wheel, so it was not a mechanism, and strut acceleration
     // is a poor proxy for the one real non-collision case (a pothole or kerb strike) anyway. If
     // that case is ever wanted, the hook is _landBumpStop below, which is already peak-priced and

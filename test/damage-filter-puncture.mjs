@@ -182,7 +182,7 @@ console.log('\n§4 what a flat actually does')
   ok(e.flat[2] === false && e.get('tireRL') === 1, 'fitting a new tire clears both the flat and the wear')
 }
 
-console.log('\n§5 driving on a flat (FEAT-94): the tire shreds first, then that side panel')
+console.log('\n§5 driving on a flat (FEAT-94): the tire shreds first, then the rim and that side panel')
 {
   // Straight-line cruise on one flat: velocity alone drives this track, nothing else in the state.
   const cruise = (d, kmh, km) => {
@@ -191,13 +191,17 @@ console.log('\n§5 driving on a flat (FEAT-94): the tire shreds first, then that
   }
   const flatFL = () => { const d = fresh(); d.setAll(1); d.flat[0] = true; return d }
   const others = ['armorRight', 'armorFront', 'armorRear', 'springFront', 'springRear', 'damperFront', 'damperRear',
-    'wheelFL', 'wheelFR', 'wheelRL', 'wheelRR', 'tireFR', 'tireRL', 'tireRR']
+    'wheelFR', 'wheelRL', 'wheelRR', 'tireFR', 'tireRL', 'tireRR']
 
   const d = flatFL(); cruise(d, 50, 1.9)
-  ok(d.get('tireFL') > 0 && d.get('armorLeft') === 1, `1.9 km at 50 km/h: the tire is going (${(d.get('tireFL') * 100).toFixed(0)}%), the body untouched — no damage the instant it pops`)
+  ok(d.get('tireFL') > 0 && d.get('armorLeft') === 1 && d.get('wheelFL') === 1, `1.9 km at 50 km/h: the tire is going (${(d.get('tireFL') * 100).toFixed(0)}%), the body untouched — no damage the instant it pops`)
   cruise(d, 50, 0.2)
   ok(d.get('tireFL') === 0, '2 km shreds it')
-  cruise(d, 50, 3.9)
+  const vs = { velocity: { x: 0, y: 0, z: 0 } }; d.step(vs, P, DT)
+  ok(vs.rimOnRoad[0] && !vs.rimOnRoad[1], '...and the damage step reports that corner down to its rim (the grind reads it)')
+  cruise(d, 50, 0.85)   // + the 0.1 km past 2 km above
+  ok(d.get('wheelFL') > 0 && d.get('wheelFL') < 0.1, `the rim grinds away fast: ~1 km on it nearly writes it off (${(d.get('wheelFL') * 100).toFixed(1)}%)`)
+  cruise(d, 50, 3.05)
   ok(d.get('armorLeft') > 0 && d.get('armorLeft') < 0.1, `then 4 km takes the left panel nearly to 0 (${(d.get('armorLeft') * 100).toFixed(1)}%)...`)
   cruise(d, 50, 0.2)
   ok(d.get('armorLeft') === 0, '...and past it, to 0')

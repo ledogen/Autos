@@ -93,6 +93,13 @@ status: shipped · group: truck
 status: shipped · group: truck
 `src/tire-audio.js` blacktop and dirt rolling engines. No preview, same reason.
 
+### Rim grind
+status: shipped · group: truck
+`src/tire-audio.js` grind voice (FEAT-94, owner 2026-10-27): once a flat tire is run down to 0 the rim
+is on the road. Bandpassed noise, centre rising with road speed, pulsed once per wheel turn (a rim run
+flat is out of round); duller and quieter on dirt. Reads `vehicleState.rimOnRoad` from the damage
+step. No preview: it needs a live wheel to follow. A recorded steel-on-concrete take could replace it.
+
 ### Tyre blowout
 status: shipped · group: truck · play: tire-audio.js playTireBlowout
 SM-3 damage model puncture burst.
@@ -256,7 +263,8 @@ suspension activity.
 status: todo · group: truck
 Driving on a flat, two stages that follow FEAT-94's damage (owner, 2026-10-27). While the flat tire
 still has condition left: the carcass FLAPPING. Once it hits 0 (the tire has come apart): the loose
-tread BANGING on that side's body panel, the moment the panel starts taking damage. Both are one hit
+tread BANGING on that side's body panel, the moment the panel starts taking damage (under the
+synthesized Rim grind above, which starts at the same moment). Both are one hit
 per wheel turn, so the rate is keyed on that wheel's rpm (`wheelOmega`), and gain rises with speed.
 Flap: slap a deflated inner tube / tyre on asphalt rhythmically. Bang: swing a strip of tread or
 rubber flap against a sheet-metal panel (contact mic on the panel). One-shot takes, light to hard,
