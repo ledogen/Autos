@@ -1,7 +1,9 @@
 ---
 id: BUG-90
 type: bug
-status: fixed-pending-playtest
+status: closed
+closed: 2026-10-27
+resolution: "Fixed on feature/spare (0c4d6684 connector sink, 3b8b5e5c apex crest + clamped station-corner sag + vertical-curvature ceiling gate). Owner play-tested 2026-10-27: 'feels good'. Junction-zone one-track sags pinned as BUG-97."
 severity: minor
 opened: 2026-10-19
 source: owner, 2026-10-19 — "dips in road are wack occasionally"
@@ -214,3 +216,8 @@ New gate `test/vertical-curvature.mjs` (the owner's slope-rate yardstick, CEILIN
 fix; on main it fails all four checks (open-road sharpest 0.085 /m = dip 2; junction sharpest 0.189 /m
 = the seed-7 orphaned-T hairpin; counts 52 / 226 vs ceilings 17 / 200). The pinned junction-zone
 population is **BUG-97** (owner ruling needed).
+
+## Closed 2026-10-27
+Owner drove dips 1–3 on :3885 after 3b8b5e5c: "feels good". Dip 3 kept as is (fun and fair). The
+remaining junction-zone population (≈200 one-wheel-track sags, 0.03–0.10 /m) is BUG-97, pinned by the
+`vertical-curvature` ceilings until the owner rules.
