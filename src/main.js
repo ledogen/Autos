@@ -5096,8 +5096,11 @@ function _updateParkTriggers (zParked = false) {
     }
   }
   if (!campRow) return
-  // The tent: wherever a camp could be looked for. Its card only while looking.
-  const showCamp = !poi && !!camp && !_campUi
+  // The tent: wherever a camp could be looked for. Its card only while looking. Under an UNMADE camp
+  // card it stays up and lit with no prompt of its own: Z / a click on it calls the hunt off there
+  // (owner, 2026-10-27; _toggleCampSeek). A made camp and mom's door hide it.
+  const unmade = _campCardUnmade()
+  const showCamp = !poi && (unmade || (!!camp && !_campUi))
   campRow.style.display = showCamp ? 'flex' : 'none'
   // The world-space ring: only while the card is offering a spot that could actually be taken.
   // Once the dialogue is up the DIALOGUE owns the ring — the confirm face leaves it standing on the
@@ -5105,9 +5108,10 @@ function _updateParkTriggers (zParked = false) {
   // false whenever _campUi is set).
   if (!_campUi) _updateCampMarker(showCamp && site ? site : null)
   if (!showCamp) return
-  document.getElementById('camp-icon')?.classList.toggle('on', seeking)
-  document.getElementById('camp-prompt').style.display = seeking ? 'block' : 'none'
-  if (!seeking) return
+  document.getElementById('camp-icon')?.classList.toggle('on', seeking || unmade)
+  const hunting = seeking && !_campUi   // the card that just opened is the prompt now
+  document.getElementById('camp-prompt').style.display = hunting ? 'block' : 'none'
+  if (!hunting) return
   // The bar only where there is ground being graded; at speed and off camping ground it would be
   // an empty meter.
   const graded = !!camp.inZone
@@ -5129,6 +5133,9 @@ function _updateParkTriggers (zParked = false) {
     : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`
     :             `${why}<br>${parkPrompt('park to sleep in the truck')}`
 }
+
+/** An unmade camp card is up — the cab's (its sleep timer too), or a site previewed but not dug. */
+const _campCardUnmade = () => !!_campUi && !_campBusy && (!!_campUi.truck || _campUi.mode === 'confirm')
 
 /** The live card's "back" — the button that closes it without committing to anything — or null.
  *  Breaking a real camp is not a back (it costs the pad), so a made camp has none. */
@@ -5341,7 +5348,7 @@ function _renderCampUI () {
   const isHome = st.mode === 'camp' || st.mode === 'moms' || st.mode === 'truck'
   const vibe = st.moms ? 0.5 : (st.site?.vibe ?? 0)
 
-  set('cp-title', st.moms ? "mom's house" : st.truck ? 'the truck' : 'camp')
+  set('cp-title', st.moms ? "mom's house" : st.truck ? 'sleep in the truck' : 'camp')
   show('cp-make',   isConfirm)
   show('cp-truck',  isConfirm)
   // The confirm face's truck fallback obeys the same shoulder rule as the brake does.
@@ -5358,7 +5365,12 @@ function _renderCampUI () {
   show('cp-sleep-go',   isSleep)
   show('cp-sleep-back', isSleep)
   show('cp-sleep-panel', isSleep)
-  set('cp-break', st.moms || st.truck ? 'leave' : 'break camp')
+  // The backs Space / RB presses wear its keycap (owner, 2026-10-27; the keydown rule below). Break camp
+  // has none: Space never breaks a made camp.
+  const html = (id, h) => { const e = document.getElementById(id); if (e) e.innerHTML = h }
+  html('cp-break', st.moms || st.truck ? `${keycap('Space')}leave` : 'break camp')
+  html('cp-cancel', `${keycap('Space')}abandon`)
+  html('cp-sleep-back', `${keycap('Space')}back`)
   show('cp-vibe',        isConfirm)
   show('cp-vibe-legend', isConfirm)
   if (isConfirm) _renderVibeBar(st.site, document.getElementById('cp-vibe'))
@@ -5411,6 +5423,13 @@ function _renderCampUI () {
  *  must not silently arm a sticky hunt the player cannot see. */
 function _toggleCampSeek () {
   if (document.getElementById('camp-row')?.style.display !== 'flex') return
+  // Under an unmade card the lit tent is the way out of camp mode (owner, 2026-10-27): the hunt goes
+  // off and the card closes with it. Re-tested here, not trusted to the row: the row repaints at
+  // 10 Hz, and a camp dug a moment ago must never be broken by Z.
+  if (_campUi) {
+    if (_campCardUnmade()) { _campSeek = false; _closeCampUi(); _updateParkTriggers() }
+    return
+  }
   _campSeek = !_campSeek
   // BUG-95 (owner, 2026-10-26): arming the hunt while ALREADY parked counts as the pull where the
   // answer is the cab or mom's door — the view stays put, so the card just opens. A real campsite

@@ -40,7 +40,15 @@ picked option 1 of three:
   confirm card, leave at the truck or mom's, back on the sleep slider. That is just looking at the
   site, saying no thanks, releasing the brake and driving away. **Space never breaks a made camp**:
   the player must pick "break camp" before the camera returns to the truck. Ignored mid-fade and on
-  key repeat. Z on a card is unchanged (the tent is hidden while a card is up).
+  key repeat.
+
+**Follow-up (owner, 2026-10-27):**
+- **The tent stays up and lit beside an unmade card**: the truck card (and its sleep slider) and a
+  previewed site's card. Z or a click on it closes the card **and** turns the hunt off. A made camp
+  and mom's door keep the tent hidden, so Z does nothing there.
+- **The truck card's title is "sleep in the truck"** (was "the truck").
+- **The buttons Space presses show its keycap** (RB on the pad): leave, abandon, back. The key sits
+  before the word, as on the other cards' back button. Break camp has none.
 
 ## Acceptance
 
@@ -51,3 +59,6 @@ picked option 1 of three:
 - [ ] Not parked: Z still only arms the hunt (unchanged).
 - [ ] Space closes the confirm card (cancel) and the truck / mom's card (leave), and steps back from the
       sleep slider. Space on a made camp does nothing.
+- [ ] With the truck card or a site's confirm card up, the tent shows lit. Z closes the card and the
+      tent goes dark (hunt off). On a made camp or at mom's, no tent shows and Z does nothing.
+- [ ] Leave, abandon and back show the Space keycap, and RB when the pad last drove.

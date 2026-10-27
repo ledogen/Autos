@@ -254,13 +254,18 @@ const STEPS = [
     check(await until(panel, 2000), `parking off the ribbon with the card up ("${text2}") opened no camp panel`)
     const title = () => js('document.getElementById("cp-title").textContent')
     if (await title() === 'camp') await js('document.getElementById("cp-truck").click()')
-    check(await title() === 'the truck', `no truck face (title "${await title()}")`)
+    check(await title() === 'sleep in the truck', `no truck face (title "${await title()}")`)
     await js('document.getElementById("cp-sleep").click()')
     check(await js('document.getElementById("cp-body").textContent.includes("campsites provide more rest")'),
       'the truck sleep face is missing its disclaimer')
-    await js('document.getElementById("cp-sleep-back").click(); document.getElementById("cp-break").click()')
-    check(await until(async () => !await panel(), 2000), '"leave" did not close the truck face')
-    await tap('z')   // hunt off again, so later parks open nothing
+    await js('document.getElementById("cp-sleep-back").click()')
+    // Owner, 2026-10-27: an unmade card keeps the tent up and lit, and Z there closes the card and
+    // calls the hunt off — so later parks open nothing.
+    const lit = () => js('document.getElementById("camp-row").style.display === "flex" && document.getElementById("camp-icon").classList.contains("on")')
+    check(await until(lit, 1000), 'the tent is not up and lit beside the truck face')
+    await tap('z')
+    check(await until(async () => !await panel(), 2000), 'Z did not close the truck face')
+    check(!await lit(), 'Z closed the truck face but left the hunt on')
   }],
   ['inventory', async () => {
     // FEAT-122: parked only (like V) — Tab driving pulses the park sign and opens nothing; parked,
