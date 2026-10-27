@@ -96,3 +96,8 @@ the cost goes as speed, so limping is the third option).
 
 Owed: the owner's in-game feel check of both rates. Left alone: a patch still works on a tire worn
 to 0 by running flat; add a "shredded, can't be patched" rule only if that reads wrong in play.
+
+**Follow-up (owner, 2026-10-27):** once the tire is at 0 the RIM is on the road too: it wears at
+`durFlatRim` (1 km at 50 km/h, 100% → 0) alongside the side panel, and grinds. `step()` publishes
+`vehicleState.rimOnRoad[i]`; `src/tire-audio.js` has the grind voice (pitch on road speed, one bite
+per wheel turn). Sparks are FEAT-152.
