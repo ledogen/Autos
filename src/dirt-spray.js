@@ -92,14 +92,14 @@ const SPARK_BACK_MAX = 7.0
 const SPARK_UP_MIN   = 0.6     // m/s
 const SPARK_UP_MAX   = 2.6
 const SPARK_OUT      = 1.2     // m/s — max sideways, away from the wheel on each lip
-const SPARK_LIFE_MIN = 0.18    // s
-const SPARK_LIFE_MAX = 0.45
+const SPARK_LIFE_MIN = 0.08    // s
+const SPARK_LIFE_MAX = 0.25
 const SPARK_SIZE_MIN = 0.015   // m — streak width
 const SPARK_SIZE_MAX = 0.030
 const SPARK_TRAIL    = 0.045   // s of travel the streak reaches back over
-const SPARK_HOT  = [1.0, 0.78, 0.42]   // yellow-white at birth...
-const SPARK_COOL = [1.0, 0.32, 0.04]   // ...deep orange as it dies
-const SPARK_GLOW = 2.4                 // colour gain above 1: an emitter, so it must survive ACES tone
+const SPARK_HOT  = [1.0, 0.62, 0.22]   // yellow-orange at birth...
+const SPARK_COOL = [1.0, 0.25, 0.02]   // ...deep orange as it dies
+const SPARK_GLOW = 2.8                 // colour gain above 1: an emitter, so it must survive ACES tone
                                        // mapping as hot orange-white instead of flattening to beige
 const KIND_CLOD = 0
 const KIND_FLOAT = 1
@@ -170,7 +170,7 @@ export class DirtSpraySystem {
           // thing becoming transparent. uLightA is luminance(uLight) shaped by its own curve.
           // Sparks are hot metal — their own light — so night leaves them alone.
           // The streak's head is white-hot, its trail the particle's orange (vColor carries the gain).
-          vec3 col = mix(vColor, vec3(max(vColor.r, 1.0)), spark * smoothstep(0.75, 1.0, vUv.x) * 0.7);
+          vec3 col = mix(vColor, vec3(max(vColor.r, 1.0)), spark * smoothstep(0.75, 1.0, vUv.x) * 0.3);
           gl_FragColor = vec4(col * mix(uLight, vec3(1.0), spark), a * vOpacity * mix(uLightA, 1.0, spark));
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -203,7 +203,7 @@ export class DirtSpraySystem {
     }
     this._cursor = 0
     this._emitAccum = [0, 0, 0, 0]
-    this._sparkAccum = [0, 0, 0, 0]   // per wheel, both lips together
+    this._sparkWait = [0, 0, 0, 0]    // per wheel, both lips: seconds until the next spark
     this._sprayColor = new THREE.Color()
     this._tmpColor = new THREE.Color()
   }
@@ -331,11 +331,12 @@ export class DirtSpraySystem {
       pos[j3] = part.x; pos[j3 + 1] = part.y; pos[j3 + 2] = part.z
       vel[j3] = vel[j3 + 1] = vel[j3 + 2] = 0
       if (part.kind === KIND_SPARK) {
-        // Yellow-white to orange over its life (sqrt: it cools fast, then lingers orange), full until
-        // the last third, trail = recent travel.
+        // Yellow-orange to deep orange over its life (sqrt: it cools fast, then lingers orange),
+        // full for the first 40% then a fast square-law fade, trail = recent travel.
         const tc = Math.sqrt(t)
         par[j3] = part.scale0
-        par[j3 + 2] = part.peak * Math.min(1, (1 - t) * 3)
+        const f = Math.min(1, (1 - t) / 0.6)
+        par[j3 + 2] = part.peak * f * f
         shp[n] = 2
         vel[j3] = part.vx * SPARK_TRAIL; vel[j3 + 1] = part.vy * SPARK_TRAIL; vel[j3 + 2] = part.vz * SPARK_TRAIL
         part.r = SPARK_GLOW * (SPARK_HOT[0] + (SPARK_COOL[0] - SPARK_HOT[0]) * tc)
@@ -469,26 +470,31 @@ export class DirtSpraySystem {
 
       const groundY = groundYAt ? groundYAt(wx, wz) : 0
       const wheelBottom = wy - params.wheelRadius
-      if (wheelBottom - groundY > CONTACT_BAND) { this._emitAccum[i] = 0; this._sparkAccum[i] = 0; continue }
+      if (wheelBottom - groundY > CONTACT_BAND) { this._emitAccum[i] = 0; this._sparkWait[i] = 0; continue }
 
       // Loose surface only: on asphalt there is nothing to throw. Cheap (memoized carveHint).
       const loose = looseFactorAt ? looseFactorAt(wx, wz) : 1
       if (loose < LOOSE_FLOOR) {
         this._emitAccum[i] = 0
         // ...except a rim on the road, which throws sparks off both lips (asphalt only).
-        if (!rims?.[i]) { this._sparkAccum[i] = 0; continue }
-        this._sparkAccum[i] += 2 * SPARK_RATE * Math.pow(sparkU, SPARK_RATE_EXP) * amount * dt
+        const rate = 2 * SPARK_RATE * Math.pow(sparkU, SPARK_RATE_EXP) * amount
+        if (!rims?.[i] || rate <= 0) { this._sparkWait[i] = 0; continue }
+        // Poisson, not a metronome: each gap is drawn from the exponential distribution (mean
+        // 1/rate), so sparks clump and gap at random instead of coming off evenly spaced.
         const lip = SPARK_LIP * (params.wheelWidth || 0.25)
+        this._sparkWait[i] -= dt
         let budget = EMIT_BUDGET
-        while (this._sparkAccum[i] >= 1 && budget-- > 0) {
-          this._sparkAccum[i] -= 1
+        while (this._sparkWait[i] <= 0 && budget-- > 0) {
+          this._sparkWait[i] -= Math.log(1 - Math.random()) / rate
           const side = Math.random() < 0.5 ? -1 : 1
-          this._spawnSpark(wx + rgtX * lip * side, groundY, wz + rgtZ * lip * side, sparkU, side, bx, bz, rgtX, rgtZ)
+          const fa = (Math.random() - 0.5) * 0.2   // m, fore-aft along the contact patch
+          this._spawnSpark(wx + rgtX * lip * side + bx * fa, groundY, wz + rgtZ * lip * side + bz * fa,
+            sparkU, side, bx, bz, rgtX, rgtZ)
         }
-        if (this._sparkAccum[i] > 2) this._sparkAccum[i] = 2
+        if (this._sparkWait[i] < 0) this._sparkWait[i] = 0   // don't bank a backlog
         continue
       }
-      this._sparkAccum[i] = 0
+      this._sparkWait[i] = 0
 
       // Combined contact-patch slip. NOTE: wheelDebug[i].sa is friction-circle-clamped at ≈0.06
       // (BUG-20 break-away clamp) and never reflects real slip magnitude — vLong/vLat are the
