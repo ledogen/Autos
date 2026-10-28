@@ -105,7 +105,11 @@ for (const s of [...SPLITS, ...CLEAN]) {
         while (st.length) for (const e of adj.get(st.pop())) if (!home.has(e.to)) { home.add(e.to); st.push(e.to) }
     }
     const poi = placePois(seed, road, C, region.nodes)
-    const onGraph = (q) => home.has(g.key(q.aId)) && home.has(g.key(q.bId))
+    // FEAT-103: the expedition camp's road is cut at the wall, so its far node is off the graph by
+    // design — it is on the piece through its ONE inner node, and must have exactly one.
+    const onGraph = (q) => q.type === 'expeditionCamp'
+        ? home.has(g.key(q.aId)) !== home.has(g.key(q.bId))
+        : home.has(g.key(q.aId)) && home.has(g.key(q.bId))
     const offP = poi.list().filter((q) => !onGraph(q)), offC = poi.customers().filter((q) => !onGraph(q))
     check(`every POI is on the spawn's piece (${poi.list().length})`, offP.length === 0, offP.map((q) => q.type).join(', '))
     check(`every customer is on the spawn's piece (${poi.customers().length})`, offC.length === 0, `${offC.length} off`)

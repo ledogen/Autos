@@ -177,17 +177,47 @@ difficulty.
 6. **Files.** Dirt grip lives in tire.js and punctures in damage.js (Lane B's); the surface lives in
    road.js and road-mesh.js.
 
+## Built (alpha slice, 2026-10-28, feature/run-shape)
+
+- **The camp** — `expeditionCamp`, `CAMP_SLOT` in src/poi.js, sited by `_siteCamp` after the roster
+  (never from the pool), dressed like a slot. Pick rule as above; on the chosen road the pad nearest
+  the cut wins. Placeholder cube until ASSET-71. Map label "Expedition" (data/map-icons.js).
+- **The barrier** — `_barrier`: a slab across the deck 4 m past the pad's far end, road + shoulders
+  wide, 1 m above the deck's highest point. It is one more box on the camp's body (`_barrierBox`), so
+  the wheels and the chassis hit what main.js draws. PLACEHOLDER art (a flat concrete box).
+- **The planner** (src/mission.js) — a destination POI may have ONE node on the graph (the camp's);
+  `dest.anyLeg` lifts the leg band and hop cap for a line, so every line always plans (SM-INV-7).
+- **The requisition** — data/offers.js `REQUISITION`; src/offer-board.js `r` slots: closed until
+  `openLines()` (main.js `_renderRunHud`, at `ECONOMY_PARAMS.campDeeds`), shown at the camp and the
+  source as one offer, no expiry, no deadline, no lock, no pay, no deed. A line taken at the camp is
+  untimed until you park at the source (`approach` / `reachSource()`); the GPS stays off and the
+  source's own park spot is lit until then. The run HUD shows "requisition n / 5" once open.
+- **The uncle** — data/dialogue.js `{dir}` + `COMPASS`, filled by main.js `_runIntro()` (8 points).
+- Gate: test/expedition-camp.mjs. Census: test/camp-edge-census.mjs now reports `camp` per seed.
+
+**Calls made where the ticket was silent — the owner may overrule any:**
+1. **A line counts at C or better**; a D (late, or too much of the load lost) puts it back on the
+   list. Read from "a lost or late load is a line delivered again" with no deadline.
+2. **The crew waits at the construction site** (`workSite`): "the POI where the crew waits" names none.
+3. **The firewood line is 25 bundles, free** — the haul S count, no picker, no stock cost.
+4. **"Nearest source" is straight-line** to the camp. Every source type is a singleton today, so it
+   only matters once a type has two.
+5. All words on the line card, the prompts and the result rows are placeholders.
+
+Not built: a GPS line from the camp to a line's source (the map's start pin and the lit park spot
+lead there); the win itself (FEAT-146).
+
 ## Acceptance
 
 **Alpha:**
 
 - [ ] Every seed in a 100-seed census places the camp, by the pick rule above. The census runs headless
       and reports the pick per seed.
-- [ ] The camp is a POI type of its own (not the roster's `workSite`), on the picked road inside the
-      planners' wall. The road past it is blocked by the model and a barrier.
-- [ ] The requisition's routes reach the camp through its one inner node. No other POI, customer or
-      route changes on a seed (test/region-pieces.mjs stays green).
-- [ ] The uncle names the camp's true compass direction.
-- [ ] The camp, its road and the requisition are the same on every load of the seed (no worldgen in saves).
+- [x] The camp is a POI type of its own (not the roster's `workSite`), on the picked road inside the
+      planners' wall. The road past it is blocked by the model and a barrier. *(model = the cube until ASSET-71)*
+- [x] The requisition's routes reach the camp through its one inner node. No other POI, customer or
+      route changes on a seed (test/region-pieces.mjs stays green). *(expedition-camp gate)*
+- [x] The uncle names the camp's true compass direction.
+- [x] The camp, its road and the requisition are the same on every load of the seed (no worldgen in saves).
 
 **Beta:** to be written when FEAT-28's walls exist and the north-wall crossing check has been measured.

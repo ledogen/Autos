@@ -85,8 +85,10 @@ const W = makeWorld(C.x, C.z, R)
         `${W.road._network.size} edges`)
     check('placing POIs does not bump _networkRev (route/junction caches survive)',
         W.road._networkRev === beforeRev, `${beforeRev} → ${W.road._networkRev}`)
+    // FEAT-103: the expedition camp rides outside the roster (its own gate: expedition-camp.mjs).
+    const roster = list.filter(q => q.type !== 'expeditionCamp')
     check('the region fills its whole roster — a selection, not the tail of a coin flip',
-        list.length === POI_COUNT, `${list.length} POIs vs roster ${POI_COUNT}`)
+        roster.length === POI_COUNT, `${roster.length} POIs vs roster ${POI_COUNT}`)
     console.log(`       ${list.length} POIs selected from ${W.road._network.size} edge slots over r=${R}`)
 }
 
@@ -743,8 +745,9 @@ function boardRig (ms, nowH = 6) {
     check('every roster slot is filled exactly to its count',
         short.length === 0,
         short.map(t => `${t} ${counts[t] || 0}/${want[t]}`).join(', '))
+    const roster = list.filter(q => q.type !== 'expeditionCamp')   // FEAT-103: outside the roster
     check('nothing is placed that the roster did not ask for',
-        list.length === POI_COUNT, `${list.length} vs ${POI_COUNT}`)
+        roster.length === POI_COUNT, `${roster.length} vs ${POI_COUNT}`)
     console.log('       ' + POI_ROSTER.map(s => `${s.type} ×${counts[s.type] || 0}`).join('  '))
 
     // Mom's and Larry's are a short drive from where you wake up. The radius may have relaxed on a
@@ -821,7 +824,7 @@ function boardRig (ms, nowH = 6) {
     // FEAT-67: the flag is DERIVED from the board's source table — a type posts work iff it has a
     // SOURCES row. The gas station has one (it is a store, 2026-09-26); the gas PUMP, the tackle
     // shop and mom's house do not — a pump's brake opens the pump (FEAT-50), never an offer.
-    const GIVERS = new Set(Object.keys(SOURCES))
+    const GIVERS = new Set([...Object.keys(SOURCES), 'expeditionCamp'])   // FEAT-103: the camp posts the requisition
     check('exactly the markers with a mechanic source jobs',
         list.every(q => q.jobs === GIVERS.has(q.type)),
         list.filter(q => q.jobs !== GIVERS.has(q.type)).map(q => q.type).join(', '))
@@ -838,7 +841,7 @@ function boardRig (ms, nowH = 6) {
         modelled.every(q => q.collision?.size?.length === 3 && Number.isFinite(q.modelYaw)
             && q.collision === PROP_MODELS[q.modelKey].collision))
     check('keyless POIs carry no box (they fall back to the cube)',
-        list.filter(q => !q.modelKey).every(q => q.collision === null))
+        list.filter(q => !q.modelKey && !q.barrier).every(q => q.collision === null))   // FEAT-103: the camp's body is its barrier
 
     // THE MODEL POOL (owner, 2026-08-15). The five residences draw from every asset tagged
     // 'residence' rather than all wearing one model. What is gated is membership, not the

@@ -388,7 +388,27 @@ export const REWARDS = [
 // FEAT-50: places no job ever ends at. A lone gas pump has no one to hand anything to — it sells fuel
 // and nothing else (owner, 2026-10-16) — so a generic delivery must never roll one as its drop-off.
 // src/offer-board.js destWish filters on it.
-export const NOT_A_DESTINATION = new Set(['gasPump'])
+// FEAT-103: nor does an ordinary job end at the expedition camp — the requisition is its only business.
+export const NOT_A_DESTINATION = new Set(['gasPump', 'expeditionCamp'])
+
+/**
+ * FEAT-103: THE REQUISITION — the expedition camp's five lines, one trip each, one per mission type
+ * (owner, 2026-10-19). Each line is posted at the camp AND at its source, the nearest POI of `from`
+ * to the camp, and the two are one offer (src/offer-board.js `r` slots). Closed until the run holds
+ * ECONOMY_PARAMS.campDeeds good deeds, then always on, outside the budget: no expiry, no deadline, no
+ * lock, no pay. A line is delivered at C or better; a D (late, or too much of the load lost) puts it
+ * back on the list unchanged.
+ * PLACEHOLDERS: the phrases (the owner writes the words), the firewood count (25 = the haul S line,
+ * 275 kg), and the crew's POI — the design names "the POI where the crew waits"; the construction site
+ * is the stand-in.
+ */
+export const REQUISITION = [
+    { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 25 },
+    { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
+    { id: 'reqFood',     phrase: 'a week of food', family: 'delivery', from: 'foodVendor',   massKg: 20 },
+    { id: 'reqFuel',     phrase: 'fuel cans',      family: 'delivery', from: 'gasStation',   massKg: 30 },
+    { id: 'reqGear',     phrase: 'camp gear',      family: 'delivery', from: 'generalStore', massKg: 25 },
+]
 
 export const SOURCES = {
     // ── always-on ──

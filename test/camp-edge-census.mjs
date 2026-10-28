@@ -14,6 +14,8 @@
 //                   on the crossing's last 400 m inside the wall
 //   stubs   dead ends that already exist (network degree 1) on the spawn's piece, ≥ 1800 m out.
 //   reach   the farthest any road of the piece gets from the centre, inside the wall.
+//   camp    THE PICK: where the game puts the expedition camp (poi.js _siteCamp, via a real build) —
+//           its bearing, radius, and roadM, the road metres from the spawn to the camp. null = none.
 //
 //   node test/camp-edge-census.mjs --seeds=1-100 [--out=file.jsonl]
 import * as THREE from 'three'
@@ -136,7 +138,12 @@ for (let s = lo; s <= (hi ?? lo); s++) {
         const p = posK(k)
         if (r(p) >= 1800) stubs.push({ r: Math.round(r(p)), bear: bear(p), rd: Math.round(dist.get(k)) })
     }
-    const row = { seed: s, sec: Math.round((Date.now() - t0) / 1000), pieces: rep.components,
+    // THE PICK (FEAT-103): the camp the game places — poi.js _siteCamp through a real build.
+    poi.build(C, REGION_RADIUS_M, rep.mainNodes)
+    const q = poi.list().find((x) => x.type === 'expeditionCamp')
+    const inner = q && (home(q.edge.split('|')[0]) ? q.edge.split('|')[0] : q.edge.split('|')[1])
+    const camp = q ? { bear: bear(q), r: Math.round(r(q)), roadM: Math.round(q.roadM), node: inner } : null
+    const row = { seed: s, sec: Math.round((Date.now() - t0) / 1000), pieces: rep.components, camp,
                   reach: Math.round(reach), reachBear, cross: cross.sort((a, b) => a.bear - b.bear), stubs }
     console.log(JSON.stringify(row))
     if (OUT) appendFileSync(OUT, JSON.stringify(row) + '\n')
