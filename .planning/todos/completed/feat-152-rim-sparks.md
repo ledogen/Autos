@@ -1,7 +1,8 @@
 ---
 id: FEAT-152
 type: feature
-status: open
+status: done
+closed: 2026-10-28
 severity: minor
 opened: 2026-10-27
 source: owner, 2026-10-27 — "we should add a sparking effect to the wheel implying its right on the
@@ -33,3 +34,19 @@ metal on asphalt.
 - [ ] A rim on asphalt throws sparks from its contact patch while moving, scaling with speed.
 - [ ] No sparks from a flat that still has tire left, on loose ground, or parked.
 - [ ] No measurable frame cost when nothing is grinding (the pool idles).
+
+## Resolution (2026-10-28, feature/machine)
+
+Built straight after the ticket (owner: "lets just do the sparks now"). Owner's spec: floor 15 mph,
+faint and infrequent there; ceiling 50 mph; two emitters per wheel at the rim lips (inside and
+outside); reuse the dirt-throwing code; small orange-white particles with a trail.
+
+- `src/dirt-spray.js` gains a third kind, SPARK, in the same pool and draw call as the clods. It reuses
+  the wheel-contact geometry and the ballistic integrator. Emitted only where `vehicleState.rimOnRoad[i]`
+  is set and the ground is asphalt (looseSurfaceFactor under the spray's own floor, so sparks and
+  dirt spray are mutually exclusive). Rate ∝ u² (u = 0 at 15 mph, 1 at 50 mph), brightness 0.35→1.
+- The trail is a streak: a new `aVel` attribute on the sheet, and the vertex shader stretches the quad
+  from the spark back along 45 ms of its own travel. The head is white-hot, the trail orange. Colour
+  gain is above 1 so ACES tone mapping keeps it hot instead of beige. Night does not dim them.
+- Checked in the real app (headless Chrome, two dead rear rims at ~37 mph on asphalt); cdp-smoke 15/15.
+- Not built: sparks on dirt (a rim throws dirt there). Tune `SPARK_*` by feel.

@@ -20,8 +20,13 @@
  *     peels off the stream and hangs in the air, growing and fading like dust. Longer life, much
  *     lower alpha, lighter/dustier tint.
  *
- * Both layers share the instanced attributes; aShape picks a crisp disc (clods) vs the soft radial
- * puff (floaters) in the fragment shader, so one material covers both.
+ *  3. SPARKS (kind 2, FEAT-152) — a flat tire run down to its rim on ASPHALT (vehicleState.rimOnRoad,
+ *     from damage.js) throws sparks from the two rim lips, inside and outside, where the steel meets
+ *     the road. Same ballistic integrator as the clods; drawn as a streak stretched back along the
+ *     spark's own velocity (the trail), orange-white, and self-lit (night does not dim them).
+ *
+ * All layers share the instanced attributes; aShape picks a crisp disc (clods), the soft radial
+ * puff (floaters) or the streak (sparks, aShape 2 + aVel), so one material covers all three.
  *
  * Conventions: wheel index 0=FL 1=FR 2=RL 3=RR (GLOSSARY.md §Wheel Index).
  * Car forward = -Z, left = -X (GLOSSARY.md §Coordinate System).
@@ -75,8 +80,30 @@ const FLOAT_OPACITY = 0.26
 const FLOAT_TINT    = 1.25  // lighter than the clods — airborne dust catches light
 const FLOAT_WHITE   = 0.20  // extra lerp toward white
 
+// ── Layer 3: rim sparks (FEAT-152, owner 2026-10-28) ────────────────────────────
+// Faint and infrequent at 15 mph, full at 50 mph; two emitters per grinding wheel (the rim lips).
+const SPARK_V_FLOOR  = 6.7     // m/s (15 mph) — nothing below
+const SPARK_V_FULL   = 22.4    // m/s (50 mph) — rate and brightness saturate
+const SPARK_RATE     = 45      // sparks/sec per lip at full
+const SPARK_RATE_EXP = 2       // rate ∝ u^this — sparse near the floor, a shower at the top
+const SPARK_LIP      = 0.35    // × wheelWidth either side of the centreline — the rim's two edges
+const SPARK_BACK_MIN = 2.0     // m/s — thrown backward off the contact
+const SPARK_BACK_MAX = 7.0
+const SPARK_UP_MIN   = 0.6     // m/s
+const SPARK_UP_MAX   = 2.6
+const SPARK_OUT      = 1.2     // m/s — max sideways, away from the wheel on each lip
+const SPARK_LIFE_MIN = 0.18    // s
+const SPARK_LIFE_MAX = 0.45
+const SPARK_SIZE_MIN = 0.015   // m — streak width
+const SPARK_SIZE_MAX = 0.030
+const SPARK_TRAIL    = 0.045   // s of travel the streak reaches back over
+const SPARK_HOT  = [1.0, 0.78, 0.42]   // yellow-white at birth...
+const SPARK_COOL = [1.0, 0.32, 0.04]   // ...deep orange as it dies
+const SPARK_GLOW = 2.4                 // colour gain above 1: an emitter, so it must survive ACES tone
+                                       // mapping as hot orange-white instead of flattening to beige
 const KIND_CLOD = 0
 const KIND_FLOAT = 1
+const KIND_SPARK = 2
 
 export class DirtSpraySystem {
   /**
@@ -91,6 +118,7 @@ export class DirtSpraySystem {
         attribute vec3 aParam;   // scale, rotation, opacity
         attribute vec3 aColor;
         attribute float aShape;
+        attribute vec3 aVel;     // sparks only: the streak reaches back along this (world m)
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
@@ -101,10 +129,20 @@ export class DirtSpraySystem {
           vColor = aColor;
           vOpacity = aParam.z;
           vShape = aShape;
-          float c = cos(aParam.y), s = sin(aParam.y);
-          vec2 corner = mat2(c, s, -s, c) * (position.xy * aParam.x);   // spin, then scale
           vec4 mvPosition = viewMatrix * vec4(aPos, 1.0);               // mesh sits at the origin
-          mvPosition.xy += corner;                                      // view-space billboard
+          if (aShape > 1.5) {
+            // Streak: the quad's x runs tail (-0.5) to head (+0.5), its y is the width, across
+            // the view-space direction of travel.
+            vec4 tail = viewMatrix * vec4(aPos - aVel, 1.0);
+            vec2 d = mvPosition.xy - tail.xy;
+            float len = length(d);
+            vec2 dir = len > 1e-5 ? d / len : vec2(1.0, 0.0);
+            mvPosition = mix(tail, mvPosition, position.x + 0.5);
+            mvPosition.xy += vec2(-dir.y, dir.x) * position.y * aParam.x;
+          } else {
+            float c = cos(aParam.y), s = sin(aParam.y);
+            mvPosition.xy += mat2(c, s, -s, c) * (position.xy * aParam.x);   // spin, scale, billboard
+          }
           gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
         }`, /* glsl */`
@@ -122,19 +160,29 @@ export class DirtSpraySystem {
           // by the per-instance shape flag rather than a second draw call.
           float d = length(vUv - 0.5) * 2.0;
           float disc = 1.0 - smoothstep(0.72, 1.0, d);
-          float a = mix(tex.a, disc, vShape);
+          // Spark streak: solid across its width, fading from the head back to the tail.
+          float streak = (1.0 - smoothstep(0.5, 1.0, abs(vUv.y - 0.5) * 2.0)) * vUv.x;
+          float spark = step(1.5, vShape);
+          float a = spark > 0.5 ? streak : mix(tex.a, disc, vShape);
           if (a < 0.01) discard;
           // Day/night: dim the COLOUR and the ALPHA. Colour alone only greys the puff out, and a
           // grey puff on a black road is still obvious — what sells "unlit smoke at night" is the
           // thing becoming transparent. uLightA is luminance(uLight) shaped by its own curve.
-          gl_FragColor = vec4(vColor * uLight, a * vOpacity * uLightA);
+          // Sparks are hot metal — their own light — so night leaves them alone.
+          // The streak's head is white-hot, its trail the particle's orange (vColor carries the gain).
+          vec3 col = mix(vColor, vec3(max(vColor.r, 1.0)), spark * smoothstep(0.75, 1.0, vUv.x) * 0.7);
+          gl_FragColor = vec4(col * mix(uLight, vec3(1.0), spark), a * vOpacity * mix(uLightA, 1.0, spark));
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
         }`)
     this._mesh = mesh
-    this._aPos = aPos; this._aParam = aParam; this._aColor = aColor; this._aShape = aShape
-    this._attrs = [aPos, aParam, aColor, aShape]   // upload set, built once (no per-frame array)
+    // The spark trail attribute, added beside the shared sheet's four (zero for clods/floaters).
+    const aVel = new THREE.InstancedBufferAttribute(new Float32Array(POOL_SIZE * 3), 3)
+    aVel.setUsage(THREE.DynamicDrawUsage)
+    mesh.geometry.setAttribute('aVel', aVel)
+    this._aPos = aPos; this._aParam = aParam; this._aColor = aColor; this._aShape = aShape; this._aVel = aVel
+    this._attrs = [aPos, aParam, aColor, aShape, aVel]   // upload set, built once (no per-frame array)
 
     this._p = []
     for (let i = 0; i < POOL_SIZE; i++) {
@@ -155,6 +203,7 @@ export class DirtSpraySystem {
     }
     this._cursor = 0
     this._emitAccum = [0, 0, 0, 0]
+    this._sparkAccum = [0, 0, 0, 0]   // per wheel, both lips together
     this._sprayColor = new THREE.Color()
     this._tmpColor = new THREE.Color()
   }
@@ -220,6 +269,29 @@ export class DirtSpraySystem {
     part.vz = dz * speed + lz * lateral
   }
 
+  /**
+   * Spawn one spark at a rim lip. Thrown back off the contact, up, and outward from that lip.
+   * @param {number} side  -1 / +1 — which lip, along the wheel's lateral axis (lx, lz)
+   */
+  _spawnSpark (x, groundY, z, u, side, bx, bz, lx, lz) {
+    const part = this._alloc()
+    part.active = true
+    part.kind = KIND_SPARK
+    part.age = 0
+    part.life = SPARK_LIFE_MIN + (SPARK_LIFE_MAX - SPARK_LIFE_MIN) * Math.random()
+    part.scale0 = SPARK_SIZE_MIN + (SPARK_SIZE_MAX - SPARK_SIZE_MIN) * Math.random()
+    part.rot = 0
+    part.peak = 0.35 + 0.65 * u   // faint near the floor
+    part.shed = 0
+    part.gy = groundY
+    part.x = x; part.y = groundY + 0.02; part.z = z
+    const back = SPARK_BACK_MIN + (SPARK_BACK_MAX - SPARK_BACK_MIN) * Math.random() * (0.5 + 0.5 * u)
+    const out = side * SPARK_OUT * Math.random()
+    part.vx = bx * back + lx * out
+    part.vy = SPARK_UP_MIN + (SPARK_UP_MAX - SPARK_UP_MIN) * Math.random()
+    part.vz = bz * back + lz * out
+  }
+
   /** Shed a draggy floater off a live clod (inherits a slice of its velocity). */
   _spawnFloater (src) {
     const part = this._alloc()
@@ -249,7 +321,7 @@ export class DirtSpraySystem {
 
   _pack () {
     const pos = this._aPos.array, par = this._aParam.array, col = this._aColor.array
-    const shp = this._aShape.array
+    const shp = this._aShape.array, vel = this._aVel.array
     let n = 0
     for (let i = 0; i < POOL_SIZE; i++) {
       const part = this._p[i]
@@ -257,7 +329,19 @@ export class DirtSpraySystem {
       const t = part.age / part.life
       const j3 = n * 3
       pos[j3] = part.x; pos[j3 + 1] = part.y; pos[j3 + 2] = part.z
-      if (part.kind === KIND_CLOD) {
+      vel[j3] = vel[j3 + 1] = vel[j3 + 2] = 0
+      if (part.kind === KIND_SPARK) {
+        // Yellow-white to orange over its life (sqrt: it cools fast, then lingers orange), full until
+        // the last third, trail = recent travel.
+        const tc = Math.sqrt(t)
+        par[j3] = part.scale0
+        par[j3 + 2] = part.peak * Math.min(1, (1 - t) * 3)
+        shp[n] = 2
+        vel[j3] = part.vx * SPARK_TRAIL; vel[j3 + 1] = part.vy * SPARK_TRAIL; vel[j3 + 2] = part.vz * SPARK_TRAIL
+        part.r = SPARK_GLOW * (SPARK_HOT[0] + (SPARK_COOL[0] - SPARK_HOT[0]) * tc)
+        part.g = SPARK_GLOW * (SPARK_HOT[1] + (SPARK_COOL[1] - SPARK_HOT[1]) * tc)
+        part.b = SPARK_GLOW * (SPARK_HOT[2] + (SPARK_COOL[2] - SPARK_HOT[2]) * tc)
+      } else if (part.kind === KIND_CLOD) {
         // Clods hold their size and stay solid, then blink out over the last quarter of life.
         par[j3] = part.scale0
         par[j3 + 2] = part.peak * Math.min(1, (1 - t) * 4)
@@ -322,13 +406,14 @@ export class DirtSpraySystem {
       if (!part.active) continue
       part.age += dt
       if (part.age >= part.life) { part.active = false; continue }
-      if (part.kind === KIND_CLOD) {
+      if (part.kind !== KIND_FLOAT) {
         part.vy -= GRAVITY * dt
         part.x += part.vx * dt
         part.y += part.vy * dt
         part.z += part.vz * dt
-        // Ballistic clods die on impact rather than sinking through the terrain.
+        // Ballistic clods (and sparks) die on impact rather than sinking through the terrain.
         if (part.vy < 0 && part.y <= part.gy) { part.active = false; continue }
+        if (part.kind === KIND_SPARK) continue
         // Shed a floater now and then — this is what makes the dust peel OFF the stream.
         part.shed += SHED_RATE * dt
         if (part.shed >= 1 && shedBudget > 0) {
@@ -348,6 +433,12 @@ export class DirtSpraySystem {
     }
 
     if (!enabled) { this._emitAccum[0] = this._emitAccum[1] = this._emitAccum[2] = this._emitAccum[3] = 0; this._pack(); return }
+
+    // Sparks: speed gate once for the truck (a rim grinds at road speed, not slip speed).
+    const roadV = Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z)
+    let sparkU = (roadV - SPARK_V_FLOOR) / (SPARK_V_FULL - SPARK_V_FLOOR)
+    if (sparkU > 1) sparkU = 1
+    const rims = sparkU > 0 ? vehicleState.rimOnRoad : null
 
     const px = vehicleState.position.x
     const py = vehicleState.position.y
@@ -378,11 +469,26 @@ export class DirtSpraySystem {
 
       const groundY = groundYAt ? groundYAt(wx, wz) : 0
       const wheelBottom = wy - params.wheelRadius
-      if (wheelBottom - groundY > CONTACT_BAND) { this._emitAccum[i] = 0; continue }
+      if (wheelBottom - groundY > CONTACT_BAND) { this._emitAccum[i] = 0; this._sparkAccum[i] = 0; continue }
 
       // Loose surface only: on asphalt there is nothing to throw. Cheap (memoized carveHint).
       const loose = looseFactorAt ? looseFactorAt(wx, wz) : 1
-      if (loose < LOOSE_FLOOR) { this._emitAccum[i] = 0; continue }
+      if (loose < LOOSE_FLOOR) {
+        this._emitAccum[i] = 0
+        // ...except a rim on the road, which throws sparks off both lips (asphalt only).
+        if (!rims?.[i]) { this._sparkAccum[i] = 0; continue }
+        this._sparkAccum[i] += 2 * SPARK_RATE * Math.pow(sparkU, SPARK_RATE_EXP) * amount * dt
+        const lip = SPARK_LIP * (params.wheelWidth || 0.25)
+        let budget = EMIT_BUDGET
+        while (this._sparkAccum[i] >= 1 && budget-- > 0) {
+          this._sparkAccum[i] -= 1
+          const side = Math.random() < 0.5 ? -1 : 1
+          this._spawnSpark(wx + rgtX * lip * side, groundY, wz + rgtZ * lip * side, sparkU, side, bx, bz, rgtX, rgtZ)
+        }
+        if (this._sparkAccum[i] > 2) this._sparkAccum[i] = 2
+        continue
+      }
+      this._sparkAccum[i] = 0
 
       // Combined contact-patch slip. NOTE: wheelDebug[i].sa is friction-circle-clamped at ≈0.06
       // (BUG-20 break-away clamp) and never reflects real slip magnitude — vLong/vLat are the
