@@ -51,7 +51,7 @@ function ackermann(steerAngle, params) {
  * @param {{THREE: object}} ctx — Three.js namespace (contact vectors + vehicle math primitives)
  * @returns {Promise<{ok: boolean}>} ok=false only on a HARD harness failure (terrain model wrong)
  */
-export async function replayEvent(capture, { THREE }) {
+export async function replayEvent(capture, { THREE, surfaceChanged = false }) {
     const { seed, params } = capture.world
     const ev = capture.event
     const F = ev.fields
@@ -115,7 +115,9 @@ export async function replayEvent(capture, { THREE }) {
     if (hasGh) {
         const ok = worstGh <= TERRAIN_SELFCHECK_HARD
         console.log(`        ${ok ? '✓' : '✗'} worst |analyticHeight − rd_gh| = ${worstGh.toFixed(4)} m over ${N} frames (frame ${worstGhAt}, tol ${TERRAIN_SELFCHECK_HARD} m)`)
-        if (!ok) {
+        if (!ok && surfaceChanged) {
+            console.log('        → --surface-changed: replaying the recorded inputs on the CURRENT surface.')
+        } else if (!ok) {
             console.log('        → headless terrain model has drifted from the game — fix terrain-headless.mjs before trusting the replay.')
             return { ok: false }
         }

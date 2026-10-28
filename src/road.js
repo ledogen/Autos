@@ -217,6 +217,11 @@ const XS_SOFT2 = 0.5 * 0.5
 // CONTINUOUS overDist (not the offEnd boolean) keeps the design surface C0/C1: at its own mouth a leg
 // has overDist 0 ⇒ weight 1 ⇒ the weld to that ribbon is exact and unchanged.
 const XS_OFF_FADE = 4.0
+// DEG2_PLANE_KINK (BUG-90): a degree-2 kink at least this sharp gets the ≥3-way junction treatment —
+// both legs held on one shared pad plane, banking set to the plane's cross-slope (_runEndpointJunctions).
+// Measured over 91 connectors (seeds 6, 3, 7, 20, 11 + 477662008): no connector whose crest unloads the
+// wheels below 12 m/s is left; at 0° (every deg-2 node) it also flattened the owner's "fair" dip 3.
+const DEG2_PLANE_KINK = 60 * Math.PI / 180
 const _xsOffFade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
 // Reusable sinks for the connector design-surface path (carve hot path — no per-query allocation).
 const _CD_A = { grade: 0, gap: 0, xs: 0, off: 0 }
@@ -5032,8 +5037,15 @@ export class RoadSystem {
         // small the grade step). A short low-pass over the shipped samples turns each corner into a
         // vertical curve. Endpoints stay pinned (node heights are a boundary condition) and the
         // window is deliberately ~2 stations: long enough to round a corner, far too short to touch
-        // a real crest, which spans many stations. Bounded ±0.5·yStep, so it can never move the deck
-        // across a class boundary and invent or destroy a span.
+        // a real crest, which spans many stations. Near a BORE it is bounded ±0.5·yStep, so it can
+        // never move the deck across a class boundary and invent or destroy a span.
+        //
+        // BUG-90 (owner dip 2, seed 2840746967 −169,−625): ONLY near a bore. Everywhere the bound bit,
+        // it bit as a TRANSLATION, not a rounding: at a big station corner (−22 % → +1.4 %, which
+        // roundCrests approved as R 43 m) every sample in the window wanted > 0.25 m, all saturated,
+        // and the corner shipped lifted +0.25 m but still sharp — R 17 m, ~3× the sag load the rule
+        // priced, enough to bottom the suspension. Unbounded it ships R 74 m. Only bore stations
+        // become spans (tunnelSpans below), so the bound is kept within ±2 stations of one.
         const wSm = this._params?.roadV2?.vSmoothM ?? 0
         if (wSm > 0 && n > 4) {
             const last = n - 1
@@ -5047,8 +5059,14 @@ export class RoadSystem {
                 for (let i = 1; i < last; i++) cur[i] = nxt[i]
             }
             const BOUND = 0.25   // m — half the DP's coarse y quantum
+            const nearBore = (t) => {
+                const ks = Math.round(t * nSt / L)
+                for (let k = Math.max(0, ks - 2); k <= Math.min(nSt, ks + 2); k++) if (prof.cls[k] === CLS.BORE) return true
+                return false
+            }
             for (let i = 1; i < last; i++) {
-                pts[i].y = y0[i] + Math.max(-BOUND, Math.min(BOUND, cur[i] - y0[i]))
+                const d = cur[i] - y0[i]
+                pts[i].y = y0[i] + (nearBore(clArc[i]) ? Math.max(-BOUND, Math.min(BOUND, d)) : d)
             }
         }
         // Portal placement: slide each bore's portals out to the cheapest buildable spot (the deck
@@ -7486,12 +7504,9 @@ export class RoadSystem {
             // the legs' grades so it matches the ribbons at the weld). Run surface unchanged off connectors.
             const domGrade = cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY
             cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: domGrade }
-            // On-ribbon decal (clearance) edge: where a run overlaps the connector, keep the RUN's edge
-            // (latDist = run lat) rather than min(run,connector). The connector centreline is inset from
-            // the run near the node, so min() would move the decal dropoff to run-lat ~5.6 — a ~0.15 m
-            // step in the "flat" band the shoulder-lateral gate tolerances tightly, offset from the real
-            // road edge. Only where there is NO run (the bend-outside void) does the connector's own edge
-            // (co.lat) govern its decal.
+            // latDist stays the RUN's lateral (the run ribbon's edge + the POI-pad gate below); the
+            // connector strip's own edge is tested separately by the decal branch (BUG-90). Only where
+            // there is NO run (the bend-outside void) does the connector's own edge stand in for it.
             if (!nr) { latDist = co.lat; arcSEff = co.arcS; runKey = '' }
         }
 
@@ -7522,6 +7537,7 @@ export class RoadSystem {
         // (QUAL-07 mesh == collision); the merged dirt `cs2.gradeY` is the surface only where no
         // asphalt is drawn.
         let gradeY = cs2.gradeY
+        const onRun = nr && latDist < halfWidth && this._leafEndDist(runKey, arcSEff) >= 0
         if (cs2.padTopY != null) {
             // ── On-PAD (inside the junction ring) ── road-mesh.js buildJunctionFootprint puts every
             // pad vertex at `_nodeSurfaceTop(node,x,z) + apronLift`, which is exactly padTopY. So the
@@ -7540,7 +7556,7 @@ export class RoadSystem {
             // has that identical step there. No potholes either: potholes are an on-ribbon-only
             // physics-side micro-noise (D-03) and the pad geometry is smooth.
             gradeY = cs2.padTopY
-        } else if (nr && latDist < halfWidth && this._leafEndDist(runKey, arcSEff) >= 0) {
+        } else if (onRun || (co && co.lat < halfWidth)) {
             // ── On-RIBBON ── ride the asphalt decal: the LEG cross-section's own design top
             // (cs.gradeY + clearanceMargin) — the same field the ribbon mesh vertices ride
             // (sampleRoadTopY) — plus the SURF-06 pothole micro-noise (D-03, physics-only).
@@ -7553,8 +7569,13 @@ export class RoadSystem {
             // the run's last vertex, so there is no asphalt to ride out on the dangling-end cap.
             // Without the gate physics floated clearanceMargin above the drawn dirt for the whole
             // cap (lat ≈ 0 straight off the end), the one place mesh == collision was breaking there.
+            // BUG-90: OR on the deg-2 connector strip (_buildDeg2Ribbon sweeps ±halfWidth along the
+            // arc, Y = sampleRoadTopY). Its fillet cuts the inside of the bend past both runs' edges;
+            // testing only the run's lat dropped the wheel clearanceMargin into the dirt there while it
+            // visibly drove on asphalt — a 0.15 m sink, then a lip back up onto the next leg's ribbon.
+            // Potholes stay run-ribbon only: the strip is drawn smooth.
             gradeY = (cs ? cs.gradeY : cs2.gradeY) + clearanceMargin
-            if (p.potholeEnabled) {
+            if (onRun && p.potholeEnabled) {
                 const rq = roadQuality(arcSEff, runKey, this._worldSeed)
                 gradeY += potholeNoise(wx, wz, rq, p)
             }
@@ -9346,8 +9367,9 @@ export class RoadSystem {
      * clearance, plus the lateral crown/camber fold) or null off both legs.
      *
      * The connector is a BEND, not a flat plaza: it carries the whole cross-section — grade, crown and
-     * superelevation. A deg-2 node is NOT flatCamber (only ≥3-way nodes ease their banking to zero,
-     * _runEndpointJunctions), so both legs arrive at their mouths fully banked; a laterally FLAT
+     * superelevation. A gentle deg-2 node is NOT flatCamber (≥3-way nodes and ≥60° kinks ease their
+     * banking onto a pad plane, _runEndpointJunctions; BUG-90 also runs off a leg whose high edge faces
+     * the kink's inside), so the other legs arrive at their mouths fully banked; a laterally FLAT
      * connector met them with a cross-slope STEP — a visible plane break at each mouth and a cross-slope
      * jolt through the wheels (1.20 m of edge-to-edge disagreement measured at the seed-6 -586,562 elbow,
      * where the leg banks 12.5°). So blend BOTH parts of each leg's cross-section: its centreline grade
@@ -10048,7 +10070,13 @@ export class RoadSystem {
             // does reconcile, onto the pad plane, which here IS the trunk's own surface: it leaves P
             // at the trunk's deck and on the trunk's slope, then recovers its own profile over
             // roadJunctionBlendLength. That is the whole departure treatment — a T needs no hold.
-            if (_isPromotedId(id)) {
+            // BUG-90: an ORPHANED promoted T — its side road gone, graph degree 2 — is no T: with < 3
+            // strands _v2PromotedRole is null, so both legs read as ANCHORs and got NO junction blend at
+            // all, each keeping its own solved line straight through the kink. On a through grade the
+            // fillet's inside line then crossed G·(a+b) of leg disagreement in ~3 m (seed 7 −1423,558:
+            // a 114° hairpin on 10–17 %, 1.67 m — the census's worst connector). It is a deg-2 pass-
+            // through, so it falls through to that treatment. Degree is graph topology (window-invariant).
+            if (_isPromotedId(id) && this._graphDegreeOf(id) !== 2) {
                 const prom = this._promoted?.get(this._proto.graph.key(id))
                 if (!prom) return NONE
                 // A THROUGH end is an ANCHOR: the far end's blend must not reach it, or the two trunk
@@ -10069,8 +10097,12 @@ export class RoadSystem {
             // fillet — must ALSO kill camber: the fillet used to carry banking across the bend, but
             // a flat pad meeting two ribbons banked ±15° the opposite way is a full camber flip at
             // the rim (user captures 1784910746309/1784910841316, cost-pruned valley confluences).
-            // Gentle kinks (≤120°) keep their banking — the fillet arc sweeps it, bit-identical to
-            // the old behaviour. Pure fn of the registered endpoint tangents (window-invariant).
+            // BUG-90 lowered that line to DEG2_PLANE_KINK (60°): the fillet's inside line crosses
+            // both legs' cross-sections, and on a through grade they disagree by G·(a+b) there — a
+            // crest or sag packed into the ~3 m leg handover. One shared plane makes them agree, as
+            // at a ≥3-way node. Gentler kinks keep their banking — the fillet arc sweeps it — except
+            // a leg whose HIGH edge faces the kink's inside (`inside`, see _applyJunctionBlend).
+            // Pure fn of the registered endpoint tangents (window-invariant).
             // vNode2: the design speed THROUGH this node, squared, for the FEAT-82 recovery curve.
             // A ≥3-way node is a corner priced at PAR_REF.junctionRadius. A degree-2 pass-through is
             // priced the way par.js prices it (owner capture 1791793263302, 2026-10-12): the
@@ -10078,12 +10110,14 @@ export class RoadSystem {
             // corner at all — nobody brakes for a graph node they cannot see, so the sag past its
             // hold must fit the speed the run allows, not an 18 m corner's.
             let vNode2 = PAR_REF.mu * PAR_REF.g * PAR_REF.junctionRadius
+            let inside = null   // BUG-90: a gentle deg-2 kink's inside direction (see _applyJunctionBlend)
             if (d === 2) {
                 const strands = this._graphNodeStrands(id)
                 if (strands && strands.length === 2) {
                     const dot = strands[0].wx * strands[1].wx + strands[0].wz * strands[1].wz
                     const kink = Math.PI - Math.acos(Math.max(-1, Math.min(1, dot)))
-                    if (kink > 120 * Math.PI / 180) flatCamber = true
+                    if (kink >= DEG2_PLANE_KINK) flatCamber = true
+                    else inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz }
                     const rEff = kink > PAR_REF.junctionDeadband ? PAR_REF.junctionRadius / Math.min(1, kink / (Math.PI / 2)) : Infinity
                     vNode2 = Math.min(PAR_REF.vMax * PAR_REF.vMax, PAR_REF.mu * PAR_REF.g * rEff)
                 }
@@ -10104,7 +10138,7 @@ export class RoadSystem {
             // The plane is handed on so the hold can evaluate it AT each sample's XZ: two legs held on
             // one plane then agree wherever their ribbons overlap, which a per-leg grade LINE (arc
             // distance × slope along the leg's own departure) only approximates on a curving leg.
-            return { is, flatCamber, y, slopeAway, plane: plane || null, vNode2, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0 }
+            return { is, flatCamber, y, slopeAway, plane: plane || null, vNode2, inside, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0 }
         }
         return { jStart: nodeInfo(e.cellA, this._strandAtEnd(e.points, true), true), jEnd: nodeInfo(e.cellB, this._strandAtEnd(e.points, false), false) }
     }
@@ -10440,7 +10474,7 @@ export class RoadSystem {
     // this run), NOT the flat scalar `endpoint.y`. d ≥ 0 at both ends and slopeAway is the through-axis
     // slope moving AWAY from the node, so the through road holds its grade across the node (no level pad)
     // while both runs still meet at endpoint.y AT the node (d = 0) → C0 step-free. Camber is unchanged
-    // (still → 0 only at flatCamber ≥3-way nodes): inclination handling stays as-is.
+    // (still → 0 only at flatCamber nodes and BUG-90 crest-side legs): inclination handling stays as-is.
     _applyJunctionBlend(runKey, arcPos, gradeY, camberRad, pts) {
         const ej = this._runEndpointJunctions(runKey)
         if (!ej.jStart.is && !ej.jEnd.is) return
@@ -10516,22 +10550,41 @@ export class RoadSystem {
             }
             return Math.atan(j.plane.gx * tz - j.plane.gz * tx)
         }
+        // BUG-90 (owner capture 1792957491413, the vault at 10 m/s): at a gentle deg-2 kink the
+        // connector fillet cuts the INSIDE of the bend, 3–5 m out across each leg's own cross-section.
+        // A leg whose HIGH edge faces that inside lifts the apex by lat·sin(bank) — +0.31 m above the
+        // node there, handed over in ~5 m. Such a leg runs its bank off to flat at the node like a
+        // ≥3-way leg (a reverse-curve crossover); a leg banked INTO the bend keeps it. The sign is read
+        // a cutback out, where the fillet apex projects, from this run's own pre-blend camber.
+        const bankCrest = (j, fromStart) => {
+            if (!j.inside || !camberRad || !havePts) return false
+            const cut = this.junctionCutbackDist()
+            let i = fromStart ? 0 : N - 1
+            while (fromStart ? (i < N - 1 && arcPos[i] - aStart < cut) : (i > 0 && aEnd - arcPos[i] < cut)) i += fromStart ? 1 : -1
+            const th = camberRad[i]
+            const s = this._strandAtEnd(pts, fromStart)
+            if (!s || Math.abs(th) < 1e-4) return false
+            const tx = fromStart ? s.wx : -s.wx, tz = fromStart ? s.wz : -s.wz   // +arc direction
+            return Math.sign(th) * (tz * j.inside.x - tx * j.inside.z) > 0     // high edge = sign·(tz, −tx)
+        }
+        const flatS = ej.jStart.flatCamber || bankCrest(ej.jStart, true)
+        const flatE = ej.jEnd.flatCamber || bankCrest(ej.jEnd, false)
         for (let i = 0; i < N; i++) {
             // fG = grade-reconcile weight (any junction endpoint); fC = camber weight (only a
-            // flatCamber endpoint, i.e. a true ≥3-way intersection — a degree-2 graph pass-through keeps
-            // its banking while still reconciling grade to C0).
+            // flatCamber endpoint — a ≥3-way intersection or a ≥60° deg-2 kink — or a BUG-90 crest-side
+            // leg; any other degree-2 pass-through keeps its banking while still reconciling grade to C0).
             let fG = 0, ny = 0, fC = 0, nc = 0
             if (ej.jStart.is) {
                 const d = arcPos[i] - aStart
                 const fs = w(d, hS, RgS)
                 if (gradeY && fs > fG) { fG = fs; ny = target(ej.jStart, i, d) }
-                if (camberRad && ej.jStart.flatCamber) { const fc = w(d, hS, RcS); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
+                if (camberRad && flatS) { const fc = w(d, hS, RcS); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
             }
             if (ej.jEnd.is) {
                 const d = aEnd - arcPos[i]
                 const fs = w(d, hE, RgE)
                 if (gradeY && fs > fG) { fG = fs; ny = target(ej.jEnd, i, d) }
-                if (camberRad && ej.jEnd.flatCamber) { const fc = w(d, hE, RcE); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
+                if (camberRad && flatE) { const fc = w(d, hE, RcE); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
             }
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] += (nc - camberRad[i]) * fC
