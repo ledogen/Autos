@@ -107,7 +107,8 @@ for (const s of SEEDS) {
     const closed = new OfferBoard({ seed, pois: list, nowH: 6 })
     const board = new OfferBoard({ seed, pois: list, nowH: 6 })
     check('closed until openLines(): nothing at the camp', board.offers(camp.id, 6).length === 0 && board.isGiver(camp.id))
-    board.openLines(6)
+    check('openLines() is true when it opens the lines and false on the idempotent repeat (FEAT-42 logs it)',
+        board.openLines(6) === true && board.openLines(7) === false)
     const lines = board.offers(camp.id, 6)
     check(`every line has a source (${lines.length}/${REQUISITION.length})`, lines.length === REQUISITION.length)
     check('each line is posted at its source too — the same offer',
@@ -145,10 +146,10 @@ for (const s of SEEDS) {
     const taken = board.take(o.id, 6, 300)
     check('a taken line has no deadline and leaves both tags', taken?.dueH === Infinity
         && !board.offers(camp.id, 6).includes(o) && !board.offers(o.poiId, 6).includes(o))
-    board.abandon(o.id, 7)
-    check('abandon puts it back unchanged', board.offers(camp.id, 7).some((x) => x.id === o.id) && o.route === undefined)
-    board.take(o.id, 7, 300); board.complete(o.id, 8)
-    check('complete takes it off for good', board.lines().filter((l) => l.state === 'done').length === 1
+    check('abandon puts it back unchanged (and says so)', board.abandon(o.id, 7) === true
+        && board.offers(camp.id, 7).some((x) => x.id === o.id) && o.route === undefined)
+    board.take(o.id, 7, 300)
+    check('complete takes it off for good (and says so)', board.complete(o.id, 8) === true && board.lines().filter((l) => l.state === 'done').length === 1
         && !board.offers(camp.id, 200).some((x) => x.id === o.id) && board.offers(camp.id, 200).length === REQUISITION.length - 1)
 }
 

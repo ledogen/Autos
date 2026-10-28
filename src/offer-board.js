@@ -275,12 +275,15 @@ export class OfferBoard {
 
     /**
      * FEAT-103: open the requisition — main.js calls it once the run holds ECONOMY_PARAMS.campDeeds
-     * good deeds. Idempotent. Every line's spec is FIXED (nothing rolled): the camp is its only
-     * destination, no person, no bonus, no pay.
+     * good deeds. Idempotent: true only when it opened a line, so a caller logging board calls
+     * (FEAT-42's save) sees one event, not one per poll. Every line's spec is FIXED (nothing rolled):
+     * the camp is its only destination, no person, no bonus, no pay.
      */
     openLines (nowH) {
+        let opened = false
         for (const s of this._lines) {
             if (s.state !== 'closed') continue
+            opened = true
             const t = s.line
             s.state = 'live'
             s.offer = {
@@ -295,6 +298,7 @@ export class OfferBoard {
                 },
             }
         }
+        return opened
     }
 
     /** FEAT-103: the requisition's lines, for the HUD and the win: [{ id, poiId, state }]. */
