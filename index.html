@@ -101,6 +101,11 @@
       color: var(--text-bright);
       border-color: var(--line-hover);
     }
+    #pause-menu button:disabled, #pause-menu button:disabled:hover {
+      background: none; color: var(--text-faint); border-color: var(--line-control); cursor: default;
+    }
+    #pause-menu .pm-why { display: block; font-size: 12px; color: var(--text-faint); }
+    #pause-menu .pm-why:empty { display: none; }
     /* FEAT-43: Story Mode seed prompt (minimal; full styling deferred to FEAT-41). */
     #story-seed-modal {
       display: none;
@@ -280,6 +285,7 @@
       font-family: var(--font); font-size: 16px; padding: 6px 10px; margin-left: 18px; width: 300px;
     }
     #su-code { color: var(--text-faint); font-size: 12px; margin: 4px 0 0 18px; }
+    #su-save-note { color: var(--text-dim); font-size: 12px; margin: 4px 0 0 18px; }
     /* ◂ value ▸ selector: a row button; the arrows (or ←/→) cycle it. */
     #main-menu button.mm-sel { width: 380px; display: flex; justify-content: space-between; }
     button.mm-sel > span { white-space: nowrap; }
@@ -1472,6 +1478,8 @@
     <div class="pm-title">paused</div>
     <div class="pm-code" id="pm-code"></div>
     <button id="pm-resume">resume</button>
+    <!-- FEAT-42: story runs only; greyed out with its reason (pm-save-why) while the run can't save. -->
+    <button id="pm-save" style="display:none">save &amp; exit<span class="pm-why" id="pm-save-why"></span></button>
     <button id="pm-restart" style="display:none">restart</button>
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
@@ -1517,6 +1525,7 @@
   <div id="main-menu">
     <div id="mm-root">
       <div class="mm-title">autos</div>
+      <button id="mm-continue" style="display:none">continue</button>   <!-- FEAT-42: only while a run is saved -->
       <button id="mm-story">story mode</button>
       <button id="mm-freeroam">free roam</button>
       <button id="mm-scenarios">scenarios</button>
@@ -1545,6 +1554,7 @@
       <button class="mm-sel" data-key="worldPoi"></button>
       <button class="mm-sel" data-key="worldRoads"></button>
       <div id="su-code"></div>
+      <div id="su-save-note" style="display:none">starting a new game discards your saved run</div>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>
     </div>

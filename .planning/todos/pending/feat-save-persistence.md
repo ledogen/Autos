@@ -16,6 +16,37 @@ blocks: SM-4's run lifecycle — a 4–6 h run is unplayable without a resume
 ---
 lane: Spare
 
+## Progress 2026-10-28 — part 1 shipped on feature/spare (Spare lane)
+
+**Owner re-scope, 2026-10-28:** "the save system is a pause menu option that says save and exit like
+other roguelikes. jobs survive a save an exit." Closing the lid is "different behavior we have to
+handle separately".
+
+- **Done (part 1):**
+  - `src/save.js`: one slot, `autos-run/1`. `takeRun` reads and deletes in one call; there is no
+    reader that leaves the record in place. `hasRun` is a yes/no only.
+  - Pause-menu **save & exit** (story only). It is greyed out with its reason while the truck is
+    moving (> 0.5 m/s), a job or paper route is in hand, or a camp / shop / service / fuel / recovery
+    card or dialogue is up.
+  - Main-menu **continue**. It takes the save, re-enters the seed cold under the saved world knobs and
+    gearbox, and `_restoreRun` writes the save over the fresh run at the end of `onRegionLive`, behind
+    the loading screen.
+  - The save carries: the clock and energy ladder, wallet and deeds, items, fitted parts and every
+    condition track, toe/camber, engine temperature, fuel, odometer, pose, shop shelves, paper tier,
+    the dialogue cards seen, camps dug, and the mission board's call history (`logBoard`, replayed
+    onto a fresh board).
+  - A new game over a save discards it; the setup page says so.
+  - Gates: `test/run-save.mjs` (registered) and a `save` step in `test/cdp-smoke.mjs`: save → page
+    reload → continue → the same spot / wallet / clock / truck → a second reload has no save.
+- **Part 2, owed after Lane A lands FEAT-103:** jobs survive. Re-plan the taken offer against the
+  regenerated roads, `MissionSystem.resume`, the cargo through `_loadFreight` / `_loadLoose` / haul
+  bundles at their bed poses, and a paper-route resume. Lane A's `mission.approach` rides along.
+- **Owed by the owner:** the "stopped truck, nothing open" enabling rule (the orchestrator surfaced
+  it 10-28). It is built that way pending a ruling.
+- **Still open from the original ticket:** the lid-close save (same snapshot, written on
+  `visibilitychange` → hidden and cleared again on → visible), `metaState`, and the checksum
+  (skipped: parse plus the version check already rejects corruption).
+
 ## ⚑ Owner, 2026-10-25 — moved up: closing the laptop lid loses the run
 
 > "major issue. if i close the lid on my laptop it seems like chrome refreshes the page which resets

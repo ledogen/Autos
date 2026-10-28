@@ -65,6 +65,7 @@ import { MoonSystem } from './moon.js'                      // QUAL-02: night mo
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
+import { putRun, takeRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one save slot
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
@@ -82,11 +83,11 @@ import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: th
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
-import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
+import { InventorySystem, runInventory } from './inventory.js'   // FEAT-122: what the player owns this run
 import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
-import { startShelves, shelf, take as takeShelf, shelfName, nextStockH } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
+import { startShelves, shelf, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
 import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside, FIELD_REPAIR, fieldRepair,
   fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
@@ -1405,8 +1406,8 @@ const SELECTORS = {
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
 }
 let _setupMode = 'freeroam'   // 'freeroam' | 'story' — which run the setup page starts
-function _fitGearbox () {
-  fitTransmission(RANGER_PARAMS, vehicleState, _settings.gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
+function _fitGearbox (gearbox = _settings.gearbox) {
+  fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
 }
 /** Redraw every selector row (both pages) and the setup page's world-code line from _settings. */
 function _renderSelectors () {
@@ -1470,6 +1471,8 @@ function _openSetup (mode) {
   // start" mean "replay the same world forever".
   const inp = document.getElementById('su-seed')
   if (inp) inp.value = ''
+  const note = document.getElementById('su-save-note')
+  if (note) note.style.display = mode === 'story' && hasRun() ? '' : 'none'
   _renderSelectors()
   document.getElementById('main-menu')?.classList.add('setup')
 }
@@ -1488,8 +1491,8 @@ async function _startFromSetup () {
   await _startFreeRoam(_resolveSeed(seed))
 }
 document.getElementById('mm-freeroam')?.addEventListener('click', () => _openSetup('freeroam'))
-// Story mode opens on new game: with no save to resume (saving is not built yet) that is the only
-// page it can open. A resume entry takes over here once story saves exist (feat-game-menus-ui).
+// Story mode opens on new game. A saved run is resumed from its own button (#mm-continue, FEAT-42);
+// starting a new game over it discards it, and the setup page says so.
 document.getElementById('mm-story')?.addEventListener('click', () => _openSetup('story'))
 document.getElementById('su-start')?.addEventListener('click', () => { void _startFromSetup() })
 document.getElementById('su-back')?.addEventListener('click', () => document.getElementById('main-menu')?.classList.remove('setup'))
@@ -3507,6 +3510,7 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
 })
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
 window.__econ = runEconomy      // dev handle — set the wallet for a play-test (`__econ.money = 200`)
+window.__day = () => daySystem   // dev handle — test/cdp-smoke.mjs reads the run clock across a save
 // The recovery chip joins the park zone last, under V and Tab (owner, 2026-10-22).
 document.getElementById('park-zone')?.append(document.getElementById('recovery-row'))
 
@@ -6964,6 +6968,15 @@ function _showPauseMenu () {
   // FEAT-62: restart only means something inside a scenario.
   const restartBtn = document.getElementById('pm-restart')
   if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() ? '' : 'none'
+  // FEAT-42: save & exit is a story-run button, greyed out with its reason while the run can't save.
+  const saveBtn = document.getElementById('pm-save')
+  if (saveBtn) {
+    const live = storySystem.isActive() && !storySystem.isEntering()
+    const why = live ? _saveBlock() : null
+    saveBtn.style.display = live ? '' : 'none'
+    saveBtn.disabled = !!why
+    document.getElementById('pm-save-why').textContent = why ?? ''
+  }
   _pauseOpen = true
 }
 
@@ -7310,6 +7323,7 @@ const storySystem = new StorySystem({
       seed: worldSeed, pois: poiSystem.list(), nowH: daySystem.clockH(),
       region: economySystem.terms().region,   // FEAT-114: which rank row a bonus gate must be reachable on
     })
+    _boardLog = logBoard(offerBoard, daySystem.clockH())   // FEAT-42: the board's history, for the run save
     // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
@@ -7336,6 +7350,9 @@ const storySystem = new StorySystem({
         for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
       }
     }
+    // FEAT-42: a resume writes the save over the fresh run built above — still behind the loading
+    // screen, before the handoff plays the run intro.
+    if (_pendingResume) { _restoreRun(_pendingResume); _pendingResume = null }
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
@@ -7439,6 +7456,7 @@ function _showMainMenu () {
   const el = document.getElementById('main-menu')
   if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'scenarios', 'setup') }
   menuStage.setActive(true)   // re-runs the drop when arriving from the world; a no-op at boot
+  _syncContinue()
   _simHeld = true
   document.body.classList.add('stage-on')
   _syncAudioPageActive()
@@ -7497,16 +7515,25 @@ async function _startFreeRoam (seedStr) {
   }
 }
 
-/** A story run on `seed`, under the setup page's preset and gearbox (the jalopy's starting box). */
-async function _startStory (seed) {
+/**
+ * A story run on `seed`, under the setup page's preset and gearbox (the jalopy's starting box) — or,
+ * FEAT-42, under the ones a run save carries: a resume enters exactly like a new run, then
+ * onRegionLive writes the save over the fresh one (_restoreRun).
+ */
+let _runGearbox = 'auto'   // the box this run started with — a run save carries it, never _settings
+let _pendingResume = null    // FEAT-42: the taken run save, between "continue" and onRegionLive
+async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null) {
   _hideSeedModal()
   map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
   // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
   // wiring these buttons early is that the click is acknowledged even while init is still running.
   _enterStageLoad('building the world\u2026')
   await _worldReady
-  applyWorld(_world())
-  _fitGearbox()
+  applyWorld(world)
+  _fitGearbox(gearbox)
+  _runGearbox = gearbox
+  _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
+  clearRun()   // FEAT-42: one slot — any story entry consumes it (a resume already took it; a new game discards it)
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
@@ -7638,6 +7665,87 @@ function _backToMenu () {
   _showMainMenu()
 }
 document.getElementById('pm-menu')?.addEventListener('click', _backToMenu)
+
+// ── FEAT-42: save & exit / continue ─────────────────────────────────────────────────────────────
+// The pause menu's "save & exit" writes the run and leaves for the main menu; "continue" there TAKES
+// the save (read and deleted in one call — src/save.js), enters the seed exactly like a new run, and
+// onRegionLive hands it to _restoreRun behind the loading screen. Nothing of the world is in the
+// save: the resume regenerates it cold. The truck comes back parked, key off, where it stood.
+const SAVE_STOP_MPS = 0.5   // m/s — only a stopped truck saves: saving mid-rollover would cancel the crash
+let _boardLog = null        // the live board's history (save.js logBoard) — the run save carries it
+
+/** Why the run cannot be saved right now, or null when it can. Asked only inside a live story run. */
+function _saveBlock () {
+  // A job holds live road geometry and bodies in the bed; restoring one is FEAT-42's second half.
+  if (missionSystem?.isActive() || paperRouteSystem.isActive()) return 'finish or cancel the job to save'
+  if (vehicleState.velocity.length() > SAVE_STOP_MPS) return 'stop the truck to save'
+  if (_campUi || _campBusy || _recoveryOpen || _larryTour || fuelStop.isOpen || serviceScreen.isOpen
+      || dialogueSystem.active) return 'close what is open to save'
+  return null
+}
+
+/** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
+function _runSnapshot () {
+  const p = vehicleState.position, q = vehicleState.quaternion
+  return {
+    seed: _seedString, world: activeWorld(), gearbox: _runGearbox,
+    day: daySystem.snapshot(), economy: runEconomy, inventory: runInventory,
+    parts: partsSystem.snapshot(),   // fitted parts, every track's condition + durability, the flats
+    damage: { toe: damageModel.toeOffsetDeg, camber: damageModel.camberOffsetDeg, engineTempC: damageModel.engineTempC },
+    fuel: vehicleState.fuel, odometer: gaugeCluster.odoMiles,
+    pose: { p: [p.x, p.y, p.z], q: [q.x, q.y, q.z, q.w] },
+    shelves: runShelves, paperTier: runPaper.tier,
+    dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
+  }
+}
+
+/** Write save `s` over the fresh run onRegionLive just built (the jalopy roll, the shelf seed, all of it). */
+function _restoreRun (s) {
+  daySystem.restore(s.day)
+  Object.assign(runEconomy, s.economy)
+  inventorySystem.restore(s.inventory)
+  partsSystem.restore(s.parts)
+  damageModel.toeOffsetDeg.splice(0, 4, ...s.damage.toe)
+  damageModel.camberOffsetDeg.splice(0, 4, ...s.damage.camber)
+  damageModel.engineTempC = s.damage.engineTempC
+  damageModel.publish(RANGER_PARAMS)
+  vehicleState.fuel = s.fuel
+  _sputtersHeard = s.fuel.sputters
+  gaugeCluster.seedOdometer(s.odometer)
+  Object.assign(runShelves, s.shelves)
+  runPaper.tier = s.paperTier
+  _renderPaperUI()
+  dialogueSystem.restoreSeen(s.dialogueSeen)   // before the handoff, or the run intro plays again
+  for (const pad of s.campPads) { roadSystem?.setCampPads(campSystem.makeCampAt(pad)); _refreshGroundAround(pad) }
+  offerBoard = new OfferBoard({ seed: worldSeed, pois: poiSystem.list(), nowH: s.board.t0H,
+                                region: economySystem.terms().region })
+  _boardLog = logBoard(offerBoard, s.board.t0H, s.board.events)
+  // The seat: the exact saved pose, put back the way a tow does it, so R still respawns where it did.
+  const prev = _spawnOverride
+  _spawnOverride = { align: false, x: s.pose.p[0], y: s.pose.p[1], z: s.pose.p[2], quat: new THREE.Quaternion(...s.pose.q) }
+  storySystem.notifyTeleport()
+  void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
+}
+
+document.getElementById('pm-save')?.addEventListener('click', () => {
+  if (!storySystem.isActive() || storySystem.isEntering() || _saveBlock()) return
+  if (!putRun(_runSnapshot())) {
+    document.getElementById('pm-save-why').textContent = 'could not save — browser storage is blocked'
+    return
+  }
+  _backToMenu()
+})
+/** The main menu's continue button stands only while a run is saved. */
+function _syncContinue () {
+  const b = document.getElementById('mm-continue')
+  if (b) b.style.display = hasRun() ? '' : 'none'
+}
+_syncContinue()
+document.getElementById('mm-continue')?.addEventListener('click', () => {
+  const s = takeRun()   // read AND deleted, before anything is built
+  _syncContinue()
+  if (s) void _startStory(s.seed, s.world, s.gearbox, s)   // null: corrupt or another version — the run is gone
+})
 // Story mode is opt-in from this menu ONLY — a first-time visitor lands in free roam and is
 // never thrust into an unfinished mode. Switching the game mode also disables free-roam-only
 // affordances (teleport), which is the point of _gameMode existing.
