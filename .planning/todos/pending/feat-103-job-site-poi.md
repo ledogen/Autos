@@ -194,6 +194,11 @@ difficulty.
   source's own park spot is lit until then. The run HUD shows "requisition n / 5" once open.
 - **The uncle** — data/dialogue.js `{dir}` + `COMPASS`, filled by main.js `_runIntro()` (8 points).
 - Gate: test/expedition-camp.mjs. Census: test/camp-edge-census.mjs now reports `camp` per seed.
+- **Census, seeds 1–100 (2026-10-28, with BUG-90 merged): 100 / 100 place the camp.** Road distance
+  from the spawn 3.4–9.5 km (median 5.2); the pad 2053–2391 m from the centre (median 2351); every
+  direction occurs (N 12, NE 17, E 4, SE 10, S 17, SW 14, W 11, NW 15). Seed 6: north, 4.1 km by road.
+  Distance is measured from the spawn's own road (both ends of its edge plus the partial stretch); the
+  nearest junction was no stand-in — on seed 4 it sits 1.9 km of road from the spawn's edge.
 
 **Calls made where the ticket was silent — the owner may overrule any:**
 1. **A line counts at C or better**; a D (late, or too much of the load lost) puts it back on the
@@ -211,7 +216,7 @@ lead there); the win itself (FEAT-146).
 
 **Alpha:**
 
-- [ ] Every seed in a 100-seed census places the camp, by the pick rule above. The census runs headless
+- [x] Every seed in a 100-seed census places the camp, by the pick rule above. The census runs headless
       and reports the pick per seed.
 - [x] The camp is a POI type of its own (not the roster's `workSite`), on the picked road inside the
       planners' wall. The road past it is blocked by the model and a barrier. *(model = the cube until ASSET-71)*
