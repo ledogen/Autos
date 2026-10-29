@@ -582,6 +582,29 @@ export const PROP_MODELS = {
     yawOffset: Math.PI * 0.5,
   },
 
+  // ASSET-32 — Uncle Larry's van: a 1984 Chevrolet G20 panel van (125" wheelbase), modelled off an
+  // 8-photo reference board by solved-camera overlay. 2200 tris, 11 materials, one 1024 x 128
+  // image. The lettering (LARRY'S DELIVERY, both flanks) is the UncleVanSign image on the VanSign
+  // material, so renaming the service is a re-bake, never a re-model. Rear doors open 100° with
+  // paper bundles in the bay. Source: assets/models/src/uncle-van.py (+ uncle-van-ref/, the board
+  // tools; the photos themselves are third-party and never committed).
+  uncleVan: {
+    url: 'assets/models/uncle-van.glb',
+    // 5.02 m bumper to bumper down -Z, centred there; the open doors reach 0.68 m behind the rear
+    // bumper (z +3.19), so the footprint is NOT centred: z -2.51..+3.19. 2.34 m is over the mirrors.
+    collision: {
+      shape: 'box', size: [2.34, 2.0, 5.70],
+      boxes: [
+        { c: [0, 1.0, 0], s: [1.95, 2.0, 5.02] },           // body, bumper to bumper
+        { c: [-0.625, 1.25, 2.82], s: [0.39, 1.26, 0.74] }, // left rear door, open
+        { c: [0.625, 1.25, 2.82], s: [0.39, 1.26, 0.74] },  // right rear door, open
+      ],
+    },
+    // Parallel to the road (owner, 2026-10-29), so a lettered flank and the open back both show.
+    // Both flanks are lettered, so the sign is free; +PI/2 matches brokenCar (+X flank roadward).
+    yawOffset: Math.PI * 0.5,
+  },
+
   // ASSET-14 — the lone gas pump, 592 tris, 2.50 x 4.55 x 1.40 m. RESHAPED BY THE OWNER
   // twice on 2026-08-22: first from "one pump on a small pad" into the roadside island in
   // the reference photo — a 4.55 m pole carrying a lit GAS sign, and at its foot TWO box

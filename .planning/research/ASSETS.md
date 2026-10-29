@@ -47,6 +47,14 @@ repoint `OUT_DIR`/`OUT_BLEND`, re-export once to prove the paths (it should come
 byte-identical), then commit with the `data/prop-models.js` entry. Delete the `wip/` folder at
 promotion. Nothing in `wip/` is backed up, and `git clean -fdx` deletes it.
 
+**Vehicles are modelled against a reference board, never from memory** (owner, 2026-10-29, after
+rejecting a from-memory van). Take 8 photos of one real example (4 orthographic, 4 diagonal), solve
+all 8 cameras by bundle adjustment on hand-picked landmarks, and render the generator's model through
+each solved camera onto its photo every round. The tools are `assets/models/src/uncle-van-ref/`
+(ASSET-32); only `picks.py` and `profile.py`'s calibration are specific to that van. The photos are
+third-party, so they are the one part of `wip/` that outlives promotion: they stay in `wip/<name>/ref/`
+(overlay rounds in `wip/<name>/out/`) and are never committed.
+
 ### A kit of variants is ONE generator and N `.glb` files
 
 When a ticket asks for "a kit" — three drums, seven road signs — the shape is **one `.py`, one

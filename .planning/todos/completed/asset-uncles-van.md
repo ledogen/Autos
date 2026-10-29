@@ -1,10 +1,10 @@
 ---
 id: ASSET-32
 type: asset
-status: open
+status: done
+closed: 2026-10-29
 severity: minor
 opened: 2026-08-03
-updated: 2026-10-29
 blocked-by: FEAT-59
 relates: FEAT-46, ASSET-22, ASSET-19
 ---
@@ -34,10 +34,25 @@ and — since the day job is gone by the end of the opening beat — the early g
 - **Placement: parallel to the road**, so the lettered side and the open back both show. That's the
   registry `yawOffset`; the model keeps nose −Z.
 - Work in progress: `wip/uncle-van/` (handoff there).
-- **v2 status (2026-10-29): built from the board, waiting on the owner's review in Blender.** 2200 tris,
-  11 materials, one 1024×128 lettering image. Every feature was compared against bundle-adjusted cameras
-  solved from the 8 board photos (the overlay tools are in `wip/uncle-van/tools/`). Open questions for
-  the owner: roof height, mud flaps (the reference van has none), and cream vs the reference blue.
+
+## Resolution (2026-10-29)
+
+Shipped after the owner's review in Blender ("what you made is perfect"): `assets/models/uncle-van.glb`,
+2200 tris against the 2200 budget, 11 materials, one 1024×128 lettering image (`UncleVanSign` on the
+`VanSign` material), 193 kB. Generator + `.blend` are in `assets/models/src/`; the re-export from there is
+byte-identical to the reviewed file. Registry key `uncleVan`: three solid boxes (body bumper to bumper, both
+open rear doors), footprint 2.34 × 5.70 m, `yawOffset` +π/2.
+
+- **Method.** Every feature on the owner's checklist was compared in cameras solved from the 8 board photos:
+  bundle adjustment on ~150 pixel picks, scaled by the 125" wheelbase, 2–7 px RMS. The model was rendered
+  through each solved camera onto its photo, 11 rounds from the primitive body up. The tools are generic and
+  live in `assets/models/src/uncle-van-ref/`. The photos are third-party and stay out of the repo.
+- **Accepted as built:** cream paint with maroon lettering (not the reference blue); no mud flaps (the
+  reference van has none); roof at 2.00 m (the side photos say 1.97 and 2.06); 5 bundle stacks on the floor
+  plus 1 on the wheel hump.
+- **Audit:** seated at y 0, no z-fighting, nothing floating; 2 of 43,733 winding rays graze through 7 mm
+  slits, and neither hit is a flipped face.
+- **Placing it** is FEAT-46 / FEAT-74's job, not this ticket's.
 
 ## Spec
 
