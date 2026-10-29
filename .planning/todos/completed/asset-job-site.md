@@ -1,7 +1,8 @@
 ---
 id: ASSET-71
 type: asset
-status: open
+status: done
+closed: 2026-10-29
 severity: minor
 opened: 2026-10-07
 relates: FEAT-103 (the expedition camp — R1's boss; this is its model), FEAT-98 (Places and Missions)
@@ -34,10 +35,21 @@ blocked, not hidden), as many as the 10 m deck needs.
 
 ## Status
 
-- 2026-10-27: modelled in `wip/expedition-camp/` (generator, `.blend`, both `.glb`, review PNGs).
-  Camp 4923 tris / 19 materials / 0 images, inside the pad (x −6.79..6.81, y −3.90..3.36). Barrier 532 tris /
-  5 materials. Winding ray-check clean; the only coplanar pairs are same-material crossings. **Awaiting the
-  owner's look, then promotion** (ASSETS.md § wip) + the `data/prop-models.js` entries with collision boxes.
+- 2026-10-27: modelled in `wip/`, camp 4923 tris. Owner's review (2026-10-29): two chairs clipped the
+  table, one a crate; the radio crate clipped a mast guy; the fire stood too close to the fly; the roof
+  jack plate was tilted against the slope. All fixed; an object-vs-object overlap check (BVH, every pair)
+  now runs clean.
+- The jack plate is no longer a flat box: it follows the sagged canvas and is seated 1.5 cm into it, because
+  the twisted roof quads stray ±1 cm from a smooth surface. Ray-checked at 169 points: the canvas stays
+  inside the plate everywhere, with ≥4 mm margin.
+
+## Resolution (2026-10-29)
+
+Shipped: `assets/models/expedition-camp.glb` (4931 tris / 19 materials / 0 images, x −6.79..6.81 by
+z −3.56..3.90) and `assets/models/road-barrier.glb` (532 tris / 5 materials). Generator + `.blend` are in
+`assets/models/src/`, and the re-export is byte-identical. Registry keys: `expeditionCamp` (9 solid boxes:
+tent, table, crates, rack, two drums, cans, mast, radio crate) and `roadBarrier` (one box). Placing both is
+FEAT-103's job.
 
 ## Acceptance
 
