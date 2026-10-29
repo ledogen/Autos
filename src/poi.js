@@ -23,7 +23,7 @@
 // mostly junctions; a place is no likelier at a T than halfway down a road.
 
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
-import { REGION_MARGIN } from './mission.js'          // FEAT-61: the wall a customer must sit inside
+import { REGION_MARGIN, buildGraphAdj, graphDijkstra } from './mission.js'   // FEAT-61: the wall a customer must sit inside; FEAT-103: the camp's road
 import { houseRungs, roadDistFromLarry, idKey } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
@@ -140,6 +140,11 @@ export const POI_PARAMS = {
     poiHouseMaxDrop:  1.5,    // m — max height spread across the target circle's rim. A circle
                               // draped over a cliff edge reads as broken, and you could not land a
                               // paper in it anyway. The light stand-in for the pad's earthwork cap.
+    // FEAT-103 alpha: the expedition camp — see _siteCamp. Measured by test/camp-edge-census.mjs.
+    poiCampBandM:     400,    // m of road before the wall cut the camp pad may sit in
+    poiCampMinRunM:   300,    // m of road from the last junction to the cut: room for the connector
+    poiCampBarrierGap: 4,     // m from the pad's far end to the barrier across the deck
+    poiCampBarriers:   3,     // barricades in that row, spread across the paved road (owner, 2026-10-29)
 }
 
 /**
@@ -273,6 +278,15 @@ export const POI_ROSTER = [
     // open (FEAT-102, `showWhileJob` — main.js _updatePoiPresence). Idle, it is an empty lay-by.
     { type: 'strandedMotorist', count: 1, model: 'brokenCar', siting: 'any', showWhileJob: true },
 ]
+
+/**
+ * FEAT-103: the expedition camp — the run's goal, on the circle's edge at the end of a road. NOT a
+ * roster slot: the pool skips every edge with a node past the wall, and the camp's road is exactly
+ * such an edge, cut there. _siteCamp picks its pad; _assignRoster then dresses it like a slot.
+ * The ASSET-71 camp model. It posts nothing (no SOURCES row) and no ordinary job ends there
+ * (NOT_A_DESTINATION): the requisition is its only business.
+ */
+export const CAMP_SLOT = { type: 'expeditionCamp', count: 1, model: 'expeditionCamp', siting: 'camp', jobs: true }
 
 /**
  * FEAT-88: POI `q`'s drop zone in world space — its centre and the yaw of the marker frame it is
@@ -450,6 +464,17 @@ const slotPadKind = slot => (slot.model && PROP_MODELS[slot.model]?.pad) || 'std
  */
 const padsClash = (a, b, spacing) => a.edge === b.edge && Math.abs(a.s - b.s) < spacing
 
+/**
+ * FEAT-103: one barricade as a box in the camp body's frame (model origin, modelYaw). It stands a
+ * quarter-turn to the camp (_barriers), so its 3 m width runs along the camp's Z.
+ */
+function _barrierBox (q, b) {
+    const [w, h, d] = PROP_MODELS.roadBarrier.collision.size
+    const wx = b.x - q.modelX, wz = b.z - q.modelZ
+    const cs = Math.cos(q.modelYaw), sn = Math.sin(q.modelYaw)
+    return { c: [cs * wx - sn * wz, b.y - q.baseY + h / 2, sn * wx + cs * wz], s: [d, h, w] }
+}
+
 /** Region population (23 in R1), derived from the roster so the two can never drift apart. */
 export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
 
@@ -604,8 +629,10 @@ export class PoiSystem {
             }
         }
 
-        // PASS 2 — THE ROSTER. Fill the ratified slots from the pool and discard the rest.
-        const out = this._assignRoster(pool, center, seed, P)
+        // PASS 2 — THE ROSTER. Fill the ratified slots from the pool and discard the rest. The camp
+        // rides at the end, off its own edge (FEAT-103), so no roster POI moves for it.
+        const camp = this._siteCamp(road, g, canon, center, wall, nodes, P)
+        const out = this._assignRoster(pool, center, seed, P, camp)
         out.forEach((q, i) => { q.index = i })
 
         this._list = out
@@ -892,17 +919,18 @@ export class PoiSystem {
      * substituted; the roster above it is already placed, which is what makes the order a priority
      * order and not just a listing.
      */
-    _assignRoster (pool, center, seed, P) {
+    _assignRoster (pool, center, seed, P, camp = null) {
         let free = pool.slice()
         const out = []
         // The coverage objective's sample of "where the player will be": the lay-bys alone, so adding a
         // big-pad kind does not re-weight where the gas stations go.
         const stdPool = pool.filter(q => (q.padKind ?? 'std') === 'std')
         const pick = (cands, n, salt, slot) =>
-            slot.siting === 'nearSpawn' ? this._pickNearSpawn(cands, center, n, salt, P)
+            slot.siting === 'camp'      ? [camp]
+          : slot.siting === 'nearSpawn' ? this._pickNearSpawn(cands, center, n, salt, P)
           : slot.siting === 'coverage'  ? this._pickCoverage(cands, stdPool, n, P[slot.sepParam ?? 'poiStationMinSep'])
           :                               this._pickStable(cands, n, salt)
-        for (const slot of POI_ROSTER) {
+        for (const slot of camp ? [...POI_ROSTER, CAMP_SLOT] : POI_ROSTER) {
             // FEAT-105: a slot draws only from pads of its own kind. A big-pad slot that comes up short
             // (a region with no spot for a farm pad) falls back to lay-bys wearing its fallbackModel —
             // the roster is never short a farm for want of a big pad (owner, 2026-10-08).
@@ -921,7 +949,7 @@ export class PoiSystem {
                 // its own class tag (Places and Missions); a fixture adds its class (mom's is a
                 // `residence`) through `slot.tags`.
                 q.tags = [slot.type, ...(slot.tags ?? [])]
-                q.jobs = !!SOURCES[slot.type]   // FEAT-67 — see the `jobs` note above
+                q.jobs = slot.jobs ?? !!SOURCES[slot.type]   // FEAT-67 — see the `jobs` note above; FEAT-103: the camp posts the requisition
                 q.modelKey = models?.length
                     // Keyed to the pad's own id, the same discipline as _pickStable and for the
                     // same reason: the choice must depend on WHICH pad this is, never on how many
@@ -954,6 +982,9 @@ export class PoiSystem {
                 // base-seated at q.y floated 15 cm over its own pad. The camp seat (main.js) already
                 // corrects for the same gap. q.y stays the pad's record: the carve keys off it.
                 q.baseY = q.y - (P.roadClearanceMargin ?? 0.25)
+                // FEAT-103: each barricade is one more box on the camp's body, so the wheels (queryContact)
+                // and the chassis (PoiPhysics) hit exactly the barricades main.js draws (MESH == PHYSICS).
+                if (q.barriers) q.collision = { ...q.collision, boxes: [...q.collision.boxes, ...q.barriers.map(b => _barrierBox(q, b))] }
                 // BUG-43: which colour from the model's curated palette. A slot may pin it (the
                 // two story houses must never match); otherwise a raw hash off the pad id, which
                 // spawnModel takes modulo the palette length. Ignored by a model with no palette.
@@ -1228,6 +1259,122 @@ export class PoiSystem {
             return { nx: cs * lx + sn * lz, ny: ly, nz: -sn * lx + cs * lz, depth }
         }
         return null
+    }
+
+    // ── the expedition camp (FEAT-103 alpha) ────────────────────────────────────────────────
+    /**
+     * Where the camp stands: on a road that already crosses the planners' wall (`wall`, the region
+     * radius less REGION_MARGIN), cut there. No road is ever added (owner, 2026-10-26).
+     *
+     * Required of the road: it leaves a dead end when cut — exactly one of its nodes is on the
+     * spawn's piece of the planners' graph, so a road that leaves and comes back in does not count;
+     * ≥ poiCampMinRunM of road from the last junction (planner degree ≥ 3) to the cut, room for the
+     * connector's hazards later; a 14 x 8 m pad passing the ordinary reject battery within
+     * poiCampBandM of road before the cut. Then the FARTHEST from the spawn by road, to the cut;
+     * ties to the edge key. On that road the pad nearest the cut wins — the end of the road.
+     *
+     * Deterministic in (seed, network, centre). The far node is past the wall, so the planner enters
+     * the camp's edge through its inner node only (mission.js `_roll`), and nothing the game sends a
+     * player to can sit past it: the pool, the customers and the planners' graph already drop the edge.
+     * Returns a pad record (the _padsOnEdge shape) plus its `barriers`, or null when no road qualifies.
+     */
+    _siteCamp (road, g, canon, center, wall, nodes, P) {
+        const r = (p) => Math.hypot(p.x - center.x, p.z - center.z)
+        const { posOf, adj } = buildGraphAdj(g, (p) => r(p) <= wall, nodes)
+        // ROAD metres from the spawn, which is the region centre and stands on a road: find its point
+        // on the planners' edges (10 m samples), then go out through either end of that edge. The
+        // nearest NODE is no stand-in — on seed 4 it sits 1.9 km of road from the spawn's own edge.
+        let at = null
+        for (const e of canon) {
+            if (!adj.has(e.ka) || !adj.has(e.kb)) continue
+            const ed = road.edgeParData(e.a, e.b)
+            if (!ed?.centerline) continue
+            const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
+            for (let t = 0; t <= L; t += 10) {
+                const d = r(ed.centerline.pointAt(off + t))
+                if (!at || d < at.d) at = { d, e, ed, off, L, t }
+            }
+        }
+        if (!at) return null
+        const p0 = at.ed.centerline.pointAt(at.off), pa = posOf.get(at.e.ka), pb = posOf.get(at.e.kb)
+        const [k0, k1] = Math.hypot(p0.x - pa.x, p0.z - pa.z) < Math.hypot(p0.x - pb.x, p0.z - pb.z)
+            ? [at.e.ka, at.e.kb] : [at.e.kb, at.e.ka]    // k0 sits at the edge's arc start
+        const d0 = graphDijkstra(adj, k0).dist, d1 = graphDijkstra(adj, k1).dist
+        const dist = new Map()
+        for (const [k, v] of d0) dist.set(k, Math.min(v + at.t, (d1.get(k) ?? Infinity) + at.L - at.t))
+        // Road metres from a node back to the last junction. The cut edge is not in adj, so a node
+        // whose only planner edge leads back is a bend in the connector, not a junction.
+        const runBack = (k) => {
+            let len = 0, prev = null
+            for (let hops = 0; hops < 50; hops++) {
+                const nb = adj.get(k).filter(x => x.to !== prev)
+                if (adj.get(k).length >= 3 || nb.length !== 1) break
+                len += nb[0].w; prev = k; k = nb[0].to
+            }
+            return len
+        }
+        const roads = [], seen = new Set()
+        for (const e of canon) {
+            const ek = `${e.ka}|${e.kb}`
+            if (seen.has(ek)) continue
+            seen.add(ek)
+            const homeA = dist.has(e.ka)
+            if (homeA === dist.has(e.kb)) continue      // both on the piece (a loop) or neither
+            const ed = road.edgeParData(e.a, e.b)
+            if (!ed?.centerline) continue
+            const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
+            const hk = homeA ? e.ka : e.kb, hp = posOf.get(hk)
+            const p0 = ed.centerline.pointAt(off), p1 = ed.centerline.pointAt(off + L)
+            const dir = Math.hypot(p0.x - hp.x, p0.z - hp.z) < Math.hypot(p1.x - hp.x, p1.z - hp.z) ? 1 : -1
+            const sHome = dir > 0 ? off : off + L
+            let cut = null      // road metres from the home node to the first point past the wall
+            for (let t = 0; t <= L; t += 5) if (r(ed.centerline.pointAt(sHome + dir * t)) > wall) { cut = t; break }
+            if (cut == null || cut + runBack(hk) < P.poiCampMinRunM) continue
+            roads.push({ e, ek, ed, off, L, hk, sHome, dir, cut, d: dist.get(hk) + cut })
+        }
+        roads.sort((a, b) => (b.d - a.d) || (a.ek < b.ek ? -1 : 1))
+        const lat = (P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5) + P.poiPadGap + P.poiPadHalfWid
+        for (const c of roads) {
+            // Back from the cut, the pad nearest it first; clear of both edge ends like any pad.
+            for (let t = c.cut - P.poiPadHalfLen - 20; t >= Math.max(0, c.cut - P.poiCampBandM); t -= 15) {
+                const s = c.sHome + c.dir * t
+                if (s < c.off + P.poiEndClearM || s > c.off + c.L - P.poiEndClearM) continue
+                if (r(c.ed.centerline.pointAt(s)) > wall - 20) continue
+                let best = null
+                for (const side of [1, -1]) {
+                    const cand = this._evaluate(road, c.ed, s, side, lat, P)
+                    if (cand && (!best || cand.cut < best.cut)) best = cand
+                }
+                if (!best) continue
+                return { id: `camp:${c.ek}`, index: -1, aId: c.e.a, bId: c.e.b, edge: c.ek, padKind: 'std', s,
+                         runKey: c.ed.key, ...best, roadM: c.d - c.cut + t, barriers: this._barriers(road, c.ed, s + c.dir * (P.poiPadHalfLen + P.poiCampBarrierGap), best, P) }
+            }
+        }
+        return null
+    }
+
+    /**
+     * The row of Type III barricades (ASSET-71 roadBarrier) across the deck at arc `s` that ends the
+     * camp's road (owner, 2026-10-26: blocked, not hidden). poiCampBarriers of them, spread so the
+     * outer ends sit on the paved edges with even gaps between (owner, 2026-10-29: three, not five
+     * abutting across the shoulders too), along the camp `pad`'s own Z (across the road): each is a
+     * quarter-turn in the camp's frame, so its box is an axis-aligned body box (_barrierBox). The
+     * striped -Z face looks back at the camp, the way the player arrives. Each stands on the lowest
+     * deck under its width, so a cross-slope sinks it rather than floating it. World base pose each.
+     */
+    _barriers (road, ed, s, pad, P) {
+        const [w] = PROP_MODELS.roadBarrier.collision.size, n = P.poiCampBarriers
+        const pitch = (2 * (P.roadHalfWidth ?? 5) - w) / (n - 1)      // 3.5 m: 0.5 m gaps on a 10 m road
+        const cp = ed.centerline.pointAt(s)
+        const ax = Math.sin(pad.yaw), az = Math.cos(pad.yaw)      // the camp's +Z in world: across the road
+        // yaw - π/2 turns a barricade's -Z face to the camp's +X, (cos yaw, -sin yaw); else the other way.
+        const toCamp = (pad.x - cp.x) * Math.cos(pad.yaw) - (pad.z - cp.z) * Math.sin(pad.yaw)
+        const yaw = pad.yaw + (toCamp > 0 ? -1 : 1) * Math.PI / 2
+        return Array.from({ length: n }, (_, k) => {
+            const o = (k - (n - 1) / 2) * pitch, x = cp.x + ax * o, z = cp.z + az * o
+            const ys = [-w / 2, 0, w / 2].map(e => road.sampleRoadTopY(x + ax * e, z + az * e)).filter(y => y != null && isFinite(y))
+            return { x, y: Math.min(...ys), z, yaw }
+        })
     }
 
     // ── placement ───────────────────────────────────────────────────────────────────────────

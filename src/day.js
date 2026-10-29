@@ -73,20 +73,21 @@ export const DAY_PARAMS = {
     truckSleepRateH: 1,
 
     // Blink cadence — MEAN IN-GAME HOURS BETWEEN BLINKS, per stage (Poisson ⇒ exponential gaps).
-    // Ratified default is "on average once per in-game hour" in every blinking stage; kept as three
-    // separate knobs so the escalation can be tuned by feel without touching the stage thresholds.
-    blinkMeanSleepyH:    1,
-    blinkMeanTiredH:     1,
-    blinkMeanExhaustedH: 1,
+    // Three separate knobs so the escalation can be tuned by feel without touching the stage
+    // thresholds. FEAT-151 (owner, 2026-10-26: "being tired in general is not dangerous enough"): was
+    // once an hour in every stage; now it escalates — ~30 / 20 / 12 real seconds apart at 1 h ≈ 1 min.
+    blinkMeanSleepyH:    0.5,
+    blinkMeanTiredH:     0.33,
+    blinkMeanExhaustedH: 0.2,
 
     // Blink shapes, REAL milliseconds (a blink is a real-time event, not a game-time one).
     sleepyBlinkMs:  250,   // total close→open envelope of the harmless sleepy blink
     signalBlinkMs:  800,   // the one long "it's about to get worse" blink on entering TIRED
     lidTravelMs:    90,    // lid close (and open) time either side of a doze hold
-    tiredMinMs:     200,   // doze hold range, TIRED      — control loss lasts exactly the hold
-    tiredMaxMs:     600,
-    exhaustedMinMs: 400,   // doze hold range, EXHAUSTED
-    exhaustedMaxMs: 1000,
+    tiredMinMs:     300,   // doze hold range, TIRED      — control loss lasts exactly the hold
+    tiredMaxMs:     900,   //   FEAT-151: 200–600 → 300–900, and EXHAUSTED 400–1000 → 700–1600
+    exhaustedMinMs: 700,   // doze hold range, EXHAUSTED
+    exhaustedMaxMs: 1600,
 }
 
 /**
@@ -223,8 +224,8 @@ export class DaySystem {
     // the REMAINDER, not elapsed time, so a coffee genuinely walks the driver back down the ladder:
     //   rested    > 4 h left            — nothing happens
     //   sleepy   <= 4 h  (12 h awake)   — eyelids + slower steering (×0.75 → ×0.5 at 0 h), no doze. A warning you feel.
-    //   tired    <= 2 h  (14 h awake)   — one long signal blink on entry, then 200–600 ms DOZES
-    //   exhausted <= 0   (16 h awake)   — 400–1000 ms dozes
+    //   tired    <= 2 h  (14 h awake)   — one long signal blink on entry, then 300–900 ms DOZES
+    //   exhausted <= 0   (16 h awake)   — 700–1600 ms dozes
     // SM-INV-1: a doze drops the inputs and lets the physics decide. It is never a fail state and
     // never forces a crash — on a straight you coast, on a mountain switchback you had better have
     // stopped for coffee.
