@@ -4,7 +4,7 @@ type: asset
 status: open
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-04
+updated: 2026-10-29
 blocked-by: FEAT-59
 relates: FEAT-46, ASSET-22, ASSET-19
 ---
@@ -34,6 +34,10 @@ and — since the day job is gone by the end of the opening beat — the early g
 - **Placement: parallel to the road**, so the lettered side and the open back both show. That's the
   registry `yawOffset`; the model keeps nose −Z.
 - Work in progress: `wip/uncle-van/` (handoff there).
+- **v2 status (2026-10-29): built from the board, waiting on the owner's review in Blender.** 2200 tris,
+  11 materials, one 1024×128 lettering image. Every feature was compared against bundle-adjusted cameras
+  solved from the 8 board photos (the overlay tools are in `wip/uncle-van/tools/`). Open questions for
+  the owner: roof height, mud flaps (the reference van has none), and cream vs the reference blue.
 
 ## Spec
 
