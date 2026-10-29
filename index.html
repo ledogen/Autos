@@ -58,7 +58,8 @@
       pointer-events: none;
       user-select: none;
     }
-    #pause-menu {
+    /* FEAT-42: #resume-card is the pause box's sibling — a resumed run opens frozen under it until any key. */
+    #pause-menu, #resume-card {
       display: none;
       position: fixed;
       top: 50%;
@@ -76,7 +77,7 @@
       z-index: 100;
       min-width: 200px;
     }
-    #pause-menu .pm-title {
+    #pause-menu .pm-title, #resume-card .pm-title {
       color: var(--accent-system);
       font-size: 14px;
       letter-spacing: 2px;
@@ -1474,6 +1475,7 @@
        FEAT-43: pm-story now opens the seed prompt and enters the sandboxed Story Mode gamemode
        (src/story.js). The beta mission generator it used to launch is now Quick Job, surfaced as a
        corner button INSIDE story mode (#quickjob-btn), not a pause-menu entry. -->
+  <div id="resume-card"><div class="pm-title">paused</div>press any key to resume</div>
   <div id="pause-menu">
     <div class="pm-title">paused</div>
     <div class="pm-code" id="pm-code"></div>

@@ -432,7 +432,7 @@ const STEPS = [
     await js('document.getElementById("pm-save").click()')
     check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
-    const paused = 'document.getElementById("pause-menu").style.display === "flex"'
+    const paused = 'document.getElementById("resume-card").style.display === "flex"'
     const resume = async (what) => {
       await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
       check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250),
@@ -450,9 +450,11 @@ const STEPS = [
     check(after.h >= before.h && after.h - before.h < 0.1, `clock ${before.h.toFixed(3)} h → ${after.h.toFixed(3)} h`)
     check(after.cond === before.cond && after.inv === before.inv, `truck/kit changed: ${JSON.stringify(before)} → ${JSON.stringify(after)}`)
     console.log(`  save & exit: resumed at ${dm.toFixed(2)} m, clock +${((after.h - before.h) * 60).toFixed(1)} game min`)
-    // (2) the crash. Drive off, and kill the page with the throttle still down.
-    await tap('Escape')
-    check(await until(async () => !await js(paused), 1000), 'Esc did not close the resume pause')
+    // (2) the crash. Any key ends the resume card; drive off, and kill the page with the throttle still down.
+    await tap('Shift')
+    check(await js(paused), 'a bare modifier ended the resume card')
+    await tap('w')
+    check(await until(async () => !await js(paused), 1000), 'a key did not end the resume card')
     await crank()
     if (await js('window.__vs.parked')) await tap(' ')
     await key('w', true); await sleep(4000)
@@ -465,11 +467,13 @@ const STEPS = [
     check(Math.abs(held.v - kill.v) < 2 && dk < 3, `crash resume: ${held.v.toFixed(1)} m/s ${dk.toFixed(1)} m from the kill (${kill.v.toFixed(1)} m/s)`)
     await sleep(1000)
     const still = await js('window.__car()')
-    check(Math.hypot(still.x - held.p.x, still.z - held.p.z) < 0.05, 'the resume pause did not hold the sim')
-    await tap('Escape')
+    check(Math.hypot(still.x - held.p.x, still.z - held.p.z) < 0.05, 'the resume card did not hold the sim')
+    await key('w', true)
+    check(!await js(paused), 'W did not end the resume card')
     await sleep(1000)
+    await key('w', false)
     const rolled = await js('window.__car()')
-    check(Math.hypot(rolled.x - held.p.x, rolled.z - held.p.z) > 1, 'closing the pause did not hand the moving truck back')
+    check(Math.hypot(rolled.x - held.p.x, rolled.z - held.p.z) > 1, 'the key that ended the resume card did not hand the moving truck back')
     console.log(`  crash: killed at ${kill.v.toFixed(1)} m/s, resumed at ${held.v.toFixed(1)} m/s ${dk.toFixed(2)} m away`)
   }],
 ]

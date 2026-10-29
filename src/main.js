@@ -1181,10 +1181,10 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 // FEAT-62: the pause menu is up. Up here, not with the scenario block, because _hidePauseMenu writes
 // it and is reachable long before the module body gets that far.
 let _pauseOpen = false
-let _resumeHold = false   // FEAT-42: a resumed run opens paused, its sim held until the pause menu closes
-// FEAT-62: a scenario's pause menu is a real pause — its clock must not run behind the menu.
-// FEAT-42: so is the pause a resumed run opens into — it may have been saved at speed.
-function _heldPause () { return _pauseOpen && (scenarioSystem.isActive() || _resumeHold) }
+let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-card until any key
+// The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
+// FEAT-42: the resume card — the run may have been saved at speed, mid-slide even.
+function _heldPause () { return _resumeHold || (_pauseOpen && scenarioSystem.isActive()) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -6988,7 +6988,6 @@ function _hidePauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) { el.style.display = 'none'; el.classList.remove('settings') }
   _pauseOpen = false
-  _resumeHold = false   // FEAT-42: closing the pause a resumed run opened in hands the drive back
 }
 
 // ── FEAT-62: scenarios ────────────────────────────────────────────────────────────────────────────
@@ -7228,7 +7227,7 @@ const storySystem = new StorySystem({
     _quickJobWanted = visible
     _syncQuickJob()
     if (visible) { dialogueSystem.play(DLG.runIntro, RUN_INTRO); _renderDialogue() }
-    if (visible && _resumeHold) _showPauseMenu()   // FEAT-42: a resumed run opens paused (see _restoreRun)
+    if (visible && _resumeHold) document.getElementById('resume-card').style.display = 'flex'   // FEAT-42 (see _restoreRun)
   },
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
   // signal that covers every story entry (main menu, pause button, a rejected-seed retry), so the
@@ -7774,6 +7773,18 @@ function _restoreRun (s) {
     _restoring = false
   })
 }
+
+// The resume card: ANY key, click or pad input hands the frozen run back, and the same press drives.
+// The listener only drops the hold and never eats the event, so a W that ends it is throttle on the
+// first frame and a player caught mid-slide can steer out at once. Bare modifiers don't count (the
+// Cmd of a Cmd-Tab away is not "resume"); nothing counts while the stage is still up.
+function _endResumeHold () {
+  if (!_resumeHold || _simHeld) return
+  _resumeHold = false
+  document.getElementById('resume-card').style.display = 'none'
+}
+window.addEventListener('keydown', e => { if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) _endResumeHold() }, true)
+window.addEventListener('pointerdown', _endResumeHold, true)
 
 document.getElementById('pm-save')?.addEventListener('click', () => {
   if (!_autosave()) {
@@ -8570,6 +8581,7 @@ function loop () {
   // revved a silent engine until some button went down. Chrome counts gamepad input as the user
   // gesture; the ensure* calls are idempotent (and resume a context that started suspended).
   if (pad.active) _unlockAudio()
+  if (pad.throttle > 0 || pad.brake > 0 || pad.steer !== 0) _endResumeHold()   // the sticks and triggers fire no keydown
   // FEAT-23: engine audio tracks RPM + throttle EVERY frame (no-op until the first keypress unlocks
   // WebAudio). PERF-16: deliberately OUTSIDE the throttled HUD block below — a 10 Hz pitch update would
   // make the engine note step audibly. Audio is not a DOM write, so the throttle does not apply to it.
