@@ -48,9 +48,30 @@ portal ring trimesh vs heightfield, bore lining vs the depressed bore slot (terr
   item 1 reproduces on runs **without** `offCurveSpans` before treating it as separate.
 - BUG-67 — portal opening inside a junction.
 
+## Progress — 2026-10-29 (Spare): the launch is FIXED; seal/mating items open
+
+**Root cause of item 3 (launch / float-then-teleport): the BUG-37 bore-wall contact
+(`RoadSystem.queryTunnelWallContact`), not the trimesh or the heightfield.** It tested only
+"is this probe's arc inside a span", never "is the probe inside the tube". So a wheel on the
+hillside beside a portal (seed 6, every portal measured): lat 9 m → depth 1.4 m, lat 10.5 m → 2.9 m,
+with the normal pointing at the bore axis. Past 2·wheelRadius (0.74 m) that trips physics.js's
+catastrophic-penetration failsafe → teleport; under it, a tire-spring force of metres of
+"penetration" → launch. It also pulled a wheel resting on the tube's outer crown DOWN into the bore
+(the "from above" case). Fix: `rho >= R → null` — only a centre inside the tube touches the shell,
+which also caps depth < r (the invariant the failsafe comment already assumed).
+Pinned in `test/road-tunnel.mjs` (5): beside-the-portal probes 0/16 before → 16/16 after, plus the
+depth < r cap. penetration-failsafe + cdp-smoke green.
+
+**Still owed:** the owner's drive (brush a portal at road speed). **Secondary, not fixed:** the
+bore-ownership rule in `_sampleCarveWorld` has the same lateral blind spot — a below-apex wheel at
+lat 9–13 m inside a span (past the 4 m mouth inset) reads the bore floor (≈ deck) while the
+heightfield/mesh there is the raw hill (+4..+11 m). It cannot launch (no ground force, the chassis
+rests on the heightfield) but a wheel pressed into the hill beside a portal dangles = "float". Bound
+ownership to |lat| < R only if a drive shows it. Items 1–2 (seal, shoulder mating) are untouched.
+
 ## Acceptance
 
-- [ ] Brushing a portal ring at road speed never launches the chassis (BUG-54's damage-energy
+- [x] (headless; drive owed) Brushing a portal ring at road speed never launches the chassis (BUG-54's damage-energy
       readout stays under a hard landing's); proven on a capture replay, then a drive.
 
 - Portal ring meets the terrain on its full perimeter at the headwall line — no daylight gap, no

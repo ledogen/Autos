@@ -7623,13 +7623,18 @@ export class RoadSystem {
         // tiltY = signedLat*sin(camberAngle)) but NOT the rendered arch (buildTunnelTube's h=R·sin(θ)
         // ignores camberRad) — so on the low side of a banked bore the drivable surface, and the wheel
         // riding it, legitimately sits at h<0 right where the wall is. A hard h<0 cutoff killed the
-        // wall contact exactly there (BUG-37 follow-up). Symmetric |h|>R+r still excludes raw hillside
-        // overhead (30+ m up) without excluding the below-springline band; a wheel never sits deep
-        // enough below grade (h≈-R) for the lower half to false-fire on ordinary ground contact — at
-        // lat≈0 (floor centre) rho≈|h| stays well under R regardless of sign, so only the region near
-        // the wall (|lat|≈R) actually triggers.
-        if (Math.abs(h) > R + r) return null
+        // wall contact exactly there (BUG-37 follow-up). A wheel never sits deep enough below grade
+        // (h≈-R) for the lower half to false-fire on ordinary ground contact — at lat≈0 (floor centre)
+        // rho≈|h| stays well under R regardless of sign, so only the region near the wall triggers.
         const rho = Math.hypot(lat, h)
+        // BUG-81: the lining is a SHELL seen from inside — only a centre INSIDE the tube can touch it.
+        // Without this, any probe whose arc fell in the span counted as "inside", so a wheel on the
+        // hillside beside a portal (lat 9 m, R 8) read depth 1.4 m (2.9 m at 10.5 m) with the normal
+        // yanking it toward the bore axis — past 2·wheelRadius that is physics.js's catastrophic-
+        // penetration teleport (the owner's portal brush that launched and totalled the truck). It
+        // also caps depth < r, the invariant that failsafe relies on, and excludes the hill overhead
+        // and a wheel resting on the tube's outer crown (which it used to pull DOWN into the bore).
+        if (rho >= R) return null
         const depth = rho + r - R
         if (depth <= 1e-9) return null
         const invRho = rho > 1e-9 ? 1 / rho : 0
