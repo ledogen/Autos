@@ -159,6 +159,8 @@ export const POI_ICONS = {
     // when a giver has nothing on offer. This colour is for a diamond that NEVER gives work (office,
     // school — destinations only): the map paper, so it reads hollow. It was orange, which read as
     // a live job with no card behind it (owner, 2026-10-12).
+    // FEAT-103: the expedition camp — the run's goal, so it is the one diamond with a name.
+    expeditionCamp: { label: 'Expedition', color: '#cfe2bd', path: null },
     diamond:      { label: null,      color: '#cfe2bd', path: null },
 }
 

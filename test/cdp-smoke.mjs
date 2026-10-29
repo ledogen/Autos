@@ -226,6 +226,10 @@ const STEPS = [
     // key advances it and goes nowhere else — so the brake taps below would only turn pages. Read them off.
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     check(await until(dlg, 3000), 'the run opened with no intro cards (R-11)')
+    // FEAT-103: the uncle names the camp's true compass direction — filled in, never the raw token.
+    const intro = await js('document.getElementById("dialogue-panel").textContent')
+    check(/expedition camped up at the (north|south)?(east|west)? road/.test(intro) && !intro.includes('{dir}'),
+      `the intro does not name the camp's direction: "${intro.slice(0, 120)}"`)
     for (let i = 0; i < 8 && await dlg(); i++) { await tap('Enter'); await sleep(250) }
     check(!await dlg(), 'the intro cards did not close after 8 presses')
   }],
@@ -284,13 +288,18 @@ const STEPS = [
     check(await until(panel, 2000), `parking off the ribbon with the card up ("${text2}") opened no camp panel`)
     const title = () => js('document.getElementById("cp-title").textContent')
     if (await title() === 'camp') await js('document.getElementById("cp-truck").click()')
-    check(await title() === 'the truck', `no truck face (title "${await title()}")`)
+    check(await title() === 'sleep in the truck', `no truck face (title "${await title()}")`)
     await js('document.getElementById("cp-sleep").click()')
     check(await js('document.getElementById("cp-body").textContent.includes("campsites provide more rest")'),
       'the truck sleep face is missing its disclaimer')
-    await js('document.getElementById("cp-sleep-back").click(); document.getElementById("cp-break").click()')
-    check(await until(async () => !await panel(), 2000), '"leave" did not close the truck face')
-    await tap('z')   // hunt off again, so later parks open nothing
+    await js('document.getElementById("cp-sleep-back").click()')
+    // Owner, 2026-10-27: an unmade card keeps the tent up and lit, and Z there closes the card and
+    // calls the hunt off — so later parks open nothing.
+    const lit = () => js('document.getElementById("camp-row").style.display === "flex" && document.getElementById("camp-icon").classList.contains("on")')
+    check(await until(lit, 1000), 'the tent is not up and lit beside the truck face')
+    await tap('z')
+    check(await until(async () => !await panel(), 2000), 'Z did not close the truck face')
+    check(!await lit(), 'Z closed the truck face but left the hunt on')
   }],
   ['inventory', async () => {
     // FEAT-122: parked only (like V) — Tab driving pulses the park sign and opens nothing; parked,
@@ -397,11 +406,51 @@ const STEPS = [
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
   }],
+  ['expedition', async () => {
+    // FEAT-103: the camp's gate prompt, the requisition opening at campDeeds, the five lines at the
+    // camp, and a line taken THERE waiting, untimed, until the truck parks at its source.
+    const pois = 'window.__map2d()._getPois()'
+    const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
+      return q ? { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+    check(camp, 'no expedition camp in the region')
+    const prompt = () => js('document.getElementById("poi-prompt").checkVisibility() && document.getElementById("poi-prompt").textContent')
+    await js(`window.__teleport(${camp.x}, ${camp.z}, ${camp.h})`)
+    await sleep(2500)
+    check(/good deeds/.test(await until(prompt, 2000) || ''), `the closed camp's prompt: "${await prompt()}"`)
+    await js('window.__econ.halfPoints = 12')
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 1000), 'six deeds opened no requisition on the run HUD')
+    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await tap(' ')
+    const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    check(await until(() => vis('mp-accept'), 3000), 'parking at the open camp opened no lines')
+    check(await js('window.__mission().offers.length') === 5, `the camp shows ${await js('window.__mission().offers.length')} lines, want 5`)
+    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqCrew'; i++) await js('window.__mission().cycle(1)')
+    await js('document.getElementById("mp-accept").click()')
+    const st = () => js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, from: m.mission?.fromPoi } })()')
+    const a = await st()
+    check(a.s === 'staging' && a.a, `a line taken at the camp is not an untimed approach: ${JSON.stringify(a)}`)
+    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)})
+      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await js(`window.__teleport(${src.x}, ${src.z}, ${src.h})`)
+    await sleep(2500)
+    check((await st()).a, 'arriving at the source started the line before the brake')
+    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await tap(' ')
+    check(await until(async () => { const b = await st(); return b.s === 'staging' && !b.a }, 2000), `parking at the source did not start the line: ${JSON.stringify(await st())}`)
+    // Cancel (parked, two clicks) → the line goes back on the camp's list.
+    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
+    check(await until(() => js('window.__mission().state === "done"'), 2000), 'cancel did not end the line')
+    await js('document.getElementById("mp-accept").click()')
+    check(await js(`window.__map2d()._getBoard().status(${JSON.stringify((await js(`${pois}.find(q => q.type === 'expeditionCamp').id`)))}).family !== null`)
+      && await js('window.__mission().state === "idle"'), 'the cancelled line is not back at the camp')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
   ['offer', async () => {
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
     // its pad (q.x/z — the solid model stands off it at modelX/Z), pull the brake, accept, drive.
     const p = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
-      const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park
+      const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park && q.type !== 'expeditionCamp'
         && b.status(q.id)?.family === 'delivery' && b.view(q.id, 0)?.count > 0)
       return q ? { x: q.x, z: q.z, rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type } : null })()`)
     if (!p) { console.log('  offer: no plain delivery giver with a live offer — step skipped'); return }

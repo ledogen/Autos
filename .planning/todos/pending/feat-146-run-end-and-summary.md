@@ -46,7 +46,10 @@ Style per UI-STYLE.md: a Story card (the world talking), not a System panel.
 - [ ] The pause menu has "throw in the towel" in story mode only, behind one confirm.
 - [ ] Completing the FEAT-103 requisition ends the run on the win card.
 - [ ] All three roads reach the same summary, and it returns to the main menu.
-- [ ] If FEAT-42's run slot exists by then, every ending deletes it.
+- [ ] Every ending calls main.js `_discardRunSave()` (FEAT-42, owner 2026-10-29: the run save is a
+      ROLLING AUTOSAVE, rewritten every second while a run is live). It deletes the save and stops the
+      autosave for the rest of that run; without it the autosave keeps rewriting a dead run and
+      "continue" brings it back. (Replaces Spare's earlier ask to grey save & exit on the end screen.)
 - [ ] `node test/cdp-smoke.mjs` drives all three endings without a console error.
 
 ## Open
