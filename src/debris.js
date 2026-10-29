@@ -40,7 +40,9 @@ export const DEBRIS_TYPES = {
   //     the drum is a smaller barrel, so the number had to move to keep the mass honest.
   //   rock — hull ≈ 0.02 m³ → 2500 ρ lands ~50 kg of granite cobble.
   barrel: { model: 'drumClosed', density: 86, friction: 0.5, restitution: 0.3 },
-  rock: { model: 'testRock', density: 2500, friction: 0.7, restitution: 0.15 },
+  // `hazard` (FEAT-93): a sharp thing a tire can split on. A hard enough strike on a wheel core pops
+  // the tire at ANY condition (damage.js hazardPunctureMult). Rocks only — never cargo or barrels.
+  rock: { model: 'testRock', density: 2500, friction: 0.7, restitution: 0.15, hazard: true },
   // FEAT-88 haul cargo: the shrink-wrapped firewood bundle (~0.75 ft³ — a real one is 10–12 kg),
   // three variants of one load (ASSET-36 kit, data/prop-models.js firewoodBundleA..C). `massKg`
   // instead of a density: a wrapped bundle's hull is mostly air between splits, and the mass the
@@ -432,7 +434,7 @@ export class DebrisSystem {
       quaternion: opts.quaternion,
       linearVelocity: velocity,
       angularVelocity: spin,
-      userData: { kind: 'debris', debrisType: kind, noDamage: !!opts.noDamage },
+      userData: { kind: 'debris', debrisType: kind, noDamage: !!opts.noDamage, hazard: !!spec.hazard },
     })
     this._eng.addHull(body, proto.hull, {
       density: opts.massKg ? opts.massKg / proto.volume : proto.density,

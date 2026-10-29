@@ -65,6 +65,7 @@ import { MoonSystem } from './moon.js'                      // QUAL-02: night mo
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
+import { putRun, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
@@ -82,11 +83,11 @@ import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: th
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
-import { InventorySystem } from './inventory.js'          // FEAT-122: what the player owns this run
+import { InventorySystem, runInventory } from './inventory.js'   // FEAT-122: what the player owns this run
 import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
-import { startShelves, shelf, take as takeShelf, shelfName, nextStockH } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
+import { startShelves, shelf, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
 import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside, FIELD_REPAIR, fieldRepair,
   fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
@@ -1180,6 +1181,10 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 // FEAT-62: the pause menu is up. Up here, not with the scenario block, because _hidePauseMenu writes
 // it and is reachable long before the module body gets that far.
 let _pauseOpen = false
+let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-card until any key
+// The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
+// FEAT-42: the resume card — the run may have been saved at speed, mid-slide even.
+function _heldPause () { return _resumeHold || (_pauseOpen && scenarioSystem.isActive()) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -1405,8 +1410,8 @@ const SELECTORS = {
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
 }
 let _setupMode = 'freeroam'   // 'freeroam' | 'story' — which run the setup page starts
-function _fitGearbox () {
-  fitTransmission(RANGER_PARAMS, vehicleState, _settings.gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
+function _fitGearbox (gearbox = _settings.gearbox) {
+  fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
 }
 /** Redraw every selector row (both pages) and the setup page's world-code line from _settings. */
 function _renderSelectors () {
@@ -1470,6 +1475,8 @@ function _openSetup (mode) {
   // start" mean "replay the same world forever".
   const inp = document.getElementById('su-seed')
   if (inp) inp.value = ''
+  const note = document.getElementById('su-save-note')
+  if (note) note.style.display = mode === 'story' && hasRun() ? '' : 'none'
   _renderSelectors()
   document.getElementById('main-menu')?.classList.add('setup')
 }
@@ -1488,9 +1495,22 @@ async function _startFromSetup () {
   await _startFreeRoam(_resolveSeed(seed))
 }
 document.getElementById('mm-freeroam')?.addEventListener('click', () => _openSetup('freeroam'))
-// Story mode opens on new game: with no save to resume (saving is not built yet) that is the only
-// page it can open. A resume entry takes over here once story saves exist (feat-game-menus-ui).
+// Story mode opens on new game. A saved run is resumed from its own button (#mm-continue, FEAT-42);
+// starting a new game over it discards it, and the setup page says so.
 document.getElementById('mm-story')?.addEventListener('click', () => _openSetup('story'))
+/** The main menu's continue button stands only while a run is saved. Wired here, ahead of the boot
+ *  awaits (the free-roam seat is ~2.5 s of cold routing), like the buttons above: it shows with the
+ *  menu, and an early click waits in _startStory's `await _worldReady`. */
+function _syncContinue () {
+  const b = document.getElementById('mm-continue')
+  if (b) b.style.display = hasRun() ? '' : 'none'
+}
+_syncContinue()
+document.getElementById('mm-continue')?.addEventListener('click', () => {
+  const s = loadRun()
+  _syncContinue()
+  if (s) void _startStory(s.seed, s.world, s.gearbox, s)   // null: corrupt or another version — the run is gone
+})
 document.getElementById('su-start')?.addEventListener('click', () => { void _startFromSetup() })
 document.getElementById('su-back')?.addEventListener('click', () => document.getElementById('main-menu')?.classList.remove('setup'))
 document.getElementById('su-seed')?.addEventListener('input', (e) => {
@@ -1821,7 +1841,8 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
-const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms,
+  compileLightState, LIGHT_STATE_COUNT } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -3507,6 +3528,7 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
 })
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
 window.__econ = runEconomy      // dev handle — set the wallet for a play-test (`__econ.money = 200`)
+window.__day = () => daySystem   // dev handle — test/cdp-smoke.mjs reads the run clock across a save
 // The recovery chip joins the park zone last, under V and Tab (owner, 2026-10-22).
 document.getElementById('park-zone')?.append(document.getElementById('recovery-row'))
 
@@ -6964,6 +6986,15 @@ function _showPauseMenu () {
   // FEAT-62: restart only means something inside a scenario.
   const restartBtn = document.getElementById('pm-restart')
   if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() ? '' : 'none'
+  // FEAT-42: save & exit is a story-run button, greyed out with its reason while the run can't save.
+  const saveBtn = document.getElementById('pm-save')
+  if (saveBtn) {
+    const live = storySystem.isActive() && !storySystem.isEntering()
+    const why = live ? _saveBlock() : null
+    saveBtn.style.display = live ? '' : 'none'
+    saveBtn.disabled = !!why
+    document.getElementById('pm-save-why').textContent = why ?? ''
+  }
   _pauseOpen = true
 }
 
@@ -7210,6 +7241,7 @@ const storySystem = new StorySystem({
     _quickJobWanted = visible
     _syncQuickJob()
     if (visible) { dialogueSystem.play(DLG.runIntro, RUN_INTRO); _renderDialogue() }
+    if (visible && _resumeHold) document.getElementById('resume-card').style.display = 'flex'   // FEAT-42 (see _restoreRun)
   },
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
   // signal that covers every story entry (main menu, pause button, a rejected-seed retry), so the
@@ -7310,6 +7342,7 @@ const storySystem = new StorySystem({
       seed: worldSeed, pois: poiSystem.list(), nowH: daySystem.clockH(),
       region: economySystem.terms().region,   // FEAT-114: which rank row a bonus gate must be reachable on
     })
+    _boardLog = logBoard(offerBoard, daySystem.clockH())   // FEAT-42: the board's history, for the run save
     // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
@@ -7336,6 +7369,9 @@ const storySystem = new StorySystem({
         for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
       }
     }
+    // FEAT-42: a resume writes the save over the fresh run built above — still behind the loading
+    // screen, before the handoff plays the run intro.
+    if (_pendingResume) { _restoreRun(_pendingResume); _pendingResume = null }
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
@@ -7439,9 +7475,9 @@ function _showMainMenu () {
   const el = document.getElementById('main-menu')
   if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'scenarios', 'setup') }
   menuStage.setActive(true)   // re-runs the drop when arriving from the world; a no-op at boot
+  _syncContinue()
   _simHeld = true
   document.body.classList.add('stage-on')
-  _syncAudioPageActive()
 }
 function _hideMainMenu () {
   const el = document.getElementById('main-menu')
@@ -7456,7 +7492,6 @@ function _enterStageLoad (text, hint = '') {
   menuStage.setActive(true)
   _simHeld = true
   document.body.classList.add('stage-on')
-  _syncAudioPageActive()
   const cap = document.getElementById('load-caption')
   if (cap) cap.style.display = 'flex'
   const t = document.getElementById('sl-text')
@@ -7472,7 +7507,6 @@ function _exitStageLoad () {
   menuStage.setActive(false)
   _simHeld = false
   document.body.classList.remove('stage-on')
-  _syncAudioPageActive()
   // The chase camera is a spring and it has been sitting wherever the last mode left it. Without
   // this it slides onto the truck over about a second the moment the world appears, which reads as
   // the camera "arriving" rather than the world simply being there (owner, 2026-09-06).
@@ -7497,16 +7531,26 @@ async function _startFreeRoam (seedStr) {
   }
 }
 
-/** A story run on `seed`, under the setup page's preset and gearbox (the jalopy's starting box). */
-async function _startStory (seed) {
+/**
+ * A story run on `seed`, under the setup page's preset and gearbox (the jalopy's starting box) — or,
+ * FEAT-42, under the ones a run save carries: a resume enters exactly like a new run, then
+ * onRegionLive writes the save over the fresh one (_restoreRun).
+ */
+let _runGearbox = 'auto'   // the box this run started with — a run save carries it, never _settings
+let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
+async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null) {
   _hideSeedModal()
   map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
   // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
   // wiring these buttons early is that the click is acknowledged even while init is still running.
   _enterStageLoad('building the world\u2026')
   await _worldReady
-  applyWorld(_world())
-  _fitGearbox()
+  applyWorld(world)
+  _fitGearbox(gearbox)
+  _runGearbox = gearbox
+  _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
+  _runEnded = false
+  if (!resume) clearRun()   // FEAT-42: one slot — a new game discards the saved run
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
@@ -7638,6 +7682,131 @@ function _backToMenu () {
   _showMainMenu()
 }
 document.getElementById('pm-menu')?.addEventListener('click', _backToMenu)
+
+// ── FEAT-42: the rolling run save ───────────────────────────────────────────────────────────────
+// ONE record, overwritten about once a second while a run is live and again the instant the tab is
+// hidden or closed (owner, 2026-10-29: a closed tab, a browser crash, a lid close or a power cut must
+// not cost the run). It is never older than "now", so there is no earlier state to scum back to — the
+// motion is saved too, so killing the tab a beat before a crash resumes a beat before it at the same
+// speed. "continue" on the main menu reads it (and leaves it: a crash during the resume's own load
+// must not lose the run either), enters the seed exactly like a new run, and onRegionLive hands it to
+// _restoreRun behind the loading screen; the run then opens into the pause menu with the sim held
+// until it is closed. Nothing of the world is saved — the resume regenerates it cold. A new game, or
+// the run's end (_discardRunSave), deletes it. "save & exit" is just the clean way out.
+const AUTOSAVE_S = 1          // s between rolling writes
+let _boardLog = null          // the live board's history (save.js logBoard) — the run save carries it
+let _restoring = false        // a resume's seat is in flight: the truck is not where the save says yet
+let _runEnded = false         // the run is over: never write it again (_discardRunSave)
+
+/**
+ * Why the run cannot be saved right now, or null. A job in hand holds live road geometry and bodies
+ * in the bed; carrying one across a resume is FEAT-42 part 2, so until then the save holds its last
+ * pre-job state for the length of a job (offers on the panel and a result card are fine to save).
+ */
+function _saveBlock () {
+  if (missionSystem?.isOnJob() || paperRouteSystem.isCarrying()) return 'finish or cancel the job to save'
+  return null
+}
+
+/** Overwrite the run save with now — whenever a live, writable run exists. */
+function _autosave () {
+  if (!storySystem.isActive() || storySystem.isEntering() || _restoring || _runEnded || _saveBlock()) return false
+  return putRun(_runSnapshot())
+}
+setInterval(_autosave, AUTOSAVE_S * 1000)
+// The last moment a page gets: hidden is what fires before Chrome discards a tab (a lid close, Memory
+// Saver), pagehide what fires when it is closed or navigated away. beforeunload is not reliable.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') _autosave() })
+window.addEventListener('pagehide', _autosave)
+window.__autosave = _autosave   // dev handle — test/cdp-smoke.mjs times a write
+
+/** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
+function _discardRunSave () {
+  _runEnded = true
+  clearRun()
+}
+
+/** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
+function _runSnapshot () {
+  const vs = vehicleState, p = vs.position, q = vs.quaternion
+  return {
+    seed: _seedString, world: activeWorld(), gearbox: _runGearbox,
+    day: daySystem.snapshot(), economy: runEconomy, inventory: runInventory,
+    parts: partsSystem.snapshot(),   // fitted parts, every track's condition + durability, the flats
+    damage: { toe: damageModel.toeOffsetDeg, camber: damageModel.camberOffsetDeg, engineTempC: damageModel.engineTempC },
+    fuel: vs.fuel, odometer: gaugeCluster.odoMiles,
+    pose: { p: [p.x, p.y, p.z], q: [q.x, q.y, q.z, q.w] },
+    // The truck in motion: a resume picks the drive up mid-stride, crash included.
+    motion: { v: vs.velocity.toArray(), w: vs.angularVelocity.toArray(), wheelOmega: vs.wheelOmega,
+              strutComp: vs.strutComp, strutCompVel: vs.strutCompVel, steerAngle: vs.steerAngle,
+              drivetrain: vs.drivetrain, ignition: vs.ignition, handbrake: vs.handbrake, parked: vs.parked },
+    shelves: runShelves, paperTier: runPaper.tier,
+    dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
+  }
+}
+
+/** Write save `s` over the fresh run onRegionLive just built (the jalopy roll, the shelf seed, all of it). */
+function _restoreRun (s) {
+  _restoring = true
+  _resumeHold = true
+  daySystem.restore(s.day)
+  Object.assign(runEconomy, s.economy)
+  inventorySystem.restore(s.inventory)
+  partsSystem.restore(s.parts)
+  damageModel.toeOffsetDeg.splice(0, 4, ...s.damage.toe)
+  damageModel.camberOffsetDeg.splice(0, 4, ...s.damage.camber)
+  damageModel.engineTempC = s.damage.engineTempC
+  damageModel.publish(RANGER_PARAMS)
+  vehicleState.fuel = s.fuel
+  _sputtersHeard = s.fuel.sputters
+  gaugeCluster.seedOdometer(s.odometer)
+  Object.assign(runShelves, s.shelves)
+  runPaper.tier = s.paperTier
+  _renderPaperUI()
+  dialogueSystem.restoreSeen(s.dialogueSeen)   // before the handoff, or the run intro plays again
+  for (const pad of s.campPads) { roadSystem?.setCampPads(campSystem.makeCampAt(pad)); _refreshGroundAround(pad) }
+  offerBoard = new OfferBoard({ seed: worldSeed, pois: poiSystem.list(), nowH: s.board.t0H,
+                                region: economySystem.terms().region })
+  _boardLog = logBoard(offerBoard, s.board.t0H, s.board.events)
+  // The seat: the exact saved pose, put back the way a tow does it, so R still respawns where it did.
+  // A seat is a fresh parked truck, so the motion goes back on top of it once it lands.
+  const prev = _spawnOverride
+  _spawnOverride = { align: false, x: s.pose.p[0], y: s.pose.p[1], z: s.pose.p[2], quat: new THREE.Quaternion(...s.pose.q) }
+  storySystem.notifyTeleport()
+  void _reseatTruckAtSpawn().then(() => {
+    _spawnOverride = prev
+    const m = s.motion, vs = vehicleState
+    vs.velocity.fromArray(m.v)
+    vs.angularVelocity.fromArray(m.w)
+    for (const k of ['wheelOmega', 'strutComp', 'strutCompVel']) vs[k].splice(0, 4, ...m[k])
+    Object.assign(vs.drivetrain, m.drivetrain)
+    Object.assign(vs.ignition, m.ignition, { event: null })   // a one-shot audio cue, never replayed
+    vs.steerAngle = m.steerAngle
+    vs.handbrake = m.handbrake
+    vs.parked = m.parked
+    _restoring = false
+  })
+}
+
+// The resume card: ANY key, click or pad input hands the frozen run back, and the same press drives.
+// The listener only drops the hold and never eats the event, so a W that ends it is throttle on the
+// first frame and a player caught mid-slide can steer out at once. Bare modifiers don't count (the
+// Cmd of a Cmd-Tab away is not "resume"); nothing counts while the stage is still up.
+function _endResumeHold () {
+  if (!_resumeHold || _simHeld) return
+  _resumeHold = false
+  document.getElementById('resume-card').style.display = 'none'
+}
+window.addEventListener('keydown', e => { if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) _endResumeHold() }, true)
+window.addEventListener('pointerdown', _endResumeHold, true)
+
+document.getElementById('pm-save')?.addEventListener('click', () => {
+  if (!_autosave()) {
+    document.getElementById('pm-save-why').textContent = _saveBlock() ?? 'could not save — browser storage is blocked'
+    return
+  }
+  _backToMenu()
+})
 // Story mode is opt-in from this menu ONLY — a first-time visitor lands in free roam and is
 // never thrust into an unfinished mode. Switching the game mode also disables free-roam-only
 // affordances (teleport), which is the point of _gameMode existing.
@@ -7829,25 +7998,21 @@ function _captureSession () {
   }
 }
 
-// ── Background-tab mute ───────────────────────────────────────────────────────
-// Two distinct "we're not looking at it" events, and we need BOTH: alt-tabbing to another app
-// fires window blur but NOT visibilitychange (the tab is still visible), while switching browser
-// tabs / minimising fires visibilitychange. Mute on either; unmute only when focused AND visible,
-// so returning focus to a still-hidden tab doesn't restart the drone.
-// The stage counts as "not looking" too: behind the menu or a load the sim is held, so the engine,
-// tires and wind would otherwise drone on at whatever the last frame left them (owner, 2026-10-20:
-// free roam → story mode → back left the engine running at the main menu).
-// Declarations, not consts: the stage transitions above call this during module init, ahead of this line.
-function _audioPageActive () { return document.hasFocus() && !document.hidden && !document.body.classList.contains('stage-on') }
-function _syncAudioPageActive () { setAudioPageActive(_audioPageActive()) }
-window.addEventListener('blur',  _syncAudioPageActive)
-window.addEventListener('focus', _syncAudioPageActive)
-document.addEventListener('visibilitychange', _syncAudioPageActive)
+// ── Hidden-tab mute ───────────────────────────────────────────────────────────
+// A hidden tab stops rAF, so update*Audio() stops being called and every gain FREEZES at its last
+// value — a tab left mid-throttle would drone at that RPM forever. Nothing fed from the frame loop
+// can fix a loop that isn't running, so the shared AudioContext is suspended instead. (Menus and
+// frozen pauses are silent by a different route: see `heard` in the frame loop.)
+document.addEventListener('visibilitychange', () => setAudioPageActive(!document.hidden))
+
+// FEAT-23: WebAudio may only start inside a user gesture (browser autoplay policy). ANY gesture
+// counts — a click too: a resumed run is reached by mouse alone (continue → resume) with the engine
+// already idling, and a keydown-only unlock left it silent until the first key. Idempotent.
+function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio() }
+window.addEventListener('pointerdown', _unlockAudio, true)
 
 document.addEventListener('keydown', e => {
-  ensureEngineAudio()   // FEAT-23: first keypress is the user gesture that unlocks WebAudio
-  ensureTireAudio()     // tire audio (slip + rolling) shares that same unlocked AudioContext
-  ensureWindAudio()     // wind audio too
+  _unlockAudio()
   if (e.key === '\\') toggleRecording()
   if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState, RANGER_PARAMS)
   // 'p' = MARK THIS PLACE: write a kind:"place" capture at the truck — the replayable spatial bug
@@ -7927,8 +8092,7 @@ function loop () {
   // free-roam reseed) left the rendered truck, and the terrain ring streaming around it, parked at the
   // OLD spawn for the whole load (measured 2026-09-22: ring built ~280 m from the truck, then
   // rebuilt from scratch the moment the stage lifted).
-  // FEAT-62: a scenario's pause menu is a real pause — its clock must not run behind the menu.
-  if (_simHeld || _genHold || (_pauseOpen && scenarioSystem.isActive())) {   // PERF-33: the freeze guard holds the sim the same way
+  if (_simHeld || _genHold || _heldPause()) {   // PERF-33: the freeze guard holds the sim the same way
     accumulator = 0
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
@@ -8033,7 +8197,7 @@ function loop () {
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
-    const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
+    const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
@@ -8419,13 +8583,22 @@ function loop () {
   // the triggers and sticks are read directly and fire no event — so a player who only touched RT
   // revved a silent engine until some button went down. Chrome counts gamepad input as the user
   // gesture; the ensure* calls are idempotent (and resume a context that started suspended).
-  if (pad.active) { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio() }
+  if (pad.active) _unlockAudio()
+  if (pad.throttle > 0 || pad.brake > 0 || pad.steer !== 0) _endResumeHold()   // the sticks and triggers fire no keydown
   // FEAT-23: engine audio tracks RPM + throttle EVERY frame (no-op until the first keypress unlocks
   // WebAudio). PERF-16: deliberately OUTSIDE the throttled HUD block below — a 10 Hz pitch update would
   // make the engine note step audibly. Audio is not a DOM write, so the throttle does not apply to it.
+  //
+  // A menu has no sound sources: while the sim is frozen — behind the stage (main menu, a load) or
+  // under a pause that holds it — the truck is fed to nothing, and each voice's own off switch fades
+  // it out in ~50 ms and holds it. The frozen truck is NOT off: free roam → menu leaves the engine
+  // idling, and a resumed run sits paused at its saved speed, so its last RPM and wheel speeds would
+  // drone on (owner, 2026-10-20 / 2026-10-29). The PERF-33 ground wait is deliberately left out: it
+  // freezes a few frames mid-drive, and silencing it would chop the engine note.
+  const heard = !_simHeld && !_heldPause()
   const dtrain = vehicleState.drivetrain
   if (dtrain) {
-    setEngineAudioEnabled(RANGER_PARAMS.engineAudioEnabled !== false)
+    setEngineAudioEnabled(heard && RANGER_PARAMS.engineAudioEnabled !== false)
     setEngineAudioVolume(RANGER_PARAMS.engineAudioVolume ?? 0.5)
     setEngineAudioTuning(RANGER_PARAMS.engineAudioDynamics, getCameraMode() !== 'hood', RANGER_PARAMS.engineChaseBrightDb, RANGER_PARAMS.engineChaseBoomDb, RANGER_PARAMS.starterAudioLevel, RANGER_PARAMS.engineAudioCompRatio)
     // FEAT-50: a low-fuel stumble drops the drone out for its length, with one pop per stumble.
@@ -8464,13 +8637,13 @@ function loop () {
   // Tire-slip audio (src/tire-audio.js): screech on pavement / tearing roar on dirt, gated by
   // per-wheel slip velocity. Same every-frame reasoning as the engine drone above — a throttled
   // update would step the squeal audibly. No-op until the first keypress unlocks WebAudio.
-  setTireAudioEnabled(RANGER_PARAMS.tireAudioEnabled !== false)
+  setTireAudioEnabled(heard && RANGER_PARAMS.tireAudioEnabled !== false)
   setTireAudioVolumes(RANGER_PARAMS.tireScreechVolume ?? 0.5, RANGER_PARAMS.tireDirtVolume ?? 0.3,
     RANGER_PARAMS.tireRoadVolume ?? 0.4)
   updateTireAudio(vehicleState, RANGER_PARAMS, looseSurfaceFactor)
 
   // Wind noise (src/wind-audio.js): airspeed only — no ground query, no per-wheel work.
-  setWindAudioEnabled(RANGER_PARAMS.windAudioEnabled !== false)
+  setWindAudioEnabled(heard && RANGER_PARAMS.windAudioEnabled !== false)
   setWindAudioVolume(RANGER_PARAMS.windVolume ?? 0.4)
   updateWindAudio(vehicleState)
 
@@ -8662,6 +8835,7 @@ function loop () {
   vehicleState.fuel.floorGal = _gameMode === 'story' ? 0 : RANGER_PARAMS.fuelTankGal * RANGER_PARAMS.fuelFreeRoamFloorFrac
   gaugeCluster.setFuelLevel(vehicleState.fuel.gal / RANGER_PARAMS.fuelTankGal)
   gaugeCluster.setLowFuel(vehicleState.fuel.gal <= RANGER_PARAMS.fuelLowLightGal)
+  gaugeCluster.setFlat(damageModel.flat.some(Boolean))   // FEAT-94
   _renderPumpDisplay(frameTime)
   gaugeCluster.setRedline(RANGER_PARAMS.engineRedlineRPM)   // repaints the tach face only on an engine swap
   {
@@ -8693,6 +8867,7 @@ function loop () {
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.
   perfFrameEnd(renderer.info.programs?.length ?? -1)
+  if (_worldInit && !menuStage.isActive()) _lampSweepStep()
 
   // FEAT-63: THE SPARE-TIME PUMP. Dead last in the frame, on purpose — by here everything that
   // owes the player a picture has been done, so what is left before the next vsync is genuinely
@@ -8713,6 +8888,21 @@ function loop () {
   }
 }
 
+// PERF-21 for late arrivals: the boot prewarm compiled every light state's variant of every material
+// that EXISTED at boot. Streamed terrain, road tiles, props and the truck's .glb arrive later, and
+// each would otherwise compile one variant per lamp state the first time that state appears — the
+// "first headlights lag". So: if a render compiled anything new (the program count moved since our
+// own last compile), sweep every light state again, ONE per frame (~1.2 ms each on a warm scene).
+// A render that compiles something mid-sweep restarts it, so nothing that arrived during it is missed.
+let _lampSweepI = -1, _lampSweepProgs = -1
+function _lampSweepStep () {
+  if (renderer.info.programs.length !== _lampSweepProgs) _lampSweepI = 0
+  if (_lampSweepI < 0) return
+  compileLightState(_lampSweepI, renderer, scene, camera, [campfire.light])
+  _lampSweepI = _lampSweepI + 1 < LIGHT_STATE_COUNT ? _lampSweepI + 1 : -1
+  _lampSweepProgs = renderer.info.programs.length
+}
+
 perfMark('init: synchronous bootstrap done, requesting first frame')  // D-arc
 // Dev handle (like __view above): init — including the QUAL-14 async spawn warm — is complete and
 // the render loop is starting. Read by the headless boot-timing probes.
@@ -8728,7 +8918,7 @@ requestAnimationFrame(loop)
 // .finally, not .then — a failed prewarm is a best-effort miss, never a reason to strand the menu.
 // The campfire's point-light variant rides the same chain (see campfire.js header) — compiled with the
 // lamps in their final all-off prewarm state, which is how the truck sits at camp.
-prewarmLightPrograms(renderer, scene, camera)
+prewarmLightPrograms(renderer, scene, camera, [campfire.light])
   .then(() => campfire.prewarm(renderer, scene, camera))
   .finally(() => {
     _worldInit = true

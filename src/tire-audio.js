@@ -168,6 +168,17 @@ const ROLL_DIRT_Q = 1.0
 const ROAD_DIRT_GAIN = 0.55    // against the slip layer's DIRT_SLIP_GAIN — still clearly the
                                // "quieter version", now in a band you can actually hear
 
+// ── Rim grind (FEAT-94): a flat run until the tire is gone puts the steel rim on the road ──────
+// Noise through a resonant band whose centre climbs with road speed (steel dragging on aggregate),
+// pulsed once per wheel revolution because a rim run flat is no longer round — it bites once a turn.
+// Asphalt is the bright full-level case; on dirt it is duller and quieter.
+const GRIND_F      = 900       // Hz — band centre at a crawl
+const GRIND_F_RISE = 1800      // Hz — added at ROLL_V_REF
+const GRIND_Q      = 6
+const GRIND_GAIN   = 0.45      // level at ROLL_V_REF on asphalt, before the road volume
+const GRIND_DIRT   = 0.35      // fraction of that on loose ground
+const GRIND_DEPTH  = 0.5       // fraction of the level swung by the once-a-turn pulse
+
 let ctx = null
 let started = false
 let enabled = true
@@ -190,6 +201,7 @@ let rollDirtLp = null, rollDirtGain = null
 // blacktop rolling chain (its own engine — see ROAD_ constants)
 let roadLp = null, roadHumGain = null
 let roadSlamBp = null, roadSlamGain = null, slamLfo = null, slamDepth = null
+let grindBp = null, grindGain = null, grindLfo = null, grindDepth = null   // FEAT-94 rim grind
 
 /** Fill an AudioBuffer with brown (1/f²) noise: white through a leaky integrator, peak-normalized. */
 function _brownNoise (ac) {
@@ -385,6 +397,22 @@ export function ensureTireAudio () {
   slamLfo.connect(slamDepth); slamDepth.connect(roadSlamGain.gain)
   slamLfo.start()
 
+  grindGain = ctx.createGain()
+  grindGain.gain.value = 0
+  grindGain.connect(master)
+  grindBp = ctx.createBiquadFilter()
+  grindBp.type = 'bandpass'
+  grindBp.frequency.value = GRIND_F
+  grindBp.Q.value = GRIND_Q
+  grindBp.connect(grindGain)
+  loopNoise(ctx, white).connect(grindBp)
+  grindLfo = ctx.createOscillator()
+  grindLfo.setPeriodicWave(_pulseWave(ctx))
+  grindLfo.frequency.value = 1
+  grindDepth = ctx.createGain(); grindDepth.gain.value = 0
+  grindLfo.connect(grindDepth); grindDepth.connect(grindGain.gain)
+  grindLfo.start()
+
   started = true
 }
 
@@ -429,6 +457,7 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
 
   let screechLvl = 0, dirtLvl = 0, maxSlip = 0, fnSum = 0
   let rollPaved = 0, rollLoose = 0                   // rolling noise, summed per wheel then averaged
+  let grindLvl = 0, grindRev = 0                     // the loudest wheel down to its rim, and its rev/s
 
   for (let i = 0; i < 4; i++) {
     const wd = vehicleState.wheelDebug?.[i]
@@ -454,6 +483,11 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
     // genuinely split the level between the two engines.
     rollPaved += load * paved
     rollLoose += load * loose
+
+    if (vehicleState.rimOnRoad?.[i]) {
+      const g = load * (paved + GRIND_DIRT * loose)
+      if (g > grindLvl) { grindLvl = g; grindRev = Math.abs(vehicleState.wheelOmega?.[i] || 0) / (2 * Math.PI) }
+    }
 
     const vLong = wd.vLong || 0, vLat = wd.vLat || 0
     const slip = Math.hypot(vLong, vLat)
@@ -540,6 +574,13 @@ export function updateTireAudio (vehicleState, params, pavedFactorAt) {
   if (fuse < 0) fuse = 0
   else if (fuse > 1) fuse = 1
   slamDepth.gain.setTargetAtTime(SLAM_DEPTH * (1 - SLAM_FUSE_CUT * fuse) * slamLevel, now, TC)
+
+  // ── Rim grind: pitch on road speed, one bite per wheel turn — see the GRIND_ constants.
+  grindBp.frequency.setTargetAtTime(GRIND_F + GRIND_F_RISE * roll, now, TC)
+  grindLfo.frequency.setTargetAtTime(Math.max(0.5, grindRev), now, TC)
+  const grindLevel = roadVol * GRIND_GAIN * Math.sqrt(ru) * grindLvl
+  grindGain.gain.setTargetAtTime(grindLevel, now, TC)
+  grindDepth.gain.setTargetAtTime(GRIND_DEPTH * grindLevel, now, TC)
 }
 
 /** Ramp every voice to silence. judderDepth MUST go to 0 too, or the AM LFO keeps swinging the
@@ -555,6 +596,8 @@ function _muteAll (now) {
   roadSlamGain.gain.setTargetAtTime(0, now, TC)
   slamDepth.gain.setTargetAtTime(0, now, TC)   // same rule as judderDepth: a live AM depth would
                                                // keep swinging the impact gain around zero
+  grindGain.gain.setTargetAtTime(0, now, TC)
+  grindDepth.gain.setTargetAtTime(0, now, TC)
 }
 
 /**
