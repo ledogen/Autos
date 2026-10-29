@@ -27,7 +27,7 @@ two gaps:
 ## Fix
 
 - `src/vehicle-model.js`: one `LAMP_STATES` list by light COUNT (off, tails, tails+reverse,
-  head+tail, all) × the point light off/on (spark light or campfire, never both). It is shared by
+  head+tail, all) × the point light off/on (the campfire). It is shared by
   the boot `prewarmLightPrograms` and a new synchronous `compileLightState(i)`, which borrows a state,
   compiles and restores within one tick, so no rendered frame sees it.
 - `src/main.js` `_lampSweepStep`: after each render, if the program count moved since our own last
@@ -42,6 +42,9 @@ two gaps:
 | reverse while braking | +7 | 0 |
 | rims grinding (spark light) | +11 | 0 |
 | any lamp after a 600 m teleport | 0 | 0 |
+
+(The spark-light row was measured while FEAT-152 had a point light; the owner removed it the same day.
+Its +11 on main was the tails+reverse gap above.)
 
 Cost: the boot prewarm now compiles 10 states instead of 4, ~30 programs a frame, so it finishes
 ~0.4 s later (behind the main menu in normal play). 313 programs warm vs 148. After boot the sweep

@@ -8726,7 +8726,7 @@ let _lampSweepI = -1, _lampSweepProgs = -1
 function _lampSweepStep () {
   if (renderer.info.programs.length !== _lampSweepProgs) _lampSweepI = 0
   if (_lampSweepI < 0) return
-  compileLightState(_lampSweepI, renderer, scene, camera, [dirtSpraySystem.light, campfire.light])
+  compileLightState(_lampSweepI, renderer, scene, camera, [campfire.light])
   _lampSweepI = _lampSweepI + 1 < LIGHT_STATE_COUNT ? _lampSweepI + 1 : -1
   _lampSweepProgs = renderer.info.programs.length
 }
@@ -8746,7 +8746,7 @@ requestAnimationFrame(loop)
 // .finally, not .then — a failed prewarm is a best-effort miss, never a reason to strand the menu.
 // The campfire's point-light variant rides the same chain (see campfire.js header) — compiled with the
 // lamps in their final all-off prewarm state, which is how the truck sits at camp.
-prewarmLightPrograms(renderer, scene, camera, [dirtSpraySystem.light, campfire.light])
+prewarmLightPrograms(renderer, scene, camera, [campfire.light])
   .then(() => campfire.prewarm(renderer, scene, camera))
   .finally(() => {
     _worldInit = true

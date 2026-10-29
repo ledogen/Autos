@@ -1045,8 +1045,8 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // keyed on counts (spots, spots carrying a cookie map — the headlights — and point lights), not on
   // which lamp is which, so this list is by count: reverse alone = tails alone, for instance.
   // Tails + reverse (braking while reversing by day: 4 spots, no maps) was missing until 2026-10-29
-  // and compiled mid-drive. × the point light off / on (the spark light or the campfire: one at a
-  // time, never both — camping is parked, sparks need 15 mph).
+  // and compiled mid-drive. × the point light off / on (the campfire — lit only at camp, where the
+  // lamps may still be in any of these states).
   const LAMP_STATES = [
     [],                                                       // everything off (daytime coasting)
     tailSpots,                                                // braking, lamps off (daytime brake)

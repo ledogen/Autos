@@ -54,8 +54,7 @@ outside); reuse the dirt-throwing code; small orange-white particles with a trai
 **Follow-ups (owner, 2026-10-28/29):** spark spacing is Poisson (random gaps); life 0.08–0.25 s,
 full for 40% then a fast fade; more orange. Sparks are born at sub-frame times (spawned where the
 wheel was, pre-aged) so the stream no longer strobes into rows one frame's travel apart.
-**Spark light:** ONE orange PointLight (6 cd at 15 live sparks, 5 m reach, no shadows) at the
-grinding wheels' contact patches, intensity following the live spark count so it flickers with the
-bursts. On by day too (owner: too dim to see). Hidden when no wheel grinds (zero per-pixel cost). Its
-lamp-state × one-point-light shader variants are compiled at boot (`DirtSpraySystem.prewarm`,
-chained after the campfire's). Measured: the light's first appearance compiles no new programs.
+**Spark light: tried and REMOVED (owner, 2026-10-29: "I don't like the way that the glow looks").**
+One orange PointLight at the grinding wheels, flickering with the live spark count, was built and
+shown at night, then taken out. Do not re-add a point source for the sparks. Proving its prewarm
+found BUG-98 (lamp shader compiles mid-drive), whose fix stays.

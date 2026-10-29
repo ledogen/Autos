@@ -99,16 +99,6 @@ const SPARK_SIZE_MAX = 0.030
 const SPARK_TRAIL    = 0.045   // s of travel the streak reaches back over
 const SPARK_HOT  = [1.0, 0.62, 0.22]   // yellow-orange at birth...
 const SPARK_COOL = [1.0, 0.25, 0.02]   // ...deep orange as it dies
-// The shower's light (owner, 2026-10-29): ONE PointLight for all of it, at the grinding wheels'
-// contact patches (not the sparks' centroid — sparks hang in the air while the truck drives off,
-// so that trails metres behind), intensity following the live spark count — so it flickers with the random bursts. No shadows.
-// On by day too (owner: too dim to see there). Hidden when there are no sparks, which drops it out of
-// every material's light loop. Its light-count shader variants are compiled with the lamps' (vehicle-model.js LAMP_STATES).
-const SPARK_LIGHT_CD    = 6       // cd at SPARK_LIGHT_REF live sparks (campfire is 24)
-const SPARK_LIGHT_REF   = 15      // live sparks ≈ one wheel's shower at 50 mph
-const SPARK_LIGHT_MAX   = 1.6     // × SPARK_LIGHT_CD — two wheels grinding is brighter, not double
-const SPARK_LIGHT_REACH = 5       // m — washes the road and the lower body, gone before the cab
-const SPARK_LIGHT_UP    = 0.15    // m above the road
 const SPARK_GLOW = 2.8                 // colour gain above 1: an emitter, so it must survive ACES tone
                                        // mapping as hot orange-white instead of flattening to beige
 const KIND_CLOD = 0
@@ -194,11 +184,6 @@ export class DirtSpraySystem {
     this._aPos = aPos; this._aParam = aParam; this._aColor = aColor; this._aShape = aShape; this._aVel = aVel
     this._attrs = [aPos, aParam, aColor, aShape, aVel]   // upload set, built once (no per-frame array)
 
-    this._light = new THREE.PointLight(0xff7a20, 0, SPARK_LIGHT_REACH, 2)
-    this._light.castShadow = false
-    this._light.visible = false
-    scene.add(this._light)
-
     this._p = []
     for (let i = 0; i < POOL_SIZE; i++) {
       this._p.push({
@@ -219,16 +204,12 @@ export class DirtSpraySystem {
     this._cursor = 0
     this._emitAccum = [0, 0, 0, 0]
     this._sparkWait = [0, 0, 0, 0]    // per wheel, both lips: seconds until the next spark
-    this._sparkSrc = [0, 0, 0, 0]     // Σx, Σy, Σz, count of the wheels grinding this frame (the light)
     this._sprayColor = new THREE.Color()
     this._tmpColor = new THREE.Color()
   }
 
   /** Show/hide the spray sheet (testing-lab teardown parity with dust/smoke — visibility only). */
-  setVisible (visible) { this._mesh.visible = visible; if (!visible) this._light.visible = false }
-
-  /** The spark light, for the lamp-state prewarm (vehicle-model.js LAMP_STATES). */
-  get light () { return this._light }
+  setVisible (visible) { this._mesh.visible = visible }
 
   _alloc () {
     for (let n = 0; n < POOL_SIZE; n++) {
@@ -349,7 +330,7 @@ export class DirtSpraySystem {
   _pack () {
     const pos = this._aPos.array, par = this._aParam.array, col = this._aColor.array
     const shp = this._aShape.array, vel = this._aVel.array
-    let n = 0, sparks = 0
+    let n = 0
     for (let i = 0; i < POOL_SIZE; i++) {
       const part = this._p[i]
       if (!part.active) continue
@@ -365,7 +346,6 @@ export class DirtSpraySystem {
         const f = Math.min(1, (1 - t) / 0.6)
         par[j3 + 2] = part.peak * f * f
         shp[n] = 2
-        sparks++
         vel[j3] = part.vx * SPARK_TRAIL; vel[j3 + 1] = part.vy * SPARK_TRAIL; vel[j3 + 2] = part.vz * SPARK_TRAIL
         part.r = SPARK_GLOW * (SPARK_HOT[0] + (SPARK_COOL[0] - SPARK_HOT[0]) * tc)
         part.g = SPARK_GLOW * (SPARK_HOT[1] + (SPARK_COOL[1] - SPARK_HOT[1]) * tc)
@@ -388,15 +368,6 @@ export class DirtSpraySystem {
       n++
     }
     this._mesh.geometry.instanceCount = n
-    const L = this._light
-    const src = this._sparkSrc
-    // Only while a wheel is grinding: the last sparks of a shower are left hanging behind the truck,
-    // and a light parked back there reads as a lamp on the road.
-    L.visible = sparks > 0 && src[3] > 0 && this._mesh.visible
-    if (L.visible) {
-      L.position.set(src[0] / src[3], src[1] / src[3] + SPARK_LIGHT_UP, src[2] / src[3])   // between the grinding wheels
-      L.intensity = SPARK_LIGHT_CD * Math.min(SPARK_LIGHT_MAX, sparks / SPARK_LIGHT_REF)
-    }
     // Hidden (testing lab) → no upload: three clears updateRanges only when it uploads, and it never
     // uploads an invisible mesh, so the ranges would pile up until the lab exits. The first visible
     // frame re-packs every live particle from scratch anyway.
@@ -478,8 +449,6 @@ export class DirtSpraySystem {
     if (sparkU > 1) sparkU = 1
     const rims = sparkU > 0 ? vehicleState.rimOnRoad : null
     const vel = vehicleState.velocity
-    const src = this._sparkSrc
-    src[0] = src[1] = src[2] = src[3] = 0
 
     const px = vehicleState.position.x
     const py = vehicleState.position.y
@@ -522,7 +491,6 @@ export class DirtSpraySystem {
         // Poisson, not a metronome: each gap is drawn from the exponential distribution (mean
         // 1/rate), so sparks clump and gap at random instead of coming off evenly spaced.
         const lip = SPARK_LIP * (params.wheelWidth || 0.25)
-        src[0] += wx; src[1] += groundY; src[2] += wz; src[3]++
         this._sparkWait[i] -= dt
         let budget = EMIT_BUDGET
         while (this._sparkWait[i] <= 0 && budget-- > 0) {
