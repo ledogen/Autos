@@ -52,7 +52,9 @@ open rear doors), footprint 2.34 × 5.70 m, `yawOffset` +π/2.
   plus 1 on the wheel hump.
 - **Audit:** seated at y 0, no z-fighting, nothing floating; 2 of 43,733 winding rays graze through 7 mm
   slits, and neither hit is a flipped face.
-- **Placing it** is FEAT-46 / FEAT-74's job, not this ticket's.
+- **Placed (owner, 2026-10-29):** parked outside Larry's house on his own 14 × 8 pad: the roster slot's
+  `parked` (src/poi.js), its boxes merged into his collision, the mesh a child of his trailer. Gated in
+  `test/poi-yard.mjs`. The opening can frame it from there later.
 
 ## Spec
 

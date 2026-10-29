@@ -3088,6 +3088,14 @@ function _rebuildPoiMarkers () {
       // modelYaw = the pad's road-facing yaw plus the asset's own yawOffset (a Winnebago parks
       // broadside, a trailer stands square) — see the yawOffset note in data/prop-models.js.
       m.rotation.y = q.modelYaw ?? q.yaw
+      // ASSET-32: Larry's van — a CHILD of the model, in its frame, so it stands, hides and is found
+      // with it (the opening can frame it later). Its boxes are already on q.collision (poi.js).
+      for (const v of q.parked ?? []) {
+        const c = spawnModel(v.key, { castShadow: true, receiveShadow: true })
+        c.position.set(v.x, 0, v.z)
+        c.rotation.y = v.yaw
+        m.add(c)
+      }
       _poiGroup.add(m)
       _poiMeshes.set(q.id, m)
     } else {

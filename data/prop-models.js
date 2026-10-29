@@ -602,6 +602,8 @@ export const PROP_MODELS = {
     },
     // Parallel to the road (owner, 2026-10-29), so a lettered flank and the open back both show.
     // Both flanks are lettered, so the sign is free; +PI/2 matches brokenCar (+X flank roadward).
+    // Only for the van standing as a POI on its own pad. Parked outside Larry's (src/poi.js
+    // larrysHouse `parked`) it takes the slot's own quarter turn in his trailer's frame instead.
     yawOffset: Math.PI * 0.5,
   },
 
