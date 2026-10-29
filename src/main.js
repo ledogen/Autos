@@ -1498,6 +1498,19 @@ document.getElementById('mm-freeroam')?.addEventListener('click', () => _openSet
 // Story mode opens on new game. A saved run is resumed from its own button (#mm-continue, FEAT-42);
 // starting a new game over it discards it, and the setup page says so.
 document.getElementById('mm-story')?.addEventListener('click', () => _openSetup('story'))
+/** The main menu's continue button stands only while a run is saved. Wired here, ahead of the boot
+ *  awaits (the free-roam seat is ~2.5 s of cold routing), like the buttons above: it shows with the
+ *  menu, and an early click waits in _startStory's `await _worldReady`. */
+function _syncContinue () {
+  const b = document.getElementById('mm-continue')
+  if (b) b.style.display = hasRun() ? '' : 'none'
+}
+_syncContinue()
+document.getElementById('mm-continue')?.addEventListener('click', () => {
+  const s = loadRun()
+  _syncContinue()
+  if (s) void _startStory(s.seed, s.world, s.gearbox, s)   // null: corrupt or another version — the run is gone
+})
 document.getElementById('su-start')?.addEventListener('click', () => { void _startFromSetup() })
 document.getElementById('su-back')?.addEventListener('click', () => document.getElementById('main-menu')?.classList.remove('setup'))
 document.getElementById('su-seed')?.addEventListener('input', (e) => {
@@ -7792,17 +7805,6 @@ document.getElementById('pm-save')?.addEventListener('click', () => {
     return
   }
   _backToMenu()
-})
-/** The main menu's continue button stands only while a run is saved. */
-function _syncContinue () {
-  const b = document.getElementById('mm-continue')
-  if (b) b.style.display = hasRun() ? '' : 'none'
-}
-_syncContinue()
-document.getElementById('mm-continue')?.addEventListener('click', () => {
-  const s = loadRun()
-  _syncContinue()
-  if (s) void _startStory(s.seed, s.world, s.gearbox, s)   // null: corrupt or another version — the run is gone
 })
 // Story mode is opt-in from this menu ONLY — a first-time visitor lands in free roam and is
 // never thrust into an unfinished mode. Switching the game mode also disables free-roam-only
