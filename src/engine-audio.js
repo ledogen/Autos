@@ -12,7 +12,7 @@
  * that opens with revs + throttle, and keep the master gain modest so it never turns into a harsh buzz.
  *
  * The AudioContext can only start after a user gesture (browser autoplay policy), so ensureEngineAudio()
- * is called from main.js's keydown handler; updateEngineAudio(rpm, throttle) is called each render frame.
+ * is called from main.js on any keydown / pointerdown / pad input; updateEngineAudio(rpm, throttle) is called each render frame.
  */
 
 let ctx = null
@@ -22,7 +22,7 @@ let oscs = []            // { osc, gain, mult, detune }
 let started = false
 let enabled = true
 let volume = 0.5         // 0..1 user volume (scales the modest internal gains)
-let pageActive = true    // false while the tab is blurred/hidden — see setAudioPageActive()
+let pageActive = true    // false while the tab is hidden — see setAudioPageActive()
 
 const RPM_MIN = 500      // idle-ish floor for frequency mapping
 const F_MIN = 22         // Hz — don't let the fundamental sink into sub-audible mud
@@ -159,14 +159,14 @@ export function setEngineAudioVolume (v) {
 }
 
 /**
- * Page-level mute for a backgrounded tab. Suspends/resumes the ONE shared AudioContext, so this
- * silences engine + tire + wind together (they all hang their master gain off this ctx) and also
- * parks the audio thread — strictly better than ramping gains to zero, which leaves the graph
- * running. Called from main.js on blur/focus/visibilitychange.
+ * Hidden-tab mute. Suspends/resumes the ONE shared AudioContext, so this silences engine + tire +
+ * wind together (they all hang their master gain off this ctx) and also parks the audio thread.
+ * Called from main.js on visibilitychange. Menus are NOT muted here — the frame loop feeds them no
+ * sources (main.js `heard`), so a menu can still play sounds of its own.
  *
- * Why suspend and not "let the gains settle": rAF is throttled to ~1 Hz in a background tab, so
- * update*Audio() effectively stops being called and every gain FREEZES at its last value. A tab
- * backgrounded mid-throttle would otherwise drone at that RPM indefinitely.
+ * Why suspend and not "let the gains settle": rAF stops in a hidden tab, so update*Audio() stops
+ * being called and every gain FREEZES at its last value. A tab hidden mid-throttle would otherwise
+ * drone at that RPM indefinitely.
  *
  * `pageActive` also gates the opportunistic ctx.resume() in getAudioContext()/ensureEngineAudio(),
  * so a stray call while inactive can't un-mute the page behind this function's back.

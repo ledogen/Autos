@@ -136,6 +136,9 @@ export class GaugeCluster {
     this._odoMiles = miles !== undefined ? miles : 80000 + Math.floor(Math.random() * 80000)
   }
 
+  /** The odometer reading, in miles (FEAT-42: the run save carries it). */
+  get odoMiles () { return this._odoMiles }
+
   /** 0 = E, 1 = F. Fed every frame from the tank (FEAT-50). */
   setFuelLevel (frac) { this._fuelFrac = Math.max(0, Math.min(1, frac)) }
 
