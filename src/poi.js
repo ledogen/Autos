@@ -282,10 +282,10 @@ export const POI_ROSTER = [
  * FEAT-103: the expedition camp — the run's goal, on the circle's edge at the end of a road. NOT a
  * roster slot: the pool skips every edge with a node past the wall, and the camp's road is exactly
  * such an edge, cut there. _siteCamp picks its pad; _assignRoster then dresses it like a slot.
- * Placeholder cube until ASSET-71 ships. It posts nothing (no SOURCES row) and no ordinary job ends
- * there (NOT_A_DESTINATION): the requisition is its only business.
+ * The ASSET-71 camp model. It posts nothing (no SOURCES row) and no ordinary job ends there
+ * (NOT_A_DESTINATION): the requisition is its only business.
  */
-export const CAMP_SLOT = { type: 'expeditionCamp', count: 1, model: null, siting: 'camp', jobs: true }
+export const CAMP_SLOT = { type: 'expeditionCamp', count: 1, model: 'expeditionCamp', siting: 'camp', jobs: true }
 
 /**
  * FEAT-88: POI `q`'s drop zone in world space — its centre and the yaw of the marker frame it is
@@ -463,14 +463,18 @@ const slotPadKind = slot => (slot.model && PROP_MODELS[slot.model]?.pad) || 'std
  */
 const padsClash = (a, b, spacing) => a.edge === b.edge && Math.abs(a.s - b.s) < spacing
 
-/** Region population (23 in R1), derived from the roster so the two can never drift apart. */
-/** FEAT-103: the camp's barrier as a box in its body's frame (model origin, modelYaw) — see _barrier. */
-function _barrierBox (q) {
-    const b = q.barrier, wx = b.x - q.modelX, wz = b.z - q.modelZ
+/**
+ * FEAT-103: one barricade as a box in the camp body's frame (model origin, modelYaw). It stands a
+ * quarter-turn to the camp (_barriers), so its 3 m width runs along the camp's Z.
+ */
+function _barrierBox (q, b) {
+    const [w, h, d] = PROP_MODELS.roadBarrier.collision.size
+    const wx = b.x - q.modelX, wz = b.z - q.modelZ
     const cs = Math.cos(q.modelYaw), sn = Math.sin(q.modelYaw)
-    return { c: [cs * wx - sn * wz, b.y - q.baseY + b.s[1] / 2, sn * wx + cs * wz], s: b.s }
+    return { c: [cs * wx - sn * wz, b.y - q.baseY + h / 2, sn * wx + cs * wz], s: [d, h, w] }
 }
 
+/** Region population (23 in R1), derived from the roster so the two can never drift apart. */
 export const POI_COUNT = POI_ROSTER.reduce((n, s) => n + s.count, 0)
 
 // Footprint sampling for the earthwork test: a 3 × 5 lattice over the pad, plus the centre.
@@ -977,9 +981,9 @@ export class PoiSystem {
                 // base-seated at q.y floated 15 cm over its own pad. The camp seat (main.js) already
                 // corrects for the same gap. q.y stays the pad's record: the carve keys off it.
                 q.baseY = q.y - (P.roadClearanceMargin ?? 0.25)
-                // FEAT-103: the camp's barrier is one more box on its body, so the wheels (queryContact)
-                // and the chassis (PoiPhysics) hit exactly the slab main.js draws (MESH == PHYSICS).
-                if (q.barrier) q.collision = { boxes: [...(q.collision?.boxes ?? [{ c: null, s: q.collision?.size ?? [P.poiCubeSize, P.poiCubeSize, P.poiCubeSize] }]), _barrierBox(q)] }
+                // FEAT-103: each barricade is one more box on the camp's body, so the wheels (queryContact)
+                // and the chassis (PoiPhysics) hit exactly the barricades main.js draws (MESH == PHYSICS).
+                if (q.barriers) q.collision = { ...q.collision, boxes: [...q.collision.boxes, ...q.barriers.map(b => _barrierBox(q, b))] }
                 // BUG-43: which colour from the model's curated palette. A slot may pin it (the
                 // two story houses must never match); otherwise a raw hash off the pad id, which
                 // spawnModel takes modulo the palette length. Ignored by a model with no palette.
@@ -1271,7 +1275,7 @@ export class PoiSystem {
      * Deterministic in (seed, network, centre). The far node is past the wall, so the planner enters
      * the camp's edge through its inner node only (mission.js `_roll`), and nothing the game sends a
      * player to can sit past it: the pool, the customers and the planners' graph already drop the edge.
-     * Returns a pad record (the _padsOnEdge shape) plus its `barrier`, or null when no road qualifies.
+     * Returns a pad record (the _padsOnEdge shape) plus its `barriers`, or null when no road qualifies.
      */
     _siteCamp (road, g, canon, center, wall, nodes, P) {
         const r = (p) => Math.hypot(p.x - center.x, p.z - center.z)
@@ -1342,26 +1346,33 @@ export class PoiSystem {
                 }
                 if (!best) continue
                 return { id: `camp:${c.ek}`, index: -1, aId: c.e.a, bId: c.e.b, edge: c.ek, padKind: 'std', s,
-                         runKey: c.ed.key, ...best, roadM: c.d - c.cut + t, barrier: this._barrier(road, c.ed, s + c.dir * (P.poiPadHalfLen + P.poiCampBarrierGap), P) }
+                         runKey: c.ed.key, ...best, roadM: c.d - c.cut + t, barriers: this._barriers(road, c.ed, s + c.dir * (P.poiPadHalfLen + P.poiCampBarrierGap), best, P) }
             }
         }
         return null
     }
 
     /**
-     * The slab across the deck at arc `s` that ends the camp's road (owner, 2026-10-26: blocked, not
-     * hidden). Full road + shoulders wide, 1 m above the deck's highest point, sunk 0.3 m under its
-     * lowest so a cross-slope never leaves a gap under it. World centre XZ, base y, and size in the
-     * camp model's axes (+X along the road, Z across) — _barrierBox turns that into a body box.
+     * The row of Type III barricades (ASSET-71 roadBarrier) across the deck at arc `s` that ends the
+     * camp's road (owner, 2026-10-26: blocked, not hidden). As many 3 m barricades as road + shoulders
+     * need, side by side along the camp `pad`'s own Z (across the road): each is a quarter-turn in
+     * the camp's frame, so its box is an axis-aligned body box (_barrierBox). The striped -Z face
+     * looks back at the camp, the way the player arrives. Each stands on the lowest deck under its
+     * width, so a cross-slope sinks it rather than floating it. World base pose per barricade.
      */
-    _barrier (road, ed, s, P) {
-        const cp = ed.centerline.pointAt(s), ct = ed.centerline.tangentAt(s)
-        const tl = Math.hypot(ct.x, ct.z) || 1
-        const half = (P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5)
-        const ys = [-1, 0, 1].map(k => road.sampleRoadTopY(cp.x - ct.z / tl * half * k, cp.z + ct.x / tl * half * k))
-            .filter(y => y != null && isFinite(y))
-        const lo = Math.min(...ys), hi = Math.max(...ys)
-        return { x: cp.x, z: cp.z, y: lo - 0.3, s: [0.6, hi - lo + 1.3, 2 * half + 1] }
+    _barriers (road, ed, s, pad, P) {
+        const [w] = PROP_MODELS.roadBarrier.collision.size
+        const n = Math.ceil(2 * ((P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5)) / w)
+        const cp = ed.centerline.pointAt(s)
+        const ax = Math.sin(pad.yaw), az = Math.cos(pad.yaw)      // the camp's +Z in world: across the road
+        // yaw - π/2 turns a barricade's -Z face to the camp's +X, (cos yaw, -sin yaw); else the other way.
+        const toCamp = (pad.x - cp.x) * Math.cos(pad.yaw) - (pad.z - cp.z) * Math.sin(pad.yaw)
+        const yaw = pad.yaw + (toCamp > 0 ? -1 : 1) * Math.PI / 2
+        return Array.from({ length: n }, (_, k) => {
+            const o = (k - (n - 1) / 2) * w, x = cp.x + ax * o, z = cp.z + az * o
+            const ys = [-w / 2, 0, w / 2].map(e => road.sampleRoadTopY(x + ax * e, z + az * e)).filter(y => y != null && isFinite(y))
+            return { x, y: Math.min(...ys), z, yaw }
+        })
     }
 
     // ── placement ───────────────────────────────────────────────────────────────────────────

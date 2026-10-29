@@ -3019,9 +3019,6 @@ const _ringMat = (color, opacity = 0.28) => new THREE.MeshBasicMaterial({
 const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered a job
 const _pumpZoneMat = _ringMat(0x4fc8ff)    // FEAT-50: blue — pull alongside and park to use the pump
 const _pumpZoneMarks = []                  // the pump zones' curtains (two per island), rebuilt with the markers
-// FEAT-103: the slab across the expedition camp's road — a unit box scaled per camp. PLACEHOLDER art.
-const _barrierGeo = new THREE.BoxGeometry(1, 1, 1)
-const _barrierMat = new THREE.MeshStandardMaterial({ color: 0xc8c3b8, roughness: 0.9, flatShading: true })
 // ASSET-74: the same curtain round a PARK box instead of a circle — the ring with four sides. A unit
 // square (side 1, open top and bottom): 4 radial segments started at 45°, at radius √½. Shares the
 // ring's material and alpha ramp, so it reads as the same signal in a different shape.
@@ -3100,13 +3097,12 @@ function _rebuildPoiMarkers () {
       _poiGroup.add(cube)
       _poiMeshes.set(q.id, cube)
     }
-    // FEAT-103: the camp's barrier — the same box its body carries (poi.js _barrierBox), so MESH == PHYSICS.
-    if (q.barrier) {
-      const b = q.barrier, m = new THREE.Mesh(_barrierGeo, _barrierMat)
-      m.scale.set(...b.s)
-      m.position.set(b.x, b.y + b.s[1] / 2, b.z)
-      m.rotation.y = q.modelYaw
-      m.castShadow = true; m.receiveShadow = true
+    // FEAT-103: the barricades across the camp's road — each the same box its body carries
+    // (poi.js _barrierBox), so MESH == PHYSICS. Base-seated, like the POI models.
+    for (const b of q.barriers ?? []) {
+      const m = spawnModel('roadBarrier', { castShadow: true, receiveShadow: true })
+      m.position.set(b.x, b.y, b.z)
+      m.rotation.y = b.yaw
       _poiGroup.add(m)
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved

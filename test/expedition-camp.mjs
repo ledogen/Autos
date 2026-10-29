@@ -5,8 +5,9 @@
 //
 //   1. THE CAMP — one `expeditionCamp`, off its own edge (never the pool), on a road that crosses the
 //      planners' wall: exactly one node of its edge is on the planners' graph, the pad inside the wall.
-//   2. THE BARRIER — its slab is one more box on the camp's body, and that box lands exactly where
-//      main.js draws the slab (MESH == PHYSICS).
+//   2. THE BARRIER — a row of ASSET-71 barricades across the deck and both shoulders, striped face to
+//      the camp, none floating; each is one more box on the camp's body, landing exactly where main.js
+//      draws it (MESH == PHYSICS).
 //   3. NOTHING ELSE MOVES — the same build with the camp siting switched off gives the same roster and
 //      the same customers, and every ordinary offer plans the same route with the lines open or closed.
 //      No ordinary offer ends at the camp (NOT_A_DESTINATION).
@@ -24,6 +25,7 @@ import { WaterSystem } from '../src/water.js'
 import { PoiSystem } from '../src/poi.js'
 import { OfferBoard } from '../src/offer-board.js'
 import { REQUISITION } from '../data/offers.js'
+import { PROP_MODELS } from '../data/prop-models.js'
 import { validateArea, discArea } from '../src/world-validate.js'
 import { MissionSystem, buildGraphAdj, REGION_MARGIN } from '../src/mission.js'
 import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
@@ -75,16 +77,43 @@ for (const s of SEEDS) {
     check('its edge has exactly ONE node on the planners\' graph — the road is cut at the wall', inA !== inB)
     check('its pad is inside the wall', r(camp) + camp.halfLen <= wall, `${r(camp).toFixed(0)} m`)
 
-    // 2. The barrier box, rotated back out of the body frame, is the slab main.js draws.
-    const box = camp.collision?.boxes?.at(-1), b = camp.barrier
+    // 2. Each barricade's box, rotated back out of the body frame, is where main.js draws it: the same
+    //    centre, and the registry box quarter-turned into the camp's axes.
+    const bars = camp.barriers ?? [], [bw, bh, bd] = PROP_MODELS.roadBarrier.collision.size
+    const boxes = camp.collision.boxes.slice(-bars.length)
     const cs = Math.cos(camp.modelYaw), sn = Math.sin(camp.modelYaw)
-    const wx = camp.modelX + cs * box.c[0] + sn * box.c[2], wz = camp.modelZ - sn * box.c[0] + cs * box.c[2]
-    check('the barrier is a body box exactly where the slab is drawn (MESH == PHYSICS)',
-        !!b && Math.hypot(wx - b.x, wz - b.z) < 1e-6 && Math.abs(camp.baseY + box.c[1] - (b.y + b.s[1] / 2)) < 1e-6
-            && box.s.every((v, i) => v === b.s[i]))
-    const top = road.sampleRoadTopY(b.x, b.z)
-    check('the slab spans the deck (road + shoulders) and stands ≥ 1 m above it', b.s[2] >= 2 * ((P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5))
-        && top != null && b.y < top && b.y + b.s[1] >= top + 1, `deck ${top?.toFixed(2)}, base ${b.y.toFixed(2)}, h ${b.s[1].toFixed(2)}`)
+    check(`each of the ${bars.length} barricades is a body box exactly where it is drawn (MESH == PHYSICS)`,
+        bars.length > 0 && camp.collision.boxes.length === PROP_MODELS.expeditionCamp.collision.boxes.length + bars.length
+            && bars.every((b, i) => {
+                const box = boxes[i]
+                const wx = camp.modelX + cs * box.c[0] + sn * box.c[2], wz = camp.modelZ - sn * box.c[0] + cs * box.c[2]
+                return Math.hypot(wx - b.x, wz - b.z) < 1e-6 && Math.abs(camp.baseY + box.c[1] - (b.y + bh / 2)) < 1e-6
+                    && Math.abs(Math.abs(Math.sin(b.yaw - camp.modelYaw)) - 1) < 1e-9 && box.s.join() === [bd, bh, bw].join()
+            }))
+    // The row: abutting along the camp's Z (across the road), wide enough for road + shoulders, every
+    // barricade over the deck (so the row is centred on it), every striped -Z face toward the camp.
+    const ax = Math.sin(camp.yaw), az = Math.cos(camp.yaw)
+    const gaps = bars.slice(1).map((b, i) => Math.hypot(b.x - bars[i].x, b.z - bars[i].z))
+    check('the row spans road and both shoulders, abutting', bars.length * bw >= 2 * ((P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5))
+        && gaps.every((g, i) => Math.abs(g - bw) < 1e-6 && Math.abs((bars[i + 1].x - bars[i].x) * ax + (bars[i + 1].z - bars[i].z) * az) > bw - 1e-6),
+        gaps.map((g) => g.toFixed(2)).join())
+    check('every striped face looks back at the camp',
+        bars.every((b) => -Math.sin(b.yaw) * (camp.x - b.x) - Math.cos(b.yaw) * (camp.z - b.z) > 0))
+    // Nothing floats: across each barricade's width and depth the deck is never more than 8 cm under
+    // its base (a 10 % grade over half its depth), nor buried past 35 cm.
+    let worst = { float: -Infinity, sunk: -Infinity }, offDeck = 0
+    for (const b of bars) {
+        if (road.sampleRoadTopY(b.x, b.z) == null) offDeck++
+        const fx = Math.sin(b.yaw + Math.PI / 2), fz = Math.cos(b.yaw + Math.PI / 2)   // along the road
+        for (let e = -bw / 2; e <= bw / 2 + 1e-9; e += bw / 6) for (const f of [-bd / 2, 0, bd / 2]) {
+            const y = road.sampleRoadTopY(b.x + ax * e + fx * f, b.z + az * e + fz * f)
+            if (y == null) continue
+            worst.float = Math.max(worst.float, b.y - y); worst.sunk = Math.max(worst.sunk, y - b.y)
+        }
+    }
+    check('every barricade stands over the deck, none floating, none buried',
+        !offDeck && worst.float <= 0.08 && worst.sunk <= 0.35,
+        `${offDeck} off the deck, float ${worst.float.toFixed(3)} m, sunk ${worst.sunk.toFixed(3)} m`)
 
     // 3.
     const bare = build(true)
@@ -94,7 +123,7 @@ for (const s of SEEDS) {
 
     // 4.
     const again = build().list().find((q) => q.type === 'expeditionCamp')
-    const sig = (q) => q && JSON.stringify([q.id, q.x, q.z, q.s, q.barrier])
+    const sig = (q) => q && JSON.stringify([q.id, q.x, q.z, q.s, q.barriers])
     check('the same camp and barrier on every build of the seed', sig(again) === sig(camp))
 
     // 5.
