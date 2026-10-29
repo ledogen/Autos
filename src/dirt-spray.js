@@ -103,7 +103,7 @@ const SPARK_COOL = [1.0, 0.25, 0.02]   // ...deep orange as it dies
 // contact patches (not the sparks' centroid — sparks hang in the air while the truck drives off,
 // so that trails metres behind), intensity following the live spark count — so it flickers with the random bursts. No shadows.
 // On by day too (owner: too dim to see there). Hidden when there are no sparks, which drops it out of
-// every material's light loop. Its light-count shader variants are compiled at boot (prewarm below).
+// every material's light loop. Its light-count shader variants are compiled with the lamps' (vehicle-model.js LAMP_STATES).
 const SPARK_LIGHT_CD    = 6       // cd at SPARK_LIGHT_REF live sparks (campfire is 24)
 const SPARK_LIGHT_REF   = 15      // live sparks ≈ one wheel's shower at 50 mph
 const SPARK_LIGHT_MAX   = 1.6     // × SPARK_LIGHT_CD — two wheels grinding is brighter, not double
@@ -227,16 +227,8 @@ export class DirtSpraySystem {
   /** Show/hide the spray sheet (testing-lab teardown parity with dust/smoke — visibility only). */
   setVisible (visible) { this._mesh.visible = visible; if (!visible) this._light.visible = false }
 
-  /**
-   * Compile the spark-light shader variants at boot, the campfire's way: with the light visible, run
-   * the lamps' own prewarm so every lamp state × one point light is compiled. Then hide it again.
-   * @param {() => Promise} prewarmLamps  vehicle-model's prewarmLightPrograms, bound to the renderer
-   */
-  async prewarm (prewarmLamps) {
-    this._light.visible = true
-    try { await prewarmLamps() } catch (_) { /* best-effort */ }
-    this._light.visible = false
-  }
+  /** The spark light, for the lamp-state prewarm (vehicle-model.js LAMP_STATES). */
+  get light () { return this._light }
 
   _alloc () {
     for (let n = 0; n < POOL_SIZE; n++) {
