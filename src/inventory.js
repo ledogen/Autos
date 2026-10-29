@@ -63,6 +63,14 @@ export class InventorySystem {
         this._changed()
     }
 
+    /** FEAT-42: put a saved runInventory back (the run save) and push its mass onto the chassis. */
+    restore (s) {
+        runInventory.entries = s.entries
+        runInventory.pending = s.pending
+        runInventory.quick.splice(0, QUICK_SLOTS, ...s.quick)
+        this._changed()
+    }
+
     slotCap () { return this._slotCap() }
     slotsUsed () { return runInventory.entries.length }
     stowedKg () {

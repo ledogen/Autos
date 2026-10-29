@@ -98,7 +98,8 @@ regions, growing with depth**, 2026-08-01/08-02*), 4–6 hours to beat (*now **6
 24-minute days (~10–15 days per run — *corrected to 7–8 on 2026-08-01, then to **20** on 2026-08-02
 once the clock-pause rule fixed what a day actually costs; see "Run shape and saving"*), and
 **suspend-and-resume saving** (one slot, written on quit,
-*deleted on load*, deleted on death). Downstream: Open Q3 is **resolved** (region unlock is
+*deleted on load*, deleted on death — *amended 2026-10-29 to a **rolling autosave**: one slot, always
+"now", deleted on death; see "Run shape and saving"*). Downstream: Open Q3 is **resolved** (region unlock is
 run-layer); SM-INV-11 is re-keyed to run progress; SM-INV-2's run-duration par clause is flagged for
 retirement (see the note there — recommended, not yet ratified).
 
@@ -1630,10 +1631,16 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
   > (100/100/normal, code `K`); **Casual** is 80/80/gentle (code `C`); anything else prints as
   > `T<t>P<p>R<wGrade>`. The hard grade cap and cTurn never move. The ratified run-start knobs (lives,
   > tows, assists, inflation) are untouched by this.
-- **Saving is suspend-and-resume, not checkpointing.** One slot per profile; written on quit;
-  **loading a save deletes it**; death deletes it. Resuming is not restoring — it's picking the run
-  back up. Standard roguelike practice (Spelunky, FTL, Slay the Spire), and SM-INV-1 is intact:
-  death is still permanent, the save is a pause that survives closing the browser.
+- **Saving is a rolling autosave, not checkpointing** [owner, 2026-10-29, amending 2026-07-29's
+  "written on quit, deleted on load"]. One slot per profile, **overwritten about once a second** while
+  the run is live and again the instant the tab is hidden or closed, so a closed tab, a browser crash,
+  a lid close or a power cut costs about a second, never the run. **The save is never older than
+  "now"**, so there is no earlier state to scum back to — the truck's motion is in it, so killing the
+  tab a beat before a crash resumes a beat before it at the same speed, paused. That (not deleting on
+  load) is what keeps SM-INV-1 intact: death is still permanent, and **death deletes the save**. A new
+  game over it deletes it too. Pause-menu "save & exit" is just the clean way out.
+  *Why the change:* "i dont want a player to lose a run from finicky browser behavior or ideally even
+  a system crash" — a quit-only save loses the run to every exit the player did not choose.
 - **The save is cheap because worldgen is meta-free** (SM-INV-12) — the world never needs
   serializing. A save is seed + `runState` + truck condition + inventory + position + time of day +
   sleepiness + currency + active missions + cleared logs. Kilobytes. The worldgen decoupling paid
