@@ -22,6 +22,19 @@ of papers visible inside. `.planning/story-mode/opening.md` describes the uncle 
 van"* — this is that van. It is the first place in the game that gives the player a reason to drive,
 and — since the day job is gone by the end of the opening beat — the early game's **only** constant.
 
+## Owner rulings (2026-10-29) — supersede the spec below where they differ
+
+- **The vehicle is a 1984 Chevrolet G20 panel van**, modelled from a reference board of the Bring a Trailer
+  listing https://bringatrailer.com/listing/1984-chevrolet-g20-van/ (owner's pick). Dimensions come from
+  the reference, not the table below. A first version modelled from memory was rejected: vehicles need
+  the board.
+- **Lettering:** "LARRY'S DELIVERY" + "PAPERS • PARCELS • 555-0142", as ONE generated lettering texture
+  (ART-STYLE's lettering exception). Everything else is flat colour, which supersedes the 1024 px
+  grime/faded-paint albedo below (wear is ART-STYLE's named anti-pattern).
+- **Placement: parallel to the road**, so the lettered side and the open back both show. That's the
+  registry `yawOffset`; the model keeps nose −Z.
+- Work in progress: `wip/uncle-van/` (handoff there).
+
 ## Spec
 
 | Field | Value |
