@@ -1,7 +1,8 @@
 ---
 id: FEAT-94
 type: feature
-status: open
+status: done
+closed: 2026-10-26
 severity: minor
 opened: 2026-09-30
 source: owner, 2026-09-30 — "driving on a flat tire should moderately annihilate spring, damper and side
@@ -73,3 +74,30 @@ The sudden damage is only fair if the player **knows** the tire is flat the mome
 - ~~What "side durability" means~~ — ruled: rim, plus a little side armor.
 - ~~How far on a flat~~ — ruled: 4 km, 100% → 0.
 - The SM-INV-5 reconciliation above: speed-superlinear anchored at ~50 km/h, or plain per-km.
+
+## Resolution (2026-10-26, feature/machine)
+
+**Owner re-ruled the damage (2026-10-26)**, replacing "What takes the damage" above: driving on a flat
+rides like a very bumpy road, so **springs, dampers and the rim get nothing extra** (the rim already
+takes its strikes through the 5% carcass). What it wrecks is the **side body panel**, and only once
+the tire has come apart: never the instant it pops. Speed law: **v² · dt** (SM-INV-5 holds; per km
+the cost goes as speed, so limping is the third option).
+
+- `src/damage.js` `step()`: while a tire is flat and the truck moves, that **tire's own condition**
+  is the run-down bar (`durFlatTire`: 2 km at 50 km/h shreds a new one). At 0, that side's panel
+  (`armorLeft`/`armorRight`) wears (`durFlatArmor`: 4 more km at 50 km/h, 100% → 0). Both are
+  starting values to tune by feel. A tire driven flat is ruined, which is its own honest cost.
+- `src/cluster.js`: the **tire-pressure lamp** (the standard tire-section-with-"!" symbol) in the
+  speedo face above MPH, amber, lit only with the key on. A state, no number (SM-INV-10). main.js
+  feeds it `damageModel.flat.some(Boolean)` every frame, so every fix path (spare, patch, new tire,
+  setAll) clears it.
+- Gate: `test/damage-filter-puncture.mjs` §5 (tire then panel, right side → right panel, half speed =
+  half per km, parked costs nothing, no other track touched).
+
+Owed: the owner's in-game feel check of both rates. Left alone: a patch still works on a tire worn
+to 0 by running flat; add a "shredded, can't be patched" rule only if that reads wrong in play.
+
+**Follow-up (owner, 2026-10-27):** once the tire is at 0 the RIM is on the road too: it wears at
+`durFlatRim` (1 km at 50 km/h, 100% → 0) alongside the side panel, and grinds. `step()` publishes
+`vehicleState.rimOnRoad[i]`; `src/tire-audio.js` has the grind voice (pitch on road speed, one bite
+per wheel turn). Sparks are FEAT-152.

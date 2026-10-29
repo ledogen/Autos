@@ -56,6 +56,7 @@ export function makeVehicleState (params, ignitionKey = undefined) {
     bumpForce:       [0, 0, 0, 0],                   // N   — peak bump-stop force this step (spring wear)
     rimForceRoad:    [0, 0, 0, 0],                   // N   — rim load from ROAD/terrain: the squashed-carcass load past full compression (a different measurement from rimForce — see suspension.js)
     rimForce:        [0, 0, 0, 0],                   // N   — engine contact FORCE on each WHEEL HARD CORE (QUAL-25). Non-zero only when the rim itself is hit — rim damage
+    rimHazard:       [0, 0, 0, 0],                   // N   — the rimForce share from HAZARD debris only (rocks; FEAT-93) — punctures a tire at any condition
     brakeTorque:     [0, 0, 0, 0],                   // N·m — applied brake torque (brake wear)
     abs:             makeAbs(),                      // anti-lock controller state; stepped by stepPhysics, a.p[] read by getBrakeTorque, a.pulse by vehicle.js (rumble)
     wheelPhase:      [0, 0, 0, 0],                   // per-wheel spin phase [rad], fixed-step; feeds the out-of-round radius (params.wheelRunout)
