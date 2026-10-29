@@ -198,8 +198,17 @@ export const POI_ROSTER = [
     // Larry hands out the paper route (FEAT-61 Phase E2). He posts offers like any other source,
     // but the brake at his place opens the PaperRouteSystem rather than a point-to-point errand —
     // main.js branches on the type, because he is the only POI whose offer is a different mission.
+    //
+    // ASSET-32: his van stands outside (owner, 2026-10-29). `parked` is a vehicle on the pad, in the
+    // MODEL's frame (_withParked). It fits the plain 14 x 8 lay-by, no bigger pad: the trailer is
+    // seated 1.7 m back, which leaves a 3.65 m road-side strip, split by the door path (x 0.25..1.85)
+    // into 7.15 m and 5.05 m. The van, parallel to the road, takes the long strip — nose to the pad's
+    // -X end, open doors toward Larry's door (x -6.01..-0.31 bumper to doors), body 0.98 m off the
+    // trailer wall and 1.03 m off the pad's road edge (z -4.68..-2.73). The short strip keeps the lawn
+    // furniture and is where you park; the 10 m interaction radius covers the whole pad. On the pad,
+    // not the bare ground beside it: the carve's bench is flat, the cut/fill bank past it is not.
     { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 1,
-      tags: ['residence', 'larry'] },
+      tags: ['residence', 'larry'], parked: [{ key: 'uncleVan', x: -3.5, z: -3.7, yaw: Math.PI * 0.5 }] },
 
     // ── Required classes (10) ──────────────────────────────────────────────────────────────────
     // "Never too far from a station" — the reason the pump and auto-shop slots exist and the reason
@@ -426,6 +435,24 @@ export function dressYard (q, seed, yard) {
         }
     }
     return out
+}
+
+/**
+ * ASSET-32: a model's collision plus the vehicles its roster slot parks on the pad (`parked`, each
+ * { key, x, z, yaw } in the model's frame). A collider box carries no yaw of its own, so a parked
+ * vehicle stands at a quarter turn to the model: its boxes then stay axis-aligned, x and z swapped.
+ */
+function _withParked (col, parked) {
+    const boxesOf = c => c.boxes ?? [{ c: [0, c.size[1] * 0.5, 0], s: c.size }]
+    const boxes = [...boxesOf(col)]
+    for (const v of parked) {
+        const cs = Math.round(Math.cos(v.yaw)), sn = Math.round(Math.sin(v.yaw))
+        for (const b of boxesOf(PROP_MODELS[v.key].collision)) {
+            boxes.push({ c: [v.x + cs * b.c[0] + sn * b.c[2], b.c[1], v.z - sn * b.c[0] + cs * b.c[2]],
+                         s: sn ? [b.s[2], b.s[1], b.s[0]] : b.s })
+        }
+    }
+    return { ...col, boxes }
 }
 
 /**
@@ -961,6 +988,10 @@ export class PoiSystem {
                 // through for the first seconds of a region and solid afterwards.
                 const spec = q.modelKey ? PROP_MODELS[q.modelKey] : null
                 q.collision = spec?.collision || null
+                // ASSET-32: a vehicle the slot parks on the pad (Larry's van). Its boxes join the model's,
+                // so the wheels (queryContact), the chassis (PoiPhysics) and the yard solver all see it.
+                q.parked = spec ? slot.parked ?? null : null
+                if (q.parked) q.collision = _withParked(q.collision, q.parked)
                 // The yaw the MODEL stands at, as opposed to q.yaw's "this pad faces the road".
                 // Assets whose length runs down their own -Z (vehicles) are quarter-turned so the
                 // long axis lies along the pad's 14 m rather than across its 8 m — see yawOffset

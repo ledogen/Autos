@@ -1,10 +1,10 @@
 ---
 id: ASSET-32
 type: asset
-status: open
+status: done
+closed: 2026-10-29
 severity: minor
 opened: 2026-08-03
-updated: 2026-08-04
 blocked-by: FEAT-59
 relates: FEAT-46, ASSET-22, ASSET-19
 ---
@@ -21,6 +21,40 @@ A tired panel van with the delivery service's name hand-painted on the side, bac
 of papers visible inside. `.planning/story-mode/opening.md` describes the uncle as *"a guy with a
 van"* — this is that van. It is the first place in the game that gives the player a reason to drive,
 and — since the day job is gone by the end of the opening beat — the early game's **only** constant.
+
+## Owner rulings (2026-10-29) — supersede the spec below where they differ
+
+- **The vehicle is a 1984 Chevrolet G20 panel van**, modelled from a reference board of the Bring a Trailer
+  listing https://bringatrailer.com/listing/1984-chevrolet-g20-van/ (owner's pick). Dimensions come from
+  the reference, not the table below. A first version modelled from memory was rejected: vehicles need
+  the board.
+- **Lettering:** "LARRY'S DELIVERY" + "PAPERS • PARCELS • 555-0142", as ONE generated lettering texture
+  (ART-STYLE's lettering exception). Everything else is flat colour, which supersedes the 1024 px
+  grime/faded-paint albedo below (wear is ART-STYLE's named anti-pattern).
+- **Placement: parallel to the road**, so the lettered side and the open back both show. That's the
+  registry `yawOffset`; the model keeps nose −Z.
+- Work in progress: `wip/uncle-van/` (handoff there).
+
+## Resolution (2026-10-29)
+
+Shipped after the owner's review in Blender ("what you made is perfect"): `assets/models/uncle-van.glb`,
+2200 tris against the 2200 budget, 11 materials, one 1024×128 lettering image (`UncleVanSign` on the
+`VanSign` material), 193 kB. Generator + `.blend` are in `assets/models/src/`; the re-export from there is
+byte-identical to the reviewed file. Registry key `uncleVan`: three solid boxes (body bumper to bumper, both
+open rear doors), footprint 2.34 × 5.70 m, `yawOffset` +π/2.
+
+- **Method.** Every feature on the owner's checklist was compared in cameras solved from the 8 board photos:
+  bundle adjustment on ~150 pixel picks, scaled by the 125" wheelbase, 2–7 px RMS. The model was rendered
+  through each solved camera onto its photo, 11 rounds from the primitive body up. The tools are generic and
+  live in `assets/models/src/uncle-van-ref/`. The photos are third-party and stay out of the repo.
+- **Accepted as built:** cream paint with maroon lettering (not the reference blue); no mud flaps (the
+  reference van has none); roof at 2.00 m (the side photos say 1.97 and 2.06); 5 bundle stacks on the floor
+  plus 1 on the wheel hump.
+- **Audit:** seated at y 0, no z-fighting, nothing floating; 2 of 43,733 winding rays graze through 7 mm
+  slits, and neither hit is a flipped face.
+- **Placed (owner, 2026-10-29):** parked outside Larry's house on his own 14 × 8 pad: the roster slot's
+  `parked` (src/poi.js), its boxes merged into his collision, the mesh a child of his trailer. Gated in
+  `test/poi-yard.mjs`. The opening can frame it from there later.
 
 ## Spec
 

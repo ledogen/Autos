@@ -9,7 +9,8 @@
 // prop wholly on the carved pad (rounded rectangle, padSd) · clear of the POI model's collision
 // boxes · clear of every other prop · on the ROAD side of the model (owner, 2026-10-07: a yard
 // behind the house is never seen) · deterministic in (seed, pad id) · every seated model still on
-// its graded ground, never past the pad toward the road · and padSd's default branch is still the exact stadium the carve always used.
+// its graded ground, never past the pad toward the road · Larry's van (ASSET-32) wholly on the flat pad and clear
+// of his trailer · and padSd's default branch is still the exact stadium the carve always used.
 
 import fs from 'node:fs'
 import { PoiSystem, POI_PARAMS, POI_ROSTER, YARD_POOLS, padKinds, overDropZone, dropZoneWorld } from '../src/poi.js'
@@ -88,7 +89,7 @@ const yardOf = q => PROP_MODELS[q.modelKey]?.yard ?? POI_ROSTER.find(s => s.type
 const SEEDS = 150
 let dressed = 0, props = 0
 const hist = [0, 0, 0, 0, 0, 0, 0]
-const bad = { bareGround: [], count: [], offPad: [], inModel: [], overlap: [], backYard: [], modelOffPad: [], modelRoadSide: [] }
+const bad = { bareGround: [], count: [], offPad: [], inModel: [], overlap: [], backYard: [], modelOffPad: [], modelRoadSide: [], vanOffPad: [], vanInHouse: [] }
 const keysSeen = new Set()
 const modelsSeen = new Set()
 
@@ -120,6 +121,7 @@ function checkYard (seed, q, sats) {
     }
 }
 const solidsOf = q => { const c = P.poiCubeSize; return q.collision?.boxes ?? [{ c: [0, 0, 0], s: q.collision?.size ?? [c, c, c] }] }
+let larryVans = 0
 
 for (let seed = 1; seed <= SEEDS; seed++) {
     for (const q of build(seed)) {
@@ -128,11 +130,23 @@ for (let seed = 1; seed <= SEEDS; seed++) {
         // off the back) — and NEVER past the pad's road-side edge, toward the shoulder.
         modelsSeen.add(q.modelKey)
         const cs = Math.cos(q.modelYaw), sn = Math.sin(q.modelYaw)
-        for (const b of solidsOf(q)) for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        // ASSET-32: a parked vehicle's boxes follow the model's own, and stand on the flat pad itself,
+        // not the rim band — a van tilts where a building's footing does not care.
+        const nModel = q.modelKey ? PROP_MODELS[q.modelKey].collision.boxes?.length ?? 1 : 1
+        for (const [i, b] of solidsOf(q).entries()) for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
             const lx = (b.c?.[0] ?? 0) + sx * b.s[0] * 0.5, lz = (b.c?.[2] ?? 0) + sz * b.s[2] * 0.5
             const dx = q.modelX + lx * cs + lz * sn - q.x, dz = q.modelZ - lx * sn + lz * cs - q.z
             if (padSd(q, dx, dz) > PAD_RIM_HOLD - 0.25) bad.modelOffPad.push(`${q.modelKey}`)
             if (dx * q.nx + dz * q.nz < -q.halfWid - 1e-9) bad.modelRoadSide.push(`${q.modelKey}`)
+            if (i >= nModel && padSd(q, dx, dz) > 1e-9) bad.vanOffPad.push(`${seed}`)
+        }
+        if (q.type === 'larrysHouse') {
+            const [house, ...van] = solidsOf(q)
+            if (van.length === 3) larryVans++   // body + both open doors
+            for (const b of van) {
+                if (Math.abs(b.c[0] - house.c[0]) < (b.s[0] + house.s[0]) / 2 &&
+                    Math.abs(b.c[2] - house.c[2]) < (b.s[2] + house.s[2]) / 2) bad.vanInHouse.push(`${seed}`)
+            }
         }
         const sats = q.satellites
         if (!q.tags.some(t => YARD_POOLS[t]) || !yardOf(q)) {
@@ -155,6 +169,9 @@ check('no two props overlap', bad.overlap.length === 0, list(bad.overlap))
 check('every prop is on the road side of its model', bad.backYard.length === 0, list(bad.backYard))
 check('every POI model stands on graded ground (pad + the carve\'s rim band)', bad.modelOffPad.length === 0, list([...new Set(bad.modelOffPad)]))
 check('…and none reaches past the pad toward the road', bad.modelRoadSide.length === 0, list([...new Set(bad.modelRoadSide)]))
+check("Larry's van (ASSET-32) is parked at every Larry's: its boxes wholly on the flat pad, none in the trailer",
+    larryVans === SEEDS && !bad.vanOffPad.length && !bad.vanInHouse.length,
+    `${larryVans}/${SEEDS} parked; off pad ${list(bad.vanOffPad)}; in trailer ${list(bad.vanInHouse)}`)
 check('the barn is on the board (the farm model)', modelsSeen.has('barn'))
 check('the produce stall is on the board (FEAT-74: its own farm)', modelsSeen.has('produceStall'))
 

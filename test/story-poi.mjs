@@ -834,7 +834,7 @@ function boardRig (ms, nowH = 6) {
 
     // A modelled POI carries its authored contact box and a yaw, both stamped at build time — the
     // physics must never wait on a GLB fetch to decide whether a building is solid.
-    const modelled = list.filter(q => q.modelKey)
+    const modelled = list.filter(q => q.modelKey && !q.parked)   // ASSET-32: Larry's carries his van too, below
     check('modelled POIs exist (the ticket\'s proof: a type that looks like what it is)',
         modelled.length > 0, `${modelled.length} modelled of ${list.length}`)
     check('every modelled POI carries its registry collision box and a model yaw',
@@ -845,6 +845,13 @@ function boardRig (ms, nowH = 6) {
                 : q.collision === PROP_MODELS[q.modelKey].collision)))
     check('keyless POIs carry no box (they fall back to the cube)',
         list.filter(q => !q.modelKey).every(q => q.collision === null))
+    // ASSET-32: only Larry's parks a vehicle, and his body is his trailer's box, then the van's (body,
+    // two open doors) — the boxes the wheels, the chassis and the yard solver all read.
+    const withVan = list.filter(q => q.parked)
+    check("Larry's alone parks a vehicle, and his body is the trailer's box plus the van's",
+        withVan.length === 1 && withVan[0].type === 'larrysHouse'
+            && withVan[0].collision.boxes.length === 1 + PROP_MODELS.uncleVan.collision.boxes.length,
+        withVan.map(q => `${q.type}: ${q.collision?.boxes?.length} boxes`).join(', '))
 
     // THE MODEL POOL (owner, 2026-08-15). The five residences draw from every asset tagged
     // 'residence' rather than all wearing one model. What is gated is membership, not the
