@@ -5,8 +5,8 @@
 //
 //   1. THE CAMP — one `expeditionCamp`, off its own edge (never the pool), on a road that crosses the
 //      planners' wall: exactly one node of its edge is on the planners' graph, the pad inside the wall.
-//   2. THE BARRIER — a row of ASSET-71 barricades across the deck and both shoulders, striped face to
-//      the camp, none floating; each is one more box on the camp's body, landing exactly where main.js
+//   2. THE BARRIER — a row of ASSET-71 barricades across the paved road, evenly gapped, striped face
+//      to the camp, none floating; each is one more box on the camp's body, landing exactly where main.js
 //      draws it (MESH == PHYSICS).
 //   3. NOTHING ELSE MOVES — the same build with the camp siting switched off gives the same roster and
 //      the same customers, and every ordinary offer plans the same route with the lines open or closed.
@@ -22,7 +22,7 @@ import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { WaterSystem } from '../src/water.js'
-import { PoiSystem } from '../src/poi.js'
+import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { OfferBoard } from '../src/offer-board.js'
 import { REQUISITION } from '../data/offers.js'
 import { PROP_MODELS } from '../data/prop-models.js'
@@ -90,13 +90,16 @@ for (const s of SEEDS) {
                 return Math.hypot(wx - b.x, wz - b.z) < 1e-6 && Math.abs(camp.baseY + box.c[1] - (b.y + bh / 2)) < 1e-6
                     && Math.abs(Math.abs(Math.sin(b.yaw - camp.modelYaw)) - 1) < 1e-9 && box.s.join() === [bd, bh, bw].join()
             }))
-    // The row: abutting along the camp's Z (across the road), wide enough for road + shoulders, every
-    // barricade over the deck (so the row is centred on it), every striped -Z face toward the camp.
+    // The row: along the camp's Z (across the road), even pitch, no two overlapping, outer ends on the
+    // paved edges; every barricade over the deck (so the row is centred on it), every striped -Z face
+    // toward the camp.
     const ax = Math.sin(camp.yaw), az = Math.cos(camp.yaw)
-    const gaps = bars.slice(1).map((b, i) => Math.hypot(b.x - bars[i].x, b.z - bars[i].z))
-    check('the row spans road and both shoulders, abutting', bars.length * bw >= 2 * ((P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5))
-        && gaps.every((g, i) => Math.abs(g - bw) < 1e-6 && Math.abs((bars[i + 1].x - bars[i].x) * ax + (bars[i + 1].z - bars[i].z) * az) > bw - 1e-6),
-        gaps.map((g) => g.toFixed(2)).join())
+    const pitch = bars.slice(1).map((b, i) => Math.hypot(b.x - bars[i].x, b.z - bars[i].z))
+    check(`the row spans the paved road, ${bars.length} barricades, evenly gapped, none overlapping`,
+        bars.length === POI_PARAMS.poiCampBarriers && pitch.every((g) => g > bw && Math.abs(g - pitch[0]) < 1e-6)
+            && Math.abs((bars.length - 1) * pitch[0] + bw - 2 * (P.roadHalfWidth ?? 5)) < 1e-6
+            && bars.slice(1).every((b, i) => Math.abs((b.x - bars[i].x) * ax + (b.z - bars[i].z) * az) > pitch[0] - 1e-6),
+        pitch.map((g) => g.toFixed(2)).join())
     check('every striped face looks back at the camp',
         bars.every((b) => -Math.sin(b.yaw) * (camp.x - b.x) - Math.cos(b.yaw) * (camp.z - b.z) > 0))
     // Nothing floats: across each barricade's width and depth the deck is never more than 8 cm under

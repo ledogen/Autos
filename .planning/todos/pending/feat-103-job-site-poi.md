@@ -182,9 +182,9 @@ difficulty.
 - **The camp** — `expeditionCamp`, `CAMP_SLOT` in src/poi.js, sited by `_siteCamp` after the roster
   (never from the pool), dressed like a slot. Pick rule as above; on the chosen road the pad nearest
   the cut wins. The ASSET-71 model (`expeditionCamp`, 9 solid boxes) since 2026-10-29. Map label "Expedition" (data/map-icons.js).
-- **The barrier** — `_barriers`: a row of five ASSET-71 Type III barricades (`roadBarrier`, 3 m each)
-  4 m past the pad's far end, covering road + both shoulders (15 m), striped faces back toward the
-  camp. Each sits on the lowest deck under its width, so it sinks a little on a cross-slope and never
+- **The barrier** — `_barriers`: a row of three ASSET-71 Type III barricades (`roadBarrier`, 3 m each)
+  4 m past the pad's far end, across the 10 m paved road with 0.5 m gaps (owner, 2026-10-29: five
+  abutting across the shoulders read as overlapping), striped faces back toward the camp. Each sits on the lowest deck under its width, so it sinks a little on a cross-slope and never
   floats. Each is one more box on the camp's body (`_barrierBox`), so the wheels and the chassis hit
   what main.js draws. (The 10-28 build used a placeholder slab; replaced 2026-10-29.)
 - **The planner** (src/mission.js) — a destination POI may have ONE node on the graph (the camp's);

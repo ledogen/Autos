@@ -144,6 +144,7 @@ export const POI_PARAMS = {
     poiCampBandM:     400,    // m of road before the wall cut the camp pad may sit in
     poiCampMinRunM:   300,    // m of road from the last junction to the cut: room for the connector
     poiCampBarrierGap: 4,     // m from the pad's far end to the barrier across the deck
+    poiCampBarriers:   3,     // barricades in that row, spread across the paved road (owner, 2026-10-29)
 }
 
 /**
@@ -1354,22 +1355,23 @@ export class PoiSystem {
 
     /**
      * The row of Type III barricades (ASSET-71 roadBarrier) across the deck at arc `s` that ends the
-     * camp's road (owner, 2026-10-26: blocked, not hidden). As many 3 m barricades as road + shoulders
-     * need, side by side along the camp `pad`'s own Z (across the road): each is a quarter-turn in
-     * the camp's frame, so its box is an axis-aligned body box (_barrierBox). The striped -Z face
-     * looks back at the camp, the way the player arrives. Each stands on the lowest deck under its
-     * width, so a cross-slope sinks it rather than floating it. World base pose per barricade.
+     * camp's road (owner, 2026-10-26: blocked, not hidden). poiCampBarriers of them, spread so the
+     * outer ends sit on the paved edges with even gaps between (owner, 2026-10-29: three, not five
+     * abutting across the shoulders too), along the camp `pad`'s own Z (across the road): each is a
+     * quarter-turn in the camp's frame, so its box is an axis-aligned body box (_barrierBox). The
+     * striped -Z face looks back at the camp, the way the player arrives. Each stands on the lowest
+     * deck under its width, so a cross-slope sinks it rather than floating it. World base pose each.
      */
     _barriers (road, ed, s, pad, P) {
-        const [w] = PROP_MODELS.roadBarrier.collision.size
-        const n = Math.ceil(2 * ((P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5)) / w)
+        const [w] = PROP_MODELS.roadBarrier.collision.size, n = P.poiCampBarriers
+        const pitch = (2 * (P.roadHalfWidth ?? 5) - w) / (n - 1)      // 3.5 m: 0.5 m gaps on a 10 m road
         const cp = ed.centerline.pointAt(s)
         const ax = Math.sin(pad.yaw), az = Math.cos(pad.yaw)      // the camp's +Z in world: across the road
         // yaw - π/2 turns a barricade's -Z face to the camp's +X, (cos yaw, -sin yaw); else the other way.
         const toCamp = (pad.x - cp.x) * Math.cos(pad.yaw) - (pad.z - cp.z) * Math.sin(pad.yaw)
         const yaw = pad.yaw + (toCamp > 0 ? -1 : 1) * Math.PI / 2
         return Array.from({ length: n }, (_, k) => {
-            const o = (k - (n - 1) / 2) * w, x = cp.x + ax * o, z = cp.z + az * o
+            const o = (k - (n - 1) / 2) * pitch, x = cp.x + ax * o, z = cp.z + az * o
             const ys = [-w / 2, 0, w / 2].map(e => road.sampleRoadTopY(x + ax * e, z + az * e)).filter(y => y != null && isFinite(y))
             return { x, y: Math.min(...ys), z, yaw }
         })
