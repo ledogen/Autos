@@ -501,6 +501,41 @@ export const PROP_MODELS = {
     },
   },
 
+  // ASSET-71 — the expedition camp, R1's boss (FEAT-103): a crew at the wall looking for the old
+  // trail out, and visibly short of the requisition (firewood, crew, food, fuel, gear). Canvas wall
+  // tent with its door to the road (-Z), a mess fly over a map table, survey tripod, a guyed 6.5 m
+  // radio mast; composites the shipped tent / campfire / cooking-kit / camp-chair / drum. 4931 tris,
+  // 19 materials (once per run, so past ART-STYLE's ~6), no images. Footprint x -6.79..6.81 by
+  // z -3.56..3.90: the standard 14 x 8 pad. Source: assets/models/src/expedition-camp.py.
+  // Solid: the tent body, table, crates, rack, drums, cans, mast pole, radio crate. Soft: fabric,
+  // guys, chairs, the small tents, the fire and the tripod.
+  expeditionCamp: {
+    url: 'assets/models/expedition-camp.glb',
+    collision: {
+      shape: 'box', size: [13.6, 7.5, 7.46],
+      boxes: [
+        { c: [-3.80, 1.39, 0.53], s: [3.92, 2.78, 4.54] },   // wall tent (a box round the gable)
+        { c: [2.30, 0.37, -0.50], s: [1.65, 0.76, 0.83] },   // map table (yawed 4°)
+        { c: [-1.12, 0.44, 0.61], s: [1.72, 0.88, 0.60] },   // gear crates
+        { c: [-1.05, 0.52, 3.28], s: [1.97, 1.05, 0.76] },   // firewood rack
+        { c: [-5.90, 0.43, -2.90], s: [0.56, 0.85, 0.58] },  // standing drum
+        { c: [-5.23, 0.29, -2.01], s: [0.94, 0.58, 0.71] },  // the drum knocked over
+        { c: [-6.55, 0.25, -2.85], s: [0.48, 0.49, 0.87] },  // jerry cans
+        { c: [5.90, 3.25, -0.60], s: [0.11, 6.50, 0.11] },   // radio mast
+        { c: [5.89, 0.20, -1.25], s: [0.47, 0.40, 0.61] },   // radio crate
+      ],
+    },
+  },
+
+  // ASSET-71 kit — a 3.0 m Type III barricade: three orange/white rails on white uprights, steel
+  // feet, sandbags, an amber lamp. 532 tris, 5 materials, striped face -Z. FEAT-103 sets it across
+  // the deck past the expedition camp (the road is blocked, not hidden), as many as the 10 m deck
+  // needs. Same generator as the camp.
+  roadBarrier: {
+    url: 'assets/models/road-barrier.glb',
+    collision: { shape: 'box', size: [3.0, 1.67, 1.15] },
+  },
+
   // ASSET-36 kit — the firewood BUNDLE, the haul cargo (src/debris.js bundleA..C). Shrink-wrapped
   // splits, ~0.29 x 0.30 x 0.43 m, origin at the bbox centre, long axis -Z, ~11 kg. Three
   // packings so a bed of them is not copy-paste. debris.js hulls the mesh (the film is convex by

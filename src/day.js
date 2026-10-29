@@ -153,6 +153,23 @@ export class DaySystem {
         this._push(true)
     }
 
+    /** FEAT-42: the clock and the energy ladder, for the run save. Blink envelopes are transient. */
+    snapshot () {
+        return { day: runState.day, hour: this._hour, energyH: this._energyH, coffeeDebt: this._coffeeDebt,
+                 crashes: this._crashes.map(c => ({ ...c })), signalArmed: this._signalArmed }
+    }
+
+    /** FEAT-42: put a snapshot() back (after start()) and seat the sky on its hour. */
+    restore (s) {
+        runState.day = s.day
+        this._hour = s.hour
+        this._energyH = s.energyH
+        this._coffeeDebt = s.coffeeDebt
+        this._crashes = s.crashes.map(c => ({ ...c }))
+        this._signalArmed = s.signalArmed
+        this._push(true)
+    }
+
     /**
      * Leave story mode. Stop ticking and hand the sky back the free-roam noon look — free roam has
      * no clock, so whatever hour the run ended on must not persist into it.

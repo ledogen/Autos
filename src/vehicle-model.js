@@ -1041,27 +1041,58 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     modelActive = true
   }, undefined, (err) => console.warn('[vehicle-model] GLB load failed; keeping primitive truck:', err))
 
-  /**
-   * PERF-21: precompile the shader-program variants that light-visibility toggling switches
-   * between (lamps off / brake tails / head+tail / all six). Spot visibility changes the light
-   * count in every lit material's program — compiling those lazily would hitch the first brake
-   * or headlight toggle of a session. Call once at boot, after the scene is populated; async
-   * (KHR_parallel_shader_compile) so it never blocks a frame.
-   */
-  async function prewarmLightPrograms (renderer, scene, camera) {
-    const all = [...headlightSpots, ...tailSpots, ...reverseSpots]
-    const states = [
-      tailSpots,                                          // braking, lamps off (daytime brake)
-      [...headlightSpots, ...tailSpots],                  // lamps on (night driving)
-      all,                                                // lamps on + reversing
-      [],                                                 // everything off (daytime coasting)
-    ]
-    for (const on of states) {
-      for (const s of all) s.visible = on.includes(s)
-      try { await renderer.compileAsync(scene, camera) } catch (_) { /* prewarm is best-effort */ }
-    }
-    // syncMeshesToState re-asserts real visibility from intensities on the next frame.
+  // PERF-21: every light-COUNT state the lamps can put the scene in. A lit material's program is
+  // keyed on counts (spots, spots carrying a cookie map — the headlights — and point lights), not on
+  // which lamp is which, so this list is by count: reverse alone = tails alone, for instance.
+  // Tails + reverse (braking while reversing by day: 4 spots, no maps) was missing until 2026-10-29
+  // and compiled mid-drive. × the point light off / on (the campfire — lit only at camp, where the
+  // lamps may still be in any of these states).
+  const LAMP_STATES = [
+    [],                                                       // everything off (daytime coasting)
+    tailSpots,                                                // braking, lamps off (daytime brake)
+    [...tailSpots, ...reverseSpots],                          // braking while reversing, by day
+    [...headlightSpots, ...tailSpots],                        // lamps on (night driving)
+    [...headlightSpots, ...tailSpots, ...reverseSpots],       // lamps on + reversing
+  ]
+  const LAMPS = [...headlightSpots, ...tailSpots, ...reverseSpots]
+  const LIGHT_STATE_COUNT = LAMP_STATES.length * 2
+
+  /** Put the lights in state i (see LAMP_STATES), returning a function that puts them back. */
+  function _lightState (i, points) {
+    const saved = [...LAMPS, ...points].map(l => l.visible)
+    const on = LAMP_STATES[i % LAMP_STATES.length]
+    for (const s of LAMPS) s.visible = on.includes(s)
+    points.forEach((p, k) => { p.visible = i >= LAMP_STATES.length && k === 0 })
+    return () => [...LAMPS, ...points].forEach((l, k) => { l.visible = saved[k] })
   }
 
-  return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms }
+  /**
+   * PERF-21: precompile every light state's program variants. Spot visibility changes the light count
+   * in every lit material's program — compiling those lazily would hitch the first brake or headlight
+   * toggle of a session. Call once at boot, after the scene is populated; async
+   * (KHR_parallel_shader_compile) so it never blocks a frame.
+   * @param {THREE.Light[]} points  the point lights that toggle (see LAMP_STATES)
+   */
+  async function prewarmLightPrograms (renderer, scene, camera, points = []) {
+    for (let i = 0; i < LIGHT_STATE_COUNT; i++) {
+      const restore = _lightState(i, points)
+      try { await renderer.compileAsync(scene, camera) } catch (_) { /* prewarm is best-effort */ }
+      restore()
+    }
+  }
+
+  /**
+   * The same, for ONE state, synchronously — for materials that arrive after boot (streamed terrain,
+   * road tiles, props, the truck's own .glb), which the boot prewarm never saw and which would
+   * otherwise compile the first time each lamp state appears (the "first headlights lag").
+   * Synchronous so no rendered frame ever sees the borrowed light state. ~1.2 ms on a warm scene.
+   */
+  function compileLightState (i, renderer, scene, camera, points = []) {
+    const restore = _lightState(i, points)
+    renderer.compile(scene, camera)
+    restore()
+  }
+
+  return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode,
+    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT }
 }

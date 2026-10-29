@@ -508,12 +508,40 @@ export const DAMAGE_PARAMS = {
   punctureAtKnee:  72000,    // N — bump-stop force that pops a 25% tire
   punctureFloorC:  0.10,     // at and below this condition the threshold stops falling
   punctureAtFloor: 30000,    // N — bump-stop force that pops a 10%-or-worse tire
+  // HAZARD punctures (FEAT-93, owner 2026-09-30): a rock hit hard enough splits the tire at ANY
+  // condition. "It shouldn't puncture for no reason … you still have to nail the rocks kinda hard."
+  // The signal is the wheel-core contact force from HAZARD debris only (DEBRIS_TYPES `hazard`), so
+  // road, potholes, cargo and barrels can never reach this path. Same measurement as rimYieldMult.
+  // Measured (test/damage-hazard-puncture.mjs: the truck into a resting 40 kg rock, 7 lateral
+  // offsets), peak hazard core force:
+  //     5 mph  up to  82 kN   — a CRAWL can spike this high: the rock is taller than the 0.15 m
+  //                             rubber band, so the rim pinches it as the wheel climbs
+  //    15 mph  up to  62 kN      20 mph  1 line of 7 past 100 kN
+  //    25 mph  3 of 7 past 100   30 mph  3 of 7      40 mph  4 of 7 (up to 365 kN)
+  // The ticket asked for this to sit at or under rim yield (85 kN), so the tire splits before the
+  // rim bends. The crawl spike rules that out: any threshold under ~85 kN pops tires at walking
+  // pace. So it sits ABOVE yield, with an 18% margin over the worst crawl. A 85-100 kN hit marks
+  // the rim a little and leaves the tire up. Hit-to-hit spread is how the rock tumbles, not noise:
+  // the same hit replays to the same number.
+  hazardPunctureMult: 30,    // x static wheel load (≈100 kN) of hazard core force pops any tire
   // A flat is not a hole in the ground: the air is gone, so the carcass carries almost nothing at
   // small deflection, but it still stacks up against the rim as it squashes. Scaling the LINEAR
   // rate to a few percent gives exactly that, while a literal zero would mean no normal force at
   // all and the wheel would sink through the road.
   tireFlatRate:    0.05,     // x stock tire spring rate when flat
   tireFlatMu:      0.70,     // x grip when flat — the owner's 30% loss
+  // FEAT-94 (owner, 2026-10-26): driving on a flat shreds the TIRE first, then the flapping carcass
+  // beats up that side's body panel. Springs, dampers and the rim get nothing extra — a flat rides
+  // like a very bumpy road, and the rim already takes its strikes through the 5% carcass. The tire's
+  // own condition is the run-down bar before the body is touched, so the damage never starts the
+  // instant it pops. Both are v^2 x dt (SM-INV-5: intensity x time, not distance), so per km the
+  // cost goes as speed and limping slowly is a real option. Anchors at 50 km/h (13.9 m/s, v^2 = 193):
+  // 2 km shreds a new tire, 4 more km takes the side panel 100% -> 0. Starting values, tune by feel.
+  // Once the tire is gone the RIM is on the road (owner, 2026-10-27): it grinds and goes fast —
+  // 1 km at 50 km/h writes it off, and a bent wheel is already out-of-round (wheelRunoutAtZero).
+  durFlatTire:  27800,       // m^2/s — integral of v^2 dt that takes a flat tire 100% -> 0
+  durFlatArmor: 55600,       // m^2/s — same, the side panel, once the tire is at 0
+  durFlatRim:   13900,       // m^2/s — same, that corner's wheel, once the tire is at 0
 
   // ── Live tuning multipliers ────────────────────────────────────────────────────────────────
   // Per-class wear SPEED, 1 = the calibrated rate above. These exist so wear can be tuned by feel
@@ -1269,6 +1297,19 @@ export class DamageModel {
       }
     }
 
+    // ── Driving on a flat (FEAT-94): tire first, then the rim + side panel — see durFlatTire ────
+    // rimOnRoad is the published state ("this corner is down to the rim"): tire-audio.js grinds on it.
+    const vel = vehicleState.velocity
+    const v2 = vel ? vel.x * vel.x + vel.y * vel.y + vel.z * vel.z : 0
+    const onRim = vehicleState.rimOnRoad || (vehicleState.rimOnRoad = [false, false, false, false])
+    for (let i = 0; i < 4; i++) {
+      onRim[i] = this.flat[i] && this.get(TIRE_IDS[i]) <= 0
+      if (!this.flat[i] || v2 <= 0) continue
+      if (!onRim[i]) { this.wear(TIRE_IDS[i], v2 * dt, P.durFlatTire); continue }
+      this.wear(WHEEL_IDS[i], v2 * dt, P.durFlatRim)
+      this.wear(i % 2 ? 'armorRight' : 'armorLeft', v2 * dt, P.durFlatArmor)
+    }
+
     // ── Brakes: ∫(friction POWER × time) = the energy the pads actually dissipate ─────────────
     // Torque x time was wrong and the owner caught it: it wore the rear pads while the truck just
     // sat on a hill with the brakes holding it. A stationary pad dissipates nothing — no sliding,
@@ -1318,6 +1359,16 @@ export class DamageModel {
       }
     }
 
+    // ── Hazard punctures (FEAT-93): a hard rock strike on the core pops the tire, any condition ─
+    // A threshold crossing, not an event to bank: the tire is either split or it is not.
+    const hz = vehicleState.rimHazard
+    if (hz && params) {
+      const popN = P.hazardPunctureMult * DamageModel.staticWheelLoad(params)
+      for (let i = 0; i < 4; i++) {
+        if (!this.flat[i] && (hz[i] || 0) >= popN) { this.flat[i] = true; this.popped.push(i) }
+      }
+    }
+
     // ── Springs: bump-stop EVENTS, per corner, priced on the PEAK of each ─────────────────────
     // Hold the peak while the stop is loaded and bank it once the corner comes off it. Same shape
     // as feedContact for collisions, for the same reason: what matters is how hard the single
@@ -1359,7 +1410,8 @@ export class DamageModel {
     }
 
     // WHEELS have no continuous wear source, by design (owner, 2026-08-20): a wheel is bent by
-    // being HIT, not worn out by driving. A strut-acceleration source was tried and deleted — it
+    // being HIT, not worn out by driving. The one exception is a rim run on the road with no tire
+    // left on it (FEAT-94, above), which is the rim being hit continuously. A strut-acceleration source was tried and deleted — it
     // measured 95,000 minutes to destroy a wheel, so it was not a mechanism, and strut acceleration
     // is a poor proxy for the one real non-collision case (a pothole or kerb strike) anyway. If
     // that case is ever wanted, the hook is _landBumpStop below, which is already peak-priced and
