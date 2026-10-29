@@ -642,13 +642,16 @@ export class PhysicsEngine {
    *   needs. Lets a caller tell a wheel-core hit from a body hull hit without the engine knowing
    *   what either means. Allocation-free: reused by the caller. (Until review-2 R-02 this read the
    *   last substep's normalImpulse — ~1/16 of the step at rest, and 0 on the step a hit lands.)
+   * @param {Float64Array|Array} [hazardByShape] - if given, the same per-shape peak counting ONLY
+   *   contacts with bodies whose userData carries `hazard` (FEAT-93: rocks a tire can split on).
    * @returns {{impulse: number, point: {x,y,z}|null, normal: {x,y,z}|null}}
    *   impulse = the hardest point's `totalNormalImpulse` this step (what point/normal describe);
    *   point/normal body-local.
    */
-  maxContactImpulse (handle, outByShape = null) {
+  maxContactImpulse (handle, outByShape = null, hazardByShape = null) {
     const rec = this._bodies.get(handle)
     if (outByShape) outByShape.fill(0)
+    if (hazardByShape) hazardByShape.fill(0)
     if (!this._contactsBuf) this._contactsBuf = _b3.createContactsBuffer()
     const buf = _b3.getBodyContactData(this._contactsBuf, rec.id)
     const n = _b3.getNumContacts(buf)
@@ -667,7 +670,9 @@ export class PhysicsEngine {
       // readout: its contacts are real, but it is not something the truck collides WITH — a
       // bundle sliding into the bedside is not a side impact. The REPORT is gated, never the contact.
       const other = this._shapeToHandle.get(this._shapeKey(aIsSelf ? contact.shapeIdB : contact.shapeIdA))
-      if (other !== undefined && this._bodies.get(other)?.userData?.noDamage) continue
+      const otherData = other !== undefined ? this._bodies.get(other)?.userData : null
+      if (otherData?.noDamage) continue
+      const hazard = hazardByShape && otherData?.hazard
       // Which of OUR shapes this contact is on — once per contact, not once per manifold point.
       let si = -1
       if (outByShape) {
@@ -683,6 +688,7 @@ export class PhysicsEngine {
           // difference between "the bumper hit a tree" and "the rim hit a rock".
           // The whole step's impulse (see the docstring for what each field holds).
           if (si >= 0 && pt.totalNormalImpulse > outByShape[si]) outByShape[si] = pt.totalNormalImpulse
+          if (hazard && si >= 0 && pt.totalNormalImpulse > hazardByShape[si]) hazardByShape[si] = pt.totalNormalImpulse
           if (pt.totalNormalImpulse <= max) continue
           max = pt.totalNormalImpulse
           const a = aIsSelf ? pt.anchorA : pt.anchorB

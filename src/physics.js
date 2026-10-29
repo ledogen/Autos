@@ -208,13 +208,16 @@ const CHASSIS_PROFILE = {
  * @param {*} chassis - chassis body handle.
  * @param {Array<number>} out - length-4 scratch, written FL/FR/RL/RR.
  * @param {number} dt - physics step [s]; the engine reports an impulse, a yield criterion wants force.
+ * @param {Array<number>} [outHazard] - length-4, ASSIGNED: the same core force counting only HAZARD
+ *   debris (FEAT-93 — a rock the tire can split on, whatever its condition). Only the engine can see
+ *   a hazard, so unlike `out` there is nothing from the soft path to max against.
  * @returns {{impulse:number, point:object|null, normal:object|null}} the chassis' hardest contact
  *   this step (engine.maxContactImpulse's result) — the same engine readout serves the collision-
  *   damage feed, so the caller does not ask twice.
  */
-export function readRimStrikes (engine, chassis, out, dt) {
+export function readRimStrikes (engine, chassis, out, dt, outHazard = null) {
   const rims = _rimsFor(engine).get(chassis)
-  const hit = engine.maxContactImpulse(chassis, rims ? _shapeImpulseScratch : null)
+  const hit = engine.maxContactImpulse(chassis, rims ? _shapeImpulseScratch : null, rims && outHazard ? _shapeHazardScratch : null)
   if (!rims) return hit
   const inv = dt > 0 ? 1 / dt : 0
   // MAX, not assign: the soft path has already written any rim contact it detected against
@@ -222,10 +225,12 @@ export function readRimStrikes (engine, chassis, out, dt) {
   for (let i = 0; i < 4; i++) {
     const f = (_shapeImpulseScratch[rims[i].shapeIndex] || 0) * inv
     if (f > out[i]) out[i] = f
+    if (outHazard) outHazard[i] = (_shapeHazardScratch[rims[i].shapeIndex] || 0) * inv
   }
   return hit
 }
 const _shapeImpulseScratch = new Float64Array(64)   // per-shape peak impulse; the chassis has ≤ 16 shapes
+const _shapeHazardScratch  = new Float64Array(64)   // the same, hazard debris only (FEAT-93)
 
 /**
  * Which armor region a contact landed on: 'front' | 'left' | 'right' | 'rear', or null for a hit

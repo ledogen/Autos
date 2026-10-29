@@ -1821,7 +1821,8 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
-const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms } = createVehicleModel(scene, RANGER_PARAMS)
+const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms,
+  compileLightState, LIGHT_STATE_COUNT } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -8033,7 +8034,7 @@ function loop () {
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
-    const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT)
+    const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
@@ -8662,6 +8663,7 @@ function loop () {
   vehicleState.fuel.floorGal = _gameMode === 'story' ? 0 : RANGER_PARAMS.fuelTankGal * RANGER_PARAMS.fuelFreeRoamFloorFrac
   gaugeCluster.setFuelLevel(vehicleState.fuel.gal / RANGER_PARAMS.fuelTankGal)
   gaugeCluster.setLowFuel(vehicleState.fuel.gal <= RANGER_PARAMS.fuelLowLightGal)
+  gaugeCluster.setFlat(damageModel.flat.some(Boolean))   // FEAT-94
   _renderPumpDisplay(frameTime)
   gaugeCluster.setRedline(RANGER_PARAMS.engineRedlineRPM)   // repaints the tach face only on an engine swap
   {
@@ -8693,6 +8695,7 @@ function loop () {
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.
   perfFrameEnd(renderer.info.programs?.length ?? -1)
+  if (_worldInit && !menuStage.isActive()) _lampSweepStep()
 
   // FEAT-63: THE SPARE-TIME PUMP. Dead last in the frame, on purpose — by here everything that
   // owes the player a picture has been done, so what is left before the next vsync is genuinely
@@ -8713,6 +8716,21 @@ function loop () {
   }
 }
 
+// PERF-21 for late arrivals: the boot prewarm compiled every light state's variant of every material
+// that EXISTED at boot. Streamed terrain, road tiles, props and the truck's .glb arrive later, and
+// each would otherwise compile one variant per lamp state the first time that state appears — the
+// "first headlights lag". So: if a render compiled anything new (the program count moved since our
+// own last compile), sweep every light state again, ONE per frame (~1.2 ms each on a warm scene).
+// A render that compiles something mid-sweep restarts it, so nothing that arrived during it is missed.
+let _lampSweepI = -1, _lampSweepProgs = -1
+function _lampSweepStep () {
+  if (renderer.info.programs.length !== _lampSweepProgs) _lampSweepI = 0
+  if (_lampSweepI < 0) return
+  compileLightState(_lampSweepI, renderer, scene, camera, [campfire.light])
+  _lampSweepI = _lampSweepI + 1 < LIGHT_STATE_COUNT ? _lampSweepI + 1 : -1
+  _lampSweepProgs = renderer.info.programs.length
+}
+
 perfMark('init: synchronous bootstrap done, requesting first frame')  // D-arc
 // Dev handle (like __view above): init — including the QUAL-14 async spawn warm — is complete and
 // the render loop is starting. Read by the headless boot-timing probes.
@@ -8728,7 +8746,7 @@ requestAnimationFrame(loop)
 // .finally, not .then — a failed prewarm is a best-effort miss, never a reason to strand the menu.
 // The campfire's point-light variant rides the same chain (see campfire.js header) — compiled with the
 // lamps in their final all-off prewarm state, which is how the truck sits at camp.
-prewarmLightPrograms(renderer, scene, camera)
+prewarmLightPrograms(renderer, scene, camera, [campfire.light])
   .then(() => campfire.prewarm(renderer, scene, camera))
   .finally(() => {
     _worldInit = true
