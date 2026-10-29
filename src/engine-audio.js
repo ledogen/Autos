@@ -22,7 +22,7 @@ let oscs = []            // { osc, gain, mult, detune }
 let started = false
 let enabled = true
 let volume = 0.5         // 0..1 user volume (scales the modest internal gains)
-let pageActive = true    // false while the tab is hidden or behind the stage — see setAudioPageActive()
+let pageActive = true    // false while the tab is hidden — see setAudioPageActive()
 
 const RPM_MIN = 500      // idle-ish floor for frequency mapping
 const F_MIN = 22         // Hz — don't let the fundamental sink into sub-audible mud
@@ -46,7 +46,6 @@ export function getAudioContext () {
   const AC = window.AudioContext || window.webkitAudioContext
   if (!AC) return null
   ctx = new AC()
-  if (!pageActive) ctx.suspend()   // unlocked by a click on the menu: born running, but it must not play yet
   return ctx
 }
 
@@ -160,10 +159,10 @@ export function setEngineAudioVolume (v) {
 }
 
 /**
- * Page-level mute: off while the tab is hidden or the stage is up. Suspends/resumes the ONE shared
- * AudioContext, so this silences engine + tire + wind together (they all hang their master gain off
- * this ctx) and also parks the audio thread — strictly better than ramping gains to zero, which
- * leaves the graph running. Called from main.js on visibilitychange and every stage transition.
+ * Hidden-tab mute. Suspends/resumes the ONE shared AudioContext, so this silences engine + tire +
+ * wind together (they all hang their master gain off this ctx) and also parks the audio thread.
+ * Called from main.js on visibilitychange. Menus are NOT muted here — the frame loop feeds them no
+ * sources (main.js `heard`), so a menu can still play sounds of its own.
  *
  * Why suspend and not "let the gains settle": rAF stops in a hidden tab, so update*Audio() stops
  * being called and every gain FREEZES at its last value. A tab hidden mid-throttle would otherwise

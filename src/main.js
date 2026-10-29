@@ -1182,6 +1182,9 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 // it and is reachable long before the module body gets that far.
 let _pauseOpen = false
 let _resumeHold = false   // FEAT-42: a resumed run opens paused, its sim held until the pause menu closes
+// FEAT-62: a scenario's pause menu is a real pause — its clock must not run behind the menu.
+// FEAT-42: so is the pause a resumed run opens into — it may have been saved at speed.
+function _heldPause () { return _pauseOpen && (scenarioSystem.isActive() || _resumeHold) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -7462,7 +7465,6 @@ function _showMainMenu () {
   _syncContinue()
   _simHeld = true
   document.body.classList.add('stage-on')
-  _syncAudioPageActive()
 }
 function _hideMainMenu () {
   const el = document.getElementById('main-menu')
@@ -7477,7 +7479,6 @@ function _enterStageLoad (text, hint = '') {
   menuStage.setActive(true)
   _simHeld = true
   document.body.classList.add('stage-on')
-  _syncAudioPageActive()
   const cap = document.getElementById('load-caption')
   if (cap) cap.style.display = 'flex'
   const t = document.getElementById('sl-text')
@@ -7493,7 +7494,6 @@ function _exitStageLoad () {
   menuStage.setActive(false)
   _simHeld = false
   document.body.classList.remove('stage-on')
-  _syncAudioPageActive()
   // The chase camera is a spring and it has been sitting wherever the last mode left it. Without
   // this it slides onto the truck over about a second the moment the world appears, which reads as
   // the camera "arriving" rather than the world simply being there (owner, 2026-09-06).
@@ -7984,16 +7984,12 @@ function _captureSession () {
   }
 }
 
-// ── Audio on/off ──────────────────────────────────────────────────────────────
-// Sound plays only while the game is on screen. Two reasons, one rule:
-//   · a hidden tab stops rAF, so update*Audio() stops and every gain FREEZES at its last value —
-//     a tab left mid-throttle would drone at that RPM forever (the ctx is suspended instead);
-//   · behind the stage (main menu, a load) the sim is held and the engine would drone on at whatever
-//     the last frame left it (owner, 2026-10-20: free roam → story → back left it running at the menu).
-// An unfocused but VISIBLE window keeps rAF and the sim running, so it keeps its sound.
-// Declarations, not consts: the stage transitions above call this during module init, ahead of this line.
-function _syncAudioPageActive () { setAudioPageActive(!document.hidden && !document.body.classList.contains('stage-on')) }
-document.addEventListener('visibilitychange', _syncAudioPageActive)
+// ── Hidden-tab mute ───────────────────────────────────────────────────────────
+// A hidden tab stops rAF, so update*Audio() stops being called and every gain FREEZES at its last
+// value — a tab left mid-throttle would drone at that RPM forever. Nothing fed from the frame loop
+// can fix a loop that isn't running, so the shared AudioContext is suspended instead. (Menus and
+// frozen pauses are silent by a different route: see `heard` in the frame loop.)
+document.addEventListener('visibilitychange', () => setAudioPageActive(!document.hidden))
 
 // FEAT-23: WebAudio may only start inside a user gesture (browser autoplay policy). ANY gesture
 // counts — a click too: a resumed run is reached by mouse alone (continue → resume) with the engine
@@ -8082,9 +8078,7 @@ function loop () {
   // free-roam reseed) left the rendered truck, and the terrain ring streaming around it, parked at the
   // OLD spawn for the whole load (measured 2026-09-22: ring built ~280 m from the truck, then
   // rebuilt from scratch the moment the stage lifted).
-  // FEAT-62: a scenario's pause menu is a real pause — its clock must not run behind the menu.
-  // FEAT-42: so is the pause a resumed run opens into — it may have been saved at speed.
-  if (_simHeld || _genHold || (_pauseOpen && (scenarioSystem.isActive() || _resumeHold))) {   // PERF-33: the freeze guard holds the sim the same way
+  if (_simHeld || _genHold || _heldPause()) {   // PERF-33: the freeze guard holds the sim the same way
     accumulator = 0
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
@@ -8579,9 +8573,17 @@ function loop () {
   // FEAT-23: engine audio tracks RPM + throttle EVERY frame (no-op until the first keypress unlocks
   // WebAudio). PERF-16: deliberately OUTSIDE the throttled HUD block below — a 10 Hz pitch update would
   // make the engine note step audibly. Audio is not a DOM write, so the throttle does not apply to it.
+  //
+  // A menu has no sound sources: while the sim is frozen — behind the stage (main menu, a load) or
+  // under a pause that holds it — the truck is fed to nothing, and each voice's own off switch fades
+  // it out in ~50 ms and holds it. The frozen truck is NOT off: free roam → menu leaves the engine
+  // idling, and a resumed run sits paused at its saved speed, so its last RPM and wheel speeds would
+  // drone on (owner, 2026-10-20 / 2026-10-29). The PERF-33 ground wait is deliberately left out: it
+  // freezes a few frames mid-drive, and silencing it would chop the engine note.
+  const heard = !_simHeld && !_heldPause()
   const dtrain = vehicleState.drivetrain
   if (dtrain) {
-    setEngineAudioEnabled(RANGER_PARAMS.engineAudioEnabled !== false)
+    setEngineAudioEnabled(heard && RANGER_PARAMS.engineAudioEnabled !== false)
     setEngineAudioVolume(RANGER_PARAMS.engineAudioVolume ?? 0.5)
     setEngineAudioTuning(RANGER_PARAMS.engineAudioDynamics, getCameraMode() !== 'hood', RANGER_PARAMS.engineChaseBrightDb, RANGER_PARAMS.engineChaseBoomDb, RANGER_PARAMS.starterAudioLevel, RANGER_PARAMS.engineAudioCompRatio)
     // FEAT-50: a low-fuel stumble drops the drone out for its length, with one pop per stumble.
@@ -8620,13 +8622,13 @@ function loop () {
   // Tire-slip audio (src/tire-audio.js): screech on pavement / tearing roar on dirt, gated by
   // per-wheel slip velocity. Same every-frame reasoning as the engine drone above — a throttled
   // update would step the squeal audibly. No-op until the first keypress unlocks WebAudio.
-  setTireAudioEnabled(RANGER_PARAMS.tireAudioEnabled !== false)
+  setTireAudioEnabled(heard && RANGER_PARAMS.tireAudioEnabled !== false)
   setTireAudioVolumes(RANGER_PARAMS.tireScreechVolume ?? 0.5, RANGER_PARAMS.tireDirtVolume ?? 0.3,
     RANGER_PARAMS.tireRoadVolume ?? 0.4)
   updateTireAudio(vehicleState, RANGER_PARAMS, looseSurfaceFactor)
 
   // Wind noise (src/wind-audio.js): airspeed only — no ground query, no per-wheel work.
-  setWindAudioEnabled(RANGER_PARAMS.windAudioEnabled !== false)
+  setWindAudioEnabled(heard && RANGER_PARAMS.windAudioEnabled !== false)
   setWindAudioVolume(RANGER_PARAMS.windVolume ?? 0.4)
   updateWindAudio(vehicleState)
 
