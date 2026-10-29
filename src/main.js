@@ -7984,25 +7984,25 @@ function _captureSession () {
   }
 }
 
-// ── Background-tab mute ───────────────────────────────────────────────────────
-// Two distinct "we're not looking at it" events, and we need BOTH: alt-tabbing to another app
-// fires window blur but NOT visibilitychange (the tab is still visible), while switching browser
-// tabs / minimising fires visibilitychange. Mute on either; unmute only when focused AND visible,
-// so returning focus to a still-hidden tab doesn't restart the drone.
-// The stage counts as "not looking" too: behind the menu or a load the sim is held, so the engine,
-// tires and wind would otherwise drone on at whatever the last frame left them (owner, 2026-10-20:
-// free roam → story mode → back left the engine running at the main menu).
+// ── Audio on/off ──────────────────────────────────────────────────────────────
+// Sound plays only while the game is on screen. Two reasons, one rule:
+//   · a hidden tab stops rAF, so update*Audio() stops and every gain FREEZES at its last value —
+//     a tab left mid-throttle would drone at that RPM forever (the ctx is suspended instead);
+//   · behind the stage (main menu, a load) the sim is held and the engine would drone on at whatever
+//     the last frame left it (owner, 2026-10-20: free roam → story → back left it running at the menu).
+// An unfocused but VISIBLE window keeps rAF and the sim running, so it keeps its sound.
 // Declarations, not consts: the stage transitions above call this during module init, ahead of this line.
-function _audioPageActive () { return document.hasFocus() && !document.hidden && !document.body.classList.contains('stage-on') }
-function _syncAudioPageActive () { setAudioPageActive(_audioPageActive()) }
-window.addEventListener('blur',  _syncAudioPageActive)
-window.addEventListener('focus', _syncAudioPageActive)
+function _syncAudioPageActive () { setAudioPageActive(!document.hidden && !document.body.classList.contains('stage-on')) }
 document.addEventListener('visibilitychange', _syncAudioPageActive)
 
+// FEAT-23: WebAudio may only start inside a user gesture (browser autoplay policy). ANY gesture
+// counts — a click too: a resumed run is reached by mouse alone (continue → resume) with the engine
+// already idling, and a keydown-only unlock left it silent until the first key. Idempotent.
+function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio() }
+window.addEventListener('pointerdown', _unlockAudio, true)
+
 document.addEventListener('keydown', e => {
-  ensureEngineAudio()   // FEAT-23: first keypress is the user gesture that unlocks WebAudio
-  ensureTireAudio()     // tire audio (slip + rolling) shares that same unlocked AudioContext
-  ensureWindAudio()     // wind audio too
+  _unlockAudio()
   if (e.key === '\\') toggleRecording()
   if (e.key === 'i' && e.ctrlKey) openInitialCondition(vehicleState, RANGER_PARAMS)
   // 'p' = MARK THIS PLACE: write a kind:"place" capture at the truck — the replayable spatial bug
@@ -8575,7 +8575,7 @@ function loop () {
   // the triggers and sticks are read directly and fire no event — so a player who only touched RT
   // revved a silent engine until some button went down. Chrome counts gamepad input as the user
   // gesture; the ensure* calls are idempotent (and resume a context that started suspended).
-  if (pad.active) { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio() }
+  if (pad.active) _unlockAudio()
   // FEAT-23: engine audio tracks RPM + throttle EVERY frame (no-op until the first keypress unlocks
   // WebAudio). PERF-16: deliberately OUTSIDE the throttled HUD block below — a 10 Hz pitch update would
   // make the engine note step audibly. Audio is not a DOM write, so the throttle does not apply to it.
