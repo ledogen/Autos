@@ -67,7 +67,37 @@ async function key (k, down, { shift = false } = {}) {
     modifiers: shift ? 8 : 0,   // CDP modifier bit 8 = Shift windowsVirtualKeyCode: k.length === 1 ? k.toUpperCase().charCodeAt(0) : 0,
   })
 }
-const tap = async (k, opts) => { await key(k, true, opts); await sleep(60); await key(k, false, opts) }
+// Wait until the page has rendered ≥ n frames AND ≥ ms has passed (5 s cap: never hang the run).
+const frames = async (n, ms) => {
+  await js(`window.__frOk = false; { let k = 0; const t0 = performance.now()
+    const f = () => (++k >= ${n} && performance.now() - t0 >= ${ms}) ? (window.__frOk = true) : requestAnimationFrame(f)
+    requestAnimationFrame(f) }`)
+  await until(() => js('window.__frOk'), 5000, 30)
+}
+// Held for ≥ 2 RENDERED frames, not a wall-clock 60 ms: key state is POLLED (vehicle.js keys[], read
+// per physics step), so under load (another lane's suite) a 60 ms tap fell wholly between two frames
+// and never happened — the brake/park flakes in service, offer and save. A player's tap is ~6 frames.
+const tap = async (k, opts) => { await key(k, true, opts); await frames(2, 60); await key(k, false, opts) }
+// Teleport and wait for the SEAT, not a fixed sleep: the reseat awaits a network build, which under
+// load outlasted 2.5 s — it then latched park after the step had already toggled the brake.
+const seat = async (x, z, h) => {
+  await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
+  check(await until(() => js('window.__seated'), 30000, 250), `teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
+  await sleep(1000)   // the 0.5 m drop lands
+}
+// Park the way the owner does: hold Space (the handbrake — never reverse throttle, as S is past rest)
+// until roughly at rest, then tap to latch. `fresh` first RELEASES a latched brake so the page sees a
+// new parked EDGE (its park trigger is a ~10 Hz poll on that edge). A bare release-then-tap lost
+// both ways under load: the truck rolled off the shop's slope (2.2 m/s, 7 m) before the re-tap, too
+// fast to latch.
+const park = async (fresh = false) => {
+  if (fresh && await js('window.__vs.parked')) { await tap(' '); await frames(4, 250) }
+  await key(' ', true)
+  await frames(4, 250)
+  await until(() => js('window.__vs.velocity.length() < 0.5'), 30000)
+  await key(' ', false); await frames(2, 60)
+  if (!await js('window.__vs.parked')) await tap(' ')
+}
 const hold = async (k, ms) => { await key(k, true); await sleep(ms); await key(k, false) }
 const car = () => js('window.__car()')
 // Hold I (the ignition key) until the engine catches.
@@ -358,12 +388,12 @@ const STEPS = [
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
       return q ? { x: q.x, z: q.z, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
     if (!p) { console.log('  service: no auto shop in this region — step skipped'); return }
-    await js(`window.__teleport(${p.x}, ${p.z}, ${p.h})`)
-    await sleep(2500)
-    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
-    await tap(' ')
+    await seat(p.x, p.z, p.h)
+    await park(true)
     const open = () => js('document.getElementById("svc-screen").checkVisibility()')
-    check(await until(open, 2000), 'parking at the auto shop opened no service screen')
+    check(await until(open, 2000), `parking at the auto shop opened no service screen: ${JSON.stringify(await js(`(() => { const c = window.__car()
+      return { parked: window.__vs.parked, v: +c.v.toFixed(2), d: +Math.hypot(c.x - ${p.x}, c.z - ${p.z}).toFixed(1), prompt: document.getElementById('poi-prompt')?.textContent.trim().slice(0, 80),
+        promptShown: document.getElementById('poi-prompt')?.style.display, mission: window.__mission().state } })()`))}`)
     // My Vehicle lists every corner's tire; selecting one opens its repair / exchange panel.
     await js('document.querySelector("#svc-screen [data-act=sel][data-key=tireRR]")?.click()')
     check(await js('!!document.querySelector("#svc-screen .sv-panel")'), 'selecting a My Vehicle row opened no panel')
@@ -424,10 +454,8 @@ const STEPS = [
         && b.status(q.id)?.family === 'delivery' && b.view(q.id, 0)?.count > 0)
       return q ? { x: q.x, z: q.z, rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type } : null })()`)
     if (!p) { console.log('  offer: no plain delivery giver with a live offer — step skipped'); return }
-    await js(`window.__teleport(${p.x}, ${p.z}, ${p.h})`)
-    await sleep(2500)
-    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
-    await tap(' ')
+    await seat(p.x, p.z, p.h)
+    await park(true)
     // checkVisibility, not the element's own display: while the job is still planning the button
     // has no display of its own but its #mp-actions row is hidden, and a click there is lost.
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
@@ -460,13 +488,9 @@ const STEPS = [
   // truck at the speed it had, held in the pause menu until it is closed.
   ['save', async () => {
     await js('window.__mission().exit()')   // a job in hand holds the save (carrying one is FEAT-42 part 2)
-    // The offer step left it driving: brake (S) in short pulses — held past rest S reverses — then latch park.
-    for (let k = 0; k < 3 && !await js('window.__vs.parked'); k++) {
-      for (let i = 0; i < 60 && await js('window.__vs.velocity.length() > 0.3'); i++) await hold('s', 150)
-      await tap(' ')   // the handbrake tap latches park near rest
-    }
+    await park()   // the offer step left it driving
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000),
-      `the truck never came to rest (${(await js('window.__vs.velocity.length()')).toFixed(2)} m/s)`)
+      `the truck never came to rest (${(await js('window.__vs.velocity.length()')).toFixed(2)} m/s, parked ${await js('window.__vs.parked')})`)
     await js('window.__econ.money = 123.45')
     const cost = await js(`(() => { let ok = 0; const t = performance.now(); for (let i = 0; i < 20; i++) ok += window.__autosave()
       return { ok, ms: (performance.now() - t) / 20, kb: localStorage.getItem("autos-run/1").length / 1024 } })()`)
@@ -486,9 +510,13 @@ const STEPS = [
       await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
       check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250),
         `${what}: no continue button after the reload`)
+      // What the dying page actually wrote (pagehide), read before continue can rewrite it.
+      const saved = await js(`(() => { const d = JSON.parse(localStorage.getItem("autos-run/1")).data
+        return { p: { x: d.pose.p[0], z: d.pose.p[2] }, v: Math.hypot(...d.motion.v) } })()`)
       await js('document.getElementById("mm-continue").click()')
       check(await until(() => js(live), 45000, 250), `${what}: the resumed run never went live (45 s)`)
       check(await until(() => js(paused), 2000), `${what}: the resumed run did not open paused`)
+      return saved
     }
     await resume('save & exit')
     check(await js('getComputedStyle(document.getElementById("dialogue-panel")).display === "none"'), 'the run intro replayed on resume')
@@ -506,14 +534,19 @@ const STEPS = [
     check(await until(async () => !await js(paused), 1000), 'a key did not end the resume card')
     await crank()
     if (await js('window.__vs.parked')) await tap(' ')
-    await key('w', true); await sleep(4000)
+    // Throttle until it is MOVING, not for a fixed 4 s: under load the sim runs slower than the wall
+    // clock (frames past MAX_FRAME_TIME), and 4 s once bought only 1.3 m/s.
+    await key('w', true); await until(() => js('window.__vs.velocity.length() > 5'), 30000)
     const kill = await js('({ v: window.__vs.velocity.length(), p: window.__car() })')
-    check(kill.v > 3, `the truck was not moving when the page was killed (${kill.v.toFixed(1)} m/s)`)
-    await resume('crash')
+    check(kill.v > 3, `the truck was not moving when the page was killed (${kill.v.toFixed(1)} m/s): ${JSON.stringify(await js('({ parked: window.__vs.parked, ign: window.__vs.ignition?.state, card: document.getElementById("resume-card").style.display, pause: document.getElementById("pause-menu").style.display })'))}`)
+    // Compare against what the page SAVED, not the kill read: W stays down through the reload and the
+    // pagehide write lands after it — under load ~0.8 s / 5.7 m later, which failed a correct resume.
+    const saved = await resume('crash')
     await key('w', false)
+    check(saved.v > 3, `the crash save caught the truck at ${saved.v.toFixed(1)} m/s (killed at ${kill.v.toFixed(1)})`)
     const held = await js('({ v: window.__vs.velocity.length(), p: window.__car() })')
-    const dk = Math.hypot(held.p.x - kill.p.x, held.p.z - kill.p.z)
-    check(Math.abs(held.v - kill.v) < 2 && dk < 3, `crash resume: ${held.v.toFixed(1)} m/s ${dk.toFixed(1)} m from the kill (${kill.v.toFixed(1)} m/s)`)
+    const dk = Math.hypot(held.p.x - saved.p.x, held.p.z - saved.p.z)
+    check(Math.abs(held.v - saved.v) < 2 && dk < 3, `crash resume: ${held.v.toFixed(1)} m/s ${dk.toFixed(1)} m from the save (${saved.v.toFixed(1)} m/s)`)
     await sleep(1000)
     const still = await js('window.__car()')
     check(Math.hypot(still.x - held.p.x, still.z - held.p.z) < 0.05, 'the resume card did not hold the sim')
@@ -523,7 +556,7 @@ const STEPS = [
     await key('w', false)
     const rolled = await js('window.__car()')
     check(Math.hypot(rolled.x - held.p.x, rolled.z - held.p.z) > 1, 'the key that ended the resume card did not hand the moving truck back')
-    console.log(`  crash: killed at ${kill.v.toFixed(1)} m/s, resumed at ${held.v.toFixed(1)} m/s ${dk.toFixed(2)} m away`)
+    console.log(`  crash: killed at ${kill.v.toFixed(1)} m/s, saved at ${saved.v.toFixed(1)}, resumed at ${held.v.toFixed(1)} m/s ${dk.toFixed(2)} m from the save`)
   }],
 ]
 
