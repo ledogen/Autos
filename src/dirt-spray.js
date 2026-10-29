@@ -272,8 +272,9 @@ export class DirtSpraySystem {
   /**
    * Spawn one spark at a rim lip. Thrown back off the contact, up, and outward from that lip.
    * @param {number} side  -1 / +1 — which lip, along the wheel's lateral axis (lx, lz)
+   * @param {number} ago   s — how long before the end of this frame it was born (see the caller)
    */
-  _spawnSpark (x, groundY, z, u, side, bx, bz, lx, lz) {
+  _spawnSpark (x, groundY, z, u, side, bx, bz, lx, lz, ago) {
     const part = this._alloc()
     part.active = true
     part.kind = KIND_SPARK
@@ -290,6 +291,13 @@ export class DirtSpraySystem {
     part.vx = bx * back + lx * out
     part.vy = SPARK_UP_MIN + (SPARK_UP_MAX - SPARK_UP_MIN) * Math.random()
     part.vz = bz * back + lz * out
+    // Already `ago` old: fly it that far now, so sparks born across a frame are spread along their
+    // flight instead of all starting this frame at the same point.
+    part.age = ago
+    part.x += part.vx * ago
+    part.y += part.vy * ago - 0.5 * GRAVITY * ago * ago
+    part.z += part.vz * ago
+    part.vy -= GRAVITY * ago
   }
 
   /** Shed a draggy floater off a live clod (inherits a slice of its velocity). */
@@ -440,6 +448,7 @@ export class DirtSpraySystem {
     let sparkU = (roadV - SPARK_V_FLOOR) / (SPARK_V_FULL - SPARK_V_FLOOR)
     if (sparkU > 1) sparkU = 1
     const rims = sparkU > 0 ? vehicleState.rimOnRoad : null
+    const vel = vehicleState.velocity
 
     const px = vehicleState.position.x
     const py = vehicleState.position.y
@@ -485,11 +494,16 @@ export class DirtSpraySystem {
         this._sparkWait[i] -= dt
         let budget = EMIT_BUDGET
         while (this._sparkWait[i] <= 0 && budget-- > 0) {
+          // SUB-FRAME BIRTH. The overdue wait IS how long ago, inside this frame, the spark was due.
+          // Spawn it where the wheel was then (back along the truck's own velocity), already that
+          // old. Without this every spark of a frame starts at the wheel's end-of-frame position,
+          // and the stream strobes into rows one frame's travel apart (0.28 m at 37 mph).
+          const ago = Math.min(dt, -this._sparkWait[i])
           this._sparkWait[i] -= Math.log(1 - Math.random()) / rate
           const side = Math.random() < 0.5 ? -1 : 1
           const fa = (Math.random() - 0.5) * 0.2   // m, fore-aft along the contact patch
-          this._spawnSpark(wx + rgtX * lip * side + bx * fa, groundY, wz + rgtZ * lip * side + bz * fa,
-            sparkU, side, bx, bz, rgtX, rgtZ)
+          this._spawnSpark(wx + rgtX * lip * side + bx * fa - vel.x * ago, groundY,
+            wz + rgtZ * lip * side + bz * fa - vel.z * ago, sparkU, side, bx, bz, rgtX, rgtZ, ago)
         }
         if (this._sparkWait[i] < 0) this._sparkWait[i] = 0   // don't bank a backlog
         continue
