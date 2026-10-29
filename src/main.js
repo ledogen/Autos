@@ -8731,6 +8731,7 @@ requestAnimationFrame(loop)
 // lamps in their final all-off prewarm state, which is how the truck sits at camp.
 prewarmLightPrograms(renderer, scene, camera)
   .then(() => campfire.prewarm(renderer, scene, camera))
+  .then(() => dirtSpraySystem.prewarm(() => prewarmLightPrograms(renderer, scene, camera)))   // FEAT-152 spark light
   .finally(() => {
     _worldInit = true
     _resolveWorldReady()   // release any menu pick the player made while this was still building
