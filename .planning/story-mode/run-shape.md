@@ -377,7 +377,8 @@ suspend-and-resume model below]
 - One save slot per profile, **overwritten about once a second** while the run is live, and again
   the instant the tab is hidden (the last thing that fires before Chrome discards a tab) or closed.
 - **It is never older than "now"**, so it cannot be reloaded to dodge anything: the truck's motion is
-  saved with it, and a resume opens paused, moving exactly as it was.
+  saved with it, and a resume opens frozen under "press any key to resume", moving exactly as it
+  was; the first key both ends the card and drives.
 - Death deletes the save; so does a new game over it.
 - Loading no longer deletes it: a crash during a resume's own load must not lose the run either.
 

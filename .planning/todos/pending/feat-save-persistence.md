@@ -32,8 +32,9 @@ ratified "written on quit, deleted on load" — DESIGN.md "Run shape and saving"
   - main.js `_autosave` overwrites it every second (`AUTOSAVE_S`) while a run is live, and on
     `visibilitychange` → hidden and on `pagehide`. Measured: 0.04 ms and 4.5 KB per write.
   - The save is never older than ~1 s and carries the truck's **motion** (velocity, spin, wheel speeds,
-    strut state, drivetrain, ignition, park/handbrake). A resume opens in the pause menu with the sim
-    held until it is closed, then the truck carries on at the speed it had.
+    strut state, drivetrain, ignition, park/handbrake). A resume opens frozen under a "press any key to
+    resume" card; any key, click or pad input ends it AND drives (the press is not eaten), so the
+    truck carries on at the speed it had with the player already on the controls (owner, 2026-10-29).
   - Main-menu **continue** re-enters the seed cold under the saved world knobs and gearbox;
     `_restoreRun` writes the save over the fresh run at the end of `onRegionLive`. Loading does not
     delete it.
