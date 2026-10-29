@@ -375,7 +375,7 @@ export class MenuStage {
     // qcPlus. Depth is continuous through the whole overlap and the normal never degenerates.
     //
     // `body` is stripped from the hits: carrying it would send them down physics.js's dynamic-support
-    // path (relative velocity, depthRate) for a body that is bolted to the world. `sizeR` is kept —
+    // path (relative velocity, surfaceVel) for a body that is bolted to the world. `sizeR` is kept —
     // it is the obstacle scale the tire envelope wants.
     this._queryContacts = (cx, cy, cz, r) => {
       const hits = []

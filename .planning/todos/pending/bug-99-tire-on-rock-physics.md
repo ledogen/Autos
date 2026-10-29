@@ -96,3 +96,49 @@ fine if the physics and the damage are honest.
 - [ ] No rock leaves a crawl-speed (< 10 mph) contact faster than physically plausible
       (rock exit speed bounded by roughly the wheel's surface speed plus the spring's stored energy).
 - [ ] The owner's play-test on the lane server.
+
+## Work log — 2026-10-29 (Lane B session)
+
+**Measured first** (`test/census-rock-strike.mjs`, new rainy-day script; `--big` ≈3000 hits). Baseline:
+flips 0/0/1/3/4 of 18 at 10/20/30/40/50 mph, all IMPACT flips (`--nopop` flips the same), rock
+spikes to 30 m/s, worst one-step chassis loss 3.1 m/s.
+
+**Root cause — a missing reaction (Newton's third law).** `physics.js` Step 3 gave a rock the tire's
+push only when it was the wheel's SUPPORT (most-upward normal). A tire still on the road running into
+a rock's face put up to 80 kN into the truck and nothing into the rock → the rock stayed planted →
+the rigid core (a hull on the chassis) pinched it: 295 kN for one step, +2.9 m/s up and 4.3 rad/s
+roll → the flip. When the wheel finally climbed on, the stored force landed on the rock in one step
+→ the crawl yeet. The truck braked against a force the rock never got → the stutter. Lead #1 (rigid
+core) was real but downstream: cores OFF still flipped about once per band (rock sinks into tire).
+
+**What shipped in the working tree** (owner rulings this session: "A + rotating proxy + small B",
+"rim load either path", a rock-only damper, "set threshold and accept shape"):
+1. Every tire–rock contact gives the rock exactly the force the hub felt, substep by substep, through
+   an injected `onForce` on the contact (suspension.js stays pure maths).
+2. The contact is followed THROUGH the step: look-ahead by one step of hub travel, overlap = gap +
+   closing·t + the rock's in-step yield — continuous collision detection for the soft tire.
+3. The rock answers in-step as a rigid body (engine mass + inverse inertia; spins, slides) held by the
+   ground it lies on (engine contact points, normal only). Ground FRICTION in the proxy was tried and
+   made it worse (predicted a pin the engine does not honour) — removed, reason in the code.
+4. The debris tire damper closes against the rock's own point velocity (was a backward difference of
+   depth — last step's approach).
+5. Rim cores are their own 18 kg bodies, re-seated on the hub each step; what debris did to one is
+   split: along the strut → strutCompVel, across → the chassis at the hub. A prismatic joint was
+   tried: unstable at the engine default (3 MJ out of a 0.1 MJ slam) and it moved 72 kg off the body
+   (ride change). The 4 mm hull rebuild (lead #2) is gone by construction.
+6. `params.tireDampingDebris` = 150 N·s/m (road keeps 1500); debug slider "Rock Damping".
+7. Punctures read the rim two ways: core force (FEAT-93, 30×) OR the soft path's carcass pinch past
+   full squash (`vehicleState.rimHazardSoft`, step mean, `hazardPinchMult` 4.5× ≈ 15 kN).
+8. Physics fingerprint (no debris) byte-identical to main.
+
+**Census after** (held speed, punctures live, 2970 hits): pops 0/0/1/16/26/34/10/14/26/39/51 % at
+5/10/…/55 mph, **0 flips**, no hit rolls past 30°, rock exit p95 1.2-1.9× truck speed, one-step loss
+≤ 1.2 m/s. The 20–30 mph hump is physics (the tire climbs the rock and presses it into the road; at
+speed it bats the rock away) — owner: accept the shape.
+
+**Still open:** low-speed rocks feel "weightless" (owner play-test) — theory: the tire has no GRIP on a
+rock face unless the rock is the support (BUG-38's single Pacejka patch), so it shoves a rock it should
+climb; the old physics climbed because the rock was effectively immovable. Rare 14 kg crawl exits up
+to ~2× remain (tumbling rock vs the coupled-step prediction). `PhysicsEngine.replaceHullLocal` now has
+no src caller (only `collider-seam-churn.mjs` drives it) — delete with that gate's rework. Stutter:
+check `?hitch=20` at a pop on :3282 (render-side suspect).

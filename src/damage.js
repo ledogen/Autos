@@ -510,20 +510,23 @@ export const DAMAGE_PARAMS = {
   punctureAtFloor: 30000,    // N — bump-stop force that pops a 10%-or-worse tire
   // HAZARD punctures (FEAT-93, owner 2026-09-30): a rock hit hard enough splits the tire at ANY
   // condition. "It shouldn't puncture for no reason … you still have to nail the rocks kinda hard."
-  // The signal is the wheel-core contact force from HAZARD debris only (DEBRIS_TYPES `hazard`), so
-  // road, potholes, cargo and barrels can never reach this path. Same measurement as rimYieldMult.
-  // Measured (test/damage-hazard-puncture.mjs: the truck into a resting 40 kg rock, 7 lateral
-  // offsets), peak hazard core force:
-  //     5 mph  up to  82 kN   — a CRAWL can spike this high: the rock is taller than the 0.15 m
-  //                             rubber band, so the rim pinches it as the wheel climbs
-  //    15 mph  up to  62 kN      20 mph  1 line of 7 past 100 kN
-  //    25 mph  3 of 7 past 100   30 mph  3 of 7      40 mph  4 of 7 (up to 365 kN)
-  // The ticket asked for this to sit at or under rim yield (85 kN), so the tire splits before the
-  // rim bends. The crawl spike rules that out: any threshold under ~85 kN pops tires at walking
-  // pace. So it sits ABOVE yield, with an 18% margin over the worst crawl. A 85-100 kN hit marks
-  // the rim a little and leaves the tire up. Hit-to-hit spread is how the rock tumbles, not noise:
-  // the same hit replays to the same number.
+  // HAZARD debris only (DEBRIS_TYPES `hazard`), so road, potholes, cargo and barrels never reach it.
+  // BUG-99 (2026-10-29) rebuilt the rock contact (Newton's third law on every tire–rock contact, a
+  // sprung 18 kg rim core) and with it this path. The RIM taking the rock is read two ways, each
+  // against its own threshold — as the rim-strike track does with its two measurements:
+  //   · hazardPunctureMult — the engine's force on the rim core. Kept from FEAT-93 (≈100 kN); with
+  //     the core now sprung it is rarely reached (census: core peaks ≈20-40 kN).
+  //   · hazardPinchMult — the soft path's carcass load past full squash, the tire pinched between
+  //     rock and rim: the path that now carries nearly every puncture. Step mean, like the core's.
+  // Measured (test/census-rock-strike.mjs --big, ≈3000 hits — rocks 0.6-1.0×, 9 offsets, 6 yaws —
+  // at held speed, tireDampingDebris 150, this 4.5×): pops per hit
+  //     5-10 mph 0 %   15 mph 1 %   20 / 25 / 30 mph 16 / 26 / 34 %   35 / 40 mph 10 / 14 %
+  //     45 / 50 / 55 mph 26 / 39 / 51 %   — no flips in the sweep.
+  // The 20-30 mph hump is the physics, accepted by the owner: there the tire climbs the rock and
+  // presses it into the road; faster, it bats the rock away before the carcass bottoms. The
+  // threshold moves the whole curve (at 20 kN: 13 / 19 / 25 % and 34 / 46 % at 50 / 55 mph).
   hazardPunctureMult: 30,    // x static wheel load (≈100 kN) of hazard core force pops any tire
+  hazardPinchMult:    4.5,   // x static wheel load (≈15 kN, step mean) of hazard CARCASS load past full squash pops any tire (BUG-99)
   // A flat is not a hole in the ground: the air is gone, so the carcass carries almost nothing at
   // small deflection, but it still stacks up against the rim as it squashes. Scaling the LINEAR
   // rate to a few percent gives exactly that, while a literal zero would mean no normal force at
@@ -1361,11 +1364,16 @@ export class DamageModel {
 
     // ── Hazard punctures (FEAT-93): a hard rock strike on the core pops the tire, any condition ─
     // A threshold crossing, not an event to bank: the tire is either split or it is not.
-    const hz = vehicleState.rimHazard
-    if (hz && params) {
-      const popN = P.hazardPunctureMult * DamageModel.staticWheelLoad(params)
+    // Two measurements of one event — the rim taking a rock — each against its own threshold
+    // (BUG-99), as the rim-strike track above does: the engine's force on the sprung rim core, and
+    // the soft path's carcass load past full squash (the tire pinched between rock and rim).
+    const hz = vehicleState.rimHazard, pinch = vehicleState.rimHazardSoft
+    if ((hz || pinch) && params) {
+      const staticW = DamageModel.staticWheelLoad(params)
+      const popN = P.hazardPunctureMult * staticW, pinchN = P.hazardPinchMult * staticW
       for (let i = 0; i < 4; i++) {
-        if (!this.flat[i] && (hz[i] || 0) >= popN) { this.flat[i] = true; this.popped.push(i) }
+        if (this.flat[i]) continue
+        if ((hz?.[i] || 0) >= popN || (pinch?.[i] || 0) >= pinchN) { this.flat[i] = true; this.popped.push(i) }
       }
     }
 

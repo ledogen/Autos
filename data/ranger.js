@@ -289,9 +289,15 @@ export const RANGER_PARAMS = {
   tireStiffness: 100000,  // N/m — the AIR spring (what tire pressure changes)
   // The progressive carcass that takes over as the sidewall runs out, and past the 0.15 m soft band
   // the rubber pinched against the rim. Its own rate so pumping the tire up does not stiffen the rim
-  // contact with it (src/suspension.js tireContactForce). 100 kN/m = the value it always had.
+  // contact with it (src/suspension.js tireContactTerms). 100 kN/m = the value it always had.
   tireCarcassStiffness: 100000,  // N/m
   tireDamping:     1500,  // N·s/m — ζ≈0.56; reduced from 4000 to prevent premature wheel lift-off
+  // The same carcass damper against a DEBRIS body (a rock), BUG-99. The road value is a ride tune
+  // (ζ≈0.56 on the 18 kg wheel, with the rim-strike ×8 past half the band); against a free rock at
+  // speed it bats the rock away before the carcass can bottom, so no pinch flat ever happens where
+  // the energy says it must (½·40 kg·(22 m/s)² ≈ 9.7 kJ vs ≈2 kJ of carcass). Owner, 2026-10-29: a
+  // separate damper for rocks, so the road keeps its tune.
+  tireDampingDebris: 150,   // N·s/m — owner + census 2026-10-29 (test/census-rock-strike.mjs --big, ≈3000 hits per value, 75–1500 swept)
 
   // ── Friction ─────────────────────────────────────────────────────────────
   frictionCoeff:      0.8,       // peak tire-road friction coefficient; caps Flat and Flong at μ·gripLoad(Fn) (FEAT-80)

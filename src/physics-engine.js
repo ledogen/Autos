@@ -163,7 +163,7 @@ export class PhysicsEngine {
    */
   createBody ({ type = 'dynamic', position = { x: 0, y: 0, z: 0 }, quaternion = { x: 0, y: 0, z: 0, w: 1 },
                 linearVelocity = null, angularVelocity = null, linearDamping = 0, angularDamping = 0,
-                canSleep = true, bullet = false, userData = null } = {}) {
+                canSleep = true, bullet = false, gravityScale = 1, userData = null } = {}) {
     const bd = _b3.b3DefaultBodyDef()
     bd.type = type === 'static' ? _b3.b3BodyType.b3_staticBody
       : type === 'kinematic' ? _b3.b3BodyType.b3_kinematicBody
@@ -176,6 +176,7 @@ export class PhysicsEngine {
     bd.angularDamping = angularDamping
     bd.enableSleep = canSleep
     bd.isBullet = bullet
+    bd.gravityScale = gravityScale
     const id = _b3.b3CreateBody(this._world, bd)
     const handle = this._nextHandle++
     // isStatic / isDynamic are fixed at creation (the adapter has no set-type call), so the
@@ -444,6 +445,12 @@ export class PhysicsEngine {
     return out
   }
 
+  /** Apply a linear impulse [N·s] at a WORLD point (BUG-99: the tire's whole-step push on a rock). */
+  applyImpulse (handle, impulse, worldPoint) {
+    _b3.b3Body_ApplyLinearImpulse(this._bodies.get(handle).id, [impulse.x, impulse.y, impulse.z],
+      [worldPoint.x, worldPoint.y, worldPoint.z], true)
+  }
+
   applyForce (handle, force, worldPoint = null) {
     const rec = this._bodies.get(handle)
     if (worldPoint) _b3.b3Body_ApplyForce(rec.id, [force.x, force.y, force.z], [worldPoint.x, worldPoint.y, worldPoint.z], true)
@@ -705,6 +712,95 @@ export class PhysicsEngine {
     _b3.b3Body_GetRotation(q, rec.id)
     const inv = [-(q[0] ?? q.x), -(q[1] ?? q.y), -(q[2] ?? q.z), (q[3] ?? q.w)]
     return { impulse: max, point: _rotateByQuat(anchor, inv), normal: _rotateByQuat(worldN, inv) }
+  }
+
+  /**
+   * This body's touching contacts with STATIC bodies — the ground it lies on — one entry per
+   * manifold point: the normal pointing INTO this body, the point as an offset from this body's
+   * centre of mass (world axes). BUG-99: the tire moves a rock within our step before the engine sees it, and
+   * that rock must be held by the ground it is on the way the engine will hold it. Read from the
+   * engine's own contact list (last step's manifolds), so a rock lying on the road is held by the
+   * road and a rock in the air is free, with no rule about either.
+   * @returns {Array<{nx,ny,nz,rx,ry,rz}>} empty for a body touching nothing static.
+   */
+  staticSupports (handle) {
+    const rec = this._bodies.get(handle)
+    if (!this._contactsBuf) this._contactsBuf = _b3.createContactsBuffer()
+    const buf = _b3.getBodyContactData(this._contactsBuf, rec.id)
+    const n = _b3.getNumContacts(buf)
+    const out = []
+    if (n === 0) return out
+    const contact  = this._contactScratch  || (this._contactScratch  = _b3.createContact())
+    const manifold = this._manifoldScratch || (this._manifoldScratch = _b3.createManifold())
+    for (let i = 0; i < n; i++) {
+      _b3.getContactAt(contact, buf, i)
+      const aIsSelf = this._shapeToHandle.get(this._shapeKey(contact.shapeIdA)) === handle
+      const other = this._shapeToHandle.get(this._shapeKey(aIsSelf ? contact.shapeIdB : contact.shapeIdA))
+      if (other === undefined || !this._bodies.get(other)?.isStatic) continue
+      for (let m = 0; m < contact.manifoldCount; m++) {
+        _b3.getManifoldAt(manifold, contact, m)
+        // The manifold normal points from shape A to shape B, so it points into us when we are B.
+        const nv = manifold.normal, sg = aIsSelf ? -1 : 1
+        for (let k = 0; k < manifold.pointCount; k++) {
+          const pt = manifold.points[k], a = aIsSelf ? pt.anchorA : pt.anchorB
+          out.push({ nx: sg * (nv[0] ?? nv.x), ny: sg * (nv[1] ?? nv.y), nz: sg * (nv[2] ?? nv.z),
+            rx: a[0] ?? a.x, ry: a[1] ?? a.y, rz: a[2] ?? a.z })
+        }
+      }
+    }
+    return out
+  }
+
+  /**
+   * World centre of mass and world-frame INVERSE inertia tensor (row-major 3×3) of a body, for a
+   * caller that predicts how it answers an impulse within a step (BUG-99's rock proxy).
+   * @returns {{com:{x,y,z}, invI:Array<number>}}
+   */
+  massProperties (handle) {
+    const id = this._bodies.get(handle).id
+    const c = _b3.b3Body_GetWorldCenterOfMass([0, 0, 0], id)
+    const M = _b3.b3Body_GetWorldInverseRotationalInertia(id)
+    const col = (v) => [v[0] ?? v.x, v[1] ?? v.y, v[2] ?? v.z]
+    const x = col(M.cx), y = col(M.cy), z = col(M.cz)
+    return { com: { x: c[0] ?? c.x, y: c[1] ?? c.y, z: c[2] ?? c.z },
+      invI: [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]] }
+  }
+
+  /**
+   * The total contact impulse [N·s] this body RECEIVED this step, as a world vector: each manifold
+   * point's whole-step normal impulse along the manifold normal (signed so it pushes on this body).
+   * BUG-99: what debris did to a wheel core, read directly. Normal impulses only — a rim's grip on
+   * a rock is negligible beside the push.
+   * @param {bigint} [only] - collision-group mask: count only contacts with bodies whose shapes are
+   *   in these groups (default: all).
+   */
+  contactImpulseOn (handle, out, only = GROUP_ALL) {
+    out.x = 0; out.y = 0; out.z = 0
+    const rec = this._bodies.get(handle)
+    if (!this._contactsBuf) this._contactsBuf = _b3.createContactsBuffer()
+    const buf = _b3.getBodyContactData(this._contactsBuf, rec.id)
+    const n = _b3.getNumContacts(buf)
+    if (n === 0) return out
+    const mask = _group32(only)
+    const contact  = this._contactScratch  || (this._contactScratch  = _b3.createContact())
+    const manifold = this._manifoldScratch || (this._manifoldScratch = _b3.createManifold())
+    for (let i = 0; i < n; i++) {
+      _b3.getContactAt(contact, buf, i)
+      const aIsSelf = this._shapeToHandle.get(this._shapeKey(contact.shapeIdA)) === handle
+      const other = this._shapeToHandle.get(this._shapeKey(aIsSelf ? contact.shapeIdB : contact.shapeIdA))
+      const orec = other !== undefined ? this._bodies.get(other) : null
+      if (only !== GROUP_ALL && !(orec && orec.groups.some(g => (g & mask) !== 0))) continue
+      // The manifold normal points A→B: it pushes B along +n and A along −n.
+      const sg = aIsSelf ? -1 : 1
+      for (let m = 0; m < contact.manifoldCount; m++) {
+        _b3.getManifoldAt(manifold, contact, m)
+        const nv = manifold.normal
+        let J = 0
+        for (let k = 0; k < manifold.pointCount; k++) J += manifold.points[k].totalNormalImpulse
+        out.x += sg * J * (nv[0] ?? nv.x); out.y += sg * J * (nv[1] ?? nv.y); out.z += sg * J * (nv[2] ?? nv.z)
+      }
+    }
+    return out
   }
 
   // ── Joints (log-drag etc.) ────────────────────────────────────────────────

@@ -340,6 +340,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   tiresFolder.add(params, 'tireStiffness', 100000, 300000, 5000).name('Tire Air Rate (N/m)')
   tiresFolder.add(params, 'tireCarcassStiffness', 50000, 300000, 5000).name('Carcass / Rim Rate (N/m)')
   tiresFolder.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
+  tiresFolder.add(params, 'tireDampingDebris', 50, 4000, 50).name('Rock Damping (N·s/m)')   // BUG-99: tire vs debris only
   // Out-of-round tire; 0 = perfectly round. No callback: vehicle-model.js refreshWheelRunout
   // re-bakes the tire MESH on the next frame, so the visible egg matches the contact radius the
   // physics is using.
