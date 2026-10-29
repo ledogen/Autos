@@ -1232,8 +1232,8 @@ function showIgnitionHint () {
 function teleportToGround (x, z, heading, drop) {
   _spawnOverride = { align: true, x, z, heading, drop }
   storySystem?.notifyTeleport()
-  void _reseatTruckAtSpawn()
   showSpawnToast()
+  return _reseatTruckAtSpawn()   // the smoke awaits the seat (it waits on a network build) rather than guessing
 }
 function teleportToPose (x, y, z, quat) {
   _spawnOverride = { align: false, x, y, z, quat: quat.clone() }
