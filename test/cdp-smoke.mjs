@@ -406,29 +406,42 @@ const STEPS = [
     console.log(`  offer: ${p.type} job running after ${moved.toFixed(0)} m — HUD "${await hudText()}"`)
     check(await vis('mission-hud'), 'mission HUD vanished mid-job')
   }],
-  // FEAT-42: save & exit → a real page reload → continue puts the run back, and the save is spent.
+  // FEAT-42: the rolling run save. (1) save & exit → a real reload → continue puts the run back,
+  // paused. (2) The crash: kill the page mid-drive with no save & exit at all → continue resumes the
+  // truck at the speed it had, held in the pause menu until it is closed.
   ['save', async () => {
-    await js('window.__mission().exit()')   // a job in hand blocks the save (its restore is FEAT-42 part 2)
+    await js('window.__mission().exit()')   // a job in hand holds the save (carrying one is FEAT-42 part 2)
     // The offer step left it driving: brake (S) in short pulses — held past rest S reverses — then latch park.
-    for (let i = 0; i < 40 && await js('window.__vs.velocity.length() > 0.5'); i++) await hold('s', 250)
-    if (!await js('window.__vs.parked')) await tap(' ')
+    for (let k = 0; k < 3 && !await js('window.__vs.parked'); k++) {
+      for (let i = 0; i < 60 && await js('window.__vs.velocity.length() > 0.3'); i++) await hold('s', 150)
+      await tap(' ')   // the handbrake tap latches park near rest
+    }
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000),
       `the truck never came to rest (${(await js('window.__vs.velocity.length()')).toFixed(2)} m/s)`)
     await js('window.__econ.money = 123.45')
-    await tap('Escape')
-    check(await until(() => js('document.getElementById("pause-menu").style.display === "flex"'), 1000), 'Esc did not pause')
+    const cost = await js(`(() => { let ok = 0; const t = performance.now(); for (let i = 0; i < 20; i++) ok += window.__autosave()
+      return { ok, ms: (performance.now() - t) / 20, kb: localStorage.getItem("autos-run/1").length / 1024 } })()`)
+    check(cost.ok === 20, `only ${cost.ok}/20 autosaves wrote`)
+    console.log(`  autosave: ${cost.ms.toFixed(2)} ms per write, ${cost.kb.toFixed(1)} KB`)
+    // Esc steps back out of any card first (the job panel the exit left behind), then pauses.
+    for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
+    check(await js('document.getElementById("pause-menu").style.display === "flex"'), 'Esc did not pause')
     check(await js('!document.getElementById("pm-save").disabled && document.getElementById("pm-save").offsetParent !== null'),
       `save & exit not offered: "${await js('document.getElementById("pm-save-why").textContent')}"`)
     const before = await js(`({ p: window.__car(), h: window.__day().clockH(), cond: window.__damage.get("armorLeft"), inv: window.__inv.list().length })`)
     await js('document.getElementById("pm-save").click()')
     check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
-    await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
-    check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250),
-      'after the reload: no continue button')
-    await js('document.getElementById("mm-continue").click()')
-    check(await js('localStorage.getItem("autos-run/1") === null'), 'continue did not delete the save before building')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
-    check(await until(() => js(live), 45000, 250), 'the resumed run never went live (45 s)')
+    const paused = 'document.getElementById("pause-menu").style.display === "flex"'
+    const resume = async (what) => {
+      await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
+      check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250),
+        `${what}: no continue button after the reload`)
+      await js('document.getElementById("mm-continue").click()')
+      check(await until(() => js(live), 45000, 250), `${what}: the resumed run never went live (45 s)`)
+      check(await until(() => js(paused), 2000), `${what}: the resumed run did not open paused`)
+    }
+    await resume('save & exit')
     check(await js('getComputedStyle(document.getElementById("dialogue-panel")).display === "none"'), 'the run intro replayed on resume')
     const after = await js(`({ p: window.__car(), h: window.__day().clockH(), cond: window.__damage.get("armorLeft"), inv: window.__inv.list().length, money: window.__econ.money })`)
     const dm = Math.hypot(after.p.x - before.p.x, after.p.z - before.p.z)
@@ -436,10 +449,28 @@ const STEPS = [
     check(after.money === 123.45, `wallet ${after.money}, saved 123.45`)
     check(after.h >= before.h && after.h - before.h < 0.1, `clock ${before.h.toFixed(3)} h → ${after.h.toFixed(3)} h`)
     check(after.cond === before.cond && after.inv === before.inv, `truck/kit changed: ${JSON.stringify(before)} → ${JSON.stringify(after)}`)
-    console.log(`  resumed at ${dm.toFixed(2)} m, clock +${((after.h - before.h) * 60).toFixed(1)} game min`)
-    await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
-    check(await until(() => js('window.__rsReady === true'), 30000, 250), 'second reload never booted')
-    check(await js('document.getElementById("mm-continue").offsetParent === null'), 'the save survived its own continue')
+    console.log(`  save & exit: resumed at ${dm.toFixed(2)} m, clock +${((after.h - before.h) * 60).toFixed(1)} game min`)
+    // (2) the crash. Drive off, and kill the page with the throttle still down.
+    await tap('Escape')
+    check(await until(async () => !await js(paused), 1000), 'Esc did not close the resume pause')
+    await crank()
+    if (await js('window.__vs.parked')) await tap(' ')
+    await key('w', true); await sleep(4000)
+    const kill = await js('({ v: window.__vs.velocity.length(), p: window.__car() })')
+    check(kill.v > 3, `the truck was not moving when the page was killed (${kill.v.toFixed(1)} m/s)`)
+    await resume('crash')
+    await key('w', false)
+    const held = await js('({ v: window.__vs.velocity.length(), p: window.__car() })')
+    const dk = Math.hypot(held.p.x - kill.p.x, held.p.z - kill.p.z)
+    check(Math.abs(held.v - kill.v) < 2 && dk < 3, `crash resume: ${held.v.toFixed(1)} m/s ${dk.toFixed(1)} m from the kill (${kill.v.toFixed(1)} m/s)`)
+    await sleep(1000)
+    const still = await js('window.__car()')
+    check(Math.hypot(still.x - held.p.x, still.z - held.p.z) < 0.05, 'the resume pause did not hold the sim')
+    await tap('Escape')
+    await sleep(1000)
+    const rolled = await js('window.__car()')
+    check(Math.hypot(rolled.x - held.p.x, rolled.z - held.p.z) > 1, 'closing the pause did not hand the moving truck back')
+    console.log(`  crash: killed at ${kill.v.toFixed(1)} m/s, resumed at ${held.v.toFixed(1)} m/s ${dk.toFixed(2)} m away`)
   }],
 ]
 

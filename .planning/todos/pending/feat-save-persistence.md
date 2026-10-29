@@ -16,36 +16,49 @@ blocks: SM-4's run lifecycle — a 4–6 h run is unplayable without a resume
 ---
 lane: Spare
 
-## Progress 2026-10-28 — part 1 shipped on feature/spare (Spare lane)
+## Progress 2026-10-29 — the rolling autosave (Spare lane, feature/spare)
 
-**Owner re-scope, 2026-10-28:** "the save system is a pause menu option that says save and exit like
-other roguelikes. jobs survive a save an exit." Closing the lid is "different behavior we have to
-handle separately".
+**Owner, 2026-10-28:** "the save system is a pause menu option that says save and exit like other
+roguelikes. jobs survive a save an exit." **Owner, 2026-10-29, after trying it:** "i dont think its
+sufficient … a user who exits the tab without saving losing their whole run … a user whose browser
+crashes … i dont want a player to lose a run from finicky browser behavior or ideally even a system
+crash." Chose option A of three (rolling autosave / event autosaves / lid-close only). This AMENDS the
+ratified "written on quit, deleted on load" — DESIGN.md "Run shape and saving" and run-shape.md
+"Saving" carry the new rule.
 
-- **Done (part 1):**
-  - `src/save.js`: one slot, `autos-run/1`. `takeRun` reads and deletes in one call; there is no
-    reader that leaves the record in place. `hasRun` is a yes/no only.
-  - Pause-menu **save & exit** (story only). It is greyed out with its reason while the truck is
-    moving (> 0.5 m/s), a job or paper route is in hand, or a camp / shop / service / fuel / recovery
-    card or dialogue is up.
-  - Main-menu **continue**. It takes the save, re-enters the seed cold under the saved world knobs and
-    gearbox, and `_restoreRun` writes the save over the fresh run at the end of `onRegionLive`, behind
-    the loading screen.
+- **Done:**
+  - `src/save.js`: one slot, `autos-run/1`. `putRun` / `loadRun` / `hasRun` / `clearRun`. A corrupt
+    or other-version record is discarded.
+  - main.js `_autosave` overwrites it every second (`AUTOSAVE_S`) while a run is live, and on
+    `visibilitychange` → hidden and on `pagehide`. Measured: 0.04 ms and 4.5 KB per write.
+  - The save is never older than ~1 s and carries the truck's **motion** (velocity, spin, wheel speeds,
+    strut state, drivetrain, ignition, park/handbrake). A resume opens in the pause menu with the sim
+    held until it is closed, then the truck carries on at the speed it had.
+  - Main-menu **continue** re-enters the seed cold under the saved world knobs and gearbox;
+    `_restoreRun` writes the save over the fresh run at the end of `onRegionLive`. Loading does not
+    delete it.
   - The save carries: the clock and energy ladder, wallet and deeds, items, fitted parts and every
-    condition track, toe/camber, engine temperature, fuel, odometer, pose, shop shelves, paper tier,
-    the dialogue cards seen, camps dug, and the mission board's call history (`logBoard`, replayed
-    onto a fresh board).
-  - A new game over a save discards it; the setup page says so.
-  - Gates: `test/run-save.mjs` (registered) and a `save` step in `test/cdp-smoke.mjs`: save → page
-    reload → continue → the same spot / wallet / clock / truck → a second reload has no save.
+    condition track, toe/camber, engine temperature, fuel, odometer, pose + motion, shop shelves,
+    paper tier, dialogue cards seen, camps dug, and the mission board's call history (`logBoard`,
+    replayed onto a fresh board; Lane A's `openLines` returns truthy only when it opens a line).
+  - A new game over a save discards it; the setup page says so. Pause-menu **save & exit** is the
+    clean way out (a write, then the main menu).
+  - Gates: `test/run-save.mjs` (registered) and the `save` step in `test/cdp-smoke.mjs`: save & exit →
+    reload → continue (same spot / wallet / clock / truck, paused, no intro replay), then the crash —
+    the page killed at 10.5 m/s mid-drive with no save & exit → continue resumes at 10.6 m/s, 0.18 m
+    away, held until Esc.
+- **Interim, until part 2:** while a job or paper route is in hand the autosave holds its last
+  pre-job write, and save & exit is greyed out ("finish or cancel the job to save"). A crash mid-job
+  therefore resumes before the job was taken.
 - **Part 2, owed after Lane A lands FEAT-103:** jobs survive. Re-plan the taken offer against the
   regenerated roads, `MissionSystem.resume`, the cargo through `_loadFreight` / `_loadLoose` / haul
-  bundles at their bed poses, and a paper-route resume. Lane A's `mission.approach` rides along.
-- **Owed by the owner:** the "stopped truck, nothing open" enabling rule (the orchestrator surfaced
-  it 10-28). It is built that way pending a ruling.
-- **Still open from the original ticket:** the lid-close save (same snapshot, written on
-  `visibilitychange` → hidden and cleared again on → visible), `metaState`, and the checksum
-  (skipped: parse plus the version check already rejects corruption).
+  bundles at their bed poses with their velocities, and a paper-route resume. Lane A's
+  `mission.approach` rides along. Then drop the job block in `_saveBlock`.
+- **Owed to the run's end (FEAT-146, Lane A):** death and the run's end call `_discardRunSave()`,
+  which deletes the save and stops the autosave. There is no death path in code yet.
+- **Still open from the original ticket:** `metaState` (the garage, story keys, export/import) and the
+  checksum (skipped: parse plus the version check already rejects corruption; a checksum computed in
+  the page stops nobody who edits the save deliberately).
 
 ## ⚑ Owner, 2026-10-25 — moved up: closing the laptop lid loses the run
 

@@ -1,8 +1,9 @@
-// GATE (FEAT-42): the run save — one slot, read-and-delete, and the mission board's replayable history.
+// GATE (FEAT-42): the run save — one rolling slot, and the mission board's replayable history.
 //
 // Pure node, a Map-backed storage. What is pinned:
-//   1. TAKE DELETES — put → take hands the data back, and a second take finds nothing; hasRun is a
-//      yes/no that never consumes. No reader in save.js leaves the record in place.
+//   1. ONE SLOT, ALWAYS NOW — put → load hands the data back; a second put overwrites it (there is
+//      never an older record beside it); loading leaves it (a crash during a resume's own load must
+//      not lose the run); clear deletes it.
 //   2. FAILURE IS "NO SAVE" — corrupt JSON, another version, a missing payload, and a storage that
 //      throws all come back null, and a corrupt record is gone afterwards (the run is lost, which is
 //      the correct direction — never a half-restored run).
@@ -11,7 +12,7 @@
 //      identical board at every later hour. A call that did not take (an offer no longer live) is not
 //      logged, so a replay never re-tries it.
 import * as save from '../src/save.js'
-import { putRun, takeRun, hasRun, clearRun, logBoard, RUN_SAVE_VERSION } from '../src/save.js'
+import { putRun, loadRun, hasRun, clearRun, logBoard, RUN_SAVE_VERSION } from '../src/save.js'
 import { OfferBoard } from '../src/offer-board.js'
 
 let fails = 0
@@ -24,20 +25,21 @@ const memory = () => {
   return { m, getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }
 }
 
-// ── 1. take deletes ──────────────────────────────────────────────────────────────────────────────
+// ── 1. one slot, always now ──────────────────────────────────────────────────────────────────────
 {
   const st = memory()
   const run = { seed: '6', day: { day: 3, hour: 14.25 }, economy: { money: 41.5, halfPoints: 3 } }
-  check('nothing saved → no run', !hasRun(st) && takeRun(st) === null)
+  check('nothing saved → no run', !hasRun(st) && loadRun(st) === null)
   check('putRun reports success', putRun(run, st) === true)
-  check('hasRun sees it, and does not consume it', hasRun(st) && hasRun(st))
-  const back = takeRun(st)
-  check('takeRun returns the data', JSON.stringify(back) === JSON.stringify(run), JSON.stringify(back))
-  check('…and deleted it: a second take is null', takeRun(st) === null && !hasRun(st))
-  putRun(run, st); clearRun(st)
-  check('clearRun discards it', !hasRun(st) && takeRun(st) === null)
-  const readers = Object.keys(save).filter(k => typeof save[k] === 'function' && /load|read|get|peek/i.test(k))
-  check('no read-without-delete API exists', readers.length === 0, readers.join(', '))
+  const back = loadRun(st)
+  check('loadRun returns the data', JSON.stringify(back) === JSON.stringify(run), JSON.stringify(back))
+  check('…and leaves it (a crash mid-resume keeps the run)', hasRun(st) && JSON.stringify(loadRun(st)) === JSON.stringify(run))
+  const later = { ...run, day: { day: 3, hour: 14.27 } }
+  putRun(later, st)
+  check('a second write overwrites: one record, the newest', st.m.size === 1 && loadRun(st).day.hour === 14.27)
+  clearRun(st)
+  check('clearRun discards it', !hasRun(st) && loadRun(st) === null)
+  check('save.js exports no second slot or history', !Object.keys(save).some(k => /slot|history|list|backup/i.test(k)))
 }
 
 // ── 2. every failure is "no save" ────────────────────────────────────────────────────────────────
@@ -49,11 +51,11 @@ const memory = () => {
   for (const [label, raw] of [['corrupt JSON', '{"v":1,"data":'], ['another version', JSON.stringify({ v: RUN_SAVE_VERSION + 1, data: { a: 1 } })],
                               ['no payload', JSON.stringify({ v: RUN_SAVE_VERSION })], ['not an object', '42']]) {
     st.m.set(k, raw)
-    check(`${label} → null, and the slot is emptied`, takeRun(st) === null && !hasRun(st))
+    check(`${label} → null, and the slot is emptied`, loadRun(st) === null && !hasRun(st))
   }
   const boom = { getItem () { throw new Error('blocked') }, setItem () { throw new Error('blocked') }, removeItem () { throw new Error('blocked') } }
   check('throwing storage: put false, take null, has false, clear quiet',
-        putRun({ a: 1 }, boom) === false && takeRun(boom) === null && hasRun(boom) === false && (clearRun(boom), true))
+        putRun({ a: 1 }, boom) === false && loadRun(boom) === null && hasRun(boom) === false && (clearRun(boom), true))
 }
 
 // ── 3. the board replays exactly ─────────────────────────────────────────────────────────────────

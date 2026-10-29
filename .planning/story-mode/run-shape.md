@@ -371,15 +371,24 @@ diegetic — you don't run out of days, you run out of money.
 be reloaded, the player reloads before a crash, and the entire loss-condition economy — the thing
 every invariant in the bible is built around — evaporates.
 
-**Model: suspend-and-resume, not checkpointing.** [RATIFIED 2026-07-29]
+**Model: a rolling autosave, not checkpointing.** [owner, 2026-10-29 — amends the 2026-07-29
+suspend-and-resume model below]
 
-- One save slot per profile.
-- Writing a save happens on quit.
-- **Loading a save deletes it.** Resuming is not restoring; it's picking the run back up.
-- Death deletes the save.
+- One save slot per profile, **overwritten about once a second** while the run is live, and again
+  the instant the tab is hidden (the last thing that fires before Chrome discards a tab) or closed.
+- **It is never older than "now"**, so it cannot be reloaded to dodge anything: the truck's motion is
+  saved with it, and a resume opens paused, moving exactly as it was.
+- Death deletes the save; so does a new game over it.
+- Loading no longer deletes it: a crash during a resume's own load must not lose the run either.
 
-Standard roguelike practice (Spelunky, FTL, Slay the Spire), and it preserves SM-INV-1
-exactly: death is still permanent, the save is only a pause button that survives closing the browser.
+*Why:* the 2026-07-29 model wrote only on quit, so every exit the player did not choose — a closed
+tab, a browser crash, Chrome discarding a tab on a lid close, a power cut — lost the whole run (owner,
+2026-10-29: "i dont want a player to lose a run from finicky browser behavior or ideally even a
+system crash"). Deleting on load existed to stop a quit-save being reloaded as a checkpoint; a save
+that is always "now" has no earlier state to reload, which closes the same exploit by construction.
+
+*Superseded (2026-07-29):* one slot; written on quit; **loading a save deletes it**; death deletes it
+— standard roguelike practice (Spelunky, FTL, Slay the Spire).
 
 **The save is cheap, thanks to the worldgen ruling.** Because worldgen is now meta-free and purely
 `(worldSeed, coords)` plus `runState`, **the world doesn't need serializing at all.** A save is:

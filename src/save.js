@@ -1,9 +1,12 @@
-// src/save.js — the story run's ONE save slot (FEAT-42; run-shape.md "Saving", RATIFIED 2026-07-29).
+// src/save.js — the story run's ONE save slot (FEAT-42; run-shape.md "Saving").
 //
-// Suspend-and-resume, NOT a checkpoint: written by the pause menu's "save & exit", and READING IT
-// DELETES IT. takeRun() is the only reader and it removes the record before it parses it, so a crash
-// mid-resume cannot leave a reloadable copy behind — there is deliberately no loadRun that leaves the
-// record in place, and no export (a downloadable run save is a reload button with extra steps).
+// A ROLLING autosave, NOT a checkpoint (owner, 2026-10-29, amending the 2026-07-29 "written on quit,
+// deleted on load"): main.js overwrites this one record about once a second while a run is live, and
+// again the instant the tab is hidden or closed — so a closed tab, a browser crash, a lid close or a
+// power cut costs about a second, never the run. There is never more than one record and it is never
+// older than "now", so there is no earlier state to scum back to; that, not deleting on load, is what
+// keeps death permanent. A resume therefore reads the record and leaves it — a crash during the
+// resume's own load must not lose the run either. No export (a downloadable save is a reload button).
 //
 // The world is never in here: every resume regenerates it cold from the seed (owner, 2026-09-22).
 // Same storage discipline as settings.js — storage can be missing, blocked or hold junk, and every
@@ -17,22 +20,25 @@ export function putRun (data, storage = globalThis.localStorage) {
   try { storage.setItem(KEY, JSON.stringify({ v: RUN_SAVE_VERSION, data })); return true } catch { return false }
 }
 
-/** Read AND delete the run. The data, or null (none, corrupt, or another version — all discarded). */
-export function takeRun (storage = globalThis.localStorage) {
+/** The saved run, or null. A corrupt or other-version record is DISCARDED (the run is gone — never half-restored). */
+export function loadRun (storage = globalThis.localStorage) {
   let raw = null
-  try { raw = storage.getItem(KEY); storage.removeItem(KEY) } catch { return null }
+  try { raw = storage.getItem(KEY) } catch { return null }
+  if (raw == null) return null
   try {
     const rec = JSON.parse(raw)
-    return rec?.v === RUN_SAVE_VERSION && rec.data ? rec.data : null
-  } catch { return null }
+    if (rec?.v === RUN_SAVE_VERSION && rec.data) return rec.data
+  } catch { /* corrupt */ }
+  clearRun(storage)
+  return null
 }
 
-/** Is there a run to continue? A yes/no only — nothing reads the run without consuming it. */
+/** Is there a run to continue? */
 export function hasRun (storage = globalThis.localStorage) {
   try { return storage.getItem(KEY) != null } catch { return false }
 }
 
-/** Discard the run (a new game over it). */
+/** Discard the run: a new game over it, or the run's end. */
 export function clearRun (storage = globalThis.localStorage) {
   try { storage.removeItem(KEY) } catch { /* blocked → there was nothing to clear */ }
 }

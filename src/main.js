@@ -65,7 +65,7 @@ import { MoonSystem } from './moon.js'                      // QUAL-02: night mo
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
-import { putRun, takeRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one save slot
+import { putRun, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
@@ -1181,6 +1181,7 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 // FEAT-62: the pause menu is up. Up here, not with the scenario block, because _hidePauseMenu writes
 // it and is reachable long before the module body gets that far.
 let _pauseOpen = false
+let _resumeHold = false   // FEAT-42: a resumed run opens paused, its sim held until the pause menu closes
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -6984,6 +6985,7 @@ function _hidePauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) { el.style.display = 'none'; el.classList.remove('settings') }
   _pauseOpen = false
+  _resumeHold = false   // FEAT-42: closing the pause a resumed run opened in hands the drive back
 }
 
 // ── FEAT-62: scenarios ────────────────────────────────────────────────────────────────────────────
@@ -7223,6 +7225,7 @@ const storySystem = new StorySystem({
     _quickJobWanted = visible
     _syncQuickJob()
     if (visible) { dialogueSystem.play(DLG.runIntro, RUN_INTRO); _renderDialogue() }
+    if (visible && _resumeHold) _showPauseMenu()   // FEAT-42: a resumed run opens paused (see _restoreRun)
   },
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
   // signal that covers every story entry (main menu, pause button, a rejected-seed retry), so the
@@ -7521,7 +7524,7 @@ async function _startFreeRoam (seedStr) {
  * onRegionLive writes the save over the fresh one (_restoreRun).
  */
 let _runGearbox = 'auto'   // the box this run started with — a run save carries it, never _settings
-let _pendingResume = null    // FEAT-42: the taken run save, between "continue" and onRegionLive
+let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
 async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null) {
   _hideSeedModal()
   map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
@@ -7533,7 +7536,8 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _fitGearbox(gearbox)
   _runGearbox = gearbox
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
-  clearRun()   // FEAT-42: one slot — any story entry consumes it (a resume already took it; a new game discards it)
+  _runEnded = false
+  if (!resume) clearRun()   // FEAT-42: one slot — a new game discards the saved run
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
@@ -7666,34 +7670,63 @@ function _backToMenu () {
 }
 document.getElementById('pm-menu')?.addEventListener('click', _backToMenu)
 
-// ── FEAT-42: save & exit / continue ─────────────────────────────────────────────────────────────
-// The pause menu's "save & exit" writes the run and leaves for the main menu; "continue" there TAKES
-// the save (read and deleted in one call — src/save.js), enters the seed exactly like a new run, and
-// onRegionLive hands it to _restoreRun behind the loading screen. Nothing of the world is in the
-// save: the resume regenerates it cold. The truck comes back parked, key off, where it stood.
-const SAVE_STOP_MPS = 0.5   // m/s — only a stopped truck saves: saving mid-rollover would cancel the crash
-let _boardLog = null        // the live board's history (save.js logBoard) — the run save carries it
+// ── FEAT-42: the rolling run save ───────────────────────────────────────────────────────────────
+// ONE record, overwritten about once a second while a run is live and again the instant the tab is
+// hidden or closed (owner, 2026-10-29: a closed tab, a browser crash, a lid close or a power cut must
+// not cost the run). It is never older than "now", so there is no earlier state to scum back to — the
+// motion is saved too, so killing the tab a beat before a crash resumes a beat before it at the same
+// speed. "continue" on the main menu reads it (and leaves it: a crash during the resume's own load
+// must not lose the run either), enters the seed exactly like a new run, and onRegionLive hands it to
+// _restoreRun behind the loading screen; the run then opens into the pause menu with the sim held
+// until it is closed. Nothing of the world is saved — the resume regenerates it cold. A new game, or
+// the run's end (_discardRunSave), deletes it. "save & exit" is just the clean way out.
+const AUTOSAVE_S = 1          // s between rolling writes
+let _boardLog = null          // the live board's history (save.js logBoard) — the run save carries it
+let _restoring = false        // a resume's seat is in flight: the truck is not where the save says yet
+let _runEnded = false         // the run is over: never write it again (_discardRunSave)
 
-/** Why the run cannot be saved right now, or null when it can. Asked only inside a live story run. */
+/**
+ * Why the run cannot be saved right now, or null. A job in hand holds live road geometry and bodies
+ * in the bed; carrying one across a resume is FEAT-42 part 2, so until then the save holds its last
+ * pre-job state for the length of a job (offers on the panel and a result card are fine to save).
+ */
 function _saveBlock () {
-  // A job holds live road geometry and bodies in the bed; restoring one is FEAT-42's second half.
-  if (missionSystem?.isActive() || paperRouteSystem.isActive()) return 'finish or cancel the job to save'
-  if (vehicleState.velocity.length() > SAVE_STOP_MPS) return 'stop the truck to save'
-  if (_campUi || _campBusy || _recoveryOpen || _larryTour || fuelStop.isOpen || serviceScreen.isOpen
-      || dialogueSystem.active) return 'close what is open to save'
+  if (missionSystem?.isOnJob() || paperRouteSystem.isCarrying()) return 'finish or cancel the job to save'
   return null
+}
+
+/** Overwrite the run save with now — whenever a live, writable run exists. */
+function _autosave () {
+  if (!storySystem.isActive() || storySystem.isEntering() || _restoring || _runEnded || _saveBlock()) return false
+  return putRun(_runSnapshot())
+}
+setInterval(_autosave, AUTOSAVE_S * 1000)
+// The last moment a page gets: hidden is what fires before Chrome discards a tab (a lid close, Memory
+// Saver), pagehide what fires when it is closed or navigated away. beforeunload is not reliable.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') _autosave() })
+window.addEventListener('pagehide', _autosave)
+window.__autosave = _autosave   // dev handle — test/cdp-smoke.mjs times a write
+
+/** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
+function _discardRunSave () {
+  _runEnded = true
+  clearRun()
 }
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
 function _runSnapshot () {
-  const p = vehicleState.position, q = vehicleState.quaternion
+  const vs = vehicleState, p = vs.position, q = vs.quaternion
   return {
     seed: _seedString, world: activeWorld(), gearbox: _runGearbox,
     day: daySystem.snapshot(), economy: runEconomy, inventory: runInventory,
     parts: partsSystem.snapshot(),   // fitted parts, every track's condition + durability, the flats
     damage: { toe: damageModel.toeOffsetDeg, camber: damageModel.camberOffsetDeg, engineTempC: damageModel.engineTempC },
-    fuel: vehicleState.fuel, odometer: gaugeCluster.odoMiles,
+    fuel: vs.fuel, odometer: gaugeCluster.odoMiles,
     pose: { p: [p.x, p.y, p.z], q: [q.x, q.y, q.z, q.w] },
+    // The truck in motion: a resume picks the drive up mid-stride, crash included.
+    motion: { v: vs.velocity.toArray(), w: vs.angularVelocity.toArray(), wheelOmega: vs.wheelOmega,
+              strutComp: vs.strutComp, strutCompVel: vs.strutCompVel, steerAngle: vs.steerAngle,
+              drivetrain: vs.drivetrain, ignition: vs.ignition, handbrake: vs.handbrake, parked: vs.parked },
     shelves: runShelves, paperTier: runPaper.tier,
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
   }
@@ -7701,6 +7734,8 @@ function _runSnapshot () {
 
 /** Write save `s` over the fresh run onRegionLive just built (the jalopy roll, the shelf seed, all of it). */
 function _restoreRun (s) {
+  _restoring = true
+  _resumeHold = true
   daySystem.restore(s.day)
   Object.assign(runEconomy, s.economy)
   inventorySystem.restore(s.inventory)
@@ -7721,16 +7756,28 @@ function _restoreRun (s) {
                                 region: economySystem.terms().region })
   _boardLog = logBoard(offerBoard, s.board.t0H, s.board.events)
   // The seat: the exact saved pose, put back the way a tow does it, so R still respawns where it did.
+  // A seat is a fresh parked truck, so the motion goes back on top of it once it lands.
   const prev = _spawnOverride
   _spawnOverride = { align: false, x: s.pose.p[0], y: s.pose.p[1], z: s.pose.p[2], quat: new THREE.Quaternion(...s.pose.q) }
   storySystem.notifyTeleport()
-  void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
+  void _reseatTruckAtSpawn().then(() => {
+    _spawnOverride = prev
+    const m = s.motion, vs = vehicleState
+    vs.velocity.fromArray(m.v)
+    vs.angularVelocity.fromArray(m.w)
+    for (const k of ['wheelOmega', 'strutComp', 'strutCompVel']) vs[k].splice(0, 4, ...m[k])
+    Object.assign(vs.drivetrain, m.drivetrain)
+    Object.assign(vs.ignition, m.ignition, { event: null })   // a one-shot audio cue, never replayed
+    vs.steerAngle = m.steerAngle
+    vs.handbrake = m.handbrake
+    vs.parked = m.parked
+    _restoring = false
+  })
 }
 
 document.getElementById('pm-save')?.addEventListener('click', () => {
-  if (!storySystem.isActive() || storySystem.isEntering() || _saveBlock()) return
-  if (!putRun(_runSnapshot())) {
-    document.getElementById('pm-save-why').textContent = 'could not save — browser storage is blocked'
+  if (!_autosave()) {
+    document.getElementById('pm-save-why').textContent = _saveBlock() ?? 'could not save — browser storage is blocked'
     return
   }
   _backToMenu()
@@ -7742,7 +7789,7 @@ function _syncContinue () {
 }
 _syncContinue()
 document.getElementById('mm-continue')?.addEventListener('click', () => {
-  const s = takeRun()   // read AND deleted, before anything is built
+  const s = loadRun()
   _syncContinue()
   if (s) void _startStory(s.seed, s.world, s.gearbox, s)   // null: corrupt or another version — the run is gone
 })
@@ -8036,7 +8083,8 @@ function loop () {
   // OLD spawn for the whole load (measured 2026-09-22: ring built ~280 m from the truck, then
   // rebuilt from scratch the moment the stage lifted).
   // FEAT-62: a scenario's pause menu is a real pause — its clock must not run behind the menu.
-  if (_simHeld || _genHold || (_pauseOpen && scenarioSystem.isActive())) {   // PERF-33: the freeze guard holds the sim the same way
+  // FEAT-42: so is the pause a resumed run opens into — it may have been saved at speed.
+  if (_simHeld || _genHold || (_pauseOpen && (scenarioSystem.isActive() || _resumeHold))) {   // PERF-33: the freeze guard holds the sim the same way
     accumulator = 0
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
