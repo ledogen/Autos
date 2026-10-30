@@ -56,7 +56,8 @@ client.on('Runtime.exceptionThrown', p => {
 })
 
 const js = async expr => {
-  const r = await client.evalJS(expr)
+  // A CDP timeout names the call that hung — "Runtime.evaluate after 60000 ms" alone does not say where.
+  const r = await client.evalJS(expr).catch(e => { throw new Error(`${e.message} — in: ${expr.replace(/\s+/g, ' ').slice(0, 120)}`) })
   if (r.err) throw new Error(`eval ${expr.slice(0, 60)}: ${r.err}`)
   return r.val
 }
@@ -484,10 +485,14 @@ const STEPS = [
     check(await vis('mission-hud'), 'mission HUD vanished mid-job')
   }],
   // FEAT-42: the rolling run save. (1) save & exit → a real reload → continue puts the run back,
-  // paused. (2) The crash: kill the page mid-drive with no save & exit at all → continue resumes the
-  // truck at the speed it had, held in the pause menu until it is closed.
+  // paused, with the offer step's courier job still in hand (part 2). (2) The crash: take a freight
+  // job, kill the page mid-drive with no save & exit at all → continue resumes the truck at the speed
+  // it had, the strapped load still in the bed, held in the pause menu until it is closed.
   ['save', async () => {
-    await js('window.__mission().exit()')   // a job in hand holds the save (carrying one is FEAT-42 part 2)
+    const jobNow = () => js(`(() => { const ms = window.__mission(), m = ms.mission
+      return { id: m?.offerId ?? null, state: ms.state, ex: m?.end.x, ez: m?.end.z, par: m?.par } })()`)
+    const job0 = await jobNow()
+    check(job0.id && job0.state === 'running', `the offer step left no running board job: ${JSON.stringify(job0)}`)
     await park()   // the offer step left it driving
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000),
       `the truck never came to rest (${(await js('window.__vs.velocity.length()')).toFixed(2)} m/s, parked ${await js('window.__vs.parked')})`)
@@ -496,7 +501,7 @@ const STEPS = [
       return { ok, ms: (performance.now() - t) / 20, kb: localStorage.getItem("autos-run/1").length / 1024 } })()`)
     check(cost.ok === 20, `only ${cost.ok}/20 autosaves wrote`)
     console.log(`  autosave: ${cost.ms.toFixed(2)} ms per write, ${cost.kb.toFixed(1)} KB`)
-    // Esc steps back out of any card first (the job panel the exit left behind), then pauses.
+    // Esc steps back out of any card first, then pauses.
     for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
     check(await js('document.getElementById("pause-menu").style.display === "flex"'), 'Esc did not pause')
     check(await js('!document.getElementById("pm-save").disabled && document.getElementById("pm-save").offsetParent !== null'),
@@ -527,11 +532,45 @@ const STEPS = [
     check(after.h >= before.h && after.h - before.h < 0.1, `clock ${before.h.toFixed(3)} h → ${after.h.toFixed(3)} h`)
     check(after.cond === before.cond && after.inv === before.inv, `truck/kit changed: ${JSON.stringify(before)} → ${JSON.stringify(after)}`)
     console.log(`  save & exit: resumed at ${dm.toFixed(2)} m, clock +${((after.h - before.h) * 60).toFixed(1)} game min`)
-    // (2) the crash. Any key ends the resume card; drive off, and kill the page with the throttle still down.
+    const job1 = await jobNow()
+    check(JSON.stringify(job1) === JSON.stringify(job0), `the courier job did not survive the save: ${JSON.stringify(job0)} → ${JSON.stringify(job1)}`)
+    console.log(`  save & exit: courier job ${job1.id} still ${job1.state}`)
+    // A strapped load for the crash: put the courier down (test-only; its slot stays taken) and take
+    // a freight offer wherever one is live, the way the offer step takes its job.
     await tap('Shift')
     check(await js(paused), 'a bare modifier ended the resume card')
     await tap('w')
     check(await until(async () => !await js(paused), 1000), 'a key did not end the resume card')
+    await js('window.__mission().exit()')
+    const fr = await js(`(() => { const b = window.__cargo().board, now = window.__day().clockH()
+      for (const q of window.__map2d()._getPois()) {
+        if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
+        const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'freight')
+        if (o) return { x: q.x, z: q.z, rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type }
+      }
+      return null })()`)
+    let load = null
+    if (fr) {
+      await seat(fr.x, fr.z, fr.h)
+      await park(true)
+      const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+      if (fr.type === 'autoShop' && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      if (await until(() => vis('mp-accept'), 2000)) {
+        for (let i = 0; i < 8 && await js(`window.__mission().offer?.id !== ${JSON.stringify(fr.id)}`); i++) await js('document.getElementById("mp-next")?.click()')
+        if (await js(`window.__mission().offer?.id === ${JSON.stringify(fr.id)} && !document.getElementById("mp-accept").disabled`)) {
+          await js('document.getElementById("mp-accept").click()')
+          load = await until(() => js('window.__cargo().freight?.key'), 5000) && await js('window.__cargo().freight')
+        }
+      }
+    }
+    if (!load) console.log(`  save: no takeable freight offer in this region — crash runs with the courier's empty bed`)
+    else {
+      check(await js('window.__mission().isOnJob()'), 'the freight job is not in hand after accept')
+      await seat(fr.rx, fr.rz, fr.h)   // off the pad: its yard clutter pins a truck at full throttle
+      console.log(`  save: freight ${load.key} strapped from ${fr.type}`)
+    }
+    const jobF = await jobNow()
+    // (2) the crash. Drive off, and kill the page with the throttle still down.
     await crank()
     if (await js('window.__vs.parked')) await tap(' ')
     // Throttle until it is MOVING, not for a fixed 4 s: under load the sim runs slower than the wall
@@ -547,6 +586,12 @@ const STEPS = [
     const held = await js('({ v: window.__vs.velocity.length(), p: window.__car() })')
     const dk = Math.hypot(held.p.x - saved.p.x, held.p.z - saved.p.z)
     check(Math.abs(held.v - saved.v) < 2 && dk < 3, `crash resume: ${held.v.toFixed(1)} m/s ${dk.toFixed(1)} m from the save (${saved.v.toFixed(1)} m/s)`)
+    if (load) {
+      const jobC = await jobNow(), loadC = await until(() => js('window.__cargo().freight?.key'), 5000) && await js('window.__cargo().freight')
+      check(jobC.id === jobF.id && jobC.ex === jobF.ex && jobC.par === jobF.par, `the freight job did not survive the crash: ${JSON.stringify(jobF)} → ${JSON.stringify(jobC)}`)
+      check(loadC?.key === load.key, `the strapped load did not survive the crash: ${JSON.stringify(load)} → ${JSON.stringify(loadC)}`)
+      console.log(`  crash: freight job ${jobC.id} ${jobC.state}, ${loadC.key} back in the bed`)
+    }
     await sleep(1000)
     const still = await js('window.__car()')
     check(Math.hypot(still.x - held.p.x, still.z - held.p.z) < 0.05, 'the resume card did not hold the sim')

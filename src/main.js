@@ -4490,43 +4490,44 @@ function _planOffer (offer) {
   const sp = offerBoard.spec(offer)
   if (sp?.family === 'papers') return null
   // planDistinct resolves "no two offers at a POI are the same job" oldest-first and memoises on the
-  // offer; this callback is the planner for ONE offer, told which destination POIs to avoid.
-  return offerBoard.planDistinct(offer, (o, exclude) => {
-    const s = offerBoard.spec(o)
-    const poi = poiSystem.list().find(q => q.id === o.poiId)
-    if (!s || !poi || s.family === 'papers') return null
-    const dest = offerBoard.destWish(o, poiSystem.list(), exclude)
-    const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest, minM: s.bonus ? BONUS_LEG_MIN_M : 0 })   // an item needs the distance
-    if (m) {
-      // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),
-      // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
-      m.offerId = o.id
-      m.line = s.line ?? null   // FEAT-103: a requisition line — settles as a line, never pays
-      m.bonus = s.bonus
-      // FEAT-114: a haul's spec pays PER PIECE; the plan assumes the whole stock until the picker
-      // sets the real count at accept (bundles + payMult are rewritten there).
-      m.payMult = s.stock ? s.payMult * s.stock : s.payMult
-      m.bundles = s.stock   // FEAT-88: a haul load's piece count — null for every other family
-      if (s.stock) m.par *= HAUL_PAR_SLACK   // the load slows the truck; payMult already ÷ the same
-      // FEAT-96: a freight load is strapped in at accept. Its par grows with its mass and pay rides
-      // par, NOT divided back out — a heavier load pays more (data/offers.js FREIGHT_PAR_SLACK_PER_KG).
-      m.load = s.load
-      m.cargoKg = s.load ? s.massKg : null
-      m.fragile = s.fragile   // FEAT-97: tolerance + sound, or null
-      m.loose = s.loose ? { kind: s.loose, massKg: s.massKg } : null   // the bed's one loose body
-      m.atPickup = s.atPickup   // a fetch's wait at the pickup (the tire change), or null
-      if (s.load) {
-        m.par *= 1 + FREIGHT_PAR_SLACK_PER_KG * s.massKg
-        // Freight tips less than haul (owner, 2026-10-11; a FEAT-69 knob since 2026-10-21) —
-        // data/offers.js. Not fragile: it tips the whole line.
-        if (!s.fragile) m.tipMult = FREIGHT_TIP_MULT
-      }
-      // The pickup wait (the tire change) runs on the job's clock, so par carries it (owner,
-      // 2026-10-22) — and pay rides par like any other par time.
-      if (s.atPickup) m.par += s.atPickup.min / 60 * secPerGameH()
+  // offer; _planOne is the planner for ONE offer, told which destination POIs to avoid.
+  return offerBoard.planDistinct(offer, _planOne)
+}
+function _planOne (o, exclude) {
+  const s = offerBoard.spec(o)
+  const poi = poiSystem.list().find(q => q.id === o.poiId)
+  if (!s || !poi || s.family === 'papers') return null
+  const dest = offerBoard.destWish(o, poiSystem.list(), exclude)
+  const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest, minM: s.bonus ? BONUS_LEG_MIN_M : 0 })   // an item needs the distance
+  if (m) {
+    // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),
+    // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
+    m.offerId = o.id
+    m.line = s.line ?? null   // FEAT-103: a requisition line — settles as a line, never pays
+    m.bonus = s.bonus
+    // FEAT-114: a haul's spec pays PER PIECE; the plan assumes the whole stock until the picker
+    // sets the real count at accept (bundles + payMult are rewritten there).
+    m.payMult = s.stock ? s.payMult * s.stock : s.payMult
+    m.bundles = s.stock   // FEAT-88: a haul load's piece count — null for every other family
+    if (s.stock) m.par *= HAUL_PAR_SLACK   // the load slows the truck; payMult already ÷ the same
+    // FEAT-96: a freight load is strapped in at accept. Its par grows with its mass and pay rides
+    // par, NOT divided back out — a heavier load pays more (data/offers.js FREIGHT_PAR_SLACK_PER_KG).
+    m.load = s.load
+    m.cargoKg = s.load ? s.massKg : null
+    m.fragile = s.fragile   // FEAT-97: tolerance + sound, or null
+    m.loose = s.loose ? { kind: s.loose, massKg: s.massKg } : null   // the bed's one loose body
+    m.atPickup = s.atPickup   // a fetch's wait at the pickup (the tire change), or null
+    if (s.load) {
+      m.par *= 1 + FREIGHT_PAR_SLACK_PER_KG * s.massKg
+      // Freight tips less than haul (owner, 2026-10-11; a FEAT-69 knob since 2026-10-21) —
+      // data/offers.js. Not fragile: it tips the whole line.
+      if (!s.fragile) m.tipMult = FREIGHT_TIP_MULT
     }
-    return m
-  })
+    // The pickup wait (the tire change) runs on the job's clock, so par carries it (owner,
+    // 2026-10-22) — and pay rides par like any other par time.
+    if (s.atPickup) m.par += s.atPickup.min / 60 * secPerGameH()
+  }
+  return m
 }
 
 /**
@@ -7827,13 +7828,86 @@ let _restoring = false        // a resume's seat is in flight: the truck is not 
 let _runEnded = false         // the run is over: never write it again (_discardRunSave)
 
 /**
- * Why the run cannot be saved right now, or null. A job in hand holds live road geometry and bodies
- * in the bed; carrying one across a resume is FEAT-42 part 2, so until then the save holds its last
- * pre-job state for the length of a job (offers on the panel and a result card are fine to save).
+ * Why the run cannot be saved right now, or null. A board job and Larry's round ride the save
+ * (FEAT-42 part 2: _jobSnapshot, PaperRouteSystem.snapshot). A Quick Job does not — the calibration
+ * rig has no offer to re-plan from — so it holds the save at its last pre-job state.
  */
 function _saveBlock () {
-  if (missionSystem?.isOnJob() || paperRouteSystem.isCarrying()) return 'finish or cancel the job to save'
+  if (missionSystem?.isOnJob() && !_jobSnapshot()) return 'finish or cancel the job to save'
+  if (paperRouteSystem.isCarrying() && !paperRouteSystem.snapshot()) return 'finish or cancel the job to save'
   return null
+}
+
+/**
+ * FEAT-42: the board job in hand as plain data, or null. The route is not saved: the resume re-plans
+ * the offer exactly as it was planned (offer.planned — see OfferBoard.replan), which is a pure
+ * function of the seed. The load is: freight and the loose tire go back to their own strap pose (a
+ * weld holds the one there; the other goes where a reset puts it), so only fragile condition is kept.
+ * Haul pieces keep their BED-LOCAL poses — where each sits is what arrival counts — and a piece
+ * already out of the bed is lost and stays lost. A haul still loading re-drops from the start.
+ */
+function _jobSnapshot () {
+  const s = missionSystem?.snapshot(), m = missionSystem?.mission
+  const planned = missionSystem?.offer?.planned
+  if (!s || !planned) return null
+  s.offerId = m.offerId
+  s.planned = planned
+  if (_freight?.mission === m) s.freightHealth = _freight.health?.health ?? null
+  if (_haul?.mission === m && s.state !== 'loading') {
+    s.haul = _haul.handles.flatMap((h, i) => _inBed(h) ? [{ kind: _haul.drops[i].kind, ..._bedLocalPose(h) }] : [])
+  }
+  return s
+}
+
+/** Debris body `h`'s pose in the truck's frame, as arrays. */
+const _blCP = new THREE.Vector3(), _blCQ = new THREE.Quaternion(), _blP = new THREE.Vector3(), _blQ = new THREE.Quaternion()
+function _bedLocalPose (h) {
+  physicsEngine.getTransform(vehicleChassis, _blCP, _blCQ)
+  physicsEngine.getTransform(h, _blP, _blQ)
+  _blCQ.invert()
+  return { p: _blP.sub(_blCP).applyQuaternion(_blCQ).toArray(), q: _blQ.premultiply(_blCQ).toArray() }
+}
+
+/** FEAT-42: put the saved board job back in hand (before the seat), or abandon it on the board. */
+function _resumeJob (sj) {
+  // A throw here must cost the JOB, never the run: _restoreRun is the only way back into the save.
+  try {
+    const offer = offerBoard.taken(sj.offerId)
+    const m = offer && offerBoard.replan(offer, sj.planned, _planOne)
+    if (m) { missionSystem.resume(offer, m, sj); return m }
+  } catch (e) { console.warn('[save] job resume failed', e) }
+  // Never expected (the plan is seeded) — but a taken slot nobody holds would never free.
+  console.warn('[save] the job in hand did not re-plan; it is dropped')
+  offerBoard.abandon(sj.offerId, daySystem.clockH())
+  return null
+}
+
+/** FEAT-42: the resumed job's load, back in the bed of the seated truck (after its motion is back). */
+function _reloadCargo (m, sj) {
+  if (m.load) {
+    const t = m.fragile ? makeFragile(m.fragile) : null
+    if (t) t.health = sj.freightHealth ?? 1
+    void _loadFreight(m.load, m.cargoKg, m, t)
+  }
+  if (m.loose && !m.failed) _loadLoose(m.loose.kind, m.loose.massKg, m)
+  if (!sj.haul) return
+  // ponytail: a piece whose model has not loaded is dropped — they load at boot, long before a resume.
+  _haul = { mission: m, handles: [], drops: [], t0: simTime, zone: null }
+  for (const d of sj.haul) {
+    const { v, q, w } = _bedPoint({ x: d.p[0], y: d.p[1], z: d.p[2] })
+    _haulQd.fromArray(d.q).premultiply(q)
+    const h = debrisSystem.spawn(d.kind, { x: _fP.x, y: _fP.y, z: _fP.z }, v,
+      { spin: { x: w.x, y: w.y, z: w.z }, quaternion: { x: _haulQd.x, y: _haulQd.y, z: _haulQd.z, w: _haulQd.w }, pinned: true, noDamage: true })
+    if (h) { _haul.handles.push(h); _haul.drops.push({ kind: d.kind }) }
+  }
+}
+
+/** FEAT-42: put Larry's saved round back in hand, or abandon it on the board. */
+function _resumePaper (sp) {
+  const offer = offerBoard.taken(sp.offerId), giver = poiSystem.list().find(q => q.id === sp.giverId)
+  try { if (offer && giver && paperRouteSystem.resume(giver, offer, sp)) return } catch (e) { console.warn('[save] paper resume failed', e) }
+  console.warn('[save] the paper round in hand did not re-plan; it is dropped')
+  offerBoard.abandon(sp.offerId, daySystem.clockH())
 }
 
 /** Overwrite the run save with now — whenever a live, writable run exists. */
@@ -7847,6 +7921,9 @@ setInterval(_autosave, AUTOSAVE_S * 1000)
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') _autosave() })
 window.addEventListener('pagehide', _autosave)
 window.__autosave = _autosave   // dev handle — test/cdp-smoke.mjs times a write
+// dev handle — test/cdp-smoke.mjs finds a freight offer on the raw board and reads what is in the bed
+window.__cargo = () => ({ board: offerBoard, freight: _freight && { key: _freight.key, health: _freight.health?.health ?? null },
+                          loose: !!_loose, haul: _haul?.handles.length ?? 0 })
 
 /** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
 function _discardRunSave () {
@@ -7870,6 +7947,7 @@ function _runSnapshot () {
               drivetrain: vs.drivetrain, ignition: vs.ignition, handbrake: vs.handbrake, parked: vs.parked },
     shelves: runShelves, paperTier: runPaper.tier,
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
+    job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
   }
 }
 
@@ -7896,6 +7974,8 @@ function _restoreRun (s) {
   offerBoard = new OfferBoard({ seed: worldSeed, pois: poiSystem.list(), nowH: s.board.t0H,
                                 region: economySystem.terms().region })
   _boardLog = logBoard(offerBoard, s.board.t0H, s.board.events)
+  const job = s.job ? _resumeJob(s.job) : null   // the board replay left its offer taken; re-plan it
+  if (s.paper) _resumePaper(s.paper)
   // The seat: the exact saved pose, put back the way a tow does it, so R still respawns where it did.
   // A seat is a fresh parked truck, so the motion goes back on top of it once it lands.
   const prev = _spawnOverride
@@ -7912,6 +7992,9 @@ function _restoreRun (s) {
     vs.steerAngle = m.steerAngle
     vs.handbrake = m.handbrake
     vs.parked = m.parked
+    // After the motion: a load starts at rest relative to the bed. A throw loses the load, never the
+    // autosave (_restoring would stay set and the run would never be written again).
+    if (job) try { _reloadCargo(job, s.job) } catch (e) { console.warn('[save] cargo reload failed', e) }
     _restoring = false
   })
 }

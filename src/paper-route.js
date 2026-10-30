@@ -990,6 +990,43 @@ export class PaperRouteSystem {
         this._onChange()
     }
 
+    /**
+     * FEAT-42: the round in hand as plain data, or null (no papers aboard, or a round from outside
+     * the board). Papers in the air are not kept — they already left the stock — and neither are the
+     * ones on the lawns: those are scenery, the hits are the record.
+     */
+    snapshot () {
+        if (!this.isCarrying() || !this.offer) return null
+        const { hits, trace, traceTick, inFlight, ...run } = this.run
+        return { offerId: this.offer.id, giverId: this.giver.id, state: this.state, par: this.route.par,
+                 run: { ...run, hits: [...hits] } }
+    }
+
+    /**
+     * FEAT-42: put a saved round back in hand. The tour is re-planned from Larry's on the same
+     * tier (the ladder only moves at a finish), so it is the tour that was taken; par is the saved
+     * one regardless — the contract never re-prices. Returns false when no tour plans.
+     */
+    resume (giver, offer, s) {
+        const route = planTour(this._getRoad(), giver, this._getPois()?.customers(runPaper.tier) ?? [],
+                               customersForTier(), this._getRegion(), 100)
+        if (!route) return false
+        route.par = s.par
+        this.giver = giver
+        this.offer = offer
+        this.route = route
+        this.guide = null
+        this.result = null
+        this.error = null
+        this.run = { ...s.run, inFlight: 0, hits: new Map(s.run.hits), trace: [], traceTick: 0 }
+        this._startZone = { x: giver.x, z: giver.z, y: giver.y ?? 0, r: START_ZONE_R }
+        this._briefed = this._planned = true
+        this.state = s.state
+        this._startReplan('resume', true)   // the line from here to whoever is still owed
+        this._onChange()
+        return true
+    }
+
     /** Hand the papers back. */
     decline () {
         if (this.state !== 'offer') return
