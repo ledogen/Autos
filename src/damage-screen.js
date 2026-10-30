@@ -83,13 +83,23 @@ export const bandColor = (c) => BANDS.find(b => c >= b.min).color
 const shownCond = (m, id) => (TRACKS[id].cls === 'tire' && m.flat[TRACKS[id].wheel] ? 0 : m.get(id))
 const LIST_ROWS = 5
 
+/** FEAT-126: a manualOnly track (the transmission) exists only on a truck with a manual fitted. */
+const shown = (m, id) => !TRACKS[id]?.manualOnly || m.manualBox
+
+/**
+ * The `n` worst parts, a flat tire counting as zero: { id, label, c (its condition), color (its band) }.
+ * The screen's list and FEAT-146's run summary read this one ranking, so the two never disagree.
+ */
+export function worstParts (m, n) {
+  return Object.keys(TRACKS).filter(id => shown(m, id)).sort((a, b) => shownCond(m, a) - shownCond(m, b)).slice(0, n)
+    .map(id => ({ id, label: TRACKS[id].label, c: m.get(id), color: bandColor(shownCond(m, id)) }))
+}
+
 /**
  * What a part is doing to the truck RIGHT NOW: one line per active symptom, none while it is above
  * every threshold. Thresholds are read live from DAMAGE_PARAMS, so the debug sliders keep the text
  * honest.
  */
-/** FEAT-126: a manualOnly track (the transmission) exists only on a truck with a manual fitted. */
-const shown = (m, id) => !TRACKS[id]?.manualOnly || m.manualBox
 
 function symptoms (m, id) {
   const t = TRACKS[id], c = m.get(id), P = DAMAGE_PARAMS
@@ -655,15 +665,13 @@ export class DamageScreen {
   /** The five worst parts, a flat tire counting as zero. Rebuilt only when what it shows changes. */
   _renderList () {
     const m = this.model
-    const rows = Object.keys(TRACKS).filter(id => shown(m, id)).sort((a, b) => shownCond(m, a) - shownCond(m, b)).slice(0, LIST_ROWS)
-      .map(id => ({ id, c: m.get(id), sym: symptoms(m, id) }))
+    const rows = worstParts(m, LIST_ROWS).map(r => ({ ...r, sym: symptoms(m, r.id) }))
     const key = rows.map(r => `${r.id}:${Math.round(r.c * 100)}:${r.sym.join('|')}`).join(',')
     if (key === this._listKey) return
     this._listKey = key
-    this.listEl.innerHTML = rows.map(({ id, c, sym }) => {
-      const col = bandColor(shownCond(m, id))
+    this.listEl.innerHTML = rows.map(({ id, label, c, color: col, sym }) => {
       return `<div class="ds-row${id === this._hover ? ' hot' : ''}" data-track="${id}" style="border-left-color:${col}">`
-        + `<div class="dr-top"><span>${TRACKS[id].label}</span><span class="dr-pct" style="color:${col}">${Math.round(c * 100)}%</span></div>`
+        + `<div class="dr-top"><span>${label}</span><span class="dr-pct" style="color:${col}">${Math.round(c * 100)}%</span></div>`
         + sym.map(l => `<div class="dr-sym">${l}</div>`).join('')
         + `</div>`
     }).join('')

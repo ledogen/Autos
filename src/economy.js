@@ -393,6 +393,9 @@ export const runEconomy = {
                      // additions cannot drift into 20.700000000000003 — see addSpot()
     halfPoints: 0,   // mission points × 2
     missions: 0,     // settled (paid) missions this run
+    // FEAT-146: the run summary's rows. Earned is derived (money + spent − startCash), so no counter.
+    ranks: { D: 0, C: 0, B: 0, A: 0, S: 0 },   // settled missions by letter
+    spent: 0,        // dollars out through spend(), to the cent
 }
 
 /** Round to whole cents. Money is added a paper at a time now, so drift is a real hazard. */
@@ -430,6 +433,8 @@ export class EconomySystem {
         runEconomy.money = ECONOMY_PARAMS.startCash   // R-01: the last paycheck
         runEconomy.halfPoints = 0
         runEconomy.missions = 0
+        runEconomy.ranks = { D: 0, C: 0, B: 0, A: 0, S: 0 }
+        runEconomy.spent = 0
     }
 
     /**
@@ -486,6 +491,7 @@ export class EconomySystem {
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
+        if (result.letter in runEconomy.ranks) runEconomy.ranks[result.letter]++
         return { payout, base, tip, points, award: this._award(mission?.bonus, result.letter) }
     }
 
@@ -509,7 +515,7 @@ export class EconomySystem {
      * on their own axis.
      *
      * What they do NOT get to decide is the wallet: money, deeds and the mission count accrue here,
-     * through the same three lines settle() uses, so there is exactly one place run money is made.
+     * through the same lines settle() uses, so there is exactly one place run money is made.
      * pointsFor() is shared deliberately — a letter is worth the same deeds whatever earned it.
      */
     settleFlat (payout, letter, bonus = null) {
@@ -518,6 +524,7 @@ export class EconomySystem {
         runEconomy.money = _cents(runEconomy.money + paid)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
+        if (letter in runEconomy.ranks) runEconomy.ranks[letter]++
         return { payout: paid, points, award: this._award(bonus, letter) }
     }
 
@@ -544,6 +551,7 @@ export class EconomySystem {
         const cost = _cents(Math.max(0, isFinite(amount) ? amount : 0))
         if (cost > runEconomy.money + 1e-9) return false
         runEconomy.money = _cents(runEconomy.money - cost)
+        runEconomy.spent = _cents(runEconomy.spent + cost)
         return true
     }
 

@@ -12,8 +12,9 @@
 // focus on purpose, because a focused button turns Space — the brake — into a click. Inputs are the
 // exception: highlighting one focuses it so it takes typing.
 //
-// The menus that count: the pause menu (or the settings page inside it), the story refusal dialog,
-// and the main-menu page on the stage. A menu holds the truck (gamepad.js zeroes the pedals).
+// The menus that count: the run's end (FEAT-146), the pause menu (or the settings page inside it),
+// the story refusal dialog, and the main-menu page on the stage. A menu holds the truck (gamepad.js
+// zeroes the pedals).
 //
 // FEAT-133: the in-game CARDS are navigated the same way — the offer / result cards, the paper
 // route, the scenario finish, camp, the fuel recovery card, and the inventory and damage screens.
@@ -27,6 +28,8 @@ const $ = (id) => document.getElementById(id)
 
 /** The element holding the live menu's items, or null when no menu owns the screen. */
 function menuContainer () {
+  const re = $('run-end')   // FEAT-146: a Story card, but nothing behind it is in play — it holds the truck like a menu
+  if (re?.style.display === 'block') return re
   const pm = $('pause-menu')
   if (pm?.style.display === 'flex') return pm.classList.contains('settings') ? $('mm-settings-panel') : pm
   const ss = $('story-seed-modal')
