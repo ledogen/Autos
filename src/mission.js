@@ -451,6 +451,45 @@ export class MissionSystem {
         this._onChange()
     }
 
+    /**
+     * FEAT-42: the board job in hand as plain data, or null (no job, or a Quick Job — the
+     * calibration rig has no offer to re-plan from). The route is NOT in here: resume() is handed it
+     * re-planned. What is, is everything that happened to the contract since the plan — the terms
+     * frozen at accept, the deadline, the haul pick, the clock, the leg, a failure.
+     */
+    snapshot() {
+        const m = this.mission
+        if (!this.isOnJob() || !m?.offerId) return null
+        return { state: this.state, elapsed: this.elapsed, t0H: this._t0H, leg: this.leg,
+                 terms: m.terms ?? null, dueH: m.dueH, expired: !!m.expired, failed: !!m.failed,
+                 approach: !!m.approach, bundles: m.bundles, payMult: m.payMult, stockCost: m.stockCost ?? null }
+    }
+
+    /**
+     * FEAT-42: put a saved job back in hand. `mission` is its offer re-planned (main.js); `s` is
+     * snapshot(). Lands straight in the saved state — no accept (the board took it, the stock was
+     * paid, and the spawn checkpoint is the run save's own seat), no countdown, no stage reset.
+     */
+    resume(offer, mission, s) {
+        Object.assign(mission, { terms: s.terms, dueH: s.dueH, expired: s.expired, failed: s.failed,
+                                 approach: s.approach, bundles: s.bundles, payMult: s.payMult, stockCost: s.stockCost })
+        this.offers = []
+        this.offer = offer
+        this.mission = mission
+        this.result = null
+        this.error = null
+        this.state = s.state
+        this.elapsed = s.elapsed
+        this._t0H = s.t0H
+        this.leg = s.leg
+        this.countdown = 0
+        this._polyIdx = mission.legs && s.leg ? mission.legs[0].polyIdx : 0
+        this._trace = []
+        this._traceTick = 0
+        this._setMapOpen(false)
+        this._onChange()
+    }
+
     /** Put the job down: no offer, no run. (Decline, or leaving the mode.) */
     exit() {
         this.state = 'idle'

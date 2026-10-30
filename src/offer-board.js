@@ -529,6 +529,9 @@ export class OfferBoard {
         return s && s.state === 'taken' && s.offer.id === offerId ? s : null
     }
 
+    /** FEAT-42: the offer the player has in hand under this id, or null — a resume's way back to it. */
+    taken (offerId) { return this._takenSlot(offerId)?.offer ?? null }
+
     // ── what an offer IS (lazy, seeded) ────────────────────────────────────────────────────────
 
     /**
@@ -678,7 +681,10 @@ export class OfferBoard {
     planDistinct (offer, planOne) {
         if (offer.route !== undefined) return offer.route
         if (!this.spec(offer)) return (offer.route = null)
-        if (offer._spec.line) return (offer.route = planOne(offer, new Set()))   // FEAT-103: fixed — nothing to re-roll
+        if (offer._spec.line) {   // FEAT-103: fixed — nothing to re-roll
+            offer.planned = { n: 0, exclude: [], placeName: null }
+            return (offer.route = planOne(offer, new Set()))
+        }
         const sibs = []
         for (const o of this.olderSiblings(offer)) {
             const r = this.planDistinct(o, planOne)
@@ -688,19 +694,35 @@ export class OfferBoard {
         const usedPois = new Set(sibs.map(x => x.r.endPoiId).filter(Boolean))
         const usedNames = new Set(sibs.filter(x => !x.r.endPoiId).map(x => x.r.placeName))
         const oneThing = postable(offer.type).length === 1
-        let m = null
-        for (let n = 0; n < RE_ROLLS && !m; n++) {
+        let m = null, n = 0
+        for (; n < RE_ROLLS; n++) {
             if (n) offer._spec = this._rollSpec(offer, n)
             if (!oneThing && usedThings.has(offer._spec.thingId)) continue
-            m = planOne(offer, usedPois)
+            if ((m = planOne(offer, usedPois))) break
         }
         if (m && !m.endPoiId) {
             let name = offer._spec.placeName
-            for (let n = 1; usedNames.has(name) && n <= 32; n++) {
-                name = this._placeName(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:place:${n}`))
+            for (let k = 1; usedNames.has(name) && k <= 32; k++) {
+                name = this._placeName(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:place:${k}`))
             }
             m.placeName = name
         }
+        // FEAT-42: what this plan was resolved AGAINST. The siblings move on (expire, refill) while
+        // the job is in hand, so a resume cannot re-run this resolution — it replays these instead.
+        offer.planned = m ? { n, exclude: [...usedPois], placeName: m.placeName ?? null } : null
+        return (offer.route = m)
+    }
+
+    /**
+     * FEAT-42: re-plan a TAKEN offer exactly as it was planned (`planned`, saved from offer.planned):
+     * the same spec attempt, the same POIs avoided, the same roadside name. Deterministic like
+     * planDistinct — the planner draws from the offer's own seeded stream.
+     */
+    replan (offer, planned, planOne) {
+        offer._spec = this._rollSpec(offer, planned.n)
+        const m = planOne(offer, new Set(planned.exclude))
+        if (m && planned.placeName) m.placeName = planned.placeName
+        offer.planned = planned
         return (offer.route = m)
     }
 
