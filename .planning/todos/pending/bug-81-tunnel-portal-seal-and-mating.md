@@ -69,9 +69,31 @@ heightfield/mesh there is the raw hill (+4..+11 m). It cannot launch (no ground 
 rests on the heightfield) but a wheel pressed into the hill beside a portal dangles = "float". Bound
 ownership to |lat| < R only if a drive shows it. Items 1–2 (seal, shoulder mating) are untouched.
 
+## Owner drive, 2026-10-30 (main at 75e13065)
+
+> "portals are good but the tube behind them still launches you into the tunnel (one sided collision
+> i think)"
+> "portal fit is good. there's still a little gap between exterior shoulder and interior shoulder tho.
+> Sometimes the exterior shoulder pokes through the road apron as well (follows terrain line for
+> 'too long')"
+
+So: item 3 (the portal brush) is closed; the launch has moved to the TUBE — driving onto the bore
+lining from outside (over the crown / against the outer wall) still kicks the truck into the tunnel.
+The BUG-37 wall contact now fires only from inside (rho < R), so this is the other side: the lining
+trimesh itself, which has one face side, or the "secondary" bore-ownership blind spot in
+`_sampleCarveWorld` (above) pulling a wheel outside the tube down to the bore floor. New item:
+
+4. **Tube launches from outside.** Reproduce with a capture on the hill above a bore and
+   `node test/replay.mjs`; then bound the bore ownership to |lat| < R, or give the lining a
+   two-sided / outward-facing contact — whichever the replay names.
+
+Items 1–2 restated by the drive: the shoulder gap at the portal line (exterior shoulder vs interior
+shoulder), and the exterior shoulder following the terrain line past the headwall so it pokes up
+through the apron.
+
 ## Acceptance
 
-- [x] (headless; drive owed) Brushing a portal ring at road speed never launches the chassis (BUG-54's damage-energy
+- [x] (drive confirmed 2026-10-30: "portals are good") Brushing a portal ring at road speed never launches the chassis (BUG-54's damage-energy
       readout stays under a hard landing's); proven on a capture replay, then a drive.
 
 - Portal ring meets the terrain on its full perimeter at the headwall line — no daylight gap, no

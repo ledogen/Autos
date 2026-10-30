@@ -1481,12 +1481,14 @@
     <div class="pm-title">paused</div>
     <div class="pm-code" id="pm-code"></div>
     <button id="pm-resume">resume</button>
-    <!-- FEAT-42: story runs only; greyed out with its reason (pm-save-why) while the run can't save. -->
-    <button id="pm-save" style="display:none">save &amp; exit<span class="pm-why" id="pm-save-why"></span></button>
     <button id="pm-restart" style="display:none">restart</button>
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
     <button id="pm-settings">settings</button>
+    <!-- FEAT-42: story runs only, at the bottom; greyed out with its reason (pm-save-why) while the run
+         can't save. It IS the way out of a run (owner, 2026-10-30: the two buttons did the same thing), so
+         "main menu" shows only outside a run, or while a run can't save. -->
+    <button id="pm-save" style="display:none">save &amp; exit<span class="pm-why" id="pm-save-why"></span></button>
     <button id="pm-menu">main menu</button>
   </div>
 

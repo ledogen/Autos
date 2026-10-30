@@ -1,7 +1,7 @@
 ---
 id: BUG-95
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-10-26
 source: owner, 2026-10-26 — "When you're already parked and then bring up the camping menu with Z it still says 'Press Space to Park' but it should just open the camping menu"
@@ -62,3 +62,7 @@ picked option 1 of three:
 - [ ] With the truck card or a site's confirm card up, the tent shows lit. Z closes the card and the
       tent goes dark (hunt off). On a made camp or at mom's, no tent shows and Z does nothing.
 - [ ] Leave, abandon and back show the Space keycap, and RB when the pad last drove.
+
+## Resolution (2026-10-30)
+
+On main at ac08a585 (fix 027c1028 + c6169eec). Owner's in-game check 2026-10-30: "good".

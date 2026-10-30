@@ -7123,6 +7123,9 @@ function _showPauseMenu () {
     saveBtn.style.display = live ? '' : 'none'
     saveBtn.disabled = !!why
     document.getElementById('pm-save-why').textContent = why ?? ''
+    // One way out (owner, 2026-10-30): save & exit replaces "main menu" while it can save.
+    const menuBtn = document.getElementById('pm-menu')
+    if (menuBtn) menuBtn.style.display = live && !why ? 'none' : ''
   }
   _pauseOpen = true
 }

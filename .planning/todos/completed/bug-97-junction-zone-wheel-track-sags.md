@@ -1,7 +1,7 @@
 ---
 id: BUG-97
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-10-26
 source: BUG-90 vertical-curvature scan (test/vertical-curvature.mjs) — needs an owner ruling before any fix
@@ -30,3 +30,7 @@ Are one-wheel-track sags of 0.03–0.10 /m within ~25 m of a junction acceptable
 ## Acceptance
 - [ ] Owner ruling on the question above.
 - [ ] If "no": mechanism found, fixed at the source, gate ceiling lowered to the new count.
+
+## Resolution (2026-10-30)
+
+Owner ruling 2026-10-30 on the in-game check of the BUG-90 landing: "good" — the ~200 one-wheel-track junction sags of 0.03–0.10 /m are fair at junction speed. The vertical-curvature gate keeps its ceiling; no fix.
