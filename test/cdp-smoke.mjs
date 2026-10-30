@@ -603,6 +603,83 @@ const STEPS = [
     check(Math.hypot(rolled.x - held.p.x, rolled.z - held.p.z) > 1, 'the key that ended the resume card did not hand the moving truck back')
     console.log(`  crash: killed at ${kill.v.toFixed(1)} m/s, saved at ${saved.v.toFixed(1)}, resumed at ${held.v.toFixed(1)} m/s ${dk.toFixed(2)} m from the save`)
   }],
+  // FEAT-146: every way a run ends reaches the one summary card, deletes the run save, and the card's
+  // button goes back to the main menu. The towel on this run, then a fresh run for each of the others.
+  ['endings', async () => {
+    const card = () => js('document.getElementById("run-end").style.display === "block" && document.getElementById("re-title").textContent')
+    const saved = () => js('localStorage.getItem("autos-run/1") !== null')
+    const ended = async (want) => {
+      const t = await until(card, 5000)
+      check(t && want.test(t), `the run-end card reads "${t}", want ${want}`)
+      const body = await js('document.getElementById("re-body").textContent')
+      check(/playtime\s*\d+h \d\dm/.test(body) && /jobs done/.test(body) && /wallet/.test(body) && /truck/.test(body),
+        `${t}: the summary is missing rows: "${body.slice(0, 200)}"`)
+      await sleep(1500)   // past an autosave tick
+      check(!await saved(), `${t}: the run save outlived the run`)
+      await js('document.getElementById("re-menu").click()')
+      check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), `${t}: no main menu after the card`)
+      check(await js('document.getElementById("mm-continue").offsetParent === null'), `${t}: "continue" offers an ended run`)
+      check(await js('!document.querySelector("canvas").style.filter'), `${t}: the world stayed black and white`)
+      console.log(`  endings: "${t}" — ${body.replace(/\s+/g, ' ').slice(0, 100)}`)
+    }
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    const newRun = async () => {
+      await js('document.getElementById("mm-story").click()')
+      await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
+      check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s)')
+      const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+      await until(dlg, 3000)
+      for (let i = 0; i < 8 && await dlg(); i++) { await tap('Enter'); await sleep(250) }
+      check(await until(saved, 3000), 'the new run wrote no save to end')
+    }
+    const playedS = () => js('JSON.parse(localStorage.getItem("autos-run/1")).data.playedS')
+    // The towel: two clicks — the first only arms it.
+    for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
+    check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "throw in the towel" in a story run\'s pause menu')
+    await js('document.getElementById("pm-towel").click()')
+    check(!await card(), 'one click on the towel ended the run')
+    await js('document.getElementById("pm-towel").click()')
+    await ended(/called it/)
+    // The crash: black and white at once, the card after the beat. First, the playtime counts (the save
+    // carries it, a second at a time) and stops while paused.
+    await newRun()
+    const p0 = await playedS(); await sleep(3000); const p1 = await playedS()
+    check(p1 - p0 > 1.5 && p1 - p0 < 4.5, `playtime counted ${(p1 - p0).toFixed(1)} s of a 3 s drive`)
+    await tap('Escape'); await sleep(1300)   // a whole save tick inside the pause before the first read
+    const q0 = await playedS(); await sleep(2500); const q1 = await playedS()
+    check(q1 - q0 < 0.2, `playtime counted ${(q1 - q0).toFixed(1)} s behind the pause menu`)
+    await tap('Escape'); await sleep(300)
+    await js('window.__damage.fatalImpact = { region: "front", v: 40, mph: 90 }')
+    check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
+    check(!await card(), 'the crash card skipped the beat')
+    await ended(/crashed/)
+    // Broke down: an empty tank, no gas can, no money for a tow → the Recovery card's "end run".
+    await newRun()
+    // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
+    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = q.barriers[1]
+      const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
+      return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
+    await seat(away.x, away.z, away.h)
+    await js(`(() => { const inv = window.__inv; for (const r of [...inv.list()].reverse()) if (r.id === 'emergencyGas' || r.gal > 0.05) inv.drop(r.index)
+      window.__econ.money = 0 })()`)
+    await crank()
+    await js('window.__vs.fuel.gal = 0')   // the running engine's next step finds it empty: dry, stalled
+    check(await until(() => js('window.__vs.fuel.dry'), 3000), 'the emptied tank never ran dry')
+    await park(true)
+    await tap('x')
+    check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000),
+      `no "end run" on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    await js('document.querySelector("#recovery-card .rc-end").click()')
+    await ended(/broke down/)
+    // The win: six deeds open the requisition; all five lines delivered → the win card.
+    await newRun()
+    await js('window.__econ.halfPoints = 12')
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), 'six deeds opened no requisition')
+    await js(`(() => { const b = window.__board(), h = window.__day().clockH()
+      const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
+      for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
+    await ended(/made it in \d+ days?/)
+  }],
 ]
 
 const times = []

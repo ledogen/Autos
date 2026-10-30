@@ -107,6 +107,8 @@
     }
     #pause-menu .pm-why { display: block; font-size: 12px; color: var(--text-faint); }
     #pause-menu .pm-why:empty { display: none; }
+    /* FEAT-146: the towel's confirm click, like the job's abandon (#job-cancel.armed). */
+    #pause-menu button.armed, #pause-menu button.armed:hover { background: var(--bad); border-color: var(--bad-text); color: var(--text-bright); }
     /* FEAT-43: Story Mode seed prompt (minimal; full styling deferred to FEAT-41). */
     #story-seed-modal {
       display: none;
@@ -318,7 +320,7 @@
     /* FEAT-133: the in-game cards each style their buttons their own way, so the pad's highlight is an
        outline that reads on all of them (light paper cards and dark screens alike). */
     #mission-panel .nav-focus, #paper-panel .nav-focus, #scenario-panel .nav-focus, #camp-panel .nav-focus,
-    #recovery-card .nav-focus, #inv-screen .nav-focus, #dmg-screen .nav-focus, #svc-screen .nav-focus { outline: 2px solid var(--accent-system); outline-offset: 2px; }
+    #recovery-card .nav-focus, #run-end .nav-focus, #inv-screen .nav-focus, #dmg-screen .nav-focus, #svc-screen .nav-focus { outline: 2px solid var(--accent-system); outline-offset: 2px; }
     /* FEAT-62: the scenario list — same page-swap as settings. Buttons are built from
        data/scenarios.js by main.js (_renderScenarioList); each carries a dim blurb line. */
     #mm-scenarios-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
@@ -403,7 +405,7 @@
        start/drop pins are visible behind it; the panel is bottom-anchored, not centered. */
     /* #camp-panel (FEAT-45), #dialogue-panel and #paper-panel (FEAT-61) share the mission panel's
        chrome by selector rather than by a copied block — one place to restyle a story-mode panel. */
-    #mission-panel, #camp-panel, #dialogue-panel, #paper-panel, #scenario-panel {
+    #mission-panel, #camp-panel, #dialogue-panel, #paper-panel, #scenario-panel, #run-end {
       display: none;
       position: fixed;
       left: 50%;
@@ -421,6 +423,14 @@
     }
     /* The camp card is a menu you sit in, not a card you read: lighter, like pause (owner, 2026-10-20). */
     #camp-panel { background: var(--menu-bg); }
+    /* FEAT-146: the run's end sits in the middle of the screen — nothing behind it is still in play. */
+    #run-end { top: 50%; bottom: auto; transform: translate(-50%, -50%); }
+    #re-body { line-height: 1.7; }
+    #re-body .re-row { display: flex; justify-content: space-between; gap: 32px; text-align: left; }
+    #re-body .re-k, #re-body .re-why { color: var(--text-dim); }
+    #re-body .re-gap { margin-top: 10px; }
+    #re-body .re-money { color: var(--money); }
+    #re-actions { margin-top: 14px; display: flex; justify-content: center; }
     /* FEAT-61 aim reticle — a 20 px ring at screen centre (the brief). pointer-events none so it
        can never eat a drag, and no transition: it must appear the instant F goes down or it lies
        about when aiming started. */
@@ -493,7 +503,7 @@
       color: var(--text-dim);
       font-size: 12px;
     }
-    #mission-panel .mp-title, #camp-panel .mp-title, #paper-panel .mp-title, #scenario-panel .mp-title {
+    #mission-panel .mp-title, #camp-panel .mp-title, #paper-panel .mp-title, #scenario-panel .mp-title, #run-end .mp-title {
       color: var(--accent-story);
       font-size: 12px;
       letter-spacing: 2px;
@@ -521,7 +531,7 @@
     #sp-body .sp-board { margin: 10px auto 0; border-collapse: collapse; font-size: 14px; }
     #sp-body .sp-board td { padding: 1px 10px; text-align: right; }
     #sp-body .sp-board tr.sp-you td { color: var(--money); }
-    #mission-panel button, #camp-panel button, #paper-panel button, #scenario-panel button {
+    #mission-panel button, #camp-panel button, #paper-panel button, #scenario-panel button, #run-end button {
       background: none;
       border: 1px solid var(--line-control);
       color: var(--text-body);
@@ -531,7 +541,7 @@
       cursor: pointer;
       transition: background 0.1s, color 0.1s;
     }
-    #mission-panel button:hover, #scenario-panel button:hover, #camp-panel button:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: var(--text-bright); border-color: var(--line-hover); }
+    #mission-panel button:hover, #scenario-panel button:hover, #run-end button:hover, #camp-panel button:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: var(--text-bright); border-color: var(--line-hover); }
     #camp-panel button:disabled { color: var(--text-faint); border-color: var(--line); cursor: default; }
     #camp-panel button .keycap { margin: 0 7px 0 0; }   /* the back's key, before its word (.card-back's order) */
     #mp-accept { border-color: var(--accept); color: var(--accept-text); }
@@ -1485,6 +1495,8 @@
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
     <button id="pm-settings">settings</button>
+    <!-- FEAT-146: story runs only — ends the run on the summary card, behind one confirm click. -->
+    <button id="pm-towel" style="display:none">throw in the towel</button>
     <!-- FEAT-42: story runs only, at the bottom; greyed out with its reason (pm-save-why) while the run
          can't save. It IS the way out of a run (owner, 2026-10-30: the two buttons did the same thing), so
          "main menu" shows only outside a run, or while a run can't save. -->
@@ -1637,6 +1649,12 @@
   </div>
   <!-- FEAT-62: the scenario finish card (mission-panel chrome). Filled by main.js _renderScenarioUI;
        the run HUD while driving is #mission-hud below, the Quick Job's readout. -->
+  <!-- FEAT-146: the run's end — one summary card for every ending (main.js _endRun), then the main menu. -->
+  <div id="run-end">
+    <div class="mp-title" id="re-title"></div>
+    <div id="re-body"></div>
+    <div id="re-actions"><button id="re-menu">main menu</button></div>
+  </div>
   <div id="scenario-panel">
     <div class="mp-title" id="sp-title">scenario</div>
     <div id="sp-body"></div>

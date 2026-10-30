@@ -31,7 +31,7 @@ import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D 
 import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
-import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
+import { DamageScreen, worstParts } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated); FEAT-146 the summary's worst parts
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
@@ -1182,9 +1182,12 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 // it and is reachable long before the module body gets that far.
 let _pauseOpen = false
 let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-card until any key
+let _runEndOpen = false   // FEAT-146: the run's summary card is up — nothing behind it is in play
+let _towelArm = 0         // FEAT-146: the towel's arm timer while armed, 0 when not (_hidePauseMenu reads it early)
+let _playedS = 0          // FEAT-146: real seconds of a live, unpaused run (the summary's playtime; the save carries it)
 // The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
-// FEAT-42: the resume card — the run may have been saved at speed, mid-slide even.
-function _heldPause () { return _resumeHold || (_pauseOpen && scenarioSystem.isActive()) }
+// FEAT-42: the resume card — the run may have been saved at speed, mid-slide even. FEAT-146: the run's end.
+function _heldPause () { return _resumeHold || _runEndOpen || (_pauseOpen && scenarioSystem.isActive()) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -5006,13 +5009,13 @@ const _RC_LABEL = {
   towShop: (o) => `tow to service center · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
 }
 const _RC_ACT = {
-  towFuel: _towToFuel, towShop: _towToShop, end: _backToMenu,
+  towFuel: _towToFuel, towShop: _towToShop, end: () => _endRun('broke'),   // FEAT-146: death by breakdown (SM-INV-1)
 }
 
 function _updateRecovery () {
   const row = document.getElementById('recovery-row')
   if (!row) return
-  const show = storySystem.isActive() && !storySystem.isEntering() && !fuelStop.isOpen && !serviceScreen.isOpen && !_inPoiRing()
+  const show = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen && !_inPoiRing()
   row.style.display = show ? 'flex' : 'none'
   const live = show && !!vehicleState.parked && !damageScreen.blocked
   const icon = document.getElementById('recovery-icon')
@@ -6061,6 +6064,8 @@ function _renderRunHud () {
   // so this is the one place the requisition opens (openLines is idempotent).
   if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds) offerBoard.openLines(daySystem.clockH())
   const req = offerBoard?.lines() ?? []
+  // FEAT-146: the win — every line delivered, and the last one's result card put away.
+  if (req.length && req.every(l => l.state === 'done') && !missionSystem?.isActive()) _endRun('win')
   const reqText = req.some(l => l.state !== 'closed') ? `requisition ${req.filter(l => l.state === 'done').length} / ${req.length}` : null
   // The clock reads the one authoritative world clock (day.js) in the SAME notation as a job's due
   // time — "Day 3, 2:15 am" — so this is where the player looks to read a deadline (owner,
@@ -7116,9 +7121,12 @@ function _showPauseMenu () {
   const restartBtn = document.getElementById('pm-restart')
   if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() ? '' : 'none'
   // FEAT-42: save & exit is a story-run button, greyed out with its reason while the run can't save.
+  // FEAT-146: an ended run (the crash's beat before its card) has nothing left to save or throw in.
+  const live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded
+  const towel = document.getElementById('pm-towel')
+  if (towel) towel.style.display = live ? '' : 'none'
   const saveBtn = document.getElementById('pm-save')
   if (saveBtn) {
-    const live = storySystem.isActive() && !storySystem.isEntering()
     const why = live ? _saveBlock() : null
     saveBtn.style.display = live ? '' : 'none'
     saveBtn.disabled = !!why
@@ -7134,6 +7142,7 @@ function _hidePauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) { el.style.display = 'none'; el.classList.remove('settings') }
   _pauseOpen = false
+  _disarmTowel()
 }
 
 // ── FEAT-62: scenarios ────────────────────────────────────────────────────────────────────────────
@@ -7682,6 +7691,8 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _runGearbox = gearbox
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _runEnded = false
+  _playedS = 0                       // FEAT-146 (a resume puts the saved playtime back in _restoreRun)
+  damageModel.fatalImpact = null     // FEAT-146: a fatal hit before the run is not this run's death
   if (!resume) clearRun()   // FEAT-42: one slot — a new game discards the saved run
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
@@ -7807,6 +7818,10 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
 // still holds a frozen region and a live day clock would leave both running behind the scene.
 function _backToMenu () {
+  // FEAT-146: the summary card and the crash's black and white leave with the run.
+  document.getElementById('run-end').style.display = 'none'
+  _runEndOpen = false
+  renderer.domElement.style.filter = ''
   _exitScenario()
   if (missionSystem?.isActive()) missionSystem.exit()
   if (storySystem.isActive()) storySystem.exit()
@@ -7934,6 +7949,78 @@ function _discardRunSave () {
   clearRun()
 }
 
+// ── FEAT-146: the run ends ──────────────────────────────────────────────────────────────────────
+// Three ways out of an alpha run (DESIGN.md, release cuts 2026-10-23): the requisition delivered
+// (win), death (SM-INV-1: a fatal crash, or a breakdown you can't pay to recover from) or the towel
+// from the pause menu. Every one comes through _endRun: the save goes first, or the autosave would
+// keep a dead run alive for "continue"; then one summary card; then the main menu. A fatal crash
+// always ends the run: the default mode has no lives (SM-INV-1 lives clause) and nothing grants any.
+const RUN_END_TITLE = {   // PLACEHOLDER words; the day is the in-game day (owner, 2026-10-30: days AND playtime)
+  win:   (d) => `you made it in ${d} day${d === 1 ? '' : 's'}`,
+  crash: (d) => `you crashed on day ${d}`,
+  broke: (d) => `you broke down on day ${d}`,
+  towel: (d) => `you called it on day ${d}`,
+}
+// The fatal hit plays out in black and white before its card (owner, 2026-10-30).
+const CRASH_CARD_DELAY_S = 1.5
+
+/** End the run `kind` ('win' | 'crash' | 'broke' | 'towel'). The first ending wins. */
+function _endRun (kind) {
+  if (_runEnded) return
+  _discardRunSave()
+  // Read the run as it ended, before the clock moves on behind the card.
+  const title = RUN_END_TITLE[kind](daySystem.day()), body = _runEndHtml(kind)
+  if (missionSystem?.isActive()) missionSystem.exit()
+  if (kind === 'crash') renderer.domElement.style.filter = 'grayscale(1)'
+  setTimeout(() => {
+    if (!_runEnded || !storySystem.isActive()) return   // left for the menu during the crash's beat
+    _hidePauseMenu()
+    document.getElementById('re-title').textContent = title
+    document.getElementById('re-body').innerHTML = body
+    document.getElementById('run-end').style.display = 'block'
+    _runEndOpen = true
+  }, kind === 'crash' ? CRASH_CARD_DELAY_S * 1000 : 0)
+}
+
+/** The summary's rows. It reads what the run already tracks; only the playtime is counted for it. */
+function _runEndHtml (kind) {
+  const e = runEconomy, f = damageModel.fatalImpact, req = offerBoard?.lines() ?? []
+  const row = (k, v, gap = false) => `<div class="re-row${gap ? ' re-gap' : ''}"><span class="re-k">${k}</span><span>${v}</span></div>`
+  const min = Math.floor(_playedS / 60)
+  return (kind === 'crash' && f ? `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region}</div>` : '')
+    + row('playtime', `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`)
+    + row('jobs done', `${e.missions}`, true)
+    + row('ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))
+    + row('good deeds', `${formatDeeds(e.halfPoints)} of ${ECONOMY_PARAMS.campDeeds}`)
+    + (req.some(l => l.state !== 'closed') ? row('requisition', `${req.filter(l => l.state === 'done').length} / ${req.length}`) : '')
+    + row('earned', `$${formatMoney(e.money + e.spent - ECONOMY_PARAMS.startCash)}`, true)
+    + row('spent', `$${formatMoney(e.spent)}`)
+    + row('wallet', `<span class="re-money">$${formatMoney(e.money)}</span>`)
+    + worstParts(damageModel, 3).map((p, i) =>
+        row(i ? '' : 'truck', `${p.label} <span style="color:${p.color}">${Math.round(p.c * 100)}%</span>`, !i)).join('')
+}
+document.getElementById('re-menu')?.addEventListener('click', _backToMenu)
+
+// The towel: the job-cancel button's two clicks (#job-cancel) — the first arms it for TOWEL_ARM_S.
+const TOWEL_ARM_S = 3
+function _disarmTowel () {
+  if (_towelArm) clearTimeout(_towelArm)
+  _towelArm = 0
+  const b = document.getElementById('pm-towel')
+  if (b) { b.classList.remove('armed'); b.textContent = 'throw in the towel' }
+}
+document.getElementById('pm-towel')?.addEventListener('click', () => {
+  const b = document.getElementById('pm-towel')
+  if (!_towelArm) {
+    _towelArm = setTimeout(_disarmTowel, TOWEL_ARM_S * 1000)
+    b.classList.add('armed')
+    b.textContent = 'throw in the towel — sure?'
+    return
+  }
+  _endRun('towel')
+})
+window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
+
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
 function _runSnapshot () {
   const vs = vehicleState, p = vs.position, q = vs.quaternion
@@ -7951,6 +8038,7 @@ function _runSnapshot () {
     shelves: runShelves, paperTier: runPaper.tier,
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
     job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
+    playedS: _playedS,   // FEAT-146: the summary's playtime
   }
 }
 
@@ -7960,6 +8048,7 @@ function _restoreRun (s) {
   _resumeHold = true
   daySystem.restore(s.day)
   Object.assign(runEconomy, s.economy)
+  _playedS = s.playedS ?? 0
   inventorySystem.restore(s.inventory)
   partsSystem.restore(s.parts)
   damageModel.toeOffsetDeg.splice(0, 4, ...s.damage.toe)
@@ -8111,6 +8200,7 @@ document.addEventListener('keydown', e => {
   // because the alternative is standing in a region the playability check just rejected.
   const seedModal = document.getElementById('story-seed-modal')
   if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
+  if (_runEndOpen) return   // FEAT-146: the run is over — the card's one button is the way out
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
   if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule
@@ -8318,6 +8408,8 @@ function loop () {
     accumulator = 0
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
+  } else if (storySystem.isActive() && !storySystem.isEntering() && !_pauseOpen && !_runEnded) {
+    _playedS += frameTime   // FEAT-146: playtime — a live run, not paused (the clamp drops a hidden tab's gap)
   }
   damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
   damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
@@ -8443,6 +8535,8 @@ function loop () {
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT,
         vehicleState.velocity)
       if (landed) { damageHUD.noteImpact(landed); damageScreen.alert() }
+      // FEAT-146: death (SM-INV-1) — a live story run ends on its first fatal hit.
+      if (damageModel.fatalImpact && storySystem.isActive() && !storySystem.isEntering()) _endRun('crash')
     }
     simTime += PHYSICS_DT
     // While recording, log the ground the browser sampled (gated on isRecording() so normal play
