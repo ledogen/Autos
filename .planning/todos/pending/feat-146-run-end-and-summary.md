@@ -40,17 +40,42 @@ Style per UI-STYLE.md: a Story card (the world talking), not a System panel.
 
 ## Acceptance
 
-- [ ] A fatal crash in story mode ends the run on the death card. Free roam is untouched (respawn
+- [x] A fatal crash in story mode ends the run on the death card. Free roam is untouched (respawn
       stays a free-roam tool — SM-INV-1 lives clause).
-- [ ] Recovery's "end run — you broke down" goes to the summary, not straight to the menu.
-- [ ] The pause menu has "throw in the towel" in story mode only, behind one confirm.
-- [ ] Completing the FEAT-103 requisition ends the run on the win card.
-- [ ] All three roads reach the same summary, and it returns to the main menu.
-- [ ] If FEAT-42's run slot exists by then, every ending deletes it.
-- [ ] `node test/cdp-smoke.mjs` drives all three endings without a console error.
+- [x] Recovery's "end run — you broke down" goes to the summary, not straight to the menu.
+- [x] The pause menu has "throw in the towel" in story mode only, behind one confirm.
+- [x] Completing the FEAT-103 requisition ends the run on the win card.
+- [x] All three roads reach the same summary, and it returns to the main menu.
+- [x] Every ending calls main.js `_discardRunSave()` (FEAT-42, owner 2026-10-29: the run save is a
+      ROLLING AUTOSAVE, rewritten every second while a run is live). It deletes the save and stops the
+      autosave for the rest of that run; without it the autosave keeps rewriting a dead run and
+      "continue" brings it back. (Replaces Spare's earlier ask to grey save & exit on the end screen.)
+- [x] `node test/cdp-smoke.mjs` drives all three endings without a console error.
+
+## Built (2026-10-30, feature/run-shape)
+
+- **One way through** — main.js `_endRun(kind)`: `_discardRunSave()` first, the summary read the moment
+  the run ends, any live mission exited, then the `#run-end` Story card (index.html). The card holds
+  the sim (`_heldPause`) and counts as a menu for keyboard / pad (menu-nav.js). Its one button is
+  `_backToMenu()`.
+- **Crash** — the frame loop reads `damageModel.fatalImpact` (latched by damage.js, cleared at run
+  start). The world turns black and white at the hit (a CSS grayscale on the canvas), and the card
+  follows 1.5 s later (owner, 2026-10-30).
+- **Broke down** — the Recovery card's "end run" calls `_endRun('broke')`.
+- **Towel** — `#pm-towel` in a live story run's pause menu, two clicks within 3 s (the job-cancel
+  pattern).
+- **Win** — `_renderRunHud` ends the run once every requisition line is done and the last result card
+  is put away. A save written on that card resumes straight into the win.
+- **The summary** — the title carries the in-game day ("you made it in 3 days", "you crashed on day
+  3"), then playtime as "xh yym" in real time (owner, 2026-10-30: show both). Then jobs done, rank
+  counts D·C·B·A·S, good deeds of 6, the requisition once open, money earned / spent / wallet, and
+  the truck's three worst parts (damage-screen.js `worstParts`, the same ranking as the damage screen).
+- **New run state** — economy.js `runEconomy.ranks` and `.spent` (earned = wallet + spent − start
+  cash); main.js `_playedS`, counted while a live run is unpaused, carried in the run save.
+- **Lives** — none: DESIGN.md SM-INV-1, "the default mode has no lives", and no setting grants any.
+- Smoke: cdp-smoke `endings` drives all four roads (towel, crash, broke down, win), checks the save is
+  gone and "continue" is not offered, and checks playtime counts while driving and stops while paused.
 
 ## Open
 
-- The win/towel card wording.
-- Whether the lives clause (a difficulty setting) is in the alpha. If it is, a fatal crash with a life
-  in hand is not an ending.
+- The card wording: every title and row label is a PLACEHOLDER.

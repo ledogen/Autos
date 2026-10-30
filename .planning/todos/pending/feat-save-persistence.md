@@ -48,13 +48,33 @@ ratified "written on quit, deleted on load" — DESIGN.md "Run shape and saving"
     reload → continue (same spot / wallet / clock / truck, paused, no intro replay), then the crash —
     the page killed at 10.5 m/s mid-drive with no save & exit → continue resumes at 10.6 m/s, 0.18 m
     away, held until Esc.
-- **Interim, until part 2:** while a job or paper route is in hand the autosave holds its last
-  pre-job write, and save & exit is greyed out ("finish or cancel the job to save"). A crash mid-job
-  therefore resumes before the job was taken.
-- **Part 2, owed after Lane A lands FEAT-103:** jobs survive. Re-plan the taken offer against the
-  regenerated roads, `MissionSystem.resume`, the cargo through `_loadFreight` / `_loadLoose` / haul
-  bundles at their bed poses with their velocities, and a paper-route resume. Lane A's
-  `mission.approach` rides along. Then drop the job block in `_saveBlock`.
+- **Part 2 DONE 2026-10-29 (Spare): jobs survive a save.** A board job and Larry's round ride the
+  save; only a Quick Job (the calibration rig, no offer) still holds it at its pre-job write.
+  - **The re-plan is a replay, not a re-resolution.** `planDistinct` steers a newcomer off its OLDER
+    SIBLINGS' things and destinations, and those siblings expire and refill while the job is in hand —
+    so planning the taken offer again could hand back a different job. `planDistinct` now records
+    what it resolved against on the offer (`offer.planned`: spec attempt n, the POIs excluded, the
+    roadside name); the save carries it and `OfferBoard.replan` replays exactly that.
+    `offer-board.mjs` pins it: every planned offer across 120 seeds re-plans as the same job on a
+    fresh board with no sibling planned, cycled re-rolls included.
+  - `MissionSystem.snapshot` / `resume`: state, clock (`elapsed` + the start-line `t0H`), leg, the
+    terms frozen at accept, `dueH`, expired, failed, `approach`, and the haul pick (bundles, payMult,
+    stockCost). Resume lands straight in the saved state: no accept, so no second take, spend or
+    spawn-checkpoint move.
+  - Cargo, after the truck's motion is back: freight re-straps through `_loadFreight` with the
+    fragile condition carried; the loose tire goes back in the bed unless it was already lost (the
+    job stays failed); haul pieces return at their saved BED-LOCAL poses and the bed's velocity, and
+    a piece already out of the bed stays lost. A haul saved mid-drop resumes in 'loading' and drops
+    again.
+  - `PaperRouteSystem.snapshot` / `resume`: the tour re-plans from Larry's on the same tier (the
+    ladder only moves at a finish) at the saved par, with the stock, the porches served and the spot
+    money; papers in the air and on the lawns are not kept. `paper-reroute.mjs` pins it.
+  - A resume that throws, or a job that does not re-plan, costs the JOB (abandoned on the board,
+    console warning), never the run or the autosave.
+  - Smoke `save` step: save & exit with the offer step's courier job in hand → same job, same state;
+    then a freight job taken at a live freight giver and the page killed mid-drive → same job, same
+    load back in the bed. **Not browser-covered:** a haul or a paper round across a reload (the
+    paper resume is headless-checked; the haul's bed-local round trip is by construction).
 - **Owed to the run's end (FEAT-146, Lane A):** death and the run's end call `_discardRunSave()`,
   which deletes the save and stops the autosave. There is no death path in code yet.
 - **Still open from the original ticket:** `metaState` (the garage, story keys, export/import) and the

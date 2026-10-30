@@ -299,17 +299,18 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
 // checked here through the live system rather than the planner, because the trigger is what broke.
 {
     let mapOpen = null
-    const sys = new PaperRouteSystem({
+    const deps = {
         getRoad: () => road, getPois: () => poi, getRegion: () => region,
         getCar: () => car, getTerms: () => ({ payTier: 1 }),
         getTargetR: () => POI_PARAMS.poiHouseTargetR,
         onSettle: () => ({ payout: 0, points: 0 }),
         onBriefing: (done) => done(),
         setMapOpen: (o) => { mapOpen = o },
-    })
+    }
+    const sys = new PaperRouteSystem(deps)
     const car = { x: larry.x, y: larry.y ?? 0, z: larry.z }
     resetPaperRun()
-    sys.open(larry)
+    sys.open(larry, { id: 'larry#0' })   // a board offer: FEAT-42 below saves the round by its id
     // open() defers the plan a tick; drain it synchronously the way the gate for the tour does.
     await new Promise(r => setTimeout(r, 0))
 
@@ -342,6 +343,18 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
         check('…and the CONTRACT still lists every customer, delivered or not',
             sys.route.customers.length === base.customers.length
             || sys.route.customers.some(c => c.id === first.id))
+
+        // FEAT-42: the round in hand survives a save — through JSON, into a fresh system, it is the
+        // same tour at the same par with the same porch served, and the line re-plans from here.
+        const snap = JSON.parse(JSON.stringify(sys.snapshot()))
+        const back = new PaperRouteSystem(deps)
+        const ok = back.resume(larry, { id: 'larry#0' }, snap)
+        const ids = r => r?.customers.map(c => c.id).join()
+        check('FEAT-42: a saved round resumes as the same tour, par, stock and served porch',
+            ok && back.state === 'running' && ids(back.route) === ids(sys.route) && back.route.par === sys.route.par
+            && back.run.stock === sys.run.stock && back.run.hits.has(first.id) && back.run.t0H === sys.run.t0H,
+            `ok ${ok}, state ${back.state}, tour ${ids(back.route) === ids(sys.route)}, stock ${back.run?.stock}/${sys.run.stock}`)
+        check('…and its line re-plans to whoever is still owed', back.hasReplan())
     }
 }
 

@@ -40,7 +40,7 @@
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
-    REWARD_VALUE,
+    REWARD_VALUE, REQUISITION,
 } from '../data/offers.js'
 import { PARTS } from '../data/parts.js'
 import { ITEM_PRICE } from '../data/shop-stock.js'
@@ -257,7 +257,52 @@ export class OfferBoard {
             this._refill(s, nowH)
             if (s.state === 'live') this._desync(s, `budget:${this._seed}:b${i}:age`, nowH)
         }
+        // FEAT-103: THE REQUISITION — a third slot kind (data/offers.js REQUISITION). Each line sits at
+        // its source, the nearest POI of its `from` type to the camp (ties to the id), and _at() shows
+        // it at the camp too: one offer, two map tags. 'closed' until openLines(); then 'live' with no
+        // expiry, 'taken', and 'done' once delivered. Never in _always or _budget, so advance() never
+        // touches it, and never anyone's older sibling, so no ordinary offer plans differently for it.
+        const camp = (pois || []).find(q => q.type === 'expeditionCamp')
+        this._campId = camp?.id ?? null
+        const d2 = (q) => (q.x - camp.x) ** 2 + (q.z - camp.z) ** 2
+        this._lines = !camp ? [] : REQUISITION.map((line, i) => {
+            const src = (pois || []).filter(q => q.type === line.from)
+                .sort((a, b) => (d2(a) - d2(b)) || (a.id < b.id ? -1 : 1))[0]
+            return src && { poiId: src.id, type: src.type, slot: `r${i}`, k: 0, line, offer: null, state: 'closed', until: 0 }
+        }).filter(Boolean)
+        this._slots.push(...this._lines)
     }
+
+    /**
+     * FEAT-103: open the requisition — main.js calls it once the run holds ECONOMY_PARAMS.campDeeds
+     * good deeds. Idempotent: true only when it opened a line, so a caller logging board calls
+     * (FEAT-42's save) sees one event, not one per poll. Every line's spec is FIXED (nothing rolled):
+     * the camp is its only destination, no person, no bonus, no pay.
+     */
+    openLines (nowH) {
+        let opened = false
+        for (const s of this._lines) {
+            if (s.state !== 'closed') continue
+            opened = true
+            const t = s.line
+            s.state = 'live'
+            s.offer = {
+                id: `${s.poiId}#${s.slot}#0`, poiId: s.poiId, type: s.type, slot: s.slot, k: 0,
+                bornH: nowH, lifeH: Infinity, expiresH: Infinity, route: undefined,
+                _spec: {
+                    line: t.id, family: t.family, thingId: t.id, phrase: t.phrase, person: null, bonus: null,
+                    massKg: t.stock ? t.stock * HAUL_BUNDLE_KG : t.massKg, stock: t.stock ?? null, payMult: 0,
+                    destKind: 'poi', destPick: 0, placeName: null, to: null, passenger: !!t.passenger,
+                    shape: 'courier', from: null, load: null, loose: null, atPickup: null, fragile: null,
+                    deadlineSlack: 0,
+                },
+            }
+        }
+        return opened
+    }
+
+    /** FEAT-103: the requisition's lines, for the HUD and the win: [{ id, poiId, state }]. */
+    lines () { return this._lines.map(s => ({ id: s.line.id, poiId: s.poiId, state: s.state })) }
 
     /** Does this type have anything it could post — a source row and at least one built thing? */
     _postsAnything (type) { return postable(type).length > 0 }
@@ -376,10 +421,10 @@ export class OfferBoard {
     sources () { return this._givers.slice() }
 
     /** Does this POI post work at all? A budget giver with nothing on offer right now still does. */
-    isGiver (poiId) { return this._givers.includes(poiId) }
+    isGiver (poiId) { return this._givers.includes(poiId) || (poiId != null && poiId === this._campId) }
 
     /** Every slot currently at this POI: its own slots, then any budget slots parked there. */
-    _at (poiId) { return this._slots.filter(s => s.poiId === poiId) }
+    _at (poiId) { return this._slots.filter(s => s.poiId === poiId || (s.line && poiId === this._campId)) }
 
     /** The live offers at a POI, in slot order. Taken and locked slots show nothing. */
     offers (poiId, nowH) {
@@ -428,8 +473,9 @@ export class OfferBoard {
         if (!this.isLive(offerId, nowH)) return null
         const s = this._slotOf(offerId)
         s.state = 'taken'
-        // FEAT-113: the delivery deadline. No par (a caller with no planned route) → no deadline.
-        s.offer.dueH = parS > 0 ? nowH + this.deadlineH(s.offer, parS) : Infinity
+        // FEAT-113: the delivery deadline. No par (a caller with no planned route) → no deadline, and
+        // a requisition line never has one (FEAT-103: no giver lockout, or the run could be unwinnable).
+        s.offer.dueH = parS > 0 && !s.line ? nowH + this.deadlineH(s.offer, parS) : Infinity
         return s.offer
     }
 
@@ -442,21 +488,26 @@ export class OfferBoard {
     }
 
     /** A taken offer was finished — ANY settled result, D included. The slot locks (see header). */
-    complete (offerId, nowH) { return this._lock(offerId, nowH) }
+    complete (offerId, nowH) { return this._lock(offerId, nowH, 'done') }
 
     /**
      * A taken offer was CANCELLED — the player phoned the customer (the cancel button is the only
      * caller). The slot locks exactly as for a completion: never free, even when the original timer
      * has already run out.
      */
-    abandon (offerId, nowH) { return this._lock(offerId, nowH) }
+    abandon (offerId, nowH) { return this._lock(offerId, nowH, 'live') }
 
-    /** THE LOCK RULE: a fresh full expiry from now (or the source's lockH). */
-    _lock (offerId, nowH) {
+    /**
+     * THE LOCK RULE: a fresh full expiry from now (or the source's lockH). A requisition line never
+     * locks (FEAT-103): it is delivered (`lineTo` 'done'), or back on the list unchanged ('live') with
+     * its route memo dropped — the old mission object carries that job's settle and terms.
+     */
+    _lock (offerId, nowH, lineTo) {
         this.advance(nowH)
         const s = this._takenSlot(offerId)
         if (!s) return false
-        this._lockAt(s, this._now)
+        if (s.line) { s.state = lineTo; s.offer.route = undefined }
+        else this._lockAt(s, this._now)
         return true
     }
 
@@ -469,6 +520,7 @@ export class OfferBoard {
         if (typeof offerId !== 'string') return null
         const [poiId, slot] = offerId.split('#')
         if (slot?.[0] === 'b') return this._budget[Number(slot.slice(1))] ?? null
+        if (slot?.[0] === 'r') return this._lines.find(s => s.slot === slot && s.poiId === poiId) ?? null
         return this._always.get(poiId)?.[Number(slot)] ?? null
     }
 
@@ -476,6 +528,9 @@ export class OfferBoard {
         const s = this._slotOf(offerId)
         return s && s.state === 'taken' && s.offer.id === offerId ? s : null
     }
+
+    /** FEAT-42: the offer the player has in hand under this id, or null — a resume's way back to it. */
+    taken (offerId) { return this._takenSlot(offerId)?.offer ?? null }
 
     // ── what an offer IS (lazy, seeded) ────────────────────────────────────────────────────────
 
@@ -601,7 +656,7 @@ export class OfferBoard {
      */
     olderSiblings (offer) {
         return this._at(offer.poiId)
-            .filter(s => s.slot !== offer.slot && (s.state === 'live' || s.state === 'taken')
+            .filter(s => !s.line && s.slot !== offer.slot && (s.state === 'live' || s.state === 'taken')
                 && (s.offer.bornH < offer.bornH || (s.offer.bornH === offer.bornH && s.slot < offer.slot)))
             .map(s => s.offer)
     }
@@ -626,6 +681,10 @@ export class OfferBoard {
     planDistinct (offer, planOne) {
         if (offer.route !== undefined) return offer.route
         if (!this.spec(offer)) return (offer.route = null)
+        if (offer._spec.line) {   // FEAT-103: fixed — nothing to re-roll
+            offer.planned = { n: 0, exclude: [], placeName: null }
+            return (offer.route = planOne(offer, new Set()))
+        }
         const sibs = []
         for (const o of this.olderSiblings(offer)) {
             const r = this.planDistinct(o, planOne)
@@ -635,19 +694,35 @@ export class OfferBoard {
         const usedPois = new Set(sibs.map(x => x.r.endPoiId).filter(Boolean))
         const usedNames = new Set(sibs.filter(x => !x.r.endPoiId).map(x => x.r.placeName))
         const oneThing = postable(offer.type).length === 1
-        let m = null
-        for (let n = 0; n < RE_ROLLS && !m; n++) {
+        let m = null, n = 0
+        for (; n < RE_ROLLS; n++) {
             if (n) offer._spec = this._rollSpec(offer, n)
             if (!oneThing && usedThings.has(offer._spec.thingId)) continue
-            m = planOne(offer, usedPois)
+            if ((m = planOne(offer, usedPois))) break
         }
         if (m && !m.endPoiId) {
             let name = offer._spec.placeName
-            for (let n = 1; usedNames.has(name) && n <= 32; n++) {
-                name = this._placeName(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:place:${n}`))
+            for (let k = 1; usedNames.has(name) && k <= 32; k++) {
+                name = this._placeName(rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:place:${k}`))
             }
             m.placeName = name
         }
+        // FEAT-42: what this plan was resolved AGAINST. The siblings move on (expire, refill) while
+        // the job is in hand, so a resume cannot re-run this resolution — it replays these instead.
+        offer.planned = m ? { n, exclude: [...usedPois], placeName: m.placeName ?? null } : null
+        return (offer.route = m)
+    }
+
+    /**
+     * FEAT-42: re-plan a TAKEN offer exactly as it was planned (`planned`, saved from offer.planned):
+     * the same spec attempt, the same POIs avoided, the same roadside name. Deterministic like
+     * planDistinct — the planner draws from the offer's own seeded stream.
+     */
+    replan (offer, planned, planOne) {
+        offer._spec = this._rollSpec(offer, planned.n)
+        const m = planOne(offer, new Set(planned.exclude))
+        if (m && planned.placeName) m.placeName = planned.placeName
+        offer.planned = planned
         return (offer.route = m)
     }
 
@@ -665,6 +740,8 @@ export class OfferBoard {
      */
     destWish (offer, pois, exclude) {
         const sp = this.spec(offer)
+        // FEAT-103: a line goes to the camp and nowhere else, at any length (mission.js `anyLeg`).
+        if (sp.line) return { kind: 'poi', pick: 0, pois: pois.filter(q => q.id === this._campId), strict: true, anyLeg: true }
         if (sp.destKind !== 'poi') return { kind: 'roadside' }
         // A FETCH (FEAT-102) wishes for its PICKUP — a POI of `from`, strictly — and says so, so the
         // planner returns the same way and settles back here.
@@ -804,6 +881,7 @@ export class OfferBoard {
     card (offer, { nowH, payTier = 1, route = null, customers = null, verdict = null } = {}) {
         const sp = this.spec(offer)
         if (!sp) return null
+        if (sp.line) return this._lineCard(offer, sp, route, verdict, nowH)
         const n = this._names.get(offer.poiId)
         const sentence = [{ t: personLabel(sp.person), b: true }]
         if (sp.family === 'papers') {
@@ -887,6 +965,34 @@ export class OfferBoard {
                 : deedLine(sp.family, this._region, cargoId, km, sp.massKg),
             // FEAT-112: a load that fits says nothing. Otherwise the worst reason, in words:
             // "Warning: this load exceeds the recommended weight limit", "Overload: too heavy".
+            verdict: verdict && verdict.verdict !== 'fits'
+                ? { level: verdict.verdict, text: `${verdict.verdict === 'overload' ? 'Overload' : 'Warning'}: ${verdict.reasons[0].text}` }
+                : null,
+        }
+    }
+
+    /**
+     * FEAT-103: a requisition line's card. The same at the camp and at the source. No person, no pay
+     * (the boss doesn't pay, for now), no timers; the deed slot states what makes the line count —
+     * C or better, in the job's own axis (gateLine's grammar). PLACEHOLDER words.
+     */
+    _lineCard (offer, sp, route, verdict, nowH) {
+        const kind = sp.family === 'haul' ? 'haul' : null
+        const terms = []
+        if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
+        terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
+        if (sp.stock) {
+            // The source's own haul offer is the stock on hand (owner, 2026-10-30): a player who wants the
+            // line in one trip waits for it. offer.poiId is the source at the camp too (_at).
+            const yard = this.offers(offer.poiId, nowH).map(o => this.spec(o)).find(x => x && !x.line && x.stock)
+            terms.push(yard ? `${yard.stock} in stock at the yard` : 'yard out of stock right now')
+        }
+        return {
+            family: sp.family, badge: jobBadge(sp), portrait: null, flavor: null,
+            sentence: [{ t: 'The expedition camp', b: true }, { t: ' needs ' }, { t: sp.phrase, b: true },
+                       { t: ` from ` }, { t: this.placeLabel(offer.poiId) ?? 'its source', b: true }, { t: '.' }],   // a template literal: the import scan
+            pay: 'Unpaid — the camp’s requisition', terms, times: ['no time limit'], bonus: null,
+            deed: `Counts ${gateLine('C', kind, this._region)} — else it goes back on the list`,
             verdict: verdict && verdict.verdict !== 'fits'
                 ? { level: verdict.verdict, text: `${verdict.verdict === 'overload' ? 'Overload' : 'Warning'}: ${verdict.reasons[0].text}` }
                 : null,

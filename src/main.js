@@ -31,7 +31,7 @@ import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D 
 import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
-import { DamageScreen } from './damage-screen.js'           // FEAT-90: the player's damage pictogram (V, park-gated)
+import { DamageScreen, worstParts } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated); FEAT-146 the summary's worst parts
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
@@ -97,7 +97,7 @@ import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine
 import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, RUN_INTRO, DLG } from '../data/dialogue.js'
+import { PAPER_ROUTE_INTRO, RUN_INTRO, DLG, COMPASS } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -1182,9 +1182,12 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 // it and is reachable long before the module body gets that far.
 let _pauseOpen = false
 let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-card until any key
+let _runEndOpen = false   // FEAT-146: the run's summary card is up — nothing behind it is in play
+let _towelArm = 0         // FEAT-146: the towel's arm timer while armed, 0 when not (_hidePauseMenu reads it early)
+let _playedS = 0          // FEAT-146: real seconds of a live, unpaused run (the summary's playtime; the save carries it)
 // The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
-// FEAT-42: the resume card — the run may have been saved at speed, mid-slide even.
-function _heldPause () { return _resumeHold || (_pauseOpen && scenarioSystem.isActive()) }
+// FEAT-42: the resume card — the run may have been saved at speed, mid-slide even. FEAT-146: the run's end.
+function _heldPause () { return _resumeHold || _runEndOpen || (_pauseOpen && scenarioSystem.isActive()) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -1232,8 +1235,8 @@ function showIgnitionHint () {
 function teleportToGround (x, z, heading, drop) {
   _spawnOverride = { align: true, x, z, heading, drop }
   storySystem?.notifyTeleport()
-  void _reseatTruckAtSpawn()
   showSpawnToast()
+  return _reseatTruckAtSpawn()   // the smoke awaits the seat (it waits on a network build) rather than guessing
 }
 function teleportToPose (x, y, z, quat) {
   _spawnOverride = { align: false, x, y, z, quat: quat.clone() }
@@ -1954,6 +1957,8 @@ const map2d = new Map2D({
   getBoard: () => (offerBoard && storySystem?.isActive() ? _boardView : null),
   // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
   onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
+  // Parked at a giver = "I want one of the jobs HERE": the map shows no other POI's card meanwhile.
+  hoverLocked: () => missionSystem?.state === 'offer',
   // (FEAT-60 dropped getMomsHouse: mom's house is a POI now, so it arrives through getPois with
   // its own glyph — the map no longer needs a second, separate channel for the same place.)
   onTeleport: ({ x, z, heading }) => {
@@ -3088,6 +3093,14 @@ function _rebuildPoiMarkers () {
       // modelYaw = the pad's road-facing yaw plus the asset's own yawOffset (a Winnebago parks
       // broadside, a trailer stands square) — see the yawOffset note in data/prop-models.js.
       m.rotation.y = q.modelYaw ?? q.yaw
+      // ASSET-32: Larry's van — a CHILD of the model, in its frame, so it stands, hides and is found
+      // with it (the opening can frame it later). Its boxes are already on q.collision (poi.js).
+      for (const v of q.parked ?? []) {
+        const c = spawnModel(v.key, { castShadow: true, receiveShadow: true })
+        c.position.set(v.x, 0, v.z)
+        c.rotation.y = v.yaw
+        m.add(c)
+      }
       _poiGroup.add(m)
       _poiMeshes.set(q.id, m)
     } else {
@@ -3096,6 +3109,14 @@ function _rebuildPoiMarkers () {
       cube.castShadow = true
       _poiGroup.add(cube)
       _poiMeshes.set(q.id, cube)
+    }
+    // FEAT-103: the barricades across the camp's road — each the same box its body carries
+    // (poi.js _barrierBox), so MESH == PHYSICS. Base-seated, like the POI models.
+    for (const b of q.barriers ?? []) {
+      const m = spawnModel('roadBarrier', { castShadow: true, receiveShadow: true })
+      m.position.set(b.x, b.y, b.z)
+      m.rotation.y = b.yaw
+      _poiGroup.add(m)
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
     // in poi.js (deterministic in the seed); this only dresses them. Static meshes, no bodies.
@@ -3249,7 +3270,8 @@ function _updateMissionRings () {
   // the same ring the same job. Only one of the two can ever be staging — you cannot take a job
   // while carrying a route — so this is a preference, not a merge.
   const paperZone = paperRouteSystem.startZone()
-  const zone = paperZone || (missionSystem?.state === 'staging' ? missionSystem.startZone() : null)
+  // FEAT-103: no green zone while a line is on its way to its source — the source's own park spot is the mark.
+  const zone = paperZone || (missionSystem?.state === 'staging' && !missionSystem.mission?.approach ? missionSystem.startZone() : null)
   const activeId = paperZone ? paperRouteSystem.giver?.id
                  : zone ? missionSystem.mission?.fromPoi : null
   // FEAT-60: rings are a NEAR-FIELD affordance now (owner, 2026-08-05). They used to burn at every
@@ -3274,7 +3296,7 @@ function _updateMissionRings () {
   const vp = vehicleState.position
   // FEAT-102: a fetch's PICKUP wears its orange ring for the whole outbound leg — the one "park
   // here" on screen while you are on a job, marking the area you park in to acquire the item.
-  const pickId = missionSystem?.pickupPoiId() ?? null
+  const pickId = missionSystem?.pickupPoiId() ?? _approachPoi()?.id ?? null   // FEAT-103: or a line's source
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
     ring.visible = id === pickId || (near && id !== activeId && !onMission && !ring.userData.hidden)
@@ -3440,7 +3462,7 @@ function _addDropMark (q) {
 
 /** Near-field like the rings; hidden on any other job, kept lit while its own load is dropping. */
 function _updateDropMarks (onMission) {
-  const vp = vehicleState.position, loadingAt = _haulPoi()?.id
+  const vp = vehicleState.position, loadingAt = _haulPoi()?.id ?? _approachPoi()?.id   // FEAT-103: or a line's source
   for (const [id, { q, mesh }] of _dropMarks) {
     const near = Math.hypot(mesh.position.x - vp.x, mesh.position.z - vp.z) <= POI_RING_SHOW_R
     mesh.visible = near && (!onMission || id === loadingAt)
@@ -4115,6 +4137,16 @@ missionSystem = new MissionSystem({
       result.health = _freight?.mission === mission && _freight.health ? _freight.health.health : 0
       result.letter = amountGrade(result.health, _fragileLinesOf(mission))
     }
+    // FEAT-103: a requisition line pays nothing and earns no deed. C or better delivers it; a D (late,
+    // or too much of the load lost) puts it back on the list unchanged.
+    if (mission?.line) {
+      const delivered = result.letter !== 'D'
+      offerBoard?.[delivered ? 'complete' : 'abandon'](mission.offerId, daySystem.clockH())
+      const lines = offerBoard?.lines() ?? []
+      result.line = { delivered, done: lines.filter(l => l.state === 'done').length, of: lines.length,
+                      need: mission.bundles ? `${rankTable('haul', region, 'firewood').C}+ bundles` : 'C or better' }
+      return { payout: 0, base: 0, tip: 0, points: 0 }
+    }
     const s = economySystem.settle(result, mission)
     // FEAT-122: the earned bonus goes in the truck — or waits on the swap prompt if it's full. A dine-in
     // meal (the dinner invitation) is never stowed: the result card offers it instead.
@@ -4127,6 +4159,13 @@ missionSystem = new MissionSystem({
   // pause holds it — and a board job's deadline is read on the same clock.
   getClockH: () => daySystem.clockH(),
 })
+
+/** FEAT-103: the run's opening cards with the camp's true compass direction from the spawn filled in. */
+function _runIntro () {
+  const c = poiSystem.list().find(q => q.type === 'expeditionCamp'), r = storySystem.region()
+  const deg = c && r ? (Math.atan2(c.x - r.x, -(c.z - r.z)) * 180 / Math.PI + 360) % 360 : 0
+  return RUN_INTRO.map(card => ({ ...card, text: card.text.replace('{dir}', COMPASS[Math.round(deg / 45) % 8]) }))
+}
 
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
 // Larry's route. A SIBLING of missionSystem — the two can never run at once (each one's park
@@ -4196,6 +4235,9 @@ gpsSystem = new GpsSystem(scene, {
     // 'staging' counts: that is precisely when a POI job wants guidance, because the reason the
     // start zone exists is that you may be pointing the wrong way and have to decide which.
     // FEAT-102: guideRoute(), not the mission — a fetch is guided one leg at a time.
+    // FEAT-103: nor while a line taken at the camp is still on its way to the source — the route
+    // starts THERE; the map's start pin and the source's lit park spot are the waypoint.
+    if (missionSystem?.mission?.approach) return null
     return (s === 'countdown' || s === 'staging' || s === 'running') ? missionSystem.guideRoute() : null
   },
   getCar: () => vehicleState.position,
@@ -4322,7 +4364,7 @@ function _offerVerdict (offer, pieces = null) {
 function _haulPick (offer) {
   const sp = offer && offerBoard ? offerBoard.spec(offer) : null
   const j = missionSystem.mission
-  if (!sp?.stock || !(j?.par > 0)) return null
+  if (!sp?.stock || sp.line || !(j?.par > 0)) return null   // FEAT-103: a line's load is fixed and free
   const { payTier, region } = economySystem.terms()
   const price = stockPrice(j.par, payTier, sp.payMult)
   const hardN = Math.floor((massLimits(TRUCK).hardKg - inventorySystem.stowedKg()) / HAUL_BUNDLE_KG)
@@ -4453,42 +4495,44 @@ function _planOffer (offer) {
   const sp = offerBoard.spec(offer)
   if (sp?.family === 'papers') return null
   // planDistinct resolves "no two offers at a POI are the same job" oldest-first and memoises on the
-  // offer; this callback is the planner for ONE offer, told which destination POIs to avoid.
-  return offerBoard.planDistinct(offer, (o, exclude) => {
-    const s = offerBoard.spec(o)
-    const poi = poiSystem.list().find(q => q.id === o.poiId)
-    if (!s || !poi || s.family === 'papers') return null
-    const dest = offerBoard.destWish(o, poiSystem.list(), exclude)
-    const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest, minM: s.bonus ? BONUS_LEG_MIN_M : 0 })   // an item needs the distance
-    if (m) {
-      // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),
-      // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
-      m.offerId = o.id
-      m.bonus = s.bonus
-      // FEAT-114: a haul's spec pays PER PIECE; the plan assumes the whole stock until the picker
-      // sets the real count at accept (bundles + payMult are rewritten there).
-      m.payMult = s.stock ? s.payMult * s.stock : s.payMult
-      m.bundles = s.stock   // FEAT-88: a haul load's piece count — null for every other family
-      if (s.stock) m.par *= HAUL_PAR_SLACK   // the load slows the truck; payMult already ÷ the same
-      // FEAT-96: a freight load is strapped in at accept. Its par grows with its mass and pay rides
-      // par, NOT divided back out — a heavier load pays more (data/offers.js FREIGHT_PAR_SLACK_PER_KG).
-      m.load = s.load
-      m.cargoKg = s.load ? s.massKg : null
-      m.fragile = s.fragile   // FEAT-97: tolerance + sound, or null
-      m.loose = s.loose ? { kind: s.loose, massKg: s.massKg } : null   // the bed's one loose body
-      m.atPickup = s.atPickup   // a fetch's wait at the pickup (the tire change), or null
-      if (s.load) {
-        m.par *= 1 + FREIGHT_PAR_SLACK_PER_KG * s.massKg
-        // Freight tips less than haul (owner, 2026-10-11; a FEAT-69 knob since 2026-10-21) —
-        // data/offers.js. Not fragile: it tips the whole line.
-        if (!s.fragile) m.tipMult = FREIGHT_TIP_MULT
-      }
-      // The pickup wait (the tire change) runs on the job's clock, so par carries it (owner,
-      // 2026-10-22) — and pay rides par like any other par time.
-      if (s.atPickup) m.par += s.atPickup.min / 60 * secPerGameH()
+  // offer; _planOne is the planner for ONE offer, told which destination POIs to avoid.
+  return offerBoard.planDistinct(offer, _planOne)
+}
+function _planOne (o, exclude) {
+  const s = offerBoard.spec(o)
+  const poi = poiSystem.list().find(q => q.id === o.poiId)
+  if (!s || !poi || s.family === 'papers') return null
+  const dest = offerBoard.destWish(o, poiSystem.list(), exclude)
+  const m = missionSystem.planOffer(poi, { rng: offerBoard.routeRng(o), dest, minM: s.bonus ? BONUS_LEG_MIN_M : 0 })   // an item needs the distance
+  if (m) {
+    // The contract's board-side terms ride on the mission: which offer it is (complete/cancel),
+    // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
+    m.offerId = o.id
+    m.line = s.line ?? null   // FEAT-103: a requisition line — settles as a line, never pays
+    m.bonus = s.bonus
+    // FEAT-114: a haul's spec pays PER PIECE; the plan assumes the whole stock until the picker
+    // sets the real count at accept (bundles + payMult are rewritten there).
+    m.payMult = s.stock ? s.payMult * s.stock : s.payMult
+    m.bundles = s.stock   // FEAT-88: a haul load's piece count — null for every other family
+    if (s.stock) m.par *= HAUL_PAR_SLACK   // the load slows the truck; payMult already ÷ the same
+    // FEAT-96: a freight load is strapped in at accept. Its par grows with its mass and pay rides
+    // par, NOT divided back out — a heavier load pays more (data/offers.js FREIGHT_PAR_SLACK_PER_KG).
+    m.load = s.load
+    m.cargoKg = s.load ? s.massKg : null
+    m.fragile = s.fragile   // FEAT-97: tolerance + sound, or null
+    m.loose = s.loose ? { kind: s.loose, massKg: s.massKg } : null   // the bed's one loose body
+    m.atPickup = s.atPickup   // a fetch's wait at the pickup (the tire change), or null
+    if (s.load) {
+      m.par *= 1 + FREIGHT_PAR_SLACK_PER_KG * s.massKg
+      // Freight tips less than haul (owner, 2026-10-11; a FEAT-69 knob since 2026-10-21) —
+      // data/offers.js. Not fragile: it tips the whole line.
+      if (!s.fragile) m.tipMult = FREIGHT_TIP_MULT
     }
-    return m
-  })
+    // The pickup wait (the tire change) runs on the job's clock, so par carries it (owner,
+    // 2026-10-22) — and pay rides par like any other par time.
+    if (s.atPickup) m.par += s.atPickup.min / 60 * secPerGameH()
+  }
+  return m
 }
 
 /**
@@ -4507,13 +4551,45 @@ function _poiInReach () {
   // which outranks her own front door in the precedence below, would offer freight instead of bed.
   const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
                              POI_PARAMS.poiInteractR, true)
-  // FEAT-88: a haul giver answers only with your BED over its drop zone — that is where the load
-  // lands, so it is where you park to be offered one.
-  if (q && q.drop && !_bedOverDrop(q)) return null
-  // ASSET-74: a POI with a PARK box (the general store's lot) answers only with the truck inside it.
-  // nearest()'s poiInteractR still finds it: the box's far corner is 8.8 m from the pad centre.
+  return q && _inPoiSpot(q) ? q : null
+}
+
+/**
+ * Is the truck in POI `q`'s parking spot? FEAT-88: a haul giver's is its drop zone, with your BED
+ * over it — that is where the load lands. ASSET-74: a POI with a PARK box (the general store's lot)
+ * wants the truck inside it; poiInteractR still reaches it (the box's far corner is 8.8 m from the
+ * pad centre). Anything else: the ring.
+ */
+function _inPoiSpot (q) {
   const vp = vehicleState.position
-  return q && q.park && !overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park) ? null : q
+  if (Math.hypot(q.x - vp.x, q.z - vp.z) > POI_PARAMS.poiInteractR) return false
+  return q.drop ? _bedOverDrop(q) : !q.park || overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park)
+}
+
+/** FEAT-103: the source of a line taken at the camp while the truck is still on its way there, or null. */
+function _approachPoi () {
+  const j = missionSystem?.mission
+  return j?.approach && missionSystem.state === 'staging' ? poiSystem.list().find(q => q.id === j.fromPoi) ?? null : null
+}
+
+/** FEAT-103: parking at that source starts the line (the fetch pickup's rule). True when it owns the prompt. */
+function _updateLinePrompt (poiEl, pulled) {
+  const q = _approachPoi()
+  if (!q || !_inPoiSpot(q)) return false
+  if (pulled) missionSystem.reachSource()
+  if (poiEl) {
+    poiEl.style.display = pulled ? 'none' : 'block'
+    if (!pulled) poiEl.innerHTML = parkPrompt(q.drop ? 'park to load the firewood' : 'park to pick up')
+  }
+  return true
+}
+
+/** FEAT-103: what the camp says when it has nothing to take. PLACEHOLDER words. */
+function _campGateText () {
+  const lines = offerBoard?.lines() ?? []
+  if (lines.length && lines.every(l => l.state === 'done')) return 'the requisition is complete'
+  if (lines.some(l => l.state !== 'closed')) return 'nothing to take here right now'
+  return `the camp takes on drivers with ${ECONOMY_PARAMS.campDeeds} good deeds`
 }
 
 // Rising edge of the parking-brake latch (vehicleState.parked), sampled where the prompt is polled.
@@ -4935,13 +5011,13 @@ const _RC_LABEL = {
   towShop: (o) => `tow to service center · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
 }
 const _RC_ACT = {
-  towFuel: _towToFuel, towShop: _towToShop, end: _backToMenu,
+  towFuel: _towToFuel, towShop: _towToShop, end: () => _endRun('broke'),   // FEAT-146: death by breakdown (SM-INV-1)
 }
 
 function _updateRecovery () {
   const row = document.getElementById('recovery-row')
   if (!row) return
-  const show = storySystem.isActive() && !storySystem.isEntering() && !fuelStop.isOpen && !serviceScreen.isOpen && !_inPoiRing()
+  const show = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen && !_inPoiRing()
   row.style.display = show ? 'flex' : 'none'
   const live = show && !!vehicleState.parked && !damageScreen.blocked
   const icon = document.getElementById('recovery-icon')
@@ -4998,8 +5074,10 @@ function _atMomsHouse () {
  * detector, and a fixed precedence: a POI in reach wins (the 18 m lay-by is the specific
  * affordance and it is what you drove onto), then making camp, then mom's door. The prompt follows
  * the same order, so what you see is always what the brake will do.
+ *
+ * `zParked` (BUG-95): the hunt was just armed with the truck already parked — see _toggleCampSeek.
  */
-function _updateParkTriggers () {
+function _updateParkTriggers (zParked = false) {
   const poiEl  = document.getElementById('poi-prompt')
   const campRow = document.getElementById('camp-row')
   const poi = _poiInReach()
@@ -5016,6 +5094,11 @@ function _updateParkTriggers () {
   // (owner, 2026-10-08), then the prompt sends you home for a few seconds.
   if (_updateFetchPrompt(poiEl, pulled)) {
     damageScreen.blocked ||= poiEl?.style.display === 'block'   // at the pickup: the brake is the fetch's
+    if (campRow) campRow.style.display = 'none'
+    return
+  }
+  if (_updateLinePrompt(poiEl, pulled)) {   // FEAT-103: likewise a line's source, on the way there
+    damageScreen.blocked = true
     if (campRow) campRow.style.display = 'none'
     return
   }
@@ -5080,7 +5163,7 @@ function _updateParkTriggers () {
   // ribbon — on the shoulder or further out — before the cab will do for a night.
   const onRoad = seeking && !site && !moms && _truckOnRibbon()
 
-  if (pulled) {
+  if (pulled || (zParked && !site)) {
     if (site) {
       _campUi = { mode: 'confirm', site, moms: false }
       _renderCampUI()
@@ -5107,7 +5190,8 @@ function _updateParkTriggers () {
       const next = offerBoard?.nextTurnoverH(poi.id, now)
       // FEAT-90: every "park to …" line carries the PARK badge; the status line does not.
       poiEl.innerHTML = !live
-        ? (next != null ? `no work here right now — new offer in ${formatGameDuration(next - now)}`
+        ? (poi.type === 'expeditionCamp' ? _campGateText()
+          : next != null ? `no work here right now — new offer in ${formatGameDuration(next - now)}`
                         : 'no work here right now')
         : poi.type === 'larrysHouse' ? parkPrompt('park to take the paper route')
         : live > 1 ? parkPrompt(`park to see ${live} offers`) : parkPrompt('park to see the offer')
@@ -5116,8 +5200,11 @@ function _updateParkTriggers () {
     }
   }
   if (!campRow) return
-  // The tent: wherever a camp could be looked for. Its card only while looking.
-  const showCamp = !poi && !!camp && !_campUi
+  // The tent: wherever a camp could be looked for. Its card only while looking. Under an UNMADE camp
+  // card it stays up and lit with no prompt of its own: Z / a click on it calls the hunt off there
+  // (owner, 2026-10-27; _toggleCampSeek). A made camp and mom's door hide it.
+  const unmade = _campCardUnmade()
+  const showCamp = !poi && (unmade || (!!camp && !_campUi))
   campRow.style.display = showCamp ? 'flex' : 'none'
   // The world-space ring: only while the card is offering a spot that could actually be taken.
   // Once the dialogue is up the DIALOGUE owns the ring — the confirm face leaves it standing on the
@@ -5125,9 +5212,10 @@ function _updateParkTriggers () {
   // false whenever _campUi is set).
   if (!_campUi) _updateCampMarker(showCamp && site ? site : null)
   if (!showCamp) return
-  document.getElementById('camp-icon')?.classList.toggle('on', seeking)
-  document.getElementById('camp-prompt').style.display = seeking ? 'block' : 'none'
-  if (!seeking) return
+  document.getElementById('camp-icon')?.classList.toggle('on', seeking || unmade)
+  const hunting = seeking && !_campUi   // the card that just opened is the prompt now
+  document.getElementById('camp-prompt').style.display = hunting ? 'block' : 'none'
+  if (!hunting) return
   // The bar only where there is ground being graded; at speed and off camping ground it would be
   // an empty meter.
   const graded = !!camp.inZone
@@ -5144,11 +5232,14 @@ function _updateParkTriggers () {
             :                      'not flat'
   document.getElementById('camp-prompt-text').innerHTML =
       camp.fast ? 'slow down to look for a campsite'
-    : site      ? parkPrompt('park to make camp')
+    : site      ? parkPrompt(parked ? 'park again to make camp' : 'park to make camp')
     : moms      ? why
     : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`
     :             `${why}<br>${parkPrompt('park to sleep in the truck')}`
 }
+
+/** An unmade camp card is up — the cab's (its sleep timer too), or a site previewed but not dug. */
+const _campCardUnmade = () => !!_campUi && !_campBusy && (!!_campUi.truck || _campUi.mode === 'confirm')
 
 /** The live card's "back" — the button that closes it without committing to anything — or null.
  *  Breaking a real camp is not a back (it costs the pad), so a made camp has none. */
@@ -5222,6 +5313,9 @@ function _makeCamp () {
   if (!site?.pad || _campBusy) return
   _campFade(() => {
     daySystem.advanceMinutes(30)   // the chore costs the day 30 minutes of energy, like any 30 min
+    // FEAT-128: making camp turns the key off — no idle drone or fuel burn through camp, and break
+    // camp leaves it off, so the player cranks it (I) like any other start.
+    vehicleState.ignition = makeIgnitionState(IGN_OFF)
     // The bench rides the POI pad carve (RoadSystem._padsAll) — same records, same zero-authority
     // road gate, so digging a camp can no more move the ribbon than a lay-by can.
     roadSystem?.setCampPads(campSystem.makeCampAt(site.pad))
@@ -5358,7 +5452,7 @@ function _renderCampUI () {
   const isHome = st.mode === 'camp' || st.mode === 'moms' || st.mode === 'truck'
   const vibe = st.moms ? 0.5 : (st.site?.vibe ?? 0)
 
-  set('cp-title', st.moms ? "mom's house" : st.truck ? 'the truck' : 'camp')
+  set('cp-title', st.moms ? "mom's house" : st.truck ? 'sleep in the truck' : 'camp')
   show('cp-make',   isConfirm)
   show('cp-truck',  isConfirm)
   // The confirm face's truck fallback obeys the same shoulder rule as the brake does.
@@ -5375,7 +5469,12 @@ function _renderCampUI () {
   show('cp-sleep-go',   isSleep)
   show('cp-sleep-back', isSleep)
   show('cp-sleep-panel', isSleep)
-  set('cp-break', st.moms || st.truck ? 'leave' : 'break camp')
+  // The backs Space / RB presses wear its keycap (owner, 2026-10-27; the keydown rule below). Break camp
+  // has none: Space never breaks a made camp.
+  const html = (id, h) => { const e = document.getElementById(id); if (e) e.innerHTML = h }
+  html('cp-break', st.moms || st.truck ? `${keycap('Space')}leave` : 'break camp')
+  html('cp-cancel', `${keycap('Space')}abandon`)
+  html('cp-sleep-back', `${keycap('Space')}back`)
   show('cp-vibe',        isConfirm)
   show('cp-vibe-legend', isConfirm)
   if (isConfirm) _renderVibeBar(st.site, document.getElementById('cp-vibe'))
@@ -5428,8 +5527,20 @@ function _renderCampUI () {
  *  must not silently arm a sticky hunt the player cannot see. */
 function _toggleCampSeek () {
   if (document.getElementById('camp-row')?.style.display !== 'flex') return
+  // Under an unmade card the lit tent is the way out of camp mode (owner, 2026-10-27): the hunt goes
+  // off and the card closes with it. Re-tested here, not trusted to the row: the row repaints at
+  // 10 Hz, and a camp dug a moment ago must never be broken by Z.
+  if (_campUi) {
+    if (_campCardUnmade()) { _campSeek = false; _closeCampUi(); _updateParkTriggers() }
+    return
+  }
   _campSeek = !_campSeek
-  _updateParkTriggers()       // repaint now rather than on the next 10 Hz poll
+  // BUG-95 (owner, 2026-10-26): arming the hunt while ALREADY parked counts as the pull where the
+  // answer is the cab or mom's door — the view stays put, so the card just opens. A real campsite
+  // still waits for a re-park: the hunt card previews its vibe and ring first, the prompt says "park
+  // again", and the re-park commits, as when you drive up to one. Safe: the tent (and so Z) never
+  // shows where a POI, pump, shop or fetch owns the brake.
+  _updateParkTriggers(_campSeek && !!vehicleState.parked)   // repaint now rather than on the next 10 Hz poll
 }
 const _campIcon = document.getElementById('camp-icon')
 // mousedown preventDefault keeps focus off the icon: Space is the parking brake, and a focused
@@ -5482,6 +5593,14 @@ function _panelHead (flavorHtml) {
     + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div>'
     + `<div class="mp-flavor">${flavorHtml ?? '&ldquo;<span class="mp-dim">[flavor line]</span>&rdquo;'}</div>`
     + '</div>'
+}
+
+/** FEAT-103: a requisition line's result rows — the load, then whether the camp counted it. PLACEHOLDER words. */
+function _lineRows (r) {
+  const L = r.line
+  return (r.loaded ? `<br><span class="mp-dim">Firewood delivered</span> <span class="mp-pay">${r.aboard} / ${r.loaded}</span>` : '')
+    + (L.delivered ? `<br><span class="mp-deed">Requisition ${L.done} / ${L.of}</span>`
+      : `<br><span class="mp-bad">not counted &mdash; back on the list</span> <span class="mp-dim">(needed ${L.need})</span>`)
 }
 
 /**
@@ -5677,6 +5796,12 @@ function _renderMissionUI () {
       // The POI start. No digits and no hold — the only thing the player needs told is what starts
       // the clock, and the green ring that just replaced the marker's orange one says where.
       show(panel, false); show(hud, true)
+      // FEAT-103: a line taken at the camp is still on its way to its source — untimed, so no clock.
+      if (m.mission?.approach) {
+        const z = m.startZone(), vp = vehicleState.position
+        hudText.textContent = `${km(Math.hypot(z.x - vp.x, z.z - vp.z))} to ${offerBoard?.placeLabel(m.mission.fromPoi) ?? 'the pickup'} · park there to start`
+        break
+      }
       hudText.textContent = 'leave the green circle to start' + _dueSuffix()
       break
     case 'running': {
@@ -5737,13 +5862,14 @@ function _renderMissionUI () {
       // 2026-10-24 for courier too): the letter decides the item and the deeds and lives only on the live
       // rank bar, so every type's card reads the time, then the money, then the deed.
       body.innerHTML = `<span class="mp-big">${formatTime(r.elapsed)}</span>`
-        + (paid
+        + (r.line ? _lineRows(r)
+          : paid
           ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
                        haul: r.loaded ? { aboard: r.aboard, loaded: r.loaded, bought: m.mission?.stockCost ?? 0 } : null,
                        condition: r.health ?? null, gate: m.mission?.bonus ? _missionGateLine(m.mission) : null,
                        deedNeed: _missionDeedNeed(m.mission) })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
-      if (paid) _revealResult(body)   // N-04: the staged reveal — tip count-up, deed tally tick
+      if (paid && !r.line) _revealResult(body)   // N-04: the staged reveal — tip count-up, deed tally tick
       // The result card is two actions: retry · continue (R-31, owner 2026-10-24: no "back to free roam"
       // here — leaving the mode is the pause menu's job). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
@@ -5936,17 +6062,25 @@ function _renderRunHud () {
   const el = document.getElementById('run-hud')
   if (!el) return
   const s = economySystem.snapshot()
+  // FEAT-103: the camp's gate. Every deed source settles through the wallet, and this poll reads it,
+  // so this is the one place the requisition opens (openLines is idempotent).
+  if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds) offerBoard.openLines(daySystem.clockH())
+  const req = offerBoard?.lines() ?? []
+  // FEAT-146: the win — every line delivered, and the last one's result card put away.
+  if (req.length && req.every(l => l.state === 'done') && !missionSystem?.isActive()) _endRun('win')
+  const reqText = req.some(l => l.state !== 'closed') ? `requisition ${req.filter(l => l.state === 'done').length} / ${req.length}` : null
   // The clock reads the one authoritative world clock (day.js) in the SAME notation as a job's due
   // time — "Day 3, 2:15 am" — so this is where the player looks to read a deadline (owner,
   // 2026-10-15). Whole minutes, which also keeps the snapshot key from re-writing the DOM at 10 Hz.
   const clock = formatDue(Math.floor(daySystem.clockH() * 60) / 60)
-  const key = `${s.money}|${s.halfPoints}|${clock}`
+  const key = `${s.money}|${s.halfPoints}|${clock}|${reqText}`
   if (key === _runHudKey && el.style.display === 'block') return
   _runHudKey = key
   const deeds = formatDeeds(s.halfPoints)
   el.innerHTML = `<span class="rh-money">$${formatMoney(s.money)}</span><br>`
     // R-02: the tally reads against the camp's gate, so the carrot is on the HUD from minute one.
     + `<span class="rh-deeds">${deeds} / ${ECONOMY_PARAMS.campDeeds} good deeds</span><br>`
+    + (reqText ? `<span class="rh-deeds">${reqText}</span><br>` : '')
     + `<span class="rh-clock">${clock}</span>`
   el.style.display = 'block'
 }
@@ -6375,6 +6509,8 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
     pm.payMult = pick.sp.payMult * pick.n
     pm.stockCost = pick.cost
   }
+  // FEAT-103: a requisition line taken AWAY from its source (at the camp) is untimed until you park there.
+  if (missionSystem.mission?.line && missionSystem.startZoneExitDist() <= 0) missionSystem.mission.approach = true
   missionSystem.accept()
   // §5b: the stock is bought at accept and never refunded — an expired or abandoned haul keeps it.
   if (pick && missionSystem.isOnJob()) economySystem.spend(pick.cost)
@@ -6987,21 +7123,41 @@ function _showPauseMenu () {
   const restartBtn = document.getElementById('pm-restart')
   if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() ? '' : 'none'
   // FEAT-42: save & exit is a story-run button, greyed out with its reason while the run can't save.
-  const saveBtn = document.getElementById('pm-save')
-  if (saveBtn) {
-    const live = storySystem.isActive() && !storySystem.isEntering()
-    const why = live ? _saveBlock() : null
-    saveBtn.style.display = live ? '' : 'none'
-    saveBtn.disabled = !!why
-    document.getElementById('pm-save-why').textContent = why ?? ''
+  // FEAT-146: an ended run (the crash's beat before its card) has nothing left to save or throw in.
+  const live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded
+  const towel = document.getElementById('pm-towel')
+  if (towel) towel.style.display = live ? '' : 'none'
+  _syncPauseSave(live)
+  // The ways out of a run to free roam / the lab are dev features (owner, 2026-10-30): in story mode they
+  // show only while the debug panel is open (backtick). Free roam keeps them.
+  const dev = _gui.domElement.style.display !== 'none'
+  for (const id of ['pm-story', 'pm-lab']) {
+    const b = document.getElementById(id)
+    if (b) b.style.display = storySystem.isActive() && !dev ? 'none' : ''
   }
   _pauseOpen = true
+}
+
+/** Save & exit's state. Called when the menu opens AND every frame it is open, so parking with the
+ *  menu up enables it at once (owner, 2026-10-30) instead of after a close and reopen. */
+function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded) {
+  const saveBtn = document.getElementById('pm-save')
+  if (!saveBtn) return
+  const why = live ? _saveExitBlock() : null
+  saveBtn.style.display = live ? '' : 'none'
+  saveBtn.disabled = !!why
+  const whyEl = document.getElementById('pm-save-why')
+  if (whyEl.textContent !== (why ?? '')) whyEl.textContent = why ?? ''
+  // One way out (owner, 2026-10-30): save & exit replaces "main menu" while it can save.
+  const menuBtn = document.getElementById('pm-menu')
+  if (menuBtn) menuBtn.style.display = live && !why ? 'none' : ''
 }
 
 function _hidePauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) { el.style.display = 'none'; el.classList.remove('settings') }
   _pauseOpen = false
+  _disarmTowel()
 }
 
 // ── FEAT-62: scenarios ────────────────────────────────────────────────────────────────────────────
@@ -7240,7 +7396,7 @@ const storySystem = new StorySystem({
   setQuickJobVisible: (visible) => {
     _quickJobWanted = visible
     _syncQuickJob()
-    if (visible) { dialogueSystem.play(DLG.runIntro, RUN_INTRO); _renderDialogue() }
+    if (visible) { dialogueSystem.play(DLG.runIntro, _runIntro()); _renderDialogue() }
     if (visible && _resumeHold) document.getElementById('resume-card').style.display = 'flex'   // FEAT-42 (see _restoreRun)
   },
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
@@ -7550,6 +7706,8 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _runGearbox = gearbox
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _runEnded = false
+  _playedS = 0                       // FEAT-146 (a resume puts the saved playtime back in _restoreRun)
+  damageModel.fatalImpact = null     // FEAT-146: a fatal hit before the run is not this run's death
   if (!resume) clearRun()   // FEAT-42: one slot — a new game discards the saved run
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
@@ -7675,6 +7833,10 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
 // still holds a frozen region and a live day clock would leave both running behind the scene.
 function _backToMenu () {
+  // FEAT-146: the summary card and the crash's black and white leave with the run.
+  document.getElementById('run-end').style.display = 'none'
+  _runEndOpen = false
+  renderer.domElement.style.filter = ''
   _exitScenario()
   if (missionSystem?.isActive()) missionSystem.exit()
   if (storySystem.isActive()) storySystem.exit()
@@ -7699,13 +7861,91 @@ let _restoring = false        // a resume's seat is in flight: the truck is not 
 let _runEnded = false         // the run is over: never write it again (_discardRunSave)
 
 /**
- * Why the run cannot be saved right now, or null. A job in hand holds live road geometry and bodies
- * in the bed; carrying one across a resume is FEAT-42 part 2, so until then the save holds its last
- * pre-job state for the length of a job (offers on the panel and a result card are fine to save).
+ * Why the run cannot be saved right now, or null. A board job and Larry's round ride the save
+ * (FEAT-42 part 2: _jobSnapshot, PaperRouteSystem.snapshot). A Quick Job does not — the calibration
+ * rig has no offer to re-plan from — so it holds the save at its last pre-job state.
  */
 function _saveBlock () {
-  if (missionSystem?.isOnJob() || paperRouteSystem.isCarrying()) return 'finish or cancel the job to save'
+  if (missionSystem?.isOnJob() && !_jobSnapshot()) return 'finish or cancel the job to save'
+  if (paperRouteSystem.isCarrying() && !paperRouteSystem.snapshot()) return 'finish or cancel the job to save'
   return null
+}
+/** The pause menu's save & exit: everything _saveBlock blocks, plus the truck must be parked (owner,
+ *  2026-10-30). The rolling autosave does NOT want this — it is the lid-close net and saves motion. */
+function _saveExitBlock () {
+  return _saveBlock() ?? (vehicleState.parked ? null : 'park to save')
+}
+
+/**
+ * FEAT-42: the board job in hand as plain data, or null. The route is not saved: the resume re-plans
+ * the offer exactly as it was planned (offer.planned — see OfferBoard.replan), which is a pure
+ * function of the seed. The load is: freight and the loose tire go back to their own strap pose (a
+ * weld holds the one there; the other goes where a reset puts it), so only fragile condition is kept.
+ * Haul pieces keep their BED-LOCAL poses — where each sits is what arrival counts — and a piece
+ * already out of the bed is lost and stays lost. A haul still loading re-drops from the start.
+ */
+function _jobSnapshot () {
+  const s = missionSystem?.snapshot(), m = missionSystem?.mission
+  const planned = missionSystem?.offer?.planned
+  if (!s || !planned) return null
+  s.offerId = m.offerId
+  s.planned = planned
+  if (_freight?.mission === m) s.freightHealth = _freight.health?.health ?? null
+  if (_haul?.mission === m && s.state !== 'loading') {
+    s.haul = _haul.handles.flatMap((h, i) => _inBed(h) ? [{ kind: _haul.drops[i].kind, ..._bedLocalPose(h) }] : [])
+  }
+  return s
+}
+
+/** Debris body `h`'s pose in the truck's frame, as arrays. */
+const _blCP = new THREE.Vector3(), _blCQ = new THREE.Quaternion(), _blP = new THREE.Vector3(), _blQ = new THREE.Quaternion()
+function _bedLocalPose (h) {
+  physicsEngine.getTransform(vehicleChassis, _blCP, _blCQ)
+  physicsEngine.getTransform(h, _blP, _blQ)
+  _blCQ.invert()
+  return { p: _blP.sub(_blCP).applyQuaternion(_blCQ).toArray(), q: _blQ.premultiply(_blCQ).toArray() }
+}
+
+/** FEAT-42: put the saved board job back in hand (before the seat), or abandon it on the board. */
+function _resumeJob (sj) {
+  // A throw here must cost the JOB, never the run: _restoreRun is the only way back into the save.
+  try {
+    const offer = offerBoard.taken(sj.offerId)
+    const m = offer && offerBoard.replan(offer, sj.planned, _planOne)
+    if (m) { missionSystem.resume(offer, m, sj); return m }
+  } catch (e) { console.warn('[save] job resume failed', e) }
+  // Never expected (the plan is seeded) — but a taken slot nobody holds would never free.
+  console.warn('[save] the job in hand did not re-plan; it is dropped')
+  offerBoard.abandon(sj.offerId, daySystem.clockH())
+  return null
+}
+
+/** FEAT-42: the resumed job's load, back in the bed of the seated truck (after its motion is back). */
+function _reloadCargo (m, sj) {
+  if (m.load) {
+    const t = m.fragile ? makeFragile(m.fragile) : null
+    if (t) t.health = sj.freightHealth ?? 1
+    void _loadFreight(m.load, m.cargoKg, m, t)
+  }
+  if (m.loose && !m.failed) _loadLoose(m.loose.kind, m.loose.massKg, m)
+  if (!sj.haul) return
+  // ponytail: a piece whose model has not loaded is dropped — they load at boot, long before a resume.
+  _haul = { mission: m, handles: [], drops: [], t0: simTime, zone: null }
+  for (const d of sj.haul) {
+    const { v, q, w } = _bedPoint({ x: d.p[0], y: d.p[1], z: d.p[2] })
+    _haulQd.fromArray(d.q).premultiply(q)
+    const h = debrisSystem.spawn(d.kind, { x: _fP.x, y: _fP.y, z: _fP.z }, v,
+      { spin: { x: w.x, y: w.y, z: w.z }, quaternion: { x: _haulQd.x, y: _haulQd.y, z: _haulQd.z, w: _haulQd.w }, pinned: true, noDamage: true })
+    if (h) { _haul.handles.push(h); _haul.drops.push({ kind: d.kind }) }
+  }
+}
+
+/** FEAT-42: put Larry's saved round back in hand, or abandon it on the board. */
+function _resumePaper (sp) {
+  const offer = offerBoard.taken(sp.offerId), giver = poiSystem.list().find(q => q.id === sp.giverId)
+  try { if (offer && giver && paperRouteSystem.resume(giver, offer, sp)) return } catch (e) { console.warn('[save] paper resume failed', e) }
+  console.warn('[save] the paper round in hand did not re-plan; it is dropped')
+  offerBoard.abandon(sp.offerId, daySystem.clockH())
 }
 
 /** Overwrite the run save with now — whenever a live, writable run exists. */
@@ -7719,12 +7959,87 @@ setInterval(_autosave, AUTOSAVE_S * 1000)
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') _autosave() })
 window.addEventListener('pagehide', _autosave)
 window.__autosave = _autosave   // dev handle — test/cdp-smoke.mjs times a write
+// dev handle — test/cdp-smoke.mjs finds a freight offer on the raw board and reads what is in the bed
+window.__cargo = () => ({ board: offerBoard, freight: _freight && { key: _freight.key, health: _freight.health?.health ?? null },
+                          loose: !!_loose, haul: _haul?.handles.length ?? 0 })
 
 /** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
 function _discardRunSave () {
   _runEnded = true
   clearRun()
 }
+
+// ── FEAT-146: the run ends ──────────────────────────────────────────────────────────────────────
+// Three ways out of an alpha run (DESIGN.md, release cuts 2026-10-23): the requisition delivered
+// (win), death (SM-INV-1: a fatal crash, or a breakdown you can't pay to recover from) or the towel
+// from the pause menu. Every one comes through _endRun: the save goes first, or the autosave would
+// keep a dead run alive for "continue"; then one summary card; then the main menu. A fatal crash
+// always ends the run: the default mode has no lives (SM-INV-1 lives clause) and nothing grants any.
+const RUN_END_TITLE = {   // PLACEHOLDER words; the day is the in-game day (owner, 2026-10-30: days AND playtime)
+  win:   (d) => `you made it in ${d} day${d === 1 ? '' : 's'}`,
+  crash: (d) => `you crashed on day ${d}`,
+  broke: (d) => `you broke down on day ${d}`,
+  towel: (d) => `you called it on day ${d}`,
+}
+// The fatal hit plays out in black and white before its card (owner, 2026-10-30).
+const CRASH_CARD_DELAY_S = 1.5
+
+/** End the run `kind` ('win' | 'crash' | 'broke' | 'towel'). The first ending wins. */
+function _endRun (kind) {
+  if (_runEnded) return
+  _discardRunSave()
+  // Read the run as it ended, before the clock moves on behind the card.
+  const title = RUN_END_TITLE[kind](daySystem.day()), body = _runEndHtml(kind)
+  if (missionSystem?.isActive()) missionSystem.exit()
+  if (kind === 'crash') renderer.domElement.style.filter = 'grayscale(1)'
+  setTimeout(() => {
+    if (!_runEnded || !storySystem.isActive()) return   // left for the menu during the crash's beat
+    _hidePauseMenu()
+    document.getElementById('re-title').textContent = title
+    document.getElementById('re-body').innerHTML = body
+    document.getElementById('run-end').style.display = 'block'
+    _runEndOpen = true
+  }, kind === 'crash' ? CRASH_CARD_DELAY_S * 1000 : 0)
+}
+
+/** The summary's rows. It reads what the run already tracks; only the playtime is counted for it. */
+function _runEndHtml (kind) {
+  const e = runEconomy, f = damageModel.fatalImpact, req = offerBoard?.lines() ?? []
+  const row = (k, v, gap = false) => `<div class="re-row${gap ? ' re-gap' : ''}"><span class="re-k">${k}</span><span>${v}</span></div>`
+  const min = Math.floor(_playedS / 60)
+  return (kind === 'crash' && f ? `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region}</div>` : '')
+    + row('playtime', `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`)
+    + row('jobs done', `${e.missions}`, true)
+    + row('ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))
+    + row('good deeds', `${formatDeeds(e.halfPoints)} of ${ECONOMY_PARAMS.campDeeds}`)
+    + (req.some(l => l.state !== 'closed') ? row('requisition', `${req.filter(l => l.state === 'done').length} / ${req.length}`) : '')
+    + row('earned', `$${formatMoney(e.money + e.spent - ECONOMY_PARAMS.startCash)}`, true)
+    + row('spent', `$${formatMoney(e.spent)}`)
+    + row('wallet', `<span class="re-money">$${formatMoney(e.money)}</span>`)
+    + worstParts(damageModel, 3).map((p, i) =>
+        row(i ? '' : 'truck', `${p.label} <span style="color:${p.color}">${Math.round(p.c * 100)}%</span>`, !i)).join('')
+}
+document.getElementById('re-menu')?.addEventListener('click', _backToMenu)
+
+// The towel: the job-cancel button's two clicks (#job-cancel) — the first arms it for TOWEL_ARM_S.
+const TOWEL_ARM_S = 3
+function _disarmTowel () {
+  if (_towelArm) clearTimeout(_towelArm)
+  _towelArm = 0
+  const b = document.getElementById('pm-towel')
+  if (b) { b.classList.remove('armed'); b.textContent = 'throw in the towel' }
+}
+document.getElementById('pm-towel')?.addEventListener('click', () => {
+  const b = document.getElementById('pm-towel')
+  if (!_towelArm) {
+    _towelArm = setTimeout(_disarmTowel, TOWEL_ARM_S * 1000)
+    b.classList.add('armed')
+    b.textContent = 'throw in the towel — sure?'
+    return
+  }
+  _endRun('towel')
+})
+window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
 function _runSnapshot () {
@@ -7742,6 +8057,8 @@ function _runSnapshot () {
               drivetrain: vs.drivetrain, ignition: vs.ignition, handbrake: vs.handbrake, parked: vs.parked },
     shelves: runShelves, paperTier: runPaper.tier,
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
+    job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
+    playedS: _playedS,   // FEAT-146: the summary's playtime
   }
 }
 
@@ -7751,6 +8068,7 @@ function _restoreRun (s) {
   _resumeHold = true
   daySystem.restore(s.day)
   Object.assign(runEconomy, s.economy)
+  _playedS = s.playedS ?? 0
   inventorySystem.restore(s.inventory)
   partsSystem.restore(s.parts)
   damageModel.toeOffsetDeg.splice(0, 4, ...s.damage.toe)
@@ -7768,6 +8086,8 @@ function _restoreRun (s) {
   offerBoard = new OfferBoard({ seed: worldSeed, pois: poiSystem.list(), nowH: s.board.t0H,
                                 region: economySystem.terms().region })
   _boardLog = logBoard(offerBoard, s.board.t0H, s.board.events)
+  const job = s.job ? _resumeJob(s.job) : null   // the board replay left its offer taken; re-plan it
+  if (s.paper) _resumePaper(s.paper)
   // The seat: the exact saved pose, put back the way a tow does it, so R still respawns where it did.
   // A seat is a fresh parked truck, so the motion goes back on top of it once it lands.
   const prev = _spawnOverride
@@ -7784,6 +8104,9 @@ function _restoreRun (s) {
     vs.steerAngle = m.steerAngle
     vs.handbrake = m.handbrake
     vs.parked = m.parked
+    // After the motion: a load starts at rest relative to the bed. A throw loses the load, never the
+    // autosave (_restoring would stay set and the run would never be written again).
+    if (job) try { _reloadCargo(job, s.job) } catch (e) { console.warn('[save] cargo reload failed', e) }
     _restoring = false
   })
 }
@@ -7802,7 +8125,7 @@ window.addEventListener('pointerdown', _endResumeHold, true)
 
 document.getElementById('pm-save')?.addEventListener('click', () => {
   if (!_autosave()) {
-    document.getElementById('pm-save-why').textContent = _saveBlock() ?? 'could not save — browser storage is blocked'
+    document.getElementById('pm-save-why').textContent = _saveExitBlock() ?? 'could not save — browser storage is blocked'
     return
   }
   _backToMenu()
@@ -7867,6 +8190,14 @@ document.addEventListener('keydown', e => {
   // The dinner invitation's DECLINE is the same tap (owner, 2026-10-23).
   if (e.key === ' ' && (missionSystem?.state === 'offer'
       || (missionSystem?.state === 'done' && missionSystem.result?.award?.stowed === 'dinner'))) { e.preventDefault(); missionSystem.exit() }
+  // BUG-95 (owner, 2026-10-26): the same tap on a camp card is its BACK — Esc / pad B's button: no
+  // thanks, release the brake, drive off. A MADE camp has no back: leaving it is "break camp", which
+  // the player picks, never a stray tap (_cardBackButton). Not mid-fade — the night is under way —
+  // and not on key repeat, or a Space still held from the park would cancel the card it just opened.
+  if (e.key === ' ' && !e.repeat && _campUi && !_campBusy) {
+    const back = _cardBackButton()
+    if (back) { e.preventDefault(); back.click() }
+  }
   // Shift+R → set the spawn point to the truck's current pose (does not move the truck).
   if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
     if (isTeleportEnabled()) setSpawnHere()
@@ -7889,6 +8220,7 @@ document.addEventListener('keydown', e => {
   // because the alternative is standing in a region the playability check just rejected.
   const seedModal = document.getElementById('story-seed-modal')
   if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
+  if (_runEndOpen) return   // FEAT-146: the run is over — the card's one button is the way out
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
   if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule
@@ -8096,7 +8428,10 @@ function loop () {
     accumulator = 0
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
+  } else if (storySystem.isActive() && !storySystem.isEntering() && !_pauseOpen && !_runEnded) {
+    _playedS += frameTime   // FEAT-146: playtime — a live run, not paused (the clamp drops a hidden tab's gap)
   }
+  if (_pauseOpen) _syncPauseSave()   // save & exit follows the brake while the menu is up
   damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
   damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
   inventoryScreen.update()         // FEAT-122: the park zone's lock; closes when the truck drives off
@@ -8221,6 +8556,8 @@ function loop () {
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT,
         vehicleState.velocity)
       if (landed) { damageHUD.noteImpact(landed); damageScreen.alert() }
+      // FEAT-146: death (SM-INV-1) — a live story run ends on its first fatal hit.
+      if (damageModel.fatalImpact && storySystem.isActive() && !storySystem.isEntering()) _endRun('crash')
     }
     simTime += PHYSICS_DT
     // While recording, log the ground the browser sampled (gated on isRecording() so normal play

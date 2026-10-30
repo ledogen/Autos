@@ -132,7 +132,7 @@ check(shared > 0 && mismatched === 0, `two-center span invariance: ${shared - mi
 
 // ── (5) BUG-37: bore WALL containment — queryTunnelWallContact ────────────────────────────────
 const R = P.tunnelBoreRadius ?? 8
-let wSampled = 0, wallOK = 0, belowOK = 0, crownOK = 0, outsideOK = 0
+let wSampled = 0, wallOK = 0, belowOK = 0, crownOK = 0, outsideOK = 0, besideOK = 0, capOK = 0
 for (const [runKey, e] of tunneled) {
   for (const sp of e.tunnelSpans) {
     const s = (sp.s0 + sp.s1) / 2
@@ -172,11 +172,24 @@ for (const [runKey, e] of tunneled) {
     } else {
       outsideOK++   // no run point that far back (edge of network) — vacuous pass
     }
+
+    // BUG-81: beside the portal, OUTSIDE the tube (hillside next to the headwall, arc inside the
+    // span) — no wall contact at all (was depth 1.4–2.9 m → teleport/launch), and no contact
+    // inside the tube ever reads deeper than the probe radius.
+    for (const [sBes, lat] of [[sp.s0 + 0.5, R + 1], [sp.s1 - 0.5, -(R + 2.5)]]) {
+      const cB = road.runPointAt(runKey, sBes)
+      if (!cB) { besideOK++; continue }
+      const pB = road.runProfile(sBes, runKey)
+      if (!road.queryTunnelWallContact(cB.x + pB.tz * lat, pB.gradeY + 0.4, cB.z - pB.tx * lat, rr)) besideOK++
+    }
+    if (!(hit && hit.depth >= rr) && !(hitBelow && hitBelow.depth >= rr)) capOK++
   }
 }
 check(wSampled > 0 && wallOK === wSampled, `bore wall contact at ρ≈R: ${wallOK}/${wSampled}`)
 check(belowOK === wSampled, `bore wall contact still fires below springline (camber floor tilt): ${belowOK}/${wSampled}`)
 check(crownOK === wSampled, `no false contact above the crown: ${crownOK}/${wSampled}`)
 check(outsideOK === wSampled, `no false contact outside the span: ${outsideOK}/${wSampled}`)
+check(besideOK === 2 * wSampled, `BUG-81: no wall contact beside the portal, outside the tube: ${besideOK}/${2 * wSampled}`)
+check(capOK === wSampled, `BUG-81: wall contact depth < probe radius (failsafe invariant): ${capOK}/${wSampled}`)
 
 process.exit(fail ? 1 : 0)

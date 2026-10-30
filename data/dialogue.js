@@ -29,7 +29,9 @@ export const PAPER_ROUTE_INTRO = [
 export const RUN_INTRO = [
     {
         speaker: 'Uncle Larry',
-        text: `Jay. There's an expedition camped up at the north road, looking for a way out of here. `
+        // FEAT-103: {dir} is the camp's true compass direction from the spawn, filled in at run start
+        // (main.js _runIntro) from COMPASS below — never a number, so it is safe in this markup.
+        text: `Jay. There's an expedition camped up at the {dir} road, looking for a way out of here. `
             + `They take on anyone with <span class="dlg-key">six good deeds</span> to their name. That's your way out too.`,
     },
     {
@@ -43,6 +45,9 @@ export const RUN_INTRO = [
             + `an item instead of the tip. Your last paycheck's in the glovebox. Go.`,
     },
 ]
+
+/** FEAT-103: the eight words for a bearing, clockwise from north (0° = −Z, the map's up). */
+export const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest']
 
 /** Sequence keys for DialogueSystem.play()'s once-per-run gate. */
 export const DLG = {

@@ -400,8 +400,11 @@ export class Map2D {
      *        already formatted ("18 min") — main.js owns the one duration format.
      * @param {(delta:number)=>void} [o.onCycle] — FEAT-67: Q/E pressed while NOT hovering a source —
      *        main.js steps the parked offer panel (the map is open behind it).
+     * @param {() => boolean} [o.hoverLocked] — true while the player is parked at a giver browsing its
+     *        offers: no other POI's hover card (offers or shelf) then, so an accidental icon hover never
+     *        claims the mouse or distracts from the panel (owner, 2026-10-30).
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -425,6 +428,7 @@ export class Map2D {
         // FEAT-67: the mission board view + the parked-panel cycle hook (see the constructor doc).
         this._getBoard = getBoard || (() => null)
         this._onCycle = onCycle || null
+        this._hoverLocked = hoverLocked || (() => false)
         pad.mapActive = () => this._open   // FEAT-133: the pad switches to its map layout (gamepad.js MAP_KEYS)
         this._hoverPoi = null      // the source POI under the cursor, or null
         this._hoverIdx = 0         // which of its live offers the card shows (Q / E)
@@ -834,7 +838,7 @@ export class Map2D {
     _updateHover() {
         const board = this._getBoard()
         const pois = this._getPois()
-        if (!board || !pois?.length || this._hoverX === undefined || this._dragging) {
+        if (!board || !pois?.length || this._hoverX === undefined || this._dragging || this._hoverLocked()) {
             this._hoverPoi = null; this._hoverView = null; return
         }
         const R = POI_ICON_PX * 0.75

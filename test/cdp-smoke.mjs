@@ -56,7 +56,8 @@ client.on('Runtime.exceptionThrown', p => {
 })
 
 const js = async expr => {
-  const r = await client.evalJS(expr)
+  // A CDP timeout names the call that hung — "Runtime.evaluate after 60000 ms" alone does not say where.
+  const r = await client.evalJS(expr).catch(e => { throw new Error(`${e.message} — in: ${expr.replace(/\s+/g, ' ').slice(0, 120)}`) })
   if (r.err) throw new Error(`eval ${expr.slice(0, 60)}: ${r.err}`)
   return r.val
 }
@@ -67,7 +68,37 @@ async function key (k, down, { shift = false } = {}) {
     modifiers: shift ? 8 : 0,   // CDP modifier bit 8 = Shift windowsVirtualKeyCode: k.length === 1 ? k.toUpperCase().charCodeAt(0) : 0,
   })
 }
-const tap = async (k, opts) => { await key(k, true, opts); await sleep(60); await key(k, false, opts) }
+// Wait until the page has rendered ≥ n frames AND ≥ ms has passed (5 s cap: never hang the run).
+const frames = async (n, ms) => {
+  await js(`window.__frOk = false; { let k = 0; const t0 = performance.now()
+    const f = () => (++k >= ${n} && performance.now() - t0 >= ${ms}) ? (window.__frOk = true) : requestAnimationFrame(f)
+    requestAnimationFrame(f) }`)
+  await until(() => js('window.__frOk'), 5000, 30)
+}
+// Held for ≥ 2 RENDERED frames, not a wall-clock 60 ms: key state is POLLED (vehicle.js keys[], read
+// per physics step), so under load (another lane's suite) a 60 ms tap fell wholly between two frames
+// and never happened — the brake/park flakes in service, offer and save. A player's tap is ~6 frames.
+const tap = async (k, opts) => { await key(k, true, opts); await frames(2, 60); await key(k, false, opts) }
+// Teleport and wait for the SEAT, not a fixed sleep: the reseat awaits a network build, which under
+// load outlasted 2.5 s — it then latched park after the step had already toggled the brake.
+const seat = async (x, z, h) => {
+  await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
+  check(await until(() => js('window.__seated'), 30000, 250), `teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
+  await sleep(1000)   // the 0.5 m drop lands
+}
+// Park the way the owner does: hold Space (the handbrake — never reverse throttle, as S is past rest)
+// until roughly at rest, then tap to latch. `fresh` first RELEASES a latched brake so the page sees a
+// new parked EDGE (its park trigger is a ~10 Hz poll on that edge). A bare release-then-tap lost
+// both ways under load: the truck rolled off the shop's slope (2.2 m/s, 7 m) before the re-tap, too
+// fast to latch.
+const park = async (fresh = false) => {
+  if (fresh && await js('window.__vs.parked')) { await tap(' '); await frames(4, 250) }
+  await key(' ', true)
+  await frames(4, 250)
+  await until(() => js('window.__vs.velocity.length() < 0.5'), 30000)
+  await key(' ', false); await frames(2, 60)
+  if (!await js('window.__vs.parked')) await tap(' ')
+}
 const hold = async (k, ms) => { await key(k, true); await sleep(ms); await key(k, false) }
 const car = () => js('window.__car()')
 // Hold I (the ignition key) until the engine catches.
@@ -196,6 +227,10 @@ const STEPS = [
     // key advances it and goes nowhere else — so the brake taps below would only turn pages. Read them off.
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     check(await until(dlg, 3000), 'the run opened with no intro cards (R-11)')
+    // FEAT-103: the uncle names the camp's true compass direction — filled in, never the raw token.
+    const intro = await js('document.getElementById("dialogue-panel").textContent')
+    check(/expedition camped up at the (north|south)?(east|west)? road/.test(intro) && !intro.includes('{dir}'),
+      `the intro does not name the camp's direction: "${intro.slice(0, 120)}"`)
     for (let i = 0; i < 8 && await dlg(); i++) { await tap('Enter'); await sleep(250) }
     check(!await dlg(), 'the intro cards did not close after 8 presses')
   }],
@@ -254,13 +289,18 @@ const STEPS = [
     check(await until(panel, 2000), `parking off the ribbon with the card up ("${text2}") opened no camp panel`)
     const title = () => js('document.getElementById("cp-title").textContent')
     if (await title() === 'camp') await js('document.getElementById("cp-truck").click()')
-    check(await title() === 'the truck', `no truck face (title "${await title()}")`)
+    check(await title() === 'sleep in the truck', `no truck face (title "${await title()}")`)
     await js('document.getElementById("cp-sleep").click()')
     check(await js('document.getElementById("cp-body").textContent.includes("campsites provide more rest")'),
       'the truck sleep face is missing its disclaimer')
-    await js('document.getElementById("cp-sleep-back").click(); document.getElementById("cp-break").click()')
-    check(await until(async () => !await panel(), 2000), '"leave" did not close the truck face')
-    await tap('z')   // hunt off again, so later parks open nothing
+    await js('document.getElementById("cp-sleep-back").click()')
+    // Owner, 2026-10-27: an unmade card keeps the tent up and lit, and Z there closes the card and
+    // calls the hunt off — so later parks open nothing.
+    const lit = () => js('document.getElementById("camp-row").style.display === "flex" && document.getElementById("camp-icon").classList.contains("on")')
+    check(await until(lit, 1000), 'the tent is not up and lit beside the truck face')
+    await tap('z')
+    check(await until(async () => !await panel(), 2000), 'Z did not close the truck face')
+    check(!await lit(), 'Z closed the truck face but left the hunt on')
   }],
   ['inventory', async () => {
     // FEAT-122: parked only (like V) — Tab driving pulses the park sign and opens nothing; parked,
@@ -349,12 +389,12 @@ const STEPS = [
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
       return q ? { x: q.x, z: q.z, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
     if (!p) { console.log('  service: no auto shop in this region — step skipped'); return }
-    await js(`window.__teleport(${p.x}, ${p.z}, ${p.h})`)
-    await sleep(2500)
-    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
-    await tap(' ')
+    await seat(p.x, p.z, p.h)
+    await park(true)
     const open = () => js('document.getElementById("svc-screen").checkVisibility()')
-    check(await until(open, 2000), 'parking at the auto shop opened no service screen')
+    check(await until(open, 2000), `parking at the auto shop opened no service screen: ${JSON.stringify(await js(`(() => { const c = window.__car()
+      return { parked: window.__vs.parked, v: +c.v.toFixed(2), d: +Math.hypot(c.x - ${p.x}, c.z - ${p.z}).toFixed(1), prompt: document.getElementById('poi-prompt')?.textContent.trim().slice(0, 80),
+        promptShown: document.getElementById('poi-prompt')?.style.display, mission: window.__mission().state } })()`))}`)
     // My Vehicle lists every corner's tire; selecting one opens its repair / exchange panel.
     await js('document.querySelector("#svc-screen [data-act=sel][data-key=tireRR]")?.click()')
     check(await js('!!document.querySelector("#svc-screen .sv-panel")'), 'selecting a My Vehicle row opened no panel')
@@ -367,18 +407,56 @@ const STEPS = [
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
   }],
+  ['expedition', async () => {
+    // FEAT-103: the camp's gate prompt, the requisition opening at campDeeds, the five lines at the
+    // camp, and a line taken THERE waiting, untimed, until the truck parks at its source.
+    const pois = 'window.__map2d()._getPois()'
+    const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
+      return q ? { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+    check(camp, 'no expedition camp in the region')
+    const prompt = () => js('document.getElementById("poi-prompt").checkVisibility() && document.getElementById("poi-prompt").textContent')
+    await js(`window.__teleport(${camp.x}, ${camp.z}, ${camp.h})`)
+    await sleep(2500)
+    check(/good deeds/.test(await until(prompt, 2000) || ''), `the closed camp's prompt: "${await prompt()}"`)
+    await js('window.__econ.halfPoints = 12')
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 1000), 'six deeds opened no requisition on the run HUD')
+    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await tap(' ')
+    const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    check(await until(() => vis('mp-accept'), 3000), 'parking at the open camp opened no lines')
+    check(await js('window.__mission().offers.length') === 5, `the camp shows ${await js('window.__mission().offers.length')} lines, want 5`)
+    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqCrew'; i++) await js('window.__mission().cycle(1)')
+    await js('document.getElementById("mp-accept").click()')
+    const st = () => js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, from: m.mission?.fromPoi } })()')
+    const a = await st()
+    check(a.s === 'staging' && a.a, `a line taken at the camp is not an untimed approach: ${JSON.stringify(a)}`)
+    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)})
+      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await js(`window.__teleport(${src.x}, ${src.z}, ${src.h})`)
+    await sleep(2500)
+    check((await st()).a, 'arriving at the source started the line before the brake')
+    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await tap(' ')
+    check(await until(async () => { const b = await st(); return b.s === 'staging' && !b.a }, 2000), `parking at the source did not start the line: ${JSON.stringify(await st())}`)
+    // Cancel (parked, two clicks) → the line goes back on the camp's list.
+    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
+    check(await until(() => js('window.__mission().state === "done"'), 2000), 'cancel did not end the line')
+    await js('document.getElementById("mp-accept").click()')
+    check(await js(`window.__map2d()._getBoard().status(${JSON.stringify((await js(`${pois}.find(q => q.type === 'expeditionCamp').id`)))}).family !== null`)
+      && await js('window.__mission().state === "idle"'), 'the cancelled line is not back at the camp')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
   ['offer', async () => {
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
     // its pad (q.x/z — the solid model stands off it at modelX/Z), pull the brake, accept, drive.
     const p = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
-      const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park
+      const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park && q.type !== 'expeditionCamp'
         && b.status(q.id)?.family === 'delivery' && b.view(q.id, 0)?.count > 0)
       return q ? { x: q.x, z: q.z, rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type } : null })()`)
     if (!p) { console.log('  offer: no plain delivery giver with a live offer — step skipped'); return }
-    await js(`window.__teleport(${p.x}, ${p.z}, ${p.h})`)
-    await sleep(2500)
-    if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
-    await tap(' ')
+    await seat(p.x, p.z, p.h)
+    await park(true)
     // checkVisibility, not the element's own display: while the job is still planning the button
     // has no display of its own but its #mp-actions row is hidden, and a click there is lost.
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
@@ -407,23 +485,23 @@ const STEPS = [
     check(await vis('mission-hud'), 'mission HUD vanished mid-job')
   }],
   // FEAT-42: the rolling run save. (1) save & exit → a real reload → continue puts the run back,
-  // paused. (2) The crash: kill the page mid-drive with no save & exit at all → continue resumes the
-  // truck at the speed it had, held in the pause menu until it is closed.
+  // paused, with the offer step's courier job still in hand (part 2). (2) The crash: take a freight
+  // job, kill the page mid-drive with no save & exit at all → continue resumes the truck at the speed
+  // it had, the strapped load still in the bed, held in the pause menu until it is closed.
   ['save', async () => {
-    await js('window.__mission().exit()')   // a job in hand holds the save (carrying one is FEAT-42 part 2)
-    // The offer step left it driving: brake (S) in short pulses — held past rest S reverses — then latch park.
-    for (let k = 0; k < 3 && !await js('window.__vs.parked'); k++) {
-      for (let i = 0; i < 60 && await js('window.__vs.velocity.length() > 0.3'); i++) await hold('s', 150)
-      await tap(' ')   // the handbrake tap latches park near rest
-    }
+    const jobNow = () => js(`(() => { const ms = window.__mission(), m = ms.mission
+      return { id: m?.offerId ?? null, state: ms.state, ex: m?.end.x, ez: m?.end.z, par: m?.par } })()`)
+    const job0 = await jobNow()
+    check(job0.id && job0.state === 'running', `the offer step left no running board job: ${JSON.stringify(job0)}`)
+    await park()   // the offer step left it driving
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000),
-      `the truck never came to rest (${(await js('window.__vs.velocity.length()')).toFixed(2)} m/s)`)
+      `the truck never came to rest (${(await js('window.__vs.velocity.length()')).toFixed(2)} m/s, parked ${await js('window.__vs.parked')})`)
     await js('window.__econ.money = 123.45')
     const cost = await js(`(() => { let ok = 0; const t = performance.now(); for (let i = 0; i < 20; i++) ok += window.__autosave()
       return { ok, ms: (performance.now() - t) / 20, kb: localStorage.getItem("autos-run/1").length / 1024 } })()`)
     check(cost.ok === 20, `only ${cost.ok}/20 autosaves wrote`)
     console.log(`  autosave: ${cost.ms.toFixed(2)} ms per write, ${cost.kb.toFixed(1)} KB`)
-    // Esc steps back out of any card first (the job panel the exit left behind), then pauses.
+    // Esc steps back out of any card first, then pauses.
     for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
     check(await js('document.getElementById("pause-menu").style.display === "flex"'), 'Esc did not pause')
     check(await js('!document.getElementById("pm-save").disabled && document.getElementById("pm-save").offsetParent !== null'),
@@ -437,9 +515,13 @@ const STEPS = [
       await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
       check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250),
         `${what}: no continue button after the reload`)
+      // What the dying page actually wrote (pagehide), read before continue can rewrite it.
+      const saved = await js(`(() => { const d = JSON.parse(localStorage.getItem("autos-run/1")).data
+        return { p: { x: d.pose.p[0], z: d.pose.p[2] }, v: Math.hypot(...d.motion.v) } })()`)
       await js('document.getElementById("mm-continue").click()')
       check(await until(() => js(live), 45000, 250), `${what}: the resumed run never went live (45 s)`)
       check(await until(() => js(paused), 2000), `${what}: the resumed run did not open paused`)
+      return saved
     }
     await resume('save & exit')
     check(await js('getComputedStyle(document.getElementById("dialogue-panel")).display === "none"'), 'the run intro replayed on resume')
@@ -450,21 +532,66 @@ const STEPS = [
     check(after.h >= before.h && after.h - before.h < 0.1, `clock ${before.h.toFixed(3)} h → ${after.h.toFixed(3)} h`)
     check(after.cond === before.cond && after.inv === before.inv, `truck/kit changed: ${JSON.stringify(before)} → ${JSON.stringify(after)}`)
     console.log(`  save & exit: resumed at ${dm.toFixed(2)} m, clock +${((after.h - before.h) * 60).toFixed(1)} game min`)
-    // (2) the crash. Any key ends the resume card; drive off, and kill the page with the throttle still down.
+    const job1 = await jobNow()
+    check(JSON.stringify(job1) === JSON.stringify(job0), `the courier job did not survive the save: ${JSON.stringify(job0)} → ${JSON.stringify(job1)}`)
+    console.log(`  save & exit: courier job ${job1.id} still ${job1.state}`)
+    // A strapped load for the crash: put the courier down (test-only; its slot stays taken) and take
+    // a freight offer wherever one is live, the way the offer step takes its job.
     await tap('Shift')
     check(await js(paused), 'a bare modifier ended the resume card')
     await tap('w')
     check(await until(async () => !await js(paused), 1000), 'a key did not end the resume card')
+    await js('window.__mission().exit()')
+    const fr = await js(`(() => { const b = window.__cargo().board, now = window.__day().clockH()
+      for (const q of window.__map2d()._getPois()) {
+        if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
+        const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'freight')
+        if (o) return { x: q.x, z: q.z, rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type }
+      }
+      return null })()`)
+    let load = null
+    if (fr) {
+      await seat(fr.x, fr.z, fr.h)
+      await park(true)
+      const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+      if (fr.type === 'autoShop' && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      if (await until(() => vis('mp-accept'), 2000)) {
+        for (let i = 0; i < 8 && await js(`window.__mission().offer?.id !== ${JSON.stringify(fr.id)}`); i++) await js('document.getElementById("mp-next")?.click()')
+        if (await js(`window.__mission().offer?.id === ${JSON.stringify(fr.id)} && !document.getElementById("mp-accept").disabled`)) {
+          await js('document.getElementById("mp-accept").click()')
+          load = await until(() => js('window.__cargo().freight?.key'), 5000) && await js('window.__cargo().freight')
+        }
+      }
+    }
+    if (!load) console.log(`  save: no takeable freight offer in this region — crash runs with the courier's empty bed`)
+    else {
+      check(await js('window.__mission().isOnJob()'), 'the freight job is not in hand after accept')
+      await seat(fr.rx, fr.rz, fr.h)   // off the pad: its yard clutter pins a truck at full throttle
+      console.log(`  save: freight ${load.key} strapped from ${fr.type}`)
+    }
+    const jobF = await jobNow()
+    // (2) the crash. Drive off, and kill the page with the throttle still down.
     await crank()
     if (await js('window.__vs.parked')) await tap(' ')
-    await key('w', true); await sleep(4000)
+    // Throttle until it is MOVING, not for a fixed 4 s: under load the sim runs slower than the wall
+    // clock (frames past MAX_FRAME_TIME), and 4 s once bought only 1.3 m/s.
+    await key('w', true); await until(() => js('window.__vs.velocity.length() > 5'), 30000)
     const kill = await js('({ v: window.__vs.velocity.length(), p: window.__car() })')
-    check(kill.v > 3, `the truck was not moving when the page was killed (${kill.v.toFixed(1)} m/s)`)
-    await resume('crash')
+    check(kill.v > 3, `the truck was not moving when the page was killed (${kill.v.toFixed(1)} m/s): ${JSON.stringify(await js('({ parked: window.__vs.parked, ign: window.__vs.ignition?.state, card: document.getElementById("resume-card").style.display, pause: document.getElementById("pause-menu").style.display })'))}`)
+    // Compare against what the page SAVED, not the kill read: W stays down through the reload and the
+    // pagehide write lands after it — under load ~0.8 s / 5.7 m later, which failed a correct resume.
+    const saved = await resume('crash')
     await key('w', false)
+    check(saved.v > 3, `the crash save caught the truck at ${saved.v.toFixed(1)} m/s (killed at ${kill.v.toFixed(1)})`)
     const held = await js('({ v: window.__vs.velocity.length(), p: window.__car() })')
-    const dk = Math.hypot(held.p.x - kill.p.x, held.p.z - kill.p.z)
-    check(Math.abs(held.v - kill.v) < 2 && dk < 3, `crash resume: ${held.v.toFixed(1)} m/s ${dk.toFixed(1)} m from the kill (${kill.v.toFixed(1)} m/s)`)
+    const dk = Math.hypot(held.p.x - saved.p.x, held.p.z - saved.p.z)
+    check(Math.abs(held.v - saved.v) < 2 && dk < 3, `crash resume: ${held.v.toFixed(1)} m/s ${dk.toFixed(1)} m from the save (${saved.v.toFixed(1)} m/s)`)
+    if (load) {
+      const jobC = await jobNow(), loadC = await until(() => js('window.__cargo().freight?.key'), 5000) && await js('window.__cargo().freight')
+      check(jobC.id === jobF.id && jobC.ex === jobF.ex && jobC.par === jobF.par, `the freight job did not survive the crash: ${JSON.stringify(jobF)} → ${JSON.stringify(jobC)}`)
+      check(loadC?.key === load.key, `the strapped load did not survive the crash: ${JSON.stringify(load)} → ${JSON.stringify(loadC)}`)
+      console.log(`  crash: freight job ${jobC.id} ${jobC.state}, ${loadC.key} back in the bed`)
+    }
     await sleep(1000)
     const still = await js('window.__car()')
     check(Math.hypot(still.x - held.p.x, still.z - held.p.z) < 0.05, 'the resume card did not hold the sim')
@@ -474,7 +601,84 @@ const STEPS = [
     await key('w', false)
     const rolled = await js('window.__car()')
     check(Math.hypot(rolled.x - held.p.x, rolled.z - held.p.z) > 1, 'the key that ended the resume card did not hand the moving truck back')
-    console.log(`  crash: killed at ${kill.v.toFixed(1)} m/s, resumed at ${held.v.toFixed(1)} m/s ${dk.toFixed(2)} m away`)
+    console.log(`  crash: killed at ${kill.v.toFixed(1)} m/s, saved at ${saved.v.toFixed(1)}, resumed at ${held.v.toFixed(1)} m/s ${dk.toFixed(2)} m from the save`)
+  }],
+  // FEAT-146: every way a run ends reaches the one summary card, deletes the run save, and the card's
+  // button goes back to the main menu. The towel on this run, then a fresh run for each of the others.
+  ['endings', async () => {
+    const card = () => js('document.getElementById("run-end").style.display === "block" && document.getElementById("re-title").textContent')
+    const saved = () => js('localStorage.getItem("autos-run/1") !== null')
+    const ended = async (want) => {
+      const t = await until(card, 5000)
+      check(t && want.test(t), `the run-end card reads "${t}", want ${want}`)
+      const body = await js('document.getElementById("re-body").textContent')
+      check(/playtime\s*\d+h \d\dm/.test(body) && /jobs done/.test(body) && /wallet/.test(body) && /truck/.test(body),
+        `${t}: the summary is missing rows: "${body.slice(0, 200)}"`)
+      await sleep(1500)   // past an autosave tick
+      check(!await saved(), `${t}: the run save outlived the run`)
+      await js('document.getElementById("re-menu").click()')
+      check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), `${t}: no main menu after the card`)
+      check(await js('document.getElementById("mm-continue").offsetParent === null'), `${t}: "continue" offers an ended run`)
+      check(await js('!document.querySelector("canvas").style.filter'), `${t}: the world stayed black and white`)
+      console.log(`  endings: "${t}" — ${body.replace(/\s+/g, ' ').slice(0, 100)}`)
+    }
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    const newRun = async () => {
+      await js('document.getElementById("mm-story").click()')
+      await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
+      check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s)')
+      const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+      await until(dlg, 3000)
+      for (let i = 0; i < 8 && await dlg(); i++) { await tap('Enter'); await sleep(250) }
+      check(await until(saved, 3000), 'the new run wrote no save to end')
+    }
+    const playedS = () => js('JSON.parse(localStorage.getItem("autos-run/1")).data.playedS')
+    // The towel: two clicks — the first only arms it.
+    for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
+    check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "throw in the towel" in a story run\'s pause menu')
+    await js('document.getElementById("pm-towel").click()')
+    check(!await card(), 'one click on the towel ended the run')
+    await js('document.getElementById("pm-towel").click()')
+    await ended(/called it/)
+    // The crash: black and white at once, the card after the beat. First, the playtime counts (the save
+    // carries it, a second at a time) and stops while paused.
+    await newRun()
+    const p0 = await playedS(); await sleep(3000); const p1 = await playedS()
+    check(p1 - p0 > 1.5 && p1 - p0 < 4.5, `playtime counted ${(p1 - p0).toFixed(1)} s of a 3 s drive`)
+    await tap('Escape'); await sleep(1300)   // a whole save tick inside the pause before the first read
+    const q0 = await playedS(); await sleep(2500); const q1 = await playedS()
+    check(q1 - q0 < 0.2, `playtime counted ${(q1 - q0).toFixed(1)} s behind the pause menu`)
+    await tap('Escape'); await sleep(300)
+    await js('window.__damage.fatalImpact = { region: "front", v: 40, mph: 90 }')
+    check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
+    check(!await card(), 'the crash card skipped the beat')
+    await ended(/crashed/)
+    // Broke down: an empty tank, no gas can, no money for a tow → the Recovery card's "end run".
+    await newRun()
+    // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
+    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = q.barriers[1]
+      const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
+      return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
+    await seat(away.x, away.z, away.h)
+    await js(`(() => { const inv = window.__inv; for (const r of [...inv.list()].reverse()) if (r.id === 'emergencyGas' || r.gal > 0.05) inv.drop(r.index)
+      window.__econ.money = 0 })()`)
+    await crank()
+    await js('window.__vs.fuel.gal = 0')   // the running engine's next step finds it empty: dry, stalled
+    check(await until(() => js('window.__vs.fuel.dry'), 3000), 'the emptied tank never ran dry')
+    await park(true)
+    await tap('x')
+    check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000),
+      `no "end run" on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    await js('document.querySelector("#recovery-card .rc-end").click()')
+    await ended(/broke down/)
+    // The win: six deeds open the requisition; all five lines delivered → the win card.
+    await newRun()
+    await js('window.__econ.halfPoints = 12')
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), 'six deeds opened no requisition')
+    await js(`(() => { const b = window.__board(), h = window.__day().clockH()
+      const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
+      for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
+    await ended(/made it in \d+ days?/)
   }],
 ]
 

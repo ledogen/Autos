@@ -511,6 +511,32 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('BUG-88: siblings at a multi-thing source never share a thing (the newcomer cycles)', pairs > 0 && dupThing === 0,
         `${dupThing}/${pairs}`)
     check('BUG-88: a newcomer with no destination left cycles to a job that has one', pairs > 0 && dead === 0, `${dead}/${pairs}`)
+
+    // FEAT-42: a saved job re-plans as the SAME job on a fresh board — replan() replays offer.planned
+    // (through a JSON round trip, as the save stores it) with none of its siblings planned at all.
+    // The planner has ONE pickup and ONE destination POI, so siblings genuinely force cycles.
+    let replays = 0, cycled = 0, drift = 0
+    const planner = bb => (o, ex) => bb.spec(o).shape === 'fetch'
+        ? (ex.has('store') ? null : { par: 300, distance: 2000, endPoiId: 'store' })
+        : { par: 300, distance: 2000, endPoiId: ex.has('poi:5|6') ? null : 'poi:5|6' }
+    const job = (bb, o) => `${bb.spec(o).thingId}|${o.route?.endPoiId ?? 'road:' + o.route?.placeName}`
+    for (let seed = 1; seed <= 120; seed++) {
+        const bb = make(seed)
+        for (let t = T0; t < T0 + 24 * 2; t += 6) for (const id of bb.sources()) {
+            const type = POIS.find(q => q.id === id).type
+            if (type !== 'tackleShop' && type !== 'foodVendor') continue
+            for (const o of bb.offers(id, t)) {
+                if (!bb.planDistinct(o, planner(bb))) continue
+                const fresh = make(seed), fo = fresh.offers(id, t).find(x => x.id === o.id)
+                fresh.replan(fo, JSON.parse(JSON.stringify(o.planned)), planner(fresh))
+                replays++
+                if (o.planned.n) cycled++
+                if (job(fresh, fo) !== job(bb, o)) drift++
+            }
+        }
+    }
+    check('FEAT-42: a taken offer re-plans as the same job on a fresh board', replays > 0 && cycled > 0 && drift === 0,
+        `${drift}/${replays} drifted (${cycled} had cycled)`)
 }
 
 // ── 15. haul (FEAT-88; stock + picker FEAT-114) ──────────────────────────────────────────────────

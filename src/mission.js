@@ -371,7 +371,21 @@ export class MissionSystem {
         this.mission.expired = false
         // FEAT-67: taking the offer OFF THE BOARD is main.js's job, done just before this call (it
         // owns the board and re-checks the offer is still live — a food offer lives ~2 real minutes).
-        this._launch({ seat: !this.mission.fromPoi, setSpawn: true, load: !!this.mission.bundles })
+        // FEAT-103: a requisition line taken at the CAMP (`approach`, set by main.js) waits, untimed,
+        // for the truck to park at its source — the load drops there, not here (reachSource()).
+        this._launch({ seat: !this.mission.fromPoi, setSpawn: true, load: !!this.mission.bundles && !this.mission.approach })
+    }
+
+    /**
+     * FEAT-103: parked at the source of a line taken at the camp. The job now begins exactly as if it
+     * had been accepted here: a haul goes 'loading', anything else stages in the start zone around you.
+     */
+    reachSource() {
+        if (this.state !== 'staging' || !this.mission?.approach) return false
+        this.mission.approach = false
+        if (this.mission.bundles) this.state = 'loading'
+        this._onChange()
+        return true
     }
 
     /** FEAT-88: the haul load is in the bed — the job stages exactly like any other POI job. */
@@ -434,6 +448,45 @@ export class MissionSystem {
         this.elapsed = 0
         this._trace = []
         this._traceTick = 0
+        this._onChange()
+    }
+
+    /**
+     * FEAT-42: the board job in hand as plain data, or null (no job, or a Quick Job — the
+     * calibration rig has no offer to re-plan from). The route is NOT in here: resume() is handed it
+     * re-planned. What is, is everything that happened to the contract since the plan — the terms
+     * frozen at accept, the deadline, the haul pick, the clock, the leg, a failure.
+     */
+    snapshot() {
+        const m = this.mission
+        if (!this.isOnJob() || !m?.offerId) return null
+        return { state: this.state, elapsed: this.elapsed, t0H: this._t0H, leg: this.leg,
+                 terms: m.terms ?? null, dueH: m.dueH, expired: !!m.expired, failed: !!m.failed,
+                 approach: !!m.approach, bundles: m.bundles, payMult: m.payMult, stockCost: m.stockCost ?? null }
+    }
+
+    /**
+     * FEAT-42: put a saved job back in hand. `mission` is its offer re-planned (main.js); `s` is
+     * snapshot(). Lands straight in the saved state — no accept (the board took it, the stock was
+     * paid, and the spawn checkpoint is the run save's own seat), no countdown, no stage reset.
+     */
+    resume(offer, mission, s) {
+        Object.assign(mission, { terms: s.terms, dueH: s.dueH, expired: s.expired, failed: s.failed,
+                                 approach: s.approach, bundles: s.bundles, payMult: s.payMult, stockCost: s.stockCost })
+        this.offers = []
+        this.offer = offer
+        this.mission = mission
+        this.result = null
+        this.error = null
+        this.state = s.state
+        this.elapsed = s.elapsed
+        this._t0H = s.t0H
+        this.leg = s.leg
+        this.countdown = 0
+        this._polyIdx = mission.legs && s.leg ? mission.legs[0].polyIdx : 0
+        this._trace = []
+        this._traceTick = 0
+        this._setMapOpen(false)
         this._onChange()
     }
 
@@ -627,6 +680,7 @@ export class MissionSystem {
         // countdown, no hold, and no way back in (the zone is a threshold, not a trigger volume, so
         // re-entering it does not stop the clock you already started).
         if (this.state === 'staging') {
+            if (m.approach) return     // FEAT-103: still driving to the source — nothing is timed yet
             if (this.startZoneExitDist() <= 0) { this._startRun(); this._onChange() }
             return
         }
@@ -812,10 +866,10 @@ export class MissionSystem {
         // Dijkstra over the graph's road-metre edges (BUG-52) from one start → reachable nodes in the leg band,
         // capped at MAX_EDGES hops. No routing here (graph metric only), so it's cheap to run per
         // start candidate. Returns the parent chain plus the qualifying endpoints.
-        const legCandidates = (startK, lo = LEG_MIN) => {
-            const { dist, prev } = graphDijkstra(adj, startK, LEG_MAX)
+        const legCandidates = (startK, lo = LEG_MIN, hi = LEG_MAX) => {
+            const { dist, prev } = graphDijkstra(adj, startK, hi)
             const ends = [...dist.entries()]
-                .filter(([k, d]) => d >= lo && d <= LEG_MAX && k !== startK)
+                .filter(([k, d]) => d >= lo && d <= hi && k !== startK)
                 .filter(([k]) => _pathLength(prev, k, startK) <= MAX_EDGES)
             return { prev, ends, dist }
         }
@@ -844,18 +898,27 @@ export class MissionSystem {
                 // FEAT-100 had let a strict wish (a thing bound for a class) go down to zero hops;
                 // now the one school being too near means that offer does not plan. `minM` raises
                 // the floor further for an offer carrying an item (data/offers.js BONUS_LEG_MIN_M).
-                const lo = Math.max(POI_LEG_MIN, minM)
+                // FEAT-103: a requisition line (`anyLeg`) must ALWAYS plan — its source and the camp
+                // are fixed for the run, so a leg band that refused them would make it unwinnable
+                // (SM-INV-7). It takes any length and any hop count.
+                const lo = dest.anyLeg ? 0 : Math.max(POI_LEG_MIN, minM)
+                const hi = dest.anyLeg ? Infinity : LEG_MAX
                 for (const [ex, other] of pair) {
-                    const c = legCandidates(ex, lo)
+                    const c = legCandidates(ex, lo, hi)
                     const opts = []
                     for (const q of dest.pois) {
                         const qa = g.key(q.aId), qb = g.key(q.bId)
-                        if (!adj.has(qa) || !adj.has(qb) || edgeKey(qa, qb) === srcEdge) continue
+                        // ONE node is enough (FEAT-103): the expedition camp's road is cut at the wall,
+                        // so its far node is off the graph and the route comes in through the inner one
+                        // (an off-graph node's distance is Infinity, so `entry` below can only pick the
+                        // inner). Every roster POI and customer already sits on an edge with both nodes
+                        // on (poi.js build / buildHouses), so this admits the camp and nothing else.
+                        if ((!adj.has(qa) && !adj.has(qb)) || edgeKey(qa, qb) === srcEdge) continue
                         const da = c.dist.get(qa) ?? Infinity, db = c.dist.get(qb) ?? Infinity
                         const entry = da <= db ? qa : qb
                         const d = Math.min(da, db)
-                        if (!(d >= lo && d <= LEG_MAX)) continue
-                        if (_pathLength(c.prev, entry, ex) > MAX_EDGES) continue
+                        if (!(d >= lo && d <= hi)) continue
+                        if (!dest.anyLeg && _pathLength(c.prev, entry, ex) > MAX_EDGES) continue
                         // Same doubling-back rule as the roadside leg: never leave along the anchor edge.
                         if (_firstHop(c.prev, entry, ex) === other) continue
                         opts.push({ q, entry })
