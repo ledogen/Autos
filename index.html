@@ -288,7 +288,7 @@
       font-family: var(--font); font-size: 16px; padding: 6px 10px; margin-left: 18px; width: 300px;
     }
     #su-code { color: var(--text-faint); font-size: 12px; margin: 4px 0 0 18px; }
-    #su-save-note { color: var(--text-dim); font-size: 12px; margin: 4px 0 0 18px; }
+    #su-save-note { color: var(--warn-text); font-size: 12px; margin: 4px 0 0 18px; }   /* caution, not failure (UI-STYLE) */
     /* ◂ value ▸ selector: a row button; the arrows (or ←/→) cycle it. */
     #main-menu button.mm-sel { width: 380px; display: flex; justify-content: space-between; }
     button.mm-sel > span { white-space: nowrap; }
@@ -1571,7 +1571,7 @@
       <button class="mm-sel" data-key="worldPoi"></button>
       <button class="mm-sel" data-key="worldRoads"></button>
       <div id="su-code"></div>
-      <div id="su-save-note" style="display:none">starting a new game discards your saved run</div>
+      <div id="su-save-note" style="display:none">warning: starting a new story game will delete your existing save</div>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>
     </div>

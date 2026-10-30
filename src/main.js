@@ -1957,6 +1957,8 @@ const map2d = new Map2D({
   getBoard: () => (offerBoard && storySystem?.isActive() ? _boardView : null),
   // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
   onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
+  // Parked at a giver = "I want one of the jobs HERE": the map shows no other POI's card meanwhile.
+  hoverLocked: () => missionSystem?.state === 'offer',
   // (FEAT-60 dropped getMomsHouse: mom's house is a POI now, so it arrives through getPois with
   // its own glyph — the map no longer needs a second, separate channel for the same place.)
   onTeleport: ({ x, z, heading }) => {
@@ -7127,7 +7129,7 @@ function _showPauseMenu () {
   if (towel) towel.style.display = live ? '' : 'none'
   const saveBtn = document.getElementById('pm-save')
   if (saveBtn) {
-    const why = live ? _saveBlock() : null
+    const why = live ? _saveExitBlock() : null
     saveBtn.style.display = live ? '' : 'none'
     saveBtn.disabled = !!why
     document.getElementById('pm-save-why').textContent = why ?? ''
@@ -7855,6 +7857,11 @@ function _saveBlock () {
   if (paperRouteSystem.isCarrying() && !paperRouteSystem.snapshot()) return 'finish or cancel the job to save'
   return null
 }
+/** The pause menu's save & exit: everything _saveBlock blocks, plus the truck must be parked (owner,
+ *  2026-10-30). The rolling autosave does NOT want this — it is the lid-close net and saves motion. */
+function _saveExitBlock () {
+  return _saveBlock() ?? (vehicleState.parked ? null : 'park to save')
+}
 
 /**
  * FEAT-42: the board job in hand as plain data, or null. The route is not saved: the resume re-plans
@@ -8105,7 +8112,7 @@ window.addEventListener('pointerdown', _endResumeHold, true)
 
 document.getElementById('pm-save')?.addEventListener('click', () => {
   if (!_autosave()) {
-    document.getElementById('pm-save-why').textContent = _saveBlock() ?? 'could not save — browser storage is blocked'
+    document.getElementById('pm-save-why').textContent = _saveExitBlock() ?? 'could not save — browser storage is blocked'
     return
   }
   _backToMenu()
