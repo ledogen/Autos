@@ -206,7 +206,7 @@ difficulty.
 1. **A line counts at C or better**; a D (late, or too much of the load lost) puts it back on the
    list. Read from "a lost or late load is a line delivered again" with no deadline.
 2. **The crew waits at the construction site** (`workSite`): "the POI where the crew waits" names none.
-3. **The firewood line is 25 bundles, free** — the haul S count, no picker, no stock cost.
+3. **The firewood line is 20 bundles, free** (owner 2026-10-30; was 25, the haul S count) — no picker, no stock cost; the card shows the yard's stock on hand.
 4. **"Nearest source" is straight-line** to the camp. Every source type is a singleton today, so it
    only matters once a type has two.
 5. All words on the line card, the prompts and the result rows are placeholders.

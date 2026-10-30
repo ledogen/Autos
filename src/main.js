@@ -7127,17 +7127,30 @@ function _showPauseMenu () {
   const live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded
   const towel = document.getElementById('pm-towel')
   if (towel) towel.style.display = live ? '' : 'none'
-  const saveBtn = document.getElementById('pm-save')
-  if (saveBtn) {
-    const why = live ? _saveExitBlock() : null
-    saveBtn.style.display = live ? '' : 'none'
-    saveBtn.disabled = !!why
-    document.getElementById('pm-save-why').textContent = why ?? ''
-    // One way out (owner, 2026-10-30): save & exit replaces "main menu" while it can save.
-    const menuBtn = document.getElementById('pm-menu')
-    if (menuBtn) menuBtn.style.display = live && !why ? 'none' : ''
+  _syncPauseSave(live)
+  // The ways out of a run to free roam / the lab are dev features (owner, 2026-10-30): in story mode they
+  // show only while the debug panel is open (backtick). Free roam keeps them.
+  const dev = _gui.domElement.style.display !== 'none'
+  for (const id of ['pm-story', 'pm-lab']) {
+    const b = document.getElementById(id)
+    if (b) b.style.display = storySystem.isActive() && !dev ? 'none' : ''
   }
   _pauseOpen = true
+}
+
+/** Save & exit's state. Called when the menu opens AND every frame it is open, so parking with the
+ *  menu up enables it at once (owner, 2026-10-30) instead of after a close and reopen. */
+function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded) {
+  const saveBtn = document.getElementById('pm-save')
+  if (!saveBtn) return
+  const why = live ? _saveExitBlock() : null
+  saveBtn.style.display = live ? '' : 'none'
+  saveBtn.disabled = !!why
+  const whyEl = document.getElementById('pm-save-why')
+  if (whyEl.textContent !== (why ?? '')) whyEl.textContent = why ?? ''
+  // One way out (owner, 2026-10-30): save & exit replaces "main menu" while it can save.
+  const menuBtn = document.getElementById('pm-menu')
+  if (menuBtn) menuBtn.style.display = live && !why ? 'none' : ''
 }
 
 function _hidePauseMenu () {
@@ -8418,6 +8431,7 @@ function loop () {
   } else if (storySystem.isActive() && !storySystem.isEntering() && !_pauseOpen && !_runEnded) {
     _playedS += frameTime   // FEAT-146: playtime — a live run, not paused (the clamp drops a hidden tab's gap)
   }
+  if (_pauseOpen) _syncPauseSave()   // save & exit follows the brake while the menu is up
   damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
   damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
   inventoryScreen.update()         // FEAT-122: the park zone's lock; closes when the truck drives off

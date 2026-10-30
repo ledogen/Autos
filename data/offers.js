@@ -398,12 +398,13 @@ export const NOT_A_DESTINATION = new Set(['gasPump', 'expeditionCamp'])
  * ECONOMY_PARAMS.campDeeds good deeds, then always on, outside the budget: no expiry, no deadline, no
  * lock, no pay. A line is delivered at C or better; a D (late, or too much of the load lost) puts it
  * back on the list unchanged.
- * PLACEHOLDERS: the phrases (the owner writes the words), the firewood count (25 = the haul S line,
- * 275 kg), and the crew's POI — the design names "the POI where the crew waits"; the construction site
+ * PLACEHOLDERS: the phrases (the owner writes the words) and the crew's POI. The firewood count is 20
+ * (owner, 2026-10-30; 220 kg — a smart player waits until the yard's stock covers it in one trip; the
+ * line's card shows that stock). The crew's POI — the design names "the POI where the crew waits"; the construction site
  * is the stand-in.
  */
 export const REQUISITION = [
-    { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 25 },
+    { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
     { id: 'reqFood',     phrase: 'a week of food', family: 'delivery', from: 'foodVendor',   massKg: 20 },
     { id: 'reqFuel',     phrase: 'fuel cans',      family: 'delivery', from: 'gasStation',   massKg: 30 },

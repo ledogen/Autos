@@ -881,7 +881,7 @@ export class OfferBoard {
     card (offer, { nowH, payTier = 1, route = null, customers = null, verdict = null } = {}) {
         const sp = this.spec(offer)
         if (!sp) return null
-        if (sp.line) return this._lineCard(offer, sp, route, verdict)
+        if (sp.line) return this._lineCard(offer, sp, route, verdict, nowH)
         const n = this._names.get(offer.poiId)
         const sentence = [{ t: personLabel(sp.person), b: true }]
         if (sp.family === 'papers') {
@@ -976,11 +976,17 @@ export class OfferBoard {
      * (the boss doesn't pay, for now), no timers; the deed slot states what makes the line count —
      * C or better, in the job's own axis (gateLine's grammar). PLACEHOLDER words.
      */
-    _lineCard (offer, sp, route, verdict) {
+    _lineCard (offer, sp, route, verdict, nowH) {
         const kind = sp.family === 'haul' ? 'haul' : null
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
+        if (sp.stock) {
+            // The source's own haul offer is the stock on hand (owner, 2026-10-30): a player who wants the
+            // line in one trip waits for it. offer.poiId is the source at the camp too (_at).
+            const yard = this.offers(offer.poiId, nowH).map(o => this.spec(o)).find(x => x && !x.line && x.stock)
+            terms.push(yard ? `${yard.stock} in stock at the yard` : 'yard out of stock right now')
+        }
         return {
             family: sp.family, badge: jobBadge(sp), portrait: null, flavor: null,
             sentence: [{ t: 'The expedition camp', b: true }, { t: ' needs ' }, { t: sp.phrase, b: true },
