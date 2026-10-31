@@ -54,11 +54,11 @@ mechanic, so it belongs with the parts/recovery work (src/recovery.js), not in t
   instant the truck passes the balance point; 5 s real-time cooldown.** Ready to build in Lane B
   (`.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md`).
 
-## Open (the owner's call)
+## Ruled (owner, 2026-10-31)
 
-- Likelihood tier (data/stock-weights.js).
-- Its input: which press uses it, and how the direction is chosen (controller button budget:
-  the B menu or an existing contextual press before a fresh button).
+- Likelihood tier: **rare**. As a reward it is gated **A–S**.
+- Input: **from the inventory menu** — select the hi-lift, then a left / right choice in a menu. No new
+  buttons, no contextual press; the GUI does it.
 
 ## Acceptance
 

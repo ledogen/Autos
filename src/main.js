@@ -31,7 +31,7 @@ import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D 
 import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
-import { DamageScreen, worstParts } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated); FEAT-146 the summary's worst parts
+import { DamageScreen } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
@@ -84,7 +84,7 @@ import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's str
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory } from './inventory.js'   // FEAT-122: what the player owns this run
-import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
+import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
 import { startShelves, shelf, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
@@ -1183,7 +1183,6 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 let _pauseOpen = false
 let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-card until any key
 let _runEndOpen = false   // FEAT-146: the run's summary card is up — nothing behind it is in play
-let _towelArm = 0         // FEAT-146: the towel's arm timer while armed, 0 when not (_hidePauseMenu reads it early)
 let _playedS = 0          // FEAT-146: real seconds of a live, unpaused run (the summary's playtime; the save carries it)
 // The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
 // FEAT-42: the resume card — the run may have been saved at speed, mid-slide even. FEAT-146: the run's end.
@@ -7157,7 +7156,7 @@ function _hidePauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) { el.style.display = 'none'; el.classList.remove('settings') }
   _pauseOpen = false
-  _disarmTowel()
+  document.getElementById('towel-card').style.display = 'none'
 }
 
 // ── FEAT-62: scenarios ────────────────────────────────────────────────────────────────────────────
@@ -7979,7 +7978,7 @@ const RUN_END_TITLE = {   // PLACEHOLDER words; the day is the in-game day (owne
   win:   (d) => `you made it in ${d} day${d === 1 ? '' : 's'}`,
   crash: (d) => `you crashed on day ${d}`,
   broke: (d) => `you broke down on day ${d}`,
-  towel: (d) => `you called it on day ${d}`,
+  towel: (d) => `run ended on day ${d}`,   // generic (owner, 2026-10-31)
 }
 // The fatal hit plays out in black and white before its card (owner, 2026-10-30).
 const CRASH_CARD_DELAY_S = 1.5
@@ -8009,36 +8008,37 @@ function _runEndHtml (kind) {
   const min = Math.floor(_playedS / 60)
   return (kind === 'crash' && f ? `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region}</div>` : '')
     + row('playtime', `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`)
-    + row('jobs done', `${e.missions}`, true)
-    + row('ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))
+    + row('jobs completed', `${e.missions}`, true)
+    + row('mission ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))
     + row('good deeds', `${formatDeeds(e.halfPoints)} of ${ECONOMY_PARAMS.campDeeds}`)
-    + (req.some(l => l.state !== 'closed') ? row('requisition', `${req.filter(l => l.state === 'done').length} / ${req.length}`) : '')
+    + (req.some(l => l.state !== 'closed') ? row('camp deliveries', `${req.filter(l => l.state === 'done').length} / ${req.length}`) : '')
     + row('earned', `$${formatMoney(e.money + e.spent - ECONOMY_PARAMS.startCash)}`, true)
     + row('spent', `$${formatMoney(e.spent)}`)
     + row('wallet', `<span class="re-money">$${formatMoney(e.money)}</span>`)
-    + worstParts(damageModel, 3).map((p, i) =>
-        row(i ? '' : 'truck', `${p.label} <span style="color:${p.color}">${Math.round(p.c * 100)}%</span>`, !i)).join('')
+    + _upgradeRows(row)
+}
+
+/** The truck's upgrades — the five most valuable parts fitted this run, or "stock" (owner, 2026-10-31). */
+function _upgradeRows (row) {
+  const n = {}
+  for (const id of Object.values(runParts.fitted)) if (PARTS[id] && !PARTS[id].stock && PARTS[id].price > 0) n[id] = (n[id] || 0) + 1   // a $0 "none" part is a removal, not an upgrade
+  const ups = Object.keys(n).sort((a, b) => PARTS[b].price - PARTS[a].price).slice(0, 5)
+  if (!ups.length) return row('truck', 'stock', true)
+  return ups.map((id, i) => row(i ? '' : 'truck', PARTS[id].name + (n[id] > 1 ? ` ×${n[id]}` : ''), !i)).join('')
 }
 document.getElementById('re-menu')?.addEventListener('click', _backToMenu)
 
-// The towel: the job-cancel button's two clicks (#job-cancel) — the first arms it for TOWEL_ARM_S.
-const TOWEL_ARM_S = 3
-function _disarmTowel () {
-  if (_towelArm) clearTimeout(_towelArm)
-  _towelArm = 0
-  const b = document.getElementById('pm-towel')
-  if (b) { b.classList.remove('armed'); b.textContent = 'throw in the towel' }
-}
+// The towel: a confirm card in place of the pause menu (owner, 2026-10-31). The game stays paused
+// under it (_pauseOpen holds); back restores the menu, end goes through _endRun like every ending.
 document.getElementById('pm-towel')?.addEventListener('click', () => {
-  const b = document.getElementById('pm-towel')
-  if (!_towelArm) {
-    _towelArm = setTimeout(_disarmTowel, TOWEL_ARM_S * 1000)
-    b.classList.add('armed')
-    b.textContent = 'throw in the towel — sure?'
-    return
-  }
-  _endRun('towel')
+  document.getElementById('pause-menu').style.display = 'none'
+  document.getElementById('towel-card').style.display = 'flex'
 })
+document.getElementById('tc-back')?.addEventListener('click', () => {
+  document.getElementById('towel-card').style.display = 'none'
+  _showPauseMenu()
+})
+document.getElementById('tc-end')?.addEventListener('click', () => _endRun('towel'))
 window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */

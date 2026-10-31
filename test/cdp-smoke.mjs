@@ -612,7 +612,7 @@ const STEPS = [
       const t = await until(card, 5000)
       check(t && want.test(t), `the run-end card reads "${t}", want ${want}`)
       const body = await js('document.getElementById("re-body").textContent')
-      check(/playtime\s*\d+h \d\dm/.test(body) && /jobs done/.test(body) && /wallet/.test(body) && /truck/.test(body),
+      check(/playtime\s*\d+h \d\dm/.test(body) && /jobs completed/.test(body) && /wallet/.test(body) && /truck/.test(body),
         `${t}: the summary is missing rows: "${body.slice(0, 200)}"`)
       await sleep(1500)   // past an autosave tick
       check(!await saved(), `${t}: the run save outlived the run`)
@@ -633,13 +633,16 @@ const STEPS = [
       check(await until(saved, 3000), 'the new run wrote no save to end')
     }
     const playedS = () => js('JSON.parse(localStorage.getItem("autos-run/1")).data.playedS')
-    // The towel: two clicks — the first only arms it.
+    // The towel: a confirm card (owner, 2026-10-31) — back restores the menu, end ends the run.
     for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
     check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "throw in the towel" in a story run\'s pause menu')
     await js('document.getElementById("pm-towel").click()')
     check(!await card(), 'one click on the towel ended the run')
-    await js('document.getElementById("pm-towel").click()')
-    await ended(/called it/)
+    check(await js('document.getElementById("towel-card").style.display === "flex"'), 'the towel click opened no confirm card')
+    await js('document.getElementById("tc-back").click()')
+    check(await js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 'back did not restore the pause menu')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/run ended/)
     // The crash: black and white at once, the card after the beat. First, the playtime counts (the save
     // carries it, a second at a time) and stops while paused.
     await newRun()

@@ -30,6 +30,8 @@ const $ = (id) => document.getElementById(id)
 function menuContainer () {
   const re = $('run-end')   // FEAT-146: a Story card, but nothing behind it is in play — it holds the truck like a menu
   if (re?.style.display === 'block') return re
+  const tc = $('towel-card')   // FEAT-146: the towel's confirm card stands in for the pause menu
+  if (tc?.style.display === 'flex') return tc
   const pm = $('pause-menu')
   if (pm?.style.display === 'flex') return pm.classList.contains('settings') ? $('mm-settings-panel') : pm
   const ss = $('story-seed-modal')

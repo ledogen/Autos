@@ -40,7 +40,8 @@ Target:
 - `src/menu-nav.js` — the pad / keyboard walk over the visible items; a selector row that swaps the
   rows below it must re-collect items.
 - The game-mode choice is a run setting like the others: a `settings.js` key so the page reopens on
-  the last mode (owner's call whether it persists; recommend yes, default story).
+  the last mode. **RULED (owner, 2026-10-31): it does NOT persist.** The selector always opens on story;
+  its order is **story · scenarios · free roam · testing lab** (lab is the last option, under scenarios).
 - The save warning (`#su-save-note`) shows only for mode story while a run is saved.
 
 ## Acceptance

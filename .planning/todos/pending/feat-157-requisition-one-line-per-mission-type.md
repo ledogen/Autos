@@ -21,6 +21,15 @@ fragile at least. `openLines` builds every line's spec FIXED with `shape: 'couri
 bed load from data/offers.js THINGS) and, for fragile, a tier; the camp copy and the source copy stay
 one offer.
 
+## Ruled (owner, 2026-10-31)
+
+- One requisition line of each mission type: **haul, freight, courier, fragile**, and the fifth is the
+  **prop-smash (demolition) type** — which has no code yet (`BUILT_FAMILIES` in src/offer-board.js;
+  FEAT-65). Building the fifth line means building demolition first: flagged back to the owner for the
+  alpha's scope.
+- The firewood count: the record says 20 (owner 2026-10-30, "was 25"); on 2026-10-31 the owner said 25.
+  **Open — asked back.**
+
 ## Proposal (placeholders — the owner names the things and writes the words)
 
 | Line | Type | Spec |
