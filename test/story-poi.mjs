@@ -839,10 +839,7 @@ function boardRig (ms, nowH = 6) {
         modelled.length > 0, `${modelled.length} modelled of ${list.length}`)
     check('every modelled POI carries its registry collision box and a model yaw',
         modelled.every(q => q.collision?.size?.length === 3 && Number.isFinite(q.modelYaw)
-            && (q.barriers   // FEAT-103: the camp's body is its registry boxes, then one box per barricade
-                ? q.collision.boxes.length === PROP_MODELS[q.modelKey].collision.boxes.length + q.barriers.length
-                    && PROP_MODELS[q.modelKey].collision.boxes.every((b, i) => q.collision.boxes[i] === b)
-                : q.collision === PROP_MODELS[q.modelKey].collision)))
+            && q.collision === PROP_MODELS[q.modelKey].collision))
     check('keyless POIs carry no box (they fall back to the cube)',
         list.filter(q => !q.modelKey).every(q => q.collision === null))
     // ASSET-32: only Larry's parks a vehicle, and his body is his trailer's box, then the van's (body,

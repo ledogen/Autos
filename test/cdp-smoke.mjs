@@ -447,6 +447,40 @@ const STEPS = [
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
   }],
+  // FEAT-154: a road out of the area. Full throttle at its barricade row: the loose barricades get
+  // smashed aside, past the fade line the screen goes black, and the truck comes back on a road inside
+  // the return radius facing in, with every barricade back where it stood.
+  ['edge', async () => {
+    const P = await js('(() => { const p = window.__poi(), b = p.barricades()[4], c = p._built; return { b, c } })()')
+    const f = { x: -Math.sin(P.b.yaw), z: -Math.cos(P.b.yaw) }   // the striped face: back into the area
+    // A row far off is plain models; near the truck its three barricades are loose bodies (main.js).
+    const row = `window.__debris._live.filter(r => r.kind === "roadBarrier" && Math.hypot(r.mesh.position.x - ${P.b.x}, r.mesh.position.z - ${P.b.z}) < 8)`
+    check(await js(`${row}.length`) === 0, 'a row 2 km from the truck already has bodies (they would fall through the world)')
+    await seat(P.b.x + f.x * 30, P.b.z + f.z * 30, Math.atan2(f.x, f.z))   // 30 m inside, nose at the row
+    check(await until(() => js(`(window.__edgeRow = ${row}).length === 3`), 2000), `the row near the truck has ${await js(`${row}.length`)} bodies, want 3`)
+    await sleep(1000)   // settled on the deck
+    const pos = 'window.__edgeRow.map(r => r.mesh.position.toArray())'
+    const before = await js(pos)
+    await crank()
+    if (await js('window.__vs.parked')) await tap(' ')
+    const black = 'document.getElementById("camp-fade").classList.contains("on")'
+    await key('w', true)
+    const went = await until(() => js(black), 20000, 50)
+    const smashed = went && (await js(pos)).some((p, i) => Math.hypot(p[0] - before[i][0], p[2] - before[i][2]) > 0.5)
+    await key('w', false)
+    check(went, `the edge never faded: the truck at ${(await js(`Math.hypot(window.__car().x - ${P.c.x}, window.__car().z - ${P.c.z})`)).toFixed(0)} m`)
+    check(smashed, 'the truck reached the fade line without moving a barricade')
+    check(await until(async () => !await js(black), 5000, 100), 'the screen stayed black')
+    const back = await js(`(() => { const p = window.__car(), q = window.__vs.quaternion
+      const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))   // the truck's nose, (0, 0, -1) rotated
+      return { r: Math.hypot(p.x - ${P.c.x}, p.z - ${P.c.z}), inward: (${P.c.x} - p.x) * fx + (${P.c.z} - p.z) * fz } })()`)
+    check(back.r <= P.c.r - 100 - 9 && back.inward > 0, `came back at ${back.r.toFixed(0)} m, ${back.inward > 0 ? 'facing in' : 'facing OUT'}`)
+    await sleep(1000)
+    const after = await js(`${row}.map(r => r.mesh.position.toArray())`)
+    const off = after.length === 3 ? Math.max(...after.map((p, i) => Math.hypot(p[0] - before[i][0], p[1] - before[i][1], p[2] - before[i][2]))) : Infinity
+    check(off < 0.05, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off`)
+    console.log(`  edge: smashed through, back at ${back.r.toFixed(0)} m facing in, the row reset (worst ${(off * 100).toFixed(1)} cm)`)
+  }],
   ['offer', async () => {
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
     // its pad (q.x/z — the solid model stands off it at modelX/Z), pull the brake, accept, drive.
@@ -659,7 +693,7 @@ const STEPS = [
     // Broke down: an empty tank, no gas can, no money for a tow → the Recovery card's "end run".
     await newRun()
     // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
-    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = q.barriers[1]
+    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = window.__poi().barricades()[1]
       const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
       return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
     await seat(away.x, away.z, away.h)
