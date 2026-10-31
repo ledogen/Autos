@@ -56,7 +56,7 @@ post nothing and only receive.
   balancing" phase**, not now.
 - Roadside share: **DEST_POI_CHANCE 0.5 → 0.65 approved** (roadside ~29 % → ~20 %). **Done 2026-10-31 (Spare):** measured over
   300 boards, roadside drops 24.0 % → 16.5 % of non-paper offers (the census above counts where jobs end).
-- The placeholder job words are the Proposal table below (school: "the field-trip permission slips",
+- **Placeholder jobs approved as written (owner, 2026-10-31).** They are the Proposal table below (school: "the field-trip permission slips",
   "the science-fair project"; office: "the signed contracts", "the payroll envelope"; doctor: "a specimen
   for the lab"); the owner writes the real words when the givers are opened.
 

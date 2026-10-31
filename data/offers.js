@@ -307,6 +307,8 @@ export const THINGS = [
 // An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
 // data/items.js ITEMS (the inventory gate checks), except a dineIn one. Its effect applies only if built.
 
+// Larry's paper route rolls from every pool (owner, 2026-10-31: "give him every item" — the LSD too, it
+// is in several pools already). The rank gates still apply, so papers earns like any job.
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'],
       pools: ['foodVendor', 'larrysHouse'] },
@@ -342,7 +344,7 @@ export const REWARDS = [
     { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'],
       pools: ['workSite', 'autoShop', 'farm', 'larrysHouse'] },
     { id: 'diffLSD',    name: 'Limited-slip differential', kind: 'part', gates: ['S'],
-      pools: ['autoShop', 'strandedMotorist', 'residence'] },
+      pools: ['autoShop', 'strandedMotorist', 'residence', 'larrysHouse'] },
     { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
       pools: ['autoShop', 'workSite', 'larrysHouse'] },
     // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
@@ -404,6 +406,8 @@ export const NOT_A_DESTINATION = new Set(['gasPump', 'expeditionCamp'])
  * is the stand-in.
  */
 export const REQUISITION = [
+    // 20 bundles (owner, 2026-10-31, confirmed): the yard's stock cycles, so a smart player waits a couple of
+    // recycles until it holds 20+ and clears the line in one trip. The card shows the stock on hand.
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
     { id: 'reqFood',     phrase: 'a week of food', family: 'delivery', from: 'foodVendor',   massKg: 20 },

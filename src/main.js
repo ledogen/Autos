@@ -6338,7 +6338,7 @@ function _promiseRows (m) {
   const kind = _missionKind(j)
   // The job's own axis: the live value, the line for a letter, how a line is spoken, and the margin
   // that counts as comfortable in its units (health: all the headroom; bundles: four spare).
-  let value = null, lineOf, below, marginTo
+  let value = null, lineOf, below, marginTo, clock = null
   if (kind === 'fragile') {
     const L = _fragileLinesOf(j)
     if (_freight?.mission === j && _freight.health) value = _freight.health.health
@@ -6358,6 +6358,15 @@ function _promiseRows (m) {
     value = _rtLive ? 4 - 'SABCD'.indexOf(_rtLive) : null
     lineOf = (l) => 4 - 'SABCD'.indexOf(l); below = (x) => gateText('SABCD'[4 - x])
     marginTo = () => 1 - _rtLiveInt
+    // Q-6 (owner, 2026-10-31, reversing the no-digits rule): until the rank bar shows (R-22, near the
+    // goal) the held band's line is a countdown above the reward line; the bar then replaces it.
+    if (!_rtShown && _rtLayout && _rtKey === j) {
+      const b = _rtLayout.bands.find(b => m.elapsed < b.t1)
+      if (b && isFinite(b.t1)) {
+        const s = Math.max(0, b.t1 - m.elapsed), mm = Math.floor(s / 60), ss = Math.floor(s % 60)
+        clock = { label: 'Clock', what: `finish in ${mm}:${String(ss).padStart(2, '0')} or better for ${b.letter} rank`, tone: _promiseTone(1 - _rtLiveInt) }
+      }
+    }
   }
   const rung = (ladder) => {
     if (value == null) return { what: ladder[0].what, next: below(ladder[0].line), tone: _promiseTone(null) }
@@ -6366,7 +6375,7 @@ function _promiseRows (m) {
     if (held.line == null) return { what: held.what, next: null, tone: 'var(--bad-text)', lost: true }
     return { what: held.what, next: below(held.line), tone: _promiseTone(marginTo(held.line)) }
   }
-  const rows = []
+  const rows = clock ? [clock] : []
   if (j.bonus) rows.push({ label: 'Reward', icon: j.bonus.rewardId, ...rung([{ what: j.bonus.name, line: lineOf(j.bonus.gate) }, { what: j.bonus.name, line: null }]) })
   // The deed: 1 at the B line, 1/2 at C (SM-INV-14). Freight's C is 0 kg (R-18), so it never reads "0".
   // R-33: at the bottom it reads "no deed", struck through (owner: "i know i said numbers only").
@@ -8120,7 +8129,7 @@ function _runEndHtml (kind) {
 /** The truck's upgrades — the five most valuable parts fitted this run, or "stock" (owner, 2026-10-31). */
 function _upgradeRows (row) {
   const n = {}
-  for (const id of Object.values(runParts.fitted)) if (PARTS[id] && !PARTS[id].stock && PARTS[id].price > 0) n[id] = (n[id] || 0) + 1   // a $0 "none" part is a removal, not an upgrade
+  for (const id of Object.values(runParts.fitted)) if (PARTS[id] && !PARTS[id].stock && PARTS[id].price > 0 && PARTS[id].family !== 'old') n[id] = (n[id] || 0) + 1   // a $0 "none" part is a removal, an old part counts as stock (owner, 2026-10-31)
   const ups = Object.keys(n).sort((a, b) => PARTS[b].price - PARTS[a].price).slice(0, 5)
   if (!ups.length) return row('truck', 'stock', true)
   return ups.map((id, i) => row(i ? '' : 'truck', PARTS[id].name + (n[id] > 1 ? ` ×${n[id]}` : ''), !i)).join('')

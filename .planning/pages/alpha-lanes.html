@@ -127,6 +127,8 @@
         { id: 'FEAT-66', what: 'Camp gear renders at the campsite (visible-kit rule).' },
         { id: 'BUG-95', what: 'Z while already parked shows "park to…" instead of opening the camp card — make the arm count as the pull (owner 10-26).' },
         { id: 'FEAT-157', what: 'Requisition = one line per MISSION TYPE (today: one haul + four couriers) — freight and fragile lines need a load key on the fixed spec; proposal table in the ticket, owner names the things (owner 10-30, major).' },
+        { id: 'FEAT-65', what: 'Demolition (prop smash) — the requisition\'s FIFTH line; build it before the alpha (owner 10-31). After FEAT-157\'s four built lines.' },
+        { id: 'FEAT-148 ↳', what: 'The midnight overlay — "Supplies are drying up / costs keep rising" falls from the top and settles centre, thin white 50 %, ~4 s, on black when slept through (owner 10-31). The giver lines come from the item-setup page once the owner fills them.' },
         { id: 'FEAT-154', what: 'Barricades on EVERY road leaving the story play area — the camp\'s row at each wall crossing; most still stop at the invisible wall (owner 10-30, major, up front).' },
         { id: 'FEAT-155', what: 'Hide the truck dashboard while a camp is made (owner 10-30).' },
         { id: 'FEAT-151', what: 'Tiredness is not dangerous enough — blinks more often at every stage, longer dozes when tired/exhausted; proposed numbers in the ticket (owner 10-26).' },
@@ -181,13 +183,12 @@
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read ' + HANDOFF + ' § Lane Spare, then this page\'s Lane Spare handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/s.handoff here.' },
   ]
   const OWED = [
-    'FEAT-103/157 firewood count: the record says 20 bundles (your 10-30 ruling, "was 25"); on 10-31 you said 25. Which?',
-    'FEAT-157 fifth line = prop smash: demolition has no code (FEAT-65). Build it for the alpha, or swap the fifth line for a built type until then?',
-    'FEAT-148: the three sets of lines are yours — giver flavour (one or two per family), the sleep reminder, the three intro cards. Write them, or hide the stubs for the alpha?',
-    'Q-6 (mission-feel review page): should the courier job show a countdown with digits ("3:41 or better for S")? Today it shows the rank band you hold and goes amber in the last 10 s, no digits (SM-INV-3). Recommend no.',
     'BUG-100: a seed whose road cannot get a drivable profile — drop that road like a stranded piece, or keep refusing the seed?',
     'BUG-81 item 4: the tunnel tube still launches you in from outside — should it jump BUG-93 and BUG-100 in Spare\'s queue?',
-    'FEAT-146 titles: towel now reads "run ended on day N"; win / crash / broke down still say what happened ("you made it in N days", "you crashed on day N"). Generic enough, or one wording for all four?',
+    'FEAT-146 titles: towel reads "run ended on day N"; win / crash / broke down still say what happened. Generic enough, or one wording for all four?',
+    'Lane A\'s order after FEAT-157\'s four built lines: FEAT-65 demolition (the fifth line), FEAT-147 the opening, or the FEAT-148 midnight overlay first?',
+    'In-game looks owed: the sealed tunnel mouths (BUG-93), the BUG-81 drive, the camp requisition run with the debug deed button (FEAT-103).',
+    'The giver lines: fill the Giver lines sheet on the item-setup page (generic first lines + one per thing); the fold to data/offers.js follows.',
   ]
   const STATES = ['todo', 'doing', 'done', 'blocked']
   const state = { tasks: {}, lanes: {}, inbox: {} }

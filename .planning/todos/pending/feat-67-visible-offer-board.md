@@ -257,8 +257,8 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
 
 - **Freight's bonus measure is weight delivered** — which is what FEAT-114 §6 built (the gate is a kg
   the load is posted with). Items gated on delivering super-heavy cargo are the intended shape.
-- **Larry has a reward pool**: every REWARDS row but the LSD (the roadside barn find) now lists
-  `larrysHouse` (data/offers.js, 2026-10-31). The rank gates still apply, so it is not game-breaking:
+- **Larry has a reward pool**: every REWARDS row, the LSD included (it is in several pools already —
+  owner), lists `larrysHouse` (data/offers.js, 2026-10-31). The rank gates still apply, so it is not game-breaking:
   one roll per round like any source. Papers rolls a bonus again.
 
 ## Open (owner's call)

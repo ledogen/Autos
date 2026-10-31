@@ -669,7 +669,7 @@ const STEPS = [
     const playedS = () => js('JSON.parse(localStorage.getItem("autos-run/1")).data.playedS')
     // The towel: a confirm card (owner, 2026-10-31) — back restores the menu, end ends the run.
     for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
-    check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "throw in the towel" in a story run\'s pause menu')
+    check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "give up" in a story run\'s pause menu')
     await js('document.getElementById("pm-towel").click()')
     check(!await card(), 'one click on the towel ended the run')
     check(await js('document.getElementById("towel-card").style.display === "flex"'), 'the towel click opened no confirm card')

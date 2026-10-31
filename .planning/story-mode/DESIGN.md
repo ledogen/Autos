@@ -547,6 +547,12 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > live. On papers (FEAT-141) the deadline is the end of D, so there it is the nearest thing to a par
   > clock — accepted with the ruling. Provenance: FEAT-139 addendum, 2026-10-23.
 
+  > **Amendment [OWNER 2026-10-31, Q-6] — courier shows its next rank line as a countdown.** Reverses
+  > "nothing downstream may render them as digits": on a courier job, until the rank bar appears near
+  > the goal (R-22), the job overlay prints **"finish in x:xx or better for S rank"** above the reward
+  > line — the time to the next rank line of the band held. When the bar appears it replaces the
+  > digits. The deadline countdown (10-23) is unchanged. Provenance: the mission-feel review Q-6.
+
   > **Amendment [RATIFIED 2026-08-01] — rank is par's player-facing surface.** The player never sees
   > par and never needs to: they see **a letter and a number** — how they did, and what they earned.
   > Ranks are **D · C · B · A · S** (`gradeRun()` in `src/par.js` already computes them), coloured

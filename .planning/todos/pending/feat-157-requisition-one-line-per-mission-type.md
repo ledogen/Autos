@@ -24,11 +24,10 @@ one offer.
 ## Ruled (owner, 2026-10-31)
 
 - One requisition line of each mission type: **haul, freight, courier, fragile**, and the fifth is the
-  **prop-smash (demolition) type** — which has no code yet (`BUILT_FAMILIES` in src/offer-board.js;
-  FEAT-65). Building the fifth line means building demolition first: flagged back to the owner for the
-  alpha's scope.
-- The firewood count: the record says 20 (owner 2026-10-30, "was 25"); on 2026-10-31 the owner said 25.
-  **Open — asked back.**
+  **prop-smash (demolition) type**. **Demolition gets built before the alpha** (owner, 2026-10-31) —
+  FEAT-65, Lane A, after the four built lines.
+- The firewood count is **20, confirmed** (owner, 2026-10-31): the yard's stock cycles, so a smart player
+  is rewarded for waiting a couple of recycles until it holds 20+ and clearing the line in one trip.
 
 ## Proposal (placeholders — the owner names the things and writes the words)
 
