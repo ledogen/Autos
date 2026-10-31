@@ -310,6 +310,9 @@ const makePropSamplers = () => Object.fromEntries(Object.entries({
   groundAt:    (x, z) => terrainSystem.groundAt(x, z),
   groundClassify: (slope, h) => terrainSystem.groundClassify(slope, h),   // PERF-34: the litter grid's own slope
   padBlocked:  (x, z, keepOut) => roadSystem.poiPadBlocked(x, z, keepOut) || roadSystem.junctionPadBlocked(x, z, keepOut),
+  // BUG-93: a tunnel mouth cuts the skin away (terrain.js tunnelCutAt — the shader's own capsule).
+  // Its analytic height there is the mouth-funnel notch: rocks and grass stood on it hung in the bore.
+  skinCut:     (x, z) => terrainSystem.tunnelCutAt(x, z),
 }).map(([k, fn]) => [k, k === 'sunShear' ? fn : _timed(k, fn)]))
 const _sunShearScratch = new THREE.Vector2()
 

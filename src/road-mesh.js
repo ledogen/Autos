@@ -962,7 +962,11 @@ export class RoadMeshSystem {
                 const sLo = Math.min(arcS0, arcS1), sHi = Math.max(arcS0, arcS1)
                 for (const sp of tSpans) {
                     const a = Math.max(sp.s0, sLo), b = Math.min(sp.s1, sHi)
-                    if (b - a > 0.5) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial())
+                    // BUG-93: a slice holding a span END always builds its piece, however short —
+                    // the proud lip is built only where the tube starts exactly at the span end. A
+                    // mouth 0.25 m before a slice boundary skipped its sliver, the next slice's tube
+                    // began 0.25 m inside, and the mouth had no lip: the shader-cut skin left a hole.
+                    if (b - a > 0.5 || (b > a && (a === sp.s0 || b === sp.s1))) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial())
                     if (sp.s0 >= sLo && sp.s0 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
                     if (sp.s1 >= sLo && sp.s1 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
                 }
@@ -1063,6 +1067,11 @@ export class RoadMeshSystem {
         const clearance   = params.roadClearanceMargin  ?? 0.25
         const APRON_IN    = Math.min(halfWidth - 0.8, R - 0.5)  // tucked under the ribbon edge
         const APRON_DROP  = 0.05             // m below carve dirt (kills mouth z-fight)
+        // BUG-93: the proud lip's OUTER ring sits this far ABOVE carve dirt instead. The terrain
+        // outside the cut starts a few cm above a dropped apron, and that open step faced into the
+        // bore: looking out from inside, the eye slid under the terrain's undrawn underside — a
+        // line of sky across the mouth. Rising across the overlap, the apron ends ON the dirt.
+        const LIP_RISE    = 0.06
         const inner = Math.max(2, Math.ceil((sB - sA) / 3) + 1)
         // Proud mouth: at a true span end (portal), one extra ring extruded 1.5 m OUT along the end
         // tangent so the tube exits the shader-cut terrain hole and meets the masonry ring.
@@ -1093,7 +1102,8 @@ export class RoadMeshSystem {
             // Dirt-apron Y (relative to gradeY) — the _carveDirtY fold at lateral L, minus the drop.
             // Camber from camberProfile, the SAME source the ribbon and the carve read.
             const sinCam = Math.sin(road.camberProfile(s, runKey))
-            const dirtH = (L) => crownProfile(L, halfWidth, crownH) + L * sinCam - clearance - APRON_DROP
+            const drop = ext ? -LIP_RISE : APRON_DROP
+            const dirtH = (L) => crownProfile(L, halfWidth, crownH) + L * sinCam - clearance - drop
             for (let k = 0; k < vpr; k++) {
                 let lat, h
                 if (k === 0)            { lat =  APRON_IN; h = dirtH(lat) }
@@ -1150,6 +1160,10 @@ export class RoadMeshSystem {
         // PORTAL_TAPER_LEN) so the carved→raw stop at the portal line hides behind the collar.
         const RIN  = R + 0.05, ROUT = R + 2.6     // reveal hugs the tube; wide headwall collar
         const D0 = -0.8, D1 = 1.35                // extrusion: buried into the hill → proud of it
+        // BUG-93: the arch's two feet carry on straight DOWN this far below grade. An arch ending at
+        // h = 0 floated over ground that sits lower — the cambered low side, the carve's dip at the
+        // neck — and you saw daylight under its leg. Buried legs stand it on whatever is there.
+        const LEG = 2.0
         const SEG = 20
         const c = road.runPointAt(runKey, pArc)
         if (!c) return null
@@ -1168,24 +1182,26 @@ export class RoadMeshSystem {
             [ROUT, D1, D1 - D0], [RIN, D1, (D1 - D0) + (ROUT - RIN)],
             [RIN, D1, (D1 - D0) + (ROUT - RIN)], [RIN, D0, 2 * (D1 - D0) + (ROUT - RIN)],
         ]
-        const nTheta = SEG + 1
+        const nTheta = SEG + 3                    // leg foot, the arch's SEG+1, leg foot
         const pos = new Float32Array(rows.length * nTheta * 3)
         const uv  = new Float32Array(rows.length * nTheta * 2)
         let vi = 0, ui = 0
         for (const [r, d, vRow] of rows) {
             for (let k = 0; k < nTheta; k++) {
-                const th = Math.PI * k / SEG
-                const lat = r * Math.cos(th), h = r * Math.sin(th)
+                const foot = k === 0 ? 1 : k === nTheta - 1 ? -1 : 0
+                const th = Math.PI * Math.min(SEG, Math.max(0, k - 1)) / SEG
+                const lat = foot ? foot * r : r * Math.cos(th), h = foot ? -LEG : r * Math.sin(th)
                 pos[vi]     = c.x + rx * lat + ox * d
                 pos[vi + 1] = prof.gradeY + h
                 pos[vi + 2] = c.z + rz * lat + oz * d
                 vi += 3
-                uv[ui] = th * RMID * 0.22; uv[ui + 1] = vRow * 0.22; ui += 2
+                // u runs on down the legs at the same scale, so the courses carry round the foot.
+                uv[ui] = (foot > 0 ? -LEG : foot < 0 ? Math.PI * RMID + LEG : th * RMID) * 0.22; uv[ui + 1] = vRow * 0.22; ui += 2
             }
         }
         const idx = []
         for (let s = 0; s < rows.length; s += 2) {      // strip = row pair (s, s+1)
-            for (let k = 0; k < SEG; k++) {
+            for (let k = 0; k < nTheta - 1; k++) {
                 const a = s * nTheta + k, b = (s + 1) * nTheta + k
                 idx.push(a, b, a + 1, a + 1, b, b + 1)
             }
