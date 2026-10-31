@@ -564,8 +564,13 @@ export const REWARD_VALUE = {
  */
 export const GATE_WEIGHTS = { C: 1, B: 1, A: 1, S: 1 }
 
-/** 0..1 — share of destinations that are another POI; the rest are roadside (LANDMARKS / place). */
-export const DEST_POI_CHANCE = 0.5
+/**
+ * 0..1 — share of destinations that are another POI; the rest are roadside (LANDMARKS / place).
+ * 0.65 (owner, 2026-10-31, FEAT-153): measured over 300 boards, roadside drops fall from 24.0 % to
+ * 16.5 % of non-paper offers (tagged things and fetches never roll it). FEAT-153's census, which
+ * counts where jobs END, read ~29 % → ~20 %.
+ */
+export const DEST_POI_CHANCE = 0.65
 
 /** People per source POI: usually one, sometimes two, rarely three. Relative weights. */
 export const PEOPLE_PER_POI = { 1: 0.75, 2: 0.2, 3: 0.05 }
