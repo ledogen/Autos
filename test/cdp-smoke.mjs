@@ -657,8 +657,27 @@ const STEPS = [
       console.log(`  endings: "${t}" — ${body.replace(/\s+/g, ' ').slice(0, 100)}`)
     }
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    let menuSeen = false
     const newRun = async () => {
-      await js('document.getElementById("mm-story").click()')
+      // FEAT-156 (once): the root is continue (only with a save) · new game · settings, and the
+      // new-game page's mode row swaps what is below it — opening on story, never remembered.
+      if (!menuSeen) {
+        menuSeen = true
+        const rootItems = await js('[...document.querySelectorAll("#mm-root button")].filter(b => b.offsetParent !== null).map(b => b.textContent.trim()).join(" · ")')
+        check(rootItems === 'new game · settings', `main menu root reads "${rootItems}", want "new game · settings"`)
+      }
+      await js('document.getElementById("mm-new").click()')
+      const modeView = () => js(`(() => { const v = id => document.getElementById(id).offsetParent !== null
+        return { mode: document.querySelector('[data-key=gameMode] .sel-val').textContent.replace(/[◂▸]/g, '').trim(),
+                 start: v('su-start'), world: v('su-seed'), list: v('mm-scenario-list') && document.querySelectorAll('#mm-scenario-list button').length } })()`)
+      const steps = []
+      for (let i = 0; i < 5; i++) {
+        steps.push(await modeView())
+        if (i < 4) await js('document.querySelector("[data-key=gameMode] .sel-next").click()')
+      }
+      const want = [['story', true, true, false], ['scenarios', false, false, true], ['free roam', true, true, false], ['testing lab', true, false, false], ['story', true, true, false]]
+      check(steps.every((v, i) => v.mode === want[i][0] && v.start === want[i][1] && v.world === want[i][2] && !!v.list === want[i][3]),
+        `new-game mode row: ${JSON.stringify(steps)}`)
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
       check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s)')
       const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')

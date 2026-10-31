@@ -38,7 +38,7 @@ function menuContainer () {
   if (ss?.style.display === 'flex') return ss
   const mm = $('main-menu')
   if (mm && mm.style.display !== 'none' && document.body.classList.contains('stage-on')) {
-    for (const page of ['setup', 'settings', 'scenarios']) if (mm.classList.contains(page)) return $(`mm-${page}-panel`)
+    for (const page of ['setup', 'settings']) if (mm.classList.contains(page)) return $(`mm-${page}-panel`)
     return $('mm-root')
   }
   return null

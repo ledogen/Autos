@@ -1401,6 +1401,9 @@ const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own auto
 const _world = () => ({ t: _settings.worldTerrain, p: _settings.worldPoi, r: _settings.worldRoads })
 const _setWorld = (w) => { _settings.worldTerrain = w.t; _settings.worldPoi = w.p; _settings.worldRoads = w.r }
 const SELECTORS = {
+  // FEAT-156: the new-game page's mode. Page state, never saved (owner, 2026-10-31): get/set, no key.
+  gameMode:     { name: 'mode', opts: [['story', 'story'], ['scenarios', 'scenarios'], ['freeroam', 'free roam'], ['lab', 'testing lab']],
+                  get: () => _setupMode, set: (m) => _setSetupMode(m) },
   worldPreset:  { name: 'difficulty',      opts: [['casual', 'casual'], ['classic', 'classic']],
                   get: () => presetOf(_world()) ?? 'custom', set: (id) => _setWorld(WORLD_PRESETS[id]) },
   worldTerrain: { name: 'terrain relief',  opts: KNOBS.t.map(v => [v, `${v} %`]) },
@@ -1417,7 +1420,7 @@ const SELECTORS = {
   abs:          { name: 'anti-lock brakes', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
 }
-let _setupMode = 'freeroam'   // 'freeroam' | 'story' — which run the setup page starts
+let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
 function _fitGearbox (gearbox = _settings.gearbox) {
   fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
 }
@@ -1475,21 +1478,30 @@ for (const b of document.querySelectorAll('button.mm-sel')) {
 for (const b of document.querySelectorAll('#main-menu button, #pause-menu button')) {
   b.addEventListener('mousedown', (e) => e.preventDefault())
 }
-function _openSetup (mode) {
+/** FEAT-156: switch the new-game page's mode — index.html's CSS swaps the rows on data-mode. */
+function _setSetupMode (mode) {
   _setupMode = mode
-  const t = document.getElementById('su-title')
-  if (t) t.textContent = mode === 'story' ? 'new game' : 'new free roam'
+  const panel = document.getElementById('mm-setup-panel')
+  if (panel) panel.dataset.mode = mode
+  const note = document.getElementById('su-save-note')
+  if (note) note.style.display = mode === 'story' && hasRun() ? '' : 'none'
+  if (mode === 'scenarios') _renderScenarioList()
+}
+/** The new-game page, opened on story — the mode is never remembered (owner, 2026-10-31). */
+function _openSetup () {
+  _setSetupMode('story')
   // Always blank (owner, 2026-09-06): pre-filling the standing seed would quietly make "just press
   // start" mean "replay the same world forever".
   const inp = document.getElementById('su-seed')
   if (inp) inp.value = ''
-  const note = document.getElementById('su-save-note')
-  if (note) note.style.display = mode === 'story' && hasRun() ? '' : 'none'
   _renderSelectors()
   document.getElementById('main-menu')?.classList.add('setup')
 }
-/** Start: save, resolve the code (6/C, 6/T80P120R290 set the knobs), apply the world and the gearbox, go. */
+/** Start: save, resolve the code (6/C, 6/T80P120R290 set the knobs), apply the world and the gearbox, go.
+ *  The lab has no world of its own and just enters; scenarios have no start (each entry starts its run). */
 async function _startFromSetup () {
+  if (_setupMode === 'lab') { await _enterLabFromMenu(); return }
+  if (_setupMode === 'scenarios') return
   const inp = document.getElementById('su-seed')
   inp?.blur()
   const { seed, world } = parseWorldCode(inp?.value ?? '')
@@ -1502,10 +1514,9 @@ async function _startFromSetup () {
   _fitGearbox()
   await _startFreeRoam(_resolveSeed(seed))
 }
-document.getElementById('mm-freeroam')?.addEventListener('click', () => _openSetup('freeroam'))
-// Story mode opens on new game. A saved run is resumed from its own button (#mm-continue, FEAT-42);
-// starting a new game over it discards it, and the setup page says so.
-document.getElementById('mm-story')?.addEventListener('click', () => _openSetup('story'))
+// A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
+// discards it, and the page says so.
+document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
 /** The main menu's continue button stands only while a run is saved. Wired here, ahead of the boot
  *  awaits (the free-roam seat is ~2.5 s of cold routing), like the buttons above: it shows with the
  *  menu, and an early click waits in _startStory's `await _worldReady`. */
@@ -1553,7 +1564,7 @@ function _openSettings (fromPause) {
 function _menuPageBack () {
   const mm = document.getElementById('main-menu')
   if (mm?.classList.contains('settings')) { _closeSettings(); return }
-  mm?.classList.remove('scenarios', 'setup')
+  mm?.classList.remove('setup')
 }
 function _closeSettings () {
   const panel = document.getElementById('mm-settings-panel')
@@ -1570,13 +1581,13 @@ document.addEventListener('keydown', (e) => {
 })
 
 // The lab is a debug rig with no world of its own, so it just enters.
-document.getElementById('mm-lab')?.addEventListener('click', async () => {
+async function _enterLabFromMenu () {
   _hideMainMenu()
   _enterStageLoad('building the world\u2026')   // the lab still needs the world's systems built
   await _worldReady
   _exitStageLoad()
   if (!_labActive) enterLab()
-})
+}
 // FEAT-62: scenarios. The list is data (data/scenarios.js), so its buttons are built here rather
 // than written into index.html. The leaderboard lives up here too — it is pure and has no world
 // dependencies, and the list shows each scenario's best time, so it must exist before the module
@@ -1606,13 +1617,6 @@ function _renderScenarioList () {
   cube.addEventListener('click', () => { void _startBarrelCube() })
   list.appendChild(cube)
 }
-document.getElementById('mm-scenarios')?.addEventListener('click', () => {
-  _renderScenarioList()
-  document.getElementById('main-menu')?.classList.add('scenarios')
-})
-document.getElementById('mm-scenarios-back')?.addEventListener('click', () => {
-  document.getElementById('main-menu')?.classList.remove('scenarios')
-})
 document.getElementById('mm-settings')?.addEventListener('click', () => _openSettings(false))
 document.getElementById('mm-settings-back')?.addEventListener('click', _closeSettings)
 document.getElementById('mm-bindings')?.addEventListener('click', () => document.getElementById('mm-settings-panel')?.classList.add('bindings'))
@@ -7727,7 +7731,7 @@ function _showMainMenu () {
   const cap = document.getElementById('load-caption')
   if (cap) cap.style.display = 'none'
   const el = document.getElementById('main-menu')
-  if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'scenarios', 'setup') }
+  if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'setup') }
   menuStage.setActive(true)   // re-runs the drop when arriving from the world; a no-op at boot
   _syncContinue()
   _simHeld = true
@@ -7735,7 +7739,7 @@ function _showMainMenu () {
 }
 function _hideMainMenu () {
   const el = document.getElementById('main-menu')
-  if (el) { el.style.display = 'none'; el.classList.remove('settings', 'scenarios', 'setup') }
+  if (el) { el.style.display = 'none'; el.classList.remove('settings', 'setup') }
 }
 // The region-freeze blurb is a STORY-MODE fact; it was showing on free-roam and lab loads too.
 const LOAD_HINT_STORY = 'the whole region is routed once, up front — after this the roads are frozen and no routing runs while you drive.'
@@ -8256,7 +8260,7 @@ document.getElementById('pm-story')?.addEventListener('click', () => {
   if (_labActive) exitLab()
   _exitScenario()
   _showMainMenu()
-  _openSetup('story')   // FEAT-41: a story run starts from the setup page, wherever it is asked for
+  _openSetup()   // FEAT-41: a story run starts from the setup page, wherever it is asked for
 })
 // (grid world's "grid world" / "return to world" buttons were removed with it — the lab's own
 // toggle is the way in and out of a flat world now.)
