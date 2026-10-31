@@ -98,6 +98,8 @@ async function drive (mph, lat, scale, yaw, trace = false) {
   const rp = new THREE.Vector3(), rv = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion()
   const r = { peakRimRoad: 0, exitRatio: 0, popStep: -1, peakHz: 0, maxRoll: 0, maxPitch: 0, upMin: 1, rockV: 0, dvStep: 0, wheelDmg: 0, rockKg, peakE: 0, peakEevent: 0 }
   const evE = [0, 0, 0, 0]   // J — pinch work over the current squash event (consecutive steps with a pinch), per wheel
+  const evN = [0, 0, 0, 0]   // steps the current squash event has run
+  const leak = [0, 0, 0, 0]; r.peakLeak = 0; r.evSteps = 0   // J — damage.js's leaky pinch work, and the longest-energy event's length
   let vPrev = speed, firstTouch = -1
   const N = 6 * 60
   for (let s = 0; s < N; s++) {
@@ -111,6 +113,9 @@ async function drive (mph, lat, scale, yaw, trace = false) {
     r.peakRimRoad = Math.max(r.peakRimRoad, ...vs.rimHazardSoft)
     for (let i = 0; i < 4; i++) {
       evE[i] = vs.rimHazardSoft[i] > 0 ? evE[i] + vs.rimHazardWork[i] : 0
+      evN[i] = vs.rimHazardSoft[i] > 0 ? evN[i] + 1 : 0
+      if (evE[i] >= r.peakEevent) r.evSteps = evN[i]
+      leak[i] = leak[i] * Math.exp(-DT / D.hazardPinchTauS) + vs.rimHazardWork[i]; r.peakLeak = Math.max(r.peakLeak, leak[i])
       r.peakEevent = Math.max(r.peakEevent, evE[i]); r.peakE = Math.max(r.peakE, vs.rimHazardWork[i])
     }
     if (NOPOP) { vs.rimHazard.fill(0); vs.rimHazardSoft.fill(0) }

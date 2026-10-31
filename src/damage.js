@@ -517,7 +517,12 @@ export const DAMAGE_PARAMS = {
   //   · hazardPunctureMult — the engine's force on the rim core. Kept from FEAT-93 (≈100 kN); with
   //     the core now sprung it is rarely reached (census: core peaks ≈20-40 kN).
   //   · hazardPinchEnergyJ — the soft path: the WORK the carcass absorbs past full squash, the tire
-  //     pinched between rock and rim (∫ residual · d depth over one squash event): the path that
+  //     pinched between rock and rim (∫ residual · d depth), through a LEAKY integrator: rubber
+  //     relaxes, so the stored work drains with hazardPinchTauS. A strike dumps its work inside one
+  //     step (census: every hit over 100 J, at every speed) and counts in full; a slow press caps at
+  //     its power × τ, so 800 J would take ≈16 kW held into the rim — rate, not total, splits a
+  //     tire (owner, 2026-11-01: "differentiate based on how quickly the energy is dumped"). τ from
+  //     16 to 200 ms gives the identical curve below. It is the path that
   //     carries nearly every puncture. ENERGY, not force (2026-10-31, owner ask "few pops below
   //     ~40 mph"): a slow climb presses as hard as a fast strike but slowly, so it does little work,
   //     and the work grows roughly with impact speed squared. A force threshold only SCALED the pop
@@ -532,7 +537,8 @@ export const DAMAGE_PARAMS = {
   // pressing a climbed rock into the road. It was the rock being handed the tire's push WITHOUT the
   // ground's reaction (physics.js proxyGround); with both, it is gone under either rule.
   hazardPunctureMult: 30,    // x static wheel load (≈100 kN) of hazard core force pops any tire
-  hazardPinchEnergyJ: 800,   // J of pinch work in one squash event (hazard carcass load past full squash × its travel) pops any tire (BUG-99)
+  hazardPinchEnergyJ: 800,   // J of leaky-integrated pinch work (hazard carcass load past full squash × its travel) pops any tire (BUG-99)
+  hazardPinchTauS:    0.05,  // s — the leak's time constant: rubber relaxing between strikes
   // A flat is not a hole in the ground: the air is gone, so the carcass carries almost nothing at
   // small deflection, but it still stacks up against the rim as it squashes. Scaling the LINEAR
   // rate to a few percent gives exactly that, while a literal zero would mean no normal force at
@@ -743,7 +749,7 @@ export class DamageModel {
     this._strikePeak = [0, 0, 0, 0]
     // Whether that peak came off the analytic ground (road residual) rather than a debris body.
     this._strikeRoad = [false, false, false, false]
-    // Pinch work [J] over the current hazard squash event per corner (consecutive steps with a pinch).
+    // Leaky-integrated hazard pinch work [J] per corner (hazardPinchTauS).
     this._pinchE = [0, 0, 0, 0]
 
   }
@@ -1375,13 +1381,14 @@ export class DamageModel {
     // A threshold crossing, not an event to bank: the tire is either split or it is not.
     // Two measurements of one event — the rim taking a rock — each against its own threshold
     // (BUG-99), as the rim-strike track above does: the engine's force on the sprung rim core, and
-    // the soft path's pinch WORK over one squash event (the tire pinched between rock and rim) —
-    // an event is the run of steps with a pinch, so a pinch that lets go starts the count again.
-    const hz = vehicleState.rimHazard, pinch = vehicleState.rimHazardSoft, work = vehicleState.rimHazardWork
-    if ((hz || pinch) && params) {
+    // the soft path's pinch WORK (the tire pinched between rock and rim), leaky-integrated so that
+    // how FAST it arrives is what splits the tire.
+    const hz = vehicleState.rimHazard, work = vehicleState.rimHazardWork
+    if ((hz || work) && params) {
       const popN = P.hazardPunctureMult * DamageModel.staticWheelLoad(params)
+      const keep = Math.exp(-dt / P.hazardPinchTauS)
       for (let i = 0; i < 4; i++) {
-        this._pinchE[i] = (pinch?.[i] || 0) > 0 ? this._pinchE[i] + (work?.[i] || 0) : 0
+        this._pinchE[i] = this._pinchE[i] * keep + (work?.[i] || 0)
         if (this.flat[i]) continue
         if ((hz?.[i] || 0) >= popN || this._pinchE[i] >= P.hazardPinchEnergyJ) { this.flat[i] = true; this.popped.push(i) }
       }

@@ -38,7 +38,6 @@ console.log(`§1 the thresholds (${(POP_N / 1000).toFixed(1)} kN on the core, ${
     const d = new DamageModel({ params: RANGER_PARAMS })
     const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], rimHazardSoft: [0, 0, 0, 0], rimHazardWork: [0, 0, 0, 0] }
     vs[field][1] = n
-    if (field === 'rimHazardWork') vs.rimHazardSoft[1] = 1   // work only counts while the pinch is on
     d.step(vs, RANGER_PARAMS, DT)
     return d
   }
@@ -50,13 +49,15 @@ console.log(`§1 the thresholds (${(POP_N / 1000).toFixed(1)} kN on the core, ${
   ok(hitWith('rimHazardWork', PINCH_J * 1.01).flat[1], 'pinch work just over its own threshold pops it too')
   ok(!hitWith('rimHazardWork', PINCH_J * 0.99).flat[1], '...and just under does nothing')
   {
+    // Rate, not total: the same 800 J pressed in slowly (a tenth of it per step, for 5 s) never pops.
     const d = new DamageModel({ params: RANGER_PARAMS })
-    const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], rimHazardSoft: [0, 1, 0, 0], rimHazardWork: [0, PINCH_J * 0.6, 0, 0] }
-    d.step(vs, RANGER_PARAMS, DT); d.step(vs, RANGER_PARAMS, DT)
-    ok(d.flat[1], 'two steps of one squash event sum past it')
+    const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], rimHazardSoft: [0, 0, 0, 0], rimHazardWork: [0, PINCH_J * 0.1, 0, 0] }
+    for (let k = 0; k < 300; k++) d.step(vs, RANGER_PARAMS, DT)
+    ok(!d.flat[1], `${PINCH_J * 0.1 / DT / 1000} kW pressed in for 5 s (${PINCH_J * 30} J in all) does not pop it — the work leaks out`)
     const e = new DamageModel({ params: RANGER_PARAMS })
-    e.step(vs, RANGER_PARAMS, DT); vs.rimHazardSoft[1] = 0; e.step(vs, RANGER_PARAMS, DT); vs.rimHazardSoft[1] = 1; e.step(vs, RANGER_PARAMS, DT)
-    ok(!e.flat[1], '...but two separate squashes do not')
+    vs.rimHazardWork[1] = PINCH_J * 0.6
+    e.step(vs, RANGER_PARAMS, DT); e.step(vs, RANGER_PARAMS, DT)
+    ok(e.flat[1], '...while two quick steps of 0.6× it in a row do')
   }
 }
 
