@@ -516,17 +516,23 @@ export const DAMAGE_PARAMS = {
   // against its own threshold — as the rim-strike track does with its two measurements:
   //   · hazardPunctureMult — the engine's force on the rim core. Kept from FEAT-93 (≈100 kN); with
   //     the core now sprung it is rarely reached (census: core peaks ≈20-40 kN).
-  //   · hazardPinchMult — the soft path's carcass load past full squash, the tire pinched between
-  //     rock and rim: the path that now carries nearly every puncture. Step mean, like the core's.
-  // Measured (test/census-rock-strike.mjs --big, ≈3000 hits — rocks 0.6-1.0×, 9 offsets, 6 yaws —
-  // at held speed, tireDampingDebris 150, this 4.5×): pops per hit
-  //     5-10 mph 0 %   15 mph 1 %   20 / 25 / 30 mph 16 / 26 / 34 %   35 / 40 mph 10 / 14 %
-  //     45 / 50 / 55 mph 26 / 39 / 51 %   — no flips in the sweep.
-  // The 20-30 mph hump is the physics, accepted by the owner: there the tire climbs the rock and
-  // presses it into the road; faster, it bats the rock away before the carcass bottoms. The
-  // threshold moves the whole curve (at 20 kN: 13 / 19 / 25 % and 34 / 46 % at 50 / 55 mph).
+  //   · hazardPinchEnergyJ — the soft path: the WORK the carcass absorbs past full squash, the tire
+  //     pinched between rock and rim (∫ residual · d depth over one squash event): the path that
+  //     carries nearly every puncture. ENERGY, not force (2026-10-31, owner ask "few pops below
+  //     ~40 mph"): a slow climb presses as hard as a fast strike but slowly, so it does little work,
+  //     and the work grows roughly with impact speed squared. A force threshold only SCALED the pop
+  //     curve; this one moves it along the speed axis.
+  // Measured (test/census-rock-strike.mjs --big --nopop, 2970 hits — rocks 0.6-1.0×, 9 offsets,
+  // 6 yaws — at held speed, tireDampingDebris 150), pops per hit, 5…55 mph in 5s:
+  //     force  15 kN (the old pinch)   0  0  0  0  0  1  1  5 19 24 44 %
+  //     energy 400 J                   0  0  0  0  0  1  5  9 27 36 56 %
+  //     energy 800 J                   0  0  0  0  0  0  3  6 23 33 53 %
+  //     energy 1600 J                  0  0  0  0  0  0  0  4 16 25 49 %
+  // Until 2026-10-31 the force curve had a 20-30 mph hump (16 / 26 / 34 %), read then as the tire
+  // pressing a climbed rock into the road. It was the rock being handed the tire's push WITHOUT the
+  // ground's reaction (physics.js proxyGround); with both, it is gone under either rule.
   hazardPunctureMult: 30,    // x static wheel load (≈100 kN) of hazard core force pops any tire
-  hazardPinchMult:    4.5,   // x static wheel load (≈15 kN, step mean) of hazard CARCASS load past full squash pops any tire (BUG-99)
+  hazardPinchEnergyJ: 800,   // J of pinch work in one squash event (hazard carcass load past full squash × its travel) pops any tire (BUG-99)
   // A flat is not a hole in the ground: the air is gone, so the carcass carries almost nothing at
   // small deflection, but it still stacks up against the rim as it squashes. Scaling the LINEAR
   // rate to a few percent gives exactly that, while a literal zero would mean no normal force at
@@ -737,6 +743,8 @@ export class DamageModel {
     this._strikePeak = [0, 0, 0, 0]
     // Whether that peak came off the analytic ground (road residual) rather than a debris body.
     this._strikeRoad = [false, false, false, false]
+    // Pinch work [J] over the current hazard squash event per corner (consecutive steps with a pinch).
+    this._pinchE = [0, 0, 0, 0]
 
   }
 
@@ -753,6 +761,7 @@ export class DamageModel {
     this._bumpPeak.fill(0)
     this._strikePeak.fill(0)
     this._strikeRoad.fill(false)
+    this._pinchE.fill(0)
   }
 
   /** Condition of one track, [0, 1]. */
@@ -1366,14 +1375,15 @@ export class DamageModel {
     // A threshold crossing, not an event to bank: the tire is either split or it is not.
     // Two measurements of one event — the rim taking a rock — each against its own threshold
     // (BUG-99), as the rim-strike track above does: the engine's force on the sprung rim core, and
-    // the soft path's carcass load past full squash (the tire pinched between rock and rim).
-    const hz = vehicleState.rimHazard, pinch = vehicleState.rimHazardSoft
+    // the soft path's pinch WORK over one squash event (the tire pinched between rock and rim) —
+    // an event is the run of steps with a pinch, so a pinch that lets go starts the count again.
+    const hz = vehicleState.rimHazard, pinch = vehicleState.rimHazardSoft, work = vehicleState.rimHazardWork
     if ((hz || pinch) && params) {
-      const staticW = DamageModel.staticWheelLoad(params)
-      const popN = P.hazardPunctureMult * staticW, pinchN = P.hazardPinchMult * staticW
+      const popN = P.hazardPunctureMult * DamageModel.staticWheelLoad(params)
       for (let i = 0; i < 4; i++) {
+        this._pinchE[i] = (pinch?.[i] || 0) > 0 ? this._pinchE[i] + (work?.[i] || 0) : 0
         if (this.flat[i]) continue
-        if ((hz?.[i] || 0) >= popN || (pinch?.[i] || 0) >= pinchN) { this.flat[i] = true; this.popped.push(i) }
+        if ((hz?.[i] || 0) >= popN || this._pinchE[i] >= P.hazardPinchEnergyJ) { this.flat[i] = true; this.popped.push(i) }
       }
     }
 

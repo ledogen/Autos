@@ -30,14 +30,15 @@ const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fail 
 const DT = 1 / 60
 const POP_N = D.hazardPunctureMult * DamageModel.staticWheelLoad(RANGER_PARAMS)
 
-const PINCH_N = D.hazardPinchMult * DamageModel.staticWheelLoad(RANGER_PARAMS)
+const PINCH_J = D.hazardPinchEnergyJ
 
-console.log(`§1 the thresholds (${(POP_N / 1000).toFixed(1)} kN on the core, ${(PINCH_N / 1000).toFixed(1)} kN of pinch), on fresh rubber`)
+console.log(`§1 the thresholds (${(POP_N / 1000).toFixed(1)} kN on the core, ${PINCH_J} J of pinch work), on fresh rubber`)
 {
   const hitWith = (field, n) => {
     const d = new DamageModel({ params: RANGER_PARAMS })
-    const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], rimHazardSoft: [0, 0, 0, 0] }
+    const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], rimHazardSoft: [0, 0, 0, 0], rimHazardWork: [0, 0, 0, 0] }
     vs[field][1] = n
+    if (field === 'rimHazardWork') vs.rimHazardSoft[1] = 1   // work only counts while the pinch is on
     d.step(vs, RANGER_PARAMS, DT)
     return d
   }
@@ -46,8 +47,17 @@ console.log(`§1 the thresholds (${(POP_N / 1000).toFixed(1)} kN on the core, ${
   ok(!pop.flat[0] && !pop.flat[2] && !pop.flat[3], '...and only the corner that struck')
   ok(!hitWith('rimHazard', POP_N * 0.99).flat[1], 'just under it does nothing')
   ok(!hitWith('rimForce', POP_N * 3).flat[1], 'three times it from NON-hazard debris (cargo, barrels) does nothing')
-  ok(hitWith('rimHazardSoft', PINCH_N * 1.01).flat[1], 'a pinch just over its own threshold pops it too')
-  ok(!hitWith('rimHazardSoft', PINCH_N * 0.99).flat[1], '...and just under does nothing')
+  ok(hitWith('rimHazardWork', PINCH_J * 1.01).flat[1], 'pinch work just over its own threshold pops it too')
+  ok(!hitWith('rimHazardWork', PINCH_J * 0.99).flat[1], '...and just under does nothing')
+  {
+    const d = new DamageModel({ params: RANGER_PARAMS })
+    const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], rimHazardSoft: [0, 1, 0, 0], rimHazardWork: [0, PINCH_J * 0.6, 0, 0] }
+    d.step(vs, RANGER_PARAMS, DT); d.step(vs, RANGER_PARAMS, DT)
+    ok(d.flat[1], 'two steps of one squash event sum past it')
+    const e = new DamageModel({ params: RANGER_PARAMS })
+    e.step(vs, RANGER_PARAMS, DT); vs.rimHazardSoft[1] = 0; e.step(vs, RANGER_PARAMS, DT); vs.rimHazardSoft[1] = 1; e.step(vs, RANGER_PARAMS, DT)
+    ok(!e.flat[1], '...but two separate squashes do not')
+  }
 }
 
 /** The GLB's vertices, centred on their bbox — what debris.js _extractHull hands the engine. */
@@ -132,8 +142,9 @@ console.log('\n§2 the real truck into a resting rock at a held speed — core f
   }
   const pops = (ms) => ms.reduce((n, m) => n + rows[m].filter(x => x.popped).length, 0)
   ok(pops([5, 10]) === 0, 'at 5-10 mph no line onto the rock pops a tire — crawling over it is not an incident')
-  ok(pops([20, 25, 30]) >= 2, `at 20-30 mph some lines do (${pops([20, 25, 30])} of 21) — nailing a rock can split a fresh tire`)
-  ok(pops([50]) >= 2, `at 50 mph several do (${pops([50])} of 7)`)
+  // Pop on pinch ENERGY (2026-10-31): below ~40 mph a hit is rarely enough work to split a tire.
+  ok(pops([20, 25, 30]) <= 3, `at 20-30 mph few lines do (${pops([20, 25, 30])} of 21) — slowing down mostly saves the tire`)
+  ok(pops([40, 50]) >= 4, `at 40-50 mph several do (${pops([40, 50])} of 14) — nailing a rock splits a fresh tire`)
   const hit = rows[50].find(x => x.popped), lat = lats[rows[50].indexOf(hit)]
   const again = await drive(50, lat)
   ok(again.peak === hit.peak && again.pinch === hit.pinch && again.popped,

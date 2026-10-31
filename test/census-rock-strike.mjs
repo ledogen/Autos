@@ -96,7 +96,8 @@ async function drive (mph, lat, scale, yaw, trace = false) {
   const dmg = new DamageModel({ params: P })
   const fwd = new THREE.Vector3(), up = new THREE.Vector3()
   const rp = new THREE.Vector3(), rv = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion()
-  const r = { peakRimRoad: 0, exitRatio: 0, popStep: -1, peakHz: 0, maxRoll: 0, maxPitch: 0, upMin: 1, rockV: 0, dvStep: 0, wheelDmg: 0, rockKg }
+  const r = { peakRimRoad: 0, exitRatio: 0, popStep: -1, peakHz: 0, maxRoll: 0, maxPitch: 0, upMin: 1, rockV: 0, dvStep: 0, wheelDmg: 0, rockKg, peakE: 0, peakEevent: 0 }
+  const evE = [0, 0, 0, 0]   // J — pinch work over the current squash event (consecutive steps with a pinch), per wheel
   let vPrev = speed, firstTouch = -1
   const N = 6 * 60
   for (let s = 0; s < N; s++) {
@@ -108,6 +109,10 @@ async function drive (mph, lat, scale, yaw, trace = false) {
     const hz = Math.max(...vs.rimHazard)   // read BEFORE --nopop clears it, so a sweep can threshold offline
     r.peakHz = Math.max(r.peakHz, hz)
     r.peakRimRoad = Math.max(r.peakRimRoad, ...vs.rimHazardSoft)
+    for (let i = 0; i < 4; i++) {
+      evE[i] = vs.rimHazardSoft[i] > 0 ? evE[i] + vs.rimHazardWork[i] : 0
+      r.peakEevent = Math.max(r.peakEevent, evE[i]); r.peakE = Math.max(r.peakE, vs.rimHazardWork[i])
+    }
     if (NOPOP) { vs.rimHazard.fill(0); vs.rimHazardSoft.fill(0) }
     const wasFlat = dmg.flat.some(Boolean)
     dmg.step(vs, P, DT)
@@ -165,7 +170,7 @@ for (const mph of SPEEDS) {
   const n = (f) => rs.filter(f).length
   const mx = (k) => Math.max(...rs.map(x => x[k]))
   console.log(`${String(mph).padStart(3)} mph  pop ${n(x => x.popStep >= 0)}  wdmg ${n(x => x.wheelDmg > 0)}  flip ${n(x => x.upMin < 0)}  roll>30 ${n(x => x.maxRoll > 30)}  ` +
-    `roll ${mx('maxRoll').toFixed(0)}°  hz ${(mx('peakHz') / 1000).toFixed(0)}k  softHz ${(mx('peakRimRoad') / 1000).toFixed(0)}k  rock ${mx('rockV').toFixed(1)}  exit× ${mx('exitRatio').toFixed(2)}  dv ${mx('dvStep').toFixed(2)}`)
+    `roll ${mx('maxRoll').toFixed(0)}°  hz ${(mx('peakHz') / 1000).toFixed(0)}k  softHz ${(mx('peakRimRoad') / 1000).toFixed(0)}k  E ${mx('peakEevent').toFixed(0)}J  rock ${mx('rockV').toFixed(1)}  exit× ${mx('exitRatio').toFixed(2)}  dv ${mx('dvStep').toFixed(2)}`)
   if (args.includes('--rows')) for (const x of rs) console.log(`      sc${x.sc} lat${x.lat} yaw${x.yaw}: pop${x.popStep} hz${(x.peakHz / 1000).toFixed(0)}k soft${(x.peakRimRoad / 1000).toFixed(0)}k wd${x.wheelDmg.toFixed(2)} roll${x.maxRoll.toFixed(0)} pitch${x.maxPitch.toFixed(0)} up${x.upMin.toFixed(2)} rock${x.rockV.toFixed(1)} exit${x.exitRatio.toFixed(2)} dv${x.dvStep.toFixed(2)} kg${x.rockKg?.toFixed?.(0)}`)
 }
 if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(ALL))

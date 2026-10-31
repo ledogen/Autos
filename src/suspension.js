@@ -317,7 +317,7 @@ const _mountX = [0, 0, 0, 0], _mountY = [0, 0, 0, 0], _mountZ = [0, 0, 0, 0]
 const _mountVX = [0, 0, 0, 0], _mountVY = [0, 0, 0, 0], _mountVZ = [0, 0, 0, 0]
 const _arbF = [0, 0, 0, 0]
 // Per-contact scratch for the two passes over one wheel's contacts (a wheel rarely has more than 3).
-const _cSpring = new Float64Array(32), _cDamp = new Float64Array(32), _cCvE = new Float64Array(32), _cCvV = new Float64Array(32), _cBUp = new Float64Array(32), _cRate = new Float64Array(32)
+const _cSpring = new Float64Array(32), _cDamp = new Float64Array(32), _cCvE = new Float64Array(32), _cCvV = new Float64Array(32), _cBUp = new Float64Array(32), _cRate = new Float64Array(32), _cEng = new Float64Array(32)
 
 export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts) {
   // SM-3: reset the per-step peak bump-stop force before the substep loop accumulates this step's.
@@ -329,6 +329,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   if (vehicleState.rimForce) { vehicleState.rimForce[0] = 0; vehicleState.rimForce[1] = 0; vehicleState.rimForce[2] = 0; vehicleState.rimForce[3] = 0 }
   if (vehicleState.rimForceRoad) { vehicleState.rimForceRoad[0] = 0; vehicleState.rimForceRoad[1] = 0; vehicleState.rimForceRoad[2] = 0; vehicleState.rimForceRoad[3] = 0 }
   if (vehicleState.rimHazardSoft) { vehicleState.rimHazardSoft[0] = 0; vehicleState.rimHazardSoft[1] = 0; vehicleState.rimHazardSoft[2] = 0; vehicleState.rimHazardSoft[3] = 0 }
+  if (vehicleState.rimHazardWork) { vehicleState.rimHazardWork[0] = 0; vehicleState.rimHazardWork[1] = 0; vehicleState.rimHazardWork[2] = 0; vehicleState.rimHazardWork[3] = 0 }
   // Paranoid guard (Phase 4.1 D-01): if strutComp/strutCompVel not initialized, skip.
   if (!vehicleState.strutComp || vehicleState.strutComp.length !== 4) return
   if (!vehicleState.strutCompVel || vehicleState.strutCompVel.length !== 4) return
@@ -502,16 +503,16 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // tire as decompressing — the damper pushed the wrong way and fed the bounce (owner capture
         // 1791092005752: a 5.7 m/s landing rebounding at 4.5 m/s once the stop held). Split as
         // (the mount's closing speed, explicit) − v_new · bUp (implicit).
-        let cvE, cvV
+        let cvE, cvV, eng = 1
         const sv = c.surfaceVel
         if (sv) {
           // A debris contact damps at its own rate (params.tireDampingDebris, BUG-99): the road's
           // is a ride tune, and against a free rock it decides whether the carcass ever bottoms.
-          const eng = Math.min(1, c.depth / TIRE_DAMP_ENGAGE) * (params.tireDampingDebris ?? params.tireDamping) / params.tireDamping
+          eng = Math.min(1, c.depth / TIRE_DAMP_ENGAGE) * (params.tireDampingDebris ?? params.tireDamping) / params.tireDamping
           cvE = -((_mountVX[i] - sv.x) * c.normal.x + (_mountVY[i] - sv.y) * c.normal.y + (_mountVZ[i] - sv.z) * c.normal.z) * eng
           cvV = bUp * eng
         } else { cvE = -(_mountVX[i] * c.normal.x + _mountVY[i] * c.normal.y + _mountVZ[i] * c.normal.z); cvV = bUp }
-        _cSpring[ci] = t.spring; _cDamp[ci] = t.damp; _cCvE[ci] = cvE; _cCvV[ci] = cvV; _cBUp[ci] = bUp; _cRate[ci] = rate
+        _cSpring[ci] = t.spring; _cDamp[ci] = t.damp; _cCvE[ci] = cvE; _cCvV[ci] = cvV; _cBUp[ci] = bUp; _cRate[ci] = rate; _cEng[ci] = eng
         tireFzExplicit += (t.spring + t.damp * cvE) * bUp
         cTire += t.damp * cvV * bUp
       }
@@ -573,7 +574,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
 
       // Pass 2 over the contacts: the tire forces at v_new (clamped — a tire pushes, never pulls),
       // the strut-axis sum the Pacejka feed reads, the X/Z residual (D-06) and the rim-load signal.
-      let tireFz = 0, pinch = 0
+      let tireFz = 0, pinch = 0, pinchW = 0
       for (let ci = 0; ci < nC; ci++) {
         const c = hubContacts[ci], bUp = _cBUp[ci], rate = _cRate[ci]
         const tireFnAtContact = Math.max(0, _cSpring[ci] + _cDamp[ci] * (_cCvE[ci] - newStrutCompVel * _cCvV[ci]))
@@ -619,7 +620,14 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
             (params.tireStiffness * rate + carcassStiffness(params) * (1 / (1 - bandNorm * bandNorm) - 1))
           const residual = tireFnAtContact - atBand
           if (residual > vehicleState.rimForceRoad[i]) vehicleState.rimForceRoad[i] = residual
-          if (c.hazard && residual > pinch) pinch = residual
+          if (c.hazard && residual > 0) {
+            if (residual > pinch) pinch = residual
+            // The WORK that residual does on the carcass this substep: residual × the closing speed
+            // on the normal (loading only). (cvE − v·cvV)/eng undoes the debris damper's scaling —
+            // eng is 1 past the soft band's depth, so only the damping ratio comes off.
+            const closing = (_cCvE[ci] - newStrutCompVel * _cCvV[ci]) / _cEng[ci]
+            if (closing > 0) pinchW += residual * closing * sdt
+          }
         }
       }
 
@@ -642,6 +650,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       // are read against thresholds of the same kind, and one substep's spike — the coupled step
       // finding a tumbling rock deeper than it predicted — is not a cut tire.
       if (vehicleState.rimHazardSoft) vehicleState.rimHazardSoft[i] += pinch / N
+      if (vehicleState.rimHazardWork) vehicleState.rimHazardWork[i] += pinchW
       params._suspForceAccum[i] += (suspForce - arbF[i]) / N  // body force along strut: spring+damper+stops + ARB reaction
       // _hubNormalXZ[i] accumulated in the contacts pass above
     }

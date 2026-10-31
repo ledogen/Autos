@@ -142,3 +142,33 @@ climb; the old physics climbed because the rock was effectively immovable. Rare 
 to ~2× remain (tumbling rock vs the coupled-step prediction). `PhysicsEngine.replaceHullLocal` now has
 no src caller (only `collider-seam-churn.mjs` drives it) — delete with that gate's rework. Stutter:
 check `?hitch=20` at a pop on :3282 (render-side suspect).
+
+## Work log — 2026-10-31 (Lane B): pop on energy, and the sandwich fix
+
+**Pop on ENERGY.** The suspension now publishes `vehicleState.rimHazardWork` (J per step): the hazard
+pinch residual × the tire's closing speed on the contact, loading only. `damage.js` sums it over one
+squash event (the run of steps with a pinch) and pops at `hazardPinchEnergyJ` = 800 J. It replaces the
+15 kN pinch-force rule (`hazardPinchMult`, deleted). The 100 kN core-force rule (FEAT-93) stays.
+
+**What the --nopop census exposed.** With fewer pops, hits that used to pop stopped hiding a blowup:
+1 flip at 25 mph and rocks thrown at up to 282 m/s (committed 1506d155 gives the same numbers). The
+cause: a 9 kg rock sandwiched under the tire got the tire's push (2.5 kN·s, 280 m/s into the road)
+but not the ground's reaction. The proxy predicted the ground holding the rock and did not tell the
+engine, whose soft contact let the rock sink and then spat it out at 47 m/s. Fix: `proxyGround` hands
+its support impulses to the engine with the tire pushes. Both sides of the contact now step the same
+rock.
+
+**That fix also removed the 20–30 mph hump.** It was this artefact, not "the tire pressing a climbed
+rock into the road". Max roll over the whole sweep: 87° → 4° (no pops). Pops by speed, 5…55 mph:
+
+| rule | 5 | 10 | 15 | 20 | 25 | 30 | 35 | 40 | 45 | 50 | 55 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| before (force 15 kN, 1506d155) | 0 | 0 | 1 | 16 | 26 | 34 | 10 | 14 | 26 | 39 | 51 |
+| force 15 kN + sandwich fix | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 5 | 19 | 24 | 44 |
+| **energy 800 J + sandwich fix (shipped)** | 0 | 0 | 0 | 0 | 0 | 0 | 3 | 6 | 23 | 33 | 53 |
+
+Rock exit (÷ truck speed) p95 is 1.0–1.6× at 5–30 mph (was 1.5–1.75×) and 1.4× at 40–55 (was 1.2×).
+Three of 1080 hits at 45–50 mph exceed 2.3× (max 3.0×, a 9 kg rock). Live: 0 flips; one 55 mph hit
+rolls 49° on the FLAT tire after the pop (no steering in the census; the same hit unpopped rolls 4°).
+Wheel damage from rocks fell with the sandwich force (55 mph: 144 → 122 of 270 hits damage a rim).
+Physics fingerprint (no debris) identical.

@@ -1320,8 +1320,12 @@ function proxyInvMass (p, rx, ry, rz, dx, dy, dz) {
 /**
  * BUG-99 rock proxy: the ground it lies on — at each support point, no velocity change INTO the
  * ground, applied as an impulse AT that point, so a base on the road makes a rock pushed high
- * pivot instead of sinking. Two passes of sequential impulses over the points; these only steer
- * the proxy's prediction — the engine applies the real ground impulses.
+ * pivot instead of sinking. Two passes of sequential impulses over the points. Each one also goes
+ * to the ENGINE with the tire's pushes (2026-10-31): handed only the tire's half, a 9 kg rock
+ * sandwiched under a 150 kN tire left the step at 280 m/s INTO the road, and the engine's soft
+ * contact let it sink and then spat it out at 47 m/s (the --nopop census: a flip at 25 mph, rocks
+ * to 282 m/s — hidden until pinch energy stopped popping those tires). The ground's reaction is
+ * real; given both halves, the engine and the proxy step the same rock.
  * No ground FRICTION here, measured (census, 2026-10-29): a Coulomb hold predicted the rock pinned,
  * the tire loaded into it, and the engine — which does not hold a rock against a large applied
  * impulse that way — then let it fly at 2–5× the truck's speed. The proxy exists to predict what
@@ -1336,6 +1340,7 @@ function proxyGround (p) {
       if (vn >= 0) continue
       const jn = -vn / proxyInvMass(p, s.rx, s.ry, s.rz, s.nx, s.ny, s.nz)
       proxyImpulse(p, jn * s.nx, jn * s.ny, jn * s.nz, s.rx, s.ry, s.rz)
+      p.pushes.push({ x: jn * s.nx, y: jn * s.ny, z: jn * s.nz }, { x: p.com.x + s.rx, y: p.com.y + s.ry, z: p.com.z + s.rz })
     }
   }
 }
