@@ -269,7 +269,7 @@ export const POI_ROSTER = [
     // an existing seed. That is the licence this design is built on; do not add a stability
     // guarantee here without re-reading that sentence.
     { type: 'residence',    count: 5, modelPool: 'residence', siting: 'any' },
-    // Office, school and doctor stand on placeholder cubes until their models ship (ASSET-73/69/70).
+    // Office, school and doctor each stand on their own model (ASSET-69/73/70, owner 2026-10-31).
     // A farm is a residence too (owner, 2026-10-07), so anything bound for a residence may end at one.
     // FEAT-105: the farm stands on the ASSET-66 barn, doors to the road, on its own 22 x 11.2 m farm
     // pad with a clutter yard beside it. A region with no spot for that pad falls back to a lay-by
@@ -280,9 +280,9 @@ export const POI_ROSTER = [
     // FEAT-74 (owner, 2026-10-16): the third farm is the produce stall, its own farm POI on a lay-by —
     // the farmhouse is imagined just off the road. Same class, same jobs, no yard.
     { type: 'farm',         count: 1, model: 'produceStall', siting: 'any', tags: ['residence'] },
-    { type: 'office',       count: 1, model: null, siting: 'any' },
-    { type: 'school',       count: 1, model: null, siting: 'any' },
-    { type: 'doctor',       count: 1, model: null, siting: 'any' },
+    { type: 'office',       count: 1, model: 'office', siting: 'any' },
+    { type: 'school',       count: 1, model: 'school', siting: 'any' },
+    { type: 'doctor',       count: 1, model: 'doctorsOffice', siting: 'any' },
     // The pad is permanent (worldgen); the broken-down car shows ONLY while the motorist has a job
     // open (FEAT-102, `showWhileJob` — main.js _updatePoiPresence). Idle, it is an empty lay-by.
     { type: 'strandedMotorist', count: 1, model: 'brokenCar', siting: 'any', showWhileJob: true },
