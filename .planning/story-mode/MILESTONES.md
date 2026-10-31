@@ -646,7 +646,7 @@ owner's name for it.
 | Inventory — what the player owns this run; the one grant path for shop, rewards and finds | FEAT-122 | built on `feature/feat-122`, all four questions answered (2026-10-16); merge pending |
 | Camp gear slots — what the shop sells renders at camp (items.md visible-kit rule) | FEAT-66 | open |
 | POI model pools — register the built models | FEAT-74 | open — produce stall is its own farm POI (2026-10-16) |
-| Placeholder-replacing models: office, doctor's office, job site, school | ASSET-69, ASSET-70, ASSET-71, ASSET-73 | open |
+| Placeholder-replacing models: office, doctor's office, job site, school | ASSET-69, ASSET-70, ASSET-71, ASSET-73 | ✅ closed — 71 shipped 89c519d5, 69/70/73 shipped 10ff0f8f (owner approved 2026-10-31) |
 
 **Mission types** (the delivery content carried forward from SM-2, plus demolition):
 
