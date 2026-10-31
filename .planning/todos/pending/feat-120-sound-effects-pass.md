@@ -127,15 +127,17 @@ Tracked in FEAT-64. Whoosh = bandpassed noise with a fast pitch sweep; impact = 
 slap (noise burst, highpassed).
 
 ### Bump-stop clunk
-status: todo · group: contacts
+status: wip · group: contacts
 A strut reaching full compression (`suspension.js` travel limit; the event is raised in `physics.js`).
 Low sine thump (~90 → 50 Hz in 40 ms) + a short metallic click (bandpassed noise ~2 kHz, 10 ms).
 Level ∝ closing speed at the stop.
+- **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `wip/audio-render/proto.js`, rendered as a take in `wip/audio/bump-stop-clunk/`. Not in `src/` or wired yet; trigger: the per-corner peak bump-stop force damage.js already tracks (`_bumpPeak`), so physics.js needs no new event.
 
 ### Landing thud
-status: todo · group: contacts
+status: wip · group: contacts
 After air. Reuse the heartbeat kick body (`heartbeat-audio.js`) pitched down, level ∝ vertical speed at
 touchdown, plus a suspension-rattle tail. Fires once per landing, not per wheel.
+- **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `wip/audio-render/proto.js`, rendered as a take in `wip/audio/landing-thud/`. Not in `src/` or wired yet; trigger: all four wheels back in contact after air, level from the vertical speed.
 
 ### Underbody and bumper scrape
 status: todo · group: contacts
@@ -155,9 +157,10 @@ Sine at shaft speed × tooth count, so it's physically exact for free. Reverse (
 overrun (coasting off-throttle with the engine braking).
 
 ### Brake squeal
-status: todo · group: truck
+status: wip · group: truck
 Only at low speed (< 15 km/h) under moderate brake pressure, with a random chance per stop so it isn't
 every time. Sine 2–4 kHz with slight vibrato, fast attack, fades as the truck stops.
+- **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `wip/audio-render/proto.js`, rendered as a take in `wip/audio/brake-squeal/`. Not in `src/` or wired yet; trigger: a stop from under 15 km/h with moderate pedal, random chance per stop.
 
 ### Wet ground
 status: todo · group: world
@@ -185,9 +188,10 @@ status: todo · group: story
 One short square/triangle blip per few characters, pitch per speaker.
 
 ### Payout coin and grade stingers
-status: todo · group: story
+status: wip · group: story
 Coin: two quick high sine pings (~2.6 / 3.9 kHz) on payout and wallet changes. Stingers: short
 musical hits on the D / par / S card reveal, rising in pitch and length with the grade.
+- **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `wip/audio-render/proto.js`, rendered as a take in `wip/audio/payout-coin-and-grade-stingers/`. Not in `src/` or wired yet; trigger: the coin on payout and wallet changes, the stinger on main.js `_revealResult`; stingers are five figures, D one low note up to S a run into a held chord.
 
 ### Pump nozzle
 status: shipped · group: story · play: pump-audio.js playNozzle
@@ -212,12 +216,16 @@ status: shipped · group: story · play: pump-audio.js playShutoff
 FEAT-50. Tank full or wallet reached: a hard double clack, two highpassed noise bursts 45 ms apart.
 
 ### Pump register (sale final)
-status: todo · group: story · play: pump-audio.js playRegister
+status: wip · group: story · play: pump-audio.js playRegister
 FEAT-50. Handbrake down: a mechanical ka-chunk (low thunk + two noise bursts) then a bright till ding.
 **Redo (owner, 2026-10-26): it should be a cash-register cha-ching** — the drawer-bell ring (two
 struck partials, ~2.4 and ~3.2 kHz, 0.4 s) with the drawer sliding open and hitting its stop
 underneath, not the current single ding. Synthesize or library (CC0); keep the `playRegister` entry
 point and the handbrake-down trigger.
+- **Built 2026-10-31, waiting for the owner's ear:** the cha-ching is in `src/pump-audio.js` (three key-lever
+  clacks; the bell at 2.4 + 3.2 kHz, each a detuned pair so it shimmers, 0.4 / 0.3 s; the drawer rolling
+  open under it and hitting its stop at +0.24 s). Same entry point and trigger. Render:
+  `wip/audio/pump-register-sale-final/synth-cha-ching.wav`.
 
 ### Low-fuel sputter
 status: shipped · group: truck · play: engine-audio.js playSputterPop

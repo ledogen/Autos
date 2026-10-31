@@ -16,8 +16,11 @@
  *              2026-10-20: "the dinging should be reduced to a click".)
  *   SHUTOFF  — playShutoff(): the auto-shutoff — a hard double clack (two highpassed noise
  *              bursts 45 ms apart) when the tank is full or the wallet runs out.
- *   REGISTER — playRegister(): handbrake down, sale final. A mechanical ka-chunk (low thunk +
- *              noise) then a brighter ding — the till.
+ *   REGISTER — playRegister(): handbrake down, sale final. A cash-register cha-ching (owner,
+ *              2026-10-26; was a ka-chunk and a single till ding): the "cha" is the key lever
+ *              tripping the mechanism (three quick clacks), the "ching" is the drawer bell — two
+ *              struck partials at 2.4 and 3.2 kHz ringing 0.4 s, each a detuned pair so it
+ *              shimmers — and under the bell the drawer rolls open and hits its stop.
  *
  * Every voice is silent unless the context is already running (it starts on the first user
  * gesture, engine-audio.js), and nothing here ever throws on a missing WebAudio.
@@ -63,20 +66,6 @@ function _burst (ctx, out, t, dur, type, freq, q, g) {
     src.stop(t + dur + 0.01)
 }
 
-function _bell (ctx, out, t, f0, g, decay) {
-    for (const [ratio, amp] of [[1, 1], [2.76, 0.45], [5.40, 0.18]]) {
-        const o = ctx.createOscillator()
-        o.type = 'sine'
-        o.frequency.value = f0 * ratio
-        const e = ctx.createGain()
-        e.gain.setValueAtTime(0.0001, t)
-        e.gain.exponentialRampToValueAtTime(g * amp, t + 0.003)
-        e.gain.exponentialRampToValueAtTime(0.0001, t + decay / ratio ** 0.5)
-        o.connect(e); e.connect(out)
-        o.start(t); o.stop(t + decay + 0.05)
-    }
-}
-
 export function playNozzle () {
     const ctx = _live(); if (!ctx) return
     const t = ctx.currentTime, out = _out(ctx)
@@ -99,13 +88,47 @@ export function playShutoff () {
     _thunk(ctx, out, t, 240, 90, 0.04, 0.3)
 }
 
+/** A struck bell with chosen partials: [freq Hz, gain, decay s] each, a detuned pair per partial
+ *  (the 4–6 Hz beat is the shimmer a real bell has and two pure sines do not). */
+function _ring (ctx, out, t, partials) {
+    for (const [f, g, decay] of partials) {
+        for (const df of [0, 5]) {
+            const o = ctx.createOscillator()
+            o.type = 'sine'
+            o.frequency.value = f + df
+            const e = ctx.createGain()
+            e.gain.setValueAtTime(0.0001, t)
+            e.gain.exponentialRampToValueAtTime(g * 0.5, t + 0.002)
+            e.gain.exponentialRampToValueAtTime(0.0001, t + decay)
+            o.connect(e); e.connect(out)
+            o.start(t); o.stop(t + decay + 0.02)
+        }
+    }
+}
+
 export function playRegister () {
     const ctx = _live(); if (!ctx) return
     const t = ctx.currentTime, out = _out(ctx)
-    _thunk(ctx, out, t, 130, 60, 0.06, 0.5)
-    _burst(ctx, out, t, 0.05, 'bandpass', 700, 1.2, 0.5)
-    _burst(ctx, out, t + 0.07, 0.04, 'bandpass', 1100, 1.2, 0.4)
-    _bell(ctx, out, t + 0.12, 2600, 0.35, 0.5)
+    // cha: the key lever trips the mechanism.
+    _burst(ctx, out, t, 0.02, 'bandpass', 1800, 1.5, 0.55)
+    _burst(ctx, out, t + 0.025, 0.02, 'bandpass', 2600, 1.5, 0.45)
+    _burst(ctx, out, t + 0.05, 0.03, 'bandpass', 1300, 1.2, 0.5)
+    _thunk(ctx, out, t + 0.05, 200, 90, 0.03, 0.3)
+    // ching: the drawer bell.
+    const tb = t + 0.09
+    _ring(ctx, out, tb, [[2400, 0.32, 0.40], [3200, 0.22, 0.30]])
+    // The drawer rolls open under the ring and hits its stop.
+    const roll = ctx.createBufferSource()
+    roll.buffer = _buf(ctx)
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.9
+    const rg = ctx.createGain()
+    rg.gain.setValueAtTime(0.0001, tb)
+    rg.gain.exponentialRampToValueAtTime(0.18, tb + 0.12)
+    rg.gain.exponentialRampToValueAtTime(0.0001, tb + 0.15)
+    roll.connect(bp); bp.connect(rg); rg.connect(out)
+    roll.start(tb, Math.random() * 0.8); roll.stop(tb + 0.16)
+    _thunk(ctx, out, tb + 0.15, 120, 50, 0.06, 0.55)
+    _burst(ctx, out, tb + 0.15, 0.05, 'lowpass', 700, 0.7, 0.35)
 }
 
 // ── The flow voice: built once on first use, then only its gains move (no clicks, no churn) ──
