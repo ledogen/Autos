@@ -16,6 +16,10 @@
 //   reach   the farthest any road of the piece gets from the centre, inside the wall.
 //   camp    THE PICK: where the game puts the expedition camp (poi.js _siteCamp, via a real build) —
 //           its bearing, radius, and roadM, the road metres from the spawn to the camp. null = none.
+//   rows    FEAT-154: the barricade rows on the roads out, from the same build. `crossings` are found
+//           HERE (every edge off the planners' graph, each change of side of the wall, 5 m samples),
+//           `missing` the crossings with no row within 25 m, `late` the rows standing past the edge
+//           fade's line (a junction just inside the wall pushes a leg's row out).
 //
 //   node test/camp-edge-census.mjs --seeds=1-100 [--out=file.jsonl]
 import * as THREE from 'three'
@@ -143,7 +147,26 @@ for (let s = lo; s <= (hi ?? lo); s++) {
     const q = poi.list().find((x) => x.type === 'expeditionCamp')
     const inner = q && (home(q.edge.split('|')[0]) ? q.edge.split('|')[0] : q.edge.split('|')[1])
     const camp = q ? { bear: bear(q), r: Math.round(r(q)), roadM: Math.round(q.roadM), node: inner } : null
-    const row = { seed: s, sec: Math.round((Date.now() - t0) / 1000), pieces: rep.components, camp,
+    const per = K.poiRowBarricades, bars = poi.barricades(), mids = []
+    for (let i = (q ? per : 0) + ((per - 1) >> 1); i < bars.length; i += per) mids.push(bars[i])   // past the camp's row
+    let crossings = 0, missing = 0
+    const seenE = new Set()
+    for (const [a, b] of g.edges) {
+        const ka = g.key(a), kb = g.key(b), ek = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`
+        if (seenE.has(ek) || ek === q?.edge || (adj.has(ka) && adj.has(kb))) continue
+        seenE.add(ek)
+        const ed = road.edgeParData(a, b)
+        if (!ed?.centerline) continue
+        const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
+        let prev = r(ed.centerline.pointAt(off)) > R_CUT
+        for (let t = 5; t < L + 5; t += 5) {
+            const p = ed.centerline.pointAt(off + Math.min(t, L)), out = r(p) > R_CUT
+            if (out !== prev) { crossings++; if (!mids.some((m) => Math.hypot(m.x - p.x, m.z - p.z) <= 25)) missing++ }
+            prev = out
+        }
+    }
+    const rows = { crossings, rows: mids.length, missing, late: mids.filter((m) => r(m) > R_CUT + K.poiEdgeFadeM).length }
+    const row = { seed: s, sec: Math.round((Date.now() - t0) / 1000), pieces: rep.components, camp, rows,
                   reach: Math.round(reach), reachBear, cross: cross.sort((a, b) => a.bear - b.bear), stubs }
     console.log(JSON.stringify(row))
     if (OUT) appendFileSync(OUT, JSON.stringify(row) + '\n')

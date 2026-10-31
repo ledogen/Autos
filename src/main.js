@@ -1183,6 +1183,7 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 let _pauseOpen = false
 let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-card until any key
 let _runEndOpen = false   // FEAT-146: the run's summary card is up — nothing behind it is in play
+let _edgeArmed = false    // FEAT-154: the edge fade is live (a deliberate teleport disarms it, like the wall; read early)
 let _towelArm = 0         // FEAT-146: the towel's arm timer while armed, 0 when not (_hidePauseMenu reads it early)
 let _playedS = 0          // FEAT-146: real seconds of a live, unpaused run (the summary's playtime; the save carries it)
 // The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
@@ -1235,12 +1236,14 @@ function showIgnitionHint () {
 function teleportToGround (x, z, heading, drop) {
   _spawnOverride = { align: true, x, z, heading, drop }
   storySystem?.notifyTeleport()
+  _edgeArmed = false   // FEAT-154: the edge fade obeys the same rule as the wall
   showSpawnToast()
   return _reseatTruckAtSpawn()   // the smoke awaits the seat (it waits on a network build) rather than guessing
 }
 function teleportToPose (x, y, z, quat) {
   _spawnOverride = { align: false, x, y, z, quat: quat.clone() }
   storySystem?.notifyTeleport()
+  _edgeArmed = false
   void _reseatTruckAtSpawn()
   showSpawnToast()
 }
@@ -3109,14 +3112,6 @@ function _rebuildPoiMarkers () {
       cube.castShadow = true
       _poiGroup.add(cube)
       _poiMeshes.set(q.id, cube)
-    }
-    // FEAT-103: the barricades across the camp's road — each the same box its body carries
-    // (poi.js _barrierBox), so MESH == PHYSICS. Base-seated, like the POI models.
-    for (const b of q.barriers ?? []) {
-      const m = spawnModel('roadBarrier', { castShadow: true, receiveShadow: true })
-      m.position.set(b.x, b.y, b.z)
-      m.rotation.y = b.yaw
-      _poiGroup.add(m)
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
     // in poi.js (deterministic in the seed); this only dresses them. Static meshes, no bodies.
@@ -5284,6 +5279,105 @@ function _campFade (during) {
   if (!el) { finish(); return }
   el.classList.add('on')
   setTimeout(finish, 480)   // slightly past the 0.45 s CSS transition
+}
+
+// ── FEAT-154: the road closures and the edge fade ────────────────────────────────────────────────
+// Every road out of the story area ends at a row of Type III barricades (poi.js barricades()): loose
+// 10 kg debris bodies, pinned outside the debris cap and harmless to the truck, so a run at the border
+// smashes straight through (owner, 2026-10-31). POI_PARAMS.poiEdgeFadeM past the planners' wall, the
+// screen fades to black and the truck is put back on the nearest job road facing inward (poi.js
+// returnPoint), every barricade back in place — as if nothing happened. It works during a job too.
+// story.js's hard wall at the region radius stays the backstop.
+//
+// A body needs ground under it, and the terrain and road colliders only exist in the ring the truck
+// streams (a loose barricade 2 km off fell straight through the world). So a row far from the truck is
+// three plain models standing on the deck's plane; within BARRICADE_ON_M they swap for three bodies at
+// exactly those poses, at rest, and past BARRICADE_OFF_M (or at an edge return) back to upright models.
+const EDGE_FADE_S = 0.5        // s to black before the return (the #camp-fade transition is 0.45 s)
+const BARRICADE_ON_M = 120     // m from a row's middle at which its models become bodies
+const BARRICADE_OFF_M = 200    // …and back (hysteresis; a knocked row stands up again out of sight)
+const _barricadeGroup = new THREE.Group()
+scene.add(_barricadeGroup)
+let _barricadeRows = []        // [{ x, z, poses: [{ pos, up, q }], meshes, bodies | null }]
+let _edgeBusy = false          // a return is in flight: the poll must not start a second
+
+/** Stand every row as models where poi.js sited it (dropping any bodies), or clear them all. */
+function _placeBarricades () {
+  for (const row of _barricadeRows) if (row.bodies) debrisSystem.remove(row.bodies)
+  _barricadeGroup.clear()
+  _barricadeRows = []
+  const bars = poiSystem.barricades(), per = POI_PARAMS.poiRowBarricades
+  for (let i = 0; i < bars.length; i += per) {
+    const poses = bars.slice(i, i + per).map((b) => {
+      // On the deck's plane (poi.js _barrierRow): up is its normal, +X the barricade's own across axis
+      // laid onto it, +Z completing the frame. The model's origin is its base.
+      const Y = new THREE.Vector3().fromArray(b.n)
+      const X = new THREE.Vector3(Math.cos(b.yaw), 0, -Math.sin(b.yaw)).addScaledVector(Y, -Math.cos(b.yaw) * Y.x + Math.sin(b.yaw) * Y.z).normalize()
+      const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, new THREE.Vector3().crossVectors(X, Y)))
+      return { pos: new THREE.Vector3(b.x, b.y, b.z), up: Y, q }
+    })
+    const meshes = poses.map(({ pos, q }) => {
+      const m = spawnModel('roadBarrier', { castShadow: true, receiveShadow: true })
+      m.position.copy(pos); m.quaternion.copy(q)
+      _barricadeGroup.add(m)
+      return m
+    })
+    const mid = poses[(per - 1) >> 1].pos
+    _barricadeRows.push({ x: mid.x, z: mid.z, poses, meshes, bodies: null })
+  }
+}
+
+/** The 10 Hz poll: a row near the truck is loose bodies, a far one is models (see above). */
+function _updateBarricades () {
+  const half = debrisSystem.halfExtents('roadBarrier')
+  if (!half) return   // a cold boot's first seconds: the type's collider is still loading
+  const p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
+  for (const row of _barricadeRows) {
+    const d = Math.hypot(p.x - row.x, p.z - row.z)
+    if (!row.bodies && d < BARRICADE_ON_M) {
+      // The body sits at the model's bbox centre: half its height up the normal, a centimetre clear.
+      row.bodies = row.poses.map(({ pos, up, q }) => debrisSystem.spawn('roadBarrier', pos.clone().addScaledVector(up, half.y + 0.01), still,
+        { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })).filter(Boolean)
+      for (const m of row.meshes) m.visible = false
+    } else if (row.bodies && d > BARRICADE_OFF_M) _standRow(row)
+  }
+}
+
+/** Back to upright models at the row's own poses — wherever its bodies ended up. */
+function _standRow (row) {
+  debrisSystem.remove(row.bodies)
+  row.bodies = null
+  for (const m of row.meshes) m.visible = true
+}
+
+/**
+ * The 10 Hz poll: past the fade line in a live run, start the return. Armed the way story.js arms the
+ * wall: a deliberate teleport (map double-click, free-cam "teleport here") disarms it until the truck
+ * is back inside the line, so a teleport out there is a look, not a bounce.
+ */
+function _checkEdge () {
+  if (_edgeBusy || _runEnded || !storySystem.isActive() || storySystem.isEntering()) return
+  const reg = storySystem.region(), p = vehicleState.position
+  if (!reg) return
+  if (Math.hypot(p.x - reg.x, p.z - reg.z) <= reg.r - REGION_MARGIN + POI_PARAMS.poiEdgeFadeM) { _edgeArmed = true; return }
+  if (_edgeArmed) _edgeReturn()
+}
+
+/** Fade to black, seat the truck on the return spot the way a tow does, reset the rows, fade back. */
+function _edgeReturn () {
+  _edgeBusy = true
+  const el = document.getElementById('camp-fade')
+  el?.classList.add('on')
+  const done = () => { el?.classList.remove('on'); _edgeBusy = false }
+  setTimeout(() => {
+    const p = vehicleState.position, back = poiSystem.returnPoint(p.x, p.z)
+    if (!back || !storySystem.isActive() || _runEnded) { done(); return }
+    const prev = _spawnOverride
+    _spawnOverride = { align: true, drop: 0.3, x: back.x, z: back.z, heading: back.heading }
+    storySystem.notifyTeleport()
+    for (const row of _barricadeRows) if (row.bodies) _standRow(row)   // every knocked row stands again, unseen
+    void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev; done() })
+  }, EDGE_FADE_S * 1000)
 }
 
 /**
@@ -7504,6 +7598,7 @@ const storySystem = new StorySystem({
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
     campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
     _rebuildPoiMarkers()
+    _placeBarricades()   // FEAT-154: the road closures
     // Only the chunks a pad reaches: pads are the one carve input that changed here. Pads never bump
     // roadGeneration, so these must be marked stale explicitly (terrain.js recarveInPlace). This was a
     // full dispose + worker refill, which discarded the warm's re-bake 1.5 s after it was queued.
@@ -7553,6 +7648,7 @@ const storySystem = new StorySystem({
     roadSystem?.setCampPads(null)   // …and no camp benches: free roam's ground is the seed's ground
     _closeCampUi()
     _rebuildPoiMarkers()
+    _placeBarricades()   // FEAT-154: poiSystem.clear() emptied the rows, so this only clears them
     terrainSystem?.rebuildAllChunksFromWorker()
   },
   /** Exit: hand the play RoadSystem back its normal streaming window before the loop resumes. */
@@ -8040,6 +8136,7 @@ document.getElementById('pm-towel')?.addEventListener('click', () => {
   _endRun('towel')
 })
 window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
+window.__poi = () => poiSystem      // dev handle — test/cdp-smoke.mjs drives at a barricade row (FEAT-154)
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
 function _runSnapshot () {
@@ -9043,6 +9140,8 @@ function loop () {
     // region is live (owner, 2026-08-01). Run state, not mission state: it never references par
     // or the current job, so the SM-INV-3 running surface above stays clean.
     _renderRunHud()
+    _checkEdge()   // FEAT-154: past the barricades, fade and come back in
+    _updateBarricades()   // …and the rows near the truck are loose bodies
     const guiOpen = _gui.domElement.style.display !== 'none'   // S-64: debug read-outs only while the panel shows
     if (guiOpen) economySystem.syncGui()
 
