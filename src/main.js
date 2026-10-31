@@ -7128,13 +7128,6 @@ function _showPauseMenu () {
   const towel = document.getElementById('pm-towel')
   if (towel) towel.style.display = live ? '' : 'none'
   _syncPauseSave(live)
-  // The ways out of a run to free roam / the lab are dev features (owner, 2026-10-30): in story mode they
-  // show only while the debug panel is open (backtick). Free roam keeps them.
-  const dev = _gui.domElement.style.display !== 'none'
-  for (const id of ['pm-story', 'pm-lab']) {
-    const b = document.getElementById(id)
-    if (b) b.style.display = storySystem.isActive() && !dev ? 'none' : ''
-  }
   _pauseOpen = true
 }
 
@@ -7151,6 +7144,13 @@ function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEnterin
   // One way out (owner, 2026-10-30): save & exit replaces "main menu" while it can save.
   const menuBtn = document.getElementById('pm-menu')
   if (menuBtn) menuBtn.style.display = live && !why ? 'none' : ''
+  // The ways out of a run to free roam / the lab are dev features (owner, 2026-10-30): in story mode they
+  // show only while the debug panel is open (backtick), and follow the toggle live. Free roam keeps them.
+  const dev = _gui.domElement.style.display !== 'none'
+  for (const id of ['pm-story', 'pm-lab']) {
+    const b = document.getElementById(id)
+    if (b) b.style.display = storySystem.isActive() && !dev ? 'none' : ''
+  }
 }
 
 function _hidePauseMenu () {
