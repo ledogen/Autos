@@ -1,10 +1,10 @@
 ---
 id: ASSET-70
 type: asset
-status: open
+status: done
+closed: 2026-10-31
 severity: minor
 opened: 2026-10-07
-updated: 2026-10-30
 relates: FEAT-98 (Places and Missions — replaces the placeholder marker)
 ---
 
@@ -28,10 +28,13 @@ relates: FEAT-98 (Places and Missions — replaces the placeholder marker)
 - `assets/models/doctors-office.glb` exported clean; sources in `assets/models/src/`.
 - Tri count within budget; material names stable.
 
-## Status — built, in owner review (2026-10-30)
+## Resolution (2026-10-31)
 
-`wip/doctors-office/` (generator `doctors-office.py`, `.blend`, `.glb`; git-invisible until
-promotion). **1140 tris**, 8 materials (`ClinicSiding`, `ClinicTrim`, `ClinicRoof`, `ClinicGreen`,
+Shipped after the owner's review in Blender ("all approved"): `assets/models/doctors-office.glb` (95 kB); generator + `.blend` in `assets/models/src/`, and the re-export from there matches the reviewed file in every mesh, material and image byte (the reviewed export also carried an empty leftover bake scene from an interrupted run; the generators now export the active scene only). Registry key `doctorsOffice` (data/prop-models.js); the src/poi.js `doctor` slot now names it instead of the placeholder cube. Gates: `npm test` (24 affected, incl. poi-yard's model-on-pad checks and poi-collider) green, cdp-smoke PASS. The numbers below are as reviewed.
+
+### As built
+
+`wip/doctors-office/` (generator `doctors-office.py`, `.blend`, `.glb`; promoted). **1140 tris**, 8 materials (`ClinicSiding`, `ClinicTrim`, `ClinicRoof`, `ClinicGreen`,
 `ClinicWood`, `ClinicStone`, `ClinicCurtain`, `ClinicSign`), one 512x256 image (the sign). Overall
 9.8 x 7.0 x 5.3 m; walls 9.0 x 5.0.
 
@@ -47,5 +50,5 @@ Facing proved in the .glb: the sign is at glTF z -4.15 (road), the back eave at 
 
 Placement numbers for promotion: collision box `size: [9.06, 3.04, 5.06]` (walls + foundation to the
 eave). The landing, steps and ramp are left out like the trailer's stoop, but the ramp is 4.8 m long:
-whether it should be solid (and drivable) is the owner's call. `seat: 0.85` (back eave 0.30 m off the
+the owner approved it drive-through like the rest (2026-10-31). `seat: 0.85` (back eave 0.30 m off the
 pad's back edge, the sign 0.70 m inside its road edge).

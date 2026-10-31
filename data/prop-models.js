@@ -793,6 +793,56 @@ export const PROP_MODELS = {
     park: { x: 7.45, z: 2.8, halfX: 2.55, halfZ: 3.0 },
   },
 
+  // ── The office, the school and the doctor (owner approved all three, 2026-10-31) ──────────────────
+  // One per region each, on a 14 x 8 lay-by, front to -Z (the road), length along +X, so no yawOffset.
+  // Every sign is generic on purpose: the tenant, the school and the doctor are named per seed
+  // (data/offer-names.js), so a board never names one. No yard (src/poi.js YARD_POOLS) and no park
+  // box: you park in the ring. Walls are centred on the origin; the stoops, steps and ramps reach past
+  // them on the road side and, like the trailer's stoop, are not colliders.
+
+  // ASSET-69 — the OFFICE, 996 tris, 8 materials, one 512x128 image (the JOB WORK board, owner
+  // 2026-10-30). Stucco over a brick wainscot, a blue parapet whose false front carries the board, a
+  // glass storefront under a canopy. Walls 10.0 x 5.0; 10.9 x 6.2 x 4.5 m overall.
+  // Built by assets/models/src/office.py. BODY ONLY: walls + parapet band; stoop and canopy left out.
+  //   seat 1.1: the back coping (z +2.59) 0.31 m inside the pad's back edge, 1.5 m of pad before the stoop.
+  office: {
+    url: 'assets/models/office.glb',
+    collision: { shape: 'box', size: [10.08, 3.83, 5.08] },
+    seat: 1.1,
+  },
+
+  // ASSET-70 — the DOCTOR'S OFFICE, 1140 tris, 8 materials, one 512x256 image (the CLINIC post sign,
+  // with a GREEN cross: the red cross is a protected emblem). A converted bungalow: porch landing,
+  // the old steps off one side, a 1:12 wheelchair ramp along the front off the other.
+  // Walls 9.0 x 5.0; 9.8 x 7.0 x 5.3 m overall. Built by assets/models/src/doctors-office.py.
+  // BODY ONLY: walls + foundation, to the eave. The landing, steps and 4.8 m ramp are drive-through
+  // (owner, 2026-10-31).
+  //   seat 0.85: the back eave 0.30 m off the pad's back edge, the sign 0.70 m inside its road edge.
+  doctorsOffice: {
+    url: 'assets/models/doctors-office.glb',
+    collision: { shape: 'box', size: [9.06, 3.04, 5.06] },
+    seat: 0.85,
+  },
+
+  // ASSET-73 — the COUNTRY SCHOOL, 1141 tris, 7 materials, one 512x512 atlas (the SCHOOL plaque + the
+  // flag). White lapped clapboard, six-over-six windows with burgundy curtains, an entry vestibule
+  // with red doors, a bell cupola, a flagpole. Main block 9.6 x 4.8; 10.2 x 7.0 x 7.8 m overall (to
+  // the finial). Built by assets/models/src/school.py.
+  // Two boxes, because the vestibule stands 1.2 m proud on the road side and one box round the main
+  // block would let the truck into it. Walls to the eaves; the steps and the flagpole are left out.
+  //   seat 0.95: the back eave 0.30 m off the pad's back edge, the steps 0.72 m inside its road edge.
+  school: {
+    url: 'assets/models/school.glb',
+    collision: {
+      shape: 'box', size: [9.66, 3.54, 6.07],
+      boxes: [
+        { c: [0, 1.77, 0], s: [9.66, 3.54, 4.86] },        // main block
+        { c: [0, 1.64, -3.02], s: [2.46, 3.27, 1.23] },    // entry vestibule
+      ],
+    },
+    seat: 0.95,
+  },
+
   // ASSET-31 — ROAD FURNITURE: seven Californian roadside signs on a timber 4x4.
   // 52 tris each, three materials (SignPost / SignBack / SignFace), one 512x512 baked face
   // per sign. Built by ONE generator, assets/models/src/road-signs.py — the steel-drum
