@@ -282,6 +282,10 @@
     #mm-setup-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
     #main-menu.setup #mm-root { display: none; }
     #main-menu.setup #mm-setup-panel { display: flex; }
+    #su-run { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+    #mm-setup-panel:not([data-mode="story"]):not([data-mode="freeroam"]) #su-run,
+    #mm-setup-panel:not([data-mode="scenarios"]) #mm-scenario-list,
+    #mm-setup-panel[data-mode="scenarios"] #su-start { display: none; }
     .mm-group { color: var(--text-faint); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; margin: 14px 0 4px 18px; }
     #pause-menu .mm-group { margin: 8px 0 0 0; }
     #su-seed {
@@ -322,12 +326,9 @@
        outline that reads on all of them (light paper cards and dark screens alike). */
     #mission-panel .nav-focus, #paper-panel .nav-focus, #scenario-panel .nav-focus, #camp-panel .nav-focus,
     #recovery-card .nav-focus, #run-end .nav-focus, #inv-screen .nav-focus, #dmg-screen .nav-focus, #svc-screen .nav-focus { outline: 2px solid var(--accent-system); outline-offset: 2px; }
-    /* FEAT-62: the scenario list — same page-swap as settings. Buttons are built from
+    /* FEAT-62: the scenario list — the new-game page's scenarios mode (FEAT-156). Buttons are built from
        data/scenarios.js by main.js (_renderScenarioList); each carries a dim blurb line. */
-    #mm-scenarios-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
-    #mm-scenario-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
-    #main-menu.scenarios #mm-root { display: none; }
-    #main-menu.scenarios #mm-scenarios-panel { display: flex; }
+    #mm-scenario-list { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
     #main-menu button .mm-sub { display: block; font-size: 12px; color: var(--text-faint); margin-top: 3px; letter-spacing: 0; }
     #mm-settings-panel .mm-note {
       color: var(--text-faint);
@@ -1550,27 +1551,25 @@
     <div id="mm-root">
       <div class="mm-title">autos</div>
       <button id="mm-continue" style="display:none">continue</button>   <!-- FEAT-42: only while a run is saved -->
-      <button id="mm-story">story mode</button>
-      <button id="mm-freeroam">free roam</button>
-      <button id="mm-scenarios">scenarios</button>
-      <button id="mm-lab">testing lab</button>
+      <button id="mm-new">new game</button>   <!-- FEAT-156: the game mode is a row on the new-game page -->
       <button id="mm-settings">settings</button>
-    </div>
-    <div id="mm-scenarios-panel">
-      <div class="mm-title">scenarios</div>
-      <div id="mm-scenario-list"></div>
-      <button id="mm-scenarios-back">back</button>
     </div>
     <!-- FEAT-41 run setup = the GENERATION settings: what the world and the truck are. The selector rows
          (.mm-sel, data-key = a src/settings.js key) are filled in by main.js from one option table; the seed
          field takes a pasted world code (6/C selects Casual). Assists and controls are NOT here — they are the
          player's, not the run's, and live on the settings page (owner, 2026-10-20). -->
-    <div id="mm-setup-panel">
-      <div class="mm-title" id="su-title">new game</div>
+    <!-- FEAT-156: the mode row picks what the rest of the page is (data-mode, set by main.js): story and
+         free roam show the world + truck rows, scenarios the level list (each entry starts its run, so there
+         is no start), testing lab nothing. Never saved — the page always opens on story (owner, 2026-10-31). -->
+    <div id="mm-setup-panel" data-mode="story">
+      <div class="mm-title">new game</div>
       <!-- Start and back lead, above the knobs: start is the page's first item, so it is where the
            menu highlight lands (menu-nav.js items[0]) — "just press start" (owner, 2026-10-21). -->
       <button id="su-start">start</button>
       <button id="su-back">back</button>
+      <button class="mm-sel" data-key="gameMode"></button>
+      <div id="mm-scenario-list"></div>
+      <div id="su-run">
       <div class="mm-group">world</div>
       <input id="su-seed" type="text" maxlength="24" spellcheck="false" placeholder="seed or world code — blank for random">
       <button class="mm-sel" data-key="worldPreset"></button>
@@ -1581,6 +1580,7 @@
       <div id="su-save-note" style="display:none">warning: starting a new story game will delete your existing save</div>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>
+      </div>
     </div>
     <!-- FEAT-41 settings: the player's own choices, saved the moment they change and applied live, from the
          main menu and the pause menu alike. Never anything generated or fitted: the world and the gearbox
