@@ -404,6 +404,8 @@ export const NOT_A_DESTINATION = new Set(['gasPump', 'expeditionCamp'])
  * (owner, 2026-10-30; 220 kg — a smart player waits until the yard's stock covers it in one trip; the
  * line's card shows that stock). The crew's POI — the design names "the POI where the crew waits"; the construction site
  * is the stand-in.
+ * FEAT-157 (owner, 2026-11-01): one line per mission type — haul (firewood), courier (the crew), freight
+ * (fuel), fragile (camp gear). The food line holds the fifth slot until demolition (FEAT-65) is built.
  */
 export const REQUISITION = [
     // 20 bundles (owner, 2026-10-31, confirmed): the yard's stock cycles, so a smart player waits a couple of
@@ -411,8 +413,10 @@ export const REQUISITION = [
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
     { id: 'reqFood',     phrase: 'a week of food', family: 'delivery', from: 'foodVendor',   massKg: 20 },
-    { id: 'reqFuel',     phrase: 'fuel cans',      family: 'delivery', from: 'gasStation',   massKg: 30 },
-    { id: 'reqGear',     phrase: 'camp gear',      family: 'delivery', from: 'generalStore', massKg: 25 },
+    // FEAT-157: fuel is a strapped 55-gal drum of gasoline (154 kg + an 18 kg drum); camp gear is a crate
+    // of lanterns and a stove, Fragile tier.
+    { id: 'reqFuel',     phrase: 'fuel',           family: 'freight',  from: 'gasStation',   massKg: 172, load: 'drum' },
+    { id: 'reqGear',     phrase: 'camp gear',      family: 'fragile',  from: 'generalStore', massKg: 30, load: 'largeCrate', ...FRAGILE },
 ]
 
 export const SOURCES = {
