@@ -987,6 +987,26 @@ function _gradeSampler(points, arc) {
  * The optional third constructor argument replaces the simplex coarse-height closure with a
  * function, for gates that want synthetic terrain: new RoadSystem(ws, params, mockCoarseHeight).
  */
+/**
+ * BUG-77: bore spans from _v2GradePts are on the CENTERLINE arc (clArc). A run whose points have left
+ * the primitive centerline (it carries offCurveSpans: a promoted side road's departure band, a shove's
+ * deflection) is READ on its driven arc, polyCum — tunnelSpanAt, the carve, the tube mesh and the
+ * collider all walk polyCum there (edgeParData's arcOf). Left unconverted the bore was drawn where
+ * polyCum = s: 24 m short of the solved portal on seed 6's g:1067143,-293510,-1. Both tables are
+ * per-vertex and monotone, so a span end maps by interpolating its vertex segment.
+ */
+function spansOnPolyCum (spans, clArc, polyCum) {
+    if (!spans) return spans
+    const n = clArc.length
+    const map = (a) => {
+        let lo = 0, hi = n - 1
+        while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (clArc[m] <= a) lo = m; else hi = m }
+        const t = Math.max(0, Math.min(1, (a - clArc[lo]) / ((clArc[hi] - clArc[lo]) || 1)))
+        return polyCum[lo] + t * (polyCum[hi] - polyCum[lo])
+    }
+    return spans.map((sp) => ({ ...sp, s0: map(sp.s0), s1: map(sp.s1) }))
+}
+
 export class RoadSystem {
     /**
      * @param {number} worldSeed — uint32 from parseWorldSeed()
@@ -5693,7 +5713,8 @@ export class RoadSystem {
         const inf0 = this._v2Infeasible || 0
         const ends = nAtStart ? { yA: P.y } : { yB: P.y }
         if (farY !== undefined) { if (nAtStart) ends.yB = farY; else ends.yA = farY }
-        const tunnelSpans = this._v2GradePts(pts, clArc, ends)
+        // BUG-77: the solver answers on clArc; a run carrying offCurveSpans is READ on polyCum.
+        const tunnelSpans = spansOnPolyCum(this._v2GradePts(pts, clArc, ends), clArc, polyCum)
         if ((this._v2Infeasible || 0) > inf0) { this._v2Infeasible = inf0; return null }   // draped — try the next fork
         const centerline = side.centerline.slice(cl0, side.clArc[i1])
         return { pts, clArc, polyCum, centerline, tunnelSpans, offCurveSpans, nAtStart, LB, g0 }
@@ -5975,7 +5996,9 @@ export class RoadSystem {
             points: pts, arcOrigin: 0,
             centerline: T.centerline.slice(c0, T.clArc[i1]),
             polyCum, clArc, cellA, cellB,
-            tunnelSpans: clip(T.tunnelSpans, c0, clArc[n - 1]),
+            // BUG-77: a run's spans are on the arc it is read on — polyCum where it carries
+            // offCurveSpans, clArc otherwise — so a slice clips them on that same arc.
+            tunnelSpans: T.offCurveSpans ? clip(T.tunnelSpans, p0, polyCum[n - 1]) : clip(T.tunnelSpans, c0, clArc[n - 1]),
         }
         const off = clip(T.offCurveSpans, p0, polyCum[n - 1])
         if (off && off.length) out.offCurveSpans = off
@@ -6202,7 +6225,7 @@ export class RoadSystem {
         for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
         const offCurveSpans = plan.idxSpans.map(([i0, i1, owner]) => ({ s0: polyCum[i0], s1: polyCum[i1], owner }))
         this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA, cellB,
-                                 tunnelSpans, offCurveSpans })
+                                 tunnelSpans: spansOnPolyCum(tunnelSpans, clArc, polyCum), offCurveSpans })   // BUG-77
         this._v2Shoves = (this._v2Shoves || 0) + 1
     }
 
