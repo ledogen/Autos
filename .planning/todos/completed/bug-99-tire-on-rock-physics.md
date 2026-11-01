@@ -1,7 +1,8 @@
 ---
 id: BUG-99
 type: bug
-status: open
+status: closed
+closed: 2026-11-01
 severity: major
 opened: 2026-10-29
 source: owner play-test of FEAT-93 on feature/machine (:3282), 2026-10-29 — recorded verbatim below
@@ -205,3 +206,15 @@ pieces on top. Fingerprint (no debris) stayed identical throughout.
 
 **Also seen:** an 88 kg rock (1.3×, ~0.5 m) hit dead-centre at 50 mph rolls the truck — pre-existing
 (1506d155 does too); the `--big` grid stops at 1.0×. Check what sizes the game spawns.
+
+## Resolution — 2026-11-01
+
+Closed on the owner's OK ("the popping feels fair. And natural."), merged to main from
+`feature/machine`. Shipped: Newton's third law on every tire–rock contact, sprung rim cores, the
+ground's half of a sandwiched rock handed to the engine, and punctures on leaky-integrated pinch
+ENERGY (800 J, τ 50 ms). Census: 0 flips in the 0.6–1.0× sweep; pops 0 below 35 mph, 3/6/23/33/53 %
+at 35…55. Physics fingerprint (no debris) identical to main; test:all 110/112, the two known reds.
+Open follow-on work moved to **FEAT-158** (rock grip / crawling — the parked attempt is on
+`wip/bug99-rock-grip`). Also still open from this log: rare crawl exits up to ~2× on light rocks,
+the 88 kg dead-centre 50 mph roll (check spawned sizes), `PhysicsEngine.replaceHullLocal` has no src
+caller (delete with `collider-seam-churn.mjs`'s rework).
