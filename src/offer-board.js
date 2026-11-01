@@ -40,7 +40,7 @@
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
-    REWARD_VALUE, REQUISITION,
+    REWARD_VALUE, REQUISITION, TRAITS, TRAIT_COUNT_WEIGHTS,
 } from '../data/offers.js'
 import { PARTS } from '../data/parts.js'
 import { ITEM_PRICE } from '../data/shop-stock.js'
@@ -622,6 +622,23 @@ export class OfferBoard {
             stock = lo + Math.floor(stockRoll * (sHi - lo + 1))
         }
 
+        // FEAT-142: the giver's traits — 0–2, on their OWN stream (a draw on `spec` would shift every
+        // existing offer's destination and place name). Opposed pairs never together; Big tipper never
+        // rides a bonus offer (its tip is the item, R-04).
+        const traits = []
+        if (thing.family !== 'papers') {
+            const tr = stream('traits')
+            const want = Number(pickWeighted(tr(), TRAIT_COUNT_WEIGHTS))
+            for (let i = 0; i < want; i++) {
+                const ok = TRAITS.filter(t => t.families.includes(thing.family) && !traits.includes(t)
+                    && !traits.some(o => o.not.includes(t.id) || t.not.includes(o.id)) && !(t.tip && bonus))
+                if (!ok.length) break
+                traits.push(ok[Math.floor(tr() * ok.length)])
+            }
+            if (stock != null && traits.some(t => t.stockFull)) stock = HAUL_STOCK[1]   // Wholesale: the whole yard
+        }
+        const tmul = (k) => traits.reduce((m, t) => m * (t[k] ?? 1), 1)
+
         const papers = thing.family === 'papers'
         const destRoll = r(), destPick = r()
         const placeName = this._placeName(r)
@@ -630,8 +647,14 @@ export class OfferBoard {
         const fetch = !!thing.fetchBy?.includes(offer.type)
         // A `to` naming 'roadside' (BUG-88) keeps the generic POI-or-roadside roll, just narrowed.
         const strictTo = !!thing.to && !thing.to.includes('roadside')
+        const fragile = fragileOf(thing)
+        const floors = tmul('floors')
         return {
-            deadlineSlack: thing.deadlineSlack ?? DEADLINE_SLACK[thing.family],   // FEAT-113
+            deadlineSlack: (thing.deadlineSlack ?? DEADLINE_SLACK[thing.family]) * tmul('deadline'),   // FEAT-113; FEAT-142
+            // FEAT-142: the traits and the terms they move that the spec does not already carry.
+            traits: traits.map(t => t.id), traitNames: traits.map(t => t.name),
+            tipMult: tmul('tip'), thresholdScale: thing.family === 'delivery' ? tmul('thresholds') : 1,
+            deeds: traits.find(t => t.deeds)?.deeds ?? null,
             shape: fetch ? 'fetch' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
             massKg: stock ? stock * HAUL_BUNDLE_KG : massKg, stock,
@@ -641,13 +664,18 @@ export class OfferBoard {
             // R-05: a fragile tier's care premium rides the whole line (data/offers.js careMult).
             payMult: (stock ? HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
                 * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1)   // FEAT-96: freight's weight bonus on pay
-                * (thing.careMult ?? 1),
+                * (thing.careMult ?? 1)
+                * tmul('pay') * (stock ? tmul('perPiece') : 1),        // FEAT-142: the traits' pay
             destKind: papers ? null : (strictTo || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
             loose: thing.loose ?? null, // one loose bed body (src/debris.js kind) — the motorist's tire
             atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
-            fragile: fragileOf(thing),   // FEAT-97
+            // FEAT-97; FEAT-142 Collector / Easygoing scale the load's shock thresholds (all three).
+            fragile: fragile && floors !== 1
+                ? { ...fragile, shockFloorG: fragile.shockFloorG * floors, breakG: fragile.breakG * floors,
+                    ...(fragile.onePctG != null && { onePctG: fragile.onePctG * floors }) }
+                : fragile,
         }
     }
 
@@ -915,7 +943,7 @@ export class OfferBoard {
         // bonus offer the cash tip is the item (R-04), so only the base is quoted and the TIP form says
         // what replaces it. FEAT-114: a haul quotes a RATE — the load isn't picked yet; the picker
         // shows the total.
-        const tipMult = sp.load && !sp.fragile ? FREIGHT_TIP_MULT : 1
+        const tipMult = (sp.load && !sp.fragile ? FREIGHT_TIP_MULT : 1) * (sp.tipMult ?? 1)   // FEAT-142 Big tipper
         const range = par > 0 ? payRange(par, payTier, sp.payMult, tipMult) : null
         const money = (v) => `$${formatMoney(v)}`
         // R-20 (owner, 2026-10-24): "Pay $3.63 – $7.27 based on speed" — the range and what moves it,
@@ -965,8 +993,11 @@ export class OfferBoard {
             bonus: sp.bonus ? `Tip: ${sp.bonus.name}${rewardValue(sp.bonus.rewardId) != null ? ` (${money(rewardValue(sp.bonus.rewardId))})` : ''}`
                 + ` — ${gateLine(sp.bonus.gate, sp.family, this._region, cargoId, km)}` : null,
             // R-09: the deed line — what this job adds toward the camp, and the number behind it.
+            // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
             deed: sp.family === 'papers' || sp.family === 'demolition' ? null
-                : deedLine(sp.family, this._region, cargoId, km, sp.massKg),
+                : sp.deeds === 'none' ? 'Deed: none — off the books'
+                : deedLine(sp.family, this._region, cargoId, km, sp.massKg) + (sp.deeds === 'extraHalf' ? ' · +1/2 at C or better' : ''),
+            traits: sp.traitNames?.length ? sp.traitNames : null,   // FEAT-142: bottom-left of the card
             // FEAT-112: a load that fits says nothing. Otherwise the worst reason, in words:
             // "Warning: this load exceeds the recommended weight limit", "Overload: too heavy".
             verdict: verdict && verdict.verdict !== 'fits'

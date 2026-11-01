@@ -367,6 +367,12 @@ export class MissionSystem {
         // The converse — accepting at 1 a.m. to buy tomorrow's HIGHER tier — is a RATIFIED feature
         // (DESIGN.md: "Nobody authored it; do not 'fix' it").
         if (this._getTerms) this.mission.terms = this._getTerms()
+        // FEAT-142: Impatient / Patient move a courier's TIME thresholds (a smaller ratio is tighter).
+        const ts = this.mission.thresholdScale
+        if (ts && ts !== 1 && this.mission.terms?.thresholds) {
+            const th = this.mission.terms.thresholds
+            this.mission.terms = { ...this.mission.terms, thresholds: Object.fromEntries(Object.entries(th).map(([k, v]) => [k, v * ts])) }
+        }
         this.mission.dueH = this.offer?.dueH ?? null   // FEAT-113: stamped by the board's take()
         this.mission.expired = false
         // FEAT-67: taking the offer OFF THE BOARD is main.js's job, done just before this call (it
