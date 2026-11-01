@@ -29,9 +29,8 @@
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { WINDOWS, buildWindow } from './lib/road-battery.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
-import { closePairs } from './lib/close-pairs.mjs'
+import { closePairs, soloEarthwork } from './lib/close-pairs.mjs'
 import { parseWorldSeed } from '../src/seed.js'
-import { DEEP_BANK_TOE_EXTRA } from '../src/road-carve.js'
 
 const argv = process.argv.slice(2)
 const VERBOSE = argv.includes('--verbose')
@@ -42,25 +41,6 @@ const SH = P.roadShoulderWidth ?? 2.5
 const CUT = P.roadCutSlope ?? 1.0
 const GENTLE = 0.6       // raw rise per metre (31°) — steeper raw ground explains a steep carve
 const TOL = 0.25         // m per m — composition may not add more than this to the steeper bank
-const FOOT = Math.min(HW + (P.roadCarveExtraWidth ?? 3), P.roadMinTurnRadius ?? 12) + (P.roadMaxEmbankmentToe ?? 10) + DEEP_BANK_TOE_EXTRA
-
-// One road's earthwork alone at (x, z): offset from raw (blendW folded in) and its coverage.
-const solo = (road, key, x, z, raw) => {
-  const e = road._network.get(key), pr = road._projectOntoRun(e, x, z)
-  if (!pr) return { d: 0, w: 0 }
-  let lat, arcS
-  if (pr.offEnd) {
-    if (pr.d2 > FOOT * FOOT) return { d: 0, w: 0 }
-    lat = (pr.signedLat < 0 ? -1 : 1) * Math.sqrt(pr.d2); arcS = pr.arcS
-  } else {
-    const f = road._refineFrame(e, pr, x, z)
-    lat = f ? (x - f.fx) * f.tz - (z - f.fz) * f.tx : pr.signedLat
-    arcS = f ? f.arcS : pr.arcS
-  }
-  const cs = road._carveCrossSection(lat, arcS, key, 1, raw, x, z)
-  return cs ? { d: cs.blendW * (cs.gradeY - raw), w: cs.blendW } : { d: 0, w: 0 }
-}
-
 const deg = (g) => (Math.atan(g) * 180 / Math.PI).toFixed(0)
 let comp = 0, single = 0, overlap = 0, fails = 0
 for (const W of WINDOWS) {
@@ -87,7 +67,7 @@ for (const W of WINDOWS) {
           if (g > CUT && gr < GENTLE) {
             let gBank = 0, wet0 = 0, wet1 = 0
             for (const k of new Set([...prev.keys, ...keys])) {
-              const s0 = solo(road, k, prev.x, prev.z, prev.raw), s1 = solo(road, k, x, z, raw)
+              const s0 = soloEarthwork(road, P, k, prev.x, prev.z, prev.raw), s1 = soloEarthwork(road, P, k, x, z, raw)
               gBank = Math.max(gBank, Math.abs(raw + s1.d - prev.raw - s0.d))
               if (s0.w > 0) wet0++
               if (s1.w > 0) wet1++

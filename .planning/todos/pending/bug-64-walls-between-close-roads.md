@@ -52,7 +52,7 @@ Class A is FEAT-77 (built on `feature/junction-stitch`: the rule in the conflict
 routing pass; residue tracked by `test/road-clearance.mjs`). Class B stays here: the gate's
 report line counts the carve-made walls (41–49 across the battery as the network moves).
 
-## Class B — Spare, 2026-11-01: the composition is fixed; one overlap case is owed a call
+## Class B — Spare, 2026-11-01: the composition is fixed; overlap ruled FEAT-77's (a)
 
 **Cause.** `_carveCrossSectionBlended` mixed the winning run with ONE rival by nearness (50/50 at the
 equidistant line, fading out over a 12 m band). Four defects, each a step no single bank has:
@@ -65,7 +65,7 @@ equidistant line, fading out over a 12 m band). Four defects, each a step no sin
 4. Rivals were re-projected from the polyline foot (not the perpendicular foot) and never got the
    analytic-frame refinement the winner gets, so the flip between them was a 0.45 m step 27 m out.
 
-**Fix (PARKED on branch `proto/bug-64-earthwork-union`, f666cdb4 — not on main until the call below).** Every run and run end within the resolver footprint is a rival
+**Fix (landed on feature/spare 2026-11-01 after ruling (a) below; was parked on `proto/bug-64-earthwork-union` f666cdb4).** Every run and run end within the resolver footprint is a rival
 (`nr.rivals`), each anchored at the resolve point and re-projected live on its refined frame
 (`_refineFrame`, now shared with the winner). They compose as earthwork: fills union by max,
 cuts by min, and a fill meeting a cut sums. A run end that is radially nearer than the interior
@@ -112,7 +112,17 @@ On main the same pair had a 65° wall at the midline. Three variants were measur
 | **ease from the owner's surface over 5.5 m (the candidate)** | **0** | **13** | **0.293** |
 | ease over 8 m | 7 | 7 | 0.282 |
 
-**The call owed (owner).**
+**Ruled (owner, 2026-11-01): (a).** The candidate lands. road-fill-support learns the overlap rule:
+an UP-step where two or more roads' earthworks reach either end of the step is reported as FEAT-77's
+and never gated; the tolerance (0.268 m) is unchanged. Both gates judge overlap with one function,
+`soloEarthwork` in `test/lib/close-pairs.mjs` (moved out of road-carve-walls). Measured on the
+landed branch: seed 7's 0.293 m step at (-169, 931) reads as overlap. The steps leading up to it on
+the same shoulder ramp (lat 8.2–8.6 m, 0.234–0.268 m) sit on the near side of where the other leg's
+earthwork begins and stay under the tolerance. Main's worst on seed 7 is 0.184 m, at a different
+site. The other three seeds are unchanged. Class A (FEAT-77's foot = the carve's real toe) stays
+open and moves routes.
+
+**The call that was owed (owner).**
 - (a) Land the candidate and teach road-fill-support the same overlap rule as road-carve-walls:
   an up-step where two roads' earthworks both reach the point belongs to FEAT-77, not to the
   footprint contract BUG-15 guards. The tolerance itself stays.

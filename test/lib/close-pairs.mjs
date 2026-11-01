@@ -7,6 +7,7 @@
 // samples inside the geometric throat of a node the two runs share (the junction's own pad and hold),
 // samples inside a T's departure blend (offCurveSpans — the side road leaving the trunk's deck), and
 // the two arms of a switchback (hairpins, counted).
+import { DEEP_BANK_TOE_EXTRA } from '../../src/road-carve.js'
 
 const NEAR = 60          // m — beyond this no rule can reach (two capped aprons are 36 m)
 const THROAT = 30        // m — from a shared node: the pad and the deck hold own it (the MINIMUM)
@@ -24,6 +25,31 @@ const THROAT_CAP = 4 * THROAT
 // 6 m of height, the last long row on the battery. Bearing is taken over the first 24 m out of the
 // shared node on each leg.
 const HAIRPIN_DEG = 30
+
+/**
+ * One road's earthwork ALONE at (x, z): its offset from raw ground (blendW folded in) and its
+ * coverage `w` (> 0 = this road's earthwork reaches the point). Past a run end it is BUG-57's polar
+ * cap out to the carve's real toe (DEEP_BANK_TOE_EXTRA past FEAT-77's capped foot); along the run it
+ * is the cross-section on the same refined analytic frame the carve uses. Shared by road-carve-walls
+ * and road-fill-support: two roads reaching one step is the OVERLAP rule (FEAT-77's, BUG-64 (a)).
+ */
+export const soloEarthwork = (road, P, key, x, z, raw) => {
+  const HW = P.roadHalfWidth ?? 5
+  const FOOT = Math.min(HW + (P.roadCarveExtraWidth ?? 3), P.roadMinTurnRadius ?? 12) + (P.roadMaxEmbankmentToe ?? 10) + DEEP_BANK_TOE_EXTRA
+  const e = road._network.get(key), pr = e && road._projectOntoRun(e, x, z)
+  if (!pr) return { d: 0, w: 0 }
+  let lat, arcS
+  if (pr.offEnd) {
+    if (pr.d2 > FOOT * FOOT) return { d: 0, w: 0 }
+    lat = (pr.signedLat < 0 ? -1 : 1) * Math.sqrt(pr.d2); arcS = pr.arcS
+  } else {
+    const f = road._refineFrame(e, pr, x, z)
+    lat = f ? (x - f.fx) * f.tz - (z - f.fz) * f.tx : pr.signedLat
+    arcS = f ? f.arcS : pr.arcS
+  }
+  const cs = road._carveCrossSection(lat, arcS, key, 1, raw, x, z)
+  return cs ? { d: cs.blendW * (cs.gradeY - raw), w: cs.blendW } : { d: 0, w: 0 }
+}
 
 export const nearestOn = (px, pz, pts, cum) => {
   let d = Infinity, s = 0, y = 0, fx = 0, fz = 0
