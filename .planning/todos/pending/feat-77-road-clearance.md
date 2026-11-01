@@ -45,7 +45,7 @@ See the review artifact and the resolution note at close. Owner review 2026-09-0
 branch preferred at every now-passing site; the nine regressions of the first cut were Ts the
 wider rule declined, and are gone under the refined rule.
 
-## Known red on main
+## Known red on main (cleared 2026-11-01 by ruling (a) below)
 
 2026-10-01, main `f163e6c`: `road-clearance.mjs` fails on a clean HEAD checkout — `lone-pine spawn`
 (29 runs, 1 violating pair, 2 carve walls reported) and `seed3 origin` (58 runs, 1 violating pair,
@@ -78,3 +78,16 @@ leg pinned to its node's departure here. Closing them means routing work in the 
 machinery, not a knob. Options for the owner: (a) accept a near-miss of under ~1 m over under ~20 m
 between two legs of one node (a gate tolerance), (b) leave the red standing as known residue, or
 (c) schedule the node-departure re-route work.
+
+## RULED — owner, 2026-11-01: (a), a shared-node near-miss tolerance
+
+Relayed by the orchestrator: "a gate tolerance for under ~1 m over under ~20 m between legs of one
+node. Kill the last red." The owner adds that neither this nor BUG-64's walls really bother them in
+play, so the tolerance stays honest and small. Built in `test/road-clearance.mjs`: a pair that is
+two legs of ONE node, short of the rule by under 1 m (`NEAR_MISS_M`) over under 20 m of road
+(`NEAR_MISS_LEN`), is printed as a near-miss and does not fail. Two separate roads get no tolerance.
+Result (feature/spare, on top of BUG-64 class B): **PASS**, 0 violating pairs, 2 near-misses
+reported — lone-pine spawn (-68, 320) 28.3 m vs 28.5 m over 4 m, and seed3 origin (1976, -889)
+27.8 m vs 28.5 m over 16 m. The known red is gone. Still open, and not this gate's: class A (the
+rule's foot capped at 18 m while the carve's deep-bank toe reaches 36 m), which would move routes.
+
