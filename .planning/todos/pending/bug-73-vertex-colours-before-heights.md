@@ -1,7 +1,7 @@
 ---
 id: BUG-73
 type: bug
-status: open
+status: needs owner sighting
 severity: minor
 opened: 2026-09-25
 source: owner, scene 22 of the surface A/B portfolio ("a super visible seam") — captured in the crash-recovery run after the laptop lid was closed mid-capture
@@ -75,3 +75,34 @@ weight 1 → the old shader exempted everything → the vertex colour (dirt/veg 
   (e.g. guard: skip/queue the write when `heights` is absent or all-zero, and re-run on arrival).
 - The guard is cheap; the gate is the hard part. If no repro can be built, ship the guard with a
   `console.warn` counter so the next occurrence is at least logged.
+
+## 2026-11-01 (Spare) — no reproduction; NEEDS OWNER SIGHTING
+
+**The "colours before heights" race cannot happen in the current code.** A chunk record and its
+heights are created together at flush: the Worker's heights → `_composeCarvedY` → normals →
+`_writeChunkVertexColors` → `new Mesh` → `_chunkMap.set`. The re-carve path (PERF-33) and the
+recolour path (`rebuildAllChunks`) only touch chunks already in `_chunkMap`. An in-flight re-carve
+re-checks `_chunkMap.has(key)` before it writes, and looks the chunk up by key at completion, so an
+eviction cannot make it write into a recycled pool geometry. The acceptance's heights guard would be
+dead code, so it is not shipped.
+
+**The GPU-side probe the 09-27 note asked for now exists: `test/bug73-gpu-probe.mjs`.** It wraps
+`drawElements` (WebGL1 and 2) and, for every draw whose program has an `aSurf` attribute, queries the
+BOUND vertex array for that location: enabled, buffer bound, size 4. Per hop it also audits every
+resident chunk inside the page: `aSurf` present with the right count, not mostly zero weights,
+non-empty heights, and no geometry shared by two chunks (a double release to the pool).
+
+Run on the spare dev server, seed `w`, fast teleport hops along the owner's 09-27 route
+((−300,200) → (−1244,787) → (−1569,1173) → (−2100,1600) and back), sometimes without waiting for
+ground:
+- 40 hops: 92 134 terrain draws, **0 binding faults**.
+- 80 hops: 183 113 terrain draws, **0 binding faults**, CPU audit clean every hop while the pool
+  churned 0 → 25 geometries.
+
+Consistent with the 09-27 fix (reuse the colour/aSurf attributes, never `setAttribute` on a pooled
+geometry — the same rule BUG-72 made standing) having removed the cause, but not proof.
+
+**Next sighting:** leave the dev server running and run `node test/bug73-gpu-probe.mjs 80 <port>`
+right after it. For an in-game sighting, note the seed, position, and whether the machine slept or
+the source was just edited (HMR). If it reproduces with 0 binding faults, the fault is not the VAO,
+and the next suspect is a shader-side transient (texture or uniform upload).
