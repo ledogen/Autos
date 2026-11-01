@@ -106,7 +106,7 @@ import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
-import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
+import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
@@ -1591,9 +1591,9 @@ async function _enterLabFromMenu () {
 // FEAT-62: scenarios. The list is data (data/scenarios.js), so its buttons are built here rather
 // than written into index.html. The leaderboard lives up here too — it is pure and has no world
 // dependencies, and the list shows each scenario's best time, so it must exist before the module
-// body below has finished building the world. No store passed = session-only memory; the one-line
-// save-file hook is described in src/leaderboard.js's header.
-const scenarioLeaderboard = new Leaderboard()
+// body below has finished building the world. Best times persist in localStorage, outside the run
+// slot (src/leaderboard.js header).
+const scenarioLeaderboard = new Leaderboard({ store: localStore() })
 // The lab's barrel cube (see _buildBarrelCube) — up here because the scenario list names its size.
 const BARREL_CUBE_RUNUP = 400 * 0.3048        // m — truck CG to the cube's near face
 const BARREL_CUBE_X = -150, BARREL_CUBE_Z = 40

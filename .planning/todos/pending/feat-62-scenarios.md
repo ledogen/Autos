@@ -39,8 +39,14 @@ scenarios, restart; white light columns at the start, 5 cyan gates, red finish.
   region, day, wallet or tier, so the "run-layer state from the definition" item below does not apply
   to it. It still applies to a paper-route scenario.
 
-**Still open:** owner tuning of start/end/gate poses; persistence (FEAT-42); the paper-route
-scenario and its run-layer state; the world-determinism acceptance item for the scenario entry path.
+**Still open:** owner tuning of start/end/gate poses; the paper-route scenario and its run-layer
+state; the world-determinism acceptance item for the scenario entry path.
+
+**Persistence — done 2026-11-01 (Spare).** Best times live in localStorage via `localStore()`, one
+key per scenario (`autos-scenario-times/1:<id>`), beside `autos-settings/1` and FEAT-42's run slot.
+They are deliberately NOT inside the run slot, which a new game clears and a death deletes, while
+best times outlive every run. scenario-route checks a reload round trip, junk text, and blocked
+storage.
 
 ## Request
 

@@ -3,21 +3,21 @@
 // Pure: no DOM, no clock, no storage of its own. Times are kept sorted fastest-first, capped at
 // `size`, keyed by the scenario's `id` (data/scenarios.js — which is why a shipped id never changes).
 //
-// ── THE SAVE-FILE HOOK (there is no save file yet — FEAT-42 owns it) ─────────────────────────────
+// ── THE STORE HOOK ────────────────────────────────────────────────────────────────────────────────
 // Everything persistent goes through ONE object, the `store`, with two synchronous methods:
 //
 //     store.load(key)        → Array<Entry> | null      (null = nothing saved under that key)
 //     store.save(key, list)  → void                      (list is a fresh array; keep it as given)
 //
 //     Entry = { elapsed: number /* s, the fixed-step clock */, at: string /* ISO date of the run */ }
-//     key   = `${STORE_PREFIX}${scenarioId}`  e.g. "scenario-times/1:ranger-descent"
+//     key   = `${STORE_PREFIX}${scenarioId}`  e.g. "autos-scenario-times/1:ranger-descent"
 //
-// Until FEAT-42 lands, main.js passes nothing and gets `memoryStore()` — times last for the session
-// and are gone on reload. When the save file exists, the change is ONE line in main.js:
+// main.js passes `localStore()`: each scenario's list is its own localStorage key, beside
+// autos-settings/1 and FEAT-42's run slot autos-run/1 — NOT inside the run slot, which a new game
+// clears and a death deletes, while best times outlive every run. `memoryStore()` is the
+// session-only store the gates use.
 //
-//     new Leaderboard({ store: saveFile.section('scenarios') })   // anything with load/save
-//
-// Notes for whoever writes that adapter:
+// Notes for any other adapter:
 //   • Keep it SYNCHRONOUS from this side. If the backing store is async (IndexedDB — a browser
 //     database whose calls return promises, i.e. answers that arrive later), read every key once at
 //     boot into memory and write through on save; never make submit() wait on disk mid-run.
@@ -27,10 +27,22 @@
 //     under the "every world generated cold, no worldgen in saves" rule.
 //   • load() output is treated as untrusted: anything that is not a finite positive time is dropped.
 
-export const STORE_PREFIX = 'scenario-times/1:'
+export const STORE_PREFIX = 'autos-scenario-times/1:'
 export const LEADERBOARD_SIZE = 10
 
-/** The session-only store used until a save file exists. */
+/**
+ * localStorage, one key per scenario. Storage can be missing, blocked (private window, previews) or
+ * hold junk, as settings.js says: a failed read is an empty board and a failed write keeps the
+ * session going without it. load() output is filtered by entries() regardless.
+ */
+export function localStore (storage = globalThis.localStorage) {
+  return {
+    load: (key) => { try { return JSON.parse(storage.getItem(key)) } catch { return null } },
+    save: (key, list) => { try { storage.setItem(key, JSON.stringify(list)) } catch { /* blocked / full */ } },
+  }
+}
+
+/** Session-only memory (the gates; nothing survives a reload). */
 export function memoryStore () {
   const m = new Map()
   return {
