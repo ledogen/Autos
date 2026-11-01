@@ -47,9 +47,12 @@ handles haul / fragile / freight / courier).
 ## Acceptance
 
 - [ ] Five lines, five distinct types (haul, courier, freight, fragile, + the owner's fifth).
-- [ ] A freight / fragile line loads and straps like its budget cousin (`_loadFreight`, fragile
+- [x] A freight / fragile line loads and straps like its budget cousin (`_loadFreight`, fragile
       health), settles on its own axis, and survives a save (FEAT-42 part 2's `mission.approach`).
-- [ ] expedition-camp + offer-board gates extended for the new line shapes; cdp-smoke expedition step green.
+      (The save half is code only — `_reloadCargo` skips the load during an approach; no gate resumes
+      a line mid-approach.)
+- [x] expedition-camp gate extended for the new line shapes (the offer-board gate needed nothing new);
+      cdp-smoke expedition step green.
 
 ## Approved plan — the four built lines (owner, 2026-11-01; not started)
 
@@ -103,3 +106,21 @@ names: the things, the loads, the masses.
   2. Teleport to the gas station and park: the drum is strapped in.
   3. Cancel: the line is back on the list.
 - `npm test`, then the full smoke.
+
+## Built — the four lines (2026-11-01, feature/run-shape)
+
+As the approved plan, with two small additions:
+- `data/offers.js` REQUISITION: `reqFuel` is freight (`load: 'drum'`, 172 kg; phrase "fuel", since a
+  drum is not cans), `reqGear` is fragile (`largeCrate`, 30 kg, `...FRAGILE`). The food line holds the
+  fifth slot.
+- `src/offer-board.js`: `fragileOf(thing)` builds the spec's fragile object for both `_rollSpec` and
+  `openLines`; a line's `_spec` now carries `load` and `fragile`. `_lineCard`'s deed line is
+  `gateLine('C', family, region, tier, km)`, and a fragile line's terms show the tier name.
+- `src/main.js`: the accept hand-over skips while `approach` is set; `_updateLinePrompt` straps the load
+  the moment `reachSource()` returns true; `_reloadCargo` skips `m.load` during an approach. Addition:
+  the line's result card names a fragile miss in its own axis ("needed N%+ intact"), not "C or better".
+- Gates: expedition-camp checks the type mix, the drum and crate specs, and each card's deed axis.
+  cdp-smoke's `expedition` step takes the fuel line at the camp: no drum on the approach, a drum once
+  parked at the gas station, none after the cancel.
+
+Open: the fifth line (FEAT-65 demolition replaces the food line's slot when it ships).

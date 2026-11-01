@@ -17,6 +17,9 @@
 //   5. THE LINES — closed until openLines(); then all five live at the camp AND at their source; each
 //      plans from its source to the camp through the camp edge's one inner node, inside the wall; no
 //      deadline; abandon puts a line back unchanged, complete takes it off for good; no expiry.
+//      FEAT-157: one line per built type — a haul, two couriers (the food holds the fifth slot), a
+//      freight drum and a fragile crate, each spec carrying its load and tier, each card's deed line in
+//      its own axis.
 //
 // Heavy: routes a full 2800 m region per seed (~15 s each).
 import * as THREE from 'three'
@@ -175,9 +178,18 @@ for (const s of SEEDS) {
     check(`every line has a source (${lines.length}/${REQUISITION.length})`, lines.length === REQUISITION.length)
     check('each line is posted at its source too — the same offer',
         lines.every((o) => o.poiId !== camp.id && board.offers(o.poiId, 6).includes(o)))
-    let bad = []
+    const fams = lines.map((o) => o._spec.family).sort().join()
+    check(`one line per built type: haul, courier ×2, freight, fragile (${fams})`, fams === 'delivery,delivery,fragile,freight,haul')
+    const fuel = lines.find((o) => o._spec.line === 'reqFuel')?._spec, gear = lines.find((o) => o._spec.line === 'reqGear')?._spec
+    check('the fuel line is a 172 kg strapped drum; the camp gear a Fragile crate',
+        fuel?.load === 'drum' && fuel.massKg === 172 && !fuel.fragile
+            && gear?.load === 'largeCrate' && gear.fragile?.tier === 'fragile' && gear.fragile.breakG > 0)
+    const axis = { haul: /bundles delivered/, freight: /upon delivery/, fragile: /%\+ intact/, delivery: /C or better/ }
+    let bad = [], badDeed = []
     for (const o of lines) {
         const m = board.planDistinct(o, planOne(board))
+        const deed = board.card(o, { nowH: 6, route: m })?.deed ?? ''
+        if (!axis[o._spec.family].test(deed)) badDeed.push(`${o._spec.line}: "${deed}"`)
         const last = m?.segments.at(-1)
         const ok = m && m.endPoiId === camp.id && Math.hypot(m.end.x - camp.roadX, m.end.z - camp.roadZ) < 1
             && g.key(last.cellA) === g.key(camp.aId) && g.key(last.cellB) === g.key(camp.bId)
@@ -186,6 +198,7 @@ for (const s of SEEDS) {
         else console.log(`       ${o._spec.line.padEnd(12)} from ${o.type.padEnd(13)} ${(m.distance / 1000).toFixed(1)} km  par ${m.par.toFixed(0)} s`)
     }
     check('every line plans from its source to the camp, in through the one inner node, inside the wall', !bad.length, bad.join(', '))
+    check('every line card\'s deed reads its own axis', !badDeed.length, badDeed.join(', '))
     void inner
 
     // Ordinary offers: the same routes with the lines open or closed, and none ends at the camp.

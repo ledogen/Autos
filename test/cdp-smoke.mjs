@@ -409,7 +409,8 @@ const STEPS = [
   }],
   ['expedition', async () => {
     // FEAT-103: the camp's gate prompt, the requisition opening at campDeeds, the five lines at the
-    // camp, and a line taken THERE waiting, untimed, until the truck parks at its source.
+    // camp, and a line taken THERE waiting, untimed, until the truck parks at its source. FEAT-157: the
+    // line taken is the fuel drum, strapped in at the source and not before.
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
       return q ? { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
@@ -425,22 +426,30 @@ const STEPS = [
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
     check(await until(() => vis('mp-accept'), 3000), 'parking at the open camp opened no lines')
     check(await js('window.__mission().offers.length') === 5, `the camp shows ${await js('window.__mission().offers.length')} lines, want 5`)
-    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqCrew'; i++) await js('window.__mission().cycle(1)')
+    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqFuel'; i++) await js('window.__mission().cycle(1)')
     await js('document.getElementById("mp-accept").click()')
     const st = () => js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, from: m.mission?.fromPoi } })()')
     const a = await st()
     check(a.s === 'staging' && a.a, `a line taken at the camp is not an untimed approach: ${JSON.stringify(a)}`)
-    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)})
-      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await sleep(500)
+    check(!await js('window.__cargo().freight'), `the fuel line strapped its drum at the camp: ${JSON.stringify(await js('window.__cargo().freight'))}`)
+    // A source with a park box (the gas station's storefront bays) is parked IN it — poi.js dropZoneWorld's
+    // mapping, the truck's long axis along the bay.
+    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)}), b = q.park
+      if (!b) return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) }
+      const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
+      return { x: ox + b.x * cs + b.z * sn, z: oz - b.x * sn + b.z * cs, h: yaw } })()`)
     await js(`window.__teleport(${src.x}, ${src.z}, ${src.h})`)
     await sleep(2500)
     check((await st()).a, 'arriving at the source started the line before the brake')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
     await tap(' ')
     check(await until(async () => { const b = await st(); return b.s === 'staging' && !b.a }, 2000), `parking at the source did not start the line: ${JSON.stringify(await st())}`)
+    check(await until(() => js('window.__cargo().freight?.key === "drum"'), 5000), `parking at the source strapped no drum: ${JSON.stringify(await js('window.__cargo().freight'))}`)
     // Cancel (parked, two clicks) → the line goes back on the camp's list.
     await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
     check(await until(() => js('window.__mission().state === "done"'), 2000), 'cancel did not end the line')
+    check(await until(() => js('!window.__cargo().freight'), 2000), 'the cancelled line left its drum in the bed')
     await js('document.getElementById("mp-accept").click()')
     check(await js(`window.__map2d()._getBoard().status(${JSON.stringify((await js(`${pois}.find(q => q.type === 'expeditionCamp').id`)))}).family !== null`)
       && await js('window.__mission().state === "idle"'), 'the cancelled line is not back at the camp')

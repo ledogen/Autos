@@ -4141,7 +4141,8 @@ missionSystem = new MissionSystem({
       offerBoard?.[delivered ? 'complete' : 'abandon'](mission.offerId, daySystem.clockH())
       const lines = offerBoard?.lines() ?? []
       result.line = { delivered, done: lines.filter(l => l.state === 'done').length, of: lines.length,
-                      need: mission.bundles ? `${rankTable('haul', region, 'firewood').C}+ bundles` : 'C or better' }
+                      need: mission.bundles ? `${rankTable('haul', region, 'firewood').C}+ bundles`
+                        : mission.fragile ? `${Math.round(_fragileLinesOf(mission).C * 100)}%+ intact` : 'C or better' }
       return { payout: 0, base: 0, tip: 0, points: 0 }
     }
     const s = economySystem.settle(result, mission)
@@ -4573,7 +4574,9 @@ function _approachPoi () {
 function _updateLinePrompt (poiEl, pulled) {
   const q = _approachPoi()
   if (!q || !_inPoiSpot(q)) return false
-  if (pulled) missionSystem.reachSource()
+  // FEAT-157: a freight / fragile line's load is handed over here, where it is, not at the camp's accept.
+  const j = missionSystem.mission
+  if (pulled && missionSystem.reachSource() && j.load) void _loadFreight(j.load, j.cargoKg, j)
   if (poiEl) {
     poiEl.style.display = pulled ? 'none' : 'block'
     if (!pulled) poiEl.innerHTML = parkPrompt(q.drop ? 'park to load the firewood' : 'park to pick up')
@@ -6611,8 +6614,9 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   // §5b: the stock is bought at accept and never refunded — an expired or abandoned haul keeps it.
   if (pick && missionSystem.isOnJob()) economySystem.spend(pick.cost)
   // FEAT-96: a freight job's load is handed over at accept, already strapped — no drop, no loading beat.
+  // FEAT-157: a line taken at the camp gets it at its source (_updateLinePrompt).
   const j = missionSystem.mission
-  if (j?.load && missionSystem.isOnJob()) void _loadFreight(j.load, j.cargoKg, j)
+  if (j?.load && !j.approach && missionSystem.isOnJob()) void _loadFreight(j.load, j.cargoKg, j)
   if (j?.loose && missionSystem.isOnJob()) _loadLoose(j.loose.kind, j.loose.massKg, j)
 })
 document.getElementById('mp-prev')?.addEventListener('click', () => missionSystem.cycle(-1))
@@ -8020,7 +8024,7 @@ function _resumeJob (sj) {
 
 /** FEAT-42: the resumed job's load, back in the bed of the seated truck (after its motion is back). */
 function _reloadCargo (m, sj) {
-  if (m.load) {
+  if (m.load && !m.approach) {   // FEAT-157: a line still on its way to the source holds nothing yet
     const t = m.fragile ? makeFragile(m.fragile) : null
     if (t) t.health = sj.freightHealth ?? 1
     void _loadFreight(m.load, m.cargoKg, m, t)
