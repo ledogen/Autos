@@ -21,9 +21,10 @@
 //     "This seed is not routable with the current router parameters and terrain generation
 //      parameters" — a disclaimer, and a prompt to type a different seed.
 //
-// So nothing rerolls, nothing needs the 3x3 world, and the architecture stays as small as story
-// mode currently is. If connectivity later turns out to be a real problem with tuned parameters,
-// the reroll is still the answer and this routine is still what it would call.
+// Nothing needs the 3x3 world, and the architecture stays as small as story mode currently is.
+// BUG-100 (owner, 2026-11-01) brought back a RANDOM re-roll, not a deterministic advance: a refused
+// seed (typed or random) is swapped for a fresh random one up to three times (main.js
+// SEED_REROLLS), and the disclaimer is the fourth-strike fallback. Measured refusal rate < 3 %.
 //
 // TWO BARS, and they differ on purpose — this is the one thing to get right when editing here:
 //
