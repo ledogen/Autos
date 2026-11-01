@@ -4531,6 +4531,12 @@ function _planOne (o, exclude) {
       // data/offers.js. Not fragile: it tips the whole line.
       if (!s.fragile) m.tipMult = FREIGHT_TIP_MULT
     }
+    // FEAT-142: the giver's traits — the terms the spec does not already carry ride the mission to
+    // accept (thresholds) and settle (tip, deeds). Pay, deadline, stock and fragile floors are in the spec.
+    m.traits = s.traits
+    if (s.tipMult !== 1) m.tipMult = (m.tipMult ?? 1) * s.tipMult
+    m.thresholdScale = s.thresholdScale
+    m.deeds = s.deeds
     // The pickup wait (the tire change) runs on the job's clock, so par carries it (owner,
     // 2026-10-22) — and pay rides par like any other par time.
     if (s.atPickup) m.par += s.atPickup.min / 60 * secPerGameH()
@@ -5866,6 +5872,7 @@ function _renderMissionUI () {
           + (card.deed ? `<span class="mp-deed">${esc(card.deed)}</span><br>` : '')   // R-09; R-21 deeds wear the story blue
           + (card.bonus ? `<span class="mp-tip">${esc(card.bonus)}</span><br>` : '')   // R-04: the item that replaces the cash tip
           + (card.verdict ? `<span class="mp-verdict mp-${card.verdict.level}">${esc(card.verdict.text)}</span><br>` : '')
+          + (card.traits ? `<span class="mp-traits">${card.traits.map(esc).join(' &middot; ')}</span><br>` : '')   // FEAT-142: bottom-left
         : `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
           + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`)
         // FEAT-46: a POI job does NOT move you — you are already parked at the marker, and claiming

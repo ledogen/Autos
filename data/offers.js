@@ -522,6 +522,31 @@ export const FREIGHT_TIP_MULT = 0.5
 // +200 % (third pass). papers is this side's pick, not a ruling yet. demolition has no things (and
 // no code) yet — give it a slack the day it ships.
 // A different clock from board expiry (EXPIRY_NOISE, SOURCES.expiryH): when an offer LEAVES the board.
+// FEAT-142 (owner, 2026-10-21): GIVER TRAITS — 0–2 per offer, each a data row that nudges terms the
+// job already has; no new systems. Every trait is a trade except Generous and Stingy. Rolled on their
+// OWN seeded stream (offer-board.js _rollSpec), shown bottom-left of the card. Starting values — FEAT-69
+// tunes them. Fields: `families` it applies to (all but papers when absent), `not` the opposed traits,
+// `pay` × the line, `deadline` × the deadline slack, `thresholds` × the courier TIME thresholds (a
+// smaller ratio is tighter), `floors` × a fragile load's shock thresholds (< 1: more delicate), `tip` ×
+// the tip pool, `stockFull` (haul: the whole yard), `perPiece` × a haul's rate per piece, `deeds`
+// 'none' (no good-deed point) or 'extraHalf' (+½ at C or better).
+// Rejected: After hours (doesn't fit the deadline system). OPEN: Wholesale on freight — built haul-only.
+const NOT_PAPERS = ['delivery', 'freight', 'fragile', 'haul']
+export const TRAITS = [
+    { id: 'impatient',  name: 'impatient',  families: NOT_PAPERS, not: ['patient'],    pay: 1.20, deadline: 0.6, thresholds: 0.9 },
+    { id: 'patient',    name: 'patient',    families: NOT_PAPERS, not: ['impatient'],  pay: 0.80, deadline: 1.5, thresholds: 1.1 },
+    { id: 'collector',  name: 'collector',  families: ['fragile'], not: ['easygoing'], pay: 1.25, floors: 0.8 },
+    { id: 'easygoing',  name: 'easygoing',  families: ['fragile'], not: ['collector'], pay: 0.85, floors: 1.25 },
+    { id: 'generous',   name: 'generous',   families: NOT_PAPERS, not: ['stingy'],     pay: 1.20 },
+    { id: 'stingy',     name: 'stingy',     families: NOT_PAPERS, not: ['generous'],   pay: 0.80 },
+    { id: 'bigTipper',  name: 'big tipper', families: NOT_PAPERS, not: [],             pay: 0.80, tip: 1.6 },
+    { id: 'wholesale',  name: 'wholesale',  families: ['haul'],   not: [],             stockFull: true, perPiece: 0.8 },
+    { id: 'offBooks',   name: 'off the books', families: NOT_PAPERS, not: ['rightThing'], pay: 1.20, deeds: 'none' },
+    { id: 'rightThing', name: 'the right thing to do', families: NOT_PAPERS, not: ['offBooks'], pay: 0.85, deeds: 'extraHalf' },
+]
+/** FEAT-142: how many traits an offer carries — relative weights (starting values, FEAT-69 tunes). */
+export const TRAIT_COUNT_WEIGHTS = { 0: 0.5, 1: 0.35, 2: 0.15 }
+
 export const DEADLINE_SLACK = {
     delivery:   1.0,
     fragile:    2.0,

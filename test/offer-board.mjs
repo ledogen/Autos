@@ -39,7 +39,7 @@
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine } from '../src/offer-board.js'
-import { THINGS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { THINGS, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -400,7 +400,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     for (let t = T0; t < T0 + 24 * 30 && !(plain && bonused); t += 1) {
         for (const id of b.sources()) for (const o of b.offers(id, t)) {
             const sp = b.spec(o)
-            if (sp.family !== 'delivery') continue
+            if (sp.family !== 'delivery' || sp.traits?.length) continue   // FEAT-142: an untraited card
             if (sp.bonus && !bonused) bonused = { o, t }
             if (!sp.bonus && !plain) plain = { o, t }
         }
@@ -557,9 +557,11 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
             counts.add(sp.stock)
             if (sp.massKg !== sp.stock * HAUL_BUNDLE_KG) badMass++
             // PER PIECE: the pick multiplies it at accept (main.js), so the card quotes a rate.
-            const want = HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK   // R-04: no bonus cut
+            // FEAT-142: the giver's traits move the rate (pay × per-piece) and the tip pool.
+            const tr = (k) => (sp.traits ?? []).reduce((m, id) => m * (TRAITS.find(x => x.id === id)[k] ?? 1), 1)
+            const want = HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK * tr('pay') * tr('perPiece')   // R-04: no bonus cut
             const card = b.card(o, { nowH: t, route: { par: 300, distance: 3000 } })
-            const pr = payRange(300, 1, want)
+            const pr = payRange(300, 1, want, sp.tipMult ?? 1)
             // R-20: a haul reads as a trade — what a bundle costs, what it sells for.
             const wantPay = `Bundle costs $${formatMoney(stockPrice(300, 1, want))} · sells for `
                 + (sp.bonus ? `$${formatMoney(pr.base)} flat` : `$${formatMoney(pr.base)} – $${formatMoney(pr.max)} by speed`)
@@ -728,6 +730,45 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22; parts.js + shop-stock.js: reward prices, R-07), seed.js, economy.js and day.js (the clock unit)',
         JSON.stringify(imports) === JSON.stringify(allowed), imports.join(', '))
     check('offer-board.js never reads Math.random', !/Math\.random/.test(src.replace(/\/\/.*$/gm, '')))
+}
+
+// ── FEAT-142: giver traits ──────────────────────────────────────────────────────────────────────
+{
+    const byId = Object.fromEntries(TRAITS.map(t => [t.id, t]))
+    const tr = (sp, k) => (sp.traits ?? []).reduce((m, id) => m * (byId[id][k] ?? 1), 1)
+    const counts = [0, 0, 0], seen = new Set()
+    let n = 0, opposed = 0, wrongFamily = 0, papersTraited = 0, tipOnBonus = 0, badTerms = 0, drift = 0, whole = 0, wholeBad = 0
+    for (let seed = 1; seed <= 60; seed++) {
+        const b = make(seed), b2 = make(seed)
+        for (let t = T0; t < T0 + 24 * 30; t += 6) for (const id of b.sources()) for (const o of b.offers(id, t)) {
+            const sp = b.spec(o), ids = sp.traits ?? []
+            const o2 = b2.offers(id, t).find(x => x.id === o.id)
+            if (JSON.stringify(b2.spec(o2).traits) !== JSON.stringify(sp.traits)) drift++
+            if (sp.family === 'papers') { if (ids.length) papersTraited++; continue }
+            n++; counts[ids.length]++
+            ids.forEach(x => seen.add(x))
+            for (const x of ids) {
+                if (!byId[x].families.includes(sp.family)) wrongFamily++
+                if (ids.some(y => byId[x].not.includes(y))) opposed++
+                if (byId[x].tip && sp.bonus) tipOnBonus++
+            }
+            const thing = THINGS.find(th => th.id === sp.thingId)
+            const slack0 = thing.deadlineSlack ?? DEADLINE_SLACK[thing.family]
+            if (Math.abs(sp.deadlineSlack - slack0 * tr(sp, 'deadline')) > 1e-12 || Math.abs(sp.tipMult - tr(sp, 'tip')) > 1e-12
+                || sp.thresholdScale !== (sp.family === 'delivery' ? tr(sp, 'thresholds') : 1)
+                || sp.deeds !== (ids.map(x => byId[x].deeds).find(Boolean) ?? null)) badTerms++
+            if (ids.includes('wholesale')) { whole++; if (sp.stock !== HAUL_STOCK[1]) wholeBad++ }
+        }
+    }
+    const share = counts.map(c => c / n), W = TRAIT_COUNT_WEIGHTS, Wt = W[0] + W[1] + W[2]
+    check('FEAT-142: same seed, same traits (their own stream — SM-INV-12)', drift === 0, `${drift} drifted`)
+    check('FEAT-142: 0–2 traits per offer, shares near the weights',
+        [0, 1, 2].every(k => Math.abs(share[k] - W[k] / Wt) < 0.04), share.map(x => x.toFixed(2)).join(' / '))
+    check('FEAT-142: opposed pairs never together, and every trait only on its families', opposed === 0 && wrongFamily === 0, `${opposed} opposed, ${wrongFamily} off-family`)
+    check('FEAT-142: Larry\'s papers carry no trait; Big tipper never rides a bonus offer (its tip is the item)', papersTraited === 0 && tipOnBonus === 0)
+    check('FEAT-142: every trait rolls somewhere in the corpus', TRAITS.every(t => seen.has(t.id)), [...TRAITS.map(t => t.id)].filter(x => !seen.has(x)).join(','))
+    check('FEAT-142: the terms move as tabled — deadline, tip pool, courier thresholds, deeds', badTerms === 0, `${badTerms} of ${n}`)
+    check('FEAT-142: Wholesale stocks the whole yard', whole > 0 && wholeBad === 0, `${whole} wholesale, ${wholeBad} short`)
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall offer-board checks passed')
