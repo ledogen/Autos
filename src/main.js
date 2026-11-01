@@ -4314,14 +4314,14 @@ const _boardView = {
     const route = papers ? _larryRoute(o) : _planOffer(o)
     const card = offerBoard.card(o, {
       nowH: now, payTier: economySystem.terms().payTier,
-      route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null, placeName: route.placeName } : null,
+      route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null, placeName: route.placeName, stopIds: route.stopIds } : null,
       customers: papers ? paperRouteSystem.sizes() : null,   // FEAT-141: the sizes on offer
       verdict: _offerVerdict(o),
     })
     const poly = route?.poly ?? null
     return { count: n, idx: i, card, poly,
              // FEAT-102: a fetch's preview points at its PICKUP — its own end is back where you stand.
-             start: route?.start ?? poly?.[0] ?? null, end: route?.legs?.[0].end ?? route?.end ?? poly?.[poly.length - 1] ?? null,
+             start: route?.start ?? poly?.[0] ?? null, end: (route?.fetch ? route.legs[0].end : route?.end) ?? poly?.[poly.length - 1] ?? null,
              nextText, shelf, shelfNext }
   },
 }
@@ -4611,6 +4611,8 @@ let _prevParkedForPoi = true
 
 // FEAT-102: the fetch prompts. "park to acquire mission item" in reach of the pickup; after the
 // latch, "get back to …!" for FETCH_HOME_MSG_S. Returns true when it owns the prompt this poll.
+// FEAT-89: a multi-drop's stop short of the last works the same way — "park to hand it over",
+// then "next stop: …!".
 let _fetchHomeMsg = null, _fetchHomeUntil = 0
 const FETCH_HOME_MSG_S = 4
 function _updateFetchPrompt (poiEl, pulled) {
@@ -4623,13 +4625,13 @@ function _updateFetchPrompt (poiEl, pulled) {
     // general store's lot, ASSET-74) — inside the box, whose curtain is the halo you park in.
     const near = pq && Math.hypot(pq.x - vp.x, pq.z - vp.z) <= POI_PARAMS.poiInteractR
       && (!pq.park || overDropZone(pq, vp.x, vp.z, PARK_SLACK, pq.park))
-    const at = missionSystem.mission.atPickup
+    const j = missionSystem.mission, at = j.atPickup
     if (near && pulled && missionSystem.acquire()) {
       if (at?.min) daySystem.advanceMinutes(at.min)   // the tire change — on the job's timer too; _planOffer put it in par
-      _fetchHomeMsg = `${at ? `${at.done} — ` : ''}get back to ${_fetchHomeLabel(missionSystem.mission)}!`
+      _fetchHomeMsg = `${at ? `${at.done} — ` : ''}${j.fetch ? 'get back to' : 'next stop:'} ${_legLabel(j, missionSystem.leg)}!`
       _fetchHomeUntil = now + FETCH_HOME_MSG_S * 1000
     } else if (near) {
-      if (poiEl) { poiEl.style.display = 'block'; poiEl.innerHTML = parkPrompt(at?.park ?? 'park to acquire mission item') }
+      if (poiEl) { poiEl.style.display = 'block'; poiEl.innerHTML = parkPrompt(at?.park ?? (j.fetch ? 'park to acquire mission item' : 'park to hand it over')) }
       return true
     }
   }
@@ -4641,6 +4643,11 @@ function _updateFetchPrompt (poiEl, pulled) {
   // Away from the pickup the fetch has nothing to say, and the brake falls through to the pump,
   // the camp and mom's door: a job is player state, not world state (owner, 2026-10-19).
   return false
+}
+
+/** FEAT-89: where leg `i` of a job ends, as the prompt and the HUD say it — a fetch's home, or a stop. */
+function _legLabel (m, i) {
+  return m.fetch && i === m.legs.length - 1 ? _fetchHomeLabel(m) : (offerBoard?.placeLabel(m.legs[i].poiId) ?? 'the next stop')
 }
 
 /** Who a fetch goes home to, as the prompt and the HUD say it. */
@@ -5925,7 +5932,8 @@ function _renderMissionUI () {
       const beat = _jobBeat(m)
       hud.classList.toggle('mh-bad', !!beat)
       hudText.textContent = beat ?? `${km(m.routeRemaining())} to go`
-        + (m.mission?.legs ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`) : '')
+        + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
+          : `   · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
         + _dueSuffix()
       break
     }

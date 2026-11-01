@@ -2300,6 +2300,11 @@ export class Map2D {
         if (m.pickup) {
             pin(m.pickup, '#5ab6ff', 'Pickup')
             pin(m.end, '#ffcf3c', 'Return')
+        } else if (m.stops) {
+            // FEAT-89: a multi-drop numbers its stops in tour order; the last one is the drop.
+            pin(m.start, '#5ad06a', 'Start')
+            m.stops.forEach((p, i) => pin(p, '#5ab6ff', `Stop ${i + 1}`))
+            pin(m.end, '#ffcf3c', `Stop ${m.stops.length + 1}`)
         } else {
             pin(m.start, '#5ad06a', 'Start')
             pin(m.end, '#ffcf3c', 'Drop')

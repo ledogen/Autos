@@ -40,8 +40,35 @@ The fetch shape is built: `THINGS[].fetchBy` / `fetchFrom`, `OfferBoard.destWish
 `mission.js` `fetchRoute` (the outbound reversed, one par with a stop at the pickup), `acquire()`.
 **The pickup is a PARK** (owner, 2026-10-08): pull up, park, the item is acquired instantly —
 "park to acquire mission item", then "get back to …!". The return is a drive-up arrival. Posting
-it: the stranded motorist (spare tire, jerry can) and the tackle shop (the store sundries). Still
-open here: multi-drop, and the `delivery` → `courier` family rename.
+it: the stranded motorist (spare tire, jerry can) and the tackle shop (the store sundries).
+
+## Multi-drop built (Spare, 2026-11-01)
+
+- **The rename is superseded.** GAME-FEEL REVIEW R-08 (2026-10-23, later than this ticket) ruled
+  that the code key `delivery` stays ("never rename a key") and the player reads COURIER through
+  `data/map-icons.js` FAMILY_LABEL. So the acceptance's first clause is met by the label, not by a
+  key change.
+- **What rolls it.** A thing with a `multi` phrase (data/offers.js — PLACEHOLDER picks: takeout,
+  groceries, full propane, fruit cake, tuna casserole, homebrew) rolls a multi-drop at
+  `MULTI_DROP.chance` 0.35, with 2 / 3 / 4 stops weighted 3 / 2 / 1 (the suggestion above, shipped as a
+  guess to tune live). It draws on the offer's own `stops` stream, so no other offer's roll moved.
+  `spec.shape` is `'multi'`, beside `'courier'` (point-to-point) and `'fetch'`.
+- **The tour.** `MissionSystem._multiDrop` plans the first stop exactly as a point-to-point job does,
+  then each next stop is the NEAREST unvisited POI by road from the stop before (nearest-next, the
+  paper route's idea without its coverage scoring). Every leg is an ordinary anchored POI roll, so it
+  keeps the 1 km courier floor and the 5.2 km band. A stop that plans no leg ends the tour short, and
+  a one-stop tour is a plain point-to-point job. Stops are POIs only (the recommendation above).
+  `joinLegs` puts a STOP on each leg's last segment and prices the whole tour once.
+- **Driving it.** Each stop short of the last is a PARK (the fetch pickup's machinery, generalised:
+  `pickupPoiId` / `acquire` walk a leg list). The prompt reads "park to hand it over", then "next
+  stop: …!". The last stop is a drive-up arrival, like every point-to-point job. The HUD reads
+  "· stop 2 of 3: the Halvorsens", the GPS gets one leg at a time, the map numbers the stops, and
+  the rank clock runs across the whole tour.
+- **The card** (the gate's own sample): "Lorraine McCoy at Big Tacos needs **takeout orders**
+  delivered to **Hamilton homestead**, **the gas station**, **Iris's Placated Towing** and **Mary's
+  Placated Tackle**." 9.5 km, par 9.3 min. Pay is the one par-based line, as before.
+- **Gate:** story-poi § 7c2. Census on its seed-6 region over three days: 33 of 33 multi-drop offers
+  plan a tour, 2.76 stops on average. Tour par equals the legs' own pars summed (within 1 %).
 
 ## Posting rule (owner, 2026-10-07)
 
@@ -119,16 +146,18 @@ extra to score; par covers it.
 
 ## Acceptance
 
-- [ ] The family is `courier` in code and on the card (renamed from `delivery`); a courier offer
-      rolls one of three shapes deterministically from its seed stream; the card names the shape
-      and its stops.
-- [ ] Multi-drop: the mission arrives at each stop in order, settles once after the last, and par
+- [x] ~~The family is `courier` in code~~ (R-08: the key stays, the card reads COURIER); a courier
+      offer rolls one of three shapes deterministically from its seed stream; the card names the
+      shape and its stops.
+- [x] Multi-drop: the mission arrives at each stop in order, settles once after the last, and par
       is the whole tour priced at offer time (headless: plan the tour, assert par = sum of legs).
-- [ ] Fetch: the mission arrives at the far POI, then settles at the giver; the return leg re-uses
-      the outbound route reversed.
-- [ ] GPS assist and the story map point at the current leg; the rank bar runs on tour par with
+- [x] Fetch: the mission arrives at the far POI, then settles at the giver; the return leg re-uses
+      the outbound route reversed. (FEAT-102.)
+- [x] GPS assist and the story map point at the current leg; the rank bar runs on tour par with
       no reset between legs; no countdown is ever rendered (SM-INV-3).
-- [ ] Point-to-point offers are unchanged in behaviour (existing offer-board / mission gates green).
+- [x] Point-to-point offers are unchanged in behaviour (existing offer-board / mission gates green).
+- [ ] Owner play-test of a multi-drop: the share (0.35), the stop weights, which things roll it, and
+      the "park to hand it over" / "next stop" words.
 
 ## Related code
 

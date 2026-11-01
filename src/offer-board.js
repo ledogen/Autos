@@ -40,7 +40,7 @@
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
-    REWARD_VALUE, REQUISITION, TRAITS, TRAIT_COUNT_WEIGHTS,
+    REWARD_VALUE, REQUISITION, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP,
 } from '../data/offers.js'
 import { PARTS } from '../data/parts.js'
 import { ITEM_PRICE } from '../data/shop-stock.js'
@@ -544,8 +544,10 @@ export class OfferBoard {
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate,dineIn?}|null, payMult,
      *   destKind: 'poi'|'roadside'|null, destPick, placeName, stock: number|null, to: string[]|null,
-     *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null, load: string|null,
-     *   deadlineSlack: number }
+     *   passenger: boolean, shape: 'courier'|'fetch'|'multi', from: string[]|null, load: string|null,
+     *   stops: number|null, multiPhrase: string|null, deadlineSlack: number }
+     * stops / multiPhrase (FEAT-89): a multi-drop's wished stop count and how the card says the goods;
+     * null on every other shape. The planned tour may come up shorter (mission.js _multiDrop).
      * deadlineSlack (FEAT-113): the deadline is par × (1 + it) from accept — see deadlineH().
      * stock is the haul giver's piece count (FEAT-114) — the player picks 1…stock at accept — null
      * for every other family. It is drawn on its OWN `stock` stream: one more draw on `spec` would
@@ -645,6 +647,10 @@ export class OfferBoard {
         // FEAT-102: a FETCH when this source is one of the thing's fetchers — go to a pickup (a POI of
         // `from`), park there, bring it back. Otherwise the courier shape, as built.
         const fetch = !!thing.fetchBy?.includes(offer.type)
+        // FEAT-89: a MULTI-DROP — several stops, the order planned for you — for a thing with a
+        // `multi` phrase. Its own `stops` stream: a draw on `spec` would move every other offer.
+        const sr = thing.multi && !fetch ? stream('stops') : null
+        const stops = sr && sr() < MULTI_DROP.chance ? Number(pickWeighted(sr(), MULTI_DROP.stops)) : null
         // A `to` naming 'roadside' (BUG-88) keeps the generic POI-or-roadside roll, just narrowed.
         const strictTo = !!thing.to && !thing.to.includes('roadside')
         const fragile = fragileOf(thing)
@@ -655,7 +661,8 @@ export class OfferBoard {
             traits: traits.map(t => t.id), traitNames: traits.map(t => t.name),
             tipMult: tmul('tip'), thresholdScale: thing.family === 'delivery' ? tmul('thresholds') : 1,
             deeds: traits.find(t => t.deeds)?.deeds ?? null,
-            shape: fetch ? 'fetch' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
+            shape: fetch ? 'fetch' : stops ? 'multi' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
+            stops, multiPhrase: stops ? thing.multi : null,
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
             massKg: stock ? stock * HAUL_BUNDLE_KG : massKg, stock,
             // Haul: PER PIECE — the pick multiplies it at accept. ÷ HAUL_PAR_SLACK: the haul's par is
@@ -666,7 +673,7 @@ export class OfferBoard {
                 * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1)   // FEAT-96: freight's weight bonus on pay
                 * (thing.careMult ?? 1)
                 * tmul('pay') * (stock ? tmul('perPiece') : 1),        // FEAT-142: the traits' pay
-            destKind: papers ? null : (strictTo || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
+            destKind: papers ? null : (strictTo || fetch || stops || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
             loose: thing.loose ?? null, // one loose bed body (src/debris.js kind) — the motorist's tire
@@ -721,7 +728,7 @@ export class OfferBoard {
             if (r) sibs.push({ r, sp: this.spec(o) })
         }
         const usedThings = new Set(sibs.map(x => x.sp.thingId))
-        const usedPois = new Set(sibs.map(x => x.r.endPoiId).filter(Boolean))
+        const usedPois = new Set(sibs.flatMap(x => x.r.stopIds ?? [x.r.endPoiId]).filter(Boolean))   // FEAT-89: every stop
         const usedNames = new Set(sibs.filter(x => !x.r.endPoiId).map(x => x.r.placeName))
         const oneThing = postable(offer.type).length === 1
         let m = null, n = 0
@@ -780,7 +787,7 @@ export class OfferBoard {
             && (!want || want.some(t => q.tags?.includes(t)))
         // A `to` that names 'roadside' is not strict: no POI in reach drops it at a roadside spot.
         const strict = !!want && !want.includes('roadside')
-        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict, fetch: sp.shape === 'fetch' }
+        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict, fetch: sp.shape === 'fetch', stops: sp.stops }
     }
 
     /** A seeded stream for the mission planner's own rolls on this offer (route determinism). */
@@ -931,8 +938,14 @@ export class OfferBoard {
                 // names its pickup: "Earl needs a full jerry can fetched from Pump & Go."
                 // (a template literal: test/offer-board.mjs's import scan would read the quoted form as an import)
                 const verb = sp.passenger ? ' to ' : sp.shape === 'fetch' ? ` fetched from ` : ' delivered to '
-                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: verb },
-                              { t: dest, b: true }, { t: '.' })
+                // FEAT-89: a multi-drop names every stop, in the order the tour drives them.
+                const stops = route?.stopIds?.map(id => this.placeLabel(id))
+                sentence.push({ t: ' needs ' }, { t: stops ? sp.multiPhrase : sp.phrase, b: true }, { t: verb })
+                for (const [i, t] of (stops ?? [dest]).entries()) {
+                    if (i) sentence.push({ t: i === stops.length - 1 ? ' and ' : ', ' })
+                    sentence.push({ t, b: true })
+                }
+                sentence.push({ t: '.' })
             }
         }
         const par = route?.par
