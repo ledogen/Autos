@@ -224,3 +224,20 @@ the node low, because the fill ceiling is 8 m) and another climbing 15–35 m in
 needs the node high). No node HEIGHT serves both. The lever left is the node SEAT: site placement
 that avoids steep faces, since sites already valley-snap. That would be a third remedy, and it
 moves every node in the world, not only heights.
+
+## Owner, 2026-11-01 (evening) — reseat questioned; junction cutting to prototype first
+
+Owner: "why do we need to move nodes to get a resolution? ... as long as there is a min spacing
+between nodes there should be a valid solution for generating legs even if they tunnel ... otherwise
+im down to implement a conditional node reseat but performance here is always a huge concern."
+
+Orchestrator's answer, which the owner ruled "follow recommendation": the ten leftover cases are one
+node whose two legs want opposite heights (one dives, one climbs). The legs DO have solutions; the
+defect is only where the climbing leg's portal lands, and that is the PROFILE solver's choice (10 m
+stations), not the corridor search's (32 m lattice) — which is why remedy (1) in the corridor search
+did nothing. Lever to try before any reseat: **forbid BORE within the junction's reach (~30 m) of a
+node and let the profile solver price those stations as an open cutting even past cutMax** — a
+walled junction cutting, as real roads do. Same mechanism as BUG-58's stub re-solve. No corridor
+re-routes, no node moves. A leg infeasible under the rule falls back to today's bore; that residue
+is where a conditional reseat would earn its cost, bounded by (failing nodes / total) × routing
+budget. Spare prototypes with the census plus each node's needed cutting depth; the owner decides.

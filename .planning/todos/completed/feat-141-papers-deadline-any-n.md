@@ -88,3 +88,13 @@ design: design-amendments-2026-10-21-mission-recut.md §7
 3. **Placement keeps its bands** (`tierRoadM`): houses still spread outward from Larry by rung, but the
    stamp no longer decides who is on a route. Retiring the bands outright would move every customer
    (a worldgen change) for no gameplay gain.
+
+## Owner, 2026-11-01 — the three calls
+
+(2) running out of papers ends the round: confirmed. (3) player picks the route freely, the plotter
+does its best on the shortest: confirmed ("intention was player is free to choose the route But
+plotter does its best to pick the shortest one"). (1) "ladder moves only on the top unlocked size":
+the owner asked what it means; explained as — sizes 4 / 9 / 15 unlock in order, and only a B-or-
+better on the LARGEST size you have unlocked opens the next one, so re-running the 4 once the 9 is
+open cannot farm the ladder. The owner's own words "first mission is 4, ladder all the way up to 15"
+match; stands unless the owner comes back.

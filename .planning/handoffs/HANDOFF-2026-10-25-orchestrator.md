@@ -118,3 +118,18 @@ Alpha = the 2500 m circle, a polished demo; FEAT-115/116 are later. Provenance: 
   Two old windows (cargame-5a in the deleted parts folder, haul-stock-picker in the deleted mission-recut folder)
   should be closed.
 - Unruled: Q-6 courier digits; FEAT-138's shelf likelihood tier; FEAT-146/147 card wording and the FEAT-148 lines.
+
+## State 2026-11-01 (evening) — orchestrator
+Main carries, all verified (suite 112/113 with road-clearance the one known red, smoke 20/20): BUG-100
+auto-reroll, FEAT-62 best-time persistence, BUG-63 parallel key + BUG-82 pad chord, BUG-58 stub bore
+re-solve, FEAT-89 courier multi-drop, BUG-73 write-up, the smoke's service-brake park. Owner ruled a
+batch at the machine (memory `project_rulings_2026_10_31.md` § fourth pass; each ticket carries its
+ruling). Spare's queue, ordered by blockers: BUG-64 (a) landing → FEAT-77 (a) tolerance → BUG-67
+junction-cutting prototype (numbers to the owner) → BUG-81 item 5 → FEAT-142 one-trait + effect line
+→ FEAT-62 paper-route scenario (after BUG-67's landing call) → BUG-101 / BUG-102. BUG-103 (expedition
+closure bypass, seed 3852053035) has an Opus assessment agent writing the options into the ticket;
+lane TBD after the owner reads it. Lane A (session "A.") was told to merge main before FEAT-157
+(shares offer-board.js / mission.js with FEAT-89). Parked branches: proto/bug-67-pad-yield,
+proto/bug-67-node-height, proto/bug-64-earthwork-union (landing now). Owed list = the tracker's OWED
+array (v36). Heat note: the owner complained the laptop was cooking on battery; the burn was the gate
+batteries (ours and Spare's censuses), Steam's UI renderer, and Spotlight (now excluded). Lifted.

@@ -78,3 +78,9 @@ leg pinned to its node's departure here. Closing them means routing work in the 
 machinery, not a knob. Options for the owner: (a) accept a near-miss of under ~1 m over under ~20 m
 between two legs of one node (a gate tolerance), (b) leave the red standing as known residue, or
 (c) schedule the node-departure re-route work.
+
+## RULED — owner, 2026-11-01: (a)
+
+A gate tolerance for under ~1 m over under ~20 m between legs of one node. Owner: "a seems fine
+unless i complain about the symptoms this test measures. i dont think its really bothering me (same
+with bug-64 vertical walls)." Keep the tolerance honest and small. Lane: Spare.
