@@ -120,3 +120,15 @@ below one run in 30 000. The 2026-08-27 "nothing rerolls" ruling is superseded f
 card stays as the fourth-strike fallback, so the player is still told when the generator cannot
 find a world. Lane: Spare. (story.js's warm-done check is where the refusal is decided; main.js
 `_showSeedModal` is the card.)
+
+## Resolution — Spare, 2026-11-01
+
+Built as ruled. `onSeedRejected` (main.js) re-rolls a fresh random seed (`_resolveSeed('')`) up to
+`SEED_REROLLS` = 3 times, typed seeds included, keeping the run's world knobs and gearbox
+(`_runWorld` / `_runGearbox`). The refusal card (`_showSeedModal`) is the fourth strike. A RESUME
+never re-rolls (that would throw the saved run away), so it gets the card at once. Each re-roll
+logs `[story] seed "<seed>" refused (<reason>) — re-roll n/3`. The superseded 08-27 wording is
+updated in story.js `_checkSeed` and the world-validate.js header.
+
+Verified in the real app (`CarGame-spare/wip/bug-100/reroll-check.mjs`): typed seed 2881088386 →
+`re-roll 1/3` → the run went live, no card. cdp-smoke green (20 steps).

@@ -7526,7 +7526,17 @@ const storySystem = new StorySystem({
   // BUG-85: pieces are cut at the PLANNERS' wall (radius less REGION_MARGIN) — see world-validate.js
   // THE STRICT CUT — so report.mainNodes is exactly the piece the planners can route on.
   validateRegion: (centre, radius) => validateArea(roadSystem, centre, discArea(radius, REGION_MARGIN), RANGER_PARAMS),
-  onSeedRejected: (seed, report) => _showSeedModal(report, seed),
+  // BUG-100 (owner, 2026-11-01): a refused seed re-rolls a fresh one, typed or random, up to
+  // SEED_REROLLS times; only then does the refusal card show. A resume never re-rolls — that would
+  // throw the saved run away — so it gets the card at once.
+  onSeedRejected: (seed, report) => {
+    if (!_pendingResume && _seedRerolls < SEED_REROLLS) {
+      console.info(`[story] seed "${seed}" refused (${unplayableReason(report)}) — re-roll ${_seedRerolls + 1}/${SEED_REROLLS}`)
+      void _startStory(_resolveSeed(''), _runWorld, _runGearbox, null, _seedRerolls + 1)
+      return
+    }
+    _showSeedModal(report, seed)
+  },
   hidePauseMenu: () => _hidePauseMenu(),
   // R-12: Quick Job is the unpaid calibration rig (mission.js PAID_JOB_DO_OVERS); a polished alpha
   // should not show a dev button in the corner of every run. It still appears whenever the debug
@@ -7712,8 +7722,8 @@ const storySystem = new StorySystem({
 /**
  * Open the story seed prompt. With a `report` it opens in its REFUSED state: the seed just entered
  * routed a region that is severed or carries a road nothing could give a profile to, so the player
- * is told plainly and asked for a different one. Nothing rerolls — that was the owner's ruling
- * (2026-08-27), and it is why story mode does not need a nine-tile play area to be safe.
+ * is told plainly and asked for a different one — after SEED_REROLLS fresh seeds were refused too
+ * (BUG-100, owner 2026-11-01, superseding the 2026-08-27 "nothing rerolls").
  */
 // FEAT-41: runs now start from the setup page (World / Truck / Assists); this dialog is left with the
 // story REFUSAL only — the report and a prompt for a different seed (or "start anyway").
@@ -7834,8 +7844,11 @@ async function _startFreeRoam (seedStr) {
  * onRegionLive writes the save over the fresh one (_restoreRun).
  */
 let _runGearbox = 'auto'   // the box this run started with — a run save carries it, never _settings
+let _runWorld = null       // ...and the world knobs, so a BUG-100 re-roll keeps them
 let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
-async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null) {
+const SEED_REROLLS = 3       // BUG-100: refused seeds re-rolled before the refusal card shows
+let _seedRerolls = 0         // re-rolls behind the current entry (0 for a player-started one)
+async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0) {
   _hideSeedModal()
   map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
   // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
@@ -7845,6 +7858,8 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   applyWorld(world)
   _fitGearbox(gearbox)
   _runGearbox = gearbox
+  _runWorld = world
+  _seedRerolls = rerolls
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _runEnded = false
   _playedS = 0                       // FEAT-146 (a resume puts the saved playtime back in _restoreRun)
