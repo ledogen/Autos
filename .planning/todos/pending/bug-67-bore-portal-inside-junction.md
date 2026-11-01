@@ -152,3 +152,39 @@ itself) is priced in the corridor search so the router prefers a seat where the 
 to stand in. Every world re-routes, so this goes in BEFORE FEAT-62 authors any scenario — a
 scenario built after it stays valid. The proto/bug-67-pad-yield branch (remedy 2) stays parked:
 it fixed the census and nothing visible. Lane: Spare, after BUG-64.
+
+## Remedy (1) measured — Spare, 2026-11-01: the corridor is not the lever; the NODE HEIGHT is
+
+Remedy (1) was built as ruled (not landed; reverted): a near-node portal charge in `corridorSearch`,
+`cPortalNear` at the node falling quadratically to 0 at `portalNearM`, on the cell the portal opens
+into. Census (`bore-junction-clearance`, seeds 0/2/13/16/18/19 at 1400 m) — interpenetrating / in a
+pad's reach / at the node:
+
+| | interpenetrations | in pad reach | at node |
+|---|---|---|---|
+| main | 1 | 18 of 64 | 12 |
+| cPortalNear 2000 over 96 m | 2 | 17 of 59 | 12 |
+| cPortalNear 20000 over 128 m | **11** | **24** | **18** |
+| burial capped at cutMax − 3 (no charge) | 2 | 18 | 12 |
+| burial cap + 2000 / 96 m | 3 | 17 of 59 | 11 |
+| burial cap + 6000 / 96 m | 4 | 19 of 59 | 12 |
+
+Stronger pricing makes it WORSE. The corridor plans on a 32 m lattice over the smoothed (K=4)
+field, while these portals are created within one 10 m PROFILE station of the node. So the charge
+only shoves the planned transitions around, and the profile DP is still forced into the bore by
+the fine ground.
+
+**The mechanism (`wip/bug-67/classify.mjs`).** Every one of the 12 at-node portals has its node
+pinned **15–29 m below its own spot height** (6 at 0 m: 26–29 m buried; 6 at one station: 15–24 m
+buried, with the ground rising another 7–35 m in the first 20 m). `_v2NodeHeight` pins a node to the
+LOWEST of 12 ring samples 22 m out, plus 0.35·22 = 7.7 m — the FEAT-68 convex-edge rule, so a
+DOWNHILL leg can reach the valley. It takes that minimum over all twelve directions, including ones
+no road leaves along. A node on a side-slope therefore sinks to the low side's level, and its UPHILL
+leg starts in (or within one station of) a > 25 m cut: a forced bore at the junction. The two
+promoted-T cases (seed 18's interpenetrating pair) are the same node seen by two legs.
+
+**Proposed lever, which still re-routes every world: the node height from its OWN legs.** Take the
+ring minimum only along the bearings of the node's actual graph edges (the Urquhart band graph is
+window-invariant in its interior, so every incident edge still computes the identical height — node
+agreement holds), and/or cap the burial so the uphill legs keep a cut under cutMax. Not prototyped:
+it changes the node-height rule FEAT-68 owns, which is wider than the ruled remedy. Waiting on a go.
