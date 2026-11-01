@@ -188,3 +188,39 @@ ring minimum only along the bearings of the node's actual graph edges (the Urquh
 window-invariant in its interior, so every incident edge still computes the identical height — node
 agreement holds), and/or cap the burial so the uphill legs keep a cut under cutMax. Not prototyped:
 it changes the node-height rule FEAT-68 owns, which is wider than the ruled remedy. Waiting on a go.
+
+## Own-legs node height — prototyped, Spare 2026-11-01, NOT landed (owner's go/no-go)
+
+Branch **`proto/bug-67-node-height`**. `_v2NodeHeight` takes its ring minimum only from samples
+within 30° of a bearing to one of the node's own Urquhart neighbours (`_v2LegBearings`). The
+bearings come from a LOCAL graph band around the node's macro-cell, memoised per site. A first
+version that read the streaming `_proto.graph` broke network-worker-parity, because the pre-warm
+band differs, so the leg set must be window-free. Switches: `BUG67_LEGS=1`, plus `BUG67_BURY=n`
+for the optional burial cap at cutMax − n. Probes: `CarGame-spare/wip/bug-67/` (node-moves.mjs,
+classify.mjs).
+
+| corpus (seeds 0/2/13/16/18/19, 1400 m) | main | own legs | own legs + burial cap (cutMax − 3) |
+|---|---|---|---|
+| bores | 64 | 62 | 62 |
+| interpenetrating | 1 | 1 | 1 |
+| portals in a pad's reach | 18 | **16** | 16 |
+| portals at their node (< 12 m) | 12 | **10** | 10 |
+| nodes whose height moves (of 340) | — | 82, all RAISED: median 1.5 m, p90 6.0 m, max 10.8 m (14 over 5 m) | 86 (median 1.6, p90 6.0, max 10.8) |
+| play-area rungs (cap · fine · relief · ceiling · re-routed) | 12915 · 6 · 103 · 366 · 2 | 12853 · 3 · 98 · 361 · 3 | 12832 · 3 · 98 · 351 · 3 |
+
+Gates with own legs:
+- **Green:** play-area, par-oracle, mission-network, scenario-route (both descents' poses still
+  sit on the road), world-determinism, road-connectivity, invariance, restream-invariance,
+  road-worker-parity, network-worker-parity.
+- **RED: paper-tour.** On its seed the world moves, and the top rung's 15-customer round goes
+  14.77 → 16.09 km, against the 15.5 km hard limit. It is one seed (n = 1): a re-route side
+  effect, not the mechanism.
+
+**The burial cap adds nothing** over own legs: the same census, and 4 more nodes move.
+
+**Why only 2 of 12.** The other at-node portals are nodes whose LOW ring sample really is along
+one of their own legs: a junction seated on a steep face, with one leg diving downhill (it needs
+the node low, because the fill ceiling is 8 m) and another climbing 15–35 m in its first 20 m (it
+needs the node high). No node HEIGHT serves both. The lever left is the node SEAT: site placement
+that avoids steep faces, since sites already valley-snap. That would be a third remedy, and it
+moves every node in the world, not only heights.
