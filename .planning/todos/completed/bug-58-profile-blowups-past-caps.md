@@ -1,7 +1,7 @@
 ---
 id: BUG-58
 type: bug
-status: pending
+status: completed
 severity: medium
 opened: 2026-09-06
 source: measured while driving the QUAL-29 bracket — isolated stations whose profile ignores the
@@ -87,3 +87,41 @@ the profile solver pins exact ends (`yA`, `yB`) and lets the DP own only the int
 
 Tuning. QUAL-29 ratified `cTurn: 45` / `wGrade: 180`; these defects are present at those values and
 must be fixed there, not tuned around.
+
+## Resolution — Spare, 2026-11-01: two causes, one fixed, one is BUG-67's
+
+**Re-measured at today's defaults (cutMax 25, cTurn 45, wGrade 180) over the road battery.**
+
+**Symptom 1's 143 m was a bore.** The site at (−107.7, −2.5) is station 487 of
+`g:-1,-1,2:-1,0,0`, inside its 367–623 m tunnel span under a 148 m hill. road-character's EARTHWORK
+max does not exclude bores (it is |deck − ground| everywhere), which is why it still reports 99–173 m
+on every seed. Measured with bores excluded, as the ticket intended, open cuts deeper than cutMax
+are 0.00–0.10 % of samples (`wip/bug-58/cuts.mjs`), in two classes:
+
+1. **A stub bore dropped as noise — FIXED.** The DP correctly prices a knife-edge ridge as a bore,
+   but `_v2GradePts` drops any bore shorter than MIN_BORE (12 m), shipping those stations as an
+   open cut the price list calls unbuildable. Example: seed 11 (2098,−945), 30.8 m for 10 m,
+   395 m from either end. Now a solve that leaves a stub is re-solved with BORE forbidden at its
+   stations (`profileSolve` `noBoreAt`): the deck stays within cutMax there (a crest over the
+   ridge), so priced == built. If that is infeasible, the original stands. That seed's worst open
+   cut went 30.8 → 25.5 m (28 m from an end). `MIN_BORE_M` is now a module constant.
+2. **Within 8 m of a run end — BUG-67's buried-node class, NOT fixed here.** 29–32.5 m. The node is
+   pinned 25+ m below its own ground and the junction guard keeps the bore span off the node. The
+   lever is BUG-67's (node height or seat), which is owner-gated. The residue overshoots of
+   25.1–25.5 m are post-solve smoothing (dequantise / station-corner rounding) moving decks by under
+   half a metre.
+
+**Symptom 2 is gone.** The cTurn 25/35/45 sweep now gives an identical crest max of 0.71 g
+(Rv ≈ 90 m) on the ticket's window; no 6 m launch ramp exists at any setting. FEAT-81's crest rule
+(roundCrests, R ≥ v²/(g·crestHold) at par speed) landed after this ticket and is the floor the
+acceptance asked for.
+
+| seed (0,0 r 1400) | crest max before → after | Rv min | p99 |
+|---|---|---|---|
+| 3 | 0.58 g → 0.58 g | 111 m | 0.38 g |
+| 6 | 0.71 → 0.71 | 90 | 0.44 |
+| 7 | 0.73 → 0.73 | 87 | 0.38 |
+| 11 | 0.83 → 0.83 | 76 | 0.38 |
+| 20 | 0.69 → 0.69 | 92 | 0.39 |
+
+**Gates:** affected suite 51/52, the one red being road-clearance (FEAT-77).
