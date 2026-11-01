@@ -110,3 +110,33 @@ is still open and still theirs, and the ceiling gate holds the line in the meant
 > clipping and obstructions and otherwise messy generation. Separate issue/ticket tho."
 
 This is that ticket. Not in the alpha queue yet; BUG-81 item 4 (the tube from outside) goes first.
+
+## Remedy (2) prototyped — 2026-11-01 (Spare), NOT landed (owner's pick pending)
+
+Branch **`proto/bug-67-pad-yield`** (`7f29e11f`, off main bcd1f671): `_junctionPadCarve` returns null
+OUTSIDE the pad's own asphalt (its rim hold and feather band) at points behind a portal line within the
+collar's half-width + 1 m (`_behindPortal`). Inside the ring the pad is road and stays as built. No span
+moves, no route or par changes. Probes and shots: `CarGame-spare/wip/bug-67/`.
+
+**Census on the gate corpus (seeds 0/2/13/16/18/19, 1400 m) — current main, after item 4 and BUG-77:**
+the gate's own three numbers are unchanged and remedy (2) cannot move them (they are positions, not
+carving): 1 interpenetration · 18 portals in a pad's reach · 12 at their node.
+
+The defect (2) targets needed its own metric: the PAD'S share of the ground behind a portal (2/4/6/10 m
+in, lateral ±11 m) — the drawn skin with the pad carve vs without it (the mouth notch is by design and
+is cut on every portal, so absolute height is the wrong test; a no-pad control proves the metric clean).
+
+| | before | after (2) |
+|---|---|---|
+| portals in a pad's reach whose headwall the pad carved | **5 of 21** (mean worst gap 9.3 m) | **0 of 21** |
+| control: portals with no pad near | 0 of 107 | 0 of 107 |
+
+**But it does not change what the owner sees.** Before/after screenshots of seeds 2, 13 and 18 are
+identical: the carving it undoes sits behind the ring and under the hill (the terrain shader already
+cuts the skin there). The visible clipping — seed 13's shot: a junction AT the mouth, a leg's asphalt
+across the ring's foot — is the at-node class (12 in the corpus), which only remedy (1) can reach,
+because the junction itself stands where the hill should be.
+
+**Recommendation for the pick:** (2) is cheap and safe but a near no-op visually; the clipping the owner
+reported is (1)'s — routing that keeps a node's legs from diving straight into a hill. (1) re-routes
+every world.
