@@ -927,6 +927,9 @@ const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band 
 //     quantisation is belt-and-braces, not the guarantee.
 const PROMOTED_K = -1
 const _promotedId = (x, z) => [Math.round(x * 1000), Math.round(z * 1000), PROMOTED_K]
+// m — a bore shorter than this reads as noise and is dropped (_v2GradePts); BUG-58 re-solves a
+// profile that would leave one, so a dropped stub never ships as an open cut past cutMax.
+const MIN_BORE_M = 12
 // BUG-63: the key suffix of a mid-span side half that shares its node pair with a trunk piece
 // (_v2MidSpanKeys). Such a run is in the world but not in the abstract graph (networkGraph).
 const PARALLEL_SUFFIX = '~p'
@@ -4994,11 +4997,32 @@ export class RoadSystem {
         const yB = opts.yB ?? this._v2NodeHeight(pts[n - 1].x, pts[n - 1].z)
         const C = this._v2Costs()
         this._v2Rung = this._v2Rung || [0, 0, 0, 0]
-        let prof = profileSolve(st, yA, yB, { costs: C })
+        // BUG-58: a bore shorter than MIN_BORE_M is dropped as noise below (spans), which ships its
+        // stations as an OPEN CUT deeper than cutMax — a state the price list calls unbuildable
+        // (measured: 30.8 m for 10 m over a knife-edge ridge, seed 11 (2098,-945)). So a solve that
+        // leaves such a stub is re-solved with BORE forbidden at its stations: the deck must stay within
+        // cutMax of the ground there (a crest over the ridge), priced == built. Up to three rounds (a
+        // re-solve can move a stub); if the forbidding is infeasible the original solve stands.
+        const solve = (o) => {
+            let p = profileSolve(st, yA, yB, o)
+            let mask = null
+            for (let round = 0; p && round < 3; round++) {
+                const stubs = p.segs.filter((sg) => sg.cls === CLS.BORE && sg.len < MIN_BORE_M)
+                if (!stubs.length) break
+                mask ??= new Uint8Array(st.s.length)
+                for (let i = 1; i < st.s.length - 1; i++) if (stubs.some((sg) => st.s[i] >= sg.s0 - 1e-6 && st.s[i] <= sg.s1 + 1e-6)) mask[i] = 1
+                const q = profileSolve(st, yA, yB, { ...o, noBoreAt: mask })
+                if (!q) break
+                p = q
+                this._v2StubResolved = (this._v2StubResolved || 0) + 1
+            }
+            return p
+        }
+        let prof = solve({ costs: C })
         if (prof) this._v2Rung[0]++
         // Rung 1 (quantization pinch): thin-margin descents die at yStep 0.5 (grade quanta 5%) but
         // solve at 0.25 — the measured M0 failure class. Only failures pay the finer, slower solve.
-        if (!prof) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: C }); if (prof) this._v2Rung[1]++ }
+        if (!prof) { prof = solve({ yStep: 0.25, costs: C }); if (prof) this._v2Rung[1]++ }
         // Rung 3: grant a SMALL relief above the vocabulary cap — the cap is a design comfort, the
         // gMaxRoad + gradeTol ceiling is the contract, and a road shipped here is steep but legal.
         //
@@ -5012,14 +5036,14 @@ export class RoadSystem {
         // answer — a mark says the terrain cannot meet the request, which is true information.
         const ceiling = C.gMaxRoad + (C.gradeTol ?? 0.14)
         const reliefCap = Math.min(ceiling, C.gMaxRoad + 0.03)
-        if (!prof) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: reliefCap } }); if (prof) this._v2Rung[2]++ }
+        if (!prof) { prof = solve({ yStep: 0.25, costs: { ...C, gMaxRoad: reliefCap } }); if (prof) this._v2Rung[2]++ }
         // Rung 4 (the CEILING rung): if even the relieved cap fails, ship the steepest road the
         // CONTRACT allows rather than fall through to the terrain-follow. Condemnation is for "no
         // legal road exists here", not for "your design cap was ambitious" — and the drape below is
         // a genuinely bad road (measured: a marked run at a 20% cap terrain-follows to 106%, where
         // a solved 38% road existed the whole time). BUG-56 C: the ceiling is gMaxRoad + gradeTol,
         // so it tracks the knob; it is the STRICT limit, and past it workstream C re-routes.
-        if (!prof && reliefCap < ceiling) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: ceiling } }); if (prof) this._v2Rung[3]++ }
+        if (!prof && reliefCap < ceiling) { prof = solve({ yStep: 0.25, costs: { ...C, gMaxRoad: ceiling } }); if (prof) this._v2Rung[3]++ }
         if (!prof) {
             // Mark-and-ship fallback: terrain-follow y, but BLEND the ends onto the shared node
             // heights over 60 m so a marked run still meets its solved neighbors (node agreement
@@ -5097,12 +5121,11 @@ export class RoadSystem {
         // is untouched — only which stations are bored changes). Last, because it breaks the
         // class-from-depth rule every pass above relies on (see extendBorePortals).
         // The end guard is the junction reach _clipTunnelSpansAtCrossings clears (blend + 10 m).
-        const MIN_BORE = 12   // m — a shorter bore reads as noise and is dropped
         prof = extendBorePortals(st, prof, C, this._params?.tunnelBoreRadius ?? 8,
-            (this._params?.roadJunctionBlendLength ?? 30) + 10, MIN_BORE)
+            (this._params?.roadJunctionBlendLength ?? 30) + 10, MIN_BORE_M)
         const spans = []
         for (const sg of prof.segs) {
-            if (sg.cls === CLS.BORE && sg.len >= MIN_BORE) spans.push({ s0: sg.s0, s1: sg.s1 })
+            if (sg.cls === CLS.BORE && sg.len >= MIN_BORE_M) spans.push({ s0: sg.s0, s1: sg.s1 })
         }
         return spans.length ? spans : null
     }
