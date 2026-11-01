@@ -626,9 +626,13 @@ export const RANGER_PARAMS = {
     // router was not choosing a tunnel over a cutting, it had no cutting to choose. 25 gives the
     // 25-30 m pinches an open-cutting answer instead of a portal pair as long as they are tall.
     // Rock over the tube crown at a portal: a portal needs deck ≥ tunnelBoreRadius + portalCover
-    // below ground. With the default 8 m bore that is 10 m, just past the ~9 m cut = bore price
-    // crossover, so portals land at the buildability floor (extendBorePortals).
-    portalCover: 2,
+    // below ground (extendBorePortals). BUG-81 item 4 (owner, 2026-11-01: "burying the portal deeper
+    // in the wall like an actual road tunnel"): 2 → 6. At 2 the portal sat at the ~9 m cut = bore
+    // crossover and 6 of 44 portals (4 seed windows) had the arch out of the hill, 29 under 2 m of
+    // rock across its width; at 6 every portal has ≥ 2 m of real rock across the whole arch (the one
+    // exception is BUG-77's mislocated span). Bores 5 % shorter, approach cuts ~4 m deeper; the deck,
+    // the routes and par are untouched — the pass only re-classes stations.
+    portalCover: 6,
     cutMax: 25,       // m below ground where a cut becomes a BORE — a 12–25 m trench is an open rock
                       // cutting at road grade cap, not a tunnel; at 12 the bore's 18% cap
                       // rate-limited legitimate cliff descents through deep-cut pockets

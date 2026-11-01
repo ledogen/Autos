@@ -140,6 +140,27 @@ Gate: `test/bore-collider.mjs` (registered) — a box on the hill over a bore st
 through the bore passes untouched, one driven at a shell's back face stops (fails without the fix on
 the first and third). Physics gates 21/21, smoke 19/19.
 
-**Still the target:** portals sit at ~2 m over the crown today (`extendBorePortals` stops at depth
-R + portalCover = 10 m; one seed-6 bore opens at −2.5 m, its arch out of the hill). Burying them deeper
-is the next step.
+### Item 4 target — DONE 2026-11-01 (Spare): portals buried deeper
+
+`roadV2.portalCover` 2 → 6 (data/ranger.js + the router default; the debug slider still reaches 0–20).
+`extendBorePortals` places a portal where the deck sits R + portalCover under the coarse ground, so at
+2 the portal sat at the ~9 m cut = bore crossover. Measured on the REAL hill across the whole arch
+(|lateral| ≤ the ring's 10.6 m, rock over the arch's own height) on four seed windows, 44 portals:
+
+| portalCover | arch out of the hill | under 2 m of rock | bored |
+|---|---|---|---|
+| 2 | 6 | 29 | 3056 m |
+| 4 | 2 | 6 | 2974 m |
+| 6 | 2 | 2 | 2892 m |
+| 8 | 2 | 2 | 2813 m |
+
+The two that never move are ONE portal seen from two windows: seed 6, a spliced run
+(g:1067143,−293510…), span 830–940 — BUG-77's mislocated span, not portal placement. Every other
+portal has ≥ 2 m of real rock over the whole arch at 6. The deck, the routes and par are untouched (the
+pass only re-classes stations): bores 5 % shorter, approach cuts ~4 m deeper. Screenshots:
+`wip/bug-81-item4/`.
+
+Gates: affected 78/81 → the known reds (road-tunnel 22.5 %, road-clearance) identical to main, and
+`vertical-curvature` open-road kinks 17 → 19 — two mild crests (0.031 / 0.035 /m) that were INSIDE
+a bore on main and now sit in the approach cut a few metres before the moved portal; no deck changed,
+so its ceiling moved with that note. Smoke 19/19. **Owner's look owed:** the deeper approach cuts.
