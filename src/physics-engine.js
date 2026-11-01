@@ -391,6 +391,11 @@ export class PhysicsEngine {
     return true
   }
 
+  /** addMesh for ground: the terrain's collision group, like a heightfield (BUG-81 item 4's bore lid). */
+  addTerrainMesh (handle, positions, indices, material = {}) {
+    return this.addMesh(handle, positions, indices, { group: GROUP_TERRAIN, ...material })
+  }
+
   /**
    * Heightfield collider. `heights` is a Float32Array of countX·countZ metres,
    * row-major over Z then X, sampled on a grid of `cellSize` metres. The field's

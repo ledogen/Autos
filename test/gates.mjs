@@ -149,6 +149,8 @@ export const GATES = [
     desc: 'FEAT-36: a stack of barrels settles, holds its footprint, sleeps — and two fresh worlds settle to bit-identical transforms (the pile the throw slice could never test)' },
   { file: 'barrel-cube.mjs', subsystem: 'physics', cost: 'fast', extraDeps: ['assets/models/drum-closed.glb'],
     desc: 'The lab barrel cube: full-height (BARREL_CUBE_LAYERS) towers of upright drums on the real hull settle, sleep within 3 s, stay over their columns and upright, and hold 30 s without waking' },
+  { file: 'bore-collider.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'BUG-81 item 4: a tunnel is never reachable from outside — the lid (the drawn hill over the heightfield\'s bore slot, one-sided up) carries a box dropped on the hill above a bore, a box driven through the bore passes under it untouched, and a shell collider (bore lining / portal ring) stops a box driven at its BACK face (Box3D mesh triangles are one-sided)' },
   { file: 'penetration-failsafe.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-24: catastrophic-penetration failsafe fires only on true tunnels (depth>2·wheelRadius = wheel fully swallowed), not resolvable deep contact — no teleport on the shoulder step or in the sub-2R band' },
   { file: 'body-contact-energy.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],

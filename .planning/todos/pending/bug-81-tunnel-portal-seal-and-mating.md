@@ -116,3 +116,30 @@ the lining pushes back from outside as well as inside, no launch, no pull-in. Th
 tube is never reachable from outside at all: seat the portal deeper into the hillside so the bore
 starts inside rock, as a real road tunnel does, and the hill is what you drive on above it. Junctions
 near portals (clipping, obstructions, messy generation) stay a separate ticket — BUG-67.
+
+
+### Item 4 floor — DONE 2026-11-01 (Spare)
+
+Two ways in from outside, both measured, both closed:
+
+1. **The lining was a one-way wall.** Box3D mesh triangles (and heightfields) collide from their front
+   face only — a box driven at the back face passes straight through (headless, measured). The
+   lining faces into the bore, so from outside a truck sank in unopposed until the front-face contact
+   threw it in. `RoadPhysics` now adds the back faces of every non-surface geometry (the lining and
+   the portal ring): a wall from both sides.
+2. **The invisible trench.** The heightfield's bore slot (FEAT-40) has to run the WHOLE bore — a
+   heightfield cannot overhang, so anywhere it climbed back to the hill inside a bore it would be a
+   wall across the lane. It left a trench 2R wide and cover + R deep under the drawn hill, along every
+   tunnel. Live, seed 6: barrels dropped on the hill over four bores fell 33–75 m into it. The **lid**
+   (`TerrainPhysics._addLid`) is the drawn hill itself over every slot cell, as an upward-facing
+   terrain mesh, kept where the hill clears the crown by 0.5 m: one-sided, so a truck in the bore
+   below never touches it. Same barrels now stay on the hillside (0.5–1.3 m above it, rolling down).
+   A truck still drives through the bores (body 0–1.7 m over the deck, as without the fix).
+
+Gate: `test/bore-collider.mjs` (registered) — a box on the hill over a bore stays up, one driven
+through the bore passes untouched, one driven at a shell's back face stops (fails without the fix on
+the first and third). Physics gates 21/21, smoke 19/19.
+
+**Still the target:** portals sit at ~2 m over the crown today (`extendBorePortals` stops at depth
+R + portalCover = 10 m; one seed-6 bore opens at −2.5 m, its arch out of the hill). Burying them deeper
+is the next step.
