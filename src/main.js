@@ -1941,6 +1941,7 @@ const map2d = new Map2D({
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
+  getBarricades: () => poiSystem.barricades(),   // BUG-103: a closure tick per FEAT-154 row
   getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
   // FEAT-61: what the customers MEAN right now, and which way to set off.
   //

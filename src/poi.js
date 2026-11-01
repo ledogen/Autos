@@ -681,7 +681,7 @@ export class PoiSystem {
             ...(camp ? this._barrierRow(road, road.edgeParData(camp.aId, camp.bId), camp.rowS, Math.sign(camp.s - camp.rowS), P) : []),
             ...this._edgeRows(road, canon, r, wall, adj, camp?.edge, P),
         ]
-        this._returns = this._returnSpots(road, canon, r, wall - P.poiEdgeReturnM, adj)
+        this._returns = this._returnSpots(road, canon, r, wall - P.poiEdgeReturnM, adj, this._barricades, P)
 
         this._list = out
         this._pool = pool
@@ -1466,9 +1466,15 @@ export class PoiSystem {
      * FEAT-154: the edge fade's return spots — every 10 m of road with an end on the planners' graph,
      * `rIn` or less from the centre: the job roads, and the inside stretch of each road out (so a road
      * exit comes back on the same road, just inside its row) and of the camp's. { x, z, tx, tz }.
+     *
+     * No spot sits on the far side of a row, nor within poiEdgeReturnM inside it (owner, 2026-11-01:
+     * the camp's row stands at its pad, ~30 m inside the wall, so the return put the truck just past
+     * the barricades and it crashed back through them). A row's back axis (poi.js _barrierRow: +Z =
+     * (sin yaw, cos yaw)) points out, so a spot is "past" a row when it lies along that axis from it.
      */
-    _returnSpots (road, canon, r, rIn, adj) {
-        const out = [], seen = new Set()
+    _returnSpots (road, canon, r, rIn, adj, barricades, P) {
+        const out = [], seen = new Set(), keep = P.poiEdgeReturnM
+        const past = (p) => barricades.some(b => Math.hypot(p.x - b.x, p.z - b.z) < 60 && (p.x - b.x) * Math.sin(b.yaw) + (p.z - b.z) * Math.cos(b.yaw) > -keep)
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek) || (!adj.has(e.ka) && !adj.has(e.kb))) continue
@@ -1478,7 +1484,7 @@ export class PoiSystem {
             const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
             for (let t = 0; t <= L; t += 10) {
                 const p = ed.centerline.pointAt(off + t)
-                if (r(p) > rIn) continue
+                if (r(p) > rIn || past(p)) continue
                 const ct = ed.centerline.tangentAt(off + t), tl = Math.hypot(ct.x, ct.z) || 1
                 out.push({ x: p.x, z: p.z, tx: ct.x / tl, tz: ct.z / tl })
             }

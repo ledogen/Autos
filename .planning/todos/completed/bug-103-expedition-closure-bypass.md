@@ -1,7 +1,7 @@
 ---
 id: BUG-103
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-01
 source: owner, 2026-11-01 — seed 3852053035, story map: the road closed at the expedition camp is reachable from behind via a spur that wraps round the play-area perimeter
@@ -169,6 +169,8 @@ heaviest and still needs (f).
 
 **Owner's call:** (f) alone, or (f) + (b).
 
+**RULED 2026-11-01: (f).** The honest map, alone.
+
 ## What a prototype measures
 
 - **(f), in-browser** (`test/cdp-smoke.mjs`-style screenshot of the map on seed 3852053035 around
@@ -182,15 +184,28 @@ heaviest and still needs (f).
 
 ## Acceptance
 
-- [ ] Owner picks (f), (f) + (b), or another option above.
-- [ ] (f): the story map's ring and exterior dim sit at the fade line (`REGION_RADIUS_M −
+- [x] Owner picks (f), (f) + (b), or another option above. → (f), 2026-11-01.
+- [x] (f): the story map's ring and exterior dim sit at the fade line (`REGION_RADIUS_M −
       REGION_MARGIN + poiEdgeFadeM`), read from the same constants the fade uses so they cannot
       drift. Every barricade row shows as a closure mark. On seed 3852053035 the camp's far junction
       and both loop legs draw in the exterior.
-- [ ] (b), if chosen: `_siteCamp` rejects a road whose far side reconnects to the home piece within
+- [ ] (b), not chosen: `_siteCamp` rejects a road whose far side reconnects to the home piece within
       R_obs. Fallback when none qualifies is defined and logged. Census numbers from the prototype
       above are recorded here. `expedition-camp`, `story-poi` and `region-pieces` gates stay green.
-- [ ] FEAT-103's "invisible wall at 2500 m" paragraph is updated to the FEAT-154 edge (rows at
+- [x] FEAT-103's "invisible wall at 2500 m" paragraph is updated to the FEAT-154 edge (rows at
       2400 m, fade at 2410 m).
-- [ ] Note in FEAT-154: rows are not placed on BUG-63 `~p` parallel runs (they are absent from
+- [x] Note in FEAT-154 (its follow-ups list; the measurement stays open there): rows are not placed on BUG-63 `~p` parallel runs (they are absent from
       `networkGraph`). Measure how often a parallel crosses the wall, or close it as not occurring.
+
+## Resolution (2026-11-01, orchestrator, main)
+
+Ruling (f) built. map2d.js `_drawRegion` draws the exterior dim and the ring at the edge fade's
+radius (`REGION_RADIUS_M − REGION_MARGIN + poiEdgeFadeM` = 2410 m, imported from the same constants
+main.js `_checkEdge` reads) and a closure tick across the road at every FEAT-154 row's middle
+barricade (main.js hands the map `poiSystem.barricades()`). The label reads 2.4 km. Verified on seed
+3852053035 in headless Chrome: 26 rows, all at 2372–2402 m from the centre; the camp's far junction
+and both loop legs draw in the dim. The dark bars elsewhere on the sheet are tunnel portals, an older
+glyph.
+
+Found while verifying (owner, same evening): the edge return seated the truck just past the camp's
+row. Fixed alongside in poi.js `_returnSpots` — see FEAT-154 § Follow-ups.
