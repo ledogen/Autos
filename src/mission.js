@@ -256,7 +256,7 @@ export class MissionSystem {
         this.elapsed = 0
         this.countdown = 0
         this.result = null       // { elapsed, par, letter, ratio, margin }
-        this.leg = 0             // FEAT-102: which leg of a fetch is being driven (0 out, 1 back)
+        this.leg = 0             // FEAT-102/89: which leg is being driven (a fetch: 0 out, 1 back)
         this.error = null
         this._trace = []         // driven trace rows (see update); reset on accept
         this._traceTick = 0
@@ -489,7 +489,7 @@ export class MissionSystem {
         this._t0H = s.t0H
         this.leg = s.leg
         this.countdown = 0
-        this._polyIdx = mission.legs && s.leg ? mission.legs[0].polyIdx : 0
+        this._polyIdx = mission.legs && s.leg ? mission.legs[s.leg - 1].polyIdx : 0
         this._trace = []
         this._traceTick = 0
         this._setMapOpen(false)
@@ -535,19 +535,22 @@ export class MissionSystem {
     /** Markers for the 2D map (null when there's nothing to draw). */
     markers() {
         if (!this.mission) return null
-        const legs = this.mission.legs
+        const { legs, fetch } = this.mission
         return { start: this.mission.start, end: this.mission.end, poly: this.mission.poly,
-                 pickup: legs ? legs[0].end : null }
+                 pickup: fetch ? legs[0].end : null,
+                 // FEAT-89: a multi-drop's stops short of the last, in tour order.
+                 stops: legs && !fetch ? legs.slice(0, -1).map(l => l.end) : null }
     }
 
     /**
-     * FEAT-102: the POI a running fetch is waiting for you to park at, or null (not a fetch, already
-     * picked up, or not running). main.js's park trigger reads it.
+     * FEAT-102/89: the POI a running job is waiting for you to park at — a fetch's pickup, or a
+     * multi-drop's stop short of the last — or null (on the last leg, or not running). main.js's
+     * park trigger reads it. The last leg arrives by driving up, like any point-to-point job.
      */
     pickupPoiId() {
         const legs = this.mission?.legs
         // A failed fetch (its loose load lost on the way out) has nothing left to hand over.
-        return this.state === 'running' && legs && this.leg === 0 && !this.mission.failed ? legs[0].poiId : null
+        return this.state === 'running' && legs && this.leg < legs.length - 1 && !this.mission.failed ? legs[this.leg].poiId : null
     }
 
     /**
@@ -561,21 +564,22 @@ export class MissionSystem {
         const m = this.mission
         if (!m?.legs) return m
         if (!m._legRoutes) {
-            const k = m.legs[0].segIdx
-            m._legRoutes = [{ segments: m.segments.slice(0, k) }, { segments: m.segments.slice(k) }]
+            const cut = [0, ...m.legs.slice(0, -1).map(l => l.segIdx), m.segments.length]
+            m._legRoutes = m.legs.map((_, i) => ({ segments: m.segments.slice(cut[i], cut[i + 1]) }))
         }
         return m._legRoutes[this.leg ?? 0]
     }
 
     /**
      * FEAT-102: the item is acquired — main.js calls this when the parking brake latches at the
-     * pickup (owner, 2026-10-08: "pull up and park; the item is instantly acquired"). Advances to
-     * the return leg. False (and nothing changes) unless a fetch is running on its outbound leg.
+     * pickup (owner, 2026-10-08: "pull up and park; the item is instantly acquired"). FEAT-89: or
+     * handed over at a multi-drop stop. Advances to the next leg. False (and nothing changes) unless
+     * a job is running on a leg that ends in a park.
      */
     acquire() {
         if (!this.pickupPoiId()) return false
-        this.leg = 1
-        this._polyIdx = this.mission.legs[0].polyIdx   // the projection resumes at the pickup
+        this._polyIdx = this.mission.legs[this.leg].polyIdx   // the projection resumes at the stop
+        this.leg++
         this._onChange()
         return true
     }
@@ -656,8 +660,9 @@ export class MissionSystem {
             }
         }
         // FEAT-102: on a fetch's return leg the route retraces the outbound points, so never match
-        // back onto the outbound half — the number would read the whole job again.
-        const floor = m.legs && this.leg === 1 ? m.legs[0].polyIdx : 0
+        // back onto the outbound half — the number would read the whole job again. (FEAT-89: any
+        // leg past the first floors at the stop it left.)
+        const floor = m.legs && this.leg ? m.legs[this.leg - 1].polyIdx : 0
         scan(Math.max(floor, last - 20), Math.min(poly.length - 1, last + 40))
         if (bd > 200 * 200) scan(floor, poly.length - 1)     // off the window (teleport, big shortcut)
         this._polyIdx = bi
@@ -703,8 +708,8 @@ export class MissionSystem {
         }
         // FEAT-102: a fetch's outbound leg ends with a PARK at the pickup (acquire()), never a
         // drive-by — and the giver's own end sits inside the start zone, so testing it here would
-        // finish the job on its first frame.
-        if (this.mission.legs && this.leg === 0) return
+        // finish the job on its first frame. FEAT-89: a multi-drop's stops short of the last, too.
+        if (this.mission.legs && this.leg < this.mission.legs.length - 1) return
         // FEAT-97: a fragile load destroyed on the way has failed the job — there is nothing left to
         // deliver; main.js's "clean up cargo" is the way out of it.
         if (this.mission.failed) return
@@ -798,6 +803,7 @@ export class MissionSystem {
      *        roadside point. A POI wish that finds no reachable candidate falls back to roadside —
      *        unless `strict` (FEAT-100: a thing bound for a class), when the roll fails instead.
      *        `fetch` (FEAT-102): the POI is a PICKUP and the job comes back here — see fetchRoute.
+     *        `stops` (FEAT-89): a MULTI-DROP of up to that many POIs of `pois` — see _multiDrop.
      * @returns {object|null} the mission, with fromPoi / startZone / endPoiId set
      */
     planOffer (poi, { rng, dest = null, minM = 0 } = {}) {
@@ -807,11 +813,34 @@ export class MissionSystem {
         for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest, minM })
         if (!m) return null
         if (dest?.fetch) m = fetchRoute(m, poi.id)
+        if (dest?.stops > 1) m = this._multiDrop(m, { rng, dest, tries })
         m.fromPoi = poi.id
         // The start threshold is centred on the MARKER (where you are parked), not on the mission's
         // road-side start pin ~11 m out across the shoulder.
         m.startZone = { x: poi.x, z: poi.z, y: poi.y ?? 0, r: START_ZONE_R }
         return m
+    }
+
+    /**
+     * FEAT-89: grow a planned first leg into a MULTI-DROP — each next stop is the NEAREST of `pois`
+     * not yet on the tour, by road from the stop before (the order is chosen for you; the paper
+     * route's nearest-next idea without its coverage scoring). Every leg is an ordinary anchored POI
+     * roll from the stop it leaves, so it keeps the courier floor and band. A stop that plans no leg
+     * ends the tour short; a tour of one stop is a plain point-to-point job.
+     */
+    _multiDrop (first, { rng, dest, tries }) {
+        const legs = [first], used = new Set([first.endPoiId])
+        while (legs.length < dest.stops) {
+            const at = dest.pois.find(q => q.id === legs[legs.length - 1].endPoiId)
+            const pois = dest.pois.filter(q => !used.has(q.id))
+            if (!at || !pois.length) break
+            const anchor = { aId: at.aId, bId: at.bId, s: at.s, poiId: at.id }
+            let m = null
+            for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest: { kind: 'poi', pois, strict: true, nearest: true } })
+            if (!m) break
+            legs.push(m); used.add(m.endPoiId)
+        }
+        return legs.length > 1 ? joinLegs(legs) : first
     }
 
     /**
@@ -909,6 +938,8 @@ export class MissionSystem {
                 // (SM-INV-7). It takes any length and any hop count.
                 const lo = dest.anyLeg ? 0 : Math.max(POI_LEG_MIN, minM)
                 const hi = dest.anyLeg ? Infinity : LEG_MAX
+                // FEAT-89: `nearest` takes the closest candidate over BOTH exits (a multi-drop's next stop).
+                let near = null
                 for (const [ex, other] of pair) {
                     const c = legCandidates(ex, lo, hi)
                     const opts = []
@@ -927,14 +958,20 @@ export class MissionSystem {
                         if (!dest.anyLeg && _pathLength(c.prev, entry, ex) > MAX_EDGES) continue
                         // Same doubling-back rule as the roadside leg: never leave along the anchor edge.
                         if (_firstHop(c.prev, entry, ex) === other) continue
-                        opts.push({ q, entry })
+                        opts.push({ q, entry, d })
                     }
                     if (!opts.length) continue
+                    if (dest.nearest) {
+                        const o = opts.reduce((a, b) => (b.d < a.d ? b : a))
+                        if (!near || o.d < near.o.d) near = { ex, c, o }
+                        continue
+                    }
                     opts.sort((a, b) => (a.q.id < b.q.id ? -1 : a.q.id > b.q.id ? 1 : 0))
                     const o = opts[Math.min(opts.length - 1, Math.floor(dest.pick * opts.length))]
                     exitK = ex; startK = ex; prev = c.prev; endK = o.entry; destPoi = o.q
                     break
                 }
+                if (near) { exitK = startK = near.ex; prev = near.c.prev; endK = near.o.entry; destPoi = near.o.q }
             }
             if (!destPoi && dest?.strict) return null
             if (!destPoi) {
@@ -1157,6 +1194,29 @@ function fetchRoute (m, giverId) {
         ...m, par: time, distance, poly, polyCum, segments, edges: segments.length, end: home,
         fetch: true,
         legs: [{ end: m.end, poiId: m.endPoiId, polyIdx: m.poly.length - 1, segIdx: n }, { end: home, poiId: giverId }],
+    }
+}
+
+/**
+ * FEAT-89: join planned legs (each giver/stop → next stop) into ONE multi-drop. Every leg but the
+ * last ends in a STOP, so the reference driver halts at each hand-over and computePar prices the
+ * whole tour once — rest to rest per leg, so it equals the legs' own pars summed. legs[i] is what
+ * leg i arrives at, with the poly / segment index where it ends (guideRoute and routeRemaining cut
+ * there). endPoiId is the LAST stop; stopIds names them all, in order, for the card.
+ */
+function joinLegs (legs) {
+    const segments = [], poly = [], out = []
+    legs.forEach((l, i) => {
+        const last = i === legs.length - 1
+        segments.push(...l.segments.map((g, j, a) => (!last && j === a.length - 1 ? { ...g, stop: true } : g)))
+        poly.push(...(i ? l.poly.slice(1) : l.poly))   // each leg starts where the one before ended
+        out.push({ end: l.end, poiId: l.endPoiId, polyIdx: poly.length - 1, segIdx: segments.length })
+    })
+    const { time, distance } = computePar(segments)
+    const fin = legs[legs.length - 1]
+    return {
+        ...legs[0], end: fin.end, endPoiId: fin.endPoiId, par: time, distance, poly, polyCum: polyCumOf(poly),
+        segments, edges: segments.length, legs: out, stopIds: out.map(l => l.poiId),
     }
 }
 

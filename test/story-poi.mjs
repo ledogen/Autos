@@ -617,6 +617,80 @@ function boardRig (ms, nowH = 6) {
     mot.hidden = false
 }
 
+// ── 7c2. MULTI-DROP (FEAT-89): stops in order, a PARK at each but the last, one par, one settle ──
+{
+    const car = { x: 0, z: 0, speed: 0 }
+    let settles = 0
+    const ms = new MissionSystem({
+        getRoad: () => W.road, getCar: () => car, getSeed: () => SEED,
+        teleport (x, z) { car.x = x; car.z = z }, setMapOpen () {}, onChange () {},
+        onSettle: () => { settles++; return null },
+    })
+    const { board, plan } = boardRig(ms)
+    // Every multi-drop offer over three days: how many plan a real tour, and how long the tours are.
+    const seen = new Set(), bad = []
+    let found = null, toured = 0, stopsSum = 0
+    for (let t = 6; t < 6 + 72; t += 2) {
+        for (const id of board.sources()) for (const o of board.offers(id, t)) {
+            const sp = board.spec(o)
+            if (sp.shape !== 'multi' || seen.has(o.id)) continue
+            seen.add(o.id)
+            const m = plan(o)
+            if (!m?.stopIds) continue
+            toured++; stopsSum += m.stopIds.length
+            const tagged = (s) => W.poi.list().find(q => q.id === s)?.tags?.some(x => sp.to.includes(x))
+            if (new Set(m.stopIds).size !== m.stopIds.length || m.stopIds.includes(id) || m.stopIds.length > sp.stops
+                || (sp.to && !m.stopIds.every(tagged)))
+                bad.push(o.id)
+            if (!found && m.stopIds.length >= 3) found = { o, poi: W.poi.list().find(q => q.id === id) }
+        }
+    }
+    console.log(`       multi-drop: ${toured}/${seen.size} offers plan a tour, ${toured ? (stopsSum / toured).toFixed(2) : 0} stops on average`)
+    check('multi-drop offers are posted and most plan a tour of 2+ stops', seen.size > 0 && toured >= seen.size / 2, `${toured}/${seen.size}`)
+    check('…every stop distinct, never the giver, of the thing\'s class, and no more than wished', bad.length === 0, bad.slice(0, 4).join(' '))
+    check('a tour of 3+ stops is posted', !!found)
+    if (found) {
+        const { o, poi } = found, m = plan(o), n = m.legs.length
+        const cut = [0, ...m.legs.slice(0, -1).map(l => l.segIdx), m.segments.length]
+        const legPar = m.legs.reduce((sum, _, i) => sum + computePar(m.segments.slice(cut[i], cut[i + 1])).time, 0)
+        check('par is the whole tour priced once (= the legs\' own pars summed, within 1 %)',
+            Math.abs(m.par - computePar(m.segments).time) < 1e-9 && Math.abs(m.par - legPar) / m.par < 0.01,
+            `${m.par.toFixed(1)} vs Σ ${legPar.toFixed(1)}`)
+        check('every leg but the last ends in a stop', m.legs.slice(0, -1).every(l => m.segments[l.segIdx - 1].stop === true)
+            && !m.segments.at(-1).stop)
+        const line = board.card(o, { nowH: 6, route: m }).sentence.map(r => r.t).join('')
+        const at = m.stopIds.map(id => line.indexOf(board.placeLabel(id)))
+        console.log(`       e.g. "${line}" — ${(m.distance / 1000).toFixed(1)} km, par ${(m.par / 60).toFixed(1)} min`)
+        check('the card names every stop, in tour order', at.every((x, i) => x >= 0 && (!i || x > at[i - 1])), line)
+
+        car.x = poi.x; car.z = poi.z
+        ms.enterFromPoi(poi, [o], plan)
+        ms.accept()
+        car.x = poi.x + ms.startZone().r + 1; car.z = poi.z
+        ms.update(0.5)
+        check('the run starts on leg one, parking for the first stop', ms.state === 'running' && ms.leg === 0 && ms.pickupPoiId() === m.stopIds[0])
+        check('the map numbers the stops short of the last', ms.markers().stops?.length === n - 1 && ms.markers().pickup === null)
+        let ok = true, t0 = ms.elapsed
+        for (let i = 0; i < n - 1; i++) {
+            const e = m.legs[i].end
+            car.x = e.x; car.z = e.z
+            ms.update(0.5)
+            const g = ms.guideRoute()
+            ok &&= ms.state === 'running' && settles === 0 && ms.leg === i                // a drive-through hands nothing over
+                && g.segments.length === cut[i + 1] - cut[i] && g.segments[0] === m.segments[cut[i]]
+                && ms.acquire() === true && ms.leg === i + 1 && ms.elapsed >= t0            // the rank clock never resets
+            t0 = ms.elapsed
+        }
+        check('each stop short of the last: a drive-through does nothing, a park hands over, the GPS moves on', ok)
+        check('…and the last leg has nothing to park for', ms.pickupPoiId() === null && ms.acquire() === false)
+        const fin = m.legs[n - 1].end
+        car.x = fin.x; car.z = fin.z
+        ms.update(0.5)
+        check('arriving at the last stop settles — exactly once', ms.state === 'done' && settles === 1)
+        ms.exit()
+    }
+}
+
 // ── 7d. FEAT-113: the mission clock is WORLD time; a board job dies at its deadline ──────────────
 // `elapsed` is the world clock since the start line, so a time skip mid-job (a sleep, a chore)
 // spends its hours against par — 60 s per game hour. The deadline is par × (1 + slack) from accept. Past the offer's deadline the job is dead in hand: arriving does

@@ -45,6 +45,9 @@
 //            names 'roadside' too (BUG-88): then a matching POI or a roadside spot.
 //   deadlineSlack (optional, FEAT-113) the deadline as par × (1 + slack), counted from accept.
 //            Absent = the family default in DEADLINE_SLACK below.
+//   multi    (optional, FEAT-89) the phrase for several of it — "Deb needs {multi} delivered to
+//            Nadia, the Halvorsens and the pump house." Present = the thing may roll a MULTI-DROP
+//            (MULTI_DROP below). PLACEHOLDER picks and words — the owner authors which things.
 
 // "Any normal giver" — cargo.md's blank From (option C). Not the food vendor, the haul yard or
 // Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply). Not the
@@ -83,9 +86,9 @@ export const THINGS = [
     { id: 'firewood',   phrase: 'firewood',               family: 'haul',     massKg: [0, 0],
       pools: ['firewoodYard'] },
     { id: 'takeout',    phrase: 'two bags of takeout',    family: 'delivery', massKg: [2, 5],
-      pools: ['foodVendor'], deadlineSlack: 0.5 },
+      pools: ['foodVendor'], deadlineSlack: 0.5, multi: 'takeout orders' },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], multi: 'grocery orders' },
     { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
       pools: ['generalStore'] },
     // Courier, R1 (cargo.md), one thing per row there.
@@ -105,11 +108,11 @@ export const THINGS = [
     { id: 'golfClubs',  phrase: 'golf clubs',              family: 'delivery', massKg: [9, 14],
       pools: HOME, to: HOME },
     { id: 'fruitCake',  phrase: 'fruit cake',              family: 'delivery', massKg: [1, 2],
-      pools: HOME, to: HOME },
+      pools: HOME, to: HOME, multi: 'fruit cakes' },
     { id: 'casserole',  phrase: 'tuna casserole',          family: 'delivery', massKg: [2, 3],
-      pools: HOME, to: HOME },
+      pools: HOME, to: HOME, multi: 'tuna casseroles' },
     { id: 'homebrew',   phrase: 'homemade beer',           family: 'delivery', massKg: [5, 10],
-      pools: HOME, to: HOME },
+      pools: HOME, to: HOME, multi: 'cases of homemade beer' },
     { id: 'woodcraft',  phrase: 'Woodcraft Vol 2.',        family: 'delivery', massKg: [0.5, 1],
       pools: HOME, to: HOME },
     { id: 'tractorKeys', phrase: 'keys for the tractor',   family: 'delivery', massKg: [0.1, 0.1],
@@ -121,7 +124,7 @@ export const THINGS = [
     // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
     // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07).
     { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
-      pools: ['generalStore', 'gasStation'] },
+      pools: ['generalStore', 'gasStation'], multi: 'full propane tanks' },
     { id: 'propaneEmpty', phrase: 'an empty 20 lb propane tank', family: 'delivery', massKg: [7, 9],
       pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'gasStation'] },
     // General-store sundries (owner, 2026-10-07): store → anyone. They are also the tackle shop's
@@ -604,6 +607,14 @@ export const GATE_WEIGHTS = { C: 1, B: 1, A: 1, S: 1 }
  * counts where jobs END, read ~29 % → ~20 %.
  */
 export const DEST_POI_CHANCE = 0.65
+
+/**
+ * FEAT-89 multi-drop: the share of offers of a thing with a `multi` phrase that roll several stops
+ * instead of one, and the stop-count weights (owner's suggestion in the ticket: 2–4, weighted toward
+ * 2). PLACEHOLDER — "ship a guess and tune live". Drawn on the offer's own `stops` stream, so no
+ * other offer's roll moves.
+ */
+export const MULTI_DROP = { chance: 0.35, stops: { 2: 3, 3: 2, 4: 1 } }
 
 /** People per source POI: usually one, sometimes two, rarely three. Relative weights. */
 export const PEOPLE_PER_POI = { 1: 0.75, 2: 0.2, 3: 0.05 }
