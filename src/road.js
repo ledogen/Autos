@@ -927,6 +927,9 @@ const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band 
 //     quantisation is belt-and-braces, not the guarantee.
 const PROMOTED_K = -1
 const _promotedId = (x, z) => [Math.round(x * 1000), Math.round(z * 1000), PROMOTED_K]
+// BUG-63: the key suffix of a mid-span side half that shares its node pair with a trunk piece
+// (_v2MidSpanKeys). Such a run is in the world but not in the abstract graph (networkGraph).
+const PARALLEL_SUFFIX = '~p'
 const _isPromotedId = (id) => !!id && id.length === 3 && id[2] === PROMOTED_K
 
 // Samplers over a graded edge polyline: arc s → position / routed design Y.
@@ -1969,6 +1972,7 @@ export class RoadSystem {
         // planners weight an edge by the road, not the chord between its nodes.
         for (const [runKey, e] of this._network) {
             if (!e.cellA || !e.cellB) continue
+            if (runKey.endsWith(PARALLEL_SUFFIX)) continue   // BUG-63: a second road between one node pair
             emit(e.cellA, e.cellB, runKey, e.polyCum?.[e.polyCum.length - 1])
         }
         return { edges, adj, key: _idKey, idOf, pos: (id) => this._nodePos(id) }
@@ -5938,17 +5942,43 @@ export class RoadSystem {
     // Both ends of a mid-span promotion, applied together: the trunk is cut at BOTH departure
     // points into three ordinary runs, and the side road becomes its two surviving halves. Doing
     // this as two independent commits is wrong — see the caller.
+    // The run keys a mid-span commit writes: the trunk's three cuts (in arc order) and the side's two
+    // halves (in plan order).
+    // BUG-63: when the pair SHARES A NODE N — two roads that part at N, go their own ways and meet
+    // again further out — the side's N → P half and the trunk's N → P piece are both g:N:P, and the
+    // second _network.set silently overwrote the first: a road gone with no count, and P a promoted
+    // node with two legs (a deck step). Declining the promotion instead is worse (junction-stitch
+    // red: the pair ships unsanctioned — "a T always beats no T"). So BOTH roads ship and the side
+    // half takes the key PARALLEL_SUFFIX. It is a second road between one node pair, which the
+    // abstract graph (networkGraph) does not represent: it stays out of it, like a stranded piece —
+    // in the world (drawn, carved, collided, P keeps three legs), not in the planners' graph.
+    _v2MidSpanKeys(g, plans) {
+        const ps = plans.slice().sort((a, b) => a.iP - b.iP)
+        const T = ps[0].T, side = ps[0].side
+        const kA = g.key(T.cellA), kB = g.key(T.cellB)
+        const k1 = ps[0].pKey, k2 = ps[1].pKey
+        const cuts = [`g:${kA}:${k1}`, `g:${k1}:${k2}`, `g:${k2}:${kB}`]
+        const halves = plans.map((c) => {
+            const farKey = c.nAtStart ? g.key(side.cellB) : g.key(side.cellA)
+            const k = c.nAtStart ? `g:${c.pKey}:${farKey}` : `g:${farKey}:${c.pKey}`
+            const flip = c.nAtStart ? `g:${farKey}:${c.pKey}` : `g:${c.pKey}:${farKey}`
+            const taken = cuts.includes(k) || cuts.includes(flip)
+                || (this._network.has(k) && k !== ps[0].tKey) || (this._network.has(flip) && flip !== ps[0].tKey)
+            return taken ? k + PARALLEL_SUFFIX : k
+        })
+        return { cuts, halves }
+    }
+
     _v2CommitMidSpan(g, pieces, pr, plans) {
         const ps = plans.slice().sort((a, b) => a.iP - b.iP)
         const T = ps[0].T, tKey = ps[0].tKey
         const tEnd = T.polyCum.length - 1
-        const kA = g.key(T.cellA), kB = g.key(T.cellB)
-        const k1 = ps[0].pKey, k2 = ps[1].pKey
+        const keys = this._v2MidSpanKeys(g, plans)
         this._network.delete(tKey)
         const cuts = [
-            [`g:${kA}:${k1}`, 0, ps[0].iP, T.cellA, ps[0].pid],
-            [`g:${k1}:${k2}`, ps[0].iP, ps[1].iP, ps[0].pid, ps[1].pid],
-            [`g:${k2}:${kB}`, ps[1].iP, tEnd, ps[1].pid, T.cellB],
+            [keys.cuts[0], 0, ps[0].iP, T.cellA, ps[0].pid],
+            [keys.cuts[1], ps[0].iP, ps[1].iP, ps[0].pid, ps[1].pid],
+            [keys.cuts[2], ps[1].iP, tEnd, ps[1].pid, T.cellB],
         ]
         for (const [key, i0, i1, cA, cB] of cuts) this._network.set(key, this._v2SliceRun(T, i0, i1, cA, cB))
         pieces.set(ps[0].wk0, [...(pieces.get(ps[0].wk0) || [tKey]).filter((k) => k !== tKey), ...cuts.map((c) => c[0])])
@@ -5956,8 +5986,7 @@ export class RoadSystem {
         this._network.delete(ps[0].sideKey)
         const halves = []
         for (const c of ps) {
-            const farKey = c.nAtStart ? g.key(side.cellB) : g.key(side.cellA)
-            const key = c.nAtStart ? `g:${c.pKey}:${farKey}` : `g:${farKey}:${c.pKey}`
+            const key = keys.halves[plans.indexOf(c)]
             this._network.set(key, {
                 points: c.built.pts, arcOrigin: 0, centerline: c.built.centerline,
                 polyCum: c.built.polyCum, clArc: c.built.clArc,
@@ -8628,12 +8657,28 @@ export class RoadSystem {
      * _legSurfaceTop keeps the siblings' pull right onto a leg's pavement edge (RULE_SOFT) and missed
      * the ribbon's edge by up to 42 cm at the mouth corners (BUG-82 follow-up, the ribbon-pad tears).
      */
+    // The ribbon draws a cross-section as a straight line through runPointAt(s), perpendicular to the
+    // runProfile tangent at s, at ONE height per s. So the deck it draws at (wx,wz) is the section
+    // whose line passes through the point: a few Newton steps on (p − c(s))·t(s) = 0 from the polyline
+    // foot. The polyline segment's own frame put a point 5 m out on a tight bend at a different station
+    // than the ribbon does — on a steep grade a 14–18 cm miss at the mouth corners, where the pad welds
+    // to the ribbon's section vertices (BUG-82 defect, found on BUG-63's restored seed-7 T: a leg
+    // turning 40° in its first 12.5 m on a 37 % cross-slope).
     _legDeckTop(ne, leg, pr, wx, wz) {
-        const pts = ne.points, i = Math.min(pr.i, pts.length - 2)
-        const ex = pts[i + 1].x - pts[i].x, ez = pts[i + 1].z - pts[i].z, sl = Math.hypot(ex, ez) || 1e-8
-        const tx = ex / sl, tz = ez / sl
-        const lat = (wx - (pts[i].x + pr.t * ex)) * tz - (wz - (pts[i].z + pr.t * ez)) * tx
-        return this._carveDirtY(lat, pr.arcS, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
+        let s = pr.arcS, c = null, rp = null
+        for (let k = 0; k < 4; k++) {
+            c = this.runPointAt(leg.runKey, s)
+            rp = this.runProfile(s, leg.runKey, _CD_RP)
+            if (!c) break
+            const ds = (wx - c.x) * rp.tx + (wz - c.z) * rp.tz
+            s += ds
+            if (Math.abs(ds) < 1e-4) break
+        }
+        if (!c) return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
+        c = this.runPointAt(leg.runKey, s)
+        rp = this.runProfile(s, leg.runKey, _CD_RP)
+        const lat = (wx - c.x) * rp.tz - (wz - c.z) * rp.tx
+        return this._carveDirtY(lat, s, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
     }
 
     /**

@@ -39,7 +39,10 @@ const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // bore (skipped above) now sit in the open approach cut and are counted: 0.031 /m at seed 6
 // (1618, 1673), arc 140 of a span that now ends at 135; 0.035 /m at seed 11 (958, −162), arc 707 of
 // one now ending at 703. Both were driven at the same speed inside the tube before.
-const CEIL = { open: 19, junction: 200 }
+// junction 200 → 204 (2026-11-01, BUG-63): the restored mid-span Ts — seed 7 (-1423,558) and seed 11
+// (the T on g:-922808,-1316138,-1) — each get back the trunk piece a key collision used to delete, and each
+// window counts +2 kinks on its legs; every other window is unchanged.
+const CEIL = { open: 19, junction: 204 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5

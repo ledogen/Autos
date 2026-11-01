@@ -1,7 +1,7 @@
 ---
 id: BUG-63
 type: bug
-status: pending
+status: completed
 severity: medium
 ---
 
@@ -112,3 +112,22 @@ Declining does what the 09-07 ruling measured: the pair ships unsanctioned and t
   `_nodeSurfaceTop`. The pad lies on a 37 % cross-slope (the field falls 2.2 m in 6 m) where the
   through road kinks 20°, and the open back follows the ribbon edges, which disagree with the field
   there. That is pad machinery (BUG-82), hidden until now because this T never had its third leg.
+
+## Resolution — Spare, 2026-11-01 (orchestrator pick: fix the pad, then land the pair key)
+
+- **The pair key landed.** `_v2MidSpanKeys` gives a mid-span side half the `~p` suffix
+  (`PARALLEL_SUFFIX`) when its node pair is already taken. No `_network.set` overwrites a live key,
+  and every promoted T keeps three legs. The run is in the world but out of `networkGraph()`.
+- **The pad defect it exposed is fixed at the source (BUG-82 machinery).** `_legDeckTop` now inverts
+  the ribbon's own cross-section: Newton on (p − runPointAt(s))·runProfile(s).t = 0, instead of the
+  polyline segment's frame. The pad field therefore meets the ribbon's section vertices at the mouth
+  corners. The seed-7 pad's chord went 16 → under 4.9 cm (road-pad-fill's worst is now 4.9 cm at
+  seed 7 (1602,1061)); all 215 legs weld with 0 mouth verts off the ribbon.
+- **Two ceilings rose for the restored junctions only:**
+  - `vertical-curvature` junction 200 → 204: +2 kinks each in the seed 7 and seed 11 windows,
+    every other window unchanged;
+  - `bore-junction-clearance` in-pad 18 → 19: seed 19's node 0,-2,2 gets its restored leg back,
+    its pad reach grows to 33.4 m, and that takes in a portal 29.8 m away.
+- **Census:** promoted-node-id checks three legs on every T that exists across the battery. It fails
+  on main (seeds 7 and 11) and passes here.
+- **Gates:** affected suite 51/52, the one red being road-clearance (the known FEAT-77 red).

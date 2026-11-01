@@ -40,7 +40,10 @@ const AT_NODE_M = 12     // "the portal is the junction" — one profile station
 // Measured ceilings over this corpus, 2026-09-14 (main @ ceb1bc8). See the header: these record
 // an OPEN defect, they do not bless it.
 const MAX_OVERLAP   = 1
-const MAX_IN_PAD    = 18
+// 18 → 19 (2026-11-01, BUG-63): seed 19's node 0,-2,2 (596,-1251) gets back the road a mid-span key
+// collision used to delete (g:460933,-1467175,-1:0,-2,2~p); its pad's reach grows to 33.4 m and takes in
+// the portal of g:0,-2,2:1,-2,1 29.8 m away — a restored junction, not a moved portal.
+const MAX_IN_PAD    = 19
 const MAX_AT_NODE   = 12
 
 /** Minimum distance between two 3D segments. */
