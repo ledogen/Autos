@@ -23,6 +23,7 @@ import {
     scoreRoute, advancesTier,
 } from '../src/paper-route.js'
 import { EconomySystem, runEconomy, ECONOMY_PARAMS, pointsFor, payoutFor, splitPayout, basePay } from '../src/economy.js'
+import { DEADLINE_SLACK } from '../data/offers.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -52,7 +53,7 @@ console.log('\n── 2. partial routes pay (the income floor) ─────�
 const one = scoreRoute([accuracyScore(0, R)], 9, PAR * 1.1, PAR, TIER)
 check('1 of 9 delivered letters D', one.letter === 'D', `got ${one.letter} (score ${one.score.toFixed(3)})`)
 // `.total` from here on where the check means MONEY EARNED. Since 2026-08-15 accuracy money is
-// banked ON THE SPOT as each paper lands (`spot`) and only the clock settles at the bell
+// banked ON THE SPOT as each paper lands (`spot`) and only the clock settles at the finish
 // (`payout`), so a route driven exactly at par settles ZERO — every dollar was already paid. The
 // old assertions read `.payout` and were really asking about the total.
 check('…and still pays for the one', one.total > 0, `total ${one.total}`)
@@ -93,7 +94,7 @@ for (const r of [1.00, 0.90, 0.80, 0.72, 0.65]) {
 // The thing the owner said went wrong with the old model, pinned so it cannot come back:
 // time money used to fall to exactly zero at par. Par is the slowest PASSING drive; it pays.
 const atPar = scoreRoute(Array(9).fill(1), 9, PAR, PAR, PT)
-check('PAR STILL PAYS — the fare does not road-to-zero at the bell', atPar.payout > 0,
+check('PAR STILL PAYS — the fare does not road-to-zero at par', atPar.payout > 0,
     `fare at par ${atPar.payout}`)
 check('…and the tips at par are already banked on top', atPar.spot > 0)
 // A tip is a fixed gratuity on a growing fare: the premium is biggest where the fare is smallest
@@ -153,27 +154,15 @@ check('accuracy does NOT move the letter — only the money', (() => {
     const rough = scoreRoute(Array(9).fill(0.3), 9, PAR, PAR, TIER)
     return sharp.letter === rough.letter && rough.total < sharp.total
 })())
-// PAR SCALES WITH COVERAGE [owner, 2026-08-15] — skipping people cannot buy time, because it
-// shrinks the clock you are held to by exactly as much. This replaced a flat D for any incomplete
-// route, which graded 8-of-9 the same as 1-of-9.
-check('an incomplete route is measured against a SHORTER par, not handed a flat D', (() => {
-    const third = scoreRoute(Array(3).fill(1), 9, PAR / 3, PAR, TIER)   // a third of the job, a third of the time
-    const full  = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
-    return third.letter === full.letter
-})())
-check('…so dropping papers and taking the full time is punished', (() => {
-    const lazy = scoreRoute(Array(3).fill(1), 9, PAR, PAR, TIER)        // a third of the job, all of the time
-    return lazy.letter === 'D'
-})())
-check('…and one paper short of a full round still beats half a round', (() => {
-    const nearly = scoreRoute(Array(8).fill(1), 9, PAR * 0.88, PAR, TIER)
-    const half   = scoreRoute(Array(4).fill(1), 9, PAR * 0.88, PAR, TIER)
-    const order  = ['D', 'C', 'B', 'A', 'S']
-    return order.indexOf(nearly.letter) > order.indexOf(half.letter)
-})())
+// FEAT-141 (owner, 2026-10-21): the letter and the fare are on the PLOTTED N-route's par — the
+// coverage-scaled par (owner 2026-08-15) retired with it, because only a finished round is settled.
+// Par is the C/D line; the deadline (par × 1.5, the board's DEADLINE_SLACK.papers) is the end of D.
+check('the letter is on the round\'s own par: driven at par it is a C', scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER).letter === 'C')
+check('…and a round finishing at the deadline (1.5 × par) is the bottom of D', scoreRoute(Array(9).fill(1), 9, PAR * 1.49, PAR, TIER).letter === 'D')
+check('the deadline is par × 1.5: DEADLINE_SLACK.papers is 0.5', DEADLINE_SLACK.papers === 0.5)
 check('…and still PAYS for what it placed (the income floor)',
     scoreRoute(Array(8).fill(1), 9, PAR * 0.5, PAR, TIER).total > 0)
-// THE SPLIT ITSELF [owner, 2026-08-15]: accuracy is banked live, the clock settles at the bell, and
+// THE SPLIT ITSELF [owner, 2026-08-15]: accuracy is banked live, the clock settles at the finish, and
 // the end-of-route payout is a PURE FUNCTION OF TIME. Two routes with the same time and wildly
 // different accuracy must settle the same amount and differ only in what was already paid.
 check('the end-of-route payout is decoupled from accuracy entirely', (() => {
@@ -183,15 +172,13 @@ check('the end-of-route payout is decoupled from accuracy entirely', (() => {
 })())
 // [RESHAPED 2026-08-17] The inverse of what this used to assert. Running to par settling NOTHING
 // was the owner-reported flaw: par is the slowest passing drive, and a pass should pay. It settles
-// the margin line's value at ratio 1.0 — 75% of the round's max since the 2026-09-30 re-cut. (This used to be "runs to the BELL";
-// the bell was cut 2026-09-29, and par is exactly where it was.)
+// the margin line's value at ratio 1.0 — 75% of the round's max since the 2026-09-30 re-cut.
 check('a route driven exactly at par settles a fare — par pays', (() => {
     const r = scoreRoute(Array(9).fill(1.0), 9, PAR, PAR, TIER)
     return r.payout > 0 && r.spot > 0 && near(r.payout, payoutFor(PAR, 1.0, TIER))
 })())
-// NO TIME LIMIT, SO THE FARE NEEDS A FLOOR [owner, 2026-09-29]. Without a bell the margin line's
-// old zero (payoutZero × par) was reachable, and a round that took all morning would have settled
-// nothing for the drive. The floor is the margin line's OWN (economy.js payoutFloor — the same
+// THE FARE HAS A FLOOR [owner, 2026-09-29]: a finished round that took a long time still settles the
+// base pay for the drive. The floor is the margin line's OWN (economy.js payoutFloor — the same
 // day's ruling made it game-wide), so the fare is still payoutFor verbatim: no paper-route dial.
 check('no paper-route floor dial: the fare floor is the shared line\'s (economy.js baseFrac)',
     PAPER_PARAMS.fareFloor === undefined && ECONOMY_PARAMS.baseFrac === 0.5)
@@ -202,10 +189,6 @@ for (const r of [ECONOMY_PARAMS.tipZero, 1.5, 3.0, 10.0]) {
         && near(round.payout, payoutFor(PAR, r, TIER), 1e-9),
         `${round.payout} vs line ${payoutFor(PAR, r, TIER)}`)
 }
-check('the floor scales with coverage like the fare does — half a round, half the guarantee', (() => {
-    const half = scoreRoute(Array(4).fill(1), 8, PAR * 3.0, PAR, TIER)
-    return near(half.payout, payoutFor(PAR * 0.5, 3.0, TIER), 1e-9) && near(half.payout, 0.5 * payoutFor(PAR, 3.0, TIER), 1e-9)
-})())
 check('a slow round still letters D — the floor is money, not a grade', (() => {
     return scoreRoute(Array(9).fill(1), 9, PAR * 1.5, PAR, TIER).letter === 'D'
 })())
@@ -244,17 +227,18 @@ check('…but accuracy is still worth real money, not a rounding error', (() => 
 resetPaperRun()
 check('a run starts on the first rung', runPaper.tier === 0 && customersForTier() === 4)
 check('the ladder is 4 → 9 → 12 → 15', JSON.stringify(PAPER_PARAMS.tiers) === '[4,9,12,15]')
-check('only a PERFECT route advances a tier', (() => {
-    const perfect = scoreRoute(Array(4).fill(accuracyScore(R, R)), 4, PAR, PAR, TIER)   // sloppy but complete
-    const missed  = scoreRoute(Array(3).fill(1), 4, PAR, PAR, TIER)
-    return advancesTier(perfect, 4) === true && advancesTier(missed, 4) === false
+check('a finished round at B or better advances a rung; a C does not (FEAT-141)', (() => {
+    const fastSloppy = scoreRoute(Array(4).fill(accuracyScore(R, R)), 4, PAR * 0.8, PAR, TIER)   // B, sloppy throws
+    const atPar      = scoreRoute(Array(4).fill(1), 4, PAR, PAR, TIER)                           // C, clean throws
+    return ['S', 'A', 'B'].includes(fastSloppy.letter) && advancesTier(fastSloppy) === true && advancesTier(atPar) === false
 })())
+check('…and an unfinished round never does, however fast', advancesTier(scoreRoute(Array(3).fill(1), 4, PAR * 0.3, PAR, TIER)) === false)
 check('spares interpolate 100% → 30% down the ladder', (() => {
     const s = [0, 1, 2, 3].map(t => stockForTier(t) - customersForTier(t))
     return s[0] === 4 && s[3] === 5 && s.every((v, i) => v >= 0)
         && (s[0] / 4) === 1.0 && Math.abs(s[3] / 15 - 0.333) < 0.01
 })(), JSON.stringify([0, 1, 2, 3].map(t => `${customersForTier(t)}+${stockForTier(t) - customersForTier(t)}`)))
-check('there is no tolerance dial any more — the bell was cut (owner, 2026-09-29)', PAPER_PARAMS.tolerance === undefined)
+check('no paper-route deadline dial — the deadline is the board\'s one rule (FEAT-141)', PAPER_PARAMS.tolerance === undefined)
 
 console.log('\n── 5. nothing degenerate reaches the wallet ───────────────────')
 for (const [label, r] of [
@@ -268,9 +252,9 @@ for (const [label, r] of [
     check(`${label}: payout is a finite, non-negative number`,
         isFinite(r.payout) && r.payout >= 0, `got ${r.payout}`)
 }
-check('zero deliveries letters D and pays nothing', (() => {
+check('zero deliveries is not a finished round (never settled, never a rung)', (() => {
     const r = scoreRoute([], 9, PAR, PAR, TIER)
-    return r.letter === 'D' && r.payout === 0
+    return r.complete === false && advancesTier(r) === false
 })())
 
 console.log('\n── 6. SM-INV-4 is untouched; the wallet is shared ─────────────')
@@ -284,7 +268,7 @@ const src = (await import('node:fs')).readFileSync(new URL('../src/paper-route.j
 // shared function on purpose — the whole point is that one drive over one road is priced once.
 check('paper-route.js DOES price the clock through the shared margin line', /\bpayoutFor\s*\(/.test(src))
 // [2026-09-29] No deadline: nothing in the code names one. The floor lives in scoreRoute, not here.
-check('…and no bell: deadlineFor and run.deadline are gone from the code',
+check('…and no paper-route deadline code: deadlineFor and run.deadline stay gone (the board owns it)',
     !/\bdeadlineFor\b/.test(src) && !/\.deadline\b/.test(src))
 // gradeRun IS called now [ratified 2026-08-14] — the rank is the par ratio, through the same
 // function every other mission type grades with, so a paper route's B means what a POI job's B

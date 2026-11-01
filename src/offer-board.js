@@ -888,7 +888,9 @@ export class OfferBoard {
         const sentence = [{ t: personLabel(sp.person), b: true }]
         if (sp.family === 'papers') {
             sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' delivered' })
-            if (customers) sentence.push({ t: ' to ' }, { t: `${customers} customers`, b: true })
+            // FEAT-141: `customers` is the route sizes on offer (any unlocked one) — "to 4 or 9 customers".
+            const sizes = Array.isArray(customers) ? customers : customers ? [customers] : []
+            if (sizes.length) sentence.push({ t: ' to ' }, { t: `${sizes.length > 1 ? sizes.slice(0, -1).join(', ') + ' or ' + sizes.at(-1) : sizes[0]} customers`, b: true })
             sentence.push({ t: '.' })
         } else {
             if (n?.name) sentence.push({ t: ` at ${n.name}` })

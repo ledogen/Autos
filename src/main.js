@@ -101,7 +101,7 @@ import { PAPER_ROUTE_INTRO, RUN_INTRO, DLG, COMPASS } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planTourJob, customersForTier } from './paper-route.js'
+         planTourJob, customersForTier, PAPER_PARAMS } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -4315,7 +4315,7 @@ const _boardView = {
     const card = offerBoard.card(o, {
       nowH: now, payTier: economySystem.terms().payTier,
       route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null, placeName: route.placeName } : null,
-      customers: papers ? route?.customers?.length ?? null : null,
+      customers: papers ? paperRouteSystem.sizes() : null,   // FEAT-141: the sizes on offer
       verdict: _offerVerdict(o),
     })
     const poly = route?.poly ?? null
@@ -4442,7 +4442,8 @@ function _larryRoute (offer) {
   if (!larry || !roadSystem) return null
   _larryTour = {
     offerId: offer.id, tier, done: false, route: null,
-    it: planTourJob(roadSystem, larry, poiSystem.customers(tier), customersForTier(),
+    // FEAT-141: every customer is deliverable — the card previews the top unlocked size's plot.
+    it: planTourJob(roadSystem, larry, poiSystem.customers(PAPER_PARAMS.tiers.length - 1), customersForTier(),
                     storySystem.region(), 100),
   }
   return null
@@ -6049,15 +6050,15 @@ function _renderPaperUI () {
     case 'offer': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.route
-      const stock = stockForTier()
-      // THE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far. "How long" left
-      // with the bell (owner, 2026-09-29), and par is not shown on any offer card (SM-INV-3). The
-      // round's DEADLINE (FEAT-113) is a window from accept, stated beside the board expiry.
+      const stock = stockForTier(p.sizeIdx)
+      // THE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far. Par is not shown
+      // on any offer card (SM-INV-3); the round's DEADLINE (par × 1.5, FEAT-141) is stated as a
+      // window from accept, beside the board expiry.
       // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
       // already written (the spare-papers aside), so it moves up into the dialogue slot.
       body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;')
         + `<span class="mp-big">${r.customers.length}</span> `
-        + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'}</span> `
+        + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'} &mdash; any of them, the GPS shows the shortest</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
         + `${stock} papers in the truck `
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
@@ -6089,6 +6090,12 @@ function _renderPaperUI () {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.result
       if (r.expired) { body.innerHTML = _expiredCard(r.dueH); break }   // FEAT-113: no letter, no pay
+      if (r.outOfPapers) {   // FEAT-141: short of N with the truck empty — settled like a passed deadline
+        body.innerHTML = `<span class="mp-big mp-bad">out of papers</span>`
+          + `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered &nbsp;<span class="mp-dim">&middot; no fare &mdash; the accuracy money you banked is yours</span>`
+          + _payRows({ base: 0, tip: 0, spot: r.spot, points: 0 })
+        break
+      }
       if (r.abandoned) {
         body.innerHTML = _abandonedCard(r, `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
           + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-dim">papers left</span> <span class="mp-pay">${r.stock}</span>`)
@@ -6122,7 +6129,15 @@ function _renderPaperUI () {
       if (p.error) console.info('[paper]', p.error)
       break
   }
-  if (p.state !== 'done' || p.result?.expired) unmountExportRow('paper-panel')
+  if (p.state !== 'done' || p.result?.expired || p.result?.outOfPapers) unmountExportRow('paper-panel')
+  // FEAT-141: the route sizes, on the offer only, when more than one is unlocked.
+  const sizesEl = document.getElementById('pp-sizes')
+  if (sizesEl) {
+    const sizes = p.state === 'offer' ? p.sizes() : []
+    sizesEl.style.display = sizes.length > 1 ? 'flex' : 'none'
+    if (sizes.length > 1) sizesEl.innerHTML = '<span class="mp-dim">route size</span>'
+      + sizes.map((n, i) => `<button data-size="${i}" class="${i === p.sizeIdx ? 'on' : ''}">${n}</button>`).join('')
+  }
   _syncJobCancel(hud, storySystem.isActive() && p.isCarrying())
   // Two buttons, two meanings: on the offer they are take/decline, on the result card the left one
   // is the only forward action and the right one has nothing to say.
@@ -6143,6 +6158,10 @@ document.getElementById('pp-accept')?.addEventListener('click', () => {
   paperRouteSystem.accept()
 })
 document.getElementById('pp-decline')?.addEventListener('click', () => paperRouteSystem.decline())
+document.getElementById('pp-sizes')?.addEventListener('click', (e) => {   // FEAT-141: drive another unlocked size
+  const b = e.target.closest('button[data-size]')
+  if (b) paperRouteSystem.setSize(Number(b.dataset.size))
+})
 
 // ── FEAT-53: the run wallet (top-right) ────────────────────────────────────────────────────
 // Painted on the ~10 Hz HUD cadence; the snapshot key skips the DOM write when nothing changed
@@ -8075,6 +8094,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('pagehide', _autosave)
 window.__autosave = _autosave   // dev handle — test/cdp-smoke.mjs times a write
 // dev handle — test/cdp-smoke.mjs finds a freight offer on the raw board and reads what is in the bed
+// dev handle — test/cdp-smoke.mjs drives Larry's round (FEAT-141) and unlocks a second route size
+window.__paper = { system: paperRouteSystem, runPaper }
 window.__cargo = () => ({ board: offerBoard, freight: _freight && { key: _freight.key, health: _freight.health?.health ?? null },
                           loose: !!_loose, haul: _haul?.handles.length ?? 0 })
 

@@ -527,7 +527,7 @@ export const DEADLINE_SLACK = {
     fragile:    2.0,
     freight:    3.0,
     haul:       2.0,
-    papers:     1.0,   // Larry's round is courier work
+    papers:     0.5,   // FEAT-141 (owner, 2026-10-21): the deadline is the plotted route's par × 1.5
 }
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
