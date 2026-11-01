@@ -34,7 +34,12 @@ import { parseWorldSeed } from '../src/seed.js'
 const KFLAG = 0.03       // 1/m — counted as a kink (R 33 m; between dip 3 and dip 2)
 const OPEN_KMAX = 0.07   // 1/m — hard line on open road
 const JN_KMAX = 0.11     // 1/m — hard line in junction zones
-const CEIL = { open: 17, junction: 200 }   // kink counts over KFLAG at 2026-10-26 — may only go DOWN
+// Kink counts over KFLAG at 2026-10-26 — may only go DOWN. open 17 → 19 (2026-11-01, BUG-81 item 4,
+// portalCover 2 → 6): no deck changed — the portals moved IN, so two mild crests that were inside a
+// bore (skipped above) now sit in the open approach cut and are counted: 0.031 /m at seed 6
+// (1618, 1673), arc 140 of a span that now ends at 135; 0.035 /m at seed 11 (958, −162), arc 707 of
+// one now ending at 703. Both were driven at the same speed inside the tube before.
+const CEIL = { open: 19, junction: 200 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5
