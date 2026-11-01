@@ -204,12 +204,10 @@ export class StorySystem {
   /**
    * Warm done: is this seed actually playable on the CURRENT router and terrain parameters?
    *
-   * Owner ruling 2026-08-27, replacing the earlier deterministic-reseed plan: do NOT reroll the
-   * seed. Fail safe and say so. The player typed a seed and loaded a parameter set; if those two
-   * are not compatible the honest answer is a disclaimer and a prompt for a different seed, not a
-   * world quietly swapped underneath them. That also means story mode does not need the nine-tile
-   * play area the reroll would have required, which is the whole point — the architecture stays as
-   * small as story mode currently is while the design is still being decided.
+   * Owner ruling 2026-08-27, replacing the earlier deterministic-reseed plan: fail safe and say so —
+   * a disclaimer and a prompt for a different seed, and no nine-tile play area. BUG-100 (owner,
+   * 2026-11-01): onSeedRejected (main.js) first re-rolls a fresh random seed, up to three times,
+   * typed seeds included; the disclaimer is what a fourth refusal gets.
    *
    * The check is HARD FAILURES ONLY (owner): the region has no road at all, or an edge exists that
    * nothing could give a profile to even after workstream C's grade-hard re-route. A SEVERED graph

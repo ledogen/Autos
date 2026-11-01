@@ -1,7 +1,7 @@
 ---
 id: FEAT-142
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-10-21
 source: owner, 2026-10-21 — "Let's not just inject noise to the pay band. We should come up with a
@@ -58,8 +58,43 @@ except Generous and Stingy.
 
 ## Acceptance
 
-- [ ] TRAITS table; 0–2 per offer from its own stream; same seed → same traits (SM-INV-12).
-- [ ] Shown bottom-left of the card; the quoted pay and terms include their effect.
-- [ ] Each trait's term change applies at accept and settle as tabled.
-- [ ] Off the books gives no deed; The right thing to do gives +½ at C or better.
-- [ ] `test/offer-board.mjs` covers trait rolls and exclusions.
+- [x] TRAITS table; 0–2 per offer from its own stream; same seed → same traits (SM-INV-12).
+- [x] Shown bottom-left of the card; the quoted pay and terms include their effect.
+- [x] Each trait's term change applies at accept and settle as tabled.
+- [x] Off the books gives no deed; The right thing to do gives +½ at C or better.
+- [x] `test/offer-board.mjs` covers trait rolls and exclusions.
+
+## Resolution — 2026-11-01 (Spare)
+
+- `data/offers.js` **TRAITS** (the ten rows above) + **TRAIT_COUNT_WEIGHTS**. `_rollSpec` rolls 0–2 on
+  the offer's own `traits` stream (no draw on `spec`, so no existing offer's destination, place or
+  bonus moves), skipping opposed pairs, off-family traits, papers, and Big tipper on a bonus offer.
+- Terms, through what the job already has:
+  - spec: `payMult` × pay (and × perPiece on a haul), `deadlineSlack` × deadline, Wholesale's stock =
+    the yard's max (HAUL_STOCK[1]), fragile shock thresholds (floor, 1 %, break) × floors;
+  - mission (`_planOne`): `tipMult` × tip (Big tipper), `thresholdScale` (courier only — the other
+    families letter on amounts), `deeds`; `MissionSystem.accept` scales the frozen time thresholds;
+  - `economy.settle`: Off the books → 0 deeds; The right thing to do → +½ at C or better (it counts
+    toward FEAT-103's camp gate, which reads the same deeds). FEAT-117 reputation is not in code yet.
+- The card: the quoted pay includes the traits (tip pool too), the deed line says what the trait does,
+  and the names sit bottom-left — the parked panel and the map's hover card.
+- Gates: offer-board (determinism, count shares, exclusions, every trait seen, terms as tabled,
+  Wholesale), economy (deed rules, threshold scaling at accept); affected 27/27; smoke 20/20.
+
+### Starting values and calls — owner to confirm (FEAT-69 tunes the numbers)
+
+- **How many:** 0 / 1 / 2 traits at 50 / 35 / 15 %.
+- **Pay:** Impatient, Generous, Off the books +20 %; Collector +25 %; Patient, Stingy −20 %;
+  Easygoing, The right thing to do −15 %; Big tipper −20 % pay with the tip pool × 1.6 (net tip × 1.28).
+- **Deadline:** Impatient × 0.6, Patient × 1.5. **Courier thresholds:** × 0.9 / × 1.1.
+- **Fragile floors:** Collector × 0.8 (more delicate), Easygoing × 1.25.
+- **Wholesale:** haul-only (the ticket's OPEN), the yard's whole stock at 80 % of the rate per piece.
+
+## Owner look, 2026-11-01 — two changes
+
+> i cant tell if the modifiers are actually doing anything. either way we should print the effect
+> on the same line. also i dont want them to stack. one at a time max
+
+1. ONE trait per offer, max (count weights become none / one; no stacking).
+2. The card prints the trait's EFFECT on the same line as its name, in plain numbers.
+Lane: Spare.

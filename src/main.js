@@ -101,12 +101,12 @@ import { PAPER_ROUTE_INTRO, RUN_INTRO, DLG, COMPASS } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planTourJob, customersForTier } from './paper-route.js'
+         planTourJob, customersForTier, PAPER_PARAMS } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
-import { Leaderboard } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
+import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
@@ -1591,9 +1591,9 @@ async function _enterLabFromMenu () {
 // FEAT-62: scenarios. The list is data (data/scenarios.js), so its buttons are built here rather
 // than written into index.html. The leaderboard lives up here too — it is pure and has no world
 // dependencies, and the list shows each scenario's best time, so it must exist before the module
-// body below has finished building the world. No store passed = session-only memory; the one-line
-// save-file hook is described in src/leaderboard.js's header.
-const scenarioLeaderboard = new Leaderboard()
+// body below has finished building the world. Best times persist in localStorage, outside the run
+// slot (src/leaderboard.js header).
+const scenarioLeaderboard = new Leaderboard({ store: localStore() })
 // The lab's barrel cube (see _buildBarrelCube) — up here because the scenario list names its size.
 const BARREL_CUBE_RUNUP = 400 * 0.3048        // m — truck CG to the cube's near face
 const BARREL_CUBE_X = -150, BARREL_CUBE_Z = 40
@@ -4314,14 +4314,14 @@ const _boardView = {
     const route = papers ? _larryRoute(o) : _planOffer(o)
     const card = offerBoard.card(o, {
       nowH: now, payTier: economySystem.terms().payTier,
-      route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null, placeName: route.placeName } : null,
-      customers: papers ? route?.customers?.length ?? null : null,
+      route: route ? { par: route.par, distance: route.distance, endPoiId: route.endPoiId ?? null, placeName: route.placeName, stopIds: route.stopIds } : null,
+      customers: papers ? paperRouteSystem.sizes() : null,   // FEAT-141: the sizes on offer
       verdict: _offerVerdict(o),
     })
     const poly = route?.poly ?? null
     return { count: n, idx: i, card, poly,
              // FEAT-102: a fetch's preview points at its PICKUP — its own end is back where you stand.
-             start: route?.start ?? poly?.[0] ?? null, end: route?.legs?.[0].end ?? route?.end ?? poly?.[poly.length - 1] ?? null,
+             start: route?.start ?? poly?.[0] ?? null, end: (route?.fetch ? route.legs[0].end : route?.end) ?? poly?.[poly.length - 1] ?? null,
              nextText, shelf, shelfNext }
   },
 }
@@ -4442,7 +4442,8 @@ function _larryRoute (offer) {
   if (!larry || !roadSystem) return null
   _larryTour = {
     offerId: offer.id, tier, done: false, route: null,
-    it: planTourJob(roadSystem, larry, poiSystem.customers(tier), customersForTier(),
+    // FEAT-141: every customer is deliverable — the card previews the top unlocked size's plot.
+    it: planTourJob(roadSystem, larry, poiSystem.customers(PAPER_PARAMS.tiers.length - 1), customersForTier(),
                     storySystem.region(), 100),
   }
   return null
@@ -4530,6 +4531,12 @@ function _planOne (o, exclude) {
       // data/offers.js. Not fragile: it tips the whole line.
       if (!s.fragile) m.tipMult = FREIGHT_TIP_MULT
     }
+    // FEAT-142: the giver's traits — the terms the spec does not already carry ride the mission to
+    // accept (thresholds) and settle (tip, deeds). Pay, deadline, stock and fragile floors are in the spec.
+    m.traits = s.traits
+    if (s.tipMult !== 1) m.tipMult = (m.tipMult ?? 1) * s.tipMult
+    m.thresholdScale = s.thresholdScale
+    m.deeds = s.deeds
     // The pickup wait (the tire change) runs on the job's clock, so par carries it (owner,
     // 2026-10-22) — and pay rides par like any other par time.
     if (s.atPickup) m.par += s.atPickup.min / 60 * secPerGameH()
@@ -4604,6 +4611,8 @@ let _prevParkedForPoi = true
 
 // FEAT-102: the fetch prompts. "park to acquire mission item" in reach of the pickup; after the
 // latch, "get back to …!" for FETCH_HOME_MSG_S. Returns true when it owns the prompt this poll.
+// FEAT-89: a multi-drop's stop short of the last works the same way — "park to hand it over",
+// then "next stop: …!".
 let _fetchHomeMsg = null, _fetchHomeUntil = 0
 const FETCH_HOME_MSG_S = 4
 function _updateFetchPrompt (poiEl, pulled) {
@@ -4616,13 +4625,13 @@ function _updateFetchPrompt (poiEl, pulled) {
     // general store's lot, ASSET-74) — inside the box, whose curtain is the halo you park in.
     const near = pq && Math.hypot(pq.x - vp.x, pq.z - vp.z) <= POI_PARAMS.poiInteractR
       && (!pq.park || overDropZone(pq, vp.x, vp.z, PARK_SLACK, pq.park))
-    const at = missionSystem.mission.atPickup
+    const j = missionSystem.mission, at = j.atPickup
     if (near && pulled && missionSystem.acquire()) {
       if (at?.min) daySystem.advanceMinutes(at.min)   // the tire change — on the job's timer too; _planOffer put it in par
-      _fetchHomeMsg = `${at ? `${at.done} — ` : ''}get back to ${_fetchHomeLabel(missionSystem.mission)}!`
+      _fetchHomeMsg = `${at ? `${at.done} — ` : ''}${j.fetch ? 'get back to' : 'next stop:'} ${_legLabel(j, missionSystem.leg)}!`
       _fetchHomeUntil = now + FETCH_HOME_MSG_S * 1000
     } else if (near) {
-      if (poiEl) { poiEl.style.display = 'block'; poiEl.innerHTML = parkPrompt(at?.park ?? 'park to acquire mission item') }
+      if (poiEl) { poiEl.style.display = 'block'; poiEl.innerHTML = parkPrompt(at?.park ?? (j.fetch ? 'park to acquire mission item' : 'park to hand it over')) }
       return true
     }
   }
@@ -4634,6 +4643,11 @@ function _updateFetchPrompt (poiEl, pulled) {
   // Away from the pickup the fetch has nothing to say, and the brake falls through to the pump,
   // the camp and mom's door: a job is player state, not world state (owner, 2026-10-19).
   return false
+}
+
+/** FEAT-89: where leg `i` of a job ends, as the prompt and the HUD say it — a fetch's home, or a stop. */
+function _legLabel (m, i) {
+  return m.fetch && i === m.legs.length - 1 ? _fetchHomeLabel(m) : (offerBoard?.placeLabel(m.legs[i].poiId) ?? 'the next stop')
 }
 
 /** Who a fetch goes home to, as the prompt and the HUD say it. */
@@ -5865,6 +5879,7 @@ function _renderMissionUI () {
           + (card.deed ? `<span class="mp-deed">${esc(card.deed)}</span><br>` : '')   // R-09; R-21 deeds wear the story blue
           + (card.bonus ? `<span class="mp-tip">${esc(card.bonus)}</span><br>` : '')   // R-04: the item that replaces the cash tip
           + (card.verdict ? `<span class="mp-verdict mp-${card.verdict.level}">${esc(card.verdict.text)}</span><br>` : '')
+          + (card.traits ? `<span class="mp-traits">${card.traits.map(esc).join(' &middot; ')}</span><br>` : '')   // FEAT-142: bottom-left
         : `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
           + `${j.edges} leg${j.edges === 1 ? '' : 's'}</span><br>`)
         // FEAT-46: a POI job does NOT move you — you are already parked at the marker, and claiming
@@ -5917,7 +5932,8 @@ function _renderMissionUI () {
       const beat = _jobBeat(m)
       hud.classList.toggle('mh-bad', !!beat)
       hudText.textContent = beat ?? `${km(m.routeRemaining())} to go`
-        + (m.mission?.legs ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`) : '')
+        + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
+          : `   · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
         + _dueSuffix()
       break
     }
@@ -6049,15 +6065,15 @@ function _renderPaperUI () {
     case 'offer': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.route
-      const stock = stockForTier()
-      // THE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far. "How long" left
-      // with the bell (owner, 2026-09-29), and par is not shown on any offer card (SM-INV-3). The
-      // round's DEADLINE (FEAT-113) is a window from accept, stated beside the board expiry.
+      const stock = stockForTier(p.sizeIdx)
+      // THE HEADLINE NUMBERS, one line, one size (owner, 2026-08-14): who, how far. Par is not shown
+      // on any offer card (SM-INV-3); the round's DEADLINE (par × 1.5, FEAT-141) is stated as a
+      // window from accept, beside the board expiry.
       // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
       // already written (the spare-papers aside), so it moves up into the dialogue slot.
       body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;')
         + `<span class="mp-big">${r.customers.length}</span> `
-        + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'}</span> `
+        + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'} &mdash; any of them, the GPS shows the shortest</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
         + `${stock} papers in the truck `
         + `<span class="mp-dim">(${stock - r.customers.length} spare)</span><br>`
@@ -6089,6 +6105,12 @@ function _renderPaperUI () {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       const r = p.result
       if (r.expired) { body.innerHTML = _expiredCard(r.dueH); break }   // FEAT-113: no letter, no pay
+      if (r.outOfPapers) {   // FEAT-141: short of N with the truck empty — settled like a passed deadline
+        body.innerHTML = `<span class="mp-big mp-bad">out of papers</span>`
+          + `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered &nbsp;<span class="mp-dim">&middot; no fare &mdash; the accuracy money you banked is yours</span>`
+          + _payRows({ base: 0, tip: 0, spot: r.spot, points: 0 })
+        break
+      }
       if (r.abandoned) {
         body.innerHTML = _abandonedCard(r, `<br><b>${r.delivered}</b> of <b>${r.customers}</b> delivered `
           + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-dim">papers left</span> <span class="mp-pay">${r.stock}</span>`)
@@ -6122,7 +6144,15 @@ function _renderPaperUI () {
       if (p.error) console.info('[paper]', p.error)
       break
   }
-  if (p.state !== 'done' || p.result?.expired) unmountExportRow('paper-panel')
+  if (p.state !== 'done' || p.result?.expired || p.result?.outOfPapers) unmountExportRow('paper-panel')
+  // FEAT-141: the route sizes, on the offer only, when more than one is unlocked.
+  const sizesEl = document.getElementById('pp-sizes')
+  if (sizesEl) {
+    const sizes = p.state === 'offer' ? p.sizes() : []
+    sizesEl.style.display = sizes.length > 1 ? 'flex' : 'none'
+    if (sizes.length > 1) sizesEl.innerHTML = '<span class="mp-dim">route size</span>'
+      + sizes.map((n, i) => `<button data-size="${i}" class="${i === p.sizeIdx ? 'on' : ''}">${n}</button>`).join('')
+  }
   _syncJobCancel(hud, storySystem.isActive() && p.isCarrying())
   // Two buttons, two meanings: on the offer they are take/decline, on the result card the left one
   // is the only forward action and the right one has nothing to say.
@@ -6143,6 +6173,10 @@ document.getElementById('pp-accept')?.addEventListener('click', () => {
   paperRouteSystem.accept()
 })
 document.getElementById('pp-decline')?.addEventListener('click', () => paperRouteSystem.decline())
+document.getElementById('pp-sizes')?.addEventListener('click', (e) => {   // FEAT-141: drive another unlocked size
+  const b = e.target.closest('button[data-size]')
+  if (b) paperRouteSystem.setSize(Number(b.dataset.size))
+})
 
 // ── FEAT-53: the run wallet (top-right) ────────────────────────────────────────────────────
 // Painted on the ~10 Hz HUD cadence; the snapshot key skips the DOM write when nothing changed
@@ -7500,7 +7534,17 @@ const storySystem = new StorySystem({
   // BUG-85: pieces are cut at the PLANNERS' wall (radius less REGION_MARGIN) — see world-validate.js
   // THE STRICT CUT — so report.mainNodes is exactly the piece the planners can route on.
   validateRegion: (centre, radius) => validateArea(roadSystem, centre, discArea(radius, REGION_MARGIN), RANGER_PARAMS),
-  onSeedRejected: (seed, report) => _showSeedModal(report, seed),
+  // BUG-100 (owner, 2026-11-01): a refused seed re-rolls a fresh one, typed or random, up to
+  // SEED_REROLLS times; only then does the refusal card show. A resume never re-rolls — that would
+  // throw the saved run away — so it gets the card at once.
+  onSeedRejected: (seed, report) => {
+    if (!_pendingResume && _seedRerolls < SEED_REROLLS) {
+      console.info(`[story] seed "${seed}" refused (${unplayableReason(report)}) — re-roll ${_seedRerolls + 1}/${SEED_REROLLS}`)
+      void _startStory(_resolveSeed(''), _runWorld, _runGearbox, null, _seedRerolls + 1)
+      return
+    }
+    _showSeedModal(report, seed)
+  },
   hidePauseMenu: () => _hidePauseMenu(),
   // R-12: Quick Job is the unpaid calibration rig (mission.js PAID_JOB_DO_OVERS); a polished alpha
   // should not show a dev button in the corner of every run. It still appears whenever the debug
@@ -7686,8 +7730,8 @@ const storySystem = new StorySystem({
 /**
  * Open the story seed prompt. With a `report` it opens in its REFUSED state: the seed just entered
  * routed a region that is severed or carries a road nothing could give a profile to, so the player
- * is told plainly and asked for a different one. Nothing rerolls — that was the owner's ruling
- * (2026-08-27), and it is why story mode does not need a nine-tile play area to be safe.
+ * is told plainly and asked for a different one — after SEED_REROLLS fresh seeds were refused too
+ * (BUG-100, owner 2026-11-01, superseding the 2026-08-27 "nothing rerolls").
  */
 // FEAT-41: runs now start from the setup page (World / Truck / Assists); this dialog is left with the
 // story REFUSAL only — the report and a prompt for a different seed (or "start anyway").
@@ -7808,8 +7852,11 @@ async function _startFreeRoam (seedStr) {
  * onRegionLive writes the save over the fresh one (_restoreRun).
  */
 let _runGearbox = 'auto'   // the box this run started with — a run save carries it, never _settings
+let _runWorld = null       // ...and the world knobs, so a BUG-100 re-roll keeps them
 let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
-async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null) {
+const SEED_REROLLS = 3       // BUG-100: refused seeds re-rolled before the refusal card shows
+let _seedRerolls = 0         // re-rolls behind the current entry (0 for a player-started one)
+async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0) {
   _hideSeedModal()
   map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
   // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
@@ -7819,6 +7866,8 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   applyWorld(world)
   _fitGearbox(gearbox)
   _runGearbox = gearbox
+  _runWorld = world
+  _seedRerolls = rerolls
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _runEnded = false
   _playedS = 0                       // FEAT-146 (a resume puts the saved playtime back in _restoreRun)
@@ -8075,6 +8124,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('pagehide', _autosave)
 window.__autosave = _autosave   // dev handle — test/cdp-smoke.mjs times a write
 // dev handle — test/cdp-smoke.mjs finds a freight offer on the raw board and reads what is in the bed
+// dev handle — test/cdp-smoke.mjs drives Larry's round (FEAT-141) and unlocks a second route size
+window.__paper = { system: paperRouteSystem, runPaper }
 window.__cargo = () => ({ board: offerBoard, freight: _freight && { key: _freight.key, health: _freight.health?.health ?? null },
                           loose: !!_loose, haul: _haul?.handles.length ?? 0 })
 
@@ -8090,11 +8141,11 @@ function _discardRunSave () {
 // from the pause menu. Every one comes through _endRun: the save goes first, or the autosave would
 // keep a dead run alive for "continue"; then one summary card; then the main menu. A fatal crash
 // always ends the run: the default mode has no lives (SM-INV-1 lives clause) and nothing grants any.
-const RUN_END_TITLE = {   // PLACEHOLDER words; the day is the in-game day (owner, 2026-10-30: days AND playtime)
-  win:   (d) => `you made it in ${d} day${d === 1 ? '' : 's'}`,
-  crash: (d) => `you crashed on day ${d}`,
-  broke: (d) => `you broke down on day ${d}`,
-  towel: (d) => `run ended on day ${d}`,   // generic (owner, 2026-10-31)
+const RUN_END_TITLE = {   // owner's words (2026-11-01); the day is a row below (owner, 2026-10-30: days AND playtime)
+  win:   'Congratulations! You beat the alpha.',
+  crash: 'You died.',
+  broke: 'The truck is dead.',
+  towel: 'You gave up.',
 }
 // The fatal hit plays out in black and white before its card (owner, 2026-10-30).
 const CRASH_CARD_DELAY_S = 1.5
@@ -8104,7 +8155,7 @@ function _endRun (kind) {
   if (_runEnded) return
   _discardRunSave()
   // Read the run as it ended, before the clock moves on behind the card.
-  const title = RUN_END_TITLE[kind](daySystem.day()), body = _runEndHtml(kind)
+  const title = RUN_END_TITLE[kind], body = _runEndHtml(kind)
   if (missionSystem?.isActive()) missionSystem.exit()
   if (kind === 'crash') renderer.domElement.style.filter = 'grayscale(1)'
   setTimeout(() => {
@@ -8123,6 +8174,7 @@ function _runEndHtml (kind) {
   const row = (k, v, gap = false) => `<div class="re-row${gap ? ' re-gap' : ''}"><span class="re-k">${k}</span><span>${v}</span></div>`
   const min = Math.floor(_playedS / 60)
   return (kind === 'crash' && f ? `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region}</div>` : '')
+    + row('day', `${daySystem.day()}`)
     + row('playtime', `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`)
     + row('jobs completed', `${e.missions}`, true)
     + row('mission ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))

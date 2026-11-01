@@ -49,8 +49,10 @@ Built on `feature/map-cursor` (worktree `CarGame-map-cursor`).
       highlight inside the inventory, B closes it, B-hold aims / release throws a paper.
 - [x] One-off probe: story mode, park with RB, D-pad to "accept mission", A → the job starts.
 - [x] `test/pad-e2e.mjs`: with throwReady forced on, an RB tap sends F and no Space; a hold sends Space and no F.
-- [ ] Not proven on a live route: a headless probe could not get Larry's offer to open (the same on main).
+- [x] Proven on a live route (2026-11-01): cdp-smoke's `papers` step takes Larry's round, leaves his circle on a fake pad, aims with the right stick and taps RB — a paper leaves the truck. (The earlier probe seated the truck on Larry's HOUSE — his marker stands at the model — and slid off.)
 - [ ] Owner play-test on a real pad: cursor speed, hovering a POI, paging its offers, the RB tap/hold split and orbitRate on a route.
 
-## Not done
-- A card's first D-pad press highlights its FIRST item (the menus' rule), not its main action.
+## Done 2026-11-01
+- A card's first D-pad press now lands on its MAIN action: `data-primary` on the mission card's accept
+  and the paper card's start (menu-nav prefers it), so it no longer starts on the calibration form's
+  "very slow" or Larry's route-size row. Pinned in cdp-smoke's `papers` step (fails without it).

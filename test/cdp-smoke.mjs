@@ -91,8 +91,18 @@ const seat = async (x, z, h) => {
 // new parked EDGE (its park trigger is a ~10 Hz poll on that edge). A bare release-then-tap lost
 // both ways under load: the truck rolled off the shop's slope (2.2 m/s, 7 m) before the re-tap, too
 // fast to latch.
+// At speed, the service brake (S) sheds it first: the handbrake is rear-wheels only, and on a steep
+// descent a locked rear axle slides at an equilibrium speed instead of stopping (measured: 6.2 m/s
+// after 30 s of Space on the papers step's road, and 15 → 23 m/s on seed 6's spawn hill). S lets go
+// at 1.2 m/s — above REV_THRESHOLD (0.56 m/s, below it S is reverse) and under PARK_SPEED (1.39 m/s),
+// so the Space press that follows latches the park brake (all four wheels) at once.
 const park = async (fresh = false) => {
   if (fresh && await js('window.__vs.parked')) { await tap(' '); await frames(4, 250) }
+  if (await js('window.__vs.velocity.length() > 1.2')) {
+    await key('s', true)
+    await until(() => js('window.__vs.velocity.length() < 1.2'), 15000)
+    await key('s', false)
+  }
   await key(' ', true)
   await frames(4, 250)
   await until(() => js('window.__vs.velocity.length() < 0.5'), 30000)
@@ -490,6 +500,80 @@ const STEPS = [
     check(off < 0.05, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off`)
     console.log(`  edge: smashed through, back at ${back.r.toFixed(0)} m facing in, the row reset (worst ${(off * 100).toFixed(1)} cm)`)
   }],
+  ['papers', async () => {
+    // FEAT-141: Larry's round — any N of the customers against a deadline, the size chosen among the
+    // unlocked rungs. Unlock the 9, park at Larry's, read his briefing, and walk the size row.
+    const larry = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse')
+      return q ? { x: q.x - q.nx * 5, z: q.z - q.nz * 5, h: Math.atan2(-q.tx, -q.tz) } : null })()`)   // his yard: the marker stands at the house
+    if (!larry) { console.log('  papers: no Larry in this region — step skipped'); return }
+    await js('window.__paper.runPaper.tier = 1')
+    await seat(larry.x, larry.z, larry.h)
+    const state = () => js('window.__paper.system.state')
+    // Releasing the brake on Larry's pad can let the truck roll before it latches again; while the
+    // prompt still asks for the brake, pull it again.
+    for (let i = 0; i < 3 && await state() === 'idle'; i++) {
+      await park(true)
+      await until(async () => await state() !== 'idle', 1500)
+    }
+    const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    for (let i = 0; i < 20 && await state() !== 'offer'; i++) { if (await dlg()) await tap('Enter'); await sleep(300) }
+    check(await until(async () => await state() === 'offer', 5000), `Larry offered no round: state ${await state()} · ${JSON.stringify(await js(`(() => {
+      const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse'), c = window.__car(), b = window.__map2d()._getBoard()
+      return { prompt: document.getElementById('poi-prompt').textContent.slice(0, 80), parked: window.__vs.parked, mission: window.__mission().state,
+               d: Math.hypot(c.x - q.x, c.z - q.z).toFixed(1), slot: b?.status(q.id), park: !!q.park, drop: !!q.drop } })()`))}`)
+    const view = () => js(`(() => { const p = window.__paper.system
+      return { n: p.route?.customers.length, sizes: [...document.querySelectorAll('#pp-sizes button')].map(b => b.textContent + (b.classList.contains('on') ? '*' : '')).join(' '),
+               deadline: /time limit/.test(document.getElementById('pp-body').textContent) } })()`)
+    const top = await view()
+    check(top.n === 9 && top.sizes === '4 9*' && top.deadline, `Larry's offer: ${JSON.stringify(top)} — want 9 customers, sizes "4 9*" and a time limit`)
+    // FEAT-133: a card's first D-pad / arrow press lands on its main action, not the size row above it.
+    await tap('ArrowDown')
+    check(await js('document.querySelector("#paper-panel .nav-focus")?.id') === 'pp-accept',
+      `the first arrow press on Larry's card highlighted "${await js('document.querySelector("#paper-panel .nav-focus")?.textContent')}", not "start the route"`)
+    await js('document.querySelector("#pp-sizes button[data-size=\'0\']").click()')
+    const small = await view()
+    check(small.n === 4 && small.sizes === '4* 9', `picking the 4: ${JSON.stringify(small)}`)
+    console.log(`  papers: Larry offers ${top.sizes.replace('*', '')} — plotted ${top.n}, then ${small.n}`)
+    // FEAT-133 on a LIVE round (until now only with throwReady forced): take the 4, leave Larry's
+    // circle, get rolling on a fake pad, aim with the right stick and TAP RB — a paper leaves the truck.
+    await js('document.getElementById("pp-accept").click()')
+    check(await until(async () => await state() === 'staging', 2000), `accepting did not stage the round: ${await state()}`)
+    const out = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse')
+      return { x: q.roadX + q.tx * 40, z: q.roadZ + q.tz * 40, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await seat(out.x, out.z, out.h)
+    await crank()
+    await js(`window.__realPads = navigator.getGamepads.bind(navigator)
+      window.__fp = { axes: [0, 0, 0, 0], b: new Array(17).fill(0) }
+      navigator.getGamepads = () => [{ index: 0, id: 'fake', mapping: 'standard', axes: __fp.axes,
+        buttons: __fp.b.map(v => ({ value: v, pressed: v > 0.5, touched: v > 0 })) }]`)
+    await js('__fp.b[7] = 0.7')   // RT: rolling past the 5 mph throw floor
+    check(await until(() => js('window.__vs.velocity.length() > 3'), 8000), `the fake pad did not get the truck rolling: ${(await js('window.__vs.velocity.length()')).toFixed(1)} m/s`)
+    check(await until(async () => await state() === 'running', 3000), `leaving Larry's circle did not start the round: ${await state()}`)
+    const stock0 = await js('window.__paper.system.stock()')
+    await js('__fp.axes[2] = 0.7'); await frames(4, 150)          // aim: the right stick
+    await js('__fp.b[5] = 1'); await frames(3, 80); await js('__fp.b[5] = 0')   // a TAP of RB
+    check(await until(async () => await js('window.__paper.system.stock()') === stock0 - 1, 2000),
+      `an RB tap while aiming on a live round threw no paper: stock ${stock0} → ${await js('window.__paper.system.stock()')}`)
+    await js('__fp.b[7] = 0; __fp.axes[2] = 0'); await frames(2, 60)
+    await js('navigator.getGamepads = window.__realPads')
+    console.log(`  papers: a pad RB tap threw a paper on the live round (stock ${stock0} → ${stock0 - 1})`)
+    // Put the round down: parked, two clicks of the abandon button, then continue off the card.
+    await park()
+    // The abandon button reads "parked" off the ~10 Hz HUD poll; a click right after the latch can
+    // land before the poll has seen it, so the two clicks are retried until the round ends.
+    for (let i = 0; i < 4 && await state() !== 'done'; i++) {
+      await frames(4, 250)
+      await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
+      await until(async () => await state() === 'done', 600)
+    }
+    check(await state() === 'done', `abandoning did not end the round: ${await state()} · ${JSON.stringify(await js(`(() => { const b = document.getElementById('job-cancel')
+      return { parked: window.__vs.parked, v: +window.__vs.velocity.length().toFixed(2), label: b.textContent, armed: b.classList.contains('armed'), hud: b.parentElement?.id, shown: b.style.display } })()`))}`)
+    await js('document.getElementById("pp-accept").click()')
+    check(await until(async () => await state() === 'idle', 2000), `continue left the round card up: ${await state()}`)
+    await js('window.__paper.runPaper.tier = 0')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
   ['offer', async () => {
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
     // its pad (q.x/z — the solid model stands off it at modelX/Z), pull the brake, accept, drive.
@@ -704,7 +788,7 @@ const STEPS = [
     await js('document.getElementById("tc-back").click()')
     check(await js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 'back did not restore the pause menu')
     await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
-    await ended(/run ended/)
+    await ended(/gave up/)
     // The crash: black and white at once, the card after the beat. First, the playtime counts (the save
     // carries it, a second at a time) and stops while paused.
     await newRun()
@@ -717,7 +801,7 @@ const STEPS = [
     await js('window.__damage.fatalImpact = { region: "front", v: 40, mph: 90 }')
     check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
     check(!await card(), 'the crash card skipped the beat')
-    await ended(/crashed/)
+    await ended(/died/)
     // Broke down: an empty tank, no gas can, no money for a tow → the Recovery card's "end run".
     await newRun()
     // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
@@ -735,7 +819,7 @@ const STEPS = [
     check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000),
       `no "end run" on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
     await js('document.querySelector("#recovery-card .rc-end").click()')
-    await ended(/broke down/)
+    await ended(/truck is dead/)
     // The win: six deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     await js('window.__econ.halfPoints = 12')
@@ -743,7 +827,7 @@ const STEPS = [
     await js(`(() => { const b = window.__board(), h = window.__day().clockH()
       const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
       for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
-    await ended(/made it in \d+ days?/)
+    await ended(/beat the alpha/)
   }],
 ]
 

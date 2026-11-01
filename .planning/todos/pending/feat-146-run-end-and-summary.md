@@ -76,6 +76,13 @@ Style per UI-STYLE.md: a Story card (the world talking), not a System panel.
 - Smoke: cdp-smoke `endings` drives all four roads (towel, crash, broke down, win), checks the save is
   gone and "continue" is not offered, and checks playtime counts while driving and stops while paused.
 
+## Ruled — owner, 2026-11-01
+
+Titles, kept separate per ending, verbatim: **Win** "Congratulations! You beat the alpha." ·
+**Crash** "You died." · **Broke down** "The truck is dead." · **Give up** "You gave up." The day
+moves off the title into its own row ("day N") above playtime; the row labels are jobs completed ·
+mission ranks · camp deliveries (10-31). Built on main.
+
 ## Open
 
-- The card wording: every title and row label is a PLACEHOLDER.
+- (was: every title and row label is a placeholder — the titles and row labels are ruled above.)

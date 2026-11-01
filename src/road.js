@@ -927,6 +927,12 @@ const PREWARM_MARGIN    = 2   // extra macro-cols/rows beyond the streamer band 
 //     quantisation is belt-and-braces, not the guarantee.
 const PROMOTED_K = -1
 const _promotedId = (x, z) => [Math.round(x * 1000), Math.round(z * 1000), PROMOTED_K]
+// m — a bore shorter than this reads as noise and is dropped (_v2GradePts); BUG-58 re-solves a
+// profile that would leave one, so a dropped stub never ships as an open cut past cutMax.
+const MIN_BORE_M = 12
+// BUG-63: the key suffix of a mid-span side half that shares its node pair with a trunk piece
+// (_v2MidSpanKeys). Such a run is in the world but not in the abstract graph (networkGraph).
+const PARALLEL_SUFFIX = '~p'
 const _isPromotedId = (id) => !!id && id.length === 3 && id[2] === PROMOTED_K
 
 // Samplers over a graded edge polyline: arc s → position / routed design Y.
@@ -987,6 +993,26 @@ function _gradeSampler(points, arc) {
  * The optional third constructor argument replaces the simplex coarse-height closure with a
  * function, for gates that want synthetic terrain: new RoadSystem(ws, params, mockCoarseHeight).
  */
+/**
+ * BUG-77: bore spans from _v2GradePts are on the CENTERLINE arc (clArc). A run whose points have left
+ * the primitive centerline (it carries offCurveSpans: a promoted side road's departure band, a shove's
+ * deflection) is READ on its driven arc, polyCum — tunnelSpanAt, the carve, the tube mesh and the
+ * collider all walk polyCum there (edgeParData's arcOf). Left unconverted the bore was drawn where
+ * polyCum = s: 24 m short of the solved portal on seed 6's g:1067143,-293510,-1. Both tables are
+ * per-vertex and monotone, so a span end maps by interpolating its vertex segment.
+ */
+function spansOnPolyCum (spans, clArc, polyCum) {
+    if (!spans) return spans
+    const n = clArc.length
+    const map = (a) => {
+        let lo = 0, hi = n - 1
+        while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (clArc[m] <= a) lo = m; else hi = m }
+        const t = Math.max(0, Math.min(1, (a - clArc[lo]) / ((clArc[hi] - clArc[lo]) || 1)))
+        return polyCum[lo] + t * (polyCum[hi] - polyCum[lo])
+    }
+    return spans.map((sp) => ({ ...sp, s0: map(sp.s0), s1: map(sp.s1) }))
+}
+
 export class RoadSystem {
     /**
      * @param {number} worldSeed — uint32 from parseWorldSeed()
@@ -1949,6 +1975,7 @@ export class RoadSystem {
         // planners weight an edge by the road, not the chord between its nodes.
         for (const [runKey, e] of this._network) {
             if (!e.cellA || !e.cellB) continue
+            if (runKey.endsWith(PARALLEL_SUFFIX)) continue   // BUG-63: a second road between one node pair
             emit(e.cellA, e.cellB, runKey, e.polyCum?.[e.polyCum.length - 1])
         }
         return { edges, adj, key: _idKey, idOf, pos: (id) => this._nodePos(id) }
@@ -4970,11 +4997,32 @@ export class RoadSystem {
         const yB = opts.yB ?? this._v2NodeHeight(pts[n - 1].x, pts[n - 1].z)
         const C = this._v2Costs()
         this._v2Rung = this._v2Rung || [0, 0, 0, 0]
-        let prof = profileSolve(st, yA, yB, { costs: C })
+        // BUG-58: a bore shorter than MIN_BORE_M is dropped as noise below (spans), which ships its
+        // stations as an OPEN CUT deeper than cutMax — a state the price list calls unbuildable
+        // (measured: 30.8 m for 10 m over a knife-edge ridge, seed 11 (2098,-945)). So a solve that
+        // leaves such a stub is re-solved with BORE forbidden at its stations: the deck must stay within
+        // cutMax of the ground there (a crest over the ridge), priced == built. Up to three rounds (a
+        // re-solve can move a stub); if the forbidding is infeasible the original solve stands.
+        const solve = (o) => {
+            let p = profileSolve(st, yA, yB, o)
+            let mask = null
+            for (let round = 0; p && round < 3; round++) {
+                const stubs = p.segs.filter((sg) => sg.cls === CLS.BORE && sg.len < MIN_BORE_M)
+                if (!stubs.length) break
+                mask ??= new Uint8Array(st.s.length)
+                for (let i = 1; i < st.s.length - 1; i++) if (stubs.some((sg) => st.s[i] >= sg.s0 - 1e-6 && st.s[i] <= sg.s1 + 1e-6)) mask[i] = 1
+                const q = profileSolve(st, yA, yB, { ...o, noBoreAt: mask })
+                if (!q) break
+                p = q
+                this._v2StubResolved = (this._v2StubResolved || 0) + 1
+            }
+            return p
+        }
+        let prof = solve({ costs: C })
         if (prof) this._v2Rung[0]++
         // Rung 1 (quantization pinch): thin-margin descents die at yStep 0.5 (grade quanta 5%) but
         // solve at 0.25 — the measured M0 failure class. Only failures pay the finer, slower solve.
-        if (!prof) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: C }); if (prof) this._v2Rung[1]++ }
+        if (!prof) { prof = solve({ yStep: 0.25, costs: C }); if (prof) this._v2Rung[1]++ }
         // Rung 3: grant a SMALL relief above the vocabulary cap — the cap is a design comfort, the
         // gMaxRoad + gradeTol ceiling is the contract, and a road shipped here is steep but legal.
         //
@@ -4988,14 +5036,14 @@ export class RoadSystem {
         // answer — a mark says the terrain cannot meet the request, which is true information.
         const ceiling = C.gMaxRoad + (C.gradeTol ?? 0.14)
         const reliefCap = Math.min(ceiling, C.gMaxRoad + 0.03)
-        if (!prof) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: reliefCap } }); if (prof) this._v2Rung[2]++ }
+        if (!prof) { prof = solve({ yStep: 0.25, costs: { ...C, gMaxRoad: reliefCap } }); if (prof) this._v2Rung[2]++ }
         // Rung 4 (the CEILING rung): if even the relieved cap fails, ship the steepest road the
         // CONTRACT allows rather than fall through to the terrain-follow. Condemnation is for "no
         // legal road exists here", not for "your design cap was ambitious" — and the drape below is
         // a genuinely bad road (measured: a marked run at a 20% cap terrain-follows to 106%, where
         // a solved 38% road existed the whole time). BUG-56 C: the ceiling is gMaxRoad + gradeTol,
         // so it tracks the knob; it is the STRICT limit, and past it workstream C re-routes.
-        if (!prof && reliefCap < ceiling) { prof = profileSolve(st, yA, yB, { yStep: 0.25, costs: { ...C, gMaxRoad: ceiling } }); if (prof) this._v2Rung[3]++ }
+        if (!prof && reliefCap < ceiling) { prof = solve({ yStep: 0.25, costs: { ...C, gMaxRoad: ceiling } }); if (prof) this._v2Rung[3]++ }
         if (!prof) {
             // Mark-and-ship fallback: terrain-follow y, but BLEND the ends onto the shared node
             // heights over 60 m so a marked run still meets its solved neighbors (node agreement
@@ -5073,12 +5121,11 @@ export class RoadSystem {
         // is untouched — only which stations are bored changes). Last, because it breaks the
         // class-from-depth rule every pass above relies on (see extendBorePortals).
         // The end guard is the junction reach _clipTunnelSpansAtCrossings clears (blend + 10 m).
-        const MIN_BORE = 12   // m — a shorter bore reads as noise and is dropped
         prof = extendBorePortals(st, prof, C, this._params?.tunnelBoreRadius ?? 8,
-            (this._params?.roadJunctionBlendLength ?? 30) + 10, MIN_BORE)
+            (this._params?.roadJunctionBlendLength ?? 30) + 10, MIN_BORE_M)
         const spans = []
         for (const sg of prof.segs) {
-            if (sg.cls === CLS.BORE && sg.len >= MIN_BORE) spans.push({ s0: sg.s0, s1: sg.s1 })
+            if (sg.cls === CLS.BORE && sg.len >= MIN_BORE_M) spans.push({ s0: sg.s0, s1: sg.s1 })
         }
         return spans.length ? spans : null
     }
@@ -5693,7 +5740,8 @@ export class RoadSystem {
         const inf0 = this._v2Infeasible || 0
         const ends = nAtStart ? { yA: P.y } : { yB: P.y }
         if (farY !== undefined) { if (nAtStart) ends.yB = farY; else ends.yA = farY }
-        const tunnelSpans = this._v2GradePts(pts, clArc, ends)
+        // BUG-77: the solver answers on clArc; a run carrying offCurveSpans is READ on polyCum.
+        const tunnelSpans = spansOnPolyCum(this._v2GradePts(pts, clArc, ends), clArc, polyCum)
         if ((this._v2Infeasible || 0) > inf0) { this._v2Infeasible = inf0; return null }   // draped — try the next fork
         const centerline = side.centerline.slice(cl0, side.clArc[i1])
         return { pts, clArc, polyCum, centerline, tunnelSpans, offCurveSpans, nAtStart, LB, g0 }
@@ -5917,17 +5965,43 @@ export class RoadSystem {
     // Both ends of a mid-span promotion, applied together: the trunk is cut at BOTH departure
     // points into three ordinary runs, and the side road becomes its two surviving halves. Doing
     // this as two independent commits is wrong — see the caller.
+    // The run keys a mid-span commit writes: the trunk's three cuts (in arc order) and the side's two
+    // halves (in plan order).
+    // BUG-63: when the pair SHARES A NODE N — two roads that part at N, go their own ways and meet
+    // again further out — the side's N → P half and the trunk's N → P piece are both g:N:P, and the
+    // second _network.set silently overwrote the first: a road gone with no count, and P a promoted
+    // node with two legs (a deck step). Declining the promotion instead is worse (junction-stitch
+    // red: the pair ships unsanctioned — "a T always beats no T"). So BOTH roads ship and the side
+    // half takes the key PARALLEL_SUFFIX. It is a second road between one node pair, which the
+    // abstract graph (networkGraph) does not represent: it stays out of it, like a stranded piece —
+    // in the world (drawn, carved, collided, P keeps three legs), not in the planners' graph.
+    _v2MidSpanKeys(g, plans) {
+        const ps = plans.slice().sort((a, b) => a.iP - b.iP)
+        const T = ps[0].T, side = ps[0].side
+        const kA = g.key(T.cellA), kB = g.key(T.cellB)
+        const k1 = ps[0].pKey, k2 = ps[1].pKey
+        const cuts = [`g:${kA}:${k1}`, `g:${k1}:${k2}`, `g:${k2}:${kB}`]
+        const halves = plans.map((c) => {
+            const farKey = c.nAtStart ? g.key(side.cellB) : g.key(side.cellA)
+            const k = c.nAtStart ? `g:${c.pKey}:${farKey}` : `g:${farKey}:${c.pKey}`
+            const flip = c.nAtStart ? `g:${farKey}:${c.pKey}` : `g:${c.pKey}:${farKey}`
+            const taken = cuts.includes(k) || cuts.includes(flip)
+                || (this._network.has(k) && k !== ps[0].tKey) || (this._network.has(flip) && flip !== ps[0].tKey)
+            return taken ? k + PARALLEL_SUFFIX : k
+        })
+        return { cuts, halves }
+    }
+
     _v2CommitMidSpan(g, pieces, pr, plans) {
         const ps = plans.slice().sort((a, b) => a.iP - b.iP)
         const T = ps[0].T, tKey = ps[0].tKey
         const tEnd = T.polyCum.length - 1
-        const kA = g.key(T.cellA), kB = g.key(T.cellB)
-        const k1 = ps[0].pKey, k2 = ps[1].pKey
+        const keys = this._v2MidSpanKeys(g, plans)
         this._network.delete(tKey)
         const cuts = [
-            [`g:${kA}:${k1}`, 0, ps[0].iP, T.cellA, ps[0].pid],
-            [`g:${k1}:${k2}`, ps[0].iP, ps[1].iP, ps[0].pid, ps[1].pid],
-            [`g:${k2}:${kB}`, ps[1].iP, tEnd, ps[1].pid, T.cellB],
+            [keys.cuts[0], 0, ps[0].iP, T.cellA, ps[0].pid],
+            [keys.cuts[1], ps[0].iP, ps[1].iP, ps[0].pid, ps[1].pid],
+            [keys.cuts[2], ps[1].iP, tEnd, ps[1].pid, T.cellB],
         ]
         for (const [key, i0, i1, cA, cB] of cuts) this._network.set(key, this._v2SliceRun(T, i0, i1, cA, cB))
         pieces.set(ps[0].wk0, [...(pieces.get(ps[0].wk0) || [tKey]).filter((k) => k !== tKey), ...cuts.map((c) => c[0])])
@@ -5935,8 +6009,7 @@ export class RoadSystem {
         this._network.delete(ps[0].sideKey)
         const halves = []
         for (const c of ps) {
-            const farKey = c.nAtStart ? g.key(side.cellB) : g.key(side.cellA)
-            const key = c.nAtStart ? `g:${c.pKey}:${farKey}` : `g:${farKey}:${c.pKey}`
+            const key = keys.halves[plans.indexOf(c)]
             this._network.set(key, {
                 points: c.built.pts, arcOrigin: 0, centerline: c.built.centerline,
                 polyCum: c.built.polyCum, clArc: c.built.clArc,
@@ -5975,7 +6048,9 @@ export class RoadSystem {
             points: pts, arcOrigin: 0,
             centerline: T.centerline.slice(c0, T.clArc[i1]),
             polyCum, clArc, cellA, cellB,
-            tunnelSpans: clip(T.tunnelSpans, c0, clArc[n - 1]),
+            // BUG-77: a run's spans are on the arc it is read on — polyCum where it carries
+            // offCurveSpans, clArc otherwise — so a slice clips them on that same arc.
+            tunnelSpans: T.offCurveSpans ? clip(T.tunnelSpans, p0, polyCum[n - 1]) : clip(T.tunnelSpans, c0, clArc[n - 1]),
         }
         const off = clip(T.offCurveSpans, p0, polyCum[n - 1])
         if (off && off.length) out.offCurveSpans = off
@@ -6202,7 +6277,7 @@ export class RoadSystem {
         for (let i = 1; i <= n; i++) polyCum[i] = polyCum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
         const offCurveSpans = plan.idxSpans.map(([i0, i1, owner]) => ({ s0: polyCum[i0], s1: polyCum[i1], owner }))
         this._network.set(key, { points: pts, arcOrigin: 0, centerline: cl, polyCum, clArc, cellA, cellB,
-                                 tunnelSpans, offCurveSpans })
+                                 tunnelSpans: spansOnPolyCum(tunnelSpans, clArc, polyCum), offCurveSpans })   // BUG-77
         this._v2Shoves = (this._v2Shoves || 0) + 1
     }
 
@@ -8605,12 +8680,28 @@ export class RoadSystem {
      * _legSurfaceTop keeps the siblings' pull right onto a leg's pavement edge (RULE_SOFT) and missed
      * the ribbon's edge by up to 42 cm at the mouth corners (BUG-82 follow-up, the ribbon-pad tears).
      */
+    // The ribbon draws a cross-section as a straight line through runPointAt(s), perpendicular to the
+    // runProfile tangent at s, at ONE height per s. So the deck it draws at (wx,wz) is the section
+    // whose line passes through the point: a few Newton steps on (p − c(s))·t(s) = 0 from the polyline
+    // foot. The polyline segment's own frame put a point 5 m out on a tight bend at a different station
+    // than the ribbon does — on a steep grade a 14–18 cm miss at the mouth corners, where the pad welds
+    // to the ribbon's section vertices (BUG-82 defect, found on BUG-63's restored seed-7 T: a leg
+    // turning 40° in its first 12.5 m on a 37 % cross-slope).
     _legDeckTop(ne, leg, pr, wx, wz) {
-        const pts = ne.points, i = Math.min(pr.i, pts.length - 2)
-        const ex = pts[i + 1].x - pts[i].x, ez = pts[i + 1].z - pts[i].z, sl = Math.hypot(ex, ez) || 1e-8
-        const tx = ex / sl, tz = ez / sl
-        const lat = (wx - (pts[i].x + pr.t * ex)) * tz - (wz - (pts[i].z + pr.t * ez)) * tx
-        return this._carveDirtY(lat, pr.arcS, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
+        let s = pr.arcS, c = null, rp = null
+        for (let k = 0; k < 4; k++) {
+            c = this.runPointAt(leg.runKey, s)
+            rp = this.runProfile(s, leg.runKey, _CD_RP)
+            if (!c) break
+            const ds = (wx - c.x) * rp.tx + (wz - c.z) * rp.tz
+            s += ds
+            if (Math.abs(ds) < 1e-4) break
+        }
+        if (!c) return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
+        c = this.runPointAt(leg.runKey, s)
+        rp = this.runProfile(s, leg.runKey, _CD_RP)
+        const lat = (wx - c.x) * rp.tz - (wz - c.z) * rp.tx
+        return this._carveDirtY(lat, s, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
     }
 
     /**

@@ -487,7 +487,9 @@ export class EconomySystem {
             : splitPayout(result.par, result.ratio, tier, mult, tipMult)
         // FEAT-138: good deeds read the letter on EVERY type — and the letter is already the type's
         // own axis (haul's count, freight's kg, fragile's health). The share and health bands retired.
-        const points = pointsFor(result.letter)
+        // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
+        const points = mission?.deeds === 'none' ? 0
+            : pointsFor(result.letter) + (mission?.deeds === 'extraHalf' && pointsFor(result.letter) > 0 ? 0.5 : 0)
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
@@ -530,7 +532,7 @@ export class EconomySystem {
 
     /**
      * Money earned MID-MISSION and banked on the spot (FEAT-61, owner 2026-08-15) — the paper
-     * route's accuracy bonus, paid as each paper lands rather than at the bell.
+     * route's accuracy bonus, paid as each paper lands rather than at the finish.
      *
      * Deliberately NOT settleFlat: this accrues no points and does not count a mission, because it
      * is not a settlement. It is the same wallet through the same module, which is the part that

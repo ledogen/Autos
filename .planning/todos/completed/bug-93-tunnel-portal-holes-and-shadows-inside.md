@@ -1,7 +1,7 @@
 ---
 id: BUG-93
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-10-25
 source: owner, 2026-10-25 — "still a lot of terrain holes near tunnel portals. there's also grass/prop shadows inside the tunnels that shouldnt be there. i propose a lot of trying stuff and verifying with screenshots that the gaps are closed."
@@ -65,6 +65,10 @@ road or above. No owner capture has been tried yet (none filed).
 Gates: affected 42/44 (road-tunnel, road-clearance = the known reds, identical to main), cdp-smoke
 19/19.
 
+**Rechecked 2026-11-01** after BUG-81 item 4 moved every portal inward (portalCover 2 → 6): the
+hole map on all eight seed-6 portals shows no gap at the mouth or outside it — only the hidden
+wall-foot strip inside the hill, as before. Nothing left for Spare here but the owner's look.
+
 ## Acceptance
 
 - [x] (8 seed-6 portals, owner's look owed) At every portal of the gate region and the owner's captures, no see-through gap between
@@ -72,3 +76,5 @@ Gates: affected 42/44 (road-tunnel, road-clearance = the known reds, identical t
 - [x] No grass, prop or baked prop shadow inside a bore span or on its floor.
 - [x] MESH == PHYSICS holds (terrain-physics mirrors the same fix); road-tunnel gate not worse than
       its known red (BUG-77).
+
+## CLOSED — owner, 2026-11-01: "b93 looks fixed. nice."

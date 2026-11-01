@@ -17,7 +17,7 @@
 //      leaving gates standing in a field. Fix by re-extracting the poses, never by loosening this.
 import * as THREE from 'three'
 import { crossedLine, ScenarioSystem, COUNTDOWN_S, GATE_SLACK_M } from '../src/scenario.js'
-import { Leaderboard, memoryStore, STORE_PREFIX } from '../src/leaderboard.js'
+import { Leaderboard, memoryStore, localStore, STORE_PREFIX } from '../src/leaderboard.js'
 import { SCENARIOS } from '../data/scenarios.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
@@ -88,6 +88,17 @@ check('5 fastest first', b2.entries('s').map(e => e.elapsed).join() === '50,60,7
 const junkStore = memoryStore()
 junkStore.save(STORE_PREFIX + 'j', [{ elapsed: 40, at: 'x' }, null, { elapsed: 'fast' }, { elapsed: -1 }, { elapsed: NaN }])
 check('5 junk from the store is dropped', new Leaderboard({ store: junkStore }).entries('j').length === 1)
+// localStore: a reload sees the times (a fresh board on the same storage), junk text reads as empty,
+// and a storage that throws on every call neither throws nor loses the session's submit result.
+const fakeLS = (() => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)) } })()
+new Leaderboard({ store: localStore(fakeLS) }).submit('p', 61.5)
+check('5 localStore survives a reload', new Leaderboard({ store: localStore(fakeLS) }).entries('p').map(e => e.elapsed).join() === '61.5')
+fakeLS.setItem(STORE_PREFIX + 'q', '{not json')
+check('5 localStore junk reads as an empty board', new Leaderboard({ store: localStore(fakeLS) }).entries('q').length === 0)
+const deadLS = { getItem: () => { throw new Error('blocked') }, setItem: () => { throw new Error('blocked') } }
+let deadR = null
+try { deadR = new Leaderboard({ store: localStore(deadLS) }).submit('d', 70) } catch { deadR = 'threw' }
+check('5 blocked storage neither throws nor loses the result', deadR && deadR !== 'threw' && deadR.rank === 1, JSON.stringify(deadR))
 
 // ── B. world ─────────────────────────────────────────────────────────────────────────────────────
 const POSE_LAT_M = 1.5    // m off the centreline

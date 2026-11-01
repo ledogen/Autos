@@ -39,8 +39,14 @@ scenarios, restart; white light columns at the start, 5 cyan gates, red finish.
   region, day, wallet or tier, so the "run-layer state from the definition" item below does not apply
   to it. It still applies to a paper-route scenario.
 
-**Still open:** owner tuning of start/end/gate poses; persistence (FEAT-42); the paper-route
-scenario and its run-layer state; the world-determinism acceptance item for the scenario entry path.
+**Still open:** owner tuning of start/end/gate poses; the paper-route scenario and its run-layer
+state; the world-determinism acceptance item for the scenario entry path.
+
+**Persistence — done 2026-11-01 (Spare).** Best times live in localStorage via `localStore()`, one
+key per scenario (`autos-scenario-times/1:<id>`), beside `autos-settings/1` and FEAT-42's run slot.
+They are deliberately NOT inside the run slot, which a new game clears and a death deletes, while
+best times outlive every run. scenario-route checks a reload round trip, junk text, and blocked
+storage.
 
 ## Request
 
@@ -163,3 +169,17 @@ Tier 1 (four customers) is the right rung: it is the one the owner has driven an
 - Recording the region centre in captures. Still worth doing for diagnosing story-mode bug reports
   (three this week were chased by guessing it), but it is no longer a prerequisite for authoring a
   scenario, so it belongs in its own small infra ticket rather than blocking this one.
+
+## RULED — owner, 2026-11-01
+
+- (a) Start point: the owner answered about the main-game opening — tutorial beats first (fired
+  cutscene → drive home, sleep, eat → dropped into the world, pointed at Larry's, but free to do any
+  mission; the tutorial's end must line up with 100 % free will for a roguelike run). The scenario
+  start was not ruled; **assumption: the paper-route scenario starts at the spawn**, like the main
+  game. Flag if that proves awkward.
+- (b) Larry's briefing plays on the FIRST paper run taken per playthrough → the scenario plays it.
+- (c) The first round is 4; the ladder runs all the way to 15. The scenario starts a fresh ladder.
+- (d) All scenarios open.
+- Pose tuning for the two descents is the owner's; if world-gen tuning moves the roads, the owner
+  will find new places. So: re-extract poses after BUG-67 lands, do not wait on the owner.
+- Best-time persistence landed 11-01 (5f650a47).

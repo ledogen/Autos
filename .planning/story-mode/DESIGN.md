@@ -529,7 +529,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
 
   > **Amendment [RATIFIED 2026-10-15, FEAT-113] — every job has a deadline; still no countdown.**
   > *"the default mission has no clock"* is retired. Every job now carries a **delivery deadline**:
-  > par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %. The card states the window ("deliver within 6h 00m") and
+  > par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %, papers +50 % (FEAT-141). The card states the window ("deliver within 6h 00m") and
   > the HUD states the due time ("due Day 3, 2 am") — a fixed time, **never a countdown**, so the core
   > of this invariant stands: par is never rendered, and the deadline is generous enough (at least
   > par +50 %) that it is a backstop, not the thing you drive against. Provenance: the FEAT-113 ticket.
@@ -713,10 +713,11 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > (two B/C jobs, ~$18 on day 1). The day is now $7.50 — those bills need re-pricing against it.
   >
   > *No time limits.* A mission can be **failed on time and still pay its base**; the paper route's
-  > bell is gone (par untouched).
+  > time limit is gone (par untouched). **[SUPERSEDED for papers 2026-10-21, FEAT-141: Larry's round
+  > has a deadline again — the plotted N-route's par × 1.5.]**
   > **[AMENDED 2026-10-15, FEAT-113]** *Slow still pays its base* — the margin line is unchanged, and
   > a job finished at any ratio up to its deadline pays base pay at the least. What is new is the
-  > **deadline** (SM-INV-3 amendment): par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %. A job still in hand
+  > **deadline** (SM-INV-3 amendment): par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %, papers +50 % (FEAT-141). A job still in hand
   > past it is **expired** — it can no longer be delivered and **pays nothing**. Nothing pops up
   > while driving: the job button turns into "mission expired", pressable only when parked, and the
   > card follows (a strapped load still costs the 1 h clean-up). The giver's slot locks at the
@@ -947,7 +948,7 @@ supplies the penalty, no payout math needed); longer hauls permit the delivery t
 next day, so camping is a legitimate rest stop on a multi-day run. The mission's own fiction
 says which it is.
 > **[AMENDED 2026-10-14; re-cut 2026-10-15]** The fiction is now a number: every job carries a
-> **delivery deadline**, par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %, shown on the card and as a due time on
+> **delivery deadline**, par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %, papers +50 % (FEAT-141), shown on the card and as a due time on
 > the HUD. A job still in hand when it passes expires unpaid (SM-INV-4 amendment). The mission
 > clock runs on world time, so a night with a load spends time against the tip. **Camping with a
 > job in hand is allowed** (owner, 2026-10-15); whether the night fits is the deadline's call — at

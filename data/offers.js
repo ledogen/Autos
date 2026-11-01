@@ -45,6 +45,9 @@
 //            names 'roadside' too (BUG-88): then a matching POI or a roadside spot.
 //   deadlineSlack (optional, FEAT-113) the deadline as par × (1 + slack), counted from accept.
 //            Absent = the family default in DEADLINE_SLACK below.
+//   multi    (optional, FEAT-89) the phrase for several of it — "Deb needs {multi} delivered to
+//            Nadia, the Halvorsens and the pump house." Present = the thing may roll a MULTI-DROP
+//            (MULTI_DROP below). PLACEHOLDER picks and words — the owner authors which things.
 
 // "Any normal giver" — cargo.md's blank From (option C). Not the food vendor, the haul yard or
 // Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply). Not the
@@ -83,9 +86,9 @@ export const THINGS = [
     { id: 'firewood',   phrase: 'firewood',               family: 'haul',     massKg: [0, 0],
       pools: ['firewoodYard'] },
     { id: 'takeout',    phrase: 'two bags of takeout',    family: 'delivery', massKg: [2, 5],
-      pools: ['foodVendor'], deadlineSlack: 0.5 },
+      pools: ['foodVendor'], deadlineSlack: 0.5, multi: 'takeout orders' },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], multi: 'grocery orders' },
     { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
       pools: ['generalStore'] },
     // Courier, R1 (cargo.md), one thing per row there.
@@ -105,11 +108,11 @@ export const THINGS = [
     { id: 'golfClubs',  phrase: 'golf clubs',              family: 'delivery', massKg: [9, 14],
       pools: HOME, to: HOME },
     { id: 'fruitCake',  phrase: 'fruit cake',              family: 'delivery', massKg: [1, 2],
-      pools: HOME, to: HOME },
+      pools: HOME, to: HOME, multi: 'fruit cakes' },
     { id: 'casserole',  phrase: 'tuna casserole',          family: 'delivery', massKg: [2, 3],
-      pools: HOME, to: HOME },
+      pools: HOME, to: HOME, multi: 'tuna casseroles' },
     { id: 'homebrew',   phrase: 'homemade beer',           family: 'delivery', massKg: [5, 10],
-      pools: HOME, to: HOME },
+      pools: HOME, to: HOME, multi: 'cases of homemade beer' },
     { id: 'woodcraft',  phrase: 'Woodcraft Vol 2.',        family: 'delivery', massKg: [0.5, 1],
       pools: HOME, to: HOME },
     { id: 'tractorKeys', phrase: 'keys for the tractor',   family: 'delivery', massKg: [0.1, 0.1],
@@ -121,7 +124,7 @@ export const THINGS = [
     // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
     // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07).
     { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
-      pools: ['generalStore', 'gasStation'] },
+      pools: ['generalStore', 'gasStation'], multi: 'full propane tanks' },
     { id: 'propaneEmpty', phrase: 'an empty 20 lb propane tank', family: 'delivery', massKg: [7, 9],
       pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'gasStation'] },
     // General-store sundries (owner, 2026-10-07): store → anyone. They are also the tackle shop's
@@ -522,12 +525,37 @@ export const FREIGHT_TIP_MULT = 0.5
 // +200 % (third pass). papers is this side's pick, not a ruling yet. demolition has no things (and
 // no code) yet — give it a slack the day it ships.
 // A different clock from board expiry (EXPIRY_NOISE, SOURCES.expiryH): when an offer LEAVES the board.
+// FEAT-142 (owner, 2026-10-21): GIVER TRAITS — 0–2 per offer, each a data row that nudges terms the
+// job already has; no new systems. Every trait is a trade except Generous and Stingy. Rolled on their
+// OWN seeded stream (offer-board.js _rollSpec), shown bottom-left of the card. Starting values — FEAT-69
+// tunes them. Fields: `families` it applies to (all but papers when absent), `not` the opposed traits,
+// `pay` × the line, `deadline` × the deadline slack, `thresholds` × the courier TIME thresholds (a
+// smaller ratio is tighter), `floors` × a fragile load's shock thresholds (< 1: more delicate), `tip` ×
+// the tip pool, `stockFull` (haul: the whole yard), `perPiece` × a haul's rate per piece, `deeds`
+// 'none' (no good-deed point) or 'extraHalf' (+½ at C or better).
+// Rejected: After hours (doesn't fit the deadline system). OPEN: Wholesale on freight — built haul-only.
+const NOT_PAPERS = ['delivery', 'freight', 'fragile', 'haul']
+export const TRAITS = [
+    { id: 'impatient',  name: 'impatient',  families: NOT_PAPERS, not: ['patient'],    pay: 1.20, deadline: 0.6, thresholds: 0.9 },
+    { id: 'patient',    name: 'patient',    families: NOT_PAPERS, not: ['impatient'],  pay: 0.80, deadline: 1.5, thresholds: 1.1 },
+    { id: 'collector',  name: 'collector',  families: ['fragile'], not: ['easygoing'], pay: 1.25, floors: 0.8 },
+    { id: 'easygoing',  name: 'easygoing',  families: ['fragile'], not: ['collector'], pay: 0.85, floors: 1.25 },
+    { id: 'generous',   name: 'generous',   families: NOT_PAPERS, not: ['stingy'],     pay: 1.20 },
+    { id: 'stingy',     name: 'stingy',     families: NOT_PAPERS, not: ['generous'],   pay: 0.80 },
+    { id: 'bigTipper',  name: 'big tipper', families: NOT_PAPERS, not: [],             pay: 0.80, tip: 1.6 },
+    { id: 'wholesale',  name: 'wholesale',  families: ['haul'],   not: [],             stockFull: true, perPiece: 0.8 },
+    { id: 'offBooks',   name: 'off the books', families: NOT_PAPERS, not: ['rightThing'], pay: 1.20, deeds: 'none' },
+    { id: 'rightThing', name: 'the right thing to do', families: NOT_PAPERS, not: ['offBooks'], pay: 0.85, deeds: 'extraHalf' },
+]
+/** FEAT-142: how many traits an offer carries — relative weights (starting values, FEAT-69 tunes). */
+export const TRAIT_COUNT_WEIGHTS = { 0: 0.5, 1: 0.35, 2: 0.15 }
+
 export const DEADLINE_SLACK = {
     delivery:   1.0,
     fragile:    2.0,
     freight:    3.0,
     haul:       2.0,
-    papers:     1.0,   // Larry's round is courier work
+    papers:     0.5,   // FEAT-141 (owner, 2026-10-21): the deadline is the plotted route's par × 1.5
 }
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
@@ -579,6 +607,14 @@ export const GATE_WEIGHTS = { C: 1, B: 1, A: 1, S: 1 }
  * counts where jobs END, read ~29 % → ~20 %.
  */
 export const DEST_POI_CHANCE = 0.65
+
+/**
+ * FEAT-89 multi-drop: the share of offers of a thing with a `multi` phrase that roll several stops
+ * instead of one, and the stop-count weights (owner's suggestion in the ticket: 2–4, weighted toward
+ * 2). PLACEHOLDER — "ship a guess and tune live". Drawn on the offer's own `stops` stream, so no
+ * other offer's roll moves.
+ */
+export const MULTI_DROP = { chance: 0.35, stops: { 2: 3, 3: 2, 4: 1 } }
 
 /** People per source POI: usually one, sometimes two, rarely three. Relative weights. */
 export const PEOPLE_PER_POI = { 1: 0.75, 2: 0.2, 3: 0.05 }

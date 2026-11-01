@@ -2300,6 +2300,11 @@ export class Map2D {
         if (m.pickup) {
             pin(m.pickup, '#5ab6ff', 'Pickup')
             pin(m.end, '#ffcf3c', 'Return')
+        } else if (m.stops) {
+            // FEAT-89: a multi-drop numbers its stops in tour order; the last one is the drop.
+            pin(m.start, '#5ad06a', 'Start')
+            m.stops.forEach((p, i) => pin(p, '#5ab6ff', `Stop ${i + 1}`))
+            pin(m.end, '#ffcf3c', `Stop ${m.stops.length + 1}`)
         } else {
             pin(m.start, '#5ad06a', 'Start')
             pin(m.end, '#ffcf3c', 'Drop')
@@ -2598,6 +2603,7 @@ export class Map2D {
         // FEAT-112: a load verdict adds one row; so do the clocks (`times`, their own row since 2026-10-23)
         // and the deed line (R-09).
         const H = baseH * k + (c?.verdict ? B.LH * k : 0) + (c?.times?.length ? B.LH * k : 0) + (c?.deed ? B.LH * k : 0)
+            + (c?.traits ? B.LH * k : 0)   // FEAT-142
         const bonusH = (c?.bonus ? B.BONUS * k : 0)
             + (v.shelf ? (B.PAD * 2 + B.HEAD + v.shelf.length * B.LH) * k : 0)   // FEAT-137: an auto shop's shelf form
         const M = 12 * k                                  // margin from the sheet's edge
@@ -2727,8 +2733,10 @@ export class Map2D {
         // currency, so they wear ONE ink everywhere — the story blue here, --accent-story on the HUD.
         if (c.deed) { ty += LH; this._drawRuns(ctx, [{ t: c.deed, b: true }], inL, ty, fN, fB, DEED_INK) }
         // FEAT-112: the load verdict — amber for a warning, red for an overload (which cannot be taken).
-        if (c.verdict) this._drawRuns(ctx, [{ t: c.verdict.text, b: true }], inL, ty + LH, fN, fB,
-                                      c.verdict.level === 'overload' ? '#b3261e' : '#a06800')
+        if (c.verdict) { ty += LH; this._drawRuns(ctx, [{ t: c.verdict.text, b: true }], inL, ty, fN, fB,
+                                      c.verdict.level === 'overload' ? '#b3261e' : '#a06800') }
+        // FEAT-142: the giver's traits, bottom-left.
+        if (c.traits) { ty += LH; this._drawRuns(ctx, [{ t: c.traits.join('  ·  ') }], inL, ty, fN, fB, '#555') }
 
         // ── the TIP form, tacked onto the bottom (R-04: the item that replaces the cash tip) ──
         if (c.bonus) {

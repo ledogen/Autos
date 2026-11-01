@@ -110,7 +110,9 @@ function onKey (e) {
     // Re-rendered under the highlight (same card, fresh nodes): resume at its index and act on this
     // press. Otherwise the first press only places the highlight.
     if (cur && !cur.isConnected && curBox === c) highlight(items[Math.min(curIdx, items.length - 1)])
-    else { highlight(items.includes(document.activeElement) ? document.activeElement : items[0]); curBox = c; curIdx = items.indexOf(cur); return }
+    // FEAT-133: a card's first press lands on its MAIN action (`data-primary`: accept / continue),
+    // not on whatever row happens to come first — the calibration form, Larry's route sizes.
+    else { highlight(items.includes(document.activeElement) ? document.activeElement : items.find(el => el.hasAttribute('data-primary')) ?? items[0]); curBox = c; curIdx = items.indexOf(cur); return }
   }
   curIdx = items.indexOf(cur)
   if (e.key === 'Enter') {
