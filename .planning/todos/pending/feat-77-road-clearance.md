@@ -59,3 +59,22 @@ red can skip re-running the gate on main to prove it.
 - `story-poi`'s 50 m-drift check: mom's pad now sits 980 m from spawn, 20 m inside a 1000 m
   nearSpawn ring the drift crosses — a fragile threshold in the roster, exposed by a new pad.
 - BUG-63 (mid-span key collision), BUG-64 class B (carve composition walls).
+
+## Residue triage — 2026-11-01 (Spare, main c0d8c43d)
+
+The two pairs left (road-clearance's only red after BUG-77) are both **two legs of one node**, just
+past the geometric throat and marginally inside the cap:
+
+- lone-pine spawn (-68, 320): 28.3 m apart, rule wants 28.5 (15.3 m of height), over 4 m —
+  `g:-1,-1,1:-127077,334872,-1` × `g:-127077,334872,-1:0,0,2` (a promoted node).
+- seed3 origin (1976, -889): 27.8 m apart, rule wants 28.5 (8.1 m of height), over 16 m —
+  `g:2,-2,1:2,-1,2` × `g:3,-2,2:2,-1,2`.
+
+**Not a measurement gap the planner can close.** Experiment: `_v2ClearReq` + 1 m. It is the ONE shared
+copy, so the gate tightened too (four marginal near-misses surfaced elsewhere — not usable as a fix),
+but the telling part: **both residue pairs did not move at all** (still 28.3 m and 27.8 m). The
+planner never acts on them — neither the conflict/T path nor the second (occupancy) pass re-routes a
+leg pinned to its node's departure here. Closing them means routing work in the node-departure
+machinery, not a knob. Options for the owner: (a) accept a near-miss of under ~1 m over under ~20 m
+between two legs of one node (a gate tolerance), (b) leave the red standing as known residue, or
+(c) schedule the node-departure re-route work.
