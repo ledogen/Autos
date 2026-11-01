@@ -1,7 +1,7 @@
 ---
 id: FEAT-157
 type: feature
-status: open
+status: done
 severity: major
 opened: 2026-10-30
 source: owner, 2026-10-30 — "isnt there supposed to be 1 of each type of mission? right now we have only one haul and 4x courier... i though we wanted fragile, freight, etc as well."
@@ -45,7 +45,9 @@ handles haul / fragile / freight / courier).
 
 ## Acceptance
 
-- [ ] Five lines, five distinct types (haul, courier, freight, fragile, + the owner's fifth).
+- [x] Five lines, five distinct types (haul, courier, freight, fragile, + the owner's fifth). The fifth,
+      demolition, shipped with FEAT-65 (2026-11-02): `reqSigns`, given by the camp itself, replaces the
+      food line.
 - [x] A freight / fragile line loads and straps like its budget cousin (`_loadFreight`, fragile
       health), settles on its own axis, and survives a save (FEAT-42 part 2's `mission.approach`).
       (The save half is code only — `_reloadCargo` skips the load during an approach; no gate resumes
@@ -122,4 +124,10 @@ As the approved plan, with two small additions:
   cdp-smoke's `expedition` step takes the fuel line at the camp: no drum on the approach, a drum once
   parked at the gas station, none after the cancel.
 
-Open: the fifth line (FEAT-65 demolition replaces the food line's slot when it ships).
+The fifth line: built with FEAT-65 (see that ticket's "Built — slice 1"). FEAT-157 is complete.
+
+## Resolution (2026-11-02)
+
+Done. Five lines, one per type: firewood (haul), the crew (courier), fuel (freight drum), camp gear
+(fragile crate), the turn-back signs (demolition, given by the camp, FEAT-65). Gated by
+expedition-camp and cdp-smoke's expedition + demolition steps.

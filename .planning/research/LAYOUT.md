@@ -95,7 +95,8 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 `economy.js` (payout/wallet/points spine, FEAT-53) · `inventory.js` (FEAT-122 per-run inventory —
 slots, stacking, swap-prompt pending, quick-slot binding, stowed mass; pure) · `inventory-screen.js`
 (FEAT-122 Tab screen — slot grid with thumbnails, pack popup, parked-only via the HUD park zone, extra confirm choices per item from main.js (plugging a tire) — + quick keys 1–4) · `offer-board.js` (FEAT-67 mission board —
-slots, expiry timers, seeded offers, names, card view-model; pure) · `load-verdict.js` (FEAT-112 fits / warning / overload
+slots, expiry timers, seeded offers, names, card view-model; pure) · `demolition.js` (FEAT-65 — where a
+demolition job's targets stand on the shoulder of the route's last km, seeded; TARGET_TYPES; pure) · `load-verdict.js` (FEAT-112 fits / warning / overload
 for the truck as configured + the overloaded-tire cap; pure, no imports) · `mission.js` (mission generator
 + run state machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `fuel-stop.js` (FEAT-50 the pump
 visit state machine — hold F, handbrake to pay — + the tow price; pure, the DOM is in main.js) · `parts.js` (SM-3 fitted

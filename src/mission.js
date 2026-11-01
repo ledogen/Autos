@@ -923,8 +923,11 @@ export class MissionSystem {
         let destPoi = null
         if (anchor) {
             const ka = g.key(anchor.aId), kb = g.key(anchor.bId)
-            if (!adj.has(ka) || !adj.has(kb)) return null      // POI edge outside the planner's set
-            const pair = rng() < 0.5 ? [[ka, kb], [kb, ka]] : [[kb, ka], [ka, kb]]
+            const onA = adj.has(ka), onB = adj.has(kb)
+            if (!onA && !onB) return null      // POI edge outside the planner's set
+            // FEAT-65: the expedition camp's road is cut at the wall — ONE node on the graph — so the job the
+            // camp gives (its demolition line) leaves through that inner node. Every roster POI has both on.
+            const pair = !onA ? [[kb, ka]] : !onB ? [[ka, kb]] : rng() < 0.5 ? [[ka, kb], [kb, ka]] : [[kb, ka], [ka, kb]]
             const edgeKey = (x, y) => (x < y ? `${x}|${y}` : `${y}|${x}`)
             const srcEdge = edgeKey(ka, kb)
             if (dest?.kind === 'poi' && dest.pois?.length) {

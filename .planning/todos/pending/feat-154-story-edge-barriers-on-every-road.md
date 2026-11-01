@@ -74,3 +74,14 @@ The design moved on from "the truck stops at them":
 - [x] Rows stand on the deck, striped faces inward, as loose bodies near the truck; the truck smashes
       through them, and past 2410 m it fades back to a road inside, facing in (owner, 2026-10-31).
 - [x] expedition-camp, region-pieces, story-poi gates green; cdp-smoke passes.
+
+## Follow-ups (2026-11-01, from BUG-103)
+
+- **The map now draws the edge at the fade line with a tick per row** (BUG-103 ruling (f), map2d.js
+  `_drawRegion`): the 2500 m ring is gone from the sheet.
+- **Return spots stop short of every row** (owner, 2026-11-01: the camp's row stands at its pad,
+  ~30 m inside the wall, so the return seated the truck just past the barricades and it crashed back
+  through them). `_returnSpots` drops a spot on a row's far side or within poiEdgeReturnM inside it;
+  on seed 3852053035 the camp road's last spot moved from 17 m past the row to 20 m inside it.
+- [ ] Rows are not placed on BUG-63 `~p` parallel runs (they are absent from `networkGraph`). Measure
+      how often a parallel crosses the wall, or close it as not occurring.

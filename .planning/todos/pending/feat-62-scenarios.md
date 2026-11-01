@@ -169,3 +169,17 @@ Tier 1 (four customers) is the right rung: it is the one the owner has driven an
 - Recording the region centre in captures. Still worth doing for diagnosing story-mode bug reports
   (three this week were chased by guessing it), but it is no longer a prerequisite for authoring a
   scenario, so it belongs in its own small infra ticket rather than blocking this one.
+
+## RULED — owner, 2026-11-01
+
+- (a) Start point: the owner answered about the main-game opening — tutorial beats first (fired
+  cutscene → drive home, sleep, eat → dropped into the world, pointed at Larry's, but free to do any
+  mission; the tutorial's end must line up with 100 % free will for a roguelike run). The scenario
+  start was not ruled; **assumption: the paper-route scenario starts at the spawn**, like the main
+  game. Flag if that proves awkward.
+- (b) Larry's briefing plays on the FIRST paper run taken per playthrough → the scenario plays it.
+- (c) The first round is 4; the ladder runs all the way to 15. The scenario starts a fresh ladder.
+- (d) All scenarios open.
+- Pose tuning for the two descents is the owner's; if world-gen tuning moves the roads, the owner
+  will find new places. So: re-extract poses after BUG-67 lands, do not wait on the owner.
+- Best-time persistence landed 11-01 (5f650a47).

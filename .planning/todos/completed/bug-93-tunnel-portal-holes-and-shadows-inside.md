@@ -1,7 +1,7 @@
 ---
 id: BUG-93
 type: bug
-status: completed
+status: closed
 severity: major
 opened: 2026-10-25
 source: owner, 2026-10-25 — "still a lot of terrain holes near tunnel portals. there's also grass/prop shadows inside the tunnels that shouldnt be there. i propose a lot of trying stuff and verifying with screenshots that the gaps are closed."
@@ -77,6 +77,4 @@ wall-foot strip inside the hill, as before. Nothing left for Spare here but the 
 - [x] MESH == PHYSICS holds (terrain-physics mirrors the same fix); road-tunnel gate not worse than
       its known red (BUG-77).
 
-## Resolution (2026-11-01)
-
-Closed on the owner's look at current main: "looks fixed. nice." (relayed by the orchestrator, 2026-11-01). The fixes are the BUG-93 commits on main; BUG-81 item 5 (portal framing and the tube-to-terrain gap) carries on separately.
+## CLOSED — owner, 2026-11-01: "b93 looks fixed. nice."

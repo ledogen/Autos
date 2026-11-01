@@ -1,7 +1,7 @@
 ---
 id: BUG-73
 type: bug
-status: completed
+status: closed
 severity: minor
 opened: 2026-09-25
 source: owner, scene 22 of the surface A/B portfolio ("a super visible seam") — captured in the crash-recovery run after the laptop lid was closed mid-capture
@@ -107,6 +107,6 @@ right after it. For an in-game sighting, note the seed, position, and whether th
 the source was just edited (HMR). If it reproduces with 0 binding faults, the fault is not the VAO,
 and the next suspect is a shader-side transient (texture or uniform upload).
 
-## Resolution (2026-11-01)
+## CLOSED — owner, 2026-11-01: "I haven't noticed it, seems like it's solved for now."
 
-Closed as NOT REPRODUCED. The owner has not seen it since (relayed by the orchestrator, 2026-11-01). Reopen on a sighting, and run `node test/bug73-gpu-probe.mjs` on the spot when it shows (see above).
+Not reproduced (7a00411d); reopen on the next sighting with the notes above.

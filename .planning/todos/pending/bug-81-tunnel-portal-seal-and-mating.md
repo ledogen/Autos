@@ -164,3 +164,14 @@ Gates: affected 78/81 → the known reds (road-tunnel 22.5 %, road-clearance) id
 `vertical-curvature` open-road kinks 17 → 19 — two mild crests (0.031 / 0.035 /m) that were INSIDE
 a bore on main and now sit in the approach cut a few metres before the moved portal; no deck changed,
 so its ceiling moved with that note. Smoke 19/19. **Owner's look owed:** the deeper approach cuts.
+## Owner look, 2026-11-01 — item 5: "better, maybe not there yet"
+
+> most irl tunnel mouths have earth basically fully framing the portal. in our game there is still
+> usually a bare spot on top where you see the tunnel itself. any way we bury it in far enough its
+> fully framed? otherwise just fix the weird gap between the terrain and tunnel where you can see
+> thru the map (pic attached)
+
+Two asks, Spare's: (1) find out whether burying further (portalCover beyond 6, or a local terrain
+raise over the ring) gets full earth framing without wrecking the approach cut, and give the number;
+(2) regardless, fix the see-through gap between the terrain and the tube beside the ring (the
+screenshot shows the tube entering a terrain hole wider than the tube, sky visible through it).

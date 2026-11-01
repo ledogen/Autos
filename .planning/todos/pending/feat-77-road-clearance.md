@@ -79,11 +79,13 @@ machinery, not a knob. Options for the owner: (a) accept a near-miss of under ~1
 between two legs of one node (a gate tolerance), (b) leave the red standing as known residue, or
 (c) schedule the node-departure re-route work.
 
-## RULED — owner, 2026-11-01: (a), a shared-node near-miss tolerance
+## RULED — owner, 2026-11-01: (a)
 
-Relayed by the orchestrator: "a gate tolerance for under ~1 m over under ~20 m between legs of one
-node. Kill the last red." The owner adds that neither this nor BUG-64's walls really bother them in
-play, so the tolerance stays honest and small. Built in `test/road-clearance.mjs`: a pair that is
+A gate tolerance for under ~1 m over under ~20 m between legs of one node. Owner: "a seems fine
+unless i complain about the symptoms this test measures. i dont think its really bothering me (same
+with bug-64 vertical walls)." Keep the tolerance honest and small. Lane: Spare.
+
+**Built (Spare, 2026-11-01).** Built in `test/road-clearance.mjs`: a pair that is
 two legs of ONE node, short of the rule by under 1 m (`NEAR_MISS_M`) over under 20 m of road
 (`NEAR_MISS_LEN`), is printed as a near-miss and does not fail. Two separate roads get no tolerance.
 Result (feature/spare, on top of BUG-64 class B): **PASS**, 0 violating pairs, 2 near-misses

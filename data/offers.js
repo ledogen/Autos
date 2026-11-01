@@ -44,6 +44,9 @@
 //            Tagged things only ever end at a matching POI, never roadside — unless the list
 //            names 'roadside' too (BUG-88): then a matching POI or a roadside spot.
 //   deadlineSlack (optional, FEAT-113) the deadline as par × (1 + slack), counted from accept.
+//   targets  (demolition, FEAT-65) what stands on the shoulder along the job's last km: groups of
+//            { kinds, n: [lo, hi], cluster: [lo, hi], side?, face? } (src/demolition.js siteTargets;
+//            kinds are its TARGET_TYPES). massKg is unused — nothing is carried.
 //            Absent = the family default in DEADLINE_SLACK below.
 //   multi    (optional, FEAT-89) the phrase for several of it — "Deb needs {multi} delivered to
 //            Nadia, the Halvorsens and the pump house." Present = the thing may roll a MULTI-DROP
@@ -296,6 +299,19 @@ export const THINGS = [
       pools: HOUSEWARES, to: ['residence'], load: 'sculptureB', ...STURDY },
     { id: 'uprightPiano', phrase: 'an upright piano',       family: 'fragile', massKg: [230, 230],
       pools: HOUSEWARES, to: ['residence'], load: 'uprightPiano', ...STURDY, sound: 'piano', furniture: true },
+
+    // ── Demolition (FEAT-65, owner 2026-11-01): smash what stands on the shoulder along the job's last km
+    // of road; the letter is the share smashed. Always a roadside job. The deed is the removal — each
+    // giver has an ordinary reason. PLACEHOLDER words and counts.
+    // The farmer's old empty drums, set out along his frontage: crushed, they go to the scrapyard in one trip.
+    { id: 'scrapDrums',  phrase: 'his old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
+      targets: [{ kinds: ['barrel', 'drumOpen'], n: [8, 12], cluster: [1, 3] }] },
+    // The county is repaving: the old sign line comes down before the new one goes up, and the last job's
+    // barricades are still out. The crew is behind.
+    { id: 'oldSignLine', phrase: 'the old sign line knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
+      targets: [{ kinds: ['signGrade', 'signCurves', 'signRockslide', 'signTee', 'signCross', 'signStop', 'signIcy'],
+                  n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
+                { kinds: ['roadBarrier'], n: [2, 3], cluster: [2, 3], face: 'road' }] },
 ]
 
 // ── Rewards — the named bonus items ─────────────────────────────────────────────────────────
@@ -408,14 +424,20 @@ export const NOT_A_DESTINATION = new Set(['gasPump', 'expeditionCamp'])
  * line's card shows that stock). The crew's POI — the design names "the POI where the crew waits"; the construction site
  * is the stand-in.
  * FEAT-157 (owner, 2026-11-01): one line per mission type — haul (firewood), courier (the crew), freight
- * (fuel), fragile (camp gear). The food line holds the fifth slot until demolition (FEAT-65) is built.
+ * (fuel), fragile (camp gear), demolition (the turn-back signs, FEAT-65).
+ * FEAT-65 (owner, 2026-11-01): the demolition line is given by the CAMP ITSELF (`from: 'expeditionCamp'`)
+ * and, unlike the others, goes OUT to a roadside site, never to the camp. Hand-painted boards keep
+ * appearing overnight on the roads near the wall — TURN BACK, NOTHING PAST THE RIDGE — nobody admits
+ * putting them up, and the crew won't drive past them. Until the painted board is modelled the site is
+ * the crates of flyers and the drums left beside them.
  */
 export const REQUISITION = [
     // 20 bundles (owner, 2026-10-31, confirmed): the yard's stock cycles, so a smart player waits a couple of
     // recycles until it holds 20+ and clears the line in one trip. The card shows the stock on hand.
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
-    { id: 'reqFood',     phrase: 'a week of food', family: 'delivery', from: 'foodVendor',   massKg: 20 },
+    { id: 'reqSigns',    phrase: 'the turn-back signs knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
+      targets: [{ kinds: ['smallCrate'], n: [3, 5], cluster: [1, 3] }, { kinds: ['barrel'], n: [3, 5], cluster: [1, 2] }] },
     // FEAT-157: fuel is a strapped 55-gal drum of gasoline (154 kg + an 18 kg drum); camp gear is a crate
     // of lanterns and a stove, Fragile tier.
     { id: 'reqFuel',     phrase: 'fuel',           family: 'freight',  from: 'gasStation',   massKg: 172, load: 'drum' },
@@ -438,9 +460,9 @@ export const SOURCES = {
     autoShop:         { cap: 2, expiryH: 48,       families: ['delivery', 'freight', 'fragile'] },   // the windshield
     // The gas station posts work too, reversing "some stores are just stores" (2026-09-26).
     gasStation:       { cap: 2, expiryH: 24,       families: ['delivery', 'freight'] },
-    workSite:         { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight'] },
+    workSite:         { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'demolition'] },
     residence:        { cap: 2, expiryH: [24, 72], families: ['delivery', 'fragile', 'demolition', 'freight'] },
-    farm:             { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile'] },
+    farm:             { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile', 'demolition'] },
     doctor:           { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight'] },
     strandedMotorist: { cap: 1, expiryH: [24, 72], families: ['delivery'] },
     // FEAT-102: fetches of the general-store sundries, plus its own goods out (BUG-88).
@@ -556,6 +578,7 @@ export const DEADLINE_SLACK = {
     freight:    3.0,
     haul:       2.0,
     papers:     0.5,   // FEAT-141 (owner, 2026-10-21): the deadline is the plotted route's par × 1.5
+    demolition: 1.0,   // FEAT-65: courier's, a placeholder
 }
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
