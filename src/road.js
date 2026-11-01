@@ -872,11 +872,10 @@ const RESOLVE_CELL_CAP   = 384  // cells kept before the map is cleared (bounded
 // footprint (switchback wrapping a spur) makes the nearest-pass projection FLIP arcs at the
 // equidistant line — with tunnel-era deep earthwork (15–25 m cuts/fills) that flip is a 25 m
 // surface cliff the terrain grid renders as accordion pleats. The resolver therefore also
-// projects the winning run EXCLUDING ±RIVAL_ARC_SEP around the winning arc; when that far pass
-// lands within CROSS_BLEND_BAND of the winner's lateral distance, the two cross-sections are
-// cross-faded (off-ribbon only) so the seam is a bank, not a teleport.
+// projects the winning run EXCLUDING ±RIVAL_ARC_SEP around the winning arc, and that far pass is
+// composed with the winner as earthwork (off-ribbon only; BUG-64 _carveCrossSectionBlended) so
+// the seam is a bank, not a teleport.
 const RIVAL_ARC_SEP    = 40   // m — min arc separation for a projection to count as a distinct pass
-const CROSS_BLEND_BAND = 12   // m — lateral-distance band over which the two passes cross-fade
 // FEAT-40 bore notch: inside a bore span the terrain SKIN (Y-less / above-apex probes) is not
 // simply raw — near each mouth the open cut's cross-section continues with its floor RISING at
 // this V:H slope per metre into the span, capped at raw. The mouth face is therefore a graded
@@ -7255,6 +7254,32 @@ export class RoadSystem {
     // excludeKeys (FEAT-40, optional Set<runKey>): candidates to skip — _sampleCarveWorld retries
     // without a bored run when the probe is above its apex, so the next-nearest SURFACE run (e.g. a
     // parallel corridor within the 18 m footprint) can own the point instead of a bore 30 m below.
+    /**
+     * Analytic frame refinement (corner-facet fix). The polyline projection gives a piecewise-constant
+     * tangent that jumps ~19° per 4 m chord on radius-12 corners, faceting the dirt and staircasing
+     * collision. Refine onto the run's exact primitive centerline (the SAME curve the visual ribbon
+     * samples) so the frame is smooth and the dirt/asphalt seam stops tearing. Returns
+     * {fx,fz,tx,tz,arcS} (arcS in the runProfile domain), or null where the polyline frame stands:
+     * an offEnd projection (its arcS is clamped to the run end to stay C0 with the sibling arm at the
+     * shared anchor, BUG-21), a run without a centerline, and BUG-53 offCurveSpans (T departure band,
+     * shove deflection: the points left the centerline, so refining would pull the frame off the carve).
+     */
+    _refineFrame(e, pr, wx, wz) {
+        if (!e || pr.offEnd || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return null
+        const arcOrigin = e.arcOrigin ?? 0
+        if (e.offCurveSpans) {
+            const a = pr.arcS + arcOrigin
+            if (e.offCurveSpans.some((csp) => a >= csp.s0 - 0.5 && a <= csp.s1 + 0.5)) return null
+        }
+        const hit = e.centerline.nearest(wx, wz, ANALYTIC_REFINE_DS, pr.sCL - ANALYTIC_REFINE_WINDOW, pr.sCL + ANALYTIC_REFINE_WINDOW)
+        if (!hit) return null
+        // Remap analytic TRUE-arc → polyline chord-arc (the runProfile/camberProfile domain), then
+        // origin-shift. clArc↔polyCum are the paired per-run arrays; _interpArcTable is the same
+        // helper the ribbon uses in the opposite direction (chord→true).
+        return { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z,
+                 arcS: _interpArcTable(e.clArc, e.polyCum, hit.s) - arcOrigin }
+    }
+
     _resolveRoadSurface(wx, wz, excludeKeys = null) {
         if (!this._tiles || !this._network) return null
         const p = this._params
@@ -7283,10 +7308,10 @@ export class RoadSystem {
         // wrong-height runs that merely pass nearby.) Where genuinely overlapping runs at different
         // heights remain, this leaves at most a localized crease, not the old sampled-spline cliff.
         let bestLat = Infinity, bestPr = null, bestRunKey = ''
-        // FEAT-40: second-best interior RUN — cross-run twin of the self-overlap rival. Where two
-        // edges' carve footprints overlap at different heights, ownership flips at the equidistant
-        // line; _carveCrossSectionBlended cross-fades toward this rival so the flip isn't a cliff.
-        let secondLat = Infinity, secondPr = null, secondRunKey = ''
+        // FEAT-40 / BUG-64: EVERY interior run and run end within reach is kept — the losers become
+        // rivals whose earthwork _carveCrossSectionBlended unions with the winner's, so neither the
+        // ownership flip nor a change of second-nearest run is a step.
+        const inter = [], ends = []
         // BUG-21: terminal-vertex sliver fallback. At a shared hairpin apex BOTH continuation arms treat
         // the wedge just beyond the anchor as off-their-end (_projectOntoRun offEnd), so the primary
         // interior pass finds nothing and the surface pops to raw terrain (the +0.6 m jolt). Collect
@@ -7307,16 +7332,15 @@ export class RoadSystem {
                 // BUG-57: the gate widened endHW → footHW as part of the polar-cap continuation
                 // (see below) — the extra ring only ever carries bank-toe weights, so the ~40 m
                 // teleport artifact the old tight gate rejected stays rejected (W(footHW) ≈ 0).
-                if (pr.d2 <= footHW * footHW && pr.d2 < bestEndD2) { bestEndD2 = pr.d2; bestEndPr = pr; bestEndRunKey = runKey }
+                if (pr.d2 <= footHW * footHW) {
+                    ends.push({ runKey, pr })
+                    if (pr.d2 < bestEndD2) { bestEndD2 = pr.d2; bestEndPr = pr; bestEndRunKey = runKey }
+                }
                 return
             }
             if (latDist > footHW) return
-            if (latDist < bestLat) {
-                secondLat = bestLat; secondPr = bestPr; secondRunKey = bestRunKey
-                bestLat = latDist; bestPr = pr; bestRunKey = runKey
-            } else if (latDist < secondLat) {
-                secondLat = latDist; secondPr = pr; secondRunKey = runKey
-            }
+            inter.push({ runKey, pr })
+            if (latDist < bestLat) { bestLat = latDist; bestPr = pr; bestRunKey = runKey }
         }
         // PERF-25: cell-candidate fast path — same runs, same order, windowed projection (bit-identical
         // for every accepted candidate; see _resolveCellCands proof). FEAT-40 bore retries (excludeKeys)
@@ -7363,7 +7387,11 @@ export class RoadSystem {
         // the ordinary toe (W → 0) by footHW. Applied in _carveCrossSectionBlended so mesh ==
         // physics inherit it from one place.
         let endRadial
-        if (!bestPr && bestEndPr) {
+        // BUG-64: also when the end is radially NEARER than the interior winner — a far run whose
+        // toe stops short of here must not suppress the polar cap of the run that ends right here
+        // (seed 20 (1748,418): the outside of an anchor bend went to raw between two runs' ends,
+        // a 5.9 m notch, because a third road 22 m off held the point with no carve).
+        if (bestEndPr && (!bestPr || bestEndD2 < bestLat * bestLat)) {
             bestPr = bestEndPr; bestRunKey = bestEndRunKey
             endRadial = Math.sqrt(bestEndD2)
         }
@@ -7373,43 +7401,29 @@ export class RoadSystem {
         // stay on it). fx/fz/tx/tz/arcS come straight from the selected _projectOntoRun result.
         let fx = bestPr.fx, fz = bestPr.fz, tx = bestPr.tx, tz = bestPr.tz, arcS = bestPr.arcS
 
-        // ── Analytic frame refinement (corner-facet fix) ─────────────────────────────────────────
-        // The polyline projection gives a piecewise-constant tangent that jumps ~19° per 4 m chord on
-        // radius-12 corners, faceting the dirt and staircasing collision. Refine the WINNER only onto its
-        // exact primitive centerline (the SAME curve the visual ribbon samples) so the frame is smooth and
-        // the dirt/asphalt seam stops tearing. Both carve consumers (terrain _buildCarveTable, physics
-        // _sampleCarveWorld) rebuild signedLat/arcSEff from point+tangent, so they inherit the fix for free.
-        // NOT applied to the offEnd apex-sliver candidate: its arcS is intentionally clamped to the run end
-        // to stay C0 with the sibling arm at the shared anchor (BUG-21) — leave it on the polyline frame.
+        // Analytic frame refinement (_refineFrame). Both carve consumers (terrain _buildCarveTable,
+        // physics _sampleCarveWorld) rebuild signedLat/arcSEff from point+tangent, so they inherit it.
         const ce = this._network.get(bestRunKey)
-        let bestCeded = false
-        if (ce && ce.offCurveSpans) {
-            // BUG-53: inside an offCurveSpan (T departure band, shove deflection) the points left the
-            // primitive centerline, so refining onto it would pull the frame off the carve.
-            const aB = bestPr.arcS + (ce.arcOrigin ?? 0)
-            bestCeded = ce.offCurveSpans.some((csp) => aB >= csp.s0 - 0.5 && aB <= csp.s1 + 0.5)
-        }
-        if (!bestCeded && !bestPr.offEnd && ce && ce.centerline && ce.centerline.length > 1e-6 && ce.clArc && ce.polyCum) {
-            const hit = ce.centerline.nearest(wx, wz, ANALYTIC_REFINE_DS,
-                                              bestPr.sCL - ANALYTIC_REFINE_WINDOW,
-                                              bestPr.sCL + ANALYTIC_REFINE_WINDOW)
-            if (hit) {
-                fx = hit.x; fz = hit.z
-                tx = hit.tangent.x; tz = hit.tangent.z
-                // Remap analytic TRUE-arc → polyline chord-arc (the runProfile/camberProfile domain), then
-                // origin-shift. clArc↔polyCum are the paired per-run arrays; _interpArcTable is the same
-                // helper the ribbon uses in the opposite direction (chord→true).
-                const arcOrigin = ce.arcOrigin ?? 0
-                arcS = _interpArcTable(ce.clArc, ce.polyCum, hit.s) - arcOrigin
-            }
-        }
+        const hit = this._refineFrame(ce, bestPr, wx, wz)
+        if (hit) ({ fx, fz, tx, tz, arcS } = hit)
 
-        // FEAT-40 rival pass: the nearest DISTINCT competing carve field — either the winning
-        // run's own next-nearest pass (arc ≥ RIVAL_ARC_SEP away; self-overlap switchback) or the
-        // second-best RUN (overlapping corridors). _carveCrossSectionBlended cross-fades toward
-        // it near the equidistant line so an ownership flip isn't a surface teleport. offEnd
-        // passes and passes beyond the interior footprint don't count.
-        let rival = null
+        // FEAT-40 rival passes: every DISTINCT competing carve field — the winning run's own next-nearest
+        // pass (arc ≥ RIVAL_ARC_SEP away; self-overlap switchback), every other interior RUN, and every
+        // run END in reach (BUG-64). Each keeps its projection AT this point plus its tangent frame, so
+        // _carveCrossSectionBlended re-projects it LIVE (a hint reused for analyticNormal's ±0.5 m
+        // offsets must still see each bank's true slope — the BUG-83 lesson); an end also keeps its
+        // terminal vertex for the polar-cap radius. (The polyline foot is NOT the perpendicular foot
+        // under a smoothed tangent, so the frame is anchored here, not there.) offEnd self-passes and
+        // passes beyond the interior footprint don't count.
+        const rivals = []
+        const rivalOf = (runKey, q, end) => {
+            // Same analytic frame the winner gets, or the flip between them is a step (0.45 m at 27 m
+            // out on a seed-7 bend, chord vs centreline).
+            const f = end ? null : this._refineFrame(this._network.get(runKey), q, wx, wz)
+            return f
+                ? { runKey, arcS: f.arcS, lat: (wx - f.fx) * f.tz - (wz - f.fz) * f.tx, x0: wx, z0: wz, tx: f.tx, tz: f.tz, end: null }
+                : { runKey, arcS: q.arcS, lat: q.signedLat, x0: wx, z0: wz, tx: q.tx, tz: q.tz, end: end ? { x: q.fx, z: q.fz } : null }
+        }
         if (ce && !bestPr.offEnd) {
             // PERF-25: the rival pass rides the same cell windows (accepted rivals need d ≤ footHW,
             // covered by the same proof; its own along<2 m gate rejects window-edge vertex clamps).
@@ -7422,14 +7436,11 @@ export class RoadSystem {
                 // cuts the polyline mid-approach; a clamped vertex has a tiny perpendicular
                 // signedLat but a large along-offset — using it would fake a nearby deep pass).
                 const d2 = pr2.d2, latP = pr2.signedLat
-                if (d2 - latP * latP < 4 && d2 <= footHW * footHW) {
-                    rival = { runKey: bestRunKey, arcS: pr2.arcS, signedLat: latP, lat: Math.sqrt(d2) }
-                }
+                if (d2 - latP * latP < 4 && d2 <= footHW * footHW) rivals.push(rivalOf(bestRunKey, pr2, false))
             }
         }
-        if (secondPr && (!rival || secondLat < rival.lat)) {
-            rival = { runKey: secondRunKey, arcS: secondPr.arcS, signedLat: secondPr.signedLat, lat: secondLat }
-        }
+        for (const c of inter) if (c.pr !== bestPr) rivals.push(rivalOf(c.runKey, c.pr, false))
+        for (const c of ends) if (c.pr !== bestPr) rivals.push(rivalOf(c.runKey, c.pr, true))
 
         // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
         // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
@@ -7439,7 +7450,7 @@ export class RoadSystem {
             runKey:     bestRunKey,
             arcS:       arcS,
             camberSign: 1,
-            rival,
+            rivals,
             endRadial,   // BUG-57: set only on an apex-sliver fallback hit — the polar-cap radius
         }
     }
@@ -9852,16 +9863,16 @@ export class RoadSystem {
 
     // ── FEAT-40: cross-section with self-overlap rival blend ─────────────────────────────────
     /**
-     * _carveCrossSection, cross-faded toward the winning run's rival pass (nr.rival, set by
-     * _resolveRoadSurface) near the equidistant line between two passes of a self-overlapping
-     * run. Without this, the nearest-pass flip is a surface TELEPORT — up to 25 m where the
-     * tunnel pass dug deep earthwork — that the terrain grid renders as accordion pleats.
+     * _carveCrossSection composed with every competing pass (nr.rivals, set by _resolveRoadSurface)
+     * — a self-overlapping run's other pass, or another run whose earthwork reaches here. Without
+     * this, the nearest-pass flip is a surface TELEPORT — up to 25 m where the tunnel pass dug deep
+     * earthwork — that the terrain grid renders as accordion pleats.
      *
-     * mix = 0.5 at the equidistant line, easing to 0 once the rival is CROSS_BLEND_BAND farther
-     * away; additionally faded to 0 at the winner's ribbon edge (the road deck itself is never
-     * blended — a wheel on the ribbon must ride exactly its run's surface). A rival pass inside
+     * Every rival (nr.rivals: self-passes, other runs, run ends in reach) is unioned with the winner
+     * as earthwork (BUG-64, below), faded to 0 at the winner's ribbon edge (the road deck itself is
+     * never blended — a wheel on the ribbon must ride exactly its run's surface). A rival pass inside
      * a bore span contributes RAW unless the probe is below its apex (same bore-ownership rule
-     * as the resolver's exclusion loop). Blending the SURFACES (not the raw cs fields) keeps the
+     * as the resolver's exclusion loop). Composing the OFFSETS from raw keeps the
      * caller identity h = raw + blendW·(gradeY − raw) exact. Shared by physics
      * (_sampleCarveWorld) and the terrain mesh (_buildCarveTable) so mesh == collision holds.
      *
@@ -9884,30 +9895,56 @@ export class RoadSystem {
             if (r > Math.abs(signedLat)) latEff = (signedLat < 0 ? -1 : 1) * r
         }
         const cs = this._carveCrossSection(latEff, arcSEff, nr.runKey ?? '', nr.camberSign ?? 1, rawAmp, wx, wz)
-        const rv = nr.rival
-        if (!rv) return cs
-        const halfWidth = this._params.roadHalfWidth ?? 5
+        const rivals = nr.rivals
+        if (!rivals || !rivals.length) return cs
+        const p = this._params
+        const halfWidth = p.roadHalfWidth ?? 5
+        // The winner's deck is never blended — a wheel on the ribbon rides exactly its run's surface.
         const latDist = Math.abs(signedLat)
-        // Fade in over 1.5 m past the ribbon edge (C0 with the unblended on-ribbon surface).
-        const fadeU = Math.max(0, Math.min(1, (latDist - halfWidth) / 1.5))
-        if (fadeU <= 0) return cs
-        const u = Math.max(0, Math.min(1, (rv.lat - latDist) / CROSS_BLEND_BAND))
-        const mix = 0.5 * (1 - u * u * (3 - 2 * u)) * (fadeU * fadeU * (3 - 2 * fadeU))
-        if (mix <= 1e-4) return cs
-        // Rival surface under the bore-ownership rule.
-        let csR = null
-        const inBore = this.tunnelSpanAt(rv.runKey, rv.arcS)
-        if (!inBore || (queryY !== undefined &&
-                        queryY < this.runProfile(rv.arcS, rv.runKey, _CD_RP).gradeY + (this._params.tunnelBoreRadius ?? 8))) {
-            csR = this._carveCrossSection(rv.signedLat, rv.arcS, rv.runKey, 1, rawAmp, wx, wz)
+        if (latDist <= halfWidth) return cs
+        // BUG-64: the passes compose as EARTHWORK, not as a nearness cross-fade. Each pass's offset
+        // from raw (its blendW folded in) is unioned: the fills by max (the higher bank stands), the
+        // cuts by min (the deeper cut is dug), and fill meeting cut sums. The old 50/50 mix with ONE
+        // rival averaged a pass whose toe had already ended (raw) with the other's bank inside a 12 m
+        // band, and dropped a leg's bank whole when the second-nearest run changed — steps no single
+        // bank has (seed 20 (1748,418): 80° between roads 50 m apart on 14° ground). max/min of
+        // continuous banks is continuous and no steeper than the steepest bank, and it is symmetric in
+        // the passes, so neither an ownership flip nor a rival change is a seam.
+        // Over the winner's core + shoulder (ribbon edge → carveHalfWidth + shoulder) each rival is
+        // eased from the WINNER'S OWN surface to its own. Where earthworks do not overlap no rival has
+        // coverage there, so this changes nothing; where a neighbour's bank does reach this road, the
+        // difference ramps in over 5.5 m instead of standing up as a step (seed 7 (-175,938): a fill
+        // 3.5 m above the shoulder — road-fill-support). Both fades are 1 at any ownership flip
+        // between roads that keep their own shoulders, so the union stays symmetric there.
+        const fadeW = Math.min(halfWidth + (p.roadCarveExtraWidth ?? 3.0), p.roadMinTurnRadius ?? 12) + (p.roadShoulderWidth ?? 2.5) - halfWidth
+        const fadeU = Math.min(1, (latDist - halfWidth) / fadeW)
+        const fade = fadeU * fadeU * (3 - 2 * fadeU)
+        const wB = cs ? cs.blendW : 0
+        const dB = cs ? wB * (cs.gradeY - rawAmp) : 0
+        let fill = Math.max(dB, 0), cut = Math.min(dB, 0), w = wB
+        const boreR = p.tunnelBoreRadius ?? 8
+        for (const rv of rivals) {
+            // Re-projected LIVE from its foot + tangent; a run END rides its polar cap (BUG-57).
+            const dx = wx - rv.x0, dz = wz - rv.z0
+            const arcS = rv.arcS + dx * rv.tx + dz * rv.tz
+            let lat = rv.lat + dx * rv.tz - dz * rv.tx
+            if (rv.end) {
+                const r = Math.hypot(wx - rv.end.x, wz - rv.end.z)
+                if (r > Math.abs(lat)) lat = (lat < 0 ? -1 : 1) * r
+            }
+            // Bore-ownership rule: a pass inside a bore span is raw unless the probe is below its apex.
+            if (this.tunnelSpanAt(rv.runKey, arcS) &&
+                !(queryY !== undefined && queryY < this.runProfile(arcS, rv.runKey, _CD_RP).gradeY + boreR)) continue
+            const csR = this._carveCrossSection(lat, arcS, rv.runKey, 1, rawAmp, wx, wz)
+            if (!csR) continue
+            const wR = csR.blendW
+            const dR = dB + (wR * (csR.gradeY - rawAmp) - dB) * fade
+            if (dR > fill) fill = dR
+            if (dR < cut) cut = dR
+            if (wR > w) w = wR
         }
-        const wB = cs ? cs.blendW : 0, wR = csR ? csR.blendW : 0
-        const hB = cs  ? rawAmp + wB * (cs.gradeY  - rawAmp) : rawAmp
-        const hR = csR ? rawAmp + wR * (csR.gradeY - rawAmp) : rawAmp
-        const w = wB + (wR - wB) * mix
         if (!(w > 1e-4)) return null
-        const h = hB + (hR - hB) * mix
-        return { blendW: w, gradeY: rawAmp + (h - rawAmp) / w }
+        return { blendW: w, gradeY: rawAmp + (fill + cut) / w }
     }
 
     // ── Longitudinal grade: there is NO smoother (FEAT-68) ────────────────────────

@@ -150,9 +150,9 @@ for (const seed of SEEDS) {
                     const c = road._sampleCarveWorld(sx, sz, 0, nr0)
                     if (!c) { prev = null; prevLat = null; continue }
                     // FEAT-40 bank detection, judged from the PINNED resolve the sweep actually uses:
-                    // the rival cross-fade (road.js CROSS_BLEND_BAND=12) is active when the station's
+                    // the rival earthwork union (road.js _carveCrossSectionBlended) is active when the station's
                     // rival is within the blend band of this sample's lateral offset.
-                    const bank = neckNear || (nr0.rival && (nr0.rival.lat - lat) < 14)
+                    const bank = neckNear || nr0.rivals?.some((r) => Math.abs(r.lat) - lat < 14)
                     if (prev !== null) {
                         const step = Math.abs(c.gradeY - prev)
                         // The lone intended discontinuity is the road-edge dropoff where the march crosses
