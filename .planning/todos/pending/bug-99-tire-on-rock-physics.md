@@ -172,3 +172,36 @@ Three of 1080 hits at 45–50 mph exceed 2.3× (max 3.0×, a 9 kg rock). Live: 0
 rolls 49° on the FLAT tire after the pop (no steering in the census; the same hit unpopped rolls 4°).
 Wheel damage from rocks fell with the sandwich force (55 mph: 144 → 122 of 270 hits damage a rim).
 Physics fingerprint (no debris) identical.
+
+## Work log — 2026-11-01 (Lane B): pop on RATE; rock grip attempted and parked
+
+**Pinch work is leaky-integrated** (`hazardPinchTauS` 50 ms, 328625ee): rubber relaxes, so a slow press
+caps at power × τ (800 J needs ≈16 kW held into the rim) — owner: "differentiate based on how quickly
+the energy is dumped". Every real strike over 100 J dumps it inside one 16.7 ms step, so τ from 16 to
+200 ms gives the identical pop curve. Owner play-test of the energy curve: "the popping feels fair. And
+natural."
+
+**Crawl baseline to beat** (`--nopop --speeds=2,5,10 --big`, 270 hits each): the struck hub rises > 5 cm
+in 0 / 0 / 0 hits, the rock ends > 1 m from where it lay in 74 / 175 / 270, rock exit ≤ 1.9×. Owner:
+"the truck hardly ever climbs over them".
+
+**Rock grip — tried, NOT working, parked on `wip/bug99-rock-grip` (48f2c41d).** Two pieces:
+1. Road friction in the rock proxy (Coulomb at each support, the engine's mixed μ — measured to be the
+   geometric mean — handed to the engine with the normal impulses). Owed: since 10-31 the engine no
+   longer sees the rock driven into the road, so its own friction holds only μ·m·g.
+2. A second tire patch per wheel on the rock the tire is pressed against: its own slip state, own load
+   (tire springs at each depth scaled to Fn), the face's tangent frame (forward-and-up on a face), slip
+   against the rock's point velocity, both patches in the ω Newton, strut share to the hub next step
+   (`params._tireGripUp`), implicit in the rock's yield. A shared single slip state was tried first:
+   the road wants ωr = v, a 40° face ωr ≈ 0.5·v, and the average reversed the wheel in three steps.
+
+Result: face grip alone does nothing (a free rock is carried along); with road friction the rock is
+pinned at its base, PIVOTS (effective mass ≈ 1.4 kg at the tire contact for a 9 kg rock) and the
+proxy's EXPLICIT per-substep coupling slingshots it — 2 mph → 22 m/s. The proxy was built for rocks
+that slide; a gripped one is a stiff oscillator (√(k/m_eff)·substep ≈ 1.6). **Next design:** solve the
+tire–rock–road contact implicitly each substep (the tire normal force evaluated at the rock's
+end-of-substep yield, with the road constraints in the rock's effective mass), then re-land the two
+pieces on top. Fingerprint (no debris) stayed identical throughout.
+
+**Also seen:** an 88 kg rock (1.3×, ~0.5 m) hit dead-centre at 50 mph rolls the truck — pre-existing
+(1506d155 does too); the `--big` grid stops at 1.0×. Check what sizes the game spawns.
