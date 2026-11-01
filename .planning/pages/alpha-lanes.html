@@ -138,6 +138,8 @@
       wt: '/Users/ledogen/CodeShit/CarGame-machine', branch: 'feature/machine', port: 3282,
       owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, data/parts.js, data/stock-weights.js, physics gates',
       tasks: [
+        { id: 'BUG-99', what: 'Tire-on-rock physics — Newton\'s third law on every rock contact; punctures on the energy a strike dumps into the rim.' },
+        { id: 'FEAT-158', what: 'Rock grip / crawling — the tire climbs rocks, rocks grip the road. Needs an implicit tire–rock–road solve first (the first try is parked on wip/bug99-rock-grip). Owner 11-01.' },
         { id: 'FEAT-93', what: 'Hazard punctures — a hard enough rock hit pops a tire at any condition.' },
         { id: 'FEAT-94', what: 'Driving on a flat wrecks that corner, and the player is told it is flat (no percentage).' },
         { id: 'FEAT-132', what: 'The stranded motorist posts a haul fetch — wheel + tire ride in the bed.' },
@@ -167,9 +169,9 @@
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
+        { id: 'BUG-81 item 4', what: 'JUMPS THE QUEUE (owner 11-01): the tube still launches you in from outside. Floor = a wall from both sides. Target = bury the portal deeper in the hillside like a real road tunnel so the tube is never reachable from outside. Junctions near portals stay BUG-67.' },
         { id: 'BUG-90', what: 'Occasional bad dips in the road surface.' },
         { id: 'FEAT-42', what: 'Saves — MOVED UP (owner 10-25, major): closing the laptop lid discards the tab and the run is gone. Write runSave on pagehide, resume once on boot (delete-on-load). Workaround meanwhile: Chrome Memory Saver → keep localhost active.' },
-        { id: 'BUG-81', what: 'Tunnel portal LAUNCH (major, owner 10-25: "touched a portal… truck was totaled") — the physics kick at the portal; capture + replay first.' },
         { id: 'BUG-93', what: 'Tunnel portals: terrain holes still, and grass/prop shadows inside the bores. Screenshot-pair loop until the gaps are closed (owner 10-25).' },
         { id: 'BUG-77 · FEAT-77', what: 'The two known red gates — tunnel spans and road clearance.' },
         { id: 'FEAT-133/136', what: 'Controller finish — pad on the map and cards; cross-browser pads.' },
@@ -183,12 +185,9 @@
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read ' + HANDOFF + ' § Lane Spare, then this page\'s Lane Spare handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/s.handoff here.' },
   ]
   const OWED = [
-    'BUG-100: a seed whose road cannot get a drivable profile — drop that road like a stranded piece, or keep refusing the seed?',
-    'BUG-81 item 4: the tunnel tube still launches you in from outside — should it jump BUG-93 and BUG-100 in Spare\'s queue?',
-    'FEAT-146 titles: towel reads "run ended on day N"; win / crash / broke down still say what happened. Generic enough, or one wording for all four?',
-    'Lane A after FEAT-66: the midnight overlay, FEAT-148\'s line plumbing and FEAT-147 are still unordered (FEAT-65 then FEAT-66 is ruled).',
-    'In-game looks owed: the sealed tunnel mouths (BUG-93), the BUG-81 drive, the camp requisition run with the debug deed button (FEAT-103).',
-    'The giver lines: fill the Giver lines sheet on the item-setup page (generic first lines + one per thing); the fold to data/offers.js follows.',
+    'BUG-100: the refusal card is up; for the alpha, every seed must play. Pick: (a) drop the condemned road like a stranded piece (recommended — also fixes typed seeds), or (b) auto-reroll a random seed on refusal.',
+    'In-game looks owed (when you are back at the machine): the sealed tunnel mouths (BUG-93), the BUG-81 portal drive, the camp requisition run with the debug deed button (FEAT-103).',
+    'The giver lines: fill the Giver lines sheet — it is now the FIRST section of the item-setup page https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu (generic first lines + one per thing); the fold to data/offers.js follows.',
   ]
   const STATES = ['todo', 'doing', 'done', 'blocked']
   const state = { tasks: {}, lanes: {}, inbox: {} }

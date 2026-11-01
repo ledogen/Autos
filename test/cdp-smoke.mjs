@@ -704,7 +704,7 @@ const STEPS = [
     await js('document.getElementById("tc-back").click()')
     check(await js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 'back did not restore the pause menu')
     await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
-    await ended(/run ended/)
+    await ended(/gave up/)
     // The crash: black and white at once, the card after the beat. First, the playtime counts (the save
     // carries it, a second at a time) and stops while paused.
     await newRun()
@@ -717,7 +717,7 @@ const STEPS = [
     await js('window.__damage.fatalImpact = { region: "front", v: 40, mph: 90 }')
     check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
     check(!await card(), 'the crash card skipped the beat')
-    await ended(/crashed/)
+    await ended(/died/)
     // Broke down: an empty tank, no gas can, no money for a tow → the Recovery card's "end run".
     await newRun()
     // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
@@ -735,7 +735,7 @@ const STEPS = [
     check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000),
       `no "end run" on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
     await js('document.querySelector("#recovery-card .rc-end").click()')
-    await ended(/broke down/)
+    await ended(/truck is dead/)
     // The win: six deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     await js('window.__econ.halfPoints = 12')
@@ -743,7 +743,7 @@ const STEPS = [
     await js(`(() => { const b = window.__board(), h = window.__day().clockH()
       const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
       for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
-    await ended(/made it in \d+ days?/)
+    await ended(/beat the alpha/)
   }],
 ]
 

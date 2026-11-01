@@ -8090,11 +8090,11 @@ function _discardRunSave () {
 // from the pause menu. Every one comes through _endRun: the save goes first, or the autosave would
 // keep a dead run alive for "continue"; then one summary card; then the main menu. A fatal crash
 // always ends the run: the default mode has no lives (SM-INV-1 lives clause) and nothing grants any.
-const RUN_END_TITLE = {   // PLACEHOLDER words; the day is the in-game day (owner, 2026-10-30: days AND playtime)
-  win:   (d) => `you made it in ${d} day${d === 1 ? '' : 's'}`,
-  crash: (d) => `you crashed on day ${d}`,
-  broke: (d) => `you broke down on day ${d}`,
-  towel: (d) => `run ended on day ${d}`,   // generic (owner, 2026-10-31)
+const RUN_END_TITLE = {   // owner's words (2026-11-01); the day is a row below (owner, 2026-10-30: days AND playtime)
+  win:   'Congratulations! You beat the alpha.',
+  crash: 'You died.',
+  broke: 'The truck is dead.',
+  towel: 'You gave up.',
 }
 // The fatal hit plays out in black and white before its card (owner, 2026-10-30).
 const CRASH_CARD_DELAY_S = 1.5
@@ -8104,7 +8104,7 @@ function _endRun (kind) {
   if (_runEnded) return
   _discardRunSave()
   // Read the run as it ended, before the clock moves on behind the card.
-  const title = RUN_END_TITLE[kind](daySystem.day()), body = _runEndHtml(kind)
+  const title = RUN_END_TITLE[kind], body = _runEndHtml(kind)
   if (missionSystem?.isActive()) missionSystem.exit()
   if (kind === 'crash') renderer.domElement.style.filter = 'grayscale(1)'
   setTimeout(() => {
@@ -8123,6 +8123,7 @@ function _runEndHtml (kind) {
   const row = (k, v, gap = false) => `<div class="re-row${gap ? ' re-gap' : ''}"><span class="re-k">${k}</span><span>${v}</span></div>`
   const min = Math.floor(_playedS / 60)
   return (kind === 'crash' && f ? `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region}</div>` : '')
+    + row('day', `${daySystem.day()}`)
     + row('playtime', `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`)
     + row('jobs completed', `${e.missions}`, true)
     + row('mission ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))

@@ -104,3 +104,15 @@ through the apron.
 - Driving off the hillside onto/over the portal mouth: no float, no teleport. Reproduce with a
   capture first, then pin with a headless check.
 - MESH == PHYSICS still holds (the collider is whatever is drawn).
+
+## Owner, 2026-11-01 — item 4 jumps Spare's queue
+
+> "Tunnel tube can jump the queue. Bare minimum it should be a wall from both sides. Desired fix is
+> making the tube not visible by burying the portal deeper in the wall like an actual road tunnel
+> (we always seek to imitate real life)."
+
+So item 4 is next for Spare, ahead of BUG-93 and BUG-100. Two bars: the floor is a two-sided tube —
+the lining pushes back from outside as well as inside, no launch, no pull-in. The target is that the
+tube is never reachable from outside at all: seat the portal deeper into the hillside so the bore
+starts inside rock, as a real road tunnel does, and the hill is what you drive on above it. Junctions
+near portals (clipping, obstructions, messy generation) stay a separate ticket — BUG-67.

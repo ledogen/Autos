@@ -62,3 +62,17 @@ terrain (a cliff or stream bank where the promoted node was seated) and the BUG-
 - [ ] Either the seed validates after a router/profile fix with play-area and road-grade green, or
       the owner rules that a condemned edge is dropped instead of refusing (then: pieces rule applies,
       region-pieces gate extended), or the ticket closes as a rare refusal working as designed.
+
+## Owner, 2026-11-01 — the alpha framing
+
+> "I thought we already put up the 'can be generated' card. For alpha we should either work on making
+> every seed generate or rerolling seed."
+
+The card exists (the refusal state of the story seed modal, FEAT-43: "Seed X: 2 roads could not be
+given a drivable profile", pick another). What it does NOT do is reroll — the 2026-08-27 ruling was
+"fail safe and say so", and story.js still says nothing rerolls. The alpha options are therefore:
+(a) make every seed generate — the third acceptance bullet's "drop the condemned edge like a stranded
+piece" (BUG-85's rule), which turns every refusal into a playable world with one road fewer; or
+(b) reroll — a random run picks a fresh seed on refusal and never shows the card, while a typed seed
+still gets the card. Orchestrator's recommendation: (a), because it also closes the ticket for typed
+seeds and is a validate-layer change, not a router one. Waits on the owner's pick.

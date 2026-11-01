@@ -103,3 +103,10 @@ is still open and still theirs, and the ceiling gate holds the line in the meant
 - [ ] `bore-junction-clearance` ceilings come DOWN with the fix (target: 0 interpenetrations, 0
       portals within 12 m of a node; portals-in-pad materially reduced)
 - [ ] The capture reproduces clean: seed 0 run `g:-1,-3,1:-1,-2,2` no longer portals at arc 0
+
+## Owner, 2026-11-01
+
+> "Keep in mind there are still big issues with tunnels having intersections near portals causing
+> clipping and obstructions and otherwise messy generation. Separate issue/ticket tho."
+
+This is that ticket. Not in the alpha queue yet; BUG-81 item 4 (the tube from outside) goes first.
