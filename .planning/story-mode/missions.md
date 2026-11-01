@@ -49,6 +49,7 @@ Mission types are not flavors of the same activity. They differ in **what is bei
 | **Restraint** | Shock and impulse into the cargo | Flat rate; the cost is time | Cargo is broken |
 | **Clearance** | Objects removed from a blocked trail | Region access | Never — progress is world state |
 | **Accuracy** | Where the thing you threw landed | Continuous in distance from the target, scaling the per-unit rate | Never hard-fails; a miss is one unit unpaid |
+| **Demolition** (FEAT-65, owner 2026-11-01) | The share of a roadside site's targets knocked down — they stand on the shoulder of the route's last km, static until hit | Currency × the share smashed (haul's rule); the tip is speed, as on every job | Never hard-fails; a target left standing is pay unearned |
 
 > **[AMENDED 2026-08-14, owner] Accuracy scales the RATE and no longer sets the rank.** It stays a
 > fifth axis and stays in this table; what it lost is the letter. The paper route's rank is the par

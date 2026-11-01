@@ -252,7 +252,7 @@ something to swing it at. **V1 is "hit it with the truck,"** which is the versio
   may want a logging landing or a spur terminus, which is the same off-network generator but a bigger
   footprint than `poi.js` currently carves.
 
-## Approved plan — slice 1 (owner, 2026-11-01; not started)
+## Approved plan — slice 1 (owner, 2026-11-01; BUILT 2026-11-02, see below)
 
 ### Context
 
@@ -417,3 +417,66 @@ the tables (colour, badge, SOURCES) but has no code, and `BUILT_FAMILIES` keeps 
 ### Placeholders the owner owns
 The words, the target counts, the rank-table numbers, the deadline slack, the sign mass, and the
 painted board's design (its own ASSET ticket).
+
+## Built — slice 1 (2026-11-02, feature/run-shape)
+
+As the approved plan, with these specifics:
+- **`src/demolition.js`** (new, pure): `DEMOLITION_PARAMS`, `TARGET_TYPES`, `siteTargets(route, dressing,
+  key, world)`. It walks the route's own `segments` backwards from the end, on the road's real
+  centreline (the 25 m map polyline is too coarse to offset 6.25 m on a curve).
+  - **Deck test:** a spot is rejected when another road's centreline (`road.queryNearest`) is nearer
+    than its own. `sampleRoadTopY` can't serve here: it answers across the whole carve footprint,
+    shoulder included (it returned a height 10 m out).
+  - **Cost:** 1–3 ms per site.
+- **Target kinds:** `barrel` and `roadBarrier` are DEBRIS_TYPES. The open drum, the small crate and the
+  seven road signs load on first use (`debrisSystem.load(kind, spec)`), never at cold boot.
+- **Sign mass:** 13 kg (a 4x4 timber post + its blank).
+- **`main.js`:**
+  - `_planOne` places `m.targets` with the plan, so the card counts them.
+  - The site manager (`_placeSite` / `_updateSite` / `_siteCount`) is FEAT-154's model↔body swap plus
+    `physicsEngine.sleep` right after the spawn.
+  - **Smashed** = moved 0.3 m from the spawn pose, or tilted 25°, latched at 10 Hz.
+  - The settle letters the share smashed and pays the line × that share.
+  - HUD: a "Site n / N smashed" row, and the deed rung reads as a goal, not "lost" (the axis climbs).
+  - The result card gets a "Smashed n / N" row.
+  - The save carries the smashed indices, and a resume re-places the same site.
+- **`mission.js`:** an anchor with one node on the planners' graph (the camp) exits through it.
+- **`offer-board.js`:**
+  - `BUILT_FAMILIES` gains demolition.
+  - The badge is `Dm`.
+  - gateLine / deedLine read "N%+ smashed".
+  - A demolition job is always roadside.
+  - The card reads "…needs **his old drums crushed** along **<place>**", with "N to smash · pay per
+    target smashed".
+  - The camp's line plans out to roadside and is named by its place.
+- **Content:** `scrapDrums` (farm), `oldSignLine` (work site; signs face the traffic on the right, the
+  barricades lie along the road), `reqSigns` (the camp; crates + drums until ASSET-77, the painted
+  board, ships).
+- **Gates:**
+  - New `test/demolition-site.mjs`: every dressing placed on every planned route, seeds 1 and 6.
+  - expedition-camp: the type mix and the camp line planning out.
+  - offer-board: demolition rolls only at farms and work sites, and the card's wording.
+  - cdp-smoke's new `demolition` step: take the camp line at the camp → the site stands → the targets
+    near the truck are bodies and stay asleep 2 s → a kicked one counts smashed on the HUD → arriving
+    settles with "Smashed 1 / N".
+
+**Acceptance (August list), as it now stands:**
+- framing and mailboxes: ruled.
+- missions.md: a demolition row as its own axis (the "coverage dressing" framing was superseded by the
+  2026-11-01 share-smashed ruling).
+- par: built without `stop: true` (it is an ordinary roadside route).
+- determinism: gated.
+- road clearance: gated (off every deck).
+- at rest: by construction (asleep), smoke-checked for 2 s.
+- drivable-through: 18 kg drums, 13 kg signs, 10 kg barricades.
+- the cap: pinned bodies.
+- economy: one rank row (`RANK_TABLE.demolition`), no new constants.
+- damage values: none authored.
+
+**Still owed:**
+- The par-vs-elapsed gap, measured on a real drive.
+- **The owner's in-game look:** does a sleeping target ever wake before it is touched, e.g. when the
+  terrain chunk under it rebuilds? If it does, the fallback is to spawn bodies only ~25 m ahead of the
+  truck.
+- The words, the counts and the rank row, all placeholders.
+- ASSET-77.

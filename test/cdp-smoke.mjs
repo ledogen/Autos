@@ -466,6 +466,52 @@ const STEPS = [
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
   }],
+  // FEAT-65: the camp's own demolition line (the requisition is open from the step above). Taken at the
+  // camp it starts there (no approach); its targets stand as models along the route's last km; near
+  // the truck they are bodies, ASLEEP until touched; a kicked one counts smashed on the HUD; arriving
+  // settles the line with the count on the result card.
+  ['demolition', async () => {
+    const pois = 'window.__map2d()._getPois()'
+    const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
+      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await seat(camp.x, camp.z, camp.h)
+    await park(true)
+    const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    check(await until(() => vis('mp-accept'), 3000), 'parking at the camp opened no lines')
+    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqSigns'; i++) await js('window.__mission().cycle(1)')
+    check(await js('window.__mission().offer._spec.line') === 'reqSigns', 'the camp lists no demolition line')
+    await js('document.getElementById("mp-accept").click()')
+    const st = await js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, n: m.mission?.targets?.length } })()')
+    check(st.s === 'staging' && !st.a && st.n > 0, `the camp's line did not start at the camp with a site: ${JSON.stringify(st)}`)
+    check((await js('window.__cargo().site'))?.length === st.n, 'the site does not stand from accept')
+    // Seat on the route's centreline beside the first target: within onM its targets become bodies.
+    const at = await js(`(() => { const m = window.__mission().mission, t = window.__cargo().site[0]
+      let bi = 0, bd = Infinity
+      m.poly.forEach((p, i) => { const d = Math.hypot(p.x - t.x, p.z - t.z); if (d < bd) { bd = d; bi = i } })
+      const a = m.poly[Math.max(0, bi - 1)], b = m.poly[Math.min(m.poly.length - 1, bi + 1)]
+      return { x: m.poly[bi].x, z: m.poly[bi].z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()`)
+    await seat(at.x, at.z, at.h)
+    const bodies = 'window.__cargo().site.filter(t => t.body != null)'
+    check(await until(() => js(`${bodies}.length > 0`), 3000), 'no target near the truck became a body')
+    await sleep(2000)
+    const awake = await js(`${bodies}.filter(t => window.__physicsEngine.isAwake(t.body)).length`)
+    check(awake === 0 && await js('window.__cargo().site.every(t => !t.smashed)'), `untouched targets did not stay asleep and standing: ${awake} awake`)
+    // Kick one: the engine wakes it, it moves, the poll latches it smashed.
+    await js(`(() => { const t = ${bodies}[0], p = new (window.__vs.position.constructor)(), q = new (window.__vs.quaternion.constructor)()
+      window.__physicsEngine.getTransform(t.body, p, q); window.__physicsEngine.applyImpulse(t.body, { x: 200, y: 100, z: 0 }, p) })()`)
+    check(await until(() => js('window.__cargo().site.filter(t => t.smashed).length === 1'), 3000), 'a kicked target did not count smashed')
+    check(await until(() => js('/1 \\/ \\d+ smashed/.test(document.getElementById("job-promise")?.textContent ?? "")'), 2000),
+      `the HUD does not count it: "${await js('document.getElementById("job-promise")?.textContent')}"`)
+    // Arrive: the line settles (a D at 1 of n — back on the list), and the result card counts the site.
+    const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
+    await seat(end.x, end.z, end.h)
+    check(await until(() => js('window.__mission().state === "done"'), 5000), `arriving did not settle the line: ${await js('window.__mission().state')}`)
+    check(await js('/Smashed\\s*1 \\/ \\d+/.test(document.getElementById("mp-body")?.textContent ?? "")'),
+      `the result card does not count the site: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    await js('document.getElementById("mp-accept").click()')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
   // FEAT-154: a road out of the area. Full throttle at its barricade row: the loose barricades get
   // smashed aside, past the fade line the screen goes black, and the truck comes back on a road inside
   // the return radius facing in, with every barricade back where it stood.

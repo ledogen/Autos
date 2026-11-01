@@ -58,7 +58,7 @@ import { DAY_PARAMS } from './day.js'
  * card, the colours and the lists are ready) but has no code, so it must simply never roll — not
  * be half-built. Add a family here the day its mission ships.
  */
-export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul', 'freight', 'fragile'])
+export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul', 'freight', 'fragile', 'demolition'])
 
 // Fixed names for roster types with no NAME_FORMS row (data/offer-names.js) — Larry, mom, and the
 // gas station, which posts work but is still just "the gas station". A destination needs a name:
@@ -111,12 +111,16 @@ export function jobBadge (sp) {
     if (sp.family === 'haul') return 'H'
     if (sp.family === 'freight') return 'Fr'
     if (sp.family === 'fragile') return 'Fg'
+    if (sp.family === 'demolition') return 'Dm'
     return sp.shape === 'fetch' ? 'Fe' : 'C'
 }
 
 /** FEAT-97: a fragile thing's tolerance and hit sound, as a spec carries it (src/fragile.js) — null otherwise. */
 const fragileOf = (thing) => thing.family === 'fragile'
     ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, onePctG: thing.onePctG, breakG: thing.breakG, sound: thing.sound } : null
+
+/** FEAT-65: a demolition gate as a whole percent of the site smashed (economy.js RANK_TABLE.demolition). */
+const smashedPct = (gate, region) => Math.round(rankTable('demolition', region)[gate] * 100)
 
 /** "S only" / "A or better" — how a card states a rank gate. */
 export function gateText (gate) { return gate === 'S' ? 'S only' : `${gate} or better` }
@@ -137,6 +141,7 @@ export function gateLine (gate, kind, region = 1, cargoId = 'firewood', km = 0) 
     if (kind === 'haul') return `if ${rankTable('haul', region, cargoId)[gate]}+ bundles delivered`
     if (kind === 'fragile') return `if ${Math.round(fragileLines(region, cargoId, km)[gate] * 100)}%+ intact`
     if (kind === 'freight') return 'upon delivery'
+    if (kind === 'demolition') return `if ${smashedPct(gate, region)}%+ smashed`   // FEAT-65: the share of the site
     return `if ${gateText(gate)}`
 }
 
@@ -166,6 +171,7 @@ export function deedLine (kind, region = 1, cargoId = 'firewood', km = 0, massKg
         const t = rankTable('freight', region)
         return massKg >= t.B ? 'Deed: 1 upon delivery' : `Deed: 1/2 upon delivery — under ${t.B} kg`
     }
+    if (kind === 'demolition') return `Deed: 1 ${gateLine('B', kind, region)} · 1/2 at ${smashedPct('C', region)}%+`
     return 'Deed: 1 if B or better · 1/2 at C'
 }
 
@@ -296,7 +302,9 @@ export class OfferBoard {
                 _spec: {
                     line: t.id, family: t.family, thingId: t.id, phrase: t.phrase, person: null, bonus: null,
                     massKg: t.stock ? t.stock * HAUL_BUNDLE_KG : t.massKg, stock: t.stock ?? null, payMult: 0,
-                    destKind: 'poi', destPick: 0, placeName: null, to: null, passenger: !!t.passenger,
+                    // FEAT-65: the camp's demolition line goes out to a roadside site, its place named like any job's.
+                    destKind: t.targets ? 'roadside' : 'poi', destPick: 0, placeName: t.targets ? this._placeName(rngFor(`line:${this._seed}:${t.id}`)) : null,
+                    to: null, passenger: !!t.passenger, targets: t.targets ?? null,
                     shape: 'courier', from: null, load: t.load ?? null, loose: null, atPickup: null, fragile: fragileOf(t),   // FEAT-157
                     deadlineSlack: 0,
                 },
@@ -673,7 +681,10 @@ export class OfferBoard {
                 * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1)   // FEAT-96: freight's weight bonus on pay
                 * (thing.careMult ?? 1)
                 * tmul('pay') * (stock ? tmul('perPiece') : 1),        // FEAT-142: the traits' pay
-            destKind: papers ? null : (strictTo || fetch || stops || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
+            // FEAT-65: a demolition job always ends roadside — its site is the route's last km of shoulder.
+            destKind: papers ? null : thing.family === 'demolition' ? 'roadside'
+                : (strictTo || fetch || stops || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
+            targets: thing.targets ?? null,   // FEAT-65: what stands on that shoulder (src/demolition.js)
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
             loose: thing.loose ?? null, // one loose bed body (src/debris.js kind) — the motorist's tire
@@ -778,7 +789,8 @@ export class OfferBoard {
     destWish (offer, pois, exclude) {
         const sp = this.spec(offer)
         // FEAT-103: a line goes to the camp and nowhere else, at any length (mission.js `anyLeg`).
-        if (sp.line) return { kind: 'poi', pick: 0, pois: pois.filter(q => q.id === this._campId), strict: true, anyLeg: true }
+        // FEAT-65: …except the camp's own demolition line, which goes OUT to a roadside site.
+        if (sp.line && sp.destKind === 'poi') return { kind: 'poi', pick: 0, pois: pois.filter(q => q.id === this._campId), strict: true, anyLeg: true }
         if (sp.destKind !== 'poi') return { kind: 'roadside' }
         // A FETCH (FEAT-102) wishes for its PICKUP — a POI of `from`, strictly — and says so, so the
         // planner returns the same way and settles back here.
@@ -933,6 +945,9 @@ export class OfferBoard {
             if (sp.stock) {
                 sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true },
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
+            } else if (sp.targets) {
+                // FEAT-65: "Earl needs his old drums crushed along the Miller place."
+                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' along ' }, { t: dest, b: true }, { t: '.' })
             } else {
                 // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto." A fetch
                 // names its pickup: "Earl needs a full jerry can fetched from Pump & Go."
@@ -970,7 +985,10 @@ export class OfferBoard {
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         if (sp.fragile) terms.push(sp.fragile.tierName)   // what the player is up against (owner, 2026-10-23)
-        terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
+        // FEAT-65: a demolition job carries nothing; it states the site — how many stand, and that the pay
+        // follows the share smashed (haul's rule, main.js onSettle).
+        if (sp.targets) terms.push(`${route?.targets?.length ?? '?'} to smash`, 'pay per target smashed')
+        else terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
         // R-20: the tip is speed on fragile too; what the condition moves is the BASE (splitFragilePayout
         // pays half of it flat and half × health) — the owner asked, so the card says it.
         if (sp.fragile) terms.push('damage docks the base')
@@ -1007,7 +1025,7 @@ export class OfferBoard {
                 + ` — ${gateLine(sp.bonus.gate, sp.family, this._region, cargoId, km)}` : null,
             // R-09: the deed line — what this job adds toward the camp, and the number behind it.
             // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
-            deed: sp.family === 'papers' || sp.family === 'demolition' ? null
+            deed: sp.family === 'papers' ? null
                 : sp.deeds === 'none' ? 'Deed: none — off the books'
                 : deedLine(sp.family, this._region, cargoId, km, sp.massKg) + (sp.deeds === 'extraHalf' ? ' · +1/2 at C or better' : ''),
             traits: sp.traitNames?.length ? sp.traitNames : null,   // FEAT-142: bottom-left of the card
@@ -1028,7 +1046,8 @@ export class OfferBoard {
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         if (sp.fragile) terms.push(sp.fragile.tierName)
-        terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
+        if (sp.targets) terms.push(`${route?.targets?.length ?? '?'} to smash`)
+        else terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
         if (sp.stock) {
             // The source's own haul offer is the stock on hand (owner, 2026-10-30): a player who wants the
             // line in one trip waits for it. offer.poiId is the source at the camp too (_at).
@@ -1037,8 +1056,11 @@ export class OfferBoard {
         }
         return {
             family: sp.family, badge: jobBadge(sp), portrait: null, flavor: null,
+            // A template literal for "from": test/offer-board.mjs's import scan. FEAT-65: the demolition line
+            // names its site, not a source — the camp gives it.
             sentence: [{ t: 'The expedition camp', b: true }, { t: ' needs ' }, { t: sp.phrase, b: true },
-                       { t: ` from ` }, { t: this.placeLabel(offer.poiId) ?? 'its source', b: true }, { t: '.' }],   // a template literal: the import scan
+                       ...(sp.targets ? [{ t: ' along ' }, { t: route?.placeName ?? sp.placeName, b: true }]
+                           : [{ t: ` from ` }, { t: this.placeLabel(offer.poiId) ?? 'its source', b: true }]), { t: '.' }],
             pay: 'Unpaid — the camp’s requisition', terms, times: ['no time limit'], bonus: null,
             // FEAT-157: the line's own axis — bundles, "upon delivery", N%+ intact, or the letter.
             deed: `Counts ${gateLine('C', sp.family, this._region, sp.fragile?.tier, (route?.distance ?? 0) / 1000)} — else it goes back on the list`,

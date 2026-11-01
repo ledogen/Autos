@@ -17,9 +17,9 @@
 //   5. THE LINES — closed until openLines(); then all five live at the camp AND at their source; each
 //      plans from its source to the camp through the camp edge's one inner node, inside the wall; no
 //      deadline; abandon puts a line back unchanged, complete takes it off for good; no expiry.
-//      FEAT-157: one line per built type — a haul, two couriers (the food holds the fifth slot), a
-//      freight drum and a fragile crate, each spec carrying its load and tier, each card's deed line in
-//      its own axis.
+//      FEAT-157: one line per type — a haul, a courier, a freight drum, a fragile crate, each spec carrying
+//      its load and tier, each card's deed line in its own axis. FEAT-65: the fifth, demolition, is given
+//      AT THE CAMP and plans OUT from it to a roadside site (inside the wall), never back to the camp.
 //
 // Heavy: routes a full 2800 m region per seed (~15 s each).
 import * as THREE from 'three'
@@ -176,28 +176,31 @@ for (const s of SEEDS) {
         board.openLines(6) === true && board.openLines(7) === false)
     const lines = board.offers(camp.id, 6)
     check(`every line has a source (${lines.length}/${REQUISITION.length})`, lines.length === REQUISITION.length)
-    check('each line is posted at its source too — the same offer',
-        lines.every((o) => o.poiId !== camp.id && board.offers(o.poiId, 6).includes(o)))
+    // FEAT-65: the demolition line's source IS the camp — one tag; every other line has two.
+    check('each line is posted at its source too — the same offer (the camp\'s own line at the camp)',
+        lines.every((o) => (o._spec.family === 'demolition' ? o.poiId === camp.id : o.poiId !== camp.id) && board.offers(o.poiId, 6).includes(o)))
     const fams = lines.map((o) => o._spec.family).sort().join()
-    check(`one line per built type: haul, courier ×2, freight, fragile (${fams})`, fams === 'delivery,delivery,fragile,freight,haul')
+    check(`one line per type: haul, courier, freight, fragile, demolition (${fams})`, fams === 'delivery,demolition,fragile,freight,haul')
     const fuel = lines.find((o) => o._spec.line === 'reqFuel')?._spec, gear = lines.find((o) => o._spec.line === 'reqGear')?._spec
     check('the fuel line is a 172 kg strapped drum; the camp gear a Fragile crate',
         fuel?.load === 'drum' && fuel.massKg === 172 && !fuel.fragile
             && gear?.load === 'largeCrate' && gear.fragile?.tier === 'fragile' && gear.fragile.breakG > 0)
-    const axis = { haul: /bundles delivered/, freight: /upon delivery/, fragile: /%\+ intact/, delivery: /C or better/ }
+    const axis = { haul: /bundles delivered/, freight: /upon delivery/, fragile: /%\+ intact/, delivery: /C or better/, demolition: /%\+ smashed/ }
     let bad = [], badDeed = []
     for (const o of lines) {
         const m = board.planDistinct(o, planOne(board))
         const deed = board.card(o, { nowH: 6, route: m })?.deed ?? ''
         if (!axis[o._spec.family].test(deed)) badDeed.push(`${o._spec.line}: "${deed}"`)
         const last = m?.segments.at(-1)
-        const ok = m && m.endPoiId === camp.id && Math.hypot(m.end.x - camp.roadX, m.end.z - camp.roadZ) < 1
-            && g.key(last.cellA) === g.key(camp.aId) && g.key(last.cellB) === g.key(camp.bId)
+        const out = o._spec.family === 'demolition'   // FEAT-65: from the camp, out to a roadside site
+        const ok = m && (out ? !m.endPoiId && Math.hypot(m.poly[0].x - camp.roadX, m.poly[0].z - camp.roadZ) < 30
+                             : m.endPoiId === camp.id && Math.hypot(m.end.x - camp.roadX, m.end.z - camp.roadZ) < 1
+                               && g.key(last.cellA) === g.key(camp.aId) && g.key(last.cellB) === g.key(camp.bId))
             && m.poly.every((p) => r(p) <= wall)
         if (!ok) bad.push(`${o._spec.line}${m ? '' : ' (no route)'}`)
         else console.log(`       ${o._spec.line.padEnd(12)} from ${o.type.padEnd(13)} ${(m.distance / 1000).toFixed(1)} km  par ${m.par.toFixed(0)} s`)
     }
-    check('every line plans from its source to the camp, in through the one inner node, inside the wall', !bad.length, bad.join(', '))
+    check('every line plans from its source to the camp, in through the one inner node (the demolition line out from the camp to roadside), inside the wall', !bad.length, bad.join(', '))
     check('every line card\'s deed reads its own axis', !badDeed.length, badDeed.join(', '))
     void inner
 
