@@ -91,8 +91,18 @@ const seat = async (x, z, h) => {
 // new parked EDGE (its park trigger is a ~10 Hz poll on that edge). A bare release-then-tap lost
 // both ways under load: the truck rolled off the shop's slope (2.2 m/s, 7 m) before the re-tap, too
 // fast to latch.
+// At speed, the service brake (S) sheds it first: the handbrake is rear-wheels only, and on a steep
+// descent a locked rear axle slides at an equilibrium speed instead of stopping (measured: 6.2 m/s
+// after 30 s of Space on the papers step's road, and 15 → 23 m/s on seed 6's spawn hill). S lets go
+// at 1.2 m/s — above REV_THRESHOLD (0.56 m/s, below it S is reverse) and under PARK_SPEED (1.39 m/s),
+// so the Space press that follows latches the park brake (all four wheels) at once.
 const park = async (fresh = false) => {
   if (fresh && await js('window.__vs.parked')) { await tap(' '); await frames(4, 250) }
+  if (await js('window.__vs.velocity.length() > 1.2')) {
+    await key('s', true)
+    await until(() => js('window.__vs.velocity.length() < 1.2'), 15000)
+    await key('s', false)
+  }
   await key(' ', true)
   await frames(4, 250)
   await until(() => js('window.__vs.velocity.length() < 0.5'), 30000)
