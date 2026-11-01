@@ -516,12 +516,49 @@ const STEPS = [
                deadline: /time limit/.test(document.getElementById('pp-body').textContent) } })()`)
     const top = await view()
     check(top.n === 9 && top.sizes === '4 9*' && top.deadline, `Larry's offer: ${JSON.stringify(top)} — want 9 customers, sizes "4 9*" and a time limit`)
+    // FEAT-133: a card's first D-pad / arrow press lands on its main action, not the size row above it.
+    await tap('ArrowDown')
+    check(await js('document.querySelector("#paper-panel .nav-focus")?.id') === 'pp-accept',
+      `the first arrow press on Larry's card highlighted "${await js('document.querySelector("#paper-panel .nav-focus")?.textContent')}", not "start the route"`)
     await js('document.querySelector("#pp-sizes button[data-size=\'0\']").click()')
     const small = await view()
     check(small.n === 4 && small.sizes === '4* 9', `picking the 4: ${JSON.stringify(small)}`)
     console.log(`  papers: Larry offers ${top.sizes.replace('*', '')} — plotted ${top.n}, then ${small.n}`)
-    await js('document.getElementById("pp-decline").click()')
-    check(await until(async () => await state() === 'idle', 2000), `declining left the round open: ${await state()}`)
+    // FEAT-133 on a LIVE round (until now only with throwReady forced): take the 4, leave Larry's
+    // circle, get rolling on a fake pad, aim with the right stick and TAP RB — a paper leaves the truck.
+    await js('document.getElementById("pp-accept").click()')
+    check(await until(async () => await state() === 'staging', 2000), `accepting did not stage the round: ${await state()}`)
+    const out = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse')
+      return { x: q.roadX + q.tx * 40, z: q.roadZ + q.tz * 40, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await seat(out.x, out.z, out.h)
+    await crank()
+    await js(`window.__realPads = navigator.getGamepads.bind(navigator)
+      window.__fp = { axes: [0, 0, 0, 0], b: new Array(17).fill(0) }
+      navigator.getGamepads = () => [{ index: 0, id: 'fake', mapping: 'standard', axes: __fp.axes,
+        buttons: __fp.b.map(v => ({ value: v, pressed: v > 0.5, touched: v > 0 })) }]`)
+    await js('__fp.b[7] = 0.7')   // RT: rolling past the 5 mph throw floor
+    check(await until(() => js('window.__vs.velocity.length() > 3'), 8000), `the fake pad did not get the truck rolling: ${(await js('window.__vs.velocity.length()')).toFixed(1)} m/s`)
+    check(await until(async () => await state() === 'running', 3000), `leaving Larry's circle did not start the round: ${await state()}`)
+    const stock0 = await js('window.__paper.system.stock()')
+    await js('__fp.axes[2] = 0.7'); await frames(4, 150)          // aim: the right stick
+    await js('__fp.b[5] = 1'); await frames(3, 80); await js('__fp.b[5] = 0')   // a TAP of RB
+    check(await until(async () => await js('window.__paper.system.stock()') === stock0 - 1, 2000),
+      `an RB tap while aiming on a live round threw no paper: stock ${stock0} → ${await js('window.__paper.system.stock()')}`)
+    await js('__fp.b[7] = 0; __fp.axes[2] = 0'); await frames(2, 60)
+    await js('navigator.getGamepads = window.__realPads')
+    console.log(`  papers: a pad RB tap threw a paper on the live round (stock ${stock0} → ${stock0 - 1})`)
+    // Put the round down: parked, two clicks of the abandon button, then continue off the card.
+    await park()
+    // The abandon button reads "parked" off the ~10 Hz HUD poll; a click right after the latch can
+    // land before the poll has seen it, so the two clicks are retried until the round ends.
+    for (let i = 0; i < 4 && await state() !== 'done'; i++) {
+      await frames(4, 250)
+      await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
+      await until(async () => await state() === 'done', 600)
+    }
+    check(await state() === 'done', `abandoning did not end the round: ${await state()}`)
+    await js('document.getElementById("pp-accept").click()')
+    check(await until(async () => await state() === 'idle', 2000), `continue left the round card up: ${await state()}`)
     await js('window.__paper.runPaper.tier = 0')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
