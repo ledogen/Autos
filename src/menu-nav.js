@@ -30,13 +30,15 @@ const $ = (id) => document.getElementById(id)
 function menuContainer () {
   const re = $('run-end')   // FEAT-146: a Story card, but nothing behind it is in play — it holds the truck like a menu
   if (re?.style.display === 'block') return re
+  const tc = $('towel-card')   // FEAT-146: the towel's confirm card stands in for the pause menu
+  if (tc?.style.display === 'flex') return tc
   const pm = $('pause-menu')
   if (pm?.style.display === 'flex') return pm.classList.contains('settings') ? $('mm-settings-panel') : pm
   const ss = $('story-seed-modal')
   if (ss?.style.display === 'flex') return ss
   const mm = $('main-menu')
   if (mm && mm.style.display !== 'none' && document.body.classList.contains('stage-on')) {
-    for (const page of ['setup', 'settings', 'scenarios']) if (mm.classList.contains(page)) return $(`mm-${page}-panel`)
+    for (const page of ['setup', 'settings']) if (mm.classList.contains(page)) return $(`mm-${page}-panel`)
     return $('mm-root')
   }
   return null

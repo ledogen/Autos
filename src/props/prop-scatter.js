@@ -19,6 +19,10 @@
  *                                          //   stands where the ground reads green (sparser on dirt,
  *                                          //   never rock); read on a 4 m grid per chunk (litterPasses)
  *   padBlocked(x,z,keepOut) -> boolean     // FEAT-85 (optional): on a junction / lay-by pad
+ *   skinCut(x,z) -> boolean                // BUG-93 (optional): the ground skin is CUT away here (a
+ *                                          //   tunnel mouth) — nothing stands on it. Checked last at
+ *                                          //   every placement, after its draws, so the streams and
+ *                                          //   every other placement are unchanged.
  *   roadDist, waterAt, streamAt, waterNear, groundClassify   // water / stream / ground-class
  *                                          //   samplers (main.js makePropSamplers supplies all)
  * }
@@ -68,6 +72,7 @@ export function* treeClusterPass (rng, ox, oz, worldSeed, samplers, P = FLORA_PA
   const S = P.scatter
   const size = P.chunkSize
   const { heightAt, roadBlocked } = samplers
+  const skinCut = samplers.skinCut || (() => false)
   const out = []
   const slopeAt = (x, z) => slopeFrom(samplers, x, z)
 
@@ -86,14 +91,15 @@ export function* treeClusterPass (rng, ox, oz, worldSeed, samplers, P = FLORA_PA
     // Uniform brightness jitter (NO hue shift) — instanceColor multiplies the WHOLE tree, so a
     // coloured tint would bleed the canopy hue onto the trunk (was greening the white aspen bark).
     const b = 0.92 + rng() * 0.16
-    out.push({
+    const t = {
       cat, variant: (rng() * cfg.variants) | 0, x, z,
       y: heightAt(x, z) - S.groundSink,    // sink so the base digs in (kills slope-float)
       scale: frange(rng, cfg.instScale), rotY: rng() * Math.PI * 2,
       // per-tree lean from vertical (pivots at the trunk base = geometry origin) — natural variation
       tilt: rng() * S.treeTiltMax, tiltAz: rng() * Math.PI * 2,
       tint: [b, b, b],
-    })
+    }
+    if (!skinCut(x, z)) out.push(t)
   }
 
   const nClusters = S.clustersPerChunk
@@ -161,6 +167,7 @@ function chunkHelpers (cx, cz, samplers, P, out, rng) {
   const size = P.chunkSize
   const ox = cx * size, oz = cz * size
   const { heightAt, roadBlocked, roadClear: roadClearFn } = samplers
+  const skinCut = samplers.skinCut || (() => false)
 
   // BUG-23: radius-aware road keep-out. roadClear(x,z,keepOut) is true when NO road centreline lies
   // within keepOut metres. Falls back to the legacy fixed-radius roadBlocked for older fixtures that
@@ -234,9 +241,9 @@ function chunkHelpers (cx, cz, samplers, P, out, rng) {
       const tilt = rngArg() * S.rockTiltMax, tiltAz = rngArg() * Math.PI * 2
       if (cat !== 'rock') { pl.tilt = tilt; pl.tiltAz = tiltAz }
     }
-    out.push(pl)
+    if (!skinCut(x, z)) out.push(pl)
   }
-  return { samplers, roadClear, inPondWater, inStreamChannel, slopeAt, blobBoundR, placeBlob }
+  return { samplers, roadClear, inPondWater, inStreamChannel, slopeAt, blobBoundR, placeBlob, skinCut }
 }
 
 /**
@@ -271,7 +278,7 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
   const out = []
   const H = chunkHelpers(cx, cz, samplers, P, out, rng)
   samplers = H.samplers
-  const { roadClear, inPondWater, inStreamChannel, slopeAt, blobBoundR, placeBlob } = H
+  const { roadClear, inPondWater, inStreamChannel, slopeAt, blobBoundR, placeBlob, skinCut } = H
   const { heightAt, roadDist } = samplers
   const streamAt = samplers.streamAt || null
 
@@ -372,14 +379,15 @@ export function* scatterChunkGen(cx, cz, worldSeed, samplers, params = FLORA_PAR
     const yB = heightAt(x + ux * hl, z + uz * hl)
     const pitch = Math.atan2(yB - yA, 2 * hl)
     if (Math.abs(pitch) > S.logPitchMax) return   // ends span a step/bank — it would float; skip
-    out.push({
+    const log = {
       cat: 'log', variant, x, z,
       y: (yA + yB) / 2 - 0.06 * scale,   // slight settle so the tube digs in on uneven ground
       gy: (yA + yB) / 2,                 // PERF-14: mid-span ground Y for the blob (avoids commit-time resample)
       scale, rotY,
       tilt: pitch, tiltAz: Math.PI / 2,  // pitch about local Z: +X end toward the higher sample
       tint: tintFor(rng, cfg.color, cfg.colorJitter),
-    })
+    }
+    if (!skinCut(x, z)) out.push(log)
   }
   yield* scatterN(irange(rng, S.logsPerChunk), placeLog)
 
@@ -596,8 +604,10 @@ function* coverPass(out, cx, cz, worldSeed, samplers, P, h) {
   // keep/skip draws); the remaining draws pick variant, scale, yaw and tint. `g` is the
   // groundAt reading already paid for — its height/slope stand in for two more terrain samples
   // (fixtures that return only {green, rock} fall back to the samplers).
+  const skinCut = samplers.skinCut || (() => false)
   const stand = (x, z, cat, prng, g) => {
-    if (inPondWater(x, z) || inStreamChannel(x, z)) return
+    // The candidate's stream is its own (position-keyed), so an early return shifts nothing else.
+    if (inPondWater(x, z) || inStreamChannel(x, z) || skinCut(x, z)) return
     if (padBlocked(x, z, 0.5)) return
     if ((g && g.slope != null ? g.slope : slopeAt(x, z)) > C.slopeMax) return
     const cfg = P[cat]

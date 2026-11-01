@@ -307,63 +307,65 @@ export const THINGS = [
 // An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
 // data/items.js ITEMS (the inventory gate checks), except a dineIn one. Its effect applies only if built.
 
+// Larry's paper route rolls from every pool (owner, 2026-10-31: "give him every item" — the LSD too, it
+// is in several pools already). The rank gates still apply, so papers earns like any job.
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'],
-      pools: ['foodVendor'] },
+      pools: ['foodVendor', 'larrysHouse'] },
     { id: 'coffee',     name: 'Coffee',      kind: 'consumable', gates: ['C', 'B'],
-      pools: ['foodVendor', 'gasStation'] },
+      pools: ['foodVendor', 'gasStation', 'larrysHouse'] },
     { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist'] },
+      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
     { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['B', 'A'],   // mid tier (owner, 2026-10-21)
-      pools: ['gasStation', 'strandedMotorist'] },
+      pools: ['gasStation', 'strandedMotorist', 'larrysHouse'] },
     // The refillable 5 gal jerry can (items.md §1): the top-tier answer to running dry, so A–S only.
     { id: 'jerryCan',   name: 'Jerry can',   kind: 'tool',       gates: ['A', 'S'],
-      pools: ['gasStation'] },
+      pools: ['gasStation', 'larrysHouse'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation', 'workSite'] },
+      pools: ['autoShop', 'gasStation', 'workSite', 'larrysHouse'] },
     // The haul yard's rewards (owner, 2026-10-22; items.md §7): the mat is the lesser grip; its
     // friction effect isn't built yet — the item is granted. The bedliner (A–S here) joins the
     // day its thumbnail exists (test/dist-assets.mjs needs assets/items/bedliner.png).
     { id: 'rubberBedMat', name: 'Rubber bed mat', kind: 'tool', gates: ['B', 'A'],
-      pools: ['firewoodYard'] },
+      pools: ['firewoodYard', 'larrysHouse'] },
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'],
-      pools: ['autoShop', 'farm'] },
+      pools: ['autoShop', 'farm', 'larrysHouse'] },
     { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'],
-      pools: ['autoShop', 'strandedMotorist', 'farm'] },
+      pools: ['autoShop', 'strandedMotorist', 'farm', 'larrysHouse'] },
     { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist'] },
+      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
     { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'],
-      pools: ['farm', 'autoShop', 'workSite'] },
+      pools: ['farm', 'autoShop', 'workSite', 'larrysHouse'] },
     { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'],
-      pools: ['autoShop', 'farm', 'residence'] },
+      pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
     { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'],
-      pools: ['workSite', 'autoShop', 'farm'] },
+      pools: ['workSite', 'autoShop', 'farm', 'larrysHouse'] },
     { id: 'diffLSD',    name: 'Limited-slip differential', kind: 'part', gates: ['S'],
-      pools: ['autoShop', 'strandedMotorist', 'residence'] },
+      pools: ['autoShop', 'strandedMotorist', 'residence', 'larrysHouse'] },
     { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
-      pools: ['autoShop', 'workSite'] },
+      pools: ['autoShop', 'workSite', 'larrysHouse'] },
     // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
     { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist'] },
+      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
     // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
     { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation'] },
+      pools: ['autoShop', 'gasStation', 'larrysHouse'] },
     // Items setup page rulings (owner, 2026-10-20/21).
     { id: 'energyDrink', name: 'Energy drink', kind: 'consumable', gates: ['C', 'B'],
-      pools: ['gasStation', 'generalStore'] },
+      pools: ['gasStation', 'generalStore', 'larrysHouse'] },
     { id: 'stopLeak',   name: 'Stop-leak',   kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation'] },
+      pools: ['autoShop', 'gasStation', 'larrysHouse'] },
     { id: 'zipTies',    name: 'Zip ties',    kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop'] },
+      pools: ['autoShop', 'larrysHouse'] },
     { id: 'ductTape',   name: 'Duct tape',   kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation', 'generalStore'] },
+      pools: ['autoShop', 'gasStation', 'generalStore', 'larrysHouse'] },
     // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when
     // the job is in. Being fed waits on hunger, which isn't built.
     { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true,
-      pools: ['residence', 'farm', 'foodVendor'] },
+      pools: ['residence', 'farm', 'foodVendor', 'larrysHouse'] },
 ]
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────
@@ -402,13 +404,19 @@ export const NOT_A_DESTINATION = new Set(['gasPump', 'expeditionCamp'])
  * (owner, 2026-10-30; 220 kg — a smart player waits until the yard's stock covers it in one trip; the
  * line's card shows that stock). The crew's POI — the design names "the POI where the crew waits"; the construction site
  * is the stand-in.
+ * FEAT-157 (owner, 2026-11-01): one line per mission type — haul (firewood), courier (the crew), freight
+ * (fuel), fragile (camp gear). The food line holds the fifth slot until demolition (FEAT-65) is built.
  */
 export const REQUISITION = [
+    // 20 bundles (owner, 2026-10-31, confirmed): the yard's stock cycles, so a smart player waits a couple of
+    // recycles until it holds 20+ and clears the line in one trip. The card shows the stock on hand.
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
     { id: 'reqFood',     phrase: 'a week of food', family: 'delivery', from: 'foodVendor',   massKg: 20 },
-    { id: 'reqFuel',     phrase: 'fuel cans',      family: 'delivery', from: 'gasStation',   massKg: 30 },
-    { id: 'reqGear',     phrase: 'camp gear',      family: 'delivery', from: 'generalStore', massKg: 25 },
+    // FEAT-157: fuel is a strapped 55-gal drum of gasoline (154 kg + an 18 kg drum); camp gear is a crate
+    // of lanterns and a stove, Fragile tier.
+    { id: 'reqFuel',     phrase: 'fuel',           family: 'freight',  from: 'gasStation',   massKg: 172, load: 'drum' },
+    { id: 'reqGear',     phrase: 'camp gear',      family: 'fragile',  from: 'generalStore', massKg: 30, load: 'largeCrate', ...FRAGILE },
 ]
 
 export const SOURCES = {
@@ -564,8 +572,13 @@ export const REWARD_VALUE = {
  */
 export const GATE_WEIGHTS = { C: 1, B: 1, A: 1, S: 1 }
 
-/** 0..1 — share of destinations that are another POI; the rest are roadside (LANDMARKS / place). */
-export const DEST_POI_CHANCE = 0.5
+/**
+ * 0..1 — share of destinations that are another POI; the rest are roadside (LANDMARKS / place).
+ * 0.65 (owner, 2026-10-31, FEAT-153): measured over 300 boards, roadside drops fall from 24.0 % to
+ * 16.5 % of non-paper offers (tagged things and fetches never roll it). FEAT-153's census, which
+ * counts where jobs END, read ~29 % → ~20 %.
+ */
+export const DEST_POI_CHANCE = 0.65
 
 /** People per source POI: usually one, sometimes two, rarely three. Relative weights. */
 export const PEOPLE_PER_POI = { 1: 0.75, 2: 0.2, 3: 0.05 }

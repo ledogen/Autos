@@ -253,9 +253,17 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
       `test/story-poi.mjs` (§7 single-offer expectations → the board model)
 - [ ] `npm run test:all` green pre-commit
 
+## Ruled (owner, 2026-10-31)
+
+- **Freight's bonus measure is weight delivered** — which is what FEAT-114 §6 built (the gate is a kg
+  the load is posted with). Items gated on delivering super-heavy cargo are the intended shape.
+- **Larry has a reward pool**: every REWARDS row, the LSD included (it is in several pools already —
+  owner), lists `larrysHouse` (data/offers.js, 2026-10-31). The rank gates still apply, so it is not game-breaking:
+  one roll per round like any source. Papers rolls a bonus again.
+
 ## Open (owner's call)
 
-- **Freight's bonus measure** (load condition? truck wear?), decided when freight is built.
+- ~~**Freight's bonus measure**~~ ruled above.
 - Fold these rulings into missions.md "The job board — discovery and expiry" (still marked OPEN).
 - The list contents themselves (owner authoring session).
 
@@ -263,6 +271,6 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
 
 - On haul and freight the bonus gate **prints as a number** ("deliver 10+", "400 kg+") and only rolls when the giver's stock can meet it — built in FEAT-114.
 - The card gains a **giver-traits slot, bottom-left** (FEAT-142).
-- Papers still roll no bonus until Larry has a reward pool (open).
+- ~~Papers still roll no bonus until Larry has a reward pool~~ — pool added 2026-10-31.
 
 See design-amendments-2026-10-21-mission-recut.md §6, §10.

@@ -31,7 +31,7 @@ import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D 
 import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
-import { DamageScreen, worstParts } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated); FEAT-146 the summary's worst parts
+import { DamageScreen } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
@@ -84,7 +84,7 @@ import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's str
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory } from './inventory.js'   // FEAT-122: what the player owns this run
-import { PartsSystem } from './parts.js'                  // SM-3: what is bolted onto the truck this run
+import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
 import { startShelves, shelf, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
@@ -310,6 +310,9 @@ const makePropSamplers = () => Object.fromEntries(Object.entries({
   groundAt:    (x, z) => terrainSystem.groundAt(x, z),
   groundClassify: (slope, h) => terrainSystem.groundClassify(slope, h),   // PERF-34: the litter grid's own slope
   padBlocked:  (x, z, keepOut) => roadSystem.poiPadBlocked(x, z, keepOut) || roadSystem.junctionPadBlocked(x, z, keepOut),
+  // BUG-93: a tunnel mouth cuts the skin away (terrain.js tunnelCutAt — the shader's own capsule).
+  // Its analytic height there is the mouth-funnel notch: rocks and grass stood on it hung in the bore.
+  skinCut:     (x, z) => terrainSystem.tunnelCutAt(x, z),
 }).map(([k, fn]) => [k, k === 'sunShear' ? fn : _timed(k, fn)]))
 const _sunShearScratch = new THREE.Vector2()
 
@@ -1183,7 +1186,7 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 let _pauseOpen = false
 let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-card until any key
 let _runEndOpen = false   // FEAT-146: the run's summary card is up — nothing behind it is in play
-let _towelArm = 0         // FEAT-146: the towel's arm timer while armed, 0 when not (_hidePauseMenu reads it early)
+let _edgeArmed = false    // FEAT-154: the edge fade is live (a deliberate teleport disarms it, like the wall; read early)
 let _playedS = 0          // FEAT-146: real seconds of a live, unpaused run (the summary's playtime; the save carries it)
 // The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
 // FEAT-42: the resume card — the run may have been saved at speed, mid-slide even. FEAT-146: the run's end.
@@ -1235,12 +1238,14 @@ function showIgnitionHint () {
 function teleportToGround (x, z, heading, drop) {
   _spawnOverride = { align: true, x, z, heading, drop }
   storySystem?.notifyTeleport()
+  _edgeArmed = false   // FEAT-154: the edge fade obeys the same rule as the wall
   showSpawnToast()
   return _reseatTruckAtSpawn()   // the smoke awaits the seat (it waits on a network build) rather than guessing
 }
 function teleportToPose (x, y, z, quat) {
   _spawnOverride = { align: false, x, y, z, quat: quat.clone() }
   storySystem?.notifyTeleport()
+  _edgeArmed = false
   void _reseatTruckAtSpawn()
   showSpawnToast()
 }
@@ -1396,6 +1401,9 @@ const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own auto
 const _world = () => ({ t: _settings.worldTerrain, p: _settings.worldPoi, r: _settings.worldRoads })
 const _setWorld = (w) => { _settings.worldTerrain = w.t; _settings.worldPoi = w.p; _settings.worldRoads = w.r }
 const SELECTORS = {
+  // FEAT-156: the new-game page's mode. Page state, never saved (owner, 2026-10-31): get/set, no key.
+  gameMode:     { name: 'mode', opts: [['story', 'story'], ['scenarios', 'scenarios'], ['freeroam', 'free roam'], ['lab', 'testing lab']],
+                  get: () => _setupMode, set: (m) => _setSetupMode(m) },
   worldPreset:  { name: 'difficulty',      opts: [['casual', 'casual'], ['classic', 'classic']],
                   get: () => presetOf(_world()) ?? 'custom', set: (id) => _setWorld(WORLD_PRESETS[id]) },
   worldTerrain: { name: 'terrain relief',  opts: KNOBS.t.map(v => [v, `${v} %`]) },
@@ -1412,7 +1420,7 @@ const SELECTORS = {
   abs:          { name: 'anti-lock brakes', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
 }
-let _setupMode = 'freeroam'   // 'freeroam' | 'story' — which run the setup page starts
+let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
 function _fitGearbox (gearbox = _settings.gearbox) {
   fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
 }
@@ -1470,21 +1478,30 @@ for (const b of document.querySelectorAll('button.mm-sel')) {
 for (const b of document.querySelectorAll('#main-menu button, #pause-menu button')) {
   b.addEventListener('mousedown', (e) => e.preventDefault())
 }
-function _openSetup (mode) {
+/** FEAT-156: switch the new-game page's mode — index.html's CSS swaps the rows on data-mode. */
+function _setSetupMode (mode) {
   _setupMode = mode
-  const t = document.getElementById('su-title')
-  if (t) t.textContent = mode === 'story' ? 'new game' : 'new free roam'
+  const panel = document.getElementById('mm-setup-panel')
+  if (panel) panel.dataset.mode = mode
+  const note = document.getElementById('su-save-note')
+  if (note) note.style.display = mode === 'story' && hasRun() ? '' : 'none'
+  if (mode === 'scenarios') _renderScenarioList()
+}
+/** The new-game page, opened on story — the mode is never remembered (owner, 2026-10-31). */
+function _openSetup () {
+  _setSetupMode('story')
   // Always blank (owner, 2026-09-06): pre-filling the standing seed would quietly make "just press
   // start" mean "replay the same world forever".
   const inp = document.getElementById('su-seed')
   if (inp) inp.value = ''
-  const note = document.getElementById('su-save-note')
-  if (note) note.style.display = mode === 'story' && hasRun() ? '' : 'none'
   _renderSelectors()
   document.getElementById('main-menu')?.classList.add('setup')
 }
-/** Start: save, resolve the code (6/C, 6/T80P120R290 set the knobs), apply the world and the gearbox, go. */
+/** Start: save, resolve the code (6/C, 6/T80P120R290 set the knobs), apply the world and the gearbox, go.
+ *  The lab has no world of its own and just enters; scenarios have no start (each entry starts its run). */
 async function _startFromSetup () {
+  if (_setupMode === 'lab') { await _enterLabFromMenu(); return }
+  if (_setupMode === 'scenarios') return
   const inp = document.getElementById('su-seed')
   inp?.blur()
   const { seed, world } = parseWorldCode(inp?.value ?? '')
@@ -1497,10 +1514,9 @@ async function _startFromSetup () {
   _fitGearbox()
   await _startFreeRoam(_resolveSeed(seed))
 }
-document.getElementById('mm-freeroam')?.addEventListener('click', () => _openSetup('freeroam'))
-// Story mode opens on new game. A saved run is resumed from its own button (#mm-continue, FEAT-42);
-// starting a new game over it discards it, and the setup page says so.
-document.getElementById('mm-story')?.addEventListener('click', () => _openSetup('story'))
+// A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
+// discards it, and the page says so.
+document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
 /** The main menu's continue button stands only while a run is saved. Wired here, ahead of the boot
  *  awaits (the free-roam seat is ~2.5 s of cold routing), like the buttons above: it shows with the
  *  menu, and an early click waits in _startStory's `await _worldReady`. */
@@ -1548,7 +1564,7 @@ function _openSettings (fromPause) {
 function _menuPageBack () {
   const mm = document.getElementById('main-menu')
   if (mm?.classList.contains('settings')) { _closeSettings(); return }
-  mm?.classList.remove('scenarios', 'setup')
+  mm?.classList.remove('setup')
 }
 function _closeSettings () {
   const panel = document.getElementById('mm-settings-panel')
@@ -1565,13 +1581,13 @@ document.addEventListener('keydown', (e) => {
 })
 
 // The lab is a debug rig with no world of its own, so it just enters.
-document.getElementById('mm-lab')?.addEventListener('click', async () => {
+async function _enterLabFromMenu () {
   _hideMainMenu()
   _enterStageLoad('building the world\u2026')   // the lab still needs the world's systems built
   await _worldReady
   _exitStageLoad()
   if (!_labActive) enterLab()
-})
+}
 // FEAT-62: scenarios. The list is data (data/scenarios.js), so its buttons are built here rather
 // than written into index.html. The leaderboard lives up here too — it is pure and has no world
 // dependencies, and the list shows each scenario's best time, so it must exist before the module
@@ -1601,13 +1617,6 @@ function _renderScenarioList () {
   cube.addEventListener('click', () => { void _startBarrelCube() })
   list.appendChild(cube)
 }
-document.getElementById('mm-scenarios')?.addEventListener('click', () => {
-  _renderScenarioList()
-  document.getElementById('main-menu')?.classList.add('scenarios')
-})
-document.getElementById('mm-scenarios-back')?.addEventListener('click', () => {
-  document.getElementById('main-menu')?.classList.remove('scenarios')
-})
 document.getElementById('mm-settings')?.addEventListener('click', () => _openSettings(false))
 document.getElementById('mm-settings-back')?.addEventListener('click', _closeSettings)
 document.getElementById('mm-bindings')?.addEventListener('click', () => document.getElementById('mm-settings-panel')?.classList.add('bindings'))
@@ -3110,14 +3119,6 @@ function _rebuildPoiMarkers () {
       _poiGroup.add(cube)
       _poiMeshes.set(q.id, cube)
     }
-    // FEAT-103: the barricades across the camp's road — each the same box its body carries
-    // (poi.js _barrierBox), so MESH == PHYSICS. Base-seated, like the POI models.
-    for (const b of q.barriers ?? []) {
-      const m = spawnModel('roadBarrier', { castShadow: true, receiveShadow: true })
-      m.position.set(b.x, b.y, b.z)
-      m.rotation.y = b.yaw
-      _poiGroup.add(m)
-    }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
     // in poi.js (deterministic in the seed); this only dresses them. Static meshes, no bodies.
     for (const sat of q.satellites ?? []) {
@@ -4144,7 +4145,8 @@ missionSystem = new MissionSystem({
       offerBoard?.[delivered ? 'complete' : 'abandon'](mission.offerId, daySystem.clockH())
       const lines = offerBoard?.lines() ?? []
       result.line = { delivered, done: lines.filter(l => l.state === 'done').length, of: lines.length,
-                      need: mission.bundles ? `${rankTable('haul', region, 'firewood').C}+ bundles` : 'C or better' }
+                      need: mission.bundles ? `${rankTable('haul', region, 'firewood').C}+ bundles`
+                        : mission.fragile ? `${Math.round(_fragileLinesOf(mission).C * 100)}%+ intact` : 'C or better' }
       return { payout: 0, base: 0, tip: 0, points: 0 }
     }
     const s = economySystem.settle(result, mission)
@@ -4576,7 +4578,9 @@ function _approachPoi () {
 function _updateLinePrompt (poiEl, pulled) {
   const q = _approachPoi()
   if (!q || !_inPoiSpot(q)) return false
-  if (pulled) missionSystem.reachSource()
+  // FEAT-157: a freight / fragile line's load is handed over here, where it is, not at the camp's accept.
+  const j = missionSystem.mission
+  if (pulled && missionSystem.reachSource() && j.load) void _loadFreight(j.load, j.cargoKg, j)
   if (poiEl) {
     poiEl.style.display = pulled ? 'none' : 'block'
     if (!pulled) poiEl.innerHTML = parkPrompt(q.drop ? 'park to load the firewood' : 'park to pick up')
@@ -5284,6 +5288,105 @@ function _campFade (during) {
   if (!el) { finish(); return }
   el.classList.add('on')
   setTimeout(finish, 480)   // slightly past the 0.45 s CSS transition
+}
+
+// ── FEAT-154: the road closures and the edge fade ────────────────────────────────────────────────
+// Every road out of the story area ends at a row of Type III barricades (poi.js barricades()): loose
+// 10 kg debris bodies, pinned outside the debris cap and harmless to the truck, so a run at the border
+// smashes straight through (owner, 2026-10-31). POI_PARAMS.poiEdgeFadeM past the planners' wall, the
+// screen fades to black and the truck is put back on the nearest job road facing inward (poi.js
+// returnPoint), every barricade back in place — as if nothing happened. It works during a job too.
+// story.js's hard wall at the region radius stays the backstop.
+//
+// A body needs ground under it, and the terrain and road colliders only exist in the ring the truck
+// streams (a loose barricade 2 km off fell straight through the world). So a row far from the truck is
+// three plain models standing on the deck's plane; within BARRICADE_ON_M they swap for three bodies at
+// exactly those poses, at rest, and past BARRICADE_OFF_M (or at an edge return) back to upright models.
+const EDGE_FADE_S = 0.5        // s to black before the return (the #camp-fade transition is 0.45 s)
+const BARRICADE_ON_M = 120     // m from a row's middle at which its models become bodies
+const BARRICADE_OFF_M = 200    // …and back (hysteresis; a knocked row stands up again out of sight)
+const _barricadeGroup = new THREE.Group()
+scene.add(_barricadeGroup)
+let _barricadeRows = []        // [{ x, z, poses: [{ pos, up, q }], meshes, bodies | null }]
+let _edgeBusy = false          // a return is in flight: the poll must not start a second
+
+/** Stand every row as models where poi.js sited it (dropping any bodies), or clear them all. */
+function _placeBarricades () {
+  for (const row of _barricadeRows) if (row.bodies) debrisSystem.remove(row.bodies)
+  _barricadeGroup.clear()
+  _barricadeRows = []
+  const bars = poiSystem.barricades(), per = POI_PARAMS.poiRowBarricades
+  for (let i = 0; i < bars.length; i += per) {
+    const poses = bars.slice(i, i + per).map((b) => {
+      // On the deck's plane (poi.js _barrierRow): up is its normal, +X the barricade's own across axis
+      // laid onto it, +Z completing the frame. The model's origin is its base.
+      const Y = new THREE.Vector3().fromArray(b.n)
+      const X = new THREE.Vector3(Math.cos(b.yaw), 0, -Math.sin(b.yaw)).addScaledVector(Y, -Math.cos(b.yaw) * Y.x + Math.sin(b.yaw) * Y.z).normalize()
+      const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, new THREE.Vector3().crossVectors(X, Y)))
+      return { pos: new THREE.Vector3(b.x, b.y, b.z), up: Y, q }
+    })
+    const meshes = poses.map(({ pos, q }) => {
+      const m = spawnModel('roadBarrier', { castShadow: true, receiveShadow: true })
+      m.position.copy(pos); m.quaternion.copy(q)
+      _barricadeGroup.add(m)
+      return m
+    })
+    const mid = poses[(per - 1) >> 1].pos
+    _barricadeRows.push({ x: mid.x, z: mid.z, poses, meshes, bodies: null })
+  }
+}
+
+/** The 10 Hz poll: a row near the truck is loose bodies, a far one is models (see above). */
+function _updateBarricades () {
+  const half = debrisSystem.halfExtents('roadBarrier')
+  if (!half) return   // a cold boot's first seconds: the type's collider is still loading
+  const p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
+  for (const row of _barricadeRows) {
+    const d = Math.hypot(p.x - row.x, p.z - row.z)
+    if (!row.bodies && d < BARRICADE_ON_M) {
+      // The body sits at the model's bbox centre: half its height up the normal, a centimetre clear.
+      row.bodies = row.poses.map(({ pos, up, q }) => debrisSystem.spawn('roadBarrier', pos.clone().addScaledVector(up, half.y + 0.01), still,
+        { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })).filter(Boolean)
+      for (const m of row.meshes) m.visible = false
+    } else if (row.bodies && d > BARRICADE_OFF_M) _standRow(row)
+  }
+}
+
+/** Back to upright models at the row's own poses — wherever its bodies ended up. */
+function _standRow (row) {
+  debrisSystem.remove(row.bodies)
+  row.bodies = null
+  for (const m of row.meshes) m.visible = true
+}
+
+/**
+ * The 10 Hz poll: past the fade line in a live run, start the return. Armed the way story.js arms the
+ * wall: a deliberate teleport (map double-click, free-cam "teleport here") disarms it until the truck
+ * is back inside the line, so a teleport out there is a look, not a bounce.
+ */
+function _checkEdge () {
+  if (_edgeBusy || _runEnded || !storySystem.isActive() || storySystem.isEntering()) return
+  const reg = storySystem.region(), p = vehicleState.position
+  if (!reg) return
+  if (Math.hypot(p.x - reg.x, p.z - reg.z) <= reg.r - REGION_MARGIN + POI_PARAMS.poiEdgeFadeM) { _edgeArmed = true; return }
+  if (_edgeArmed) _edgeReturn()
+}
+
+/** Fade to black, seat the truck on the return spot the way a tow does, reset the rows, fade back. */
+function _edgeReturn () {
+  _edgeBusy = true
+  const el = document.getElementById('camp-fade')
+  el?.classList.add('on')
+  const done = () => { el?.classList.remove('on'); _edgeBusy = false }
+  setTimeout(() => {
+    const p = vehicleState.position, back = poiSystem.returnPoint(p.x, p.z)
+    if (!back || !storySystem.isActive() || _runEnded) { done(); return }
+    const prev = _spawnOverride
+    _spawnOverride = { align: true, drop: 0.3, x: back.x, z: back.z, heading: back.heading }
+    storySystem.notifyTeleport()
+    for (const row of _barricadeRows) if (row.bodies) _standRow(row)   // every knocked row stands again, unseen
+    void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev; done() })
+  }, EDGE_FADE_S * 1000)
 }
 
 /**
@@ -6242,7 +6345,7 @@ function _promiseRows (m) {
   const kind = _missionKind(j)
   // The job's own axis: the live value, the line for a letter, how a line is spoken, and the margin
   // that counts as comfortable in its units (health: all the headroom; bundles: four spare).
-  let value = null, lineOf, below, marginTo
+  let value = null, lineOf, below, marginTo, clock = null
   if (kind === 'fragile') {
     const L = _fragileLinesOf(j)
     if (_freight?.mission === j && _freight.health) value = _freight.health.health
@@ -6262,6 +6365,15 @@ function _promiseRows (m) {
     value = _rtLive ? 4 - 'SABCD'.indexOf(_rtLive) : null
     lineOf = (l) => 4 - 'SABCD'.indexOf(l); below = (x) => gateText('SABCD'[4 - x])
     marginTo = () => 1 - _rtLiveInt
+    // Q-6 (owner, 2026-10-31, reversing the no-digits rule): until the rank bar shows (R-22, near the
+    // goal) the held band's line is a countdown above the reward line; the bar then replaces it.
+    if (!_rtShown && _rtLayout && _rtKey === j) {
+      const b = _rtLayout.bands.find(b => m.elapsed < b.t1)
+      if (b && isFinite(b.t1)) {
+        const s = Math.max(0, b.t1 - m.elapsed), mm = Math.floor(s / 60), ss = Math.floor(s % 60)
+        clock = { label: 'Clock', what: `finish in ${mm}:${String(ss).padStart(2, '0')} or better for ${b.letter} rank`, tone: _promiseTone(1 - _rtLiveInt) }
+      }
+    }
   }
   const rung = (ladder) => {
     if (value == null) return { what: ladder[0].what, next: below(ladder[0].line), tone: _promiseTone(null) }
@@ -6270,7 +6382,7 @@ function _promiseRows (m) {
     if (held.line == null) return { what: held.what, next: null, tone: 'var(--bad-text)', lost: true }
     return { what: held.what, next: below(held.line), tone: _promiseTone(marginTo(held.line)) }
   }
-  const rows = []
+  const rows = clock ? [clock] : []
   if (j.bonus) rows.push({ label: 'Reward', icon: j.bonus.rewardId, ...rung([{ what: j.bonus.name, line: lineOf(j.bonus.gate) }, { what: j.bonus.name, line: null }]) })
   // The deed: 1 at the B line, 1/2 at C (SM-INV-14). Freight's C is 0 kg (R-18), so it never reads "0".
   // R-33: at the bottom it reads "no deed", struck through (owner: "i know i said numbers only").
@@ -6515,8 +6627,9 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   // §5b: the stock is bought at accept and never refunded — an expired or abandoned haul keeps it.
   if (pick && missionSystem.isOnJob()) economySystem.spend(pick.cost)
   // FEAT-96: a freight job's load is handed over at accept, already strapped — no drop, no loading beat.
+  // FEAT-157: a line taken at the camp gets it at its source (_updateLinePrompt).
   const j = missionSystem.mission
-  if (j?.load && missionSystem.isOnJob()) void _loadFreight(j.load, j.cargoKg, j)
+  if (j?.load && !j.approach && missionSystem.isOnJob()) void _loadFreight(j.load, j.cargoKg, j)
   if (j?.loose && missionSystem.isOnJob()) _loadLoose(j.loose.kind, j.loose.massKg, j)
 })
 document.getElementById('mp-prev')?.addEventListener('click', () => missionSystem.cycle(-1))
@@ -7128,13 +7241,6 @@ function _showPauseMenu () {
   const towel = document.getElementById('pm-towel')
   if (towel) towel.style.display = live ? '' : 'none'
   _syncPauseSave(live)
-  // The ways out of a run to free roam / the lab are dev features (owner, 2026-10-30): in story mode they
-  // show only while the debug panel is open (backtick). Free roam keeps them.
-  const dev = _gui.domElement.style.display !== 'none'
-  for (const id of ['pm-story', 'pm-lab']) {
-    const b = document.getElementById(id)
-    if (b) b.style.display = storySystem.isActive() && !dev ? 'none' : ''
-  }
   _pauseOpen = true
 }
 
@@ -7151,13 +7257,20 @@ function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEnterin
   // One way out (owner, 2026-10-30): save & exit replaces "main menu" while it can save.
   const menuBtn = document.getElementById('pm-menu')
   if (menuBtn) menuBtn.style.display = live && !why ? 'none' : ''
+  // The ways out of a run to free roam / the lab are dev features (owner, 2026-10-30): in story mode they
+  // show only while the debug panel is open (backtick), and follow the toggle live. Free roam keeps them.
+  const dev = _gui.domElement.style.display !== 'none'
+  for (const id of ['pm-story', 'pm-lab']) {
+    const b = document.getElementById(id)
+    if (b) b.style.display = storySystem.isActive() && !dev ? 'none' : ''
+  }
 }
 
 function _hidePauseMenu () {
   const el = document.getElementById('pause-menu')
   if (el) { el.style.display = 'none'; el.classList.remove('settings') }
   _pauseOpen = false
-  _disarmTowel()
+  document.getElementById('towel-card').style.display = 'none'
 }
 
 // ── FEAT-62: scenarios ────────────────────────────────────────────────────────────────────────────
@@ -7504,6 +7617,7 @@ const storySystem = new StorySystem({
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
     campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
     _rebuildPoiMarkers()
+    _placeBarricades()   // FEAT-154: the road closures
     // Only the chunks a pad reaches: pads are the one carve input that changed here. Pads never bump
     // roadGeneration, so these must be marked stale explicitly (terrain.js recarveInPlace). This was a
     // full dispose + worker refill, which discarded the warm's re-bake 1.5 s after it was queued.
@@ -7553,6 +7667,7 @@ const storySystem = new StorySystem({
     roadSystem?.setCampPads(null)   // …and no camp benches: free roam's ground is the seed's ground
     _closeCampUi()
     _rebuildPoiMarkers()
+    _placeBarricades()   // FEAT-154: poiSystem.clear() emptied the rows, so this only clears them
     terrainSystem?.rebuildAllChunksFromWorker()
   },
   /** Exit: hand the play RoadSystem back its normal streaming window before the loop resumes. */
@@ -7629,7 +7744,7 @@ function _showMainMenu () {
   const cap = document.getElementById('load-caption')
   if (cap) cap.style.display = 'none'
   const el = document.getElementById('main-menu')
-  if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'scenarios', 'setup') }
+  if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'setup') }
   menuStage.setActive(true)   // re-runs the drop when arriving from the world; a no-op at boot
   _syncContinue()
   _simHeld = true
@@ -7637,7 +7752,7 @@ function _showMainMenu () {
 }
 function _hideMainMenu () {
   const el = document.getElementById('main-menu')
-  if (el) { el.style.display = 'none'; el.classList.remove('settings', 'scenarios', 'setup') }
+  if (el) { el.style.display = 'none'; el.classList.remove('settings', 'setup') }
 }
 // The region-freeze blurb is a STORY-MODE fact; it was showing on free-roam and lab loads too.
 const LOAD_HINT_STORY = 'the whole region is routed once, up front — after this the roads are frozen and no routing runs while you drive.'
@@ -7922,7 +8037,7 @@ function _resumeJob (sj) {
 
 /** FEAT-42: the resumed job's load, back in the bed of the seated truck (after its motion is back). */
 function _reloadCargo (m, sj) {
-  if (m.load) {
+  if (m.load && !m.approach) {   // FEAT-157: a line still on its way to the source holds nothing yet
     const t = m.fragile ? makeFragile(m.fragile) : null
     if (t) t.health = sj.freightHealth ?? 1
     void _loadFreight(m.load, m.cargoKg, m, t)
@@ -7979,7 +8094,7 @@ const RUN_END_TITLE = {   // PLACEHOLDER words; the day is the in-game day (owne
   win:   (d) => `you made it in ${d} day${d === 1 ? '' : 's'}`,
   crash: (d) => `you crashed on day ${d}`,
   broke: (d) => `you broke down on day ${d}`,
-  towel: (d) => `you called it on day ${d}`,
+  towel: (d) => `run ended on day ${d}`,   // generic (owner, 2026-10-31)
 }
 // The fatal hit plays out in black and white before its card (owner, 2026-10-30).
 const CRASH_CARD_DELAY_S = 1.5
@@ -8009,37 +8124,39 @@ function _runEndHtml (kind) {
   const min = Math.floor(_playedS / 60)
   return (kind === 'crash' && f ? `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region}</div>` : '')
     + row('playtime', `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`)
-    + row('jobs done', `${e.missions}`, true)
-    + row('ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))
+    + row('jobs completed', `${e.missions}`, true)
+    + row('mission ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))
     + row('good deeds', `${formatDeeds(e.halfPoints)} of ${ECONOMY_PARAMS.campDeeds}`)
-    + (req.some(l => l.state !== 'closed') ? row('requisition', `${req.filter(l => l.state === 'done').length} / ${req.length}`) : '')
+    + (req.some(l => l.state !== 'closed') ? row('camp deliveries', `${req.filter(l => l.state === 'done').length} / ${req.length}`) : '')
     + row('earned', `$${formatMoney(e.money + e.spent - ECONOMY_PARAMS.startCash)}`, true)
     + row('spent', `$${formatMoney(e.spent)}`)
     + row('wallet', `<span class="re-money">$${formatMoney(e.money)}</span>`)
-    + worstParts(damageModel, 3).map((p, i) =>
-        row(i ? '' : 'truck', `${p.label} <span style="color:${p.color}">${Math.round(p.c * 100)}%</span>`, !i)).join('')
+    + _upgradeRows(row)
+}
+
+/** The truck's upgrades — the five most valuable parts fitted this run, or "stock" (owner, 2026-10-31). */
+function _upgradeRows (row) {
+  const n = {}
+  for (const id of Object.values(runParts.fitted)) if (PARTS[id] && !PARTS[id].stock && PARTS[id].price > 0 && PARTS[id].family !== 'old') n[id] = (n[id] || 0) + 1   // a $0 "none" part is a removal, an old part counts as stock (owner, 2026-10-31)
+  const ups = Object.keys(n).sort((a, b) => PARTS[b].price - PARTS[a].price).slice(0, 5)
+  if (!ups.length) return row('truck', 'stock', true)
+  return ups.map((id, i) => row(i ? '' : 'truck', PARTS[id].name + (n[id] > 1 ? ` ×${n[id]}` : ''), !i)).join('')
 }
 document.getElementById('re-menu')?.addEventListener('click', _backToMenu)
 
-// The towel: the job-cancel button's two clicks (#job-cancel) — the first arms it for TOWEL_ARM_S.
-const TOWEL_ARM_S = 3
-function _disarmTowel () {
-  if (_towelArm) clearTimeout(_towelArm)
-  _towelArm = 0
-  const b = document.getElementById('pm-towel')
-  if (b) { b.classList.remove('armed'); b.textContent = 'throw in the towel' }
-}
+// The towel: a confirm card in place of the pause menu (owner, 2026-10-31). The game stays paused
+// under it (_pauseOpen holds); back restores the menu, end goes through _endRun like every ending.
 document.getElementById('pm-towel')?.addEventListener('click', () => {
-  const b = document.getElementById('pm-towel')
-  if (!_towelArm) {
-    _towelArm = setTimeout(_disarmTowel, TOWEL_ARM_S * 1000)
-    b.classList.add('armed')
-    b.textContent = 'throw in the towel — sure?'
-    return
-  }
-  _endRun('towel')
+  document.getElementById('pause-menu').style.display = 'none'
+  document.getElementById('towel-card').style.display = 'flex'
 })
+document.getElementById('tc-back')?.addEventListener('click', () => {
+  document.getElementById('towel-card').style.display = 'none'
+  _showPauseMenu()
+})
+document.getElementById('tc-end')?.addEventListener('click', () => _endRun('towel'))
 window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
+window.__poi = () => poiSystem      // dev handle — test/cdp-smoke.mjs drives at a barricade row (FEAT-154)
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
 function _runSnapshot () {
@@ -8156,7 +8273,7 @@ document.getElementById('pm-story')?.addEventListener('click', () => {
   if (_labActive) exitLab()
   _exitScenario()
   _showMainMenu()
-  _openSetup('story')   // FEAT-41: a story run starts from the setup page, wherever it is asked for
+  _openSetup()   // FEAT-41: a story run starts from the setup page, wherever it is asked for
 })
 // (grid world's "grid world" / "return to world" buttons were removed with it — the lab's own
 // toggle is the way in and out of a flat world now.)
@@ -9043,6 +9160,8 @@ function loop () {
     // region is live (owner, 2026-08-01). Run state, not mission state: it never references par
     // or the current job, so the SM-INV-3 running surface above stays clean.
     _renderRunHud()
+    _checkEdge()   // FEAT-154: past the barricades, fade and come back in
+    _updateBarricades()   // …and the rows near the truck are loose bodies
     const guiOpen = _gui.domElement.style.display !== 'none'   // S-64: debug read-outs only while the panel shows
     if (guiOpen) economySystem.syncGui()
 

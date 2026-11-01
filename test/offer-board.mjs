@@ -438,8 +438,10 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     }
     const share = count.foodVendor[0] / count.foodVendor[1]
     check('bonus share ≈ 25 % where the source has rewards', Math.abs(share - 0.25) < 0.03, share.toFixed(3))
-    check('no bonus where the source has no rewards (givers, Larry)',
-        count.doctor[0] === 0 && count.larrysHouse[0] === 0)   // residences (dinner) and general stores (duct tape) reward now
+    check('no bonus where the source has no rewards (the doctor)', count.doctor[0] === 0)   // residences (dinner) and general stores (duct tape) reward now
+    // Larry rolls from (nearly) every reward since 2026-10-31 (owner: "give him every item") — the same share as any source.
+    const larry = count.larrysHouse[0] / count.larrysHouse[1]
+    check('Larry rolls a bonus at the common share', larry > 0.15 && larry < 0.35, larry.toFixed(3))
 }
 
 // ── 13b. no two offers at a POI are the same job ────────────────────────────────────────────────

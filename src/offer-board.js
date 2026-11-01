@@ -114,6 +114,10 @@ export function jobBadge (sp) {
     return sp.shape === 'fetch' ? 'Fe' : 'C'
 }
 
+/** FEAT-97: a fragile thing's tolerance and hit sound, as a spec carries it (src/fragile.js) — null otherwise. */
+const fragileOf = (thing) => thing.family === 'fragile'
+    ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, onePctG: thing.onePctG, breakG: thing.breakG, sound: thing.sound } : null
+
 /** "S only" / "A or better" — how a card states a rank gate. */
 export function gateText (gate) { return gate === 'S' ? 'S only' : `${gate} or better` }
 
@@ -293,7 +297,7 @@ export class OfferBoard {
                     line: t.id, family: t.family, thingId: t.id, phrase: t.phrase, person: null, bonus: null,
                     massKg: t.stock ? t.stock * HAUL_BUNDLE_KG : t.massKg, stock: t.stock ?? null, payMult: 0,
                     destKind: 'poi', destPick: 0, placeName: null, to: null, passenger: !!t.passenger,
-                    shape: 'courier', from: null, load: null, loose: null, atPickup: null, fragile: null,
+                    shape: 'courier', from: null, load: t.load ?? null, loose: null, atPickup: null, fragile: fragileOf(t),   // FEAT-157
                     deadlineSlack: 0,
                 },
             }
@@ -643,9 +647,7 @@ export class OfferBoard {
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
             loose: thing.loose ?? null, // one loose bed body (src/debris.js kind) — the motorist's tire
             atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
-            // FEAT-97: a fragile load's tolerance and hit sound (src/fragile.js) — null otherwise.
-            fragile: thing.family === 'fragile'
-                ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, onePctG: thing.onePctG, breakG: thing.breakG, sound: thing.sound } : null,
+            fragile: fragileOf(thing),   // FEAT-97
         }
     }
 
@@ -977,9 +979,9 @@ export class OfferBoard {
      * C or better, in the job's own axis (gateLine's grammar). PLACEHOLDER words.
      */
     _lineCard (offer, sp, route, verdict, nowH) {
-        const kind = sp.family === 'haul' ? 'haul' : null
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
+        if (sp.fragile) terms.push(sp.fragile.tierName)
         terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
         if (sp.stock) {
             // The source's own haul offer is the stock on hand (owner, 2026-10-30): a player who wants the
@@ -992,7 +994,8 @@ export class OfferBoard {
             sentence: [{ t: 'The expedition camp', b: true }, { t: ' needs ' }, { t: sp.phrase, b: true },
                        { t: ` from ` }, { t: this.placeLabel(offer.poiId) ?? 'its source', b: true }, { t: '.' }],   // a template literal: the import scan
             pay: 'Unpaid — the camp’s requisition', terms, times: ['no time limit'], bonus: null,
-            deed: `Counts ${gateLine('C', kind, this._region)} — else it goes back on the list`,
+            // FEAT-157: the line's own axis — bundles, "upon delivery", N%+ intact, or the letter.
+            deed: `Counts ${gateLine('C', sp.family, this._region, sp.fragile?.tier, (route?.distance ?? 0) / 1000)} — else it goes back on the list`,
             verdict: verdict && verdict.verdict !== 'fits'
                 ? { level: verdict.verdict, text: `${verdict.verdict === 'overload' ? 'Overload' : 'Warning'}: ${verdict.reasons[0].text}` }
                 : null,

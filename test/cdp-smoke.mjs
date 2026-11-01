@@ -409,7 +409,8 @@ const STEPS = [
   }],
   ['expedition', async () => {
     // FEAT-103: the camp's gate prompt, the requisition opening at campDeeds, the five lines at the
-    // camp, and a line taken THERE waiting, untimed, until the truck parks at its source.
+    // camp, and a line taken THERE waiting, untimed, until the truck parks at its source. FEAT-157: the
+    // line taken is the fuel drum, strapped in at the source and not before.
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
       return q ? { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
@@ -425,27 +426,69 @@ const STEPS = [
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
     check(await until(() => vis('mp-accept'), 3000), 'parking at the open camp opened no lines')
     check(await js('window.__mission().offers.length') === 5, `the camp shows ${await js('window.__mission().offers.length')} lines, want 5`)
-    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqCrew'; i++) await js('window.__mission().cycle(1)')
+    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqFuel'; i++) await js('window.__mission().cycle(1)')
     await js('document.getElementById("mp-accept").click()')
     const st = () => js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, from: m.mission?.fromPoi } })()')
     const a = await st()
     check(a.s === 'staging' && a.a, `a line taken at the camp is not an untimed approach: ${JSON.stringify(a)}`)
-    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)})
-      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await sleep(500)
+    check(!await js('window.__cargo().freight'), `the fuel line strapped its drum at the camp: ${JSON.stringify(await js('window.__cargo().freight'))}`)
+    // A source with a park box (the gas station's storefront bays) is parked IN it — poi.js dropZoneWorld's
+    // mapping, the truck's long axis along the bay.
+    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)}), b = q.park
+      if (!b) return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) }
+      const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
+      return { x: ox + b.x * cs + b.z * sn, z: oz - b.x * sn + b.z * cs, h: yaw } })()`)
     await js(`window.__teleport(${src.x}, ${src.z}, ${src.h})`)
     await sleep(2500)
     check((await st()).a, 'arriving at the source started the line before the brake')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
     await tap(' ')
     check(await until(async () => { const b = await st(); return b.s === 'staging' && !b.a }, 2000), `parking at the source did not start the line: ${JSON.stringify(await st())}`)
+    check(await until(() => js('window.__cargo().freight?.key === "drum"'), 5000), `parking at the source strapped no drum: ${JSON.stringify(await js('window.__cargo().freight'))}`)
     // Cancel (parked, two clicks) → the line goes back on the camp's list.
     await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
     check(await until(() => js('window.__mission().state === "done"'), 2000), 'cancel did not end the line')
+    check(await until(() => js('!window.__cargo().freight'), 2000), 'the cancelled line left its drum in the bed')
     await js('document.getElementById("mp-accept").click()')
     check(await js(`window.__map2d()._getBoard().status(${JSON.stringify((await js(`${pois}.find(q => q.type === 'expeditionCamp').id`)))}).family !== null`)
       && await js('window.__mission().state === "idle"'), 'the cancelled line is not back at the camp')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
+  }],
+  // FEAT-154: a road out of the area. Full throttle at its barricade row: the loose barricades get
+  // smashed aside, past the fade line the screen goes black, and the truck comes back on a road inside
+  // the return radius facing in, with every barricade back where it stood.
+  ['edge', async () => {
+    const P = await js('(() => { const p = window.__poi(), b = p.barricades()[4], c = p._built; return { b, c } })()')
+    const f = { x: -Math.sin(P.b.yaw), z: -Math.cos(P.b.yaw) }   // the striped face: back into the area
+    // A row far off is plain models; near the truck its three barricades are loose bodies (main.js).
+    const row = `window.__debris._live.filter(r => r.kind === "roadBarrier" && Math.hypot(r.mesh.position.x - ${P.b.x}, r.mesh.position.z - ${P.b.z}) < 8)`
+    check(await js(`${row}.length`) === 0, 'a row 2 km from the truck already has bodies (they would fall through the world)')
+    await seat(P.b.x + f.x * 30, P.b.z + f.z * 30, Math.atan2(f.x, f.z))   // 30 m inside, nose at the row
+    check(await until(() => js(`(window.__edgeRow = ${row}).length === 3`), 2000), `the row near the truck has ${await js(`${row}.length`)} bodies, want 3`)
+    await sleep(1000)   // settled on the deck
+    const pos = 'window.__edgeRow.map(r => r.mesh.position.toArray())'
+    const before = await js(pos)
+    await crank()
+    if (await js('window.__vs.parked')) await tap(' ')
+    const black = 'document.getElementById("camp-fade").classList.contains("on")'
+    await key('w', true)
+    const went = await until(() => js(black), 20000, 50)
+    const smashed = went && (await js(pos)).some((p, i) => Math.hypot(p[0] - before[i][0], p[2] - before[i][2]) > 0.5)
+    await key('w', false)
+    check(went, `the edge never faded: the truck at ${(await js(`Math.hypot(window.__car().x - ${P.c.x}, window.__car().z - ${P.c.z})`)).toFixed(0)} m`)
+    check(smashed, 'the truck reached the fade line without moving a barricade')
+    check(await until(async () => !await js(black), 5000, 100), 'the screen stayed black')
+    const back = await js(`(() => { const p = window.__car(), q = window.__vs.quaternion
+      const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))   // the truck's nose, (0, 0, -1) rotated
+      return { r: Math.hypot(p.x - ${P.c.x}, p.z - ${P.c.z}), inward: (${P.c.x} - p.x) * fx + (${P.c.z} - p.z) * fz } })()`)
+    check(back.r <= P.c.r - 100 - 9 && back.inward > 0, `came back at ${back.r.toFixed(0)} m, ${back.inward > 0 ? 'facing in' : 'facing OUT'}`)
+    await sleep(1000)
+    const after = await js(`${row}.map(r => r.mesh.position.toArray())`)
+    const off = after.length === 3 ? Math.max(...after.map((p, i) => Math.hypot(p[0] - before[i][0], p[1] - before[i][1], p[2] - before[i][2]))) : Infinity
+    check(off < 0.05, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off`)
+    console.log(`  edge: smashed through, back at ${back.r.toFixed(0)} m facing in, the row reset (worst ${(off * 100).toFixed(1)} cm)`)
   }],
   ['offer', async () => {
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
@@ -612,7 +655,7 @@ const STEPS = [
       const t = await until(card, 5000)
       check(t && want.test(t), `the run-end card reads "${t}", want ${want}`)
       const body = await js('document.getElementById("re-body").textContent')
-      check(/playtime\s*\d+h \d\dm/.test(body) && /jobs done/.test(body) && /wallet/.test(body) && /truck/.test(body),
+      check(/playtime\s*\d+h \d\dm/.test(body) && /jobs completed/.test(body) && /wallet/.test(body) && /truck/.test(body),
         `${t}: the summary is missing rows: "${body.slice(0, 200)}"`)
       await sleep(1500)   // past an autosave tick
       check(!await saved(), `${t}: the run save outlived the run`)
@@ -623,8 +666,27 @@ const STEPS = [
       console.log(`  endings: "${t}" — ${body.replace(/\s+/g, ' ').slice(0, 100)}`)
     }
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    let menuSeen = false
     const newRun = async () => {
-      await js('document.getElementById("mm-story").click()')
+      // FEAT-156 (once): the root is continue (only with a save) · new game · settings, and the
+      // new-game page's mode row swaps what is below it — opening on story, never remembered.
+      if (!menuSeen) {
+        menuSeen = true
+        const rootItems = await js('[...document.querySelectorAll("#mm-root button")].filter(b => b.offsetParent !== null).map(b => b.textContent.trim()).join(" · ")')
+        check(rootItems === 'new game · settings', `main menu root reads "${rootItems}", want "new game · settings"`)
+      }
+      await js('document.getElementById("mm-new").click()')
+      const modeView = () => js(`(() => { const v = id => document.getElementById(id).offsetParent !== null
+        return { mode: document.querySelector('[data-key=gameMode] .sel-val').textContent.replace(/[◂▸]/g, '').trim(),
+                 start: v('su-start'), world: v('su-seed'), list: v('mm-scenario-list') && document.querySelectorAll('#mm-scenario-list button').length } })()`)
+      const steps = []
+      for (let i = 0; i < 5; i++) {
+        steps.push(await modeView())
+        if (i < 4) await js('document.querySelector("[data-key=gameMode] .sel-next").click()')
+      }
+      const want = [['story', true, true, false], ['scenarios', false, false, true], ['free roam', true, true, false], ['testing lab', true, false, false], ['story', true, true, false]]
+      check(steps.every((v, i) => v.mode === want[i][0] && v.start === want[i][1] && v.world === want[i][2] && !!v.list === want[i][3]),
+        `new-game mode row: ${JSON.stringify(steps)}`)
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
       check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s)')
       const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
@@ -633,13 +695,16 @@ const STEPS = [
       check(await until(saved, 3000), 'the new run wrote no save to end')
     }
     const playedS = () => js('JSON.parse(localStorage.getItem("autos-run/1")).data.playedS')
-    // The towel: two clicks — the first only arms it.
+    // The towel: a confirm card (owner, 2026-10-31) — back restores the menu, end ends the run.
     for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
-    check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "throw in the towel" in a story run\'s pause menu')
+    check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "give up" in a story run\'s pause menu')
     await js('document.getElementById("pm-towel").click()')
     check(!await card(), 'one click on the towel ended the run')
-    await js('document.getElementById("pm-towel").click()')
-    await ended(/called it/)
+    check(await js('document.getElementById("towel-card").style.display === "flex"'), 'the towel click opened no confirm card')
+    await js('document.getElementById("tc-back").click()')
+    check(await js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 'back did not restore the pause menu')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/run ended/)
     // The crash: black and white at once, the card after the beat. First, the playtime counts (the save
     // carries it, a second at a time) and stops while paused.
     await newRun()
@@ -656,7 +721,7 @@ const STEPS = [
     // Broke down: an empty tank, no gas can, no money for a tow → the Recovery card's "end run".
     await newRun()
     // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
-    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = q.barriers[1]
+    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = window.__poi().barricades()[1]
       const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
       return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
     await seat(away.x, away.z, away.h)

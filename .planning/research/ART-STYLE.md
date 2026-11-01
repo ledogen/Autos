@@ -122,6 +122,16 @@ The trick that makes this work: **flat shading turns a fold into a colour change
 or a pleat reads as light/dark banding purely from facet normals — one material, no texture, 2 tris a
 fold. Use it constantly.
 
+> **Trap: anything proud of a grooved wall needs edge faces that start IN the groove.** Siding and
+> clapboard are cut inward from the wall plane (so reveals and roofs still meet it flush), which means
+> the wall surface sits up to the groove depth *behind* that plane between course lines. A frame
+> ring, corner board, shutter, vent or plaque whose edge faces run from the plane (0) out to its face
+> leaves a slot that deep under every edge, and a grazing view sees through it. Start those edge
+> faces at `-depth` (the part behind the wall is hidden), and give corner boards their two inner
+> sides too. The ray-cast facing check finds it: the ray slips into the slot and hits the back of a
+> reveal. Found on ASSET-73's 4 cm clapboard (2026-10-30); `trailer-home-a` predates it and carries a
+> 2 cm slot under its frame edges.
+
 ### 3. Faceted. Never smooth-shade.
 
 Everything is flat-shaded. Props are built non-indexed so `computeVertexNormals()` yields per-face

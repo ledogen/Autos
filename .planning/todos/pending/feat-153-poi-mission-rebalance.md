@@ -48,7 +48,19 @@ more things that end there (as a receiver), chosen for variety and fun rather th
 believability tags alone. This reverses or amends the 2026-10-07 ruling that the office and school
 post nothing and only receive.
 
-## Owner-only questions (asked back 2026-10-29, unruled)
+## Ruled (owner, 2026-10-31)
+
+- Office and school **stay receive-only for the alpha**. They may become givers only with a gameplay
+  reason built on tension — e.g. some places post no jobs, so ending up there is a loss the mission
+  that sent you there has to pay for. That re-seat of items, givers and destinations is the **"alpha
+  balancing" phase**, not now.
+- Roadside share: **DEST_POI_CHANCE 0.5 → 0.65 approved** (roadside ~29 % → ~20 %). **Done 2026-10-31 (Spare):** measured over
+  300 boards, roadside drops 24.0 % → 16.5 % of non-paper offers (the census above counts where jobs end).
+- **Placeholder jobs approved as written (owner, 2026-10-31).** They are the Proposal table below (school: "the field-trip permission slips",
+  "the science-fair project"; office: "the signed contracts", "the payroll envelope"; doctor: "a specimen
+  for the lab"); the owner writes the real words when the givers are opened.
+
+## Owner-only questions (asked back 2026-10-29, ruled above)
 
 1. Do the office and school become givers (`cap: 1`, delivery only), or stay receive-only with
    more things sent to them? Recommendation: givers — a receive-only POI can only ever be reached
