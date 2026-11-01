@@ -89,3 +89,12 @@ except Generous and Stingy.
 - **Deadline:** Impatient × 0.6, Patient × 1.5. **Courier thresholds:** × 0.9 / × 1.1.
 - **Fragile floors:** Collector × 0.8 (more delicate), Easygoing × 1.25.
 - **Wholesale:** haul-only (the ticket's OPEN), the yard's whole stock at 80 % of the rate per piece.
+
+## Owner look, 2026-11-01 — two changes
+
+> i cant tell if the modifiers are actually doing anything. either way we should print the effect
+> on the same line. also i dont want them to stack. one at a time max
+
+1. ONE trait per offer, max (count weights become none / one; no stacking).
+2. The card prints the trait's EFFECT on the same line as its name, in plain numbers.
+Lane: Spare.
