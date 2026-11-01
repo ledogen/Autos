@@ -12,14 +12,13 @@ relates: FEAT-61, FEAT-53, FEAT-46, FEAT-60, FEAT-36, FEAT-48, FEAT-59, ASSET-22
 invariants: SM-INV-3, SM-INV-4, SM-INV-11, SM-INV-12, SM-INV-14
 amended: 2026-08-17 (owner ruling — par charges no stops for this mission type)
 blocked_on: two owner rulings (see "Owner rulings needed") — the framing and the mailbox conflict.
+            The damage toll is a forward dependency on SM-3, not a blocker.
 lane: A
 ---
 
 > **ALPHA SCOPE (owner, 2026-10-31): build demolition before the alpha** — it is the fifth line of the
 > camp requisition (FEAT-157: haul, freight, courier, fragile, prop smash). Lane A, after FEAT-157's
 > four built lines. `BUILT_FAMILIES` in src/offer-board.js gains 'demolition' the day it ships.
-            The damage toll is a forward dependency on SM-3, not a blocker.
----
 
 # FEAT-65: Demolition missions — "destroy all the props"
 
