@@ -65,6 +65,10 @@ road or above. No owner capture has been tried yet (none filed).
 Gates: affected 42/44 (road-tunnel, road-clearance = the known reds, identical to main), cdp-smoke
 19/19.
 
+**Rechecked 2026-11-01** after BUG-81 item 4 moved every portal inward (portalCover 2 → 6): the
+hole map on all eight seed-6 portals shows no gap at the mouth or outside it — only the hidden
+wall-foot strip inside the hill, as before. Nothing left for Spare here but the owner's look.
+
 ## Acceptance
 
 - [x] (8 seed-6 portals, owner's look owed) At every portal of the gate region and the owner's captures, no see-through gap between
