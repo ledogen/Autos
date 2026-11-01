@@ -24,7 +24,9 @@
 //      expires, shows no timer, and is unavailable 12 h after a round.
 //   8. CANCEL locks exactly as a completion does — including a cancel after expiry.
 //   9. TAKEN offers are hidden and do not count toward the turnover timer.
-//  10. ONLY BUILT FAMILIES roll (BUILT_FAMILIES) and every built one appears — demolition never does.
+//  10. ONLY BUILT FAMILIES roll (BUILT_FAMILIES) and every built one appears. FEAT-65: demolition rolls
+//      only where a thing pools it (farms, work sites), always roadside, carrying its site's dressing;
+//      its card counts the targets and states the deed as a share smashed.
 //  11. NAMES — deduplicated within a region; a 'home' giver is "the <last> place", a 'person'
 //      giver is one person and no place name.
 //  12. THE CARD — base pay equals economy.basePay at the offer's multiplier (0.5× on a bonus
@@ -323,6 +325,22 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     }
     check('only built families ever roll', [...seen].every(f => BUILT_FAMILIES.has(f)), [...seen].join(','))
     check('every built family appears', [...BUILT_FAMILIES].every(f => seen.has(f)), [...seen].join(','))
+    // FEAT-65
+    let demo = 0, wrong = 0, card = null
+    for (let seed = 1; seed <= 20; seed++) {
+        const b = make(seed)
+        for (const id of b.sources()) for (const o of b.offers(id, T0)) {
+            const sp = b.spec(o)
+            if (sp.family !== 'demolition') continue
+            demo++
+            if (!['farm', 'workSite'].includes(o.type) || sp.destKind !== 'roadside' || !sp.targets?.length) wrong++
+            card ??= b.card(o, { nowH: T0, route: { par: 300, distance: 3000, targets: new Array(10) } })
+        }
+    }
+    check('demolition rolls only at farms and work sites, always roadside, with a site dressing', demo > 0 && wrong === 0, `${demo} rolled, ${wrong} wrong`)
+    check('a demolition card counts its targets and states the deed and the gate as a share smashed',
+        card?.terms.includes('10 to smash') && /Deed: 1 if \d+%\+ smashed · 1\/2 at \d+%\+/.test(card.deed)
+            && gateLine('B', 'demolition', 1) === 'if 75%+ smashed', JSON.stringify(card && { terms: card.terms, deed: card.deed }))
 }
 
 // ── 11. names ───────────────────────────────────────────────────────────────────────────────────
