@@ -556,7 +556,8 @@ const STEPS = [
       await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
       await until(async () => await state() === 'done', 600)
     }
-    check(await state() === 'done', `abandoning did not end the round: ${await state()}`)
+    check(await state() === 'done', `abandoning did not end the round: ${await state()} · ${JSON.stringify(await js(`(() => { const b = document.getElementById('job-cancel')
+      return { parked: window.__vs.parked, v: +window.__vs.velocity.length().toFixed(2), label: b.textContent, armed: b.classList.contains('armed'), hud: b.parentElement?.id, shown: b.style.display } })()`))}`)
     await js('document.getElementById("pp-accept").click()')
     check(await until(async () => await state() === 'idle', 2000), `continue left the round card up: ${await state()}`)
     await js('window.__paper.runPaper.tier = 0')
