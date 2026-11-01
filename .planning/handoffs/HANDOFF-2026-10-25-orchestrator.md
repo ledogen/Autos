@@ -128,8 +128,12 @@ ruling). Spare's queue, ordered by blockers: BUG-64 (a) landing → FEAT-77 (a) 
 junction-cutting prototype (numbers to the owner) → BUG-81 item 5 → FEAT-142 one-trait + effect line
 → FEAT-62 paper-route scenario (after BUG-67's landing call) → BUG-101 / BUG-102. BUG-103 (expedition
 closure bypass, seed 3852053035) has an Opus assessment agent writing the options into the ticket;
-lane TBD after the owner reads it. Lane A (session "A.") was told to merge main before FEAT-157
-(shares offer-board.js / mission.js with FEAT-89). Parked branches: proto/bug-67-pad-yield,
+lane TBD after the owner reads it. **Later that night: the owner ruled (f) and the orchestrator built it on
+main (map ring + dim at the 2410 m fade line, a tick per row; BUG-103 closed) plus the edge-return cap
+(poi.js `_returnSpots` stops 10 m short of every row — the owner was seated just past the camp's row).**
+FEAT-157's four lines are on main (f9bd6553); Lane A is in plan mode on FEAT-65.
+The tracker page's 1f24a9f3 publish shipped a missing comma (the BUG-67 row) — the page sat on
+"connecting to the store…"; fixed ee81605d. ALWAYS `node --check` the page script before a publish. Parked branches: proto/bug-67-pad-yield,
 proto/bug-67-node-height, proto/bug-64-earthwork-union (landing now). Owed list = the tracker's OWED
 array (v36). Heat note: the owner complained the laptop was cooking on battery; the burn was the gate
 batteries (ours and Spare's censuses), Steam's UI renderer, and Spotlight (now excluded). Lifted.

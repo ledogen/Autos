@@ -114,10 +114,13 @@ crosses the wall**, cut there. No road is ever added.
 - **Any direction** (owner, 2026-10-26). The uncle's line (data/dialogue.js, today "the north road")
   names the camp's true compass direction, filled in at run start.
 - **The road past the camp is blocked, not hidden** (owner, 2026-10-26). The camp model plus a barrier
-  across the deck ends the road. The 100–120 m beyond it, out to the invisible wall at 2500 m, stays
-  as it is: every crossing road already runs into that wall. *Hiding the deck past the camp is more
-  correct, since the expedition hasn't found a way out yet. It is a later toggle (FEAT-28's trim
-  brought forward, and it needs a mid-edge cut in road.js).*
+  across the deck ends the road. Beyond it the road runs on to the FEAT-154 edge: a barricade row at
+  every crossing of the planners' wall (2400 m) and the edge fade at 2410 m, which seats the truck
+  back on a road inside. (Until 2026-11-01 this read "the invisible wall at 2500 m" — the 2500 m ring
+  is where the network is built out to, not where the player is stopped; BUG-103 moved the map's
+  ring to the fade line for the same reason.) *Hiding the deck past the camp is more correct, since
+  the expedition hasn't found a way out yet. It is a later toggle (FEAT-28's trim brought forward,
+  and it needs a mid-edge cut in road.js).*
 - **Cutting at the wall strands nothing.** The camp's edge has one node past 2400 m, so the POI
   pool, the newspaper customers and the planners' graph already exclude it (poi.js `build`,
   `buildHouses`, mission.js `buildGraphAdj`). Nothing the game sends a player to sits past the inner
