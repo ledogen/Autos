@@ -16,6 +16,7 @@
 //      put the same T at different heights, the trunk they split is not window-invariant either.
 //   3. DEGREE 3 — a promoted node that is not a three-way junction is a T that lost a leg.
 //   4. NO COLLISION with a real site id (structural: real k >= 0), asserted rather than assumed.
+//   5. BUG-63, over the whole road battery: every promoted node that exists has three legs.
 //
 // Windows per seed are concentric-ish: the same ground reached from four different centres, which
 // is exactly how the streamer meets a T in play.
@@ -28,6 +29,7 @@ import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
+import { WINDOWS, buildWindow } from './lib/road-battery.mjs'
 
 const SEEDS = ['6', '20', '11']
 // four centres that overlap heavily — a T inside the shared ground must come out identical in all
@@ -122,6 +124,23 @@ for (const { seed, c } of FAR) {
   console.log(`seed ${seed} @ (${c[0]},${c[1]}): ${core.length} core T nodes in the far band, ${judged} re-streamed at play radius`)
   if (!judged) { console.log(`  FAIL ${seed}: the far band built no core T — the dissimilar-window sweep proved nothing`); fails++ }
 }
+
+// ── BUG-63: battery-wide, every promoted node that EXISTS has three legs ──────────────────────
+// Existence legitimately varies with the window (a T's partner may not be streamed), so this is
+// "every T built here has three registered legs", never "the same Ts everywhere". A mid-span pair
+// that shares a node once wrote two runs under one key and left its T with two (seeds 7, 11); the
+// side half now ships under the parallel key (road.js PARALLEL_SUFFIX), counted here as a report.
+let batteryTs = 0, parallel = 0
+for (const W of WINDOWS) {
+  const road = buildWindow(W, P)
+  for (const [k] of road._promoted) {
+    batteryTs++
+    const deg = (road._proto.nodeInc.get(k) || []).length
+    if (deg !== 3) { console.log(`  FAIL ${W.name}: T ${k} has ${deg} registered legs (want 3)`); fails++ }
+  }
+  for (const k of road._network.keys()) if (k.endsWith('~p')) parallel++
+}
+console.log(`battery (${WINDOWS.length} windows): ${batteryTs} promoted T nodes, all checked for three legs · parallel side halves shipped (report): ${parallel}`)
 
 // A promotion that never fires proves nothing — say so loudly rather than passing an empty gate.
 if (seen === 0) { console.log('FAIL: no promoted T nodes were built at all — the gate proved nothing'); fails++ }
