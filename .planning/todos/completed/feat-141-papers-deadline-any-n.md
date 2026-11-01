@@ -98,3 +98,5 @@ the owner asked what it means; explained as — sizes 4 / 9 / 15 unlock in order
 better on the LARGEST size you have unlocked opens the next one, so re-running the 4 once the 9 is
 open cannot farm the ladder. The owner's own words "first mission is 4, ladder all the way up to 15"
 match; stands unless the owner comes back.
+
+Owner, 2026-11-01 (later): "yes only b+ on the highest rung should advance" — (1) CONFIRMED.
