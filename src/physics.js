@@ -41,7 +41,7 @@
 
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
-import { computeNormalForce, effectiveWheelRadius, getWheelPosition, mountLocal, stepSuspensionSubsteps, tireContactForce, TIRE_DAMP_ENGAGE, WHEEL_SOFT_BAND } from './suspension.js'
+import { computeNormalForce, effectiveWheelRadius, getWheelPosition, mountLocal, stepSuspensionSubsteps, SUSPENSION_SUBSTEPS, WHEEL_SOFT_BAND } from './suspension.js'
 import { REV_THRESHOLD, stepDrivetrain } from './drivetrain.js'
 import { stepFuel } from './fuel.js'
 import { stepAbs } from './abs.js'
@@ -191,8 +191,8 @@ const CHASSIS_PROFILE = {
  * against whatever the soft path already put there.
  *
  * This is the rim-strike signal, and it is the engine's own answer rather than anything derived.
- * The QUAL-25 chassis carries a rigid sphere per wheel at `wheelRadius − WHEEL_SOFT_BAND`, riding
- * the strut-derived hub position and colliding with debris only. That geometry IS the model of a
+ * Each wheel carries a rigid core at `wheelRadius − WHEEL_SOFT_BAND` — its own 18 kg body (BUG-99),
+ * riding the strut-derived hub position and colliding with debris only. That geometry IS the model of a
  * tire: the outer 0.15 m band is rubber, handled by our analytic soft path, and the core is the
  * rim. So "the rubber ran out and the rim is taking the load" needs no threshold and no proxy —
  * it is exactly the condition that the engine reports a contact on a core, and Box3D solves that
@@ -216,21 +216,22 @@ const CHASSIS_PROFILE = {
  *   damage feed, so the caller does not ask twice.
  */
 export function readRimStrikes (engine, chassis, out, dt, outHazard = null) {
+  const hit = engine.maxContactImpulse(chassis)
   const rims = _rimsFor(engine).get(chassis)
-  const hit = engine.maxContactImpulse(chassis, rims ? _shapeImpulseScratch : null, rims && outHazard ? _shapeHazardScratch : null)
   if (!rims) return hit
   const inv = dt > 0 ? 1 / dt : 0
   // MAX, not assign: the soft path has already written any rim contact it detected against
   // terrain this step (suspension.js), and a wheel can be taking both at once.
   for (let i = 0; i < 4; i++) {
-    const f = (_shapeImpulseScratch[rims[i].shapeIndex] || 0) * inv
+    engine.maxContactImpulse(rims[i].core, _coreImpulse, outHazard ? _coreHazard : null)
+    const f = _coreImpulse[0] * inv
     if (f > out[i]) out[i] = f
-    if (outHazard) outHazard[i] = (_shapeHazardScratch[rims[i].shapeIndex] || 0) * inv
+    if (outHazard) outHazard[i] = _coreHazard[0] * inv
   }
   return hit
 }
-const _shapeImpulseScratch = new Float64Array(64)   // per-shape peak impulse; the chassis has ≤ 16 shapes
-const _shapeHazardScratch  = new Float64Array(64)   // the same, hazard debris only (FEAT-93)
+const _coreImpulse = new Float64Array(1)   // a core body's peak contact impulse (it has one shape)
+const _coreHazard  = new Float64Array(1)   // the same, hazard debris only (FEAT-93)
 
 /**
  * Which armor region a contact landed on: 'front' | 'left' | 'right' | 'rear', or null for a hit
@@ -389,19 +390,26 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
     ], P.deckHalfW), mat)
   }
 
-  // 5. Wheel HARD CORES — spheres at the nominal hub positions that collide with DEBRIS ONLY
-  // (never terrain/road — driving feel is untouched by construction). The tire itself stays the
-  // analytic soft contact (suspension + Pacejka + reaction through qcPlus); these cores exist
-  // because the wheel is otherwise not solid to the engine, so a rock bulldozed backward by the
-  // slab chamfer could be shoved INTO the wheel arch and sit inside the tire (owner capture
-  // 1786777538787: wheel visually through rock; measured −0.43 m interpenetration in the crawl
-  // gate). Core radius = wheelRadius − WHEEL_SOFT_BAND: the outer band is honest tire squish
-  // handled by the soft path; the core makes deeper overlap geometrically impossible and hands
-  // the pinch impulse to the chassis like a real wheel would.
-  // Rim placement TRACKS THE STRUT (owner, 2026-08-15 — they originally rode fixed on the
-  // body at the MOUNT height, ~a strut-length above the real hub): created here at the mount,
-  // re-seated every step by updateWheelRims() below to the strut-derived hub position, wheel
-  // order FL/FR/RL/RR to match strutComp indexing.
+  // 5. Wheel HARD CORES — one per wheel, the RIM: a disk at `wheelRadius − WHEEL_SOFT_BAND` that
+  // collides with DEBRIS ONLY (never terrain/road — driving feel is untouched by construction).
+  // The tire itself stays the analytic soft contact (suspension + Pacejka + the Step 0.5 debris
+  // coupling); the cores exist because the wheel is otherwise not solid to the engine, so a rock
+  // bulldozed backward by the slab chamfer could be shoved INTO the wheel arch and sit inside the
+  // tire (owner capture 1786777538787: −0.43 m interpenetration in the crawl gate).
+  // Each core is its OWN body of the wheel's unsprung mass (params.wheelMass) (BUG-99, owner
+  // 2026-10-29). Until then the cores were hulls on the chassis, so a rock pinched against a rim was
+  // answered by the whole truck — rigidly, at the hub, with a lever arm to the CG — and that impulse
+  // flipped it. A real wheel answers along its strut with its own ~18 kg on its spring, and across
+  // the strut through its arms, i.e. with the truck. So: the core is seated on its hub every step
+  // (seatWheelCores), touches debris only, and after the step what debris did to it is split —
+  // along the strut into strutCompVel (our spring and stops hand it on), across it onto the
+  // chassis at the hub (readWheelCores). The core is FREE during the engine step, not jointed: a
+  // prismatic joint was tried and measured — at the engine's default stiffness it went unstable
+  // against the per-step re-seat (body-contact-energy: 3 MJ out of a 0.1 MJ slam), and it moved
+  // the wheels' 72 kg off the body, which changes ride and handling (owner: road feel stays). The
+  // cost, within one engine step only: a rock pushing a rim SIDEWAYS meets 18 kg, not the truck; the
+  // core is back at truck speed the next step, so a wedged rock is shoved over a few steps instead
+  // of one, and the truck takes every newton of it. With no rock on a core, nothing here acts.
   const rims = []
   // The hulls between the slab and the wheel cores are the ones that carry params.bodyRestitution.
   rims.bounceShapes = []
@@ -410,10 +418,15 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   for (let i = bounceFrom; i < engine.shapeCount(chassis); i++) {
     if (i < bedShapes[0] || i >= bedShapes[1]) rims.bounceShapes.push(i)
   }
+  const q = vehicleState.quaternion
   for (let c = 0; c < 4; c++) {
     const { x, y: mountY, z } = mountLocal(c, params), front = c < 2
-    engine.addHull(chassis, wheelCorePoints(x, mountY, z, params), RIM_MATERIAL)
-    rims.push({ shapeIndex: engine.shapeCount(chassis) - 1, x, z, mountY, front, lastY: mountY })
+    const hub = getWheelPosition(c, vehicleState, params)
+    const core = engine.createBody({ type: 'dynamic', position: hub, quaternion: q, gravityScale: 0,
+      canSleep: false, userData: { kind: 'wheelCore', corner: c } })
+    engine.addHull(core, wheelCorePoints(0, 0, 0, params), RIM_MATERIAL)
+    engine.setMassData(core, params.wheelMass, wheelCoreInertia(params))
+    rims.push({ core, x, z, mountY, front })
   }
 
   // INERTIA AXES — PHYSICALLY CORRECT MAPPING (owner-approved fix, 2026-08-15). Body frame,
@@ -440,6 +453,13 @@ export function syncChassisMass (engine, chassis, params) {
     { x: params.inertiaPitch, y: params.inertiaYaw, z: params.inertiaRoll })
 }
 
+/** A wheel core's own inertia: a disk of params.wheelMass spinning about body x. */
+function wheelCoreInertia (params) {
+  const mu = params.wheelMass, R = params.wheelRadius - WHEEL_SOFT_BAND, w = params.wheelWidth || 0.25
+  const across = mu * (R * R / 4 + w * w / 12)
+  return { x: mu * R * R / 2, y: across, z: across }
+}
+
 /**
  * Live-set the body rebound (the "Body Bounce" debug slider) on the hulls that carry it — hood,
  * cab and bed. The undercarriage slab and the wheel cores are pinned to 0 at creation and stay so.
@@ -460,28 +480,53 @@ function _rimsFor (engine) {
   return m
 }
 
-/** Re-seat the rim cores at the strut-derived hub positions (hubLocal = mount − strutLen·ŷ). */
-function updateWheelRims (engine, chassis, vehicleState, params) {
+/**
+ * Before the engine step: put each wheel core on its hub (the strut-derived position, the chassis'
+ * orientation) moving as the hub moves — the chassis' point velocity plus the strut's own rate.
+ * What a rock then does to a core during the step is the engine's to solve.
+ */
+function seatWheelCores (engine, chassis, vehicleState, params) {
   const rims = _rimsFor(engine).get(chassis)
   if (!rims || !vehicleState.strutComp) return
+  const up = _coreUp.set(0, 1, 0).applyQuaternion(vehicleState.quaternion)
+  const v = vehicleState.velocity, w = vehicleState.angularVelocity
   for (let i = 0; i < 4; i++) {
     const r = rims[i]
-    const L_S = r.front ? params.suspensionRestLengthFront : params.suspensionRestLengthRear
-    const y = r.mountY - (L_S - (vehicleState.strutComp[i] ?? 0))
-    // A hull cannot be mutated in place, so moving the core means rebuilding it — cheap, but not
-    // free, and the strut moves by microns most steps. Rebuild only once the core has drifted far
-    // enough for the difference to matter to a contact, which on a smooth road is almost never.
-    if (Math.abs(y - r.lastY) < RIM_REBUILD_M) continue
-    engine.replaceHullLocal(chassis, r.shapeIndex, wheelCorePoints(r.x, y, r.z, params), RIM_MATERIAL)
-    r.lastY = y
+    const hub = getWheelPosition(i, vehicleState, params)
+    const rx = hub.x - vehicleState.position.x, ry = hub.y - vehicleState.position.y, rz = hub.z - vehicleState.position.z
+    const sv = vehicleState.strutCompVel?.[i] ?? 0
+    _coreV.set(v.x + w.y * rz - w.z * ry + sv * up.x, v.y + w.z * rx - w.x * rz + sv * up.y, v.z + w.x * ry - w.y * rx + sv * up.z)
+    engine.setTransform(r.core, hub, vehicleState.quaternion)
+    engine.setVelocity(r.core, _coreV, w)
   }
 }
 
-const RIM_REBUILD_M = 0.004   // m — below this the core has not moved enough to change a contact
+/**
+ * After the engine step: the impulse debris put into each core is what the rock did to that wheel.
+ * Along the strut it lands on the wheel's own mass (÷ wheelMass into the strut rate — our spring
+ * and stops hand it to the truck); across the strut the arms carry it, so it goes to the chassis
+ * at the hub. Read as the contact impulse itself: with no rock touching a core this is exactly
+ * zero, and the step is untouched.
+ */
+function readWheelCores (engine, chassis, vehicleState, params) {
+  const rims = _rimsFor(engine).get(chassis)
+  if (!rims || !vehicleState.strutCompVel) return
+  engine.getTransform(chassis, _coreP, _coreQ)
+  const up = _coreUp.set(0, 1, 0).applyQuaternion(_coreQ)
+  for (let i = 0; i < 4; i++) {
+    const J = engine.contactImpulseOn(rims[i].core, _coreV, GROUP_DEBRIS)
+    if (J.x === 0 && J.y === 0 && J.z === 0) continue
+    const along = J.x * up.x + J.y * up.y + J.z * up.z
+    vehicleState.strutCompVel[i] += along / params.wheelMass
+    engine.getTransform(rims[i].core, _coreHub, _coreQ2)
+    engine.applyImpulse(chassis, { x: J.x - along * up.x, y: J.y - along * up.y, z: J.z - along * up.z }, _coreHub)
+  }
+}
+const _coreV = new THREE.Vector3(), _coreUp = new THREE.Vector3(), _coreP = new THREE.Vector3(), _coreHub = new THREE.Vector3()
+const _coreQ = new THREE.Quaternion(), _coreQ2 = new THREE.Quaternion()
+
 const RIM_SIDES = 12          // dodecagon: within 3.5% of a true circle, 24 hull points
-// updateBodyMass FALSE: the chassis mass is pinned by setMassData after construction, and these
-// cores are rebuilt live as the strut moves — letting each rebuild re-derive mass from shape
-// densities throws that pinned mass away (the truck stops settling on flat ground).
+// updateBodyMass FALSE: each core's mass is pinned by setMassData (params.wheelMass).
 const RIM_MATERIAL = { friction: 0.5, restitution: 0, group: GROUP_CHASSIS, collidesWith: GROUP_DEBRIS, updateBodyMass: false }
 
 /**
@@ -547,16 +592,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // allowance, damper-relief suppression — existed to paper over a DISCONTINUOUS depth probe
   // and a damper fed strut velocity instead of the contact's closing rate. Owner called it,
   // correctly: fix the measurement, not the physics.)
-  //
-  // depthRate: finite difference of the per-(body, wheel) depth across steps — the honest
-  // d(depth)/dt the tire damper wants. Keyed per wheel as well as per body: two wheels on one body
-  // (a dragged log) must each difference against their OWN last depth, or the shallower wheel's
-  // damper reads the deeper one's baseline and pushes the wrong way. Continuous depth ⇒ well-behaved difference; on first touch
-  // prev = 0 and depth ≈ closing·dt, so the rate lands at the true closing speed. Every query
-  // within one step shares the previous step's baseline (suspension substeps cannot compound).
-  const prevDepth = engineCtx._dynContactDepth ?? EMPTY_DEPTH_MAP
-  const stepDepth = new Map()
-  engineCtx._dynContactDepth = stepDepth
+
   // ONE analytic ground query per wheel per step. Step 1 (the tunnelling failsafe) asks it at each
   // wheel's start-of-step hub; the four suspension substeps and Step 3 then ask at hubs that have
   // moved by one step of strut travel — millimetres — and on an out-of-round tire with a radius a
@@ -576,6 +612,54 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // real query every substep, so a landing is caught at the substep it happens, as before. Costs
   // nothing while the wheels are on the ground.
   const base = [null, null, null, null]   // per corner: { x, y, z, r, list } — Step 1's analytic answer
+
+  // BUG-99 WITHIN-STEP DEBRIS COUPLING — Newton's third law, at the suspension's own cadence.
+  // The engine moves a rock only once per step, after this step's four suspension substeps have
+  // pushed on it. Three things went wrong with that before:
+  //   · The rock was handed the tire's push only when it was the wheel's SUPPORT (Step 3). A tire
+  //     still on the road running into a rock's face put up to 80 kN into the truck and NOTHING
+  //     into the rock, so the rock stayed planted, the wheel's hard core pinched it, and the pinch
+  //     flipped the truck (owner play-test: 4 times in 5 above 30 mph); when the wheel finally
+  //     climbed on, the force stored all that while landed on the rock in one step — the yeet.
+  //   · Given that push for a whole 1/60 s at once, a light rock overshoots the tire.
+  //   · The contact was found a step LATE: only once the engine step had already driven the wheel
+  //     into the rock (10 cm per step at 6 m/s), with no force acting while it did. The spring
+  //     energy of an overlap that appeared at once launched the rock, v ≈ d·√(k/m).
+  // So, per step, each debris body near a wheel gets a PROXY — its mass and engine velocity — and
+  // its contact is followed THROUGH the step instead of read at its start:
+  //   · LOOK-AHEAD: the query sphere is grown by one step of the hub's travel, so a rock the wheel
+  //     will reach during this step is seen now, at its true (negative) gap.
+  //   · The overlap at substep time t is gap + u·t + (the proxy's yield)·n, where u is the hub's
+  //     closing speed on the rock's normal relative to the rock's own motion. The contact starts
+  //     at the instant the surfaces meet — continuous collision detection for the soft tire.
+  //   · Every substep's tire force on the body (c.onForce, from the suspension's own contact pass)
+  //     accelerates the proxy at once, and the summed impulse goes to the engine once, before it
+  //     steps. The rock gets exactly what the hub felt, while it is being pushed.
+  //   · The proxy is a rigid body: a push changes its velocity AND spin (the engine's mass and
+  //     inertia), so the contact point yields as the rock really would, turning as well as sliding.
+  //   · It cannot move INTO the ground it was lying on (the engine's own contacts with static
+  //     bodies, as impulses at those points): a rock on the road pivots on it, a rock in the air
+  //     is free, and the ground still takes its share through the engine. No speed rule decides.
+  // Each push goes to the engine at its own contact point, so the rock's real spin matches the
+  // proxy's. Small-angle within the step (a step turns a rock a few degrees). The hub's look-ahead uses the
+  // chassis' rigid motion; its strut motion is already in the hub position each substep asks at.
+  // (Revives the 2026-08-15 proxy, c03a727, reverted on feel before the hard cores existed; that
+  // one read the start-of-step overlap and held "resting" rocks with a speed rule.)
+  const proxies = new Map()           // body → proxy, this step only
+  const queries = _queryCount.fill(0) // qcPlus calls per corner this step: substep k asks at t = (k−1)·sdt
+  const sdt = dt / SUSPENSION_SUBSTEPS
+  const proxyFor = (h) => {
+    let p = proxies.get(h.body)
+    if (!p) {
+      const { com, invI } = engine.massProperties(h.body)
+      p = { m: engine.getMass(h.body), com, invI, support: engine.staticSupports(h.body),
+        dv: { x: 0, y: 0, z: 0 }, dw: { x: 0, y: 0, z: 0 },   // velocity / spin change this step
+        D: { x: 0, y: 0, z: 0 }, Th: { x: 0, y: 0, z: 0 },    // and their integrals (small angles)
+        pushes: [] }                                         // [impulse, point] for the engine
+      proxies.set(h.body, p)
+    }
+    return p
+  }
   const qcPlus = (cx, cy, cz, r, footprint, corner) => {
     let list = null
     const b = corner !== undefined ? base[corner] : null
@@ -588,25 +672,48 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       }
     }
     if (!list) list = queryContacts(cx, cy, cz, r, footprint)
-    const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
+    // Look-ahead (see above): grow the sphere by one step of the hub's rigid travel.
+    const vs = vehicleState, w = vs.angularVelocity
+    const rx = cx - vs.position.x, ry = cy - vs.position.y, rz = cz - vs.position.z
+    const hvx = vs.velocity.x + w.y * rz - w.z * ry
+    const hvy = vs.velocity.y + w.z * rx - w.x * rz
+    const hvz = vs.velocity.z + w.x * ry - w.y * rx
+    const ahead = Math.hypot(hvx, hvy, hvz) * dt
+    const t = corner !== undefined ? Math.min(queries[corner]++, SUSPENSION_SUBSTEPS - 1) * sdt : 0
+    const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r + ahead, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
     for (let i = 0; i < dyn.length; i++) {
       const h = dyn[i]
       // Safety invariant, not a filter that should ever fire with exact manifolds: a body under
       // the wheel cannot push it DOWN (a rock overhead is the chassis' engine contact).
       if (h.normal.y < -0.1) continue
-      const key = h.body * 4 + corner
-      h.depthRate = (h.depth - (prevDepth.get(key) ?? 0)) / dt
-      const seen = stepDepth.get(key)
-      if (seen === undefined || h.depth > seen) stepDepth.set(key, h.depth)
+      const p = proxyFor(h)
+      const rx = h.contactPoint.x - p.com.x, ry = h.contactPoint.y - p.com.y, rz = h.contactPoint.z - p.com.z
+      // The body's velocity at the contact: the engine's, plus what this step's pushes have added
+      // there (spin included — a push high on a rock mostly turns it).
+      const sv = engine.getPointVelocity(h.body, h.contactPoint, { x: 0, y: 0, z: 0 })
+      const u = -((hvx - sv.x) * h.normal.x + (hvy - sv.y) * h.normal.y + (hvz - sv.z) * h.normal.z)
+      // gap + closing·t + the contact point's yield · n (negative while it separates along −n)
+      const yx = p.D.x + p.Th.y * rz - p.Th.z * ry, yy = p.D.y + p.Th.z * rx - p.Th.x * rz, yz = p.D.z + p.Th.x * ry - p.Th.y * rx
+      h.depth = h.depth - ahead + u * t + (yx * h.normal.x + yy * h.normal.y + yz * h.normal.z)
+      if (h.depth <= 0) continue
+      sv.x += p.dv.x + p.dw.y * rz - p.dw.z * ry
+      sv.y += p.dv.y + p.dw.z * rx - p.dw.x * rz
+      sv.z += p.dv.z + p.dw.x * ry - p.dw.y * rx
+      h.surfaceVel = sv
+      h.hazard = !!engine.getUserData(h.body)?.hazard
+      h.onForce = (Fn, dts) => {
+        // The tire pushes the body along −n with Fn for one substep, at the contact point.
+        const j = { x: -h.normal.x * Fn * dts, y: -h.normal.y * Fn * dts, z: -h.normal.z * Fn * dts }
+        p.pushes.push(j, h.contactPoint)
+        proxyImpulse(p, j.x, j.y, j.z, rx, ry, rz)
+        proxyGround(p)
+        p.D.x += p.dv.x * dts; p.D.y += p.dv.y * dts; p.D.z += p.dv.z * dts
+        p.Th.x += p.dw.x * dts; p.Th.y += p.dw.y * dts; p.Th.z += p.dw.z * dts
+      }
       list.push(h)
     }
     return list
   }
-  // (The 2026-08-15 within-step rock-proxy experiment — simultaneous substep-cadence coupling —
-  // was REVERTED on owner feel; the one-step coupling lag returns force-on-rock via the engine
-  // a frame late, which is the behaviour the owner signed off as right. See commit c03a727 and
-  // its revert for the full mechanism if it is ever revisited.)
-
   // ── Step 1: Catastrophic penetration failsafe ──────────────────────────────
   // Fires ONLY for genuine tunnelling. Uses queryContacts to detect terrain-aware severe penetration
   // instead of a flat y=0 half-space check (Phase 6 fix: TERR-FIX-01).
@@ -943,25 +1050,14 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
 
-      // FEAT-48: equal-and-opposite onto the dynamic support — the tire's friction force
-      // AND its normal load press on the body under the wheel at the contact point.
-      // (Static supports have no .body; the terrain doesn't need its reaction.)
-      //
-      // The normal reaction is the CONTACT-LOCAL spring–damper force — THE SAME FUNCTION the
-      // suspension applied for this contact (tireContactForce: engagement, progressive carcass,
-      // air spring and damper at this tire's rate), never the wheel's SUMMED Fz (road + rock when
-      // straddling once over-flung the rock). Before 2026-10-02 this side re-implemented the law
-      // without the carcass term or the flat-tire rate: 37 % short at 0.10 m of squash, ~20× too
-      // hard on a flat.
+      // FEAT-48: equal-and-opposite onto the dynamic support — the tire's FRICTION force, at the
+      // contact point. (Static supports have no .body; the terrain doesn't need its reaction.)
+      // The NORMAL reaction is not here: every debris contact, support or not, already handed the
+      // body the exact force the suspension put on the hub, substep by substep (BUG-99, the proxy
+      // in Step 0.5). Until 2026-10-29 the normal share was applied HERE, so only to the support —
+      // a rock struck face-on while the tire was still on the road got none of it.
       if (ground.body != null) {
-        const rate = params._tireRateScale ? params._tireRateScale[i] : 1
-        const FnContact = tireContactForce(ground.depth,
-          (ground.depthRate ?? 0) * Math.min(1, ground.depth / TIRE_DAMP_ENGAGE), ground.sizeR, rate, params)
-        engine.applyForce(ground.body, {
-          x: -wheelForce.x - FnContact * ground.normal.x,
-          y: -wheelForce.y - FnContact * ground.normal.y,
-          z: -wheelForce.z - FnContact * ground.normal.z,
-        }, ground.contactPoint)
+        engine.applyForce(ground.body, { x: -wheelForce.x, y: -wheelForce.y, z: -wheelForce.z }, ground.contactPoint)
       }
 
       // Write debug data for logger — evaluated once per wheel against the chosen support surface (BUG-38).
@@ -1133,7 +1229,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // totalForce/totalTorque are about the CG — the body origin — so center
   // application is exact. The engine also advances every debris body here:
   // ONE world step per physics tick, chassis↔debris↔terrain solved together.
-  updateWheelRims(engine, chassis, vehicleState, params)   // rims follow strut travel
+  seatWheelCores(engine, chassis, vehicleState, params)   // the rims ride the hubs (BUG-99)
+  // BUG-99: what the tire pushed into each debris body this step, as one impulse (see Step 0.5).
+  for (const [body, p] of proxies) {
+    for (let k = 0; k < p.pushes.length; k += 2) engine.applyImpulse(body, p.pushes[k], p.pushes[k + 1])
+  }
   engine.applyForce(chassis, totalForce)
   engine.applyTorque(chassis, totalTorque)
   // 8 substeps (not the engine-default 4): the chassis carries the TUNED inertia, whose x-axis
@@ -1142,6 +1242,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // bounce (measured: e_eff 0.30 → 0.21 on a worst-case flat slam) and costs microseconds at
   // this body count. See test/body-contact-energy.mjs for the measured envelope.
   engine.step(dt, ENGINE_SUBSTEPS)
+  readWheelCores(engine, chassis, vehicleState, params)   // what rocks did to the rims (BUG-99)
 
   // ── Step 3e: Pull the engine result back into the authoritative JS mirror ──
   engine.getTransform(chassis, vehicleState.position, vehicleState.quaternion)
@@ -1197,4 +1298,49 @@ const _steerQ = new THREE.Quaternion(), _wheelFwd = new THREE.Vector3(), _wheelR
 const _hubPost = [null, null, null, null]
 
 const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, commit the rolling fixed point instead
-const EMPTY_DEPTH_MAP = new Map()           // shared immutable-by-convention first-step default
+const _queryCount = [0, 0, 0, 0]           // qcPlus calls per corner, reset each step (BUG-99)
+
+/** BUG-99 rock proxy: an impulse j at offset r from the centre of mass changes velocity by j/m and
+ *  spin by I⁻¹(r × j). */
+function proxyImpulse (p, jx, jy, jz, rx, ry, rz) {
+  p.dv.x += jx / p.m; p.dv.y += jy / p.m; p.dv.z += jz / p.m
+  const tx = ry * jz - rz * jy, ty = rz * jx - rx * jz, tz = rx * jy - ry * jx, I = p.invI
+  p.dw.x += I[0] * tx + I[1] * ty + I[2] * tz
+  p.dw.y += I[3] * tx + I[4] * ty + I[5] * tz
+  p.dw.z += I[6] * tx + I[7] * ty + I[8] * tz
+}
+
+/** 1/m + (r × d)·I⁻¹(r × d): how hard it is to change the velocity of point r along d. */
+function proxyInvMass (p, rx, ry, rz, dx, dy, dz) {
+  const cx = ry * dz - rz * dy, cy = rz * dx - rx * dz, cz = rx * dy - ry * dx, I = p.invI
+  return 1 / p.m + cx * (I[0] * cx + I[1] * cy + I[2] * cz) + cy * (I[3] * cx + I[4] * cy + I[5] * cz) +
+    cz * (I[6] * cx + I[7] * cy + I[8] * cz)
+}
+
+/**
+ * BUG-99 rock proxy: the ground it lies on — at each support point, no velocity change INTO the
+ * ground, applied as an impulse AT that point, so a base on the road makes a rock pushed high
+ * pivot instead of sinking. Two passes of sequential impulses over the points. Each one also goes
+ * to the ENGINE with the tire's pushes (2026-10-31): handed only the tire's half, a 9 kg rock
+ * sandwiched under a 150 kN tire left the step at 280 m/s INTO the road, and the engine's soft
+ * contact let it sink and then spat it out at 47 m/s (the --nopop census: a flip at 25 mph, rocks
+ * to 282 m/s — hidden until pinch energy stopped popping those tires). The ground's reaction is
+ * real; given both halves, the engine and the proxy step the same rock.
+ * No ground FRICTION here, measured (census, 2026-10-29): a Coulomb hold predicted the rock pinned,
+ * the tire loaded into it, and the engine — which does not hold a rock against a large applied
+ * impulse that way — then let it fly at 2–5× the truck's speed. The proxy exists to predict what
+ * the engine will do; predicting more than that splits the two sides of one contact.
+ */
+function proxyGround (p) {
+  for (let pass = 0; pass < 2; pass++) {
+    for (const s of p.support) {
+      const wx = p.dw.x, wy = p.dw.y, wz = p.dw.z
+      const vx = p.dv.x + wy * s.rz - wz * s.ry, vy = p.dv.y + wz * s.rx - wx * s.rz, vz = p.dv.z + wx * s.ry - wy * s.rx
+      const vn = vx * s.nx + vy * s.ny + vz * s.nz
+      if (vn >= 0) continue
+      const jn = -vn / proxyInvMass(p, s.rx, s.ry, s.rz, s.nx, s.ny, s.nz)
+      proxyImpulse(p, jn * s.nx, jn * s.ny, jn * s.nz, s.rx, s.ry, s.rz)
+      p.pushes.push({ x: jn * s.nx, y: jn * s.ny, z: jn * s.nz }, { x: p.com.x + s.rx, y: p.com.y + s.ry, z: p.com.z + s.rz })
+    }
+  }
+}
