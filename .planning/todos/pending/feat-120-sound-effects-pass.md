@@ -140,21 +140,24 @@ touchdown, plus a suspension-rattle tail. Fires once per landing, not per wheel.
 - **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `wip/audio-render/proto.js`, rendered as a take in `wip/audio/landing-thud/`. Not in `src/` or wired yet; trigger: all four wheels back in contact after air, level from the vertical speed.
 
 ### Underbody and bumper scrape
-status: todo · group: contacts
+status: wip · group: contacts
 Sustained while the hull is in sliding contact with ground. Noise through a resonant bandpass
 (Q ~8, centre 800–2500 Hz rising with sliding speed) plus random gain flutter for grit. Rock/road:
 brighter; dirt: lowpassed and quieter.
+- **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `wip/audio-render/proto-b2.js`, rendered as a take in `wip/audio/underbody-and-bumper-scrape/`. Not in `src/` or wired yet. The take is the bumper on rock (bright ring, re-rolled every frame for grit) sliding up to 5 m/s and back, then the belly on dirt (muffled ring, the low drag leads). The ring is two bands, the panel's first mode and one at 2.3× it. Trigger: hull sliding contact (speed + force) out of the adapter; the material read is the impact seam's open question.
 
 ### Gravel ping
-status: todo · group: world
+status: wip · group: world
 Stones flicking the wheel wells on dirt/gravel. Reuse the tinkle grains from `glass-audio.js`
 (short high sine pings), lowered to 1.5–4 kHz, random rate ∝ wheel speed on loose surfaces.
+- **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `wip/audio-render/proto-b2.js`, rendered as a take in `wip/audio/gravel-ping/`. Not in `src/` or wired yet. The take ramps the wheel speed 1 → 20 m/s and back down: 0.7 pings/s per m/s, each ping a 1.5–4 kHz sine with a sheet-metal partial at 2.4×.
 
 ### Reverse gear and diff whine
-status: todo · group: truck
+status: wip · group: truck
 Sine at shaft speed × tooth count, so it's physically exact for free. Reverse (straight-cut): loud,
 ~25 teeth on the reverse idler. Diff: quiet, ring-gear teeth (~41) × driveshaft speed, mostly on
 overrun (coasting off-throttle with the engine braking).
+- **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `wip/audio-render/proto-b2.js`, rendered as a take in `wip/audio/reverse-gear-and-diff-whine/`. Not in `src/` or wired yet. Two takes. Reverse: ~17 mesh events per engine rev (countershaft ≈ 0.68 × input × 25 teeth), so 800 rpm ≈ 230 Hz and 2800 rpm ≈ 790 Hz; louder under throttle, with a once-per-countershaft-rev wobble. Manual box only: an automatic's reverse is a helical planetary and barely whines. Diff: the Ranger's 3.73 final drive is 41:11, so the mesh rate is 41 × AXLE speed (= 11 × driveshaft speed; the line above had it as 41 × driveshaft, which is 3.7× too high). 30 m/s ≈ 530 Hz; the take coasts 30 → 9 m/s on overrun, then back on the throttle, where it drops to a quarter.
 
 ### Brake squeal
 status: wip · group: truck
@@ -163,25 +166,29 @@ every time. Sine 2–4 kHz with slight vibrato, fast attack, fades as the truck 
 - **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `wip/audio-render/proto.js`, rendered as a take in `wip/audio/brake-squeal/`. Not in `src/` or wired yet; trigger: a stop from under 15 km/h with moderate pedal, random chance per stop.
 
 ### Wet ground
-status: todo · group: world
+status: wip · group: world
 Stands in for wading for now. Spatter layer on wet surfaces: noise bursts (lowpassed ~1.5 kHz) at a
 rate ∝ wheel speed, plus a soft squelch on wheel load spikes.
+- **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `wip/audio-render/proto-b2.js`, rendered as a take in `wip/audio/wet-ground/`. Not in `src/` or wired yet. The take ramps 0.5 → 12 m/s and back with four squelches. Spatter: 2.5 bursts/s per m/s, fusing at speed into a continuous spray hiss whose level goes as speed^1.5. Squelch: a noise band sliding 450 → 140 Hz over 0.16 s.
 
 ### Grass and brush swish
-status: todo · group: world
+status: wip · group: world
 Off-road over vegetation. Bandpassed noise (~3 kHz, broad) with slow random gain swells, level ∝ speed.
 Needs a flora-density read at the bumper.
+- **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `wip/audio-render/proto-b2.js`, rendered as a take in `wip/audio/grass-and-brush-swish/`. Not in `src/` or wired yet. The take ramps 0 → 11 m/s and back. Blades: ~3 kHz broad band, brighter with speed. Stems on the bumper: a ~900 Hz band. Both swell at random every 0.25–0.75 s (clumps).
 
 ### Tunnel reverb
-status: todo · group: world
+status: wip · group: world
 A ConvolverNode (adds a space's echo to a signal) faded in on the master bus while in a bore. The
 impulse response (the space's echo fingerprint) is generated, not recorded: ~1.5 s of stereo noise
 under an exponential decay, a little brighter early. Crossfade over ~0.3 s at the portals.
+- **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `wip/audio-render/proto-b2.js`, rendered as a take in `wip/audio/tunnel-reverb/`. Not in `src/` or wired yet. The take is the engine drone plus a bump-stop clunk: outside, into a bore at 2 s (with a throttle blip inside), out at 6 s. The generated echo: RT60 (time to fall 60 dB) 1.5 s, darkening as it decays, plus the tunnel's own flutter echo between the walls, every 53 ms (9 m bore). Wiring needs a master bus: every module connects straight to `ctx.destination` today, so it becomes a `getMasterBus()` export in engine-audio.js that they all connect to.
 
 ### Night crickets
-status: todo · group: world
+status: wip · group: world
 Pulsed sine 4–5 kHz chirps in groups of 3–5, several voices at slightly different rates; fade in at
 dusk from the day clock.
+- **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `wip/audio-render/proto-b2.js`, rendered as a take in `wip/audio/night-crickets/`. Not in `src/` or wired yet. The take is 4 voices fading in over 2 s. Carrier 4.2–5 kHz, chirps of 3–5 pulses at ~30 pulses/s, each voice at its own 1.6–2.6 chirps/s; one close voice, the rest quieter and darker. Always-running oscillators, gains scheduled a frame ahead: no nodes per chirp.
 
 ### Dialogue text blips
 status: todo · group: story
@@ -238,9 +245,10 @@ reports it. Sound: the engine drone cutting for a few firing events (gain dips o
 engine-audio.js) with a low pop or two (short lowpassed noise bursts), timed to the torque dip.
 
 ### Camera-aware mix
-status: todo · group: mix
+status: wip · group: mix
 Not a sound, a bus: in cab view, lowpass the outside world (~2 kHz) as if heard through glass; in
 chase view the engine leads the mix instead of the tyres.
+- **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `wip/audio-render/proto-b2.js`, rendered as a take in `wip/audio/camera-aware-mix/`. Not in `src/` or wired yet. The take is the engine at 3000 rpm plus wind at 25 m/s: chase view, then hood view (camera.js `hood`: there is no separate cab view) from 2.5 to 5 s through a 2 kHz lowpass, then chase again. Needs the same master bus as the tunnel reverb.
 
 ## Record
 
