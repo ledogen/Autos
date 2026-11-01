@@ -107,3 +107,16 @@ longer refuses — BUG-85). Rule of three: the true rate is under ~3 % at 95 %. 
   Either is real work for a ≤3 % case; the orchestrator's "prototype if small" bar is not met, so it is
   not prototyped.
 - Or (c) close as "a rare refusal working as designed" — the card did its job.
+
+## RULED — owner, 2026-11-01
+
+> "auto reroll max 3x then the card again. Should be exceedingly rare then. Typed seed should also
+> just auto-re-roll."
+
+So: on a refusal the run re-rolls a fresh seed and tries again, up to three re-rolls; only after
+the third failure does the refusal card show, as it does today. Typed seeds get the same treatment —
+no card on the first refusal. With a measured refusal rate under ~3 %, three re-rolls put the card
+below one run in 30 000. The 2026-08-27 "nothing rerolls" ruling is superseded for the alpha; the
+card stays as the fourth-strike fallback, so the player is still told when the generator cannot
+find a world. Lane: Spare. (story.js's warm-done check is where the refusal is decided; main.js
+`_showSeedModal` is the card.)

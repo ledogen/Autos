@@ -140,3 +140,15 @@ because the junction itself stands where the hill should be.
 **Recommendation for the pick:** (2) is cheap and safe but a near no-op visually; the clipping the owner
 reported is (1)'s — routing that keeps a node's legs from diving straight into a hill. (1) re-routes
 every world.
+
+## RULED — owner, 2026-11-01: remedy (1), price near-node portals
+
+> "unfortunately I think we have to price near node portal if the only two options are the ones you
+> presented. My only concern with changing every routed world is scenarios becoming obsolete.
+> Overall not a big deal if that happens though."
+
+Remedy (1) it is: a bore whose portal would land inside a junction pad's reach (or at the node
+itself) is priced in the corridor search so the router prefers a seat where the headwall has hill
+to stand in. Every world re-routes, so this goes in BEFORE FEAT-62 authors any scenario — a
+scenario built after it stays valid. The proto/bug-67-pad-yield branch (remedy 2) stays parked:
+it fixed the census and nothing visible. Lane: Spare, after BUG-64.
