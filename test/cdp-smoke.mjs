@@ -490,6 +490,42 @@ const STEPS = [
     check(off < 0.05, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off`)
     console.log(`  edge: smashed through, back at ${back.r.toFixed(0)} m facing in, the row reset (worst ${(off * 100).toFixed(1)} cm)`)
   }],
+  ['papers', async () => {
+    // FEAT-141: Larry's round — any N of the customers against a deadline, the size chosen among the
+    // unlocked rungs. Unlock the 9, park at Larry's, read his briefing, and walk the size row.
+    const larry = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse')
+      return q ? { x: q.x - q.nx * 5, z: q.z - q.nz * 5, h: Math.atan2(-q.tx, -q.tz) } : null })()`)   // his yard: the marker stands at the house
+    if (!larry) { console.log('  papers: no Larry in this region — step skipped'); return }
+    await js('window.__paper.runPaper.tier = 1')
+    await seat(larry.x, larry.z, larry.h)
+    const state = () => js('window.__paper.system.state')
+    // Releasing the brake on Larry's pad can let the truck roll before it latches again; while the
+    // prompt still asks for the brake, pull it again.
+    for (let i = 0; i < 3 && await state() === 'idle'; i++) {
+      await park(true)
+      await until(async () => await state() !== 'idle', 1500)
+    }
+    const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    for (let i = 0; i < 20 && await state() !== 'offer'; i++) { if (await dlg()) await tap('Enter'); await sleep(300) }
+    check(await until(async () => await state() === 'offer', 5000), `Larry offered no round: state ${await state()} · ${JSON.stringify(await js(`(() => {
+      const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse'), c = window.__car(), b = window.__map2d()._getBoard()
+      return { prompt: document.getElementById('poi-prompt').textContent.slice(0, 80), parked: window.__vs.parked, mission: window.__mission().state,
+               d: Math.hypot(c.x - q.x, c.z - q.z).toFixed(1), slot: b?.status(q.id), park: !!q.park, drop: !!q.drop } })()`))}`)
+    const view = () => js(`(() => { const p = window.__paper.system
+      return { n: p.route?.customers.length, sizes: [...document.querySelectorAll('#pp-sizes button')].map(b => b.textContent + (b.classList.contains('on') ? '*' : '')).join(' '),
+               deadline: /time limit/.test(document.getElementById('pp-body').textContent) } })()`)
+    const top = await view()
+    check(top.n === 9 && top.sizes === '4 9*' && top.deadline, `Larry's offer: ${JSON.stringify(top)} — want 9 customers, sizes "4 9*" and a time limit`)
+    await js('document.querySelector("#pp-sizes button[data-size=\'0\']").click()')
+    const small = await view()
+    check(small.n === 4 && small.sizes === '4* 9', `picking the 4: ${JSON.stringify(small)}`)
+    console.log(`  papers: Larry offers ${top.sizes.replace('*', '')} — plotted ${top.n}, then ${small.n}`)
+    await js('document.getElementById("pp-decline").click()')
+    check(await until(async () => await state() === 'idle', 2000), `declining left the round open: ${await state()}`)
+    await js('window.__paper.runPaper.tier = 0')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
   ['offer', async () => {
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
     // its pad (q.x/z — the solid model stands off it at modelX/Z), pull the brake, accept, drive.

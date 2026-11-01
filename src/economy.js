@@ -530,7 +530,7 @@ export class EconomySystem {
 
     /**
      * Money earned MID-MISSION and banked on the spot (FEAT-61, owner 2026-08-15) — the paper
-     * route's accuracy bonus, paid as each paper lands rather than at the bell.
+     * route's accuracy bonus, paid as each paper lands rather than at the finish.
      *
      * Deliberately NOT settleFlat: this accrues no points and does not count a mission, because it
      * is not a settlement. It is the same wallet through the same module, which is the part that

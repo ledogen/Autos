@@ -237,10 +237,9 @@ for (const t of tours.filter(Boolean)) {
     }
 }
 
-// ── 5. [RETIRED 2026-09-29] the bell ─────────────────────────────────────────────────────────────
-// This asserted deadlineFor(par) > par, then (re-anchored 2026-08-16) == par. The route has no
-// deadline now — owner ruling, no time limit — so there is nothing here to pin. Par's own
-// reachability lives in src/par.js (PAR_SLACK) and the fare's floor in test/paper-route.mjs.
+// ── 5. the deadline ──────────────────────────────────────────────────────────────────────────────
+// FEAT-141: the round's deadline is par × (1 + DEADLINE_SLACK.papers) — the board's one rule for
+// every family (offer-board.js deadlineH), pinned in test/paper-route.mjs; nothing here to pin.
 
 // ── 6. THE ROUTE, END TO END ────────────────────────────────────────────────────────────────────
 //
@@ -311,23 +310,27 @@ for (const t of tours.filter(Boolean)) {
         again?.already === true && paper.delivered() === 1,
         `already ${again?.already}, delivered ${paper.delivered()}`)
 
-    // A paper landing on someone who is NOT on this route scores nothing — the decoy case.
+    // FEAT-141: EVERY customer is deliverable — a paper on one outside the plotted route COUNTS.
+    // (Before FEAT-141 this was the decoy case and scored nothing.)
     const offRound = customers.find(c => !route.some(r => r.id === c.id))
-    if (offRound) {
+    if (offRound && route.length > 2) {
+        drive(4)
         paper.takePaper()
-        const miss = paper.recordLanding(offRound.x, offRound.z)
-        check('a paper on a customer who is not on this route scores nothing',
-            !miss?.credited && paper.delivered() === 1, `delivered ${paper.delivered()}`)
+        const off = paper.recordLanding(offRound.x, offRound.z)
+        check('a paper on a customer outside the plotted route still COUNTS (any N, FEAT-141)',
+            !!off?.credited && paper.delivered() === 2, `delivered ${paper.delivered()}`)
     }
 
-    // Finish the route on the remaining porches. The LAST one must end it by itself.
-    for (let i = 1; i < route.length; i++) {
-        check(`…still running with ${route.length - i} to go`, paper.state === 'running')
+    // Finish on the plotted porches. The Nth delivery must end the round by itself — no more.
+    const N = route.length
+    for (let i = 1; i < route.length && paper.state === 'running'; i++) {
+        check(`…still running with ${N - paper.delivered()} to go`, paper.state === 'running')
         drive(4)                      // road between porches, so elapsed and the trace are real
         paper.takePaper()
         paper.recordLanding(route[i].x, route[i].z)
     }
-    check('the last porch ENDS the route', paper.state === 'done', `state ${paper.state}`)
+    check('the Nth delivery ENDS the round', paper.state === 'done', `state ${paper.state}`)
+    check('…at exactly N — the round never runs past it', paper.result?.delivered === N, `${paper.result?.delivered} of ${N}`)
     const r = paper.result
     check('a perfect route covers everyone', r?.coverage === 1, `coverage ${r?.coverage}`)
     check('…letters S', r?.letter === 'S', `letter ${r?.letter}`)
@@ -357,9 +360,8 @@ for (const t of tours.filter(Boolean)) {
             x?.par_ref?.slack === PAR_SLACK,
             JSON.stringify({ par: x?.result?.par_s, elapsed: x?.result?.elapsed_s, letter: x?.result?.letter,
                              cols: x?.topology?.columns?.length, rows: x?.topology?.rows?.length, slack: x?.par_ref?.slack }))
-        check('…records the EFFECTIVE par the letter came from (par × coverage)',
-            Math.abs(x.paper.par_effective_s - x.result.par_s * x.paper.coverage) < 0.02,
-            `${x?.paper?.par_effective_s} vs ${x?.result?.par_s} × ${x?.paper?.coverage}`)
+        check('…records the round\'s size N (FEAT-141: any N of the customers)', x.paper.size === x.paper.customers && x.paper.size > 0,
+            `size ${x?.paper?.size}`)
         check('…and the paper-specific terms a refit needs',
             x.paper.customers > 0 && x.paper.delivered === x.paper.customers && x.paper.complete === true)
         // The trace is the richest calibration signal: it says WHERE the time went, not just how
@@ -374,6 +376,21 @@ for (const t of tours.filter(Boolean)) {
 }
 
 // ── 7. degenerate inputs return null rather than a broken route ─────────────────────────────────
+// FEAT-141: THE PLOTTER PICKS. Over every customer, the plotted N-route is the shortest — so no
+// particular set of N can route shorter. Forty random 4-sets from the region's customers.
+{
+    const plotted = planTour(W.road, larry, customers, 4, region, 100)
+    let worse = 0, tried = 0
+    const pick = (k) => { const a = customers.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (i * 7919 + k * 104729) % (i + 1); [a[i], a[j]] = [a[j], a[i]] } return a.slice(0, 4) }
+    for (let k = 0; k < 40 && customers.length > 4; k++) {
+        const t = planTour(W.road, larry, pick(k), 4, region, 100)
+        if (!t) continue
+        tried++
+        if (t.distance < plotted.distance - 0.5) worse++
+    }
+    check('the plotted 4-route is the shortest through ANY 4 customers (40 random sets route no shorter)',
+        !!plotted && tried > 10 && worse === 0, `plotted ${plotted?.distance.toFixed(0)} m, ${worse}/${tried} shorter`)
+}
 check('no Larry ⇒ no route', planTour(W.road, null, customers, 4, region) === null)
 check('no customers ⇒ no route', planTour(W.road, larry, [], 4, region) === null)
 check('a zero-customer tier ⇒ no route', planTour(W.road, larry, customers, 0, region) === null)

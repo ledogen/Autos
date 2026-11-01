@@ -527,6 +527,9 @@
     #mp-body .job-badge { display: inline-block; border: 1.5px solid currentColor; padding: 0 4px;
       margin-right: 6px; font-size: 12px; font-weight: 700; line-height: 16px; }
     #mp-actions, #pp-actions, #sp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+    #pp-sizes { display: none; margin-top: 10px; gap: 6px; justify-content: center; align-items: center; }   /* FEAT-141 */
+    #pp-sizes .mp-dim { color: var(--text-dim); margin-right: 4px; }
+    #paper-panel #pp-sizes button.on { color: var(--text-bright); border-color: var(--accent-story); }
     /* FEAT-62 finish card: the status line and the top-five board. */
     #sp-body .sp-best { color: var(--money); letter-spacing: 2px; }
     #sp-body .sp-miss { color: var(--bad-text); }
@@ -1834,11 +1837,12 @@
 
   <!-- FEAT-61: the paper route's offer / result card and its in-run HUD. A sibling of the mission
        panel, not a face of it — the two missions are different shapes (this one has an inventory
-       and a bell where the other has a destination), and main.js renders each from its own system.
+       and a deadline over many porches where the other has one destination), and main.js renders each from its own system.
        src/paper-route.js stays renderer-agnostic. -->
   <div id="paper-panel">
     <div class="mp-title" id="pp-title">the paper route</div>
     <div id="pp-body"></div>
+    <div id="pp-sizes"></div>   <!-- FEAT-141: the route sizes the player may drive (any unlocked rung) -->
     <div id="pp-actions">
       <button id="pp-accept">start the route</button>
       <button id="pp-decline">not today</button>

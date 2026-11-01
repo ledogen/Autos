@@ -7,7 +7,7 @@
 //
 // THE FARE IS THE MARGIN LINE; THE TIPS ARE THE DIFFERENCE [owner, 2026-08-17].
 //
-//     time  =  payoutFor(parEff, elapsed/parEff, payTier)   — the SAME function a POI job uses
+//     time  =  payoutFor(par, elapsed/par, payTier)   — the SAME function a POI job uses
 //     tips  =  paperTip x k x par x payTier, per customer, scaled by throw accuracy
 //
 // This REVERSES the original ruling, which was that the route must price its own time money and
@@ -27,8 +27,7 @@
 //
 // The consequence that matters: this is the income floor (missions.md, ratified 2026-08-05). Papers
 // you delivered are money you keep — the TIPS are the floor, banked per throw, and they survive a
-// half-finished route. The fare is priced against parEff (par x coverage), so serving half the
-// round pays for half the road rather than cliff-edging to nothing.
+// round that runs out of time. The fare is paid only for a finished round (FEAT-141).
 //
 // ── ACCURACY PAYS, THE CLOCK GRADES [ratified + implemented 2026-08-14] ─────────────────────────
 //
@@ -47,14 +46,17 @@
 // It replaced coverage × meanAccuracy, which made "how well did you throw" and "how well did you
 // do" the same question and left the clock nothing to say.
 //
-// ── NO TIME LIMIT [owner, 2026-09-29] ───────────────────────────────────────────────────────────
+// ── ANY N, AGAINST A DEADLINE [FEAT-141, owner 2026-10-21 — reverses 2026-09-29's "no time limit"] ──
 //
-// The bell is gone. A route ends on the last porch or the empty truck, never on a clock — the
-// deadline (par × tolerance, latterly par exactly) was cut. Par itself did NOT move: the letter is
-// still the par ratio and the fare is still the margin line, so driving faster still pays more.
-// What stops a slow round settling nothing is the margin line's own floor (economy.js `baseFrac`,
-// ruled for every mission): the fare never drops below the guaranteed base pay — half the round's
-// max — and what it pays above that is the tip. Both come from payoutFor — nothing here.
+// Every customer is deliverable. The plotter picks the N of them with the shortest route from Larry
+// (planTourJob — which N as well as the order) and that route's par is the round's par; the GPS draws
+// it, and the player may ignore it. The round ENDS at the Nth delivery (going past N was rejected: a
+// tight cluster of houses would be a repeatable payout). The DEADLINE is par × 1.5 (data/offers.js
+// DEADLINE_SLACK.papers): par is still the C/D line, the deadline is the end of D. Unfinished at the
+// deadline — or out of papers short of N — the round is over: accuracy money already banked stays,
+// and there is no fare, no letter and no ladder rung. A finished round at B or better on the top
+// unlocked size earns the next one; the player may drive any unlocked size. The HUD shows the
+// deadline as a CLOCK TIME, never a countdown (SM-INV-3).
 
 import { ECONOMY_PARAMS, payoutFor, splitPayout } from './economy.js'
 import { buildGraphAdj, graphDijkstra, START_ZONE_R, buildRunExport, TRACE_DIV, secPerGameH } from './mission.js'
@@ -65,18 +67,17 @@ import { accuracyScore } from './throw.js'
 import { polyCumOf, traceRow } from './mission.js'
 
 export const PAPER_PARAMS = {
-    // (`tolerance`, the bell, was cut 2026-09-29 — the route has no time limit. The fare's floor is
-    // economy.js `baseFrac`, shared with every mission.)
+    // (The deadline is not here: it is par × (1 + DEADLINE_SLACK.papers), the board's one rule for
+    // every family — data/offers.js.)
 
-    // The ladder Larry walks you up, one rung per PERFECT route (owner, 2026-08-05). Run-layer, so
-    // it is re-earned every run like everything else.
+    // The ROUTE SIZES Larry offers — the ladder. A finished round at B or better on the top unlocked
+    // size unlocks the next (FEAT-141, reversing 2026-08-05's perfect-round rule), and the player may
+    // drive any unlocked size. Run-layer, so it is re-earned every run like everything else.
     tiers:       [4, 9, 12, 15],
-    // …and how far out each rung reaches, in metres of ROAD from Larry's house (owner, 2026-10-15).
-    // The route grows in BOTH axes: more customers AND a wider neighbourhood, so rung four is a
-    // different shape of drive and not just a longer list. Placement reads this table — poi.js's
-    // buildHouses fills the bands innermost first and STAMPS each house with the rung it was placed
-    // for (`paperTier`), so who is on a tier's route is decided at placement and nothing is selected
-    // at plan time. That is why it lives here, with the ladder, and not in POI_PARAMS.
+    // …and how far out each rung's houses are PLACED, in metres of ROAD from Larry's house (owner,
+    // 2026-10-15). PLACEMENT ONLY since FEAT-141: poi.js's buildHouses still fills the bands
+    // innermost first (stamping `paperTier`), which spreads the customers outward, but the stamp no
+    // longer decides who is on a route — every customer is deliverable and the plotter picks.
     //
     // ROAD DISTANCE FROM LARRY, NOT RINGS ROUND THE REGION CENTRE. The 2026-08-11 rings (1.0 / 1.5 /
     // 2.0 km straight-line from the centre) did not survive seed 1097699782: Larry sat 936 m out, on
@@ -210,24 +211,13 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
     // THE CLOCK GRADES [ratified 2026-08-14]. The letter is the par ratio through the SAME
     // gradeRun() every other mission type uses — par is the C/D boundary (re-anchored 2026-08-16),
     // on the region's time thresholds (FEAT-138) — so a paper route's B means what a POI job's B
-    // means. That shared meaning is the point, and it is why the re-anchor had to reverse the
-    // 2026-08-14 "par is a B" ruling HERE too rather than leaving this mission type behind on the
-    // old convention. It used to be coverage × meanAccuracy,
-    // which made "how well did you throw" and "how well did you do" the same question and left
-    // nothing for the clock to say.
+    // means.
     //
-    // PAR SCALES WITH THE JOB YOU ACTUALLY DID (owner, 2026-08-15): deliver half the papers and you
-    // are measured against half the par — "closer to half of par" — instead of being handed a flat D.
-    //
-    // The flat D it replaces was too blunt. It graded a round that dropped one paper of fifteen the
-    // same as one that dropped fourteen, and it made the letter stop being about driving the moment
-    // anything went wrong. Scaling keeps the clock honest instead: skipping people no longer buys
-    // time, because it shrinks the clock you are held to by exactly as much. Nine of nine at par and
-    // three of nine in a third of par both come out at ratio 1.0.
-    //
-    // Complete routes are untouched (coverage 1 ⇒ parEff = par), so the C/D line still sits at par.
-    const parEff = par * coverage
-    const letter = gradeRun(elapsed, parEff, thresholds).letter
+    // FEAT-141 (owner, 2026-10-21): par is the PLOTTED N-route's — the shortest way through any N
+    // customers — and only a finished round (N delivered) is settled at all; the deadline is par ×
+    // 1.5 (data/offers.js DEADLINE_SLACK.papers), so D is the band between par and the deadline. The
+    // coverage-scaled par (parEff, owner 2026-08-15) retired with it: an unfinished round expires.
+    const letter = gradeRun(elapsed, par, thresholds).letter
 
     // TIPS are per delivery, derived rather than authored so the round tracks the same economy
     // everything else does. Degenerate par (a broken tour) pays zero rather than NaN-ing the
@@ -241,17 +231,11 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
     // driving SLOWLY. It now calls the shared function, so a paper round and a POI job are paid
     // identically for the same drive over the same road, and the tips are the difference.
     //
-    // Priced against parEff (par × coverage), the same effective par the LETTER is graded on:
-    // serve half the round and you are paid for half the road, on the clock you actually kept.
-    // Nothing needs to be gated on `complete` — an unfinished round is priced, not cliff-edged,
-    // and the tips it did earn are already banked. The income floor survives in the tips.
-    //
-    // No bell any more (2026-09-29), so the line's floor is what a slow round settles: the base
-    // pay, guaranteed, priced against parEff like the fare — serve half the round and the guarantee
-    // is half as big. `base`/`tip` are the two rows the result card states, split exactly as
-    // economy.js settles a POI job (the same splitPayout, so the cards agree to the cent).
-    const timeMoney = parEff > 0 ? payoutFor(parEff, elapsed / parEff, payTier) : 0
-    const { base, tip } = parEff > 0 ? splitPayout(parEff, elapsed / parEff, payTier) : { base: 0, tip: 0 }
+    // Priced on the round's par, like the letter (FEAT-141). The line's floor is the base pay,
+    // guaranteed for a finished round; `base`/`tip` are the two rows the result card states, split
+    // exactly as economy.js settles a POI job (the same splitPayout, so the cards agree to the cent).
+    const timeMoney = par > 0 ? payoutFor(par, elapsed / par, payTier) : 0
+    const { base, tip } = par > 0 ? splitPayout(par, elapsed / par, payTier) : { base: 0, tip: 0 }
 
     // TWO INCOME STREAMS, PAID AT DIFFERENT TIMES [owner, 2026-08-15].
     //
@@ -267,12 +251,13 @@ export function scoreRoute (accuracies, customers, elapsed, par, payTier = 1, P 
 }
 
 /**
- * Did this route earn the next rung? Only a PERFECT one does: every customer got a paper inside
- * their circle. Accuracy does not enter it — Larry is judging whether you can
- * finish the route, not how pretty it was.
+ * Did this round earn the next rung? FEAT-141 (owner, 2026-10-21): a FINISHED round at B or better.
+ * Accuracy does not enter it — Larry is judging how you drive the route, not how pretty the throws
+ * were. (The caller also requires the round to be the top unlocked size: a 4-house round does not
+ * unlock the 12.)
  */
-export function advancesTier (result, customers) {
-    return !!result?.complete && customers > 0 && result.coverage >= 1
+export function advancesTier (result) {
+    return !!result?.complete && ['S', 'A', 'B'].includes(result.letter)
 }
 
 // ── the tour ────────────────────────────────────────────────────────────────────────────────────
@@ -535,29 +520,22 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
         return searches.get(k)
     }
 
-    // The SEED ORDER: a nearest-by-road chain from Larry. Who is on the route is not chosen here —
-    // the caller hands over the tier's customers (poi.js stamps the tier at placement) — so this
-    // only matters as Held-Karp's fallback above HELD_KARP_MAX, and as the `want` cap.
-    const remaining = allCust.filter(c => ptKeyOf.has(c.id))
-    if (!remaining.length) return null
-    const order = []
-    let curK = larryK
-    while (order.length < want && remaining.length) {
-        const { dist } = searchFrom(curK)
-        if (fresh) yield
-        let bi = -1, bd = Infinity
-        for (let i = 0; i < remaining.length; i++) {
-            const d = dist.get(ptKeyOf.get(remaining[i].id)) ?? Infinity
-            if (d < bd) { bd = d; bi = i }
-        }
-        if (bi < 0 || !isFinite(bd)) break
-        const c = remaining.splice(bi, 1)[0]
-        order.push(c)
-        curK = ptKeyOf.get(c.id)
-    }
+    // THE CANDIDATES (FEAT-141, owner 2026-10-21): every customer is deliverable, and the plotter
+    // picks WHICH `want` of them as well as the order — the shortest route from Larry through any
+    // `want`. Candidates are the reachable customers nearest Larry by road, capped at HELD_KARP_MAX
+    // (placement makes at most the top rung's 15, so in practice that is all of them).
+    const fromLarry = searchFrom(larryK).dist
+    yield
+    const order = allCust
+        .filter(c => isFinite(fromLarry.get(ptKeyOf.get(c.id)) ?? Infinity))
+        .sort((a, b) => fromLarry.get(ptKeyOf.get(a.id)) - fromLarry.get(ptKeyOf.get(b.id)))
+        .slice(0, HELD_KARP_MAX)
+    want = Math.min(want, order.length)
     if (!order.length) return null
+    if (want === 1) order.splice(1)                      // one stop: the nearest, nothing to order
 
-    // …and in WHICH ORDER: the SHORTEST one, exactly.
+    // …WHICH `want` of them, and in WHICH ORDER: the SHORTEST, exactly. Held-Karp over the candidates,
+    // grown only to `want` stops; the route is the cheapest state holding exactly `want` of them.
     //
     // 2-opt was not enough, and the reason is worth keeping. On an open path with a pinned start,
     // reversing a sub-run cannot rotate the sequence — turning A,B,C,D into D,A,B,C is not a
@@ -587,7 +565,10 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
             par.fill(-1, 0, SZ * n)
             try {
                 for (let j = 0; j < n; j++) dp[(1 << j) * n + j] = from[j]
+                const bits = (m) => { let c = 0; for (; m; m &= m - 1) c++; return c }
                 for (let mask = 1; mask < SZ; mask++) {
+                    // A state already holding `want` stops is an answer, never a step: no growing it.
+                    if (bits(mask) >= want) { if ((mask & (HK_CHUNK - 1)) === 0) yield; continue }
                     for (let j = 0; j < n; j++) {
                         if (!(mask & (1 << j))) continue
                         const cur = dp[mask * n + j]
@@ -602,12 +583,14 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
                     // THE yield that matters — this loop is the entire 14 ms at fifteen stops.
                     if ((mask & (HK_CHUNK - 1)) === 0) yield
                 }
-                const full = SZ - 1
-                let endJ = -1, bestT = Infinity
-                for (let j = 0; j < n; j++) if (dp[full * n + j] < bestT) { bestT = dp[full * n + j]; endJ = j }
+                let bestM = -1, endJ = -1, bestT = Infinity
+                for (let mask = 1; mask < SZ; mask++) {
+                    if (bits(mask) !== want) continue
+                    for (let j = 0; j < n; j++) if (dp[mask * n + j] < bestT) { bestT = dp[mask * n + j]; endJ = j; bestM = mask }
+                }
                 if (endJ >= 0 && isFinite(bestT)) {
                     const seq = []
-                    for (let mask = full, j = endJ; j >= 0;) {
+                    for (let mask = bestM, j = endJ; j >= 0;) {
                         seq.unshift(order[j])
                         const pj = par[mask * n + j]
                         mask ^= (1 << j)
@@ -623,6 +606,8 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
             }
         }
     }
+
+    if (order.length > want) order.splice(want)       // never more stops than the round has
 
     // The node walk: Larry's point, then each stop in turn, along shortest paths through the split
     // graph. Consecutive duplicates collapse — two customers on one stretch share the road between.
@@ -721,7 +706,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
  *   staging   papers loaded, parked at Larry's, clock NOT running — same threshold a POI job uses
  *             (mission.js START_ZONE_R). You are on a pad facing whichever way you arrived, and the
  *             route should not be timing you while you turn around.
- *   running   papers in the truck, the clock running (against par, never against a bell)
+ *   running   papers in the truck, the clock running against par, until N are delivered or the deadline
  *   done      the result card, already settled
  *
  * Renderer-agnostic (the mission-panel pattern): it owns state, main.js owns the DOM.
@@ -770,6 +755,8 @@ export class PaperRouteSystem {
         this.run = null          // the live route — see accept()
         this.result = null
         this.giver = null        // the POI the route was taken from
+        this.sizeIdx = 0         // FEAT-141: the chosen route size — an index into PAPER_PARAMS.tiers (≤ runPaper.tier)
+        this.eligible = []       // FEAT-141: every customer — any of them counts toward the round's N
         this.offer = null        // FEAT-67: the mission-board offer this route is (null outside the board)
         this._startZone = null   // the green threshold at Larry's while staging
         this._briefed = false
@@ -831,7 +818,7 @@ export class PaperRouteSystem {
      */
     exportRun (note = '') {
         const e = this._lastExport, r = this.result
-        if (!e || !r || r.expired) return null   // FEAT-113: an expired round has no run to describe
+        if (!e || !r || r.expired || r.outOfPapers) return null   // FEAT-113/141: an unfinished round has no run to describe
         const ratio = r.par > 0 ? r.elapsed / r.par : 0
         return buildRunExport({
             note,
@@ -849,16 +836,12 @@ export class PaperRouteSystem {
             extra: {
                 mission_type: 'paper_route',
                 paper: {
-                    tier:          runPaper.tier + 1,
+                    size:          r.customers,   // FEAT-141: the round's N (any N of the customers)
                     customers:     r.customers,
                     delivered:     r.delivered,
                     coverage:      +r.coverage.toFixed(3),
                     mean_accuracy: +r.meanAccuracy.toFixed(3),
                     complete:      !!r.complete,
-                    // The letter is graded against par × coverage (owner, 2026-08-15), so record the
-                    // EFFECTIVE par it actually came from — otherwise a refit grades a half-finished
-                    // round against the whole round's clock and concludes par is far too generous.
-                    par_effective_s: +(r.par * r.coverage).toFixed(2),
                     payout:        r.payout,
                     spot:          r.spot,
                 },
@@ -892,7 +875,7 @@ export class PaperRouteSystem {
      */
     paperValue (q) {
         if (!this.run || !this.route) return 0
-        return tipPerPaper(this.route.par, this.route.customers.length, this.run.payTier) * q
+        return tipPerPaper(this.route.par, this.run.n, this.run.payTier) * q
     }
 
     /** Papers still in the truck. Zero does not end the route; the last one LANDING does. */
@@ -902,9 +885,9 @@ export class PaperRouteSystem {
     /** FEAT-133: is a customer still owed a paper within r metres of (x, z)? (The pad's throw gate.) */
     owedWithin (x, z, r) {
         if (this.state !== 'running') return false
-        return this.route.customers.some(c => !this.run.hits.has(c.id) && Math.hypot(c.x - x, c.z - z) < r)
+        return this.eligible.some(c => !this.run.hits.has(c.id) && Math.hypot(c.x - x, c.z - z) < r)
     }
-    /** Seconds on the route's clock so far. Elapsed, not remaining: there is no bell to count to. */
+    /** Seconds on the route's clock so far. Elapsed, not remaining: the HUD states the deadline as a clock time (SM-INV-3). */
     elapsed () { return this.run ? this.run.elapsed : 0 }
 
     /**
@@ -917,6 +900,7 @@ export class PaperRouteSystem {
         if (this.state !== 'idle' || !giver) return
         this.giver = giver
         this.offer = offer
+        this.sizeIdx = runPaper.tier   // the top unlocked size; setSize() picks a smaller one
         this.error = null
         this.result = null
         this.route = null
@@ -937,8 +921,9 @@ export class PaperRouteSystem {
         try {
             const pois = this._getPois()
             const larry = this.giver
-            const want = customersForTier()
-            this.route = planTour(this._getRoad(), larry, pois?.customers(runPaper.tier) ?? [], want,
+            // FEAT-141: every customer is deliverable; the plotter picks the N with the shortest route.
+            this.eligible = pois?.customers(PAPER_PARAMS.tiers.length - 1) ?? []
+            this.route = planTour(this._getRoad(), larry, this.eligible, customersForTier(this.sizeIdx),
                                   this._getRegion(), 100)
             if (!this.route) this.error = 'no route could be routed from here'
         } catch (e) {
@@ -960,6 +945,23 @@ export class PaperRouteSystem {
         this._onChange()
     }
 
+    /** FEAT-141: the route sizes the player may choose — every rung up to the top unlocked one. */
+    sizes () { return PAPER_PARAMS.tiers.slice(0, Math.min(runPaper.tier, PAPER_PARAMS.tiers.length - 1) + 1) }
+
+    /**
+     * FEAT-141: drive a different unlocked size. Re-plots on the spot (a few ms at the top size —
+     * the briefing has already been read), and keeps the old plot if the new one cannot route.
+     */
+    setSize (idx) {
+        if (this.state !== 'offer' || idx === this.sizeIdx || idx < 0 || idx >= this.sizes().length) return
+        const r = planTour(this._getRoad(), this.giver, this.eligible, customersForTier(idx), this._getRegion(), 100)
+        if (!r) return
+        this.sizeIdx = idx
+        this.route = r
+        this._setMapOpen(true)
+        this._onChange()
+    }
+
     /**
      * Take the papers. Terms freeze here, exactly like a paid job's do — but the CLOCK does not
      * start here: you are parked on Larry's pad. It starts when you drive out of the threshold.
@@ -968,7 +970,9 @@ export class PaperRouteSystem {
         if (this.state !== 'offer' || !this.route) return
         const terms = this._getTerms() || { payTier: 1 }
         this.run = {
-            stock:    stockForTier(),
+            n:        this.route.customers.length,   // FEAT-141: the round ends at the Nth delivery
+            sizeIdx:  this.sizeIdx,
+            stock:    stockForTier(this.sizeIdx),
             inFlight: 0,
             elapsed:  0,
             t0H:      0,              // FEAT-113: the world clock at the start line
@@ -999,17 +1003,18 @@ export class PaperRouteSystem {
         if (!this.isCarrying() || !this.offer) return null
         const { hits, trace, traceTick, inFlight, ...run } = this.run
         return { offerId: this.offer.id, giverId: this.giver.id, state: this.state, par: this.route.par,
-                 run: { ...run, hits: [...hits] } }
+                 sizeIdx: this.sizeIdx, run: { ...run, hits: [...hits] } }
     }
 
     /**
-     * FEAT-42: put a saved round back in hand. The tour is re-planned from Larry's on the same
-     * tier (the ladder only moves at a finish), so it is the tour that was taken; par is the saved
-     * one regardless — the contract never re-prices. Returns false when no tour plans.
+     * FEAT-42: put a saved round back in hand. The plot is re-run from Larry's at the same size
+     * over the same customers, so it is the route that was taken; par is the saved one regardless —
+     * the contract never re-prices. Returns false when no tour plans.
      */
     resume (giver, offer, s) {
-        const route = planTour(this._getRoad(), giver, this._getPois()?.customers(runPaper.tier) ?? [],
-                               customersForTier(), this._getRegion(), 100)
+        this.sizeIdx = s.sizeIdx ?? Math.min(runPaper.tier, s.run.sizeIdx ?? runPaper.tier)
+        this.eligible = this._getPois()?.customers(PAPER_PARAMS.tiers.length - 1) ?? []
+        const route = planTour(this._getRoad(), giver, this.eligible, customersForTier(this.sizeIdx), this._getRegion(), 100)
         if (!route) return false
         route.par = s.par
         this.giver = giver
@@ -1134,8 +1139,8 @@ export class PaperRouteSystem {
             if (c) this.run.trace.push(traceRow(c, this.run.elapsed))
         }
         this._replanTick(dt)
-        // No bell (owner, 2026-09-29): the clock only accumulates. The last porch or the empty truck
-        // ends the route (recordLanding), or the player cancels it from the pause menu (FEAT-67).
+        // The clock only accumulates. The Nth porch or the empty truck ends the round (recordLanding),
+        // the deadline expires it (above), or the player cancels it (FEAT-67).
     }
 
     // ── FEAT-63: the GPS always shows the shortest way to finish ────────────────────────────────
@@ -1296,17 +1301,18 @@ export class PaperRouteSystem {
      */
     _startReplan (reason, quiet = false, retry = false) {
         if (this.state !== 'running' || !this.route || !this.run) return
-        const left = this.route.customers.filter(c => !this.run.hits.has(c.id))
-        if (!left.length) return
+        // FEAT-141: the shortest way to FINISH — through any of the customers still owed a paper,
+        // as many as the round still needs. (Before, the set was the plotted route's, fixed.)
+        const left = this.eligible.filter(c => !this.run.hits.has(c.id))
+        const want = this.run.n - this.run.hits.size
+        if (!left.length || want <= 0) return
         const car = this._getCar()
         const origin = this._originPoint()
         if (!origin) return          // off the network entirely; try again on the next poll
 
         this._cancelReplan()
         this._rr = {
-            // want = left.length: the SET is fixed, only the order is in question.
-            it: planTourJob(this._getRoad(), origin, left, left.length,
-                            this._getRegion(), 100),
+            it: planTourJob(this._getRoad(), origin, left, want, this._getRegion(), 100),
             // cx/cz is where the TRUCK was, which is what the staleness guard measures against;
             // origin is the road point it planned from, and the two are not the same place.
             cx: car?.x ?? origin.x, cz: car?.z ?? origin.z, reason, quiet, retry,
@@ -1359,7 +1365,7 @@ export class PaperRouteSystem {
         if (this.run.expired) return null   // FEAT-113: a paper in the air at the deadline scores nothing
         const R = this._getTargetR()
         let best = null, bd = Infinity
-        for (const c of this.route.customers) {
+        for (const c of this.eligible) {          // FEAT-141: any customer counts, not only the plotted N
             const d = Math.hypot(c.x - x, c.z - z)
             if (d < bd) { bd = d; best = c }
         }
@@ -1379,10 +1385,10 @@ export class PaperRouteSystem {
         // and the end-of-route payout is left a pure function of the clock.
         const pay = credited ? this._onSpot(this.paperValue(q)) : 0
         this.run.spotPaid = Math.round((this.run.spotPaid + pay) * 100) / 100
-        if (this.run.hits.size >= this.route.customers.length
-            || (this.run.stock <= 0 && this.run.inFlight <= 0)) {
+        // FEAT-141: the round ends at the Nth delivery — or, out of papers short of N, it is over.
+        if (this.run.hits.size >= this.run.n || (this.run.stock <= 0 && this.run.inFlight <= 0)) {
             const out = { customer: best, dist: bd, q, credited, already, pay }
-            this.finish()
+            if (this.run.hits.size >= this.run.n) this.finish(); else this.outOfPapers()
             return out
         }
         // FEAT-63 / BUG-48: RE-PLAN ON EVERY DELIVERY, not only on an out-of-order one.
@@ -1405,6 +1411,22 @@ export class PaperRouteSystem {
      * The empty truck or the last porch. Prices the route, settles it through the one money path,
      * and moves the ladder.
      */
+    /**
+     * FEAT-141: out of papers short of N — the round is over, settled exactly like a deadline that
+     * passed: accuracy money already banked stays; no fare, no letter, no rung. The board's slot
+     * stays taken and locks at the deadline, as an expired round's does.
+     */
+    outOfPapers () {
+        if (this.state !== 'running') return
+        this._cancelReplan()
+        this._rrHideAt = 0
+        this.result = { outOfPapers: true, delivered: this.run.hits.size, customers: this.run.n, spot: this.run.spotPaid }
+        this.state = 'done'
+        this.run = null
+        this._lastExport = null
+        this._onChange()
+    }
+
     finish () {
         if (this.state !== 'running') return
         // FEAT-63: a re-plan in flight is answering a question the route no longer has. Dropping it
@@ -1412,12 +1434,13 @@ export class PaperRouteSystem {
         // a job left alive past the end would hold RECALCULATING on screen over the result card.
         this._cancelReplan()
         this._rrHideAt = 0
-        const n = this.route.customers.length
+        const n = this.run.n
         const accuracies = [...this.run.hits.values()]
         const r = scoreRoute(accuracies, n, this.run.elapsed, this.route.par, this.run.payTier,
                              PAPER_PARAMS, this.run.thresholds)
         const settled = this._onSettle(r.payout, r.letter) || {}
-        const advanced = advancesTier(r, n)
+        // FEAT-141: B or better on the TOP unlocked size — a smaller round does not climb the ladder.
+        const advanced = advancesTier(r) && this.run.sizeIdx === runPaper.tier
         if (advanced && runPaper.tier < PAPER_PARAMS.tiers.length - 1) runPaper.tier++
         this.result = {
             ...r,
