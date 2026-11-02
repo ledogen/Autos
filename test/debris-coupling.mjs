@@ -3,7 +3,10 @@
 // A barrel-sized dynamic hull lies in the truck's path on flat ground. The truck drives into
 // it. Three things must be true, all through the REAL stepPhysics:
 //   (1) the truck imparts motion — the barrel gets shoved (reaction force path);
-//   (2) the truck feels it — the encounter disturbs the chassis (two-way, not a ghost);
+//   (2) the truck feels it — the encounter disturbs the chassis (two-way, not a ghost). Measured against a
+//       TWIN run with the barrel moved off the path: the chassis velocity must differ after the hit. (A bare
+//       peak |vy| threshold was the drivetrain's own shift jolt — with the barrel off the path it read 0.006,
+//       higher than the hit's 0.005 once FEAT-150 moved the 1→2 shift into the contact window.)
 //   (3) nothing explodes — no NaN, truck still drivable and upright after the hit,
 //       and the barrel eventually comes to rest instead of jittering forever.
 // Deterministic: no Math.random anywhere in the setup; the engine is single-threaded.
@@ -28,14 +31,17 @@ function freshParams () {
   return P
 }
 
-const P = freshParams()
-const eq = computeStaticEquilibrium(P)
+// The flat ground every scenario here drives on (the analytic plane y = 0).
 const queryContacts = (cx, cy, cz, r) => {
   const gd = 0 + r - cy
   return gd > 0
     ? [{ normal: new THREE.Vector3(0, 1, 0), depth: gd, contactPoint: new THREE.Vector3(cx, 0, cz) }]
     : []
 }
+
+async function hit (barrelX) {
+const P = freshParams()
+const eq = computeStaticEquilibrium(P)
 
 const vs = {
   position: new THREE.Vector3(0, eq.bodyY, 0), velocity: new THREE.Vector3(0, 0, -8),
@@ -54,7 +60,7 @@ const ctx = await makeEngineCtx(vs, P, { groundFn: () => 0, extent: 256, cell: 4
 // (truck forward = −Z; left wheels sit at x ≈ −0.72). Cylinder hull, ~18 kg.
 const barrel = ctx.engine.createBody({
   type: 'dynamic',
-  position: { x: -0.7, y: 0.31, z: -12 },
+  position: { x: barrelX, y: 0.31, z: -12 },
   quaternion: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 },   // axis horizontal — lies flat
   userData: { kind: 'debris' },
 })
@@ -64,7 +70,7 @@ const bp = { x: 0, y: 0, z: 0 }, bq = { x: 0, y: 0, z: 0, w: 1 }
 const bv = { x: 0, y: 0, z: 0 }, bw = { x: 0, y: 0, z: 0 }
 
 let barrelPeakSpeed = 0
-let chassisDisturbance = 0        // peak |vy| of the chassis after contact begins — "the truck felt it"
+const chassisV = []   // the chassis velocity each step — compared against the barrel-free twin
 let anyNaN = false
 let contactStep = -1
 for (let s = 1; s <= 600; s++) {
@@ -74,9 +80,7 @@ for (let s = 1; s <= 600; s++) {
   const bSpeed = Math.hypot(bv.x, bv.y, bv.z)
   if (bSpeed > barrelPeakSpeed) barrelPeakSpeed = bSpeed
   if (contactStep < 0 && bSpeed > 1.0) contactStep = s   // > 1 m/s: the HIT, not the initial cm of settle
-  if (contactStep > 0 && s < contactStep + 90) {
-    chassisDisturbance = Math.max(chassisDisturbance, Math.abs(vs.velocity.y))
-  }
+  chassisV.push(vs.velocity.clone())
   if (![vs.position.x, vs.position.y, vs.position.z, bv.x, bv.y, bv.z].every(Number.isFinite)) anyNaN = true
 }
 
@@ -85,18 +89,27 @@ ctx.engine.getVelocity(barrel, bv, bw)
 const barrelRestSpeed = Math.hypot(bv.x, bv.y, bv.z)
 const up = new THREE.Vector3(0, 1, 0).applyQuaternion(vs.quaternion)
 
+ctx.dispose()
+return { contactStep, barrelPeakSpeed, anyNaN, bp, barrelRestSpeed, up, vs, chassisV }
+}
+
+const H = await hit(-0.7)          // dead ahead of the LEFT front wheel
+const F = await hit(5)             // the twin: the barrel well off the path, everything else identical
+const { contactStep, barrelPeakSpeed, anyNaN, bp, barrelRestSpeed, up, vs } = H
+let chassisDisturbance = 0         // the largest chassis-velocity difference from the twin after contact
+for (let s = Math.max(0, contactStep - 1); s < Math.min(H.chassisV.length, contactStep + 90); s++)
+  chassisDisturbance = Math.max(chassisDisturbance, H.chassisV[s].distanceTo(F.chassisV[s]))
 console.log(`contact at step ${contactStep}; barrel peak ${barrelPeakSpeed.toFixed(2)} m/s; ` +
   `final barrel pos (${bp.x.toFixed(1)}, ${bp.y.toFixed(2)}, ${bp.z.toFixed(1)}), |v| ${barrelRestSpeed.toFixed(3)}`)
-console.log(`chassis: y=${vs.position.y.toFixed(2)}, up·Y=${up.y.toFixed(3)}, |v|=${vs.velocity.length().toFixed(1)}, peak |vy| near contact ${chassisDisturbance.toFixed(3)}`)
+console.log(`chassis: y=${vs.position.y.toFixed(2)}, up·Y=${up.y.toFixed(3)}, |v|=${vs.velocity.length().toFixed(1)}, velocity off the barrel-free twin ${chassisDisturbance.toFixed(3)} m/s`)
 
 ok(contactStep > 0, `the truck reached and hit the barrel (first motion at step ${contactStep})`)
 ok(barrelPeakSpeed > 1.0, `truck→barrel: the barrel was shoved (peak ${barrelPeakSpeed.toFixed(2)} m/s > 1.0)`)
-ok(chassisDisturbance > 0.005, `barrel→truck: the chassis felt the encounter (peak |vy| ${chassisDisturbance.toFixed(3)} > 0.005 m/s)`)
+ok(chassisDisturbance > 0.05, `barrel→truck: the chassis felt the encounter (velocity ${chassisDisturbance.toFixed(3)} m/s off its barrel-free twin > 0.05)`)
 ok(!anyNaN, 'no NaN anywhere in 10 s of simulation')
 ok(up.y > 0.9, `truck still upright after the hit (up·Y ${up.y.toFixed(3)} > 0.9)`)
 ok(barrelRestSpeed < 0.8, `barrel settles instead of jittering (final |v| ${barrelRestSpeed.toFixed(3)} < 0.8 m/s)`)
 
-ctx.dispose()
 
 // ── Fling regression (owner capture 1786690032648, 2026-08-14) ───────────────────────────────
 // Coasting slowly over a SMALL rock used to feed a loop: the overlap depth spiked to ~0.15 m in

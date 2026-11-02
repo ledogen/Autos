@@ -69,15 +69,16 @@ function runScenario (gradePct, steps, label, opts = {}) {
   let prevV = 0
   let minDriveT = Infinity
   const gearChanges = []
-  let prevGear = 1
+  let prevGear = opts.initGear ?? 1, lastCoupled = 0
   for (let s = 1; s <= steps; s++) {
-    vs.throttle = 1; vs.brake = 0        // hold full throttle every step (no input ramp in harness)
+    vs.throttle = opts.throttleAt ? opts.throttleAt(s * DT) : 1; vs.brake = 0   // full throttle unless a pedal is given
     stepPhysics(vs, P, DT, queryContacts, ctx)
     const vfwd = vs.velocity.dot(fwd)
     const accel = (vfwd - prevV) / DT; prevV = vfwd
     const driveT = P._driveTorque ? P._driveTorque[2] : 0
     if (s > 3) minDriveT = Math.min(minDriveT, driveT)   // skip first ticks (RPM settling)
-    if (vs.drivetrain.activeGear !== prevGear) { gearChanges.push({ t: s * DT, from: prevGear, to: vs.drivetrain.activeGear }); prevGear = vs.drivetrain.activeGear }
+    if (vs.drivetrain.activeGear !== prevGear) { gearChanges.push({ t: s * DT, from: prevGear, to: vs.drivetrain.activeGear, rpm: lastCoupled }); prevGear = vs.drivetrain.activeGear }
+    lastCoupled = vs.drivetrain.coupledRPM
     samples.push({ t: s * DT, vfwd, gear: vs.drivetrain.activeGear, rpm: vs.drivetrain.engineRPM, driveT, accel })
   }
   return { P, vs, samples, minDriveT, gearChanges, fwd }
@@ -178,6 +179,28 @@ console.log('FEAT-23 drivetrain — climb + taper gate\n')
   }
   if (worst <= 1) pass(`no grade hunts once settled (worst = ${worst} shifts @ ${(worstGrade * 100).toFixed(0)}%)`)
   else fail(`hunting on a sustained grade (${worst} shifts in 10 s @ ${(worstGrade * 100).toFixed(0)}% — hysteresis too weak)`)
+}
+
+// ── Scenario 8 (FEAT-150): the box leaves 1st at its own schedule point, and kicks down with headroom ──
+// Owner 2026-10-25: "really struggles to get out of first" — the anti-hunt band, judged on the 1→2 landing
+// rpm alone, held 1st to ~3800 rpm at half pedal on the flat (the schedule says ~2850). And "prefers to lug
+// 3rd instead of downshifting to 2nd at full throttle even if there is rpm headroom".
+{
+  console.log('\nScenario 8: half-pedal launch on the flat; floored in 3rd with headroom in 2nd')
+  const P = freshParams(), th = 0.5
+  const sched = P.shiftUpLightRPM + th ** (P.shiftThrottleCurve ?? 2) * (P.shiftUpRPM - P.shiftUpLightRPM)
+  const { gearChanges } = runScenario(0, 15 * 60, 'half', { throttleAt: () => th })
+  const up = gearChanges.find(g => g.from === 1 && g.to === 2)
+  console.log(`  50 % pedal: 1→2 at ${up ? up.rpm.toFixed(0) : '—'} rpm coupled (schedule ${sched.toFixed(0)})`)
+  if (up && Math.abs(up.rpm - sched) < 0.05 * sched) pass('leaves 1st at its schedule point (within 5 %), not held by the band')
+  else fail(`held in 1st past the schedule (${up ? up.rpm.toFixed(0) : 'never'} vs ${sched.toFixed(0)} rpm)`)
+  // 3rd at 2600 coupled: 2nd would turn 2600 × 1.47 ≈ 3820, ≥ 1500 rpm under the floored upshift point
+  const r = P.gearRatios, v3 = 2600 / (r[2] * P.finalDrive * 60 / (2 * Math.PI) / P.wheelRadius)
+  const kd = runScenario(0, 3 * 60, 'kick3', { initVfwd: v3, initGear: 3, throttleAt: () => 1 })
+  const down = kd.gearChanges.find(g => g.from === 3 && g.to === 2)
+  console.log(`  floored in 3rd at 2600 coupled (2nd would turn ${(2600 * r[1] / r[2]).toFixed(0)}): ${down ? `kicked down at ${down.t.toFixed(2)} s` : 'lugged 3rd'}`)
+  if (down) pass('kicks down to 2nd when 2nd has the headroom')
+  else fail('lugs 3rd with 1500+ rpm of headroom in 2nd')
 }
 
 // ── Scenario 6: wheelspin shift-lock — a burnout must NOT upshift on spin-inflated coupled RPM ─────
