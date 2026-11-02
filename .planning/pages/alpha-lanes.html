@@ -158,7 +158,7 @@
       wt: '/Users/ledogen/CodeShit/CarGame-machine', branch: 'feature/machine', port: 3282,
       owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, drivetrain assists, data/parts.js, data/stock-weights.js, physics gates',
       tasks: [
-        { id: 'FEAT-158', what: 'Rock grip — BUILT on feature/machine; crawl approved 11-02 ("it feels good"). Pops at 2000 J approved 11-02. Merges on the last call: the 50 mph flip.' },
+        { id: 'FEAT-158', what: 'Rock grip — BUILT on feature/machine; crawl approved 11-02 ("it feels good"). 2000 J and the 50 mph flip approved 11-02. Merging.' },
         { id: 'FEAT-159', what: 'NEXT — throttle assist (a skilled foot) + brake-based traction control (owner inbox 11-02).' },
         { id: 'FEAT-162', what: 'The truck’s heart: failures that strand it for real, "you broke down" — plan first (owner idea 11-02).' },
         { id: 'BUG-92', what: 'ABS kick never rumbles the pad — waits on the owner’s USB probe.' },
@@ -201,11 +201,8 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
-    { id: 'feat158-flip', kind: 'decide', tk: 'FEAT-158', blocks: 'Lane B’s rock grip merge',
-      text: 'Flips: main 0 in 1890 rock strikes (270 per speed, 25–55 mph). Branch: 1 with punctures on — at 50 mph, into a 40 kg rock about as tall as the tire’s radius. Accept?',
-      options: ['accept', 'fix first'] },
     { id: 'bug67-cap', kind: 'decide', tk: 'BUG-67', blocks: 'FEAT-62 scenarios (a re-route moves their gates)',
-      text: 'Tunnel mouths inside junctions (12 in six test worlds). Fix on the table: near a junction the road digs an open trench instead, down to a depth cap (30 m fixes 2 of 12, 40 m fixes 7, 50 m fixes 8). You judge from Spare’s before/after screenshots. If none pass: re-seat nodes — an opus subagent is investigating that (tunnels + connectivity) now.',
+      text: 'Tunnel mouths inside junctions (12 in six test worlds). Fix on the table: near a junction the road digs an open trench instead, down to a depth cap (30 m fixes 2 of 12, 40 m fixes 7, 50 m fixes 8). Screenshots sent in chat 11-02 (CarGame-spare/wip/bug-67/shots/). If none pass: re-seat nodes — an opus subagent is investigating that (tunnels + connectivity) now.',
       options: ['30 m', '40 m', '50 m', 'none — re-seat'] },
     { id: 'feat144-defaults', kind: 'decide', tk: 'FEAT-144', blocks: 'Spare’s world items (FEAT-143/144)',
       text: 'Reloading lost bed cargo — six defaults in the ticket. The one that needs you: a lost tire no longer fails the job at once; it just can’t finish until it’s back in the bed (reverses 10-22).',
