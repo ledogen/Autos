@@ -7,7 +7,7 @@ opened: 2026-10-26
 source: owner, 2026-10-26 — "Tree Billboard sprites don't look great in all lighting conditions and angles and they flip-flop and mirror themselves at certain orientations, which is visually jarring."
 relates: PERF-21 (impostors), src/props/prop-impostor.js, src/props/prop-system.js
 ---
-lane: C
+lane: C → Spare (2026-11-02: Lane C has no session; Spare took it, says so to C)
 
 # BUG-96: Distant-tree billboards mirror-flip at some headings and read badly in some lights
 

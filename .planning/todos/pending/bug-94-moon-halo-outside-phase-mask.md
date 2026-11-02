@@ -7,7 +7,7 @@ opened: 2026-10-26
 source: owner, 2026-10-26 — "The mask for the moon phase needs to be a larger diameter because you can still see the glowing halo around the mask."
 relates: QUAL-02 (day/night, moon), src/moon.js
 ---
-lane: C
+lane: C → Spare (2026-11-02: Lane C has no session; Spare took it, says so to C)
 
 # BUG-94: Moon phase — the halo glows around the UNLIT limb, outlining the masked disc
 

@@ -7,7 +7,7 @@ opened: 2026-10-25
 source: owner, 2026-10-25 — "smashing into specific lawn ornaments should trigger them to become physics objects and roll/bounce away (gnomes, beach balls, flamingo). others should have collision but not budge (brick firepit)"
 relates: FEAT-71 (yard scatter — placed these as static dressing), FEAT-36 (dynamic props), ASSET-01/02/03 (the three models), ASSET-08 (the fire pit), ASSET-76 (fire pit re-export)
 ---
-lane: C
+lane: C → Spare (2026-11-02: Lane C has no session; Spare took it, says so to C)
 
 # FEAT-149: Knockable lawn ornaments — gnomes, beach balls and flamingos roll away; the fire pit stands
 
