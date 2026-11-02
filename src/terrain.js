@@ -1722,6 +1722,13 @@ export class TerrainSystem {
         const cliffHi = this._params.roadCliffSlopeHi ?? 0.6
         // BUG-74: half-width (m of excavation) of the rock↔dirt fade centred on the cut/fill crossover.
         const cutRockFade = this._params.roadCutRockFade ?? 2.0
+        // BUG-74 class 1: the fill BURIES the natural rock by its own thickness (roadFillRockBury m
+        // of fill hides it all). Coverage is s^γ of the tile, tallest fragments first (the shader's
+        // rank rule), so scaling the share by (1 − bury)^(1/γ) scales COVERAGE by (1 − bury): as the
+        // fill thins toward its toe the tallest fragments surface first — the height contest the
+        // owner asked for ("use the height wiring to bring the rocks below the dirt"), not a weight.
+        const fillBury = this._params.roadFillRockBury ?? 0.6
+        const invGamma = 1 / (this._params.terrainRockSparsity ?? 6)
 
         const nrmAttr = geom.attributes.normal
         const nVerts = N * N
@@ -1784,6 +1791,7 @@ export class TerrainSystem {
             // tan-vs-rock line wherever the raw hill crossed grade on the flat bench.
             let carveZoneBlend = 0  // 0 = general terrain; 1 = fully in the carve zone
             let cutness = 0         // 0 = shoulder dirt; 1 = broken-rock ballast / cut face
+            let bury = 0            // BUG-74: 0 = natural rock shows; 1 = buried under the fill
             if (carveData) {
                 const blendW = carveData[i * 2]
                 if (blendW > 1e-6) {
@@ -1791,6 +1799,7 @@ export class TerrainSystem {
                     const delta  = gradeY - heights[i]   // positive = fill, negative = cut
                     carveZoneBlend = blendW
                     cutness = _smooth01(-cutRockFade, cutRockFade, -delta)
+                    bury = Math.min(1, Math.max(0, blendW * delta) / fillBury)   // the fill's real thickness here
                 }
             }
 
@@ -1841,9 +1850,14 @@ export class TerrainSystem {
                 r = r + (zr - r) * carveZoneBlend
                 g = g + (zg - g) * carveZoneBlend
                 b = b + (zb - b) * carveZoneBlend
-                sRock  += (cutness       - sRock)  * carveZoneBlend
-                sDirt  += ((1 - cutness) - sDirt)  * carveZoneBlend
-                sGrass += (0             - sGrass) * carveZoneBlend
+                // BUG-74: a FILL is the natural ground with its rock buried by the fill's thickness
+                // (above); a CUT pulls to its broken rock as before. Only the cut is an engineered
+                // face with its own look — `aSurf.w` below is the carve weight × cut-ness, so the
+                // fill takes every natural rule (coverage, dither, stones, under-rock green).
+                sRock  *= Math.pow(1 - bury, invGamma)
+                sRock  += (1 - sRock) * carveZoneBlend * cutness
+                sGrass += (0 - sGrass) * carveZoneBlend
+                sDirt   = 1 - sRock - sGrass
             }
 
             colorArr[idx3    ] = r
@@ -1852,7 +1866,7 @@ export class TerrainSystem {
             surfArr[i * 4    ] = sGrass
             surfArr[i * 4 + 1] = sDirt
             surfArr[i * 4 + 2] = sRock
-            surfArr[i * 4 + 3] = carveZoneBlend   // engineered face: keeps its cut/fill colour, gets albedo
+            surfArr[i * 4 + 3] = carveZoneBlend * cutness   // engineered CUT face: keeps its colour, gets albedo (BUG-74: fill is ground)
         }
 
         colAttr.needsUpdate = true

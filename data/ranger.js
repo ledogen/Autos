@@ -880,6 +880,7 @@ export const RANGER_PARAMS = {
   // grade meets the raw hill, full rock this many metres into it, shoulder dirt this many metres
   // up on fill. Replaces the sign test that drew a hard tan-vs-rock line along the flat bench.
   roadCutRockFade: 2.0,        // m — half-width of the rock↔dirt fade, in metres of cut/fill depth
+  roadFillRockBury: 2.5,       // m — BUG-74: fill this thick buries the natural rock; thinner, the tallest fragments show
 
   // ── Phase 9 Plan 06 — Pothole / Crack Micro-Noise (SURF-06 / D-03) ──────────
   // potholeEnabled: master toggle. When false, potholeNoise always returns 0 and the
