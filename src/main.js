@@ -61,7 +61,7 @@ import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
-import { SkySystem, SKY_CYCLE } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
+import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
@@ -114,6 +114,7 @@ import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the 
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
+import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -8692,7 +8693,7 @@ document.addEventListener('visibilitychange', () => setAudioPageActive(!document
 // FEAT-23: WebAudio may only start inside a user gesture (browser autoplay policy). ANY gesture
 // counts — a click too: a resumed run is reached by mouse alone (continue → resume) with the engine
 // already idling, and a keydown-only unlock left it silent until the first key. Idempotent.
-function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio() }
+function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio(); ensureAmbientAudio() }
 window.addEventListener('pointerdown', _unlockAudio, true)
 
 document.addEventListener('keydown', e => {
@@ -9341,6 +9342,14 @@ function loop () {
   updateWindAudio(vehicleState)
   setCabView(getCameraMode() === 'hood')   // FEAT-120 camera-aware mix: the cab hears the world through the glass
   setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
+  // FEAT-120 ambience: crickets on the sky's own night; grass from the green share of the ground the
+  // truck is on, off the road only (the shoulder feather counts as road).
+  {
+    const p = vehicleState.position, v = vehicleState.velocity
+    const green = !_labActive && terrainSystem && _looseSurfaceFactorAt(p.x, p.z) >= 1 ? terrainSystem.groundAt(p.x, p.z).green : 0
+    setAmbientAudio(heard && RANGER_PARAMS.ambientAudioEnabled !== false, RANGER_PARAMS.cricketVolume ?? 0.5, RANGER_PARAMS.grassVolume ?? 0.5)
+    updateAmbientAudio(Math.hypot(v.x, v.z), nightWeight(SKY_CYCLE.hour), green, frameTime)
+  }
 
   // PERF-16: throttle all HUD DOM + debug-canvas writes to ~10 Hz. These are human-readable readouts;
   // rewriting the spans and repainting the Pacejka/travel/slip canvases every frame cost Layout+Paint

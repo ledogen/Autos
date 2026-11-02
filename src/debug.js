@@ -327,6 +327,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'contactAudioEnabled').name('Contact Sounds')
   driveFolder.add(params, 'contactVolume', 0, 1, 0.05).name('Bump / Landing Volume')
   driveFolder.add(params, 'brakeSquealVolume', 0, 1, 0.05).name('Brake Squeal Volume')
+  // FEAT-120 ambience (src/ambient-audio.js) — read live every frame.
+  driveFolder.add(params, 'ambientAudioEnabled').name('Ambient Sounds')
+  driveFolder.add(params, 'cricketVolume', 0, 1, 0.05).name('Cricket Volume')
+  driveFolder.add(params, 'grassVolume', 0, 1, 0.05).name('Grass Volume')
 
   // ── Differentials (FEAT-23) ───────────────────────────────────────────────────────
   // Rear diff mode: open / limited-slip / locked (src/drivetrain.js couples the rear wheels).

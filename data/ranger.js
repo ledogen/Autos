@@ -286,6 +286,10 @@ export const RANGER_PARAMS = {
   contactAudioEnabled: true, // master toggle for all three
   contactVolume:      0.6,   // 0..1 — bump stop and landing
   brakeSquealVolume:  0.3,   // 0..1 — the squeal on its own (owner, 2026-11-02: QUIET)
+  // FEAT-120 ambience (src/ambient-audio.js): night crickets (parked or crawling only) and grass swish.
+  ambientAudioEnabled: true, // master toggle for both
+  cricketVolume:      0.5,   // 0..1
+  grassVolume:        0.5,   // 0..1
 
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
   // tireStiffness: radial spring constant. At rest, each corner compresses ~38mm (mg/4 / k).
