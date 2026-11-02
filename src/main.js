@@ -2891,6 +2891,7 @@ window.__propPhysics = propPhysics             // dev handle — prop-debug radi
 // Collider wireframes (debug overlay) — replaces the retired orange probe spheres. Backtick
 // toggles it; the debug panel mirrors it. Two-tone X-ray over the models, never hiding them.
 const physicsWireframes = new PhysicsWireframes(physicsEngine, scene)
+const _debrisPose = (h) => debrisSystem.meshOf(h)   // BUG-101: debris wireframes sit on their drawn (interpolated) mesh
 window.__physWireframes = physicsWireframes    // dev handle — debug.js checkbox targets it
 window.__physicsEngine = physicsEngine         // dev handle (counters in the HUD / console)
 window.__setBodyBounce = (e) => setBodyRestitution(physicsEngine, vehicleChassis, e)   // debug.js Body Bounce slider
@@ -9395,7 +9396,7 @@ function loop () {
   // chassis wireframe takes the INTERPOLATED render pose, not the engine transform — the meshes
   // were drawn at subframe time above, and reading the raw body here would sit the box up to one
   // physics step (~0.5 m at 30 m/s) off the truck it is measuring.
-  physicsWireframes.update(camera.position, { position: _renderPos, quaternion: _renderQuat })
+  physicsWireframes.update(camera.position, { position: _renderPos, quaternion: _renderQuat }, _debrisPose)
 
   // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
   skySystem.update(camera.position)
