@@ -120,18 +120,20 @@ campfire is not an item — it spawns to mark camp.
 - **`src/main.js`**: `_enterCampScene` lights the fire at its slot and dresses the pad; the
   inventory's `onChange` re-dresses a camp that is up, so packing at camp shows at once;
   `_exitCampScene` clears it. Dev handle `window.__campGear`.
+- **The bed models** (owner: use the thumbnail models as is): `sleeping-bag.glb`, `air-mattress.glb`,
+  `sleeping-pad.glb`, `deluxe-sleeping-pad.glb`, exported from `assets/models/src/items.py` (`WORLD` rows:
+  length on glTF Z, head end at +Z) and registered; a bag on a pad stacks and shows through the tent
+  door. **`export_glb` now runs headless** (`blender -b`): only the GUI's window override needed a
+  window, the glTF exporter does not.
+- **Thumbnails** for `tent`, `awning`, `shadeTarp`, `cookingKit`: rendered through the items.py rig
+  from their own .glbs (`from_glb`), headless. For the owner's look on the item-setup page.
 - **Gates:** `test/camp-gear.mjs` (new — the layout on the real .glbs, the stacking, the shade fill,
   the tent's rest); cdp-smoke `campGear` step (a packed tent loads at camp, repacking re-dresses it).
 
 ## Still owed
 
-- **The bed-slot models.** Export as is from `assets/models/src/items.py` — the `WORLD` rows are in
-  (length on glTF Z, head end at +Z), so it is `items.export_glb(id)` in GUI Blender, then a
-  `PROP_MODELS` entry and the item's `model`: `sleepingBag` (1.90 × 0.85 m), `airMattress`
-  (1.88 × 0.76 m), `sleepingPad`, `deluxeSleepingPad`. New shapes: ASSET-78 (bedroll, unrolled), ASSET-79 (blanket layer). All need
-  GUI Blender via blender-mcp, which was down on 2026-11-02.
-- **Thumbnails** for `tent`, `awning`, `shadeTarp`, `cookingKit` (items.py, Blender). The inventory
-  shows the name until then.
+- **The bedroll's and the blanket's models**: ASSET-78 (bedroll, unrolled — the one every camp shows)
+  and ASSET-79 (blanket layer). Until then the starter camp's bed slot is empty.
 - **Where the four new items come from** (shelf, rewards) — owner's call. Debug grant only today.
 - **Fire shadows** (`light.castShadow`) — wanted once the tent landed; a six-face cube shadow map, so it
   needs a quality toggle first. Its own perf item.

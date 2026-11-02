@@ -28,6 +28,12 @@ right on a flat bedroll AND on a domed sleeping bag. The inventory thumbnail sta
   sits toward −Z (the foot, by the door), so the slot point stays the bed's and the blanket lands at
   the foot of whatever is under it. Forward −Z.
 - **Collision:** none.
+- **Know before modelling:** FEAT-66 seats a layer on the lower layer's BOUNDING-BOX top. The
+  shipped sleeping bag's top is 0.25 m (its turned-back corner at the head) but ~0.135 m at the foot,
+  where the blanket lies, so a blanket seated on it floats ~12 cm at the foot. Either seat the top
+  layer by the lower one's height under the blanket's footprint (src/camp-gear.js — a vertex scan of
+  the lower model inside the blanket's x/z box), or drop the bag's flap height from the stack. Decide
+  when the model is in hand and check it on the bag and on a pad.
 
 ## Acceptance
 
