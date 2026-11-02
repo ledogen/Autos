@@ -266,6 +266,8 @@ export const GATES = [
     desc: 'FEAT-18: stream channels cut bed+banks (C0, bounded, descending); every road×stream crossing holds road grade (ribbon-deck) with the channel notch continuous both sides' },
   { file: 'stream-bed-drape.mjs', subsystem: 'water', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-25: cobble bed ribbon drapes the carved channel — dry shoulders above the waterline, center under water, deterministic' },
+  { file: 'page-scripts.mjs', subsystem: 'docs', cost: 'fast', extraDeps: ['.planning/pages'],
+    desc: 'the owner\'s tracker pages (.planning/pages/*.html): every inline script parses — a missing comma once shipped the Alpha Lanes page dead' },
   { file: 'cdp-smoke.mjs', subsystem: 'app', cost: 'heavy', browser: true, extraDeps: ['src', 'data', 'index.html', 'vite.config.js'],
     desc: 'INFRA-07 the main.js gate: the real app in Chrome — boot, drive, R, teleport, map, freecam (R-11), lab, story entry, mom\'s camp hold + R closes it (R-12), backtick (R-13), take and start a job — zero console errors' },
 ]

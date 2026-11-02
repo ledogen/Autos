@@ -42,3 +42,11 @@ the player first needs it:
 - ~~How the firing is shown~~ **RULED (owner, 2026-10-31): a graphic-novel-style scene — background
   art with dialogue cards over it** (the Story card channel). Not a staged in-world scene.
 - Whether the tutorial jobs are scripted or just the first real offers with prompts on top.
+- **RULED (owner, 2026-11-02) — the first job is a COURIER run TO Larry, not his paper round.** From the
+  Sid Meier review (review-sid-meier-2026-11-02.md item B): papers is the only type whose deadline is the
+  real target (par × 1.5, FEAT-141), so a brand-new player could lose their first job. Owner: *"i wouldnt
+  want to make the papers different rules the first time around. maybe we just courier something TO larry
+  instead. then the player can play papers if they want or not."* Papers keeps its rules; after the
+  courier, Larry's round is on offer like any other job. Also noted (not a ruling): a round that expires
+  still banked its throws — *"they can lose and still make money tho... maybe we just dont need to call
+  that 'losing'"* — so the papers result card should not read as a failure.

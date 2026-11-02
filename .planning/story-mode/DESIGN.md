@@ -902,6 +902,13 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > Choosing a heavy job and surviving it is the competence. A flat deed on delivery was rejected: it
   > would make bare completion progress. By extension (flagged, not asked directly), **The right
   > thing to do**'s +½ at C or better reads the same internal letter on freight.
+  >
+  > **Superseded [GAME-FEEL REVIEW 2026-10-23/24, R-09 + R-18; doc caught up 2026-11-02] — the tension
+  > is gone.** Every offer card now prints its deed line (R-09, `deedLine` in offer-board.js), and
+  > freight's reads straight off the posted mass: *"Deed: 1 upon delivery"* at or over the B line
+  > (285 kg in R1), *"Deed: 1/2 upon delivery — under 285 kg"* below it; C is 0 kg, so every freight
+  > job earns at least ½ (R-18, owner: *"freight should always give at least half a good deed"*). The
+  > letter stays internal, but the player reads the deed before accepting — nothing is hidden.
 - **SM-INV-15 — No in-run vehicle purchase.** [RATIFIED 2026-07-29] **You cannot buy a different car
   during a run.** Parts, yes — deeply. Vehicles, no. Three reasons, all owner-stated, and worth
   keeping in the code comment that will inevitably ask *"why not just add a dealership"*:
