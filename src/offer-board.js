@@ -752,10 +752,38 @@ export class OfferBoard {
             }
             m.placeName = name
         }
+        this._receiverBonus(offer, m, n)
         // FEAT-42: what this plan was resolved AGAINST. The siblings move on (expire, refill) while
         // the job is in hand, so a resume cannot re-run this resolution — it replays these instead.
         offer.planned = m ? { n, exclude: [...usedPois], placeName: m.placeName ?? null } : null
         return (offer.route = m)
+    }
+
+    /**
+     * FEAT-67 amendment (owner, 2026-10-20; items.md): the RECEIVER hands the bonus over as a tip, and
+     * its pool is a 50/50 roll between the giver's and the destination's. Only the plan knows the
+     * destination, so this runs on it. The spec's GATE stays (drawn from the giver's pool; the haul
+     * stock and the traits already depend on it). On the receiver's half the ITEM is re-picked among
+     * the destination POI's rewards (its type or tags) at that gate. The giver's item stands for a fetch
+     * (giver = receiver), a multi-drop (several receivers), a roadside drop (no receiver), and a
+     * receiver with nothing at that gate. Its own stream per spec attempt, so replan agrees.
+     */
+    _receiverBonus (offer, m, n) {
+        const sp = offer._spec
+        if (!sp?.bonus) return
+        sp.giverBonus ??= sp.bonus   // idempotent: a re-plan of a kept spec starts from the giver's item
+        sp.bonus = sp.giverBonus
+        if (m) m.bonus = sp.bonus
+        if (!m || sp.shape !== 'courier' || !m.endPoiId) return
+        const r = rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:receiver` + (n ? `:${n}` : ''))
+        if (r() < 0.5) return
+        const q = this._pois.get(m.endPoiId)
+        const kinds = [q?.type, ...(q?.tags ?? [])]
+        const at = REWARDS.filter(w => w.gates.includes(sp.bonus.gate) && w.pools.some(p => kinds.includes(p)))
+        if (!at.length) return
+        const reward = pickReward(at, r())
+        sp.bonus = { rewardId: reward.id, name: reward.name, gate: sp.bonus.gate, ...(reward.dineIn && { dineIn: true }) }
+        m.bonus = sp.bonus
     }
 
     /**
@@ -767,6 +795,7 @@ export class OfferBoard {
         offer._spec = this._rollSpec(offer, planned.n)
         const m = planOne(offer, new Set(planned.exclude))
         if (m && planned.placeName) m.placeName = planned.placeName
+        this._receiverBonus(offer, m, planned.n)
         offer.planned = planned
         return (offer.route = m)
     }

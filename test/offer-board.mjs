@@ -41,7 +41,7 @@
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine } from '../src/offer-board.js'
-import { THINGS, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { THINGS, REWARDS, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -557,6 +557,55 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     }
     check('FEAT-42: a taken offer re-plans as the same job on a fresh board', replays > 0 && cycled > 0 && drift === 0,
         `${drift}/${replays} drifted (${cycled} had cycled)`)
+}
+
+// ── 13c. the receiver's half of the bonus (owner, 2026-10-20; items.md) ──────────────────────────
+// The receiver hands the item over, and the pool is a 50/50 roll between the giver's and the
+// destination's. The gate stays the spec's; on the receiver's half the item comes from the
+// destination's rewards at that gate. A fetch or a roadside drop keeps the giver's item, and a replan
+// on a fresh board lands on the same item (FEAT-42 resume).
+{
+    const shop = 'poi:9|10'   // the auto shop: rewards at every gate
+    const atShop = (g) => REWARDS.filter(w => w.pools.includes('autoShop') && w.gates.includes(g))
+    let eligible = 0, swapped = 0, offPool = 0, gateMoved = 0, keptFetch = 0, fetches = 0, keptRoad = 0, roads = 0, drift = 0, replays = 0
+    for (let seed = 1; seed <= 150; seed++) {
+        const b = make(seed)
+        for (let t = T0; t < T0 + 24 * 3; t += 4) for (const id of b.sources()) {
+            if (id === shop) continue
+            for (const o of b.offers(id, t)) {
+                const sp = b.spec(o)
+                if (!sp?.bonus || sp.family === 'papers' || o.route !== undefined) continue
+                const road = sp.shape === 'courier' && seed % 3 === 0   // a third of the couriers drop roadside
+                const m = b.planDistinct(o, () => ({ par: 300, distance: 2000, endPoiId: road ? null : shop }))
+                if (!m) continue
+                const now = b.spec(o)
+                if (!now.bonus) continue   // a cycled attempt (BUG-88) may carry none
+                if (now.bonus.gate !== now.giverBonus.gate) gateMoved++
+                if (now.shape === 'fetch') { fetches++; if (now.bonus === now.giverBonus) keptFetch++; continue }
+                if (now.shape !== 'courier') continue
+                if (road) { roads++; if (now.bonus === now.giverBonus) keptRoad++; continue }
+                if (!atShop(now.bonus.gate).length) continue
+                eligible++
+                if (now.bonus !== now.giverBonus) {
+                    swapped++
+                    if (!atShop(now.bonus.gate).some(w => w.id === now.bonus.rewardId)) offPool++
+                }
+                if (m.bonus !== now.bonus) offPool++   // the mission carries what the card shows
+                const fresh = make(seed), fo = fresh.offers(id, t).find(x => x.id === o.id)
+                fresh.replan(fo, JSON.parse(JSON.stringify(o.planned)), () => ({ par: 300, distance: 2000, endPoiId: shop }))
+                replays++
+                if (fresh.spec(fo).bonus.rewardId !== now.bonus.rewardId) drift++
+            }
+        }
+    }
+    const share = swapped / eligible
+    check("receiver's half: about half the courier bonuses come from the receiver's pool", eligible > 100 && share > 0.4 && share < 0.6,
+        `${swapped}/${eligible} = ${share.toFixed(3)}`)
+    check("a receiver's item is from the receiver's rewards at the SAME gate, and rides the mission", offPool === 0 && gateMoved === 0,
+        `${offPool} off-pool, ${gateMoved} gate moved`)
+    check("a fetch and a roadside drop keep the giver's item", fetches + roads > 0 && keptFetch === fetches && keptRoad === roads,
+        `fetch ${keptFetch}/${fetches}, roadside ${keptRoad}/${roads}`)
+    check('a replan on a fresh board lands on the same bonus item', replays > 0 && drift === 0, `${drift}/${replays}`)
 }
 
 // ── 15. haul (FEAT-88; stock + picker FEAT-114) ──────────────────────────────────────────────────
