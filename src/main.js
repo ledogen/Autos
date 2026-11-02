@@ -29,7 +29,7 @@ import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
-import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
+import { DamageModel, DAMAGE_PARAMS, fatalMph } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
@@ -8336,10 +8336,10 @@ function _endRun (kind) {
 
 /** The summary's rows. It reads what the run already tracks; only the playtime is counted for it. */
 function _runEndHtml (kind) {
-  const e = runEconomy, f = damageModel.fatalImpact, req = offerBoard?.lines() ?? []
+  const e = runEconomy, req = offerBoard?.lines() ?? []
   const row = (k, v, gap = false) => `<div class="re-row${gap ? ' re-gap' : ''}"><span class="re-k">${k}</span><span>${v}</span></div>`
   const min = Math.floor(_playedS / 60)
-  return (kind === 'crash' && f ? `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region}</div>` : '')
+  return _runEndWhy(kind)
     + row('day', `${daySystem.day()}`)
     + row('playtime', `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`)
     + row('jobs completed', `${e.missions}`, true)
@@ -8350,6 +8350,22 @@ function _runEndHtml (kind) {
     + row('spent', `$${formatMoney(e.spent)}`)
     + row('wallet', `<span class="re-money">$${formatMoney(e.money)}</span>`)
     + _upgradeRows(row)
+}
+
+/**
+ * FEAT-160 (owner, 2026-11-02): an unexplained setback reads as the game cheating, so a death says
+ * why and how to avoid it, from the numbers the game itself used. Words are placeholders.
+ */
+function _runEndWhy (kind) {
+  const f = damageModel.fatalImpact
+  if (kind === 'crash' && f) {
+    return `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region} &middot; at ${Math.round(f.armor * 100)} % armor `
+      + `the ${f.region} could take ${Math.round(fatalMph(f.armor))} mph; fresh it takes ${Math.round(fatalMph(1))}</div>`
+  }
+  if (kind !== 'broke') return ''
+  // The tows the Recovery card offered: the cheapest is what the wallet fell short of.
+  const tow = [_towQuote(_FUEL_SELLER), _towQuote(_SERVICE_CENTER)].filter(Boolean).sort((a, b) => a.price - b.price)[0]
+  return `<div class="re-why">${tow ? `the tow was $${formatMoney(tow.price)}` : 'no tow could reach you'} &mdash; you had $${formatMoney(runEconomy.money)}</div>`
 }
 
 /** The truck's upgrades — the five most valuable parts fitted this run, or "stock" (owner, 2026-10-31). */
