@@ -140,6 +140,9 @@ const BODY_RESTITUTION_DEFAULT = 0.21   // slight rebound on hard slams; 0 = ful
 // (terrain-physics.js), so the shape value is chosen to land the PAIR at the tuned BUG-27b 0.1:
 // √(0.0125 · 0.8) = 0.1.
 const BODY_FRICTION_MU  = 0.1            // the tuned pair friction (BUG-27b)
+// BUG-89: below this sliding speed a tire SIDEWALL's Coulomb friction turns viscous (Step 2.6), so a
+// truck at rest on its side holds instead of chattering. m/s.
+const SIDEWALL_V_REG    = 0.1
 const TERRAIN_FRICTION_REF = 0.8         // must match terrain-physics.js TERRAIN_FRICTION
 const CHASSIS_SHAPE_MU  = BODY_FRICTION_MU * BODY_FRICTION_MU / TERRAIN_FRICTION_REF   // ≈ 0.0125
 // FEAT-88: the open BED gets its own material. On the body material above, a firewood bundle
@@ -840,6 +843,29 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       totalTorque.x += rHubY * xz.z - rHubZ * xz.y
       totalTorque.y += rHubZ * xz.x - rHubX * xz.z
       totalTorque.z += rHubX * xz.y - rHubY * xz.x
+      // BUG-89: a tire with NO strut load is touching with its sidewall — the truck on its side or
+      // roof. Step 3 reads it as airborne (no Pacejka), so this whole contact load used to be
+      // frictionless: on its side the down-side tires carried ~60 % of the weight and the truck skated
+      // (15 m/s → 245 m). Rubber scrubs: Coulomb μN against the hub's sliding, μ the tire's own.
+      // Regularised below SIDEWALL_V_REG so it holds at rest instead of chattering. A loaded strut
+      // (any upright truck, slopes included) never takes this branch — Pacejka owns that tire.
+      // ponytail: the support is taken as static; a sidewall on a moving rock scrubs against the world.
+      if ((params._tireFz[i] || 0) <= 0) {
+        const N = Math.hypot(xz.x, xz.y, xz.z), nx = xz.x / N, ny = xz.y / N, nz = xz.z / N
+        const w = vehicleState.angularVelocity, v = vehicleState.velocity
+        let vx = v.x + w.y * rHubZ - w.z * rHubY
+        let vy = v.y + w.z * rHubX - w.x * rHubZ
+        let vz = v.z + w.x * rHubY - w.y * rHubX
+        const vn = vx * nx + vy * ny + vz * nz
+        vx -= vn * nx; vy -= vn * ny; vz -= vn * nz
+        const k = -(params.frictionCoeff ?? 1) * (params._tireMuScale?.[i] ?? 1) * N
+                / Math.max(Math.hypot(vx, vy, vz), SIDEWALL_V_REG)
+        const fx = vx * k, fy = vy * k, fz = vz * k
+        totalForce.x += fx; totalForce.y += fy; totalForce.z += fz
+        totalTorque.x += rHubY * fz - rHubZ * fy
+        totalTorque.y += rHubZ * fx - rHubX * fz
+        totalTorque.z += rHubX * fy - rHubY * fx
+      }
     }
   }
 
