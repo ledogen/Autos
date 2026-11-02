@@ -45,3 +45,32 @@ for a named subset; it does not reopen FEAT-71.
 - [ ] Headless: the yard solver (poi-yard gate) is unchanged — placement is identical, only the
       runtime response differs. No engine types outside physics-engine.js (grep).
 - [ ] 60 fps budget: no body exists until something is hit.
+
+## Built — Spare, 2026-11-02
+
+**Correction to "collision as today":** before this, a yard satellite was a MESH only — no engine body,
+not in `PoiSystem.queryContact` — so the truck drove straight through the fire pit. The owner's
+"others should have collision but not budge" needed both halves:
+
+- **Solid** (every satellite with a collision box that is not knockable — fire pit, grill, potted
+  plant, propane tank, and the farm's drums, crates and pallet; the camp chair stays `none`):
+  `satSolid(sat)` in src/poi.js turns it into a marker-shaped record (modelX/Z, baseY, modelYaw,
+  collision), so `queryContact` (the wheels) and `PoiPhysics` (the chassis, via main.js
+  `_syncPoiPhysics`) take it unchanged. Static; never moves.
+- **Knockable** (`knockable: { massKg }` in data/prop-models.js — gnome 4 kg, beach ball 0.15 kg at its
+  own restitution 0.75, both flamingos 0.3 kg): FEAT-65's model↔body swap. A model far off; within
+  60 m a debris body at exactly its pose, PUT TO SLEEP at once — it stands until the truck touches it
+  and the engine wakes it. Pinned (outside the debris cap) and `noDamage` (the engine adapter drops its
+  contacts from the damage readout). Past 120 m it is a model again, at the pose the body came to
+  rest in — a knocked gnome stays knocked for the session. Bodies exist only near the truck, asleep.
+
+**Measured live** (`wip/feat-149/knock.mjs`, story seed 6; driving past an ornament along the house,
+with no solid satellite within 3 m): gnome knocked 2.4 m, flamingo 5.8 m, beach ball 20.6 m (an
+earlier run); the truck drives on and takes only ordinary driving wear. The fire pit stops a wheel and
+the truck climbs its 0.33 m ring at ~3 m/s with wheel damage; the potted plant stops the truck. Yards
+stand 5 cm apart in clusters, so a run at a gnome usually also meets its solid neighbour (a propane
+tank, the grill) — that is the solid rule doing its job, and it is where the damage in the mixed runs
+came from. Shots: `wip/feat-149/`.
+
+Gates: affected 29/30 then the smoke twice alone, 21/21 both (its one failure was the free-roam drive
+step under a concurrent browser — the truck did not move at all, unrelated to POIs).

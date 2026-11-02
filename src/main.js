@@ -77,7 +77,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH } from './mission.js'  // sto
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -3075,6 +3075,7 @@ const _poiMeshes = new Map()
 // customer.id → [ring, pip]. FEAT-61: a delivery target is only lit when it is ON your route and
 // still owed a paper — see _updateCustomerRings.
 const _customerRings = new Map()
+const _ornaments = []   // FEAT-149: [{ kind, mesh, lift, body }] — knockable yard ornaments, rebuilt with the markers
 
 /**
  * Rebuild the markers + interaction rings (cheap: a handful of each per region).
@@ -3085,6 +3086,8 @@ const _customerRings = new Map()
  * yet, and the auto shops, the food vendor and the stores are all still cube.
  */
 function _rebuildPoiMarkers () {
+  for (const o of _ornaments) if (o.body != null) debrisSystem.remove([o.body])   // FEAT-149
+  _ornaments.length = 0
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
   _poiMeshes.clear()
@@ -3123,12 +3126,20 @@ function _rebuildPoiMarkers () {
       _poiMeshes.set(q.id, cube)
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
-    // in poi.js (deterministic in the seed); this only dresses them. Static meshes, no bodies.
+    // in poi.js (deterministic in the seed); this only dresses them. FEAT-149: a knockable ornament
+    // (gnome, beach ball, flamingo) becomes a body near the truck (_updateOrnaments); the rest are
+    // solid in place (poi.js satSolid, synced with the markers).
     for (const sat of q.satellites ?? []) {
       const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
       m.position.set(sat.x, sat.y, sat.z)
       m.rotation.y = sat.yaw
       _poiGroup.add(m)
+      const knock = PROP_MODELS[sat.key]?.knockable
+      if (knock) {
+        const kind = `ornament:${sat.key}`
+        void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg, friction: 0.6, restitution: knock.restitution ?? 0.3 })
+        _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null })
+      }
     }
 
     // FEAT-50: a pump island's two zones — the store lot's box curtain, in fuel blue rather than
@@ -3265,7 +3276,12 @@ function _updatePoiPresence (force = false) {
     const ring = _poiRings.get(q.id)
     if (ring) ring.userData.hidden = !!q.hidden
   }
-  poiPhysics.sync(poiSystem.list().filter(q => !q.hidden), POI_PARAMS.poiCubeSize)
+  _syncPoiPhysics()
+}
+/** MESH == PHYSICS for the markers AND their yards' solid things (FEAT-149: poi.js satSolid). */
+function _syncPoiPhysics () {
+  const shown = poiSystem.list().filter(q => !q.hidden)
+  poiPhysics.sync([...shown, ...shown.flatMap(q => (q.satellites ?? []).map(satSolid).filter(Boolean))], POI_PARAMS.poiCubeSize)
 }
 const POI_REAPPEAR_CLEAR_M = 15   // m — truck-to-marker distance a hidden marker waits for before it returns
 
@@ -5387,6 +5403,42 @@ function _updateBarricades () {
         { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })).filter(Boolean)
       for (const m of row.meshes) m.visible = false
     } else if (row.bodies && d > BARRICADE_OFF_M) _standRow(row)
+  }
+}
+
+// ── FEAT-149: knockable lawn ornaments ──────────────────────────────────────────────────────────
+// Owner, 2026-10-25: "smashing into specific lawn ornaments should trigger them to become physics
+// objects and roll/bounce away (gnomes, beach balls, flamingo)". FEAT-65's model↔body swap: a plain
+// model far off; within ORNAMENT_ON_M a debris body at exactly its pose, put to SLEEP at once, so it
+// stands until the truck touches it and the engine wakes it. Pinned (outside the debris cap) and
+// harmless (noDamage — a gnome is not a rock). Past ORNAMENT_OFF_M it is a model again, standing where
+// the body came to rest: a knocked gnome stays knocked for the session.
+const ORNAMENT_ON_M = 60, ORNAMENT_OFF_M = 120
+const _ornQ = new THREE.Quaternion(), _ornP = new THREE.Vector3(), _ornUp = new THREE.Vector3()
+
+/** The 10 Hz poll, beside the barricades'. */
+function _updateOrnaments () {
+  const p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
+  for (const o of _ornaments) {
+    const half = debrisSystem.halfExtents(o.kind)
+    if (!half) continue   // its collider is still loading
+    const d = Math.hypot(p.x - o.mesh.position.x, p.z - o.mesh.position.z)
+    // The body sits at the model's bbox centre: half its height above a base-origin model, at the
+    // origin of a centred one (the beach ball, lifted by its radius).
+    _ornUp.set(0, half.y - o.lift + 0.01, 0).applyQuaternion(o.mesh.quaternion)
+    if (o.body == null && d < ORNAMENT_ON_M) {
+      const q = o.mesh.quaternion
+      o.body = debrisSystem.spawn(o.kind, _ornP.copy(o.mesh.position).add(_ornUp), still,
+        { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })
+      if (o.body != null) { physicsEngine.sleep(o.body); o.mesh.visible = false }
+    } else if (o.body != null && d > ORNAMENT_OFF_M) {
+      physicsEngine.getTransform(o.body, _ornP, _ornQ)
+      o.mesh.quaternion.copy(_ornQ)
+      o.mesh.position.copy(_ornP).sub(_ornUp.set(0, half.y - o.lift + 0.01, 0).applyQuaternion(_ornQ))
+      debrisSystem.remove([o.body])
+      o.body = null
+      o.mesh.visible = true
+    }
   }
 }
 
@@ -9315,6 +9367,7 @@ function loop () {
     _renderRunHud()
     _checkEdge()   // FEAT-154: past the barricades, fade and come back in
     _updateBarricades()   // …and the rows near the truck are loose bodies
+    _updateOrnaments()    // FEAT-149: so are the lawn ornaments
     _updateSite()         // FEAT-65: likewise a demolition job's targets
     const guiOpen = _gui.domElement.style.display !== 'none'   // S-64: debug read-outs only while the panel shows
     if (guiOpen) economySystem.syncGui()
