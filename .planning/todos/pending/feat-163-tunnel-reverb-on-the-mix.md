@@ -25,8 +25,8 @@ It is an effect applied to the actual mix, never an extra sound layered on top o
   and crossfades up over ~0.3 s [DEFAULT] at the portals.
 - **The impulse response is generated, not recorded.** FEAT-120's prototype has one: RT60 (the time for the echo
   to fall 60 dB) 1.5 s, darkening as it decays, plus the flutter echo between the walls every 53 ms for a 9 m
-  bore. Source: `/Users/ledogen/CodeShit/CarGame-content/wip/audio-render/proto-b2.js` (git-invisible, that
-  worktree only).
+  bore. Source: `tools/audio-proto/proto-b2.js` (tracked since 46bf4649; it was the
+  git-invisible wip/audio-render/).
 - **The trigger** is the camera (the listener) inside a bore span, read from the road system's bore spans, not the
   truck's position: in chase view the camera leaves the portal after the truck does.
 
