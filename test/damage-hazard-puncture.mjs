@@ -49,7 +49,7 @@ console.log(`§1 the thresholds (${(POP_N / 1000).toFixed(1)} kN on the core, ${
   ok(hitWith('rimHazardWork', PINCH_J * 1.01).flat[1], 'pinch work just over its own threshold pops it too')
   ok(!hitWith('rimHazardWork', PINCH_J * 0.99).flat[1], '...and just under does nothing')
   {
-    // Rate, not total: the same 800 J pressed in slowly (a tenth of it per step, for 5 s) never pops.
+    // Rate, not total: the same pinch energy pressed in slowly (a tenth of it per step, for 5 s) never pops.
     const d = new DamageModel({ params: RANGER_PARAMS })
     const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], rimHazardSoft: [0, 0, 0, 0], rimHazardWork: [0, PINCH_J * 0.1, 0, 0] }
     for (let k = 0; k < 300; k++) d.step(vs, RANGER_PARAMS, DT)
