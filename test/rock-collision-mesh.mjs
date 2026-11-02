@@ -1,4 +1,4 @@
-// test/rock-collision-mesh.mjs — BUG-22c gate: boulders collide against their ACTUAL visible mesh.
+// test/rock-collision-mesh.mjs — BUG-22c / BUG-54 gate: boulders AND rocks collide against their ACTUAL visible mesh.
 //
 // No sphere proxy fits a lumpy ~20 m boulder — it either overshoots into "air" (the old boundingSphere)
 // or sits inside the rock (the mean-bulk proxy). Boulders are rare + low-poly (subdiv 2 = 320 tris), so
@@ -9,6 +9,10 @@
 //   (3) NO overshoot: a probe just outside the real surface — but inside the enclosing boundingSphere —
 //       misses (the exact defect a single sphere could not avoid on a lumpy/flattened boulder);
 //   (4) the instance transform (offset + Y-rotation + uniform scale) round-trips correctly.
+//   (5) BUG-54: the collidable ROCK (once a sphere that stood up to 1.12 m taller than the rock, and
+//       0.34 m proud of a rock buried out of sight) is its own mesh too: collider top = visible top, a
+//       buried rock is no invisible kerb, a wheel centre INSIDE a rock is pushed out (small rocks make
+//       that real), and every face winds outward (the inside test reads the face normal).
 //
 // Run: node test/rock-collision-mesh.mjs   (exit 0 = pass)
 
@@ -110,6 +114,54 @@ console.log('4. instance transform (offset + Y-rotation + uniform scale) round-t
   ok(hit && Math.abs(hit.depth - 0.1) < 0.1, `world depth ≈ 0.1 m (${hit ? hit.depth.toFixed(3) : 'none'})`)
   ok(hit && (hit.nx * wdir[0] + hit.ny * wdir[1] + hit.nz * wdir[2]) > 0.85,
     'world contact normal matches the rotated surface direction')
+}
+
+console.log('5. BUG-54: the collidable ROCK collides as its own mesh — no invisible kerb, inside pushes out')
+{
+  const { variants } = buildPalette(2024, P)
+  const R = 0.368                       // a wheel probe
+  let n = 0, outward = 0, tris = 0, topOk = true, buriedOk = true, insideOk = true
+  for (const e of variants.rock) {
+    n++
+    const t = e.collision.tris
+    ok(e.collision.kind === 'mesh' && t?.length >= 9, `rock variant ${n - 1} carries a triangle mesh`)
+    // Winding: the inside test reads the closest face's normal, so every face must face out. The
+    // blob is star-shaped about its origin, so outward ⇔ face normal · centroid > 0.
+    for (let i = 0; i < t.length; i += 9) {
+      const ux = t[i + 3] - t[i], uy = t[i + 4] - t[i + 1], uz = t[i + 5] - t[i + 2]
+      const vx = t[i + 6] - t[i], vy = t[i + 7] - t[i + 1], vz = t[i + 8] - t[i + 2]
+      const fx = uy * vz - uz * vy, fy = uz * vx - ux * vz, fz = ux * vy - uy * vx
+      const gx = t[i] + t[i + 3] + t[i + 6], gy = t[i + 1] + t[i + 4] + t[i + 7], gz = t[i + 2] + t[i + 5] + t[i + 8]
+      tris++; if (fx * gx + fy * gy + fz * gz > 0) outward++
+    }
+    // The collider's top IS the visible top: a wheel 5 cm clear of the highest vertex misses, 5 cm into it hits.
+    let top = -Infinity; for (let i = 1; i < t.length; i += 3) top = Math.max(top, t[i])
+    let tx = 0, tz = 0; for (let i = 1; i < t.length; i += 3) if (t[i] === top) { tx = t[i - 1]; tz = t[i + 1] }
+    if (sphereVsMeshInstance(tx, top + R + 0.05, tz, R, t, 0, 0, 0, 0, 1)) topOk = false
+    if (!sphereVsMeshInstance(tx, top + R - 0.05, tz, R, t, 0, 0, 0, 0, 1)) topOk = false
+    // Buried out of sight (top 2 cm under the ground at y = 0): a wheel resting on the ground over it
+    // touches nothing. The retired sphere stood up to 0.34 m proud here.
+    if (sphereVsMeshInstance(tx, R, tz, R, t, 0, -top - 0.02, 0, 0, 1)) buriedOk = false
+    // Centre inside the rock (its origin, and halfway up): the contact must say how to get OUT —
+    // depth > r, and stepping depth + 1 cm along each returned normal clears the rock within three
+    // steps (one nearest-face push can leave a neighbouring lump ≤ 0.1 m into a 0.37 m sphere; the
+    // solver resolves that over steps, as here).
+    for (const y of [0, top / 2]) {
+      const h0 = sphereVsMeshInstance(0, y, 0, R, t, 0, 0, 0, 0, 1)
+      if (!h0 || h0.depth <= R) { insideOk = false; continue }
+      let px = 0, py = y, pz = 0, h = h0, steps = 0
+      while (h && steps < 3) {
+        const k = h.depth + 0.01; px += h.nx * k; py += h.ny * k; pz += h.nz * k; steps++
+        h = sphereVsMeshInstance(px, py, pz, R, t, 0, 0, 0, 0, 1)
+      }
+      if (h) insideOk = false
+    }
+  }
+  ok(n >= 1, `rock variants present (${n})`)
+  ok(outward === tris, `every rock face winds outward (${outward}/${tris}) — the inside test depends on it`)
+  ok(topOk, 'collider top = visible top: a wheel 5 cm above the highest point misses, 5 cm into it hits')
+  ok(buriedOk, 'a rock buried just out of sight is not an invisible kerb (no contact for a wheel on the ground)')
+  ok(insideOk, 'a wheel centre inside the rock is pushed OUT (depth > r; its pushes clear it within 3 steps) — not pulled in, not ignored')
 }
 
 console.log(fails === 0 ? '\nROCK-COLLISION-MESH GATE: PASS' : `\nROCK-COLLISION-MESH GATE: FAIL (${fails})`)

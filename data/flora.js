@@ -251,11 +251,10 @@ export const FLORA_PARAMS = {
   // ── Collision (FEAT-06b) — analytic shapes the truck contact query tests against ────────
   // Read LIVE at query time (PropSystem.queryProps applies these to the baked shape dims), so the
   // sliders tune without a re-stream. Trees = capsule between baked (tilt-inclusive) trunk endpoints;
-  // fallen logs = the same capsule test; rocks = sphere; boulders = exact triangle mesh (BUG-22c);
+  // fallen logs = the same capsule test; rocks + boulders = exact triangle mesh (BUG-22c / BUG-54);
   // bushes = soft drag (no hard contact); medium/small rocks and roadside cover = none.
   collision: {
     trunkRadiusScale: 1.15,   // capsule radius = trunkRadius × instScale × this (bark + slop)
-    rockRadiusScale:  0.92,   // sphere radius  = blob 90th-pct flank reach (prop-palette rBulk) × instScale × this
     bush: { k: 1350, fMax: 12000 }, // soft drag: F = clamp(k · |v| · effRadius, 0, fMax) N, opposing v
   },
 
