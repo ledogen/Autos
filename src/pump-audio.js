@@ -109,26 +109,36 @@ function _ring (ctx, out, t, partials) {
 export function playRegister () {
     const ctx = _live(); if (!ctx) return
     const t = ctx.currentTime, out = _out(ctx)
-    // cha: the key lever trips the mechanism.
-    _burst(ctx, out, t, 0.02, 'bandpass', 1800, 1.5, 0.55)
-    _burst(ctx, out, t + 0.025, 0.02, 'bandpass', 2600, 1.5, 0.45)
-    _burst(ctx, out, t + 0.05, 0.03, 'bandpass', 1300, 1.2, 0.5)
-    _thunk(ctx, out, t + 0.05, 200, 90, 0.03, 0.3)
-    // ching: the drawer bell.
-    const tb = t + 0.09
-    _ring(ctx, out, tb, [[2400, 0.32, 0.40], [3200, 0.22, 0.30]])
-    // The drawer rolls open under the ring and hits its stop.
+    // Redone 2026-11-02 to the owner's reference (a mechanical till, read off its spectrum, never
+    // shipped): the 10-31 build was "not cha-ching enough" — a short bell and no real cha.
+    // CHA: the key and the gear train, ~0.2 s of broadband clatter, the strikes closing up.
+    for (const [dt, f, g] of [[0, 2600, 0.6], [0.05, 4200, 0.5], [0.09, 1900, 0.55], [0.125, 5200, 0.45], [0.15, 3100, 0.5], [0.17, 6400, 0.4], [0.185, 2400, 0.5]])
+        _burst(ctx, out, t + dt, 0.018, 'bandpass', f, 1.1, g)
+    _thunk(ctx, out, t + 0.02, 220, 90, 0.04, 0.3)
+    // CHING: the bell, struck at +0.2 s. A bell's partials are inharmonic — the reference rings at
+    // ~2.1, 4.8, 7.4/7.75 and 10.9 kHz (1 : 2.29 : 3.5–3.7 : 5.2), the 2.1 kHz one for about a second.
+    const tb = t + 0.2
+    _ring(ctx, out, tb, [[2100, 0.40, 1.1], [4800, 0.28, 0.9], [3200, 0.08, 0.3], [7400, 0.16, 0.30], [7750, 0.14, 0.30], [10900, 0.08, 0.15]])
+    // The drawer: released under the ring, rolls out and hits its stop, the coins rattling after.
+    const td = tb + 0.27
+    _burst(ctx, out, td, 0.05, 'bandpass', 3000, 0.7, 0.5)
     const roll = ctx.createBufferSource()
     roll.buffer = _buf(ctx)
     const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.9
     const rg = ctx.createGain()
-    rg.gain.setValueAtTime(0.0001, tb)
-    rg.gain.exponentialRampToValueAtTime(0.18, tb + 0.12)
-    rg.gain.exponentialRampToValueAtTime(0.0001, tb + 0.15)
+    rg.gain.setValueAtTime(0.0001, td)
+    rg.gain.exponentialRampToValueAtTime(0.2, td + 0.1)
+    rg.gain.exponentialRampToValueAtTime(0.0001, td + 0.12)
     roll.connect(bp); bp.connect(rg); rg.connect(out)
-    roll.start(tb, Math.random() * 0.8); roll.stop(tb + 0.16)
-    _thunk(ctx, out, tb + 0.15, 120, 50, 0.06, 0.55)
-    _burst(ctx, out, tb + 0.15, 0.05, 'lowpass', 700, 0.7, 0.35)
+    roll.start(td, Math.random() * 0.8); roll.stop(td + 0.13)
+    const ts = td + 0.11
+    _thunk(ctx, out, ts, 130, 50, 0.06, 0.6)
+    _burst(ctx, out, ts, 0.06, 'lowpass', 900, 0.7, 0.45)
+    _burst(ctx, out, ts, 0.03, 'bandpass', 5600, 1.2, 0.35)
+    for (let i = 0; i < 9; i++) {   // coins settling in the drawer
+        const dt = 0.04 + i * (0.05 + Math.random() * 0.05)
+        _burst(ctx, out, ts + dt, 0.012, 'bandpass', 3000 + Math.random() * 3500, 3, 0.18 * (1 - i / 9))
+    }
 }
 
 // ── The flow voice: built once on first use, then only its gains move (no clicks, no churn) ──
