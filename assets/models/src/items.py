@@ -6,8 +6,8 @@ Style brief: .planning/research/ART-STYLE.md (flat colour, faceted, no textures,
 
 Each item is modelled at real size (metres, Blender Z up, front = −Y) and rendered through ONE
 fixed rig — orthographic 3/4 view from front-right-above, sun + sky ambient, transparent film — so
-the inventory grid reads as one set.  These models exist for the thumbnail only; none ships as a
-.glb from here (the camp render, FEAT-66, would promote pack/bedroll through the asset pipeline).
+the inventory grid reads as one set.  Most exist for the thumbnail only; the ones with a WORLD row
+also ship as a .glb (export_glb) — the spare tire, and FEAT-66's camp bed slot.
 
 Run in the GUI Blender (blender-mcp):
     import sys, importlib; sys.path.insert(0, "<repo>/assets/models/src"); import items
@@ -2676,7 +2676,14 @@ def run(item_id):
 # footprint, written to assets/models/<file>.glb. No collider mesh: the game's debris loader hulls the
 # render vertices itself (src/debris.js, thinned to fit the engine's hull limit).
 GLB_DIR = os.path.join(os.path.dirname(OUT_DIR), "models")
-WORLD = {"spareTire": ("spare-tire", Matrix.Rotation(math.pi / 2, 4, "X"))}   # file, rest rotation (tire: lying flat)
+WORLD = {"spareTire": ("spare-tire", Matrix.Rotation(math.pi / 2, 4, "X")),   # file, rest rotation (tire: lying flat)
+         # FEAT-66's camp bed slot: already lying flat, so only turned — length onto glTF Z, head end at
+         # +Z (Blender −Y), the back of the tent. The pads' head is −X (the pillow end, valve at the
+         # foot); the sleeping bag's is +X (the collar).
+         "sleepingBag":       ("sleeping-bag",        Matrix.Rotation(-math.pi / 2, 4, "Z")),
+         "airMattress":       ("air-mattress",        Matrix.Rotation(math.pi / 2, 4, "Z")),
+         "sleepingPad":       ("sleeping-pad",        Matrix.Rotation(math.pi / 2, 4, "Z")),
+         "deluxeSleepingPad": ("deluxe-sleeping-pad", Matrix.Rotation(math.pi / 2, 4, "Z"))}
 
 
 def export_glb(item_id):
