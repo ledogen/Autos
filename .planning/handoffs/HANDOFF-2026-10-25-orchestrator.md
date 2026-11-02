@@ -16,8 +16,12 @@ code and platform terms inline, never physics, maths, git or design.
 db, then act. Window title `CarGame  :8000` (the main checkout; `title.sh` labels it from the directory, so a /clear
 does not lose it).
 
-**On wake, first:** `ArtifactData list` on the page (url below) — collection `lanes` (each lane's `handoff`, written
-before its /clear), `tasks` (status/note per row), and **`inbox`**: the owner types feedback items into the page's
+**On wake, first:** `bash tools/lanes.sh` (every worktree's branch, ahead/behind, uncommitted files, server up/down —
+uncommitted files in a lane are that lane's WIP, never discard them). Then `ArtifactData list` on the page (url below) —
+collection `lanes` (each lane's `handoff`, and `agent` = its session name, written by the lane on every resume),
+`tasks` (status/note per row), **`owed`** (the owner's answers to the page's OWED items since 2026-11-02: doc = the
+item's id, `{choice, note, at}` — act on each answer, record it in its ticket, then delete the item from the page's
+`OWED` array and republish), and **`inbox`**: the owner types feedback items into the page's
 Orchestrator card (since 2026-10-26) instead of pasting a list. Give the owner a four-line board summary, then drain
 the inbox: each `inbox/<id>` doc is `{text, at, status:'new'}`; handle it exactly like a pasted item (below) and
 `update` the doc with `{status: 'done'|'ticket'|'question', reply: '<one line: hash / id + lane / the question>',
@@ -152,3 +156,22 @@ remaining item is an owner call. The owner's calls + looks are the tracker page'
 ~20 items; recap them from there, not from memory. Lanes B and C had no session all night; their page
 handoffs carry an ORCHESTRATOR NOTE naming what Spare built so they do not redo it. Lane A ("A.") was
 last in plan mode on FEAT-147 / FEAT-65 owner items.
+
+## State 2026-11-02 (afternoon) — orchestrator, after the machine crash
+All four lanes relaunched from their page handoffs; nothing lost (Lane B's uncommitted FEAT-158 survived on disk
+and is now committed, 51b3f330). Owner rulings this session (provenance: the Sid Meier review,
+`.planning/story-mode/review-sid-meier-2026-11-02.md`, and the workflow review in chat):
+- **Lane branches commit WIP at every working step** (CLAUDE.md § Workflow; memory `feedback_commits` rewritten —
+  its old "only at phase boundaries" text was why lanes sat on uncommitted work). Main: task boundaries only.
+- **The page's owed list is now structured** (`OWED` objects: `kind` decide/drive/make, `blocks`, `options`):
+  blockers render on top, decide items have one-tap answers that land in db `owed`. Keep each item to a line or two.
+  Lane task rows are ONE line each; closed rows move to the "Closed since" list.
+- **Lanes write their session name** to `lanes/<id>.agent` on every resume (CLAUDE.md § Workflow).
+- **Owed-list cap ~10**: past it, lanes prefer work that adds nothing to the owner's review pile.
+- **Lane C has no standing session** (owner: "wouldn't mind freeing up an agent"): its queue stays on the page and
+  runs when the owner has listening/modelling time; its code items go to Spare.
+- New tickets: FEAT-159 (B, assists), FEAT-160 (Spare, run-end says why — approved), FEAT-161 (A, the finale is the
+  hardest drive — plan options), FEAT-162 (B, the truck's heart / genuine stranding — plan). FEAT-147: the first job
+  is a courier run TO Larry (ruled). DESIGN.md SM-INV-14's freight tension marked superseded by R-09/R-18.
+- New gate `page-scripts` (parses the tracker pages' scripts) and `tools/lanes.sh`.
+The owner still owes the full alpha run review (the page's "run-review" drive item).
