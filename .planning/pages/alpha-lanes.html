@@ -179,7 +179,8 @@
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
-        { id: 'BUG-67', what: 'Trench and re-seat shots sent; waits on the owner’s pick. Servers :3891–3896 up for a live look.' },
+        { id: 'BUG-67', what: 'REDEFINED 11-03 by the owner: sibling tunnels colliding at a junction (degree ≥ 3), not a lone portal. Re-assessment running (orchestrator’s subagent) on three captures.' },
+        { id: 'BUG-105 · BUG-106', what: 'Two roads graze with no crossing · a road in a lake a cold build doesn’t have (owner captures 11-03).' },
         { id: 'FEAT-153', what: 'ON MAIN ac7a9593 — office + school give jobs; census gate. Open: your words, the tackle-shop reel.' },
         { id: 'FEAT-120', what: 'ON MAIN 012b2461 — keepers wired, register + sputter redone, gravel prototyped. Waits on your clips, a scrape recording, and your listen.' },
         { id: 'FEAT-163', what: 'ON MAIN 012b2461 — a real reverb on the game’s mix inside a tunnel; waits on your listen.' },
@@ -201,9 +202,6 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
-    { id: 'bug67-cap', kind: 'decide', tk: 'BUG-67', blocks: 'FEAT-62 scenarios (a re-route moves their gates)',
-      text: 'Tunnel mouths inside junctions (12 in six test worlds). Fix on the table: near a junction the road digs an open trench instead, down to a depth cap (30 m fixes 2 of 12, 40 m fixes 7, 50 m fixes 8). Screenshots sent in chat 11-02 (CarGame-spare/wip/bug-67/shots/). RE-SEAT (move a junction off a steep face, ≤ 60 m) shots sent too: it clears 7 of the 8 and 3 of the 4 no trench fixed; split regions 9 → 7 of 42; but on seed 20 a moved road doubles beside another for ~490 m until a road-planning fix.',
-      options: ['re-seat (fix seed 20 first)', '40 m trench now, re-seat after', 'both together', 'hold'] },
     { id: 'feat120-listen', kind: 'drive', tk: 'FEAT-120/163',
       text: 'Listen in game (on main): tunnel reverb in a real tunnel; the redone pump register (handbrake down at the pump) and low-fuel sputter; crickets at night under 5 mph; coin + stinger on the result card; brake squeal; grass. Menu and result-card sounds stay dry in a tunnel [default] — say if they should echo too.' },
     { id: 'feat120-clips', kind: 'make', tk: 'FEAT-120',
