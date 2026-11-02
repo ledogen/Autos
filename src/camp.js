@@ -122,6 +122,24 @@ export const CAMP_PARAMS = {
 // Keep the four in the bar's left-to-right order; index.html and _renderVibeBar assume it.
 export const VIBE_W = { flat: 0.4, view: 0.15, shade: 0.2, water: 0.25 }
 
+// The vibe assist from packed camp gear (items.md §2b; FEAT-66). Each segment an item `fills` gets
+// its WHOLE deficit back — the awning and the tarp shade a treeless site fully (owner, 2026-11-02) —
+// and every assist together stays under the ruled cap (2026-10-20). Applied to the CHOSEN site only,
+// never inside the hunt (_gradeFlat/_gradeAmenity): boosting there would steer which spot is picked.
+// Inert on a site already good at that thing, so the place still sets the ceiling (SM-INV-6).
+export const VIBE_ASSIST_CAP = 0.3
+
+/** Per-segment assist { shade: 0.2, … } for a graded site and the Set of segments packed gear fills. */
+export function vibeAssist (site, fills) {
+    const out = {}
+    let left = VIBE_ASSIST_CAP
+    for (const seg of fills) {
+        out[seg] = Math.min(left, Math.max(0, VIBE_W[seg] - (site?.[seg + 'Score'] ?? 0)))
+        left -= out[seg]
+    }
+    return out
+}
+
 // Grading lattice: 5×5 over the 6 m square (1.5 m spacing). Enough to catch a rock ledge or a ditch
 // lip without turning a 10 Hz poll into a terrain-sampling loop.
 const GRADE_N = 5

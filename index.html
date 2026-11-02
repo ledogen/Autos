@@ -1369,6 +1369,7 @@
     .vibe-bar .vseg-flat  { background: #e8d44a; }   /* flatness — up to 40% of the bar */
     .vibe-bar .vseg-view  { background: #b98ae0; }   /* view     — up to 15% */
     .vibe-bar .vseg-shade { background: #7fd86a; }   /* shade    — up to 20% */
+    .vibe-bar .vseg-ghost { background: #7fd86a; opacity: 0.4; }   /* shade the packed awning/tarp gives back (FEAT-66) */
     .vibe-bar .vseg-water { background: #4aa8d8; }   /* water    — up to 25% */
 
     /* The legend. The bar read as one anonymous fill without it (owner, 2026-07-30) — four
@@ -1761,6 +1762,7 @@
             <div class="vseg vseg-flat"></div>
             <div class="vseg vseg-view"></div>
             <div class="vseg vseg-shade"></div>
+            <div class="vseg vseg-ghost"></div>
             <div class="vseg vseg-water"></div>
           </div>
           <div class="vibe-legend" id="camp-vibe-legend">
@@ -1865,6 +1867,7 @@
       <div class="vseg vseg-flat"></div>
       <div class="vseg vseg-view"></div>
       <div class="vseg vseg-shade"></div>
+      <div class="vseg vseg-ghost"></div>
       <div class="vseg vseg-water"></div>
     </div>
     <div class="vibe-legend" id="cp-vibe-legend" style="display:none;">

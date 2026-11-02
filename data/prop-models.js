@@ -1068,7 +1068,11 @@ export const PROP_MODELS = {
   lumberStack: { url: 'assets/models/lumber-stack.glb', collision: { shape: 'box', size: [1.30, 0.68, 4.05] } },   // 792 tris, 60 boards in two stickered units, no straps (a loose yard stack); no recolour hook
   timberRack: { url: 'assets/models/timber-rack.glb', collision: { shape: 'box', size: [5.19, 2.50, 1.50] } },   // 552 tris, orange three-post cantilever rack, timbers across the arms; no recolour hook
   offcutPile: { url: 'assets/models/offcut-pile.glb', collision: { shape: 'box', size: [2.50, 0.42, 2.99] } },   // 480 tris, 40 settled pieces; no recolour hook
-  // ASSET-25 / ASSET-26 — camp gear: renders at the campsite under FEAT-66's slots, not placed from here.
+  // ASSET-23 / ASSET-06 / ASSET-25 / ASSET-26 — camp gear: renders at the campsite under FEAT-66's slots
+  // (src/camp-gear.js) when the item is PACKED, not placed from here. No camp gear spawns a body: the
+  // truck is held while camped.
+  tent: { url: 'assets/models/tent.glb', collision: { shape: 'box', size: [1.4, 1.1, 2.2] } },   // 200 tris, ridge tent, door -Z; the fly is double-sided so the open door shows the inside. 2.44 x 3.18 m with the guys
+  awning: { url: 'assets/models/awning.glb', collision: { shape: 'none', size: [3.04, 2.50, 2.54] } },   // 240 tris, striped canopy on four poles, open front -Z (ASSET-06, moved to camp gear by R-19); no recolour hook
   cookingKit: { url: 'assets/models/cooking-kit.glb', collision: { shape: 'box', size: [1.24, 1.08, 0.82] } },   // 388 tris, two iron A-frames, crossbar, chain, Dutch oven; no recolour hook
   shadeTarp: { url: 'assets/models/shade-tarp.glb', collision: { shape: 'none', size: [3.73, 2.01, 3.53] } },   // 224 tris, 3 x 2.4 m fabric with a loose skirt on leaning poles and guy lines — drive-through; no recolour hook
   // ASSET-38 — lumber bundle (freight) and the three loose boards it was split into for haul (FEAT-88: single

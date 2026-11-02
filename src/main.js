@@ -95,8 +95,9 @@ import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, f
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
-import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
+import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
+import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, RUN_INTRO, DLG, COMPASS } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
@@ -3554,7 +3555,7 @@ function _pourStopLeak () {
 const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
-  onChange: () => inventoryScreen.render(),
+  onChange: () => { inventoryScreen.render(); campGear.refresh(inventorySystem.packed()) },   // packing at camp re-dresses it
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
   effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
@@ -4715,15 +4716,16 @@ const CAMP_PROMPT_KPH = 20
 //     prompt is up. The ray means the camp no longer lands where the truck is, so without this the
 //     player has no way to read where "make camp" is actually going to put them.
 //   • the CAMPFIRE — ASSET-24, lit by src/campfire.js (flames, coals, embers, a flickering point
-//     light), standing at the pad centre once camp is made. It replaced the blue placeholder cube.
-//     FEAT-66's other slots (shelter / over-fire / shade) are still empty — the default camp is
-//     bedroll + fire, and there is no bedroll model yet.
+//     light), standing at the pad's `fire` slot once camp is made. It replaced the blue placeholder cube.
+//   • the CAMP GEAR — FEAT-66, src/camp-gear.js: whatever is in the equipped pack, each item at its
+//     slot on the pad (tent, awning or tarp, cooking kit; the bed models are still to come).
 // camp.js stays THREE-free (the story-layer isolation rule): it hands out a pad record and main.js
 // is the only place that becomes geometry.
 const _campGroup = new THREE.Group()
 _campGroup.name = 'camp'
 scene.add(_campGroup)
 const campfire = new CampfireFx(_campGroup)
+const campGear = new CampGear(_campGroup)
 // Unit ring (inner 0.86 / outer 1.0), laid flat and scaled to the live pad half-extent, so the
 // campPadHalfM slider moves it without rebuilding geometry. No depth write: it is a read-out, and
 // it must not z-fight the ground it is describing.
@@ -4745,10 +4747,10 @@ function _updateCampMarker (site) {
 }
 
 /**
- * Camp is established: light the fire on the pad and put the camera on it. The camera seam is
- * camera.js's focus override (setCameraFocus) — the minimal one: it reuses the chase cam's existing
- * drag-orbit angles, so the player can still look around camp, and clearing it hands back to the
- * follow lerp with no snap. Freecam is untouched and still outranks it.
+ * Camp is established: light the fire, set out the packed gear and put the camera on the pad. The
+ * camera seam is camera.js's focus override (setCameraFocus) — the minimal one: it reuses the chase
+ * cam's existing drag-orbit angles, so the player can still look around camp, and clearing it hands
+ * back to the follow lerp with no snap. Freecam is untouched and still outranks it.
  */
 function _enterCampScene (site) {
   const pad = site?.pad
@@ -4756,15 +4758,17 @@ function _enterCampScene (site) {
   // Seat on the REAL ground, not pad.y: the camp bench is carved flat at pad.y − roadClearanceMargin
   // (road.js _poiPadCarve), so pad.y floats 0.25 m. analyticHeight reads the live carve, and
   // setCampPads has already run by the time we get here. pad.y stays as the fallback.
-  const gy = terrainSystem?.analyticHeight(pad.x, pad.z)
-  const y = Number.isFinite(gy) ? gy : pad.y
-  campfire.show(pad.x, y, pad.z)
-  setCameraFocus({ x: pad.x, y: y + 1, z: pad.z })
+  const groundAt = (x, z) => { const gy = terrainSystem?.analyticHeight(x, z); return Number.isFinite(gy) ? gy : pad.y }
+  const fire = slotXZ(pad, 'fire')
+  campfire.show(fire.x, groundAt(fire.x, fire.z), fire.z)
+  campGear.show(pad, inventorySystem.packed(), groundAt)
+  setCameraFocus({ x: pad.x, y: groundAt(pad.x, pad.z) + 1, z: pad.z })
 }
 
-/** Break camp / leave the region: fire out, camera back on the truck. */
+/** Break camp / leave the region: fire out, gear packed away, camera back on the truck. */
 function _exitCampScene () {
   campfire.hide()
+  campGear.hide()
   _campMarker.visible = false
   setCameraFocus(null)
 }
@@ -5332,6 +5336,9 @@ function _renderVibeBar (g, root = document.getElementById('camp-vibe')) {
   seg('.vseg-flat',  g.flatScore)
   seg('.vseg-view',  g.viewScore)
   seg('.vseg-shade', g.shadeScore)
+  // The packed gear's assist: a ghosted tail on the segment it helps, unlabelled (items.md §2b) — the
+  // player reads *the tarp is working tonight* vs *the tarp is dead weight*.
+  seg('.vseg-ghost', vibeAssist(g, inventorySystem.fills()).shade ?? 0)
   seg('.vseg-water', g.waterScore)
 }
 
@@ -5592,8 +5599,10 @@ function _makeCamp () {
   })
 }
 
+/** A graded site's vibe with the packed gear's assist on top (camp.js vibeAssist — the chosen site only). */
+const _siteVibe = (site) => site.vibe + Object.values(vibeAssist(site, inventorySystem.fills())).reduce((a, b) => a + b, 0)
 /** What a night here is worth, as day.js reads it: the site's vibe, mom's fixed 0.5, or 'truck'. */
-const _campVibe = (st) => st?.truck ? 'truck' : st?.moms ? 0.5 : (st?.site?.vibe ?? 0.5)
+const _campVibe = (st) => st?.truck ? 'truck' : st?.moms ? 0.5 : st?.site ? _siteVibe(st.site) : 0.5
 /** The packed sleeping gear's recovery bonus — at a camp only: the cab and mom's bed are their own. */
 const _campRest = (st) => st?.truck || st?.moms ? 0 : inventorySystem.restBonus()
 /** The face the sleep timer returns to. */
@@ -5716,7 +5725,7 @@ function _renderCampUI () {
   const isSleep = st.mode === 'sleep'
   const isConfirm = st.mode === 'confirm'
   const isHome = st.mode === 'camp' || st.mode === 'moms' || st.mode === 'truck'
-  const vibe = st.moms ? 0.5 : (st.site?.vibe ?? 0)
+  const vibe = st.moms ? 0.5 : st.site ? _siteVibe(st.site) : 0
 
   set('cp-title', st.moms ? "mom's house" : st.truck ? 'sleep in the truck' : 'camp')
   show('cp-make',   isConfirm)
