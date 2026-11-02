@@ -107,3 +107,42 @@ Spare builds it, then the census gate (Acceptance).
 - [ ] `data/offers.js` carries the new things / SOURCES rows; pois.md § Job supply and cargo.md
       updated to match.
 - [ ] offer-board, story-poi, paper gates green; cdp-smoke passes.
+
+## Built — Spare, 2026-11-02 (feature/spare)
+
+As ruled: the office and the school are budget givers (`SOURCES` cap 1, expiry 24 h; the office posts
+delivery, the school delivery + fragile). They post only their own jobs — they stay out of `ANY_GIVER`, so
+no generic note leaves them. New `THINGS` rows, all PLACEHOLDER words:
+
+- school: *the field-trip permission slips* → residence / farm; *the science-fair project* → residence,
+  Fragile tier, crated (`largeCrate`, 6 kg) until it has a model;
+- office: *the signed contracts* → workSite / autoShop / farm; *the payroll envelope* → generalStore /
+  gasStation;
+- `deck` now comes from any normal giver; `classNotes` stays household-only; the doctor gets nothing new;
+- tackle shop: *a reel to re-spool*, residence / farm → tackleShop. **My reading, flag it:** the
+  proposal's line says "add one outbound thing … so it is a destination too". The shop already sends its
+  goods out, and nothing ended at it, so I read "destination" as the point and added one thing that ENDS
+  there. If "outbound" was the point, delete the row.
+
+The ring and park trigger follow by construction (poi.js derives `jobs` from `SOURCES`).
+
+**Census gate `test/offer-census.mjs`** (registered, fast, 0.2 s). It runs 300 boards on the real
+`POI_ROSTER` (26 POIs). It checks that every giver posts ≥ 3 % of live offers, and that every POI type
+posts ≥ 3 % **or** ends ≥ 0.3 jobs per board *meant for it*. "Meant for it" means a `to` or a fetch
+pickup names it. Generic things can end at any POI, so they are printed but not counted: spread over
+every POI they hid the gap (the old office and school each read about 0.44 / 0.38 per board that way).
+It is OR rather than two separate floors because, as literally written, the 0.3 floor also fails the
+food vendor (0.01), the yard (0.01) and the doctor (0.00). All three post well over 3 %, and the owner
+ruled the doctor no inbound thing. The old pool FAILS the gate (office 0.15, school 0.10, neither posts);
+the new one passes:
+
+| type | posts | ends / board meant · any |
+|---|---|---|
+| office | 3.4 % | 0.25 · 0.27 |
+| school | 3.1 % | 0.08 · 0.27 |
+| tackle shop | 4.3 % | 0.12 · 0.27 |
+| doctor | 4.3 % | 0.00 · 0.27 |
+| residence (×5) | 20.8 % | 1.63 · 1.34 |
+| food vendor | 15.2 % | 0.01 · 0.11 |
+
+The school's class notes dropped 0.10 → 0.08: two more givers share the 12-job budget.
