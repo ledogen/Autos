@@ -241,6 +241,23 @@ export const RANGER_PARAMS = {
   absReapplyFrac: 0.8,    // [-] fraction of the last lock pressure the fast re-apply restores
   absReapplyRate: 3,      // 1/s — stepped re-apply above that (0 → full in 0.33 s)
   absMinSpeed:    2.2,    // m/s — reference speed below which ABS stands down (8 km/h)
+  // Traction assists (src/traction.js, FEAT-159). Both OFF here — the honest baseline every physics gate
+  // assumes; the player's defaults (throttle assist on, TC off — owner 2026-11-02) live in src/settings.js.
+  throttleAssist:   false,  // the skilled foot: trims the pedal so the rears sit just under peak grip
+  tractionControl:  false,  // the automotive system: brakes the faster rear, cuts torque on spin / oversteer
+  // taSlip is calibrated to OUR tire, as absSlipDump is: this Pacejka crests near 45 % slip ratio, and
+  // 0.30 still makes 98 % of the crest's force at two-thirds of its slip speed (the tread-wear term).
+  taSlip:           0.30,   // [-] rear slip ratio the throttle assist holds the faster rear under
+  taMaxSpeed:       15,     // m/s — above this the throttle assist steps aside (34 mph; owner 2026-11-02: "at low speeds")
+  taDriftAngle:     0.175,  // rad — sideslip past which it steps aside: the truck is sideways, the player is drifting (10°)
+  tcSlip:           0.15,   // [-] TC cuts torque when the SLOWER rear passes this (both spinning)
+  tcSplit:          1.0,    // m/s — TC brakes the faster rear once it out-turns the other by more than this
+  tcBrakeGain:      2,      // 1/s per m/s over tcSplit — TC brake-pressure build rate
+  tcYawMargin:      0.1,    // rad/s — yaw rate past the steering's kinematic rate that TC calls oversteer
+  tracDumpRate:     15,     // 1/s — pedal cap cut (and TC pressure vent) per second (full → 0 in 67 ms, as absDumpRate)
+  tracBuildRate:    4,      // 1/s — fast re-apply up to tracReapplyFrac of the cap it spun at; also the step-aside ramp
+  tracReapplyFrac:  0.8,    // [-] fraction of the last spin cap the fast re-apply restores
+  tracReapplyRate:  1,      // 1/s — the creep above that (0 → full in 1 s)
 
   // ── Rear differential (FEAT-23 Phase 2 seed) ──────────────────────────────────────────────────
   // rearDiffMode: 'open' | 'lsd' | 'locked'. Selected in the debug panel (Vehicle → Differentials →
