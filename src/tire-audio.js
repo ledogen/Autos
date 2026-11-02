@@ -38,10 +38,10 @@
  * slip magnitude — vLong/vLat are the real contact-patch slip speeds. Same gotcha as smoke.js update().
  *
  * Shares the AudioContext with engine-audio.js (getAudioContext) but keeps its own master gain
- * straight into ctx.destination, so tire volume is independent of engine volume.
+ * into the world bus (getWorldBus), so tire volume is independent of engine volume.
  */
 
-import { getAudioContext, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
 
 // ── Gating constants (user spec) ──────────────────────────────────────────────────────────
 const SLIP_FLOOR = 4.0     // m/s — combined slip below this is silent
@@ -238,7 +238,7 @@ export function ensureTireAudio () {
 
   master = ctx.createGain()
   master.gain.value = 1
-  master.connect(ctx.destination)
+  master.connect(getWorldBus())
 
   // ── Screech: tonal core (f0 + 2f0 + 3f0) + the scrub noise bed → gain ──
   const white = whiteNoiseBuffer(ctx, NOISE_SECONDS)

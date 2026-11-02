@@ -19,7 +19,7 @@
  * stopped and left for GC, as engine-audio.js _blip does.
  */
 
-import { getAudioContext, whiteNoiseBuffer } from './engine-audio.js'
+import { getAudioContext, getMasterBus, whiteNoiseBuffer } from './engine-audio.js'
 
 const KICK_F0 = 150      // Hz — body pitch at the hit
 const KICK_F1 = 45       // Hz — …where it settles
@@ -49,7 +49,7 @@ function _kick (ctx, t0, peak) {
   g.gain.setValueAtTime(0.0001, t0)
   g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t0 + 0.003)
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + BODY_S)
-  osc.connect(g); g.connect(ctx.destination)
+  osc.connect(g); g.connect(getMasterBus())
   osc.start(t0)
   osc.stop(t0 + BODY_S + 0.02)
   // Click: a highpassed noise tick on the attack.
@@ -61,7 +61,7 @@ function _kick (ctx, t0, peak) {
   const cg = ctx.createGain()
   cg.gain.setValueAtTime(Math.max(0.0002, peak * CLICK_LEVEL), t0)
   cg.gain.exponentialRampToValueAtTime(0.0001, t0 + CLICK_S)
-  src.connect(hp); hp.connect(cg); cg.connect(ctx.destination)
+  src.connect(hp); hp.connect(cg); cg.connect(getMasterBus())
   src.start(t0)
   src.stop(t0 + CLICK_S + 0.01)
 }

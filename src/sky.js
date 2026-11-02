@@ -127,6 +127,17 @@ export const SKY_CYCLE = {
   ],
 }
 
+/** FEAT-120: how much of the look at `hour` is the `night` preset (0..1), by the same keyframe bracket
+ *  setTimeOfDay blends — so the crickets' night is the night on screen. */
+export function nightWeight (hour) {
+  const kf = SKY_CYCLE.keyframes, h = ((hour % 24) + 24) % 24
+  let i = 0
+  while (i < kf.length - 1 && h >= kf[i + 1].hour) i++
+  const a = kf[i], b = kf[Math.min(i + 1, kf.length - 1)]
+  const t = b.hour > a.hour ? (h - a.hour) / (b.hour - a.hour) : 0
+  return (a.preset === 'night' ? 1 - t : 0) + (b.preset === 'night' ? t : 0)
+}
+
 const _scratchA = new THREE.Color()
 const _scratchB = new THREE.Color()
 const _scratchFog = new THREE.Color()

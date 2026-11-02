@@ -48,7 +48,7 @@ window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase he
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
-import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playSputterPop } from './engine-audio.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playSputterPop, setCabView, setInTunnel, setTunnelReverb } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
@@ -61,7 +61,7 @@ import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
-import { SkySystem, SKY_CYCLE } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
+import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
@@ -113,6 +113,9 @@ import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heart
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
+import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
+import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
+import { playCoin, playStinger, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -5932,9 +5935,19 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
  * flips from the old total to the new half a second after its row. Idempotent per render — a re-render
  * writes fresh rows and the stale timers find theirs disconnected.
  */
-function _revealResult (body) {
+function _revealResult (body, letter = null) {
   const t0 = performance.now()
   const delayOf = (el) => (parseFloat(el.closest('.mp-reveal')?.style.animationDelay) || 0) * 1000
+  // FEAT-120 / FEAT-131 P1: a coin as each money row that paid lands, then the grade's stinger a beat
+  // after the last row — the grade is heard, never printed.
+  const rows = [...body.querySelectorAll('.mp-reveal')]
+  for (const el of rows) {
+    const pay = el.querySelector('.mp-pay:not(.mp-bad)')   // money only: counts and conditions share the class
+    const amt = pay && (pay.dataset.countup != null || pay.textContent.includes('$'))
+      ? parseFloat(pay.dataset.countup ?? pay.textContent.replace(/[^0-9.]/g, '')) : 0
+    if (amt > 0) setTimeout(() => { if (el.isConnected) playCoin() }, delayOf(el))
+  }
+  if (rows.length && letter) setTimeout(() => { if (body.isConnected) playStinger(letter) }, delayOf(rows.at(-1)) + 450)
   for (const el of body.querySelectorAll('[data-countup]')) {
     const target = parseFloat(el.dataset.countup), delay = delayOf(el)
     el.textContent = '$0.00'
@@ -6144,7 +6157,7 @@ function _renderMissionUI () {
                        site: r.targets != null ? { smashed: r.smashed, of: r.targets } : null,
                        deedNeed: _missionDeedNeed(m.mission) })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
-      if (paid && !r.line) _revealResult(body)   // N-04: the staged reveal — tip count-up, deed tally tick
+      if (paid && !r.line) _revealResult(body, r.letter)   // N-04: the staged reveal — tip count-up, deed tally tick
       // The result card is two actions: retry · continue (R-31, owner 2026-10-24: no "back to free roam"
       // here — leaving the mode is the pause menu's job). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
@@ -8337,6 +8350,20 @@ function _endRun (kind) {
   }, kind === 'crash' ? CRASH_CARD_DELAY_S * 1000 : 0)
 }
 
+/**
+ * FEAT-163: is the camera (the listener) inside a bore? The surface resolver's own ownership rule: on a
+ * bore span of the nearest run, and below the tube's apex. Read-only; carveHint is memoised per cell.
+ */
+function _listenerInBore () {
+  if (_labActive || !roadSystem) return false
+  const c = camera.position, nr = roadSystem.carveHint(c.x, c.z)
+  if (!nr?.point || !nr.tangent) return false
+  const arc = (nr.arcS ?? 0) + (c.x - nr.point.x) * nr.tangent.x + (c.z - nr.point.z) * nr.tangent.z
+  if (!roadSystem.tunnelSpanAt(nr.runKey ?? '', arc)) return false
+  return c.y < roadSystem.runProfile(arc, nr.runKey, _boreProf).gradeY + (RANGER_PARAMS.tunnelBoreRadius ?? 8)
+}
+const _boreProf = { gradeY: 0, tx: 1, tz: 0 }
+
 /** The summary's rows. It reads what the run already tracks; only the playtime is counted for it. */
 function _runEndHtml (kind) {
   const e = runEconomy, req = offerBoard?.lines() ?? []
@@ -8694,7 +8721,7 @@ document.addEventListener('visibilitychange', () => setAudioPageActive(!document
 // FEAT-23: WebAudio may only start inside a user gesture (browser autoplay policy). ANY gesture
 // counts — a click too: a resumed run is reached by mouse alone (continue → resume) with the engine
 // already idling, and a keydown-only unlock left it silent until the first key. Idempotent.
-function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio() }
+function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio(); ensureAmbientAudio() }
 window.addEventListener('pointerdown', _unlockAudio, true)
 
 document.addEventListener('keydown', e => {
@@ -8894,6 +8921,9 @@ function loop () {
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
+    // FEAT-120: the contact one-shots read the same per-step peaks the damage step just priced.
+    const v = vehicleState.velocity
+    stepContactAudio(vehicleState, RANGER_PARAMS._tireFz, Math.hypot(v.x, v.z), PHYSICS_DT)
     // FEAT-126: a shift forced with the clutch in grinds, and is a damage event in its own right. Its
     // 2 % wear is under the damage screen's per-sample drop threshold, so it raises the alert here,
     // like a landed impact does below.
@@ -9295,7 +9325,7 @@ function loop () {
     setEngineAudioTuning(RANGER_PARAMS.engineAudioDynamics, getCameraMode() !== 'hood', RANGER_PARAMS.engineChaseBrightDb, RANGER_PARAMS.engineChaseBoomDb, RANGER_PARAMS.starterAudioLevel, RANGER_PARAMS.engineAudioCompRatio)
     // FEAT-50: a low-fuel stumble drops the drone out for its length, with one pop per stumble.
     const fuel = vehicleState.fuel
-    if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth); _sputtersHeard = fuel.sputters }
+    if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth, dtrain.engineRPM, RANGER_PARAMS.cylinders, fuel.sputterDur); _sputtersHeard = fuel.sputters }
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle,
       (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0), RANGER_PARAMS.cylinders, RANGER_PARAMS.engine,
       vehicleState.ignition?.state === 'off')
@@ -9338,6 +9368,19 @@ function loop () {
   setWindAudioEnabled(heard && RANGER_PARAMS.windAudioEnabled !== false)
   setWindAudioVolume(RANGER_PARAMS.windVolume ?? 0.4)
   updateWindAudio(vehicleState)
+  setCabView(getCameraMode() === 'hood')   // FEAT-120 camera-aware mix: the cab hears the world through the glass
+  setTunnelReverb(RANGER_PARAMS.tunnelReverbEnabled !== false, RANGER_PARAMS.tunnelReverbLevel ?? 0.9)
+  setInTunnel(_listenerInBore())           // FEAT-163: the camera is the listener — it leaves a portal after the truck
+  setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
+  setResultAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)   // the card plays over a held sim
+  // FEAT-120 ambience: crickets on the sky's own night; grass from the green share of the ground the
+  // truck is on, off the road only (the shoulder feather counts as road).
+  {
+    const p = vehicleState.position, v = vehicleState.velocity
+    const green = !_labActive && terrainSystem && _looseSurfaceFactorAt(p.x, p.z) >= 1 ? terrainSystem.groundAt(p.x, p.z).green : 0
+    setAmbientAudio(heard && RANGER_PARAMS.ambientAudioEnabled !== false, RANGER_PARAMS.cricketVolume ?? 0.5, RANGER_PARAMS.grassVolume ?? 0.5)
+    updateAmbientAudio(Math.hypot(v.x, v.z), nightWeight(SKY_CYCLE.hour), green, frameTime)
+  }
 
   // PERF-16: throttle all HUD DOM + debug-canvas writes to ~10 Hz. These are human-readable readouts;
   // rewriting the spans and repainting the Pacejka/travel/slip canvases every frame cost Layout+Paint
