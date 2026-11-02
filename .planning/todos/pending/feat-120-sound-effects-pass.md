@@ -127,19 +127,21 @@ Tracked in FEAT-64. Whoosh = bandpassed noise with a fast pitch sweep; impact = 
 slap (noise burst, highpassed).
 
 ### Bump-stop clunk
-status: wip · group: contacts
+status: shipped · group: contacts · play: contact-audio.js playBumpStop
 A strut reaching full compression (`suspension.js` travel limit; the event is raised in `physics.js`).
 Low sine thump (~90 → 50 Hz in 40 ms) + a short metallic click (bandpassed noise ~2 kHz, 10 ms).
 Level ∝ closing speed at the stop.
 - **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto.js`, rendered as a take in `wip/audio/bump-stop-clunk/`. Not in `src/` or wired yet; trigger: the per-corner peak bump-stop force damage.js already tracks (`_bumpPeak`), so physics.js needs no new event.
 - **Owner's ear, 2026-11-02:** KEEP — "cheap but acceptable for now". Wire it.
+- **In game 2026-11-02 (Spare):** `src/contact-audio.js` `playBumpStop`, on the fixed step: ONE clunk per bump-stop contact, played the step its force stops rising, sized by that peak (silent under 2 kN, full at 30 kN). Sliders: Contact Sounds, Bump / Landing Volume.
 
 ### Landing thud
-status: wip · group: contacts
+status: shipped · group: contacts · play: contact-audio.js playLanding
 After air. Reuse the heartbeat kick body (`heartbeat-audio.js`) pitched down, level ∝ vertical speed at
 touchdown, plus a suspension-rattle tail. Fires once per landing, not per wheel.
 - **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto.js`, rendered as a take in `wip/audio/landing-thud/`. Not in `src/` or wired yet; trigger: all four wheels back in contact after air, level from the vertical speed.
 - **Owner's ear, 2026-11-02:** KEEP — "cheap but acceptable for now". Wire it.
+- **In game 2026-11-02 (Spare):** `contact-audio.js` `playLanding`: the first wheel back down after ≥ 0.25 s with all four off, level from the vertical speed (silent under 1 m/s, full at 8 m/s).
 
 ### Underbody and bumper scrape
 status: wip · group: contacts
@@ -148,6 +150,7 @@ Sustained while the hull is in sliding contact with ground. Noise through a reso
 brighter; dirt: lowpassed and quieter.
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/underbody-and-bumper-scrape/`. Not in `src/` or wired yet. The take is the bumper on rock (bright ring, re-rolled every frame for grit) sliding up to 5 m/s and back, then the belly on dirt (muffled ring, the low drag leads). The ring is two bands, the panel's first mode and one at 2.3× it. Trigger: hull sliding contact (speed + force) out of the adapter; the material read is the impact seam's open question.
 - **Owner's ear, 2026-11-02:** REDO — "wildly bad". Consider a contact-mic recording or a CC0 library take of steel dragging on rock/asphalt instead.
+- **Not redone by synthesis (2026-11-02):** the owner's note points at a recording — a contact-mic take or a CC0 library take of steel dragging on rock / asphalt. Owed: that take (dropped on this card), then the voice plays it, speed and load driving rate and level.
 
 ### Gravel ping
 status: wip · group: world
@@ -155,6 +158,7 @@ Stones flicking the wheel wells on dirt/gravel. Reuse the tinkle grains from `gl
 (short high sine pings), lowered to 1.5–4 kHz, random rate ∝ wheel speed on loose surfaces.
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/gravel-ping/`. Not in `src/` or wired yet. The take ramps the wheel speed 1 → 20 m/s and back down: 0.7 pings/s per m/s, each ping a 1.5–4 kHz sine with a sheet-metal partial at 2.4×.
 - **Owner's ear, 2026-11-02:** REDO — "sounds more like a xylophone than gravel strikes". Pitched sine pings read as notes. Reference (ear and spectrum only, never shipped — copyright): https://www.youtube.com/watch?v=s0pqv_p1UvU. Gravel strikes are unpitched broadband ticks on sheet metal over a continuous tire crunch.
+- **Redo prototype 2026-11-02 (Spare), `tools/audio-proto/proto-b3.js` (not wired):** unpitched — every strike is a 1–4 ms broadband click ringing ONE fixed, inharmonic wheel-well panel (1.15 / 2.73 / 4.38 / 6.9 kHz), so a stone changes loudness and brightness, never a note; under it a granular tread crunch. Built from the ticket's description: the reference download was refused (HTTP 403, and a retry was blocked as bot-check circumvention). Take: `wip/audio/gravel-ping/redo-2026-11-02.wav` — owner's ear owed; a clip of the reference dropped on this card would let the next pass match it.
 
 ### Reverse gear and diff whine
 status: wip · group: truck
@@ -163,13 +167,15 @@ Sine at shaft speed × tooth count, so it's physically exact for free. Reverse (
 overrun (coasting off-throttle with the engine braking).
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/reverse-gear-and-diff-whine/`. Not in `src/` or wired yet. Two takes. Reverse: ~17 mesh events per engine rev (countershaft ≈ 0.68 × input × 25 teeth), so 800 rpm ≈ 230 Hz and 2800 rpm ≈ 790 Hz; louder under throttle, with a once-per-countershaft-rev wobble. Manual box only: an automatic's reverse is a helical planetary and barely whines. Diff: the Ranger's 3.73 final drive is 41:11, so the mesh rate is 41 × AXLE speed (= 11 × driveshaft speed; the line above had it as 41 × driveshaft, which is 3.7× too high). 30 m/s ≈ 530 Hz; the take coasts 30 → 9 m/s on overrun, then back on the throttle, where it drops to a quarter.
 - **Owner's ear, 2026-11-02:** REDO the reverse whine to the reference: https://www.youtube.com/watch?v=-bBiqmdEjbM at 1:50–1:53 (ear and spectrum only, never shipped). The diff whine was not judged separately.
+- **Not redone yet (2026-11-02):** the redo is defined by the reference clip, and its download was refused (HTTP 403). Owed: the clip (1:50–1:53) dropped on this card, then the whine is matched to its spectrum.
 
 ### Brake squeal
-status: wip · group: truck
+status: shipped · group: truck · play: contact-audio.js playBrakeSqueal
 Only at low speed (< 15 km/h) under moderate brake pressure, with a random chance per stop so it isn't
 every time. Sine 2–4 kHz with slight vibrato, fast attack, fades as the truck stops.
 - **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto.js`, rendered as a take in `wip/audio/brake-squeal/`. Not in `src/` or wired yet; trigger: a stop from under 15 km/h with moderate pedal, random chance per stop.
 - **Owner's ear, 2026-11-02:** KEEP, but make it QUIET.
+- **In game 2026-11-02 (Spare):** `contact-audio.js` `playBrakeSqueal`, QUIET (10 dB under the take, its own slider, Brake Squeal Volume): a 35 % roll per stop [DEFAULT] as the truck slows through 15 km/h on a 0.15–0.7 pedal; re-armed above 6 m/s. Take: `wip/audio/brake-squeal/in-game-quiet-2026-11-02.wav`.
 
 ### Wet ground
 status: wip · group: world
@@ -178,11 +184,12 @@ rate ∝ wheel speed, plus a soft squelch on wheel load spikes.
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/wet-ground/`. Not in `src/` or wired yet. The take ramps 0.5 → 12 m/s and back with four squelches. Spatter: 2.5 bursts/s per m/s, fusing at speed into a continuous spray hiss whose level goes as speed^1.5. Squelch: a noise band sliding 450 → 140 Hz over 0.16 s.
 
 ### Grass and brush swish
-status: wip · group: world
+status: shipped · group: world
 Off-road over vegetation. Bandpassed noise (~3 kHz, broad) with slow random gain swells, level ∝ speed.
 Needs a flora-density read at the bumper.
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/grass-and-brush-swish/`. Not in `src/` or wired yet. The take ramps 0 → 11 m/s and back. Blades: ~3 kHz broad band, brighter with speed. Stems on the bumper: a ~900 Hz band. Both swell at random every 0.25–0.75 s (clumps).
 - **Owner's ear, 2026-11-02:** KEEP, but it "needs attack and release": each brush hit gets a sharp onset and a tail, instead of symmetric swells. Confirm the read on the next listen.
+- **In game 2026-11-02 (Spare), with attack and release:** `src/ambient-audio.js`. Discrete brush hits (a ~10 ms attack, a 0.12–0.3 s tail) over a quiet bed, at 0.6 hits/s per m/s through full cover. The cover read is the terrain's own green share (`groundAt().green`, the rule that paints it), off the road only. Take: `wip/audio/grass-and-brush-swish/in-game-attack-release-2026-11-02.wav` — the owner's confirming listen is owed.
 
 ### Tunnel reverb
 status: cut · group: world
@@ -193,22 +200,24 @@ under an exponential decay, a little brighter early. Crossfade over ~0.3 s at th
 - **Owner's ear, 2026-11-02:** MOVED to its own ticket, FEAT-163: "it should be a literal reverb effect on the actual audio track. it can't be a layered sound."
 
 ### Night crickets
-status: wip · group: world
+status: shipped · group: world
 Pulsed sine 4–5 kHz chirps in groups of 3–5, several voices at slightly different rates; fade in at
 dusk from the day clock.
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/night-crickets/`. Not in `src/` or wired yet. The take is 4 voices fading in over 2 s. Carrier 4.2–5 kHz, chirps of 3–5 pulses at ~30 pulses/s, each voice at its own 1.6–2.6 chirps/s; one close voice, the rest quieter and darker. Always-running oscillators, gains scheduled a frame ahead: no nodes per chirp.
 - **Owner's ear, 2026-11-02:** KEEP. Play ONLY under 5 mph, and fade in slowly (~10 s [DEFAULT]). Above 5 mph they fade out.
+- **In game 2026-11-02 (Spare):** `ambient-audio.js`, on the sky's own night (`sky.js nightWeight`, the keyframes setTimeOfDay blends). Only under 5 mph: a 10 s swell in [DEFAULT] (linear, squared — an exponential sounded full in ~4 s), 1.5 s out. Take: `wip/audio/night-crickets/in-game-10s-fade-2026-11-02.wav`.
 
 ### Dialogue text blips
 status: todo · group: story
 One short square/triangle blip per few characters, pitch per speaker.
 
 ### Payout coin and grade stingers
-status: wip · group: story
+status: shipped · group: story · play: result-audio.js playCoin
 Coin: two quick high sine pings (~2.6 / 3.9 kHz) on payout and wallet changes. Stingers: short
 musical hits on the D / par / S card reveal, rising in pitch and length with the grade.
 - **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto.js`, rendered as a take in `wip/audio/payout-coin-and-grade-stingers/`. Not in `src/` or wired yet; trigger: the coin on payout and wallet changes, the stinger on main.js `_revealResult`; stingers are five figures, D one low note up to S a run into a held chord.
 - **Owner's ear, 2026-11-02:** KEEP ("i like coin and stingers"). FEAT-131 P1 builds result-audio.js FROM this take.
+- **In game 2026-11-02 (Spare) — FEAT-131 phase 1, coin + stinger only:** `src/result-audio.js`. A coin as each paid dollar row lands; the grade's stinger a beat after the last row (heard, never printed). UI path, straight out — not the world bus. P1's tick train, clack and thud are not built (not heard by the owner yet).
 
 ### Pump nozzle
 status: shipped · group: story · play: pump-audio.js playNozzle
@@ -248,9 +257,10 @@ point and the handbrake-down trigger.
   open under it and hitting its stop at +0.24 s). Same entry point and trigger. Render:
   `wip/audio/pump-register-sale-final/synth-cha-ching.wav`.
 - **Owner's ear, 2026-11-02:** REDO — the 10-31 build is not cha-ching enough: "aim for more of a cha-ching". Reference: https://www.youtube.com/watch?v=4kVTqUxJYBA (ear and spectrum only, never shipped). Do not land 6b67588d's register as is.
+- **Redone 2026-11-02 (Spare) to the reference, read off its spectrum:** ~0.2 s of key/gear clatter (cha); a bell on the reference's inharmonic partials 2.1 / 4.8 / 7.4 / 7.75 / 10.9 kHz, the 2.1 kHz ringing ~1 s (ching); the drawer released, rolled and slammed, coins settling. Replaces 6b67588d's take. Take: `wip/audio/pump-register-sale-final/redo-2026-11-02.wav` — owner's ear owed.
 
 ### Low-fuel sputter
-status: shipped · group: truck · play: engine-audio.js playSputterPop
+status: wip · group: truck · play: engine-audio.js playSputterPop
 FEAT-50 follow-up, built 2026-10-17 — the mechanic (`src/fuel.js` stepSputter, a real torque dip read
 by drivetrain.js) and the sound together: the drone drops out for the stumble's length (firing=false)
 and `playSputterPop(depth)` marks each one. The spec it was built to: Starts when the tank holds about **2 real minutes** of fuel at the running-average burn
@@ -259,13 +269,15 @@ is a matching momentary **torque loss** in the drivetrain — the engine actuall
 reports it. Sound: the engine drone cutting for a few firing events (gain dips on the oscillator stack in
 engine-audio.js) with a low pop or two (short lowpassed noise bursts), timed to the torque dip.
 - **Owner's ear, 2026-11-02:** REDO — "sounds like nothing to me". It should be a gaseous exhaust event: a pop, bang or misfire, ideally tied to engine speed (each pop on a firing event at the current rpm).
+- **Redone 2026-11-02 (Spare):** the stumble now POPS in the exhaust 2–5 times on the firing grid at the live rpm (rpm/60 × cylinders/2), more and louder the deeper it goes, and the re-light is a bang; each pop a crack (lowpassed noise), a thump (130 → 55 Hz) and the pipe ringing (~250 Hz). Take: `wip/audio/low-fuel-sputter/redo-2026-11-02.wav` (deep, 2000 rpm) — owner's ear owed.
 
 ### Camera-aware mix
-status: wip · group: mix
+status: shipped · group: mix
 Not a sound, a bus: in cab view, lowpass the outside world (~2 kHz) as if heard through glass; in
 chase view the engine leads the mix instead of the tyres.
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/camera-aware-mix/`. Not in `src/` or wired yet. The take is the engine at 3000 rpm plus wind at 25 m/s: chase view, then hood view (camera.js `hood`: there is no separate cab view) from 2.5 to 5 s through a 2 kHz lowpass, then chase again. Needs the same master bus as the tunnel reverb.
 - **Owner's ear, 2026-11-02:** KEEP ("has always sounded pretty good"). Wire it with the master bus.
+- **In game 2026-11-02 (Spare):** the WORLD bus, `engine-audio.js getWorldBus()` — engine, tires, wind, gearbox, pump, contacts, ambience and bed-cargo hits all route through it; UI sounds (heartbeat, rank glass, result card) do not. `setCabView` lowpasses it to 2 kHz in hood view. FEAT-163's reverb goes on the same bus.
 
 ## Record
 
