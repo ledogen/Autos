@@ -60,6 +60,21 @@ post nothing and only receive.
   "the science-fair project"; office: "the signed contracts", "the payroll envelope"; doctor: "a specimen
   for the lab"); the owner writes the real words when the givers are opened.
 
+## RULED — owner, 2026-11-02: the Proposal, with two changes
+
+> "approve all proposals except notes should only come from residence. no specimen for the lab"
+
+This supersedes the 10-31 "receive-only for the alpha" line above. Asked again with the measured share (office
+and school end a job in about 1 board of 8–10), the owner approved the Proposal below as written, except:
+
+- **School** keeps receiving `classNotes` from residences only. The proposal's widening to ANY_GIVER is dropped.
+  Its two giver jobs stand (permission slips → HOME, science-fair project → residence, FRAGILE).
+- **Doctor** gets no "specimen for the lab". It keeps the generic ANY_GIVER posts.
+- Office (giver, cap 1, two jobs, receives `deck` from ANY_GIVER), tackle shop (one outbound thing), budget 12,
+  no per-POI visit quota: approved as written. The placeholder job words stand until the owner rewrites them.
+
+Spare builds it, then the census gate (Acceptance).
+
 ## Owner-only questions (asked back 2026-10-29, ruled above)
 
 1. Do the office and school become givers (`cap: 1`, delivery only), or stay receive-only with

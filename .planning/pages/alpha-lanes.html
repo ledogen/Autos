@@ -124,7 +124,7 @@
     <li><b>Lane A:</b> FEAT-103 alpha camp · FEAT-146 the run ends · FEAT-157 requisition lines · FEAT-154 barricades · FEAT-128 key off at camp · FEAT-151 tiredness · BUG-95.</li>
     <li><b>Lane B (some built by Spare):</b> BUG-99 tire on rock · FEAT-93/94 punctures and flats · FEAT-152 rim sparks · FEAT-138 hi-lift · FEAT-150 shift schedule · BUG-89 side slide · BUG-54 rock colliders · FEAT-132/137 on evidence.</li>
     <li><b>Lane C (some built by Spare):</b> ASSET-71 camp · ASSET-32 van · ASSET-69/70/73 office, doctor, school · FEAT-149 knockable ornaments · BUG-94 moon halo · BUG-96 tree billboards.</li>
-    <li><b>Spare:</b> BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus. BUG-73 closed unreproduced.</li>
+    <li><b>Spare:</b> BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus · FEAT-160 run end says why. BUG-73 closed unreproduced.</li>
   </ul></div>
   <h2>Landed 2026-10-24</h2>
   <div class="owed"><ul>
@@ -158,7 +158,7 @@
       wt: '/Users/ledogen/CodeShit/CarGame-machine', branch: 'feature/machine', port: 3282,
       owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, drivetrain assists, data/parts.js, data/stock-weights.js, physics gates',
       tasks: [
-        { id: 'FEAT-158', what: 'Rock grip — BUILT on feature/machine (51b3f330); merges on the owner’s three calls (owed list).' },
+        { id: 'FEAT-158', what: 'Rock grip — BUILT on feature/machine; crawl approved 11-02 ("it feels good"). Merges on two calls: pop threshold, flip.' },
         { id: 'FEAT-159', what: 'NEXT — throttle assist (a skilled foot) + brake-based traction control (owner inbox 11-02).' },
         { id: 'FEAT-162', what: 'The truck’s heart: failures that strand it for real, "you broke down" — plan first (owner idea 11-02).' },
         { id: 'BUG-92', what: 'ABS kick never rumbles the pad — waits on the owner’s USB probe.' },
@@ -168,7 +168,7 @@
       wt: '/Users/ledogen/CodeShit/CarGame-content', branch: 'feature/content', port: 3774,
       owns: 'assets/, wip/, src/*-audio.js, data/items.js rows + thumbnails, items.md, FEAT-120/121',
       tasks: [
-        { id: 'FEAT-120', what: 'Sound pass — two synth batches wait for the owner’s ear (dashboard :8774 → Sounds); then wire the keepers + a master bus.' },
+        { id: 'FEAT-120', what: 'Sound pass — the owner listened 11-02; verdicts per sound in the ticket on feature/content. Keepers and redos went to Spare.' },
         { id: 'FEAT-120 ↳', what: 'Strap click / release — the owner records them.' },
         { id: 'ASSET-77', what: 'The hand-painted turn-back board (FEAT-65’s camp line; crates + drums stand in).' },
         { id: 'ASSET-76', what: 'Fire pit re-export at 1.2×, registry box to match.' },
@@ -179,11 +179,12 @@
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
-        { id: 'FEAT-160', what: 'NEXT — the run-end card says why it ended and how to avoid it (Sid Meier review A, approved 11-02).' },
-        { id: 'BUG-67', what: 'Junction cutting — prototype parked on proto/bug-67-junction-cut; waits on 30 / 40 / hold.' },
+        { id: 'BUG-67', what: 'NOW — before/after screenshots of the junction trenches (30 / 40 / 50 m caps) for the owner’s pick.' },
+        { id: 'FEAT-153', what: 'NEXT — build the 11-02 ruling: office + school become givers; class notes from residences only; no lab specimen.' },
+        { id: 'FEAT-120', what: 'Then — merge feature/content; wire the keepers on a master bus; redo scrape, gravel, reverse whine, register, sputter (verdicts in the ticket).' },
+        { id: 'FEAT-163', what: 'Tunnel reverb = a real reverb on the game’s mix (the same master bus).' },
         { id: 'FEAT-62', what: 'Paper-route scenario — waits on BUG-67’s re-route and the owner’s scenario calls.' },
-        { id: 'FEAT-153', what: 'POI mission rebalance — waits on the office/school ruling.' },
-        { id: 'FEAT-144/143', what: 'World items + reloading lost cargo — wait on the defaults and P1 answers.' },
+                { id: 'FEAT-144/143', what: 'World items + reloading lost cargo — wait on the defaults and P1 answers.' },
         { id: 'FEAT-70', what: 'Wheel contact (the sphere stencil) — waits on A or B.' },
         { id: 'FEAT-131', what: 'Results-screen juice — waits on four calls.' },
         { id: 'BUG-74', what: 'Roadwork seam, 4th try — held on proto/bug-74-fill-bury for the owner’s drive on :3885.' },
@@ -201,21 +202,14 @@
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
     { id: 'feat158-pinch', kind: 'decide', tk: 'FEAT-158', blocks: 'Lane B’s rock grip merge',
-      text: 'Puncture threshold: 2000 J [new default] pops 0/0/7/11/19/21/45 % at 25–55 mph; your signed-off feel was 0/0/3/6/23/33/53 (other rows in the ticket).',
-      options: ['2000 J', 'keep signed-off rates', 'other row (note)'] },
+      text: 'Tire pops per rock strike at 30/35/40/45/50/55 mph. Signed off (main): 0/3/6/23/33/53 %. Branch at 2000 J [default]: 0/7/11/19/21/45 % — more pops at 35–40, fewer at 45–55. 1500 J: 2/11/20/31/32/55. 2500 J: 0/3/8/11/15/38.',
+      options: ['2000 J', '1500 J', '2500 J'] },
     { id: 'feat158-flip', kind: 'decide', tk: 'FEAT-158', blocks: 'Lane B’s rock grip merge',
-      text: 'Flips: 2 in 1890 rock strikes at 25–55 mph (one in 270 at 50 mph into a 40 kg rock; main has 0). Acceptable?',
+      text: 'Flips: main 0 in 1890 rock strikes (270 per speed, 25–55 mph). Branch: 1 with punctures on — at 50 mph, into a 40 kg rock about as tall as the tire’s radius. Accept?',
       options: ['accept', 'fix first'] },
-    { id: 'feat158-crawl', kind: 'drive', tk: 'FEAT-158', blocks: 'Lane B’s rock grip merge',
-      text: 'Crawl over rocks on :3282 (not main): the truck now climbs them at 2–10 mph.' },
-    { id: 'feat120-ear', kind: 'make', tk: 'FEAT-120', blocks: 'all of Lane C’s sound wiring',
-      text: 'Listen to the two synth batches on the content dashboard (localhost:8774 → Sounds): keep / redo (what) / cut per sound.' },
     { id: 'bug67-cap', kind: 'decide', tk: 'BUG-67', blocks: 'FEAT-62 scenarios (a re-route moves their gates)',
-      text: 'Junction cutting depth cap: 30 m moves nothing (10 of 12 at-node bores stay); 40 m leaves 5 and moves one T 33.5 m; build +6 %.',
-      options: ['30 m', '40 m', 'Spare shoots a 40 m cutting first', 'hold'] },
-    { id: 'feat153-givers', kind: 'decide', tk: 'FEAT-153', blocks: 'Spare’s POI rebalance',
-      text: 'Office and school get a job in 1 board of 8–10. Give each its own 1–2 job types as givers (reverses 10-07 "only receive"), or keep receive-only and widen who sends to them?',
-      options: ['givers (recommended)', 'receive-only, widen senders'] },
+      text: 'Tunnel mouths inside junctions (12 in six test worlds). Fix: near a junction the road digs an open trench instead, down to a depth cap. 30 m fixes 2 of 12, nothing moves. 40 m fixes 7; one T in one world moves 33.5 m. 50 m fixes 8, same move. Spare is shooting before/after screenshots of the trenches.',
+      options: ['30 m', '40 m', '50 m', 'hold'] },
     { id: 'feat144-defaults', kind: 'decide', tk: 'FEAT-144', blocks: 'Spare’s world items (FEAT-143/144)',
       text: 'Reloading lost bed cargo — six defaults in the ticket. The one that needs you: a lost tire no longer fails the job at once; it just can’t finish until it’s back in the bed (reverses 10-22).',
       options: ['approve all six', 'approve, keep the 10-22 tire rule'] },
@@ -232,11 +226,8 @@
       text: 'Drive the roadwork seam, 4th try: say the word and Spare checks it out on :3885. Also: build the "fade ≥ 8 m" past-the-toe channel?' },
     { id: 'feat65-wake', kind: 'drive', tk: 'FEAT-65', blocks: 'Lane A’s fallback decision',
       text: 'Drive a demolition site: does a sleeping target ever wake before it’s touched? Then the placeholder words, counts and the rank row (S 100 / A 90 / B 75 / C 60 %).' },
-    { id: 'givers-lines', kind: 'make', tk: 'FEAT-148', blocks: 'the givers’ quotes (Lane A builds the plumbing either way)',
-      text: 'Fill the Giver lines sheet — first section of the item-setup page (https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu).' },
-    { id: 'feat157-swap', kind: 'decide', tk: 'FEAT-157',
-      text: 'Sid Meier D: the camp asks one delivery of EACH type at C or better, so your weakest type is the final gate. Allow one swap to a type of your choice, ease the gates on the hardest types (fragile, demolition), or leave it?',
-      options: ['one swap', 'easier gates on the hard types', 'leave it'] },
+    { id: 'givers-lines', kind: 'make', tk: 'FEAT-148',
+      text: 'Fill the Giver lines sheet — first section of the item-setup page (https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu). Not blocking: placeholders ship until then.' },
     { id: 'feat62-calls', kind: 'decide', tk: 'FEAT-62',
       text: 'Paper-route scenario: start at the spawn or at Larry’s? Replay the briefing cards? A fixed 4 customers or a ladder? All scenarios open from the start? Are the two descents’ gates final?',
       options: [] },
