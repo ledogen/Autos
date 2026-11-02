@@ -113,6 +113,7 @@ import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heart
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
+import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -8891,6 +8892,9 @@ function loop () {
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
+    // FEAT-120: the contact one-shots read the same per-step peaks the damage step just priced.
+    const v = vehicleState.velocity
+    stepContactAudio(vehicleState, RANGER_PARAMS._tireFz, Math.hypot(v.x, v.z), PHYSICS_DT)
     // FEAT-126: a shift forced with the clutch in grinds, and is a damage event in its own right. Its
     // 2 % wear is under the damage screen's per-sample drop threshold, so it raises the alert here,
     // like a landed impact does below.
@@ -9336,6 +9340,7 @@ function loop () {
   setWindAudioVolume(RANGER_PARAMS.windVolume ?? 0.4)
   updateWindAudio(vehicleState)
   setCabView(getCameraMode() === 'hood')   // FEAT-120 camera-aware mix: the cab hears the world through the glass
+  setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
 
   // PERF-16: throttle all HUD DOM + debug-canvas writes to ~10 Hz. These are human-readable readouts;
   // rewriting the spans and repainting the Pacejka/travel/slip canvases every frame cost Layout+Paint

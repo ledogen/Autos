@@ -5,7 +5,7 @@
 //   node tools/audio-proto/offline.mjs <module.js> <export> [seconds=1.5] [args JSON] [out dir]
 //   e.g. node tools/audio-proto/offline.mjs pump-audio.js playRegister 1
 //
-// Needs the worktree's Vite up (:3774). How: window.AudioContext is swapped, before the game's
+// Needs a worktree's Vite up: PORT=<its port> (default 3885, the Spare lane's). How: window.AudioContext is swapped, before the game's
 // getAudioContext() first runs, for an OfflineAudioContext behind a Proxy that reports
 // state 'running' (the modules stay silent otherwise) and binds every method to the real context.
 
@@ -17,7 +17,7 @@ import { join } from 'node:path'
 const [mod, fn, secs = '1.5', argJson = '[]', outDir = 'wip/audio-render/out'] = process.argv.slice(2)
 if (!mod || !fn) { console.error('usage: offline.mjs <module.js> <export> [seconds] [args JSON] [out dir]'); process.exit(2) }
 const SR = 48000
-const { cleanup } = launchChrome('http://localhost:3774/package.json', { port: 9374 })
+const { cleanup } = launchChrome(`http://localhost:${process.env.PORT || 3885}/package.json`, { port: 9374 })
 try {
     const c = await connect({ port: 9374 })
     await sleep(500)

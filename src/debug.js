@@ -323,6 +323,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Wind audio (src/wind-audio.js) — airspeed only, same live-read treatment.
   driveFolder.add(params, 'windAudioEnabled').name('Wind Audio')
   driveFolder.add(params, 'windVolume', 0, 1, 0.05).name('Wind Volume')
+  // FEAT-120 contact one-shots (src/contact-audio.js) — read live every frame.
+  driveFolder.add(params, 'contactAudioEnabled').name('Contact Sounds')
+  driveFolder.add(params, 'contactVolume', 0, 1, 0.05).name('Bump / Landing Volume')
+  driveFolder.add(params, 'brakeSquealVolume', 0, 1, 0.05).name('Brake Squeal Volume')
 
   // ── Differentials (FEAT-23) ───────────────────────────────────────────────────────
   // Rear diff mode: open / limited-slip / locked (src/drivetrain.js couples the rear wheels).

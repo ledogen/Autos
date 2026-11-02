@@ -282,6 +282,11 @@ export const RANGER_PARAMS = {
   windAudioEnabled:   true,  // master toggle for wind sound
   windVolume:         0.4,   // 0..1 volume
 
+  // FEAT-120 contact one-shots (src/contact-audio.js): bump-stop clunk, landing thud, brake squeal.
+  contactAudioEnabled: true, // master toggle for all three
+  contactVolume:      0.6,   // 0..1 — bump stop and landing
+  brakeSquealVolume:  0.3,   // 0..1 — the squeal on its own (owner, 2026-11-02: QUIET)
+
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
   // tireStiffness: radial spring constant. At rest, each corner compresses ~38mm (mg/4 / k).
   // tireDamping: ζ≈0.56 relative to critical (2·√(k·m)=2683 N·s/m). Kept below critical so
