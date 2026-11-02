@@ -697,6 +697,12 @@ export function armorPassThrough (c) {
   return p < 0 ? 0 : p
 }
 
+/** The fatal-crash speed [mph] for a panel at armor condition `c` (SM-INV-1; see fatalMphBare). */
+export function fatalMph (c) {
+  const P = DAMAGE_PARAMS
+  return P.fatalMphBare + (P.fatalMphFull - P.fatalMphBare) * c
+}
+
 const clampAbs = (x, m) => (x >  m ? m : x < -m ? -m : x)
 
 // ── The model ─────────────────────────────────────────────────────────────────────────────────────
@@ -1097,10 +1103,10 @@ export class DamageModel {
     this._bendAlignment(region, v, passed)
 
     // Fatal-crash fail state (SM-INV-1). The panel's armor condition BEFORE the hit sets the ceiling:
-    // bare → fatalMphBare, full → fatalMphFull, linear between (owner 2026-10-12).
-    const fatalMph = P.fatalMphBare + (P.fatalMphFull - P.fatalMphBare) * armorBefore
-    const fatal = P.fatalEnabled && v >= fatalMph * MPH
-    if (fatal && !this.fatalImpact) this.fatalImpact = { region, v, mph: v / MPH }
+    // bare → fatalMphBare, full → fatalMphFull, linear between (owner 2026-10-12). The run-end card
+    // reads `armor` back to say what the panel could take (FEAT-160).
+    const fatal = P.fatalEnabled && v >= fatalMph(armorBefore) * MPH
+    if (fatal && !this.fatalImpact) this.fatalImpact = { region, v, mph: v / MPH, armor: armorBefore }
 
     return { v, passed, fatal }
   }
