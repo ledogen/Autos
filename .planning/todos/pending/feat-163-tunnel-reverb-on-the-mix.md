@@ -32,8 +32,29 @@ It is an effect applied to the actual mix, never an extra sound layered on top o
 
 ## Acceptance
 
-- [ ] Every audio module routes through the master bus; nothing connects to `ctx.destination` directly.
-- [ ] Inside a bore, the engine, tires and impacts all carry the echo; outside, the dry mix is unchanged.
-- [ ] No pop or click at the portals (the crossfade).
-- [ ] An enable/volume control beside the audio sliders (FEAT-120's rule).
+- [x] Every audio module routes through the master bus; nothing connects to `ctx.destination` directly.
+- [x] Inside a bore, the engine, tires and impacts all carry the echo; outside, the dry mix is unchanged.
+- [x] No pop or click at the portals (the crossfade).
+- [x] An enable/volume control beside the audio sliders (FEAT-120's rule).
 - [ ] Owner listens in a tunnel.
+
+## Built — Spare, 2026-11-02 (feature/spare)
+
+- **The master bus.** `engine-audio.js getMasterBus()` is the ONLY node on `ctx.destination`. World sounds (engine,
+  tires, wind, gearbox, pump, contacts, ambience, bed-cargo hits) feed `getWorldBus()`. UI sounds (the rank bar's
+  heartbeat and glass, the result card) feed the master directly.
+- **The reverb.** A `ConvolverNode` sits on a send from the world bus, with the generated IR from the prototype
+  (RT60 1.5 s, darkening as it decays, the 53 ms wall flutter). It crossfades in and out with a 0.1 s time
+  constant (~0.3 s), and it comes BEFORE the cab lowpass, so in hood view the tunnel is heard through the glass.
+  The send is connected only while the listener is in a bore and for 2.5 s after it leaves: a convolver costs CPU
+  whether it is heard or not.
+- **The trigger.** `main.js _listenerInBore()` tests the camera, not the truck, with the surface resolver's own
+  ownership rule: on a bore span of the nearest run (`carveHint` → `tunnelSpanAt`) and below the tube's apex
+  (gradeY + tunnelBoreRadius). It uses only the road system's public calls, so road.js is untouched.
+- **The UI stays dry** — a tunnel does not echo the result card or the rank bar's heartbeat. If the owner wants them
+  in the echo too, it is a one-line move: route UI to the world bus.
+- **Controls:** Tunnel Reverb, Tunnel Reverb Level (wet 0.9 [DEFAULT]).
+- **Offline check** (`wip/feat-120/demo.js demoTunnel`): an engine and four bump-stop clunks, into a bore at 2 s and
+  out at 6 s. A clunk inside keeps a ~0.3 s tail at about −29 dB, where outside it drops straight back to the −34 dB
+  engine floor. Neither portal crossing shows a step in the 100 ms envelope. Take for the owner:
+  `CarGame/wip/audio/tunnel-reverb/in-game-reverb-2026-11-02.wav`. Owed: the owner's listen in a real tunnel.

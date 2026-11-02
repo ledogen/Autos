@@ -13,7 +13,7 @@
  * About 0.4 s in all. Shares the one AudioContext (engine-audio.js); fire-and-forget voices.
  */
 
-import { getAudioContext, whiteNoiseBuffer } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer } from './engine-audio.js'
 
 const LEVEL = 0.09     // overall peak gain — 20 % of the first cut (owner, 2026-10-19)
 const DUR_S = 0.42     // s — the whole grind
@@ -33,7 +33,7 @@ export function playGearGrind (rpm = 2000) {
   out.gain.exponentialRampToValueAtTime(LEVEL, t + 0.008)
   out.gain.setValueAtTime(LEVEL * 0.8, t + DUR_S * 0.6)
   out.gain.exponentialRampToValueAtTime(0.0001, t + DUR_S)
-  out.connect(ctx.destination)
+  out.connect(getWorldBus())
 
   // The tooth-passing pulse train: a square wave, sagging ~20 % over the grind.
   const pulse = ctx.createOscillator()

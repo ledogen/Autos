@@ -50,6 +50,102 @@ export function getAudioContext () {
 }
 
 /**
+ * The mix (FEAT-120 / FEAT-163). Nothing connects to ctx.destination but the master bus:
+ *
+ *   world sounds → WORLD bus ─┬─ dry ────────────────┬─ cab lowpass ─→ MASTER bus → speakers
+ *                             └─ tunnel reverb (wet) ─┘                    ↑
+ *   UI sounds (the rank bar's heartbeat and glass, the result card) ───────┘
+ *
+ * The WORLD bus carries everything that happens in the world (engine, tires, wind, the truck's
+ * contacts, the pump, crickets…). On it: FEAT-163's tunnel reverb, a ConvolverNode (the browser's
+ * reverb: it applies a space's echo fingerprint, the impulse response, to whatever passes through) on
+ * a send, and the camera mix — hood view hears the world through the glass, a ~2 kHz lowpass after
+ * the reverb, so a tunnel is heard through the glass too. UI sounds stay dry: a tunnel does not echo
+ * the result card. Null if WebAudio is unavailable.
+ */
+let masterBus = null
+let worldBus = null
+let worldLp = null       // the camera mix's lowpass: open outside, the glass in the cab
+const CAB_OPEN_HZ = 20000
+const CAB_GLASS_HZ = 2000
+export function getMasterBus () {
+  if (masterBus) return masterBus
+  const c = getAudioContext()
+  if (!c) return null
+  masterBus = c.createGain()
+  masterBus.connect(c.destination)
+  return masterBus
+}
+export function getWorldBus () {
+  if (worldBus) return worldBus
+  const c = getAudioContext()
+  if (!c) return null
+  worldLp = c.createBiquadFilter()
+  worldLp.type = 'lowpass'
+  worldLp.frequency.value = CAB_OPEN_HZ
+  worldLp.Q.value = 0.5
+  worldLp.connect(getMasterBus())
+  worldBus = c.createGain()
+  worldBus.connect(worldLp)
+  return worldBus
+}
+/** Camera-aware mix (FEAT-120, the owner kept the take 2026-11-02): true while the camera is in the cab. */
+export function setCabView (inCab) {
+  if (worldLp) worldLp.frequency.setTargetAtTime(inCab ? CAB_GLASS_HZ : CAB_OPEN_HZ, ctx.currentTime, 0.08)
+}
+
+// ── FEAT-163: the tunnel reverb ──────────────────────────────────────────────────────────────────
+// The impulse response is GENERATED (FEAT-120's batch-2 prototype): stereo noise under an exponential
+// decay, RT60 1.5 s (the time to fall 60 dB), darkening as it decays (a one-pole lowpass whose cutoff
+// falls with time: walls eat the highs first), plus the tube's own signature, a flutter echo between
+// the walls every 2·w/c ≈ 53 ms for w = 9 m. The send is connected only while the listener is in or
+// near a bore — a convolver costs CPU whether its output is heard or not.
+const TUNNEL_RT60 = 1.5, TUNNEL_W = 9, C_AIR = 343
+const TUNNEL_FADE_TC = 0.1   // s — setTargetAtTime constant: ~0.3 s crossfade at the portals [DEFAULT]
+let tunnelWet = null, tunnelConv = null, tunnelOnUntil = 0, tunnelLevel = 0.9, tunnelOn = true
+function tunnelIR (c) {
+  const sr = c.sampleRate, n = Math.ceil(sr * TUNNEL_RT60), ir = c.createBuffer(2, n, sr)
+  const flutter = Math.round(sr * 2 * TUNNEL_W / C_AIR)
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch)
+    let y = 0
+    for (let i = 0; i < n; i++) {
+      const t = i / sr, env = Math.exp(-6.91 * t / TUNNEL_RT60)
+      const a = Math.exp(-2 * Math.PI * (7000 * Math.exp(-t * 2.2) + 600) / sr)   // cutoff 7.6 kHz → ~1 kHz
+      y = a * y + (1 - a) * (Math.random() * 2 - 1)
+      d[i] = y * env * 3
+    }
+    for (let k = 1; k * flutter < n; k++) {   // discrete wall-to-wall slaps, decaying
+      const i = k * flutter + (ch ? 7 : 0)
+      d[i] += 0.5 * Math.exp(-6.91 * (i / sr) / TUNNEL_RT60) * (k % 2 ? 1 : -1)
+    }
+  }
+  return ir
+}
+/** FEAT-163 debug-menu controls: on/off and the wet level (0..1). */
+export function setTunnelReverb (on, level) { tunnelOn = !!on; tunnelLevel = level }
+/** Per frame: is the LISTENER (the camera) inside a bore? Crossfades the wet send; connects it on demand. */
+export function setInTunnel (inBore) {
+  if (!worldBus || !ctx || ctx.state !== 'running') return
+  const now = ctx.currentTime, want = inBore && tunnelOn
+  if (want && !tunnelConv) {
+    tunnelConv = ctx.createConvolver()
+    tunnelConv.buffer = tunnelIR(ctx)
+    tunnelWet = ctx.createGain()
+    tunnelWet.gain.value = 0
+    tunnelConv.connect(tunnelWet)
+    tunnelWet.connect(worldLp)
+    worldBus.connect(tunnelConv)
+  } else if (want && tunnelOnUntil === 0) {
+    worldBus.connect(tunnelConv)   // re-attach after an idle stretch
+  }
+  if (!tunnelConv) return
+  if (want) tunnelOnUntil = now + TUNNEL_RT60 + 1   // keep the send until the tail and the fade are done
+  tunnelWet.gain.setTargetAtTime(want ? tunnelLevel : 0, now, TUNNEL_FADE_TC)
+  if (!want && tunnelOnUntil && now > tunnelOnUntil) { worldBus.disconnect(tunnelConv); tunnelOnUntil = 0 }
+}
+
+/**
  * `seconds` of white noise in a mono buffer on context `ac`. Shared by every audio module (they all
  * hang off the one context above) — the raw material for crank grind, tire roar, wind and one-shots.
  */
@@ -88,7 +184,7 @@ export function ensureEngineAudio () {
   master.gain.value = 0
 
   lp.connect(master)
-  master.connect(ctx.destination)
+  master.connect(getWorldBus())
 
   for (const r of RECIPE) {
     const osc = ctx.createOscillator()
@@ -283,7 +379,7 @@ async function ensureExhaust () {
   limiter.attack.value = 0.002
   limiter.release.value = 0.1
   bakeOut.connect(limiter)
-  limiter.connect(ctx.destination)
+  limiter.connect(getWorldBus())
   muffler = ctx.createConvolver()
   muffler.normalize = false         // engine-sim applies the IR raw; normalising would re-level it
   muffler.buffer = ir
@@ -477,7 +573,7 @@ async function ensureStarter () {
   if (starterGain || !getAudioContext()) return
   starterGain = ctx.createGain()
   starterGain.gain.value = 0
-  starterGain.connect(ctx.destination)
+  starterGain.connect(getWorldBus())
   try {
     const buf = await ctx.decodeAudioData(await (await fetch(BAKE_DIR + STARTER_FILE)).arrayBuffer())
     starterSrc = ctx.createBufferSource()
@@ -528,7 +624,7 @@ function _noiseHit (at, dur, type, freq, Q, peak) {
   const g = ctx.createGain()
   g.gain.setValueAtTime(volume * peak, t)
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-  src.connect(f); f.connect(g); g.connect(ctx.destination)
+  src.connect(f); f.connect(g); g.connect(getWorldBus())
   src.start(t); src.stop(t + dur + 0.02)
 }
 
@@ -550,7 +646,7 @@ function _blip (f0, f1, dur, peak, cutoff) {
   g.gain.setValueAtTime(0.0001, now)
   g.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume * peak), now + dur * 0.18)
   g.gain.exponentialRampToValueAtTime(0.0001, now + dur)
-  osc.connect(lpB); lpB.connect(g); g.connect(ctx.destination)
+  osc.connect(lpB); lpB.connect(g); g.connect(getWorldBus())
   osc.start(now)
   osc.stop(now + dur + 0.02)
 }
@@ -565,10 +661,47 @@ export function playCatchAudio () {
 }
 
 /**
- * FEAT-50: the low-fuel sputter — one stumble. A short low pop, louder the deeper it goes (`depth`
- * 0..1, the torque it took); the drone dropping out underneath is main.js passing firing=false to
- * updateEngineAudio for the stumble's length.
+ * FEAT-50: the low-fuel sputter — one stumble of `durS` seconds, `depth` 0..1 the torque it took. The
+ * drone drops out underneath (main.js passes firing=false to updateEngineAudio for the stumble).
+ * Redone 2026-11-02 (owner: the old low pop "sounds like nothing"; "a gaseous exhaust event: a pop,
+ * bang or misfire … tied to engine speed"): the mixture that missed its cylinder lights in the
+ * exhaust, so the stumble POPS 2–5 times ON THE FIRING GRID at the live rpm (rpm/60 × cylinders/2 a
+ * second), the deeper the stumble the more and louder, and the last one, as it re-lights, is a bang.
  */
-export function playSputterPop (depth = 0.7) {
-  _blip(55, 28, 0.14, 0.18 + 0.2 * depth, 500)
+export function playSputterPop (depth = 0.7, rpm = 800, cylinders = 6, durS = 0.4) {
+  if (!enabled || !getAudioContext() || ctx.state !== 'running') return
+  const now = ctx.currentTime, firing = 60 / (Math.max(400, rpm) * cylinders / 2)
+  const slots = Math.max(2, Math.floor(durS / firing))
+  const n = 2 + Math.round(3 * depth * Math.random())
+  for (let i = 0; i < n; i++) {
+    const last = i === n - 1
+    const slot = last ? slots - 1 : 1 + Math.floor(Math.random() * (slots - 2))
+    _exhaustPop(now + slot * firing, (last ? 1 : 0.45 + 0.35 * Math.random()) * (0.5 + 0.5 * depth))
+  }
 }
+
+/** One exhaust pop at `t`, `k` 0..1: a sharp broadband crack, a body thump, and the pipe ringing. */
+function _exhaustPop (t, k) {
+  const out = ctx.createGain()
+  out.gain.value = volume * 0.9 * k
+  out.connect(getWorldBus())
+  const src = ctx.createBufferSource()
+  src.buffer = (_popNoise ??= whiteNoiseBuffer(ctx, 0.5))
+  const crack = ctx.createBiquadFilter(); crack.type = 'lowpass'; crack.frequency.value = 2500
+  const cg = ctx.createGain()
+  cg.gain.setValueAtTime(0.9, t); cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.018)
+  const pipe = ctx.createBiquadFilter(); pipe.type = 'bandpass'; pipe.frequency.value = 220 + 80 * Math.random(); pipe.Q.value = 4
+  const pg = ctx.createGain()
+  pg.gain.setValueAtTime(1.4, t); pg.gain.exponentialRampToValueAtTime(0.0001, t + 0.07)
+  src.connect(crack); crack.connect(cg); cg.connect(out)
+  src.connect(pipe); pipe.connect(pg); pg.connect(out)
+  src.start(t, Math.random() * 0.4); src.stop(t + 0.08)
+  const o = ctx.createOscillator()
+  o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.04)
+  const og = ctx.createGain()
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.8, t + 0.003)
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.06)
+  o.connect(og); og.connect(out)
+  o.start(t); o.stop(t + 0.07)
+}
+let _popNoise = null
