@@ -50,6 +50,35 @@ export function getAudioContext () {
 }
 
 /**
+ * FEAT-120: the WORLD bus. Every sound that happens in the world (engine, tires, wind, the truck's
+ * contacts, the pump, crickets…) connects here instead of to ctx.destination; the UI's own sounds (the
+ * rank bar's heartbeat and glass, the result card) bypass it. The bus is where the camera mix lives —
+ * hood view hears the world through the glass, a ~2 kHz lowpass (setCabView) — and where FEAT-163's
+ * tunnel reverb goes. Null if WebAudio is unavailable.
+ */
+let worldBus = null
+let worldLp = null       // the camera mix's lowpass: open outside, the glass in the cab
+const CAB_OPEN_HZ = 20000
+const CAB_GLASS_HZ = 2000
+export function getWorldBus () {
+  if (worldBus) return worldBus
+  const c = getAudioContext()
+  if (!c) return null
+  worldLp = c.createBiquadFilter()
+  worldLp.type = 'lowpass'
+  worldLp.frequency.value = CAB_OPEN_HZ
+  worldLp.Q.value = 0.5
+  worldLp.connect(c.destination)
+  worldBus = c.createGain()
+  worldBus.connect(worldLp)
+  return worldBus
+}
+/** Camera-aware mix (FEAT-120, the owner kept the take 2026-11-02): true while the camera is in the cab. */
+export function setCabView (inCab) {
+  if (worldLp) worldLp.frequency.setTargetAtTime(inCab ? CAB_GLASS_HZ : CAB_OPEN_HZ, ctx.currentTime, 0.08)
+}
+
+/**
  * `seconds` of white noise in a mono buffer on context `ac`. Shared by every audio module (they all
  * hang off the one context above) — the raw material for crank grind, tire roar, wind and one-shots.
  */
@@ -88,7 +117,7 @@ export function ensureEngineAudio () {
   master.gain.value = 0
 
   lp.connect(master)
-  master.connect(ctx.destination)
+  master.connect(getWorldBus())
 
   for (const r of RECIPE) {
     const osc = ctx.createOscillator()
@@ -283,7 +312,7 @@ async function ensureExhaust () {
   limiter.attack.value = 0.002
   limiter.release.value = 0.1
   bakeOut.connect(limiter)
-  limiter.connect(ctx.destination)
+  limiter.connect(getWorldBus())
   muffler = ctx.createConvolver()
   muffler.normalize = false         // engine-sim applies the IR raw; normalising would re-level it
   muffler.buffer = ir
@@ -477,7 +506,7 @@ async function ensureStarter () {
   if (starterGain || !getAudioContext()) return
   starterGain = ctx.createGain()
   starterGain.gain.value = 0
-  starterGain.connect(ctx.destination)
+  starterGain.connect(getWorldBus())
   try {
     const buf = await ctx.decodeAudioData(await (await fetch(BAKE_DIR + STARTER_FILE)).arrayBuffer())
     starterSrc = ctx.createBufferSource()
@@ -528,7 +557,7 @@ function _noiseHit (at, dur, type, freq, Q, peak) {
   const g = ctx.createGain()
   g.gain.setValueAtTime(volume * peak, t)
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-  src.connect(f); f.connect(g); g.connect(ctx.destination)
+  src.connect(f); f.connect(g); g.connect(getWorldBus())
   src.start(t); src.stop(t + dur + 0.02)
 }
 
@@ -550,7 +579,7 @@ function _blip (f0, f1, dur, peak, cutoff) {
   g.gain.setValueAtTime(0.0001, now)
   g.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume * peak), now + dur * 0.18)
   g.gain.exponentialRampToValueAtTime(0.0001, now + dur)
-  osc.connect(lpB); lpB.connect(g); g.connect(ctx.destination)
+  osc.connect(lpB); lpB.connect(g); g.connect(getWorldBus())
   osc.start(now)
   osc.stop(now + dur + 0.02)
 }

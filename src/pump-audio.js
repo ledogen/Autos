@@ -1,7 +1,7 @@
 /**
  * src/pump-audio.js — FEAT-50: the gas pump. All synthesized (no samples), on the one shared
- * AudioContext (engine-audio.js getAudioContext), each voice into its own gain straight to the
- * destination — the glass-audio.js pattern. The visit is the stop the player makes over and over,
+ * AudioContext (engine-audio.js getAudioContext), each voice into its own gain on the world bus
+ * (getWorldBus) — the glass-audio.js pattern. The visit is the stop the player makes over and over,
  * so it is meant to feel like a machine (owner, 2026-10-16: "polish and some juice").
  *
  *   NOZZLE   — playNozzle(): the nozzle seating in the filler neck. A sine thunk 170 → 55 Hz in
@@ -26,7 +26,7 @@
  * gesture, engine-audio.js), and nothing here ever throws on a missing WebAudio.
  */
 
-import { getAudioContext, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
 
 const LEVEL = 0.45   // overall peak gain for the one-shots
 let _noise = null
@@ -36,7 +36,7 @@ const _live = () => { const c = getAudioContext(); return c && c.state === 'runn
 function _out (ctx, g = LEVEL) {
     const out = ctx.createGain()
     out.gain.value = g
-    out.connect(ctx.destination)
+    out.connect(getWorldBus())
     return out
 }
 
@@ -137,7 +137,7 @@ function _ensureFlow (ctx) {
     if (_flow) return _flow
     const master = ctx.createGain()
     master.gain.value = 0
-    master.connect(ctx.destination)
+    master.connect(getWorldBus())
     // Motor: sawtooth hum with a slow wobble on the pitch.
     const motor = ctx.createOscillator()
     motor.type = 'sawtooth'

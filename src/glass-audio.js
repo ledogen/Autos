@@ -18,7 +18,7 @@
  * is stopped on a schedule and left for GC.
  */
 
-import { getAudioContext, whiteNoiseBuffer } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer } from './engine-audio.js'
 
 const LEVEL = 0.5          // overall peak gain
 const TAIL_S = 0.3         // s — the crumble and tinkles land inside this window after the pop
@@ -44,14 +44,15 @@ function _noiseHit (ctx, out, t0, dur, type, freq, q, g) {
   src.stop(t0 + dur + 0.01)
 }
 
-/** The side window going. Silent unless the shared AudioContext is running. */
-export function playGlassBreak (level = 1) {
+/** The side window going. Silent unless the shared AudioContext is running. `world`: a load in the bed
+ *  breaking (the world bus) rather than the rank tile (UI, straight out). */
+export function playGlassBreak (level = 1, world = false) {
   const ctx = getAudioContext()
   if (!ctx || ctx.state !== 'running' || level <= 0) return
   const t = ctx.currentTime
   const out = ctx.createGain()
   out.gain.value = LEVEL * Math.min(1, level)
-  out.connect(ctx.destination)
+  out.connect(world ? getWorldBus() : ctx.destination)
 
   // THUNK
   const osc = ctx.createOscillator()
@@ -101,11 +102,11 @@ export function playCargoHit (sound, cost) {
   const ctx = getAudioContext()
   if (!ctx || ctx.state !== 'running' || !(cost > 0)) return
   const level = Math.min(1, Math.max(0.08, 1.5 * Math.sqrt(cost)))
-  if (sound === 'glass' && cost >= 1 / 3) { playGlassBreak(level); return }
+  if (sound === 'glass' && cost >= 1 / 3) { playGlassBreak(level, true); return }
   const t = ctx.currentTime
   const out = ctx.createGain()
   out.gain.value = LEVEL * level
-  out.connect(ctx.destination)
+  out.connect(getWorldBus())
   if (sound === 'glass') {
     // CLINK — two or three short high pings and a tick of bright noise: glass knocking on glass.
     _noiseHit(ctx, out, t, 0.015, 'highpass', 3000, 0.7, 0.4)
