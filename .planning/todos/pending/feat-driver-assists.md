@@ -43,6 +43,8 @@ only the display.
 1. **Throttle assistant (traction control / TCS).** Limits engine power delivery when a driven wheel
    exceeds a slip-ratio threshold (wheelspin). Reads rear-wheel slip ratio (RWD — `src/tire.js`),
    clamps `throttle` down while slipping. Gain = how aggressively it cuts.
+   **Split by the owner 2026-11-02 → FEAT-159:** a *throttle assist* (skilled-foot input shaping, drifts
+   still allowed) and a separate brake-based *traction control* (anti-oversteer). Build #1 there.
 2. **Brake assistant (ABS).** Prevents lockup: when a braked wheel's slip ratio crosses the lock
    threshold, modulates `brake` down for that axle so the wheel keeps rotating. Gain = intervention
    strength / how much lock it tolerates.
