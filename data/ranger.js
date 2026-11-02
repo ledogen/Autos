@@ -290,6 +290,9 @@ export const RANGER_PARAMS = {
   ambientAudioEnabled: true, // master toggle for both
   cricketVolume:      0.5,   // 0..1
   grassVolume:        0.5,   // 0..1
+  // FEAT-120 / FEAT-131 P1 (src/result-audio.js): the result card's payout coin and grade stinger.
+  resultAudioEnabled: true,
+  resultAudioVolume:  0.6,   // 0..1
 
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
   // tireStiffness: radial spring constant. At rest, each corner compresses ~38mm (mg/4 / k).

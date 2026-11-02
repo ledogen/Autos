@@ -115,6 +115,7 @@ import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } f
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
+import { playCoin, playStinger, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -5931,9 +5932,19 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
  * flips from the old total to the new half a second after its row. Idempotent per render — a re-render
  * writes fresh rows and the stale timers find theirs disconnected.
  */
-function _revealResult (body) {
+function _revealResult (body, letter = null) {
   const t0 = performance.now()
   const delayOf = (el) => (parseFloat(el.closest('.mp-reveal')?.style.animationDelay) || 0) * 1000
+  // FEAT-120 / FEAT-131 P1: a coin as each money row that paid lands, then the grade's stinger a beat
+  // after the last row — the grade is heard, never printed.
+  const rows = [...body.querySelectorAll('.mp-reveal')]
+  for (const el of rows) {
+    const pay = el.querySelector('.mp-pay:not(.mp-bad)')   // money only: counts and conditions share the class
+    const amt = pay && (pay.dataset.countup != null || pay.textContent.includes('$'))
+      ? parseFloat(pay.dataset.countup ?? pay.textContent.replace(/[^0-9.]/g, '')) : 0
+    if (amt > 0) setTimeout(() => { if (el.isConnected) playCoin() }, delayOf(el))
+  }
+  if (rows.length && letter) setTimeout(() => { if (body.isConnected) playStinger(letter) }, delayOf(rows.at(-1)) + 450)
   for (const el of body.querySelectorAll('[data-countup]')) {
     const target = parseFloat(el.dataset.countup), delay = delayOf(el)
     el.textContent = '$0.00'
@@ -6143,7 +6154,7 @@ function _renderMissionUI () {
                        site: r.targets != null ? { smashed: r.smashed, of: r.targets } : null,
                        deedNeed: _missionDeedNeed(m.mission) })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
-      if (paid && !r.line) _revealResult(body)   // N-04: the staged reveal — tip count-up, deed tally tick
+      if (paid && !r.line) _revealResult(body, r.letter)   // N-04: the staged reveal — tip count-up, deed tally tick
       // The result card is two actions: retry · continue (R-31, owner 2026-10-24: no "back to free roam"
       // here — leaving the mode is the pause menu's job). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
@@ -9342,6 +9353,7 @@ function loop () {
   updateWindAudio(vehicleState)
   setCabView(getCameraMode() === 'hood')   // FEAT-120 camera-aware mix: the cab hears the world through the glass
   setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
+  setResultAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)   // the card plays over a held sim
   // FEAT-120 ambience: crickets on the sky's own night; grass from the green share of the ground the
   // truck is on, off the road only (the shoulder feather counts as road).
   {

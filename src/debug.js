@@ -331,6 +331,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'ambientAudioEnabled').name('Ambient Sounds')
   driveFolder.add(params, 'cricketVolume', 0, 1, 0.05).name('Cricket Volume')
   driveFolder.add(params, 'grassVolume', 0, 1, 0.05).name('Grass Volume')
+  driveFolder.add(params, 'resultAudioEnabled').name('Result Card Sounds')
+  driveFolder.add(params, 'resultAudioVolume', 0, 1, 0.05).name('Coin / Stinger Volume')
 
   // ── Differentials (FEAT-23) ───────────────────────────────────────────────────────
   // Rear diff mode: open / limited-slip / locked (src/drivetrain.js couples the rear wheels).
