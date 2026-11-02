@@ -98,3 +98,18 @@ except Generous and Stingy.
 1. ONE trait per offer, max (count weights become none / one; no stacking).
 2. The card prints the trait's EFFECT on the same line as its name, in plain numbers.
 Lane: Spare.
+
+**Built (Spare, 2026-11-01).**
+- **One at most.** `TRAIT_COUNT_WEIGHTS` = { 0: 0.5, 1: 0.5 } — the old two-trait share folded into one,
+  so plain offers stay half the board. Same `traits` stream: an offer that had one trait keeps it, one
+  that had two keeps its first, and no other roll moves. The opposed-pair rule is moot and gone.
+- **The effect on the line**, in this offer's own numbers against the same offer without the trait
+  (`OfferBoard._traitLine`): pay in dollars off the quoted base (per bundle on a haul), the deadline
+  in game time, courier rank times and a fragile load's shock tolerance in percent, the tip in percent,
+  Wholesale's full-yard stock, and the deed change. Live samples, story seed 6:
+  "patient: −$0.64 pay · deadline +29 min · rank times 10% looser", "generous: +$1.12 pay",
+  "the right thing to do: −$1.14 pay · +1/2 deed at C or better".
+- The map card does not wrap text, so the trait row wraps at its " · " joins when it outruns the card
+  (the card grows by those rows). The parked panel is HTML and wraps on its own.
+- Gate: offer-board — one trait at most with shares near the weights, and every traited card's line
+  names the trait and carries each of its effects. Card screenshots: `wip/feat-142/`.

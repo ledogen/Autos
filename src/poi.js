@@ -360,6 +360,21 @@ const YARD_SOLID_GAP = 0.15   // m — clearance from the POI model's own collis
  * Static dressing only (owner, 2026-09-22): meshes, no bodies, no contact — the truck drives
  * through them.
  */
+/**
+ * FEAT-149: a yard satellite's SOLID record — the fields a marker carries (modelX/Z, baseY, modelYaw,
+ * collision), so queryContact's box test (the wheels) and PoiPhysics (the chassis) take it unchanged.
+ * Null for a knockable ornament (data/prop-models.js `knockable` — main.js makes it a body near the
+ * truck) and for a model with no collision. "Others should have collision but not budge (brick
+ * firepit)" — owner, 2026-10-25; before this a satellite was a mesh only and the truck drove through.
+ */
+export function satSolid (sat) {
+    if (sat._solid !== undefined) return sat._solid
+    const spec = PROP_MODELS[sat.key], col = spec?.collision
+    return (sat._solid = !col?.size || col.shape === 'none' || spec.knockable ? null
+        : { id: `sat:${sat.key}@${sat.x.toFixed(2)},${sat.z.toFixed(2)}`, modelX: sat.x, modelZ: sat.z,
+            baseY: sat.y - (sat.lift ?? 0), modelYaw: sat.yaw, collision: { size: col.size } })
+}
+
 export function dressYard (q, seed, yard) {
     const tag = q.tags?.find(t => YARD_POOLS[t])
     if (!tag || !yard?.length) return []
@@ -681,7 +696,7 @@ export class PoiSystem {
             ...(camp ? this._barrierRow(road, road.edgeParData(camp.aId, camp.bId), camp.rowS, Math.sign(camp.s - camp.rowS), P) : []),
             ...this._edgeRows(road, canon, r, wall, adj, camp?.edge, P),
         ]
-        this._returns = this._returnSpots(road, canon, r, wall - P.poiEdgeReturnM, adj)
+        this._returns = this._returnSpots(road, canon, r, wall - P.poiEdgeReturnM, adj, this._barricades, P)
 
         this._list = out
         this._pool = pool
@@ -1257,6 +1272,11 @@ export class PoiSystem {
             if (q.hidden) continue                    // FEAT-102: a hidden marker has no collider
             const hit = this._boxesContact(q, cube, cx, cy, cz, r)
             if (hit) return hit
+            for (const sat of q.satellites ?? []) {   // FEAT-149: the yard's solid things
+                const s = satSolid(sat)
+                const h = s && this._boxesContact(s, cube, cx, cy, cz, r)
+                if (h) return h
+            }
         }
         return null
     }
@@ -1466,9 +1486,15 @@ export class PoiSystem {
      * FEAT-154: the edge fade's return spots — every 10 m of road with an end on the planners' graph,
      * `rIn` or less from the centre: the job roads, and the inside stretch of each road out (so a road
      * exit comes back on the same road, just inside its row) and of the camp's. { x, z, tx, tz }.
+     *
+     * No spot sits on the far side of a row, nor within poiEdgeReturnM inside it (owner, 2026-11-01:
+     * the camp's row stands at its pad, ~30 m inside the wall, so the return put the truck just past
+     * the barricades and it crashed back through them). A row's back axis (poi.js _barrierRow: +Z =
+     * (sin yaw, cos yaw)) points out, so a spot is "past" a row when it lies along that axis from it.
      */
-    _returnSpots (road, canon, r, rIn, adj) {
-        const out = [], seen = new Set()
+    _returnSpots (road, canon, r, rIn, adj, barricades, P) {
+        const out = [], seen = new Set(), keep = P.poiEdgeReturnM
+        const past = (p) => barricades.some(b => Math.hypot(p.x - b.x, p.z - b.z) < 60 && (p.x - b.x) * Math.sin(b.yaw) + (p.z - b.z) * Math.cos(b.yaw) > -keep)
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek) || (!adj.has(e.ka) && !adj.has(e.kb))) continue
@@ -1478,7 +1504,7 @@ export class PoiSystem {
             const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
             for (let t = 0; t <= L; t += 10) {
                 const p = ed.centerline.pointAt(off + t)
-                if (r(p) > rIn) continue
+                if (r(p) > rIn || past(p)) continue
                 const ct = ed.centerline.tangentAt(off + t), tl = Math.hypot(ct.x, ct.z) || 1
                 out.push({ x: p.x, z: p.z, tx: ct.x / tl, tz: ct.z / tl })
             }

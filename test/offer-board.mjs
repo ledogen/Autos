@@ -24,7 +24,9 @@
 //      expires, shows no timer, and is unavailable 12 h after a round.
 //   8. CANCEL locks exactly as a completion does — including a cancel after expiry.
 //   9. TAKEN offers are hidden and do not count toward the turnover timer.
-//  10. ONLY BUILT FAMILIES roll (BUILT_FAMILIES) and every built one appears — demolition never does.
+//  10. ONLY BUILT FAMILIES roll (BUILT_FAMILIES) and every built one appears. FEAT-65: demolition rolls
+//      only where a thing pools it (farms, work sites), always roadside, carrying its site's dressing;
+//      its card counts the targets and states the deed as a share smashed.
 //  11. NAMES — deduplicated within a region; a 'home' giver is "the <last> place", a 'person'
 //      giver is one person and no place name.
 //  12. THE CARD — base pay equals economy.basePay at the offer's multiplier (0.5× on a bonus
@@ -39,7 +41,7 @@
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine } from '../src/offer-board.js'
-import { THINGS, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { THINGS, REWARDS, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -323,6 +325,22 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     }
     check('only built families ever roll', [...seen].every(f => BUILT_FAMILIES.has(f)), [...seen].join(','))
     check('every built family appears', [...BUILT_FAMILIES].every(f => seen.has(f)), [...seen].join(','))
+    // FEAT-65
+    let demo = 0, wrong = 0, card = null
+    for (let seed = 1; seed <= 20; seed++) {
+        const b = make(seed)
+        for (const id of b.sources()) for (const o of b.offers(id, T0)) {
+            const sp = b.spec(o)
+            if (sp.family !== 'demolition') continue
+            demo++
+            if (!['farm', 'workSite'].includes(o.type) || sp.destKind !== 'roadside' || !sp.targets?.length) wrong++
+            card ??= b.card(o, { nowH: T0, route: { par: 300, distance: 3000, targets: new Array(10) } })
+        }
+    }
+    check('demolition rolls only at farms and work sites, always roadside, with a site dressing', demo > 0 && wrong === 0, `${demo} rolled, ${wrong} wrong`)
+    check('a demolition card counts its targets and states the deed and the gate as a share smashed',
+        card?.terms.includes('10 to smash') && /Deed: 1 if \d+%\+ smashed · 1\/2 at \d+%\+/.test(card.deed)
+            && gateLine('B', 'demolition', 1) === 'if 75%+ smashed', JSON.stringify(card && { terms: card.terms, deed: card.deed }))
 }
 
 // ── 11. names ───────────────────────────────────────────────────────────────────────────────────
@@ -541,6 +559,55 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         `${drift}/${replays} drifted (${cycled} had cycled)`)
 }
 
+// ── 13c. the receiver's half of the bonus (owner, 2026-10-20; items.md) ──────────────────────────
+// The receiver hands the item over, and the pool is a 50/50 roll between the giver's and the
+// destination's. The gate stays the spec's; on the receiver's half the item comes from the
+// destination's rewards at that gate. A fetch or a roadside drop keeps the giver's item, and a replan
+// on a fresh board lands on the same item (FEAT-42 resume).
+{
+    const shop = 'poi:9|10'   // the auto shop: rewards at every gate
+    const atShop = (g) => REWARDS.filter(w => w.pools.includes('autoShop') && w.gates.includes(g))
+    let eligible = 0, swapped = 0, offPool = 0, gateMoved = 0, keptFetch = 0, fetches = 0, keptRoad = 0, roads = 0, drift = 0, replays = 0
+    for (let seed = 1; seed <= 150; seed++) {
+        const b = make(seed)
+        for (let t = T0; t < T0 + 24 * 3; t += 4) for (const id of b.sources()) {
+            if (id === shop) continue
+            for (const o of b.offers(id, t)) {
+                const sp = b.spec(o)
+                if (!sp?.bonus || sp.family === 'papers' || o.route !== undefined) continue
+                const road = sp.shape === 'courier' && seed % 3 === 0   // a third of the couriers drop roadside
+                const m = b.planDistinct(o, () => ({ par: 300, distance: 2000, endPoiId: road ? null : shop }))
+                if (!m) continue
+                const now = b.spec(o)
+                if (!now.bonus) continue   // a cycled attempt (BUG-88) may carry none
+                if (now.bonus.gate !== now.giverBonus.gate) gateMoved++
+                if (now.shape === 'fetch') { fetches++; if (now.bonus === now.giverBonus) keptFetch++; continue }
+                if (now.shape !== 'courier') continue
+                if (road) { roads++; if (now.bonus === now.giverBonus) keptRoad++; continue }
+                if (!atShop(now.bonus.gate).length) continue
+                eligible++
+                if (now.bonus !== now.giverBonus) {
+                    swapped++
+                    if (!atShop(now.bonus.gate).some(w => w.id === now.bonus.rewardId)) offPool++
+                }
+                if (m.bonus !== now.bonus) offPool++   // the mission carries what the card shows
+                const fresh = make(seed), fo = fresh.offers(id, t).find(x => x.id === o.id)
+                fresh.replan(fo, JSON.parse(JSON.stringify(o.planned)), () => ({ par: 300, distance: 2000, endPoiId: shop }))
+                replays++
+                if (fresh.spec(fo).bonus.rewardId !== now.bonus.rewardId) drift++
+            }
+        }
+    }
+    const share = swapped / eligible
+    check("receiver's half: about half the courier bonuses come from the receiver's pool", eligible > 100 && share > 0.4 && share < 0.6,
+        `${swapped}/${eligible} = ${share.toFixed(3)}`)
+    check("a receiver's item is from the receiver's rewards at the SAME gate, and rides the mission", offPool === 0 && gateMoved === 0,
+        `${offPool} off-pool, ${gateMoved} gate moved`)
+    check("a fetch and a roadside drop keep the giver's item", fetches + roads > 0 && keptFetch === fetches && keptRoad === roads,
+        `fetch ${keptFetch}/${fetches}, roadside ${keptRoad}/${roads}`)
+    check('a replan on a fresh board lands on the same bonus item', replays > 0 && drift === 0, `${drift}/${replays}`)
+}
+
 // ── 15. haul (FEAT-88; stock + picker FEAT-114) ──────────────────────────────────────────────────
 {
     let wrongPlace = 0, badCount = 0, badMass = 0, badPay = 0, badGate = 0, n = 0, gated = 0
@@ -737,6 +804,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const byId = Object.fromEntries(TRAITS.map(t => [t.id, t]))
     const tr = (sp, k) => (sp.traits ?? []).reduce((m, id) => m * (byId[id][k] ?? 1), 1)
     const counts = [0, 0, 0], seen = new Set()
+    let lines = 0, badLine = 0, lineEg = ''
     let n = 0, opposed = 0, wrongFamily = 0, papersTraited = 0, tipOnBonus = 0, badTerms = 0, drift = 0, whole = 0, wholeBad = 0
     for (let seed = 1; seed <= 60; seed++) {
         const b = make(seed), b2 = make(seed)
@@ -758,12 +826,25 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
                 || sp.thresholdScale !== (sp.family === 'delivery' ? tr(sp, 'thresholds') : 1)
                 || sp.deeds !== (ids.map(x => byId[x].deeds).find(Boolean) ?? null)) badTerms++
             if (ids.includes('wholesale')) { whole++; if (sp.stock !== HAUL_STOCK[1]) wholeBad++ }
+            // The card prints the trait's EFFECT on its line (owner, 2026-11-01), in this offer's numbers.
+            if (ids.length && !sp.line) {
+                const t = byId[ids[0]], line = b.card(o, { nowH: t + 0, route: { par: 300, distance: 2000 } })?.traits?.[0] ?? ''
+                lines++
+                const payM = (t.pay ?? 1) * (t.perPiece ?? 1)
+                const want = [payM !== 1 && (payM > 1 ? '+$' : '−$'), t.deadline && 'deadline ', t.thresholds && 'rank times ',
+                              t.floors && 'load ', t.tip && 'tip', t.deeds && 'deed', t.stockFull && `the whole yard: ${HAUL_STOCK[1]}`].filter(Boolean)
+                if (!line.startsWith(`${t.name}: `) || !want.every(w => line.includes(w))) { badLine++; lineEg ||= `${t.id}: "${line}"` }
+                else if (!lineEg && payM !== 1 && t.deadline) lineEg = `"${line}"`
+            }
         }
     }
-    const share = counts.map(c => c / n), W = TRAIT_COUNT_WEIGHTS, Wt = W[0] + W[1] + W[2]
+    const share = counts.map(c => c / n), W = TRAIT_COUNT_WEIGHTS, Wt = W[0] + W[1]
     check('FEAT-142: same seed, same traits (their own stream — SM-INV-12)', drift === 0, `${drift} drifted`)
-    check('FEAT-142: 0–2 traits per offer, shares near the weights',
-        [0, 1, 2].every(k => Math.abs(share[k] - W[k] / Wt) < 0.04), share.map(x => x.toFixed(2)).join(' / '))
+    check('FEAT-142: ONE trait at most (owner 2026-11-01: no stacking), shares near the weights',
+        counts[2] === 0 && [0, 1].every(k => Math.abs(share[k] - W[k] / Wt) < 0.04), share.map(x => x.toFixed(2)).join(' / '))
+    check('FEAT-142: the card prints each trait\'s effect on its line, in the offer\'s numbers', lines > 0 && badLine === 0,
+        `${badLine} of ${lines} — ${lineEg}`)
+    console.log(`       e.g. ${lineEg}`)
     check('FEAT-142: opposed pairs never together, and every trait only on its families', opposed === 0 && wrongFamily === 0, `${opposed} opposed, ${wrongFamily} off-family`)
     check('FEAT-142: Larry\'s papers carry no trait; Big tipper never rides a bonus offer (its tip is the item)', papersTraited === 0 && tipOnBonus === 0)
     check('FEAT-142: every trait rolls somewhere in the corpus', TRAITS.every(t => seen.has(t.id)), [...TRAITS.map(t => t.id)].filter(x => !seen.has(x)).join(','))

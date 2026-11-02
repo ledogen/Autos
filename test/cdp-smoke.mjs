@@ -81,6 +81,18 @@ const frames = async (n, ms) => {
 const tap = async (k, opts) => { await key(k, true, opts); await frames(2, 60); await key(k, false, opts) }
 // Teleport and wait for the SEAT, not a fixed sleep: the reseat awaits a network build, which under
 // load outlasted 2.5 s — it then latched park after the step had already toggled the brake.
+// Where a player parks at a giver (in-page, given a POI record): its marker — or, when the marker's own
+// model reaches over it, the first point toward the road a truck-sized circle clears, inside the 10 m
+// reach. Measured 2026-11-01: seated ON the farm's marker at (-936.5, 668.6) the truck starts inside the
+// barn and is thrown out at 21 m/s, on main as on any branch; the save step stalled whenever the clock
+// happened to post that farm's freight (it rolled 70–88 m off the pad, never taking the offer).
+const PAD_SEAT = `((q) => { const P = window.__poi(), y = (q.y ?? 0) + 0.8
+  const dx = q.roadX - q.x, dz = q.roadZ - q.z, L = Math.hypot(dx, dz) || 1
+  for (let t = 0; t <= Math.min(9, L); t += 0.5) {
+    const x = q.x + dx / L * t, z = q.z + dz / L * t
+    if (!P.queryContact(x, y, z, 3)) return { x, z }
+  }
+  return { x: q.x, z: q.z } })`
 const seat = async (x, z, h) => {
   await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
   check(await until(() => js('window.__seated'), 30000, 250), `teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
@@ -397,7 +409,7 @@ const STEPS = [
   ['service', async () => {
     // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
-      return q ? { x: q.x, z: q.z, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+      return q ? { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } : null })()`)
     if (!p) { console.log('  service: no auto shop in this region — step skipped'); return }
     await seat(p.x, p.z, p.h)
     await park(true)
@@ -463,6 +475,52 @@ const STEPS = [
     await js('document.getElementById("mp-accept").click()')
     check(await js(`window.__map2d()._getBoard().status(${JSON.stringify((await js(`${pois}.find(q => q.type === 'expeditionCamp').id`)))}).family !== null`)
       && await js('window.__mission().state === "idle"'), 'the cancelled line is not back at the camp')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
+  // FEAT-65: the camp's own demolition line (the requisition is open from the step above). Taken at the
+  // camp it starts there (no approach); its targets stand as models along the route's last km; near
+  // the truck they are bodies, ASLEEP until touched; a kicked one counts smashed on the HUD; arriving
+  // settles the line with the count on the result card.
+  ['demolition', async () => {
+    const pois = 'window.__map2d()._getPois()'
+    const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
+      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await seat(camp.x, camp.z, camp.h)
+    await park(true)
+    const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    check(await until(() => vis('mp-accept'), 3000), 'parking at the camp opened no lines')
+    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqSigns'; i++) await js('window.__mission().cycle(1)')
+    check(await js('window.__mission().offer._spec.line') === 'reqSigns', 'the camp lists no demolition line')
+    await js('document.getElementById("mp-accept").click()')
+    const st = await js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, n: m.mission?.targets?.length } })()')
+    check(st.s === 'staging' && !st.a && st.n > 0, `the camp's line did not start at the camp with a site: ${JSON.stringify(st)}`)
+    check((await js('window.__cargo().site'))?.length === st.n, 'the site does not stand from accept')
+    // Seat on the route's centreline beside the first target: within onM its targets become bodies.
+    const at = await js(`(() => { const m = window.__mission().mission, t = window.__cargo().site[0]
+      let bi = 0, bd = Infinity
+      m.poly.forEach((p, i) => { const d = Math.hypot(p.x - t.x, p.z - t.z); if (d < bd) { bd = d; bi = i } })
+      const a = m.poly[Math.max(0, bi - 1)], b = m.poly[Math.min(m.poly.length - 1, bi + 1)]
+      return { x: m.poly[bi].x, z: m.poly[bi].z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()`)
+    await seat(at.x, at.z, at.h)
+    const bodies = 'window.__cargo().site.filter(t => t.body != null)'
+    check(await until(() => js(`${bodies}.length > 0`), 3000), 'no target near the truck became a body')
+    await sleep(2000)
+    const awake = await js(`${bodies}.filter(t => window.__physicsEngine.isAwake(t.body)).length`)
+    check(awake === 0 && await js('window.__cargo().site.every(t => !t.smashed)'), `untouched targets did not stay asleep and standing: ${awake} awake`)
+    // Kick one: the engine wakes it, it moves, the poll latches it smashed.
+    await js(`(() => { const t = ${bodies}[0], p = new (window.__vs.position.constructor)(), q = new (window.__vs.quaternion.constructor)()
+      window.__physicsEngine.getTransform(t.body, p, q); window.__physicsEngine.applyImpulse(t.body, { x: 200, y: 100, z: 0 }, p) })()`)
+    check(await until(() => js('window.__cargo().site.filter(t => t.smashed).length === 1'), 3000), 'a kicked target did not count smashed')
+    check(await until(() => js('/1 \\/ \\d+ smashed/.test(document.getElementById("job-promise")?.textContent ?? "")'), 2000),
+      `the HUD does not count it: "${await js('document.getElementById("job-promise")?.textContent')}"`)
+    // Arrive: the line settles (a D at 1 of n — back on the list), and the result card counts the site.
+    const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
+    await seat(end.x, end.z, end.h)
+    check(await until(() => js('window.__mission().state === "done"'), 5000), `arriving did not settle the line: ${await js('window.__mission().state')}`)
+    check(await js('/Smashed\\s*1 \\/ \\d+/.test(document.getElementById("mp-body")?.textContent ?? "")'),
+      `the result card does not count the site: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    await js('document.getElementById("mp-accept").click()')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
   }],
@@ -580,7 +638,7 @@ const STEPS = [
     const p = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
       const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park && q.type !== 'expeditionCamp'
         && b.status(q.id)?.family === 'delivery' && b.view(q.id, 0)?.count > 0)
-      return q ? { x: q.x, z: q.z, rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type } : null })()`)
+      return q ? { ...${PAD_SEAT}(q), rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type } : null })()`)
     if (!p) { console.log('  offer: no plain delivery giver with a live offer — step skipped'); return }
     await seat(p.x, p.z, p.h)
     await park(true)
@@ -673,7 +731,7 @@ const STEPS = [
       for (const q of window.__map2d()._getPois()) {
         if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
         const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'freight')
-        if (o) return { x: q.x, z: q.z, rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type }
+        if (o) return { ...${PAD_SEAT}(q), rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type }
       }
       return null })()`)
     let load = null
@@ -704,7 +762,7 @@ const STEPS = [
     // clock (frames past MAX_FRAME_TIME), and 4 s once bought only 1.3 m/s.
     await key('w', true); await until(() => js('window.__vs.velocity.length() > 5'), 30000)
     const kill = await js('({ v: window.__vs.velocity.length(), p: window.__car() })')
-    check(kill.v > 3, `the truck was not moving when the page was killed (${kill.v.toFixed(1)} m/s): ${JSON.stringify(await js('({ parked: window.__vs.parked, ign: window.__vs.ignition?.state, card: document.getElementById("resume-card").style.display, pause: document.getElementById("pause-menu").style.display })'))}`)
+    check(kill.v > 3, `the truck was not moving when the page was killed (${kill.v.toFixed(1)} m/s at (${kill.p.x.toFixed(1)}, ${kill.p.z.toFixed(1)})${load ? `, ${load.key} from ${fr.type}` : ', no freight'}): ${JSON.stringify(await js('({ parked: window.__vs.parked, ign: window.__vs.ignition?.state, card: document.getElementById("resume-card").style.display, pause: document.getElementById("pause-menu").style.display })'))}`)
     // Compare against what the page SAVED, not the kill read: W stays down through the reload and the
     // pagehide write lands after it — under load ~0.8 s / 5.7 m later, which failed a correct resume.
     const saved = await resume('crash')

@@ -67,10 +67,13 @@ export class PhysicsWireframes {
    *   hands us the same interpolated pose syncMeshesToState() used. Substituting it is exact, not an
    *   approximation: vehicleState.position/quaternion IS the chassis body transform verbatim
    *   (physics.js's end-of-step getTransform).
-   *   Debris deliberately does NOT get this — debris meshes are posed from the raw engine transform
-   *   too (debris.js update()), so raw-vs-raw already agrees.
+   * @param {(handle:*) => ({position: THREE.Vector3, quaternion: THREE.Quaternion}|null)} [poseOf] —
+   *   the drawn pose of any other dynamic body, or null to read the engine. BUG-101: debris meshes are
+   *   interpolated at the truck's render alpha too (debris.js update()), so a raw read put the strapped
+   *   freight's box up to a step AHEAD of the load it measures — ~0.5 m at 30 m/s, and jumping frame to
+   *   frame under load, when a frame carries several steps or the catch-up budget zeroes the alpha.
    */
-  update (cameraPos, vehiclePose) {
+  update (cameraPos, vehiclePose, poseOf = null) {
     if (!this.enabled) return
     this._sync(false)
     for (const rec of this._built.values()) {
@@ -79,7 +82,9 @@ export class PhysicsWireframes {
           rec.group.position.copy(vehiclePose.position)
           rec.group.quaternion.copy(vehiclePose.quaternion)
         } else {
-          this._eng.getTransform(rec.handle, rec.group.position, rec.group.quaternion)
+          const drawn = poseOf?.(rec.handle)
+          if (drawn) { rec.group.position.copy(drawn.position); rec.group.quaternion.copy(drawn.quaternion) }
+          else this._eng.getTransform(rec.handle, rec.group.position, rec.group.quaternion)
         }
         for (const t of rec.tracked) {   // live-seated spheres (rim cores) follow their spec
           t.faint.position.set(t.spec.offset.x, t.spec.offset.y, t.spec.offset.z)

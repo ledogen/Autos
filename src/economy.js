@@ -176,6 +176,9 @@ export const ECONOMY_PARAMS = {
             fragile:     [{ S: 0.90, A: 0.83, B: 0.77, C: 0.70 }],
             sturdy:      [{ S: 0.95, A: 0.90, B: 0.85, C: 0.80 }],
         },
+        // FEAT-65: the SHARE OF THE SITE SMASHED (0..1), higher is better — its own axis (owner,
+        // 2026-11-01). Whole percents, as the card and the HUD print them. PROVISIONAL — the owner tunes.
+        demolition: [{ S: 1.0, A: 0.9, B: 0.75, C: 0.6 }],
     },
 
     // THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17 at the then k 0.024 — RESOLVED by regionMult
@@ -255,7 +258,7 @@ export function dayTier(day) {
 }
 
 /**
- * FEAT-138: a type's rank thresholds in a region — `kind` 'time' | 'freight', or 'haul' with the
+ * FEAT-138: a type's rank thresholds in a region — `kind` 'time' | 'freight' | 'demolition', or 'haul' with the
  * cargo id. Region clamps like regionTier: <1 reads as 1, past the list holds the last entry.
  */
 export function rankTable (kind, region, cargoId) {

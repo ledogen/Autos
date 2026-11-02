@@ -27,6 +27,8 @@ import { chunkCover, slopeFromGradient, COVER_CELL, CELLS_PER_CHUNK, DENSE_MIN }
     from './map-cover.js'
 import { biomeAt, isWetGround, BIOME } from './biome.js'
 import { REGION_RADIUS_M } from './story.js'   // MIN_VIEW_SPAN_M — the widest the map may zoom out to
+import { REGION_MARGIN } from './mission.js'   // BUG-103: the map's edge is the edge fade's line, from the same constants main.js _checkEdge uses
+import { POI_PARAMS } from './poi.js'
 import { FLORA_PARAMS } from '../data/flora.js'
 import { pad, PAD_PARAMS } from './gamepad.js'   // FEAT-133: the right stick drives a virtual cursor
 
@@ -404,7 +406,7 @@ export class Map2D {
      *        offers: no other POI's hover card (offers or shelf) then, so an accidental icon hover never
      *        claims the mouse or distracts from the panel (owner, 2026-10-30).
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getBarricades, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -419,6 +421,7 @@ export class Map2D {
         // FEAT-46: story-mode POIs. This is how the player finds one — see an icon, drive to it,
         // park (latch the handbrake). Empty outside story mode.
         this._getPois     = getPois      || (() => null)
+        this._getBarricades = getBarricades || (() => [])   // BUG-103: FEAT-154's rows, one closure tick each
         this._getCustomers = getCustomers || (() => null)   // FEAT-61 newspaper customers
         // FEAT-61: `{ onRoute: boolean, arrow: {x,z,ang}|null }`, or null when nothing is driving it.
         // onRoute is TRUE ONLY ON A PAPER ROUTE and drives the customer glyph (see _drawCustomers);
@@ -2215,18 +2218,24 @@ export class Map2D {
         }
     }
 
-    // FEAT-43: story-mode region boundary. The hard wall is invisible in-world (FEAT-28's
-    // trail-closed barriers are the diegetic version), so the map is where the player reads it —
-    // without this you only learn where the region ends by driving into it.
+    // FEAT-43: story-mode region boundary — the map is where the player reads where the region ends.
+    //
+    // BUG-103 (owner 2026-11-01, ruling (f), "the honest map"): the line drawn is the EDGE FADE's
+    // (FEAT-154: the planners' wall at REGION_RADIUS_M − REGION_MARGIN, plus poiEdgeFadeM), not the
+    // 2500 m region ring. The network is built out to the ring, so drawing the ring showed kilometres
+    // of road past the fade as open — a loop behind the expedition camp looked like a way around its
+    // closure when the fade already cut it. The radius is read from the same constants main.js
+    // _checkEdge uses, so the two cannot drift. Every FEAT-154 barricade row gets a closure tick.
     //
     // Drawn as: everything OUTSIDE the circle dimmed (the "you can't go there" read, done with an
-    // evenodd fill so it needs no clip/save juggling), a solid boundary ring, and a distance label.
-    // Per-frame layer, not the cached bg: the region is captured after entry and the bg may already
-    // have been baked by then.
+    // evenodd fill so it needs no clip/save juggling), a solid boundary ring, the row ticks, and a
+    // distance label. Per-frame layer, not the cached bg: the region is captured after entry and the
+    // bg may already have been baked by then.
     _drawRegion(ctx) {
         const reg = this._getRegion()
         if (!reg) return
-        const cx = this._sx(reg.x), cy = this._sy(reg.z), r = reg.r * this._zoom
+        const rFade = reg.r - REGION_MARGIN + POI_PARAMS.poiEdgeFadeM
+        const cx = this._sx(reg.x), cy = this._sy(reg.z), r = rFade * this._zoom
         const W = this._cssW, H = this._cssH
         // Dim the exterior: full-canvas rect MINUS the region disc (evenodd), so only outside fills.
         ctx.beginPath()
@@ -2239,6 +2248,15 @@ export class Map2D {
         ctx.strokeStyle = 'rgba(255,150,90,0.9)'
         ctx.lineWidth = 2
         ctx.stroke()
+        // The closure ticks: one bar across the road at each barricade row's middle barricade, along
+        // the row's own across axis (poi.js _barrierRow: +X = (cos yaw, −sin yaw)). A fixed 18 × 5 px, not
+        // world-sized: a crossing is radial, so the bar lies along the ring and must stand proud of it.
+        const bars = this._getBarricades(), per = POI_PARAMS.poiRowBarricades, hl = 9
+        ctx.lineWidth = 5
+        for (let i = (per - 1) >> 1; i < bars.length; i += per) {
+            const b = bars[i], ax = Math.cos(b.yaw), az = -Math.sin(b.yaw), x = this._sx(b.x), y = this._sy(b.z)
+            ctx.beginPath(); ctx.moveTo(x - ax * hl, y - az * hl); ctx.lineTo(x + ax * hl, y + az * hl); ctx.stroke()
+        }
         // Region center tick — the spawn, and the anchor the radius is measured from.
         ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2)
         ctx.fillStyle = 'rgba(255,150,90,0.9)'; ctx.fill()
@@ -2247,7 +2265,7 @@ export class Map2D {
         const ly = Math.min(H - 10, Math.max(14, cy - r))
         ctx.font = `600 11px ${MAP_LABEL_FONT}`
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        const txt = `Region boundary · ${(reg.r / 1000).toFixed(1)} km`
+        const txt = `Region boundary · ${(rFade / 1000).toFixed(1)} km`
         const tw = ctx.measureText(txt).width + 14
         ctx.fillStyle = 'rgba(8,10,14,0.75)'; ctx.fillRect(cx - tw / 2, ly - 9, tw, 18)
         ctx.fillStyle = '#ff965a'; ctx.fillText(txt, cx, ly)
@@ -2600,10 +2618,25 @@ export class Map2D {
         const TX = PAD + B.BAR * k + PORT + 12 * k        // text column, right of the portrait
         const fN = `${B.FS * k}px ${MAP_LABEL_FONT}`, fB = `700 ${B.FS * k}px ${MAP_LABEL_FONT}`
         const fS = `600 ${B.FSS * k}px ${MAP_LABEL_FONT}`
+        // FEAT-142: the trait line (name: effects) wraps at its " · " joins when it outruns the card —
+        // nothing else on this card wraps, and a full effect list is ~60 characters to the row's ~46.
+        const traitRows = []
+        if (c?.traits) {
+            ctx.font = fN
+            const maxW = W - 2 * PAD - B.BAR * k
+            for (const line of c.traits) {
+                let cur = ''
+                for (const part of line.split(' · ')) {
+                    const t = cur ? `${cur} · ${part}` : part
+                    if (cur && ctx.measureText(t).width > maxW) { traitRows.push(`${cur} ·`); cur = part } else cur = t
+                }
+                traitRows.push(cur)
+            }
+        }
         // FEAT-112: a load verdict adds one row; so do the clocks (`times`, their own row since 2026-10-23)
         // and the deed line (R-09).
         const H = baseH * k + (c?.verdict ? B.LH * k : 0) + (c?.times?.length ? B.LH * k : 0) + (c?.deed ? B.LH * k : 0)
-            + (c?.traits ? B.LH * k : 0)   // FEAT-142
+            + traitRows.length * B.LH * k   // FEAT-142
         const bonusH = (c?.bonus ? B.BONUS * k : 0)
             + (v.shelf ? (B.PAD * 2 + B.HEAD + v.shelf.length * B.LH) * k : 0)   // FEAT-137: an auto shop's shelf form
         const M = 12 * k                                  // margin from the sheet's edge
@@ -2736,7 +2769,7 @@ export class Map2D {
         if (c.verdict) { ty += LH; this._drawRuns(ctx, [{ t: c.verdict.text, b: true }], inL, ty, fN, fB,
                                       c.verdict.level === 'overload' ? '#b3261e' : '#a06800') }
         // FEAT-142: the giver's traits, bottom-left.
-        if (c.traits) { ty += LH; this._drawRuns(ctx, [{ t: c.traits.join('  ·  ') }], inL, ty, fN, fB, '#555') }
+        for (const t of traitRows) { ty += LH; this._drawRuns(ctx, [{ t }], inL, ty, fN, fB, '#555') }
 
         // ── the TIP form, tacked onto the bottom (R-04: the item that replaces the cash tip) ──
         if (c.bonus) {

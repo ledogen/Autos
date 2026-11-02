@@ -79,14 +79,18 @@ function scanLine(line, off, h, skip, zoneOf, hits) {
   for (let s = 0, j = 0; s <= L; s += DS) {
     while (j < cum.length - 2 && cum[j + 1] < s) j++
     const t = (s - cum[j]) / ((cum[j + 1] - cum[j]) || 1)
-    pts.push({ s, x: line[j].x + t * (line[j + 1].x - line[j].x), z: line[j].z + t * (line[j + 1].z - line[j].z) })
+    // `a`: the RUN's own arc when the line carries it. The resample's chord length runs short of it on
+    // a curve, and a bore skip keyed on the chord arc let a sample just inside a portal count as open
+    // road — measured against the skin, which over a bore stands at the portal mound (BUG-81 item 5).
+    const a = line[j].a != null ? line[j].a + t * (line[j + 1].a - line[j].a) : s
+    pts.push({ s, a, x: line[j].x + t * (line[j + 1].x - line[j].x), z: line[j].z + t * (line[j + 1].z - line[j].z) })
   }
   const y = [], bad = []
   for (let i = 0; i < pts.length; i++) {
     const a = pts[Math.max(0, i - 3)], b = pts[Math.min(pts.length - 1, i + 3)]
     const l = Math.hypot(b.x - a.x, b.z - a.z) || 1
     const x = pts[i].x + (b.z - a.z) / l * off, z = pts[i].z - (b.x - a.x) / l * off
-    y.push(h(x, z)); bad.push(skip(pts[i].s, x, z, y[i]))
+    y.push(h(x, z)); bad.push(skip(pts[i].a, x, z, y[i]))
   }
   let n = 0
   for (let i = W; i < y.length - W; i++) {
@@ -115,7 +119,7 @@ for (const Wn of windows) {
   for (const [key, e] of road._network) {
     const L = e.polyCum?.at(-1); if (!(L > 2 * WB)) continue
     const line = []
-    for (let s = 0; s <= L; s += 2) line.push(road.runPointAt(key, s))
+    for (let s = 0; s <= L; s += 2) line.push({ ...road.runPointAt(key, s), a: s })
     const spans = e.tunnelSpans
     const inBore = spans ? (s) => spans.some(sp => s >= sp.s0 && s <= sp.s1) : () => false
     for (const off of LANES) samples += scanLine(line, off, h, inBore, (s, L) => Math.min(s, L - s) < JN_ZONE ? 'junction' : 'open', hits)

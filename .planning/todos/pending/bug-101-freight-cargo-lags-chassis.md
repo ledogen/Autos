@@ -38,3 +38,22 @@ the strap-break / damage model.
   throttled Chrome in the smoke), the strapped load's mesh and debug box move in the same frame as
   the chassis — no visible offset in a screenshot pair.
 - No change to the strap-break or damage behaviour (FEAT-96/97 gates green).
+
+## Cause and fix — Spare, 2026-11-01
+
+**Not a physics lag, a debug-draw one.** The strap is a rigid weld (frequency 0) and freight-strap
+already gates it: a 400 kg load drifts < 5 mm in the bed on a rough road at 15 m/s. The load's MESH is
+posed like every debris mesh — interpolated at the truck's own render alpha (`debris.js update()`), so
+truck and load are drawn at the same instant. The COLLIDER BOX was not: `PhysicsWireframes.update` read
+every non-vehicle dynamic body straight from the engine, on a comment that "debris meshes are posed
+from the raw engine transform too" — true once, stale since debris got interpolation. So the freight's
+box sat at the current physics step while the load and truck were drawn up to a step earlier: ~0.5 m
+at 30 m/s, and jumping frame to frame under load, when a frame carries several steps or the PERF-32
+catch-up budget zeroes the alpha. That is the owner's "updating every couple frames".
+
+Fix: `DebrisSystem.meshOf(body)`; the wireframes take the drawn pose for any body it answers
+(`update(cameraPos, vehiclePose, poseOf)`), the engine otherwise. Measured live
+(`wip/bug-101/wireprobe.mjs`: a barrel thrown at 30 m/s, wireframes on, CPU throttled 6×, 149 frames):
+box ↔ mesh **0.000 m** at worst; the raw engine pose the box used before sits up to **0.508 m** off.
+Affected gates 16/16 green, smoke included. If the owner still sees the load itself trail the bed,
+that is a new observation — the weld and the mesh interpolation both measure clean.

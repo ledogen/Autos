@@ -27,6 +27,7 @@ export const STOCK_WEIGHT = {
     tirePlugKit:      4,
     compressor:       1,
     quickJack:        1,      // Rarely (owner, 2026-10-22)
+    hiLiftJack:       1,      // Rarely (owner, 2026-10-31)
 
     // Brakes
     brakesFrontStd:   10,

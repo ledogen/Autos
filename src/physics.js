@@ -140,6 +140,9 @@ const BODY_RESTITUTION_DEFAULT = 0.21   // slight rebound on hard slams; 0 = ful
 // (terrain-physics.js), so the shape value is chosen to land the PAIR at the tuned BUG-27b 0.1:
 // √(0.0125 · 0.8) = 0.1.
 const BODY_FRICTION_MU  = 0.1            // the tuned pair friction (BUG-27b)
+// BUG-89: below this sliding speed a tire SIDEWALL's Coulomb friction turns viscous (Step 2.6), so a
+// truck at rest on its side holds instead of chattering. m/s.
+const SIDEWALL_V_REG    = 0.1
 const TERRAIN_FRICTION_REF = 0.8         // must match terrain-physics.js TERRAIN_FRICTION
 const CHASSIS_SHAPE_MU  = BODY_FRICTION_MU * BODY_FRICTION_MU / TERRAIN_FRICTION_REF   // ≈ 0.0125
 // FEAT-88: the open BED gets its own material. On the body material above, a firewood bundle
@@ -184,6 +187,19 @@ const CHASSIS_PROFILE = {
   slabHalfW: 0.85,     // fenders/bumpers/tail lamps — the widest body point
   cabHalfW: 0.78,      // cab at the beltline (mirrors excluded)
   deckHalfW: 0.845,    // bed sides
+}
+
+/**
+ * FEAT-138: the two roll angles [deg from upright] where the CG stands over the pivot edge — past
+ * them gravity finishes the roll. Wheels ↔ side pivots on the tire's outer edge at the ground; side ↔
+ * roof on the cab roof's edge. Stock Ranger: 56.8° and 141.2°.
+ */
+export function rollBalance (params) {
+  const deg = 180 / Math.PI
+  return {
+    wheelsDeg: Math.atan2(params.trackFront / 2 + (params.wheelWidth || 0.25) / 2, params.cgHeight) * deg,
+    roofDeg: 180 - Math.atan2(CHASSIS_PROFILE.cabHalfW, CHASSIS_PROFILE.roofY) * deg,
+  }
 }
 
 /**
@@ -827,6 +843,29 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       totalTorque.x += rHubY * xz.z - rHubZ * xz.y
       totalTorque.y += rHubZ * xz.x - rHubX * xz.z
       totalTorque.z += rHubX * xz.y - rHubY * xz.x
+      // BUG-89: a tire with NO strut load is touching with its sidewall — the truck on its side or
+      // roof. Step 3 reads it as airborne (no Pacejka), so this whole contact load used to be
+      // frictionless: on its side the down-side tires carried ~60 % of the weight and the truck skated
+      // (15 m/s → 245 m). Rubber scrubs: Coulomb μN against the hub's sliding, μ the tire's own.
+      // Regularised below SIDEWALL_V_REG so it holds at rest instead of chattering. A loaded strut
+      // (any upright truck, slopes included) never takes this branch — Pacejka owns that tire.
+      // ponytail: the support is taken as static; a sidewall on a moving rock scrubs against the world.
+      if ((params._tireFz[i] || 0) <= 0) {
+        const N = Math.hypot(xz.x, xz.y, xz.z), nx = xz.x / N, ny = xz.y / N, nz = xz.z / N
+        const w = vehicleState.angularVelocity, v = vehicleState.velocity
+        let vx = v.x + w.y * rHubZ - w.z * rHubY
+        let vy = v.y + w.z * rHubX - w.x * rHubZ
+        let vz = v.z + w.x * rHubY - w.y * rHubX
+        const vn = vx * nx + vy * ny + vz * nz
+        vx -= vn * nx; vy -= vn * ny; vz -= vn * nz
+        const k = -(params.frictionCoeff ?? 1) * (params._tireMuScale?.[i] ?? 1) * N
+                / Math.max(Math.hypot(vx, vy, vz), SIDEWALL_V_REG)
+        const fx = vx * k, fy = vy * k, fz = vz * k
+        totalForce.x += fx; totalForce.y += fy; totalForce.z += fz
+        totalTorque.x += rHubY * fz - rHubZ * fy
+        totalTorque.y += rHubZ * fx - rHubX * fz
+        totalTorque.z += rHubX * fy - rHubY * fx
+      }
     }
   }
 
@@ -1235,6 +1274,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     for (let k = 0; k < p.pushes.length; k += 2) engine.applyImpulse(body, p.pushes[k], p.pushes[k + 1])
   }
   engine.applyForce(chassis, totalForce)
+  const jt = vehicleState.jackTorque   // FEAT-138: the hi-lift's roll heave (src/hilift.js), null when idle
+  if (jt) { totalTorque.x += jt.x; totalTorque.y += jt.y; totalTorque.z += jt.z }
   engine.applyTorque(chassis, totalTorque)
   // 8 substeps (not the engine-default 4): the chassis carries the TUNED inertia, whose x-axis
   // value sits ~3× below the hull-natural tensor, and the soft-step solver converts some of a

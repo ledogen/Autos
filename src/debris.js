@@ -579,6 +579,10 @@ export class DebrisSystem {
     }
   }
 
+  /** BUG-101: the mesh drawn for `body` (posed by update() at the render alpha), or null if not debris.
+   *  ponytail: linear scan — debug wireframes only, over ≤ DEBRIS_CAP + the pinned loads. */
+  meshOf (body) { return this._live.find(r => r.body === body)?.mesh ?? null }
+
   clear () {
     for (const rec of this._live) this._reclaim(rec)
     this._live.length = 0

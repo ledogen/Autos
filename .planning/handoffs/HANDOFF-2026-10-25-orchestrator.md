@@ -70,7 +70,7 @@ for s in run-shape machine content spare; do git -C /Users/ledogen/CodeShit/CarG
 If a lane has moved (not ff-able), leave it; it merges main itself.
 
 **Landing a lane into main:** in this checkout, `git merge --no-ff feature/<lane>` → resolve → `npm run test:all`
-(expect all green but road-clearance, the one known red — FEAT-77; road-tunnel went green with BUG-77, 2026-11-01) → `node test/cdp-smoke.mjs` (15 steps; it flakes
+(expect ALL green — the last known red, road-clearance, went green with FEAT-77 (a) on 2026-11-01; road-tunnel with BUG-77) → `node test/cdp-smoke.mjs` (15 steps; it flakes
 under load, rerun alone) → commit → fast-forward the other lanes. One lane at a time. Never push: pushing deploys Pages.
 
 ## The pages
@@ -128,8 +128,27 @@ ruling). Spare's queue, ordered by blockers: BUG-64 (a) landing → FEAT-77 (a) 
 junction-cutting prototype (numbers to the owner) → BUG-81 item 5 → FEAT-142 one-trait + effect line
 → FEAT-62 paper-route scenario (after BUG-67's landing call) → BUG-101 / BUG-102. BUG-103 (expedition
 closure bypass, seed 3852053035) has an Opus assessment agent writing the options into the ticket;
-lane TBD after the owner reads it. Lane A (session "A.") was told to merge main before FEAT-157
-(shares offer-board.js / mission.js with FEAT-89). Parked branches: proto/bug-67-pad-yield,
+lane TBD after the owner reads it. **Later that night: the owner ruled (f) and the orchestrator built it on
+main (map ring + dim at the 2410 m fade line, a tick per row; BUG-103 closed) plus the edge-return cap
+(poi.js `_returnSpots` stops 10 m short of every row — the owner was seated just past the camp's row).**
+FEAT-157's four lines are on main (f9bd6553); Lane A is in plan mode on FEAT-65.
+The tracker page's 1f24a9f3 publish shipped a missing comma (the BUG-67 row) — the page sat on
+"connecting to the store…"; fixed ee81605d. ALWAYS `node --check` the page script before a publish. Parked branches: proto/bug-67-pad-yield,
 proto/bug-67-node-height, proto/bug-64-earthwork-union (landing now). Owed list = the tracker's OWED
 array (v36). Heat note: the owner complained the laptop was cooking on battery; the burn was the gate
 batteries (ours and Spare's censuses), Steam's UI renderer, and Spotlight (now excluded). Lifted.
+
+## State 2026-11-02 (early morning) — orchestrator
+Main 7977155d, clean; suite 116/116 (NO known red), smoke 21/21 on every landing. Landed overnight,
+one lane at a time, each behind test:all + cdp-smoke: Lane A's FEAT-65 demolition slice 1 (FEAT-157
+closed, ASSET-77 minted); Spare's BUG-64 (a), FEAT-77 (a), BUG-81 item 5, FEAT-142 one-trait, BUG-101,
+FEAT-149 / BUG-94 / BUG-96 (Lane C's code items, C had no session), FEAT-150 / FEAT-138 / BUG-89 /
+BUG-54 (Lane B's, B had no session), FEAT-67 receiver bonus; FEAT-132 and FEAT-137 closed on evidence;
+BUG-69, BUG-104 (new), FEAT-70, FEAT-143, FEAT-131 MEASURED with proposals, nothing built. Orchestrator:
+BUG-103 (f) honest map + camp respawn, BUG-104 minted, the tracker page repair (a missing comma).
+**Held off main:** BUG-74 class 1 on proto/bug-74-fill-bury (4th try; the owner drives it on :3885 —
+Spare checks the branch out there when asked). **Spare is HOLDING** (page handoff rewritten): every
+remaining item is an owner call. The owner's calls + looks are the tracker page's OWED array (v54) —
+~20 items; recap them from there, not from memory. Lanes B and C had no session all night; their page
+handoffs carry an ORCHESTRATOR NOTE naming what Spare built so they do not redo it. Lane A ("A.") was
+last in plan mode on FEAT-147 / FEAT-65 owner items.

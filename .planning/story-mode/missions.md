@@ -12,8 +12,10 @@ current and wins.** `design-amendments-2026-07-29.md` is a historical provenance
 
 | Decided | Open |
 |---|---|
-| Five scoring axes; four delivery types — courier, haul, freight, fragile (§3, 2026-10-06) | Job discovery + expiry model (§"The job board") |
-| **Each type ranks on its own axis; the tip is speed; thresholds step by region** (§3, 2026-10-21) | Larry's reward pool (§2) |
+| Five scoring axes; four delivery types — courier, haul, freight, fragile (§3, 2026-10-06) | — |
+| **Each type ranks on its own axis; the tip is speed; thresholds step by region** (§3, 2026-10-21) | — |
+| **The job board: visible, slots, expiry, cancel lock, receiver-handed bonus** (§"The job board", FEAT-67) | — |
+| **Larry's reward pool: every reward** (§2, owner 2026-10-31) | — |
 | Points not XP; continuous payout; rank as surface | Exact `k` (maintenance cost per par-second) |
 | Payout continuous on par ratio, base × par | — |
 | The farm is its own POI type, source of produce freight (FEAT-96) | — |
@@ -49,6 +51,7 @@ Mission types are not flavors of the same activity. They differ in **what is bei
 | **Restraint** | Shock and impulse into the cargo | Flat rate; the cost is time | Cargo is broken |
 | **Clearance** | Objects removed from a blocked trail | Region access | Never — progress is world state |
 | **Accuracy** | Where the thing you threw landed | Continuous in distance from the target, scaling the per-unit rate | Never hard-fails; a miss is one unit unpaid |
+| **Demolition** (FEAT-65, owner 2026-11-01) | The share of a roadside site's targets knocked down — they stand on the shoulder of the route's last km, static until hit | Currency × the share smashed (haul's rule); the tip is speed, as on every job | Never hard-fails; a target left standing is pay unearned |
 
 > **[AMENDED 2026-08-14, owner] Accuracy scales the RATE and no longer sets the rank.** It stays a
 > fifth axis and stays in this table; what it lost is the letter. The paper route's rank is the par
@@ -880,9 +883,27 @@ answered: **how much the vehicle is player-customizable at all.** "You drive wha
 build a truck" are different games and they imply different answers here. A route+build sharing hash
 was sketched and **set aside** as premature. Don't rebuild it until the customization question lands.
 
-## The job board — discovery and expiry *(OPEN — owner wants more discussion)*
+## The job board — discovery and expiry *(RATIFIED — FEAT-67, owner 2026-08-17 … 2026-10-31)*
 
-Not settled. Recorded because the shape of the question matters more than any answer proposed so far.
+> **Ratified model — what is built.** The full record is FEAT-67's ticket; this is the summary.
+> - **The map is the board.** Hover a source POI to see one offer card and that offer's route. Q / E cycle
+>   through its offers.
+> - **The card states the terms:** base pay (the at-par figure) up to the most a fast drive pays,
+>   distance, cargo weight, expiry, and the bonus item with the rank that earns it.
+> - **Accept by parking at the POI**, one job at a time. **Terms lock at accept.**
+> - **Slots, always full.** A source has a fixed number of slots, and an expired offer re-rolls at
+>   once. Expiry is the centre value ± 30 % on the game clock, and the slots start desynchronised.
+> - **After a completion** the slot waits out the original expiry.
+> - **A cancel** — a button, the only thing that abandons a job — locks the slot for the offer's full
+>   expiry length, counted from the cancel.
+> - **Bonus on 25 % of offers**, gated C / B / A / S at equal odds. D never earns one. A bonus offer's
+>   cash tip is the item.
+> - **The receiver hands the bonus over.** The item is a 50/50 roll between the giver's pool and the
+>   destination's (2026-10-20, built 2026-11-01). A fetch or a roadside drop uses the giver's pool.
+> - **Larry rolls from every reward** (2026-10-31).
+> - **Freight and haul print their gate as a number** (kg, pieces).
+>
+> The section below is the provenance for the reversal: the hidden-board argument that was traded away.
 
 > **⚠ SUPERSEDED 2026-08-17 — read this box before the section below.** The owner reversed leaning 2
 > outright: **the board is visible, and optimizing against it is now a design goal.** Before

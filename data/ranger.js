@@ -169,9 +169,11 @@ export const RANGER_PARAMS = {
   // shiftUpRPM is the ENGINE's (data/engines.js) — it follows the redline.
   shiftDownRPM:  1300,  // rpm(coupled) — light-throttle/cruise downshift floor
   // kickdownRPM: WOT downshift point. The downshift threshold scales with throttle from shiftDownRPM (lift)
-  // up to kickdownRPM (floored), so flooring it on a grade drops a gear into the power band. Keep below
-  // ~shiftUpRPM/1.7 so a fresh upshift doesn't immediately re-trigger a downshift (hunting).
-  kickdownRPM:   2400,  // rpm(coupled) — downshift point at wide-open throttle (kickdown)
+  // up to kickdownRPM (floored), so flooring it on a grade drops a gear into the power band. FEAT-150: 2400 →
+  // 3200 (owner 2026-10-25: "prefers to lug 3rd … even if there is rpm headroom"). It cannot cause a hunt
+  // any more: a downshift never lands within shiftHysteresis of the upshift point (drivetrain.js), so the
+  // kickdown is per-gear — 3rd → 2nd below 3200, 2nd → 1st only once 1st has room to pull.
+  kickdownRPM:   3200,  // rpm(coupled) — downshift point at wide-open throttle (kickdown)
   // shiftHysteresis: the PRIMARY anti-hunt lever. An upshift only fires if the NEXT gear's coupled RPM
   // would sit this far ABOVE the current downshift point — so the box only upshifts into a gear it can
   // actually hold. Bigger = firmer, hunts less (holds lower gears longer on grades); too big delays
@@ -186,6 +188,11 @@ export const RANGER_PARAMS = {
   shiftThrottleTau:     1.5,  // s — throttle-average time constant
   shiftHysteresisLight: 300,  // rpm(coupled) — anti-hunt headroom at a light foot
   kickdownDelay:        0.4,  // s — pedal held ≥ 95 % this long = kickdown (a feathered tap is not one)
+  // FEAT-150: the upshift's anti-hunt test projects the next gear this far ahead at the road's current
+  // acceleration (smoothed over shiftAccelTau): accelerating, the higher gear clears the band at once;
+  // barely holding speed on a grade, it does not.
+  shiftLookahead:       1.0,  // s
+  shiftAccelTau:        0.25, // s
   // FEAT-126 manual gearbox (only read when the fitted box is transmissionType 'manual').
   clutchAssist:    true,   // the clutch assistant (src/clutch-assist.js) stands between input and sim
   clutchShiftMax:  0.15,   // [-] clutch engagement above which a shift is rejected (the clutch is "in")

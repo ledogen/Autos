@@ -46,11 +46,6 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
     const ps = getPropSystem && getPropSystem()
     if (ps) ps.setImpostorLitGain(v)
   })
-  // Sun-on gradient flatten (baked facet pattern → tile mean as the view swings sun-ward).
-  f.add(params.lod, 'flatten', 0, 1, 0.05).name('billboard sun-side flatten').onChange((v) => {
-    const ps = getPropSystem && getPropSystem()
-    if (ps) ps.setImpostorFlatten(v)
-  })
 
   const density = f.addFolder('Density'); density.close()
   density.add(S, 'clustersPerChunk', 0, 12, 1).name('tree clusters').onFinishChange(done)
@@ -105,7 +100,6 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
   // radii at chunk sync — rebuild them so the chassis feels the new size too.
   const _resync = () => window.__propPhysics?.resyncAll()
   coll.add(params.collision, 'trunkRadiusScale', 0.5, 3, 0.05).name('trunk capsule ×').onChange(_resync)
-  coll.add(params.collision, 'rockRadiusScale', 0.5, 2, 0.05).name('rock sphere ×').onChange(_resync)
   coll.add(params.collision.bush, 'k', 0, 200, 1).name('bush drag k')
   coll.add(params.collision.bush, 'fMax', 0, 800, 10).name('bush drag cap (N)')
 
