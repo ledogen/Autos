@@ -316,6 +316,7 @@ export function carcassRadialOffset (corner, psi, runout) {
 const _mountX = [0, 0, 0, 0], _mountY = [0, 0, 0, 0], _mountZ = [0, 0, 0, 0]
 const _mountVX = [0, 0, 0, 0], _mountVY = [0, 0, 0, 0], _mountVZ = [0, 0, 0, 0]
 const _arbF = [0, 0, 0, 0]
+const _hub = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 }   // the hub handed to a debris contact's onForce (FEAT-158)
 // Per-contact scratch for the two passes over one wheel's contacts (a wheel rarely has more than 3).
 const _cSpring = new Float64Array(32), _cDamp = new Float64Array(32), _cCvE = new Float64Array(32), _cCvV = new Float64Array(32), _cBUp = new Float64Array(32), _cRate = new Float64Array(32), _cEng = new Float64Array(32)
 
@@ -419,6 +420,8 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
 
   const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.1905)   // for the rim-load residual below
   const sc = vehicleState.strutComp, scv = vehicleState.strutCompVel
+  // FEAT-158: rock-face grip along each strut [N], carried substep to substep (and across steps).
+  const gripUp = params._rockGripUp || (params._rockGripUp = [0, 0, 0, 0])
 
   for (let s = 0; s < N; s++) {
     // ── 1. ARB pass — from every corner's compression BEFORE any corner integrates ────────────
@@ -512,6 +515,19 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
           cvE = -((_mountVX[i] - sv.x) * c.normal.x + (_mountVY[i] - sv.y) * c.normal.y + (_mountVZ[i] - sv.z) * c.normal.z) * eng
           cvV = bUp * eng
         } else { cvE = -(_mountVX[i] * c.normal.x + _mountVY[i] * c.normal.y + _mountVZ[i] * c.normal.z); cvV = bUp }
+        if (c.yield > 0) {
+          // FEAT-158: IMPLICIT in the body's yield. A debris body moves under this force within the
+          // substep (c.yield: its velocity change along −n per unit impulse, with its ground holding
+          // it — physics.js), so the force is evaluated where the contact will be at the substep's
+          // end:  F = S(d + sdt·(cv − y·F·sdt)) + c·(cv − y·F·sdt)  ⇒  F·(1 + (k·sdt + c)·sdt·y) =
+          // S + c·cv, k = dS/dd. Explicit, a rock held at its base by the road pivots (≈1 kg at
+          // the tire), a stiff oscillator past the substep's stability (√(k·y)·sdt > 2): 30 mph
+          // threw a 9 kg rock at 73 m/s. A body that cannot yield (y = 0) is exactly the old law.
+          const s1 = t.spring, d1 = t.damp
+          const k = (tireContactTerms(c.depth + 1e-4, c.sizeR, rate, params).spring - s1) * 1e4   // overwrites the shared t
+          const a = 1 / (1 + (k * sdt + d1 * eng) * sdt * c.yield)
+          t.spring = s1 * a; t.damp = d1 * a
+        }
         _cSpring[ci] = t.spring; _cDamp[ci] = t.damp; _cCvE[ci] = cvE; _cCvV[ci] = cvV; _cBUp[ci] = bUp; _cRate[ci] = rate; _cEng[ci] = eng
         tireFzExplicit += (t.spring + t.damp * cvE) * bUp
         cTire += t.damp * cvV * bUp
@@ -556,6 +572,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       const F_explicit = tireFzExplicit - springTerm - c_S * strutCompVelI + arbF[i]
                        - m_u * 9.81 * gravDot
                        + droopForce
+                       + gripUp[i]   // FEAT-158: the last substep's rock-face grip on the tire, along the strut
       // Explicit Euler on everything above (D-10: N=4 substeps); the stop and the tire damper
       // implicit:  v_new = (v + (F_explicit − kBump·x)·sdt/m) / (1 + (kBump·sdt² + (cBump + cTire)·sdt)/m)
       const newStrutCompVel = (strutCompVelI + (F_explicit - kBump * bumpOvershoot) / m_u * sdt)
@@ -575,14 +592,31 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       // Pass 2 over the contacts: the tire forces at v_new (clamped — a tire pushes, never pulls),
       // the strut-axis sum the Pacejka feed reads, the X/Z residual (D-06) and the rim-load signal.
       let tireFz = 0, pinch = 0, pinchW = 0
+      _hub.x = hubWorldX; _hub.y = hubWorldY; _hub.z = hubWorldZ
+      _hub.vx = _mountVX[i] + newStrutCompVel * body_up.x
+      _hub.vy = _mountVY[i] + newStrutCompVel * body_up.y
+      _hub.vz = _mountVZ[i] + newStrutCompVel * body_up.z
+      gripUp[i] = 0
       for (let ci = 0; ci < nC; ci++) {
         const c = hubContacts[ci], bUp = _cBUp[ci], rate = _cRate[ci]
         const tireFnAtContact = Math.max(0, _cSpring[ci] + _cDamp[ci] * (_cCvE[ci] - newStrutCompVel * _cCvV[ci]))
         tireFz += tireFnAtContact * bUp
         // BUG-99: a debris contact carries an injected callback (physics.js) that hands this exact
         // force, for this substep, back to the body as its equal and opposite. A callback, so this
-        // module stays pure maths and never sees an engine type.
-        if (c.onForce) c.onForce(tireFnAtContact, sdt)
+        // module stays pure maths and never sees an engine type. FEAT-158: it returns the rock
+        // face's GRIP on the tire [N] (null when there is none), split as a normal force is — the
+        // strut-axis part onto the hub (next substep: it is solved after this one's integration),
+        // the rest to the body.
+        const g = c.onForce ? c.onForce(tireFnAtContact, sdt, _hub) : null
+        if (g) {
+          const gUp = g.x * body_up.x + g.y * body_up.y + g.z * body_up.z
+          gripUp[i] += gUp
+          if (params._hubNormalXZ) {
+            params._hubNormalXZ[i].x += (g.x - gUp * body_up.x) / N
+            params._hubNormalXZ[i].y += (g.y - gUp * body_up.y) / N
+            params._hubNormalXZ[i].z += (g.z - gUp * body_up.z) / N
+          }
+        }
         if (params._hubNormalXZ) {
           params._hubNormalXZ[i].x += tireFnAtContact * (c.normal.x - bUp * body_up.x) / N
           params._hubNormalXZ[i].y += tireFnAtContact * (c.normal.y - bUp * body_up.y) / N
