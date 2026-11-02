@@ -125,10 +125,10 @@ campfire is not an item — it spawns to mark camp.
 
 ## Still owed
 
-- **The bed-slot models.** Export as is from `assets/models/src/items.py` (each needs a `WORLD` row with a
-  rest rotation putting its length on glTF Z, head end at +Z, then a `PROP_MODELS` entry and the item's
-  `model`): `sleepingBag` (1.90 × 0.85 m), `airMattress` (1.88 × 0.76 m), `sleepingPad`,
-  `deluxeSleepingPad`. New shapes: ASSET-78 (bedroll, unrolled), ASSET-79 (blanket layer). All need
+- **The bed-slot models.** Export as is from `assets/models/src/items.py` — the `WORLD` rows are in
+  (length on glTF Z, head end at +Z), so it is `items.export_glb(id)` in GUI Blender, then a
+  `PROP_MODELS` entry and the item's `model`: `sleepingBag` (1.90 × 0.85 m), `airMattress`
+  (1.88 × 0.76 m), `sleepingPad`, `deluxeSleepingPad`. New shapes: ASSET-78 (bedroll, unrolled), ASSET-79 (blanket layer). All need
   GUI Blender via blender-mcp, which was down on 2026-11-02.
 - **Thumbnails** for `tent`, `awning`, `shadeTarp`, `cookingKit` (items.py, Blender). The inventory
   shows the name until then.
