@@ -110,7 +110,7 @@ function bakeLogs(P, rng) {
   return out
 }
 
-// kind: 'sphere' (collidable rock), 'mesh' (boulder — exact triangles, BUG-22c), 'bush' (soft drag),
+// kind: 'mesh' (collidable rock and boulder — exact triangles, BUG-22c / BUG-54), 'bush' (soft drag),
 // 'none' (small / medium rock, decorative).
 function bakeBlobs(P, rng, kind) {
   const out = []
@@ -125,36 +125,14 @@ function bakeBlobs(P, rng, kind) {
     fillColor(geo, P.color)
     let collision = null
     if (kind === 'mesh') {
-      // BUG-22c: boulders collide against their ACTUAL visible mesh (few boulders, low-poly → cheap).
-      // No sphere proxy can match a lumpy 20 m boulder — the truck either hit "air" (overshoot) or the
-      // sphere sat inside the rock. queryProps tests the vehicle probe vs these triangles directly, so
-      // collision lands exactly on the surface the player sees. `radius` is the full boundingSphere =
-      // broad-phase cull only (never miss an outer lump); the triangle-soup is the narrow phase.
+      // BUG-22c (boulders) / BUG-54 (rocks): collide against the ACTUAL visible mesh. A sphere proxy
+      // cannot fit a squashed, lumpy blob: the rock's sphere stood up to 1.12 m taller than the rock,
+      // and 3 % of placements were a rock buried out of sight with its sphere still 0.34 m proud — an
+      // invisible kerb. queryProps tests the vehicle probe vs these triangles directly, so collision
+      // lands exactly on the surface the player sees. `radius` is the full boundingSphere = broad-phase
+      // cull only (never miss an outer lump); the triangle soup is the narrow phase.
       geo.computeBoundingSphere()
       collision = { kind, radius: geo.boundingSphere.radius, tris: new Float32Array(geo.attributes.position.array) }
-    } else if (kind === 'sphere') {
-      // BUG-22/22b: collide against the VISIBLE BOUNDARY, derived from the ACTUAL baked mesh. makeBlob
-      // displaces vertices symmetrically (r·(1+irregularity·n), n∈[-1,1]), so the MEAN horizontal reach
-      // sits at the CENTRE of the lumps — basing the proxy there (× mean axis) put the sphere far INSIDE
-      // the rock (truck penetrated the visible surface before contacting), and rockRadiusScale then inset
-      // it further. But the theoretical outer surface r·(1+irregularity) OVERSHOOTS the real mesh: value
-      // noise on a low-poly icosphere never realises the full ±1 amplitude, so that formula exceeded the
-      // actual boundingSphere. So measure the geometry directly: take a high PERCENTILE of the equatorial-
-      // band horizontal reach — the flanks the truck actually contacts — which sits AT the visible surface
-      // while ignoring the single outermost spike (whose uniform-sphere use was the original overshoot).
-      const pos = geo.attributes.position
-      let maxAbsY = 0
-      for (let v = 0; v < pos.count; v++) { const ay = Math.abs(pos.getY(v)); if (ay > maxAbsY) maxAbsY = ay }
-      const flankHr = []
-      for (let v = 0; v < pos.count; v++) {
-        if (Math.abs(pos.getY(v)) < 0.4 * maxAbsY) flankHr.push(Math.hypot(pos.getX(v), pos.getZ(v)))
-      }
-      flankHr.sort((p, q) => p - q)
-      // 90th-percentile flank reach = out at the visible surface, short only of the lone widest lump.
-      // (The live rockRadiusScale 0.92 insets this a touch, landing the effective sphere on the flank —
-      // not the mean bulk it sat at before, which read as "collision far inside the rock".)
-      const rBulk = flankHr[Math.floor(0.9 * (flankHr.length - 1))]
-      collision = { kind, radius: rBulk }
     } else if (kind === 'bush') {
       // Bush soft-drag extent is the full visual reach (unchanged) — it's a gentle field, not a wall.
       collision = { kind, radius: geo.boundingSphere.radius }
@@ -178,7 +156,7 @@ export function buildPalette(worldSeed, params = FLORA_PARAMS) {
   const variants = {
     aspen:     bakeAspen(params.aspen, rng),
     pine:      bakePine(params.pine, rng),
-    rock:      bakeBlobs(params.rock, rng, 'sphere'),
+    rock:      bakeBlobs(params.rock, rng, 'mesh'),
     boulder:   bakeBlobs(params.boulder, rng, 'mesh'),
     smallRock: bakeBlobs(params.smallRock, rng, 'none'),
     bush:      bakeBlobs(params.bush, rng, 'bush'),
