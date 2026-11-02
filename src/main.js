@@ -4726,6 +4726,7 @@ _campGroup.name = 'camp'
 scene.add(_campGroup)
 const campfire = new CampfireFx(_campGroup)
 const campGear = new CampGear(_campGroup)
+window.__campGear = campGear   // dev handle — test/cdp-smoke.mjs dresses a pad and repacks it
 // Unit ring (inner 0.86 / outer 1.0), laid flat and scaled to the live pad half-extent, so the
 // campPadHalfM slider moves it without rebuilding geometry. No depth write: it is a read-out, and
 // it must not z-fight the ground it is describing.

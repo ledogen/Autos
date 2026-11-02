@@ -352,6 +352,24 @@ const STEPS = [
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
   }],
+  ['campGear', async () => {
+    // FEAT-66: what is packed is what stands at camp. A pad at the truck, a packed tent → the tent
+    // loads at its slot; repacking while the camp is up re-dresses it (tent out, awning in); hiding
+    // clears it. Leaves the inventory as it found it.
+    const names = () => js('window.__campGear.root.children.filter(c => c.children.length).map(c => c.name).join()')
+    const pack = (id) => js(`(() => { const i = window.__inv; i.grant('${id}'); return i.packItem(i.list().findIndex(r => r.id === '${id}')) })()`)
+    const unpack = (id) => js(`(() => { const i = window.__inv; i.unpackItem(i.equippedIndex(), i.packed().indexOf('${id}'))
+      return i.drop(i.list().findIndex(r => r.id === '${id}')) })()`)
+    check(await pack('tent'), 'the tent did not pack')
+    await js(`(() => { const c = window.__car(); window.__campGear.show({ x: c.x, z: c.z, tx: 1, tz: 0, nx: 0, nz: 1 },
+      window.__inv.packed(), () => c.y) })()`)
+    check(await until(async () => await names() === 'model:tent', 5000), `a packed tent is not at camp (got "${await names()}")`)
+    check(await unpack('tent') && await pack('awning'), 'could not swap the tent for the awning')
+    check(await until(async () => await names() === 'model:awning', 5000), `repacking at camp did not re-dress it (got "${await names()}")`)
+    await js('window.__campGear.hide()')
+    check(await js('window.__campGear.root.children.length') === 0, 'hide left gear on the pad')
+    check(await unpack('awning'), 'could not put the awning back')
+  }],
   ['tires', async () => {
     // SM-3 roadside tire work (owner, 2026-10-22): using the spare or the plug kit opens the damage
     // screen's picker; nothing happens until a tire is picked and the timed button confirmed. The
