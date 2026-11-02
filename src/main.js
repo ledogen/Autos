@@ -48,7 +48,7 @@ window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase he
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
-import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playSputterPop, setCabView } from './engine-audio.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playSputterPop, setCabView, setInTunnel, setTunnelReverb } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
@@ -8347,6 +8347,20 @@ function _endRun (kind) {
   }, kind === 'crash' ? CRASH_CARD_DELAY_S * 1000 : 0)
 }
 
+/**
+ * FEAT-163: is the camera (the listener) inside a bore? The surface resolver's own ownership rule: on a
+ * bore span of the nearest run, and below the tube's apex. Read-only; carveHint is memoised per cell.
+ */
+function _listenerInBore () {
+  if (_labActive || !roadSystem) return false
+  const c = camera.position, nr = roadSystem.carveHint(c.x, c.z)
+  if (!nr?.point || !nr.tangent) return false
+  const arc = (nr.arcS ?? 0) + (c.x - nr.point.x) * nr.tangent.x + (c.z - nr.point.z) * nr.tangent.z
+  if (!roadSystem.tunnelSpanAt(nr.runKey ?? '', arc)) return false
+  return c.y < roadSystem.runProfile(arc, nr.runKey, _boreProf).gradeY + (RANGER_PARAMS.tunnelBoreRadius ?? 8)
+}
+const _boreProf = { gradeY: 0, tx: 1, tz: 0 }
+
 /** The summary's rows. It reads what the run already tracks; only the playtime is counted for it. */
 function _runEndHtml (kind) {
   const e = runEconomy, req = offerBoard?.lines() ?? []
@@ -9352,6 +9366,8 @@ function loop () {
   setWindAudioVolume(RANGER_PARAMS.windVolume ?? 0.4)
   updateWindAudio(vehicleState)
   setCabView(getCameraMode() === 'hood')   // FEAT-120 camera-aware mix: the cab hears the world through the glass
+  setTunnelReverb(RANGER_PARAMS.tunnelReverbEnabled !== false, RANGER_PARAMS.tunnelReverbLevel ?? 0.9)
+  setInTunnel(_listenerInBore())           // FEAT-163: the camera is the listener — it leaves a portal after the truck
   setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
   setResultAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)   // the card plays over a held sim
   // FEAT-120 ambience: crickets on the sky's own night; grass from the green share of the ground the

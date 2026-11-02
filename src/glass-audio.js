@@ -18,7 +18,7 @@
  * is stopped on a schedule and left for GC.
  */
 
-import { getAudioContext, getWorldBus, whiteNoiseBuffer } from './engine-audio.js'
+import { getAudioContext, getWorldBus, getMasterBus, whiteNoiseBuffer } from './engine-audio.js'
 
 const LEVEL = 0.5          // overall peak gain
 const TAIL_S = 0.3         // s — the crumble and tinkles land inside this window after the pop
@@ -52,7 +52,7 @@ export function playGlassBreak (level = 1, world = false) {
   const t = ctx.currentTime
   const out = ctx.createGain()
   out.gain.value = LEVEL * Math.min(1, level)
-  out.connect(world ? getWorldBus() : ctx.destination)
+  out.connect(world ? getWorldBus() : getMasterBus())
 
   // THUNK
   const osc = ctx.createOscillator()

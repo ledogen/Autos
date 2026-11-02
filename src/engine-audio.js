@@ -50,16 +50,32 @@ export function getAudioContext () {
 }
 
 /**
- * FEAT-120: the WORLD bus. Every sound that happens in the world (engine, tires, wind, the truck's
- * contacts, the pump, crickets…) connects here instead of to ctx.destination; the UI's own sounds (the
- * rank bar's heartbeat and glass, the result card) bypass it. The bus is where the camera mix lives —
- * hood view hears the world through the glass, a ~2 kHz lowpass (setCabView) — and where FEAT-163's
- * tunnel reverb goes. Null if WebAudio is unavailable.
+ * The mix (FEAT-120 / FEAT-163). Nothing connects to ctx.destination but the master bus:
+ *
+ *   world sounds → WORLD bus ─┬─ dry ────────────────┬─ cab lowpass ─→ MASTER bus → speakers
+ *                             └─ tunnel reverb (wet) ─┘                    ↑
+ *   UI sounds (the rank bar's heartbeat and glass, the result card) ───────┘
+ *
+ * The WORLD bus carries everything that happens in the world (engine, tires, wind, the truck's
+ * contacts, the pump, crickets…). On it: FEAT-163's tunnel reverb, a ConvolverNode (the browser's
+ * reverb: it applies a space's echo fingerprint, the impulse response, to whatever passes through) on
+ * a send, and the camera mix — hood view hears the world through the glass, a ~2 kHz lowpass after
+ * the reverb, so a tunnel is heard through the glass too. UI sounds stay dry: a tunnel does not echo
+ * the result card. Null if WebAudio is unavailable.
  */
+let masterBus = null
 let worldBus = null
 let worldLp = null       // the camera mix's lowpass: open outside, the glass in the cab
 const CAB_OPEN_HZ = 20000
 const CAB_GLASS_HZ = 2000
+export function getMasterBus () {
+  if (masterBus) return masterBus
+  const c = getAudioContext()
+  if (!c) return null
+  masterBus = c.createGain()
+  masterBus.connect(c.destination)
+  return masterBus
+}
 export function getWorldBus () {
   if (worldBus) return worldBus
   const c = getAudioContext()
@@ -68,7 +84,7 @@ export function getWorldBus () {
   worldLp.type = 'lowpass'
   worldLp.frequency.value = CAB_OPEN_HZ
   worldLp.Q.value = 0.5
-  worldLp.connect(c.destination)
+  worldLp.connect(getMasterBus())
   worldBus = c.createGain()
   worldBus.connect(worldLp)
   return worldBus
@@ -76,6 +92,57 @@ export function getWorldBus () {
 /** Camera-aware mix (FEAT-120, the owner kept the take 2026-11-02): true while the camera is in the cab. */
 export function setCabView (inCab) {
   if (worldLp) worldLp.frequency.setTargetAtTime(inCab ? CAB_GLASS_HZ : CAB_OPEN_HZ, ctx.currentTime, 0.08)
+}
+
+// ── FEAT-163: the tunnel reverb ──────────────────────────────────────────────────────────────────
+// The impulse response is GENERATED (FEAT-120's batch-2 prototype): stereo noise under an exponential
+// decay, RT60 1.5 s (the time to fall 60 dB), darkening as it decays (a one-pole lowpass whose cutoff
+// falls with time: walls eat the highs first), plus the tube's own signature, a flutter echo between
+// the walls every 2·w/c ≈ 53 ms for w = 9 m. The send is connected only while the listener is in or
+// near a bore — a convolver costs CPU whether its output is heard or not.
+const TUNNEL_RT60 = 1.5, TUNNEL_W = 9, C_AIR = 343
+const TUNNEL_FADE_TC = 0.1   // s — setTargetAtTime constant: ~0.3 s crossfade at the portals [DEFAULT]
+let tunnelWet = null, tunnelConv = null, tunnelOnUntil = 0, tunnelLevel = 0.9, tunnelOn = true
+function tunnelIR (c) {
+  const sr = c.sampleRate, n = Math.ceil(sr * TUNNEL_RT60), ir = c.createBuffer(2, n, sr)
+  const flutter = Math.round(sr * 2 * TUNNEL_W / C_AIR)
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch)
+    let y = 0
+    for (let i = 0; i < n; i++) {
+      const t = i / sr, env = Math.exp(-6.91 * t / TUNNEL_RT60)
+      const a = Math.exp(-2 * Math.PI * (7000 * Math.exp(-t * 2.2) + 600) / sr)   // cutoff 7.6 kHz → ~1 kHz
+      y = a * y + (1 - a) * (Math.random() * 2 - 1)
+      d[i] = y * env * 3
+    }
+    for (let k = 1; k * flutter < n; k++) {   // discrete wall-to-wall slaps, decaying
+      const i = k * flutter + (ch ? 7 : 0)
+      d[i] += 0.5 * Math.exp(-6.91 * (i / sr) / TUNNEL_RT60) * (k % 2 ? 1 : -1)
+    }
+  }
+  return ir
+}
+/** FEAT-163 debug-menu controls: on/off and the wet level (0..1). */
+export function setTunnelReverb (on, level) { tunnelOn = !!on; tunnelLevel = level }
+/** Per frame: is the LISTENER (the camera) inside a bore? Crossfades the wet send; connects it on demand. */
+export function setInTunnel (inBore) {
+  if (!worldBus || !ctx || ctx.state !== 'running') return
+  const now = ctx.currentTime, want = inBore && tunnelOn
+  if (want && !tunnelConv) {
+    tunnelConv = ctx.createConvolver()
+    tunnelConv.buffer = tunnelIR(ctx)
+    tunnelWet = ctx.createGain()
+    tunnelWet.gain.value = 0
+    tunnelConv.connect(tunnelWet)
+    tunnelWet.connect(worldLp)
+    worldBus.connect(tunnelConv)
+  } else if (want && tunnelOnUntil === 0) {
+    worldBus.connect(tunnelConv)   // re-attach after an idle stretch
+  }
+  if (!tunnelConv) return
+  if (want) tunnelOnUntil = now + TUNNEL_RT60 + 1   // keep the send until the tail and the fade are done
+  tunnelWet.gain.setTargetAtTime(want ? tunnelLevel : 0, now, TUNNEL_FADE_TC)
+  if (!want && tunnelOnUntil && now > tunnelOnUntil) { worldBus.disconnect(tunnelConv); tunnelOnUntil = 0 }
 }
 
 /**

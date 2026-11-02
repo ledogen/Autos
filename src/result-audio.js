@@ -1,7 +1,7 @@
 /**
  * src/result-audio.js — FEAT-120 coin + grade stingers, FEAT-131 phase 1: the result card's reveal
- * gets its sound. Synthesized, on the one shared AudioContext, straight out (UI, not the world bus:
- * the cab's glass and a tunnel's echo never colour the card). The owner kept both takes on 2026-11-02
+ * gets its sound. Synthesized, on the one shared AudioContext, on the master bus dry (UI, not the
+ * world bus: the cab's glass and a tunnel's echo never colour the card). The owner kept both takes on 2026-11-02
  * ("i like coin and stingers"); prototypes in tools/audio-proto/proto.js.
  *
  *   coin    — two quick high pings a fifth apart (2.6 → 3.9 kHz), each with a coin's inharmonic ring
@@ -11,7 +11,7 @@
  *             chord. Sound only: the card prints no letter (owner, 2026-10-22), the grade is heard.
  */
 
-import { getAudioContext, whiteNoiseBuffer } from './engine-audio.js'
+import { getAudioContext, getMasterBus, whiteNoiseBuffer } from './engine-audio.js'
 
 let enabled = true
 let volume = 0.6
@@ -25,7 +25,7 @@ export function setResultAudio (on, vol) {
 
 const jit = pct => 1 + (Math.random() * 2 - 1) * pct
 const live = () => { const c = getAudioContext(); return enabled && c && c.state === 'running' ? c : null }
-function out (ctx, g) { const o = ctx.createGain(); o.gain.value = g; o.connect(ctx.destination); return o }
+function out (ctx, g) { const o = ctx.createGain(); o.gain.value = g; o.connect(getMasterBus()); return o }
 
 function tone (ctx, dest, t, f, g, decay) {
   const o = ctx.createOscillator()
