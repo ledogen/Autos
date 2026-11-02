@@ -632,18 +632,15 @@ export class OfferBoard {
             stock = lo + Math.floor(stockRoll * (sHi - lo + 1))
         }
 
-        // FEAT-142: the giver's traits — 0–2, on their OWN stream (a draw on `spec` would shift every
-        // existing offer's destination and place name). Opposed pairs never together; Big tipper never
-        // rides a bonus offer (its tip is the item, R-04).
+        // FEAT-142: the giver's trait — at most ONE (owner, 2026-11-01: no stacking), on its OWN stream
+        // (a draw on `spec` would shift every existing offer's destination and place name). Big tipper
+        // never rides a bonus offer (its tip is the item, R-04). Kept a list: one trait or none.
         const traits = []
         if (thing.family !== 'papers') {
             const tr = stream('traits')
-            const want = Number(pickWeighted(tr(), TRAIT_COUNT_WEIGHTS))
-            for (let i = 0; i < want; i++) {
-                const ok = TRAITS.filter(t => t.families.includes(thing.family) && !traits.includes(t)
-                    && !traits.some(o => o.not.includes(t.id) || t.not.includes(o.id)) && !(t.tip && bonus))
-                if (!ok.length) break
-                traits.push(ok[Math.floor(tr() * ok.length)])
+            if (Number(pickWeighted(tr(), TRAIT_COUNT_WEIGHTS)) > 0) {
+                const ok = TRAITS.filter(t => t.families.includes(thing.family) && !(t.tip && bonus))
+                if (ok.length) traits.push(ok[Math.floor(tr() * ok.length)])
             }
             if (stock != null && traits.some(t => t.stockFull)) stock = HAUL_STOCK[1]   // Wholesale: the whole yard
         }
@@ -1028,13 +1025,37 @@ export class OfferBoard {
             deed: sp.family === 'papers' ? null
                 : sp.deeds === 'none' ? 'Deed: none — off the books'
                 : deedLine(sp.family, this._region, cargoId, km, sp.massKg) + (sp.deeds === 'extraHalf' ? ' · +1/2 at C or better' : ''),
-            traits: sp.traitNames?.length ? sp.traitNames : null,   // FEAT-142: bottom-left of the card
+            // FEAT-142: bottom-left of the card, the trait's name and what it does to THIS offer, in the
+            // card's own numbers (owner, 2026-11-01: "i cant tell if the modifiers are actually doing anything").
+            traits: sp.traits?.length ? sp.traits.map(id => this._traitLine(offer, sp, id, par, range, money)) : null,
             // FEAT-112: a load that fits says nothing. Otherwise the worst reason, in words:
             // "Warning: this load exceeds the recommended weight limit", "Overload: too heavy".
             verdict: verdict && verdict.verdict !== 'fits'
                 ? { level: verdict.verdict, text: `${verdict.verdict === 'overload' ? 'Overload' : 'Warning'}: ${verdict.reasons[0].text}` }
                 : null,
         }
+    }
+
+    /**
+     * FEAT-142: one trait as the card prints it — "impatient: +$1.20 pay · deadline −1h 10m · ranks
+     * 10% tighter". Each effect against the same offer WITHOUT the trait: pay is the quoted base
+     * (per bundle on a haul), the deadline the time limit; the rest are the multipliers as percentages.
+     */
+    _traitLine (offer, sp, id, par, range, money) {
+        const t = TRAITS.find(x => x.id === id)
+        const pct = (m) => `${Math.round(Math.abs(m - 1) * 100)}%`
+        const signed = (v, f) => `${v < 0 ? '−' : '+'}${f(Math.abs(v))}`
+        const fx = []
+        if (t.stockFull) fx.push(`the whole yard: ${sp.stock} bundles`)
+        const payM = (t.pay ?? 1) * (t.perPiece ?? 1)
+        if (payM !== 1) fx.push(range ? `${signed(range.base * (1 - 1 / payM), money)} ${sp.stock ? 'a bundle' : 'pay'}` : `${signed(payM - 1, () => pct(payM))} pay`)
+        if (t.deadline && par > 0) fx.push(`deadline ${signed(this.deadlineH(offer, par) - par / (DAY_PARAMS.dayLengthSec / 24) * (1 + sp.deadlineSlack / t.deadline), formatGameDuration)}`)
+        if (t.thresholds) fx.push(`rank times ${pct(t.thresholds)} ${t.thresholds < 1 ? 'tighter' : 'looser'}`)
+        if (t.floors) fx.push(`load ${pct(t.floors)} ${t.floors < 1 ? 'more delicate' : 'sturdier'}`)
+        if (t.tip) fx.push(`${signed(t.tip - 1, () => pct(t.tip))} tip`)
+        if (t.deeds === 'none') fx.push('no good deed')
+        if (t.deeds === 'extraHalf') fx.push('+1/2 deed at C or better')
+        return fx.length ? `${t.name}: ${fx.join(' · ')}` : t.name
     }
 
     /**

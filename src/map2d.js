@@ -2618,10 +2618,25 @@ export class Map2D {
         const TX = PAD + B.BAR * k + PORT + 12 * k        // text column, right of the portrait
         const fN = `${B.FS * k}px ${MAP_LABEL_FONT}`, fB = `700 ${B.FS * k}px ${MAP_LABEL_FONT}`
         const fS = `600 ${B.FSS * k}px ${MAP_LABEL_FONT}`
+        // FEAT-142: the trait line (name: effects) wraps at its " · " joins when it outruns the card —
+        // nothing else on this card wraps, and a full effect list is ~60 characters to the row's ~46.
+        const traitRows = []
+        if (c?.traits) {
+            ctx.font = fN
+            const maxW = W - 2 * PAD - B.BAR * k
+            for (const line of c.traits) {
+                let cur = ''
+                for (const part of line.split(' · ')) {
+                    const t = cur ? `${cur} · ${part}` : part
+                    if (cur && ctx.measureText(t).width > maxW) { traitRows.push(`${cur} ·`); cur = part } else cur = t
+                }
+                traitRows.push(cur)
+            }
+        }
         // FEAT-112: a load verdict adds one row; so do the clocks (`times`, their own row since 2026-10-23)
         // and the deed line (R-09).
         const H = baseH * k + (c?.verdict ? B.LH * k : 0) + (c?.times?.length ? B.LH * k : 0) + (c?.deed ? B.LH * k : 0)
-            + (c?.traits ? B.LH * k : 0)   // FEAT-142
+            + traitRows.length * B.LH * k   // FEAT-142
         const bonusH = (c?.bonus ? B.BONUS * k : 0)
             + (v.shelf ? (B.PAD * 2 + B.HEAD + v.shelf.length * B.LH) * k : 0)   // FEAT-137: an auto shop's shelf form
         const M = 12 * k                                  // margin from the sheet's edge
@@ -2754,7 +2769,7 @@ export class Map2D {
         if (c.verdict) { ty += LH; this._drawRuns(ctx, [{ t: c.verdict.text, b: true }], inL, ty, fN, fB,
                                       c.verdict.level === 'overload' ? '#b3261e' : '#a06800') }
         // FEAT-142: the giver's traits, bottom-left.
-        if (c.traits) { ty += LH; this._drawRuns(ctx, [{ t: c.traits.join('  ·  ') }], inL, ty, fN, fB, '#555') }
+        for (const t of traitRows) { ty += LH; this._drawRuns(ctx, [{ t }], inL, ty, fN, fB, '#555') }
 
         // ── the TIP form, tacked onto the bottom (R-04: the item that replaces the cash tip) ──
         if (c.bonus) {
