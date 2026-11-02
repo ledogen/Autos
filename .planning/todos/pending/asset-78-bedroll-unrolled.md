@@ -32,8 +32,8 @@ laid out to sleep on.
 
 ## Acceptance
 
-- [ ] `assets/models/bedroll.glb` exported from items.py (GUI Blender via blender-mcp — headless
-      `blender -b` never exports).
+- [ ] `assets/models/bedroll.glb` exported from items.py (`export_glb` — runs headless since
+      2026-11-02, `blender -b --factory-startup`).
 - [ ] `data/prop-models.js` `bedroll` entry; `ITEMS.bedroll.model = 'bedroll'`. That is the whole
       wiring: FEAT-66's renderer stacks it.
 - [ ] Seen at camp inside the tent and on its own (the sleeping bag and blanket stack on it).

@@ -37,6 +37,6 @@ right on a flat bedroll AND on a domed sleeping bag. The inventory thumbnail sta
 
 ## Acceptance
 
-- [ ] `assets/models/blanket.glb` exported from items.py (GUI Blender via blender-mcp).
+- [ ] `assets/models/blanket.glb` exported from items.py (`export_glb`, headless works).
 - [ ] `data/prop-models.js` `blanket` entry; `ITEMS.blanket.model = 'blanket'`.
 - [ ] Seen at camp on the bedroll and on the sleeping bag: no visible gap, no clipping into the bag.
