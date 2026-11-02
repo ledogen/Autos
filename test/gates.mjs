@@ -159,6 +159,8 @@ export const GATES = [
     desc: 'BUG-27: hard body slams honor params.bodyRestitution without amplifying it (sampled-once bias, accumulated-impulse solver, tamed Baumgarte) — no phantom spin/launch, no energy gain, rest stable' },
   { file: 'drivetrain-climb.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting' },
+  { file: 'hilift.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'FEAT-138: the hi-lift jack (src/hilift.js) on the real stepPhysics, flat ground — a truck on its side heaved toward upright comes back onto its wheels, cut at the balance point inside the 3 s cap; the 5 s cooldown, a truck on its wheels and an ended run all refuse; from the roof it is on its wheels within two presses' },
   { file: 'abs-stop.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'ABS (src/abs.js): 25 m/s full-pedal stops off/on at μ 0.8/0.35 — no lock above cut-out, 3–15 Hz front cycling, ≤ 1.2× locked distance, steers where locked fronts plough' },
   { file: 'ignition-starter.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],

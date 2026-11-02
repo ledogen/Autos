@@ -18,7 +18,8 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, syncChassisMass } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, syncChassisMass, rollBalance } from './physics.js'
+import { HiLift } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
@@ -5055,7 +5056,19 @@ function _pickFieldRepair (id) {
  * The inventory's roadside choices for the selected item: a flat tire, with a kit aboard, opens the plug
  * picker with it picked; a part you can swap by hand (the air filter) goes on, the time on the button.
  */
+// FEAT-138: the hi-lift jack. Its cooldown is real time (owner, 2026-10-24); the balance angles are
+// re-read at each start because a vehicle preset edits RANGER_PARAMS in place.
+const hiLift = new HiLift(rollBalance(RANGER_PARAMS))
+const _now = () => performance.now() / 1000
+
 function _partActions (row) {
+  if (row.id === 'hiLiftJack') {
+    hiLift.balance = rollBalance(RANGER_PARAMS)
+    const why = hiLift.refusal(vehicleState, _now(), _runEnded)
+    if (why) return [{ label: why, enabled: false, run: () => {} }]
+    const heave = (dir) => () => { if (hiLift.start(dir, vehicleState, _now(), _runEnded)) inventoryScreen.close() }
+    return [{ label: 'Heave it left', run: heave(-1) }, { label: 'Heave it right', run: heave(1) }]
+  }
   if (PARTS[row.id]?.roadside) {
     return [{ label: `Replace it — ${formatGameDuration(SLOTS[PARTS[row.id].slot].hours)}`,
       run: () => { const h = fitRoadside(partsSystem, inventorySystem, row.index); if (h >= 0) _afterRoadsideWork(h) } }]
@@ -8845,6 +8858,7 @@ function loop () {
 
     // FEAT-36: debris pre-step — render snapshot + cargo-in-bed bullet flag (see debris.js).
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
+    hiLift.step(vehicleState, RANGER_PARAMS.mass + (RANGER_PARAMS.stowedKg || 0), PHYSICS_DT, _now())   // FEAT-138
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them
