@@ -9308,7 +9308,7 @@ function loop () {
     setEngineAudioTuning(RANGER_PARAMS.engineAudioDynamics, getCameraMode() !== 'hood', RANGER_PARAMS.engineChaseBrightDb, RANGER_PARAMS.engineChaseBoomDb, RANGER_PARAMS.starterAudioLevel, RANGER_PARAMS.engineAudioCompRatio)
     // FEAT-50: a low-fuel stumble drops the drone out for its length, with one pop per stumble.
     const fuel = vehicleState.fuel
-    if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth); _sputtersHeard = fuel.sputters }
+    if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth, dtrain.engineRPM, RANGER_PARAMS.cylinders, fuel.sputterDur); _sputtersHeard = fuel.sputters }
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle,
       (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0), RANGER_PARAMS.cylinders, RANGER_PARAMS.engine,
       vehicleState.ignition?.state === 'off')

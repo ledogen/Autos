@@ -594,10 +594,47 @@ export function playCatchAudio () {
 }
 
 /**
- * FEAT-50: the low-fuel sputter — one stumble. A short low pop, louder the deeper it goes (`depth`
- * 0..1, the torque it took); the drone dropping out underneath is main.js passing firing=false to
- * updateEngineAudio for the stumble's length.
+ * FEAT-50: the low-fuel sputter — one stumble of `durS` seconds, `depth` 0..1 the torque it took. The
+ * drone drops out underneath (main.js passes firing=false to updateEngineAudio for the stumble).
+ * Redone 2026-11-02 (owner: the old low pop "sounds like nothing"; "a gaseous exhaust event: a pop,
+ * bang or misfire … tied to engine speed"): the mixture that missed its cylinder lights in the
+ * exhaust, so the stumble POPS 2–5 times ON THE FIRING GRID at the live rpm (rpm/60 × cylinders/2 a
+ * second), the deeper the stumble the more and louder, and the last one, as it re-lights, is a bang.
  */
-export function playSputterPop (depth = 0.7) {
-  _blip(55, 28, 0.14, 0.18 + 0.2 * depth, 500)
+export function playSputterPop (depth = 0.7, rpm = 800, cylinders = 6, durS = 0.4) {
+  if (!enabled || !getAudioContext() || ctx.state !== 'running') return
+  const now = ctx.currentTime, firing = 60 / (Math.max(400, rpm) * cylinders / 2)
+  const slots = Math.max(2, Math.floor(durS / firing))
+  const n = 2 + Math.round(3 * depth * Math.random())
+  for (let i = 0; i < n; i++) {
+    const last = i === n - 1
+    const slot = last ? slots - 1 : 1 + Math.floor(Math.random() * (slots - 2))
+    _exhaustPop(now + slot * firing, (last ? 1 : 0.45 + 0.35 * Math.random()) * (0.5 + 0.5 * depth))
+  }
 }
+
+/** One exhaust pop at `t`, `k` 0..1: a sharp broadband crack, a body thump, and the pipe ringing. */
+function _exhaustPop (t, k) {
+  const out = ctx.createGain()
+  out.gain.value = volume * 0.9 * k
+  out.connect(getWorldBus())
+  const src = ctx.createBufferSource()
+  src.buffer = (_popNoise ??= whiteNoiseBuffer(ctx, 0.5))
+  const crack = ctx.createBiquadFilter(); crack.type = 'lowpass'; crack.frequency.value = 2500
+  const cg = ctx.createGain()
+  cg.gain.setValueAtTime(0.9, t); cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.018)
+  const pipe = ctx.createBiquadFilter(); pipe.type = 'bandpass'; pipe.frequency.value = 220 + 80 * Math.random(); pipe.Q.value = 4
+  const pg = ctx.createGain()
+  pg.gain.setValueAtTime(1.4, t); pg.gain.exponentialRampToValueAtTime(0.0001, t + 0.07)
+  src.connect(crack); crack.connect(cg); cg.connect(out)
+  src.connect(pipe); pipe.connect(pg); pg.connect(out)
+  src.start(t, Math.random() * 0.4); src.stop(t + 0.08)
+  const o = ctx.createOscillator()
+  o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.04)
+  const og = ctx.createGain()
+  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.8, t + 0.003)
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.06)
+  o.connect(og); og.connect(out)
+  o.start(t); o.stop(t + 0.07)
+}
+let _popNoise = null
