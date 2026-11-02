@@ -755,6 +755,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const byId = Object.fromEntries(TRAITS.map(t => [t.id, t]))
     const tr = (sp, k) => (sp.traits ?? []).reduce((m, id) => m * (byId[id][k] ?? 1), 1)
     const counts = [0, 0, 0], seen = new Set()
+    let lines = 0, badLine = 0, lineEg = ''
     let n = 0, opposed = 0, wrongFamily = 0, papersTraited = 0, tipOnBonus = 0, badTerms = 0, drift = 0, whole = 0, wholeBad = 0
     for (let seed = 1; seed <= 60; seed++) {
         const b = make(seed), b2 = make(seed)
@@ -776,12 +777,25 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
                 || sp.thresholdScale !== (sp.family === 'delivery' ? tr(sp, 'thresholds') : 1)
                 || sp.deeds !== (ids.map(x => byId[x].deeds).find(Boolean) ?? null)) badTerms++
             if (ids.includes('wholesale')) { whole++; if (sp.stock !== HAUL_STOCK[1]) wholeBad++ }
+            // The card prints the trait's EFFECT on its line (owner, 2026-11-01), in this offer's numbers.
+            if (ids.length && !sp.line) {
+                const t = byId[ids[0]], line = b.card(o, { nowH: t + 0, route: { par: 300, distance: 2000 } })?.traits?.[0] ?? ''
+                lines++
+                const payM = (t.pay ?? 1) * (t.perPiece ?? 1)
+                const want = [payM !== 1 && (payM > 1 ? '+$' : '−$'), t.deadline && 'deadline ', t.thresholds && 'rank times ',
+                              t.floors && 'load ', t.tip && 'tip', t.deeds && 'deed', t.stockFull && `the whole yard: ${HAUL_STOCK[1]}`].filter(Boolean)
+                if (!line.startsWith(`${t.name}: `) || !want.every(w => line.includes(w))) { badLine++; lineEg ||= `${t.id}: "${line}"` }
+                else if (!lineEg && payM !== 1 && t.deadline) lineEg = `"${line}"`
+            }
         }
     }
-    const share = counts.map(c => c / n), W = TRAIT_COUNT_WEIGHTS, Wt = W[0] + W[1] + W[2]
+    const share = counts.map(c => c / n), W = TRAIT_COUNT_WEIGHTS, Wt = W[0] + W[1]
     check('FEAT-142: same seed, same traits (their own stream — SM-INV-12)', drift === 0, `${drift} drifted`)
-    check('FEAT-142: 0–2 traits per offer, shares near the weights',
-        [0, 1, 2].every(k => Math.abs(share[k] - W[k] / Wt) < 0.04), share.map(x => x.toFixed(2)).join(' / '))
+    check('FEAT-142: ONE trait at most (owner 2026-11-01: no stacking), shares near the weights',
+        counts[2] === 0 && [0, 1].every(k => Math.abs(share[k] - W[k] / Wt) < 0.04), share.map(x => x.toFixed(2)).join(' / '))
+    check('FEAT-142: the card prints each trait\'s effect on its line, in the offer\'s numbers', lines > 0 && badLine === 0,
+        `${badLine} of ${lines} — ${lineEg}`)
+    console.log(`       e.g. ${lineEg}`)
     check('FEAT-142: opposed pairs never together, and every trait only on its families', opposed === 0 && wrongFamily === 0, `${opposed} opposed, ${wrongFamily} off-family`)
     check('FEAT-142: Larry\'s papers carry no trait; Big tipper never rides a bonus offer (its tip is the item)', papersTraited === 0 && tipOnBonus === 0)
     check('FEAT-142: every trait rolls somewhere in the corpus', TRAITS.every(t => seen.has(t.id)), [...TRAITS.map(t => t.id)].filter(x => !seen.has(x)).join(','))

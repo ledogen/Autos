@@ -569,8 +569,10 @@ export const TRAITS = [
     { id: 'offBooks',   name: 'off the books', families: NOT_PAPERS, not: ['rightThing'], pay: 1.20, deeds: 'none' },
     { id: 'rightThing', name: 'the right thing to do', families: NOT_PAPERS, not: ['offBooks'], pay: 0.85, deeds: 'extraHalf' },
 ]
-/** FEAT-142: how many traits an offer carries — relative weights (starting values, FEAT-69 tunes). */
-export const TRAIT_COUNT_WEIGHTS = { 0: 0.5, 1: 0.35, 2: 0.15 }
+/** FEAT-142: how many traits an offer carries — relative weights (starting values, FEAT-69 tunes).
+ *  ONE at most (owner, 2026-11-01: "i dont want them to stack. one at a time max"); the old two-trait
+ *  share folded into one, so the share of plain offers is unchanged. */
+export const TRAIT_COUNT_WEIGHTS = { 0: 0.5, 1: 0.5 }
 
 export const DEADLINE_SLACK = {
     delivery:   1.0,
