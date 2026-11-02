@@ -41,7 +41,7 @@
  * alignment/runout readouts) and vehicleState.parked, and writes only to the DOM.
  */
 
-import { TRACKS, DAMAGE_PARAMS } from './damage.js'
+import { TRACKS, DAMAGE_PARAMS, fatalMph } from './damage.js'
 import { keycap, hintPark, BACK_BUTTON } from './park-badge.js'
 
 const REFRESH_S = 0.1      // 10 Hz — condition moves on the scale of minutes
@@ -144,7 +144,7 @@ function symptoms (m, id) {
     case 'armor':
       // Fatal speed scales with this panel's condition (fatalMphBare..fatalMphFull). Only worth
       // saying once the panel has left the sound band.
-      if (P.fatalEnabled && c < BANDS[0].min) out.push(`A crash over ${Math.round(P.fatalMphBare + (P.fatalMphFull - P.fatalMphBare) * c)} mph here is fatal`)
+      if (P.fatalEnabled && c < BANDS[0].min) out.push(`A crash over ${Math.round(fatalMph(c))} mph here is fatal`)
       break
   }
   return out
