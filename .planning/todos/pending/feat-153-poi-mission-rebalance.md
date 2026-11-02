@@ -100,13 +100,13 @@ Spare builds it, then the census gate (Acceptance).
 
 ## Acceptance
 
-- [ ] Owner has ruled on questions 1–2 and the placeholder jobs are replaced by the owner's words.
-- [ ] The census script lands as a gate (`test/offer-census.mjs`) with a floor per POI type: no
+- [ ] Owner has ruled on questions 1–2 (DONE 11-02) and the placeholder jobs are replaced by the owner's words (OPEN; plus the tackle-shop reading in § Built).
+- [x] The census script lands as a gate (`test/offer-census.mjs`) with a floor per POI type: no
       POI type with a model ends fewer than N jobs per board (N ruled; 0.3 proposed = one in three
       boards) and no giver posts under 3 %.
-- [ ] `data/offers.js` carries the new things / SOURCES rows; pois.md § Job supply and cargo.md
+- [x] `data/offers.js` carries the new things / SOURCES rows; pois.md § Job supply and cargo.md
       updated to match.
-- [ ] offer-board, story-poi, paper gates green; cdp-smoke passes.
+- [x] offer-board, story-poi, paper gates green; cdp-smoke passes. (2026-11-02: 24/24 affected gates; the smoke 21/21 rerun alone after a load flake in `papers`.)
 
 ## Built — Spare, 2026-11-02 (feature/spare)
 
