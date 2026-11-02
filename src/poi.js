@@ -360,6 +360,21 @@ const YARD_SOLID_GAP = 0.15   // m — clearance from the POI model's own collis
  * Static dressing only (owner, 2026-09-22): meshes, no bodies, no contact — the truck drives
  * through them.
  */
+/**
+ * FEAT-149: a yard satellite's SOLID record — the fields a marker carries (modelX/Z, baseY, modelYaw,
+ * collision), so queryContact's box test (the wheels) and PoiPhysics (the chassis) take it unchanged.
+ * Null for a knockable ornament (data/prop-models.js `knockable` — main.js makes it a body near the
+ * truck) and for a model with no collision. "Others should have collision but not budge (brick
+ * firepit)" — owner, 2026-10-25; before this a satellite was a mesh only and the truck drove through.
+ */
+export function satSolid (sat) {
+    if (sat._solid !== undefined) return sat._solid
+    const spec = PROP_MODELS[sat.key], col = spec?.collision
+    return (sat._solid = !col?.size || col.shape === 'none' || spec.knockable ? null
+        : { id: `sat:${sat.key}@${sat.x.toFixed(2)},${sat.z.toFixed(2)}`, modelX: sat.x, modelZ: sat.z,
+            baseY: sat.y - (sat.lift ?? 0), modelYaw: sat.yaw, collision: { size: col.size } })
+}
+
 export function dressYard (q, seed, yard) {
     const tag = q.tags?.find(t => YARD_POOLS[t])
     if (!tag || !yard?.length) return []
@@ -1257,6 +1272,11 @@ export class PoiSystem {
             if (q.hidden) continue                    // FEAT-102: a hidden marker has no collider
             const hit = this._boxesContact(q, cube, cx, cy, cz, r)
             if (hit) return hit
+            for (const sat of q.satellites ?? []) {   // FEAT-149: the yard's solid things
+                const s = satSolid(sat)
+                const h = s && this._boxesContact(s, cube, cx, cy, cz, r)
+                if (h) return h
+            }
         }
         return null
     }

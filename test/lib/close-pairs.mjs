@@ -5,6 +5,8 @@
 //
 // Excluded, because they are not two roads on their own earthworks: tunnel bores (±80 m of approach),
 // samples inside the geometric throat of a node the two runs share (the junction's own pad and hold),
+// samples within the reach of a registered at-grade CROSSING on either run (BUG-104: a crossing is a
+// junction of its own — the same ±(blend + 10) m the tunnel clip clears around it),
 // samples inside a T's departure blend (offCurveSpans — the side road leaving the trunk's deck), and
 // the two arms of a switchback (hairpins, counted).
 import { DEEP_BANK_TOE_EXTRA } from '../../src/road-carve.js'
@@ -81,7 +83,7 @@ const hairpin = (A, aFromStart, B, bFromStart) => {
 
 /**
  * @returns {{ pairs: Array<{ ka, kb, shared, samples: Array<{ ax, az, ay, d, fx, fz, by }> }>, runs: number, hairpins: number }}
- *   Each sample: a station on run A (ax, az, deck ay), the nearest point of run B (fx, fz, deck by)
+ *   Each sample: a station on run A at arc s (ax, az, deck ay), the nearest point of run B (fx, fz, deck by)
  *   and their distance d. Pairs with no surviving sample are omitted.
  */
 export function closePairs(road, P) {
@@ -98,6 +100,8 @@ export function closePairs(road, P) {
     }
     return THROAT_CAP
   }
+  const XR = (P.roadJunctionBlendLength ?? 30) + 10
+  const inCross = (k, s) => (road._crossingsByRun?.get(k) ?? []).some((x) => Math.abs(x.arc - s) < XR)
   const runs = [...road._network.entries()].filter(([, e]) => e.points?.length > 1)
   const pairs = []
   let hairpins = 0
@@ -125,9 +129,10 @@ export function closePairs(road, P) {
       if (n.d > NEAR || n.d < 1e-6) continue
       if (inBore(A, s) || inBore(B, n.s) || inBlend(A, s) || inBlend(B, n.s)) continue
       if (shared && (s < tAs || LA - s < tAe || n.s < tBs || LB - n.s < tBe)) continue
+      if (inCross(ka, s) || inCross(kb, n.s)) continue
       const ay = road.runProfile(s - (A.arcOrigin ?? 0), ka).gradeY
       const by = road.runProfile(n.s - (B.arcOrigin ?? 0), kb).gradeY
-      samples.push({ ax, az, ay, d: n.d, fx: n.fx, fz: n.fz, by })
+      samples.push({ s, ax, az, ay, d: n.d, fx: n.fx, fz: n.fz, by })
     }
     if (samples.length) pairs.push({ ka, kb, shared, samples })
   }

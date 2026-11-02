@@ -306,11 +306,8 @@ export const FLORA_PARAMS = {
   // overridable live by the '3D prop ring' slider. Baked ground shadows are unaffected.
   lod: {
     ring3d: 2,             // chunks of full-3D props around the camera; beyond → billboards
-    litGain: 1.7,          // billboard sun-contrast scale in the view-relight ratio (1 = physical
-                           // Lambert average; 1.7 = user-tuned 2026-07-19, punchier lit side —
-                           // see prop-impostor._updateLightUniforms); GUI slider
-    flatten: 0,            // sun-on gradient flatten: blend toward the tile mean as the view
-                           // swings sun-ward (0 = off, 1 = featureless). User-tuned OFF 2026-07-19 —
-                           // the baked facet pattern reads better than the softened one; GUI slider
+    litGain: 1,            // billboard sun-term scale (1 = the 3D trees' own Lambert; GUI slider). BUG-96:
+                           // billboards are now lit per texel from baked normals, the same maths as the 3D
+                           // ring — the old 1.7 compensated the retired view-ratio relight's flat average
   },
 }
