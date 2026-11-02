@@ -49,7 +49,9 @@ chassis factory, debris translation) · `tire.js` (Pacejka, pure math) · `suspe
 (spring-damper struts, out-of-round tire radius) · `alignment.js` (static toe/camber signs,
 pure math — read by `physics.js` and `vehicle-model.js`) · `terrain-physics.js` (streamed heightfield colliders, MESH == PHYSICS) ·
 `drivetrain.js` (engine/converter/gearbox, FEAT-23) · `abs.js` (FEAT-135 4-channel anti-lock
-controller — wheel + decel sensors → per-wheel line pressure; pure, stepped by `physics.js`) · `fuel.js` (FEAT-50 engine fuel map — rpm × pedal
+controller — wheel + decel sensors → per-wheel line pressure; pure, stepped by `physics.js`) · `traction.js` (FEAT-159 throttle
+assist + traction control — wheel + yaw sensors → a pedal cap the drivetrain reads and TC brake pressure on the rears; pure,
+stepped by `physics.js`) · `fuel.js` (FEAT-50 engine fuel map — rpm × pedal
 table off `data/engines.js` by the Willans line — and the tank's per-step drain; pure) · `ignition.js` (key/starter state machine,
 FEAT-33 — pure, no DOM) · `vehicle.js` (Ackermann, input) · `vehicle-state.js` (THE canonical
 vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stage truck cannot drift) ·

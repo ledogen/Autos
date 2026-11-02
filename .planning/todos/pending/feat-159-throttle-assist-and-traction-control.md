@@ -174,3 +174,91 @@ With both toggles off, `stepTraction` writes cap 1 and p 0 and changes nothing. 
 - `node test/fingerprint-physics.mjs --compare` against main must be identical. Then run the affected gates (`npm test`) and the browser smoke (`npm run test:all -- --browser`), since main.js and index.html change.
 - **In-game on :3282:** keyboard W and S launches with each toggle, a drift and a handbrake U-turn.
 - **Commits:** a `wip(159):` commit at each green step, the new lane rule. Copy this plan into the ticket first, because plan files get overwritten.
+
+## Work log — 2026-11-02 (Lane B)
+
+**Built** on `feature/machine`: `src/traction.js` (pure), stepped in `stepPhysics` beside `stepAbs`.
+- `t.cap` is the most pedal the engine may have. `stepDrivetrain` takes `min(pedal, cap)` in the
+  automatic (where it picks W or reverse-S, via the shared `autoReverse`) and in the manual.
+- `t.p[2..3]` is TC brake pressure on the rears. `getBrakeTorque` takes the stronger of it and the pedal.
+- `data/ranger.js` holds both toggles OFF, the honest baseline every gate assumes. `src/settings.js`
+  holds the player defaults: throttle assist ON, TC OFF.
+- There are two settings-page rows and a debug "Traction assists" folder. The gate is
+  `test/traction.mjs` (18 checks); `--matrix` prints the owner's table.
+- Physics fingerprint identical to main.
+
+**Two changes from the approved plan, both measured:**
+1. **The pedal cap is an integral controller**: it moves by `tracGain × (slip − target)` per second,
+   cutting from what the engine is actually getting. The ABS-style dump/re-apply valve was built
+   first, and it cost 19 % of the launch. Each 0.25-per-step cut collapsed the slip to nothing. The
+   engine and converter smooth the plant over about 6 steps, and an integrator tracks that without
+   pulsing.
+2. **The assist steps aside on ESC's oversteer test, not on sideslip > 10°.** The test is: yaw rate past
+   the steering's kinematic rate `vx·tan δ / wheelbase` by `tracYawMargin`, or yaw against the
+   countersteer. It is the same test TC uses to cut. It is sensor-honest (gyro + steering + wheel
+   speeds), and a gripping, understeering truck can never trip it. The sideslip test let no power-over
+   through either, and it read a gripping tight turn's kinematic sideslip as a drift.
+
+**Throttle assist**, slip target `taSlip`. This Pacejka crests near 45 %, and the break-away clamp
+holds a spinning tire there. So spin costs no drive in this model, only tread (wear ∝ slip speed) and
+lateral grip. 0–30 mph, time / rear tread slide (damage.js's wear integrand):
+
+| σ* | keyboard | pad | reverse 0–5 m/s (kbd) |
+|---|---|---|---|
+| off | 3.48 s / 27.6 m | 3.40 s / 56.5 m | 1.82 s / 52.1 m |
+| 0.30 | 3.57 / 16.8 | 3.55 / 17.7 | 1.87 / 2.8 |
+| **0.35 [DEFAULT]** | **3.52 / 19.7** | **3.50 / 20.7** | **1.83 / 3.6** |
+| 0.40 | 3.50 / 22.0 | 3.42 / 22.9 | 1.83 / 4.6 |
+
+**Assist on, at 0.35, against a drift:**
+- **Handbrake flick into full throttle:** the run is bit-identical to assist-off while the truck
+  out-rotates its steering.
+- **Handbrake U-turn:** identical (239.8°).
+- **Power-over on loose ground (μ 0.5):** β 67° with the assist vs 77° without.
+- **Power-over on DRY asphalt at 8 m/s, floored mid-corner:** β 36° → 9°. The foot feathers it before
+  the tail steps out. At 12 m/s it still goes (β 30°). Owner call (a) below.
+
+**Traction control:**
+- **Split grip** (one rear at 0.35 μ), open diff, 0–10 m/s: 9.65 → 5.63 s, and the wheel-speed gap
+  41 → 12 m/s.
+- **Dry power-oversteer entry** (8 m/s, δ 0.25, floored): β 45° → 5°.
+- **The cost:** a straight dry launch to 30 mph takes 4.62 s against 3.48 s. TC's torque cut fires at
+  15 % slip on the slower rear (`tcSlip`), which is deliberately cautious.
+
+**Matrix** (`node test/traction.mjs --matrix`), open diff, new tires, keyboard, time / tread slide:
+
+| ground | dir | off | throttle assist | TC |
+|---|---|---|---|---|
+| flat | fwd | 3.48 s / 28 m | 3.52 / 20 | 4.62 / 8 |
+| flat | rev | 1.82 / 52 | 1.83 / 3.6 | 2.27 / 1.0 |
+| 12 % cross-slope | fwd | 4.32 / 65 | 4.03 / 18 | 4.38 / 11 |
+| 12 % cross-slope | rev | 1.82 / 52 | 2.02 / 2.6 | 2.08 / 2.0 |
+| split grip | fwd | 11.73 / 597 | 12.03 / 44 | 8.73 / 25 |
+| split grip | rev | 5.55 / 191 | 5.03 / 5.9 | 3.07 / 6.6 |
+| one rear worn (μ×0.7) | fwd | 5.30 / 123 | 5.30 / 21 | 5.00 / 17 |
+
+The LSD, worn and pad rows follow the same pattern. The matrix driver is open-loop: it never steers.
+So asymmetric-grip launches (LSD split, worn tire on a cross-slope) spin themselves out with the
+assists off, and TC catches every one. The throttle assist stands aside once the truck oversteers,
+by design.
+
+**Acceptance:**
+- [x] Launch slip held near peak: σ mean 0.32 against a 0.35 target. Keyboard launch is 1.01× the
+      unassisted one; pad is 1.03× the best fixed pedal, which in this model is full throttle. Tread
+      wear is −29 % on keyboard, −63 % on pad and −93 % in reverse.
+- [~] Drift, U-turn and burnout with the assist on. The U-turn, a handbrake flick and a loose-ground
+      power drift pass through untouched. The burnout is the assist switched off (owner: no gesture).
+      Dry low-speed power-over is feathered; that is call (a).
+- [x] TC brakes split-grip one-wheel spin down and catches a power-oversteer entry.
+- [x] Two separate settings toggles. Presets don't touch them (owner 11-02).
+- [x] Headless gate `test/traction.mjs`.
+- [x] FEAT-39's assist #1 points here (already on main).
+
+**Owner calls:**
+- **(a) Dry power-over at low speed with the assist on.**
+  - Accept [DEFAULT]: the foot feathers a floored mid-corner exit, which is what a skilled foot does.
+    To power-drift on dry tarmac below ~25 mph, use the handbrake or a flick, or switch the assist off.
+  - Or: the assist stands aside past a steering angle. Then a junction pull-out on full lock spins too.
+- **(b) `taSlip` 0.35 [DEFAULT]**, from the table above.
+- **(c) `tcSlip` 0.15 [DEFAULT].** Cautious: dry launches with TC on are about 33 % slower.
+- **(d) Drive it on :3282.** Settings → throttle assist / traction control. Try a keyboard reverse.
