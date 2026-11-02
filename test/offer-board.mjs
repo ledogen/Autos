@@ -8,8 +8,7 @@
 //   1. DETERMINISM — same seed, same board, down to every name and every roll. Different seed, a
 //      different board.
 //   2. SLOTS — always-on sources have exactly their SOURCES slots; BUDGET_JOBS budget slots are
-//      spread over budget givers within their caps; non-givers (tackle shop, office, school, mom)
-//      hold nothing.
+//      spread over budget givers within their caps; non-givers (mom) hold nothing.
 //   3. BOARD SIZE (FEAT-101) — with no player, every slot is live at every time: 12 budget jobs +
 //      food 2–3 + yard 2 + Larry 1 = 17–18, and no giver ever exceeds its cap.
 //   4. EXPIRY NOISE — every lifetime is inside centre ± 30 % (range centres rolled per POI); Larry's
@@ -116,7 +115,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         bad.map(q => `${q.type} ${slotsOf(b, q.id).length}`).join(', '))
     check(`${BUDGET_JOBS} budget jobs are live at world start`, b._budget.filter(s => s.state === 'live').length === BUDGET_JOBS)
     const off = POIS.filter(q => !SOURCES[q.type]?.cap && hosted(b, q.id).length)
-    check('only budget givers host budget jobs (never the office, school or mom)', off.length === 0,
+    check('only budget givers host budget jobs (never mom)', off.length === 0,
         off.map(q => q.type).join(', '))
     check('isGiver: every source, and no one else', POIS.every(q =>
         b.isGiver(q.id) === !!SOURCES[q.type]), POIS.filter(q => b.isGiver(q.id) !== !!SOURCES[q.type]).map(q => q.type).join(', '))
@@ -371,7 +370,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     }
     check('POI names are unique within a region (300 seeds)', dupPoi === 0, `${dupPoi}`)
     check('people are unique within a region (300 seeds)', dupPerson === 0, `${dupPerson}`)
-    check('every source — and every receive-only class (office, school) — is named by its class\'s forms (300 seeds)', formBad === 0,
+    check('every source is named by its class\'s forms (300 seeds)', formBad === 0,
         `${formBad}: ${[...formOff].slice(0, 5).join(' · ')}`)
     check('no POI is named by its bare business word — never just "Radiator" (300 seeds)', bareBiz === 0, `${bareBiz}`)
     check('a class with no forms is ONE person, no place name — just the person', personBad === 0, `${personBad}`)
