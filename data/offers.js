@@ -369,6 +369,9 @@ export const REWARDS = [
     // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
     { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'],
       pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
+    // FEAT-138: rights a rolled truck. A–S, never a roadside find (owner, 2026-10-24).
+    { id: 'hiLiftJack', name: 'Hi-lift jack', kind: 'tool',     gates: ['A', 'S'],
+      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
     // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
     { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'larrysHouse'] },

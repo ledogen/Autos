@@ -7,7 +7,7 @@ opened: 2026-10-25
 source: owner, 2026-10-25 — "auto trans really struggles to get out of first gear. maybe we should adjust the ratios" · "maybe we should lower the ratio to second a little. also the shift logic seems to prefer to lug 3rd instead of downshifting to 2nd at full throttle even if there is rpm headroom."
 relates: FEAT-23 (drivetrain), FEAT-124 (one shift schedule, throttle-averaged), data/transmissions.js 4r44e, data/ranger.js shift params, test/drivetrain-climb.mjs
 ---
-lane: B → Spare (2026-11-02: Lane B has no session; Spare took it)
+lane: B → Spare (2026-11-01: Lane B has no session; Spare took it)
 
 # FEAT-150: Automatic shift schedule — hangs in 1st, lugs 3rd instead of kicking down
 

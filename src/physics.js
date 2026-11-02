@@ -187,6 +187,19 @@ const CHASSIS_PROFILE = {
 }
 
 /**
+ * FEAT-138: the two roll angles [deg from upright] where the CG stands over the pivot edge — past
+ * them gravity finishes the roll. Wheels ↔ side pivots on the tire's outer edge at the ground; side ↔
+ * roof on the cab roof's edge. Stock Ranger: 56.8° and 141.2°.
+ */
+export function rollBalance (params) {
+  const deg = 180 / Math.PI
+  return {
+    wheelsDeg: Math.atan2(params.trackFront / 2 + (params.wheelWidth || 0.25) / 2, params.cgHeight) * deg,
+    roofDeg: 180 - Math.atan2(CHASSIS_PROFILE.cabHalfW, CHASSIS_PROFILE.roofY) * deg,
+  }
+}
+
+/**
  * Fold the engine's WHEEL HARD CORE contact forces into `out`, per corner [N], taking the max
  * against whatever the soft path already put there.
  *
@@ -1235,6 +1248,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     for (let k = 0; k < p.pushes.length; k += 2) engine.applyImpulse(body, p.pushes[k], p.pushes[k + 1])
   }
   engine.applyForce(chassis, totalForce)
+  const jt = vehicleState.jackTorque   // FEAT-138: the hi-lift's roll heave (src/hilift.js), null when idle
+  if (jt) { totalTorque.x += jt.x; totalTorque.y += jt.y; totalTorque.z += jt.z }
   engine.applyTorque(chassis, totalTorque)
   // 8 substeps (not the engine-default 4): the chassis carries the TUNED inertia, whose x-axis
   // value sits ~3× below the hull-natural tensor, and the soft-step solver converts some of a
