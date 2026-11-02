@@ -70,7 +70,7 @@ for s in run-shape machine content spare; do git -C /Users/ledogen/CodeShit/CarG
 If a lane has moved (not ff-able), leave it; it merges main itself.
 
 **Landing a lane into main:** in this checkout, `git merge --no-ff feature/<lane>` → resolve → `npm run test:all`
-(expect all green but road-clearance, the one known red — FEAT-77; road-tunnel went green with BUG-77, 2026-11-01) → `node test/cdp-smoke.mjs` (15 steps; it flakes
+(expect ALL green — the last known red, road-clearance, went green with FEAT-77 (a) on 2026-11-01; road-tunnel with BUG-77) → `node test/cdp-smoke.mjs` (15 steps; it flakes
 under load, rerun alone) → commit → fast-forward the other lanes. One lane at a time. Never push: pushing deploys Pages.
 
 ## The pages
