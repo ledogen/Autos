@@ -1,7 +1,8 @@
 ---
 id: FEAT-158
 type: feature
-status: open
+status: done
+closed: 2026-11-02
 severity: major
 opened: 2026-11-01
 source: owner play-test of BUG-99 on :3282, 2026-11-01 — "At really low speeds, interactions with rocks
@@ -158,3 +159,12 @@ lifted, but no NEW point can appear within a step); the tire is a sphere for deb
 **Owed to the owner:** (1) the pinch threshold — 2000 J [DEFAULT] or another row; (2) whether
 1 flip in 270 hits at 50 mph into a 40 kg rock as tall as the tire's radius is acceptable (main: 0;
 the rock no longer skates away, so the corner runs over it); (3) the crawl play-test on :3282.
+
+## Resolution — 2026-11-02 (owner)
+
+All three calls answered (relayed by the orchestrator):
+1. **Pinch threshold: 2000 J approved** ("approve 2kj"). The damage.js table row is now marked owner-approved.
+2. **The flip is accepted** ("one flip is fine. that's noise. accept."): 1 in 270 hits at 50 mph into a 40 kg rock.
+3. **Crawl play-test on :3282: "it feels good".**
+
+Closed. Built on `feature/machine` (51b3f330), landed by the orchestrator.

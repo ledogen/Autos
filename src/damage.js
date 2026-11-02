@@ -540,7 +540,7 @@ export const DAMAGE_PARAMS = {
   // longer skates out from under the rim on its own weight's friction — the same hits do more work
   // on the carcass. Same census; every row above was measured on the skating rock:
   //     energy 800 J  (rock grips)     0  0  0  0  0 14 24 47 48 56 62 %
-  //     energy 2000 J (rock grips)     0  0  0  0  0  0  7 11 19 21 45 %   ← [DEFAULT], owner's call
+  //     energy 2000 J (rock grips)     0  0  0  0  0  0  7 11 19 21 45 %   ← owner-approved 2026-11-02
   hazardPunctureMult: 30,    // x static wheel load (≈100 kN) of hazard core force pops any tire
   hazardPinchEnergyJ: 2000,  // J of leaky-integrated pinch work (hazard carcass load past full squash × its travel) pops any tire (BUG-99; FEAT-158 re-fit 800 → 2000)
   hazardPinchTauS:    0.05,  // s — the leak's time constant: rubber relaxing between strikes
