@@ -4718,7 +4718,8 @@ const CAMP_PROMPT_KPH = 20
 //   • the CAMPFIRE — ASSET-24, lit by src/campfire.js (flames, coals, embers, a flickering point
 //     light), standing at the pad's `fire` slot once camp is made. It replaced the blue placeholder cube.
 //   • the CAMP GEAR — FEAT-66, src/camp-gear.js: whatever is in the equipped pack, each item at its
-//     slot on the pad (tent, awning or tarp, cooking kit; the bed models are still to come).
+//     slot on the pad (the bed and sleeping bag, tent, awning or tarp, cooking kit; the bedroll's and the
+//     blanket's models are still to come — ASSET-78/79).
 // camp.js stays THREE-free (the story-layer isolation rule): it hands out a pad record and main.js
 // is the only place that becomes geometry.
 const _campGroup = new THREE.Group()

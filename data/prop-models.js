@@ -1073,6 +1073,12 @@ export const PROP_MODELS = {
   // truck is held while camped.
   tent: { url: 'assets/models/tent.glb', collision: { shape: 'box', size: [1.4, 1.1, 2.2] } },   // 200 tris, ridge tent, door -Z; the fly is double-sided so the open door shows the inside. 2.44 x 3.18 m with the guys
   awning: { url: 'assets/models/awning.glb', collision: { shape: 'none', size: [3.04, 2.50, 2.54] } },   // 240 tris, striped canopy on four poles, open front -Z (ASSET-06, moved to camp gear by R-19); no recolour hook
+  // The camp bed slot (FEAT-66): the item thumbnails' own models, exported lying flat from
+  // assets/models/src/items.py (export_glb), length along Z, head end at +Z (the back of the tent).
+  sleepingBag: { url: 'assets/models/sleeping-bag.glb', collision: { shape: 'none', size: [0.86, 0.25, 1.92] } },   // 7491 tris, flannel corner turned back at the head
+  airMattress: { url: 'assets/models/air-mattress.glb', collision: { shape: 'none', size: [0.78, 0.19, 1.88] } },   // 4670 tris, flocked quilted top
+  sleepingPad: { url: 'assets/models/sleeping-pad.glb', collision: { shape: 'none', size: [0.51, 0.08, 1.83] } },   // 8878 tris, baffled, valve at the foot
+  deluxeSleepingPad: { url: 'assets/models/deluxe-sleeping-pad.glb', collision: { shape: 'none', size: [0.64, 0.14, 1.93] } },   // 6798 tris, raised pillow end
   cookingKit: { url: 'assets/models/cooking-kit.glb', collision: { shape: 'box', size: [1.24, 1.08, 0.82] } },   // 388 tris, two iron A-frames, crossbar, chain, Dutch oven; no recolour hook
   shadeTarp: { url: 'assets/models/shade-tarp.glb', collision: { shape: 'none', size: [3.73, 2.01, 3.53] } },   // 224 tris, 3 x 2.4 m fabric with a loose skirt on leaning poles and guy lines — drive-through; no recolour hook
   // ASSET-38 — lumber bundle (freight) and the three loose boards it was split into for haul (FEAT-88: single

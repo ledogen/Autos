@@ -81,15 +81,15 @@ export const ITEMS = {
     // `rest` is the bonus on camp sleep's recovery rate while packed (owner, 2026-10-16), summed and
     // applied once (day.js recoveryRate). The beds replace the bedroll; the blanket and the sleeping
     // bag are add-ons in their own slot. Masses [DEFAULT].
-    airMattress:  { name: 'Air mattress',  kind: 'camp',       massKg: 3,   sleep: true, rest: 0.05, campSlot: 'bed',
+    airMattress:  { name: 'Air mattress',  kind: 'camp',       massKg: 3,   sleep: true, rest: 0.05, campSlot: 'bed', model: 'airMattress',
                     desc: 'Off the rocks, mostly. Leaks a little by morning.' },
-    sleepingPad:  { name: 'Sleeping pad',  kind: 'camp',       massKg: 1,   sleep: true, rest: 0.10, campSlot: 'bed',
+    sleepingPad:  { name: 'Sleeping pad',  kind: 'camp',       massKg: 1,   sleep: true, rest: 0.10, campSlot: 'bed', model: 'sleepingPad',
                     desc: 'A foam pad that keeps the cold ground away from you.' },
-    deluxeSleepingPad: { name: 'Deluxe sleeping pad', kind: 'camp', massKg: 2, sleep: true, rest: 0.15, campSlot: 'bed',
+    deluxeSleepingPad: { name: 'Deluxe sleeping pad', kind: 'camp', massKg: 2, sleep: true, rest: 0.15, campSlot: 'bed', model: 'deluxeSleepingPad',
                     desc: 'Thick and self-inflating. The best night you can have outdoors.' },
     blanket:      { name: 'Blanket',       kind: 'camp',       massKg: 1,   rest: 0.05, campSlot: 'bed', layer: 2,
                     desc: 'A wool blanket on top of whatever you sleep on.' },
-    sleepingBag:  { name: 'Sleeping bag',  kind: 'camp',       massKg: 1.5, rest: 0.10, campSlot: 'bed', layer: 1,
+    sleepingBag:  { name: 'Sleeping bag',  kind: 'camp',       massKg: 1.5, rest: 0.10, campSlot: 'bed', model: 'sleepingBag', layer: 1,
                     desc: 'Zip in and stay warm. Goes on top of the bed.' },
     // The tent is the sleeping bag's size of bonus (owner, 2026-11-02) and stands over the bed.
     tent:         { name: 'Tent',          kind: 'camp',       massKg: 2.5, rest: 0.10, campSlot: 'shelter', model: 'tent',

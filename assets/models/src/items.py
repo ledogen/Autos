@@ -14,7 +14,7 @@ Run in the GUI Blender (blender-mcp):
     importlib.reload(items); items.run_all()            # or items.run("coffee")
 The ids are data/items.js ITEMS keys — test/inventory.mjs fails if one has no PNG.
 """
-import bpy, bmesh, math, os, random
+import bpy, bmesh, contextlib, math, os, random
 from mathutils import Vector, Matrix
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "assets", "items")
@@ -2605,7 +2605,30 @@ BUILDERS = {
     "cooler": build_cooler, "iceKing": build_iceKing, "quickJack": build_quickJack, "hiLiftJack": build_hiLiftJack, "shovel": build_shovel,
     "longHandledShovel": build_longHandledShovel, "gpsUnit": build_gpsUnit, "furniturePad": build_furniturePad, "heavyDutyPad": build_heavyDutyPad,
     "rubberBedMat": build_rubberBedMat,
+    # FEAT-66 camp gear whose world model already ships: the thumbnail is that .glb (from_glb).
+    "tent": lambda: from_glb("tent"), "awning": lambda: from_glb("awning"),
+    "shadeTarp": lambda: from_glb("shade-tarp"), "cookingKit": lambda: from_glb("cooking-kit"),
 }
+
+
+def from_glb(fname):
+    """An item whose game model ships already (assets/models/<fname>.glb): import it, bake every mesh
+    into one object for frame(), and turn it to face the rig — glTF's front (−Z) imports as Blender +Y,
+    the rig's front is −Y. Renders headless too (`blender -b`): only EXPORT needs the GUI."""
+    bpy.ops.import_scene.gltf(filepath=os.path.join(GLB_DIR, f"{fname}.glb"))
+    meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+    turn = Matrix.Rotation(math.pi, 4, "Z")
+    for o in meshes:
+        o.data = o.data.copy()   # glTF may share one mesh between nodes: bake each node's own copy
+        o.data.transform(turn @ o.matrix_world)
+        o.parent = None
+        o.matrix_world = Matrix.Identity(4)
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in meshes:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    bpy.ops.object.join()
+    return meshes[0]
 BATCH2 = ["airMattress", "sleepingPad", "deluxeSleepingPad", "blanket", "sleepingBag",
           "zipTies", "ductTape", "tirePlugKit", "stopLeak", "bubbleWrap"]
 PARTS = ["tire", "wheel", "springs", "dampers", "pads", "shoes", "arb", "diff", "lift", "engine", "radiator", "airFilter", "headlight"]
@@ -2696,8 +2719,10 @@ def export_glb(item_id):
     hi = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
     ob.data.transform(Matrix.Translation((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z)))
     path = os.path.join(GLB_DIR, f"{fname}.glb")
-    win = bpy.context.window_manager.windows[0]   # the exporter needs a window context (freight.py _ui_override)
-    with bpy.context.temp_override(window=win, area=win.screen.areas[0]):
+    # In the GUI the operator runs under a window context (freight.py _ui_override). `blender -b` has no
+    # window, and the glTF exporter runs fine without one (FEAT-66, 2026-11-02): only the override needed it.
+    wins = bpy.context.window_manager.windows
+    with bpy.context.temp_override(window=wins[0], area=wins[0].screen.areas[0]) if wins else contextlib.nullcontext():
         bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", export_draco_mesh_compression_enable=False,
                                   export_yup=True, export_apply=True, export_materials="EXPORT", export_texcoords=False,
                                   export_normals=True, export_cameras=False, export_lights=False, use_selection=False)
