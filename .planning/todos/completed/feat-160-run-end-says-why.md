@@ -1,7 +1,7 @@
 ---
 id: FEAT-160
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-11-02
 source: owner, 2026-11-02 — approved item A of the Sid Meier review (.planning/story-mode/review-sid-meier-2026-11-02.md)
@@ -32,7 +32,21 @@ Words are placeholders in the owner's voice rules (no letters, numerals for mone
 
 ## Acceptance
 
-- [ ] Crash card shows the hit speed, the panel's limit at its armour, and the fresh limit.
-- [ ] Broke card shows the recovery cost against the wallet.
-- [ ] Numbers come from the same functions the game uses (no second copy of the fatal formula).
-- [ ] cdp-smoke still passes; the run-end gate (if any) covers the new line.
+- [x] Crash card shows the hit speed, the panel's limit at its armour, and the fresh limit.
+- [x] Broke card shows the recovery cost against the wallet.
+- [x] Numbers come from the same functions the game uses (no second copy of the fatal formula).
+- [x] cdp-smoke still passes; the run-end gate (if any) covers the new line.
+
+## Resolution (2026-11-02, Spare, cf983bf9)
+
+Built as specified. `damage.js` exports `fatalMph(c)`, the one copy of the fatal formula: `applyImpact`,
+the damage screen's "A crash over N mph here is fatal" and the card all call it. `fatalImpact` also
+records `armor` (the panel's condition before the hit). In `main.js`, `_runEndWhy(kind)` writes the card's
+`re-why` line:
+
+- crash: *"hit at 90 mph — front · at 30 % armor the front could take 72 mph; fresh it takes 100"*
+- broke: *"the tow was $12.89 — you had $0.00"*. That is the cheapest of the two `_towQuote`s the
+  Recovery card offered, or *"no tow could reach you"* when neither could.
+
+The cdp-smoke `endings` step checks both lines. Affected gates are 26/26 green, and the smoke passes
+21/21 steps. The words are placeholders: rewording either line is a one-line edit in `_runEndWhy`.
