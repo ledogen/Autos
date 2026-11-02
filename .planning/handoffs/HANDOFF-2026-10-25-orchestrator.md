@@ -137,3 +137,18 @@ The tracker page's 1f24a9f3 publish shipped a missing comma (the BUG-67 row) —
 proto/bug-67-node-height, proto/bug-64-earthwork-union (landing now). Owed list = the tracker's OWED
 array (v36). Heat note: the owner complained the laptop was cooking on battery; the burn was the gate
 batteries (ours and Spare's censuses), Steam's UI renderer, and Spotlight (now excluded). Lifted.
+
+## State 2026-11-02 (early morning) — orchestrator
+Main 7977155d, clean; suite 116/116 (NO known red), smoke 21/21 on every landing. Landed overnight,
+one lane at a time, each behind test:all + cdp-smoke: Lane A's FEAT-65 demolition slice 1 (FEAT-157
+closed, ASSET-77 minted); Spare's BUG-64 (a), FEAT-77 (a), BUG-81 item 5, FEAT-142 one-trait, BUG-101,
+FEAT-149 / BUG-94 / BUG-96 (Lane C's code items, C had no session), FEAT-150 / FEAT-138 / BUG-89 /
+BUG-54 (Lane B's, B had no session), FEAT-67 receiver bonus; FEAT-132 and FEAT-137 closed on evidence;
+BUG-69, BUG-104 (new), FEAT-70, FEAT-143, FEAT-131 MEASURED with proposals, nothing built. Orchestrator:
+BUG-103 (f) honest map + camp respawn, BUG-104 minted, the tracker page repair (a missing comma).
+**Held off main:** BUG-74 class 1 on proto/bug-74-fill-bury (4th try; the owner drives it on :3885 —
+Spare checks the branch out there when asked). **Spare is HOLDING** (page handoff rewritten): every
+remaining item is an owner call. The owner's calls + looks are the tracker page's OWED array (v54) —
+~20 items; recap them from there, not from memory. Lanes B and C had no session all night; their page
+handoffs carry an ORCHESTRATOR NOTE naming what Spare built so they do not redo it. Lane A ("A.") was
+last in plan mode on FEAT-147 / FEAT-65 owner items.
