@@ -44,3 +44,47 @@ The same census found two gaps in the measuring tool itself, noted here so they 
 - [ ] A remedy proposed with its census and world-change footprint (how many run keys move),
       for the owner's go/no-go — nothing that re-routes the world lands without one.
 - [ ] The two measuring-tool gaps either fixed in the walk or ticketed on FEAT-77.
+
+## Measured — Spare, 2026-11-02
+
+**Frequency (seeds 1–100, 1400 m; the FEAT-77 battery walk with the crossing exclusion; overlap =
+centrelines under one road width (10 m) apart for ≥ 20 m):** 5 overlaps in 5 worlds — 4 between two
+legs of one node, 1 between two separate roads. No `~p` parallel overlaps. Probe:
+`CarGame-spare/wip/bug-69/overlap100.mjs <firstSeed> <count>`.
+
+| seed, spot | overlap | class |
+|---|---|---|
+| **41 (−1110, 1372)** | 136 m; 3.0 m apart at closest, 4.9 m height gap | two separate roads (halves of two different promoted Ts) |
+| **87 (843, 1583)** | 56 m; 3.3 m, 2.3 m | one node — a promoted T's half beside a plain leg |
+| **10 (1566, −949)** | 52 m; 5.8 m, 5.1 m | one node — a promoted T's half beside a plain leg |
+| 52 (−722, 1135) | 40 m; 5.3 m, 0.5 m | one node — two plain legs |
+| 51 (1818, 30) | 28 m; 5.4 m, 7.3 m | one node — two plain legs |
+
+**Cause (seed 10, from the planner's own log).** Edge `1,-2,1|2,-2,0` and edge `2,-2,0|3,-1,0` leave
+node `2,-2,0` into the same valley. The planner saw it — `pin-overwrite … @2,-2,0 (R6 counted — inside
+the rule by 22.7 m over 296 m)` — and the T ladder tried to merge them: `promote-legacy: … has no T
+under the rule`, then `promote-residual: g:1,-2,1:2,-2,0 shipped as the best available T — departure
+grade 46% > cap 38%`. The edge took a mid-span T on another trunk instead, and its half that still runs
+to `2,-2,0` keeps the overlapping line. Nothing after the ladder catches it: the re-convergence rule
+(owner 2026-09-10, delete the longer of two legs that part and come back) skips any interval touching
+the shared node's throat — "the junction's own business" — and the crossing rung only fires on proper
+crossings. Two legs that never part are always node-anchored, so a failed T leaves them as they are.
+Seeds 51, 52 and 41 never appear in the T ladder's log at all (uncapped probe:
+`wip/bug-69/skips.mjs`) — their pairs never became conflict pairs in the plan layer; the overlap
+exists only in the shipped geometry.
+
+**Remedy tried — REJECTED** (branch `proto/bug-104-hug-delete`, env `BUG104_HUG`): count a
+node-anchored interval whose legs have not parted by the throat cap (4 × 30 m) as a re-convergence,
+so the delete rung judges it. Over seeds 1–100: **0 of the 5 shipped overlaps resolved**, while the
+plan layer's coarse samples flagged many legs that are fine on the shipped roads — **~200 runs deleted**
+(6139 → 5936 run keys, 501 key lines changed). The plan layer is the wrong place: it does not see
+these overlaps, and what it does see it over-reports.
+
+**What would work, for the owner's go (not built):** a check on the SHIPPED geometry, after assembly —
+two runs whose pavements overlap (centrelines < one road width for ≥ 20 m, outside throats and
+crossings) drop the shorter one when its endpoints stay connected without it (the delete rung's own
+detour test). Footprint by construction: only the 5 overlapping runs over 100 seeds plus whatever
+the junctions at their ends re-stitch (a T losing a leg may become a deg-2 connector) — every other
+run keeps its key. It still deletes a road the player could have driven, so it is the owner's call
+against the standing "connectivity goes up" ruling; the alternative is to leave 5 % of worlds with a
+doubled stretch of road.
