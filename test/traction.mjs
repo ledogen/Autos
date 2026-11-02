@@ -105,7 +105,7 @@ const r1 = (x) => x.toFixed(1), r2 = (x) => x.toFixed(2)
 if (process.argv.includes('--matrix')) {
   console.log('diff   ground      rear  dir  input  assist        t(s)   slide(m)  gap max  σ mean  cap min  TC p max')
   for (const diff of ['open', 'lsd']) {
-    for (const [gname, g] of [['flat', {}], ['off-camber', { slope: 0.25 }], ['split', { muScale: [1, 1, 0.35, 1] }]]) {
+    for (const [gname, g] of [['flat', {}], ['off-camber', { slope: 0.12 }], ['split', { muScale: [1, 1, 0.35, 1] }]]) {
       for (const [wname, worn] of [['new', 1], ['worn', 0.7]]) {
         for (const dir of ['fwd', 'rev']) {
           for (const kbd of [true, false]) {
