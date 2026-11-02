@@ -883,6 +883,13 @@ const RIVAL_ARC_SEP    = 40   // m — min arc separation for a projection to co
 // the portal line, and the surface is C0 straight through the portal. The below-crown part of
 // the funnel sits inside the shader discard capsule; the collar hides the fringe.
 const BORE_NOTCH_SLOPE = 1.2  // V:H — mouth-funnel floor rise per metre into the bore
+// BUG-81 item 5 (owner 2026-11-01: "most irl tunnel mouths have earth basically fully framing the
+// portal"): the funnel rises from the DECK, so it only clears the crown R/BORE_NOTCH_SLOPE ≈ 6.7 m in
+// and the tube's top lay bare behind the collar — at every portal, whatever portalCover was. Over the
+// tube the skin is therefore never below a MOUND hugging the arch at R + BORE_MOUND_M about the deck
+// centre, from the portal line on; raw ground still wins wherever it is higher. Inside the collar's
+// outer radius (R + 2.6, road-mesh.js buildPortalRing), so the step at the portal line hides behind it.
+const BORE_MOUND_M = 1.5
 // QUAL-24 dangling run end: arc-length (m) over which a run's carve footprint EXTRA (the FEAT-40
 // deep-bank toe) feathers away as it approaches a terminus that is a graph LEAF (degree-1 site — a
 // road that genuinely stops, not a junction and not an end whose neighbour merely hasn't streamed).
@@ -9856,7 +9863,10 @@ export class RoadSystem {
         const dIn = Math.min(aArc - sp.s0, sp.s1 - aArc)
         const cs = this._carveCrossSection(signedLat, aArc, runKey, camberSign, rawAmp)
         if (!cs) return null
-        const liftedY = cs.gradeY + dIn * BORE_NOTCH_SLOPE
+        let liftedY = cs.gradeY + dIn * BORE_NOTCH_SLOPE
+        const rm = (this._params?.tunnelBoreRadius ?? 8) + BORE_MOUND_M
+        if (Math.abs(signedLat) < rm)
+            liftedY = Math.max(liftedY, this.runProfile(aArc, runKey, _CD_RP).gradeY + Math.sqrt(rm * rm - signedLat * signedLat))
         if (liftedY >= rawAmp) return null
         return { blendW: cs.blendW, gradeY: liftedY }
     }

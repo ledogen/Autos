@@ -117,6 +117,38 @@ for (const [runKey, e] of tunneled) {
 check(sampled > 0 && coverOK === sampled, `raw hill stays overhead mid-bore: ${coverOK}/${sampled}`)
 check(floorOK === sampled, `in-bore probe rides the road floor: ${floorOK}/${sampled}`)
 
+// ── (3b) BUG-81 item 5: earth frames every portal — no bare tube top behind the collar ───────────
+// The mouth funnel rises from the deck, so on its own it only clears the crown ~6.7 m in; the skin
+// over the tube is held at a mound R + 1.5 m about the deck (road.js BORE_MOUND_M). Probe 1, 3 and
+// 6 m in, on the centreline and ±4 m across: the drawn (Y-less) skin stands ≥ 1 m over the arch there.
+// Where the raw hill itself is lower than that no carve can frame the portal — counted, not gated.
+{
+  const R = P.tunnelBoreRadius ?? 8
+  let probes = 0, framed = 0, thin = 0, worst = Infinity, worstAt = ''
+  for (const [runKey, e] of tunneled) {
+    for (const sp of e.tunnelSpans) {
+      for (const [s0, dir] of [[sp.s0, 1], [sp.s1, -1]]) {
+        for (const dIn of [1, 3, 6]) {
+          const s = s0 + dir * dIn
+          if (s <= sp.s0 || s >= sp.s1) continue
+          const c = road.runPointAt(runKey, s), pr = road.runProfile(s, runKey)
+          if (!c) continue
+          for (const lat of [0, -4, 4]) {
+            const x = c.x + pr.tz * lat, z = c.z - pr.tx * lat
+            const arch = pr.gradeY + Math.sqrt(R * R - lat * lat)
+            if (terr.rawHeightWorld(x, z) < arch + 1) { thin++; continue }
+            probes++
+            const over = terr.analyticHeight(x, z) - arch
+            if (over >= 1) framed++
+            if (over < worst) { worst = over; worstAt = `${runKey} s ${s.toFixed(0)} lat ${lat}` }
+          }
+        }
+      }
+    }
+  }
+  check(probes > 0 && framed === probes, `BUG-81: earth over the arch behind every portal (≥ 1 m, 1–6 m in): ${framed}/${probes}, worst ${worst.toFixed(2)} m${framed === probes ? '' : ` at ${worstAt}`} · ${thin} probe(s) where the raw hill itself is lower (reported)`)
+}
+
 // ── (4) window invariance of the spans ─────────────────────────────────────────────────────────
 const { road: road2 } = streamAt(...CENTERS[1])
 let shared = 0, mismatched = 0

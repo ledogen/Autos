@@ -175,3 +175,39 @@ Two asks, Spare's: (1) find out whether burying further (portalCover beyond 6, o
 raise over the ring) gets full earth framing without wrecking the approach cut, and give the number;
 (2) regardless, fix the see-through gap between the terrain and the tube beside the ring (the
 screenshot shows the tube entering a terrain hole wider than the tube, sky visible through it).
+
+### Item 5 — DONE 2026-11-01 (Spare): earth frames the portal, and the see-through gap is shut
+
+**(1) Framing — why burying deeper could not do it, and what does.** The skin over a bore near its
+mouth is the mouth FUNNEL (`_boreNotchCS`): the open cut's floor rising `BORE_NOTCH_SLOPE` = 1.2 m per
+metre into the span. It rises from the DECK, so it clears the crown (R = 8 m) only ~6.7 m in. The
+collar's outer band reaches 0.8 m into the hill, which left ~5.9 m of bare tube top behind it at every
+portal — **whatever portalCover is**: cover moves where the portal sits, not where the funnel starts.
+So `portalCover` stays 6; raising it would only lengthen the approach cuts.
+
+The fix is the "local terrain raise over the ring": over the tube the skin is never below a MOUND
+hugging the arch at R + 1.5 m about the deck centre (`BORE_MOUND_M`), from the portal line on; raw
+ground still wins wherever it is higher, and the funnel still shapes everything beside the tube. 1.5 m
+keeps the mound inside the collar's outer radius (R + 2.6), so the step at the portal line hides
+behind the ring. It is the same function physics samples, so the mound is solid ground (mesh ==
+collision). Measured on road-tunnel's seed-6 window, 1/3/6 m behind every portal, centreline and
+±4 m: earth over the arch was **−6.9 m at worst (0 of 144 probes ≥ 1 m)** before, **+1.50 m at worst
+(144 of 144)** after; 0 probes where the raw hill itself sits below the mound. The approach cut is
+untouched (the funnel is unchanged off the tube, and nothing outside the span moved).
+
+**(2) The see-through gap.** The skin hole at each mouth (terrain shader, `uTunnelPos/Axis` discard)
+was a straight, level capsule of radius R + 0.45, centred 0.4 m above the deck, 16 m into the bore.
+The lining is a single surface at R, so past the collar it left skin open OUTSIDE the tube: 0.45 m all
+round, 0.85 m at the crown, and more on the outside of a bend or up a grade — the owner's screenshot,
+sky through the map beside the tube. The hole now follows the tube (the deck tangent with its grade,
+plus a quadratic bend fitted to the tube's centre 16 m in, `uTunnelBend`) and is the tube's own size
+past the collar (R + 0.05, the ring's reveal); the old radius stays inside the collar's 0.8 m.
+`tunnelCutAt` (the prop scatter's JS mirror) follows the same shape.
+
+Gates: `road-tunnel` (3b), the framing probe above — fails 0/144 on the old notch. `vertical-curvature`
+skipped bores by its RESAMPLED chord arc, which runs short of the run's arc on a curve, so a sample just
+inside a portal counted as open road against the skin — harmless over the old C0 funnel, a 9.5 m step
+over the mound (open 22 kinks, 1.16 /m). It now skips on the run's own arc: open 19 / junction 203, as
+on main, no deck changed. Full suite otherwise 115/116 green, smoke 21/21. Screenshots, before
+and after, from above beside the mouth, from 10 m inside looking out, and at road level:
+`wip/bug-81-item5/` (seed 6's four spawn-region portals).
