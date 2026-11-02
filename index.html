@@ -59,7 +59,7 @@
       user-select: none;
     }
     /* FEAT-42: #resume-card is the pause box's sibling — a resumed run opens frozen under it until any key. */
-    #pause-menu, #resume-card {
+    #pause-menu, #resume-card, #towel-card {
       display: none;
       position: fixed;
       top: 50%;
@@ -77,7 +77,7 @@
       z-index: 100;
       min-width: 200px;
     }
-    #pause-menu .pm-title, #resume-card .pm-title {
+    #pause-menu .pm-title, #resume-card .pm-title, #towel-card .pm-title {
       color: var(--accent-system);
       font-size: 14px;
       letter-spacing: 2px;
@@ -85,7 +85,7 @@
       margin-bottom: 6px;
     }
     #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text; }
-    #pause-menu button {
+    #pause-menu button, #towel-card button {
       background: none;
       border: 1px solid var(--line-control);
       color: var(--text-body);
@@ -97,7 +97,7 @@
       text-align: left;
       transition: background 0.1s, color 0.1s;
     }
-    #pause-menu button:hover {
+    #pause-menu button:hover, #towel-card button:hover {
       background: rgba(255, 255, 255, 0.08);
       color: var(--text-bright);
       border-color: var(--line-hover);
@@ -107,8 +107,9 @@
     }
     #pause-menu .pm-why { display: block; font-size: 12px; color: var(--text-faint); }
     #pause-menu .pm-why:empty { display: none; }
-    /* FEAT-146: the towel's confirm click, like the job's abandon (#job-cancel.armed). */
-    #pause-menu button.armed, #pause-menu button.armed:hover { background: var(--bad); border-color: var(--bad-text); color: var(--text-bright); }
+    /* FEAT-146: the towel's confirm card (owner, 2026-10-31: a card in the owner's words, not a double click). */
+    #towel-card { max-width: 400px; }
+    #towel-card p { margin: 0 0 6px; line-height: 1.5; text-align: center; }
     /* FEAT-43: Story Mode seed prompt (minimal; full styling deferred to FEAT-41). */
     #story-seed-modal {
       display: none;
@@ -281,6 +282,10 @@
     #mm-setup-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
     #main-menu.setup #mm-root { display: none; }
     #main-menu.setup #mm-setup-panel { display: flex; }
+    #su-run { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+    #mm-setup-panel:not([data-mode="story"]):not([data-mode="freeroam"]) #su-run,
+    #mm-setup-panel:not([data-mode="scenarios"]) #mm-scenario-list,
+    #mm-setup-panel[data-mode="scenarios"] #su-start { display: none; }
     .mm-group { color: var(--text-faint); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; margin: 14px 0 4px 18px; }
     #pause-menu .mm-group { margin: 8px 0 0 0; }
     #su-seed {
@@ -321,12 +326,9 @@
        outline that reads on all of them (light paper cards and dark screens alike). */
     #mission-panel .nav-focus, #paper-panel .nav-focus, #scenario-panel .nav-focus, #camp-panel .nav-focus,
     #recovery-card .nav-focus, #run-end .nav-focus, #inv-screen .nav-focus, #dmg-screen .nav-focus, #svc-screen .nav-focus { outline: 2px solid var(--accent-system); outline-offset: 2px; }
-    /* FEAT-62: the scenario list — same page-swap as settings. Buttons are built from
+    /* FEAT-62: the scenario list — the new-game page's scenarios mode (FEAT-156). Buttons are built from
        data/scenarios.js by main.js (_renderScenarioList); each carries a dim blurb line. */
-    #mm-scenarios-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
-    #mm-scenario-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
-    #main-menu.scenarios #mm-root { display: none; }
-    #main-menu.scenarios #mm-scenarios-panel { display: flex; }
+    #mm-scenario-list { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
     #main-menu button .mm-sub { display: block; font-size: 12px; color: var(--text-faint); margin-top: 3px; letter-spacing: 0; }
     #mm-settings-panel .mm-note {
       color: var(--text-faint);
@@ -525,6 +527,9 @@
     #mp-body .job-badge { display: inline-block; border: 1.5px solid currentColor; padding: 0 4px;
       margin-right: 6px; font-size: 12px; font-weight: 700; line-height: 16px; }
     #mp-actions, #pp-actions, #sp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+    #pp-sizes { display: none; margin-top: 10px; gap: 6px; justify-content: center; align-items: center; }   /* FEAT-141 */
+    #pp-sizes .mp-dim { color: var(--text-dim); margin-right: 4px; }
+    #paper-panel #pp-sizes button.on { color: var(--text-bright); border-color: var(--accent-story); }
     /* FEAT-62 finish card: the status line and the top-five board. */
     #sp-body .sp-best { color: var(--money); letter-spacing: 2px; }
     #sp-body .sp-miss { color: var(--bad-text); }
@@ -1196,7 +1201,8 @@
     /* an abandoned job's headline, its $0 and a lost or destroyed load (owner, 2026-10-15) */
     #mission-panel .mp-bad, #paper-panel .mp-bad { color: var(--bad-text); }
     #mission-panel .mp-tip { color: var(--warn); }   /* R-04: the item that replaces the cash tip, the map card's gold form */
-    #mission-panel .mp-deed, #paper-panel .mp-deed { color: var(--accent-story); }   /* R-21: deeds in the story blue */
+    #mission-panel .mp-deed, #paper-panel .mp-deed { color: var(--accent-story); }
+    #mission-panel .mp-traits { color: var(--text-dim); font-style: italic; }   /* FEAT-142: the giver's traits, bottom-left */   /* R-21: deeds in the story blue */
     /* N-04 / FEAT-131: the result card's rows land one beat apart (delay set inline per row); the
        tally flashes bright when it ticks to the new total. */
     #mp-body .mp-reveal, #pp-body .mp-reveal { opacity: 0; animation: mp-in 0.35s ease-out forwards; }
@@ -1487,6 +1493,12 @@
        (src/story.js). The beta mission generator it used to launch is now Quick Job, surfaced as a
        corner button INSIDE story mode (#quickjob-btn), not a pause-menu entry. -->
   <div id="resume-card"><div class="pm-title">paused</div>press any key to resume</div>
+  <div id="towel-card">
+    <div class="pm-title">give up</div>
+    <p>Are you sure you want to end your run? This will permanently delete the save file for this run.</p>
+    <button id="tc-end">end the run</button>
+    <button id="tc-back">back</button>
+  </div>
   <div id="pause-menu">
     <div class="pm-title">paused</div>
     <div class="pm-code" id="pm-code"></div>
@@ -1495,8 +1507,8 @@
     <button id="pm-story">story mode</button>
     <button id="pm-lab">testing lab</button>
     <button id="pm-settings">settings</button>
-    <!-- FEAT-146: story runs only — ends the run on the summary card, behind one confirm click. -->
-    <button id="pm-towel" style="display:none">throw in the towel</button>
+    <!-- FEAT-146: story runs only — ends the run on the summary card, behind the #towel-card confirm. -->
+    <button id="pm-towel" style="display:none">give up</button>
     <!-- FEAT-42: story runs only, at the bottom; greyed out with its reason (pm-save-why) while the run
          can't save. It IS the way out of a run (owner, 2026-10-30: the two buttons did the same thing), so
          "main menu" shows only outside a run, or while a run can't save. -->
@@ -1543,27 +1555,25 @@
     <div id="mm-root">
       <div class="mm-title">autos</div>
       <button id="mm-continue" style="display:none">continue</button>   <!-- FEAT-42: only while a run is saved -->
-      <button id="mm-story">story mode</button>
-      <button id="mm-freeroam">free roam</button>
-      <button id="mm-scenarios">scenarios</button>
-      <button id="mm-lab">testing lab</button>
+      <button id="mm-new">new game</button>   <!-- FEAT-156: the game mode is a row on the new-game page -->
       <button id="mm-settings">settings</button>
-    </div>
-    <div id="mm-scenarios-panel">
-      <div class="mm-title">scenarios</div>
-      <div id="mm-scenario-list"></div>
-      <button id="mm-scenarios-back">back</button>
     </div>
     <!-- FEAT-41 run setup = the GENERATION settings: what the world and the truck are. The selector rows
          (.mm-sel, data-key = a src/settings.js key) are filled in by main.js from one option table; the seed
          field takes a pasted world code (6/C selects Casual). Assists and controls are NOT here — they are the
          player's, not the run's, and live on the settings page (owner, 2026-10-20). -->
-    <div id="mm-setup-panel">
-      <div class="mm-title" id="su-title">new game</div>
+    <!-- FEAT-156: the mode row picks what the rest of the page is (data-mode, set by main.js): story and
+         free roam show the world + truck rows, scenarios the level list (each entry starts its run, so there
+         is no start), testing lab nothing. Never saved — the page always opens on story (owner, 2026-10-31). -->
+    <div id="mm-setup-panel" data-mode="story">
+      <div class="mm-title">new game</div>
       <!-- Start and back lead, above the knobs: start is the page's first item, so it is where the
            menu highlight lands (menu-nav.js items[0]) — "just press start" (owner, 2026-10-21). -->
       <button id="su-start">start</button>
       <button id="su-back">back</button>
+      <button class="mm-sel" data-key="gameMode"></button>
+      <div id="mm-scenario-list"></div>
+      <div id="su-run">
       <div class="mm-group">world</div>
       <input id="su-seed" type="text" maxlength="24" spellcheck="false" placeholder="seed or world code — blank for random">
       <button class="mm-sel" data-key="worldPreset"></button>
@@ -1574,6 +1584,7 @@
       <div id="su-save-note" style="display:none">warning: starting a new story game will delete your existing save</div>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>
+      </div>
     </div>
     <!-- FEAT-41 settings: the player's own choices, saved the moment they change and applied live, from the
          main menu and the pause menu alike. Never anything generated or fitted: the world and the gearbox
@@ -1644,7 +1655,7 @@
       <button id="mp-decline" title="the same brake tap that releases the truck">decline (space)</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
-      <button id="mp-accept">accept mission</button>
+      <button id="mp-accept" data-primary>accept mission</button>
     </div>
   </div>
   <!-- FEAT-62: the scenario finish card (mission-panel chrome). Filled by main.js _renderScenarioUI;
@@ -1827,13 +1838,14 @@
 
   <!-- FEAT-61: the paper route's offer / result card and its in-run HUD. A sibling of the mission
        panel, not a face of it — the two missions are different shapes (this one has an inventory
-       and a bell where the other has a destination), and main.js renders each from its own system.
+       and a deadline over many porches where the other has one destination), and main.js renders each from its own system.
        src/paper-route.js stays renderer-agnostic. -->
   <div id="paper-panel">
     <div class="mp-title" id="pp-title">the paper route</div>
     <div id="pp-body"></div>
+    <div id="pp-sizes"></div>   <!-- FEAT-141: the route sizes the player may drive (any unlocked rung) -->
     <div id="pp-actions">
-      <button id="pp-accept">start the route</button>
+      <button id="pp-accept" data-primary>start the route</button>
       <button id="pp-decline">not today</button>
     </div>
   </div>

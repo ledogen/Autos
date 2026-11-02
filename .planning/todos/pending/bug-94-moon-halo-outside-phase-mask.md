@@ -7,7 +7,7 @@ opened: 2026-10-26
 source: owner, 2026-10-26 — "The mask for the moon phase needs to be a larger diameter because you can still see the glowing halo around the mask."
 relates: QUAL-02 (day/night, moon), src/moon.js
 ---
-lane: C
+lane: C → Spare (2026-11-02: Lane C has no session; Spare took it, says so to C)
 
 # BUG-94: Moon phase — the halo glows around the UNLIT limb, outlining the masked disc
 
@@ -30,3 +30,16 @@ dark limb has NO ring. Keep `(1 − disc)`.
 - [ ] phase 0.42 (default) at night: no visible ring on the dark side of the moon; the lit limb keeps its glow.
 - [ ] phase 1.0: unchanged full halo. phase 0: nothing drawn (or earthshine only when dialled up).
 - [ ] The Moon GUI folder still drives it live (halo, phase sliders).
+
+## Fixed — Spare, 2026-11-02 (the halo, not the mask)
+
+- The glow is gated by the TERMINATOR: the same test the disc uses, evaluated at 0.8 of the way out
+  along the pixel's direction (at the limb itself the full moon's sunward edge sits on the line and
+  would glow at half), widened by 0.15 so it tapers round the cusps. The dark limb keeps only the
+  earthshine level — no ring at earthshine 0.
+- A new moon is dark: the lit term fades over k 0.98 → 1 (≈ phase 0.064 → 0). Without it the disc's
+  anti-aliased rim stayed half-lit at phase 0 — a hairline circle the old ring used to drown.
+- Measured on the moon alone (`wip/bug-94/moon.html` + `shoot.mjs`, halo boosted to 1.5 so nothing
+  hides): before, phase 0.42 / 0.5 / 0 all wear a full bright ring; after, the glow follows the lit
+  limb only, full is unchanged, and phase 0 draws nothing. Shots: `wip/bug-94/{before,after}-phase*.png`.
+  The Moon GUI sliders (phase, halo, earthshine) drive the same uniforms.

@@ -40,7 +40,7 @@
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
-    REWARD_VALUE, REQUISITION,
+    REWARD_VALUE, REQUISITION, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP,
 } from '../data/offers.js'
 import { PARTS } from '../data/parts.js'
 import { ITEM_PRICE } from '../data/shop-stock.js'
@@ -58,7 +58,7 @@ import { DAY_PARAMS } from './day.js'
  * card, the colours and the lists are ready) but has no code, so it must simply never roll — not
  * be half-built. Add a family here the day its mission ships.
  */
-export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul', 'freight', 'fragile'])
+export const BUILT_FAMILIES = new Set(['delivery', 'papers', 'haul', 'freight', 'fragile', 'demolition'])
 
 // Fixed names for roster types with no NAME_FORMS row (data/offer-names.js) — Larry, mom, and the
 // gas station, which posts work but is still just "the gas station". A destination needs a name:
@@ -111,8 +111,16 @@ export function jobBadge (sp) {
     if (sp.family === 'haul') return 'H'
     if (sp.family === 'freight') return 'Fr'
     if (sp.family === 'fragile') return 'Fg'
+    if (sp.family === 'demolition') return 'Dm'
     return sp.shape === 'fetch' ? 'Fe' : 'C'
 }
+
+/** FEAT-97: a fragile thing's tolerance and hit sound, as a spec carries it (src/fragile.js) — null otherwise. */
+const fragileOf = (thing) => thing.family === 'fragile'
+    ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, onePctG: thing.onePctG, breakG: thing.breakG, sound: thing.sound } : null
+
+/** FEAT-65: a demolition gate as a whole percent of the site smashed (economy.js RANK_TABLE.demolition). */
+const smashedPct = (gate, region) => Math.round(rankTable('demolition', region)[gate] * 100)
 
 /** "S only" / "A or better" — how a card states a rank gate. */
 export function gateText (gate) { return gate === 'S' ? 'S only' : `${gate} or better` }
@@ -133,6 +141,7 @@ export function gateLine (gate, kind, region = 1, cargoId = 'firewood', km = 0) 
     if (kind === 'haul') return `if ${rankTable('haul', region, cargoId)[gate]}+ bundles delivered`
     if (kind === 'fragile') return `if ${Math.round(fragileLines(region, cargoId, km)[gate] * 100)}%+ intact`
     if (kind === 'freight') return 'upon delivery'
+    if (kind === 'demolition') return `if ${smashedPct(gate, region)}%+ smashed`   // FEAT-65: the share of the site
     return `if ${gateText(gate)}`
 }
 
@@ -162,6 +171,7 @@ export function deedLine (kind, region = 1, cargoId = 'firewood', km = 0, massKg
         const t = rankTable('freight', region)
         return massKg >= t.B ? 'Deed: 1 upon delivery' : `Deed: 1/2 upon delivery — under ${t.B} kg`
     }
+    if (kind === 'demolition') return `Deed: 1 ${gateLine('B', kind, region)} · 1/2 at ${smashedPct('C', region)}%+`
     return 'Deed: 1 if B or better · 1/2 at C'
 }
 
@@ -292,8 +302,10 @@ export class OfferBoard {
                 _spec: {
                     line: t.id, family: t.family, thingId: t.id, phrase: t.phrase, person: null, bonus: null,
                     massKg: t.stock ? t.stock * HAUL_BUNDLE_KG : t.massKg, stock: t.stock ?? null, payMult: 0,
-                    destKind: 'poi', destPick: 0, placeName: null, to: null, passenger: !!t.passenger,
-                    shape: 'courier', from: null, load: null, loose: null, atPickup: null, fragile: null,
+                    // FEAT-65: the camp's demolition line goes out to a roadside site, its place named like any job's.
+                    destKind: t.targets ? 'roadside' : 'poi', destPick: 0, placeName: t.targets ? this._placeName(rngFor(`line:${this._seed}:${t.id}`)) : null,
+                    to: null, passenger: !!t.passenger, targets: t.targets ?? null,
+                    shape: 'courier', from: null, load: t.load ?? null, loose: null, atPickup: null, fragile: fragileOf(t),   // FEAT-157
                     deadlineSlack: 0,
                 },
             }
@@ -540,8 +552,10 @@ export class OfferBoard {
      *
      * { family, thingId, phrase, massKg, person, bonus: {rewardId,name,gate,dineIn?}|null, payMult,
      *   destKind: 'poi'|'roadside'|null, destPick, placeName, stock: number|null, to: string[]|null,
-     *   passenger: boolean, shape: 'courier'|'fetch', from: string[]|null, load: string|null,
-     *   deadlineSlack: number }
+     *   passenger: boolean, shape: 'courier'|'fetch'|'multi', from: string[]|null, load: string|null,
+     *   stops: number|null, multiPhrase: string|null, deadlineSlack: number }
+     * stops / multiPhrase (FEAT-89): a multi-drop's wished stop count and how the card says the goods;
+     * null on every other shape. The planned tour may come up shorter (mission.js _multiDrop).
      * deadlineSlack (FEAT-113): the deadline is par × (1 + it) from accept — see deadlineH().
      * stock is the haul giver's piece count (FEAT-114) — the player picks 1…stock at accept — null
      * for every other family. It is drawn on its OWN `stock` stream: one more draw on `spec` would
@@ -618,17 +632,42 @@ export class OfferBoard {
             stock = lo + Math.floor(stockRoll * (sHi - lo + 1))
         }
 
+        // FEAT-142: the giver's trait — at most ONE (owner, 2026-11-01: no stacking), on its OWN stream
+        // (a draw on `spec` would shift every existing offer's destination and place name). Big tipper
+        // never rides a bonus offer (its tip is the item, R-04). Kept a list: one trait or none.
+        const traits = []
+        if (thing.family !== 'papers') {
+            const tr = stream('traits')
+            if (Number(pickWeighted(tr(), TRAIT_COUNT_WEIGHTS)) > 0) {
+                const ok = TRAITS.filter(t => t.families.includes(thing.family) && !(t.tip && bonus))
+                if (ok.length) traits.push(ok[Math.floor(tr() * ok.length)])
+            }
+            if (stock != null && traits.some(t => t.stockFull)) stock = HAUL_STOCK[1]   // Wholesale: the whole yard
+        }
+        const tmul = (k) => traits.reduce((m, t) => m * (t[k] ?? 1), 1)
+
         const papers = thing.family === 'papers'
         const destRoll = r(), destPick = r()
         const placeName = this._placeName(r)
         // FEAT-102: a FETCH when this source is one of the thing's fetchers — go to a pickup (a POI of
         // `from`), park there, bring it back. Otherwise the courier shape, as built.
         const fetch = !!thing.fetchBy?.includes(offer.type)
+        // FEAT-89: a MULTI-DROP — several stops, the order planned for you — for a thing with a
+        // `multi` phrase. Its own `stops` stream: a draw on `spec` would move every other offer.
+        const sr = thing.multi && !fetch ? stream('stops') : null
+        const stops = sr && sr() < MULTI_DROP.chance ? Number(pickWeighted(sr(), MULTI_DROP.stops)) : null
         // A `to` naming 'roadside' (BUG-88) keeps the generic POI-or-roadside roll, just narrowed.
         const strictTo = !!thing.to && !thing.to.includes('roadside')
+        const fragile = fragileOf(thing)
+        const floors = tmul('floors')
         return {
-            deadlineSlack: thing.deadlineSlack ?? DEADLINE_SLACK[thing.family],   // FEAT-113
-            shape: fetch ? 'fetch' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
+            deadlineSlack: (thing.deadlineSlack ?? DEADLINE_SLACK[thing.family]) * tmul('deadline'),   // FEAT-113; FEAT-142
+            // FEAT-142: the traits and the terms they move that the spec does not already carry.
+            traits: traits.map(t => t.id), traitNames: traits.map(t => t.name),
+            tipMult: tmul('tip'), thresholdScale: thing.family === 'delivery' ? tmul('thresholds') : 1,
+            deeds: traits.find(t => t.deeds)?.deeds ?? null,
+            shape: fetch ? 'fetch' : stops ? 'multi' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
+            stops, multiPhrase: stops ? thing.multi : null,
             family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
             massKg: stock ? stock * HAUL_BUNDLE_KG : massKg, stock,
             // Haul: PER PIECE — the pick multiplies it at accept. ÷ HAUL_PAR_SLACK: the haul's par is
@@ -637,15 +676,21 @@ export class OfferBoard {
             // R-05: a fragile tier's care premium rides the whole line (data/offers.js careMult).
             payMult: (stock ? HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
                 * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1)   // FEAT-96: freight's weight bonus on pay
-                * (thing.careMult ?? 1),
-            destKind: papers ? null : (strictTo || fetch || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
+                * (thing.careMult ?? 1)
+                * tmul('pay') * (stock ? tmul('perPiece') : 1),        // FEAT-142: the traits' pay
+            // FEAT-65: a demolition job always ends roadside — its site is the route's last km of shoulder.
+            destKind: papers ? null : thing.family === 'demolition' ? 'roadside'
+                : (strictTo || fetch || stops || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
+            targets: thing.targets ?? null,   // FEAT-65: what stands on that shoulder (src/demolition.js)
             destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
             loose: thing.loose ?? null, // one loose bed body (src/debris.js kind) — the motorist's tire
             atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
-            // FEAT-97: a fragile load's tolerance and hit sound (src/fragile.js) — null otherwise.
-            fragile: thing.family === 'fragile'
-                ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, onePctG: thing.onePctG, breakG: thing.breakG, sound: thing.sound } : null,
+            // FEAT-97; FEAT-142 Collector / Easygoing scale the load's shock thresholds (all three).
+            fragile: fragile && floors !== 1
+                ? { ...fragile, shockFloorG: fragile.shockFloorG * floors, breakG: fragile.breakG * floors,
+                    ...(fragile.onePctG != null && { onePctG: fragile.onePctG * floors }) }
+                : fragile,
         }
     }
 
@@ -691,7 +736,7 @@ export class OfferBoard {
             if (r) sibs.push({ r, sp: this.spec(o) })
         }
         const usedThings = new Set(sibs.map(x => x.sp.thingId))
-        const usedPois = new Set(sibs.map(x => x.r.endPoiId).filter(Boolean))
+        const usedPois = new Set(sibs.flatMap(x => x.r.stopIds ?? [x.r.endPoiId]).filter(Boolean))   // FEAT-89: every stop
         const usedNames = new Set(sibs.filter(x => !x.r.endPoiId).map(x => x.r.placeName))
         const oneThing = postable(offer.type).length === 1
         let m = null, n = 0
@@ -707,10 +752,38 @@ export class OfferBoard {
             }
             m.placeName = name
         }
+        this._receiverBonus(offer, m, n)
         // FEAT-42: what this plan was resolved AGAINST. The siblings move on (expire, refill) while
         // the job is in hand, so a resume cannot re-run this resolution — it replays these instead.
         offer.planned = m ? { n, exclude: [...usedPois], placeName: m.placeName ?? null } : null
         return (offer.route = m)
+    }
+
+    /**
+     * FEAT-67 amendment (owner, 2026-10-20; items.md): the RECEIVER hands the bonus over as a tip, and
+     * its pool is a 50/50 roll between the giver's and the destination's. Only the plan knows the
+     * destination, so this runs on it. The spec's GATE stays (drawn from the giver's pool; the haul
+     * stock and the traits already depend on it). On the receiver's half the ITEM is re-picked among
+     * the destination POI's rewards (its type or tags) at that gate. The giver's item stands for a fetch
+     * (giver = receiver), a multi-drop (several receivers), a roadside drop (no receiver), and a
+     * receiver with nothing at that gate. Its own stream per spec attempt, so replan agrees.
+     */
+    _receiverBonus (offer, m, n) {
+        const sp = offer._spec
+        if (!sp?.bonus) return
+        sp.giverBonus ??= sp.bonus   // idempotent: a re-plan of a kept spec starts from the giver's item
+        sp.bonus = sp.giverBonus
+        if (m) m.bonus = sp.bonus
+        if (!m || sp.shape !== 'courier' || !m.endPoiId) return
+        const r = rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:receiver` + (n ? `:${n}` : ''))
+        if (r() < 0.5) return
+        const q = this._pois.get(m.endPoiId)
+        const kinds = [q?.type, ...(q?.tags ?? [])]
+        const at = REWARDS.filter(w => w.gates.includes(sp.bonus.gate) && w.pools.some(p => kinds.includes(p)))
+        if (!at.length) return
+        const reward = pickReward(at, r())
+        sp.bonus = { rewardId: reward.id, name: reward.name, gate: sp.bonus.gate, ...(reward.dineIn && { dineIn: true }) }
+        m.bonus = sp.bonus
     }
 
     /**
@@ -722,6 +795,7 @@ export class OfferBoard {
         offer._spec = this._rollSpec(offer, planned.n)
         const m = planOne(offer, new Set(planned.exclude))
         if (m && planned.placeName) m.placeName = planned.placeName
+        this._receiverBonus(offer, m, planned.n)
         offer.planned = planned
         return (offer.route = m)
     }
@@ -741,7 +815,8 @@ export class OfferBoard {
     destWish (offer, pois, exclude) {
         const sp = this.spec(offer)
         // FEAT-103: a line goes to the camp and nowhere else, at any length (mission.js `anyLeg`).
-        if (sp.line) return { kind: 'poi', pick: 0, pois: pois.filter(q => q.id === this._campId), strict: true, anyLeg: true }
+        // FEAT-65: …except the camp's own demolition line, which goes OUT to a roadside site.
+        if (sp.line && sp.destKind === 'poi') return { kind: 'poi', pick: 0, pois: pois.filter(q => q.id === this._campId), strict: true, anyLeg: true }
         if (sp.destKind !== 'poi') return { kind: 'roadside' }
         // A FETCH (FEAT-102) wishes for its PICKUP — a POI of `from`, strictly — and says so, so the
         // planner returns the same way and settles back here.
@@ -750,7 +825,7 @@ export class OfferBoard {
             && (!want || want.some(t => q.tags?.includes(t)))
         // A `to` that names 'roadside' is not strict: no POI in reach drops it at a roadside spot.
         const strict = !!want && !want.includes('roadside')
-        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict, fetch: sp.shape === 'fetch' }
+        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict, fetch: sp.shape === 'fetch', stops: sp.stops }
     }
 
     /** A seeded stream for the mission planner's own rolls on this offer (route determinism). */
@@ -886,7 +961,9 @@ export class OfferBoard {
         const sentence = [{ t: personLabel(sp.person), b: true }]
         if (sp.family === 'papers') {
             sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' delivered' })
-            if (customers) sentence.push({ t: ' to ' }, { t: `${customers} customers`, b: true })
+            // FEAT-141: `customers` is the route sizes on offer (any unlocked one) — "to 4 or 9 customers".
+            const sizes = Array.isArray(customers) ? customers : customers ? [customers] : []
+            if (sizes.length) sentence.push({ t: ' to ' }, { t: `${sizes.length > 1 ? sizes.slice(0, -1).join(', ') + ' or ' + sizes.at(-1) : sizes[0]} customers`, b: true })
             sentence.push({ t: '.' })
         } else {
             if (n?.name) sentence.push({ t: ` at ${n.name}` })
@@ -894,13 +971,22 @@ export class OfferBoard {
             if (sp.stock) {
                 sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true },
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
+            } else if (sp.targets) {
+                // FEAT-65: "Earl needs his old drums crushed along the Miller place."
+                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' along ' }, { t: dest, b: true }, { t: '.' })
             } else {
                 // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto." A fetch
                 // names its pickup: "Earl needs a full jerry can fetched from Pump & Go."
                 // (a template literal: test/offer-board.mjs's import scan would read the quoted form as an import)
                 const verb = sp.passenger ? ' to ' : sp.shape === 'fetch' ? ` fetched from ` : ' delivered to '
-                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: verb },
-                              { t: dest, b: true }, { t: '.' })
+                // FEAT-89: a multi-drop names every stop, in the order the tour drives them.
+                const stops = route?.stopIds?.map(id => this.placeLabel(id))
+                sentence.push({ t: ' needs ' }, { t: stops ? sp.multiPhrase : sp.phrase, b: true }, { t: verb })
+                for (const [i, t] of (stops ?? [dest]).entries()) {
+                    if (i) sentence.push({ t: i === stops.length - 1 ? ' and ' : ', ' })
+                    sentence.push({ t, b: true })
+                }
+                sentence.push({ t: '.' })
             }
         }
         const par = route?.par
@@ -911,7 +997,7 @@ export class OfferBoard {
         // bonus offer the cash tip is the item (R-04), so only the base is quoted and the TIP form says
         // what replaces it. FEAT-114: a haul quotes a RATE — the load isn't picked yet; the picker
         // shows the total.
-        const tipMult = sp.load && !sp.fragile ? FREIGHT_TIP_MULT : 1
+        const tipMult = (sp.load && !sp.fragile ? FREIGHT_TIP_MULT : 1) * (sp.tipMult ?? 1)   // FEAT-142 Big tipper
         const range = par > 0 ? payRange(par, payTier, sp.payMult, tipMult) : null
         const money = (v) => `$${formatMoney(v)}`
         // R-20 (owner, 2026-10-24): "Pay $3.63 – $7.27 based on speed" — the range and what moves it,
@@ -925,7 +1011,10 @@ export class OfferBoard {
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         if (sp.fragile) terms.push(sp.fragile.tierName)   // what the player is up against (owner, 2026-10-23)
-        terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
+        // FEAT-65: a demolition job carries nothing; it states the site — how many stand, and that the pay
+        // follows the share smashed (haul's rule, main.js onSettle).
+        if (sp.targets) terms.push(`${route?.targets?.length ?? '?'} to smash`, 'pay per target smashed')
+        else terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
         // R-20: the tip is speed on fragile too; what the condition moves is the BASE (splitFragilePayout
         // pays half of it flat and half × health) — the owner asked, so the card says it.
         if (sp.fragile) terms.push('damage docks the base')
@@ -961,8 +1050,13 @@ export class OfferBoard {
             bonus: sp.bonus ? `Tip: ${sp.bonus.name}${rewardValue(sp.bonus.rewardId) != null ? ` (${money(rewardValue(sp.bonus.rewardId))})` : ''}`
                 + ` — ${gateLine(sp.bonus.gate, sp.family, this._region, cargoId, km)}` : null,
             // R-09: the deed line — what this job adds toward the camp, and the number behind it.
-            deed: sp.family === 'papers' || sp.family === 'demolition' ? null
-                : deedLine(sp.family, this._region, cargoId, km, sp.massKg),
+            // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
+            deed: sp.family === 'papers' ? null
+                : sp.deeds === 'none' ? 'Deed: none — off the books'
+                : deedLine(sp.family, this._region, cargoId, km, sp.massKg) + (sp.deeds === 'extraHalf' ? ' · +1/2 at C or better' : ''),
+            // FEAT-142: bottom-left of the card, the trait's name and what it does to THIS offer, in the
+            // card's own numbers (owner, 2026-11-01: "i cant tell if the modifiers are actually doing anything").
+            traits: sp.traits?.length ? sp.traits.map(id => this._traitLine(offer, sp, id, par, range, money)) : null,
             // FEAT-112: a load that fits says nothing. Otherwise the worst reason, in words:
             // "Warning: this load exceeds the recommended weight limit", "Overload: too heavy".
             verdict: verdict && verdict.verdict !== 'fits'
@@ -972,15 +1066,38 @@ export class OfferBoard {
     }
 
     /**
+     * FEAT-142: one trait as the card prints it — "impatient: +$1.20 pay · deadline −1h 10m · ranks
+     * 10% tighter". Each effect against the same offer WITHOUT the trait: pay is the quoted base
+     * (per bundle on a haul), the deadline the time limit; the rest are the multipliers as percentages.
+     */
+    _traitLine (offer, sp, id, par, range, money) {
+        const t = TRAITS.find(x => x.id === id)
+        const pct = (m) => `${Math.round(Math.abs(m - 1) * 100)}%`
+        const signed = (v, f) => `${v < 0 ? '−' : '+'}${f(Math.abs(v))}`
+        const fx = []
+        if (t.stockFull) fx.push(`the whole yard: ${sp.stock} bundles`)
+        const payM = (t.pay ?? 1) * (t.perPiece ?? 1)
+        if (payM !== 1) fx.push(range ? `${signed(range.base * (1 - 1 / payM), money)} ${sp.stock ? 'a bundle' : 'pay'}` : `${signed(payM - 1, () => pct(payM))} pay`)
+        if (t.deadline && par > 0) fx.push(`deadline ${signed(this.deadlineH(offer, par) - par / (DAY_PARAMS.dayLengthSec / 24) * (1 + sp.deadlineSlack / t.deadline), formatGameDuration)}`)
+        if (t.thresholds) fx.push(`rank times ${pct(t.thresholds)} ${t.thresholds < 1 ? 'tighter' : 'looser'}`)
+        if (t.floors) fx.push(`load ${pct(t.floors)} ${t.floors < 1 ? 'more delicate' : 'sturdier'}`)
+        if (t.tip) fx.push(`${signed(t.tip - 1, () => pct(t.tip))} tip`)
+        if (t.deeds === 'none') fx.push('no good deed')
+        if (t.deeds === 'extraHalf') fx.push('+1/2 deed at C or better')
+        return fx.length ? `${t.name}: ${fx.join(' · ')}` : t.name
+    }
+
+    /**
      * FEAT-103: a requisition line's card. The same at the camp and at the source. No person, no pay
      * (the boss doesn't pay, for now), no timers; the deed slot states what makes the line count —
      * C or better, in the job's own axis (gateLine's grammar). PLACEHOLDER words.
      */
     _lineCard (offer, sp, route, verdict, nowH) {
-        const kind = sp.family === 'haul' ? 'haul' : null
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
-        terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
+        if (sp.fragile) terms.push(sp.fragile.tierName)
+        if (sp.targets) terms.push(`${route?.targets?.length ?? '?'} to smash`)
+        else terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
         if (sp.stock) {
             // The source's own haul offer is the stock on hand (owner, 2026-10-30): a player who wants the
             // line in one trip waits for it. offer.poiId is the source at the camp too (_at).
@@ -989,10 +1106,14 @@ export class OfferBoard {
         }
         return {
             family: sp.family, badge: jobBadge(sp), portrait: null, flavor: null,
+            // A template literal for "from": test/offer-board.mjs's import scan. FEAT-65: the demolition line
+            // names its site, not a source — the camp gives it.
             sentence: [{ t: 'The expedition camp', b: true }, { t: ' needs ' }, { t: sp.phrase, b: true },
-                       { t: ` from ` }, { t: this.placeLabel(offer.poiId) ?? 'its source', b: true }, { t: '.' }],   // a template literal: the import scan
+                       ...(sp.targets ? [{ t: ' along ' }, { t: route?.placeName ?? sp.placeName, b: true }]
+                           : [{ t: ` from ` }, { t: this.placeLabel(offer.poiId) ?? 'its source', b: true }]), { t: '.' }],
             pay: 'Unpaid — the camp’s requisition', terms, times: ['no time limit'], bonus: null,
-            deed: `Counts ${gateLine('C', kind, this._region)} — else it goes back on the list`,
+            // FEAT-157: the line's own axis — bundles, "upon delivery", N%+ intact, or the letter.
+            deed: `Counts ${gateLine('C', sp.family, this._region, sp.fragile?.tier, (route?.distance ?? 0) / 1000)} — else it goes back on the list`,
             verdict: verdict && verdict.verdict !== 'fits'
                 ? { level: verdict.verdict, text: `${verdict.verdict === 'overload' ? 'Overload' : 'Warning'}: ${verdict.reasons[0].text}` }
                 : null,

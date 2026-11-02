@@ -57,3 +57,28 @@ is necessary to enforce; leave red or fix verifiably" — no length threshold, n
 - [ ] road length cost stays inside QUAL-26's measured envelope (median ≤ 1.01×, worst ≤ 1.30×)
 - [ ] `promoted-node-id` T count unchanged; `junction-stitch`, `restream-invariance`,
       `world-determinism`, `road-connectivity` green
+
+## Measured — Spare, 2026-11-01 (lane: Spare; nothing built — a fix re-routes the world)
+
+**The rows still exist on today's roads** (`wip/bug-69/rows.mjs`, the gate's own walk and rule):
+lone-pine (−68, 320) 0.17 m short over 4 m; seed 1625430154 (−1686, 1354) 0.07 m over 4 m and
+(−3536, 2306) 0.34 m over 4 m — all three are FEAT-77 ruling (a) near-misses now, reported, not gated —
+and seed 1625430154 (−899, 694) **2.06 m short over 8 m**, a real miss (not in the gate's battery).
+
+**How common, across worlds** (`wip/bug-69/census.mjs`, seeds 1–12 at 1400 m: 176 close pairs): 3
+near-misses and 6 real misses, every one two legs of one node, in four classes:
+
+| class | rows | worst |
+|---|---|---|
+| **this ticket's** — the side dives 10–22 m below the trunk right beside it | seed 2 (1619, −620), seed 5 (991, −1263), seed 12 (−814, −361) | 3.5 m short over 48 m |
+| a registered at-grade CROSSING 250 m from the shared node | seed 4 (1637, 406) | (the walk does not exclude crossings — a gate gap, not a road defect) |
+| a `~p` parallel half (BUG-63) running 22.8 m from its sibling | seed 4 (1239, −1118) | 5.7 m short over 148 m |
+| **two legs OVERLAPPING** — centrelines 5.8 m apart with 5.1 m of height between them, pavements on top of each other for ~160 m, no crossing registered | seed 10 (1566, −949) | 22.7 m short over 164 m |
+
+So this ticket's own class is ~1 in 4 seeds, 1.4–3.5 m short over 8–48 m, and the owner has read it
+as "playable as is". The census found a worse, separate defect: seed 10's two legs of one node drawn
+on top of each other (overhead shot: `wip/bug-69/seed10-overlapping-legs.png` — one wide road with two
+centre lines). That one needs its own ticket.
+
+**Next step needs a go:** the ticket's narrow fix (an occupancy price on the ~60 m past a T's departure
+band) re-routes edges, so every world moves. Not built.

@@ -137,13 +137,18 @@ export function getWheelPosition (corner, vehicleState, params) {
  */
 export const WHEEL_SOFT_BAND = 0.15
 
-export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire damper by one static deflection of depth (see tireContactForce)
+/** Suspension substeps per physics step (D-10). physics.js reads it to re-play a debris overlap
+ *  across the same substeps (BUG-99). */
+export const SUSPENSION_SUBSTEPS = 4
+
+export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire damper by one static deflection of depth (see stepSuspensionSubsteps)
 
 /**
  * THE tire contact law — the normal force [N] one contact of depth `depth` [m] produces, for a
- * tire whose air carries `rate` (1 = inflated, →0 flat) of its stiffness. Used by the suspension
- * (the force on the hub) AND by physics.js for the equal-and-opposite force on a debris body under
- * the wheel, so the two sides are the same law by construction (Newton's third law).
+ * tire whose air carries `rate` (1 = inflated, →0 flat) of its stiffness. Evaluated once, by the
+ * suspension: the force it puts on the hub from a debris contact is the force handed back to that
+ * body through the contact's `onForce` (physics.js, BUG-99), so the two sides are the same number by
+ * construction (Newton's third law), not two evaluations of one law.
  *
  * Three pieces, each explained where it was derived:
  *   · OBSTACLE ENGAGEMENT `env` (sizeR given ⇒ a debris body): the carcass wraps an object smaller
@@ -164,27 +169,14 @@ export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire dampe
  *     would hand a hard landing's energy straight back (measured: a 5.7 m/s landing rebounding at
  *     4.5 m/s). Zero effect at ordinary deflections (≤ 7.5 cm).
  *
+ * Returned in two parts — `spring` [N] (air + carcass, engagement applied) and `damp` [N·s/m] (the
+ * damper coefficient, engagement and rim-strike multiplier applied), so the caller can integrate the
+ * damper IMPLICITLY by folding `damp` into its denominator. F = max(0, spring + damp · compressionVel).
+ *
  * @param {number} depth          penetration [m], ≥ 0 meaningful
- * @param {number} compressionVel closing speed [m/s], positive = compressing (caller's convention)
  * @param {number|undefined} sizeR obstacle size for the engagement factor; undefined = ground
  * @param {number} rate           params._tireRateScale[i] (1 when no damage model runs)
  * @param {object} params         RANGER_PARAMS (tireStiffness, tireDamping, wheelRadius, rimRadius, tireContactAreaM2)
- */
-/** Rate of the progressive carcass / bottoming term [N/m]; the air rate where a preset has none. */
-export function carcassStiffness (params) {
-  return params.tireCarcassStiffness ?? params.tireStiffness
-}
-
-export function tireContactForce (depth, compressionVel, sizeR, rate, params) {
-  const t = tireContactTerms(depth, sizeR, rate, params)
-  return Math.max(0, t.spring + t.damp * compressionVel)
-}
-
-/**
- * The same law in two parts — `spring` [N] (air + carcass, engagement applied) and `damp` [N·s/m]
- * (the damper coefficient, engagement and rim-strike multiplier applied), so a caller that
- * integrates the damper IMPLICITLY (stepSuspensionSubsteps) can fold `damp` into its denominator.
- * F = max(0, spring + damp · compressionVel).
  */
 export function tireContactTerms (depth, sizeR, rate, params) {
   const env = (sizeR !== undefined)
@@ -202,6 +194,11 @@ export function tireContactTerms (depth, sizeR, rate, params) {
   return _terms
 }
 const _terms = { spring: 0, damp: 0 }   // scratch — consumed immediately by every caller
+
+/** Rate of the progressive carcass / bottoming term [N/m]; the air rate where a preset has none. */
+export function carcassStiffness (params) {
+  return params.tireCarcassStiffness ?? params.tireStiffness
+}
 const RIM_DAMP_MULT = 8     // the damper is integrated implicitly on the hub, so this is a modelling choice, not a stability bound
 
 const RUNOUT_PHASE = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]
@@ -311,7 +308,7 @@ export function carcassRadialOffset (corner, psi, runout) {
  * @param {number} dt - Outer physics step in seconds (== PHYSICS_DT from main.js).
  * @param {function} queryContacts - (cx, cy, cz, r, footprint, corner) → Array<{normal, depth, contactPoint}>.
  *   physics.js passes its qcPlus (analytic ground ∪ engine debris); gives the tire compression
- *   depth per hub. Debris contacts also carry depthRate and sizeR. `corner` lets the caller reuse
+ *   depth per hub. Debris contacts also carry surfaceVel, sizeR, hazard and onForce. `corner` lets the caller reuse
  *   one ground answer per wheel per step; a plain query ignores it.
  * @returns {void}
  */
@@ -320,7 +317,7 @@ const _mountX = [0, 0, 0, 0], _mountY = [0, 0, 0, 0], _mountZ = [0, 0, 0, 0]
 const _mountVX = [0, 0, 0, 0], _mountVY = [0, 0, 0, 0], _mountVZ = [0, 0, 0, 0]
 const _arbF = [0, 0, 0, 0]
 // Per-contact scratch for the two passes over one wheel's contacts (a wheel rarely has more than 3).
-const _cSpring = new Float64Array(32), _cDamp = new Float64Array(32), _cCvE = new Float64Array(32), _cCvV = new Float64Array(32), _cBUp = new Float64Array(32), _cRate = new Float64Array(32)
+const _cSpring = new Float64Array(32), _cDamp = new Float64Array(32), _cCvE = new Float64Array(32), _cCvV = new Float64Array(32), _cBUp = new Float64Array(32), _cRate = new Float64Array(32), _cEng = new Float64Array(32)
 
 export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts) {
   // SM-3: reset the per-step peak bump-stop force before the substep loop accumulates this step's.
@@ -331,6 +328,8 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   // whether it was the road or a rock that reached it, and the cores collide with debris only.
   if (vehicleState.rimForce) { vehicleState.rimForce[0] = 0; vehicleState.rimForce[1] = 0; vehicleState.rimForce[2] = 0; vehicleState.rimForce[3] = 0 }
   if (vehicleState.rimForceRoad) { vehicleState.rimForceRoad[0] = 0; vehicleState.rimForceRoad[1] = 0; vehicleState.rimForceRoad[2] = 0; vehicleState.rimForceRoad[3] = 0 }
+  if (vehicleState.rimHazardSoft) { vehicleState.rimHazardSoft[0] = 0; vehicleState.rimHazardSoft[1] = 0; vehicleState.rimHazardSoft[2] = 0; vehicleState.rimHazardSoft[3] = 0 }
+  if (vehicleState.rimHazardWork) { vehicleState.rimHazardWork[0] = 0; vehicleState.rimHazardWork[1] = 0; vehicleState.rimHazardWork[2] = 0; vehicleState.rimHazardWork[3] = 0 }
   // Paranoid guard (Phase 4.1 D-01): if strutComp/strutCompVel not initialized, skip.
   if (!vehicleState.strutComp || vehicleState.strutComp.length !== 4) return
   if (!vehicleState.strutCompVel || vehicleState.strutCompVel.length !== 4) return
@@ -368,7 +367,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   }
 
   // N=4 substeps with explicit Euler on the damper.
-  const N   = 4
+  const N   = SUSPENSION_SUBSTEPS
   const sdt = dt / N
   const m_u = params.wheelMass
 
@@ -486,9 +485,13 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // bodyUpDot = dot(c.normal, body_up): the fraction of this contact's force along the strut axis (D-06)
         const bUp = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z
         // compressionVel: positive = hub approaching the surface = tire compressing.
-        // Damper: for DEBRIS contacts (c.depthRate set by physics.js) use the contact's TRUE
-        // closing rate — hit hard → high force, roll on slow → low force, straight from the
-        // spring–damper law. HUNT–CROSSLEY engagement scaling (min(1, depth/ENGAGE)): a
+        // Damper: the hub's closing speed on the contact normal, RELATIVE to the surface. A debris
+        // contact carries the body's own velocity at the contact point (c.surfaceVel, physics.js —
+        // including what this step's tire pushes have already given it), so a rock that is already
+        // running away is not still being hit at the speed it was hit last step (BUG-99: the old
+        // backward difference of depth was last step's approach, and over-punted light rocks ~2.5×).
+        // Hit hard → high force, roll on slow → low force. For debris, HUNT–CROSSLEY engagement
+        // scaling (min(1, depth/ENGAGE)): a
         // constant damper is DISCONTINUOUS at first touch (force jumps from 0 to c·v the
         // instant contact begins), which punted crawled-into rocks like a kicked ball; scaling
         // the damper with penetration makes contact force continuous from zero — the standard
@@ -500,10 +503,16 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         // tire as decompressing — the damper pushed the wrong way and fed the bounce (owner capture
         // 1791092005752: a 5.7 m/s landing rebounding at 4.5 m/s once the stop held). Split as
         // (the mount's closing speed, explicit) − v_new · bUp (implicit).
-        let cvE, cvV
-        if (c.depthRate !== undefined) { cvE = c.depthRate * Math.min(1, c.depth / TIRE_DAMP_ENGAGE); cvV = 0 }
-        else { cvE = -(_mountVX[i] * c.normal.x + _mountVY[i] * c.normal.y + _mountVZ[i] * c.normal.z); cvV = bUp }
-        _cSpring[ci] = t.spring; _cDamp[ci] = t.damp; _cCvE[ci] = cvE; _cCvV[ci] = cvV; _cBUp[ci] = bUp; _cRate[ci] = rate
+        let cvE, cvV, eng = 1
+        const sv = c.surfaceVel
+        if (sv) {
+          // A debris contact damps at its own rate (params.tireDampingDebris, BUG-99): the road's
+          // is a ride tune, and against a free rock it decides whether the carcass ever bottoms.
+          eng = Math.min(1, c.depth / TIRE_DAMP_ENGAGE) * (params.tireDampingDebris ?? params.tireDamping) / params.tireDamping
+          cvE = -((_mountVX[i] - sv.x) * c.normal.x + (_mountVY[i] - sv.y) * c.normal.y + (_mountVZ[i] - sv.z) * c.normal.z) * eng
+          cvV = bUp * eng
+        } else { cvE = -(_mountVX[i] * c.normal.x + _mountVY[i] * c.normal.y + _mountVZ[i] * c.normal.z); cvV = bUp }
+        _cSpring[ci] = t.spring; _cDamp[ci] = t.damp; _cCvE[ci] = cvE; _cCvV[ci] = cvV; _cBUp[ci] = bUp; _cRate[ci] = rate; _cEng[ci] = eng
         tireFzExplicit += (t.spring + t.damp * cvE) * bUp
         cTire += t.damp * cvV * bUp
       }
@@ -565,11 +574,15 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
 
       // Pass 2 over the contacts: the tire forces at v_new (clamped — a tire pushes, never pulls),
       // the strut-axis sum the Pacejka feed reads, the X/Z residual (D-06) and the rim-load signal.
-      let tireFz = 0
+      let tireFz = 0, pinch = 0, pinchW = 0
       for (let ci = 0; ci < nC; ci++) {
         const c = hubContacts[ci], bUp = _cBUp[ci], rate = _cRate[ci]
         const tireFnAtContact = Math.max(0, _cSpring[ci] + _cDamp[ci] * (_cCvE[ci] - newStrutCompVel * _cCvV[ci]))
         tireFz += tireFnAtContact * bUp
+        // BUG-99: a debris contact carries an injected callback (physics.js) that hands this exact
+        // force, for this substep, back to the body as its equal and opposite. A callback, so this
+        // module stays pure maths and never sees an engine type.
+        if (c.onForce) c.onForce(tireFnAtContact, sdt)
         if (params._hubNormalXZ) {
           params._hubNormalXZ[i].x += tireFnAtContact * (c.normal.x - bUp * body_up.x) / N
           params._hubNormalXZ[i].y += tireFnAtContact * (c.normal.y - bUp * body_up.y) / N
@@ -602,11 +615,19 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
           const bandNorm = Math.min(0.98, WHEEL_SOFT_BAND / sidewall)
           // The reference is what this tire carries at full compression: its AIR at this tire's rate
           // (almost nothing for a flat) plus its carcass at full rate — the same split
-          // tireContactForce makes.
+          // tireContactTerms makes.
           const atBand = WHEEL_SOFT_BAND *
             (params.tireStiffness * rate + carcassStiffness(params) * (1 / (1 - bandNorm * bandNorm) - 1))
           const residual = tireFnAtContact - atBand
           if (residual > vehicleState.rimForceRoad[i]) vehicleState.rimForceRoad[i] = residual
+          if (c.hazard && residual > 0) {
+            if (residual > pinch) pinch = residual
+            // The WORK that residual does on the carcass this substep: residual × the closing speed
+            // on the normal (loading only). (cvE − v·cvV)/eng undoes the debris damper's scaling —
+            // eng is 1 past the soft band's depth, so only the damping ratio comes off.
+            const closing = (_cCvE[ci] - newStrutCompVel * _cCvV[ci]) / _cEng[ci]
+            if (closing > 0) pinchW += residual * closing * sdt
+          }
         }
       }
 
@@ -623,6 +644,13 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
 
       // Accumulate for outer step (average force across substeps, /N pattern)
       params._tireFz[i]         += tireFz                / N  // average tire-spring Fz for Pacejka feed (D-06b)
+      // BUG-99: a HAZARD rock squashing the carcass onto the rim is a pinch — the same residual, from
+      // hazard contacts only, kept apart so src/damage.js can split the tire on it (c.hazard, set by
+      // physics.js). The STEP MEAN, like the engine's core force (whole-step impulse ÷ dt): the two
+      // are read against thresholds of the same kind, and one substep's spike — the coupled step
+      // finding a tumbling rock deeper than it predicted — is not a cut tire.
+      if (vehicleState.rimHazardSoft) vehicleState.rimHazardSoft[i] += pinch / N
+      if (vehicleState.rimHazardWork) vehicleState.rimHazardWork[i] += pinchW
       params._suspForceAccum[i] += (suspForce - arbF[i]) / N  // body force along strut: spring+damper+stops + ARB reaction
       // _hubNormalXZ[i] accumulated in the contacts pass above
     }

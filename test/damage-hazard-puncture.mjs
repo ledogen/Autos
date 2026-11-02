@@ -1,13 +1,16 @@
 // test/damage-hazard-puncture.mjs — FEAT-93 gate: a hard rock hit pops a tire at ANY condition.
 //
 // Below 50% a tire pops on a bump-stop force (damage-filter-puncture.mjs); above it nothing on the
-// road can pop it. This is the second, condition-independent path: the wheel's rigid core (QUAL-25,
-// the rim) struck by HAZARD debris — a rock — hard enough. Same signal damage-rim-strike.mjs prices
-// for rims, filtered by the engine to hazard bodies only (DEBRIS_TYPES `hazard`), so cargo, barrels,
-// road and potholes can never reach it. A threshold on a force, not a roll (SM-INV-12).
+// road can pop it. This is the second, condition-independent path: the RIM taking a HAZARD rock —
+// read two ways, each against its own threshold (BUG-99): the engine's force on the wheel's sprung
+// hard core, and the soft path's carcass load past full squash (the tire pinched between rock and
+// rim). Filtered to hazard bodies only (DEBRIS_TYPES `hazard`), so cargo, barrels, road and
+// potholes can never reach it. A threshold on a force, not a roll (SM-INV-12), and no speed term:
+// how often a rock reaches the rim at a given speed is the physics' answer, not this file's.
 //
 // §1 is the damage model alone; §2 drives the real truck (engine, chassis, struts) into a resting
-// rock and prints the measured core force the threshold was set against.
+// rock at a HELD speed and prints both measurements. The full picture is the census,
+// test/census-rock-strike.mjs --big (≈3000 hits).
 //
 // Run: node test/damage-hazard-puncture.mjs
 
@@ -27,11 +30,13 @@ const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fail 
 const DT = 1 / 60
 const POP_N = D.hazardPunctureMult * DamageModel.staticWheelLoad(RANGER_PARAMS)
 
-console.log(`§1 the threshold (${(POP_N / 1000).toFixed(1)} kN of hazard core force), on fresh rubber`)
+const PINCH_J = D.hazardPinchEnergyJ
+
+console.log(`§1 the thresholds (${(POP_N / 1000).toFixed(1)} kN on the core, ${PINCH_J} J of pinch work), on fresh rubber`)
 {
   const hitWith = (field, n) => {
     const d = new DamageModel({ params: RANGER_PARAMS })
-    const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0] }
+    const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], rimHazardSoft: [0, 0, 0, 0], rimHazardWork: [0, 0, 0, 0] }
     vs[field][1] = n
     d.step(vs, RANGER_PARAMS, DT)
     return d
@@ -41,6 +46,19 @@ console.log(`§1 the threshold (${(POP_N / 1000).toFixed(1)} kN of hazard core f
   ok(!pop.flat[0] && !pop.flat[2] && !pop.flat[3], '...and only the corner that struck')
   ok(!hitWith('rimHazard', POP_N * 0.99).flat[1], 'just under it does nothing')
   ok(!hitWith('rimForce', POP_N * 3).flat[1], 'three times it from NON-hazard debris (cargo, barrels) does nothing')
+  ok(hitWith('rimHazardWork', PINCH_J * 1.01).flat[1], 'pinch work just over its own threshold pops it too')
+  ok(!hitWith('rimHazardWork', PINCH_J * 0.99).flat[1], '...and just under does nothing')
+  {
+    // Rate, not total: the same 800 J pressed in slowly (a tenth of it per step, for 5 s) never pops.
+    const d = new DamageModel({ params: RANGER_PARAMS })
+    const vs = { rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], rimHazardSoft: [0, 0, 0, 0], rimHazardWork: [0, PINCH_J * 0.1, 0, 0] }
+    for (let k = 0; k < 300; k++) d.step(vs, RANGER_PARAMS, DT)
+    ok(!d.flat[1], `${PINCH_J * 0.1 / DT / 1000} kW pressed in for 5 s (${PINCH_J * 30} J in all) does not pop it — the work leaks out`)
+    const e = new DamageModel({ params: RANGER_PARAMS })
+    vs.rimHazardWork[1] = PINCH_J * 0.6
+    e.step(vs, RANGER_PARAMS, DT); e.step(vs, RANGER_PARAMS, DT)
+    ok(e.flat[1], '...while two quick steps of 0.6× it in a row do')
+  }
 }
 
 /** The GLB's vertices, centred on their bbox — what debris.js _extractHull hands the engine. */
@@ -96,39 +114,44 @@ async function drive (mph, lat, hazard = true) {
   const flat = (cx, cy, cz, r) => { const d = r - cy; return d > 0 ? [{ normal: new THREE.Vector3(0, 1, 0), depth: d, contactPoint: new THREE.Vector3(cx, 0, cz) }] : [] }
   const ctx = { engine, chassis }
   const dmg = new DamageModel({ params: P })
-  let peak = 0
+  let peak = 0, pinch = 0
+  const fwd = new THREE.Vector3()
   for (let s = 0; s < 4 * 60; s++) {
-    vs.throttle = 0.3
+    // Hold the labelled speed, so the label is the speed the rock is met at.
+    const v = vs.velocity.dot(fwd.set(0, 0, -1).applyQuaternion(vs.quaternion))
+    vs.throttle = Math.max(0, Math.min(1, (speed - v) * 0.5)); vs.brake = Math.max(0, Math.min(1, (v - speed) * 0.5))
     stepPhysics(vs, P, DT, flat, ctx)
     readRimStrikes(engine, chassis, vs.rimForce, DT, vs.rimHazard)
-    for (let i = 0; i < 4; i++) peak = Math.max(peak, vs.rimHazard[i])
+    for (let i = 0; i < 4; i++) { peak = Math.max(peak, vs.rimHazard[i]); pinch = Math.max(pinch, vs.rimHazardSoft[i]) }
     dmg.step(vs, P, DT)
   }
   engine.dispose()
-  return { peak, popped: dmg.flat.some(Boolean) }
+  return { peak, pinch, popped: dmg.flat.some(Boolean) }
 }
 
-console.log('\n§2 the real truck into a resting rock — peak hazard core force [kN] by lateral offset [m]')
+console.log('\n§2 the real truck into a resting rock at a held speed — core force / pinch [kN] by lateral offset [m]')
 {
   const lats = [-0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15]
-  console.log('    mph' + lats.map(l => String(l).padStart(7)).join('') + '   popped')
+  console.log('    mph' + lats.map(l => String(l).padStart(10)).join('') + '   popped')
   const rows = {}
-  for (const mph of [5, 10, 15, 20, 25, 30, 40]) {
+  for (const mph of [5, 10, 15, 20, 25, 30, 40, 50]) {
     const r = []
     for (const lat of lats) r.push(await drive(mph, lat))
     rows[mph] = r
-    console.log(String(mph).padStart(7) + r.map(x => (x.peak / 1000).toFixed(0).padStart(7)).join('') +
+    console.log(String(mph).padStart(7) + r.map(x => `${(x.peak / 1000).toFixed(0)}/${(x.pinch / 1000).toFixed(0)}`.padStart(10)).join('') +
       `   ${r.filter(x => x.popped).length}/${lats.length}`)
   }
-  ok([5, 10, 15].every(m => rows[m].every(x => !x.popped)), 'up to 15 mph no line onto the rock pops a tire — clipping it is not an incident')
-  ok(rows[25].filter(x => x.popped).length >= 3 && rows[30].filter(x => x.popped).length >= 3,
-    'at 25-30 mph several lines onto it do — nailing a rock splits a fresh tire')
-  const centre = rows[30][3]
-  const again = await drive(30, 0)
-  ok(centre.popped && again.peak === centre.peak && again.popped,
-    `the same hit replays to the same force (${(centre.peak / 1000).toFixed(3)} kN) and the same puncture`)
-  const plain = await drive(30, 0, false)
-  ok(!plain.popped && plain.peak === 0, 'the same hit on the same rock WITHOUT the hazard flag pops nothing — the flag gates the path')
+  const pops = (ms) => ms.reduce((n, m) => n + rows[m].filter(x => x.popped).length, 0)
+  ok(pops([5, 10]) === 0, 'at 5-10 mph no line onto the rock pops a tire — crawling over it is not an incident')
+  // Pop on pinch ENERGY (2026-10-31): below ~40 mph a hit is rarely enough work to split a tire.
+  ok(pops([20, 25, 30]) <= 3, `at 20-30 mph few lines do (${pops([20, 25, 30])} of 21) — slowing down mostly saves the tire`)
+  ok(pops([40, 50]) >= 4, `at 40-50 mph several do (${pops([40, 50])} of 14) — nailing a rock splits a fresh tire`)
+  const hit = rows[50].find(x => x.popped), lat = lats[rows[50].indexOf(hit)]
+  const again = await drive(50, lat)
+  ok(again.peak === hit.peak && again.pinch === hit.pinch && again.popped,
+    `the same hit replays to the same forces (${(hit.peak / 1000).toFixed(3)} / ${(hit.pinch / 1000).toFixed(3)} kN) and the same puncture`)
+  const plain = await drive(50, lat, false)
+  ok(!plain.popped && plain.peak === 0 && plain.pinch === 0, 'the same hit on the same rock WITHOUT the hazard flag pops nothing — the flag gates the path')
 }
 
 console.log(fail ? '\nFAIL — hazard punctures have drifted' : '\nPASS — a hard rock hit pops any tire; a crawl, or anything but a hazard, does not')

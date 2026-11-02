@@ -1,7 +1,7 @@
 ---
 id: BUG-63
 type: bug
-status: pending
+status: completed
 severity: medium
 ---
 
@@ -78,3 +78,56 @@ through this ticket's territory. Two facts fell out, both useful here:
   not visibly deleting road at those sites. The known loss is still the reproducer's seed 6 T at
   (-3152.1, 5154.2).
 
+
+## Spare, 2026-11-01 — still live; both remedies measured; the pair key wins, three gates move
+
+**Still live on main**, though the reproducer above no longer fires (seed 6 re-routed). Across the
+road battery there are 4 mid-span commits, and **2 overwrite a run**: seed 7 `g:-1423270,557802,-1:-3,1,2`
+and seed 11 `g:-922808,-1316138,-1:-2,-2,0`. The side half is written last, so it is the TRUNK piece
+N → P that vanishes, and each T is left with 2 legs. Census: `wip/bug-63/census.mjs`.
+
+| | main | decline (option 3) | pair key (option 1) |
+|---|---|---|---|
+| overwrites / Ts with < 3 legs | 2 / 2 | 0 / 0 | 0 / 0 |
+| junction-stitch unstitched (gating) | 0 | **2 — RED** | 0 |
+| runs in the affected seed-7 window | 57 | 55 | 58 |
+| road-connectivity | 1 component | 1 | 1 |
+
+Declining does what the 09-07 ruling measured: the pair ships unsanctioned and the decks split.
+**The pair key (built on branch `proto/bug-63-parallel-key`)** works like this:
+- the side half takes the key suffix `~p` (`PARALLEL_SUFFIX`) when its node pair is already taken;
+- the key logic lives in one function, `_v2MidSpanKeys`, shared by the commit;
+- the run is in the world (drawn, carved, collided, P keeps three legs) but stays out of
+  `networkGraph()`, so the planners and POIs keep a simple graph. It is a second road between one
+  node pair, the same way BUG-85's stranded pieces get no POIs.
+- promoted-node-id gains a battery-wide census ("every promoted T that exists has three legs"): it
+  FAILS on main with the two Ts and passes with the key. 3 parallel halves ship in the battery
+  (the third is a pair whose reversed spelling was already live).
+
+**What it costs: three gates move, all from the restored seed-7 T** (pad at (-1423,558), now a real
+3-leg pad):
+- `bore-junction-clearance` in-pad ceiling 18 → 19: the new pad reaches one portal.
+- `vertical-curvature` junction kinks 207 vs ceiling 200: one more junction's legs.
+- `road-pad-fill` chord 16 cm vs 6 cm at that pad. Two open-back ring vertices sit 14–18 cm above
+  `_nodeSurfaceTop`. The pad lies on a 37 % cross-slope (the field falls 2.2 m in 6 m) where the
+  through road kinks 20°, and the open back follows the ribbon edges, which disagree with the field
+  there. That is pad machinery (BUG-82), hidden until now because this T never had its third leg.
+
+## Resolution — Spare, 2026-11-01 (orchestrator pick: fix the pad, then land the pair key)
+
+- **The pair key landed.** `_v2MidSpanKeys` gives a mid-span side half the `~p` suffix
+  (`PARALLEL_SUFFIX`) when its node pair is already taken. No `_network.set` overwrites a live key,
+  and every promoted T keeps three legs. The run is in the world but out of `networkGraph()`.
+- **The pad defect it exposed is fixed at the source (BUG-82 machinery).** `_legDeckTop` now inverts
+  the ribbon's own cross-section: Newton on (p − runPointAt(s))·runProfile(s).t = 0, instead of the
+  polyline segment's frame. The pad field therefore meets the ribbon's section vertices at the mouth
+  corners. The seed-7 pad's chord went 16 → under 4.9 cm (road-pad-fill's worst is now 4.9 cm at
+  seed 7 (1602,1061)); all 215 legs weld with 0 mouth verts off the ribbon.
+- **Two ceilings rose for the restored junctions only:**
+  - `vertical-curvature` junction 200 → 204: +2 kinks each in the seed 7 and seed 11 windows,
+    every other window unchanged;
+  - `bore-junction-clearance` in-pad 18 → 19: seed 19's node 0,-2,2 gets its restored leg back,
+    its pad reach grows to 33.4 m, and that takes in a portal 29.8 m away.
+- **Census:** promoted-node-id checks three legs on every T that exists across the battery. It fails
+  on main (seeds 7 and 11) and passes here.
+- **Gates:** affected suite 51/52, the one red being road-clearance (the known FEAT-77 red).

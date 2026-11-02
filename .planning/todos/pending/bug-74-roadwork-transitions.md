@@ -144,3 +144,11 @@ judge in play.
 - At the capture spot, driver's-eye and 30 m overhead: no continuous line between the skirt and
   the ground; the shoulder material fades out over ≥ 8 m with a ragged front.
 - Cut walls unchanged. No new per-zone rule in the shader beyond the one mechanism chosen.
+
+## 2026-11-02 — class 1 attempt HELD on `proto/bug-74-fill-bury` (2390dda1)
+
+Spare's height-contest attempt (a fill buries the natural rock by its own thickness — `roadFillRockBury`
+2.5 m; only a cut stays an engineered face) is parked on branch `proto/bug-74-fill-bury`, off
+feature/spare so the rest lands without it. The owner drives it on :3885 — Spare checks that branch out
+in `CarGame-spare` when asked, then puts feature/spare back. The write-up and measurements are in that
+branch's copy of this ticket; shots in `CarGame-spare/wip/bug-74/`.

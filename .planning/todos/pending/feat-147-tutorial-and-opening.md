@@ -39,5 +39,6 @@ the player first needs it:
 
 ## Open
 
-- How the firing is shown: a card, or a staged in-world scene at the burger joint.
+- ~~How the firing is shown~~ **RULED (owner, 2026-10-31): a graphic-novel-style scene — background
+  art with dialogue cards over it** (the Story card channel). Not a staged in-world scene.
 - Whether the tutorial jobs are scripted or just the first real offers with prompts on top.

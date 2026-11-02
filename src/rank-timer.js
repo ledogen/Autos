@@ -9,9 +9,10 @@
 // fixed pointer, sited on the run HUD (top-right), never over the road.
 //
 // What is binding here (DESIGN.md SM-INV-3 as amended 2026-08-17, and the FEAT-87 rulings):
-//   • BOUNDARY PROXIMITY, NEVER A COUNTDOWN. This module hands out seconds so the strip can be
-//     drawn to scale; nothing downstream may render them as digits. `3:41 remaining` is the exact
-//     banned string. The bar shows where the letters fall, not how long is left.
+//   • BOUNDARY PROXIMITY ON THE BAR; the digits live elsewhere. This module hands out seconds so the
+//     strip can be drawn to scale; the bar itself never shows them. Q-6 (owner, 2026-10-31) reversed
+//     the old digit ban: BEFORE the bar shows, the promise overlay prints "finish in x:xx or better
+//     for S rank" from these same seconds (main.js _promiseRows); once the bar is up it replaces that.
 //   • NOT THERE UNTIL IT MATTERS (owner, 2026-10-01). The bar pops up `appearS` (15) seconds before
 //     the S/A line and stays for the rest of the job. For most of a drive it has nothing to say — the
 //     player only gets useful data from it when the mission is almost over — so until then it is

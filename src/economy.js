@@ -176,6 +176,9 @@ export const ECONOMY_PARAMS = {
             fragile:     [{ S: 0.90, A: 0.83, B: 0.77, C: 0.70 }],
             sturdy:      [{ S: 0.95, A: 0.90, B: 0.85, C: 0.80 }],
         },
+        // FEAT-65: the SHARE OF THE SITE SMASHED (0..1), higher is better — its own axis (owner,
+        // 2026-11-01). Whole percents, as the card and the HUD print them. PROVISIONAL — the owner tunes.
+        demolition: [{ S: 1.0, A: 0.9, B: 0.75, C: 0.6 }],
     },
 
     // THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17 at the then k 0.024 — RESOLVED by regionMult
@@ -255,7 +258,7 @@ export function dayTier(day) {
 }
 
 /**
- * FEAT-138: a type's rank thresholds in a region — `kind` 'time' | 'freight', or 'haul' with the
+ * FEAT-138: a type's rank thresholds in a region — `kind` 'time' | 'freight' | 'demolition', or 'haul' with the
  * cargo id. Region clamps like regionTier: <1 reads as 1, past the list holds the last entry.
  */
 export function rankTable (kind, region, cargoId) {
@@ -487,7 +490,9 @@ export class EconomySystem {
             : splitPayout(result.par, result.ratio, tier, mult, tipMult)
         // FEAT-138: good deeds read the letter on EVERY type — and the letter is already the type's
         // own axis (haul's count, freight's kg, fragile's health). The share and health bands retired.
-        const points = pointsFor(result.letter)
+        // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
+        const points = mission?.deeds === 'none' ? 0
+            : pointsFor(result.letter) + (mission?.deeds === 'extraHalf' && pointsFor(result.letter) > 0 ? 0.5 : 0)
         runEconomy.money = _cents(runEconomy.money + payout)
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
@@ -530,7 +535,7 @@ export class EconomySystem {
 
     /**
      * Money earned MID-MISSION and banked on the spot (FEAT-61, owner 2026-08-15) — the paper
-     * route's accuracy bonus, paid as each paper lands rather than at the bell.
+     * route's accuracy bonus, paid as each paper lands rather than at the finish.
      *
      * Deliberately NOT settleFlat: this accrues no points and does not count a mission, because it
      * is not a settlement. It is the same wallet through the same module, which is the part that

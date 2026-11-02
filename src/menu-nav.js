@@ -30,13 +30,15 @@ const $ = (id) => document.getElementById(id)
 function menuContainer () {
   const re = $('run-end')   // FEAT-146: a Story card, but nothing behind it is in play — it holds the truck like a menu
   if (re?.style.display === 'block') return re
+  const tc = $('towel-card')   // FEAT-146: the towel's confirm card stands in for the pause menu
+  if (tc?.style.display === 'flex') return tc
   const pm = $('pause-menu')
   if (pm?.style.display === 'flex') return pm.classList.contains('settings') ? $('mm-settings-panel') : pm
   const ss = $('story-seed-modal')
   if (ss?.style.display === 'flex') return ss
   const mm = $('main-menu')
   if (mm && mm.style.display !== 'none' && document.body.classList.contains('stage-on')) {
-    for (const page of ['setup', 'settings', 'scenarios']) if (mm.classList.contains(page)) return $(`mm-${page}-panel`)
+    for (const page of ['setup', 'settings']) if (mm.classList.contains(page)) return $(`mm-${page}-panel`)
     return $('mm-root')
   }
   return null
@@ -108,7 +110,9 @@ function onKey (e) {
     // Re-rendered under the highlight (same card, fresh nodes): resume at its index and act on this
     // press. Otherwise the first press only places the highlight.
     if (cur && !cur.isConnected && curBox === c) highlight(items[Math.min(curIdx, items.length - 1)])
-    else { highlight(items.includes(document.activeElement) ? document.activeElement : items[0]); curBox = c; curIdx = items.indexOf(cur); return }
+    // FEAT-133: a card's first press lands on its MAIN action (`data-primary`: accept / continue),
+    // not on whatever row happens to come first — the calibration form, Larry's route sizes.
+    else { highlight(items.includes(document.activeElement) ? document.activeElement : items.find(el => el.hasAttribute('data-primary')) ?? items[0]); curBox = c; curIdx = items.indexOf(cur); return }
   }
   curIdx = items.indexOf(cur)
   if (e.key === 'Enter') {

@@ -1,10 +1,11 @@
 ---
 id: BUG-54
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-08-20
 source: owner observation while driving (2026-08-20)
+lane: B → Spare (2026-11-01: Lane B has no session; Spare took it)
 relates: FEAT-48 (Box3D chassis + the static mirrors it collides with), QUAL-25 (chassis collision
   mesh), BUG-22/22b (the rock sphere proxy — a secondary suspect here, see below)
 ---
@@ -84,3 +85,50 @@ Capture the seed and location so it replays deterministically (worldgen is stric
 - If the fix touches the rock collider, the change lands in BOTH consumers — the analytic wheel
   query (`prop-system.js` `queryProps`) and the engine mirror (`terrain-physics.js`
   `PropPhysics.syncChunk`) — they must not disagree.
+
+## Resolution (Spare, 2026-11-01) — hypothesis 3, measured
+
+**Root cause: the collidable `rock`'s sphere collider stood proud of the rock you see.** It was named
+from harness data (`wip/bug-54/*.mjs`).
+- The visible blob is squashed to 0.7 in height. The sphere was sized off its 90th-percentile
+  horizontal flank reach, so it was taller than the rock: 0.22–0.70 m per unit scale. The worst was
+  **1.12 m** (variant 4 at scale 1.6: sphere r 1.85, visible half-height 1.15).
+- **3.1 % of rock placements were invisible**: the rock fully under the ground while its sphere still
+  poked out, up to **0.34 m**. That is the invisible kerb.
+- Driven at 15 m/s over the worst invisible one (rock top 2 cm under the ground, sphere top 0.33 m
+  above it), the retired sphere gave the body **1.14 m/s up and 1.81 rad/s of roll rate**. The mesh
+  collider gives exactly what bare ground gives (0.06 m/s, 0 rad/s). That is the "launch off nothing
+  at full travel".
+
+**Fix:** the collidable rock now collides as its **own triangle mesh**, the boulders' BUG-22c path, in
+BOTH consumers by construction:
+- the analytic wheel query, `prop-system.js` `queryProps` → `sphereVsMeshInstance`;
+- the engine mirror, `terrain-physics.js` `PropPhysics.syncChunk` → `addMesh`.
+
+What you see is what you hit. The sphere path and its `rockRadiusScale` slider are deleted; nothing
+else used them.
+
+**Supporting fix: the triangle query handles a centre INSIDE the solid** (`prop-collider.js`
+`sphereVsMesh`). It used to assume the centre stayed outside, which held for 20 m boulders. A 0.37 m
+wheel can sink its centre into a 0.3 m rock, and it would then have been pulled IN or ignored. The
+closest triangle's face normal now says which side the centre is on. Inside, the push is out through
+that face with depth = r + distance. Every rock face winds outward (gate-checked, 400/400).
+
+**Hard obstacles still stop the truck:** the mesh IS the visible surface, the target BUG-22/22b were
+tuning the sphere toward. Hypotheses 1 and 2 were not pursued: the 2026-10-03 progressive implicit
+bump stop and BUG-99's separate wheel-core bodies changed both since this was filed, and the
+hypothesis-3 kick alone reproduces the reported launch.
+
+**Gates:**
+- `rock-collision-mesh.mjs` section 5 (rocks: mesh, outward winding, collider top = visible top,
+  buried = no contact, inside pushes out — the inside check fails on the old query).
+- `props.mjs` updated (rock is `mesh`; the query at a rock's centre now returns an outward push).
+- `rock-collision-proxy.mjs` (which locked the sphere) retired.
+
+**Separate finding, NOT changed (a world-look call for the owner):** `prop-scatter.js` `placeBlob`
+sinks every blob by `cfg.blob.radius[1] × axisScale[1] × scale`, which is the LARGEST radius in the
+range (2.0 m), not the variant's own. The comment says "approximate exposed half-height from the
+variant's nominal radius". So a small variant is buried as if it were 4× its size. Many rocks sit
+deeper than their bury fraction says, and some vanish entirely. Using the variant's own half-height
+would raise small rocks, medium rocks and litter into view across the whole world. With mesh colliders
+this is purely visual now; it no longer makes invisible collision.

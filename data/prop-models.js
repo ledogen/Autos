@@ -228,6 +228,9 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.87, 0.50] },
     tags: ['lawnFurniture'],
     yardGroup: [1, 2],   // flamingos come in pairs
+    // FEAT-149: knocked over and sent rolling by the truck (src/main.js _updateOrnaments). A plastic
+    // flamingo on wire legs.
+    knockable: { massKg: 0.3 },
   },
 
   // ASSET-01 — the grazing pose.  SHORTER but LONGER: the neck swings forward
@@ -239,6 +242,7 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
     tags: ['lawnFurniture'],
     yardGroup: [1, 2],
+    knockable: { massKg: 0.3 },   // FEAT-149
   },
 
   // ASSET-24 — the player's campfire.  472 tris, 0.708 x 0.378 x 0.675 m, four
@@ -399,6 +403,7 @@ export const PROP_MODELS = {
     // one side — the right way round for knockable set dressing.
     collision: { shape: 'box', size: [0.412, 0.800, 0.330] },
     tags: ['lawnFurniture'],
+    knockable: { massKg: 4 },   // FEAT-149: a ceramic gnome
     yardYaw: 0.5,   // faces the road, like the chair (owner 2026-10-07)
     // Blue / green / burgundy. The hat, beard, skin, leather and buckle are FIXED — a gnome is a
     // red hat and a white beard, and recolouring those stops it being a gnome.
@@ -439,6 +444,7 @@ export const PROP_MODELS = {
     },
     // FEAT-71 lifts a sphere-shaped satellite by its radius (dressYard), per the note above.
     tags: ['lawnFurniture'],
+    knockable: { massKg: 0.15, restitution: 0.75 },   // FEAT-149: the collision row's own mass and bounce
   },
 
   // ── POI markers ───────────────────────────────────────────────────────────────────────────

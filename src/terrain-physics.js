@@ -25,6 +25,9 @@
 // The BUG-27b "slippery body" behaviour is reproduced on the CHASSIS shape's
 // friction (see physics.js), not here — debris needs honest ground grip.
 const TERRAIN_FRICTION = 0.8
+// BUG-81 item 4: the bore lid stands only where the drawn hill clears the tube's crown by this much
+// (m) — below that is the mouth itself, which has to stay open.
+const LID_CLEAR = 0.5
 
 export class TerrainPhysics {
   constructor (engine, getRoad = null) {
@@ -72,11 +75,13 @@ export class TerrainPhysics {
     // collider with the analytic surface the wheels drive — the deliberate, span-bounded exception
     // to "heights == mesh Y" (the mountain above is scenery there, not a driving surface).
     const rs = this._getRoad?.()
+    const R = rs?._params?.tunnelBoreRadius ?? 8
+    let lidDeck = null                                // per vertex: the bore deck it was cut to, NaN = not cut
     if (rs?._network) {
-      const R = rs._params?.tunnelBoreRadius ?? 8
       const wx0 = cx * S, wz0 = cz * S
       const segs = this._boreSegsIn(wx0 - R, wz0 - R, wx0 + S + R, wz0 + S + R)
       if (segs) {
+        lidDeck = new Float32Array(N * N).fill(NaN)
         const half = S / 2
         const R2 = R * R
         for (let i = 0; i < N * N; i++) {
@@ -95,7 +100,9 @@ export class TerrainPhysics {
             const deck = segs[sgi + 1] + t * (segs[sgi + 4] - segs[sgi + 1])
             if (deck < cut) cut = deck
           }
-          if (cut !== Infinity && heights[i] > cut - 0.5) heights[i] = cut - 0.5
+          if (cut === Infinity) continue
+          lidDeck[i] = cut
+          if (heights[i] > cut - 0.5) heights[i] = cut - 0.5
         }
       }
     }
@@ -107,7 +114,42 @@ export class TerrainPhysics {
       userData: { kind: 'terrain', key },
     })
     this._eng.addHeightfield(body, heights, N, N, S / (N - 1), { friction: TERRAIN_FRICTION })
+    if (lidDeck) this._addLid(body, posAttr, lidDeck, N, S, R)
     this._chunks.set(key, body)
+  }
+
+  /**
+   * BUG-81 item 4: the LID over the bore slot. The slot has to run the whole bore — a heightfield
+   * cannot overhang, so anywhere it climbed back to the hill inside a bore it would be a wall across
+   * the lane — and it left an invisible trench, cover + R deep and 2R wide, under the drawn hill: a
+   * truck on the hill above a tunnel fell into it onto the tube. The lid is that drawn hill (mesh Y,
+   * the mesh's own triangle split) over every slot cell, as an UPWARD-facing mesh. Box3D meshes and
+   * heightfields collide from their front face only (measured: a box driven up through one passes),
+   * so the hill carries a truck on top while a truck in the bore below never touches it. Cells whose
+   * hill does not clear the crown by LID_CLEAR are left out: that is the mouth.
+   */
+  _addLid (body, posAttr, lidDeck, N, S, R) {
+    const half = S / 2
+    const pos = new Float32Array(N * N * 3)
+    for (let i = 0; i < N * N; i++) {
+      pos[i * 3] = posAttr.getX(i) + half; pos[i * 3 + 1] = posAttr.getY(i); pos[i * 3 + 2] = posAttr.getZ(i) + half
+    }
+    const idx = []
+    const tri = (a, b, c) => {     // wound so the face normal points UP (the side that collides)
+      const ux = pos[b * 3] - pos[a * 3], uz = pos[b * 3 + 2] - pos[a * 3 + 2]
+      const vx = pos[c * 3] - pos[a * 3], vz = pos[c * 3 + 2] - pos[a * 3 + 2]
+      if (uz * vx - ux * vz > 0) idx.push(a, b, c); else idx.push(a, c, b)
+    }
+    for (let r = 0; r < N - 1; r++) for (let c = 0; c < N - 1; c++) {
+      const a = r * N + c, b = a + N, d = a + 1, e = b + 1      // PlaneGeometry's own cell: (a,b,d) (b,e,d)
+      let deck = Infinity
+      for (const v of [a, b, d, e]) if (lidDeck[v] < deck) deck = lidDeck[v]   // NaN never compares less
+      if (deck === Infinity) continue
+      const top = deck + R + LID_CLEAR
+      if (pos[a * 3 + 1] < top || pos[b * 3 + 1] < top || pos[d * 3 + 1] < top || pos[e * 3 + 1] < top) continue
+      tri(a, b, d); tri(b, e, d)
+    }
+    if (idx.length) this._eng.addTerrainMesh(body, pos, Uint32Array.from(idx), { friction: TERRAIN_FRICTION })
   }
 
   /** TerrainSystem hook: chunk fell out of the keep ring. */
@@ -165,8 +207,18 @@ export class RoadPhysics {
       // skirts, 0.4 m wall strips along the asphalt that the chassis slab could catch at speed
       // (one-frame Δv 7 m/s + 8.6 rad/s yaw kick, capture 1786773473453). Debris can't tell:
       // anything rolling off the edge lands on the carved-dirt heightfield centimetres below.
-      if (geo.userData?.colliderSurfaceOnly) indices = this._surfaceTris(positions, indices)
+      const surfaceOnly = !!geo.userData?.colliderSurfaceOnly
+      if (surfaceOnly) indices = this._surfaceTris(positions, indices)
       if (indices.length >= 3 && this._eng.addMesh(body, positions, indices, { friction: ROAD_FRICTION })) shapes++
+      // BUG-81 item 4: everything else here is a SHELL — the bore lining and the portal ring — and a
+      // Box3D mesh triangle collides from its front face only (measured). The lining faces into the
+      // bore, so a truck touching it from OUTSIDE met back faces, sank in unopposed and was thrown
+      // into the tube by the front-face contact. Its back faces go in too: a wall from both sides.
+      if (!surfaceOnly && indices.length >= 3) {
+        const back = new Uint32Array(indices.length)
+        for (let i = 0; i + 2 < indices.length; i += 3) { back[i] = indices[i]; back[i + 1] = indices[i + 2]; back[i + 2] = indices[i + 1] }
+        if (this._eng.addMesh(body, positions, back, { friction: ROAD_FRICTION })) shapes++
+      }
     }
     if (shapes > 0) this._tiles.set(key, body)
     else this._eng.destroyBody(body)
@@ -206,11 +258,11 @@ export class RoadPhysics {
  * by the wheel path — the old body solver probed it too, but the engine chassis only knew
  * terrain/road/debris, so driving the BODY into a tree pushed back through nothing but the
  * suspension's XZ spring residual. This mirror gives the chassis (and debris) rigid contacts:
- * tree trunks + fallen logs as capsules, rocks as spheres, boulders as their actual triangle
- * meshes — the same shapes the analytic wheel query resolves, one static body per prop chunk.
+ * tree trunks + fallen logs as capsules, rocks and boulders as their actual triangle meshes
+ * (BUG-54) — the same shapes the analytic wheel query resolves, one static body per prop chunk.
  * Wheels are untouched (their engine overlap filters to GROUP_DEBRIS), so nothing double-counts.
  *
- * Radii bake the live prop sliders (trunkRadiusScale / rockRadiusScale) at chunk-sync time —
+ * Radii bake the live trunk slider (trunkRadiusScale) at chunk-sync time —
  * PropSystem re-syncs on slider change via resyncAll() (see prop-debug wiring). Bushes are
  * soft-drag only and get no collider, matching the analytic query.
  */
@@ -235,11 +287,8 @@ export class PropPhysics {
         const r = c.radius * c.scale * C.trunkRadiusScale
         this._eng.addCapsule(body, { x: c.ax, y: c.ay, z: c.az }, { x: c.bx, y: c.by, z: c.bz }, r, mat)
         shapes++
-      } else if (c.kind === 'sphere') {
-        this._eng.addSphere(body, c.radius * c.scale * C.rockRadiusScale, mat, { x: c.x, y: c.y, z: c.z })
-        shapes++
       } else if (c.kind === 'mesh' && c.tris) {
-        // Boulder: instance-local triangle soup → world (same yaw/scale/translate the analytic
+        // Rock or boulder (BUG-54): instance-local triangle soup → world (same yaw/scale/translate the analytic
         // sphereVsMeshInstance applies), sequential indices.
         const n = c.tris.length / 3
         const pos = new Float32Array(c.tris.length)

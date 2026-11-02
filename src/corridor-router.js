@@ -46,7 +46,7 @@ export const V2_COSTS = {
     // costs money. Evaluated greedily against the parent step's direction (not part of the state
     // — exact turn accounting would 8× the state space for a tie-shaping term).
     cTurn: 45,
-    portalCover: 2,   // m of rock over the tube crown at a portal (extendBorePortals)
+    portalCover: 6,   // m of rock over the tube crown at a portal (extendBorePortals) — BUG-81 item 4: 2 → 6
     cutMax: 25,       // m below ground where a cut becomes a bore (owner 2026-09-07: 20 -> 25) — a 12–25 m trench is an open
                       // rock CUTTING (road grade cap, priced linearly per m of depth), not a
                       // tunnel; at 12 the bore's 18% grade cap rate-limited legitimate cliff
@@ -670,7 +670,9 @@ function makeStepCost(C, yStep) {
  * @param {{s:number[],ground:number[]}} st stations (built by RoadSystem._v2GradePts)
  * @param {number} yA deck height pinned at station 0
  * @param {number} yB deck height pinned at the last station
- * @param {object} [opts] { yStep=0.5, costs=V2_COSTS }
+ * @param {object} [opts] { yStep=0.5, costs=V2_COSTS, noBoreAt } — noBoreAt (BUG-58): a per-station
+ *        Uint8Array; a marked interior station may not be a BORE, so its deck stays within cutMax of
+ *        the ground there (see RoadSystem._v2GradePts, which marks the stations of a stub bore).
  * @returns {{y:number[], cls:number[], cost:number, segs:{cls:number,s0:number,s1:number,len:number}[]}|null}
  *          null = infeasible under the caps (mark-and-ship is the CALLER's job)
  */
@@ -679,6 +681,7 @@ export function profileSolve(st, yA, yB, opts = {}) {
     const yStep = opts.yStep ?? 0.5
     const n = st.s.length
     if (n < 2) return null
+    const noBore = opts.noBoreAt ?? null
 
     let lo = Math.min(yA, yB), hi = Math.max(yA, yB)
     for (const g of st.ground) { if (g < lo) lo = g; if (g > hi) hi = g }
@@ -722,6 +725,7 @@ export function profileSolve(st, yA, yB, opts = {}) {
         const c1 = new Float64Array(ny).fill(Infinity)
         const jNear = Math.round((yA - lo) / yStep)
         for (let j = Math.max(0, jNear - kMax); j <= Math.min(ny - 1, jNear + kMax); j++) {
+            if (noBore && noBore[1] && classOf(yOf(j) - st.ground[1], C) === CLS.BORE) continue
             c1[j] = stepCost(yA, st.ground[0], yOf(j), st.ground[1], ds)
         }
         cost[1] = c1
@@ -743,6 +747,7 @@ export function profileSolve(st, yA, yB, opts = {}) {
         for (let j = 0; j < ny; j++) {
             const y1 = yArr[j]
             const clsJ = clsTo[j], rateJ = rateTo[j], jBore = clsJ === CLS.BORE
+            if (jBore && noBore && noBore[i]) { ci[j] = Infinity; continue }
             let best = Infinity, bestK = -1
             for (let k = Math.max(0, j - kMax); k <= Math.min(ny - 1, j + kMax); k++) {
                 const p = prev[k]

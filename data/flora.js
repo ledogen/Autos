@@ -251,11 +251,10 @@ export const FLORA_PARAMS = {
   // ── Collision (FEAT-06b) — analytic shapes the truck contact query tests against ────────
   // Read LIVE at query time (PropSystem.queryProps applies these to the baked shape dims), so the
   // sliders tune without a re-stream. Trees = capsule between baked (tilt-inclusive) trunk endpoints;
-  // fallen logs = the same capsule test; rocks = sphere; boulders = exact triangle mesh (BUG-22c);
+  // fallen logs = the same capsule test; rocks + boulders = exact triangle mesh (BUG-22c / BUG-54);
   // bushes = soft drag (no hard contact); medium/small rocks and roadside cover = none.
   collision: {
     trunkRadiusScale: 1.15,   // capsule radius = trunkRadius × instScale × this (bark + slop)
-    rockRadiusScale:  0.92,   // sphere radius  = blob 90th-pct flank reach (prop-palette rBulk) × instScale × this
     bush: { k: 1350, fMax: 12000 }, // soft drag: F = clamp(k · |v| · effRadius, 0, fMax) N, opposing v
   },
 
@@ -306,11 +305,8 @@ export const FLORA_PARAMS = {
   // overridable live by the '3D prop ring' slider. Baked ground shadows are unaffected.
   lod: {
     ring3d: 2,             // chunks of full-3D props around the camera; beyond → billboards
-    litGain: 1.7,          // billboard sun-contrast scale in the view-relight ratio (1 = physical
-                           // Lambert average; 1.7 = user-tuned 2026-07-19, punchier lit side —
-                           // see prop-impostor._updateLightUniforms); GUI slider
-    flatten: 0,            // sun-on gradient flatten: blend toward the tile mean as the view
-                           // swings sun-ward (0 = off, 1 = featureless). User-tuned OFF 2026-07-19 —
-                           // the baked facet pattern reads better than the softened one; GUI slider
+    litGain: 1,            // billboard sun-term scale (1 = the 3D trees' own Lambert; GUI slider). BUG-96:
+                           // billboards are now lit per texel from baked normals, the same maths as the 3D
+                           // ring — the old 1.7 compensated the retired view-ratio relight's flat average
   },
 }

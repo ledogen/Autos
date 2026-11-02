@@ -529,7 +529,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
 
   > **Amendment [RATIFIED 2026-10-15, FEAT-113] — every job has a deadline; still no countdown.**
   > *"the default mission has no clock"* is retired. Every job now carries a **delivery deadline**:
-  > par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %. The card states the window ("deliver within 6h 00m") and
+  > par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %, papers +50 % (FEAT-141). The card states the window ("deliver within 6h 00m") and
   > the HUD states the due time ("due Day 3, 2 am") — a fixed time, **never a countdown**, so the core
   > of this invariant stands: par is never rendered, and the deadline is generous enough (at least
   > par +50 %) that it is a backstop, not the thing you drive against. Provenance: the FEAT-113 ticket.
@@ -546,6 +546,12 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > ("deliver within 6h 00m") already let a player back out par × (1 + slack); the countdown makes that
   > live. On papers (FEAT-141) the deadline is the end of D, so there it is the nearest thing to a par
   > clock — accepted with the ruling. Provenance: FEAT-139 addendum, 2026-10-23.
+
+  > **Amendment [OWNER 2026-10-31, Q-6] — courier shows its next rank line as a countdown.** Reverses
+  > "nothing downstream may render them as digits": on a courier job, until the rank bar appears near
+  > the goal (R-22), the job overlay prints **"finish in x:xx or better for S rank"** above the reward
+  > line — the time to the next rank line of the band held. When the bar appears it replaces the
+  > digits. The deadline countdown (10-23) is unchanged. Provenance: the mission-feel review Q-6.
 
   > **Amendment [RATIFIED 2026-08-01] — rank is par's player-facing surface.** The player never sees
   > par and never needs to: they see **a letter and a number** — how they did, and what they earned.
@@ -707,10 +713,11 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > (two B/C jobs, ~$18 on day 1). The day is now $7.50 — those bills need re-pricing against it.
   >
   > *No time limits.* A mission can be **failed on time and still pay its base**; the paper route's
-  > bell is gone (par untouched).
+  > time limit is gone (par untouched). **[SUPERSEDED for papers 2026-10-21, FEAT-141: Larry's round
+  > has a deadline again — the plotted N-route's par × 1.5.]**
   > **[AMENDED 2026-10-15, FEAT-113]** *Slow still pays its base* — the margin line is unchanged, and
   > a job finished at any ratio up to its deadline pays base pay at the least. What is new is the
-  > **deadline** (SM-INV-3 amendment): par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %. A job still in hand
+  > **deadline** (SM-INV-3 amendment): par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %, papers +50 % (FEAT-141). A job still in hand
   > past it is **expired** — it can no longer be delivered and **pays nothing**. Nothing pops up
   > while driving: the job button turns into "mission expired", pressable only when parked, and the
   > card follows (a strapped load still costs the 1 h clean-up). The giver's slot locks at the
@@ -941,7 +948,7 @@ supplies the penalty, no payout math needed); longer hauls permit the delivery t
 next day, so camping is a legitimate rest stop on a multi-day run. The mission's own fiction
 says which it is.
 > **[AMENDED 2026-10-14; re-cut 2026-10-15]** The fiction is now a number: every job carries a
-> **delivery deadline**, par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %, shown on the card and as a due time on
+> **delivery deadline**, par × (1 + slack) of game time from accept (60 real s of par = one game hour). Slack: takeout +50 %, other courier +100 %, haul and fragile +200 %, freight +300 %, papers +50 % (FEAT-141), shown on the card and as a due time on
 > the HUD. A job still in hand when it passes expires unpaid (SM-INV-4 amendment). The mission
 > clock runs on world time, so a night with a load spends time against the tip. **Camping with a
 > job in hand is allowed** (owner, 2026-10-15); whether the night fits is the deadline's call — at
@@ -1224,11 +1231,10 @@ tracks obey SM-INV-5 (time + intensity, never distance).
 **Engine.**
 - **Wear = f(rpm, load, time)** — gentle cruising costs far less than aggressive driving; both integrate
   over time (SM-INV-5). rpm-hours + load are the signals.
-- **Air filter condition** — **OPEN, NOT IN THE RATIFIED TRACK LIST** [2026-08-23]. SM-3 ratifies
-  twenty-six tracks in eight classes and none of them is a filter; engine damage there is front
-  impact, engine temperature above 110 °C (FEAT-51), and a slow f(rpm, torque, load). Needs a ruling — dropped (and this
-  paragraph struck, along with the diagnostic screen's stated headline job), deferred (a known gap
-  with a ticket), or restored (wants a class and a damage source).
+- **Air filter condition** — **RESTORED (owner, 2026-10-31: the docs follow the shipped game)**. It is a
+  live track and part slot (`data/parts.js` airFilter / `airFilterStock`, 0.25 h service, a B–A reward at
+  the auto shop and gas station). *(Was marked OPEN, NOT IN THE RATIFIED TRACK LIST on 2026-08-23 — the
+  26-track list predates the slot.)*
   > Provenance: `design-amendments-2026-08-23-sm3.md` §6. As written it is its own track and the one
   > the player must *watch*: it does ~nothing until
   ~20%, then **sharply accelerates engine wear**. **Dusty / dirt roads degrade it faster** — the direct
@@ -1842,9 +1848,13 @@ escalate rather than assuming the pane is licensed for it.
    identity: *a day driven entirely at par is break-even*, so below par profits and above par bleeds
    by construction. What remains is **one number to tune** (`k`, maintenance cost per second of
    par-driving), plus the day-tier steps and the threshold ramp. Tuning, not structure.
-5. Camp quality: dimensions (water, fire, flat, shelter, *weirdness*?) and what they modify.
-6. Mission failure currently costs nothing but opportunity. May be right (the fiction does
-   the work) — or means there's no reason not to accept every job and bail. Unresolved.
+5. ~~Camp quality: dimensions (water, fire, flat, shelter, *weirdness*?) and what they modify.~~ **RULED (owner, 2026-10-31)**: not open.
+   The four scored dimensions are the ratified bar (2026-08-01, `src/camp.js`): flatness 40 %, view 15 %,
+   shade 20 %, water 25 % — the view was the one in question and it is defined. Dimensions may be added or
+   removed later; that is a tuning call, not an open question.
+6. ~~Mission failure currently costs nothing but opportunity.~~ **RULED (owner, 2026-10-31)**: haul has a cost (the bundles are
+   bought from the yard's stock — FEAT-88/114); for every other type the time cost is enough. Closed.
+   *(Was: May be right (the fiction does the work) — or means there's no reason not to accept every job and bail.)*
    (Timed mission types partially answer this — their reward decays/zeroes — but the
    no-clock default mission still has no bail cost.)
 7. ~~**Maintenance time + the day-cost of waiting**~~ **RESOLVED 2026-08-02.** A repair is priced in
@@ -1857,7 +1867,12 @@ escalate rather than assuming the pane is licensed for it.
    ten hours at a station is ten hours awake. A morning repair therefore leaves ~6 h of energy and
    effectively ends the day, which is the point: a big repair *is* a day. **Sleep is the only skip that
    credits energy** rather than draining it. No residual.
-8. **Two damage-model mechanisms flagged for owner OK** (proposals in "Damage, wear & repair"):
+8. ~~**Two damage-model mechanisms flagged for owner OK**~~ **RULED (owner, 2026-10-31)**: everything here is already in
+   the shipped code — the docs follow the game. The gasket metric was ruled 2026-10-16 (FEAT-51: no separate
+   meter; overheat wears the engine track and engine 0 % IS the blown gasket). The **air filter is restored**:
+   it is a live track and slot (`data/parts.js` airFilter, `airFilterStock`, `src/damage.js`), serviced at
+   the shop and rolled as a reward. Fatal speed scales with armor (2026-10-12). Nothing open. Original text:
+   (proposals in "Damage, wear & repair"):
    the **head-gasket metric** (proposed: an overheat integral — time-above-threshold × severity)
    and the ~~**suspension-damage trigger**~~. **The trigger is RESOLVED 2026-08-22, and split** —
    dampers take suspension velocity above a no-harm floor, springs take bump-stop force but priced
@@ -1869,7 +1884,11 @@ escalate rather than assuming the pane is licensed for it.
    2026-10-12: no — the fatal speed scales with the hit panel's armor condition, ~60 → ~100 mph**
    (see "Death & the tow decision").
    Provenance: `design-amendments-2026-08-23-sm3.md` §4, §5, §6.
-9. **Forced progression: what pushes the player out of the easy early zones?** (owner, 2026-07-19,
+9. ~~**Forced progression: what pushes the player out of the easy early zones?**~~ **RULED (owner, 2026-10-31)**: **(A) cost
+   escalation is the answer and it is shipped** — `src/economy.js` dayTier (×1.15 compounding to day 8,
+   then a soft approach to a ~5× ceiling) carries maintenance and reward up together, and the per-region
+   payout multiplier (2026-08-17) is the step the treadmill cannot follow. (B) the storm is not built and
+   not planned. Closed. Original text: (owner, 2026-07-19,
    UNDECIDED — two live options, not mutually exclusive.) **Status 2026-07-29: (A) is the operative
    difficulty ramp** — SM-INV-14 makes XP *position against A's cost curve*, so A is now load-bearing
    for more than forced progression, and the cost-escalation curve and the XP curve are the same
@@ -1901,7 +1920,9 @@ escalate rather than assuming the pane is licensed for it.
      escalation would move onto the cost/POI side (which has a story) off the par side (which has
      none). See also Q7 (day-cost of waiting).
 
-10. **Classes vs SM-INV-7 first-run winnability** (owner, 2026-07-20). A class system is ratified
+10. ~~**Classes vs SM-INV-7 first-run winnability**~~ **RULED (owner, 2026-10-31)**: a class is the **vehicle selector** —
+    what you drive, chosen at run start from the garage ("the roster is a garage", 2026-07-29). It is not
+    in the alpha's scope (one truck). Closed. Original text: (owner, 2026-07-20). A class system is ratified
     (breadth, not floor — see "Classes"). Unresolved: is a class chosen at run start, or does it
     apply some other way? What does a class actually change — the objective it frames, the jalopy
     roll-space it draws from, which spirits/missions appear — and how is it kept *strictly breadth*

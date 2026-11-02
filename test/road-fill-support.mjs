@@ -25,12 +25,20 @@
 // true on a cut, a fill, or a bench. The pre-fix code fails it at 7.5 m; a future footprint clip fails
 // it wherever it bites.
 //
+// OVERLAP (BUG-64 ruling (a), owner 2026-11-01). An UP-step where two or more roads' earthworks
+// both reach the step is not this gate's: two roads sharing earthwork is FEAT-77's separation rule
+// (road-clearance), not BUG-15's footprint contract. It is judged by the same test road-carve-walls
+// uses (test/lib/close-pairs.mjs soloEarthwork: > 1 road with coverage at either end of the step)
+// and reported, never gated. The tolerance itself is unchanged. The step that raised it: seed 7,
+// a 0.293 m up-step once the carve composed every run in reach (BUG-64 class B).
+//
 // Run: node test/road-fill-support.mjs   (exit 0 = the carve footprint covers its core)
 
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
+import { soloEarthwork } from './lib/close-pairs.mjs'
 
 // Four seeds, and the TOP FILLS in each rather than the single global argmax. One argmax per seed is a
 // coin flip: three of the top 120 fills per seed sit on a bench, so the old gate's verdict depended on
@@ -60,7 +68,16 @@ const log = (ok, name, msg) => {
     ok ? pass++ : fail++
 }
 
-let corpusProbes = 0, corpusFillSides = 0
+let corpusProbes = 0, corpusFillSides = 0, corpusOverlap = 0
+
+// How many roads' earthworks reach (x, z): the probe's own run and every run the resolver sees there.
+const reaching = (road, runKey, x, z, raw) => {
+    const nr = road._resolveRoadSurface(x, z)
+    const keys = new Set([runKey, ...(nr ? [nr.runKey, ...nr.rivals.map((r) => r.runKey)] : [])])
+    let n = 0
+    for (const k of keys) if (soloEarthwork(road, RANGER_PARAMS, k, x, z, raw).w > 0) n++
+    return n
+}
 
 for (const seed of SEEDS) {
     const road = new RoadSystem(seed, RANGER_PARAMS)
@@ -94,7 +111,7 @@ for (const seed of SEEDS) {
     // old gate's verdict was luck: on a bench the two sides are a cut and a fill, and they fail
     // differently.
     let worstCoreW = 1, coreAt = '', worstDriveStep = 0, worstUpStep = 0, stepAt = ''
-    let fillSides = 0
+    let fillSides = 0, worstOverlap = 0, overlapAt = ''
 
     for (const p of probes) {
         const nr0 = road._resolveRoadSurface(p.x, p.z)
@@ -107,7 +124,7 @@ for (const seed of SEEDS) {
             // NEIGHBOUR run. (At parallel/stacked-road overlaps a free re-resolve jumps to the closer
             // road at a different height — a real but SEPARATE defect, COVER/FEAT-10 route merge, not
             // the footprint clip under test.) analyticHeight = raw + blendW·(gradeY − raw).
-            let prev = null, sawFill = false
+            let prev = null, prevXZ = null, sawFill = false
             // INTEGER-INDEXED. `lat += 0.2` accumulates to 7.799999999999995, which made the old
             // `lastSupported >= SUPPORT_TO - DLAT` comparison false by 5e-15 — a latent knife-edge.
             const steps = Math.round((MESH_EXT + 0.5) / DLAT)
@@ -145,9 +162,11 @@ for (const seed of SEEDS) {
                         worstDriveStep = Math.abs(d)
                         stepAt = `seed ${seed} @(${p.x.toFixed(0)},${p.z.toFixed(0)}) lat ${lat.toFixed(1)}`
                     }
-                    if (d > worstUpStep) worstUpStep = d
+                    if (d > STEP_TOL && (reaching(road, p.runKey, prevXZ.x, prevXZ.z, prevXZ.raw) > 1 || reaching(road, p.runKey, wx, wz, raw) > 1)) {
+                        if (d > worstOverlap) { worstOverlap = d; overlapAt = `@(${wx.toFixed(0)},${wz.toFixed(0)})` }
+                    } else if (d > worstUpStep) worstUpStep = d
                 }
-                prev = ah
+                prev = ah; prevXZ = { x: wx, z: wz, raw }
             }
             if (sawFill) { fillSides++; corpusFillSides++ }
         }
@@ -160,7 +179,9 @@ for (const seed of SEEDS) {
         `${probes.length} fills probed × 2 sides (deepest ${probes[0].d.toFixed(1)} m), ${fillSides} sides carry embankment; ` +
         `worst core blendW ${worstCoreW.toFixed(4)} (need ≥${CORE_W_MIN}${coreOk ? '' : ` — at ${coreAt}`}) out to ${CORE_TO.toFixed(1)} m; ` +
         `drivable step ${worstDriveStep.toFixed(3)} m${driveOk ? '' : ` at ${stepAt}`}, worst UP-step ${worstUpStep.toFixed(3)} m ` +
-        `(tol ${STEP_TOL.toFixed(3)} m; steep downward bank allowed)`)
+        `(tol ${STEP_TOL.toFixed(3)} m; steep downward bank allowed)` +
+        (worstOverlap ? `; overlapping earthwork (FEAT-77, report) up-step ${worstOverlap.toFixed(3)} m ${overlapAt}` : ''))
+    if (worstOverlap) corpusOverlap++
 }
 
 // NON-VACUOUS over the corpus, same reasoning as pond-route-around.mjs's corpus check: the footprint
@@ -170,6 +191,7 @@ log(corpusFillSides >= corpusProbes, 'NON-VACUOUS (corpus)',
     `${corpusFillSides} embankment-carrying sides over ${corpusProbes} probes ` +
     `(need ≥${corpusProbes} — averaging one fill side per probe; a bench contributes one, a causeway two)`)
 
+console.log(`overlapping-earthwork up-steps (FEAT-77, report): ${corpusOverlap} seed(s)`)
 console.log('\n' + '='.repeat(64))
 console.log(`ROAD-FILL-SUPPORT GATES: ${pass} pass, ${fail} FAIL (${pass + fail} total) — exit ${fail ? 1 : 0}`)
 process.exit(fail ? 1 : 0)

@@ -55,6 +55,10 @@ export const DEBRIS_TYPES = {
   // The stranded motorist's tire, loose in the bed (data/offers.js `loose`). 21 kg, a tire on a steel
   // wheel (owner, 2026-10-23: the realistic figure), as are data/items.js and the offer row. Rubber on the bed ribs grips.
   spareTire: { model: 'spareTire', massKg: 21, friction: 0.9, restitution: 0.3 },
+  // FEAT-154: a Type III barricade across a road out of the story area (ASSET-71 roadBarrier). 10 kg,
+  // light enough to smash through and send flying (owner, 2026-10-31); main.js pins them and they do
+  // no damage. Plastic feet on asphalt.
+  roadBarrier: { model: 'roadBarrier', massKg: 10, friction: 0.5, restitution: 0.1 },
 }
 
 /** The three bundle variants, in a fixed order so a hash picks one deterministically. */
@@ -574,6 +578,10 @@ export class DebrisSystem {
       rec.mesh.quaternion.copy(rec.prevQ).slerp(_q, alpha)
     }
   }
+
+  /** BUG-101: the mesh drawn for `body` (posed by update() at the render alpha), or null if not debris.
+   *  ponytail: linear scan — debug wireframes only, over ≤ DEBRIS_CAP + the pinned loads. */
+  meshOf (body) { return this._live.find(r => r.body === body)?.mesh ?? null }
 
   clear () {
     for (const rec of this._live) this._reclaim(rec)

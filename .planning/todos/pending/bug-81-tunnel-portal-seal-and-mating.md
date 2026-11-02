@@ -104,3 +104,110 @@ through the apron.
 - Driving off the hillside onto/over the portal mouth: no float, no teleport. Reproduce with a
   capture first, then pin with a headless check.
 - MESH == PHYSICS still holds (the collider is whatever is drawn).
+
+## Owner, 2026-11-01 — item 4 jumps Spare's queue
+
+> "Tunnel tube can jump the queue. Bare minimum it should be a wall from both sides. Desired fix is
+> making the tube not visible by burying the portal deeper in the wall like an actual road tunnel
+> (we always seek to imitate real life)."
+
+So item 4 is next for Spare, ahead of BUG-93 and BUG-100. Two bars: the floor is a two-sided tube —
+the lining pushes back from outside as well as inside, no launch, no pull-in. The target is that the
+tube is never reachable from outside at all: seat the portal deeper into the hillside so the bore
+starts inside rock, as a real road tunnel does, and the hill is what you drive on above it. Junctions
+near portals (clipping, obstructions, messy generation) stay a separate ticket — BUG-67.
+
+
+### Item 4 floor — DONE 2026-11-01 (Spare)
+
+Two ways in from outside, both measured, both closed:
+
+1. **The lining was a one-way wall.** Box3D mesh triangles (and heightfields) collide from their front
+   face only — a box driven at the back face passes straight through (headless, measured). The
+   lining faces into the bore, so from outside a truck sank in unopposed until the front-face contact
+   threw it in. `RoadPhysics` now adds the back faces of every non-surface geometry (the lining and
+   the portal ring): a wall from both sides.
+2. **The invisible trench.** The heightfield's bore slot (FEAT-40) has to run the WHOLE bore — a
+   heightfield cannot overhang, so anywhere it climbed back to the hill inside a bore it would be a
+   wall across the lane. It left a trench 2R wide and cover + R deep under the drawn hill, along every
+   tunnel. Live, seed 6: barrels dropped on the hill over four bores fell 33–75 m into it. The **lid**
+   (`TerrainPhysics._addLid`) is the drawn hill itself over every slot cell, as an upward-facing
+   terrain mesh, kept where the hill clears the crown by 0.5 m: one-sided, so a truck in the bore
+   below never touches it. Same barrels now stay on the hillside (0.5–1.3 m above it, rolling down).
+   A truck still drives through the bores (body 0–1.7 m over the deck, as without the fix).
+
+Gate: `test/bore-collider.mjs` (registered) — a box on the hill over a bore stays up, one driven
+through the bore passes untouched, one driven at a shell's back face stops (fails without the fix on
+the first and third). Physics gates 21/21, smoke 19/19.
+
+### Item 4 target — DONE 2026-11-01 (Spare): portals buried deeper
+
+`roadV2.portalCover` 2 → 6 (data/ranger.js + the router default; the debug slider still reaches 0–20).
+`extendBorePortals` places a portal where the deck sits R + portalCover under the coarse ground, so at
+2 the portal sat at the ~9 m cut = bore crossover. Measured on the REAL hill across the whole arch
+(|lateral| ≤ the ring's 10.6 m, rock over the arch's own height) on four seed windows, 44 portals:
+
+| portalCover | arch out of the hill | under 2 m of rock | bored |
+|---|---|---|---|
+| 2 | 6 | 29 | 3056 m |
+| 4 | 2 | 6 | 2974 m |
+| 6 | 2 | 2 | 2892 m |
+| 8 | 2 | 2 | 2813 m |
+
+The two that never move are ONE portal seen from two windows: seed 6, a spliced run
+(g:1067143,−293510…), span 830–940 — BUG-77's mislocated span, not portal placement. Every other
+portal has ≥ 2 m of real rock over the whole arch at 6. The deck, the routes and par are untouched (the
+pass only re-classes stations): bores 5 % shorter, approach cuts ~4 m deeper. Screenshots:
+`wip/bug-81-item4/`.
+
+Gates: affected 78/81 → the known reds (road-tunnel 22.5 %, road-clearance) identical to main, and
+`vertical-curvature` open-road kinks 17 → 19 — two mild crests (0.031 / 0.035 /m) that were INSIDE
+a bore on main and now sit in the approach cut a few metres before the moved portal; no deck changed,
+so its ceiling moved with that note. Smoke 19/19. **Owner's look owed:** the deeper approach cuts.
+## Owner look, 2026-11-01 — item 5: "better, maybe not there yet"
+
+> most irl tunnel mouths have earth basically fully framing the portal. in our game there is still
+> usually a bare spot on top where you see the tunnel itself. any way we bury it in far enough its
+> fully framed? otherwise just fix the weird gap between the terrain and tunnel where you can see
+> thru the map (pic attached)
+
+Two asks, Spare's: (1) find out whether burying further (portalCover beyond 6, or a local terrain
+raise over the ring) gets full earth framing without wrecking the approach cut, and give the number;
+(2) regardless, fix the see-through gap between the terrain and the tube beside the ring (the
+screenshot shows the tube entering a terrain hole wider than the tube, sky visible through it).
+
+### Item 5 — DONE 2026-11-01 (Spare): earth frames the portal, and the see-through gap is shut
+
+**(1) Framing — why burying deeper could not do it, and what does.** The skin over a bore near its
+mouth is the mouth FUNNEL (`_boreNotchCS`): the open cut's floor rising `BORE_NOTCH_SLOPE` = 1.2 m per
+metre into the span. It rises from the DECK, so it clears the crown (R = 8 m) only ~6.7 m in. The
+collar's outer band reaches 0.8 m into the hill, which left ~5.9 m of bare tube top behind it at every
+portal — **whatever portalCover is**: cover moves where the portal sits, not where the funnel starts.
+So `portalCover` stays 6; raising it would only lengthen the approach cuts.
+
+The fix is the "local terrain raise over the ring": over the tube the skin is never below a MOUND
+hugging the arch at R + 1.5 m about the deck centre (`BORE_MOUND_M`), from the portal line on; raw
+ground still wins wherever it is higher, and the funnel still shapes everything beside the tube. 1.5 m
+keeps the mound inside the collar's outer radius (R + 2.6), so the step at the portal line hides
+behind the ring. It is the same function physics samples, so the mound is solid ground (mesh ==
+collision). Measured on road-tunnel's seed-6 window, 1/3/6 m behind every portal, centreline and
+±4 m: earth over the arch was **−6.9 m at worst (0 of 144 probes ≥ 1 m)** before, **+1.50 m at worst
+(144 of 144)** after; 0 probes where the raw hill itself sits below the mound. The approach cut is
+untouched (the funnel is unchanged off the tube, and nothing outside the span moved).
+
+**(2) The see-through gap.** The skin hole at each mouth (terrain shader, `uTunnelPos/Axis` discard)
+was a straight, level capsule of radius R + 0.45, centred 0.4 m above the deck, 16 m into the bore.
+The lining is a single surface at R, so past the collar it left skin open OUTSIDE the tube: 0.45 m all
+round, 0.85 m at the crown, and more on the outside of a bend or up a grade — the owner's screenshot,
+sky through the map beside the tube. The hole now follows the tube (the deck tangent with its grade,
+plus a quadratic bend fitted to the tube's centre 16 m in, `uTunnelBend`) and is the tube's own size
+past the collar (R + 0.05, the ring's reveal); the old radius stays inside the collar's 0.8 m.
+`tunnelCutAt` (the prop scatter's JS mirror) follows the same shape.
+
+Gates: `road-tunnel` (3b), the framing probe above — fails 0/144 on the old notch. `vertical-curvature`
+skipped bores by its RESAMPLED chord arc, which runs short of the run's arc on a curve, so a sample just
+inside a portal counted as open road against the skin — harmless over the old C0 funnel, a 9.5 m step
+over the mound (open 22 kinks, 1.16 /m). It now skips on the run's own arc: open 19 / junction 203, as
+on main, no deck changed. Full suite otherwise 115/116 green, smoke 21/21. Screenshots, before
+and after, from above beside the mouth, from 10 m inside looking out, and at road level:
+`wip/bug-81-item5/` (seed 6's four spawn-region portals).

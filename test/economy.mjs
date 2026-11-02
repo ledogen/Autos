@@ -426,4 +426,30 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
 }
 
 console.log(fails === 0 ? '\neconomy gate: ALL OK' : `\neconomy gate: ${fails} FAILURE(S)`)
+
+// ── FEAT-142: the deed traits — Off the books earns none, The right thing to do adds ½ at C or better
+{
+    const deedsOf = (letter, deeds) => {
+        const before = runEconomy.halfPoints
+        new EconomySystem().settle({ par: 300, ratio: 1, letter }, { terms: { payTier: 1 }, deeds })
+        return (runEconomy.halfPoints - before) / 2
+    }
+    check('FEAT-142: Off the books earns no good deed, even at S', deedsOf('S', 'none') === 0)
+    check('FEAT-142: The right thing to do adds ½ at C or better (B → 1½, C → 1)', deedsOf('B', 'extraHalf') === 1.5 && deedsOf('C', 'extraHalf') === 1)
+    check('FEAT-142: …and nothing at D', deedsOf('D', 'extraHalf') === 0)
+}
+// FEAT-142: Impatient / Patient scale a courier's TIME thresholds at accept, frozen with the terms.
+{
+    const { MissionSystem } = await import('../src/mission.js')
+    const termsAt = (scale) => {
+        const ms = new MissionSystem({ getRoad: () => null, getCar: () => ({ x: 0, z: 0 }), teleport () {}, setMapOpen () {}, onChange () {},
+                                       getTerms: () => ({ payTier: 1, thresholds: { ...RANK_THRESHOLDS_DEFAULT } }) })
+        ms.state = 'offer'
+        ms.mission = { fromPoi: 'p', startZone: { x: 0, z: 0, r: 10 }, start: { x: 0, z: 0, heading: 0 }, end: { x: 0, z: 0 }, thresholdScale: scale }
+        ms.accept()
+        return ms.mission.terms.thresholds
+    }
+    check('FEAT-142: Impatient tightens a courier\'s time thresholds at accept (S 0.77 → 0.693)', Math.abs(termsAt(0.9).S - 0.77 * 0.9) < 1e-12)
+    check('FEAT-142: …Patient loosens them, and a job with no trait keeps the region\'s own', Math.abs(termsAt(1.1).C - 1.1) < 1e-12 && termsAt(1).B === RANK_THRESHOLDS_DEFAULT.B)
+}
 process.exit(fails === 0 ? 0 : 1)

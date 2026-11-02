@@ -61,6 +61,10 @@ export const ITEMS = {
     // (owner, 2026-10-22 — "you don't need to jack to plug"). The time saving is the parts session's.
     quickJack:    { name: 'Quick-jack',    kind: 'tool',       massKg: 15,
                     desc: 'A low trolley jack that rolls under the truck. Gets a spare on quicker than the factory jack.' },
+    // FEAT-138: a real 48-inch farm jack, 13 kg. Rights a rolled truck where it lies, live in the physics
+    // (src/hilift.js) — from the inventory menu, left or right (owner, 2026-10-22 / 10-31).
+    hiLiftJack:   { name: 'Hi-lift jack',  kind: 'tool',       massKg: 13,
+                    desc: 'A tall farm jack. Heaves a rolled truck back over, if the ground lets it.' },
 
     // ── Backpacks (items.md §2c) — `packSlots` camp items ride inside; `reachM` is how far past the
     //    road edge camp may be (campRoadEdgeM — not wired yet: the starter's is today's tether).

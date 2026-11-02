@@ -169,9 +169,11 @@ export const RANGER_PARAMS = {
   // shiftUpRPM is the ENGINE's (data/engines.js) — it follows the redline.
   shiftDownRPM:  1300,  // rpm(coupled) — light-throttle/cruise downshift floor
   // kickdownRPM: WOT downshift point. The downshift threshold scales with throttle from shiftDownRPM (lift)
-  // up to kickdownRPM (floored), so flooring it on a grade drops a gear into the power band. Keep below
-  // ~shiftUpRPM/1.7 so a fresh upshift doesn't immediately re-trigger a downshift (hunting).
-  kickdownRPM:   2400,  // rpm(coupled) — downshift point at wide-open throttle (kickdown)
+  // up to kickdownRPM (floored), so flooring it on a grade drops a gear into the power band. FEAT-150: 2400 →
+  // 3200 (owner 2026-10-25: "prefers to lug 3rd … even if there is rpm headroom"). It cannot cause a hunt
+  // any more: a downshift never lands within shiftHysteresis of the upshift point (drivetrain.js), so the
+  // kickdown is per-gear — 3rd → 2nd below 3200, 2nd → 1st only once 1st has room to pull.
+  kickdownRPM:   3200,  // rpm(coupled) — downshift point at wide-open throttle (kickdown)
   // shiftHysteresis: the PRIMARY anti-hunt lever. An upshift only fires if the NEXT gear's coupled RPM
   // would sit this far ABOVE the current downshift point — so the box only upshifts into a gear it can
   // actually hold. Bigger = firmer, hunts less (holds lower gears longer on grades); too big delays
@@ -186,6 +188,11 @@ export const RANGER_PARAMS = {
   shiftThrottleTau:     1.5,  // s — throttle-average time constant
   shiftHysteresisLight: 300,  // rpm(coupled) — anti-hunt headroom at a light foot
   kickdownDelay:        0.4,  // s — pedal held ≥ 95 % this long = kickdown (a feathered tap is not one)
+  // FEAT-150: the upshift's anti-hunt test projects the next gear this far ahead at the road's current
+  // acceleration (smoothed over shiftAccelTau): accelerating, the higher gear clears the band at once;
+  // barely holding speed on a grade, it does not.
+  shiftLookahead:       1.0,  // s
+  shiftAccelTau:        0.25, // s
   // FEAT-126 manual gearbox (only read when the fitted box is transmissionType 'manual').
   clutchAssist:    true,   // the clutch assistant (src/clutch-assist.js) stands between input and sim
   clutchShiftMax:  0.15,   // [-] clutch engagement above which a shift is rejected (the clutch is "in")
@@ -289,9 +296,15 @@ export const RANGER_PARAMS = {
   tireStiffness: 100000,  // N/m — the AIR spring (what tire pressure changes)
   // The progressive carcass that takes over as the sidewall runs out, and past the 0.15 m soft band
   // the rubber pinched against the rim. Its own rate so pumping the tire up does not stiffen the rim
-  // contact with it (src/suspension.js tireContactForce). 100 kN/m = the value it always had.
+  // contact with it (src/suspension.js tireContactTerms). 100 kN/m = the value it always had.
   tireCarcassStiffness: 100000,  // N/m
   tireDamping:     1500,  // N·s/m — ζ≈0.56; reduced from 4000 to prevent premature wheel lift-off
+  // The same carcass damper against a DEBRIS body (a rock), BUG-99. The road value is a ride tune
+  // (ζ≈0.56 on the 18 kg wheel, with the rim-strike ×8 past half the band); against a free rock at
+  // speed it bats the rock away before the carcass can bottom, so no pinch flat ever happens where
+  // the energy says it must (½·40 kg·(22 m/s)² ≈ 9.7 kJ vs ≈2 kJ of carcass). Owner, 2026-10-29: a
+  // separate damper for rocks, so the road keeps its tune.
+  tireDampingDebris: 150,   // N·s/m — owner + census 2026-10-29 (test/census-rock-strike.mjs --big, ≈3000 hits per value, 75–1500 swept)
 
   // ── Friction ─────────────────────────────────────────────────────────────
   frictionCoeff:      0.8,       // peak tire-road friction coefficient; caps Flat and Flong at μ·gripLoad(Fn) (FEAT-80)
@@ -620,9 +633,13 @@ export const RANGER_PARAMS = {
     // router was not choosing a tunnel over a cutting, it had no cutting to choose. 25 gives the
     // 25-30 m pinches an open-cutting answer instead of a portal pair as long as they are tall.
     // Rock over the tube crown at a portal: a portal needs deck ≥ tunnelBoreRadius + portalCover
-    // below ground. With the default 8 m bore that is 10 m, just past the ~9 m cut = bore price
-    // crossover, so portals land at the buildability floor (extendBorePortals).
-    portalCover: 2,
+    // below ground (extendBorePortals). BUG-81 item 4 (owner, 2026-11-01: "burying the portal deeper
+    // in the wall like an actual road tunnel"): 2 → 6. At 2 the portal sat at the ~9 m cut = bore
+    // crossover and 6 of 44 portals (4 seed windows) had the arch out of the hill, 29 under 2 m of
+    // rock across its width; at 6 every portal has ≥ 2 m of real rock across the whole arch (the one
+    // exception is BUG-77's mislocated span). Bores 5 % shorter, approach cuts ~4 m deeper; the deck,
+    // the routes and par are untouched — the pass only re-classes stations.
+    portalCover: 6,
     cutMax: 25,       // m below ground where a cut becomes a BORE — a 12–25 m trench is an open rock
                       // cutting at road grade cap, not a tunnel; at 12 the bore's 18% cap
                       // rate-limited legitimate cliff descents through deep-cut pockets

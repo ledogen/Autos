@@ -1,10 +1,11 @@
 ---
 id: FEAT-137
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-10-21
 source: owner, 2026-10-21 — "as with all sold auto parts, only sometimes not always. We should probably come up with a stock table with probabilities for items that will rotate and be on sale"; mechanism ruled 2026-10-22
+lane: B → Spare (2026-11-01: Lane B has no session; Spare took it)
 relates: SM-3, FEAT-115 (bed upgrades as parts — "a shop stocks a subset"), FEAT-69 (repair-economy prices), FEAT-121 (item tracker)
 ---
 
@@ -48,7 +49,24 @@ Parts Shop / My Items.
 ## Acceptance
 
 - [x] The owner approves the [DEFAULT] numbers (approved as built, 2026-10-24).
-- [ ] The Parts Shop shows only the shelf, each item with condition, price and time left; the map
+- [x] The Parts Shop shows only the shelf, each item with condition, price and time left; the map
       shows the same.
-- [ ] Rolls are seeded per (run, shop, hour), so a revisit agrees and a gate can pin them.
-- [ ] A headless gate pins the frequencies, the 6–48 h lifetimes, expiry and buying.
+- [x] Rolls are seeded per (run, shop, hour), so a revisit agrees and a gate can pin them.
+- [x] A headless gate pins the frequencies, the 6–48 h lifetimes, expiry and buying.
+
+## Resolution (Spare, 2026-11-01) — already built on feature/parts-shop (merged); closed on evidence
+
+Nothing left to code; every acceptance line is on main (checked at 1218f99b):
+- **The Parts Shop shows only the shelf.** `src/service-screen.js` lists this shop's shelf with
+  new/used, condition, price and time left. **The map shows the same:** `src/map2d.js`, the auto
+  shop's hover card, via main.js `_shelfView`. It also shows the R-24 "NEW STOCK IN …" clock
+  (`nextStockH`).
+- **Seeded rolls:** `src/shop-stock.js` `rollSlot` is a pure function of (run seed, shop POI id,
+  game hour, slot), and the catch-up is lazy. The run seed is rolled at run start and kept in the save
+  (`runShelves`).
+- **Gate `test/shop-stock.mjs`** pins:
+  - the fill rate (0.0602 vs P_FILL 0.06);
+  - every item's shelf share against `data/stock-weights.js`, the hi-lift included;
+  - the 6–48 h lifetimes, expiry and buying.
+- **Numbers as approved 10-22/10-24:** 4 slots, 6 %/h, 6–48 h, used 40–85 %, P_NEW 0.15 (the
+  new-vs-used share was "re-asked" in 10-22 and approved as built on 10-24).

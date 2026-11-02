@@ -110,8 +110,21 @@ const FRAG = /* glsl */`
     //    great circle, so intermediate phases are crescents, not straight-line wipes.
     float k = cos(uPhase * 3.14159265);
     float edge = k * sqrt(max(0.0, 1.0 - p.y * p.y));
-    float lit = smoothstep(-uTermSoft, uTermSoft, p.x - edge);
+    // A NEW moon is dark (BUG-94): at k → 1 the terminator lies ON the limb, and its soft edge left
+    // the disc's anti-aliased rim half-lit — a hairline circle once the halo stopped drowning it.
+    // Faded out over the last few hundredths of phase (k 0.98 → 1 ≈ phase 0.064 → 0).
+    float newFade = 1.0 - smoothstep(0.98, 1.0, k);
+    float lit = smoothstep(-uTermSoft, uTermSoft, p.x - edge) * newFade;
     float level = mix(uEarthshine, 1.0, lit);
+
+    // BUG-94: the glow follows the TERMINATOR, not the disc. Built from r alone it ringed the whole
+    // circle, dark limb included — a full disc outlined in light with the phase inside it. Sample the
+    // same terminator test at 0.8 of the way out along this direction (at the limb itself the full
+    // moon's sunward edge sits ON the line and would glow at half), widened so the glow tapers round
+    // the cusps; the dark limb keeps only the earthshine level.
+    vec2 pl = (p / max(r, 1e-4)) * 0.8;
+    float limbLit = smoothstep(-(uTermSoft + 0.15), uTermSoft + 0.15, pl.x - k * sqrt(max(0.0, 1.0 - pl.y * pl.y)));
+    glow *= mix(uEarthshine, 1.0, limbLit * newFade);
 
     // ADDITIVE output (see the material): the moon is a light source against the sky, so the
     // unlit limb must contribute NOTHING. With normal blending it instead painted the disc's dark

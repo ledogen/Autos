@@ -1,7 +1,7 @@
 ---
 id: FEAT-67
 type: feature
-status: open
+status: done
 severity: major
 opened: 2026-08-17
 refined: 2026-09-25 (owner planning pass — rulings folded into the body)
@@ -114,7 +114,8 @@ offer appears there. It is the only always-on addition.
   **Amended 2026-10-20 (owner, item setup page):** the **receiver** hands the bonus over as a tip at
   delivery, and the pool is a **50/50 roll between the giver's and the destination's** (REWARDS
   `pools` then lists destination classes too). A fetch, where giver and receiver are the same place,
-  uses the giver's pool only. Not built yet — `src/offer-board.js` still rolls the giver's pool.
+  uses the giver's pool only. **Built 2026-11-01 (Spare)** — `src/offer-board.js` `_receiverBonus`, see
+  the Resolution below.
 - **One bonus item per offer, no tiering** (owner, 2026-10-08 — retires the 2026-08-17 tier ladder).
   Every offer pays cash too; a bonus rides on top, never instead ($0-cash offers retired, same ruling).
 - **Scope here: named and displayed, the grant is stubbed.** Settlement records which bonus was earned;
@@ -251,18 +252,57 @@ brakes fade, and it overheats on long climbs. So the freight card differs from t
 - [x] Larry's POI draws the newspaper glyph; customers draw as small white diamonds off-route
 - [x] Gates: extend `test/economy.mjs` (base pay tracks the tables; bonus gate resolution) and
       `test/story-poi.mjs` (§7 single-offer expectations → the board model)
-- [ ] `npm run test:all` green pre-commit
+- [x] `npm run test:all` green pre-commit (the affected story/physics suite + smoke on Spare; the full suite runs on the merge)
+
+## Ruled (owner, 2026-10-31)
+
+- **Freight's bonus measure is weight delivered** — which is what FEAT-114 §6 built (the gate is a kg
+  the load is posted with). Items gated on delivering super-heavy cargo are the intended shape.
+- **Larry has a reward pool**: every REWARDS row, the LSD included (it is in several pools already —
+  owner), lists `larrysHouse` (data/offers.js, 2026-10-31). The rank gates still apply, so it is not game-breaking:
+  one roll per round like any source. Papers rolls a bonus again.
 
 ## Open (owner's call)
 
-- **Freight's bonus measure** (load condition? truck wear?), decided when freight is built.
-- Fold these rulings into missions.md "The job board — discovery and expiry" (still marked OPEN).
+- ~~**Freight's bonus measure**~~ ruled above.
+- ~~Fold these rulings into missions.md "The job board — discovery and expiry" (still marked OPEN).~~ Done 2026-11-01.
 - The list contents themselves (owner authoring session).
 
 ## Amended 2026-10-21 (owner)
 
 - On haul and freight the bonus gate **prints as a number** ("deliver 10+", "400 kg+") and only rolls when the giver's stock can meet it — built in FEAT-114.
 - The card gains a **giver-traits slot, bottom-left** (FEAT-142).
-- Papers still roll no bonus until Larry has a reward pool (open).
+- ~~Papers still roll no bonus until Larry has a reward pool~~ — pool added 2026-10-31.
 
 See design-amendments-2026-10-21-mission-recut.md §6, §10.
+
+## Resolution (Spare, 2026-11-01) — measured against main; one gap built, closed
+
+Every acceptance line was already on main (the board, the cards, Q/E, the timers, slots, the cancel
+lock, terms, freight's flat card, the icons), except one amendment and one doc fold:
+
+1. **The receiver's half of the bonus (owner, 2026-10-20) — built.**
+   - Only the PLAN knows the destination, so `OfferBoard._receiverBonus` runs where a plan is
+     resolved: `planDistinct`, and `replan` for a resume.
+   - The spec's GATE stays. It was drawn from the giver's pool, and the haul stock floor and the
+     Big-tipper trait already depend on it.
+   - On a seeded 50/50 the ITEM is re-picked from the destination POI's REWARDS (its type or tags) at
+     that gate. It is weighted by the stock table like every bonus pick.
+   - The giver's item stands for:
+     - a fetch (giver = receiver);
+     - a multi-drop (several receivers — ponytail: a per-stop receiver if the owner wants it);
+     - a roadside drop (no receiver POI);
+     - a receiver with nothing at that gate.
+   - Idempotent: a re-plan of a kept spec starts again from the giver's item (`giverBonus`).
+   - **Gate:** `test/offer-board.mjs` §13c:
+     - about half of eligible courier bonuses come from the receiver, at the same gate and from the
+       receiver's pool;
+     - the mission carries what the card shows;
+     - fetch and roadside keep the giver's item;
+     - a fresh-board replan lands on the same item.
+     §13c fails without the change.
+2. **missions.md "The job board"** — the OPEN header is now RATIFIED, with a summary of the built model
+   on top (the old argument kept as provenance). Its status board now lists the job board and
+   Larry's reward pool as decided.
+
+Affected suite (story + physics) + cdp-smoke: 10/10 green.

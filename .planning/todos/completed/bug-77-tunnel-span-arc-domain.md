@@ -1,7 +1,7 @@
 ---
 id: BUG-77
 type: bug
-status: pending
+status: done
 severity: medium
 ---
 
@@ -39,3 +39,17 @@ samples inside the mislocated span. That is the gate's only red on the merged br
 2026-10-01, main `f163e6c`: `road-tunnel.mjs` fails on a clean HEAD checkout — `bore INTERIOR grade
 ≤ 21%: worst 22.5%`. This is the symptom above, not a new regression. Any session that sees this red
 can skip re-running the gate on main to prove it.
+
+## Resolution — 2026-11-01 (Spare)
+
+One helper, `spansOnPolyCum(spans, clArc, polyCum)` (road.js, module level): maps each span end
+through its vertex segment of the two per-vertex arc tables. Applied where a run carries
+offCurveSpans — the promoted side road (`_v2PromoteSide…`'s `_v2GradePts` result) and the shove
+(`_v2RegisterShoved`) — and `_v2SliceRun` now clips spans on the arc they are in: polyCum (`p0`) when
+the parent carries offCurveSpans, clArc (`c0`) otherwise. Ordinary runs are untouched (read on clArc).
+
+- `road-tunnel.mjs` **green**: bore interior worst 22.5 % → **18.0 %** (limit 21 %). No longer a known red.
+- BUG-81 item 4's portal census (four seed windows, real hill across the whole arch): the one portal
+  still out of the hill is gone — **44/44 portals have ≥ 3.3 m of rock over the whole arch**.
+- Affected gates 50/51 (road-clearance = FEAT-77's known red, identical to main), bore-junction-clearance,
+  road-smoothness, junction-stitch and vertical-curvature green; play-area green; smoke 19/19.

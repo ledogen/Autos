@@ -45,7 +45,7 @@ See the review artifact and the resolution note at close. Owner review 2026-09-0
 branch preferred at every now-passing site; the nine regressions of the first cut were Ts the
 wider rule declined, and are gone under the refined rule.
 
-## Known red on main
+## Known red on main (cleared 2026-11-01 by ruling (a) below)
 
 2026-10-01, main `f163e6c`: `road-clearance.mjs` fails on a clean HEAD checkout — `lone-pine spawn`
 (29 runs, 1 violating pair, 2 carve walls reported) and `seed3 origin` (58 runs, 1 violating pair,
@@ -59,3 +59,50 @@ red can skip re-running the gate on main to prove it.
 - `story-poi`'s 50 m-drift check: mom's pad now sits 980 m from spawn, 20 m inside a 1000 m
   nearSpawn ring the drift crosses — a fragile threshold in the roster, exposed by a new pad.
 - BUG-63 (mid-span key collision), BUG-64 class B (carve composition walls).
+
+## Residue triage — 2026-11-01 (Spare, main c0d8c43d)
+
+The two pairs left (road-clearance's only red after BUG-77) are both **two legs of one node**, just
+past the geometric throat and marginally inside the cap:
+
+- lone-pine spawn (-68, 320): 28.3 m apart, rule wants 28.5 (15.3 m of height), over 4 m —
+  `g:-1,-1,1:-127077,334872,-1` × `g:-127077,334872,-1:0,0,2` (a promoted node).
+- seed3 origin (1976, -889): 27.8 m apart, rule wants 28.5 (8.1 m of height), over 16 m —
+  `g:2,-2,1:2,-1,2` × `g:3,-2,2:2,-1,2`.
+
+**Not a measurement gap the planner can close.** Experiment: `_v2ClearReq` + 1 m. It is the ONE shared
+copy, so the gate tightened too (four marginal near-misses surfaced elsewhere — not usable as a fix),
+but the telling part: **both residue pairs did not move at all** (still 28.3 m and 27.8 m). The
+planner never acts on them — neither the conflict/T path nor the second (occupancy) pass re-routes a
+leg pinned to its node's departure here. Closing them means routing work in the node-departure
+machinery, not a knob. Options for the owner: (a) accept a near-miss of under ~1 m over under ~20 m
+between two legs of one node (a gate tolerance), (b) leave the red standing as known residue, or
+(c) schedule the node-departure re-route work.
+
+## RULED — owner, 2026-11-01: (a)
+
+A gate tolerance for under ~1 m over under ~20 m between legs of one node. Owner: "a seems fine
+unless i complain about the symptoms this test measures. i dont think its really bothering me (same
+with bug-64 vertical walls)." Keep the tolerance honest and small. Lane: Spare.
+
+**Built (Spare, 2026-11-01).** Built in `test/road-clearance.mjs`: a pair that is
+two legs of ONE node, short of the rule by under 1 m (`NEAR_MISS_M`) over under 20 m of road
+(`NEAR_MISS_LEN`), is printed as a near-miss and does not fail. Two separate roads get no tolerance.
+Result (feature/spare, on top of BUG-64 class B): **PASS**, 0 violating pairs, 2 near-misses
+reported — lone-pine spawn (-68, 320) 28.3 m vs 28.5 m over 4 m, and seed3 origin (1976, -889)
+27.8 m vs 28.5 m over 16 m. The known red is gone. Still open, and not this gate's: class A (the
+rule's foot capped at 18 m while the carve's deep-bank toe reaches 36 m), which would move routes.
+
+
+## Open, handed over from BUG-104 (Spare, 2026-11-02): does a `~p` parallel owe its sibling the rule?
+
+A `~p` run (BUG-63) is the second half of a mid-span T whose node pair is already taken — a second
+road between the SAME two nodes. The clearance rule judges it like any pair, and the rule has no view
+on whether two parallel roads between one node pair should keep 12 m of daylight. Census example:
+seed 4 (1239, −1118), 1400 m window — a `~p` half 22.8 m from its sibling for 148 m, 5.7 m short of
+the rule (`CarGame-spare/wip/bug-69/census.mjs`). Over seeds 1–100 no `~p` pair OVERLAPS (centrelines
+under one road width), so this is a clearance question, not BUG-104's defect. Owner's call: hold
+parallels to the rule (and the planner to re-route one), exempt them like hairpin arms, or drop the
+second road. The other walk gap BUG-104 found — registered at-grade crossings were not excluded — is
+fixed in `test/lib/close-pairs.mjs` (±(blend + 10) m of a crossing on either run; road-clearance and
+road-carve-walls unchanged on the battery).

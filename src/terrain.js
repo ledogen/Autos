@@ -55,6 +55,17 @@ const        BUILD_MS_BUDGET      = 3.0 // PERF-02: per-frame ms budget for geom
 const        CARVE_ROWS_PER_SLICE = 4   // PERF-26: carve-table rows per resumable slice (65 rows → ~16 slices ≈ 1.5 ms each on a fast machine). Smaller = smoother but more generator overhead; this is the granularity that lets BUILD_MS_BUDGET actually bind.
 const        MAX_IN_FLIGHT_PER_WORKER = 3 // PERF-33: posted-but-unanswered generate requests per Worker (a Worker answers one in a few ms; 3 keeps it fed across a frame without a deep unrecallable backlog)
 const        MAX_REQUESTS_PER_FRAME = 8 // PERF-02: cap worker `generate` dispatches per frame — bounds the postMessage flood at large rings (raised for the deeper warm rings at Far/Ultra)
+// FEAT-40 tunnel-mouth skin cut (the shader's capsule; tunnelCutAt() is its JS mirror — both read these).
+const        TUNNEL_CUT_LEN       = 16  // m the cut runs into the bore from each mouth (capsule length)
+const        TUNNEL_CUT_CAP       = 1.2 // m outside the mouth where the flat outer end sits (inside the tube's 1.5 m proud lip)
+const        TUNNEL_CUT_FLOOR     = 1.2 // m below the axis (the deck centre) the cut stops — BUG-93: 1.2 m under grade
+// BUG-81 item 5: the hole follows the TUBE and is the tube's own size past the collar. A straight,
+// level capsule 0.45 m wider than the lining and centred 0.4 m above the deck left skin open outside
+// the tube — 0.45 m all round, 0.85 m at the crown, more on the outside of a bend or up a grade — and
+// the map showed sky through it (owner's screenshot 2026-11-01). The wide radius stays only inside the
+// collar's buried depth, where the ring's outer band hides the ragged cut.
+const        TUNNEL_COLLAR_IN     = 0.8  // m — the portal ring's buried depth (road-mesh.js buildPortalRing D0)
+const        TUNNEL_HOLE_R        = 0.05 // m past the lining (= the ring's reveal, RIN) beyond the collar
 
 // ── TerrainSystem class ────────────────────────────────────────────────────
 
@@ -158,6 +169,7 @@ export class TerrainSystem {
             uTunnelN:    { value: 0 },
             uTunnelPos:  { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
             uTunnelAxis: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
+            uTunnelBend: { value: Array.from({ length: 24 }, () => new THREE.Vector3()) },   // BUG-81: centre = pos + axis·t + bend·t²
             // FEAT-84: per-zone surface detail (terrain-texture.js). The vertex `aSurf` weights
             // (grass, dirt, rock) pick between three tileable albedo-modulation+height / normal
             // pairs, height-weighted so the taller feature wins at an interface. uSurfScale is
@@ -239,7 +251,7 @@ export class TerrainSystem {
                 // blend weights are computed, consumed at <normal_fragment_begin> (separate scope).
                 'vec2 tsNrm = vec2(0.0); vec3 tsNrmSide = vec3(0.0);\n' +
                 'uniform sampler2D uShadowAtlas; uniform float uShadowAtlasN, uShadowTilePx, uShadowStrength, uShadowFadeStart, uShadowFadeEnd, uShadowLightGain;\n' +
-                'uniform int uTunnelN; uniform vec4 uTunnelPos[24]; uniform vec4 uTunnelAxis[24];\n' +
+                'uniform int uTunnelN; uniform vec4 uTunnelPos[24]; uniform vec4 uTunnelAxis[24]; uniform vec3 uTunnelBend[24];\n' +
                 // Baked prop-shadow occlusion, written at <color_fragment> and consumed by the
                 // directional-light patch below. Global because those two chunks are separate scopes.
                 'float rsBakedShade = 1.0;\n' + shader.fragmentShader
@@ -250,15 +262,24 @@ export class TerrainSystem {
                 for (int ti = 0; ti < 24; ti++) {
                     if (ti >= uTunnelN) break;
                     vec3 tq = vWorldPos - uTunnelPos[ti].xyz;
-                    float ta = dot(tq, uTunnelAxis[ti].xyz);
+                    vec3 tax = uTunnelAxis[ti].xyz;
+                    float ta = dot(tq.xz, tax.xz);
                     // FLAT outside end just beyond the tube's proud lip: a capsule end-cap sphere
                     // bulged ~R beyond the mouth and ate a whole disc of ground outside it.
-                    if (ta < -1.2) continue;
-                    float tt = clamp(ta, -1.2, uTunnelAxis[ti].w);
-                    tq -= uTunnelAxis[ti].xyz * tt;
+                    if (ta < ${(-TUNNEL_CUT_CAP).toFixed(3)}) continue;
+                    float tt = clamp(ta, ${(-TUNNEL_CUT_CAP).toFixed(3)}, uTunnelAxis[ti].w);
+                    // BUG-81: the tube's own centre at tt — the deck's tangent and grade, bent by the
+                    // run's curve (quadratic through the centre TUNNEL_CUT_LEN in).
+                    float tb = max(tt, 0.0);
+                    tq -= tax * tt + uTunnelBend[ti] * (tb * tb);
+                    float tr = uTunnelPos[ti].w - (ta < ${TUNNEL_COLLAR_IN.toFixed(3)} ? 0.0 : ${(0.45 - TUNNEL_HOLE_R).toFixed(3)});
                     // tq.y gate: only cut skin ABOVE the apron plane — a full capsule also ate the
                     // carved ground beside/below the road just outside the mouth (visible hole).
-                    if (tq.y > -0.7 && dot(tq, tq) < uTunnelPos[ti].w * uTunnelPos[ti].w) discard;
+                    // BUG-93: the plane sits 1.2 m under grade (axis +0.4), not 0.3: on the low side
+                    // of a cambered bore the apron runs lower than −0.3, and the carved skin between
+                    // the two showed as a ragged gravel shelf over it inside the mouth. The cap
+                    // above (ta < −1.2) is what keeps the ground just outside the mouth now.
+                    if (tq.y > ${(-TUNNEL_CUT_FLOOR).toFixed(3)} && dot(tq, tq) < tr * tr) discard;
                 }`
             )
             // Albedo mottle (after vColor is folded into diffuseColor).
@@ -590,17 +611,14 @@ export class TerrainSystem {
         }
     }
 
-    // FEAT-40: refresh the tunnel-mouth cutout uniforms. The full portal list rebuilds when the
-    // road network changes (rev-guarded); the 24 uniform slots are then filled with the portals
-    // NEAREST the car, re-selected when the car has moved — a dense region can carry far more
-    // than 24 mouths, and first-in-map-order left distant ones cut and nearby ones sealed.
-    // pos.w = hole radius overlapped by the portal ring's outer band, axis.w = inward capsule
-    // length (covers the skin crossing the tube near the mouth).
-    _syncTunnelUniforms(carPos) {
+    /**
+     * Every tunnel mouth of the live network, rebuilt when the network changes. S-40: keyed on the
+     * INSTANCE too — a reseed swaps in a new RoadSystem whose rev restarts at 0, and a rev that
+     * happened to match would keep the old world's portals open. Null without a network.
+     */
+    _tunnelPortals() {
         const rs = this._roadSystem
-        if (!rs || !rs._network) return
-        // S-40: keyed on the INSTANCE too — a reseed swaps in a new RoadSystem whose rev restarts
-        // at 0, and a rev that happened to match would keep the old world's portals open.
+        if (!rs || !rs._network) return null
         if (this._tunnelUniformRoad !== rs || this._tunnelUniformRev !== rs._networkRev) {
             this._tunnelUniformRoad = rs
             this._tunnelUniformRev = rs._networkRev
@@ -613,13 +631,56 @@ export class TerrainSystem {
                         const p = rs.runPointAt(runKey, s)
                         if (!p) continue
                         const pr = rs.runProfile(s, runKey)
-                        this._tunnelPortalList.push({ x: p.x, y: pr.gradeY + 0.4, z: p.z, r: R, ax: pr.tx * inward, az: pr.tz * inward })
+                        // BUG-81 item 5: the tube's centreline as pos + axis·t + bend·t² — the axis is the
+                        // deck tangent with its grade, the bend fitted to the centre TUNNEL_CUT_LEN in.
+                        const ax = pr.tx * inward, az = pr.tz * inward
+                        const g = (rs.runProfile(s + inward, runKey).gradeY - pr.gradeY)
+                        const L = TUNNEL_CUT_LEN, q = rs.runPointAt(runKey, s + inward * L)
+                        const yq = rs.runProfile(s + inward * L, runKey).gradeY
+                        const bend = q ? { x: (q.x - p.x - ax * L) / (L * L), y: (yq - pr.gradeY - g * L) / (L * L), z: (q.z - p.z - az * L) / (L * L) }
+                            : { x: 0, y: 0, z: 0 }
+                        this._tunnelPortalList.push({ x: p.x, y: pr.gradeY, z: p.z, r: R, ax, ay: g, az, bend })
                     }
                 }
             }
-            this._tunnelSyncX = Infinity   // force the slot refill below
+            this._tunnelSyncX = Infinity   // force the uniform slot refill
         }
-        const list = this._tunnelPortalList
+        return this._tunnelPortalList
+    }
+
+    /**
+     * BUG-93: does a tunnel mouth cut the skin away at (x, z)? The shader's capsule test, run on the
+     * ground point — over EVERY mouth, not just the 24 in the uniforms. The prop scatter asks it:
+     * the skin's analytic height there is the mouth-funnel notch, which the shader then discards,
+     * so a rock or grass clump placed on it hung in the mouth with its shadow on the bore floor.
+     */
+    tunnelCutAt(x, z) {
+        const list = this._tunnelPortals()
+        if (!list?.length) return false
+        let y = null
+        for (const p of list) {
+            let qx = x - p.x, qz = z - p.z
+            if (qx * qx + qz * qz > (TUNNEL_CUT_LEN + p.r) ** 2) continue
+            y ??= this.analyticHeight(x, z)
+            let qy = y - p.y
+            const ta = qx * p.ax + qz * p.az
+            if (ta < -TUNNEL_CUT_CAP) continue
+            const tt = Math.min(ta, TUNNEL_CUT_LEN), tb = Math.max(tt, 0) ** 2
+            qx -= p.ax * tt + p.bend.x * tb; qy -= p.ay * tt + p.bend.y * tb; qz -= p.az * tt + p.bend.z * tb
+            const r = p.r - (ta < TUNNEL_COLLAR_IN ? 0 : 0.45 - TUNNEL_HOLE_R)
+            if (qy > -TUNNEL_CUT_FLOOR && qx * qx + qy * qy + qz * qz < r * r) return true
+        }
+        return false
+    }
+
+    // FEAT-40: refresh the tunnel-mouth cutout uniforms. The full portal list rebuilds when the
+    // road network changes (rev-guarded); the 24 uniform slots are then filled with the portals
+    // NEAREST the car, re-selected when the car has moved — a dense region can carry far more
+    // than 24 mouths, and first-in-map-order left distant ones cut and nearby ones sealed.
+    // pos.w = hole radius overlapped by the portal ring's outer band, axis.w = inward capsule
+    // length (covers the skin crossing the tube near the mouth).
+    _syncTunnelUniforms(carPos) {
+        const list = this._tunnelPortals()
         if (!list) return
         const moved = Math.hypot(carPos.x - (this._tunnelSyncX ?? Infinity), carPos.z - (this._tunnelSyncZ ?? 0))
         if (!(moved > 100) && this._terrainUniforms.uTunnelN.value === Math.min(24, list.length)) return
@@ -629,9 +690,11 @@ export class TerrainSystem {
             : list
         const posArr = this._terrainUniforms.uTunnelPos.value
         const axArr  = this._terrainUniforms.uTunnelAxis.value
+        const bendArr = this._terrainUniforms.uTunnelBend.value
         for (let i = 0; i < sel.length; i++) {
             posArr[i].set(sel[i].x, sel[i].y, sel[i].z, sel[i].r)
-            axArr[i].set(sel[i].ax, 0, sel[i].az, 16)
+            axArr[i].set(sel[i].ax, sel[i].ay, sel[i].az, TUNNEL_CUT_LEN)
+            bendArr[i].set(sel[i].bend.x, sel[i].bend.y, sel[i].bend.z)
         }
         this._terrainUniforms.uTunnelN.value = sel.length
     }

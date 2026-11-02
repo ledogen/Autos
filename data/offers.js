@@ -44,7 +44,13 @@
 //            Tagged things only ever end at a matching POI, never roadside — unless the list
 //            names 'roadside' too (BUG-88): then a matching POI or a roadside spot.
 //   deadlineSlack (optional, FEAT-113) the deadline as par × (1 + slack), counted from accept.
+//   targets  (demolition, FEAT-65) what stands on the shoulder along the job's last km: groups of
+//            { kinds, n: [lo, hi], cluster: [lo, hi], side?, face? } (src/demolition.js siteTargets;
+//            kinds are its TARGET_TYPES). massKg is unused — nothing is carried.
 //            Absent = the family default in DEADLINE_SLACK below.
+//   multi    (optional, FEAT-89) the phrase for several of it — "Deb needs {multi} delivered to
+//            Nadia, the Halvorsens and the pump house." Present = the thing may roll a MULTI-DROP
+//            (MULTI_DROP below). PLACEHOLDER picks and words — the owner authors which things.
 
 // "Any normal giver" — cargo.md's blank From (option C). Not the food vendor, the haul yard or
 // Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply). Not the
@@ -83,9 +89,9 @@ export const THINGS = [
     { id: 'firewood',   phrase: 'firewood',               family: 'haul',     massKg: [0, 0],
       pools: ['firewoodYard'] },
     { id: 'takeout',    phrase: 'two bags of takeout',    family: 'delivery', massKg: [2, 5],
-      pools: ['foodVendor'], deadlineSlack: 0.5 },
+      pools: ['foodVendor'], deadlineSlack: 0.5, multi: 'takeout orders' },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
-      pools: ['generalStore'] },
+      pools: ['generalStore'], multi: 'grocery orders' },
     { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
       pools: ['generalStore'] },
     // Courier, R1 (cargo.md), one thing per row there.
@@ -105,11 +111,11 @@ export const THINGS = [
     { id: 'golfClubs',  phrase: 'golf clubs',              family: 'delivery', massKg: [9, 14],
       pools: HOME, to: HOME },
     { id: 'fruitCake',  phrase: 'fruit cake',              family: 'delivery', massKg: [1, 2],
-      pools: HOME, to: HOME },
+      pools: HOME, to: HOME, multi: 'fruit cakes' },
     { id: 'casserole',  phrase: 'tuna casserole',          family: 'delivery', massKg: [2, 3],
-      pools: HOME, to: HOME },
+      pools: HOME, to: HOME, multi: 'tuna casseroles' },
     { id: 'homebrew',   phrase: 'homemade beer',           family: 'delivery', massKg: [5, 10],
-      pools: HOME, to: HOME },
+      pools: HOME, to: HOME, multi: 'cases of homemade beer' },
     { id: 'woodcraft',  phrase: 'Woodcraft Vol 2.',        family: 'delivery', massKg: [0.5, 1],
       pools: HOME, to: HOME },
     { id: 'tractorKeys', phrase: 'keys for the tractor',   family: 'delivery', massKg: [0.1, 0.1],
@@ -121,7 +127,7 @@ export const THINGS = [
     // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
     // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07).
     { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
-      pools: ['generalStore', 'gasStation'] },
+      pools: ['generalStore', 'gasStation'], multi: 'full propane tanks' },
     { id: 'propaneEmpty', phrase: 'an empty 20 lb propane tank', family: 'delivery', massKg: [7, 9],
       pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'gasStation'] },
     // General-store sundries (owner, 2026-10-07): store → anyone. They are also the tackle shop's
@@ -293,6 +299,19 @@ export const THINGS = [
       pools: HOUSEWARES, to: ['residence'], load: 'sculptureB', ...STURDY },
     { id: 'uprightPiano', phrase: 'an upright piano',       family: 'fragile', massKg: [230, 230],
       pools: HOUSEWARES, to: ['residence'], load: 'uprightPiano', ...STURDY, sound: 'piano', furniture: true },
+
+    // ── Demolition (FEAT-65, owner 2026-11-01): smash what stands on the shoulder along the job's last km
+    // of road; the letter is the share smashed. Always a roadside job. The deed is the removal — each
+    // giver has an ordinary reason. PLACEHOLDER words and counts.
+    // The farmer's old empty drums, set out along his frontage: crushed, they go to the scrapyard in one trip.
+    { id: 'scrapDrums',  phrase: 'his old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
+      targets: [{ kinds: ['barrel', 'drumOpen'], n: [8, 12], cluster: [1, 3] }] },
+    // The county is repaving: the old sign line comes down before the new one goes up, and the last job's
+    // barricades are still out. The crew is behind.
+    { id: 'oldSignLine', phrase: 'the old sign line knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
+      targets: [{ kinds: ['signGrade', 'signCurves', 'signRockslide', 'signTee', 'signCross', 'signStop', 'signIcy'],
+                  n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
+                { kinds: ['roadBarrier'], n: [2, 3], cluster: [2, 3], face: 'road' }] },
 ]
 
 // ── Rewards — the named bonus items ─────────────────────────────────────────────────────────
@@ -307,63 +326,68 @@ export const THINGS = [
 // An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
 // data/items.js ITEMS (the inventory gate checks), except a dineIn one. Its effect applies only if built.
 
+// Larry's paper route rolls from every pool (owner, 2026-10-31: "give him every item" — the LSD too, it
+// is in several pools already). The rank gates still apply, so papers earns like any job.
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'],
-      pools: ['foodVendor'] },
+      pools: ['foodVendor', 'larrysHouse'] },
     { id: 'coffee',     name: 'Coffee',      kind: 'consumable', gates: ['C', 'B'],
-      pools: ['foodVendor', 'gasStation'] },
+      pools: ['foodVendor', 'gasStation', 'larrysHouse'] },
     { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist'] },
+      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
     { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['B', 'A'],   // mid tier (owner, 2026-10-21)
-      pools: ['gasStation', 'strandedMotorist'] },
+      pools: ['gasStation', 'strandedMotorist', 'larrysHouse'] },
     // The refillable 5 gal jerry can (items.md §1): the top-tier answer to running dry, so A–S only.
     { id: 'jerryCan',   name: 'Jerry can',   kind: 'tool',       gates: ['A', 'S'],
-      pools: ['gasStation'] },
+      pools: ['gasStation', 'larrysHouse'] },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation', 'workSite'] },
+      pools: ['autoShop', 'gasStation', 'workSite', 'larrysHouse'] },
     // The haul yard's rewards (owner, 2026-10-22; items.md §7): the mat is the lesser grip; its
     // friction effect isn't built yet — the item is granted. The bedliner (A–S here) joins the
     // day its thumbnail exists (test/dist-assets.mjs needs assets/items/bedliner.png).
     { id: 'rubberBedMat', name: 'Rubber bed mat', kind: 'tool', gates: ['B', 'A'],
-      pools: ['firewoodYard'] },
+      pools: ['firewoodYard', 'larrysHouse'] },
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'],
-      pools: ['autoShop', 'farm'] },
+      pools: ['autoShop', 'farm', 'larrysHouse'] },
     { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'],
-      pools: ['autoShop', 'strandedMotorist', 'farm'] },
+      pools: ['autoShop', 'strandedMotorist', 'farm', 'larrysHouse'] },
     { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist'] },
+      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
     { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'],
-      pools: ['farm', 'autoShop', 'workSite'] },
+      pools: ['farm', 'autoShop', 'workSite', 'larrysHouse'] },
     { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'],
-      pools: ['autoShop', 'farm', 'residence'] },
+      pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
     { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'],
-      pools: ['workSite', 'autoShop', 'farm'] },
+      pools: ['workSite', 'autoShop', 'farm', 'larrysHouse'] },
     { id: 'diffLSD',    name: 'Limited-slip differential', kind: 'part', gates: ['S'],
-      pools: ['autoShop', 'strandedMotorist', 'residence'] },
+      pools: ['autoShop', 'strandedMotorist', 'residence', 'larrysHouse'] },
     { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
-      pools: ['autoShop', 'workSite'] },
+      pools: ['autoShop', 'workSite', 'larrysHouse'] },
     // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
     { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist'] },
+      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
+    // FEAT-138: rights a rolled truck. A–S, never a roadside find (owner, 2026-10-24).
+    { id: 'hiLiftJack', name: 'Hi-lift jack', kind: 'tool',     gates: ['A', 'S'],
+      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
     // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
     { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation'] },
+      pools: ['autoShop', 'gasStation', 'larrysHouse'] },
     // Items setup page rulings (owner, 2026-10-20/21).
     { id: 'energyDrink', name: 'Energy drink', kind: 'consumable', gates: ['C', 'B'],
-      pools: ['gasStation', 'generalStore'] },
+      pools: ['gasStation', 'generalStore', 'larrysHouse'] },
     { id: 'stopLeak',   name: 'Stop-leak',   kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation'] },
+      pools: ['autoShop', 'gasStation', 'larrysHouse'] },
     { id: 'zipTies',    name: 'Zip ties',    kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop'] },
+      pools: ['autoShop', 'larrysHouse'] },
     { id: 'ductTape',   name: 'Duct tape',   kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation', 'generalStore'] },
+      pools: ['autoShop', 'gasStation', 'generalStore', 'larrysHouse'] },
     // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when
     // the job is in. Being fed waits on hunger, which isn't built.
     { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true,
-      pools: ['residence', 'farm', 'foodVendor'] },
+      pools: ['residence', 'farm', 'foodVendor', 'larrysHouse'] },
 ]
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────
@@ -402,13 +426,25 @@ export const NOT_A_DESTINATION = new Set(['gasPump', 'expeditionCamp'])
  * (owner, 2026-10-30; 220 kg — a smart player waits until the yard's stock covers it in one trip; the
  * line's card shows that stock). The crew's POI — the design names "the POI where the crew waits"; the construction site
  * is the stand-in.
+ * FEAT-157 (owner, 2026-11-01): one line per mission type — haul (firewood), courier (the crew), freight
+ * (fuel), fragile (camp gear), demolition (the turn-back signs, FEAT-65).
+ * FEAT-65 (owner, 2026-11-01): the demolition line is given by the CAMP ITSELF (`from: 'expeditionCamp'`)
+ * and, unlike the others, goes OUT to a roadside site, never to the camp. Hand-painted boards keep
+ * appearing overnight on the roads near the wall — TURN BACK, NOTHING PAST THE RIDGE — nobody admits
+ * putting them up, and the crew won't drive past them. Until the painted board is modelled the site is
+ * the crates of flyers and the drums left beside them.
  */
 export const REQUISITION = [
+    // 20 bundles (owner, 2026-10-31, confirmed): the yard's stock cycles, so a smart player waits a couple of
+    // recycles until it holds 20+ and clears the line in one trip. The card shows the stock on hand.
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
-    { id: 'reqFood',     phrase: 'a week of food', family: 'delivery', from: 'foodVendor',   massKg: 20 },
-    { id: 'reqFuel',     phrase: 'fuel cans',      family: 'delivery', from: 'gasStation',   massKg: 30 },
-    { id: 'reqGear',     phrase: 'camp gear',      family: 'delivery', from: 'generalStore', massKg: 25 },
+    { id: 'reqSigns',    phrase: 'the turn-back signs knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
+      targets: [{ kinds: ['smallCrate'], n: [3, 5], cluster: [1, 3] }, { kinds: ['barrel'], n: [3, 5], cluster: [1, 2] }] },
+    // FEAT-157: fuel is a strapped 55-gal drum of gasoline (154 kg + an 18 kg drum); camp gear is a crate
+    // of lanterns and a stove, Fragile tier.
+    { id: 'reqFuel',     phrase: 'fuel',           family: 'freight',  from: 'gasStation',   massKg: 172, load: 'drum' },
+    { id: 'reqGear',     phrase: 'camp gear',      family: 'fragile',  from: 'generalStore', massKg: 30, load: 'largeCrate', ...FRAGILE },
 ]
 
 export const SOURCES = {
@@ -427,9 +463,9 @@ export const SOURCES = {
     autoShop:         { cap: 2, expiryH: 48,       families: ['delivery', 'freight', 'fragile'] },   // the windshield
     // The gas station posts work too, reversing "some stores are just stores" (2026-09-26).
     gasStation:       { cap: 2, expiryH: 24,       families: ['delivery', 'freight'] },
-    workSite:         { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight'] },
+    workSite:         { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'demolition'] },
     residence:        { cap: 2, expiryH: [24, 72], families: ['delivery', 'fragile', 'demolition', 'freight'] },
-    farm:             { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile'] },
+    farm:             { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight', 'fragile', 'demolition'] },
     doctor:           { cap: 2, expiryH: [24, 72], families: ['delivery', 'freight'] },
     strandedMotorist: { cap: 1, expiryH: [24, 72], families: ['delivery'] },
     // FEAT-102: fetches of the general-store sundries, plus its own goods out (BUG-88).
@@ -514,12 +550,40 @@ export const FREIGHT_TIP_MULT = 0.5
 // +200 % (third pass). papers is this side's pick, not a ruling yet. demolition has no things (and
 // no code) yet — give it a slack the day it ships.
 // A different clock from board expiry (EXPIRY_NOISE, SOURCES.expiryH): when an offer LEAVES the board.
+// FEAT-142 (owner, 2026-10-21): GIVER TRAITS — 0–2 per offer, each a data row that nudges terms the
+// job already has; no new systems. Every trait is a trade except Generous and Stingy. Rolled on their
+// OWN seeded stream (offer-board.js _rollSpec), shown bottom-left of the card. Starting values — FEAT-69
+// tunes them. Fields: `families` it applies to (all but papers when absent), `not` the opposed traits,
+// `pay` × the line, `deadline` × the deadline slack, `thresholds` × the courier TIME thresholds (a
+// smaller ratio is tighter), `floors` × a fragile load's shock thresholds (< 1: more delicate), `tip` ×
+// the tip pool, `stockFull` (haul: the whole yard), `perPiece` × a haul's rate per piece, `deeds`
+// 'none' (no good-deed point) or 'extraHalf' (+½ at C or better).
+// Rejected: After hours (doesn't fit the deadline system). OPEN: Wholesale on freight — built haul-only.
+const NOT_PAPERS = ['delivery', 'freight', 'fragile', 'haul']
+export const TRAITS = [
+    { id: 'impatient',  name: 'impatient',  families: NOT_PAPERS, not: ['patient'],    pay: 1.20, deadline: 0.6, thresholds: 0.9 },
+    { id: 'patient',    name: 'patient',    families: NOT_PAPERS, not: ['impatient'],  pay: 0.80, deadline: 1.5, thresholds: 1.1 },
+    { id: 'collector',  name: 'collector',  families: ['fragile'], not: ['easygoing'], pay: 1.25, floors: 0.8 },
+    { id: 'easygoing',  name: 'easygoing',  families: ['fragile'], not: ['collector'], pay: 0.85, floors: 1.25 },
+    { id: 'generous',   name: 'generous',   families: NOT_PAPERS, not: ['stingy'],     pay: 1.20 },
+    { id: 'stingy',     name: 'stingy',     families: NOT_PAPERS, not: ['generous'],   pay: 0.80 },
+    { id: 'bigTipper',  name: 'big tipper', families: NOT_PAPERS, not: [],             pay: 0.80, tip: 1.6 },
+    { id: 'wholesale',  name: 'wholesale',  families: ['haul'],   not: [],             stockFull: true, perPiece: 0.8 },
+    { id: 'offBooks',   name: 'off the books', families: NOT_PAPERS, not: ['rightThing'], pay: 1.20, deeds: 'none' },
+    { id: 'rightThing', name: 'the right thing to do', families: NOT_PAPERS, not: ['offBooks'], pay: 0.85, deeds: 'extraHalf' },
+]
+/** FEAT-142: how many traits an offer carries — relative weights (starting values, FEAT-69 tunes).
+ *  ONE at most (owner, 2026-11-01: "i dont want them to stack. one at a time max"); the old two-trait
+ *  share folded into one, so the share of plain offers is unchanged. */
+export const TRAIT_COUNT_WEIGHTS = { 0: 0.5, 1: 0.5 }
+
 export const DEADLINE_SLACK = {
     delivery:   1.0,
     fragile:    2.0,
     freight:    3.0,
     haul:       2.0,
-    papers:     1.0,   // Larry's round is courier work
+    papers:     0.5,   // FEAT-141 (owner, 2026-10-21): the deadline is the plotted route's par × 1.5
+    demolition: 1.0,   // FEAT-65: courier's, a placeholder
 }
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
@@ -564,8 +628,21 @@ export const REWARD_VALUE = {
  */
 export const GATE_WEIGHTS = { C: 1, B: 1, A: 1, S: 1 }
 
-/** 0..1 — share of destinations that are another POI; the rest are roadside (LANDMARKS / place). */
-export const DEST_POI_CHANCE = 0.5
+/**
+ * 0..1 — share of destinations that are another POI; the rest are roadside (LANDMARKS / place).
+ * 0.65 (owner, 2026-10-31, FEAT-153): measured over 300 boards, roadside drops fall from 24.0 % to
+ * 16.5 % of non-paper offers (tagged things and fetches never roll it). FEAT-153's census, which
+ * counts where jobs END, read ~29 % → ~20 %.
+ */
+export const DEST_POI_CHANCE = 0.65
+
+/**
+ * FEAT-89 multi-drop: the share of offers of a thing with a `multi` phrase that roll several stops
+ * instead of one, and the stop-count weights (owner's suggestion in the ticket: 2–4, weighted toward
+ * 2). PLACEHOLDER — "ship a guess and tune live". Drawn on the offer's own `stops` stream, so no
+ * other offer's roll moves.
+ */
+export const MULTI_DROP = { chance: 0.35, stops: { 2: 3, 3: 2, 4: 1 } }
 
 /** People per source POI: usually one, sometimes two, rarely three. Relative weights. */
 export const PEOPLE_PER_POI = { 1: 0.75, 2: 0.2, 3: 0.05 }

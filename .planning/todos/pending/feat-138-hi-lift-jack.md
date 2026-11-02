@@ -5,6 +5,7 @@ status: open
 severity: minor
 opened: 2026-10-22
 source: owner, 2026-10-22 (item setup page) — items.md §7 "Hi-lift jack" row; FEAT-121 row
+lane: B → Spare (2026-11-01: Lane B has no session; Spare took it)
 relates: SM-3 (recovery), SM-INV-1, FEAT-121 (item tracker), FEAT-137 (shop shelf), src/recovery.js
 ---
 
@@ -51,20 +52,47 @@ mechanic, so it belongs with the parts/recovery work (src/recovery.js), not in t
     stage), each with its own cooldown.
 
 - **Torque APPROVED (owner, 2026-10-24): 10.5 N·m per kg of truck mass, applied for up to 3 s, cut the
-  instant the truck passes the balance point; 5 s real-time cooldown.** Ready to build in Lane B
-  (`.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md`).
+  instant the truck passes the balance point; 5 s real-time cooldown.** Lane **B → Spare** (orchestrator,
+  2026-11-01; B has no session).
 
-## Open (the owner's call)
+## Ruled (owner, 2026-10-31)
 
-- Likelihood tier (data/stock-weights.js).
-- Its input: which press uses it, and how the direction is chosen (controller button budget:
-  the B menu or an existing contextual press before a fresh button).
+- Likelihood tier: **rare**. As a reward it is gated **A–S**.
+- Input: **from the inventory menu** — select the hi-lift, then a left / right choice in a menu. No new
+  buttons, no contextual press; the GUI does it.
 
 ## Acceptance
 
-- [ ] An ITEMS row (items session) and thumbnail; REWARDS, shelf price and likelihood rows.
-- [ ] Usable only when the truck is not on its wheels and the run is not over; the player picks left or
+- [x] An ITEMS row (items session) and thumbnail; REWARDS, shelf price and likelihood rows.
+- [x] Usable only when the truck is not on its wheels and the run is not over; the player picks left or
       right; a roll torque goes through the physics adapter seam for the set time; then the cooldown.
-- [ ] It sometimes fails to right the truck, from the physics, not from a dice roll.
-- [ ] A headless gate: a truck on its side, the jack applied, comes back onto its wheels on flat ground;
+- [x] It sometimes fails to right the truck, from the physics, not from a dice roll.
+- [x] A headless gate: a truck on its side, the jack applied, comes back onto its wheels on flat ground;
       the cooldown refuses a second use; a truck on its wheels refuses it.
+
+## Built (Spare, 2026-11-01)
+
+- `src/hilift.js` — pure. Roll φ about the forward axis (0 upright, +90 on its right side, ±180 roof)
+  splits into four basins at the two balance angles: wheels, right side, left side, roof. A heave applies
+  `10.5 N·m/kg × (mass + stowed kit)` about the forward axis and is cut the step φ leaves the basin it
+  started in, or at 3 s. The 5 s cooldown is real time (`performance.now`).
+- The torque goes in as `vehicleState.jackTorque`, which `stepPhysics` adds to the chassis torque it
+  hands the engine — the adapter seam, nothing new in it.
+- `physics.js rollBalance(params)` — the balance angles from the real collision geometry: wheels ↔ side
+  on the tire's outer edge (atan(0.84 / 0.55) = 56.5°), side ↔ roof on the cab roof edge
+  (180° − atan(0.78 / 0.97) = 141.2°). The ticket's estimate used a 1.15 m roof; the hull's is 0.97.
+- Data: ITEMS `hiLiftJack` (13 kg tool; the thumbnail `assets/items/hiLiftJack.png` was already there),
+  REWARDS A–S from the auto shop, stranded motorists and Larry (he rolls everything, 10-31), shelf
+  price **$20 [DEFAULT]** (the middle of the owner's $10–30; the day tier scales it), STOCK_WEIGHT 1
+  (Rarely).
+- Input: the inventory's hi-lift row shows **Heave it left / Heave it right** (the truck's own left and
+  right); while it can't be used the row shows why (on its wheels / catching your breath / the run is
+  over). Starting a heave closes the inventory so you watch it. The inventory still opens only when
+  parked — a rolled truck at rest takes the Space tap like any other.
+- Gate `test/hilift.mjs` (flat ground): on its side (settles at φ 101.5°) → upright, cut at the balance
+  point after **0.43 s**; cooldown, on-its-wheels and run-over refusals.
+- **From the roof it took ONE press, not two.** The heave cuts at the roof balance (0.77 s), and the fall
+  from there to the side releases about 5 kJ (0.4 m of CG drop × 1360 kg × g) against the 2.2 kJ the
+  side → wheels climb needs, so the truck rolls on through its side onto its wheels. That is the physics,
+  not a rule; the gate accepts one or two presses and prints which. A softer landing (mud, a slope) can
+  stop it on the side, and then the second press does the rest.

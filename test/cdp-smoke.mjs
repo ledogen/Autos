@@ -81,6 +81,18 @@ const frames = async (n, ms) => {
 const tap = async (k, opts) => { await key(k, true, opts); await frames(2, 60); await key(k, false, opts) }
 // Teleport and wait for the SEAT, not a fixed sleep: the reseat awaits a network build, which under
 // load outlasted 2.5 s — it then latched park after the step had already toggled the brake.
+// Where a player parks at a giver (in-page, given a POI record): its marker — or, when the marker's own
+// model reaches over it, the first point toward the road a truck-sized circle clears, inside the 10 m
+// reach. Measured 2026-11-01: seated ON the farm's marker at (-936.5, 668.6) the truck starts inside the
+// barn and is thrown out at 21 m/s, on main as on any branch; the save step stalled whenever the clock
+// happened to post that farm's freight (it rolled 70–88 m off the pad, never taking the offer).
+const PAD_SEAT = `((q) => { const P = window.__poi(), y = (q.y ?? 0) + 0.8
+  const dx = q.roadX - q.x, dz = q.roadZ - q.z, L = Math.hypot(dx, dz) || 1
+  for (let t = 0; t <= Math.min(9, L); t += 0.5) {
+    const x = q.x + dx / L * t, z = q.z + dz / L * t
+    if (!P.queryContact(x, y, z, 3)) return { x, z }
+  }
+  return { x: q.x, z: q.z } })`
 const seat = async (x, z, h) => {
   await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
   check(await until(() => js('window.__seated'), 30000, 250), `teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
@@ -91,8 +103,18 @@ const seat = async (x, z, h) => {
 // new parked EDGE (its park trigger is a ~10 Hz poll on that edge). A bare release-then-tap lost
 // both ways under load: the truck rolled off the shop's slope (2.2 m/s, 7 m) before the re-tap, too
 // fast to latch.
+// At speed, the service brake (S) sheds it first: the handbrake is rear-wheels only, and on a steep
+// descent a locked rear axle slides at an equilibrium speed instead of stopping (measured: 6.2 m/s
+// after 30 s of Space on the papers step's road, and 15 → 23 m/s on seed 6's spawn hill). S lets go
+// at 1.2 m/s — above REV_THRESHOLD (0.56 m/s, below it S is reverse) and under PARK_SPEED (1.39 m/s),
+// so the Space press that follows latches the park brake (all four wheels) at once.
 const park = async (fresh = false) => {
   if (fresh && await js('window.__vs.parked')) { await tap(' '); await frames(4, 250) }
+  if (await js('window.__vs.velocity.length() > 1.2')) {
+    await key('s', true)
+    await until(() => js('window.__vs.velocity.length() < 1.2'), 15000)
+    await key('s', false)
+  }
   await key(' ', true)
   await frames(4, 250)
   await until(() => js('window.__vs.velocity.length() < 0.5'), 30000)
@@ -387,7 +409,7 @@ const STEPS = [
   ['service', async () => {
     // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
-      return q ? { x: q.x, z: q.z, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+      return q ? { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } : null })()`)
     if (!p) { console.log('  service: no auto shop in this region — step skipped'); return }
     await seat(p.x, p.z, p.h)
     await park(true)
@@ -409,7 +431,8 @@ const STEPS = [
   }],
   ['expedition', async () => {
     // FEAT-103: the camp's gate prompt, the requisition opening at campDeeds, the five lines at the
-    // camp, and a line taken THERE waiting, untimed, until the truck parks at its source.
+    // camp, and a line taken THERE waiting, untimed, until the truck parks at its source. FEAT-157: the
+    // line taken is the fuel drum, strapped in at the source and not before.
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
       return q ? { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
@@ -425,25 +448,187 @@ const STEPS = [
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
     check(await until(() => vis('mp-accept'), 3000), 'parking at the open camp opened no lines')
     check(await js('window.__mission().offers.length') === 5, `the camp shows ${await js('window.__mission().offers.length')} lines, want 5`)
-    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqCrew'; i++) await js('window.__mission().cycle(1)')
+    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqFuel'; i++) await js('window.__mission().cycle(1)')
     await js('document.getElementById("mp-accept").click()')
     const st = () => js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, from: m.mission?.fromPoi } })()')
     const a = await st()
     check(a.s === 'staging' && a.a, `a line taken at the camp is not an untimed approach: ${JSON.stringify(a)}`)
-    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)})
-      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await sleep(500)
+    check(!await js('window.__cargo().freight'), `the fuel line strapped its drum at the camp: ${JSON.stringify(await js('window.__cargo().freight'))}`)
+    // A source with a park box (the gas station's storefront bays) is parked IN it — poi.js dropZoneWorld's
+    // mapping, the truck's long axis along the bay.
+    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)}), b = q.park
+      if (!b) return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) }
+      const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
+      return { x: ox + b.x * cs + b.z * sn, z: oz - b.x * sn + b.z * cs, h: yaw } })()`)
     await js(`window.__teleport(${src.x}, ${src.z}, ${src.h})`)
     await sleep(2500)
     check((await st()).a, 'arriving at the source started the line before the brake')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
     await tap(' ')
     check(await until(async () => { const b = await st(); return b.s === 'staging' && !b.a }, 2000), `parking at the source did not start the line: ${JSON.stringify(await st())}`)
+    check(await until(() => js('window.__cargo().freight?.key === "drum"'), 5000), `parking at the source strapped no drum: ${JSON.stringify(await js('window.__cargo().freight'))}`)
     // Cancel (parked, two clicks) → the line goes back on the camp's list.
     await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
     check(await until(() => js('window.__mission().state === "done"'), 2000), 'cancel did not end the line')
+    check(await until(() => js('!window.__cargo().freight'), 2000), 'the cancelled line left its drum in the bed')
     await js('document.getElementById("mp-accept").click()')
     check(await js(`window.__map2d()._getBoard().status(${JSON.stringify((await js(`${pois}.find(q => q.type === 'expeditionCamp').id`)))}).family !== null`)
       && await js('window.__mission().state === "idle"'), 'the cancelled line is not back at the camp')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
+  // FEAT-65: the camp's own demolition line (the requisition is open from the step above). Taken at the
+  // camp it starts there (no approach); its targets stand as models along the route's last km; near
+  // the truck they are bodies, ASLEEP until touched; a kicked one counts smashed on the HUD; arriving
+  // settles the line with the count on the result card.
+  ['demolition', async () => {
+    const pois = 'window.__map2d()._getPois()'
+    const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
+      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await seat(camp.x, camp.z, camp.h)
+    await park(true)
+    const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    check(await until(() => vis('mp-accept'), 3000), 'parking at the camp opened no lines')
+    for (let i = 0; i < 5 && await js('window.__mission().offer._spec.line') !== 'reqSigns'; i++) await js('window.__mission().cycle(1)')
+    check(await js('window.__mission().offer._spec.line') === 'reqSigns', 'the camp lists no demolition line')
+    await js('document.getElementById("mp-accept").click()')
+    const st = await js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, n: m.mission?.targets?.length } })()')
+    check(st.s === 'staging' && !st.a && st.n > 0, `the camp's line did not start at the camp with a site: ${JSON.stringify(st)}`)
+    check((await js('window.__cargo().site'))?.length === st.n, 'the site does not stand from accept')
+    // Seat on the route's centreline beside the first target: within onM its targets become bodies.
+    const at = await js(`(() => { const m = window.__mission().mission, t = window.__cargo().site[0]
+      let bi = 0, bd = Infinity
+      m.poly.forEach((p, i) => { const d = Math.hypot(p.x - t.x, p.z - t.z); if (d < bd) { bd = d; bi = i } })
+      const a = m.poly[Math.max(0, bi - 1)], b = m.poly[Math.min(m.poly.length - 1, bi + 1)]
+      return { x: m.poly[bi].x, z: m.poly[bi].z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()`)
+    await seat(at.x, at.z, at.h)
+    const bodies = 'window.__cargo().site.filter(t => t.body != null)'
+    check(await until(() => js(`${bodies}.length > 0`), 3000), 'no target near the truck became a body')
+    await sleep(2000)
+    const awake = await js(`${bodies}.filter(t => window.__physicsEngine.isAwake(t.body)).length`)
+    check(awake === 0 && await js('window.__cargo().site.every(t => !t.smashed)'), `untouched targets did not stay asleep and standing: ${awake} awake`)
+    // Kick one: the engine wakes it, it moves, the poll latches it smashed.
+    await js(`(() => { const t = ${bodies}[0], p = new (window.__vs.position.constructor)(), q = new (window.__vs.quaternion.constructor)()
+      window.__physicsEngine.getTransform(t.body, p, q); window.__physicsEngine.applyImpulse(t.body, { x: 200, y: 100, z: 0 }, p) })()`)
+    check(await until(() => js('window.__cargo().site.filter(t => t.smashed).length === 1'), 3000), 'a kicked target did not count smashed')
+    check(await until(() => js('/1 \\/ \\d+ smashed/.test(document.getElementById("job-promise")?.textContent ?? "")'), 2000),
+      `the HUD does not count it: "${await js('document.getElementById("job-promise")?.textContent')}"`)
+    // Arrive: the line settles (a D at 1 of n — back on the list), and the result card counts the site.
+    const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
+    await seat(end.x, end.z, end.h)
+    check(await until(() => js('window.__mission().state === "done"'), 5000), `arriving did not settle the line: ${await js('window.__mission().state')}`)
+    check(await js('/Smashed\\s*1 \\/ \\d+/.test(document.getElementById("mp-body")?.textContent ?? "")'),
+      `the result card does not count the site: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    await js('document.getElementById("mp-accept").click()')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
+  // FEAT-154: a road out of the area. Full throttle at its barricade row: the loose barricades get
+  // smashed aside, past the fade line the screen goes black, and the truck comes back on a road inside
+  // the return radius facing in, with every barricade back where it stood.
+  ['edge', async () => {
+    const P = await js('(() => { const p = window.__poi(), b = p.barricades()[4], c = p._built; return { b, c } })()')
+    const f = { x: -Math.sin(P.b.yaw), z: -Math.cos(P.b.yaw) }   // the striped face: back into the area
+    // A row far off is plain models; near the truck its three barricades are loose bodies (main.js).
+    const row = `window.__debris._live.filter(r => r.kind === "roadBarrier" && Math.hypot(r.mesh.position.x - ${P.b.x}, r.mesh.position.z - ${P.b.z}) < 8)`
+    check(await js(`${row}.length`) === 0, 'a row 2 km from the truck already has bodies (they would fall through the world)')
+    await seat(P.b.x + f.x * 30, P.b.z + f.z * 30, Math.atan2(f.x, f.z))   // 30 m inside, nose at the row
+    check(await until(() => js(`(window.__edgeRow = ${row}).length === 3`), 2000), `the row near the truck has ${await js(`${row}.length`)} bodies, want 3`)
+    await sleep(1000)   // settled on the deck
+    const pos = 'window.__edgeRow.map(r => r.mesh.position.toArray())'
+    const before = await js(pos)
+    await crank()
+    if (await js('window.__vs.parked')) await tap(' ')
+    const black = 'document.getElementById("camp-fade").classList.contains("on")'
+    await key('w', true)
+    const went = await until(() => js(black), 20000, 50)
+    const smashed = went && (await js(pos)).some((p, i) => Math.hypot(p[0] - before[i][0], p[2] - before[i][2]) > 0.5)
+    await key('w', false)
+    check(went, `the edge never faded: the truck at ${(await js(`Math.hypot(window.__car().x - ${P.c.x}, window.__car().z - ${P.c.z})`)).toFixed(0)} m`)
+    check(smashed, 'the truck reached the fade line without moving a barricade')
+    check(await until(async () => !await js(black), 5000, 100), 'the screen stayed black')
+    const back = await js(`(() => { const p = window.__car(), q = window.__vs.quaternion
+      const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))   // the truck's nose, (0, 0, -1) rotated
+      return { r: Math.hypot(p.x - ${P.c.x}, p.z - ${P.c.z}), inward: (${P.c.x} - p.x) * fx + (${P.c.z} - p.z) * fz } })()`)
+    check(back.r <= P.c.r - 100 - 9 && back.inward > 0, `came back at ${back.r.toFixed(0)} m, ${back.inward > 0 ? 'facing in' : 'facing OUT'}`)
+    await sleep(1000)
+    const after = await js(`${row}.map(r => r.mesh.position.toArray())`)
+    const off = after.length === 3 ? Math.max(...after.map((p, i) => Math.hypot(p[0] - before[i][0], p[1] - before[i][1], p[2] - before[i][2]))) : Infinity
+    check(off < 0.05, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off`)
+    console.log(`  edge: smashed through, back at ${back.r.toFixed(0)} m facing in, the row reset (worst ${(off * 100).toFixed(1)} cm)`)
+  }],
+  ['papers', async () => {
+    // FEAT-141: Larry's round — any N of the customers against a deadline, the size chosen among the
+    // unlocked rungs. Unlock the 9, park at Larry's, read his briefing, and walk the size row.
+    const larry = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse')
+      return q ? { x: q.x - q.nx * 5, z: q.z - q.nz * 5, h: Math.atan2(-q.tx, -q.tz) } : null })()`)   // his yard: the marker stands at the house
+    if (!larry) { console.log('  papers: no Larry in this region — step skipped'); return }
+    await js('window.__paper.runPaper.tier = 1')
+    await seat(larry.x, larry.z, larry.h)
+    const state = () => js('window.__paper.system.state')
+    // Releasing the brake on Larry's pad can let the truck roll before it latches again; while the
+    // prompt still asks for the brake, pull it again.
+    for (let i = 0; i < 3 && await state() === 'idle'; i++) {
+      await park(true)
+      await until(async () => await state() !== 'idle', 1500)
+    }
+    const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    for (let i = 0; i < 20 && await state() !== 'offer'; i++) { if (await dlg()) await tap('Enter'); await sleep(300) }
+    check(await until(async () => await state() === 'offer', 5000), `Larry offered no round: state ${await state()} · ${JSON.stringify(await js(`(() => {
+      const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse'), c = window.__car(), b = window.__map2d()._getBoard()
+      return { prompt: document.getElementById('poi-prompt').textContent.slice(0, 80), parked: window.__vs.parked, mission: window.__mission().state,
+               d: Math.hypot(c.x - q.x, c.z - q.z).toFixed(1), slot: b?.status(q.id), park: !!q.park, drop: !!q.drop } })()`))}`)
+    const view = () => js(`(() => { const p = window.__paper.system
+      return { n: p.route?.customers.length, sizes: [...document.querySelectorAll('#pp-sizes button')].map(b => b.textContent + (b.classList.contains('on') ? '*' : '')).join(' '),
+               deadline: /time limit/.test(document.getElementById('pp-body').textContent) } })()`)
+    const top = await view()
+    check(top.n === 9 && top.sizes === '4 9*' && top.deadline, `Larry's offer: ${JSON.stringify(top)} — want 9 customers, sizes "4 9*" and a time limit`)
+    // FEAT-133: a card's first D-pad / arrow press lands on its main action, not the size row above it.
+    await tap('ArrowDown')
+    check(await js('document.querySelector("#paper-panel .nav-focus")?.id') === 'pp-accept',
+      `the first arrow press on Larry's card highlighted "${await js('document.querySelector("#paper-panel .nav-focus")?.textContent')}", not "start the route"`)
+    await js('document.querySelector("#pp-sizes button[data-size=\'0\']").click()')
+    const small = await view()
+    check(small.n === 4 && small.sizes === '4* 9', `picking the 4: ${JSON.stringify(small)}`)
+    console.log(`  papers: Larry offers ${top.sizes.replace('*', '')} — plotted ${top.n}, then ${small.n}`)
+    // FEAT-133 on a LIVE round (until now only with throwReady forced): take the 4, leave Larry's
+    // circle, get rolling on a fake pad, aim with the right stick and TAP RB — a paper leaves the truck.
+    await js('document.getElementById("pp-accept").click()')
+    check(await until(async () => await state() === 'staging', 2000), `accepting did not stage the round: ${await state()}`)
+    const out = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse')
+      return { x: q.roadX + q.tx * 40, z: q.roadZ + q.tz * 40, h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await seat(out.x, out.z, out.h)
+    await crank()
+    await js(`window.__realPads = navigator.getGamepads.bind(navigator)
+      window.__fp = { axes: [0, 0, 0, 0], b: new Array(17).fill(0) }
+      navigator.getGamepads = () => [{ index: 0, id: 'fake', mapping: 'standard', axes: __fp.axes,
+        buttons: __fp.b.map(v => ({ value: v, pressed: v > 0.5, touched: v > 0 })) }]`)
+    await js('__fp.b[7] = 0.7')   // RT: rolling past the 5 mph throw floor
+    check(await until(() => js('window.__vs.velocity.length() > 3'), 8000), `the fake pad did not get the truck rolling: ${(await js('window.__vs.velocity.length()')).toFixed(1)} m/s`)
+    check(await until(async () => await state() === 'running', 3000), `leaving Larry's circle did not start the round: ${await state()}`)
+    const stock0 = await js('window.__paper.system.stock()')
+    await js('__fp.axes[2] = 0.7'); await frames(4, 150)          // aim: the right stick
+    await js('__fp.b[5] = 1'); await frames(3, 80); await js('__fp.b[5] = 0')   // a TAP of RB
+    check(await until(async () => await js('window.__paper.system.stock()') === stock0 - 1, 2000),
+      `an RB tap while aiming on a live round threw no paper: stock ${stock0} → ${await js('window.__paper.system.stock()')}`)
+    await js('__fp.b[7] = 0; __fp.axes[2] = 0'); await frames(2, 60)
+    await js('navigator.getGamepads = window.__realPads')
+    console.log(`  papers: a pad RB tap threw a paper on the live round (stock ${stock0} → ${stock0 - 1})`)
+    // Put the round down: parked, two clicks of the abandon button, then continue off the card.
+    await park()
+    // The abandon button reads "parked" off the ~10 Hz HUD poll; a click right after the latch can
+    // land before the poll has seen it, so the two clicks are retried until the round ends.
+    for (let i = 0; i < 4 && await state() !== 'done'; i++) {
+      await frames(4, 250)
+      await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
+      await until(async () => await state() === 'done', 600)
+    }
+    check(await state() === 'done', `abandoning did not end the round: ${await state()} · ${JSON.stringify(await js(`(() => { const b = document.getElementById('job-cancel')
+      return { parked: window.__vs.parked, v: +window.__vs.velocity.length().toFixed(2), label: b.textContent, armed: b.classList.contains('armed'), hud: b.parentElement?.id, shown: b.style.display } })()`))}`)
+    await js('document.getElementById("pp-accept").click()')
+    check(await until(async () => await state() === 'idle', 2000), `continue left the round card up: ${await state()}`)
+    await js('window.__paper.runPaper.tier = 0')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
   }],
@@ -453,7 +638,7 @@ const STEPS = [
     const p = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
       const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park && q.type !== 'expeditionCamp'
         && b.status(q.id)?.family === 'delivery' && b.view(q.id, 0)?.count > 0)
-      return q ? { x: q.x, z: q.z, rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type } : null })()`)
+      return q ? { ...${PAD_SEAT}(q), rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type } : null })()`)
     if (!p) { console.log('  offer: no plain delivery giver with a live offer — step skipped'); return }
     await seat(p.x, p.z, p.h)
     await park(true)
@@ -546,7 +731,7 @@ const STEPS = [
       for (const q of window.__map2d()._getPois()) {
         if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
         const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'freight')
-        if (o) return { x: q.x, z: q.z, rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type }
+        if (o) return { ...${PAD_SEAT}(q), rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type }
       }
       return null })()`)
     let load = null
@@ -577,7 +762,7 @@ const STEPS = [
     // clock (frames past MAX_FRAME_TIME), and 4 s once bought only 1.3 m/s.
     await key('w', true); await until(() => js('window.__vs.velocity.length() > 5'), 30000)
     const kill = await js('({ v: window.__vs.velocity.length(), p: window.__car() })')
-    check(kill.v > 3, `the truck was not moving when the page was killed (${kill.v.toFixed(1)} m/s): ${JSON.stringify(await js('({ parked: window.__vs.parked, ign: window.__vs.ignition?.state, card: document.getElementById("resume-card").style.display, pause: document.getElementById("pause-menu").style.display })'))}`)
+    check(kill.v > 3, `the truck was not moving when the page was killed (${kill.v.toFixed(1)} m/s at (${kill.p.x.toFixed(1)}, ${kill.p.z.toFixed(1)})${load ? `, ${load.key} from ${fr.type}` : ', no freight'}): ${JSON.stringify(await js('({ parked: window.__vs.parked, ign: window.__vs.ignition?.state, card: document.getElementById("resume-card").style.display, pause: document.getElementById("pause-menu").style.display })'))}`)
     // Compare against what the page SAVED, not the kill read: W stays down through the reload and the
     // pagehide write lands after it — under load ~0.8 s / 5.7 m later, which failed a correct resume.
     const saved = await resume('crash')
@@ -612,7 +797,7 @@ const STEPS = [
       const t = await until(card, 5000)
       check(t && want.test(t), `the run-end card reads "${t}", want ${want}`)
       const body = await js('document.getElementById("re-body").textContent')
-      check(/playtime\s*\d+h \d\dm/.test(body) && /jobs done/.test(body) && /wallet/.test(body) && /truck/.test(body),
+      check(/playtime\s*\d+h \d\dm/.test(body) && /jobs completed/.test(body) && /wallet/.test(body) && /truck/.test(body),
         `${t}: the summary is missing rows: "${body.slice(0, 200)}"`)
       await sleep(1500)   // past an autosave tick
       check(!await saved(), `${t}: the run save outlived the run`)
@@ -623,8 +808,27 @@ const STEPS = [
       console.log(`  endings: "${t}" — ${body.replace(/\s+/g, ' ').slice(0, 100)}`)
     }
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    let menuSeen = false
     const newRun = async () => {
-      await js('document.getElementById("mm-story").click()')
+      // FEAT-156 (once): the root is continue (only with a save) · new game · settings, and the
+      // new-game page's mode row swaps what is below it — opening on story, never remembered.
+      if (!menuSeen) {
+        menuSeen = true
+        const rootItems = await js('[...document.querySelectorAll("#mm-root button")].filter(b => b.offsetParent !== null).map(b => b.textContent.trim()).join(" · ")')
+        check(rootItems === 'new game · settings', `main menu root reads "${rootItems}", want "new game · settings"`)
+      }
+      await js('document.getElementById("mm-new").click()')
+      const modeView = () => js(`(() => { const v = id => document.getElementById(id).offsetParent !== null
+        return { mode: document.querySelector('[data-key=gameMode] .sel-val').textContent.replace(/[◂▸]/g, '').trim(),
+                 start: v('su-start'), world: v('su-seed'), list: v('mm-scenario-list') && document.querySelectorAll('#mm-scenario-list button').length } })()`)
+      const steps = []
+      for (let i = 0; i < 5; i++) {
+        steps.push(await modeView())
+        if (i < 4) await js('document.querySelector("[data-key=gameMode] .sel-next").click()')
+      }
+      const want = [['story', true, true, false], ['scenarios', false, false, true], ['free roam', true, true, false], ['testing lab', true, false, false], ['story', true, true, false]]
+      check(steps.every((v, i) => v.mode === want[i][0] && v.start === want[i][1] && v.world === want[i][2] && !!v.list === want[i][3]),
+        `new-game mode row: ${JSON.stringify(steps)}`)
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
       check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s)')
       const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
@@ -633,13 +837,16 @@ const STEPS = [
       check(await until(saved, 3000), 'the new run wrote no save to end')
     }
     const playedS = () => js('JSON.parse(localStorage.getItem("autos-run/1")).data.playedS')
-    // The towel: two clicks — the first only arms it.
+    // The towel: a confirm card (owner, 2026-10-31) — back restores the menu, end ends the run.
     for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
-    check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "throw in the towel" in a story run\'s pause menu')
+    check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "give up" in a story run\'s pause menu')
     await js('document.getElementById("pm-towel").click()')
     check(!await card(), 'one click on the towel ended the run')
-    await js('document.getElementById("pm-towel").click()')
-    await ended(/called it/)
+    check(await js('document.getElementById("towel-card").style.display === "flex"'), 'the towel click opened no confirm card')
+    await js('document.getElementById("tc-back").click()')
+    check(await js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 'back did not restore the pause menu')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/gave up/)
     // The crash: black and white at once, the card after the beat. First, the playtime counts (the save
     // carries it, a second at a time) and stops while paused.
     await newRun()
@@ -652,11 +859,11 @@ const STEPS = [
     await js('window.__damage.fatalImpact = { region: "front", v: 40, mph: 90 }')
     check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
     check(!await card(), 'the crash card skipped the beat')
-    await ended(/crashed/)
+    await ended(/died/)
     // Broke down: an empty tank, no gas can, no money for a tow → the Recovery card's "end run".
     await newRun()
     // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
-    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = q.barriers[1]
+    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = window.__poi().barricades()[1]
       const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
       return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
     await seat(away.x, away.z, away.h)
@@ -670,7 +877,7 @@ const STEPS = [
     check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000),
       `no "end run" on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
     await js('document.querySelector("#recovery-card .rc-end").click()')
-    await ended(/broke down/)
+    await ended(/truck is dead/)
     // The win: six deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     await js('window.__econ.halfPoints = 12')
@@ -678,7 +885,7 @@ const STEPS = [
     await js(`(() => { const b = window.__board(), h = window.__day().clockH()
       const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
       for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
-    await ended(/made it in \d+ days?/)
+    await ended(/beat the alpha/)
   }],
 ]
 
