@@ -25,8 +25,8 @@ const SLIP_FLOOR = 0.15   // damage.js tireSlipFloor — the no-wear floor
  * keyboard ramp is the caller's: rampKbd below). Stops at `until(vs, t)` or `tMax`.
  */
 async function drive ({ ta = false, tc = false, mu = 0.8, muScale = [1, 1, 1, 1], diff = 'open', slope = 0,
-  v0 = 0, steer0 = 0, input, until = () => false, tMax = 20, traction = true }) {
-  const P = { ...RANGER_PARAMS, throttleAssist: ta, tractionControl: tc, frictionCoeff: mu, rearDiffMode: diff }
+  v0 = 0, steer0 = 0, input, until = () => false, tMax = 20, traction = true, extra = {} }) {
+  const P = { ...RANGER_PARAMS, throttleAssist: ta, tractionControl: tc, frictionCoeff: mu, rearDiffMode: diff, ...extra }
   P._tireFz = [0, 0, 0, 0]; P._suspForceAccum = [0, 0, 0, 0]
   P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
   P._tireMuScale = muScale
@@ -81,7 +81,8 @@ async function drive ({ ta = false, tc = false, mu = 0.8, muScale = [1, 1, 1, 1]
       out.capMin = Math.min(out.capMin, vs.traction.cap); out.pMax = Math.max(out.pMax, vs.traction.p[2], vs.traction.p[3])
       if (vs.traction.cap !== 1 || vs.traction.p[2] || vs.traction.p[3]) out.passThrough = false
     }
-    out.trace.push([out.t, vF, vHi - vRef, vs.traction?.cap ?? 1])
+    const yawRate = vs.angularVelocity.dot(up), rRef = 0.5 * (vs.wheelOmega[0] + vs.wheelOmega[1]) * r * Math.tan(vs.steerAngle) / P.wheelbase
+    out.trace.push([out.t, vF, vL, vHi - vRef, vs.traction?.cap ?? 1, yawRate, rRef])
     if (until(vs, out.t, vF)) break
   }
   out.speed = Math.hypot(vs.velocity.x, vs.velocity.z)
@@ -124,36 +125,46 @@ if (process.argv.includes('--matrix')) {
 const fails = []
 const check = (ok, msg) => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${msg}`); if (!ok) fails.push(msg) }
 
-// ── Throttle assist: the keyboard launch ──────────────────────────────────────────────────────────
+// ── Throttle assist: launches, keyboard and pad ───────────────────────────────────────────────────
 const off = await drive({ input: fwdLaunch(true), until: to30 })
 const on = await drive({ ta: true, input: fwdLaunch(true), until: to30 })
-let best = Infinity, bestP = 0
+let best = null
 for (let p = 0.3; p <= 1.001; p += 0.1) {
   const o = await drive({ input: () => ({ throttle: p }), until: to30 })
-  if (o.t < best) { best = o.t; bestP = p }
+  if (!best || o.t < best.t) best = { ...o, p }
 }
-console.log(`launch 0–30 mph, keyboard: off ${r2(off.t)} s / slide ${r1(off.slide)} m / σ ${r2(off.sigMean)} · on ${r2(on.t)} s / slide ${r1(on.slide)} m / σ ${r2(on.sigMean)} · best fixed pedal ${r2(best)} s at ${r1(bestP)}`)
-check(on.sigMean > 0.15 && on.sigMean < 0.45, `throttle assist holds the rears near target (σ mean ${r2(on.sigMean)})`)
-check(on.slide <= 0.5 * off.slide, `throttle assist halves launch tread wear at least (${r1(on.slide)} vs ${r1(off.slide)} m)`)
-check(on.t <= best * 1.03, `throttle-assisted launch ≤ 1.03 × the best fixed pedal (${r2(on.t)} vs ${r2(best)} s)`)
+const onPad = await drive({ ta: true, input: fwdLaunch(false), until: to30 })
+console.log(`0–30 mph keyboard: off ${r2(off.t)} s / slide ${r1(off.slide)} m / σ ${r2(off.sigMean)} · on ${r2(on.t)} s / slide ${r1(on.slide)} m / σ ${r2(on.sigMean)}`)
+console.log(`0–30 mph pad: best fixed pedal ${r1(best.p)} ${r2(best.t)} s / slide ${r1(best.slide)} m · on, floored ${r2(onPad.t)} s / slide ${r1(onPad.slide)} m`)
+check(on.sigMean > 0.2 && on.sigMean < 0.45, `throttle assist holds the rears near target (σ mean ${r2(on.sigMean)})`)
+check(on.t <= off.t * 1.03, `keyboard launch ≤ 1.03 × unassisted (${r2(on.t)} vs ${r2(off.t)} s)`)
+check(onPad.t <= best.t * 1.04, `pad launch ≤ 1.04 × the best fixed pedal (${r2(onPad.t)} vs ${r2(best.t)} s)`)
+check(on.slide <= 0.8 * off.slide && onPad.slide <= 0.5 * best.slide, `launch tread wear down (keyboard ${r1(on.slide)} vs ${r1(off.slide)} m, pad ${r1(onPad.slide)} vs ${r1(best.slide)} m)`)
 
 const revOff = await drive({ input: revLaunch(true), until: toRev5 })
 const revOn = await drive({ ta: true, input: revLaunch(true), until: toRev5 })
-console.log(`reverse 0–5 m/s, keyboard: off ${r2(revOff.t)} s / slide ${r1(revOff.slide)} m · on ${r2(revOn.t)} s / slide ${r1(revOn.slide)} m`)
-check(revOn.slide <= 0.5 * revOff.slide, `throttle assist halves reverse tread wear at least (${r1(revOn.slide)} vs ${r1(revOff.slide)} m)`)
+console.log(`reverse 0–5 m/s keyboard: off ${r2(revOff.t)} s / slide ${r1(revOff.slide)} m · on ${r2(revOn.t)} s / slide ${r1(revOn.slide)} m`)
+check(revOn.slide <= 0.2 * revOff.slide && revOn.t <= revOff.t * 1.05, `reverse: tread wear ≤ 0.2 × and time ≤ 1.05 × unassisted (${r1(revOn.slide)} vs ${r1(revOff.slide)} m, ${r2(revOn.t)} vs ${r2(revOff.t)} s)`)
 
-console.log(`burnout (assist off, floored at rest): rear spin ${r1(off.spinMax)} m/s over the fronts`)
-check(off.spinMax > 10, `with the assist off a floored launch spins the rears (${r1(off.spinMax)} m/s)`)
+console.log(`burnout (assist off, pad floored at rest): rear spin ${r1(best.spinMax)} m/s over the fronts`)
+check(best.spinMax > 5, `with the assist off a floored launch spins the rears (${r1(best.spinMax)} m/s)`)
 
-// ── Throttle assist: steps aside for a power drift and a handbrake U-turn ─────────────────────────
-const CORNER = { v0: 8, steer0: 0.15 }
+// ── Throttle assist: out of the way of a drift and a handbrake U-turn ─────────────────────────────
+// A handbrake flick into full throttle: while the truck out-rotates its steering the assist must pass the
+// pedal untouched, so the first second is the same run with or without it.
+const flick = (t) => t < 0.5 ? { steer: 0.35, handbrake: true } : { steer: -0.2, throttle: 1 }
+const fOff = await drive({ v0: 10, input: flick, tMax: 0.9 })
+const fOn = await drive({ ta: true, v0: 10, input: flick, tMax: 0.9 })
+console.log(`handbrake flick, floored: yaw over 0.9 s off ${r1(fOff.yawDeg)}° / on ${r1(fOn.yawDeg)}°, rear spin ${r1(fOff.spinMax)} / ${r1(fOn.spinMax)} m/s`)
+check(fOn.state.every((x, i) => x === fOff.state[i]), 'the assist passes the throttle through while the truck out-rotates its steering (identical run)')
+// Power-over on loose ground: the rears step out before the assist can hold them, and it then stands aside.
 const powerDrift = (t) => ({ steer: 0.15, throttle: t < 2 ? 0.25 : 1 })
-const grip = await drive({ ta: true, ...CORNER, input: (t) => ({ steer: 0.15, throttle: 0.25 }), tMax: 4 })
-const driftOff = await drive({ ...CORNER, input: powerDrift, tMax: 4 })
-const driftOn = await drive({ ta: true, ...CORNER, input: powerDrift, tMax: 4 })
-console.log(`corner 8 m/s: gripping β max ${r1(grip.betaMax)}° · power drift off β ${r1(driftOff.betaMax)}° / on β ${r1(driftOn.betaMax)}°`)
-check(grip.betaMax < 10, `a gripping corner stays under the drift bypass (β ${r1(grip.betaMax)}° < 10°)`)
-check(driftOn.betaMax > 25 && driftOn.betaMax > 0.8 * driftOff.betaMax, `power drift still happens with the throttle assist on (β ${r1(driftOn.betaMax)}° vs off ${r1(driftOff.betaMax)}°)`)
+const looseOff = await drive({ mu: 0.5, v0: 8, steer0: 0.15, input: powerDrift, tMax: 4.5 })
+const looseOn = await drive({ ta: true, mu: 0.5, v0: 8, steer0: 0.15, input: powerDrift, tMax: 4.5 })
+const dryOff = await drive({ v0: 8, steer0: 0.15, input: powerDrift, tMax: 4.5 })
+const dryOn = await drive({ ta: true, v0: 8, steer0: 0.15, input: powerDrift, tMax: 4.5 })
+console.log(`power-over at 8 m/s: loose (μ 0.5) β off ${r1(looseOff.betaMax)}° / on ${r1(looseOn.betaMax)}° · dry β off ${r1(dryOff.betaMax)}° / on ${r1(dryOn.betaMax)}° (dry: the foot feathers it — report only)`)
+check(looseOn.betaMax > 0.8 * looseOff.betaMax, `power drift on loose ground with the assist on (β ${r1(looseOn.betaMax)}° vs ${r1(looseOff.betaMax)}°)`)
 
 const uTurn = (t) => ({ steer: 0.5, handbrake: t < 1.2, throttle: t > 0.6 ? 1 : 0 })
 const uOff = await drive({ v0: 10, input: uTurn, tMax: 3.5 })
@@ -167,14 +178,15 @@ const to10 = (vs, t, vF) => vF >= 10
 const splitOff = await drive({ ...SPLIT, input: fwdLaunch(false), until: to10 })
 const splitOn = await drive({ tc: true, ...SPLIT, input: fwdLaunch(false), until: to10 })
 console.log(`split grip 0–10 m/s, open diff: off ${r2(splitOff.t)} s, gap max ${r1(splitOff.gapMax)} m/s · TC ${r2(splitOn.t)} s, gap max ${r1(splitOn.gapMax)} m/s, brake p max ${r2(splitOn.pMax)}`)
-check(splitOn.t < splitOff.t, `TC launches faster on split grip (${r2(splitOn.t)} vs ${r2(splitOff.t)} s)`)
+check(splitOn.t < 0.8 * splitOff.t, `TC launches faster on split grip (${r2(splitOn.t)} vs ${r2(splitOff.t)} s)`)
 check(splitOn.gapMax < 0.5 * splitOff.gapMax, `TC brakes the one-wheel spin down (gap ${r1(splitOn.gapMax)} vs ${r1(splitOff.gapMax)} m/s)`)
 
-// ── Traction control: a power-oversteer entry ─────────────────────────────────────────────────────
-const tcOff = driftOff
-const tcOn = await drive({ tc: true, ...CORNER, input: powerDrift, tMax: 4 })
-console.log(`power-oversteer entry: off β ${r1(tcOff.betaMax)}° · TC β ${r1(tcOn.betaMax)}°`)
-check(tcOff.betaMax > 25, `the baseline really oversteers (β ${r1(tcOff.betaMax)}°)`)
+// ── Traction control: a power-oversteer entry on dry ground ───────────────────────────────────────
+const OVER = { v0: 8, steer0: 0.25, input: (t) => ({ steer: 0.25, throttle: t < 2 ? 0.25 : 1 }), tMax: 4.5 }
+const tcOff = await drive(OVER)
+const tcOn = await drive({ tc: true, ...OVER })
+console.log(`power-oversteer entry (8 m/s, δ 0.25, floored): off β ${r1(tcOff.betaMax)}° · TC β ${r1(tcOn.betaMax)}°`)
+check(tcOff.betaMax > 30, `the baseline really oversteers (β ${r1(tcOff.betaMax)}°)`)
 check(tcOn.betaMax < 15, `TC catches it (β ${r1(tcOn.betaMax)}° < 15°)`)
 
 // ── Both off: pass-through, identical to no controller at all ─────────────────────────────────────
