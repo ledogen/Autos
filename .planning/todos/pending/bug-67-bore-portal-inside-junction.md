@@ -268,3 +268,17 @@ Also from the owner's screenshot (seed 19, (−1210, 1837), on the re-seat + cut
 past the portal. Not yet checked on main.
 
 The re-assessment, with this definition, is running (orchestrator's subagent, on proto/node-reseat).
+
+## RULED — owner, 2026-11-03: "approve the call"
+
+The sibling-tunnel re-assessment is on proto/node-reseat (0b0f9956; its last two sections of this ticket hold the
+census and the per-class fixes; probe `wip/reseat/sibling.mjs`). Of 442 junctions in 54 windows, 5 collide. Approved
+order:
+1. **T slide + re-seat at a 50 m relief trigger, first.** T slide: in `_v2PromotableProbe`, never fork a T within
+   25 m of its trunk's bore if an open-air candidate exists; otherwise the old placement stands (no T deleted).
+   Re-seat: a site whose 22 m ring relief exceeds 50 m moves to the nearest seat ≤ 25 m relief within 60 m (3 of 340
+   nodes move; seed 20's node stays, so its doubled road does not happen).
+2. **Then the shared bore** (an underground Y: overlapping sibling tubes drop the lining inside each other, and a
+   portal ring inside the other tube is skipped; meshes and colliders only). Only simulated so far.
+Before/after screenshots of the moved sites go to the owner before each step lands. The junction cut
+(proto/bug-67-junction-cut) is not needed. Lane: Spare. FEAT-62's scenarios come after (every world re-routes slightly).
