@@ -11,7 +11,9 @@
  *   TRACTION CONTROL — the automotive system. Brakes the FASTER rear when it out-turns the other by
  *     more than tcSplit (a brake-based limited-slip: the open diff's equal torque split can then
  *     push the gripping wheel harder), and cuts engine torque when both rears spin (slower rear past
- *     tcSlip) or the truck oversteers. It never steps aside: stopping a drift is its job.
+ *     tcSlip), when the faster one passes tcSlipHi (the rear brake alone cannot hold it — 495 N·m
+ *     against the whole axle's torque on split grip) or when the truck oversteers. It never steps
+ *     aside: stopping a drift is its job.
  *
  * In this tire model a spinning tire still pulls at ~100 % of peak (the break-away clamp,
  * tireBreakawaySlip, holds the slip state at the Pacejka crest — the same finding abs-stop.mjs made for
@@ -85,7 +87,7 @@ export function stepTraction (t, drive, vs, vForward, vLat, yawRate, params, dt)
   const aside = !tc && (vs.handbrake || oversteer || Math.hypot(vForward, vLat) > (params.taMaxSpeed ?? 15))
   if (drive <= 0) { t.cap = 1; return }                                  // foot off: nothing to trim
   if (aside) { t.cap = Math.min(1, t.cap + dump * dt); return }          // out of the way — ramped, never a snap
-  const e = (tc ? sLo - (params.tcSlip ?? 0.15) : sHi - (params.taSlip ?? 0.3))
+  const e = (tc ? Math.max(sLo - (params.tcSlip ?? 0.35), sHi - (params.tcSlipHi ?? 0.6)) : sHi - (params.taSlip ?? 0.35))
   const from = Math.min(t.cap, drive)                                    // cut from what the engine is getting
   t.cap = oversteer ? Math.max(0, from - dump * dt)
     : e > 0 ? Math.max(0, from - (params.tracGain ?? 10) * e * dt)

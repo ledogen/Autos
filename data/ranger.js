@@ -252,7 +252,11 @@ export const RANGER_PARAMS = {
   // (m = rear tread slide, damage.js's wear integrand). Reverse 0–5 m/s: 52 m off → 3.6 m at 0.35.
   taSlip:           0.35,   // [-] rear slip ratio the throttle assist holds the faster rear under [DEFAULT]
   taMaxSpeed:       15,     // m/s — above this the throttle assist steps aside (34 mph; owner 2026-11-02: "at low speeds")
-  tcSlip:           0.15,   // [-] TC cuts torque when the SLOWER rear passes this (both spinning)
+  // TC's torque cut. Owner 2026-11-02: 0.15 was "too conservative" (a dry launch to 30 mph took 4.62 s vs
+  // 3.48 off); at 0.35 it matches the throttle assist (3.52 s). Above it the rear brake alone (495 N·m)
+  // cannot hold a split-grip spin, so the faster rear past tcSlipHi cuts too (gap 34 → 12.6 m/s).
+  tcSlip:           0.35,   // [-] TC cuts torque when the SLOWER rear passes this (both spinning)
+  tcSlipHi:         0.6,    // [-] … or the FASTER rear passes this (one wheel spinning past what the brake holds)
   tcSplit:          1.0,    // m/s — TC brakes the faster rear once it out-turns the other by more than this
   tcBrakeGain:      2,      // 1/s per m/s over tcSplit — TC brake-pressure build rate
   tracYawMargin:    0.1,    // rad/s — yaw past the steering's kinematic rate that counts as oversteer (TC cuts, the assist steps aside)

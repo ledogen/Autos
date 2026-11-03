@@ -188,6 +188,10 @@ const tcOn = await drive({ tc: true, ...OVER })
 console.log(`power-oversteer entry (8 m/s, δ 0.25, floored): off β ${r1(tcOff.betaMax)}° · TC β ${r1(tcOn.betaMax)}°`)
 check(tcOff.betaMax > 30, `the baseline really oversteers (β ${r1(tcOff.betaMax)}°)`)
 check(tcOn.betaMax < 15, `TC catches it (β ${r1(tcOn.betaMax)}° < 15°)`)
+// Owner 2026-11-02: "tc too conservative" — on dry ground it must launch with the throttle assist.
+const tcDry = await drive({ tc: true, input: fwdLaunch(true), until: to30 })
+console.log(`dry keyboard launch 0–30 mph with TC: ${r2(tcDry.t)} s (off ${r2(off.t)} s)`)
+check(tcDry.t <= off.t * 1.03, `TC is not over-cautious on dry ground (${r2(tcDry.t)} vs ${r2(off.t)} s)`)
 
 // ── Both off: pass-through, identical to no controller at all ─────────────────────────────────────
 const none = await drive({ traction: false, input: fwdLaunch(true), until: to30 })
