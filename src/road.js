@@ -803,6 +803,11 @@ const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
 const ACUTE_ELBOW_COS      = Math.cos(75 * Math.PI / 180)   // BUG-86: a deg-2 elbow sharper than 75° gets no through pin
+// BUG-67 (owner, 2026-11-03): sibling tunnels colliding at a junction — see _reseat and the T slide.
+const RESEAT_TRIGGER_M     = 50    // m of 22 m-ring relief above which a junction site is re-seated
+const RESEAT_FIT_M         = 25    // m — the relief a new seat must be at or under
+const RESEAT_REACH_M       = 60    // m — the farthest a site walks
+const T_SLIDE_M            = 25    // m — a T's fork stays this far outside its trunk's bores when it can
 
 // BUG-57 rung (owner re-scope 2026-08-25, session 2): "keep the connection, trim the mess." The
 // merge ladder gains TANGLE-ONLY relaxations, gated on this test: a pair whose two pure routes
@@ -2582,10 +2587,48 @@ export class RoadSystem {
                     wx = bx; wz = bz; h = bh
                 }
             }
-            out.push({ id: [cmx, cmz, k], pos: new THREE.Vector3(wx, h, wz), pri: seedFor(this._worldSeed, 'roadsitePri', cmx, cmz * 131 + k) })
+            // pos is seated LAZILY: the Poisson recursion touches ~10k cells per window (pos0 only), and
+            // seating every candidate there cost +2.8 s per window; only sites a graph reads get seated.
+            const self = this
+            out.push({ id: [cmx, cmz, k], pos0: new THREE.Vector3(wx, h, wz), get pos() { return (this._pos ??= self._reseat(this.pos0)) },
+                       pri: seedFor(this._worldSeed, 'roadsitePri', cmx, cmz * 131 + k) })
         }
         this._proto.sites.set(ckey, out)
         return out
+    }
+
+    // BUG-67 (owner, 2026-11-03): a junction is not seated on a steep face. On one, a leg's portal lands
+    // on the junction's apron and the next leg's lane runs through its ring — sibling tunnels colliding
+    // (owner capture 1793661400345). "Relief" = max − min ground over the 22 m ring _v2NodeHeight reads
+    // (+ the centre). A site whose relief exceeds RESEAT_TRIGGER_M walks to the NEAREST ring (10 m steps,
+    // 16 bearings, out to RESEAT_REACH_M) holding a point at or under RESEAT_FIT_M, taking the flattest
+    // point on that ring; no such point in reach → it stays (a half-flatter seat on the same face is how
+    // seed 19's -2,2,0 lost its only solvable leg: condemned in its story region). The trigger is 50 m,
+    // not 40: at 40 a node with 40.1 m of relief (seed 20 2,-1,0) moved and grew a leg 8 m beside a
+    // promoted-T trunk; at 50, 3 of 340 corpus nodes move. Pure fn of (seed, terrain, pos0) →
+    // window-invariant; Poisson acceptance keeps reading pos0, so the node SET is untouched and only
+    // seats move.
+    _seatRelief(x, z) {
+        const R = 22, N = 12
+        const h = this._coarseH(x, z); let lo = h, hi = h
+        for (let i = 0; i < N; i++) {
+            const a = 2 * Math.PI * i / N, v = this._coarseH(x + R * Math.cos(a), z + R * Math.sin(a))
+            if (v < lo) lo = v; if (v > hi) hi = v
+        }
+        return hi - lo
+    }
+    _reseat(p) {
+        if (this._seatRelief(p.x, p.z) <= RESEAT_TRIGGER_M) return p
+        for (let r = 10; r <= RESEAT_REACH_M; r += 10) {
+            let best = Infinity, bx = 0, bz = 0
+            for (let i = 0; i < 16; i++) {
+                const a = 2 * Math.PI * i / 16, x = p.x + r * Math.cos(a), z = p.z + r * Math.sin(a)
+                const v = this._seatRelief(x, z)
+                if (v < best) { best = v; bx = x; bz = z }
+            }
+            if (best <= RESEAT_FIT_M) return new THREE.Vector3(bx, this._coarseH(bx, bz), bz)
+        }
+        return p
     }
 
     // Poisson-disk acceptance: a site is ALIVE iff no STRICTLY higher-priority accepted site lies within
@@ -2608,7 +2651,7 @@ export class RoadSystem {
                     const hp = other.pri < site.pri || (other.pri === site.pri && idLess(other.id, site.id))
                     if (!hp) continue
                     if (!this._siteAlive(other)) continue   // a rejected site cannot suppress us
-                    const ex = other.pos.x - site.pos.x, ez = other.pos.z - site.pos.z
+                    const ex = other.pos0.x - site.pos0.x, ez = other.pos0.z - site.pos0.z
                     if (ex * ex + ez * ez < minD2) return (site._alive = false)
                 }
             }
@@ -4657,7 +4700,7 @@ export class RoadSystem {
             if (!S) return null
             const cl = S.cl   // the sample's own line — a re-routed edge is not its pure corridor
             if (!cl || !cl.slice) return null
-            return { points: S.pts, polyCum: S.polyCum, clArc: S.clArc, centerline: cl, cellA: a, cellB: b }
+            return { points: S.pts, polyCum: S.polyCum, clArc: S.clArc, centerline: cl, cellA: a, cellB: b, spans: S.spans }
         }
         const side = sample(c1, c2), T = sample(spec.winner[0], spec.winner[1])
         if (!side || !T) return true          // cannot judge — leave the plan alone
@@ -4739,6 +4782,14 @@ export class RoadSystem {
                     ? [{ wCut: null, lArc: en.lArc }]
                     : this._v2ForkCandidates(probe, side, nAtStart, sideL, wk0)
                 let chosen = null, best = null
+                // BUG-67 T SLIDE (owner, 2026-11-03): a T never forks off its trunk inside a trunk bore
+                // or within T_SLIDE_M of one of its portals — the side road would start underground
+                // beside the trunk's own tube (owner capture 1793661489778: all three legs bore from the
+                // T). Pass 0 skips such fork vertices, so the fork SLIDES to the best candidate in open
+                // air; pass 1 (nothing cleared or scored) is the plain ranking — a T always beats no T.
+                // Spans are the pure sample's, in centreline arc like T.clArc.
+                const inBore = (iP) => !spec.midSpan && (T.spans || []).some((sp) => T.clArc[iP] > sp.s0 - T_SLIDE_M && T.clArc[iP] < sp.s1 + T_SLIDE_M)
+                for (let pass = 0; pass < 2 && !chosen && !best; pass++)
                 for (const c of cands) {
                     let iL, P, iP
                     if (spec.midSpan) {
@@ -4756,6 +4807,7 @@ export class RoadSystem {
                         // road ("many roads have spontaneous spurs") — BUG-61.
                         if (T.polyCum[iP] < MINREG || tL - T.polyCum[iP] < MINREG) continue
                         if (taken.some((a) => Math.abs(a - T.polyCum[iP]) < MINREG)) continue   // FEAT-77 stagger
+                        if (pass === 0 && inBore(iP)) continue
                         P = T.points[iP]
                         // Where the side road's OWN line resumes: its point abreast of P, windowed to
                         // the half of the run that leaves the shared node so a run that loops back
