@@ -354,7 +354,7 @@ const STEPS = [
   }],
   ['campGear', async () => {
     // FEAT-66: what is packed is what stands at camp. A pad at the truck, a packed tent → the tent
-    // loads at its slot; repacking while the camp is up re-dresses it (tent out, awning in); hiding
+    // loads at its slot, beside the starter bedroll (ASSET-78); repacking while the camp is up re-dresses it (tent out, awning in); hiding
     // clears it. Leaves the inventory as it found it.
     const names = () => js('window.__campGear.root.children.filter(c => c.children.length).map(c => c.name).join()')
     const pack = (id) => js(`(() => { const i = window.__inv; i.grant('${id}'); return i.packItem(i.list().findIndex(r => r.id === '${id}')) })()`)
@@ -363,9 +363,9 @@ const STEPS = [
     check(await pack('tent'), 'the tent did not pack')
     await js(`(() => { const c = window.__car(); window.__campGear.show({ x: c.x, z: c.z, tx: 1, tz: 0, nx: 0, nz: 1 },
       window.__inv.packed(), () => c.y) })()`)
-    check(await until(async () => await names() === 'model:tent', 5000), `a packed tent is not at camp (got "${await names()}")`)
+    check(await until(async () => await names() === 'model:bedroll,model:tent', 5000), `a packed tent is not at camp (got "${await names()}")`)
     check(await unpack('tent') && await pack('awning'), 'could not swap the tent for the awning')
-    check(await until(async () => await names() === 'model:awning', 5000), `repacking at camp did not re-dress it (got "${await names()}")`)
+    check(await until(async () => await names() === 'model:bedroll,model:awning', 5000), `repacking at camp did not re-dress it (got "${await names()}")`)
     await js('window.__campGear.hide()')
     check(await js('window.__campGear.root.children.length') === 0, 'hide left gear on the pad')
     check(await unpack('awning'), 'could not put the awning back')
