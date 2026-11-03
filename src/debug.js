@@ -323,6 +323,18 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Wind audio (src/wind-audio.js) — airspeed only, same live-read treatment.
   driveFolder.add(params, 'windAudioEnabled').name('Wind Audio')
   driveFolder.add(params, 'windVolume', 0, 1, 0.05).name('Wind Volume')
+  // FEAT-120 contact one-shots (src/contact-audio.js) — read live every frame.
+  driveFolder.add(params, 'contactAudioEnabled').name('Contact Sounds')
+  driveFolder.add(params, 'contactVolume', 0, 1, 0.05).name('Bump / Landing Volume')
+  driveFolder.add(params, 'brakeSquealVolume', 0, 1, 0.05).name('Brake Squeal Volume')
+  // FEAT-120 ambience (src/ambient-audio.js) — read live every frame.
+  driveFolder.add(params, 'ambientAudioEnabled').name('Ambient Sounds')
+  driveFolder.add(params, 'cricketVolume', 0, 1, 0.05).name('Cricket Volume')
+  driveFolder.add(params, 'grassVolume', 0, 1, 0.05).name('Grass Volume')
+  driveFolder.add(params, 'resultAudioEnabled').name('Result Card Sounds')
+  driveFolder.add(params, 'resultAudioVolume', 0, 1, 0.05).name('Coin / Stinger Volume')
+  driveFolder.add(params, 'tunnelReverbEnabled').name('Tunnel Reverb')
+  driveFolder.add(params, 'tunnelReverbLevel', 0, 1, 0.05).name('Tunnel Reverb Level')
 
   // ── Differentials (FEAT-23) ───────────────────────────────────────────────────────
   // Rear diff mode: open / limited-slip / locked (src/drivetrain.js couples the rear wheels).
@@ -831,6 +843,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   surfaceFolder.add(params, 'roadCliffSlopeHi',     0.3,  0.9,  0.02).name('Cliff Slope Hi').onChange(fireSurface)
   // BUG-74: the cut's rock fades in/out over this much cut/fill depth either side of the crossover.
   surfaceFolder.add(params, 'roadCutRockFade',      0.25, 6,    0.25).name('Cut Rock Fade (m)').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadFillRockBury',     0.1, 3,     0.05).name('Fill Rock Bury (m)').onChange(fireSurface)
 
   // Plan 09-10 — Decal ribbon depth-bias + edge skirts.
   // roadSkirtDepth is geometry → fires fireSurface (full road rebuild).
@@ -922,6 +935,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadShoulderWidth:     'Width (m) of the dirt shoulder flanking each side of the paved surface.',
     roadCliffSlopeLo:      'Lower slope threshold where terrain starts shading as cliff rock.',
     roadCliffSlopeHi:      'Upper slope threshold where terrain is fully cliff rock.',
+    roadFillRockBury:      'Metres of fill that bury the natural rock under a road embankment. Thinner fill shows the tallest fragments first, so rock surfaces through the toe of the fill.',
     roadCutRockFade:       'Half-width (m of cut/fill depth) of the fade between the cut\'s broken rock and shoulder dirt, centred where the road grade meets the hill.',
     roadSkirtDepth:        'How far (m) the road-edge skirt drops below the ribbon to hide seams against terrain.',
     roadPolygonOffsetFactor:'Depth-bias factor pushing the road decal above terrain to prevent z-fighting.',

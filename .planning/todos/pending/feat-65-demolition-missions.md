@@ -475,8 +475,40 @@ As the approved plan, with these specifics:
 
 **Still owed:**
 - The par-vs-elapsed gap, measured on a real drive.
-- **The owner's in-game look:** does a sleeping target ever wake before it is touched, e.g. when the
+- ~~The owner's in-game look~~ — ANSWERED 2026-11-03: no target wakes before it is touched. Was: does a sleeping target ever wake before it is touched, e.g. when the
   terrain chunk under it rebuilds? If it does, the fallback is to spawn bodies only ~25 m ahead of the
   truck.
 - The words, the counts and the rank row, all placeholders.
 - ASSET-77.
+
+## Owner drive — 2026-11-03: slice 2 (Lane A)
+
+> "demolition needs a strict time limit. i just got a mission that said reward all terrain tires upon 100%
+> smashed targets (9/9). i missed the first one (too easy to miss targets, gps should always route to the
+> nearest one), hit the other 8/9 within B time rank but since i crossed the "finish line" the mission ended
+> and i wasnt able to go back and hit the one i missed. The physics work great, props are static until I hit
+> them, then they became live and launched. There was a brief lag upon hitting them […] overall structure
+> needs some more thought to make it make sense. i think strict time limit to hit all the barrels. not sure
+> how we separate base pay from tip..."
+
+**Answered by the drive:** a sleeping target does NOT wake before it is touched. The ~25 m spawn fallback is
+not needed. The hit lag is its own ticket, BUG-108 (Lane B).
+
+**Ruled (the owner's words), build now:**
+1. **Arriving at the end of the site no longer settles the job.** The job settles when every target is
+   smashed, or when the clock runs out. The player can turn round and go back for a missed one.
+2. **The GPS always routes to the nearest unsmashed target** once the site's first target is the next
+   thing on the route; when the last one falls, the job settles where the truck is.
+
+**Owed by the owner (one decide item on the tracker page, `feat65-clock-pay`):** the clock and the pay split.
+Recommended, no new economy constant:
+- **One clock:** the job's own due-in deadline (`DEADLINE_SLACK.demolition`, placeholder 1.0), strict: at zero
+  the job settles with what is smashed. The alternative is a second, site-only clock from the first target.
+- **Base pays per target smashed** (the base ÷ N each; the August plan's "banked on impact").
+- **The tip is the time left when the last target falls**, on the existing continuous tip curve. Run the clock
+  out and the tip is zero by construction, and the 100 % reward is lost; the base for every hit is kept.
+
+**Acceptance (slice 2):**
+- [ ] Driving past the site's end with targets standing does not settle; turning back and smashing them does.
+- [ ] The GPS line points at the nearest unsmashed target on the site, and moves on as each one falls.
+- [ ] The clock and pay as the owner rules them; cdp-smoke's `demolition` step settles on the last smash.

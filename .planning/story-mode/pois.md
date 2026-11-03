@@ -58,7 +58,7 @@ except the required classes is only a job giver and receiver for now.
 | Group | Classes (count) | Jobs |
 |---|---|---|
 | **Required (9)** | general store · food vendor (`foodVendor`) · auto shop ×2 (`autoShop`) · gas station ×2 · tackle shop · job site (`workSite`) · haul yard (FEAT-91: splitting yard R1, sawmill R2, quarry R3) | food vendor 2–3 always; haul yard 2 always; job site hosts the region boss; the rest 0–2 from the budget |
-| **Additional (12)** | residence ×5 · farm ×3 (also tagged `residence`) · office · school · doctor · stranded motorist | 0–2 each from the budget; motorist 0–1, only their own ride to an auto shop; **office and school post nothing, they only receive** (owner, 2026-10-07) |
+| **Additional (12)** | residence ×5 · farm ×3 (also tagged `residence`) · office · school · doctor · stranded motorist | 0–2 each from the budget; motorist 0–1, only their own ride to an auto shop; **office and school 0–1 each, only their own two jobs** (FEAT-153, owner 2026-11-02 — reverses 2026-10-07's receive-only) |
 | **Fixtures (R1)** | mom (`residence`, `mom`: you can sleep there, she receives) · Larry (`residence`, `larry`: always has a job, save his re-roll timer) | Larry 1 always |
 
 Region 1 is therefore **23 POIs**. Two of each gas station and auto shop stay, as today; scaling the

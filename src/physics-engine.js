@@ -726,7 +726,9 @@ export class PhysicsEngine {
    * that rock must be held by the ground it is on the way the engine will hold it. Read from the
    * engine's own contact list (last step's manifolds), so a rock lying on the road is held by the
    * road and a rock in the air is free, with no rule about either.
-   * @returns {Array<{nx,ny,nz,rx,ry,rz}>} empty for a body touching nothing static.
+   * `mu` is the pair's friction as the engine mixes it — the geometric mean √(μa·μb), measured
+   * (a box sliding on the ground: 0.4 on 0.9 decelerates at 0.600 g).
+   * @returns {Array<{nx,ny,nz,rx,ry,rz,mu}>} empty for a body touching nothing static.
    */
   staticSupports (handle) {
     const rec = this._bodies.get(handle)
@@ -742,6 +744,7 @@ export class PhysicsEngine {
       const aIsSelf = this._shapeToHandle.get(this._shapeKey(contact.shapeIdA)) === handle
       const other = this._shapeToHandle.get(this._shapeKey(aIsSelf ? contact.shapeIdB : contact.shapeIdA))
       if (other === undefined || !this._bodies.get(other)?.isStatic) continue
+      const mu = Math.sqrt(_b3.b3Shape_GetFriction(contact.shapeIdA) * _b3.b3Shape_GetFriction(contact.shapeIdB))
       for (let m = 0; m < contact.manifoldCount; m++) {
         _b3.getManifoldAt(manifold, contact, m)
         // The manifold normal points from shape A to shape B, so it points into us when we are B.
@@ -749,7 +752,7 @@ export class PhysicsEngine {
         for (let k = 0; k < manifold.pointCount; k++) {
           const pt = manifold.points[k], a = aIsSelf ? pt.anchorA : pt.anchorB
           out.push({ nx: sg * (nv[0] ?? nv.x), ny: sg * (nv[1] ?? nv.y), nz: sg * (nv[2] ?? nv.z),
-            rx: a[0] ?? a.x, ry: a[1] ?? a.y, rz: a[2] ?? a.z })
+            rx: a[0] ?? a.x, ry: a[1] ?? a.y, rz: a[2] ?? a.z, mu })
         }
       }
     }

@@ -10,6 +10,8 @@
 // `--nopop` runs the same hits with punctures disabled (rim peaks still recorded, for offline
 //   thresholding), to tell an IMPACT flip from a FLAT-TIRE flip.
 // `--big` the dense grid (≈3000 hits, ~45 s). `--damp=<N·s/m>` overrides params.tireDampingDebris.
+// `--rear` puts the rock just ahead of the rear-left tire — a DRIVEN wheel (the Ranger is RWD), so
+//   climbing is tested where there is torque to climb with (FEAT-158).
 // `--json=<path>` dumps every run. `--rows` prints them. `--trace=<mph>,<lat>,<scale>,<yaw>` prints
 //   the per-step log of one run around the strike (TFROM=<step> to start elsewhere).
 //
@@ -34,6 +36,8 @@ const DAMP = +(args.find(a => a.startsWith('--damp='))?.slice(7) ?? 0)   // N·s
 const JSON_OUT = args.find(a => a.startsWith('--json='))?.slice(7)        // dump every run's row
 const BIG = args.includes('--big')                                         // the dense grid (≈3000 hits)
 const SPEEDS_ARG = args.find(a => a.startsWith('--speeds='))?.slice(9).split(',').map(Number)   // override the speed list
+const REAR = args.includes('--rear')   // FEAT-158: the rock lies 0.6 m ahead of the rear-left (DRIVEN) tire instead of 12 m ahead of the front-left
+const W = REAR ? 2 : 0                  // the struck wheel
 const SCALES_ARG = args.find(a => a.startsWith('--scales='))?.slice(9).split(',').map(Number)   // override the rock scales
 
 function glbPoints (rel) {
@@ -87,9 +91,9 @@ async function drive (mph, lat, scale, yaw, trace = false) {
     const af = engine.applyForce.bind(engine)
     engine.applyForce = (b, f, pt) => { if (b !== chassis) console.log(`    friction→rock [${(f.x * DT).toFixed(0)},${(f.y * DT).toFixed(0)},${(f.z * DT).toFixed(0)}] N·s`); return af(b, f, pt) }
   }
-  const fl = getWheelPosition(0, vs, P)
+  const fl = getWheelPosition(W, vs, P)
   const { flat: hull, halfY } = rockHull(scale, yaw)
-  const rock = engine.createBody({ type: 'dynamic', position: { x: fl.x + lat, y: halfY + 0.005, z: -12 },
+  const rock = engine.createBody({ type: 'dynamic', position: { x: fl.x + lat, y: halfY + 0.005, z: REAR ? fl.z - 0.6 : -12 },
     userData: { kind: 'debris', debrisType: 'rock', hazard: true } })
   engine.addHull(rock, hull, { density: ROCK.density, friction: ROCK.friction, restitution: ROCK.restitution, group: GROUP_DEBRIS })
   const rockKg = engine.getMass(rock)
@@ -102,7 +106,7 @@ async function drive (mph, lat, scale, yaw, trace = false) {
   const evE = [0, 0, 0, 0]   // J — pinch work over the current squash event (consecutive steps with a pinch), per wheel
   const evN = [0, 0, 0, 0]   // steps the current squash event has run
   const rock0 = new THREE.Vector3(); engine.getTransform(rock, rock0, _q)
-  const hub0Y = getWheelPosition(0, vs, P).y; r.hubRise = 0   // m — the struck (front-left) hub's lift: did it climb?
+  const hub0Y = getWheelPosition(W, vs, P).y; r.hubRise = 0   // m — the struck hub's lift: did it climb?
   const leak = [0, 0, 0, 0]; r.peakLeak = 0; r.evSteps = 0   // J — damage.js's leaky pinch work, and the longest-energy event's length
   let vPrev = speed, firstTouch = -1
   const N = Math.round(60 * Math.max(6, 20 / speed))   // past the rock at any speed (it lies 12 m ahead)
@@ -135,7 +139,7 @@ async function drive (mph, lat, scale, yaw, trace = false) {
     if (firstTouch < 0 && rvMag > 0.5) firstTouch = Math.max(0, s - 3)
     if (firstTouch >= 0 && s < firstTouch + 60) r.dvStep = Math.max(r.dvStep, vPrev - v)
     r.rockV = Math.max(r.rockV, rvMag)
-    r.hubRise = Math.max(r.hubRise, getWheelPosition(0, vs, P).y - hub0Y)
+    r.hubRise = Math.max(r.hubRise, getWheelPosition(W, vs, P).y - hub0Y)
     if (firstTouch >= 0 && s === firstTouch + 30) r.exitRatio = Math.hypot(rv.x, rv.z) / speed
     const roll = Math.asin(Math.max(-1, Math.min(1, new THREE.Vector3(1, 0, 0).applyQuaternion(vs.quaternion).y)))
     const pitch = Math.asin(Math.max(-1, Math.min(1, fwd.y)))
@@ -183,6 +187,6 @@ for (const mph of SPEEDS) {
   console.log(`${String(mph).padStart(3)} mph  pop ${n(x => x.popStep >= 0)}  wdmg ${n(x => x.wheelDmg > 0)}  flip ${n(x => x.upMin < 0)}  roll>30 ${n(x => x.maxRoll > 30)}  ` +
     `roll ${mx('maxRoll').toFixed(0)}°  hz ${(mx('peakHz') / 1000).toFixed(0)}k  softHz ${(mx('peakRimRoad') / 1000).toFixed(0)}k  E ${mx('peakEevent').toFixed(0)}J  rock ${mx('rockV').toFixed(1)}  exit× ${mx('exitRatio').toFixed(2)}  dv ${mx('dvStep').toFixed(2)}  ` +
     `climb>5cm ${n(x => x.hubRise > 0.05)}  rock moved>1m ${n(x => x.rockMove > 1)}`)
-  if (args.includes('--rows')) for (const x of rs) console.log(`      sc${x.sc} lat${x.lat} yaw${x.yaw}: pop${x.popStep} hz${(x.peakHz / 1000).toFixed(0)}k soft${(x.peakRimRoad / 1000).toFixed(0)}k wd${x.wheelDmg.toFixed(2)} roll${x.maxRoll.toFixed(0)} pitch${x.maxPitch.toFixed(0)} up${x.upMin.toFixed(2)} rock${x.rockV.toFixed(1)} exit${x.exitRatio.toFixed(2)} dv${x.dvStep.toFixed(2)} kg${x.rockKg?.toFixed?.(0)}`)
+  if (args.includes('--rows')) for (const x of rs) console.log(`      sc${x.sc} lat${x.lat} yaw${x.yaw}: pop${x.popStep} hz${(x.peakHz / 1000).toFixed(0)}k soft${(x.peakRimRoad / 1000).toFixed(0)}k wd${x.wheelDmg.toFixed(2)} roll${x.maxRoll.toFixed(0)} pitch${x.maxPitch.toFixed(0)} up${x.upMin.toFixed(2)} rock${x.rockV.toFixed(1)} exit${x.exitRatio.toFixed(2)} dv${x.dvStep.toFixed(2)} kg${x.rockKg?.toFixed?.(0)} climb${(x.hubRise * 100).toFixed(0)}cm moved${x.rockMove.toFixed(2)}m`)
 }
 if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(ALL))

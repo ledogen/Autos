@@ -111,3 +111,13 @@ line saying items now have a world presence.
 - parked only, as the inventory already is;
 - does a drop persist across leaving the area and in the save (proposed: yes, player state);
 - the "Nearby on the ground" strip as the pick-up (no new button).
+
+## Owner rulings — 2026-11-03: Phase 1 "yes to all"
+
+Reach (8 m proposed), parked only, drops persist in the save (player state), pick-up from the inventory's
+"Nearby on the ground" strip. **Phase 1 is go** (Spare). The 33 exports run headless now
+(`items.py export_glb`, `blender -b --factory-startup`, Lane A 11-02) — no GUI session needed.
+
+**One open number:** in the same sitting the owner ruled FEAT-144 "one button, one reach rule for both" with
+"parked within a couple meters" and D-pad ↓. Until `feat143-reach` is answered, build R as one shared constant
+(3 m [DEFAULT]) and route D-pad ↓ to the same pick-up; the strip stays as the keyboard/mouse path.

@@ -282,6 +282,21 @@ export const RANGER_PARAMS = {
   windAudioEnabled:   true,  // master toggle for wind sound
   windVolume:         0.4,   // 0..1 volume
 
+  // FEAT-120 contact one-shots (src/contact-audio.js): bump-stop clunk, landing thud, brake squeal.
+  contactAudioEnabled: true, // master toggle for all three
+  contactVolume:      0.6,   // 0..1 — bump stop and landing
+  brakeSquealVolume:  0.3,   // 0..1 — the squeal on its own (owner, 2026-11-02: QUIET)
+  // FEAT-120 ambience (src/ambient-audio.js): night crickets (parked or crawling only) and grass swish.
+  ambientAudioEnabled: true, // master toggle for both
+  cricketVolume:      0.5,   // 0..1
+  grassVolume:        0.5,   // 0..1
+  // FEAT-120 / FEAT-131 P1 (src/result-audio.js): the result card's payout coin and grade stinger.
+  resultAudioEnabled: true,
+  resultAudioVolume:  0.6,   // 0..1
+  // FEAT-163: the tunnel reverb on the world mix while the camera is in a bore (engine-audio.js).
+  tunnelReverbEnabled: true,
+  tunnelReverbLevel:  0.9,   // 0..1 — the wet send
+
   // ── Tire Spring-Damper ───────────────────────────────────────────────────
   // tireStiffness: radial spring constant. At rest, each corner compresses ~38mm (mg/4 / k).
   // tireDamping: ζ≈0.56 relative to critical (2·√(k·m)=2683 N·s/m). Kept below critical so
@@ -887,6 +902,7 @@ export const RANGER_PARAMS = {
   // grade meets the raw hill, full rock this many metres into it, shoulder dirt this many metres
   // up on fill. Replaces the sign test that drew a hard tan-vs-rock line along the flat bench.
   roadCutRockFade: 2.0,        // m — half-width of the rock↔dirt fade, in metres of cut/fill depth
+  roadFillRockBury: 2.5,       // m — BUG-74: fill this thick buries the natural rock; thinner, the tallest fragments show
 
   // ── Phase 9 Plan 06 — Pothole / Crack Micro-Noise (SURF-06 / D-03) ──────────
   // potholeEnabled: master toggle. When false, potholeNoise always returns 0 and the
