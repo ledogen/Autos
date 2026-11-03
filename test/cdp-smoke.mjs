@@ -498,8 +498,9 @@ const STEPS = [
   }],
   // FEAT-65: the camp's own demolition line (the requisition is open from the step above). Taken at the
   // camp it starts there (no approach); its targets stand as models along the route's last km; near
-  // the truck they are bodies, ASLEEP until touched; a kicked one counts smashed on the HUD; arriving
-  // settles the line with the count on the result card.
+  // the truck they are bodies, ASLEEP until touched; a kicked one counts smashed on the HUD. Slice 2:
+  // arriving at the site's end with targets standing settles nothing and the GPS turns back to the
+  // nearest one; it moves on as each falls, and the last one down settles the line wherever the truck is.
   ['demolition', async () => {
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
@@ -532,12 +533,20 @@ const STEPS = [
     check(await until(() => js('window.__cargo().site.filter(t => t.smashed).length === 1'), 3000), 'a kicked target did not count smashed')
     check(await until(() => js('/1 \\/ \\d+ smashed/.test(document.getElementById("job-promise")?.textContent ?? "")'), 2000),
       `the HUD does not count it: "${await js('document.getElementById("job-promise")?.textContent')}"`)
-    // Arrive: the line settles (a D at 1 of n — back on the list), and the result card counts the site.
+    // Arrive with the rest standing: nothing settles, and the GPS goes BACK to the nearest one standing.
     const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
     await seat(end.x, end.z, end.h)
-    check(await until(() => js('window.__mission().state === "done"'), 5000), `arriving did not settle the line: ${await js('window.__mission().state')}`)
-    check(await js('/Smashed\\s*1 \\/ \\d+/.test(document.getElementById("mp-body")?.textContent ?? "")'),
-      `the result card does not count the site: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    check(await until(() => js('window.__site().next?.back === true && window.__site().gps === window.__site().guide.route'), 3000),
+      `past the end the GPS does not turn back to a target: ${await js('JSON.stringify(window.__site().next)')}`)
+    check(await js('window.__mission().state') === 'running', `arriving with targets standing settled the line: ${await js('window.__mission().state')}`)
+    // Fell the GPS's target: it moves on to another standing one. Then the rest: the line settles where it is.
+    const i0 = await js('window.__site().next.i')
+    await js(`window.__site().targets[${i0}].smashed = true`)
+    check(await until(() => js(`(n => n && n.i !== ${i0} && !window.__site().targets[n.i].smashed)(window.__site().next)`), 2000), 'the GPS did not move on when its target fell')
+    await js('window.__site().targets.forEach(t => { t.smashed = true })')
+    check(await until(() => js('window.__mission().state === "done"'), 5000), `felling the last target did not settle the line: ${await js('window.__mission().state')}`)
+    check(await js('(n => new RegExp(`Smashed\\\\s*${n} \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
+      `the result card does not count the whole site: "${await js('document.getElementById("mp-body")?.textContent')}"`)
     await js('document.getElementById("mp-accept").click()')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)

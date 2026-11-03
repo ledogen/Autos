@@ -8332,6 +8332,8 @@ window.__paper = { system: paperRouteSystem, runPaper }
 window.__cargo = () => ({ board: offerBoard, freight: _freight && { key: _freight.key, health: _freight.health?.health ?? null },
                           loose: !!_loose, haul: _haul?.handles.length ?? 0,
                           site: _site && _site.targets.map(t => ({ x: t.pos.x, z: t.pos.z, body: t.body, smashed: t.smashed })) })   // FEAT-65
+// dev handle — test/cdp-smoke.mjs fells a demolition site's targets and reads the GPS's pick (FEAT-65 slice 2)
+window.__site = () => _site && { ..._site, gps: gpsSystem._src }
 
 /** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
 function _discardRunSave () {
