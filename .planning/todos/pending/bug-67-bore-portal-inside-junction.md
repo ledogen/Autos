@@ -241,3 +241,44 @@ walled junction cutting, as real roads do. Same mechanism as BUG-58's stub re-so
 re-routes, no node moves. A leg infeasible under the rule falls back to today's bore; that residue
 is where a conditional reseat would earn its cost, bounded by (failing nodes / total) × routing
 budget. Spare prototypes with the census plus each node's needed cutting depth; the owner decides.
+
+## Owner, 2026-11-03 — the defect is SIBLING tunnels colliding at a junction, not a portal at a node
+
+> "there's no issue here. Clearly you've misunderstood the problem. This may be a junction, but if it's a junction of
+> n equals 2, then there's no way that the legs self-intersect where the tunnel mouth is. You don't need to fix this
+> occurrence." — on seed 19 `-3,2,1` (the one at-node portal re-seat + the 40 m cut left).
+> "both tunnels are undriveable due to them intersecting. the wall of one tunnel literally prevents you from entering
+> the other and vice versa. fix this. not n=2 non-issue tunnels … reassess the solution space and let me know what
+> works with minimal overhead"
+
+So the census metrics above (portal in a pad's reach, portal at its node) measured the wrong thing. A lone tunnel at a
+degree-2 node is fine. The defect is **two or more legs of one junction (degree ≥ 3, promoted Ts included) whose bores
+or portals collide**. That was metric (1), "interpenetrating" (1 in the 6-seed corpus), which every fix so far treated
+as the rare case.
+
+Three owner captures, all seed 163384989, free roam, on main (orchestrator probe: every bore within 250 m of each mark):
+
+| capture | junction | what collides |
+|---|---|---|
+| `autos-capture-1793661489778` (the worst) | promoted T `-27029134,40835686,-1` (deg 3) | ALL THREE legs are in bores that start at the T itself (0 m): the trunk's 12 m stub and two legs of 133 m and 168 m, centrelines 0–4 m apart. The T was promoted onto the trunk where the trunk was already underground. |
+| `autos-capture-1793661400345` | site node `-31,48,0` (deg 3) | two legs bore from 10 m and 20 m out, side by side, centrelines 15.9 m apart (< 2R = 16 m): the tubes overlap. |
+| `autos-capture-1793661187695` | site node `-13,10,0` (deg 3) | two legs' bores (portals 106 m and 141 m from the node) come within 29 m centreline to centreline near (−8259, 6847). |
+
+Also from the owner's screenshot (seed 19, (−1210, 1837), on the re-seat + cut build): the tube there shows open sky
+past the portal. Not yet checked on main.
+
+The re-assessment, with this definition, is running (orchestrator's subagent, on proto/node-reseat).
+
+## RULED — owner, 2026-11-03: "approve the call"
+
+The sibling-tunnel re-assessment is on proto/node-reseat (0b0f9956; its last two sections of this ticket hold the
+census and the per-class fixes; probe `wip/reseat/sibling.mjs`). Of 442 junctions in 54 windows, 5 collide. Approved
+order:
+1. **T slide + re-seat at a 50 m relief trigger, first.** T slide: in `_v2PromotableProbe`, never fork a T within
+   25 m of its trunk's bore if an open-air candidate exists; otherwise the old placement stands (no T deleted).
+   Re-seat: a site whose 22 m ring relief exceeds 50 m moves to the nearest seat ≤ 25 m relief within 60 m (3 of 340
+   nodes move; seed 20's node stays, so its doubled road does not happen).
+2. **Then the shared bore** (an underground Y: overlapping sibling tubes drop the lining inside each other, and a
+   portal ring inside the other tube is skipped; meshes and colliders only). Only simulated so far.
+Before/after screenshots of the moved sites go to the owner before each step lands. The junction cut
+(proto/bug-67-junction-cut) is not needed. Lane: Spare. FEAT-62's scenarios come after (every world re-routes slightly).

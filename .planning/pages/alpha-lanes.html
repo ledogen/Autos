@@ -124,7 +124,7 @@
     <li><b>Lane A:</b> FEAT-103 alpha camp · FEAT-146 the run ends · FEAT-157 requisition lines · FEAT-154 barricades · FEAT-128 key off at camp · FEAT-151 tiredness · BUG-95.</li>
     <li><b>Lane B (some built by Spare):</b> BUG-99 tire on rock · FEAT-93/94 punctures and flats · FEAT-152 rim sparks · FEAT-138 hi-lift · FEAT-150 shift schedule · BUG-89 side slide · BUG-54 rock colliders · FEAT-132/137 on evidence.</li>
     <li><b>Lane C (some built by Spare):</b> ASSET-71 camp · ASSET-32 van · ASSET-69/70/73 office, doctor, school · FEAT-149 knockable ornaments · BUG-94 moon halo · BUG-96 tree billboards.</li>
-    <li><b>Spare:</b> BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus · FEAT-160 run end says why. BUG-73 closed unreproduced.</li>
+    <li><b>Spare:</b> BUG-74 roadwork seam (fill buries the rock; owner-approved 11-03) · BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus · FEAT-160 run end says why. BUG-73 closed unreproduced.</li>
   </ul></div>
   <h2>Landed 2026-10-24</h2>
   <div class="owed"><ul>
@@ -150,7 +150,7 @@
         { id: 'FEAT-161', what: 'The finale is the hardest drive — plan 2–3 options for the owner (Sid Meier review C, 11-02).' },
         { id: 'FEAT-147', what: 'The opening: the firing as a graphic-novel scene, then a courier run TO Larry as the first job (ruled 11-02).' },
         { id: 'FEAT-148 ↳', what: 'The midnight overlay, and the plumbing for the givers’ two-part quotes (the owner writes the words).' },
-        { id: 'FEAT-65', what: 'Demolition slice 1 is on main; open for the owner’s drive and the placeholder words.' },
+        { id: 'FEAT-65', what: 'NOW — slice 2 from the owner’s drive 11-03: no settle on arrival, GPS to the nearest target; the clock + pay wait on one call.' },
         { id: 'FEAT-155', what: 'Hide the HUD dock while a camp is made.' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then this page\'s Lane A handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/a.agent. Before a /clear, set your task rows and write lanes/a.handoff here.' },
@@ -159,7 +159,8 @@
       owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, drivetrain assists, data/parts.js, data/stock-weights.js, physics gates',
       tasks: [
         { id: 'FEAT-158', what: 'Rock grip — ON MAIN b2d857ce (full suite 118/118, smoke 21/21).' },
-        { id: 'FEAT-159', what: 'BUILT on feature/machine — throttle assist + traction control; waits on your three calls + the drive on :3282 (owed list).' },
+        { id: 'FEAT-159', what: 'Owner drove it 11-03: loves throttle assist; (a)(b) accepted; TC too cautious — retune (c), then it lands.' },
+        { id: 'BUG-108', what: 'A brief hitch when the truck hits a demolition target — render or physics first, numbers (owner 11-03).' },
         { id: 'FEAT-162', what: 'The truck’s heart: failures that strand it for real, "you broke down" — plan first (owner idea 11-02).' },
         { id: 'BUG-92', what: 'ABS kick never rumbles the pad — waits on the owner’s USB probe.' },
       ],
@@ -179,15 +180,15 @@
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
-        { id: 'BUG-67', what: 'Trench and re-seat shots sent; waits on the owner’s pick. Servers :3891–3896 up for a live look.' },
+        { id: 'BUG-67', what: 'NOW — approved 11-03: T slide + re-seat at 50 m, then the shared bore; before/after shots to the owner before each lands.' },
+        { id: 'BUG-105 · BUG-106 · BUG-107', what: 'Two roads graze or cross with no crossing built · a road in a lake a cold build doesn’t have · a tunnel’s end cut open by the next road (owner captures 11-03).' },
         { id: 'FEAT-153', what: 'ON MAIN ac7a9593 — office + school give jobs; census gate. Open: your words, the tackle-shop reel.' },
         { id: 'FEAT-120', what: 'ON MAIN 012b2461 — keepers wired, register + sputter redone, gravel prototyped. Waits on your clips, a scrape recording, and your listen.' },
         { id: 'FEAT-163', what: 'ON MAIN 012b2461 — a real reverb on the game’s mix inside a tunnel; waits on your listen.' },
         { id: 'FEAT-62', what: 'Paper-route scenario — waits on BUG-67’s re-route and the owner’s scenario calls.' },
-                { id: 'FEAT-144/143', what: 'World items + reloading lost cargo — wait on the defaults and P1 answers.' },
-        { id: 'FEAT-70', what: 'Wheel contact (the sphere stencil) — waits on A or B.' },
-        { id: 'FEAT-131', what: 'Results-screen juice — waits on four calls.' },
-        { id: 'BUG-74', what: 'Roadwork seam, 4th try — held on proto/bug-74-fill-bury for the owner’s drive on :3885.' },
+        { id: 'FEAT-70', what: 'GO 11-03 — wheel contact, option A, 3 lines, radial normal.' },
+        { id: 'FEAT-143/144', what: 'GO 11-03 — world items P1, then reloading lost bed cargo (D-pad ↓; reset → / spawn ←); one reach number owed.' },
+        { id: 'FEAT-131', what: 'GO 11-03 — results juice: sounds → motion → the music bed (with the bar, Spare’s).' },
         { id: 'BUG-104 · BUG-69', what: 'Overlapping roads · side road diving below its trunk — each a go / no-go.' },
         { id: 'BUG-102', what: 'Camera freeze — not reproduced; waits on a sighting.' },
         { id: 'FEAT-133/136', what: 'Controller finish — waits on the real-pad play-test (and Safari / Firefox).' },
@@ -201,9 +202,14 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
-    { id: 'bug67-cap', kind: 'decide', tk: 'BUG-67', blocks: 'FEAT-62 scenarios (a re-route moves their gates)',
-      text: 'Tunnel mouths inside junctions (12 in six test worlds). Fix on the table: near a junction the road digs an open trench instead, down to a depth cap (30 m fixes 2 of 12, 40 m fixes 7, 50 m fixes 8). Screenshots sent in chat 11-02 (CarGame-spare/wip/bug-67/shots/). RE-SEAT (move a junction off a steep face, ≤ 60 m) shots sent too: it clears 7 of the 8 and 3 of the 4 no trench fixed; split regions 9 → 7 of 42; but on seed 20 a moved road doubles beside another for ~490 m until a road-planning fix.',
-      options: ['re-seat (fix seed 20 first)', '40 m trench now, re-seat after', 'both together', 'hold'] },
+    { id: 'feat65-clock-pay', kind: 'decide', tk: 'FEAT-65', blocks: 'Lane A’s demolition slice 2 (the clock and pay)',
+      text: 'Demolition (your drive): reaching the end no longer ends it, and the GPS goes to the nearest target — building now. The clock + pay, recommended: ONE clock (the job’s due-in; at zero it settles with what you hit). Base pays per target smashed; the tip is the time left when the last one falls, so running the clock out means no tip and no 100 % reward.',
+      options: ['OK as recommended', 'separate site clock from the first target'] },
+    { id: 'feat143-reach', kind: 'decide', tk: 'FEAT-143/144', blocks: 'Spare’s world items (one shared reach)',
+      text: 'You said one button and one reach for both pick-ups, but 8 m (FEAT-143) and “parked within a couple meters” (FEAT-144). Which? Either way D-pad ↓ picks up and the inventory strip lists the same things.',
+      options: ['3 m for both', '8 m for both', '3 m bed cargo · 8 m items'] },
+    { id: 'bug67-fixes', kind: 'drive', tk: 'BUG-67', blocks: 'its landing (approved 11-03; Spare building)',
+      text: 'Approved 11-03 (T slide + re-seat at 50 m, then the shared bore). Look at Spare’s before/after shots when they arrive in chat: step 1 = the moved sites + your capture …400345; step 2 = your worst capture …489778. Each lands on your OK.' },
     { id: 'feat120-listen', kind: 'drive', tk: 'FEAT-120/163',
       text: 'Listen in game (on main): tunnel reverb in a real tunnel; the redone pump register (handbrake down at the pump) and low-fuel sputter; crickets at night under 5 mph; coin + stinger on the result card; brake squeal; grass. Menu and result-card sounds stay dry in a tunnel [default] — say if they should echo too.' },
     { id: 'feat120-clips', kind: 'make', tk: 'FEAT-120',
@@ -211,27 +217,6 @@
     { id: 'feat153-reel', kind: 'decide', tk: 'FEAT-153',
       text: 'Tackle shop: Spare read "one outbound thing … so it is a destination too" as adding a job that ENDS there — "a reel to re-spool", from a home. Keep it, or delete the row?',
       options: ['keep', 'delete'] },
-    { id: 'feat159-calls', kind: 'decide', tk: 'FEAT-159', blocks: 'Lane B’s throttle assist + traction control landing',
-      text: '(a) Assist on, flooring it mid-corner on dry tarmac under ~25 mph gets feathered: the slide angle drops from 36° to 9°. Handbrake flicks, U-turns and loose-ground drifts pass untouched. The alternative, stepping aside past a steering angle, lets a full-lock pull-out spin. (b) Assist strength 0.35: a 0–30 mph keyboard launch takes 3.52 s (3.48 s with it off); tread wear drops 29 % on keyboard, 63 % on pad, 93 % in reverse. (c) Traction control strength 0.15 is cautious: a dry launch with it on is ~33 % slower.',
-      options: ['accept all three', '(a) step aside past a steering angle', '(c) less cautious TC'] },
-    { id: 'feat159-drive', kind: 'drive', tk: 'FEAT-159', blocks: 'Lane B’s throttle assist + traction control landing',
-      text: 'Drive it on :3282 (not main): Settings → throttle assist / traction control. Try a keyboard launch, a corner on full throttle, and a keyboard reverse.' },
-    { id: 'feat144-defaults', kind: 'decide', tk: 'FEAT-144', blocks: 'Spare’s world items (FEAT-143/144)',
-      text: 'Reloading lost bed cargo — six defaults in the ticket. The one that needs you: a lost tire no longer fails the job at once; it just can’t finish until it’s back in the bed (reverses 10-22).',
-      options: ['approve all six', 'approve, keep the 10-22 tire rule'] },
-    { id: 'feat143-p1', kind: 'decide', tk: 'FEAT-143', blocks: 'Spare’s world items P1',
-      text: 'Drop / pick-up: reach 8 m, parked only, drops persist in the save, pick-up from a "Nearby on the ground" strip in the inventory (no new button)?',
-      options: ['yes to all'] },
-    { id: 'feat70-ab', kind: 'decide', tk: 'FEAT-70', blocks: 'Spare’s wheel-contact build',
-      text: 'The wheel touches the world as a sphere (a 15 cm step lifts the hub 74 mm in one step; kerbs never push back). A: solve the real tire cylinder ourselves, radial normal (recommended). B: engine wheel shapes on terrain.',
-      options: ['A, 3 lines', 'A, 2 lines (edges)', 'B'] },
-    { id: 'feat131-calls', kind: 'decide', tk: 'FEAT-131', blocks: 'Spare’s results-screen juice',
-      text: 'A sound-only grade stinger under the no-letter rule? Music bed starts with the bar or at accept? Bed is Spare’s or Lane C’s? Order sounds → motion → bed?',
-      options: ['yes · bar · Spare · that order'] },
-    { id: 'bug74-drive', kind: 'drive', tk: 'BUG-74', blocks: 'the held branch proto/bug-74-fill-bury',
-      text: 'Drive the roadwork seam, 4th try: say the word and Spare checks it out on :3885. Also: build the "fade ≥ 8 m" past-the-toe channel?' },
-    { id: 'feat65-wake', kind: 'drive', tk: 'FEAT-65', blocks: 'Lane A’s fallback decision',
-      text: 'Drive a demolition site: does a sleeping target ever wake before it’s touched? Then the placeholder words, counts and the rank row (S 100 / A 90 / B 75 / C 60 %).' },
     { id: 'givers-lines', kind: 'make', tk: 'FEAT-148',
       text: 'Fill the Giver lines sheet — first section of the item-setup page (https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu). Not blocking: placeholders ship until then.' },
     { id: 'feat62-calls', kind: 'decide', tk: 'FEAT-62',

@@ -97,3 +97,11 @@ that touches the drive.
 3. Is the bed this ticket's (synthesized, Spare) or Lane C's alongside FEAT-58? The `duck` hook works
    either way.
 4. Which phase first? Proposed: P1, then P2, then P3.
+
+## Owner rulings — 2026-11-03 ("yes · bar · Spare · that order")
+
+1. A sound-only grade stinger is OK under the no-letter rule.
+2. The music bed starts with the bar.
+3. The bed is this ticket's: synthesized, Spare builds it.
+4. Order P1 (sounds) → P2 (motion) → P3 (bed). Check first what FEAT-120's landing (012b2461) already wired on
+   the result card (coin + stinger are in the owner's listen list); build on it, never twice.
