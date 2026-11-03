@@ -1397,7 +1397,8 @@ document.getElementById('ss-start')?.addEventListener('click', () => _startStory
 //     they change, never part of a world. Each is the same-named field of the object in _LIVE.
 // Both pages draw their ◂ value ▸ rows from this one table, keyed by the settings key.
 const _settings = loadSettings()
-const _LIVE = { steerAssist: PAD_PARAMS, steerShape: PAD_PARAMS, clutchAssist: RANGER_PARAMS, abs: RANGER_PARAMS, stickDeadzone: PAD_PARAMS }
+const _LIVE = { steerAssist: PAD_PARAMS, steerShape: PAD_PARAMS, clutchAssist: RANGER_PARAMS, abs: RANGER_PARAMS,
+  throttleAssist: RANGER_PARAMS, tractionControl: RANGER_PARAMS, stickDeadzone: PAD_PARAMS }
 for (const [k, o] of Object.entries(_LIVE)) o[k] = _settings[k]
 const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own automatic
 // `difficulty` is not stored: it names the preset the three knobs match ("custom" when none), and
@@ -1423,6 +1424,8 @@ const SELECTORS = {
                   show: () => !_settings.steerAssist, opts: Array.from({ length: 16 }, (_, i) => [i / 10, `${i * 10} %`]) },
   clutchAssist: { name: 'clutch assist',   opts: [[true, 'on'], [false, 'off']] },
   abs:          { name: 'anti-lock brakes', opts: [[true, 'on'], [false, 'off']] },
+  throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
+  tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
 }
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'

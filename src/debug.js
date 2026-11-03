@@ -275,6 +275,18 @@ export function initDebug (params, callbacks = {}, options = {}) {
   absFolder.add(params, 'absReapplyRate', 0.5, 15, 0.5).name('Stepped re-apply rate (1/s)')
   absFolder.add(params, 'absMinSpeed', 0, 6, 0.1).name('Cut-out speed (m/s)')
   absFolder.close()
+  // FEAT-159 traction assists (src/traction.js) — the settings page owns the two toggles too.
+  const tracFolder = driveFolder.addFolder('Traction assists')
+  tracFolder.add(params, 'throttleAssist').name('Throttle assist')
+  tracFolder.add(params, 'tractionControl').name('Traction control')
+  tracFolder.add(params, 'taSlip', 0.1, 0.5, 0.01).name('Assist slip target (–)')
+  tracFolder.add(params, 'taMaxSpeed', 5, 40, 1).name('Assist ceiling (m/s)')
+  tracFolder.add(params, 'tcSlip', 0.05, 0.6, 0.01).name('TC torque-cut slip (–)')
+  tracFolder.add(params, 'tcSlipHi', 0.2, 1, 0.01).name('TC one-wheel cut slip (–)')
+  tracFolder.add(params, 'tcSplit', 0.2, 5, 0.1).name('TC brake split (m/s)')
+  tracFolder.add(params, 'tracYawMargin', 0, 0.5, 0.01).name('Oversteer margin (rad/s)')
+  tracFolder.add(params, 'tracGain', 1, 40, 1).name('Cap gain (1/s)')
+  tracFolder.close()
   // Body-slam rebound (0 = fully-plastic thud). FEAT-48: lives on the chassis shape's engine
   // material now, so the slider pushes the new value into the engine on change.
   driveFolder.add(params, 'bodyRestitution', 0, 0.6, 0.01).name('Body Bounce (restitution)')

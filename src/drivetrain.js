@@ -45,6 +45,11 @@ export function fitTransmission (params, vehicleState, key) {
 // stopped/rolling back.
 export const REV_THRESHOLD = 2 / 3.6     // +0.556 m/s — S drives reverse below this, brakes above it
 
+/** The automatic's reverse rule: S drives reverse when no throttle is down and the truck is at or below
+ * REV_THRESHOLD. Shared with physics.js, which hands the traction assists the same drive pedal (FEAT-159). */
+export const autoReverse = (vehicleState, vForward) =>
+  (vehicleState.throttle || 0) <= 0 && (vehicleState.brake || 0) > 0 && vForward <= REV_THRESHOLD
+
 /**
  * Interpolate the engine torque curve (piecewise-linear lookup) at a given RPM.
  * curve is an ascending array of [rpm, torqueNm] control points; clamps outside the table range.
@@ -179,7 +184,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   const brake    = vehicleState.brake || 0
 
   // ── Mode: reverse only when the S-pedal is down, no throttle, and stopped/rolling back ──────────
-  const reverse = throttle <= 0 && brake > 0 && vForward <= REV_THRESHOLD
+  const reverse = autoReverse(vehicleState, vForward)
   st.shiftTimer = Math.max(0, (st.shiftTimer || 0) - dt)
 
   // Clamp forward gear index into range.
@@ -188,7 +193,9 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
 
   const dir   = reverse ? -1 : 1
   const ratio = reverse ? (params.reverseRatio || 2.47) : gears[st.gear - 1]
-  const pedal = reverse ? brake : throttle              // S is the reverse throttle
+  // S is the reverse throttle. FEAT-159: the traction assists' cap (src/traction.js) trims it — the most
+  // pedal the engine may have; absent (headless gates) or both assists off, it is 1.
+  const pedal = Math.min(reverse ? brake : throttle, vehicleState.traction?.cap ?? 1)
   const totalRatio = ratio * finalDrive
 
   // ── Turbine speed from the driven (rear) axle through the rigid gearbox ─────────────────────────
@@ -201,7 +208,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // compare the driven (rear) surface speed to a ground-speed reference — the undriven FRONT wheels (a
   // wheel-speed sensor a real system would read), floored by the CG longitudinal speed so a lifted or
   // locked front axle can't fake a low reference. The excess is wheelspin. Deliberately just a signal +
-  // a shift-lock; a fuller traction-control pass can later consume st.wheelspin. The threshold sits ABOVE
+  // a shift-lock; the traction assists (src/traction.js, FEAT-159) read the wheels per side. The threshold sits ABOVE
   // the normal slip of hard grip (measured p90 ~6.7 m/s) but below burnout slip (~10–20 m/s), so it locks
   // shifts only during genuine wheelspin — NOT during a hard, gripping corner exit.
   const wheelR    = params.wheelRadius || 0.368
@@ -493,7 +500,7 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
   const gov = Math.max(0, Math.min(1, (idleSet + 50 - rpm) / 200)) * (params.idleGovernorMax ?? 0.5)
   // The idle valve bypasses the throttle plate, so its air ADDS to the driver's: it also catches an rpm
   // dip under load (a lugging launch), not just a closed-throttle idle.
-  const thr = Math.max(vehicleState.throttle || 0, params.engineIdleThrottle || 0)
+  const thr = Math.max(Math.min(vehicleState.throttle || 0, vehicleState.traction?.cap ?? 1), params.engineIdleThrottle || 0)
   const pedalEff = thr + gov * (1 - thr)
   st.pedal = pedalEff
   const tune = params.engineTorqueScale ?? 1.0
