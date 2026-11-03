@@ -585,7 +585,7 @@ export const TRAITS = [
     { id: 'stingy',     name: 'stingy',     families: NOT_PAPERS, not: ['generous'],   pay: 0.80 },
     { id: 'bigTipper',  name: 'big tipper', families: NOT_PAPERS, not: [],             pay: 0.80, tip: 1.6 },
     { id: 'wholesale',  name: 'wholesale',  families: ['haul'],   not: [],             stockFull: true, perPiece: 0.8 },
-    { id: 'offBooks',   name: 'off the books', families: NOT_PAPERS, not: ['rightThing'], pay: 1.20, deeds: 'none' },
+    { id: 'offBooks',   name: 'off the books', families: NOT_PAPERS, not: ['rightThing'], pay: 1.40, deeds: 'none' },   // bonus doubled +20 → +40 % (owner 11-03: not worth the lost deed)
     { id: 'rightThing', name: 'the right thing to do', families: NOT_PAPERS, not: ['offBooks'], pay: 0.85, deeds: 'extraHalf' },
 ]
 /** FEAT-142: how many traits an offer carries — relative weights (starting values, FEAT-69 tunes).
