@@ -175,3 +175,27 @@ and is now committed, 51b3f330). Owner rulings this session (provenance: the Sid
   is a courier run TO Larry (ruled). DESIGN.md SM-INV-14's freight tension marked superseded by R-09/R-18.
 - New gate `page-scripts` (parses the tracker pages' scripts) and `tools/lanes.sh`.
 The owner still owes the full alpha run review (the page's "run-review" drive item).
+
+## State 2026-11-03 (after midnight) — orchestrator, before a /clear
+**Landed on main 11-02/03** (each full suite 118/118 + smoke 21/21): FEAT-160 run-end says why (f6efbb97) · FEAT-153
+office + school givers (ac7a9593) · FEAT-158 rock grip (b2d857ce) · FEAT-120 sounds + FEAT-163 tunnel reverb, which also
+landed feature/content (012b2461) · fix(dev) one Vite pre-bundle cache per checkout (49557b4e: every worktree's
+node_modules is a symlink to main's, so a shared node_modules/.vite got re-bundled under running servers → two copies of
+three.js → colliding material ids → the menu truck's orange tires; servers on branches older than 49557b4e still share
+the old cache). Sound prototypes are tracked in tools/audio-proto/ (were wip/).
+**BUG-67 — RULED 11-03, owner "approve the call":** the defect is SIBLING tunnels colliding at a junction of degree ≥ 3
+(promoted Ts included), NOT a lone portal at a degree-2 node (owner: "clearly you've misunderstood the problem"). The
+trench caps and the old portal-at-node metrics were the wrong target. Census on proto/node-reseat (0b0f9956,
+`wip/reseat/sibling.mjs` in `.claude/worktrees/agent-a1bd6846ae9dbbd2a`): 5 of 442 junctions. Approved order:
+(1) T slide (never fork a T within 25 m of its trunk's bore if open air exists) + re-seat at a 50 m relief trigger,
+then (2) the shared bore (an underground Y; meshes/colliders only), with before/after screenshots before each lands.
+Spare builds it. Every world re-routes slightly, so FEAT-62 scenarios come after.
+**New tickets:** BUG-105 two roads graze/cross with no crossing (2 captures) · BUG-106 a road in a lake that a cold build
+doesn't have (history-dependent network: breaks cold generation) · BUG-107 a tunnel's end cut open by the next road.
+**Lanes:** A = `camp-gear-slots` (FEAT-66, run-shape 10 ahead) · B = `throttle-assist-traction-control` (FEAT-159 built
+on feature/machine 278e7004, NOT for landing until the owner's 3 calls + drive on :3282) · Spare = `cargame-3d` (BUG-67
+build) · C = no session. Extra servers: :3891–3896 Spare's BUG-67 shots (main, caps 30/40/50, re-seat, re-seat+cap;
+the cap ones can go) · :3897 BUG-74 drive (worktree CarGame-bug74 = proto/bug-74-fill-bury + main, started by the
+orchestrator). Owed list on the page: FEAT-159 calls/drive, BUG-74 drive (+ the ≥ 8 m fade question), sound listen +
+two reference clips (YouTube blocks agents' downloads — the owner drops them on the Sounds cards) + a scrape recording,
+FEAT-153 tackle-shop reel, FEAT-163 UI-dry default, plus the older items.
