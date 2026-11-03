@@ -179,7 +179,7 @@
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
-        { id: 'BUG-67', what: 'REDEFINED 11-03: sibling tunnels colliding at a junction. Measured on proto/node-reseat: 5 of 442 junctions; T slide + re-seat 50 m + shared bore clear all 5. Waits on the owner’s go.' },
+        { id: 'BUG-67', what: 'NOW — approved 11-03: T slide + re-seat at 50 m, then the shared bore; before/after shots to the owner before each lands.' },
         { id: 'BUG-105 · BUG-106 · BUG-107', what: 'Two roads graze or cross with no crossing built · a road in a lake a cold build doesn’t have · a tunnel’s end cut open by the next road (owner captures 11-03).' },
         { id: 'FEAT-153', what: 'ON MAIN ac7a9593 — office + school give jobs; census gate. Open: your words, the tackle-shop reel.' },
         { id: 'FEAT-120', what: 'ON MAIN 012b2461 — keepers wired, register + sputter redone, gravel prototyped. Waits on your clips, a scrape recording, and your listen.' },
@@ -202,9 +202,8 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
-    { id: 'bug67-fixes', kind: 'decide', tk: 'BUG-67', blocks: 'FEAT-62 scenarios (a re-route moves their gates)',
-      text: 'Sibling tunnels collide at 5 of 442 junctions (1.1 %). Three small fixes clear all 5: T slide (never fork a T within 25 m of its trunk’s tunnel if open air exists; moves 1 T in 54 windows); re-seat at a 50 m trigger (moves 3 of 340 nodes; fixes your capture 2; seed 20’s doubled road goes away); shared bore (an underground Y: overlapping tubes drop the lining inside each other; meshes only, no route moves; only simulated so far; fixes your worst capture). The junction trench is not needed.',
-      options: ['build all three', 'T slide + re-seat first, then the shared bore', 'hold'] },
+    { id: 'bug67-fixes', kind: 'drive', tk: 'BUG-67', blocks: 'its landing (approved 11-03; Spare building)',
+      text: 'Approved 11-03 (T slide + re-seat at 50 m, then the shared bore). Look at Spare’s before/after shots when they arrive in chat: step 1 = the moved sites + your capture …400345; step 2 = your worst capture …489778. Each lands on your OK.' },
     { id: 'feat120-listen', kind: 'drive', tk: 'FEAT-120/163',
       text: 'Listen in game (on main): tunnel reverb in a real tunnel; the redone pump register (handbrake down at the pump) and low-fuel sputter; crickets at night under 5 mph; coin + stinger on the result card; brake squeal; grass. Menu and result-card sounds stay dry in a tunnel [default] — say if they should echo too.' },
     { id: 'feat120-clips', kind: 'make', tk: 'FEAT-120',
