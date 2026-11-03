@@ -159,6 +159,9 @@ MATS = {
     "IceBag":     ((0.60, 0.72, 0.80, 1), 0.3),
     "IceBlue":    ((0.03, 0.18, 0.62, 1), 0.4),
     "IceCube":    ((0.80, 0.88, 0.94, 1), 0.15),
+    # ASSET-78 (2026-11-03): the bedroll's groundsheet, natural duck canvas — the olive one vanished into the grass.
+    "Duck":       ((0.50, 0.41, 0.25, 1), 0.95),
+    "DuckHem":    ((0.27, 0.20, 0.10, 1), 0.95),
 }
 
 
@@ -713,12 +716,12 @@ def build_bedrollOpen():
     RC, TURN = 0.018, math.radians(200)               # the curl: spine radius, how far round it turned
     BANDS, HB = (-WB / 2 + 0.075, WB / 2 - 0.11), 0.0175   # the cream bands: centres across, half-width
     # Groundsheet: a slab, its hem a darker band 3 mm proud, brass grommets on the hem.
-    b.cbox((0, 0, TG / 2), (LG, WG, TG), "Canvas", ch=0.002)
+    b.cbox((0, 0, TG / 2), (LG, WG, TG), "Duck", ch=0.002)
     hh, hx, hy = TG + 0.003, LG / 2 - 0.015, WG / 2 - 0.015
     for sy in (-1, 1):
-        b.bar((-LG / 2, sy * hy, hh / 2), (LG / 2, sy * hy, hh / 2), 0.03, "CanvasDark", h=hh)
+        b.bar((-LG / 2, sy * hy, hh / 2), (LG / 2, sy * hy, hh / 2), 0.03, "DuckHem", h=hh)
     for sx in (-1, 1):
-        b.bar((sx * hx, -WG / 2 + 0.03, hh / 2), (sx * hx, WG / 2 - 0.03, hh / 2), 0.03, "CanvasDark", h=hh)
+        b.bar((sx * hx, -WG / 2 + 0.03, hh / 2), (sx * hx, WG / 2 - 0.03, hh / 2), 0.03, "DuckHem", h=hh)
     for gx, gy in ((sx * (LG / 2 - 0.035), sy * hy) for sx in (-1, 0, 1) for sy in (-1, 1)):
         b.M = Matrix.Translation((gx, gy, hh))
         b.lathe([(0.005, 0.0), (0.011, 0.0), (0.011, 0.0015), (0.005, 0.0015), (0.005, 0.0)], 10, "Buckle",

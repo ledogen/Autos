@@ -30,10 +30,11 @@ right on a flat bedroll AND on a domed sleeping bag. The inventory thumbnail sta
 - **Collision:** none.
 - **Know before modelling:** FEAT-66 seats a layer on the lower layer's BOUNDING-BOX top. The
   shipped sleeping bag's top is 0.25 m (its turned-back corner at the head) but ~0.135 m at the foot,
-  where the blanket lies, so a blanket seated on it floats ~12 cm at the foot. Either seat the top
-  layer by the lower one's height under the blanket's footprint (src/camp-gear.js — a vertex scan of
-  the lower model inside the blanket's x/z box), or drop the bag's flap height from the stack. Decide
-  when the model is in hand and check it on the bag and on a pad.
+  where the blanket lies, so a blanket seated on it floats ~12 cm at the foot. **The fix exists since
+  ASSET-78 (2026-11-03): `seatY` on a PROP_MODELS entry is the height the next layer lies at.** Give the
+  sleeping bag one (~0.135, its top at the foot) and the deluxe pad one (its pillow raises its box top
+  ~3.5 cm). Check it on the bag, on a pad, and on the bedroll, whose foot curl stands 2.5 cm above its
+  `seatY` right where the blanket lies: the blanket's three layers must swallow it.
 
 ## Acceptance
 
