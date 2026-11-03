@@ -129,7 +129,7 @@ import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-s
 import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
-import { siteTargets, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
+import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
@@ -4274,6 +4274,8 @@ gpsSystem = new GpsSystem(scene, {
     // FEAT-103: nor while a line taken at the camp is still on its way to the source — the route
     // starts THERE; the map's start pin and the source's lit park spot are the waypoint.
     if (missionSystem?.mission?.approach) return null
+    // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
+    if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
     return (s === 'countdown' || s === 'staging' || s === 'running') ? missionSystem.guideRoute() : null
   },
   getCar: () => vehicleState.position,
@@ -5483,7 +5485,7 @@ function _standRow (row) {
 // cancelled, expired) the site goes the moment nothing of it is within offM — never in view.
 const _siteGroup = new THREE.Group()
 scene.add(_siteGroup)
-let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }] } — or null
+let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], next, guide } — or null
 const _siteP = new THREE.Vector3(), _siteQ = new THREE.Quaternion(), _siteY = new THREE.Vector3(0, 1, 0)
 
 /** Stand mission `m`'s targets as models; `smashed` lists the indices already down (a resume). */
@@ -5530,6 +5532,16 @@ function _updateSite () {
       if (t.body != null) { physicsEngine.sleep(t.body); t.mesh.visible = false }
     }
     if (d <= D.offM && (t.body != null || t.mesh.visible)) near = true
+  }
+  if (live) {
+    // Slice 2 (owner, 2026-11-03): the last one down settles the job (mission.js reads `cleared`), and
+    // the GPS goes to the nearest one standing — a new guide object only when that target or its
+    // direction changes, since gps.js re-bakes on identity.
+    const m = _site.mission, standing = _site.targets.flatMap((t, i) => t.smashed ? [] : [i])
+    m.cleared = !standing.length
+    const n = _site.next = nearestTarget(m, p.x, p.z, standing, missionSystem.routeRemaining())
+    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: guideTo(m, m.targets[n.i].u, n.back) }
+    else if (!n) _site.guide = null
   }
   if (!live && !near) _clearSite()
 }
@@ -6107,7 +6119,9 @@ function _renderMissionUI () {
       // R-23: unless the job has just turned — then the bad news takes the line (_jobBeat).
       const beat = _jobBeat(m)
       hud.classList.toggle('mh-bad', !!beat)
-      hudText.textContent = beat ?? `${km(m.routeRemaining())} to go`
+      // FEAT-65 slice 2: a demolition job's end is no goal — the HUD counts to its next target instead.
+      const next = _site?.mission === m.mission ? _site.next : null
+      hudText.textContent = beat ?? (next ? `${km(next.dist)} to the next target` : `${km(m.routeRemaining())} to go`)
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
           : `   · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
         + _dueSuffix()

@@ -713,7 +713,9 @@ export class MissionSystem {
         // FEAT-97: a fragile load destroyed on the way has failed the job — there is nothing left to
         // deliver; main.js's "clean up cargo" is the way out of it.
         if (this.mission.failed) return
-        if (this.distanceToGo() <= ARRIVE_RADIUS) {
+        // FEAT-65 slice 2: a demolition job is done when its site is CLEARED (main.js sets `cleared` as
+        // the last target falls), wherever the truck is — not on arrival, so it can turn back for a miss.
+        if (this.mission.targets ? this.mission.cleared : this.distanceToGo() <= ARRIVE_RADIUS) {
             const par = this.mission.par
             // FEAT-53: grade on the thresholds FROZEN at accept (missing terms → day-1 default
             // inside gradeRun — headless gates and free-roam rolls are unchanged).
