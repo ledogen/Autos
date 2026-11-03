@@ -38,6 +38,31 @@ right on a flat bedroll AND on a domed sleeping bag. The inventory thumbnail sta
 
 ## Acceptance
 
-- [ ] `assets/models/blanket.glb` exported from items.py (`export_glb`, headless works).
-- [ ] `data/prop-models.js` `blanket` entry; `ITEMS.blanket.model = 'blanket'`.
-- [ ] Seen at camp on the bedroll and on the sleeping bag: no visible gap, no clipping into the bag.
+- [x] `assets/models/blanket.glb` exported from items.py (`export_glb`, headless works).
+- [x] `data/prop-models.js` `blanket` entry; `ITEMS.blanket.model = 'blanket'`.
+- [x] Seen at camp on the bedroll and on the sleeping bag: no visible gap, no clipping into the bag.
+
+## Built — 2026-11-03 (feature/run-shape, with FEAT-66 and ASSET-78; not merged)
+
+- **`build_blanketLayer`** in items.py, 3636 tris, 0.93 × 0.50 m, sides hanging 9.5 cm:
+  - The thumbnail's buffalo check (`RedWool` / `CheckStripe` / `CheckDeep`), folded in thirds. Each fold
+    edge shows two layers' round fold and the third layer's seam.
+  - It lies across the foot: z −0.80…−0.30 from the bed's centre.
+  - How it is built: one cross-section (the fold's depth) swept along one spine across the bed — flat on
+    top, dipping 2 cm at the shoulders, bending over the sides and hanging. The check is cut on the
+    fabric's own (arc, depth) grid, so it wraps the bends.
+- **Origin = the bed's centre at the blanket's underside.** The builder sets `keepOrigin`, so `export_glb`
+  does not recentre it. camp-gear.js seats it on the layer under it, and the sides hang below.
+- **Normals:** 0 of 4000 rays hit a back face. Two fixes on the way:
+  - Blender's outside-recalc put the thin sheet inside-out. `finish(closed=True)` now also turns any shell
+    whose topmost face points down.
+  - The fold seam first overlapped the next fold sample (117 rays hit back faces). It now sits between them.
+- **`seatY`, measured from each bed's vertices under the blanket's footprint:** sleeping bag 0.135
+  (box 0.25), sleeping pad 0.064 (its valve makes the box 0.084), deluxe pad 0.10 (its pillow, 0.135),
+  bedroll 0.044 (its creases peak at 0.047). The air mattress is flat (its box, 0.192).
+  - The gate (camp-gear) pins it: the blanket seats within 1 cm of every bed's real top at the foot. The
+    old box-top seating, which floated the blanket 12 cm on the bag, fails it.
+- **Known limit:** the drape is rigid. On a bed narrower than the blanket (the pads, 0.51–0.64 m), its
+  sides bridge out past the pad's edge and hang, rather than sagging onto it. It reads at camp distance.
+- Shots (2026-11-03): on the bedroll, on the bag over the bedroll (and low from the foot), on the deluxe
+  pad, and through the tent's door.
