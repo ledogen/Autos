@@ -178,7 +178,8 @@ export const DAMAGE_PARAMS = {
   // point — driving badly is what costs rubber.
   // DOUBLED again on 2026-08-20: five minutes of peel was a touch too quick in play, so ten.
   // 1.5x FASTER on 2026-10-03 (owner): ten minutes of peel became ~6.7 — 16100 / 1.5.
-  durTire:        10700,     // m of accumulated sliding to destroy a tire
+  // 50% LONGER on 2026-11-03 (owner, "tires should last 50% longer"): 10700 × 1.5, ~10 min of peel again.
+  durTire:        16050,     // m of accumulated sliding to destroy a tire
   tireWCorner:    2.0e-4,    // N·s → m-equivalent. At 5 kN cornering that is 1 m/s of "slip".
   tireSlipFloor:  0.15,      // m/s — no-harm floor. Rolling slip is not abrasion.
 

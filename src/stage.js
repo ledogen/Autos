@@ -75,6 +75,7 @@ const ROCK_GAP    = 0.20    // s between rocks: staggered so the 50 kg impulses 
 const ROCK_DROP_H = 2.6     // m above the bed floor → ~7 m/s at contact: a firm thump, not a launch
 const PARALLAX    = 5 * Math.PI / 180   // rad — cursor-follow orbit limit, both axes
 const LENS_SHIFT_MM = -4.5   // mm of 35 mm film: −4.5 ≈ 10 % of a 16:9 frame to the right (more on a narrower window)
+const LENS_EASE_S   = 0.25   // s — time constant of the slide back to centre once the menu is gone (and out again)
 // Click-drag orbit, layered UNDER the parallax so the resting shot is unchanged until someone drags.
 const DRAG_RAD_PER_PX = 0.006             // rad of orbit per pixel dragged
 const DRAG_ELEV_MIN   = 2 * Math.PI / 180  // rad — lowest camera elevation; the parallax's extra -5°
@@ -194,6 +195,7 @@ export class MenuStage {
     // right to sit centred in what is left (owner, 2026-10-25). The pivot and every orbit are untouched.
     this.camera.filmOffset = LENS_SHIFT_MM
     this.camera.updateProjectionMatrix()
+    this._lensTarget = LENS_SHIFT_MM
 
     this._camTarget = new THREE.Vector3()
     this._camBase = new THREE.Vector3()
@@ -427,6 +429,10 @@ export class MenuStage {
     if (on) this.reset()
   }
 
+  /** Menu up: the picture sits right of the menu type. Menu gone (a load): it eases back to centre
+   *  (owner, 2026-11-03). */
+  setMenuShift (on) { this._lensTarget = on ? LENS_SHIFT_MM : 0 }
+
   /** Re-seat the truck at drop height, empty the bed, restart the beat clock. */
   reset () {
     if (!this._vs) return   // reset() also runs during begin(), before _ready is set
@@ -463,6 +469,13 @@ export class MenuStage {
 
   update (dt) {
     if (!this._ready || !this._active) return
+    const lens = this.camera.filmOffset
+    if (lens !== this._lensTarget) {
+      // Load frames can run hundreds of ms, so cap the step: the slide must read as a slide, not a jump.
+      const k = 1 - Math.exp(-Math.min(dt, 1 / 30) / LENS_EASE_S)
+      this.camera.filmOffset = Math.abs(this._lensTarget - lens) < 0.01 ? this._lensTarget : lens + (this._lensTarget - lens) * k
+      this.camera.updateProjectionMatrix()
+    }
     this._acc += dt
     let n = 0
     while (this._acc >= PHYSICS_DT && n < MAX_STEPS_PER_FRAME) {

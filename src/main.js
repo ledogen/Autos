@@ -2999,8 +2999,8 @@ const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 
 // The INTERACTION ring (owner, 2026-08-02): a translucent orange curtain standing at
 // poiInteractR, so the spot where parking actually opens the offer is something you can see and
 // aim at rather than a radius you discover by trial — the first step toward the marker being a
-// highlighted parking spot you pull into. Drawn on every marker you are NEAR (FEAT-60 cut it to
-// POI_RING_SHOW_R); it is still part of what a POI looks like up close, not a UI state.
+// highlighted parking spot you pull into. Drawn on every marker out to the drawn terrain (poiRingShowR);
+// it is part of what a POI looks like, not a UI state.
 //
 // Deliberately dumb geometry: an open-ended unit cylinder, scaled to the radius and sunk into the
 // ground so undulating terrain can never open a gap under it. depthWrite off + DoubleSide so it
@@ -3008,11 +3008,14 @@ const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 
 // the orange stays the same signal orange at every hour of the day clock.
 const _POI_RING_H = 4.0        // m — curtain height
 const _POI_RING_SINK = 1.5     // m — how far the base is buried (terrain slop, not decoration)
-// How close you must be for a marker's ring to light up (FEAT-60, owner 2026-08-05). Comfortably
-// past the pad and past braking distance at road speed, but nowhere near the ~160 m the game draws
-// — so you find a POI by seeing the BUILDING, and the ring only tells you where to stop once you
-// have. See the near-field note in _updateMissionRings.
+// How close you must be for a haul drop mark to light up (FEAT-60, owner 2026-08-05): past the pad and
+// past braking distance at road speed. POI rings and pump zones no longer use it — they burn out to
+// the drawn terrain (poiRingShowR, owner 2026-11-03).
 const POI_RING_SHOW_R = 50     // m
+// The drawn terrain's radius + one chunk, the same reach as the water sync: a ring is lit wherever the
+// ground under it is drawn (owner, 2026-11-03: "POI rings should render at draw distance so they're
+// always illuminated" — reverses FEAT-60's 50 m near-field).
+const poiRingShowR = () => ((terrainSystem?._ringRadius ?? 2) + 1) * 64
 
 /** Vertical alpha ramp: solid at the base, gone by the top. alphaMap reads the GREEN channel. */
 function _ringAlphaTex () {
@@ -3298,11 +3301,8 @@ function _updateMissionRings () {
   const zone = paperZone || (missionSystem?.state === 'staging' && !missionSystem.mission?.approach ? missionSystem.startZone() : null)
   const activeId = paperZone ? paperRouteSystem.giver?.id
                  : zone ? missionSystem.mission?.fromPoi : null
-  // FEAT-60: rings are a NEAR-FIELD affordance now (owner, 2026-08-05). They used to burn at every
-  // marker across the region because the cube needed the help to be found; a modelled POI reads as
-  // itself from a long way off, and a field of orange curtains flattens the landscape into a game
-  // board. Inside POI_RING_SHOW_R the ring goes back to doing its real job — showing you exactly
-  // where to stop. Distance is to the marker, not the camera, so freecam does not light them up.
+  // Rings burn out to the drawn terrain (poiRingShowR, owner 2026-11-03), reversing FEAT-60's 50 m
+  // near-field (2026-08-05). Distance is to the marker, not the camera, so freecam does not light them up.
   //
   // FEAT-61 stacks one more condition on top: ONCE A JOB IS TAKEN, NO ORANGE AT ALL (owner,
   // 2026-08-05). You cannot accept a job while running one, so every orange curtain you drive past
@@ -3321,14 +3321,15 @@ function _updateMissionRings () {
   // FEAT-102: a fetch's PICKUP wears its orange ring for the whole outbound leg — the one "park
   // here" on screen while you are on a job, marking the area you park in to acquire the item.
   const pickId = missionSystem?.pickupPoiId() ?? _approachPoi()?.id ?? null   // FEAT-103: or a line's source
+  const showR = poiRingShowR()
   for (const [id, ring] of _poiRings) {
-    const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= POI_RING_SHOW_R
+    const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= showR
     ring.visible = id === pickId || (near && id !== activeId && !onMission && !ring.userData.hidden)
   }
   // FEAT-50: pump zones show on a job too — running low mid-route is exactly when you need them —
   // and drop away while the pump is open (you are already in one).
   for (const m of _pumpZoneMarks)
-    m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= POI_RING_SHOW_R
+    m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= showR
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
     _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)
@@ -3484,7 +3485,7 @@ function _addDropMark (q) {
   _dropMarks.set(q.id, { q, mesh })
 }
 
-/** Near-field like the rings; hidden on any other job, kept lit while its own load is dropping. */
+/** Near-field (POI_RING_SHOW_R); hidden on any other job, kept lit while its own load is dropping. */
 function _updateDropMarks (onMission) {
   const vp = vehicleState.position, loadingAt = _haulPoi()?.id ?? _approachPoi()?.id   // FEAT-103: or a line's source
   for (const [id, { q, mesh }] of _dropMarks) {
@@ -7966,6 +7967,7 @@ function _showMainMenu () {
   const el = document.getElementById('main-menu')
   if (el) { el.style.display = 'flex'; el.classList.remove('settings', 'setup') }
   menuStage.setActive(true)   // re-runs the drop when arriving from the world; a no-op at boot
+  menuStage.setMenuShift(true)
   _syncContinue()
   _simHeld = true
   document.body.classList.add('stage-on')
@@ -7981,6 +7983,7 @@ const LOAD_HINT_STORY = 'the whole region is routed once, up front — after thi
 function _enterStageLoad (text, hint = '') {
   _hideMainMenu()
   menuStage.setActive(true)
+  menuStage.setMenuShift(false)   // the menu is gone: the truck slides back to the centre of the frame
   _simHeld = true
   document.body.classList.add('stage-on')
   const cap = document.getElementById('load-caption')
