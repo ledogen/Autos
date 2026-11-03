@@ -87,7 +87,7 @@ export const ITEMS = {
                     desc: 'A foam pad that keeps the cold ground away from you.' },
     deluxeSleepingPad: { name: 'Deluxe sleeping pad', kind: 'camp', massKg: 2, sleep: true, rest: 0.15, campSlot: 'bed', model: 'deluxeSleepingPad',
                     desc: 'Thick and self-inflating. The best night you can have outdoors.' },
-    blanket:      { name: 'Blanket',       kind: 'camp',       massKg: 1,   rest: 0.05, campSlot: 'bed', layer: 2,
+    blanket:      { name: 'Blanket',       kind: 'camp',       massKg: 1,   rest: 0.05, campSlot: 'bed', model: 'blanket', layer: 2,
                     desc: 'A wool blanket on top of whatever you sleep on.' },
     sleepingBag:  { name: 'Sleeping bag',  kind: 'camp',       massKg: 1.5, rest: 0.10, campSlot: 'bed', model: 'sleepingBag', layer: 1,
                     desc: 'Zip in and stay warm. Goes on top of the bed.' },

@@ -38,11 +38,27 @@ const noModel = camp.filter(([, it]) => it.model && !PROP_MODELS[it.model]).map(
 check('every camp item model is a PROP_MODELS key', noModel.length === 0, noModel.join(', '))
 
 // ── 2. Layout on the real models ─────────────────────────────────────────────────────────────────
-async function bounds (key) {
+async function scene (key) {
   const buf = readFileSync(join(ROOT, PROP_MODELS[key].url))
   const gltf = await new Promise((res, rej) =>
     new GLTFLoader().parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length), '', res, rej))
-  return new THREE.Box3().setFromObject(gltf.scene)
+  gltf.scene.updateMatrixWorld(true)
+  return gltf.scene
+}
+const bounds = async (key) => new THREE.Box3().setFromObject(await scene(key))
+/** The highest vertex of `key` inside an x/z box. */
+async function topIn (key, x0, x1, z0, z1) {
+  let top = -Infinity
+  const v = new THREE.Vector3()
+  ;(await scene(key)).traverse(o => {
+    if (!o.isMesh) return
+    const p = o.geometry.attributes.position
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld)
+      if (v.x > x0 && v.x < x1 && v.z > z0 && v.z < z1) top = Math.max(top, v.y)
+    }
+  })
+  return top
 }
 // Pad-frame footprint: the model's −Z faces −v (camp-gear.js padYaw), so local z runs along v; local x
 // runs along u with a sign that follows the road side, so take it symmetric.
@@ -64,22 +80,24 @@ for (const a of prints.filter(p => FIRE.has(p.slot))) {
   }
 }
 check('the fire and its kit clear the bed, the tent and the shade', hits.length === 0, hits.join(', '))
-// The bed lies inside the tent (the tent's own box, not its guy lines), and a `seatY` lies under its model's top.
-const tentB = await bounds('tent'), beds = camp.filter(([, it]) => it.model && it.campSlot === 'bed')
-const wide = []
+// The bed lies inside the tent (the tent's own box, not its guy lines). And the blanket, which lies on
+// whatever is under it at the foot, seats within 1 cm of that layer's real top there: a layer's seatY (or
+// its box top) is its highest vertex under the blanket's footprint (its middle 0.6 m across).
+const tentB = await bounds('tent'), blB = await bounds('blanket'), beds = camp.filter(([, it]) => it.model && it.campSlot === 'bed')
+const wide = [], seats = []
 for (const [id, it] of beds) {
-  const b = await bounds(it.model), seat = PROP_MODELS[it.model].seatY
+  const b = await bounds(it.model)
   if (b.min.x < tentB.min.x || b.max.x > tentB.max.x || b.min.z < tentB.min.z || b.max.z > tentB.max.z) wide.push(`${id} ${(b.max.x - b.min.x).toFixed(2)} x ${(b.max.z - b.min.z).toFixed(2)}`)
-  if (seat != null && !(seat > 0 && seat < b.max.y)) wide.push(`${id} seatY ${seat} vs top ${b.max.y.toFixed(3)}`)
+  if (it.layer === 2) continue
+  const seat = PROP_MODELS[it.model].seatY ?? b.max.y, top = await topIn(it.model, -0.3, 0.3, blB.min.z, blB.max.z)
+  if (Math.abs(seat - top) > 0.01) seats.push(`${id} seats ${seat.toFixed(3)}, top there ${top.toFixed(3)}`)
 }
-check('every bed model fits inside the tent, and its seatY lies under its top', wide.length === 0, wide.join(', '))
+check('every bed model fits inside the tent', wide.length === 0, wide.join(', '))
+check('the blanket seats within 1 cm of every bed\'s real top at the foot', seats.length === 0, seats.join('; '))
 
 // ── 3. What a packed list shows ──────────────────────────────────────────────────────────────────
-const saved = ['bedroll', 'sleepingBag', 'blanket'].map(id => [id, ITEMS[id].model])
-for (const [id] of saved) ITEMS[id].model = `test-${id}`   // stand-ins: the blanket's model is not exported yet
 const bed = slotModels(['blanket', 'tent', 'sleepingBag', 'bedroll']).bed?.map(it => it.name)
 check('the bed slot stacks bed, then sleeping bag, then blanket', bed?.join() === 'Bedroll,Sleeping bag,Blanket', String(bed))
-for (const [id, m] of saved) ITEMS[id].model = m
 const shade = slotModels(['shadeTarp', 'awning']).shade?.map(it => it.name)
 check('a single-model slot shows the first packed', shade?.join() === 'Shade tarp', String(shade))
 const tentModel = ITEMS.tent.model

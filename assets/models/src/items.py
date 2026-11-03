@@ -337,8 +337,19 @@ class Builder:
         ray-probe fix_normals misreads non-planar lofted quads (its probe hits the quad's own bulge)."""
         bm = self.bm
         bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
-        if closed:
-            bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        if closed:   # consistent per shell — but its outside guess can miss on a thin sheet (the blanket
+            bmesh.ops.recalc_face_normals(bm, faces=bm.faces)   # came out inside-out), so each shell's top must face up
+            seen = set()
+            for f0 in bm.faces:
+                if f0 in seen:
+                    continue
+                shell, stack = [], [f0]; seen.add(f0)
+                while stack:
+                    f = stack.pop(); shell.append(f)
+                    for g in (g for e in f.edges for g in e.link_faces if g not in seen):
+                        seen.add(g); stack.append(g)
+                if max(shell, key=lambda f: f.calc_center_median().z).normal.z < 0:
+                    bmesh.ops.reverse_faces(bm, faces=shell)
         me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
         for s in self.slots:
             me.materials.append(get_material(s))
@@ -788,6 +799,67 @@ def build_bedrollOpen():
     foot = [(-0.948 + 0.006 * math.sin(9 * y), y) for y in (-0.30 + 0.068 * i for i in range(10))]
     strap(foot, foot[0], (0, -1))
     return b.finish("bedrollOpen", closed=True)
+
+
+def build_blanketLayer():
+    """ASSET-79: the blanket as a layer on the bed — the thumbnail's buffalo check, folded in thirds and
+    laid across the FOOT of whatever the player sleeps on, its sides hanging down over the bed's edges.
+    Built in the bed's own frame, not its own: across the bed is X, the foot is +Y (glTF −Z), and the
+    origin is the BED's centre at the blanket's underside — so camp-gear.js seats it on the layer under it
+    (that layer's seatY) and the sides hang below. One cross-section (the fold's depth along the bed)
+    swept along one spine across the bed: flat on top, dipping a little at the shoulders, bending down
+    over the sides. The check is cut on the fabric's own (arc, depth) grid, so it wraps the bends."""
+    b = Builder()
+    X0, DZ, RB, HL = 0.40, 0.022, 0.06, 0.035   # flat half-width, the dip at its shoulders, bend radius, hang
+    D, T, YC = 0.50, 0.024, 0.55                # depth along the bed, three layers' thickness, centre (foot)
+    CELL = 0.06                                  # one square of the check
+    # Half the spine, centre outward, densely; mirrored. Turning down: the centre of the bend is on the right.
+    half = [(X0 * i / 40, -DZ * (i / 40) ** 4) for i in range(41)]
+    a0 = math.atan(-4 * DZ / X0)
+    cx, cz = half[-1][0] + RB * math.sin(a0), half[-1][1] - RB * math.cos(a0)
+    a1 = math.radians(-80)
+    half += [(cx - RB * math.sin(a), cz + RB * math.cos(a)) for a in (a0 + (a1 - a0) * k / 16 for k in range(1, 17))]
+    ex, ez = half[-1]
+    half += [(ex + HL * math.cos(a1) * k / 3, ez + HL * math.sin(a1) * k / 3) for k in range(1, 4)]
+    arc = [0.0]
+    for (xa, za), (xb, zb) in zip(half, half[1:]):
+        arc.append(arc[-1] + math.hypot(xb - xa, zb - za))
+    def at(t):   # spine point and the top side's normal, t metres of fabric from the centre (signed)
+        u = abs(t); k = min(len(arc) - 2, max(i for i in range(len(arc) - 1) if arc[i] <= u))
+        f = (u - arc[k]) / (arc[k + 1] - arc[k])
+        (xa, za), (xb, zb) = half[k], half[k + 1]
+        tx, tz = (xb - xa), (zb - za); l = math.hypot(tx, tz)
+        sx = 1 if t >= 0 else -1
+        return (sx * (xa + (xb - xa) * f), T / 2 + za + (zb - za) * f), (-sx * tz / l, tx / l)   # the left normal, mirrored
+    S = arc[-1]
+    ts = sorted({0.0, S, -S, *[k * CELL / 2 for k in range(-int(S / (CELL / 2)), int(S / (CELL / 2)) + 1)]})
+    # The cross-section, across the bed's length (v) and through the fold (n). Folded in thirds: at each
+    # edge a round fold of two layers and the third layer's own edge, with a seam between them.
+    vg = sorted({-D / 2 + T / 2, D / 2 - T / 2, *[k * CELL / 2 for k in range(-int(D / CELL), int(D / CELL) + 1) if abs(k * CELL / 2) < D / 2 - T / 2]})
+    # The seam sits between the fold's 0° and 45° samples, so the outline never doubles back on itself.
+    seam = lambda v, n: [(v, n - 0.0015), (v - 0.003 if v > 0 else v + 0.003, n), (v, n + 0.0015)]
+    fold = lambda sv, ks: [(sv * (D / 2 - T / 2 + T / 2 * math.cos(a)), T / 2 * math.sin(a)) for a in (math.radians(sv * (-90 + 22.5 * k)) for k in ks)]
+    prof = ([(v, -T / 2) for v in vg]
+            + fold(1, range(1, 5)) + seam(D / 2 - 0.0005, T / 6) + fold(1, range(6, 8))
+            + [(v, T / 2) for v in reversed(vg)]
+            + fold(-1, range(1, 5)) + seam(-D / 2 + 0.0005, -T / 6) + fold(-1, range(6, 8)))
+    def point(t, v, n):
+        (px, pz), (nx, nz) = at(t)
+        lump = 0.0015 * math.sin(11 * t + 7 * v) * math.sin(5 * t - 13 * v) if n > T / 2 - 1e-9 else 0.0
+        return (px + (n + lump) * nx, YC + v, pz + (n + lump) * nz)
+    rings = [[point(t, v, n) for v, n in prof] for t in ts]
+    dark = lambda x: math.floor((x + CELL / 2) / CELL) % 2 == 1
+    n = len(prof)
+    for ta, tb, ra, rb_ in zip(ts, ts[1:], rings, rings[1:]):
+        du = dark((ta + tb) / 2)
+        for k in range(n):
+            j = (k + 1) % n
+            dv = dark((prof[k][0] + prof[j][0]) / 2)
+            b.face([ra[k], ra[j], rb_[j], rb_[k]], "CheckDeep" if du and dv else "CheckStripe" if du or dv else "RedWool")
+    b.face(rings[0], "RedWool"); b.face(list(reversed(rings[-1])), "RedWool")
+    ob = b.finish("blanketLayer", closed=True)
+    ob["keepOrigin"] = True   # export_glb: the bed's centre, not its own (see above)
+    return ob
 
 
 # ── Batch 2 (2026-10-20): sleep kit, field repairs, cargo protection ───────────────────────────────
@@ -2806,7 +2878,9 @@ WORLD = {"spareTire": ("spare-tire", Matrix.Rotation(math.pi / 2, 4, "X")),   # 
          "deluxeSleepingPad": ("deluxe-sleeping-pad", Matrix.Rotation(math.pi / 2, 4, "Z")),
          # ASSET-78: the bedroll's world model is its own shape, laid out (a third field: its builder);
          # the thumbnail stays the roll. Head +X, as the bag's.
-         "bedroll":           ("bedroll",             Matrix.Rotation(-math.pi / 2, 4, "Z"), build_bedrollOpen)}
+         "bedroll":           ("bedroll",             Matrix.Rotation(-math.pi / 2, 4, "Z"), build_bedrollOpen),
+         # ASSET-79: the blanket as a bed layer, built in the bed's frame already (its origin kept).
+         "blanket":           ("blanket",             Matrix.Identity(4), build_blanketLayer)}
 
 
 def export_glb(item_id):
@@ -2817,7 +2891,8 @@ def export_glb(item_id):
     vs = [v.co for v in ob.data.vertices]
     lo = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
     hi = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
-    ob.data.transform(Matrix.Translation((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z)))
+    if not ob.get("keepOrigin"):   # a bed layer built in the bed's frame keeps it (build_blanketLayer)
+        ob.data.transform(Matrix.Translation((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z)))
     path = os.path.join(GLB_DIR, f"{fname}.glb")
     # In the GUI the operator runs under a window context (freight.py _ui_override). `blender -b` has no
     # window, and the glTF exporter runs fine without one (FEAT-66, 2026-11-02): only the override needed it.
