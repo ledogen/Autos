@@ -76,7 +76,7 @@ export const ITEMS = {
     //    (src/camp-gear.js CAMP_SLOTS) and `model` the PROP_MODELS key; no `model` renders nothing (no
     //    placeholder art). The bed slot STACKS by `layer`: the bed, the sleeping bag on it, the blanket
     //    on top of either (owner, 2026-11-02). Every other slot shows one model.
-    bedroll:      { name: 'Bedroll',       kind: 'camp',       massKg: 2.5, sleep: true, campSlot: 'bed',
+    bedroll:      { name: 'Bedroll',       kind: 'camp',       massKg: 2.5, sleep: true, campSlot: 'bed', model: 'bedroll',
                     desc: 'A rolled bed for the ground. Better than the dirt, not by much.' },
     // `rest` is the bonus on camp sleep's recovery rate while packed (owner, 2026-10-16), summed and
     // applied once (day.js recoveryRate). The beds replace the bedroll; the blanket and the sleeping

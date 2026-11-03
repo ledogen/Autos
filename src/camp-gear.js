@@ -21,6 +21,7 @@
 import * as THREE from 'three'
 import { getModel, spawnModel } from './model-service.js'
 import { ITEMS } from '../data/items.js'
+import { PROP_MODELS } from '../data/prop-models.js'
 
 /** Pad-frame slot points, metres: u along the road, v away from it. The pad is ±campPadHalfM (3). */
 export const CAMP_SLOTS = {
@@ -74,10 +75,11 @@ export class CampGear {
         m.position.set(x, y, z)
         m.rotation.y = yaw
         this.root.add(m)
-        // A bed layer sits on the tops of the layers under it (base-seated models: top = height).
+        // A bed layer sits on the tops of the layers under it (base-seated models: top = height), or on
+        // a layer's `seatY` where its top is not flat (data/prop-models.js).
         if (k) {
           Promise.all(items.slice(0, k).map(b => getModel(b.model))).then((recs) => {
-            m.position.y = y + recs.reduce((h, r) => h + new THREE.Box3().setFromObject(r.template).max.y, 0)
+            m.position.y = y + recs.reduce((h, r, i) => h + (PROP_MODELS[items[i].model].seatY ?? new THREE.Box3().setFromObject(r.template).max.y), 0)
           })
         }
       })

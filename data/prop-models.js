@@ -1075,6 +1075,9 @@ export const PROP_MODELS = {
   awning: { url: 'assets/models/awning.glb', collision: { shape: 'none', size: [3.04, 2.50, 2.54] } },   // 240 tris, striped canopy on four poles, open front -Z (ASSET-06, moved to camp gear by R-19); no recolour hook
   // The camp bed slot (FEAT-66): the item thumbnails' own models, exported lying flat from
   // assets/models/src/items.py (export_glb), length along Z, head end at +Z (the back of the tent).
+  // `seatY`: the height the next bed layer lies at, where the model's top is not flat — the bedroll's
+  // pillow fold and foot curl stand ~3 cm above where a sleeping bag lies (they end up inside its base).
+  bedroll: { url: 'assets/models/bedroll.glb', collision: { shape: 'none', size: [0.88, 0.075, 2.04] }, seatY: 0.044 },   // 5880 tris, ASSET-78: unrolled on its canvas, head folded back for a pillow, foot still curled, straps loose
   sleepingBag: { url: 'assets/models/sleeping-bag.glb', collision: { shape: 'none', size: [0.86, 0.25, 1.92] } },   // 7491 tris, flannel corner turned back at the head
   airMattress: { url: 'assets/models/air-mattress.glb', collision: { shape: 'none', size: [0.78, 0.19, 1.88] } },   // 4670 tris, flocked quilted top
   sleepingPad: { url: 'assets/models/sleeping-pad.glb', collision: { shape: 'none', size: [0.51, 0.08, 1.83] } },   // 8878 tris, baffled, valve at the foot

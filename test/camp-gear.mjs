@@ -64,10 +64,19 @@ for (const a of prints.filter(p => FIRE.has(p.slot))) {
   }
 }
 check('the fire and its kit clear the bed, the tent and the shade', hits.length === 0, hits.join(', '))
+// The bed lies inside the tent (the tent's own box, not its guy lines), and a `seatY` lies under its model's top.
+const tentB = await bounds('tent'), beds = camp.filter(([, it]) => it.model && it.campSlot === 'bed')
+const wide = []
+for (const [id, it] of beds) {
+  const b = await bounds(it.model), seat = PROP_MODELS[it.model].seatY
+  if (b.min.x < tentB.min.x || b.max.x > tentB.max.x || b.min.z < tentB.min.z || b.max.z > tentB.max.z) wide.push(`${id} ${(b.max.x - b.min.x).toFixed(2)} x ${(b.max.z - b.min.z).toFixed(2)}`)
+  if (seat != null && !(seat > 0 && seat < b.max.y)) wide.push(`${id} seatY ${seat} vs top ${b.max.y.toFixed(3)}`)
+}
+check('every bed model fits inside the tent, and its seatY lies under its top', wide.length === 0, wide.join(', '))
 
 // ── 3. What a packed list shows ──────────────────────────────────────────────────────────────────
 const saved = ['bedroll', 'sleepingBag', 'blanket'].map(id => [id, ITEMS[id].model])
-for (const [id] of saved) ITEMS[id].model = `test-${id}`   // stand-ins: the bed models are not exported yet
+for (const [id] of saved) ITEMS[id].model = `test-${id}`   // stand-ins: the blanket's model is not exported yet
 const bed = slotModels(['blanket', 'tent', 'sleepingBag', 'bedroll']).bed?.map(it => it.name)
 check('the bed slot stacks bed, then sleeping bag, then blanket', bed?.join() === 'Bedroll,Sleeping bag,Blanket', String(bed))
 for (const [id, m] of saved) ITEMS[id].model = m
