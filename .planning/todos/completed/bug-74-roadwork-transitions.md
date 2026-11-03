@@ -1,7 +1,7 @@
 ---
 id: BUG-74
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-09-27
 source: owner, seed w (197, 616) place capture, after the FEAT-84 pass 15 fill-as-dirt fix ("still looks bad to me")
@@ -184,3 +184,11 @@ Spare's height-contest attempt (a fill buries the natural rock by its own thickn
 feature/spare so the rest lands without it. The owner drives it on :3885 — Spare checks that branch out
 in `CarGame-spare` when asked, then puts feature/spare back. The write-up and measurements are in that
 branch's copy of this ticket; shots in `CarGame-spare/wip/bug-74/`.
+
+## Resolution — 2026-11-03: class 1 LANDED (owner: "bug74 fix approved")
+
+The owner drove `proto/bug-74-fill-bury` on :3897 and approved it; merged to main as 14136e11 (a fill buries
+the natural rock by its own thickness, `roadFillRockBury` 2.5 m, slider "Fill Rock Bury (m)"; only a cut stays
+an engineered face). **Not built:** the "fade ≥ 8 m past the toe" carve-table channel — the owner did not ask
+for it. The acceptance's "≥ 8 m" line is met where the fill runs that far and not past a 2 m toe; re-open with
+that channel if the seam shows again.
