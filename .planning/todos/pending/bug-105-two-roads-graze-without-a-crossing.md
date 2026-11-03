@@ -35,3 +35,10 @@ should have crossed at a registered crossing or should have kept clear.
 - [ ] At this mark, the two runs either cross at a registered crossing or keep the FEAT-77 clearance.
 - [ ] The capture replays clean.
 - [ ] The fix keeps every world window-invariant (the invariance and restream gates stay green).
+
+## Second capture of the class — /Users/ledogen/Downloads/autos-capture-1793661187695.json (2026-11-03)
+
+Sent as a tunnel collision; the BUG-67 re-assessment (proto/node-reseat, `wip/reseat/sibling.mjs`) found it is not one.
+Two legs of site node `-13,10,0` (seed 163384989, mark (−8224, 6860)) come out of their tunnels and CROSS each other
+76 m from the node with their decks 6.3 m apart vertically, and no structure or registered crossing there. The tubes
+themselves stay 29 m apart. A second shape for this ticket: a grade-separated crossing with nothing to separate it.
