@@ -262,3 +262,29 @@ by design.
 - **(b) `taSlip` 0.35 [DEFAULT]**, from the table above.
 - **(c) `tcSlip` 0.15 [DEFAULT].** Cautious: dry launches with TC on are about 33 % slower.
 - **(d) Drive it on :3282.** Settings → throttle assist / traction control. Try a keyboard reverse.
+
+## Owner rulings — 2026-11-02 (relayed by the orchestrator) + the TC retune
+
+- **(a) accepted:** the assist feathers a dry, low-speed mid-corner power-over.
+- **(b) accepted:** `taSlip` 0.35.
+- **(c) retuned:** traction control was too cautious. The owner drove it on :3282: "tc too
+  conservative. otherwise love throttle assist."
+
+**Retune:**
+- `tcSlip` 0.15 → **0.35**, the same point the throttle assist holds.
+- **New `tcSlipHi` 0.6:** TC also cuts torque when the FASTER rear passes 60 % slip. Above 0.15, the
+  rear brake alone (495 N·m) cannot hold a split-grip spin against the whole axle's torque. Without this
+  second trigger the wheel-speed gap went back to 34 m/s; with it the gap is 12.6.
+- Gate check added: a dry TC launch is ≤ 1.03× unassisted.
+
+Time / rear tread slide, TC before → after:
+
+| scenario | TC off | TC before (0.15) | TC after (0.35 / 0.6) |
+|---|---|---|---|
+| dry, keyboard, 0–30 mph | 3.48 s / 28 m | 4.62 / 8 | **3.52 / 20** |
+| dry, pad, 0–30 mph | 3.40 / 57 | 4.72 / 9 | **3.50 / 21** |
+| reverse, keyboard, 0–5 m/s | 1.82 / 52 | 2.27 / 1 | **1.83 / 4** |
+| split grip, 0–10 m/s | 9.65 / 297 | 5.63 / 18 | **6.05 / 33** |
+| one rear worn (μ×0.7), keyboard, 0–30 | 5.30 / 123 | 5.00 / 17 | **5.05 / 27** |
+| 12 % cross-slope, keyboard, 0–30 | 4.32 / 65 | 4.38 / 11 | **4.22 / 19** |
+| power-oversteer entry, β max | 45° | 5° | **5°** |
