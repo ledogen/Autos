@@ -54,8 +54,8 @@
 
 // "Any normal giver" — cargo.md's blank From (option C). Not the food vendor, the haul yard or
 // Larry: each has one kind of job and posts it outside the budget (pois.md § Job supply). Not the
-// office or school (they only receive) nor the motorist (they post only their own ride) — owner,
-// 2026-10-07.
+// motorist (they post only their own ride — owner, 2026-10-07), nor the office or school, which post
+// only their own two jobs each (FEAT-153, owner 2026-11-02).
 const ANY_GIVER = ['generalStore', 'autoShop', 'workSite', 'residence', 'farm', 'doctor']
 const YARD_TRADE = ['generalStore', 'gasStation', 'farm']   // FEAT-96: the palletised singles' circuit
 
@@ -123,7 +123,18 @@ export const THINGS = [
     { id: 'classNotes', phrase: 'their class notes',       family: 'delivery', massKg: [0.3, 1],
       pools: HOME, to: ['school'] },
     { id: 'deck',       phrase: 'a presentation deck',     family: 'delivery', massKg: [0.5, 1.5],
-      pools: HOME, to: ['office'] },
+      pools: ANY_GIVER, to: ['office'] },   // FEAT-153: from any giver; class notes stay household-only (owner, 2026-11-02)
+    // FEAT-153 (owner, 2026-11-02): the office and the school give their own jobs. PLACEHOLDER words
+    // until the owner writes them; the school's fragile one is in the fragile block.
+    { id: 'permissionSlips', phrase: 'the field-trip permission slips', family: 'delivery', massKg: [0.1, 0.3],
+      pools: ['school'], to: HOME },
+    { id: 'contracts',  phrase: 'the signed contracts',    family: 'delivery', massKg: [0.2, 0.5],
+      pools: ['office'], to: ['workSite', 'autoShop', 'farm'] },
+    { id: 'payroll',    phrase: 'the payroll envelope',    family: 'delivery', massKg: [0.1, 0.3],
+      pools: ['office'], to: ['generalStore', 'gasStation'] },
+    // FEAT-153: one thing that ends AT the tackle shop, so it is a destination too. PLACEHOLDER.
+    { id: 'reel',       phrase: 'a reel to re-spool',      family: 'delivery', massKg: [0.3, 0.6],
+      pools: HOME, to: ['tackleShop'] },
     // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
     // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07).
     { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
@@ -279,6 +290,8 @@ export const THINGS = [
       pools: HOUSEWARES, to: ['residence'], load: 'ornateVase', ...VERY_FRAGILE },
     { id: 'mirror',      phrase: 'a full-length mirror',    family: 'fragile', massKg: [16, 16],
       pools: HOUSEWARES, to: ['residence'], load: 'fullLengthMirror', ...VERY_FRAGILE, furniture: true },
+    { id: 'scienceFair', phrase: 'the science-fair project', family: 'fragile', massKg: [6, 6],
+      pools: ['school'], to: ['residence'], load: 'largeCrate', ...FRAGILE },   // FEAT-153, PLACEHOLDER; crated until it has a model
     { id: 'windshield',  phrase: 'a windshield',            family: 'fragile', massKg: [14, 14],
       pools: ['autoShop'], load: 'largeCrate', ...FRAGILE, sound: 'glass' },   // laminated, so tougher than plate (owner, 2026-10-15); crated until it has a model
     { id: 'glassPanes',  phrase: 'ten panes of glass',      family: 'fragile', massKg: [240, 240],
@@ -369,6 +382,9 @@ export const REWARDS = [
     // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
     { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'],
       pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
+    // FEAT-138: rights a rolled truck. A–S, never a roadside find (owner, 2026-10-24).
+    { id: 'hiLiftJack', name: 'Hi-lift jack', kind: 'tool',     gates: ['A', 'S'],
+      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
     // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
     { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'larrysHouse'] },
@@ -390,7 +406,7 @@ export const REWARDS = [
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────
 //
 // Keyed by POI roster type (src/poi.js POI_ROSTER). A type that is NOT listed here posts nothing:
-// mom's house, and the office and school, which only receive (owner, 2026-10-07).
+// mom's house, which only receives.
 //
 // TWO KINDS OF SOURCE (FEAT-101, pois.md § Job supply):
 //   ALWAYS-ON — a `slots` row. The place keeps its own slots, outside the budget: Larry, the haul
@@ -467,6 +483,9 @@ export const SOURCES = {
     strandedMotorist: { cap: 1, expiryH: [24, 72], families: ['delivery'] },
     // FEAT-102: fetches of the general-store sundries, plus its own goods out (BUG-88).
     tackleShop:       { cap: 2, expiryH: 24,       families: ['delivery'] },
+    // FEAT-153 (owner, 2026-11-02, reverses 2026-10-07's receive-only): one job at a time each.
+    office:           { cap: 1, expiryH: 24,       families: ['delivery'] },
+    school:           { cap: 1, expiryH: 24,       families: ['delivery', 'fragile'] },
 }
 
 /** Live budget jobs shared by every `cap` source in the region (owner, 2026-10-07: "about 12"). */

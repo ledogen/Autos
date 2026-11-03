@@ -7,7 +7,7 @@ opened: 2026-10-25
 source: owner, 2026-10-25 — "auto trans really struggles to get out of first gear. maybe we should adjust the ratios" · "maybe we should lower the ratio to second a little. also the shift logic seems to prefer to lug 3rd instead of downshifting to 2nd at full throttle even if there is rpm headroom."
 relates: FEAT-23 (drivetrain), FEAT-124 (one shift schedule, throttle-averaged), data/transmissions.js 4r44e, data/ranger.js shift params, test/drivetrain-climb.mjs
 ---
-lane: B
+lane: B → Spare (2026-11-01: Lane B has no session; Spare took it)
 
 # FEAT-150: Automatic shift schedule — hangs in 1st, lugs 3rd instead of kicking down
 
@@ -52,3 +52,50 @@ squared. The anti-hunt rule then BLOCKS the upshift unless the next gear's coupl
 - [ ] Floored in 3rd with ≥ 1500 rpm of headroom in 2nd, it kicks down.
 - [ ] No hunting on a grade (the anti-hunt case the hysteresis exists for) — drivetrain-climb green.
 - [ ] Ratios stay the real 4R44E unless the owner rules otherwise.
+
+## Built — Spare, 2026-11-02 (the schedule, not the ratios — the box stays the real 4R44E)
+
+**Measured first** (`wip/feat-150/launch.mjs`: full physics on the flat, the coupled rpm at each shift).
+The anti-hunt band, judged on the 1→2 LANDING rpm alone, held 1st far past the schedule's own point at
+every part throttle; floored in 3rd at 2600 coupled (2nd would turn 3822, 1578 rpm under the upshift) the
+box lugged 3rd.
+
+**Three changes in src/drivetrain.js:**
+1. **The upshift judges where the next gear is GOING.** Its coupled rpm projected `shiftLookahead` (1 s) ahead
+   at the road's current acceleration carried into that gear — the axle's smoothed angular acceleration,
+   gear-independent so a shift never spikes it, scaled by the step for rpm and again for wheel torque —
+   must clear the next gear's own downshift point + the band. Accelerating on the flat it clears at once;
+   barely holding speed on a grade it does not, and the box stays down: the case the band exists for. At
+   the redline the band is waived (on the limiter the acceleration reads ~0 whatever the next gear could
+   do; the old rule's floored bar, 2400 + 800, was no stricter).
+2. **The downshift mirrors it:** never drop into a gear that would land within the band of its own upshift
+   point. That makes the kickdown per-gear, so **kickdownRPM 2400 → 3200** (data/ranger.js) cannot hunt:
+   3rd → 2nd below 3200, 2nd → 1st only once 1st has room to pull.
+3. A held floor (kickdown) reads the FLOORED schedule for the upshift point and band too, as the downshift
+   point always has — otherwise the box kicked down, then shifted straight back up on the lagging average.
+
+**Result, standing starts on the flat (coupled rpm at 1→2):**
+
+| pedal | before | after | the schedule's own point (FEAT-124) |
+|---|---|---|---|
+| 50 % | 3818 | **2850** | 2850 |
+| 60 % | 4100 | **3218** | 3224 |
+| 70 % | 4386 | **3653** | 3666 |
+| 80 % | 4693 | **4168** | 4176 |
+| 100 % | 5399 | 5399 | 5400 |
+
+Floored in 3rd at 2600 coupled: kicks down to 2nd at once, revs out, takes 3rd at 5399. Grade hunting
+unchanged (drivetrain-climb's sweep: worst 1 shift in the settled 10 s); 18 % from 4th settles with 0.
+
+**On the acceptance's "~3000 rpm at 50–80 %":** the box now leaves 1st exactly where FEAT-124's ruled
+schedule says (2850 at 50 % … 4176 at 80 %). Reaching ~3000 at 80 % would mean reshaping that curve
+(`shiftThrottleCurve` / `shiftUpLightRPM`) — the owner's call after a drive; the band no longer adds anything.
+
+**Gates:** drivetrain-climb gains scenario 8 (half-pedal launch leaves 1st within 5 % of the schedule; a
+floored 3rd with ≥ 1500 rpm headroom kicks down) — fails on the old schedule (3818 vs 2850; lugged 3rd).
+shift-schedule all green (the floored-3rd kickdown still at 0.40 s). **debris-coupling's "barrel→truck"
+check was measuring the drivetrain, not the barrel:** a bare peak |vy| > 0.005 m/s read 0.006 with the
+barrel OFF the path; with the 1→2 shift moved into the contact window it read 0.005 with the hit. It now
+compares a twin run with the barrel moved aside: 0.114 m/s (new) / 0.139 (old) of chassis velocity off the
+twin, threshold 0.05. Affected suite 71/72 then that test fixed; smoke included.
+

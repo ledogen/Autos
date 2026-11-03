@@ -520,7 +520,7 @@ export const DAMAGE_PARAMS = {
   //     pinched between rock and rim (∫ residual · d depth), through a LEAKY integrator: rubber
   //     relaxes, so the stored work drains with hazardPinchTauS. A strike dumps its work inside one
   //     step (census: every hit over 100 J, at every speed) and counts in full; a slow press caps at
-  //     its power × τ, so 800 J would take ≈16 kW held into the rim — rate, not total, splits a
+  //     its power × τ, so 2000 J would take ≈40 kW held into the rim — rate, not total, splits a
   //     tire (owner, 2026-11-01: "differentiate based on how quickly the energy is dumped"). τ from
   //     16 to 200 ms gives the identical curve below. It is the path that
   //     carries nearly every puncture. ENERGY, not force (2026-10-31, owner ask "few pops below
@@ -536,8 +536,13 @@ export const DAMAGE_PARAMS = {
   // Until 2026-10-31 the force curve had a 20-30 mph hump (16 / 26 / 34 %), read then as the tire
   // pressing a climbed rock into the road. It was the rock being handed the tire's push WITHOUT the
   // ground's reaction (physics.js proxyGround); with both, it is gone under either rule.
+  // FEAT-158 (2026-11-02): the rock now GRIPS the road (proxyGround friction), so a struck rock no
+  // longer skates out from under the rim on its own weight's friction — the same hits do more work
+  // on the carcass. Same census; every row above was measured on the skating rock:
+  //     energy 800 J  (rock grips)     0  0  0  0  0 14 24 47 48 56 62 %
+  //     energy 2000 J (rock grips)     0  0  0  0  0  0  7 11 19 21 45 %   ← owner-approved 2026-11-02
   hazardPunctureMult: 30,    // x static wheel load (≈100 kN) of hazard core force pops any tire
-  hazardPinchEnergyJ: 800,   // J of leaky-integrated pinch work (hazard carcass load past full squash × its travel) pops any tire (BUG-99)
+  hazardPinchEnergyJ: 2000,  // J of leaky-integrated pinch work (hazard carcass load past full squash × its travel) pops any tire (BUG-99; FEAT-158 re-fit 800 → 2000)
   hazardPinchTauS:    0.05,  // s — the leak's time constant: rubber relaxing between strikes
   // A flat is not a hole in the ground: the air is gone, so the carcass carries almost nothing at
   // small deflection, but it still stacks up against the rim as it squashes. Scaling the LINEAR
@@ -690,6 +695,12 @@ export function impactDamage (v, curve) {
 export function armorPassThrough (c) {
   const p = 1 - DAMAGE_PARAMS.armorAbsorbAtFull * (c < 0 ? 0 : c > 1 ? 1 : c)
   return p < 0 ? 0 : p
+}
+
+/** The fatal-crash speed [mph] for a panel at armor condition `c` (SM-INV-1; see fatalMphBare). */
+export function fatalMph (c) {
+  const P = DAMAGE_PARAMS
+  return P.fatalMphBare + (P.fatalMphFull - P.fatalMphBare) * c
 }
 
 const clampAbs = (x, m) => (x >  m ? m : x < -m ? -m : x)
@@ -1092,10 +1103,10 @@ export class DamageModel {
     this._bendAlignment(region, v, passed)
 
     // Fatal-crash fail state (SM-INV-1). The panel's armor condition BEFORE the hit sets the ceiling:
-    // bare → fatalMphBare, full → fatalMphFull, linear between (owner 2026-10-12).
-    const fatalMph = P.fatalMphBare + (P.fatalMphFull - P.fatalMphBare) * armorBefore
-    const fatal = P.fatalEnabled && v >= fatalMph * MPH
-    if (fatal && !this.fatalImpact) this.fatalImpact = { region, v, mph: v / MPH }
+    // bare → fatalMphBare, full → fatalMphFull, linear between (owner 2026-10-12). The run-end card
+    // reads `armor` back to say what the panel could take (FEAT-160).
+    const fatal = P.fatalEnabled && v >= fatalMph(armorBefore) * MPH
+    if (fatal && !this.fatalImpact) this.fatalImpact = { region, v, mph: v / MPH, armor: armorBefore }
 
     return { v, passed, fatal }
   }

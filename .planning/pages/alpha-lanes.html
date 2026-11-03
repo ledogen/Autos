@@ -76,6 +76,21 @@
   .inbox .reply { color: var(--dim); font-size: 13px; margin: 2px 0 0; white-space: pre-wrap; }
   .inbox .when { font-family: var(--mono); font-size: 11px; color: var(--dim); }
   .inbox button.x { grid-column: 1; font-family: var(--mono); font-size: 10.5px; padding: 2px 0; border: 1px solid var(--line); background: transparent; color: var(--dim); cursor: pointer; border-radius: 3px; }
+  /* The owner's queue: blockers first, then by what each costs the owner (decide · drive · make). */
+  .og { background: var(--panel); border: 1px solid var(--line); padding: 10px 16px; margin-bottom: 12px; }
+  .og.blocking { border-top: 4px solid var(--bad); }
+  .og h3 { font-family: var(--mono); font-size: 13px; letter-spacing: 1px; text-transform: uppercase; margin: 2px 0 2px; }
+  .og .goal { color: var(--dim); font-size: 13px; margin: 0 0 6px; }
+  .ow { display: grid; grid-template-columns: 60px 1fr; gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--line); align-items: start; }
+  .ow .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .5px; text-transform: uppercase; text-align: center; padding: 3px 0; border-radius: 3px; background: var(--chip); color: var(--dim); }
+  .ow .k.decide { background: var(--key); color: #fff; } .ow .k.drive { background: var(--warn); color: #fff; } .ow .k.make { background: var(--story); color: #fff; }
+  .ow .t { min-width: 0; } .ow .t .id { font-family: var(--mono); font-weight: 600; color: var(--key); font-size: 13px; margin-right: 6px; }
+  .ow .blk { color: var(--bad); font-size: 13px; margin: 2px 0 0; }
+  .ow .opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .ow .opts button { font-family: var(--mono); font-size: 12px; padding: 4px 10px; border: 1px solid var(--line); background: var(--chip); color: var(--fg); cursor: pointer; border-radius: 3px; }
+  .ow .opts button.on { background: var(--money); border-color: var(--money); color: #fff; }
+  .ow .opts input { flex: 1 1 160px; min-width: 0; font-family: var(--sans); font-size: 13px; padding: 4px 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 3px; }
+  .ow.answered .t { color: var(--dim); }
   @media (prefers-reduced-motion: no-preference) { .task button.st { transition: background .15s, color .15s; } }
 </style>
 <main>
@@ -99,9 +114,18 @@
     <details id="in-done-wrap"><summary id="in-done-sum">handled</summary><ul class="inbox" id="inbox-done"></ul></details>
     <div class="saved" id="saved-orch"></div>
   </section>
+  <h2>Owed by you — blockers first</h2>
+  <div id="owed"></div>
+  <div class="saved" id="saved-owed"></div>
+  <h2>Lanes</h2>
   <div class="board" id="board"></div>
-  <h2>Owner rulings owed</h2>
-  <div class="owed"><ul id="owed"></ul></div>
+  <h2>Closed since 10-24 (one line each; the tickets hold the rest)</h2>
+  <div class="owed"><ul>
+    <li><b>Lane A:</b> FEAT-103 alpha camp · FEAT-146 the run ends · FEAT-157 requisition lines · FEAT-154 barricades · FEAT-128 key off at camp · FEAT-151 tiredness · BUG-95.</li>
+    <li><b>Lane B (some built by Spare):</b> BUG-99 tire on rock · FEAT-93/94 punctures and flats · FEAT-152 rim sparks · FEAT-138 hi-lift · FEAT-150 shift schedule · BUG-89 side slide · BUG-54 rock colliders · FEAT-132/137 on evidence.</li>
+    <li><b>Lane C (some built by Spare):</b> ASSET-71 camp · ASSET-32 van · ASSET-69/70/73 office, doctor, school · FEAT-149 knockable ornaments · BUG-94 moon halo · BUG-96 tree billboards.</li>
+    <li><b>Spare:</b> BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus · FEAT-160 run end says why. BUG-73 closed unreproduced.</li>
+  </ul></div>
   <h2>Landed 2026-10-24</h2>
   <div class="owed"><ul>
     <li><b>mission-recut</b> → main (2e0e1aed): every type ranks on its own axis, the haul picker, freight and fragile tiers.</li>
@@ -113,103 +137,133 @@
 </main>
 <script>
 (() => {
-  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
   const HANDOFF = '.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md'
+  // ONE LINE per row (owner 11-02): the ticket holds the detail. Only open work is listed; closed rows move
+  // to the "Closed since" list below the board.
   const LANES = [
-    { id: 'a', name: 'A — the run has a shape', critical: true, goal: 'The critical path: today a run starts and never ends.',
+    { id: 'a', name: 'A — the run has a shape', critical: true, goal: 'The critical path: a run that starts, ends, and peaks at the end.',
       wt: '/Users/ledogen/CodeShit/CarGame-run-shape', branch: 'feature/run-shape', port: 3731,
       owns: 'story.js, camp.js, dialogue, poi.js (the camp type), the story sections of main.js',
       tasks: [
-        { id: 'FEAT-103', what: 'Alpha camp — the expedition camp as its own POI type at the end of a road on the circle\'s edge; five-line requisition behind 6 deeds; completing it is the win. No wall, no FEAT-28. The construction site stays a client.' },
-        { id: 'FEAT-146', what: 'The run ends — death card, "throw in the towel" in the pause menu, win card, one summary → main menu.' },
-        { id: 'FEAT-147', what: 'Opening + tutorial — the firing, the uncle, first-day prompts; FEAT-148\'s flavor-line plumbing rides along (the owner writes the words).' },
-        { id: 'FEAT-128', what: 'Truck shuts off at camp.' },
-        { id: 'FEAT-66', what: 'Camp gear renders at the campsite (visible-kit rule).' },
-        { id: 'BUG-95', what: 'Z while already parked shows "park to…" instead of opening the camp card — make the arm count as the pull (owner 10-26).' },
-        { id: 'FEAT-157', what: 'Requisition = one line per MISSION TYPE (today: one haul + four couriers) — freight and fragile lines need a load key on the fixed spec; proposal table in the ticket, owner names the things (owner 10-30, major).' },
-        { id: 'FEAT-65', what: 'Demolition (prop smash) — the requisition\'s FIFTH line; build it before the alpha (owner 10-31). Ruled 11-01: earns deeds like every type (1 at B+, ½ at C), played straight (leaking drums, a condemned sign line); targets drums, barrels, signs, barricades, propane tanks, gnomes, flamingos — mailboxes stay paper-route only. Then FEAT-66.' },
-        { id: 'ASSET-77', what: 'The hand-painted turn-back board — the camp\'s own demolition line (FEAT-65 slice 1) smashes a line of these on the shoulder. Minted 11-01 by Lane A; a plain placeholder stands in until it ships.' },
-        { id: 'FEAT-148 ↳', what: 'The midnight overlay — "Supplies are drying up / costs keep rising" falls from the top and settles centre, thin white 50 %, ~4 s, on black when slept through (owner 10-31). The giver lines come from the item-setup page once the owner fills them.' },
-        { id: 'FEAT-154', what: 'Barricades on EVERY road leaving the story play area — the camp\'s row at each wall crossing; most still stop at the invisible wall (owner 10-30, major, up front).' },
-        { id: 'FEAT-155', what: 'Hide the truck dashboard while a camp is made (owner 10-30).' },
-        { id: 'FEAT-151', what: 'Tiredness is not dangerous enough — blinks more often at every stage, longer dozes when tired/exhausted; proposed numbers in the ticket (owner 10-26).' },
+        { id: 'FEAT-66', what: "NEXT — camp gear renders at the campsite (items.md's visible-kit rule)." },
+        { id: 'FEAT-161', what: 'The finale is the hardest drive — plan 2–3 options for the owner (Sid Meier review C, 11-02).' },
+        { id: 'FEAT-147', what: 'The opening: the firing as a graphic-novel scene, then a courier run TO Larry as the first job (ruled 11-02).' },
+        { id: 'FEAT-148 ↳', what: 'The midnight overlay, and the plumbing for the givers’ two-part quotes (the owner writes the words).' },
+        { id: 'FEAT-65', what: 'Demolition slice 1 is on main; open for the owner’s drive and the placeholder words.' },
+        { id: 'FEAT-155', what: 'Hide the HUD dock while a camp is made.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then this page\'s Lane A handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/a.handoff here.' },
-    { id: 'b', name: 'B — the machine bites back', goal: 'Physics, damage, parts and recovery.',
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then this page\'s Lane A handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/a.agent. Before a /clear, set your task rows and write lanes/a.handoff here.' },
+    { id: 'b', name: 'B — the machine bites back', goal: 'Physics, damage, parts, recovery, assists.',
       wt: '/Users/ledogen/CodeShit/CarGame-machine', branch: 'feature/machine', port: 3282,
-      owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, data/parts.js, data/stock-weights.js, physics gates',
+      owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, drivetrain assists, data/parts.js, data/stock-weights.js, physics gates',
       tasks: [
-        { id: 'BUG-99', what: 'Tire-on-rock physics — Newton\'s third law on every rock contact; punctures on the energy a strike dumps into the rim.' },
-        { id: 'FEAT-158', what: 'Rock grip / crawling — the tire climbs rocks, rocks grip the road. Needs an implicit tire–rock–road solve first (the first try is parked on wip/bug99-rock-grip). Owner 11-01.' },
-        { id: 'FEAT-93', what: 'Hazard punctures — a hard enough rock hit pops a tire at any condition.' },
-        { id: 'FEAT-94', what: 'Driving on a flat wrecks that corner, and the player is told it is flat (no percentage).' },
-        { id: 'FEAT-132', what: 'The stranded motorist posts a haul fetch — wheel + tire ride in the bed.' },
-        { id: 'FEAT-138', what: 'Hi-lift jack — right a rolled truck where it lies. Approved 2026-10-24: 10.5 N·m per kg for up to 3 s, cut at the balance point, 5 s real-time cooldown. Ready to build.' },
-        { id: 'BUG-89/54/92', what: 'Rolled truck slides too far · chassis launched at extreme travel · ABS kick never rumbles the pad.' },
-        { id: 'FEAT-150', what: 'Auto shift schedule — hangs in 1st (the hysteresis band vs the 1st→2nd step), lugs 3rd instead of kicking down (kickdownRPM 2400 → ~3200). Owner 10-25; numbers in the ticket.' },
+        { id: 'FEAT-158', what: 'Rock grip — ON MAIN b2d857ce (full suite 118/118, smoke 21/21).' },
+        { id: 'FEAT-159', what: 'BUILT on feature/machine — throttle assist + traction control; waits on your three calls + the drive on :3282 (owed list).' },
+        { id: 'FEAT-162', what: 'The truck’s heart: failures that strand it for real, "you broke down" — plan first (owner idea 11-02).' },
+        { id: 'BUG-92', what: 'ABS kick never rumbles the pad — waits on the owner’s USB probe.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read ' + HANDOFF + ' § Lane B, then this page\'s Lane B handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/b.handoff here.' },
-    { id: 'c', name: 'C — content and polish', goal: 'Models, sound, items. Lane A needs the first two models.',
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read ' + HANDOFF + ' § Lane B, then this page\'s Lane B handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/b.agent. Before a /clear, set your task rows and write lanes/b.handoff here.' },
+    { id: 'c', name: 'C — content (no standing session)', goal: 'Owner-gated: runs when the owner has listening or modelling time (11-02). Code items go to Spare.',
       wt: '/Users/ledogen/CodeShit/CarGame-content', branch: 'feature/content', port: 3774,
       owns: 'assets/, wip/, src/*-audio.js, data/items.js rows + thumbnails, items.md, FEAT-120/121',
       tasks: [
-        { id: 'ASSET-71', what: 'The expedition camp model (Lane A\'s win needs it; no placeholder in the alpha).' },
-        { id: 'ASSET-32', what: 'The uncle\'s van (Lane A\'s opening).' },
-        { id: 'ASSET-69/70/73', what: 'Office, doctor\'s office, school — the placeholders the alpha shows.' },
-        { id: 'FEAT-120', what: 'Sound-effects pass, source by source (dashboard → Sounds is the tracker).' },
-        { id: 'FEAT-121/129', what: 'Item-setup rulings going live (the standing items loop) · favicon.' },
-        { id: 'FEAT-149', what: 'Knockable lawn ornaments — gnome, beach ball, flamingo become debris bodies on contact and roll away; the fire pit and the rest stay solid. (owner 10-25)' },
-        { id: 'ASSET-76', what: 'Fire pit re-export at 1.2× (owner 10-25: "20% bigger"); registry box to match.' },
-        { id: 'FEAT-120 ↳', what: 'Ratchet strap click (freight accept) + release (job end) — the owner records these; the entries are in the ticket.' },
-        { id: 'FEAT-120 ↳', what: 'Pump register → a cash-register cha-ching, not the ding (owner 10-26); entry in the ticket.' },
-        { id: 'BUG-94', what: 'Moon halo rings the UNLIT limb, outlining the phase mask — gate the glow by the terminator, not a bigger mask (owner 10-26).' },
-        { id: 'BUG-96', what: 'Distant-tree billboards mirror-flip at some headings (the sun-side U flip) and read badly at low sun — three options in the ticket (owner 10-26).' },
+        { id: 'FEAT-120', what: 'Sound pass — the owner listened 11-02; verdicts per sound in the ticket on feature/content. Keepers and redos went to Spare.' },
+        { id: 'FEAT-120 ↳', what: 'Strap click / release — the owner records them.' },
+        { id: 'ASSET-77', what: 'The hand-painted turn-back board (FEAT-65’s camp line; crates + drums stand in).' },
+        { id: 'ASSET-76', what: 'Fire pit re-export at 1.2×, registry box to match.' },
+        { id: 'FEAT-121/129', what: 'Item-setup rulings going live · favicon.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read ' + HANDOFF + ' § Lane C, then this page\'s Lane C handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/c.handoff here.' },
-    { id: 's', name: 'Spare — front of mind', goal: 'Whatever you surface; the alpha bugs nobody else owns.',
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read ' + HANDOFF + ' § Lane C, then this page\'s Lane C handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/c.agent. Before a /clear, set your task rows and write lanes/c.handoff here.' },
+    { id: 's', name: 'Spare — front of mind', goal: 'Whatever the owner surfaces, the alpha bugs nobody else owns, and Lane C’s code items.',
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
-        { id: 'BUG-81 item 4', what: 'LANDED 11-01 (two-sided tube, lid, portalCover 2 → 6). ITEM 5 LANDED 11-01 night (06b7d94f): the number — portalCover could never frame the portal, the deck-rooted funnel left ~5.9 m of bare tube top whatever the cover; now a terrain mound hugs the arch at R + 1.5 m from the portal line (inside the collar\'s R + 2.6, so the step hides behind the ring); the skin hole follows the tube\'s own centreline past the collar (was a level capsule 0.45 m wide of it = the sky). road-tunnel earth-over-arch 0/144 → 144/144. Owner look owed.' },
-        { id: 'BUG-90', what: 'DONE — ticket closed (completed/).' },
-        { id: 'FEAT-42', what: 'DONE — the single run slot (autos-run/1) ships; a new game clears it.' },
-        { id: 'BUG-93', what: 'CLOSED 11-01 — owner: "looks fixed. nice."' },
-        { id: 'BUG-77 · FEAT-77', what: 'BUG-77 LANDED 11-01 (5e283d49). FEAT-77 (a) LANDED 11-01 night (4ac68645, merged fb99b12a): two legs of one node short of the rule by < 1 m over < 20 m are a reported near-miss; road-clearance PASS, 0 violating pairs, 2 near-misses. NO known red left in the suite. FEAT-77 stays open for class A only.' },
-        { id: 'FEAT-133/136', what: 'Controller finish. FEAT-133 LANDED 11-01 (6bb5e9f6): a card\'s first D-pad press lands on its main action; the pad paper throw is proven live in the smoke. Both now wait on the owner\'s real-pad play-test (FEAT-136 = Safari and Firefox pads, owner hardware).' },
-        { id: 'BUG-67', what: 'Remedy (1) as RULED 11-01 MEASURED DEAD (ticket 66e3e4ab): a near-node portal charge in the corridor search leaves the census at 2/17/12 (main 1/18/12), 10× the charge makes it 11/24/18. The corridor plans on a 32 m lattice; these portals are born within one 10 m station of the node. Real mechanism: _v2NodeHeight sinks a node to the LOWEST of 12 ring samples 22 m out (FEAT-68 convex-edge rule), in all 12 directions, so a side-slope node sinks to the low side and its uphill leg starts in a >25 m cut = a forced bore at the junction. Proposed lever: ring minimum only along the node\'s OWN legs\' bearings (optionally cap the burial under cutMax). Changes FEAT-68\'s node-height rule, every world re-routes. PROTOTYPED on proto/bug-67-node-height (c4839529): census 1/18/12 → 1/16/10, burial cap adds nothing; 82 of 340 nodes rise (median 1.5 m, p90 6 m, max 10.8 m); every routing gate green but paper-tour, red on one seed (the 15-house round grows 14.77 → 16.09 km over the 15.5 km limit). The other 10 at-node portals sit on steep faces with one leg diving and one climbing — no node HEIGHT serves both, only the node SEAT (site placement) would. Owner go/no-go on the OWED list. Still lands BEFORE FEAT-62 authors anything.' },
-        { id: 'BUG-63', what: 'Spare took it 11-01 (sweep: unowned alpha bugs are BUG-58/63/69/73/74). A mid-span T-promotion whose pair shares a node writes two runs under one key and silently loses a road — 2 collisions in 4 mid-span commits across the battery (seeds 7, 11), each leaving a 2-leg promoted node. Measured (65b036a3): declining turns junction-stitch red (2 unstitched), exactly as the 09-07 ruling found; the PAIR KEY (side half keyed "~p", drawn/carved/collided but out of networkGraph(), the BUG-85 precedent) keeps both roads and the T at main\'s numbers. Parked on proto/bug-63-parallel-key because the restored seed-7 T now builds a real 3-leg pad on a 37 % cross-slope and exposes a BUG-82 open-back pad chord defect (16 cm vs 6 cm). LANDED 11-01 (1ec004ca): _legDeckTop inverts the ribbon\'s own cross-section (Newton step), pad chord 16 → 4.9 cm, all 215 legs weld; ceilings in-pad 19 (seed 19\'s restored leg) and curvature 204 (seeds 7 and 11), each commented with its T. Ticket in completed/.' },
-        { id: 'BUG-64', what: 'Class B LANDED per ruling (a), merged 11-01 night (fb99b12a). Every run in reach composes as earthwork (fills max, cuts min, mixed sums); road-carve-walls 33 → 0; road-fill-support reports an overlap up-step as FEAT-77\'s (tolerance unchanged). The rest is OVERLAP = class A (FEAT-77: the 18 m foot vs the 36 m toe), which moves routes. (major)' },
-        { id: 'FEAT-62', what: 'The frame already ships (two descent time trials, data/scenarios.js, scenario-route gate). LANDED 11-01: best times persist in localStorage, one key per scenario, outside the run slot (5f650a47). The paper-route scenario (seed 90, tier 1) waits on owner calls (OWED list) and on BUG-67\'s re-route, which breaks both descents\' poses (re-extract after). (major)' },
-        { id: 'FEAT-141', what: 'LANDED 11-01 (b7e773ea). Papers, "any N against a deadline" — every customer deliverable from the start; the plotter\'s shortest N-route × 1.5 is the deadline, the GPS draws it; the round ends at N or expires; "bell" leaves code and docs. (major)' },
-        { id: 'FEAT-142', what: 'LANDED 11-01 (97ebbcb5). Giver traits — 0–2 per offer from their own seeded stream (no existing offer changes), bottom-left of the card; pay, deadline, haul stock and fragile floors move at accept, the tip pool and deeds ride to settle. Count weights 50/35/15 %. Wholesale is haul-only. All numbers are starting values for FEAT-69.' },
-        { id: 'FEAT-156', what: 'DONE — main menu = continue · new game · settings; mode selector on the new-game page (owner 10-30).' },
-        { id: 'BUG-100', what: 'LANDED 11-01 (15b837d5): a refused seed re-rolls a fresh random one up to 3×, typed seeds included, world knobs and gearbox kept; the card is the 4th strike. A RESUME never re-rolls (it would throw the save away). Verified in Chrome: typed 2881088386 → re-roll 1/3 → live.' },
-        { id: 'BUG-58', what: 'LANDED 11-01 (43cc5b6b): the ticket\'s 143 m "open cut" was a bore (road-character\'s earthwork max counts bores); real open cuts past cutMax were 0.00–0.10 % of samples, from stub bores under 12 m dropped as noise and shipped as unpriced cuts — a profile that leaves a stub now re-solves with BORE forbidden at those stations (seed 11 worst 30.8 → 25.5 m). The crest launch ramp is gone since FEAT-81. The 29–32 m cuts within 8 m of a run end are BUG-67\'s buried-node class. Suite 112/113, smoke 20/20.' },
-        { id: 'BUG-73', what: 'CLOSED 11-01 — not reproduced (GPU probe 0 faults in 183k draws); owner has not seen it since. Reopen on sighting; the ticket says what to note.' },
-        { id: 'FEAT-89', what: 'LANDED 11-01 (a97f5618): courier multi-drop, 2–4 stops, nearest-unvisited tour, park to hand over at every stop but the last, par priced once. The delivery → courier key rename is superseded by R-08. Owner play-test owed: the 0.35 share, stop weights 3/2/1, the 6 placeholder things, prompt wording.' },
-        { id: 'FEAT-142 follow-up', what: 'LANDED 11-01 night (833d0e6a): one trait at most (weights 0/1 at 0.5 each on the same stream; single-trait offers keep theirs, two-trait offers keep their first, no other roll moves) and the effect printed on its line in the offer\'s numbers. Owner look owed.' },
-        { id: 'BUG-101', what: 'NEW 11-01 (owner, requisition fuel run): strapped freight\'s collider box and mesh lag a step behind the chassis under load — a frame-order / interpolation defect, probably quick. Unowned; Spare after its queue.' },
-        { id: 'BUG-102', what: 'NEW 11-01 (owner, long-standing): chase camera drops behind the truck or freezes in space when the frame rate dips. Spare 11-01 night: NOT reproduced — the chase camera already decays on wall dt (clamped 0.25 s); logged at no load, CPU 6×, 20× (63 ms frames) and 300 ms stalls: zero frozen frames, separation in the unloaded 5.3–10 m band, a 5.7 m truck jump across a stall followed in the same frame. Waits on the owner\'s sighting details (owed list).' },
-        { id: 'BUG-103', what: 'CLOSED 11-01 by the orchestrator on main. The spur was never open (the fade and a FEAT-154 row already cut both loops); the MAP was wrong: it drew the 2500 m ring, with 3.8 km of road past the fade shown as open. Owner ruled (f), the honest map: ring and dim at the 2410 m fade line, an orange tick at every barricade row. Found alongside: the edge return seated the truck just past the camp\'s row (poi.js _returnSpots now stops 10 m short of every row).' },
-        { id: 'FEAT-153', what: 'POI mission rebalance — every POI type earns its visits. Census: office 1 job in 8 boards, school 1 in 10, households + vendor post half of everything, 29 % of jobs end roadside. Waits on the owner\'s ruling (office/school as givers?) — numbers + placeholder jobs in the ticket. (owner 10-29, major)' },
-        { id: 'FEAT-69', what: 'The economy re-cut, once Lane A gives a run that can finish.' },
+        { id: 'BUG-67', what: 'REDEFINED 11-03 by the owner: sibling tunnels colliding at a junction (degree ≥ 3), not a lone portal. Re-assessment running (orchestrator’s subagent) on three captures.' },
+        { id: 'BUG-105 · BUG-106', what: 'Two roads graze with no crossing · a road in a lake a cold build doesn’t have (owner captures 11-03).' },
+        { id: 'FEAT-153', what: 'ON MAIN ac7a9593 — office + school give jobs; census gate. Open: your words, the tackle-shop reel.' },
+        { id: 'FEAT-120', what: 'ON MAIN 012b2461 — keepers wired, register + sputter redone, gravel prototyped. Waits on your clips, a scrape recording, and your listen.' },
+        { id: 'FEAT-163', what: 'ON MAIN 012b2461 — a real reverb on the game’s mix inside a tunnel; waits on your listen.' },
+        { id: 'FEAT-62', what: 'Paper-route scenario — waits on BUG-67’s re-route and the owner’s scenario calls.' },
+                { id: 'FEAT-144/143', what: 'World items + reloading lost cargo — wait on the defaults and P1 answers.' },
+        { id: 'FEAT-70', what: 'Wheel contact (the sphere stencil) — waits on A or B.' },
+        { id: 'FEAT-131', what: 'Results-screen juice — waits on four calls.' },
+        { id: 'BUG-74', what: 'Roadwork seam, 4th try — held on proto/bug-74-fill-bury for the owner’s drive on :3885.' },
+        { id: 'BUG-104 · BUG-69', what: 'Overlapping roads · side road diving below its trunk — each a go / no-go.' },
+        { id: 'BUG-102', what: 'Camera freeze — not reproduced; waits on a sighting.' },
+        { id: 'FEAT-133/136', what: 'Controller finish — waits on the real-pad play-test (and Safari / Firefox).' },
+        { id: 'FEAT-69', what: 'The economy re-cut — after the owner’s full-run review.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read ' + HANDOFF + ' § Lane Spare, then this page\'s Lane Spare handoff and tasks; take the first task not done. Merge main first; before a /clear, commit, set your task rows and write lanes/s.handoff here.' },
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read ' + HANDOFF + ' § Lane Spare, then this page\'s Lane Spare handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/s.agent. Before a /clear, set your task rows and write lanes/s.handoff here.' },
   ]
+  // The owner's queue (owner 11-02): `kind` = what it costs the owner — decide (a one-line answer: tap an option
+  // or type a note), drive (needs the game; the full-run review covers most), make (the owner's hands, ears or
+  // hardware). `blocks` = the agent work that waits on it; any item with one sorts into the top group. A decide
+  // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
+  // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
-    'FEAT-103 requisition: the fuel delivery is done; the other deliveries are yours "at a later date".',
-    'FEAT-65 demolition (landed 11-01): drive a demolition site — does a sleeping target ever wake untouched? Then the placeholder words, the target counts and the rank row (S 1.0 / A .9 / B .75 / C .6, provisional).',
-    'FEAT-89 courier multi-drop (landed 11-01): play-test the 0.35 share, the stop weights 3/2/1, the six placeholder things that roll it, and the prompt wording.',
-    'FEAT-142 giver traits (landed 11-01 night): look at a card — one trait, its effect in the offer\'s own numbers ("patient: −$0.64 pay · deadline +29 min · rank times 10% looser").',
-    'BUG-81 item 5 (landed 11-01 night): drive a portal — earth now frames every arch (a mound at R + 1.5 m behind the collar) and the sky gap beside the mouth is closed. Before/after shots in CarGame-spare/wip/bug-81-item5/.',
-    'BUG-103 / FEAT-154 (landed 11-01): look at the story map\'s new edge (ring at 2.4 km, a tick per row) and the edge return at the camp, which now seats you inside its row.',
-    'BUG-67 junction cutting — NUMBERS IN (proto/bug-67-junction-cut, ticket § Junction cutting): a cap of 30 m moves nothing and leaves 10 at-node bores (of 12); 40 m leaves 5 and moves one T 33.5 m on seed 13; 50 m leaves 4; two (seed 18) need a re-check after the mid-span split. Build +6 %. Your call: 30 / 40 / hold; Spare can shoot a 40 m cutting first.',
-    'FEAT-133/136 controller: the real-pad play-test (map, cards, paper throw on RB), and pads in Safari and Firefox.',
-    'BUG-102 camera lag/freeze: NOT reproduced (chase camera logged at no load, CPU 6×, 20× and 300 ms stalls — zero frames where it stood still while the truck moved). Spare needs: which camera (chase / hood / orbit drag / pad look), the rough speed, and whether a menu, the map or the camp was up when it froze.',
-    'The giver lines: fill the Giver lines sheet — the FIRST section of the item-setup page https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu (generic first lines + one per thing); the fold to data/offers.js follows.',
+    { id: 'feat120-listen', kind: 'drive', tk: 'FEAT-120/163',
+      text: 'Listen in game (on main): tunnel reverb in a real tunnel; the redone pump register (handbrake down at the pump) and low-fuel sputter; crickets at night under 5 mph; coin + stinger on the result card; brake squeal; grass. Menu and result-card sounds stay dry in a tunnel [default] — say if they should echo too.' },
+    { id: 'feat120-clips', kind: 'make', tk: 'FEAT-120',
+      text: 'YouTube blocked the agents’ download: drop the gravel clip (s0pqv_p1UvU) and the reverse whine (-bBiqmdEjbM, 1:50–1:53) on their Sounds cards (localhost:8010 → Sounds). And the underbody scrape needs a recording (contact mic) or a CC0 library take.' },
+    { id: 'feat153-reel', kind: 'decide', tk: 'FEAT-153',
+      text: 'Tackle shop: Spare read "one outbound thing … so it is a destination too" as adding a job that ENDS there — "a reel to re-spool", from a home. Keep it, or delete the row?',
+      options: ['keep', 'delete'] },
+    { id: 'feat159-calls', kind: 'decide', tk: 'FEAT-159', blocks: 'Lane B’s throttle assist + traction control landing',
+      text: '(a) Assist on, flooring it mid-corner on dry tarmac under ~25 mph gets feathered: the slide angle drops from 36° to 9°. Handbrake flicks, U-turns and loose-ground drifts pass untouched. The alternative, stepping aside past a steering angle, lets a full-lock pull-out spin. (b) Assist strength 0.35: a 0–30 mph keyboard launch takes 3.52 s (3.48 s with it off); tread wear drops 29 % on keyboard, 63 % on pad, 93 % in reverse. (c) Traction control strength 0.15 is cautious: a dry launch with it on is ~33 % slower.',
+      options: ['accept all three', '(a) step aside past a steering angle', '(c) less cautious TC'] },
+    { id: 'feat159-drive', kind: 'drive', tk: 'FEAT-159', blocks: 'Lane B’s throttle assist + traction control landing',
+      text: 'Drive it on :3282 (not main): Settings → throttle assist / traction control. Try a keyboard launch, a corner on full throttle, and a keyboard reverse.' },
+    { id: 'feat144-defaults', kind: 'decide', tk: 'FEAT-144', blocks: 'Spare’s world items (FEAT-143/144)',
+      text: 'Reloading lost bed cargo — six defaults in the ticket. The one that needs you: a lost tire no longer fails the job at once; it just can’t finish until it’s back in the bed (reverses 10-22).',
+      options: ['approve all six', 'approve, keep the 10-22 tire rule'] },
+    { id: 'feat143-p1', kind: 'decide', tk: 'FEAT-143', blocks: 'Spare’s world items P1',
+      text: 'Drop / pick-up: reach 8 m, parked only, drops persist in the save, pick-up from a "Nearby on the ground" strip in the inventory (no new button)?',
+      options: ['yes to all'] },
+    { id: 'feat70-ab', kind: 'decide', tk: 'FEAT-70', blocks: 'Spare’s wheel-contact build',
+      text: 'The wheel touches the world as a sphere (a 15 cm step lifts the hub 74 mm in one step; kerbs never push back). A: solve the real tire cylinder ourselves, radial normal (recommended). B: engine wheel shapes on terrain.',
+      options: ['A, 3 lines', 'A, 2 lines (edges)', 'B'] },
+    { id: 'feat131-calls', kind: 'decide', tk: 'FEAT-131', blocks: 'Spare’s results-screen juice',
+      text: 'A sound-only grade stinger under the no-letter rule? Music bed starts with the bar or at accept? Bed is Spare’s or Lane C’s? Order sounds → motion → bed?',
+      options: ['yes · bar · Spare · that order'] },
+    { id: 'bug74-drive', kind: 'drive', tk: 'BUG-74', blocks: 'the held branch proto/bug-74-fill-bury',
+      text: 'Drive the roadwork seam, 4th try: say the word and Spare checks it out on :3885. Also: build the "fade ≥ 8 m" past-the-toe channel?' },
+    { id: 'feat65-wake', kind: 'drive', tk: 'FEAT-65', blocks: 'Lane A’s fallback decision',
+      text: 'Drive a demolition site: does a sleeping target ever wake before it’s touched? Then the placeholder words, counts and the rank row (S 100 / A 90 / B 75 / C 60 %).' },
+    { id: 'givers-lines', kind: 'make', tk: 'FEAT-148',
+      text: 'Fill the Giver lines sheet — first section of the item-setup page (https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu). Not blocking: placeholders ship until then.' },
+    { id: 'feat62-calls', kind: 'decide', tk: 'FEAT-62',
+      text: 'Paper-route scenario: start at the spawn or at Larry’s? Replay the briefing cards? A fixed 4 customers or a ladder? All scenarios open from the start? Are the two descents’ gates final?',
+      options: [] },
+    { id: 'bug104-go', kind: 'decide', tk: 'BUG-104',
+      text: 'Two roads lie on top of each other in ~5 % of worlds. Drop the shorter run when its ends stay connected (removes a drivable road), or accept it?',
+      options: ['go', 'accept'] },
+    { id: 'bug69-go', kind: 'decide', tk: 'BUG-69',
+      text: 'A side road diving 10–22 m below its trunk right beside it, ~1 world in 4. The narrow fix re-routes every world. Go, or leave it as playable?',
+      options: ['go', 'leave it'] },
+    { id: 'bug54-sink', kind: 'decide', tk: 'BUG-54',
+      text: 'Every rock is sunk by the LARGEST rock’s radius, so small rocks sit ~4× too deep and some vanish. Fixing it raises small rocks into view world-wide. Go?',
+      options: ['go', 'leave'] },
+    { id: 'feat150-curve', kind: 'decide', tk: 'FEAT-150',
+      text: '"~3000 rpm at 80 % pedal" needs FEAT-124’s throttle curve reshaped. Reshape it, or leave the curve?',
+      options: ['reshape', 'leave'] },
+    { id: 'feat138-press', kind: 'decide', tk: 'FEAT-138',
+      text: 'Hi-lift from the ROOF usually rights the truck in one press (the roof → side fall releases ~5 kJ; side → wheels needs ~2.2 kJ). Accept the physics? And the $20 shelf price?',
+      options: ['accept both', 'two presses'] },
+    { id: 'feat120-blip', kind: 'decide', tk: 'FEAT-120',
+      text: 'Dialogue cards appear whole, so a "text blip" has nothing to tick on: one blip per card, or cut it?',
+      options: ['one per card', 'cut'] },
+    { id: 'run-review', kind: 'drive', tk: 'full run',
+      text: 'The full alpha run — it shows most of the drive items in context: demolition, multi-drop courier (FEAT-89), giver traits (FEAT-142), the tunnel portals (BUG-81), the map edge + edge return (BUG-103/FEAT-154), the shift schedule (FEAT-150), the hi-lift (FEAT-138), the key-off at camp (FEAT-128), lawn ornaments / moon / trees (FEAT-149, BUG-94/96). Type notes into the inbox as you go. If the camera ever freezes, note which camera, speed, and what was open (BUG-102).' },
+    { id: 'pad-test', kind: 'drive', tk: 'FEAT-133/136',
+      text: 'Real-pad play-test (map, cards, the paper throw on RB), then pads in Safari and Firefox.' },
+    { id: 'bug92-usb', kind: 'make', tk: 'BUG-92',
+      text: 'Run the ABS rumble console probe with the pad on a USB cable: if it buzzes, Spare lengthens the kick; if not, it closes as a platform limit.' },
+    { id: 'feat120-straps', kind: 'make', tk: 'FEAT-120',
+      text: 'Record the ratchet-strap click and release.' },
   ]
   const STATES = ['todo', 'doing', 'done', 'blocked']
-  const state = { tasks: {}, lanes: {}, inbox: {} }
+  const state = { tasks: {}, lanes: {}, inbox: {}, owed: {} }
   let db = null, canWrite = true
   const el = (id) => document.getElementById(id)
   const tid = (l, t) => `${l.id}-${t.id.replace(/[^A-Za-z0-9]+/g, '_')}`
@@ -218,7 +272,7 @@
     <h3>${esc(l.name)}</h3>
     <p class="goal">${esc(l.goal)}</p>
     <div class="meta"><span>worktree</span><span><code>${esc(l.wt)}</code></span><span>branch</span><span><code>${esc(l.branch)}</code></span>
-      <span>serve</span><span><a href="http://localhost:${l.port}">localhost:${l.port}</a></span><span>owns</span><span>${esc(l.owns)}</span></div>
+      <span>serve</span><span><a href="http://localhost:${l.port}">localhost:${l.port}</a></span><span>session</span><span id="agent-${l.id}">—</span><span>owns</span><span>${esc(l.owns)}</span></div>
     <ul class="tasks">${l.tasks.map(t => { const id = tid(l, t); return `<li class="task" id="task-${id}">
       <button class="st" data-task="${id}" id="st-${id}">todo</button>
       <div class="what"><span class="id">${esc(t.id)}</span>${esc(t.what)}</div>
@@ -226,7 +280,27 @@
     <details><summary>resume prompt</summary><div class="prompt" id="prompt-${l.id}">${esc(l.prompt)}<button data-copy="prompt-${l.id}">copy</button></div><div class="saved" id="src-${l.id}"></div></details>
     <div class="saved" id="saved-${l.id}"></div>
   </section>`).join('')
-  el('owed').innerHTML = OWED.map(o => `<li>${esc(o)}</li>`).join('')
+  // The owner's queue: everything that blocks an agent on top, then decide · drive · make.
+  const GROUPS = [
+    { key: 'blocking', title: 'Blocking work now', goal: 'An agent waits on each of these.', pick: (o) => !!o.blocks },
+    { key: 'decide', title: 'Decide', goal: 'A one-line answer: tap an option, or type a note.', pick: (o) => !o.blocks && o.kind === 'decide' },
+    { key: 'drive', title: 'Drive', goal: 'Needs the game. The full run covers most of these.', pick: (o) => !o.blocks && o.kind === 'drive' },
+    { key: 'make', title: 'Make', goal: 'Your hands, ears or hardware.', pick: (o) => !o.blocks && o.kind === 'make' },
+  ]
+  function paintOwed () {
+    const box = el('owed')
+    if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return   // never repaint under the cursor
+    box.innerHTML = GROUPS.map(g => {
+      const items = OWED.filter(g.pick)
+      if (!items.length) return ''
+      return `<section class="og ${g.key}"><h3>${esc(g.title)} (${items.length})</h3><p class="goal">${esc(g.goal)}</p>${items.map(o => {
+        const a = state.owed[o.id] || {}
+        const opts = o.kind === 'decide' ? `<div class="opts">${(o.options || []).map(x => `<button data-owed="${o.id}" data-opt="${esc(x)}" class="${a.choice === x ? 'on' : ''}"${canWrite ? '' : ' disabled'}>${esc(x)}</button>`).join('')}
+          <input data-owed-note="${o.id}" placeholder="note" value="${esc(a.note || '')}"${canWrite ? '' : ' disabled'}></div>` : ''
+        return `<div class="ow${a.choice ? ' answered' : ''}"><span class="k ${o.kind}">${o.kind}</span><div class="t"><span class="id">${esc(o.tk)}</span>${esc(o.text)}${o.blocks ? `<p class="blk">blocks: ${esc(o.blocks)}</p>` : ''}${opts}</div></div>`
+      }).join('')}</section>`
+    }).join('')
+  }
 
   function paint () {
     const counts = { todo: 0, doing: 0, done: 0, blocked: 0 }
@@ -246,6 +320,8 @@
       }
     }
     for (const k of STATES) el('n-' + k).textContent = counts[k]
+    for (const l of LANES) el('agent-' + l.id).textContent = state.lanes[l.id]?.agent || '— (the lane writes lanes/' + l.id + '.agent on resume)'
+    paintOwed()
     // The inbox: new items first (oldest at the top, the order they were written), handled ones folded.
     const items = Object.entries(state.inbox).map(([id, x]) => ({ id, ...x })).sort((a, b) => (a.at || '').localeCompare(b.at || ''))
     const when = (x) => x.at ? new Date(x.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
@@ -289,7 +365,16 @@
   }
   el('in-add').addEventListener('click', addItem)
   el('in-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addItem() } })
+  async function saveOwed (id, patch) {
+    state.owed[id] = { ...(state.owed[id] || {}), ...patch, at: new Date().toISOString() }
+    paint()
+    if (!db) return
+    const out = el('saved-owed'); out.textContent = 'saving…'
+    try { await db.doc('owed/' + id).set(state.owed[id]); out.textContent = 'saved — the orchestrator reads it on wake' } catch (e) { out.textContent = 'not saved — ' + (e?.code || 'error') }
+  }
   document.addEventListener('click', (e) => {
+    const ob = e.target.closest('button[data-owed]')
+    if (ob && canWrite) { const id = ob.dataset.owed, x = ob.dataset.opt; saveOwed(id, { choice: state.owed[id]?.choice === x ? '' : x }); return }
     const d = e.target.closest('button[data-del]')
     if (d && canWrite) {
       const id = d.dataset.del
@@ -312,6 +397,8 @@
   document.addEventListener('input', (e) => {
     const ta = e.target.closest('textarea[data-task]')
     if (ta) { const id = ta.dataset.task; clearTimeout(timers[id]); timers[id] = setTimeout(() => save('tasks', id, laneOf(id), { note: ta.value }), 600); return }
+    const on = e.target.closest('input[data-owed-note]')
+    if (on) { const id = on.dataset.owedNote; clearTimeout(timers['o-' + id]); timers['o-' + id] = setTimeout(() => saveOwed(id, { note: on.value }), 600) }
   })
   ;(async () => {
     const use = window.claude?.use
@@ -323,7 +410,8 @@
     el('state').textContent = canWrite ? 'changes save to the page' : 'read-only view'
     const onErr = (err) => { el('state').textContent = 'store error: ' + (err?.code || 'unknown') }
     db.collection('tasks').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.tasks[d.id] = { status: x.status ?? 'todo', note: x.note ?? '' } } paint() }, onErr)
-    db.collection('lanes').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.lanes[d.id] = { handoff: typeof x.handoff === 'string' ? x.handoff : '' } } paint() }, onErr)
+    db.collection('lanes').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.lanes[d.id] = { handoff: typeof x.handoff === 'string' ? x.handoff : '', agent: typeof x.agent === 'string' ? x.agent : '' } } paint() }, onErr)
+    db.collection('owed').onSnapshot((snap) => { for (const d of snap.docs) { const x = d.data() || {}; state.owed[d.id] = { choice: String(x.choice ?? ''), note: String(x.note ?? ''), at: x.at } } paint() }, onErr)
     db.collection('inbox').onSnapshot((snap) => { state.inbox = {}; for (const d of snap.docs) { const x = d.data() || {}; state.inbox[d.id] = { text: String(x.text ?? ''), at: x.at, status: x.status, reply: x.reply, handledAt: x.handledAt } } paint() }, onErr)
   })()
 })()

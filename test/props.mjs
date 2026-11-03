@@ -63,7 +63,7 @@ console.log('2. palette bake determinism')
   ok(v0a.length !== v0c.length || v0a.some((x, i) => x !== v0c[i]), 'different seed → different geometry')
   // collision descriptors baked per variant
   ok(a.variants.aspen[0].collision.kind === 'capsule' && a.variants.aspen[0].collision.height > 0, 'tree variant carries a capsule collision')
-  ok(a.variants.rock[0].collision.kind === 'sphere' && a.variants.rock[0].collision.radius > 0, 'rock variant carries a sphere collision')
+  ok(a.variants.rock[0].collision.kind === 'mesh' && a.variants.rock[0].collision.tris?.length > 0, 'rock variant carries its own triangle mesh as collision (BUG-54)')
   ok(a.variants.smallRock[0].collision === null, 'small rock is non-collidable')
   ok(a.variants.bush[0].collision.kind === 'bush', 'bush variant carries a bush (drag) collision')
 }
@@ -131,11 +131,11 @@ console.log('5. collision math + PropSystem queries (FEAT-06b)')
   sys.drainScatter()   // PERF-14: scatter is time-sliced; gates assert on the committed state
   ok(sys.collidableCount() > 0, `collidable index populated (${sys.collidableCount()})`)
   let rock = null
-  for (const list of sys._collidables.values()) { rock = list.find((c) => c.kind === 'sphere'); if (rock) break }
+  for (const list of sys._collidables.values()) { rock = list.find((c) => c.kind === 'mesh'); if (rock) break }
   ok(rock, 'found a rock collidable')
   if (rock) {
     const hits = sys.queryProps(rock.x, rock.y, rock.z, 0.4)
-    ok(hits.length > 0 && hits[0].depth > 0, 'queryProps at rock centre returns a contact')
+    ok(hits.length > 0 && hits[0].depth > 0.4, 'queryProps at rock centre (inside the solid) returns a contact pushing out (BUG-54)')
     ok(sys.queryProps(rock.x + 9999, rock.y, rock.z, 0.4).length === 0, 'queryProps far away returns nothing')
   }
   let bush = null

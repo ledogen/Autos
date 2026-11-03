@@ -69,3 +69,85 @@ step function too, so the damage model inherits whatever fidelity this has.
   the truck rests on, only how faithfully it is found.
 - `test/collision-drop-lab.mjs` drop numbers stay in family; a change there means the contact depth
   moved, which is a result worth understanding rather than absorbing.
+
+## Measured (Spare, 2026-11-01) — `wip/feat-70/stencil.mjs`, `wip/feat-70/real.mjs`
+
+The shipped stencil (4 rings × 8 directions + centre = 33 height samples) was compared with an
+**exact tire**: a cylinder of radius r = 0.368 m and width w = 0.235 m, solved densely in the wheel's
+own plane.
+
+**Synthetic kerbs** (wheel rolled across, hub rest height every 2 mm of travel):
+
+| surface | stencil, biggest hub jump | exact tire | stencil error vs exact |
+|---|---|---|---|
+| sharp 15 cm step | **73.6 mm** in one 2 mm step (a ring seam) | 3.2 mm | 73 mm |
+| 15 cm over 5 cm | 6.0 mm | 3.1 mm | 52 mm |
+| sharp 15 cm at 30° | 73.6 mm | 3.2 mm | 100 mm |
+| sharp 30 cm step | 105.9 mm | 11.2 mm | 103 mm |
+
+**It is a sphere, not a disc.** The rings sample all around the hub, so the stencil feels things
+beside the tire. A 15 cm kerb running parallel, 15 cm from the tire's centre plane (outside its
+11.8 cm half-width), lifts the hub **76 mm**; the real tire: 0 mm.
+
+**Real roads** (headless network + carved analytic terrain; 120 lines across road edges, 48k wheel
+positions every 2 cm, heading across the road):
+- the surface slope across an edge: p50 1.6°, p99 15°, max 89° (cut faces);
+- stencil vs exact tire: **p50 9.3 mm, p99 66 mm**, max 485 mm.
+
+So the error is not a kerb-only effect: the sphere envelope reads lateral relief all the time.
+
+**The contact NORMAL is also wrong at an edge.** The stencil returns the terrain normal at its winning
+sample. On a flat-topped step that is straight up, so meeting a kerb gives the wheel no horizontal
+push back. Physically the force at an edge acts along the line from the edge to the axle. That
+horizontal component is what slows a wheel that hits a kerb, and what it climbs on.
+
+## Proposal — the complete model, approximations flagged (owner's call)
+
+**What the physics says.**
+1. **Geometry:** the tire is a solid cylinder, radius r (the soft band stays as now) and width w,
+   posed by the wheel's real orientation (steer, body roll and pitch, so camber comes free). The
+   contact is that solid's deepest penetration of the ground.
+2. **Direction:** the force acts along the line from the contact point to the axle. At a smooth
+   tangency that IS the surface normal (the maximum of h(s) + √(r² − s²) sits where the surface is
+   tangent to the circle). At an edge it is the radial line, so a kerb now resists horizontally.
+3. **Depth:** the depth along that line feeds the existing tire spring and the SM-3 rim strike
+   (`WHEEL_SOFT_BAND`) unchanged. Only how the contact is FOUND changes.
+
+**Option A (recommended): solve it in our own code, against the analytic surface.**
+- For 3 lines across the width (both tire edges and the centre), search the lower rim:
+  12 coarse samples, then a golden-section refinement around the best (≈ 8 more).
+- About 60 height samples a wheel, against 33 now (1.8×). The normal comes from the geometry, so the
+  separate `analyticNormal` lookup goes.
+- It plugs into `queryContacts`' wheel path. The wheel's heading and axle must reach the query; the
+  suspension already passes the corner index.
+
+**Option B (not recommended): extend QUAL-25's Box3D wheel cores to collide with terrain.**
+- It hands the tire's ground contact to the rigid solver.
+- Those cores are the RIM (r − soft band), not the tire.
+- The tire spring, struts and Pacejka are this project's, so it would fight them.
+
+**Approximations, flagged:**
+- **One contact per surface, the deepest point.** A real carcass spreads its load over a patch and can
+  bridge two edges at once. Ceiling: a narrow ridge under a wide tire loads one point.
+- **Three lines across the width.** Exact for anything wider than half the tire. A feature narrower
+  than ~6 cm between lines can be missed (rocks are props and have their own exact query, so this is
+  terrain-only).
+- **The refinement is exact to ~1 mm at a kink.** The hub trace is continuous; the remaining jumps are
+  real geometry: the contact moving from one feature to another, which a real tire does too.
+- **The tire's radial stiffness stays the shipped tire spring.** No carcass sidewall model.
+
+**What it will move:**
+- `fingerprint-physics` (the bumpy-ground drive no longer feels lateral relief);
+- `collision-drop-lab` and the m4 behaviours in family;
+- driving on rough terrain, slightly: the hub follows the ground under the tire, not ground beside it.
+
+It must not move the surface itself: the road and terrain gates stay unchanged.
+
+**Perf risk to check in the build:** refinement samples land in arbitrary 5 cm memo cells, so PERF-24's
+near-stationary death-spiral needs re-measuring. The coarse grid can be snapped to the memo cells if
+it bites.
+
+**Owner answers needed:**
+- A or B (A recommended);
+- 3 lines across the width, or the tire edges only (2 lines, cheaper);
+- confirm the radial normal at edges (a kerb will now slow a wheel that hits it).

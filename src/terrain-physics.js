@@ -258,11 +258,11 @@ export class RoadPhysics {
  * by the wheel path — the old body solver probed it too, but the engine chassis only knew
  * terrain/road/debris, so driving the BODY into a tree pushed back through nothing but the
  * suspension's XZ spring residual. This mirror gives the chassis (and debris) rigid contacts:
- * tree trunks + fallen logs as capsules, rocks as spheres, boulders as their actual triangle
- * meshes — the same shapes the analytic wheel query resolves, one static body per prop chunk.
+ * tree trunks + fallen logs as capsules, rocks and boulders as their actual triangle meshes
+ * (BUG-54) — the same shapes the analytic wheel query resolves, one static body per prop chunk.
  * Wheels are untouched (their engine overlap filters to GROUP_DEBRIS), so nothing double-counts.
  *
- * Radii bake the live prop sliders (trunkRadiusScale / rockRadiusScale) at chunk-sync time —
+ * Radii bake the live trunk slider (trunkRadiusScale) at chunk-sync time —
  * PropSystem re-syncs on slider change via resyncAll() (see prop-debug wiring). Bushes are
  * soft-drag only and get no collider, matching the analytic query.
  */
@@ -287,11 +287,8 @@ export class PropPhysics {
         const r = c.radius * c.scale * C.trunkRadiusScale
         this._eng.addCapsule(body, { x: c.ax, y: c.ay, z: c.az }, { x: c.bx, y: c.by, z: c.bz }, r, mat)
         shapes++
-      } else if (c.kind === 'sphere') {
-        this._eng.addSphere(body, c.radius * c.scale * C.rockRadiusScale, mat, { x: c.x, y: c.y, z: c.z })
-        shapes++
       } else if (c.kind === 'mesh' && c.tris) {
-        // Boulder: instance-local triangle soup → world (same yaw/scale/translate the analytic
+        // Rock or boulder (BUG-54): instance-local triangle soup → world (same yaw/scale/translate the analytic
         // sphereVsMeshInstance applies), sequential indices.
         const n = c.tris.length / 3
         const pos = new Float32Array(c.tris.length)

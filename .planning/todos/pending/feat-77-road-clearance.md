@@ -93,3 +93,16 @@ reported — lone-pine spawn (-68, 320) 28.3 m vs 28.5 m over 4 m, and seed3 ori
 27.8 m vs 28.5 m over 16 m. The known red is gone. Still open, and not this gate's: class A (the
 rule's foot capped at 18 m while the carve's deep-bank toe reaches 36 m), which would move routes.
 
+
+## Open, handed over from BUG-104 (Spare, 2026-11-02): does a `~p` parallel owe its sibling the rule?
+
+A `~p` run (BUG-63) is the second half of a mid-span T whose node pair is already taken — a second
+road between the SAME two nodes. The clearance rule judges it like any pair, and the rule has no view
+on whether two parallel roads between one node pair should keep 12 m of daylight. Census example:
+seed 4 (1239, −1118), 1400 m window — a `~p` half 22.8 m from its sibling for 148 m, 5.7 m short of
+the rule (`CarGame-spare/wip/bug-69/census.mjs`). Over seeds 1–100 no `~p` pair OVERLAPS (centrelines
+under one road width), so this is a clearance question, not BUG-104's defect. Owner's call: hold
+parallels to the rule (and the planner to re-route one), exempt them like hairpin arms, or drop the
+second road. The other walk gap BUG-104 found — registered at-grade crossings were not excluded — is
+fixed in `test/lib/close-pairs.mjs` (±(blend + 10) m of a crossing on either run; road-clearance and
+road-carve-walls unchanged on the battery).

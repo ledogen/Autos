@@ -297,8 +297,16 @@ the norm.
 - **Implement directly** with focused edits. The headless harness is the real quality gate: `npm test`
   (the registered gates) + `node test/replay.mjs <capture>` for captured bugs. Prove fixes there rather
   than through heavyweight verify phases.
-- **Commit** with conventional messages (`feat(NN)` / `fix(NN)` / `perf(NN)` / `docs`), only at a
-  task/phase boundary or when asked.
+- **Commit** with conventional messages (`feat(NN)` / `fix(NN)` / `perf(NN)` / `docs`). **On a lane /
+  feature branch, commit work in progress at every working step** (`wip(NN): …` is fine) — an uncommitted
+  tree is lost work after a crash (owner, 2026-11-02). On resume, uncommitted changes in your worktree are
+  yours: commit them, never discard them. **Main** (the integration branch) gets commits only at a task
+  boundary (a landing, an orchestrator fix) or when asked.
+- **Parallel lanes** (when the owner runs them — lanes, ports and the tracker page are in the orchestrator
+  handoff, `.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`): on every resume, write your session
+  name (as `ListAgents` shows it) to the tracker page's `lanes/<id>.agent`. When the page's owed list holds
+  10+ items, prefer work that adds nothing to the owner's review pile (gates, perf, closing on evidence,
+  making a pending decision cheaper to answer).
 
 For a large structured effort, lean on plan mode and stage the work in `.planning/`. The `.planning/`
 phase artifacts (`phases/`, `milestones/`, handoffs) are historical record; `.planning/todos/` is the

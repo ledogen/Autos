@@ -177,8 +177,8 @@ export const POI_PARAMS = {
  *
  * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is DERIVED, not hand-set (FEAT-67): a
  * type posts offers iff it has a row in data/offers.js SOURCES (the mission board's source table).
- * Mom's house, the office and the school have none — they only receive (owner, 2026-10-07) — so
- * they wear no interaction ring and answer no park trigger. A marker that wears the ring but answers
+ * Mom's house has none — she only receives — so she wears no interaction ring and answers no park
+ * trigger. A marker that wears the ring but answers
  * nothing is the same lie as a prompt drawn wider than its trigger, which this module already
  * refuses to tell; deriving the flag from the one table that decides who posts work is what makes
  * that impossible to get out of step.
@@ -360,6 +360,21 @@ const YARD_SOLID_GAP = 0.15   // m — clearance from the POI model's own collis
  * Static dressing only (owner, 2026-09-22): meshes, no bodies, no contact — the truck drives
  * through them.
  */
+/**
+ * FEAT-149: a yard satellite's SOLID record — the fields a marker carries (modelX/Z, baseY, modelYaw,
+ * collision), so queryContact's box test (the wheels) and PoiPhysics (the chassis) take it unchanged.
+ * Null for a knockable ornament (data/prop-models.js `knockable` — main.js makes it a body near the
+ * truck) and for a model with no collision. "Others should have collision but not budge (brick
+ * firepit)" — owner, 2026-10-25; before this a satellite was a mesh only and the truck drove through.
+ */
+export function satSolid (sat) {
+    if (sat._solid !== undefined) return sat._solid
+    const spec = PROP_MODELS[sat.key], col = spec?.collision
+    return (sat._solid = !col?.size || col.shape === 'none' || spec.knockable ? null
+        : { id: `sat:${sat.key}@${sat.x.toFixed(2)},${sat.z.toFixed(2)}`, modelX: sat.x, modelZ: sat.z,
+            baseY: sat.y - (sat.lift ?? 0), modelYaw: sat.yaw, collision: { size: col.size } })
+}
+
 export function dressYard (q, seed, yard) {
     const tag = q.tags?.find(t => YARD_POOLS[t])
     if (!tag || !yard?.length) return []
@@ -1257,6 +1272,11 @@ export class PoiSystem {
             if (q.hidden) continue                    // FEAT-102: a hidden marker has no collider
             const hit = this._boxesContact(q, cube, cx, cy, cz, r)
             if (hit) return hit
+            for (const sat of q.satellites ?? []) {   // FEAT-149: the yard's solid things
+                const s = satSolid(sat)
+                const h = s && this._boxesContact(s, cube, cx, cy, cz, r)
+                if (h) return h
+            }
         }
         return null
     }

@@ -323,28 +323,58 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   const tauAvg = params.shiftThrottleTau ?? 1.5
   st.throttleAvg = st.throttleAvg === undefined ? throttle : st.throttleAvg + (throttle - st.throttleAvg) * (1 - Math.exp(-dt / tauAvg))
   st.floorTime = throttle >= 0.95 ? (st.floorTime || 0) + dt : 0
+  // FEAT-150: the road's acceleration, as the axle's angular acceleration (gear-independent, so a shift
+  // never spikes it), smoothed. The upshift test projects the NEXT gear forward with it.
+  const axleAbs = Math.abs(axleOmega)
+  if (st.prevAxle !== undefined && dt > 0)
+    st.axleAcc = (st.axleAcc ?? 0) + ((axleAbs - st.prevAxle) / dt - (st.axleAcc ?? 0)) * (1 - Math.exp(-dt / (params.shiftAccelTau ?? 0.25)))
+  st.prevAxle = axleAbs
   if (!reverse && st.shiftTimer <= 0 && !spinLock) {
     const shiftUpWot    = params.shiftUpRPM || 4300
     const shiftUpLight  = params.shiftUpLightRPM ?? shiftUpWot
-    const load          = st.throttleAvg ** (params.shiftThrottleCurve ?? 2)   // 0 light … 1 floored
+    // FEAT-150: a held floor (kickdown) reads the FLOORED schedule at once — the downshift point below has
+    // always done so, and the upshift point and band must agree with it or the box kicks down on the
+    // floored point, then shifts straight back up on the still-lagging average (3-2-3).
+    const kick          = st.floorTime >= (params.kickdownDelay ?? 0.4)
+    const load          = kick ? 1 : st.throttleAvg ** (params.shiftThrottleCurve ?? 2)   // 0 light … 1 floored
     const shiftUp       = shiftUpLight + load * (shiftUpWot - shiftUpLight)
     const shiftDownBase = params.shiftDownRPM || 1300
     const kickdown      = params.kickdownRPM || 2200
-    const downLoad      = st.floorTime >= (params.kickdownDelay ?? 0.4) ? 1 : st.throttleAvg
+    const downLoad      = kick ? 1 : st.throttleAvg
     const shiftDownEff  = shiftDownBase + downLoad * (kickdown - shiftDownBase)
     const holdTime      = params.shiftHoldTime || 0.6
     const hystWot       = params.shiftHysteresis ?? 800
     const hysteresis    = (params.shiftHysteresisLight ?? hystWot) + load * (hystWot - (params.shiftHysteresisLight ?? hystWot))
     if (st.gear < nGears && coupled > shiftUp) {
-      // Anti-hunt (the key hysteresis lever): only upshift if the next gear's coupled RPM would land a
-      // full `shiftHysteresis` band ABOVE the current downshift point — i.e. the higher gear has real
-      // headroom to hold. On a grade the truck can't push the next gear's coupled RPM that high, so the
-      // upshift is BLOCKED and it stays in the lower gear instead of upshift→bog→downshift limit-cycling.
-      // On the flat it accelerates right through, so this only bites where a higher gear is unsustainable.
+      // Anti-hunt (the key hysteresis lever): only upshift if the higher gear can HOLD — its coupled rpm
+      // must stay a `hysteresis` band above the point where it would shift back down. FEAT-150: judged on
+      // where the next gear is GOING, not where it lands: its rpm projected `shiftLookahead` s ahead at
+      // the road's current acceleration carried into that gear (rpm scaled by the step, wheel torque by
+      // the step again). Accelerating on the flat it clears at once; barely holding speed on a grade it
+      // does not, and the box stays down — the case the band exists for. Judged on the landing rpm alone,
+      // the band written for the 2→3 and 3→4 steps (×0.68, ×0.71) held 1st to ~4400 rpm at 70 % pedal
+      // on the flat, because the 1→2 step (×0.595) lands lowest (owner 2026-10-25: "struggles to get out
+      // of first").
+      const step        = gears[st.gear] / gears[st.gear - 1]
       const nextRatio   = gears[st.gear] * finalDrive
-      const nextCoupled = Math.abs(axleOmega * nextRatio) * RPM_PER_RAD / couplingSR
-      if (nextCoupled > shiftDownEff + hysteresis) { st.gear++; st.shiftTimer = holdTime }
-    } else if (st.gear > 1 && coupled < shiftDownEff) {
+      const toCoupled   = RPM_PER_RAD / couplingSR
+      const nextCoupled = Math.abs(axleOmega * nextRatio) * toCoupled
+      const nextProj    = nextCoupled + Math.max(0, st.axleAcc ?? 0) * step * nextRatio * toCoupled * (params.shiftLookahead ?? 1)
+      // The next gear's effective downshift point: the rule below never drops into a gear that would
+      // land within the band of the upshift point, so from the next gear back into this one that is
+      // min(shiftDownEff, (shiftUp − band) · step).
+      const downNext    = Math.min(shiftDownEff, (shiftUp - hysteresis) * step)
+      // At the redline the band is waived: pinned on the limiter the road's acceleration reads ~0 whatever
+      // the next gear could do, and staying on the limiter is never the answer — the next gear only has
+      // to land above its own downshift point (the old rule's floored bar, 2400 + 800, was no stricter).
+      const band        = coupled >= shiftUpWot ? 0 : hysteresis
+      if (nextProj > downNext + band) { st.gear++; st.shiftTimer = holdTime }
+    } else if (st.gear > 1 && coupled < shiftDownEff
+               && coupled * gears[st.gear - 2] / gears[st.gear - 1] < shiftUp - hysteresis) {
+      // FEAT-150: the mirror of the upshift rule — never drop into a gear that would land within the band
+      // of its own upshift point (it would only shift straight back). That makes the kickdown point
+      // per-gear: floored in 3rd the box drops to 2nd below kickdownRPM, while 2nd → 1st waits until 1st
+      // has room to pull.
       st.gear--
       st.shiftTimer = holdTime
     }

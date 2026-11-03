@@ -66,28 +66,37 @@ function closestPtTriangle(px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz, out) 
 const _cpt = [0, 0, 0]
 
 /**
- * Sphere (cx,cy,cz,r) vs a triangle-soup mesh `tris` (flat Float32Array, 9 floats = one triangle,
- * a,b,c). Returns the DEEPEST contact {nx,ny,nz,depth} (normal from surface toward the sphere centre,
- * depth > 0) or null. Assumes the sphere centre is OUTSIDE the solid (true for a vehicle contact probe
- * grazing a boulder) — closest-point-to-centre gives the correct outward push; deep interior
- * penetration (truck inside a boulder) is not a real case here.
+ * Sphere (cx,cy,cz,r) vs a CLOSED triangle-soup mesh `tris` (flat Float32Array, 9 floats = one
+ * triangle a,b,c, wound counter-clockwise seen from outside). Returns {nx,ny,nz,depth} — the normal
+ * points out of the solid toward the sphere, depth > 0 — or null.
+ * The centre may be INSIDE the solid (BUG-54: a 0.37 m wheel probe can sink its centre into a 0.3 m
+ * rock, which never happened against 20 m boulders). The closest triangle's face normal says which
+ * side the centre is on; inside, the push is out through that nearest face, depth = r + distance.
  */
 export function sphereVsMesh(cx, cy, cz, r, tris) {
-  let best = null
-  const r2 = r * r
+  let bestD2 = Infinity, bi = -1, bx = 0, by = 0, bz = 0
   for (let i = 0; i < tris.length; i += 9) {
     closestPtTriangle(cx, cy, cz,
       tris[i], tris[i + 1], tris[i + 2], tris[i + 3], tris[i + 4], tris[i + 5],
       tris[i + 6], tris[i + 7], tris[i + 8], _cpt)
     const dx = cx - _cpt[0], dy = cy - _cpt[1], dz = cz - _cpt[2]
     const d2 = dx * dx + dy * dy + dz * dz
-    if (d2 < r2) {
-      const d = Math.sqrt(d2) || 1e-6
-      const depth = r - d
-      if (!best || depth > best.depth) best = { nx: dx / d, ny: dy / d, nz: dz / d, depth }
-    }
+    if (d2 < bestD2) { bestD2 = d2; bi = i; bx = dx; by = dy; bz = dz }
   }
-  return best
+  if (bi < 0) return null
+  // Face normal (b − a) × (c − a) of the closest triangle: outward for CCW winding.
+  const ux = tris[bi + 3] - tris[bi], uy = tris[bi + 4] - tris[bi + 1], uz = tris[bi + 5] - tris[bi + 2]
+  const vx = tris[bi + 6] - tris[bi], vy = tris[bi + 7] - tris[bi + 1], vz = tris[bi + 8] - tris[bi + 2]
+  const fx = uy * vz - uz * vy, fy = uz * vx - ux * vz, fz = ux * vy - uy * vx
+  const inside = bx * fx + by * fy + bz * fz < 0
+  const d = Math.sqrt(bestD2)
+  if (!inside && d >= r) return null
+  if (d < 1e-9) {   // on the surface: push along the face normal
+    const f = Math.hypot(fx, fy, fz) || 1
+    return { nx: fx / f, ny: fy / f, nz: fz / f, depth: r }
+  }
+  const s = inside ? -1 / d : 1 / d
+  return { nx: bx * s, ny: by * s, nz: bz * s, depth: inside ? r + d : r - d }
 }
 
 /**

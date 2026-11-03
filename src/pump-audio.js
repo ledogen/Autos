@@ -1,7 +1,7 @@
 /**
  * src/pump-audio.js — FEAT-50: the gas pump. All synthesized (no samples), on the one shared
- * AudioContext (engine-audio.js getAudioContext), each voice into its own gain straight to the
- * destination — the glass-audio.js pattern. The visit is the stop the player makes over and over,
+ * AudioContext (engine-audio.js getAudioContext), each voice into its own gain on the world bus
+ * (getWorldBus) — the glass-audio.js pattern. The visit is the stop the player makes over and over,
  * so it is meant to feel like a machine (owner, 2026-10-16: "polish and some juice").
  *
  *   NOZZLE   — playNozzle(): the nozzle seating in the filler neck. A sine thunk 170 → 55 Hz in
@@ -16,14 +16,17 @@
  *              2026-10-20: "the dinging should be reduced to a click".)
  *   SHUTOFF  — playShutoff(): the auto-shutoff — a hard double clack (two highpassed noise
  *              bursts 45 ms apart) when the tank is full or the wallet runs out.
- *   REGISTER — playRegister(): handbrake down, sale final. A mechanical ka-chunk (low thunk +
- *              noise) then a brighter ding — the till.
+ *   REGISTER — playRegister(): handbrake down, sale final. A cash-register cha-ching (owner,
+ *              2026-10-26; was a ka-chunk and a single till ding): the "cha" is the key lever
+ *              tripping the mechanism (three quick clacks), the "ching" is the drawer bell — two
+ *              struck partials at 2.4 and 3.2 kHz ringing 0.4 s, each a detuned pair so it
+ *              shimmers — and under the bell the drawer rolls open and hits its stop.
  *
  * Every voice is silent unless the context is already running (it starts on the first user
  * gesture, engine-audio.js), and nothing here ever throws on a missing WebAudio.
  */
 
-import { getAudioContext, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
 
 const LEVEL = 0.45   // overall peak gain for the one-shots
 let _noise = null
@@ -33,7 +36,7 @@ const _live = () => { const c = getAudioContext(); return c && c.state === 'runn
 function _out (ctx, g = LEVEL) {
     const out = ctx.createGain()
     out.gain.value = g
-    out.connect(ctx.destination)
+    out.connect(getWorldBus())
     return out
 }
 
@@ -63,20 +66,6 @@ function _burst (ctx, out, t, dur, type, freq, q, g) {
     src.stop(t + dur + 0.01)
 }
 
-function _bell (ctx, out, t, f0, g, decay) {
-    for (const [ratio, amp] of [[1, 1], [2.76, 0.45], [5.40, 0.18]]) {
-        const o = ctx.createOscillator()
-        o.type = 'sine'
-        o.frequency.value = f0 * ratio
-        const e = ctx.createGain()
-        e.gain.setValueAtTime(0.0001, t)
-        e.gain.exponentialRampToValueAtTime(g * amp, t + 0.003)
-        e.gain.exponentialRampToValueAtTime(0.0001, t + decay / ratio ** 0.5)
-        o.connect(e); e.connect(out)
-        o.start(t); o.stop(t + decay + 0.05)
-    }
-}
-
 export function playNozzle () {
     const ctx = _live(); if (!ctx) return
     const t = ctx.currentTime, out = _out(ctx)
@@ -99,13 +88,57 @@ export function playShutoff () {
     _thunk(ctx, out, t, 240, 90, 0.04, 0.3)
 }
 
+/** A struck bell with chosen partials: [freq Hz, gain, decay s] each, a detuned pair per partial
+ *  (the 4–6 Hz beat is the shimmer a real bell has and two pure sines do not). */
+function _ring (ctx, out, t, partials) {
+    for (const [f, g, decay] of partials) {
+        for (const df of [0, 5]) {
+            const o = ctx.createOscillator()
+            o.type = 'sine'
+            o.frequency.value = f + df
+            const e = ctx.createGain()
+            e.gain.setValueAtTime(0.0001, t)
+            e.gain.exponentialRampToValueAtTime(g * 0.5, t + 0.002)
+            e.gain.exponentialRampToValueAtTime(0.0001, t + decay)
+            o.connect(e); e.connect(out)
+            o.start(t); o.stop(t + decay + 0.02)
+        }
+    }
+}
+
 export function playRegister () {
     const ctx = _live(); if (!ctx) return
     const t = ctx.currentTime, out = _out(ctx)
-    _thunk(ctx, out, t, 130, 60, 0.06, 0.5)
-    _burst(ctx, out, t, 0.05, 'bandpass', 700, 1.2, 0.5)
-    _burst(ctx, out, t + 0.07, 0.04, 'bandpass', 1100, 1.2, 0.4)
-    _bell(ctx, out, t + 0.12, 2600, 0.35, 0.5)
+    // Redone 2026-11-02 to the owner's reference (a mechanical till, read off its spectrum, never
+    // shipped): the 10-31 build was "not cha-ching enough" — a short bell and no real cha.
+    // CHA: the key and the gear train, ~0.2 s of broadband clatter, the strikes closing up.
+    for (const [dt, f, g] of [[0, 2600, 0.6], [0.05, 4200, 0.5], [0.09, 1900, 0.55], [0.125, 5200, 0.45], [0.15, 3100, 0.5], [0.17, 6400, 0.4], [0.185, 2400, 0.5]])
+        _burst(ctx, out, t + dt, 0.018, 'bandpass', f, 1.1, g)
+    _thunk(ctx, out, t + 0.02, 220, 90, 0.04, 0.3)
+    // CHING: the bell, struck at +0.2 s. A bell's partials are inharmonic — the reference rings at
+    // ~2.1, 4.8, 7.4/7.75 and 10.9 kHz (1 : 2.29 : 3.5–3.7 : 5.2), the 2.1 kHz one for about a second.
+    const tb = t + 0.2
+    _ring(ctx, out, tb, [[2100, 0.40, 1.1], [4800, 0.28, 0.9], [3200, 0.08, 0.3], [7400, 0.16, 0.30], [7750, 0.14, 0.30], [10900, 0.08, 0.15]])
+    // The drawer: released under the ring, rolls out and hits its stop, the coins rattling after.
+    const td = tb + 0.27
+    _burst(ctx, out, td, 0.05, 'bandpass', 3000, 0.7, 0.5)
+    const roll = ctx.createBufferSource()
+    roll.buffer = _buf(ctx)
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.9
+    const rg = ctx.createGain()
+    rg.gain.setValueAtTime(0.0001, td)
+    rg.gain.exponentialRampToValueAtTime(0.2, td + 0.1)
+    rg.gain.exponentialRampToValueAtTime(0.0001, td + 0.12)
+    roll.connect(bp); bp.connect(rg); rg.connect(out)
+    roll.start(td, Math.random() * 0.8); roll.stop(td + 0.13)
+    const ts = td + 0.11
+    _thunk(ctx, out, ts, 130, 50, 0.06, 0.6)
+    _burst(ctx, out, ts, 0.06, 'lowpass', 900, 0.7, 0.45)
+    _burst(ctx, out, ts, 0.03, 'bandpass', 5600, 1.2, 0.35)
+    for (let i = 0; i < 9; i++) {   // coins settling in the drawer
+        const dt = 0.04 + i * (0.05 + Math.random() * 0.05)
+        _burst(ctx, out, ts + dt, 0.012, 'bandpass', 3000 + Math.random() * 3500, 3, 0.18 * (1 - i / 9))
+    }
 }
 
 // ── The flow voice: built once on first use, then only its gains move (no clicks, no churn) ──
@@ -114,7 +147,7 @@ function _ensureFlow (ctx) {
     if (_flow) return _flow
     const master = ctx.createGain()
     master.gain.value = 0
-    master.connect(ctx.destination)
+    master.connect(getWorldBus())
     // Motor: sawtooth hum with a slow wobble on the pitch.
     const motor = ctx.createOscillator()
     motor.type = 'sawtooth'

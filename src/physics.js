@@ -140,6 +140,9 @@ const BODY_RESTITUTION_DEFAULT = 0.21   // slight rebound on hard slams; 0 = ful
 // (terrain-physics.js), so the shape value is chosen to land the PAIR at the tuned BUG-27b 0.1:
 // √(0.0125 · 0.8) = 0.1.
 const BODY_FRICTION_MU  = 0.1            // the tuned pair friction (BUG-27b)
+// BUG-89: below this sliding speed a tire SIDEWALL's Coulomb friction turns viscous (Step 2.6), so a
+// truck at rest on its side holds instead of chattering. m/s.
+const SIDEWALL_V_REG    = 0.1
 const TERRAIN_FRICTION_REF = 0.8         // must match terrain-physics.js TERRAIN_FRICTION
 const CHASSIS_SHAPE_MU  = BODY_FRICTION_MU * BODY_FRICTION_MU / TERRAIN_FRICTION_REF   // ≈ 0.0125
 // FEAT-88: the open BED gets its own material. On the body material above, a firewood bundle
@@ -184,6 +187,19 @@ const CHASSIS_PROFILE = {
   slabHalfW: 0.85,     // fenders/bumpers/tail lamps — the widest body point
   cabHalfW: 0.78,      // cab at the beltline (mirrors excluded)
   deckHalfW: 0.845,    // bed sides
+}
+
+/**
+ * FEAT-138: the two roll angles [deg from upright] where the CG stands over the pivot edge — past
+ * them gravity finishes the roll. Wheels ↔ side pivots on the tire's outer edge at the ground; side ↔
+ * roof on the cab roof's edge. Stock Ranger: 56.8° and 141.2°.
+ */
+export function rollBalance (params) {
+  const deg = 180 / Math.PI
+  return {
+    wheelsDeg: Math.atan2(params.trackFront / 2 + (params.wheelWidth || 0.25) / 2, params.cgHeight) * deg,
+    roofDeg: 180 - Math.atan2(CHASSIS_PROFILE.cabHalfW, CHASSIS_PROFILE.roofY) * deg,
+  }
 }
 
 /**
@@ -652,7 +668,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     let p = proxies.get(h.body)
     if (!p) {
       const { com, invI } = engine.massProperties(h.body)
-      p = { m: engine.getMass(h.body), com, invI, support: engine.staticSupports(h.body),
+      const support = engine.staticSupports(h.body)
+      const v0 = { x: 0, y: 0, z: 0 }, w0 = { x: 0, y: 0, z: 0 }
+      engine.getVelocity(h.body, v0, w0)
+      p = { m: engine.getMass(h.body), com, invI, support, v0, w0,   // the engine's velocity and spin at the step's start
+        jn: new Float64Array(support.length), jt: new Float64Array(3 * support.length),   // proxyGround's per-point sums
+        sr: new Float64Array(4 * support.length), sdt,   // and each support's carried offset + lift rate
         dv: { x: 0, y: 0, z: 0 }, dw: { x: 0, y: 0, z: 0 },   // velocity / spin change this step
         D: { x: 0, y: 0, z: 0 }, Th: { x: 0, y: 0, z: 0 },    // and their integrals (small angles)
         pushes: [] }                                         // [impulse, point] for the engine
@@ -701,18 +722,70 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       sv.z += p.dv.z + p.dw.x * ry - p.dw.y * rx
       h.surfaceVel = sv
       h.hazard = !!engine.getUserData(h.body)?.hazard
-      h.onForce = (Fn, dts) => {
+      h.yield = proxyYield(p, rx, ry, rz, -h.normal.x, -h.normal.y, -h.normal.z)   // FEAT-158: the normal force is implicit in it (stepSuspensionSubsteps)
+      h.onForce = (Fn, dts, hub) => {
         // The tire pushes the body along −n with Fn for one substep, at the contact point.
         const j = { x: -h.normal.x * Fn * dts, y: -h.normal.y * Fn * dts, z: -h.normal.z * Fn * dts }
         p.pushes.push(j, h.contactPoint)
         proxyImpulse(p, j.x, j.y, j.z, rx, ry, rz)
         proxyGround(p)
+        const g = rockGrip(p, h, rx, ry, rz, Fn, dts, hub, corner)
+        rockLoad[corner] += Fn * (h.normal.x * _up.x + h.normal.y * _up.y + h.normal.z * _up.z) * dts / dt
         p.D.x += p.dv.x * dts; p.D.y += p.dv.y * dts; p.D.z += p.dv.z * dts
         p.Th.x += p.dw.x * dts; p.Th.y += p.dw.y * dts; p.Th.z += p.dw.z * dts
+        return g
       }
       list.push(h)
     }
     return list
+  }
+  // FEAT-158 GRIP ON A ROCK — Coulomb friction between the tire and every rock it is pressed
+  // against (a face or the top it is riding on), solved per substep at velocity level with the
+  // normal push it rides on. The tire's one Pacejka patch (BUG-38) sat on the most-upward contact,
+  // so a face pressing the tire took normal force only and the tire shoved rocks it should climb
+  // (owner: "the truck hardly ever climbs over them"); that patch now rides the road only (Step 3).
+  // Why this shape, measured on the parked attempt (wip/bug99-rock-grip): a second Pacejka patch
+  // stepped once per 1/60 s builds its grip over the relaxation length (≈0.16 s at a crawl) while
+  // the normal push acts every substep, so the rock was rolled away before any grip existed; and
+  // once saturated it handed a pivoting 9 kg rock (≈1.4 kg at its face) 60 N·s a step — 2 mph into
+  // 22 m/s. Here the impulse is the one that stops the slide of the tire surface over the rock,
+  // against BOTH sides' compliance (the rock's with its ground holding it — proxyYield — and the
+  // wheel's spin), capped by the cone μ·Fn·dt: implicit, so it can stop a slide but never reverse
+  // it, at any mass. The rock gets it at the contact (its ground's share via proxyGround, so a
+  // rock pressed into the road grips the road too); the wheel's spin gets its torque (rockSpin,
+  // folded into ω after the substeps); the hub gets the force back (returned to the suspension:
+  // the strut-axis part through the hub, the rest to the body, as a normal force is split).
+  const rockSpin = _rockSpin.fill(0)
+  const rockLoad = _rockLoad.fill(0)   // N — the strut-axis load rocks carried, step mean (Step 3 takes it off the road patch)
+  const rockGrip = (p, h, rx, ry, rz, Fn, dts, hub, i) => {
+    const vs = vehicleState, n = h.normal
+    // The wheel's spin axis: ω·â with â = −(steered right), so a wheel rolling forward turns its
+    // contact patch backward (the Step 3 frame; camber ignored — a few degrees on a lever of 0.37 m).
+    const steer = (i < 2 ? (vs.wheelSteerAngles ? vs.wheelSteerAngles[i] : vs.steerAngle) : 0) + toeOffset(i, params)
+    const a = _gripAx.copy(_right).applyAxisAngle(_up, steer).negate()
+    const om = (vs.wheelOmega?.[i] ?? 0) + rockSpin[i]
+    const cx = h.contactPoint.x - hub.x, cy = h.contactPoint.y - hub.y, cz = h.contactPoint.z - hub.z
+    // Slide of the tire surface over the rock, in the contact's tangent plane.
+    const rv = proxyPointVel(p, rx, ry, rz, _gripV)
+    let sx = hub.vx + om * (a.y * cz - a.z * cy) - rv.x
+    let sy = hub.vy + om * (a.z * cx - a.x * cz) - rv.y
+    let sz = hub.vz + om * (a.x * cy - a.y * cx) - rv.z
+    const sn = sx * n.x + sy * n.y + sz * n.z
+    sx -= sn * n.x; sy -= sn * n.y; sz -= sn * n.z
+    const slide = Math.hypot(sx, sy, sz)
+    if (slide < 1e-6) return null
+    const tx = sx / slide, ty = sy / slide, tz = sz / slide
+    const I = (params.wheelInertia || 1.22) + (i >= 2 ? (params._drivenInertia ?? 0) : 0)   // FEAT-126, as the ω solve
+    const lever = a.x * (cy * tz - cz * ty) + a.y * (cz * tx - cx * tz) + a.z * (cx * ty - cy * tx)   // â·(r × t)
+    const mu = (params.frictionCoeff ?? 1) * (params.pacejkaD ?? 1) * (params._tireMuScale?.[i] ?? 1)
+    const J = Math.min(slide / (proxyYield(p, rx, ry, rz, tx, ty, tz) + lever * lever / I), mu * Fn * dts)
+    if (!(J > 0)) return null
+    const jx = J * tx, jy = J * ty, jz = J * tz
+    p.pushes.push({ x: jx, y: jy, z: jz }, h.contactPoint)
+    proxyImpulse(p, jx, jy, jz, rx, ry, rz)
+    proxyGround(p)
+    rockSpin[i] -= J * lever / I
+    return _gripF.set(-jx / dts, -jy / dts, -jz / dts)
   }
   // ── Step 1: Catastrophic penetration failsafe ──────────────────────────────
   // Fires ONLY for genuine tunnelling. Uses queryContacts to detect terrain-aware severe penetration
@@ -787,6 +860,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   //   params._hubNormalXZ[i]    — X/Z residual contact normal force per corner (applied in Step 2.6 below)
   // Must run BEFORE Step 3 so Pacejka reads the post-substep tire Fz (D-08).
   stepSuspensionSubsteps(vehicleState, params, dt, qcPlus)
+  for (let i = 0; i < 4; i++) if (rockSpin[i]) vehicleState.wheelOmega[i] += rockSpin[i]   // FEAT-158: what rock faces did to the spin
 
   // ── Step 2.6: Apply XZ contact normal forces to body (Phase 4.1 D-06a) ─────────────────────
   // _hubNormalXZ[i] is the X/Z residual of tire contact normal force — the component of contact
@@ -827,6 +901,29 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       totalTorque.x += rHubY * xz.z - rHubZ * xz.y
       totalTorque.y += rHubZ * xz.x - rHubX * xz.z
       totalTorque.z += rHubX * xz.y - rHubY * xz.x
+      // BUG-89: a tire with NO strut load is touching with its sidewall — the truck on its side or
+      // roof. Step 3 reads it as airborne (no Pacejka), so this whole contact load used to be
+      // frictionless: on its side the down-side tires carried ~60 % of the weight and the truck skated
+      // (15 m/s → 245 m). Rubber scrubs: Coulomb μN against the hub's sliding, μ the tire's own.
+      // Regularised below SIDEWALL_V_REG so it holds at rest instead of chattering. A loaded strut
+      // (any upright truck, slopes included) never takes this branch — Pacejka owns that tire.
+      // ponytail: the support is taken as static; a sidewall on a moving rock scrubs against the world.
+      if ((params._tireFz[i] || 0) <= 0) {
+        const N = Math.hypot(xz.x, xz.y, xz.z), nx = xz.x / N, ny = xz.y / N, nz = xz.z / N
+        const w = vehicleState.angularVelocity, v = vehicleState.velocity
+        let vx = v.x + w.y * rHubZ - w.z * rHubY
+        let vy = v.y + w.z * rHubX - w.x * rHubZ
+        let vz = v.z + w.x * rHubY - w.y * rHubX
+        const vn = vx * nx + vy * ny + vz * nz
+        vx -= vn * nx; vy -= vn * ny; vz -= vn * nz
+        const k = -(params.frictionCoeff ?? 1) * (params._tireMuScale?.[i] ?? 1) * N
+                / Math.max(Math.hypot(vx, vy, vz), SIDEWALL_V_REG)
+        const fx = vx * k, fy = vy * k, fz = vz * k
+        totalForce.x += fx; totalForce.y += fy; totalForce.z += fz
+        totalTorque.x += rHubY * fz - rHubZ * fy
+        totalTorque.y += rHubZ * fx - rHubX * fz
+        totalTorque.z += rHubX * fy - rHubY * fx
+      }
     }
   }
 
@@ -932,10 +1029,14 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // double-counted lateral + longitudinal force whenever a wheel straddled ground + a hard obstacle.
     // Fn (_tireFz[i]) is the SUMMED strut-axis load and is already ground-dominated: a wall's near-
     // horizontal normal projects ≈0 onto the strut axis, so it adds ~nothing to the tire's vertical load.
+    // FEAT-158: never a ROCK — every debris contact grips the tire in the substeps instead
+    // (rockGrip, Step 0.5), so this patch rides on the road and terrain only. Stepped once per
+    // 1/60 s, on a rock it was frictionless through the substeps that rolled the rock out from under
+    // the tire, then explicit on a body as light as a kilogram at the contact.
     let ground = null
     let bestUp = -Infinity
     for (const c of contacts) {
-      if (c.normal.y > bestUp) { bestUp = c.normal.y; ground = c }
+      if (c.body == null && c.normal.y > bestUp) { bestUp = c.normal.y; ground = c }
     }
 
     // Phase 4: Fn for Pacejka comes from params._tireFz[i] (computed by stepSuspensionSubsteps, per
@@ -950,25 +1051,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         ground.contactPoint.y - vehicleState.position.y,
         ground.contactPoint.z - vehicleState.position.z
       )
-
-      // FEAT-48: RELATIVE contact velocity. Against static ground (analytic terrain,
-      // props — no .body) the support is at rest and this reduces exactly to the old
-      // absolute-velocity formulation. Against a dynamic body (a rock rolling under
-      // the wheel) slip is measured relative to the body's own contact-point velocity —
-      // this one mechanism is what makes driving onto a moving rock launch the car and
-      // kick the rock out, with no special cases.
-      if (ground.body != null) {
-        const groundVel = engine.getPointVelocity(ground.body, ground.contactPoint, _groundVelScratch)
-        // Fully relative — the support's own velocity enters the slip UNCLAMPED (owner,
-        // 2026-08-15: the last containment-era limiter deleted). Honest forces from honest
-        // kinematics; the enveloping factor and exact manifolds bound the magnitudes.
-        latVel  = (hubVel.x - groundVel.x) * wheelRight.x +
-                  (hubVel.y - groundVel.y) * wheelRight.y +
-                  (hubVel.z - groundVel.z) * wheelRight.z
-        longVel = (hubVel.x - groundVel.x) * wheelFwd.x +
-                  (hubVel.y - groundVel.y) * wheelFwd.y +
-                  (hubVel.z - groundVel.z) * wheelFwd.z
-      }
 
       // Phase 4.1 NOTE (D-06): do NOT add Fn*normal to totalForce here.
       // The strut-axis component of the contact normal flows through _suspForceAccum (spring pathway),
@@ -1016,7 +1098,11 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // SM-3 per-tire friction: params._tireMuScale[i] is published by src/damage.js (tire wear),
       // and is the same hook FEAT-38's per-surface μ will multiply into. Absent → 1, no change.
       const muScale = params._tireMuScale?.[i] ?? 1
-      const { Flong, Flat } = computeTireForces(sLongCur, sLatNew, Fn, params, muScale)
+      // FEAT-158: the road patch carries the road's load — what a rock carried is that rock's
+      // (rockGrip, Step 0.5), so a tire climbing a rock is not held at road speed by a full wheel
+      // load the road no longer has. No rock, exactly Fn.
+      const FnRoad = Math.max(0, Fn - rockLoad[i])
+      const { Flong, Flat } = computeTireForces(sLongCur, sLatNew, FnRoad, params, muScale)
 
       // SM-3 honest wear signals for this wheel, published for src/damage.js to integrate.
       // slipVel is the RAW contact-patch sliding speed (not the relaxation-filtered displacement) —
@@ -1025,7 +1111,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       if (vehicleState.tireFlat) vehicleState.tireFlat[i] = Math.abs(Flat)
 
       // Save state for Newton iteration in ω integrator (re-evaluates sLong and F at ω_new).
-      lastFn         = Fn
+      lastFn         = FnRoad
       lastSLongPrev  = sLongPrev
       lastSLatNew    = sLatNew
       lastLongVelCur = longVelCur
@@ -1049,16 +1135,6 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       }
       totalForce.add(wheelForce)
       totalTorque.add(new THREE.Vector3().crossVectors(rContact, wheelForce))
-
-      // FEAT-48: equal-and-opposite onto the dynamic support — the tire's FRICTION force, at the
-      // contact point. (Static supports have no .body; the terrain doesn't need its reaction.)
-      // The NORMAL reaction is not here: every debris contact, support or not, already handed the
-      // body the exact force the suspension put on the hub, substep by substep (BUG-99, the proxy
-      // in Step 0.5). Until 2026-10-29 the normal share was applied HERE, so only to the support —
-      // a rock struck face-on while the tire was still on the road got none of it.
-      if (ground.body != null) {
-        engine.applyForce(ground.body, { x: -wheelForce.x, y: -wheelForce.y, z: -wheelForce.z }, ground.contactPoint)
-      }
 
       // Write debug data for logger — evaluated once per wheel against the chosen support surface (BUG-38).
       // NOTE: `sa` field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad).
@@ -1235,6 +1311,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     for (let k = 0; k < p.pushes.length; k += 2) engine.applyImpulse(body, p.pushes[k], p.pushes[k + 1])
   }
   engine.applyForce(chassis, totalForce)
+  const jt = vehicleState.jackTorque   // FEAT-138: the hi-lift's roll heave (src/hilift.js), null when idle
+  if (jt) { totalTorque.x += jt.x; totalTorque.y += jt.y; totalTorque.z += jt.z }
   engine.applyTorque(chassis, totalTorque)
   // 8 substeps (not the engine-default 4): the chassis carries the TUNED inertia, whose x-axis
   // value sits ~3× below the hull-natural tensor, and the soft-step solver converts some of a
@@ -1289,8 +1367,6 @@ function stepAirborneWheel (i, vehicleState, params, dt, longVel) {
 // |(sLong,sLat)| (sBreak) — the physically correct limiter.
 const SLIP_EPSILON = 0.05
 
-// Scratch for the dynamic-support ground velocity (avoids a per-contact alloc).
-const _groundVelScratch = { x: 0, y: 0, z: 0 }
 // Per-step scratch (stepPhysics only; nothing holds them past the step): body axes, the per-wheel
 // steered frame, and the post-substep hubs.
 const _forward = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3()
@@ -1299,6 +1375,9 @@ const _hubPost = [null, null, null, null]
 
 const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, commit the rolling fixed point instead
 const _queryCount = [0, 0, 0, 0]           // qcPlus calls per corner, reset each step (BUG-99)
+const _rockSpin = [0, 0, 0, 0]             // rad/s — rock-face grip's change to each wheel's spin this step (FEAT-158)
+const _rockLoad = [0, 0, 0, 0]             // N — strut-axis load rocks carried this step (FEAT-158)
+const _gripAx = new THREE.Vector3(), _gripF = new THREE.Vector3(), _gripV = { x: 0, y: 0, z: 0 }   // rockGrip scratch
 
 /** BUG-99 rock proxy: an impulse j at offset r from the centre of mass changes velocity by j/m and
  *  spin by I⁻¹(r × j). */
@@ -1319,28 +1398,97 @@ function proxyInvMass (p, rx, ry, rz, dx, dy, dz) {
 
 /**
  * BUG-99 rock proxy: the ground it lies on — at each support point, no velocity change INTO the
- * ground, applied as an impulse AT that point, so a base on the road makes a rock pushed high
- * pivot instead of sinking. Two passes of sequential impulses over the points. Each one also goes
- * to the ENGINE with the tire's pushes (2026-10-31): handed only the tire's half, a 9 kg rock
- * sandwiched under a 150 kN tire left the step at 280 m/s INTO the road, and the engine's soft
- * contact let it sink and then spat it out at 47 m/s (the --nopop census: a flip at 25 mph, rocks
- * to 282 m/s — hidden until pinch energy stopped popping those tires). The ground's reaction is
- * real; given both halves, the engine and the proxy step the same rock.
- * No ground FRICTION here, measured (census, 2026-10-29): a Coulomb hold predicted the rock pinned,
- * the tire loaded into it, and the engine — which does not hold a rock against a large applied
- * impulse that way — then let it fly at 2–5× the truck's speed. The proxy exists to predict what
- * the engine will do; predicting more than that splits the two sides of one contact.
+ * ground, and Coulomb friction against sliding along it (|jt| ≤ μ·jn, the engine's mixed μ), as
+ * impulses AT that point, so a base on the road makes a rock pushed high pivot instead of sinking
+ * and a rock pressed into the road grips it instead of skating. Two passes of projected
+ * Gauss–Seidel (accumulated sums per point, clamped) on the point's WHOLE velocity — the engine's
+ * at the step's start plus this step's change (FEAT-158: solved on the change alone, a rock already
+ * sliding under a 6 kN press kept sliding, because the engine's friction knows only its weight).
+ * Each point's total goes to the ENGINE with the tire's pushes (2026-10-31): handed only the tire's
+ * half, a 9 kg rock sandwiched under a 150 kN tire left the step at 280 m/s INTO the road, and the
+ * engine's soft contact let it sink and then spat it out at 47 m/s (the --nopop census: a flip at
+ * 25 mph, rocks to 282 m/s — hidden until pinch energy stopped popping those tires). The ground's
+ * reaction is real; given both halves, the engine and the proxy step the same rock.
+ * The FRICTION is owed to the same fix (2026-11-01): once the engine no longer sees the rock driven
+ * into the road, its own friction holds only the rock's weight (μ·m·g), so a rock under a 10 kN tire
+ * skated away as if weightless. Friction here was tried on 10-29 and rejected because it predicted
+ * a pin the engine never got; now the engine gets it.
  */
-function proxyGround (p) {
+function proxyGround (p, push = true) {
+  const S = p.support, jn = p.jn, jt = p.jt, v = _pgV, R = p.sr, T = p.Th, D = p.D
+  jn.fill(0); jt.fill(0)
+  // Each support where the rock has carried it this step (small angle), and how far it has lifted
+  // off the ground along n: a lifted point holds nothing until it would touch down within the substep.
+  for (let k = 0; k < S.length; k++) {
+    const s = S[k], o = 4 * k
+    const dx = T.y * s.rz - T.z * s.ry, dy = T.z * s.rx - T.x * s.rz, dz = T.x * s.ry - T.y * s.rx
+    R[o] = s.rx + dx; R[o + 1] = s.ry + dy; R[o + 2] = s.rz + dz
+    R[o + 3] = Math.max(0, (D.x + dx) * s.nx + (D.y + dy) * s.ny + (D.z + dz) * s.nz) / p.sdt
+  }
   for (let pass = 0; pass < 2; pass++) {
-    for (const s of p.support) {
-      const wx = p.dw.x, wy = p.dw.y, wz = p.dw.z
-      const vx = p.dv.x + wy * s.rz - wz * s.ry, vy = p.dv.y + wz * s.rx - wx * s.rz, vz = p.dv.z + wx * s.ry - wy * s.rx
-      const vn = vx * s.nx + vy * s.ny + vz * s.nz
-      if (vn >= 0) continue
-      const jn = -vn / proxyInvMass(p, s.rx, s.ry, s.rz, s.nx, s.ny, s.nz)
-      proxyImpulse(p, jn * s.nx, jn * s.ny, jn * s.nz, s.rx, s.ry, s.rz)
-      p.pushes.push({ x: jn * s.nx, y: jn * s.ny, z: jn * s.nz }, { x: p.com.x + s.rx, y: p.com.y + s.ry, z: p.com.z + s.rz })
+    for (let k = 0; k < S.length; k++) {
+      const s = S[k], q = 4 * k, rx = R[q], ry = R[q + 1], rz = R[q + 2]
+      proxyPointVel(p, rx, ry, rz, v)
+      const vn = v.x * s.nx + v.y * s.ny + v.z * s.nz
+      // Projected Gauss–Seidel: the point's accumulated push, clamped ≥ 0, may SHRINK when a later
+      // point has already done its work — otherwise the sweep over-corrects and lifts the rock.
+      const jNew = Math.max(0, jn[k] - (vn + R[q + 3]) / proxyInvMass(p, rx, ry, rz, s.nx, s.ny, s.nz))
+      const d = jNew - jn[k]
+      if (d !== 0) {
+        jn[k] = jNew
+        proxyImpulse(p, d * s.nx, d * s.ny, d * s.nz, rx, ry, rz)
+        proxyPointVel(p, rx, ry, rz, v)
+      }
+      const cap = s.mu * jn[k]
+      if (!(cap > 0)) continue
+      const vn2 = v.x * s.nx + v.y * s.ny + v.z * s.nz
+      const tx = v.x - vn2 * s.nx, ty = v.y - vn2 * s.ny, tz = v.z - vn2 * s.nz
+      const vt = Math.hypot(tx, ty, tz)
+      if (vt < 1e-9) continue
+      // The impulse that stops the slide, added to this point's sum, the sum clamped to the cone.
+      const m = vt / proxyInvMass(p, rx, ry, rz, tx / vt, ty / vt, tz / vt)
+      const o = 3 * k
+      let ax = jt[o] - tx / vt * m, ay = jt[o + 1] - ty / vt * m, az = jt[o + 2] - tz / vt * m
+      const am = Math.hypot(ax, ay, az)
+      if (am > cap) { ax *= cap / am; ay *= cap / am; az *= cap / am }
+      proxyImpulse(p, ax - jt[o], ay - jt[o + 1], az - jt[o + 2], rx, ry, rz)
+      jt[o] = ax; jt[o + 1] = ay; jt[o + 2] = az
     }
   }
+  if (!push) return
+  for (let k = 0; k < S.length; k++) {
+    const s = S[k], o = 3 * k, q = 4 * k
+    if (jn[k] <= 0 && !jt[o] && !jt[o + 1] && !jt[o + 2]) continue
+    p.pushes.push({ x: jn[k] * s.nx + jt[o], y: jn[k] * s.ny + jt[o + 1], z: jn[k] * s.nz + jt[o + 2] },
+      { x: p.com.x + R[q], y: p.com.y + R[q + 1], z: p.com.z + R[q + 2] })
+  }
 }
+const _pgV = { x: 0, y: 0, z: 0 }
+
+/** The velocity of the proxy's point at offset r: the engine's at the step's start plus this step's change. */
+function proxyPointVel (p, rx, ry, rz, out) {
+  const wx = p.w0.x + p.dw.x, wy = p.w0.y + p.dw.y, wz = p.w0.z + p.dw.z
+  out.x = p.v0.x + p.dv.x + wy * rz - wz * ry
+  out.y = p.v0.y + p.dv.y + wz * rx - wx * rz
+  out.z = p.v0.z + p.dv.z + wx * ry - wy * rx
+  return out
+}
+
+/**
+ * FEAT-158: the rock's COMPLIANCE at a point — the velocity change along d at offset r per unit
+ * impulse along d there, with the ground it lies on holding it (proxyGround: normal + friction).
+ * proxyInvMass is the same number for a FREE rock; a rock held at its base pivots instead, and its
+ * compliance high on its face is several times the free one (a 9 kg rock reads ≈1.4 kg there).
+ * Probed from rest (homogeneous in the impulse, so a unit probe serves any size); state restored.
+ */
+function proxyYield (p, rx, ry, rz, dx, dy, dz) {
+  const dv = p.dv, dw = p.dw, v0 = p.v0, w0 = p.w0
+  p.dv = _pyV; p.dw = _pyW; p.v0 = p.w0 = _pyZ
+  _pyV.x = _pyV.y = _pyV.z = _pyW.x = _pyW.y = _pyW.z = 0
+  proxyImpulse(p, dx, dy, dz, rx, ry, rz)
+  proxyGround(p, false)
+  const v = proxyPointVel(p, rx, ry, rz, _pgV)
+  p.dv = dv; p.dw = dw; p.v0 = v0; p.w0 = w0
+  return v.x * dx + v.y * dy + v.z * dz
+}
+const _pyV = { x: 0, y: 0, z: 0 }, _pyW = { x: 0, y: 0, z: 0 }, _pyZ = Object.freeze({ x: 0, y: 0, z: 0 })

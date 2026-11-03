@@ -16,10 +16,10 @@
  *
  * Nothing is created or stopped per frame: the graph is built once and only AudioParams move, all
  * via setTargetAtTime so nothing clicks. Shares the AudioContext with engine-audio.js but keeps its
- * own master gain straight into ctx.destination, so wind volume is independent of engine/tire.
+ * own master gain into the world bus (getWorldBus), so wind volume is independent of engine/tire.
  */
 
-import { getAudioContext, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
 
 const V_FLOOR   = 4.0    // m/s — below this there is no wind noise at all
 const V_REF     = 45.0   // m/s (~160 km/h) — speed at which the level curve reaches 1
@@ -55,7 +55,7 @@ export function ensureWindAudio () {
 
   master = ctx.createGain()
   master.gain.value = 1
-  master.connect(ctx.destination)
+  master.connect(getWorldBus())
 
   const white = whiteNoiseBuffer(ctx, NOISE_SECONDS)
 

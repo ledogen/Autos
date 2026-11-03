@@ -793,10 +793,11 @@ const STEPS = [
   ['endings', async () => {
     const card = () => js('document.getElementById("run-end").style.display === "block" && document.getElementById("re-title").textContent')
     const saved = () => js('localStorage.getItem("autos-run/1") !== null')
-    const ended = async (want) => {
+    const ended = async (want, why) => {
       const t = await until(card, 5000)
       check(t && want.test(t), `the run-end card reads "${t}", want ${want}`)
       const body = await js('document.getElementById("re-body").textContent')
+      if (why) check(why.test(body), `${t}: the card does not say why (FEAT-160), want ${why}: "${body.slice(0, 200)}"`)
       check(/playtime\s*\d+h \d\dm/.test(body) && /jobs completed/.test(body) && /wallet/.test(body) && /truck/.test(body),
         `${t}: the summary is missing rows: "${body.slice(0, 200)}"`)
       await sleep(1500)   // past an autosave tick
@@ -856,10 +857,10 @@ const STEPS = [
     const q0 = await playedS(); await sleep(2500); const q1 = await playedS()
     check(q1 - q0 < 0.2, `playtime counted ${(q1 - q0).toFixed(1)} s behind the pause menu`)
     await tap('Escape'); await sleep(300)
-    await js('window.__damage.fatalImpact = { region: "front", v: 40, mph: 90 }')
+    await js('window.__damage.fatalImpact = { region: "front", v: 40, mph: 90, armor: 0.3 }')
     check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
     check(!await card(), 'the crash card skipped the beat')
-    await ended(/died/)
+    await ended(/died/, /hit at 90 mph — front · at 30 % armor the front could take 72 mph; fresh it takes 100/)
     // Broke down: an empty tank, no gas can, no money for a tow → the Recovery card's "end run".
     await newRun()
     // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
@@ -877,7 +878,7 @@ const STEPS = [
     check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000),
       `no "end run" on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
     await js('document.querySelector("#recovery-card .rc-end").click()')
-    await ended(/truck is dead/)
+    await ended(/truck is dead/, /(the tow was \$[\d,.]+|no tow could reach you) — you had \$0\b/)
     // The win: six deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     await js('window.__econ.halfPoints = 12')

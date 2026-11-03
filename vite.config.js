@@ -85,6 +85,12 @@ export default defineConfig({
     },
   },
   server: { port: 8000 },           // keep harness --port default + query-string passthrough
+  // The dependency pre-bundle cache lives in THIS checkout, not node_modules/.vite. Every lane worktree's
+  // node_modules is a symlink to main's, so the default put all of them on one cache: a server in another
+  // worktree (a different root, so a different config hash) re-bundled it under the running ones, which
+  // then served three.js from two bundle runs at once — two copies of three, two material-id counters,
+  // and a tire that drew in the amber lens's colour because both had id 35 (owner, 2026-11-02).
+  cacheDir: '.vite',
   // es2022 so the top-level `await` in src/main.js's boot sequence survives the build (default es2020
   // rejects TLA). TLA needs Chrome 89+/Safari 15+/Firefox 89+ — well inside the WebGL2 baseline the
   // sim already requires.

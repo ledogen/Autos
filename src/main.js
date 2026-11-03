@@ -18,7 +18,8 @@
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, syncChassisMass } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, syncChassisMass, rollBalance } from './physics.js'
+import { HiLift } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
@@ -28,7 +29,7 @@ import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
-import { DamageModel, DAMAGE_PARAMS } from './damage.js'    // SM-3: component condition model
+import { DamageModel, DAMAGE_PARAMS, fatalMph } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
@@ -47,7 +48,7 @@ window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase he
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
-import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playSputterPop } from './engine-audio.js'
+import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playSputterPop, setCabView, setInTunnel, setTunnelReverb } from './engine-audio.js'
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
@@ -60,7 +61,7 @@ import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
-import { SkySystem, SKY_CYCLE } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
+import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
@@ -77,7 +78,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH } from './mission.js'  // sto
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -112,6 +113,9 @@ import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heart
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
+import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
+import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
+import { playCoin, playStinger, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -3075,6 +3079,7 @@ const _poiMeshes = new Map()
 // customer.id → [ring, pip]. FEAT-61: a delivery target is only lit when it is ON your route and
 // still owed a paper — see _updateCustomerRings.
 const _customerRings = new Map()
+const _ornaments = []   // FEAT-149: [{ kind, mesh, lift, body }] — knockable yard ornaments, rebuilt with the markers
 
 /**
  * Rebuild the markers + interaction rings (cheap: a handful of each per region).
@@ -3085,6 +3090,8 @@ const _customerRings = new Map()
  * yet, and the auto shops, the food vendor and the stores are all still cube.
  */
 function _rebuildPoiMarkers () {
+  for (const o of _ornaments) if (o.body != null) debrisSystem.remove([o.body])   // FEAT-149
+  _ornaments.length = 0
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
   _poiMeshes.clear()
@@ -3123,12 +3130,20 @@ function _rebuildPoiMarkers () {
       _poiMeshes.set(q.id, cube)
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
-    // in poi.js (deterministic in the seed); this only dresses them. Static meshes, no bodies.
+    // in poi.js (deterministic in the seed); this only dresses them. FEAT-149: a knockable ornament
+    // (gnome, beach ball, flamingo) becomes a body near the truck (_updateOrnaments); the rest are
+    // solid in place (poi.js satSolid, synced with the markers).
     for (const sat of q.satellites ?? []) {
       const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
       m.position.set(sat.x, sat.y, sat.z)
       m.rotation.y = sat.yaw
       _poiGroup.add(m)
+      const knock = PROP_MODELS[sat.key]?.knockable
+      if (knock) {
+        const kind = `ornament:${sat.key}`
+        void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg, friction: 0.6, restitution: knock.restitution ?? 0.3 })
+        _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null })
+      }
     }
 
     // FEAT-50: a pump island's two zones — the store lot's box curtain, in fuel blue rather than
@@ -3265,7 +3280,12 @@ function _updatePoiPresence (force = false) {
     const ring = _poiRings.get(q.id)
     if (ring) ring.userData.hidden = !!q.hidden
   }
-  poiPhysics.sync(poiSystem.list().filter(q => !q.hidden), POI_PARAMS.poiCubeSize)
+  _syncPoiPhysics()
+}
+/** MESH == PHYSICS for the markers AND their yards' solid things (FEAT-149: poi.js satSolid). */
+function _syncPoiPhysics () {
+  const shown = poiSystem.list().filter(q => !q.hidden)
+  poiPhysics.sync([...shown, ...shown.flatMap(q => (q.satellites ?? []).map(satSolid).filter(Boolean))], POI_PARAMS.poiCubeSize)
 }
 const POI_REAPPEAR_CLEAR_M = 15   // m — truck-to-marker distance a hidden marker waits for before it returns
 
@@ -5039,7 +5059,19 @@ function _pickFieldRepair (id) {
  * The inventory's roadside choices for the selected item: a flat tire, with a kit aboard, opens the plug
  * picker with it picked; a part you can swap by hand (the air filter) goes on, the time on the button.
  */
+// FEAT-138: the hi-lift jack. Its cooldown is real time (owner, 2026-10-24); the balance angles are
+// re-read at each start because a vehicle preset edits RANGER_PARAMS in place.
+const hiLift = new HiLift(rollBalance(RANGER_PARAMS))
+const _now = () => performance.now() / 1000
+
 function _partActions (row) {
+  if (row.id === 'hiLiftJack') {
+    hiLift.balance = rollBalance(RANGER_PARAMS)
+    const why = hiLift.refusal(vehicleState, _now(), _runEnded)
+    if (why) return [{ label: why, enabled: false, run: () => {} }]
+    const heave = (dir) => () => { if (hiLift.start(dir, vehicleState, _now(), _runEnded)) inventoryScreen.close() }
+    return [{ label: 'Heave it left', run: heave(-1) }, { label: 'Heave it right', run: heave(1) }]
+  }
   if (PARTS[row.id]?.roadside) {
     return [{ label: `Replace it — ${formatGameDuration(SLOTS[PARTS[row.id].slot].hours)}`,
       run: () => { const h = fitRoadside(partsSystem, inventorySystem, row.index); if (h >= 0) _afterRoadsideWork(h) } }]
@@ -5387,6 +5419,42 @@ function _updateBarricades () {
         { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })).filter(Boolean)
       for (const m of row.meshes) m.visible = false
     } else if (row.bodies && d > BARRICADE_OFF_M) _standRow(row)
+  }
+}
+
+// ── FEAT-149: knockable lawn ornaments ──────────────────────────────────────────────────────────
+// Owner, 2026-10-25: "smashing into specific lawn ornaments should trigger them to become physics
+// objects and roll/bounce away (gnomes, beach balls, flamingo)". FEAT-65's model↔body swap: a plain
+// model far off; within ORNAMENT_ON_M a debris body at exactly its pose, put to SLEEP at once, so it
+// stands until the truck touches it and the engine wakes it. Pinned (outside the debris cap) and
+// harmless (noDamage — a gnome is not a rock). Past ORNAMENT_OFF_M it is a model again, standing where
+// the body came to rest: a knocked gnome stays knocked for the session.
+const ORNAMENT_ON_M = 60, ORNAMENT_OFF_M = 120
+const _ornQ = new THREE.Quaternion(), _ornP = new THREE.Vector3(), _ornUp = new THREE.Vector3()
+
+/** The 10 Hz poll, beside the barricades'. */
+function _updateOrnaments () {
+  const p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
+  for (const o of _ornaments) {
+    const half = debrisSystem.halfExtents(o.kind)
+    if (!half) continue   // its collider is still loading
+    const d = Math.hypot(p.x - o.mesh.position.x, p.z - o.mesh.position.z)
+    // The body sits at the model's bbox centre: half its height above a base-origin model, at the
+    // origin of a centred one (the beach ball, lifted by its radius).
+    _ornUp.set(0, half.y - o.lift + 0.01, 0).applyQuaternion(o.mesh.quaternion)
+    if (o.body == null && d < ORNAMENT_ON_M) {
+      const q = o.mesh.quaternion
+      o.body = debrisSystem.spawn(o.kind, _ornP.copy(o.mesh.position).add(_ornUp), still,
+        { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })
+      if (o.body != null) { physicsEngine.sleep(o.body); o.mesh.visible = false }
+    } else if (o.body != null && d > ORNAMENT_OFF_M) {
+      physicsEngine.getTransform(o.body, _ornP, _ornQ)
+      o.mesh.quaternion.copy(_ornQ)
+      o.mesh.position.copy(_ornP).sub(_ornUp.set(0, half.y - o.lift + 0.01, 0).applyQuaternion(_ornQ))
+      debrisSystem.remove([o.body])
+      o.body = null
+      o.mesh.visible = true
+    }
   }
 }
 
@@ -5864,9 +5932,19 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
  * flips from the old total to the new half a second after its row. Idempotent per render — a re-render
  * writes fresh rows and the stale timers find theirs disconnected.
  */
-function _revealResult (body) {
+function _revealResult (body, letter = null) {
   const t0 = performance.now()
   const delayOf = (el) => (parseFloat(el.closest('.mp-reveal')?.style.animationDelay) || 0) * 1000
+  // FEAT-120 / FEAT-131 P1: a coin as each money row that paid lands, then the grade's stinger a beat
+  // after the last row — the grade is heard, never printed.
+  const rows = [...body.querySelectorAll('.mp-reveal')]
+  for (const el of rows) {
+    const pay = el.querySelector('.mp-pay:not(.mp-bad)')   // money only: counts and conditions share the class
+    const amt = pay && (pay.dataset.countup != null || pay.textContent.includes('$'))
+      ? parseFloat(pay.dataset.countup ?? pay.textContent.replace(/[^0-9.]/g, '')) : 0
+    if (amt > 0) setTimeout(() => { if (el.isConnected) playCoin() }, delayOf(el))
+  }
+  if (rows.length && letter) setTimeout(() => { if (body.isConnected) playStinger(letter) }, delayOf(rows.at(-1)) + 450)
   for (const el of body.querySelectorAll('[data-countup]')) {
     const target = parseFloat(el.dataset.countup), delay = delayOf(el)
     el.textContent = '$0.00'
@@ -6076,7 +6154,7 @@ function _renderMissionUI () {
                        site: r.targets != null ? { smashed: r.smashed, of: r.targets } : null,
                        deedNeed: _missionDeedNeed(m.mission) })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
-      if (paid && !r.line) _revealResult(body)   // N-04: the staged reveal — tip count-up, deed tally tick
+      if (paid && !r.line) _revealResult(body, r.letter)   // N-04: the staged reveal — tip count-up, deed tally tick
       // The result card is two actions: retry · continue (R-31, owner 2026-10-24: no "back to free roam"
       // here — leaving the mode is the pause menu's job). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
@@ -8269,12 +8347,26 @@ function _endRun (kind) {
   }, kind === 'crash' ? CRASH_CARD_DELAY_S * 1000 : 0)
 }
 
+/**
+ * FEAT-163: is the camera (the listener) inside a bore? The surface resolver's own ownership rule: on a
+ * bore span of the nearest run, and below the tube's apex. Read-only; carveHint is memoised per cell.
+ */
+function _listenerInBore () {
+  if (_labActive || !roadSystem) return false
+  const c = camera.position, nr = roadSystem.carveHint(c.x, c.z)
+  if (!nr?.point || !nr.tangent) return false
+  const arc = (nr.arcS ?? 0) + (c.x - nr.point.x) * nr.tangent.x + (c.z - nr.point.z) * nr.tangent.z
+  if (!roadSystem.tunnelSpanAt(nr.runKey ?? '', arc)) return false
+  return c.y < roadSystem.runProfile(arc, nr.runKey, _boreProf).gradeY + (RANGER_PARAMS.tunnelBoreRadius ?? 8)
+}
+const _boreProf = { gradeY: 0, tx: 1, tz: 0 }
+
 /** The summary's rows. It reads what the run already tracks; only the playtime is counted for it. */
 function _runEndHtml (kind) {
-  const e = runEconomy, f = damageModel.fatalImpact, req = offerBoard?.lines() ?? []
+  const e = runEconomy, req = offerBoard?.lines() ?? []
   const row = (k, v, gap = false) => `<div class="re-row${gap ? ' re-gap' : ''}"><span class="re-k">${k}</span><span>${v}</span></div>`
   const min = Math.floor(_playedS / 60)
-  return (kind === 'crash' && f ? `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region}</div>` : '')
+  return _runEndWhy(kind)
     + row('day', `${daySystem.day()}`)
     + row('playtime', `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`)
     + row('jobs completed', `${e.missions}`, true)
@@ -8285,6 +8377,22 @@ function _runEndHtml (kind) {
     + row('spent', `$${formatMoney(e.spent)}`)
     + row('wallet', `<span class="re-money">$${formatMoney(e.money)}</span>`)
     + _upgradeRows(row)
+}
+
+/**
+ * FEAT-160 (owner, 2026-11-02): an unexplained setback reads as the game cheating, so a death says
+ * why and how to avoid it, from the numbers the game itself used. Words are placeholders.
+ */
+function _runEndWhy (kind) {
+  const f = damageModel.fatalImpact
+  if (kind === 'crash' && f) {
+    return `<div class="re-why">hit at ${Math.round(f.mph)} mph &mdash; ${f.region} &middot; at ${Math.round(f.armor * 100)} % armor `
+      + `the ${f.region} could take ${Math.round(fatalMph(f.armor))} mph; fresh it takes ${Math.round(fatalMph(1))}</div>`
+  }
+  if (kind !== 'broke') return ''
+  // The tows the Recovery card offered: the cheapest is what the wallet fell short of.
+  const tow = [_towQuote(_FUEL_SELLER), _towQuote(_SERVICE_CENTER)].filter(Boolean).sort((a, b) => a.price - b.price)[0]
+  return `<div class="re-why">${tow ? `the tow was $${formatMoney(tow.price)}` : 'no tow could reach you'} &mdash; you had $${formatMoney(runEconomy.money)}</div>`
 }
 
 /** The truck's upgrades — the five most valuable parts fitted this run, or "stock" (owner, 2026-10-31). */
@@ -8610,7 +8718,7 @@ document.addEventListener('visibilitychange', () => setAudioPageActive(!document
 // FEAT-23: WebAudio may only start inside a user gesture (browser autoplay policy). ANY gesture
 // counts — a click too: a resumed run is reached by mouse alone (continue → resume) with the engine
 // already idling, and a keydown-only unlock left it silent until the first key. Idempotent.
-function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio() }
+function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio(); ensureAmbientAudio() }
 window.addEventListener('pointerdown', _unlockAudio, true)
 
 document.addEventListener('keydown', e => {
@@ -8793,6 +8901,7 @@ function loop () {
 
     // FEAT-36: debris pre-step — render snapshot + cargo-in-bed bullet flag (see debris.js).
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
+    hiLift.step(vehicleState, RANGER_PARAMS.mass + (RANGER_PARAMS.stowedKg || 0), PHYSICS_DT, _now())   // FEAT-138
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them
@@ -8809,6 +8918,9 @@ function loop () {
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
+    // FEAT-120: the contact one-shots read the same per-step peaks the damage step just priced.
+    const v = vehicleState.velocity
+    stepContactAudio(vehicleState, RANGER_PARAMS._tireFz, Math.hypot(v.x, v.z), PHYSICS_DT)
     // FEAT-126: a shift forced with the clutch in grinds, and is a damage event in its own right. Its
     // 2 % wear is under the damage screen's per-sample drop threshold, so it raises the alert here,
     // like a landed impact does below.
@@ -9210,7 +9322,7 @@ function loop () {
     setEngineAudioTuning(RANGER_PARAMS.engineAudioDynamics, getCameraMode() !== 'hood', RANGER_PARAMS.engineChaseBrightDb, RANGER_PARAMS.engineChaseBoomDb, RANGER_PARAMS.starterAudioLevel, RANGER_PARAMS.engineAudioCompRatio)
     // FEAT-50: a low-fuel stumble drops the drone out for its length, with one pop per stumble.
     const fuel = vehicleState.fuel
-    if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth); _sputtersHeard = fuel.sputters }
+    if (fuel.sputters !== _sputtersHeard) { if (fuel.sputters > _sputtersHeard) playSputterPop(fuel.sputterDepth, dtrain.engineRPM, RANGER_PARAMS.cylinders, fuel.sputterDur); _sputtersHeard = fuel.sputters }
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle,
       (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0), RANGER_PARAMS.cylinders, RANGER_PARAMS.engine,
       vehicleState.ignition?.state === 'off')
@@ -9253,6 +9365,19 @@ function loop () {
   setWindAudioEnabled(heard && RANGER_PARAMS.windAudioEnabled !== false)
   setWindAudioVolume(RANGER_PARAMS.windVolume ?? 0.4)
   updateWindAudio(vehicleState)
+  setCabView(getCameraMode() === 'hood')   // FEAT-120 camera-aware mix: the cab hears the world through the glass
+  setTunnelReverb(RANGER_PARAMS.tunnelReverbEnabled !== false, RANGER_PARAMS.tunnelReverbLevel ?? 0.9)
+  setInTunnel(_listenerInBore())           // FEAT-163: the camera is the listener — it leaves a portal after the truck
+  setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
+  setResultAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)   // the card plays over a held sim
+  // FEAT-120 ambience: crickets on the sky's own night; grass from the green share of the ground the
+  // truck is on, off the road only (the shoulder feather counts as road).
+  {
+    const p = vehicleState.position, v = vehicleState.velocity
+    const green = !_labActive && terrainSystem && _looseSurfaceFactorAt(p.x, p.z) >= 1 ? terrainSystem.groundAt(p.x, p.z).green : 0
+    setAmbientAudio(heard && RANGER_PARAMS.ambientAudioEnabled !== false, RANGER_PARAMS.cricketVolume ?? 0.5, RANGER_PARAMS.grassVolume ?? 0.5)
+    updateAmbientAudio(Math.hypot(v.x, v.z), nightWeight(SKY_CYCLE.hour), green, frameTime)
+  }
 
   // PERF-16: throttle all HUD DOM + debug-canvas writes to ~10 Hz. These are human-readable readouts;
   // rewriting the spans and repainting the Pacejka/travel/slip canvases every frame cost Layout+Paint
@@ -9315,6 +9440,7 @@ function loop () {
     _renderRunHud()
     _checkEdge()   // FEAT-154: past the barricades, fade and come back in
     _updateBarricades()   // …and the rows near the truck are loose bodies
+    _updateOrnaments()    // FEAT-149: so are the lawn ornaments
     _updateSite()         // FEAT-65: likewise a demolition job's targets
     const guiOpen = _gui.domElement.style.display !== 'none'   // S-64: debug read-outs only while the panel shows
     if (guiOpen) economySystem.syncGui()

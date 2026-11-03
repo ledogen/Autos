@@ -57,7 +57,11 @@ Every courier thing is a phrase on the card. Nothing renders.
 | R1 | Woodcraft Vol 2. | residence / farm → residence / farm | |
 | R1 | keys for the tractor | any → farm | existing |
 | R1 | their class notes | residence / farm → school | existing |
-| R1 | a presentation deck | residence / farm → office | existing |
+| R1 | a presentation deck | any → office | existing; from any normal giver (FEAT-153, owner 2026-11-02). Class notes stay household-only |
+| R1 | the field-trip permission slips | school → residence / farm | FEAT-153 placeholder words (owner, 2026-11-02); 0.1–0.3 kg |
+| R1 | the signed contracts | office → workSite / autoShop / farm | FEAT-153 placeholder words; 0.2–0.5 kg |
+| R1 | the payroll envelope | office → generalStore / gasStation | FEAT-153 placeholder words; 0.1–0.3 kg |
+| R1 | a reel to re-spool | residence / farm → tackleShop | FEAT-153 placeholder: the one thing that ends at the tackle shop; 0.3–0.6 kg |
 | R1 | a full 20 lb propane tank | generalStore / gasStation → any | existing; ~17 kg (7.7 kg cylinder + 9.1 kg gas) |
 | R1 | an empty 20 lb propane tank | any → generalStore / gasStation | existing; ~8 kg. The bed version of both is the freight 4-pack (ASSET-72) |
 | R1 | a box of lightbulbs | generalStore → any | existing; the tackle shop FETCHES it (FEAT-102) |
@@ -177,6 +181,7 @@ only** and are never modelled.
 | R1 | four dining chairs | generalStore / residence → residence | ASSET-59 | 24 | the "ratty old furniture" job (worn recolour). 4 × 6 kg |
 | R1 | grandma's vase | | ASSET-41 | 9 | existing `vase`. Glazed ceramic, 0.78 m, + its base |
 | R1 | full-length mirror | generalStore / residence → residence | ASSET-64 | 16 | framed, 0.6 × 1.7 m, blanket-wrapped |
+| R1 | the science-fair project | school → residence / farm | ASSET-28 + text | 6 | FEAT-153 placeholder words (owner, 2026-11-02); Fragile tier |
 | R2 | crate of fine china | generalStore / residence → residence | ASSET-28 + text | 30 | ~24 kg of china + crate |
 | R2 | a windshield | autoShop → any | crate until modelled | 14 | existing. The glass alone |
 | R2 | dining table | generalStore / residence → residence | ASSET-60 | 45 | the "nice" set, paired with ASSET-59. Solid wood, 1.6 × 0.9 m |

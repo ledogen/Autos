@@ -22,7 +22,7 @@
 import * as THREE from 'three'
 import { buildPalette, COVER_CATS, COVER_FAR_CAT, FADE_CATS } from './prop-palette.js'
 import { scatterChunk, scatterChunkGen, scatterLitterGen } from './prop-scatter.js'
-import { sphereVsSphere, sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
+import { sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
 import { PropImpostors } from './prop-impostor.js'                     // PERF-21: distant-prop billboards
 import { FLORA_PARAMS } from '../../data/flora.js'
@@ -361,7 +361,6 @@ export class PropSystem {
     this._impostors = new PropImpostors(renderer, lights)
     const entries = this._impostors.build(this._variants)
     if (this._params.lod && this._params.lod.litGain != null) this._impostors.setLitGain(this._params.lod.litGain)
-    if (this._params.lod && this._params.lod.flatten != null) this._impostors.setFlatten(this._params.lod.flatten)
     this._impMeshes = new Map()
     const base = new THREE.PlaneGeometry(1, 1)      // shared unit quad (position/uv/index reused)
     for (const [key, e] of entries) {
@@ -404,8 +403,6 @@ export class PropSystem {
   /** Live billboard sun-side brightening (GUI slider). No-op when impostors are off. */
   setImpostorLitGain(v) { if (this._impostors) this._impostors.setLitGain(v) }
 
-  /** Live billboard sun-on gradient flatten (GUI slider). No-op when impostors are off. */
-  setImpostorFlatten(v) { if (this._impostors) this._impostors.setFlatten(v) }
 
   /** 3D-prop ring radius in chunks (quality tier / GUI). Chunks beyond it billboard. */
   setLodRing(n) { this._lodRing = Math.max(0, Math.round(n)) }
@@ -548,7 +545,7 @@ export class PropSystem {
       } else if (col) collidables.push({
         kind: col.kind, x: pl.x, y: pl.y, z: pl.z,
         radius: col.radius, height: col.height || 0, scale: pl.scale,
-        rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (boulder) contacts; undefined otherwise
+        rotY: pl.rotY, tris: col.tris,   // rotY/tris used by 'mesh' (rock, boulder) contacts; undefined otherwise
       })
     }
     return bakeEnd
@@ -1201,10 +1198,8 @@ export class PropSystem {
         // trunkRadiusScale as standing trunks (bark + slop), so one slider tunes both.
         const capR = c.radius * c.scale * C.trunkRadiusScale
         hit = sphereVsCapsule(cx, cy, cz, r, c.ax, c.ay, c.az, c.bx, c.by, c.bz, capR)
-      } else if (c.kind === 'sphere') {
-        hit = sphereVsSphere(cx, cy, cz, r, c.x, c.y, c.z, c.radius * c.scale * C.rockRadiusScale)
       } else if (c.kind === 'mesh') {
-        // BUG-22c: boulder — broad-phase reject against the bounding sphere, then exact triangle test.
+        // BUG-22c / BUG-54: rock or boulder — broad-phase reject against the bounding sphere, then exact triangle test.
         const cullR = r + c.radius * c.scale
         const dx = cx - c.x, dy = cy - c.y, dz = cz - c.z
         if (dx * dx + dy * dy + dz * dz < cullR * cullR) {

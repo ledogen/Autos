@@ -176,3 +176,11 @@ crossover band, no orange): `wip/bug-74/`. Not reached: a fade of ≥ 8 m where 
 table stops at the toe). If the owner wants that, it is a third carve-table channel (distance beyond
 the toe) — say so before it is built. Seed 1666428418's crossover spot has no road any more (routes
 moved since September); seed 656320315 (650, −254) shows the same class, improved less (shallow fill).
+
+## 2026-11-02 — class 1 attempt HELD on `proto/bug-74-fill-bury` (2390dda1)
+
+Spare's height-contest attempt (a fill buries the natural rock by its own thickness — `roadFillRockBury`
+2.5 m; only a cut stays an engineered face) is parked on branch `proto/bug-74-fill-bury`, off
+feature/spare so the rest lands without it. The owner drives it on :3885 — Spare checks that branch out
+in `CarGame-spare` when asked, then puts feature/spare back. The write-up and measurements are in that
+branch's copy of this ticket; shots in `CarGame-spare/wip/bug-74/`.
