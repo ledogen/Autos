@@ -1,7 +1,7 @@
 ---
 id: BUG-74
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-09-27
 source: owner, seed w (197, 616) place capture, after the FEAT-84 pass 15 fill-as-dirt fix ("still looks bad to me")
@@ -145,6 +145,38 @@ judge in play.
   the ground; the shoulder material fades out over ≥ 8 m with a ragged front.
 - Cut walls unchanged. No new per-zone rule in the shader beyond the one mechanism chosen.
 
+## 2026-11-01 — Spare takes it: class 1 by a HEIGHT CONTEST (owner to judge)
+
+Lane: Spare (orchestrator, 2026-11-01). Standing ruling honoured: no new blend weight on the carve;
+the owner's own pointer — "use the height wiring to bring the rocks below the dirt".
+
+**What the seam was, measured** (`wip/bug-74/profile.mjs`, the chunk's own vertex attributes across
+the road at seed w (197, 616)): the fill skirt pulled the vertex rock share to 0 linearly with the
+carve feather, and the shader then raises that share to γ = 6 for coverage — so rock barely showed
+until the feather was nearly done, then rushed in — and crossfaded the rock colour by (1 − w) a second
+time. Smooth tan band, then a front. The fill there is 4.9 m thick at the road and still 1.8 m at 8 m
+out; its bank drops to nothing between 9 and 11 m.
+
+**The change — one mechanism replacing the fill's rules, none added:**
+- A fill BURIES the natural rock by its own thickness (`roadFillRockBury`, slider "Fill Rock Bury (m)",
+  default 2.5 m). The coverage rule is rank-based (tallest fragments first), so scaling coverage by
+  (1 − thickness/bury) makes the tallest fragments surface first as the fill thins — rock showing
+  through the toe of the embankment, ragged by the existing biome dither. 2.5 m reads as fill built of
+  the local rock (what real embankments are), the owner's "gravel fill the road is built on".
+- Only a CUT is an engineered face now: `aSurf.w` = carve weight × cut-ness. On a pure cut wall the
+  arithmetic is identical to before (rock share, exemption, grass and dirt all reduce to the old
+  formulas), so cut walls are unchanged; the fill takes every natural rule (coverage, dither, stones,
+  under-rock green).
+
+Measured at seed w: rock coverage across the section went from 0 → 0.43 over ~1.5 m (lat 9.5 → 11)
+to 0.04 → 0.15 → 0.20 → 0.35 → 0.43 over ~5 m (lat 6 → 11). Shots (overhead, driver's eye, oblique;
+before/after; plus the case-25 cut bank against main, unchanged but for a few more flecks in its
+crossover band, no orange): `wip/bug-74/`. Not reached: a fade of ≥ 8 m where the fill itself ends in
+2 m — that needs the overspill to extend PAST the toe, which the vertex writer cannot see (the carve
+table stops at the toe). If the owner wants that, it is a third carve-table channel (distance beyond
+the toe) — say so before it is built. Seed 1666428418's crossover spot has no road any more (routes
+moved since September); seed 656320315 (650, −254) shows the same class, improved less (shallow fill).
+
 ## 2026-11-02 — class 1 attempt HELD on `proto/bug-74-fill-bury` (2390dda1)
 
 Spare's height-contest attempt (a fill buries the natural rock by its own thickness — `roadFillRockBury`
@@ -152,3 +184,11 @@ Spare's height-contest attempt (a fill buries the natural rock by its own thickn
 feature/spare so the rest lands without it. The owner drives it on :3885 — Spare checks that branch out
 in `CarGame-spare` when asked, then puts feature/spare back. The write-up and measurements are in that
 branch's copy of this ticket; shots in `CarGame-spare/wip/bug-74/`.
+
+## Resolution — 2026-11-03: class 1 LANDED (owner: "bug74 fix approved")
+
+The owner drove `proto/bug-74-fill-bury` on :3897 and approved it; merged to main as 14136e11 (a fill buries
+the natural rock by its own thickness, `roadFillRockBury` 2.5 m, slider "Fill Rock Bury (m)"; only a cut stays
+an engineered face). **Not built:** the "fade ≥ 8 m past the toe" carve-table channel — the owner did not ask
+for it. The acceptance's "≥ 8 m" line is met where the fill runs that far and not past a 2 m toe; re-open with
+that channel if the seam shows again.

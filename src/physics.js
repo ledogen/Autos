@@ -42,9 +42,10 @@
 import * as THREE from 'three'
 import { computeTireForces } from './tire.js'
 import { computeNormalForce, effectiveWheelRadius, getWheelPosition, mountLocal, stepSuspensionSubsteps, SUSPENSION_SUBSTEPS, WHEEL_SOFT_BAND } from './suspension.js'
-import { REV_THRESHOLD, stepDrivetrain } from './drivetrain.js'
+import { REV_THRESHOLD, autoReverse, stepDrivetrain } from './drivetrain.js'
 import { stepFuel } from './fuel.js'
 import { stepAbs } from './abs.js'
+import { stepTraction } from './traction.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
 
@@ -102,11 +103,15 @@ function getBrakeTorque (wheelIndex, vehicleState, params, longVel) {
   // FEAT-126: in a MANUAL, S is always just the brake — reverse is a gear (R), not the pedal.
   // ABS (src/abs.js) owns the line pressure at each wheel when present: the pedal, less whatever the
   // controller has vented. Without vehicleState.abs (headless gates) the pedal goes straight through.
+  const maxBt = isRear ? (params.maxBrakeTorqueRear ?? 800) : (params.maxBrakeTorqueFront ?? 1200)
   let service = 0
   if (vehicleState.brake > 0 && (longVel > REV_THRESHOLD || params.transmissionType === 'manual')) {
-    const maxBt = isRear ? (params.maxBrakeTorqueRear ?? 800) : (params.maxBrakeTorqueFront ?? 1200)
     service = (vehicleState.abs ? vehicleState.abs.p[wheelIndex] : vehicleState.brake) * maxBt * brakeDmg
   }
+  // FEAT-159: traction control's brake on the faster rear (src/traction.js) — real line pressure, in
+  // either direction of travel, so it wears the pads like any braking; the stronger clamp wins.
+  const tcP = vehicleState.traction?.p[wheelIndex]
+  if (tcP) service = Math.max(service, tcP * maxBt * brakeDmg)
 
   // Handbrake: rear wheels only, FULL clamping torque at all speeds. A handbrake is a fixed brake, so
   // it must apply full torque at low speed / rest — that is exactly when you park on a hill. The old
@@ -848,6 +853,15 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const vForward = vehicleState.velocity.x * forward.x +
                    vehicleState.velocity.y * forward.y +
                    vehicleState.velocity.z * forward.z
+  // FEAT-159: the traction assists (src/traction.js) trim the drive pedal — t.cap, which stepDrivetrain
+  // reads — and brake a spinning rear (t.p, getBrakeTorque), from the start-of-step sensors: one loop of
+  // lag, like ABS. The drive pedal is W, or S while the automatic is in reverse.
+  if (vehicleState.traction) {
+    const drive = params.transmissionType !== 'manual' && autoReverse(vehicleState, vForward) ? vehicleState.brake : (vehicleState.throttle || 0)
+    const v = vehicleState.velocity, w = vehicleState.angularVelocity
+    stepTraction(vehicleState.traction, drive, vehicleState, vForward, v.x * right.x + v.y * right.y + v.z * right.z,
+      w.x * up.x + w.y * up.y + w.z * up.z, params, dt)
+  }
   stepDrivetrain(vehicleState, params, dt, vForward)
   stepFuel(vehicleState, params, dt)   // FEAT-50: burns off the pedal + rpm the drivetrain just used
   // ABS samples the wheel speeds as they stand at the start of the step — one loop of sensor lag.

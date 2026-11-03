@@ -275,6 +275,18 @@ export function initDebug (params, callbacks = {}, options = {}) {
   absFolder.add(params, 'absReapplyRate', 0.5, 15, 0.5).name('Stepped re-apply rate (1/s)')
   absFolder.add(params, 'absMinSpeed', 0, 6, 0.1).name('Cut-out speed (m/s)')
   absFolder.close()
+  // FEAT-159 traction assists (src/traction.js) — the settings page owns the two toggles too.
+  const tracFolder = driveFolder.addFolder('Traction assists')
+  tracFolder.add(params, 'throttleAssist').name('Throttle assist')
+  tracFolder.add(params, 'tractionControl').name('Traction control')
+  tracFolder.add(params, 'taSlip', 0.1, 0.5, 0.01).name('Assist slip target (–)')
+  tracFolder.add(params, 'taMaxSpeed', 5, 40, 1).name('Assist ceiling (m/s)')
+  tracFolder.add(params, 'tcSlip', 0.05, 0.6, 0.01).name('TC torque-cut slip (–)')
+  tracFolder.add(params, 'tcSlipHi', 0.2, 1, 0.01).name('TC one-wheel cut slip (–)')
+  tracFolder.add(params, 'tcSplit', 0.2, 5, 0.1).name('TC brake split (m/s)')
+  tracFolder.add(params, 'tracYawMargin', 0, 0.5, 0.01).name('Oversteer margin (rad/s)')
+  tracFolder.add(params, 'tracGain', 1, 40, 1).name('Cap gain (1/s)')
+  tracFolder.close()
   // Body-slam rebound (0 = fully-plastic thud). FEAT-48: lives on the chassis shape's engine
   // material now, so the slider pushes the new value into the engine on change.
   driveFolder.add(params, 'bodyRestitution', 0, 0.6, 0.01).name('Body Bounce (restitution)')
@@ -843,6 +855,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   surfaceFolder.add(params, 'roadCliffSlopeHi',     0.3,  0.9,  0.02).name('Cliff Slope Hi').onChange(fireSurface)
   // BUG-74: the cut's rock fades in/out over this much cut/fill depth either side of the crossover.
   surfaceFolder.add(params, 'roadCutRockFade',      0.25, 6,    0.25).name('Cut Rock Fade (m)').onChange(fireSurface)
+  surfaceFolder.add(params, 'roadFillRockBury',     0.1, 3,     0.05).name('Fill Rock Bury (m)').onChange(fireSurface)
 
   // Plan 09-10 — Decal ribbon depth-bias + edge skirts.
   // roadSkirtDepth is geometry → fires fireSurface (full road rebuild).
@@ -934,6 +947,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     roadShoulderWidth:     'Width (m) of the dirt shoulder flanking each side of the paved surface.',
     roadCliffSlopeLo:      'Lower slope threshold where terrain starts shading as cliff rock.',
     roadCliffSlopeHi:      'Upper slope threshold where terrain is fully cliff rock.',
+    roadFillRockBury:      'Metres of fill that bury the natural rock under a road embankment. Thinner fill shows the tallest fragments first, so rock surfaces through the toe of the fill.',
     roadCutRockFade:       'Half-width (m of cut/fill depth) of the fade between the cut\'s broken rock and shoulder dirt, centred where the road grade meets the hill.',
     roadSkirtDepth:        'How far (m) the road-edge skirt drops below the ribbon to hide seams against terrain.',
     roadPolygonOffsetFactor:'Depth-bias factor pushing the road decal above terrain to prevent z-fighting.',

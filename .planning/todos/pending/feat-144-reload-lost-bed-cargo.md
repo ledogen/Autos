@@ -51,3 +51,34 @@ This works for any loose bed cargo:
 ## Acceptance
 
 - To be written once the questions above are ruled.
+
+## Owner rulings — 2026-11-03 ("approve all six")
+
+> "5 mins per piece. dpad up or down (not sure what else is mapped but i like reset on dpad right and set spawn
+> on dpad left). need to be parked within a couple meters. job cant finish till you fetch. loose cargo only.
+> f143: yes"
+
+1. **Button:** a D-pad direction — **D-pad ↓** [DEFAULT of the owner's "up or down"]; a free keyboard key
+   [DEFAULT, Spare picks; the settings chart is generated from `BINDINGS`, so it shows there].
+   **Also asked for in the same breath:** reset truck on **D-pad →** (held 1 s like View [DEFAULT], so a
+   mid-drive tap can't reset) and set spawn on **D-pad ←** (free roam's Shift+R). Same `gamepad.js` edit.
+   This spends three D-pad directions while driving; the owner's call (it was kept free for actions, FEAT-125).
+2. **Reach:** parked, within a couple of metres — **3 m from the truck's body** [DEFAULT].
+3. **Cost:** 5 minutes per piece, on the world clock and the job's clock.
+4. **Tire fail rule: REVERSES the 10-22 ruling.** A lost tire never fails the job; the job just can't finish
+   until the tire is back in the bed. The deadline still applies as on any job.
+5. **Loose cargo only.** Strapped freight and fragile are out.
+6. **One button, one reach rule for both this and FEAT-143's pick-up.** FEAT-143's P1 answers said 8 m; this
+   says a couple of metres. One decide item on the tracker page (`feat143-reach`) confirms 3 m for both.
+
+## Acceptance
+
+- [ ] Parked within the reach of a lost loose piece, D-pad ↓ (or the key) lifts it above the bed and it drops in,
+      the same way it was loaded at accept; 5 min passes on the world and job clocks.
+- [ ] A lost motorist's tire does not fail the job; arriving at the shop without it does not finish it; fetching
+      it and arriving does.
+- [ ] A reloaded haul bundle pays at delivery (pieces aboard), no economy change.
+- [ ] Freight and fragile pieces are never offered.
+- [ ] A lost piece persists while its chunk streams out and back.
+- [ ] D-pad → held resets the truck; D-pad ← sets the spawn in free roam; the settings chart shows all three.
+- [ ] A gate on the reload path (reach refused outside 3 m or unparked; the tire rule); cdp-smoke still green.

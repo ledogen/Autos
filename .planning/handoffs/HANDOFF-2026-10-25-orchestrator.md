@@ -199,3 +199,26 @@ the cap ones can go) · :3897 BUG-74 drive (worktree CarGame-bug74 = proto/bug-7
 orchestrator). Owed list on the page: FEAT-159 calls/drive, BUG-74 drive (+ the ≥ 8 m fade question), sound listen +
 two reference clips (YouTube blocks agents' downloads — the owner drops them on the Sounds cards) + a scrape recording,
 FEAT-153 tackle-shop reel, FEAT-163 UI-dry default, plus the older items.
+
+## Lane context — the orchestrator watches it, not the owner (owner question 2026-11-03)
+Sessions auto-compact near their limit, so a lane never stops for a full context. Lane A and Lane B had
+each auto-compacted twice by 11-03 with nobody noticing. Nothing is lost that matters: lanes commit WIP
+at every step, plans are parked in tickets, and the page holds each lane's handoff. A manual `/clear` is
+still worth it **between unrelated tasks while a session is heavy** (cheaper turns, no stale
+assumptions). Nobody but the owner can `/clear` a session: a SendMessage arrives as text, never as a command.
+**On every wake:** read each lane's context from its transcript: the last assistant entry's `usage`
+(input + cache read + cache creation) in `~/.claude/projects/-Users-ledogen-CodeShit-CarGame/<session>.jsonl`.
+All lanes write to that one folder; tell them apart by the worktree path in the transcript. When a lane
+finishes a task while heavy (≳ 400k tokens), have it write `lanes/<id>.handoff`, then tell the owner
+"<lane> is ready for a clear". The owner types `/clear` and pastes the page's resume prompt.
+
+## State 2026-11-04 (after midnight) — orchestrator
+Owner asleep, standing permission for the night: "feel free to move main. merge, push main to origin, etc".
+Landed: BUG-74 class 1 (14136e11, full suite 118/118; ticket closed 44ce5f46). Owner rulings drained into
+tickets (cabe8a77): FEAT-65 slice 2 (Lane A built 1–2 on feature/run-shape ea6d553e; it lands with FEAT-66
+after the owner's look + `feat65-clock-pay`), FEAT-144 six approved + D-pad ↓/→/←, FEAT-143 P1 go, FEAT-131
+go, FEAT-70 A/3 lines, FEAT-159 (c) TC less cautious (Lane B retuning), new BUG-108 hit hitch (Lane B).
+Inbox 11-03 (four items, done on main): menu truck re-centres on load (stage.js setMenuShift), off the books
+×1.40, durTire 16050 (+50 %), POI + pump rings lit to the drawn terrain (reverses FEAT-60's 50 m).
+Owed on the page: `feat65-clock-pay`, `feat143-reach` (both blockers) + the older list.
+The owner playtests on Pages: every main commit rebuilds :8000 under them, so batch main commits and push.

@@ -151,3 +151,9 @@ it bites.
 - A or B (A recommended);
 - 3 lines across the width, or the tire edges only (2 lines, cheaper);
 - confirm the radial normal at edges (a kerb will now slow a wheel that hits it).
+
+## Owner ruling — 2026-11-03: A, 3 lines
+
+Option A (our own tire-cylinder solve), **3 lines** across the width (both edges and the centre), the radial
+normal at the edges confirmed (a kerb now slows a wheel that hits it). Spare builds; physics identity is
+expected to change — `fingerprint-physics.mjs` diff explained in the ticket, PERF-24's memo-cell check re-run.
