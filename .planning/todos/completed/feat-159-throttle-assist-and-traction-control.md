@@ -1,7 +1,8 @@
 ---
 id: FEAT-159
 type: feature
-status: open
+status: done
+closed: 2026-11-02
 severity: minor
 opened: 2026-11-02
 source: owner, 2026-11-02 (orchestrator inbox) — "throttle assist - at low speeds prevents excessive wheelspin
@@ -288,3 +289,6 @@ Time / rear tread slide, TC before → after:
 | one rear worn (μ×0.7), keyboard, 0–30 | 5.30 / 123 | 5.00 / 17 | **5.05 / 27** |
 | 12 % cross-slope, keyboard, 0–30 | 4.32 / 65 | 4.38 / 11 | **4.22 / 19** |
 | power-oversteer entry, β max | 45° | 5° | **5°** |
+
+**Closed** with the TC retune: the owner drove the throttle assist ("love throttle assist") and ruled on all
+three calls. Landing from `feature/machine`.
