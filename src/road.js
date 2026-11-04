@@ -7756,7 +7756,7 @@ export class RoadSystem {
      * Memoised per run and network revision. Meshes and the wall contact read the same test (MESH == PHYSICS).
      */
     siblingTubeTest(runKey) {
-        if (this._sibRev !== this._networkRev) { this._sibRev = this._networkRev; this._sibTests = new Map(); this._sibByNode = null }
+        if (this._sibRev !== this._networkRev) { this._sibRev = this._networkRev; this._sibTests = new Map(); this._sibByNode = null; this._mouths = new Map() }
         if (this._sibTests.has(runKey)) return this._sibTests.get(runKey)
         if (!this._sibByNode) {
             this._sibByNode = new Map()
@@ -7804,6 +7804,27 @@ export class RoadSystem {
         }
         this._sibTests.set(runKey, test)
         return test
+    }
+
+    /**
+     * BUG-67 shared bore: is the span end at run-arc `s` a real tunnel MOUTH? Not when it lies inside a
+     * sibling's tube — the split at a T promoted underground, where the tube carries on as the sibling's.
+     * Such an end gets no portal ring (road-mesh.js) and no skin cut (terrain.js _tunnelPortals). The
+     * mouth-funnel notch (_boreNotchCS) still measures from it: dropping that let the junction's other
+     * claimants carve the skin to the deck over the T (capture 1793661489778, measured 2026-11-04).
+     * Memoised per run, arc and network revision.
+     */
+    isMouth(runKey, s) {
+        const test = this.siblingTubeTest(runKey)   // also resets the memo on a new network revision
+        if (!test) return true
+        const key = runKey + '|' + s
+        let m = this._mouths.get(key)
+        if (m === undefined) {
+            const p = this.runPointAt(runKey, s)
+            m = !p || !test(p.x, this.runProfile(s, runKey, _CD_RP).gradeY + (this._params.tunnelBoreRadius ?? 8) / 2, p.z)
+            this._mouths.set(key, m)
+        }
+        return m
     }
 
     // BUG-37: bore WALL contact — the carve heightfield above (_sampleCarveWorld) only resolves the
