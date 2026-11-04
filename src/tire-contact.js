@@ -18,9 +18,11 @@
  *            axle, so a kerb pushes back horizontally (a kerb slows the wheel that hits it). The
  *            surface's tilt along the axle is kept, so a cross-slope still pushes downhill and the
  *            tire's grip holds it, as before.
- * Search per line: 13 coarse samples over [−r, r] (one under the hub, so flat ground is exact), then
- * a golden-section refinement in the bracket of every coarse local minimum (≈1 mm at a kink). One
- * minimum on smooth ground: 3 × (13 + 12) = 75 height samples per wheel, vs the stencil's 33.
+ * Search per line: 9 coarse samples over [−r, r] (one under the hub, so flat ground is exact), then a
+ * golden-section refinement in the bracket of every coarse local minimum (≈1.5 mm at a kink). One
+ * minimum on smooth ground: 3 × (9 + 10) = 57 height samples per wheel, vs the stencil's 33 — measured
+ * 1.9× its cost parked on a junction pad (397 vs 208 µs a frame for four wheels, wip/feat-70/perf.mjs);
+ * 13 + 12 was no more accurate on real roads (p99 2.0 mm against a dense exact cylinder).
  * A hub centre BELOW the ground is a buried wheel, not a contact: the depth there is the half-space
  * measure h + r − cy, unbounded, which is what physics.js's tunnelling failsafe keys on.
  *
@@ -32,8 +34,8 @@
  * Pure: no DOM, no engine types, no Three.js. `heightAt(x, z)` and `normalAt(x, z)` are the caller's.
  */
 
-const COARSE = 13                        // odd: one sample sits under the hub
-const REFINE = 12                        // golden-section steps per bracket: 12 cm → ≈1 mm
+const COARSE = 9                         // odd: one sample sits under the hub
+const REFINE = 10                        // golden-section steps per bracket: 18 cm → ≈1.5 mm
 const GOLD = (3 - Math.sqrt(5)) / 2       // 0.382 — the golden section of the larger side
 const _v = new Float64Array(COARSE)
 
