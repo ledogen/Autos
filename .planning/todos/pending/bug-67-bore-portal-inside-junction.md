@@ -282,3 +282,48 @@ order:
    portal ring inside the other tube is skipped; meshes and colliders only). Only simulated so far.
 Before/after screenshots of the moved sites go to the owner before each step lands. The junction cut
 (proto/bug-67-junction-cut) is not needed. Lane: Spare. FEAT-62's scenarios come after (every world re-routes slightly).
+
+## Built — Spare, 2026-11-04 (feature/spare), NOT landed until the owner's OK
+
+### Step 1 — T slide + re-seat at 50 m, the default (915c966c, re-pins 32df8c82; land at 3df62151)
+
+Ported from proto/node-reseat 0b0f9956 with the switches dropped: constants `RESEAT_TRIGGER_M` 50, `RESEAT_FIT_M` 25,
+`RESEAT_REACH_M` 60, `T_SLIDE_M` 25 (road.js). Full suite 116/119 + smoke 21/21; the three reds are the predicted
+ones, each re-pinned with its reason in the gate:
+
+- vertical-curvature: junction ceiling 204 → 205 — seed 6 origin 30 → 32 kinks, the legs of node 1,0,0 re-seated
+  40 m, both under the 0.11 /m line (main 203).
+- adopt-reconcile: the flip's T matched by shape — the T slid 8 m (635643,448649 → 627737,447586), flip unchanged.
+- demolition-site: "a farm or work site posts a demolition offer" over the fixture, not per seed — seed 6's
+  roster moved with its re-seat; seed 1 still posts one, and every placement check passes on both.
+
+What moves (main vs step 1, `wip/bug-67/moved.mjs`): nothing in corpus seeds 0/2/16/18/19; seed 13 node -1,2,2
+re-seats 30 m and its T moves ~100 m onto another trunk; **seed 6 (the default world)** node 1,0,0 re-seats 40 m
+and its legs re-plan (the T at (1067,−294) goes, Ts at (1024,305) and (733,541) appear, a road through there that
+main lacks); capture 1793661400345 node -31,48,0 re-seats 40 m; s115's T slides ~32 m out of its trunk's portal.
+Sibling probe: 3 of the 5 known collisions fixed. Shots: `CarGame-spare/wip/bug-67/shots/step1/`.
+
+### Step 2 — the shared bore (85625eff)
+
+`road.siblingTubeTest(runKey)` → a test (x, y, z) → inside the bore of another run sharing one of its nodes
+(radius tunnelBoreRadius about that run's centreline, from 1.5 m under its deck up, within one of its spans), or
+null when no sibling bores (memoised per network revision). Three readers, one rule (MESH == PHYSICS):
+buildTunnelTube drops a lining triangle whose centroid is inside a sibling's tube; buildPortalRing builds no ring
+at a span end inside one; queryTunnelWallContact returns no wall where its contact point is inside one. The
+trimesh colliders, bore slot and lid follow the meshes as before.
+
+Sibling probe with the REAL rule (`REAL=1`, the game's own siblingTubeTest decides what B still builds):
+**0 of the 5** known collisions. Full suite 119/120 + smoke: the smoke flaked twice under other lanes' load
+(`reset`, then `map`, load average 9–11) and passed 21/21 alone.
+
+**The two decks drift inside the overlap** (`wip/bug-67/drift.mjs`): at the T they are equal by construction,
+and they part as the legs diverge (~55–60° apart, so the tubes overlap for the first ~16 m):
+
+| junction | 8 m out | 12 m out | 16 m out |
+|---|---|---|---|
+| capture 1793661489778 | 0.19–0.51 m | 0.46–0.82 m | 0.82–1.19 m |
+| s77 | 0.26–1.26 m | 0.24–1.92 m | up to 2.6 m |
+
+The physics floor follows the lane you are on (within 0.07 m of its own deck everywhere measured), so the drift
+reads as two ribbons at slightly different heights where they overlap, and as a step if you cross from one lane
+to the other inside the Y. A blended deck through the overlap would remove it; not built.
