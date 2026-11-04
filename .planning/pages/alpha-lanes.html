@@ -122,7 +122,7 @@
   <h2>Closed since 10-24 (one line each; the tickets hold the rest)</h2>
   <div class="owed"><ul>
     <li><b>Lane A:</b> FEAT-103 alpha camp · FEAT-146 the run ends · FEAT-157 requisition lines · FEAT-154 barricades · FEAT-128 key off at camp · FEAT-151 tiredness · BUG-95.</li>
-    <li><b>Lane B (some built by Spare):</b> BUG-99 tire on rock · FEAT-93/94 punctures and flats · FEAT-152 rim sparks · FEAT-138 hi-lift · FEAT-150 shift schedule · BUG-89 side slide · BUG-54 rock colliders · FEAT-132/137 on evidence.</li>
+    <li><b>Lane B (some built by Spare):</b> FEAT-159 throttle assist + traction control (on main 11-04) · FEAT-158 rock grip · BUG-99 tire on rock · FEAT-93/94 punctures and flats · FEAT-152 rim sparks · FEAT-138 hi-lift · FEAT-150 shift schedule · BUG-89 side slide · BUG-54 rock colliders · FEAT-132/137 on evidence.</li>
     <li><b>Lane C (some built by Spare):</b> ASSET-71 camp · ASSET-32 van · ASSET-69/70/73 office, doctor, school · FEAT-149 knockable ornaments · BUG-94 moon halo · BUG-96 tree billboards.</li>
     <li><b>Spare:</b> BUG-74 roadwork seam (fill buries the rock; owner-approved 11-03) · BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus · FEAT-160 run end says why. BUG-73 closed unreproduced.</li>
   </ul></div>
@@ -146,11 +146,12 @@
       wt: '/Users/ledogen/CodeShit/CarGame-run-shape', branch: 'feature/run-shape', port: 3731,
       owns: 'story.js, camp.js, dialogue, poi.js (the camp type), the story sections of main.js',
       tasks: [
-        { id: 'FEAT-66', what: "NEXT — camp gear renders at the campsite (items.md's visible-kit rule)." },
+        { id: 'FEAT-66', what: 'BUILT on feature/run-shape — camp gear stands at the campsite; lands with demolition slice 2 after your look.' },
+        { id: 'ASSET-78/79', what: 'BUILT — the unrolled bedroll (now the starter bed) and the blanket layer; in the same look.' },
         { id: 'FEAT-161', what: 'The finale is the hardest drive — plan 2–3 options for the owner (Sid Meier review C, 11-02).' },
         { id: 'FEAT-147', what: 'The opening: the firing as a graphic-novel scene, then a courier run TO Larry as the first job (ruled 11-02).' },
         { id: 'FEAT-148 ↳', what: 'The midnight overlay, and the plumbing for the givers’ two-part quotes (the owner writes the words).' },
-        { id: 'FEAT-65', what: 'NOW — slice 2 from the owner’s drive 11-03: no settle on arrival, GPS to the nearest target; the clock + pay wait on one call.' },
+        { id: 'FEAT-65', what: 'Slice 2 BUILT (no settle on arrival, GPS to the nearest target); the clock + pay wait on one call.' },
         { id: 'FEAT-155', what: 'Hide the HUD dock while a camp is made.' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then this page\'s Lane A handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/a.agent. Before a /clear, set your task rows and write lanes/a.handoff here.' },
@@ -158,10 +159,9 @@
       wt: '/Users/ledogen/CodeShit/CarGame-machine', branch: 'feature/machine', port: 3282,
       owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, drivetrain assists, data/parts.js, data/stock-weights.js, physics gates',
       tasks: [
-        { id: 'FEAT-158', what: 'Rock grip — ON MAIN b2d857ce (full suite 118/118, smoke 21/21).' },
-        { id: 'FEAT-159', what: 'Owner drove it 11-03: loves throttle assist; (a)(b) accepted; TC too cautious — retune (c), then it lands.' },
-        { id: 'BUG-108', what: 'A brief hitch when the truck hits a demolition target — render or physics first, numbers (owner 11-03).' },
-        { id: 'FEAT-162', what: 'The truck’s heart: failures that strand it for real, "you broke down" — plan first (owner idea 11-02).' },
+        { id: 'BUG-108', what: 'NOW — a brief hitch when the truck hits a demolition target — render or physics first, numbers (owner 11-03).' },
+        { id: 'FEAT-70', what: 'NOW — wheel contact, option A, 3 lines, radial normal (ruled 11-03; moved from Spare 11-04).' },
+        { id: 'FEAT-162', what: 'The truck’s heart — plan parked in the ticket; four calls on the owed list.' },
         { id: 'BUG-92', what: 'ABS kick never rumbles the pad — waits on the owner’s USB probe.' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read ' + HANDOFF + ' § Lane B, then this page\'s Lane B handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/b.agent. Before a /clear, set your task rows and write lanes/b.handoff here.' },
@@ -186,7 +186,6 @@
         { id: 'FEAT-120', what: 'ON MAIN 012b2461 — keepers wired, register + sputter redone, gravel prototyped. Waits on your clips, a scrape recording, and your listen.' },
         { id: 'FEAT-163', what: 'ON MAIN 012b2461 — a real reverb on the game’s mix inside a tunnel; waits on your listen.' },
         { id: 'FEAT-62', what: 'Paper-route scenario — waits on BUG-67’s re-route and the owner’s scenario calls.' },
-        { id: 'FEAT-70', what: 'GO 11-03 — wheel contact, option A, 3 lines, radial normal.' },
         { id: 'FEAT-143/144', what: 'GO 11-03 — world items P1, then reloading lost bed cargo (D-pad ↓; reset → / spawn ←); one reach number owed.' },
         { id: 'FEAT-131', what: 'GO 11-03 — results juice: sounds → motion → the music bed (with the bar, Spare’s).' },
         { id: 'BUG-104 · BUG-69', what: 'Overlapping roads · side road diving below its trunk — each a go / no-go.' },
@@ -205,6 +204,17 @@
     { id: 'feat65-clock-pay', kind: 'decide', tk: 'FEAT-65', blocks: 'Lane A’s demolition slice 2 (the clock and pay)',
       text: 'Demolition (your drive): reaching the end no longer ends it, and the GPS goes to the nearest target — building now. The clock + pay, recommended: ONE clock (the job’s due-in; at zero it settles with what you hit). Base pays per target smashed; the tip is the time left when the last one falls, so running the clock out means no tip and no 100 % reward.',
       options: ['OK as recommended', 'separate site clock from the first target'] },
+    { id: 'feat66-look', kind: 'drive', tk: 'FEAT-66 · ASSET-78/79', blocks: 'landing Lane A (camp gear + demolition slice 2)',
+      text: 'On localhost:3731 (Lane A’s branch): make camp — the starter bed is the unrolled bedroll with the blanket on it; pack the tent, the awning or the cooking kit (the starter Pack has one free slot) and see each stand at camp; glance at the four new thumbnails. While there, drive a demolition site: miss one, turn back for it.' },
+    { id: 'feat162-calls', kind: 'decide', tk: 'FEAT-162', blocks: 'Lane B’s “you broke down” build',
+      text: 'Genuine stranding (plan in the ticket). Today only an empty tank strands you. (1) The heart = the truck’s own parts: the engine SEIZES at 0 % (overheat — a dead radiator kills it in ~50 s hard — a choked filter, front crashes past dead armour); a written-off wheel collapses onto its hub (a spare fixes it). (2) Stranded and can’t pay a tow → the run ends by itself (dry with no can, seized, collapsed wheel with no spare, rolled with no hi-lift). (3) Title “You broke down.” with the cause line. (4) A seized engine costs 3× a full engine repair [placeholder].',
+      options: ['all four as proposed', '(1) a frame bar instead'] },
+    { id: 'feat161-pick', kind: 'decide', tk: 'FEAT-161',
+      text: 'The finale is the hardest drive — three options in the ticket. 1: a sixth line, the expedition’s last load (recommended). 2: the lines climb, easiest first. 3: the connector road gets its danger now (reverses 10-26).',
+      options: ['1 — the last load', '2 — lines climb', '3 — connector danger'] },
+    { id: 'bug108-nose', kind: 'decide', tk: 'BUG-108', blocks: 'Lane B’s fix for the hit hitch',
+      text: 'Measured: no render hitch (every frame 16.5–16.8 ms at a hit); drums, signs and barricades stay inside the momentum bound. The small crate (in the farm’s drum sites) wedges under the nose and costs up to 0.98 m/s in one step: the collider’s nose is one 48° ramp with no bumper face. Fix: give it the drawn bumper’s vertical blade (halves it; approach angle 45° → 31°, a real Ranger is 25–30°). Recommended: go. In the note: which targets, about what speed, and did the picture freeze or the truck lurch?',
+      options: ['go', 'no-go'] },
     { id: 'feat143-reach', kind: 'decide', tk: 'FEAT-143/144', blocks: 'Spare’s world items (one shared reach)',
       text: 'You said one button and one reach for both pick-ups, but 8 m (FEAT-143) and “parked within a couple meters” (FEAT-144). Which? Either way D-pad ↓ picks up and the inventory strip lists the same things.',
       options: ['3 m for both', '8 m for both', '3 m bed cargo · 8 m items'] },
