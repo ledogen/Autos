@@ -303,14 +303,25 @@ and its legs re-plan (the T at (1067,−294) goes, Ts at (1024,305) and (733,541
 main lacks); capture 1793661400345 node -31,48,0 re-seats 40 m; s115's T slides ~32 m out of its trunk's portal.
 Sibling probe: 3 of the 5 known collisions fixed. Shots: `CarGame-spare/wip/bug-67/shots/step1/`.
 
-### Step 2 — the shared bore (85625eff)
+### Step 2 — the shared bore (85625eff, 8eab4d90, and the run-on after it)
 
 `road.siblingTubeTest(runKey)` → a test (x, y, z) → inside the bore of another run sharing one of its nodes
 (radius tunnelBoreRadius about that run's centreline, from 1.5 m under its deck up, within one of its spans), or
-null when no sibling bores (memoised per network revision). Three readers, one rule (MESH == PHYSICS):
-buildTunnelTube drops a lining triangle whose centroid is inside a sibling's tube; buildPortalRing builds no ring
-at a span end inside one; queryTunnelWallContact returns no wall where its contact point is inside one. The
-trimesh colliders, bore slot and lid follow the meshes as before.
+null when no sibling bores (memoised per network revision). `road.isMouth(runKey, s)`: a span end inside a
+sibling's tube is not a mouth. The readers (MESH == PHYSICS):
+- buildTunnelTube drops a lining triangle when ALL its corners are inside a sibling's tube. A centroid test (the
+  first build) left a sawtooth seam with triangle-sized gaps, and the first shots showed sky through them.
+- At a span end that is not a mouth, the tube runs on straight by a full radius (8 m) instead of the 1.5 m lip.
+  Two legs ending square at the T left a wedge open on the outside of the bend (sky through it at capture 1);
+  what of the run-on lies inside the sibling is dropped with the rest of the overlap.
+- buildPortalRing builds no ring at a non-mouth end; terrain.js _tunnelPortals cuts no skin there.
+- queryTunnelWallContact returns no wall where its contact point is inside a sibling's tube.
+- NOT changed: the mouth-funnel notch (_boreNotchCS) still measures from a non-mouth end. Measuring only from real
+  mouths was tried and made it worse: other claimants (the junction's pad, the trunk's open approach) then carved
+  the skin over capture 1's T down to the deck (160 m) instead of the funnel's 169 m (1 m over the crowns). So the
+  hill over an underground T keeps main's funnel pit, seen from outside. A pad that yields at an underground node
+  would remove it; not built.
+The trimesh colliders, bore slot and lid follow the meshes as before.
 
 Sibling probe with the REAL rule (`REAL=1`, the game's own siblingTubeTest decides what B still builds):
 **0 of the 5** known collisions. Full suite 119/120 + smoke: the smoke flaked twice under other lanes' load
