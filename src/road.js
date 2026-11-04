@@ -7744,6 +7744,68 @@ export class RoadSystem {
         return null
     }
 
+    /**
+     * BUG-67 SHARED BORE (owner, 2026-11-03): sibling tubes at one junction make an underground Y. Where
+     * two runs that share a node both bore away from it (a T promoted onto a trunk that was already
+     * underground: owner capture 1793661489778, s77), each tube's lining runs through the other's lane
+     * and each split's portal ring stands inside the other tube. So a lining triangle, a portal ring and
+     * a wall contact INSIDE a sibling's tube do not exist — the tubes merge. This returns the test for
+     * `runKey`: (x, y, z) → true where the point is inside the bore of another run sharing one of its
+     * nodes (radius tunnelBoreRadius about that run's centreline, from its apron 1.5 m under the deck up,
+     * within one of its spans), or null when no sibling bores — the common case, so callers skip the work.
+     * Memoised per run and network revision. Meshes and the wall contact read the same test (MESH == PHYSICS).
+     */
+    siblingTubeTest(runKey) {
+        if (this._sibRev !== this._networkRev) { this._sibRev = this._networkRev; this._sibTests = new Map(); this._sibByNode = null }
+        if (this._sibTests.has(runKey)) return this._sibTests.get(runKey)
+        if (!this._sibByNode) {
+            this._sibByNode = new Map()
+            for (const [k, e] of this._network) for (const c of [e.cellA, e.cellB]) {
+                if (!c) continue
+                const n = c.join(','); if (!this._sibByNode.has(n)) this._sibByNode.set(n, [])
+                this._sibByNode.get(n).push(k)
+            }
+        }
+        const me = this._network.get(runKey), R = this._params.tunnelBoreRadius ?? 8
+        const tubes = []
+        for (const c of me ? [me.cellA, me.cellB] : []) {
+            for (const k of (c && this._sibByNode.get(c.join(','))) || []) {
+                const e = this._network.get(k)
+                if (k === runKey || !e?.tunnelSpans || tubes.some((t) => t.k === k)) continue
+                tubes.push({ k, e })
+            }
+        }
+        let test = null
+        if (tubes.length) {
+            const prof = { gradeY: 0, tx: 1, tz: 0 }
+            test = (x, y, z) => {
+                for (const { k, e } of tubes) {
+                    const pts = e.points, cum = e.polyCum
+                    for (const sp of e.tunnelSpans) {
+                        // nearest point of the span's centreline (the run polyline over [s0, s1])
+                        let best = Infinity, bs = 0
+                        for (let i = 1; i < pts.length; i++) {
+                            if (cum[i] < sp.s0 || cum[i - 1] > sp.s1) continue
+                            const ax = pts[i - 1].x, az = pts[i - 1].z, dx = pts[i].x - ax, dz = pts[i].z - az
+                            const L2 = dx * dx + dz * dz
+                            const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)) : 0
+                            const s = cum[i - 1] + (cum[i] - cum[i - 1]) * t
+                            if (s < sp.s0 || s > sp.s1) continue
+                            const d2 = (x - ax - dx * t) ** 2 + (z - az - dz * t) ** 2
+                            if (d2 < best) { best = d2; bs = s }
+                        }
+                        if (best >= R * R) continue
+                        const h = y - this.runProfile(bs, k, prof).gradeY
+                        if (h > -1.5 && best + h * h < R * R) return true
+                    }
+                }
+                return false
+            }
+        }
+        this._sibTests.set(runKey, test)
+        return test
+    }
+
     // BUG-37: bore WALL contact — the carve heightfield above (_sampleCarveWorld) only resolves the
     // bore FLOOR (bore-ownership rule); the curved half-tube sides (buildTunnelTube, road-mesh.js)
     // have no matching collision, so a wheel drove straight through the concrete. This is a half-
@@ -7786,10 +7848,11 @@ export class RoadSystem {
         const nLat = -lat * invRho, nH = -h * invRho           // inward unit normal in the (lat,h) plane
         const normal = new THREE.Vector3(nLat * tz, nH, -nLat * tx)  // right=(tz,0,-tx), up=(0,1,0)
         const t = r - depth
-        return {
-            normal, depth,
-            contactPoint: new THREE.Vector3(wx - normal.x * t, wy - normal.y * t, wz - normal.z * t)
-        }
+        const contactPoint = new THREE.Vector3(wx - normal.x * t, wy - normal.y * t, wz - normal.z * t)
+        // BUG-67 shared bore: the wall here is ON the lining, which buildTunnelTube does not build inside a
+        // sibling's tube — no wall to touch there (MESH == PHYSICS).
+        if (this.siblingTubeTest(runKey)?.(contactPoint.x, contactPoint.y, contactPoint.z)) return null
+        return { normal, depth, contactPoint }
     }
 
     // ── QUAL-07: dirt-surface helper (the crown/camber/clearance fold, shared) ───────────────

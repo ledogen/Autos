@@ -1127,12 +1127,19 @@ export class RoadMeshSystem {
             }
         }
         const idx = []
+        // BUG-67 shared bore: a triangle whose centroid is inside a sibling run's tube is not built —
+        // the two tubes merge into an underground Y (road.siblingTubeTest; the wall contact reads it too).
+        const sib = road.siblingTubeTest?.(runKey)
+        const keep = (i, j, l) => !sib || !sib((pos[3 * i] + pos[3 * j] + pos[3 * l]) / 3,
+            (pos[3 * i + 1] + pos[3 * j + 1] + pos[3 * l + 1]) / 3, (pos[3 * i + 2] + pos[3 * j + 2] + pos[3 * l + 2]) / 3)
         for (let r = 0; r < rings - 1; r++) {
             for (let k = 0; k < vpr - 1; k++) {
                 const a = r * vpr + k, b = a + vpr
-                idx.push(a, b, a + 1, a + 1, b, b + 1)
+                if (keep(a, b, a + 1)) idx.push(a, b, a + 1)
+                if (keep(a + 1, b, b + 1)) idx.push(a + 1, b, b + 1)
             }
         }
+        if (!idx.length) return null
         const geo = new THREE.BufferGeometry()
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
         geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
@@ -1169,6 +1176,9 @@ export class RoadMeshSystem {
         if (!c) return null
         const prof = { gradeY: 0, tx: 1, tz: 0 }
         road.runProfile(pArc, runKey, prof)
+        // BUG-67 shared bore: a span end inside a sibling's tube (the split at a T promoted underground)
+        // is not a portal — the tube carries on as the sibling's. No ring.
+        if (road.siblingTubeTest?.(runKey)?.(c.x, prof.gradeY + R / 2, c.z)) return null
         const rx = prof.tz, rz = -prof.tx
         const ox = prof.tx * outSign, oz = prof.tz * outSign
 
