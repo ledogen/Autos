@@ -438,12 +438,11 @@ export const RANGER_PARAMS = {
   // I = 0.5 × wheelMass × r²; wheelMass ≈ 18 kg matches wheelInertia derivation above.
   wheelMass:                    18,   // kg — per-corner unsprung mass (D-02)
 
-  // wheelFootprint: tire-envelope ground sampling. When true (default), the wheel-contact query
-  // samples a small stencil across the tire's footprint and rests the disc on the HIGHEST terrain it
-  // can touch (envelope of h + √(r²−d²)), instead of a single point-probe under the hub. This stops the
-  // tire sinking into troughs / clipping through crests on rumble strips and steep slopes. Set false to
-  // revert to the legacy single-column probe (A/B comparison; also cheaper on very weak CPUs).
-  wheelFootprint:             true,   // tire-envelope footprint sampling on wheel ground contact
+  // wheelFootprint: the wheel's ground contact solved for the tire CYLINDER it is (src/tire-contact.js,
+  // FEAT-70) — the surface point closest to the axle across three lines of the tread, so the tire
+  // feels an edge ahead of the hub, not ground beside it. Set false for the legacy single-column probe
+  // under the hub (A/B comparison; also cheaper on very weak CPUs).
+  wheelFootprint:             true,   // tire-cylinder ground contact (false = one probe under the hub)
 
   // ── Anti-Roll Bars (Phase 4 — D-06) ──────────────────────────────────────
   // Bilinear-spring approximation: ARB force shares the same lever arm as the main spring (D-07).

@@ -697,7 +697,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
         if (d > 0) list.push({ normal: c.normal, depth: d, contactPoint: c.contactPoint })
       }
     }
-    if (!list) list = queryContacts(cx, cy, cz, r, footprint)
+    if (!list) list = queryContacts(cx, cy, cz, r, footprint, corner !== undefined ? _axle[corner] : undefined)
     // Look-ahead (see above): grow the sphere by one step of the hub's rigid travel.
     const vs = vehicleState, w = vs.angularVelocity
     const rx = cx - vs.position.x, ry = cy - vs.position.y, rz = cz - vs.position.z
@@ -817,7 +817,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     let maxEmbed = 0
     for (let i = 0; i < 4; i++) {
       const hub      = getWheelPosition(i, vehicleState, params)
-      const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius, true)
+      // FEAT-70: the wheel's spin axle — the body's right axis steered (steer + static toe) about its
+      // up — for the ground query's tire cylinder (src/tire-contact.js). Camber is left out (a few mm
+      // at the tread's edge lines). Fixed for the step: qcPlus hands the same axle to every substep.
+      const steer    = (i < 2 ? (vehicleState.wheelSteerAngles ? vehicleState.wheelSteerAngles[i] : vehicleState.steerAngle) : 0) + toeOffset(i, params)
+      _axle[i].set(1, 0, 0).applyAxisAngle(_bodyY, steer).applyQuaternion(vehicleState.quaternion)
+      const contacts = queryContacts(hub.x, hub.y, hub.z, params.wheelRadius, true, _axle[i])
       base[i] = { x: hub.x, y: hub.y, z: hub.z, r: params.wheelRadius, list: contacts }
       for (const { depth } of contacts) {
         if (depth > maxEmbed) maxEmbed = depth
@@ -1385,6 +1390,7 @@ const SLIP_EPSILON = 0.05
 // steered frame, and the post-substep hubs.
 const _forward = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3()
 const _steerQ = new THREE.Quaternion(), _wheelFwd = new THREE.Vector3(), _wheelRight = new THREE.Vector3()
+const _axle = [0, 1, 2, 3].map(() => new THREE.Vector3()), _bodyY = new THREE.Vector3(0, 1, 0)   // FEAT-70: the wheels' spin axles (Step 1)
 const _hubPost = [null, null, null, null]
 
 const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, commit the rolling fixed point instead
