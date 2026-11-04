@@ -1076,6 +1076,12 @@ export class RoadMeshSystem {
         // Proud mouth: at a true span end (portal), one extra ring extruded 1.5 m OUT along the end
         // tangent so the tube exits the shader-cut terrain hole and meets the masonry ring.
         const extA = Math.abs(sA - span.s0) < 1e-6, extB = Math.abs(sB - span.s1) < 1e-6
+        // BUG-67 shared bore: at a span end that is NOT a mouth (a split inside a sibling's tube) the
+        // tube runs on straight by a full radius instead of the 1.5 m lip. Two legs ending square at
+        // the T left a wedge open on the outside of the bend; the run-on closes it, and what of it lies
+        // inside the sibling is dropped with the rest of the overlap below.
+        const lipA = extA && road.isMouth && !road.isMouth(runKey, span.s0) ? R : 1.5
+        const lipB = extB && road.isMouth && !road.isMouth(runKey, span.s1) ? R : 1.5
         const rings = inner + (extA ? 1 : 0) + (extB ? 1 : 0)
         const vpr = SEG + 5                  // apronR(2) + (SEG+1 arch verts) + apronL(2)
 
@@ -1091,7 +1097,7 @@ export class RoadMeshSystem {
             if (!c) return null
             road.runProfile(s, runKey, prof)
             // Extrusion rings reuse the end frame, pushed out along the tangent.
-            const ext = (extA && r === 0) ? -1.5 : (extB && r === rings - 1) ? 1.5 : 0
+            const ext = (extA && r === 0) ? -lipA : (extB && r === rings - 1) ? lipB : 0
             if (ext) { c.x += prof.tx * ext; c.z += prof.tz * ext }
             // rightDir chosen so a vertex at lateral L has signedLat = L (matches the carve frame).
             const rx = prof.tz, rz = -prof.tx
