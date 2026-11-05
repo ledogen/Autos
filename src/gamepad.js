@@ -57,7 +57,8 @@ export const PAD_PARAMS = {
 // the reticle is up as well (RB tap throws). pumpActive: set by main.js — the pump is open, so A
 // pumps. hudMenu: set by src/hud-menu.js — the B-hold icon menu ({ open, move, select, cancel }).
 export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, zoom: 0,
-  menuActive: () => false, cardActive: () => false, mapActive: () => false, canThrow: () => false, throwReady: () => false,
+  menuActive: () => false, cardActive: () => false, cardTabs: () => false, cardDrive: () => false,
+  mapActive: () => false, canThrow: () => false, throwReady: () => false,
   pumpActive: () => false, hudMenu: null }
 
 // THE BINDING TABLE (Forza-style layout, owner 2026-10-19 — the FEAT-125 ticket). Rows with a
@@ -87,6 +88,7 @@ export const BINDINGS = [
   { action: 'back (menus, cards, map)', key: 'Esc',     pad: 'B' },
   { action: 'map',                   key: 'm',         pad: 'View (tap)' },
   { action: 'map: prev / next offer', key: 'Q / E',    pad: 'LB / RB (map open)' },
+  { action: 'tabs (service shop)',   key: 'Q / E',    pad: 'LB / RB (shop open)' },
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'RT / LT (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
   { action: 'reset truck',           key: 'r',         pad: 'View (hold 1 s)' },
@@ -114,6 +116,12 @@ delete MAP_KEYS[0]; delete MAP_KEYS[2]
 const CARD_KEYS = { ...BUTTON_KEYS, 0: 'Enter', 1: 'Escape' }
 for (const i of [2, 12, 13, 14, 15]) delete CARD_KEYS[i]
 const CARD_MAP_KEYS = { ...CARD_KEYS, 4: 'q', 5: 'e' }
+// BUG-109 (owner, 2026-11-04): a card with tabs (the service shop) steps them on LB / RB — Q / E,
+// menu-nav.js — like the map's offers. Parked at the shop, the bumpers have no clutch or handbrake to work.
+const CARD_TAB_KEYS = CARD_MAP_KEYS
+// BUG-109: a RESULT card has no tabs and nothing to pick until the D-pad puts its highlight on it, so
+// the pad drives through it — A / X shift, LB clutch, RB handbrake — and B is back (pad.cardDrive).
+const RESULT_KEYS = { ...BUTTON_KEYS, 1: 'Escape' }
 // The pump is open (pad.pumpActive): A is F, held to pump — parked at the pump, A has nothing to shift.
 const PUMP_KEYS = { ...BUTTON_KEYS, 0: 'f' }
 const NAV = [['ArrowUp', 12], ['ArrowDown', 13], ['ArrowLeft', 14], ['ArrowRight', 15]]
@@ -177,7 +185,9 @@ function poll () {
   // picking one — two pads on the desk both work. Per-player pads would need a real assignment.
   let thr = 0, brk = 0, steer = 0, lookX = 0, lookY = 0, any = false, viewDown = false, rbDown = false
   const menu = pad.menuActive(), card = !menu && pad.cardActive(), map = !menu && pad.mapActive()
-  let keys = menu ? MENU_KEYS : card ? (map ? CARD_MAP_KEYS : CARD_KEYS) : map ? MAP_KEYS : BUTTON_KEYS
+  let keys = menu ? MENU_KEYS
+    : card ? (pad.cardDrive() ? RESULT_KEYS : pad.cardTabs() ? CARD_TAB_KEYS : map ? CARD_MAP_KEYS : CARD_KEYS)
+    : map ? MAP_KEYS : BUTTON_KEYS
   const drive = keys === BUTTON_KEYS
   if (drive && pad.pumpActive()) keys = PUMP_KEYS
   const down = new Set(), nav = new Set()

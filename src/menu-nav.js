@@ -55,7 +55,8 @@ function cardContainer () {
   return null
 }
 
-const ITEMS = 'button, input, .inv-slot[data-slot], .inv-slot[data-packslot]'   // the inventory's slots are divs
+// The inventory's slots are divs; BUG-109: so are the damage screen's list rows, and its pictogram parts are SVG.
+const ITEMS = 'button, input, .inv-slot[data-slot], .inv-slot[data-packslot], #dmg-screen .ds-part[data-track], #dmg-screen .ds-row[data-track]'
 
 let cur = null   // the highlighted item
 // FEAT-133: where it was, so a card that re-renders its innerHTML (the inventory, on every change)
@@ -71,7 +72,19 @@ function highlight (el, focus = true) {
   el.classList.add('nav-focus')
   if (focus && el.tagName === 'INPUT') el.focus()
   if (focus) el.scrollIntoView?.({ block: 'nearest' })
+  // BUG-109: a screen that answers HOVER (the damage screen's part info card) gets the hover the
+  // mouse would give it, at the item's centre — one code path, so the pad needs no screen of its own.
+  if (focus) {
+    const r = el.getBoundingClientRect()
+    el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+  }
 }
+
+/** Click an item. An SVG element (the damage screen's parts) has no click(); send it the event. */
+const press = (el) => typeof el.click === 'function' ? el.click() : el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+/** BUG-109: the card's tab buttons (the service shop's), or none. */
+const tabsOf = (c) => c ? [...c.querySelectorAll('[data-act="tab"]')].filter(el => el.offsetParent !== null) : []
 
 /** Drop a highlight left on an item that is no longer showing (its page closed). */
 function sync () {
@@ -97,8 +110,22 @@ function nearest (items, from, dx, dy) {
 function onKey (e) {
   const c = menuContainer() ?? cardContainer()
   if (!c) return
-  const typing = document.activeElement?.tagName === 'INPUT' && document.activeElement.type !== 'range'
+  // BUG-109: typing only into a field SHOWING in this menu. The new-game page's seed field kept DOM focus
+  // after the run started, hidden; every later menu then read A / Enter as typing and dropped it — the
+  // pad could move the highlight on the give-up card but never press.
+  const ae = document.activeElement
+  const typing = ae?.tagName === 'INPUT' && ae.type !== 'range' && c.contains(ae) && ae.offsetParent !== null
   if (e.key === 'Escape') { requestAnimationFrame(sync); return }
+  // BUG-109: Q / E step a tabbed card's tabs, wrapping like the map's offers — the pad's LB / RB
+  // (gamepad.js CARD_TAB_KEYS). Parked at the shop, they have no gear to shift.
+  const tabs = typing ? [] : tabsOf(c)
+  if ((e.key === 'q' || e.key === 'e') && tabs.length > 1) {
+    e.preventDefault(); e.stopPropagation()
+    const i = Math.max(0, tabs.findIndex(t => t.classList.contains('on')))
+    tabs[(i + (e.key === 'e' ? 1 : -1) + tabs.length) % tabs.length].click()
+    requestAnimationFrame(sync)
+    return
+  }
   // A text field keeps its own ←/→ (caret) and Enter (start).
   if (typing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Enter')) return
   if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) return
@@ -116,7 +143,7 @@ function onKey (e) {
   }
   curIdx = items.indexOf(cur)
   if (e.key === 'Enter') {
-    cur.click()
+    press(cur)
     requestAnimationFrame(sync)
     return
   }
@@ -159,4 +186,8 @@ export function initMenuNav () {
   })
   pad.menuActive = () => menuContainer() !== null
   pad.cardActive = () => cardContainer() !== null
+  // BUG-109: a card with tabs takes the bumpers for them; a RESULT card (data-result, main.js) lets
+  // the pad drive through it — shifts, clutch, handbrake — until the D-pad puts its highlight on it.
+  pad.cardTabs = () => tabsOf(cardContainer()).length > 1
+  pad.cardDrive = () => { const c = cardContainer(); return !!c?.hasAttribute('data-result') && !(cur?.isConnected && c.contains(cur)) }
 }

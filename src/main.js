@@ -5996,6 +5996,7 @@ function _abandonedCard (r, extra = '') {
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
 function _renderMissionUI () {
   const panel = document.getElementById('mission-panel')
+  if (panel) delete panel.dataset.result   // BUG-109: set again below while it shows a result
   const body  = document.getElementById('mp-body')
   const hud   = document.getElementById('mission-hud')
   const acts  = document.getElementById('mp-actions')
@@ -6108,6 +6109,7 @@ function _renderMissionUI () {
     }
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
+      panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
       const r = m.result
       if (r.expired) {   // FEAT-113: signed off past the deadline — no letter, no pay
         body.innerHTML = _expiredCard(r.dueH)
@@ -6207,6 +6209,7 @@ function _renderMissionUI () {
  */
 function _renderPaperUI () {
   const panel = document.getElementById('paper-panel')
+  if (panel) delete panel.dataset.result   // BUG-109: set again below while it shows a result
   const body  = document.getElementById('pp-body')
   const hud   = document.getElementById('paper-hud')
   const acts  = document.getElementById('pp-actions')
@@ -6273,6 +6276,7 @@ function _renderPaperUI () {
     }
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
+      panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
       const r = p.result
       if (r.expired) { body.innerHTML = _expiredCard(r.dueH); break }   // FEAT-113: no letter, no pay
       if (r.outOfPapers) {   // FEAT-141: short of N with the truck empty — settled like a passed deadline
@@ -7569,6 +7573,7 @@ function _syncScenarioColumns () {
 function _renderScenarioUI () {
   const hud = document.getElementById('mission-hud')
   const panel = document.getElementById('scenario-panel')
+  if (panel) delete panel.dataset.result   // BUG-109: set again below while it shows a result
   if (!hud || !panel) return
   const hudText = hud.querySelector('.hud-text') ?? hud
   const sc = scenarioSystem
@@ -7584,6 +7589,7 @@ function _renderScenarioUI () {
       break
     case 'done': {
       show(hud, false); show(panel, true)
+      panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
       const r = sc.result
       const title = document.getElementById('sp-title')
       if (title) title.textContent = `scenario · ${sc.def.name}`
