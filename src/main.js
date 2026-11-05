@@ -117,7 +117,7 @@ import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } f
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
-import { playCoin, playStinger, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
+import { playCoin, playStinger, playTickTrain, playClack, playThud, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -6090,7 +6090,7 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
       ? (award
         ? beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-pay">${bonus.name} &check;</span>`
           + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; Tab to make room</span>` : ''))
-        : beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-dim">${bonus.name} missed &mdash; ${gate ?? gateText(bonus.gate)}</span>`))
+        : beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-dim" data-miss>${bonus.name} missed &mdash; ${gate ?? gateText(bonus.gate)}</span>`))
       : row('Speed tip', formatMoney(tip), ` data-countup="${tip}"`))
     + (haul?.bought > 0 ? beat(`<br><span class="mp-dim">Stock bought</span> <span class="mp-pay mp-bad">&minus;$${formatMoney(haul.bought)}</span>`) : '')
     + deed
@@ -6113,11 +6113,14 @@ function _revealResult (body, letter = null) {
     const amt = pay && (pay.dataset.countup != null || pay.textContent.includes('$'))
       ? parseFloat(pay.dataset.countup ?? pay.textContent.replace(/[^0-9.]/g, '')) : 0
     if (amt > 0) setTimeout(() => { if (el.isConnected) playCoin() }, delayOf(el))
+    // …and a thud as a miss lands: "no deed", an item missed, a load that never arrived (not a cost)
+    if (el.querySelector('.mp-bad:not(.mp-pay), [data-miss]')) setTimeout(() => { if (el.isConnected) playThud() }, delayOf(el))
   }
   if (rows.length && letter) setTimeout(() => { if (body.isConnected) playStinger(letter) }, delayOf(rows.at(-1)) + 450)
   for (const el of body.querySelectorAll('[data-countup]')) {
     const target = parseFloat(el.dataset.countup), delay = delayOf(el)
     el.textContent = '$0.00'
+    if (target > 0) setTimeout(() => { if (el.isConnected) playTickTrain(0.7) }, delay)   // the count-up's 700 ms
     const tick = (t) => {
       if (!el.isConnected) return
       const k = Math.min(1, Math.max(0, (t - t0 - delay) / 700))
@@ -6127,7 +6130,12 @@ function _revealResult (body, letter = null) {
     requestAnimationFrame(tick)
   }
   for (const el of body.querySelectorAll('[data-tally]')) {
-    setTimeout(() => { if (el.isConnected) { el.textContent = `· ${el.dataset.tally}`; el.classList.add('mp-tick') } }, delayOf(el) + 500)
+    setTimeout(() => {
+      if (!el.isConnected) return
+      if (el.textContent !== `· ${el.dataset.tally}`) playClack()   // a tally that moved; "no deed" stays put
+      el.textContent = `· ${el.dataset.tally}`
+      el.classList.add('mp-tick')
+    }, delayOf(el) + 500)
   }
 }
 
