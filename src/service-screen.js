@@ -98,6 +98,7 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
   font: 12px var(--font); letter-spacing: 2px; text-align: left; background: transparent; border: 0; cursor: pointer; transition: background 0.1s; }
 #svc-screen button.sv-slothead:hover { background: rgba(255,255,255,0.09); }
 #svc-screen .sv-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+#svc-screen .sv-left { white-space: nowrap; }   /* "gone in 12 min" wraps whole, never "12 / min" */
 #svc-screen .sv-price { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; color: var(--text-dim); }
 #svc-screen .sv-cond { display: flex; align-items: center; gap: 4px; }
 #svc-screen .sv-chip { width: 28px; height: 28px; border-radius: 3px; flex: none; background-size: contain;
@@ -399,7 +400,7 @@ export class ServiceScreen {
       // FEAT-167 (owner, 2026-11-05: "too much detail text"): the bar says new or used, the prices stack
       // on the right with it, and the description is two lines at most.
       h += `<div class="sv-row wrap sv-shelf" data-slot="${i}">${chip(e.id)}<span class="sv-name">${shelfName(e)}`
-        + ` <span class="sv-desc">${e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}`}</span>`
+        + ` <span class="sv-desc sv-left">${e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}`}</span>`
         + `<div class="sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</div></span>`
         + `<span class="sv-price">${e.cond !== null ? `<span class="sv-cond">${bar(e.cond)}</span>` : ''}`
         + (sockets.length ? `<span>part: $${formatMoney(price)}</span><span>installation: $${formatMoney(fitQ.price)}</span>` : `<span>$${formatMoney(price)}</span>`)
