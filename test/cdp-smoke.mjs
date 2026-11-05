@@ -123,6 +123,16 @@ const park = async (fresh = false) => {
 }
 const hold = async (k, ms) => { await key(k, true); await sleep(ms); await key(k, false) }
 const car = () => js('window.__car()')
+// A fake pad: navigator.getGamepads stubbed to one standard-mapping pad whose buttons and sticks are
+// window.__fp.b / .axes (gamepad.js polls it every frame). padOff hands back the real one.
+const padOn = () => js(`window.__realPads ??= navigator.getGamepads.bind(navigator)
+  window.__fp = { axes: [0, 0, 0, 0], b: new Array(17).fill(0) }
+  navigator.getGamepads = () => [{ index: 0, id: 'fake', mapping: 'standard', axes: __fp.axes,
+    buttons: __fp.b.map(v => ({ value: v, pressed: v > 0.5, touched: v > 0 })) }]`)
+const padOff = () => js('navigator.getGamepads = window.__realPads')
+// A press of pad button i (standard mapping: 0 A · 2 X · 4 LB · 5 RB · 12–15 D-pad ↑ ↓ ← →), held 3 rendered frames.
+const btn = async (i) => { await js(`__fp.b[${i}] = 1`); await frames(3, 80); await js(`__fp.b[${i}] = 0`); await frames(2, 60) }
+const navFocus = () => js('(e => e && (e.id || e.dataset.track || e.dataset.tab || e.textContent.trim().slice(0, 30)))(document.querySelector(".nav-focus"))')
 // Hold I (the ignition key) until the engine catches.
 async function crank () {
   if (await js('window.__vs.ignition?.state') === 'running') return
@@ -372,6 +382,17 @@ const STEPS = [
     await useItem('spareTire')
     check(await js('document.querySelectorAll("#dmg-screen .ds-pbtn[data-track]:not(:disabled)").length') === 4, 'the spare cannot go on every corner')
     check(await js('!document.querySelector("#dmg-screen [data-act=pick-do]")'), 'a confirm showed before a tire was picked')
+    // BUG-109: the D-pad reaches the pictogram's parts and the list's rows (not only the buttons), lights
+    // the part as the mouse's hover would, and A picks it.
+    await padOn()
+    const onPart = 'document.querySelector("#dmg-screen .nav-focus")?.matches(".ds-part[data-track^=tire], .ds-row[data-track^=tire]")'
+    for (let i = 0; i < 24 && !await js(onPart); i++) await btn(i < 12 ? 13 : 14)
+    const part = await navFocus()
+    check(await js(onPart), `the D-pad on the damage screen never reached a tire's part or row (stuck on "${part}")`)
+    check(await js(`!!document.querySelector('#dmg-screen .hot[data-track="${part}"]')`), `the D-pad on ${part} lit no hover`)
+    await btn(0)
+    check(await until(() => js('!!document.querySelector("#dmg-screen [data-act=pick-do]")'), 1000), `A on ${part} picked nothing`)
+    await padOff()
     await js('document.querySelector("#dmg-screen .ds-pbtn[data-track=tireFR]").click()')
     await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()')
     check(await until(inv, 1000), 'the picker did not hand back to the inventory')
@@ -424,6 +445,12 @@ const STEPS = [
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     check(await js('/For sale/i.test(document.querySelector("#svc-screen").textContent) && /My items/i.test(document.querySelector("#svc-screen").textContent)'),
       'the Parts Shop tab shows no shelf')
+    // BUG-109: the pad's LB / RB step the tabs, wrapping at the ends.
+    const tabOn = () => js('document.querySelector("#svc-screen [data-act=tab].on")?.dataset.tab')
+    await padOn()
+    const t0 = await tabOn(); await btn(5); const t1 = await tabOn(); await btn(4)
+    check(t1 && t1 !== t0 && await tabOn() === t0, `RB then LB on the service screen: tab ${t0} → ${t1} → ${await tabOn()}`)
+    await padOff()
     await tap('Escape')
     check(await until(async () => !await open(), 1000), 'Esc left the service screen open')
     await tap(' ')   // brake off: the next step parks fresh
@@ -600,10 +627,7 @@ const STEPS = [
       return { x: q.roadX + q.tx * 40, z: q.roadZ + q.tz * 40, h: Math.atan2(-q.tx, -q.tz) } })()`)
     await seat(out.x, out.z, out.h)
     await crank()
-    await js(`window.__realPads = navigator.getGamepads.bind(navigator)
-      window.__fp = { axes: [0, 0, 0, 0], b: new Array(17).fill(0) }
-      navigator.getGamepads = () => [{ index: 0, id: 'fake', mapping: 'standard', axes: __fp.axes,
-        buttons: __fp.b.map(v => ({ value: v, pressed: v > 0.5, touched: v > 0 })) }]`)
+    await padOn()
     await js('__fp.b[7] = 0.7')   // RT: rolling past the 5 mph throw floor
     check(await until(() => js('window.__vs.velocity.length() > 3'), 8000), `the fake pad did not get the truck rolling: ${(await js('window.__vs.velocity.length()')).toFixed(1)} m/s`)
     check(await until(async () => await state() === 'running', 3000), `leaving Larry's circle did not start the round: ${await state()}`)
@@ -613,7 +637,6 @@ const STEPS = [
     check(await until(async () => await js('window.__paper.system.stock()') === stock0 - 1, 2000),
       `an RB tap while aiming on a live round threw no paper: stock ${stock0} → ${await js('window.__paper.system.stock()')}`)
     await js('__fp.b[7] = 0; __fp.axes[2] = 0'); await frames(2, 60)
-    await js('navigator.getGamepads = window.__realPads')
     console.log(`  papers: a pad RB tap threw a paper on the live round (stock ${stock0} → ${stock0 - 1})`)
     // Put the round down: parked, two clicks of the abandon button, then continue off the card.
     await park()
@@ -626,8 +649,21 @@ const STEPS = [
     }
     check(await state() === 'done', `abandoning did not end the round: ${await state()} · ${JSON.stringify(await js(`(() => { const b = document.getElementById('job-cancel')
       return { parked: window.__vs.parked, v: +window.__vs.velocity.length().toFixed(2), label: b.textContent, armed: b.classList.contains('armed'), hud: b.parentElement?.id, shown: b.style.display } })()`))}`)
-    await js('document.getElementById("pp-accept").click()')
-    check(await until(async () => await state() === 'idle', 2000), `continue left the round card up: ${await state()}`)
+    // BUG-109: a RESULT card lets the pad drive through it — A / X shift, LB clutch, RB handbrake — until
+    // the D-pad puts its highlight on it; then A presses continue.
+    await js('window.__padKeys = []; addEventListener("keydown", e => window.__padKeys?.push(e.key), true)')
+    for (const i of [0, 2, 4]) await btn(i)
+    const sent = await js('window.__padKeys.join(" ")')
+    check(sent === 'e q Shift' && await state() === 'done', `A, X, LB on the result card sent "${sent}" (want "e q Shift"), round ${await state()}`)
+    await btn(5); const rb1 = await js('window.__vs.parked'); await btn(5)
+    check(!rb1 && await until(() => js('window.__vs.parked'), 1000), `RB on the result card did not work the handbrake: parked → ${rb1} → ${await js('window.__vs.parked')}`)
+    await btn(13)
+    check(await navFocus() === 'pp-accept', `the D-pad on the result card highlighted "${await navFocus()}", not continue`)
+    await btn(0)
+    check(await until(async () => await state() === 'idle', 2000), `A on the highlighted continue left the round card up: ${await state()}`)
+    await js('window.__padKeys = null')
+    await padOff()
+    console.log('  papers: the result card drove through on the pad (A/X/LB/RB), then D-pad + A continued')
     await js('window.__paper.runPaper.tier = 0')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
@@ -806,6 +842,7 @@ const STEPS = [
       check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), `${t}: no main menu after the card`)
       check(await js('document.getElementById("mm-continue").offsetParent === null'), `${t}: "continue" offers an ended run`)
       check(await js('!document.querySelector("canvas").style.filter'), `${t}: the world stayed black and white`)
+      check(await js('window.__stage._dragYaw === 0 && window.__stage._dragPitch === 0'), `${t}: the menu truck kept the last orbit (BUG-109: back to the resting shot)`)
       console.log(`  endings: "${t}" — ${body.replace(/\s+/g, ' ').slice(0, 100)}`)
     }
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
@@ -841,13 +878,20 @@ const STEPS = [
     // The towel: a confirm card (owner, 2026-10-31) — back restores the menu, end ends the run.
     for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
     check(await js('document.getElementById("pm-towel").offsetParent !== null'), 'no "give up" in a story run\'s pause menu')
-    await js('document.getElementById("pm-towel").click()')
-    check(!await card(), 'one click on the towel ended the run')
-    check(await js('document.getElementById("towel-card").style.display === "flex"'), 'the towel click opened no confirm card')
-    await js('document.getElementById("tc-back").click()')
-    check(await js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 'back did not restore the pause menu')
+    // BUG-109: on the pad — the D-pad walks to the towel, A opens its card, the D-pad walks to back, A.
+    await padOn()
+    const padTo = async (id) => { for (let i = 0; i < 12 && await navFocus() !== id; i++) await btn(13); check(await navFocus() === id, `the D-pad never reached #${id} (stuck on "${await navFocus()}")`); await btn(0) }
+    await padTo('pm-towel')
+    check(!await card(), 'one press of the towel ended the run')
+    check(await until(() => js('document.getElementById("towel-card").style.display === "flex"'), 1000), 'A on the towel opened no confirm card')
+    await padTo('tc-back')
+    check(await until(() => js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 1000), 'back did not restore the pause menu')
     await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
     await ended(/gave up/)
+    // BUG-109: the right stick orbits the menu truck (and the next return to the menu re-centres it: ended()).
+    await js('__fp.axes[2] = 1'); await frames(10, 300); await js('__fp.axes[2] = 0')
+    check(await js('Math.abs(window.__stage._dragYaw) > 0.1'), `the right stick did not orbit the menu truck: yaw ${await js('window.__stage._dragYaw')}`)
+    await padOff()
     // The crash: black and white at once, the card after the beat. First, the playtime counts (the save
     // carries it, a second at a time) and stops while paused.
     await newRun()
