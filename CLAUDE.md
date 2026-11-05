@@ -175,6 +175,13 @@ the world talking), real-world objects copy the object (the pump face is the ref
 pinned monospace font at a 12 px floor, and a fixed token palette. Never type a hex value that is
 not in it.
 
+### Seeds — there is no default seed
+
+A player hits **Random** or types a seed (owner, 2026-11-05). Seed 6 is a **test seed**. It is fine for
+reproducing and measuring, but a player will almost never see it. Never describe a seed-6 result as "the
+world" or what players get. World-gen calls for the owner sample random seeds. The `'6'` fallbacks in
+`main.js` / `story.js` are boot plumbing, not a player-facing default.
+
 ### Diagnostic tools (all live in test/, triggered externally)
 
 - **The main.js smoke (INFRA-07):** `node test/cdp-smoke.mjs [--headed]`, or `npm run test:all -- --browser`

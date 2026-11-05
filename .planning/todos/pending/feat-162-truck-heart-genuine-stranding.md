@@ -143,3 +143,22 @@ need, and a second number standing between the parts and the ending.
 4. **What a seized engine costs to fix** at a shop: a rebuild or swap, priced with FEAT-69's re-price.
    Placeholder: 3× the engine's full-wear repair. A collapsed wheel is a new wheel at the shop's wheel
    price.
+
+## Amended 2026-11-05 (owner, first playthrough) — get the wheel collapse right, and add roadside tire repair
+
+"my run ended from a big crash, but it really was doomed about a day prior from a flat tire. due to the damage
+model in game the flat tire didnt actually stop me from driving for about an entire day so i think the planned
+changes for the 'stuck worn rim' are important to get right. maybe we couple them with a 'roadside tire repair'
+feature that lets the player trade time and money to get a messed up tire and/or rim fixed (for more than the cost
+of an equivalent set at the service shop)."
+
+- **(2) above is a priority, not a footnote.** A flat must end in a collapsed wheel within FEAT-94's ~1 km of
+  rim wear, so "a flat doesn't stop you for a day" can't happen.
+- **(5) Roadside tire repair** joins this ticket. It's a Recovery-chip call-out beside the tow, for when you're
+  parked with a flat, a ruined tire or a collapsed wheel. A mobile tire service comes out and fixes the tire
+  and/or the rim on the spot.
+  - **Money:** dearer than the shop. `[DEFAULT]` (the shop's price for the same new part(s) + its labour) × 1.5,
+    plus the tow's $10 call-out, all × the day tier.
+  - **Time:** `[DEFAULT]` the tow's wait (3 h + 0.5 h/km from the nearest shop), then the fitting hours.
+  - It never needs a spare. It's what turns "a wheel collapsed and no spare" from stranded into an expensive
+    afternoon. You're **stranded** only when you can't afford it either.
