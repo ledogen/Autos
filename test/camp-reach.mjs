@@ -29,9 +29,7 @@ import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 
 const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.split('=')[1]
-// The owner's seed is PINNED to its in-game centre: test/lib/spawn-decision.mjs puts its spawn 325 m off
-// the game's (-22, -161 vs 34.65, 158.45 — the browser's free roam and story agree; seeds 1 and 6 match).
-const SEEDS = (arg('seeds') ?? '4194356868@34.65:158.45,1,6').split(',').filter(Boolean)
+const SEEDS = (arg('seeds') ?? '4194356868,1,6').split(',').filter(Boolean)
 const REPORT = process.argv.includes('--report')
 const CAPS = (arg('caps') ?? String(CAMP_PARAMS.campReachM)).split(',').filter(Boolean).map(Number)
 

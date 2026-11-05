@@ -373,7 +373,7 @@ const STEPS = [
     const names = () => js('window.__campGear.root.children.filter(c => c.children.length).map(c => c.name).join()')
     const pack = (id) => js(`(() => { const i = window.__inv; i.grant('${id}'); return i.packItem(i.list().findIndex(r => r.id === '${id}')) })()`)
     const unpack = (id) => js(`(() => { const i = window.__inv; i.unpackItem(i.equippedIndex(), i.packed().indexOf('${id}'))
-      return i.drop(i.list().findIndex(r => r.id === '${id}')) })()`)
+      return i.consume('${id}') })()`)   // not drop(): since FEAT-143 that lays it behind the tailgate
     check(await pack('tent'), 'the tent did not pack')
     await js(`(() => { const c = window.__car(); window.__campGear.show({ x: c.x, z: c.z, tx: 1, tz: 0, nx: 0, nz: 1 },
       window.__inv.packed(), () => c.y) })()`)
