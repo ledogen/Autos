@@ -16,9 +16,10 @@ The drum is NOT remodelled: `steel-drum.py` builds its `build_closed()` part fou
 """
 import bpy, importlib.util, math
 
-SRC = "/Users/ledogen/CodeShit/CarGame/assets/models/src"
+import os
+SRC = os.path.dirname(os.path.abspath(__file__))   # assets/models/src
 NAME = "drum-stack"
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
 OUT_BLEND = f"{SRC}/drum-stack.blend"
 TRI_BUDGET = 1500
 PITCH_X, PITCH_Y = 0.24, 0.36      # 0.58 m drums: hypot(0.48, 0.36) = 0.60 between neighbours; 0.53 m to the arch at 0.545

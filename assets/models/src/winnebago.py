@@ -39,6 +39,7 @@ CONSTRUCTION NOTES:
 """
 
 import bpy
+import os
 import bmesh
 import math
 
@@ -48,8 +49,9 @@ import math
 
 NAME = "winnebago"
 TRI_BUDGET = 2000
-OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/winnebago.glb"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/winnebago.blend"
+MODELS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_GLB = f"{MODELS_DIR}/winnebago.glb"
+OUT_BLEND = f"{MODELS_DIR}/src/winnebago.blend"
 
 # Real Chieftain 27DB is 27 ft; ticket says 8.0 x 2.4 x 3.2 m.  Bumper faces land
 # exactly on +/-4.0 so the collision box in the ticket stays honest.
@@ -1172,6 +1174,8 @@ def check_normals(ob, samples=400):
 
 
 def _ui_override():
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     scr = win.screen
     area = next(a for a in scr.areas if a.type == "VIEW_3D")

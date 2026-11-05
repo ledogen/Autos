@@ -32,6 +32,7 @@ Determinism: no randomness except random.Random(seed).
 """
 
 import bpy
+import os
 import bmesh
 import math
 import random
@@ -40,7 +41,7 @@ from mathutils import Matrix, Vector
 # ---------------------------------------------------------------------------
 # PARAMETERS
 # ---------------------------------------------------------------------------
-MODELS = "/Users/ledogen/CodeShit/CarGame/assets/models"   # composited kit is read here
+MODELS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # composited kit is read here
 OUT_DIR = MODELS
 OUT_BLEND = f"{MODELS}/src/expedition-camp.blend"
 

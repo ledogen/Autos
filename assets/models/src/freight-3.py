@@ -15,10 +15,11 @@ recolour hooks (SodaCase, SoilBag, ConcreteBag) stay one draw call each.  Base-s
 forward −Z (Blender +Y).
 """
 import bpy, bmesh, math, random
+import os
 from mathutils import Vector, Matrix
 
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/freight-3.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/freight-3.blend"
 BUDGETS = {"soft-drink-pallet": 1800, "potting-soil-pallet": 3000, "concrete-pallet": 3000, "pelican-case": 400}   # owner 2026-10-09: ~1000 floor; 18 real bags
 
 MATS = {   # name: (linear rgba, roughness, alpha)
@@ -597,6 +598,8 @@ def fresh_scene():
 
 
 def _ui_override():
+    if bpy.context.screen is None:              # blender -b: no window, and the exporter needs none
+        return {}
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             return dict(window=bpy.context.window, area=area, region=next(r for r in area.regions if r.type == 'WINDOW'))

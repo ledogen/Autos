@@ -34,6 +34,7 @@ centimetres between the outer and inner spans, which nobody will ever see.
 """
 
 import bpy
+import os
 import bmesh
 import math
 from mathutils import Vector
@@ -41,7 +42,7 @@ from mathutils import Vector
 # ---------------------------------------------------------------------------
 # PARAMETERS
 # ---------------------------------------------------------------------------
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
 OUT_BLEND = f"{OUT_DIR}/src/barn.blend"
 NAME = "barn"
 TRI_BUDGET = 1200

@@ -22,7 +22,7 @@ import bpy, bmesh, math, os
 from mathutils import Vector, Matrix
 
 NAME = "fire-pit"
-OUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))   # this checkout's assets/models
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
 OUT_BLEND = f"{OUT_DIR}/src/{NAME}.blend"
 TRI_BUDGET = 700   # owner 2026-10-09: separation on the cap tiles beat the 550 figure
 

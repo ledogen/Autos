@@ -15,10 +15,11 @@ Per-piece variation is COLOR_0 vertex tint (ART-STYLE rule 1), one material per 
     PlyFace PlyEdge · TieWood TieEnd · TyreRubber · BlockConcrete BlockCore PalletWood · Strap
 """
 import bpy, bmesh, math, random
+import os
 from mathutils import Vector, Matrix
 
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/freight.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/freight.blend"
 BUDGETS = {"plywood-sheets": 200, "railway-ties": 300, "tire-stack": 2600, "cinder-block-pallet": 800}   # owner 2026-10-09: ~1000 floor
 
 MATS = {
@@ -412,6 +413,8 @@ def fresh_scene():
 
 
 def _ui_override():
+    if bpy.context.screen is None:              # blender -b: no window, and the exporter needs none
+        return {}
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             return dict(window=bpy.context.window, area=area, region=next(r for r in area.regions if r.type == 'WINDOW'))

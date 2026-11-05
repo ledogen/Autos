@@ -552,13 +552,7 @@ class Canvas:
     def render(self, name):
         path = os.path.join(bpy.app.tempdir, "%s.png" % name)
         self.sc.render.filepath = path
-        win = bpy.context.window
-        prev = win.scene
-        win.scene = self.sc
-        try:
-            bpy.ops.render.render(write_still=True)
-        finally:
-            win.scene = prev
+        bpy.ops.render.render(write_still=True, scene=self.sc.name)   # no window swap: runs under blender -b too
         img = bpy.data.images.load(path, check_existing=False)
         img.name = "SignFace_%s" % name
         img.pack()                 # NEVER leave it in tempdir - that is wiped on quit

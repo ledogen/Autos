@@ -30,6 +30,7 @@ valve overshot the r=0.20 collider by 12.3 mm and the bbox reported it clean.
 """
 
 import bpy
+import os
 import bmesh
 import math
 
@@ -38,8 +39,9 @@ import math
 # ---------------------------------------------------------------------------
 
 TRI_BUDGET = 320
-OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/beach-ball.glb"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/beach-ball.blend"
+MODELS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_GLB = f"{MODELS_DIR}/beach-ball.glb"
+OUT_BLEND = f"{MODELS_DIR}/src/beach-ball.blend"
 
 RADIUS = 0.40                # 0.80 m diameter — x2 the ticket's 0.40 (owner 2026-10-07, FEAT-71)
 SEG = 18                     # meridians — MUST be a multiple of GORES
@@ -299,6 +301,8 @@ def check_normals(ob, samples=300):
 
 
 def _ui_override():
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     scr = win.screen
     area = next(a for a in scr.areas if a.type == "VIEW_3D")
