@@ -2,6 +2,8 @@
 ASSET-08 — backyard fire ring, brick-and-mortar.  Parametric generator.
 
 Built for: Blender 5.2  |  Targets: assets/models/<name>.glb  ·  source: assets/models/src/fire-pit.blend
+Headless (never the owner's GUI Blender):
+    /Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 --python assets/models/src/fire-pit.py
 Style brief: .planning/research/ART-STYLE.md  ·  Mechanics: .planning/research/ASSETS.md
 
 The read is BUILT, not found (ticket): one block modelled once and placed 24 times on a
@@ -16,17 +18,20 @@ Empty `FireFlameAnchor` at the flame origin (ASSET-24 convention), parented to t
 Materials (all fixed, none recolourable — masonry is masonry):
     FirePitBlock  FirePitMortar  FirePitCap  FirePitAsh  FirePitChar  FirePitLog
 """
-import bpy, bmesh, math
+import bpy, bmesh, math, os
 from mathutils import Vector, Matrix
 
 NAME = "fire-pit"
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/fire-pit.blend"
+OUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/{NAME}.blend"
 TRI_BUDGET = 700   # owner 2026-10-09: separation on the cap tiles beat the 550 figure
 
 # ring geometry
+SCALE = 1.2            # ASSET-76 (owner 2026-10-25: "brick firepit should be 20% bigger").  Every size
+                       # below is the 1.0x design; finish() scales the whole mesh and the flame anchor,
+                       # so joints, cap, footing and logs all follow (1.2 m ring, footing 3.6 cm down).
 N = 12                 # blocks per course
-R_OUT = 0.50           # outer radius (1.0 m diameter)
+R_OUT = 0.50           # outer radius (1.0 m diameter at 1.0x)
 R_IN = 0.31            # inner radius (block depth 0.19)
 COURSE_H = 0.13
 COURSES = 2
@@ -88,6 +93,7 @@ class Builder:
     def finish(self, name):
         bm = self.bm
         bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+        bmesh.ops.scale(bm, vec=(SCALE, SCALE, SCALE), verts=bm.verts)
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
         bm.normal_update()
         up = {self.slots.index("FirePitAsh"), self.slots.index("FirePitChar")}
@@ -190,7 +196,7 @@ def build():
     ob = b.finish("FirePit")
     anchor = bpy.data.objects.new("FireFlameAnchor", None)
     anchor.empty_display_size = 0.1
-    anchor.location = (0, 0, BED_Z + 0.08)
+    anchor.location = (0, 0, (BED_Z + 0.08) * SCALE)
     anchor.parent = ob
     bpy.context.collection.objects.link(anchor)
     return ob
@@ -230,6 +236,8 @@ def fresh_scene():
 
 
 def _ui_override():
+    if bpy.context.screen is None:              # blender -b: no window, and the exporter needs none
+        return {}
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             return dict(window=bpy.context.window, area=area,
