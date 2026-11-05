@@ -1,39 +1,50 @@
-# Handoff — Lane B, 2026-11-04 (FEAT-159 landed; BUG-108 and FEAT-162 wait on owner calls)
+# Handoff — Lane B, 2026-11-05 (compute hold; five items built, waiting to land)
 
 **Worktree** `/Users/ledogen/CodeShit/CarGame-machine` · **branch** `feature/machine` · **serve** `:3282`
-(if it is down: `npx vite --port 3282 --strictPort` from the worktree). Work ONLY there; own only Lane B's
-files. `git merge main` before starting (main's `durTire` is now 16050, owner 11-03: merge before touching
-damage.js). Commit WIP on the branch at every working step (`wip(NN): …`). Tracker page:
-https://claude.ai/artifact/8P7QDPAaKxKPtJuf6zvRVH (Lane B rows; `lanes/b` handoff + agent name — write
-your session name there on every resume). Supersedes the 2026-11-02 version.
+— **STOPPED under the orchestrator's compute hold: do not restart it, or run heavy gates / sweeps / CDP,
+until the hold is lifted** (the owner is playing on this machine). Light single gates are OK. Work ONLY in
+the worktree; own only Lane B's files. `git merge main` before starting. Commit WIP at every working step.
+Tracker page: https://claude.ai/artifact/8P7QDPAaKxKPtJuf6zvRVH (Lane B rows; `lanes/b` handoff + agent
+name — write your session name there on every resume).
 
-## State
+## Built on feature/machine, not landed — the orchestrator lands them as one merge after the hold
 
-- **FEAT-158 rock grip:** landed on main (b2d857ce).
-- **FEAT-159 throttle assist + traction control:** landed on main (c92a0d44). Owner: (a)(b) accepted;
-  "tc too conservative" → tcSlip 0.35 + tcSlipHi 0.6. Ticket in completed/.
-- **BUG-108 hit hitch: MEASURED, waiting on the owner** (page item `bug108-nose`). The work log is in the
-  ticket.
-  - No frame hitch at any hit.
-  - Drums, signs and barricades stay inside the momentum bound.
-  - The 0.45 m small crate wedges on the collider's bumperless 48° nose ramp: up to 0.98 m/s in one step.
-  - Fix on the table: add the drawn bumper's bottom edge (0.49 m) to the nose hull. Measured as an
-    experiment and reverted: halves the crate case, and the approach angle goes 45° → 31°.
-  - If go, re-run the census + the affected gates (scrape gates especially) before landing.
-  - Probes (git-invisible): `wip/bug-108/census.mjs` (`--lats=`, `--trace=kind,mph,lat`),
-    `nose.mjs` (BUMP_Y env, needs the one-line hull hook re-added), `browser-probe.mjs` (needs :3282).
-- **FEAT-162 the truck's heart: PLAN parked in the ticket, four owner calls on the page.** Recommended:
-  - the vital parts are the heart: the engine seizes at 0, and a written-off wheel collapses onto its hub;
-  - one `stranded` predicate in recovery.js;
-  - auto-end when stranded and broke (DESIGN.md);
-  - the title "You broke down.".
+1. **FEAT-70 tire cylinder contact** (c9d8fe20 … c24bbbfc). The `src/tire-contact.js` solve runs 3 lines
+   across the tread, takes the surface point closest to the axle, and turns the normal radial at edges
+   while keeping the surface's tilt along the axle. main.js `queryContacts` uses it; physics.js passes
+   each wheel's steered axle.
+   - Gate `test/tire-contact.mjs`: kerbs within 1.1 mm of the exact cylinder, and a kerb beside the tire
+     lifts nothing.
+   - Real roads: p99 2.0 mm against a dense exact cylinder (the old stencil was 66 mm). Probes are in
+     `wip/feat-70/`.
+   - Cost 1.9× the stencil (397 vs 208 µs a frame for four wheels on a junction pad).
+   - The physics fingerprint is UNCHANGED: its ground query is its own single probe, which FEAT-70 does
+     not touch.
+   - **Owed:** the collision-drop lab on :8000 against :3282 (`node test/collision-drop-lab.mjs <port>
+     <cdp>`), the affected gates and cdp-smoke, the ticket's work log, and the PERF-24 note (measured: a
+     memo-bounded 0.4 ms a frame on a pad).
+2. **Open diff $10** (3180c87d).
+3. **No keep/sell prompt at the shop** (ea000e4e): a part swapped out goes straight into the inventory.
+4. **FEAT-165** (cf385fba, 386698de, 90949098):
+   - Old and Standard tires always on every shelf;
+   - Old $8 / Standard $18 `[DEFAULT]` (page item `feat165-price`);
+   - "Tire FL · Old tire" on diagnostics.
+5. **FEAT-166 clutch-type LSD** (26efa8cc, add05d70, 4f41a2d2). New packs sit between open and helical,
+   worn packs ARE the open diff, they wear with slip heat, and the rebuild goes straight to 100 %. Gate
+   `test/diff-clutch.mjs`. Owner numbers `[DEFAULT]` are in the ticket.
+
+Landing needs, after the hold: 89 affected gates (40 heavy) plus cdp-smoke for the set, then hand the
+orchestrator the exact hash.
+
+## Waiting on the owner
+
+- **BUG-108** (page item `bug108-nose`). The 0.45 m crate wedges on the collider's bumperless 48° nose.
+  The fix (add the drawn bumper's 0.49 m edge) is measured and reverted; the probes are in
+  `wip/bug-108/`.
+- **FEAT-162** (`feat162-calls`). The plan is in the ticket.
 
 ## NEXT
 
-1. BUG-108: the owner's sighting details + nose-fix go/no-go → build and measure.
-2. FEAT-162: the owner's four calls → P1 terminal states, P2 stranded + ending, P3 cues.
-3. BUG-92 when the owner's USB-pad probe lands.
-
-Small leftover: `PhysicsEngine.replaceHullLocal` has no src caller (delete with `collider-seam-churn.mjs`'s
-rework). FEAT-94 and FEAT-152 are signed off: don't retune them, and never re-add a spark point light.
-Owner ruling 11-02: no hidden input gestures (double press etc.).
+FEAT-70's held checks → landing → BUG-108 on go → FEAT-162 on its calls → BUG-92 when the USB probe lands.
+FEAT-94 and FEAT-152 are signed off: don't retune them, and never re-add a spark point light. No hidden
+input gestures.
