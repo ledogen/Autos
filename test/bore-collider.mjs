@@ -22,7 +22,8 @@ plane.rotateX(-Math.PI / 2)
 const posAttr = plane.attributes.position
 for (let i = 0; i < posAttr.count; i++) posAttr.setY(i, HILL)
 // One run straight along +x through the chunk at z = 32, bored for its whole length.
-const road = { _params: { tunnelBoreRadius: 8 }, _network: new Map([['bore', {
+// No carve: the floor the wheels read is the flat deck (the real RoadSystem's camber is road-tunnel's).
+const road = { _params: { tunnelBoreRadius: 8 }, _sampleCarveWorld: () => null, _network: new Map([['bore', {
   points: [{ x: -20, y: 0, z: 32 }, { x: 84, y: 0, z: 32 }], polyCum: [0, 104], tunnelSpans: [{ s0: 0, s1: 104 }],
 }]]) }
 
@@ -69,6 +70,20 @@ const run = (eng, s) => { for (let i = 0; i < s * 60; i++) eng.step(1 / 60) }
   run(eng, 2)
   const x = at(eng, b).x
   check(Math.sign(x) === Math.sign(from) && Math.abs(x) < Math.abs(from), `a box driven at a shell's back face stops at it: x ${from} → ${x.toFixed(2)} (front faces ${n.x < 0 ? '−x' : '+x'})`)
+  eng.dispose()
+}
+{ // (4) BUG-81 third report: the shoulder by the wall. A heightfield cell is two flat triangles, so cutting only the
+  // vertices within R left the cells that straddle R ramping up to the hill INSIDE the tube — a jagged hidden wall
+  // in from the lining. The run sits half a cell off the grid (z = 32.5) so the last cut vertex is 0.5 m short of R:
+  // a box whose side reaches 7.8 m out, driven along the bore, must pass untouched.
+  const off = { ...road, _network: new Map([['bore', { ...road._network.get('bore'),
+    points: [{ x: -20, y: 0, z: 32.5 }, { x: 84, y: 0, z: 32.5 }] }]]) }
+  const eng = await createPhysicsEngine({ gravity: { x: 0, y: 0, z: 0 } })
+  new TerrainPhysics(eng, () => off).syncChunk('0,0', 0, 0, posAttr, N, S)
+  const b = box(eng, { x: 4, y: 2, z: 32.5 + 5.8 }, { x: 15, y: 0, z: 0 })   // half-width 2 across the run: its side at 7.8
+  run(eng, 3)
+  const p = at(eng, b)
+  check(p.x > 40 && Math.abs(p.y - 2) < 0.01 && Math.abs(p.z - 38.3) < 0.01, `a box along the bore's shoulder, its side 7.8 m out, passes untouched: x ${p.x.toFixed(1)} y ${p.y.toFixed(3)} z ${p.z.toFixed(3)}`)
   eng.dispose()
 }
 process.exit(fail ? 1 : 0)
