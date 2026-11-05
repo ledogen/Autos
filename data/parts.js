@@ -93,9 +93,11 @@ export const PARTS = {
     //    The spare is its own part (owner, 2026-10-20): a full-size spare MOUNTED on a steel wheel, new
     //    at ~$25 (owner, 2026-10-21; a worn one, 50–80%, comes from the reward pools). It is carried,
     //    never fitted as itself: `mounted` names what goes on the corner (src/recovery.js fitSpare).
-    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 7, massKg: 12, grip: 0.9,
+    // FEAT-165 [DEFAULT, the owner confirms]: Old 7 → 8, Standard 15 → 18 — every shop always stocks
+    // them now (data/shop-stock.js ALWAYS), so they cost a little more.
+    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 8, massKg: 12, grip: 0.9,
                      patch: {}, desc: 'Cracked and dry rotted rubber. Slippery and fragile.' },
-    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 15, massKg: 12, grip: 1, stock: true,
+    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 18, massKg: 12, grip: 1, stock: true,
                      patch: {}, desc: 'The factory all-season. Fine everywhere, great nowhere.' },
     spareTire:     { name: 'Mounted tire',         slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
                      patch: {}, desc: 'A tire mounted on a wheel.' },

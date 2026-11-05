@@ -4322,7 +4322,7 @@ function _shelfNext (poiId, now) {
 function _shelfView (poiId, now) {
   if (poiSystem.list().find(q => q.id === poiId)?.type !== 'autoShop') return null
   return shelf(poiId, now).map(e => e && {
-    name: shelfName(e), used: e.cond !== null && e.cond < 1, left: formatGameDuration(e.expiresAt - now) })
+    name: shelfName(e), used: e.cond !== null && e.cond < 1, left: e.expiresAt === Infinity ? 'always' : formatGameDuration(e.expiresAt - now) })
 }
 
 // FEAT-112: the truck as configured NOW — the fitted parts' load ratings folded over the stock ones.

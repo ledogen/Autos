@@ -372,7 +372,7 @@ export class ServiceScreen {
         : sockets.length ? btn('buy', 'buy & fit', ok, `data-slot="${i}" data-socket="${sockets[0]}"`) : ''
       const state = e.cond === null ? '' : e.cond >= 1 ? 'new · ' : 'used · '
       h += `<div class="sv-row wrap sv-shelf" data-slot="${i}">${chip(e.id)}<span class="sv-name">${shelfName(e)}`
-        + ` <span class="sv-desc">${state}gone in ${formatGameDuration(e.expiresAt - now)}`
+        + ` <span class="sv-desc">${state}${e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}`}`
         + `${fitQ.price ? ` · fitting $${formatMoney(fitQ.price)}` : ''}</span>`
         + `<div class="sv-desc">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</div></span>`
         + (e.cond !== null ? bar(e.cond) : '') + `<span class="sv-cost">$${formatMoney(price)}</span>`

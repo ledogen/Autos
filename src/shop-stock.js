@@ -9,6 +9,8 @@
 //     at the longest shelf life: anything older would have expired anyway. A shop looked at for the
 //     first time starts that far back, so it is already stocked as if it had been open all along.
 //   • Buying empties the slot (take()).
+//   • FEAT-165: after the slots, the ALWAYS tires (data/shop-stock.js) — new, never expiring, never
+//     emptied — so a shop is never out of a tire (owner, 2026-11-04).
 //
 // Run-layer state (SM-INV-12: run-layer randomness stays free) is a plain module object beside
 // runEconomy / runInventory, so it follows them into any save. main.js rolls the run seed at run start
@@ -16,7 +18,7 @@
 
 import { PARTS, BEAD } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
-import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE } from '../data/shop-stock.js'
+import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE, ALWAYS } from '../data/shop-stock.js'
 import { STOCK_WEIGHT, REWARD_ONLY } from '../data/stock-weights.js'
 import { mulberry32, seedFor, hash32 } from './seed.js'
 
@@ -26,6 +28,7 @@ export const runShelves = {
 }
 
 const CATCH_UP_H = LIFE_H[1]
+const ALWAYS_ROWS = ALWAYS.map(id => Object.freeze({ id, cond: 1, expiresAt: Infinity }))
 
 /** What can fill a slot: every id the stock table weighs above nothing. */
 const STOCK = Object.entries(STOCK_WEIGHT).filter(([id, w]) => w > 0 && !REWARD_ONLY.has(id))
@@ -51,7 +54,8 @@ export function startShelves (seed) {
     runShelves.shops = {}
 }
 
-/** Shop `poiId`'s shelf at game time `nowH` (daySystem.clockH): SHELF_SLOTS entries, null = empty. */
+/** Shop `poiId`'s shelf at game time `nowH` (daySystem.clockH): SHELF_SLOTS entries (null = empty),
+ *  then the ALWAYS rows (expiresAt Infinity). */
 export function shelf (poiId, nowH) {
     const H = Math.floor(nowH)
     let s = runShelves.shops[poiId]
@@ -63,7 +67,7 @@ export function shelf (poiId, nowH) {
         }
     }
     s.rolledTo = Math.max(s.rolledTo, H)
-    return s.slots.map(e => e && e.expiresAt > nowH ? e : null)
+    return [...s.slots.map(e => e && e.expiresAt > nowH ? e : null), ...ALWAYS_ROWS]
 }
 
 /**
@@ -86,10 +90,10 @@ export function nextStockH (poiId, nowH) {
     return best
 }
 
-/** Bought: the slot empties (and rolls again from the next hour). */
+/** Bought: the slot empties (and rolls again from the next hour). An ALWAYS row stays. */
 export function take (poiId, slot) {
     const s = runShelves.shops[poiId]
-    if (s) s.slots[slot] = null
+    if (s && slot < SHELF_SLOTS) s.slots[slot] = null
 }
 
 /** A shelf item's price before the day tier: a part's price × its condition (new = 1), or the item's. */
