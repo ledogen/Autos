@@ -54,7 +54,7 @@ export const SLOTS = {
     brakesRear:   { name: 'Rear brakes',       hours: 1,    tracks: ['brakeRear'] },
     arbFront:     { name: 'Front anti-roll bar', hours: 0.5, tracks: [] },
     arbRear:      { name: 'Rear anti-roll bar',  hours: 0.5, tracks: [] },
-    diff:         { name: 'Rear differential', hours: 3,    tracks: [] },
+    diff:         { name: 'Rear differential', hours: 3,    tracks: ['diff'] },   // FEAT-166: the clutch LSD's packs
     lift:         { name: 'Lift',              hours: 4,    tracks: [] },
     // The engine bay (owner, 2026-10-22): these were damage tracks with no part; exchange and the shop
     // shelf need them to exist as parts. Either headlight socket takes the one 'headlight' part.
@@ -196,9 +196,14 @@ export const PARTS = {
     diffOpen:      { name: 'Open differential',    slot: 'diff', family: 'oem', rarity: 'common', price: 10, massKg: 30, stock: true,   // owner 11-04: "worth half as much" (20 → 10)
                      patch: { rearDiffMode: 'open' },
                      desc: 'Power goes to whichever rear wheel has the least grip.' },
-    diffLSD:       { name: 'Limited-slip differential', slot: 'diff', family: 'sport', rarity: 'rare', price: 40, massKg: 32,
+    // FEAT-166 (owner 2026-11-04): the ladder is open → clutch-type LSD (temporary: its packs wear back to
+    // an open diff, and a rebuild is a cash drain) → helical LSD (permanent). Price [DEFAULT].
+    diffClutchLSD: { name: 'Clutch-type limited-slip differential', slot: 'diff', family: 'sport', rarity: 'uncommon', price: 25, massKg: 31,
+                     durability: 1, rebuild: true, patch: { rearDiffMode: 'clutch' },
+                     desc: 'Clutch packs share the drive until they wear out, then it is an open diff again. A shop can rebuild it, for a price.' },
+    diffLSD:       { name: 'Helical limited-slip differential', slot: 'diff', family: 'sport', rarity: 'rare', price: 40, massKg: 32,
                      patch: { rearDiffMode: 'lsd' },
-                     desc: 'Clutch packs share the drive. Pulls out of corners, and pushes into them.' },
+                     desc: 'Gears, not clutches, share the drive: nothing in it wears out. Pulls out of corners, and pushes into them.' },
     // The welded diff replaces the locker (owner, 2026-10-22): "its cheaper … I do want a silly locked
     // diff option to show up occasionally". Same physics as a locker. Price [DEFAULT], under its $35.
     diffWelded:    { name: 'Welded differential', slot: 'diff', family: 'offroad', rarity: 'uncommon', price: 15, massKg: 30,
@@ -257,6 +262,9 @@ export const REPAIRS = {
     radiator:     { price: 27.5, hours: 2 },     // welded
     alignment:    { price: 4,    hours: 0.5 },
     transmission: { price: 30,   hours: 3 },     // rebuilt
+    // FEAT-166: new clutch packs for the clutch-type LSD — straight back to 100% (src/service.js
+    // repairTargets), a cash drain by design (owner, 2026-11-04). [DEFAULT] $30 / 3 h from empty.
+    diff:         { price: 30,   hours: 3 },
 }
 /** Every repair starts with this before the clock on the gap runs (owner, 2026-10-23): the shop's
  *  minimum charge, and the time to get at the part (half an hour to reach a damper before revalving

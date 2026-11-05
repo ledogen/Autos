@@ -83,8 +83,9 @@ export const bandColor = (c) => BANDS.find(b => c >= b.min).color
 const shownCond = (m, id) => (TRACKS[id].cls === 'tire' && m.flat[TRACKS[id].wheel] ? 0 : m.get(id))
 const LIST_ROWS = 5
 
-/** FEAT-126: a manualOnly track (the transmission) exists only on a truck with a manual fitted. */
-const shown = (m, id) => !TRACKS[id]?.manualOnly || m.manualBox
+/** FEAT-126: a manualOnly track (the transmission) exists only on a truck with a manual fitted; FEAT-166:
+ *  a clutchOnly track (the diff's packs) only with a clutch-type LSD. */
+const shown = (m, id) => (!TRACKS[id]?.manualOnly || m.manualBox) && (!TRACKS[id]?.clutchOnly || m.clutchDiff)
 
 /**
  * The `n` worst parts, a flat tire counting as zero: { id, label, c (its condition), color (its band) }.

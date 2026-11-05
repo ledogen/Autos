@@ -291,7 +291,7 @@ export class ServiceScreen {
   _vehicle () {
     const d = this.service.damage
     return GROUPS.map(([title, keys]) => `<div class="sv-slot"><div class="sv-slothead">${title}</div>`
-      + keys.filter(([k]) => !TRACKS[k]?.manualOnly || d.manualBox).map(([k, label]) => this._vehicleRow(k, label)).join('') + `</div>`).join('')
+      + keys.filter(([k]) => (!TRACKS[k]?.manualOnly || d.manualBox) && (!TRACKS[k]?.clutchOnly || d.clutchDiff)).map(([k, label]) => this._vehicleRow(k, label)).join('') + `</div>`).join('')
   }
 
   _vehicleRow (k, label) {

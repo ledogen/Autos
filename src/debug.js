@@ -352,7 +352,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Rear diff mode: open / limited-slip / locked (src/drivetrain.js couples the rear wheels).
   // Front differential + a per-axle final-drive slider will join this folder in a later phase.
   const diffFolder = vehicleFolder.addFolder('Differentials')
-  diffFolder.add(params, 'rearDiffMode', { Open: 'open', 'Limited Slip': 'lsd', Locked: 'locked' }).name('Rear Differential')
+  diffFolder.add(params, 'rearDiffMode', { Open: 'open', 'Clutch LSD': 'clutch', 'Helical LSD': 'lsd', Locked: 'locked' }).name('Rear Differential')
 
   // ── Tires ───────────────────────────────────────────────────────────────────────
   // Vertical tire spring (stiffness/damping) + ground friction + the Pacejka force-curve model

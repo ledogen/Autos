@@ -264,7 +264,7 @@ export const RANGER_PARAMS = {
   tracDumpRate:     15,     // 1/s — oversteer cut, step-aside ramp and TC pressure vent (full → 0 in 67 ms, as absDumpRate)
 
   // ── Rear differential (FEAT-23 Phase 2 seed) ──────────────────────────────────────────────────
-  // rearDiffMode: 'open' | 'lsd' | 'locked'. Selected in the debug panel (Vehicle → Differentials →
+  // rearDiffMode: 'open' | 'clutch' (FEAT-166) | 'lsd' (helical) | 'locked'. Selected in the debug panel (Vehicle → Differentials →
   // Rear Differential). Open = equal torque split, wheels spin independently. LSD/locked add an internal
   // coupling torque ∝ the rear wheels' speed difference that shuttles torque from the faster (spinning)
   // wheel to the slower (gripping) one — a CLAMPED viscous coupling for LSD, a stiff one for locked.
@@ -274,6 +274,11 @@ export const RANGER_PARAMS = {
   diffLsdCoupling:  25,   // N·m per rad/s — LSD viscous coupling (torque per unit rear speed difference)
   diffLsdMaxTorque: 400,  // N·m — LSD coupling clamp (the "limited" in limited-slip; bias cap)
   diffLockCoupling: 30,   // N·m per rad/s — locked-diff coupling (stiff; ≤ ~36 keeps the explicit step stable)
+  // FEAT-166 clutch-pack LSD (rearDiffMode 'clutch'): capacity = preload + ramp × |axle torque|, × the
+  // packs' condition (damage.js 'diff'). [DEFAULT]s — a new Ranger Traction-Lok breaks away at ~100–200
+  // N·m; the ramp keeps it under the helical's 400 N·m cap at full first-gear torque (~4 kN·m).
+  diffClutchPreload: 140,  // N·m — the packs' spring preload
+  diffClutchRamp:    0.05, // [-] share of the axle torque the side gears' separating force adds
 
   // Aerodynamic drag (FEAT-23): lumped Cd·A [m²]; F = ½·ρ·CdA·v² opposing horizontal velocity (ρ≈1.225).
   // Without it the geared drivetrain would accelerate to an unrealistic top speed; ~1.2 m² (Cd≈0.45 ×

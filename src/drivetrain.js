@@ -98,13 +98,25 @@ function splitRearAxle (T, axleTorque, vehicleState, params) {
     const dOm = (vehicleState.wheelOmega?.[2] ?? 0) - (vehicleState.wheelOmega?.[3] ?? 0)
     if (mode === 'locked') {
       couple = (params.diffLockCoupling ?? 30) * dOm
-    } else { // limited-slip
+    } else if (mode === 'clutch') {
+      // FEAT-166: a clutch-pack LSD (the Ranger's factory type) — friction packs that hold until the
+      // torque across them passes their capacity: spring preload plus a share of the input torque (the
+      // side gears' separating force loads the packs). Worn packs (params._diffClutchScale, damage.js)
+      // carry less; at 0 it is an open diff. Below capacity it locks on the welded diff's coupling.
+      const cap = ((params.diffClutchPreload ?? 140) + (params.diffClutchRamp ?? 0.05) * Math.abs(axleTorque)) * (params._diffClutchScale ?? 1)
+      couple = Math.max(-cap, Math.min(cap, (params.diffLockCoupling ?? 30) * dOm))
+    } else { // limited-slip (helical)
       const cap = params.diffLsdMaxTorque ?? 400
       couple = Math.max(-cap, Math.min(cap, (params.diffLsdCoupling ?? 25) * dOm))
     }
   }
   T[2] = perWheel - couple   // faster rear wheel (higher ω) sheds torque to the slower one
   T[3] = perWheel + couple
+  // FEAT-166: the heat the clutch packs slip [W] — what wears them (damage.js). Written only by a
+  // clutch diff (and zeroed after one), so no other truck's state grows a field.
+  const st = vehicleState.drivetrain
+  if (mode === 'clutch') st.diffSlipW = Math.abs(couple * dOm)
+  else if (st.diffSlipW) st.diffSlipW = 0
 }
 
 /**

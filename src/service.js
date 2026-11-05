@@ -44,9 +44,12 @@ const classOf = (id) => {
  * REPAIR_STEP multiple above it, up to REPAIR_CAP — or, for alignment, only straight. Empty when
  * there is nothing to do (replace-only, or already at the cap).
  */
-export function repairTargets (cls, cond) {
+export function repairTargets (cls, cond, partId = null) {
     if (!REPAIRS[cls]) return []
     if (cls === 'alignment') return cond < 1 - ALIGN_FLOOR ? [1] : []
+    // FEAT-166: a differential's only wear is the clutch LSD's packs, and a rebuild is new packs —
+    // straight to 100%, and only for a part that has them (PARTS[id].rebuild).
+    if (cls === 'diff') return PARTS[partId]?.rebuild && cond < 1 - EPS ? [1] : []
     const out = []
     for (let t = Math.floor(cond / REPAIR_STEP + EPS) + 1; t * REPAIR_STEP <= REPAIR_CAP + EPS; t++) out.push(Math.round(t * REPAIR_STEP * 100) / 100)
     return out
@@ -82,7 +85,7 @@ export class ServiceCenter {
     /** What the bench can bring fitted track `id` up to (repairTargets). */
     targets (id) {
         if (TRACKS[id].manualOnly && !this.damage.manualBox) return []
-        return repairTargets(TRACKS[id].cls, this.damage.get(id))
+        return repairTargets(TRACKS[id].cls, this.damage.get(id), this.parts.fitted(socketOfTrack(id)))
     }
 
     /** What repairing fitted track `id` to `target` costs now (default: as far as it goes). */
@@ -124,7 +127,7 @@ export class ServiceCenter {
     ownedRepairRows () {
         return this.inventory.list()
             .filter(r => classOf(r.id))
-            .map(r => ({ index: r.index, id: r.id, cond: r.cond ?? 1, flat: r.flat, targets: repairTargets(classOf(r.id), r.cond ?? 1) }))
+            .map(r => ({ index: r.index, id: r.id, cond: r.cond ?? 1, flat: r.flat, targets: repairTargets(classOf(r.id), r.cond ?? 1, r.id) }))
             .filter(r => r.targets.length || r.flat)
             .sort((a, b) => a.cond - b.cond)
     }
