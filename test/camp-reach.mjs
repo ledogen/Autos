@@ -14,7 +14,7 @@
 // Checks: after the fill, POINT ≤ campReachM and every node reaches a zone; the fill only ADDS (every
 // cell-grid zone kept as it was, each added one flagged `fill`); a second fillReach adds nothing.
 //
-//   node test/camp-reach.mjs --seeds=4194356868,1,6        other seeds
+//   node test/camp-reach.mjs --seeds=1,6,7                 other seeds (`seed@x:z` pins the region centre)
 //   node test/camp-reach.mjs --report --caps=1500,2000     before, and after a fill at each cap (never fails)
 //
 // Heavy: routes a full 2800 m region per seed (~15 s each).
@@ -29,7 +29,9 @@ import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 
 const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.split('=')[1]
-const SEEDS = (arg('seeds') ?? '4194356868,1,6').split(',').filter(Boolean)
+// The owner's seed is PINNED to its in-game centre: test/lib/spawn-decision.mjs puts its spawn 325 m off
+// the game's (-22, -161 vs 34.65, 158.45 — the browser's free roam and story agree; seeds 1 and 6 match).
+const SEEDS = (arg('seeds') ?? '4194356868@34.65:158.45,1,6').split(',').filter(Boolean)
 const REPORT = process.argv.includes('--report')
 const CAPS = (arg('caps') ?? String(CAMP_PARAMS.campReachM)).split(',').filter(Boolean).map(Number)
 
@@ -39,10 +41,10 @@ const check = (label, ok, detail = '') => {
     if (!ok) fails++
 }
 
-for (const s of SEEDS) {
-    const seed = parseWorldSeed(s), t0 = Date.now()
-    const sp = spawnDecision(seed, P)
-    const C = { x: sp.x, z: sp.z }
+for (const arg of SEEDS) {
+    const [s, at] = arg.split('@'), seed = parseWorldSeed(s), t0 = Date.now()
+    const sp = at ? null : spawnDecision(seed, P)
+    const C = at ? { x: +at.split(':')[0], z: +at.split(':')[1] } : { x: sp.x, z: sp.z }
     const road = new RoadSystem(seed, P)
     road.setRadius(REGION_WARM_RADIUS_M)
     road.update(new THREE.Vector3(C.x, 0, C.z))
