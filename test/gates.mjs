@@ -145,6 +145,8 @@ export const GATES = [
     desc: 'The stranded motorist\'s spare, one LOOSE body in the bed (data/offers.js `loose`): the item-thumbnail model is past Box3D\'s 255-half-edge hull limit, so debris.js thinHull hulls its 40 most spread-out vertices — builds, spans the model\'s 0.73 × 0.24 m, lands 20 kg. Dropped where main.js _loadLoose drops it, it settles flat on the ribs and holds through 60 mph straight and a slalom' },
   { file: 'poi-collider.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'POI marker engine colliders (PoiPhysics) match the wheel-query solid at 4000 probes, and a truck-sized block fired at the trailer stops rigidly with no rebound (Larry\'s house bounce/rim report)' },
+  { file: 'tow-seat.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'BUG-114: a tow seats the truck clear of where it tows to — poi.js towSeat puts a keyless auto shop\'s seat on the pad\'s road-side strip (in reach, on the pad) and a pump tow in its pump zone; on real physics with the marker\'s colliders the seat matches bare ground (no first-step spin, upright, at rest, same height). The old pad-centre seat perched the truck on the cube' },
   { file: 'debris-stack.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-36: a stack of barrels settles, holds its footprint, sleeps — and two fresh worlds settle to bit-identical transforms (the pile the throw slice could never test)' },
   { file: 'barrel-cube.mjs', subsystem: 'physics', cost: 'fast', extraDeps: ['assets/models/drum-closed.glb'],
