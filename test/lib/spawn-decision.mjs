@@ -11,9 +11,8 @@
 // game no longer does.
 import * as THREE from 'three'
 import { RoadSystem, CHUNK_SIZE } from '../../src/road.js'
-import { WaterSystem } from '../../src/water.js'
 import { seedFor } from '../../src/seed.js'
-import { makeTerrainHeadless } from './terrain-headless.mjs'
+import { wirePondNoGo } from './pond-no-go.mjs'
 
 /** The seeded probe geometry — src/main.js `_spawnProbeBase`, verbatim. */
 export function spawnProbeBase (seed, params) {
@@ -48,13 +47,7 @@ export function spawnDecision (seed, params, opts = {}) {
     // replica must too. Without it seed 4194356868's nearest road was a different one, 325 m away
     // (−22.10, −160.63 against the game's 34.65, 158.45): the story region every gate built held 3 zones
     // where the game has 6. Seeds with no pond near the probe (1, 6) never showed it.
-    const { rawHeightWorld } = makeTerrainHeadless(seed, params, null)
-    const water = new WaterSystem(seed, params, rawHeightWorld)
-    road.setWaterNoGo((x, z) => water.isRoadNoGo(x, z), (x0, z0, x1, z1) => {
-        const d = []
-        for (const p of water.pondsNear(x0, z0, x1, z1)) d.push(p.floorX, p.floorZ, p.radius + p.skirt)
-        return d
-    })
+    wirePondNoGo(road, seed, params)
     if (pre) { road.setRadius(pre.r); road.update(new THREE.Vector3(pre.x, 0, pre.z)) }
 
     const { baseX, baseZ, tightR, spawnR } = spawnProbeBase(seed, params)

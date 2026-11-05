@@ -34,6 +34,7 @@ import { buildGraphAdj, graphDijkstra, REGION_MARGIN } from '../src/mission.js'
 import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
+import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
 const arg = (k) => (process.argv.find((a) => a.startsWith(`--${k}=`)) || '').split('=')[1]
 const [lo, hi] = (arg('seeds') || '1-10').split('-').map(Number)
@@ -49,6 +50,7 @@ for (let s = lo; s <= (hi ?? lo); s++) {
     const r = (p) => Math.hypot(p.x - C.x, p.z - C.z)
     const bear = (p) => Math.round((Math.atan2(p.x - C.x, -(p.z - C.z)) * 180 / Math.PI + 360) % 360)
     const road = new RoadSystem(seed, P)
+    wirePondNoGo(road, seed, P)   // BUG-111: the game's pond no-go, before the first stream
     road.setRadius(REGION_WARM_RADIUS_M)
     road.update(new THREE.Vector3(C.x, 0, C.z))
     const rep = validateArea(road, C, discArea(REGION_RADIUS_M, REGION_MARGIN), P)
