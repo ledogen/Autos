@@ -144,5 +144,8 @@ Reach (8 m proposed), parked only, drops persist in the save (player state), pic
 - **Gate:** `test/world-items.mjs` (drop → entry handed over; reach from the outline; identical entry back
   incl. condition, gallons, uses; no room refuses; save round trip).
 
-**Owed (compute hold):** run the 27 exports (`blender -b --factory-startup … items.export_glb`), add their
-`data/prop-models.js` rows (tris + size from the export print), cdp-smoke with a drop + pick-up step.
+**Exports done (Spare, 2026-11-05, d12d3d49):** the 27 models ran headless (`blender -b --factory-startup`,
+`items.export_glb`), 2.3 MB in all, 240–6856 tris (the tire is the heaviest: the item builder's tread); their
+`data/prop-models.js` rows carry the export's tris and size. cdp-smoke has a drop + pick-up step (7e871dfb: the
+zip ties go down behind the tailgate, show under "Nearby on the ground", and come back with their 4 uses).
+**Owed:** the owner's look at the dropped models in the world.
