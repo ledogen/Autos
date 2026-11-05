@@ -125,13 +125,17 @@ inv.packItem(tarpAt(), spareAt())
 check('equip refuses a full pack with no bed in it', ids(spareAt()) === 'testTarp,testTarp' && inv.equip(spareAt()) === false)
 delete ITEMS.testTarp
 
-// ── 6b. Sleeping gear (items.md §2b): the equipped pack's `rest` adds up; a bed swaps for the bedroll
+// ── 6b. Sleeping gear (items.md §2b, FEAT-171): the equipped pack's `rest` adds up, one item per bed layer
 inv.start()
+const at6 = (id) => inv.list().findIndex(r => r.id === id)
 check('the bare bedroll adds no rest', inv.restBonus() === 0)
-inv.grant('blanket'); inv.packItem(inv.list().findIndex(r => r.id === 'blanket'))
-inv.grant('deluxeSleepingPad'); inv.packItem(inv.list().findIndex(r => r.id === 'deluxeSleepingPad'))
-check('blanket + deluxe pad = +20%, the bedroll back in a truck slot',
-  Math.abs(inv.restBonus() - 0.20) < 1e-9 && inv.list().some(r => r.id === 'bedroll'), String(inv.restBonus()))
+inv.grant('blanket'); inv.packItem(at6('blanket'))
+inv.grant('deluxeSleepingPad')
+check('bedroll + blanket = +5%, and the starter Pack is full: no room for a pad', Math.abs(inv.restBonus() - 0.05) < 1e-9
+  && inv.packItem(at6('deluxeSleepingPad')) === false, String(inv.restBonus()))
+inv.unpackItem(inv.equippedIndex(), inv.packed().indexOf('blanket')); inv.packItem(at6('deluxeSleepingPad'))
+check('the deluxe pad goes UNDER the bedroll: +15%, the bedroll stays packed', Math.abs(inv.restBonus() - 0.15) < 1e-9
+  && inv.packed().join() === 'bedroll,deluxeSleepingPad', `${inv.restBonus()} ${inv.packed()}`)
 
 // ── 7. Catalog ────────────────────────────────────────────────────────────────────────────────
 const missing = REWARDS.filter(r => !r.dineIn && !ITEMS[r.id]).map(r => r.id)
@@ -141,7 +145,7 @@ check('no item desc carries a digit (SM-INV-10)', digits.length === 0, digits.jo
 const bad = Object.entries(ITEMS).filter(([, it]) => !(it.massKg > 0) || !it.name).map(([id]) => id)
 check('every item has a name and a positive mass', bad.length === 0, bad.join(', '))
 check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind === 'pack' && ITEMS.pack.packSlots >= 2
-  && ITEMS.bedroll.kind === 'camp' && ITEMS.bedroll.sleep === true)
+  && ITEMS.bedroll.kind === 'camp' && ITEMS.bedroll.bed === 'bedding')
 
 console.log(fails === 0 ? '\ninventory gate: ALL OK' : `\ninventory gate: ${fails} FAILURE(S)`)
 process.exit(fails === 0 ? 0 : 1)

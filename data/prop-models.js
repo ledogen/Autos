@@ -1074,19 +1074,18 @@ export const PROP_MODELS = {
   tent: { url: 'assets/models/tent.glb', collision: { shape: 'box', size: [1.4, 1.1, 2.2] } },   // 200 tris, ridge tent, door -Z; the fly is double-sided so the open door shows the inside. 2.44 x 3.18 m with the guys
   awning: { url: 'assets/models/awning.glb', collision: { shape: 'none', size: [3.04, 2.50, 2.54] } },   // 240 tris, striped canopy on four poles, open front -Z (ASSET-06, moved to camp gear by R-19); no recolour hook
   // The camp bed slot (FEAT-66): the item thumbnails' own models, exported lying flat from
-  // assets/models/src/items.py (export_glb), length along Z, head end at +Z (the back of the tent).
-  // `seatY`: the height the next bed layer lies at, where the model's top is not flat — measured under the
-  // blanket's footprint, the foot (test/camp-gear.mjs pins it there to 1 cm). The bedroll's pillow fold and
-  // curl, the bag's turned-back head, the pads' pillow and valve all stand above it and end up inside the
-  // layer on top.
-  bedroll: { url: 'assets/models/bedroll.glb', collision: { shape: 'none', size: [0.88, 0.075, 2.04] }, seatY: 0.044 },   // 5880 tris, ASSET-78: unrolled on its canvas, head folded back for a pillow, foot still curled, straps loose
-  sleepingBag: { url: 'assets/models/sleeping-bag.glb', collision: { shape: 'none', size: [0.86, 0.25, 1.92] }, seatY: 0.135 },   // 7491 tris, flannel corner turned back at the head
+  // assets/models/src/items.py (export_glb), length along Z, head end at +Z (the back of the tent). They all
+  // share that frame, so src/camp-gear.js stacks them by draping each layer over the ones under it (FEAT-171);
+  // the bedding's slabs are gridded so they can bend.
+  bedroll: { url: 'assets/models/bedroll.glb', collision: { shape: 'none', size: [0.88, 0.16, 2.04] } },   // 8308 tris, ASSET-78: unrolled on its canvas, head folded back with a pillow on it, foot still curled, straps loose
+  sleepingBag: { url: 'assets/models/sleeping-bag.glb', collision: { shape: 'none', size: [0.86, 0.25, 1.92] } },   // 11613 tris, flannel corner turned back at the head, a pillow on the zipped side
   airMattress: { url: 'assets/models/air-mattress.glb', collision: { shape: 'none', size: [0.78, 0.19, 1.88] } },   // 4670 tris, flocked quilted top
-  sleepingPad: { url: 'assets/models/sleeping-pad.glb', collision: { shape: 'none', size: [0.51, 0.08, 1.83] }, seatY: 0.064 },   // 8878 tris, baffled, valve at the foot
-  deluxeSleepingPad: { url: 'assets/models/deluxe-sleeping-pad.glb', collision: { shape: 'none', size: [0.64, 0.14, 1.93] }, seatY: 0.10 },   // 6798 tris, raised pillow end
-  // ASSET-79: the blanket as the bed's top layer. Its ORIGIN IS THE BED'S CENTRE at its own underside — it
-  // lies across the foot (−Z) and its sides hang down past the bed's (below 0) — so it seats on seatY.
-  blanket: { url: 'assets/models/blanket.glb', collision: { shape: 'none', size: [0.93, 0.12, 0.50] } },   // 3636 tris, buffalo check folded in thirds
+  sleepingPad: { url: 'assets/models/sleeping-pad.glb', collision: { shape: 'none', size: [0.51, 0.08, 1.83] } },   // 8878 tris, baffled, valve at the foot
+  deluxeSleepingPad: { url: 'assets/models/deluxe-sleeping-pad.glb', collision: { shape: 'none', size: [0.64, 0.14, 1.93] } },   // 6798 tris, raised pillow end
+  // ASSET-79 / ASSET-81: the blanket layer. Its ORIGIN IS THE BED'S CENTRE at its own underside; it lies FLAT
+  // across the foot (−Z), and the drape hangs it over the bedding's edges (FEAT-171).
+  blanket: { url: 'assets/models/blanket.glb', collision: { shape: 'none', size: [1.06, 0.03, 0.50] } },   // 3844 tris, buffalo check folded in thirds
+  quilt: { url: 'assets/models/quilt.glb', collision: { shape: 'none', size: [1.10, 0.04, 0.56] } },   // 1676 tris, patchwork in five colours, each patch puffed between its seams
   cookingKit: { url: 'assets/models/cooking-kit.glb', collision: { shape: 'box', size: [1.24, 1.08, 0.82] } },   // 388 tris, two iron A-frames, crossbar, chain, Dutch oven; no recolour hook
   shadeTarp: { url: 'assets/models/shade-tarp.glb', collision: { shape: 'none', size: [3.73, 2.01, 3.53] } },   // 224 tris, 3 x 2.4 m fabric with a loose skirt on leaning poles and guy lines — drive-through; no recolour hook
   // ASSET-38 — lumber bundle (freight) and the three loose boards it was split into for haul (FEAT-88: single

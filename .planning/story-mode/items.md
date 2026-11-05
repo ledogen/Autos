@@ -462,11 +462,13 @@ land. Nothing here is built (owner, 2026-07-30: *catalog it, don't build it*).
 
 | Item | What it does | Source | Cost | Status |
 |---|---|---|---|---|
-| **Bedroll** | **The baseline sleeping item — no bonus.** Everybody has one. It is what the rest of this table is measured against. | Starting kit | Its own trivial mass; the sleeping item's slot in the pack (§2c) | **RULED** — owner, 2026-10-16. Replaced by an air mattress or a pad, never removed for nothing |
-| **Air mattress** | **Sleeping item.** **+5% recovery rate.** **Replaces the bedroll** in its slot and in the rendered camp. | Bought/found | Cash; the sleeping item's slot; small mass | **RULED** — owner, 2026-10-16 |
-| **Sleeping pad** | **Sleeping item.** **+10% recovery rate.** Replaces the bedroll. | Bought/found | Cash; the sleeping item's slot; small mass | **RULED** — owner, 2026-10-16 |
-| **Deluxe sleeping pad** | **Sleeping item — the best bed.** **+15% recovery rate.** Replaces the bedroll. | Bought/found | Cash; the sleeping item's slot | **RULED** — owner, 2026-10-16 |
-| **Sleeping bag** | **Add-on, not a sleeping item.** Not required to sleep; takes **its own slot**. **+10% recovery rate**, combining with the bed and the blanket. Renders with the bed, not in place of it. | Bought/found | Cash; its own slot; small mass | **RULED** — owner, 2026-10-16 (was a ~1.1× multiplier that replaced the bedroll) |
+| **Bedroll** | **Bedding, the bottom rung — no bonus.** Everybody has one; the starter Pack holds it alone. It is what the rest of the bed is measured against. Has a pillow. | Starting kit | Its own trivial mass; a Pack slot | **RULED** — owner, 2026-10-16; **re-cut 2026-11-05 (FEAT-171): the bedding layer, never removed — the sleeping bag replaces it** |
+| **Sleeping bag** | **Bedding, the top rung. +10% recovery rate.** Replaces the bedroll (the bedroll goes back to the truck). Has a pillow. | Bought/found | Cash; a Pack slot; small mass | **RULED** — owner, 2026-10-16; **re-cut 2026-11-05 (FEAT-171): bedding, not an add-on** |
+| **Air mattress** | **Ground layer, the bottom rung. +5% recovery rate.** The bedding lies on it. | Bought/found | Cash; a Pack slot; small mass | **RULED** — owner, 2026-10-16; **re-cut 2026-11-05 (FEAT-171): the ground layer, under the bedding (it no longer replaces the bedroll)** |
+| **Sleeping pad** | **Ground layer. +10% recovery rate.** | Bought/found | Cash; a Pack slot; small mass | **RULED** — as the air mattress |
+| **Deluxe sleeping pad** | **Ground layer, the top rung. +15% recovery rate.** | Bought/found | Cash; a Pack slot | **RULED** — as the air mattress |
+| **Blanket** | **Blanket layer, the bottom rung. +5% recovery rate.** Drapes over the bedding. The cheap first upgrade over the bare bedroll. | Bought/found | Cash; a Pack slot; trivial mass | **RULED** — owner, 2026-10-16; **re-cut 2026-11-05 (FEAT-171): the blanket layer** |
+| **Quilt** | **Blanket layer, the top rung. +10% recovery rate.** Drapes over the bedding like the blanket (ASSET-81: warmer, heavier, patterned in geometry). | Bought/found | Cash; a Pack slot; ~2 kg [DEFAULT] | **RULED** — owner, 2026-11-05 (FEAT-171) |
 | **Tent** | **Add-on: +10% recovery rate**, the same as the sleeping bag, adding with the bed and the other add-ons. Takes its own slot. **Stands over the bed** in the rendered camp (FEAT-66) rather than replacing anything — the bed shows through the open door — so the campsite visibly becomes a camp rather than a man on the dirt. | Bought/found | Cash; its own slot; ~2.5 kg [DEFAULT] | **RULED** — owner, 2026-11-02 (was a multiplier larger than the bag's old ~1.1×) |
 | **Blanket** | **Add-on, not a sleeping item.** Not required to sleep; takes **its own slot**. **+5% recovery rate**, combining with the bed and the sleeping bag. The cheap first upgrade over the bare bedroll. | Bought/found | Cash; its own slot; trivial mass | **RULED** — owner, 2026-10-16 (was the small end of the multiplier) |
 | **Cot** | **Vibe axis — flatness.** Makes unflat ground sleepable: fills part of the flatness deficit of the site you chose. Inert on ground that is already flat. | Bought/found | Cash; a slot; real mass (it's a folding frame) | **IDEA** — 2026-08-01 |
@@ -596,7 +598,7 @@ still placeholders.
 
 | Pack | Slots | Reach | Cost | Status |
 |---|---|---|---|---|
-| **Pack** | **2** — the bedroll fills one, so a new player has **one open slot** to take something else along | 40 m (today's tether) | Starting kit | **RULED** — owner, 2026-10-16. Every run starts with it |
+| **Pack** | **2** — the bedroll (bedding) fills one, so a new player has **one open slot** to take something else along | 40 m (today's tether) | Starting kit | **RULED** — owner, 2026-10-16. Every run starts with it |
 | **Daypack** | Few | Far (up to the 120 m cap) | Cheap; light | **IDEA** — owner, 2026-10-16 |
 | **Duffel** | Many | Barely past the shoulder | Cheap; bulky | **IDEA** — owner, 2026-10-16 |
 | **Rucksack** | Fewer than the Duffel | Less than the Frame pack | Mid-priced | **RULED** — owner, 2026-10-16. Sits between the Duffel and the Frame pack |
@@ -606,14 +608,19 @@ still placeholders.
 
 - **The bedroll takes a slot; the campfire is not an item** (owner, 2026-10-16). The bedroll is the
   default sleeping item and starts the run packed in the Pack. The fire just spawns to mark camp.
-- **The equipped pack must always hold a sleeping item** (owner, 2026-10-16). Spare packs in the
-  truck carry no such rule. The bedroll can be swapped for an
-  upgrade — **sleeping pad, air mattress, deluxe sleeping pad** (§2b) — but never removed for
-  nothing. So one slot of the equipped pack is always the bed; with the starter Pack equipped, that
-  leaves exactly one free slot.
+- **THE BED IS THREE STACKED LAYERS** (owner, 2026-11-05, FEAT-171 — supersedes the 2026-10-16 bed rule,
+  under which a pad *replaced* the bedroll and the bag and blanket were add-ons). **Ground** (air mattress <
+  sleeping pad < deluxe pad), **bedding** (bedroll < sleeping bag), **blanket** (blanket < quilt). At most one
+  item per layer — packing a second swaps it, the old one back to the truck — and they stack in the rendered
+  camp: ground, the bedding on it, the blanket over the bedding.
+- **The equipped pack always holds bedding** (owner, 2026-10-16, re-read 2026-11-05). Spare packs in the
+  truck carry no such rule. The bedroll can be swapped for the sleeping bag but never removed for nothing.
+  So one slot of the equipped pack is always the bedding; with the starter Pack (the bedroll alone) that
+  leaves one free slot, so all three layers need a bigger pack.
 - **Restfulness bonuses are a percentage on the recovery rate** — how fast energy recovers per hour
-  slept (owner, 2026-10-16). The bed: **bedroll 0 · air mattress +5% · sleeping pad +10% · deluxe
-  sleeping pad +15%.** The add-ons: **blanket +5% · sleeping bag +10%.** The same percentage on any
+  slept (owner, 2026-10-16). **Ground:** air mattress +5% · sleeping pad +10% · deluxe sleeping pad
+  +15%. **Bedding:** bedroll 0 · sleeping bag +10%. **Blanket:** blanket +5% · quilt +10% (2026-11-05).
+  They add: `r × (1 + ground + bedding + blanket)`, the full kit +35%. The same percentage on any
   site, applied to `r(vibe) = lerp(sleepRateWorstH 4/3, sleepRateBestH 8/3, vibe)` h/h
   (`src/day.js`). The bedroll adds nothing, so the "average site, 8 h = full tank" contract is the
   baseline. SM-INV-6 holds because the place still sets the rate the bonus scales — a deluxe pad on

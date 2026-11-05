@@ -384,6 +384,15 @@ const STEPS = [
     await js('window.__campGear.hide()')
     check(await js('window.__campGear.root.children.length') === 0, 'hide left gear on the pad')
     check(await unpack('awning'), 'could not put the awning back')
+    // FEAT-155: a camp up (the debug panel's shortcut runs the real _enterCampScene) hides the truck's gauge
+    // cluster, and breaking it brings the cluster back.
+    const cluster = () => js('getComputedStyle(document.getElementById("cluster")).display')
+    await js(`[...document.querySelectorAll('.lil-gui .controller')].find(c => c.textContent.trim() === 'skip to camp dialogue')?.querySelector('button')?.click()`)
+    const up = await js('document.body.classList.contains("camp-on")')
+    if (up) check(await cluster() === 'none', `the gauge cluster shows at camp (${await cluster()})`)
+    else console.log('  campGear: no pad at the truck for the camp shortcut — FEAT-155 check skipped')
+    await js('document.getElementById("cp-break")?.click()')
+    if (up) check(await until(async () => await cluster() !== 'none', 2000), 'breaking camp did not bring the gauge cluster back')
   }],
   ['tires', async () => {
     // SM-3 roadside tire work (owner, 2026-10-22): using the spare or the plug kit opens the damage
@@ -580,6 +589,9 @@ const STEPS = [
     check(await until(() => js('window.__cargo().site.filter(t => t.smashed).length === 1'), 3000), 'a kicked target did not count smashed')
     check(await until(() => js('/1 \\/ \\d+ smashed/.test(document.getElementById("job-promise")?.textContent ?? "")'), 2000),
       `the HUD does not count it: "${await js('document.getElementById("job-promise")?.textContent')}"`)
+    // 11-05 (owner, option b): the first smash starts the site window; the job line counts it down.
+    check(await until(() => js('/next hit within \\d+ s/.test(document.getElementById("mission-hud").textContent)'), 2000),
+      `the job line shows no site window: "${await js('document.getElementById("mission-hud").textContent')}"`)
     // Arrive with the rest standing: nothing settles, and the GPS goes BACK to the nearest one standing.
     const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
     await seat(end.x, end.z, end.h)
@@ -590,10 +602,13 @@ const STEPS = [
     const i0 = await js('window.__site().next.i')
     await js(`window.__site().targets[${i0}].smashed = true`)
     check(await until(() => js(`(n => n && n.i !== ${i0} && !window.__site().targets[n.i].smashed)(window.__site().next)`), 2000), 'the GPS did not move on when its target fell')
-    await js('window.__site().targets.forEach(t => { t.smashed = true })')
-    check(await until(() => js('window.__mission().state === "done"'), 5000), `felling the last target did not settle the line: ${await js('window.__mission().state')}`)
-    check(await js('(n => new RegExp(`Smashed\\\\s*${n} \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
-      `the result card does not count the whole site: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    // That smash refilled the window; let it run out (a game minute is a second of the job's clock) and the line
+    // settles where it is, with the two that fell. (The last one down settling it is the same `cleared` line.)
+    check(await js('window.__mission().state') === 'running', 'the line settled before its window ran out')
+    await js('window.__day().advanceMinutes(41)')
+    check(await until(() => js('window.__mission().state === "done"'), 5000), `the site window ran out and the line did not settle: ${await js('window.__mission().state')}`)
+    check(await js('(n => new RegExp(`Smashed\\\\s*2 \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
+      `the result card does not count the two smashed: "${await js('document.getElementById("mp-body")?.textContent')}"`)
     await js('document.getElementById("mp-accept").click()')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)

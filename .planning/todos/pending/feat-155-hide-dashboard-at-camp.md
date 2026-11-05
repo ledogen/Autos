@@ -27,3 +27,15 @@ breaks. Mom's and the cab card are not camp — leave those as they are unless t
 
 - [ ] Dashboard gone while a camp is made, back on break camp; the run HUD readout stays.
 - [ ] cdp-smoke's camp step passes.
+
+## Built — 2026-11-05 (feature/run-shape, Lane A; ff0c1452)
+
+The truck's dashboard is the gauge cluster, `canvas#cluster` (src/cluster.js: speed, revs, lamps, gear, fuel).
+`#hud-dock`, the ticket's first pointer, is the top-right column of wallet, deeds, clock, energy and the context
+icons; that is the run readout, which stays. `body.camp-on` is set in `_enterCampScene` and cleared in
+`_exitCampScene`. Every way out of a camp runs through `_exitCampScene`: break camp, R, and leaving story mode.
+One CSS rule next to `stage-on`'s hides the cluster. Mom's and the cab never enter the camp scene, so they keep
+it. cdp-smoke's `campGear` step checks it through the debug camp shortcut: the cluster is gone, and it comes
+back on break camp.
+
+**Owed:** the owner's look.
