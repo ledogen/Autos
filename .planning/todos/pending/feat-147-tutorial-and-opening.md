@@ -182,3 +182,14 @@ D-pad presses — the new `opening` row sits under the mode row; re-check its co
 **Owed by the owner:** every card's words (FEAT-148 — all PLACEHOLDER in data/dialogue.js); whether the
 joint→mom's first drive is too long on a wide seed (re-siting the joint `nearSpawn` reshuffles every
 seed's POI layout).
+
+## Fixed 2026-11-05 — no job after the opening (owner's drive on :3731)
+
+*"i didnt have a job after the opening (no gps top bar not populated). mom did have a mission i could optionally
+accept."* Mom's job was only POSTED at her house. Now her call's last card takes it for you (`_takeFirstJob`,
+b0cf618b): taken at the joint, away from her house, it is an `approach` exactly like a requisition line taken at
+the camp — untimed, HUD "x km to Mom's · park there to start", her lit park spot and the map pin. Unlike a camp
+line it also gets a GPS route to her door (`approachGuide`, planned from the joint at the take; not saved, so a
+run resumed mid-approach has the pin and the HUD only). Parked at hers, it starts as the ordinary courier to
+Larry. The accept button's handler is now the named `_acceptOffer` both paths call. cdp-smoke's `opening` step
+checks the job in hand, the HUD line, the guide, and the start at mom's (PASS 23/23).
