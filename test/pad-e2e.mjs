@@ -1,8 +1,8 @@
 // test/pad-e2e.mjs — FEAT-125 rainy-day script (NOT a gate): drives the REAL app with a scripted fake
 // gamepad and checks the pad → vehicle contract (analog pedals, position steering + assist toggle,
 // last-moved-wins, unplug safety, the Forza button layout incl. View tap/hold), then FEAT-41's menus
-// pad-only: main menu → run setup (Casual + manual) → free roam, Start → pause → settings, and the
-// choices surviving a reload.
+// pad-only: main menu → new game (the setup page: mode → free roam, Casual + manual) → start, Start →
+// pause → settings, and the choices surviving a reload.
 //
 //   node test/pad-e2e.mjs [--port=3775] [--headed]     (needs a dev server already serving that port)
 //
@@ -227,17 +227,18 @@ await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html` })
 for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await sleep(250)
 await sleep(500)
 await js(fakePad)
+// FEAT-156: the menu is new game / settings, and it opens with new game highlighted.
 await press(DOWN)
-check(await navText() === 'story mode', `first D-pad press highlights the first item (${await navText()})`)
-await press(DOWN)
-check(await navText() === 'free roam', `second reaches free roam (${await navText()})`)
+check(await navText() === 'settings', `the menu opens on new game: D-pad down reaches settings (${await navText()})`)
+await press(UP)
+check(await navText() === 'new game', `up returns to new game (${await navText()})`)
 await press(A)
 check(await js('document.getElementById("main-menu").classList.contains("setup")'), 'A opens the run setup page')
 check(await js('!document.querySelector("#mm-setup-panel [data-key=steerAssist]")'), 'no assist rows on the setup page (they are settings)')
-await press(DOWN)
-check(await navText() === 'start', `the first press on the setup page lands on start, its default (${await navText()})`)
-await press(DOWN, 2)   // past back, onto the seed field
-check(await js('document.activeElement?.id') === 'su-seed', 'the seed field takes the highlight AND focus')
+check(await navText() === 'start', `the setup page opens on start, its default (${await navText()})`)
+await press(DOWN, 2); await press(RIGHT, 2)   // past back to the mode row: story → scenarios → free roam
+check((await selVal('gameMode')).includes('free roam') && !await js('document.querySelector("#mm-setup-panel [data-key=opening]").offsetParent'),
+      `mode ▸▸ → free roam, and the opening row (story only, FEAT-147) hides (${await selVal('gameMode')})`)
 await press(DOWN); await press(LEFT)
 check((await selVal('worldPreset')).includes('casual'), `difficulty ◂ → casual (${await selVal('worldPreset')})`)
 const codeLine = () => js('document.getElementById("su-code").textContent')
@@ -249,7 +250,7 @@ check((await selVal('worldPreset')).includes('casual') && await codeLine() === '
 await press(DOWN, 3); await press(RIGHT)   // past POI spacing and road climbs to the gearbox
 check((await selVal('gearbox')).includes('manual'), `gearbox ▸ → manual (${await selVal('gearbox')})`)
 check(await js('document.getElementById("su-code").textContent') === 'world code: random/C', `code line follows (${await js('document.getElementById("su-code").textContent')})`)
-await press(UP, 7)   // back up past the knobs, the seed field and back
+await press(UP, 8)   // back up past the knobs, the mode row and back (up meets one more stop than down)
 check(await navText() === 'start', `D-pad up returns to start at the top (${await navText()})`)
 await press(A)
 let live = false
@@ -265,13 +266,13 @@ check(saved && JSON.parse(saved).worldTerrain === 80 && JSON.parse(saved).worldR
 const shown = (id) => js(`getComputedStyle(document.getElementById("${id}")).display !== "none"`)
 await press(START)
 check(await shown('pause-menu'), 'Start pauses')
-await press(DOWN); await press(DOWN, 3)
+await press(DOWN, 3)   // the pause list opens on resume (no placing press any more)
 check(await navText() === 'settings', `pause list: down ×3 from resume reaches settings (${await navText()})`)
 await press(A)
 check(await shown('mm-settings-panel'), 'A opens settings inside the pause box')
 check(await js('!document.querySelector("#mm-settings-panel [data-key=gearbox]")'), 'no gearbox row in the in-game settings (pre-game only)')
 check(!await js('document.querySelector("#mm-settings-panel [data-key=steerShape]").offsetParent'), 'center softening is hidden while the steering assist is on')
-await press(DOWN); await press(RIGHT)
+await press(RIGHT)   // settings opens on its first row, the steering assist
 await js(`(async () => { window.__o = (${appMod('/src/gamepad.js')}).PAD_PARAMS.steerAssist })()`)
 await sleep(200)
 const pp = await js('window.__o')
@@ -283,7 +284,7 @@ const shape = await js('window.__o')
 check(shape === 0.2 && JSON.parse(await js('localStorage.getItem("autos-settings/1")')).steerShape === 0.2, `center softening → 20 %, live and saved (${shape})`)
 await press(LEFT, 4)
 check((await js(`document.querySelector('#mm-settings-panel [data-key="steerShape"] .sel-val').textContent`)).includes('0 %'), 'the slider stops at 0 %, never wraps')
-await press(DOWN, 3); await press(RIGHT)   // past clutch assist and ABS to the stick deadzone: 8 → 12 %
+await press(DOWN, 5); await press(RIGHT)   // past clutch assist, ABS, throttle assist and traction control to the stick deadzone: 8 → 12 %
 await js(`(async () => { window.__o = (${appMod('/src/gamepad.js')}).PAD_PARAMS.stickDeadzone })()`)
 await sleep(200)
 const dzSet = await js('window.__o')
@@ -299,7 +300,7 @@ await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html` })
 for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await sleep(250)
 await sleep(500)
 await js(fakePad)
-await press(DOWN); await press(A)
+await press(A)   // the menu opens on new game
 check((await selVal('worldPreset')).includes('casual') && (await selVal('gearbox')).includes('manual'),
       'after a reload the setup page shows casual / manual')
 await press(B)

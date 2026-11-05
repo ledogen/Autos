@@ -1377,6 +1377,7 @@
     .vibe-bar .vseg-flat  { background: #e8d44a; }   /* flatness — up to 40% of the bar */
     .vibe-bar .vseg-view  { background: #b98ae0; }   /* view     — up to 15% */
     .vibe-bar .vseg-shade { background: #7fd86a; }   /* shade    — up to 20% */
+    .vibe-bar .vseg-ghost { background: #7fd86a; opacity: 0.4; }   /* shade the packed awning/tarp gives back (FEAT-66) */
     .vibe-bar .vseg-water { background: #4aa8d8; }   /* water    — up to 25% */
 
     /* The legend. The bar read as one anonymous fill without it (owner, 2026-07-30) — four
@@ -1437,6 +1438,28 @@
       transition: opacity 0.45s ease;
     }
     #camp-fade.on { opacity: 1; }
+
+    /* FEAT-148: the midnight overlay — falls from the top, settles in the centre, fades; ~4 s. Thin white
+       at half opacity so the night road shows through. Same z as the fade and AFTER it in the DOM, so a
+       sleep through midnight plays it on the black. */
+    #midnight-card {
+      position: fixed; inset: 0; z-index: 160; pointer-events: none;
+      display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+      font-family: var(--font); font-weight: 200; letter-spacing: 2px; text-align: center;
+      color: var(--text-bright); text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    }
+    #midnight-card.on { display: flex; animation: mn-fall 4s linear forwards; }
+    #mn-main { font-size: 44px; }
+    #mn-sub { font-size: 22px; }
+    @keyframes mn-fall {
+      0%   { transform: translateY(-55vh); opacity: 0;   animation-timing-function: cubic-bezier(.2,1.4,.4,1); }
+      22%  { transform: translateY(0);     opacity: 0.5; }
+      80%  { transform: translateY(0);     opacity: 0.5; }
+      100% { transform: translateY(0);     opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes mn-fall { 0% { opacity: 0 } 15%, 80% { opacity: 0.5 } 100% { opacity: 0 } }
+    }
 
     #cp-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; justify-content: center; }
     #cp-hours { width: 160px; }
@@ -1580,6 +1603,7 @@
       <button id="su-start">start</button>
       <button id="su-back">back</button>
       <button class="mm-sel" data-key="gameMode"></button>
+      <button class="mm-sel" data-key="opening"></button>
       <div id="mm-scenario-list"></div>
       <div id="su-run">
       <div class="mm-group">world</div>
@@ -1771,6 +1795,7 @@
             <div class="vseg vseg-flat"></div>
             <div class="vseg vseg-view"></div>
             <div class="vseg vseg-shade"></div>
+            <div class="vseg vseg-ghost"></div>
             <div class="vseg vseg-water"></div>
           </div>
           <div class="vibe-legend" id="camp-vibe-legend">
@@ -1875,6 +1900,7 @@
       <div class="vseg vseg-flat"></div>
       <div class="vseg vseg-view"></div>
       <div class="vseg vseg-shade"></div>
+      <div class="vseg vseg-ghost"></div>
       <div class="vseg vseg-water"></div>
     </div>
     <div class="vibe-legend" id="cp-vibe-legend" style="display:none;">
@@ -1915,6 +1941,8 @@
 
   <!-- The fade the 30-minute chore and the night happen behind. -->
   <div id="camp-fade"></div>
+  <!-- FEAT-148: midnight, every night. After the fade so it draws on its black. -->
+  <div id="midnight-card" aria-live="polite"><div id="mn-main"></div><div id="mn-sub"></div></div>
 
   <div id="lab-hud"></div>
 

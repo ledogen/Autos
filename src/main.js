@@ -98,10 +98,11 @@ import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, f
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
-import { CampSystem, CAMP_PARAMS, VIBE_W } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
+import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
+import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, RUN_INTRO, DLG, COMPASS } from '../data/dialogue.js'
+import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -132,7 +133,7 @@ import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-s
 import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
-import { siteTargets, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
+import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
@@ -1197,9 +1198,13 @@ let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-c
 let _runEndOpen = false   // FEAT-146: the run's summary card is up — nothing behind it is in play
 let _edgeArmed = false    // FEAT-154: the edge fade is live (a deliberate teleport disarms it, like the wall; read early)
 let _playedS = 0          // FEAT-146: real seconds of a live, unpaused run (the summary's playtime; the save carries it)
+// FEAT-147: a HOLDING card sequence was started (the firing, mom's call, a first-use card). It holds only
+// while a card is actually up, and _renderDialogue clears it once none is — so a sequence that another
+// play() replaced can never leave the sim frozen.
+let _cardHold = false
 // The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
 // FEAT-42: the resume card — the run may have been saved at speed, mid-slide even. FEAT-146: the run's end.
-function _heldPause () { return _resumeHold || _runEndOpen || (_pauseOpen && scenarioSystem.isActive()) }
+function _heldPause () { return _resumeHold || _runEndOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.active) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -1421,6 +1426,9 @@ const SELECTORS = {
   worldPoi:     { name: 'POI spacing',     opts: KNOBS.p.map(v => [v, `${v} %`]) },
   worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
+  // FEAT-147: the firing and the first day. On for a first run; Larry's welcome turns it off
+  // (_checkOpeningEnd), and a returning player can turn it back on here.
+  opening:      { name: 'opening',         opts: [[true, 'play'], [false, 'skip']], show: () => _setupMode === 'story' },
   steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
   // A slider: 0 % linear … 100 % parabolic … 150 % (gamepad.js steerCurve), with a tiny plot of the map.
   // i / 10 so the saved value round-trips to exactly the same notch. Shown only with the assist off —
@@ -3572,11 +3580,11 @@ function _pourStopLeak () {
 const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
-  onChange: () => inventoryScreen.render(),
+  onChange: () => { inventoryScreen.render(); campGear.refresh(inventorySystem.packed()) },   // packing at camp re-dresses it
   onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
-  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
+  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(ITEMS[e.id].hold), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
     spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
     fieldRepair: (e) => { queueMicrotask(() => _pickFieldRepair(e.id)); return false },
     jerry: (e) => { queueMicrotask(() => _pourJerry(e)); return false },
@@ -3657,7 +3665,7 @@ function _renderDialogue () {
   if (!panel) return
   const card = dialogueSystem.current()
   panel.style.display = card ? 'block' : 'none'
-  if (!card) return
+  if (!card) { _cardHold = false; return }
   const sp = document.getElementById('dlg-speaker')
   const tx = document.getElementById('dlg-text')
   const mo = document.getElementById('dlg-more')
@@ -4223,6 +4231,109 @@ function _runIntro () {
   return RUN_INTRO.map(card => ({ ...card, text: card.text.replace('{dir}', COMPASS[Math.round(deg / 45) % 8]) }))
 }
 
+// ── FEAT-147: the opening — the firing, mom's call, the first job, Larry's welcome ─────────────
+// A NEW story run with the setup page's Opening on. The firing is an in-world camera move round the
+// burger joint (the foodVendor POI) with the Story cards over it — no scene art (owner, 2026-11-05) —
+// so the run starts with the truck parked on the joint's lay-by. Mom's call posts the first job (the
+// board's f0 slot); its result card put away, Larry's welcome is RUN_INTRO, and the opening is done.
+//
+// STATELESS ACROSS A RESUME: "this run opened on the firing" is the dialogue seen-key DLG.firing (the
+// save carries the seen set), and the first job's progress is the board's (the save replays it).
+const JOINT_SEAT_M = 2.8   // m — the truck's seat off the pad centre toward the road: the 14 x 8 lay-by's road-side strip
+// The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
+// turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
+// aim point's height over the pad (m).
+const FIRING_CAM = { radius: 16, swing: 0.35, rate: 0.05, lift: 2 }
+let _openingRun = false   // onRegionLive → go-live: this new run plays the opening
+let _firingCam = null     // { p, theta0, t } while the firing's cards are up
+
+/** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
+const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
+
+/** onRegionLive, a new run with the opening on: park the truck on the joint's lay-by — _restoreRun's seat. */
+function _seatAtJoint () {
+  const q = _joint()
+  if (!q) return
+  const prev = _spawnOverride
+  // q.nx/nz points away from the road and q.tx/tz along it (poi.js _evaluate); forward = (−sin h, −cos h).
+  _spawnOverride = { align: true, x: q.x - q.nx * JOINT_SEAT_M, z: q.z - q.nz * JOINT_SEAT_M, heading: Math.atan2(-q.tx, -q.tz) }
+  storySystem.notifyTeleport()
+  void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
+}
+
+/**
+ * Go-live: true when the opening owns the moment (so RUN_INTRO waits for Larry). Plays the firing on
+ * a fresh opening run; on a resumed one it only holds RUN_INTRO back until the welcome.
+ */
+function _playOpening () {
+  if (!_openingRun) return dialogueSystem.has(DLG.firing) && !dialogueSystem.has(DLG.runIntro)
+  _openingRun = false
+  offerBoard?.openFirst(daySystem.clockH())   // posted FIRST: a save made mid-firing still has mom's job
+  const q = _joint()
+  if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
+  _cardHold = true
+  dialogueSystem.play(DLG.firing, FIRING, () => {
+    _firingCam = null
+    setCameraFocus(null)   // the chase spring swings back onto the truck, parked right there
+    _cardHold = true
+    dialogueSystem.play(DLG.momCall, MOM_CALL, _takeFirstJob)
+  })
+  return true
+}
+
+/**
+ * Mom's call ends with her job IN HAND (owner 11-05: "i didnt have a job after the opening"). Taken here
+ * at the joint, away from her house, it is an `approach` like a line taken at the camp: untimed until
+ * you park at hers, guided there by `approachGuide` (planned from the joint).
+ */
+function _takeFirstJob () {
+  const mom = poiSystem.list().find(q => q.type === 'momsHouse'), joint = _joint()
+  const o = mom && offerBoard?.offers(mom.id, daySystem.clockH()).find(x => offerBoard.spec(x)?.first)
+  if (!o) return
+  missionSystem.enterFromPoi(mom, [o], _planOffer)
+  if (missionSystem.state !== 'offer') return
+  _acceptOffer()
+  const j = missionSystem.mission
+  if (j?.approach && joint) {
+    j.approachGuide = missionSystem.planOffer(joint, { rng: offerBoard.routeRng(o), dest: { kind: 'poi', pois: [mom], strict: true, anyLeg: true, nearest: true } })
+  }
+}
+
+/** Per frame, before updateCamera: turn the firing's orbit (camera.js focus seam, as camp and the service screen use). */
+function _updateFiringCam (dt) {
+  if (!_firingCam) return
+  _firingCam.t += dt
+  setCameraFocus(_firingCam.p, { theta: _firingCam.theta0 + FIRING_CAM.rate * _firingCam.t, radius: FIRING_CAM.radius })
+}
+
+// First-use cards (data/dialogue.js TUT), and Larry's welcome through the same door: queued, then
+// played by _pumpTut on the HUD poll once no other card is up, each HOLDING the sim and the clock
+// (_cardHold) — so one may land mid-drive (the rank bar appears near the drop) without the truck
+// running on under it. Only in a run that opened on the firing; each key once per run (the seen-gate).
+const _tutQueue = []
+function _tut (key, cards = TUT[key], done = null) {
+  if (!dialogueSystem.has(DLG.firing) || dialogueSystem.has(key) || _tutQueue.some(t => t.key === key)) return
+  _tutQueue.push({ key, cards, done })
+}
+function _pumpTut () {
+  if (!_tutQueue.length || dialogueSystem.active || _heldPause() || _pauseOpen || storySystem.isEntering()) return
+  const { key, cards, done } = _tutQueue.shift()
+  _cardHold = true
+  dialogueSystem.play(key, cards, done)
+  _renderDialogue()
+}
+
+/** Mom's job is over (any end) and its card put away: Larry's welcome, then the opening is finished for good. */
+function _checkOpeningEnd () {
+  // null = no mom on the roster (never expected — her count is hard): Larry still welcomes you.
+  if (!offerBoard || ['closed', 'live', 'taken'].includes(offerBoard.firstState())) return
+  if (missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
+  _tut(DLG.runIntro, [...LARRY_WELCOME, ..._runIntro()], () => {
+    _settings.opening = false   // the setup page's default flips to skip; the player can turn it back on
+    saveSettings(_settings)
+  })
+}
+
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
 // Larry's route. A SIBLING of missionSystem — the two can never run at once (each one's park
 // trigger and prompt yields to the other's active state), but neither is a mode inside the other.
@@ -4292,8 +4403,12 @@ gpsSystem = new GpsSystem(scene, {
     // start zone exists is that you may be pointing the wrong way and have to decide which.
     // FEAT-102: guideRoute(), not the mission — a fetch is guided one leg at a time.
     // FEAT-103: nor while a line taken at the camp is still on its way to the source — the route
-    // starts THERE; the map's start pin and the source's lit park spot are the waypoint.
-    if (missionSystem?.mission?.approach) return null
+    // starts THERE; the map's start pin and the source's lit park spot are the waypoint. FEAT-147: mom's
+    // first job carries its way to her door (approachGuide, planned at the take; not saved — a resumed
+    // approach has only the pin).
+    if (missionSystem?.mission?.approach) return missionSystem.mission.approachGuide ?? null
+    // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
+    if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
     return (s === 'countdown' || s === 'staging' || s === 'running') ? missionSystem.guideRoute() : null
   },
   getCar: () => vehicleState.position,
@@ -4623,8 +4738,10 @@ function _poiInReach () {
   // jobsOnly (FEAT-60): only a job source answers the park trigger. Without this the roster's
   // other six types would each win the trigger and then have nothing to say — and mom's house,
   // which outranks her own front door in the precedence below, would offer freight instead of bed.
+  // FEAT-147: …except mom's, while her first job is on offer — then her pad answers like a giver's.
   const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
                              POI_PARAMS.poiInteractR, true)
+    ?? (offerBoard?.firstState() === 'live' ? poiSystem.list().find(p => p.type === 'momsHouse') : null)
   return q && _inPoiSpot(q) ? q : null
 }
 
@@ -4739,15 +4856,18 @@ const CAMP_PROMPT_KPH = 20
 //     prompt is up. The ray means the camp no longer lands where the truck is, so without this the
 //     player has no way to read where "make camp" is actually going to put them.
 //   • the CAMPFIRE — ASSET-24, lit by src/campfire.js (flames, coals, embers, a flickering point
-//     light), standing at the pad centre once camp is made. It replaced the blue placeholder cube.
-//     FEAT-66's other slots (shelter / over-fire / shade) are still empty — the default camp is
-//     bedroll + fire, and there is no bedroll model yet.
+//     light), standing at the pad's `fire` slot once camp is made. It replaced the blue placeholder cube.
+//   • the CAMP GEAR — FEAT-66, src/camp-gear.js: whatever is in the equipped pack, each item at its
+//     slot on the pad (the bed and sleeping bag, tent, awning or tarp, cooking kit; the bedroll's and the
+//     blanket's models are still to come — ASSET-78/79).
 // camp.js stays THREE-free (the story-layer isolation rule): it hands out a pad record and main.js
 // is the only place that becomes geometry.
 const _campGroup = new THREE.Group()
 _campGroup.name = 'camp'
 scene.add(_campGroup)
 const campfire = new CampfireFx(_campGroup)
+const campGear = new CampGear(_campGroup)
+window.__campGear = campGear   // dev handle — test/cdp-smoke.mjs dresses a pad and repacks it
 // Unit ring (inner 0.86 / outer 1.0), laid flat and scaled to the live pad half-extent, so the
 // campPadHalfM slider moves it without rebuilding geometry. No depth write: it is a read-out, and
 // it must not z-fight the ground it is describing.
@@ -4769,10 +4889,10 @@ function _updateCampMarker (site) {
 }
 
 /**
- * Camp is established: light the fire on the pad and put the camera on it. The camera seam is
- * camera.js's focus override (setCameraFocus) — the minimal one: it reuses the chase cam's existing
- * drag-orbit angles, so the player can still look around camp, and clearing it hands back to the
- * follow lerp with no snap. Freecam is untouched and still outranks it.
+ * Camp is established: light the fire, set out the packed gear and put the camera on the pad. The
+ * camera seam is camera.js's focus override (setCameraFocus) — the minimal one: it reuses the chase
+ * cam's existing drag-orbit angles, so the player can still look around camp, and clearing it hands
+ * back to the follow lerp with no snap. Freecam is untouched and still outranks it.
  */
 function _enterCampScene (site) {
   const pad = site?.pad
@@ -4780,15 +4900,17 @@ function _enterCampScene (site) {
   // Seat on the REAL ground, not pad.y: the camp bench is carved flat at pad.y − roadClearanceMargin
   // (road.js _poiPadCarve), so pad.y floats 0.25 m. analyticHeight reads the live carve, and
   // setCampPads has already run by the time we get here. pad.y stays as the fallback.
-  const gy = terrainSystem?.analyticHeight(pad.x, pad.z)
-  const y = Number.isFinite(gy) ? gy : pad.y
-  campfire.show(pad.x, y, pad.z)
-  setCameraFocus({ x: pad.x, y: y + 1, z: pad.z })
+  const groundAt = (x, z) => { const gy = terrainSystem?.analyticHeight(x, z); return Number.isFinite(gy) ? gy : pad.y }
+  const fire = slotXZ(pad, 'fire')
+  campfire.show(fire.x, groundAt(fire.x, fire.z), fire.z)
+  campGear.show(pad, inventorySystem.packed(), groundAt)
+  setCameraFocus({ x: pad.x, y: groundAt(pad.x, pad.z) + 1, z: pad.z })
 }
 
-/** Break camp / leave the region: fire out, camera back on the truck. */
+/** Break camp / leave the region: fire out, gear packed away, camera back on the truck. */
 function _exitCampScene () {
   campfire.hide()
+  campGear.hide()
   _campMarker.visible = false
   setCameraFocus(null)
 }
@@ -5208,6 +5330,7 @@ function _updateParkTriggers (zParked = false) {
     if (pump && pulled) {
       fuelStop.open(pump.id, RANGER_PARAMS.fuelPricePerGal, inventorySystem.cans())
       playNozzle()
+      _tut('tut-fuel')   // FEAT-147
     }
     if (poiEl) {
       poiEl.style.display = fuelStop.isOpen ? 'none' : 'block'
@@ -5225,6 +5348,7 @@ function _updateParkTriggers (zParked = false) {
     if (shop && pulled) {
       _servicePoi = shop
       serviceScreen.open(offerBoard?.poiName(shop.id) ?? 'Auto shop')
+      _tut('tut-service')   // FEAT-147
     }
     if (poiEl) {
       poiEl.style.display = serviceScreen.isOpen ? 'none' : 'block'
@@ -5243,7 +5367,7 @@ function _updateParkTriggers (zParked = false) {
     const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
-    else missionSystem.enterFromPoi(poi, offers, _planOffer)
+    else { missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer') }   // FEAT-147
     if (poiEl) poiEl.style.display = 'none'
     if (campRow) campRow.style.display = 'none'
     return
@@ -5358,6 +5482,9 @@ function _renderVibeBar (g, root = document.getElementById('camp-vibe')) {
   seg('.vseg-flat',  g.flatScore)
   seg('.vseg-view',  g.viewScore)
   seg('.vseg-shade', g.shadeScore)
+  // The packed gear's assist: a ghosted tail on the segment it helps, unlabelled (items.md §2b) — the
+  // player reads *the tarp is working tonight* vs *the tarp is dead weight*.
+  seg('.vseg-ghost', vibeAssist(g, inventorySystem.fills()).shade ?? 0)
   seg('.vseg-water', g.waterScore)
 }
 
@@ -5374,13 +5501,37 @@ function _campFade (during) {
     // The fade overlay lets clicks through, so Cancel (or leaving the region) can close the
     // dialogue mid-fade. The deferred action belongs to THAT dialogue: if it is gone, do nothing.
     try { if (_campUi === ui) during() } finally {
-      if (el) setTimeout(() => { el.classList.remove('on'); _campBusy = false }, 120)
+      // FEAT-148: a night that crossed midnight holds the black while the midnight overlay plays on it.
+      const hold = _checkMidnight() ? MIDNIGHT_MS : 0
+      if (el) setTimeout(() => { el.classList.remove('on'); _campBusy = false }, 120 + hold)
       else _campBusy = false
     }
   }
   if (!el) { finish(); return }
   el.classList.add('on')
   setTimeout(finish, 480)   // slightly past the 0.45 s CSS transition
+}
+
+// FEAT-148 (owner, 2026-10-31): THE MIDNIGHT OVERLAY. Every midnight a line falls from the top and settles
+// in the centre: the pressure is rising (data/dialogue.js MIDNIGHT). Over the night road when awake; on
+// the black when slept through (_campFade holds it). It compares the DAY, so every clock path counts — a
+// drive, a pour, roadside work — whoever moved it. Called by the HUD poll and by _campFade.
+const MIDNIGHT_MS = 4000   // the CSS animation's length (index.html #midnight-card)
+let _midnightDay = 0       // the day last seen; 0 = adopt the next one silently (a run start, a resume)
+let _midnightTimer = 0
+/** Play the overlay if the day moved on since the last look; true when it played. */
+function _checkMidnight () {
+  const d = storySystem.isActive() ? daySystem.day() : 0
+  const crossed = _midnightDay > 0 && d > _midnightDay
+  _midnightDay = d
+  const el = document.getElementById('midnight-card')
+  if (!crossed || !el) return false
+  document.getElementById('mn-main').textContent = MIDNIGHT.main
+  document.getElementById('mn-sub').textContent = MIDNIGHT.sub
+  el.classList.remove('on'); void el.offsetWidth; el.classList.add('on')   // the reflow restarts the animation
+  clearTimeout(_midnightTimer)
+  _midnightTimer = setTimeout(() => el.classList.remove('on'), MIDNIGHT_MS)
+  return true
 }
 
 // ── FEAT-154: the road closures and the edge fade ────────────────────────────────────────────────
@@ -5599,7 +5750,7 @@ function _standRow (row) {
 // cancelled, expired) the site goes the moment nothing of it is within offM — never in view.
 const _siteGroup = new THREE.Group()
 scene.add(_siteGroup)
-let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }] } — or null
+let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], next, guide } — or null
 const _siteP = new THREE.Vector3(), _siteQ = new THREE.Quaternion(), _siteY = new THREE.Vector3(0, 1, 0)
 
 /** Stand mission `m`'s targets as models; `smashed` lists the indices already down (a resume). */
@@ -5646,6 +5797,16 @@ function _updateSite () {
       if (t.body != null) { physicsEngine.sleep(t.body); t.mesh.visible = false }
     }
     if (d <= D.offM && (t.body != null || t.mesh.visible)) near = true
+  }
+  if (live) {
+    // Slice 2 (owner, 2026-11-03): the last one down settles the job (mission.js reads `cleared`), and
+    // the GPS goes to the nearest one standing — a new guide object only when that target or its
+    // direction changes, since gps.js re-bakes on identity.
+    const m = _site.mission, standing = _site.targets.flatMap((t, i) => t.smashed ? [] : [i])
+    m.cleared = !standing.length
+    const n = _site.next = nearestTarget(m, p.x, p.z, standing, missionSystem.routeRemaining())
+    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: guideTo(m, m.targets[n.i].u, n.back) }
+    else if (!n) _site.guide = null
   }
   if (!live && !near) _clearSite()
 }
@@ -5720,8 +5881,10 @@ function _makeCamp () {
   })
 }
 
+/** A graded site's vibe with the packed gear's assist on top (camp.js vibeAssist — the chosen site only). */
+const _siteVibe = (site) => site.vibe + Object.values(vibeAssist(site, inventorySystem.fills())).reduce((a, b) => a + b, 0)
 /** What a night here is worth, as day.js reads it: the site's vibe, mom's fixed 0.5, or 'truck'. */
-const _campVibe = (st) => st?.truck ? 'truck' : st?.moms ? 0.5 : (st?.site?.vibe ?? 0.5)
+const _campVibe = (st) => st?.truck ? 'truck' : st?.moms ? 0.5 : st?.site ? _siteVibe(st.site) : 0.5
 /** The packed sleeping gear's recovery bonus — at a camp only: the cab and mom's bed are their own. */
 const _campRest = (st) => st?.truck || st?.moms ? 0 : inventorySystem.restBonus()
 /** The face the sleep timer returns to. */
@@ -5844,7 +6007,7 @@ function _renderCampUI () {
   const isSleep = st.mode === 'sleep'
   const isConfirm = st.mode === 'confirm'
   const isHome = st.mode === 'camp' || st.mode === 'moms' || st.mode === 'truck'
-  const vibe = st.moms ? 0.5 : (st.site?.vibe ?? 0)
+  const vibe = st.moms ? 0.5 : st.site ? _siteVibe(st.site) : 0
 
   set('cp-title', st.moms ? "mom's house" : st.truck ? 'sleep in the truck' : 'camp')
   show('cp-make',   isConfirm)
@@ -5977,15 +6140,15 @@ document.getElementById('mp-count')?.addEventListener('input', () => _renderMiss
 
 /**
  * FEAT-67: the head of a parked offer panel — the giver's portrait beside their line of dialogue.
- * Both are PLACEHOLDERS (owner, 2026-09-28): the portrait is the same flat silhouette the map card
- * draws, and a missing line shows a bracketed marker so an unwritten one is obvious in play.
+ * The portrait is a PLACEHOLDER (owner, 2026-09-28: the map card's flat silhouette). No line, no quote —
+ * the alpha shows no bracketed stub (FEAT-148); the portrait slot stays.
  * `flavorHtml` is trusted markup (authored constants or the escaped card flavor), never player input.
  */
 function _panelHead (flavorHtml) {
   return '<div class="mp-head">'
     + '<div class="mp-portrait" title="portrait (placeholder)"><svg viewBox="0 0 36 36" aria-hidden="true">'
     + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div>'
-    + `<div class="mp-flavor">${flavorHtml ?? '&ldquo;<span class="mp-dim">[flavor line]</span>&rdquo;'}</div>`
+    + (flavorHtml ? `<div class="mp-flavor">${flavorHtml}</div>` : '')
     + '</div>'
 }
 
@@ -6243,7 +6406,9 @@ function _renderMissionUI () {
       // R-23: unless the job has just turned — then the bad news takes the line (_jobBeat).
       const beat = _jobBeat(m)
       hud.classList.toggle('mh-bad', !!beat)
-      hudText.textContent = beat ?? `${km(m.routeRemaining())} to go`
+      // FEAT-65 slice 2: a demolition job's end is no goal — the HUD counts to its next target instead.
+      const next = _site?.mission === m.mission ? _site.next : null
+      hudText.textContent = beat ?? (next ? `${km(next.dist)} to the next target` : `${km(m.routeRemaining())} to go`)
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
           : `   · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
         + _dueSuffix()
@@ -6517,7 +6682,10 @@ function _renderRunHud () {
   const s = economySystem.snapshot()
   // FEAT-103: the camp's gate. Every deed source settles through the wallet, and this poll reads it,
   // so this is the one place the requisition opens (openLines is idempotent).
-  if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds) offerBoard.openLines(daySystem.clockH())
+  if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
+  _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
+  _pumpTut()           // …and any first-use card waiting its turn
+  _checkMidnight()     // FEAT-148: the midnight overlay
   const req = offerBoard?.lines() ?? []
   // FEAT-146: the win — every line delivered, and the last one's result card put away.
   if (req.length && req.every(l => l.state === 'done') && !missionSystem?.isActive()) _endRun('win')
@@ -6589,9 +6757,11 @@ function _updateEnergyMeter () {
   _emEls.strip.style.transform =
     `translateX(${EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H}px)`
   const st = daySystem.stage()
-  if (st !== _emStage) {
-    _emStage = st
-    _emEls.stage.textContent = st
+  const label = daySystem.hungry() ? `${st} · hungry` : st   // FEAT-169: words, never a gauge (SM-INV-10)
+  if (label !== _emStage) {
+    _emStage = label
+    if (st === 'sleepy') _tut('tut-sleep')   // FEAT-147
+    _emEls.stage.textContent = label
     _emEls.stage.style.color = STAGE_COLOR[st]
   }
 }
@@ -6857,6 +7027,7 @@ function _updateRankTimer () {
   const shown = src.near != null ? src.near : f.shown
   if (shown !== _rtShown) {
     _rtShown = shown
+    if (shown) _tut('tut-rank')   // FEAT-147: the first time the bar appears
     E.root.style.display = shown ? 'block' : 'none'
     E.root.classList.toggle('rt-in', shown)
     if (shown) startRankMusic()   // FEAT-131 P3: the bed starts with the bar (owner, 2026-11-03)
@@ -6961,13 +7132,14 @@ for (const id of ['mp-note', 'mp-driver']) {
 }
 
 // Buttons. Same null-guarded module-eval wiring as every other control in this file (WR-04).
-document.getElementById('mp-accept')?.addEventListener('click', () => {
+document.getElementById('mp-accept')?.addEventListener('click', () => _acceptOffer())
+function _acceptOffer () {
   // On the result card this button is CONTINUE: put the finished run down and carry on driving in
   // story mode. It no longer auto-rolls the next job — with POIs as the job source, the next one is
   // something you go and find, not something handed to you at the drop point.
   if (missionSystem.state === 'done') {
-    // The dinner invitation, taken: 30 min at their table. Being fed waits on hunger (items.md §1d).
-    if (missionSystem.result?.award?.stowed === 'dinner') daySystem.advanceMinutes(30)
+    // The dinner invitation, taken: 30 min at their table, then fed like a standard meal (FEAT-169).
+    if (missionSystem.result?.award?.stowed === 'dinner') { daySystem.advanceMinutes(30); daySystem.eat(DAY_PARAMS.mealHoldH) }
     missionSystem.exit(); return
   }
   // FEAT-67: take the offer OFF THE BOARD first, re-checking it is still live — a food offer lives
@@ -6987,7 +7159,8 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
     pm.stockCost = pick.cost
   }
   // FEAT-103: a requisition line taken AWAY from its source (at the camp) is untimed until you park there.
-  if (missionSystem.mission?.line && missionSystem.startZoneExitDist() <= 0) missionSystem.mission.approach = true
+  // FEAT-147: so is mom's first job, taken at the joint as her call ends (_takeFirstJob).
+  if ((missionSystem.mission?.line || offerBoard?.spec(o)?.first) && missionSystem.startZoneExitDist() <= 0) missionSystem.mission.approach = true
   missionSystem.accept()
   // §5b: the stock is bought at accept and never refunded — an expired or abandoned haul keeps it.
   if (pick && missionSystem.isOnJob()) economySystem.spend(pick.cost)
@@ -6997,7 +7170,7 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   if (j?.load && !j.approach && missionSystem.isOnJob()) void _loadFreight(j.load, j.cargoKg, j)
   if (j?.loose && missionSystem.isOnJob()) _loadLoose(j.loose.kind, j.loose.massKg, j)
   if (j?.targets && missionSystem.isOnJob()) _placeSite(j)   // FEAT-65: the site stands from accept
-})
+}
 document.getElementById('mp-prev')?.addEventListener('click', () => missionSystem.cycle(-1))
 document.getElementById('mp-next')?.addEventListener('click', () => missionSystem.cycle(+1))
 
@@ -7887,7 +8060,7 @@ const storySystem = new StorySystem({
   setQuickJobVisible: (visible) => {
     _quickJobWanted = visible
     _syncQuickJob()
-    if (visible) { dialogueSystem.play(DLG.runIntro, _runIntro()); _renderDialogue() }
+    if (visible) { if (!_playOpening()) dialogueSystem.play(DLG.runIntro, _runIntro()); _renderDialogue() }   // FEAT-147
     if (visible && _resumeHold) document.getElementById('resume-card').style.display = 'flex'   // FEAT-42 (see _restoreRun)
   },
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
@@ -7959,6 +8132,7 @@ const storySystem = new StorySystem({
   onRegionLive: (center, radius) => {
     if (!center) return
     daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
+    _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
     inventorySystem.start()          // FEAT-122: items die with the run (SM-INV-8/9)
@@ -7996,6 +8170,8 @@ const storySystem = new StorySystem({
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
     campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
+    // FEAT-164: then zones until no road the planners use is more than campReachM from one.
+    campSystem.fillReach(mainNodes, p => Math.hypot(p.x - center.x, p.z - center.z) <= radius - REGION_MARGIN)
     _rebuildPoiMarkers()
     _placeBarricades()   // FEAT-154: the road closures
     // Only the chunks a pad reaches: pads are the one carve input that changed here. Pads never bump
@@ -8021,7 +8197,10 @@ const storySystem = new StorySystem({
     }
     // FEAT-42: a resume writes the save over the fresh run built above — still behind the loading
     // screen, before the handoff plays the run intro.
+    // FEAT-147: a NEW run with the opening on starts parked at the burger joint instead.
+    _openingRun = !_pendingResume && _settings.opening
     if (_pendingResume) { _restoreRun(_pendingResume); _pendingResume = null }
+    else if (_openingRun) _seatAtJoint()
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
@@ -8038,6 +8217,10 @@ const storySystem = new StorySystem({
     _setRunHudVisible(false)
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
+    if (_firingCam) setCameraFocus(null)   // FEAT-147: a run left mid-firing hands the camera back…
+    _firingCam = null
+    _openingRun = false
+    _tutQueue.length = 0                // …and no first-use card waits for a run that is gone
     paperRouteSystem.abort()            // …and an unfinished route is dropped, never settled
     _renderPaperUI()
     _clearThrownRolls()                 // …and no papers from a story run lying about in free roam
@@ -8497,6 +8680,8 @@ window.__paper = { system: paperRouteSystem, runPaper }
 window.__cargo = () => ({ board: offerBoard, freight: _freight && { key: _freight.key, health: _freight.health?.health ?? null },
                           loose: !!_loose, haul: _haul?.handles.length ?? 0,
                           site: _site && _site.targets.map(t => ({ x: t.pos.x, z: t.pos.z, body: t.body, smashed: t.smashed })) })   // FEAT-65
+// dev handle — test/cdp-smoke.mjs fells a demolition site's targets and reads the GPS's pick (FEAT-65 slice 2)
+window.__site = () => _site && { ..._site, gps: gpsSystem._src }
 
 /** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
 function _discardRunSave () {
@@ -8636,6 +8821,7 @@ function _restoreRun (s) {
   _restoring = true
   _resumeHold = true
   daySystem.restore(s.day)
+  _midnightDay = 0   // FEAT-148: the restored day is no midnight crossed
   Object.assign(runEconomy, s.economy)
   _playedS = s.playedS ?? 0
   inventorySystem.restore(s.inventory)
@@ -9708,6 +9894,7 @@ function loop () {
     updateSlipVectors(vehicleState)
   }
 
+  _updateFiringCam(frameTime)   // FEAT-147: the firing's orbit of the burger joint
   updateCamera(camera, vehicleState, frameTime)
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
   debrisSystem.update(_renderAlpha)   // FEAT-36: engine → debris meshes, at the truck's render alpha

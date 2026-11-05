@@ -36,8 +36,28 @@ Spoilage (items.md §1b) is not part of this. It is its own ticket when bought f
 
 ## Acceptance
 
-- [ ] A headless check: unfed past the hold, a waking day is measurably shorter (report the hours lost
-      at ×1.25 → ×1.5); fed on schedule, it matches today's.
-- [ ] Eating a chili dog and staying for dinner each reset the clock with their own hold.
-- [ ] The energy meter says "hungry" past the hold; there is no new gauge.
+- [x] A headless check: unfed past the hold, a waking day is measurably shorter (report the hours lost
+      at ×1.25 → ×1.5); fed on schedule, it matches today's. **day-clock §10: fed 16.00 h, unfed 13.67 h —
+      2.33 h lost.**
+- [x] Eating a chili dog and staying for dinner each reset the clock with their own hold.
+- [x] The energy meter says "hungry" past the hold; there is no new gauge.
 - [ ] The owner plays a day without eating and feels the day get shorter.
+
+## Built — 2026-11-05 (feature/run-shape, Lane A; 44badad6, cc081dee)
+
+- `src/day.js`: `DAY_PARAMS.hungryRate 1.25 / starvingRate 1.5 / hungryRampH 4 [DEFAULT] / mealHoldH 8`;
+  `eat(holdH)`, `hungry()`, and the drain's hunger share `_hungerCost(h0, h1)` — closed form (flat, a linear
+  ramp, flat), so `advanceMinutes` charges a skip exactly what living it costs. Saved as `fedUntilH`; a save
+  from before hunger restores fed. Debug folder: the four sliders + "eat a standard meal".
+- **A meal never shortens a running hold** `[DEFAULT]` (a snack after a burger does not make you hungrier).
+- **A run starts on a standard meal; bedtime counts as one** `[DEFAULT]`, the ticket's item 6: an 8 h night
+  wakes right at the edge of hungry, so breakfast matters. A camp meal (cooking kit, fish) making waking a
+  fresh meal waits for those meals to exist.
+- Foods today: the chili dog (`use: 'eat'`, `hold: 10`, eaten from the inventory or a quick slot) and the
+  dinner invitation (30 min at the table, then fed like a standard meal, `mealHoldH`). The others get a `hold`
+  when they become items.
+- Energy meter: "Energy · rested · hungry" (the stage's colour; SM-INV-10, no gauge).
+- Gates: day-clock §10 (sections 1–9 now pin the FED driver's arithmetic, rates set to 1 there); cdp-smoke's
+  `opening` step: past the first meal the meter says hungry, a chili dog clears it.
+
+**Owed by the owner:** the play-test (a day without eating feels shorter); the three `[DEFAULT]`s above.

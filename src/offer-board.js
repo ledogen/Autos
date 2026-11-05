@@ -40,7 +40,7 @@
 import {
     THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
-    REWARD_VALUE, REQUISITION, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP,
+    REWARD_VALUE, REQUISITION, FIRST_JOB, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP, GIVER_LINES, GIVER_LINE_P,
 } from '../data/offers.js'
 import { PARTS } from '../data/parts.js'
 import { ITEM_PRICE } from '../data/shop-stock.js'
@@ -70,6 +70,21 @@ const FIXED_NAMES = {
 }
 
 const rngFor = (key) => mulberry32(djb2(key))
+
+/**
+ * FEAT-148: the giver's line for an offer, or null (no line written yet — the panel then shows no quote).
+ * The second line (keyed on the thing) comes GIVER_LINE_P of the time; the first comes GIVER_LINE_P of the
+ * time too, and always when the second did not. From the offer's OWN stream, so a revisit says the same
+ * thing and no spec draw moves.
+ */
+export function giverLine (offerId, thingId) {
+    const r = rngFor(`line:${offerId}`)
+    const pick = (a) => a[Math.floor(r() * a.length)]
+    const seconds = GIVER_LINES.byThing[thingId] ?? []
+    const second = seconds.length && r() < GIVER_LINE_P ? pick(seconds) : null
+    const first = GIVER_LINES.first.length && (r() < GIVER_LINE_P || !second) ? pick(GIVER_LINES.first) : null
+    return [first, second].filter(Boolean).join(' ') || null
+}
 
 /** Can a `type` post this thing — as its courier giver (`pools`) or as a fetcher (`fetchBy`)? */
 const postsThing = (t, type) => t.pools.includes(type) || !!t.fetchBy?.includes(type)
@@ -281,7 +296,42 @@ export class OfferBoard {
             return src && { poiId: src.id, type: src.type, slot: `r${i}`, k: 0, line, offer: null, state: 'closed', until: 0 }
         }).filter(Boolean)
         this._slots.push(...this._lines)
+        // FEAT-147: THE FIRST JOB — a fourth slot kind, one `f0` at mom's (data/offers.js FIRST_JOB).
+        // 'closed' until the opening calls openFirst(); then 'live' with no expiry, 'taken', and 'done'
+        // for good on ANY end. Outside _slots altogether (_at and clearRoutes add it), so advance(), the
+        // board census and every "always-on + budget" count stay exactly as they were.
+        const mom = (pois || []).find(q => q.type === 'momsHouse')
+        this._first = mom ? { poiId: mom.id, type: mom.type, slot: 'f0', k: 0, first: true, offer: null, state: 'closed', until: 0 } : null
     }
+
+    /**
+     * FEAT-147: post the first job at mom's. Idempotent (true only when it posted), like openLines. Its
+     * spec is FIXED but shaped like any rolled courier spec — no `line` — so the card, pay, deadline,
+     * settle and deed are the ordinary ones: the owner's "same rules" principle (2026-11-02).
+     */
+    openFirst (nowH) {
+        const s = this._first
+        if (s?.state !== 'closed') return false
+        const t = FIRST_JOB
+        s.state = 'live'
+        s.offer = {
+            id: `${s.poiId}#${s.slot}#0`, poiId: s.poiId, type: s.type, slot: s.slot, k: 0,
+            bornH: nowH, lifeH: Infinity, expiresH: Infinity, route: undefined,
+            _spec: {
+                first: true, family: t.family, thingId: t.id, phrase: t.phrase, person: t.person, bonus: null,
+                traits: [], traitNames: [], tipMult: 1, thresholdScale: 1, deeds: null,
+                shape: 'courier', from: null, stops: null, multiPhrase: null,
+                massKg: t.massKg, stock: null, payMult: 1,
+                destKind: 'poi', targets: null, destPick: 0, placeName: null, to: t.to, passenger: false,
+                load: null, loose: null, atPickup: null, fragile: null,
+                deadlineSlack: DEADLINE_SLACK[t.family],
+            },
+        }
+        return true
+    }
+
+    /** FEAT-147: the first job's state — 'closed' | 'live' | 'taken' | 'done' — or null with no mom on the roster. */
+    firstState () { return this._first?.state ?? null }
 
     /**
      * FEAT-103: open the requisition — main.js calls it once the run holds ECONOMY_PARAMS.campDeeds
@@ -425,6 +475,7 @@ export class OfferBoard {
      */
     clearRoutes () {
         for (const s of this._slots) if (s.offer) s.offer.route = undefined
+        if (this._first?.offer) this._first.offer.route = undefined
     }
 
     // ── queries ────────────────────────────────────────────────────────────────────────────────
@@ -436,7 +487,11 @@ export class OfferBoard {
     isGiver (poiId) { return this._givers.includes(poiId) || (poiId != null && poiId === this._campId) }
 
     /** Every slot currently at this POI: its own slots, then any budget slots parked there. */
-    _at (poiId) { return this._slots.filter(s => s.poiId === poiId || (s.line && poiId === this._campId)) }
+    _at (poiId) {
+        const at = this._slots.filter(s => s.poiId === poiId || (s.line && poiId === this._campId))
+        if (this._first?.poiId === poiId) at.push(this._first)   // FEAT-147: mom's first job
+        return at
+    }
 
     /** The live offers at a POI, in slot order. Taken and locked slots show nothing. */
     offers (poiId, nowH) {
@@ -519,6 +574,7 @@ export class OfferBoard {
         const s = this._takenSlot(offerId)
         if (!s) return false
         if (s.line) { s.state = lineTo; s.offer.route = undefined }
+        else if (s.first) s.state = 'done'   // FEAT-147: posted once; mom has no SOURCES row to lock against
         else this._lockAt(s, this._now)
         return true
     }
@@ -533,6 +589,7 @@ export class OfferBoard {
         const [poiId, slot] = offerId.split('#')
         if (slot?.[0] === 'b') return this._budget[Number(slot.slice(1))] ?? null
         if (slot?.[0] === 'r') return this._lines.find(s => s.slot === slot && s.poiId === poiId) ?? null
+        if (slot?.[0] === 'f') return this._first?.poiId === poiId ? this._first : null
         return this._always.get(poiId)?.[Number(slot)] ?? null
     }
 
@@ -726,7 +783,7 @@ export class OfferBoard {
     planDistinct (offer, planOne) {
         if (offer.route !== undefined) return offer.route
         if (!this.spec(offer)) return (offer.route = null)
-        if (offer._spec.line) {   // FEAT-103: fixed — nothing to re-roll
+        if (offer._spec.line || offer._spec.first) {   // FEAT-103 / FEAT-147: fixed — nothing to re-roll
             offer.planned = { n: 0, exclude: [], placeName: null }
             return (offer.route = planOne(offer, new Set()))
         }
@@ -825,7 +882,8 @@ export class OfferBoard {
             && (!want || want.some(t => q.tags?.includes(t)))
         // A `to` that names 'roadside' is not strict: no POI in reach drops it at a roadside spot.
         const strict = !!want && !want.includes('roadside')
-        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict, fetch: sp.shape === 'fetch', stops: sp.stops }
+        // FEAT-147: mom's and Larry's are both near the spawn, inside POI_LEG_MIN — the first job plans at any length.
+        return { kind: 'poi', pick: sp.destPick, pois: pois.filter(fits), strict, fetch: sp.shape === 'fetch', stops: sp.stops, anyLeg: !!sp.first }
     }
 
     /** A seeded stream for the mission planner's own rolls on this offer (route determinism). */
@@ -966,7 +1024,7 @@ export class OfferBoard {
             if (sizes.length) sentence.push({ t: ' to ' }, { t: `${sizes.length > 1 ? sizes.slice(0, -1).join(', ') + ' or ' + sizes.at(-1) : sizes[0]} customers`, b: true })
             sentence.push({ t: '.' })
         } else {
-            if (n?.name) sentence.push({ t: ` at ${n.name}` })
+            if (n?.name && !sp.first) sentence.push({ t: ` at ${n.name}` })   // FEAT-147: "Mom needs…", not "Mom at Mom's"
             const dest = route?.endPoiId ? this.placeLabel(route.endPoiId) : (route?.placeName ?? sp.placeName)
             if (sp.stock) {
                 sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true },
@@ -1037,10 +1095,8 @@ export class OfferBoard {
             // The giver's portrait. PLACEHOLDER art today; `sex` is the field that will pick the
             // portrait pool (ruled 2026-09-26: sex is rolled first so name and picture agree).
             portrait: sp.person ? { sex: sp.person.sex, name: sp.person.first } : null,
-            // The giver's short line of dialogue on the parked panel. OWNER-AUTHORED and not written
-            // yet (2026-09-28) — null means the panel shows its placeholder. When the lines exist
-            // they belong in a data table (data/offers.js), picked here from the offer's spec stream.
-            flavor: null,
+            // FEAT-148: the giver's line on the parked panel (data/offers.js GIVER_LINES), or null — no quote.
+            flavor: giverLine(offer.id, sp.thingId),
             sentence,
             pay,
             terms,
