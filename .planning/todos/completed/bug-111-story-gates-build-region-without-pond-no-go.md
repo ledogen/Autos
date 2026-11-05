@@ -1,7 +1,7 @@
 ---
 id: BUG-111
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-05
 source: Spare, found while fixing BUG-110 (feature/spare a2c5173c)
@@ -40,3 +40,9 @@ camp-edge-census, and camp-reach (new from Lane A, same pattern). Before/after r
   A scan of seeds 2–8 with the no-go (`wip/bug-111/demo-scan.mjs`): 4 → 2, 5 → 1, 8 → 2, the rest 0. The gate's
   seeds are now ['8', '6'] (seed 1 only repeated the camp line seed 6 already covers). Green, 2 offers.
 - **camp-edge-census** — a JSON census, not a gate; its rows move with the roads, as they should.
+
+## Resolution (2026-11-05) — CLOSED
+
+Landed on main bdf2ff5e: every story gate's region network (world-determinism, region-pieces, expedition-camp,
+demolition-site, camp-edge-census, camp-reach) is built with the game's pond no-go through one helper; the moved
+pins are listed above (demolition-site now samples seed 8). Suite on main 125/125.
