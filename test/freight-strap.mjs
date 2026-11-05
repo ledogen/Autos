@@ -22,7 +22,7 @@ import { stepPhysics, createVehicleChassis } from '../src/physics.js'
 import { makeVehicleState } from '../src/vehicle-state.js'
 import { computeStaticEquilibrium } from '../src/suspension.js'
 import { RUNNING } from '../src/ignition.js'
-import { strapPose } from '../src/debris.js'
+import { strapPose, DebrisSystem } from '../src/debris.js'
 import { splitPayout, rankTable } from '../src/economy.js'
 import { amountGrade } from '../src/par.js'
 import { FREIGHT_TIP_MULT } from '../data/offers.js'
@@ -145,6 +145,36 @@ for (let i = 0; i < 300; i++) {
 ok(finite, 'no NaN over 5 s of rough road')
 ok(drift < 0.005, `400 kg welded drifts ${(drift * 1000).toFixed(2)} mm in the bed over a rough road at 15 m/s (< 5)`)
 tr.engine.dispose()
+
+// 6. BUG-101: drawn WITH the truck when a frame carries several steps (a loaded machine). main.js snapshots the
+// truck's render pose (_prevRenderPos) and the debris' (DebrisSystem.beforeStep) on EVERY step, just before
+// stepPhysics, and draws both at the same alpha (debrisSystem.update(_renderAlpha)). A snapshot taken once per
+// frame instead would draw the load (k − 1) steps behind the bed. The truck side is main.js's formula, restated.
+const td = await truck(true), d = addLoad(td)
+td.engine.createWeldJoint(td.chassis, d.b, d.p)
+td.vs.velocity.set(0, 0, -15)
+td.vs.wheelOmega = [0, 1, 2, 3].map(() => 15 / td.P.wheelRadius)
+const rec = { body: d.b, mesh: new THREE.Object3D(), prevP: new THREE.Vector3(), prevQ: new THREE.Quaternion(), cargo: false }
+const deb = { _eng: td.engine, _live: [rec] }
+const tPrev = new THREE.Vector3(), tPrevQ = new THREE.Quaternion(), tDrawn = new THREE.Vector3(), tDrawnQ = new THREE.Quaternion()
+let lagMax = 0, onceMax = 0
+for (let f = 0; f < 120; f++) {
+  const k = 1 + (f % 4), alpha = [0, 0.3, 0.7, 0.99][Math.floor(f / 4) % 4]   // every k meets every alpha
+  const frameStart = td.vs.position.clone()
+  for (let s = 0; s < k; s++) {
+    td.vs.throttle = 0.35
+    tPrev.copy(td.vs.position); tPrevQ.copy(td.vs.quaternion)
+    DebrisSystem.prototype.beforeStep.call(deb, td.chassis, BED)
+    td.step()
+  }
+  tDrawn.copy(tPrev).lerp(td.vs.position, alpha); tDrawnQ.copy(tPrevQ).slerp(td.vs.quaternion, alpha)
+  DebrisSystem.prototype.update.call(deb, alpha)
+  rel.copy(rec.mesh.position).sub(tDrawn).applyQuaternion(qi.copy(tDrawnQ).invert())
+  lagMax = Math.max(lagMax, rel.distanceTo(LOCAL))
+  if (k === 4) onceMax = Math.max(onceMax, tDrawn.distanceTo(frameStart.lerp(td.vs.position, alpha)))   // what a per-frame snapshot would be off by
+}
+ok(lagMax < 0.008, `drawn load sits in the drawn bed at 1–4 steps a frame, 15 m/s: ${(lagMax * 1000).toFixed(2)} mm off its strap pose (< 8; a once-a-frame snapshot would be ${onceMax.toFixed(2)} m behind)`)
+td.engine.dispose()
 
 console.log(fail ? '\nFREIGHT-STRAP: FAILED' : '\nFREIGHT-STRAP: all checks passed')
 process.exit(fail)
