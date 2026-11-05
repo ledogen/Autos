@@ -750,6 +750,28 @@ export const PROP_MODELS = {
     park: { x: 0, z: -6.975, halfX: 6.75, halfZ: 2.475 },
   },
 
+  // ASSET-80 — the BURGER JOINT, 1190 tris, 8 materials, no images. The foodVendor POI, where the
+  // player is fired (FEAT-147, opening.md § The firing): a walk-up stand, not a chain. A cream box under
+  // a red fascia, an open service window beneath a striped awning, a backlit menu, and a round rooftop
+  // sign carrying the burger as geometry — NO name on it (the name rolls per seed). Window, menu and
+  // sign face -Z (the road); the 7.0 x 3.4 m walls lie along the lay-by, no yawOffset.
+  // Built by assets/models/src/burger-joint.py, which prints the box and the pad-frame check below.
+  //
+  // BurgerLight (menu face, awning tube, hood light) is the first shipped EMISSIVE material: the glow
+  // is baked in (emissiveFactor), unlike the gas station's unlit night hooks.
+  //
+  // On a 14 x 8 LAY-BY. seat 1.95: the back fascia stands 0.30 m inside the pad's back edge (the
+  // downspout shoes 0.23 m), and the awning, the part nearest the road, ends at pad z -0.70 — 1.20 m
+  // clear of the strip the opening parks the truck in (main.js JOINT_SEAT_M: z -3.7..-1.9, x ±2.6).
+  //
+  // ONE box, the walls to the parapet. The awning is drive-under (valance 2.0 m up); the counter
+  // ledge (0.38 m out at 1.0 m), the sign and the roof gear are left soft.
+  burgerJoint: {
+    url: 'assets/models/burger-joint.glb',
+    collision: { shape: 'box', size: [7.1, 3.2, 3.5] },
+    seat: 1.95,
+  },
+
   // ASSET-13 — the GAS STATION, 1482 tris, 7 materials, one 1024x512 atlas (FOOD MART, GAS x3, ICE,
   // PROPANE, the pump register face). The station IS the convenience store (FEAT-123, owner 2026-10-16).
   // Layout by the owner (2026-10-19): the store at the back, ONE island right in front of its doors with
