@@ -157,3 +157,57 @@ it bites.
 Option A (our own tire-cylinder solve), **3 lines** across the width (both edges and the centre), the radial
 normal at the edges confirmed (a kerb now slows a wheel that hits it). Lane B builds (moved from Spare 11-04); physics identity is
 expected to change — `fingerprint-physics.mjs` diff explained in the ticket, PERF-24's memo-cell check re-run.
+
+## Built — 2026-11-05 (Lane B, feature/machine c9d8fe20 · 67ba62a1 · c24bbbfc)
+
+**What.** `src/tire-contact.js` (pure) replaces the 4-ring × 8-direction stencil in main.js
+`queryContacts`.
+- **Lines.** For three lines across the tread (both edges and the centre) it follows the surface along
+  the rolling direction under the hub.
+- **Search per line.** 9 coarse samples over [−r, r] (one exactly under the hub, so flat ground is
+  exact). Then a golden-section refinement in the bracket of EVERY coarse local minimum.
+- **Contact.** The surface point closest to the axle line wins: depth = r − its distance, point = that
+  point.
+- **Normal.** The surface normal with its in-plane part turned to the radial line point → axle, keeping
+  its tilt along the axle. So a kerb pushes back, and a cross-slope still pushes downhill.
+- **Buried hub** (centre below ground): the old half-space depth h + r − cy, unbounded. physics.js's
+  tunnelling failsafe keys on it.
+- **Axle.** physics.js Step 1 computes each wheel's spin axle (body right, steered by steer + toe;
+  camber left out) and passes it as `queryContacts`' 6th argument. qcPlus hands the same axle to every
+  substep. `wheelFootprint` off → one probe under the hub.
+
+**Measured.**
+
+| | new solve | stencil |
+|---|---|---|
+| synthetic kerbs (15 cm square / chamfered / 30°, 30 cm): hub rest height vs a dense exact cylinder | within 1.1 mm, no seams | 74 mm one-step jumps |
+| a kerb 15 or 25 cm beside the tire | lifts 0 mm | 76 mm |
+| real roads (`wip/feat-70/real.mjs`, 60 road-crossing lines, 12k positions): rest height vs exact | p50 0.00 · p99 2.0 · max 9.9 mm | p50 9.3 · p99 66 · max 485 mm (Spare) |
+| cost, parked truck's 4 wheels on a junction pad (PERF-25's seed-6 point, `wip/feat-70/perf.mjs`) | 397 µs a frame | 208 µs |
+| same, off-pad | 141 µs | 77 µs |
+
+- **PERF-24.** Repeat queries at one spot still share carveHint's 0.05 m cells, so the near-stationary
+  case stays memo-bounded at about 1.9× its old cost.
+- **13 + 12 samples** per line was no more accurate on real roads than 9 + 10.
+- **Fingerprint unchanged:** `fingerprint-physics.mjs` uses its own single-probe ground query, which
+  never calls `queryContacts`. FEAT-70 changes only the in-game query (main.js). So the in-game
+  evidence is cdp-smoke and the collision-drop lab, owed below.
+
+**Fragile — don't undo:**
+1. **Refine every local minimum, not only the best coarse one.** An edge's basin can be narrower than
+   the 9 cm spacing; a 15 cm kerb 28 cm ahead read 20 mm low that way.
+2. **The bracketing-triple golden search.** With the two-interior-point form, both probes can land on
+   the high side of a step face and walk away from an edge at the bracket's end (a 30 cm step read
+   45 mm low).
+3. **Keep the surface normal's tilt along the axle.** A purely radial normal has none, so a truck on a
+   cross-slope would stop sliding downhill.
+4. **The buried-hub half-space depth.** The tunnelling failsafe needs a depth that grows without bound.
+
+**Owed before landing (after the compute hold):**
+- the affected gates;
+- cdp-smoke;
+- `node test/collision-drop-lab.mjs 8000 9431` (main) against `… 3282 9432` (branch): the DROP numbers
+  (tire compression, bump-stop force, rim load at each height) stay in family. A real change means the
+  contact depth moved: understand it, don't absorb it. The COLLISION half is chassis contact, so it
+  should match;
+- a drive onto a kerb and over rough ground on :3282.

@@ -163,6 +163,8 @@ export const GATES = [
     desc: 'FEAT-138: the hi-lift jack (src/hilift.js) on the real stepPhysics, flat ground — a truck on its side heaved toward upright comes back onto its wheels, cut at the balance point inside the 3 s cap; the 5 s cooldown, a truck on its wheels and an ended run all refuse; from the roof it is on its wheels within two presses' },
   { file: 'abs-stop.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'ABS (src/abs.js): 25 m/s full-pedal stops off/on at μ 0.8/0.35 — no lock above cut-out, 3–15 Hz front cycling, ≤ 1.2× locked distance, steers where locked fronts plough' },
+  { file: 'tire-contact.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'FEAT-70 tire cylinder contact (src/tire-contact.js): rolling onto 15/30 cm kerbs (square, chamfered, at 30°) the hub rest height climbs within 2 mm of a dense exact cylinder with no seam jumps; a kerb beside the tire (outside its width) lifts nothing; flat ground exact; a cross-slope keeps its tilted normal; a kerb edge pushes back radially; a buried hub reads the unbounded half-space depth' },
   { file: 'diff-clutch.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-166 clutch-type LSD: on split grip (0.35) floored to 10 m/s, new packs sit between the open diff and the helical LSD, worn-out packs ARE the open diff step for step, the packs wear exactly ∫ clutch-slip heat / durDiffClutch off the diff track, no other diff writes the slip field, the shop rebuilds only the clutch type and straight to 100%' },
   { file: 'traction.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],

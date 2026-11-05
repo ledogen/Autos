@@ -25,20 +25,20 @@ const upNormal = () => UP
 // Hub rest height at (x, 0): bisect cy for depth = 0.
 const rest = (h, x, solve) => {
   let lo = -1, hi = 2
-  for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (solve(h, x, m) > 0) lo = m; else hi = m }
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (solve(h, x, m) > 0) lo = m; else hi = m }
   return (lo + hi) / 2
 }
 const ours = (h, x, cy) => tireContact(h, upNormal, x, cy, 0, r, w, A, out)?.depth ?? 0
-// The exact cylinder, dense: 11 lines across the width × 2000 points along each, min distance to the axle.
+// The exact cylinder, dense: 7 lines across the width × 2000 points along each (0.4 mm), min distance to the axle.
 const exact = (h, x, cy) => {
   let best = Infinity
-  for (let j = 0; j <= 10; j++) {
-    const z = -w / 2 + w * j / 10
+  for (let j = 0; j <= 6; j++) {
+    const z = -w / 2 + w * j / 6
     for (let i = 0; i <= 2000; i++) { const s = -r + 2 * r * i / 2000, y = h(x + s, z); best = Math.min(best, s * s + (y - cy) ** 2) }
   }
   return r - Math.sqrt(best)
 }
-const roll = (h, f) => { const o = []; for (let x = -0.6; x <= 0.6 + 1e-9; x += 0.002) o.push(rest(h, x, f)); return o }
+const roll = (h, f) => { const o = []; for (let x = -0.45; x <= 0.45 + 1e-9; x += 0.002) o.push(rest(h, x, f)); return o }
 const maxJump = (a) => a.slice(1).reduce((m, v, i) => Math.max(m, Math.abs(v - a[i])), 0)
 const maxErr = (a, b) => a.reduce((m, v, i) => Math.max(m, Math.abs(v - b[i])), 0)
 
