@@ -155,3 +155,30 @@ Built in slices, a WIP commit each. Every word on a card is a PLACEHOLDER the ow
 Known ceiling: the joint is sited `any`, so the first drive (joint → Mom's) can be ~2–3 km on a
 large-spread seed. Re-siting it `nearSpawn` reshuffles every seed's POI layout — not done; owner's call
 if the drive feels long.
+
+## Built — 2026-11-05 (feature/run-shape, Lane A) — NOT verified in a browser (compute hold)
+
+Slices 1–6 of the plan are in (commits 1c359f2a … 8678a4a2):
+- **The first job:** `data/offers.js FIRST_JOB`; OfferBoard `f0` slot (kept OUT of `_slots`, added by
+  `_at`/`clearRoutes`), `openFirst()` / `firstState()`, save.js `BOARD_OPS` += `openFirst`.
+  `test/offer-board.mjs` FEAT-147 block — 10 checks, the gate green (all checks).
+- **The toggle:** `SETTINGS_DEFAULTS.opening`, the `opening` row (play / skip) on the story setup page.
+- **The firing:** `_seatAtJoint` (onRegionLive) · `_playOpening` (go-live) · `_updateFiringCam` (per frame,
+  the focus seam) · mom's call → `openFirst` happens at the firing's START so a mid-firing save keeps it.
+- **The hold:** `_cardHold` in `_heldPause` — only while a card is actually up; `_renderDialogue` clears it.
+- **First-use cards:** `_tut(key)` queue + `_pumpTut` on the run-HUD poll; triggers: first offer panel,
+  the rank bar's first show, first pump, first service screen, the sleepy stage, `openLines()` → true.
+  Only in a run that opened on the firing (`dialogueSystem.has(DLG.firing)` — survives a resume).
+- **Larry's welcome:** `_checkOpeningEnd` — mom's job ended any way and its card put away → LARRY_WELCOME +
+  RUN_INTRO, then `opening` saved off.
+- **Smoke:** the main flow now picks `skip` (its later steps must not meet a holding card); a new last step
+  `opening` plays it: seated < 8 m from the joint, camera on the orbit, clock frozen, firing → mom's call →
+  her job live → camera home.
+
+**Owed before landing (after the hold):** `node test/cdp-smoke.mjs` (the new step has never run) + the
+affected set; the owner's drive on :3731. `test/pad-e2e.mjs` (unregistered) counts setup-page rows by
+D-pad presses — the new `opening` row sits under the mode row; re-check its counts when it next runs.
+
+**Owed by the owner:** every card's words (FEAT-148 — all PLACEHOLDER in data/dialogue.js); whether the
+joint→mom's first drive is too long on a wide seed (re-siting the joint `nearSpawn` reshuffles every
+seed's POI layout).
