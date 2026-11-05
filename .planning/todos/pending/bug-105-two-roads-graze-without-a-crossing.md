@@ -106,3 +106,18 @@ takes is an ordinary clearance violation, and the longer road takes the berth.
   separate pass.
 - Sheets: `CarGame-bug105/wip/bug-105/shots/sheet-{1-mark,2-elsewhere,3-open}.png` (map overlay + top/oblique
   frames, main :3885 vs fix :3886).
+
+### Gates and the owner call (2026-11-05, late)
+
+`npm run test:all` on proto/bug-105 33b041f1: **121/122. `vertical-curvature` is RED** on its seed-11 window. The
+re-routes reshuffle which roads survive at (−1895, 184). Main tunnels through that ridge; the fix sends a road over
+the saddle to a junction on the crest: a 0.183 /m crest (line 0.07; lift-off at 7.3 m/s) and a 0.552 /m junction
+sag (line 0.11). So the fix cannot land as it stands. Sheets (sent to the owner): `sheet-1-mark` (fixed, 2 sites),
+`sheet-2-elsewhere-a/b` (7 sites on 20 random seeds), `sheet-3-open` (the seed-11 crest, and the untouched disjoint
+shape on 158847947).
+
+**Spare's recommendation: park.** The defect is rare: this capture plus one disjoint sibling in ~1 400 km of
+cold-built road. The fix moves ~8 sites for each one it repairs, and one of them gets worse. A fix with less
+ripple has to mend the planner itself (its two walks disagree about where a node interval ends), which is a router
+pass. Keep proto/bug-105 and this record. Owner's call: (a) park as recorded, or (b) one more pass to make the
+fix land green (the seed-11 crest, then the s3192 kink).
