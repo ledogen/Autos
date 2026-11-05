@@ -241,6 +241,10 @@ const STEPS = [
     // FEAT-41: pm-story opens the run setup page (the seed modal is left with the refusal only).
     await js('document.getElementById("pm-story").click()')
     check(await js('document.getElementById("main-menu").classList.contains("setup")'), 'story did not open the setup page')
+    // FEAT-147: a fresh profile plays the opening. This flow is the SKIPPED run — RUN_INTRO at go-live and no
+    // first-use card holding the sim under the steps below (the choice is saved, so every later run skips too);
+    // the 'opening' step at the end plays it.
+    await js('const b = document.querySelector("[data-key=opening]"); if (/play/.test(b.textContent)) b.querySelector(".sel-next").click()')
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
@@ -914,6 +918,29 @@ const STEPS = [
       const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
       for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
     await ended(/beat the alpha/)
+  }],
+  ['opening', async () => {
+    // FEAT-147: a new run with the opening on starts PARKED AT THE BURGER JOINT, the firing's cards over a slow
+    // orbit of it with the sim held, then mom's call, which leaves her first job live at her house.
+    await js('document.getElementById("mm-new").click()')
+    await js('const b = document.querySelector("[data-key=opening]"); if (/skip/.test(b.textContent)) b.querySelector(".sel-next").click()')
+    await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    check(await until(() => js(live), 45000, 250), 'the opening run never went live (45 s)')
+    const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
+    check(await until(async () => await speaker() === 'The manager', 3000), `the run did not open on the firing (speaker "${await speaker()}")`)
+    const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
+      return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
+    const a = await at(); await sleep(1000); const b = await at()
+    check(a.truck < 8, `the truck is ${a.truck.toFixed(1)} m from the burger joint's pad, want < 8`)
+    check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
+    check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
+    for (let i = 0; i < 4 && await speaker() === 'The manager'; i++) { await tap('Enter'); await sleep(250) }
+    check(await speaker() === 'Mom', `the firing was not followed by mom's call (speaker "${await speaker()}")`)
+    check(await js('window.__board().firstState()') === 'live', "mom's first job is not on offer after her call")
+    for (let i = 0; i < 4 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
+    check(!await speaker(), "mom's call did not close")
+    check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
   }],
 ]
 
