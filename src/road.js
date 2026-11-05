@@ -5736,8 +5736,19 @@ export class RoadSystem {
         // FEAT-77: "clear of the road it left" is the owner's earthwork rule (_v2ClearReq), not one
         // road width plus a seam window — 46 of the battery's 52 clearance violators were T sides
         // whose fork had been accepted at that old 12 m bar.
-        const near = spec.legacy ? (pa, h) => h.d <= 2 * (this._params?.roadHalfWidth ?? 5) + 2 : this._v2Near()
+        const legacyBar = 2 * (this._params?.roadHalfWidth ?? 5) + 2
+        const near = spec.legacy ? Object.assign((pa, h) => h.d <= legacyBar, { bar: legacyBar }) : this._v2Near()
         const lo = nAtStart ? 0 : sideL * 0.15, hi = nAtStart ? sideL * 0.85 : sideL
+        // PERF-31: a side sample's nearest trunk hit is the same for every candidate, so it is found
+        // once. Past the band only `near` reads it, so a sample proven further than near.bar
+        // (_nearestWithinXZ → null) skips the full scan; inside the band the lateral needs the hit.
+        const qFull = [], qNear = []
+        const fullAt = (i) => qFull[i] ?? (qFull[i] = _nearestOnPolyXZ(side.points[i].x, side.points[i].z, T0.points, T0.polyCum))
+        const nearAt = (i) => {
+            if (qFull[i]) return qFull[i]
+            if (qNear[i] === undefined) qNear[i] = _nearestWithinXZ(side.points[i].x, side.points[i].z, T0.points, T0.polyCum, near.bar)
+            return qNear[i]
+        }
         for (const c of cand) {
             const h = _nearestOnPolyXZ(c.forkPt.x, c.forkPt.z, side.points, side.polyCum, lo, hi)
             const t = _nearestOnPolyXZ(c.forkPt.x, c.forkPt.z, T0.points, T0.polyCum)
@@ -5758,9 +5769,9 @@ export class RoadSystem {
             for (let i = 0; i < side.points.length && clears; i++) {
                 const d = nAtStart ? side.polyCum[i] - h.cum : h.cum - side.polyCum[i]
                 if (d < 0) continue
-                const q = _nearestOnPolyXZ(side.points[i].x, side.points[i].z, T0.points, T0.polyCum)
-                if (!q) continue
                 if (d <= LBmax) {
+                    const q = fullAt(i)
+                    if (!q) continue
                     const lat = (side.points[i].x - q.fx) * q.tz - (side.points[i].z - q.fz) * q.tx
                     const sg = Math.sign(lat)
                     if (d < 1e-6 || !sideSign) { if (sg !== 0) sideSign = sg; continue }
@@ -5768,7 +5779,8 @@ export class RoadSystem {
                     if (lat * sideSign - c.gap * (1 - u) * (1 - u) < 1) clears = false
                     continue
                 }
-                if (near(side.points[i], q)) clears = false
+                const q = nearAt(i)
+                if (q && near(side.points[i], q)) clears = false
             }
             c.clears = clears
         }
