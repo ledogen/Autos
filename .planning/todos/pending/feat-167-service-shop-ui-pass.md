@@ -58,7 +58,7 @@ damper / brake / armor lines are in the owner's words.
 - [x] Stock rows: no new/used word; `part:` / `installation:` stacked at the right; desc ≤ 2 lines; the bar no longer crowds the text.
 - [x] A Jobs tab appears only with live offers; LB/RB and the D-pad reach it.
 - [x] Nothing of the HUD shows through or around the open shop; the time and wallet are readable inside it.
-- [ ] Screenshot of each tab for the owner (after the compute hold lifts), then the owner's look.
+- [x] Screenshot of each tab for the owner: `wip/feat-167/feat167-{1-vehicle-collapsed,2-vehicle-tires-open,3-parts-shop,4-jobs}.png` (seed 6, The Body Shop, Day 1 11:06 am). Then the owner's look.
 
 ## Work log
 
@@ -118,4 +118,6 @@ with an ellipsis until they are rewritten:
 The shelf's non-part items (compressor, jacks, plug kit…) fit in two lines: with no bar or installation
 line their text column is wider.
 
-**Owed after the hold:** cdp-smoke, then a screenshot of each tab for the owner.
+**2026-11-05, after the hold.** cdp-smoke PASS (21 steps, the service step's new checks included). The
+screenshots are in `wip/feat-167/`. They showed "gone in 12 min" wrapping as "12 / min"; that phrase is now
+kept on one line (f0f30257). Owed: the owner's look.
