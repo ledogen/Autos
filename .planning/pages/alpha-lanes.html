@@ -165,7 +165,7 @@
         { id: 'diffOpen · swap', what: 'DONE on feature/machine (3180c87d, ea000e4e) — open diff $10; a swapped-out part goes straight to My Items, no keep/sell prompt.' },
         { id: 'FEAT-165', what: 'BUILT (cf385fba, 386698de) — every shop always has Old + Standard tires ($8 / $18 default); diagnostics reads “Tire FL · Old tire”.' },
         { id: 'FEAT-166', what: 'BUILT (4f41a2d2) — clutch-type LSD: new 5.88 s vs open 9.70 s on split grip, worn = open step for step; numbers on the owed list.' },
-        { id: 'FEAT-167', what: 'NEXT (code, fine under the hold) — shop UI pass from the owner’s 11-05 inbox: collapsible repair sections coloured by their worst part, one $15 alignment, lean stock rows, a Jobs tab, no HUD behind the shop. Build it on top of the landing set.' },
+        { id: 'FEAT-167', what: 'BUILT (5263af16) — collapsed repair sections coloured by their worst part, one $15 alignment, lean stock rows, a Jobs tab, no HUD behind the shop; joins the landing set (+ jalopy crash fix 4d725dd0).' },
         { id: 'FEAT-162', what: 'The truck’s heart — plan parked in the ticket; four calls on the owed list.' },
         { id: 'BUG-92', what: 'ABS kick never rumbles the pad — waits on the owner’s USB probe.' },
       ],
@@ -271,6 +271,8 @@
       text: 'Real-pad play-test (map, cards, the paper throw on RB), then pads in Safari and Firefox.' },
     { id: 'bug92-usb', kind: 'make', tk: 'BUG-92',
       text: 'Run the ABS rumble console probe with the pad on a USB cable: if it buzzes, Spare lengthens the kick; if not, it closes as a platform limit.' },
+    { id: 'feat167-descs', kind: 'make', tk: 'FEAT-167',
+      text: '16 shop part descriptions run past two lines; the shop cuts them off with … until you rewrite them. The table is in FEAT-167’s work log (feature/machine, § MAKE). Your “more stopping power.” went on the Sport front pads; say if it meant another brake part.' },
     { id: 'feat120-straps', kind: 'make', tk: 'FEAT-120',
       text: 'Record the ratchet-strap click and release.' },
   ]
