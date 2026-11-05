@@ -383,6 +383,15 @@ const STEPS = [
     await js('window.__campGear.hide()')
     check(await js('window.__campGear.root.children.length') === 0, 'hide left gear on the pad')
     check(await unpack('awning'), 'could not put the awning back')
+    // FEAT-155: a camp up (the debug panel's shortcut runs the real _enterCampScene) hides the truck's gauge
+    // cluster, and breaking it brings the cluster back.
+    const cluster = () => js('getComputedStyle(document.getElementById("cluster")).display')
+    await js(`[...document.querySelectorAll('.lil-gui .controller')].find(c => c.textContent.trim() === 'skip to camp dialogue')?.querySelector('button')?.click()`)
+    const up = await js('document.body.classList.contains("camp-on")')
+    if (up) check(await cluster() === 'none', `the gauge cluster shows at camp (${await cluster()})`)
+    else console.log('  campGear: no pad at the truck for the camp shortcut — FEAT-155 check skipped')
+    await js('document.getElementById("cp-break")?.click()')
+    if (up) check(await until(async () => await cluster() !== 'none', 2000), 'breaking camp did not bring the gauge cluster back')
   }],
   ['tires', async () => {
     // SM-3 roadside tire work (owner, 2026-10-22): using the spare or the plug kit opens the damage

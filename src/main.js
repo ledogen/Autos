@@ -4905,10 +4905,12 @@ function _enterCampScene (site) {
   campfire.show(fire.x, groundAt(fire.x, fire.z), fire.z)
   campGear.show(pad, inventorySystem.packed(), groundAt)
   setCameraFocus({ x: pad.x, y: groundAt(pad.x, pad.z) + 1, z: pad.z })
+  document.body.classList.add('camp-on')   // FEAT-155: the key is off (FEAT-128), so the gauges go too
 }
 
 /** Break camp / leave the region: fire out, gear packed away, camera back on the truck. */
 function _exitCampScene () {
+  document.body.classList.remove('camp-on')
   campfire.hide()
   campGear.hide()
   _campMarker.visible = false

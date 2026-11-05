@@ -346,6 +346,9 @@
     body.stage-on > div:not(#main-menu):not(#load-caption):not(#story-seed-modal):not(#boot-loading),
     body.stage-on > canvas#map2d,
     body.stage-on > canvas#cluster { display: none !important; }
+    /* FEAT-155 (owner 2026-10-30): a made camp turns the key off, and the truck's dashboard goes with it.
+       The run readout (wallet, deeds, clock) is the dock's, not the dashboard's: it stays. */
+    body.camp-on > canvas#cluster { display: none !important; }
 
     /* FEAT-41: the load caption. This used to be #story-loading, an OPAQUE full-cover panel — it
        had to be, because what was behind it was a world mid-reseed and mid-warm, which reads as a
