@@ -46,12 +46,14 @@ export class InventorySystem {
      *   slotCap()          — the truck's slot count (RANGER_PARAMS.inventorySlots)
      *   onMassChange(kg)   — stowed mass changed; main.js pushes it onto the chassis
      *   onChange()         — anything changed; the screen re-renders
+     *   onDrop(entry)      — FEAT-143: an entry was dropped; main.js lays it on the ground
      *   effects            — { [hook]: () => void } for items whose effect is built (ITEMS[id].use)
      */
     constructor (deps = {}) {
         this._slotCap = deps.slotCap ?? (() => 8)
         this._onMassChange = deps.onMassChange ?? (() => {})
         this._onChange = deps.onChange ?? (() => {})
+        this._onDrop = deps.onDrop ?? (() => {})
         this._effects = deps.effects ?? {}
     }
 
@@ -166,8 +168,19 @@ export class InventorySystem {
         const e = runInventory.entries[index]
         if (!e || (_isPack(e) && (e.equipped || e.contents.length))) return false
         runInventory.entries.splice(index, 1)
+        this._onDrop(e)   // FEAT-143: it goes on the ground, not out of the game
         this._changed()
         return true
+    }
+
+    /**
+     * FEAT-143: put back an entry picked up off the ground, exactly as it went down (its condition,
+     * gallons, contents). Like grant: no room → it waits as the pending swap. Returns 'taken' | 'pending' | null.
+     */
+    restoreEntry (entry) {
+        if (!entry || !ITEMS[entry.id]) return null
+        const { id, n, ...extra } = entry
+        return this.grant(id, n ?? 1, extra)
     }
 
     /**
