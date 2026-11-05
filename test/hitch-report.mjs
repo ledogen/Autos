@@ -74,8 +74,15 @@ const GPU_ARM = `(() => {
     g.active = true; gl.beginQuery(ext.TIME_ELAPSED_EXT, q); render(s, c); gl.endQuery(ext.TIME_ELAPSED_EXT); g.active = false
     g.pend.push([g.n, q, k])
   }
+  // Program churn: three deletes a WebGLProgram when its last material is disposed, so a streamed
+  // material that is disposed and re-made recompiles mid-play. Log every add/remove by frame.
+  g.progs = new Set(r.info.programs); g.churn = []
   const tick = (t) => {
     g.f.push([g.n, t]); g.n++
+    const now = new Set(r.info.programs)
+    for (const p of now) if (!g.progs.has(p)) g.churn.push([g.n, '+', p.name, p.cacheKey.slice(0, 60)])
+    for (const p of g.progs) if (!now.has(p)) g.churn.push([g.n, '-', p.name, p.cacheKey.slice(0, 60)])
+    g.progs = now
     const dis = gl.getParameter(ext.GPU_DISJOINT_EXT)
     while (g.pend.length && gl.getQueryParameter(g.pend[0][1], gl.QUERY_RESULT_AVAILABLE)) {
       const [n, q, k] = g.pend.shift()
@@ -125,7 +132,7 @@ if (CPU > 1) { await client.cmd('Emulation.setCPUThrottlingRate', { rate: CPU })
 // ── measurement window ───────────────────────────────────────────────────────────────────────
 const tracer = TRACE ? await startTracing(client, TRACE, { categories: `${TRACE_CATEGORIES},v8` }) : null
 await evalOk('window.__hitchReset()')
-if (GPU) await evalOk('(() => { window.__gpuT.q.length = 0; window.__gpuT.f.length = 0; return true })()')
+if (GPU) await evalOk('(() => { window.__gpuT.q.length = 0; window.__gpuT.f.length = 0; window.__gpuT.churn.length = 0; return true })()')
 const t0 = performance.now()
 if (SCENARIO === 'drive') await keyEvent(client, 'w', true)
 let sweep = null
@@ -144,7 +151,7 @@ while (performance.now() - t0 < DURATION * 1000) {
 if (SCENARIO === 'drive') await keyEvent(client, 'w', false)
 if (GPU) await evalOk('(() => { window.__gpuT.on = false; return true })()')
 if (tracer) await tracer.stop()   // before the read-backs below, which are long frames of their own
-const gpuT = GPU ? (await sleep(500), await evalOk('({ q: window.__gpuT.q, f: window.__gpuT.f })')) : null
+const gpuT = GPU ? (await sleep(500), await evalOk('({ q: window.__gpuT.q, f: window.__gpuT.f, churn: window.__gpuT.churn })')) : null
 
 const rep = await evalOk('window.__hitches()')
 const frames = (await evalOk('window.__perfData()')).frames.slice(-Math.round(DURATION * 144))
@@ -263,6 +270,11 @@ if (gpuT) {
   console.log(`  per frame: p50 ${G.p50}  p95 ${G.p95}  p99 ${G.p99}  max ${G.max} ms   ≥16.7 ms: ${G.over16} of ${G.frames}   by call: ${Object.entries(G.kinds).map(([k, v]) => `${k} ${v}%`).join(', ')}`)
   console.log(`  long periods (≥ ${HITCH_MS} ms): ${G.long} — mean gpu own ${G.longOwn} / previous frame ${G.longPrev} ms; ${G.longGpuBound} had ≥ 12 ms of our GPU work in either`)
   for (const w of G.worst) console.log(`    gpu ${String(w.gpu).padStart(6)} ms  period ${String(w.period).padStart(6)} ms  ${JSON.stringify(w.calls)}`)
+  const period = new Map(fr.map(x => [x.n, x.period]))
+  G.churn = gpuT.churn.map(([n, op, name, key]) => ({ n, op, name, key, period: +(period.get(n - 1) ?? 0).toFixed(1) }))
+  const add = G.churn.filter(c => c.op === '+'), rem = G.churn.filter(c => c.op === '-')
+  console.log(`  programs: +${add.length} created / -${rem.length} deleted in the window${add.length ? ' — ' + Object.entries(add.reduce((m, c) => (m[c.name] = (m[c.name] ?? 0) + 1, m), {})).map(([k, v]) => `${k}×${v}`).join(', ') : ''}`)
+  for (const c of G.churn.slice(0, 20)) console.log(`    frame ${c.n} ${c.op} ${c.name}  (${c.period} ms)  ${c.key}`)
   console.log('')
 }
 
