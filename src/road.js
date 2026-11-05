@@ -108,7 +108,7 @@ const JN_ANCHOR_KEEP = 15.0   // m of a T's through piece, from P, that no far-e
 const JN_FADE_IN = 22.0
 // BUG-112 (FEAT-40's lining ramp, now shared — RoadSystem.boreShade): a bore is lit at its portals and dark
 // inside — this deep, reached over this many metres from the nearer portal.
-const BORE_SHADE_DEEP = 0.25
+export const BORE_SHADE_DEEP = 0.25
 const BORE_SHADE_RAMP = 25
 const JN_FADE_OUT = 34.0
 // Junction-pad ring geometry (moved from road-mesh.js so the CARVE path is the single source of the

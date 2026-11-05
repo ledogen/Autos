@@ -954,10 +954,11 @@ export class RoadMeshSystem {
             // everything else. (Untrimmed arcS0/arcS1: bores are ≥ endMargin from junctions.)
             const tSpans = this._road._network?.get(runKey)?.tunnelSpans
             if (tSpans) {
-                const addTMesh = (g, mat) => {
+                const addTMesh = (g, mat, cast = false) => {
                     if (!g) return
                     const m = new THREE.Mesh(g, mat)
                     m.receiveShadow = true
+                    m.castShadow = cast
                     if (this._meshesVisible === false) m.visible = false
                     this._scene.add(m)
                     meshes.push(m)
@@ -974,7 +975,7 @@ export class RoadMeshSystem {
                     // the proud lip is built only where the tube starts exactly at the span end. A
                     // mouth 0.25 m before a slice boundary skipped its sliver, the next slice's tube
                     // began 0.25 m inside, and the mouth had no lip: the shader-cut skin left a hole.
-                    if (b - a > 0.5 || (b > a && (a === sp.s0 || b === sp.s1))) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial())
+                    if (b - a > 0.5 || (b > a && (a === sp.s0 || b === sp.s1))) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial(), true)   // BUG-112: the lining shades the bore — no sun on the deck or the truck inside it
                     if (sp.s0 >= sLo && sp.s0 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
                     if (sp.s1 >= sLo && sp.s1 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
                 }
