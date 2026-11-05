@@ -59,6 +59,32 @@ const TRUCK = has('truck')
 // period into loop JS / GC / other main-thread tasks (worker replies, timers) / idle main thread. The
 // in-loop buckets cannot see between frames; "off-CPU" above lumps all four together.
 const TRACE = flag('trace', '')
+// --gpu (PERF-28): time OUR GPU work per frame — every renderer.render() wrapped in a WebGL timer query
+// (EXT_disjoint_timer_query_webgl2, present in headless Chrome on ANGLE/Metal). Says whether a frame
+// that waited on GPU backpressure was waiting on our own draw or on someone else's.
+const GPU = has('gpu')
+const GPU_ARM = `(() => {
+  const r = window.__renderer(), gl = r.getContext(), ext = gl.getExtension('EXT_disjoint_timer_query_webgl2')
+  if (!ext) return false
+  const g = window.__gpuT = { on: true, active: false, n: 0, q: [], f: [], pend: [] }
+  const render = r.render.bind(r)
+  r.render = (s, c) => {
+    if (!g.on || g.active) return render(s, c)
+    const q = gl.createQuery(), k = (r.getRenderTarget() ? 'target' : 'screen') + (c && c.isOrthographicCamera ? '/ortho' : '')
+    g.active = true; gl.beginQuery(ext.TIME_ELAPSED_EXT, q); render(s, c); gl.endQuery(ext.TIME_ELAPSED_EXT); g.active = false
+    g.pend.push([g.n, q, k])
+  }
+  const tick = (t) => {
+    g.f.push([g.n, t]); g.n++
+    const dis = gl.getParameter(ext.GPU_DISJOINT_EXT)
+    while (g.pend.length && gl.getQueryParameter(g.pend[0][1], gl.QUERY_RESULT_AVAILABLE)) {
+      const [n, q, k] = g.pend.shift()
+      g.q.push([n, dis ? -1 : gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6, k]); gl.deleteQuery(q)
+    }
+    if (g.on || g.pend.length) requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+  return true })()`
 if (!['drive', 'stream'].includes(SCENARIO)) { console.error(`unknown scenario ${SCENARIO}`); process.exit(1) }
 
 const qs = new URLSearchParams({ prof: '1', hitch: String(HITCH_MS), nomenu: '1' })   // FEAT-41: skip the menu; this harness wants the world on screen
@@ -90,6 +116,7 @@ await waitFor('(()=>{ const r = window.__road && window.__road(); return r ? (r.
   .catch(() => console.error('warn: route warm never drained'))
 await sleep(4000)
 if (EVAL) { await evalOk(EVAL); await sleep(1500) }
+if (GPU && !(await evalOk(GPU_ARM))) { console.error('--gpu: EXT_disjoint_timer_query_webgl2 unavailable'); process.exit(1) }
 
 // Throttle AFTER settling — a 4× CPU penalty applied during load just makes the wait long, and the
 // question is about steady-state play on a slow machine, not about load.
@@ -98,6 +125,7 @@ if (CPU > 1) { await client.cmd('Emulation.setCPUThrottlingRate', { rate: CPU })
 // ── measurement window ───────────────────────────────────────────────────────────────────────
 const tracer = TRACE ? await startTracing(client, TRACE, { categories: `${TRACE_CATEGORIES},v8` }) : null
 await evalOk('window.__hitchReset()')
+if (GPU) await evalOk('(() => { window.__gpuT.q.length = 0; window.__gpuT.f.length = 0; return true })()')
 const t0 = performance.now()
 if (SCENARIO === 'drive') await keyEvent(client, 'w', true)
 let sweep = null
@@ -114,7 +142,9 @@ while (performance.now() - t0 < DURATION * 1000) {
   await sleep(sweep ? 500 : 2000)
 }
 if (SCENARIO === 'drive') await keyEvent(client, 'w', false)
+if (GPU) await evalOk('(() => { window.__gpuT.on = false; return true })()')
 if (tracer) await tracer.stop()   // before the read-backs below, which are long frames of their own
+const gpuT = GPU ? (await sleep(500), await evalOk('({ q: window.__gpuT.q, f: window.__gpuT.f })')) : null
 
 const rep = await evalOk('window.__hitches()')
 const frames = (await evalOk('window.__perfData()')).frames.slice(-Math.round(DURATION * 144))
@@ -206,9 +236,39 @@ if (tracer) {
   console.log(`  all long periods: ${traceSplit.ms.toFixed(0)} ms = loop ${(100 * traceSplit.loop / T).toFixed(0)}% (gc inside ${(100 * traceSplit.gcIn / T).toFixed(0)}%) · gc outside ${(100 * traceSplit.gcOut / T).toFixed(0)}% · other tasks ${(100 * traceSplit.other / T).toFixed(0)}% · idle ${(100 * traceSplit.idle / T).toFixed(0)}%  (gpu busy ${(100 * traceSplit.gpu / T).toFixed(0)}%)\n`)
 }
 
+// ── --gpu: our own GPU milliseconds per frame, and on the frames around each long period ──────
+let gpuSplit = null
+if (gpuT) {
+  const per = new Map(), kinds = {}, calls = new Map()
+  for (const [n, ms, k] of gpuT.q) {
+    if (ms < 0) continue   // a disjoint (GPU clock reset) — the reading is garbage
+    per.set(n, (per.get(n) ?? 0) + ms); kinds[k] = (kinds[k] ?? 0) + ms
+    if (!calls.has(n)) calls.set(n, {}); calls.get(n)[k] = +((calls.get(n)[k] ?? 0) + ms).toFixed(1)
+  }
+  const fr = gpuT.f.slice(0, -1).map(([n, t], i) => ({ n, period: gpuT.f[i + 1][1] - t, gpu: per.get(n) ?? 0 }))
+  fr.forEach((x, i) => { x.prev = fr[i - 1]?.gpu ?? 0 })
+  const gs = fr.map(x => x.gpu).sort((a, b) => a - b), gp = p => gs[Math.min(gs.length - 1, Math.floor(p * gs.length))] ?? 0
+  const long = fr.filter(x => x.period >= HITCH_MS)
+  const mean = (l, k) => l.reduce((s, x) => s + x[k], 0) / (l.length || 1)
+  const total = Object.values(kinds).reduce((s, v) => s + v, 0) || 1
+  gpuSplit = {
+    frames: fr.length, p50: +gp(0.5).toFixed(2), p95: +gp(0.95).toFixed(2), p99: +gp(0.99).toFixed(2), max: +(gs[gs.length - 1] ?? 0).toFixed(2),
+    over16: fr.filter(x => x.gpu >= 16.7).length, kinds: Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, +(100 * v / total).toFixed(0)])),
+    long: long.length, longOwn: +mean(long, 'gpu').toFixed(2), longPrev: +mean(long, 'prev').toFixed(2),
+    longGpuBound: long.filter(x => Math.max(x.gpu, x.prev) >= 12).length,
+    worst: [...fr].sort((a, b) => b.gpu - a.gpu).slice(0, 8).map(x => ({ gpu: +x.gpu.toFixed(1), period: +x.period.toFixed(1), calls: calls.get(x.n) })),
+  }
+  const G = gpuSplit
+  console.log(`  ── gpu (our renderer.render calls, timer queries) ──`)
+  console.log(`  per frame: p50 ${G.p50}  p95 ${G.p95}  p99 ${G.p99}  max ${G.max} ms   ≥16.7 ms: ${G.over16} of ${G.frames}   by call: ${Object.entries(G.kinds).map(([k, v]) => `${k} ${v}%`).join(', ')}`)
+  console.log(`  long periods (≥ ${HITCH_MS} ms): ${G.long} — mean gpu own ${G.longOwn} / previous frame ${G.longPrev} ms; ${G.longGpuBound} had ≥ 12 ms of our GPU work in either`)
+  for (const w of G.worst) console.log(`    gpu ${String(w.gpu).padStart(6)} ms  period ${String(w.period).padStart(6)} ms  ${JSON.stringify(w.calls)}`)
+  console.log('')
+}
+
 if (OUT) {
   mkdirSync(dirname(OUT), { recursive: true })
-  writeFileSync(OUT, JSON.stringify({ meta: { scenario: SCENARIO, preset: PRESET, seed: SEED, cpu: CPU, duration: DURATION, hitchMs: HITCH_MS }, stats, report: rep, traceSplit }, null, 2))
+  writeFileSync(OUT, JSON.stringify({ meta: { scenario: SCENARIO, preset: PRESET, seed: SEED, cpu: CPU, duration: DURATION, hitchMs: HITCH_MS }, stats, report: rep, traceSplit, gpuSplit }, null, 2))
   console.log(`  written: ${OUT}\n`)
 }
 client.close()
