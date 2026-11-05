@@ -102,7 +102,14 @@ export class TerrainPhysics {
           }
           if (cut === Infinity) continue
           lidDeck[i] = cut
-          if (heights[i] > cut - 0.5) heights[i] = cut - 0.5
+          // BUG-81 (third report, owner 2026-11-04: "the shoulder in tunnels is super rough … feels like
+          // discontinuous terrain"): the slot goes under the FLOOR the wheels read here, not only under the
+          // deck. In a banked bore the floor tilts with the camber out to the wall — up to 2 m under the
+          // deck on the low side (seed 6) — and a flat cut at deck − 0.5 m stood up to 1.6 m over the drawn
+          // shoulder there: an invisible stepped shelf the body struck while the wheels rode below it.
+          const f = rs._sampleCarveWorld(x, z, heights[i], undefined, cut + 0.5)
+          const floor = f ? Math.min(cut, f.padTopY ?? f.gradeY) : cut
+          if (heights[i] > floor - 0.5) heights[i] = floor - 0.5
         }
       }
     }
