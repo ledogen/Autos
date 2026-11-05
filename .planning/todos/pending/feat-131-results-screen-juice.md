@@ -105,3 +105,29 @@ that touches the drive.
 3. The bed is this ticket's: synthesized, Spare builds it.
 4. Order P1 (sounds) → P2 (motion) → P3 (bed). Check first what FEAT-120's landing (012b2461) already wired on
    the result card (coin + stinger are in the owner's listen list); build on it, never twice.
+
+## Built (Spare, 2026-11-05) — P1 complete, P2 built; neither owner-seen yet
+
+- **P1** (`src/result-audio.js`, da9efdf4): FEAT-120's coin + stinger were already in; added the **tick train**
+  (counter-wheel ticks at ~12/s for the count-up's length, loud to soft), the **clack** (wood block, only when
+  the tally moves) and the **thud** (a miss: no deed, item missed, nothing arrived — never a cost). Each has
+  its FEAT-120 Sounds-tab entry (status wip), so the dashboard's ▶ plays it.
+- **P2** (index.html CSS + `_revealResult`): rows rise 6 px as they fade in; the tip's count-up runs
+  0.5 s → 1.4 s by size (`COUNTUP_FULL` $20 [DEFAULT] — day 1's S tip is $5, so early tips sit near 0.7 s); the
+  deed numeral pops 1.15 → 1; a full deed warms the card's border (`--warn-line`, 2.4 s, then back); a missed
+  line nudges once, sideways, just after it lands. UI-STYLE tokens only.
+- **Owed:** the owner's look + listen (the card shows on any finished job). P3 (the rank-timer music bed)
+  not started.
+- **P3** (`src/rank-music.js`, Spare 2026-11-05): built, not owner-heard. Starts with the bar; minor-triad pad
+  (A2) whose lowpass opens on intensity²; arpeggio four notes per heartbeat, stepped by the heartbeat
+  oscillator's own phase (main.js hands it over, so they cannot drift); a semitone up per line passed; drop on
+  the bonus lost; thin to the heartbeat on the C/D line; resolve to major into the stinger at the job's end.
+  Debug: Rank Timer Music + volume. The dashboard's ▶ (driver `rank-bed`) plays an 8 s approach to a line.
+  The `duck` hook for FEAT-58 is not exported yet — nothing would read it; it is one line when the player
+  music lands. **Owed:** the owner's listen in a real job (P4 sign-off).
+
+## Owner, 2026-11-05 (:3885)
+
+The result card's sounds (P1) are accepted. The rank-timer music bed (P3) is still owed: the owner did not know
+what it was — it plays only once the rank bar shows (the last 25 % of a courier route, never under 400 m; a paper
+round 15 s before its S/A line), so it wants a job driven to the bar.

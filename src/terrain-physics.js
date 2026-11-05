@@ -79,11 +79,17 @@ export class TerrainPhysics {
     let lidDeck = null                                // per vertex: the bore deck it was cut to, NaN = not cut
     if (rs?._network) {
       const wx0 = cx * S, wz0 = cz * S
-      const segs = this._boreSegsIn(wx0 - R, wz0 - R, wx0 + S + R, wz0 + S + R)
+      // BUG-81 (third report): the slot runs one cell diagonal PAST the lining. A heightfield cell is two
+      // flat triangles, so cutting only the vertices within R left every triangle that straddles R ramping
+      // from the slot floor up to the hill INSIDE the tube — an invisible wall 0.5–1 m in from the drawn one,
+      // its foot jumping a cell at a time along the run (measured seed 6: 3–90 m over the floor at 7.25 m out).
+      // Any point within R now has all three of its triangle's corners cut.
+      const RC = R + Math.SQRT2 * S / (N - 1)
+      const segs = this._boreSegsIn(wx0 - RC, wz0 - RC, wx0 + S + RC, wz0 + S + RC)
       if (segs) {
         lidDeck = new Float32Array(N * N).fill(NaN)
         const half = S / 2
-        const R2 = R * R
+        const R2 = RC * RC
         for (let i = 0; i < N * N; i++) {
           // PlaneGeometry local XZ ∈ [−S/2, S/2]; mesh sits at the chunk CENTER (terrain.js)
           const x = posAttr.getX(i) + wx0 + half
@@ -102,7 +108,14 @@ export class TerrainPhysics {
           }
           if (cut === Infinity) continue
           lidDeck[i] = cut
-          if (heights[i] > cut - 0.5) heights[i] = cut - 0.5
+          // BUG-81 (third report, owner 2026-11-04: "the shoulder in tunnels is super rough … feels like
+          // discontinuous terrain"): the slot goes under the FLOOR the wheels read here, not only under the
+          // deck. In a banked bore the floor tilts with the camber out to the wall — up to 2 m under the
+          // deck on the low side (seed 6) — and a flat cut at deck − 0.5 m stood up to 1.6 m over the drawn
+          // shoulder there: an invisible stepped shelf the body struck while the wheels rode below it.
+          const f = rs._sampleCarveWorld(x, z, heights[i], undefined, cut + 0.5)
+          const floor = f ? Math.min(cut, f.padTopY ?? f.gradeY) : cut
+          if (heights[i] > floor - 0.5) heights[i] = floor - 0.5
         }
       }
     }

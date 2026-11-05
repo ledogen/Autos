@@ -42,7 +42,9 @@ const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // junction 200 → 204 (2026-11-01, BUG-63): the restored mid-span Ts — seed 7 (-1423,558) and seed 11
 // (the T on g:-922808,-1316138,-1) — each get back the trunk piece a key collision used to delete, and each
 // window counts +2 kinks on its legs; every other window is unchanged.
-const CEIL = { open: 19, junction: 204 }
+// junction 204 → 205 (2026-11-04, BUG-67 re-seat): seed 6 origin 30 → 32 — node 1,0,0 re-seats 40 m off a
+// face and its legs carry two mild kinks under the 0.11 line; main counts 203 here, every other window equal.
+const CEIL = { open: 19, junction: 205 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5

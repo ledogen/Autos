@@ -29,3 +29,28 @@ region from the one the owner plays on this seed.
       share the game's code, if the decision can be made importable without the browser).
 - [ ] A check pins spawn agreement on 4194356868, 1 and 6 against the game's numbers.
 - [ ] camp-reach drops its pinned centre for this seed.
+
+## Fixed (Spare, 2026-11-05, a2c5173c) — the replica never routed round the ponds
+
+**Where it departs.** `resolveSpawn`'s probe and the replica's are the same steps (tiers, recenter, query). The
+difference is the network they query: main.js injects the pond no-go (`setWaterNoGo`, FEAT-17) into the RoadSystem
+before its first stream, and the replica built a bare one. On 4194356868 a pond beside the probe re-routes the
+nearby roads, so the nearest road the replica found was a different one, 325 m away. Seeds 1 and 6 have no pond
+near the probe, so they never showed it.
+
+| seed | replica before | replica now | game (Lane A, browser) |
+|---|---|---|---|
+| 4194356868 | (−22.10, −160.63) | (34.54, 158.50) | (34.65, 158.45) |
+| 1 | (420.69, 89.03) | unchanged | matches to cm |
+| 6 | (−71.10, 149.10) | unchanged | matches to cm |
+
+The 0.12 m left on 4194356868 is the same road and the same region (not chased). `spawnDecision` now wires the
+pond no-go the way main.js does. **Check:** world-determinism section 1b pins the three seeds to the game's spawn
+(< 0.25 m). The four gates on the replica are green (world-determinism, region-pieces, expedition-camp,
+demolition-site), and none of their own seeds moved (`wip/bug-110/cmp.mjs`: 9 seeds, 0.00 m each).
+
+**For Lane A:** camp-reach can drop its pinned centre for 4194356868 once this is on main.
+
+**Found, not fixed here (a separate call):** those same gates, and camp-edge-census, build their REGION network
+without the pond no-go too — so even centred right, their roads near a pond are not the game's. Wiring it in moves
+what they measure (rosters, pieces, sites), so it wants its own pass with each gate's pins re-read.

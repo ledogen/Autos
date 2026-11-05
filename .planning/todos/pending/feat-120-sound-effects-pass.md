@@ -217,7 +217,37 @@ Coin: two quick high sine pings (~2.6 / 3.9 kHz) on payout and wallet changes. S
 musical hits on the D / par / S card reveal, rising in pitch and length with the grade.
 - **Prototype 2026-10-31, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto.js`, rendered as a take in `wip/audio/payout-coin-and-grade-stingers/`. Not in `src/` or wired yet; trigger: the coin on payout and wallet changes, the stinger on main.js `_revealResult`; stingers are five figures, D one low note up to S a run into a held chord.
 - **Owner's ear, 2026-11-02:** KEEP ("i like coin and stingers"). FEAT-131 P1 builds result-audio.js FROM this take.
-- **In game 2026-11-02 (Spare) — FEAT-131 phase 1, coin + stinger only:** `src/result-audio.js`. A coin as each paid dollar row lands; the grade's stinger a beat after the last row (heard, never printed). UI path, straight out — not the world bus. P1's tick train, clack and thud are not built (not heard by the owner yet).
+- **In game 2026-11-02 (Spare) — FEAT-131 phase 1, coin + stinger only:** `src/result-audio.js`. A coin as each paid dollar row lands; the grade's stinger a beat after the last row (heard, never printed). UI path, straight out — not the world bus. P1's tick train, clack and thud: built 2026-11-05, their own entries below.
+
+### Result tick train
+status: wip · group: story · play: result-audio.js playTickTrain
+FEAT-131 P1, `src/result-audio.js`. The speed tip counting up on the result card: a counter wheel's tick
+(6 ms of noise bandpassed at ~3.2 kHz) at ~12 a second for the count-up's 0.7 s, loud to soft as the
+ease-out settles.
+- **In game 2026-11-05 (Spare), synthesized, not owner-heard:** starts as the tip row lands, under its coin.
+
+### Deed tally clack
+status: wip · group: story · play: result-audio.js playClack
+FEAT-131 P1, `src/result-audio.js`. The deed tally flipping old → new: a wood block — sines at ~980 Hz
+(60 ms) and ~2.65 kHz (30 ms) on a 4 ms click. Silent when the tally does not move ("no deed").
+- **In game 2026-11-05 (Spare), synthesized, not owner-heard.**
+
+### Rank timer music bed
+status: wip · group: story · play: rank-bed
+FEAT-131 P3, `src/rank-music.js` — the game's only music. Starts with the rank bar: a minor triad of
+detuned saws (A2) through a lowpass that opens 220 → 2400 Hz on the bar's intensity²; an arpeggio of
+the triad an octave up, four notes per heartbeat, stepping on the heartbeat oscillator's own phase. A
+line passing lifts it a semitone; the bonus lost drops it (filter shut, −5 semitones over 0.4 s, then
+back); the C/D line thins it to the heartbeat alone; the job's end lifts the third to major and fades
+it into the result card's stinger.
+- **In game 2026-11-05 (Spare), synthesized, not owner-heard.** ▶ plays an 8 s approach to a line, the line, then the resolve.
+
+### Miss thud
+status: wip · group: story · play: result-audio.js playThud
+FEAT-131 P1, `src/result-audio.js`. A miss landing on the result card ("no deed", an item missed, a load
+that never arrived — never a cost like stock bought): a dull knock, sine 110 → 50 Hz over 0.22 s, under
+50 ms of noise lowpassed at 320 Hz.
+- **In game 2026-11-05 (Spare), synthesized, not owner-heard.**
 
 ### Pump nozzle
 status: shipped · group: story · play: pump-audio.js playNozzle

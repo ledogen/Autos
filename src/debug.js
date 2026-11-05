@@ -345,6 +345,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'grassVolume', 0, 1, 0.05).name('Grass Volume')
   driveFolder.add(params, 'resultAudioEnabled').name('Result Card Sounds')
   driveFolder.add(params, 'resultAudioVolume', 0, 1, 0.05).name('Coin / Stinger Volume')
+  driveFolder.add(params, 'rankMusicEnabled').name('Rank Timer Music')
+  driveFolder.add(params, 'rankMusicVolume', 0, 1, 0.05).name('Rank Music Volume')
   driveFolder.add(params, 'tunnelReverbEnabled').name('Tunnel Reverb')
   driveFolder.add(params, 'tunnelReverbLevel', 0, 1, 0.05).name('Tunnel Reverb Level')
 

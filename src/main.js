@@ -85,7 +85,9 @@ import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: th
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
-import { InventorySystem, runInventory } from './inventory.js'   // FEAT-122: what the player owns this run
+import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
+import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
+import { ITEMS } from '../data/items.js'
 import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
@@ -111,12 +113,13 @@ import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown
 import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
+import { startRankMusic, updateRankMusic, rankMusicStep, rankMusicDrop, rankMusicThin, resolveRankMusic, setRankMusic } from './rank-music.js'   // FEAT-131 P3: the bar's music bed
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
-import { playCoin, playStinger, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
+import { playCoin, playStinger, playTickTrain, playClack, playThud, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -2725,18 +2728,21 @@ function _bedPoint (pose) {
 // ── The loose bed load — ONE unwelded body (data/offers.js `loose`: the stranded motorist's tire) ──
 // Dropped at accept where strapPose puts a load (centred, against the front wall, between the
 // wheelhouses), 1 cm above the ribs so it settles rather than starts in contact. Nothing holds it:
-// it slides, bounces and can be lost. Pinned and noDamage like FEAT-88's bundles. Pay never reads it.
+// it slides, bounces and can fall out. Pinned and noDamage like FEAT-88's bundles. Pay never reads it.
 const LOOSE_SETTLE_GAP = 0.01   // m
-const LOOSE_LOST_S = 1.0        // s out of the bed well before the load counts as LOST — a bump that lifts it is not
+const LOOSE_LOST_S = 1.0        // s out of the bed well before the load counts as OUT — a bump that lifts it is not
 let _loose = null   // { body, kind, massKg, mission, outSince } — or null
 
-/** Losing the loose load fails its job (owner, 2026-10-22) — the same dead end as wrecked fragile cargo. */
+/**
+ * Out of the bed, the job cannot hand over until it is back (FEAT-144, owner 2026-11-03: "job cant finish
+ * till you fetch" — reversing 10-22's fail). mission.js reads `cargoOut`; the deadline still runs.
+ */
 function _looseStep () {
   const L = _loose
-  if (!L?.mission || L.mission.failed) return
-  if (_inBed(L.body)) { L.outSince = null; return }
+  if (!L?.mission) return
+  if (_inBed(L.body)) { L.outSince = null; L.mission.cargoOut = false; return }
   L.outSince ??= simTime
-  if (simTime - L.outSince >= LOOSE_LOST_S) { L.mission.failed = true; _disarmJobCancel() }
+  L.mission.cargoOut = simTime - L.outSince >= LOOSE_LOST_S
 }
 function _loadLoose (kind, massKg, mission) {
   if (_loose) { debrisSystem.remove([_loose.body]); _loose = null }
@@ -2752,10 +2758,65 @@ function _loadLoose (kind, massKg, mission) {
 
 // A seat (R, teleport, reseed, region re-fit) moves the truck in one jump; a weld to the load left
 // behind would yank them together across it. Re-strap the same load on the new pose instead — and
-// put the loose load back in the bed, where a reset means it to be.
+// put the loose load back in the bed, where a reset means it to be. Not one already out of it: that
+// one is fetched (FEAT-144, 5 min), and a reset must not be the free way to fetch it.
 function _restrapFreight () {
   if (_freight) void _loadFreight(_freight.key, _freight.massKg, _freight.mission, _freight.health)
-  if (_loose) _loadLoose(_loose.kind, _loose.massKg, _loose.mission)
+  if (_loose && !_loose.mission?.cargoOut) _loadLoose(_loose.kind, _loose.massKg, _loose.mission)
+}
+
+// ── FEAT-144: loose bed cargo that fell out — fetched, not lost ─────────────────────────────────
+// Owner, 2026-11-03: "5 mins per piece … need to be parked within a couple meters … job cant finish till
+// you fetch … loose cargo only … f143: yes". One button for both this and FEAT-143's pick-up (D-pad ↓ / G),
+// one reach (REACH_M from the truck's outline): a lost piece in reach goes first, lifted above the bed to
+// drop back in, RELOAD_MIN on the clock (the job's too); else the nearest dropped item, into the inventory.
+// Strapped freight is never here: it is welded, it cannot fall out.
+const RELOAD_MIN = 5          // game minutes per piece (owner, 2026-11-03)
+const RELOAD_DROP_M = 0.5     // m above the bed rail the piece is let go — "teleported above the bed and falls back in"
+const LOST_ON_M = 60, LOST_OFF_M = 120   // a lost piece leaves the world past OFF, comes back within ON (the ornaments' numbers)
+const _frozen = new Set()     // lost pieces out of the world while far: no ground streams under them
+
+/** The live loose bed pieces — every haul bundle and the motorist's tire — in or out of the bed. */
+const _loosePieces = () => [...(_haul?.handles ?? []), ...(_loose ? [_loose.body] : [])]
+
+/** The truck's plan footprint for world-items' planGap: unit forward, nose and tail off the CG, half width. */
+function _truckFootprint () {
+  const bed = DEFAULT_VEHICLE_MODEL.bed, rear = bed?.gateZ ?? RANGER_PARAMS.bodyLength / 2
+  _giF.set(0, 0, -1).applyQuaternion(vehicleState.quaternion).setY(0).normalize()
+  return { fx: _giF.x, fz: _giF.z, front: RANGER_PARAMS.bodyLength - rear, rear, half: RANGER_PARAMS.bodyWidth / 2 }
+}
+
+/** The 10 Hz poll: a lost piece far off is taken out of the world, so streamed-out ground cannot drop it. */
+function _freezeLostCargo () {
+  const p = vehicleState.position, live = _loosePieces()
+  for (const h of _frozen) if (!live.includes(h)) _frozen.delete(h)
+  for (const h of live) {
+    physicsEngine.getTransform(h, _giP, _giQ)
+    const d = Math.hypot(_giP.x - p.x, _giP.z - p.z)
+    if (!_frozen.has(h) && d > LOST_OFF_M) { physicsEngine.setEnabled(h, false); _frozen.add(h) }
+    else if (_frozen.has(h) && d < LOST_ON_M) { physicsEngine.setEnabled(h, true); _frozen.delete(h) }
+  }
+}
+
+/** D-pad ↓ / G, parked: put the nearest lost piece in reach back in the bed, else pick up the nearest item. */
+function _pickUpNear () {
+  if (menuStage.isActive() || damageScreen.blocked) return
+  if (!vehicleState.parked) { hintPark(); return }
+  const fp = _truckFootprint(), p = vehicleState.position
+  let best = null, bestD = REACH_M
+  for (const h of missionSystem?.state === 'loading' ? [] : _loosePieces()) {   // not a bundle still dropping in
+    if (_inBed(h)) continue
+    physicsEngine.getTransform(h, _giP, _giQ)
+    const d = planGap(_giP, p.x, p.z, fp)
+    if (d <= bestD) { best = h; bestD = d }
+  }
+  if (best == null) { const g = _groundNearby()[0]; if (g) _pickUpGround(g.it); return }
+  const bed = DEFAULT_VEHICLE_MODEL.bed
+  const { v, q, w } = _bedPoint({ x: 0, y: bed.railY + RELOAD_DROP_M, z: (bed.frontZ + bed.tailZ) / 2 })
+  physicsEngine.setTransform(best, _fP, q)
+  physicsEngine.setVelocity(best, v, w)
+  physicsEngine.wake(best)
+  daySystem.advanceMinutes(RELOAD_MIN)
 }
 
 // ── FEAT-97: the fragile load's shocks ───────────────────────────────────────────────────────
@@ -3512,6 +3573,7 @@ const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
   onChange: () => inventoryScreen.render(),
+  onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
   effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
@@ -3525,6 +3587,7 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isSuppressed: () => menuStage.isActive(),
   isBlocked: () => damageScreen.blocked,
   actions: _partActions,
+  ground: { list: _groundNearby, pick: _pickUpGround },   // FEAT-143: "Nearby on the ground"
 })
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
 window.__econ = runEconomy      // dev handle — set the wallet for a play-test (`__econ.money = 200`)
@@ -5418,6 +5481,108 @@ function _updateOrnaments () {
   }
 }
 
+// ── FEAT-143: items on the ground — the player's drops (src/world-items.js holds the list) ─────────
+// The ornaments' model↔body swap: a plain model far off; within ITEM_ON_M a debris body at its resting
+// pose, put to SLEEP at once, so it lies still until something touches it. A fresh drop is the one body
+// that starts awake: it is set down off the tailgate and falls to wherever it lands. Past ITEM_OFF_M it
+// is a model again where the body came to rest. Pinned (outside the debris cap) and harmless (noDamage),
+// like the loose bed load. The collider is the item's own model hulled at first use (debris.js load),
+// shared per model; the mass is the entry's own (a full can is heavier than an empty one). An item whose
+// world model is not exported yet is the model service's pink cube — honest, and still picked up.
+const ITEM_ON_M = 60, ITEM_OFF_M = 120
+const ITEM_GAP_M = 0.1   // m between the tailgate and a fresh drop's bounding circle, whatever its yaw
+const _groundItems = new Map()   // world item → { kind, mesh, body, fresh } — what the scene holds for it
+const _giP = new THREE.Vector3(), _giQ = new THREE.Quaternion(), _giF = new THREE.Vector3()
+
+/** inventory drop → on the ground at the tailgate, square to the truck (the body is set clear of it). */
+function _dropToGround (entry) {
+  const bed = DEFAULT_VEHICLE_MODEL.bed, q = vehicleState.quaternion
+  _giP.set(0, bed?.floorY ?? 0, bed?.gateZ ?? RANGER_PARAMS.bodyLength / 2).applyQuaternion(q).add(vehicleState.position)
+  const i = place(entry, { x: _giP.x, y: _giP.y, z: _giP.z, q: [q.x, q.y, q.z, q.w] })
+  _groundHandle(runWorldItems.items[i]).fresh = true
+  _updateWorldItems()
+}
+
+function _groundHandle (it) {
+  const model = ITEMS[it.entry.id].thumb ?? it.entry.id, kind = `item:${model}`
+  void debrisSystem.load(kind, { model, massKg: ITEMS[it.entry.id].massKg, friction: 0.6, restitution: 0.2 })
+  const h = { kind, model, mesh: null, body: null, fresh: false }
+  _groundItems.set(it, h)
+  return h
+}
+
+function _dropGroundHandle (it) {
+  const h = _groundItems.get(it)
+  if (!h) return
+  if (h.body != null) debrisSystem.remove([h.body])
+  if (h.mesh) scene.remove(h.mesh)
+  _groundItems.delete(it)
+}
+
+/** Everything off the scene (a run starts, resumes or ends). The list itself is world-items'. */
+function _clearGround () {
+  for (const it of [..._groundItems.keys()]) _dropGroundHandle(it)
+}
+
+/** The 10 Hz poll, beside the ornaments'. Keeps each live body's pose in the list, so the save reads where it lies. */
+function _updateWorldItems () {
+  const p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
+  runWorldItems.items.forEach((it, i) => {
+    const h = _groundItems.get(it) ?? _groundHandle(it)
+    const half = debrisSystem.halfExtents(h.kind)
+    if (!half) return   // its collider is still loading
+    if (!h.mesh) {   // the far model, posed as debris poses its own: the body origin is the mesh bbox centre
+      const m = spawnModel(h.model)
+      m.position.copy(debrisSystem.centerOf(h.kind)).negate()
+      h.mesh = new THREE.Group().add(m)
+      scene.add(h.mesh)
+    }
+    const d = Math.hypot(p.x - it.x, p.z - it.z)
+    if (h.body == null && d < ITEM_ON_M) {
+      _giQ.set(...it.q)
+      if (h.fresh) {   // off the tailgate: back by its bounding circle, up by its half height
+        _giP.set(0, half.y, Math.hypot(half.x, half.z) + ITEM_GAP_M).applyQuaternion(_giQ)
+        rest(i, { x: it.x + _giP.x, y: it.y + _giP.y, z: it.z + _giP.z })
+      }
+      h.body = debrisSystem.spawn(h.kind, { x: it.x, y: it.y, z: it.z }, still,
+        { spin: still, quaternion: { x: _giQ.x, y: _giQ.y, z: _giQ.z, w: _giQ.w }, pinned: true, noDamage: true, massKg: entryKg(it.entry) })
+      if (h.body == null) return
+      if (!h.fresh) physicsEngine.sleep(h.body)
+      h.fresh = false
+      h.mesh.visible = false
+    } else if (h.body != null) {
+      physicsEngine.getTransform(h.body, _giP, _giQ)
+      rest(i, { x: _giP.x, y: _giP.y, z: _giP.z, q: [_giQ.x, _giQ.y, _giQ.z, _giQ.w] })
+      if (d > ITEM_OFF_M) {
+        debrisSystem.remove([h.body])
+        h.body = null
+      }
+    }
+    if (h.body == null) {
+      h.mesh.position.set(it.x, it.y, it.z)
+      h.mesh.quaternion.set(...it.q)
+      h.mesh.visible = true
+    }
+  })
+}
+
+/** What the inventory lists under "Nearby on the ground": in reach of the parked truck's outline, nearest first. */
+function _groundNearby () {
+  const p = vehicleState.position
+  return near(p.x, p.z, REACH_M, _truckFootprint()).map(i => {
+    const it = runWorldItems.items[i]
+    return { it, row: inventorySystem.rowOf(it.entry) }
+  })
+}
+
+/** Pick world item `it` up into the truck. No room → it stays where it lies. */
+function _pickUpGround (it) {
+  const i = runWorldItems.items.indexOf(it)
+  if (i < 0 || !inventorySystem.fits(it.entry.id, it.entry.n)) return false
+  _dropGroundHandle(it)
+  return inventorySystem.restoreEntry(takeWorldItem(i))
+}
+
 /** Back to upright models at the row's own poses — wherever its bodies ended up. */
 function _standRow (row) {
   debrisSystem.remove(row.bodies)
@@ -5859,7 +6024,7 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
   const goal = (h) => `${formatDeeds(h)} / ${ECONOMY_PARAMS.campDeeds}`
   const tally = `<span class="mp-dim" data-tally="${goal(halfNow)}">· ${goal(halfNow - points * 2)}</span>`
   const deed = points > 0
-    ? beat(`<br><span class="mp-deed">+${points >= 1 ? '1' : '1/2'} deed</span>`
+    ? beat(`<br><span class="mp-deed"${points >= 1 ? ' data-full' : ''}>+${points >= 1 ? '1' : '1/2'} deed</span>`
         + (points < 1 && deedNeed ? ` <span class="mp-dim">(1 needed ${deedNeed})</span>` : '') + ` ${tally}`)
     : deedNeed ? beat(`<br><span class="mp-bad">no deed</span> <span class="mp-dim">(needed ${deedNeed})</span> ${tally}`) : ''
   // FEAT-88: the load's count, answered — and N-08: what became of the rest, so a short count has a cause.
@@ -5880,7 +6045,7 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
       ? (award
         ? beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-pay">${bonus.name} &check;</span>`
           + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; Tab to make room</span>` : ''))
-        : beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-dim">${bonus.name} missed &mdash; ${gate ?? gateText(bonus.gate)}</span>`))
+        : beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-dim" data-miss>${bonus.name} missed &mdash; ${gate ?? gateText(bonus.gate)}</span>`))
       : row('Speed tip', formatMoney(tip), ` data-countup="${tip}"`))
     + (haul?.bought > 0 ? beat(`<br><span class="mp-dim">Stock bought</span> <span class="mp-pay mp-bad">&minus;$${formatMoney(haul.bought)}</span>`) : '')
     + deed
@@ -5888,10 +6053,11 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
 }
 /**
  * N-04: run the result card's reveal on the rows _payRows just wrote: each `data-countup` amount counts
- * up over 0.7 s once its row has landed (an ease-out, so the last cents settle), and each `data-tally`
+ * up over 0.5–1.4 s by its size once its row has landed (an ease-out, so the last cents settle), and each `data-tally`
  * flips from the old total to the new half a second after its row. Idempotent per render — a re-render
  * writes fresh rows and the stale timers find theirs disconnected.
  */
+const COUNTUP_FULL = 20   // $ — a tip this big counts up for the longest (1.4 s) [DEFAULT]: day 1's S tip is $5
 function _revealResult (body, letter = null) {
   const t0 = performance.now()
   const delayOf = (el) => (parseFloat(el.closest('.mp-reveal')?.style.animationDelay) || 0) * 1000
@@ -5903,21 +6069,41 @@ function _revealResult (body, letter = null) {
     const amt = pay && (pay.dataset.countup != null || pay.textContent.includes('$'))
       ? parseFloat(pay.dataset.countup ?? pay.textContent.replace(/[^0-9.]/g, '')) : 0
     if (amt > 0) setTimeout(() => { if (el.isConnected) playCoin() }, delayOf(el))
+    // …and a thud as a miss lands: "no deed", an item missed, a load that never arrived (not a cost); P2: the
+    // line nudges once just after
+    const miss = el.querySelector('.mp-bad:not(.mp-pay), [data-miss]')
+    if (miss) {
+      setTimeout(() => { if (el.isConnected) playThud() }, delayOf(el))
+      miss.style.animationDelay = `${delayOf(el) + 350}ms`
+      miss.classList.add('mp-nudge')
+    }
   }
+  // P2: a full deed warms the box's border as its row lands — re-armed on every reveal (the box outlives it)
+  const box = body.closest('#mission-panel, #paper-panel'), full = body.querySelector('[data-full]')
+  box?.classList.remove('mp-warm')
+  if (box && full) setTimeout(() => { if (full.isConnected) box.classList.add('mp-warm') }, delayOf(full))
   if (rows.length && letter) setTimeout(() => { if (body.isConnected) playStinger(letter) }, delayOf(rows.at(-1)) + 450)
   for (const el of body.querySelectorAll('[data-countup]')) {
     const target = parseFloat(el.dataset.countup), delay = delayOf(el)
+    // P2: a bigger tip takes visibly longer — 0.5 s, up to 1.4 s at COUNTUP_FULL and over
+    const dur = 500 + 900 * Math.min(1, target / COUNTUP_FULL)
     el.textContent = '$0.00'
+    if (target > 0) setTimeout(() => { if (el.isConnected) playTickTrain(dur / 1000) }, delay)
     const tick = (t) => {
       if (!el.isConnected) return
-      const k = Math.min(1, Math.max(0, (t - t0 - delay) / 700))
+      const k = Math.min(1, Math.max(0, (t - t0 - delay) / dur))
       el.textContent = `$${formatMoney(target * (1 - Math.pow(1 - k, 3)))}`
       if (k < 1) requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
   }
   for (const el of body.querySelectorAll('[data-tally]')) {
-    setTimeout(() => { if (el.isConnected) { el.textContent = `· ${el.dataset.tally}`; el.classList.add('mp-tick') } }, delayOf(el) + 500)
+    setTimeout(() => {
+      if (!el.isConnected) return
+      if (el.textContent !== `· ${el.dataset.tally}`) playClack()   // a tally that moved; "no deed" stays put
+      el.textContent = `· ${el.dataset.tally}`
+      el.classList.add('mp-tick')
+    }, delayOf(el) + 500)
   }
 }
 
@@ -5952,6 +6138,7 @@ function _abandonedCard (r, extra = '') {
 // SM-INV-3 — par NEVER appears while driving; the result card is the only place it is shown.
 function _renderMissionUI () {
   const panel = document.getElementById('mission-panel')
+  if (panel) delete panel.dataset.result   // BUG-109: set again below while it shows a result
   const body  = document.getElementById('mp-body')
   const hud   = document.getElementById('mission-hud')
   const acts  = document.getElementById('mp-actions')
@@ -6064,6 +6251,7 @@ function _renderMissionUI () {
     }
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
+      panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
       const r = m.result
       if (r.expired) {   // FEAT-113: signed off past the deadline — no letter, no pay
         body.innerHTML = _expiredCard(r.dueH)
@@ -6163,6 +6351,7 @@ function _renderMissionUI () {
  */
 function _renderPaperUI () {
   const panel = document.getElementById('paper-panel')
+  if (panel) delete panel.dataset.result   // BUG-109: set again below while it shows a result
   const body  = document.getElementById('pp-body')
   const hud   = document.getElementById('paper-hud')
   const acts  = document.getElementById('pp-actions')
@@ -6229,6 +6418,7 @@ function _renderPaperUI () {
     }
     case 'done': {
       show(panel, true); show(hud, false); show(acts, true, 'flex')
+      panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
       const r = p.result
       if (r.expired) { body.innerHTML = _expiredCard(r.dueH); break }   // FEAT-113: no letter, no pay
       if (r.outOfPapers) {   // FEAT-141: short of N with the truck empty — settled like a passed deadline
@@ -6579,7 +6769,8 @@ let _spill = { key: null, aboard: -1, lost: 0, until: 0 }
 function _jobBeat (m) {
   const j = m.mission
   if (!j) return null
-  if (j.failed) return j.fragile ? 'CARGO DESTROYED · park and clean up' : j.loose ? 'TIRE LOST · park and abandon the job' : 'CARGO LOST · park and abandon the job'
+  if (j.failed) return j.fragile ? 'CARGO DESTROYED · park and clean up' : 'CARGO LOST · park and abandon the job'
+  if (j.cargoOut) return 'TIRE OUT OF THE BED · go back for it'   // FEAT-144
   if (j.bundles && _haul?.mission === j) {
     const aboard = _haulAboard(), now = performance.now() / 1000
     if (_spill.key !== j) _spill = { key: j, aboard, lost: 0, until: 0 }
@@ -6615,6 +6806,7 @@ function _updateRankTimer () {
   const src = (storySystem.isActive() && !storySystem.isEntering()) ? _rankTimerSource() : null
   if (!src) {
     if (_rtKey !== null) {       // the job ended or was put down: hide once, forget the layout
+      resolveRankMusic()         // FEAT-131 P3: the bed resolves into the result card's stinger
       _rtKey = null; _rtLayout = null; _rtHot = false; _rtShown = false; _rtLive = ''; _rtLiveInt = 0
       _rtEls.root.style.display = 'none'
       _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in', 'rt-closed')
@@ -6667,6 +6859,7 @@ function _updateRankTimer () {
     _rtShown = shown
     E.root.style.display = shown ? 'block' : 'none'
     E.root.classList.toggle('rt-in', shown)
+    if (shown) startRankMusic()   // FEAT-131 P3: the bed starts with the bar (owner, 2026-11-03)
   }
   if (!shown) return
   // Deep in D the strip closes (rank-timer.js closeAfterDS); the tile below it stays to the end.
@@ -6677,7 +6870,7 @@ function _updateRankTimer () {
   if (f.letter !== _rtLetter) {
     const old = _rtLetter
     _rtLetter = f.letter
-    if (old) _rtBreakLetter(old)   // a line went past: the old letter breaks and falls
+    if (old) { _rtBreakLetter(old); rankMusicStep() }   // a line went past: the old letter breaks and falls, the bed climbs
     E.letter.textContent = f.letter
     E.letterBox.style.background = RANK_COLOR[f.letter]   // the tile; the letter on it is dark (CSS)
     if (old) { E.letter.classList.remove('rt-slam'); void E.letter.offsetWidth; E.letter.classList.add('rt-slam') }
@@ -6691,6 +6884,7 @@ function _updateRankTimer () {
     E.root.classList.add(f.lost ? 'rt-lost' : 'rt-slow')
     E.beat.textContent = f.lost ? 'bonus lost' : 'too slow'
     if (f.lost) E.gate.classList.add('lost')
+    if (f.lost) rankMusicDrop(); else rankMusicThin()   // FEAT-131 P3: the bed drops, or thins to the heartbeat
     _rtBeatT = now + RT.beatS
   } else if (_rtBeatT && now >= _rtBeatT) {
     _rtBeatT = 0
@@ -6709,6 +6903,7 @@ function _updateRankTimer () {
       E.letterBox.style.scale = ''; E.letterBox.style.filter = ''; _rtKickT = -1
     }
     _rtLastNow = now
+    updateRankMusic(0, 0)   // FEAT-131 P3: calm — the pad settles dark, the arpeggio rests
     return
   }
   // ONE oscillator. Its frequency ramps pulseHzMin → pulseHzMax (48 → 140 bpm) with intensity² —
@@ -6722,6 +6917,7 @@ function _updateRankTimer () {
   const freq = RT.pulseHzMin + (RT.pulseHzMax - RT.pulseHzMin) * i * i
   const peaksBefore = Math.floor((_rtPhase - Math.PI / 2) / (2 * Math.PI))
   _rtPhase += 2 * Math.PI * freq * dtF
+  updateRankMusic(i, _rtPhase)   // FEAT-131 P3: the arpeggio steps on this phase's quarter turns
   const osc = Math.sin(_rtPhase)
   const weight = f.heavy ? 1 : 0.5
   if (Math.floor((_rtPhase - Math.PI / 2) / (2 * Math.PI)) > peaksBefore) {
@@ -7525,6 +7721,7 @@ function _syncScenarioColumns () {
 function _renderScenarioUI () {
   const hud = document.getElementById('mission-hud')
   const panel = document.getElementById('scenario-panel')
+  if (panel) delete panel.dataset.result   // BUG-109: set again below while it shows a result
   if (!hud || !panel) return
   const hudText = hud.querySelector('.hud-text') ?? hud
   const sc = scenarioSystem
@@ -7540,6 +7737,7 @@ function _renderScenarioUI () {
       break
     case 'done': {
       show(hud, false); show(panel, true)
+      panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
       const r = sc.result
       const title = document.getElementById('sp-title')
       if (title) title.textContent = `scenario · ${sc.def.name}`
@@ -7764,6 +7962,8 @@ const storySystem = new StorySystem({
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
     inventorySystem.start()          // FEAT-122: items die with the run (SM-INV-8/9)
+    _clearGround()                   // FEAT-143: …and so do the ones on the ground
+    restoreWorldItems(null)
     // …and a fresh truck. Entry flips the mode to 'story' BEFORE it reseats, so the seat's
     // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
     // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
@@ -7841,6 +8041,8 @@ const storySystem = new StorySystem({
     paperRouteSystem.abort()            // …and an unfinished route is dropped, never settled
     _renderPaperUI()
     _clearThrownRolls()                 // …and no papers from a story run lying about in free roam
+    _clearGround()                      // FEAT-143: nor the things the player set down
+    restoreWorldItems(null)
     setAimMode(false)
     poiSystem.clear()
     campSystem.clear()   // FEAT-45: no camping zones outside a live story region
@@ -8088,7 +8290,6 @@ function _jobCancelLabel () {
   if (!vehicleState.parked) return parkPrompt('park to abandon')
   // An intact strapped load still costs the clean-up hour, but it reads "abandon job" (owner,
   // 2026-10-15: "clean up" only once the cargo is actually wrecked).
-  if (missionSystem.mission?.failed && missionSystem.mission.loose) return 'tire lost · abandon job'
   return _strappedJob() && missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'abandon job'   // FEAT-97
 }
 function _syncJobCancel (hud, on) {
@@ -8183,8 +8384,9 @@ function _saveExitBlock () {
  * the offer exactly as it was planned (offer.planned — see OfferBoard.replan), which is a pure
  * function of the seed. The load is: freight and the loose tire go back to their own strap pose (a
  * weld holds the one there; the other goes where a reset puts it), so only fragile condition is kept.
- * Haul pieces keep their BED-LOCAL poses — where each sits is what arrival counts — and a piece
- * already out of the bed is lost and stays lost. A haul still loading re-drops from the start.
+ * Haul pieces keep their BED-LOCAL poses — where each sits is what arrival counts. A piece already out
+ * of the bed, the tire too, keeps its WORLD pose: it lies there to be fetched (FEAT-144). A haul still
+ * loading re-drops from the start.
  */
 function _jobSnapshot () {
   const s = missionSystem?.snapshot(), m = missionSystem?.mission
@@ -8196,8 +8398,23 @@ function _jobSnapshot () {
   if (_site?.mission === m) s.smashed = _site.targets.flatMap((t, i) => t.smashed ? [i] : [])   // FEAT-65
   if (_haul?.mission === m && s.state !== 'loading') {
     s.haul = _haul.handles.flatMap((h, i) => _inBed(h) ? [{ kind: _haul.drops[i].kind, ..._bedLocalPose(h) }] : [])
+    s.haulOut = _haul.handles.flatMap((h, i) => _inBed(h) ? [] : [{ kind: _haul.drops[i].kind, ..._worldPose(h) }])
   }
+  if (_loose?.mission === m && m.cargoOut) s.looseOut = _worldPose(_loose.body)
   return s
+}
+
+/** Debris body `h`'s world pose, as arrays. */
+function _worldPose (h) {
+  physicsEngine.getTransform(h, _blP, _blQ)
+  return { p: _blP.toArray(), q: _blQ.toArray() }
+}
+
+/** Lay debris body `h` at a saved world pose, still and asleep: it lies where it was left. */
+function _layAt (h, { p, q }) {
+  physicsEngine.setTransform(h, _blP.fromArray(p), _blQ.fromArray(q))
+  physicsEngine.setVelocity(h, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })
+  physicsEngine.sleep(h)
 }
 
 /** Debris body `h`'s pose in the truck's frame, as arrays. */
@@ -8231,6 +8448,11 @@ function _reloadCargo (m, sj) {
     void _loadFreight(m.load, m.cargoKg, m, t)
   }
   if (m.loose && !m.failed) _loadLoose(m.loose.kind, m.loose.massKg, m)
+  if (_loose && sj.looseOut) {   // FEAT-144: still where it fell out, and the job still waiting on it from the first step
+    _layAt(_loose.body, sj.looseOut)
+    _loose.outSince = -Infinity
+    m.cargoOut = true
+  }
   if (m.targets) _placeSite(m, sj.smashed ?? [])   // FEAT-65: the same site, the smashed ones still gone
   if (!sj.haul) return
   // ponytail: a piece whose model has not loaded is dropped — they load at boot, long before a resume.
@@ -8241,6 +8463,12 @@ function _reloadCargo (m, sj) {
     const h = debrisSystem.spawn(d.kind, { x: _fP.x, y: _fP.y, z: _fP.z }, v,
       { spin: { x: w.x, y: w.y, z: w.z }, quaternion: { x: _haulQd.x, y: _haulQd.y, z: _haulQd.z, w: _haulQd.w }, pinned: true, noDamage: true })
     if (h) { _haul.handles.push(h); _haul.drops.push({ kind: d.kind }) }
+  }
+  const still = { x: 0, y: 0, z: 0 }
+  for (const d of sj.haulOut ?? []) {   // FEAT-144: the pieces that fell out, where they lie
+    const h = debrisSystem.spawn(d.kind, { x: d.p[0], y: d.p[1], z: d.p[2] }, still,
+      { spin: still, quaternion: { x: d.q[0], y: d.q[1], z: d.q[2], w: d.q[3] }, pinned: true, noDamage: true })
+    if (h) { physicsEngine.sleep(h); _haul.handles.push(h); _haul.drops.push({ kind: d.kind }) }
   }
 }
 
@@ -8387,6 +8615,7 @@ function _runSnapshot () {
   return {
     seed: _seedString, world: activeWorld(), gearbox: _runGearbox,
     day: daySystem.snapshot(), economy: runEconomy, inventory: runInventory,
+    worldItems: runWorldItems.items,   // FEAT-143: a drop is player state (cold generation still holds)
     parts: partsSystem.snapshot(),   // fitted parts, every track's condition + durability, the flats
     damage: { toe: damageModel.toeOffsetDeg, camber: damageModel.camberOffsetDeg, engineTempC: damageModel.engineTempC },
     fuel: vs.fuel, odometer: gaugeCluster.odoMiles,
@@ -8410,6 +8639,8 @@ function _restoreRun (s) {
   Object.assign(runEconomy, s.economy)
   _playedS = s.playedS ?? 0
   inventorySystem.restore(s.inventory)
+  _clearGround()
+  restoreWorldItems(s.worldItems)   // FEAT-143: where the drops lay; the poll stands them back up
   partsSystem.restore(s.parts)
   damageModel.toeOffsetDeg.splice(0, 4, ...s.damage.toe)
   damageModel.camberOffsetDeg.splice(0, 4, ...s.damage.camber)
@@ -8542,6 +8773,8 @@ document.addEventListener('keydown', e => {
   if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
     if (isTeleportEnabled()) setSpawnHere()
   }
+  // FEAT-144 / FEAT-143: G (pad D-pad ↓) — load a lost piece back in the bed, or pick an item up.
+  if ((e.key === 'g' || e.key === 'G') && !e.repeat && !e.ctrlKey && !e.metaKey && e.target?.tagName !== 'INPUT') _pickUpNear()
 })
 
 // ── Esc handler — pause menu (D-17 / RESEARCH §Pitfall 3) ────────────────────
@@ -8867,7 +9100,7 @@ function loop () {
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them
-    _looseStep()     // the loose load: out of the bed too long fails the job
+    _looseStep()     // the loose load: out of the bed, the job waits for it (FEAT-144)
     // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
     // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
@@ -9332,6 +9565,7 @@ function loop () {
   setInTunnel(_listenerInBore())           // FEAT-163: the camera is the listener — it leaves a portal after the truck
   setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
   setResultAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)   // the card plays over a held sim
+  setRankMusic(RANGER_PARAMS.rankMusicEnabled !== false, RANGER_PARAMS.rankMusicVolume ?? 0.5)   // FEAT-131 P3
   // FEAT-120 ambience: crickets on the sky's own night; grass from the green share of the ground the
   // truck is on, off the road only (the shoulder feather counts as road).
   {
@@ -9403,6 +9637,8 @@ function loop () {
     _checkEdge()   // FEAT-154: past the barricades, fade and come back in
     _updateBarricades()   // …and the rows near the truck are loose bodies
     _updateOrnaments()    // FEAT-149: so are the lawn ornaments
+    _updateWorldItems()   // FEAT-143: and the things the player set down
+    _freezeLostCargo()    // FEAT-144: bed cargo that fell out sits out of the world while far
     _updateSite()         // FEAT-65: likewise a demolition job's targets
     const guiOpen = _gui.domElement.style.display !== 'none'   // S-64: debug read-outs only while the panel shows
     if (guiOpen) economySystem.syncGui()

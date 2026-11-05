@@ -49,6 +49,7 @@ import { makeVehicleState } from './vehicle-state.js'
 import { computeStaticEquilibrium } from './suspension.js'
 import { OFF as IGN_OFF } from './ignition.js'
 import { DebrisSystem } from './debris.js'
+import { pad } from './gamepad.js'   // BUG-109: the right stick orbits the menu truck
 
 const PHYSICS_DT = 1 / 60
 
@@ -78,6 +79,7 @@ const LENS_SHIFT_MM = -4.5   // mm of 35 mm film: −4.5 ≈ 10 % of a 16:9 fram
 const LENS_EASE_S   = 0.25   // s — time constant of the slide back to centre once the menu is gone (and out again)
 // Click-drag orbit, layered UNDER the parallax so the resting shot is unchanged until someone drags.
 const DRAG_RAD_PER_PX = 0.006             // rad of orbit per pixel dragged
+const STICK_RAD_PER_S = 1.6               // rad of orbit per second at full right stick (BUG-109) [DEFAULT]
 const DRAG_ELEV_MIN   = 2 * Math.PI / 180  // rad — lowest camera elevation; the parallax's extra -5°
                                            // still leaves the lens ~0.1 m above the plane
 const DRAG_ELEV_MAX   = 80 * Math.PI / 180 // rad — near top-down, straight into the bed
@@ -426,7 +428,7 @@ export class MenuStage {
   setActive (on) {
     if (on === this._active) return
     this._active = on
-    if (on) this.reset()
+    if (on) { this.reset(); this._dragYaw = 0; this._dragPitch = 0 }   // BUG-109: back to the resting shot on every return
   }
 
   /** Menu up: the picture sits right of the menu type. Menu gone (a load): it eases back to centre
@@ -530,6 +532,9 @@ export class MenuStage {
     this._mxS += (this._mx - this._mxS) * k
     this._myS += (this._my - this._myS) * k
 
+    // BUG-109: the pad's right stick orbits like a drag (stick right = drag right), at a fixed rate.
+    this._dragYaw -= pad.lookX * STICK_RAD_PER_S * dt
+    this._dragPitch += pad.lookY * STICK_RAD_PER_S * dt
     this._camOff.copy(this._camBase).sub(this._camTarget)
     // Clamp the drag in elevation terms: the shot's own elevation plus the drag stays in range.
     const elev0 = Math.asin(this._camOff.y / this._camOff.length())

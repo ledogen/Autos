@@ -355,6 +355,9 @@ export class DebrisSystem {
     return e
   }
 
+  /** Where a loaded type's body origin sits in its model's own frame (the mesh bbox centre), or null. */
+  centerOf (kind) { return this._proto.get(kind)?.center ?? null }
+
   /**
    * The hull's volume as the ENGINE builds it [m³] — NaN if the engine cannot build it at all. The
    * engine integrates ρ over the solid hull, so a throwaway body at ρ = 1 reports the volume as

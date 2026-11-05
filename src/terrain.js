@@ -628,6 +628,7 @@ export class TerrainSystem {
                 if (!e.tunnelSpans) continue
                 for (const sp of e.tunnelSpans) {
                     for (const [s, inward] of [[sp.s0, 1], [sp.s1, -1]]) {
+                        if (rs.isMouth && !rs.isMouth(runKey, s)) continue   // BUG-67: a split inside a sibling's tube has no mouth
                         const p = rs.runPointAt(runKey, s)
                         if (!p) continue
                         const pr = rs.runProfile(s, runKey)
