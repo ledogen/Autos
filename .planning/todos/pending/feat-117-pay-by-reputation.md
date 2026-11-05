@@ -40,3 +40,10 @@ moving on is always a raise.
 ## Amended 2026-10-21 (owner)
 
 Two giver traits move good deeds, and so reputation: **Off the books** gives none; **The right thing to do** adds ½ at C or better (FEAT-142). Deeds follow `pointsFor(letter)` on every type (FEAT-138). See design-amendments-2026-10-21-mission-recut.md §10.
+
+## Amended 2026-11-05 (owner, first playthrough)
+
+"pay should only scale with regions, and as that's a post-alpha feature we should just lock payment scales for now."
+The day tier leaving pay is built in **FEAT-168** (Lane B), with pay locked at the region tier, which is 1.0 in alpha.
+The reputation multiplier stays parked here for beta. The owner's 11-05 words name only regions, so whether
+reputation survives is open.
