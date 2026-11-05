@@ -29,10 +29,24 @@ export function rest (i, pose) {
     if (pose.q) it.q = pose.q
 }
 
-/** Indices of the items within `r` of (x, z) in plan, nearest first. */
-export function near (x, z, r = REACH_M) {
+/**
+ * Plan distance from item `it` to the truck at (x, z): to its footprint when `fp` is given, else to the
+ * point. The reach is "parked within a couple meters" OF THE TRUCK — measured from its centre, a thing
+ * set down behind the tailgate (2.5 m back) would start out of a 3 m reach.
+ * @param {{fx: number, fz: number, front: number, rear: number, half: number}} [fp] - the truck's unit
+ *   forward in plan, how far its nose and tail stand ahead of and behind (x, z), and its half width [m].
+ */
+function gap (it, x, z, fp) {
+    const dx = it.x - x, dz = it.z - z
+    if (!fp) return Math.hypot(dx, dz)
+    const a = dx * fp.fx + dz * fp.fz, s = dx * fp.fz - dz * fp.fx   // ahead, and to one side
+    return Math.hypot(Math.max(0, a - fp.front, -fp.rear - a), Math.max(0, Math.abs(s) - fp.half))
+}
+
+/** Indices of the items within `r` of the truck at (x, z) in plan (`fp`: see gap), nearest first. */
+export function near (x, z, r = REACH_M, fp = null) {
     return runWorldItems.items
-        .map((it, i) => [i, Math.hypot(it.x - x, it.z - z)])
+        .map((it, i) => [i, gap(it, x, z, fp)])
         .filter(([, d]) => d <= r)
         .sort((a, b) => a[1] - b[1])
         .map(([i]) => i)

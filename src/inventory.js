@@ -40,6 +40,10 @@ const _isBed = (id) => !!ITEMS[id]?.sleep
 const _newEntry = (id) => ITEMS[id].kind === 'pack' ? { id, n: 1, equipped: false, contents: [] }
     : ITEMS[id].capGal ? { id, n: 1, gal: ITEMS[id].capGal } : { id, n: 1 }
 
+/** One entry's real mass [kg]: the stack, a can's gas, a pack's contents. */
+export const entryKg = (e) => e.n * ITEMS[e.id].massKg + (e.gal ?? 0) * (ITEMS[e.id].kgPerGal ?? 0)
+    + (e.contents ?? []).reduce((k, id) => k + ITEMS[id].massKg, 0)
+
 export class InventorySystem {
     /**
      * @param {object} deps - adapter into main.js:
@@ -76,8 +80,7 @@ export class InventorySystem {
     slotCap () { return this._slotCap() }
     slotsUsed () { return runInventory.entries.length }
     stowedKg () {
-        return runInventory.entries.reduce((kg, e) => kg + e.n * ITEMS[e.id].massKg + (e.gal ?? 0) * (ITEMS[e.id].kgPerGal ?? 0)
-            + (e.contents ?? []).reduce((k, id) => k + ITEMS[id].massKg, 0), 0)
+        return runInventory.entries.reduce((kg, e) => kg + entryKg(e), 0)
     }
     equippedIndex () { return runInventory.entries.findIndex(e => e.equipped) }
     /** Camp sleep's recovery bonus: the `rest` of everything in the equipped pack (items.md §2b). */
@@ -175,12 +178,19 @@ export class InventorySystem {
 
     /**
      * FEAT-143: put back an entry picked up off the ground, exactly as it went down (its condition,
-     * gallons, contents). Like grant: no room → it waits as the pending swap. Returns 'taken' | 'pending' | null.
+     * gallons, contents, an open roll's uses). No room → false, and it stays on the ground: never the
+     * swap prompt, whose "leave it" would delete it.
      */
     restoreEntry (entry) {
-        if (!entry || !ITEMS[entry.id]) return null
-        const { id, n, ...extra } = entry
-        return this.grant(id, n ?? 1, extra)
+        const it = ITEMS[entry?.id]
+        if (!it || !this.fits(entry.id, entry.n)) return false
+        const s = _stacks(entry.id) && runInventory.entries.find(e => e.id === entry.id)
+        // ponytail: one open roll per stack — merging two keeps the emptier one's uses, so a merge can
+        // lose a few but never mints any; track open rolls per unit if that ever matters.
+        if (s) { s.n += entry.n; if (entry.left != null) s.left = Math.min(s.left ?? it.uses, entry.left) }
+        else runInventory.entries.push({ ...entry })
+        this._changed()
+        return true
     }
 
     /**
@@ -269,10 +279,15 @@ export class InventorySystem {
     list () {
         return runInventory.entries.map((e, index) => {
             const q = runInventory.quick.indexOf(e.id)
-            return { index, id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id), key: q < 0 ? null : q + 1,
-                     equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat,
-                     tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
+            return { index, ...this.rowOf(e), key: q < 0 ? null : q + 1 }
         })
+    }
+
+    /** One entry as the screen reads it — a truck slot, or an item lying on the ground (FEAT-143). */
+    rowOf (e) {
+        return { id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id),
+                 equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat,
+                 tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
     }
 
     _changed () {

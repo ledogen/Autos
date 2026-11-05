@@ -84,7 +84,9 @@ import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: th
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
-import { InventorySystem, runInventory } from './inventory.js'   // FEAT-122: what the player owns this run
+import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
+import { runWorldItems, place, rest, near, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
+import { ITEMS } from '../data/items.js'
 import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
@@ -3562,6 +3564,7 @@ const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
   onChange: () => inventoryScreen.render(),
+  onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
   effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
@@ -3575,6 +3578,7 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isSuppressed: () => menuStage.isActive(),
   isBlocked: () => damageScreen.blocked,
   actions: _partActions,
+  ground: { list: _groundNearby, pick: _pickUpGround },   // FEAT-143: "Nearby on the ground"
 })
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
 window.__econ = runEconomy      // dev handle — set the wallet for a play-test (`__econ.money = 200`)
@@ -5462,6 +5466,111 @@ function _updateOrnaments () {
       o.mesh.visible = true
     }
   }
+}
+
+// ── FEAT-143: items on the ground — the player's drops (src/world-items.js holds the list) ─────────
+// The ornaments' model↔body swap: a plain model far off; within ITEM_ON_M a debris body at its resting
+// pose, put to SLEEP at once, so it lies still until something touches it. A fresh drop is the one body
+// that starts awake: it is set down off the tailgate and falls to wherever it lands. Past ITEM_OFF_M it
+// is a model again where the body came to rest. Pinned (outside the debris cap) and harmless (noDamage),
+// like the loose bed load. The collider is the item's own model hulled at first use (debris.js load),
+// shared per model; the mass is the entry's own (a full can is heavier than an empty one). An item whose
+// world model is not exported yet is the model service's pink cube — honest, and still picked up.
+const ITEM_ON_M = 60, ITEM_OFF_M = 120
+const ITEM_GAP_M = 0.1   // m between the tailgate and a fresh drop's bounding circle, whatever its yaw
+const _groundItems = new Map()   // world item → { kind, mesh, body, fresh } — what the scene holds for it
+const _giP = new THREE.Vector3(), _giQ = new THREE.Quaternion(), _giF = new THREE.Vector3()
+
+/** inventory drop → on the ground at the tailgate, square to the truck (the body is set clear of it). */
+function _dropToGround (entry) {
+  const bed = DEFAULT_VEHICLE_MODEL.bed, q = vehicleState.quaternion
+  _giP.set(0, bed?.floorY ?? 0, bed?.gateZ ?? RANGER_PARAMS.bodyLength / 2).applyQuaternion(q).add(vehicleState.position)
+  const i = place(entry, { x: _giP.x, y: _giP.y, z: _giP.z, q: [q.x, q.y, q.z, q.w] })
+  _groundHandle(runWorldItems.items[i]).fresh = true
+  _updateWorldItems()
+}
+
+function _groundHandle (it) {
+  const model = ITEMS[it.entry.id].thumb ?? it.entry.id, kind = `item:${model}`
+  void debrisSystem.load(kind, { model, massKg: ITEMS[it.entry.id].massKg, friction: 0.6, restitution: 0.2 })
+  const h = { kind, model, mesh: null, body: null, fresh: false }
+  _groundItems.set(it, h)
+  return h
+}
+
+function _dropGroundHandle (it) {
+  const h = _groundItems.get(it)
+  if (!h) return
+  if (h.body != null) debrisSystem.remove([h.body])
+  if (h.mesh) scene.remove(h.mesh)
+  _groundItems.delete(it)
+}
+
+/** Everything off the scene (a run starts, resumes or ends). The list itself is world-items'. */
+function _clearGround () {
+  for (const it of [..._groundItems.keys()]) _dropGroundHandle(it)
+}
+
+/** The 10 Hz poll, beside the ornaments'. Keeps each live body's pose in the list, so the save reads where it lies. */
+function _updateWorldItems () {
+  const p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
+  runWorldItems.items.forEach((it, i) => {
+    const h = _groundItems.get(it) ?? _groundHandle(it)
+    const half = debrisSystem.halfExtents(h.kind)
+    if (!half) return   // its collider is still loading
+    if (!h.mesh) {   // the far model, posed as debris poses its own: the body origin is the mesh bbox centre
+      const m = spawnModel(h.model)
+      m.position.copy(debrisSystem.centerOf(h.kind)).negate()
+      h.mesh = new THREE.Group().add(m)
+      scene.add(h.mesh)
+    }
+    const d = Math.hypot(p.x - it.x, p.z - it.z)
+    if (h.body == null && d < ITEM_ON_M) {
+      _giQ.set(...it.q)
+      if (h.fresh) {   // off the tailgate: back by its bounding circle, up by its half height
+        _giP.set(0, half.y, Math.hypot(half.x, half.z) + ITEM_GAP_M).applyQuaternion(_giQ)
+        rest(i, { x: it.x + _giP.x, y: it.y + _giP.y, z: it.z + _giP.z })
+      }
+      h.body = debrisSystem.spawn(h.kind, { x: it.x, y: it.y, z: it.z }, still,
+        { spin: still, quaternion: { x: _giQ.x, y: _giQ.y, z: _giQ.z, w: _giQ.w }, pinned: true, noDamage: true, massKg: entryKg(it.entry) })
+      if (h.body == null) return
+      if (!h.fresh) physicsEngine.sleep(h.body)
+      h.fresh = false
+      h.mesh.visible = false
+    } else if (h.body != null) {
+      physicsEngine.getTransform(h.body, _giP, _giQ)
+      rest(i, { x: _giP.x, y: _giP.y, z: _giP.z, q: [_giQ.x, _giQ.y, _giQ.z, _giQ.w] })
+      if (d > ITEM_OFF_M) {
+        debrisSystem.remove([h.body])
+        h.body = null
+      }
+    }
+    if (h.body == null) {
+      h.mesh.position.set(it.x, it.y, it.z)
+      h.mesh.quaternion.set(...it.q)
+      h.mesh.visible = true
+    }
+  })
+}
+
+/** What the inventory lists under "Nearby on the ground": in reach of the parked truck's outline, nearest first. */
+function _groundNearby () {
+  const q = vehicleState.quaternion, p = vehicleState.position, bed = DEFAULT_VEHICLE_MODEL.bed
+  _giF.set(0, 0, -1).applyQuaternion(q).setY(0).normalize()
+  const rear = bed?.gateZ ?? RANGER_PARAMS.bodyLength / 2
+  const fp = { fx: _giF.x, fz: _giF.z, front: RANGER_PARAMS.bodyLength - rear, rear, half: RANGER_PARAMS.bodyWidth / 2 }
+  return near(p.x, p.z, REACH_M, fp).map(i => {
+    const it = runWorldItems.items[i]
+    return { it, row: inventorySystem.rowOf(it.entry) }
+  })
+}
+
+/** Pick world item `it` up into the truck. No room → it stays where it lies. */
+function _pickUpGround (it) {
+  const i = runWorldItems.items.indexOf(it)
+  if (i < 0 || !inventorySystem.fits(it.entry.id, it.entry.n)) return false
+  _dropGroundHandle(it)
+  return inventorySystem.restoreEntry(takeWorldItem(i))
 }
 
 /** Back to upright models at the row's own poses — wherever its bodies ended up. */
@@ -7816,6 +7925,8 @@ const storySystem = new StorySystem({
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
     inventorySystem.start()          // FEAT-122: items die with the run (SM-INV-8/9)
+    _clearGround()                   // FEAT-143: …and so do the ones on the ground
+    restoreWorldItems(null)
     // …and a fresh truck. Entry flips the mode to 'story' BEFORE it reseats, so the seat's
     // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
     // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
@@ -7893,6 +8004,8 @@ const storySystem = new StorySystem({
     paperRouteSystem.abort()            // …and an unfinished route is dropped, never settled
     _renderPaperUI()
     _clearThrownRolls()                 // …and no papers from a story run lying about in free roam
+    _clearGround()                      // FEAT-143: nor the things the player set down
+    restoreWorldItems(null)
     setAimMode(false)
     poiSystem.clear()
     campSystem.clear()   // FEAT-45: no camping zones outside a live story region
@@ -8439,6 +8552,7 @@ function _runSnapshot () {
   return {
     seed: _seedString, world: activeWorld(), gearbox: _runGearbox,
     day: daySystem.snapshot(), economy: runEconomy, inventory: runInventory,
+    worldItems: runWorldItems.items,   // FEAT-143: a drop is player state (cold generation still holds)
     parts: partsSystem.snapshot(),   // fitted parts, every track's condition + durability, the flats
     damage: { toe: damageModel.toeOffsetDeg, camber: damageModel.camberOffsetDeg, engineTempC: damageModel.engineTempC },
     fuel: vs.fuel, odometer: gaugeCluster.odoMiles,
@@ -8462,6 +8576,8 @@ function _restoreRun (s) {
   Object.assign(runEconomy, s.economy)
   _playedS = s.playedS ?? 0
   inventorySystem.restore(s.inventory)
+  _clearGround()
+  restoreWorldItems(s.worldItems)   // FEAT-143: where the drops lay; the poll stands them back up
   partsSystem.restore(s.parts)
   damageModel.toeOffsetDeg.splice(0, 4, ...s.damage.toe)
   damageModel.camberOffsetDeg.splice(0, 4, ...s.damage.camber)
@@ -9455,6 +9571,7 @@ function loop () {
     _checkEdge()   // FEAT-154: past the barricades, fade and come back in
     _updateBarricades()   // …and the rows near the truck are loose bodies
     _updateOrnaments()    // FEAT-149: so are the lawn ornaments
+    _updateWorldItems()   // FEAT-143: and the things the player set down
     _updateSite()         // FEAT-65: likewise a demolition job's targets
     const guiOpen = _gui.domElement.style.display !== 'none'   // S-64: debug read-outs only while the panel shows
     if (guiOpen) economySystem.syncGui()

@@ -1,8 +1,10 @@
 // GATE (FEAT-143 phase 1): items dropped on the ground and picked back up — the pure layer.
 //   1. a drop hands main.js the removed entry (InventorySystem onDrop), and it lies where it was put;
 //   2. near() finds it within the one shared reach (REACH_M), nearest first, and not beyond it;
-//   3. take() + restoreEntry() puts back the IDENTICAL entry — a part's condition, a can's gallons;
-//   4. the list survives the save (JSON round trip through restoreWorldItems).
+//   3. take() + restoreEntry() puts back the IDENTICAL entry — a part's condition, a can's gallons, an
+//      open roll's uses — and with no room it refuses (the item stays on the ground, no swap prompt);
+//   4. the list survives the save (JSON round trip through restoreWorldItems);
+//   5. the reach is measured from the truck's OUTLINE: a thing just behind the tailgate is in reach.
 import { InventorySystem, runInventory } from '../src/inventory.js'
 import { runWorldItems, place, near, take, rest, restoreWorldItems, REACH_M } from '../src/world-items.js'
 import { ITEMS } from '../data/items.js'
@@ -43,11 +45,26 @@ check('nothing is in reach from 4 m away', near(10, 10 + REACH_M + 1).length ===
 // 3. take + restore: the identical entries come back
 const back = []
 for (const i of near(10.4, 10).sort((a, b) => b - a)) back.push(take(i))
-for (const e of back) inv.restoreEntry(e)
+for (const e of back) check(`picks up ${e.id}`, inv.restoreEntry(e) === true)
 const after = runInventory.entries.map(e => JSON.parse(JSON.stringify(e)))
 const key = (l) => l.map(e => JSON.stringify(e)).sort()
 check('picked up, the entries are exactly what went down (condition, gallons)', same(key(after), key(before)), `${JSON.stringify(before)} → ${JSON.stringify(after)}`)
 check('the ground is empty again', runWorldItems.items.length === 0)
+
+// 3b. an open roll keeps its uses; no room refuses and changes nothing
+const roll = Object.keys(ITEMS).find(id => ITEMS[id].uses > 1)
+inv.grant(roll, 2)
+const iRoll = runInventory.entries.findIndex(e => e.id === roll)
+runInventory.entries[iRoll].left = 1
+inv.drop(iRoll)
+const rollBack = take(place(dropped.at(-1), { x: 0, y: 0, z: 0 }))
+inv.restoreEntry(rollBack)
+const r = runInventory.entries.find(e => e.id === roll)
+check(`${roll}: the open one still has 1 use left`, r?.n === 2 && r.left === 1, JSON.stringify(r))
+const full = new InventorySystem({ slotCap: () => 0 })
+const snap = JSON.stringify(runInventory)
+check('no room: refused, the inventory unchanged', full.restoreEntry({ id: part, n: 1, cond: 0.5 }) === false && JSON.stringify(runInventory) === snap)
+runInventory.entries.splice(runInventory.entries.findIndex(e => e.id === roll), 1)
 
 // 4. save round trip
 place({ id: part, n: 1, cond: 0.9 }, { x: 1, y: 2, z: 3, q: [0, 0, 0.3826834, 0.9238795] })
@@ -56,6 +73,14 @@ restoreWorldItems(null)
 check('a new run starts with nothing on the ground', runWorldItems.items.length === 0)
 restoreWorldItems(saved.worldItems)
 check('a save brings the drop back where it lay', runWorldItems.items.length === 1 && runWorldItems.items[0].entry.cond === 0.9 && runWorldItems.items[0].q[2] === 0.3826834)
+
+// 5. reach from the outline: a truck at the origin facing −Z, tail 2.54 m back, nose 2.17 m on, 0.83 m half width
+restoreWorldItems(null)
+place({ id: part, n: 1 }, { x: 0.3, y: 0, z: 2.54 + 0.6 })   // 0.6 m off the tailgate (3.15 m from the centre)
+place({ id: part, n: 1 }, { x: 0.83 + REACH_M + 0.2, y: 0, z: 0 })   // just past the reach off the side
+const fp = { fx: 0, fz: -1, front: 2.17, rear: 2.54, half: 0.83 }
+check('behind the tailgate: out of reach of the centre, in reach of the outline', near(0, 0).length === 0 && same(near(0, 0, REACH_M, fp), [0]),
+    JSON.stringify(near(0, 0, REACH_M, fp)))
 
 console.log(fails ? `\nworld-items: ${fails} FAIL` : '\nworld-items: all ok')
 process.exit(fails ? 1 : 0)

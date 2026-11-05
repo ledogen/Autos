@@ -56,7 +56,7 @@ function cardContainer () {
 }
 
 // The inventory's slots are divs; BUG-109: so are the damage screen's list rows, and its pictogram parts are SVG.
-const ITEMS = 'button, input, .inv-slot[data-slot], .inv-slot[data-packslot], #dmg-screen .ds-part[data-track], #dmg-screen .ds-row[data-track]'
+const ITEMS = 'button, input, .inv-slot[data-slot], .inv-slot[data-packslot], .inv-slot[data-ground], #dmg-screen .ds-part[data-track], #dmg-screen .ds-row[data-track]'
 
 let cur = null   // the highlighted item
 // FEAT-133: where it was, so a card that re-renders its innerHTML (the inventory, on every change)
