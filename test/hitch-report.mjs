@@ -61,6 +61,8 @@ const TRUCK = has('truck')
 // period into loop JS / GC / other main-thread tasks (worker replies, timers) / idle main thread. The
 // in-loop buckets cannot see between frames; "off-CPU" above lumps all four together.
 const TRACE = flag('trace', '')
+// --analyze=FILE: re-run that split on a saved trace (with --hitch=MS), no browser.
+const ANALYZE = flag('analyze', '')
 // --gpu (PERF-28): time OUR GPU work per frame — every renderer.render() wrapped in a WebGL timer query
 // (EXT_disjoint_timer_query_webgl2, present in headless Chrome on ANGLE/Metal). Says whether a frame
 // that waited on GPU backpressure was waiting on our own draw or on someone else's.
@@ -102,6 +104,8 @@ const GPU_ARM = `(() => {
   return true })()`
 if (!['drive', 'stream'].includes(SCENARIO)) { console.error(`unknown scenario ${SCENARIO}`); process.exit(1) }
 
+if (ANALYZE) { analyzeTrace(ANALYZE); process.exit(0) }
+
 const qs = new URLSearchParams({ prof: '1', hitch: String(HITCH_MS), nomenu: '1' })   // FEAT-41: skip the menu; this harness wants the world on screen
 if (SEED && SEED !== '6') qs.set('seed', SEED)
 const APP = `http://localhost:${PORT}/index.html?${qs}`
@@ -139,7 +143,7 @@ if (GPU && !(await evalOk(GPU_ARM))) { console.error('--gpu: EXT_disjoint_timer_
 if (CPU > 1) { await client.cmd('Emulation.setCPUThrottlingRate', { rate: CPU }); await sleep(1500) }
 
 // ── measurement window ───────────────────────────────────────────────────────────────────────
-const tracer = TRACE ? await startTracing(client, TRACE, { categories: `${TRACE_CATEGORIES},v8` }) : null
+const tracer = TRACE ? await startTracing(client, TRACE, { categories: `${TRACE_CATEGORIES},v8,disabled-by-default-v8.cpu_profiler` }) : null
 await evalOk('window.__hitchReset()')
 if (PHYS) await evalOk('(() => { window.__physT0 = performance.now(); window.__physT.slow.length = 0; window.__physT.n = 0; window.__physT.ms = 0; return true })()')
 if (GPU) await evalOk('(() => { window.__gpuT.q.length = 0; window.__gpuT.f.length = 0; window.__gpuT.churn.length = 0; return true })()')
@@ -207,14 +211,14 @@ console.log(`\n  excess frame time in hitches: ${lost.toFixed(0)} ms — ${(100 
 // UNION on the renderer main thread, clipped to the period, so nested events never double-count.
 // idle = no task on the main thread at all: it was waiting (GPU backpressure, or the OS gave the
 // process no core — machine load). gpu = GPU-process task time in the same period, for that call.
-let traceSplit = null
-if (tracer) {
-  const ev = JSON.parse(readFileSync(TRACE, 'utf8')).traceEvents
+const traceSplit = tracer ? analyzeTrace(TRACE) : null
+function analyzeTrace (file) {
+  const ev = JSON.parse(readFileSync(file, 'utf8')).traceEvents
   const named = (n) => ev.filter(e => e.ph === 'M' && e.name === 'thread_name' && e.args?.name === n)
   const rafs = ev.filter(e => e.ph === 'X' && e.name === 'FireAnimationFrame')
   const mains = named('CrRendererMain').map(m => ({ m, n: rafs.filter(e => e.pid === m.pid && e.tid === m.tid).length })).sort((a, b) => b.n - a.n)
   const { pid, tid } = mains[0].m
-  const gpuPid = ev.find(e => e.ph === 'M' && e.name === 'process_name' && e.args?.name === 'GPU Process')?.pid
+  const gpuMain = named('CrGpuMain')[0]
   const iv = (pred) => ev.filter(e => e.ph === 'X' && e.dur > 0 && pred(e)).map(e => [e.ts, e.ts + e.dur]).sort((a, b) => a[0] - b[0])
   const union = (l) => { const o = []; for (const [a, b] of l) { const t = o[o.length - 1]; if (t && a <= t[1]) t[1] = Math.max(t[1], b); else o.push([a, b]) } return o }
   const onMain = e => e.pid === pid && e.tid === tid
@@ -223,7 +227,10 @@ if (tracer) {
     task: union(iv(e => onMain(e) && e.name === 'ThreadControllerImpl::RunTask')),
     loop: union(iv(e => onMain(e) && e.name === 'FireAnimationFrame')),
     gc: union(iv(e => onMain(e) && GC.test(e.name))),
-    gpu: gpuPid != null ? union(iv(e => e.pid === gpuPid && e.name === 'GPUTask')) : [],
+    gpu: gpuMain ? union(iv(e => e.pid === gpuMain.pid && e.tid === gpuMain.tid && e.name === 'ThreadControllerImpl::RunTask')) : [],
+    // A synchronous GL round trip: the main thread blocks on the GPU process (GetProgramiv after a shader
+    // link is the common one — a mid-play program compile).
+    glWait: union(iv(e => onMain(e) && e.name === 'CommandBufferHelper::Finish')),
   }
   const clip = (u, a, b) => u.reduce((s, [x, y]) => s + Math.max(0, Math.min(y, b) - Math.max(x, a)), 0)
   const minus = (u, cut) => { const o = []; for (const [a, b] of u) { let x = a; for (const [c, d] of cut) { if (d <= x || c >= b) continue; if (c > x) o.push([x, c]); x = Math.max(x, d) } if (x < b) o.push([x, b]) } return o }
@@ -233,6 +240,33 @@ if (tracer) {
   const outs = ev.filter(e => e.ph === 'X' && onMain(e) && NAMED.has(e.name) && e.dur > 2000)
   const inLoop = (e) => U.loop.some(([a, b]) => e.ts >= a && e.ts < b)
   const label = (e) => { const d = e.args?.data ?? {}; return `${e.name}${d.type ? ':' + d.type : ''}${d.functionName ? ' ' + d.functionName : ''}${d.url ? ' ' + d.url.split('/').pop().split('?')[0] + ':' + (d.lineNumber ?? '') : ''}` }
+  // JS stacks: the cpu_profiler category puts V8's sampling profile in the trace (ProfileChunk events:
+  // nodes + samples + timeDeltas, on the trace clock). Only the profile whose thread is the main thread.
+  const prof = new Map()   // id -> { tid, t, nodes, samples: [[ts, nodeId, dtUs]] }
+  for (const e of ev) {
+    if (e.name === 'Profile' && e.pid === pid) prof.set(e.id, { tid: e.tid, t: e.args.data.startTime, nodes: new Map(), samples: [] })
+    if (e.name !== 'ProfileChunk' || !prof.has(e.id)) continue
+    const P = prof.get(e.id), d = e.args.data, cp = d.cpuProfile ?? {}
+    for (const n of cp.nodes ?? []) P.nodes.set(n.id, n)
+    const ids = cp.samples ?? [], dts = d.timeDeltas ?? []
+    for (let k = 0; k < ids.length; k++) { P.t += dts[k] ?? 0; P.samples.push([P.t, ids[k], dts[k + 1] ?? 0]) }
+  }
+  const P = [...prof.values()].find(x => x.tid === tid) ?? null
+  const fn = (n) => n.callFrame.functionName || `(anon ${n.callFrame.url.split('/').pop().split('?')[0]}:${n.callFrame.lineNumber})`
+  const SKIP = new Set(['(root)', '(program)', '(idle)', 'loop'])
+  const stacks = (a, b) => {   // top self functions in [a, b), each with its two nearest named callers
+    if (!P) return []
+    const self = new Map()
+    for (const [t, id, dt] of P.samples) {
+      if (t < a || t >= b) continue
+      let n = P.nodes.get(id); if (!n) continue
+      const path = [fn(n)]
+      for (let p = P.nodes.get(n.parent); p && path.length < 3; p = P.nodes.get(p.parent)) if (!SKIP.has(fn(p))) path.push(fn(p))
+      const k = path.join(' < ')
+      self.set(k, (self.get(k) ?? 0) + dt)
+    }
+    return [...self.entries()].filter(([k]) => !SKIP.has(k.split(' < ')[0])).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, us]) => `${(us / 1000).toFixed(1)} ${k}`)
+  }
   // One BeginMainThreadFrame per frame; the app's ~29 rAF callbacks per frame each log their own FireAnimationFrame.
   const starts = ev.filter(e => onMain(e) && e.name === 'BeginMainThreadFrame').map(e => e.ts).sort((a, b) => a - b)
   const rows2 = []
@@ -241,17 +275,22 @@ if (tracer) {
     if (ms < HITCH_MS) continue
     const busy = clip(U.task, a, b)
     rows2.push({ ms, loop: clip(U.loop, a, b) / 1000, gcIn: (clip(U.gc, a, b) - clip(gcOut, a, b)) / 1000, gcOut: clip(gcOut, a, b) / 1000,
-      other: clip(other, a, b) / 1000, idle: ((b - a) - busy) / 1000, gpu: clip(U.gpu, a, b) / 1000,
+      other: clip(other, a, b) / 1000, idle: ((b - a) - busy) / 1000, gpu: clip(U.gpu, a, b) / 1000, glWait: clip(U.glWait, a, b) / 1000,
+      js: stacks(a, b),
       what: outs.filter(e => e.ts >= a && e.ts < b && !inLoop(e)).sort((x, y) => y.dur - x.dur).slice(0, 2).map(e => `${label(e)} ${(e.dur / 1000).toFixed(0)}`) })
   }
   const sum = k => rows2.reduce((s, r) => s + r[k], 0)
-  traceSplit = { periods: starts.length - 1, long: rows2.length, ms: sum('ms'), loop: sum('loop'), gcIn: sum('gcIn'), gcOut: sum('gcOut'), other: sum('other'), idle: sum('idle'), gpu: sum('gpu'), worst: rows2.sort((x, y) => y.ms - x.ms).slice(0, 20) }
+  const traceSplit = { periods: starts.length - 1, long: rows2.length, ms: sum('ms'), loop: sum('loop'), gcIn: sum('gcIn'), gcOut: sum('gcOut'), other: sum('other'), idle: sum('idle'), gpu: sum('gpu'), glWait: sum('glWait'), worst: rows2.sort((x, y) => y.ms - x.ms).slice(0, 20) }
   const f = v => v.toFixed(1).padStart(7)
-  console.log(`  ── trace: ${rows2.length} of ${starts.length - 1} frame periods ≥ ${HITCH_MS} ms (${TRACE}) ──`)
-  console.log(`  ${'period'.padStart(7)}${'loop'.padStart(7)}${'gcIn'.padStart(7)}${'gcOut'.padStart(7)}${'other'.padStart(7)}${'idle'.padStart(7)}${'gpu'.padStart(7)}  other = non-rAF tasks (named, ms)`)
-  for (const r of traceSplit.worst.slice(0, 15)) console.log(`  ${f(r.ms)}${f(r.loop)}${f(r.gcIn)}${f(r.gcOut)}${f(r.other)}${f(r.idle)}${f(r.gpu)}  ${r.what.join(' · ')}`)
+  console.log(`  ── trace: ${rows2.length} of ${starts.length - 1} frame periods ≥ ${HITCH_MS} ms (${file}) ──`)
+  console.log(`  ${'period'.padStart(7)}${'loop'.padStart(7)}${'gcIn'.padStart(7)}${'gcOut'.padStart(7)}${'other'.padStart(7)}${'idle'.padStart(7)}${'gpu'.padStart(7)}${'glWait'.padStart(7)}  other = non-rAF tasks (named, ms)${P ? '' : '   [no JS profile in trace]'}`)
+  for (const r of traceSplit.worst.slice(0, 15)) {
+    console.log(`  ${f(r.ms)}${f(r.loop)}${f(r.gcIn)}${f(r.gcOut)}${f(r.other)}${f(r.idle)}${f(r.gpu)}${f(r.glWait)}  ${r.what.join(' · ')}`)
+    for (const j of r.js) console.log(`  ${''.padStart(56)}js ${j}`)
+  }
   const T = traceSplit.ms || 1
-  console.log(`  all long periods: ${traceSplit.ms.toFixed(0)} ms = loop ${(100 * traceSplit.loop / T).toFixed(0)}% (gc inside ${(100 * traceSplit.gcIn / T).toFixed(0)}%) · gc outside ${(100 * traceSplit.gcOut / T).toFixed(0)}% · other tasks ${(100 * traceSplit.other / T).toFixed(0)}% · idle ${(100 * traceSplit.idle / T).toFixed(0)}%  (gpu busy ${(100 * traceSplit.gpu / T).toFixed(0)}%)\n`)
+  console.log(`  all long periods: ${traceSplit.ms.toFixed(0)} ms = loop ${(100 * traceSplit.loop / T).toFixed(0)}% (gc inside ${(100 * traceSplit.gcIn / T).toFixed(0)}%) · gc outside ${(100 * traceSplit.gcOut / T).toFixed(0)}% · other tasks ${(100 * traceSplit.other / T).toFixed(0)}% · idle ${(100 * traceSplit.idle / T).toFixed(0)}%  (gpu-process busy ${(100 * traceSplit.gpu / T).toFixed(0)}%, sync GL waits ${(100 * traceSplit.glWait / T).toFixed(0)}%)\n`)
+  return traceSplit
 }
 
 // ── --gpu: our own GPU milliseconds per frame, and on the frames around each long period ──────
