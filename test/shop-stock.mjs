@@ -9,7 +9,8 @@
 //   4. Mean occupancy of a shelf run hour by hour (reported; checked against the two-state estimate).
 //   5. Same seed → same shelf; another seed → another.
 //   6. Buying empties the slot; an item is gone once its time is up.
-//   7. FEAT-165: every shop, every hour, ends its shelf with the ALWAYS tires, new; buying one leaves it.
+//   7. FEAT-165/168: every shop, every hour, ends its shelf with the ALWAYS rows (old tire, air filter,
+//      plug kit), new; buying one leaves it. The standard tire is back in the rotation.
 //
 // Pure node: no THREE, no DOM.
 import { rollSlot, startShelves, shelf, take, shelfPrice, runShelves } from '../src/shop-stock.js'
@@ -100,6 +101,7 @@ const life = (LIFE_H[0] + LIFE_H[1]) / 2 + 0.5, wait = (1 - P_FILL) / P_FILL
 const est = SHELF_SLOTS * life / (life + wait)
 console.log(`       mean occupancy ${occ.toFixed(2)} of ${SHELF_SLOTS} slots (estimate ${est.toFixed(2)})`)
 check('mean occupancy as the numbers imply', Math.abs(occ - est) < 0.15)
+check('FEAT-168: a shelf carries ~3 rotating items on average (owner, 2026-11-05)', Math.abs(occ - 3) < 0.25)
 
 // ── 5. Determinism ────────────────────────────────────────────────────────────────────────────
 const snap = (seed) => { startShelves(seed); return JSON.stringify([100, 130, 175.5].map(t => shelf('shopA', t))) }
@@ -123,16 +125,18 @@ check('…and the same shelf without the purchase still has it', s[i]?.id === e.
 check('still there just before its time is up', shelf('buy', e.expiresAt - 0.01)[i]?.expiresAt === e.expiresAt)
 check('gone once it is', shelf('buy', e.expiresAt)[i]?.expiresAt !== e.expiresAt)
 
-// ── 7. The tires every shop always has (FEAT-165) ──────────────────────────────────────────────
+// ── 7. What every shop always has (FEAT-165/168) ───────────────────────────────────────────────
 let always = true
 for (const seed of [1, 2, 3, 4, 5]) {
   startShelves(seed)
   for (const shop of ['autoShop:a', 'autoShop:b', 'autoShop:c']) for (let h = 0; h < 24 * 12; h += 0.5) {
     const tail = shelf(shop, h).slice(SHELF_SLOTS)
-    if (tail.length !== ALWAYS.length || tail.some((e, k) => e?.id !== ALWAYS[k] || e.cond !== 1)) always = false
+    if (tail.length !== ALWAYS.length || tail.some((e, k) => e?.id !== ALWAYS[k] || e.cond !== (PARTS[e.id] ? 1 : null))) always = false
   }
 }
 check(`every shop, every half hour of 12 days × 5 seeds, has ${ALWAYS.join(' and ')}, new`, always)
+check('the old tire and the air filter are always stocked; the standard tire rotates',
+  ALWAYS.includes('tireOld') && ALWAYS.includes('airFilterStock') && !ALWAYS.includes('tireStandard') && STOCK_WEIGHT.tireStandard === 10)
 startShelves(3)
 const at = shelf('autoShop:a', 50).length - 1
 take('autoShop:a', at)
