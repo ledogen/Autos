@@ -121,3 +121,28 @@ Reach (8 m proposed), parked only, drops persist in the save (player state), pic
 **One open number:** in the same sitting the owner ruled FEAT-144 "one button, one reach rule for both" with
 "parked within a couple meters" and D-pad ↓. Until `feat143-reach` is answered, build R as one shared constant
 (3 m [DEFAULT]) and route D-pad ↓ to the same pick-up; the strip stays as the keyboard/mouse path.
+
+## Built — Phase 1 code (Spare, 2026-11-05, feature/spare 29fae9be → e6b7ae06, 3aa8f0fd)
+
+- **Pure layer** `src/world-items.js`: `runWorldItems` (full entries + resting pose), `place / rest / near /
+  take / restoreWorldItems`, `REACH_M` 3 m [DEFAULT], and `planGap`: the reach is measured from the truck's
+  **outline** (nose 2.17 m, tail = the tailgate 2.54 m off the CG, half width 0.83 m), not its centre — from
+  the centre, a thing set down behind the tailgate would start out of a 3 m reach.
+- **Drop:** `InventorySystem.drop` → `onDrop` → main.js lays it at the tailgate, square to the truck, set back
+  by its bounding circle + 0.1 m at bed-floor height, and it falls. Mass = the entry's own (`entryKg`: a full
+  can weighs more than an empty one). Collider = the model hulled at first use (`debrisSystem.load`, lazy —
+  no cold-boot fetches), shared per model.
+- **Swap:** the ornaments' pattern — a body within 60 m (asleep, except a fresh drop), a model past 120 m
+  where it came to rest. Poses go back into `runWorldItems` at 10 Hz, and the save carries `worldItems`.
+- **Pick up:** the inventory's "Nearby on the ground" strip (pad-reachable), and D-pad ↓ / G (FEAT-144).
+  Only into a free slot: `restoreEntry` refuses with no room (the item stays on the ground; never the swap
+  prompt, whose "leave it" would delete it) and keeps an open roll's uses.
+- **Assets:** `items.py` has WORLD rows for the 27 remaining models (`item-<kebab>.glb`; tire, wheel,
+  radiator and air filter laid flat, the hi-lift on its side). The six camp-bed models come from Lane A's
+  FEAT-66 rows (feature/run-shape). Until the exports run, an item without a model is the model service's
+  pink cube — it works, it is just a cube.
+- **Gate:** `test/world-items.mjs` (drop → entry handed over; reach from the outline; identical entry back
+  incl. condition, gallons, uses; no room refuses; save round trip).
+
+**Owed (compute hold):** run the 27 exports (`blender -b --factory-startup … items.export_glb`), add their
+`data/prop-models.js` rows (tris + size from the export print), cdp-smoke with a drop + pick-up step.
