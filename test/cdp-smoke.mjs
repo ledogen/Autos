@@ -1019,6 +1019,12 @@ const STEPS = [
     const mn = () => js('document.getElementById("midnight-card").classList.contains("on") && document.getElementById("mn-main").textContent')
     check(await until(async () => await mn() === 'Supplies are drying up', 1500), `midnight showed no overlay ("${await mn()}")`)
     check(await until(async () => !await mn(), 6000), 'the midnight overlay never cleared')
+    // FEAT-169: that jump was past the run's first meal — the meter says hungry, in words; a chili dog
+    // from the inventory feeds the driver.
+    const stage = () => js('document.getElementById("em-stage").textContent')
+    check(await until(async () => /· hungry$/.test(await stage()), 1000), `the energy meter does not say hungry ("${await stage()}")`)
+    await js('window.__inv.grant("chiliDog"); window.__inv.use("chiliDog")')
+    check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)
   }],
 ]
 
