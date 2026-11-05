@@ -82,3 +82,39 @@ is the pass line by definition (the 2026-08-16 re-anchor), and `tipZero` is solv
 breaks that. The clean way that keeps it: raise `PAR_SLACK` 1.15 → ~1.32–1.38, so par itself sits 15–20 % later,
 and pull S/A/B down as ratios so S's absolute time barely moves (S 0.77 → ~0.66; "maybe slightly too challenging"
 → a touch easier still). The owner rules on which, with numbers, at build time.
+
+**Measured options (Lane B, 2026-11-05; nothing shipped changed).** The day-1 average region-1 job: today par
+180 s, so its reference drive is 180 / 1.15 = 156.5 s. Rules used in every option:
+- S's absolute time is held at 138.6 s.
+- A and B keep their place in the S→C gap (A 17 %, B 43 % of the way from S to C), so the spread grows evenly.
+- `fullTipRatio` stays = S and `tipZero` = 2 − S (both gated today), so par still earns half the tip.
+- `k` is rescaled by 1.15 / slack, so the average job still pays $5 base and $10 max (the owner's day-1 anchors).
+
+| `PAR_SLACK` | S / A / B ratios | S | A | B | C (= par) | base pay only from |
+|---|---|---|---|---|---|---|
+| 1.15 (today) | 0.770 / 0.810 / 0.870 | 138.6 s | 145.8 s | 156.6 s | 180.0 s | 221 s |
+| 1.27 | 0.697 / 0.750 / 0.829 | 138.6 s | 149.1 s (+2 %) | 164.8 s (+5 %) | 198.8 s (+10 %) | 259 s |
+| 1.32 | 0.671 / 0.728 / 0.814 | 138.6 s | 150.4 s (+3 %) | 168.2 s (+7 %) | 206.6 s (+15 %) | 275 s |
+| 1.38 | 0.642 / 0.704 / 0.797 | 138.6 s | 152.1 s (+4 %) | 172.3 s (+10 %) | 216.0 s (+20 %) | 293 s |
+
+Pay at each letter's line is the SAME in every option: S $10.00 · A $9.57 · B $8.91 · C $7.50 · D floor
+$5.00. The tip is linear in time between S and C, and both ends are held, so only the times move. What
+changes is the pay for a given drive time, because the tip runs out later:
+
+| drive time | 150 s | 160 s | 170 s | 180 s | 190 s | 200 s | 210 s |
+|---|---|---|---|---|---|---|---|
+| 1.15 (today) | $9.31 | $8.71 | $8.10 | $7.50 | $6.90 | $6.29 | $5.69 |
+| 1.27 | $9.53 | $9.11 | $8.70 | $8.28 | $7.86 | $7.45 | $7.03 |
+| 1.32 | $9.58 | $9.21 | $8.85 | $8.48 | $8.11 | $7.74 | $7.38 |
+| 1.38 | $9.63 | $9.31 | $8.99 | $8.66 | $8.34 | $8.02 | $7.69 |
+
+If `k` is NOT rescaled, par grows and every dollar above grows with it: ×1.10 / ×1.15 / ×1.20 (1.38 gives a
+$6 base and a $12 max on the average job).
+
+Knock-on effects to weigh:
+- B moves 5–10 % later, so more drives earn a whole deed. FEAT-168 sized the 12-day run (10 deeds) on
+  today's lines.
+- Everything priced off par grows by the same factor: offer deadlines, the papers deadline (par × 1.5),
+  and haul and freight pars.
+- Gate pins to re-express: region 1's time row == par.js `RANK_THRESHOLDS_DEFAULT`, and "S at or above the
+  best honest drive, ratio 0.740". In absolute time that drive is 133 s, still faster than S's 138.6 s.
