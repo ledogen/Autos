@@ -124,6 +124,7 @@
     <li><b>Lane A:</b> FEAT-103 alpha camp · FEAT-146 the run ends · FEAT-157 requisition lines · FEAT-154 barricades · FEAT-128 key off at camp · FEAT-151 tiredness · BUG-95.</li>
     <li><b>Lane B (some built by Spare):</b> landed 11-05 e8a6d460 (121/121, smoke 21/21): open diff $10 · swapped-out parts go to My Items · jalopy crash fix · crash lab repaired · FEAT-159 throttle assist + traction control (on main 11-04) · FEAT-158 rock grip · BUG-99 tire on rock · FEAT-93/94 punctures and flats · FEAT-152 rim sparks · FEAT-138 hi-lift · FEAT-150 shift schedule · BUG-89 side slide · BUG-54 rock colliders · FEAT-132/137 on evidence.</li>
     <li><b>Lane C (some built by Spare):</b> ASSET-71 camp · ASSET-32 van · ASSET-69/70/73 office, doctor, school · FEAT-149 knockable ornaments · BUG-94 moon halo · BUG-96 tree billboards.</li>
+    <li><b>Landed 11-05 night</b> (each smoke 23/23; suites 124/124, 125/125): Lane A cb5dcf84 + 7006140f · FEAT-168 3ea5578c · BUG-114 428768a3 · Spare bdf2ff5e + 3518e8ed (BUG-101 closed: no lag, pinned · PERF-36 measured, not landed · BUG-94/96).</li>
     <li><b>Spare:</b> landed 11-05 38765f33 (122/122, smoke 21/21): BUG-67 steps 1 + 2 · BUG-81 tunnel shoulder (“smooth as butter”) · FEAT-143/144 world items · BUG-74 roadwork seam (fill buries the rock; owner-approved 11-03) · BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus · FEAT-160 run end says why. BUG-73 closed unreproduced.</li>
   </ul></div>
   <h2>Landed 2026-10-24</h2>
@@ -151,11 +152,11 @@
         { id: 'FEAT-161', what: 'The finale is the hardest drive — plan 2–3 options for the owner (Sid Meier review C, 11-02).' },
         { id: 'FEAT-147 · 169 · 164 · 66', what: 'ON MAIN (cb5dcf84; 124/124, smoke 23/23) — the opening hands you mom’s job → the courier to Larry; hunger; camp reach 2000 m; camp gear. Your plays owed (feat169-play, the camp-gear glance).' },
         { id: 'FEAT-170', what: 'The opening becomes a skippable tutorial evening at mom’s (fired at 6 pm → drive to mom’s with the clock frozen → sleep → breakfast → the casserole to Larry). Staged plan first; after FEAT-169.' },
-        { id: 'FEAT-171', what: 'BUILT (sheet sent; feat171-look) — camp bed = three stacked layers: ground (air < pad < deluxe), bedding (bedroll < bag, always one; pillows on both), blanket (blanket < quilt +10 %). Starter Pack = the bedroll alone.' },
-        { id: 'ASSET-81', what: 'The quilt (the blanket layer’s top tier).' },
+        { id: 'FEAT-171', what: 'ON MAIN (7006140f; sheet sent, feat171-look) — camp bed = three stacked layers: ground (air < pad < deluxe), bedding (bedroll < bag, always one; pillows on both), blanket (blanket < quilt +10 %). Starter Pack = the bedroll alone.' },
+        { id: 'ASSET-81', what: 'ON MAIN — the quilt (in the FEAT-171 sheet).' },
         { id: 'FEAT-148 ↳', what: 'BUILT (336813e0) — the midnight overlay (“Supplies are drying up / costs keep rising”) and the empty giver-line table; no placeholder quote. Your lines fold in when written.' },
-        { id: 'FEAT-65', what: 'BUILT — your option (b): a 40 s window that resets on every hit [default; the widest gap between targets is 341 m, 34 s at 36 km/h]; when it runs out the job settles with what you smashed. Then you check the GPS + order.' },
-        { id: 'FEAT-155', what: 'Hide the HUD dock while a camp is made.' },
+        { id: 'FEAT-65', what: 'ON MAIN (7006140f) — your option (b): a 40 s window that resets on every hit [default; the widest gap between targets is 341 m, 34 s at 36 km/h]; when it runs out the job settles with what you smashed. Then you check the GPS + order.' },
+        { id: 'FEAT-155', what: 'ON MAIN — the HUD dock hides while a camp is made.' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then this page\'s Lane A handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/a.agent. Before a /clear, set your task rows and write lanes/a.handoff here.' },
     { id: 'b', name: 'B — the machine bites back', goal: 'Physics, damage, parts, recovery, assists.',
@@ -166,10 +167,10 @@
         { id: 'FEAT-70', what: 'ON MAIN (e8a6d460) — wheel contact on an exact cylinder, plus the tread-centre fix the repaired crash lab found (it yawed the truck 5° at full throttle). Your kerb / rough-ground feel drive owed.' },
         { id: 'FEAT-165', what: 'ON MAIN — every shop always has Old + Standard tires ($8 / $18, your price); diagnostics names each tire. FEAT-168 changes the always-stocked list.' },
         { id: 'FEAT-166', what: 'ON MAIN — clutch-type LSD; your numbers call owed (feat166-numbers).' },
-        { id: 'FEAT-168', what: 'MERGED on main (3ea5578c; smoke 23/23, full suite running) — your playthrough economy pass: pay locked, fuel and prices ride a gentler 1.065×/day curve, a 12-day run (10 deeds), 6 shelf slots ~3 items, old tire + air filter + plug kit always stocked, helical LSD reward from day 3, tires .7/.9/.8. Reward categories wait on reward-cats.' },
+        { id: 'FEAT-168', what: 'ON MAIN (3ea5578c; 124/124, smoke 23/23) — your playthrough economy pass: pay locked, fuel and prices ride a gentler 1.065×/day curve, a 12-day run (10 deeds), 6 shelf slots ~3 items, old tire + air filter + plug kit always stocked, helical LSD reward from day 3, tires .7/.9/.8. Reward categories wait on reward-cats.' },
         { id: 'FEAT-167', what: 'ON MAIN — the shop UI pass. Screenshots: CarGame-machine/wip/feat-167/. Your look + the part descriptions owed.' },
         { id: 'FEAT-162', what: 'The truck’s heart — plan parked in the ticket; four calls on the owed list. Now also: a flat must collapse the wheel within ~1 km, plus roadside tire repair (a call-out dearer than the shop; owner 11-05).' },
-        { id: 'BUG-114', what: 'A recovery teleport launched the truck onto its roof outside a service center — seat every recovery upright at rest height; after FEAT-168.' },
+        { id: 'BUG-114', what: 'ON MAIN (428768a3) — every recovery seats the truck upright at rest height, zero velocity; tow-seat gate.' },
         { id: 'BUG-92', what: 'ABS kick never rumbles the pad — waits on the owner’s USB probe.' },
       ],
       prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read ' + HANDOFF + ' § Lane B, then this page\'s Lane B handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/b.agent. Before a /clear, set your task rows and write lanes/b.handoff here.' },
@@ -191,13 +192,11 @@
       tasks: [
         { id: 'BUG-67 · FEAT-143/144', what: 'ON MAIN (38765f33) — both junction steps, world items + reach 5 m. Close the tickets on evidence.' },
         { id: 'BUG-109', what: 'ON MAIN — the pad pass. Your real-pad check owed (pad-test).' },
-        { id: 'BUG-113', what: 'B on the pad opens pause instead of closing the Recovery menu.' },
-        { id: 'BUG-110', what: 'ON MAIN — the tests’ spawn copy matches the game on your seed. Lane A drops camp-reach’s pinned centre next.' },
-        { id: 'BUG-111', what: 'Test harness: the story gates’ region roads also skip the pond no-go, so near a pond they measure roads the game doesn’t build. Its own pass (pins move).' },
+        { id: 'BUG-110 · 111 · 113', what: 'ON MAIN (bdf2ff5e; 125/125) — the tests route round ponds like the game; pad B closes the Recovery card. Closing.' },
         { id: 'BUG-105', what: 'SHEETS SENT — prototype fix on proto/bug-105 (33b041f1, :3886) moves ~8 sites per site fixed and reds one test; recommended park (bug105-call).' },
         { id: 'BUG-106', what: 'Waits on your three capture files (copy command in chat).' },
         { id: 'BUG-107', what: 'MEASURED — the hill over that tunnel is its OWN mouth funnel, not the next road’s cutting. Needs your screenshot to know what you saw.' },
-        { id: 'BUG-112', what: 'Inside a tunnel: too bright, and the textures don’t blend (your BUG-81 drive). Before/after shots first.' },
+        { id: 'BUG-112', what: 'ON MAIN — tunnels are darker inside (one bore-darkness ramp; the lining casts shadows; headlights show by day). Your look + which seam (1/2/3 on Spare’s sheet) for the blending.' },
         { id: 'FEAT-153', what: 'ON MAIN ac7a9593 — office + school give jobs; census gate. Open: your words, the tackle-shop reel.' },
         { id: 'FEAT-120', what: 'ON MAIN 012b2461 — keepers wired, register + sputter redone, gravel prototyped. Waits on your clips, a scrape recording, and your listen.' },
         { id: 'FEAT-163', what: 'ON MAIN 012b2461 — a real reverb on the game’s mix inside a tunnel; waits on your listen.' },
@@ -221,6 +220,9 @@
     { id: 'asset80-look', kind: 'decide', tk: 'ASSET-80', blocks: 'promoting the burger joint into the game',
       text: 'The burger joint: 1043 tris, flat colours, burger sign with no name, striped awning over the counter, clear of the truck’s strip by 1.2 m. Renders: CarGame-content/wip/burger-joint/out/sheet.png (the firing orbit × 3, roadside, rear). At the firing camera’s 16 m it fills ~1/3 of the frame; a tighter shot is FIRING_CAM.radius, not the model.',
       options: ['promote it', 'promote + tighten the shot', 'changes in the note'] },
+    { id: 'rank-spread', kind: 'decide', tk: 'FEAT-69',
+      text: 'More spread between S and D, C 10–20 % more forgiving. The day-1 average job’s S stays at 138.6 s in every option; par (= C) moves. S / A / B / C: today 138.6 / 145.8 / 156.6 / 180.0 s · C +10 %: 138.6 / 149.1 / 164.8 / 198.8 · C +15 %: 138.6 / 150.4 / 168.2 / 206.6 · C +20 %: 138.6 / 152.1 / 172.3 / 216.0. Pay at each line stays S $10 · A $9.57 · B $8.91 · C $7.50 · D $5 (rate rescaled, rec.); the same drive time pays a bit more. Deeds come faster, so the 12-day run may shorten.',
+      options: ['C +10 %', 'C +15 %', 'C +20 %', 'keep today'] },
     { id: 'bug105-call', kind: 'decide', tk: 'BUG-105',
       text: 'Two roads grazing with no crossing. The sheets were sent to you (CarGame-bug105/wip/bug-105/shots/sheet-*.png). The cause: the merge planner’s two walks disagree on where a junction’s shared stretch ends (176 m vs 16 m), so no plan takes the pair. A prototype fix clears your capture (5.7 → 52 m), but on 20 random seeds it moves 7 sites (+3 roads, 1 cleaner T, 1 junction swap, 1 neutral bend, 1 slightly worse kink) and turns one test red (a road now crosses a ridge saddle where main tunnels). Rare: 2 in ~1,400 km. Recommended: park it (branch + record kept).',
       options: ['park it (rec.)', 'one more pass to land it green'] },

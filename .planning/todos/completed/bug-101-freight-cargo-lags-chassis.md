@@ -1,7 +1,7 @@
 ---
 id: BUG-101
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-01
 source: owner, 2026-11-01 — FEAT-103 requisition fuel delivery, machine under heavy load
@@ -57,3 +57,15 @@ Fix: `DebrisSystem.meshOf(body)`; the wireframes take the drawn pose for any bod
 box ↔ mesh **0.000 m** at worst; the raw engine pose the box used before sits up to **0.508 m** off.
 Affected gates 16/16 green, smoke included. If the owner still sees the load itself trail the bed,
 that is a new observation — the weld and the mesh interpolation both measure clean.
+
+## Pinned headlessly + resolution (Spare, 2026-11-05) — CLOSED
+
+The step order is right, and now a gate says so. main.js snapshots the truck's render pose (`_prevRenderPos`) and
+every debris body's (`DebrisSystem.beforeStep`) on EVERY fixed step, just before `stepPhysics`, and draws both at
+the same alpha (`debrisSystem.update(_renderAlpha)`), so the strapped load and the bed are drawn at the same
+instant however many steps a frame carries. `freight-strap` check 6 drives the welded 400 kg load at 15 m/s on the
+rough road at 1–4 steps per frame and every alpha, restating main.js's truck interpolation: the drawn load sits
+0.89 mm off its strap pose in the drawn bed. Snapshotting once per frame instead (the failure the ticket guessed)
+puts it 689 mm behind, and the check fails — tried (`wip/bug-101/strap-once.mjs`). The collider box was the
+11-01 fix (`DebrisSystem.meshOf`: the wireframes draw the interpolated pose). Strap and damage behaviour untouched
+(freight-strap's other checks unchanged, all green).
