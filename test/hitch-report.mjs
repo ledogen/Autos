@@ -20,6 +20,8 @@
 // FLAGS: --scenario=drive|stream  --cpu=N (throttle factor, 1 = off)  --duration=SECONDS
 //        --preset=Low|Normal|High|Ultra  --seed=N  --hitch=MS (threshold, default 24)
 //        --speed=M/S (stream sweep)  --out=FILE  --headed  --port/--cdp
+//        --trace=FILE (Chrome trace + between-frame split)  --gpu (our GPU ms + shader-program churn)
+//        --phys (Box3D engine-step timer)   — PERF-28; each is described where it is parsed below
 //
 // READING THE OUTPUT:
 //   lift    — meanMs on frames carrying the tag, minus meanMs on quiet frames. The ranking column.
@@ -63,6 +65,12 @@ const TRACE = flag('trace', '')
 // (EXT_disjoint_timer_query_webgl2, present in headless Chrome on ANGLE/Metal). Says whether a frame
 // that waited on GPU backpressure was waiting on our own draw or on someone else's.
 const GPU = has('gpu')
+// --phys (PERF-28): time the Box3D engine step (window.__physicsEngine.step) and log every call over 5 ms,
+// so a fat frame.physics splits into "the engine" vs "our vehicle code around it" (tires, struts, ground).
+const PHYS = has('phys')
+const PHYS_ARM = `(() => { const e = window.__physicsEngine, step = e.step.bind(e), g = window.__physT = { slow: [], n: 0, ms: 0 }
+  e.step = (...a) => { const t = performance.now(); const r = step(...a), d = performance.now() - t; g.n++; g.ms += d; if (d > 5) g.slow.push([+(t - window.__physT0).toFixed(0), +d.toFixed(1)]); return r }
+  return true })()`
 const GPU_ARM = `(() => {
   const r = window.__renderer(), gl = r.getContext(), ext = gl.getExtension('EXT_disjoint_timer_query_webgl2')
   if (!ext) return false
@@ -123,6 +131,7 @@ await waitFor('(()=>{ const r = window.__road && window.__road(); return r ? (r.
   .catch(() => console.error('warn: route warm never drained'))
 await sleep(4000)
 if (EVAL) { await evalOk(EVAL); await sleep(1500) }
+if (PHYS) await evalOk(PHYS_ARM)
 if (GPU && !(await evalOk(GPU_ARM))) { console.error('--gpu: EXT_disjoint_timer_query_webgl2 unavailable'); process.exit(1) }
 
 // Throttle AFTER settling — a 4× CPU penalty applied during load just makes the wait long, and the
@@ -132,6 +141,7 @@ if (CPU > 1) { await client.cmd('Emulation.setCPUThrottlingRate', { rate: CPU })
 // ── measurement window ───────────────────────────────────────────────────────────────────────
 const tracer = TRACE ? await startTracing(client, TRACE, { categories: `${TRACE_CATEGORIES},v8` }) : null
 await evalOk('window.__hitchReset()')
+if (PHYS) await evalOk('(() => { window.__physT0 = performance.now(); window.__physT.slow.length = 0; window.__physT.n = 0; window.__physT.ms = 0; return true })()')
 if (GPU) await evalOk('(() => { window.__gpuT.q.length = 0; window.__gpuT.f.length = 0; window.__gpuT.churn.length = 0; return true })()')
 const t0 = performance.now()
 if (SCENARIO === 'drive') await keyEvent(client, 'w', true)
@@ -151,6 +161,7 @@ while (performance.now() - t0 < DURATION * 1000) {
 if (SCENARIO === 'drive') await keyEvent(client, 'w', false)
 if (GPU) await evalOk('(() => { window.__gpuT.on = false; return true })()')
 if (tracer) await tracer.stop()   // before the read-backs below, which are long frames of their own
+const physT = PHYS ? await evalOk('window.__physT') : null
 const gpuT = GPU ? (await sleep(500), await evalOk('({ q: window.__gpuT.q, f: window.__gpuT.f, churn: window.__gpuT.churn })')) : null
 
 const rep = await evalOk('window.__hitches()')
@@ -278,9 +289,11 @@ if (gpuT) {
   console.log('')
 }
 
+if (physT) console.log(`  ── engine step: ${physT.n} calls, mean ${(physT.ms / (physT.n || 1)).toFixed(2)} ms; over 5 ms: ${physT.slow.map(([t, d]) => `${d} ms @${(t / 1000).toFixed(1)}s`).join(', ') || 'none'}\n`)
+
 if (OUT) {
   mkdirSync(dirname(OUT), { recursive: true })
-  writeFileSync(OUT, JSON.stringify({ meta: { scenario: SCENARIO, preset: PRESET, seed: SEED, cpu: CPU, duration: DURATION, hitchMs: HITCH_MS }, stats, report: rep, traceSplit, gpuSplit }, null, 2))
+  writeFileSync(OUT, JSON.stringify({ meta: { scenario: SCENARIO, preset: PRESET, seed: SEED, cpu: CPU, duration: DURATION, hitchMs: HITCH_MS }, stats, report: rep, traceSplit, gpuSplit, physT }, null, 2))
   console.log(`  written: ${OUT}\n`)
 }
 client.close()
