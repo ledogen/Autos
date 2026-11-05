@@ -3542,7 +3542,7 @@ export class RoadSystem {
                 const s = S.polyCum[i]
                 if ((shA && s < tA) || (shB && s > S.L - tB)) continue
                 if ((S.spans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)) continue
-                const h = _nearestOnPolyXZ(S.pts[i].x, S.pts[i].z, Q.pts, Q.polyCum)
+                const h = _nearestWithinXZ(S.pts[i].x, S.pts[i].z, Q.pts, Q.polyCum, 60)   // PERF-31: null = proven > 60 m
                 if (!h || h.d > 60) continue
                 if (h.d < PROX) { merges = true; break }
                 if (h.d < this._v2ClearReq(S.pts[i], h)) violates = true
