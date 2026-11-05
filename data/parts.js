@@ -102,7 +102,7 @@ export const PARTS = {
     spareTire:     { name: 'Mounted tire',         slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
                      patch: {}, desc: 'A tire mounted on a wheel.' },
     tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 20, massKg: 11.5, grip: 1.1, durability: 0.8,
-                     patch: {}, desc: 'Sticky. Great grip on pavement, not so good on dirt. Wears fast.' },
+                     patch: {}, desc: 'Good grip on road. Worse off road.' },   // owner's words, 2026-11-05 (FEAT-167)
     tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 14.4, grip: 1,
                      patch: {}, desc: 'Chunky tread. At home on dirt, no worse on pavement. Heavy.' },
     tireLT:        { name: 'Load-range E tire',    slot: 'tire', family: 'hd', rarity: 'uncommon', price: 10, massKg: 15, grip: 0.95,
@@ -165,7 +165,7 @@ export const PARTS = {
                      desc: 'Organic pads. Quiet, gentle, forgiving.' },
     brakesFrontSport:{ name: 'Sport front pads',     slot: 'brakesFront', icon: 'pads', family: 'sport', rarity: 'uncommon', price: 8, massKg: 2,
                      patch: { maxBrakeTorqueFront: 1705 },
-                     desc: 'Semi-metallic. More bite up front, and they eat themselves faster.' },
+                     desc: 'More stopping power.' },   // owner's words, 2026-11-05 (FEAT-167: "brakes")
     brakesFrontRace: { name: 'Race front pads',      slot: 'brakesFront', icon: 'pads', family: 'sport', rarity: 'rare', price: 12, massKg: 2,
                      patch: { maxBrakeTorqueFront: 1980 },
                      desc: 'Grabby and loud. Locks the fronts if you stab them.' },
