@@ -5328,7 +5328,8 @@ function _updateParkTriggers (zParked = false) {
   if (fuelStop.isOpen || pump) {
     damageScreen.blocked = true
     if (pump && pulled) {
-      fuelStop.open(pump.id, RANGER_PARAMS.fuelPricePerGal, inventorySystem.cans())
+      // FEAT-168: fuel rides the day tier like parts and the tow, to the cent — the cans fill on the same counter.
+      fuelStop.open(pump.id, Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * 100) / 100, inventorySystem.cans())
       playNozzle()
       _tut('tut-fuel')   // FEAT-147
     }

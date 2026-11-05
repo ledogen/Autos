@@ -31,7 +31,8 @@
 //  12. THE CARD — base pay equals economy.basePay at the offer's multiplier (0.5× on a bonus
 //      offer), the gate reads "X or better" / "S only", and the terms state distance, weight, board
 //      expiry and the delivery window.
-//  13. BONUS SHARE ≈ 25 % where the source has rewards; never where it has none.
+//  13. BONUS SHARE ≈ BONUS_CHANCE where the source has rewards; never where it has none. FEAT-168: no
+//      helical LSD (minDay 3) on an offer born before day 3, every pool alike.
 //  16. DEADLINES (FEAT-113) — every thing resolves a deadline slack (its own or the family's);
 //      take() stamps dueH = take + par × (1 + slack) (60 real s of par = one game hour); no par → no
 //      deadline; a taken slot still in hand at dueH locks AT dueH (always-on and budget alike), and a
@@ -40,7 +41,7 @@
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine, giverLine } from '../src/offer-board.js'
-import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARDS, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARDS, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -446,19 +447,25 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 // ── 13. bonus share ─────────────────────────────────────────────────────────────────────────────
 {
     const count = { foodVendor: [0, 0], doctor: [0, 0], larrysHouse: [0, 0] }
+    const lsd = { early: 0, late: 0 }   // helical-LSD bonuses on offers born before / from day 3
     for (let seed = 1; seed <= 200; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 3; t += 2) for (const q of POIS) {
-            if (!count[q.type]) continue
-            for (const o of b.offers(q.id, t)) { count[q.type][1]++; if (b.spec(o).bonus) count[q.type][0]++ }
+            for (const o of b.offers(q.id, t)) {
+                if (b.spec(o).bonus?.rewardId === 'diffLSD') lsd[o.bornH < 48 ? 'early' : 'late']++
+                if (!count[q.type]) continue
+                count[q.type][1]++; if (b.spec(o).bonus) count[q.type][0]++
+            }
         }
     }
     const share = count.foodVendor[0] / count.foodVendor[1]
-    check('bonus share ≈ 25 % where the source has rewards', Math.abs(share - 0.25) < 0.03, share.toFixed(3))
+    check(`bonus share ≈ ${BONUS_CHANCE * 100} % where the source has rewards`, Math.abs(share - BONUS_CHANCE) < 0.03, share.toFixed(3))
+    check(`FEAT-168: no helical LSD reward on an offer born before day 3 (${lsd.early} early, ${lsd.late} from day 3)`,
+        lsd.early === 0 && lsd.late > 0)
     check('no bonus where the source has no rewards (the doctor)', count.doctor[0] === 0)   // residences (dinner) and general stores (duct tape) reward now
     // Larry rolls from (nearly) every reward since 2026-10-31 (owner: "give him every item") — the same share as any source.
     const larry = count.larrysHouse[0] / count.larrysHouse[1]
-    check('Larry rolls a bonus at the common share', larry > 0.15 && larry < 0.35, larry.toFixed(3))
+    check('Larry rolls a bonus at the common share', Math.abs(larry - BONUS_CHANCE) < 0.1, larry.toFixed(3))
 }
 
 // ── 13b. no two offers at a POI are the same job ────────────────────────────────────────────────

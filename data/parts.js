@@ -77,7 +77,9 @@ export const partIcon = (id) => PARTS[id].icon ?? PARTS[id].slot.replace(/(Front
 /** The tint behind a part's icon, per rarity (owner, 2026-10-20: gray, green, blue, orange). */
 export const RARITY_COLOR = { common: '#8a929b', uncommon: '#4fa35a', rare: '#3f7fd6', legendary: '#e0892c' }
 
-export const FAMILY_DURABILITY = { old: 0.6, oem: 1, sport: 0.7, offroad: 1.2, hd: 2 }
+// FEAT-168 (owner, 2026-11-05: "put standard tires to .9 durability. sport to .8 old to .7"): old 0.6 → 0.7.
+// The standard tire's 0.9 is its own (the oem family also covers springs and brakes); sport's 0.8 too.
+export const FAMILY_DURABILITY = { old: 0.7, oem: 1, sport: 0.7, offroad: 1.2, hd: 2 }
 
 const LT_LOAD = { tires: { softKg: 800, hardKg: 1100, popKg: 850 } }
 const HD_SPRINGS = { springs: { softKg: 800, hardKg: 1100 } }
@@ -93,12 +95,12 @@ export const PARTS = {
     //    The spare is its own part (owner, 2026-10-20): a full-size spare MOUNTED on a steel wheel, new
     //    at ~$25 (owner, 2026-10-21; a worn one, 50–80%, comes from the reward pools). It is carried,
     //    never fitted as itself: `mounted` names what goes on the corner (src/recovery.js fitSpare).
-    // FEAT-165 [DEFAULT, the owner confirms]: Old 7 → 8, Standard 15 → 18 — every shop always stocks
-    // them now (data/shop-stock.js ALWAYS), so they cost a little more.
+    // FEAT-165 (owner, 2026-11-05: "Old $8 · Standard $18"): Old 7 → 8, Standard 15 → 18 — the price of
+    // always being on the shelf. FEAT-168 then took the standard tire back into rotation.
     tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 8, massKg: 12, grip: 0.9,
                      patch: {}, desc: 'Cracked and dry rotted rubber. Slippery and fragile.' },
     tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 18, massKg: 12, grip: 1, stock: true,
-                     patch: {}, desc: 'The factory all-season. Fine everywhere, great nowhere.' },
+                     durability: 0.9, patch: {}, desc: 'The factory all-season. Fine everywhere, great nowhere.' },
     spareTire:     { name: 'Mounted tire',         slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
                      patch: {}, desc: 'A tire mounted on a wheel.' },
     tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 20, massKg: 11.5, grip: 1.1, durability: 0.8,
