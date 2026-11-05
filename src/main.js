@@ -79,7 +79,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH } from './mission.js'  // sto
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -4998,17 +4998,14 @@ function _towTo (t, seat) {
     _prevParkedForPoi = false
   })
 }
+// BUG-114: the seat is poi.js towSeat — a pump zone, or a keyless pad's road-side strip, never the marker.
 function _towToFuel () {
   const t = _towQuote(_FUEL_SELLER)
-  if (!t) return
-  // Into the road-side pump zone, nose along the island: model +X in world is (cos yaw, −sin yaw)
-  // and the truck's forward is (−sin h, −cos h), so h = yaw − π/2 lays the truck alongside.
-  const z = dropZoneWorld(t.q, t.q.pumpZones[0])
-  _towTo(t, { x: z.x, z: z.z, heading: z.yaw - Math.PI / 2 })
+  if (t) _towTo(t, towSeat(t.q))
 }
 function _towToShop () {
   const t = _towQuote(_SERVICE_CENTER)
-  if (t) _towTo(t, { x: t.q.x, z: t.q.z, heading: Math.atan2(-t.q.tx, -t.q.tz) })
+  if (t) _towTo(t, towSeat(t.q))
 }
 // ── Roadside tire work (owner, 2026-10-22): the player picks the tire on the damage screen's
 // pictogram (DamageScreen.pick), sees each corner's tire, wheel and air, and confirms with the time on

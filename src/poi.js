@@ -317,6 +317,25 @@ export function dropZoneWorld (q, box = q?.drop) {
 }
 
 /**
+ * BUG-114: where a tow leaves the truck at POI `q` — { x, z, heading } for main.js's ground seat. Never
+ * on the marker: the shop tow used to seat at the pad centre, inside the placeholder cube, and the truck
+ * climbed onto it (1.1 m up, perched on its belly) and came off it upside down.
+ *   • A pump island: its first pump zone, nose along the island. Model +X in world is (cos yaw, −sin yaw)
+ *     and the truck's forward is (−sin h, −cos h), so h = yaw − π/2 lays the truck alongside.
+ *   • Anything else is a KEYLESS marker (the auto shop — test/tow-seat.mjs holds it to that): the
+ *     road-side strip of the pad, centred between the cube's face and the pad's edge (2.4 m off the
+ *     centre on a 4 m half-width), heading along the road. A 1.9 m truck clears both by ~0.6 m.
+ */
+export function towSeat (q) {
+    if (q.pumpZones) {
+        const z = dropZoneWorld(q, q.pumpZones[0])
+        return { x: z.x, z: z.z, heading: z.yaw - Math.PI / 2 }
+    }
+    const lat = (POI_PARAMS.poiCubeSize / 2 + (q.halfWid ?? POI_PARAMS.poiPadHalfWid)) / 2
+    return { x: q.x - q.nx * lat, z: q.z - q.nz * lat, heading: Math.atan2(-q.tx, -q.tz) }
+}
+
+/**
  * FEAT-88: is the world point (x, z) over POI `q`'s drop zone, grown by `slack` metres on every
  * side? Pure. The point is taken into the marker's own frame the way queryContact does (undo
  * modelYaw about Y) and tested against the rectangle. False for a POI with no drop zone.
