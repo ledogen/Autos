@@ -60,6 +60,7 @@ export const STOCK_WEIGHT = {
     headlightStock:   10,
     radiatorStock:    1,
     diffOpen:         4,
+    diffClutchLSD:    1,      // FEAT-166 [DEFAULT]: the middle rung — commoner than the helical
     diffLSD:          0.25,
     diffWelded:       4,
     engineStock:      0.25,

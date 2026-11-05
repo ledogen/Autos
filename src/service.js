@@ -6,11 +6,13 @@
 //     back to 100%: a repair reaches data/parts.js REPAIR_CAP at most, in REPAIR_STEP increments, for
 //     money and labour hours pro rata on the gap repaired (REPAIRS). Tires, brakes, the air filter and
 //     the headlights are REPLACE-ONLY (no REPAIRS row); the shop still PATCHES a flat (PATCH) — the
-//     hole, not the wear. Alignment is an adjustment: always straight back to 100%.
+//     hole, not the wear. Alignment is an adjustment: always straight back to 100%, and ONE job for
+//     all four corners at one flat price (owner, 2026-11-05: align()).
 //   • A part is one tire, or one axle's pair (data/parts.js SLOTS). A part in the inventory follows the
 //     same rules as its own item — a worn spring pair re-arched, a flat tire patched — and is refitted later.
-//   • A part that comes off is SOLD (half its price × its condition) or KEPT in inventory with its
-//     wear. A massless stock part ('No lift') is an absence: nothing to sell or keep.
+//   • A part that comes off goes STRAIGHT into the inventory with its wear (owner 11-04: "get rid of
+//     that dialogue entirely") — selling is My Items' job (half its price × its condition). A massless
+//     stock part ('No lift') is an absence: nothing comes off.
 //   • Browsing is free — the frame loop holds the clock while the screen is open — and each repair or
 //     swap adds its labour hours, the way the tow does.
 //   • Prices ride the day tier like the tow (economy.tierNow); FEAT-69 re-cuts them.
@@ -28,6 +30,7 @@ import { shelfPrice } from './shop-stock.js'
 const cents = (x) => Math.round(x * 100) / 100
 const EPS = 1e-9
 const ALIGN_FLOOR = 0.02   // a drive leaves alignment a hair under straight: not a job
+const ALIGN = Object.keys(TRACKS).filter(id => TRACKS[id].cls === 'alignment')   // the four corners
 /** A tire or wheel socket's corner (0=FL … 3=RR), else −1. */
 const cornerOf = (socket) => Math.max(TIRE_IDS.indexOf(socket), WHEEL_IDS.indexOf(socket))
 const socketOfTrack = (id) => Object.keys(SLOTS).find(s => SLOTS[s].tracks.includes(id)) ?? null
@@ -43,9 +46,12 @@ const classOf = (id) => {
  * REPAIR_STEP multiple above it, up to REPAIR_CAP — or, for alignment, only straight. Empty when
  * there is nothing to do (replace-only, or already at the cap).
  */
-export function repairTargets (cls, cond) {
+export function repairTargets (cls, cond, partId = null) {
     if (!REPAIRS[cls]) return []
     if (cls === 'alignment') return cond < 1 - ALIGN_FLOOR ? [1] : []
+    // FEAT-166: a differential's only wear is the clutch LSD's packs, and a rebuild is new packs —
+    // straight to 100%, and only for a part that has them (PARTS[id].rebuild).
+    if (cls === 'diff') return PARTS[partId]?.rebuild && cond < 1 - EPS ? [1] : []
     const out = []
     for (let t = Math.floor(cond / REPAIR_STEP + EPS) + 1; t * REPAIR_STEP <= REPAIR_CAP + EPS; t++) out.push(Math.round(t * REPAIR_STEP * 100) / 100)
     return out
@@ -64,7 +70,6 @@ export class ServiceCenter {
     constructor (deps) {
         Object.assign(this, deps)
         this.onChange ??= () => {}
-        this.off = null      // the part just taken off, waiting on sell / keep: { id, cond, flat }
         this._preview = null // PartsSystem.snapshot() while a shelf item is fitted for a look
     }
 
@@ -82,7 +87,7 @@ export class ServiceCenter {
     /** What the bench can bring fitted track `id` up to (repairTargets). */
     targets (id) {
         if (TRACKS[id].manualOnly && !this.damage.manualBox) return []
-        return repairTargets(TRACKS[id].cls, this.damage.get(id))
+        return repairTargets(TRACKS[id].cls, this.damage.get(id), this.parts.fitted(socketOfTrack(id)))
     }
 
     /** What repairing fitted track `id` to `target` costs now (default: as far as it goes). */
@@ -92,15 +97,34 @@ export class ServiceCenter {
     }
 
     /** Repair one fitted track to `target` (one of targets(id)). False, nothing charged, if it isn't
-     *  one or the wallet can't cover it. Straightening alignment also zeroes the bent geometry. */
+     *  one or the wallet can't cover it. Alignment is never a corner on its own: align(). */
     repair (id, target = this.targets(id).at(-1)) {
-        if (!this.targets(id).includes(target)) return false
+        if (TRACKS[id].cls === 'alignment' || !this.targets(id).includes(target)) return false
         const q = this.repairQuote(id, target)
         if (!this.spend(q.price)) return false
-        const d = this.damage, t = TRACKS[id]
-        d.set(id, target)
-        // The alignment track is a readout of the bent geometry (damage.js setAll): straighten it too.
-        if (t.cls === 'alignment') { d.toeOffsetDeg[t.wheel] = 0; d.camberOffsetDeg[t.wheel] = 0 }
+        this.damage.set(id, target)
+        this.advanceHours(q.hours)
+        this.onChange()
+        return true
+    }
+
+    /** Is any corner bent enough to be a job (targets)? */
+    bent () { return ALIGN.some(id => this.targets(id).length) }
+
+    /** The alignment: one flat price × the day tier, and one setup plus each corner's gap on the clock. */
+    alignQuote () {
+        const r = REPAIRS.alignment
+        return { price: cents(r.price * this.tier()), hours: REPAIR_SETUP.hours + ALIGN.reduce((h, id) => h + r.hours * (1 - this.damage.get(id)), 0) }
+    }
+
+    /** Straighten all four corners. The tracks are a readout of the bent geometry (damage.js setAll),
+     *  so that goes back to zero too. False, nothing charged, when straight or short of the wallet. */
+    align () {
+        if (!this.bent()) return false
+        const q = this.alignQuote()
+        if (!this.spend(q.price)) return false
+        const d = this.damage
+        for (const id of ALIGN) { d.set(id, 1); d.toeOffsetDeg[TRACKS[id].wheel] = 0; d.camberOffsetDeg[TRACKS[id].wheel] = 0 }
         this.advanceHours(q.hours)
         this.onChange()
         return true
@@ -124,7 +148,7 @@ export class ServiceCenter {
     ownedRepairRows () {
         return this.inventory.list()
             .filter(r => classOf(r.id))
-            .map(r => ({ index: r.index, id: r.id, cond: r.cond ?? 1, flat: r.flat, targets: repairTargets(classOf(r.id), r.cond ?? 1) }))
+            .map(r => ({ index: r.index, id: r.id, cond: r.cond ?? 1, flat: r.flat, targets: repairTargets(classOf(r.id), r.cond ?? 1, r.id) }))
             .filter(r => r.targets.length || r.flat)
             .sort((a, b) => a.cond - b.cond)
     }
@@ -192,10 +216,10 @@ export class ServiceCenter {
     }
 
     /** Buy shelf slot `i` and bolt it into `socket` (a tire or wheel needs its corner), with its
-     *  condition, paying for the part and the fitting. The old part waits in `off`. */
+     *  condition, paying for the part and the fitting. The old part goes into the inventory. */
     buyAndFit (i, socket) {
         const e = this.stock()[i]
-        if (this.off || !e || !socketsFor(e.id).includes(socket)) return false
+        if (!e || !socketsFor(e.id).includes(socket)) return false
         const q = this.fitLabour(e.id, socket)
         if (!this.spend(cents(this.shelfPrice(i) + q.price))) return false
         this.unstock(i)
@@ -221,7 +245,7 @@ export class ServiceCenter {
     preview (i, socket) {
         this.unpreview()
         const e = this.stock()[i]
-        if (this.off || !e || !socketsFor(e.id).includes(socket)) return false
+        if (!e || !socketsFor(e.id).includes(socket)) return false
         this._preview = this.parts.snapshot()
         this.parts.fit(e.id, e.cond, socket)
         return true
@@ -242,7 +266,7 @@ export class ServiceCenter {
         return this.inventory.list().filter(r => !r.flat && (socketsFor(r.id).includes(socket) || (corner >= 0 && PARTS[r.id]?.mounted)))
     }
 
-    /** Swap `socket`'s part for inventory entry `index`: the old part goes to the bench with its wear. */
+    /** Swap `socket`'s part for inventory entry `index`: the old part goes into the inventory with its wear. */
     exchange (index, socket) {
         return PARTS[this.inventory.list()[index]?.id]?.mounted
             ? this.swapPair(index, cornerOf(socket))
@@ -251,7 +275,6 @@ export class ServiceCenter {
 
     /** Bolt on a part from inventory (entry `index`), with its wear. A flat tire is patched first. */
     fitFromInventory (index, socket) {
-        if (this.off) return false
         const e = this.inventory.list()[index]
         socket ??= PARTS[e?.id]?.slot
         if (!e || e.flat || !socketsFor(e.id).includes(socket)) return false
@@ -323,7 +346,7 @@ export class ServiceCenter {
      */
     swapPair (index, corner) {
         const r = this.inventory.list()[index]
-        if (this.off || !PARTS[r?.id]?.mounted || r.flat) return false
+        if (!PARTS[r?.id]?.mounted || r.flat) return false
         const q = this.fitLabour(r.id, TIRE_IDS[corner])
         if (!this.spend(q.price)) return false
         this.inventory.amend(index, this.parts.fitMounted(r, corner))
@@ -332,26 +355,14 @@ export class ServiceCenter {
         return true
     }
 
+    /** Fit `id` into `socket`: the part that comes off goes into the inventory with its wear and its
+     *  puncture (a full inventory → its swap prompt). Nothing is ever thrown away silently. */
     _swap (id, cond, socket, q) {
         const off = this.parts.fit(id, cond, socket)
         this.advanceHours(q.hours)
-        this.off = PARTS[off.id].massKg > 0 ? off : null
+        if (PARTS[off.id].massKg > 0) this.inventory.grant(off.id, 1, { cond: off.cond, flat: off.flat })
         this.onChange()
     }
 
-    /** The part that came off: 'sell' it to the shop or 'keep' it (inventory; full → the swap prompt). */
-    settleOff (how) {
-        const off = this.off
-        if (!off) return false
-        this.off = null
-        if (how === 'sell') this.earn(this.sellValue(off.id, off.cond))
-        else this.inventory.grant(off.id, 1, { cond: off.cond, flat: off.flat })
-        this.onChange()
-        return true
-    }
-    /** Leaving with a part still on the bench keeps it — nothing is ever thrown away silently. */
-    close () {
-        this.unpreview()
-        if (this.off) this.settleOff('keep')
-    }
+    close () { this.unpreview() }
 }

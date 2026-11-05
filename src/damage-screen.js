@@ -84,8 +84,9 @@ export const bandColor = (c) => BANDS.find(b => c >= b.min).color
 const shownCond = (m, id) => (TRACKS[id].cls === 'tire' && m.flat[TRACKS[id].wheel] ? 0 : m.get(id))
 const LIST_ROWS = 5
 
-/** FEAT-126: a manualOnly track (the transmission) exists only on a truck with a manual fitted. */
-const shown = (m, id) => !TRACKS[id]?.manualOnly || m.manualBox
+/** FEAT-126: a manualOnly track (the transmission) exists only on a truck with a manual fitted; FEAT-166:
+ *  a clutchOnly track (the diff's packs) only with a clutch-type LSD. */
+const shown = (m, id) => (!TRACKS[id]?.manualOnly || m.manualBox) && (!TRACKS[id]?.clutchOnly || m.clutchDiff)
 
 /**
  * The `n` worst parts, a flat tire counting as zero: { id, label, c (its condition), color (its band) }.
@@ -379,6 +380,9 @@ export class DamageScreen {
     this.model = model
     this.vehicleState = vehicleState
     this.isSuppressed = isSuppressed
+    // FEAT-165 (owner 2026-11-04: "we should be able to tell if a tire is standard or old"): main.js sets
+    // this to the fitted part's name for a track; a tire's row and tip then say which tire is on.
+    this.partName = null
     this.isOpen = false
     this.alerting = false
     this._acc = REFRESH_S
@@ -666,8 +670,8 @@ export class DamageScreen {
   /** The five worst parts, a flat tire counting as zero. Rebuilt only when what it shows changes. */
   _renderList () {
     const m = this.model
-    const rows = worstParts(m, LIST_ROWS).map(r => ({ ...r, sym: symptoms(m, r.id) }))
-    const key = rows.map(r => `${r.id}:${Math.round(r.c * 100)}:${r.sym.join('|')}`).join(',')
+    const rows = worstParts(m, LIST_ROWS).map(r => ({ ...r, label: this._label(r.id), sym: symptoms(m, r.id) }))
+    const key = rows.map(r => `${r.id}:${r.label}:${Math.round(r.c * 100)}:${r.sym.join('|')}`).join(',')
     if (key === this._listKey) return
     this._listKey = key
     this.listEl.innerHTML = rows.map(({ id, label, c, color: col, sym }) => {
@@ -676,6 +680,12 @@ export class DamageScreen {
         + sym.map(l => `<div class="dr-sym">${l}</div>`).join('')
         + `</div>`
     }).join('')
+  }
+
+  /** A track's label; a tire's says which tire is on ("Tire FL · Old tire"). */
+  _label (id) {
+    const name = TRACKS[id].cls === 'tire' && this.partName?.(id)
+    return name ? `${TRACKS[id].label} · ${name}` : TRACKS[id].label
   }
 
   _setHover (id) {
@@ -702,7 +712,7 @@ export class DamageScreen {
       return
     }
     this.tip.innerHTML =
-      `<div class="dt-name">${t.label}</div>`
+      `<div class="dt-name">${this._label(id)}</div>`
       + `<div class="dt-pct" style="color:${bandColor(shownCond(m, id))}">${Math.round(c * 100)}%</div>`
       + symptoms(m, id).map(l => `<div class="dt-extra">${l}</div>`).join('')
       + `<div class="dt-why">${CONSEQUENCE[t.cls] || ''}</div>`

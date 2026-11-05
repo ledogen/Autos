@@ -26,6 +26,7 @@ import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
+import { tireContact } from './tire-contact.js'   // FEAT-70: the wheel's ground contact, solved for the tire cylinder
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
@@ -1316,6 +1317,7 @@ window.__damageHUD = damageHUD   // the debug panel's "Diagnostic Readout" check
 // FEAT-90: the player's damage screen (V or the left-edge icon, parked only). The suppress
 // callback runs per frame, long after menuStage is initialised below.
 const damageScreen = new DamageScreen(damageModel, vehicleState, () => menuStage.isActive())
+damageScreen.partName = (track) => PARTS[partsSystem.fitted(track)]?.name   // FEAT-165: which tire is on
 
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -2128,100 +2130,48 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
 // described lives on as the engine ramp prism built in _buildLabColliders.)
 
 /**
- * Sphere collision query against all solid geometry.
- * Returns every surface the sphere at (cx,cy,cz) with radius r overlaps.
- * Each contact: normal points away from solid toward sphere; depth is penetration depth.
- * Called by stepPhysics once per wheel each physics step.
+ * Collision query against all solid geometry: every surface the query at (cx,cy,cz), radius r,
+ * overlaps. Each contact: normal points away from solid toward the wheel; depth is penetration depth.
+ * Called by stepPhysics once per wheel each physics step (footprint = true, `axle` = that wheel's spin
+ * axis), and by body probes as a plain sphere.
  */
-// Tire-envelope stencil (see queryContacts): ring radii as a fraction of the wheel radius, and the
-// eight sample directions. Hoisted so the per-wheel query does no trig — the values are the same
-// cos/sin of o·2π/8 the loop used to evaluate on every call.
-const FOOT_RINGS = [0.35, 0.6, 0.8, 0.95]
-const FOOT_DIRS  = 8
-const FOOT_COS   = Array.from({ length: FOOT_DIRS }, (_, o) => Math.cos(o * Math.PI * 2 / FOOT_DIRS))
-const FOOT_SIN   = Array.from({ length: FOOT_DIRS }, (_, o) => Math.sin(o * Math.PI * 2 / FOOT_DIRS))
-
-// S-64: queryContacts' per-sample road-hint and ground-height samplers, hoisted to module scope so
-// the 4-wheels-per-step physics path does not allocate two closures per call. The call's cy reaches
-// them through _qcY (set at the top of queryContacts; nothing in between re-enters it).
+// S-64: queryContacts' per-sample road-hint and ground samplers, hoisted to module scope so the
+// 4-wheels-per-step physics path does not allocate closures per call. The call's cy reaches them
+// through _qcY (set at the top of queryContacts; nothing in between re-enters it).
 let _qcY = 0
 const _qcHintAt = (x, z) => (!_labActive && roadSystem) ? roadSystem.carveHint(x, z) : undefined
 // FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
 const _qcGroundH = (x, z) => _labActive ? labSystem.groundHeight(x, z)
                                         : (terrainSystem ? terrainSystem.analyticHeight(x, z, _qcHintAt(x, z), _qcY) : 0)
-function queryContacts (cx, cy, cz, r, footprint = false) {
+const _QC_UP = { x: 0, y: 1, z: 0 }
+const _qcGroundN = (x, z) => _labActive ? labSystem.groundNormal(x, z)
+                                        : (terrainSystem ? terrainSystem.analyticNormal(x, z, _qcHintAt(x, z), _qcY) : _QC_UP)
+const _qcTire = {}
+function queryContacts (cx, cy, cz, r, footprint = false, axle = undefined) {
   const hits = []
   _qcY = cy
 
   // Ground surface — the lab's own surface in the testing lab; analytic terrain height otherwise.
-  // PERF (contact path): resolve the road run ONCE (memoized carveHint) and thread it into EVERY
-  // height/normal sample below. That collapses the per-wheel road tile-scans to ~1, and — crucially —
-  // carveHint is memoized per 0.05 m cell, so the death-spiral's ~300 queryContacts/frame at a
-  // near-stationary wheel reuse one query instead of each re-scanning a switchback's many slices
-  // (the slow-CPU 5fps lock that recovers airborne). Height stays accurate: at the query center the
-  // projection is ~0 (perp foot) so rest height ≈ exact (≤~5 mm via the memo).
-  // The road run is resolved PER SAMPLE, not once at the wheel centre.
+  // The road run is resolved PER SAMPLE (carveHint at each sample's own x, z), never once at the wheel
+  // centre: a centre still off the road would resolve every sample against bare terrain and the tire
+  // could not feel a road edge until its centre crossed it (owner, 2026-08-22). PERF-24's death
+  // spiral (a near-stationary wheel dispatching ~300 queries a frame on a switchback) stays bounded by
+  // carveHint's own 0.05 m memo: every substep and repeat query at the same spot reuses its cells.
   //
-  // It used to be resolved once at (cx,cz) and threaded into every footprint sample, which quietly
-  // defeated the tire envelope at exactly the place it matters most — a road EDGE. With the wheel
-  // centre still off the road, the centre's hint says "no run here", so every sample ahead resolved
-  // against bare terrain and the envelope never saw the raised road at all. The tire clipped through
-  // the edge until the centre crossed it, at which point the hint flipped and the surface snapped up
-  // under the wheel (owner, 2026-08-22). The whole point of the envelope is to feel an edge before
-  // the centre reaches it.
-  //
-  // The perf that motivated the shared hint (PERF-24) is preserved by carveHint's own memo, which is
-  // keyed per 0.05 m cell: the stencil's 33 samples are distinct cells, but every substep and every
-  // repeat query at the same spot still shares them, which is what the death-spiral case needs.
-  // (_qcHintAt / _qcGroundH above.)
-
-  // TIRE-ENVELOPE (footprint sampling). A wheel is a disc of radius r; it rests on the HIGHEST
-  // terrain its circular profile can touch, NOT the single point under the hub. The legacy probe
-  // sampled only the centre column, so the tire sank into troughs (rumble strips) and clipped through
-  // crests / the downhill face of a slope. Here we sweep a small direction-agnostic stencil and take
-  // the ENVELOPE max of  h(sample) + sqrt(r² − d²)  — the wheel-centre rest height each sample implies
-  // (d = horizontal offset; the sqrt is the circle's height above ground at that offset). The winning
-  // sample sets penetration depth, contact point, and surface normal. At d=0 this reduces EXACTLY to
-  // the old  terrainH + r − cy, so flat ground and the m4-* assertions are unchanged.
-  // PERF: each sample resolves its OWN road run, memoized per 0.05 m cell — see the note above the
-  // stencil for why a single shared hint broke the envelope at road edges. Wheel callers pass
-  // footprint=true; body probes do not.
-  const doFootprint = footprint && r > 0 && RANGER_PARAMS.wheelFootprint !== false
-  let bestH   = _qcGroundH(cx, cz)
-  let bestTop = bestH + r        // d=0 term — identical to the legacy single probe
-  let bestX = cx, bestZ = cz
-  if (doFootprint) {
-    // Four rings x eight directions (32 offsets), direction-agnostic so it bridges bumps and slopes
-    // in any orientation without knowing the wheel's heading.
-    //
-    // It was two rings x four directions, and the owner could see the seams: rolling onto a road
-    // edge the wheel climbed in two visible steps — one per ring — because the envelope only knows
-    // the surface at the radii it samples. The disc it is approximating is continuous, so the fix
-    // is resolution: more rings make the climb finer, and the diagonals matter because a wheel
-    // rarely meets an edge square-on to the world axes.
-    //
-    // Cost is bounded by carveHint's 0.05 m memo — these offsets are distinct cells for one wheel,
-    // but every suspension substep and every repeat query at the same spot reuse them.
-    for (let k = 0; k < FOOT_RINGS.length; k++) {
-      const d    = FOOT_RINGS[k] * r
-      const lift = Math.sqrt(Math.max(0, r * r - d * d))
-      for (let o = 0; o < FOOT_DIRS; o++) {
-        const sx = cx + d * FOOT_COS[o], sz = cz + d * FOOT_SIN[o]
-        const h   = _qcGroundH(sx, sz)
-        const top = h + lift
-        if (top > bestTop) { bestTop = top; bestH = h; bestX = sx; bestZ = sz }
-      }
+  // FEAT-70: a wheel is solved as the tire CYLINDER it is (src/tire-contact.js) — the surface point
+  // closest to the axle across three lines of the tread, depth along the radial line, the normal
+  // radial at an edge — so a kerb ahead lifts and slows the wheel continuously and ground BESIDE the
+  // tire lifts nothing. It replaced a 4-ring × 8-direction stencil round the hub, which was a sphere
+  // (a kerb 15 cm beside the tire lifted the hub 76 mm) and climbed edges in ring-seam steps.
+  if (footprint && axle && r > 0 && RANGER_PARAMS.wheelFootprint !== false) {
+    const c = tireContact(_qcGroundH, _qcGroundN, cx, cy, cz, r, RANGER_PARAMS.wheelWidth, axle, _qcTire)
+    if (c) hits.push({ normal: new THREE.Vector3(c.nx, c.ny, c.nz), depth: c.depth, contactPoint: new THREE.Vector3(c.px, c.py, c.pz) })
+  } else {
+    const h = _qcGroundH(cx, cz), gd = h + r - cy
+    if (gd > 0) {
+      const n = _qcGroundN(cx, cz)
+      hits.push({ normal: new THREE.Vector3(n.x, n.y, n.z), depth: gd, contactPoint: new THREE.Vector3(cx, h, cz) })
     }
-  }
-  const gd = bestTop - cy
-  if (gd > 0) {
-    const n = _labActive ? labSystem.groundNormal(bestX, bestZ)
-                         : (terrainSystem ? terrainSystem.analyticNormal(bestX, bestZ, _qcHintAt(bestX, bestZ), cy) : { x: 0, y: 1, z: 0 })
-    hits.push({
-      normal:       new THREE.Vector3(n.x, n.y, n.z),
-      depth:        gd,
-      contactPoint: new THREE.Vector3(bestX, bestH, bestZ)
-    })
   }
 
   // Ramp triangle contacts — lab only (wheel path; the chassis gets the engine ramp prism).
@@ -3595,11 +3545,15 @@ const serviceCenter = new ServiceCenter({
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
-  jobs: () => _servicePoi ? _takeableOffers(_servicePoi.id, daySystem.clockH()).length : 0,
-  // The shop still posts work: the button hands the brake to the offer, as parking does elsewhere.
-  openJobs: () => {
+  // The shop still posts work (FEAT-167: its Jobs tab), each offer worded as its map card is. Picking one
+  // hands the brake to the offers, as parking does elsewhere, starting at that one.
+  jobs: () => {
+    const n = _servicePoi ? _takeableOffers(_servicePoi.id, daySystem.clockH()).length : 0
+    return Array.from({ length: n }, (_, i) => _boardView.view(_servicePoi.id, i).card)
+  },
+  openJobs: (i = 0) => {
     const offers = _takeableOffers(_servicePoi.id, daySystem.clockH())
-    if (offers.length) missionSystem.enterFromPoi(_servicePoi, offers, _planOffer)
+    if (offers.length) missionSystem.enterFromPoi(_servicePoi, [...offers.slice(i), ...offers.slice(0, i)], _planOffer)
   },
   openMap: () => map2d.toggle(),
   nowH: () => daySystem.clockH(),
@@ -4373,7 +4327,7 @@ function _shelfNext (poiId, now) {
 function _shelfView (poiId, now) {
   if (poiSystem.list().find(q => q.id === poiId)?.type !== 'autoShop') return null
   return shelf(poiId, now).map(e => e && {
-    name: shelfName(e), used: e.cond !== null && e.cond < 1, left: formatGameDuration(e.expiresAt - now) })
+    name: shelfName(e), used: e.cond !== null && e.cond < 1, left: e.expiresAt === Infinity ? 'always' : formatGameDuration(e.expiresAt - now) })
 }
 
 // FEAT-112: the truck as configured NOW — the fitted parts' load ratings folded over the stock ones.

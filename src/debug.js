@@ -352,7 +352,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // Rear diff mode: open / limited-slip / locked (src/drivetrain.js couples the rear wheels).
   // Front differential + a per-axle final-drive slider will join this folder in a later phase.
   const diffFolder = vehicleFolder.addFolder('Differentials')
-  diffFolder.add(params, 'rearDiffMode', { Open: 'open', 'Limited Slip': 'lsd', Locked: 'locked' }).name('Rear Differential')
+  diffFolder.add(params, 'rearDiffMode', { Open: 'open', 'Clutch LSD': 'clutch', 'Helical LSD': 'lsd', Locked: 'locked' }).name('Rear Differential')
 
   // ── Tires ───────────────────────────────────────────────────────────────────────
   // Vertical tire spring (stiffness/damping) + ground friction + the Pacejka force-curve model
@@ -443,7 +443,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   suspFolder.add(params, 'bumpStopStiffness',         10000, 500000, 5000).name('Bump Stop Stiffness (N/m)')
   suspFolder.add(params, 'bumpStopProgressiveM',      0.01, 0.30, 0.005).name('Bump Stop Pack Dist (m)')   // rate ×(1+(x/x0)²), capped 8×
   suspFolder.add(params, 'bumpStopDamping',           0, 30000, 500).name('Bump Stop Damping (N·s/m)')
-  suspFolder.add(params, 'wheelFootprint').name('Tire Footprint (envelope)')
+  suspFolder.add(params, 'wheelFootprint').name('Tire contact (cylinder)')
 
   // ── SM-3 damage panel ──────────────────────────────────────────────────────────────────────────
   // Two jobs, both authoring conveniences, neither shipped to the player (the player-facing surface

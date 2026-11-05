@@ -42,7 +42,8 @@ let spares = 0
 for (let seed = 1; seed <= N; seed++) {
   const j = roll(seed)
   for (const [id, c] of Object.entries(j.cond)) {
-    const [lo, hi] = JALOPY_COND[TRACKS[id].cls]
+    // FEAT-166: the open diff has no clutch packs to wear; the track sits at new.
+    const [lo, hi] = TRACKS[id].clutchOnly ? [1, 1] : JALOPY_COND[TRACKS[id].cls]
     if (c < lo - 1e-9 || c > hi + 1e-9) { inRange = false; badDetail = `${id} ${c} seed ${seed}` }
   }
   for (const [s, id] of Object.entries(j.fitted)) {

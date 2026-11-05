@@ -28,3 +28,17 @@ still ran out on day 1 with none for sale.
 - [ ] The two prices raised (default above, or the owner's numbers), on the shelf and in the card.
 - [ ] Diagnostics shows the part name of each of the four tires.
 - [ ] The owner confirms the price.
+
+## Built — 2026-11-05 (Lane B, feature/machine)
+
+- **Always for sale** (cf385fba). `data/shop-stock.js` ALWAYS = Old + Standard. `shelf()` lists them new,
+  after the four rotating slots, with no expiry, and buying one never empties it. The map card's shelf
+  says "always" and the service screen says "always in stock". The rotation itself is unchanged.
+- **Prices** in `data/parts.js` (the part's own price, so the shelf, the map card and resale agree):
+  Old $7 → **$8**, Standard $15 → **$18** `[DEFAULT, the owner confirms]`.
+- **Diagnostics** (386698de): a tire's row in the worst-parts list and its hover tip read
+  "Tire FL · Old tire". The new `DamageScreen.partName` hook is set by main.js from the fitted parts.
+- **Gate:** `shop-stock.mjs` §7 checks every shop, every half hour of 12 days × 5 seeds, holds both tires
+  new, and that buying one leaves it. `service.mjs` and `offer-board.mjs` stay green.
+
+Owed: the owner confirms the two prices. The browser smoke is held by the compute hold.
