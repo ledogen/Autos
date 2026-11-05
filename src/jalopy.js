@@ -44,6 +44,7 @@ export function rollJalopy ({ parts, damage, inventory }, seed) {
     if (w) parts.fit(pick(w), null, socket)
   }
   for (const [id, t] of Object.entries(TRACKS)) {
+    if (t.clutchOnly) continue   // FEAT-166: the jalopy's diff is open; clutch packs fitted later come new
     const range = JALOPY_COND[t.cls]
     // Alignment is bent GEOMETRY with the track as its readout (damage.js _bendWheel): a bend of at
     // most 1 − lo of full keeps the readout inside the range.
