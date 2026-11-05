@@ -191,7 +191,7 @@ export const PARTS = {
                      patch: { arbStiffnessRear: 6500 }, desc: 'Ties the rear wheels together. Rotates the truck; one bump becomes both wheels’ problem.' },
 
     // ── Rear differential (§3b — the canonical described-never-scored part).
-    diffOpen:      { name: 'Open differential',    slot: 'diff', family: 'oem', rarity: 'common', price: 20, massKg: 30, stock: true,
+    diffOpen:      { name: 'Open differential',    slot: 'diff', family: 'oem', rarity: 'common', price: 10, massKg: 30, stock: true,   // owner 11-04: "worth half as much" (20 → 10)
                      patch: { rearDiffMode: 'open' },
                      desc: 'Power goes to whichever rear wheel has the least grip.' },
     diffLSD:       { name: 'Limited-slip differential', slot: 'diff', family: 'sport', rarity: 'rare', price: 40, massKg: 32,
