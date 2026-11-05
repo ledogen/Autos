@@ -225,7 +225,7 @@ The owner playtests on Pages: every main commit rebuilds :8000 under them, so ba
 
 ## State 2026-11-05
 
-**COMPUTE HOLD ON** (owner 11-05: "i need the compute to play smoothly"). Only main :8000 + the dashboards
+**COMPUTE HOLD LIFTED 11-05 evening** (owner: "im on power now feel free to test and use battery freely"); all four lane servers restarted, A/B/Spare told; landing order B → Spare → A. The rest of this paragraph is the hold's history. Was: **COMPUTE HOLD ON** (owner 11-05: "i need the compute to play smoothly"). Only main :8000 + the dashboards
 run. Every lane server is stopped, because idle Vite drew ~15–20 % CPU each. All three lanes are told: no
 test:all, heavy gates, sweeps or CDP until the hold lifts. Lift it only on the owner's word, then tell A,
 B and Spare. 11-04 inbox triaged in 5400a4c8: BUG-109 pad (Spare, next), BUG-81 third report (Spare),
