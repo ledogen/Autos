@@ -1,7 +1,7 @@
 ---
 id: BUG-96
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-10-26
 source: owner, 2026-10-26 — "Tree Billboard sprites don't look great in all lighting conditions and angles and they flip-flop and mirror themselves at certain orientations, which is visually jarring."
@@ -66,3 +66,9 @@ atlas with mips and a depth buffer for its bake ≈ 5 MB.
 morning / noon / dusk, facing the sun and away, each also with the 3D ring set to 0 so EVERY tree is a
 billboard (`*-bb.png`) — the brightness match head-on. After: billboards carry the 3D trees' facet
 shading and brightness; before: flatter and lighter than the 3D frame. Gates: props 6/6 + smoke.
+
+## Resolution (2026-11-05) — CLOSED
+
+On main since 2d03f51b: billboards bake a light-free albedo + faceted normals once and are lit live by the rig's
+Lambert terms — no sun-side mirror, the highlight follows the real sun. Draw calls unchanged, ≈ 5 MB more atlas.
+Marked closed on the tracker page; the ticket followed.

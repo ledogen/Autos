@@ -1,7 +1,7 @@
 ---
 id: BUG-94
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-10-26
 source: owner, 2026-10-26 — "The mask for the moon phase needs to be a larger diameter because you can still see the glowing halo around the mask."
@@ -43,3 +43,8 @@ dark limb has NO ring. Keep `(1 − disc)`.
   hides): before, phase 0.42 / 0.5 / 0 all wear a full bright ring; after, the glow follows the lit
   limb only, full is unchanged, and phase 0 draws nothing. Shots: `wip/bug-94/{before,after}-phase*.png`.
   The Moon GUI sliders (phase, halo, earthshine) drive the same uniforms.
+
+## Resolution (2026-11-05) — CLOSED
+
+On main since 3cb8b16e: the glow is gated by the terminator (lit limb only, no ring round the dark half) and a new
+moon is dark. Marked closed on the tracker page; the ticket followed.
