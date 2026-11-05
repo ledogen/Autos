@@ -45,8 +45,9 @@ export const CAMP_PARAMS = {
     campZoneChance: 0.26,   // P(a cell carries a zone) — see THE COVERAGE ARITHMETIC below
     campMinRadiusM: 350,    // zone radius ~ U[min, max]; mean diameter ≈ 1 km (RATIFIED)
     campMaxRadiusM: 650,
-    campReachM:     2500,   // m [DEFAULT] — FEAT-164: the longest drive from any road in the region to a
-                            // camp zone; fillReach adds zones until it holds. The owner's number.
+    campReachM:     2000,   // m — FEAT-164: the longest drive from any road in the region to a camp zone;
+                            // fillReach adds zones until it holds (owner 2026-11-05: "i like the 2000m
+                            // spacing between camping zones best")
     campRoadEdgeM:  40,    // m past the shoulder edge that dispersed camping is allowed (owner
                             // 2026-07-31: was 20 — the wider tether roughly doubles the siting
                             // ray's candidate ladder, so watch the re-grade cost if widened again)
