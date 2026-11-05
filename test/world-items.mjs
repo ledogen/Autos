@@ -40,7 +40,7 @@ check('both lie on the ground', runWorldItems.items.length === 2 && runWorldItem
 // 2. near: within the reach, nearest first; nothing beyond it
 const n1 = near(10.4, 10)
 check(`near() finds both within ${REACH_M} m, nearest first`, same(n1, [1, 0]), JSON.stringify(n1))
-check('nothing is in reach from 4 m away', near(10, 10 + REACH_M + 1).length === 0)
+check(`nothing is in reach from ${REACH_M + 1} m away`, near(10, 10 + REACH_M + 1).length === 0)
 
 // 3. take + restore: the identical entries come back
 const back = []
@@ -76,7 +76,7 @@ check('a save brings the drop back where it lay', runWorldItems.items.length ===
 
 // 5. reach from the outline: a truck at the origin facing −Z, tail 2.54 m back, nose 2.17 m on, 0.83 m half width
 restoreWorldItems(null)
-place({ id: part, n: 1 }, { x: 0.3, y: 0, z: 2.54 + 0.6 })   // 0.6 m off the tailgate (3.15 m from the centre)
+place({ id: part, n: 1 }, { x: 0.3, y: 0, z: 2.54 + REACH_M - 0.4 })   // inside the reach off the tailgate, past it from the centre
 place({ id: part, n: 1 }, { x: 0.83 + REACH_M + 0.2, y: 0, z: 0 })   // just past the reach off the side
 const fp = { fx: 0, fz: -1, front: 2.17, rear: 2.54, half: 0.83 }
 check('behind the tailgate: out of reach of the centre, in reach of the outline', near(0, 0).length === 0 && same(near(0, 0, REACH_M, fp), [0]),

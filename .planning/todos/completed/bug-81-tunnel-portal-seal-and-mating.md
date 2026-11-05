@@ -1,7 +1,7 @@
 ---
 id: BUG-81
 type: bug
-status: pending
+status: closed
 severity: major
 opened: 2026-10-05
 source: Owner report (in-game observation, no capture yet). Second report 2026-10-25 (below).
@@ -255,3 +255,8 @@ baseline is a dead-straight, unbanked run held to the centimetre; the bores curv
 the levels are alike (bore 1: 0.47 m/s centre, 0.26–0.47 shoulder). Gate: `bore-collider` (4) — a box along the
 shoulder of a run half a cell off the grid passes untouched (shoved 0.2 m sideways without the fix).
 **Owed:** the owner's drive along a tunnel shoulder.
+
+## Resolution (owner, 2026-11-05) — CLOSED
+
+Owner's drive on :3885 (feature/spare at 7bb77913): the tunnel shoulder is "smooth as butter - close". Closes with
+the Spare landing (1aa3a2ab + 065b94b5). The portal items (1, 4, 5) were closed in their own sections above.

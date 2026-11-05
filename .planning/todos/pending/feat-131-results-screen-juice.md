@@ -125,3 +125,9 @@ that touches the drive.
   Debug: Rank Timer Music + volume. The dashboard's ▶ (driver `rank-bed`) plays an 8 s approach to a line.
   The `duck` hook for FEAT-58 is not exported yet — nothing would read it; it is one line when the player
   music lands. **Owed:** the owner's listen in a real job (P4 sign-off).
+
+## Owner, 2026-11-05 (:3885)
+
+The result card's sounds (P1) are accepted. The rank-timer music bed (P3) is still owed: the owner did not know
+what it was — it plays only once the rank bar shows (the last 25 % of a courier route, never under 400 m; a paper
+round 15 s before its S/A line), so it wants a job driven to the bar.

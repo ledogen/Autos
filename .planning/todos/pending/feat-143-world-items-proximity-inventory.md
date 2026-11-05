@@ -148,4 +148,5 @@ Reach (8 m proposed), parked only, drops persist in the save (player state), pic
 `items.export_glb`), 2.3 MB in all, 240–6856 tris (the tire is the heaviest: the item builder's tread); their
 `data/prop-models.js` rows carry the export's tris and size. cdp-smoke has a drop + pick-up step (7e871dfb: the
 zip ties go down behind the tailgate, show under "Nearby on the ground", and come back with their 4 uses).
-**Owed:** the owner's look at the dropped models in the world.
+**Owner, 2026-11-05:** reach = "5m both" — `REACH_M` 3 → 5 m, the drop pick-up and the bed-cargo reload alike. The
+:3885 drive (dropping and picking up a tire, driving over it) "felt good".

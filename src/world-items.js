@@ -12,8 +12,8 @@
 export const runWorldItems = { items: [] }   // { entry, x, y, z, q: [x, y, z, w] } — q is the resting pose
 
 // One reach for the pick-up and for FEAT-144's reload of lost bed cargo (owner, 2026-11-03: "one button,
-// one reach rule for both", "parked within a couple meters"). [DEFAULT] 3 m — the owner owes 3 vs 8.
-export const REACH_M = 3
+// one reach rule for both", "parked within a couple meters"); 5 m for both (owner, 2026-11-05: "5m both").
+export const REACH_M = 5
 
 /** Lay `entry` in the world at `pose` ({ x, y, z, q }). Returns its index. */
 export function place (entry, pose) {
@@ -32,7 +32,7 @@ export function rest (i, pose) {
 /**
  * Plan distance from `it` ({ x, z } — an item, or a lost bed piece, FEAT-144) to the truck at (x, z): to its footprint when `fp` is given, else to the
  * point. The reach is "parked within a couple meters" OF THE TRUCK — measured from its centre, a thing
- * set down behind the tailgate (2.5 m back) would start out of a 3 m reach.
+ * set down behind the tailgate (2.5 m back) would already have used half the reach.
  * @param {{fx: number, fz: number, front: number, rear: number, half: number}} [fp] - the truck's unit
  *   forward in plan, how far its nose and tail stand ahead of and behind (x, z), and its half width [m].
  */
