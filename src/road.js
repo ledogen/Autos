@@ -404,6 +404,34 @@ function _nearestOnPolyXZ(px, pz, pts, polyCum, lo = -Infinity, hi = Infinity) {
     return { d, cum, y, tx, tz, fx, fz }
 }
 
+// PERF-31: _nearestOnPolyXZ's own hit, or null when NO point of the polyline lies within `bar` —
+// proven, never guessed. For callers whose predicate is false past a fixed distance (the clearance
+// rule past reqMax, a legacy road-width bar), so a point plainly apart skips the full O(n) scan.
+// The proof walks vertices with an arc skip: polyCum is at least the XZ chord (the fact the scan's
+// own prune rests on), so a vertex at distance d clears the next d − bar metres of arc in one
+// binary-searched step. Whenever it cannot prove "apart" it returns the full scan, so a caller sees
+// bit-identical hits. The 1e-6 m slack only ever costs speed, never an answer.
+function _nearestWithinXZ(px, pz, pts, polyCum, bar) {
+    const n = pts.length, EPS = 1e-6
+    let i = 0
+    while (i < n) {
+        const ax = pts[i].x, az = pts[i].z
+        const d = Math.hypot(px - ax, pz - az)
+        if (d <= bar + EPS) return _nearestOnPolyXZ(px, pz, pts, polyCum)
+        const sMax = polyCum[i] + (d - bar) - EPS * (1 + d)   // every arc below sMax is apart
+        let lo = i, hi = n - 1
+        while (lo < hi) { const m = (lo + hi + 1) >> 1; if (polyCum[m] <= sMax) lo = m; else hi = m - 1 }
+        if (lo > i) { i = lo; continue }
+        if (i + 1 >= n) return null
+        // segment i→i+1 straddles sMax: test it exactly
+        const ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az, l2 = ex * ex + ez * ez
+        const t = l2 > 1e-12 ? Math.max(0, Math.min(1, ((px - ax) * ex + (pz - az) * ez) / l2)) : 0
+        if (Math.hypot(px - ax - t * ex, pz - az - t * ez) <= bar + EPS) return _nearestOnPolyXZ(px, pz, pts, polyCum)
+        i++
+    }
+    return null
+}
+
 /**
  * BUG-56 B0: convex hull of XZ points, monotone chain, CCW, no repeated endpoint. A hull is simple
  * by construction, which is the whole point of it here — it is the one pad boundary that cannot
@@ -591,9 +619,13 @@ function _conflictIntervalsXZ(PS, fromStart, QS, near, GAPM, FLARE, onFlare) {
     const idx = (k) => (fromStart ? k : n - 1 - k)
     const arcAt = (k) => (fromStart ? PS.polyCum[idx(k)] : PS.L - PS.polyCum[idx(k)])
     let lastD = Infinity
+    // PERF-31: a sample proven further than both the predicate's bar and FLARE is not near, and
+    // lastD = Infinity decides the gap walk's only use of it (flare > FLARE) as its distance would.
+    const bar = Math.max(near.bar ?? Infinity, FLARE)
     const nearAt = (k) => {
         const pa = PS.pts[idx(k)]
-        const h = _nearestOnPolyXZ(pa.x, pa.z, QS.pts, QS.polyCum)
+        const h = _nearestWithinXZ(pa.x, pa.z, QS.pts, QS.polyCum, bar)
+        if (!h) { lastD = Infinity; return false }
         lastD = h.d
         return near(pa, h, arcAt(k))
     }
@@ -784,6 +816,8 @@ function _interpArcTable(key, val, k) {
 // Tile side length in metres: the terrain chunk size (terrain-height.js), so road tiles and
 // terrain chunks are aligned by construction.
 export { CHUNK_SIZE }
+// For test/nearest-within.mjs only — the gate that pins _nearestWithinXZ to the full scan.
+export { _nearestOnPolyXZ, _nearestWithinXZ }
 
 /**
  * Which router built the roads this build drives on. Stamped into every calibration run export
@@ -3117,10 +3151,12 @@ export class RoadSystem {
         // the two terrain samples the rule would take. Same answer for every input.
         const prm = this._v2ClearPrm(), ground = (x, z) => this._coarseH(x, z)
         const reqMax = Math.max(prm.floor, prm.cap + prm.edge)
-        return (pa, hit, s) => {
+        const pred = (pa, hit, s) => {
             if (throat && s !== undefined && throat(s)) return hit.d <= PROX
             return hit.d > reqMax ? false : hit.d <= clearReq(pa, hit, ground, prm)
         }
+        pred.bar = throat ? Math.max(PROX, reqMax) : reqMax   // PERF-31: false for every hit past it (_nearestWithinXZ)
+        return pred
     }
 
     /**
@@ -3679,13 +3715,20 @@ export class RoadSystem {
         // the pass-2 walk read that — but a pair that rides 22–28 m apart with a height split for
         // the next hundred metres is still a T worth building (owner: main's Ts beat two roads).
         // Measured when this walk used the geometric throat: seed 20's far band lost all 3 Ts.
-        const near = legacy ? (pa, h) => h.d <= PROX : this._v2Near((s) => s < THROAT)
+        const near = legacy ? Object.assign((pa, h) => h.d <= PROX, { bar: PROX }) : this._v2Near((s) => s < THROAT)
+        const nearBar = Math.max(near.bar, FLARE)   // PERF-31: as _conflictIntervalsXZ's nearAt
         const firstInterval = (P, Q) => {
             const n = P.S.pts.length
             const idx = (k) => (P.nodeAtStart ? k : n - 1 - k)
             const arcAt = (k) => fromNode(P, P.S.polyCum[idx(k)])
             let lastD = Infinity
-            const nearAt = (k) => { const pa = P.S.pts[idx(k)]; const h = _nearestOnPolyXZ(pa.x, pa.z, Q.S.pts, Q.S.polyCum); lastD = h.d; return near(pa, h, arcAt(k)) }
+            const nearAt = (k) => {
+                const pa = P.S.pts[idx(k)]
+                const h = _nearestWithinXZ(pa.x, pa.z, Q.S.pts, Q.S.polyCum, nearBar)
+                if (!h) { lastD = Infinity; return false }
+                lastD = h.d
+                return near(pa, h, arcAt(k))
+            }
             let k = 0, end = 0
             while (k < n && nearAt(k)) { end = arcAt(k); k++ }
             if (!k) return 0
@@ -5658,15 +5701,17 @@ export class RoadSystem {
             // FEAT-77: "too close" is the clearance rule, not one road width — the parting point
             // is the last sample still inside the earthwork the rule protects. A legacy spec (the
             // fallback that keeps main's T) keeps the old one-road-width bar throughout.
-            const nearT = spec.legacy ? (pa, h) => h.d <= 2 * (this._params?.roadHalfWidth ?? 5) + 2 : this._v2Near()
-            const nSide = side.points.length
-            let lastClose = -1
-            for (let i = 0; i < nSide; i++) {
-                const q = _nearestOnPolyXZ(side.points[i].x, side.points[i].z, T0.points, T0.polyCum)
-                if (q && nearT(side.points[i], q)) lastClose = i
+            const legacyBar = 2 * (this._params?.roadHalfWidth ?? 5) + 2
+            const nearT = spec.legacy ? Object.assign((pa, h) => h.d <= legacyBar, { bar: legacyBar }) : this._v2Near()
+            // PERF-31: the LAST close sample, walked from the far end — the first close one is the
+            // answer, and _nearestWithinXZ skips the plainly-apart ones without a full scan (this
+            // loop was 15 % of the network thread scanning every sample against the whole trunk).
+            let lastClose = -1, base = null
+            for (let i = side.points.length - 1; i >= 0 && lastClose < 0; i--) {
+                const q = _nearestWithinXZ(side.points[i].x, side.points[i].z, T0.points, T0.polyCum, nearT.bar)
+                if (q && nearT(side.points[i], q)) { lastClose = i; base = q }
             }
             if (lastClose >= 0) {
-                const base = _nearestOnPolyXZ(side.points[lastClose].x, side.points[lastClose].z, T0.points, T0.polyCum)
                 for (const extra of [0, 20, 45]) {
                     const arc = Math.min(tL - MINREG, Math.max(MINREG, base.cum + (wAtStart ? extra : -extra)))
                     const k = arc.toFixed(2)
