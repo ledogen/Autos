@@ -415,6 +415,18 @@ const STEPS = [
     await js(`window.__inv.use("jerryCan", window.__inv.list().findIndex(r => r.id === "jerryCan"))`)
     check(await until(() => js('window.__vs.fuel.gal === 6 && window.__inv.list().find(r => r.id === "jerryCan")?.gal === 0'), 1000),
       'the jerry can did not pour into the tank, or did not stay aboard')
+    // FEAT-143: a drop goes down behind the tailgate, shows under "Nearby on the ground", and picking it up
+    // puts the same entry back — the zip ties keep the 4 uses they had.
+    const zt = () => js('window.__inv.list().find(r => r.id === "zipTies")?.left ?? null')
+    const ground = '#inv-screen .inv-slot[data-ground]'
+    await js('window.__inv.drop(window.__inv.list().findIndex(r => r.id === "zipTies"))')
+    check(await zt() === null, 'dropping the zip ties left them in the inventory')
+    check(await until(() => js(`!!document.querySelector('${ground}')`), 3000), 'the dropped zip ties are not under "Nearby on the ground"')
+    await sleep(1000)   // the model loads, the body lands
+    await js(`document.querySelector('${ground}').click()`)
+    await js('document.querySelector("#inv-screen [data-act=pick]").click()')
+    check(await until(async () => await zt() === 4, 1000), `picking the zip ties up gave back ${await zt()} uses, want 4`)
+    check(await js(`!document.querySelector('${ground}')`), 'the picked-up zip ties are still on the ground')
     await tap('Escape')
     check(await until(async () => !await inv(), 1000), 'Esc left the inventory open')
   }],
