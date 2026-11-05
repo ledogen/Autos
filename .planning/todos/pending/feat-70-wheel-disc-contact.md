@@ -202,6 +202,19 @@ expected to change — `fingerprint-physics.mjs` diff explained in the ticket, P
 3. **Keep the surface normal's tilt along the axle.** A purely radial normal has none, so a truck on a
    cross-slope would stop sliding downhill.
 4. **The buried-hub half-space depth.** The tunnelling failsafe needs a depth that grows without bound.
+5. **The contact point is the depth-weighted centroid of the three lines, not the deepest line.**
+   physics.js applies the tire's forces there. With the deepest point, level ground made all three lines
+   tie and the first (an edge) won; a hair of roll picked an edge too. Both drive wheels then pushed
+   117.5 mm off the same side, a yaw moment of about 2 × 3 kN × 0.12 m. Measured 2026-11-05: straight
+   full throttle on the lab's flat ground turned the truck 180.0° → 174.9° and 1.8 m sideways in 3 s,
+   and so it hit the lab's wall at an angle. Fixed in 30bc59f6; the gate now checks the point (level →
+   under the hub, rolled 1° → 2.4 mm, a kerb under one edge → that edge).
+
+**Lab check, 2026-11-05.** The collision-drop lab against main, after 30bc59f6: COLLISION and DROP
+identical line for line (26 mph: 15,496 N·s, ratio 1.38×; 3 m drop: 108.5 kN tire, 99.2 kN bump stop,
+63.9 kN rim). Before the fix the collision read 24.7k + 3.7k N·s in two hits and the 3 m camber
+−0.172° (main −0.176°): both were the edge contact point. The lab itself had rotted and needed three
+fixes first (bb9cd475, ae68e4c4, ee0627dc).
 
 **Owed before landing (after the compute hold):**
 - the affected gates;
