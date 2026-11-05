@@ -941,6 +941,11 @@ const STEPS = [
     for (let i = 0; i < 4 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
     check(!await speaker(), "mom's call did not close")
     check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
+    // FEAT-148: midnight drops its overlay over the road, then clears it (every clock path counts).
+    await js('{ const d = window.__day(); d.advanceMinutes((24 - d.clockH() % 24) * 60 + 1) }')
+    const mn = () => js('document.getElementById("midnight-card").classList.contains("on") && document.getElementById("mn-main").textContent')
+    check(await until(async () => await mn() === 'Supplies are drying up', 1500), `midnight showed no overlay ("${await mn()}")`)
+    check(await until(async () => !await mn(), 6000), 'the midnight overlay never cleared')
   }],
 ]
 

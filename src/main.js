@@ -99,7 +99,7 @@ import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, TUT, DLG, COMPASS } from '../data/dialogue.js'
+import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -5464,13 +5464,37 @@ function _campFade (during) {
     // The fade overlay lets clicks through, so Cancel (or leaving the region) can close the
     // dialogue mid-fade. The deferred action belongs to THAT dialogue: if it is gone, do nothing.
     try { if (_campUi === ui) during() } finally {
-      if (el) setTimeout(() => { el.classList.remove('on'); _campBusy = false }, 120)
+      // FEAT-148: a night that crossed midnight holds the black while the midnight overlay plays on it.
+      const hold = _checkMidnight() ? MIDNIGHT_MS : 0
+      if (el) setTimeout(() => { el.classList.remove('on'); _campBusy = false }, 120 + hold)
       else _campBusy = false
     }
   }
   if (!el) { finish(); return }
   el.classList.add('on')
   setTimeout(finish, 480)   // slightly past the 0.45 s CSS transition
+}
+
+// FEAT-148 (owner, 2026-10-31): THE MIDNIGHT OVERLAY. Every midnight a line falls from the top and settles
+// in the centre: the pressure is rising (data/dialogue.js MIDNIGHT). Over the night road when awake; on
+// the black when slept through (_campFade holds it). It compares the DAY, so every clock path counts — a
+// drive, a pour, roadside work — whoever moved it. Called by the HUD poll and by _campFade.
+const MIDNIGHT_MS = 4000   // the CSS animation's length (index.html #midnight-card)
+let _midnightDay = 0       // the day last seen; 0 = adopt the next one silently (a run start, a resume)
+let _midnightTimer = 0
+/** Play the overlay if the day moved on since the last look; true when it played. */
+function _checkMidnight () {
+  const d = storySystem.isActive() ? daySystem.day() : 0
+  const crossed = _midnightDay > 0 && d > _midnightDay
+  _midnightDay = d
+  const el = document.getElementById('midnight-card')
+  if (!crossed || !el) return false
+  document.getElementById('mn-main').textContent = MIDNIGHT.main
+  document.getElementById('mn-sub').textContent = MIDNIGHT.sub
+  el.classList.remove('on'); void el.offsetWidth; el.classList.add('on')   // the reflow restarts the animation
+  clearTimeout(_midnightTimer)
+  _midnightTimer = setTimeout(() => el.classList.remove('on'), MIDNIGHT_MS)
+  return true
 }
 
 // ── FEAT-154: the road closures and the edge fade ────────────────────────────────────────────────
@@ -6497,6 +6521,7 @@ function _renderRunHud () {
   if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
   _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
   _pumpTut()           // …and any first-use card waiting its turn
+  _checkMidnight()     // FEAT-148: the midnight overlay
   const req = offerBoard?.lines() ?? []
   // FEAT-146: the win — every line delivered, and the last one's result card put away.
   if (req.length && req.every(l => l.state === 'done') && !missionSystem?.isActive()) _endRun('win')
@@ -7932,6 +7957,7 @@ const storySystem = new StorySystem({
   onRegionLive: (center, radius) => {
     if (!center) return
     daySystem.start()   // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
+    _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
     inventorySystem.start()          // FEAT-122: items die with the run (SM-INV-8/9)
@@ -8589,6 +8615,7 @@ function _restoreRun (s) {
   _restoring = true
   _resumeHold = true
   daySystem.restore(s.day)
+  _midnightDay = 0   // FEAT-148: the restored day is no midnight crossed
   Object.assign(runEconomy, s.economy)
   _playedS = s.playedS ?? 0
   inventorySystem.restore(s.inventory)

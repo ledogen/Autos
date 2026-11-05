@@ -1431,6 +1431,28 @@
     }
     #camp-fade.on { opacity: 1; }
 
+    /* FEAT-148: the midnight overlay — falls from the top, settles in the centre, fades; ~4 s. Thin white
+       at half opacity so the night road shows through. Same z as the fade and AFTER it in the DOM, so a
+       sleep through midnight plays it on the black. */
+    #midnight-card {
+      position: fixed; inset: 0; z-index: 160; pointer-events: none;
+      display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+      font-family: var(--font); font-weight: 200; letter-spacing: 2px; text-align: center;
+      color: var(--text-bright); text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    }
+    #midnight-card.on { display: flex; animation: mn-fall 4s linear forwards; }
+    #mn-main { font-size: 44px; }
+    #mn-sub { font-size: 22px; }
+    @keyframes mn-fall {
+      0%   { transform: translateY(-55vh); opacity: 0;   animation-timing-function: cubic-bezier(.2,1.4,.4,1); }
+      22%  { transform: translateY(0);     opacity: 0.5; }
+      80%  { transform: translateY(0);     opacity: 0.5; }
+      100% { transform: translateY(0);     opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes mn-fall { 0% { opacity: 0 } 15%, 80% { opacity: 0.5 } 100% { opacity: 0 } }
+    }
+
     #cp-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; justify-content: center; }
     #cp-hours { width: 160px; }
     .cp-dim { color: var(--text-dim); }
@@ -1911,6 +1933,8 @@
 
   <!-- The fade the 30-minute chore and the night happen behind. -->
   <div id="camp-fade"></div>
+  <!-- FEAT-148: midnight, every night. After the fade so it draws on its black. -->
+  <div id="midnight-card" aria-live="polite"><div id="mn-main"></div><div id="mn-sub"></div></div>
 
   <div id="lab-hud"></div>
 

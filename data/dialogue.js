@@ -87,6 +87,9 @@ export const TUT = {
         + `they've posted what they need. Bring it and you're out of here.` }],
 }
 
+/** FEAT-148 (owner, 2026-10-31): the midnight overlay's words — the pressure is rising. The owner's lines. */
+export const MIDNIGHT = { main: 'Supplies are drying up', sub: 'costs keep rising' }
+
 /** FEAT-103: the eight words for a bearing, clockwise from north (0° = −Z, the map's up). */
 export const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest']
 
