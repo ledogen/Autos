@@ -43,9 +43,10 @@ export function launchChrome (url, { port = 9222, headed = false, audio = false,
   const chrome = spawn(CHROME, args, { stdio: 'ignore' })
   const cleanup = () => { try { chrome.kill() } catch {} try { rmSync(userDir, { recursive: true, force: true }) } catch {} }
   process.on('exit', cleanup)
-  // SIGTERM too (pkill's default): unhandled, node dies without its 'exit' handlers and the headless Chrome lives on,
-  // orphaned, rendering on the shared GPU for hours (2026-11-05: two of them skewed another lane's frame traces).
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { cleanup(); process.exit(1) })
+  // SIGTERM (pkill's default, TaskStop) and SIGHUP (a closed terminal) too: unhandled, node dies without its 'exit'
+  // handlers and the headless Chrome lives on, orphaned, rendering on the shared GPU for hours (2026-11-05: two of
+  // them skewed another lane's frame traces). SIGKILL can't be caught.
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { cleanup(); process.exit(1) })
   return { chrome, cleanup }
 }
 
