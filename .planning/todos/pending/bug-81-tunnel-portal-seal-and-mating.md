@@ -211,3 +211,13 @@ over the mound (open 22 kinks, 1.16 /m). It now skips on the run's own arc: open
 on main, no deck changed. Full suite otherwise 115/116 green, smoke 21/21. Screenshots, before
 and after, from above beside the mouth, from 10 m inside looking out, and at road level:
 `wip/bug-81-item5/` (seed 6's four spawn-region portals).
+
+## Third report (owner, 2026-11-04, page inbox)
+
+> "the shoulder in tunnels is super rough to drive on and punishes the truck heavily, feels like discontinuous terrain"
+
+Inside the bore, on the shoulder band beyond the deck edge (item 2's area). Check what the wheels meet out
+there: the deck trimesh, the bore lining, or the carved heightfield. A step or sawtooth between them hits
+the strut as an impact. The bore floor must be one continuous surface out to the wall (MESH == PHYSICS).
+Acceptance: a headless drive along the tunnel shoulder shows no strut impacts above the open-road
+shoulder's baseline.

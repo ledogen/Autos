@@ -356,7 +356,7 @@ export class ServiceScreen {
   /** The repair stepper: ◀ bar ▶ (←/→ and the D-pad step it through menu-nav's .sel-prev / .sel-next),
    *  then the live price and the confirm button. Nothing to do at or above the bench's cap. */
   _repair (key, cond, quote) {
-    if (!this._targets(key).length) return dim('As good as the bench gets it. Only a new one is better.')
+    if (!this._targets(key).length) return dim(`Cannot repair above ${Math.round(REPAIR_CAP * 100)}%.`)   // owner's words, 2026-11-05
     const t = this._target(key), q = quote(t)
     return `<button class="sv-step" data-act="step" data-key="${key}" title="← → set how far">`
       + `<i class="sel-prev">◀</i>${hbar(cond, t)}<i class="sel-next">▶</i>`

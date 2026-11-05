@@ -5167,9 +5167,11 @@ function _updateParkTriggers (zParked = false) {
   const poiEl  = document.getElementById('poi-prompt')
   const campRow = document.getElementById('camp-row')
   const poi = _poiInReach()
-  // A mission zone (a giver in reach, or its offer open) owns the brake: no other parking action —
-  // the damage screen included — may answer it there (owner, 2026-10-16).
-  damageScreen.blocked = !!poi || ['generating', 'offer'].includes(missionSystem?.state)
+  // An open offer owns the brake: no other parking action — the damage screen and inventory included —
+  // may answer it while the card is up (owner, 2026-10-16). Merely being in a giver's reach does not
+  // block them: the offer opens only on the brake's rising edge, so once it is declined the menus are
+  // free while you stay parked (owner, 2026-11-05).
+  damageScreen.blocked = ['generating', 'offer'].includes(missionSystem?.state)
     || ['planning', 'offer'].includes(paperRouteSystem.state)
   const parked = !!vehicleState.parked
   const pulled = parked && !_prevParkedForPoi
