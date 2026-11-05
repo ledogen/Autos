@@ -209,8 +209,8 @@ assumptions). Nobody but the owner can `/clear` a session: a SendMessage arrives
 **On every wake:** read each lane's context from its transcript: the last assistant entry's `usage`
 (input + cache read + cache creation) in `~/.claude/projects/-Users-ledogen-CodeShit-CarGame/<session>.jsonl`.
 All lanes write to that one folder; tell them apart by the worktree path in the transcript. When a lane
-finishes a task while heavy (≳ 400k tokens), have it write `lanes/<id>.handoff`, then tell the owner
-"<lane> is ready for a clear". The owner types `/clear` and pastes the page's resume prompt.
+finishes a task while over **300k tokens (the owner's budget, 2026-11-05)**, have it write `lanes/<id>.handoff`, then tell the owner
+"<lane> is ready for a clear". The owner types `/clear` (Remote Control accepts it too) and pastes the page's resume prompt.
 
 ## State 2026-11-04 (after midnight) — orchestrator
 Owner asleep, standing permission for the night: "feel free to move main. merge, push main to origin, etc".
@@ -222,3 +222,37 @@ Inbox 11-03 (four items, done on main): menu truck re-centres on load (stage.js 
 ×1.40, durTire 16050 (+50 %), POI + pump rings lit to the drawn terrain (reverses FEAT-60's 50 m).
 Owed on the page: `feat65-clock-pay`, `feat143-reach` (both blockers) + the older list.
 The owner playtests on Pages: every main commit rebuilds :8000 under them, so batch main commits and push.
+
+## State 2026-11-05
+
+**COMPUTE HOLD ON** (owner 11-05: "i need the compute to play smoothly"). Only main :8000 + the dashboards
+run. Every lane server is stopped, because idle Vite drew ~15–20 % CPU each. All three lanes are told: no
+test:all, heavy gates, sweeps or CDP until the hold lifts. Lift it only on the owner's word, then tell A,
+B and Spare. 11-04 inbox triaged in 5400a4c8: BUG-109 pad (Spare, next), BUG-81 third report (Spare),
+FEAT-164 camp reach (A), FEAT-165 tires + FEAT-166 clutch LSD (B), and two Lane B quick edits (open diff
+$10, swap → inventory). BUG-67 steps 1+2 are both built (Spare head 974c15f9). The page item bug67-step1
+now offers land 1+2 / 1 only / hold. Before it lands, one solo `node test/cdp-smoke.mjs` (the overnight
+kill timed it out).
+
+**Later 11-05 (the orchestrator was cleared at 147k after this):**
+- **Clears in progress.** Spare (817k), Lane B (706k) and Lane A (401k) are writing `lanes/<id>.handoff` on the page, for
+  the owner to `/clear` them. On wake: read each `lanes/<id>.handoff`; tell the owner which lanes are ready.
+- **Lane B's landing set** (feature/machine, all committed): FEAT-70 cylinder wheel contact; open diff $10 3180c87d;
+  part swap straight to My Items, no prompt, ea000e4e; FEAT-165 tires always for sale + named in diagnostics
+  (cf385fba, 386698de); FEAT-166 clutch-type LSD (4f41a2d2). After the hold: 89 affected gates, cdp-smoke and the
+  collision-drop lab, then ONE merge. Owner calls (not blocking): feat165-price, feat166-numbers.
+- **Spare's two:** BUG-67 steps 1+2 (head 974c15f9) need the owner's `bug67-step1` call (land 1+2 / 1 only / hold)
+  plus one solo cdp-smoke. BUG-109 pad pass (4ba7a6ce) needs a fake-pad smoke step for all five screens plus
+  the owner's pad check (owner on the train, controller next trip). Its result cards now take D-pad then A to press.
+  Spare's next is BUG-81's tunnel shoulder.
+- **Lane A** waits on `feat66-look`. FEAT-164 is queued after FEAT-147.
+- The content session `cargame-a1` (CarGame-content, 115k, idle) was NOT told about the hold. Tell it if it wakes.
+- **All 11-04 inbox docs are answered.** Owner's context budget is 300k per session (memory feedback_context_budget_300k).
+- **Lane A cleared-ready** (session now named `park-feat-147-planning-notes`): clean at c1d7427d, lanes/a v22. Its FEAT-147
+  questions went to the owed list: feat147-art / feat147-sender / feat147-card. Before landing, its affected set
+  and cdp-smoke need one rerun, because it merged main after its last gate run.
+- **11-05 afternoon (orchestrator after its clear):** 9 inbox items drained. fe199149 on main: brake lamps = pedal switch,
+  only an OPEN offer blocks the menus (a giver in reach no longer does), grey band 80 %, the owner's diagnostics + repair
+  words. The other five shop items = FEAT-167 (Lane B, next code item, on top of its landing set; lanes/b v14 says so).
+  Main is 9+ ahead of origin, NOT pushed (the 11-04 push permission was for that night). A, B and Spare are still
+  waiting for their /clear (≈419k / 719k / 817k).

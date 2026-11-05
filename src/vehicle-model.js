@@ -40,6 +40,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { carcassRadialOffset, wheelRunoutOf } from './suspension.js'
+import { REV_THRESHOLD } from './drivetrain.js'
 
 // The imported GLB (described by a spec from data/vehicle-models.js) replaces the primitive truck.
 // The primitives stay as an automatic fallback if the load fails (offline, 404, parse error).
@@ -821,16 +822,12 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     // Longitudinal velocity along the car's forward axis (-Z local). Negative = reversing.
     _fwd.set(0, 0, -1).applyQuaternion(state.quaternion)
     const vLong = state.velocity ? state.velocity.dot(_fwd) : 0
-    // Brake lights illuminate when the driver's input OPPOSES the direction of travel
-    // (i.e. actual deceleration). In this control scheme S=brake/reverse, W=throttle/forward:
-    //   moving forward  → S (brake) decelerates  → brake lights
-    //   moving backward → W (throttle) decelerates → brake lights
-    // Near standstill, pressing into a direction is acceleration, not braking, so no light.
-    const throttle = state.throttle || 0
-    const brake    = state.brake || 0
-    const braking =
-      (vLong >  0.4 && brake    > 0.1) ||
-      (vLong < -0.4 && throttle > 0.1)
+    // Brake lights are the brake-pedal switch: lit exactly when physics.js applies the service brake.
+    // The automatic's S drives reverse below REV_THRESHOLD and brakes above it; a manual's S is always
+    // the brake (reverse is a gear). W never lights them — since FEAT-23 W while rolling back is drive
+    // through the converter, not a brake (owner 2026-11-05: tapping W in reverse lit them).
+    const brake   = state.brake || 0
+    const braking = brake > 0.1 && (vLong > REV_THRESHOLD || params.transmissionType === 'manual')
     const reversing = vLong < -0.4
     const lightsRunning = headlightMode !== 0
 
