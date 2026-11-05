@@ -25,6 +25,14 @@ warmer, heavier, patterned piece. The pattern is carried as geometry or flat-col
 
 ## Acceptance
 
-- [ ] `assets/models/quilt.glb` + generator in `assets/models/src/`, per ASSETS.md / ART-STYLE.md.
-- [ ] Drapes over the bedroll and the sleeping bag with nothing floating (FEAT-171's sheet).
-- [ ] Thumbnail in assets/items/; the owner's look.
+- [x] `assets/models/quilt.glb` + generator in `assets/models/src/`, per ASSETS.md / ART-STYLE.md.
+- [x] Drapes over the bedroll and the sleeping bag with nothing floating (FEAT-171's sheet).
+- [ ] Thumbnail in assets/items/; the owner's look. (thumbnail done)
+
+## Built — 2026-11-05 (Lane A, aac0a2ae)
+
+`items.py build_quiltLayer` (the camp layer) + `build_quilt` (the thumbnail, folded like the blanket's):
+0.12 m patches in five flat colours (QuiltRed / Cream / Navy / Mustard / Sage), each puffed 6 mm between its
+stitched seams — the pattern is faces and geometry. Built flat, the blanket's frame (origin the bed's centre at
+its underside), 1.10 × 0.56 m, 32 mm folded; FEAT-171's drape hangs it. **1 676 tris** — over the ~1000–1400
+budget by the fold's own profile; drop to 0.15 m patches if the owner wants it inside.
