@@ -1317,6 +1317,7 @@ window.__damageHUD = damageHUD   // the debug panel's "Diagnostic Readout" check
 // FEAT-90: the player's damage screen (V or the left-edge icon, parked only). The suppress
 // callback runs per frame, long after menuStage is initialised below.
 const damageScreen = new DamageScreen(damageModel, vehicleState, () => menuStage.isActive())
+damageScreen.partName = (track) => PARTS[partsSystem.fitted(track)]?.name   // FEAT-165: which tire is on
 
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
