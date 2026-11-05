@@ -47,10 +47,12 @@ The alpha ships no stubs. Three places still show placeholder or model-written t
 3. **The intro cards are reworked after the tutorial beats** (FEAT-147) — not before.
 
 ## Acceptance
-- [ ] A giver-line table exists in data/offers.js (generic first lines + per-thing second lines, Ruled
+- [x] A giver-line table exists in data/offers.js (generic first lines + per-thing second lines, Ruled
       §1, 70 % / 70 % with the first guaranteed as fallback); `card()` fills `flavor` from it; the
-      `[flavor line]` stub is gone from every panel.
-- [ ] The midnight overlay (Ruled §2) plays at every midnight, and on black when slept through.
+      `[flavor line]` stub is gone from every panel. *(Plumbing on feature/run-shape 99bc30e8; the table
+      is empty until the owner writes the lines.)*
+- [x] The midnight overlay (Ruled §2) plays at every midnight, and on black when slept through.
+      *(feature/run-shape a8f89166.)*
 - [ ] `RUN_INTRO` text is the owner's, or FEAT-147 has replaced the cards.
 - [ ] Nothing on screen in story mode reads as a bracketed placeholder.
 
@@ -58,3 +60,38 @@ The alpha ships no stubs. Three places still show placeholder or model-written t
 The owner writes the words. A session's job here is the plumbing (table, pick, hide-until-written)
 and a list of the slots that need lines, with their length budget (the panel head wraps at ~2 lines;
 a map card quotes nothing).
+
+## Built — 2026-11-05 (feature/run-shape, Lane A)
+
+**Giver lines** (99bc30e8). `data/offers.js GIVER_LINES = { first: [], byThing: {} }` + `GIVER_LINE_P = 0.7`.
+`offer-board.js giverLine(offerId, thingId)` picks the second line (keyed on the thing) 70 % of the time,
+then the first line 70 % of the time, or always when no second line came. That gives both 49 %, second
+only 21 %, first only 30 %. It draws from the offer's OWN stream (`line:<offerId>`), so a revisit says the
+same thing and no spec draw moves. Picking from the spec stream itself would have reshuffled every
+seed's board. `card().flavor` is the joined line, or null. The panel shows no quote for null and keeps the
+portrait. The bracketed stub is gone. `test/offer-board.mjs`: 4 checks (null when none written, the
+three shares within 3 %, revisit-stable, first-only for a thing with no seconds). The affected set is 27/27.
+
+**Midnight overlay** (a8f89166). The words are `data/dialogue.js MIDNIGHT` (the owner's). The element is
+`#midnight-card` in index.html, at z 160 after `#camp-fade`, so it draws on the sleep's black. It is
+JetBrains Mono at weight 200: the main line 44 px, the sub 22 px, white, 50 % opacity, with a dark shadow.
+It falls from −55 vh on the overshoot curve, holds, and fades; 4 s overall. Reduced motion: a fade only.
+`main.js _checkMidnight()` compares `daySystem.day()` on the run-HUD poll, so every clock path counts
+(a drive, a pour, roadside work). It resets to "adopt silently" on a run start and on a resume.
+`_campFade` holds the black for the overlay when its action crossed midnight. Checked in a browser on
+:3731: a sleep from 21:00 kept the black and the overlay up through 3.4 s and cleared both by 5.9 s, and
+an awake midnight played over the road. cdp-smoke's last step pushes the clock past midnight and checks
+the overlay plays and clears. Smoke 23/23.
+
+**Owed by the owner — the slots, with their length budget.** The quote sits beside the 64 px portrait,
+so the panel at its narrowest fits ~30 characters a line, and the head should stay within ~3 lines.
+Keep a first line to ~30 characters and a second line to ~60.
+- `first`: the generic openers. The 10-31 examples are a start ("looking for work?", "lend a hand?", …).
+- `byThing[<thingId>]`: one list per THINGS row that posts as an ordinary offer (`node -e` the THINGS ids).
+  Today that is 93 things across courier, haul, freight and fragile. A thing with no list falls back to a
+  first line every time.
+- The setup page's db has no `answers/_lines` yet (checked 2026-11-05).
+- `(name)` in the 10-31 examples: whose name? The card's sentence already names the giver ("Earl
+  needs…"), so the token needs ruling before the fold (the giver? the recipient?).
+- The FEAT-147 opening cards (FIRING, MOM_CALL, LARRY_WELCOME, TUT in data/dialogue.js) are placeholders
+  too; Ruled §3 reworks RUN_INTRO after them.
