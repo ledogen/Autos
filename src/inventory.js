@@ -35,7 +35,8 @@ export const runInventory = {
 
 const _stacks = (id) => STACKING_KINDS.has(ITEMS[id].kind)
 const _isPack = (e) => ITEMS[e?.id]?.kind === 'pack'
-const _isBed = (id) => !!ITEMS[id]?.sleep
+const _bed = (id) => ITEMS[id]?.bed ?? null   // FEAT-171: 'ground' | 'bedding' | 'blanket'
+const _isBedding = (id) => _bed(id) === 'bedding'
 // A can (`capGal`) comes full; its entry carries the gallons in it as `gal`.
 const _newEntry = (id) => ITEMS[id].kind === 'pack' ? { id, n: 1, equipped: false, contents: [] }
     : ITEMS[id].capGal ? { id, n: 1, gal: ITEMS[id].capGal } : { id, n: 1 }
@@ -195,13 +196,14 @@ export class InventorySystem {
     }
 
     /**
-     * Move the camp item at truck entry `index` into a pack (default: the equipped one). A bed going
-     * into a pack that already has one SWAPS: the old bed takes the truck slot the new one left.
+     * Move the camp item at truck entry `index` into a pack (default: the equipped one). A bed layer
+     * going into a pack that already has one of that layer SWAPS (FEAT-171): the old one takes the truck
+     * slot the new one left.
      */
     packItem (index, packIndex = this.equippedIndex()) {
         const e = runInventory.entries[index], p = runInventory.entries[packIndex]
         if (!e || !_isPack(p) || ITEMS[e.id].kind !== 'camp') return false
-        const bedAt = _isBed(e.id) ? p.contents.findIndex(_isBed) : -1
+        const bedAt = _bed(e.id) ? p.contents.findIndex(c => _bed(c) === _bed(e.id)) : -1
         if (bedAt >= 0) {
             runInventory.entries[index] = { id: p.contents[bedAt], n: 1 }
             p.contents[bedAt] = e.id
@@ -214,24 +216,24 @@ export class InventorySystem {
         return true
     }
 
-    /** Move pack slot `slot` back into a free truck slot. The equipped pack keeps its bed. */
+    /** Move pack slot `slot` back into a free truck slot. The equipped pack keeps its bedding. */
     unpackItem (packIndex, slot) {
         const p = runInventory.entries[packIndex]
         const id = _isPack(p) ? p.contents[slot] : undefined
-        if (!id || (p.equipped && _isBed(id)) || this.slotsUsed() >= this.slotCap()) return false
+        if (!id || (p.equipped && _isBedding(id)) || this.slotsUsed() >= this.slotCap()) return false
         p.contents.splice(slot, 1)
         runInventory.entries.push({ id, n: 1 })
         this._changed()
         return true
     }
 
-    /** Equip a spare pack. If it has no bed, the current bed moves across (it needs a free slot). */
+    /** Equip a spare pack. If it has no bedding, the current bedding moves across (it needs a free slot). */
     equip (packIndex) {
         const p = runInventory.entries[packIndex], cur = runInventory.entries[this.equippedIndex()]
         if (!_isPack(p) || p === cur) return false
-        if (!p.contents.some(_isBed)) {
+        if (!p.contents.some(_isBedding)) {
             if (p.contents.length >= ITEMS[p.id].packSlots) return false
-            p.contents.push(...cur.contents.splice(cur.contents.findIndex(_isBed), 1))
+            p.contents.push(...cur.contents.splice(cur.contents.findIndex(_isBedding), 1))
         }
         cur.equipped = false
         p.equipped = true

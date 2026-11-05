@@ -72,26 +72,30 @@ export const ITEMS = {
     pack:         { name: 'Pack',          kind: 'pack',       massKg: 1.5, packSlots: 2, reachM: 40,
                     desc: 'An old canvas pack. Whatever is in it comes to camp.' },
 
-    // ── Camp gear (items.md §2b) — `sleep` marks a sleeping item: the equipped pack always holds one.
-    //    FEAT-66: what is PACKED is what stands at camp. `campSlot` is where on the pad
-    //    (src/camp-gear.js CAMP_SLOTS) and `model` the PROP_MODELS key; no `model` renders nothing (no
-    //    placeholder art). The bed slot STACKS by `layer`: the bed, the sleeping bag on it, the blanket
-    //    on top of either (owner, 2026-11-02). Every other slot shows one model.
-    bedroll:      { name: 'Bedroll',       kind: 'camp',       massKg: 2.5, sleep: true, campSlot: 'bed', model: 'bedroll',
+    // ── Camp gear (items.md §2b). FEAT-66: what is PACKED is what stands at camp. `campSlot` is where on
+    //    the pad (src/camp-gear.js CAMP_SLOTS) and `model` the PROP_MODELS key; no `model` renders nothing
+    //    (no placeholder art). Every slot but the bed shows one model.
+    //    FEAT-171 (owner, 2026-11-05): THE BED IS THREE LAYERS — `bed` names an item's: 'ground' under
+    //    'bedding' under 'blanket'. A pack holds one item per layer (packing a second swaps it), and the
+    //    equipped pack always holds bedding: the bedroll, or the sleeping bag that replaces it. At camp
+    //    they stack, each draped over the ones under it (src/camp-gear.js).
+    bedroll:      { name: 'Bedroll',       kind: 'camp',       massKg: 2.5, bed: 'bedding', campSlot: 'bed', model: 'bedroll',
                     desc: 'A rolled bed for the ground. Better than the dirt, not by much.' },
     // `rest` is the bonus on camp sleep's recovery rate while packed (owner, 2026-10-16), summed and
-    // applied once (day.js recoveryRate). The beds replace the bedroll; the blanket and the sleeping
-    // bag are add-ons in their own slot. Masses [DEFAULT].
-    airMattress:  { name: 'Air mattress',  kind: 'camp',       massKg: 3,   sleep: true, rest: 0.05, campSlot: 'bed', model: 'airMattress',
+    // applied once (day.js recoveryRate): ground +5/+10/+15 %, bedding 0/+10 %, blanket +5/+10 % — the
+    // full kit +35 %. Masses [DEFAULT].
+    airMattress:  { name: 'Air mattress',  kind: 'camp',       massKg: 3,   bed: 'ground', rest: 0.05, campSlot: 'bed', model: 'airMattress',
                     desc: 'Off the rocks, mostly. Leaks a little by morning.' },
-    sleepingPad:  { name: 'Sleeping pad',  kind: 'camp',       massKg: 1,   sleep: true, rest: 0.10, campSlot: 'bed', model: 'sleepingPad',
+    sleepingPad:  { name: 'Sleeping pad',  kind: 'camp',       massKg: 1,   bed: 'ground', rest: 0.10, campSlot: 'bed', model: 'sleepingPad',
                     desc: 'A foam pad that keeps the cold ground away from you.' },
-    deluxeSleepingPad: { name: 'Deluxe sleeping pad', kind: 'camp', massKg: 2, sleep: true, rest: 0.15, campSlot: 'bed', model: 'deluxeSleepingPad',
+    deluxeSleepingPad: { name: 'Deluxe sleeping pad', kind: 'camp', massKg: 2, bed: 'ground', rest: 0.15, campSlot: 'bed', model: 'deluxeSleepingPad',
                     desc: 'Thick and self-inflating. The best night you can have outdoors.' },
-    blanket:      { name: 'Blanket',       kind: 'camp',       massKg: 1,   rest: 0.05, campSlot: 'bed', model: 'blanket', layer: 2,
+    blanket:      { name: 'Blanket',       kind: 'camp',       massKg: 1,   bed: 'blanket', rest: 0.05, campSlot: 'bed', model: 'blanket',
                     desc: 'A wool blanket on top of whatever you sleep on.' },
-    sleepingBag:  { name: 'Sleeping bag',  kind: 'camp',       massKg: 1.5, rest: 0.10, campSlot: 'bed', model: 'sleepingBag', layer: 1,
-                    desc: 'Zip in and stay warm. Goes on top of the bed.' },
+    quilt:        { name: 'Quilt',         kind: 'camp',       massKg: 2,   bed: 'blanket', rest: 0.10, campSlot: 'bed', model: 'quilt',
+                    desc: 'A heavy patchwork quilt. Somebody spent a winter on it.' },   // ASSET-81
+    sleepingBag:  { name: 'Sleeping bag',  kind: 'camp',       massKg: 1.5, bed: 'bedding', rest: 0.10, campSlot: 'bed', model: 'sleepingBag',
+                    desc: 'Zip in and stay warm. Takes the bedroll\'s place.' },
     // The tent is the sleeping bag's size of bonus (owner, 2026-11-02) and stands over the bed.
     tent:         { name: 'Tent',          kind: 'camp',       massKg: 2.5, rest: 0.10, campSlot: 'shelter', model: 'tent',
                     desc: 'A small ridge tent. The weather happens outside it.' },

@@ -162,6 +162,13 @@ MATS = {
     # ASSET-78 (2026-11-03): the bedroll's groundsheet, natural duck canvas — the olive one vanished into the grass.
     "Duck":       ((0.50, 0.41, 0.25, 1), 0.95),
     "DuckHem":    ((0.27, 0.20, 0.10, 1), 0.95),
+    # FEAT-171 (2026-11-05): the bedding's pillow, and the quilt's patches (ASSET-81 — colour as faces, no texture).
+    "PillowCase":  ((0.58, 0.57, 0.52, 1), 0.9),
+    "QuiltRed":    ((0.42, 0.05, 0.035, 1), 0.95),
+    "QuiltNavy":   ((0.03, 0.055, 0.19, 1), 0.95),
+    "QuiltMustard": ((0.56, 0.35, 0.05, 1), 0.95),
+    "QuiltCream":  ((0.64, 0.57, 0.42, 1), 0.95),
+    "QuiltSage":   ((0.17, 0.25, 0.12, 1), 0.95),
 }
 
 
@@ -385,6 +392,37 @@ def rrect(w, d, r, z, per=4, cx=0.0, cy=0.0):
             a = a0 + (math.pi / 2) * k / per
             pts.append((cx + sx * (w / 2 - r) + r * math.cos(a), cy + sy * (d / 2 - r) + r * math.sin(a), z))
     return pts
+
+
+def sheet(b, L, W, T, step, mat_at, z0=0.0):
+    """A flat slab L (X) x W (Y) x T, centred on the origin, gridded every ~`step` top AND bottom (FEAT-171:
+    a bedding layer DRAPES over the one under it in camp — src/camp-gear.js lifts each vertex onto the
+    layers below — so a slab has to be able to bend). `mat_at(x, y)` picks each top cell's material."""
+    nx, ny = max(1, round(L / step)), max(1, round(W / step))
+    xs = [-L / 2 + L * i / nx for i in range(nx + 1)]; ys = [-W / 2 + W * j / ny for j in range(ny + 1)]
+    for i in range(nx):
+        for j in range(ny):
+            c = [(xs[i], ys[j]), (xs[i + 1], ys[j]), (xs[i + 1], ys[j + 1]), (xs[i], ys[j + 1])]
+            m = mat_at((xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2)
+            b.face([(x, y, z0 + T) for x, y in c], m)
+            b.face([(x, y, z0) for x, y in reversed(c)], m)
+    rim = ([(x, ys[0]) for x in xs] + [(xs[-1], y) for y in ys[1:]] + [(x, ys[-1]) for x in reversed(xs[:-1])]
+           + [(xs[0], y) for y in reversed(ys[1:-1])])
+    for (xa, ya), (xb, yb) in zip(rim, rim[1:] + rim[:1]):
+        m = mat_at((xa + xb) / 2, (ya + yb) / 2)
+        b.face([(xa, ya, z0), (xb, yb, z0), (xb, yb, z0 + T), (xa, ya, z0 + T)], m)
+
+
+def pillow(b, cx, cy, z0, L=0.50, W=0.34, H=0.09):
+    """FEAT-171 (owner 2026-11-05, "Both"): the bedding's pillow, lying at (cx, cy) on a surface at z0, its
+    long side across the bed (Y). Lofted rounded rectangles: small where it meets the bed, plumpest just
+    under the middle seam, pinched round the top."""
+    M0 = b.M
+    b.M = M0 @ Matrix.Translation((cx, cy, z0))
+    b.loft([rrect(W - 2 * i, L - 2 * i, r, z, per=5) for z, i, r in
+            ((0.0, 0.05, 0.07), (0.015, 0.016, 0.10), (H * 0.48, 0.0, 0.11), (H * 0.56, 0.003, 0.11),
+             (H - 0.014, 0.03, 0.09), (H, 0.075, 0.065))], "PillowCase")
+    b.M = M0
 
 
 # ── Items ────────────────────────────────────────────────────────────────────────────────────────
@@ -726,13 +764,10 @@ def build_bedrollOpen():
     xh = 0.91; xf = xh - LB                           # its head and foot ends
     RC, TURN = 0.018, math.radians(200)               # the curl: spine radius, how far round it turned
     BANDS, HB = (-WB / 2 + 0.075, WB / 2 - 0.11), 0.0175   # the cream bands: centres across, half-width
-    # Groundsheet: a slab, its hem a darker band 3 mm proud, brass grommets on the hem.
-    b.cbox((0, 0, TG / 2), (LG, WG, TG), "Duck", ch=0.002)
-    hh, hx, hy = TG + 0.003, LG / 2 - 0.015, WG / 2 - 0.015
-    for sy in (-1, 1):
-        b.bar((-LG / 2, sy * hy, hh / 2), (LG / 2, sy * hy, hh / 2), 0.03, "DuckHem", h=hh)
-    for sx in (-1, 1):
-        b.bar((sx * hx, -WG / 2 + 0.03, hh / 2), (sx * hx, WG / 2 - 0.03, hh / 2), 0.03, "DuckHem", h=hh)
+    # Groundsheet: a gridded slab (it drapes over a pad in camp, FEAT-171), its outer cells the darker
+    # hem, brass grommets on the hem.
+    hh, hx, hy = TG, LG / 2 - 0.015, WG / 2 - 0.015
+    sheet(b, LG, WG, TG, 0.06, lambda x, y: "DuckHem" if abs(x) > LG / 2 - 0.06 or abs(y) > WG / 2 - 0.06 else "Duck")
     for gx, gy in ((sx * (LG / 2 - 0.035), sy * hy) for sx in (-1, 0, 1) for sy in (-1, 1)):
         b.M = Matrix.Translation((gx, gy, hh))
         b.lathe([(0.005, 0.0), (0.011, 0.0), (0.011, 0.0015), (0.005, 0.0015), (0.005, 0.0)], 10, "Buckle",
@@ -798,43 +833,45 @@ def build_bedrollOpen():
     strap(side, side[-1], (1, 0))
     foot = [(-0.948 + 0.006 * math.sin(9 * y), y) for y in (-0.30 + 0.068 * i for i in range(10))]
     strap(foot, foot[0], (0, -1))
+    pillow(b, xh - 0.12, 0.0, zs + 2 * RH + T / 2 - 0.004)   # on the head fold (FEAT-171)
     return b.finish("bedrollOpen", closed=True)
 
 
 def build_blanketLayer():
     """ASSET-79: the blanket as a layer on the bed — the thumbnail's buffalo check, folded in thirds and
-    laid across the FOOT of whatever the player sleeps on, its sides hanging down over the bed's edges.
-    Built in the bed's own frame, not its own: across the bed is X, the foot is +Y (glTF −Z), and the
-    origin is the BED's centre at the blanket's underside — so camp-gear.js seats it on the layer under it
-    (that layer's seatY) and the sides hang below. One cross-section (the fold's depth along the bed)
-    swept along one spine across the bed: flat on top, dipping a little at the shoulders, bending down
-    over the sides. The check is cut on the fabric's own (arc, depth) grid, so it wraps the bends."""
+    laid across the FOOT of the bed. Built FLAT in the bed's own frame: across the bed is X, the foot is +Y
+    (glTF −Z), and the origin is the BED's centre at the blanket's underside. FEAT-171: src/camp-gear.js
+    drapes it over whatever bedding is under it, so the sides hang over that bedding's own edges — a
+    bent-down blanket would hang twice. The check is cut on the fabric's (across, along) grid."""
+    dark = lambda x: math.floor((x + 0.03) / 0.06) % 2 == 1   # the check: 0.06 m squares
+    def mat(t, v):
+        du, dv = dark(t), dark(v)
+        return "CheckDeep" if du and dv else "CheckStripe" if du or dv else "RedWool"
+    lump = lambda t, v: 0.0015 * math.sin(11 * t + 7 * v) * math.sin(5 * t - 13 * v)
+    return bed_cover("blanketLayer", 1.06, 0.50, 0.024, 0.55, 0.06, mat, lump)
+
+
+def build_quiltLayer():
+    """ASSET-81: the quilt, the blanket layer's top rung (FEAT-171) — the blanket's fold, a little wider and
+    thicker, pieced from 0.12 m patches in five flat colours, each patch puffed up between its stitched
+    seams: the pattern is faces and geometry, never a texture (ART-STYLE.md). Draped like the blanket."""
+    C = 0.12
+    PATCH = ("QuiltRed", "QuiltCream", "QuiltNavy", "QuiltMustard", "QuiltCream", "QuiltSage", "QuiltRed", "QuiltNavy")
+    cell = lambda x: math.floor(x / C)
+    mat = lambda t, v: PATCH[(cell(t) * 3 + cell(v) * 5 + (cell(t) * cell(v)) % 3) % len(PATCH)]
+    frac = lambda x: x / C - math.floor(x / C)
+    puff = lambda t, v: 0.006 * math.sin(math.pi * frac(t)) * math.sin(math.pi * frac(v))
+    return bed_cover("quiltLayer", 1.10, 0.56, 0.032, 0.52, C, mat, puff)
+
+
+def bed_cover(name, W, D, T, YC, CELL, mat, lump):
+    """A bed cover folded in thirds, lying flat (ASSET-79's blanket, ASSET-81's quilt): W across the bed,
+    D along it, T the folded thickness, YC its centre (toward the foot), CELL the pattern's square.
+    `mat(t, v)` picks a face's material at (across, along), `lump(t, v)` offsets the top surface there.
+    One cross-section (along the bed, through the fold) swept across the bed every CELL/2: at each edge
+    along the bed a round fold of two layers and the third layer's own edge, a seam between them."""
     b = Builder()
-    X0, DZ, RB, HL = 0.40, 0.022, 0.06, 0.035   # flat half-width, the dip at its shoulders, bend radius, hang
-    D, T, YC = 0.50, 0.024, 0.55                # depth along the bed, three layers' thickness, centre (foot)
-    CELL = 0.06                                  # one square of the check
-    # Half the spine, centre outward, densely; mirrored. Turning down: the centre of the bend is on the right.
-    half = [(X0 * i / 40, -DZ * (i / 40) ** 4) for i in range(41)]
-    a0 = math.atan(-4 * DZ / X0)
-    cx, cz = half[-1][0] + RB * math.sin(a0), half[-1][1] - RB * math.cos(a0)
-    a1 = math.radians(-80)
-    half += [(cx - RB * math.sin(a), cz + RB * math.cos(a)) for a in (a0 + (a1 - a0) * k / 16 for k in range(1, 17))]
-    ex, ez = half[-1]
-    half += [(ex + HL * math.cos(a1) * k / 3, ez + HL * math.sin(a1) * k / 3) for k in range(1, 4)]
-    arc = [0.0]
-    for (xa, za), (xb, zb) in zip(half, half[1:]):
-        arc.append(arc[-1] + math.hypot(xb - xa, zb - za))
-    def at(t):   # spine point and the top side's normal, t metres of fabric from the centre (signed)
-        u = abs(t); k = min(len(arc) - 2, max(i for i in range(len(arc) - 1) if arc[i] <= u))
-        f = (u - arc[k]) / (arc[k + 1] - arc[k])
-        (xa, za), (xb, zb) = half[k], half[k + 1]
-        tx, tz = (xb - xa), (zb - za); l = math.hypot(tx, tz)
-        sx = 1 if t >= 0 else -1
-        return (sx * (xa + (xb - xa) * f), T / 2 + za + (zb - za) * f), (-sx * tz / l, tx / l)   # the left normal, mirrored
-    S = arc[-1]
-    ts = sorted({0.0, S, -S, *[k * CELL / 2 for k in range(-int(S / (CELL / 2)), int(S / (CELL / 2)) + 1)]})
-    # The cross-section, across the bed's length (v) and through the fold (n). Folded in thirds: at each
-    # edge a round fold of two layers and the third layer's own edge, with a seam between them.
+    ts = sorted({-W / 2, W / 2, *[k * CELL / 2 for k in range(-int(W / CELL) - 1, int(W / CELL) + 2) if abs(k * CELL / 2) < W / 2]})
     vg = sorted({-D / 2 + T / 2, D / 2 - T / 2, *[k * CELL / 2 for k in range(-int(D / CELL), int(D / CELL) + 1) if abs(k * CELL / 2) < D / 2 - T / 2]})
     # The seam sits between the fold's 0° and 45° samples, so the outline never doubles back on itself.
     seam = lambda v, n: [(v, n - 0.0015), (v - 0.003 if v > 0 else v + 0.003, n), (v, n + 0.0015)]
@@ -844,20 +881,16 @@ def build_blanketLayer():
             + [(v, T / 2) for v in reversed(vg)]
             + fold(-1, range(1, 5)) + seam(-D / 2 + 0.0005, -T / 6) + fold(-1, range(6, 8)))
     def point(t, v, n):
-        (px, pz), (nx, nz) = at(t)
-        lump = 0.0015 * math.sin(11 * t + 7 * v) * math.sin(5 * t - 13 * v) if n > T / 2 - 1e-9 else 0.0
-        return (px + (n + lump) * nx, YC + v, pz + (n + lump) * nz)
+        bump = lump(t, v) if n > T / 2 - 1e-9 else 0.0
+        return (t, YC + v, T / 2 + n + bump)
     rings = [[point(t, v, n) for v, n in prof] for t in ts]
-    dark = lambda x: math.floor((x + CELL / 2) / CELL) % 2 == 1
     n = len(prof)
     for ta, tb, ra, rb_ in zip(ts, ts[1:], rings, rings[1:]):
-        du = dark((ta + tb) / 2)
         for k in range(n):
             j = (k + 1) % n
-            dv = dark((prof[k][0] + prof[j][0]) / 2)
-            b.face([ra[k], ra[j], rb_[j], rb_[k]], "CheckDeep" if du and dv else "CheckStripe" if du or dv else "RedWool")
-    b.face(rings[0], "RedWool"); b.face(list(reversed(rings[-1])), "RedWool")
-    ob = b.finish("blanketLayer", closed=True)
+            b.face([ra[k], ra[j], rb_[j], rb_[k]], mat((ta + tb) / 2, (prof[k][0] + prof[j][0]) / 2))
+    b.face(rings[0], mat(ts[0], 0.0)); b.face(list(reversed(rings[-1])), mat(ts[-1], 0.0))
+    ob = b.finish(name, closed=True)
     ob["keepOrigin"] = True   # export_glb: the bed's centre, not its own (see above)
     return ob
 
@@ -956,6 +989,22 @@ def build_deluxeSleepingPad():
 def build_blanket():
     """A folded wool blanket in buffalo check: one continuous fold profile swept along X, so every
     band wraps the top, the round fold and the back without a seam; the crossings run darker."""
+    return folded_cover("blanket", None)
+
+
+def build_quilt():
+    """ASSET-81's thumbnail: the quilt folded like the blanket's, pieced in the same patches as its camp
+    layer (build_quiltLayer) — squares running over the top, round the fold and down the back."""
+    PATCH = ("QuiltRed", "QuiltCream", "QuiltNavy", "QuiltMustard", "QuiltCream", "QuiltSage", "QuiltRed", "QuiltNavy")
+    def mat(xm, pm):
+        i, j = math.floor(xm / 0.09), math.floor((pm[0] - 1.6 * pm[1]) / 0.07)
+        return PATCH[(i * 3 + j * 5 + (i * j) % 3) % len(PATCH)]
+    return folded_cover("quilt", mat)
+
+
+def folded_cover(name, patch):
+    """A folded bed cover (the blanket's and the quilt's thumbnails). `patch(xm, pm)` picks a face's
+    material from its x and its profile point; None draws the blanket's buffalo check."""
     b = Builder()
     X, Y, T, N = 0.46, 0.34, 0.022, 4
     Hs = N * T; R = Hs / 2
@@ -1000,11 +1049,15 @@ def build_blanket():
         for k in range(n):
             j = (k + 1) % n
             pm = ((prof[k][0] + prof[j][0]) / 2, (prof[k][1] + prof[j][1]) / 2)
-            al = on_along(*pm)
-            mat = "CheckDeep" if cross and al else ("CheckStripe" if cross or al else "RedWool")
+            if patch:
+                mat = patch(xm, pm)
+            else:
+                al = on_along(*pm)
+                mat = "CheckDeep" if cross and al else ("CheckStripe" if cross or al else "RedWool")
             b.face([ra[k], ra[j], rb_[j], rb_[k]], mat)
-    b.face(list(reversed(rings[0])), "RedWool"); b.face(rings[-1], "RedWool")
-    return b.finish("blanket")
+    end = patch(0.0, (0.0, 0.0)) if patch else "RedWool"
+    b.face(list(reversed(rings[0])), end); b.face(rings[-1], end)
+    return b.finish(name)
 
 
 
@@ -1020,8 +1073,8 @@ def build_sleepingBag():
     nu, nv, nc = int(round(L / s)), int(round(W / s)), 24   # fold line u + v = nc·s (0.60 m: leaves a third of the head collar on the bag)
     zb, ht = 0.050, 0.085   # bottom layer; the top layer's loft at its fullest
     # Bottom layer: a soft slab, outer shell; its top shows flannel where the corner is turned back.
-    b.cbox((0, 0, zb / 2), (L, W, zb), "BagGreen", ch=0.020)
-    b.cbox((0, 0, zb + 0.0005), (L - 0.04, W - 0.04, 0.001), "Flannel")
+    sheet(b, L, W, zb, 0.06, lambda x, y: "BagGreen")   # gridded: it drapes over a pad in camp (FEAT-171)
+    sheet(b, L - 0.04, W - 0.04, 0.001, 0.06, lambda x, y: "Flannel", z0=zb - 0.0005)
     # Grid in (u, v): u from the +X end, v from the −Y side. x = L/2 − u, y = v − W/2.
     def top_z(u, v):   # baffles puff between the sewn-through seams; the loft rounds down at the zips
         baffle = 0.80 + 0.20 * math.sin(math.pi * ((u % 0.19) / 0.19))
@@ -1092,6 +1145,9 @@ def build_sleepingBag():
     kept = [P(dc, (W - 0.045) + ((c - dc + 0.03) - (W - 0.045)) * k / nk, zb + RC) for k in range(nk + 1)]
     turned = [P(u, c - dc, under(u, c - dc) + RC) for u in (dc + 0.03 + (c - 0.075 - dc) * k / nf for k in range(nf + 1))]
     b.tube(kept + [P(dc, c - dc, zb + RC + 0.035)] + turned, RC, 10, "BagGreen")
+    # FEAT-171: the pillow at the head, on the zipped side clear of the turned-back corner, sunk a little
+    # into the baffles it rests on.
+    pillow(b, L / 2 - 0.32, 0.17, zb + ht - 0.006)
     return b.finish("sleepingBag")
 
 
@@ -2763,7 +2819,7 @@ BUILDERS = {
     "coffee": build_coffee, "chiliDog": build_chiliDog, "spareTire": build_spareTire,
     "emergencyGas": build_emergencyGas, "pack": build_pack, "rucksack": build_rucksack, "bedroll": build_bedroll,
     "airMattress": build_airMattress, "sleepingPad": build_sleepingPad, "deluxeSleepingPad": build_deluxeSleepingPad,
-    "blanket": build_blanket, "sleepingBag": build_sleepingBag, "zipTies": build_zipTies, "ductTape": build_ductTape,
+    "blanket": build_blanket, "quilt": build_quilt, "sleepingBag": build_sleepingBag, "zipTies": build_zipTies, "ductTape": build_ductTape,
     "tirePlugKit": build_tirePlugKit, "stopLeak": build_stopLeak, "bubbleWrap": build_bubbleWrap,
     "tire": build_tire, "wheel": build_wheel, "springs": build_springs, "dampers": build_dampers, "pads": build_pads, "shoes": build_shoes, "arb": build_arb,
     "diff": build_diff, "lift": build_lift, "compressor": build_compressor, "bikePump": build_bikePump,
@@ -2880,7 +2936,9 @@ WORLD = {"spareTire": ("spare-tire", Matrix.Rotation(math.pi / 2, 4, "X")),   # 
          # the thumbnail stays the roll. Head +X, as the bag's.
          "bedroll":           ("bedroll",             Matrix.Rotation(-math.pi / 2, 4, "Z"), build_bedrollOpen),
          # ASSET-79: the blanket as a bed layer, built in the bed's frame already (its origin kept).
-         "blanket":           ("blanket",             Matrix.Identity(4), build_blanketLayer)}
+         "blanket":           ("blanket",             Matrix.Identity(4), build_blanketLayer),
+         # ASSET-81: the quilt, the blanket layer's top rung — the same frame (FEAT-171).
+         "quilt":             ("quilt",               Matrix.Identity(4), build_quiltLayer)}
 
 
 def export_glb(item_id):

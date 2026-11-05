@@ -318,21 +318,21 @@ export class InventoryScreen {
       + `<div class="st-desc">${r.desc}</div>`
     if (r.contents) {
       const packed = r.contents[this.packSel]
-      const canUnpack = packed && !(r.equipped && packed.sleep) && inv.slotsUsed() < inv.slotCap()
+      const canUnpack = packed && !(r.equipped && packed.bed === 'bedding') && inv.slotsUsed() < inv.slotCap()
       return head
         + `<div class="st-pack">${packSlotsHtml(r, (i) => r.contents[i] ? `data-packslot="${i}"` : '', this.packSel)}</div>`
         + (packed ? btn('unpack', `unpack ${packed.name.toLowerCase()}`, canUnpack) : '')
         + (r.equipped ? '' : btn('equip', 'equip') + btn('drop', 'drop', !r.contents.length))
     }
     const eq = rows.find(x => x.equipped)
-    const canPack = r.kind === 'camp' && eq
-      && (eq.contents.length < eq.packSlots || (r.sleep && eq.contents.some(c => c.sleep)))
+    const swap = r.bed && eq?.contents.some(c => c.bed === r.bed)   // FEAT-171: one item per bed layer
+    const canPack = r.kind === 'camp' && eq && (eq.contents.length < eq.packSlots || swap)
     const acts = this.actions(r)
     return head
       + (acts.length ? `<div class="st-acts">${acts.map((a, i) => btn('action',
         (a.icon ? `<img src="${THUMB(a.icon)}" alt="">` : '') + a.label, a.enabled ?? true, `data-i="${i}"`)).join('')}</div>` : '')
       + (r.usable && !acts.length ? btn('use', 'use') : '')
-      + (r.kind === 'camp' ? btn('pack', r.sleep && eq?.contents.some(c => c.sleep) ? 'swap into pack' : 'pack', canPack) : '')
+      + (r.kind === 'camp' ? btn('pack', swap ? 'swap into pack' : 'pack', canPack) : '')
       + btn('drop', 'drop')
   }
 }
