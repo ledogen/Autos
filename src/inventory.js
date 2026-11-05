@@ -40,18 +40,24 @@ const _isBed = (id) => !!ITEMS[id]?.sleep
 const _newEntry = (id) => ITEMS[id].kind === 'pack' ? { id, n: 1, equipped: false, contents: [] }
     : ITEMS[id].capGal ? { id, n: 1, gal: ITEMS[id].capGal } : { id, n: 1 }
 
+/** One entry's real mass [kg]: the stack, a can's gas, a pack's contents. */
+export const entryKg = (e) => e.n * ITEMS[e.id].massKg + (e.gal ?? 0) * (ITEMS[e.id].kgPerGal ?? 0)
+    + (e.contents ?? []).reduce((k, id) => k + ITEMS[id].massKg, 0)
+
 export class InventorySystem {
     /**
      * @param {object} deps - adapter into main.js:
      *   slotCap()          — the truck's slot count (RANGER_PARAMS.inventorySlots)
      *   onMassChange(kg)   — stowed mass changed; main.js pushes it onto the chassis
      *   onChange()         — anything changed; the screen re-renders
+     *   onDrop(entry)      — FEAT-143: an entry was dropped; main.js lays it on the ground
      *   effects            — { [hook]: () => void } for items whose effect is built (ITEMS[id].use)
      */
     constructor (deps = {}) {
         this._slotCap = deps.slotCap ?? (() => 8)
         this._onMassChange = deps.onMassChange ?? (() => {})
         this._onChange = deps.onChange ?? (() => {})
+        this._onDrop = deps.onDrop ?? (() => {})
         this._effects = deps.effects ?? {}
     }
 
@@ -74,8 +80,7 @@ export class InventorySystem {
     slotCap () { return this._slotCap() }
     slotsUsed () { return runInventory.entries.length }
     stowedKg () {
-        return runInventory.entries.reduce((kg, e) => kg + e.n * ITEMS[e.id].massKg + (e.gal ?? 0) * (ITEMS[e.id].kgPerGal ?? 0)
-            + (e.contents ?? []).reduce((k, id) => k + ITEMS[id].massKg, 0), 0)
+        return runInventory.entries.reduce((kg, e) => kg + entryKg(e), 0)
     }
     equippedIndex () { return runInventory.entries.findIndex(e => e.equipped) }
     /** What comes to camp: the equipped pack's contents (items.md §2c) — FEAT-66 renders exactly this. */
@@ -167,6 +172,24 @@ export class InventorySystem {
         const e = runInventory.entries[index]
         if (!e || (_isPack(e) && (e.equipped || e.contents.length))) return false
         runInventory.entries.splice(index, 1)
+        this._onDrop(e)   // FEAT-143: it goes on the ground, not out of the game
+        this._changed()
+        return true
+    }
+
+    /**
+     * FEAT-143: put back an entry picked up off the ground, exactly as it went down (its condition,
+     * gallons, contents, an open roll's uses). No room → false, and it stays on the ground: never the
+     * swap prompt, whose "leave it" would delete it.
+     */
+    restoreEntry (entry) {
+        const it = ITEMS[entry?.id]
+        if (!it || !this.fits(entry.id, entry.n)) return false
+        const s = _stacks(entry.id) && runInventory.entries.find(e => e.id === entry.id)
+        // ponytail: one open roll per stack — merging two keeps the emptier one's uses, so a merge can
+        // lose a few but never mints any; track open rolls per unit if that ever matters.
+        if (s) { s.n += entry.n; if (entry.left != null) s.left = Math.min(s.left ?? it.uses, entry.left) }
+        else runInventory.entries.push({ ...entry })
         this._changed()
         return true
     }
@@ -257,10 +280,15 @@ export class InventorySystem {
     list () {
         return runInventory.entries.map((e, index) => {
             const q = runInventory.quick.indexOf(e.id)
-            return { index, id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id), key: q < 0 ? null : q + 1,
-                     equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat,
-                     tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
+            return { index, ...this.rowOf(e), key: q < 0 ? null : q + 1 }
         })
+    }
+
+    /** One entry as the screen reads it — a truck slot, or an item lying on the ground (FEAT-143). */
+    rowOf (e) {
+        return { id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id),
+                 equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat,
+                 tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
     }
 
     _changed () {

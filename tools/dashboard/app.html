@@ -816,6 +816,19 @@ const DRIVERS = {
     m.startCrankAudio();
     setTimeout(() => { m.stopCrankAudio(); m.playCatchAudio(); }, 1400);
   },
+  // FEAT-131 P3: the rank bar's music bed over an 8 s approach to a line — intensity 0 → 1, the heartbeat
+  // oscillator's phase turning 48 → 140 bpm on intensity² as main.js turns it — then the line, then resolve.
+  async 'rank-bed'() {
+    await (await import('/src/engine-audio.js')).getAudioContext()?.resume();
+    const m = await import('/src/rank-music.js');
+    m.startRankMusic();
+    let phase = 0, last = performance.now();
+    ramp(8000, u => {
+      const now = performance.now();
+      phase += 2 * Math.PI * (0.8 + 1.53 * u * u) * (now - last) / 1000; last = now;
+      m.updateRankMusic(u, phase);
+    }, () => { m.rankMusicStep(); setTimeout(() => m.resolveRankMusic(), 1200); });
+  },
 };
 /** `module.js export` → one-shot (after the module's ensure*Audio, if any); a bare name → a driver. */
 async function playHook(spec) {

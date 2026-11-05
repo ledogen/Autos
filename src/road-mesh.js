@@ -1076,6 +1076,12 @@ export class RoadMeshSystem {
         // Proud mouth: at a true span end (portal), one extra ring extruded 1.5 m OUT along the end
         // tangent so the tube exits the shader-cut terrain hole and meets the masonry ring.
         const extA = Math.abs(sA - span.s0) < 1e-6, extB = Math.abs(sB - span.s1) < 1e-6
+        // BUG-67 shared bore: at a span end that is NOT a mouth (a split inside a sibling's tube) the
+        // tube runs on straight by a full radius instead of the 1.5 m lip. Two legs ending square at
+        // the T left a wedge open on the outside of the bend; the run-on closes it, and what of it lies
+        // inside the sibling is dropped with the rest of the overlap below.
+        const lipA = extA && road.isMouth && !road.isMouth(runKey, span.s0) ? R : 1.5
+        const lipB = extB && road.isMouth && !road.isMouth(runKey, span.s1) ? R : 1.5
         const rings = inner + (extA ? 1 : 0) + (extB ? 1 : 0)
         const vpr = SEG + 5                  // apronR(2) + (SEG+1 arch verts) + apronL(2)
 
@@ -1091,7 +1097,7 @@ export class RoadMeshSystem {
             if (!c) return null
             road.runProfile(s, runKey, prof)
             // Extrusion rings reuse the end frame, pushed out along the tangent.
-            const ext = (extA && r === 0) ? -1.5 : (extB && r === rings - 1) ? 1.5 : 0
+            const ext = (extA && r === 0) ? -lipA : (extB && r === rings - 1) ? lipB : 0
             if (ext) { c.x += prof.tx * ext; c.z += prof.tz * ext }
             // rightDir chosen so a vertex at lateral L has signedLat = L (matches the carve frame).
             const rx = prof.tz, rz = -prof.tx
@@ -1127,12 +1133,21 @@ export class RoadMeshSystem {
             }
         }
         const idx = []
+        // BUG-67 shared bore: a triangle inside a sibling run's tube is not built —
+        // the two tubes merge into an underground Y (road.siblingTubeTest; the wall contact reads it too).
+        const sib = road.siblingTubeTest?.(runKey)
+        // A triangle goes only when ALL its corners are inside the sibling: a centroid test left a
+        // sawtooth seam with triangle-sized gaps; what is kept past the seam sits in the sibling's wall.
+        const inSib = (i) => sib(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2])
+        const keep = (i, j, l) => !sib || !(inSib(i) && inSib(j) && inSib(l))
         for (let r = 0; r < rings - 1; r++) {
             for (let k = 0; k < vpr - 1; k++) {
                 const a = r * vpr + k, b = a + vpr
-                idx.push(a, b, a + 1, a + 1, b, b + 1)
+                if (keep(a, b, a + 1)) idx.push(a, b, a + 1)
+                if (keep(a + 1, b, b + 1)) idx.push(a + 1, b, b + 1)
             }
         }
+        if (!idx.length) return null
         const geo = new THREE.BufferGeometry()
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
         geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
@@ -1169,6 +1184,9 @@ export class RoadMeshSystem {
         if (!c) return null
         const prof = { gradeY: 0, tx: 1, tz: 0 }
         road.runProfile(pArc, runKey, prof)
+        // BUG-67 shared bore: a span end inside a sibling's tube (the split at a T promoted underground)
+        // is not a portal — the tube carries on as the sibling's. No ring.
+        if (road.isMouth && !road.isMouth(runKey, pArc)) return null
         const rx = prof.tz, rz = -prof.tx
         const ox = prof.tx * outSign, oz = prof.tz * outSign
 

@@ -88,6 +88,22 @@ const WIDE_SEEDS = [6, 90]
         + `${offRoad ? ` (${offRoad} seed(s) spawn off-road — the terrain fallback, not a failure)` : ''}`)
 }
 
+// ── 1b. the replica's spawn is the GAME's spawn ─────────────────────────────────────────────────
+// BUG-110: every story gate centres its region on spawnDecision, so a replica that answers differently
+// from main.js measures a region nobody plays. 4194356868 is the owner's seed, read in a browser (Lane A,
+// 2026-11-05: free roam and story agree); a pond beside its probe is what the replica once missed.
+// 1 and 6 matched the game to centimetres in the same check, so their pins are the replica's values.
+// 0.25 m: the game's 4194356868 reading sits 0.12 m from the replica's — the same road, the same region.
+{
+    const GAME = [[4194356868, 34.65, 158.45], [1, 420.69, 89.03], [6, -71.10, 149.10]]
+    for (const [seed, x, z] of GAME) {
+        const d = spawnDecision(seed, RANGER_PARAMS)
+        const off = d.onRoad ? Math.hypot(d.x - x, d.z - z) : Infinity
+        check(`seed ${seed}: the replica spawns where the game does`, off < 0.25,
+            d.onRoad ? `(${d.x.toFixed(2)}, ${d.z.toFixed(2)}) is ${off.toFixed(2)} m from the game's (${x}, ${z})` : 'off-road')
+    }
+}
+
 // ── 2/3. what the region CONTAINS is a pure function of (seed, centre) ──────────────────────────
 //
 // Fingerprints the whole placement layer, not just the roster: the graph it reads, the pool it

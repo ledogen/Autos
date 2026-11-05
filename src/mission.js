@@ -549,8 +549,9 @@ export class MissionSystem {
      */
     pickupPoiId() {
         const legs = this.mission?.legs
-        // A failed fetch (its loose load lost on the way out) has nothing left to hand over.
-        return this.state === 'running' && legs && this.leg < legs.length - 1 && !this.mission.failed ? legs[this.leg].poiId : null
+        // FEAT-144: nor while its loose load is out of the bed (main.js sets cargoOut) — go back for it.
+        return this.state === 'running' && legs && this.leg < legs.length - 1 && !this.mission.failed && !this.mission.cargoOut
+            ? legs[this.leg].poiId : null
     }
 
     /**
@@ -711,8 +712,9 @@ export class MissionSystem {
         // finish the job on its first frame. FEAT-89: a multi-drop's stops short of the last, too.
         if (this.mission.legs && this.leg < this.mission.legs.length - 1) return
         // FEAT-97: a fragile load destroyed on the way has failed the job — there is nothing left to
-        // deliver; main.js's "clean up cargo" is the way out of it.
-        if (this.mission.failed) return
+        // deliver; main.js's "clean up cargo" is the way out of it. FEAT-144: a loose load out of the bed
+        // (cargoOut) has not failed it — the job just cannot finish until the load is back in the bed.
+        if (this.mission.failed || this.mission.cargoOut) return
         // FEAT-65 slice 2: a demolition job is done when its site is CLEARED (main.js sets `cleared` as
         // the last target falls), wherever the truck is — not on arrival, so it can turn back for a miss.
         if (this.mission.targets ? this.mission.cleared : this.distanceToGo() <= ARRIVE_RADIUS) {

@@ -1205,8 +1205,16 @@
     #mission-panel .mp-traits { color: var(--text-dim); font-style: italic; }   /* FEAT-142: the giver's traits, bottom-left */   /* R-21: deeds in the story blue */
     /* N-04 / FEAT-131: the result card's rows land one beat apart (delay set inline per row); the
        tally flashes bright when it ticks to the new total. */
-    #mp-body .mp-reveal, #pp-body .mp-reveal { opacity: 0; animation: mp-in 0.35s ease-out forwards; }
-    @keyframes mp-in { from { opacity: 0; } to { opacity: 1; } }
+    #mp-body .mp-reveal, #pp-body .mp-reveal { position: relative; opacity: 0; animation: mp-in 0.35s ease-out forwards; }
+    @keyframes mp-in { from { opacity: 0; top: 6px; } to { opacity: 1; top: 0; } }   /* FEAT-131 P2: up 6 px and settle */
+    /* FEAT-131 P2: the deed numeral pops as its row lands; a miss nudges once, sideways, just after (delay
+       set by _revealResult); the box's border warms on a full deed (.mp-warm, re-armed per reveal). */
+    #mp-body .mp-reveal .mp-deed, #pp-body .mp-reveal .mp-deed { display: inline-block; animation: mp-pop 0.4s ease-out; animation-delay: inherit; }
+    @keyframes mp-pop { from { transform: scale(1.15); } to { transform: scale(1); } }
+    .mp-nudge { position: relative; animation: mp-nudge 0.35s ease-in-out; }
+    @keyframes mp-nudge { 25% { left: -4px; } 50% { left: 4px; } 75% { left: -2px; } }
+    #mission-panel.mp-warm, #paper-panel.mp-warm { animation: mp-warm 2.4s ease-in-out; }
+    @keyframes mp-warm { 25%, 75% { border-color: var(--warn-line); } }
     #mp-body .mp-tick, #pp-body .mp-tick { animation: mp-tick 0.6s ease-out; }
     @keyframes mp-tick { 0% { color: var(--text-bright); } 100% { color: var(--text-dim); } }
     #pp-accept { border-color: var(--accept); color: var(--accept-text); }

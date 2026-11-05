@@ -2906,6 +2906,22 @@ def export_glb(item_id):
     return ob
 
 
+# FEAT-143: every other item, as it lies on the ground once dropped behind the tailgate (src/world-items.js).
+# A block of its own beside WORLD's: the camp-bed rows live there (FEAT-66). Most builders already stand
+# the item as it would rest; the ones built upright or tipped for the icon are laid down here.
+WORLD.update({k: ("item-" + "".join("-" + c.lower() if c.isupper() else c for c in k), Matrix.Identity(4)) for k in (
+    "coffee", "chiliDog", "emergencyGas", "tirePlugKit", "rubberBedMat", "compressor", "energyDrink", "stopLeak",
+    "zipTies", "ductTape", "jerryCan", "quickJack", "pack", "springs", "dampers", "pads", "shoes", "arb", "diff",
+    "lift", "engine", "headlight")})
+WORLD.update({
+    "tire":       ("item-tire",        Matrix.Rotation(math.pi / 2, 4, "Y")),                                   # axis X → Z: lying flat
+    "wheel":      ("item-wheel",       Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Rotation(math.radians(25), 4, "Z")),   # un-yawed, then flat
+    "hiLiftJack": ("item-hi-lift-jack", Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Rotation(math.radians(8), 4, "Z")),   # on its side, the lever along the ground
+    "radiator":   ("item-radiator",    Matrix.Rotation(math.pi / 2, 4, "X") @ Matrix.Rotation(math.radians(-15), 4, "Z")),  # face down
+    "airFilter":  ("item-air-filter",  Matrix.Rotation(math.radians(-30), 4, "X") @ Matrix.Rotation(math.radians(-35), 4, "Z")),  # the icon's tip undone
+})
+
+
 def run_all():
     for k in BUILDERS:
         run(k)

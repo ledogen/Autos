@@ -1134,6 +1134,35 @@ export const PROP_MODELS = {
   barrelPallet: { url: 'assets/models/barrel-pallet.glb', collision: { shape: 'hull-from-mesh', size: [0.80, 1.04, 0.80] } },   // 612 tris, blue HDPE barrel on the small pallet; recolour hook BarrelBlue
   smallCratePallet: { url: 'assets/models/small-crate-pallet.glb', collision: { shape: 'hull-from-mesh', size: [0.80, 0.60, 0.80] } },   // 496 tris, one small crate on the small pallet; no recolour hook
   largeCratePallet: { url: 'assets/models/large-crate-pallet.glb', collision: { shape: 'hull-from-mesh', size: [1.00, 0.96, 1.20] } },   // 580 tris, the 0.81 m crate on the full pallet; no recolour hook
+  // FEAT-143: every other inventory item as it lies on the ground once dropped (src/world-items.js; main.js
+  // _groundHandle keys it by ITEMS[id].thumb ?? id). items.py export_glb, laid in its rest pose, base-seated.
+  coffee: { url: 'assets/models/item-coffee.glb', collision: { shape: 'hull-from-mesh', size: [0.10, 0.15, 0.09] } },   // 346 tris
+  chiliDog: { url: 'assets/models/item-chili-dog.glb', collision: { shape: 'hull-from-mesh', size: [0.21, 0.06, 0.09] } },   // 1246 tris
+  emergencyGas: { url: 'assets/models/item-emergency-gas.glb', collision: { shape: 'hull-from-mesh', size: [0.38, 0.37, 0.12] } },   // 1090 tris
+  tirePlugKit: { url: 'assets/models/item-tire-plug-kit.glb', collision: { shape: 'hull-from-mesh', size: [0.17, 0.03, 0.22] } },   // 3200 tris
+  rubberBedMat: { url: 'assets/models/item-rubber-bed-mat.glb', collision: { shape: 'hull-from-mesh', size: [0.59, 0.17, 0.41] } },   // 1556 tris
+  compressor: { url: 'assets/models/item-compressor.glb', collision: { shape: 'hull-from-mesh', size: [0.39, 0.26, 0.34] } },   // 2338 tris
+  energyDrink: { url: 'assets/models/item-energy-drink.glb', collision: { shape: 'hull-from-mesh', size: [0.07, 0.17, 0.07] } },   // 664 tris
+  stopLeak: { url: 'assets/models/item-stop-leak.glb', collision: { shape: 'hull-from-mesh', size: [0.07, 0.20, 0.07] } },   // 1043 tris
+  zipTies: { url: 'assets/models/item-zip-ties.glb', collision: { shape: 'hull-from-mesh', size: [0.33, 0.07, 0.07] } },   // 1712 tris
+  ductTape: { url: 'assets/models/item-duct-tape.glb', collision: { shape: 'hull-from-mesh', size: [0.18, 0.12, 0.05] } },   // 548 tris
+  jerryCan: { url: 'assets/models/item-jerry-can.glb', collision: { shape: 'hull-from-mesh', size: [0.38, 0.61, 0.28] } },   // 1104 tris
+  quickJack: { url: 'assets/models/item-quick-jack.glb', collision: { shape: 'hull-from-mesh', size: [0.97, 0.51, 0.65] } },   // 856 tris
+  pack: { url: 'assets/models/item-pack.glb', collision: { shape: 'hull-from-mesh', size: [0.28, 0.40, 0.18] } },   // 802 tris
+  springs: { url: 'assets/models/item-springs.glb', collision: { shape: 'hull-from-mesh', size: [0.15, 0.30, 0.15] } },   // 872 tris
+  dampers: { url: 'assets/models/item-dampers.glb', collision: { shape: 'hull-from-mesh', size: [0.13, 0.06, 0.52] } },   // 1310 tris
+  pads: { url: 'assets/models/item-pads.glb', collision: { shape: 'hull-from-mesh', size: [0.15, 0.02, 0.14] } },   // 704 tris
+  shoes: { url: 'assets/models/item-shoes.glb', collision: { shape: 'hull-from-mesh', size: [0.22, 0.20, 0.19] } },   // 2344 tris
+  arb: { url: 'assets/models/item-arb.glb', collision: { shape: 'hull-from-mesh', size: [0.88, 0.07, 0.69] } },   // 1764 tris
+  diff: { url: 'assets/models/item-diff.glb', collision: { shape: 'hull-from-mesh', size: [0.18, 0.17, 0.17] } },   // 968 tris
+  lift: { url: 'assets/models/item-lift.glb', collision: { shape: 'hull-from-mesh', size: [0.39, 0.16, 0.38] } },   // 1408 tris
+  engine: { url: 'assets/models/item-engine.glb', collision: { shape: 'hull-from-mesh', size: [0.74, 0.77, 0.85] } },   // 4430 tris
+  headlight: { url: 'assets/models/item-headlight.glb', collision: { shape: 'hull-from-mesh', size: [0.27, 0.17, 0.50] } },   // 386 tris
+  tire: { url: 'assets/models/item-tire.glb', collision: { shape: 'hull-from-mesh', size: [0.73, 0.25, 0.73] } },   // 6856 tris
+  wheel: { url: 'assets/models/item-wheel.glb', collision: { shape: 'hull-from-mesh', size: [0.40, 0.20, 0.40] } },   // 2574 tris
+  hiLiftJack: { url: 'assets/models/item-hi-lift-jack.glb', collision: { shape: 'hull-from-mesh', size: [1.48, 0.16, 0.78] } },   // 1164 tris
+  radiator: { url: 'assets/models/item-radiator.glb', collision: { shape: 'hull-from-mesh', size: [0.89, 0.07, 0.52] } },   // 1924 tris
+  airFilter: { url: 'assets/models/item-air-filter.glb', collision: { shape: 'hull-from-mesh', size: [0.30, 0.05, 0.20] } },   // 240 tris
 }
 
 /** Every registry key carrying `tag`, in registry order — the pool a roster slot draws from. */

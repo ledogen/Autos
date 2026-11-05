@@ -82,3 +82,23 @@ This works for any loose bed cargo:
 - [ ] A lost piece persists while its chunk streams out and back.
 - [ ] D-pad → held resets the truck; D-pad ← sets the spawn in free roam; the settings chart shows all three.
 - [ ] A gate on the reload path (reach refused outside 3 m or unparked; the tire rule); cdp-smoke still green.
+
+## Built (Spare, 2026-11-05, feature/spare 9d375c06) — unrun under the compute hold
+
+- **D-pad ↓ / G**, parked (else the PARK badge pulses): the nearest lost loose piece within `REACH_M` (3 m
+  from the truck's outline, FEAT-143's `planGap`) is lifted 0.5 m over the bed rail at mid-bed and let go;
+  `RELOAD_MIN` 5 on the clock (the job's too). With none in reach it picks up the nearest dropped item
+  (FEAT-143). A bundle still dropping in at the yard is never offered.
+- **Tire rule:** `mission.cargoOut` (main.js `_looseStep`, out of the bed ≥ 1 s) holds the pickup park and the
+  final hand-over; nothing fails. HUD: "TIRE OUT OF THE BED · go back for it". A truck reset no longer puts an
+  out-of-bed tire back in the bed (that would be the free reload).
+- **Persistence:** a lost piece past 120 m leaves the world (adapter `setEnabled` = Box3D Disable/Enable) and
+  comes back within 60 m, so ground that streams out under it cannot drop it. The save keeps lost pieces'
+  WORLD poses (`haulOut`, `looseOut`) — before, a lost bundle vanished on resume and a lost tire came back
+  in the bed.
+- **Pad:** D-pad ← = set spawn (a `Shift+R` chord row; `sendKey` sends the Shift), D-pad → held 1 s = reset,
+  D-pad ↓ silent while B holds the side menu, all four silent on result cards. Settings chart rows added.
+- **Gate:** `test/story-poi.mjs` — a fetch with its tire out has no pickup, and back at the giver it waits
+  (not done, not failed), then settles once it is back.
+
+**Owed:** the affected gates (43: the adapter touches every physics gate), cdp-smoke, the owner's pad check.

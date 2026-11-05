@@ -1,7 +1,7 @@
 ---
 id: BUG-81
 type: bug
-status: pending
+status: closed
 severity: major
 opened: 2026-10-05
 source: Owner report (in-game observation, no capture yet). Second report 2026-10-25 (below).
@@ -221,3 +221,42 @@ there: the deck trimesh, the bore lining, or the carved heightfield. A step or s
 the strut as an impact. The bore floor must be one continuous surface out to the wall (MESH == PHYSICS).
 Acceptance: a headless drive along the tunnel shoulder shows no strut impacts above the open-road
 shoulder's baseline.
+
+### Third report — built (Spare, 2026-11-05, 1aa3a2ab + 065b94b5); owner's drive owed
+
+Two things in the engine heightfield inside a bore (what the truck's BODY collides with — the wheels ride the
+analytic floor, which was already continuous) made the shoulder punish the truck:
+
+1. **The slot stopped short of the lining.** The bore slot (TerrainPhysics.syncChunk) cut only the heightfield
+   vertices within R = 8 m of the centreline. A cell is two flat triangles, so every cell straddling R ramped
+   from the slot floor up to the hill INSIDE the tube: an invisible wall 0.5–1 m in from the drawn one, its foot
+   jumping a cell at a time along the run. Measured on seed 6 (`wip/bug-81-shoulder/hf.mjs`): 3–90 m over the
+   floor at 7.25 m out, above it at up to 176 of 298 samples. The slot now runs one cell diagonal (1.41 m) past
+   the lining, so every triangle reaching inside R is cut at all three corners: ≥ 0.46 m under the floor out to
+   7.95 m, both sides, three bores.
+2. **The slot was flat in a banked bore** (1aa3a2ab): cut at deck − 0.5 m while the floor tilts with the camber
+   up to 2 m under the deck on the low side — a stepped shelf over the drawn shoulder. It now goes under the floor.
+
+**The acceptance drive** (`wip/bug-81-shoulder/drive.mjs`): the real truck — makeVehicleState, stepPhysics, the
+engine chassis, the tire-envelope wheel query — on TerrainPhysics chunks in a Box3D world, a pure-pursuit driver
+holding an offset off the centreline at a held speed, two seed-6 bores (256 m and 189 m), 6 / 6.5 / 6.9 m out on
+both sides:
+
+| 15 m/s, shoulder runs | main | branch | open road, same offsets |
+|---|---|---|---|
+| runs that strike and leave the line | 9 of 16 | 0 of 16 | 0 of 8 |
+| worst vertical acceleration | 37 g | 0.45 g | 0.15 g |
+| worst one-step loss of speed | 15.6 m/s | 0.06 m/s | 0.02 m/s |
+| worst strut rate | 6.3 m/s | 0.84 m/s | 0.08 m/s |
+
+At 22 m/s the branch is clean too (≤ 1.0 g, no strike). The bore numbers sit above the open road's because that
+baseline is a dead-straight, unbanked run held to the centimetre; the bores curve and bank and the driver weaves
+±0.3 m, over the 0.15 m deck-edge lip every road has (`roadClearanceMargin`). On the same bore's own centreline
+the levels are alike (bore 1: 0.47 m/s centre, 0.26–0.47 shoulder). Gate: `bore-collider` (4) — a box along the
+shoulder of a run half a cell off the grid passes untouched (shoved 0.2 m sideways without the fix).
+**Owed:** the owner's drive along a tunnel shoulder.
+
+## Resolution (owner, 2026-11-05) — CLOSED
+
+Owner's drive on :3885 (feature/spare at 7bb77913): the tunnel shoulder is "smooth as butter - close". Closes with
+the Spare landing (1aa3a2ab + 065b94b5). The portal items (1, 4, 5) were closed in their own sections above.

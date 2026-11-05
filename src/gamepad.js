@@ -57,7 +57,8 @@ export const PAD_PARAMS = {
 // the reticle is up as well (RB tap throws). pumpActive: set by main.js — the pump is open, so A
 // pumps. hudMenu: set by src/hud-menu.js — the B-hold icon menu ({ open, move, select, cancel }).
 export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, zoom: 0,
-  menuActive: () => false, cardActive: () => false, mapActive: () => false, canThrow: () => false, throwReady: () => false,
+  menuActive: () => false, cardActive: () => false, cardTabs: () => false, cardDrive: () => false,
+  mapActive: () => false, canThrow: () => false, throwReady: () => false,
   pumpActive: () => false, hudMenu: null }
 
 // THE BINDING TABLE (Forza-style layout, owner 2026-10-19 — the FEAT-125 ticket). Rows with a
@@ -66,9 +67,10 @@ export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, l
 // cannot drift from what the pad does. LB / A / X are the FEAT-126 manual gearbox's clutch and
 // shifts; the automatic ignores them. Start pauses and View is the map (owner, 2026-10-19), which
 // moved the headlights to the left stick click. The side-menu icons (inventory, damage, camp,
-// recovery) sit behind ONE button, B held (owner, 2026-10-21): the D-pad is free while driving, and
-// B + ←/→ is reserved for a later action. Their rows carry `B (…)` so every key tab reads "B". The
-// pump left B for A, at the pump only. Home (16) is unbound.
+// recovery) sit behind ONE button, B held (owner, 2026-10-21), and B + ←/→ is reserved for a later
+// action. Their rows carry `B (…)` so every key tab reads "B". The pump left B for A, at the pump only.
+// The D-pad drives three actions (owner, 2026-11-03, FEAT-144): ↓ picks up / loads lost bed cargo, ←
+// sets the spawn (free roam), → held resets the truck like View's hold. Home (16) is unbound.
 export const BINDINGS = [
   { action: 'throttle',              key: 'W',         pad: 'RT' },
   { action: 'brake / reverse',       key: 'S',         pad: 'LT' },
@@ -87,9 +89,12 @@ export const BINDINGS = [
   { action: 'back (menus, cards, map)', key: 'Esc',     pad: 'B' },
   { action: 'map',                   key: 'm',         pad: 'View (tap)' },
   { action: 'map: prev / next offer', key: 'Q / E',    pad: 'LB / RB (map open)' },
+  { action: 'tabs (service shop)',   key: 'Q / E',    pad: 'LB / RB (shop open)' },
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'RT / LT (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
-  { action: 'reset truck',           key: 'r',         pad: 'View (hold 1 s)' },
+  { action: 'reset truck',           key: 'r',         pad: 'View or D-pad → (hold 1 s)' },
+  { action: 'pick up / load lost cargo (parked)', key: 'g', pad: 'D-pad ↓', button: 13 },
+  { action: 'set spawn here (free roam)', key: 'Shift+R', pad: 'D-pad ←', button: 14 },
   { action: 'inventory',             key: 'Tab',       pad: 'B (hold, ↑/↓, release)' },
   { action: 'damage screen',         key: 'v',         pad: 'B (hold, ↑/↓, release)' },
   { action: 'camp',                  key: 'z',         pad: 'B (hold, ↑/↓, release)' },
@@ -114,6 +119,14 @@ delete MAP_KEYS[0]; delete MAP_KEYS[2]
 const CARD_KEYS = { ...BUTTON_KEYS, 0: 'Enter', 1: 'Escape' }
 for (const i of [2, 12, 13, 14, 15]) delete CARD_KEYS[i]
 const CARD_MAP_KEYS = { ...CARD_KEYS, 4: 'q', 5: 'e' }
+// BUG-109 (owner, 2026-11-04): a card with tabs (the service shop) steps them on LB / RB — Q / E,
+// menu-nav.js — like the map's offers. Parked at the shop, the bumpers have no clutch or handbrake to work.
+const CARD_TAB_KEYS = CARD_MAP_KEYS
+// BUG-109: a RESULT card has no tabs and nothing to pick until the D-pad puts its highlight on it, so
+// the pad drives through it — A / X shift, LB clutch, RB handbrake — and B is back (pad.cardDrive).
+// Its D-pad is the card's highlight, never the drive layout's actions.
+const RESULT_KEYS = { ...BUTTON_KEYS, 1: 'Escape' }
+for (const i of [12, 13, 14, 15]) delete RESULT_KEYS[i]
 // The pump is open (pad.pumpActive): A is F, held to pump — parked at the pump, A has nothing to shift.
 const PUMP_KEYS = { ...BUTTON_KEYS, 0: 'f' }
 const NAV = [['ArrowUp', 12], ['ArrowDown', 13], ['ArrowLeft', 14], ['ArrowRight', 15]]
@@ -134,10 +147,13 @@ let rbBrake = false      // Space is down for RB
 // B in the drive layout holds the icon menu (src/hud-menu.js via pad.hudMenu): press opens it, D-pad
 // ↑/↓ edges walk it, release opens the pick. A B press that began in a menu, card or the map was a
 // "back" and stays one: it can never open the icon menu when the layout drops to drive under it.
-const B = 1, UP = 12, DOWN = 13
+const B = 1, UP = 12, DOWN = 13, RIGHT = 15
 let bMenu = false        // the icon menu is open on this B press
 let bSpent = false       // this B press belongs to something else (it was a back)
 let dPrev = 0            // last frame's D-pad ↑ (1) / ↓ (2) bits, for edges
+// D-pad → (FEAT-144): held VIEW_HOLD_MS it resets the truck (r down at the threshold, up on release),
+// so a mid-drive tap does nothing. Drive layout only.
+let rightAt = -1, rightReset = false
 
 const held = new Map()   // button index → the key whose keydown was sent and keyup has not been
 // The map opened mid-drive (owner, 2026-10-20). A trigger already down when the map opens stays the
@@ -166,10 +182,12 @@ export function padKick () {
 const deadzone = (v, d) => Math.abs(v) < d ? 0 : Math.sign(v) * (Math.abs(v) - d) / (1 - d)
 
 function sendKey (type, key) {
+  const shiftKey = key.startsWith('Shift+')   // a chord row ('Shift+R'): the key with Shift held
+  if (shiftKey) key = key.slice(6)
   const code = key === ' ' ? 'Space' : key.length === 1 ? 'Key' + key.toUpperCase() : key
   // Dispatched where a real keystroke lands (the focused element), bubbling, so element-level and
   // document/window-level listeners all see it as they would a real key.
-  ;(document.activeElement || document.body).dispatchEvent(new KeyboardEvent(type, { key, code, bubbles: true, cancelable: true }))
+  ;(document.activeElement || document.body).dispatchEvent(new KeyboardEvent(type, { key, code, shiftKey, bubbles: true, cancelable: true }))
 }
 
 function poll () {
@@ -177,11 +195,13 @@ function poll () {
   // picking one — two pads on the desk both work. Per-player pads would need a real assignment.
   let thr = 0, brk = 0, steer = 0, lookX = 0, lookY = 0, any = false, viewDown = false, rbDown = false
   const menu = pad.menuActive(), card = !menu && pad.cardActive(), map = !menu && pad.mapActive()
-  let keys = menu ? MENU_KEYS : card ? (map ? CARD_MAP_KEYS : CARD_KEYS) : map ? MAP_KEYS : BUTTON_KEYS
+  let keys = menu ? MENU_KEYS
+    : card ? (pad.cardDrive() ? RESULT_KEYS : pad.cardTabs() ? CARD_TAB_KEYS : map ? CARD_MAP_KEYS : CARD_KEYS)
+    : map ? MAP_KEYS : BUTTON_KEYS
   const drive = keys === BUTTON_KEYS
   if (drive && pad.pumpActive()) keys = PUMP_KEYS
   const down = new Set(), nav = new Set()
-  let bDown = false, dpad = 0
+  let bDown = false, dpad = 0, rightDown = false
   for (const gp of navigator.getGamepads()) {
     if (!gp || gp.mapping !== 'standard') continue
     any = true
@@ -197,6 +217,7 @@ function poll () {
     if (gp.buttons[B]?.pressed) bDown = true
     if (gp.buttons[UP]?.pressed) dpad |= 1
     if (gp.buttons[DOWN]?.pressed) dpad |= 2
+    if (gp.buttons[RIGHT]?.pressed) rightDown = true
     if (menu || card) for (const [k, b] of NAV) if (gp.buttons[b]?.pressed) nav.add(k)
     if (menu) {   // the left stick navigates a menu; on a card it is still steering
       const ax = gp.axes[0], ay = gp.axes[1]
@@ -204,6 +225,7 @@ function poll () {
       if (ax < -NAV_STICK) nav.add('ArrowLeft'); if (ax > NAV_STICK) nav.add('ArrowRight')
     }
   }
+  if (drive && bDown) down.delete(DOWN)   // B held: D-pad ↓ walks the icon menu, it picks nothing up
   if (!map) mapPass = null
   else {
     mapPass ??= { thr: thr > 0, brk: brk > 0 }
@@ -251,6 +273,13 @@ function poll () {
     bMenu = false
     if (drive && any) pad.hudMenu?.select()   // released: open the pick
     else pad.hudMenu?.cancel()                // a menu/card took over, or the pad was unplugged
+  }
+  if (drive && rightDown && !bDown) {
+    if (rightAt < 0) { rightAt = now; rightReset = false; pad.active = true }
+    else if (!rightReset && now - rightAt >= VIEW_HOLD_MS) { rightReset = true; sendKey('keydown', 'r') }
+  } else {
+    if (rightReset) sendKey('keyup', 'r')
+    rightAt = -1; rightReset = false
   }
   if (!drive && bDown) bSpent = true
   if (!bDown) bSpent = false

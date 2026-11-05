@@ -256,3 +256,10 @@ kill timed it out).
   words. The other five shop items = FEAT-167 (Lane B, next code item, on top of its landing set; lanes/b v14 says so).
   Main is 9+ ahead of origin, NOT pushed (the 11-04 push permission was for that night). A, B and Spare are still
   waiting for their /clear (≈419k / 719k / 817k).
+- **11-05 evening (hold lifted):** Lane B landed e8a6d460 (121/121, smoke 21/21; FEAT-70 + its tread-centre fix, FEAT-165/166/167,
+  open diff $10, swap to My Items, jalopy fix, crash lab repaired). Spare landed 38765f33 (122/122, smoke 21/21; BUG-67 1+2 as
+  ruled, BUG-81 closed, FEAT-143/144 reach 5 m, BUG-109, FEAT-131, BUG-110). Lanes fast-forwarded; run-shape diverged (merges
+  itself). The owner's first serious playthrough → FEAT-168 economy pass (B, NEXT), FEAT-169 hunger (A, NEXT), FEAT-162 +
+  roadside tire repair, BUG-111/112 (Spare). No default seed: CLAUDE.md § Seeds. A, B and Spare all parked for the owner's
+  /clear (resume line: "<lane> resume: read the tracker page's lanes/<id> handoff and do its NEXT item"). Main is ~96 ahead of
+  origin, NOT pushed: pushing is the owner's call.

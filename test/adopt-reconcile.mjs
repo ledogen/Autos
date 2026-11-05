@@ -129,7 +129,10 @@ for (const [name, route] of ROUTES) {
     }
 }
 
-log(markKeys.has('g:1,0,2:0,1,2') && markKeys.has('g:635643,448649,-1:0,1,2'), 'the owner\'s flip occurs on the route',
+// The flip: the plain run and a promoted-T leg into node 0,1,2 both seen under the mark. The T is matched by
+// shape, not id — a T's id is its trunk position, and BUG-67's T slide (2026-11-04) moved this one 8 m
+// (635643,448649 → 627737,447586) with the flip unchanged.
+log(markKeys.has('g:1,0,2:0,1,2') && [...markKeys].some(k => /^g:-?\d+,-?\d+,-1:0,1,2$/.test(k)), 'the owner\'s flip occurs on the route',
     `roads seen under the mark: ${[...markKeys].join('  ')}`)
 log(misses.length === 0, 'no chunk is left carved against a road that moved',
     misses.length ? `${misses.length} STALE: ${misses.slice(0, 6).join(' | ')}`

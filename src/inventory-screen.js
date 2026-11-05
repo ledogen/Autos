@@ -52,6 +52,7 @@ const CSS = `
 .inv-slot .sl-n { position: absolute; right: 3px; bottom: 1px; font-size: 12px; color: var(--text);
   text-shadow: 0 1px 2px #000; pointer-events: none; }
 .inv-slot .keycap { position: absolute; left: -5px; top: -6px; margin: 0; font-size: 12px; background: #1b2026; }
+#inv-screen .is-sub { display: block; margin: 12px 0 6px; }
 #inv-screen .is-strip { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); min-height: 52px; }
 #inv-screen .st-name { font-size: 14px; }
 #inv-screen .st-tag { font-size: 12px; color: #c9a24a; margin-left: 6px; }
@@ -127,16 +128,21 @@ export class InventoryScreen {
    * @param {() => boolean} [o.isBlocked] - the brake belongs to something else here (a POI).
    * @param {(row) => Array<{label: string, icon?: string, enabled?: boolean, run: () => void}>} [o.actions] - extra choices
    *   for the selected item, each a confirm button (main.js: plugging a tire — by hand or compressor).
+   * @param {{list: () => Array<{it: object, row: object}>, pick: (it) => void}} [o.ground] - FEAT-143: the items
+   *   lying in reach of the truck ("Nearby on the ground") and picking one up into a free slot.
    */
-  constructor (inventory, vehicleState, { isSuppressed = () => false, isBlocked = () => false, actions = () => [] } = {}) {
+  constructor (inventory, vehicleState, { isSuppressed = () => false, isBlocked = () => false, actions = () => [],
+    ground = { list: () => [], pick: () => {} } } = {}) {
     this.inventory = inventory
     this.vehicleState = vehicleState
     this.isSuppressed = isSuppressed
     this.isBlocked = isBlocked
     this.actions = actions
+    this.ground = ground
     this.isOpen = false
     this.sel = null       // selected truck entry index
     this.packSel = -1     // selected slot inside the selected pack
+    this.groundSel = null // FEAT-143: the selected world item (its object — the list reorders as things settle)
 
     const style = document.createElement('style')
     style.textContent = CSS
@@ -191,6 +197,7 @@ export class InventoryScreen {
     this.isOpen = true
     this.sel = null
     this.packSel = -1
+    this.groundSel = null
     this.screen.classList.add('open')
     this.iconEl.classList.add('on')
     this.render()
@@ -228,11 +235,18 @@ export class InventoryScreen {
         case 'equip': inv.equip(this.sel); break
         case 'unpack': inv.unpackItem(this.sel, this.packSel); this.packSel = -1; break
         case 'action': this.actions(inv.list()[this.sel])[+b.dataset.i]?.run(); break
+        case 'pick': this.ground.pick(this.groundSel); this.groundSel = null; break
       }
+    } else if (s?.dataset.ground != null) {
+      const it = this.ground.list()[+s.dataset.ground]?.it ?? null
+      this.groundSel = this.groundSel === it ? null : it
+      this.sel = null
+      this.packSel = -1
     } else if (s?.dataset.slot != null) {
       const i = +s.dataset.slot
       this.sel = this.sel === i ? null : i
       this.packSel = -1
+      this.groundSel = null
     } else if (s?.dataset.packslot != null) {
       const i = +s.dataset.packslot
       this.packSel = this.packSel === i ? -1 : i
@@ -269,6 +283,8 @@ export class InventoryScreen {
     for (let i = 0; i < Math.max(inv.slotCap(), rows.length); i++) {
       grid += slotHtml(rows[i] ?? null, rows[i] ? `data-slot="${i}"` : '', i === this.sel ? 'sel' : '')
     }
+    const ground = this.ground.list()
+    if (!ground.some(g => g.it === this.groundSel)) this.groundSel = null
     this.card.innerHTML =
       `<div class="is-head"><span class="is-title">Inventory</span></div>`
       + (p
@@ -276,8 +292,20 @@ export class InventoryScreen {
           + btn('take', 'take it', inv.fits(p.id, p.n)) + btn('leave', 'leave it') + `</div>`
         : '')
       + `<div class="is-grid">${grid}</div>`
-      + `<div class="is-strip">${this._strip(rows)}</div>`
+      + (ground.length ? `<span class="is-title is-sub">Nearby on the ground</span><div class="is-grid">`
+        + ground.map((g, k) => slotHtml(g.row, `data-ground="${k}"`, g.it === this.groundSel ? 'sel' : '')).join('') + `</div>` : '')
+      + `<div class="is-strip">${this.groundSel ? this._groundStrip(ground) : this._strip(rows)}</div>`
       + BACK_BUTTON
+  }
+
+  /** FEAT-143: a selected item on the ground — what it is, and picking it up (only into a free slot). */
+  _groundStrip (ground) {
+    const r = ground.find(g => g.it === this.groundSel).row
+    return `<div class="st-name">${r.name}</div>`
+      + (condLine(r) ? `<div class="st-cond">${condLine(r)}</div>` : '')
+      + `<div class="st-desc">${r.desc}</div>`
+      + btn('pick', 'pick up', this.inventory.fits(r.id, r.n))
+      + (this.inventory.fits(r.id, r.n) ? '' : `<div class="st-hint">No room. Drop something to make room.</div>`)
   }
 
   /** What you can do with the selected item. */

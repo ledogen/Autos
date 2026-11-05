@@ -122,9 +122,9 @@
   <h2>Closed since 10-24 (one line each; the tickets hold the rest)</h2>
   <div class="owed"><ul>
     <li><b>Lane A:</b> FEAT-103 alpha camp · FEAT-146 the run ends · FEAT-157 requisition lines · FEAT-154 barricades · FEAT-128 key off at camp · FEAT-151 tiredness · BUG-95.</li>
-    <li><b>Lane B (some built by Spare):</b> FEAT-159 throttle assist + traction control (on main 11-04) · FEAT-158 rock grip · BUG-99 tire on rock · FEAT-93/94 punctures and flats · FEAT-152 rim sparks · FEAT-138 hi-lift · FEAT-150 shift schedule · BUG-89 side slide · BUG-54 rock colliders · FEAT-132/137 on evidence.</li>
+    <li><b>Lane B (some built by Spare):</b> landed 11-05 e8a6d460 (121/121, smoke 21/21): open diff $10 · swapped-out parts go to My Items · jalopy crash fix · crash lab repaired · FEAT-159 throttle assist + traction control (on main 11-04) · FEAT-158 rock grip · BUG-99 tire on rock · FEAT-93/94 punctures and flats · FEAT-152 rim sparks · FEAT-138 hi-lift · FEAT-150 shift schedule · BUG-89 side slide · BUG-54 rock colliders · FEAT-132/137 on evidence.</li>
     <li><b>Lane C (some built by Spare):</b> ASSET-71 camp · ASSET-32 van · ASSET-69/70/73 office, doctor, school · FEAT-149 knockable ornaments · BUG-94 moon halo · BUG-96 tree billboards.</li>
-    <li><b>Spare:</b> BUG-74 roadwork seam (fill buries the rock; owner-approved 11-03) · BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus · FEAT-160 run end says why. BUG-73 closed unreproduced.</li>
+    <li><b>Spare:</b> landed 11-05 38765f33 (122/122, smoke 21/21): BUG-67 steps 1 + 2 · BUG-81 tunnel shoulder (“smooth as butter”) · FEAT-143/144 world items · BUG-74 roadwork seam (fill buries the rock; owner-approved 11-03) · BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus · FEAT-160 run end says why. BUG-73 closed unreproduced.</li>
   </ul></div>
   <h2>Landed 2026-10-24</h2>
   <div class="owed"><ul>
@@ -149,8 +149,9 @@
         { id: 'FEAT-66', what: 'BUILT on feature/run-shape — camp gear stands at the campsite; lands with demolition slice 2 after your look.' },
         { id: 'ASSET-78/79', what: 'BUILT — the unrolled bedroll (now the starter bed) and the blanket layer; in the same look.' },
         { id: 'FEAT-161', what: 'The finale is the hardest drive — plan 2–3 options for the owner (Sid Meier review C, 11-02).' },
-        { id: 'FEAT-147', what: 'BUILT + checked (05477612): the firing at the burger joint, then a courier run TO Larry. Gates 43/43, smoke 23/23 with the new opening step. Waits on your drive (feat66-look visit on :3731).' },
-        { id: 'FEAT-164', what: 'BUILT (4b9ffbe1) — camp zones are added until no road point is farther than the cap from one; 1–23 ms at go-live, nothing saved. Built at 2500 m; your cap call is owed (feat164-cap).' },
+        { id: 'FEAT-147', what: 'NOW — your drive: “good for now”, but no job came after the opening (GPS bar empty; only mom’s optional one). Fix that before landing.' },
+        { id: 'FEAT-170', what: 'The opening becomes a skippable tutorial evening at mom’s (fired at 6 pm → drive to mom’s with the clock frozen → sleep → breakfast → the casserole to Larry). Staged plan first; after FEAT-169.' },
+        { id: 'FEAT-164', what: 'BUILT (4b9ffbe1) — camp zones are added until no road point is farther than the cap from one; 1–23 ms at go-live, nothing saved. Built at 2500 m; your cap call is owed (feat164-cap). BUG-110 is on main: drop camp-reach’s pin for 4194356868.' },
         { id: 'FEAT-148 ↳', what: 'BUILT (336813e0) — the midnight overlay (“Supplies are drying up / costs keep rising”) and the empty giver-line table; no placeholder quote. Your lines fold in when written.' },
         { id: 'FEAT-65', what: 'Slice 2 BUILT (no settle on arrival, GPS to the nearest target); the clock + pay wait on one call.' },
         { id: 'FEAT-169', what: 'NEXT — hunger, moved up (owner 11-05): past a meal’s hold, energy drains ×1.25 → ×1.5, so skipping food shortens the day. No bar. Waking counts as a meal only after a camp meal [default].' },
@@ -162,12 +163,11 @@
       owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, drivetrain assists, data/parts.js, data/stock-weights.js, physics gates',
       tasks: [
         { id: 'BUG-108', what: 'NOW — a brief hitch when the truck hits a demolition target — render or physics first, numbers (owner 11-03).' },
-        { id: 'FEAT-70', what: 'BUILT — wheel contact on an exact cylinder: real roads 2 mm off at p99 (was 66 mm), 1.9× the query cost; in-browser checks wait for the compute hold.' },
-        { id: 'diffOpen · swap', what: 'DONE on feature/machine (3180c87d, ea000e4e) — open diff $10; a swapped-out part goes straight to My Items, no keep/sell prompt.' },
-        { id: 'FEAT-165', what: 'BUILT (cf385fba, 386698de) — every shop always has Old + Standard tires ($8 / $18 default); diagnostics reads “Tire FL · Old tire”.' },
-        { id: 'FEAT-166', what: 'BUILT (4f41a2d2) — clutch-type LSD: new 5.88 s vs open 9.70 s on split grip, worn = open step for step; numbers on the owed list.' },
+        { id: 'FEAT-70', what: 'ON MAIN (e8a6d460) — wheel contact on an exact cylinder, plus the tread-centre fix the repaired crash lab found (it yawed the truck 5° at full throttle). Your kerb / rough-ground feel drive owed.' },
+        { id: 'FEAT-165', what: 'ON MAIN — every shop always has Old + Standard tires ($8 / $18, your price); diagnostics names each tire. FEAT-168 changes the always-stocked list.' },
+        { id: 'FEAT-166', what: 'ON MAIN — clutch-type LSD; your numbers call owed (feat166-numbers).' },
         { id: 'FEAT-168', what: 'NEXT — your playthrough economy pass: pay locked, fuel and prices ride a gentler 1.065×/day curve, a 12-day run (10 deeds), 6 shelf slots ~3 items, old tire + air filter + plug kit always stocked, helical LSD reward from day 3, tires .7/.9/.8. Reward categories wait on reward-cats.' },
-        { id: 'FEAT-167', what: 'BUILT (5263af16) — collapsed repair sections coloured by their worst part, one $15 alignment, lean stock rows, a Jobs tab, no HUD behind the shop; joins the landing set (+ jalopy crash fix 4d725dd0).' },
+        { id: 'FEAT-167', what: 'ON MAIN — the shop UI pass. Screenshots: CarGame-machine/wip/feat-167/. Your look + the part descriptions owed.' },
         { id: 'FEAT-162', what: 'The truck’s heart — plan parked in the ticket; four calls on the owed list. Now also: a flat must collapse the wheel within ~1 km, plus roadside tire repair (a call-out dearer than the shop; owner 11-05).' },
         { id: 'BUG-92', what: 'ABS kick never rumbles the pad — waits on the owner’s USB probe.' },
       ],
@@ -188,21 +188,19 @@
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
-        { id: 'BUG-67', what: 'LANDING — you ruled “land steps 1 + 2”; it lands with Spare’s set after Lane B.' },
-        { id: 'BUG-109', what: 'BUILT + smoke-proven — fake-pad steps pass on all five screens (and caught one real bug, fixed 6e1c490a). Your real-pad check owed (pad-test).' },
-        { id: 'BUG-110', what: 'FIXED on the branch (a2c5173c) — the tests’ spawn copy skipped the pond no-go; now 0.1 m from the game on your seed. No other seed’s tests moved.' },
+        { id: 'BUG-67 · FEAT-143/144', what: 'ON MAIN (38765f33) — both junction steps, world items + reach 5 m. Close the tickets on evidence.' },
+        { id: 'BUG-109', what: 'ON MAIN — the pad pass. Your real-pad check owed (pad-test).' },
+        { id: 'BUG-110', what: 'ON MAIN — the tests’ spawn copy matches the game on your seed. Lane A drops camp-reach’s pinned centre next.' },
         { id: 'BUG-111', what: 'Test harness: the story gates’ region roads also skip the pond no-go, so near a pond they measure roads the game doesn’t build. Its own pass (pins move).' },
         { id: 'BUG-105', what: 'MEASURED — the only such pair in 623 km of road: a T promoted 32 m from an existing junction, so two roads meet one junction split over two nodes. Two routing fixes; your call comes with before/after sheets.' },
         { id: 'BUG-106', what: 'Waits on your three capture files (copy command in chat).' },
         { id: 'BUG-107', what: 'MEASURED — the hill over that tunnel is its OWN mouth funnel, not the next road’s cutting. Needs your screenshot to know what you saw.' },
-        { id: 'BUG-81', what: 'DONE — your drive: “smooth as butter”. Closes when Spare lands.' },
         { id: 'BUG-112', what: 'Inside a tunnel: too bright, and the textures don’t blend (your BUG-81 drive). Before/after shots first.' },
         { id: 'FEAT-153', what: 'ON MAIN ac7a9593 — office + school give jobs; census gate. Open: your words, the tackle-shop reel.' },
         { id: 'FEAT-120', what: 'ON MAIN 012b2461 — keepers wired, register + sputter redone, gravel prototyped. Waits on your clips, a scrape recording, and your listen.' },
         { id: 'FEAT-163', what: 'ON MAIN 012b2461 — a real reverb on the game’s mix inside a tunnel; waits on your listen.' },
         { id: 'FEAT-62', what: 'Paper-route scenario — waits on BUG-67’s re-route and the owner’s scenario calls.' },
-        { id: 'FEAT-143/144', what: 'DONE — your look: dropping and picking up a tire, and driving over it, feel good. Reach goes to 5 m for both (your call) before Spare lands.' },
-        { id: 'FEAT-131', what: 'Card sounds + motion accepted. The music bed (P3) waits on your listen (feat131-listen).' },
+        { id: 'FEAT-131', what: 'ON MAIN — card sounds + motion accepted. The music bed waits on your listen (feat131-listen).' },
         { id: 'BUG-104 · BUG-69', what: 'Overlapping roads · side road diving below its trunk — each a go / no-go.' },
         { id: 'BUG-102', what: 'Camera freeze — not reproduced; waits on a sighting.' },
         { id: 'FEAT-133/136', what: 'Controller finish — waits on the real-pad play-test (and Safari / Firefox).' },
@@ -219,8 +217,8 @@
     { id: 'feat65-clock-pay', kind: 'decide', tk: 'FEAT-65', blocks: 'Lane A’s demolition slice 2 (the clock and pay)',
       text: 'Demolition (your drive): reaching the end no longer ends it, and the GPS goes to the nearest target — building now. The clock + pay, recommended: ONE clock (the job’s due-in; at zero it settles with what you hit). Base pays per target smashed; the tip is the time left when the last one falls, so running the clock out means no tip and no 100 % reward.',
       options: ['OK as recommended', 'separate site clock from the first target'] },
-    { id: 'feat66-look', kind: 'drive', tk: 'FEAT-147 · FEAT-66 · ASSET-78/79', blocks: 'landing Lane A (the opening, camp gear, demolition slice 2)',
-      text: 'On localhost:3731 (Lane A’s branch): start a NEW run — the opening (FEAT-147): fired at the burger joint (a cube until ASSET-80), then the courier run to Larry. Then make camp — the starter bed is the unrolled bedroll with the blanket on it; pack the tent, the awning or the cooking kit (the starter Pack has one free slot) and see each stand at camp; glance at the four new thumbnails. While there, drive a demolition site: miss one, turn back for it.' },
+    { id: 'feat66-look', kind: 'drive', tk: 'FEAT-66 · ASSET-78/79', blocks: 'landing Lane A (camp gear, demolition slice 2)',
+      text: 'The opening is done (your rewrite is FEAT-170). Still on localhost:3731 (Lane A’s branch): make camp — the starter bed is the unrolled bedroll with the blanket on it; pack the tent, the awning or the cooking kit (the starter Pack has one free slot) and see each stand at camp; glance at the four new thumbnails. While there, drive a demolition site: miss one, turn back for it.' },
     { id: 'feat164-cap', kind: 'decide', tk: 'FEAT-164', blocks: 'nothing (built at 2500 m)',
       text: 'The longest road drive from anywhere to a camp zone. Zones added per region, mean over 20 seeds: 1500 m → 6.2 · 2000 m → 3.8 · 2500 m → 2.5 · 3000 m → 1.4. Your seed’s worst drive goes from 5.3 km to 1.4 / 1.4 / 2.4 / 2.6 km. Its map at each cap: https://claude.ai/artifact/SvWko63QjRmdGWkyUSp3bD',
       options: ['1500 m', '2000 m', '2500 m (built)', '3000 m'] },
@@ -242,7 +240,7 @@
     { id: 'feat120-listen', kind: 'drive', tk: 'FEAT-120/163',
       text: 'Listen in game (on main): tunnel reverb in a real tunnel; the redone pump register (handbrake down at the pump) and low-fuel sputter; crickets at night under 5 mph; coin + stinger on the result card; brake squeal; grass. Menu and result-card sounds stay dry in a tunnel [default] — say if they should echo too.' },
     { id: 'feat131-listen', kind: 'drive', tk: 'FEAT-131 P3',
-      text: 'Only the music bed is left (the card sounds are accepted). It is a quiet synth pad with a four-note arpeggio that starts when the rank-timer strip appears on the drive in, opens up as you near the next line, steps up a semitone at each line, and resolves into the result stinger. Hear it alone on the dashboard (Sounds ▶ “Rank timer music bed”), then on a timed job (on main once Spare lands).' },
+      text: 'Only the music bed is left (the card sounds are accepted). It is a quiet synth pad with a four-note arpeggio that starts when the rank-timer strip appears on the drive in, opens up as you near the next line, steps up a semitone at each line, and resolves into the result stinger. It only plays once the rank bar shows: the last 25 % of a courier route, or 15 s before a paper round’s S/A line. Hear it alone on the dashboard (Sounds ▶ “Rank timer music bed”), then on a courier job on main.' },
     { id: 'feat120-clips', kind: 'make', tk: 'FEAT-120',
       text: 'YouTube blocked the agents’ download: drop the gravel clip (s0pqv_p1UvU) and the reverse whine (-bBiqmdEjbM, 1:50–1:53) on their Sounds cards (localhost:8010 → Sounds). And the underbody scrape needs a recording (contact mic) or a CC0 library take.' },
     { id: 'feat153-reel', kind: 'decide', tk: 'FEAT-153',
@@ -274,7 +272,7 @@
     { id: 'run-review', kind: 'drive', tk: 'full run',
       text: 'The full alpha run — it shows most of the drive items in context: demolition, multi-drop courier (FEAT-89), giver traits (FEAT-142), the tunnel portals (BUG-81), the map edge + edge return (BUG-103/FEAT-154), the shift schedule (FEAT-150), the hi-lift (FEAT-138), the key-off at camp (FEAT-128), lawn ornaments / moon / trees (FEAT-149, BUG-94/96). Type notes into the inbox as you go. If the camera ever freezes, note which camera, speed, and what was open (BUG-102).' },
     { id: 'pad-test', kind: 'drive', tk: 'FEAT-133/136',
-      text: 'Real-pad play-test (map, cards, the paper throw on RB), then pads in Safari and Firefox. On Spare’s branch (:3885), BUG-109’s five screens: give-up menu, result cards (D-pad then A), diagnostics, LB/RB tabs, menu truck on the right stick.' },
+      text: 'Real-pad play-test (map, cards, the paper throw on RB), then pads in Safari and Firefox. On main, BUG-109’s five screens: give-up menu, result cards (D-pad then A), diagnostics, LB/RB tabs, menu truck on the right stick.' },
     { id: 'bug92-usb', kind: 'make', tk: 'BUG-92',
       text: 'Run the ABS rumble console probe with the pad on a USB cable: if it buzzes, Spare lengthens the kick; if not, it closes as a platform limit.' },
     { id: 'feat167-descs', kind: 'make', tk: 'FEAT-167',

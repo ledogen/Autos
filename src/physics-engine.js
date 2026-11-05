@@ -503,6 +503,14 @@ export class PhysicsEngine {
    *  against another bullet — the lever debris.js flagCargo() pulls for cargo riding the truck. */
   setBullet (handle, flag) { _b3.b3Body_SetBullet(this._bodies.get(handle).id, flag) }
   sleep (handle) { _b3.b3Body_SetAwake(this._bodies.get(handle).id, false) }
+  wake (handle) { _b3.b3Body_SetAwake(this._bodies.get(handle).id, true) }
+  /** Take a body out of the world — no contacts, no motion, its pose kept — or put it back. A body far
+   *  from the truck must not fall through ground that streamed out under it (FEAT-144). */
+  setEnabled (handle, on) {
+    const id = this._bodies.get(handle).id
+    if (on) _b3.b3Body_Enable(id)
+    else _b3.b3Body_Disable(id)
+  }
 
   // ── Queries ───────────────────────────────────────────────────────────────
 

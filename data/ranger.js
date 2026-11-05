@@ -319,6 +319,9 @@ export const RANGER_PARAMS = {
   // FEAT-120 / FEAT-131 P1 (src/result-audio.js): the result card's payout coin and grade stinger.
   resultAudioEnabled: true,
   resultAudioVolume:  0.6,   // 0..1
+  // FEAT-131 P3 (src/rank-music.js): the music bed under the rank bar.
+  rankMusicEnabled: true,
+  rankMusicVolume:  0.5,     // 0..1
   // FEAT-163: the tunnel reverb on the world mix while the camera is in a bore (engine-audio.js).
   tunnelReverbEnabled: true,
   tunnelReverbLevel:  0.9,   // 0..1 — the wet send

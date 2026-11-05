@@ -35,3 +35,16 @@ blocks something it should let through.
 - [ ] Main menu: the truck is back at the resting shot on every return to the menu; the right stick orbits it.
 - [ ] No new buttons added to any menu beyond these (button budget); `node test/cdp-smoke.mjs` green.
 - [ ] Note in the touched files' owning lanes: service-screen.js and damage-screen.js are Lane B's.
+
+## Built (Spare, 2026-11-05, 4ba7a6ce + 6e1c490a) — smoke-proven; the owner's pad check owed
+
+All five in one pass (gamepad.js, menu-nav.js, main.js, stage.js): the give-up card takes A (a hidden seed field
+kept DOM focus and ate it); a result card (`data-result`) lets the pad drive through — A / X shift, LB clutch, RB
+handbrake, B back — until the D-pad puts its highlight on it; the damage screen's parts and rows are navigable,
+with the hover card the mouse would give; a tabbed card (the service shop) steps tabs on LB / RB, wrapping; the
+menu truck is back at the resting shot on every return and the right stick orbits it. No new buttons.
+
+The cdp-smoke fake-pad steps (3e268b86) caught one more: the paper panel's start button IS its result card's
+continue, so a D-pad highlight left on the offer came back with the result and A pressed continue instead of
+shifting. menu-nav's 100 ms poll now drops a highlight once its card closes (6e1c490a). Smoke 21/21 green with
+all five screens driven on the fake pad. **Owed:** the owner's real-pad check.
