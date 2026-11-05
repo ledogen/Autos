@@ -29,6 +29,10 @@ export const DEMOLITION_PARAMS = {
     smashTiltRad: 25 * Math.PI / 180,   // … or how far it has tilted: either is smashed. A graze that only wakes it is not.
     onM: 120,            // m from the truck at which a target's model becomes a sleeping body (FEAT-154's rows)
     offM: 200,           // …and back (hysteresis); a smashed target is simply gone
+    // The site window (owner 2026-11-05, option b: "reset the timer on every object hit so the timer runs out
+    // faster once you start hitting them"): the first smash starts it, every smash refills it, and when it
+    // runs out the job settles with what is smashed. Seconds of the job's clock [DEFAULT].
+    hitWindowS: 30,
 }
 
 /**

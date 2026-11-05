@@ -5801,9 +5801,13 @@ function _updateSite () {
   if (live) {
     // Slice 2 (owner, 2026-11-03): the last one down settles the job (mission.js reads `cleared`), and
     // the GPS goes to the nearest one standing — a new guide object only when that target or its
-    // direction changes, since gps.js re-bakes on identity.
+    // direction changes, since gps.js re-bakes on identity. 11-05: so does the site window running out —
+    // every smash refills it (D.hitWindowS), so going back for a miss is a race, not a given.
     const m = _site.mission, standing = _site.targets.flatMap((t, i) => t.smashed ? [] : [i])
-    m.cleared = !standing.length
+    const down = _site.targets.length - standing.length
+    if (down > (_site.down ?? down)) m.lastHitS = missionSystem.elapsed
+    _site.down = down
+    m.cleared = !standing.length || (m.lastHitS != null && missionSystem.elapsed - m.lastHitS > D.hitWindowS)
     const n = _site.next = nearestTarget(m, p.x, p.z, standing, missionSystem.routeRemaining())
     if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: guideTo(m, m.targets[n.i].u, n.back) }
     else if (!n) _site.guide = null
@@ -6408,7 +6412,8 @@ function _renderMissionUI () {
       hud.classList.toggle('mh-bad', !!beat)
       // FEAT-65 slice 2: a demolition job's end is no goal — the HUD counts to its next target instead.
       const next = _site?.mission === m.mission ? _site.next : null
-      hudText.textContent = beat ?? (next ? `${km(next.dist)} to the next target` : `${km(m.routeRemaining())} to go`)
+      const win = next && m.mission.lastHitS != null ? Math.max(0, Math.ceil(DEMOLITION_PARAMS.hitWindowS - (m.elapsed - m.mission.lastHitS))) : null
+      hudText.textContent = beat ?? (next ? `${km(next.dist)} to the next target` + (win != null ? `   · next hit within ${win} s` : '') : `${km(m.routeRemaining())} to go`)
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
           : `   · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
         + _dueSuffix()
@@ -8578,7 +8583,7 @@ function _jobSnapshot () {
   s.offerId = m.offerId
   s.planned = planned
   if (_freight?.mission === m) s.freightHealth = _freight.health?.health ?? null
-  if (_site?.mission === m) s.smashed = _site.targets.flatMap((t, i) => t.smashed ? [i] : [])   // FEAT-65
+  if (_site?.mission === m) { s.smashed = _site.targets.flatMap((t, i) => t.smashed ? [i] : []); s.lastHitS = m.lastHitS ?? null }   // FEAT-65
   if (_haul?.mission === m && s.state !== 'loading') {
     s.haul = _haul.handles.flatMap((h, i) => _inBed(h) ? [{ kind: _haul.drops[i].kind, ..._bedLocalPose(h) }] : [])
     s.haulOut = _haul.handles.flatMap((h, i) => _inBed(h) ? [] : [{ kind: _haul.drops[i].kind, ..._worldPose(h) }])
@@ -8636,7 +8641,7 @@ function _reloadCargo (m, sj) {
     _loose.outSince = -Infinity
     m.cargoOut = true
   }
-  if (m.targets) _placeSite(m, sj.smashed ?? [])   // FEAT-65: the same site, the smashed ones still gone
+  if (m.targets) { _placeSite(m, sj.smashed ?? []); m.lastHitS = sj.lastHitS ?? null }   // FEAT-65: the same site, the smashed ones still gone, its window as it was
   if (!sj.haul) return
   // ponytail: a piece whose model has not loaded is dropped — they load at boot, long before a resume.
   _haul = { mission: m, handles: [], drops: [], t0: simTime, zone: null }
