@@ -70,7 +70,7 @@ export const LARRY_WELCOME = [
 
 /**
  * First-use cards: each plays once, the first time the player meets the thing, and only in a run that
- * opened on the firing. They wait for the truck to stop and hold the sim while they are up (main.js
+ * opened on the firing. They play once no other card is up and hold the sim while they are (main.js
  * _tut). Larry is the tutorial's voice once you have met him; before that it is mom.
  */
 export const TUT = {
