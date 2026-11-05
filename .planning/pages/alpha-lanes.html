@@ -179,7 +179,7 @@
       tasks: [
         { id: 'FEAT-120', what: 'Sound pass — the owner listened 11-02; verdicts per sound in the ticket on feature/content. Keepers and redos went to Spare.' },
         { id: 'FEAT-120 ↳', what: 'Strap click / release — the owner records them.' },
-        { id: 'ASSET-80', what: 'NEXT — the burger joint (the foodVendor POI, a cube today). FEAT-147’s opening frames it with a camera move (owner 11-05).' },
+        { id: 'ASSET-80', what: 'BUILT in wip/ (1043 tris) — renders sent; promotes on your asset80-look.' },
         { id: 'ASSET-77', what: 'The hand-painted turn-back board (FEAT-65’s camp line; crates + drums stand in).' },
         { id: 'ASSET-76', what: 'Fire pit re-export at 1.2×, registry box to match.' },
         { id: 'FEAT-121/129', what: 'Item-setup rulings going live · favicon.' },
@@ -218,6 +218,9 @@
   const OWED = [
     { id: 'feat66-look', kind: 'drive', tk: 'FEAT-66',
       text: 'On main now. The tent, awning and cooking kit come from the debug grant (backtick → “Story · Inventory (FEAT-122)” → the item → grant); no run hands them out yet (camp-gear-source). Pack one and glance at it standing at camp. (Old text follows.) Make camp — the starter bed is the unrolled bedroll with the blanket on it; pack the tent, the awning or the cooking kit (the starter Pack has one free slot) and see each stand at camp; glance at the four new thumbnails. While there, drive a demolition site: miss one, turn back for it.' },
+    { id: 'asset80-look', kind: 'decide', tk: 'ASSET-80', blocks: 'promoting the burger joint into the game',
+      text: 'The burger joint: 1043 tris, flat colours, burger sign with no name, striped awning over the counter, clear of the truck’s strip by 1.2 m. Renders: CarGame-content/wip/burger-joint/out/sheet.png (the firing orbit × 3, roadside, rear). At the firing camera’s 16 m it fills ~1/3 of the frame; a tighter shot is FIRING_CAM.radius, not the model.',
+      options: ['promote it', 'promote + tighten the shot', 'changes in the note'] },
     { id: 'feat170-plan', kind: 'decide', tk: 'FEAT-170', blocks: 'Lane A’s tutorial stage 1',
       text: 'The tutorial’s staged plan (4 stages, in the ticket). Four calls: (1) the evening is day 0 (rec.) or day 1; (2) skip by holding M (rec.) or pause; (3) keep the setup page’s opening toggle until the hold-to-skip lands, then retire it (rec.); (4) the joint→mom’s drive can be 2–3 km on a wide seed: accept it as the tutorial’s length (my rec.: no world reshuffle, and it’s skippable) or re-site the joint near spawn.',
       options: ['all four as recommended', 'my answers in the note'] },
