@@ -17,6 +17,13 @@ export const LIFE_H = [6, 48]         // an item's shelf life, uniform
 export const P_NEW = 0.15             // otherwise used:
 export const USED_COND = [0.4, 0.85]  //   condition, uniform
 
+/** FEAT-165 (owner 2026-11-04, "i keep tearing through tires over the first day and cant find a place to
+ *  pick up new ones … make sure shops always offer standard/old tires but increase the price a little"):
+ *  new tires EVERY shop always has, listed after the rotating slots. Buying one never empties it. Their
+ *  price rise is the parts' own (data/parts.js tireOld / tireStandard), so the shelf, the map card and a
+ *  resale all agree. */
+export const ALWAYS = ['tireOld', 'tireStandard']
+
 /** Shelf items that aren't parts: no condition, priced here. */
 export const ITEM_PRICE = { tirePlugKit: 7, compressor: 20, quickJack: 30,   // owner, 2026-10-22
     zipTies: 10, stopLeak: 10,  // owner, 2026-10-24
