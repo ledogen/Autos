@@ -37,7 +37,9 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-const SEEDS = ['1', '6']
+// BUG-111: '8' replaced '1' when the region network took the game's pond no-go — seed 1's real 06:00 board posts no
+// farm or work-site demolition offer (it did only on the pond-blind roads); 8's posts 2 (4 and 5 also post).
+const SEEDS = ['8', '6']
 let fails = 0, posted = 0
 const check = (label, ok, detail = '') => {
     console.log(`  ${ok ? '[ ok ]' : '[FAIL]'} ${label}${ok ? '' : '  ' + detail}`)
