@@ -248,3 +248,6 @@ kill timed it out).
 - **Lane A** waits on `feat66-look`. FEAT-164 is queued after FEAT-147.
 - The content session `cargame-a1` (CarGame-content, 115k, idle) was NOT told about the hold. Tell it if it wakes.
 - **All 11-04 inbox docs are answered.** Owner's context budget is 300k per session (memory feedback_context_budget_300k).
+- **Lane A cleared-ready** (session now named `park-feat-147-planning-notes`): clean at c1d7427d, lanes/a v22. Its FEAT-147
+  questions went to the owed list: feat147-art / feat147-sender / feat147-card. Before landing, its affected set
+  and cdp-smoke need one rerun, because it merged main after its last gate run.
