@@ -43,7 +43,10 @@ export function launchChrome (url, { port = 9222, headed = false, audio = false,
   const chrome = spawn(CHROME, args, { stdio: 'ignore' })
   const cleanup = () => { try { chrome.kill() } catch {} try { rmSync(userDir, { recursive: true, force: true }) } catch {} }
   process.on('exit', cleanup)
-  process.on('SIGINT', () => { cleanup(); process.exit(1) })
+  // SIGTERM (a stopped background task) and SIGHUP (a closed terminal) too: with only SIGINT handled
+  // they left headless Chromes rendering the game for hours, sharing the GPU with every perf run
+  // (PERF-28, 2026-11-05). SIGKILL cannot be caught.
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { cleanup(); process.exit(1) })
   return { chrome, cleanup }
 }
 
