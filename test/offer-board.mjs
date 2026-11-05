@@ -31,7 +31,8 @@
 //  12. THE CARD — base pay equals economy.basePay at the offer's multiplier (0.5× on a bonus
 //      offer), the gate reads "X or better" / "S only", and the terms state distance, weight, board
 //      expiry and the delivery window.
-//  13. BONUS SHARE ≈ 25 % where the source has rewards; never where it has none.
+//  13. BONUS SHARE ≈ BONUS_CHANCE where the source has rewards; never where it has none. FEAT-168: no
+//      helical LSD (minDay 3) on an offer born before day 3, every pool alike.
 //  16. DEADLINES (FEAT-113) — every thing resolves a deadline slack (its own or the family's);
 //      take() stamps dueH = take + par × (1 + slack) (60 real s of par = one game hour); no par → no
 //      deadline; a taken slot still in hand at dueH locks AT dueH (always-on and budget alike), and a
@@ -39,8 +40,8 @@
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
-import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine } from '../src/offer-board.js'
-import { THINGS, REWARDS, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine, giverLine } from '../src/offer-board.js'
+import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARDS, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -446,19 +447,25 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 // ── 13. bonus share ─────────────────────────────────────────────────────────────────────────────
 {
     const count = { foodVendor: [0, 0], doctor: [0, 0], larrysHouse: [0, 0] }
+    const lsd = { early: 0, late: 0 }   // helical-LSD bonuses on offers born before / from day 3
     for (let seed = 1; seed <= 200; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 3; t += 2) for (const q of POIS) {
-            if (!count[q.type]) continue
-            for (const o of b.offers(q.id, t)) { count[q.type][1]++; if (b.spec(o).bonus) count[q.type][0]++ }
+            for (const o of b.offers(q.id, t)) {
+                if (b.spec(o).bonus?.rewardId === 'diffLSD') lsd[o.bornH < 48 ? 'early' : 'late']++
+                if (!count[q.type]) continue
+                count[q.type][1]++; if (b.spec(o).bonus) count[q.type][0]++
+            }
         }
     }
     const share = count.foodVendor[0] / count.foodVendor[1]
-    check('bonus share ≈ 25 % where the source has rewards', Math.abs(share - 0.25) < 0.03, share.toFixed(3))
+    check(`bonus share ≈ ${BONUS_CHANCE * 100} % where the source has rewards`, Math.abs(share - BONUS_CHANCE) < 0.03, share.toFixed(3))
+    check(`FEAT-168: no helical LSD reward on an offer born before day 3 (${lsd.early} early, ${lsd.late} from day 3)`,
+        lsd.early === 0 && lsd.late > 0)
     check('no bonus where the source has no rewards (the doctor)', count.doctor[0] === 0)   // residences (dinner) and general stores (duct tape) reward now
     // Larry rolls from (nearly) every reward since 2026-10-31 (owner: "give him every item") — the same share as any source.
     const larry = count.larrysHouse[0] / count.larrysHouse[1]
-    check('Larry rolls a bonus at the common share', larry > 0.15 && larry < 0.35, larry.toFixed(3))
+    check('Larry rolls a bonus at the common share', Math.abs(larry - BONUS_CHANCE) < 0.1, larry.toFixed(3))
 }
 
 // ── 13b. no two offers at a POI are the same job ────────────────────────────────────────────────
@@ -849,6 +856,57 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('FEAT-142: every trait rolls somewhere in the corpus', TRAITS.every(t => seen.has(t.id)), [...TRAITS.map(t => t.id)].filter(x => !seen.has(x)).join(','))
     check('FEAT-142: the terms move as tabled — deadline, tip pool, courier thresholds, deeds', badTerms === 0, `${badTerms} of ${n}`)
     check('FEAT-142: Wholesale stocks the whole yard', whole > 0 && wholeBad === 0, `${whole} wholesale, ${wholeBad} short`)
+}
+
+// ── FEAT-147: the first job — mom's one fixed courier run to Larry, posted by the opening ─────────
+{
+    const tagged = POIS.map(q => ({ ...q, tags: [q.type, ...(q.type === 'larrysHouse' ? ['residence', 'larry'] : [])] }))
+    const mom = ofType('momsHouse')[0], larry = ofType('larrysHouse')[0]
+    const b = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 }), twin = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 })
+    check('FEAT-147: closed until the opening posts it — mom shows nothing', b.firstState() === 'closed' && b.offers(mom, T0).length === 0)
+    const opened = b.openFirst(T0), again = b.openFirst(T0)
+    const [o] = b.offers(mom, T0), sp = o && b.spec(o)
+    check('FEAT-147: openFirst posts one offer at mom\'s, once (idempotent)', opened && !again && b.offers(mom, T0).length === 1)
+    check('FEAT-147: an ORDINARY courier spec — no line, pay 1x, no bonus, no trait, the family\'s slack',
+        sp && !sp.line && sp.family === 'delivery' && sp.payMult === 1 && !sp.bonus && !sp.traits.length && sp.deadlineSlack === DEADLINE_SLACK.delivery)
+    const wish = b.destWish(o, tagged, new Set())
+    check('FEAT-147: it goes to Larry\'s only, strict, at any length', wish.anyLeg === true && wish.strict && wish.pois.length === 1 && wish.pois[0].id === larry)
+    const c = b.card(o, { nowH: T0, route: { par: 90, distance: 800, endPoiId: larry } })
+    const text = c.sentence.map(x => x.t).join('')
+    const r = payRange(90, 1, 1, 1)
+    check('FEAT-147: the card is the ordinary one — "Mom needs …", base pay at 1x, a time limit',
+        text.startsWith('Mom needs a casserole delivered to') && c.pay === `Pay $${formatMoney(r.base)} – $${formatMoney(r.max)} based on speed`
+        && c.times.some(t => t.startsWith('time limit')) && !c.times.some(t => t.startsWith('available')), `${text} / ${c.pay} / ${c.times}`)
+    b.take(o.id, T0, 90)
+    check('FEAT-147: taken carries an ordinary deadline', b.firstState() === 'taken' && Number.isFinite(b.taken(o.id)?.dueH))
+    b.complete(o.id, T0 + 0.5)
+    b.advance(T0 + 30)
+    check('FEAT-147: any end closes it for good — never re-posted', b.firstState() === 'done' && b.offers(mom, T0 + 30).length === 0 && !b.openFirst(T0 + 30))
+    const c2 = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 })
+    c2.openFirst(T0); const o2 = c2.offers(mom, T0)[0]; c2.take(o2.id, T0, 90); c2.abandon(o2.id, T0 + 0.2)
+    check('FEAT-147: a cancel closes it too', c2.firstState() === 'done')
+    twin.advance(T0 + 30)
+    const others = (x) => tagged.filter(q => q.id !== mom).map(q => x.offers(q.id, T0 + 30).map(y => y.id).join(',')).join('|')
+    check('FEAT-147: posting it moves no other offer (it draws no stream)', others(b) === others(twin))
+    const none = new OfferBoard({ seed: 4242, pois: tagged.filter(q => q.type !== 'momsHouse'), nowH: T0 })
+    check('FEAT-147: no mom on the roster → no first job, and openFirst is a no-op', none.firstState() === null && !none.openFirst(T0))
+}
+
+// ── FEAT-148: the giver's line — a generic first line, a second keyed on the thing, 70 % each ──────────
+{
+    const ids = Array.from({ length: 4000 }, (_, i) => `poi:${i}#b${i % 12}#${i % 5}`)
+    check('FEAT-148: no line written → no quote (null), never a stub', ids.every(id => giverLine(id, 'note') === null))
+    GIVER_LINES.first.push('F1', 'F2'); GIVER_LINES.byThing.note = ['S1', 'S2', 'S3']
+    const lines = ids.map(id => giverLine(id, 'note'))
+    const both = lines.filter(l => /^F\d S\d$/.test(l)).length / ids.length
+    const second = lines.filter(l => /^S\d$/.test(l)).length / ids.length
+    const first = lines.filter(l => /^F\d$/.test(l)).length / ids.length
+    const P = GIVER_LINE_P
+    check(`FEAT-148: both ${(both * 100).toFixed(0)} % · second only ${(second * 100).toFixed(0)} % · first only ${(first * 100).toFixed(0)} % ≈ ${(P * P * 100).toFixed(0)} / ${(P * (1 - P) * 100).toFixed(0)} / ${((1 - P) * 100).toFixed(0)}`,
+        Math.abs(both - P * P) < 0.03 && Math.abs(second - P * (1 - P)) < 0.03 && Math.abs(first - (1 - P)) < 0.03 && both + second + first === 1)
+    check('FEAT-148: a revisit says the same thing (the offer\'s own stream)', ids.every((id, i) => giverLine(id, 'note') === lines[i]))
+    check('FEAT-148: a thing with no second lines gets a first line every time', ids.every(id => /^F\d$/.test(giverLine(id, 'takeout'))))
+    GIVER_LINES.first.length = 0; delete GIVER_LINES.byThing.note
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall offer-board checks passed')

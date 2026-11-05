@@ -122,3 +122,34 @@ with no pool edits.
 - [ ] If the owner takes the categories: every giver type has at least one category, and every part and
       camp item is a reward somewhere. A census reports each giver's reward count before and after.
 - [ ] The owner plays a run and confirms the wear feel, the economy and the run length.
+
+## Work log
+
+**2026-11-05, Lane B (feature/machine).** Items 1, 2, 4–8 built; item 3 half-built (the chance), its pick
+waits on the owner's reward-cats call.
+
+1. Pay locked. `terms().payTier = regionTier`; `dayTier` rides along for costs and the readout. The
+   "1 a.m. buys tomorrow's rate" comment is gone; the economy.js header and `test/economy.mjs` match.
+   The haul stock price follows pay, so a bundle is still a fixed share of the haul's base.
+2. Fuel × day tier at the pump, to the cent (`main.js` `fuelStop.open`); the cans fill on the same
+   counter. Nothing on the map shows a fuel price today, so there is no map card to change.
+3. `BONUS_CHANCE` 0.40. Census over 300 boards on the real roster (`wip/feat-168/reward-census.mjs`,
+   not a gate): bonuses 17.7 % → 27.8 % of offers (the givers with no rewards count in the total);
+   parts stay 45 % of bonuses, so offers carrying a part go 8.0 % → 12.5 %. The share of parts
+   AMONG bonuses only moves with the pick change (categories, or the ×3 fallback).
+4. `ALWAYS = ['tireOld', 'airFilterStock', 'tirePlugKit']`; the standard tire rotates at weight 10. The
+   plug kit's always-row has no condition, like a rolled item (it was about to be granted with `{cond: 1}`).
+5. `diffLSD` carries `minDay: 3`; both bonus picks (giver and receiver) drop it for an offer born before
+   day 3 (`dayAllows`, day from `bornH`). Gate: 0 early vs 70 from day 3 over 200 seeds; with the
+   filter switched off, 398 early.
+6. Tire durability: old 0.7 (family), standard 0.9 (its own), sport 0.8 (unchanged).
+7. 6 slots, `P_FILL` 0.037: the gate measures 3.03 rotating items a shelf (estimate 3.08).
+8. `campDeeds` 10; `dayTierTable` = 1.065^(d−1) to the cent (day 7 1.46, day 12 2.00, day 20 3.31,
+   day 30 6.21). Gate: two B-line jobs ($17.83) clear day 12's costs ($15.00).
+
+Notes for the owner:
+- Acceptance 1 said "the day-7 tier (2.31×)"; that was the old curve. With item 8 it is 1.46×.
+- The 2026-08-17 end target "a day-20 region-6 job pays $500–1500" leaned on the day tier (~4.6×).
+  Pay by region alone gives $224 for that job. Regions are post-alpha (FEAT-28 / SM-4), so the gate
+  now reports it instead of pinning it; `regionMult` wants a re-cut when regions land.
+- A job accepted before this lands keeps the pay tier it froze at accept (day 7 → 2.31×), once.

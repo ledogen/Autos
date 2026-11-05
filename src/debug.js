@@ -241,7 +241,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   fuelFolder.add({ drain: () => callbacks.setFuelGal?.(0) }, 'drain').name('Drain to empty')
   fuelFolder.add(params, 'fuelTankGal', 2, 40, 0.5).name('Tank Capacity (gal)')
   fuelFolder.add(params, 'fuelBurnScale', 0, 20, 0.5).name('Burn Scale × (gameplay)')
-  fuelFolder.add(params, 'fuelPricePerGal', 0, 3, 0.05).name('Price ($/gal)')
+  fuelFolder.add(params, 'fuelPricePerGal', 0, 3, 0.05).name('Day-1 price ($/gal)')
   fuelFolder.add(params, 'fuelFillGalPerS', 0.2, 5, 0.05).name('Pump Rate (gal/s)')
   fuelFolder.add(params, 'fuelStartFrac', 0, 1, 0.01).name('Story Start Fill')
   fuelFolder.add(params, 'fuelFreeRoamFloorFrac', 0, 0.5, 0.01).name('Free-Roam Floor')

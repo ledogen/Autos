@@ -38,6 +38,11 @@ check('pinned: energy ladder 16/4/2, debt floor 8', DAY_PARAMS.fullEnergyH === 1
 check('pinned: coffee +5/−2', DAY_PARAMS.coffeeReliefH === 5 && DAY_PARAMS.coffeeDebtH === 2)
 check('pinned: sleep rates 4/3 and 8/3 (mean 2.0, best exactly 2× worst)',
   DAY_PARAMS.sleepRateWorstH === 4 / 3 && DAY_PARAMS.sleepRateBestH === 8 / 3)
+check('pinned: hunger ×1.25 → ×1.5 over 4 h, a standard meal holds 8 h', DAY_PARAMS.hungryRate === 1.25
+  && DAY_PARAMS.starvingRate === 1.5 && DAY_PARAMS.hungryRampH === 4 && DAY_PARAMS.mealHoldH === 8)
+// Sections 1–9 pin the arithmetic of a FED driver; hunger (section 10) is a rate on top of it.
+const HUNGER = { hungryRate: DAY_PARAMS.hungryRate, starvingRate: DAY_PARAMS.starvingRate }
+DAY_PARAMS.hungryRate = DAY_PARAMS.starvingRate = 1
 
 const mkDay = () => {
   const pushes = { n: 0, last: NaN }
@@ -280,6 +285,61 @@ const mkDay = () => {
   sys.sleep(10, 0.5)
   jumpOk = Math.abs(sys.clockH() - before - 10) < 1e-9
   check('a 10 h sleep advances clockH by exactly 10', jumpOk, `${sys.clockH() - before}`)
+}
+
+// ── 10. FEAT-169: hunger — a rate on the drain past the meal's hold (items.md §1d) ─────────────────
+// A run starts on a standard meal. Past its hold the drain runs ×1.25, ramping to ×1.5 over 4 h.
+{
+  Object.assign(DAY_PARAMS, HUNGER)
+  const near = (a, b) => Math.abs(a - b) < 1e-6
+  // Hours awake from a full tank to empty, eating `meals` ({ atH: hours awake, holdH }) on the way.
+  const day = (meals = []) => {
+    const { sys } = mkDay()
+    sys.start()
+    DAY_PARAMS.dayLengthSec = 24
+    const step = 1 / 64   // exact in binary, so meal times land on a step
+    let t = 0
+    while (sys.energyH() > 0) {
+      for (const m of meals) if (t === m.atH) sys.eat(m.holdH)
+      sys.update(step); t += step
+    }
+    DAY_PARAMS.dayLengthSec = 1440
+    return t
+  }
+  const fed = day([{ atH: 8, holdH: 8 }]), unfed = day(), dog = day([{ atH: 8, holdH: 10 }])
+  // Unfed: 8 h at ×1, the 4 h ramp costs 5.5 h, the last 2.5 h at ×1.5 lasts 1⅔ h → 13⅔ h awake.
+  console.log(`       a waking day: fed ${fed.toFixed(2)} h · unfed ${unfed.toFixed(2)} h (${(fed - unfed).toFixed(2)} h lost) · chili dog at 8 h ${dog.toFixed(2)} h`)
+  check('fed on schedule (a second 8 h meal at 8 h awake), the day is today\'s 16 h', Math.abs(fed - 16) <= 1 / 64)
+  check('unfed past the hold, the day is 2⅓ h shorter (×1.25 → ×1.5)', Math.abs(unfed - (12 + 5 / 3)) <= 1 / 64, `unfed=${unfed}`)
+  check('a longer hold (the chili dog\'s 10 h) covers the whole day too', Math.abs(dog - 16) <= 1 / 64)
+
+  // Every step below is a multiple of 1/64 h, so the clock lands EXACTLY on a hold's end.
+  const { sys } = mkDay()
+  sys.start()
+  DAY_PARAMS.dayLengthSec = 24
+  const tick = 1 / 64
+  check('a run starts fed', !sys.hungry())
+  sys.update(8)
+  check('…and is hungry once the standard meal\'s 8 h are up', !sys.hungry() && (sys.update(tick), sys.hungry()))
+  const e0 = sys.energyH()
+  sys.eat(10)
+  sys.update(10)
+  check('eating resets the clock to the food\'s hold: 10 h at ×1, no longer', near(e0 - sys.energyH(), 10) && !sys.hungry()
+    && (sys.update(tick), sys.hungry()))
+  sys.eat(8); sys.eat(2)
+  check('a snack after a meal never shortens its hold', (sys.update(7.875), !sys.hungry()))
+  sys.setEnergy(8)   // 26 h awake had floored it at the debt floor
+  const e1 = sys.energyH()
+  sys.advanceMinutes(60)   // 0.125 h still fed, then 0.875 h on the ramp
+  check('a time skip past the hold pays the same hunger as living it', near(e1 - sys.energyH(), 1 + 0.25 * 0.875 + 0.25 * 0.875 ** 2 / 8),
+    `cost=${e1 - sys.energyH()}`)
+  const snap = sys.snapshot(), back = mkDay().sys
+  back.start(); back.restore(snap)
+  check('the save carries the hunger clock', back.hungry() === sys.hungry() && near(back.snapshot().fedUntilH, snap.fedUntilH))
+  // Bedtime counts as a standard meal [DEFAULT]: an 8 h night wakes right at the edge of hungry.
+  sys.sleep(8, 0.5)
+  check('bedtime counts as a meal: an 8 h night wakes fed, hungry the moment after', !sys.hungry() && (sys.update(tick), sys.hungry()))
+  DAY_PARAMS.dayLengthSec = 1440
 }
 
 console.log(fails === 0 ? '\nPASS day-clock' : `\nFAIL day-clock (${fails})`)

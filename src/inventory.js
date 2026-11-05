@@ -83,11 +83,12 @@ export class InventorySystem {
         return runInventory.entries.reduce((kg, e) => kg + entryKg(e), 0)
     }
     equippedIndex () { return runInventory.entries.findIndex(e => e.equipped) }
+    /** What comes to camp: the equipped pack's contents (items.md §2c) — FEAT-66 renders exactly this. */
+    packed () { return runInventory.entries.find(e => e.equipped)?.contents ?? [] }
     /** Camp sleep's recovery bonus: the `rest` of everything in the equipped pack (items.md §2b). */
-    restBonus () {
-        const p = runInventory.entries.find(e => e.equipped)
-        return (p?.contents ?? []).reduce((s, id) => s + (ITEMS[id].rest ?? 0), 0)
-    }
+    restBonus () { return this.packed().reduce((s, id) => s + (ITEMS[id].rest ?? 0), 0) }
+    /** The vibe segments packed gear fills on the chosen site (camp.js vibeAssist). */
+    fills () { return new Set(this.packed().map(id => ITEMS[id].fills).filter(Boolean)) }
     pending () { return runInventory.pending }
     nameOf (id) { return ITEMS[id]?.name ?? id }
     usable (id) { const h = ITEMS[id]?.use; return !!(h && this._effects[h]) }

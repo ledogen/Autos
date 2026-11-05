@@ -19,6 +19,7 @@ import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
+import { ECONOMY_PARAMS } from '../src/economy.js'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
@@ -251,6 +252,10 @@ const STEPS = [
     // FEAT-41: pm-story opens the run setup page (the seed modal is left with the refusal only).
     await js('document.getElementById("pm-story").click()')
     check(await js('document.getElementById("main-menu").classList.contains("setup")'), 'story did not open the setup page')
+    // FEAT-147: a fresh profile plays the opening. This flow is the SKIPPED run — RUN_INTRO at go-live and no
+    // first-use card holding the sim under the steps below (the choice is saved, so every later run skips too);
+    // the 'opening' step at the end plays it.
+    await js('const b = document.querySelector("[data-key=opening]"); if (/play/.test(b.textContent)) b.querySelector(".sel-next").click()')
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
@@ -361,6 +366,24 @@ const STEPS = [
     // Parking at the spawn can open mom's camp face, which holds the truck — R closes it (R-12).
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
+  }],
+  ['campGear', async () => {
+    // FEAT-66: what is packed is what stands at camp. A pad at the truck, a packed tent → the tent
+    // loads at its slot, beside the starter bedroll (ASSET-78); repacking while the camp is up re-dresses it (tent out, awning in); hiding
+    // clears it. Leaves the inventory as it found it.
+    const names = () => js('window.__campGear.root.children.filter(c => c.children.length).map(c => c.name).join()')
+    const pack = (id) => js(`(() => { const i = window.__inv; i.grant('${id}'); return i.packItem(i.list().findIndex(r => r.id === '${id}')) })()`)
+    const unpack = (id) => js(`(() => { const i = window.__inv; i.unpackItem(i.equippedIndex(), i.packed().indexOf('${id}'))
+      return i.consume('${id}') })()`)   // not drop(): since FEAT-143 that lays it behind the tailgate
+    check(await pack('tent'), 'the tent did not pack')
+    await js(`(() => { const c = window.__car(); window.__campGear.show({ x: c.x, z: c.z, tx: 1, tz: 0, nx: 0, nz: 1 },
+      window.__inv.packed(), () => c.y) })()`)
+    check(await until(async () => await names() === 'model:bedroll,model:tent', 5000), `a packed tent is not at camp (got "${await names()}")`)
+    check(await unpack('tent') && await pack('awning'), 'could not swap the tent for the awning')
+    check(await until(async () => await names() === 'model:bedroll,model:awning', 5000), `repacking at camp did not re-dress it (got "${await names()}")`)
+    await js('window.__campGear.hide()')
+    check(await js('window.__campGear.root.children.length') === 0, 'hide left gear on the pad')
+    check(await unpack('awning'), 'could not put the awning back')
   }],
   ['tires', async () => {
     // SM-3 roadside tire work (owner, 2026-10-22): using the spare or the plug kit opens the damage
@@ -483,8 +506,8 @@ const STEPS = [
     await js(`window.__teleport(${camp.x}, ${camp.z}, ${camp.h})`)
     await sleep(2500)
     check(/good deeds/.test(await until(prompt, 2000) || ''), `the closed camp's prompt: "${await prompt()}"`)
-    await js('window.__econ.halfPoints = 12')
-    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 1000), 'six deeds opened no requisition on the run HUD')
+    await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 1000), `${ECONOMY_PARAMS.campDeeds} deeds opened no requisition on the run HUD`)
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
     await tap(' ')
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
@@ -522,8 +545,9 @@ const STEPS = [
   }],
   // FEAT-65: the camp's own demolition line (the requisition is open from the step above). Taken at the
   // camp it starts there (no approach); its targets stand as models along the route's last km; near
-  // the truck they are bodies, ASLEEP until touched; a kicked one counts smashed on the HUD; arriving
-  // settles the line with the count on the result card.
+  // the truck they are bodies, ASLEEP until touched; a kicked one counts smashed on the HUD. Slice 2:
+  // arriving at the site's end with targets standing settles nothing and the GPS turns back to the
+  // nearest one; it moves on as each falls, and the last one down settles the line wherever the truck is.
   ['demolition', async () => {
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
@@ -556,12 +580,20 @@ const STEPS = [
     check(await until(() => js('window.__cargo().site.filter(t => t.smashed).length === 1'), 3000), 'a kicked target did not count smashed')
     check(await until(() => js('/1 \\/ \\d+ smashed/.test(document.getElementById("job-promise")?.textContent ?? "")'), 2000),
       `the HUD does not count it: "${await js('document.getElementById("job-promise")?.textContent')}"`)
-    // Arrive: the line settles (a D at 1 of n — back on the list), and the result card counts the site.
+    // Arrive with the rest standing: nothing settles, and the GPS goes BACK to the nearest one standing.
     const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
     await seat(end.x, end.z, end.h)
-    check(await until(() => js('window.__mission().state === "done"'), 5000), `arriving did not settle the line: ${await js('window.__mission().state')}`)
-    check(await js('/Smashed\\s*1 \\/ \\d+/.test(document.getElementById("mp-body")?.textContent ?? "")'),
-      `the result card does not count the site: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    check(await until(() => js('window.__site().next?.back === true && window.__site().gps === window.__site().guide.route'), 3000),
+      `past the end the GPS does not turn back to a target: ${await js('JSON.stringify(window.__site().next)')}`)
+    check(await js('window.__mission().state') === 'running', `arriving with targets standing settled the line: ${await js('window.__mission().state')}`)
+    // Fell the GPS's target: it moves on to another standing one. Then the rest: the line settles where it is.
+    const i0 = await js('window.__site().next.i')
+    await js(`window.__site().targets[${i0}].smashed = true`)
+    check(await until(() => js(`(n => n && n.i !== ${i0} && !window.__site().targets[n.i].smashed)(window.__site().next)`), 2000), 'the GPS did not move on when its target fell')
+    await js('window.__site().targets.forEach(t => { t.smashed = true })')
+    check(await until(() => js('window.__mission().state === "done"'), 5000), `felling the last target did not settle the line: ${await js('window.__mission().state')}`)
+    check(await js('(n => new RegExp(`Smashed\\\\s*${n} \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
+      `the result card does not count the whole site: "${await js('document.getElementById("mp-body")?.textContent')}"`)
     await js('document.getElementById("mp-accept").click()')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
@@ -944,14 +976,62 @@ const STEPS = [
     check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000), 'X did not reopen the Recovery card after B closed it')
     await js('document.querySelector("#recovery-card .rc-end").click()')
     await ended(/truck is dead/, /(the tow was \$[\d,.]+|no tow could reach you) — you had \$0\b/)
-    // The win: six deeds open the requisition; all five lines delivered → the win card.
+    // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
-    await js('window.__econ.halfPoints = 12')
-    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), 'six deeds opened no requisition')
+    await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), `${ECONOMY_PARAMS.campDeeds} deeds opened no requisition`)
     await js(`(() => { const b = window.__board(), h = window.__day().clockH()
       const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
       for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
     await ended(/beat the alpha/)
+  }],
+  ['opening', async () => {
+    // FEAT-147: a new run with the opening on starts PARKED AT THE BURGER JOINT, the firing's cards over a slow
+    // orbit of it with the sim held, then mom's call, which ends with her first job in hand.
+    await js('document.getElementById("mm-new").click()')
+    await js('const b = document.querySelector("[data-key=opening]"); if (/skip/.test(b.textContent)) b.querySelector(".sel-next").click()')
+    await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    check(await until(() => js(live), 45000, 250), 'the opening run never went live (45 s)')
+    const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
+    check(await until(async () => await speaker() === 'The manager', 3000), `the run did not open on the firing (speaker "${await speaker()}")`)
+    const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
+      return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
+    const a = await at(); await sleep(1000); const b = await at()
+    check(a.truck < 8, `the truck is ${a.truck.toFixed(1)} m from the burger joint's pad, want < 8`)
+    check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
+    check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
+    for (let i = 0; i < 4 && await speaker() === 'The manager'; i++) { await tap('Enter'); await sleep(250) }
+    check(await speaker() === 'Mom', `the firing was not followed by mom's call (speaker "${await speaker()}")`)
+    check(await js('window.__board().firstState()') === 'live', "mom's first job is not on offer after her call")
+    for (let i = 0; i < 4 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
+    check(!await speaker(), "mom's call did not close")
+    check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
+    // Owner 11-05 ("i didnt have a job after the opening"): her call ends with her job IN HAND — taken at the
+    // joint, untimed until you park at hers, the HUD and the GPS pointing there. Parked at hers, it starts.
+    const job = () => js(`(() => { const m = window.__mission(), j = m.mission
+      return { s: m.state, a: !!j?.approach, guide: j?.approachGuide?.segments?.length ?? 0, first: window.__board().firstState(),
+        hud: document.getElementById('mission-hud').textContent.trim() } })()`)
+    const j0 = await job()
+    check(j0.first === 'taken' && j0.s === 'staging' && j0.a, `mom's job is not in hand after her call: ${JSON.stringify(j0)}`)
+    check(/to Mom's · park there to start/.test(j0.hud), `the job HUD does not point to mom's ("${j0.hud}")`)
+    check(j0.guide > 0, "the GPS has no way to mom's (no approachGuide)")
+    const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
+      return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await seat(mom.x, mom.z, mom.h)
+    await park(true)
+    check(await until(async () => { const b = await job(); return b.s === 'staging' && !b.a }, 3000), `parking at mom's did not start her job: ${JSON.stringify(await job())}`)
+    // FEAT-148: midnight drops its overlay over the road, then clears it (every clock path counts).
+    await js('{ const d = window.__day(); d.advanceMinutes((24 - d.clockH() % 24) * 60 + 1) }')
+    const mn = () => js('document.getElementById("midnight-card").classList.contains("on") && document.getElementById("mn-main").textContent')
+    check(await until(async () => await mn() === 'Supplies are drying up', 1500), `midnight showed no overlay ("${await mn()}")`)
+    check(await until(async () => !await mn(), 6000), 'the midnight overlay never cleared')
+    // FEAT-169: that jump was past the run's first meal — the meter says hungry, in words; a chili dog
+    // from the inventory feeds the driver.
+    const stage = () => js('document.getElementById("em-stage").textContent')
+    check(await until(async () => /· hungry$/.test(await stage()), 1000), `the energy meter does not say hungry ("${await stage()}")`)
+    await js('window.__inv.grant("chiliDog"); window.__inv.use("chiliDog")')
+    check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)
   }],
 ]
 

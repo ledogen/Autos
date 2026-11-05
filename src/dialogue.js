@@ -33,6 +33,8 @@ export class DialogueSystem {
     /** FEAT-42: the keys heard this run, for the run save — and back, so a resume replays none of them. */
     seen () { return [...this._seen] }
     restoreSeen (keys) { for (const k of keys) this._seen.add(k) }
+    /** Has `key` played this run? (FEAT-147: whether the run opened on the firing.) */
+    has (key) { return this._seen.has(key) }
 
     /** True while a card is on screen. main.js gates the advance key and the HUD on this. */
     get active () { return this._i < this._queue.length }

@@ -14,6 +14,10 @@
 //      its own route within 0.5 m, within the route's last siteM, at least nodeClearM from any
 //      junction node, out of water, its footprint no steeper than maxSlope, standing on the lowest
 //      ground under it.
+//   5. THE GUIDE (slice 2, owner 2026-11-03) — every target's recorded `u` is its own point on the route;
+//      guideTo runs from the route's start (or, back, from its end) to that point; nearestTarget, from
+//      each target's road point, picks the nearest other one along the road and says whether it is
+//      behind; past the route's end every target is behind, and short of the site the first one wins.
 //
 // Heavy: routes a full 2800 m region per seed (~15 s each).
 import * as THREE from 'three'
@@ -28,7 +32,7 @@ import { PROP_MODELS } from '../data/prop-models.js'
 import { validateArea, discArea } from '../src/world-validate.js'
 import { MissionSystem, buildGraphAdj, REGION_MARGIN } from '../src/mission.js'
 import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
-import { siteTargets, DEMOLITION_PARAMS as D, TARGET_TYPES } from '../src/demolition.js'
+import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS as D, TARGET_TYPES } from '../src/demolition.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
@@ -86,7 +90,7 @@ for (const s of SEEDS) {
 
     const dressings = [...THINGS, ...REQUISITION].filter((t) => t.family === 'demolition').map((t) => [t.id, t.targets])
     let ms0 = 0, nCalls = 0
-    const bad = { plan: [], same: [], full: [], deck: [], off: [], site: [], junction: [], water: [], slope: [], ground: [] }
+    const bad = { plan: [], same: [], full: [], deck: [], off: [], site: [], junction: [], water: [], slope: [], ground: [], u: [], guide: [], nearest: [] }
     for (const o of offers) {
         const spc = board.spec(o)
         const m = board.planDistinct(o, planOne)
@@ -110,6 +114,7 @@ for (const s of SEEDS) {
             for (let d = 0; d <= len; d += 1) { const p = sg.centerline.pointAt(sg.s1 - dir * d); pts.push({ x: p.x, z: p.z, u: u + d }) }
             u += len
         }
+        const roadAt = (uu) => pts.reduce((a, p) => Math.abs(p.u - uu) < Math.abs(a.u - uu) ? p : a)
         for (const t of T) {
             const fr = Math.hypot(...[0, 2].map((i) => PROP_MODELS[TARGET_TYPES[t.kind].model].collision.size[i])) / 2
             const near = pts.reduce((a, p) => { const d = Math.hypot(p.x - t.x, p.z - t.z); return d < a.d ? { d, u: p.u } : a }, { d: Infinity, u: 0 })
@@ -122,7 +127,28 @@ for (const s of SEEDS) {
             const hs = [[0, 0], [fr, 0], [-fr, 0], [0, fr], [0, -fr]].map(([a, b]) => world.height(t.x + a, t.z + b))
             if ((Math.max(...hs) - Math.min(...hs)) / (2 * fr) > D.maxSlope + 0.25) bad.slope.push(tag)   // axis-aligned probes, not the route's: slack
             if (t.y > world.height(t.x, t.z) + 1e-9) bad.ground.push(`${tag} floats ${(t.y - world.height(t.x, t.z)).toFixed(3)} m`)
+            if (Math.abs(near.u - t.u) > 1.5) bad.u.push(`${tag} u ${t.u.toFixed(0)} vs ${near.u.toFixed(0)} m`)
+            for (const back of [false, true]) {
+                const G = guideTo(m, t.u, back).segments, a = G[0], z = G.at(-1)
+                const p0 = a.centerline.pointAt(a.s0), p1 = z.centerline.pointAt(z.s1)
+                const from = back ? pts[0] : pts.at(-1), to = roadAt(t.u)
+                if (Math.hypot(p0.x - from.x, p0.z - from.z) > 1 || Math.hypot(p1.x - to.x, p1.z - to.z) > 1.5) bad.guide.push(`${tag}${back ? ' back' : ''}`)
+            }
         }
+        // From each target's road point the nearest OTHER target along the road; past the end, every one
+        // behind; short of the site, the first along the road ahead.
+        T.forEach((t, k) => {
+            const others = T.flatMap((_, j) => j === k ? [] : [j])
+            if (!others.length) return
+            const p = roadAt(t.u), n = nearestTarget({ ...m, targets: T }, p.x, p.z, others, t.u)
+            const best = Math.min(...others.map(j => Math.abs(T[j].u - t.u)))
+            if (Math.abs(n.dist - best) > 2 || (best > 2 && n.back !== T[n.i].u > t.u)) bad.nearest.push(`${tag} #${k}`)
+        })
+        const all = T.map((_, j) => j), e0 = pts[0], e1 = pts[5]   // the end, and 5 m before it
+        const past = nearestTarget({ ...m, targets: T }, e0.x + (e0.x - e1.x) * 6, e0.z + (e0.z - e1.z) * 6, all, 30)
+        const short = nearestTarget({ ...m, targets: T }, 0, 0, all, m.distance)
+        if (T.length && (!past.back || T[past.i].u !== Math.min(...T.map(t => t.u)))) bad.nearest.push(`${tag} past the end`)
+        if (T.length && (short.back || T[short.i].u !== Math.max(...T.map(t => t.u)))) bad.nearest.push(`${tag} short of the site`)
         console.log(`       ${tag.padEnd(40)} ${(m.distance / 1000).toFixed(1)} km  ${T.length}/${want}+ targets: ${[...new Set(T.map((t) => t.kind))].join(' ')}`)
         }
     }
@@ -136,6 +162,9 @@ for (const s of SEEDS) {
     check('no target in water', !bad.water.length, `${bad.water.length}`)
     check('no target on a footprint steeper than the limit', !bad.slope.length, `${bad.slope.length}`)
     check('every target stands on the lowest ground under it, never above the ground at its centre', !bad.ground.length, bad.ground.slice(0, 3).join(', '))
+    check('every target\'s u is its own point on the route (± 1.5 m)', !bad.u.length, bad.u.slice(0, 5).join(', '))
+    check('guideTo runs from the route\'s start, or back from its end, to the target', !bad.guide.length, bad.guide.slice(0, 5).join(', '))
+    check('nearestTarget: the nearest along the road, behind or ahead; past the end all behind; short of the site the first', !bad.nearest.length, bad.nearest.slice(0, 5).join(', '))
     console.log(`       siteTargets: ${(ms0 / Math.max(1, nCalls)).toFixed(1)} ms per site (${nCalls} sites)`)
 }
 

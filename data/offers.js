@@ -335,6 +335,7 @@ export const THINGS = [
 //   gates    which offer gates it may appear under (see RANK GATES above)
 //   pools    which sources may offer it
 //   dineIn   (optional) true for a meal eaten on the spot at delivery — nothing is stowed.
+//   minDay   (optional) the first run day an offer born then may carry it (FEAT-168).
 //
 // An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
 // data/items.js ITEMS (the inventory gate checks), except a dineIn one. Its effect applies only if built.
@@ -377,7 +378,9 @@ export const REWARDS = [
       pools: ['workSite', 'autoShop', 'farm', 'larrysHouse'] },
     { id: 'diffClutchLSD', name: 'Clutch-type limited-slip differential', kind: 'part', gates: ['A', 'S'],   // FEAT-166 [DEFAULT]
       pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
-    { id: 'diffLSD',    name: 'Helical limited-slip differential', kind: 'part', gates: ['S'],
+    // FEAT-168: a reward only from day 3 (owner, 2026-11-05: "helical lsd reward day 3 onward"); the shelf
+    // stocks it every day, at its price × the day tier.
+    { id: 'diffLSD',    name: 'Helical limited-slip differential', kind: 'part', gates: ['S'], minDay: 3,
       pools: ['autoShop', 'strandedMotorist', 'residence', 'larrysHouse'] },
     { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
       pools: ['autoShop', 'workSite', 'larrysHouse'] },
@@ -400,7 +403,7 @@ export const REWARDS = [
     { id: 'ductTape',   name: 'Duct tape',   kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'generalStore', 'larrysHouse'] },
     // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when
-    // the job is in. Being fed waits on hunger, which isn't built.
+    // the job is in: fed like a standard meal (src/day.js mealHoldH, FEAT-169).
     { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true,
       pools: ['residence', 'farm', 'foodVendor', 'larrysHouse'] },
 ]
@@ -461,6 +464,30 @@ export const REQUISITION = [
     { id: 'reqFuel',     phrase: 'fuel',           family: 'freight',  from: 'gasStation',   massKg: 172, load: 'drum' },
     { id: 'reqGear',     phrase: 'camp gear',      family: 'fragile',  from: 'generalStore', massKg: 30, load: 'largeCrate', ...FRAGILE },
 ]
+
+/**
+ * FEAT-147: THE FIRST JOB — the opening's courier run from mom's to Larry's (owner, 2026-11-02: a
+ * courier TO Larry, not his paper round; 2026-11-05: mom sends it, scripted). One fixed offer at mom's,
+ * posted once by the opening (src/offer-board.js `f0` slot) — mom has no SOURCES row and posts nothing
+ * else. Same rules as any courier job: pay, deadline, deed. PLACEHOLDER words (the owner writes them).
+ */
+export const FIRST_JOB = {
+    id: 'firstJob', phrase: 'a casserole', family: 'delivery', massKg: 3, to: ['larry'],
+    person: { sex: 'female', first: 'Mom', nick: null, last: null },
+}
+
+/**
+ * FEAT-148 (owner, 2026-10-31): the giver's line on the parked offer panel, in two parts — a FIRST line
+ * that fits any job ("looking for work?") and a SECOND keyed on the thing (`byThing[thingId]`). Each comes
+ * GIVER_LINE_P of the time, and the first always comes when the second does not (offer-board.js
+ * giverLine). OWNER-AUTHORED on the item setup page (db answers/_lines: `first`, `t_<thingId>`) and
+ * folded here; empty until then, and an offer with no line shows no quote at all.
+ */
+export const GIVER_LINES = {
+    first: [],
+    byThing: {},
+}
+export const GIVER_LINE_P = 0.7
 
 export const SOURCES = {
     // ── always-on ──
@@ -616,8 +643,9 @@ export const EXPIRY_NOISE = 0.3
 
 // ── Roll shares (owner, 2026-09-26) ─────────────────────────────────────────────────────────
 
-/** 0..1 — share of offers that carry a bonus item. */
-export const BONUS_CHANCE = 0.25
+/** 0..1 — share of offers that carry a bonus item. FEAT-168 [DEFAULT]: 0.25 → 0.40 (owner, 2026-11-05:
+ *  "not enough item rewards"). */
+export const BONUS_CHANCE = 0.40
 // An offer carrying an item plans no leg shorter than this (road metres): a 0.3 km courier handed
 // out a mounted tire on S (owner, 2026-10-25: "increase the item reward floor to 1.5 or 2 km").
 // Enforced by the planner (src/mission.js minM) so the card never has to strip a promised tip —
