@@ -8810,6 +8810,7 @@ document.addEventListener('keydown', e => {
   if (el.style.display !== 'flex') {
     const back = _cardBackButton()
     if (back) { back.click(); return }
+    if (_recoveryOpen) { _recoveryOpen = false; _updateRecovery(); return }   // BUG-113: the Recovery card has no back button of its own
     if (map2d.isOpen()) { map2d.hide(); return }
   }
   if (el.style.display === 'none' || el.style.display === '') {
