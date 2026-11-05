@@ -59,6 +59,16 @@ for (const gap of [0.15, 0.25]) {
 const flat = tireContact(() => 0.1, upNormal, 0, 0.4, 0, r, w, A, out)
 check(Math.abs(flat.depth - (0.1 + r - 0.4)) < 1e-12 && flat.ny === 1, `flat ground is exact (depth ${flat.depth.toFixed(6)})`)
 
+// The contact point is where physics.js applies the tire's forces, so it is the tread's pressure centre:
+// a point at one edge on level ground put both drive wheels' push half a tread off the same side — a
+// yaw moment that turned the truck 5° in 3 s of straight full throttle (2026-11-05).
+check(Math.abs(flat.pz) < 1e-9, `level ground: the contact point is under the hub, not at an edge (${(flat.pz * 1000).toFixed(1)} mm across)`)
+const r1 = 1 * Math.PI / 180, A1 = { x: 0, y: Math.sin(r1), z: Math.cos(r1) }
+const rolled = tireContact(() => 0.1, upNormal, 0, 0.4, 0, r, w, A1, out)
+check(Math.abs(rolled.pz) < 0.01, `rolled 1°: the contact point stays near the centre (${(rolled.pz * 1000).toFixed(1)} mm across)`)
+const half = tireContact((x, z) => (z >= 0.05 ? 0.15 : 0), upNormal, 0, 0.5, 0, r, w, A, out)   // a kerb under the +z edge only
+check(Math.abs(half.pz - w / 2) < 1e-9, `a kerb under one edge: the contact point is that edge (${(half.pz * 1000).toFixed(1)} mm across)`)
+
 const cs = 0.2   // cross-slope along the axle: y = 0.2 z
 const csN = { x: 0, y: 1 / Math.hypot(1, cs), z: -cs / Math.hypot(1, cs) }
 const c = tireContact((x, z) => cs * z, () => csN, 0, 0.3, 0, r, w, A, out)

@@ -11,7 +11,11 @@
  * lines across the tread (both edges and the centre) the surface is followed along the rolling
  * direction under the hub, and the point CLOSEST to the axle line wins:
  *   depth  = r − its distance to the axle (exact solid-cylinder penetration at those lines)
- *   point  = that surface point
+ *   point  = the lines' closest points weighted by their depth: the tread's pressure centre, where
+ *            physics.js applies the tire's forces. On level ground that is the centre line, at a kerb
+ *            under one edge it is that edge. (The deepest point alone sat at an edge on level ground —
+ *            the first line wins a tie, a hair of roll picks one — and both drive wheels' push half a
+ *            tread off the same side turned the truck 5° in 3 s of straight full throttle, 2026-11-05.)
  *   normal = the surface normal with its in-plane part turned to the RADIAL line from the point to
  *            the axle. On smooth ground the closest point is where the surface is tangent to the
  *            circle, so that IS the surface normal; at an edge it is the line from the edge to the
@@ -60,14 +64,16 @@ export function tireContact (heightAt, normalAt, cx, cy, cz, r, w, A, out) {
   const ah = Math.hypot(A.x, A.z) || 1
   const fx = -A.z / ah, fz = A.x / ah
   let best = Infinity, bx = 0, by = 0, bz = 0
+  let sw = 0, sx = 0, sy = 0, sz = 0   // the lines' closest points, weighted by their depth
   for (let line = -1; line <= 1; line++) {
     const o = line * w / 2, ox = cx + o * A.x, oz = cz + o * A.z
+    let lb = Infinity, lx = 0, ly = 0, lz = 0
     // Squared distance from the surface point at s along this line to the axle line through the hub.
     const rho2 = (s) => {
       const x = ox + s * fx, z = oz + s * fz, y = s === 0 && line === 0 ? h0 : heightAt(x, z)
       const dx = x - cx, dy = y - cy, dz = z - cz, da = dx * A.x + dy * A.y + dz * A.z
       const d2 = dx * dx + dy * dy + dz * dz - da * da
-      if (d2 < best) { best = d2; bx = x; by = y; bz = z }
+      if (d2 < lb) { lb = d2; lx = x; ly = y; lz = z }
       return d2
     }
     for (let k = 0; k < COARSE; k++) _v[k] = rho2(-r + 2 * r * k / (COARSE - 1))
@@ -89,6 +95,9 @@ export function tireContact (heightAt, normalAt, cx, cy, cz, r, w, A, out) {
         if (fx < fb) { if (left) c = b; else a = b; b = x; fb = fx } else if (left) a = x; else c = x
       }
     }
+    const d = r - Math.sqrt(lb)
+    if (d > 0) { sw += d; sx += d * lx; sy += d * ly; sz += d * lz }
+    if (lb < best) { best = lb; bx = lx; by = ly; bz = lz }
   }
   const rho = Math.sqrt(best)
   if (!(rho < r)) return null
@@ -104,6 +113,7 @@ export function tireContact (heightAt, normalAt, cx, cy, cz, r, w, A, out) {
   const np = Math.sqrt(Math.max(0, 1 - na * na))
   let nx = na * A.x + np * ux, ny = na * A.y + np * uy, nz = na * A.z + np * uz
   const nl = Math.hypot(nx, ny, nz) || 1
-  out.depth = r - rho; out.nx = nx / nl; out.ny = ny / nl; out.nz = nz / nl; out.px = bx; out.py = by; out.pz = bz
+  out.depth = r - rho; out.nx = nx / nl; out.ny = ny / nl; out.nz = nz / nl
+  out.px = sx / sw; out.py = sy / sw; out.pz = sz / sw   // sw > 0: the deepest line is in it
   return out
 }
