@@ -56,6 +56,15 @@ export const DAY_PARAMS = {
     energyDrinkReliefH:     5,
     energyDrinkCrashH:      2.5,
     energyDrinkCrashAfterH: 4,
+    // ── Hunger (FEAT-169, items.md §1d) — a RATE on the awake drain, never a meter (SM-INV-10) ──
+    // A meal holds hunger off for its own hold (data/items.js `hold`). Past it the drain runs
+    // ×hungryRate, rising linearly to ×starvingRate over hungryRampH (ruled 2026-10-20: ×1.25 → ×1.5;
+    // the ramp [DEFAULT]). A run starts on a standard meal, and BEDTIME COUNTS AS ONE (items.md's open
+    // question, its simplest answer [DEFAULT]): an 8 h night wakes right at the edge of hungry.
+    hungryRate:   1.25,
+    starvingRate: 1.5,
+    hungryRampH:  4,
+    mealHoldH:    8,      // a standard meal (the burger, the dinner invitation)
 
     // ── Sleep recovery (FEAT-45 Phase D) — hours of energy bought per hour slept ───────────────
     // THE ARITHMETIC (ratified 2026-07-30; rescaled 2026-08-02 with the 16 h tank).
@@ -129,6 +138,7 @@ export class DaySystem {
         this._energyH   = DAY_PARAMS.fullEnergyH
         this._coffeeDebt = 0
         this._crashes   = []      // energy drinks' crashes still to come: [{ atH (clockH), h }]
+        this._fedUntilH = Infinity   // FEAT-169: clockH the last meal's hold runs out (start() serves the first)
         // SM-INV-12 FLAG-GATE. Blinks and dozes are live-reactive, so they are OFF at construction
         // and stay off until main.js turns them on for a live story region. Headless gates never
         // construct this system at all, and even if they did, attenuation() is identically 1 and
@@ -147,6 +157,7 @@ export class DaySystem {
         this._energyH = DAY_PARAMS.fullEnergyH
         this._coffeeDebt = 0
         this._crashes = []
+        this._fedUntilH = this.clockH() + DAY_PARAMS.mealHoldH
         this._blink = null
         this._signalArmed = true
         this._nextBlinkH = Infinity
@@ -156,7 +167,7 @@ export class DaySystem {
     /** FEAT-42: the clock and the energy ladder, for the run save. Blink envelopes are transient. */
     snapshot () {
         return { day: runState.day, hour: this._hour, energyH: this._energyH, coffeeDebt: this._coffeeDebt,
-                 crashes: this._crashes.map(c => ({ ...c })), signalArmed: this._signalArmed }
+                 crashes: this._crashes.map(c => ({ ...c })), signalArmed: this._signalArmed, fedUntilH: this._fedUntilH }
     }
 
     /** FEAT-42: put a snapshot() back (after start()) and seat the sky on its hour. */
@@ -167,6 +178,7 @@ export class DaySystem {
         this._coffeeDebt = s.coffeeDebt
         this._crashes = s.crashes.map(c => ({ ...c }))
         this._signalArmed = s.signalArmed
+        this._fedUntilH = s.fedUntilH ?? this.clockH() + DAY_PARAMS.mealHoldH   // a save from before hunger wakes fed
         this._push(true)
     }
 
@@ -191,13 +203,14 @@ export class DaySystem {
     update (dtSec) {
         if (!this._running || !(dtSec > 0)) return
         const perSec = 24 / DAY_PARAMS.dayLengthSec
-        const dHour = dtSec * perSec
+        const dHour = dtSec * perSec, h0 = this.clockH()
         this._hour += dHour
         while (this._hour >= 24) { this._hour -= 24; runState.day++ }
         // BEING AWAKE COSTS AN HOUR PER HOUR — energy is denominated in hours of waking left, so the
-        // drain is the hour advance itself. Floors at −sleepDebtMaxH: past empty the meter keeps
-        // falling into sleep debt (owner, 2026-08-02), so the night that repays it must be longer.
-        this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - dHour)
+        // drain is the hour advance itself (plus hunger's share past the meal's hold, FEAT-169). Floors
+        // at −sleepDebtMaxH: past empty the meter keeps falling into sleep debt (owner, 2026-08-02), so
+        // the night that repays it must be longer.
+        this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - dHour - this._hungerCost(h0, h0 + dHour))
         this._crash()
         this._updateBlinks(dHour, dtSec)
         this._push(false)
@@ -272,6 +285,29 @@ export class DaySystem {
         this._syncGui()
     }
 
+    /**
+     * FEAT-169: a meal — hunger held off for `holdH` from now (items.md §1d). Never shortens a hold
+     * already running: a snack after a burger does not make you hungrier [DEFAULT].
+     */
+    eat (holdH) { this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + holdH) }
+
+    /** Past the last meal's hold. The energy meter says so in words (SM-INV-10: never a gauge). */
+    hungry () { return this.clockH() > this._fedUntilH }
+
+    /**
+     * Hours of energy hunger adds to being awake from clockH h0 to h1 — 0 while fed. The rate over 1 is
+     * 0 up to the hold's end, a linear ramp for hungryRampH, then flat, so its integral is closed-form
+     * and a 30 min skip costs exactly what living through it would.
+     */
+    _hungerCost (h0, h1) {
+        const P = DAY_PARAMS, R = P.hungryRampH, a = P.hungryRate - 1, b = P.starvingRate - P.hungryRate
+        const extra = (t) => {
+            const x = t - this._fedUntilH
+            return x <= 0 ? 0 : x < R ? a * x + b * x * x / (2 * R) : (a + b / 2) * R + (a + b) * (x - R)
+        }
+        return extra(h1) - extra(h0)
+    }
+
     /** Land every energy-drink crash the clock has reached. */
     _crash () {
         if (!this._crashes.length) return
@@ -303,9 +339,9 @@ export class DaySystem {
      * for it cost what being awake always costs.
      */
     advanceMinutes (m) {
-        const dH = Math.max(0, m) / 60
+        const dH = Math.max(0, m) / 60, h0 = this.clockH()
         this._advanceHours(dH)
-        this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - dH)
+        this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - dH - this._hungerCost(h0, h0 + dH))
         this._crash()
         this._endSkip()
     }
@@ -328,6 +364,7 @@ export class DaySystem {
      */
     sleep (hours, vibe, rest = 0) {
         const h = Math.max(0, hours)
+        this.eat(DAY_PARAMS.mealHoldH)   // FEAT-169: bedtime counts as a standard meal [DEFAULT]
         this._advanceHours(h)
         this._crashes = []   // slept off (DAY_PARAMS energyDrink*)
         // ONE CODE PATH with the sleep dialogue's live preview: previewWake IS this arithmetic, and
@@ -539,6 +576,10 @@ export class DaySystem {
         f.add(DAY_PARAMS, 'sleepRateWorstH', 0.5, 6, 0.05).name('sleep rate worst (h/h)')
         f.add(DAY_PARAMS, 'sleepRateBestH', 0.5, 6, 0.05).name('sleep rate best (h/h)')
         f.add(DAY_PARAMS, 'truckSleepRateH', 0.25, 6, 0.05).name('sleep rate truck (h/h)')
+        f.add(DAY_PARAMS, 'hungryRate', 1, 3, 0.05).name('hungry drain ×')
+        f.add(DAY_PARAMS, 'starvingRate', 1, 3, 0.05).name('starving drain ×')
+        f.add(DAY_PARAMS, 'hungryRampH', 0, 12, 0.5).name('hunger ramp (h)')
+        f.add(DAY_PARAMS, 'mealHoldH', 0, 16, 0.5).name('standard meal hold (h)')
         f.add(DAY_PARAMS, 'blinkMeanSleepyH', 0.1, 4, 0.05).name('sleepy gap (h)')
         f.add(DAY_PARAMS, 'blinkMeanTiredH', 0.1, 4, 0.05).name('tired gap (h)')
         f.add(DAY_PARAMS, 'blinkMeanExhaustedH', 0.1, 4, 0.05).name('exhausted gap (h)')
@@ -552,10 +593,12 @@ export class DaySystem {
 
         const acts = {
             coffee: () => this.drinkCoffee(),
+            eat:    () => this.eat(DAY_PARAMS.mealHoldH),
             blink:  () => this.forceBlink(),
             blinksEnabled: this._blinksEnabled,
         }
         f.add(acts, 'coffee').name('drink coffee')
+        f.add(acts, 'eat').name('eat a standard meal')
         f.add(acts, 'blink').name('force blink')
         f.add(acts, 'blinksEnabled').name('blinks enabled')
             .onChange(v => this.setBlinksEnabled(v))

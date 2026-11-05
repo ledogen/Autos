@@ -400,7 +400,7 @@ export const REWARDS = [
     { id: 'ductTape',   name: 'Duct tape',   kind: 'consumable', gates: ['B', 'A'],
       pools: ['autoShop', 'gasStation', 'generalStore', 'larrysHouse'] },
     // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when
-    // the job is in. Being fed waits on hunger, which isn't built.
+    // the job is in: fed like a standard meal (src/day.js mealHoldH, FEAT-169).
     { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true,
       pools: ['residence', 'farm', 'foodVendor', 'larrysHouse'] },
 ]

@@ -14,13 +14,14 @@
 //            a free quick slot (keys 1–4, items.md §1c).
 //   uses     uses per unit (a pack, a roll), when more than one: the stack tracks the open one's `left`
 //   capGal   a can's fill, gallons: the entry carries `gal`, and its mass is `kgPerGal` × gal on top
+//   hold     food: game hours the meal holds hunger off (items.md §1d; src/day.js eat)
 
 import { PARTS, partIcon } from './parts.js'
 
 export const ITEMS = {
     coffee:       { name: 'Coffee',        kind: 'consumable', massKg: 0.5, use: 'coffee',
                     desc: 'Wakes you up now. You will feel it in the morning.' },
-    chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3,
+    chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3, use: 'eat', hold: 10,
                     desc: 'Kinda gross.' },   // the owner's flavor line (setup page, 10-22)
     // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
     // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.

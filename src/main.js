@@ -3584,7 +3584,7 @@ const inventorySystem = new InventorySystem({
   onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
-  effects: { coffee: () => daySystem.drinkCoffee(), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
+  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(ITEMS[e.id].hold), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
     spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
     fieldRepair: (e) => { queueMicrotask(() => _pickFieldRepair(e.id)); return false },
     jerry: (e) => { queueMicrotask(() => _pourJerry(e)); return false },
@@ -6757,10 +6757,11 @@ function _updateEnergyMeter () {
   _emEls.strip.style.transform =
     `translateX(${EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H}px)`
   const st = daySystem.stage()
-  if (st !== _emStage) {
-    _emStage = st
+  const label = daySystem.hungry() ? `${st} · hungry` : st   // FEAT-169: words, never a gauge (SM-INV-10)
+  if (label !== _emStage) {
+    _emStage = label
     if (st === 'sleepy') _tut('tut-sleep')   // FEAT-147
-    _emEls.stage.textContent = st
+    _emEls.stage.textContent = label
     _emEls.stage.style.color = STAGE_COLOR[st]
   }
 }
@@ -7137,8 +7138,8 @@ function _acceptOffer () {
   // story mode. It no longer auto-rolls the next job — with POIs as the job source, the next one is
   // something you go and find, not something handed to you at the drop point.
   if (missionSystem.state === 'done') {
-    // The dinner invitation, taken: 30 min at their table. Being fed waits on hunger (items.md §1d).
-    if (missionSystem.result?.award?.stowed === 'dinner') daySystem.advanceMinutes(30)
+    // The dinner invitation, taken: 30 min at their table, then fed like a standard meal (FEAT-169).
+    if (missionSystem.result?.award?.stowed === 'dinner') { daySystem.advanceMinutes(30); daySystem.eat(DAY_PARAMS.mealHoldH) }
     missionSystem.exit(); return
   }
   // FEAT-67: take the offer OFF THE BOARD first, re-checking it is still live — a food offer lives
