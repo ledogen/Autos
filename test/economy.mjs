@@ -15,8 +15,8 @@
 //      deep-equals par.js's RANK_THRESHOLDS_DEFAULT, C IS par (C === 1.0) on EVERY day and never
 //      tightens, S stays reachable at day 20, and economy.js imports nothing (so `day` cannot
 //      reach computePar even by accident).
-//   5. The terms lock — a job settles on the tier/thresholds frozen at ACCEPT, not at finish.
-//      The 1 a.m. accept buying tomorrow's rate is a ratified feature: do not "fix" it.
+//   5. The terms lock — a job settles on the region tier/thresholds frozen at ACCEPT, not at finish.
+//      FEAT-168: the day no longer moves pay (payTier = regionTier); dayTier is the COST curve.
 //   6. SM-INV-12 — run-layer boundary: money lives in runEconomy, NOT on day.js's runState
 //      (whose contract is day/sleep boundaries only).
 //
@@ -87,23 +87,17 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
     return true
   })())
   check('tier multiplies linearly', near(payoutFor(par, 1.0, 2.66), 2.66 * payoutFor(par, 1.0, 1.0)))
-  // THE TIP SCALES WITH EVERYTHING ELSE [owner, 2026-09-30: "it would not be fun for tips to lose
-  // their value after the first couple days. We want to keep some pressure on to drive fast"].
-  // Base and tip are both shares of the same max, and the max rides dayTier × regionTier — so the
-  // tip is worth the same fraction of a day's costs on day 20 as on day 1. Pinned, because a tip
-  // priced off a flat table would pass every other check here and quietly stop mattering.
-  check('the tip rides the tier exactly like the base: an S tip === the base pay, every day and region', (() => {
-    for (let d = 1; d <= 30; d++) for (const rg of [1, 3, 6]) {
-      const t = dayTier(d) * regionTier(rg)
+  // THE TIP SCALES WITH THE BASE [owner, 2026-09-30: "it would not be fun for tips to lose their value
+  // after the first couple days. We want to keep some pressure on to drive fast"]. Base and tip are
+  // both shares of the same max, so an S tip is worth the base pay at every tier. (FEAT-168: the tier
+  // is the region's alone now; the day's costs rise past it — pinned in section 1b.)
+  check('the tip rides the tier exactly like the base: an S tip === the base pay, at every tier', (() => {
+    for (const t of [...P.dayTierTable, ...P.regionMult]) {
       const b = P.baseFrac * P.k * par * t
       if (!near(payoutFor(par, 0.5, t) - b, b, 1e-9 * b + 1e-12)) return false        // whole tip === base
       if (!near(payoutFor(par, 1.0, t) - b, 0.5 * b, 1e-9 * b + 1e-12)) return false   // par: half of it
     }
     return true
-  })())
-  check('the tip keeps its value against the day\'s costs (1.5 base pays): same share on day 1 and day 20', (() => {
-    const share = (d) => { const t = dayTier(d), b = P.baseFrac * P.k * par * t; return (payoutFor(par, 0.5, t) - b) / (1.5 * b) }
-    return near(share(1), share(20)) && near(share(1), 2 / 3)
   })())
 
   // THE OWNER'S DAY-1 NUMBERS, on the AVERAGE region-1 job — par 180 s, MEASURED 2026-09-30 (mean
@@ -134,6 +128,30 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('splitPayout on degenerate par: everything 0', (() => {
     const sp = splitPayout(0, 1, tier); return sp.base === 0 && sp.tip === 0 && sp.total === 0
   })())
+}
+
+// ── 1b. FEAT-168: pay is locked to the region; costs ride the day [owner, 2026-11-05] ─────────────
+// "payment shouldnt scale with the day but item costs and fuel should... otherwise there is no
+// incentive to hurry up and collect good deeds." The cost curve came down to 1.065^(d−1) with it, and
+// the run lengthened to 10 deeds (~12 days).
+{
+  let day = 1
+  const eco = new EconomySystem({ getDay: () => day, getRegion: () => 1 })
+  const d1 = eco.terms(); day = 7
+  const d7 = eco.terms()
+  check('a day-7 job quotes the same base and max as day 1 (payTier === regionTier)',
+    d1.payTier === d7.payTier && d7.payTier === regionTier(1)
+      && payRange(180, d7.payTier).base === payRange(180, d1.payTier).base && payRange(180, d7.payTier).max === payRange(180, d1.payTier).max)
+  check('…while costs read the day-7 tier (1.46×) through tierNow and terms().dayTier',
+    eco.tierNow() === 1.46 && d7.dayTier === 1.46)
+  check('the cost curve is 1.065^(d−1) to the cent: day 7 1.46, day 12 2.00, day 20 3.31',
+    P.dayTierTable.every((t, i) => t === Math.round(1.065 ** i * 100) / 100)
+      && dayTier(7) === 1.46 && dayTier(12) === 2 && dayTier(20) === 3.31)
+  check('the camp opens at 10 good deeds (a ~12-day region-1 run)', P.campDeeds === 10)
+  // The ticket's check on the curve: a day's costs are 1.5 base pays × dayTier; two average B jobs
+  // (at the B line, ratio 0.87, flat pay) must still clear day 12's.
+  const costs12 = 1.5 * basePay(180, 1) * dayTier(12), twoB = 2 * payoutFor(180, rankTable('time', 1).B, 1)
+  check(`two B jobs ($${twoB.toFixed(2)}) clear day 12's costs ($${costs12.toFixed(2)})`, twoB > costs12)
 }
 
 // ── 2. Floors at the base, finite, never NaN ────────────────────────────────────────────────────
@@ -190,9 +208,9 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
 }
 
 // ── 5b. regionTier: the per-region payout multiplier [owner, 2026-08-17] ───────────────────────
-// This is the progression dial. dayTier rises to track escalating maintenance, so reward and cost
-// move together and surviving longer nets nothing on its own; the region step is the part the
-// treadmill cannot follow, and it is what makes pushing into harder country worth doing.
+// This is the progression dial — since FEAT-168 the ONLY one on pay. dayTier rises with the costs and
+// pay does not follow, so surviving longer loses ground; the region step is what makes pushing into
+// harder country worth doing.
 {
   let mono = true
   for (let r = 1; r < ECONOMY_PARAMS.regionMult.length; r++) {
@@ -210,10 +228,13 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   // the MEASURED region-1 average (180 s, 2026-09-30) and the ratified 2× for region 6 (the ladder
   // is mission length, run-shape.md) — not the old nominal 360/720.
   const B_DRIVE = 0.83   // a B on region 1's time row (A 0.81 < 0.83 ≤ B 0.87) — the reference drive
-  const pay = (par, day, region) => payoutFor(par, B_DRIVE, dayTier(day) * regionTier(region))
-  const start = pay(180, 1, 1), end = pay(360, 20, 6)
-  check('a day-1 region-1 job pays $5-15', start >= 5 && start <= 15, `got $${start.toFixed(2)}`)
-  check('a day-20 region-6 job pays $500-1500', end >= 500 && end <= 1500, `got $${end.toFixed(0)}`)
+  const pay = (par, region) => payoutFor(par, B_DRIVE, regionTier(region))
+  const start = pay(180, 1), end = pay(360, 6)
+  check('a region-1 job pays $5-15', start >= 5 && start <= 15, `got $${start.toFixed(2)}`)
+  // FEAT-168 took the day out of pay, so the 2026-08-17 "$500-1500 day-20 region-6" end target (which
+  // leaned on dayTier ~4.6) is no longer met by regionMult alone. Regions are post-alpha (FEAT-28 / SM-4):
+  // re-cut regionMult there. Reported, not gated, until then.
+  console.log(`       a region-6 job pays $${end.toFixed(0)} (the retired day × region target was $500-1500)`)
 }
 
 // ── 6. FEAT-138: the threshold table — by type and REGION, never by day ────────────────────────
@@ -242,13 +263,13 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
       && rankTable('haul', 1.7, 'firewood') === T.haul.firewood[0])
   check('every row has all four letters, finite', rows.every(t => ['S', 'A', 'B', 'C'].every(k => isFinite(t[k]))))
   // NOTHING READS THE DAY FOR A LETTER: the same region accepted on day 1 and day 20 gets identical
-  // thresholds. (The day still moves the pay tier — that is the cost treadmill, not difficulty.)
+  // thresholds. (The day still moves dayTier — that is the cost treadmill, not difficulty or pay.)
   let day = 1
   const eco = new EconomySystem({ getDay: () => day, getRegion: () => 1 })
   const early = eco.terms(); day = 20
   const late = eco.terms()
   check('terms(): day 1 and day 20 freeze the SAME thresholds in one region',
-    ['S', 'A', 'B', 'C'].every(k => early.thresholds[k] === late.thresholds[k]) && early.payTier !== late.payTier)
+    ['S', 'A', 'B', 'C'].every(k => early.thresholds[k] === late.thresholds[k]) && early.dayTier !== late.dayTier)
   // S MUST STAY REACHABLE. The best HONEST drive in runs-v2/ is ratio 0.740 [2026-09-07; 0003, later
   // archived to runs-v2/pre-feat80-grip/; the best new-grip drive, 0019, is also 0.740]. A 0.668 run
   // skipped 471 m of its route and must not certify a threshold. Keep every region's S at or above it.
@@ -322,7 +343,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
     Array.from({ length: 31 }, (_, i) => 'DCBAS'.indexOf(h(30 - i))).every((v, i, a) => i === 0 || v <= a[i - 1]))
 }
 
-// ── 9. The terms lock: settle on the ACCEPTED day, not the finished day ─────────────────────────
+// ── 9. The terms: the day rides along, the pay is the region's ─────────────────────────────────
 {
   let day = 3
   const eco = new EconomySystem({ getDay: () => day })
@@ -332,12 +353,12 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   // Settle AT the full-tip ratio so the expected payout is exactly the max (k·par·tier) and the arithmetic
   // below stays readable. (At ratio 1.0 it would be half a unit — see the re-anchored payout line.)
   const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.fullTipRatio, letter: 'S' }, { terms })
-  check('terms lock: day-3 tier paid despite finishing on day 4',
-    settled.payout === cents(ECONOMY_PARAMS.k * 180 * dayTier(3)) && dayTier(3) !== dayTier(4))
+  check('settle pays the region tier, never the day\'s (day 3 accept, day 4 finish: $10)',
+    settled.payout === cents(ECONOMY_PARAMS.k * 180 * regionTier(1)) && settled.payout === 10)
   check('terms carry the region\'s thresholds (frozen)',
     terms.day === 3 && terms.thresholds.S === rankTable('time', terms.region).S && Object.isFrozen(terms.thresholds))
-  check('terms compose payTier = dayTier × regionTier',
-    near(terms.payTier, terms.dayTier * terms.regionTier))
+  check('terms: payTier === regionTier, dayTier rides along for costs',
+    terms.payTier === terms.regionTier && terms.dayTier === dayTier(3))
 }
 
 // ── 9b. The region multiplier reaches the payout, and locks at accept like the day tier ─────────
@@ -352,7 +373,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('region tier reaches the payout (region 2 pays 1.6× region 1)',
     settled.payout === cents(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(2)),
     `got ${settled.payout}`)
-  check('region locks at ACCEPT, not at settle — same rule as the day tier',
+  check('region locks at ACCEPT, not at settle',
     settled.payout !== cents(ECONOMY_PARAMS.k * 180 * dayTier(1) * regionTier(5)))
 }
 

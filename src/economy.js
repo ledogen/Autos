@@ -3,7 +3,7 @@
 // Implements the RATIFIED performance model (DESIGN.md "The performance model", 2026-08-01):
 //
 //     ratio  = elapsed / par                    (par = referenceTime × PAR_SLACK — see par.js)
-//     max    = k × par × payTier                the most a job can pay (payTier = dayTier × regionTier)
+//     max    = k × par × payTier                the most a job can pay (payTier = regionTier — FEAT-168)
 //     tip    = clamp((TIP_ZERO − ratio) / (TIP_ZERO − FULL_TIP_RATIO), 0, 1)     share of the tip pool
 //     payout = max × (BASE_FRAC + (1 − BASE_FRAC) × tip)
 //
@@ -24,7 +24,7 @@
 //     run-shape "~5–7 h" figure was the plan; the measurement is the fact — re-measure before
 //     moving k, never re-anchor k to a nominal length.)
 //   • BREAK-EVEN IS A DAY, NOT A RATIO [owner, 2026-09-30]. A day's costs are 1.5 × the reference
-//     job's base pay — $7.50 on day 1, scaling with dayTier. Two jobs driven poorly ($5 + $5) or
+//     job's base pay — $7.50 on day 1, scaling with dayTier while the pay does not (FEAT-168). Two jobs driven poorly ($5 + $5) or
 //     one driven very well ($10) make a good day; one at-par C ($7.50) is exactly level. Nothing
 //     in this module charges that cost — it is the anchor SM-3's repair/upkeep prices are authored
 //     against, and it REPLACES the old "$13-19 region-1 day" (two break-even jobs at the old k).
@@ -32,10 +32,13 @@
 //   • A JOB never charges the player: the loss past the base is the day and the wear. Money leaves
 //     the wallet only by spend() — fuel at the pump and the tow (FEAT-50), the first debits.
 //
-// WHAT SCALES AND WHAT DOES NOT. The DOLLARS scale, base and tip alike: both are shares of the
-// same max, and the max rides dayTier × regionTier, so the tip is worth the same fraction of a
-// day's costs on day 20 as on day 1 (owner, 2026-09-30: tips must not lose their value; the
-// pressure to drive fast stays on for the whole run — gated). What does NOT move is the pair of
+// WHAT SCALES AND WHAT DOES NOT. PAY IS LOCKED TO THE REGION (FEAT-168, owner 2026-11-05: "payment
+// shouldnt scale with the day but item costs and fuel should... otherwise there is no incentive to
+// hurry up and collect good deeds"). This is FEAT-117's ratified "dayTier leaves pay" (DESIGN.md
+// 2026-10-14) without its reputation multiplier, which stays parked in FEAT-117. COSTS ride the day:
+// parts, repairs, the tow and fuel are × dayTier. So a day's work buys less as the run drags on, and
+// the deeds gate is the thing to hurry for. Base and tip are both shares of the same max, so the tip
+// keeps its share of the PAY; against the day's costs it shrinks, by design. What does NOT move is the pair of
 // RATIOS the tip is earned between. SM-INV-4: payout is continuous in the ratio and rank is display
 // only, so money must never be a function of the letter. `fullTipRatio` is pinned to region 1's
 // time S threshold (RANK_TABLE.time), so an S earns the whole tip.
@@ -83,11 +86,11 @@
  *     k = 0.024 × 0.85/0.80 = 0.0255. A break-even day is worth exactly the same dollars as before
  *     — 0.024 × T/0.80 === 0.0255 × T/0.85 === 0.03·T — which is the whole point of the rule: the
  *     letters moved, the wage did not.
- *   • dayTierTable steps PER DAY so the ratified "accept at 1 a.m., buy tomorrow's rate"
- *     seduction is live at EVERY midnight. Shipped ~×1.15 compounding through day 8 (2.66),
- *     then a soft approach to a ~5× asymptote (owner-picked ceiling, 2026-08-02):
- *     tier(d) = 5 − 2.34·e^((8−d)/7) for d 9..30, ~4.9 by day 30 — escalation stays live for
- *     the whole ratified 20-day run instead of dying on day 8 (run-shape.md "Code deltas").
+ *   • dayTierTable is the COST curve since FEAT-168 (pay left it). RE-CUT 2026-11-05 to
+ *     1.065^(d−1): day 7 = 1.46×, day 12 = 2.0×, day 20 = 3.3×. The old ×1.15/day curve (2.66 by
+ *     day 8, a ~5× asymptote) reached 3.68× by day 12, the owner's expected region-1 run length:
+ *     a day's costs (1.5 × a base pay) would be $27.60 against ~$20 for two top jobs at flat pay.
+ *     At 1.065, two average B jobs (~$17.80) still clear day 12's $15 of costs.
  *   • payoutZero was re-solved alongside breakEven in the 2026-09-07 re-cut, from the SAME anchor
  *     that fixed it at 1.20 before: par (ratio 1.0) pays exactly half a unit. m(1) = 0.5 with
  *     b = 0.85 gives (z − 1)/(z − 0.85) = 0.5 ⇒ z = 1.15. Consequence worth knowing: the anchors
@@ -120,9 +123,11 @@ export const ECONOMY_PARAMS = {
     // nothing: a fixed day-1 sum.
     startCash:    10,
     // GAME-FEEL REVIEW 2026-10-23 (R-02): the good deeds that open the expedition camp (FEAT-103,
-    // owner 2026-10-19: "gated by 6 good deeds"). The ONE copy: the run HUD's "2 / 6", the result
+    // owner 2026-10-19: "gated by 6 good deeds"). The ONE copy: the run HUD's "2 / 10", the result
     // card's tally and the intro card all read it. FEAT-103 reads it when the camp lands.
-    campDeeds:    6,
+    // FEAT-168 [DEFAULT]: 6 → 10, so a region-1 run takes ~12 days (owner, 2026-11-05: "maybe 12 days
+    // should be expected for a R1 run"; their one run made 6 deeds in 7 days — re-measure).
+    campDeeds:    10,
 
     // ── FEAT-138 RANK THRESHOLDS, BY TYPE AND REGION [owner, 2026-10-21] ──────────────────────
     // Every type ranks on its own axis (design-amendments-2026-10-21-mission-recut.md §1–2, §11b).
@@ -214,15 +219,10 @@ export const ECONOMY_PARAMS = {
     // until SM-4 lands. It is built now so the economy is not the thing blocking that milestone.
     regionMult: [1.0, 1.6, 2.7, 4.4, 7.3, 12.0],
 
-    // Payout multiplier per run day, 1-based; day 31+ holds the last entry. tier(1) === 1 is the
-    // anchor: day 1 pays the bare k rate, and the day's costs (header: 1.5 × a base pay) ride the same table. Days 1-8 are the shipped
-    // ×1.15 compounding; days 9-30 ease toward the ~5× asymptote (derivation in the header note).
-    dayTierTable: [
-        1.00, 1.15, 1.32, 1.52, 1.75, 2.01, 2.31, 2.66,                    // 1-8   shipped curve
-        2.97, 3.24, 3.48, 3.68, 3.85, 4.01, 4.14, 4.25, 4.35, 4.44,        // 9-18
-        4.51, 4.58, 4.63, 4.68, 4.73, 4.76, 4.79, 4.82, 4.84, 4.87,        // 19-28
-        4.88, 4.90,                                                        // 29-30
-    ],
+    // COST multiplier per run day, 1-based; day 31+ holds the last entry. tier(1) === 1 is the anchor:
+    // day-1 prices are the authored ones. Parts, repairs, the tow and fuel ride it; pay does not
+    // (FEAT-168). 1.065^(d−1), to the cent [DEFAULT] (derivation in the docblock above).
+    dayTierTable: Array.from({ length: 30 }, (_, i) => Math.round(1.065 ** i * 100) / 100),
 
     // ── FEAT-50 THE TOW [owner, 2026-10-16] — USER-OWNED ─────────────────────────────────────
     // Out of fuel and parked, the Recovery chip offers a tow to the nearest place that sells fuel.
@@ -443,8 +443,7 @@ export class EconomySystem {
     /**
      * The terms of a job at the moment it is ACCEPTED — pay tier, region and time thresholds, frozen.
      * mission.js stamps this onto the mission so settlement reads the contract you took, not the
-     * day you finished on. The 1 a.m. accept buying tomorrow's rate is a RATIFIED FEATURE
-     * (DESIGN.md: "Nobody authored it; do not 'fix' it"). The thresholds are the REGION's
+     * place you finished in. The thresholds are the REGION's
      * (FEAT-138), never the day's; haul and freight read theirs from `region` at settle
      * (rankTable), which is the same thing, since the table is static per region.
      */
@@ -452,12 +451,12 @@ export class EconomySystem {
         const day = this._getDay()
         const region = this._getRegion()
         const dt = dayTier(day), rt = regionTier(region)
-        // payTier is the ONE number consumers should multiply by: the day treadmill and the earned
-        // region step composed. Both components ride along for the result card and for debugging.
+        // payTier is the ONE number consumers should multiply by: the earned region step alone
+        // (FEAT-168: the day no longer moves pay). dayTier rides along for costs and the readout.
         // Frozen at accept with everything else — a job accepted in region 2 pays region 2's rate
-        // even if it is settled after moving on, exactly as the day tier already worked.
+        // even if it is settled after moving on.
         return Object.freeze({
-            day, region, dayTier: dt, regionTier: rt, payTier: dt * rt,
+            day, region, dayTier: dt, regionTier: rt, payTier: rt,
             thresholds: Object.freeze({ ...rankTable('time', region) }),
         })
     }
@@ -469,7 +468,7 @@ export class EconomySystem {
      * gradeRun used to letter it).
      */
     settle (result, mission) {
-        const t = mission?.terms ?? { payTier: dayTier(1) * regionTier(1) }
+        const t = mission?.terms ?? { payTier: regionTier(1) }
         // FEAT-67: a bonus offer pays `payMult` (BONUS_PAY_MULT) of the line — a multiplier on the
         // whole curve, so pay stays continuous in the ratio (SM-INV-4). Frozen on the mission at
         // accept with the rest of the terms; a job with no board offer behind it pays the full line.
@@ -484,7 +483,7 @@ export class EconomySystem {
         // and never a half-price cash line the player couldn't value. Base pay stays guaranteed.
         const tipMult = mission?.bonus ? 0 : isFinite(mission?.tipMult) ? mission.tipMult : 1
         // FEAT-97: a fragile job (result.health set by main.js) cuts half its base by condition.
-        const tier = t.payTier ?? t.dayTier ?? 1
+        const tier = t.payTier ?? 1
         const { base, tip, total: payout } = result.health != null
             ? splitFragilePayout(result.par, result.ratio, result.health, tier, mult, tipMult)
             : splitPayout(result.par, result.ratio, tier, mult, tipMult)

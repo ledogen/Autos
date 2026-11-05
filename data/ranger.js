@@ -101,7 +101,7 @@ export const RANGER_PARAMS = {
   // The burn TABLE is the engine's (data/engines.js → src/fuel.js); these are the truck's side of it.
   fuelTankGal:          16.5,  // gal — 2002 Ranger regular cab, short bed (service manual)
   fuelBurnScale:        7,     // [-] GAMEPLAY multiplier over the honest table (owner 2026-10-16): WOT empties the tank in ~10–18 real min
-  fuelPricePerGal:      0.50,  // $ — read at the pump; Q9A cost escalation may drive it later
+  fuelPricePerGal:      0.50,  // $ — the day-1 price; the pump multiplies by the day tier (FEAT-168)
   fuelStartFrac:        0.62,  // [-] story start: the truck was handed over "with some gas in it"
   fuelFillGalPerS:      1.65,  // gal/s — a full 16.5 gal tank in 10 s of held F (owner 2026-10-16)
   fuelFreeRoamFloorFrac: 0.05, // [-] free roam's no-consequence floor: the tank stops here and never runs dry

@@ -71,3 +71,14 @@ design-amendments-2026-10-14.md §12–15 change the problem:
 - ~~Parts are priced by the furthest region unlocked (§11), so their prices follow the region step,
   scaled by the upgrade/item-cost knob.~~ **Retired 2026-10-21 (owner):** parts scale with the clock
   (`dayTier`) like every other cost, times the upgrade/item-cost knob. No region term.
+
+## Owner, 2026-11-05 (page inbox) — more spread between S and D
+
+"relevant to rebalancing: i think we want more spread between S and D times S is about right maybe slightly too
+challenging, C should be accessible at a much more forgiving time (+10%-20%). just add it to the ticket for now"
+
+**A conflict to resolve when this is built:** C is pinned at exactly par (ratio 1.00) in every region, because par
+is the pass line by definition (the 2026-08-16 re-anchor), and `tipZero` is solved from it. Moving C to 1.10–1.20
+breaks that. The clean way that keeps it: raise `PAR_SLACK` 1.15 → ~1.32–1.38, so par itself sits 15–20 % later,
+and pull S/A/B down as ratios so S's absolute time barely moves (S 0.77 → ~0.66; "maybe slightly too challenging"
+→ a touch easier still). The owner rules on which, with numbers, at build time.
