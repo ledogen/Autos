@@ -2,22 +2,24 @@
  * SM-3 — the service center screen. Opens when the parking brake latches at an auto shop (main.js
  * _updateParkTriggers); closes on Esc, the ×, or the brake coming off. While it is open the camera
  * holds a front three-quarter view of the truck (main.js, through `onView`) — it's a modification
- * game, and the player should see the truck — so the card docks to the side. Two tabs (owner,
- * 2026-10-22):
- *   My Vehicle — everything installed and its condition, grouped. Selecting a row offers REPAIR (a
+ * game, and the player should see the truck — so the card docks to the side, and the HUD hides
+ * behind it (FEAT-167: the card carries the wallet and the clock). Tabs (owner, 2026-10-22):
+ *   My Vehicle — everything installed and its condition, in sections that start collapsed, each
+ *                header coloured by its worst part (FEAT-167). Selecting a row offers REPAIR (a
  *                repairable class: set how far with ◀ ▶, ←/→ or the D-pad, in 5% steps up to the
  *                bench's cap; price and hours follow live) and EXCHANGE (a part you own that fits that
- *                socket, or a mounted pair on a corner). Alignment has one "straighten"; a flat has
- *                "patch"; replace-only parts only exchange.
- *   Parts Shop — ONLY this shop's shelf right now (src/shop-stock.js): name, new or used and its
- *                condition, price, and how long before it's gone. Buy & fit (a tire or wheel names its
- *                corner) or buy to carry. Hovering — or pad-focusing — an item fits it on the truck for
- *                a look (ServiceCenter.preview), on the corner under the pointer or else the worst one;
- *                moving off puts back exactly what was there.
+ *                socket, or a mounted pair on a corner). Alignment is one row, one job for all four
+ *                corners (ServiceCenter.align); a flat has "patch"; replace-only parts only exchange.
+ *   Parts Shop — ONLY this shop's shelf right now (src/shop-stock.js): name, how long before it's
+ *                gone, a two-line description; on the right its condition and the part / installation
+ *                prices. Buy & fit (a tire or wheel names its corner) or buy to carry. Hovering — or
+ *                pad-focusing — an item fits it on the truck for a look (ServiceCenter.preview), on the
+ *                corner under the pointer or else the worst one; moving off puts back exactly what was there.
  *                My Items, below it: sell the parts you carry, and repair or patch them as their own items.
- * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt). The shop still posts jobs (owner,
- * 2026-10-20): the header's "jobs" button hands over to the offer. "map" opens the map over the
- * screen (owner, 2026-10-21); the screen hides under it and the clock stays held.
+ *   Jobs       — only while the shop has live offers (owner, 2026-10-20: it still posts work): each as
+ *                the map card words it; picking one closes the screen and hands over to its offer.
+ * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt). "map" opens
+ * the map over the screen (owner, 2026-10-21); the screen hides under it and the clock stays held.
  *
  * Described, never scored (SM-INV-10): parts are names, prices are money, conditions are colour bars
  * with their percentage (wear is a state, not a score: owner, 2026-10-22),
@@ -30,7 +32,7 @@ import { ITEMS } from '../data/items.js'
 import { TRACKS } from './damage.js'
 import { formatMoney } from './economy.js'
 import { bandColor } from './damage-screen.js'
-import { formatGameDuration } from './offer-board.js'
+import { formatGameDuration, formatDue } from './offer-board.js'
 import { shelfName } from './shop-stock.js'
 import { BACK_BUTTON } from './park-badge.js'
 
@@ -41,12 +43,16 @@ const CSS = `
   align-items: center; padding: 0 16px; font-family: var(--font); color: var(--text-body); }
 #svc-screen.open { display: flex; }
 body.map-open #svc-screen { visibility: hidden; }
-body:has(#svc-screen.open) #quickjob-btn { visibility: hidden; }   /* it sits where the card docks */
+/* FEAT-167 (owner, 2026-11-05): no HUD behind the shop — the card carries the wallet and the clock. The
+   dock comes back over the map, where the run HUD lifts above it. */
+body:has(#svc-screen.open) #quickjob-btn, body:has(#svc-screen.open) #cluster,
+body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen .sv-card { pointer-events: auto; background: var(--card-bg); border: 1px solid var(--line-card);
   padding: 12px 16px 14px; width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow-y: auto; box-sizing: border-box; }
 #svc-screen .sv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 #svc-screen .sv-title { flex: 1; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-story); }
-#svc-screen .sv-wallet { font-size: 14px; color: var(--money); }
+#svc-screen .sv-wallet { font-size: 14px; color: var(--money); text-align: right; }
+#svc-screen .sv-clock { font-size: 12px; color: var(--text-dim); }
 #svc-screen .sv-tabs { display: flex; gap: 4px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
 #svc-screen .sv-tab { font: 14px var(--font); color: var(--text-dim); background: transparent; border: 0;
   border-bottom: 2px solid transparent; padding: 4px 10px; cursor: pointer; transition: color 0.1s; }
@@ -88,6 +94,12 @@ body:has(#svc-screen.open) #quickjob-btn { visibility: hidden; }   /* it sits wh
 #svc-screen .sv-slot { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
 #svc-screen .sv-slot:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 #svc-screen .sv-slothead { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-faint); margin-bottom: 2px; }
+#svc-screen button.sv-slothead { display: block; width: 100%; padding: 2px 6px; margin: 0 -6px 2px; box-sizing: content-box;
+  font: 12px var(--font); letter-spacing: 2px; text-align: left; background: transparent; border: 0; cursor: pointer; transition: background 0.1s; }
+#svc-screen button.sv-slothead:hover { background: rgba(255,255,255,0.09); }
+#svc-screen .sv-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+#svc-screen .sv-price { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; color: var(--text-dim); }
+#svc-screen .sv-cond { display: flex; align-items: center; gap: 4px; }
 #svc-screen .sv-chip { width: 28px; height: 28px; border-radius: 3px; flex: none; background-size: contain;
   background-repeat: no-repeat; background-position: center; }
 #svc-screen .sv-empty { font-size: 14px; color: var(--text-faint); padding: 4px 0; }
@@ -118,10 +130,11 @@ const isFlat = (d, track) => TRACKS[track]?.cls === 'tire' && d.flat[TRACKS[trac
 const CORNERS = [['FL', 'Front left'], ['FR', 'Front right'], ['RL', 'Rear left'], ['RR', 'Rear right']]
 const corners = (k) => CORNERS.map(([c, l]) => [k + c, l])
 const axles = (k) => [[k + 'Front', 'Front'], [k + 'Rear', 'Rear']]
+const ALIGN = corners('align')   // one row: the alignment is one job (FEAT-167)
 const GROUPS = [
   ['Wheels', corners('wheel')],
   ['Tires', corners('tire')],
-  ['Alignment', corners('align')],
+  ['Alignment', ALIGN],
   ['Brakes', axles('brakes')],
   ['Springs', axles('springs')],
   ['Shocks', axles('dampers')],
@@ -137,8 +150,8 @@ export class ServiceScreen {
    * @param {import('./service.js').ServiceCenter} service
    * @param {object} vehicleState - read-only; the brake coming off closes the screen
    * @param {object} o
-   * @param {() => number} o.jobs - live offers at this shop
-   * @param {() => void} o.openJobs - close the screen and hand the brake to the offer
+   * @param {() => object[]} o.jobs - this shop's live offers as offerBoard.card words them
+   * @param {(i:number) => void} o.openJobs - hand the brake to the offers, starting at the i-th
    * @param {() => void} o.openMap - show the map over the screen
    * @param {() => number} o.nowH - the game clock (daySystem.clockH): the shelf's time left
    * @param {(open:boolean) => void} o.onView - the screen opened / closed (main.js: the camera)
@@ -151,6 +164,7 @@ export class ServiceScreen {
     this.tab = 'vehicle'
     this.name = ''
     this.sel = null       // the selected row's key: a My Vehicle key, or `i:<inventory index>` in My Items
+    this.groups = new Set()   // the My Vehicle sections opened (all start collapsed)
     this.target = {}      // repair key → the chosen target condition
     this._pv = null       // the live preview's `slot:socket`, or null
     this._mouse = true    // the last input was the pointer (else keys / the pad, which move .nav-focus)
@@ -177,6 +191,7 @@ export class ServiceScreen {
     this.tab = 'vehicle'
     this.sel = null
     this.target = {}
+    this.groups.clear()
     this.screen.classList.add('open')
     this.onView(true)
     this.render()
@@ -242,10 +257,12 @@ export class ServiceScreen {
     const key = b.dataset.key
     switch (b.dataset.act) {
       case 'close': this.close(); return
-      case 'jobs': this.close(); this.openJobs(); return
+      case 'jobs': this.close(); this.openJobs(+b.dataset.index); return
       case 'map': this.openMap(); return
       case 'tab': this.tab = b.dataset.tab; this.sel = null; break
       case 'sel': this.sel = this.sel === key ? null : key; break
+      case 'group': { const g = b.dataset.group; this.groups.has(g) ? this.groups.delete(g) : this.groups.add(g); break }
+      case 'align': s.align(); break
       case 'step': {
         const d = e.target.closest('.sel-prev') ? -1 : e.target.closest('.sel-next') ? 1 : 0
         const ts = this._targets(key)
@@ -274,24 +291,39 @@ export class ServiceScreen {
     if (!this.isOpen) return
     const s = this.service
     const jobs = this.jobs()
+    if (this.tab === 'jobs' && !jobs.length) this.tab = 'vehicle'
     const tab = (id, label) => `<button class="sv-tab${this.tab === id ? ' on' : ''}" data-act="tab" data-tab="${id}">${label}</button>`
     this.card.innerHTML =
       `<div class="sv-head"><span class="sv-title">${this.name} · service</span>`
-      + `<span class="sv-wallet">$${formatMoney(s.money())}</span>`
+      + `<span class="sv-wallet">$${formatMoney(s.money())}<br><span class="sv-clock">${formatDue(Math.floor(this.nowH() * 60) / 60)}</span></span>`
       + btn('map', 'map')
-      + (jobs ? btn('jobs', `jobs (${jobs})`) : '')
       + `</div>`
-      + `<div class="sv-tabs">${tab('vehicle', 'My Vehicle')}${tab('shop', 'Parts Shop')}</div>`
-      + (this.tab === 'vehicle' ? this._vehicle() : this._shop())
+      + `<div class="sv-tabs">${tab('vehicle', 'My Vehicle')}${tab('shop', 'Parts Shop')}${jobs.length ? tab('jobs', 'Jobs') : ''}</div>`
+      + (this.tab === 'vehicle' ? this._vehicle() : this.tab === 'shop' ? this._shop() : this._jobs(jobs))
       + BACK_BUTTON   // the card's way out (owner, 2026-10-21: replaces the corner ×)
   }
 
   // ── My Vehicle ─────────────────────────────────────────────────────────────────────────────────
 
+  /** Each section is a toggle, collapsed at first; its header wears the band of its worst part, a flat
+   *  reading as nothing left (owner, 2026-11-05: "if a tire is at 40%, the tires section will appear as orange"). */
   _vehicle () {
     const d = this.service.damage
-    return GROUPS.map(([title, keys]) => `<div class="sv-slot"><div class="sv-slothead">${title}</div>`
-      + keys.filter(([k]) => (!TRACKS[k]?.manualOnly || d.manualBox) && (!TRACKS[k]?.clutchOnly || d.clutchDiff)).map(([k, label]) => this._vehicleRow(k, label)).join('') + `</div>`).join('')
+    return GROUPS.map(([title, all]) => {
+      const keys = all.filter(([k]) => (!TRACKS[k]?.manualOnly || d.manualBox) && (!TRACKS[k]?.clutchOnly || d.clutchDiff))
+      const conds = keys.map(([k]) => SLOTS[k] ? SLOTS[k].tracks[0] : k).filter(Boolean).map(t => isFlat(d, t) ? 0 : d.get(t))
+      const open = this.groups.has(title)
+      return `<div class="sv-slot"><button class="sv-slothead" data-act="group" data-group="${title}"`
+        + `${conds.length ? ` style="color:${bandColor(Math.min(...conds))}"` : ''}>${open ? '▾' : '▸'} ${title}</button>`
+        + (!open ? '' : all === ALIGN ? this._align() : keys.map(([k, label]) => this._vehicleRow(k, label)).join('')) + `</div>`
+    }).join('')
+  }
+
+  /** The alignment: one row for all four corners, the worst one's bar, one price (owner, 2026-11-05). */
+  _align () {
+    const s = this.service, q = s.alignQuote()
+    return `<div class="sv-row"><span class="sv-name">All four corners</span>${bar(Math.min(...ALIGN.map(([k]) => s.damage.get(k))))}`
+      + `<span class="sv-cost">${cost(q.price, q.hours)}</span>` + btn('align', 'align', s.bent() && s.money() + 1e-9 >= q.price, '', ' ok') + `</div>`
   }
 
   _vehicleRow (k, label) {
@@ -312,13 +344,7 @@ export class ServiceScreen {
   _vehicleActs (socket, track, flat) {
     const s = this.service, money = s.money(), cls = track && TRACKS[track].cls
     let h = ''
-    if (cls === 'alignment') {
-      const q = s.repairQuote(track, 1)
-      h += s.targets(track).length
-        ? `<div class="sv-row"><span class="sv-name">Straighten it</span><span class="sv-cost">${cost(q.price, q.hours)}</span>`
-          + btn('repair', 'straighten', money + 1e-9 >= q.price, `data-key="v:${track}"`, ' ok') + `</div>`
-        : dim('Straight.')
-    } else if (cls && REPAIRS[cls]) {
+    if (cls && REPAIRS[cls]) {
       h += `<div class="sv-sub">Repair</div>` + this._repair(`v:${track}`, s.damage.get(track), (t) => s.repairQuote(track, t))
     } else if (cls) {
       h += dim('Replace only: exchange it for one you carry, or buy one off a shelf.')
@@ -370,15 +396,25 @@ export class ServiceScreen {
       const fit = sockets.length > 1
         ? sockets.map(sk => btn('buy', where(sk), ok, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
         : sockets.length ? btn('buy', 'buy & fit', ok, `data-slot="${i}" data-socket="${sockets[0]}"`) : ''
-      const state = e.cond === null ? '' : e.cond >= 1 ? 'new · ' : 'used · '
+      // FEAT-167 (owner, 2026-11-05: "too much detail text"): the bar says new or used, the prices stack
+      // on the right with it, and the description is two lines at most.
       h += `<div class="sv-row wrap sv-shelf" data-slot="${i}">${chip(e.id)}<span class="sv-name">${shelfName(e)}`
-        + ` <span class="sv-desc">${state}${e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}`}`
-        + `${fitQ.price ? ` · fitting $${formatMoney(fitQ.price)}` : ''}</span>`
-        + `<div class="sv-desc">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</div></span>`
-        + (e.cond !== null ? bar(e.cond) : '') + `<span class="sv-cost">$${formatMoney(price)}</span>`
-        + `<span class="sv-acts">${fit} ${btn('stow', 'to inventory', money + 1e-9 >= price, `data-slot="${i}"`)}</span></div>`
+        + ` <span class="sv-desc">${e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}`}</span>`
+        + `<div class="sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</div></span>`
+        + `<span class="sv-price">${e.cond !== null ? `<span class="sv-cond">${bar(e.cond)}</span>` : ''}`
+        + (sockets.length ? `<span>part: $${formatMoney(price)}</span><span>installation: $${formatMoney(fitQ.price)}</span>` : `<span>$${formatMoney(price)}</span>`)
+        + `</span><span class="sv-acts">${fit} ${btn('stow', 'to inventory', money + 1e-9 >= price, `data-slot="${i}"`)}</span></div>`
     })
     return h + `</div>` + this._myItems()
+  }
+
+  // ── Jobs ────────────────────────────────────────────────────────────────────────────────────────
+
+  /** The shop's live offers, each in the map card's own sentence and pay line. */
+  _jobs (cards) {
+    return `<div class="sv-slot">` + cards.map((c, i) => `<div class="sv-row wrap"><span class="sv-name">`
+      + c.sentence.map(r => r.b ? `<b>${r.t}</b>` : r.t).join('') + (c.pay ? `<div class="sv-desc">${c.pay}</div>` : '')
+      + `</span><span class="sv-acts">${btn('jobs', 'see the job', true, `data-index="${i}"`, ' ok')}</span></div>`).join('') + `</div>`
   }
 
   _myItems () {

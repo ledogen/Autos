@@ -3545,11 +3545,15 @@ const serviceCenter = new ServiceCenter({
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
-  jobs: () => _servicePoi ? _takeableOffers(_servicePoi.id, daySystem.clockH()).length : 0,
-  // The shop still posts work: the button hands the brake to the offer, as parking does elsewhere.
-  openJobs: () => {
+  // The shop still posts work (FEAT-167: its Jobs tab), each offer worded as its map card is. Picking one
+  // hands the brake to the offers, as parking does elsewhere, starting at that one.
+  jobs: () => {
+    const n = _servicePoi ? _takeableOffers(_servicePoi.id, daySystem.clockH()).length : 0
+    return Array.from({ length: n }, (_, i) => _boardView.view(_servicePoi.id, i).card)
+  },
+  openJobs: (i = 0) => {
     const offers = _takeableOffers(_servicePoi.id, daySystem.clockH())
-    if (offers.length) missionSystem.enterFromPoi(_servicePoi, offers, _planOffer)
+    if (offers.length) missionSystem.enterFromPoi(_servicePoi, [...offers.slice(i), ...offers.slice(0, i)], _planOffer)
   },
   openMap: () => map2d.toggle(),
   nowH: () => daySystem.clockH(),
