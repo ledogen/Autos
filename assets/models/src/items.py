@@ -14,7 +14,7 @@ Run in the GUI Blender (blender-mcp):
     importlib.reload(items); items.run_all()            # or items.run("coffee")
 The ids are data/items.js ITEMS keys — test/inventory.mjs fails if one has no PNG.
 """
-import bpy, bmesh, math, os, random
+import bpy, bmesh, contextlib, math, os, random
 from mathutils import Vector, Matrix
 
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "assets", "items")
@@ -2681,22 +2681,41 @@ WORLD = {"spareTire": ("spare-tire", Matrix.Rotation(math.pi / 2, 4, "X"))}   # 
 
 def export_glb(item_id):
     fresh_scene()
-    ob = BUILDERS[item_id]()
-    fname, rest = WORLD[item_id]
+    fname, rest, *build = WORLD[item_id]
+    ob = (build[0] if build else BUILDERS[item_id])()
     ob.data.transform(rest)
     vs = [v.co for v in ob.data.vertices]
     lo = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
     hi = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
-    ob.data.transform(Matrix.Translation((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z)))
+    if not ob.get("keepOrigin"):   # a bed layer built in the bed's frame keeps it (build_blanketLayer)
+        ob.data.transform(Matrix.Translation((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z)))
     path = os.path.join(GLB_DIR, f"{fname}.glb")
-    win = bpy.context.window_manager.windows[0]   # the exporter needs a window context (freight.py _ui_override)
-    with bpy.context.temp_override(window=win, area=win.screen.areas[0]):
+    # In the GUI the operator runs under a window context (freight.py _ui_override). `blender -b` has no
+    # window, and the glTF exporter runs fine without one (FEAT-66, 2026-11-02): only the override needed it.
+    wins = bpy.context.window_manager.windows
+    with bpy.context.temp_override(window=wins[0], area=wins[0].screen.areas[0]) if wins else contextlib.nullcontext():
         bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", export_draco_mesh_compression_enable=False,
                                   export_yup=True, export_apply=True, export_materials="EXPORT", export_texcoords=False,
                                   export_normals=True, export_cameras=False, export_lights=False, use_selection=False)
     tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
     print(f"{item_id}: {tris} tris, {hi - lo} m -> {path}")
     return ob
+
+
+# FEAT-143: every other item, as it lies on the ground once dropped behind the tailgate (src/world-items.js).
+# A block of its own beside WORLD's: the camp-bed rows live there (FEAT-66). Most builders already stand
+# the item as it would rest; the ones built upright or tipped for the icon are laid down here.
+WORLD.update({k: ("item-" + "".join("-" + c.lower() if c.isupper() else c for c in k), Matrix.Identity(4)) for k in (
+    "coffee", "chiliDog", "emergencyGas", "tirePlugKit", "rubberBedMat", "compressor", "energyDrink", "stopLeak",
+    "zipTies", "ductTape", "jerryCan", "quickJack", "pack", "springs", "dampers", "pads", "shoes", "arb", "diff",
+    "lift", "engine", "headlight")})
+WORLD.update({
+    "tire":       ("item-tire",        Matrix.Rotation(math.pi / 2, 4, "Y")),                                   # axis X → Z: lying flat
+    "wheel":      ("item-wheel",       Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Rotation(math.radians(25), 4, "Z")),   # un-yawed, then flat
+    "hiLiftJack": ("item-hi-lift-jack", Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Rotation(math.radians(8), 4, "Z")),   # on its side, the lever along the ground
+    "radiator":   ("item-radiator",    Matrix.Rotation(math.pi / 2, 4, "X") @ Matrix.Rotation(math.radians(-15), 4, "Z")),  # face down
+    "airFilter":  ("item-air-filter",  Matrix.Rotation(math.radians(-30), 4, "X") @ Matrix.Rotation(math.radians(-35), 4, "Z")),  # the icon's tip undone
+})
 
 
 def run_all():
