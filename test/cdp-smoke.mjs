@@ -36,10 +36,12 @@ process.on('exit', shutdown)
 // INFRA-08: every wall-clock ceiling in here is a HANG GUARD, never a speed test, and a loaded box (other lanes'
 // suites, the owner's game on the same machine) runs the page slower — the region warm on a contended pool, the
 // sim in slow motion. The 2026-11-05 landing smokes failed on exactly that, never on code. So every ceiling
-// stretches by how slow the box is right now: the boot step's own time over an idle boot (the boot is the same
-// worker-pool world build as a story load: 13 s boots went with 4.1× story loads), or the 1-min load average
-// per core if that climbs higher later. The load average alone under-reads it badly: two suites and a game read
-// 4×/core while the boot ran 47× idle. An idle box keeps the base ceilings; past TOO_SLOW× the run stops (boot).
+// stretches by how slow the box is right now: the boot step's own time over an idle boot, or the 1-min load
+// average per core if that climbs higher later. The boot is the right yardstick because it is built the way a
+// story load is, a slice per rendered frame (a 13 s boot went with a 4.1× story load), so it also feels the GPU.
+// The load average alone cannot: with the owner's game on the GPU the page drew 12–14 fps and booted 17× idle
+// at 1.8/core. An idle box keeps the base ceilings; past TOO_SLOW× the run stops at boot (an hour-long smoke
+// speaks for nothing).
 const BOOT_IDLE_S = 3.5, TOO_SLOW = 10   // this Mac's idle boot: 3.3–3.5 s
 let bootX = 0, peakX = 1   // bootX: 0 until the boot step has measured it · peakX: the summary line's worst stretch
 const stretch = () => { const x = bootX ? Math.max(1, bootX, loadavg()[0] / cpus().length) : 1; peakX = Math.max(peakX, x); return x }
