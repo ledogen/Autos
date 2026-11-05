@@ -3427,8 +3427,33 @@ export class RoadSystem {
         return out
     }
 
+    // PERF-31: ONE profile solve per centerline per network rev. The route cache hands back the same
+    // Centerline object for the same (edge, pins) key and a sample is a pure fn of it (terrain +
+    // prices, fixed within a rev), yet the pass-1 and pass-2 memos (_v2RunSample1 / _v2RunSample)
+    // and R4's pass 2 (every plan memo re-keys on _planRev) each re-solved it: ~640 solves on ~290
+    // centerlines per 1400 m window (2026-11-05). A hit replays the solve's tally deltas, so
+    // _v2Infeasible (which _v2SampleEdge reads to climb the hard-grade rungs) and the rung/stub
+    // tallies come out exactly as a re-solve would leave them. No caller mutates a sample, so pass 1
+    // and pass 2 sharing one object is invisible.
     _v2SampleCenterline(cl) {
         if (!cl || !(cl.length > 1e-6)) return null
+        if (this._v2ProfMemo?.rev !== this._networkRev) this._v2ProfMemo = { rev: this._networkRev, map: new WeakMap() }
+        const rung = this._v2Rung || (this._v2Rung = [0, 0, 0, 0])
+        const hit = this._v2ProfMemo.map.get(cl)
+        if (hit) {
+            this._v2Infeasible = (this._v2Infeasible || 0) + hit.dInf
+            this._v2StubResolved = (this._v2StubResolved || 0) + hit.dStub
+            for (let i = 0; i < 4; i++) rung[i] += hit.dRung[i]
+            return hit.out
+        }
+        const inf0 = this._v2Infeasible || 0, stub0 = this._v2StubResolved || 0, rung0 = rung.slice()
+        const out = this._v2SampleCenterlineSolve(cl)
+        this._v2ProfMemo.map.set(cl, { out, dInf: (this._v2Infeasible || 0) - inf0,
+            dStub: (this._v2StubResolved || 0) - stub0, dRung: rung.map((v, i) => v - rung0[i]) })
+        return out
+    }
+
+    _v2SampleCenterlineSolve(cl) {
         const n = Math.max(1, Math.ceil(cl.length / PROTO_SAMPLE_DS))
         const pts = new Array(n + 1)
         const clArc = new Float64Array(n + 1)
