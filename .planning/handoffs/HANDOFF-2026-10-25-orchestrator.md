@@ -209,8 +209,8 @@ assumptions). Nobody but the owner can `/clear` a session: a SendMessage arrives
 **On every wake:** read each lane's context from its transcript: the last assistant entry's `usage`
 (input + cache read + cache creation) in `~/.claude/projects/-Users-ledogen-CodeShit-CarGame/<session>.jsonl`.
 All lanes write to that one folder; tell them apart by the worktree path in the transcript. When a lane
-finishes a task while heavy (≳ 400k tokens), have it write `lanes/<id>.handoff`, then tell the owner
-"<lane> is ready for a clear". The owner types `/clear` and pastes the page's resume prompt.
+finishes a task while over **300k tokens (the owner's budget, 2026-11-05)**, have it write `lanes/<id>.handoff`, then tell the owner
+"<lane> is ready for a clear". The owner types `/clear` (Remote Control accepts it too) and pastes the page's resume prompt.
 
 ## State 2026-11-04 (after midnight) — orchestrator
 Owner asleep, standing permission for the night: "feel free to move main. merge, push main to origin, etc".
