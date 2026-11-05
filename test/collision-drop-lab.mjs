@@ -32,7 +32,7 @@ const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chro
   { stdio: 'ignore', detached: true })
 await sleep(3500)
 const list = await (await fetch(`http://localhost:${CDP}/json/list`)).json()
-const ws = new WebSocket(list.find(t => t.type === 'page').webSocketDebuggerUrl)
+const ws = new WebSocket(list.find(t => t.type === 'page' && t.url.startsWith('http')).webSocketDebuggerUrl)   // not Chrome's own first-run tab (chrome://settings/help)
 await new Promise(r => ws.addEventListener('open', r))
 let id = 0; const pend = new Map()
 ws.addEventListener('message', e => { const m = JSON.parse(e.data); if (pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id) } })
