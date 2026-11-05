@@ -8,13 +8,13 @@
 //      target off the list; straightening zeroes the bent geometry; a wallet that can't cover it
 //      changes nothing. The shop patches a flat: air back in, condition unchanged.
 //   3. Buy & fit off the shelf: priced by condition × tier, charges, empties the slot, bolts the part on
-//      with its condition, adds the socket's labour; the old part waits on the bench until sold (half
-//      price × condition) or kept (into inventory WITH its wear, and its puncture); exchanging a kept
-//      part back on brings that wear back, on any corner for a tire. A flat tire won't go on. Closing
-//      with a part on the bench keeps it.
+//      with its condition, adds the socket's labour; the old part goes straight into the inventory WITH
+//      its wear and its puncture (owner 11-04: no sell / keep prompt) and sells from there (half price ×
+//      condition); exchanging it back on brings that wear back, on any corner for a tire. A flat tire
+//      won't go on.
 //   4. The live preview: fit a shelf item for a look, revert EXACTLY (params, conditions, durability,
 //      the fitted map, the flats); nothing charged or clocked; closing reverts too.
-//   5. A massless stock part (no lift) leaves nothing on the bench.
+//   5. A massless stock part (no lift) puts nothing in the inventory.
 //   6. A part in inventory follows the same rules: a flat tire is patched (wear kept), a worn one has
 //      no repair; a worn spring pair is re-arched up to the cap.
 //   7. A shelf item bought to carry goes into the inventory with its condition; a part you own sells
@@ -106,30 +106,28 @@ check('…the slot is empty now', shelf[0] === null && !svc.buyAndFit(0, 'damper
 check('the socket\'s labour is on the clock', hours === 0.75, hours)
 check('an exchange off the tires pays the minimum charge too, × tier', svc.fitLabour('springsFrontHD', 'springsFront').price === SU.price
   && (tier = 2, svc.fitLabour('springsFrontHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
-check('the old shocks wait on the bench with their wear', svc.off?.id === 'dampersRearOEM' && svc.off.cond === 0.2)
-check('no second swap while one waits', !svc.buyAndFit(1, 'tireFL'))
+const oldShocks = inventory.list().find(r => r.id === 'dampersRearOEM')
+check('the old shocks go straight into the inventory with their wear', !!oldShocks && oldShocks.cond === 0.2, JSON.stringify(oldShocks))
 const before = wallet
-svc.settleOff('sell')
-check('sold for half price × condition', near(wallet - before, PARTS.dampersRearOEM.price * 0.5 * 0.2), wallet - before)
+check('…and sell from there for half price × condition', svc.sellOwned(oldShocks.index) && near(wallet - before, PARTS.dampersRearOEM.price * 0.5 * 0.2), wallet - before)
 
 check('a tire needs a corner', !svc.buyAndFit(1, 'tire') && !svc.buyAndFit(1, 'wheelFL'))
 damage.set('tireFL', 0.3); damage.flat[0] = true
 check('a used tire goes on with its wear', svc.buyAndFit(1, 'tireFL') && damage.get('tireFL') === 0.5 && !damage.flat[0])
-svc.settleOff('keep')
 const kept = inventory.list().find(r => r.id === 'tireStandard')
 check('the flat comes off and is kept, flat, with its wear', !!kept && kept.flat && kept.cond === 0.3, JSON.stringify(kept))
 check('a flat tire won\'t go on', !svc.fitFromInventory(kept.index, 'tireRR') && !svc.exchangeOptions('tireRR').some(r => r.index === kept.index))
 stock(['tireOld'], ['liftKit'], ['spareTire', 0.6], ['tirePlugKit'])
-svc.buyAndFit(0, 'tireFL'); svc.settleOff('keep')
+svc.buyAndFit(0, 'tireFL')
 const idx = inventory.list().findIndex(r => r.id === 'tireSport')
 check('the worn sport tire is in inventory', idx >= 0 && inventory.list()[idx].cond === 0.5 && !inventory.list()[idx].flat)
 hours = 0
 check('exchange: offered for any corner, fitted with its wear', svc.exchangeOptions('tireRR').some(r => r.index === idx)
   && !svc.exchangeOptions('wheelRR').some(r => r.index === idx) && svc.exchange(idx, 'tireRR')
   && parts.fitted('tireRR') === 'tireSport' && damage.get('tireRR') === 0.5 && !inventory.list().some(r => r.id === 'tireSport'))
-check('…for 2 hub swaps and 2 bead jobs, the old part to the bench', near(hours, 2 * HUB.hours + 2 * BEAD.hours) && svc.off?.id === 'tireStandard')
+check('…for 2 hub swaps and 2 bead jobs, the old tire into the inventory', near(hours, 2 * HUB.hours + 2 * BEAD.hours)
+  && inventory.list().filter(r => r.id === 'tireStandard').length === 2)
 svc.close()
-check('closing with a part on the bench keeps it', !svc.off && inventory.list().filter(r => r.id === 'tireStandard').length === 2)
 
 // ── 4. The live preview ───────────────────────────────────────────────────────────────────────
 // Fit a shelf item for a look, then revert: params, conditions, durability, the fitted map and the
@@ -148,9 +146,10 @@ check('closing reverts the preview exactly', state() === at)
 check('nothing to preview off an empty slot or the wrong socket', !svc.preview(5, 'lift') && !svc.preview(0, 'lift') && state() === at)
 damage.flat[2] = false
 
-// ── 5. Nothing to bench ───────────────────────────────────────────────────────────────────────
+// ── 5. Nothing comes off ──────────────────────────────────────────────────────────────────────
+const carried = inventory.list().length
 svc.buyAndFit(1, 'lift')
-check('no lift leaves nothing on the bench', svc.off === null)
+check('no lift puts nothing in the inventory', inventory.list().length === carried)
 
 // ── 6. Repairing a part as its own item ───────────────────────────────────────────────────────
 let owned = svc.ownedRepairRows()
@@ -200,7 +199,6 @@ svc.close(); inventory.start(); wallet = 100; hours = 0
 stock(['tireOffroad'])
 check('buy & fit a tire: the part plus 2 hub + 2 bead', svc.buyAndFit(0, 'tireRL')
   && near(wallet, 100 - PARTS.tireOffroad.price - 2 * HUB.price - 2 * BEAD.price), wallet)
-svc.settleOff('sell')
 inventory.start(); wallet = 100; hours = 0
 inventory.grant('spareTire', 1, { cond: 0.6, flat: true, tire: 'tireSport', wheel: 'wheelSteel', wheelCond: 0.4 })
 check('split: a tire and a wheel, each with its wear, the puncture on the tire', svc.split(sp().index)

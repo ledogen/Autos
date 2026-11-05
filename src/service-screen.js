@@ -15,7 +15,7 @@
  *                a look (ServiceCenter.preview), on the corner under the pointer or else the worst one;
  *                moving off puts back exactly what was there.
  *                My Items, below it: sell the parts you carry, and repair or patch them as their own items.
- * A part that comes off waits on the bench: sell it or keep it. The shop still posts jobs (owner,
+ * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt). The shop still posts jobs (owner,
  * 2026-10-20): the header's "jobs" button hands over to the offer. "map" opens the map over the
  * screen (owner, 2026-10-21); the screen hides under it and the clock stays held.
  *
@@ -90,8 +90,6 @@ body:has(#svc-screen.open) #quickjob-btn { visibility: hidden; }   /* it sits wh
 #svc-screen .sv-slothead { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-faint); margin-bottom: 2px; }
 #svc-screen .sv-chip { width: 28px; height: 28px; border-radius: 3px; flex: none; background-size: contain;
   background-repeat: no-repeat; background-position: center; }
-#svc-screen .sv-bench { padding: 7px 9px; margin-bottom: 10px; border: 1px solid var(--warn-line);
-  background: rgba(255,176,32,0.10); color: var(--warn-text); font-size: 14px; line-height: 1.6; }
 #svc-screen .sv-empty { font-size: 14px; color: var(--text-faint); padding: 4px 0; }
 `
 
@@ -268,8 +266,6 @@ export class ServiceScreen {
       case 'combine': s.combine(+b.dataset.index, +b.dataset.with); this.sel = null; break
       case 'buy': s.buyAndFit(+b.dataset.slot, b.dataset.socket); break
       case 'stow': s.buyToInventory(+b.dataset.slot); break
-      case 'sell': s.settleOff('sell'); break
-      case 'keep': s.settleOff('keep'); break
     }
     this.render()
   }
@@ -286,15 +282,8 @@ export class ServiceScreen {
       + (jobs ? btn('jobs', `jobs (${jobs})`) : '')
       + `</div>`
       + `<div class="sv-tabs">${tab('vehicle', 'My Vehicle')}${tab('shop', 'Parts Shop')}</div>`
-      + (s.off ? this._bench() : '')
       + (this.tab === 'vehicle' ? this._vehicle() : this._shop())
       + BACK_BUTTON   // the card's way out (owner, 2026-10-21: replaces the corner ×)
-  }
-
-  _bench () {
-    const s = this.service, off = s.off
-    return `<div class="sv-bench">Took off <b>${PARTS[off.id].name}</b>. `
-      + `${btn('sell', `sell for $${formatMoney(s.sellValue(off.id, off.cond))}`)} ${btn('keep', 'keep it')}</div>`
   }
 
   // ── My Vehicle ─────────────────────────────────────────────────────────────────────────────────
@@ -346,7 +335,7 @@ export class ServiceScreen {
             const q = s.fitLabour(r.id, socket)
             return `<div class="sv-row">${chip(r.id)}<span class="sv-name">${r.name}</span>${bar(r.cond ?? 1)}`
               + `<span class="sv-cost">${cost(q.price, q.hours)}</span>`
-              + btn('exchange', 'exchange', !s.off && money + 1e-9 >= q.price, `data-index="${r.index}" data-socket="${socket}"`) + `</div>`
+              + btn('exchange', 'exchange', money + 1e-9 >= q.price, `data-index="${r.index}" data-socket="${socket}"`) + `</div>`
           }).join('')
           : dim('Nothing you carry fits here.'))
     }
@@ -377,7 +366,7 @@ export class ServiceScreen {
       if (!e) { h += dim('An empty shelf.'); return }
       const price = s.shelfPrice(i), sockets = socketsFor(e.id)
       const fitQ = sockets.length ? s.fitLabour(e.id, sockets[0]) : { price: 0 }
-      const ok = !s.off && money + 1e-9 >= price + fitQ.price
+      const ok = money + 1e-9 >= price + fitQ.price
       const fit = sockets.length > 1
         ? sockets.map(sk => btn('buy', where(sk), ok, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
         : sockets.length ? btn('buy', 'buy & fit', ok, `data-slot="${i}" data-socket="${sockets[0]}"`) : ''
