@@ -76,6 +76,10 @@ If a lane has moved (not ff-able), leave it; it merges main itself.
 **Landing a lane into main:** in this checkout, `git merge --no-ff feature/<lane>` → resolve → `npm run test:all`
 (expect ALL green — the last known red, road-clearance, went green with FEAT-77 (a) on 2026-11-01; road-tunnel with BUG-77) → `node test/cdp-smoke.mjs` (15 steps; it flakes
 under load, rerun alone) → commit → fast-forward the other lanes. One lane at a time. Never push: pushing deploys Pages.
+**Smoke protocol (11-05, all lanes at full CPU):** landing smokes run ONLY on main, by the orchestrator, one
+at a time; lanes send a hash with affected gates green and skip their own landing smoke. A smoke that fails at
+load > ~50 is a load flake until it fails alone. Ask the lanes for a quiet window when the load won't drop
+(pausing their processes from here is refused by the permission classifier; renice works but isn't enough).
 
 ## The pages
 
