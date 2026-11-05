@@ -14,13 +14,14 @@
 //            a free quick slot (keys 1–4, items.md §1c).
 //   uses     uses per unit (a pack, a roll), when more than one: the stack tracks the open one's `left`
 //   capGal   a can's fill, gallons: the entry carries `gal`, and its mass is `kgPerGal` × gal on top
+//   hold     food: game hours the meal holds hunger off (items.md §1d; src/day.js eat)
 
 import { PARTS, partIcon } from './parts.js'
 
 export const ITEMS = {
     coffee:       { name: 'Coffee',        kind: 'consumable', massKg: 0.5, use: 'coffee',
                     desc: 'Wakes you up now. You will feel it in the morning.' },
-    chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3,
+    chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3, use: 'eat', hold: 10,
                     desc: 'Kinda gross.' },   // the owner's flavor line (setup page, 10-22)
     // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
     // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.
@@ -72,21 +73,38 @@ export const ITEMS = {
                     desc: 'An old canvas pack. Whatever is in it comes to camp.' },
 
     // ── Camp gear (items.md §2b) — `sleep` marks a sleeping item: the equipped pack always holds one.
-    bedroll:      { name: 'Bedroll',       kind: 'camp',       massKg: 2.5, sleep: true,
+    //    FEAT-66: what is PACKED is what stands at camp. `campSlot` is where on the pad
+    //    (src/camp-gear.js CAMP_SLOTS) and `model` the PROP_MODELS key; no `model` renders nothing (no
+    //    placeholder art). The bed slot STACKS by `layer`: the bed, the sleeping bag on it, the blanket
+    //    on top of either (owner, 2026-11-02). Every other slot shows one model.
+    bedroll:      { name: 'Bedroll',       kind: 'camp',       massKg: 2.5, sleep: true, campSlot: 'bed', model: 'bedroll',
                     desc: 'A rolled bed for the ground. Better than the dirt, not by much.' },
     // `rest` is the bonus on camp sleep's recovery rate while packed (owner, 2026-10-16), summed and
     // applied once (day.js recoveryRate). The beds replace the bedroll; the blanket and the sleeping
     // bag are add-ons in their own slot. Masses [DEFAULT].
-    airMattress:  { name: 'Air mattress',  kind: 'camp',       massKg: 3,   sleep: true, rest: 0.05,
+    airMattress:  { name: 'Air mattress',  kind: 'camp',       massKg: 3,   sleep: true, rest: 0.05, campSlot: 'bed', model: 'airMattress',
                     desc: 'Off the rocks, mostly. Leaks a little by morning.' },
-    sleepingPad:  { name: 'Sleeping pad',  kind: 'camp',       massKg: 1,   sleep: true, rest: 0.10,
+    sleepingPad:  { name: 'Sleeping pad',  kind: 'camp',       massKg: 1,   sleep: true, rest: 0.10, campSlot: 'bed', model: 'sleepingPad',
                     desc: 'A foam pad that keeps the cold ground away from you.' },
-    deluxeSleepingPad: { name: 'Deluxe sleeping pad', kind: 'camp', massKg: 2, sleep: true, rest: 0.15,
+    deluxeSleepingPad: { name: 'Deluxe sleeping pad', kind: 'camp', massKg: 2, sleep: true, rest: 0.15, campSlot: 'bed', model: 'deluxeSleepingPad',
                     desc: 'Thick and self-inflating. The best night you can have outdoors.' },
-    blanket:      { name: 'Blanket',       kind: 'camp',       massKg: 1,   rest: 0.05,
+    blanket:      { name: 'Blanket',       kind: 'camp',       massKg: 1,   rest: 0.05, campSlot: 'bed', model: 'blanket', layer: 2,
                     desc: 'A wool blanket on top of whatever you sleep on.' },
-    sleepingBag:  { name: 'Sleeping bag',  kind: 'camp',       massKg: 1.5, rest: 0.10,
+    sleepingBag:  { name: 'Sleeping bag',  kind: 'camp',       massKg: 1.5, rest: 0.10, campSlot: 'bed', model: 'sleepingBag', layer: 1,
                     desc: 'Zip in and stay warm. Goes on top of the bed.' },
+    // The tent is the sleeping bag's size of bonus (owner, 2026-11-02) and stands over the bed.
+    tent:         { name: 'Tent',          kind: 'camp',       massKg: 2.5, rest: 0.10, campSlot: 'shelter', model: 'tent',
+                    desc: 'A small ridge tent. The weather happens outside it.' },
+    // `fills` names the vibe segment the item gives back on the chosen site (camp.js vibeAssist): the
+    // awning and the tarp both fill the shade deficit, trees or no trees (owner, 2026-11-02). Masses
+    // [DEFAULT].
+    awning:       { name: 'Awning',        kind: 'camp',       massKg: 8,   fills: 'shade', campSlot: 'shade', model: 'awning',
+                    desc: 'A striped canopy on four poles. Shade wherever you pitch it.' },
+    shadeTarp:    { name: 'Shade tarp',    kind: 'camp',       massKg: 2,   fills: 'shade', campSlot: 'shade', model: 'shadeTarp',
+                    desc: 'A tarp, a pole and some line. Shade where there are no trees.' },
+    // About fifty pounds of iron (items.md §2b). Its effect waits on groceries, which are not built.
+    cookingKit:   { name: 'Cooking kit',   kind: 'camp',       massKg: 23,  campSlot: 'overFire', model: 'cookingKit',
+                    desc: 'An iron A-frame and a Dutch oven to hang over the fire. Heavy.' },
 
     // ── Vehicle parts (data/parts.js), owned UNFITTED: a slot each, and the entry carries the part's
     //    wear as `cond`. A massless part ('No lift') is an absence, not a thing you can carry. The

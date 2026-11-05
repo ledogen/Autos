@@ -509,6 +509,33 @@ Recommended, no new economy constant:
   out and the tip is zero by construction, and the 100 % reward is lost; the base for every hit is kept.
 
 **Acceptance (slice 2):**
-- [ ] Driving past the site's end with targets standing does not settle; turning back and smashing them does.
-- [ ] The GPS line points at the nearest unsmashed target on the site, and moves on as each one falls.
-- [ ] The clock and pay as the owner rules them; cdp-smoke's `demolition` step settles on the last smash.
+- [x] Driving past the site's end with targets standing does not settle; turning back and smashing them does.
+- [x] The GPS line points at the nearest unsmashed target on the site, and moves on as each one falls.
+- [ ] The clock and pay as the owner rules them. (cdp-smoke's `demolition` step already settles on the last
+      smash.)
+
+### Built — slice 2, rulings 1–2 (2026-11-03, feature/run-shape)
+
+- **Settle:** `mission.js` settles a job with `targets` when the mission's `cleared` flag is set, never on
+  arrival. main.js's 10 Hz site poll (`_updateSite`) sets it the moment no target stands, wherever the truck is.
+- **GPS:** each target now records `u`, its metres of route before the end. `demolition.js` gains two pure
+  functions:
+  - `nearestTarget(route, x, z, standing, togo)` finds the truck's own `u` (the nearest centreline point every
+    2 m over the site, clamped at both ends) and picks the standing target nearest along the road, saying
+    whether it is behind. Short of the site (`togo` = `routeRemaining()` past the site + 100 m) the first
+    target ahead wins, so a route that loops past its own site can't pull the guide early. Past the route's
+    end every target is behind.
+  - `guideTo(route, u, back)` is the route cut at that point: from the route's start, or, behind, from its
+    end walked back (each segment reversed, its junction degree taken from the node it now ends at).
+  - The poll hands gps.js a NEW guide object only when the target or its direction changes (gps.js re-bakes
+    on identity), so the chevrons hold still between picks.
+- **HUD:** on a demolition job the line reads "N km to the next target" (placeholder words) instead of the
+  distance to the route's end, which is no longer a goal.
+- **Interim, until the clock/pay ruling lands:** the deadline still works as FEAT-113 has it, so a job whose
+  clock runs out with targets standing expires UNPAID. The rank bar still shows (time vs par).
+- **Gates:** `demolition-site` adds three checks on both seeds: every target's `u` is its own route point;
+  `guideTo` runs from the route's start (or back from its end) to the target; `nearestTarget` from each
+  target's road point matches the brute-force nearest along the road, all behind past the end, the first
+  one short of the site. cdp-smoke's `demolition` step: at the end with targets standing the line is still
+  running and the GPS is the reversed guide; felling the GPS's target moves it on; felling the rest settles
+  the line with "Smashed N / N".

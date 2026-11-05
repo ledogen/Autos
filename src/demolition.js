@@ -2,8 +2,9 @@
  * src/demolition.js — FEAT-65: where a demolition job's targets stand (owner, 2026-11-01).
  *
  * A demolition job is an ordinary roadside job whose LAST siteM OF ROUTE is the site: its targets
- * stand on the shoulder there, off the deck, and the job settles on arrival like any other. The
- * letter is the share smashed (economy.js RANK_TABLE.demolition). main.js stands each target as a
+ * stand on the shoulder there, off the deck. It does NOT settle on arrival (slice 2, owner 2026-11-03):
+ * it settles when the last target falls, so the player can turn back for a missed one, and the GPS
+ * goes to the nearest one standing (nearestTarget / guideTo). The letter is the share smashed (economy.js RANK_TABLE.demolition). main.js stands each target as a
  * plain model far from the truck and, within onM, as a debris body put to SLEEP at once — a sleeping
  * body cannot slide off a sloped shoulder and costs nothing, and the truck touching it wakes it:
  * "static until the truck collides with them" (owner).
@@ -87,8 +88,9 @@ function walkBack (route) {
 }
 
 /**
- * The site's targets: [{ kind, x, y, z, yaw }], y the ground under the target's lowest footprint point
- * (it stands upright — a post is planted plumb), yaw in the model convention (−Z → (−sin, −cos)).
+ * The site's targets: [{ kind, x, y, z, yaw, u }], y the ground under the target's lowest footprint point
+ * (it stands upright — a post is planted plumb), yaw in the model convention (−Z → (−sin, −cos)), u the
+ * metres of route before its end (siteGuide reads it).
  *
  * `dressing` is a THINGS / REQUISITION row's `targets`: groups of
  *   { kinds, n: [lo, hi], cluster: [lo, hi], side?: 'right', face?: 'traffic' | 'road' }
@@ -146,11 +148,51 @@ export function siteTargets (route, dressing, key, { road, height, isWater, half
                     const yaw = grp.face === 'traffic' ? Math.atan2(c.tx, c.tz)
                         : grp.face === 'road' ? Math.atan2(-c.tz, c.tx) + (side > 0 ? 0 : Math.PI)
                         : yawRoll * 2 * Math.PI
-                    out.push({ kind, x, y: lo, z, yaw, r: fr })
+                    out.push({ kind, x, y: lo, z, yaw, u, r: fr })
                     break
                 }
             }
         })
     })
     return out.map(({ r: _, ...t }) => t)
+}
+
+/**
+ * Slice 2 (owner, 2026-11-03: "too easy to miss targets, gps should always route to the nearest one"):
+ * the target still standing that is nearest the truck ALONG THE ROAD — back the way it came for one it
+ * missed. `standing` lists the indices not yet smashed; `togo` is mission.routeRemaining(), the truck's
+ * own u while it is still short of the site — so a route that loops past the site cannot pull the guide
+ * onto it early. Returns { i, back, dist } (back: the target is behind the truck; dist: metres to it along
+ * the road), or null.
+ */
+export function nearestTarget (route, x, z, standing, togo) {
+    if (!standing.length) return null
+    const { at, length } = walkBack(route)
+    const U = Math.min(length, DEMOLITION_PARAMS.siteM)
+    let uT = togo, bd = Infinity
+    // On the site the truck's own u is the nearest centreline point, every 2 m. It clamps at both ends,
+    // so a truck past the route's end reads 0 — every target behind it.
+    if (togo < U + 100) for (let u = 0; u <= U; u += 2) {
+        const c = at(u), d = (c.x - x) ** 2 + (c.z - z) ** 2
+        if (d < bd) { bd = d; uT = u }
+    }
+    let i = standing[0]
+    for (const k of standing) if (Math.abs(route.targets[k].u - uT) < Math.abs(route.targets[i].u - uT)) i = k
+    return { i, back: route.targets[i].u > uT, dist: Math.abs(route.targets[i].u - uT) }
+}
+
+/**
+ * The GPS route (gps.js reads only `segments`) to the point u metres before the route's end: the route
+ * up to it, or, `back`, the route from its end walked back to it. A segment with s1 < s0 is driven
+ * backwards (mission.js), and one driven backwards ends at the node it started from — the previous
+ * segment's end, whose degree gps.js reads for its junction arrows.
+ */
+export function guideTo (route, u, back) {
+    const segs = route.segments, rev = []
+    for (let i = segs.length - 1, u0 = 0; i >= 0; i--) {
+        const g = segs[i], len = Math.abs(g.s1 - g.s0), s = g.s1 - Math.sign(g.s1 - g.s0) * (u - u0)
+        if (u <= u0 + len || i === 0) return { segments: back ? [...rev, { ...g, s0: g.s1, s1: s }] : [...segs.slice(0, i), { ...g, s1: s }] }
+        rev.push({ ...g, s0: g.s1, s1: g.s0, endDeg: segs[i - 1].endDeg })
+        u0 += len
+    }
 }
