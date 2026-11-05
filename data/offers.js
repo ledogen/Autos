@@ -471,6 +471,19 @@ export const FIRST_JOB = {
     person: { sex: 'female', first: 'Mom', nick: null, last: null },
 }
 
+/**
+ * FEAT-148 (owner, 2026-10-31): the giver's line on the parked offer panel, in two parts — a FIRST line
+ * that fits any job ("looking for work?") and a SECOND keyed on the thing (`byThing[thingId]`). Each comes
+ * GIVER_LINE_P of the time, and the first always comes when the second does not (offer-board.js
+ * giverLine). OWNER-AUTHORED on the item setup page (db answers/_lines: `first`, `t_<thingId>`) and
+ * folded here; empty until then, and an offer with no line shows no quote at all.
+ */
+export const GIVER_LINES = {
+    first: [],
+    byThing: {},
+}
+export const GIVER_LINE_P = 0.7
+
 export const SOURCES = {
     // ── always-on ──
     // Larry's paper route never expires and has no timer; after a round (or a cancel) he is

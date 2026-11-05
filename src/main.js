@@ -5977,15 +5977,15 @@ document.getElementById('mp-count')?.addEventListener('input', () => _renderMiss
 
 /**
  * FEAT-67: the head of a parked offer panel — the giver's portrait beside their line of dialogue.
- * Both are PLACEHOLDERS (owner, 2026-09-28): the portrait is the same flat silhouette the map card
- * draws, and a missing line shows a bracketed marker so an unwritten one is obvious in play.
+ * The portrait is a PLACEHOLDER (owner, 2026-09-28: the map card's flat silhouette). No line, no quote —
+ * the alpha shows no bracketed stub (FEAT-148); the portrait slot stays.
  * `flavorHtml` is trusted markup (authored constants or the escaped card flavor), never player input.
  */
 function _panelHead (flavorHtml) {
   return '<div class="mp-head">'
     + '<div class="mp-portrait" title="portrait (placeholder)"><svg viewBox="0 0 36 36" aria-hidden="true">'
     + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div>'
-    + `<div class="mp-flavor">${flavorHtml ?? '&ldquo;<span class="mp-dim">[flavor line]</span>&rdquo;'}</div>`
+    + (flavorHtml ? `<div class="mp-flavor">${flavorHtml}</div>` : '')
     + '</div>'
 }
 

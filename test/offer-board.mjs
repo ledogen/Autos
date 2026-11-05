@@ -39,8 +39,8 @@
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
-import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine } from '../src/offer-board.js'
-import { THINGS, REWARDS, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine, giverLine } from '../src/offer-board.js'
+import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARDS, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -883,6 +883,23 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('FEAT-147: posting it moves no other offer (it draws no stream)', others(b) === others(twin))
     const none = new OfferBoard({ seed: 4242, pois: tagged.filter(q => q.type !== 'momsHouse'), nowH: T0 })
     check('FEAT-147: no mom on the roster → no first job, and openFirst is a no-op', none.firstState() === null && !none.openFirst(T0))
+}
+
+// ── FEAT-148: the giver's line — a generic first line, a second keyed on the thing, 70 % each ──────────
+{
+    const ids = Array.from({ length: 4000 }, (_, i) => `poi:${i}#b${i % 12}#${i % 5}`)
+    check('FEAT-148: no line written → no quote (null), never a stub', ids.every(id => giverLine(id, 'note') === null))
+    GIVER_LINES.first.push('F1', 'F2'); GIVER_LINES.byThing.note = ['S1', 'S2', 'S3']
+    const lines = ids.map(id => giverLine(id, 'note'))
+    const both = lines.filter(l => /^F\d S\d$/.test(l)).length / ids.length
+    const second = lines.filter(l => /^S\d$/.test(l)).length / ids.length
+    const first = lines.filter(l => /^F\d$/.test(l)).length / ids.length
+    const P = GIVER_LINE_P
+    check(`FEAT-148: both ${(both * 100).toFixed(0)} % · second only ${(second * 100).toFixed(0)} % · first only ${(first * 100).toFixed(0)} % ≈ ${(P * P * 100).toFixed(0)} / ${(P * (1 - P) * 100).toFixed(0)} / ${((1 - P) * 100).toFixed(0)}`,
+        Math.abs(both - P * P) < 0.03 && Math.abs(second - P * (1 - P)) < 0.03 && Math.abs(first - (1 - P)) < 0.03 && both + second + first === 1)
+    check('FEAT-148: a revisit says the same thing (the offer\'s own stream)', ids.every((id, i) => giverLine(id, 'note') === lines[i]))
+    check('FEAT-148: a thing with no second lines gets a first line every time', ids.every(id => /^F\d$/.test(giverLine(id, 'takeout'))))
+    GIVER_LINES.first.length = 0; delete GIVER_LINES.byThing.note
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall offer-board checks passed')
