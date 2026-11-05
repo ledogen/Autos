@@ -177,7 +177,10 @@ function wakeMenu () {
 /** Install once. gamepad.js asks pad.menuActive() each poll to pick its menu key map. */
 export function initMenuNav () {
   window.addEventListener('keydown', onKey, true)   // capture: ahead of the game's own key handlers
-  setInterval(wakeMenu, 100)   // ponytail: a poll, not a hook in every menu opener; 100 ms is under a key repeat
+  // ponytail: a poll, not a hook in every menu opener; 100 ms is under a key repeat. BUG-109: it also drops a
+  // highlight whose card has closed — the paper panel's start button IS its result card's continue, so a highlight
+  // left on it from the offer came back with the result and A pressed continue instead of shifting.
+  setInterval(() => { sync(); wakeMenu() }, 100)
   // The mouse and the highlight agree: pointing at an item moves the highlight to it.
   document.addEventListener('pointerover', (e) => {
     const c = menuContainer() ?? cardContainer()
