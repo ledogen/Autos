@@ -233,3 +233,18 @@ FEAT-164 camp reach (A), FEAT-165 tires + FEAT-166 clutch LSD (B), and two Lane 
 $10, swap → inventory). BUG-67 steps 1+2 are both built (Spare head 974c15f9). The page item bug67-step1
 now offers land 1+2 / 1 only / hold. Before it lands, one solo `node test/cdp-smoke.mjs` (the overnight
 kill timed it out).
+
+**Later 11-05 (the orchestrator was cleared at 147k after this):**
+- **Clears in progress.** Spare (817k), Lane B (706k) and Lane A (401k) are writing `lanes/<id>.handoff` on the page, for
+  the owner to `/clear` them. On wake: read each `lanes/<id>.handoff`; tell the owner which lanes are ready.
+- **Lane B's landing set** (feature/machine, all committed): FEAT-70 cylinder wheel contact; open diff $10 3180c87d;
+  part swap straight to My Items, no prompt, ea000e4e; FEAT-165 tires always for sale + named in diagnostics
+  (cf385fba, 386698de); FEAT-166 clutch-type LSD (4f41a2d2). After the hold: 89 affected gates, cdp-smoke and the
+  collision-drop lab, then ONE merge. Owner calls (not blocking): feat165-price, feat166-numbers.
+- **Spare's two:** BUG-67 steps 1+2 (head 974c15f9) need the owner's `bug67-step1` call (land 1+2 / 1 only / hold)
+  plus one solo cdp-smoke. BUG-109 pad pass (4ba7a6ce) needs a fake-pad smoke step for all five screens plus
+  the owner's pad check (owner on the train, controller next trip). Its result cards now take D-pad then A to press.
+  Spare's next is BUG-81's tunnel shoulder.
+- **Lane A** waits on `feat66-look`. FEAT-164 is queued after FEAT-147.
+- The content session `cargame-a1` (CarGame-content, 115k, idle) was NOT told about the hold. Tell it if it wakes.
+- **All 11-04 inbox docs are answered.** Owner's context budget is 300k per session (memory feedback_context_budget_300k).
