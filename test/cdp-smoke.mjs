@@ -980,7 +980,7 @@ const STEPS = [
   }],
   ['opening', async () => {
     // FEAT-147: a new run with the opening on starts PARKED AT THE BURGER JOINT, the firing's cards over a slow
-    // orbit of it with the sim held, then mom's call, which leaves her first job live at her house.
+    // orbit of it with the sim held, then mom's call, which ends with her first job in hand.
     await js('document.getElementById("mm-new").click()')
     await js('const b = document.querySelector("[data-key=opening]"); if (/skip/.test(b.textContent)) b.querySelector(".sel-next").click()')
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
@@ -1000,6 +1000,20 @@ const STEPS = [
     for (let i = 0; i < 4 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
     check(!await speaker(), "mom's call did not close")
     check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
+    // Owner 11-05 ("i didnt have a job after the opening"): her call ends with her job IN HAND — taken at the
+    // joint, untimed until you park at hers, the HUD and the GPS pointing there. Parked at hers, it starts.
+    const job = () => js(`(() => { const m = window.__mission(), j = m.mission
+      return { s: m.state, a: !!j?.approach, guide: j?.approachGuide?.segments?.length ?? 0, first: window.__board().firstState(),
+        hud: document.getElementById('mission-hud').textContent.trim() } })()`)
+    const j0 = await job()
+    check(j0.first === 'taken' && j0.s === 'staging' && j0.a, `mom's job is not in hand after her call: ${JSON.stringify(j0)}`)
+    check(/to Mom's · park there to start/.test(j0.hud), `the job HUD does not point to mom's ("${j0.hud}")`)
+    check(j0.guide > 0, "the GPS has no way to mom's (no approachGuide)")
+    const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
+      return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`)
+    await seat(mom.x, mom.z, mom.h)
+    await park(true)
+    check(await until(async () => { const b = await job(); return b.s === 'staging' && !b.a }, 3000), `parking at mom's did not start her job: ${JSON.stringify(await job())}`)
     // FEAT-148: midnight drops its overlay over the road, then clears it (every clock path counts).
     await js('{ const d = window.__day(); d.advanceMinutes((24 - d.clockH() % 24) * 60 + 1) }')
     const mn = () => js('document.getElementById("midnight-card").classList.contains("on") && document.getElementById("mn-main").textContent')

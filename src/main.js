@@ -4276,9 +4276,27 @@ function _playOpening () {
     _firingCam = null
     setCameraFocus(null)   // the chase spring swings back onto the truck, parked right there
     _cardHold = true
-    dialogueSystem.play(DLG.momCall, MOM_CALL)
+    dialogueSystem.play(DLG.momCall, MOM_CALL, _takeFirstJob)
   })
   return true
+}
+
+/**
+ * Mom's call ends with her job IN HAND (owner 11-05: "i didnt have a job after the opening"). Taken here
+ * at the joint, away from her house, it is an `approach` like a line taken at the camp: untimed until
+ * you park at hers, guided there by `approachGuide` (planned from the joint).
+ */
+function _takeFirstJob () {
+  const mom = poiSystem.list().find(q => q.type === 'momsHouse'), joint = _joint()
+  const o = mom && offerBoard?.offers(mom.id, daySystem.clockH()).find(x => offerBoard.spec(x)?.first)
+  if (!o) return
+  missionSystem.enterFromPoi(mom, [o], _planOffer)
+  if (missionSystem.state !== 'offer') return
+  _acceptOffer()
+  const j = missionSystem.mission
+  if (j?.approach && joint) {
+    j.approachGuide = missionSystem.planOffer(joint, { rng: offerBoard.routeRng(o), dest: { kind: 'poi', pois: [mom], strict: true, anyLeg: true, nearest: true } })
+  }
 }
 
 /** Per frame, before updateCamera: turn the firing's orbit (camera.js focus seam, as camp and the service screen use). */
@@ -4385,8 +4403,10 @@ gpsSystem = new GpsSystem(scene, {
     // start zone exists is that you may be pointing the wrong way and have to decide which.
     // FEAT-102: guideRoute(), not the mission — a fetch is guided one leg at a time.
     // FEAT-103: nor while a line taken at the camp is still on its way to the source — the route
-    // starts THERE; the map's start pin and the source's lit park spot are the waypoint.
-    if (missionSystem?.mission?.approach) return null
+    // starts THERE; the map's start pin and the source's lit park spot are the waypoint. FEAT-147: mom's
+    // first job carries its way to her door (approachGuide, planned at the take; not saved — a resumed
+    // approach has only the pin).
+    if (missionSystem?.mission?.approach) return missionSystem.mission.approachGuide ?? null
     // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
     if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
     return (s === 'countdown' || s === 'staging' || s === 'running') ? missionSystem.guideRoute() : null
@@ -7111,7 +7131,8 @@ for (const id of ['mp-note', 'mp-driver']) {
 }
 
 // Buttons. Same null-guarded module-eval wiring as every other control in this file (WR-04).
-document.getElementById('mp-accept')?.addEventListener('click', () => {
+document.getElementById('mp-accept')?.addEventListener('click', () => _acceptOffer())
+function _acceptOffer () {
   // On the result card this button is CONTINUE: put the finished run down and carry on driving in
   // story mode. It no longer auto-rolls the next job — with POIs as the job source, the next one is
   // something you go and find, not something handed to you at the drop point.
@@ -7137,7 +7158,8 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
     pm.stockCost = pick.cost
   }
   // FEAT-103: a requisition line taken AWAY from its source (at the camp) is untimed until you park there.
-  if (missionSystem.mission?.line && missionSystem.startZoneExitDist() <= 0) missionSystem.mission.approach = true
+  // FEAT-147: so is mom's first job, taken at the joint as her call ends (_takeFirstJob).
+  if ((missionSystem.mission?.line || offerBoard?.spec(o)?.first) && missionSystem.startZoneExitDist() <= 0) missionSystem.mission.approach = true
   missionSystem.accept()
   // §5b: the stock is bought at accept and never refunded — an expired or abandoned haul keeps it.
   if (pick && missionSystem.isOnJob()) economySystem.spend(pick.cost)
@@ -7147,7 +7169,7 @@ document.getElementById('mp-accept')?.addEventListener('click', () => {
   if (j?.load && !j.approach && missionSystem.isOnJob()) void _loadFreight(j.load, j.cargoKg, j)
   if (j?.loose && missionSystem.isOnJob()) _loadLoose(j.loose.kind, j.loose.massKg, j)
   if (j?.targets && missionSystem.isOnJob()) _placeSite(j)   // FEAT-65: the site stands from accept
-})
+}
 document.getElementById('mp-prev')?.addEventListener('click', () => missionSystem.cycle(-1))
 document.getElementById('mp-next')?.addEventListener('click', () => missionSystem.cycle(+1))
 
