@@ -1,7 +1,7 @@
 ---
 id: BUG-110
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-05
 source: Lane A, found while building FEAT-164 (feature/run-shape 4b9ffbe1; details in that ticket's Built section)
@@ -54,3 +54,9 @@ demolition-site), and none of their own seeds moved (`wip/bug-110/cmp.mjs`: 9 se
 **Found, not fixed here (a separate call):** those same gates, and camp-edge-census, build their REGION network
 without the pond no-go too — so even centred right, their roads near a pond are not the game's. Wiring it in moves
 what they measure (rosters, pieces, sites), so it wants its own pass with each gate's pins re-read.
+
+## Resolution (2026-11-05) — CLOSED
+
+On main since the Spare set 38765f33 (a2c5173c): the headless spawn replica routes round the ponds as main.js does,
+so seed 4194356868 lands at (34.54, 158.50) against the game's (34.65, 158.45); world-determinism 1b pins it. The
+replica now reaches the no-go through BUG-111's shared helper (test/lib/pond-no-go.mjs). Suite on main 125/125.
