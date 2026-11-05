@@ -222,3 +222,14 @@ Inbox 11-03 (four items, done on main): menu truck re-centres on load (stage.js 
 ×1.40, durTire 16050 (+50 %), POI + pump rings lit to the drawn terrain (reverses FEAT-60's 50 m).
 Owed on the page: `feat65-clock-pay`, `feat143-reach` (both blockers) + the older list.
 The owner playtests on Pages: every main commit rebuilds :8000 under them, so batch main commits and push.
+
+## State 2026-11-05
+
+**COMPUTE HOLD ON** (owner 11-05: "i need the compute to play smoothly"). Only main :8000 + the dashboards
+run. Every lane server is stopped, because idle Vite drew ~15–20 % CPU each. All three lanes are told: no
+test:all, heavy gates, sweeps or CDP until the hold lifts. Lift it only on the owner's word, then tell A,
+B and Spare. 11-04 inbox triaged in 5400a4c8: BUG-109 pad (Spare, next), BUG-81 third report (Spare),
+FEAT-164 camp reach (A), FEAT-165 tires + FEAT-166 clutch LSD (B), and two Lane B quick edits (open diff
+$10, swap → inventory). BUG-67 steps 1+2 are both built (Spare head 974c15f9). The page item bug67-step1
+now offers land 1+2 / 1 only / hold. Before it lands, one solo `node test/cdp-smoke.mjs` (the overnight
+kill timed it out).
