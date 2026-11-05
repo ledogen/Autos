@@ -3474,8 +3474,15 @@ export class RoadSystem {
     _v2SampleCenterline(cl) {
         if (!cl || !(cl.length > 1e-6)) return null
         if (this._v2ProfMemo?.rev !== this._networkRev) this._v2ProfMemo = { rev: this._networkRev, map: new WeakMap() }
+        return this._v2SolveMemo(this._v2ProfMemo.map, cl, () => this._v2SampleCenterlineSolve(cl))
+    }
+
+    // PERF-31: memoize a profile-solving call in `map` under `key`, replaying the solve's tally deltas
+    // (_v2Infeasible, _v2StubResolved, _v2Rung) on a hit so every tally — and _v2Infeasible's use as a
+    // drape signal by the callers — reads exactly as a re-solve would leave it.
+    _v2SolveMemo(map, key, solve) {
         const rung = this._v2Rung || (this._v2Rung = [0, 0, 0, 0])
-        const hit = this._v2ProfMemo.map.get(cl)
+        const hit = map.get(key)
         if (hit) {
             this._v2Infeasible = (this._v2Infeasible || 0) + hit.dInf
             this._v2StubResolved = (this._v2StubResolved || 0) + hit.dStub
@@ -3483,8 +3490,8 @@ export class RoadSystem {
             return hit.out
         }
         const inf0 = this._v2Infeasible || 0, stub0 = this._v2StubResolved || 0, rung0 = rung.slice()
-        const out = this._v2SampleCenterlineSolve(cl)
-        this._v2ProfMemo.map.set(cl, { out, dInf: (this._v2Infeasible || 0) - inf0,
+        const out = solve()
+        map.set(key, { out, dInf: (this._v2Infeasible || 0) - inf0,
             dStub: (this._v2StubResolved || 0) - stub0, dRung: rung.map((v, i) => v - rung0[i]) })
         return out
     }
@@ -4894,7 +4901,7 @@ export class RoadSystem {
                     const grade = _trunkGradeAt(T, iP)
                     let cleared = false
                     for (const RB of ladder) {
-                        const b = this._v2BuildDeparture(side, iL, nAtStart, P, RB)
+                        const b = this._v2ProbeDeparture(side, iL, nAtStart, P, RB)
                         if (!b) continue
                         const why = this._v2DepartureAccepts(b, T, P, grade)
                         const pick = { P, iL, RB, b, why }
@@ -5792,6 +5799,20 @@ export class RoadSystem {
         const out = ok.slice(0, 10)
         for (const c of ok.slice(10)) if (c.fromPlan) out.push(c)
         return out
+    }
+
+    // PERF-31: the T probe's departures, once per network rev. The probe's `side` wraps a plan SAMPLE
+    // (one object per centerline since _v2SampleCenterline's memo) and R4's pass 2 re-probes every
+    // pair: ~140 builds on ~85 distinct (sample, fork, band) per 1400 m window. A departure never
+    // leaves the probe, and _v2DepartureAccepts only writes its _score/_*Over fields, each before
+    // reading it, so sharing one is invisible. The registered-network callers (_v2PromoteOne,
+    // _v2PromoteMidSpan) ship what they build and keep building their own.
+    _v2ProbeDeparture(side, iL, nAtStart, P, RB) {
+        if (this._v2DepMemo?.rev !== this._networkRev) this._v2DepMemo = { rev: this._networkRev, map: new WeakMap() }
+        let m = this._v2DepMemo.map.get(side.points)
+        if (!m) this._v2DepMemo.map.set(side.points, (m = new Map()))
+        return this._v2SolveMemo(m, `${iL}|${nAtStart}|${P.x}|${P.y}|${P.z}|${RB}`,
+            () => this._v2BuildDeparture(side, iL, nAtStart, P, RB))
     }
 
     /**
