@@ -65,3 +65,59 @@ does **not** reproduce in a cold build, on main or on this branch: the three leg
 (`wip/bug-105/mark2.mjs`). Like BUG-106, it may be a network adopted from an earlier window — the capture's
 `streamCenterHistory` would tell; the captures are in ~/Downloads, which this session cannot read (asked to copy them
 into wip/bug-106/).
+
+## The mechanism, corrected (Spare, 2026-11-05 evening) — and a fix that moves the road
+
+The note above was wrong on one point, and it changes which fix works. **In the plan graph the two roads ARE legs
+of one node.** The side road's graph edge is `-21,23,1 → -20,23,2`; the T promotion moves its start to P only at
+assembly. So the planner did see them as related, and options (a) "land the T on the junction" and (b) "count nodes
+a stub apart as one" would only change which node the gate thinks they share. The graze 179 m out would stay
+exactly where it is. Neither was built.
+
+What actually happens at `-20,23,2` (`wip/bug-105/why.mjs`, `why2.mjs`):
+- The two legs part at the node, swing **64 m** apart, and come back to **5.8 m** at ~179 m for ~50 m.
+- The merge planner misses the pair. Its walk from the NW leg bridges the swing (the NW leg's samples stay inside
+  the 60 m flare limit of the side road's line), so that walk calls it one 176 m node-anchored strand. Its walk
+  from the side road does not (64.5 m > 60). One answer is < MINREG, so the pair skips the node-anchored path, and
+  the mid-span search then starts past 176 + 60 m — beyond the graze. No plan. (Even with a plan, the side road
+  already cedes to the trunk at that node, and a run may merge once per node.)
+- FEAT-77's clearance pass then **defers** the pair, because it comes inside mergeProxM (18 m) "and the T machinery
+  owns that". Nobody owns it.
+
+**The fix (prototype `proto/bug-105` 33b041f1, worktree `CarGame-bug105`):** the clearance pass defers a close pair
+to the T machinery only if the node's plan actually gives that pair a role. It asks the plan computed on the
+PASS-1 lines (the lines the clearance pass itself reads), so it never reads a pass-2 route and no cycle forms
+(`_v2NodeMerges` gains a quiet `pass1` mode; `pinHeld` reads base dirs, which are the same pins). A pair no plan
+takes is an ordinary clearance violation, and the longer road takes the berth.
+
+- At the mark: the NW leg keeps **52 m** (was 5.7 m), 966 → 921 m. The same window's one node-sharing violation
+  (a road riding 150 m beside another at (−13879, 16279)) is fixed too: 913 → 665 m.
+- A first, broader cut (4e5b7563: any short touch out on the span counts) flipped 121 pairs in 13 windows, most of
+  them pairs the planner does merge. Rejected.
+- **What else it moves** — 20 random seeds, 1 400 m round each origin, 767 km (`wip/bug-105/seeds.txt`,
+  `narrow/moved-*.jsonl`): 7 sites. Three gain a road the crossing rule used to delete (connectivity up). One
+  re-places two crowded Ts cleanly. One swaps a T for a different junction. Two shift a bend by ≤ 24 m (one of those
+  gains a kink). The clearance census over the same seeds is unchanged (1 no-shared-node pair, 8 node-sharing
+  pairs, on main and with the fix).
+- **Not fixed — the other shape:** seed 158847947 (2020, 625), roads `1,0,0→3,0,2` and the trunk of T
+  `2321413,700472`. They are 15.3 m apart and 8.5 m apart in height, side by side for 168 m. They share no node
+  even in the graph, so it's the disjoint planner's hole (BUG-55 shape E: its winner must be "plain", and this
+  trunk carries a T). A pass-1 forecast of that planner needs `_v2MergeFor`'s promotability probe, so it is a
+  separate pass.
+- Sheets: `CarGame-bug105/wip/bug-105/shots/sheet-{1-mark,2-elsewhere,3-open}.png` (map overlay + top/oblique
+  frames, main :3885 vs fix :3886).
+
+### Gates and the owner call (2026-11-05, late)
+
+`npm run test:all` on proto/bug-105 33b041f1: **121/122. `vertical-curvature` is RED** on its seed-11 window. The
+re-routes reshuffle which roads survive at (−1895, 184). Main tunnels through that ridge; the fix sends a road over
+the saddle to a junction on the crest: a 0.183 /m crest (line 0.07; lift-off at 7.3 m/s) and a 0.552 /m junction
+sag (line 0.11). So the fix cannot land as it stands. Sheets (sent to the owner): `sheet-1-mark` (fixed, 2 sites),
+`sheet-2-elsewhere-a/b` (7 sites on 20 random seeds), `sheet-3-open` (the seed-11 crest, and the untouched disjoint
+shape on 158847947).
+
+**Spare's recommendation: park.** The defect is rare: this capture plus one disjoint sibling in ~1 400 km of
+cold-built road. The fix moves ~8 sites for each one it repairs, and one of them gets worse. A fix with less
+ripple has to mend the planner itself (its two walks disagree about where a node interval ends), which is a router
+pass. Keep proto/bug-105 and this record. Owner's call: (a) park as recorded, or (b) one more pass to make the
+fix land green (the seed-11 crest, then the s3192 kink).

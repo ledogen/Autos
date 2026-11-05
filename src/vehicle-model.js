@@ -957,6 +957,30 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     nightFactor = f < 0 ? 0 : (f > 1 ? 1 : f)
   }
 
+  // BUG-112: the truck darkens in a bore like everything else in the tube (RoadSystem.boreShade): its diffuse
+  // colour × one shared uniform, set each frame from main.js (setBoreShade). Emissive — the lamps — is untouched,
+  // and unlit (Basic) materials are skipped. Patched when the parts are built and when the GLB lands, never on
+  // the first tunnel entry: that would compile shaders at the portal.
+  const boreShadeU = { value: 1 }
+  function shadeInBore (root) {
+    root.traverse((o) => {
+      if (!o.isMesh) return
+      for (const m of [o.material].flat()) {
+        if (!m || m.isMeshBasicMaterial || m.userData.boreShade) continue
+        m.userData.boreShade = true
+        const prev = m.onBeforeCompile, key0 = m.customProgramCacheKey()
+        m.onBeforeCompile = (sh, r) => {
+          prev.call(m, sh, r)
+          sh.uniforms.uBoreShade = boreShadeU
+          sh.fragmentShader = 'uniform float uBoreShade;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.rgb *= uBoreShade;')
+        }
+        m.customProgramCacheKey = () => key0 + '|bore'
+        m.needsUpdate = true
+      }
+    })
+  }
+  function setBoreShade (v) { boreShadeU.value = v }
+
   // Recolor the body paint. Safe to call before the model finishes loading — the
   // color is remembered and applied to the paint materials on load.
   function setBodyColor (color) {
@@ -1011,6 +1035,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
 
     carGroup.add(root)
     if (antennaMat) { antenna = createAntenna(spec.antenna, antennaMat); carGroup.add(antenna.mesh) }
+    shadeInBore(carGroup)                   // BUG-112: the GLB's materials (and the antenna's)
     bodyGroup.visible = false               // hide primitive shell (body + emissive light panels)
 
     // Strip the model's own wheels so the procedural wheels (which spin/steer/show suspension
@@ -1090,6 +1115,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     restore()
   }
 
+  shadeInBore(carGroup)   // BUG-112: the procedural parts (wheels, the primitive shell)
   return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode,
-    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT }
+    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade }
 }

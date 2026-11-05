@@ -32,6 +32,7 @@ import { buildGraphAdj, REGION_MARGIN } from '../src/mission.js'
 import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
+import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
 const SPLITS = ['1222770136', '30', '31', '3309753130']
 const CLEAN = ['6', '7']
@@ -59,6 +60,7 @@ for (const s of [...SPLITS, ...CLEAN]) {
     const sp = spawnDecision(seed, P)
     const C = { x: sp.x, z: sp.z }
     const road = new RoadSystem(seed, P)
+    wirePondNoGo(road, seed, P)   // BUG-111: the game's pond no-go, before the first stream
     road.setRadius(REGION_WARM_RADIUS_M)
     road.update(new THREE.Vector3(C.x, 0, C.z))
     // Exactly what main.js validateRegion hands story mode.

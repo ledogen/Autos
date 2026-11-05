@@ -198,8 +198,11 @@ export class RoadMeshSystem {
                     float distEdge      = uRoadHalf - abs(uLat);
                     float edgeSpatial   = 1.0 - smoothstep(RS_EDGE_HALF - aaL, RS_EDGE_HALF + aaL, distEdge);
                     // Tier brightness + dash gating (matches roadQuality tiers).
-                    float centerB = q >= 0.66 ? 0.9 : (q >= 0.33 ? 0.65 : 0.3);
-                    float edgeB   = q >= 0.66 ? 0.9 : 0.65;
+                    // BUG-112: in a bore the asphalt's vertex colour carries the bore shade (base green 0.15);
+                    // the paint takes the same factor, or the stripes glow down a dark tube.
+                    float boreSh  = clamp(vColor.g / 0.15, 0.0, 1.0);
+                    float centerB = (q >= 0.66 ? 0.9 : (q >= 0.33 ? 0.65 : 0.3)) * boreSh;
+                    float edgeB   = (q >= 0.66 ? 0.9 : 0.65) * boreSh;
                     float edgeGate = q >= 0.66 ? 1.0 : (q >= 0.33 ? rsDash(arcS, RS_E_PERIOD, RS_E_ON) : 0.0);
                     float centerDash = rsDash(arcS, RS_C_PERIOD, RS_C_ON);
                     float centerAlpha = centerSpatial * centerDash * mFeather;
@@ -305,6 +308,9 @@ export class RoadMeshSystem {
             const arcS = i > 0 && i === N_LONG - 1 ? arcS1 : arcS0 + (arcS1 - arcS0) * (cumXZ[i] / totXZ)
             const q = this._ribbonSection(points[i].x, points[i].z, arcS, runKey, camberSign, params, sec)
             const feather = markFeather(arcS)   // QUAL-11: 1 on open road, →0 at a pad mouth
+            // BUG-112: inside a bore the ribbon darkens with the lining (one ramp), skirts included; the shader
+            // dims the paint by the same factor (it reads it back off the asphalt's green).
+            const shade = this._road.boreShade ? this._road.boreShade(runKey, arcS) : 1
 
             for (let j = 0; j <= CROSS_SEGS; j++) {
                 const idx = (i * vertsPerSection + j) * 3
@@ -316,9 +322,9 @@ export class RoadMeshSystem {
                 // Markings are no longer painted here — they are evaluated per-fragment
                 // from the aMark attribute below. The asphalt base stays a clean neutral
                 // grey so FEAT-05's shoulder isolation (vColor.r - vColor.b) is unaffected.
-                colors[idx    ] = RC
-                colors[idx + 1] = GC
-                colors[idx + 2] = BC
+                colors[idx    ] = RC * shade
+                colors[idx + 1] = GC * shade
+                colors[idx + 2] = BC * shade
 
                 // ── Marking coord (BUG-28): vec4(uLat, arcS, q, markEnable) ───
                 // Top-surface verts are markable; the shader masks the stripe spatially.
@@ -343,6 +349,7 @@ export class RoadMeshSystem {
             positions[leftSkirtBase + 1] = leftEdgeVy - skirtDepth
             positions[leftSkirtBase + 2] = leftEdgeVz
             this._skirtColor(leftEdgeVx, leftEdgeVy, leftEdgeVz, params, colors, leftSkirtBase)
+            for (let c = 0; c < 3; c++) colors[leftSkirtBase + c] *= shade
             // BUG-28: markEnable=0 — the dirt skirt is the vertical shoulder wall; no stripes.
             marks[(i * vertsPerSection + (CROSS_SEGS + 1)) * 4 + 3] = 0
 
@@ -351,6 +358,7 @@ export class RoadMeshSystem {
             positions[rightSkirtBase + 1] = rightEdgeVy - skirtDepth
             positions[rightSkirtBase + 2] = rightEdgeVz
             this._skirtColor(rightEdgeVx, rightEdgeVy, rightEdgeVz, params, colors, rightSkirtBase)
+            for (let c = 0; c < 3; c++) colors[rightSkirtBase + c] *= shade
             marks[(i * vertsPerSection + (CROSS_SEGS + 2)) * 4 + 3] = 0
         }
 
@@ -946,10 +954,11 @@ export class RoadMeshSystem {
             // everything else. (Untrimmed arcS0/arcS1: bores are ≥ endMargin from junctions.)
             const tSpans = this._road._network?.get(runKey)?.tunnelSpans
             if (tSpans) {
-                const addTMesh = (g, mat) => {
+                const addTMesh = (g, mat, cast = false) => {
                     if (!g) return
                     const m = new THREE.Mesh(g, mat)
                     m.receiveShadow = true
+                    m.castShadow = cast
                     if (this._meshesVisible === false) m.visible = false
                     this._scene.add(m)
                     meshes.push(m)
@@ -966,7 +975,7 @@ export class RoadMeshSystem {
                     // the proud lip is built only where the tube starts exactly at the span end. A
                     // mouth 0.25 m before a slice boundary skipped its sliver, the next slice's tube
                     // began 0.25 m inside, and the mouth had no lip: the shader-cut skin left a hole.
-                    if (b - a > 0.5 || (b > a && (a === sp.s0 || b === sp.s1))) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial())
+                    if (b - a > 0.5 || (b > a && (a === sp.s0 || b === sp.s1))) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial(), true)   // BUG-112: the lining shades the bore — no sun on the deck or the truck inside it
                     if (sp.s0 >= sLo && sp.s0 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
                     if (sp.s1 >= sLo && sp.s1 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
                 }
@@ -1101,10 +1110,9 @@ export class RoadMeshSystem {
             if (ext) { c.x += prof.tx * ext; c.z += prof.tz * ext }
             // rightDir chosen so a vertex at lateral L has signedLat = L (matches the carve frame).
             const rx = prof.tz, rz = -prof.tx
-            // Brightness: 1 at the portals → 0.25 deep inside (25 m ramp, smoothstep).
-            const dPortal = Math.min(s - span.s0, span.s1 - s)
-            const t = Math.max(0, Math.min(1, dPortal / 25))
-            const shade = 1 - 0.75 * (t * t * (3 - 2 * t))
+            // Brightness: 1 at the portals → dark deep inside (BUG-112: RoadSystem.boreShade, the one ramp
+            // the ribbon, pads and truck darken by too).
+            const shade = road.boreShade(runKey, s)
             // Dirt-apron Y (relative to gradeY) — the _carveDirtY fold at lateral L, minus the drop.
             // Camber from camberProfile, the SAME source the ribbon and the carve read.
             const sinCam = Math.sin(road.camberProfile(s, runKey))
@@ -1492,7 +1500,8 @@ export class RoadMeshSystem {
                 const X = p.x + lx * off, Z = p.z + lz * off
                 const vi = i * COLS + c
                 positions[vi * 3] = X; positions[vi * 3 + 1] = sampleY(X, Z); positions[vi * 3 + 2] = Z
-                colors[vi * 3] = 0.15; colors[vi * 3 + 1] = 0.15; colors[vi * 3 + 2] = 0.17
+                const sh = this._road.boreShadeAt ? this._road.boreShadeAt(X, positions[vi * 3 + 1], Z) : 1   // BUG-112
+                colors[vi * 3] = 0.15 * sh; colors[vi * 3 + 1] = 0.15 * sh; colors[vi * 3 + 2] = 0.17 * sh
                 // uLat: the sweep's `off` is measured to the LEFT, the ribbon's to the right — the
                 // shader only ever reads |uLat|, so the strip and the ribbon agree either way.
                 marks[vi * 4] = off; marks[vi * 4 + 1] = arcS; marks[vi * 4 + 2] = q
@@ -1556,7 +1565,8 @@ export class RoadMeshSystem {
             positions[v * 3    ] = w ? w.x : verts[v].x
             positions[v * 3 + 1] = w ? w.y : sampleY(verts[v].x, verts[v].z)
             positions[v * 3 + 2] = w ? w.z : verts[v].z
-            colors[v * 3] = 0.15; colors[v * 3 + 1] = 0.15; colors[v * 3 + 2] = 0.17
+            const sh = this._road.boreShadeAt ? this._road.boreShadeAt(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]) : 1   // BUG-112
+            colors[v * 3] = 0.15 * sh; colors[v * 3 + 1] = 0.15 * sh; colors[v * 3 + 2] = 0.17 * sh
         }
         // BUG-28: pads share the road shader (reads aMark). All-zero aMark (feather 0) → no stripes.
         return this._withJunctionSkirt(positions, colors, new Float32Array(V * 4), tris, params,

@@ -48,3 +48,10 @@ The cdp-smoke fake-pad steps (3e268b86) caught one more: the paper panel's start
 continue, so a D-pad highlight left on the offer came back with the result and A pressed continue instead of
 shifting. menu-nav's 100 ms poll now drops a highlight once its card closes (6e1c490a). Smoke 21/21 green with
 all five screens driven on the fake pad. **Owed:** the owner's real-pad check.
+
+## The seed field off the D-pad path (Lane A's pad-e2e note, checked by Spare 2026-11-05) — no change
+
+The new-game page's seed field is not a stop on the D-pad's path in either mode. Random stays reachable anyway:
+`_openSetup` blanks the field every time the page opens (owner, 2026-09-06: a pre-filled seed would make "just
+press start" replay one world), and a blank field starts a random seed. So a pad's "start" is always Random. A pad
+cannot type a seed, so skipping the field loses nothing; with a keyboard and mouse, click it to type one.

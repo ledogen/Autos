@@ -983,6 +983,12 @@ const STEPS = [
     await tap('x')
     check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000),
       `no "end run" on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
+    await padOn(); await btn(1); await padOff()
+    check(await until(() => js('document.getElementById("recovery-card").style.display === "none"'), 2000), 'pad B left the Recovery card open (BUG-113)')
+    check(await js('document.getElementById("pause-menu").style.display !== "flex"'), 'pad B on the Recovery card opened the pause menu (BUG-113)')
+    await tap('x')
+    check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000), 'X did not reopen the Recovery card after B closed it')
     await js('document.querySelector("#recovery-card .rc-end").click()')
     await ended(/truck is dead/, /(the tow was \$[\d,.]+|no tow could reach you) — you had \$0\b/)
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.

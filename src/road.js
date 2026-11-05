@@ -106,6 +106,10 @@ const JN_HOLD_MAX_PLANE = 30.0
 const JN_HOLD_MAX_SURFACE = 60.0
 const JN_ANCHOR_KEEP = 15.0   // m of a T's through piece, from P, that no far-end blend may touch
 const JN_FADE_IN = 22.0
+// BUG-112 (FEAT-40's lining ramp, now shared — RoadSystem.boreShade): a bore is lit at its portals and dark
+// inside — this deep, reached over this many metres from the nearer portal.
+export const BORE_SHADE_DEEP = 0.25
+const BORE_SHADE_RAMP = 25
 const JN_FADE_OUT = 34.0
 // Junction-pad ring geometry (moved from road-mesh.js so the CARVE path is the single source of the
 // welded pad boundary — the mesh now reads road.js's cached node.ring). Not road* params (no route-sig
@@ -7742,6 +7746,28 @@ export class RoadSystem {
             if (arcS >= s.s0 + inset && arcS <= s.s1 - inset) return s
         }
         return null
+    }
+
+    // BUG-112: how dark the bore is at run-arc `arcS` — 1 at a portal (and anywhere outside a bore), easing to
+    // BORE_SHADE_DEEP over BORE_SHADE_RAMP m inside. ONE formula for everything in the tube (lining, apron, ribbon,
+    // pads, the truck): each darkens its own colour by it, so they go dark together and no seam shows between them.
+    boreShade(runKey, arcS) {
+        const sp = this.tunnelSpanAt(runKey, arcS)
+        if (!sp) return 1
+        const t = Math.max(0, Math.min(1, Math.min(arcS - sp.s0, sp.s1 - arcS) / BORE_SHADE_RAMP))
+        return 1 - (1 - BORE_SHADE_DEEP) * t * t * (3 - 2 * t)
+    }
+
+    // BUG-112: boreShade at a world point — the nearest run's arc (carveHint, memoised per cell), and only below
+    // the tube's apex (a point on the hill over a bore is in daylight). For what has no run arc of its own: the
+    // truck, a junction pad's vertices.
+    boreShadeAt(x, y, z) {
+        const nr = this.carveHint(x, z)
+        if (!nr?.point || !nr.tangent) return 1
+        const arc = (nr.arcS ?? 0) + (x - nr.point.x) * nr.tangent.x + (z - nr.point.z) * nr.tangent.z
+        if (!this.tunnelSpanAt(nr.runKey ?? '', arc)) return 1
+        if (y >= this.runProfile(arc, nr.runKey, this._boreShadeProf ??= { gradeY: 0, tx: 1, tz: 0 }).gradeY + (this._params?.tunnelBoreRadius ?? 8)) return 1
+        return this.boreShade(nr.runKey, arc)
     }
 
     /**

@@ -35,8 +35,11 @@ import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
 import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS as D, TARGET_TYPES } from '../src/demolition.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
+import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-const SEEDS = ['1', '6']
+// BUG-111: '8' replaced '1' when the region network took the game's pond no-go — seed 1's real 06:00 board posts no
+// farm or work-site demolition offer (it did only on the pond-blind roads); 8's posts 2 (4 and 5 also post).
+const SEEDS = ['8', '6']
 const CHASE_MPS = 15   // ~54 km/h down the shoulder, the pace a site is driven at [DEFAULT]
 let fails = 0, posted = 0
 const check = (label, ok, detail = '') => {
@@ -49,6 +52,7 @@ for (const s of SEEDS) {
     const sp = spawnDecision(seed, P)
     const C = { x: sp.x, z: sp.z }
     const road = new RoadSystem(seed, P)
+    wirePondNoGo(road, seed, P)   // BUG-111: the game's pond no-go, before the first stream
     road.setRadius(REGION_WARM_RADIUS_M)
     road.update(new THREE.Vector3(C.x, 0, C.z))
     const rep = validateArea(road, C, discArea(REGION_RADIUS_M, REGION_MARGIN), P)

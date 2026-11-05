@@ -53,7 +53,7 @@ import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineA
 import { ensureTireAudio, updateTireAudio, setTireAudioEnabled, setTireAudioVolumes, playTireBlowout } from './tire-audio.js'
 import { ensureWindAudio, updateWindAudio, setWindAudioEnabled, setWindAudioVolume } from './wind-audio.js'
 import { TerrainSystem } from './terrain.js'
-import { RoadSystem, CHUNK_SIZE, ROAD_ROUTER_VERSION } from './road.js'
+import { RoadSystem, CHUNK_SIZE, ROAD_ROUTER_VERSION, BORE_SHADE_DEEP } from './road.js'
 import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTiming, perfFrameDt,
          perfEnableHitchLog, perfFrameBegin, perfFrameEnd, perfHitchReport, perfHitchDump, perfHitchReset, perfEvent } from './perf.js'  // ?prof / ?hitch profiler (D-arc / PERF-08 / PERF-26)
 let _perfFrame = 0  // frame counter for the ?hitch/?prof auto-dump at load
@@ -1875,7 +1875,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
 const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms,
-  compileLightState, LIGHT_STATE_COUNT } = createVehicleModel(scene, RANGER_PARAMS)
+  compileLightState, LIGHT_STATE_COUNT, setBoreShade } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -9001,6 +9001,7 @@ document.addEventListener('keydown', e => {
   if (el.style.display !== 'flex') {
     const back = _cardBackButton()
     if (back) { back.click(); return }
+    if (_recoveryOpen) { _recoveryOpen = false; _updateRecovery(); return }   // BUG-113: the Recovery card has no back button of its own
     if (map2d.isOpen()) { map2d.hide(); return }
   }
   if (el.style.display === 'none' || el.style.display === '') {
@@ -9420,7 +9421,11 @@ function loop () {
   vehicleState.quaternion = _renderQuat
 
   // FEAT-14: feed the day/night factor so headlight/lamp cast pools dim by day, brighten at night.
-  setNightFactor(skySystem.nightFactor())
+  // BUG-112: a bore is dark by day too, so the beams come up as the truck goes in (fully at the bore's deepest);
+  // and the truck darkens with the road and lining around it (one ramp, RoadSystem.boreShade).
+  const truckBore = _labActive || !roadSystem ? 1 : roadSystem.boreShadeAt(_renderPos.x, _renderPos.y, _renderPos.z)
+  setBoreShade(truckBore)
+  setNightFactor(Math.max(skySystem.nightFactor(), (1 - truckBore) / (1 - BORE_SHADE_DEEP)))
   syncMeshesToState(vehicleState)
   campfire.update(frameTime, skySystem.nightFactor())   // no-op unless a camp is up
 

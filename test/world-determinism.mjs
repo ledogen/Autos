@@ -29,6 +29,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem } from '../src/poi.js'
 import { spawnDecision } from './lib/spawn-decision.mjs'
+import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 let fails = 0
@@ -111,6 +112,7 @@ const WIDE_SEEDS = [6, 90]
 // players on one seed — or one player entering twice — get different worlds.
 function regionFingerprint (seed, C, pre) {
     const road = new RoadSystem(seed, RANGER_PARAMS)
+    wirePondNoGo(road, seed, RANGER_PARAMS)   // BUG-111: the game's pond no-go, before the first stream
     if (pre) { road.setRadius(pre.r); road.update(new THREE.Vector3(pre.x, 0, pre.z)) }
     // 1600 m, not the live 2500: this gate asserts HISTORY-INDEPENDENCE, and the radius is not the
     // variable under test — story-poi.mjs uses the same window for the same reason. At 2500 the
