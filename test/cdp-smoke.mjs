@@ -33,17 +33,20 @@ const vite = spawn(process.execPath, [join(ROOT, 'node_modules/vite/bin/vite.js'
 const shutdown = () => { try { vite.kill() } catch {} }
 process.on('exit', shutdown)
 
-// INFRA-08: every wall-clock ceiling in here is a HANG GUARD, never a speed test, and a loaded box (another
-// lane's suite, the owner's game on the same machine) runs the page slower — the region warm on a contended
-// pool, the sim in slow motion. Tonight's landing smokes failed on exactly that, never on code. So a ceiling
-// stretches by the run queue's oversubscription: the 1-min load average per core, never under 1, the worst
-// seen during the wait. An idle box keeps the base ceiling.
-let peakX = 1   // the worst stretch any wait saw — the summary line reports it
-const loadX = () => { const x = Math.max(1, loadavg()[0] / cpus().length); peakX = Math.max(peakX, x); return x }
-// Poll fn until it returns truthy (resolves with that value) or ms × loadX elapse (resolves null).
+// INFRA-08: every wall-clock ceiling in here is a HANG GUARD, never a speed test, and a loaded box (other lanes'
+// suites, the owner's game on the same machine) runs the page slower — the region warm on a contended pool, the
+// sim in slow motion. The 2026-11-05 landing smokes failed on exactly that, never on code. So every ceiling
+// stretches by how slow the box is right now: the boot step's own time over an idle boot (the boot is the same
+// worker-pool world build as a story load: 13 s boots went with 4.1× story loads), or the 1-min load average
+// per core if that climbs higher later. The load average alone under-reads it badly: two suites and a game read
+// 4×/core while the boot ran 47× idle. An idle box keeps the base ceilings; past TOO_SLOW× the run stops (boot).
+const BOOT_IDLE_S = 3.5, TOO_SLOW = 10   // this Mac's idle boot: 3.3–3.5 s
+let bootX = 0, peakX = 1   // bootX: 0 until the boot step has measured it · peakX: the summary line's worst stretch
+const stretch = () => { const x = bootX ? Math.max(1, bootX, loadavg()[0] / cpus().length) : 1; peakX = Math.max(peakX, x); return x }
+// Poll fn until it returns truthy (resolves with that value) or ms × stretch() elapse (resolves null).
 async function until (fn, ms, every = 100) {
   const t0 = performance.now()
-  for (let x = loadX(); performance.now() - t0 < ms * x; x = Math.max(x, loadX())) { const v = await fn(); if (v) return v; await sleep(every) }
+  for (let x = stretch(); performance.now() - t0 < ms * x; x = Math.max(x, stretch())) { const v = await fn(); if (v) return v; await sleep(every) }
   return null
 }
 if (!await until(() => fetch(`http://localhost:${HTTP}/`).then(r => r.ok, () => false), 15000, 200)) {
@@ -90,7 +93,7 @@ const frames = async (n, ms) => {
 const tap = async (k, opts) => { await key(k, true, opts); await frames(2, 60); await key(k, false, opts) }
 // INFRA-08: wait on the SIM, not the wall. Under load main.js abandons its catch-up debt and the sim runs in
 // slow motion, so 8 s of wall-clock W bought 24.8 m. Poll fn until truthy (resolves with it) or the sim has
-// run s seconds (resolves null). A sim that stops stepping for 10 s (× loadX) is a hang and fails right
+// run s seconds (resolves null). A sim that stops stepping for 10 s (× stretch) is a hang and fails right
 // there, not at a ceiling — so only wait on the sim where it should be running.
 async function untilSim (fn, s) {
   const t0 = await js('window.__simT()')
@@ -100,7 +103,7 @@ async function untilSim (fn, s) {
     const t = await js('window.__simT()')
     if (t - t0 >= s) return null
     if (t > last) { last = t; seen = performance.now() }
-    check(performance.now() - seen < 10000 * loadX(), `the sim stopped stepping, ${(t - t0).toFixed(2)} of ${s} sim-s in`)
+    check(performance.now() - seen < 10000 * stretch(), `the sim stopped stepping, ${(t - t0).toFixed(2)} of ${s} sim-s in`)
     await sleep(50)
   }
 }
@@ -175,8 +178,15 @@ function check (cond, what) { if (!cond) throw new Error(what) }
 let home = null
 const STEPS = [
   ['boot', async () => {
+    // INFRA-08: the boot is the box's speed test (see stretch). Past TOO_SLOW × an idle boot this run cannot
+    // speak for the code — it says so now, rather than failing on whichever step the load lands on.
+    const t0 = performance.now()
     await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?nomenu=1` })
-    check(await until(() => js('window.__rsReady === true'), 30000, 250), '__rsReady never set (30 s)')
+    const ready = await until(() => js('window.__rsReady === true'), TOO_SLOW * BOOT_IDLE_S * 1000, 250)
+    const s = (performance.now() - t0) / 1000
+    check(ready, `__rsReady never set in ${s.toFixed(0)} s (${TOO_SLOW}× an idle boot, load ${(loadavg()[0] / cpus().length).toFixed(1)}/core): `
+      + 'a hang, or a box too loaded to judge the code — rerun alone')
+    bootX = s / BOOT_IDLE_S
     home = await car()
     check(fin(home.x, home.y, home.z), `truck position not finite: ${JSON.stringify(home)}`)
   }],
@@ -1084,7 +1094,7 @@ for (const [name, fn] of STEPS) {
 }
 client.close(); cleanup(); shutdown()
 
-console.log(`steps: ${times.join(' · ')} · ceilings stretched up to ×${peakX.toFixed(2)} (load per core)`)
+console.log(`steps: ${times.join(' · ')} · ceilings stretched up to ×${peakX.toFixed(1)} (boot ×${bootX.toFixed(1)} idle)`)
 if (errors.length) {
   console.log(`FAIL: ${errors.length} console error(s); first in step "${errors[0].step}":\n  ${errors[0].msg}`)
   process.exit(1)
