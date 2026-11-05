@@ -1,7 +1,7 @@
 ---
 id: BUG-113
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-05
 source: owner, 2026-11-05 (page inbox, playing main) — "b on pad doesnt close the recovery menu. it opens the pause menu which is strange and unexpected"
@@ -26,3 +26,8 @@ has no back button of its own, so it fell through to the pause menu. One case in
 closes (`_recoveryOpen = false; _updateRecovery()`) before the map and the pause. Pinned in cdp-smoke's broke-down
 step: with the card open, a fake-pad B closes it and the pause menu stays shut, then X reopens it for the step's own
 "end run". The landing smoke runs on main (orchestrator, 2026-11-05).
+
+## Resolution (2026-11-05) — CLOSED
+
+Landed on main bdf2ff5e. The landing smoke passed 23/23 on main with the new fake-pad step (pad B closes the
+Recovery card, pause stays shut). Suite on main 125/125.
