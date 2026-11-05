@@ -106,17 +106,14 @@ then plan mode on these notes.
   - The queue: a small one added to `DialogueSystem`, so a card never replaces another.
 - **Words:** I draft and flag them; the owner rewrites (FEAT-148: the owner owns character text).
 
-**Three owner questions, unanswered:**
-1. **The firing's art.** No art exists and the burger joint has no model. Options:
-   - I model a burger-joint set and render 2–3 flat-shaded panels headless (an ASSET ticket);
-   - the owner supplies the panels (the scene can't ship until they land; no stubs);
-   - plumbing first, art later.
-2. **Who sends the first job to Larry.** Options:
-   - Mom, scripted (recommended: always near spawn, family);
-   - the burger joint (tension with "never earn a cent from it" unless unpaid);
-   - the first real courier offer that can end at Larry's.
-3. **The result-card conflict.** The ticket says teach "par, rank, pay", but par and the letter are off
-   the card. Options:
-   - teach what the card shows (base, tip, deed) plus the rank bar the first time it appears
-     (recommended);
-   - show par and the letter on the first card only.
+**The three questions — ANSWERED (owner, 2026-11-05):**
+1. **The firing's art: an in-world camera move, not panels (for now).** *"have lane C build a burger
+   joint model. for now we can just do a camera move on the burger joint in the game world and put the
+   dialogue cards over it. this keeps it simple while getting the point across."* This narrows the 10-31
+   graphic-novel ruling: no scene art layer; the camera flies to the `foodVendor` POI and the Story
+   cards play over the live world. The burger-joint model is Lane C's (an ASSET ticket, routed by the
+   orchestrator); until it ships the POI wears whatever `model: null` gives it today.
+2. **Mom sends the first job, scripted** (recommended option): one fixed courier line, Mom's → Larry's,
+   on normal pay and deed rules.
+3. **The first result card teaches what the card shows** (recommended option): base, tip and deed on
+   the card, plus the live rank bar the first time it appears. Par and the letter stay off.
