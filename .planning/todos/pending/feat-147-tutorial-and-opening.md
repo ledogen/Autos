@@ -156,7 +156,7 @@ Known ceiling: the joint is sited `any`, so the first drive (joint → Mom's) ca
 large-spread seed. Re-siting it `nearSpawn` reshuffles every seed's POI layout — not done; owner's call
 if the drive feels long.
 
-## Built — 2026-11-05 (feature/run-shape, Lane A) — NOT verified in a browser (compute hold)
+## Built — 2026-11-05 (feature/run-shape, Lane A)
 
 Slices 1–6 of the plan are in (commits 1c359f2a … 8678a4a2):
 - **The first job:** `data/offers.js FIRST_JOB`; OfferBoard `f0` slot (kept OUT of `_slots`, added by
@@ -175,8 +175,8 @@ Slices 1–6 of the plan are in (commits 1c359f2a … 8678a4a2):
   `opening` plays it: seated < 8 m from the joint, camera on the orbit, clock frozen, firing → mom's call →
   her job live → camera home.
 
-**Owed before landing (after the hold):** `node test/cdp-smoke.mjs` (the new step has never run) + the
-affected set; the owner's drive on :3731. `test/pad-e2e.mjs` (unregistered) counts setup-page rows by
+**Verified 2026-11-05 (hold lifted):** the affected set, 43/43 green; `node test/cdp-smoke.mjs` PASS,
+23 steps, zero console errors (`opening` 19.9 s). **Owed before landing:** the owner's drive on :3731. `test/pad-e2e.mjs` (unregistered) counts setup-page rows by
 D-pad presses — the new `opening` row sits under the mode row; re-check its counts when it next runs.
 
 **Owed by the owner:** every card's words (FEAT-148 — all PLACEHOLDER in data/dialogue.js); whether the
