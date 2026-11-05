@@ -939,10 +939,10 @@ const STEPS = [
       `no "end run" on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
     await js('document.querySelector("#recovery-card .rc-end").click()')
     await ended(/truck is dead/, /(the tow was \$[\d,.]+|no tow could reach you) — you had \$0\b/)
-    // The win: six deeds open the requisition; all five lines delivered → the win card.
+    // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
-    await js('window.__econ.halfPoints = 12')
-    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), 'six deeds opened no requisition')
+    await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), `${ECONOMY_PARAMS.campDeeds} deeds opened no requisition`)
     await js(`(() => { const b = window.__board(), h = window.__day().clockH()
       const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
       for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
