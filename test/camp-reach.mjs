@@ -27,7 +27,7 @@ import { spawnDecision } from './lib/spawn-decision.mjs'
 const CAMP_REACH_M = 3000   // m [DEFAULT] — the owner's number (FEAT-164)
 
 const arg = (k) => process.argv.find((a) => a.startsWith(`--${k}=`))?.split('=')[1]
-const SEEDS = (arg('seeds') ?? '4194356868,1,6').split(',')
+const SEEDS = (arg('seeds') ?? '4194356868,1,6').split(',').filter(Boolean)
 const REPORT = process.argv.includes('--report')
 
 let fails = 0
