@@ -234,8 +234,9 @@ export const POI_ROSTER = [
     { type: 'autoShop',     count: 2, model: null, siting: 'coverage' },
     // ANY FOOD VENDOR (FEAT-67 ruling, 2026-09-26; opening.md amended): the player delivers
     // ready-made meals from it as an independent gig contractor, not as staff, so the opening's
-    // "never work there again" still holds. Sited anywhere.
-    { type: 'foodVendor',   count: 1, model: null, siting: 'any' },
+    // "never work there again" still holds. Sited anywhere. ASSET-80, the burger joint, on a lay-by:
+    // the opening's firing scene frames it (FEAT-147).
+    { type: 'foodVendor',   count: 1, model: 'burgerJoint', siting: 'any' },
     // ASSET-74: the country store, on the FARM pad (owner, 2026-10-08) — its paved lot of five
     // nose-in stalls fills the road side, and you park in a stall to be offered work (the model's
     // `park` box, not the round ring). No farm pad free: a lay-by and the placeholder cube, so the
