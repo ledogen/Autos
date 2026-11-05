@@ -1,7 +1,7 @@
 ---
 id: FEAT-165
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-04
 source: owner, 2026-11-04 (page inbox) — "huge issue. i keep tearing through tires over the first day and cant find a place to pick up new ones. missions arent offering any and shops arent either. i think we need to make sure shops always offer standard/old tires but increase the price a little" · "we should be able to tell if a tire is standard or old, etc from the vehicle diagnostics screen"
@@ -24,10 +24,12 @@ still ran out on day 1 with none for sale.
 
 ## Acceptance
 
-- [ ] Every shop shelf, every visit, holds `tireOld` and `tireStandard`; a headless check over N seeds × days.
-- [ ] The two prices raised (default above, or the owner's numbers), on the shelf and in the card.
-- [ ] Diagnostics shows the part name of each of the four tires.
-- [ ] The owner confirms the price.
+- [x] Every shop shelf, every visit, holds `tireOld` and `tireStandard`; a headless check over N seeds × days.
+      (Superseded 11-05 by FEAT-168 item 4, the owner's later ruling: ALWAYS = old tire + air filter + plug kit;
+      the standard tire rotates at weight 10. `shop-stock.mjs` §7 pins that set.)
+- [x] The two prices raised (default above, or the owner's numbers), on the shelf and in the card.
+- [x] Diagnostics shows the part name of each of the four tires.
+- [x] The owner confirms the price.
 
 ## Built — 2026-11-05 (Lane B, feature/machine)
 
@@ -42,3 +44,10 @@ still ran out on day 1 with none for sale.
   new, and that buying one leaves it. `service.mjs` and `offer-board.mjs` stay green.
 
 Owed: the owner confirms the two prices. The browser smoke is held by the compute hold.
+
+## Resolution — 2026-11-06 (Lane B), closed on evidence
+
+- The owner confirmed the prices on the tracker page (`feat165-price`, 2026-11-05 14:43: "Old $8 · Standard
+  $18"), the shipped values.
+- On main since e8a6d460. Landing smokes on main have passed since (23/23), so the held browser smoke is covered.
+- The always-stocked set is now FEAT-168's (old tire, air filter, plug kit), on main as 3ea5578c.
