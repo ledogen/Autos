@@ -1867,7 +1867,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
 const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms,
-  compileLightState, LIGHT_STATE_COUNT } = createVehicleModel(scene, RANGER_PARAMS)
+  compileLightState, LIGHT_STATE_COUNT, setBoreShade } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -9564,6 +9564,8 @@ function loop () {
   setCabView(getCameraMode() === 'hood')   // FEAT-120 camera-aware mix: the cab hears the world through the glass
   setTunnelReverb(RANGER_PARAMS.tunnelReverbEnabled !== false, RANGER_PARAMS.tunnelReverbLevel ?? 0.9)
   setInTunnel(_listenerInBore())           // FEAT-163: the camera is the listener — it leaves a portal after the truck
+  // BUG-112: the truck darkens in a bore with the road and lining around it (one ramp, RoadSystem.boreShade)
+  setBoreShade(_labActive || !roadSystem ? 1 : roadSystem.boreShadeAt(vehicleState.position.x, vehicleState.position.y, vehicleState.position.z))
   setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
   setResultAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)   // the card plays over a held sim
   setRankMusic(RANGER_PARAMS.rankMusicEnabled !== false, RANGER_PARAMS.rankMusicVolume ?? 0.5)   // FEAT-131 P3
