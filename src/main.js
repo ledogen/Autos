@@ -85,7 +85,7 @@ import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's str
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
-import { runWorldItems, place, rest, near, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
+import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
 import { ITEMS } from '../data/items.js'
 import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
@@ -2777,18 +2777,21 @@ function _bedPoint (pose) {
 // ── The loose bed load — ONE unwelded body (data/offers.js `loose`: the stranded motorist's tire) ──
 // Dropped at accept where strapPose puts a load (centred, against the front wall, between the
 // wheelhouses), 1 cm above the ribs so it settles rather than starts in contact. Nothing holds it:
-// it slides, bounces and can be lost. Pinned and noDamage like FEAT-88's bundles. Pay never reads it.
+// it slides, bounces and can fall out. Pinned and noDamage like FEAT-88's bundles. Pay never reads it.
 const LOOSE_SETTLE_GAP = 0.01   // m
-const LOOSE_LOST_S = 1.0        // s out of the bed well before the load counts as LOST — a bump that lifts it is not
+const LOOSE_LOST_S = 1.0        // s out of the bed well before the load counts as OUT — a bump that lifts it is not
 let _loose = null   // { body, kind, massKg, mission, outSince } — or null
 
-/** Losing the loose load fails its job (owner, 2026-10-22) — the same dead end as wrecked fragile cargo. */
+/**
+ * Out of the bed, the job cannot hand over until it is back (FEAT-144, owner 2026-11-03: "job cant finish
+ * till you fetch" — reversing 10-22's fail). mission.js reads `cargoOut`; the deadline still runs.
+ */
 function _looseStep () {
   const L = _loose
-  if (!L?.mission || L.mission.failed) return
-  if (_inBed(L.body)) { L.outSince = null; return }
+  if (!L?.mission) return
+  if (_inBed(L.body)) { L.outSince = null; L.mission.cargoOut = false; return }
   L.outSince ??= simTime
-  if (simTime - L.outSince >= LOOSE_LOST_S) { L.mission.failed = true; _disarmJobCancel() }
+  L.mission.cargoOut = simTime - L.outSince >= LOOSE_LOST_S
 }
 function _loadLoose (kind, massKg, mission) {
   if (_loose) { debrisSystem.remove([_loose.body]); _loose = null }
@@ -2804,10 +2807,65 @@ function _loadLoose (kind, massKg, mission) {
 
 // A seat (R, teleport, reseed, region re-fit) moves the truck in one jump; a weld to the load left
 // behind would yank them together across it. Re-strap the same load on the new pose instead — and
-// put the loose load back in the bed, where a reset means it to be.
+// put the loose load back in the bed, where a reset means it to be. Not one already out of it: that
+// one is fetched (FEAT-144, 5 min), and a reset must not be the free way to fetch it.
 function _restrapFreight () {
   if (_freight) void _loadFreight(_freight.key, _freight.massKg, _freight.mission, _freight.health)
-  if (_loose) _loadLoose(_loose.kind, _loose.massKg, _loose.mission)
+  if (_loose && !_loose.mission?.cargoOut) _loadLoose(_loose.kind, _loose.massKg, _loose.mission)
+}
+
+// ── FEAT-144: loose bed cargo that fell out — fetched, not lost ─────────────────────────────────
+// Owner, 2026-11-03: "5 mins per piece … need to be parked within a couple meters … job cant finish till
+// you fetch … loose cargo only … f143: yes". One button for both this and FEAT-143's pick-up (D-pad ↓ / G),
+// one reach (REACH_M from the truck's outline): a lost piece in reach goes first, lifted above the bed to
+// drop back in, RELOAD_MIN on the clock (the job's too); else the nearest dropped item, into the inventory.
+// Strapped freight is never here: it is welded, it cannot fall out.
+const RELOAD_MIN = 5          // game minutes per piece (owner, 2026-11-03)
+const RELOAD_DROP_M = 0.5     // m above the bed rail the piece is let go — "teleported above the bed and falls back in"
+const LOST_ON_M = 60, LOST_OFF_M = 120   // a lost piece leaves the world past OFF, comes back within ON (the ornaments' numbers)
+const _frozen = new Set()     // lost pieces out of the world while far: no ground streams under them
+
+/** The live loose bed pieces — every haul bundle and the motorist's tire — in or out of the bed. */
+const _loosePieces = () => [...(_haul?.handles ?? []), ...(_loose ? [_loose.body] : [])]
+
+/** The truck's plan footprint for world-items' planGap: unit forward, nose and tail off the CG, half width. */
+function _truckFootprint () {
+  const bed = DEFAULT_VEHICLE_MODEL.bed, rear = bed?.gateZ ?? RANGER_PARAMS.bodyLength / 2
+  _giF.set(0, 0, -1).applyQuaternion(vehicleState.quaternion).setY(0).normalize()
+  return { fx: _giF.x, fz: _giF.z, front: RANGER_PARAMS.bodyLength - rear, rear, half: RANGER_PARAMS.bodyWidth / 2 }
+}
+
+/** The 10 Hz poll: a lost piece far off is taken out of the world, so streamed-out ground cannot drop it. */
+function _freezeLostCargo () {
+  const p = vehicleState.position, live = _loosePieces()
+  for (const h of _frozen) if (!live.includes(h)) _frozen.delete(h)
+  for (const h of live) {
+    physicsEngine.getTransform(h, _giP, _giQ)
+    const d = Math.hypot(_giP.x - p.x, _giP.z - p.z)
+    if (!_frozen.has(h) && d > LOST_OFF_M) { physicsEngine.setEnabled(h, false); _frozen.add(h) }
+    else if (_frozen.has(h) && d < LOST_ON_M) { physicsEngine.setEnabled(h, true); _frozen.delete(h) }
+  }
+}
+
+/** D-pad ↓ / G, parked: put the nearest lost piece in reach back in the bed, else pick up the nearest item. */
+function _pickUpNear () {
+  if (menuStage.isActive() || damageScreen.blocked) return
+  if (!vehicleState.parked) { hintPark(); return }
+  const fp = _truckFootprint(), p = vehicleState.position
+  let best = null, bestD = REACH_M
+  for (const h of missionSystem?.state === 'loading' ? [] : _loosePieces()) {   // not a bundle still dropping in
+    if (_inBed(h)) continue
+    physicsEngine.getTransform(h, _giP, _giQ)
+    const d = planGap(_giP, p.x, p.z, fp)
+    if (d <= bestD) { best = h; bestD = d }
+  }
+  if (best == null) { const g = _groundNearby()[0]; if (g) _pickUpGround(g.it); return }
+  const bed = DEFAULT_VEHICLE_MODEL.bed
+  const { v, q, w } = _bedPoint({ x: 0, y: bed.railY + RELOAD_DROP_M, z: (bed.frontZ + bed.tailZ) / 2 })
+  physicsEngine.setTransform(best, _fP, q)
+  physicsEngine.setVelocity(best, v, w)
+  physicsEngine.wake(best)
+  daySystem.advanceMinutes(RELOAD_MIN)
 }
 
 // ── FEAT-97: the fragile load's shocks ───────────────────────────────────────────────────────
@@ -5555,11 +5613,8 @@ function _updateWorldItems () {
 
 /** What the inventory lists under "Nearby on the ground": in reach of the parked truck's outline, nearest first. */
 function _groundNearby () {
-  const q = vehicleState.quaternion, p = vehicleState.position, bed = DEFAULT_VEHICLE_MODEL.bed
-  _giF.set(0, 0, -1).applyQuaternion(q).setY(0).normalize()
-  const rear = bed?.gateZ ?? RANGER_PARAMS.bodyLength / 2
-  const fp = { fx: _giF.x, fz: _giF.z, front: RANGER_PARAMS.bodyLength - rear, rear, half: RANGER_PARAMS.bodyWidth / 2 }
-  return near(p.x, p.z, REACH_M, fp).map(i => {
+  const p = vehicleState.position
+  return near(p.x, p.z, REACH_M, _truckFootprint()).map(i => {
     const it = runWorldItems.items[i]
     return { it, row: inventorySystem.rowOf(it.entry) }
   })
@@ -6738,7 +6793,8 @@ let _spill = { key: null, aboard: -1, lost: 0, until: 0 }
 function _jobBeat (m) {
   const j = m.mission
   if (!j) return null
-  if (j.failed) return j.fragile ? 'CARGO DESTROYED · park and clean up' : j.loose ? 'TIRE LOST · park and abandon the job' : 'CARGO LOST · park and abandon the job'
+  if (j.failed) return j.fragile ? 'CARGO DESTROYED · park and clean up' : 'CARGO LOST · park and abandon the job'
+  if (j.cargoOut) return 'TIRE OUT OF THE BED · go back for it'   // FEAT-144
   if (j.bundles && _haul?.mission === j) {
     const aboard = _haulAboard(), now = performance.now() / 1000
     if (_spill.key !== j) _spill = { key: j, aboard, lost: 0, until: 0 }
@@ -8253,7 +8309,6 @@ function _jobCancelLabel () {
   if (!vehicleState.parked) return parkPrompt('park to abandon')
   // An intact strapped load still costs the clean-up hour, but it reads "abandon job" (owner,
   // 2026-10-15: "clean up" only once the cargo is actually wrecked).
-  if (missionSystem.mission?.failed && missionSystem.mission.loose) return 'tire lost · abandon job'
   return _strappedJob() && missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'abandon job'   // FEAT-97
 }
 function _syncJobCancel (hud, on) {
@@ -8348,8 +8403,9 @@ function _saveExitBlock () {
  * the offer exactly as it was planned (offer.planned — see OfferBoard.replan), which is a pure
  * function of the seed. The load is: freight and the loose tire go back to their own strap pose (a
  * weld holds the one there; the other goes where a reset puts it), so only fragile condition is kept.
- * Haul pieces keep their BED-LOCAL poses — where each sits is what arrival counts — and a piece
- * already out of the bed is lost and stays lost. A haul still loading re-drops from the start.
+ * Haul pieces keep their BED-LOCAL poses — where each sits is what arrival counts. A piece already out
+ * of the bed, the tire too, keeps its WORLD pose: it lies there to be fetched (FEAT-144). A haul still
+ * loading re-drops from the start.
  */
 function _jobSnapshot () {
   const s = missionSystem?.snapshot(), m = missionSystem?.mission
@@ -8361,8 +8417,23 @@ function _jobSnapshot () {
   if (_site?.mission === m) s.smashed = _site.targets.flatMap((t, i) => t.smashed ? [i] : [])   // FEAT-65
   if (_haul?.mission === m && s.state !== 'loading') {
     s.haul = _haul.handles.flatMap((h, i) => _inBed(h) ? [{ kind: _haul.drops[i].kind, ..._bedLocalPose(h) }] : [])
+    s.haulOut = _haul.handles.flatMap((h, i) => _inBed(h) ? [] : [{ kind: _haul.drops[i].kind, ..._worldPose(h) }])
   }
+  if (_loose?.mission === m && m.cargoOut) s.looseOut = _worldPose(_loose.body)
   return s
+}
+
+/** Debris body `h`'s world pose, as arrays. */
+function _worldPose (h) {
+  physicsEngine.getTransform(h, _blP, _blQ)
+  return { p: _blP.toArray(), q: _blQ.toArray() }
+}
+
+/** Lay debris body `h` at a saved world pose, still and asleep: it lies where it was left. */
+function _layAt (h, { p, q }) {
+  physicsEngine.setTransform(h, _blP.fromArray(p), _blQ.fromArray(q))
+  physicsEngine.setVelocity(h, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })
+  physicsEngine.sleep(h)
 }
 
 /** Debris body `h`'s pose in the truck's frame, as arrays. */
@@ -8396,6 +8467,11 @@ function _reloadCargo (m, sj) {
     void _loadFreight(m.load, m.cargoKg, m, t)
   }
   if (m.loose && !m.failed) _loadLoose(m.loose.kind, m.loose.massKg, m)
+  if (_loose && sj.looseOut) {   // FEAT-144: still where it fell out, and the job still waiting on it from the first step
+    _layAt(_loose.body, sj.looseOut)
+    _loose.outSince = -Infinity
+    m.cargoOut = true
+  }
   if (m.targets) _placeSite(m, sj.smashed ?? [])   // FEAT-65: the same site, the smashed ones still gone
   if (!sj.haul) return
   // ponytail: a piece whose model has not loaded is dropped — they load at boot, long before a resume.
@@ -8406,6 +8482,12 @@ function _reloadCargo (m, sj) {
     const h = debrisSystem.spawn(d.kind, { x: _fP.x, y: _fP.y, z: _fP.z }, v,
       { spin: { x: w.x, y: w.y, z: w.z }, quaternion: { x: _haulQd.x, y: _haulQd.y, z: _haulQd.z, w: _haulQd.w }, pinned: true, noDamage: true })
     if (h) { _haul.handles.push(h); _haul.drops.push({ kind: d.kind }) }
+  }
+  const still = { x: 0, y: 0, z: 0 }
+  for (const d of sj.haulOut ?? []) {   // FEAT-144: the pieces that fell out, where they lie
+    const h = debrisSystem.spawn(d.kind, { x: d.p[0], y: d.p[1], z: d.p[2] }, still,
+      { spin: still, quaternion: { x: d.q[0], y: d.q[1], z: d.q[2], w: d.q[3] }, pinned: true, noDamage: true })
+    if (h) { physicsEngine.sleep(h); _haul.handles.push(h); _haul.drops.push({ kind: d.kind }) }
   }
 }
 
@@ -8710,6 +8792,8 @@ document.addEventListener('keydown', e => {
   if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
     if (isTeleportEnabled()) setSpawnHere()
   }
+  // FEAT-144 / FEAT-143: G (pad D-pad ↓) — load a lost piece back in the bed, or pick an item up.
+  if ((e.key === 'g' || e.key === 'G') && !e.repeat && !e.ctrlKey && !e.metaKey && e.target?.tagName !== 'INPUT') _pickUpNear()
 })
 
 // ── Esc handler — pause menu (D-17 / RESEARCH §Pitfall 3) ────────────────────
@@ -9035,7 +9119,7 @@ function loop () {
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them
-    _looseStep()     // the loose load: out of the bed too long fails the job
+    _looseStep()     // the loose load: out of the bed, the job waits for it (FEAT-144)
     // SM-3: integrate component wear on the SAME fixed step the physics ran, so condition is
     // framerate-independent like everything else (INFRA-03 determinism). Reads the honest signals
     // stepPhysics just published; writes the effect multipliers the NEXT step will read.
@@ -9572,6 +9656,7 @@ function loop () {
     _updateBarricades()   // …and the rows near the truck are loose bodies
     _updateOrnaments()    // FEAT-149: so are the lawn ornaments
     _updateWorldItems()   // FEAT-143: and the things the player set down
+    _freezeLostCargo()    // FEAT-144: bed cargo that fell out sits out of the world while far
     _updateSite()         // FEAT-65: likewise a demolition job's targets
     const guiOpen = _gui.domElement.style.display !== 'none'   // S-64: debug read-outs only while the panel shows
     if (guiOpen) economySystem.syncGui()

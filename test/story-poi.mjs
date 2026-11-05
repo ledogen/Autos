@@ -572,9 +572,9 @@ function boardRig (ms, nowH = 6) {
             guideOut !== ms.mission && guideOut.segments.length === n && guideOut.segments.every((g, j) => g === segs[j]))
         check('driving through the pickup does not pick it up — you must park', ms.state === 'running' && ms.leg === 0
             && ms.pickupPoiId() === pick.id)
-        ms.mission.failed = true
-        check('a failed fetch (its loose tire lost) has no pickup to park at', ms.pickupPoiId() === null && ms.acquire() === false && ms.leg === 0)
-        ms.mission.failed = false
+        ms.mission.cargoOut = true
+        check('FEAT-144: with its loose tire out of the bed a fetch has no pickup to park at', ms.pickupPoiId() === null && ms.acquire() === false && ms.leg === 0)
+        ms.mission.cargoOut = false
         check('parking there acquires the item (acquire → the return leg)', ms.acquire() === true && ms.leg === 1)
         check('…once', ms.acquire() === false && ms.pickupPoiId() === null)
         check('the GPS is handed the RETURN leg alone, as a new route (no outbound pass to snap onto)',
@@ -598,6 +598,10 @@ function boardRig (ms, nowH = 6) {
         console.log(`       GPS at the giver after the return leg: whole route ${(100 * fWhole).toFixed(0)} %, leg route ${(100 * fLeg).toFixed(0)} %`)
         check('the GPS, guided by the return leg, reaches the giver (≥ 98 % along it)', fLeg >= 0.98, `${(100 * fLeg).toFixed(1)} %`)
         car.x = giverEnd.x; car.z = giverEnd.z
+        ms.mission.cargoOut = true
+        ms.update(0.5)
+        check('FEAT-144: back at the giver without the tire, the job waits — not done, not failed', ms.state === 'running' && settles === 0 && !ms.mission.failed)
+        ms.mission.cargoOut = false
         ms.update(0.5)
         check('back at the giver the job settles — exactly once', ms.state === 'done' && settles === 1)
         ms.update(0.5)
