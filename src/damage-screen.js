@@ -16,9 +16,10 @@
  *     while driving, READY once parked. A damage event flashes it and holds it lit until the screen
  *     is opened. There is no alert card beside it any more (owner, 2026-10-21: "get rid of all this
  *     stuff"); V while driving pulses the park zone's PARK stencil, as Tab does.
- *   - BLOCKED where parking already means something else (owner, 2026-10-16): in a POI's reach the
- *     brake opens the offer, so V does nothing and the icon stays backgrounded. main.js sets
- *     `blocked` from the same poll that owns the park trigger.
+ *   - BLOCKED where parking already means something else (owner, 2026-10-16): while a POI's offer
+ *     card is up, at a pump or a shop, V does nothing and the icon stays backgrounded. A declined
+ *     offer frees it again while you stay parked (owner, 2026-11-05). main.js sets `blocked` from
+ *     the same poll that owns the park trigger.
  *   - What counts as a damage event: a landed impact (main.js calls alert()), a puncture, or any
  *     part losing more than DROP_ALERT in one 10 Hz sample. Slow wear (tread, filter, brakes) never
  *     loses that much in a tenth of a second, so driving alone never flashes it.
@@ -73,7 +74,7 @@ const CONSEQUENCE = {
  * muted: a sound part should not compete with a damaged one for the eye.
  */
 const BANDS = [
-  { min: 0.9, color: '#5f7a6b' },   // sound — desaturated grey-green
+  { min: 0.8, color: '#5f7a6b' },   // sound — desaturated grey-green (was 0.9; owner 2026-11-05)
   { min: 0.5, color: '#d9c04a' },   // worn
   { min: 0.3, color: '#e8893a' },   // damaged
   { min: 0,   color: '#e5574a' },   // failing
@@ -129,8 +130,8 @@ function symptoms (m, id) {
       break
     }
     case 'spring': if (c < P.springKnee) out.push(`Sagging, bottoms out sooner under ${pct(P.springKnee)}`); break
-    case 'damper': if (c < P.damperKnee) out.push(`Keeps bouncing after bumps under ${pct(P.damperKnee)}`); break
-    case 'brake':  if (c < P.brakeKnee)  out.push(`Stopping distance growing under ${pct(P.brakeKnee)}`); break
+    case 'damper': if (c < P.damperKnee) out.push(`More bouncy under ${pct(P.damperKnee)}`); break   // owner's words, 2026-11-05
+    case 'brake':  if (c < P.brakeKnee)  out.push(`Reduced stopping power under ${pct(P.brakeKnee)}`); break
     case 'engine': if (c < P.engineKnee) out.push(`Losing power fast under ${pct(P.engineKnee)}`); break
     case 'radiator': if (c < 0.5) out.push(`Overheats under full load below 50%`); break
     case 'filter': if (c < P.filterKnee) out.push(`Wearing out the engine under ${pct(P.filterKnee)}`); break
@@ -145,7 +146,7 @@ function symptoms (m, id) {
     case 'armor':
       // Fatal speed scales with this panel's condition (fatalMphBare..fatalMphFull). Only worth
       // saying once the panel has left the sound band.
-      if (P.fatalEnabled && c < BANDS[0].min) out.push(`A crash over ${Math.round(fatalMph(c))} mph here is fatal`)
+      if (P.fatalEnabled && c < BANDS[0].min) out.push(`${Math.round(fatalMph(c))} mph impact is fatal`)
       break
   }
   return out
