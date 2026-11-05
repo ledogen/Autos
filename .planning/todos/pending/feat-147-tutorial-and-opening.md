@@ -117,3 +117,41 @@ then plan mode on these notes.
    on normal pay and deed rules.
 3. **The first result card teaches what the card shows** (recommended option): base, tip and deed on
    the card, plus the live rank bar the first time it appears. Par and the letter stay off.
+
+## Plan — 2026-11-05 (Lane A, after the owner's three answers)
+
+Built in slices, a WIP commit each. Every word on a card is a PLACEHOLDER the owner rewrites (FEAT-148).
+
+1. **Mom's first job — a fourth board slot kind (`f`).** `data/offers.js FIRST_JOB`: one courier
+   thing (Mom → the `larry` tag). OfferBoard gets one `f0` slot at mom's, `closed` until
+   `openFirst(nowH)` (joins save.js `BOARD_OPS`). Its spec is FIXED but shaped like any rolled courier
+   spec (no `line`), so the normal card, pay, deadline, settle and deed rules apply untouched — the
+   owner's "same rules" principle. planDistinct skips the re-roll; destWish sends it to Larry, strict,
+   `anyLeg` (the two houses sit inside POI_LEG_MIN). Any end (done, cancel) closes it for good
+   (`_lock` → 'done'; mom has no SOURCES row to lock against). Mom answers the park trigger only
+   while that slot is live (`_poiInReach`); otherwise her door is the bed, as today.
+2. **The Opening toggle.** A run-setup row; `SETTINGS_DEFAULTS.opening = true`, flipped off once an
+   opening completes (the player can turn it back on). Off → `RUN_INTRO` at go-live, exactly as today.
+3. **The firing — an in-world camera move (owner 11-05).** Opening on + a NEW run: onRegionLive seats
+   the truck on the foodVendor's lay-by, road-side strip (pad-local z −2.8, nose along the road), the
+   `_restoreRun` seat pattern — the story network is the frozen whole region, so no build. Go-live:
+   the sim is held (`_openingHold` in `_heldPause`), `setCameraFocus` slowly orbits the joint's ROAD
+   face (theta from the pad normal; works on the cube today, ASSET-80 later), the firing cards play.
+   On the last card: focus cleared (the chase spring swings onto the truck parked right there),
+   hold released, Mom's call plays, `openFirst()` posts her job.
+4. **Larry after the first job.** The first job's result card closes → Larry's welcome, which is
+   `RUN_INTRO` (the goal, the deed rule, the pay rule) moved to this beat; the opening is marked
+   complete (the toggle's default flips off).
+5. **First-use cards (`tut-*` keys on the dialogue seen-gate).** `DialogueSystem.queue()` appends
+   instead of replacing; a card waits until the truck is stopped and holds the sim and clock while it
+   is up. Triggers: the first offer panel (the offer card), the first accept (the rank bar), the first
+   result card (base, tip, deed — the card as it is, owner 11-05), the first pump park, the first
+   service screen, day 1's sleepy stage (finding ground, camp, the day as the budget), the
+   requisition opening (`openLines()` returning true). Each shows once per run, dismissed by a key.
+6. **Smoke.** `test/cdp-smoke.mjs` ~250 / ~739 pin today's intro: they get an opening-off run (as
+   today) plus one opening-on step (the firing plays, the camera returns, Mom's offer is live).
+   Runs when the compute hold lifts.
+
+Known ceiling: the joint is sited `any`, so the first drive (joint → Mom's) can be ~2–3 km on a
+large-spread seed. Re-siting it `nearSpawn` reshuffles every seed's POI layout — not done; owner's call
+if the drive feels long.
