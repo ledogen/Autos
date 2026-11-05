@@ -47,3 +47,23 @@ pool stays as it is.
 - [ ] The truck's strip (pad z −3.7..−1.9, x ±2.6) is clear of the collision box and every mesh; checked with the seated truck.
 - [ ] Registry key in `data/prop-models.js` (collision box + `seat`); the `foodVendor` slot in `src/poi.js` names it (the doctor's office did the same, ASSET-70).
 - [ ] Owner's look in Blender before promotion; then `npm test` (poi-yard, poi-collider) + cdp-smoke.
+
+## Progress
+
+**2026-11-05 (Lane C, cargame-a1) — built in `wip/burger-joint/`, awaiting the owner's look.**
+Generator `wip/burger-joint/burger-joint.py` (git-excluded until promotion, per ASSETS.md), headless:
+`/Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 --python wip/burger-joint/burger-joint.py -- export render`.
+
+- A walk-up stand: cream walls 7.0 × 3.4 m on a dark skirt, red belt line, red fascia + yellow pinstripe,
+  steel-coped parapet round a sunk roof deck (AC unit, exhaust stack). Road face: a 3.4 m open service
+  window over a steel counter (ketchup, mustard, napkins), an 11-stripe red/cream awning with a
+  fluorescent tube under it, a backlit menu lightbox. Through the window: griddle line, backsplash, hood
+  with its light. Round rooftop sign (red rim, yellow ring, cream face) carrying the burger as GEOMETRY
+  (bun + seeds, lettuce, cheese drips, patty, bottom bun): no texture, no name. Side kit: staff door +
+  step and meter on +X, extract fan on −X, two downspouts at the back.
+- **1043 tris** (budget 1200), **8 materials**, **0 images**. `BurgerLight` is the one emissive
+  (menu face, awning tube, hood light). Material names are stable (`Burger*`); none recolourable (no palette).
+- Facing: 0 inverted first-hits of 5807 rays.
+- Registry numbers (printed by the generator): collision box `[7.10, 3.20, 3.50]` (walls + parapet;
+  awning, counter, sign and roof gear left out), `seat: 1.95` (back fascia 0.30 m inside the pad's back
+  edge). Whole mesh behind pad z −0.70: **1.20 m clear** of the truck strip (ends −1.90), |x| ≤ 3.90.
