@@ -130,11 +130,21 @@ campfire is not an item — it spawns to mark camp.
 - **Gates:** `test/camp-gear.mjs` (new — the layout on the real .glbs, the stacking, the shade fill,
   the tent's rest); cdp-smoke `campGear` step (a packed tent loads at camp, repacking re-dresses it).
 
+## Owner's look — 2026-11-05 evening (:3731)
+
+- **The camp gear "render[s] just fine in camp."** The look is done.
+- *"there is no tent awning or cooking kit on 3731"*: no run gives them yet (below). They are reachable through
+  the debug grant; where a run gets them is the open question below.
+
 ## Still owed
 
 - **The bedroll's and the blanket's models**: ASSET-78 (bedroll, unrolled — the one every camp shows)
   and ASSET-79 (blanket layer). Until then the starter camp's bed slot is empty.
-- **Where the four new items come from** (shelf, rewards) — owner's call. Debug grant only today.
+- **Where the four new items come from** (shelf, rewards) — owner's call. Debug grant only today: backtick →
+  "Story · Inventory (FEAT-122)" → item → "grant item" (story mode does not hold the debug lockout; only
+  scenarios do). Recommended for the alpha, pending FEAT-168's shelves: mission rewards, B–A, as the other camp
+  gear will be — the tent and the shade tarp from residences and farms, the awning from the general store and
+  residences, the cooking kit from the food vendor and farms.
 - **Fire shadows** (`light.castShadow`) — wanted once the tent landed; a six-face cube shadow map, so it
   needs a quality toggle first. Its own perf item.
 - **The starter Pack has one free slot**, so today a player can bring the tent OR a shade OR the kit.
