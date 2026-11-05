@@ -33,8 +33,13 @@ name — write your session name there on every resume).
    worn packs ARE the open diff, they wear with slip heat, and the rebuild goes straight to 100 %. Gate
    `test/diff-clutch.mjs`. Owner numbers `[DEFAULT]` are in the ticket.
 
-Landing needs, after the hold: 89 affected gates (40 heavy) plus cdp-smoke for the set, then hand the
-orchestrator the exact hash.
+Landing needs, after the hold (head a8d67a8b; FEAT-70's gate is registered and its work log, with the
+four fragile points, is in the ticket):
+1. restart :3282;
+2. `npm run test:all -- --browser` (or the affected subset, ~89 gates plus cdp-smoke);
+3. the collision-drop lab: `node test/collision-drop-lab.mjs 8000 9431` (main) against `… 3282 9432`
+   (branch). The DROP numbers stay in family; the collision half should match;
+4. hand the orchestrator the exact hash.
 
 ## Waiting on the owner
 
