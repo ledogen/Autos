@@ -16,7 +16,8 @@
 // The collision target is the lab ramp's BACK WALL: approach the ramp from behind (−Z) and it is a
 // solid vertical face, not a ramp. Repeatable, flat-on, and no props needed.
 //
-// Requires the dev server, and ?prof=1 for window.__tp.
+// Requires the dev server, ?prof=1 for window.__tp, and ?nomenu=1: from the main menu (FEAT-156) the
+// pause menu's lab button never leaves the menu stage, and the physics never steps.
 //   node test/collision-drop-lab.mjs [port] [cdpPort]
 
 import { spawn } from 'child_process'
@@ -28,7 +29,7 @@ const MPH = 0.44704
 
 const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=/tmp/cdl-${CDP}`,
-   '--use-angle=metal', '--window-size=900,600', `http://localhost:${PORT}/index.html?prof=1`],
+   '--use-angle=metal', '--window-size=900,600', `http://localhost:${PORT}/index.html?prof=1&nomenu=1`],
   { stdio: 'ignore', detached: true })
 await sleep(3500)
 const list = await (await fetch(`http://localhost:${CDP}/json/list`)).json()
