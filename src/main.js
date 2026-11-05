@@ -1417,6 +1417,9 @@ const SELECTORS = {
   worldPoi:     { name: 'POI spacing',     opts: KNOBS.p.map(v => [v, `${v} %`]) },
   worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
+  // FEAT-147: the firing and the first day. On for a first run; finishing one turns it off (main.js
+  // _finishOpening), and a returning player can turn it back on here.
+  opening:      { name: 'opening',         opts: [[true, 'play'], [false, 'skip']], show: () => _setupMode === 'story' },
   steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
   // A slider: 0 % linear … 100 % parabolic … 150 % (gamepad.js steerCurve), with a tiny plot of the map.
   // i / 10 so the saved value round-trips to exactly the same notch. Shown only with the assist off —
