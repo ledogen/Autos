@@ -118,3 +118,10 @@ that touches the drive.
   line nudges once, sideways, just after it lands. UI-STYLE tokens only.
 - **Owed:** the owner's look + listen (the card shows on any finished job). P3 (the rank-timer music bed)
   not started.
+- **P3** (`src/rank-music.js`, Spare 2026-11-05): built, not owner-heard. Starts with the bar; minor-triad pad
+  (A2) whose lowpass opens on intensity²; arpeggio four notes per heartbeat, stepped by the heartbeat
+  oscillator's own phase (main.js hands it over, so they cannot drift); a semitone up per line passed; drop on
+  the bonus lost; thin to the heartbeat on the C/D line; resolve to major into the stinger at the job's end.
+  Debug: Rank Timer Music + volume. The dashboard's ▶ (driver `rank-bed`) plays an 8 s approach to a line.
+  The `duck` hook for FEAT-58 is not exported yet — nothing would read it; it is one line when the player
+  music lands. **Owed:** the owner's listen in a real job (P4 sign-off).

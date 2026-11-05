@@ -112,6 +112,7 @@ import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown
 import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
+import { startRankMusic, updateRankMusic, rankMusicStep, rankMusicDrop, rankMusicThin, resolveRankMusic, setRankMusic } from './rank-music.js'   // FEAT-131 P3: the bar's music bed
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
@@ -6851,6 +6852,7 @@ function _updateRankTimer () {
   const src = (storySystem.isActive() && !storySystem.isEntering()) ? _rankTimerSource() : null
   if (!src) {
     if (_rtKey !== null) {       // the job ended or was put down: hide once, forget the layout
+      resolveRankMusic()         // FEAT-131 P3: the bed resolves into the result card's stinger
       _rtKey = null; _rtLayout = null; _rtHot = false; _rtShown = false; _rtLive = ''; _rtLiveInt = 0
       _rtEls.root.style.display = 'none'
       _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in', 'rt-closed')
@@ -6903,6 +6905,7 @@ function _updateRankTimer () {
     _rtShown = shown
     E.root.style.display = shown ? 'block' : 'none'
     E.root.classList.toggle('rt-in', shown)
+    if (shown) startRankMusic()   // FEAT-131 P3: the bed starts with the bar (owner, 2026-11-03)
   }
   if (!shown) return
   // Deep in D the strip closes (rank-timer.js closeAfterDS); the tile below it stays to the end.
@@ -6913,7 +6916,7 @@ function _updateRankTimer () {
   if (f.letter !== _rtLetter) {
     const old = _rtLetter
     _rtLetter = f.letter
-    if (old) _rtBreakLetter(old)   // a line went past: the old letter breaks and falls
+    if (old) { _rtBreakLetter(old); rankMusicStep() }   // a line went past: the old letter breaks and falls, the bed climbs
     E.letter.textContent = f.letter
     E.letterBox.style.background = RANK_COLOR[f.letter]   // the tile; the letter on it is dark (CSS)
     if (old) { E.letter.classList.remove('rt-slam'); void E.letter.offsetWidth; E.letter.classList.add('rt-slam') }
@@ -6927,6 +6930,7 @@ function _updateRankTimer () {
     E.root.classList.add(f.lost ? 'rt-lost' : 'rt-slow')
     E.beat.textContent = f.lost ? 'bonus lost' : 'too slow'
     if (f.lost) E.gate.classList.add('lost')
+    if (f.lost) rankMusicDrop(); else rankMusicThin()   // FEAT-131 P3: the bed drops, or thins to the heartbeat
     _rtBeatT = now + RT.beatS
   } else if (_rtBeatT && now >= _rtBeatT) {
     _rtBeatT = 0
@@ -6945,6 +6949,7 @@ function _updateRankTimer () {
       E.letterBox.style.scale = ''; E.letterBox.style.filter = ''; _rtKickT = -1
     }
     _rtLastNow = now
+    updateRankMusic(0, 0)   // FEAT-131 P3: calm — the pad settles dark, the arpeggio rests
     return
   }
   // ONE oscillator. Its frequency ramps pulseHzMin → pulseHzMax (48 → 140 bpm) with intensity² —
@@ -6958,6 +6963,7 @@ function _updateRankTimer () {
   const freq = RT.pulseHzMin + (RT.pulseHzMax - RT.pulseHzMin) * i * i
   const peaksBefore = Math.floor((_rtPhase - Math.PI / 2) / (2 * Math.PI))
   _rtPhase += 2 * Math.PI * freq * dtF
+  updateRankMusic(i, _rtPhase)   // FEAT-131 P3: the arpeggio steps on this phase's quarter turns
   const osc = Math.sin(_rtPhase)
   const weight = f.heavy ? 1 : 0.5
   if (Math.floor((_rtPhase - Math.PI / 2) / (2 * Math.PI)) > peaksBefore) {
@@ -9605,6 +9611,7 @@ function loop () {
   setInTunnel(_listenerInBore())           // FEAT-163: the camera is the listener — it leaves a portal after the truck
   setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
   setResultAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)   // the card plays over a held sim
+  setRankMusic(RANGER_PARAMS.rankMusicEnabled !== false, RANGER_PARAMS.rankMusicVolume ?? 0.5)   // FEAT-131 P3
   // FEAT-120 ambience: crickets on the sky's own night; grass from the green share of the ground the
   // truck is on, off the road only (the shoulder feather counts as road).
   {

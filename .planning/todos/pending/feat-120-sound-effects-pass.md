@@ -232,6 +232,16 @@ FEAT-131 P1, `src/result-audio.js`. The deed tally flipping old → new: a wood 
 (60 ms) and ~2.65 kHz (30 ms) on a 4 ms click. Silent when the tally does not move ("no deed").
 - **In game 2026-11-05 (Spare), synthesized, not owner-heard.**
 
+### Rank timer music bed
+status: wip · group: story · play: rank-bed
+FEAT-131 P3, `src/rank-music.js` — the game's only music. Starts with the rank bar: a minor triad of
+detuned saws (A2) through a lowpass that opens 220 → 2400 Hz on the bar's intensity²; an arpeggio of
+the triad an octave up, four notes per heartbeat, stepping on the heartbeat oscillator's own phase. A
+line passing lifts it a semitone; the bonus lost drops it (filter shut, −5 semitones over 0.4 s, then
+back); the C/D line thins it to the heartbeat alone; the job's end lifts the third to major and fades
+it into the result card's stinger.
+- **In game 2026-11-05 (Spare), synthesized, not owner-heard.** ▶ plays an 8 s approach to a line, the line, then the resolve.
+
 ### Miss thud
 status: wip · group: story · play: result-audio.js playThud
 FEAT-131 P1, `src/result-audio.js`. A miss landing on the result card ("no deed", an item missed, a load
