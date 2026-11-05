@@ -99,7 +99,7 @@ import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, RUN_INTRO, DLG, COMPASS } from '../data/dialogue.js'
+import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, TUT, DLG, COMPASS } from '../data/dialogue.js'
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -1194,9 +1194,13 @@ let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-c
 let _runEndOpen = false   // FEAT-146: the run's summary card is up — nothing behind it is in play
 let _edgeArmed = false    // FEAT-154: the edge fade is live (a deliberate teleport disarms it, like the wall; read early)
 let _playedS = 0          // FEAT-146: real seconds of a live, unpaused run (the summary's playtime; the save carries it)
+// FEAT-147: a HOLDING card sequence was started (the firing, mom's call, a first-use card). It holds only
+// while a card is actually up, and _renderDialogue clears it once none is — so a sequence that another
+// play() replaced can never leave the sim frozen.
+let _cardHold = false
 // The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
 // FEAT-42: the resume card — the run may have been saved at speed, mid-slide even. FEAT-146: the run's end.
-function _heldPause () { return _resumeHold || _runEndOpen || (_pauseOpen && scenarioSystem.isActive()) }
+function _heldPause () { return _resumeHold || _runEndOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.active) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -3644,7 +3648,7 @@ function _renderDialogue () {
   if (!panel) return
   const card = dialogueSystem.current()
   panel.style.display = card ? 'block' : 'none'
-  if (!card) return
+  if (!card) { _cardHold = false; return }
   const sp = document.getElementById('dlg-speaker')
   const tx = document.getElementById('dlg-text')
   const mo = document.getElementById('dlg-more')
@@ -4210,6 +4214,91 @@ function _runIntro () {
   return RUN_INTRO.map(card => ({ ...card, text: card.text.replace('{dir}', COMPASS[Math.round(deg / 45) % 8]) }))
 }
 
+// ── FEAT-147: the opening — the firing, mom's call, the first job, Larry's welcome ─────────────
+// A NEW story run with the setup page's Opening on. The firing is an in-world camera move round the
+// burger joint (the foodVendor POI) with the Story cards over it — no scene art (owner, 2026-11-05) —
+// so the run starts with the truck parked on the joint's lay-by. Mom's call posts the first job (the
+// board's f0 slot); its result card put away, Larry's welcome is RUN_INTRO, and the opening is done.
+//
+// STATELESS ACROSS A RESUME: "this run opened on the firing" is the dialogue seen-key DLG.firing (the
+// save carries the seen set), and the first job's progress is the board's (the save replays it).
+const JOINT_SEAT_M = 2.8   // m — the truck's seat off the pad centre toward the road: the 14 x 8 lay-by's road-side strip
+// The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
+// turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
+// aim point's height over the pad (m).
+const FIRING_CAM = { radius: 16, swing: 0.35, rate: 0.05, lift: 2 }
+let _openingRun = false   // onRegionLive → go-live: this new run plays the opening
+let _firingCam = null     // { p, theta0, t } while the firing's cards are up
+
+/** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
+const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
+
+/** onRegionLive, a new run with the opening on: park the truck on the joint's lay-by — _restoreRun's seat. */
+function _seatAtJoint () {
+  const q = _joint()
+  if (!q) return
+  const prev = _spawnOverride
+  // q.nx/nz points away from the road and q.tx/tz along it (poi.js _evaluate); forward = (−sin h, −cos h).
+  _spawnOverride = { align: true, x: q.x - q.nx * JOINT_SEAT_M, z: q.z - q.nz * JOINT_SEAT_M, heading: Math.atan2(-q.tx, -q.tz) }
+  storySystem.notifyTeleport()
+  void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
+}
+
+/**
+ * Go-live: true when the opening owns the moment (so RUN_INTRO waits for Larry). Plays the firing on
+ * a fresh opening run; on a resumed one it only holds RUN_INTRO back until the welcome.
+ */
+function _playOpening () {
+  if (!_openingRun) return dialogueSystem.has(DLG.firing) && !dialogueSystem.has(DLG.runIntro)
+  _openingRun = false
+  offerBoard?.openFirst(daySystem.clockH())   // posted FIRST: a save made mid-firing still has mom's job
+  const q = _joint()
+  if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
+  _cardHold = true
+  dialogueSystem.play(DLG.firing, FIRING, () => {
+    _firingCam = null
+    setCameraFocus(null)   // the chase spring swings back onto the truck, parked right there
+    _cardHold = true
+    dialogueSystem.play(DLG.momCall, MOM_CALL)
+  })
+  return true
+}
+
+/** Per frame, before updateCamera: turn the firing's orbit (camera.js focus seam, as camp and the service screen use). */
+function _updateFiringCam (dt) {
+  if (!_firingCam) return
+  _firingCam.t += dt
+  setCameraFocus(_firingCam.p, { theta: _firingCam.theta0 + FIRING_CAM.rate * _firingCam.t, radius: FIRING_CAM.radius })
+}
+
+// First-use cards (data/dialogue.js TUT), and Larry's welcome through the same door: queued, then
+// played by _pumpTut on the HUD poll once no other card is up, each HOLDING the sim and the clock
+// (_cardHold) — so one may land mid-drive (the rank bar appears near the drop) without the truck
+// running on under it. Only in a run that opened on the firing; each key once per run (the seen-gate).
+const _tutQueue = []
+function _tut (key, cards = TUT[key], done = null) {
+  if (!dialogueSystem.has(DLG.firing) || dialogueSystem.has(key) || _tutQueue.some(t => t.key === key)) return
+  _tutQueue.push({ key, cards, done })
+}
+function _pumpTut () {
+  if (!_tutQueue.length || dialogueSystem.active || _heldPause() || _pauseOpen || storySystem.isEntering()) return
+  const { key, cards, done } = _tutQueue.shift()
+  _cardHold = true
+  dialogueSystem.play(key, cards, done)
+  _renderDialogue()
+}
+
+/** Mom's job is over (any end) and its card put away: Larry's welcome, then the opening is finished for good. */
+function _checkOpeningEnd () {
+  // null = no mom on the roster (never expected — her count is hard): Larry still welcomes you.
+  if (!offerBoard || ['closed', 'live', 'taken'].includes(offerBoard.firstState())) return
+  if (missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
+  _tut(DLG.runIntro, [...LARRY_WELCOME, ..._runIntro()], () => {
+    _settings.opening = false   // the setup page's default flips to skip; the player can turn it back on
+    saveSettings(_settings)
+  })
+}
+
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
 // Larry's route. A SIBLING of missionSystem — the two can never run at once (each one's park
 // trigger and prompt yields to the other's active state), but neither is a mode inside the other.
@@ -4612,8 +4701,10 @@ function _poiInReach () {
   // jobsOnly (FEAT-60): only a job source answers the park trigger. Without this the roster's
   // other six types would each win the trigger and then have nothing to say — and mom's house,
   // which outranks her own front door in the precedence below, would offer freight instead of bed.
+  // FEAT-147: …except mom's, while her first job is on offer — then her pad answers like a giver's.
   const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
                              POI_PARAMS.poiInteractR, true)
+    ?? (offerBoard?.firstState() === 'live' ? poiSystem.list().find(p => p.type === 'momsHouse') : null)
   return q && _inPoiSpot(q) ? q : null
 }
 
@@ -5202,6 +5293,7 @@ function _updateParkTriggers (zParked = false) {
     if (pump && pulled) {
       fuelStop.open(pump.id, RANGER_PARAMS.fuelPricePerGal, inventorySystem.cans())
       playNozzle()
+      _tut('tut-fuel')   // FEAT-147
     }
     if (poiEl) {
       poiEl.style.display = fuelStop.isOpen ? 'none' : 'block'
@@ -5219,6 +5311,7 @@ function _updateParkTriggers (zParked = false) {
     if (shop && pulled) {
       _servicePoi = shop
       serviceScreen.open(offerBoard?.poiName(shop.id) ?? 'Auto shop')
+      _tut('tut-service')   // FEAT-147
     }
     if (poiEl) {
       poiEl.style.display = serviceScreen.isOpen ? 'none' : 'block'
@@ -5237,7 +5330,7 @@ function _updateParkTriggers (zParked = false) {
     const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
-    else missionSystem.enterFromPoi(poi, offers, _planOffer)
+    else { missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer') }   // FEAT-147
     if (poiEl) poiEl.style.display = 'none'
     if (campRow) campRow.style.display = 'none'
     return
@@ -6401,7 +6494,9 @@ function _renderRunHud () {
   const s = economySystem.snapshot()
   // FEAT-103: the camp's gate. Every deed source settles through the wallet, and this poll reads it,
   // so this is the one place the requisition opens (openLines is idempotent).
-  if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds) offerBoard.openLines(daySystem.clockH())
+  if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
+  _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
+  _pumpTut()           // …and any first-use card waiting its turn
   const req = offerBoard?.lines() ?? []
   // FEAT-146: the win — every line delivered, and the last one's result card put away.
   if (req.length && req.every(l => l.state === 'done') && !missionSystem?.isActive()) _endRun('win')
@@ -6475,6 +6570,7 @@ function _updateEnergyMeter () {
   const st = daySystem.stage()
   if (st !== _emStage) {
     _emStage = st
+    if (st === 'sleepy') _tut('tut-sleep')   // FEAT-147
     _emEls.stage.textContent = st
     _emEls.stage.style.color = STAGE_COLOR[st]
   }
@@ -6739,6 +6835,7 @@ function _updateRankTimer () {
   const shown = src.near != null ? src.near : f.shown
   if (shown !== _rtShown) {
     _rtShown = shown
+    if (shown) _tut('tut-rank')   // FEAT-147: the first time the bar appears
     E.root.style.display = shown ? 'block' : 'none'
     E.root.classList.toggle('rt-in', shown)
   }
@@ -7763,7 +7860,7 @@ const storySystem = new StorySystem({
   setQuickJobVisible: (visible) => {
     _quickJobWanted = visible
     _syncQuickJob()
-    if (visible) { dialogueSystem.play(DLG.runIntro, _runIntro()); _renderDialogue() }
+    if (visible) { if (!_playOpening()) dialogueSystem.play(DLG.runIntro, _runIntro()); _renderDialogue() }   // FEAT-147
     if (visible && _resumeHold) document.getElementById('resume-card').style.display = 'flex'   // FEAT-42 (see _restoreRun)
   },
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
@@ -7895,7 +7992,10 @@ const storySystem = new StorySystem({
     }
     // FEAT-42: a resume writes the save over the fresh run built above — still behind the loading
     // screen, before the handoff plays the run intro.
+    // FEAT-147: a NEW run with the opening on starts parked at the burger joint instead.
+    _openingRun = !_pendingResume && _settings.opening
     if (_pendingResume) { _restoreRun(_pendingResume); _pendingResume = null }
+    else if (_openingRun) _seatAtJoint()
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
@@ -7912,6 +8012,10 @@ const storySystem = new StorySystem({
     _setRunHudVisible(false)
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
+    if (_firingCam) setCameraFocus(null)   // FEAT-147: a run left mid-firing hands the camera back…
+    _firingCam = null
+    _openingRun = false
+    _tutQueue.length = 0                // …and no first-use card waits for a run that is gone
     paperRouteSystem.abort()            // …and an unfinished route is dropped, never settled
     _renderPaperUI()
     _clearThrownRolls()                 // …and no papers from a story run lying about in free roam
@@ -9548,6 +9652,7 @@ function loop () {
     updateSlipVectors(vehicleState)
   }
 
+  _updateFiringCam(frameTime)   // FEAT-147: the firing's orbit of the burger joint
   updateCamera(camera, vehicleState, frameTime)
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
   debrisSystem.update(_renderAlpha)   // FEAT-36: engine → debris meshes, at the truck's render alpha
