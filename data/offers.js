@@ -460,6 +460,17 @@ export const REQUISITION = [
     { id: 'reqGear',     phrase: 'camp gear',      family: 'fragile',  from: 'generalStore', massKg: 30, load: 'largeCrate', ...FRAGILE },
 ]
 
+/**
+ * FEAT-147: THE FIRST JOB — the opening's courier run from mom's to Larry's (owner, 2026-11-02: a
+ * courier TO Larry, not his paper round; 2026-11-05: mom sends it, scripted). One fixed offer at mom's,
+ * posted once by the opening (src/offer-board.js `f0` slot) — mom has no SOURCES row and posts nothing
+ * else. Same rules as any courier job: pay, deadline, deed. PLACEHOLDER words (the owner writes them).
+ */
+export const FIRST_JOB = {
+    id: 'firstJob', phrase: 'a casserole', family: 'delivery', massKg: 3, to: ['larry'],
+    person: { sex: 'female', first: 'Mom', nick: null, last: null },
+}
+
 export const SOURCES = {
     // ── always-on ──
     // Larry's paper route never expires and has no timer; after a round (or a cancel) he is

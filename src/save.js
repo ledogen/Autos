@@ -49,7 +49,7 @@ export function clearRun (storage = globalThis.localStorage) {
 // every mutator once, where the board is built, log the calls that took (a truthy return), and a
 // resume rebuilds the board and replays them. Every caller is covered without touching one — a new
 // mutator only has to be named here and return truthy when it changed something.
-const BOARD_OPS = ['take', 'complete', 'abandon', 'openLines']
+const BOARD_OPS = ['take', 'complete', 'abandon', 'openLines', 'openFirst']   // FEAT-147: the first job
 
 /** Wrap `board`'s mutators to log into the returned { t0H, events }, after replaying `events` onto it. */
 export function logBoard (board, t0H, events = []) {

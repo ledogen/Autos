@@ -851,5 +851,39 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('FEAT-142: Wholesale stocks the whole yard', whole > 0 && wholeBad === 0, `${whole} wholesale, ${wholeBad} short`)
 }
 
+// ── FEAT-147: the first job — mom's one fixed courier run to Larry, posted by the opening ─────────
+{
+    const tagged = POIS.map(q => ({ ...q, tags: [q.type, ...(q.type === 'larrysHouse' ? ['residence', 'larry'] : [])] }))
+    const mom = ofType('momsHouse')[0], larry = ofType('larrysHouse')[0]
+    const b = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 }), twin = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 })
+    check('FEAT-147: closed until the opening posts it — mom shows nothing', b.firstState() === 'closed' && b.offers(mom, T0).length === 0)
+    const opened = b.openFirst(T0), again = b.openFirst(T0)
+    const [o] = b.offers(mom, T0), sp = o && b.spec(o)
+    check('FEAT-147: openFirst posts one offer at mom\'s, once (idempotent)', opened && !again && b.offers(mom, T0).length === 1)
+    check('FEAT-147: an ORDINARY courier spec — no line, pay 1x, no bonus, no trait, the family\'s slack',
+        sp && !sp.line && sp.family === 'delivery' && sp.payMult === 1 && !sp.bonus && !sp.traits.length && sp.deadlineSlack === DEADLINE_SLACK.delivery)
+    const wish = b.destWish(o, tagged, new Set())
+    check('FEAT-147: it goes to Larry\'s only, strict, at any length', wish.anyLeg === true && wish.strict && wish.pois.length === 1 && wish.pois[0].id === larry)
+    const c = b.card(o, { nowH: T0, route: { par: 90, distance: 800, endPoiId: larry } })
+    const text = c.sentence.map(x => x.t).join('')
+    const r = payRange(90, 1, 1, 1)
+    check('FEAT-147: the card is the ordinary one — "Mom needs …", base pay at 1x, a time limit',
+        text.startsWith('Mom needs a casserole delivered to') && c.pay === `Pay $${formatMoney(r.base)} – $${formatMoney(r.max)} based on speed`
+        && c.times.some(t => t.startsWith('time limit')) && !c.times.some(t => t.startsWith('available')), `${text} / ${c.pay} / ${c.times}`)
+    b.take(o.id, T0, 90)
+    check('FEAT-147: taken carries an ordinary deadline', b.firstState() === 'taken' && Number.isFinite(b.taken(o.id)?.dueH))
+    b.complete(o.id, T0 + 0.5)
+    b.advance(T0 + 30)
+    check('FEAT-147: any end closes it for good — never re-posted', b.firstState() === 'done' && b.offers(mom, T0 + 30).length === 0 && !b.openFirst(T0 + 30))
+    const c2 = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 })
+    c2.openFirst(T0); const o2 = c2.offers(mom, T0)[0]; c2.take(o2.id, T0, 90); c2.abandon(o2.id, T0 + 0.2)
+    check('FEAT-147: a cancel closes it too', c2.firstState() === 'done')
+    twin.advance(T0 + 30)
+    const others = (x) => tagged.filter(q => q.id !== mom).map(q => x.offers(q.id, T0 + 30).map(y => y.id).join(',')).join('|')
+    check('FEAT-147: posting it moves no other offer (it draws no stream)', others(b) === others(twin))
+    const none = new OfferBoard({ seed: 4242, pois: tagged.filter(q => q.type !== 'momsHouse'), nowH: T0 })
+    check('FEAT-147: no mom on the roster → no first job, and openFirst is a no-op', none.firstState() === null && !none.openFirst(T0))
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall offer-board checks passed')
 process.exit(fails ? 1 : 0)
