@@ -54,4 +54,4 @@ all five screens driven on the fake pad. **Owed:** the owner's real-pad check.
 The new-game page's seed field is not a stop on the D-pad's path in either mode. Random stays reachable anyway:
 `_openSetup` blanks the field every time the page opens (owner, 2026-09-06: a pre-filled seed would make "just
 press start" replay one world), and a blank field starts a random seed. So a pad's "start" is always Random. A pad
-cannot type a seed, so skipping the field loses nothing; a keyboard reaches it by clicking or Tab.
+cannot type a seed, so skipping the field loses nothing; with a keyboard and mouse, click it to type one.
