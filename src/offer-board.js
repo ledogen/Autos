@@ -94,6 +94,9 @@ const pick = (r, list) => list[Math.floor(r() * list.length)]
  *  table the auto-shop shelf uses (owner, 2026-10-22). A reward the table doesn't list weighs 1 [DEFAULT]. */
 export const pickReward = (at, u) => at.find(x => x.id === pickWeighted(u, Object.fromEntries(at.map(x => [x.id, STOCK_WEIGHT[x.id] ?? 1]))))
 
+/** FEAT-168: may an offer born at `bornH` (DaySystem.clockH, day 1 starts at 0) carry REWARDS row `w`? */
+const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24) + 1)
+
 function pickWeighted (u, weights) {
     const keys = Object.keys(weights)
     const total = keys.reduce((s, k) => s + weights[k], 0)
@@ -596,7 +599,7 @@ export class OfferBoard {
 
         const stockRoll = thing.family === 'haul' ? stream('stock')() : null
 
-        // BONUS (25 %). The gate is drawn only among gates this source actually has a reward for,
+        // BONUS (BONUS_CHANCE). The gate is drawn only among gates this source actually has a reward for,
         // so a source whose list lacks an S reward still posts bonuses at the full share instead of
         // silently rolling a gate it cannot fill. A source with no rewards at all never bonuses.
         // FEAT-114 §6: a freight gate is a kg the load is posted with, so it is drawn only among gates
@@ -607,7 +610,7 @@ export class OfferBoard {
         const bonusRoll = r(), gateRoll = r(), rewardRoll = r()
         const amount = thing.family === 'freight' ? { have: massKg, row: rankTable('freight', this._region) } : null
         if (bonusRoll < BONUS_CHANCE) {
-            const pool = REWARDS.filter(w => w.pools.includes(offer.type))
+            const pool = REWARDS.filter(w => w.pools.includes(offer.type) && dayAllows(w, offer.bornH))
             const w = {}
             for (const g of Object.keys(GATE_WEIGHTS)) {
                 // R-18 keeps the ruling that a light load carries no item (DESIGN.md, owner 2026-10-22):
@@ -779,7 +782,7 @@ export class OfferBoard {
         if (r() < 0.5) return
         const q = this._pois.get(m.endPoiId)
         const kinds = [q?.type, ...(q?.tags ?? [])]
-        const at = REWARDS.filter(w => w.gates.includes(sp.bonus.gate) && w.pools.some(p => kinds.includes(p)))
+        const at = REWARDS.filter(w => w.gates.includes(sp.bonus.gate) && w.pools.some(p => kinds.includes(p)) && dayAllows(w, offer.bornH))
         if (!at.length) return
         const reward = pickReward(at, r())
         sp.bonus = { rewardId: reward.id, name: reward.name, gate: sp.bonus.gate, ...(reward.dineIn && { dineIn: true }) }

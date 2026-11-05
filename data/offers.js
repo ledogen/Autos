@@ -335,6 +335,7 @@ export const THINGS = [
 //   gates    which offer gates it may appear under (see RANK GATES above)
 //   pools    which sources may offer it
 //   dineIn   (optional) true for a meal eaten on the spot at delivery — nothing is stowed.
+//   minDay   (optional) the first run day an offer born then may carry it (FEAT-168).
 //
 // An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
 // data/items.js ITEMS (the inventory gate checks), except a dineIn one. Its effect applies only if built.
@@ -377,7 +378,9 @@ export const REWARDS = [
       pools: ['workSite', 'autoShop', 'farm', 'larrysHouse'] },
     { id: 'diffClutchLSD', name: 'Clutch-type limited-slip differential', kind: 'part', gates: ['A', 'S'],   // FEAT-166 [DEFAULT]
       pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
-    { id: 'diffLSD',    name: 'Helical limited-slip differential', kind: 'part', gates: ['S'],
+    // FEAT-168: a reward only from day 3 (owner, 2026-11-05: "helical lsd reward day 3 onward"); the shelf
+    // stocks it every day, at its price × the day tier.
+    { id: 'diffLSD',    name: 'Helical limited-slip differential', kind: 'part', gates: ['S'], minDay: 3,
       pools: ['autoShop', 'strandedMotorist', 'residence', 'larrysHouse'] },
     { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
       pools: ['autoShop', 'workSite', 'larrysHouse'] },
@@ -616,8 +619,9 @@ export const EXPIRY_NOISE = 0.3
 
 // ── Roll shares (owner, 2026-09-26) ─────────────────────────────────────────────────────────
 
-/** 0..1 — share of offers that carry a bonus item. */
-export const BONUS_CHANCE = 0.25
+/** 0..1 — share of offers that carry a bonus item. FEAT-168 [DEFAULT]: 0.25 → 0.40 (owner, 2026-11-05:
+ *  "not enough item rewards"). */
+export const BONUS_CHANCE = 0.40
 // An offer carrying an item plans no leg shorter than this (road metres): a 0.3 km courier handed
 // out a mounted tire on S (owner, 2026-10-25: "increase the item reward floor to 1.5 or 2 km").
 // Enforced by the planner (src/mission.js minM) so the card never has to strip a promised tip —

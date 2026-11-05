@@ -9,8 +9,8 @@
 //     at the longest shelf life: anything older would have expired anyway. A shop looked at for the
 //     first time starts that far back, so it is already stocked as if it had been open all along.
 //   • Buying empties the slot (take()).
-//   • FEAT-165: after the slots, the ALWAYS tires (data/shop-stock.js) — new, never expiring, never
-//     emptied — so a shop is never out of a tire (owner, 2026-11-04).
+//   • FEAT-165/168: after the slots, the ALWAYS rows (data/shop-stock.js) — new, never expiring, never
+//     emptied — so a shop is never out of an old tire, an air filter or a plug kit.
 //
 // Run-layer state (SM-INV-12: run-layer randomness stays free) is a plain module object beside
 // runEconomy / runInventory, so it follows them into any save. main.js rolls the run seed at run start
@@ -28,7 +28,7 @@ export const runShelves = {
 }
 
 const CATCH_UP_H = LIFE_H[1]
-const ALWAYS_ROWS = ALWAYS.map(id => Object.freeze({ id, cond: 1, expiresAt: Infinity }))
+const ALWAYS_ROWS = ALWAYS.map(id => Object.freeze({ id, cond: PARTS[id] ? 1 : null, expiresAt: Infinity }))   // an item has no condition (rollSlot)
 
 /** What can fill a slot: every id the stock table weighs above nothing. */
 const STOCK = Object.entries(STOCK_WEIGHT).filter(([id, w]) => w > 0 && !REWARD_ONLY.has(id))
