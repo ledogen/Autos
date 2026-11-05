@@ -6,7 +6,8 @@
 //     back to 100%: a repair reaches data/parts.js REPAIR_CAP at most, in REPAIR_STEP increments, for
 //     money and labour hours pro rata on the gap repaired (REPAIRS). Tires, brakes, the air filter and
 //     the headlights are REPLACE-ONLY (no REPAIRS row); the shop still PATCHES a flat (PATCH) — the
-//     hole, not the wear. Alignment is an adjustment: always straight back to 100%.
+//     hole, not the wear. Alignment is an adjustment: always straight back to 100%, and ONE job for
+//     all four corners at one flat price (owner, 2026-11-05: align()).
 //   • A part is one tire, or one axle's pair (data/parts.js SLOTS). A part in the inventory follows the
 //     same rules as its own item — a worn spring pair re-arched, a flat tire patched — and is refitted later.
 //   • A part that comes off goes STRAIGHT into the inventory with its wear (owner 11-04: "get rid of
@@ -29,6 +30,7 @@ import { shelfPrice } from './shop-stock.js'
 const cents = (x) => Math.round(x * 100) / 100
 const EPS = 1e-9
 const ALIGN_FLOOR = 0.02   // a drive leaves alignment a hair under straight: not a job
+const ALIGN = Object.keys(TRACKS).filter(id => TRACKS[id].cls === 'alignment')   // the four corners
 /** A tire or wheel socket's corner (0=FL … 3=RR), else −1. */
 const cornerOf = (socket) => Math.max(TIRE_IDS.indexOf(socket), WHEEL_IDS.indexOf(socket))
 const socketOfTrack = (id) => Object.keys(SLOTS).find(s => SLOTS[s].tracks.includes(id)) ?? null
@@ -95,15 +97,34 @@ export class ServiceCenter {
     }
 
     /** Repair one fitted track to `target` (one of targets(id)). False, nothing charged, if it isn't
-     *  one or the wallet can't cover it. Straightening alignment also zeroes the bent geometry. */
+     *  one or the wallet can't cover it. Alignment is never a corner on its own: align(). */
     repair (id, target = this.targets(id).at(-1)) {
-        if (!this.targets(id).includes(target)) return false
+        if (TRACKS[id].cls === 'alignment' || !this.targets(id).includes(target)) return false
         const q = this.repairQuote(id, target)
         if (!this.spend(q.price)) return false
-        const d = this.damage, t = TRACKS[id]
-        d.set(id, target)
-        // The alignment track is a readout of the bent geometry (damage.js setAll): straighten it too.
-        if (t.cls === 'alignment') { d.toeOffsetDeg[t.wheel] = 0; d.camberOffsetDeg[t.wheel] = 0 }
+        this.damage.set(id, target)
+        this.advanceHours(q.hours)
+        this.onChange()
+        return true
+    }
+
+    /** Is any corner bent enough to be a job (targets)? */
+    bent () { return ALIGN.some(id => this.targets(id).length) }
+
+    /** The alignment: one flat price × the day tier, and one setup plus each corner's gap on the clock. */
+    alignQuote () {
+        const r = REPAIRS.alignment
+        return { price: cents(r.price * this.tier()), hours: REPAIR_SETUP.hours + ALIGN.reduce((h, id) => h + r.hours * (1 - this.damage.get(id)), 0) }
+    }
+
+    /** Straighten all four corners. The tracks are a readout of the bent geometry (damage.js setAll),
+     *  so that goes back to zero too. False, nothing charged, when straight or short of the wallet. */
+    align () {
+        if (!this.bent()) return false
+        const q = this.alignQuote()
+        if (!this.spend(q.price)) return false
+        const d = this.damage
+        for (const id of ALIGN) { d.set(id, 1); d.toeOffsetDeg[TRACKS[id].wheel] = 0; d.camberOffsetDeg[TRACKS[id].wheel] = 0 }
         this.advanceHours(q.hours)
         this.onChange()
         return true

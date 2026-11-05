@@ -260,7 +260,7 @@ export const REPAIRS = {
     // the price of a new radiator. These are 0→100% rates, so × 0.8 is the cap's price.
     engine:       { price: 80,   hours: 4 },     // rebuilt
     radiator:     { price: 27.5, hours: 2 },     // welded
-    alignment:    { price: 4,    hours: 0.5 },
+    alignment:    { price: 15,   hours: 0.5 },   // ONE job, all four corners, flat (owner, 2026-11-05); hours per corner's gap
     transmission: { price: 30,   hours: 3 },     // rebuilt
     // FEAT-166: new clutch packs for the clutch-type LSD — straight back to 100% (src/service.js
     // repairTargets), a cash drain by design (owner, 2026-11-04). [DEFAULT] $30 / 3 h from empty.

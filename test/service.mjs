@@ -87,9 +87,16 @@ damage.flat[1] = true; damage.set('tireFR', 0.6); wallet = 100; hours = 0
 check('the shop patches a flat: air back, wear kept', svc.patch('tireFR') && !damage.flat[1] && damage.get('tireFR') === 0.6
   && near(wallet, 100 - PATCH.price) && near(hours, PATCH.hours))
 check('no flat, no patch', !svc.patch('tireFR'))
+// FEAT-167: alignment is ONE job for all four corners — a flat price, one setup plus each corner's gap.
+check('straight: no alignment job', !svc.bent() && !svc.align())
 damage.set('alignFL', 0.4); damage.toeOffsetDeg[0] = 0.3; damage.camberOffsetDeg[0] = -1
-svc.repair('alignFL', 1)
-check('straighten: back to 100%, geometry zeroed', damage.get('alignFL') === 1 && damage.toeOffsetDeg[0] === 0 && damage.camberOffsetDeg[0] === 0)
+damage.set('alignRR', 0.9); damage.toeOffsetDeg[3] = 0.1
+wallet = 100; hours = 0
+check('a corner on its own is refused', !svc.repair('alignFL', 1) && wallet === 100)
+check('align: one flat price, one setup + every gap', svc.align() && near(wallet, 100 - REPAIRS.alignment.price)
+  && near(hours, SU.hours + REPAIRS.alignment.hours * (0.6 + 0.1)), `${wallet} ${hours}`)
+check('…all four straight, geometry zeroed', ['alignFL', 'alignFR', 'alignRL', 'alignRR'].every(id => damage.get(id) === 1)
+  && damage.toeOffsetDeg.every(x => x === 0) && damage.camberOffsetDeg.every(x => x === 0) && !svc.bent())
 wallet = 0.5; damage.set('radiator', 0)
 check('can\'t afford: refused, nothing changes', !svc.repair('radiator', 0.8) && damage.get('radiator') === 0 && wallet === 0.5)
 damage.setAll(1)
