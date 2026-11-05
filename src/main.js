@@ -7967,6 +7967,8 @@ const storySystem = new StorySystem({
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
     campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
+    // FEAT-164: then zones until no road the planners use is more than campReachM from one.
+    campSystem.fillReach(mainNodes, p => Math.hypot(p.x - center.x, p.z - center.z) <= radius - REGION_MARGIN)
     _rebuildPoiMarkers()
     _placeBarricades()   // FEAT-154: the road closures
     // Only the chunks a pad reaches: pads are the one carve input that changed here. Pads never bump

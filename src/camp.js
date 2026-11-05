@@ -45,7 +45,9 @@ export const CAMP_PARAMS = {
     campZoneChance: 0.26,   // P(a cell carries a zone) — see THE COVERAGE ARITHMETIC below
     campMinRadiusM: 350,    // zone radius ~ U[min, max]; mean diameter ≈ 1 km (RATIFIED)
     campMaxRadiusM: 650,
-    campRoadEdgeM:  40,     // m past the shoulder edge that dispersed camping is allowed (owner
+    campReachM:     2500,   // m [DEFAULT] — FEAT-164: the longest drive from any road in the region to a
+                            // camp zone; fillReach adds zones until it holds. The owner's number.
+    campRoadEdgeM:  40,    // m past the shoulder edge that dispersed camping is allowed (owner
                             // 2026-07-31: was 20 — the wider tether roughly doubles the siting
                             // ray's candidate ladder, so watch the re-grade cost if widened again)
 
@@ -286,6 +288,65 @@ export function skylineView (sampleH, x, z, P) {
 }
 
 /**
+ * FEAT-164: the worst drive from any point of a road network to a camp zone, and where it is.
+ * `segs` are the roads as `{ka, kb, pts, cum, L}` (end-node keys, the ka → kb polyline, its arc). A road
+ * point inside a zone disc is campable. Multi-source Dijkstra over the nodes, each road seeding its ends
+ * with the arc to its first / last in-zone point; then the worst POINT of each road: a zone-less road's
+ * is (dA + dB + L) / 2, the stretch before its first in-zone point (dA + s0) / 2, a gap between two
+ * in-zone stretches half the gap. A piece with no zone at all is Infinity, at a road's midpoint.
+ * test/camp-reach.mjs measures the same thing independently.
+ *
+ * @returns {{ d:number, at:{x:number,z:number}|null }}
+ */
+export function campReach (segs, zones) {
+    const inZone = (p) => zones.some((q) => (p.x - q.x) ** 2 + (p.z - q.z) ** 2 <= q.r * q.r)
+    const dist = new Map(), adj = new Map()
+    const node = (k) => { if (!adj.has(k)) { adj.set(k, []); dist.set(k, Infinity) } }
+    const spans = segs.map((s) => {
+        node(s.ka); node(s.kb)
+        adj.get(s.ka).push({ to: s.kb, w: s.L }); adj.get(s.kb).push({ to: s.ka, w: s.L })
+        let s0 = null, s1 = null, gap = 0, gapAt = 0
+        for (let i = 0; i < s.pts.length; i++) {
+            if (!inZone(s.pts[i])) continue
+            if (s1 !== null && s.cum[i] - s1 > gap) { gap = s.cum[i] - s1; gapAt = (s.cum[i] + s1) / 2 }
+            if (s0 === null) s0 = s.cum[i]
+            s1 = s.cum[i]
+        }
+        if (s0 !== null) {
+            dist.set(s.ka, Math.min(dist.get(s.ka), s0))
+            dist.set(s.kb, Math.min(dist.get(s.kb), s.L - s1))
+        }
+        return { s0, s1, gap, gapAt }
+    })
+    // A linear-scan queue (mission.js graphDijkstra's shape): a region is a few dozen nodes.
+    const queue = [...dist].filter(([, d]) => d < Infinity).map(([k, d]) => ({ k, d }))
+    while (queue.length) {
+        queue.sort((p, q) => p.d - q.d)
+        const { k, d } = queue.shift()
+        if (d > dist.get(k)) continue
+        for (const e of adj.get(k)) {
+            if (d + e.w < dist.get(e.to)) { dist.set(e.to, d + e.w); queue.push({ k: e.to, d: d + e.w }) }
+        }
+    }
+    let d = 0, at = null
+    segs.forEach((s, i) => {
+        const { s0, s1, gap, gapAt } = spans[i], dA = dist.get(s.ka), dB = dist.get(s.kb)
+        const consider = (v, arc) => {
+            if (v <= d) return
+            const j = s.cum.findIndex((c) => c >= arc)
+            d = v; at = s.pts[j < 0 ? s.pts.length - 1 : j]
+        }
+        if (s0 === null) consider((dA + dB + s.L) / 2, dA === Infinity ? s.L / 2 : (dB - dA + s.L) / 2)
+        else {
+            consider((dA + s0) / 2, (s0 - dA) / 2)
+            consider((dB + s.L - s1) / 2, s.L - (s.L - s1 - dB) / 2)
+            consider(gap / 2, gapAt)
+        }
+    })
+    return { d, at: at && { x: at.x, z: at.z } }
+}
+
+/**
  * The dispersed-camping layer: zone generation, the region-scoped zone list the map and the
  * in-world queries read, and the road-adjacency half of the Phase-D eligibility test.
  */
@@ -376,6 +437,49 @@ export class CampSystem {
         this._moms = null
         this._eval = null
         this._rev++
+    }
+
+    /**
+     * FEAT-164: THE REACH FILL — after build(), no road in the region is more than `campReachM` of
+     * driving from a camp zone. The cell grid cannot promise that on its own: it is a coin per cell, and
+     * seed 4194356868's region drew 3 zones for 37 km of road, its worst drive 5.7 km (seeds 1–20:
+     * 2.3–5.9 km, median ~3.7 km).
+     *
+     * Farthest-point greedy: measure every road's drive to the nearest zone (campReach), put a
+     * campMinRadiusM zone on the worst point, repeat. A fill zone is a disc like any other (`fill: true`),
+     * so the map casing, zoneAt and the site grading need nothing new.
+     *
+     * NOT a pure f(seed, cell), deliberately: it reads the region's built network, as the POI roster
+     * does — a region-build pass behind the loading screen, as cold as the network it reads (nothing
+     * saved; a resume rebuilds it). Idempotent: a second call finds the cap already met.
+     *
+     * @param {Set<string>} mainNodes  the region's main piece (BUG-85) — the roads the planners use
+     * @param {(p:{x:number,z:number})=>boolean} inside  the planners' wall test
+     */
+    fillReach (mainNodes, inside) {
+        const P = this._P(), road = this._d.getRoad(), g = road?.networkGraph()
+        if (!g || !this._built || !mainNodes) return this._list
+        const segs = []
+        for (const [a, b, runKey] of g.edges) {
+            if (!mainNodes.has(g.key(a)) || !mainNodes.has(g.key(b)) || !inside(g.pos(a)) || !inside(g.pos(b))) continue
+            const { points: pts, polyCum: cum } = road._network.get(runKey)
+            // Orient the polyline a → b: its first point sits on one end node.
+            const pa = g.pos(a), n = pts.length - 1
+            const fwd = Math.hypot(pts[0].x - pa.x, pts[0].z - pa.z) <= Math.hypot(pts[n].x - pa.x, pts[n].z - pa.z)
+            segs.push({ ka: g.key(fwd ? a : b), kb: g.key(fwd ? b : a), pts, cum, L: cum[n] })
+        }
+        // A canonical order, so a tie for the worst point breaks the same way however the network
+        // was registered (Worker adopt vs synchronous build).
+        segs.sort((p, q) => (p.ka + '|' + p.kb < q.ka + '|' + q.kb ? -1 : 1))
+        const list = [...this._list]
+        for (let i = 0; i < 64; i++) {   // ponytail: each pass re-measures the whole region (~ms); a guard, never reached
+            const w = campReach(segs, list)
+            if (w.d <= P.campReachM || !w.at) break
+            list.push({ x: w.at.x, z: w.at.z, r: P.campMinRadiusM, fill: true })
+        }
+        // A NEW array when it grew: map2d memoises its casing on the list's identity.
+        if (list.length !== this._list.length) { this._list = list; this._rev++ }
+        return this._list
     }
 
     /**
