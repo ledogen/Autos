@@ -267,3 +267,8 @@ kill timed it out).
   roadside tire repair, BUG-111/112 (Spare). No default seed: CLAUDE.md § Seeds. A, B and Spare all parked for the owner's
   /clear (resume line: "<lane> resume: read the tracker page's lanes/<id> handoff and do its NEXT item"). Main is ~96 ahead of
   origin, NOT pushed: pushing is the owner's call.
+- **11-05 night:** landed, each with a solo smoke 23/23 on main: Lane A cb5dcf84 (FEAT-147 first-job fix, FEAT-169 hunger,
+  FEAT-164 2000 m, FEAT-66) then 7006140f (FEAT-65 per-hit 40 s window, FEAT-171 bed layers + ASSET-81 quilt, FEAT-155);
+  FEAT-168 3ea5578c (suite 124/124); BUG-114 428768a3; Spare bdf2ff5e (BUG-111/112/113) + 3518e8ed (BUG-101, PERF-36 notes)
+  — the A+B+Spare suite 125/125. Owner calls owed on the page: reward-cats, rank-spread, feat170-plan, camp-gear-source,
+  asset80-look, feat171-look, bug105-call, BUG-112's seam. Main NOT pushed.
