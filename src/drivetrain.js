@@ -87,15 +87,16 @@ export const engineDragNm = (engine, rpm) =>
 
 // Rear differential (FEAT-23): open = equal split, wheels free. LSD/locked add an internal coupling
 // torque ∝ the rear wheels' speed difference that shuttles torque from the faster (spinning) wheel to
-// the slower (gripping) one — clamped/viscous for LSD, stiff for locked. Total axle torque is preserved
+// the slower (gripping) one — clamped/viscous for the helical LSD, stiff for locked, and stiff up to the
+// packs' capacity for the clutch type (FEAT-166). Total axle torque is preserved
 // (couple is added to one wheel and subtracted from the other). Uses start-of-step wheel ω (operator-
 // split, like the rest of stepDrivetrain). diffLockCoupling is kept ≤ ~36 so this explicit term is stable.
 function splitRearAxle (T, axleTorque, vehicleState, params) {
   const perWheel = axleTorque / 2
   const mode = params.rearDiffMode || 'open'
-  let couple = 0
+  let couple = 0, dOm = 0
   if (mode !== 'open') {
-    const dOm = (vehicleState.wheelOmega?.[2] ?? 0) - (vehicleState.wheelOmega?.[3] ?? 0)
+    dOm = (vehicleState.wheelOmega?.[2] ?? 0) - (vehicleState.wheelOmega?.[3] ?? 0)
     if (mode === 'locked') {
       couple = (params.diffLockCoupling ?? 30) * dOm
     } else if (mode === 'clutch') {
