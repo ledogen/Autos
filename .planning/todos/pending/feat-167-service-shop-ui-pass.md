@@ -53,9 +53,71 @@ damper / brake / armor lines are in the owner's words.
 
 ## Acceptance
 
-- [ ] Every repair section collapses and starts collapsed. A collapsed header carries its worst part's band colour (a 40 % tire → orange `Tires`).
-- [ ] One "Alignment" row: $15 base, straightens all four corners, disabled when straight. The service gate covers its price.
-- [ ] Stock rows: no new/used word; `part:` / `installation:` stacked at the right; desc ≤ 2 lines; the bar no longer crowds the text.
-- [ ] A Jobs tab appears only with live offers; LB/RB and the D-pad reach it.
-- [ ] Nothing of the HUD shows through or around the open shop; the time and wallet are readable inside it.
-- [ ] Screenshot of each tab for the owner (after the compute hold lifts), then the owner's look.
+- [x] Every repair section collapses and starts collapsed. A collapsed header carries its worst part's band colour (a 40 % tire → orange `Tires`).
+- [x] One "Alignment" row: $15 base, straightens all four corners, disabled when straight. The service gate covers its price.
+- [x] Stock rows: no new/used word; `part:` / `installation:` stacked at the right; desc ≤ 2 lines; the bar no longer crowds the text.
+- [x] A Jobs tab appears only with live offers; LB/RB and the D-pad reach it.
+- [x] Nothing of the HUD shows through or around the open shop; the time and wallet are readable inside it.
+- [x] Screenshot of each tab for the owner: `wip/feat-167/feat167-{1-vehicle-collapsed,2-vehicle-tires-open,3-parts-shop,4-jobs}.png` (seed 6, The Body Shop, Day 1 11:06 am). Then the owner's look.
+
+## Work log
+
+**2026-11-05, Lane B (feature/machine, on the landing set).** Built; the in-game look waits on the compute hold.
+
+- **Sections** (`src/service-screen.js` `_vehicle`): every `GROUPS` header is a button (`data-act="group"`), all
+  closed on open. The header text wears `bandColor` of the section's worst shown track, a flat reading 0, in
+  both states. Sections with no condition track (Anti-roll bars, Lift) keep the plain header colour. menu-nav
+  reaches the headers as ordinary buttons, so the D-pad and Enter / A open them.
+- **Alignment** (`src/service.js` `bent` / `alignQuote` / `align`): one job, `REPAIRS.alignment.price` = $15 ×
+  the day tier, flat. Hours = one `REPAIR_SETUP` (0.5 h) + 0.5 h × each corner's gap. It straightens all four
+  corners and zeroes the bend arrays. `repair()` now refuses an alignment corner on its own, so there is one
+  price path. The screen shows one row, "All four corners", with the worst corner's bar; the button is
+  disabled when nothing is bent. `test/service.mjs` covers the refusal, the price, the hours and all four.
+- **Stock rows**: no new/used word. The right column stacks the condition bar, `part: $x` and
+  `installation: $x` (a non-part item, the jacks, shows its one price). The description is clamped to two
+  lines (CSS line-clamp, with an ellipsis) until the owner's words replace the long ones. The name column
+  gains ~80 px (≈ 240 px, about 33 characters a line at 12 px).
+- **Jobs tab**: `data-act="tab" data-tab="jobs"`, shown only while `_takeableOffers` has any. Each offer is its
+  map card's sentence and pay line (`_boardView.view(...).card`), with a "see the job" button that closes the
+  screen and opens the offers starting at that one (the list rotated, so Q / E still cycle all of them). Spare's
+  BUG-109 LB/RB stepping reads `[data-act="tab"]`, so it reaches the tab with no change.
+- **HUD**: `body:has(#svc-screen.open)` hides `#hud-dock` (wallet, clock, energy, icon column) and `#cluster`.
+  The dock comes back while the map is open over the shop. The card header now stacks the wallet over the
+  clock (`formatDue`, the HUD's own notation).
+- `test/cdp-smoke.mjs`: opens Tires before selecting the RR tire, takes the shop's jobs through the tab, and
+  checks the dock is hidden. **Not run yet** (compute hold).
+- Found on the way: FEAT-166's clutch-pack track had no jalopy range and crashed `rollJalopy`, which runs at
+  every story start (4d725dd0 fixes it; the random sequence is unchanged from main).
+
+### MAKE (owner): descriptions over two lines
+
+Applied the owner's two lines: Sport tire → "Good grip on road. Worse off road."; **brakes → "More stopping
+power." on the Sport front pads** (the inbox said only "brakes"; move it if another brake part was meant).
+These still run past two lines at the new width (≈ 33 characters a line). The shop shows the first two lines
+with an ellipsis until they are rewritten:
+
+| Part | Today |
+|---|---|
+| springsFrontHD | Stiffer coils. Hold the nose up under a load, and crash over bumps when empty. |
+| springsFrontSport | Shorter, stiffer coils that drop the nose. Flat and sharp on pavement; they hit the stops sooner on rough ground and tire sooner. |
+| springsRearSport | Lowering leaves, stiffer than stock. Squats less and corners flat; bottoms out sooner loaded or on rough ground, and they tire sooner. |
+| dampersFrontHD | Firm valving that settles a loaded truck. Busy and harsh when empty. |
+| dampersRearHD | Firm valving that settles a loaded bed. Busy and harsh when empty. |
+| dampersFrontSport | Quick, firm valving. The nose stays put and the ride gets busy. They wear out faster. |
+| dampersRearSport | Quick, firm valving. The tail settles fast and the ride gets busy. They wear out faster. |
+| brakesRearRace | Aggressive rear lining. Brake while turning and the tail comes round. |
+| arbFrontNone | The front wheels move free of each other. It leans, and it turns in. |
+| arbRearSport | Ties the rear wheels together. Rotates the truck; one bump becomes both wheels’ problem. |
+| diffClutchLSD | Clutch packs share the drive until they wear out, then it is an open diff again. A shop can rebuild it, for a price. |
+| diffLSD | Gears, not clutches, share the drive: nothing in it wears out. Pulls out of corners, and pushes into them. |
+| diffWelded | The spider gears welded solid. Both rear wheels turn together, always: they chirp and hop through every tight turn. |
+| liftKit | Spacers and longer shocks. Clears ruts and rocks; leans more, and rolls sooner. |
+| radiatorStock | The factory radiator. Keeps the engine cool when it isn’t leaking. |
+| airFilterStock | A paper filter. A clean one lets the engine breathe. Swaps in by hand, no shop needed. |
+
+The shelf's non-part items (compressor, jacks, plug kit…) fit in two lines: with no bar or installation
+line their text column is wider.
+
+**2026-11-05, after the hold.** cdp-smoke PASS (21 steps, the service step's new checks included). The
+screenshots are in `wip/feat-167/`. They showed "gone in 12 min" wrapping as "12 / min"; that phrase is now
+kept on one line (f0f30257). Owed: the owner's look.

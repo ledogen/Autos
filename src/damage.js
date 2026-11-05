@@ -94,6 +94,11 @@ export const TRACKS = {
   // pops out of gear. `regions: []` keeps impacts off it. `manualOnly`: the damage screen lists it only
   // while a manual is fitted (an automatic truck has no synchros to show).
   transmission: { label: 'Transmission', cls: 'transmission', regions: [], manualOnly: true },
+  // FEAT-166: the clutch-type LSD's packs. Worn by the heat the clutches slip (drivetrain.js
+  // diffSlipW); worn packs carry less, and at 0 the diff IS an open one. Every diff shares the slot's
+  // track, but only the clutch type wears it or shows it (`clutchOnly`, as manualOnly); a rebuild is
+  // new packs, straight to 100% (src/service.js repairTargets).
+  diff:       { label: 'Diff clutches', cls: 'diff', regions: [], clutchOnly: true },
   headlightL: { label: 'Headlight L', cls: 'headlights', regions: ['front'], side: 'left'  },
   headlightR: { label: 'Headlight R', cls: 'headlights', regions: ['front'], side: 'right' },
 
@@ -144,6 +149,10 @@ export const DAMAGE_PARAMS = {
   // in costs transMissWear of condition (owner's figure: 2 %).
   transKnee: 0.50, transAtKnee: 1.2, transAtZero: 3.0,
   transMissWear: 0.02,
+  // FEAT-166 clutch-type LSD: joules of clutch slip from new packs to an open diff [DEFAULT]. A corner
+  // slips ~100 W through them; a one-wheel spin at full torque tens of kW — so it lasts a few days of
+  // honest driving and minutes of burnouts.
+  durDiffClutch: 2.0e6,
   // Tires: condition scales the friction coefficient directly. Linear from new to bald is fine —
   // a half-worn tire really is meaningfully worse, unlike a half-worn spring.
   // Grip is FLAT-THEN-CLIFF, not linear: mu = atZero + (1 − atZero)·(1 − (1 − c)^tireMuExp).
@@ -1233,6 +1242,8 @@ export class DamageModel {
     params._engineDamageScale = this.engineScale() * this.overheatScale()
     params._transShiftScale   = this.transShiftScale()
     this.manualBox = params.transmissionType === 'manual'   // the damage screen shows manualOnly tracks off this
+    params._diffClutchScale = this.get('diff')               // FEAT-166: the clutch LSD's capacity, linear to an open diff at 0
+    this.clutchDiff = params.rearDiffMode === 'clutch'       // …and the screens show the clutchOnly track off this
     // Alignment is geometry, not a multiplier — published as the raw per-wheel offsets the
     // suspension applies on top of the static toe/camber. alignment.js consumes these (BUG-79).
     params._toeOffsetDeg    = this.toeOffsetDeg
@@ -1310,6 +1321,9 @@ export class DamageModel {
 
     // FEAT-126: a shift forced with the clutch in (one-shot from the manual gearbox sim).
     if (vehicleState.drivetrain?.missShift) this.wear('transmission', P.transMissWear, 1)
+    // FEAT-166: the clutch-type LSD's packs wear with the heat they slip.
+    const diffW = vehicleState.drivetrain?.diffSlipW
+    if (diffW > 0) this.wear('diff', diffW * dt, P.durDiffClutch)
 
     const slipVel  = vehicleState.slipVel
     const tireFlat = vehicleState.tireFlat

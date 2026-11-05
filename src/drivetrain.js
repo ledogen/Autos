@@ -87,24 +87,37 @@ export const engineDragNm = (engine, rpm) =>
 
 // Rear differential (FEAT-23): open = equal split, wheels free. LSD/locked add an internal coupling
 // torque ∝ the rear wheels' speed difference that shuttles torque from the faster (spinning) wheel to
-// the slower (gripping) one — clamped/viscous for LSD, stiff for locked. Total axle torque is preserved
+// the slower (gripping) one — clamped/viscous for the helical LSD, stiff for locked, and stiff up to the
+// packs' capacity for the clutch type (FEAT-166). Total axle torque is preserved
 // (couple is added to one wheel and subtracted from the other). Uses start-of-step wheel ω (operator-
 // split, like the rest of stepDrivetrain). diffLockCoupling is kept ≤ ~36 so this explicit term is stable.
 function splitRearAxle (T, axleTorque, vehicleState, params) {
   const perWheel = axleTorque / 2
   const mode = params.rearDiffMode || 'open'
-  let couple = 0
+  let couple = 0, dOm = 0
   if (mode !== 'open') {
-    const dOm = (vehicleState.wheelOmega?.[2] ?? 0) - (vehicleState.wheelOmega?.[3] ?? 0)
+    dOm = (vehicleState.wheelOmega?.[2] ?? 0) - (vehicleState.wheelOmega?.[3] ?? 0)
     if (mode === 'locked') {
       couple = (params.diffLockCoupling ?? 30) * dOm
-    } else { // limited-slip
+    } else if (mode === 'clutch') {
+      // FEAT-166: a clutch-pack LSD (the Ranger's factory type) — friction packs that hold until the
+      // torque across them passes their capacity: spring preload plus a share of the input torque (the
+      // side gears' separating force loads the packs). Worn packs (params._diffClutchScale, damage.js)
+      // carry less; at 0 it is an open diff. Below capacity it locks on the welded diff's coupling.
+      const cap = ((params.diffClutchPreload ?? 140) + (params.diffClutchRamp ?? 0.05) * Math.abs(axleTorque)) * (params._diffClutchScale ?? 1)
+      couple = Math.max(-cap, Math.min(cap, (params.diffLockCoupling ?? 30) * dOm))
+    } else { // limited-slip (helical)
       const cap = params.diffLsdMaxTorque ?? 400
       couple = Math.max(-cap, Math.min(cap, (params.diffLsdCoupling ?? 25) * dOm))
     }
   }
   T[2] = perWheel - couple   // faster rear wheel (higher ω) sheds torque to the slower one
   T[3] = perWheel + couple
+  // FEAT-166: the heat the clutch packs slip [W] — what wears them (damage.js). Written only by a
+  // clutch diff (and zeroed after one), so no other truck's state grows a field.
+  const st = vehicleState.drivetrain
+  if (mode === 'clutch') st.diffSlipW = Math.abs(couple * dOm)
+  else if (st.diffSlipW) st.diffSlipW = 0
 }
 
 /**

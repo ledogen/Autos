@@ -450,7 +450,10 @@ const STEPS = [
     check(await until(open, 2000), `parking at the auto shop opened no service screen: ${JSON.stringify(await js(`(() => { const c = window.__car()
       return { parked: window.__vs.parked, v: +c.v.toFixed(2), d: +Math.hypot(c.x - ${p.x}, c.z - ${p.z}).toFixed(1), prompt: document.getElementById('poi-prompt')?.textContent.trim().slice(0, 80),
         promptShown: document.getElementById('poi-prompt')?.style.display, mission: window.__mission().state } })()`))}`)
-    // My Vehicle lists every corner's tire; selecting one opens its repair / exchange panel.
+    // FEAT-167: no HUD behind the shop.
+    check(await js('!document.getElementById("hud-dock").checkVisibility({ visibilityProperty: true })'), 'the HUD shows behind the service screen')
+    // My Vehicle lists every corner's tire under a collapsed Tires; selecting one opens its repair / exchange panel.
+    await js('document.querySelector("#svc-screen [data-group=Tires]")?.click()')
     await js('document.querySelector("#svc-screen [data-act=sel][data-key=tireRR]")?.click()')
     check(await js('!!document.querySelector("#svc-screen .sv-panel")'), 'selecting a My Vehicle row opened no panel')
     // The Parts Shop is the shop's four-slot shelf (items or empty slots) and My Items.
@@ -696,7 +699,7 @@ const STEPS = [
     // SM-3: an auto shop's brake opens the service center; its jobs button hands over to the offer.
     if (p.type === 'autoShop') {
       check(await until(() => vis('svc-screen'), 2000), 'parking at the auto shop opened no service screen')
-      await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
     }
     check(await until(() => vis('mp-accept'), 2000), `parking at the ${p.type} pad opened no offer`)
     await js('document.getElementById("mp-accept").click()')
@@ -787,7 +790,7 @@ const STEPS = [
       await seat(fr.x, fr.z, fr.h)
       await park(true)
       const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
-      if (fr.type === 'autoShop' && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      if (fr.type === 'autoShop' && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
       if (await until(() => vis('mp-accept'), 2000)) {
         for (let i = 0; i < 8 && await js(`window.__mission().offer?.id !== ${JSON.stringify(fr.id)}`); i++) await js('document.getElementById("mp-next")?.click()')
         if (await js(`window.__mission().offer?.id === ${JSON.stringify(fr.id)} && !document.getElementById("mp-accept").disabled`)) {

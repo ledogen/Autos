@@ -375,7 +375,9 @@ export const REWARDS = [
       pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
     { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'],
       pools: ['workSite', 'autoShop', 'farm', 'larrysHouse'] },
-    { id: 'diffLSD',    name: 'Limited-slip differential', kind: 'part', gates: ['S'],
+    { id: 'diffClutchLSD', name: 'Clutch-type limited-slip differential', kind: 'part', gates: ['A', 'S'],   // FEAT-166 [DEFAULT]
+      pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
+    { id: 'diffLSD',    name: 'Helical limited-slip differential', kind: 'part', gates: ['S'],
       pools: ['autoShop', 'strandedMotorist', 'residence', 'larrysHouse'] },
     { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
       pools: ['autoShop', 'workSite', 'larrysHouse'] },

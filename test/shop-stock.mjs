@@ -9,10 +9,11 @@
 //   4. Mean occupancy of a shelf run hour by hour (reported; checked against the two-state estimate).
 //   5. Same seed → same shelf; another seed → another.
 //   6. Buying empties the slot; an item is gone once its time is up.
+//   7. FEAT-165: every shop, every hour, ends its shelf with the ALWAYS tires, new; buying one leaves it.
 //
 // Pure node: no THREE, no DOM.
 import { rollSlot, startShelves, shelf, take, shelfPrice, runShelves } from '../src/shop-stock.js'
-import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE } from '../data/shop-stock.js'
+import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE, ALWAYS } from '../data/shop-stock.js'
 import { STOCK_WEIGHT, REWARD_ONLY } from '../data/stock-weights.js'
 import { PARTS } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
@@ -89,7 +90,7 @@ check(`lifetimes inside ${LIFE_H.join('–')} h`, lifeOk)
 startShelves(777)
 let filled = 0, samples = 0
 for (let h = 0; h < 40000; h++) {
-  filled += shelf('occ', h + 0.5).filter(Boolean).length
+  filled += shelf('occ', h + 0.5).slice(0, SHELF_SLOTS).filter(Boolean).length
   samples++
 }
 const occ = filled / samples
@@ -111,8 +112,8 @@ check('a revisit agrees however often it was looked at in between', JSON.stringi
 
 // ── 6. Buying and expiry ──────────────────────────────────────────────────────────────────────
 startShelves(9)
-let t = 200, s = shelf('buy', t)
-while (!s.some(Boolean)) s = shelf('buy', ++t)
+let t = 200, s = shelf('buy', t).slice(0, SHELF_SLOTS)
+while (!s.some(Boolean)) s = shelf('buy', ++t).slice(0, SHELF_SLOTS)
 const i = s.findIndex(Boolean), e = s[i]
 take('buy', i)
 check('buying empties the slot', shelf('buy', t)[i] === null && runShelves.shops.buy.slots[i] === null)
@@ -121,6 +122,21 @@ s = shelf('buy', t)
 check('…and the same shelf without the purchase still has it', s[i]?.id === e.id)
 check('still there just before its time is up', shelf('buy', e.expiresAt - 0.01)[i]?.expiresAt === e.expiresAt)
 check('gone once it is', shelf('buy', e.expiresAt)[i]?.expiresAt !== e.expiresAt)
+
+// ── 7. The tires every shop always has (FEAT-165) ──────────────────────────────────────────────
+let always = true
+for (const seed of [1, 2, 3, 4, 5]) {
+  startShelves(seed)
+  for (const shop of ['autoShop:a', 'autoShop:b', 'autoShop:c']) for (let h = 0; h < 24 * 12; h += 0.5) {
+    const tail = shelf(shop, h).slice(SHELF_SLOTS)
+    if (tail.length !== ALWAYS.length || tail.some((e, k) => e?.id !== ALWAYS[k] || e.cond !== 1)) always = false
+  }
+}
+check(`every shop, every half hour of 12 days × 5 seeds, has ${ALWAYS.join(' and ')}, new`, always)
+startShelves(3)
+const at = shelf('autoShop:a', 50).length - 1
+take('autoShop:a', at)
+check('buying one leaves it on the shelf', shelf('autoShop:a', 50)[at]?.id === ALWAYS.at(-1) && runShelves.shops['autoShop:a'].slots.length === SHELF_SLOTS)
 
 console.log(fails ? `\n${fails} FAILED` : '\nshop-stock gate: ALL OK')
 process.exit(fails ? 1 : 0)

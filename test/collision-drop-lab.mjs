@@ -16,35 +16,33 @@
 // The collision target is the lab ramp's BACK WALL: approach the ramp from behind (−Z) and it is a
 // solid vertical face, not a ramp. Repeatable, flat-on, and no props needed.
 //
-// Requires the dev server, and ?prof=1 for window.__tp.
+// Requires the dev server, and ?prof=1 for window.__tp. ?nomenu=1 boots straight into free roam, past
+// the main menu (FEAT-156), the way cdp-smoke reaches the lab button.
 //   node test/collision-drop-lab.mjs [port] [cdpPort]
 
-import { spawn } from 'child_process'
+import { launchChrome, connect, sleep } from './lib/cdp.mjs'
 
 const PORT = process.argv[2] || 3686
 const CDP  = process.argv[3] || 9431
-const sleep = ms => new Promise(r => setTimeout(r, ms))
 const MPH = 0.44704
 
-const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=/tmp/cdl-${CDP}`,
-   '--use-angle=metal', '--window-size=900,600', `http://localhost:${PORT}/index.html?prof=1`],
-  { stdio: 'ignore', detached: true })
-await sleep(3500)
-const list = await (await fetch(`http://localhost:${CDP}/json/list`)).json()
-const ws = new WebSocket(list.find(t => t.type === 'page').webSocketDebuggerUrl)
-await new Promise(r => ws.addEventListener('open', r))
-let id = 0; const pend = new Map()
-ws.addEventListener('message', e => { const m = JSON.parse(e.data); if (pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id) } })
-const send = (m, p = {}) => new Promise(r => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method: m, params: p })) })
+// The shared launcher (fresh profile, muted, killed on exit — a throw used to leave the detached
+// Chrome running the game), and the game NAVIGATED into the blank tab it opens, as cdp-smoke does:
+// launched straight onto the URL the game sat in a background tab, which gets no animation frames,
+// so the physics stopped stepping (2026-11-05).
+launchChrome('about:blank', { port: +CDP, windowSize: '900,600' })
+const client = await connect({ port: +CDP })
+await client.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html?prof=1&nomenu=1` })
+const send = client.cmd
 async function ev (x) {
   const m = await send('Runtime.evaluate', { expression: x, returnByValue: true })
   if (m.result?.exceptionDetails) throw new Error(m.result.exceptionDetails.text + ' :: ' + x.slice(0, 60))
   return m.result?.result?.value
 }
-const key = (t, k, c, v) => send('Input.dispatchKeyEvent', { type: t, key: k, code: c, windowsVirtualKeyCode: v, nativeVirtualKeyCode: v })
+// No nativeVirtualKeyCode: on macOS the Windows code read as a native one (87 for W) turned the page
+// hidden at the first key-down, and a hidden page gets no frames — the physics stopped mid-sweep.
+const key = (t, k, c, v) => send('Input.dispatchKeyEvent', { type: t, key: k, code: c, windowsVirtualKeyCode: v })
 
-await send('Page.enable'); await send('Runtime.enable')
 console.log('booting…'); await sleep(20000)
 await ev(`document.getElementById('pm-lab').click(); true`); await sleep(7000)
 await ev(`document.querySelector('canvas').focus(); true`)
@@ -133,4 +131,4 @@ const TH = JSON.parse(await ev(`(() => { const p = window.__damage.params, D = w
 console.log('\n  target shape (owner): 1 m damages SPRINGS only; 2 m damages springs AND rim;'
   + ' alignment only on REALLY hard bumps.')
 
-ws.close(); process.kill(-chrome.pid, 'SIGKILL'); process.exit(0)
+client.close(); process.exit(0)

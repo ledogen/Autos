@@ -264,7 +264,7 @@ export const RANGER_PARAMS = {
   tracDumpRate:     15,     // 1/s — oversteer cut, step-aside ramp and TC pressure vent (full → 0 in 67 ms, as absDumpRate)
 
   // ── Rear differential (FEAT-23 Phase 2 seed) ──────────────────────────────────────────────────
-  // rearDiffMode: 'open' | 'lsd' | 'locked'. Selected in the debug panel (Vehicle → Differentials →
+  // rearDiffMode: 'open' | 'clutch' (FEAT-166) | 'lsd' (helical) | 'locked'. Selected in the debug panel (Vehicle → Differentials →
   // Rear Differential). Open = equal torque split, wheels spin independently. LSD/locked add an internal
   // coupling torque ∝ the rear wheels' speed difference that shuttles torque from the faster (spinning)
   // wheel to the slower (gripping) one — a CLAMPED viscous coupling for LSD, a stiff one for locked.
@@ -274,6 +274,11 @@ export const RANGER_PARAMS = {
   diffLsdCoupling:  25,   // N·m per rad/s — LSD viscous coupling (torque per unit rear speed difference)
   diffLsdMaxTorque: 400,  // N·m — LSD coupling clamp (the "limited" in limited-slip; bias cap)
   diffLockCoupling: 30,   // N·m per rad/s — locked-diff coupling (stiff; ≤ ~36 keeps the explicit step stable)
+  // FEAT-166 clutch-pack LSD (rearDiffMode 'clutch'): capacity = preload + ramp × |axle torque|, × the
+  // packs' condition (damage.js 'diff'). [DEFAULT]s — a new Ranger Traction-Lok breaks away at ~100–200
+  // N·m; the ramp keeps it under the helical's 400 N·m cap at full first-gear torque (~4 kN·m).
+  diffClutchPreload: 140,  // N·m — the packs' spring preload
+  diffClutchRamp:    0.05, // [-] share of the axle torque the side gears' separating force adds
 
   // Aerodynamic drag (FEAT-23): lumped Cd·A [m²]; F = ½·ρ·CdA·v² opposing horizontal velocity (ρ≈1.225).
   // Without it the geared drivetrain would accelerate to an unrealistic top speed; ~1.2 m² (Cd≈0.45 ×
@@ -441,12 +446,11 @@ export const RANGER_PARAMS = {
   // I = 0.5 × wheelMass × r²; wheelMass ≈ 18 kg matches wheelInertia derivation above.
   wheelMass:                    18,   // kg — per-corner unsprung mass (D-02)
 
-  // wheelFootprint: tire-envelope ground sampling. When true (default), the wheel-contact query
-  // samples a small stencil across the tire's footprint and rests the disc on the HIGHEST terrain it
-  // can touch (envelope of h + √(r²−d²)), instead of a single point-probe under the hub. This stops the
-  // tire sinking into troughs / clipping through crests on rumble strips and steep slopes. Set false to
-  // revert to the legacy single-column probe (A/B comparison; also cheaper on very weak CPUs).
-  wheelFootprint:             true,   // tire-envelope footprint sampling on wheel ground contact
+  // wheelFootprint: the wheel's ground contact solved for the tire CYLINDER it is (src/tire-contact.js,
+  // FEAT-70) — the surface point closest to the axle across three lines of the tread, so the tire
+  // feels an edge ahead of the hub, not ground beside it. Set false for the legacy single-column probe
+  // under the hub (A/B comparison; also cheaper on very weak CPUs).
+  wheelFootprint:             true,   // tire-cylinder ground contact (false = one probe under the hub)
 
   // ── Anti-Roll Bars (Phase 4 — D-06) ──────────────────────────────────────
   // Bilinear-spring approximation: ARB force shares the same lever arm as the main spring (D-07).

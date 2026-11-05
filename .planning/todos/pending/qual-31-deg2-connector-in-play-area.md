@@ -59,6 +59,6 @@ question, plus a doc comment that currently misleads the next reader into thinki
 
 ## Acceptance
 
-- [ ] census: how many deg-2 connectors land inside the play area, across the standard seed set
+- [ ] census: how many deg-2 connectors land inside the play area, across a census of random seeds (there is no standard or default seed — CLAUDE.md § Seeds)
 - [ ] verdict on 1 vs 2 above (owner's call if it turns on intent)
 - [ ] `_connectorCarve`'s QUAL-24 comment either corrected, or kept with evidence that it holds

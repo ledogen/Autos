@@ -54,7 +54,7 @@ export const SLOTS = {
     brakesRear:   { name: 'Rear brakes',       hours: 1,    tracks: ['brakeRear'] },
     arbFront:     { name: 'Front anti-roll bar', hours: 0.5, tracks: [] },
     arbRear:      { name: 'Rear anti-roll bar',  hours: 0.5, tracks: [] },
-    diff:         { name: 'Rear differential', hours: 3,    tracks: [] },
+    diff:         { name: 'Rear differential', hours: 3,    tracks: ['diff'] },   // FEAT-166: the clutch LSD's packs
     lift:         { name: 'Lift',              hours: 4,    tracks: [] },
     // The engine bay (owner, 2026-10-22): these were damage tracks with no part; exchange and the shop
     // shelf need them to exist as parts. Either headlight socket takes the one 'headlight' part.
@@ -93,14 +93,16 @@ export const PARTS = {
     //    The spare is its own part (owner, 2026-10-20): a full-size spare MOUNTED on a steel wheel, new
     //    at ~$25 (owner, 2026-10-21; a worn one, 50–80%, comes from the reward pools). It is carried,
     //    never fitted as itself: `mounted` names what goes on the corner (src/recovery.js fitSpare).
-    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 7, massKg: 12, grip: 0.9,
+    // FEAT-165 [DEFAULT, the owner confirms]: Old 7 → 8, Standard 15 → 18 — every shop always stocks
+    // them now (data/shop-stock.js ALWAYS), so they cost a little more.
+    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 8, massKg: 12, grip: 0.9,
                      patch: {}, desc: 'Cracked and dry rotted rubber. Slippery and fragile.' },
-    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 15, massKg: 12, grip: 1, stock: true,
+    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 18, massKg: 12, grip: 1, stock: true,
                      patch: {}, desc: 'The factory all-season. Fine everywhere, great nowhere.' },
     spareTire:     { name: 'Mounted tire',         slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
                      patch: {}, desc: 'A tire mounted on a wheel.' },
     tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 20, massKg: 11.5, grip: 1.1, durability: 0.8,
-                     patch: {}, desc: 'Sticky. Great grip on pavement, not so good on dirt. Wears fast.' },
+                     patch: {}, desc: 'Good grip on road. Worse off road.' },   // owner's words, 2026-11-05 (FEAT-167)
     tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 14.4, grip: 1,
                      patch: {}, desc: 'Chunky tread. At home on dirt, no worse on pavement. Heavy.' },
     tireLT:        { name: 'Load-range E tire',    slot: 'tire', family: 'hd', rarity: 'uncommon', price: 10, massKg: 15, grip: 0.95,
@@ -163,7 +165,7 @@ export const PARTS = {
                      desc: 'Organic pads. Quiet, gentle, forgiving.' },
     brakesFrontSport:{ name: 'Sport front pads',     slot: 'brakesFront', icon: 'pads', family: 'sport', rarity: 'uncommon', price: 8, massKg: 2,
                      patch: { maxBrakeTorqueFront: 1705 },
-                     desc: 'Semi-metallic. More bite up front, and they eat themselves faster.' },
+                     desc: 'More stopping power.' },   // owner's words, 2026-11-05 (FEAT-167: "brakes")
     brakesFrontRace: { name: 'Race front pads',      slot: 'brakesFront', icon: 'pads', family: 'sport', rarity: 'rare', price: 12, massKg: 2,
                      patch: { maxBrakeTorqueFront: 1980 },
                      desc: 'Grabby and loud. Locks the fronts if you stab them.' },
@@ -191,12 +193,17 @@ export const PARTS = {
                      patch: { arbStiffnessRear: 6500 }, desc: 'Ties the rear wheels together. Rotates the truck; one bump becomes both wheels’ problem.' },
 
     // ── Rear differential (§3b — the canonical described-never-scored part).
-    diffOpen:      { name: 'Open differential',    slot: 'diff', family: 'oem', rarity: 'common', price: 20, massKg: 30, stock: true,
+    diffOpen:      { name: 'Open differential',    slot: 'diff', family: 'oem', rarity: 'common', price: 10, massKg: 30, stock: true,   // owner 11-04: "worth half as much" (20 → 10)
                      patch: { rearDiffMode: 'open' },
                      desc: 'Power goes to whichever rear wheel has the least grip.' },
-    diffLSD:       { name: 'Limited-slip differential', slot: 'diff', family: 'sport', rarity: 'rare', price: 40, massKg: 32,
+    // FEAT-166 (owner 2026-11-04): the ladder is open → clutch-type LSD (temporary: its packs wear back to
+    // an open diff, and a rebuild is a cash drain) → helical LSD (permanent). Price [DEFAULT].
+    diffClutchLSD: { name: 'Clutch-type limited-slip differential', slot: 'diff', family: 'sport', rarity: 'uncommon', price: 25, massKg: 31,
+                     durability: 1, rebuild: true, patch: { rearDiffMode: 'clutch' },
+                     desc: 'Clutch packs share the drive until they wear out, then it is an open diff again. A shop can rebuild it, for a price.' },
+    diffLSD:       { name: 'Helical limited-slip differential', slot: 'diff', family: 'sport', rarity: 'rare', price: 40, massKg: 32,
                      patch: { rearDiffMode: 'lsd' },
-                     desc: 'Clutch packs share the drive. Pulls out of corners, and pushes into them.' },
+                     desc: 'Gears, not clutches, share the drive: nothing in it wears out. Pulls out of corners, and pushes into them.' },
     // The welded diff replaces the locker (owner, 2026-10-22): "its cheaper … I do want a silly locked
     // diff option to show up occasionally". Same physics as a locker. Price [DEFAULT], under its $35.
     diffWelded:    { name: 'Welded differential', slot: 'diff', family: 'offroad', rarity: 'uncommon', price: 15, massKg: 30,
@@ -253,8 +260,11 @@ export const REPAIRS = {
     // the price of a new radiator. These are 0→100% rates, so × 0.8 is the cap's price.
     engine:       { price: 80,   hours: 4 },     // rebuilt
     radiator:     { price: 27.5, hours: 2 },     // welded
-    alignment:    { price: 4,    hours: 0.5 },
+    alignment:    { price: 15,   hours: 0.5 },   // ONE job, all four corners, flat (owner, 2026-11-05); hours per corner's gap
     transmission: { price: 30,   hours: 3 },     // rebuilt
+    // FEAT-166: new clutch packs for the clutch-type LSD — straight back to 100% (src/service.js
+    // repairTargets), a cash drain by design (owner, 2026-11-04). [DEFAULT] $30 / 3 h from empty.
+    diff:         { price: 30,   hours: 3 },
 }
 /** Every repair starts with this before the clock on the gap runs (owner, 2026-10-23): the shop's
  *  minimum charge, and the time to get at the part (half an hour to reach a damper before revalving
