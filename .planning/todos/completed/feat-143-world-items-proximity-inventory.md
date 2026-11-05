@@ -1,7 +1,7 @@
 ---
 id: FEAT-143
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-10-22
 source: owner, 2026-10-22 — "I plan on taking a lot of the in game items and placing them in the world in 3d. We already did the modeling work and it should be simple enough to build colliders for them. I actually think we could have an area-based inventory system so if you drop an item it goes onto the ground and you can also pick up items from the ground. This would allow us to spawn collectible items randomly in the world or allow them to drop from certain events"
@@ -150,3 +150,9 @@ Reach (8 m proposed), parked only, drops persist in the save (player state), pic
 zip ties go down behind the tailgate, show under "Nearby on the ground", and come back with their 4 uses).
 **Owner, 2026-11-05:** reach = "5m both" — `REACH_M` 3 → 5 m, the drop pick-up and the bed-cargo reload alike. The
 :3885 drive (dropping and picking up a tire, driving over it) "felt good".
+
+## Resolution (2026-11-05) — CLOSED
+
+Landed on main in the Spare set (merge 38765f33): drop and pick up any item as a world object, 27 item models,
+pick-up reach 5 m (owner: "5m both"). Owner's drive on :3885 — dropping and picking up a tire, driving over it —
+"felt good"; the world items were accepted (2026-11-05). Gates: world-items, the cdp-smoke drop + pick-up step.

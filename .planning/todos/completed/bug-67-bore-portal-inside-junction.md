@@ -1,7 +1,7 @@
 ---
 id: BUG-67
 type: bug
-status: pending
+status: closed
 severity: major
 opened: 2026-09-14
 source: >
@@ -338,3 +338,12 @@ and they part as the legs diverge (~55–60° apart, so the tubes overlap for th
 The physics floor follows the lane you are on (within 0.07 m of its own deck everywhere measured), so the drift
 reads as two ribbons at slightly different heights where they overlap, and as a step if you cross from one lane
 to the other inside the Y. A blended deck through the overlap would remove it; not built.
+
+## Resolution (2026-11-05) — CLOSED
+
+Landed on main in the Spare set (merge 38765f33): step 1 (the T slides off the bore) + step 2 (re-seat + the
+shared bore — sibling tubes at one junction merge). Owner ruled "land both" (2026-11-05). Evidence: the sibling
+probe with the game's own rule (REAL=1) finds 0 of the 5 known collisions; the owner's later report on seed
+4194356868 (1375, 408), an underground T, is 0 on main too (1 with raw tubes). Not built, and not part of this
+ticket: the funnel pit over an underground T, and the two decks drifting apart inside the Y's overlap (both
+measured above) — new tickets if they show in play.

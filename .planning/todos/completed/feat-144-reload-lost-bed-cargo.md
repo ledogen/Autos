@@ -1,7 +1,7 @@
 ---
 id: FEAT-144
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-10-22
 source: owner, 2026-10-22 — "a feature where you can go to a dropped piece of haul cargo and hit a d-pad button or something and it instantly gets teleported above the truck bed and falls back in. Maybe it takes five minutes or something. Let's say I drive all the way to the auto shop and bounce the tire out of my bed right there. It'd be cool if I could just drive back over, put it in the truck, then go to the shop and continue with the mission. Similarly with firewood: if I bounce a couple pieces off I think it should be up to the player if they want they can go pick up their lost pieces. It will take a long time but it's something a desperate player would do if they had an awesome reward."
@@ -102,3 +102,9 @@ This works for any loose bed cargo:
   (not done, not failed), then settles once it is back.
 
 **Owed:** the affected gates (43: the adapter touches every physics gate), cdp-smoke, the owner's pad check.
+
+## Resolution (2026-11-05) — CLOSED
+
+Landed on main in the Spare set (merge 38765f33; suites 122/122, smoke 21/21): D-pad ↓ / G reloads a lost loose
+piece within REACH_M (5 m, owner: "5m both"), D-pad ← sets the spawn, D-pad → held resets. Accepted with the world
+items (owner, 2026-11-05). Gates: story-poi (the fetch-with-the-tire-out rule), world-items.
