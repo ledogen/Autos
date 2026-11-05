@@ -37,6 +37,7 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 
 const SEEDS = ['1', '6']
+const CHASE_MPS = 15   // ~54 km/h down the shoulder, the pace a site is driven at [DEFAULT]
 let fails = 0, posted = 0
 const check = (label, ok, detail = '') => {
     console.log(`  ${ok ? '[ ok ]' : '[FAIL]'} ${label}${ok ? '' : '  ' + detail}`)
@@ -88,7 +89,8 @@ for (const s of SEEDS) {
 
     const dressings = [...THINGS, ...REQUISITION].filter((t) => t.family === 'demolition').map((t) => [t.id, t.targets])
     let ms0 = 0, nCalls = 0
-    const bad = { plan: [], same: [], full: [], deck: [], off: [], site: [], junction: [], water: [], slope: [], ground: [], u: [], guide: [], nearest: [] }
+    const bad = { plan: [], same: [], full: [], deck: [], off: [], site: [], junction: [], water: [], slope: [], ground: [], u: [], guide: [], nearest: [], gap: [] }
+    let gapMax = 0
     for (const o of offers) {
         const spc = board.spec(o)
         const m = board.planDistinct(o, planOne)
@@ -147,7 +149,12 @@ for (const s of SEEDS) {
         const short = nearestTarget({ ...m, targets: T }, 0, 0, all, m.distance)
         if (T.length && (!past.back || T[past.i].u !== Math.min(...T.map(t => t.u)))) bad.nearest.push(`${tag} past the end`)
         if (T.length && (short.back || T[short.i].u !== Math.max(...T.map(t => t.u)))) bad.nearest.push(`${tag} short of the site`)
-        console.log(`       ${tag.padEnd(40)} ${(m.distance / 1000).toFixed(1)} km  ${T.length}/${want}+ targets: ${[...new Set(T.map((t) => t.kind))].join(' ')}`)
+        // 6. THE SITE WINDOW (owner 2026-11-05) — the longest stretch between two targets along the road is drivable
+        //    inside hitWindowS at CHASE_MPS, so driving straight down the site never runs the window out.
+        const us = T.map(t => t.u).sort((a, b) => a - b), gap = Math.max(0, ...us.slice(1).map((u, j) => u - us[j]))
+        gapMax = Math.max(gapMax, gap)
+        if (gap / CHASE_MPS > D.hitWindowS) bad.gap.push(`${tag} ${gap.toFixed(0)} m`)
+        console.log(`       ${tag.padEnd(40)} ${(m.distance / 1000).toFixed(1)} km  ${T.length}/${want}+ targets: ${[...new Set(T.map((t) => t.kind))].join(' ')}  · widest gap ${gap.toFixed(0)} m`)
         }
     }
     check('every demolition job plans a roadside job (the camp\'s from the camp)', !bad.plan.length, bad.plan.join(', '))
@@ -163,6 +170,7 @@ for (const s of SEEDS) {
     check('every target\'s u is its own point on the route (± 1.5 m)', !bad.u.length, bad.u.slice(0, 5).join(', '))
     check('guideTo runs from the route\'s start, or back from its end, to the target', !bad.guide.length, bad.guide.slice(0, 5).join(', '))
     check('nearestTarget: the nearest along the road, behind or ahead; past the end all behind; short of the site the first', !bad.nearest.length, bad.nearest.slice(0, 5).join(', '))
+    check(`no gap between targets longer than the window at ${CHASE_MPS} m/s (${D.hitWindowS} s → ${D.hitWindowS * CHASE_MPS} m; widest ${gapMax.toFixed(0)} m)`, !bad.gap.length, bad.gap.slice(0, 5).join(', '))
     console.log(`       siteTargets: ${(ms0 / Math.max(1, nCalls)).toFixed(1)} ms per site (${nCalls} sites)`)
 }
 

@@ -549,15 +549,15 @@ Recommended, no new economy constant:
 **Built: option (b), the per-hit reset** (the orchestrator's default; it needs no world-gen change, and nothing
 argued for (a)). Answers the clock half of `feat65-clock-pay`; pay was already per target smashed.
 - **The site window:** the first smash starts it, every smash refills it (`DEMOLITION_PARAMS.hitWindowS`,
-  **30 s of the job's clock [DEFAULT]**), and when it runs out the job settles with what is smashed — the same
+  **40 s of the job's clock [DEFAULT]**), and when it runs out the job settles with what is smashed — the same
   `cleared` line as the last one down, so a run-out pays the share smashed and letters it like any finish.
   Before the first smash the job is an ordinary drive under its due-in deadline.
 - **Going back for a miss** is a race inside the window: a near miss is worth turning for, a far one is not.
 - **Job line:** "N km to the next target · next hit within N s" (placeholder words). The rank bar is unchanged.
 - **Saved:** `lastHitS` with the smashed indices; a resume keeps the window where it was.
-- **Gates:** cdp-smoke `demolition` — the window shows after the first smash; running it out (31 game minutes)
+- **Gates:** cdp-smoke `demolition` — the window shows after the first smash; running it out (41 game minutes)
   settles "Smashed 2 / N". demolition-site (6): the widest gap between two targets along the road fits the
-  window at 15 m/s (450 m), so driving straight down a site never runs it out.
+  window at 15 m/s (600 m), so driving straight down a site never runs it out. Measured: the widest gap on
+  seeds 1 and 6 is 341 m — 23 s at 54 km/h, 34 s at 36 km/h, which is why the window is 40 s and not 30.
 
-**Owed by the owner:** the GPS behaviour and the sequencing on a drive (`hitWindowS` is a slider-free
-constant today — say the number); the words.
+**Owed by the owner:** the GPS behaviour and the sequencing on a drive (`hitWindowS` is a constant — say the number); the words.

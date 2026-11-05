@@ -595,7 +595,7 @@ const STEPS = [
     // That smash refilled the window; let it run out (a game minute is a second of the job's clock) and the line
     // settles where it is, with the two that fell. (The last one down settling it is the same `cleared` line.)
     check(await js('window.__mission().state') === 'running', 'the line settled before its window ran out')
-    await js('window.__day().advanceMinutes(31)')
+    await js('window.__day().advanceMinutes(41)')
     check(await until(() => js('window.__mission().state === "done"'), 5000), `the site window ran out and the line did not settle: ${await js('window.__mission().state')}`)
     check(await js('(n => new RegExp(`Smashed\\\\s*2 \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
       `the result card does not count the two smashed: "${await js('document.getElementById("mp-body")?.textContent')}"`)

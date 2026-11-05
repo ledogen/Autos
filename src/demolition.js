@@ -32,7 +32,8 @@ export const DEMOLITION_PARAMS = {
     // The site window (owner 2026-11-05, option b: "reset the timer on every object hit so the timer runs out
     // faster once you start hitting them"): the first smash starts it, every smash refills it, and when it
     // runs out the job settles with what is smashed. Seconds of the job's clock [DEFAULT].
-    hitWindowS: 30,
+    // 40 s: the widest gap between two targets on the gated seeds is 341 m — 23 s at 54 km/h, 34 s at 36.
+    hitWindowS: 40,
 }
 
 /**
