@@ -105,3 +105,16 @@ that touches the drive.
 3. The bed is this ticket's: synthesized, Spare builds it.
 4. Order P1 (sounds) → P2 (motion) → P3 (bed). Check first what FEAT-120's landing (012b2461) already wired on
    the result card (coin + stinger are in the owner's listen list); build on it, never twice.
+
+## Built (Spare, 2026-11-05) — P1 complete, P2 built; neither owner-seen yet
+
+- **P1** (`src/result-audio.js`, da9efdf4): FEAT-120's coin + stinger were already in; added the **tick train**
+  (counter-wheel ticks at ~12/s for the count-up's length, loud to soft), the **clack** (wood block, only when
+  the tally moves) and the **thud** (a miss: no deed, item missed, nothing arrived — never a cost). Each has
+  its FEAT-120 Sounds-tab entry (status wip), so the dashboard's ▶ plays it.
+- **P2** (index.html CSS + `_revealResult`): rows rise 6 px as they fade in; the tip's count-up runs
+  0.5 s → 1.4 s by size (`COUNTUP_FULL` $20 [DEFAULT] — day 1's S tip is $5, so early tips sit near 0.7 s); the
+  deed numeral pops 1.15 → 1; a full deed warms the card's border (`--warn-line`, 2.4 s, then back); a missed
+  line nudges once, sideways, just after it lands. UI-STYLE tokens only.
+- **Owed:** the owner's look + listen (the card shows on any finished job). P3 (the rank-timer music bed)
+  not started.

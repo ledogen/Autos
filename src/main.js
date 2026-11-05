@@ -6069,7 +6069,7 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
   const goal = (h) => `${formatDeeds(h)} / ${ECONOMY_PARAMS.campDeeds}`
   const tally = `<span class="mp-dim" data-tally="${goal(halfNow)}">· ${goal(halfNow - points * 2)}</span>`
   const deed = points > 0
-    ? beat(`<br><span class="mp-deed">+${points >= 1 ? '1' : '1/2'} deed</span>`
+    ? beat(`<br><span class="mp-deed"${points >= 1 ? ' data-full' : ''}>+${points >= 1 ? '1' : '1/2'} deed</span>`
         + (points < 1 && deedNeed ? ` <span class="mp-dim">(1 needed ${deedNeed})</span>` : '') + ` ${tally}`)
     : deedNeed ? beat(`<br><span class="mp-bad">no deed</span> <span class="mp-dim">(needed ${deedNeed})</span> ${tally}`) : ''
   // FEAT-88: the load's count, answered — and N-08: what became of the rest, so a short count has a cause.
@@ -6098,10 +6098,11 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
 }
 /**
  * N-04: run the result card's reveal on the rows _payRows just wrote: each `data-countup` amount counts
- * up over 0.7 s once its row has landed (an ease-out, so the last cents settle), and each `data-tally`
+ * up over 0.5–1.4 s by its size once its row has landed (an ease-out, so the last cents settle), and each `data-tally`
  * flips from the old total to the new half a second after its row. Idempotent per render — a re-render
  * writes fresh rows and the stale timers find theirs disconnected.
  */
+const COUNTUP_FULL = 20   // $ — a tip this big counts up for the longest (1.4 s) [DEFAULT]: day 1's S tip is $5
 function _revealResult (body, letter = null) {
   const t0 = performance.now()
   const delayOf = (el) => (parseFloat(el.closest('.mp-reveal')?.style.animationDelay) || 0) * 1000
@@ -6113,17 +6114,29 @@ function _revealResult (body, letter = null) {
     const amt = pay && (pay.dataset.countup != null || pay.textContent.includes('$'))
       ? parseFloat(pay.dataset.countup ?? pay.textContent.replace(/[^0-9.]/g, '')) : 0
     if (amt > 0) setTimeout(() => { if (el.isConnected) playCoin() }, delayOf(el))
-    // …and a thud as a miss lands: "no deed", an item missed, a load that never arrived (not a cost)
-    if (el.querySelector('.mp-bad:not(.mp-pay), [data-miss]')) setTimeout(() => { if (el.isConnected) playThud() }, delayOf(el))
+    // …and a thud as a miss lands: "no deed", an item missed, a load that never arrived (not a cost); P2: the
+    // line nudges once just after
+    const miss = el.querySelector('.mp-bad:not(.mp-pay), [data-miss]')
+    if (miss) {
+      setTimeout(() => { if (el.isConnected) playThud() }, delayOf(el))
+      miss.style.animationDelay = `${delayOf(el) + 350}ms`
+      miss.classList.add('mp-nudge')
+    }
   }
+  // P2: a full deed warms the box's border as its row lands — re-armed on every reveal (the box outlives it)
+  const box = body.closest('#mission-panel, #paper-panel'), full = body.querySelector('[data-full]')
+  box?.classList.remove('mp-warm')
+  if (box && full) setTimeout(() => { if (full.isConnected) box.classList.add('mp-warm') }, delayOf(full))
   if (rows.length && letter) setTimeout(() => { if (body.isConnected) playStinger(letter) }, delayOf(rows.at(-1)) + 450)
   for (const el of body.querySelectorAll('[data-countup]')) {
     const target = parseFloat(el.dataset.countup), delay = delayOf(el)
+    // P2: a bigger tip takes visibly longer — 0.5 s, up to 1.4 s at COUNTUP_FULL and over
+    const dur = 500 + 900 * Math.min(1, target / COUNTUP_FULL)
     el.textContent = '$0.00'
-    if (target > 0) setTimeout(() => { if (el.isConnected) playTickTrain(0.7) }, delay)   // the count-up's 700 ms
+    if (target > 0) setTimeout(() => { if (el.isConnected) playTickTrain(dur / 1000) }, delay)
     const tick = (t) => {
       if (!el.isConnected) return
-      const k = Math.min(1, Math.max(0, (t - t0 - delay) / 700))
+      const k = Math.min(1, Math.max(0, (t - t0 - delay) / dur))
       el.textContent = `$${formatMoney(target * (1 - Math.pow(1 - k, 3)))}`
       if (k < 1) requestAnimationFrame(tick)
     }
