@@ -251,3 +251,8 @@ kill timed it out).
 - **Lane A cleared-ready** (session now named `park-feat-147-planning-notes`): clean at c1d7427d, lanes/a v22. Its FEAT-147
   questions went to the owed list: feat147-art / feat147-sender / feat147-card. Before landing, its affected set
   and cdp-smoke need one rerun, because it merged main after its last gate run.
+- **11-05 afternoon (orchestrator after its clear):** 9 inbox items drained. fe199149 on main: brake lamps = pedal switch,
+  only an OPEN offer blocks the menus (a giver in reach no longer does), grey band 80 %, the owner's diagnostics + repair
+  words. The other five shop items = FEAT-167 (Lane B, next code item, on top of its landing set; lanes/b v14 says so).
+  Main is 9+ ahead of origin, NOT pushed (the 11-04 push permission was for that night). A, B and Spare are still
+  waiting for their /clear (≈419k / 719k / 817k).
