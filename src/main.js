@@ -2008,6 +2008,7 @@ window.__mission = () => missionSystem   // CDP play-through: the live job (mark
 window.__teleport = (x, z, heading, drop = 0.5) => teleportToGround(x, z, heading, drop)
 window.__car = () => ({ x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
                         v: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) })
+window.__simT = () => simTime   // INFRA-08: test/cdp-smoke.mjs times its holds in SIM seconds (under load the sim runs slow)
 
 // FEAT-49: gauge cluster (bottom-right canvas overlay). The odometer seeds to a random jalopy
 // mileage at boot and RE-seeds on every story-mode entry — "the next run's jalopy". The temp needle

@@ -16,6 +16,7 @@
 import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
+import { cpus, loadavg } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
@@ -32,10 +33,17 @@ const vite = spawn(process.execPath, [join(ROOT, 'node_modules/vite/bin/vite.js'
 const shutdown = () => { try { vite.kill() } catch {} }
 process.on('exit', shutdown)
 
-// Poll fn until it returns truthy (resolves with that value) or ms elapse (resolves null).
+// INFRA-08: every wall-clock ceiling in here is a HANG GUARD, never a speed test, and a loaded box (another
+// lane's suite, the owner's game on the same machine) runs the page slower — the region warm on a contended
+// pool, the sim in slow motion. Tonight's landing smokes failed on exactly that, never on code. So a ceiling
+// stretches by the run queue's oversubscription: the 1-min load average per core, never under 1, the worst
+// seen during the wait. An idle box keeps the base ceiling.
+let peakX = 1   // the worst stretch any wait saw — the summary line reports it
+const loadX = () => { const x = Math.max(1, loadavg()[0] / cpus().length); peakX = Math.max(peakX, x); return x }
+// Poll fn until it returns truthy (resolves with that value) or ms × loadX elapse (resolves null).
 async function until (fn, ms, every = 100) {
-  const t1 = performance.now() + ms
-  while (performance.now() < t1) { const v = await fn(); if (v) return v; await sleep(every) }
+  const t0 = performance.now()
+  for (let x = loadX(); performance.now() - t0 < ms * x; x = Math.max(x, loadX())) { const v = await fn(); if (v) return v; await sleep(every) }
   return null
 }
 if (!await until(() => fetch(`http://localhost:${HTTP}/`).then(r => r.ok, () => false), 15000, 200)) {
@@ -80,6 +88,23 @@ const frames = async (n, ms) => {
 // per physics step), so under load (another lane's suite) a 60 ms tap fell wholly between two frames
 // and never happened — the brake/park flakes in service, offer and save. A player's tap is ~6 frames.
 const tap = async (k, opts) => { await key(k, true, opts); await frames(2, 60); await key(k, false, opts) }
+// INFRA-08: wait on the SIM, not the wall. Under load main.js abandons its catch-up debt and the sim runs in
+// slow motion, so 8 s of wall-clock W bought 24.8 m. Poll fn until truthy (resolves with it) or the sim has
+// run s seconds (resolves null). A sim that stops stepping for 10 s (× loadX) is a hang and fails right
+// there, not at a ceiling — so only wait on the sim where it should be running.
+async function untilSim (fn, s) {
+  const t0 = await js('window.__simT()')
+  let last = t0, seen = performance.now()
+  for (;;) {
+    const v = await fn(); if (v) return v
+    const t = await js('window.__simT()')
+    if (t - t0 >= s) return null
+    if (t > last) { last = t; seen = performance.now() }
+    check(performance.now() - seen < 10000 * loadX(), `the sim stopped stepping, ${(t - t0).toFixed(2)} of ${s} sim-s in`)
+    await sleep(50)
+  }
+}
+const simFor = s => untilSim(() => false, s)
 // Teleport and wait for the SEAT, not a fixed sleep: the reseat awaits a network build, which under
 // load outlasted 2.5 s — it then latched park after the step had already toggled the brake.
 // Where a player parks at a giver (in-page, given a POI record): its marker — or, when the marker's own
@@ -97,7 +122,7 @@ const PAD_SEAT = `((q) => { const P = window.__poi(), y = (q.y ?? 0) + 0.8
 const seat = async (x, z, h) => {
   await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
   check(await until(() => js('window.__seated'), 30000, 250), `teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
-  await sleep(1000)   // the 0.5 m drop lands
+  await simFor(1)   // the 0.5 m drop lands
 }
 // Park the way the owner does: hold Space (the handbrake — never reverse throttle, as S is past rest)
 // until roughly at rest, then tap to latch. `fresh` first RELEASES a latched brake so the page sees a
@@ -122,7 +147,7 @@ const park = async (fresh = false) => {
   await key(' ', false); await frames(2, 60)
   if (!await js('window.__vs.parked')) await tap(' ')
 }
-const hold = async (k, ms) => { await key(k, true); await sleep(ms); await key(k, false) }
+const hold = async (k, s) => { await key(k, true); await simFor(s); await key(k, false) }   // s SIM seconds
 const car = () => js('window.__car()')
 // A fake pad: navigator.getGamepads stubbed to one standard-mapping pad whose buttons and sticks are
 // window.__fp.b / .axes (gamepad.js polls it every frame). padOff hands back the real one.
@@ -157,11 +182,11 @@ const STEPS = [
   }],
   ['drive', async () => {
     const c0 = await car()
-    await hold('w', 8000)
+    await hold('w', 8)
     const c1 = await car()
     const moved = Math.hypot(c1.x - c0.x, c1.z - c0.z)
     const fz = await js('[...window.__vs.strutComp]')
-    check(moved >= 40, `truck moved ${moved.toFixed(1)} m in 8 s of W (need ≥ 40)`)
+    check(moved >= 40, `truck moved ${moved.toFixed(1)} m in 8 sim-s of W (need ≥ 40)`)
     check(fz.every(Number.isFinite), `strut state not finite: ${fz}`)
   }],
   ['reset', async () => {
@@ -179,12 +204,12 @@ const STEPS = [
         const d = Math.abs(Math.hypot(q.x - c.x, q.z - c.z) - 600); if (d < bd) { bd = d; best = { x: q.x, z: q.z } } }
       return best })()`)
     check(p, 'no road network to teleport along')
-    await js(`window.__teleport(${p.x}, ${p.z}, 0)`)
-    await sleep(4000)
-    const a = await car(); await sleep(1000); const b = await car()
+    await seat(p.x, p.z, 0)
+    await simFor(3)
+    const a = await car(); await simFor(1); const b = await car()
     const ground = await js(`window.terrain(${b.x}, ${b.z})`)
     check(b.y > ground - 1, `truck below the ground after teleport: y ${b.y.toFixed(1)} vs terrain ${ground.toFixed(1)}`)
-    check(Math.abs(b.y - a.y) < 0.5, `truck still falling 5 s after teleport: dy ${(b.y - a.y).toFixed(2)} m/s`)
+    check(Math.abs(b.y - a.y) < 0.5, `truck still falling 5 sim-s after the seat: dy ${(b.y - a.y).toFixed(2)} m/s`)
   }],
   ['map', async () => {
     await tap('m')
@@ -238,9 +263,9 @@ const STEPS = [
   }],
   ['lab', async () => {
     await js('document.getElementById("pm-lab").click()')
-    await sleep(3000)
+    await simFor(3)
     check(await js('document.getElementById("pm-lab").textContent') === 'exit testing lab', 'lab did not enter')
-    const a = await car(); await sleep(1000); const b = await car()
+    const a = await car(); await simFor(1); const b = await car()
     check(Math.abs(b.y - a.y) < 0.05 && b.y > -1 && b.y < 3, `truck not resting on the lab slab: y ${a.y.toFixed(2)} → ${b.y.toFixed(2)}`)
     await js('document.getElementById("pm-lab").click()')
     check(await js('document.getElementById("pm-lab").textContent') === 'testing lab', 'lab did not exit')
@@ -259,7 +284,7 @@ const STEPS = [
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
-    check(await until(() => js(live), 45000, 250), 'story never went live (45 s): no run HUD / POIs, or the load stage stayed up')
+    check(await until(() => js(live), 45000, 250), 'story never went live (45 s × load): no run HUD / POIs, or the load stage stayed up')
     // R-11 (game-feel review): the run opens on Uncle Larry's intro cards, and while a card is up every
     // key advances it and goes nowhere else — so the brake taps below would only turn pages. Read them off.
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
@@ -279,8 +304,7 @@ const STEPS = [
         const d = Math.hypot(q.x - m.x, q.z - m.z); if (d < bd && d > 8) { bd = d; best = { x: q.x, z: q.z } } }
       return best })()`)
     check(p, "no road point within 25 m of mom's house")
-    await js(`window.__teleport(${p.x}, ${p.z}, 0)`)
-    await sleep(2500)
+    await seat(p.x, p.z, 0)
     const panel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }   // a teleport seats latched
     await tap(' ')
@@ -290,7 +314,7 @@ const STEPS = [
     check(await clock() === h0, `clock ran while at mom's (FEAT-118 hold): ${h0} → ${await clock()}`)
     await tap('r')   // R-12: R closes the camp before the re-seat
     check(await until(async () => !await panel(), 2000), 'R left the camp panel up')
-    const h1 = await clock(); await sleep(3000)
+    const h1 = await clock(); await simFor(3)
     check(await clock() !== h1, 'clock did not resume after R closed the camp')
 
     // The truck (owner, 2026-10-19): Z always opens the card, and the brake sleeps you in the cab
@@ -305,8 +329,7 @@ const STEPS = [
         return { x: q.x, z: q.z, ox: q.x + tz / l * 9, oz: q.z - tx / l * 9 } }
       return null })()`)
     check(q, "no road point 300 m from mom's house")
-    await js(`window.__teleport(${q.x}, ${q.z}, 0)`)
-    await sleep(2500)
+    await seat(q.x, q.z, 0)
     await tap('z')
     const card = () => js('getComputedStyle(document.getElementById("camp-prompt")).display !== "none" && document.getElementById("camp-prompt-text").textContent')
     const text = await until(card, 2000)
@@ -318,8 +341,7 @@ const STEPS = [
       check(await js('document.getElementById("cp-truck").disabled'), 'on the ribbon, the site card still offered the truck')
       await js('document.getElementById("cp-cancel").click()')
     } else check(text.includes('park on the shoulder'), `on the ribbon the card does not say "park on the shoulder" ("${text}")`)
-    await js(`window.__teleport(${q.ox}, ${q.oz}, 0)`)
-    await sleep(2500)
+    await seat(q.ox, q.oz, 0)
     const text2 = await until(card, 2000)
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
     await tap(' ')
@@ -512,8 +534,7 @@ const STEPS = [
       return q ? { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
     check(camp, 'no expedition camp in the region')
     const prompt = () => js('document.getElementById("poi-prompt").checkVisibility() && document.getElementById("poi-prompt").textContent')
-    await js(`window.__teleport(${camp.x}, ${camp.z}, ${camp.h})`)
-    await sleep(2500)
+    await seat(camp.x, camp.z, camp.h)
     check(/good deeds/.test(await until(prompt, 2000) || ''), `the closed camp's prompt: "${await prompt()}"`)
     await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
     check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 1000), `${ECONOMY_PARAMS.campDeeds} deeds opened no requisition on the run HUD`)
@@ -535,8 +556,7 @@ const STEPS = [
       if (!b) return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) }
       const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
       return { x: ox + b.x * cs + b.z * sn, z: oz - b.x * sn + b.z * cs, h: yaw } })()`)
-    await js(`window.__teleport(${src.x}, ${src.z}, ${src.h})`)
-    await sleep(2500)
+    await seat(src.x, src.z, src.h)
     check((await st()).a, 'arriving at the source started the line before the brake')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
     await tap(' ')
@@ -624,14 +644,14 @@ const STEPS = [
     check(await js(`${row}.length`) === 0, 'a row 2 km from the truck already has bodies (they would fall through the world)')
     await seat(P.b.x + f.x * 30, P.b.z + f.z * 30, Math.atan2(f.x, f.z))   // 30 m inside, nose at the row
     check(await until(() => js(`(window.__edgeRow = ${row}).length === 3`), 2000), `the row near the truck has ${await js(`${row}.length`)} bodies, want 3`)
-    await sleep(1000)   // settled on the deck
+    await simFor(1)   // settled on the deck
     const pos = 'window.__edgeRow.map(r => r.mesh.position.toArray())'
     const before = await js(pos)
     await crank()
     if (await js('window.__vs.parked')) await tap(' ')
     const black = 'document.getElementById("camp-fade").classList.contains("on")'
     await key('w', true)
-    const went = await until(() => js(black), 20000, 50)
+    const went = await untilSim(() => js(black), 20)
     const smashed = went && (await js(pos)).some((p, i) => Math.hypot(p[0] - before[i][0], p[2] - before[i][2]) > 0.5)
     await key('w', false)
     check(went, `the edge never faded: the truck at ${(await js(`Math.hypot(window.__car().x - ${P.c.x}, window.__car().z - ${P.c.z})`)).toFixed(0)} m`)
@@ -691,11 +711,15 @@ const STEPS = [
     await crank()
     await padOn()
     await js('__fp.b[7] = 0.7')   // RT: rolling past the 5 mph throw floor
-    check(await until(() => js('window.__vs.velocity.length() > 3'), 8000), `the fake pad did not get the truck rolling: ${(await js('window.__vs.velocity.length()')).toFixed(1)} m/s`)
+    check(await untilSim(() => js('window.__vs.velocity.length() > 3'), 8), `the fake pad did not get the truck rolling: ${(await js('window.__vs.velocity.length()')).toFixed(1)} m/s`)
     check(await until(async () => await state() === 'running', 3000), `leaving Larry's circle did not start the round: ${await state()}`)
     const stock0 = await js('window.__paper.system.stock()')
     await js('__fp.axes[2] = 0.7'); await frames(4, 150)          // aim: the right stick
-    await js('__fp.b[5] = 1'); await frames(3, 80); await js('__fp.b[5] = 0')   // a TAP of RB
+    // A TAP of RB: pressed for ONE pad poll and let go in-page on the next frame. gamepad.js times the tap in
+    // WALL ms (throwTapMs 200) and a longer press becomes the handbrake — under load, 3 frames + 80 ms + a CDP
+    // round trip ran past it and no paper flew (INFRA-08). The poll's rAF callback (requestAnimationFrame, the
+    // browser's once-per-frame hook) was queued in the last frame, ahead of this one, so it sees the press first.
+    await js('__fp.b[5] = 1; requestAnimationFrame(() => { __fp.b[5] = 0 })')
     check(await until(async () => await js('window.__paper.system.stock()') === stock0 - 1, 2000),
       `an RB tap while aiming on a live round threw no paper: stock ${stock0} → ${await js('window.__paper.system.stock()')}`)
     await js('__fp.b[7] = 0; __fp.axes[2] = 0'); await frames(2, 60)
@@ -756,8 +780,7 @@ const STEPS = [
     const staged = await hudText()
     // Pull away from the road beside the pad, facing along it: the pad itself is boxed in by the
     // shop and its yard clutter, which pinned the truck at full throttle.
-    await js(`window.__teleport(${p.rx}, ${p.rz}, ${p.h})`)
-    await sleep(2000)
+    await seat(p.rx, p.rz, p.h)
     await crank()   // story seats the truck with the engine OFF (FEAT-33)
     if (await js('window.__vs.parked')) await tap(' ')   // and latched
     const c0 = await car(); await hold('w', 6000); const c1 = await car()
@@ -802,7 +825,7 @@ const STEPS = [
       const saved = await js(`(() => { const d = JSON.parse(localStorage.getItem("autos-run/1")).data
         return { p: { x: d.pose.p[0], z: d.pose.p[2] }, v: Math.hypot(...d.motion.v) } })()`)
       await js('document.getElementById("mm-continue").click()')
-      check(await until(() => js(live), 45000, 250), `${what}: the resumed run never went live (45 s)`)
+      check(await until(() => js(live), 45000, 250), `${what}: the resumed run never went live (45 s × load)`)
       check(await until(() => js(paused), 2000), `${what}: the resumed run did not open paused`)
       return saved
     }
@@ -880,7 +903,7 @@ const STEPS = [
     check(Math.hypot(still.x - held.p.x, still.z - held.p.z) < 0.05, 'the resume card did not hold the sim')
     await key('w', true)
     check(!await js(paused), 'W did not end the resume card')
-    await sleep(1000)
+    await simFor(1)
     await key('w', false)
     const rolled = await js('window.__car()')
     check(Math.hypot(rolled.x - held.p.x, rolled.z - held.p.z) > 1, 'the key that ended the resume card did not hand the moving truck back')
@@ -930,7 +953,7 @@ const STEPS = [
       check(steps.every((v, i) => v.mode === want[i][0] && v.start === want[i][1] && v.world === want[i][2] && !!v.list === want[i][3]),
         `new-game mode row: ${JSON.stringify(steps)}`)
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
-      check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s)')
+      check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s × load)')
       const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
       await until(dlg, 3000)
       for (let i = 0; i < 8 && await dlg(); i++) { await tap('Enter'); await sleep(250) }
@@ -1007,7 +1030,7 @@ const STEPS = [
     await js('const b = document.querySelector("[data-key=opening]"); if (/skip/.test(b.textContent)) b.querySelector(".sel-next").click()')
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
-    check(await until(() => js(live), 45000, 250), 'the opening run never went live (45 s)')
+    check(await until(() => js(live), 45000, 250), 'the opening run never went live (45 s × load)')
     const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
     check(await until(async () => await speaker() === 'The manager', 3000), `the run did not open on the firing (speaker "${await speaker()}")`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
@@ -1061,7 +1084,7 @@ for (const [name, fn] of STEPS) {
 }
 client.close(); cleanup(); shutdown()
 
-console.log(`steps: ${times.join(' · ')}`)
+console.log(`steps: ${times.join(' · ')} · ceilings stretched up to ×${peakX.toFixed(2)} (load per core)`)
 if (errors.length) {
   console.log(`FAIL: ${errors.length} console error(s); first in step "${errors[0].step}":\n  ${errors[0].msg}`)
   process.exit(1)
