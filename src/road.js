@@ -3575,7 +3575,7 @@ export class RoadSystem {
             // re-routed here before the crossing rung could judge them).
             let tAx = tA, tBx = tB
             const shK = shA ? kA : kB
-            if (merges && ((shA || shB) ? !this._v2PlannedPair(g, drop, shK, ck, pk)
+            if (merges && ((shA || shB) ? !this._v2PlannedPair(g, drop, ck, pk)
                 : this._v2NodeRole(g, drop, kA, kB, ck) || this._v2NodeRole(g, drop, qA, qB, pk))
                 && !_pairProperCrossingsXZ(S, shK === kA, Q, shK === qA, shA || shB).length) {
                 merges = false; violates = false
@@ -3610,29 +3610,31 @@ export class RoadSystem {
         return out
     }
 
-    // BUG-105: does node nk's pass-1 plan (rule or legacy proximity) merge pair ck × pk, either way round?
-    _v2PlannedPair(g, drop, nk, ck, pk) {
-        const role = (plans) => {
-            for (const [l, w] of [[ck, pk], [pk, ck]]) {
-                const sp = plans.get(l)
-                if (!sp) continue
-                const a = g.key(sp.winner[0]), b = g.key(sp.winner[1])
+    // BUG-105: will a T own pair ck × pk? _v2MergeFor's own answer on the PASS-1 lines, either way round —
+    // a node plan alone is not enough: the plan may have no buildable T (promote-infeasible: seeds
+    // 3752380034, 1013531954, 3628580736) or lose to the run's other end (seed 10, BUG-104's site: the
+    // side road's larger merge at 1,-2,1 wins, so its plan at 2,-2,0 is dropped). Nobody owned those.
+    _v2PlannedPair(g, drop, ck, pk) {
+        const spell = this._v2EdgeSpellings(g)
+        for (const [l, w] of [[ck, pk], [pk, ck]]) {
+            const sp = spell.get(l)
+            if (!sp) continue
+            for (const spec of this._v2MergeFor(g, drop, sp[0], sp[1], true) || []) {
+                const a = g.key(spec.winner[0]), b = g.key(spec.winner[1])
                 if ((a < b ? a + '|' + b : b + '|' + a) === w) return true
             }
-            return false
         }
-        return role(this._v2NodeMerges(g, drop, nk, false, true)) || role(this._v2NodeMerges(g, drop, nk, true, true))
+        return false
     }
 
-    // BUG-105: the arcs of edge ck — measured along its sample that starts at node startKey, length L — that a
-    // PASS-1 plan at either of its nodes cedes to a T (rule or legacy; the variant the ladder tries first).
+    // BUG-105: the arcs of edge ck — measured along its sample that starts at node startKey, length L — that the
+    // T it will be promoted into cedes to the trunk (the PASS-1 _v2MergeFor answer: a plan the merge drops cedes nothing).
     _v2CededPass1(g, drop, ck, startKey, L) {
         const out = [], spell = this._v2EdgeSpellings(g).get(ck)
         if (!spell) return out
         const flip = g.key(spell[0]) !== startKey
-        for (const nk of ck.split('|')) for (const legacy of [false, true]) {
-            const sp = this._v2NodeMerges(g, drop, nk, legacy, true).get(ck)
-            const v = sp?.variants?.[0]
+        for (const sp of this._v2MergeFor(g, drop, spell[0], spell[1], true) || []) {
+            const v = sp.variants?.[0]
             if (!v) continue
             let iv = sp.midSpan ? [Math.min(v.lIn, v.lOut), Math.max(v.lIn, v.lOut)] : (sp.loserNodeAtStart ? [0, v.lCut] : [v.lCut, L])
             if (flip) iv = [L - iv[1], L - iv[0]]
@@ -3641,13 +3643,13 @@ export class RoadSystem {
         return out
     }
 
-    // BUG-105: does edge ck (nodes a, b) hold a role in either end's pass-1 plan (rule or legacy) — merged
-    // as a loser, or the winner some loser merges onto? The disjoint planner's two preconditions, forecast on
-    // the pass-1 plans (a superset of the plans _v2MergeFor keeps, so a doubt resolves to "has a role").
+    // BUG-105: does edge ck (nodes a, b) hold a node-merge role — _v2DisjointFor's two preconditions, on the
+    // PASS-1 lines: a loser whose _v2MergeFor answers, or the winner of a node plan at either end.
     _v2NodeRole(g, drop, a, b, ck) {
-        for (const nk of [a, b]) for (const legacy of [false, true]) for (const [l, sp] of this._v2NodeMerges(g, drop, nk, legacy, true)) {
-            if (l === ck) return true
-            const x = g.key(sp.winner[0]), y = g.key(sp.winner[1])
+        const sp = this._v2EdgeSpellings(g).get(ck)
+        if (sp && this._v2MergeFor(g, drop, sp[0], sp[1], true)) return true
+        for (const nk of [a, b]) for (const [, spec] of this._v2NodeMerges(g, drop, nk, false, true)) {
+            const x = g.key(spec.winner[0]), y = g.key(spec.winner[1])
             if ((x < y ? x + '|' + y : y + '|' + x) === ck) return true
         }
         return false
@@ -4773,23 +4775,35 @@ export class RoadSystem {
     // overlaps the adopted strand — the adopted vertices must be the winner's REGISTERED (pure)
     // geometry. Raw per-node lookups only (plans never depend on other plans): order-free,
     // cycle-free.
-    _v2MergeFor(g, drop, c1, c2) {
+    // BUG-105: `pass1` asks the same question of the PASS-1 lines and plans — what FEAT-77's clearance
+    // pass needs to know ("will a T own this pair?") without reading the pass-2 lines it produces. A
+    // forecast, so it is quiet: the skip tallies stay the real plan's.
+    _v2MergeFor(g, drop, c1, c2, pass1 = false) {
+        if (pass1) {
+            const k0 = this._v2MergeSkip && { ...this._v2MergeSkip }, w0 = this._v2MergeSkipWhy?.slice()
+            try { return this._v2MergeForOn(g, drop, c1, c2, true) }
+            finally { this._v2MergeSkip = k0; this._v2MergeSkipWhy = w0 }
+        }
+        return this._v2MergeForOn(g, drop, c1, c2, false)
+    }
+
+    _v2MergeForOn(g, drop, c1, c2, pass1) {
         const kA = g.key(c1), kB = g.key(c2)
         const ck = kA < kB ? kA + '|' + kB : kB + '|' + kA
         const winnerOk = (spec) => {
             const wkA = g.key(spec.winner[0]), wkB = g.key(spec.winner[1])
             const wck = wkA < wkB ? wkA + '|' + wkB : wkB + '|' + wkA
-            const wRaw = this._v2NodeMerges(g, drop, wkA).get(wck) || this._v2NodeMerges(g, drop, wkB).get(wck)
+            const wRaw = this._v2NodeMerges(g, drop, wkA, false, pass1).get(wck) || this._v2NodeMerges(g, drop, wkB, false, pass1).get(wck)
             if (!wRaw) return true
-            const wS = this._v2RunSample(g, drop, spec.winner[0], spec.winner[1])
+            const wS = pass1 ? this._v2RunSample1(g, drop, spec.winner[0], spec.winner[1]) : this._v2RunSample(g, drop, spec.winner[0], spec.winner[1])
             if (!wS) return false
             const wCut0 = spec.variants[0].wCut, lCut0 = wRaw.variants[0].lCut
             const adopt = spec.winnerNodeAtStart ? [0, wCut0] : [wCut0, wS.L]
             const wOwn = wRaw.loserNodeAtStart ? [0, lCut0] : [lCut0, wS.L]
             return !(adopt[1] > wOwn[0] + 1 && wOwn[1] > adopt[0] + 1)
         }
-        let sA = this._v2NodeMerges(g, drop, kA).get(ck)
-        let sB = this._v2NodeMerges(g, drop, kB).get(ck)
+        let sA = this._v2NodeMerges(g, drop, kA, false, pass1).get(ck)
+        let sB = this._v2NodeMerges(g, drop, kB, false, pass1).get(ck)
         // A MID-SPAN merge cedes a stretch in the middle of the run, so it cannot be combined with
         // an end merge on the same run — the assembly would have to splice three ceded regions and
         // solve four strands. Take the longer one alone.
@@ -4799,9 +4813,9 @@ export class RoadSystem {
         // old proximity (owner 2026-09-08) — a T main had is kept, and the pair is counted.
         const promotable = (sp, k) => {
             if (!sp) return null
-            if (this._v2PromotableFor(g, drop, sp, c1, c2)) return sp
-            const l = k && !sp.legacy ? this._v2NodeMerges(g, drop, k, true).get(ck) : null
-            if (l && (l.midSpan || winnerOk(l)) && this._v2PromotableFor(g, drop, l, c1, c2)) {
+            if (this._v2PromotableFor(g, drop, sp, c1, c2, pass1)) return sp
+            const l = k && !sp.legacy ? this._v2NodeMerges(g, drop, k, true, pass1).get(ck) : null
+            if (l && (l.midSpan || winnerOk(l)) && this._v2PromotableFor(g, drop, l, c1, c2, pass1)) {
                 this._v2MergeSkipped('promote-legacy', `${ck} has no T under the rule — kept the 18 m one`)
                 return l
             }
@@ -4853,24 +4867,24 @@ export class RoadSystem {
      * window (trunk pieces, promotion order) and the id IS the vertex. `true` still means
      * "could not judge — leave the plan alone", `false` means no T can be built.
      */
-    _v2PromotableFor(g, drop, spec, c1, c2) {
+    _v2PromotableFor(g, drop, spec, c1, c2, pass1 = false) {
         if (!this._v2PromoMemo || this._v2PromoMemo.rev !== this._planRev())
             this._v2PromoMemo = { rev: this._planRev(), map: new Map() }
         const kA = g.key(c1), kB = g.key(c2)
         // BUG-65: the winner is in the key — a post-freeze re-plan can hand the same loser a
         // different winner at a region the pass-1 spec also had.
-        const mk = `${kA}|${kB}|${spec.midSpan ? 'm' : 'n'}${spec.legacy ? 'L' : ''}|${spec.region.toFixed(1)}|${g.key(spec.winner[0])}:${g.key(spec.winner[1])}`
+        const mk = `${kA}|${kB}|${spec.midSpan ? 'm' : 'n'}${spec.legacy ? 'L' : ''}|${spec.region.toFixed(1)}|${g.key(spec.winner[0])}:${g.key(spec.winner[1])}${pass1 ? '|1' : ''}`
         const hit = this._v2PromoMemo.map.get(mk)
         if (hit !== undefined) return hit
         this._v2PromoMemo.map.set(mk, true)   // optimistic: bars re-entry, never observed as an answer
-        const out = this._v2PromotableProbe(g, drop, spec, c1, c2)
+        const out = this._v2PromotableProbe(g, drop, spec, c1, c2, pass1)
         this._v2PromoMemo.map.set(mk, out)
         return out
     }
 
-    _v2PromotableProbe(g, drop, spec, c1, c2) {
+    _v2PromotableProbe(g, drop, spec, c1, c2, pass1 = false) {
         const sample = (a, b) => {
-            const S = this._v2RunSample(g, drop, a, b)
+            const S = pass1 ? this._v2RunSample1(g, drop, a, b) : this._v2RunSample(g, drop, a, b)
             if (!S) return null
             const cl = S.cl   // the sample's own line — a re-routed edge is not its pure corridor
             if (!cl || !cl.slice) return null
@@ -4906,12 +4920,12 @@ export class RoadSystem {
         if (!spec.midSpan && nKey) {
             const own = sA < sB ? `${sA}|${sB}` : `${sB}|${sA}`
             const wA = g.key(spec.winner[0]), wB = g.key(spec.winner[1])
-            for (const [ck, sp] of this._v2NodeMerges(g, drop, nKey)) {
+            for (const [ck, sp] of this._v2NodeMerges(g, drop, nKey, false, pass1)) {
                 if (ck >= own || sp.midSpan) continue
                 const a = g.key(sp.winner[0]), b = g.key(sp.winner[1])
                 if (!((a === wA && b === wB) || (a === wB && b === wA))) continue
                 const [q1, q2] = ck.split('|').map((k) => k.split(',').map(Number))
-                const r = this._v2PromotableFor(g, drop, sp, q1, q2)
+                const r = this._v2PromotableFor(g, drop, sp, q1, q2, pass1)
                 if (r && r.fork) { const h = _nearestOnPolyXZ(r.fork.x, r.fork.z, T.points, T.polyCum); if (h) taken.push(h.cum) }
             }
         }
