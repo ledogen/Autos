@@ -1,9 +1,10 @@
 ---
 id: ASSET-77
 type: asset
-status: open
+status: completed
 severity: minor
 opened: 2026-11-02
+closed: 2026-11-06
 source: owner, 2026-11-01 (FEAT-65 brainstorm) — "some sort of propaganda sign"; the camp's demolition line
         is the turn-back signs (owner picked it over a mundane hazard)
 relates: FEAT-65 (demolition — the camp's own line, data/offers.js REQUISITION reqSigns), FEAT-157 (the
@@ -86,3 +87,12 @@ blue-grey.
   The smoke's demolition step seats the truck by `site[0]`, which is now a board (targets come out group by
   group, boards first): the boards hull and sleep standing, and a kicked one counts smashed.
   **Ready to close at landing.**
+
+## Resolution (2026-11-06) — SHIPPED, on main 196bc38d
+
+Four boards with the owner's words: `assets/models/turn-back-sign.glb` (TURN BACK), `-keep-out`, `-beware`,
+`-no-entry`, each **360 tris**, 4 materials (`SignFace`, `SignPly`, `SignStake`, `SignScrew`), one baked
+face image. Sources: `assets/models/src/turn-back-sign.py` + `.blend`. Wired into the camp's demolition
+line: `PROP_MODELS.turnBackSign*` ×4, `TARGET_TYPES` ×4 (6 kg), `reqSigns.targets` boards group. Gates
+33/33 incl. cdp-smoke (the landing smoke, same code). Left open as the owner's call (owed list
+`asset77-standins`): whether the stand-in crates of flyers and drums stay on the site beside the boards.
