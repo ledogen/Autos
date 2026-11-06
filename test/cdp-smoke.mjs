@@ -958,6 +958,73 @@ const STEPS = [
     check(Math.hypot(rolled.x - held.p.x, rolled.z - held.p.z) > 1, 'the key that ended the resume card did not hand the moving truck back')
     console.log(`  crash: killed at ${kill.v.toFixed(1)} m/s, saved at ${saved.v.toFixed(1)}, resumed at ${held.v.toFixed(1)} m/s ${dk.toFixed(2)} m from the save`)
   }],
+  // FEAT-62: the paper-route scenario runs in story mode under a guard and must never touch the player's run
+  // (orchestrator, 2026-11-06): save this run, play the scenario — a crash and a restart in it — quit to the
+  // menu, and Continue still resumes the run, byte-identical in the slot until then.
+  ['paperScenario', async () => {
+    const slot = () => js('localStorage.getItem("autos-run/1")')
+    await park()
+    check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000), 'paper scenario: the run never came to rest to save')
+    const money0 = await js('window.__econ.money')
+    for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
+    await js('document.getElementById("pm-save").click()')
+    check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'paper scenario: no continue button after save & exit')
+    const before = await slot()
+    const pose = JSON.parse(before).data.pose.p
+    // From the real menu: new game → mode "scenarios" → the paper route.
+    await js('document.getElementById("mm-new").click()')
+    await js('document.querySelector(\'button.mm-sel[data-key="gameMode"]\').click()')
+    const pick = await js(`(() => { const b = [...document.querySelectorAll('#mm-scenario-list button')].find(b => b.textContent.startsWith('the paper route'))
+      if (b) b.click(); return !!b })()`)
+    check(pick, 'paper scenario: not on the scenarios page')
+    const state = () => js('window.__paper.system.state')
+    const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    const offered = async (what, ms) => {
+      const t0 = Date.now()
+      while (Date.now() - t0 < ms && await state() !== 'offer') { if (await dlg()) await tap('Enter'); await sleep(300) }
+      check(await state() === 'offer', `paper scenario ${what}: Larry offered no round (state ${await state()})`)
+    }
+    await offered('entry', 60000)
+    const at = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse'), c = window.__car()
+      return { d: Math.hypot(c.x - q.x, c.z - q.z), sizes: [...document.querySelectorAll('#pp-sizes button')].map(b => b.textContent + (b.classList.contains('on') ? '*' : '')).join(' '),
+               deadline: /time limit/.test(document.getElementById('pp-body').textContent), decline: document.getElementById('pp-decline').style.display } })()`)
+    check(at.d < 40, `paper scenario: seated ${at.d.toFixed(0)} m from Larry's`)
+    check(at.sizes === '4* 9 12 15' && !at.deadline && at.decline === 'none', `paper scenario offer: ${JSON.stringify(at)} — want "4* 9 12 15", no time limit, no decline`)
+    check(await js('window.__autosave()') === false, 'paper scenario: the autosave wrote')
+    check(await slot() === before, 'paper scenario: the run save changed on entry')
+    // A fatal crash: the scenario's card, never the run's end.
+    await js('window.__damage.fatalImpact = { kmh: 99 }')
+    check(await until(() => js('document.getElementById("scenario-panel").style.display === "block"'), 5000), 'paper scenario: a crash showed no scenario card')
+    check(await js('document.getElementById("run-end").style.display !== "block"'), 'paper scenario: a crash reached the run-end card')
+    check(await slot() === before, 'paper scenario: the crash touched the run save')
+    await js('document.getElementById("sp-restart").click()')
+    await offered('restart', 20000)
+    check(!await dlg(), 'paper scenario: the briefing replayed on restart')
+    check(await slot() === before, 'paper scenario: the restart touched the run save')
+    // The result card and the per-rung board: a finished 4-customer round (a B, 3:20 against par 4:10).
+    await js(`(() => { const p = window.__paper.system
+      p.result = { customers: 4, delivered: 4, letter: 'B', elapsed: 200, par: 250 }; p.state = 'done'; p._onChange() })()`)
+    const card = await js(`({ shown: document.getElementById('scenario-panel').style.display, title: document.getElementById('sp-title').textContent,
+      body: document.getElementById('sp-body').textContent, board: localStorage.getItem('autos-scenario-times/1:paper-90:4') })`)
+    check(card.shown === 'block' && /4 customers/.test(card.title) && /3:20/.test(card.body) && /B\s+par 4:10/.test(card.body) && JSON.parse(card.board ?? '[]')[0]?.elapsed === 200,
+      `paper scenario result card: ${JSON.stringify(card)}`)
+    check(await slot() === before, 'paper scenario: the result touched the run save')
+    await js('document.getElementById("sp-restart").click()')
+    await offered('restart after a result', 20000)
+    // Out through the pause menu, then Continue resumes the run that was saved.
+    for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
+    await js('document.getElementById("pm-menu").click()')
+    check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 10000), 'paper scenario: no continue button back at the menu')
+    check(await slot() === before, 'paper scenario: the run save is not byte-identical after the scenario')
+    await js('document.getElementById("mm-continue").click()')
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    check(await until(() => js(live), 45000, 250), 'paper scenario: Continue never went live')
+    const c = await js('window.__car()')
+    const dm = Math.hypot(c.x - pose[0], c.z - pose[2])
+    check(dm < 0.5 && await js('window.__econ.money') === money0, `paper scenario: Continue resumed ${dm.toFixed(2)} m from the saved run, wallet ${await js('window.__econ.money')} (saved ${money0})`)
+    if (await js('document.getElementById("resume-card").style.display === "flex"')) await tap('w')   // hand the run back, as the save step leaves it
+    console.log(`  paper scenario: Larry's offer "${at.sizes}", crash → card → restart, the run save untouched, Continue resumed at ${dm.toFixed(2)} m`)
+  }],
   // FEAT-146: every way a run ends reaches the one summary card, deletes the run save, and the card's
   // button goes back to the main menu. The towel on this run, then a fresh run for each of the others.
   ['endings', async () => {
@@ -1184,11 +1251,155 @@ const STEPS = [
     await js('window.__inv.grant("chiliDog"); window.__inv.use("chiliDog")')
     check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)
   }],
+  ['pad', async () => {
+    // FEAT-125 pad audit (2026-11-06): a run end to end on the pad alone — every screen the other steps drive with
+    // clicks and keys, here by buttons only (Spare's BUG-109 steps already drive the damage screen, the shop's tabs,
+    // the paper route, the give-up card and the menu truck). gamepad.js replays buttons as the keys the screens take.
+    await padOn()
+    const hold = async (i, ms) => { await js(`__fp.b[${i}] = 1`); await sleep(ms); await frames(2, 30); await js(`__fp.b[${i}] = 0`); await frames(3, 80) }
+    const padTo = async (id, dir = 13, n = 12) => { for (let i = 0; i < n && await navFocus() !== id; i++) await btn(dir); check(await navFocus() === id, `the D-pad never reached #${id} (on "${await navFocus()}")`) }
+    const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    const readCards = async () => { for (let i = 0; i < 40; i++) { if (!await dlg()) { await sleep(800); if (!await dlg()) return } await btn(0); await sleep(150) } throw new Error('the cards never stopped coming (A)') }
+    // Park as a pad player does: LT to a crawl, RB held to rest, a tap to latch.
+    const padPark = async () => {
+      if (await js('window.__vs.parked')) { await btn(5); await frames(4, 200) }
+      if (await js('window.__vs.velocity.length() > 1.2')) { await js('__fp.b[6] = 1'); await until(() => js('window.__vs.velocity.length() < 1.2'), 15000); await js('__fp.b[6] = 0') }
+      await js('__fp.b[5] = 1'); await until(() => js('window.__vs.velocity.length() < 0.4'), 15000); await frames(2, 60); await js('__fp.b[5] = 0'); await frames(3, 100)
+      if (!await js('window.__vs.parked')) await btn(5)
+      check(await js('window.__vs.parked'), 'the pad could not park the truck (LT, RB held, RB tap)')
+    }
+    // Not seat(): lessons that land on arrival hold the sim, so its settle would wait on nothing — read them, then settle.
+    const seatRead = async (x, z, h) => {
+      await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
+      check(await until(() => js('window.__seated'), 30000, 250), `teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
+      await readCards(); await simFor(1)
+    }
+    const seatPoi = async (test) => { const p = await js(`(() => { const q = window.__map2d()._getPois().find(${test}); return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`); await seatRead(p.x, p.z, p.h) }
+
+    // The run the opening step left: Start → pause → give up → its confirm → the summary → the main menu.
+    const inRun = await js('getComputedStyle(document.getElementById("run-hud")).display !== "none"')
+    if (!inRun) await js('document.getElementById("pm-story").click()')   // SMOKE_STEPS=boot,pad: free roam, no run to end — the setup page
+    else {
+    await btn(9)
+    check(await until(() => js('document.getElementById("pause-menu").style.display === "flex"'), 2000), 'Start did not pause')
+    await padTo('pm-towel'); await btn(0)
+    check(await until(() => js('document.getElementById("towel-card").style.display === "flex"'), 2000), 'A on "give up" opened no confirm')
+    await padTo('tc-end'); await btn(0)
+    check(await until(() => js('document.getElementById("run-end").style.display === "block"'), 3000), 'the give-up confirm ended nothing')
+    await padTo('re-menu'); await btn(0)
+    check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), 'A on the summary did not reach the main menu')
+    }
+    // A new story run from the menu, the seed left blank (a pad cannot type one: blank is Random).
+    if (inRun) { await padTo('mm-new'); await btn(0) }
+    await padTo('su-start'); await btn(0)
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    check(await until(() => js(live), 45000, 250), 'the pad\'s new run never went live')
+    // The firing: A fills a card, A turns it; View held skips the opening (FEAT-170, pad.skipHold).
+    check(await until(dlg, 3000), 'the pad\'s run did not open on the firing')
+    const txt = () => js('document.getElementById("dlg-text").textContent.slice(0, 40)')
+    const t0 = await txt(); await btn(0); await btn(0); await sleep(200)
+    check(await txt() !== t0, 'A did not turn the firing\'s card')
+    // Read on to mom's first lesson naming a key (her call's M, the drive's W / S): it reads the pad's button, not the keyboard's.
+    const lessonCap = () => js('(k => k && JSON.stringify({ kb: getComputedStyle(k.querySelector(".kc-kb")).display, pad: getComputedStyle(k.querySelector(".kc-pad")).display, key: k.querySelector(".kc-kb").textContent, text: k.querySelector(".kc-pad").textContent }))(document.querySelector("#dlg-text .dlg-key .keycap"))')
+    for (let i = 0; i < 30 && await dlg() && !await lessonCap(); i++) { await btn(0); await sleep(150) }
+    const cap = JSON.parse(await lessonCap() ?? 'null')
+    check(cap && cap.kb === 'none' && cap.pad !== 'none' && /^(RT|LT|View|B|RB)$/.test(cap.text), `a lesson's key does not read the pad's button: ${JSON.stringify(cap)}`)
+    await hold(8, 1400)
+    check(await until(() => js('window.__board().firstState() === "taken"'), 8000), 'holding View did not skip the opening')
+    // The glyphs: the pad drove last, so every keycap reads its button.
+    check(await js('document.body.classList.contains("pad-on")'), 'body.pad-on is off while the pad drives')
+    // The casserole, abandoned through the B menu: its LAST entry, never the pre-selection (no B tap can arm it),
+    // labelled by its words; ↑ wraps to it, the release arms it, a second trip confirms.
+    const pick = async () => {
+      await js('__fp.b[1] = 1'); await frames(4, 200)
+      const first = await js('document.querySelector(".menu-sel")?.id')
+      await btn(12)
+      const r = { first, sel: await js('document.querySelector(".menu-sel")?.id'), label: await js('document.getElementById("hud-menu-label").textContent') }
+      await js('__fp.b[1] = 0'); await frames(4, 200)
+      return r
+    }
+    if (!await js('window.__vs.parked')) await padPark()
+    check(await js('getComputedStyle(document.querySelector("#job-cancel .kc-pad")).display !== "none" && getComputedStyle(document.querySelector("#job-cancel .kc-kb")).display === "none"'),
+      `the abandon button does not show its pad glyph: "${await js('document.getElementById("job-cancel").innerHTML')}"`)
+    const a1 = await pick()
+    check(a1.first !== 'job-cancel' && a1.sel === 'job-cancel' && /abandon job/.test(a1.label), `the B menu's abandon entry: ${JSON.stringify(a1)}`)
+    check(/confirm\?/.test(await js('document.getElementById("job-cancel").textContent')), 'picking "abandon job" did not arm it')
+    await pick()
+    check(await until(() => js('window.__mission().state === "done"'), 3000), 'the second pick did not abandon the casserole')
+    await btn(13); await btn(0)   // the result card: the D-pad puts the highlight on continue, A presses it
+    check(await until(dlg, 3000), 'A on the result card brought no Larry')
+    await readCards()
+    // The inventory through the B menu (its first entry), parked on an open road — at a POI, mom's door included, its
+    // card or pump owns the brake and the park zone's icons are off the menu by design. The quick-slot numbers are
+    // keyboard-only, so they hide.
+    const open = await js(`(() => { const pois = window.__map2d()._getPois()   // the map's list: mom's house included
+      for (const e of window.__roadSys()._network.values()) for (const q of e.points)
+        if (Math.hypot(q.x, q.z) < 1200 && pois.every(o => Math.hypot(o.x - q.x, o.z - q.z) > 150)) return { x: q.x, z: q.z }
+      return null })()`)
+    check(open, 'no open road 150 m from every POI')
+    await seatRead(open.x, open.z, 0); await padPark()
+    const modes = (await client.cmd('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
+      const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => /\\/src\\/gamepad\\.js(\\?|$)/.test(n)))
+      const p = m.pad; return JSON.stringify({ menu: p.menuActive(), card: p.cardActive(), map: p.mapActive(), pump: p.pumpActive(), skip: p.skipHold(), hud: !!p.hudMenu, active: p.active, gp: navigator.getGamepads()[0]?.id,
+        before: ["inv-screen","dmg-screen","svc-screen"].filter(i => document.getElementById(i)?.classList.contains("open")).concat(["camp-panel","mission-panel","paper-panel","scenario-panel","recovery-card"].filter(i => document.getElementById(i)?.style.display === "block")).map(i => i + ": " + document.getElementById(i).innerText.replace(/\\s+/g, " ").slice(0, 100)) }) })()` })).result.result.value
+    await js('__fp.b[1] = 1'); await frames(4, 200)
+    const menu = modes + await js('JSON.stringify({ on: document.body.classList.contains("hud-menu-on"), sel: document.querySelector(".menu-sel")?.id, zone: document.getElementById("park-zone").className, parked: window.__vs.parked, icons: [...document.querySelectorAll("#hud-icons .hud-icon")].map(e => e.id + (e.offsetParent ? "" : "·hidden")), dlg: getComputedStyle(document.getElementById("dialogue-panel")).display, cards: ["inv-screen","dmg-screen","svc-screen"].filter(i => document.getElementById(i)?.classList.contains("open")).concat(["camp-panel","mission-panel","paper-panel","scenario-panel","recovery-card"].filter(i => document.getElementById(i)?.style.display === "block")).map(i => i + ": " + document.getElementById(i).innerText.replace(/\\s+/g, " ").slice(0, 80)) })')
+    await js('__fp.b[1] = 0'); await frames(4, 250)
+    check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 2000), `a B tap did not open the inventory: ${menu}`)
+    check(await js('[...document.querySelectorAll("#inv-screen .inv-slot .keycap")].every(k => getComputedStyle(k).display === "none")'), 'the inventory shows quick-slot keys while the pad drives')
+    await btn(1); check(await until(() => js('!document.getElementById("inv-screen").classList.contains("open")'), 2000), 'B did not close the inventory')
+    // The map (View tap): a giver centred under the pad's cursor pages its offers on LB / RB; B closes it.
+    await btn(8)
+    check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
+    const giver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
+      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
+    check(giver?.n > 1, `no giver with two offers to page: ${JSON.stringify(giver)}`)
+    await js(`(() => { const m = window.__map2d(), s = m._sheet(); for (let i = 0; i < 6; i++) { m._panX += (m._sx(${giver.x}) - s.cx) / m._zoom; m._panZ += (m._sy(${giver.z}) - s.cy) / m._zoom } })()`)
+    await js('__fp.axes[2] = 0.09'); await frames(3, 60); await js('__fp.axes[2] = 0'); await frames(3, 60)
+    const hov = () => js('window.__map2d()._hoverPoi === ' + JSON.stringify(giver.id) + ' && window.__map2d()._hoverIdx')
+    check(await hov() === 0, `the pad cursor is not on the giver (${await js('window.__map2d()._hoverPoi')})`)
+    await btn(5); check(await hov() === 1, 'RB did not page the giver\'s offers'); await btn(4); check(await hov() === 0, 'LB did not page back')
+    await btn(1); check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'B did not close the map')
+    // At the giver, a LONG RB press: the offer card opens under it, and the brake must stay latched (FEAT-125: the
+    // card layout re-sent RB's Space, so the park latched and let go).
+    await seatPoi(`q => q.id === ${JSON.stringify(giver.id)}`)
+    if (await js('window.__vs.parked')) { await btn(5); await frames(4, 200) }
+    await hold(5, 450)
+    check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
+    check(await until(() => js('document.getElementById("mission-panel").style.display === "block"'), 3000), 'parking at the giver opened no offer card')
+    await padTo('mp-decline'); await btn(0)
+    check(await until(() => js('document.getElementById("mission-panel").style.display !== "block"'), 2000), 'A on decline left the offer up')
+    // The pump: A held pumps, RB lets go of the brake and pays.
+    const pz = (await client.cmd('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
+      const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("/src/poi.js")))
+      return m.towSeat(window.__poi().list().find(q => q.pumpZones?.length)) })()` })).result.result.value
+    await js('window.__vs.fuel.gal = 4')
+    await seatRead(pz.x, pz.z, pz.heading); await padPark()
+    check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), 'parking at the pump on the pad opened no pump')
+    const g0 = await js('window.__vs.fuel.gal'), m0 = await js('window.__econ.money')
+    await hold(0, 2500)
+    const g1 = await js('window.__vs.fuel.gal')
+    check(g1 - g0 > 1, `A held 2.5 s pumped ${(g1 - g0).toFixed(2)} gal`)
+    await btn(5)
+    check(await until(() => js(`window.__econ.money < ${m0} - 0.01`), 2000), 'RB at the pump did not pay')
+    // Mom's doorstep: its camp card on the D-pad, the sleep timer's slider on ←/→, B back out of both.
+    await seatPoi("q => q.type === 'momsHouse'"); await padPark(); await readCards()
+    check(await until(() => js('document.getElementById("camp-panel").style.display === "block"'), 3000), 'parking at mom\'s on the pad opened no card')
+    await padTo('cp-sleep'); await btn(0); await padTo('cp-hours')
+    const h0 = await js('+document.getElementById("cp-hours").value'); await btn(15)
+    check(await js('+document.getElementById("cp-hours").value') === h0 + 1, 'D-pad → did not step the sleep slider')
+    await btn(1); await btn(1)
+    check(await until(() => js('document.getElementById("camp-panel").style.display !== "block"'), 2000), 'B twice did not back out of the camp card')
+    await padOff()
+  }],
 ]
 
 const times = []
 let failed = null
+// SMOKE_STEPS=boot,pad runs only those steps (a development aid; a landing runs them all).
+const ONLY = process.env.SMOKE_STEPS?.split(',')
 for (const [name, fn] of STEPS) {
+  if (ONLY && !ONLY.includes(name)) continue
   step = name
   const t0 = performance.now()
   try { await fn() } catch (e) { failed = { step: name, msg: e.message } }
