@@ -10,11 +10,11 @@
 // THE LINE, RE-CUT [owner, 2026-09-30 — SM-INV-4 amended; supersedes the 2026-08-16 anchors]:
 //   • COMPLETION ALONE PAYS HALF THE MAX. `baseFrac` 0.5 — the guaranteed BASE PAY every offer card
 //     quotes. A job can be failed on time (a D) and still settle it. There is no time limit.
-//   • THE CLOCK EARNS THE OTHER HALF, AS A TIP. The whole tip at the day-1 S threshold (ratio 0.77,
+//   • THE CLOCK EARNS THE OTHER HALF, AS A TIP. The whole tip at the day-1 S threshold (ratio 0.652,
 //     `fullTipRatio`) and faster — the max is a hard ceiling, there is nothing above it. Half the
 //     tip exactly at par (ratio 1.0, the C/D line), so a bare C pays base + 25 % of max = 75 %.
 //     `tipZero` is SOLVED from that, never picked: (z − 1)/(z − fullTipRatio) = 0.5 ⇒
-//     z = 2 − fullTipRatio = 1.23. Between par and z a near-miss D still earns a shrinking tip
+//     z = 2 − fullTipRatio = 1.348. Between par and z a near-miss D still earns a shrinking tip
 //     (the payout stays continuous in ratio — no cliff at the pass line); past z a D is base only.
 //   • k IS THE MAX RATE, anchored to the owner's day-1 numbers on the AVERAGE region-1 job:
 //     completion $5, max $10. The average job is par 180 s = 3 game hours — MEASURED 2026-09-30
@@ -106,13 +106,15 @@ export const ECONOMY_PARAMS = {
     // before the day/region tier. Anchored to the day-1 AVERAGE job — par 180 s (measured), region
     // 1 — completing for $5 and maxing at $10. Pure currency scale: every ratio and relative price
     // is independent of it. (History: 0.30 → 0.24 → 0.024 → 0.0255 as the BREAK-EVEN rate of the
-    // retired line; see the docblock above.)
-    k:            10 / 180,
+    // retired line; see the docblock above.) FEAT-69 (owner, 2026-11-06): PAR_SLACK 1.15 → 1.495 made
+    // that same average job's par 180 × 1.3 = 234 s, so k ÷ 1.3 holds its $5 / $10 — pay at each letter's
+    // line stays put, and only the times move.
+    k:            10 / 234,
 
     // The payout line, as named anchors rather than magic numbers in the formula (module header).
     baseFrac:     0.5,    // completion alone: this share of the max is guaranteed — the card's "Base pay"
-    fullTipRatio: 0.77,   // the whole tip at this ratio and faster — MUST equal RANK_TABLE.time[0].S (gated)
-    tipZero:      1.23,   // where the tip runs out — SOLVED: 2 − fullTipRatio, so par earns half (gated)
+    fullTipRatio: 0.652,  // the whole tip at this ratio and faster — MUST equal RANK_TABLE.time[0].S (gated)
+    tipZero:      1.348,  // where the tip runs out — SOLVED: 2 − fullTipRatio, so par earns half (gated)
     // FEAT-139: health a fragile line eases per km of route, per tier (owner, 2026-10-24: 3 / 2 / 1 points/km).
     fragileLinePerKm: { veryFragile: 0.03, fragile: 0.02, sturdy: 0.01 },
 
@@ -141,9 +143,9 @@ export const ECONOMY_PARAMS = {
         // 2026-10-01). C is par in every region. R2/R3 PROVISIONAL: the owner may tighten them
         // slightly ("I could maybe see wanting to scale timing slightly as well").
         time: [
-            { S: 0.77, A: 0.81, B: 0.87, C: 1.00 },
-            { S: 0.77, A: 0.81, B: 0.87, C: 1.00 },   // PROVISIONAL
-            { S: 0.77, A: 0.81, B: 0.87, C: 1.00 },   // PROVISIONAL
+            { S: 0.652, A: 0.707, B: 0.794, C: 1.00 },   // FEAT-69 rank spread (owner, 2026-11-06; par.js)
+            { S: 0.652, A: 0.707, B: 0.794, C: 1.00 },   // PROVISIONAL
+            { S: 0.652, A: 0.707, B: 0.794, C: 1.00 },   // PROVISIONAL
         ],
         // PIECES DELIVERED, higher is better, per haul cargo (one yard per region, each its own cargo).
         // S = a BRIMMING stock-Ranger bed, MEASURED 2026-10-22 by test/measure-haul-brim.mjs: the game's
