@@ -186,3 +186,23 @@ screen, the sleepy stage and the requisition. So does Larry's welcome after the 
 
 *Owner checks (stage 1):* one new run with the opening on (fired at 6 pm, drive home, sleep at mom's, take
 the casserole in the morning) and one with it off (start at mom's with it in hand; Larry after the drop).
+
+## Built — stage 2 (2026-11-06, feature/run-shape, Lane A; 30e08eb5, 319193bb, b5db188e)
+
+- **Hold M (the pad's View) for 1 s `[DEFAULT]` to skip.** A prompt sits bottom-left the whole time the opening
+  can be skipped (`#skip-hint`, `_eveningLeg()`): "hold M to skip the tutorial" (PLACEHOLDER words), with its
+  key as a keycap (View on the pad). A 2 px `--accent-system` bar fills over the hold.
+- **A tap still opens the map.** While the opening can be skipped, M no longer toggles the map on the press: a
+  release under the second opens it, the hold skips. While a card is up a tap does nothing, and M never
+  advances a card. On the pad, View sends M down on the press and up on the release (`pad.skipHold`). Its
+  1 s hold skips the opening instead of resetting the truck; the D-pad → hold and R still reset.
+- **The skip (`_skipOpening`)** drops whatever card is up and the firing's camera, closes mom's sleep card if
+  open, sleeps the night at hers to 07:00 (`daySystem.sleep`: energy, the meal), posts the casserole, seats the
+  truck on her pad and puts the casserole in hand. This is the stage-1 skip path, now reached by the hold.
+- **No first-use cards after a skip:** `DLG.skipped` joins the seen set, and `_tut` checks it. Larry's welcome +
+  camp text still play after the casserole.
+- **The setup page's opening toggle is retired** (owner 11-06): its row, its button and `_settings.opening`
+  are gone. Every new run opens on the firing.
+- cdp-smoke: `story` holds M through the firing (a real 1.3 s key hold) and lands at mom's with the casserole.
+  `opening` taps M in the evening: the map opens and closes, and the evening stays on. `endings`' new runs
+  skip the same way. pad-e2e no longer looks for the opening row.
