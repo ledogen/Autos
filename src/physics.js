@@ -355,8 +355,8 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   // BUG-108: at the nose the face is the drawn bumper's vertical blade down to its bottom edge, and the
   // approach chamfer starts below it. One 48° ramp from the bumper top to the undercarriage met a 45 cm
   // crate near its foot and pressed it into the road: it wedged and the truck climbed it, 0.98 m/s lost in
-  // one step at 40 mph (4× the momentum bound). Against the blade it is pushed. Approach angle ~45° → ~31°
-  // (a real Ranger is 25–30°).
+  // one step at 40 mph (2× the momentum bound). Against the blade it is pushed (test/strike-hitch.mjs).
+  // Approach angle, the tire-tangent ramp to the hull: 52° → 37° (a real Ranger is 25–30°).
   const slabPart = (z0, z1, topY) => engine.addHull(chassis, [
     -P.slabHalfW, topY, z0, P.slabHalfW, topY, z0,
     -P.slabHalfW, topY, z1, P.slabHalfW, topY, z1,

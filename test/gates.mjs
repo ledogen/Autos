@@ -147,6 +147,8 @@ export const GATES = [
     desc: 'POI marker engine colliders (PoiPhysics) match the wheel-query solid at 4000 probes, and a truck-sized block fired at the trailer stops rigidly with no rebound (Larry\'s house bounce/rim report)' },
   { file: 'tow-seat.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-114: a tow seats the truck clear of where it tows to — poi.js towSeat puts a keyless auto shop\'s seat on the pad\'s road-side strip (in reach, on the pad) and a pump tow in its pump zone; on real physics with the marker\'s colliders the seat matches bare ground (no first-step spin, upright, at rest, same height). The old pad-centre seat perched the truck on the cube' },
+  { file: 'strike-hitch.mjs', subsystem: 'physics', cost: 'fast', extraDeps: ['assets/models/small-crate.glb', 'assets/models/drum-closed.glb'],
+    desc: 'BUG-108: a sleeping demolition target struck at 40 mph (small crate and barrel, dead centre and the wheel line) takes at most 1.25× the momentum bound 2·m·v/M off the truck in ONE step. The collider nose used to be one 48° ramp that pressed the 45 cm crate into the road (2.1× the bound, the truck climbing it); it now has the drawn bumper\'s vertical blade' },
   { file: 'debris-stack.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-36: a stack of barrels settles, holds its footprint, sleeps — and two fresh worlds settle to bit-identical transforms (the pile the throw slice could never test)' },
   { file: 'barrel-cube.mjs', subsystem: 'physics', cost: 'fast', extraDeps: ['assets/models/drum-closed.glb'],

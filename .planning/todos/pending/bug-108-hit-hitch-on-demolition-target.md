@@ -33,9 +33,9 @@ about 0.3 m/s. Anything visibly more is a defect.
 
 ## Acceptance
 
-- [ ] The cause is named (render frame time vs per-step chassis velocity), with numbers.
-- [ ] No one-step chassis velocity loss beyond the momentum bound (+ a margin) across the strike census.
-- [ ] No frame over the `?hitch` threshold at a hit.
+- [x] The cause is named (render frame time vs per-step chassis velocity), with numbers.
+- [x] No one-step chassis velocity loss beyond the momentum bound (+ a margin) across the strike census.
+- [x] No frame over the `?hitch` threshold at a hit.
 - [ ] The owner's drive through a demolition site.
 
 ## Work log — 2026-11-04 (Lane B): render vs physics, measured
@@ -87,3 +87,39 @@ the owner remembers.
 2. **Collider nose fix:** go or no-go. It matches the drawn bumper. It halves the crate wedge, and drums
    hit a little more squarely. It changes how the nose meets the ground on steep transitions; the
    numbers come before it lands.
+
+## Work log — 2026-11-06 (Lane B): the nose fix, built
+
+The owner said "go" on the collider nose (2026-11-06, via the orchestrator). No target or speed details came, so
+this rests on the 11-04 measurements.
+
+- **`src/physics.js`:** a new field, `CHASSIS_PROFILE.bumperLowY = −0.06`. That is the drawn blade's bottom edge,
+  `ranger.py` Z_BUMP0, 0.49 m above the ground at ride height. The nose end of the lower slab hull gains two points
+  there, so its front face is a vertical blade from the bumper top down to 0.49 m, and the approach chamfer starts
+  below it.
+- **Strike census** (`wip/bug-108/census.mjs`), worst single-step drop at 40 mph, before → after:
+
+| Target | Dead centre | Wheel line | Momentum bound |
+|---|---|---|---|
+| small crate | 0.98 → 0.42 m/s | → 0.46 m/s | 0.47 m/s |
+| barrel / open drum | 0.23 → 0.26 | 0.26 | 0.47 |
+| stop sign | 0.14 | 0.14 | 0.34 |
+| barricade | 0.13 → 0.11 | 0.11 | 0.26 |
+
+  Every target at every speed is now under the bound in one step. The barrel rises a little because the blade
+  meets it squarely.
+- **What remains:** a dead-centre crate at 40 mph passes under the blade (the crate is 0.45 m tall, the blade's
+  edge is at 0.49 m) and is run over. That costs 1.06 m/s over the whole second, against a 0.47 bound. It is real
+  contact with the undercarriage spread over many steps, not a one-frame hitch.
+- **Approach angle**, measured as the ramp tangent under the front tire to the hull: 52.2° → 37.1°. A real Ranger is
+  about 25–30°, so the hull is still more forgiving than the truck it draws.
+- **Gates:** every gate a `physics.js` change selects passed (21, including `penetration-failsafe` and
+  `body-contact-energy`). So did `tire-contact` (FEAT-70 kerbs), `damage-bumpstop` (lab-ramp bottoming) and
+  `shift-schedule`.
+- **Identity:** `fingerprint-physics` against main is identical. The blade changes nothing in ordinary driving.
+- **New gate, `test/strike-hitch.mjs`** (physics, fast, 1.2 s):
+  - The small crate and the barrel, struck at 40 mph, dead centre and on the wheel line.
+  - It requires the worst one-step loss to stay ≤ 1.25 × 2·m·v/M.
+  - It passes at 0.89× / 0.96× / 0.55× / 0.55×. Against the old nose it fails: the crate at 1.35× and 1.92×.
+
+**Still owed:** the owner's drive through a demolition site.
