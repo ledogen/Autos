@@ -183,3 +183,14 @@ Tier 1 (four customers) is the right rung: it is the one the owner has driven an
 - Pose tuning for the two descents is the owner's; if world-gen tuning moves the roads, the owner
   will find new places. So: re-extract poses after BUG-67 lands, do not wait on the owner.
 - Best-time persistence landed 11-01 (5f650a47).
+
+## RULED — owner, 2026-11-06 (via the orchestrator, verbatim)
+
+> "if you're asking for scenarios gameplay: start at larry's, briefing should go over the controls for papers but we
+> dont need the expedition camp stuff. all customer counts from the ladder are open from the start. should follow story
+> par for now (which i just ruled an adjustment on)"
+
+- **Start at Larry's.** This supersedes 11-01's assumption that the scenario starts at the spawn.
+- **The briefing covers the paper controls**, without the expedition-camp material.
+- **Every customer count on the ladder (4 … 15) is open from the start**: the player picks the rung.
+- **Par = story par**: main's rank spread (FEAT-69: S +10 %, par +30 %, A/B interpolated).
