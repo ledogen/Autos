@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- FEAT-129: the favicon. The game as software, so the System family: the accent-system token on the
+       card black (UI-STYLE.md). A pickup in profile, faceted like the models: octagon wheels, no curves. -->
+  <rect width="32" height="32" rx="6" fill="#000" fill-opacity="0.86"/>
+  <polygon points="2.5,21.5 2.5,16 3.5,14.5 10,13.6 13,9 18,9 18.6,14 29.5,14 29.5,21.5" fill="#00ff88"/>
+  <polygon points="11.4,13.5 13.9,10.3 16.9,10.3 17.3,13.5" fill="#000" fill-opacity="0.86"/>
+  <polygon points="12.38,23.11 10.11,25.38 6.89,25.38 4.62,23.11 4.62,19.89 6.89,17.62 10.11,17.62 12.38,19.89" fill="#000"/>
+  <polygon points="27.88,23.11 25.61,25.38 22.39,25.38 20.12,23.11 20.12,19.89 22.39,17.62 25.61,17.62 27.88,19.89" fill="#000"/>
+  <polygon points="10.90,22.49 9.49,23.90 7.51,23.90 6.10,22.49 6.10,20.51 7.51,19.10 9.49,19.10 10.90,20.51" fill="#00ff88"/>
+  <polygon points="26.40,22.49 24.99,23.90 23.01,23.90 21.60,22.49 21.60,20.51 23.01,19.10 24.99,19.10 26.40,20.51" fill="#00ff88"/>
+</svg>
