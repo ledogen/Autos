@@ -62,3 +62,21 @@ Generator `wip/turn-back-sign/turn-back-sign.py` (git-excluded until promotion),
   collar would fly off with it. Mass for the TARGET_TYPES row: ply ~3.9 kg + stakes ~1.9 kg ≈ 6 kg.
 - Next: the owner's look (EEVEE renders wait for a free machine), then promote + wire
   (PROP_MODELS × 4, TARGET_TYPES × 4, `reqSigns.targets` group with all four kinds).
+
+**2026-11-06 (Lane C, cargame-a1) — owner: "promote", with the words; promoted and wired (41e883a7).**
+The owner (overnight, through the orchestrator) approved the board and wrote the four words: "keep out",
+"turn back", "beware", "no entry". Lettered in capitals, freehand as before. Paint and ink are our call:
+KEEP OUT black on bare ply, TURN BACK red on white, BEWARE white on red (one line), NO ENTRY black on
+blue-grey.
+
+- Shipped: `assets/models/turn-back-sign.glb` (TURN BACK), `-keep-out`, `-beware`, `-no-entry`, each
+  360 tris, 4 materials, 1 image, 0 inverted of ~2055 rays, bbox 0.93 × 1.30 × 0.13 m. Generator + .blend
+  in `assets/models/src/` (paths from `__file__`; preview and EEVEE review renders go to the
+  git-invisible `wip/turn-back-sign/out/`). Headless:
+  `/Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 --python assets/models/src/turn-back-sign.py -- export render`.
+- Wiring: `PROP_MODELS.turnBackSign / turnBackSignKeepOut / turnBackSignBeware / turnBackSignNoEntry`
+  (one shared box, the whole sign: it only spaces targets on the shoulder); four `TARGET_TYPES` rows at
+  6 kg (`BOARD`, friction 0.6, restitution 0.1; the hull is the whole .glb); `reqSigns.targets` gains
+  `{ kinds: [all four], n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' }`, the old sign
+  line's shape. The crates of flyers and the drums stay on the site beside the boards. Dropping them is
+  the owner's call.
