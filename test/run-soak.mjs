@@ -344,6 +344,8 @@ async function playRun (seedIn) {
   run.seed = await startRun(seedIn)
   let idleH = 0
   for (;;) {
+    // A card queued a beat after the last action (Larry after the casserole) would swallow the next park's Space.
+    if (await until(dlgUp, 800)) await readCards()
     const s = await S()
     run.day = s.day
     if (s.ended) { run.result = s.ended; if (/beat the alpha/.test(s.ended)) run.winDay = s.day; break }
