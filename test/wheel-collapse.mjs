@@ -9,7 +9,8 @@
 //   2. The real stepPhysics on flat ground: that corner drops onto its hub and the hub never turns —
 //      undriven (front) or driven (rear, open diff: the other rear wheel takes the drive).
 //   3. What the truck can still do on it, at full throttle. A collapsed driven (rear) corner strands it;
-//      a collapsed front corner is dragged, and how hard that should be is an open owner call.
+//      a collapsed front corner digs in like a tire (owner, 2026-11-06, feat162-front-drag): stuck
+//      uphill, dragged on the flat.
 //
 // Pure node: the flat-drive harness (the Box3D engine ctx, no THREE scene, no DOM).
 import { DamageModel, DAMAGE_PARAMS as D } from '../src/damage.js'
@@ -76,10 +77,10 @@ console.log(`     5 % grade, front-left   ${(climbF.speed * 3.6).toFixed(1)} km/
 console.log(`     5 % grade, rear-left    ${(climbR.speed * 3.6).toFixed(1)} km/h`)
 ok(rear.speed < 15 / 3.6 && climbR.speed < 15 / 3.6,
     'a collapsed DRIVEN corner strands it: under 15 km/h flat or up 5 % (the open diff spins the good wheel)')
-// A collapsed FRONT corner is steel sliding at ×0.5 of the road's grip on ~2 kN (the corner droops and the
-// load moves to its diagonal): under a kilonewton, which the engine out-pulls. Honest Newton, reported
-// only — whether dragging it should break something is the owner's call (feat162-front-drag).
-ok(front.speed < base.speed, 'a collapsed front corner drags: slower than a healthy truck (reported above)')
+// A collapsed FRONT corner digs in at the road's full grip (owner, feat162-front-drag). The corner droops
+// and its load moves to the diagonal, so it drags ~2 kN: the engine still pulls it on the flat, not up 5 %.
+ok(front.speed > 30 / 3.6 && front.speed < 0.7 * base.speed, 'a collapsed front corner drags on the flat: moving, well under a healthy truck')
+ok(climbF.speed < 15 / 3.6, 'a collapsed front corner is stuck up 5 % (under 15 km/h)')
 
 console.log(fail ? '\nFAIL — the wheel collapse has drifted' : '\nPASS — a written-off wheel collapses onto its hub and is dragged')
 process.exit(fail)

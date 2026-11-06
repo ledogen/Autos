@@ -429,10 +429,12 @@ export const DAMAGE_PARAMS = {
   // COLLAPSES. The rim folds, the tire comes off the bead, and that corner drops onto its hub. The hub
   // can't turn (the folded rim jams it), so the corner is dragged, steel on the road. No spare and no
   // roadside repair = stranded (P2). The contact radius is the folded rim; on the tire law's ~3 cm of
-  // static sink at the full rate (it is steel, not air) the hub rides ~0.15 m up. [DEFAULT]s: the
-  // radius, and the sliding grip as a multiple of the road's (steel on asphalt ≈ 0.5 of a tire's).
+  // static sink at the full rate (it is steel, not air) the hub rides ~0.15 m up. [DEFAULT]: the radius.
+  // The grip is a multiple of the road's. Owner, 2026-11-06 (feat162-front-drag): the folded rim "digs in
+  // like a tire": stuck uphill, drags on the flat. ×1.0 does that (a front at 0: ~68 km/h flat, stuck up
+  // 5 %); bare steel sliding on asphalt (×0.5) let the engine out-pull it at 108 km/h.
   wheelCollapseR:   0.18,    // m
-  wheelCollapseMu:  0.5,
+  wheelCollapseMu:  1.0,
 
   // ── What bends a rim ───────────────────────────────────────────────────────────────────────
   // Two events, no continuous wear: a crash reaching the wheel through the armor (impactWheel

@@ -199,6 +199,9 @@ new wheel at the shop's price.
   5 %; ×1.5 → stuck on the flat. With the radius ground lower, the body takes ground contact through the engine:
   0.10 m → 72 km/h, 0.06 m → 35 km/h. **Owner call `feat162-front-drag` (sent to the orchestrator): dig in like a
   tire [rec.] · 1.5× · keep sliding steel · the complete model.** P1a's landing waits on it.
+  **Answered 2026-11-06:** "digs in like a tire (rec.): stuck uphill, drags on the flat". `wheelCollapseMu` = 1.0.
+  Re-measured: a collapsed front-left does 68.3 km/h flat and 0.2 km/h up 5 % (healthy 139.4); a collapsed
+  rear-left 12.4 / 8.3. `wheel-collapse` §3 now pins both front halves (moving on the flat, stuck up 5 %).
 - Approximation, flagged: the debris-only rim core (BUG-99) stays full size on a collapsed corner. Rocks still
   meet a whole rim there.
 
