@@ -478,3 +478,46 @@ Cleared by Stage 2: 87, 200398059, battery seed 4, 51, 2166453044, and two borde
 quiet machine (`wip/perf-31/thread-bench.mjs`, ≤ 5 % of the network thread; story entry cpu ×4 < 30 s); the
 random-seed leg on `road-clearance`; the before/after sheets. Footprint grew 37 → 49 windows: the owner sees it
 on the sheets.
+
+### Collateral fixed, census 9, the gate leg, and the sheets (2026-11-06, `3735b972` → `1f1e0117`)
+
+**804662785 was forced-join collateral, now gone.** At node `-2,-1,2` main already has two ordinary Ts: legs
+`-2,0,1` (71 m) and `-1,0,0` (70 m) both join `-2,-1,1|-2,-1,2` as their trunk. The forced pair (72 m) sorted ahead
+of them by length and made that trunk a loser, so both Ts were dropped and their legs shipped 4 m apart. Fix
+`3735b972`: a forced join loses every role conflict (it only fills a gap, it never displaces a JOIN), and it is judged
+past the geometric throat, as the gate judges it. Main's runs there are now reproduced exactly. Gates 58/58.
+
+**Census 9: GRAZE 4 over 140 windows, and they are exactly the four owner-call sites, all on main as well.**
+Footprint: 48 of 140 windows changed vs main (87 run keys gone, 143 new; most are T splits re-keying unchanged
+geometry, which the sheets' maps show grey).
+
+| census (140 windows) | GRAZE | changed windows |
+|---|---|---|
+| main | 30 + 1 crossing | — |
+| census 6: Stage 1 + the GRAZE bar | 11 | 37 |
+| census 7: + mid-span on pieces | 8 | 40 |
+| census 8: + both-leg probe, forced join | 5 (one new collateral) | 49 |
+| **census 9: + forced join last in role order** | **4 (the owner's calls)** | **48** |
+
+**The owner's calls** (orchestrator 11-06: leave them, no blind tuning, own shots):
+- **3502246374 (1628, 137):** two legs of node `2,0,1` cross 45 m out, decks 5.1 m apart. No departure builds at all.
+- **1227226248 (−424, −275):** two legs weave for ~200 m. `promote-infeasible`; the shove rung declines (31 m > 30).
+- **2757792661 (−810, 444):** stacked bench. Two legs of node `-2,0,2` run 17–22 m apart for 136 m, one 17.5 m
+  above the other. A T cannot bridge the height, and the re-route never moves.
+- **1276689627 (1336, 338):** stacked bench. Two legs of a T, 21.4 m apart for 32 m, 120 m out, 23.7 m height split.
+
+**Standing gate (`1f1e0117`).** `road-clearance` has a random-seed leg: the first 12 seeds of the census list, built
+as the game builds them, with the GRAZE tier gated at zero and banks reported. Green on the branch (7 banks-only
+pairs); main is red on 3 of the 12 (3532835134 at 3.4 m for 144 m, 3259630675, 3628580736). No pins needed: no
+owner-call site is on these seeds. It adds about 4 min to the gate.
+
+**Sheets** (`wip/bug-105/sheets/shots/`, made by `wip/bug-105/sheets/{shootall.sh, maps.sh, gen-reads.mjs,
+sheet.mjs}`): all 27 sites where main grazes (31 rows, clustered), main (:8000) vs the fix (:3885). Each site gets
+a map (dashed blue = main only, orange = fix only, grey = unchanged, compared by geometry), plus top-down and
+from-the-south frames:
+- `sheet-1-captures.jpg`: the owner's two captures and BUG-104's sites;
+- `sheet-2-census-1..4.jpg`: every other graze main ships;
+- `sheet-3-owner-call.jpg`: the four owner's calls.
+
+**Left before the landing:** the build-time bench in a quiet window (`wip/perf-31/thread-bench.mjs`; ≤ 5 % of the
+network thread; story entry cpu ×4 < 30 s), then the landing with the sheets in front of the owner.
