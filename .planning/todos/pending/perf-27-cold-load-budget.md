@@ -444,3 +444,35 @@ the plan issues jobs (today), and longest-first with the TRUE times, which is th
   fixed.
 - Pump latency: unmeasured, ≤ ~0.5 s by construction (SETTLE_MIN_MS 400 ms + 250 ms poll).
 - "Behind the menu": the owner's call, numbers above.
+
+### Built: the dispatch warm primes pond discs only (`25f2d7fe`, NOT landed; parked 2026-11-06 for the owner's playtest)
+
+**Reseed harness fixed first.** `story-coldload --mode=reseed`, `hitch-report` and `profile` all waited on
+`__road().lastWarm`. Nothing has set `_lastWarmCenter` since PERF-30 (the network builds off-thread), so all three
+hung. `__road()` now reports `netIdle` (the network client has nothing active and nothing queued), and the three
+harnesses wait on it.
+
+**The lever.**
+- What the fixed reseed breakdown showed (cpu ×4, loaded box): the biggest main-thread bucket in the settle was
+  `road.dispatch.warm`, 4.35 s. That is the network client's water warm before each build, over the whole disc box
+  (~13–18 km across with its stream-length margin), and it traced every stream in that box.
+- The worker routes on pond discs only. `wip/perf-27/waterwarm.mjs`, headless 1×: full warm 1.7 s (320 m window) and
+  2.5–4.1 s (region), against 0.3–0.5 s and 0.6–1.1 s for the ponds alone.
+- New `WaterSystem.warmPonds`: cell scans + rim casts over the box with the ponds' own reach margin. The client's
+  hook uses it.
+- Streams near the player stay warmed per frame (±768 m), which is the anti-hitch job.
+- Cache priming only: the discs are byte-identical, and the world cannot change.
+
+**Measured (loaded box, load ~11–13, so indicative only):** reseed at cpu ×4, seed 2623851183:
+`road.dispatch.warm` 4.35 → 1.08 s, `reseed.reseat` 14.6 → 6.3 s, rebuild 15.2 → 6.8 s, entry 18.2 → 9.7 s.
+
+**Gates:** affected 25/25 green.
+
+**NEXT (to land):**
+1. `cdp-smoke` (main.js changed).
+2. `fingerprint-world` vs main, as a formality: headless worldgen never runs the client's warm.
+3. A quiet window: `wip/perf-27/sweep.sh` on random seeds, 1× and 4×, main vs `25f2d7fe`, plus the reseed mode.
+4. Hash to the orchestrator.
+
+**Still open after this:** the settle's other main-thread buckets at 4× (loaded): `frame.physics` ~1.4 s, props
+~1.2 s, render ~1.0 s. Physics stepping behind a loading screen may be a lever; measure in the quiet window first.
