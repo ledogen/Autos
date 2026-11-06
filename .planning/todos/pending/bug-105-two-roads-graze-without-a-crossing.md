@@ -1,7 +1,7 @@
 ---
 id: BUG-105
 type: bug
-status: open
+status: landed — owner's calls open (4 sites)
 severity: major
 opened: 2026-11-03
 source: owner capture /Users/ledogen/Downloads/autos-capture-1793661257788.json (seed 163384989, free roam, mark
@@ -614,3 +614,13 @@ final-plan-only step after the walk, over recorded candidates; role resolution s
 Network hash identical on both sides. The orchestrator's rule (story entry within +2 s of main) is met, and +22 % is
 the recorded cost. Landing: `npm run test:all -- --browser` on the branch with current main merged, then the hash
 goes to the orchestrator.
+
+### Landed (2026-11-06, main `14c6feb6` = `fbad0c59`)
+
+- `npm run test:all -- --browser`: 130/130 on the branch with main `8739d3cb` merged. Solo smoke on main: 23/23, zero
+  console errors.
+- Coverage follow-up `6db8d0c7`: BUG-105 healed `region-pieces`' split seed 3309753130, so BUG-85's filter went
+  unexercised there. Replaced with 229165396, a census random seed whose planners' graph falls in 2 pieces and
+  strands 1.5 km. All checks pass; it still needs landing.
+- **Open: the owner's four calls**, on the sheets page https://claude.ai/artifact/U18febBn14QDM9NiPZBhKB and the
+  tracker. Close this ticket once they are answered and built, or ruled "leave".
