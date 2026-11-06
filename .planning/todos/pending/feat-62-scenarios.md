@@ -259,3 +259,33 @@ deadline, the board keeps times only. Seed 90 is a curated scenario's world by d
    - play the scenario, crash, and restart in it;
    - quit to the menu;
    - and then **Continue must still resume the original run**.
+
+## Built — the paper-route scenario (Spare, 2026-11-06, `feature/spare` `2bbaf7ba` → `1016261a`)
+
+- **Definition:** `data/scenarios.js` has `{ kind: 'paper', id: 'paper-90', seed: '90' }`; the descents default to
+  `kind: 'trial'`. The scenarios page lists the paper route with its best time per rung.
+- **Entry:** `_startPaperScenario` → `_startStory(seed, Classic, gearbox, null, 0, def)` sets `_paperScenario`.
+  Under it:
+  - `clearRun()` is skipped and `_autosave` returns false;
+  - `_endRun` shows the scenario's card (`_paperScenarioOver`) instead of discarding the save;
+  - the seed never re-rolls;
+  - the opening, run intro, Larry's welcome and the camp tutorial are skipped;
+  - save & exit, the towel and the free-roam slot are hidden from the pause menu, and restart is shown.
+- **Go-live:** day 1, 07:00; `runPaper.tier = 3`; seated at Larry's; `paperRouteSystem.open(larry, null, rung)`.
+  `open()` takes an optional starting rung. There is no board offer, so no deadline, and decline is hidden.
+- **Briefing:** `PAPER_ROUTE_INTRO` now also names the pad's throw (right stick aims, RB tap). It plays once per
+  scenario entry, and a restart keeps the dialogue's seen set.
+- **Result:** the paper round's result renders as the scenario card (`#scenario-panel`): time, letter, par and the
+  board for that rung (`Leaderboard` id `paper-90:<n>` through `localStore()`, one key per rung). Restart re-seats
+  at Larry's on the same rung with a fresh truck; main menu is `_backToMenu`. R restarts too. Leaving the region
+  clears the scenario.
+- **Proof:**
+  - `test/paper-scenario.mjs` (registered, heavy): seed 90 plans every rung from Larry's, par 4.2 / 8.2 / 15.0 /
+    19.9 min for 4 / 9 / 12 / 15 customers.
+  - `scenario-route.mjs` skips the paper kind (it has no poses).
+  - `cdp-smoke` step `paperScenario`: save a real run and save & exit → the scenarios page → the paper route; it is
+    seated at Larry's offering "4* 9 12 15", with no time limit, no decline, and the autosave refused. A fatal crash
+    → the scenario card, not the run end; restart without the briefing; a finished result → card + board
+    `paper-90:4`; restart; pause → main menu; the run save is byte-identical at every step; Continue resumes the
+    original run at 0.00 m with its wallet.
+  - First full smoke: PASS, 24 steps, zero console errors.
