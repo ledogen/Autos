@@ -358,10 +358,15 @@ function _exitFreecam () {
  *
  * @param {THREE.PerspectiveCamera} camera — Three.js camera; mutated in-place (position and quaternion/lookAt)
  * @param {object} vehicleState — {position: THREE.Vector3, quaternion: THREE.Quaternion, velocity: THREE.Vector3}
- * @param {number} dt — frame delta time in seconds
+ * @param {number} dt — frame delta time in seconds (wall clock: input, freecam, the look timers)
+ * @param {number} [followDt] — BUG-102: how far the DRAWN truck advanced in sim time this frame. The chase
+ *   follow (its lerp, pitch low-pass and rate caps) runs on it, so the trail is the same in metres at any load.
+ *   It equals `dt` at a healthy frame rate; it falls behind only when the sim does (PERF-32's catch-up budget
+ *   runs it in slow motion, a hold stops it). On the wall clock the spring then pulled in tight around a
+ *   slow-motion truck and dropped back behind it the moment the frame rate recovered.
  * @returns {void}
  */
-export function updateCamera (camera, vehicleState, dt) {
+export function updateCamera (camera, vehicleState, dt, followDt = dt) {
   // Store latest vehicleState reference so the C-key listener can read truck position.
   _lastVehicleState = vehicleState
   const snap = _snapNext   // consumed here, whichever branch below runs
@@ -479,7 +484,7 @@ export function updateCamera (camera, vehicleState, dt) {
       const boost   = swinging ? CHASE_SWING_BOOST : 1
       if (snap) camYaw = bodyYaw
       else {
-        const cap = CHASE_YAW_MAX_RATE * boost * horiz * horiz * dt
+        const cap = CHASE_YAW_MAX_RATE * boost * horiz * horiz * followDt
         camYaw   += Math.max(-cap, Math.min(cap, yawErr))
       }
       const yawQ = _yawQ.setFromAxisAngle(_AXIS_Y, camYaw)
@@ -495,7 +500,7 @@ export function updateCamera (camera, vehicleState, dt) {
       const pitch = Math.max(-CHASE_PITCH_CLAMP, Math.min(CHASE_PITCH_CLAMP,
         Math.asin(Math.max(-1, Math.min(1, _fwd.y))) * (reverseView ? -1 : 1)))
       if (snap) smoothedPitch = pitch
-      else smoothedPitch += (pitch - smoothedPitch) * (1 - Math.exp(-CHASE_PITCH_STIFFNESS * dt))
+      else smoothedPitch += (pitch - smoothedPitch) * (1 - Math.exp(-CHASE_PITCH_STIFFNESS * followDt))
       const tiltQ      = _tiltQ.setFromAxisAngle(_AXIS_X, smoothedPitch * CHASE_PITCH_FOLLOW)
       const goalRot    = yawQ.multiply(tiltQ)  // yaw (world Y) first, then pitch about resulting local X
       const goalOffset = _offset.copy(CHASE_OFFSET_LOCAL).applyQuaternion(goalRot)
@@ -504,7 +509,7 @@ export function updateCamera (camera, vehicleState, dt) {
       // by ~v/CHASE_STIFFNESS metres — which is what leans the view toward the VELOCITY vector at
       // speed and in a slide. That emergent chassis/velocity blend is the feel the owner tuned to;
       // a stiff sideways spring (tried 2026-10-01) killed it and read as "too much chassis lock".
-      const alpha = snap ? 1 : 1 - Math.exp(-CHASE_STIFFNESS * boost * dt)
+      const alpha = snap ? 1 : 1 - Math.exp(-CHASE_STIFFNESS * boost * followDt)
       camera.position.lerp(goalPos, alpha)
 
       // Aim: lookAt gives the target orientation; the camera slerps toward it (the rotational
@@ -514,7 +519,7 @@ export function updateCamera (camera, vehicleState, dt) {
       if (!snap) {
         const ang = _aimFrom.angleTo(camera.quaternion)
         if (ang > 1e-5) {
-          const t = Math.min(1, CHASE_AIM_MAX_RATE * boost * dt / ang)
+          const t = Math.min(1, CHASE_AIM_MAX_RATE * boost * followDt / ang)
           camera.quaternion.copy(_aimFrom.slerp(camera.quaternion, t))
         }
       }

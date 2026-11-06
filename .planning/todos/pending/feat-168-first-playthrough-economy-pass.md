@@ -63,7 +63,7 @@ ALWAYS list, the clutch LSD's stock weight, and the tire prices.
    B-grade driving (two average jobs ≈ $17.80) still clears day 12's $15 of costs, and a run that dawdles
    to day 20 pays 3.3×.
 
-## Reward categories (proposal, the owner's call)
+## Reward categories (RULED 2026-11-05: "take it, with my edits" — built, see the work log)
 
 Today each REWARDS row lists its own `pools` (giver types). That leaves big holes. Brakes, springs,
 shocks, anti-roll bars, the radiator, the headlight, the engine and all camp gear are never a reward
@@ -85,7 +85,7 @@ with no pool edits.
 | drivetrain | the diffs |
 | recovery | quick-jack, hi-lift, zip ties, duct tape |
 | fuel | emergency gas, jerry can |
-| camp | bedroll, pads, air mattress, blanket, sleeping bag |
+| camp | bedroll, pads, air mattress, blanket, sleeping bag; **the tent, shade tarp, awning and cooking kit** (owner 11-06, camp-gear-source "camp + shelf": these four also go on the shop shelf, `STOCK_WEIGHT` + `ITEM_PRICE` `[DEFAULT]`) |
 | food | meals, snacks, the dinner invitation |
 | drink | coffee, energy drink |
 | bed | rubber bed mat (and the bedliner when it exists) |
@@ -153,3 +153,55 @@ Notes for the owner:
   Pay by region alone gives $224 for that job. Regions are post-alpha (FEAT-28 / SM-4), so the gate
   now reports it instead of pinning it; `regionMult` wants a re-cut when regions land.
 - A job accepted before this lands keeps the pay tier it froze at accept (day 7 → 2.31×), once.
+
+**2026-11-06, Lane B — item 3's pick: reward categories, as ruled.** Owner, reward-cats: "good base. leave
+room for some unlikely pulls i.e. residential has a low chance to give car parts \"i happened to find this
+in my garage\", etc. maybe tackle, office, schoole each can have rare rewards too (school lunch?)".
+camp-gear-source (11-06): "camp + shelf".
+
+- Every REWARDS row carries a `cat`; `pools` is gone. `REWARD_CATS` (data/offers.js) lists each giver
+  type's categories. Every carried part WITHOUT a row is a reward with no row: `REWARD_LIST`
+  (src/offer-board.js) adds it under its slot's category (`PART_REWARD_CAT`) at its rarity's gates
+  (`RARITY_GATES`: common B–A, uncommon A–S, rare S). The owner-ruled rows keep their own gates. 62 rewards
+  (was 22).
+- **Off-list pulls:** a giver may carry `rare` categories. `RARE_PULL` 0.1 `[DEFAULT]` of its bonuses draw
+  from them instead (the bottom tenth of the bonus roll, so no new draw). Residence → tires, suspension,
+  engine (the garage, the owner's). Tackle shop → recovery, fuel `[DEFAULT]`. Office → camp `[DEFAULT]`.
+  School → its lunch. The receiver's half (FEAT-67) re-picks from the destination's ordinary categories only.
+- **School lunch** (`schoolLunch`): NEW food, its own category `lunch`, so only the school (and Larry)
+  hands it out. B–A, holds hunger 8 h (the packed lunch's), the packed lunch's bag icon, value $5 — all
+  `[DEFAULT]`. Its desc is a placeholder: **the owner writes its words.**
+- **Camp gear:** blanket, air mattress, shade tarp B–A; sleeping pad, quilt, sleeping bag, tent, awning,
+  cooking kit A–S; deluxe pad S `[DEFAULT]`. The tent, tarp, awning and cooking kit are also shelf stock
+  at weight 1 ("Rarely") for $15 / $6 / $12 / $15 `[DEFAULT]`. The bed layers are rewards only, weighted
+  4 / 4 / 4 / 1 / 1 / 0.25 `[DEFAULT]`. **The bedroll is left out**: every run starts with one and the
+  sleeping bag replaces it, so as a reward it is a dud.
+- **The engine keeps its rarity's B–A** (at weight 0.25 it is about 1 % of the engine category). An
+  S-only engine was the office's one S item, and gates draw evenly among the gates a giver has
+  (GATE_WEIGHTS), so it came out as 23 % of the office's bonuses.
+- Gates: `offer-board` +6 checks (every source has a category; every named category holds a reward;
+  all 47 parts and camp items are a reward at a giver besides Larry; the doctor bonuses; 10.4 % of
+  residence bonuses are garage parts; the school lunch only at the school). `shop-stock` and `inventory`
+  read the category lists.
+
+Census (`wip/feat-168/reward-census.mjs [<root>]`, 300 boards on the real roster, days 1–4; main vs this
+branch; both at BONUS_CHANCE 0.40):
+
+| Giver | Distinct items | Parts among its bonuses |
+|---|---|---|
+| auto shop | 16 → 38 | 77 % → 91 % |
+| work site | 4 → 24 | 35 % → 81 % |
+| gas station | 8 → 19 | 22 % → 60 % |
+| stranded motorist | 6 → 19 | 75 % → 76 % |
+| farm | 7 → 43 | 91 % → 65 % (food + camp joined) |
+| residence | 4 → 41 | 66 % → 53 % (dinner leads; brakes are its parts) |
+| firewood yard | 1 → 15 | 0 % (bed mat → camp gear + recovery) |
+| general store | 2 → 19 | 0 % |
+| office / school / tackle / doctor | 0 → 14 / 5 / 17 / 4 | office 34 % (engine bay) |
+
+Overall: bonuses 27.8 % → 31.9 % of offers (the four silent givers now reward). Offers carrying a part
+stay **12.5 % → 12.4 %**, against 8.0 % before FEAT-168. So the gain over the pre-pass game is the
+chance (0.25 → 0.40); the categories add variety and move parts to the givers that should have them, but
+the farm and residence lose part share to food and camp. Parts are 39 % of bonuses (was 45 %): camp gear
+takes 13.7 %. If parts should rise further, the lever is the table (e.g. drop food from the farm).
+

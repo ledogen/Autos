@@ -57,10 +57,11 @@ export const FIRING = [
     { speaker: 'The manager', text: `I'm letting you go. Leave the hat. And don't come back asking for shifts &mdash; there won't be any.` },
 ]
 
-/** Mom's call, the moment the firing ends: she sends the first job (data/offers.js FIRST_JOB). */
+/** Mom's call, the moment the firing ends: she sends you home for the night (FEAT-170). Her casserole,
+ *  the first job (data/offers.js FIRST_JOB), is the morning's. */
 export const MOM_CALL = [
-    { speaker: 'Mom', text: `Heard about the job, honey. Come by the house &mdash; I made your uncle a casserole and he isn't answering.` },
-    { speaker: 'Mom', text: `Run it over to Larry's for me. He might have work for you. `
+    { speaker: 'Mom', text: `Heard about the job, honey. Come home tonight &mdash; your old bed's made up.` },
+    { speaker: 'Mom', text: `I made your uncle a casserole and he isn't answering. You can run it over in the morning. `
         + `Press <span class="dlg-key">M</span> for the map if you forgot the way home.` },
 ]
 
@@ -86,6 +87,26 @@ export const TUT = {
         + `The day is all the time you've got &mdash; whatever you didn't earn by dark, you didn't earn.` }],
     'tut-camp': [{ speaker: 'Uncle Larry', text: `That's enough good deeds. The expedition camp is taking you on &mdash; `
         + `they've posted what they need. Bring it and you're out of here.` }],
+
+    // FEAT-170 stage 4: the opening's lessons, in mom's voice, in the order they come. PLACEHOLDER words
+    // (Lane A's draft, 2026-11-06; the owner writes them — FEAT-148).
+    // On the drive home: right after her call, halfway there, and near her house (main.js _eveningBeats).
+    'tut-drive': [{ speaker: 'Mom', text: `Drive safe, honey. <span class="dlg-key">W</span> and <span class="dlg-key">S</span> `
+        + `are the gas and the brake, <span class="dlg-key">A</span> and <span class="dlg-key">D</span> steer. Follow the line home.` }],
+    'tut-diag': [{ speaker: 'Mom', text: `If that old truck starts acting funny, stop and press <span class="dlg-key">V</span> `
+        + `to look it over. <span class="dlg-key">Tab</span> shows what you've got with you.` }],
+    'tut-park': [{ speaker: 'Mom', text: `Pull in at mine and stop. A tap of <span class="dlg-key">Space</span> sets the handbrake &mdash; `
+        + `that's parking, and parking is how you get anything done around here.` }],
+    // At hers in the evening, when her sleep card opens.
+    'tut-moms': [
+        { speaker: 'Mom', text: `You can always rest here. It's better than sleeping in the truck.` },
+        { speaker: 'Mom', text: `When you're out late, find flat ground off the road and make camp. A nice spot rests you better than a bad one.` },
+        { speaker: 'Mom', text: `Sleep is how a day ends. Pick how long on the timer &mdash; the bar shows how rested you'll wake up.` },
+    ],
+    // The morning: breakfast at hers (it feeds you), then her card. Its map line plays as her card opens.
+    'tut-breakfast': [{ speaker: 'Mom', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach.` }],
+    'tut-mapcard': [{ speaker: 'Mom', text: `The casserole's ready. Park at mine and look at my card: it shows you the way to Larry's.` }],
+    'tut-map': [{ speaker: 'Mom', text: `You can always open the map with <span class="dlg-key">M</span>.` }],
 }
 
 /** FEAT-148 (owner, 2026-10-31): the midnight overlay's words — the pressure is rising. The owner's lines. */
@@ -100,4 +121,5 @@ export const DLG = {
     runIntro: 'run-intro',
     firing: 'firing',         // FEAT-147 — also how main.js knows the run opened on the firing
     momCall: 'mom-call',
+    skipped: 'opening-skipped',   // FEAT-170: the opening was held-to-skip — no first-use cards this run
 }

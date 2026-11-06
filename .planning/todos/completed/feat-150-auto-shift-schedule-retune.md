@@ -1,13 +1,13 @@
 ---
 id: FEAT-150
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-10-25
 source: owner, 2026-10-25 — "auto trans really struggles to get out of first gear. maybe we should adjust the ratios" · "maybe we should lower the ratio to second a little. also the shift logic seems to prefer to lug 3rd instead of downshifting to 2nd at full throttle even if there is rpm headroom."
 relates: FEAT-23 (drivetrain), FEAT-124 (one shift schedule, throttle-averaged), data/transmissions.js 4r44e, data/ranger.js shift params, test/drivetrain-climb.mjs
 ---
-lane: B → Spare (2026-11-01: Lane B has no session; Spare took it)
+lane: B (back from Spare 2026-11-06, orchestrator; queued after FEAT-162)
 
 # FEAT-150: Automatic shift schedule — hangs in 1st, lugs 3rd instead of kicking down
 
@@ -99,3 +99,34 @@ barrel OFF the path; with the 1→2 shift moved into the contact window it read 
 compares a twin run with the barrel moved aside: 0.114 m/s (new) / 0.139 (old) of chassis velocity off the
 twin, threshold 0.05. Affected suite 71/72 then that test fixed; smoke included.
 
+## Owner, 2026-11-06 (feat150-curve: "leave") — back to Lane B, queued after FEAT-162
+
+"i was just vibing that advice. basically we want a kickdown but we also want overdrive at partial throttle"
+
+- Leave FEAT-124's throttle curve (`shiftThrottleCurve` / `shiftUpLightRPM`) alone.
+- The shift schedule does the work instead:
+  - a kickdown on a deep pedal stab;
+  - the top gear (overdrive) held at partial throttle when cruising.
+
+## Resolution — Lane B, 2026-11-06: the schedule already does both; pinned, nothing changed in the box
+
+The owner ruled "leave" on FEAT-124's curve, so acceptance item 1's "~3000 rpm" is superseded: the box leaves
+1st at the schedule's own point (2850 at 50 % … 4176 at 80 %, Spare's table above). The owner's two wants are
+measured on full physics on the flat and pinned as `test/drivetrain-climb.mjs` scenario 9:
+
+| | measured |
+|---|---|
+| holding 50 / 60 / 70 km/h (a cruise control from rest) | 3rd, 17–21 % pedal, no shift after 40 s |
+| holding 80 / 100 km/h | **overdrive (4th)**, 35 / 44 % pedal, no shift after 40 s |
+| cruising in 4th at 25 % at 65 / 80 / 100 km/h, then floored | **kicks down 4→3 after 0.32 / 0.40 / 0.40 s** |
+| a deep stab short of the floor (from 80 km/h in 4th) | 85 % → 1.10 s, 70 % → 1.65 s (the throttle average, not the kickdown path) |
+
+- **Tried and reverted — the lever if the owner wants overdrive below ~75 km/h.** The 3→4 upshift demands the
+  anti-hunt band on top of the next gear's mirror downshift point, which already carries one. Demanding it only
+  against the plain downshift point (`shiftDownEff`) brought overdrive in at 70 km/h (4th at 1518 rpm). But it
+  also brought back a 1→2→1→2 hunt when lifting off a held floor: the kickdown flag drops, the upshift point
+  falls to the average's, 2nd takes it, and the still-high average holds 2nd's downshift point up. The second
+  band is what blocks that transient. Doing it safely needs the band only on that lift-off. That's a design
+  call, not a tweak.
+- **Kickdown threshold** stays at a pedal of ≥ 95 % held 0.4 s (FEAT-124's anti-feather rule). A "deep stab" at
+  85 % reaches 3rd through the average in about a second.

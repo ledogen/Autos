@@ -288,3 +288,21 @@ kill timed it out).
   Parked for the owner's morning /clear: Lane A (86258763; lands after feat171-round2 + one smoke), Lane B (FEAT-168 item 3
   then FEAT-162 next), and this orchestrator (~500k). Spare is on BUG-105 Stage 1 (graze tier gated at zero, banks reported —
   my call from the owner's two rulings). Lane C idle.
+- **2026-11-06 morning.** The owner /cleared A, B and Spare; all three were resumed with their resume lines (C left idle: no standing session). Lane A filed camp-gear-source (c86ca54f, unlanded, docs only) and is idle until feat171-round2 / feat170-plan are answered. **Landed d4d2ad2d**: Lane B 7ed4fded, FEAT-168 item 3 (reward categories): 31/31 affected, solo smoke 23/23 on main. Tracker: feat162-front-drag added (blocks Lane B's FEAT-162 P1a landing, d8d79492).
+- **2026-11-06 ~09:10 answers.** feat170-plan "all approved" + a map beat + Larry's camp text after the casserole, and feat171-round2's changes (the corner across the whole bag width, the pillow on the corner, one pillow size): both relayed verbatim to Lane A. rank-spread-knock: keep the spread, 10 deeds (the "12 days include the expedition camp missions"); relayed to Lane B to record. asset77-standins: keep both (no code change). Lane B has FEAT-162 P1a+P1b built at bc1bba43 and is ready for a /clear; its landing waits on feat162-front-drag. Tracker v112.
+- **Session names changed 11-06:** Lane A = `A. [afa252]`, Lane B = `B. [6c86f2]`, Spare = `D. [b04a13]` (was cargame-3d), Lane C = `C. [43559c]`. ListAgents also shows offline Remote Control rows that reuse A./B./C., so send with the `[ref]`. Lane B was /cleared and resumed. Until the owner answers feat162-front-drag, it builds P2.
+- **11-06 midday.** Spare's session is now `Spare` (sock 1473). BUG-105 Stages 1+2 are at 723f0d4a: grazes 30 → 5 over 140 windows, 58/58. Told to trace 804662785 (a graze made by the forced join) and the 20–21 m borderline pairs next. The two no-departure tangles go on the sheets as the owner's call. Before the sheets it owes a quiet-window build bench: the orchestrator holds A/B heavy jobs for it. Lane B: FEAT-162 P1+P2 at 2617d0a7. The orchestrator ruled the at-shop gap [DEFAULT]: the 0 km self-tow is no cure; the shop's bench/shelf is. P3 cues next. Landing waits on feat162-front-drag. Lane A: feat171-round3 owed (43d2a6d6); FEAT-170 stage 1 in progress.
+- **11-06 ~10:30, owner away (on mobile, checks in over RC now and then; laptop on power, unlimited compute).** Auto-compact is set to 400k in ~/.claude/settings.json (`autoCompactWindow`). Let lanes run into it rather than waiting on a /clear, and ping the owner if raising it looks wise. Lanes keep working, not waiting. Owner calls queue on the page, and lanes build around them.
+- **11-06 afternoon landings** (each with a solo smoke 23/23 on main):
+  - Lane A 14fd4954: FEAT-170 stage 1, FEAT-171 round 3, PERF-28.
+  - FEAT-138 c03fa062 and FEAT-150 ac2c03dd: cherry-picked alone from feature/machine.
+  - FEAT-170 stage 2 49288514 (pad-e2e ok on --port=8000).
+  - BUG-102 camera 8fb16089…c4fc7fa0 (cherry-picked).
+  - FEAT-170 stages 3–4 + the dialogue word-stream 6099321f.
+  - BUG-54 rock sink e133edd0 + dcfee28e (cherry-picked).
+
+  BUG-105: the quiet-window bench failed at +35 % build time (same world hash). Spare is cutting it, then wants a second short window; its sheets page is https://claude.ai/artifact/U18febBn14QDM9NiPZBhKB (owed: bug105-calls).
+
+  Reassigned: FEAT-138, FEAT-150 and the BUG-54 sink → Lane B; BUG-109 + FEAT-125's open pad items → Lane B (a pad-only audit). Lane A now runs a headless run soak (random seeds to the camp ending). Lane B's FEAT-162 P1–P3 waits only on feat162-front-drag; BUG-115 is on proto/bug-115-cab-mu waiting on bug115-roof.
+
+  Cherry-pick protocol: `git cherry-pick -x <commits>`, amend a "landed alone by the orchestrator" note onto single picks, then affected gates + the solo smoke.

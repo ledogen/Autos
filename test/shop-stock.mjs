@@ -18,8 +18,8 @@ import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE, ALWAYS } fro
 import { STOCK_WEIGHT, REWARD_ONLY } from '../data/stock-weights.js'
 import { PARTS } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
-import { REWARDS } from '../data/offers.js'
-import { pickReward } from '../src/offer-board.js'
+import { REWARD_CATS } from '../data/offers.js'
+import { pickReward, rewardsIn } from '../src/offer-board.js'
 import { mulberry32 } from '../src/seed.js'
 
 let fails = 0
@@ -56,9 +56,9 @@ check('nothing outside the table, nothing reward-only', Object.keys(n).every(id 
 for (const [id, w] of Object.entries(SHELF)) share(`shelf ${id}`, n[id] ?? 0, fills.length, w / W)
 
 // Rewards: every source's pool at every gate, drawn many times, follows the same weights.
-for (const src of [...new Set(REWARDS.flatMap(r => r.pools))]) {
+for (const [src, { cats }] of Object.entries(REWARD_CATS)) {
   for (const gate of ['C', 'B', 'A', 'S']) {
-    const at = REWARDS.filter(r => r.pools.includes(src) && r.gates.includes(gate))
+    const at = rewardsIn(cats, 24 * 30).filter(r => r.gates.includes(gate))
     if (at.length < 2) continue
     const rand = mulberry32(7), N = 40000, got = {}
     for (let i = 0; i < N; i++) { const id = pickReward(at, rand()).id; got[id] = (got[id] ?? 0) + 1 }

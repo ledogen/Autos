@@ -24,7 +24,7 @@ const _noiseBuf = (ctx) => (_noise ??= whiteNoiseBuffer(ctx, 0.5))
 
 /** The grind. `rpm` (engine speed at the miss) sets the rasp rate. Silent unless audio is running. */
 export function playGearGrind (rpm = 2000) {
-  const ctx = getAudioContext()
+  const ctx = getAudioContext(false)
   if (!ctx || ctx.state !== 'running') return
   const t = ctx.currentTime
   const rate = Math.max(140, Math.min(700, rpm / 60 * TEETH))   // Hz — 2000 rpm → ~270 Hz
