@@ -11,6 +11,9 @@ lane: Spare
 
 # BUG-104: two legs of one node lie on top of each other for ~160 m
 
+**Folded into BUG-105 (owner, 2026-11-06: "a hollistic solution for 'roads intersect but dont form a junction'").**
+The plan for both is BUG-105's "The plan" section. This ticket keeps its census and its cause, and closes with BUG-105.
+
 ## What
 
 At seed 10, world (1566, −949), two legs leaving one junction run with their centrelines 5.8 m
