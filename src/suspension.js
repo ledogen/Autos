@@ -233,6 +233,8 @@ export function wheelRunoutOf (corner, params) {
  * @returns {number} radius in metres.
  */
 export function effectiveWheelRadius (corner, vehicleState, params) {
+  const collapsed = params._wheelCollapseR?.[corner]   // FEAT-162: the folded rim, no runout to speak of
+  if (collapsed) return collapsed
   const runout = wheelRunoutOf(corner, params)   // slider + this wheel's damage-driven runout
   if (runout === 0) return params.wheelRadius
   const theta = (vehicleState.wheelPhase && vehicleState.wheelPhase[corner]) || 0

@@ -425,6 +425,14 @@ export const DAMAGE_PARAMS = {
   // src/suspension.js) rather than a handling penalty invented for damage. Ratified: 0.04 m
   // peak-to-peak at zero condition — a wheel so far gone the truck shakes itself apart at speed.
   wheelRunoutAtZero: 0.04,
+  // FEAT-162 (owner, 2026-11-06: "written off wheel should mean after wheel hits 0%"): a wheel at 0
+  // COLLAPSES. The rim folds, the tire comes off the bead, and that corner drops onto its hub. The hub
+  // can't turn (the folded rim jams it), so the corner is dragged, steel on the road. No spare and no
+  // roadside repair = stranded (P2). The contact radius is the folded rim; on the tire law's ~3 cm of
+  // static sink at the full rate (it is steel, not air) the hub rides ~0.15 m up. [DEFAULT]s: the
+  // radius, and the sliding grip as a multiple of the road's (steel on asphalt ≈ 0.5 of a tire's).
+  wheelCollapseR:   0.18,    // m
+  wheelCollapseMu:  0.5,
 
   // ── What bends a rim ───────────────────────────────────────────────────────────────────────
   // Two events, no continuous wear: a crash reaching the wheel through the armor (impactWheel
@@ -1232,7 +1240,7 @@ export class DamageModel {
     if (!params) return
     const mu = params._tireMuScale || (params._tireMuScale = [1, 1, 1, 1])
     // × the fitted tire's grip against the stock one (src/parts.js publishes params._tireGrip per corner).
-    for (let i = 0; i < 4; i++) mu[i] = this.tireMuScale(i) * (params._tireGrip?.[i] ?? 1)
+    for (let i = 0; i < 4; i++) mu[i] = this.collapsed(i) ? DAMAGE_PARAMS.wheelCollapseMu : this.tireMuScale(i) * (params._tireGrip?.[i] ?? 1)
     params._brakeScaleFront  = this.brakeScale(false)
     params._brakeScaleRear   = this.brakeScale(true)
     params._springScaleFront = this.springScale(false)
@@ -1251,7 +1259,11 @@ export class DamageModel {
     // Flat tires: the carcass rate collapses and grip drops. Published as a RATE multiplier so the
     // suspension needs no notion of "flat" at all — it just reads a softer tire.
     const fr = params._tireRateScale || (params._tireRateScale = [1, 1, 1, 1])
-    for (let i = 0; i < 4; i++) fr[i] = this.flat[i] ? DAMAGE_PARAMS.tireFlatRate : 1
+    for (let i = 0; i < 4; i++) fr[i] = this.flat[i] && !this.collapsed(i) ? DAMAGE_PARAMS.tireFlatRate : 1
+    // FEAT-162: a collapsed wheel's contact radius, 0 while it stands (src/suspension.js effectiveWheelRadius;
+    // physics.js locks its spin). The full rate above: the folded rim is steel, not air.
+    const cr = params._wheelCollapseR || (params._wheelCollapseR = [0, 0, 0, 0])
+    for (let i = 0; i < 4; i++) cr[i] = this.collapsed(i) ? DAMAGE_PARAMS.wheelCollapseR : 0
     // Per-wheel out-of-round, in metres peak-to-peak. Added to the params.wheelRunout slider so
     // that slider stays usable on its own as a test tool with damage off.
     const ro = params._wheelRunout || (params._wheelRunout = [0, 0, 0, 0])
@@ -1291,6 +1303,11 @@ export class DamageModel {
    * ratified 0.04 m. The manual `params.wheelRunout` slider adds on top so it keeps working as a
    * standalone test tool when damage is off.
    */
+  /** FEAT-162: has this wheel collapsed? Written off = exactly 0 (Lives mode floors above it). */
+  collapsed (wheelIndex) {
+    return this.get(WHEEL_IDS[wheelIndex]) <= 0
+  }
+
   wheelRunout (wheelIndex, params = this.params) {
     const c = this.get(WHEEL_IDS[wheelIndex])
     return ((params && params.wheelRunout) || 0) + (1 - c) * DAMAGE_PARAMS.wheelRunoutAtZero
