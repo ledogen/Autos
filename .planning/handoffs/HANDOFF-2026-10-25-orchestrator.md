@@ -306,3 +306,4 @@ kill timed it out).
   Reassigned: FEAT-138, FEAT-150 and the BUG-54 sink → Lane B; BUG-109 + FEAT-125's open pad items → Lane B (a pad-only audit). Lane A now runs a headless run soak (random seeds to the camp ending). Lane B's FEAT-162 P1–P3 waits only on feat162-front-drag; BUG-115 is on proto/bug-115-cab-mu waiting on bug115-roof.
 
   Cherry-pick protocol: `git cherry-pick -x <commits>`, amend a "landed alone by the orchestrator" note onto single picks, then affected gates + the solo smoke.
+- **BUG-105 landed 14c6feb6** (11-06): the merge equals Spare's tested fbad0c59 (test:all --browser 130/130), and the solo smoke on main passed 23/23. GRAZE 30 → 4; cost: network thread +22 %, story entry +0.6 s at cpu ×4. Spare's next queue: the BUG-69 case study, FEAT-62, BUG-112, plus a new BUG-85 seed for region-pieces.
