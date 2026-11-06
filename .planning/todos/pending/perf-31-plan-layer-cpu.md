@@ -152,3 +152,39 @@ discovery bound (`censusChordM` 300 m) — over the battery, 3627 partner routes
 only 149 bear a crossing; tightening the bound to 50 m would keep 146/149 while still routing
 3339 of the 3478 empty probes, i.e. the bound is not what makes them empty. The waste is the
 probe set itself, which is a route-reuse question (FEAT-76), not a threshold question.
+
+## W4 — plan-layer CPU on the network thread, WORLD UNCHANGED (2026-11-06, `feature/spare`)
+
+After W2 the network thread no longer routes, so its cost is the plan layer itself. Profiled
+thread-only (`routeEdgeV2` and idle excluded; `--cpu-prof` on the worker path, three 1400 m
+windows, seed 6). Every lever below is a pure cache or a proven-safe skip: the world fingerprint
+(`fingerprint-world --compare` vs main `55c8b013`) is **ALL IDENTICAL after each commit**, and the
+worker-path network hash stays `f96eb26bd930` throughout. Shares are thread-only CPU shares; the
+ms column is owed (the machine was contended — see "Timing" below).
+
+| commit | lever | count / share before → after |
+|---|---|---|
+| `cef63fff` | one profile solve per centerline per network rev: pass 1 and pass 2 (`_planRev` +0.5) asked the route cache for the same `Centerline` object and re-solved it; memo on the object, a hit replays the infeasible / stub / rung tallies so exported tallies match | `_v2GradePts` 854 → 479 per window (~290 distinct centerlines) |
+| `3c93df56` | `_nearestWithinXZ`: walk a polyline in arc-length jumps — a vertex at distance d proves every point within arc `d − bar` of it is further than the bar (triangle inequality) — and run the full nearest-point scan only where a hit can be near. Predicates carry their bar (`_v2Near` → `reqMax`, throat `max(PROX, reqMax)`; the gap walk's `FLARE`). New fast gate `nearest-within`: 60 000 adversarial queries, 0 wrong; a mutant without the `−bar` fails 5 936 | nearest-point work ~30 % → ~14.6 % |
+| `33a3a1d5` | T probe (`_v2ForkCandidates`): each side sample's trunk hit found once, not once per fork candidate (it was O(candidates × side × trunk) — "O" = order of growth, constants dropped) | `_v2ForkCandidates` 15.5 % → 1.3 % |
+| `c12875ae` | clearance pass walks with the within-skip at 60 m (it already discarded hits past 60 m) | its share of the walk is now the 6.8 % that is genuinely near |
+| `a474e7c1` | T probe builds each departure once per rev (`_v2ProbeDeparture`, memo by side + ladder key); `_v2PromoteOne` / `_v2PromoteMidSpan` still build fresh | departures ~140 → ~85 (= distinct) per window; profile solves 479 → 427 |
+
+What is left on the thread (phase split by process CPU time): warm 79 % (of which the warm-time
+settle pass 44 %), build pass 1 ~0 % (carried memos), pass 2 + assembly 21 %; the route pool burns
+≈ 1.5× the thread's CPU. The thread is now mostly UNIQUE profile solves (`profileSolve` 27 %,
+`_v2GradePts` 34 % inclusive) plus plan logic.
+
+**Declined, with numbers:**
+- **Lever 4, cross-pass merge-plan reuse** — pass 2 + assembly is 21 % of the thread, and reuse
+  needs an exact key over the flipped pin classes plus tally replay. Small prize, intricate fence.
+- **Lazy census** (`_v2PairCensus` 4.4 %) — skipping it moves the exported `infeasible` tally, so
+  the fingerprint fails. Not world-invariant.
+- **Lever 2, tighter margin box for plan-only samples** — changes routes, moves the world.
+  Needs an owner call (priced == built), not a landing.
+- **Route-count cuts** (fewer partners probed) — changes which partners are evaluated; not
+  world-invariant.
+- **Shove `RAMP` hoist, `_registerRun` memo** (2.9 %) — too small to carry.
+
+**Timing: OWED.** The A/B (`wip/perf-31/ab.sh`, alternating main and branch) and story entry at
+`--cpu=4` wait for a free machine; the orchestrator schedules the slot.
