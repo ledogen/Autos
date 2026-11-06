@@ -162,7 +162,7 @@ export const GATES = [
   { file: 'body-contact-energy.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-27: hard body slams honor params.bodyRestitution without amplifying it (sampled-once bias, accumulated-impulse solver, tamed Baumgarte) — no phantom spin/launch, no energy gain, rest stable' },
   { file: 'drivetrain-climb.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
-    desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting' },
+    desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting; FEAT-150: leaves 1st at the schedule point, kicks down with headroom, holds a cruise without hunting and in overdrive from 80 km/h at part throttle, a floored pedal kicks down from 4th within 0.5 s' },
   { file: 'side-slide.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-89: a truck on its side scrubs instead of skating — its down-side tires (no strut load, Pacejka off) carry ~60 % of the weight and now scrub at the tire μ: 15 m/s along its length stops inside 40 m (was 245 m); lying across a 15° slope it holds (< 1 m in 10 s, was 75 m)' },
   { file: 'hilift.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
