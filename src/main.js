@@ -1286,6 +1286,7 @@ const PUMP_FLOOR_MS   = 0.5
 let simTime = 0  // accumulated simulation time in seconds; incremented by PHYSICS_DT each physics step
 
 let accumulator = 0
+let _cameraDrawnT = 0   // BUG-102: simTime + accumulator at the last camera update (the chase's clock)
 
 // Subframe render interpolation: track the physics state from immediately before the last step.
 // After the accumulator drains, lerp(prevRender, current, accumulator/PHYSICS_DT) eliminates the
@@ -9993,7 +9994,11 @@ function loop () {
   }
 
   _updateFiringCam(frameTime)   // FEAT-147: the firing's orbit of the burger joint
-  updateCamera(camera, vehicleState, frameTime)
+  // BUG-102: the chase follows the DRAWN truck's clock — the sim time its render pose advanced (simTime plus
+  // the interpolation's residual). Equal to frameTime at a healthy rate; behind it in PERF-32 slow motion or a hold.
+  const drawnT = simTime + accumulator
+  updateCamera(camera, vehicleState, frameTime, Math.max(0, Math.min(MAX_FRAME_TIME, drawnT - _cameraDrawnT)))
+  _cameraDrawnT = drawnT
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
   debrisSystem.update(_renderAlpha)   // FEAT-36: engine → debris meshes, at the truck's render alpha
 

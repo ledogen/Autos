@@ -165,6 +165,8 @@ export const GATES = [
     desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting' },
   { file: 'side-slide.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-89: a truck on its side scrubs instead of skating — its down-side tires (no strut load, Pacejka off) carry ~60 % of the weight and now scrub at the tire μ: 15 m/s along its length stops inside 40 m (was 245 m); lying across a 15° slope it holds (< 1 m in 10 s, was 75 m)' },
+  { file: 'camera-follow-clock.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'BUG-102: the chase camera trails a 25 m/s truck by its 60 fps distance under PERF-32 slow motion and across load recoveries (the follow runs on the drawn truck\'s sim clock; the old wall-clock follow pulled in 3.7 m and dropped back on recovery), never still while the truck moves; bursty clamped frames unchanged' },
   { file: 'hilift.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-138: the hi-lift jack (src/hilift.js) on the real stepPhysics, flat ground — a truck on its side heaved toward upright comes back onto its wheels, cut at the balance point inside the 3 s cap; the 5 s cooldown, a truck on its wheels and an ended run all refuse; from the roof it is on its wheels within two presses' },
   { file: 'abs-stop.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
