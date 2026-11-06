@@ -97,6 +97,13 @@ const HELPERS = `window.__soak = {
     const dx = q.roadX - q.x, dz = q.roadZ - q.z, L = Math.hypot(dx, dz) || 1
     for (let t = 0; t <= Math.min(9, L); t += 0.5) { const x = q.x + dx / L * t, z = q.z + dz / L * t; if (!P.queryContact(x, y, z, 3)) return { x, z, h: Math.atan2(-q.tx, -q.tz) } }
     return { x: q.x, z: q.z, h: Math.atan2(-q.tx, -q.tz) } },
+  // Where a giver's card answers the brake (main.js _inPoiSpot): a haul yard's BED over its drop zone (the bed's
+  // centre sits 1.523 m behind the truck's origin: data/vehicle-models.js bed frontZ/tailZ), inside a PARK box
+  // (the general store's lot), else the pad. Along the zone's long axis, as the pump seat lies (h = yaw − π/2).
+  spot (q) { const box = q.drop ?? q.park; if (!box) return this.pad(q)
+    const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
+    const cx = ox + box.x * cs + box.z * sn, cz = oz - box.x * sn + box.z * cs, h = yaw - Math.PI / 2, k = q.drop ? 1.523 : 0
+    return { x: cx - k * Math.sin(h), z: cz - k * Math.cos(h), h } },
   // poi.js towSeat's pump branch: alongside the island, in its first zone.
   pump (q) { const b = q.pumpZones[0], yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
     return { x: ox + b.x * cs + b.z * sn, z: oz - b.x * sn + b.z * cs, h: yaw - Math.PI / 2 } },
@@ -204,7 +211,7 @@ async function decline () {
 /** Park at the giver, open its card, take offer `o`. False when the card refuses it. */
 async function take (o) {
   step = `take ${o.family}${o.line ? ' line ' + o.line : ''} at ${o.type}`
-  await drive(await js(`window.__soak.pad(window.__soak.poi(${JSON.stringify(o.poi)}))`))
+  await drive(await js(`window.__soak.spot(window.__soak.poi(${JSON.stringify(o.poi)}))`))
   await park()
   if (o.type === 'autoShop' && await until(() => vis('svc-screen'), 3000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
   if (!await until(() => vis('mp-accept'), 5000)) { await skip(o); return false }
@@ -233,7 +240,7 @@ async function finish (o) {
   check(await until(() => js('window.__mission().state === "running"'), 10000), `leaving the start zone did not start the job (state ${await js('window.__mission().state')})`)
   // The stops short of the last (a fetch's pickup, a multi-drop's hand-overs) each end with a park.
   for (let i = 0; m0.legs && i < m0.legs.length - 1; i++) {
-    await drive(await js(`window.__soak.pad(window.__soak.poi(${JSON.stringify(m0.legs[i].poi)}))`))
+    await drive(await js(`window.__soak.spot(window.__soak.poi(${JSON.stringify(m0.legs[i].poi)}))`))
     await park()
     check(await until(() => js(`window.__mission().leg > ${i}`), 5000), `parking at stop ${i + 1} did not hand over (leg ${await js('window.__mission().leg')})`)
   }
@@ -245,7 +252,7 @@ async function finish (o) {
   else {
     const end = await js(`(() => { const m = window.__mission().mission, e = m.legs ? m.legs.at(-1).end : m.end
       const q = window.__soak.pois().find(q => Math.hypot(q.x - e.x, q.z - e.z) < 30)
-      return q ? window.__soak.pad(q) : { ...window.__soak.along(window.__mission().mission.poly.length - 1) } })()`)
+      return q ? window.__soak.spot(q) : { ...window.__soak.along(window.__mission().mission.poly.length - 1) } })()`)
     await seat(end)
   }
   if (!await until(() => js('window.__mission().state === "done"'), 15000)) {
