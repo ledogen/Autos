@@ -108,3 +108,17 @@ other mechanisms:
 - seed 5's legs are 15–22 m apart for the first 100 m, the junction's own ground. A T is forecast but none ships.
 
 Census of the prototype over the 140 windows is running (what clears, GRAZE must stay 4, the footprint).
+
+**Prototype census** (BUG-105's 140 windows, `CarGame-bug69/wip/bug-105/census-p69` vs `census10`):
+
+| | main | 10× junction-leg berth |
+|---|---|---|
+| this ticket's shape (banks, legs of one node, ≥ 10 m height split) | 25 (580 m) | 22 (460 m): 5 cleared, 2 new; worst still 6.2 m short |
+| GRAZE (BUG-105's tier) | 4 | **5**: 2489161098 (308, 1132) new, 15.3 m for 32 m; seed 51 (1809, 18) back (BUG-105's forced-join T no longer forms), 19.9 m for 52 m; 2757792661 cleared |
+| windows whose roads changed | — | **94 of 140** (~150 km re-keyed) |
+
+**Case-study page:** https://claude.ai/artifact/M9S2yYEjKTCNJPZqypBAgt (7 random-seed sites: the shape, what the fix clears,
+what it breaks; generator `wip/bug-69/sheets/gen-page69.mjs`).
+- Recommendation: **leave.** It is the owner's 2026-09-20 read, and BUG-64 (a) covers banks meeting.
+- The choice put to the owner: 1 leave / 2 go with the fix as measured.
+- The prototype stays on `proto/bug-69-past-band` (`474b6d42`) until the owner answers.
