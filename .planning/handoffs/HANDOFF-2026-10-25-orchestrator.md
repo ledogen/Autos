@@ -284,7 +284,7 @@ kill timed it out).
 - **11-06 overnight landings** (each smoke 23/23 on main): burger joint 7aa73ebf · fire pit + generator paths e5134514 ·
   ASSET-77 signs 196bc38d (owner's words) · INFRA-08 9b3ef2b8 (the smoke now runs on sim time; stops "too loaded" past 10×
   idle boot) · BUG-108 862b1663 · favicon 9debc110 · PERF-31 48a80e92 (−40 % network build; 58/58) · FEAT-69 2c1738ac (owner's
-  spread). PERF-28 closed (no regression; audio getter a2d28361 on Lane A's branch). A night-wide test:all runs on main.
+  spread). PERF-28 closed (no regression; audio getter a2d28361 on Lane A's branch). Night-wide test:all on main: 127/127 green.
   Parked for the owner's morning /clear: Lane A (86258763; lands after feat171-round2 + one smoke), Lane B (FEAT-168 item 3
   then FEAT-162 next), and this orchestrator (~500k). Spare is on BUG-105 Stage 1 (graze tier gated at zero, banks reported —
   my call from the owner's two rulings). Lane C idle.
