@@ -229,3 +229,26 @@ While `_eveningLeg()` is on:
 All of it ends at mom's: the sleep (or the skip) ends the evening leg. cdp-smoke `opening` checks that the
 clock holds over 2 s of sim, and that a truck seated 25–45 m off the road sees the hint, presses R, and lands
 within 5 m of the road with the hint gone. Affected gates 8/8.
+
+## Built — stage 4, the lessons (2026-11-06, ea695525; smoke owed — the orchestrator's quiet window)
+
+Mom's cards on the `_tut` queue (each holds the sim while up, plays once per run, never after a skip), every word
+a PLACEHOLDER in `data/dialogue.js TUT` (the owner writes them, FEAT-148):
+
+| Key | When | Says (gist) |
+|---|---|---|
+| `tut-drive` | her call ends | W/S gas and brake, A/D steer, follow the line home |
+| `tut-diag` | halfway home (crow distance, `_eveningBeats` on the run-HUD poll) | V looks the truck over, Tab shows what you carry |
+| `tut-park` | within 150 m of hers `[DEFAULT]` | a tap of Space sets the handbrake; parking is how you do things |
+| `tut-moms` (3) | her sleep card opens in the evening | rest here any time, better than the truck · camping off the road, a nice spot rests you better · the sleep timer and its bar |
+| `tut-breakfast` | the wake, if you slept at hers | eat before you go (its end calls `daySystem.eat(mealHoldH)`: you went to bed at 6, so you wake hungry) |
+| `tut-mapcard` | the wake (anywhere) | the casserole's ready, park at mine and look at my card, it shows the way |
+| `tut-map` | her card opens (an offer with `first`) | "You can always open the map with M" — the owner's map beat; plays after `tut-offer` |
+
+cdp-smoke `opening` reads them off at each beat with `readCards()` (each card takes a fill press and a turn
+press). It checks there are ≥ 2 cards on the way home, ≥ 3 at her sleep card and ≥ 2 in the morning, and that
+breakfast leaves the driver not hungry. Light affected gates 6/6. The heavy ones (world-determinism,
+region-pieces) and the smoke wait for the orchestrator's go.
+
+*Owner checks (stage 4, with stages 1–3):* one full playthrough with the tutorial, one skipping it — the
+ticket's acceptance. Every card's words.
