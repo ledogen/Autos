@@ -4293,7 +4293,7 @@ function _runIntro () {
 }
 
 // ── FEAT-147/170: the opening — the firing, the evening at mom's, the first job, Larry's welcome ──
-// A NEW story run with the setup page's Opening on. The firing is an in-world camera move round the
+// EVERY new story run (the setup page's toggle retired, FEAT-170). The firing is an in-world camera move round the
 // burger joint (the foodVendor POI) with the Story cards over it — no scene art (owner, 2026-11-05) —
 // so the run starts with the truck parked on the joint's lay-by, at 6 pm on DAY 0 (FEAT-170, owner
 // 2026-11-06: the evening is the day before the run's day 1). Mom's call sends you home for the
