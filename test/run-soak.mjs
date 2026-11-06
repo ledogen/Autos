@@ -190,8 +190,10 @@ async function saveAndResume () {
     `the resume changed the run: ${JSON.stringify({ day: before.day, money: before.money, h: before.h })} → ${JSON.stringify({ day: after.day, money: after.money, h: after.h })}`)
 }
 
+// A 0.1 m drop, not the teleport's default 0.5: every seat with a fragile crate aboard was a half-metre fall
+// a driven truck never takes (one soak run broke the camp-gear crate on them).
 async function seat (p) {
-  await js(`window.__seated = false; window.__teleport(${p.x}, ${p.z}, ${p.h}).then(() => { window.__seated = true })`)
+  await js(`window.__seated = false; window.__teleport(${p.x}, ${p.z}, ${p.h}, 0.1).then(() => { window.__seated = true })`)
   check(await until(() => js('window.__seated'), 60000, 100), `the teleport to (${p.x.toFixed(0)}, ${p.z.toFixed(0)}) never seated`)
   await simFor(0.6)
 }
