@@ -206,3 +206,26 @@ the casserole in the morning) and one with it off (start at mom's with it in han
 - cdp-smoke: `story` holds M through the firing (a real 1.3 s key hold) and lands at mom's with the casserole.
   `opening` taps M in the evening: the map opens and closes, and the evening stays on. `endings`' new runs
   skip the same way. pad-e2e no longer looks for the opening row.
+
+## Built — the word stream + blip (2026-11-06, 2917fe6e; owner, feat120-blip)
+
+Not a FEAT-170 stage, but it rides the same dialogue: cards type in a word every 80 ms `[DEFAULT]` (laid out
+whole, words hidden, so nothing reflows). The first press, click or pad A fills the card; the next turns it.
+One blip plays when a card is full (`result-audio.js playBlip`, pitch per speaker `[DEFAULT]`). Recorded in
+FEAT-120's "Dialogue text blips" entry. Smoke 23/23.
+
+## Built — stage 3, the safe drive (2026-11-06, de7c6b82)
+
+While `_eveningLeg()` is on:
+- the fixed step skips `daySystem.update`, so the clock, energy (and with it blinks and dozes) and hunger hold;
+- it skips `damageModel.step`, so there is no wear, no impact damage, no puncture and no fatal crash (engine
+  heat holds too);
+- R (the pad's D-pad → hold; View is the skip in the opening) runs `_resetToRoad`: onto the nearest road point
+  facing the truck's way along it (`roadSystem.queryNearest` + the map teleport's `_pickRoadDir`). The spawn
+  re-seat is skipped.
+- The evening's HUD line adds "off the road · R puts you back on it" (PLACEHOLDER words) whenever the truck is
+  off the paved ribbon. `keycap(label, pad)` gained a pad override so the hint shows D-pad → and not View.
+
+All of it ends at mom's: the sleep (or the skip) ends the evening leg. cdp-smoke `opening` checks that the
+clock holds over 2 s of sim, and that a truck seated 25–45 m off the road sees the hint, presses R, and lands
+within 5 m of the road with the hint gone. Affected gates 8/8.
