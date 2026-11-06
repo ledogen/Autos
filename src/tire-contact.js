@@ -30,6 +30,17 @@
  * A hub centre BELOW the ground is a buried wheel, not a contact: the depth there is the half-space
  * measure h + r − cy, unbounded, which is what physics.js's tunnelling failsafe keys on.
  *
+ * A TILTED tire (truck on its side, mid-roll) is solved differently. The lines measure distance to the
+ * axle LINE, unbounded along the axle, so with the axle near the ground normal every line sees the
+ * ground under the hub at ρ ≈ 0: a tire lying on its side read depth ≈ r (0.37 m) at any height, and a
+ * truck rolled onto its side was launched 15 m (2026-11-06, the owner's playtest). Past TILT_LO the
+ * contact blends to the exact solid cylinder against the local ground PLANE — its deepest point,
+ * width included: depth = (w/2)·|n·A| + r·√(1 − (n·A)²) − the hub's height over the plane — and is
+ * that alone past TILT_HI. On smooth ground the two agree to a few mm at TILT_LO, so the blend is
+ * gentle. An upright tire (any slope; the axle lies along the ground) never reaches TILT_LO.
+ * ponytail: a tilted tire reads the ground as the plane under its hub — a kerb under a tire mid-roll is
+ * not seen; a cap-face line solve if that ever matters.
+ *
  * Approximations, flagged (ticket): one contact per surface, the deepest; a feature narrower than the
  * ~12 cm between lines can be missed (rocks are props with their own query); the lines are vertical
  * sections at the axle's horizontal offsets, so a wheel cambered by roll reads its edge lines a few
@@ -42,6 +53,9 @@ const COARSE = 9                         // odd: one sample sits under the hub
 const REFINE = 10                        // golden-section steps per bracket: 18 cm → ≈1.5 mm
 const GOLD = (3 - Math.sqrt(5)) / 2       // 0.382 — the golden section of the larger side
 const _v = new Float64Array(COARSE)
+const TILT_LO = Math.sin(15 * Math.PI / 180)   // |n·A| where the plane solve starts to blend in
+const TILT_HI = Math.sin(35 * Math.PI / 180)   //   …and where it has taken over
+const _line = {}
 
 /**
  * @param {(x: number, z: number) => number} heightAt      ground height
@@ -54,12 +68,34 @@ const _v = new Float64Array(COARSE)
  * @returns {object|null}     `out`, or null when the tire does not touch the ground
  */
 export function tireContact (heightAt, normalAt, cx, cy, cz, r, w, A, out) {
-  const h0 = heightAt(cx, cz)
+  const h0 = heightAt(cx, cz), n = normalAt(cx, cz)
   if (h0 >= cy) {   // buried hub: the half-space measure
-    const n = normalAt(cx, cz)
     out.depth = h0 + r - cy; out.nx = n.x; out.ny = n.y; out.nz = n.z; out.px = cx; out.py = h0; out.pz = cz
     return out
   }
+  const na = n.x * A.x + n.y * A.y + n.z * A.z, t = Math.min(1, Math.max(0, (Math.abs(na) - TILT_LO) / (TILT_HI - TILT_LO)))
+  const k = t * t * (3 - 2 * t)   // smoothstep
+  if (k === 0) return treadContact(heightAt, normalAt, h0, cx, cy, cz, r, w, A, out)
+  // The cylinder's deepest point toward the plane: the cap on the ground's side, the rim's lowest point.
+  const hw = (na > 0 ? -w : w) / 2
+  let ux = n.x - na * A.x, uy = n.y - na * A.y, uz = n.z - na * A.z
+  const ul = Math.hypot(ux, uy, uz), ur = ul > 1e-9 ? -r / ul : 0
+  const qx = cx + hw * A.x + ur * ux, qy = cy + hw * A.y + ur * uy, qz = cz + hw * A.z + ur * uz
+  const dp = n.x * (cx - qx) + n.y * (h0 - qy) + n.z * (cz - qz)
+  const L = k < 1 ? treadContact(heightAt, normalAt, h0, cx, cy, cz, r, w, A, _line) : null
+  const dl = L ? L.depth : 0, depth = (1 - k) * dl + k * dp
+  if (!(depth > 0)) return null
+  const px = qx + dp * n.x, py = qy + dp * n.y, pz = qz + dp * n.z
+  let nx = k * n.x, ny = k * n.y, nz = k * n.z
+  if (L) { nx += (1 - k) * L.nx; ny += (1 - k) * L.ny; nz += (1 - k) * L.nz }
+  const nl = Math.hypot(nx, ny, nz) || 1
+  out.depth = depth; out.nx = nx / nl; out.ny = ny / nl; out.nz = nz / nl
+  out.px = L ? (1 - k) * L.px + k * px : px; out.py = L ? (1 - k) * L.py + k * py : py; out.pz = L ? (1 - k) * L.pz + k * pz : pz
+  return out
+}
+
+/** The three-line tread solve (the docblock above) — the tire near upright. */
+function treadContact (heightAt, normalAt, h0, cx, cy, cz, r, w, A, out) {
   // Rolling direction on the ground: horizontal, perpendicular to the axle's horizontal part.
   const ah = Math.hypot(A.x, A.z) || 1
   const fx = -A.z / ah, fz = A.x / ah

@@ -41,7 +41,7 @@ check('pinned: sleep rates 4/3 and 8/3 (mean 2.0, best exactly 2× worst)',
 check('pinned: hunger ×1.25 → ×1.5 over 4 h, a standard meal holds 8 h', DAY_PARAMS.hungryRate === 1.25
   && DAY_PARAMS.starvingRate === 1.5 && DAY_PARAMS.hungryRampH === 4 && DAY_PARAMS.mealHoldH === 8)
 // Sections 1–9 pin the arithmetic of a FED driver; hunger (section 10) is a rate on top of it.
-const HUNGER = { hungryRate: DAY_PARAMS.hungryRate, starvingRate: DAY_PARAMS.starvingRate }
+const HUNGER = { hungerOn: true, hungryRate: DAY_PARAMS.hungryRate, starvingRate: DAY_PARAMS.starvingRate }
 DAY_PARAMS.hungryRate = DAY_PARAMS.starvingRate = 1
 
 const mkDay = () => {
