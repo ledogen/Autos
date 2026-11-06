@@ -372,3 +372,48 @@ times story's own deps from the page. Built bundle (`vite preview`). Random seed
 
 **Owed:** the same sweep, plus the region bench A/B, in a quiet window. Then the levers, and the "behind the menu"
 numbers.
+
+## 2026-11-06 — QUIET-WINDOW numbers (orchestrator's window, load 2.7–5.2) — these supersede the loaded table above
+
+**Current main `48b6c989` (= `0d7c84c6` + docs), built bundle, three random seeds** (3997014678, 2623851183,
+744309545):
+
+| | 1× | cpu ×4 |
+|---|---|---|
+| free-roam boot: ready / ring | 3.4–3.5 s / 5.0–5.2 s | 5.4–6.4 s (ready) |
+| settle (reseed: spawn resolve + world) | 2.4–3.2 s | 4.0–4.9 s |
+| region warm (worker region build + pumps) | 6.9–7.4 s | 7.4–8.8 s |
+| go-live (POI placement, board, camps) | 0.31 s | 1.2–1.3 s |
+| **story entry (click → driving)** | **11.2–11.5 s** | **17.4–18.2 s** |
+| **cold → driving** | **16.4–16.5 s** | **~28–29 s** |
+
+The loaded table above (44–48 s at 4×) was the box, not the code. Random-seed entry at cpu ×4 is ~17.7 s, under the
+owner's 30 s bar.
+
+**BUG-105's cost on a player's path** (A/B the orchestrator asked for, cpu ×4, alternating per seed):
+- story entry `8739d3cb` → `14c6feb6`: 17.02 → 17.71 s (+0.70 s, +4 %). Main is 17.73 s.
+- Region bench (1× headless, one region): thread 2.87 → 3.04 s (+6 %), pool CPU unchanged, network hash identical.
+- Well inside the orchestrator's 2 s line, so BUG-105 stays.
+
+**The rows, against the 09-22 table:**
+
+| 09-22 row | then | now (1×, quiet) | status |
+|---|---|---|---|
+| Go-live POI placement | 0.9 + 0.3 s | 0.31 s | **CLOSED: under target** |
+| Serial plan layer | ~2.7 s pre-warm + 2.0–2.5 s build | region bench thread ~3.0 s (warm 2.4 + build 0.6) | **CLOSED: met (PERF-31)** |
+| Worker pre-warm, route waves | 5.4–6.2 s | region warm wall 6.9–7.4 s, of which thread ~3 s; pool CPU ~8.5 s / 356 jobs across the nested pool | open: the wave-stall lever (longest-first dispatch) is unmeasured |
+| Spawn resolve | ~2 s | settle 2.4–3.2 s (97 % `reseed.reseat`) | open: ≤ 1 s by its own estimate |
+| Entry pump latency | ~0.5 s | not separable from the region warm wall yet | open: measure (SETTLE_MIN_MS 400 ms + 250 ms poll) |
+| **Build the story world behind the menu** | the whole ~12 s entry | **hides 11.2–11.5 s at 1×, ~17.7 s at cpu ×4** | **owner's call, made cheap below** |
+
+**The "behind the menu" call: what it would cost the menu.** Frame times on the loading screen's own frame loop, while
+the same work runs:
+- 1×: median 60 fps, p95 17 ms, worst single hitch 0.3–0.6 s. The menu truck stays smooth with an occasional
+  half-second stall.
+- cpu ×4: median 60 fps, p95 33–50 ms, worst hitch 1.6–2.3 s, all in the settle. Visible once or twice on a slow
+  machine.
+- The design call stands as framed: free roam's boot world becomes random too, or is built second. The orchestrator
+  takes it to the owner.
+
+**Tools:** `test/story-coldload.mjs` (split + frame times), `wip/perf-27/{sweep.sh, ab105.sh}`,
+`wip/perf-31/region-bench.mjs`.

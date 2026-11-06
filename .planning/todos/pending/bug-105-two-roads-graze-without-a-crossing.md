@@ -624,3 +624,8 @@ goes to the orchestrator.
   strands 1.5 km. All checks pass; it still needs landing.
 - **Open: the owner's four calls**, on the sheets page https://claude.ai/artifact/U18febBn14QDM9NiPZBhKB and the
   tracker. Close this ticket once they are answered and built, or ruled "leave".
+
+**Correction (2026-11-06, PERF-27 quiet window): the acceptance numbers above were taken on seed 6, the boot seed — no
+reseed, warm caches — which is not a player's path.** On random seeds (3997014678, 2623851183, 744309545) at cpu ×4,
+alternating `8739d3cb` (before) / `14c6feb6` (the BUG-105 merge): story entry 17.02 → 17.71 s (+0.70 s, +4 %); region
+bench thread +6 %, network hash identical. Inside the orchestrator's 2 s line — BUG-105 stays. Details: PERF-27.

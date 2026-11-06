@@ -128,6 +128,7 @@ else {
         if (r && typeof r.then === 'function') return r.then((v) => { add(t); return v })
         add(t); return r } }
     window.__phases = [['enter', performance.now()]]; let last = s._phase
+    window.__ft = []; let _lf = performance.now(); const _tick = (t) => { window.__ft.push([t, t - _lf]); _lf = t; if (!window.__ftStop) requestAnimationFrame(_tick) }; requestAnimationFrame(_tick)
     window.__phaseTimer = setInterval(() => { if (s._phase !== last) { last = s._phase; window.__phases.push([last, performance.now()]) } }, 50)
     return true })()`)
   await evalOk(`(window.__story().enter(${JSON.stringify(SEED)}), true)`)
@@ -216,7 +217,7 @@ if (regionAsset) console.log(`  region prefetch ${regionAsset.startMs + regionAs
 console.log('  state at live:', JSON.stringify(state))
 for (const a of assets) console.log(`  asset  ${a.name}  ${a.kb} KB  start ${a.startMs} ms  transfer ${a.durMs} ms`)
 if (MODE === 'story') {
-  const sp = await evalOk(`(() => { clearInterval(window.__phaseTimer); return { st: window.__st, ph: window.__phases } })()`)
+  const sp = await evalOk(`(() => { clearInterval(window.__phaseTimer); window.__ftStop = true; return { st: window.__st, ph: window.__phases, ft: window.__ft } })()`)
   const at = (name) => sp.ph.find(([p]) => p === name)?.[1]
   const t0 = at('enter'), tw = at('warming'), tl = at('live')
   const ms = (v) => v == null ? '—' : `${(v / 1000).toFixed(2)} s`
@@ -225,6 +226,14 @@ if (MODE === 'story') {
   console.log(`    region warm (worker build + pumps)      ${ms(tl - tw - (sp.st.ms.validateRegion ?? 0) - (sp.st.ms.onRegionLive ?? 0))}   [pumps ${sp.st.n.pumpRegionWarm ?? 0} × ${ms((sp.st.ms.pumpRegionWarm ?? 0) / Math.max(1, sp.st.n.pumpRegionWarm ?? 1))}]`)
   console.log(`    seed check                              ${ms(sp.st.ms.validateRegion)}`)
   console.log(`    go-live (POI placement, board, camps)   ${ms(sp.st.ms.onRegionLive)}`)
+  // What a menu drawn on top of this work would feel like: frame times per phase (the loading screen IS a rendered
+  // frame loop), for the "build the story world behind the menu" call.
+  const fps = (a, b) => { const d = sp.ft.filter(([t]) => t >= a && t < b).map(([, dt]) => dt).sort((x, y) => x - y)
+    if (!d.length) return '—'; const q = (f) => d[Math.min(d.length - 1, Math.floor(f * d.length))]
+    return `${d.length} frames, median ${q(0.5).toFixed(0)} ms (${(1000 / q(0.5)).toFixed(0)} fps), p95 ${q(0.95).toFixed(0)} ms, worst ${d.at(-1).toFixed(0)} ms` }
+  console.log(`  frame times while it builds (what a menu on top would get):`)
+  console.log(`    settle        ${fps(t0, tw)}`)
+  console.log(`    region warm   ${fps(tw, tl)}`)
 }
 if (exceptions.length) console.log(`\n  ⚠ ${exceptions.length} page exception(s):\n   ${exceptions.slice(0, 5).join('\n   ')}`)
 
