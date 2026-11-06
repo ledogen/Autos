@@ -132,3 +132,39 @@ variant's nominal radius". So a small variant is buried as if it were 4× its si
 deeper than their bury fraction says, and some vanish entirely. Using the variant's own half-height
 would raise small rocks, medium rocks and litter into view across the whole world. With mesh colliders
 this is purely visual now; it no longer makes invisible collision.
+
+## Follow-up built — the sink by each rock's own size (owner, 2026-11-06, bug54-sink: "go"; Lane B, feature/machine)
+
+- **Change.** `placeBlob` sinks a rock by its variant's OWN drawn radius × axis-y × scale. The scatter can't replay the
+  palette's rng, so `prop-palette.js blobRadii` takes the radii from the baked variants and `PropSystem` hands them to
+  the scatter on its samplers (`blobRadius`).
+  - Only rock, boulder, medRock and smallRock are covered. Bushes keep the category sink (only rocks were ruled; they
+    have the same quirk).
+  - A caller without the radii (older fixtures) gets byte-unchanged placements.
+  - `fingerprint-world` passes the same radii, so it hashes what the game draws.
+- **The prediction above was half wrong.** The old sink used `halfH × (0.5 − bury)`, so an oversized halfH sank rocks
+  whose bury draw was over half, and LIFTED those under half. Small rocks bury 10–40 %, so the old sink raised every
+  one of them; some cleared the ground.
+- **Measured** (`wip/bug-54-sink/floatprobe.mjs`; real terrain, seeds 6, 48213, 90517, 2718, 31337 × 25 chunks; each
+  rock's real mesh posed as drawn):
+
+  | | out of sight, old → new | floats (lowest point above ground) | touches by < 2 cm |
+  |---|---|---|---|
+  | rock (3,863) | 1 → 0 | 1 (3.9 cm) → 0; every rock now ≥ 30 cm in | 1 → 0 |
+  | boulder (5) | 0 → 0 | 0 → 0 | 0 → 0 |
+  | medRock (9,198) | 0 → 0 | 0 → 0 | 0 → 0 |
+  | smallRock (35,094) | 0 → 0 | 5 → 0 | 207 → 4 |
+
+- **Record by record** (60,831 placements): the same placements in the same order. Every field is identical but a
+  rock's y.
+  - rock: 3,863 moved (2,169 up, 1,694 down), by up to 64 cm.
+  - medRock: 9,198 moved (3,025 up, 6,173 down), by up to 3.6 cm.
+  - smallRock: all 35,094 down, by up to 2.9 cm.
+  - boulder: 5 up, by up to 62 cm.
+- **MESH == PHYSICS by construction:** the rock collider (terrain-physics.js `PropPhysics`) is built from the same
+  placement record (y, scale, rotY) and the same variant triangles.
+- **Gate `test/rock-sink.mjs`:** PropSystem wiring; each rock's height within 0.5 − bury of its own size (the old sink
+  fails it); bushes unchanged; posed as drawn, none floats or hides on flat (≥ 1.5 cm in), 45° (≥ 2.2 cm) or 60°
+  (≥ 3.1 cm).
+- **fingerprint-world vs main 6099321f:** 48/54 components identical (network, profiles, junctions, poi, surface, carve,
+  tiles, water in all six windows); props differs in each window, and the record diff above shows it's only rock y.
