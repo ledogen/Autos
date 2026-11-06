@@ -3665,6 +3665,7 @@ const dialogueSystem = new DialogueSystem()
 // reflows as it fills, then shown a word per DLG_WORD_MS on the wall clock — a card that holds the sim still
 // streams. The first press fills it (the advance handlers below), the next one turns it; one blip when full.
 const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
+const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space'])   // FEAT-125: see _renderDialogue
 const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0 }
 /** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order. */
 function _hideWords (el) {
@@ -3713,6 +3714,10 @@ function _renderDialogue () {
   if (sp) sp.textContent = card.speaker
   if (tx && card !== _dlg.card) {   // a new card streams in; a repaint of the same one leaves it be
     tx.innerHTML = card.text
+    // FEAT-125: a key a card names reads the pad's button while the pad drives — the prompts' keycap(). Only keys the
+    // pad has ONE button for: A / D (the stick steers) and F (the stick aims, RB throws) need the card's own pad words,
+    // and a grade or a phrase (B, "ten good deeds") is emphasis, never a key.
+    for (const k of tx.querySelectorAll('.dlg-key')) if (_DLG_PAD_KEYS.has(k.textContent.trim().toLowerCase())) k.innerHTML = keycap(k.textContent.trim())
     clearInterval(_dlg.timer)
     Object.assign(_dlg, { card, words: _hideWords(tx), n: 0, t0: performance.now() })
     _dlg.timer = setInterval(() => _dlgShow(Math.floor((performance.now() - _dlg.t0) / DLG_WORD_MS) + 1), DLG_WORD_MS / 2)

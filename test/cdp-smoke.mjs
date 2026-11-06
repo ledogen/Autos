@@ -1232,6 +1232,11 @@ const STEPS = [
     const txt = () => js('document.getElementById("dlg-text").textContent.slice(0, 40)')
     const t0 = await txt(); await btn(0); await btn(0); await sleep(200)
     check(await txt() !== t0, 'A did not turn the firing\'s card')
+    // Read on to mom's first lesson naming a key (her call's M, the drive's W / S): it reads the pad's button, not the keyboard's.
+    const lessonCap = () => js('(k => k && JSON.stringify({ kb: getComputedStyle(k.querySelector(".kc-kb")).display, pad: getComputedStyle(k.querySelector(".kc-pad")).display, key: k.querySelector(".kc-kb").textContent, text: k.querySelector(".kc-pad").textContent }))(document.querySelector("#dlg-text .dlg-key .keycap"))')
+    for (let i = 0; i < 30 && await dlg() && !await lessonCap(); i++) { await btn(0); await sleep(150) }
+    const cap = JSON.parse(await lessonCap() ?? 'null')
+    check(cap && cap.kb === 'none' && cap.pad !== 'none' && /^(RT|LT|View|B|RB)$/.test(cap.text), `a lesson's key does not read the pad's button: ${JSON.stringify(cap)}`)
     await hold(8, 1400)
     check(await until(() => js('window.__board().firstState() === "taken"'), 8000), 'holding View did not skip the opening')
     // The glyphs: the pad drove last, so every keycap reads its button.
