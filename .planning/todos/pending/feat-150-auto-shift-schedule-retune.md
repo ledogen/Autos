@@ -7,7 +7,7 @@ opened: 2026-10-25
 source: owner, 2026-10-25 — "auto trans really struggles to get out of first gear. maybe we should adjust the ratios" · "maybe we should lower the ratio to second a little. also the shift logic seems to prefer to lug 3rd instead of downshifting to 2nd at full throttle even if there is rpm headroom."
 relates: FEAT-23 (drivetrain), FEAT-124 (one shift schedule, throttle-averaged), data/transmissions.js 4r44e, data/ranger.js shift params, test/drivetrain-climb.mjs
 ---
-lane: B → Spare (2026-11-01: Lane B has no session; Spare took it)
+lane: B (back from Spare 2026-11-06, orchestrator; queued after FEAT-162)
 
 # FEAT-150: Automatic shift schedule — hangs in 1st, lugs 3rd instead of kicking down
 
@@ -99,3 +99,11 @@ barrel OFF the path; with the 1→2 shift moved into the contact window it read 
 compares a twin run with the barrel moved aside: 0.114 m/s (new) / 0.139 (old) of chassis velocity off the
 twin, threshold 0.05. Affected suite 71/72 then that test fixed; smoke included.
 
+## Owner, 2026-11-06 (feat150-curve: "leave") — back to Lane B, queued after FEAT-162
+
+"i was just vibing that advice. basically we want a kickdown but we also want overdrive at partial throttle"
+
+- Leave FEAT-124's throttle curve (`shiftThrottleCurve` / `shiftUpLightRPM`) alone.
+- The shift schedule does the work instead:
+  - a kickdown on a deep pedal stab;
+  - the top gear (overdrive) held at partial throttle when cruising.

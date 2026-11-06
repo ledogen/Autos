@@ -5,7 +5,7 @@ status: open
 severity: minor
 opened: 2026-10-22
 source: owner, 2026-10-22 (item setup page) — items.md §7 "Hi-lift jack" row; FEAT-121 row
-lane: B → Spare (2026-11-01: Lane B has no session; Spare took it)
+lane: B (back from Spare 2026-11-06, orchestrator; queued after FEAT-162)
 relates: SM-3 (recovery), SM-INV-1, FEAT-121 (item tracker), FEAT-137 (shop shelf), src/recovery.js
 ---
 
@@ -96,3 +96,14 @@ mechanic, so it belongs with the parts/recovery work (src/recovery.js), not in t
   side → wheels climb needs, so the truck rolls on through its side onto its wheels. That is the physics,
   not a rule; the gate accepts one or two presses and prints which. A softer landing (mud, a slope) can
   stop it on the side, and then the second press does the rest.
+
+## Owner, 2026-11-06 (feat138-press, no option tapped) — back to Lane B, queued after FEAT-162
+
+"shelf price is good. i tried it on a flipped truck on a level road. it gets some angular momentum up but wasnt
+able to get on its wheels. i propose the torque is held for longer but is scaled down when angular momentum is
+high. basically \"high torque, low speed\" to try to get the flip to be more reliable."
+
+- The $20 shelf price stands.
+- The press becomes a long, gentle push: hold the torque longer, and back it off as the roll rate builds, so the
+  truck walks over its tipping point instead of being flung.
+- Measure the success rate before and after: from the roof and from the side, on the level and on a slope.
