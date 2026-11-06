@@ -16,7 +16,8 @@
 // a sleep that does not move the clock), or a run that never reaches the win.
 // Writes wip/run-soak/<stamp>.json + .txt (wip/ is git-invisible).
 //
-// USAGE: node test/run-soak.mjs [--n=3] [--seeds=a,b,c] [--max-days=30] [--headed]
+// USAGE: node test/run-soak.mjs [--n=3] [--seeds=a,b,c] [--max-days=30] [--headed] [--gate-at-start]
+//   --gate-at-start: the deeds gate open from the first morning (the camp's five lines, straight away)
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -25,6 +26,7 @@ import { cpus, loadavg } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
+import { ECONOMY_PARAMS } from '../src/economy.js'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
@@ -155,6 +157,7 @@ async function startRun (seed) {
   check(await until(dlgUp, 5000), 'the run did not open on the firing')
   await key('m', true); await sleep(1300); await key('m', false)
   check(await until(() => js('window.__board().firstState() === "taken"'), 15000), 'holding M did not skip to the casserole')
+  if (process.argv.includes('--gate-at-start')) await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)   // test the camp's lines first
   await js('window.__autosave()')
   return await js('JSON.parse(localStorage.getItem("autos-run/1")).data.seed')
 }
@@ -222,7 +225,11 @@ function pick (list, h) {
 }
 /** A card that refused an offer (overload, a stock it can't cover yet) is passed over for SKIP_H game hours. */
 const SKIP_H = 2
-const skip = async (o) => { run.skip.set(o.id, (await S()).h + SKIP_H); run.refused++ }
+const skip = async (o, why) => {
+  const st = await S()
+  run.skip.set(o.id, st.h + SKIP_H)
+  run.refusals.push({ day: st.day, h: +st.h.toFixed(2), offer: o.id, family: o.line ?? o.family, giver: o.type, why })
+}
 
 /** Put an open offer card down: its decline button, else Esc; a panel that will not go is a soft-lock. */
 async function decline () {
@@ -237,11 +244,18 @@ async function take (o) {
   await drive(await js(`window.__soak.spot(window.__soak.poi(${JSON.stringify(o.poi)}))`))
   await park()
   if (o.type === 'autoShop' && await until(() => vis('svc-screen'), 3000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
-  if (!await until(() => vis('mp-accept'), 15000)) { await skip(o); if (await js('window.__mission().state') !== 'idle') await decline(); return false }
+  if (!await until(() => vis('mp-accept'), 15000)) {
+    await skip(o, `no card: ${JSON.stringify(await js(`({ state: window.__mission().state, parked: window.__vs.parked, prompt: document.getElementById('poi-prompt')?.textContent ?? '', camp: !!document.getElementById('camp-panel')?.checkVisibility(), pump: !!document.getElementById('pump-display')?.checkVisibility(), svc: !!document.getElementById('svc-screen')?.checkVisibility() })`))}`)
+    if (await js('window.__mission().state') !== 'idle') await decline()
+    return false
+  }
   await readCards()
   for (let i = 0; i < 12 && await js(`window.__mission().offer?.id !== ${JSON.stringify(o.id)}`); i++) { await js('window.__mission().cycle(1)'); await sleep(100) }
   if (!await js(`window.__mission().offer?.id === ${JSON.stringify(o.id)} && !document.getElementById("mp-accept").disabled`)) {
-    await skip(o); await decline(); return false
+    await skip(o, await js(`window.__mission().offer?.id !== ${JSON.stringify(o.id)}
+      ? 'not in the card: ' + JSON.stringify(window.__mission().offers.map(x => x.id))
+      : 'accept disabled: ' + document.getElementById('mp-body').textContent.replace(/\s+/g, ' ').slice(-160)`))
+    await decline(); return false
   }
   await js('document.getElementById("mp-accept").click()')
   check(await until(() => js('["staging", "loading", "running"].includes(window.__mission().state)'), 10000), `accepting did not start the job (state ${await js('window.__mission().state')})`)
@@ -338,7 +352,7 @@ async function sleepNight () {
 }
 
 async function playRun (seedIn) {
-  run = { seed: seedIn, day: 0, speed: 12, driveMin: 0, jobs: [], wakes: [], fuelBuys: [], meals: 0, hungryDays: [], skip: new Map(), refused: 0, notes: [], softlocks: [],
+  run = { seed: seedIn, day: 0, speed: 12, driveMin: 0, jobs: [], wakes: [], fuelBuys: [], meals: 0, hungryDays: [], skip: new Map(), refusals: [], notes: [], softlocks: [],
           gateDay: null, winDay: null, result: null }
   const t0 = performance.now()
   run.seed = await startRun(seedIn)
@@ -412,9 +426,10 @@ client.close(); cleanup()
 
 const perDay = r => { const n = {}; for (const j of r.jobs ?? []) (n[j.day] ??= []).push(j.line ?? j.family); return Object.entries(n).map(([d, f]) => `d${d}: ${f.join(', ')}`).join(' · ') }
 const lines = runs.flatMap(r => [`seed ${r.seed}: ${r.result} · deeds gate day ${r.gateDay ?? '—'} · win day ${r.winDay ?? '—'} · ${r.jobs?.length ?? 0} jobs`
-  + ` · soft-locks ${r.softlocks?.length ?? 0} · refused ${r.refused ?? 0} · hungry days ${JSON.stringify(r.hungryDays ?? [])} · drives ${((r.driveMin ?? 0) / 60).toFixed(1)} game h · ${r.minutes ?? '?'} min wall`,
+  + ` · soft-locks ${r.softlocks?.length ?? 0} · refused ${r.refusals?.length ?? 0} · hungry days ${JSON.stringify(r.hungryDays ?? [])} · drives ${((r.driveMin ?? 0) / 60).toFixed(1)} game h · ${r.minutes ?? '?'} min wall`,
   `  wallet at wakes: ${(r.wakes ?? []).map(w => `d${w.day} $${w.money} (${w.deeds} deeds)`).join(' · ')}`,
   `  jobs: ${perDay(r)}`,
+  ...Object.entries(Object.groupBy(r.refusals ?? [], x => `${x.family} @${x.giver}: ${x.why.slice(0, 140)}`)).map(([k, v]) => `  refused ×${v.length} (first day ${v[0].day}) ${k}`),
   ...(r.softlocks ?? []).map(l => `  SOFT-LOCK day ${l.day} clockH ${l.clockH?.toFixed(2)} at (${l.pos?.x.toFixed(0)}, ${l.pos?.z.toFixed(0)}) in "${l.step}": ${l.why} · mission ${JSON.stringify(l.mission)}`)])
 const out = join(ROOT, 'wip/run-soak'); mkdirSync(out, { recursive: true })
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
