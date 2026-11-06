@@ -331,82 +331,116 @@ export const THINGS = [
 //
 //   id       stable key — never rename once used
 //   name     how the card says it
-//   kind     'food' | 'consumable' | 'tool' | 'part'  (items.md §1 / §2 / §3)
+//   kind     'food' | 'consumable' | 'tool' | 'camp' | 'part'  (items.md §1 / §2 / §2b / §3)
+//   cat      its REWARD CATEGORY (REWARD_CATS below): a giver offers it when the category is on its list
 //   gates    which offer gates it may appear under (see RANK GATES above)
-//   pools    which sources may offer it
 //   dineIn   (optional) true for a meal eaten on the spot at delivery — nothing is stowed.
 //   minDay   (optional) the first run day an offer born then may carry it (FEAT-168).
 //
 // An earned reward is granted into the inventory by its id (FEAT-122) — every id here must be in
 // data/items.js ITEMS (the inventory gate checks), except a dineIn one. Its effect applies only if built.
-
-// Larry's paper route rolls from every pool (owner, 2026-10-31: "give him every item" — the LSD too, it
-// is in several pools already). The rank gates still apply, so papers earns like any job.
+//
+// FEAT-168 (owner, 2026-11-05, reward-cats: "take it, with my edits"): rows carry a CATEGORY, not a
+// giver list. Every vehicle part NOT listed here is a reward too, with no row: src/offer-board.js
+// REWARD_LIST adds it under its slot's category (PART_REWARD_CAT) at its rarity's gates (RARITY_GATES).
+// A row here is an owner-ruled override of those gates. So a new part is a reward wherever its
+// category goes, with no edit to this table.
 export const REWARDS = [
-    { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'],
-      pools: ['foodVendor', 'larrysHouse'] },
-    { id: 'coffee',     name: 'Coffee',      kind: 'consumable', gates: ['C', 'B'],
-      pools: ['foodVendor', 'gasStation', 'larrysHouse'] },
-    { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
+    { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'], cat: 'food' },
+    { id: 'coffee',     name: 'Coffee',      kind: 'consumable', gates: ['C', 'B'], cat: 'drink' },
+    { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
-    { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['B', 'A'],   // mid tier (owner, 2026-10-21)
-      pools: ['gasStation', 'strandedMotorist', 'larrysHouse'] },
+    { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['B', 'A'], cat: 'fuel' },   // mid tier (owner, 2026-10-21)
     // The refillable 5 gal jerry can (items.md §1): the top-tier answer to running dry, so A–S only.
-    { id: 'jerryCan',   name: 'Jerry can',   kind: 'tool',       gates: ['A', 'S'],
-      pools: ['gasStation', 'larrysHouse'] },
-    { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation', 'workSite', 'larrysHouse'] },
+    { id: 'jerryCan',   name: 'Jerry can',   kind: 'tool',       gates: ['A', 'S'], cat: 'fuel' },
+    { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'], cat: 'tires' },
     // The haul yard's rewards (owner, 2026-10-22; items.md §7): the mat is the lesser grip; its
     // friction effect isn't built yet — the item is granted. The bedliner (A–S here) joins the
     // day its thumbnail exists (test/dist-assets.mjs needs assets/items/bedliner.png).
-    { id: 'rubberBedMat', name: 'Rubber bed mat', kind: 'tool', gates: ['B', 'A'],
-      pools: ['firewoodYard', 'larrysHouse'] },
+    { id: 'rubberBedMat', name: 'Rubber bed mat', kind: 'tool', gates: ['B', 'A'], cat: 'bed' },
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
-    { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'],
-      pools: ['autoShop', 'farm', 'larrysHouse'] },
-    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'],
-      pools: ['autoShop', 'strandedMotorist', 'farm', 'larrysHouse'] },
-    { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
-    { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'],
-      pools: ['farm', 'autoShop', 'workSite', 'larrysHouse'] },
-    { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'],
-      pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
-    { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'],
-      pools: ['workSite', 'autoShop', 'farm', 'larrysHouse'] },
-    { id: 'diffClutchLSD', name: 'Clutch-type limited-slip differential', kind: 'part', gates: ['A', 'S'],   // FEAT-166 (owner took the default, 2026-11-06)
-      pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
+    { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'], cat: 'tires' },
+    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'], cat: 'tires' },
+    { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
+    { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'], cat: 'tires' },
+    { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'], cat: 'tires' },
+    { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'], cat: 'suspension' },
+    { id: 'diffClutchLSD', name: 'Clutch-type limited-slip differential', kind: 'part', gates: ['A', 'S'], cat: 'drivetrain' },   // FEAT-166 (owner took the default, 2026-11-06)
     // FEAT-168: a reward only from day 3 (owner, 2026-11-05: "helical lsd reward day 3 onward"); the shelf
     // stocks it every day, at its price × the day tier.
-    { id: 'diffLSD',    name: 'Helical limited-slip differential', kind: 'part', gates: ['S'], minDay: 3,
-      pools: ['autoShop', 'strandedMotorist', 'residence', 'larrysHouse'] },
-    { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'],
-      pools: ['autoShop', 'workSite', 'larrysHouse'] },
+    { id: 'diffLSD',    name: 'Helical limited-slip differential', kind: 'part', gates: ['S'], minDay: 3, cat: 'drivetrain' },
+    { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'], cat: 'tires' },
     // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
-    { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
+    { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'], cat: 'recovery' },
     // FEAT-138: rights a rolled truck. A–S, never a roadside find (owner, 2026-10-24).
-    { id: 'hiLiftJack', name: 'Hi-lift jack', kind: 'tool',     gates: ['A', 'S'],
-      pools: ['autoShop', 'strandedMotorist', 'larrysHouse'] },
-    // The spare air filter (items.md, ratified): a reward from the auto shop and the gas station.
-    { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation', 'larrysHouse'] },
+    { id: 'hiLiftJack', name: 'Hi-lift jack', kind: 'tool',     gates: ['A', 'S'], cat: 'recovery' },
+    // The spare air filter (items.md, ratified).
+    { id: 'airFilterStock', name: 'Air filter', kind: 'part',   gates: ['B', 'A'], cat: 'engine' },
     // Items setup page rulings (owner, 2026-10-20/21).
-    { id: 'energyDrink', name: 'Energy drink', kind: 'consumable', gates: ['C', 'B'],
-      pools: ['gasStation', 'generalStore', 'larrysHouse'] },
-    { id: 'stopLeak',   name: 'Stop-leak',   kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation', 'larrysHouse'] },
-    { id: 'zipTies',    name: 'Zip ties',    kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'larrysHouse'] },
-    { id: 'ductTape',   name: 'Duct tape',   kind: 'consumable', gates: ['B', 'A'],
-      pools: ['autoShop', 'gasStation', 'generalStore', 'larrysHouse'] },
+    { id: 'energyDrink', name: 'Energy drink', kind: 'consumable', gates: ['C', 'B'], cat: 'drink' },
+    { id: 'stopLeak',   name: 'Stop-leak',   kind: 'consumable', gates: ['B', 'A'], cat: 'engine' },
+    { id: 'zipTies',    name: 'Zip ties',    kind: 'consumable', gates: ['B', 'A'], cat: 'recovery' },
+    { id: 'ductTape',   name: 'Duct tape',   kind: 'consumable', gates: ['B', 'A'], cat: 'recovery' },
     // The dinner meal as an invitation (items.md §1d, owner 2026-10-22): the customer feeds you when
     // the job is in: fed like a standard meal (src/day.js mealHoldH, FEAT-169).
-    { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true,
-      pools: ['residence', 'farm', 'foodVendor', 'larrysHouse'] },
+    { id: 'dinnerMeal', name: 'Dinner invitation', kind: 'food', gates: ['C', 'B'], dineIn: true, cat: 'food' },
+    // FEAT-168 (owner, 2026-11-05: "school lunch?"): the school's rare pull, its own category so no
+    // other giver hands one out. NEW — the owner writes its words; gates [DEFAULT].
+    { id: 'schoolLunch', name: 'School lunch', kind: 'food', gates: ['B', 'A'], cat: 'lunch' },
+    // Camp gear (items.md §2b; camp-gear-source, owner 2026-11-06: "camp + shelf"). The bedroll is
+    // left out: every run starts with one and the sleeping bag replaces it. Gates [DEFAULT]: the
+    // bottom rung of a layer B–A, the middle A–S, the top S.
+    { id: 'blanket',     name: 'Blanket',      kind: 'camp', gates: ['B', 'A'], cat: 'camp' },
+    { id: 'airMattress', name: 'Air mattress', kind: 'camp', gates: ['B', 'A'], cat: 'camp' },
+    { id: 'shadeTarp',   name: 'Shade tarp',   kind: 'camp', gates: ['B', 'A'], cat: 'camp' },
+    { id: 'sleepingPad', name: 'Sleeping pad', kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
+    { id: 'quilt',       name: 'Quilt',        kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
+    { id: 'sleepingBag', name: 'Sleeping bag', kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
+    { id: 'tent',        name: 'Tent',         kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
+    { id: 'awning',      name: 'Awning',       kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
+    { id: 'cookingKit',  name: 'Cooking kit',  kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
+    { id: 'deluxeSleepingPad', name: 'Deluxe sleeping pad', kind: 'camp', gates: ['S'], cat: 'camp' },
 ]
+
+/** FEAT-168: the reward category of a vehicle part with no REWARDS row, by its slot (data/parts.js). */
+export const PART_REWARD_CAT = {
+    tire: 'tires', wheel: 'tires', brakesFront: 'brakes', brakesRear: 'brakes',
+    springsFront: 'suspension', springsRear: 'suspension', dampersFront: 'suspension', dampersRear: 'suspension',
+    arbFront: 'suspension', arbRear: 'suspension', lift: 'suspension',
+    engine: 'engine', radiator: 'engine', airFilter: 'engine', headlight: 'engine', diff: 'drivetrain',
+}
+/** FEAT-168: a part's gates from its rarity, unless a REWARDS row overrides them. */
+export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['S'], legendary: ['S'] }
+
+/**
+ * FEAT-168: what each giver type hands out, by category (owner, 2026-11-05: "good base. leave room for
+ * some unlikely pulls"). Keyed by POI type, or a tag (the produce stall is a farm tagged residence).
+ *   cats   the categories an ordinary bonus draws from
+ *   rare   (optional) off-list categories: RARE_PULL of this giver's bonuses draw from them instead.
+ *          The residence's is the owner's ("i happened to find this in my garage"); the tackle shop's
+ *          and the office's are [DEFAULT]; the school's is its lunch.
+ * Larry's paper route rolls from every category (owner, 2026-10-31: "give him every item").
+ */
+const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch']
+export const REWARD_CATS = {
+    autoShop:         { cats: ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery'] },
+    gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires'] },
+    strandedMotorist: { cats: ['tires', 'recovery', 'fuel', 'engine'] },
+    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp'] },
+    workSite:         { cats: ['tires', 'suspension', 'recovery', 'bed'] },
+    firewoodYard:     { cats: ['bed', 'recovery', 'camp'] },
+    residence:        { cats: ['food', 'camp', 'brakes', 'drivetrain'], rare: ['tires', 'suspension', 'engine'] },
+    foodVendor:       { cats: ['food', 'drink'] },
+    generalStore:     { cats: ['food', 'drink', 'camp', 'recovery', 'fuel'] },
+    doctor:           { cats: ['drink', 'food'] },
+    tackleShop:       { cats: ['camp', 'food'], rare: ['recovery', 'fuel'] },
+    office:           { cats: ['drink', 'food', 'engine'], rare: ['camp'] },
+    school:           { cats: ['food', 'drink'], rare: ['lunch'] },
+    larrysHouse:      { cats: ALL_CATS },
+}
+/** 0..1 — FEAT-168 [DEFAULT]: the share of a `rare` giver's bonuses that are an off-list pull. */
+export const RARE_PULL = 0.1
 
 // ── Sources — which POIs post offers (ruled 2026-09-26) ─────────────────────────────────────
 //
@@ -669,6 +703,8 @@ export const BONUS_LEG_MIN_M = 1500
 export const REWARD_VALUE = {
     coffee: 3, energyDrink: 4, chiliDog: 5, dinnerMeal: 5, emergencyGas: 8,
     zipTies: 8, ductTape: 8, stopLeak: 8, rubberBedMat: 8,
+    // FEAT-168 [DEFAULT]: the school lunch and the camp gear the shelf doesn't price
+    schoolLunch: 5, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,
 }
 
 /**

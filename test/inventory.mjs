@@ -16,7 +16,7 @@
 // Pure node: no THREE, no DOM.
 import { InventorySystem, runInventory } from '../src/inventory.js'
 import { ITEMS } from '../data/items.js'
-import { REWARDS } from '../data/offers.js'
+import { REWARD_LIST } from '../src/offer-board.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -138,8 +138,8 @@ check('the deluxe pad goes UNDER the bedroll: +15%, the bedroll stays packed', M
   && inv.packed().join() === 'bedroll,deluxeSleepingPad', `${inv.restBonus()} ${inv.packed()}`)
 
 // ── 7. Catalog ────────────────────────────────────────────────────────────────────────────────
-const missing = REWARDS.filter(r => !r.dineIn && !ITEMS[r.id]).map(r => r.id)
-check('every REWARDS id is in ITEMS', missing.length === 0, missing.join(', '))
+const missing = REWARD_LIST.filter(r => !r.dineIn && !ITEMS[r.id]).map(r => r.id)
+check('every reward id is in ITEMS', missing.length === 0, missing.join(', '))
 const digits = Object.entries(ITEMS).filter(([, it]) => /\d/.test(it.desc)).map(([id]) => id)
 check('no item desc carries a digit (SM-INV-10)', digits.length === 0, digits.join(', '))
 const bad = Object.entries(ITEMS).filter(([, it]) => !(it.massKg > 0) || !it.name).map(([id]) => id)

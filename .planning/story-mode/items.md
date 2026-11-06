@@ -283,7 +283,7 @@ spends daylight, so it can't turn into a chore. Thirst is out (owner, 2026-09-30
   as with every reward (owner), the result card asks *stay for dinner (30 min)* or *decline*; being fed
   waits on hunger), the chili dog
   (10 h, spoils in 16 h), the **packed lunch** (never sold — a $6 reward from homes, farms and the food
-  vendor, B–A; 8 h; fresh 24 h), groceries (§1, cooked at camp: the meal holds 10 h), the **potato** (§1, cooked on the campfire, no kit
+  vendor, B–A; 8 h; fresh 24 h), the **school lunch** (FEAT-168, owner 2026-11-05: "school lunch?" — the school's rare reward, its own category; B–A, 8 h, the packed lunch's bag icon, all [DEFAULT]; the owner writes its words), groceries (§1, cooked at camp: the meal holds 10 h), the **potato** (§1, cooked on the campfire, no kit
   needed; inedible raw; holds 4 h), and four gas-station snacks split from one: **bag of peanuts 3 h × 3, spicy chips
   3 h × 3, candy bar 3 h × 4, gummy worms 2 h × 5** (hold × stack, owner 2026-10-21). All under $5; a C–B
   reward from the gas station (peanuts and gummy worms also the general store); found roadside near gas

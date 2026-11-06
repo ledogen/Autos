@@ -40,8 +40,9 @@
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
-import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine, giverLine } from '../src/offer-board.js'
-import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARDS, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, rewardsIn } from '../src/offer-board.js'
+import { ITEMS } from '../data/items.js'
+import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARD_CATS, RARE_PULL, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -444,15 +445,35 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('a POI drop names the destination POI', cd.sentence.some(r => r.t === b.placeLabel(dest)))
 }
 
+// ── 12d. FEAT-168 reward categories: every giver rewards, every part and camp item is a reward ──
+{
+    const noCats = Object.keys(SOURCES).filter(k => !REWARD_CATS[k]?.cats.length)
+    check('FEAT-168: every source type lists at least one reward category', noCats.length === 0, noCats.join())
+    const used = new Set(REWARD_LIST.map(w => w.cat))
+    const deadCat = Object.values(REWARD_CATS).flatMap(c => [...c.cats, ...(c.rare ?? [])]).filter(c => !used.has(c))
+    check('FEAT-168: every category a giver names holds a reward', deadCat.length === 0, deadCat.join())
+    const given = new Set(Object.entries(REWARD_CATS).filter(([k]) => k !== 'larrysHouse').flatMap(([, c]) => [...c.cats, ...(c.rare ?? [])]))
+    const want = Object.entries(ITEMS).filter(([id, it]) => (it.kind === 'part' || it.kind === 'camp') && id !== 'bedroll').map(([id]) => id)
+    const orphan = want.filter(id => !given.has(REWARD_LIST.find(w => w.id === id)?.cat))
+    check(`FEAT-168: every part and camp item (${want.length}, the bedroll aside) is a reward at some giver besides Larry`, orphan.length === 0, orphan.join())
+}
+
 // ── 13. bonus share ─────────────────────────────────────────────────────────────────────────────
 {
     const count = { foodVendor: [0, 0], doctor: [0, 0], larrysHouse: [0, 0] }
     const lsd = { early: 0, late: 0 }   // helical-LSD bonuses on offers born before / from day 3
+    const catOf = Object.fromEntries(REWARD_LIST.map(w => [w.id, w.cat]))
+    const home = { bonus: 0, garage: 0 }, lunch = { school: 0, elsewhere: 0 }   // FEAT-168 off-list pulls
     for (let seed = 1; seed <= 200; seed++) {
         const b = make(seed)
         for (let t = T0; t < T0 + 24 * 3; t += 2) for (const q of POIS) {
             for (const o of b.offers(q.id, t)) {
-                if (b.spec(o).bonus?.rewardId === 'diffLSD') lsd[o.bornH < 48 ? 'early' : 'late']++
+                const bonus = b.spec(o).bonus
+                if (bonus?.rewardId === 'diffLSD') lsd[o.bornH < 48 ? 'early' : 'late']++
+                if (bonus?.rewardId === 'schoolLunch') lunch[q.type === 'school' ? 'school' : q.type === 'larrysHouse' ? 'larry' : 'elsewhere']++
+                if (bonus && q.type === 'residence') {
+                    home.bonus++; if (REWARD_CATS.residence.rare.includes(catOf[bonus.rewardId])) home.garage++
+                }
                 if (!count[q.type]) continue
                 count[q.type][1]++; if (b.spec(o).bonus) count[q.type][0]++
             }
@@ -462,7 +483,15 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check(`bonus share ≈ ${BONUS_CHANCE * 100} % where the source has rewards`, Math.abs(share - BONUS_CHANCE) < 0.03, share.toFixed(3))
     check(`FEAT-168: no helical LSD reward on an offer born before day 3 (${lsd.early} early, ${lsd.late} from day 3)`,
         lsd.early === 0 && lsd.late > 0)
-    check('no bonus where the source has no rewards (the doctor)', count.doctor[0] === 0)   // residences (dinner) and general stores (duct tape) reward now
+    // FEAT-168 reward categories: every giver rewards now, the doctor included. Below the common share:
+    // half its posts are freight, and a light load carries no item (R-18).
+    const doc = count.doctor[0] / count.doctor[1]
+    check(`FEAT-168: the doctor posts bonuses now (${(doc * 100).toFixed(1)} % of its offers)`, doc > 0.1, doc.toFixed(3))
+    const garage = home.garage / home.bonus
+    check(`FEAT-168: ≈ ${RARE_PULL * 100} % of a residence's bonuses are a garage part (${home.garage}/${home.bonus})`,
+        Math.abs(garage - RARE_PULL) < 0.03, garage.toFixed(3))
+    check(`FEAT-168: the school lunch comes only from the school (or Larry): ${lunch.school} at the school`,
+        lunch.school > 0 && lunch.elsewhere === 0, JSON.stringify(lunch))
     // Larry rolls from (nearly) every reward since 2026-10-31 (owner: "give him every item") — the same share as any source.
     const larry = count.larrysHouse[0] / count.larrysHouse[1]
     check('Larry rolls a bonus at the common share', Math.abs(larry - BONUS_CHANCE) < 0.1, larry.toFixed(3))
@@ -572,7 +601,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 // on a fresh board lands on the same item (FEAT-42 resume).
 {
     const shop = 'poi:9|10'   // the auto shop: rewards at every gate
-    const atShop = (g) => REWARDS.filter(w => w.pools.includes('autoShop') && w.gates.includes(g))
+    const atShop = (g) => rewardsIn(REWARD_CATS.autoShop.cats, 24 * 30).filter(w => w.gates.includes(g))
     let eligible = 0, swapped = 0, offPool = 0, gateMoved = 0, keptFetch = 0, fetches = 0, keptRoad = 0, roads = 0, drift = 0, replays = 0
     for (let seed = 1; seed <= 150; seed++) {
         const b = make(seed)
