@@ -4,6 +4,8 @@
 //   1. The damage model: a wheel at exactly 0 publishes its folded-rim radius, steel grip and the full
 //      (steel) contact rate; at 1 % it still stands. FEAT-94's flat → rim wear (damage-filter-puncture §5)
 //      is how a wheel gets there: ~2 km shreds the flat, ~1 more km at 50 km/h writes the rim off.
+//   1b. …driven all the way (owner, 2026-11-05: "a flat doesn't stop you for a day" must not happen): a
+//      flat at 50 km/h ends in a COLLAPSED wheel within ~1 km of the tire shredding, ~3 km from the pop.
 //   2. The real stepPhysics on flat ground: that corner drops onto its hub and the hub never turns —
 //      undriven (front) or driven (rear, open diff: the other rear wheel takes the drive).
 //   3. What the truck can still do on it, at full throttle. A collapsed driven (rear) corner strands it;
@@ -27,6 +29,22 @@ console.log('§1 the damage model publishes the collapse at exactly 0')
   ok(P._tireMuScale[2] === D.wheelCollapseMu && P._tireRateScale[2] === 1, `steel on the road: grip ×${D.wheelCollapseMu}, the full contact rate (not a flat's air)`)
   d.set('wheelRL', 0.5); d.publish(P)
   ok(P._wheelCollapseR[2] === 0, 'a new wheel (the spare, the shop) stands it back up')
+}
+
+console.log('§1b a flat, driven on, ends in a collapsed wheel')
+{
+  const P = { engineIdleRPM: 750, engineRedlineRPM: 5500 }
+  const d = new DamageModel({ params: P }), DT = 1 / 60, v = 50 / 3.6, vs = { velocity: { x: v, y: 0, z: 0 } }
+  d.setAll(1); d.flat[1] = true
+  let km = 0, shredKm = null
+  while (!d.collapsed(1) && km < 10) {
+    d.step(vs, P, DT); km += v * DT / 1000
+    if (shredKm === null && d.get('tireFR') <= 0) shredKm = km
+  }
+  d.publish(P)
+  ok(d.collapsed(1) && P._wheelCollapseR[1] === D.wheelCollapseR,
+    `the front-right flat at 50 km/h: the tire shreds at ${shredKm?.toFixed(2)} km, the wheel collapses at ${km.toFixed(2)} km`)
+  ok(km - shredKm > 0.5 && km - shredKm < 1.5, `…${(km - shredKm).toFixed(2)} km on the rim (FEAT-94's ~1 km): a flat can't be driven on for a day`)
 }
 
 /** Full throttle for `tMax` s with one corner collapsed. Logs the collapsed hub's spin and height. */
