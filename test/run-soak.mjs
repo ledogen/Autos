@@ -186,10 +186,13 @@ async function offers () {
     }
     return out })()`)
 }
-function pick (list) {
+function pick (list, h) {
   const rank = o => (o.line ? -1000 : FAMILY_ORDER.indexOf(o.family) * 100) + o.d / 1000
-  return list.filter(o => FAMILY_ORDER.includes(o.family) && !run.skip.has(o.id)).sort((a, b) => rank(a) - rank(b))[0] ?? null
+  return list.filter(o => FAMILY_ORDER.includes(o.family) && !(run.skip.get(o.id) > h)).sort((a, b) => rank(a) - rank(b))[0] ?? null
 }
+/** A card that refused an offer (overload, a stock it can't cover yet) is passed over for SKIP_H game hours. */
+const SKIP_H = 2
+const skip = async (o) => { run.skip.set(o.id, (await S()).h + SKIP_H); run.refused++ }
 
 /** Put an open offer card down: its decline button, else Esc; a panel that will not go is a soft-lock. */
 async function decline () {
@@ -204,11 +207,11 @@ async function take (o) {
   await drive(await js(`window.__soak.pad(window.__soak.poi(${JSON.stringify(o.poi)}))`))
   await park()
   if (o.type === 'autoShop' && await until(() => vis('svc-screen'), 3000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
-  if (!await until(() => vis('mp-accept'), 5000)) { run.skip.add(o.id); return false }
+  if (!await until(() => vis('mp-accept'), 5000)) { await skip(o); return false }
   await readCards()
   for (let i = 0; i < 12 && await js(`window.__mission().offer?.id !== ${JSON.stringify(o.id)}`); i++) { await js('window.__mission().cycle(1)'); await sleep(100) }
   if (!await js(`window.__mission().offer?.id === ${JSON.stringify(o.id)} && !document.getElementById("mp-accept").disabled`)) {
-    run.skip.add(o.id); await decline(); return false
+    await skip(o); await decline(); return false
   }
   await js('document.getElementById("mp-accept").click()')
   check(await until(() => js('["staging", "loading", "running"].includes(window.__mission().state)'), 10000), `accepting did not start the job (state ${await js('window.__mission().state')})`)
@@ -305,7 +308,7 @@ async function sleepNight () {
 }
 
 async function playRun (seedIn) {
-  run = { seed: seedIn, day: 0, speed: 12, driveMin: 0, jobs: [], wakes: [], fuelBuys: [], meals: 0, hungryDays: [], skip: new Set(), notes: [], softlocks: [],
+  run = { seed: seedIn, day: 0, speed: 12, driveMin: 0, jobs: [], wakes: [], fuelBuys: [], meals: 0, hungryDays: [], skip: new Map(), refused: 0, notes: [], softlocks: [],
           gateDay: null, winDay: null, result: null }
   const t0 = performance.now()
   run.seed = await startRun(seedIn)
@@ -328,7 +331,7 @@ async function playRun (seedIn) {
       if (s.hungry && !run.hungryDays.includes(s.day)) run.hungryDays.push(s.day)
       if (s.hungry && await eat()) continue
       if (s.fuel < 5 && s.money > 2) { await refuel(); continue }
-      const o = pick(await offers())
+      const o = pick(await offers(), s.h)
       if (!o) {   // nothing takeable: wait an hour for the board to turn over
         idleH++
         check(idleH < 16, `no takeable job for ${idleH} game hours`)
@@ -361,7 +364,7 @@ async function playRun (seedIn) {
     }
   }
   run.minutes = +((performance.now() - t0) / 60000).toFixed(1)
-  run.skip = run.skip.size
+  delete run.skip
   return run
 }
 
@@ -369,7 +372,7 @@ async function playRun (seedIn) {
 const runs = []
 for (const seed of SEEDS) {
   console.log(`run seed ${seed}…`)
-  try { runs.push(await playRun(seed)) } catch (e) { runs.push({ ...run, skip: run?.skip?.size ?? 0, result: `crashed: ${e.message}` }); console.log(`  crashed: ${e.message}`) }
+  try { runs.push(await playRun(seed)) } catch (e) { const r = { ...run, result: `crashed in "${step}": ${e.message}` }; delete r.skip; runs.push(r); console.log(`  ${r.result}`) }
   const r = runs.at(-1)
   console.log(`  → ${r.result} · deeds gate day ${r.gateDay ?? '—'} · win day ${r.winDay ?? '—'} · ${r.jobs?.length ?? 0} jobs · ${r.softlocks?.length ?? 0} soft-locks · ${r.minutes ?? '?'} min`)
 }
