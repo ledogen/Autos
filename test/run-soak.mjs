@@ -91,6 +91,14 @@ const vis = id => js(`!!document.getElementById("${id}")?.checkVisibility()`)
 const dlgUp = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
 async function readCards () {
   for (let i = 0; i < 40 && await dlgUp(); i++) { await tap('Enter'); await sleep(150) }
+  // HARNESS OR GAME? The stuck card's dumps show none of the CDP Enters reaching the page at all (the window-capture
+  // logger saw no keydown). Press from INSIDE the page — a keydown dispatched on document, where the game's dialogue
+  // handler listens — and note which one closed it: a page-side close means the game is sound and the browser's
+  // input pipe dropped the keys; the run goes on. Still stuck after that is a real soft-lock.
+  if (await dlgUp()) {
+    for (let i = 0; i < 40 && await dlgUp(); i++) { await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }))`); await sleep(100) }
+    if (!await dlgUp()) { run.notes.push(`day ${run.day}: a card ignored 40 CDP Enters but closed on page-side keydowns (harness input, not the game)`); return }
+  }
   check(!await dlgUp(), `a dialogue card would not close: ${JSON.stringify(await js(`({ vis: document.visibilityState, focus: document.hasFocus(),
     tickAgoMs: Math.round(performance.now() - (window.__soakTick ?? 0)), simT: window.__simT(), speaker: document.getElementById('dlg-speaker')?.textContent,
     text: document.getElementById('dlg-text')?.textContent.slice(0, 80), more: document.getElementById('dlg-more')?.textContent,
@@ -467,6 +475,7 @@ const lines = runs.flatMap(r => [`seed ${r.seed}: ${r.result} · deeds gate day 
   + ` · soft-locks ${r.softlocks?.length ?? 0} · refused ${r.refusals?.length ?? 0} · hungry days ${JSON.stringify(r.hungryDays ?? [])} · drives ${((r.driveMin ?? 0) / 60).toFixed(1)} game h · ${r.minutes ?? '?'} min wall`,
   `  wallet at wakes: ${(r.wakes ?? []).map(w => `d${w.day} $${w.money} (${w.deeds} deeds)`).join(' · ')}`,
   `  rewards: ${rewards(r)}`,
+  ...(r.notes ?? []).map(n => `  note: ${n}`),
   `  jobs: ${perDay(r)}`,
   ...Object.entries(Object.groupBy(r.refusals ?? [], x => `${x.family} @${x.giver}: ${x.why.slice(0, 140)}`)).map(([k, v]) => `  refused ×${v.length} (first day ${v[0].day}) ${k}`),
   ...(r.softlocks ?? []).map(l => `  SOFT-LOCK day ${l.day} clockH ${l.clockH?.toFixed(2)} at (${l.pos?.x.toFixed(0)}, ${l.pos?.z.toFixed(0)}) in "${l.step}": ${l.why} · mission ${JSON.stringify(l.mission)}`)])
