@@ -235,6 +235,9 @@ export const ECONOMY_PARAMS = {
     towPerKm:      2,     // $ per km of tow (straight line to the destination)
     towBaseHours:  3,     // game h — the wait for the truck: you're in the boonies, 3 h at least (owner, 2026-10-23)
     towHoursPerKm: 0.5,   // game h per km — the haul itself
+    // FEAT-162 amendment 5 (owner, 2026-11-05): the mobile tire service is the shop's parts + labour ×
+    // this, plus towFlat, × dayTier; it waits as the tow from the nearest shop would (src/recovery.js).
+    roadsideMarkup: 1.5,  // [DEFAULT]
 }
 
 /** Rank colours, ratified: D·C·B·A·S = red·orange·yellow·white·blue (DESIGN.md). */
@@ -594,6 +597,7 @@ export class EconomySystem {
         f.add(ECONOMY_PARAMS, 'towPerKm', 0, 20, 0.25).name('tow: $ per km')
         f.add(ECONOMY_PARAMS, 'towBaseHours', 0, 6, 0.25).name('tow: base hours')
         f.add(ECONOMY_PARAMS, 'towHoursPerKm', 0, 3, 0.05).name('tow: hours per km')
+        f.add(ECONOMY_PARAMS, 'roadsideMarkup', 1, 4, 0.05).name('tire service: × shop price')
         f.close()
         return f
     }

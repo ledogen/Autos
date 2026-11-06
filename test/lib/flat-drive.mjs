@@ -16,25 +16,27 @@ const SLIP_FLOOR = 0.15   // damage.js tireSlipFloor — the no-wear floor
  * Drive one scenario. `input(t, vs)` returns { throttle, brake, steer, handbrake } each step (the
  * keyboard ramp is the caller's). Stops at `until(vs, t)` or `tMax`. `onStep(vs, P, dt)` runs after each step.
  */
-export async function drive ({ ta = false, tc = false, mu = 0.8, muScale = [1, 1, 1, 1], diff = 'open', slope = 0,
+export async function drive ({ ta = false, tc = false, mu = 0.8, muScale = [1, 1, 1, 1], diff = 'open', slope = 0, grade = 0,
   v0 = 0, steer0 = 0, input, until = () => false, tMax = 20, traction = true, extra = {}, onStep = null }) {
   const P = { ...RANGER_PARAMS, throttleAssist: ta, tractionControl: tc, frictionCoeff: mu, rearDiffMode: diff, ...extra }
   P._tireFz = [0, 0, 0, 0]; P._suspForceAccum = [0, 0, 0, 0]
   P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
   P._tireMuScale = muScale
   const eq = computeStaticEquilibrium(P)
-  // A cross-slope plane y = slope·x (the truck faces −z, so +x is its right: positive slope = right side up).
-  const n = new THREE.Vector3(-slope, 1, 0).normalize()
-  const groundFn = (x) => slope * x
+  // A cross-slope plane y = slope·x (the truck faces −z, so +x is its right: positive slope = right side up),
+  // tilted by `grade` along the heading too (positive = uphill ahead).
+  const n = new THREE.Vector3(-slope, 1, grade).normalize()
+  const groundFn = (x, z) => slope * x - grade * z
   const queryContacts = (cx, cy, cz, r) => {
-    const dist = (cy - groundFn(cx)) * n.y
+    const dist = (cy - groundFn(cx, cz)) * n.y
     const gd = r - dist
     return gd > 0 ? [{ normal: n.clone(), depth: gd, contactPoint: new THREE.Vector3(cx - n.x * dist, cy - n.y * dist, cz - n.z * dist) }] : []
   }
   const w = v0 / P.wheelRadius
   const vs = {
     position: new THREE.Vector3(0, eq.bodyY, 0), velocity: new THREE.Vector3(0, 0, -v0),
-    quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.atan(slope)),
+    quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.atan(slope))
+      .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.atan(grade))),
     angularVelocity: new THREE.Vector3(),
     steerAngle: steer0, throttle: 0, brake: 0, smoothThrottle: 0, smoothBrake: 0,
     wheelSteerAngles: [steer0, steer0, 0, 0],

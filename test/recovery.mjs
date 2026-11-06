@@ -1,9 +1,17 @@
 // test/recovery.mjs — SM-3 Recovery card gate.
 //
-//   1. Can't continue = dry with no gas can. A flat is not, and nor is a dead engine (it always starts).
-//   2. The card is the tows only (owner, 2026-10-20 — the gas can and the spare are inventory uses):
+//   1. Can't continue = dry with no gas can. A flat is not, and nor is a worn engine (it starts).
+//   2. The card is the tows (owner, 2026-10-20 — the gas can and the spare are inventory uses):
 //      the fuel tow only when dry, the service-center tow any time, each priced against the wallet.
-//   3. End run only when stuck AND no tow is affordable.
+//   3. The run can end only when stuck AND nothing that cures it is affordable.
+//   3b. FEAT-162: also stuck — the engine seized; a wheel collapsed with no spare to put on; on its side
+//      or roof with no hi-lift. Each option cures only its own: the shop tow anything, the fuel tow the
+//      tank (and the roll), the tire service the wheels — and a set of them can cure it between them.
+//      Parked at a shop, the 0 km tow there cures only a roll: its bench and shelf are the cure [DEFAULT,
+//      the orchestrator's reading of the owner's rule].
+//   3c. The mobile tire service (amendment 5): new stock parts where a tire or wheel is dead, a patch on
+//      a sound flat; (parts + the shop's labour) × 1.5 + the call-out, × the tier; the tow's wait, then
+//      the fitting. Nothing to fix, or no shop, no quote.
 //   4. The spare (fitSpare, on the corner the player picks): an ordinary inventory part (owner,
 //      2026-10-21). It is a mounted pair, so its tire goes on with its wear and its wheel with its own
 //      (a bent rim there is gone); the flat is gone. The corner's pair comes off STILL MOUNTED,
@@ -22,8 +30,9 @@
 //   8. The jerry can: pours what the tank takes and stays, lighter; empty or into a full tank, nothing.
 //
 // Pure node: no THREE, no DOM.
-import { recoveryCard, fitSpare, plugTire, plugMethods, spareFitHours, fitRoadside, fieldRepair, pourCan } from '../src/recovery.js'
-import { REPAIR_CAP } from '../data/parts.js'
+import { recoveryCard, tireServiceQuote, tireService, fitSpare, plugTire, plugMethods, spareFitHours, fitRoadside, fieldRepair, pourCan } from '../src/recovery.js'
+import { REPAIR_CAP, PARTS, PATCH, HUB, BEAD } from '../data/parts.js'
+import { ECONOMY_PARAMS } from '../src/economy.js'
 import { InventorySystem } from '../src/inventory.js'
 import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
@@ -34,8 +43,10 @@ const check = (label, ok, detail = '') => {
   console.log(`${ok ? '[ ok ]' : '[FAIL]'} ${label}${ok ? '' : '  ' + detail}`)
   if (!ok) fails++
 }
+const near = (a, b) => Math.abs(a - b) < 1e-9
 const tow = (price) => ({ price, km: 2, hours: 1 })
-const base = { dry: false, gasCan: false, flats: [], money: 20, fuelTow: tow(14), shopTow: tow(16) }
+const base = { dry: false, gasCan: false, seized: false, rolled: 0, hiLift: false, flats: [], collapsed: [], spares: 0,
+  money: 20, fuelTow: tow(14), shopTow: tow(16), tireService: null, atShop: null }
 const acts = (c) => c.opts.map(o => o.act + (o.enabled ? '' : '-')).join()
 
 // ── 1–3. The card ─────────────────────────────────────────────────────────────────────────────
@@ -51,6 +62,41 @@ c = recoveryCard({ ...base, dry: true, money: 5 })
 check('dry and broke: the run can end', c.stuck && c.canEnd)
 c = recoveryCard({ ...base, dry: true, gasCan: true, money: 0 })
 check('dry and broke with a can: the can is the way out, never the end', !c.canEnd)
+
+// ── 3b. FEAT-162: what else strands it ─────────────────────────────────────────────────────────
+c = recoveryCard({ ...base, seized: true })
+check('a seized engine is stuck; the shop tow is the way out', c.stuck && c.why.join() === 'seized' && c.head === 'the engine seized' && !c.canEnd)
+c = recoveryCard({ ...base, seized: true, money: 5 })
+check('…and broke, the run ends; the cure it fell short of is the shop tow', c.canEnd && c.cure?.acts.join() === 'towShop')
+c = recoveryCard({ ...base, collapsed: [2], spares: 1 })
+check('a collapsed wheel with a spare aboard is not stuck', !c.stuck && c.head === 'a wheel gave out')
+c = recoveryCard({ ...base, collapsed: [2, 3], spares: 1 })
+check('…two collapsed and one spare is', c.stuck && c.why.join() === 'wheel')
+c = recoveryCard({ ...base, collapsed: [2], money: 13, tireService: tow(12) })
+check('no spare: the tire service cures it when the shop tow is out of reach', c.stuck && !c.canEnd && c.cure?.acts.join() === 'tireService'
+  && acts(c) === 'towShop-,tireService')
+c = recoveryCard({ ...base, collapsed: [2], seized: true, money: 13, tireService: tow(12) })
+check('…but not a seized engine as well: the run ends', c.canEnd && c.why.join() === 'seized,wheel' && c.cure?.acts.join() === 'towShop')
+c = recoveryCard({ ...base, rolled: 2, money: 0 })
+check('on its roof with no hi-lift and no money: the end', c.canEnd && c.head === 'on its roof')
+check('on its side with a hi-lift aboard: not stuck', !recoveryCard({ ...base, rolled: -1, hiLift: true }).stuck)
+c = recoveryCard({ ...base, rolled: 1, dry: true, money: 15 })
+check('dry and on its side: the pump\'s tow truck sets it upright too', !c.canEnd && c.cure?.acts.join() === 'towFuel' && c.head === 'out of fuel')
+c = recoveryCard({ ...base, dry: true, seized: true, money: 15 })
+check('dry and seized: the fuel tow cures only the tank, so the run ends', c.canEnd && c.cure?.acts.join() === 'towShop')
+c = recoveryCard({ ...base, dry: true, collapsed: [1], money: 27, shopTow: tow(30), tireService: tow(12) })
+check('dry with a collapsed wheel: the fuel tow and the tire service between them', !c.canEnd
+  && c.cure?.acts.join() === 'towFuel,tireService' && near(c.cure.price, 26))
+const shop = { seized: 207, wheel: 14 }
+c = recoveryCard({ ...base, seized: true, money: 50, shopTow: { price: 10, km: 0, hours: 3 }, atShop: shop })
+check('seized AT the shop: the 0 km tow cures nothing; short of the rebuild, the run ends', c.canEnd
+  && c.cure?.acts.join() === 'shopFix' && c.cure.price === 207)
+check('…with the rebuild in the wallet it goes on', !recoveryCard({ ...base, seized: true, money: 210, atShop: shop }).canEnd)
+c = recoveryCard({ ...base, collapsed: [0, 1], spares: 1, money: 13, atShop: shop })
+check('a wheel short at the shop: one wheel and its fitting', c.canEnd && c.cure?.price === 14)
+c = recoveryCard({ ...base, rolled: 2, money: 12, shopTow: { price: 10, km: 0, hours: 3 }, atShop: shop })
+check('…but on its roof at the shop, the tow truck still sets it on its wheels', !c.canEnd && c.cure?.acts.join() === 'towShop')
+check('a sound truck at the shop: nothing to cure', recoveryCard({ ...base, money: 0, atShop: shop }).cure === null)
 
 // ── 4. The spare ──────────────────────────────────────────────────────────────────────────────
 const params = { ...RANGER_PARAMS }
@@ -78,6 +124,27 @@ check('plugged, it goes back on as itself', fit(0) === 0 && parts.fitted('tireFL
 damage.set('tireRR', 0.5)
 check('a sound corner swaps too, and its pair comes off holding air', spare().flat && (inv.amend(spare().index, { flat: false }), fit(3) === 3)
   && damage.get('tireRR') === 1 && !spare().flat && spare().cond === 0.5, JSON.stringify(spare()))
+
+
+// ── 3c. The tire service ──────────────────────────────────────────────────────────────────────
+const shopTow = { price: 16, km: 2, hours: 4 }
+damage.flat.fill(false)
+for (const t of ['tireFL', 'tireFR', 'tireRL', 'tireRR', 'wheelFL', 'wheelFR', 'wheelRL', 'wheelRR']) damage.set(t, 1)
+check('nothing to fix: no quote', tireServiceQuote(damage, shopTow, 1, ECONOMY_PARAMS) === null)
+damage.flat[0] = true; damage.set('tireFL', 0.6)
+let ts = tireServiceQuote(damage, shopTow, 1.2, ECONOMY_PARAMS)
+check('a sound flat: the patch × 1.5 + the call-out, × the tier; the wait, then the patch', ts && near(ts.price, (PATCH.price * 1.5 + 10) * 1.2)
+  && near(ts.hours, 4 + PATCH.hours) && ts.jobs.length === 1, JSON.stringify(ts))
+check('no shop in the region: no service', tireServiceQuote(damage, null, 1, ECONOMY_PARAMS) === null)
+damage.set('tireRL', 0); damage.set('wheelRL', 0)
+ts = tireServiceQuote(damage, shopTow, 1, ECONOMY_PARAMS)
+const fitRL = PARTS.tireStandard.price + PARTS.wheelSteel.price + 2 * HUB.price + 2 * BEAD.price
+check('…and a collapsed corner: a new tire and wheel at the shop\'s prices + its labour', damage.collapsed(2)
+  && near(ts.price, ((PATCH.price + fitRL) * 1.5 + 10)) && near(ts.hours, 4 + PATCH.hours + 2 * HUB.hours + 2 * BEAD.hours), JSON.stringify(ts))
+tireService(parts, damage, ts)
+check('done: the corner stands on a new stock pair, the flat holds air, the worn tire kept', !damage.collapsed(2)
+  && parts.fitted('tireRL') === 'tireStandard' && parts.fitted('wheelRL') === 'wheelSteel' && damage.get('tireRL') === 1
+  && !damage.flat[0] && damage.get('tireFL') === 0.6 && tireServiceQuote(damage, shopTow, 1, ECONOMY_PARAMS) === null)
 
 const tools = new InventorySystem({ slotCap: () => 8 }); tools.start()
 check('the spare takes 2 h with the factory jack', spareFitHours(tools) === 2)

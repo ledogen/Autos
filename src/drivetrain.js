@@ -25,6 +25,9 @@
  */
 
 import { TRANSMISSIONS } from '../data/transmissions.js'
+import { seized } from './ignition.js'
+
+const SEIZE_SLIP_W = 1   // rad/s of clutch slip over which a seized engine's clutch drag builds to its capacity
 
 const RPM_PER_RAD = 60 / (2 * Math.PI)   // rad/s → rev/min
 
@@ -241,10 +244,11 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // a vehicleState by hand with no ignition field, so they keep seeing exactly today's drivetrain and
   // never have to crank the truck before driving it.
   const ignState = vehicleState.ignition ? vehicleState.ignition.state : 'running'
+  const dead = seized(vehicleState)   // FEAT-162: a seized engine is off, and the starter can't turn it either
   // Cranking and the catch-to-idle settle are the start transient (stepStart above). They make
   // NO drive torque — T stays all zero — so cranking on a slope cannot creep the truck. A touch of pedal,
   // or a driveline already turning the engine faster, ends the transient early.
-  if (ignState === 'cranking' || (ignState === 'running' && st.starting && pedal <= 0.02 && turbineRPM / couplingSR <= st.engineRPM)) {
+  if (!dead && (ignState === 'cranking' || (ignState === 'running' && st.starting && pedal <= 0.02 && turbineRPM / couplingSR <= st.engineRPM))) {
     if (stepStart(st, vehicleState, params, dt, idle)) {
       st.pedal = 0
       st.activeGear = reverse ? 0 : st.gear
@@ -253,7 +257,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
     }
   }
   if (st.starting) st.starting = false   // only ever written by a start: an uncranked truck's state stays byte-identical
-  if (ignState !== 'running') {
+  if (ignState !== 'running' || dead) {
     // Ignition OFF. A dead engine in an automatic left in gear does NOT freewheel: above the
     // converter's coupling speed the turbine drags the impeller — and the whole engine — around, so
     // the truck coasts down on the engine's pumping and friction losses (MORE retardation than
@@ -270,7 +274,9 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
     // from idle to zero in one step). A dying engine coasts down slowly on its own inertia, which is
     // the whole sound and look of shutting a truck off.
     st.engineRPM += (target - st.engineRPM) * (1 - Math.exp(-dt / (params.engineOffRpmLag ?? 0.15)))
-    if (st.engineRPM < 1) st.engineRPM = 0
+    // FEAT-162: a seized engine doesn't turn. Its converter still churns: ponytail — the drag above is the
+    // dead engine's curve, standing in for a stalled impeller's fluid brake (stronger at speed, if modelled).
+    if (st.engineRPM < 1 || dead) st.engineRPM = 0
     st.activeGear = reverse ? 0 : st.gear
     st.coupledRPM = turbineRPM / couplingSR
     st.fuelPowerW = 0   // no combustion while off: no fuel burned, no heat made
@@ -474,9 +480,18 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
   st.activeGear = g
 
   // ── Engine off / cranking: no combustion ────────────────────────────────────────────────────────
-  if (ignState !== 'running') {
+  if (ignState !== 'running' || seized(vehicleState)) {
     let wE = st.engineOmega
-    if (ignState === 'cranking') {
+    if (seized(vehicleState)) {
+      // FEAT-162: a seized flywheel can't turn. A clutch biting in gear slips against it at its capacity,
+      // so it brakes the rear axle that hard (in the low gears the rears lock — dip the clutch). Coulomb
+      // friction, regularised over SEIZE_SLIP_W so it holds a stopped truck without chattering.
+      wE = 0
+      if (inGear) {
+        const s = Math.max(-1, Math.min(1, omegaC / SEIZE_SLIP_W))
+        splitRearAxle(T, -s * clutch * (params.clutchMaxTorque ?? 450) * total, vehicleState, params)
+      }
+    } else if (ignState === 'cranking') {
       wE += ((params.ignitionCrankRPM ?? 250) / RPM_PER_RAD - wE) * (1 - Math.exp(-dt / (params.ignitionCrankRpmLag ?? 0.12)))
     } else if (inGear && clutch > 0.5) {
       // Dead engine in gear, clutch in: the wheels turn it over, and its compression and friction drag them.

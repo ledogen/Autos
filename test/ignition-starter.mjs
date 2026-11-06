@@ -73,11 +73,11 @@ console.log('\n── 2. releasing early aborts and discards the crank ───
 
 console.log('\n── 3. catch time scales with engine health (the SM-3 wear seam) ──────────────')
 {
-  // Linear 0.25 s → ignitionCatchTimeWorn as health → 0, and a dead engine still starts (owner,
-  // 2026-10-22, reversing 2026-09-04's never-catch: "otherwise we don't have a game").
-  const dead = crankFor(P.ignitionCatchTimeWorn + 4 * DT, 0)
-  check(dead.caught !== null && Math.abs(dead.caught - P.ignitionCatchTimeWorn) <= 2 * DT + 1e-9,
-    `health 0 still catches, at ${dead.caught?.toFixed(2)}s ≈ ignitionCatchTimeWorn ${P.ignitionCatchTimeWorn}s`)
+  // Linear 0.25 s → ignitionCatchTimeWorn as health → 0: a worn engine still starts (owner, 2026-10-22,
+  // "otherwise we don't have a game"). At exactly 0 it has SEIZED and never catches (FEAT-162, owner
+  // approved 2026-11-06 — the tow and recovery give that a game now).
+  const dead = crankFor(10, 0)
+  check(dead.caught === null, 'health 0 is a seized engine: ten seconds of cranking never catch it')
   const nearDead = crankFor(P.ignitionCatchTimeWorn + 4 * DT, 0.02)
   const nearWorn = P.ignitionCatchTime + 0.98 * (P.ignitionCatchTimeWorn - P.ignitionCatchTime)
   check(Math.abs(nearDead.caught - nearWorn) <= 2 * DT + 1e-9,

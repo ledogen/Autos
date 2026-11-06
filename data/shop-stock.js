@@ -25,8 +25,10 @@ export const USED_COND = [0.4, 0.85]  //   condition, uniform
  *  what EVERY shop always has, new, listed after the rotating slots. Buying one never empties it.
  *  FEAT-168 (owner, 2026-11-05): the true needs — the old tire, the air filter ("you basically will need
  *  the air filter by day 3 and its not a guaranteed spawn - not fun") and the plug kit [DEFAULT reading
- *  of "patch kit"]. The standard tire went back to the rotating slots. */
-export const ALWAYS = ['tireOld', 'airFilterStock', 'tirePlugKit']
+ *  of "patch kit"]. The standard tire went back to the rotating slots.
+ *  FEAT-162 (2026-11-06): and the steel wheel — a collapsed wheel is replaced, never straightened, so a
+ *  tow to any shop is a way out of one [DEFAULT]. */
+export const ALWAYS = ['tireOld', 'airFilterStock', 'tirePlugKit', 'wheelSteel']
 
 /** Shelf items that aren't parts: no condition, priced here. */
 export const ITEM_PRICE = { tirePlugKit: 7, compressor: 20, quickJack: 30,   // owner, 2026-10-22
