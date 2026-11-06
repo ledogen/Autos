@@ -215,7 +215,7 @@ async function offers () {
     for (const q of window.__soak.pois()) {
       if (!q.jobs || q.hidden || q.type === 'larrysHouse') continue
       for (const o of b.offers(q.id, h)) { const s = b.spec(o), g = window.__soak.poi(o.poiId); if (!s || !g || out.has(o.id)) continue
-        out.set(o.id, { poi: g.id, type: g.type, id: o.id, family: s.family, line: s.line?.id ?? null, d: Math.hypot(g.x - c.x, g.z - c.z) }) }
+        out.set(o.id, { poi: g.id, type: g.type, id: o.id, family: s.family, line: s.line ?? null, d: Math.hypot(g.x - c.x, g.z - c.z) }) }
     }
     return [...out.values()] })()`)
 }
@@ -368,7 +368,7 @@ async function playRun (seedIn) {
     try {
       if (s.ms === 'offer' || s.ms === 'generating') { await decline(); continue }
       if (s.ms !== 'idle') {   // the casserole (in hand from the skip), or a job a resume brought back
-        const o = await js('(() => { const m = window.__mission(), sp = window.__board().spec(m.offer ?? {}); return { family: sp?.family ?? "?", line: sp?.line?.id ?? null, type: sp?.first ? "momsHouse (casserole)" : "in hand" } })()')
+        const o = await js('(() => { const m = window.__mission(), sp = window.__board().spec(m.offer ?? {}); return { family: sp?.family ?? "?", line: sp?.line ?? null, type: sp?.first ? "momsHouse (casserole)" : "in hand" } })()')
         const r = await finish(o)
         run.jobs.push({ day: s.day, family: o.family, line: o.line, giver: o.type, ...r })
         continue
