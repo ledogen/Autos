@@ -417,3 +417,30 @@ the same work runs:
 
 **Tools:** `test/story-coldload.mjs` (split + frame times), `wip/perf-27/{sweep.sh, ab105.sh}`,
 `wip/perf-31/region-bench.mjs`.
+
+### The two open levers, scoped (2026-11-06)
+
+**Route waves, longest-first dispatch: below the 1 s bar, NOT built.** `wip/perf-31/wavesim.mjs` records every
+route job's time per wave in a region build, then simulates the pool (4 workers, pull dispatch) both ways: the order
+the plan issues jobs (today), and longest-first with the TRUE times, which is the upper bound for any predictor.
+- Seeds 3997014678 / 2623851183 / 744309545: FIFO 4.57 / 5.10 / 5.17 s vs longest-first 4.23 / 4.06 / 4.27 s, a
+  gain of 0.34 / 1.04 / 0.90 s at best.
+- The floor of each wave is its single longest route job (up to 2 s in the first wave), and no ordering beats it.
+- The browser's cpu ×4 throttle barely slows the region warm (6.9–7.4 → 7.4–8.8 s), so the routing in the workers
+  isn't the throttled part. The gain does not grow at 4×.
+- A real predictor (edge length, corridor size) would get perhaps half: ~0.2–0.5 s.
+
+**Settle: 2.4–3.2 s at 1×, 4.0–4.9 s at cpu ×4.**
+- The throttle only slows main-thread work. Solving the 1× and 4× numbers gives ~0.6 s of main-thread work at 1×
+  (~2.3 s at 4×), plus ~2.2 s waiting on the worker's spawn-network builds.
+- A ≥ 1 s lever at 4× has to come out of that ~2.3 s main-thread share.
+- `story-coldload.mjs --mode=reseed`, which should break it down, hung on current code at cpu ×4: its "route warm
+  drained" end condition never fired in 600 s. The predicate needs fixing before the settle can be split.
+
+**Where that leaves PERF-27:**
+- Rows closed: POI placement, plan layer.
+- Route waves: measured, < 1 s, not built.
+- Spawn resolve / settle: the 4× main-thread share (~2.3 s) is the only candidate left; it needs the reseed harness
+  fixed.
+- Pump latency: unmeasured, ≤ ~0.5 s by construction (SETTLE_MIN_MS 400 ms + 250 ms poll).
+- "Behind the menu": the owner's call, numbers above.
