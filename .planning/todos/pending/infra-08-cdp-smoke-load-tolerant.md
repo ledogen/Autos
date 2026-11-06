@@ -21,10 +21,10 @@ progress in **sim time / sim distance** instead of wall time, and keep generous 
 
 ## Acceptance
 
-- [ ] `drive` asserts distance per **simulated** second (or waits on the sim until N m, with a hang ceiling).
-- [ ] The "went live" waits keep a hang ceiling but scale with a measured boot factor (e.g. boot ms vs a baseline), or wait on progress events rather than a fixed 45 s.
-- [ ] The papers aim/tap hold for sim time, not wall ms.
-- [ ] Proof: the smoke passes 3/3 with a full `npm run test:all` running beside it, and still fails fast on an injected hang.
+- [x] `drive` asserts distance per **simulated** second (or waits on the sim until N m, with a hang ceiling).
+- [x] The "went live" waits keep a hang ceiling but scale with a measured boot factor (e.g. boot ms vs a baseline), or wait on progress events rather than a fixed 45 s.
+- [x] ~~The papers aim/tap hold for sim time, not wall ms.~~ The tap was too LONG, not too short (work log): it is now one polled frame.
+- [x] Proof: the smoke passes 3/3 with a full `npm run test:all` running beside it, and still fails fast on an injected hang.
 
 ## Work log
 
@@ -80,3 +80,27 @@ At 17×, a full smoke would run more than an hour and prove nothing, so the 10×
 - Injected hang (`window.requestAnimationFrame = () => 0` at the start of `drive`, game-only box, 6×): FAIL in
   `drive`, "the sim stopped stepping, 0.00 of 8 sim-s in". The stall guard fired after 60 s (10 s × 6); total run 86 s.
 - Too-loaded refusal: 6/6 runs beside a full suite plus the game stopped at boot in 36 s with the rerun-alone message.
+
+**Two more wall-clock bugs the loaded runs found (game-only box, 6×):**
+- `edge`: the reset barricade row was read a wall second after the fade. It is now read the way the first row was:
+  three bodies, then a sim second.
+  - Even so, the landing itself is not repeatable under load. Box3D orders contacts by body creation, and streaming
+    creates bodies in a different order. The first row's rest pose scatters 1–2 cm between runs; the reset row lands
+    1–6 cm from it; both are at rest 3 sim-s later. Idle it is 0.0 cm.
+  - So the tolerance is 15 cm, not 5. A row that wasn't reset is metres off; a knock is > 0.5 m.
+- `offer` passed `hold('w', 6000)` after `hold` went to sim seconds: 100 sim-minutes of W. Fixed to 6.
+
+**Proof (2026-11-06, game closed):**
+- One smoke at light load: PASS 23/23, edge reset 0.0 cm.
+- Then 3 smokes, one after another, beside a full `npm run test:all` on this branch. Other lanes' node work was
+  running too. Load rose from 24 to a peak of 85 (8.5/core).
+
+| Run | Boot (× idle) | Story | Save | Endings | Peak stretch | Result |
+|---|---|---|---|---|---|---|
+| 1 | 9.4 s (2.6) | 36.2 s | 83.2 s | 135.4 s | ×9.5 | PASS 23/23, zero console errors |
+| 2 | 8.6 s (2.4) | 29.0 s | 76.5 s | 98.0 s | ×12.1 | PASS 23/23, zero console errors |
+| 3 | 8.9 s (2.5) | 27.4 s | 74.8 s | 111.3 s | ×7.9 | PASS 23/23, zero console errors |
+
+Idle reference: story 15 s, save 40 s, endings 57 s. Run 1's story (36 s) and run 2's (29 s) would have been close to
+the old 45 s ceiling at a heavier moment. One unrelated hiccup: a single "CDP socket error" 1.5 s into a boot (the
+launcher), passed on the immediate rerun.
