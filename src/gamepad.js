@@ -271,9 +271,11 @@ function poll () {
       pad.active = true
       if (pad.throwReady()) rbAt = now
       else { rbBrake = true; sendKey('keydown', ' ') }
-    } else if (rbAt >= 0 && now - rbAt >= PAD_PARAMS.throwTapMs) { rbAt = -1; rbBrake = true; sendKey('keydown', ' ') }
+    } else if (rbAt >= 0 && (!drive || now - rbAt >= PAD_PARAMS.throwTapMs)) { rbAt = -1; rbBrake = true; sendKey('keydown', ' ') }
+    // ↑ a held-back press that can no longer throw (a card came up under it) is the handbrake it would have been
   } else if (!rbDown) {
     if (drive && rbAt >= 0 && any) { sendKey('keydown', 'f'); sendKey('keyup', 'f') }   // a tap: throw
+    else if (rbAt >= 0 && any) { sendKey('keydown', ' '); sendKey('keyup', ' ') }      // …or, off the drive layout, a brake tap
     if (rbBrake) sendKey('keyup', ' ')
     rbAt = -1; rbBrake = false
   }
