@@ -454,14 +454,6 @@ async function playRun (seedIn) {
 
 // ── main ─────────────────────────────────────────────────────────────────────────────────────────
 const runs = []
-for (const seed of SEEDS) {
-  console.log(`run seed ${seed}…`)
-  try { runs.push(await playRun(seed)) } catch (e) { const r = { ...run, result: `crashed in "${step}": ${e.message}` }; delete r.skip; runs.push(r); console.log(`  ${r.result}`) }
-  const r = runs.at(-1)
-  console.log(`  → ${r.result} · deeds gate day ${r.gateDay ?? '—'} · win day ${r.winDay ?? '—'} · ${r.jobs?.length ?? 0} jobs · ${r.softlocks?.length ?? 0} soft-locks · ${r.minutes ?? '?'} min`)
-}
-client.close(); cleanup()
-
 // Offers carrying a bonus, bonuses earned (by item, and how they were stowed), food among them, meals eaten.
 const FOOD = ['chiliDog', 'schoolLunch', 'dinnerMeal']
 const rewards = r => {
@@ -471,19 +463,33 @@ const rewards = r => {
     + ` · stowed ${JSON.stringify(Object.fromEntries(Object.entries(Object.groupBy(got, j => j.stowed)).map(([k, v]) => [k, v.length])))} · meals eaten ${r.meals ?? 0}`
 }
 const perDay = r => { const n = {}; for (const j of r.jobs ?? []) (n[j.day] ??= []).push(j.line ?? j.family); return Object.entries(n).map(([d, f]) => `d${d}: ${f.join(', ')}`).join(' · ') }
-const lines = runs.flatMap(r => [`seed ${r.seed}: ${r.result} · deeds gate day ${r.gateDay ?? '—'} · win day ${r.winDay ?? '—'} · ${r.jobs?.length ?? 0} jobs`
+const runLines = r => [`seed ${r.seed}: ${r.result} · deeds gate day ${r.gateDay ?? '—'} · win day ${r.winDay ?? '—'} · ${r.jobs?.length ?? 0} jobs`
   + ` · soft-locks ${r.softlocks?.length ?? 0} · refused ${r.refusals?.length ?? 0} · hungry days ${JSON.stringify(r.hungryDays ?? [])} · drives ${((r.driveMin ?? 0) / 60).toFixed(1)} game h · ${r.minutes ?? '?'} min wall`,
   `  wallet at wakes: ${(r.wakes ?? []).map(w => `d${w.day} $${w.money} (${w.deeds} deeds)`).join(' · ')}`,
   `  rewards: ${rewards(r)}`,
   ...(r.notes ?? []).map(n => `  note: ${n}`),
   `  jobs: ${perDay(r)}`,
   ...Object.entries(Object.groupBy(r.refusals ?? [], x => `${x.family} @${x.giver}: ${x.why.slice(0, 140)}`)).map(([k, v]) => `  refused ×${v.length} (first day ${v[0].day}) ${k}`),
-  ...(r.softlocks ?? []).map(l => `  SOFT-LOCK day ${l.day} clockH ${l.clockH?.toFixed(2)} at (${l.pos?.x.toFixed(0)}, ${l.pos?.z.toFixed(0)}) in "${l.step}": ${l.why} · mission ${JSON.stringify(l.mission)}`)])
+  ...(r.softlocks ?? []).map(l => `  SOFT-LOCK day ${l.day} clockH ${l.clockH?.toFixed(2)} at (${l.pos?.x.toFixed(0)}, ${l.pos?.z.toFixed(0)}) in "${l.step}": ${l.why} · mission ${JSON.stringify(l.mission)}`)]
+
+// The report is rewritten after EVERY run, so a soak stopped part-way keeps the runs it finished.
 const out = join(ROOT, 'wip/run-soak'); mkdirSync(out, { recursive: true })
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-writeFileSync(join(out, `${stamp}.json`), JSON.stringify({ runs, errors }, null, 2))
-writeFileSync(join(out, `${stamp}.txt`), [...lines, '', ...errors.map(e => `console error · seed ${e.seed} day ${e.day} in ${e.step}: ${e.msg}`)].join('\n') + '\n')
-console.log(lines.join('\n'))
+const report = () => {
+  writeFileSync(join(out, `${stamp}.json`), JSON.stringify({ runs, errors }, null, 2))
+  writeFileSync(join(out, `${stamp}.txt`), [...runs.flatMap(runLines), '', ...errors.map(e => `console error · seed ${e.seed} day ${e.day} in ${e.step}: ${e.msg}`)].join('\n') + '\n')
+}
+
+for (const seed of SEEDS) {
+  console.log(`run seed ${seed}…`)
+  try { runs.push(await playRun(seed)) } catch (e) { const r = { ...run, result: `crashed in "${step}": ${e.message}` }; delete r.skip; runs.push(r); console.log(`  ${r.result}`) }
+  const r = runs.at(-1)
+  report()
+  console.log(`  → ${r.result} · deeds gate day ${r.gateDay ?? '—'} · win day ${r.winDay ?? '—'} · ${r.jobs?.length ?? 0} jobs · ${r.softlocks?.length ?? 0} soft-locks · ${r.minutes ?? '?'} min`)
+}
+client.close(); cleanup()
+
+console.log(runs.flatMap(runLines).join('\n'))
 console.log(`report: wip/run-soak/${stamp}.{json,txt}`)
 const ok = !errors.length && runs.every(r => r.winDay != null && !r.softlocks?.length)
 console.log(ok ? `PASS: ${runs.length} runs reached the win` : `FAIL: ${errors.length} console error(s), ${runs.filter(r => r.winDay == null).length} run(s) without a win, ${runs.reduce((n, r) => n + (r.softlocks?.length ?? 0), 0)} soft-lock(s)`)
