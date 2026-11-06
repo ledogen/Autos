@@ -1049,6 +1049,15 @@ const STEPS = [
     await ended(/truck is dead/, /(the tow was \$[\d,.]+|no tow could reach you) — you had \$0\b/)
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
+    // FEAT-170: a new run starts with mom's casserole in hand, and the win waits for no job to be active (in
+    // play every line is a job, so the casserole is long done) — put it down, and read off Larry after it.
+    if (!await js('window.__vs.parked')) await park()
+    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
+    check(await until(() => js('window.__mission().state === "done"'), 2000), 'abandoning the casserole did not end it')
+    await js('document.getElementById("mp-accept").click()')
+    const larry = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    await until(larry, 3000)
+    for (let i = 0; i < 8 && await larry(); i++) { await tap('Enter'); await sleep(250) }
     await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
     check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), `${ECONOMY_PARAMS.campDeeds} deeds opened no requisition`)
     await js(`(() => { const b = window.__board(), h = window.__day().clockH()
