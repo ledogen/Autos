@@ -1001,6 +1001,16 @@ const STEPS = [
     await offered('restart', 20000)
     check(!await dlg(), 'paper scenario: the briefing replayed on restart')
     check(await slot() === before, 'paper scenario: the restart touched the run save')
+    // The result card and the per-rung board: a finished 4-customer round (a B, 3:20 against par 4:10).
+    await js(`(() => { const p = window.__paper.system
+      p.result = { customers: 4, delivered: 4, letter: 'B', elapsed: 200, par: 250 }; p.state = 'done'; p._onChange() })()`)
+    const card = await js(`({ shown: document.getElementById('scenario-panel').style.display, title: document.getElementById('sp-title').textContent,
+      body: document.getElementById('sp-body').textContent, board: localStorage.getItem('autos-scenario-times/1:paper-90:4') })`)
+    check(card.shown === 'block' && /4 customers/.test(card.title) && /3:20/.test(card.body) && /\bB\b/.test(card.body) && JSON.parse(card.board ?? '[]')[0]?.elapsed === 200,
+      `paper scenario result card: ${JSON.stringify(card)}`)
+    check(await slot() === before, 'paper scenario: the result touched the run save')
+    await js('document.getElementById("sp-restart").click()')
+    await offered('restart after a result', 20000)
     // Out through the pause menu, then Continue resumes the run that was saved.
     for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
     await js('document.getElementById("pm-menu").click()')
