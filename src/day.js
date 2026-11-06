@@ -149,11 +149,14 @@ export class DaySystem {
         this._signalArmed = true      // the once-per-entry TIRED signal blink; re-arms above tiredAtH
     }
 
-    /** Begin a story run: dawn of day 1, full tank of energy, and seat the sky at that hour. */
-    start () {
+    /**
+     * Begin a story run: dawn of day 1, full tank of energy, and seat the sky at that hour. FEAT-170: the
+     * opening's tutorial evening starts it earlier — `start(0, 18)`, day 0, the evening before day 1.
+     */
+    start (day = 1, hour = DAY_PARAMS.dayStartHour) {
         this._running = true
-        this._hour = DAY_PARAMS.dayStartHour
-        runState.day = 1
+        this._hour = hour
+        runState.day = day
         this._energyH = DAY_PARAMS.fullEnergyH
         this._coffeeDebt = 0
         this._crashes = []

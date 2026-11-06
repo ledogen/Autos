@@ -21,7 +21,6 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   tractionControl: false,   // RANGER_PARAMS.tractionControl — brake + torque traction control (FEAT-159; owner: off)
   stickDeadzone: 0.08,      // PAD_PARAMS.stickDeadzone — keep equal to gamepad.js's default
   steerShape: 0,            // PAD_PARAMS.steerShape — likewise (0 linear … 1 parabolic … 1.5)
-  opening: true,            // FEAT-147: a story run opens on the firing + the first day; turned off once one completes
   // No last seed: the seed field is always blank (owner, 2026-09-06) — remembering it would make
   // "just press start" mean "replay the same world forever".
 })

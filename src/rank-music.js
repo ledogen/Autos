@@ -41,7 +41,7 @@ export function setRankMusic (on, vol) {
   volume = vol
 }
 
-const live = () => { const c = getAudioContext(); return c && c.state === 'running' ? c : null }
+const live = () => { const c = getAudioContext(false); return c && c.state === 'running' ? c : null }
 const cents = (v, step, d) => 100 * (step + (v.major ?? 0)) + d
 
 /** The bar just showed: the bed comes in under it, dark. */

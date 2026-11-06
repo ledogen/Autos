@@ -67,6 +67,7 @@ MATS = {
     "PadNavy":    ((0.03, 0.07, 0.20, 1), 0.55),
     "BagGreen":   ((0.05, 0.13, 0.06, 1), 0.65),
     "Flannel":    ((0.55, 0.38, 0.18, 1), 0.95),
+    "FlannelShade": ((0.33, 0.21, 0.09, 1), 0.95),
     "PlugBrown":  ((0.13, 0.05, 0.02, 1), 0.7),
     "CheckStripe":((0.08, 0.02, 0.018, 1), 0.95),
     "CheckDeep":  ((0.012, 0.010, 0.010, 1), 0.95),
@@ -315,8 +316,9 @@ class Builder:
         self.face([L[0], inn(L[0]), inn(R[0]), R[0]], mat)
         self.face([R[-1], inn(R[-1]), inn(L[-1]), L[-1]], mat)
 
-    def tube(self, path, r, seg, mat, caps=True):
-        """A round tube swept along a polyline, frames parallel-transported so it never twists."""
+    def tube(self, path, r, seg, mat, caps=True, rs=None):
+        """A round tube swept along a polyline, frames parallel-transported so it never twists. `rs`: a
+        radius per path point instead of r (a rounded end: radii falling to ~0 over the last points)."""
         P = [Vector(p) for p in path]
         T = [(P[min(i + 1, len(P) - 1)] - P[max(i - 1, 0)]).normalized() for i in range(len(P))]
         u = T[0].cross(Vector((0, 0, 1)) if abs(T[0].z) < 0.9 else Vector((1, 0, 0))).normalized()
@@ -324,7 +326,7 @@ class Builder:
         for i, p in enumerate(P):
             u = (u - T[i] * u.dot(T[i])).normalized()
             v = T[i].cross(u)
-            rings.append([p + (u * math.cos(2 * math.pi * k / seg) + v * math.sin(2 * math.pi * k / seg)) * r for k in range(seg)])
+            rings.append([p + (u * math.cos(2 * math.pi * k / seg) + v * math.sin(2 * math.pi * k / seg)) * (rs[i] if rs else r) for k in range(seg)])
         self.loft(rings, mat, cap_bottom=caps, cap_top=caps)
 
     def prism(self, outline, z0, z1, mat, top=True, bottom=True):
@@ -394,12 +396,16 @@ def rrect(w, d, r, z, per=4, cx=0.0, cy=0.0):
     return pts
 
 
-def sheet(b, L, W, T, step, mat_at, z0=0.0):
+def sheet(b, L, W, T, step, mat_at, z0=0.0, rim=0.0):
     """A flat slab L (X) x W (Y) x T, centred on the origin, gridded every ~`step` top AND bottom (FEAT-171:
     a bedding layer DRAPES over the one under it in camp — src/camp-gear.js lifts each vertex onto the
-    layers below — so a slab has to be able to bend). `mat_at(x, y)` picks each top cell's material."""
+    layers below — so a slab has to be able to bend). `mat_at(x, y)` picks each top cell's material.
+    `rim`: an extra grid line that far in from each edge, so a border can take its own material."""
     nx, ny = max(1, round(L / step)), max(1, round(W / step))
     xs = [-L / 2 + L * i / nx for i in range(nx + 1)]; ys = [-W / 2 + W * j / ny for j in range(ny + 1)]
+    if rim:
+        xs = sorted({*xs, -L / 2 + rim, L / 2 - rim}); ys = sorted({*ys, -W / 2 + rim, W / 2 - rim})
+        nx, ny = len(xs) - 1, len(ys) - 1
     for i in range(nx):
         for j in range(ny):
             c = [(xs[i], ys[j]), (xs[i + 1], ys[j]), (xs[i + 1], ys[j + 1]), (xs[i], ys[j + 1])]
@@ -413,16 +419,25 @@ def sheet(b, L, W, T, step, mat_at, z0=0.0):
         b.face([(xa, ya, z0), (xb, yb, z0), (xb, yb, z0 + T), (xa, ya, z0 + T)], m)
 
 
-def pillow(b, cx, cy, z0, L=0.50, W=0.34, H=0.09):
+def pillow(b, cx, cy, z0, L=0.50, W=0.34, H=0.09, rest=None):
     """FEAT-171 (owner 2026-11-05, "Both"): the bedding's pillow, lying at (cx, cy) on a surface at z0, its
     long side across the bed (Y). Lofted rounded rectangles: small where it meets the bed, plumpest just
-    under the middle seam, pinched round the top."""
+    under the middle seam, pinched round the top. One size on both beds (owner, 2026-11-06).
+    `rest(x, y)`: how far the surface under (x, y) stands above z0 — the pillow is soft, so its bottom rides
+    up over it and its top follows at 85 %, squashed where it lies on something."""
     M0 = b.M
     b.M = M0 @ Matrix.Translation((cx, cy, z0))
-    b.loft([rrect(W - 2 * i, L - 2 * i, r, z, per=5) for z, i, r in
-            ((0.0, 0.05, 0.07), (0.015, 0.016, 0.10), (H * 0.48, 0.0, 0.11), (H * 0.56, 0.003, 0.11),
-             (H - 0.014, 0.03, 0.09), (H, 0.075, 0.065))], "PillowCase")
+    before = set(b.bm.verts)
+    rings = [rrect(W - 2 * i, L - 2 * i, r, z, per=5) for z, i, r in
+             ((0.0, 0.05, 0.07), (0.015, 0.016, 0.10), (H * 0.48, 0.0, 0.11), (H * 0.56, 0.003, 0.11),
+              (H - 0.014, 0.03, 0.09), (H, 0.075, 0.065), (H + 0.001, 0.11, 0.05))]
+    b.loft(rings, "PillowCase", cap_top=False)   # the top is fanned from its centre: bent by `rest`, an
+    for p, q in zip(rings[-1], rings[-1][1:] + rings[-1][:1]):   # n-gon cap creased corner to corner in game
+        b.face([p, q, (0.0, 0.0, H + 0.002)], "PillowCase")
     b.M = M0
+    if rest:
+        for v in set(b.bm.verts) - before:
+            v.co.z += rest(v.co.x, v.co.y) * (1 - 0.15 * (v.co.z - z0) / H)
 
 
 # ── Items ────────────────────────────────────────────────────────────────────────────────────────
@@ -848,7 +863,9 @@ def build_blanketLayer():
         du, dv = dark(t), dark(v)
         return "CheckDeep" if du and dv else "CheckStripe" if du or dv else "RedWool"
     lump = lambda t, v: 0.0015 * math.sin(11 * t + 7 * v) * math.sin(5 * t - 13 * v)
-    return bed_cover("blanketLayer", 1.06, 0.50, 0.024, 0.55, 0.06, mat, lump)
+    # FEAT-171 (owner 2026-11-06, "a little bit longer so they go midway up the bedroll/bag"): from the bed's
+    # middle (0) to its old foot edge, 0.80 m (it was 0.30–0.80).
+    return bed_cover("blanketLayer", 1.06, 0.80, 0.024, 0.40, 0.06, mat, lump)
 
 
 def build_quiltLayer():
@@ -861,7 +878,7 @@ def build_quiltLayer():
     mat = lambda t, v: PATCH[(cell(t) * 3 + cell(v) * 5 + (cell(t) * cell(v)) % 3) % len(PATCH)]
     frac = lambda x: x / C - math.floor(x / C)
     puff = lambda t, v: 0.006 * math.sin(math.pi * frac(t)) * math.sin(math.pi * frac(v))
-    return bed_cover("quiltLayer", 1.10, 0.56, 0.032, 0.52, C, mat, puff)
+    return bed_cover("quiltLayer", 1.10, 0.80, 0.032, 0.40, C, mat, puff)   # midway up, as the blanket (was 0.24–0.80)
 
 
 def bed_cover(name, W, D, T, YC, CELL, mat, lump):
@@ -1064,17 +1081,23 @@ def folded_cover(name, patch):
 
 def build_sleepingBag():
     """A rectangular sleeping bag laid out flat, its near head corner unzipped and turned back to
-    show the flannel lining — ready to slide into. The head end (+X) is framed by a thick stuffed collar,
-    which folds over with the flap. Lofted top quilted in puffy baffles; the turned-back
-    flap is the top layer's own fill, so it drapes over the baffles and rolls round a fold whose
-    radius is that fill's thickness — the open corner sits up on top of the bag."""
+    show the flannel lining — ready to slide into. The head end is +X.
+    Lofted top quilted in puffy baffles; the turned-back flap is the top layer's own fill, pressed
+    flatter by the fold, so it drapes over the baffles and rolls round a fold as thick as the two
+    layers. FEAT-171 round 2 (owner 2026-11-06, "open the corner more so it takes the entire width of the
+    bag like we did for the sleeping bag thumbnail? then the pillow can go atop the folded over corner"):
+    the fold runs corner to corner across the whole width, and the pillow lies over it at the head."""
     b = Builder()
     L, W, s = 1.90, 0.85, 0.025
-    nu, nv, nc = int(round(L / s)), int(round(W / s)), 24   # fold line u + v = nc·s (0.60 m: leaves a third of the head collar on the bag)
+    nu, nv, nc = int(round(L / s)), int(round(W / s)), int(round(W / s))   # fold line u + v = nc·s = W: the whole width
     zb, ht = 0.050, 0.085   # bottom layer; the top layer's loft at its fullest
-    # Bottom layer: a soft slab, outer shell; its top shows flannel where the corner is turned back.
-    sheet(b, L, W, zb, 0.06, lambda x, y: "BagGreen")   # gridded: it drapes over a pad in camp (FEAT-171)
-    sheet(b, L - 0.04, W - 0.04, 0.001, 0.06, lambda x, y: "Flannel", z0=zb - 0.0005)
+    # Bottom layer: a soft slab, outer shell; its top shows the lining where the corner is turned back,
+    # a shade darker than the flap's — the inside of the bag, under the flap. Same flannel; the shade is
+    # what lets the turned flap read against the hole it left. The lining is the slab's own top inside a
+    # 2 cm shell rim, not a second sheet: draped over a pad, two sheets on different grids crossed and
+    # striped the lining green (FEAT-171).
+    lining = lambda x, y: "FlannelShade" if abs(x) < L / 2 - 0.02 and abs(y) < W / 2 - 0.02 else "BagGreen"
+    sheet(b, L, W, zb, 0.06, lining, rim=0.02)   # gridded: it drapes over a pad in camp (FEAT-171)
     # Grid in (u, v): u from the +X end, v from the −Y side. x = L/2 − u, y = v − W/2.
     def top_z(u, v):   # baffles puff between the sewn-through seams; the loft rounds down at the zips
         baffle = 0.80 + 0.20 * math.sin(math.pi * ((u % 0.19) / 0.19))
@@ -1099,20 +1122,21 @@ def build_sleepingBag():
         return [k for k, c in cnt.items() if c == 1]
     fold = lambda e: all(i + j == nc for i, j in e)
     # The flap: reflected across the fold (u, v) → (c − v, c − u). Its underside rests on the kept top
-    # it now covers; its thickness is the fill it had where it came from (thin at its zipped edges).
+    # it now covers; its thickness is the fill it had where it came from (thin at its zipped edges),
+    # pressed to 55 % by the fold. At full loft it stood up as a stiff wedge (FEAT-171).
     c = nc * s
     R = lambda u, v: (c - v, c - u)
     # The baffles puff on the shell side only, so the turned-back flap shows a smooth lining (owner,
     # 2026-10-21): it drapes on the baffles' mean loft and keeps its own thickness, no puffs on top.
     smooth = lambda u, v: zb + ht * 0.93 * min(1.0, max(0.0, min(u, L - u, v, W - v)) / 0.10) ** 0.5
     under = lambda u, v: smooth(u, v) + 0.003                   # (u, v) = where the flap now lies
-    over = lambda u, v: under(u, v) + smooth(*R(u, v)) - zb     # R(u, v) = where that bit came from
+    over = lambda u, v: under(u, v) + 0.55 * (smooth(*R(u, v)) - zb)   # R(u, v) = where that bit came from
     for t in flap:
         q = [R(i * s, j * s) for i, j in t]
         b.face([P(u, v, over(u, v)) for u, v in q], "Flannel")
         b.face([P(u, v, under(u, v)) for u, v in reversed(q)], "BagGreen")
     for (i0, j0), (i1, j1) in boundary(flap):
-        if fold(((i0, j0), (i1, j1))) or i0 == i1 == 0:   # the head edge carries the collar, not a zip
+        if fold(((i0, j0), (i1, j1))) or i0 == i1 == 0:   # the head edge has no zip
             continue
         (u0, v0), (u1, v1) = R(i0 * s, j0 * s), R(i1 * s, j1 * s)
         if over(u0, v0) - under(u0, v0) > 0.002 or over(u1, v1) - under(u1, v1) > 0.002:
@@ -1136,18 +1160,19 @@ def build_sleepingBag():
     b.bar(P(0.0, 0.008, zb + 0.003), P(c, 0.008, zb + 0.003), 0.016, "Nylon", h=0.006)
     b.bar(P(c, 0.001, zb + 0.004), P(L - 0.02, 0.001, zb + 0.004), 0.008, "Nylon", h=0.006)
     b.cbox(P(c + 0.02, -0.006, zb + 0.004), (0.022, 0.012, 0.010), "Buckle", ch=0.002)   # zip pull
-    # The head opening is framed by a thick stuffed collar on the top layer's edge (owner, 2026-10-21; it
-    # replaced a drawcord too small to see). It folds with the flap: the collar's centre line, inset dc
-    # from the edge, meets the fold at (dc, c − dc), turns 90° there and runs on along the turned-back
-    # edge, resting on the bag the flap now covers.
-    RC, dc = 0.060, 0.045
-    nk, nf = 6, 12
-    kept = [P(dc, (W - 0.045) + ((c - dc + 0.03) - (W - 0.045)) * k / nk, zb + RC) for k in range(nk + 1)]
-    turned = [P(u, c - dc, under(u, c - dc) + RC) for u in (dc + 0.03 + (c - 0.075 - dc) * k / nf for k in range(nf + 1))]
-    b.tube(kept + [P(dc, c - dc, zb + RC + 0.035)] + turned, RC, 10, "BagGreen")
-    # FEAT-171: the pillow at the head, on the zipped side clear of the turned-back corner, sunk a little
-    # into the baffles it rests on.
-    pillow(b, L / 2 - 0.32, 0.17, zb + ht - 0.006)
+    # The pillow, the bedroll's size, at the head across the middle of the bag (owner, 2026-11-06: "the
+    # pillow can go atop the folded over corner"). Its foot-side corner lies over the fold, so it rests on
+    # whatever is under it there: the lining, the roll of the fold, or the flap.
+    # The step is the flap plus the kept top it lies on (~12 cm), and it runs along the fold line, so the lift is
+    # a smooth ramp in the distance from that line: nothing a 10 cm reach before the roll, the roll's top at it.
+    rt2 = math.sqrt(2)
+    uc, vc = 0.20, W / 2                                   # the pillow's centre
+    dp = (c - uc - vc) / rt2; uf, vf = uc + dp / rt2, vc + dp / rt2   # its foot on the fold line
+    z0 = zb + 0.004; rise = over(uf, vf) - z0; reach = (over(uf, vf) - zb) / 2 + 0.10
+    def rest(x, y):
+        t = min(1.0, max(0.0, 1 - (c - (L / 2 - x) - (y + W / 2)) / rt2 / reach))
+        return rise * t * t * (3 - 2 * t)
+    pillow(b, L / 2 - uc, vc - W / 2, z0, rest=rest)
     return b.finish("sleepingBag")
 
 
@@ -2927,7 +2952,7 @@ GLB_DIR = os.path.join(os.path.dirname(OUT_DIR), "models")
 WORLD = {"spareTire": ("spare-tire", Matrix.Rotation(math.pi / 2, 4, "X")),   # file, rest rotation (tire: lying flat)
          # FEAT-66's camp bed slot: already lying flat, so only turned — length onto glTF Z, head end at
          # +Z (Blender −Y), the back of the tent. The pads' head is −X (the pillow end, valve at the
-         # foot); the sleeping bag's is +X (the collar).
+         # foot); the sleeping bag's is +X.
          "sleepingBag":       ("sleeping-bag",        Matrix.Rotation(-math.pi / 2, 4, "Z")),
          "airMattress":       ("air-mattress",        Matrix.Rotation(math.pi / 2, 4, "Z")),
          "sleepingPad":       ("sleeping-pad",        Matrix.Rotation(math.pi / 2, 4, "Z")),

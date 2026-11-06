@@ -165,9 +165,17 @@ export function stackBed (roots) {
       if (!o.isMesh) return
       const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(), p = g.attributes.position
       const toRoot = inv.clone().multiply(o.matrixWorld), toMesh = toRoot.clone().invert()
+      // A pillow is stiff: it rides the drape in one piece, lifted by the highest field under it, so it never
+      // sinks. Bent vertex by vertex like the fabric, it sheared into a beak over a pad's edge or the deluxe
+      // pad's 3.5 cm head rise (FEAT-171). The loader splits a model per material, so the pillow is its own mesh.
+      let lift = null
+      if (o.material?.name === 'PillowCase') {
+        lift = 0
+        for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(toRoot); lift = Math.max(lift, fieldAt(f, v.x, v.z)) }
+      }
       for (let i = 0; i < p.count; i++) {
         v.fromBufferAttribute(p, i).applyMatrix4(toRoot)
-        v.y += fieldAt(f, v.x, v.z)
+        v.y += lift ?? fieldAt(f, v.x, v.z)
         v.applyMatrix4(toMesh)
         p.setXYZ(i, v.x, v.y, v.z)
       }

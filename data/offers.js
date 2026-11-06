@@ -505,7 +505,7 @@ export const REQUISITION = [
 /**
  * FEAT-147: THE FIRST JOB — the opening's courier run from mom's to Larry's (owner, 2026-11-02: a
  * courier TO Larry, not his paper round; 2026-11-05: mom sends it, scripted). One fixed offer at mom's,
- * posted once by the opening (src/offer-board.js `f0` slot) — mom has no SOURCES row and posts nothing
+ * posted once per run (src/offer-board.js `f0` slot): when the opening's evening ends, or at go-live on a skip (FEAT-170) — mom has no SOURCES row and posts nothing
  * else. Same rules as any courier job: pay, deadline, deed. PLACEHOLDER words (the owner writes them).
  */
 export const FIRST_JOB = {

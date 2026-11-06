@@ -237,8 +237,7 @@ check(await js('document.getElementById("main-menu").classList.contains("setup")
 check(await js('!document.querySelector("#mm-setup-panel [data-key=steerAssist]")'), 'no assist rows on the setup page (they are settings)')
 check(await navText() === 'start', `the setup page opens on start, its default (${await navText()})`)
 await press(DOWN, 2); await press(RIGHT, 2)   // past back to the mode row: story → scenarios → free roam
-check((await selVal('gameMode')).includes('free roam') && !await js('document.querySelector("#mm-setup-panel [data-key=opening]").offsetParent'),
-      `mode ▸▸ → free roam, and the opening row (story only, FEAT-147) hides (${await selVal('gameMode')})`)
+check((await selVal('gameMode')).includes('free roam'), `mode ▸▸ → free roam (${await selVal('gameMode')})`)
 await press(DOWN); await press(LEFT)
 check((await selVal('worldPreset')).includes('casual'), `difficulty ◂ → casual (${await selVal('worldPreset')})`)
 const codeLine = () => js('document.getElementById("su-code").textContent')
