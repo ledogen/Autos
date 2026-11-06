@@ -1363,10 +1363,16 @@ const STEPS = [
     // At the giver, a LONG RB press: the offer card opens under it, and the brake must stay latched (FEAT-125: the
     // card layout re-sent RB's Space, so the park latched and let go).
     await seatPoi(`q => q.id === ${JSON.stringify(giver.id)}`)
-    if (await js('window.__vs.parked')) { await btn(5); await frames(4, 200) }
+    // The seat lands parked and its reseat lets the next poll answer that brake, so the offer may be up already (under
+    // load it raced the presses below): decline it, let go of the brake, and give the 10 Hz poll time to see that.
+    const offerUp = () => js('document.getElementById("mission-panel").style.display === "block"')
+    if (await until(offerUp, 1500)) { await padTo('mp-decline'); await btn(0); await until(async () => !await offerUp(), 2000) }
+    if (await js('window.__vs.parked')) await btn(5)
+    check(await until(() => js('!window.__vs.parked'), 2000), 'RB did not let go of the brake at the giver')
+    await frames(6, 300)
     await hold(5, 450)
     check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
-    check(await until(() => js('document.getElementById("mission-panel").style.display === "block"'), 3000), 'parking at the giver opened no offer card')
+    check(await until(offerUp, 6000), 'parking at the giver opened no offer card')
     await padTo('mp-decline'); await btn(0)
     check(await until(() => js('document.getElementById("mission-panel").style.display !== "block"'), 2000), 'A on decline left the offer up')
     // The pump: A held pumps, RB lets go of the brake and pays.
