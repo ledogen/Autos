@@ -110,6 +110,26 @@ const HELPERS = `window.__soak = {
   // A point of the job's polyline and the heading along it there.
   along (i) { const p = window.__mission().mission.poly, k = Math.max(1, Math.min(p.length - 1, i)), a = p[k - 1], b = p[k]
     return { x: p[k].x, z: p[k].z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } },
+  // THE LOAD RIDES THE TELEPORT (soak-side, the page's engine wrapped — no game code changes): when the reseat
+  // moves the chassis, every body debris.js marks in the bed (rec.cargo: haul bundles, the strapped drum, a crate,
+  // the loose spare) moves by the same rigid step in the same call, velocity zeroed. A teleport otherwise leaves
+  // the load behind, and a welded drum would be yanked across the map by its joint.
+  carry () { const E = window.__physicsEngine, D = window.__debris, vs = window.__vs
+    if (E.__soakSet) return; const set = E.__soakSet = E.setTransform.bind(E)
+    const V = vs.position.constructor, Q = vs.quaternion.constructor, p0 = new V(), q0 = new Q(), bp = new V(), bq = new Q(), zero = { x: 0, y: 0, z: 0 }
+    E.setTransform = (h, p, q) => {
+      if (!D._live.some(r => r.body === h)) {
+        E.getTransform(h, p0, q0)
+        if (p0.distanceTo(vs.position) < 0.05) {   // the chassis: its pose is the truck's
+          const step = new Q(q.x, q.y, q.z, q.w).multiply(q0.clone().invert())
+          for (const r of D._live) { if (!r.cargo) continue
+            E.getTransform(r.body, bp, bq)
+            const np = bp.sub(p0).applyQuaternion(step).add(new V(p.x, p.y, p.z)), nq = step.clone().multiply(bq)
+            set(r.body, np, nq); E.setVelocity(r.body, zero, zero) }
+        }
+      }
+      set(h, p, q)
+    } },
   state () { const d = window.__day(), e = window.__econ, m = window.__mission(), b = window.__board(), v = window.__vs
     return { day: d.day(), h: d.clockH(), hour: d.hour(), energy: d.energyH(), hungry: d.hungry(), money: e.money, half: e.halfPoints,
       ms: m.state, fuel: v.fuel.gal, first: b?.firstState(), lines: b?.lines().map(l => l.state) ?? [], pos: window.__car(),
@@ -129,7 +149,7 @@ async function startRun (seed) {
   await js('document.getElementById("mm-new").click()')
   await js(`document.getElementById("su-seed").value = ${JSON.stringify(seed)}; document.getElementById("su-start").click()`)
   check(await until(() => js(live), 180000, 250), 'the run never went live')
-  await js(HELPERS)
+  await js(HELPERS); await js('window.__soak.carry()')
   // Skip the opening: hold M a second over the firing (FEAT-170 stage 2).
   check(await until(dlgUp, 5000), 'the run did not open on the firing')
   await key('m', true); await sleep(1300); await key('m', false)
@@ -151,7 +171,7 @@ async function saveAndResume () {
   check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 120000, 250), 'no continue after the reload')
   await js('document.getElementById("mm-continue").click()')
   check(await until(() => js(live), 180000, 250), 'the resumed run never went live')
-  await js(HELPERS)
+  await js(HELPERS); await js('window.__soak.carry()')
   if (await until(() => js('document.getElementById("resume-card").style.display === "flex"'), 3000)) await tap('Escape')
   await until(async () => !await js('document.getElementById("resume-card").style.display === "flex"'), 3000)
   const after = await S()
@@ -216,7 +236,7 @@ async function take (o) {
   await drive(await js(`window.__soak.spot(window.__soak.poi(${JSON.stringify(o.poi)}))`))
   await park()
   if (o.type === 'autoShop' && await until(() => vis('svc-screen'), 3000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
-  if (!await until(() => vis('mp-accept'), 5000)) { await skip(o); return false }
+  if (!await until(() => vis('mp-accept'), 15000)) { await skip(o); if (await js('window.__mission().state') !== 'idle') await decline(); return false }
   await readCards()
   for (let i = 0; i < 12 && await js(`window.__mission().offer?.id !== ${JSON.stringify(o.id)}`); i++) { await js('window.__mission().cycle(1)'); await sleep(100) }
   if (!await js(`window.__mission().offer?.id === ${JSON.stringify(o.id)} && !document.getElementById("mp-accept").disabled`)) {
