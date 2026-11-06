@@ -3575,28 +3575,37 @@ export class RoadSystem {
             // re-routed here before the crossing rung could judge them).
             let tAx = tA, tBx = tB
             const shK = shA ? kA : kB
-            if (merges && ((shA || shB) ? !this._v2PlannedPair(g, drop, ck, pk)
-                : this._v2NodeRole(g, drop, kA, kB, ck) || this._v2NodeRole(g, drop, qA, qB, pk))
-                && !_pairProperCrossingsXZ(S, shK === kA, Q, shK === qA, shA || shB).length) {
-                merges = false; violates = false
-                if (shA) tAx = this._v2ThroatLen(S, true, Q)
-                if (shB) tBx = this._v2ThroatLen(S, false, Q)
-                // …and never on a stretch a pass-1 T cedes (either run's line from its node to the fork
-                // is replaced by the trunk, so it never ships).
-                // …and only for the GRAZE tier (centres inside the pavement floor, 2·HW + clearEdgeM): banks-only
-                // contact is reported, not chased (tier split, 2026-11-06). Seed 11 (1385, −1170): the pair
-                // 1,-2,0|2,-1,1 × 0,-2,0|1,-2,0 sat 22.1 m apart (banks only); re-routing it against that one
-                // winner swung the loser onto the node's third leg, 1.9 m apart for 88 m.
-                const cedS = this._v2CededPass1(g, drop, ck, kA, S.L), cedQ = this._v2CededPass1(g, drop, pk, qA, Q.L)
-                const ceded = (iv, x) => iv.some(([a, b]) => x >= a && x <= b), FLOOR = this._v2ClearPrm().floor
-                for (let i = 0; i < S.pts.length && !violates; i++) {
+            // …and only for the GRAZE tier (centres inside the pavement floor, 2·HW + clearEdgeM): banks-only
+            // contact is reported, not chased (tier split, 2026-11-06). Seed 11 (1385, −1170): the pair
+            // 1,-2,0|2,-1,1 × 0,-2,0|1,-2,0 sat 22.1 m apart (banks only); re-routing it against that one
+            // winner swung the loser onto the node's third leg, 1.9 m apart for 88 m.
+            const FLOOR = this._v2ClearPrm().floor
+            const grazeWalk = (tAg, tBg, cedS, cedQ) => {
+                const ceded = (iv, x) => iv.some(([a, b]) => x >= a && x <= b)
+                for (let i = 0; i < S.pts.length; i++) {
                     const s = S.polyCum[i]
-                    if ((shA && s < tAx) || (shB && s > S.L - tBx)) continue
+                    if ((shA && s < tAg) || (shB && s > S.L - tBg)) continue
                     if ((S.spans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)) continue
                     if (ceded(cedS, s)) continue
                     const h = _nearestWithinXZ(S.pts[i].x, S.pts[i].z, Q.pts, Q.polyCum, 60)
-                    if (h && !ceded(cedQ, h.cum) && h.d < FLOOR) violates = true
+                    if (h && !ceded(cedQ, h.cum) && h.d < FLOOR) return true
                 }
+                return false
+            }
+            // Cheapest test first: the walk with nothing ceded is a superset of the one below, so a pair that does not
+            // graze past the geometric throat even then stays deferred whatever the T machinery would answer — and the
+            // ownership question (pass-1 T probes) is never asked. Asking it for every pair inside mergeProxM cost
+            // +35 % of the network thread (2026-11-06).
+            const tAg = shA ? this._v2ThroatLen(S, true, Q) : tA, tBg = shB ? this._v2ThroatLen(S, false, Q) : tB
+            if (merges && grazeWalk(tAg, tBg, [], [])
+                && ((shA || shB) ? !this._v2PlannedPair(g, drop, ck, pk)
+                    : this._v2NodeRole(g, drop, kA, kB, ck) || this._v2NodeRole(g, drop, qA, qB, pk))
+                && !_pairProperCrossingsXZ(S, shK === kA, Q, shK === qA, shA || shB).length) {
+                merges = false
+                tAx = tAg; tBx = tBg
+                // …and never on a stretch a pass-1 T cedes (either run's line from its node to the fork
+                // is replaced by the trunk, so it never ships).
+                violates = grazeWalk(tAg, tBg, this._v2CededPass1(g, drop, ck, kA, S.L), this._v2CededPass1(g, drop, pk, qA, Q.L))
             }
             if (merges || !violates) continue
             // the LOSER re-routes: the longer pass-1 route, tie broken by the larger key
