@@ -126,13 +126,13 @@ const HELPERS = `window.__soak = {
   // the load behind, and a welded drum would be yanked across the map by its joint. The chassis is the call
   // passing vehicleState.position itself; only a jump (> 2 m) carries, so a step's own motion never touches it.
   // A timeline of the dialogue panel for the stuck-card soft-lock: display flips, text re-renders (hidden word
-  // counts), word reveals, and every keydown the document sees (bubble phase, after the game's handlers ran).
+  // counts), word reveals, and every keydown as it arrives (window capture, ahead of the game's handlers).
   watch () { if (window.__soakLog) return; const L = window.__soakLog = [], t0 = performance.now(), P = document.getElementById('dialogue-panel'), T = document.getElementById('dlg-text')
     const add = (e) => { L.push(((performance.now() - t0) / 1000).toFixed(2) + ' ' + e); if (L.length > 60) L.shift() }
     const hid = () => T.querySelectorAll('span[style*=hidden]').length + '/' + T.querySelectorAll('span:not(:has(span))').length
     new MutationObserver(() => add('panel ' + P.style.display)).observe(P, { attributes: true, attributeFilter: ['style'] })
     new MutationObserver((ms) => add(ms.some(m => m.type === 'childList') ? 'text ' + hid() + ' ' + T.textContent.slice(0, 24) : 'reveal ' + hid())).observe(T, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] })
-    document.addEventListener('keydown', e => add('key ' + e.key + (e.repeat ? ' repeat' : '') + (e.defaultPrevented ? ' handled' : ' UNHANDLED'))) },
+    window.addEventListener('keydown', e => add('key ' + e.key + (e.repeat ? ' repeat' : '') + ' → ' + (e.target.id || e.target.tagName)), true) },   // window capture: before every handler
   carry () { const E = window.__physicsEngine, D = window.__debris, vs = window.__vs
     if (E.__soakSet) return; const set = E.__soakSet = E.setTransform.bind(E)
     const V = vs.position.constructor, Q = vs.quaternion.constructor, p0 = new V(), q0 = new Q(), bp = new V(), bq = new Q(), zero = { x: 0, y: 0, z: 0 }
