@@ -3911,9 +3911,16 @@ export class RoadSystem {
                 // BUG-55: the coarse gate runs even with the feature off, so a declined candidate
                 // is COUNTED — capture-classify can then answer "why didn't this pair merge" with
                 // a named reason instead of silence.
-                if (!maybeMidSpan(A, B, fA)) continue
+                // From BOTH walks (BUG-105): one leg's walk can carry the whole conflict inside its own
+                // node interval (a flare bridged) while the other's parts at once and meets it only far
+                // out, past mergeGapM — so neither the node merge (needs both) nor A's mid-span probe
+                // (starts past fA) saw it. Seed 2166453044 (−89, −1307): fA 227, fB 16, the legs cross
+                // 160 m out and shipped 10.4 m apart for 92 m.
+                const mA = maybeMidSpan(A, B, fA), mB = maybeMidSpan(B, A, fB)
+                if (!mA && !mB) continue
                 if (!MIDSPAN_ON) { this._v2MergeSkipped('midspanOff', `${A.ck} x ${B.ck} @${nk}`); continue }
-                const mid = this._v2MidSpanPair(ctx, A, B, conflictIntervals(A, B))
+                const mid = (mA && this._v2MidSpanPair(ctx, A, B, conflictIntervals(A, B)))
+                    || (mB && this._v2MidSpanPair(ctx, B, A, conflictIntervals(B, A))) || null
                 if (mid) pairs.push(mid)
                 continue
             }
