@@ -1454,7 +1454,8 @@ for (const [name, fn] of STEPS) {
   if (ONLY && !ONLY.includes(name)) continue
   step = name
   const t0 = performance.now()
-  try { await fn() } catch (e) { failed = { step: name, msg: e.message } }
+  // A step on a random world (the pad step's blank seed box) names it, so a miss can be replayed (Lane A, 2026-11-06).
+  try { await fn() } catch (e) { failed = { step: name, msg: `${e.message} · ${await js('window.__worldCode?.()').catch(() => 'world code unreadable')}` } }
   times.push(`${name} ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   if (failed || errors.length) break
 }
