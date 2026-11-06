@@ -343,3 +343,32 @@ each estimate is the thing to verify first.
 | **Build the story world behind the menu** | the whole ~12 s entry | pre-roll the blank-seed `Math.random()` at boot and generate THAT world (region included) while the player is in the menu. Still pure generation — nothing saved. Design call: free roam's boot world would then be random too, or be built second | hides up to all of it |
 
 The last row is the only one that changes the order of magnitude; the rest are each a second or so.
+
+## 2026-11-06 — re-measured on main `0d7c84c6` (Spare): preliminary, LOADED box (load 5–21)
+
+`test/story-coldload.mjs` now prints the click → live **split**: settle = the reseed (spawn resolve + the new
+free-roam world), region warm = the worker's region build plus pumps, seed check, and go-live (POI placement). It
+times story's own deps from the page. Built bundle (`vite preview`). Random seeds from BUG-105's census list.
+
+| seed | cpu | boot (ready) | settle | region warm | go-live | **entry** | **total** |
+|---|---|---|---|---|---|---|---|
+| 3997014678 | 1× | 7.8 s | 10.8 s | 20.5 s | 0.65 s | 33.9 s | 45.3 s |
+| 2623851183 | 1× | 8.3 s | 8.6 s | 19.4 s | 0.64 s | 30.7 s | 42.4 s |
+| 744309545 | 1× | 8.5 s | 5.7 s | 18.4 s | 0.79 s | 27.2 s | 39.3 s |
+| 3997014678 | 4× | 17.6 s | 12.1 s | 24.0 s | 2.5 s | 44.6 s | 72.1 s |
+| 2623851183 | 4× | 13.9 s | 11.6 s | 24.6 s | 2.3 s | 44.4 s | 70.3 s |
+| 744309545 | 4× | 14.3 s | 8.4 s | 27.2 s | 2.9 s | 48.0 s | 71.2 s |
+
+**Read with care; this box was loaded throughout.** Even so:
+- **Story entry on a RANDOM seed at cpu ×4 is ~44–48 s here.** PERF-31's and BUG-105's "9 s" was seed 6, the boot
+  seed: no reseed, warm caches. That is not the path a player takes.
+- **The settle is 5.6–10.8 s at 1× (09-22: ~2 s).** It is ~97 % `reseed.reseat`: the free-roam spawn resolve builds
+  networks around candidates, then the region warm builds the whole region over the same ground.
+- **Go-live (POI placement) is 0.6–0.8 s at 1×.** It meets the 09-22 row's target (0.9 + 0.3 s) and can be closed;
+  2.3–2.9 s at 4×.
+- **The region warm is the biggest row.** Region bench (`wip/perf-31/region-bench.mjs`, seed 3997014678, loaded):
+  old main `871d7750` thread 7.0 s + pool 18.1 s / 356 jobs; now thread 10.2 s + pool 28.8 s / 358 jobs. Same network
+  hash. BUG-105's pass-1 forecast lives in that warm thread.
+
+**Owed:** the same sweep, plus the region bench A/B, in a quiet window. Then the levers, and the "behind the menu"
+numbers.

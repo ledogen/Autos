@@ -117,7 +117,21 @@ if (MODE === 'reseed') {
                  window.__lever('changeSeed', ${JSON.stringify(SEED)})
                    .then(() => { window.__reseedDone = performance.now() }), true)`)
 }
-else await evalOk(`(window.__story().enter(${JSON.stringify(SEED)}), true)`)
+else {
+  // PERF-27 (2026-11-06): the click-to-driving SPLIT, timed in the page off story's own deps (wrapped here, test-side
+  // only) and its phase edges — settle (the reseed: spawn resolve + the new world), the region warm (worker
+  // pre-warm + plan + build, with pump latency), the seed check, go-live (POI placement), then the carve re-bake.
+  await evalOk(`(() => { const s = window.__story(), d = s._d, T = window.__st = { ms: {}, n: {} }
+    for (const k of ['applySeed', 'pumpRegionWarm', 'validateRegion', 'onRegionLive']) { const f = d[k]; if (typeof f !== 'function') continue
+      const add = (t) => { T.ms[k] = (T.ms[k] || 0) + performance.now() - t; T.n[k] = (T.n[k] || 0) + 1 }
+      d[k] = function (...a) { const t = performance.now(), r = f.apply(this, a)
+        if (r && typeof r.then === 'function') return r.then((v) => { add(t); return v })
+        add(t); return r } }
+    window.__phases = [['enter', performance.now()]]; let last = s._phase
+    window.__phaseTimer = setInterval(() => { if (s._phase !== last) { last = s._phase; window.__phases.push([last, performance.now()]) } }, 50)
+    return true })()`)
+  await evalOk(`(window.__story().enter(${JSON.stringify(SEED)}), true)`)
+}
 console.log(`  ${MODE === 'reseed' ? 'reseed' : 'enter '}      ${(tEnter / 1000).toFixed(2)} s   ${MODE === 'reseed' ? 'free-roam seed change called' : 'story entry called'}`)
 
 // The reseed is async: the rebuild has not started on the tick the lever returns, so waiting
@@ -201,6 +215,17 @@ const regionAsset = assets.find(a => a.name.includes('region'))
 if (regionAsset) console.log(`  region prefetch ${regionAsset.startMs + regionAsset.durMs <= tEnter ? 'COMPLETE before entry (realistic: player took a moment to click)' : 'STILL IN FLIGHT at entry (pessimistic: instant click)'}`)
 console.log('  state at live:', JSON.stringify(state))
 for (const a of assets) console.log(`  asset  ${a.name}  ${a.kb} KB  start ${a.startMs} ms  transfer ${a.durMs} ms`)
+if (MODE === 'story') {
+  const sp = await evalOk(`(() => { clearInterval(window.__phaseTimer); return { st: window.__st, ph: window.__phases } })()`)
+  const at = (name) => sp.ph.find(([p]) => p === name)?.[1]
+  const t0 = at('enter'), tw = at('warming'), tl = at('live')
+  const ms = (v) => v == null ? '—' : `${(v / 1000).toFixed(2)} s`
+  console.log(`\n  split (click → live; main-thread hook time in brackets):`)
+  console.log(`    settle (reseed: spawn resolve + world)  ${ms(tw - t0)}   [applySeed ${ms(sp.st.ms.applySeed)}]`)
+  console.log(`    region warm (worker build + pumps)      ${ms(tl - tw - (sp.st.ms.validateRegion ?? 0) - (sp.st.ms.onRegionLive ?? 0))}   [pumps ${sp.st.n.pumpRegionWarm ?? 0} × ${ms((sp.st.ms.pumpRegionWarm ?? 0) / Math.max(1, sp.st.n.pumpRegionWarm ?? 1))}]`)
+  console.log(`    seed check                              ${ms(sp.st.ms.validateRegion)}`)
+  console.log(`    go-live (POI placement, board, camps)   ${ms(sp.st.ms.onRegionLive)}`)
+}
 if (exceptions.length) console.log(`\n  ⚠ ${exceptions.length} page exception(s):\n   ${exceptions.slice(0, 5).join('\n   ')}`)
 
 const result = {
