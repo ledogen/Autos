@@ -38,7 +38,7 @@
 // Offer ids are `${poiId}#${slot}#${k}` — stable, unique for the run, and readable in a log.
 
 import {
-    THINGS, REWARDS, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
+    THINGS, REWARDS, REWARD_CATS, RARE_PULL, PART_REWARD_CAT, RARITY_GATES, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
     REWARD_VALUE, REQUISITION, FIRST_JOB, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP, GIVER_LINES, GIVER_LINE_P,
 } from '../data/offers.js'
@@ -111,6 +111,15 @@ export const pickReward = (at, u) => at.find(x => x.id === pickWeighted(u, Objec
 
 /** FEAT-168: may an offer born at `bornH` (DaySystem.clockH, day 1 starts at 0) carry REWARDS row `w`? */
 const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24) + 1)
+
+/** FEAT-168: every reward — the REWARDS rows, then each carried part with no row, under its slot's
+ *  category at its rarity's gates (data/offers.js PART_REWARD_CAT / RARITY_GATES). */
+export const REWARD_LIST = [...REWARDS, ...Object.entries(PARTS)
+    .filter(([id, p]) => p.massKg > 0 && !REWARDS.some(w => w.id === id))
+    .map(([id, p]) => ({ id, name: p.name, kind: 'part', gates: RARITY_GATES[p.rarity], cat: PART_REWARD_CAT[p.slot] }))]
+
+/** FEAT-168: the rewards in categories `cats` that an offer born at `bornH` may carry. */
+export const rewardsIn = (cats, bornH) => REWARD_LIST.filter(w => cats.includes(w.cat) && dayAllows(w, bornH))
 
 function pickWeighted (u, weights) {
     const keys = Object.keys(weights)
@@ -667,7 +676,9 @@ export class OfferBoard {
         const bonusRoll = r(), gateRoll = r(), rewardRoll = r()
         const amount = thing.family === 'freight' ? { have: massKg, row: rankTable('freight', this._region) } : null
         if (bonusRoll < BONUS_CHANCE) {
-            const pool = REWARDS.filter(w => w.pools.includes(offer.type) && dayAllows(w, offer.bornH))
+            // FEAT-168: the giver's categories; the bottom RARE_PULL of the roll is an off-list pull.
+            const cats = REWARD_CATS[offer.type]
+            const pool = rewardsIn((bonusRoll < BONUS_CHANCE * RARE_PULL && cats?.rare) || cats?.cats || [], offer.bornH)
             const w = {}
             for (const g of Object.keys(GATE_WEIGHTS)) {
                 // R-18 keeps the ruling that a light load carries no item (DESIGN.md, owner 2026-10-22):
@@ -838,8 +849,8 @@ export class OfferBoard {
         const r = rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:receiver` + (n ? `:${n}` : ''))
         if (r() < 0.5) return
         const q = this._pois.get(m.endPoiId)
-        const kinds = [q?.type, ...(q?.tags ?? [])]
-        const at = REWARDS.filter(w => w.gates.includes(sp.bonus.gate) && w.pools.some(p => kinds.includes(p)) && dayAllows(w, offer.bornH))
+        const cats = [q?.type, ...(q?.tags ?? [])].flatMap(k => REWARD_CATS[k]?.cats ?? [])
+        const at = rewardsIn(cats, offer.bornH).filter(w => w.gates.includes(sp.bonus.gate))
         if (!at.length) return
         const reward = pickReward(at, r())
         sp.bonus = { rewardId: reward.id, name: reward.name, gate: sp.bonus.gate, ...(reward.dineIn && { dineIn: true }) }
