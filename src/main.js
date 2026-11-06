@@ -26,7 +26,7 @@ import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
-import { tireContact } from './tire-contact.js'   // FEAT-70: the wheel's ground contact, solved for the tire cylinder
+import { makeQueryContacts } from './world-contacts.js'   // the wheels' and body's contact query (FEAT-70 tire cylinder inside)
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
@@ -2176,85 +2176,25 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
  * Called by stepPhysics once per wheel each physics step (footprint = true, `axle` = that wheel's spin
  * axis), and by body probes as a plain sphere.
  */
-// S-64: queryContacts' per-sample road-hint and ground samplers, hoisted to module scope so the
-// 4-wheels-per-step physics path does not allocate closures per call. The call's cy reaches them
-// through _qcY (set at the top of queryContacts; nothing in between re-enters it).
-let _qcY = 0
+// S-64: the per-sample road hint, at module scope so the 4-wheels-per-step physics path allocates no closure per call.
 const _qcHintAt = (x, z) => (!_labActive && roadSystem) ? roadSystem.carveHint(x, z) : undefined
-// FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
-const _qcGroundH = (x, z) => _labActive ? labSystem.groundHeight(x, z)
-                                        : (terrainSystem ? terrainSystem.analyticHeight(x, z, _qcHintAt(x, z), _qcY) : 0)
 const _QC_UP = { x: 0, y: 1, z: 0 }
-const _qcGroundN = (x, z) => _labActive ? labSystem.groundNormal(x, z)
-                                        : (terrainSystem ? terrainSystem.analyticNormal(x, z, _qcHintAt(x, z), _qcY) : _QC_UP)
-const _qcTire = {}
-function queryContacts (cx, cy, cz, r, footprint = false, axle = undefined) {
-  const hits = []
-  _qcY = cy
-
-  // Ground surface — the lab's own surface in the testing lab; analytic terrain height otherwise.
-  // The road run is resolved PER SAMPLE (carveHint at each sample's own x, z), never once at the wheel
-  // centre: a centre still off the road would resolve every sample against bare terrain and the tire
-  // could not feel a road edge until its centre crossed it (owner, 2026-08-22). PERF-24's death
-  // spiral (a near-stationary wheel dispatching ~300 queries a frame on a switchback) stays bounded by
-  // carveHint's own 0.05 m memo: every substep and repeat query at the same spot reuses its cells.
-  //
-  // FEAT-70: a wheel is solved as the tire CYLINDER it is (src/tire-contact.js) — the surface point
-  // closest to the axle across three lines of the tread, depth along the radial line, the normal
-  // radial at an edge — so a kerb ahead lifts and slows the wheel continuously and ground BESIDE the
-  // tire lifts nothing. It replaced a 4-ring × 8-direction stencil round the hub, which was a sphere
-  // (a kerb 15 cm beside the tire lifted the hub 76 mm) and climbed edges in ring-seam steps.
-  if (footprint && axle && r > 0 && RANGER_PARAMS.wheelFootprint !== false) {
-    const c = tireContact(_qcGroundH, _qcGroundN, cx, cy, cz, r, RANGER_PARAMS.wheelWidth, axle, _qcTire)
-    if (c) hits.push({ normal: new THREE.Vector3(c.nx, c.ny, c.nz), depth: c.depth, contactPoint: new THREE.Vector3(c.px, c.py, c.pz) })
-  } else {
-    const h = _qcGroundH(cx, cz), gd = h + r - cy
-    if (gd > 0) {
-      const n = _qcGroundN(cx, cz)
-      hits.push({ normal: new THREE.Vector3(n.x, n.y, n.z), depth: gd, contactPoint: new THREE.Vector3(cx, h, cz) })
-    }
-  }
-
-  // Ramp triangle contacts — lab only (wheel path; the chassis gets the engine ramp prism).
-  // _labActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
-  if (_labActive && RANGER_PARAMS.rampEnabled !== false) _triContacts(RAMP_TRIS, cx, cy, cz, r, hits)
-  if (_kick) _triContacts(_kick.tris, cx, cy, cz, r, hits)   // the barrel cube's kick ramp
-
-  // FEAT-06b: prop hard contacts (tree trunks = capsule, rocks/boulders = sphere). Local query
-  // against the per-chunk collidable grid — bushes are NOT here (soft-drag is applied separately
-  // once per physics step in the loop). Skipped in the lab (no props there). Same {normal,depth,
-  // contactPoint} shape, so the wheel + body solvers consume them unchanged.
-  if (!_labActive && propSystem) {
-    propSystem.queryProps(cx, cy, cz, r, hits)   // appends in place (S-49)
-  }
-
-  // FEAT-46: the POI marker cube is SOLID — a marker you drive through reads as scenery, and this
-  // project's premise is that the physics is honest. Same {nx,ny,nz,depth} convention as the prop
-  // hits above, converted here exactly as prop-system does. Empty list in free roam ⇒ free.
-  if (!_labActive) {
-    const poiHit = poiSystem.queryContact(cx, cy, cz, r)
-    if (poiHit) {
-      const t = r - poiHit.depth   // query centre back along -normal to the solid's surface
-      hits.push({
-        normal: new THREE.Vector3(poiHit.nx, poiHit.ny, poiHit.nz),
-        depth: poiHit.depth,
-        contactPoint: new THREE.Vector3(cx - poiHit.nx * t, cy - poiHit.ny * t, cz - poiHit.nz * t),
-      })
-    }
-  }
-
-  // BUG-37: bore WALL contact — terrainSystem's ground block above only resolves the bore FLOOR
-  // (bore-ownership rule); the curved half-tube sides have no matching collision without this. Same
-  // {normal,depth,contactPoint} shape as prop hits, so the wheel solver treats a wall like any other
-  // surface. Reuses the CENTRE's run (memoized, so no extra tile scan) — a tunnel wall is a
-  // property of the run the wheel is in, not of the envelope's outlying samples.
-  if (!_labActive && roadSystem) {
-    const wallHit = roadSystem.queryTunnelWallContact(cx, cy, cz, r, _qcHintAt(cx, cz))
-    if (wallHit) hits.push(wallHit)
-  }
-
-  return hits
-}
+// The contact query stepPhysics is handed (src/world-contacts.js — one definition, which the headless drive soak builds
+// from the same systems): the lab's own surface in the testing lab, the analytic terrain otherwise, each sample's road
+// run resolved at its own x, z and the query's own height (FEAT-40) choosing the level.
+const queryContacts = makeQueryContacts({
+  params: RANGER_PARAMS,
+  groundH: (x, z, y) => _labActive ? labSystem.groundHeight(x, z) : (terrainSystem ? terrainSystem.analyticHeight(x, z, _qcHintAt(x, z), y) : 0),
+  groundN: (x, z, y) => _labActive ? labSystem.groundNormal(x, z) : (terrainSystem ? terrainSystem.analyticNormal(x, z, _qcHintAt(x, z), y) : _QC_UP),
+  props: () => _labActive ? null : propSystem,
+  pois: () => _labActive ? null : poiSystem,
+  tunnelWall: (cx, cy, cz, r) => (!_labActive && roadSystem) ? roadSystem.queryTunnelWallContact(cx, cy, cz, r, _qcHintAt(cx, cz)) : null,
+  // Ramp triangles — lab only (_labActive is the gate; rampEnabled a debug toggle) — and the barrel cube's kick ramp.
+  extra: (cx, cy, cz, r, hits) => {
+    if (_labActive && RANGER_PARAMS.rampEnabled !== false) _triContacts(RAMP_TRIS, cx, cy, cz, r, hits)
+    if (_kick) _triContacts(_kick.tris, cx, cy, cz, r, hits)
+  },
+})
 
 // Ramp visual — inclined PlaneGeometry spanning the full slope (rise + underrun).
 // Toe is buried underground (RAMP_TOE_Y < 0); terrain clips the lower section naturally.
