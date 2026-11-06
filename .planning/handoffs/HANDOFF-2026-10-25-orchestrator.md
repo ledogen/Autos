@@ -307,3 +307,4 @@ kill timed it out).
 
   Cherry-pick protocol: `git cherry-pick -x <commits>`, amend a "landed alone by the orchestrator" note onto single picks, then affected gates + the solo smoke.
 - **BUG-105 landed 14c6feb6** (11-06): the merge equals Spare's tested fbad0c59 (test:all --browser 130/130), and the solo smoke on main passed 23/23. GRAZE 30 → 4; cost: network thread +22 %, story entry +0.6 s at cpu ×4. Spare's next queue: the BUG-69 case study, FEAT-62, BUG-112, plus a new BUG-85 seed for region-pieces.
+- **Pad-only audit landed** (cherry-picked 2b98b92e…b990bfbf; affected 9/9, solo smoke 24/24 with the new 'pad' step, pad-e2e ok). bug69-case is owed (Spare's page M9S2yYEjKTCNJPZqypBAgt; prototype at CarGame-bug69, proto/bug-69-past-band). Lane B: dlg-key → keycap in the dialogue renderer, then the drive soak. Spare: FEAT-62.
