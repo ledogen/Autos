@@ -120,7 +120,7 @@ import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } f
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
-import { playCoin, playStinger, playTickTrain, playClack, playThud, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
+import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -3660,17 +3660,64 @@ const dialogueSystem = new DialogueSystem()
  * innerHTML is correct and safe on .dlg-text — cards are authored constants in data/dialogue.js
  * carrying <span class="dlg-key"> glyphs, never player input. See the note there.
  */
+// THE WORD STREAM (owner, 2026-11-06, feat120-blip: "word by word text stream in where a keypress skips to the
+// whole card filled. blip at the end."). A new card is laid out whole with every word hidden, so it never
+// reflows as it fills, then shown a word per DLG_WORD_MS on the wall clock — a card that holds the sim still
+// streams. The first press fills it (the advance handlers below), the next one turns it; one blip when full.
+const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
+const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0 }
+/** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order. */
+function _hideWords (el) {
+  const words = []
+  const walk = (node) => {
+    for (const c of [...node.childNodes]) {
+      if (c.nodeType !== Node.TEXT_NODE) { walk(c); continue }
+      const frag = document.createDocumentFragment()
+      for (const part of c.textContent.split(/(\s+)/)) {
+        if (!part) continue
+        if (/^\s+$/.test(part)) { frag.append(part); continue }
+        const w = document.createElement('span'); w.textContent = part; w.style.visibility = 'hidden'
+        frag.append(w); words.push(w)
+      }
+      c.replaceWith(frag)
+    }
+  }
+  walk(el)
+  return words
+}
+/** Show the card's first n words; at the last, stop and blip. */
+function _dlgShow (n) {
+  const d = _dlg
+  if (!d.words) return
+  for (; d.n < Math.min(n, d.words.length); d.n++) d.words[d.n].style.visibility = ''
+  if (d.n < d.words.length) return
+  clearInterval(d.timer); d.timer = 0; d.words = null
+  playBlip(d.card.speaker)
+}
+/** The press that lands on a card still filling fills it, and is spent. */
+function _dlgFill () {
+  if (!_dlg.words) return false
+  _dlgShow(Infinity)
+  return true
+}
+
 function _renderDialogue () {
   const panel = document.getElementById('dialogue-panel')
   if (!panel) return
   const card = dialogueSystem.current()
   panel.style.display = card ? 'block' : 'none'
-  if (!card) { _cardHold = false; return }
+  if (!card) { _cardHold = false; clearInterval(_dlg.timer); Object.assign(_dlg, { card: null, words: null, timer: 0 }); return }
   const sp = document.getElementById('dlg-speaker')
   const tx = document.getElementById('dlg-text')
   const mo = document.getElementById('dlg-more')
   if (sp) sp.textContent = card.speaker
-  if (tx) tx.innerHTML = card.text
+  if (tx && card !== _dlg.card) {   // a new card streams in; a repaint of the same one leaves it be
+    tx.innerHTML = card.text
+    clearInterval(_dlg.timer)
+    Object.assign(_dlg, { card, words: _hideWords(tx), n: 0, t0: performance.now() })
+    _dlg.timer = setInterval(() => _dlgShow(Math.floor((performance.now() - _dlg.t0) / DLG_WORD_MS) + 1), DLG_WORD_MS / 2)
+    _dlgShow(1)
+  }
   const p = dialogueSystem.progress()
   // The affordance is "press anything", so name no key — the brief's press-any-key-to-continue.
   if (mo) mo.textContent = p ? `${p.n} / ${p.of}  —  press any key` : ''
@@ -4016,6 +4063,7 @@ document.addEventListener('keydown', e => {
   if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return  // a modifier alone is not a press
   e.preventDefault()
   e.stopPropagation()
+  if (_dlgFill()) return   // a card still streaming in fills first
   dialogueSystem.advance()
   _renderDialogue()
 }, { capture: true })
@@ -4028,6 +4076,7 @@ document.addEventListener('mousedown', e => {
   if (e.target.closest?.('.lil-gui')) return    // the debug panel keeps working during a briefing
   e.preventDefault()
   e.stopPropagation()
+  if (_dlgFill()) return
   dialogueSystem.advance()
   _renderDialogue()
 }, { capture: true })
@@ -4257,6 +4306,8 @@ let _openingRun = false   // onRegionLive → go-live: this new run plays the op
 let _openingSeat = null   // the opening's last seat (a promise): a skip takes the casserole once the truck is on her pad
 let _firingCam = null     // { p, theta0, t } while the firing's cards are up
 let _eveningGuide         // undefined = not planned yet: the evening's way home, planned once (not saved)
+let _eveningFrom = null   // m — the truck's crow distance to mom's when the evening was first polled (stage 4)
+const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4287,6 +4338,27 @@ function _homeGuide () {
 
 /** Hours of sleep from now to 07:00 on day 1 — the evening's night, the sleep timer's preset. */
 const _eveningSleepH = () => DAY_PARAMS.dayStartHour - daySystem.clockH()
+
+/**
+ * FEAT-170 stage 3, THE SAFE DRIVE: while the evening leg is on, the clock, energy and hunger hold (the fixed
+ * step skips daySystem.update), the truck takes no damage and no wear (it skips damageModel.step), and R puts
+ * it back on the nearest road — not at the spawn — with the HUD line saying so whenever it is off one.
+ */
+function _resetToRoad () {
+  const v = vehicleState.position, nr = roadSystem?.queryNearest(v.x, v.z, 2000)
+  if (!nr?.point || !nr.tangent) { void _reseatTruckAtSpawn(); return }
+  teleportToGround(nr.point.x, nr.point.z, _pickRoadDir(Math.atan2(-nr.tangent.x, -nr.tangent.z), _currentHeading()), 0.5)
+}
+
+/** Stage 4, on the run-HUD poll: the drive home's lessons — the damage screen halfway, parking near hers. */
+function _eveningBeats () {
+  const q = _mom(), v = vehicleState.position
+  if (!_eveningLeg() || !q) return
+  const d = Math.hypot(q.x - v.x, q.z - v.z)
+  _eveningFrom ??= d
+  if (d < 0.5 * _eveningFrom) _tut('tut-diag')
+  if (d < EVENING_PARK_M) _tut('tut-park')
+}
 
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
 function _endEvening () {
@@ -4355,7 +4427,7 @@ function _playOpening () {
     _firingCam = null
     setCameraFocus(null)   // the chase spring swings back onto the truck, parked right there
     _cardHold = true
-    dialogueSystem.play(DLG.momCall, MOM_CALL)   // the evening leg is on from here (_eveningLeg)
+    dialogueSystem.play(DLG.momCall, MOM_CALL, () => _tut('tut-drive'))   // the evening leg is on from here (_eveningLeg)
   })
   return true
 }
@@ -4816,6 +4888,12 @@ function _poiInReach () {
                              POI_PARAMS.poiInteractR, true)
     ?? (offerBoard?.firstState() === 'live' ? poiSystem.list().find(p => p.type === 'momsHouse') : null)
   return q && _inPoiSpot(q) ? q : null
+}
+
+/** A giver's card opens on its live offers, with its first-use lessons. */
+function _openOffers (poi, offers) {
+  missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer')   // FEAT-147
+  if (offers.some(o => offerBoard.spec(o)?.first)) _tut('tut-map')   // FEAT-170: her card shows the route on the map
 }
 
 /**
@@ -5440,7 +5518,7 @@ function _updateParkTriggers (zParked = false) {
     const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
-    else { missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer') }   // FEAT-147
+    else _openOffers(poi, offers)
     if (poiEl) poiEl.style.display = 'none'
     if (campRow) campRow.style.display = 'none'
     return
@@ -5464,6 +5542,7 @@ function _updateParkTriggers (zParked = false) {
     } else if (moms) {
       _campUi = { mode: 'moms', site: null, moms: true }
       _renderCampUI()
+      if (_eveningLeg()) _tut('tut-moms')   // FEAT-170 stage 4
     } else if (seeking && !camp.fast && !onRoad) {
       _campUi = { mode: 'truck', site: null, moms: false, truck: true }
       _renderCampUI()
@@ -5974,9 +6053,20 @@ function _sleepAtCamp () {
   if (_eveningLeg() && hours === Math.round(_eveningSleepH())) hours = _eveningSleepH()   // FEAT-170: the preset wakes at 07:00 sharp
   const vibe = _campVibe(_campUi)
   const back = _campHome(_campUi)
+  const evening = _eveningLeg(), atMoms = !!_campUi.moms
   _campFade(() => {
     daySystem.sleep(hours, vibe, _campRest(_campUi))
     _endEvening()   // FEAT-170: any night ends the opening's evening
+    // Stage 4, the morning: breakfast if you slept at hers (it feeds you), then her card.
+    if (evening && atMoms) _tut('tut-breakfast', TUT['tut-breakfast'], () => daySystem.eat(DAY_PARAMS.mealHoldH))
+    // …and woken at hers, her card opens as that lesson ends: the route on the map (the owner's map beat).
+    if (evening) _tut('tut-mapcard', TUT['tut-mapcard'], () => {
+      const q = _poiInReach()
+      if (q?.type !== 'momsHouse' || !vehicleState.parked) return
+      if (_campUi) _closeCampUi()
+      const offers = _takeableOffers(q.id, daySystem.clockH())
+      if (offers.length) _openOffers(q, offers)
+    })
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
     // and on a worn engine it is also the morning's first piece of news about what you're driving.
@@ -6578,6 +6668,8 @@ function _renderMissionUI () {
       if (_eveningLeg()) {   // FEAT-170: no job, only the way home
         const q = _mom(), vp = vehicleState.position
         if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · park there to sleep`
+        // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
+        if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · ${keycap('R', 'D-pad →')} puts you back on it`)
       }
       break
   }
@@ -6771,6 +6863,7 @@ function _renderRunHud () {
   // so this is the one place the requisition opens (openLines is idempotent).
   if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
   if (daySystem.clockH() >= DAY_PARAMS.dayStartHour) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
+  _eveningBeats()
   const skip = document.getElementById('skip-hint')
   if (skip) skip.style.display = _eveningLeg() ? '' : 'none'
   _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
@@ -8225,6 +8318,7 @@ const storySystem = new StorySystem({
     // opening's 6 pm on day 0 (a resume puts its own clock back below).
     daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
+    _eveningFrom = null
     _openingSeat = null
     _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
@@ -9334,6 +9428,7 @@ function loop () {
       // FEAT-62: inside a scenario R is RESTART — the same seat plus a fresh count and clean gates.
       if (scenarioSystem.isActive()) void _restartScenario()
       else if (_barrelCube) _buildBarrelCube(_barrelCube.side, _barrelCube.count)   // a fresh cube AND a fresh run-up
+      else if (_eveningLeg()) _resetToRoad()   // FEAT-170: the opening's evening puts you back on the road
       else void _reseatTruckAtSpawn()
     }
 
@@ -9350,7 +9445,8 @@ function loop () {
     // FEAT-118: a pitched camp (or mom's) is a planning pause — idle there, the clock and energy
     // hold until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
     // SM-3: browsing the service center is free — its work adds its own hours (owner, 2026-10-20).
-    if ((!_campUi || _campUi.mode === 'confirm') && !serviceScreen.isOpen) daySystem.update(PHYSICS_DT)
+    // FEAT-170: the opening's evening is a safe drive — the clock, energy and hunger hold until mom's.
+    if ((!_campUi || _campUi.mode === 'confirm') && !serviceScreen.isOpen && !_eveningLeg()) daySystem.update(PHYSICS_DT)
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
@@ -9392,7 +9488,7 @@ function loop () {
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
-    damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    if (!_eveningLeg()) damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)   // FEAT-170: no damage or wear on the safe drive
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
