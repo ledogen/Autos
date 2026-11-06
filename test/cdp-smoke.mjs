@@ -1021,6 +1021,10 @@ const STEPS = [
     await js(`(() => { const inv = window.__inv; for (const r of [...inv.list()].reverse()) if (r.id === 'emergencyGas' || r.gal > 0.05) inv.drop(r.index)
       window.__econ.money = 1000 })()`)
     await crank()
+    // FEAT-162 P3: worn below the line, the engine says so.
+    await js("window.__damage.set('engine', 0.1)")
+    check(await until(() => js('/the engine is knocking/.test(document.getElementById("machine-word").textContent)'), 2000),
+      `no "the engine is knocking" at 10 %: "${await js('document.getElementById("machine-word").textContent')}"`)
     await js('window.__vs.fuel.gal = 0')   // the running engine's next step finds it empty: dry, stalled
     check(await until(() => js('window.__vs.fuel.dry'), 3000), 'the emptied tank never ran dry')
     await park(true)

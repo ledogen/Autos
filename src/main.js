@@ -30,7 +30,7 @@ import { tireContact } from './tire-contact.js'   // FEAT-70: the wheel's ground
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
-import { DamageModel, DAMAGE_PARAMS, fatalMph } from './damage.js'    // SM-3: component condition model
+import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
@@ -118,6 +118,7 @@ import { startRankMusic, updateRankMusic, rankMusicStep, rankMusicDrop, rankMusi
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
+import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
 import { playCoin, playStinger, playTickTrain, playClack, playThud, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
@@ -1222,6 +1223,35 @@ function showSpawnToast () {
   void el.offsetWidth
   el.style.transition = 'opacity 1s ease'
   _spawnToastTimer = setTimeout(() => { el.style.opacity = '0' }, 3000)
+}
+
+// ── FEAT-162 P3: the dying truck, in words at the edge only (SM-INV-10: described, never scored) ──
+// The engine and each wheel speak twice: on dropping below KNOCK_FROM (the knock starts — the wheel
+// cracks) and at 0 (seized — gave out). Fixed back above the line, it can speak again. The first poll
+// of a live drive only takes the levels in, so a loaded run doesn't announce what it already was.
+const _CORNER_NAME = ['front-left', 'front-right', 'rear-left', 'rear-right']
+const _MACHINE_WORD = [
+  [null, 'the engine is knocking', 'the engine seized'],
+  ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is cracking`, `the ${c} wheel gave out`])),
+]
+let _wordLevels = null, _wordTimer = null
+function _machineWords () {
+  if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) { _wordLevels = null; return }
+  const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
+  const now = [lv(damageModel.get('engine')), ...WHEEL_IDS.map(id => lv(damageModel.get(id)))]
+  const rose = _wordLevels ? now.findIndex((l, i) => l > _wordLevels[i]) : -1
+  _wordLevels = now
+  if (rose < 0) return
+  const el = document.getElementById('machine-word')
+  if (!el) return
+  el.textContent = _MACHINE_WORD[rose][now[rose]]
+  el.classList.toggle('bad', now[rose] === 2)
+  clearTimeout(_wordTimer)
+  el.style.transition = 'none'
+  el.style.opacity = '1'
+  void el.offsetWidth      // reflow so the fade re-arms (same trick as showSpawnToast)
+  el.style.transition = 'opacity 1s ease'
+  _wordTimer = setTimeout(() => { el.style.opacity = '0' }, 4000)
 }
 
 // ── FEAT-33 "hold I to start the truck" hint ──────────────────────────────────────────────
@@ -9157,7 +9187,7 @@ document.addEventListener('visibilitychange', () => setAudioPageActive(!document
 // FEAT-23: WebAudio may only start inside a user gesture (browser autoplay policy). ANY gesture
 // counts — a click too: a resumed run is reached by mouse alone (continue → resume) with the engine
 // already idling, and a keydown-only unlock left it silent until the first key. Idempotent.
-function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio(); ensureAmbientAudio() }
+function _unlockAudio () { ensureEngineAudio(); ensureKnockAudio(); ensureTireAudio(); ensureWindAudio(); ensureAmbientAudio() }
 window.addEventListener('pointerdown', _unlockAudio, true)
 
 document.addEventListener('keydown', e => {
@@ -9279,6 +9309,7 @@ function loop () {
     // catch on step 1 is gone by the time the frame reads it. Latch the edge here, per step.
     const ignEv = vehicleState.ignition?.event
     if (ignEv === 'catch') _ignEdge = ignEv
+    else if (ignEv === 'shutoff' && seized(vehicleState)) _ignEdge = 'seize'   // FEAT-162: the running engine seized
     if (resetRequested) {
       // R-12: R while camped breaks camp first — the same close the dialogue's "break camp" button
       // runs (un-digs the pad, hides the fire, drops the camera focus, releases the FEAT-118 clock
@@ -9769,6 +9800,8 @@ function loop () {
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle,
       (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0), RANGER_PARAMS.cylinders, RANGER_PARAMS.engine,
       vehicleState.ignition?.state === 'off')
+    setKnockAudio(heard && RANGER_PARAMS.engineAudioEnabled !== false, RANGER_PARAMS.engineAudioVolume ?? 0.5)
+    updateKnockAudio(damageModel.get('engine'), dtrain.engineRPM, vehicleState.throttle, vehicleState.ignition?.state === IGN_RUNNING)
   }
 
   // FEAT-33 ignition audio, in two halves.
@@ -9785,6 +9818,7 @@ function loop () {
   if (ign) {
     if (_starterEngaged(ign)) startCrankAudio(Math.min(dtrain?.engineRPM ?? 0, RANGER_PARAMS.starterFreeRPM ?? 280)); else stopCrankAudio()   // the overrunning clutch: the starter never turns faster than its free speed
     if (_ignEdge === 'catch') playCatchAudio()   // key-off has no one-shot: the coast-down is the motoring rows (engine-audio.js)
+    if (_ignEdge === 'seize') playSeizeBang()
     ign.event = null
   }
   _ignEdge = null
@@ -9896,6 +9930,7 @@ function loop () {
     _updateParkTriggers()
     _updateRecovery()           // FEAT-50 / SM-3: the recovery chip in the park zone
     _checkStranded()            // FEAT-162: …and the breakdown that ends the run
+    _machineWords()             // FEAT-162 P3: the knock, the crack, the seize, in words
     // FEAT-45: the camping folder's read-outs ride the same 10 Hz poll and hit the same memoized
     // grade the prompt just computed. Gated to the SAME sub-20 kph window as the prompt on purpose:
     // grading costs a handful of terrain/water/scatter samples, and paying for it at speed to feed a
