@@ -88,7 +88,13 @@ async function simFor (s) {
 }
 const vis = id => js(`!!document.getElementById("${id}")?.checkVisibility()`)
 const dlgUp = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
-async function readCards () { for (let i = 0; i < 40 && await dlgUp(); i++) { await tap('Enter'); await sleep(150) } check(!await dlgUp(), 'a dialogue card would not close') }
+async function readCards () {
+  for (let i = 0; i < 40 && await dlgUp(); i++) { await tap('Enter'); await sleep(150) }
+  check(!await dlgUp(), `a dialogue card would not close: ${JSON.stringify(await js(`({ speaker: document.getElementById('dlg-speaker')?.textContent,
+    text: document.getElementById('dlg-text')?.textContent.slice(0, 80), more: document.getElementById('dlg-more')?.textContent,
+    hidden: document.querySelectorAll('#dlg-text span[style*=hidden]').length, pause: document.getElementById('pause-menu')?.style.display,
+    resume: document.getElementById('resume-card')?.style.display, active: document.activeElement?.id || document.activeElement?.tagName })`))}`)
+}
 
 // Page-side helpers, re-installed after every navigation (a resume reloads the page).
 const HELPERS = `window.__soak = {
