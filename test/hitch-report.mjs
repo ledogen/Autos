@@ -107,7 +107,7 @@ if (!['drive', 'stream'].includes(SCENARIO)) { console.error(`unknown scenario $
 if (ANALYZE) { analyzeTrace(ANALYZE); process.exit(0) }
 
 const qs = new URLSearchParams({ prof: '1', hitch: String(HITCH_MS), nomenu: '1' })   // FEAT-41: skip the menu; this harness wants the world on screen
-if (SEED && SEED !== '6') qs.set('seed', SEED)
+qs.set('seed', SEED)   // always: without it the game boots a random world
 const APP = `http://localhost:${PORT}/index.html?${qs}`
 
 try { const r = await fetch(`http://localhost:${PORT}/index.html`); if (!r.ok) throw 0 }

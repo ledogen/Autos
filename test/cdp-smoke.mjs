@@ -192,7 +192,7 @@ const STEPS = [
     // INFRA-08: the boot is the box's speed test (see stretch). Past TOO_SLOW × an idle boot this run cannot
     // speak for the code — it says so now, rather than failing on whichever step the load lands on.
     const t0 = performance.now()
-    await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?nomenu=1` })
+    await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?nomenu=1&seed=6` })
     const ready = await until(() => js('window.__rsReady === true'), TOO_SLOW * BOOT_IDLE_S * 1000, 250)
     const s = (performance.now() - t0) / 1000
     check(ready, `__rsReady never set in ${s.toFixed(0)} s (${TOO_SLOW}× an idle boot, load ${(loadavg()[0] / cpus().length).toFixed(1)}/core): `
@@ -868,7 +868,7 @@ const STEPS = [
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     const paused = 'document.getElementById("resume-card").style.display === "flex"'
     const resume = async (what) => {
-      await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
+      await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?seed=6` })
       check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250),
         `${what}: no continue button after the reload`)
       // What the dying page actually wrote (pagehide), read before continue can rewrite it.

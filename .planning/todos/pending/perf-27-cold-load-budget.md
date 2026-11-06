@@ -20,7 +20,7 @@ making the cold load WORSE for real players."
 > cache suggested further down ("baking a cache per region"); caches are fine only inside ONE load.
 >
 > **Measure on a seed the session has not built.** A blank story seed rolls `Math.random()`, so a
-> real entry ALWAYS reseeds; `story-coldload.mjs --seed=6` (the boot seed) skips that and is the
+> real entry ALWAYS reseeds; `story-coldload.mjs --seed=6` (the harness boots on 6, `--bootseed`) skips that and is the
 > wrong path. Use `--seed=811` or any other.
 >
 > **Correction to the 2026-09-07 "two thirds is terrain" reading below.** Per-phase bucket diffs
@@ -101,7 +101,7 @@ Owner framing, 2026-07-26, recorded because it re-scopes work that already looks
    free-roam numbers we happen to measure while developing.
 2. **`data/route-cache-default.json.gz` is a DEV convenience, not a shipping optimization.** It
    exists so the owner's dev/playtest cycles on seed 6 are instant. It is emphatically *not* the
-   answer to cold load for players: it only ever covers the default seed, and every byte of it is
+   answer to cold load for players: it only ever covered seed 6 (a test seed; there is no default seed), and every byte of it is
    downloaded by everyone on every cold load whether or not they enter story mode.
 
 Point 2 currently bites. FEAT-43 re-baked the cache from 1700 m to 3100 m so story entry on seed 6
@@ -180,7 +180,7 @@ regenerate them. The three drivers live in `test/` (tracked, alongside `hitch-re
    (1.3 / 4.3 s) since BASE still hits for the free-roam spawn. *This first read blamed the region
    warm — item 3 measured it and that was wrong: the warm is 5.5 s of it, the world rebuild is the
    rest.*
-3. **The doomed cache fetch is NOT a meaningful cost — measured, not assumed.** A non-default seed
+3. **The doomed cache fetch is NOT a meaningful cost — measured, not assumed.** A seed other than 6
    re-fetches and parses both assets only to find `rec.sig` mismatched (the sig lives *inside* the
    file, so the loader must parse to know). That looked like a headline cost in the resource
    timings — the BASE re-fetch shows `duration` 20.2 s at 4× — but that duration is main-thread
@@ -340,6 +340,6 @@ each estimate is the thing to verify first.
 | Spawn resolve on the new seed | ~2 s (672 m + 228 m builds) | routes now carry into the region build, so the residue is the plan layer run twice on a small window | ≤1 s |
 | Go-live POI placement | 0.9 s + houses 0.3 s, main thread | dominated by cold water queries (`streamsInBBox`, `pondsInBBox`) | ~0.5–1 s |
 | Entry pump latency | ~0.5 s | `SETTLE_MIN_MS` 400 ms before the region build is issued; the done flag is polled every 250 ms | ~0.4 s |
-| **Build the story world behind the menu** | the whole ~12 s entry | pre-roll the blank-seed `Math.random()` at boot and generate THAT world (region included) while the player is in the menu. Still pure generation — nothing saved. Design call: free roam's boot world would then be random too, or be built second | hides up to all of it |
+| **Build the story world behind the menu** | the whole ~12 s entry | pre-roll the blank-seed `Math.random()` at boot and generate THAT world (region included) while the player is in the menu. Still pure generation — nothing saved. Design call: free roam's boot world would then be random too, or be built second. *(Owner 11-06: "not now" for this lever; the boot world IS random now, so a world nobody picked is never the same one twice.)* | hides up to all of it |
 
 The last row is the only one that changes the order of magnitude; the rest are each a second or so.

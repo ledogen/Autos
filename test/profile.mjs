@@ -47,7 +47,7 @@ const PORT = Number(flag('port', 8000)), CDP_PORT = Number(flag('cdp', 9222))
 if (!['coldload', 'idle', 'drive', 'stream'].includes(SCENARIO)) { console.error(`unknown scenario ${SCENARIO}`); process.exit(1) }
 
 const qs = new URLSearchParams({ prof: '1', nomenu: '1' })   // FEAT-41: skip the menu; this harness wants the world on screen
-if (SEED && SEED !== '6') qs.set('seed', SEED)
+qs.set('seed', SEED)   // always: without it the game boots a random world
 if (NOAA) qs.set('noaa', '1')
 const APP = `http://localhost:${PORT}/index.html?${qs}`
 

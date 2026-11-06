@@ -138,7 +138,10 @@ import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
 
-// World seed — parsed from URL ?seed= parameter, defaulting to '6'.
+// World seed — the URL's ?seed= when it names one, else a fresh random world. There is no default
+// seed (owner, 2026-11-06): any world the player did not pick (the one built behind the menu, free roam
+// after the lab, `?nomenu=1`) is a new one each boot. The seed shows in the pause menu's world code.
+// Seed 6 is a test seed: the harnesses in test/ pass ?seed=6 when they want it.
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
 // Refreshing the same ?seed= URL reproduces the same terrain (SEED-01/03).
 const _urlParams = new URLSearchParams(window.location.search)
@@ -155,8 +158,8 @@ if (_PROF) perfEnableUserTiming()
 const _hitchArg = _urlParams.get('hitch')
 const _HITCH = _hitchArg !== null || _PROF
 if (_HITCH) perfEnableHitchLog(Number(_hitchArg) > 1 ? Number(_hitchArg) : 24)
-let worldSeed = parseWorldSeed(_urlSeed ?? '6')
-let _seedString = _urlSeed ?? '6'   // current seed STRING (reference for captures; numeric worldSeed drives repro)
+let _seedString = _resolveSeed(_urlSeed)   // current seed STRING (reference for captures; numeric worldSeed drives repro)
+let worldSeed = parseWorldSeed(_seedString)
 
 // Capture stream-center ring (Phase 4/5): last N stream centers, for event/tear reproduction. Cheap —
 // pushed only when the center moves a meaningful distance. Not required for PLACE repro (the road is
@@ -2635,7 +2638,7 @@ const _gui = initDebug(RANGER_PARAMS, {
     if (terrainSystem?._terrainUniforms?.[name]) terrainSystem._terrainUniforms[name].value = value
     if (roadMeshSystem?._roadUniforms?.[name])   roadMeshSystem._roadUniforms[name].value = value
   },
-}, { initialSeed: _urlSeed ?? '6' })
+}, { initialSeed: _seedString })
 
 // Fog kill-switch checkbox (see _fogState at the fog construction for the boot-param half).
 _gui.add(_fogState, 'disabled').name('Disable fog').onChange((v) => {
@@ -8639,9 +8642,10 @@ function _exitStageLoad () {
 }
 
 /**
- * Free roam on a chosen seed. The world standing behind the menu was built on the boot seed, so
- * picking that same one costs nothing but a re-seat; anything else pays one full rebuild — behind
- * the stage, which is the entire point of the stage existing.
+ * Free roam on a chosen seed (the setup page's blank rolls a fresh one, _resolveSeed). The world
+ * standing behind the menu was built on its own random seed at boot, so picking that same one costs
+ * nothing but a re-seat; anything else pays one full rebuild — behind the stage, which is the entire
+ * point of the stage existing.
  */
 async function _startFreeRoam (seedStr) {
   if (storySystem.isActive()) storySystem.exit()

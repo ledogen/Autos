@@ -21,7 +21,7 @@ c.on('Runtime.consoleAPICalled', (e) => e.type === 'error' && errs.push(e.args.m
 const js = async (e) => { const r = await c.evalJS(e); if (r.err) throw new Error(r.err); return r.val }
 let fails = 0
 const check = (ok, msg) => { console.log(ok ? '  ok  ' : '  FAIL', msg); if (!ok) fails++ }
-await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html?nomenu=1` })
+await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html?nomenu=1&seed=6` })
 for (let t = 0; t < 120 && !(await js('window.__rsReady === true')); t++) await sleep(250)
 await js(`window.__fp = { on: true, axes: [0, 0, 0, 0], b: new Array(17).fill(0) }
   navigator.getGamepads = () => __fp.on ? [{ index: 0, id: 'fake', mapping: 'standard', axes: __fp.axes,
