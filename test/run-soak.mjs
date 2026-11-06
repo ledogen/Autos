@@ -91,7 +91,8 @@ const vis = id => js(`!!document.getElementById("${id}")?.checkVisibility()`)
 const dlgUp = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
 async function readCards () {
   for (let i = 0; i < 40 && await dlgUp(); i++) { await tap('Enter'); await sleep(150) }
-  check(!await dlgUp(), `a dialogue card would not close: ${JSON.stringify(await js(`({ speaker: document.getElementById('dlg-speaker')?.textContent,
+  check(!await dlgUp(), `a dialogue card would not close: ${JSON.stringify(await js(`({ vis: document.visibilityState, focus: document.hasFocus(),
+    tickAgoMs: Math.round(performance.now() - (window.__soakTick ?? 0)), simT: window.__simT(), speaker: document.getElementById('dlg-speaker')?.textContent,
     text: document.getElementById('dlg-text')?.textContent.slice(0, 80), more: document.getElementById('dlg-more')?.textContent,
     hidden: document.querySelectorAll('#dlg-text span[style*=hidden]').length, pause: document.getElementById('pause-menu')?.style.display,
     resume: document.getElementById('resume-card')?.style.display, active: document.activeElement?.id || document.activeElement?.tagName,
@@ -132,7 +133,10 @@ const HELPERS = `window.__soak = {
     const hid = () => T.querySelectorAll('span[style*=hidden]').length + '/' + T.querySelectorAll('span:not(:has(span))').length
     new MutationObserver(() => add('panel ' + P.style.display)).observe(P, { attributes: true, attributeFilter: ['style'] })
     new MutationObserver((ms) => add(ms.some(m => m.type === 'childList') ? 'text ' + hid() + ' ' + T.textContent.slice(0, 24) : 'reveal ' + hid())).observe(T, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] })
-    window.addEventListener('keydown', e => add('key ' + e.key + (e.repeat ? ' repeat' : '') + ' → ' + (e.target.id || e.target.tagName)), true) },   // window capture: before every handler
+    window.addEventListener('keydown', e => add('key ' + e.key + (e.repeat ? ' repeat' : '') + ' → ' + (e.target.id || e.target.tagName)), true)   // window capture: before every handler
+    for (const ev of ['blur', 'focus', 'pagehide', 'freeze', 'resume']) window.addEventListener(ev, () => add(ev), true)
+    document.addEventListener('visibilitychange', () => add('visibility ' + document.visibilityState), true)
+    setInterval(() => { window.__soakTick = performance.now() }, 250) },
   carry () { const E = window.__physicsEngine, D = window.__debris, vs = window.__vs
     if (E.__soakSet) return; const set = E.__soakSet = E.setTransform.bind(E)
     const V = vs.position.constructor, Q = vs.quaternion.constructor, p0 = new V(), q0 = new Q(), bp = new V(), bq = new Q(), zero = { x: 0, y: 0, z: 0 }
