@@ -844,6 +844,7 @@ const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
 const ACUTE_ELBOW_COS      = Math.cos(75 * Math.PI / 180)   // BUG-86: a deg-2 elbow sharper than 75° gets no through pin
+const LOOP_TRIM_M          = 400   // m — BUG-105: the longest loop (site → crossing along both legs) a trim cuts off
 // BUG-67 (owner, 2026-11-03): sibling tunnels colliding at a junction — see _reseat and the T slide.
 const RESEAT_TRIGGER_M     = 50    // m of 22 m-ring relief above which a junction site is re-seated
 const RESEAT_FIT_M         = 25    // m — the relief a new seat must be at or under
@@ -995,6 +996,12 @@ const MIN_BORE_M = 12
 // (_v2MidSpanKeys). Such a run is in the world but not in the abstract graph (networkGraph).
 const PARALLEL_SUFFIX = '~p'
 const _isPromotedId = (id) => !!id && id.length === 3 && id[2] === PROMOTED_K
+// BUG-105 loop trim (owner, 2026-11-06): a BEND node at the crossing where a degree-2 site's two legs cross each other.
+// Like a promoted id it names a point, not a site — x, z in mm — but no table backs it: its position is a pure fn of
+// the id (the node-height rule at that point), so every thread and window derives the same one with nothing shipped.
+const BEND_K = -2
+const _bendId = (x, z) => [Math.round(x * 1000), Math.round(z * 1000), BEND_K]
+const _isBendId = (id) => !!id && id.length === 3 && id[2] === BEND_K
 
 // Samplers over a graded edge polyline: arc s → position / routed design Y.
 // `arc` is ANY monotone per-point arc array — the caller picks the domain. edgeParData passes
@@ -1797,6 +1804,7 @@ export class RoadSystem {
     _invalidateProto() {
         this._proto.sites.clear()           // FEAT-13 v2: sites + Urquhart graph derive from seed + params
         this._proto.aliveSites.clear()
+        this._bendPos?.clear()              // BUG-105: a bend's height reads the same terrain
         this._proto.graph = null
         this._urqMemo.clear()   // PERF-26: the persist=false memo derives from the same sites+params
         this._proto.nodeInc.clear()
@@ -2543,7 +2551,7 @@ export class RoadSystem {
             return v
         }
         const nodeKept = (id) => {
-            if (_isPromotedId(id)) return false
+            if (_isPromotedId(id) || _isBendId(id)) return false
             const nk = _idKey(id), a = keep.inc.get(nk), b = inc.get(nk)
             if (!a || !b || a.length !== b.length) return false
             for (let i = 0; i < a.length; i++) if (a[i] !== b[i] || !unchanged(a[i])) return false
@@ -2747,6 +2755,12 @@ export class RoadSystem {
             const px = id[0] / 1000, pz = id[1] / 1000
             return new THREE.Vector3(px, this._coarseH(px, pz), pz)
         }
+        if (_isBendId(id)) {
+            const k = _idKey(id)
+            let p = this._bendPos?.get(k)
+            if (!p) { const x = id[0] / 1000, z = id[1] / 1000; p = new THREE.Vector3(x, this._v2NodeHeight(x, z), z); (this._bendPos ??= new Map()).set(k, p) }
+            return p
+        }
         for (const s of this._anchorSites(id[0], id[1])) if (s.id[2] === id[2]) return s.pos
         return this._coarseAnchorFallback(id)
     }
@@ -2853,8 +2867,10 @@ export class RoadSystem {
         if (!g) return 2
         const nk = g.key(id)
         // FEAT-76: a promoted node is not in the Urquhart graph at all — its degree is what
-        // REGISTERED there (trunk in, trunk out, side road out = 3 by construction).
+        // REGISTERED there (trunk in, trunk out, side road out = 3 by construction). BUG-105: nor is a loop
+        // trim's bend (2).
         if (_isPromotedId(id)) return this._proto.nodeInc.get(nk)?.length ?? 3
+        if (_isBendId(id)) return this._proto.nodeInc.get(nk)?.length ?? 2
         const nbrs = g.adj.get(nk)
         if (!nbrs) return 0
         const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
@@ -6459,6 +6475,93 @@ export class RoadSystem {
         return out
     }
 
+    /**
+     * BUG-105 loop trim (owner, 2026-11-06, bug105-calls 24 and 25: "detect a loop … and trim it off completely promoting
+     * the crossing point to the intersection"). A degree-2 site in rough ground can send its two legs out together and
+     * back across each other: the road visits the site and pays a loop for it (+2,000–2,900 cost-m against going
+     * straight past, at the owner's two). When every crossing between the two legs' routes closes a loop (site →
+     * crossing along both legs) of at most LOOP_TRIM_M, the road is cut at the OUTERMOST crossing: each leg registers from
+     * its far end to there, and the crossing becomes a bend node (BEND_K) that the deg-2 connector rounds like any other
+     * kink. The site leaves the road. Plan-time and pure — the legs' routes are per-edge pure, so every window cuts the
+     * same. A leg the plan already uses (side or winner of a T or mid-span spec at the site or either far end, or a
+     * disjoint side) is left to that machinery: those pairs resolve and never ship as loops. 140 census windows: 3
+     * trims (844938307, 2502655950, 1227226248) + the owner's 3502246374 just outside them.
+     * Returns null, or { id, cut: Map(neighbour key → the arc, on that leg's REGISTERED spelling, of the cut) }.
+     */
+    _v2LoopTrim(g, drop, wide, nk) {
+        const memo = this._v2LoopTrims
+        if (memo.has(nk)) return memo.get(nk)
+        memo.set(nk, null)
+        if (nk.split(',').map(Number)[2] < 0) return null
+        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
+        const nbrs = [...(g.adj.get(nk) || [])].filter((o) => !drop.has(nk + '|' + o) && !delF?.has(nk + '|' + o))
+        if (nbrs.length !== 2) return null
+        const pk = (a, b) => a < b ? a + '|' + b : b + '|' + a
+        const spell = this._v2EdgeSpellings(g), legs = []
+        for (const o of nbrs) {
+            const [c1, c2] = spell.get(pk(nk, o)) || []
+            if (!c1) return null
+            const cl = this._edgeCenterline(c1, c2, this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2)))
+            if (!cl || !(cl.length > 1e-6)) return null
+            legs.push({ o, c1, c2, cl, fromEnd: g.key(c2) === nk })
+        }
+        // arc s measured from the site, on either spelling
+        const at = (L, s) => L.cl.pointAt(L.fromEnd ? L.cl.length - s : s)
+        const samp = (L) => {
+            const n = Math.max(1, Math.ceil(L.cl.length / PROTO_SAMPLE_DS)), o = []
+            for (let i = 0; i <= n; i++) { const s = L.cl.length * i / n, p = at(L, s); o.push({ x: p.x, z: p.z, s }) }
+            return o
+        }
+        const [A, B] = legs, pa = samp(A), pb = samp(B)
+        let best = null, maxA = 0, maxB = 0
+        for (let i = 0; i + 1 < pa.length; i++) {
+            if (pa[i + 1].s < 8) continue   // the shared end at the site
+            const a = pa[i], rx = pa[i + 1].x - a.x, rz = pa[i + 1].z - a.z
+            for (let j = 0; j + 1 < pb.length; j++) {
+                if (pb[j + 1].s < 8) continue
+                const b = pb[j], sx = pb[j + 1].x - b.x, sz = pb[j + 1].z - b.z, den = rx * sz - rz * sx
+                if (Math.abs(den) < 1e-9) continue
+                const t = ((b.x - a.x) * sz - (b.z - a.z) * sx) / den, u = ((b.x - a.x) * rz - (b.z - a.z) * rx) / den
+                if (t < 0 || t > 1 || u < 0 || u > 1) continue
+                const sA = a.s + t * (pa[i + 1].s - a.s), sB = b.s + u * (pb[j + 1].s - b.s)
+                if (sA < 8 || sB < 8) continue
+                if (sA + sB > LOOP_TRIM_M) return null   // a crossing past the cap: not a loop this cuts off
+                maxA = Math.max(maxA, sA); maxB = Math.max(maxB, sB)
+                if (!best || sA + sB > best.sA + best.sB) best = { sA, sB }
+            }
+        }
+        // the cut must be outermost on BOTH legs, or the kept parts would still cross
+        if (!best || best.sA < maxA || best.sB < maxB) return null
+        // the specs registration acts on (_v2MergeFor, filtered — the raw node table also lists the wyes BUG-105
+        // declines, which is what leaves these loops) for every edge at the site and at both far ends
+        const mine = new Set(nbrs.map((o) => pk(nk, o)))
+        for (const k of [nk, ...nbrs]) for (const o of g.adj.get(k) || []) {
+            if (drop.has(k + '|' + o) || delF?.has(k + '|' + o)) continue
+            const [e1, e2] = spell.get(pk(k, o)) || []
+            if (!e1) continue
+            for (const spec of this._v2MergeFor(g, drop, e1, e2) || []) {
+                if (mine.has(pk(k, o)) || mine.has(pk(g.key(spec.winner[0]), g.key(spec.winner[1])))) return null
+            }
+        }
+        for (const L of legs) if ((this._v2DisjointFor(g, drop, wide, L.c1, L.c2) || []).length) return null
+        // the crossing on the continuous lines: Newton from the sampled hit (p + tA·dA = q + tB·dB)
+        let sA = best.sA, sB = best.sB
+        for (let it = 0; it < 3; it++) {
+            const p = at(A, sA), q = at(B, sB), p1 = at(A, sA + 0.5), q1 = at(B, sB + 0.5)
+            const tax = (p1.x - p.x) / 0.5, taz = (p1.z - p.z) / 0.5, tbx = (q1.x - q.x) / 0.5, tbz = (q1.z - q.z) / 0.5
+            const den = tbx * taz - tax * tbz
+            if (Math.abs(den) < 1e-9) break
+            const ex = q.x - p.x, ez = q.z - p.z
+            sA += (tbx * ez - tbz * ex) / den; sB += (tax * ez - taz * ex) / den
+        }
+        const p = at(A, sA), q = at(B, sB)
+        if (!(Math.hypot(p.x - q.x, p.z - q.z) < 0.5)) return null
+        const out = { id: _bendId((p.x + q.x) / 2, (p.z + q.z) / 2),
+            cut: new Map(legs.map((L, i) => { const s = i ? sB : sA; return [L.o, L.fromEnd ? L.cl.length - s : s] })) }
+        memo.set(nk, out)
+        return out
+    }
+
     // FEAT-13 v2 graph mode: build the Urquhart network into this._network over the band
     // [mx0,mx1]×[mz0,mz1]. _buildUrquhart computes the edge set over band+margin so every undirected edge
     // is emitted identically from any stream center (window-invariant). Each edge with ≥1 in-band endpoint
@@ -6504,6 +6607,7 @@ export class RoadSystem {
         this._promoted = new Map()
         this._promotedAway = new Set()
         this._promotedRoleMemo = null
+        this._v2LoopTrims = new Map()
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
         const promos = []
         for (const [c1, c2] of g.edges) {
@@ -6520,6 +6624,20 @@ export class RoadSystem {
             const key = `g:${g.key(c1)}:${g.key(c2)}`
             const cl = this._edgeCenterline(c1, c2, this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2)))
             if (!cl || cl.length < 1e-6) continue
+            // BUG-105 loop trim: a leg of a trimmed site registers from its far end to the bend, and has no other role
+            // (_v2LoopTrim declines a leg the plan uses). The edge leaves the site's end only — directed, like a T's.
+            const t1 = this._v2LoopTrim(g, drop, wide, g.key(c1)), t2 = this._v2LoopTrim(g, drop, wide, g.key(c2))
+            if (t1 || t2) {
+                const s0 = t1 ? t1.cut.get(g.key(c2)) : 0, s1 = t2 ? t2.cut.get(g.key(c1)) : cl.length
+                if (!(s1 - s0 > PROTO_SAMPLE_DS)) continue
+                const kept = cl.slice(s0, s1)
+                kept._v2DirsSpec = cl._v2DirsSpec; kept._v2Dirs = cl._v2Dirs
+                const cA = t1 ? t1.id : c1, cB = t2 ? t2.id : c2
+                this._registerRun(`g:${_idKey(cA)}:${_idKey(cB)}`, kept, cA, cB)
+                if (t1) this._promotedAway.add(g.key(c1) + '|' + g.key(c2))
+                if (t2) this._promotedAway.add(g.key(c2) + '|' + g.key(c1))
+                continue
+            }
             // Conflicting pairs (BUG-53) resolve as T promotions (FEAT-76, below); an edge with no
             // node-merge role checks the DISJOINT planner (BUG-55 shape E), then the shove, before
             // registering plain. (The ceded-strand merge and BUG-55's bundles are gone — QUAL-30.)
