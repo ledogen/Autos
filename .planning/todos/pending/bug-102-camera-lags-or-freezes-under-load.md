@@ -56,3 +56,43 @@ Across each stall frame the truck jumps 0.5–5.7 m and the camera follows in th
 the separation never leaves its unloaded band. **Owed to reproduce:** which camera (chase / hood / an
 orbit drag or pad look in progress), roughly the speed, and whether a menu, the map or a camp was
 involved when it froze. Left open.
+
+## Fixed — Lane B, 2026-11-06 (feature/machine 3066dab2, a4ec7b87)
+
+**Cause: the chase spring ran on the wall clock while the truck runs on the sim's.** They are the same number at a
+healthy frame rate. Under load they aren't: PERF-32's catch-up budget abandons the step debt once a frame has burned
+a step's worth of wall time, so the sim runs in slow motion.
+- Measured live (`wip/bug-102/drawprobe.mjs`, 6× CPU throttle and random 50–400 ms main-thread stalls): sim 13.6 s in
+  24.9 s of wall, 55 %.
+- The camera's exponential still closed the gap at its wall-clock rate, so around a slow-motion truck it pulled in
+  tight: a 3.7 m shorter trail at 25 m/s and a quarter speed.
+- The moment the frame rate recovered, it dropped back out to its full trail in ~0.2 s (1/k). That is "the camera
+  drops behind the truck when the game lags".
+
+**Fix.** `updateCamera(camera, vehicleState, dt, followDt)`:
+- The chase follow uses `followDt`: its position lerp, pitch low-pass, and yaw and aim rate caps. That is the sim time
+  the DRAWN truck advanced this frame. main.js gives the drawn pose an exact time:
+  `_prevRenderT + alpha · (simTime − _prevRenderT)`, with `_prevRenderT` stamped where `_prevRenderPos` is copied.
+  That covers a hold's snap to the physics pose too.
+- Input, freecam, the look timers and the camp focus stay on wall time.
+- At a healthy rate `followDt` = `frameTime` (the signed-off feel is unchanged). In slow motion it's the slower truck
+  time; in a hold it's 0, and the truck is still too.
+
+**Gate `test/camera-follow-clock.mjs`** (the real updateCamera, a truck at 25 m/s):
+
+| frames | trail, now | trail, the wall-clock follow |
+|---|---|---|
+| 60 fps | 10.79 m | 10.79 m |
+| PERF-32 slow motion (15 fps, one step each) | 10.79 m | 7.05 m |
+| slow motion ↔ recovery every 2 s | 10.79 m steady | 7.05–10.77 m, dropping back on each recovery |
+| bursty, a clamped 250 ms frame every 0.5 s | 9.12–10.65 m | identical |
+
+The bursty dip is the exponential's own step: it takes the goal's end position for the whole frame, so a long frame
+lands the camera nearer, never behind. Integrating it exactly would move the 60 fps trail by ~4 % (4.79 → 5.00 m of
+lag at 25 m/s), and the feel is signed off.
+
+**"Freezes in space": still not reproduced, by Spare's probe or mine.** In the real app under the loads above, the
+camera never stayed still across a drawn frame while the truck mesh moved, and the truck stayed centred on screen. The
+code has only two paths that hold the camera on a fixed point: the camp/service-screen focus (each holds the truck as
+well, and each hands back on close) and freecam. If the owner sees it again, the sighting details Spare asked for
+(camera mode, a menu/map/camp, a pad look) are what's owed.
