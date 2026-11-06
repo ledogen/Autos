@@ -1143,8 +1143,11 @@ const STEPS = [
     // Parked at hers: her sleep card, the timer preset to wake at 07:00 — and sleeping posts the casserole.
     const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
       return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`)
-    await seat(mom.x, mom.z, mom.h)
+    // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
+    await js(`window.__seated = false; window.__teleport(${mom.x}, ${mom.z}, ${mom.h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), "the teleport to mom's never seated")
     check(await readCards() >= 2, "no lessons on the way home (the damage screen halfway, parking near hers)")
+    await simFor(1)   // the 0.5 m drop lands
     await park(true)
     const panel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     check(await until(panel, 3000), "parking at mom's in the evening opened no sleep card")
