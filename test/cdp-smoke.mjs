@@ -1006,7 +1006,7 @@ const STEPS = [
       p.result = { customers: 4, delivered: 4, letter: 'B', elapsed: 200, par: 250 }; p.state = 'done'; p._onChange() })()`)
     const card = await js(`({ shown: document.getElementById('scenario-panel').style.display, title: document.getElementById('sp-title').textContent,
       body: document.getElementById('sp-body').textContent, board: localStorage.getItem('autos-scenario-times/1:paper-90:4') })`)
-    check(card.shown === 'block' && /4 customers/.test(card.title) && /3:20/.test(card.body) && /\bB\b/.test(card.body) && JSON.parse(card.board ?? '[]')[0]?.elapsed === 200,
+    check(card.shown === 'block' && /4 customers/.test(card.title) && /3:20/.test(card.body) && /B\s+par 4:10/.test(card.body) && JSON.parse(card.board ?? '[]')[0]?.elapsed === 200,
       `paper scenario result card: ${JSON.stringify(card)}`)
     check(await slot() === before, 'paper scenario: the result touched the run save')
     await js('document.getElementById("sp-restart").click()')
