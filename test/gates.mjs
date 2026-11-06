@@ -165,6 +165,8 @@ export const GATES = [
     desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting; FEAT-150: leaves 1st at the schedule point, kicks down with headroom, holds a cruise without hunting and in overdrive from 80 km/h at part throttle, a floored pedal kicks down from 4th within 0.5 s' },
   { file: 'side-slide.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-89: a truck on its side scrubs instead of skating — its down-side tires (no strut load, Pacejka off) carry ~60 % of the weight and now scrub at the tire μ: 15 m/s along its length stops inside 40 m (was 245 m); lying across a 15° slope it holds (< 1 m in 10 s, was 75 m)' },
+  { file: 'rock-sink.mjs', subsystem: 'props', cost: 'fast', extraDeps: [],
+    desc: 'BUG-54: every rock sinks by its OWN variant radius (the palette hands them to the scatter via PropSystem): height within 0.5 − bury of its own size (the old largest-radius sink leaves it), bushes unchanged, and posed as drawn none floats or hides on flat, 45° and 60°' },
   { file: 'camera-follow-clock.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-102: the chase camera trails a 25 m/s truck by its 60 fps distance under PERF-32 slow motion and across load recoveries (the follow runs on the drawn truck\'s sim clock; the old wall-clock follow pulled in 3.7 m and dropped back on recovery), never still while the truck moves; bursty clamped frames unchanged' },
   { file: 'hilift.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],

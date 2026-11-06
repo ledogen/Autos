@@ -30,6 +30,7 @@ import { WaterSystem } from '../src/water.js'
 import { streamSpans, buildStreamMesh, buildStreamBedMesh } from '../src/water-render.js'
 import { PoiSystem } from '../src/poi.js'
 import { scatterChunk } from '../src/props/prop-scatter.js'
+import { buildPalette, blobRadii } from '../src/props/prop-palette.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { FLORA_PARAMS } from '../data/flora.js'
 import { makeTerrainHeadless, makeNoise } from './lib/terrain-headless.mjs'
@@ -179,6 +180,7 @@ function fingerprint (W) {
       groundAt: (x, z) => TerrainSystem.prototype.groundAt.call(T, x, z),
       groundClassify: (sl, y) => T.groundClassify(sl, y),
       padBlocked: (x, z, k) => road.poiPadBlocked(x, z, k) || road.junctionPadBlocked(x, z, k),
+      blobRadius: blobRadii(buildPalette(seed).variants),   // BUG-54: PropSystem's own addition — each rock's variant radius
     }
     const ccx = Math.floor(cx / CHUNK_SIZE), ccz = Math.floor(cz / CHUNK_SIZE), out = []
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) out.push(scatterChunk(ccx + dx, ccz + dz, seed, s))

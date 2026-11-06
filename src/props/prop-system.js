@@ -20,7 +20,7 @@
  */
 
 import * as THREE from 'three'
-import { buildPalette, COVER_CATS, COVER_FAR_CAT, FADE_CATS } from './prop-palette.js'
+import { buildPalette, blobRadii, COVER_CATS, COVER_FAR_CAT, FADE_CATS } from './prop-palette.js'
 import { scatterChunk, scatterChunkGen, scatterLitterGen } from './prop-scatter.js'
 import { sphereVsCapsule, sphereVsMeshInstance, bushDrag } from './prop-collider.js'
 import { BAKE_LAYER, shadowShearScale } from './prop-shadow-bake.js'   // PERF-07: baked prop-shadow atlas (main.js owns the system)
@@ -96,11 +96,11 @@ export class PropSystem {
   constructor({ scene, worldSeed, samplers, params = FLORA_PARAMS }) {
     this._scene = scene
     this._seed = worldSeed >>> 0
-    this._samplers = samplers
     this._params = params
     this._chunkSize = params.chunkSize
 
     const { variants, material, coverMaterial, coverDepthMaterial, groundMaterial, coverUniforms } = buildPalette(this._seed, params)
+    this._samplers = { ...samplers, blobRadius: blobRadii(variants) }   // BUG-54: each rock sinks by its own size
     this._material = material
     this._coverMaterial = coverMaterial   // FEAT-85: wind + distance fade (uniforms shared below)
     this._coverDepthMaterial = coverDepthMaterial   // near-cover shadow pass: the same wind, no fade
