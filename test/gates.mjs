@@ -96,6 +96,8 @@ export const GATES = [
     desc: 'FEAT-13 v2: Delaunay/Urquhart primitives — empty-circumcircle, Urquhart⊇MST (connected), order-invariant' },
   { file: 'road-connectivity.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-68: the registered network is ONE component on the eval trio (connectivity is priority #1 and it regressed silently once — the deleted v1 culls shredded v2 geometry to 54% mean largest-component share while preventing zero real crossings), and no non-adjacent runs cross' },
+  { file: 'road-loop-trim.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-105 loop trim: a degree-2 site whose two legs cross each other (a loop the road paid to visit the site) is cut at the outermost crossing, which becomes a bend. Four random-seed windows (the census-10 sites + the owner\'s 3502246374), pond no-go: no degree-2 node\'s runs cross within 400 m, each bend has two runs meeting on one deck, the site keeps no road, and the trim is identical with the window shifted 500 m' },
   { file: 'junction-edge-lip.mjs', subsystem: 'road', cost: 'heavy', extraDeps: ['src/terrain.js'],
     desc: 'BUG-122/123: at every ringed junction on two random seeds (pond no-go, R 1000), each leg edge walked 2–30 m out keeps the asphalt-edge lip (physics 5 cm inside minus 5 cm outside) ≤ 0.25 m — main before BUG-122 stood 0.30 m on most pad rims, worst 0.66 m (50 fails); and the terrain mesh dirt (as _buildCarveTable composes it, 1 m grid, worst triangle split) never stands above the pad top up to 1.2 m inside a ring.' },
   { file: 'bank-steps.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
