@@ -37,6 +37,7 @@ const SEEDS = arg('seeds', null)?.split(',') ?? Array.from({ length: N }, () => 
 })
 const ROAD_FACTOR = 1.3   // road distance ÷ crow distance for the drive to a giver [DEFAULT]
 const MID = 0.5           // where between the A and B lines a job lands (0 = on A, 1 = on B)
+const MPG = 17            // a teleport burns no fuel, a drive does: the 2002 Ranger's ballpark [DEFAULT]
 
 // ── boot (cdp-smoke's) ───────────────────────────────────────────────────────────────────────────
 const freePort = () => new Promise(r => { const s = createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)) }) })
@@ -203,11 +204,14 @@ async function park (fresh = true) {
   check(await until(() => js('window.__vs.parked'), 3000), 'the truck would not park')
 }
 
-/** A drive to (x, z) costs game time even though the soak teleports. */
+/** A drive of `m` metres burns its fuel (never below a 0.3 gal reserve: the soak refuels under 5). */
+const burn = (m) => js(`window.__vs.fuel.gal = Math.max(0.3, window.__vs.fuel.gal - ${m / 1609.34 / MPG})`)
+/** A drive to (x, z) costs game time and fuel even though the soak teleports. */
 async function drive (to) {
   const c = await js('window.__car()'), d = Math.hypot(to.x - c.x, to.z - c.z) * ROAD_FACTOR
   const sec = d / run.speed   // real seconds = game minutes (DAY_PARAMS: 24 real minutes a day)
   if (sec > 1) await js(`window.__day().advanceMinutes(${sec})`)
+  await burn(d)
   run.driveMin += sec
   await seat(to)
 }
@@ -287,6 +291,7 @@ async function finish (o) {
     await park()
     check(await until(() => js(`window.__mission().leg > ${i}`), 5000), `parking at stop ${i + 1} did not hand over (leg ${await js('window.__mission().leg')})`)
   }
+  await burn(m0.len)   // the route itself
   // The clock to the middle of the A/B lines, then the last arrival.
   const th = m0.th ?? { A: 1.135, B: 1.187 }
   const want = m0.par * (th.A + MID * (th.B - th.A)), el = await js('window.__mission().elapsed')
