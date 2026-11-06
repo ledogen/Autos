@@ -107,3 +107,39 @@ high. basically \"high torque, low speed\" to try to get the flip to be more rel
 - The press becomes a long, gentle push: hold the torque longer, and back it off as the roll rate builds, so the
   truck walks over its tipping point instead of being flung.
 - Measure the success rate before and after: from the roof and from the side, on the level and on a slope.
+
+## Built 2026-11-06, Lane B — the long gentle press (feature/machine b5a4725d)
+
+- **The press** (`src/hilift.js` step):
+  - The full 10.5 N·m/kg until the roll rate in the push direction reaches half of `rollRate`. From there it
+    backs off linearly to zero at `rollRate`, 0.6 rad/s (34°/s) `[DEFAULT]`. The jack only pushes; it never brakes.
+  - Held up to `maxS` 8 s `[DEFAULT]` (was 3).
+  - From the roof it no longer stops at the roof's balance point. It pushes on through the side and is cut when
+    the truck reaches its wheels' balance point. So one press walks it roof → side → wheels (3.6 s on the level).
+  - From a side it stops if it goes over onto the roof (the wrong direction).
+  - $20 shelf price unchanged.
+- **Measured** (`test/hilift.mjs` §3 grid: roof and side × level and ±8°/±15° cross-slopes × three settle poses ×
+  both push directions; 45 trials):
+
+  | | before (constant 14 kN·m, cut at each balance, 3 s) | after |
+  |---|---|---|
+  | roof, level, one press | 4/6 | **6/6** |
+  | roof, slopes, one press / two | 21/24 / 24/24 | 22/24 / 24/24 |
+  | side, all, one press | 15/15 | 15/15 |
+  | fastest roll on the level | 5.0 rad/s | **3.0 rad/s** |
+
+  The push itself never rolls faster than 0.6 rad/s. The remaining 3.0 is gravity finishing the fall past each
+  balance point.
+- **Rates tried:** with the linear back-off from zero, 0.3 rad/s fell to 7/24 on the slopes. Slower means more
+  time on a sliding roof. 0.6 with full torque to half-rate is the slowest that matches or beats the old press
+  on every row.
+- **Flagged — the slope misses are a sliding roof, not the jack.** The body's pair friction is BUG-27b's 0.1, so
+  bumpers slide off a shoulder. That is below tan 5.7°, so a truck on its roof slides down any steeper slope:
+  20–480 m during a press here. Real roof metal on asphalt (μ ~0.4) would sit still on 8°. A body friction that
+  depends on the contact (low for a glancing bumper, high for a resting roof) is the complete model. It's
+  BUG-27b's call, not this ticket's.
+- **Flagged — a pure torque at the CG is the approximation.** A real hi-lift pushes up at one point with its
+  foot on the ground. That is a force, and the torque comes from its lever arm. The rate limit reproduces what
+  matters (a slow, displacement-limited push); the rest is unchanged.
+- **Not reproduced:** the owner's in-game miss on a level road (the old press did 6/6 within two presses on the
+  bench). The new one rights every level case in one press. The owner's next try is the check.

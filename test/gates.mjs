@@ -166,7 +166,7 @@ export const GATES = [
   { file: 'side-slide.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-89: a truck on its side scrubs instead of skating — its down-side tires (no strut load, Pacejka off) carry ~60 % of the weight and now scrub at the tire μ: 15 m/s along its length stops inside 40 m (was 245 m); lying across a 15° slope it holds (< 1 m in 10 s, was 75 m)' },
   { file: 'hilift.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
-    desc: 'FEAT-138: the hi-lift jack (src/hilift.js) on the real stepPhysics, flat ground — a truck on its side heaved toward upright comes back onto its wheels, cut at the balance point inside the 3 s cap; the 5 s cooldown, a truck on its wheels and an ended run all refuse; from the roof it is on its wheels within two presses' },
+    desc: 'FEAT-138: the hi-lift jack (src/hilift.js) on the real stepPhysics — a truck on its side heaved toward upright comes back onto its wheels, cut at the wheels\' balance point inside the 8 s cap; the 5 s cooldown, a truck on its wheels and an ended run all refuse; from the roof one long press rights it; a reliability grid (roof/side × level/±8°/±15° × poses × directions): every level one in one press, rolling < 4 rad/s, every slope one within two' },
   { file: 'abs-stop.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'ABS (src/abs.js): 25 m/s full-pedal stops off/on at μ 0.8/0.35 — no lock above cut-out, 3–15 Hz front cycling, ≤ 1.2× locked distance, steers where locked fronts plough' },
   { file: 'tire-contact.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
