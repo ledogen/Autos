@@ -69,6 +69,13 @@ export const STOCK_WEIGHT = {
     zipTies:          4,
     stopLeak:         4,
 
+    // Camp gear (FEAT-168 camp-gear-source, owner 2026-11-06: "camp + shelf") [DEFAULT]: the four the owner
+    // named are shelf stock as well as rewards; the bed layers below them are rewards only.
+    shadeTarp:        1,
+    tent:             1,
+    awning:           1,
+    cookingKit:       1,
+
     // Rewards only: never on the shelf (REWARD_ONLY below)
     emergencyGas:     4,
     coffee:           10,
@@ -76,7 +83,14 @@ export const STOCK_WEIGHT = {
     ductTape:         4,     // sold only at the general store, which has no shelf
     energyDrink:      10,
     dinnerMeal:       4,     // eaten on the spot, never stowed
+    blanket:          4,     // FEAT-168 camp rewards [DEFAULT]: the bottom rungs Sometimes, the top Hardly ever
+    airMattress:      4,
+    sleepingPad:      4,
+    quilt:            1,
+    sleepingBag:      1,
+    deluxeSleepingPad: 0.25,
 }
 
 /** Weighted for mission rewards but never stocked on a shelf (the owner's reward-only rows). */
-export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'ductTape', 'energyDrink', 'dinnerMeal'])
+export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'ductTape', 'energyDrink', 'dinnerMeal',
+    'blanket', 'airMattress', 'sleepingPad', 'quilt', 'sleepingBag', 'deluxeSleepingPad'])

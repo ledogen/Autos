@@ -23,6 +23,10 @@ export const ITEMS = {
                     desc: 'Wakes you up now. You will feel it in the morning.' },
     chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3, use: 'eat', hold: 10,
                     desc: 'Kinda gross.' },   // the owner's flavor line (setup page, 10-22)
+    // FEAT-168: the school's rare reward (owner, 2026-11-05: "school lunch?"). NEW: the words are a
+    // placeholder for the owner's; the hold is the packed lunch's 8 h and the icon its bag [DEFAULT].
+    schoolLunch:  { name: 'School lunch',  kind: 'food',       massKg: 0.5, use: 'eat', hold: 8, thumb: 'packedLunch',
+                    desc: 'A brown-bag lunch from the school cafeteria.' },
     // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
     // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.
     spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: PARTS.spareTire.massKg, use: 'spare',
