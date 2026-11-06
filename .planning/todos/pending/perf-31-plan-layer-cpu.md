@@ -160,15 +160,16 @@ thread-only (`routeEdgeV2` and idle excluded; `--cpu-prof` on the worker path, t
 windows, seed 6). Every lever below is a pure cache or a proven-safe skip: the world fingerprint
 (`fingerprint-world --compare` vs main `55c8b013`) is **ALL IDENTICAL after each commit**, and the
 worker-path network hash stays `f96eb26bd930` throughout. Shares are thread-only CPU shares; the
-ms column is owed (the machine was contended — see "Timing" below).
+ms column is the network thread's total over the three windows (`wip/perf-31/thread-bench.mjs`), each
+commit's `road.js` benched in turn on one quiet machine (load ~2.5), cumulative from main's 8.00 s.
 
-| commit | lever | count / share before → after |
-|---|---|---|
-| `cef63fff` | one profile solve per centerline per network rev: pass 1 and pass 2 (`_planRev` +0.5) asked the route cache for the same `Centerline` object and re-solved it; memo on the object, a hit replays the infeasible / stub / rung tallies so exported tallies match | `_v2GradePts` 854 → 479 per window (~290 distinct centerlines) |
-| `3c93df56` | `_nearestWithinXZ`: walk a polyline in arc-length jumps — a vertex at distance d proves every point within arc `d − bar` of it is further than the bar (triangle inequality) — and run the full nearest-point scan only where a hit can be near. Predicates carry their bar (`_v2Near` → `reqMax`, throat `max(PROX, reqMax)`; the gap walk's `FLARE`). New fast gate `nearest-within`: 60 000 adversarial queries, 0 wrong; a mutant without the `−bar` fails 5 936 | nearest-point work ~30 % → ~14.6 % |
-| `33a3a1d5` | T probe (`_v2ForkCandidates`): each side sample's trunk hit found once, not once per fork candidate (it was O(candidates × side × trunk) — "O" = order of growth, constants dropped) | `_v2ForkCandidates` 15.5 % → 1.3 % |
-| `c12875ae` | clearance pass walks with the within-skip at 60 m (it already discarded hits past 60 m) | its share of the walk is now the 6.8 % that is genuinely near |
-| `a474e7c1` | T probe builds each departure once per rev (`_v2ProbeDeparture`, memo by side + ladder key); `_v2PromoteOne` / `_v2PromoteMidSpan` still build fresh | departures ~140 → ~85 (= distinct) per window; profile solves 479 → 427 |
+| commit | lever | count / share before → after | thread, cumulative |
+|---|---|---|---|
+| `cef63fff` | one profile solve per centerline per network rev: pass 1 and pass 2 (`_planRev` +0.5) asked the route cache for the same `Centerline` object and re-solved it; memo on the object, a hit replays the infeasible / stub / rung tallies so exported tallies match | `_v2GradePts` 854 → 479 per window (~290 distinct centerlines) | 8.00 → **7.37 s** (−0.63) |
+| `3c93df56` | `_nearestWithinXZ`: walk a polyline in arc-length jumps — a vertex at distance d proves every point within arc `d − bar` of it is further than the bar (triangle inequality) — and run the full nearest-point scan only where a hit can be near. Predicates carry their bar (`_v2Near` → `reqMax`, throat `max(PROX, reqMax)`; the gap walk's `FLARE`). New fast gate `nearest-within`: 60 000 adversarial queries, 0 wrong; a mutant without the `−bar` fails 5 936 | nearest-point work ~30 % → ~14.6 % | → **6.63 s** (−0.74) |
+| `33a3a1d5` | T probe (`_v2ForkCandidates`): each side sample's trunk hit found once, not once per fork candidate (it was O(candidates × side × trunk) — "O" = order of growth, constants dropped) | `_v2ForkCandidates` 15.5 % → 1.3 % | → **5.73 s** (−0.90) |
+| `c12875ae` | clearance pass walks with the within-skip at 60 m (it already discarded hits past 60 m) | its share of the walk is now the 6.8 % that is genuinely near | → **5.43 s** (−0.30) |
+| `a474e7c1` | T probe builds each departure once per rev (`_v2ProbeDeparture`, memo by side + ladder key); `_v2PromoteOne` / `_v2PromoteMidSpan` still build fresh | departures ~140 → ~85 (= distinct) per window; profile solves 479 → 427 | → **4.88 s** (−0.55) |
 
 What is left on the thread (phase split by process CPU time): warm 79 % (of which the warm-time
 settle pass 44 %), build pass 1 ~0 % (carried memos), pass 2 + assembly 21 %; the route pool burns
@@ -186,5 +187,17 @@ settle pass 44 %), build pass 1 ~0 % (carried memos), pass 2 + assembly 21 %; th
   world-invariant.
 - **Shove `RAMP` hoist, `_registerRun` memo** (2.9 %) — too small to carry.
 
-**Timing: OWED.** The A/B (`wip/perf-31/ab.sh`, alternating main and branch) and story entry at
-`--cpu=4` wait for a free machine; the orchestrator schedules the slot.
+**Timing (2026-11-06, the measurement slot the other lanes cleared; load 2–3.5, no leaked Chrome).**
+
+| measure | main `55c8b013` | branch `a474e7c1` |
+|---|---|---|
+| network thread, 3× 1400 m (alternating A/B, 3 rounds each) | 8.03 / 7.99 / 8.00 s | **4.82 / 4.90 / 4.73 s** (−40 %) |
+| … warm | 5.49–5.57 s | 4.04–4.21 s |
+| … carried build | 2.42–2.54 s | 0.69–0.70 s |
+| route pool CPU (unchanged by design) | 8.89–9.15 s / 511 jobs | 8.79–9.06 s / 511 jobs |
+| story entry, cpu ×4, seed 6, cold (alternating A/B) | 11.6 / 11.8 / 11.6 s | **9.0 / 8.9 / 9.0 s** (−2.7 s) |
+
+Story entry sits far under the owner's 30 s bar. The ≤ 8 s three-window bench target of this ticket was
+met by W3; the thread is now 4.8 s of it. Gates: the affected set (`--changed=src/road.js,test/gates.mjs,
+test/nearest-within.mjs` — a clean tree selects 0) 58/58 green, including network-worker-parity,
+road-worker-parity, world-determinism, restream-invariance and the new nearest-within.
