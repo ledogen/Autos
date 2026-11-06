@@ -36,8 +36,8 @@ import os
 # PARAMETERS
 # ---------------------------------------------------------------------------
 
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/crate.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/crate.blend"
 
 
 class Size:
@@ -393,6 +393,8 @@ def build():
 
 
 def _ui_override():
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     area = next(a for a in win.screen.areas if a.type == "VIEW_3D")
     region = next(r for r in area.regions if r.type == "WINDOW")

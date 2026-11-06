@@ -597,13 +597,7 @@ def bake_sign_texture():
 
     path = os.path.join(bpy.app.tempdir, "produce-stall-sign.png")
     sc.render.filepath = path
-    win = bpy.context.window
-    prev = win.scene
-    win.scene = sc
-    try:
-        bpy.ops.render.render(write_still=True)
-    finally:
-        win.scene = prev
+    bpy.ops.render.render(write_still=True, scene=sc.name)   # no window swap: runs under blender -b too
 
     img = bpy.data.images.load(path, check_existing=False)
     img.name = "ProduceStallSign"

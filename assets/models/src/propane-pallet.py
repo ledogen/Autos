@@ -36,6 +36,7 @@ glTF -Z forward (stringers and valve outlets both point that way).
 """
 
 import bpy
+import os
 import importlib.util
 import math
 
@@ -45,8 +46,8 @@ import math
 
 TRI_BUDGET = 1800
 NAME = "propane-pallet"
-SRC = "/Users/ledogen/CodeShit/CarGame/assets/models/src"
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
+SRC = os.path.dirname(os.path.abspath(__file__))   # assets/models/src
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
 OUT_BLEND = f"{SRC}/{NAME}.blend"
 
 # Tank centres sit PITCH apart: 0.31 m diameter + a 10 mm gap.  Touching
@@ -161,6 +162,8 @@ def build_load():
 
 
 def _ui_override():
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     area = next(a for a in win.screen.areas if a.type == "VIEW_3D")
     region = next(r for r in area.regions if r.type == "WINDOW")

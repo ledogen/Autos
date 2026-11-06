@@ -13,10 +13,11 @@ Base-seated, centred; long axis along Blender +Y (= glTF −Z).  FurnWood is the
 for the wardrobe and table (one of three stains); the piano is PianoBlack.
 """
 import bpy, bmesh, math, random
+import os
 from mathutils import Vector, Matrix
 
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/household.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/household.blend"
 BUDGETS = {"wardrobe": 500, "upright-piano": 700, "framed-artwork": 500, "dining-table": 600}
 
 MATS = {
@@ -334,6 +335,8 @@ def fresh_scene():
 
 
 def _ui_override():
+    if bpy.context.screen is None:              # blender -b: no window, and the exporter needs none
+        return {}
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             return dict(window=bpy.context.window, area=area, region=next(r for r in area.regions if r.type == 'WINDOW'))

@@ -19,10 +19,11 @@ The strap section is the LOAD MESH'S OWN cut at the strap plane (every edge cros
 so it hugs a faceted drum as closely as a boxed crate.
 """
 import bpy, importlib.util, math, random
+import os
 from mathutils import Vector
 
-SRC = "/Users/ledogen/CodeShit/CarGame/assets/models/src"
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
+SRC = os.path.dirname(os.path.abspath(__file__))   # assets/models/src
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
 OUT_BLEND = f"{SRC}/freight-pallet.blend"
 BUDGETS = {"drum-pallet": 900, "barrel-pallet": 900, "small-crate-pallet": 800, "large-crate-pallet": 800}
 

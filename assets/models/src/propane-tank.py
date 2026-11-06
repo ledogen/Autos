@@ -28,6 +28,7 @@ AXIS.  Lathe about +Z, base-seated at z=0.  Outlet points Blender +Y, which the
 """
 
 import bpy
+import os
 import bmesh
 import math
 
@@ -37,7 +38,7 @@ import math
 
 TRI_BUDGET = 350
 NAME = "propane-tank"
-MODELS = "/Users/ledogen/CodeShit/CarGame/assets/models"
+MODELS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
 OUT_DIR = MODELS
 OUT_BLEND = f"{MODELS}/src/{NAME}.blend"
 
@@ -346,6 +347,8 @@ def build():
 
 
 def _ui_override():
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     scr = win.screen
     area = next(a for a in scr.areas if a.type == "VIEW_3D")

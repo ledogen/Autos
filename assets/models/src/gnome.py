@@ -92,6 +92,7 @@ the lower beard, cutting the white silhouette off with a horizontal edge.
 """
 
 import bpy
+import os
 import bmesh
 import math
 import mathutils
@@ -101,8 +102,9 @@ import mathutils
 # ---------------------------------------------------------------------------
 
 TRI_BUDGET = 500
-OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/gnome.glb"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/gnome.blend"
+MODELS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_GLB = f"{MODELS_DIR}/gnome.glb"
+OUT_BLEND = f"{MODELS_DIR}/src/gnome.blend"
 OBJ_NAME = "Gnome"
 
 # RESCALED 2026-10-07 (owner, FEAT-71): x2 overall, applied to the finished mesh, so every

@@ -9,10 +9,11 @@ Household freight kit 3 — the fragile top end.  One generator, one .glb each.
 Base-seated, centred; forward −Z (Blender +Y).  Builder and materials are household.py's.
 """
 import bpy, bmesh, math, random
+import os
 from mathutils import Vector, Matrix
 
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/household-3.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/household-3.blend"
 BUDGETS = {"glass-panes": 600, "xray-machine": 800, "sculpture-a": 400, "sculpture-b": 800}
 
 MATS = {
@@ -403,6 +404,8 @@ def fresh_scene():
 
 
 def _ui_override():
+    if bpy.context.screen is None:              # blender -b: no window, and the exporter needs none
+        return {}
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             return dict(window=bpy.context.window, area=area, region=next(r for r in area.regions if r.type == 'WINDOW'))

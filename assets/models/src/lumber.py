@@ -20,10 +20,11 @@ LumberStrap (steel banding), RackSteel (rack frame).  Tints live in COLOR_0 so t
 two stay ONE draw call each; authored colour is the lightest board, every tint <= 1.
 """
 import bpy, bmesh, math, random
+import os
 from mathutils import Vector, Matrix
 
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/lumber.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/lumber.blend"
 BUDGETS = {"lumber-bundle": 800, "board-2x4": 12, "board-2x6": 12, "board-2x8": 12, "lumber-stack": 1000, "timber-rack": 600, "offcut-pile": 500}   # owner 2026-10-09: real boards
 
 MATS = {
@@ -316,6 +317,8 @@ def fresh_scene():
 
 
 def _ui_override():
+    if bpy.context.screen is None:              # blender -b: no window, and the exporter needs none
+        return {}
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             return dict(window=bpy.context.window, area=area, region=next(r for r in area.regions if r.type == 'WINDOW'))

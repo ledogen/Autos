@@ -35,6 +35,7 @@ facet on the belly.  Even counts put an edge on the ridge and read boxy.
 """
 
 import bpy
+import os
 import bmesh
 import math
 import mathutils
@@ -44,8 +45,8 @@ import mathutils
 # ---------------------------------------------------------------------------
 
 TRI_BUDGETS = {"flamingo-a": 400, "flamingo-b": 400}
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/flamingo.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/flamingo.blend"
 
 SEG = 7                      # body/neck/head cross-section
 PHASE = math.pi / 2          # first ring vertex on the up axis (see header)
@@ -447,6 +448,8 @@ def check_normals(ob, samples=300):
 
 
 def _ui_override():
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     scr = win.screen
     area = next(a for a in scr.areas if a.type == "VIEW_3D")

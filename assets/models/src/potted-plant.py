@@ -13,11 +13,12 @@ Base-seated at the pot base; near-symmetric, forward −Z nominal.  Collision is
 Materials: PotTerracotta (recolour hook: terracotta / glazed blue / white), PotSoil, PlantLeaf, PlantStem.
 """
 import bpy, bmesh, math, random
+import os
 from mathutils import Vector, Matrix
 
 NAME = "potted-plant"
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/potted-plant.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/potted-plant.blend"
 TRI_BUDGET = 500
 SEG = 8
 LEAVES = 13
@@ -156,6 +157,8 @@ def fresh_scene():
 
 
 def _ui_override():
+    if bpy.context.screen is None:              # blender -b: no window, and the exporter needs none
+        return {}
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             return dict(window=bpy.context.window, area=area, region=next(r for r in area.regions if r.type == 'WINDOW'))
