@@ -183,3 +183,109 @@ Tier 1 (four customers) is the right rung: it is the one the owner has driven an
 - Pose tuning for the two descents is the owner's; if world-gen tuning moves the roads, the owner
   will find new places. So: re-extract poses after BUG-67 lands, do not wait on the owner.
 - Best-time persistence landed 11-01 (5f650a47).
+
+## RULED — owner, 2026-11-06 (via the orchestrator, verbatim)
+
+> "if you're asking for scenarios gameplay: start at larry's, briefing should go over the controls for papers but we
+> dont need the expedition camp stuff. all customer counts from the ladder are open from the start. should follow story
+> par for now (which i just ruled an adjustment on)"
+
+- **Start at Larry's.** This supersedes 11-01's assumption that the scenario starts at the spawn.
+- **The briefing covers the paper controls**, without the expedition-camp material.
+- **Every customer count on the ladder (4 … 15) is open from the start**: the player picks the rung.
+- **Par = story par**: main's rank spread (FEAT-69: S +10 %, par +30 %, A/B interpolated).
+
+## Plan — the paper-route scenario (Spare, 2026-11-06; awaiting the orchestrator's sign-off)
+
+**What the code says** (mapped 11-06; `main` = `src/main.js`):
+- The ladder is four rungs, `PAPER_PARAMS.tiers = [4, 9, 12, 15]` (`paper-route.js:76`). "Every count open" means
+  `runPaper.tier = 3`, with all four rungs on Larry's existing size buttons (`main:6834`).
+- A paper run cannot live outside story mode the way the descent does:
+  - Larry, the customers and the planner exist only after the story region warms (`onRegionLive`, `main:8315`);
+  - the reach, throw, HUD and rank timer are gated on `storySystem.isActive()`;
+  - the paper clock is the day clock.
+- **The danger is the player's real run.** Inside `storySystem.enter()`:
+  - `_autosave` overwrites the run save every second (`main:8855`);
+  - a crash calls `_endRun`, which runs `_discardRunSave()` and deletes it (`main:9517`, `8899`);
+  - `_startStory` calls `clearRun()` (`main:8586`).
+  A scenario must touch none of these.
+- Story par is free: `planTour` + `computePar`, and `economySystem.terms()` carries FEAT-69's rank spread.
+
+**Build:**
+1. **Definition** (`data/scenarios.js`): `{ id: 'paper-90', kind: 'paper', seed: '90', name, blurb }`. The descent gets
+   `kind: 'trial'` (the default). The scenario list, `_startScenario` and `scenario-route.mjs` part B branch on `kind`.
+2. **Entry** (`_startPaperScenario`): set a `scenarioRun` flag, then `storySystem.enter('90')`. Under the flag:
+   - `_autosave`, `_discardRunSave` and `clearRun` are no-ops, so the player's real save is never read, written
+     or deleted;
+   - RUN_INTRO, LARRY_WELCOME and `tut-camp` are skipped (the owner's "no expedition camp stuff");
+   - debug and teleport stay locked out.
+3. **`onRegionLive` scenario branch:**
+   - day 1, 07:00; a fresh economy and inventory; `dialogueSystem.start()` and `resetPaperRun()`;
+   - `runPaper.tier = 3`;
+   - seat at Larry's (`_seatAt(larry)`);
+   - `paperRouteSystem.open(larry, null)`: no board offer, so no deadline and no save snapshot.
+   - The offer card opens on the **4-customer rung** (the owner's rated difficulty), with 9, 12 and 15 one tap away.
+4. **Briefing:** `PAPER_ROUTE_INTRO` already covers only the papers, but names only the keyboard's F. Add the pad's
+   aim-and-throw line (FEAT-133 bindings) to it. It plays on the first paper run of the scenario, not on a restart
+   (ruling (b) 11-01, with one scenario entry = one playthrough).
+5. **Finish:** the scenario card shows the time, the letter and par for the rung, plus the best time per rung
+   (`Leaderboard` id `paper-90:<count>`; times only, so no schema bump; the letter is derived from the run).
+   Buttons: restart (re-seat at Larry's, same rung, no briefing) and main menu.
+6. **Crash, dead truck, or R:** inside the scenario these lead to the finish card's restart, never `_endRun`.
+   R re-seats at Larry's, not at the region centre.
+7. **Exit:** leave story mode for the main menu. Nothing carries into free roam, and the player's story save is
+   byte-identical (asserted).
+
+**Proof:**
+- A headless gate pins seed 90's route per rung (customers, km, par).
+- `scenario-route.mjs` gets a `kind` branch.
+- `cdp-smoke` gains a step: menu → paper scenario → seated at Larry's → offer shows four rungs → exit, with a
+  pre-seeded run save checked identical afterwards.
+- `world-determinism` keeps `clearSpawnOverride` before `applySeed` on the new path.
+- `npm run test:all -- --browser` green.
+
+**Open, defaulted (flag if wrong):**
+- The rung is chosen on Larry's card, not on the scenarios page.
+- The default rung is 4.
+- There is no deadline (par and rank only).
+- The best-times board keeps times per rung.
+
+**Signed off (orchestrator, 2026-11-06).** The defaults stand: the rung is picked on Larry's card, default 4, no
+deadline, the board keeps times only. Seed 90 is a curated scenario's world by design, not a default seed. Two notes:
+1. Best times go through `src/leaderboard.js` `localStore()`, the descent's board (one key per scenario). If that
+   cannot hold a list per rung, extend it; do not fork it.
+2. The save guard matters most. Beyond the byte-identical check, the smoke must:
+   - start a real run and save it;
+   - play the scenario, crash, and restart in it;
+   - quit to the menu;
+   - and then **Continue must still resume the original run**.
+
+## Built — the paper-route scenario (Spare, 2026-11-06, `feature/spare` `2bbaf7ba` → `1016261a`)
+
+- **Definition:** `data/scenarios.js` has `{ kind: 'paper', id: 'paper-90', seed: '90' }`; the descents default to
+  `kind: 'trial'`. The scenarios page lists the paper route with its best time per rung.
+- **Entry:** `_startPaperScenario` → `_startStory(seed, Classic, gearbox, null, 0, def)` sets `_paperScenario`.
+  Under it:
+  - `clearRun()` is skipped and `_autosave` returns false;
+  - `_endRun` shows the scenario's card (`_paperScenarioOver`) instead of discarding the save;
+  - the seed never re-rolls;
+  - the opening, run intro, Larry's welcome and the camp tutorial are skipped;
+  - save & exit, the towel and the free-roam slot are hidden from the pause menu, and restart is shown.
+- **Go-live:** day 1, 07:00; `runPaper.tier = 3`; seated at Larry's; `paperRouteSystem.open(larry, null, rung)`.
+  `open()` takes an optional starting rung. There is no board offer, so no deadline, and decline is hidden.
+- **Briefing:** `PAPER_ROUTE_INTRO` now also names the pad's throw (right stick aims, RB tap). It plays once per
+  scenario entry, and a restart keeps the dialogue's seen set.
+- **Result:** the paper round's result renders as the scenario card (`#scenario-panel`): time, letter, par and the
+  board for that rung (`Leaderboard` id `paper-90:<n>` through `localStore()`, one key per rung). Restart re-seats
+  at Larry's on the same rung with a fresh truck; main menu is `_backToMenu`. R restarts too. Leaving the region
+  clears the scenario.
+- **Proof:**
+  - `test/paper-scenario.mjs` (registered, heavy): seed 90 plans every rung from Larry's, par 4.2 / 8.2 / 15.0 /
+    19.9 min for 4 / 9 / 12 / 15 customers.
+  - `scenario-route.mjs` skips the paper kind (it has no poses).
+  - `cdp-smoke` step `paperScenario`: save a real run and save & exit → the scenarios page → the paper route; it is
+    seated at Larry's offering "4* 9 12 15", with no time limit, no decline, and the autosave refused. A fatal crash
+    → the scenario card, not the run end; restart without the briefing; a finished result → card + board
+    `paper-90:4`; restart; pause → main menu; the run save is byte-identical at every step; Continue resumes the
+    original run at 0.00 m with its wallet.
+  - First full smoke: PASS, 24 steps, zero console errors.

@@ -16,7 +16,8 @@ export const PAPER_ROUTE_INTRO = [
         speaker: 'Uncle Larry',
         text: `Drive near the customer's house and hold <span class="dlg-key">F</span> to aim your `
             + `throw. when you're happy with your aim, <span class="dlg-key">release F</span> to `
-            + `yeet that newspaper roll right onto their porch.`,
+            + `yeet that newspaper roll right onto their porch. On a controller, aim with the `
+            + `<span class="dlg-key">right stick</span> and tap <span class="dlg-key">RB</span> to throw.`,
     },
 ]
 

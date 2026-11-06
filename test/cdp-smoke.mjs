@@ -958,6 +958,73 @@ const STEPS = [
     check(Math.hypot(rolled.x - held.p.x, rolled.z - held.p.z) > 1, 'the key that ended the resume card did not hand the moving truck back')
     console.log(`  crash: killed at ${kill.v.toFixed(1)} m/s, saved at ${saved.v.toFixed(1)}, resumed at ${held.v.toFixed(1)} m/s ${dk.toFixed(2)} m from the save`)
   }],
+  // FEAT-62: the paper-route scenario runs in story mode under a guard and must never touch the player's run
+  // (orchestrator, 2026-11-06): save this run, play the scenario — a crash and a restart in it — quit to the
+  // menu, and Continue still resumes the run, byte-identical in the slot until then.
+  ['paperScenario', async () => {
+    const slot = () => js('localStorage.getItem("autos-run/1")')
+    await park()
+    check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000), 'paper scenario: the run never came to rest to save')
+    const money0 = await js('window.__econ.money')
+    for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
+    await js('document.getElementById("pm-save").click()')
+    check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'paper scenario: no continue button after save & exit')
+    const before = await slot()
+    const pose = JSON.parse(before).data.pose.p
+    // From the real menu: new game → mode "scenarios" → the paper route.
+    await js('document.getElementById("mm-new").click()')
+    await js('document.querySelector(\'button.mm-sel[data-key="gameMode"]\').click()')
+    const pick = await js(`(() => { const b = [...document.querySelectorAll('#mm-scenario-list button')].find(b => b.textContent.startsWith('the paper route'))
+      if (b) b.click(); return !!b })()`)
+    check(pick, 'paper scenario: not on the scenarios page')
+    const state = () => js('window.__paper.system.state')
+    const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    const offered = async (what, ms) => {
+      const t0 = Date.now()
+      while (Date.now() - t0 < ms && await state() !== 'offer') { if (await dlg()) await tap('Enter'); await sleep(300) }
+      check(await state() === 'offer', `paper scenario ${what}: Larry offered no round (state ${await state()})`)
+    }
+    await offered('entry', 60000)
+    const at = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse'), c = window.__car()
+      return { d: Math.hypot(c.x - q.x, c.z - q.z), sizes: [...document.querySelectorAll('#pp-sizes button')].map(b => b.textContent + (b.classList.contains('on') ? '*' : '')).join(' '),
+               deadline: /time limit/.test(document.getElementById('pp-body').textContent), decline: document.getElementById('pp-decline').style.display } })()`)
+    check(at.d < 40, `paper scenario: seated ${at.d.toFixed(0)} m from Larry's`)
+    check(at.sizes === '4* 9 12 15' && !at.deadline && at.decline === 'none', `paper scenario offer: ${JSON.stringify(at)} — want "4* 9 12 15", no time limit, no decline`)
+    check(await js('window.__autosave()') === false, 'paper scenario: the autosave wrote')
+    check(await slot() === before, 'paper scenario: the run save changed on entry')
+    // A fatal crash: the scenario's card, never the run's end.
+    await js('window.__damage.fatalImpact = { kmh: 99 }')
+    check(await until(() => js('document.getElementById("scenario-panel").style.display === "block"'), 5000), 'paper scenario: a crash showed no scenario card')
+    check(await js('document.getElementById("run-end").style.display !== "block"'), 'paper scenario: a crash reached the run-end card')
+    check(await slot() === before, 'paper scenario: the crash touched the run save')
+    await js('document.getElementById("sp-restart").click()')
+    await offered('restart', 20000)
+    check(!await dlg(), 'paper scenario: the briefing replayed on restart')
+    check(await slot() === before, 'paper scenario: the restart touched the run save')
+    // The result card and the per-rung board: a finished 4-customer round (a B, 3:20 against par 4:10).
+    await js(`(() => { const p = window.__paper.system
+      p.result = { customers: 4, delivered: 4, letter: 'B', elapsed: 200, par: 250 }; p.state = 'done'; p._onChange() })()`)
+    const card = await js(`({ shown: document.getElementById('scenario-panel').style.display, title: document.getElementById('sp-title').textContent,
+      body: document.getElementById('sp-body').textContent, board: localStorage.getItem('autos-scenario-times/1:paper-90:4') })`)
+    check(card.shown === 'block' && /4 customers/.test(card.title) && /3:20/.test(card.body) && /B\s+par 4:10/.test(card.body) && JSON.parse(card.board ?? '[]')[0]?.elapsed === 200,
+      `paper scenario result card: ${JSON.stringify(card)}`)
+    check(await slot() === before, 'paper scenario: the result touched the run save')
+    await js('document.getElementById("sp-restart").click()')
+    await offered('restart after a result', 20000)
+    // Out through the pause menu, then Continue resumes the run that was saved.
+    for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
+    await js('document.getElementById("pm-menu").click()')
+    check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 10000), 'paper scenario: no continue button back at the menu')
+    check(await slot() === before, 'paper scenario: the run save is not byte-identical after the scenario')
+    await js('document.getElementById("mm-continue").click()')
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    check(await until(() => js(live), 45000, 250), 'paper scenario: Continue never went live')
+    const c = await js('window.__car()')
+    const dm = Math.hypot(c.x - pose[0], c.z - pose[2])
+    check(dm < 0.5 && await js('window.__econ.money') === money0, `paper scenario: Continue resumed ${dm.toFixed(2)} m from the saved run, wallet ${await js('window.__econ.money')} (saved ${money0})`)
+    if (await js('document.getElementById("resume-card").style.display === "flex"')) await tap('w')   // hand the run back, as the save step leaves it
+    console.log(`  paper scenario: Larry's offer "${at.sizes}", crash → card → restart, the run save untouched, Continue resumed at ${dm.toFixed(2)} m`)
+  }],
   // FEAT-146: every way a run ends reaches the one summary card, deletes the run save, and the card's
   // button goes back to the main menu. The towel on this run, then a fresh run for each of the others.
   ['endings', async () => {
