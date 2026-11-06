@@ -86,3 +86,24 @@ touches `src/` until the owner rules.
   junctions, and the threshold bounds how many there are.
 - Downstream systems (pads, carve, causeways, stitching) take a junction position as input and do not care where it
   came from. The repairs that become dead get deleted, not retuned.
+
+## Work log
+
+**2026-11-06, Spare: method and tools (`wip/qual-35/`, git-invisible).**
+- `place.mjs`: the census windows built as the game builds them (pond no-go, 1400 m). For every plan node of degree
+  ≥ 3 whose site lies in the window, ground-following cost fields on a world-aligned 12 m grid, 16-neighbour, step cost
+  `ds·(1 + wGrade·g²)` on the corridor's own height field, pond+skirt discs blocked: one from each leg's far end, one
+  from the site. **The site stays on the network.** A set M of 2 to n−1 legs leaves the site down one shared trunk to a
+  junction J and splits there; the other legs still start at the site. J minimises `Σ_{i∈M} F_i + F_site`; the saving
+  is that sum at the site (today's cost of those legs) minus its minimum. With |M| = n−1 the site becomes a bend on a
+  through road; with fewer it keeps a T of its own (twin Ts). J must lie nearer its own site than any far end (and
+  ≥ 60 m from one), so the Urquhart graph still decides which sites connect. One move per site (a 4-way that would
+  split into two pairs takes the better pair only).
+- **The field is checked against the router** (`calib.mjs`, seed 6, 119 legs): field cost / the corridor search's own
+  cost with the turn term off has median 1.02 and 10–90 % range 0.88–1.21. A fair stand-in, minus curvature.
+- `report.mjs` (bill, absorbs, coupling, time; today's leftovers from BUG-105's census 10), `invariance.mjs` (one seed,
+  two window centres, every shared node must place identically), `sheet-data.mjs` + `gen-page.mjs` (plan-view maps:
+  today's roads, today's lines of the merging legs, the router's own lines from J; no plan-layer passes).
+- Early signal, one 600 m window of seed 6 (a smoke run, not a result): all 3 nodes move 260–320 m, each saving
+  1 000–3 700 cost-m: legs climbing over the same ridge side by side, merged into one crossing.
+- Waiting on the orchestrator's GO (machine hold for the owner's playtest).
