@@ -92,9 +92,14 @@ function makeRouter (road, rng) {
   push(cur)
   // At a junction, any other edge there; at a dead end (the region's rim, a stub) a U-turn is not drivable by pursuit,
   // so the route JUMPS to a random edge elsewhere and the truck is re-seated there when it gets to the end (a tow).
+  // Only an edge leaving within 100° of the way the truck arrives: a hairpin turn at a junction is not drivable by
+  // pursuit (it overshot one on seed 6 at (−298, −987) again and again) — none, and it is a tow too.
+  const heading = (a, b) => Math.atan2(b.z - a.z, b.x - a.x)
+  const leaving = (en) => { const pts = en.e.points, k = Math.min(3, pts.length - 1); return en.end === 0 ? heading(pts[0], pts[k]) : heading(pts.at(-1), pts.at(-1 - k)) }
   const extend = () => {
     const far = endOf(cur.e, 1 - cur.end), n = node.get(far)
-    const next = n.ends.filter(x => x.e !== cur.e)
+    const arrive = heading(path.at(-Math.min(4, path.length)), path.at(-1))
+    const next = n.ends.filter(x => x.e !== cur.e && Math.abs(Math.atan2(Math.sin(leaving(x) - arrive), Math.cos(leaving(x) - arrive))) < 100 * Math.PI / 180)
     if (next.length) { cur = next[Math.floor(rng() * next.length)]; push(cur) }
     else { cur = endOf(edges[Math.floor(rng() * edges.length)], rng() < 0.5 ? 0 : 1); push(cur, true) }
   }
