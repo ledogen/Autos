@@ -176,7 +176,9 @@ async function startRun (seed) {
   // Skip the opening: hold M a second over the firing (FEAT-170 stage 2).
   check(await until(dlgUp, 5000), 'the run did not open on the firing')
   await key('m', true); await sleep(1300); await key('m', false)
-  check(await until(() => js('window.__board().firstState() === "taken"'), 15000), 'holding M did not skip to the casserole')
+  check(await until(() => js('window.__board().firstState() === "taken"'), 15000), `holding M did not skip to the casserole: ${JSON.stringify(await js(`({
+    first: window.__board().firstState(), ms: window.__mission().state, dlg: getComputedStyle(document.getElementById('dialogue-panel')).display,
+    hint: document.getElementById('skip-hint')?.style.display, vis: document.visibilityState, focus: document.hasFocus(), log: (window.__soakLog ?? []).slice(-12) })`))}`)
   if (process.argv.includes('--gate-at-start')) await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)   // test the camp's lines first
   await js('window.__autosave()')
   return await js('JSON.parse(localStorage.getItem("autos-run/1")).data.seed')
