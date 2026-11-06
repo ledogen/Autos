@@ -1250,7 +1250,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // wrong omega. Re-evaluate sLong at the ACTUAL committed omega (0 when clamped) so the
       // slip state stays consistent with the wheel speed. Inconsistent sLong would generate a force
       // in the wrong direction on the next step (accelerating backward instead of braking).
-      if (brakeTorque > 0 && Math.sign(omegaNew) !== spinSign) {
+      // FEAT-162: a collapsed wheel's hub can't turn — the folded rim jams it and reacts any torque, so
+      // the corner slides at ω = 0 like a locked brake (its sliding grip is damage.js wheelCollapseMu).
+      if (params._wheelCollapseR?.[i] || (brakeTorque > 0 && Math.sign(omegaNew) !== spinSign)) {
         vehicleState.wheelOmega[i] = 0
         // Recompute sLong at omega=0 so slip state matches actual wheel speed.
         sLongFinal = (lastSLongPrev + dt * (0 - lastLongVelCur)) / lastRelaxDen
@@ -1374,7 +1376,8 @@ function stepAirborneWheel (i, vehicleState, params, dt, longVel) {
   const brakeSigned = brakeTorque * spinSign
   const omegaNew    = omega0 + (dt / wheelInertia) * (driveTorque - brakeSigned)
   // Braking cannot reverse spin direction: the brake stops the wheel, it does not push through zero.
-  vehicleState.wheelOmega[i] = (brakeTorque > 0 && Math.sign(omegaNew) !== spinSign) ? 0 : omegaNew
+  // FEAT-162: a collapsed wheel's hub can't turn, in the air as on the ground.
+  vehicleState.wheelOmega[i] = params._wheelCollapseR?.[i] || (brakeTorque > 0 && Math.sign(omegaNew) !== spinSign) ? 0 : omegaNew
   if (vehicleState.slipLong && vehicleState.slipLat) {
     const vCon = Math.max(Math.abs(omega0 * params.wheelRadius), SLIP_EPSILON)
     const relaxDen = 1 + dt * vCon / (params.tireRelaxationLength || 0.3)
