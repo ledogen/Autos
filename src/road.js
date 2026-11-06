@@ -3554,6 +3554,19 @@ export class RoadSystem {
                 if (h.d < PROX) { merges = true; break }
                 if (h.d < this._v2ClearReq(S.pts[i], h)) violates = true
             }
+            // BUG-105: "inside mergeProxM somewhere" defers the pair to the T machinery — but only a
+            // pair the node's plan gives a role is ever merged. Seed 163384989 (−12730, 14910): two
+            // legs of −20,23,2 part, swing 64 m apart and come back to 5.8 m ~180 m out; the side
+            // road already cedes to the trunk at that node (one merge per run per node) and the
+            // planner's two walks disagree on where the node interval ends (176 m vs 16 m), so no
+            // plan took the pair and this pass deferred it anyway — nobody owned it. Asked of the
+            // PASS-1 plan (same lines this walk reads), so nothing here reads a pass-2 route.
+            // A pair sharing NO node is the disjoint planner's (_v2DisjointFor), which plans it only when
+            // NEITHER run holds a node-merge role — its loser must have none, its winner must be plain.
+            // Seed 158847947 (2020, 625): 15.3 m apart for 168 m, the trunk already merges at a node, so
+            // the disjoint planner declined it 'winner' and this pass deferred it all the same.
+            if (merges && ((shA || shB) ? !this._v2PlannedPair(g, drop, shA ? kA : kB, ck, pk)
+                : this._v2NodeRole(g, drop, kA, kB, ck) || this._v2NodeRole(g, drop, qA, qB, pk))) { merges = false; violates = true }
             if (merges || !violates) continue
             // the LOSER re-routes: the longer pass-1 route, tie broken by the larger key
             const loserIsMe = S.L > Q.L + 1e-6 || (Math.abs(S.L - Q.L) <= 1e-6 && ck > pk)
@@ -3568,6 +3581,32 @@ export class RoadSystem {
         const out = { lines, exempt, exemptM: THROAT, prm: this._v2ClearPrm() }
         memo.set(ck, out)
         return out
+    }
+
+    // BUG-105: does node nk's pass-1 plan (rule or legacy proximity) merge pair ck × pk, either way round?
+    _v2PlannedPair(g, drop, nk, ck, pk) {
+        const role = (plans) => {
+            for (const [l, w] of [[ck, pk], [pk, ck]]) {
+                const sp = plans.get(l)
+                if (!sp) continue
+                const a = g.key(sp.winner[0]), b = g.key(sp.winner[1])
+                if ((a < b ? a + '|' + b : b + '|' + a) === w) return true
+            }
+            return false
+        }
+        return role(this._v2NodeMerges(g, drop, nk, false, true)) || role(this._v2NodeMerges(g, drop, nk, true, true))
+    }
+
+    // BUG-105: does edge ck (nodes a, b) hold a role in either end's pass-1 plan (rule or legacy) — merged
+    // as a loser, or the winner some loser merges onto? The disjoint planner's two preconditions, forecast on
+    // the pass-1 plans (a superset of the plans _v2MergeFor keeps, so a doubt resolves to "has a role").
+    _v2NodeRole(g, drop, a, b, ck) {
+        for (const nk of [a, b]) for (const legacy of [false, true]) for (const [l, sp] of this._v2NodeMerges(g, drop, nk, legacy, true)) {
+            if (l === ck) return true
+            const x = g.key(sp.winner[0]), y = g.key(sp.winner[1])
+            if ((x < y ? x + '|' + y : y + '|' + x) === ck) return true
+        }
+        return false
     }
 
     /**
@@ -3639,7 +3678,10 @@ export class RoadSystem {
     // T: the owner's ruling is that a T main had must not be lost to the wider rule ("wherever
     // main resolved the pair with a T … omit the wider rule in these cases", 2026-09-08), and the
     // pair is then counted `promote-legacy` so the gate can still see the residue.
-    _v2NodeMerges(g, drop, nk, legacy = false) {
+    // BUG-105: `pass1` plans the node on the PASS-1 samples — the question FEAT-77's clearance pass asks
+    // ("will a merge own this pair?") without reading the pass-2 lines that pass itself produces. Quiet:
+    // it is a forecast, so it leaves the skip tallies to the real plan.
+    _v2NodeMerges(g, drop, nk, legacy = false, pass1 = false) {
         if (!this._v2MergeMemo || this._v2MergeMemo.rev !== this._planRev())
             this._v2MergeMemo = { rev: this._planRev(), map: new Map() }
         const memo = this._v2MergeMemo.map
@@ -3657,9 +3699,18 @@ export class RoadSystem {
         const nbrsRaw = g.adj.get(nk)
         const nbrs0 = nbrsRaw ? [...nbrsRaw].filter((o) => !drop || !drop.has(nk + '|' + o)).sort() : []
         const dead = delF && delF.size ? nbrs0.filter((o) => delF.has(nk + '|' + o)) : []
-        const mk = nk + (legacy ? '#L' : '') + (dead.length ? '#d' + dead.join(';') : '')
+        const mk = nk + (legacy ? '#L' : '') + (pass1 ? '#1' : '') + (dead.length ? '#d' + dead.join(';') : '')
         const hit = memo.get(mk)
         if (hit !== undefined) return hit
+        if (pass1) {
+            const k0 = this._v2MergeSkip && { ...this._v2MergeSkip }, w0 = this._v2MergeSkipWhy?.slice()
+            try { return this._v2NodeMergesOn(g, drop, nk, legacy, memo, mk, dead, nbrs0, true) }
+            finally { this._v2MergeSkip = k0; this._v2MergeSkipWhy = w0 }
+        }
+        return this._v2NodeMergesOn(g, drop, nk, legacy, memo, mk, dead, nbrs0, false)
+    }
+
+    _v2NodeMergesOn(g, drop, nk, legacy, memo, mk, dead, nbrs0, pass1) {
         const C = this._v2Costs()
         const PROX = C.mergeProxM ?? 18   // m — centre separation that counts as one shared road
         const GAPM = C.mergeGapM ?? 200    // m — longest flare the merge may bridge, along the run
@@ -3689,7 +3740,7 @@ export class RoadSystem {
             const ck = nk < o ? nk + '|' + o : o + '|' + nk
             const sp = spell.get(ck)
             if (!sp) continue
-            const S = this._v2RunSample(g, drop, sp[0], sp[1])
+            const S = pass1 ? this._v2RunSample1(g, drop, sp[0], sp[1]) : this._v2RunSample(g, drop, sp[0], sp[1])
             if (!S || S.L < 2 * MINREG) continue
             inc.push({ ck, sp, S, nodeAtStart: g.key(sp[0]) === nk })
         }
@@ -3836,7 +3887,7 @@ export class RoadSystem {
             // "Did the leg keep its pin" is read off the GEOMETRY (first-leg direction vs the pin
             // cone), never off route metadata — a cache-rehydrated route must answer identically.
             const pinHeld = (R) => {
-                const dirs2 = this._v2EdgeDirs(g, drop, g.key(R.sp[0]), g.key(R.sp[1]))
+                const dirs2 = this._v2EdgeDirsBase(g, drop, g.key(R.sp[0]), g.key(R.sp[1]))   // pins only (BUG-105: never the clearance pass)
                 const pin = dirs2 && (R.nodeAtStart ? dirs2.startDir
                     : (dirs2.goalDir ? { x: -dirs2.goalDir.x, z: -dirs2.goalDir.z } : null))
                 if (!pin) return false
