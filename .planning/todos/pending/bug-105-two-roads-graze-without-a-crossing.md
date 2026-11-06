@@ -383,3 +383,55 @@ A Stage 1 move CREATED this graze. Trace it first in the next session (`wip/bug-
 
 **Next session (orchestrator, 11-06):** Stage 2 (the forced join) + gate pins with written reasons + the
 before/after sheets, then ONE landing with the sheets in front of the owner. Stage 1 does not land alone.
+
+### Seed 11 traced, and census 6 (2026-11-06, `ceeb68ff` + `790c5c1b`)
+
+**The seed-11 graze was Stage 1 chasing BANKS.** The pass took over `1,-2,0|2,-1,1` × `0,-2,0|1,-2,0`, which sit
+22.1 m apart past the geometric throat. That is banks-only contact. Its loser re-routed against that one winner
+only, and swung onto the node's third leg `2,-3,2`: 1.9 m apart for 88 m. Fix: a pair Stage 1 newly owns is
+judged at the GRAZE bar (`2·HW + clearEdgeM`, 22 m), not the full banks rule. Main's own FEAT-77 losers are
+unchanged. The tier split already said banks is reported, not chased.
+
+**Gates: 58/58 on the affected set.** `vertical-curvature` re-pinned with its reason written in the gate: seed 11's
+`0,-1,1|0,0,0` pair is now joined by a new T at (184, −310). Its leg carries a 0.048 /m sag 18 m out (under the
+0.11 junction line), and a 0.030 /m open sag on the re-keyed run drops under the 0.03 flag. Junction 205 → 206,
+open 19 → 18, total 224 unchanged.
+
+**Census 6** (`wip/bug-105/census6`; the battery seeds 1–12, 19, 20 added as `battery.list`, main baseline
+`census0bat`):
+- 127 windows: **GRAZE 10, 536 m**. Same list as census 5. 2166453044 and 1227226248 were NOT banks collateral.
+- 13 battery windows: GRAZE 1, identical to main (seed 4 (1668, 375), 18.8 m for 8 m, a mid-span pair).
+- Footprint: **37 of 140 windows changed** (census 5: 40 of 127).
+
+### Stage 2 — what the residue actually is (2026-11-06)
+
+Every residual graze is **a T that should exist and does not ship**. There are five different reasons:
+
+| site | sep / len | why no T ships | probe |
+|---|---|---|---|
+| 87 (843, 1583) | 3.3 m / 76 m | A mid-span T is planned AND promotable for this exact pair. `_v2PromoteMidSpan` ends "no variant promoted": every variant dies on a silent structural check (trunk piece < 30 m past a fork, two forks on one vertex, kept piece < 30 m, ends on different pieces, forks < 30 m apart). The trunk was already split at (709, 1026) by `1,0,2`'s node T. The side road ships whole (813 m), 0.2–3.2 m off the trunk. | `promo-why.mjs`, `where.mjs` |
+| 200398059 (1020, −508) | 12.1 m / 44 m | Mid-span T planned for the pair; declined "side run already promoted". The side run is itself the trunk of another T (`-1,-2,2|0,-2,1`), so it is in pieces. BUG-61 fixed exactly this on the node-anchored path ("take the piece that touches the trunk"); the mid-span path still declines. | `promo-why.mjs` |
+| 51 (1818, 30) | 5.4 m / 80 m | No plan at all. The legs part at the node, bulge 59–60 m apart (`FLARE` is 60), and come back to 5 m 183 m out. They stay under 18 m for 44 m (`MINSPAN` is 60). SEPARATE fails: the pass-2 line is identical to pass 1, because the berth is a price and the detour costs more. | `sep-profile.mjs` |
+| 2166453044 (−89, −1307) | 10.4 m / 92 m | No plan, and nothing logged. The legs cross about 160 m out; the shove rung declines (transit; deflection 43 m > 30). The node planner drops the pair on a silent `continue`. Still to instrument. | `sep-profile.mjs`, `promo-why.mjs` (ALL=1) |
+| 1227226248 (−424, −275) | 14.3 m / 32 m | Tangled pair. A role conflict, then `promote-infeasible` (no departure builds); shove declines at 31 m > 30. | `why-owned.mjs` |
+| 3502246374 (1628, 137) | crossing, decks 5.1 m | Crossing rung owns it, never resolves. On main too. | — |
+| borderline: 1695296864, 2757792661, 2314412071, 1276689627 | 20–21.4 m / 32–76 m | 0.6–2 m short of 12 m daylight. | — |
+| seed 4 (battery) | 18.8 m / 8 m | Mid-span pair; on main too. | — |
+
+**So the forced join is not a new backstop: it is making the existing T machinery honour "a T always beats no T"
+on its remaining veto paths.** The node-anchored promotion already ranks and ships its best fork
+(`promote-residual`). The mid-span path still vetoes (87, 200398059), and the planners still drop pairs on shape
+floors (51: `FLARE` / `MINSPAN`; 2166453044: a silent planner path). Order of work, smallest blast radius first:
+1. Mid-span promotion takes the side piece covering `[lIn, lOut]` (BUG-61's rule): 200398059.
+2. Mid-span promotion: find which structural check kills 87, then rank instead of veto.
+3. A pair the clearance pass owns whose pass-2 lines still graze is planned with the shape floors relaxed
+   (`MINSPAN` → `MINREG`, then `FLARE` unbounded within `GAPM`): 51. It reads only pass-2 lines and the pass-1
+   ownership, so the plan stays acyclic.
+4. Instrument 2166453044's silent planner path.
+5. 1227226248 and the crossing: last, they may need an owner call (no departure builds at all).
+Each step: census + footprint, gates, and any pin with its reason.
+
+New probes: `promo-why.mjs <seed> <cx> <cz> [substr]` (uncapped promote* reasons; `ALL=1` for every reason),
+`where.mjs <seed> <cx> <cz> <x> <z> <substr>` (shipped runs and nearest approach), `sep-profile.mjs <seed> <cx> <cz>
+<edgeA a|b> <edgeB c|d>` (pass-1 / pass-2 separation along A from the shared node), `kinkrun.mjs <root> <window> x,z…`
+(which run carries a kink, main vs branch).
