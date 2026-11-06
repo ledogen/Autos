@@ -106,7 +106,7 @@ let prem = [], monotone = true, prev = Infinity
 // measuring the accuracy pool at some other pace. [2026-09-30: was the break-even pace; the re-cut
 // line has no break-even ratio, and the pool is now defined against the MAX fare.] Past it the
 // fare is capped, so the premium goes FLAT rather than tapering further — still never inverting.
-for (const r of [1.00, 0.90, ECONOMY_PARAMS.fullTipRatio, 0.72, 0.65, 0.60]) {
+for (const r of [1.00, 0.90, ...[0, 0.05, 0.12, 0.17].map(d => ECONOMY_PARAMS.fullTipRatio - d)]) {   // [2] is the full-tip pace
     const round = scoreRoute(Array(9).fill(1), 9, PAR * r, PAR, PT)
     const x = round.total / payoutFor(PAR, r, PT)
     prem.push(x)
@@ -204,7 +204,7 @@ check('base + tip === the rounded fare, and base is what the offer card quoted',
     })
 })())
 check('the tip is $0 for a round slow enough to run the line out, and positive at par', (() => {
-    const slow = scoreRoute(Array(9).fill(1), 9, PAR * 1.3, PAR, TIER)
+    const slow = scoreRoute(Array(9).fill(1), 9, PAR * (ECONOMY_PARAMS.tipZero + 0.05), PAR, TIER)
     const par  = scoreRoute(Array(9).fill(1), 9, PAR, PAR, TIER)
     return slow.tip === 0 && slow.base > 0 && par.tip > 0 && par.base === slow.base
 })())
@@ -228,7 +228,7 @@ resetPaperRun()
 check('a run starts on the first rung', runPaper.tier === 0 && customersForTier() === 4)
 check('the ladder is 4 → 9 → 12 → 15', JSON.stringify(PAPER_PARAMS.tiers) === '[4,9,12,15]')
 check('a finished round at B or better advances a rung; a C does not (FEAT-141)', (() => {
-    const fastSloppy = scoreRoute(Array(4).fill(accuracyScore(R, R)), 4, PAR * 0.8, PAR, TIER)   // B, sloppy throws
+    const fastSloppy = scoreRoute(Array(4).fill(accuracyScore(R, R)), 4, PAR * 0.75, PAR, TIER)  // B (FEAT-69: A 0.707 < 0.75 ≤ B 0.794), sloppy throws
     const atPar      = scoreRoute(Array(4).fill(1), 4, PAR, PAR, TIER)                           // C, clean throws
     return ['S', 'A', 'B'].includes(fastSloppy.letter) && advancesTier(fastSloppy) === true && advancesTier(atPar) === false
 })())

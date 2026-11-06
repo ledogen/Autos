@@ -186,3 +186,10 @@ between."**, with `k` rescaled so pay at each line stays put (the recommended de
 moved by its interpolated share, and checks k·234 = $10. The average job's par is `AVG_PAR` (180 × slack / 1.15).
 The best-honest-drive pin is re-expressed (0.740 at slack 1.15 = 0.569 today), and the B fixtures moved 0.83 → 0.75.
 `test/fragile-cargo.mjs` reads `fullTipRatio` instead of 0.77.
+
+**Gates, 2026-11-06:**
+- First run of the 65 gates the four files select: 62 green, plus 2 test fixtures still on the old lines.
+- `freight-strap` sampled "S pace" at 0.77. It now uses `fullTipRatio`.
+- `paper-route` had three: its taper samples now sit around `fullTipRatio`; its slow round sits past `tipZero`;
+  its "B" round moved 0.8 → 0.75 of par (0.8 is now a C).
+- Both fixed gates pass. Total: 64/64 node gates green; cdp-smoke is the landing's.
