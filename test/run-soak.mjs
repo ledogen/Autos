@@ -389,7 +389,7 @@ async function playRun (seedIn) {
       if (s.energy < 3 || s.hour >= 21 || s.hour < 4) { await sleepNight(); await saveAndResume(); continue }
       if (s.hungry && !run.hungryDays.includes(s.day)) run.hungryDays.push(s.day)
       if (s.hungry && await eat()) continue
-      if (s.fuel < 5 && s.money > 2) { await refuel(); continue }
+      if (s.fuel < 8.25 && s.money > 2) { await refuel(); continue }   // half a 16.5 gal tank: a run burns ~5 of its 10.2 start
       const o = pick(await offers(), s.h)
       if (!o) {   // nothing takeable: wait an hour for the board to turn over
         idleH++
