@@ -3575,12 +3575,17 @@ export class RoadSystem {
                 merges = false; violates = false
                 if (shA) tAx = this._v2ThroatLen(S, true, Q)
                 if (shB) tBx = this._v2ThroatLen(S, false, Q)
+                // …and never on a stretch a pass-1 T cedes (either run's line from its node to the fork
+                // is replaced by the trunk, so it never ships).
+                const cedS = this._v2CededPass1(g, drop, ck, kA, S.L), cedQ = this._v2CededPass1(g, drop, pk, qA, Q.L)
+                const ceded = (iv, x) => iv.some(([a, b]) => x >= a && x <= b)
                 for (let i = 0; i < S.pts.length && !violates; i++) {
                     const s = S.polyCum[i]
                     if ((shA && s < tAx) || (shB && s > S.L - tBx)) continue
                     if ((S.spans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)) continue
+                    if (ceded(cedS, s)) continue
                     const h = _nearestWithinXZ(S.pts[i].x, S.pts[i].z, Q.pts, Q.polyCum, 60)
-                    if (h && h.d < this._v2ClearReq(S.pts[i], h)) violates = true
+                    if (h && !ceded(cedQ, h.cum) && h.d < this._v2ClearReq(S.pts[i], h)) violates = true
                 }
             }
             if (merges || !violates) continue
@@ -3611,6 +3616,23 @@ export class RoadSystem {
             return false
         }
         return role(this._v2NodeMerges(g, drop, nk, false, true)) || role(this._v2NodeMerges(g, drop, nk, true, true))
+    }
+
+    // BUG-105: the arcs of edge ck — measured along its sample that starts at node startKey, length L — that a
+    // PASS-1 plan at either of its nodes cedes to a T (rule or legacy; the variant the ladder tries first).
+    _v2CededPass1(g, drop, ck, startKey, L) {
+        const out = [], spell = this._v2EdgeSpellings(g).get(ck)
+        if (!spell) return out
+        const flip = g.key(spell[0]) !== startKey
+        for (const nk of ck.split('|')) for (const legacy of [false, true]) {
+            const sp = this._v2NodeMerges(g, drop, nk, legacy, true).get(ck)
+            const v = sp?.variants?.[0]
+            if (!v) continue
+            let iv = sp.midSpan ? [Math.min(v.lIn, v.lOut), Math.max(v.lIn, v.lOut)] : (sp.loserNodeAtStart ? [0, v.lCut] : [v.lCut, L])
+            if (flip) iv = [L - iv[1], L - iv[0]]
+            out.push(iv)
+        }
+        return out
     }
 
     // BUG-105: does edge ck (nodes a, b) hold a role in either end's pass-1 plan (rule or legacy) — merged
