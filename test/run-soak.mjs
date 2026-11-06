@@ -185,13 +185,15 @@ async function drive (to) {
 const FAMILY_ORDER = ['delivery', 'fetch', 'freight', 'fragile', 'haul', 'demolition']   // papers (Larry) skipped
 /** Every live board offer the soak can try now, best first: requisition lines, then the plainer families. */
 async function offers () {
-  return await js(`(() => { const b = window.__board(), h = window.__day().clockH(), c = window.__car(), out = []
+  // At its OWN giver (o.poiId): the camp lists every requisition line too, and one taken there is an untimed
+  // approach to its source, a second shape the soak does not drive.
+  return await js(`(() => { const b = window.__board(), h = window.__day().clockH(), c = window.__car(), out = new Map()
     for (const q of window.__soak.pois()) {
       if (!q.jobs || q.hidden || q.type === 'larrysHouse') continue
-      for (const o of b.offers(q.id, h)) { const s = b.spec(o); if (!s) continue
-        out.push({ poi: q.id, type: q.type, id: o.id, family: s.family, line: s.line?.id ?? null, d: Math.hypot(q.x - c.x, q.z - c.z) }) }
+      for (const o of b.offers(q.id, h)) { const s = b.spec(o), g = window.__soak.poi(o.poiId); if (!s || !g || out.has(o.id)) continue
+        out.set(o.id, { poi: g.id, type: g.type, id: o.id, family: s.family, line: s.line?.id ?? null, d: Math.hypot(g.x - c.x, g.z - c.z) }) }
     }
-    return out })()`)
+    return [...out.values()] })()`)
 }
 function pick (list, h) {
   const rank = o => (o.line ? -1000 : FAMILY_ORDER.indexOf(o.family) * 100) + o.d / 1000
