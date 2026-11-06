@@ -194,3 +194,58 @@ Tier 1 (four customers) is the right rung: it is the one the owner has driven an
 - **The briefing covers the paper controls**, without the expedition-camp material.
 - **Every customer count on the ladder (4 … 15) is open from the start**: the player picks the rung.
 - **Par = story par**: main's rank spread (FEAT-69: S +10 %, par +30 %, A/B interpolated).
+
+## Plan — the paper-route scenario (Spare, 2026-11-06; awaiting the orchestrator's sign-off)
+
+**What the code says** (mapped 11-06; `main` = `src/main.js`):
+- The ladder is four rungs, `PAPER_PARAMS.tiers = [4, 9, 12, 15]` (`paper-route.js:76`). "Every count open" means
+  `runPaper.tier = 3`, with all four rungs on Larry's existing size buttons (`main:6834`).
+- A paper run cannot live outside story mode the way the descent does:
+  - Larry, the customers and the planner exist only after the story region warms (`onRegionLive`, `main:8315`);
+  - the reach, throw, HUD and rank timer are gated on `storySystem.isActive()`;
+  - the paper clock is the day clock.
+- **The danger is the player's real run.** Inside `storySystem.enter()`:
+  - `_autosave` overwrites the run save every second (`main:8855`);
+  - a crash calls `_endRun`, which runs `_discardRunSave()` and deletes it (`main:9517`, `8899`);
+  - `_startStory` calls `clearRun()` (`main:8586`).
+  A scenario must touch none of these.
+- Story par is free: `planTour` + `computePar`, and `economySystem.terms()` carries FEAT-69's rank spread.
+
+**Build:**
+1. **Definition** (`data/scenarios.js`): `{ id: 'paper-90', kind: 'paper', seed: '90', name, blurb }`. The descent gets
+   `kind: 'trial'` (the default). The scenario list, `_startScenario` and `scenario-route.mjs` part B branch on `kind`.
+2. **Entry** (`_startPaperScenario`): set a `scenarioRun` flag, then `storySystem.enter('90')`. Under the flag:
+   - `_autosave`, `_discardRunSave` and `clearRun` are no-ops, so the player's real save is never read, written
+     or deleted;
+   - RUN_INTRO, LARRY_WELCOME and `tut-camp` are skipped (the owner's "no expedition camp stuff");
+   - debug and teleport stay locked out.
+3. **`onRegionLive` scenario branch:**
+   - day 1, 07:00; a fresh economy and inventory; `dialogueSystem.start()` and `resetPaperRun()`;
+   - `runPaper.tier = 3`;
+   - seat at Larry's (`_seatAt(larry)`);
+   - `paperRouteSystem.open(larry, null)`: no board offer, so no deadline and no save snapshot.
+   - The offer card opens on the **4-customer rung** (the owner's rated difficulty), with 9, 12 and 15 one tap away.
+4. **Briefing:** `PAPER_ROUTE_INTRO` already covers only the papers, but names only the keyboard's F. Add the pad's
+   aim-and-throw line (FEAT-133 bindings) to it. It plays on the first paper run of the scenario, not on a restart
+   (ruling (b) 11-01, with one scenario entry = one playthrough).
+5. **Finish:** the scenario card shows the time, the letter and par for the rung, plus the best time per rung
+   (`Leaderboard` id `paper-90:<count>`; times only, so no schema bump; the letter is derived from the run).
+   Buttons: restart (re-seat at Larry's, same rung, no briefing) and main menu.
+6. **Crash, dead truck, or R:** inside the scenario these lead to the finish card's restart, never `_endRun`.
+   R re-seats at Larry's, not at the region centre.
+7. **Exit:** leave story mode for the main menu. Nothing carries into free roam, and the player's story save is
+   byte-identical (asserted).
+
+**Proof:**
+- A headless gate pins seed 90's route per rung (customers, km, par).
+- `scenario-route.mjs` gets a `kind` branch.
+- `cdp-smoke` gains a step: menu → paper scenario → seated at Larry's → offer shows four rungs → exit, with a
+  pre-seeded run save checked identical afterwards.
+- `world-determinism` keeps `clearSpawnOverride` before `applySeed` on the new path.
+- `npm run test:all -- --browser` green.
+
+**Open, defaulted (flag if wrong):**
+- The rung is chosen on Larry's card, not on the scenarios page.
+- The default rung is 4.
+- There is no deadline (par and rank only).
+- The best-times board keeps times per rung.
