@@ -48,3 +48,22 @@ the tow is the way out.
 - [ ] Giving up while stuck → "You broke down."; giving up while not stuck → "You gave up.".
 - [ ] Pinned headlessly where it can be (the predicate → title mapping); the cdp-smoke's broke-down step covers
       the overlay and the towel-while-stuck title.
+
+## Work log
+
+**2026-11-06, Lane B — built on feature/machine (659e4abc, 650abe4d), not landed** (it builds on FEAT-162 P2;
+FEAT-162 landed a3b82204).
+
+- **The hint** (`#stranded-hint`, index.html, in the toast family a line below `#machine-word`; main.js
+  `_checkStranded`, the 10 Hz poll). Shown while `recoveryCard().stuck && !canEnd`, the truck still (< 0.5 m/s), no
+  screen open, the Recovery chip on show (so never inside a POI's ring, where X does nothing) and its card shut.
+  Words `[DEFAULT]`, PLACEHOLDER: "out of fuel — park, then X to call a tow" (parked: "out of fuel — X to call a tow").
+  X is a keycap, so the pad reads its B glyph.
+- **The towel while stuck** (`tc-end`): `recoveryCard().stuck` → `_endRun('broke')`, "You broke down.". Stuck
+  needs no rest here: a seized engine still rolling is broken down too. FEAT-160's line keeps the shortfall wording when
+  the wallet is short ("the tow was $12.12, you had $10.00", a fresh run) and reads ", and you gave up" when it covered
+  the cure.
+- **Pinned** in cdp-smoke `endings`: a dry truck with $1000 shows the hint, and it hides under the open Recovery card;
+  a seized engine with $1000, given up → "You broke down." / "the engine seized — the tow was $12.12, and you gave up".
+  `SMOKE_STEPS=boot,story,endings`: PASS, zero console errors. The not-stuck towel ("You gave up.") was already pinned.
+- Owed: the 9 affected node gates (held for the orchestrator's landing smokes); the owner's words for the hint.
