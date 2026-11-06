@@ -17,8 +17,10 @@
 //      happened to pick one of those off-graph pads; farthest-point siting reaches for exactly them.
 //
 // Seeds: the four known splits (1222770136 the BUG-85 report, 30 and 31 from the 2026-10-12 sweep,
-// 3309753130 BUG-80's clip split) + two clean ones. If a router change heals a split seed, the
-// filter is no longer exercised there — that is printed as a NOTE, never failed.
+// 229165396) + two clean ones. If a router change heals a split seed, the filter is no longer
+// exercised there — that is printed as a NOTE, never failed — and the seed is REPLACED, never
+// dropped: BUG-105 (2026-11-06) healed 3309753130 (BUG-80's clip split); 229165396 took its place,
+// the BUG-105 census's random seed whose planners' graph falls in 2 pieces AND strands 1.5 km.
 //
 // Heavy: routes a full 2800 m region per seed (~20 s each).
 import * as THREE from 'three'
@@ -34,7 +36,7 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-const SPLITS = ['1222770136', '30', '31', '3309753130']
+const SPLITS = ['1222770136', '30', '31', '229165396']
 const CLEAN = ['6', '7']
 const ONLY = (process.argv.find((a) => a.startsWith('--seed=')) || '').split('=')[1]
 
