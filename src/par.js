@@ -171,8 +171,14 @@ export const PAR_REF = {
  * where every felt-"very slow" drive lands at or above ratio 1.0 (1.017 / 1.018 / 1.457) and every
  * committed or normal drive lands below it. That is the definition made measurable — the standard
  * is exactly where careless driving starts to fail.
+ *
+ * [FEAT-69 RANK SPREAD, owner 2026-11-06: "S 10% more forgiving. D 30% more forgiving. interpolate
+ * between."] 1.15 → 1.495: the C/D line (par) moves 30 % later. RANK_THRESHOLDS_DEFAULT below
+ * re-expresses S/A/B against the new par, and economy.js's k is rescaled by the same 1.3, so pay at
+ * each line stays put. (So the 2026-08-16 property above no longer holds: on the 8-run new-grip corpus
+ * the two felt-slow drives now grade C, at 0.80 and 0.93.)
  */
-export const PAR_SLACK = 1.15
+export const PAR_SLACK = 1.495
 
 const DS = 2.0        // profile sample spacing along the route (m) — 2 m is well below the
                       // shortest primitive the router emits, so κ is never aliased.
@@ -445,7 +451,15 @@ export function formatTime(sec) {
  * (FEAT-87): "makes sense to have A be tight, B be wider, C wider" — a 0.04 / 0.06 / 0.13 ladder
  * instead of 0.04 / 0.04 / 0.15. S, A and C do not move; the late-day set keeps its flat −0.02.
  */
-export const RANK_THRESHOLDS_DEFAULT = { S: 0.77, A: 0.81, B: 0.87, C: 1.00 }
+/*
+ * [FEAT-69 RANK SPREAD, owner 2026-11-06 — "S 10% more forgiving. D 30% more forgiving. interpolate
+ * between."] Each line's TIME moves later by a share interpolated on where it sat between S and C:
+ * S +10 %, A (17 % of the way) +13.5 %, B (43 %) +18.7 %, C = par +30 % (PAR_SLACK above). As ratios
+ * of the new par: 0.77 × 1.10 / 1.3 = 0.652, 0.81 × 1.135 / 1.3 = 0.707, 0.87 × 1.187 / 1.3 = 0.794.
+ * The interpolation by time position, not by letter step, is this side's [DEFAULT] (letter steps would
+ * give A +16.7 %, B +23.3 %).
+ */
+export const RANK_THRESHOLDS_DEFAULT = { S: 0.652, A: 0.707, B: 0.794, C: 1.00 }
 
 /**
  * FEAT-138: the letter for an AMOUNT, higher is better — haul's pieces delivered, freight's kg

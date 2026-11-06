@@ -52,7 +52,7 @@ ok(furn.every(id => THINGS.find(t => t.id === id)?.furniture) && THINGS.filter(t
 
 // ── 2. pay, letter, events ───────────────────────────────────────────────────────────────────
 console.log('pay:')
-const S = 0.77, SLOW = 1.5   // a ratio at the whole tip, and one past the tip's end
+const S = ECONOMY_PARAMS.fullTipRatio, SLOW = 1.5   // a ratio at the whole tip, and one past the tip's end
 const courier = (r) => splitPayout(180, r, 1)
 const at = (h, r = S) => splitFragilePayout(180, r, h, 1)
 const base = courier(S).base
