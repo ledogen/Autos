@@ -4,11 +4,19 @@
 // fix it here, limp it to a shop, or pay for a tow. Only can't-continue AND can't-afford ends the run
 // (SM-INV-1, "you broke down").
 //
-//   CAN'T CONTINUE  out of fuel with no gas can aboard. Not a dead engine: it always starts, just
-//                   gutless (owner, 2026-10-22). Not a flat: the truck still drives on one (FEAT-94).
-//   OPTIONS         the tows only (owner, 2026-10-20): to the nearest gas station when dry, to the
-//                   nearest service center any time, each with its distance and cost. Pouring the
-//                   gas can, fitting the spare and plugging a tire are the inventory screen's.
+//   CAN'T CONTINUE  FEAT-162 (owner, 2026-11-06), any of:
+//                   · out of fuel with no gas can aboard;
+//                   · the engine seized (its track at exactly 0, ignition.js seized) — a worn one
+//                     still starts, gutless;
+//                   · a wheel collapsed (damage.js collapsed) and no spare left to put on it — a flat
+//                     still drives (FEAT-94) until its rim gives out;
+//                   · on its side or roof with no hi-lift jack aboard.
+//   OPTIONS         the tows (owner, 2026-10-20): to the nearest gas station when dry, to the nearest
+//                   service center any time, each with its distance and cost; and the mobile tire
+//                   service (FEAT-162 amendment 5) for a flat, a ruined tire or a collapsed wheel.
+//                   Pouring the gas can, fitting the spare and plugging a tire are the inventory screen's.
+//   THE END         can't continue, and no option that cures it is affordable: the run ends by itself
+//                   ("You broke down.", SM-INV-1) — main.js, once the truck is at rest.
 //
 // Roadside tire work (owner, 2026-10-21; the factory jack and the bike pump are always aboard):
 //   SPARE   2 h, less with tools (spareFitHours). The spare goes on the corner the player picks, tire AND wheel (it is a mounted
@@ -28,8 +36,9 @@
 // and the card lists what fits the moment. Pure: main.js supplies the state and owns the DOM.
 
 
-import { PARTS, SLOTS, REPAIR_CAP } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIR_CAP, HUB, BEAD, PATCH, stockPart } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
+import { TIRE_IDS, WHEEL_IDS } from './damage.js'
 
 /**
  * Hours to change a tire for the spare (owner, 2026-10-22): 2 h with the factory jack and wrench; a
@@ -44,20 +53,71 @@ export const PLUG_H = { pump: 2, compressor: 0.5 }          // the whole stop, b
 
 /**
  * @param {object} s
- *   dry, gasCan               booleans
- *   flats                     flat corner indices (0=FL 1=FR 2=RL 3=RR) — the headline only
+ *   dry, gasCan, seized, hiLift   booleans
+ *   rolled                    0 on its wheels, ±1 on a side, 2 on its roof (hilift.js basin)
+ *   flats, collapsed          corner indices (0=FL 1=FR 2=RL 3=RR): the flat tires, the collapsed wheels
+ *   spares                    mounted tires aboard that can go on (a sound wheel; air, or a plug kit for it)
  *   money                     the wallet
  *   fuelTow, shopTow          { price, km, hours } to the nearest gas station / service center, or null
- * @returns {{ head: string, stuck: boolean, opts: Array<{act, enabled, tow?}>, canEnd: boolean }}
+ *   tireService               tireServiceQuote(), or null
+ * @returns {{ head: string, why: string[], stuck: boolean, opts: Array<{act, enabled, tow}>, canEnd: boolean, cure: object|null }}
+ *   why     what strands the truck: 'dry' · 'seized' · 'wheel' · 'rolled' (empty: it can go on)
+ *   canEnd  stuck, and no option that cures every `why` is affordable; `cure` is the cheapest such option
  */
 export function recoveryCard (s) {
-  const stuck = s.dry && !s.gasCan
-  const head = s.dry ? 'out of fuel' : s.flats.length ? 'flat tire' : 'roadside'
+  const why = []
+  if (s.dry && !s.gasCan) why.push('dry')
+  if (s.seized) why.push('seized')
+  if (s.collapsed.length > s.spares) why.push('wheel')
+  if (s.rolled && !s.hiLift) why.push('rolled')
+  const words = { dry: 'out of fuel', seized: 'the engine seized', wheel: 'a wheel gave out', rolled: s.rolled === 2 ? 'on its roof' : 'on its side' }
+  const head = words[why[0]] ?? (s.dry ? words.dry : s.collapsed.length ? words.wheel : s.flats.length ? 'flat tire' : 'roadside')
+  // What each one cures: the service center takes anything, the pump only the tank, the tire service
+  // only the wheels — and a tow truck sets a rolled truck back on its wheels wherever it takes it.
   const opts = []
-  // A tow to the pump is only an answer to an empty tank; the service center takes anything.
-  if (s.dry && s.fuelTow) opts.push({ act: 'towFuel', enabled: s.money + 1e-9 >= s.fuelTow.price, tow: s.fuelTow })
-  if (s.shopTow) opts.push({ act: 'towShop', enabled: s.money + 1e-9 >= s.shopTow.price, tow: s.shopTow })
-  return { head, stuck, opts, canEnd: stuck && !opts.some(o => o.enabled) }
+  const opt = (act, tow, cures) => opts.push({ act, tow, cures, enabled: s.money + 1e-9 >= tow.price })
+  if (s.dry && s.fuelTow) opt('towFuel', s.fuelTow, ['dry', 'rolled'])
+  if (s.shopTow) opt('towShop', s.shopTow, ['dry', 'seized', 'wheel', 'rolled'])
+  if (s.tireService) opt('tireService', s.tireService, ['wheel'])
+  const cures = opts.filter(o => why.every(w => o.cures.includes(w))).sort((a, b) => a.tow.price - b.tow.price)
+  const stuck = why.length > 0
+  return { head, why, stuck, opts, canEnd: stuck && !cures.some(o => o.enabled), cure: cures[0] ?? null }
+}
+
+/**
+ * FEAT-162 amendment 5 (owner, 2026-11-05): the mobile tire service — a call-out that fixes, on the spot,
+ * every corner with a flat, a ruined tire (at 0) or a collapsed wheel, no spare needed. A dead tire or
+ * wheel is replaced with the stock part, new; a sound tire with no air is patched. Dearer than the shop
+ * [DEFAULT]: (the shop's price for the same parts + its labour) × roadsideMarkup, plus the tow's
+ * call-out, all × the day tier. The time [DEFAULT]: the tow's wait from the nearest shop (`shopTow`),
+ * then the fitting. The dead parts go with the service — each sells for half its price × 0.
+ * Returns { price, km, hours, jobs: [{ corner, tire, wheel }] }, or null (nothing to fix, no shop).
+ */
+export function tireServiceQuote (damage, shopTow, tier, params) {
+  if (!shopTow) return null
+  let price = 0, hours = 0
+  const jobs = []
+  for (let c = 0; c < 4; c++) {
+    const tire = damage.get(TIRE_IDS[c]) <= 0, wheel = damage.collapsed(c)
+    if (tire || wheel) {   // the shop's fitLabour for a loose tire or wheel: 2 hub swaps, 2 bead jobs
+      price += (tire ? PARTS[stockPart(TIRE_IDS[c])].price : 0) + (wheel ? PARTS[stockPart(WHEEL_IDS[c])].price : 0) + 2 * HUB.price + 2 * BEAD.price
+      hours += 2 * HUB.hours + 2 * BEAD.hours
+    }
+    if (!tire && damage.flat[c]) { price += PATCH.price; hours += PATCH.hours }
+    if (tire || wheel || damage.flat[c]) jobs.push({ corner: c, tire, wheel })
+  }
+  if (!jobs.length) return null
+  return { price: Math.round((price * params.roadsideMarkup + params.towFlat) * tier * 100) / 100,
+           km: shopTow.km, hours: shopTow.hours + hours, jobs }
+}
+
+/** Do quoted tire service `q`: the new parts on, every flat holding air. The wallet and the clock are the caller's. */
+export function tireService (parts, damage, q) {
+  for (const { corner, tire, wheel } of q.jobs) {
+    if (tire) parts.fit(stockPart(TIRE_IDS[corner]), 1, TIRE_IDS[corner])
+    if (wheel) parts.fit(stockPart(WHEEL_IDS[corner]), 1, WHEEL_IDS[corner])
+    damage.flat[corner] = false
+  }
 }
 
 /**
