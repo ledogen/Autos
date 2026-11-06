@@ -428,9 +428,12 @@ def pillow(b, cx, cy, z0, L=0.50, W=0.34, H=0.09, rest=None):
     M0 = b.M
     b.M = M0 @ Matrix.Translation((cx, cy, z0))
     before = set(b.bm.verts)
-    b.loft([rrect(W - 2 * i, L - 2 * i, r, z, per=5) for z, i, r in
-            ((0.0, 0.05, 0.07), (0.015, 0.016, 0.10), (H * 0.48, 0.0, 0.11), (H * 0.56, 0.003, 0.11),
-             (H - 0.014, 0.03, 0.09), (H, 0.075, 0.065))], "PillowCase")
+    rings = [rrect(W - 2 * i, L - 2 * i, r, z, per=5) for z, i, r in
+             ((0.0, 0.05, 0.07), (0.015, 0.016, 0.10), (H * 0.48, 0.0, 0.11), (H * 0.56, 0.003, 0.11),
+              (H - 0.014, 0.03, 0.09), (H, 0.075, 0.065), (H + 0.001, 0.11, 0.05))]
+    b.loft(rings, "PillowCase", cap_top=False)   # the top is fanned from its centre: bent by `rest`, an
+    for p, q in zip(rings[-1], rings[-1][1:] + rings[-1][:1]):   # n-gon cap creased corner to corner in game
+        b.face([p, q, (0.0, 0.0, H + 0.002)], "PillowCase")
     b.M = M0
     if rest:
         for v in set(b.bm.verts) - before:
@@ -1160,17 +1163,16 @@ def build_sleepingBag():
     # The pillow, the bedroll's size, at the head across the middle of the bag (owner, 2026-11-06: "the
     # pillow can go atop the folded over corner"). Its foot-side corner lies over the fold, so it rests on
     # whatever is under it there: the lining, the roll of the fold, or the flap.
+    # The step is the flap plus the kept top it lies on (~12 cm), and it runs along the fold line, so the lift is
+    # a smooth ramp in the distance from that line: nothing a 10 cm reach before the roll, the roll's top at it.
     rt2 = math.sqrt(2)
-    def surf(u, v):
-        if u + v >= c:
-            return over(min(u, c), min(v, c))
-        d = (c - u - v) / rt2; uf, vf = u + d / rt2, v + d / rt2   # off the fold line, toward the opened corner
-        rad = (over(uf, vf) - zb) / 2
-        return zb + rad + math.sqrt(rad * rad - d * d) if d < rad else zb
-    ring = [(0.0, 0.0)] + [(0.06 * math.cos(a), 0.06 * math.sin(a)) for a in (k * math.pi / 4 for k in range(8))]
-    top = lambda x, y: max(surf(L / 2 - x - dx, y + W / 2 + dy) for dx, dy in ring)   # max over a disc, then
-    z0 = zb + 0.004
-    pillow(b, L / 2 - 0.20, 0.0, z0, rest=lambda x, y: max(0.0, sum(top(x + dx, y + dy) for dx, dy in ring) / len(ring) - z0))
+    uc, vc = 0.20, W / 2                                   # the pillow's centre
+    dp = (c - uc - vc) / rt2; uf, vf = uc + dp / rt2, vc + dp / rt2   # its foot on the fold line
+    z0 = zb + 0.004; rise = over(uf, vf) - z0; reach = (over(uf, vf) - zb) / 2 + 0.10
+    def rest(x, y):
+        t = min(1.0, max(0.0, 1 - (c - (L / 2 - x) - (y + W / 2)) / rt2 / reach))
+        return rise * t * t * (3 - 2 * t)
+    pillow(b, L / 2 - uc, vc - W / 2, z0, rest=rest)
     return b.finish("sleepingBag")
 
 
