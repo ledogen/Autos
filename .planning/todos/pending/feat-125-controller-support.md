@@ -127,6 +127,31 @@ run.
 
 ## Still open on this ticket
 
-- Button glyphs in prompts (`park-badge.js keycap`).
-- Pad navigation of the in-game screens (inventory, map, offer board, damage).
-- Acceptance re-check in story mode with real hardware.
+- ~~Button glyphs in prompts (`park-badge.js keycap`).~~ Done — see the audit below. The tutorial's lesson cards are
+  the one place left: their `dlg-key` spans name keyboard keys (Lane A's `data/dialogue.js` + the word stream).
+- ~~Pad navigation of the in-game screens (inventory, map, offer board, damage).~~ Done (FEAT-133 / BUG-109 / the audit).
+- Acceptance re-check in story mode with real hardware (the owner).
+
+## Pad-only audit — Lane B, 2026-11-06 (orchestrator)
+
+Every screen a run touches, driven on a fake pad alone (`wip/pad-audit/`, then pinned as cdp-smoke's `pad` step):
+the menus and settings (a selector on ←/→), the new-game page, the opening's cards (A fills, A turns) and its View-hold
+skip, ignition (Y), park / drive (RB, RT, LT), the B menu and every screen on it (inventory, damage, recovery, camp),
+the map (the cursor on the right stick, zoom on the triggers, a giver's offers on LB / RB, B out), the offer card,
+the result card, the shop (rows, LB / RB tabs), the pump (A held pumps, RB pays), mom's camp card and its sleep
+slider, pause, settings, give up, its confirm, the summary, back to the main menu. Two gaps, both fixed:
+
+1. **RB re-sent Space when a card opened or closed mid-press** (gamepad.js). RB's handbrake is the drive layout's
+   own path (a press can be held back to tell a paper throw from a brake). When a card appeared under the press, the
+   card layout sent RB through the generic path as well — a second Space. Parking at mom's (her sleep card) or a
+   giver (the offer) latched the brake and let it go again. Now a press keeps the meaning it went down with until it
+   is let go, as every other button already did.
+2. **"abandon job" was mouse-only** — on the keyboard too, and it is the only way to clear an expired job.
+   `[DEFAULT]`, the orchestrator's go: the B menu's LAST entry while it can act (parked), never the pre-selection, so
+   no B tap arms it; J on the keyboard; its keycap on the button; a `BINDINGS` row, so the controls chart lists it.
+   Its two-press confirm stands.
+
+**Glyphs.** `keycap()` already draws both labels from `BINDINGS` and `body.pad-on` swaps them. Every literal
+`keycap()` call has its pad glyph. Two fixes: the inventory's quick-slot numbers (1–4) are keyboard-only and now hide
+while the pad drives (`keycap(label, false)`); the result card's "Tab to make room" was plain text.
+
