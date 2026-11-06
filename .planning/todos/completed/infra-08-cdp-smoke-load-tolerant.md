@@ -1,7 +1,7 @@
 ---
 id: INFRA-08
 type: infra
-status: open
+status: closed
 severity: major
 opened: 2026-11-05
 source: orchestrator + Lane C, 2026-11-05 night — every landing smoke that failed tonight failed on wall-clock checks under load, never on code (the same code passed alone each time)
@@ -104,3 +104,8 @@ At 17×, a full smoke would run more than an hour and prove nothing, so the 10×
 Idle reference: story 15 s, save 40 s, endings 57 s. Run 1's story (36 s) and run 2's (29 s) would have been close to
 the old 45 s ceiling at a heavier moment. One unrelated hiccup: a single "CDP socket error" 1.5 s into a boot (the
 launcher), passed on the immediate rerun.
+
+## Resolution — 2026-11-06 (Lane B)
+
+Every acceptance item is checked and proven above (3/3 PASS beside a full `test:all`, load peak 8.5/core; the
+too-loaded refusal stops at boot). Landed on main with 76dd9399. Closed on that evidence.
