@@ -323,3 +323,50 @@ So:
 - **BANKS is reported, ranked, and not chased.**
 
 The proof's "zero touches" means the GRAZE tier from here on.
+
+### Stage 1 — built and measured (2026-11-06, `feature/spare` `010d5fa3` → `d2150de1`)
+
+**The rule as built.** FEAT-77's clearance pass hands a close pair (pass-1 lines inside `mergeProxM`) to the T
+machinery only when **`_v2MergeFor`'s own answer, asked on the PASS-1 lines, pairs the two roads**. A `pass1` mode
+is threaded through `_v2MergeFor`, `_v2PromotableFor`, `_v2PromotableProbe` and `_v2NodeMerges`, so the question
+reads no pass-2 line and no cycle forms. It is quiet: the skip tallies stay the real plan's. For a pair with no
+shared node, the forecast is the disjoint planner's precondition: neither road holds a node-merge role.
+
+A pair the pass now takes over is judged the way the gate judges it:
+- past the **geometric** throat (`_v2ThroatLen`), and the router exempts that same throat;
+- never on a stretch the forecast T cedes to its trunk;
+- not at all if the pass-1 lines properly **cross** past 30 m. That pair stays with the crossing rungs (BUG-57),
+  which own crossings.
+
+**Each refinement was measured over the 127-window census** (`wip/bug-105/census*`; footprint = changed windows vs
+main):
+
+| step | GRAZE | changed windows (of them, no touch on main) |
+|---|---|---|
+| main (census 0) | 29 + 1 crossing, 2 356 m | — |
+| prototype port + disjoint role forecast | 14 | 68 (41) |
+| + geometric throat | 13 | 60 (36) |
+| + pass-1 crossings stay with the crossing rungs | 15 | 25 (9) |
+| + ownership = `_v2MergeFor`'s pass-1 answer (no buildable T, or outranked by the run's other end, owns nothing) | **10, 536 m** | 40 (17) |
+
+Why the plan-only forecast was not enough:
+- Three pairs had a node plan whose T could not be built (`promote-infeasible`).
+- BUG-104's own seed-10 site had a plan that `_v2MergeFor` dropped, because the side road's larger merge at its other
+  end won.
+
+Now clean:
+- BUG-105's mark;
+- BUG-104's seeds 10 and 52;
+- 158847947;
+- the worst graze, seed 2078771719, 0.5 m apart for 92 m.
+
+**Residue (10), for Stage 2.**
+- **Separation fails** (seed 51, 5.4 m for 80 m; 2314412071; 1695296864). The loser re-routes, but FEAT-77's berth is
+  a price, not a wall: `wClear` = 12 per metre inside, while the detour out of the valley costs more grade. Only a
+  JOIN resolves these. This is the plan's forced-join rung.
+- **B2** (87: 3.3 m for 76 m; 200398059). A mid-span T was planned for the pair, but on another interval about
+  500 m away. The deferral still covers the whole pair.
+- **Deferred with no owner** (2166453044, 1227226248). Not on main's list: collateral of Stage 1's moves. To be traced.
+- **The unregistered crossing** at 3502246374 (1628, 137), decks 5.1 m apart. The crossing rung owns it but never
+  resolves it. On main too.
+- **Borderline** (2757792661, 1276689627: legs of Ts at 20–21.4 m, i.e. 10–11.4 m of daylight against the 12 m bar).
