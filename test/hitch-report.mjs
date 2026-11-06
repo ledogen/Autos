@@ -131,7 +131,7 @@ const RING_COMPLETE = `(()=>{ const w = window.__world && window.__world(); if (
 await waitFor('window.__rsReady === true', 120000)
 await waitFor(RING_COMPLETE, 90000, 200).catch(() => console.error('warn: ring never completed pre-measure'))
 if (PRESET !== 'Normal') { await evalOk(`window.__q(${JSON.stringify(PRESET)})`); await waitFor(RING_COMPLETE, 90000, 200).catch(() => {}) }
-await waitFor('(()=>{ const r = window.__road && window.__road(); return r ? (r.pending === 0 && r.lastWarm) : true })()', 90000, 500)
+await waitFor('(()=>{ const r = window.__road && window.__road(); return r ? (r.pending === 0 && r.netIdle) : true })()', 90000, 500)
   .catch(() => console.error('warn: route warm never drained'))
 await sleep(4000)
 if (EVAL) { await evalOk(EVAL); await sleep(1500) }
