@@ -387,9 +387,12 @@ for (const seed of SEEDS) {
 }
 client.close(); cleanup()
 
-const perDay = r => { const n = {}; for (const j of r.jobs ?? []) n[j.day] = (n[j.day] ?? 0) + 1; return n }
-const lines = runs.map(r => `seed ${r.seed}: ${r.result} · deeds gate day ${r.gateDay ?? '—'} · win day ${r.winDay ?? '—'} · jobs/day ${JSON.stringify(perDay(r))}`
-  + ` · wallet at wakes ${(r.wakes ?? []).map(w => `d${w.day} $${w.money}`).join(' ')} · soft-locks ${r.softlocks?.length ?? 0}`)
+const perDay = r => { const n = {}; for (const j of r.jobs ?? []) (n[j.day] ??= []).push(j.line ?? j.family); return Object.entries(n).map(([d, f]) => `d${d}: ${f.join(', ')}`).join(' · ') }
+const lines = runs.flatMap(r => [`seed ${r.seed}: ${r.result} · deeds gate day ${r.gateDay ?? '—'} · win day ${r.winDay ?? '—'} · ${r.jobs?.length ?? 0} jobs`
+  + ` · soft-locks ${r.softlocks?.length ?? 0} · refused ${r.refused ?? 0} · hungry days ${JSON.stringify(r.hungryDays ?? [])} · drives ${((r.driveMin ?? 0) / 60).toFixed(1)} game h · ${r.minutes ?? '?'} min wall`,
+  `  wallet at wakes: ${(r.wakes ?? []).map(w => `d${w.day} $${w.money} (${w.deeds} deeds)`).join(' · ')}`,
+  `  jobs: ${perDay(r)}`,
+  ...(r.softlocks ?? []).map(l => `  SOFT-LOCK day ${l.day} clockH ${l.clockH?.toFixed(2)} at (${l.pos?.x.toFixed(0)}, ${l.pos?.z.toFixed(0)}) in "${l.step}": ${l.why} · mission ${JSON.stringify(l.mission)}`)])
 const out = join(ROOT, 'wip/run-soak'); mkdirSync(out, { recursive: true })
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
 writeFileSync(join(out, `${stamp}.json`), JSON.stringify({ runs, errors }, null, 2))
