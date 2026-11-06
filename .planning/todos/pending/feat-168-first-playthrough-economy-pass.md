@@ -85,7 +85,7 @@ with no pool edits.
 | drivetrain | the diffs |
 | recovery | quick-jack, hi-lift, zip ties, duct tape |
 | fuel | emergency gas, jerry can |
-| camp | bedroll, pads, air mattress, blanket, sleeping bag |
+| camp | bedroll, pads, air mattress, blanket, sleeping bag; **the tent, shade tarp, awning and cooking kit** (owner 11-06, camp-gear-source "camp + shelf": these four also go on the shop shelf, `STOCK_WEIGHT` + `ITEM_PRICE` `[DEFAULT]`) |
 | food | meals, snacks, the dinner invitation |
 | drink | coffee, energy drink |
 | bed | rubber bed mat (and the bedliner when it exists) |

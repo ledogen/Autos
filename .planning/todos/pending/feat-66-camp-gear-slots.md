@@ -140,11 +140,13 @@ campfire is not an item — it spawns to mark camp.
 
 - **The bedroll's and the blanket's models**: ASSET-78 (bedroll, unrolled — the one every camp shows)
   and ASSET-79 (blanket layer). Until then the starter camp's bed slot is empty.
-- **Where the four new items come from** (shelf, rewards) — owner's call. Debug grant only today: backtick →
-  "Story · Inventory (FEAT-122)" → item → "grant item" (story mode does not hold the debug lockout; only
-  scenarios do). Recommended for the alpha, pending FEAT-168's shelves: mission rewards, B–A, as the other camp
-  gear will be — the tent and the shade tarp from residences and farms, the awning from the general store and
-  residences, the cooking kit from the food vendor and farms.
+- **Where the four new items come from — RULED 2026-11-06 (owner, the tracker page's camp-gear-source: "camp +
+  shelf").** The tent, shade tarp, awning and cooking kit are (1) **job rewards through reward-cats' `camp`
+  category** — farm, firewood yard, residence, general store, tackle shop (FEAT-168 § Reward categories; the
+  rank gate from each item's `rarity`), and (2) **stocked on the shop shelf** (FEAT-137, `data/stock-weights.js`
+  + an `ITEM_PRICE` each). Lane A's per-item pools are not taken. **Built by Lane B with FEAT-168 item 3**
+  (orchestrator routing, 11-06); the shelf weights and prices land as `[DEFAULT]`s there. Until it lands, the
+  debug grant (backtick → "Story · Inventory (FEAT-122)" → item → "grant item") is the only source.
 - **Fire shadows** (`light.castShadow`) — wanted once the tent landed; a six-face cube shadow map, so it
   needs a quality toggle first. Its own perf item.
 - **The starter Pack has one free slot**, so today a player can bring the tent OR a shade OR the kit.
