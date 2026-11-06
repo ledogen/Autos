@@ -110,11 +110,30 @@ export function buildNoGoFns(discs) {
  *  so the PERF-31 pre-warm can hold the instance before calling update()). */
 export function makeNetworkInstance(req) {
     const rs = new RoadSystem(req.seed, req.params)
-    if (req.pondDiscs && req.pondDiscs.length) {
-        const { noGo, discsInBBox } = buildNoGoFns(req.pondDiscs)
-        rs.setWaterNoGo(noGo, discsInBBox)
-    }
+    const store = { discs: [], keys: new Set() }
+    POND_STORES.set(rs, store)
+    addPondDiscs(store, req.pondDiscs)
+    const { noGo, discsInBBox } = buildNoGoFns(store.discs)
+    rs.setWaterNoGo(noGo, discsInBBox)
     return rs
+}
+
+// BUG-106: a warm instance answers EVERY later build of its epoch, so its pond no-go must hold every build's discs,
+// not the first one's. It held the first: after a 2.4 km teleport (seed 163384989, ~50 km from the session's first
+// build) the worker routed with no ponds at all and drew a road through a lake a cold build does not have. Each
+// build's discs are complete for every query that build makes (pondDiscPad), and a disc added later is a pond that
+// touched no earlier box — so growing the set changes no answer an earlier build (or its cached routes) relied on,
+// and the caches stay warm (setWaterNoGo would drop them).
+// ponytail: the set only grows (a few hundred ponds over a long drive, O(n) per no-go query); a spatial grid if it shows.
+const POND_STORES = new WeakMap()
+function addPondDiscs(store, discs) {
+    if (!discs) return
+    for (let i = 0; i < discs.length; i += 3) {
+        const k = `${discs[i]},${discs[i + 1]},${discs[i + 2]}`
+        if (store.keys.has(k)) continue
+        store.keys.add(k)
+        store.discs.push(discs[i], discs[i + 1], discs[i + 2])
+    }
 }
 
 /**
@@ -124,6 +143,7 @@ export function makeNetworkInstance(req) {
  */
 export function buildNetworkSnapshot(req, rs = null) {
     if (!rs) rs = makeNetworkInstance(req)
+    else addPondDiscs(POND_STORES.get(rs), req.pondDiscs)   // BUG-106: this window's ponds, on the warm instance
     rs.setRadius(req.radius)
     rs.forgetStreamCenter()   // PERF-33: build exactly the requested band — never the previous one kept by the 96 m gate
     rs.update(new THREE.Vector3(req.center.x, 0, req.center.z))
@@ -182,6 +202,7 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
         const psig = JSON.stringify(d.params)
         if (inst && (inst.epoch !== d.epoch || inst.seed !== d.seed || inst.psig !== psig)) inst = null
         let rs = inst ? inst.rs : null
+        if (rs) addPondDiscs(POND_STORES.get(rs), d.pondDiscs)   // BUG-106: this window's ponds BEFORE the pre-warm routes it
         if (canNest) {
             try {
                 if (!rs) rs = makeNetworkInstance(d)
