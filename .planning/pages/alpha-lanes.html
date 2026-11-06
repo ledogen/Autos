@@ -203,10 +203,11 @@
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
+        { id: 'QUAL-35', what: 'NEXT — junctions placed by cost, not pinned to sites (your idea, 11-06). Measure only, no game change: first how much of the world would change (junctions moved, road km, windows), then what it absorbs (grazes, stacked legs, close Ts), the time, and a before/after sheet. Then it comes to you.' },
         { id: 'BUG-67 · FEAT-143/144', what: 'ON MAIN (38765f33) — both junction steps, world items + reach 5 m. Close the tickets on evidence.' },
         { id: 'BUG-109', what: 'ON MAIN — the pad pass. Your real-pad check owed (pad-test).' },
         { id: 'BUG-110 · 111 · 113', what: 'ON MAIN (bdf2ff5e; 125/125) — the tests route round ponds like the game; pad B closes the Recovery card. Closing.' },
-        { id: 'BUG-105 + 104', what: 'ON MAIN (14c6feb6): roads that graze now form a junction or separate. Grazes 30 \u2192 4 over 140 windows (the 4 are your calls on the sheets, bug105-calls); 48 of 140 windows changed. Cost: road-network build +22 %, story entry at cpu \u00d74 9.0 \u2192 9.6 s (your bar is 30 s).' },
+        { id: 'BUG-105 + 104', what: 'ON MAIN (14c6feb6): roads that graze now form a junction or separate. Grazes 30 \u2192 4 over 140 windows (the 4 are your calls on the sheets, bug105-calls); 48 of 140 windows changed. Cost, measured on 3 random seeds on a quiet machine: story entry at cpu \u00d74 17.0 \u2192 17.7 s (+0.7 s; your bar is 30 s).' },
         { id: 'BUG-106', what: 'Waits on your three capture files (copy command in chat).' },
         { id: 'BUG-107', what: 'MEASURED — the hill over that tunnel is its OWN mouth funnel, not the next road’s cutting. Needs your screenshot to know what you saw.' },
         { id: 'BUG-112', what: 'ON MAIN — tunnels are darker inside (one bore-darkness ramp; the lining casts shadows; headlights show by day). Your look + which seam (1/2/3 on Spare’s sheet) for the blending.' },
@@ -228,6 +229,9 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
+    { id: 'perf27-menu', kind: 'decide', tk: 'PERF-27',
+      text: 'Load times on current main, random seeds, a quiet machine. Normal speed: boot 3.5 s, story entry 11.3 s, cold \u2192 driving 16.5 s. CPU slowed 4\u00d7 (an older machine): story entry 17.7 s, cold \u2192 driving 28.5 s. One lever hides the whole story entry: roll the Random seed at boot and build that world while you\u2019re still in the menu (pure generation, nothing saved). Cost: the menu truck stays at 60 fps with an occasional 0.3\u20130.6 s stall on a normal machine, and 1.6\u20132.3 s stalls once or twice on a slow one. The catch: free roam\u2019s boot world would then be random too, or be built second (slower free-roam start). A typed seed still builds from scratch. Build it? Type anything else in the note box below.',
+      options: ['build it (free roam random too)', 'build it (free roam built second)', 'not now'] },
     { id: 'runsoak-calls', kind: 'decide', tk: 'FEAT-69',
       text: 'Lane A\u2019s run soak played 9 whole runs on random seeds, every job at a B, by teleport: all 9 reached the camp win, with zero errors and no soft-locks. Runs took 8\u201311 days (deeds gate on day 5\u20137, then 3\u20134 days of camp lines); that is a lower bound, with no breakdowns. Hunger numbers are being recounted (the soak miscounted its rewards) and will come separately. Two questions: (1) the five camp lines pay nothing, so the wallet is flat after the gate: intended? (2) The fuel line always grades C, because freight is graded by the load\u2019s mass, not time: fine, or should it grade on time? Fuel never mattered: ~5 of the starting 10.2 gal per run. Type your answers in the note box below, e.g. \u201c1 yes, 2 time\u201d.',
       options: ['my answers in the note'] },

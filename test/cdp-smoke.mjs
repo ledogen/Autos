@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
+import { DAY_PARAMS } from '../src/day.js'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
@@ -1247,9 +1248,12 @@ const STEPS = [
     check(await until(async () => !await mn(), 6000), 'the midnight overlay never cleared')
     // FEAT-169: that jump was past the run's first meal — the meter says hungry, in words; a chili dog
     // from the inventory feeds the driver.
-    check(await until(async () => /· hungry$/.test(await stage()), 1000), `the energy meter does not say hungry ("${await stage()}")`)
-    await js('window.__inv.grant("chiliDog"); window.__inv.use("chiliDog")')
-    check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)
+    // (Skipped while hunger is switched off — DAY_PARAMS.hungerOn, off for the 2026-11-06 playtest.)
+    if (DAY_PARAMS.hungerOn) {
+      check(await until(async () => /· hungry$/.test(await stage()), 1000), `the energy meter does not say hungry ("${await stage()}")`)
+      await js('window.__inv.grant("chiliDog"); window.__inv.use("chiliDog")')
+      check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)
+    }
   }],
   ['pad', async () => {
     // FEAT-125 pad audit (2026-11-06): a run end to end on the pad alone — every screen the other steps drive with
@@ -1363,10 +1367,16 @@ const STEPS = [
     // At the giver, a LONG RB press: the offer card opens under it, and the brake must stay latched (FEAT-125: the
     // card layout re-sent RB's Space, so the park latched and let go).
     await seatPoi(`q => q.id === ${JSON.stringify(giver.id)}`)
-    if (await js('window.__vs.parked')) { await btn(5); await frames(4, 200) }
+    // The seat lands parked and its reseat lets the next poll answer that brake, so the offer may be up already (under
+    // load it raced the presses below): decline it, let go of the brake, and give the 10 Hz poll time to see that.
+    const offerUp = () => js('document.getElementById("mission-panel").style.display === "block"')
+    if (await until(offerUp, 1500)) { await padTo('mp-decline'); await btn(0); await until(async () => !await offerUp(), 2000) }
+    if (await js('window.__vs.parked')) await btn(5)
+    check(await until(() => js('!window.__vs.parked'), 2000), 'RB did not let go of the brake at the giver')
+    await frames(6, 300)
     await hold(5, 450)
     check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
-    check(await until(() => js('document.getElementById("mission-panel").style.display === "block"'), 3000), 'parking at the giver opened no offer card')
+    check(await until(offerUp, 6000), 'parking at the giver opened no offer card')
     await padTo('mp-decline'); await btn(0)
     check(await until(() => js('document.getElementById("mission-panel").style.display !== "block"'), 2000), 'A on decline left the offer up')
     // The pump: A held pumps, RB lets go of the brake and pays.
