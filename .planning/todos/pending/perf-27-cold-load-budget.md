@@ -476,3 +476,19 @@ harnesses wait on it.
 
 **Still open after this:** the settle's other main-thread buckets at 4× (loaded): `frame.physics` ~1.4 s, props
 ~1.2 s, render ~1.0 s. Physics stepping behind a loading screen may be a lever; measure in the quiet window first.
+
+### "Behind the menu" — PARKED (owner, 2026-11-06)
+
+Owner, verbatim (perf27-menu, "not now"): "not now. but record the findings we could add this later."
+
+The findings stand as recorded above, in "The 'behind the menu' call: what it would cost the menu":
+- **What it hides:** the whole story entry, 11.2–11.5 s at 1× and ~17.7 s at cpu ×4 (quiet window).
+- **What it costs the menu:** median 60 fps at both speeds. Worst hitch 0.3–0.6 s at 1× and 1.6–2.3 s at cpu ×4, all in
+  the settle.
+- **How:** pre-roll the blank-seed `Math.random()` at boot and generate that world, region included, while the player
+  is in the menu. Still pure generation, nothing saved (cold-generation rule).
+- **The design half** (free roam's boot world becomes random too, or is built second) went to Lane A with the
+  free-roam random-seed work (orchestrator, 2026-11-06).
+
+Nothing is built. If it comes back, re-time the menu hitch first: the settle's main-thread share is what stalls the
+menu, and `25f2d7fe` (above) shrinks it.
