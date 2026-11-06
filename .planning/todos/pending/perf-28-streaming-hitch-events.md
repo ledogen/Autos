@@ -182,12 +182,80 @@ Our own GPU time per frame (timer queries): p50 9.5–12.7 ms, mostly the main s
 renders peak at 40–68 ms in one frame at 100 m/s. Frames timed at 85 ms of GPU still had a 16.7 ms
 period, so these ANGLE/Metal readings are upper bounds, not execution time. Do not act on them alone.
 
-### Still owed (when the GPU is free — the owner is using it 11-05 evening)
+## 2026-11-06 clean-GPU batch (Lane A) — attribution complete
 
-1. The ticket's own commands on a clean GPU (`--cpu=4`, stream 60 s + drive 45 s). The 11-05 baseline
-   (p95 45 ms, 20 % of frames over 24 ms) ran next to the two orphans, so it does not count. A/B against
-   the PERF-33 merge (072692f0) in the same session, to rule a regression in or out.
-2. `--gpu` on stream + drive: name the materials whose programs churn.
-3. `--trace --phys` on freecam: name the 45 ms physics step.
+All runs were on current main (feature/run-shape c5ca43f7 = main + Lane A's own work, which touches no
+frame-loop code), seed 6, 1400×900. The GPU was cleared by the orchestrator: before every run there were 0
+foreign headless Chromes, and the load average was 2–4. Logs and JSON are in `perf-runs/g-*.json`.
 
-No fix proposed yet.
+### 1. The ticket's own commands at cpu ×4, A/B against the PERF-33 merge 072692f0 (same session)
+
+| run (cpu ×4) | p50 | p95 | p99 | over 24 ms | frames over 100 ms |
+|---|---|---|---|---|---|
+| stream 60 s, current main | 16.7 | 18.6 | 19.2 | 0.25 % | none |
+| stream 60 s, 072692f0 | 16.6 | 18.7 | 20.4 | 0.17 % | 281 ms (+2 shader programs) |
+| drive 45 s, current main | 16.7 | 18.6 | 24.1 | 1.0 % | none |
+| drive 45 s, 072692f0 | 16.7 | 18.5 | 19.1 | 0.31 % | 326 ms, 130 ms (+1 program), 130 ms (+1 program) |
+
+- **No streaming regression.** The 11-05 "baseline" (p95 45 ms, 20 % over 24 ms) was the shared GPU, not code.
+  The acceptance bar holds: no streaming tag has a lift that implies a frame over 50 ms at cpu ×4, in either
+  scenario.
+- **The big frames in 072692f0 are mid-play shader compiles** (frame.render 120–313 ms at ×4, `+Nsh` on the
+  hitch line). BUG-98 (3fdc3f32, after that base) prewarms the lamp-state and light-count variants and sweeps
+  late materials. Current main shows none in 5 runs.
+- **One open question, small:** at ×4, driving on current main had 27 frames over 24 ms against 8 on the base.
+  These are frames carrying two physics steps (frame.physics 22–28 ms at ×4). The quiet-frame CPU is 8.1 ms
+  against 7.4 ms (+0.7 ms at ×4, about +0.2 ms native). That is steady per-step cost from what landed since
+  09-24 (FEAT-147/169/65/171…), not a streaming event, and it is n = 1 each. One more A/B pair would say whether
+  it is real. The base worktree is kept for that (`/Users/ledogen/CodeShit/CarGame-perf28-base`, :3732).
+
+### 2. Program churn (`--gpu`, native): none
+
+`programs: +0 created / -0 deleted` in all three native runs (freecam 20 m/s, freecam 100 m/s, drive), and the
+traces show no synchronous GL waits (`CommandBufferHelper::Finish`: 0 ms). The two GetProgramiv waits on 11-05
+(33 ms, and 63 + 29 ms) did not reproduce in 3 traced runs. BUG-98 was already in that tree, so they stay
+unexplained. With n = 2 in 6 runs and 0 here, there is nothing to act on.
+
+### 3. The "45 ms physics step": the AudioContext being constructed, not physics
+
+`--phys`: Box3D's step is 0.02–0.05 ms mean, with no call over 5 ms in any run. `--trace`'s JS profile of the
+long frame (both freecam runs; it is also the 47 ms frame in the cpu ×4 stream run):
+
+```
+js 38.1 getAudioContext < live < playLanding        (freecam 20 m/s, 40.7 ms frame)
+js 37.7 getAudioContext < live < playLanding        (freecam 100 m/s, 46.0 ms frame)
+```
+
+- `src/contact-audio.js`'s `live()` calls `getAudioContext()` (src/engine-audio.js), and the first call
+  CONSTRUCTS the context: `new AudioContext()` costs about 38 ms. Its docstring says "created lazily, on a user
+  gesture", but this caller is the landing thud, inside the fixed step (`stepContactAudio`).
+- The stream scenario never presses a key, so no gesture has made the context yet. The parked truck "lands"
+  once the camera is about 1.1–1.3 km away (57 s in at 20 m/s, 13 s in at 100 m/s): its ground streams out from
+  under it, because in freecam `roadStreamCenter()` is the camera.
+- **A player never pays this in a frame.** `_unlockAudio` (main.js) builds the context on the first pointerdown,
+  keydown or pad input, normally on a menu. The drive run shows that cost where it belongs: 52 ms in the first
+  `keydown` task (`getAudioContext < ensureEngineAudio < _unlockAudio`, 39.8 ms; tire noise and starter fetch the
+  rest), once per page load.
+- So this spike is a harness artefact. It also exposes a freecam-only quirk: the parked truck drops when the
+  camera streams its ground away.
+
+### Also seen, harness artefacts (not the game)
+
+- The first frame of every `--trace` window is 158–171 ms with about 2 ms of CPU: Tracing.start stalling the
+  renderer (t ≈ 98.5–98.9 s in all three runs, at the window start).
+- ANGLE/Metal timer queries keep reading above the frame period (47 ms of "GPU" in a 16.7 ms period). As
+  noted above, they are upper bounds only.
+
+### Verdict and proposals (the owner's / orchestrator's call; nothing changed in src/)
+
+The 0.1–0.2 s events were a **shared GPU** (finding 1, 11-05): other GPU clients, such as orphaned harness
+Chromes, a game, or a video. On a clean GPU, current main runs 0–1 frames over 30 ms per minute in freecam and
+driving, and the one it does run is the harness's own artefact.
+
+1. **Nothing to fix in streaming.** Close the ticket on this evidence.
+2. Optional, one line, about 38 ms: give the audio playback helpers' `live()` (contact, result, rank-music,
+   pump) a getter that never constructs the context. That would make getAudioContext's docstring true and take
+   the artefact out of headless measurements. A player sees no difference.
+3. Optional: one more cpu ×4 drive A/B pair to settle the +0.7 ms (×4) per-frame CPU question above.
+
+Cleanup: the 11-05 and 11-06 traces (about 2 GB) are deleted; the JSON summaries stay in perf-runs/.
