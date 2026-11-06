@@ -30,6 +30,8 @@ export const GATES = [
     desc: 'EXACT per-primitive min-radius + two-center invariance (construction-level, complements road-minradius realized geometry)' },
   { file: 'centerline-nearest-parity.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'PERF-32: the Lipschitz-pruned Centerline.nearest scan is BIT-identical to the unpruned linear scan (+ the unit-speed premise the prune stands on)' },
+  { file: 'nearest-within.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
+    desc: 'PERF-31: _nearestWithinXZ returns the full nearest-point scan\'s exact hit, or null only when the polyline is PROVEN further than the bar' },
   { file: 'invariance.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'two-center network invariance: arcS + gradeY stable across streaming windows' },
   { file: 'road-band-coverage.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],

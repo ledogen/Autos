@@ -118,3 +118,78 @@ Knock-on effects to weigh:
   and haul and freight pars.
 - Gate pins to re-express: region 1's time row == par.js `RANK_THRESHOLDS_DEFAULT`, and "S at or above the
   best honest drive, ratio 0.740". In absolute time that drive is 133 s, still faster than S's 138.6 s.
+
+### Built — 2026-11-06 (Lane B): the owner's spread
+
+Owner, 2026-11-06 (relayed by the orchestrator): **"S 10% more forgiving. D 30% more forgiving. interpolate
+between."**, with `k` rescaled so pay at each line stays put (the recommended default).
+
+**What changed:**
+- `src/par.js`: `PAR_SLACK` 1.15 → **1.495**, so par (the C/D line) is 30 % later.
+- `RANK_THRESHOLDS_DEFAULT` → **S 0.652 · A 0.707 · B 0.794 · C 1**. Each line's time moved later by a share
+  interpolated on where it sat between S and C:
+  - S +10 %;
+  - A (17 % of the way) +13.5 %;
+  - B (43 %) +18.7 %;
+  - C +30 %.
+- `src/economy.js`: `k` 10/180 → **10/234**. `fullTipRatio` 0.652 and `tipZero` 1.348 (still S and 2 − S). The
+  `RANK_TABLE.time` rows follow.
+- `[DEFAULT]`, this side's call: the interpolation runs by time position, not by letter step. Letter steps would
+  have given A +16.7 % and B +23.3 %.
+
+**The average job (par 180 → 234 s):**
+
+| Line | Before | After |
+|---|---|---|
+| S | 138.6 s | 152.6 s |
+| A | 145.8 s | 165.4 s |
+| B | 156.6 s | 185.8 s |
+| C (par) | 180 s | 234 s |
+| tip runs out | 221 s | 315 s |
+
+- Pay at the lines: S $10, A $9.60 (was $9.57), B $8.97 (was $8.91), par $7.50, base $5.
+- Pay for a given drive:
+
+| Drive | 150 s | 160 s | 170 s | 180 s | 190 s | 200 s | 210 s | 234 s |
+|---|---|---|---|---|---|---|---|---|
+| before | $9.31 | $8.71 | $8.10 | $7.50 | $6.90 | $6.29 | $5.69 | $5.00 |
+| after | $10.00 | $9.77 | $9.46 | $9.16 | $8.85 | $8.54 | $8.24 | $7.50 |
+
+**What it does to the run** (the 8 recorded new-grip drives in `runs-v2/`, re-graded under both sets):
+
+| Drive (felt) | Before | After |
+|---|---|---|
+| 0019 very fast | S (0.740) | S (0.569) |
+| 0020 par | A (0.784) | S (0.603) |
+| 0021 slow | D (1.041) | C (0.801) |
+| 0022 par | B (0.857) | A (0.660) |
+| 0023 very fast | B (0.817) | S (0.628) |
+| 0024 very slow | D (1.208) | C (0.929) |
+| 0025 fast | A (0.789) | S (0.607) |
+| 0026 fast | S (0.730) | S (0.562) |
+
+- **Deeds per job: 0.75 → 0.88 (+17 %).** Both felt-slow drives now earn ½ instead of 0. No recorded drive reaches
+  D any more, which undoes the 2026-08-16 slack property ("every felt-very-slow drive lands at or above 1.0").
+- **FEAT-168's 12-day run shortens to about 10 days.** The owner's one run made 6 deeds in 7 days; at +17 % the
+  10-deed camp opens around day 10. `campDeeds` **12** would restore ~12 days. Not changed; it's the owner's
+  call.
+- **Money: mean pay per job +9 %** on the same corpus (0.881 → 0.961 of the max). FEAT-168's affordability check
+  (two B jobs clear day 12's costs) still passes, with more room.
+- **S becomes common:** 5 of 8 drives grade S (before: 2). Every felt-fast drive now pays the whole tip.
+
+**Knock-ons, left riding par (`[DEFAULT]`, owner to rule):**
+- Delivery deadlines (`par × (1 + DEADLINE_SLACK)`) and the papers deadline (par × 1.5) are 30 % longer in game
+  time.
+- Haul and freight pars grow too. Their pay doesn't change, because `k` follows.
+
+**Gates:** `test/economy.mjs` re-pinned. It now pins `PAR_SLACK` 1.495 and the four lines, checks each line's time
+moved by its interpolated share, and checks k·234 = $10. The average job's par is `AVG_PAR` (180 × slack / 1.15).
+The best-honest-drive pin is re-expressed (0.740 at slack 1.15 = 0.569 today), and the B fixtures moved 0.83 → 0.75.
+`test/fragile-cargo.mjs` reads `fullTipRatio` instead of 0.77.
+
+**Gates, 2026-11-06:**
+- First run of the 65 gates the four files select: 62 green, plus 2 test fixtures still on the old lines.
+- `freight-strap` sampled "S pace" at 0.77. It now uses `fullTipRatio`.
+- `paper-route` had three: its taper samples now sit around `fullTipRatio`; its slow round sits past `tipZero`;
+  its "B" round moved 0.8 → 0.75 of par (0.8 is now a C).
+- Both fixed gates pass. Total: 64/64 node gates green; cdp-smoke is the landing's.

@@ -121,3 +121,205 @@ cold-built road. The fix moves ~8 sites for each one it repairs, and one of them
 ripple has to mend the planner itself (its two walks disagree about where a node interval ends), which is a router
 pass. Keep proto/bug-105 and this record. Owner's call: (a) park as recorded, or (b) one more pass to make the
 fix land green (the seed-11 crest, then the s3192 kink).
+
+## The plan — BUG-104 + BUG-105 as ONE problem (owner, 2026-11-06)
+
+The owner's rulings, relayed by the orchestrator overnight:
+- bug105-call: "i dont care about roads moving if it makes generation better. i do care about grazing without an
+  intersection." So the ticket is NOT parked.
+- bug104-go: "can this be combined with bug-105? im looking for a hollistic solution for 'roads intersect but dont
+  form a junction'".
+
+So BUG-104 (two legs of one node lying on top of each other), BUG-105 (two roads grazing with no node in common), the
+disjoint seed-158847947 sibling and the second capture's structureless crossing are all one defect. Two roads touch
+somewhere that is not a junction. This section is the plan. Build only after PERF-31's timings land, so the
+measurements sit on the faster base and don't contend with the other lanes' timing runs.
+
+### The rule — no new rule, the existing one enforced everywhere
+
+**Two roads touch** when, anywhere outside a junction's own ground, they are inside FEAT-77's clearance rule
+(`_v2ClearReq`). That rule requires 12 m of daylight between pavement edges, and neither road's cut or fill bank may
+reach the other. It already scales with the height between the decks. BUG-105's mark (5.7 m apart), BUG-104's
+overlaps (< 10 m), and 158847947 (15.3 m apart with 8.5 m of height, where the banks meet) all fall inside it.
+
+There is one addition, which the BUG-105 census already measures: **any crossing in plan view is a touch, at any deck
+height**. Without a structure, a crossing with 6.3 m between the decks is just one road's bank cut into the other.
+
+**A junction's own ground** is the existing close-pairs exclusions, unchanged:
+- the geometric throat of a shared node;
+- ±(blend + 10) m of a registered at-grade crossing;
+- a T's departure blend;
+- hairpin arms;
+- tunnel bores ±80 m.
+
+The owner's near-miss tolerance for legs of one node stays (ruling (a), 2026-11-01: under 1 m short over under 20 m).
+Two separate roads get no tolerance.
+
+The `road-clearance` gate already enforces exactly this rule, gating at zero. It is green because it only walks its
+own 9-window battery. Random seeds are where the residue lives: 1 no-shared-node pair plus 8 node-sharing pairs in
+20 seeds, and 5 overlaps in 100. So the bug is not a missing rule. It is the places where nobody enforces the rule.
+
+**Every touching pair resolves exactly one way, in this order.**
+1. **JOIN.** The two roads become one junction: the T machinery merges them (FEAT-76; standing ruling "a T always
+   beats no T").
+2. **SEPARATE.** The loser re-routes, with the winner's line priced as occupied. That is FEAT-77's second pass, and
+   the road moves, which the owner has now accepted.
+3. **FORCED JOIN.** If a pair still touches after both, it is joined anyway as the best available T, because the
+   departure tests rank T candidates and never veto them.
+
+No road is deleted to clear a touch. Deleting one would cut connectivity against the standing "connectivity goes up"
+ruling. If the build ever needs a deletion, that goes to the owner as a call.
+
+### Where it lives — two owners, and the plan layer stays acyclic
+
+The road build has two layers. The **plan layer** decides pins, routes, merges and the clearance re-routes, all from
+the graph and the pure routes. The **assembly layer** turns those decisions into registered runs. The world is the
+same in every window because nothing in assembly feeds back into a plan decision.
+`.planning/research/T-PROMOTION-FIXPOINT.md` has the full argument. Both fixes respect that boundary.
+
+**Stage 1, plan layer: close the ownership hole.** The clearance pass skips any pair that comes inside `mergeProxM`
+(18 m), because "the T machinery owns that". It does this whether or not the T machinery actually takes the pair.
+That is BUG-105's mark, and it is also 158847947, which sits at 15.3 m, under 18 m. The T machinery then refuses the
+pair (the disjoint planner wants a "plain" winner, and this trunk carries a T), so nobody owns it.
+
+The fix: the clearance pass defers only when the T machinery's own plan, computed on the same pass-1 lines, gives the
+pair a role.
+- **Node-sharing pairs:** use the node's merge plan. This is prototype `33b041f1` (+38/−4 in `road.js`), ported
+  onto this branch.
+- **Disjoint pairs:** use a pass-1 forecast of the disjoint planner. This is new work. Its one dependency is
+  `_v2MergeFor`'s promotability probe, which is a pure function of pass-1 lines, so no cycle forms.
+
+**Stage 2, assembly layer: the backstop on the line that ships.** Some touches only exist after promotion, so the
+plan layer cannot see them:
+- a T's departure, or a sliced half of a promoted run, landing beside another road (BUG-104 seeds 41, 87, 10);
+- a pass-2 line routed against a winner that itself moved.
+
+After `_v2PromoteTs`, the build walks the registered network with the gate's own walk. `test/lib/close-pairs.mjs`
+moves into `src/` as a pure function, so the gate and the build judge the same pairs at the same stations. Each
+residual touch is joined at the touch with a mid-span T. That is FEAT-76's `_v2PromoteMidSpan`, which already
+promotes disjoint pairs from a winner plus a fork arc. A join only adds a node on a run that is already built. It
+never changes pins or routes, so it cannot reach back into the plan layer. The walk's reach is 60 m, far inside the
+window's margin band, so the windows agree.
+
+**Stage 0 decides Stage 2's details.** Before any code, a census on the SHIPPED geometry classifies every touch by the
+mechanism that made it, the way BUG-104 traced its seed 10:
+- the planner deferred it (Stage 1's class);
+- a T departure or a sliced half made it;
+- a re-route against a moved line made it;
+- the planner never saw it.
+
+If Stage 1 alone clears nearly everything, Stage 2 stays a small backstop. If promotions make most of the touches,
+Stage 2 is the main fix, and its T-at-the-touch design gets written up here before it is built.
+
+### How it's proven
+
+1. **The census.** 100 random seeds, drawn once from a fixed generator and recorded here (not hand-picked), each a
+   1400 m window at the origin. Plus every known site: both captures, BUG-104's five, 158847947 and the 20 seeds in
+   `wip/bug-105/seeds.txt`.
+   - Required: **zero touches** outside junction ground (beyond the owner's near-miss tolerance), and **zero
+     unregistered plan crossings**.
+   - Reported: how many pairs JOIN, SEPARATE and FORCED JOIN each resolved.
+2. **A standing gate**, so it can't regress. `road-clearance` adds a random-seed leg: 12 seeds from the same list,
+   heavy, gating at zero. Its pins are counted from the run, with the reason written beside each one.
+3. **World footprint**, over the 100 seeds: run keys that changed, km of road that moved, and junctions gained.
+   Roads moving is accepted, but the owner sees how much moved.
+4. **Every gate green, with re-justified pins.** That includes `vertical-curvature` (the prototype's red), the
+   invariance and restream gates, `promoted-node-id`, `world-determinism` and both worker-parity gates.
+   - A pin moves only with a written reason: the new number, and which re-route or join moved it.
+   - Never a blind bump.
+   - If a SEPARATE re-route breaks a curvature or grade bar that the original line met, that re-route is the defect.
+     That pair ranks the join first instead (the seed-11 crest: the side road joins the trunk rather than going over
+     the saddle). The gate's numbers are not relaxed.
+5. **Both captures replay clean** (`node test/replay.mjs`).
+6. **Before/after sheets for the owner:** every touch site from the census, a map overlay plus top and oblique
+   frames, main vs branch. The same format as `wip/bug-105/shots/sheet-*.png`.
+
+### What it costs
+
+- **Build time.**
+  - Stage 1's forecast reuses plan memos that already exist, plus one promotability probe per disjoint candidate.
+  - Stage 2's walk uses the same within-skip PERF-31 added, so it is roughly tens of ms per window, plus one route
+    per joined touch.
+  - Budget: ≤ 5 % of the network thread. Story entry at `--cpu=4` measured before and after; it must stay < 30 s.
+- **Compute to prove it:** about 100 window builds per census pass, roughly 25 min on 4 cores. Expect 3–5 passes.
+- **World movement:** unknown until Stage 0. The prototype moved 7 sites in 20 seeds for Stage 1's node-sharing half.
+
+### Order of work
+
+1. PERF-31 timings, then landing.
+2. Stage 0 census plus the mechanism classifier: numbers recorded here.
+3. Stage 1: port `33b041f1`, then add the disjoint forecast. Census, and fix the seed-11 crest by ranking.
+4. Stage 2: the shipped-line backstop. Design note here first, then build. Census to zero.
+5. Gates with re-justified pins, the random-seed gate leg, sheets, then the owner.
+
+Work on `feature/spare` (`/Users/ledogen/CodeShit/CarGame-spare`, :3885) after PERF-31 lands. Probes go in
+`wip/bug-105/`. The prototype `proto/bug-105` (`CarGame-bug105`) is the reference, and it is retired once Stage 1 is
+ported.
+
+### Stage 0 — measured (2026-11-06)
+
+`wip/bug-105/touch-census.mjs` runs on the SHIPPED network. It uses road-clearance's exact accounting, the owner's
+near-miss tolerance, and plan crossings at any height. Worlds are built the way the game builds them (pond no-go),
+and each touch is classified against the build's own plan graph, captured where assembly hands it to the T
+promotion.
+
+The sample: 127 distinct 1400 m windows, about 4 850 km of road. That is 100 random seeds (`wip/bug-105/rand100.txt`,
+mulberry32 from `0xB105B104`), the 20 seeds in `seeds.txt`, and the known sites (capture 2 does not reproduce cold,
+as recorded above).
+
+**Result: 57 touches plus 1 unregistered crossing, in 44 windows.** The crossing is at seed 3502246374 (1628, 137),
+with the decks 5.1 m apart and no bore.
+
+**No touch is made by promotion geometry.** Every touch's two points lie on the plan's own final lines. So Stage 2's
+backstop has nothing of its own to catch. Every touch is a plan-layer ownership question.
+
+**By mechanism and severity.** The severity bands are by centreline separation:
+- "overlap" is under 10 m, where the pavements lie on each other;
+- "daylight" is under 22 m, which leaves less than the owner's 12 m of daylight between pavement edges;
+- "banks only" means the pavements are clear, but one road's cut or fill reaches the other because of the height
+  between them.
+
+| class | overlap < 10 m | daylight < 12 m | banks only |
+|---|---|---|---|
+| **A: the clearance pass deferred the pair, and NO T was planned for it** | **9 (1 044 m)** | **14 (1 016 m)** | 3 (28 m) |
+| B: legs of a planned T, 32–120 m from the T | 0 | 1 (32 m) | 19 (288 m) |
+| B2: a mid-span T planned for the pair, the touch ~500 m away | 1 (76 m) | 1 (44 m) | 0 |
+| C: inside the rule, not deferred (the clearance pass's own residue) | 0 | 2 (144 m) | 7 (168 m) |
+
+**Class A is the bug the owner described.** It holds every pavement overlap but one, and most of the grazes:
+BUG-105's mark, BUG-104's seeds 10, 51 and 52, 158847947, and the worst, seed 2078771719 (−165, −430), at 0.5 m apart
+for 92 m. Splitting it by the plan GRAPH (a T promotion re-keys ends, so the shipped network's node sharing is not
+the graph's):
+- **23 are legs of one graph node** (1 796 m). This is the prototype `33b041f1`'s case.
+- **4 are graph-disjoint** (292 m): 158847947, and three touches at seed 1276865166 (−212…−267, 215…254), all against
+  edge `0,0,0|-1,1,2`. This is the disjoint forecast's case.
+
+**Class B is not a graze.** These are two legs of a T whose pavements already have ≥ 12 m of daylight. Their banks
+meet 32–120 m from the T because the legs sit 7–24 m apart in height. That is BUG-64's earthwork territory, and it is
+the shape the owner's near-miss ruling (a) covers ("reads neither these nor BUG-64's walls as a problem in play").
+The tolerance is just narrower than these: they miss by 1.2–7 m, over 4–44 m.
+
+**Plan adjustment, from the numbers:**
+1. **Two tiers.**
+   - **GRAZE gates at zero:** centres under 2·HW + clearEdgeM (22 m), outside junction ground, plus every plan
+     crossing. Over the census: **29 + 1**.
+   - **BANKS is reported and ranked, not chased:** banks-only contact. Over the census: **29, all short**.
+   - This narrows the plan's "zero inside FEAT-77's rule", and it is a call for the orchestrator and the owner. The
+     recommendation is to adopt it, because chasing banks-only means moving T legs for earthwork the owner has said
+     he does not read as a problem.
+2. **Stage 1 is the fix.** Port `33b041f1` for the 23 legs-of-one-node pairs. Add the disjoint forecast for the 4.
+3. **Stage 2 shrinks.** It no longer needs a shipped-line backstop. Its job becomes the four graze-tier pairs outside
+   class A: B2's two, where the T owns one interval and the deferral wrongly covers the whole pair, and C's two.
+   Each gets a look after Stage 1's census.
+
+**Tier split ADOPTED (orchestrator call, 2026-11-06; the owner is told in the morning as information).** It rests on
+two owner rulings:
+- "i do care about grazing without an intersection" (11-06);
+- BUG-64 (a), which waves off earthwork banks meeting between roads (10-31).
+
+So:
+- **GRAZE gates at zero:** centres under 22 m (under 12 m of daylight) outside junction ground, plus every plan
+  crossing.
+- **BANKS is reported, ranked, and not chased.**
+
+The proof's "zero touches" means the GRAZE tier from here on.

@@ -124,6 +124,7 @@
     <li><b>Lane A:</b> FEAT-103 alpha camp · FEAT-146 the run ends · FEAT-157 requisition lines · FEAT-154 barricades · FEAT-128 key off at camp · FEAT-151 tiredness · BUG-95.</li>
     <li><b>Lane B (some built by Spare):</b> landed 11-05 e8a6d460 (121/121, smoke 21/21): open diff $10 · swapped-out parts go to My Items · jalopy crash fix · crash lab repaired · FEAT-159 throttle assist + traction control (on main 11-04) · FEAT-158 rock grip · BUG-99 tire on rock · FEAT-93/94 punctures and flats · FEAT-152 rim sparks · FEAT-138 hi-lift · FEAT-150 shift schedule · BUG-89 side slide · BUG-54 rock colliders · FEAT-132/137 on evidence.</li>
     <li><b>Lane C (some built by Spare):</b> ASSET-71 camp · ASSET-32 van · ASSET-69/70/73 office, doctor, school · FEAT-149 knockable ornaments · BUG-94 moon halo · BUG-96 tree billboards.</li>
+    <li><b>Landed 11-06 overnight</b> (each smoke 23/23 on main): burger joint 7aa73ebf (125/125) \u00b7 fire pit + generator paths e5134514 \u00b7 turn-back signs 196bc38d \u00b7 INFRA-08 smoke on sim time 9b3ef2b8 \u00b7 BUG-108 bumper blade 862b1663 \u00b7 favicon 9debc110 \u00b7 PERF-31 network build \u221240 % 48a80e92 \u00b7 FEAT-69 rank spread 2c1738ac \u00b7 PERF-28 closed (no regression; the 45 ms step was the audio context).</li>
     <li><b>Landed 11-05 night</b> (each smoke 23/23; suites 124/124, 125/125): Lane A cb5dcf84 + 7006140f · FEAT-168 3ea5578c · BUG-114 428768a3 · Spare bdf2ff5e + 3518e8ed (BUG-101 closed: no lag, pinned · PERF-36 measured, not landed · BUG-94/96).</li>
     <li><b>Spare:</b> landed 11-05 38765f33 (122/122, smoke 21/21): BUG-67 steps 1 + 2 · BUG-81 tunnel shoulder (“smooth as butter”) · FEAT-143/144 world items · BUG-74 roadwork seam (fill buries the rock; owner-approved 11-03) · BUG-81 portals · BUG-77/FEAT-77 (a) · BUG-64 (a) · BUG-63 · BUG-58 · BUG-90 · BUG-93 · BUG-100 · BUG-101 · BUG-103 · FEAT-42 single save · FEAT-141 papers · FEAT-142 traits · FEAT-156 menus · FEAT-89 multi-drop · FEAT-67 receiver bonus · FEAT-160 run end says why. BUG-73 closed unreproduced.</li>
   </ul></div>
@@ -165,7 +166,7 @@
       tasks: [
         { id: 'BUG-108', what: 'ON MAIN (862b1663) — the collider nose has the bumper\u2019s vertical blade: a crate at 40 mph now costs 0.42 m/s in one step (was 0.98). Your drive through a demolition site owed.' },
         { id: 'INFRA-08', what: 'ON MAIN (9b3ef2b8) — the browser smoke test counts game time, not wall time, so it no longer fails on a busy machine (3/3 beside a full suite).' },
-        { id: 'FEAT-69', what: 'Rank spread, your numbers: S 10 % more forgiving, the C/D line 30 %, A and B interpolated; pay at each line kept.' },
+        { id: 'FEAT-69', what: 'ON MAIN (2c1738ac) \u2014 your rank spread: par 30 % later, S 10 %, A/B interpolated, pay at each line kept. Knock-ons on the owed list (rank-spread-knock).' },
         { id: 'FEAT-70', what: 'ON MAIN (e8a6d460) — wheel contact on an exact cylinder, plus the tread-centre fix the repaired crash lab found (it yawed the truck 5° at full throttle). Your kerb / rough-ground feel drive owed.' },
         { id: 'FEAT-165', what: 'ON MAIN — every shop always has Old + Standard tires ($8 / $18, your price); diagnostics names each tire. FEAT-168 changes the always-stocked list.' },
         { id: 'FEAT-166', what: 'ON MAIN — clutch-type LSD; you took the defaults. Closing.' },
@@ -220,6 +221,9 @@
   const OWED = [
     { id: 'feat66-look', kind: 'drive', tk: 'FEAT-66',
       text: 'On main now. The tent, awning and cooking kit come from the debug grant (backtick → “Story · Inventory (FEAT-122)” → the item → grant); no run hands them out yet (camp-gear-source). Pack one and glance at it standing at camp. (Old text follows.) Make camp — the starter bed is the unrolled bedroll with the blanket on it; pack the tent, the awning or the cooking kit (the starter Pack has one free slot) and see each stand at camp; glance at the four new thumbnails. While there, drive a demolition site: miss one, turn back for it.' },
+    { id: 'rank-spread-knock', kind: 'decide', tk: 'FEAT-69',
+      text: 'Your rank spread is built (S +10 % \u00b7 A +13.5 % \u00b7 B +18.7 % \u00b7 C/par +30 % in time; pay at each line unchanged). Re-grading your 8 recorded drives: deeds per job +17 %, so the 12-day run becomes ~10 days; S is now common (5 of 8 drives, was 2); job deadlines ride par, so they are 30 % longer. Tap one, and type in the note box below for anything else.',
+      options: ['raise the deeds to 12 (keep ~12 days)', 'keep 10 deeds (~10-day run)'] },
     { id: 'feat171-round2', kind: 'decide', tk: 'FEAT-171',
       text: 'Your bed notes, round 2: CarGame-run-shape/wip/feat-171/sheet.png (bag stacks first; the third view per row is the corner + pillow close-up). The corner now folds back only on the opened half, the pillow sits beside it, and the blankets run from mid-bed to the foot. One leftover: on the two narrow pads the bag is 35 cm wider than the pad, so its turned corner folds down over the pad\u2019s edge (close view only). Type in the note box below if anything else needs changing.',
       options: ['land it', 'land it, narrow pads as they are', 'changes in the note'] },
