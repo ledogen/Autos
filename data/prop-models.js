@@ -1082,9 +1082,9 @@ export const PROP_MODELS = {
   // ASSET-07 — potted plant, 324 tris. Thirteen geometry leaves on stems out of an 8-sided pot (no alpha cards,
   // ART-STYLE rule 7). The box is the POT; the leaves clip.
   pottedPlant: { url: 'assets/models/potted-plant.glb', collision: { shape: 'box', size: [0.32, 0.69, 0.32] }, tags: ['lawnFurniture'] },
-  // ASSET-08 — brick fire ring, 644 tris, footing 3 cm below grade. One log pokes 13 cm past the ring; the box is
-  // the ring, the log is clippable.
-  firePit: { url: 'assets/models/fire-pit.glb', collision: { shape: 'box', size: [1.05, 0.33, 1.05] }, tags: ['lawnFurniture'] },
+  // ASSET-08 — brick fire ring, 644 tris, 1.26 m across at 1.2x (ASSET-76, owner: "20% bigger"), footing 3.6 cm
+  // below grade. One log pokes 16 cm past the ring; the box is the ring, the log is clippable.
+  firePit: { url: 'assets/models/fire-pit.glb', collision: { shape: 'box', size: [1.26, 0.40, 1.26] }, tags: ['lawnFurniture'] },
   // ASSET-12 — lumber yard kit, sawmill dressing (FEAT-91; pools FEAT-74). One generator, src/lumber.py, shared
   // with ASSET-38. Boards are modelled, ends in LumberEnd. Offcut pile was settled by a rigid-body sim and baked.
   lumberStack: { url: 'assets/models/lumber-stack.glb', collision: { shape: 'box', size: [1.30, 0.68, 4.05] } },   // 792 tris, 60 boards in two stickered units, no straps (a loose yard stack); no recolour hook

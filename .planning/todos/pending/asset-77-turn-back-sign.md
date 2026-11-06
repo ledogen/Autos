@@ -37,3 +37,28 @@ line's site is crates and drums alone (`reqSigns` targets).
 
 - [ ] `assets/models/turn-back-sign.glb` (+ build.py + .blend) per ASSETS.md, the four wordings.
 - [ ] dist-assets green; a line taken at the camp shows the boards on its site (cdp-smoke demolition step).
+
+## Progress
+
+**2026-11-05 (Lane C, cargame-a1) — built in `wip/turn-back-sign/`, awaiting the owner's look.**
+Generator `wip/turn-back-sign/turn-back-sign.py` (git-excluded until promotion), headless:
+`/Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 --python wip/turn-back-sign/turn-back-sign.py -- export preview`.
+
+- 12 mm ply 0.90 × 0.60 m, hand-sawn (every edge wanders ±3.5 mm, the top 1.3 cm out of square), the
+  reader's top-right corner split along a jagged crack and bent back 14°. Screwed (four round heads)
+  to two 38 mm 2×2 stakes, tops mushroomed by the sledge, 1.30 m tall, board 0.62–1.22 m. The lean is
+  a SHEAR (4° back from traffic, 2.5° sideways), so both stake feet stay exactly on z = 0.
+- **Packaging: one .glb per wording**, the road-sign / mailbox rule (`turn-back-sign.glb`, `-ridge`,
+  `-before`, `-stay`). The ticket's `spawnModel(key, { variant })` cannot do it: a palette variant only
+  recolours (`model-service.js buildPalette`), it cannot swap lettering.
+- The face is one baked 576 × 384 image per wording (general-store.py's ortho-emitter rig): bare ply
+  with grain, house paint brushed short of the sawn edges in uneven passes, the words lettered letter
+  by letter in Chalkduster with jitter (±5° tilt, baseline and size), squeezed toward each line's
+  end, a few drips. Words and paints are placeholders in `WORDINGS`: the owner writes them.
+- **360 tris** (budget 600; under the ~1000 floor because the silhouette genuinely is a board on two
+  posts), **4 materials** (SignFace textured, SignPly, SignStake, SignScrew), **1 image**. Facing 0
+  inverted of ~2060 rays. 80–139 kB per .glb.
+- Nothing in the file is ground dressing: the whole sign becomes ONE debris body when hit, so a dirt
+  collar would fly off with it. Mass for the TARGET_TYPES row: ply ~3.9 kg + stakes ~1.9 kg ≈ 6 kg.
+- Next: the owner's look (EEVEE renders wait for a free machine), then promote + wire
+  (PROP_MODELS × 4, TARGET_TYPES × 4, `reqSigns.targets` group with all four kinds).

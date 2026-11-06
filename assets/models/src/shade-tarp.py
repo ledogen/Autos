@@ -15,11 +15,12 @@ Layout (Blender axes; +Y = glTF -Z = project forward):
 Materials: TarpPoly (double-sided — looked at from underneath), TarpTape, TarpPole, TarpLine.
 """
 import bpy, bmesh, math, random
+import os
 from mathutils import Vector, Matrix
 
 NAME = "shade-tarp"
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/shade-tarp.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/shade-tarp.blend"
 TRI_BUDGET = 400
 
 SPAN_X, SPAN_Y = 3.0, 2.4
@@ -187,6 +188,8 @@ def fresh_scene():
 
 
 def _ui_override():
+    if bpy.context.screen is None:              # blender -b: no window, and the exporter needs none
+        return {}
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             return dict(window=bpy.context.window, area=area, region=next(r for r in area.regions if r.type == 'WINDOW'))

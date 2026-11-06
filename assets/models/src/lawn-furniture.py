@@ -26,6 +26,7 @@ Base-seated at z = 0, centred on the footprint.
 """
 
 import bpy
+import os
 import bmesh
 import math
 from mathutils import Matrix, Vector
@@ -33,7 +34,7 @@ from mathutils import Matrix, Vector
 # ---------------------------------------------------------------------------
 # PARAMETERS
 # ---------------------------------------------------------------------------
-MODELS = "/Users/ledogen/CodeShit/CarGame/assets/models"
+MODELS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
 OUT_DIR = MODELS
 OUT_BLEND = f"{MODELS}/src/lawn-furniture.blend"
 

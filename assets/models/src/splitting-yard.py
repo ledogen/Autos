@@ -45,6 +45,7 @@ Determinism: random.Random(seed) only — stable across runs and Pythons.
 """
 
 import bpy
+import os
 import bmesh
 import math
 import random
@@ -53,7 +54,7 @@ from mathutils import Matrix, Vector
 # ---------------------------------------------------------------------------
 # PARAMETERS
 # ---------------------------------------------------------------------------
-MODELS = "/Users/ledogen/CodeShit/CarGame/assets/models"
+MODELS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
 OUT_DIR = MODELS
 OUT_BLEND = f"{MODELS}/src/splitting-yard.blend"
 
