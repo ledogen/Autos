@@ -57,10 +57,11 @@ export const FIRING = [
     { speaker: 'The manager', text: `I'm letting you go. Leave the hat. And don't come back asking for shifts &mdash; there won't be any.` },
 ]
 
-/** Mom's call, the moment the firing ends: she sends the first job (data/offers.js FIRST_JOB). */
+/** Mom's call, the moment the firing ends: she sends you home for the night (FEAT-170). Her casserole,
+ *  the first job (data/offers.js FIRST_JOB), is the morning's. */
 export const MOM_CALL = [
-    { speaker: 'Mom', text: `Heard about the job, honey. Come by the house &mdash; I made your uncle a casserole and he isn't answering.` },
-    { speaker: 'Mom', text: `Run it over to Larry's for me. He might have work for you. `
+    { speaker: 'Mom', text: `Heard about the job, honey. Come home tonight &mdash; your old bed's made up.` },
+    { speaker: 'Mom', text: `I made your uncle a casserole and he isn't answering. You can run it over in the morning. `
         + `Press <span class="dlg-key">M</span> for the map if you forgot the way home.` },
 ]
 
