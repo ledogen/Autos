@@ -91,7 +91,7 @@ import { ITEMS } from '../data/items.js'
 import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
-import { startShelves, shelf, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
+import { startShelves, shelf, shelfPrice, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
 import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside,
   FIELD_REPAIR, fieldRepair, fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
@@ -5258,7 +5258,19 @@ function _recoveryState () {
     fuelTow: _towQuote(_FUEL_SELLER),
     shopTow,
     tireService: tireServiceQuote(damageModel, shopTow, economySystem.tierNow(), ECONOMY_PARAMS),
+    atShop: _shopCures(),
   }
+}
+
+/** FEAT-162: parked at a service center, the least its bench or shelf charges to cure a seized engine
+ *  (the ×3 rebuild, or an engine off the shelf) and to put on one wheel, fitting included. Else null. */
+function _shopCures () {
+  const vp = vehicleState.position, q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
+  if (q?.type !== 'autoShop') return null
+  const tier = economySystem.tierNow(), onShelf = shelf(q.id, daySystem.clockH())
+  const buy = (slot, socket) => Math.min(...onShelf.filter(e => PARTS[e?.id]?.slot === slot)
+    .map(e => shelfPrice(e) * tier + serviceCenter.fitLabour(e.id, socket).price))
+  return { seized: Math.min(serviceCenter.repairQuote('engine').price, buy('engine', 'engine')), wheel: buy('wheel', 'wheelFL') }
 }
 
 /**
@@ -5294,7 +5306,7 @@ function _updateRecovery () {
   card.style.display = _recoveryOpen ? 'block' : 'none'
   if (!_recoveryOpen) return
   const html = `<div class="rc-head">${c.head}</div>`
-    + c.opts.map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
+    + c.opts.filter(o => _RC_LABEL[o.act]).map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
       + `<div class="rc-dim">${formatGameDuration(o.tow.hours)} ${o.act === 'tireService' ? 'to come out and fit it' : 'on the hook'}</div>`).join('')
     + (c.opts.length ? '' : '<div class="rc-dim">no tow can reach you here</div>')
     + `<div class="rc-dim">you have $${formatMoney(money)}</div>`
@@ -8810,7 +8822,8 @@ function _runEndWhy (kind) {
   if (kind !== 'broke') return ''
   // What stranded it, and the cheapest of the Recovery card's cures: what the wallet fell short of.
   const c = recoveryCard(_recoveryState()), o = c.cure
-  return `<div class="re-why">${c.head} &mdash; ${o ? `the ${o.act === 'tireService' ? 'tire service' : 'tow'} was $${formatMoney(o.tow.price)}`
+  const words = { towFuel: 'the tow', towShop: 'the tow', tireService: 'the tire service', shopFix: 'the repair' }
+  return `<div class="re-why">${c.head} &mdash; ${o ? `${o.acts.map(a => words[a]).join(' and ')} ${o.acts.length > 1 ? 'came to' : 'was'} $${formatMoney(o.price)}`
     : 'no tow could reach you'}, you had $${formatMoney(runEconomy.money)}</div>`
 }
 

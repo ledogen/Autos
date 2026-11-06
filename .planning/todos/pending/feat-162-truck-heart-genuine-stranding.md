@@ -217,16 +217,16 @@ engine always starts" at 0 only (0.1 % still starts, gutless).
   130 °C, plus the warm-up).
 - Gates: `wheel-collapse` and `engine-seize` (new). `ignition-starter` §3 now pins "0 never catches".
 
-**2026-11-06, Lane B — P2 built on P1 (feature/machine 28a0aa15), not landed** (it waits on P1, which waits on
+**2026-11-06, Lane B — P2 built on P1 (feature/machine 28a0aa15 + the at-shop rule), not landed** (it waits on P1, which waits on
 `feat162-front-drag`). 66/66 affected node gates green; the cdp-smoke's broke-down step is rewritten for the
 auto-end and is the orchestrator's to run on landing.
 
 - **Stranded** (recovery.js `recoveryCard` → `why`): dry with no can · the engine seized · more collapsed wheels
   than spares that can go on (a sound wheel, and air or a plug kit) · on its side or roof with no hi-lift.
 - **Each option cures only its own.** The shop tow cures anything. The fuel tow cures the tank, and a rolled
-  truck, since any tow truck sets it on its wheels. The tire service cures the wheels. So a seized engine plus a
-  collapsed wheel is not saved by an affordable tire service. `canEnd` = stranded, and no curing option is
-  affordable.
+  truck, since any tow truck sets it on its wheels. The tire service cures the wheels. Options can cure it
+  *between them*: dry plus a collapsed wheel is the fuel tow and the tire service, priced as their sum (with at
+  most four options, every set is tried). `canEnd` = stranded, and the wallet can't cover the cheapest curing set.
 - **The auto-end** (main.js `_checkStranded`, 10 Hz poll): `canEnd` held for `STRANDED_REST_S` 3 s `[DEFAULT]` of
   sim time with the truck still (< 0.5 m/s). A truck still rolling, or limping on a rim, is still trying. An open
   pump, shop, inventory or damage screen holds it. The manual "end run" button is gone (ruling 2).
@@ -241,11 +241,17 @@ auto-end and is the orchestrator's to run on landing.
   - Time: the shop tow's hours (3 h + 0.5 h/km), then the fitting.
   - The dead parts go with the service. Each would sell for half its price × 0.
 - **At the shop** (ruling 4):
-  - A seized engine rebuilds at `SEIZED_REPAIR_X` 3 × the full-wear price ($207 to the cap on day 1, vs $69).
+  - A seized engine is rebuilt only whole, to the cap, at `SEIZED_REPAIR_X` 3 × the full-wear price ($207 on day
+    1, vs $69). There's no cheap first step that frees it.
   - A collapsed wheel has no repair: it's replaced.
   - `wheelSteel` joined the always-stocked rows `[DEFAULT]`, so a tow to any shop is a way out of a collapsed wheel.
-- **Gap, flagged (owner's call if it bites):** towed to a shop with a seized engine and too little left for an
-  engine, the truck is stranded *at* the shop. The shop "tow" to itself (0 km, $10) still counts as affordable,
-  so the run doesn't auto-end, and give-up is the only door.
+- **Already at a shop** `[DEFAULT — the orchestrator's reading of the owner's rule "stranded and no affordable tow
+  → the run ends by itself", whose intent is that no affordable cure ends the run; the owner can overrule]`:
+  - The 0 km "tow" to the shop you're parked at cures nothing but a roll.
+  - The shop's own bench and shelf are the cure: the ×3 rebuild or an engine off the shelf, a wheel plus its
+    fitting (main.js `_shopCures`).
+  - So you're towed in with a seized engine and can't afford an engine: close the service screen, and 3 s later
+    the run ends.
+  - Pinned in `test/recovery.mjs` §3b.
 
 **Next: P3**, the cues: HUD words below ~20 %, the knock, the bang.

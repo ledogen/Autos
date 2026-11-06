@@ -6,7 +6,9 @@
 //   3. The run can end only when stuck AND nothing that cures it is affordable.
 //   3b. FEAT-162: also stuck — the engine seized; a wheel collapsed with no spare to put on; on its side
 //      or roof with no hi-lift. Each option cures only its own: the shop tow anything, the fuel tow the
-//      tank (and the roll), the tire service the wheels.
+//      tank (and the roll), the tire service the wheels — and a set of them can cure it between them.
+//      Parked at a shop, the 0 km tow there cures only a roll: its bench and shelf are the cure [DEFAULT,
+//      the orchestrator's reading of the owner's rule].
 //   3c. The mobile tire service (amendment 5): new stock parts where a tire or wheel is dead, a patch on
 //      a sound flat; (parts + the shop's labour) × 1.5 + the call-out, × the tier; the tow's wait, then
 //      the fitting. Nothing to fix, or no shop, no quote.
@@ -44,7 +46,7 @@ const check = (label, ok, detail = '') => {
 const near = (a, b) => Math.abs(a - b) < 1e-9
 const tow = (price) => ({ price, km: 2, hours: 1 })
 const base = { dry: false, gasCan: false, seized: false, rolled: 0, hiLift: false, flats: [], collapsed: [], spares: 0,
-  money: 20, fuelTow: tow(14), shopTow: tow(16), tireService: null }
+  money: 20, fuelTow: tow(14), shopTow: tow(16), tireService: null, atShop: null }
 const acts = (c) => c.opts.map(o => o.act + (o.enabled ? '' : '-')).join()
 
 // ── 1–3. The card ─────────────────────────────────────────────────────────────────────────────
@@ -65,23 +67,36 @@ check('dry and broke with a can: the can is the way out, never the end', !c.canE
 c = recoveryCard({ ...base, seized: true })
 check('a seized engine is stuck; the shop tow is the way out', c.stuck && c.why.join() === 'seized' && c.head === 'the engine seized' && !c.canEnd)
 c = recoveryCard({ ...base, seized: true, money: 5 })
-check('…and broke, the run ends; the cure it fell short of is the shop tow', c.canEnd && c.cure?.act === 'towShop')
+check('…and broke, the run ends; the cure it fell short of is the shop tow', c.canEnd && c.cure?.acts.join() === 'towShop')
 c = recoveryCard({ ...base, collapsed: [2], spares: 1 })
 check('a collapsed wheel with a spare aboard is not stuck', !c.stuck && c.head === 'a wheel gave out')
 c = recoveryCard({ ...base, collapsed: [2, 3], spares: 1 })
 check('…two collapsed and one spare is', c.stuck && c.why.join() === 'wheel')
 c = recoveryCard({ ...base, collapsed: [2], money: 13, tireService: tow(12) })
-check('no spare: the tire service cures it when the shop tow is out of reach', c.stuck && !c.canEnd && c.cure?.act === 'tireService'
+check('no spare: the tire service cures it when the shop tow is out of reach', c.stuck && !c.canEnd && c.cure?.acts.join() === 'tireService'
   && acts(c) === 'towShop-,tireService')
 c = recoveryCard({ ...base, collapsed: [2], seized: true, money: 13, tireService: tow(12) })
-check('…but not a seized engine as well: the run ends', c.canEnd && c.why.join() === 'seized,wheel' && c.cure?.act === 'towShop')
+check('…but not a seized engine as well: the run ends', c.canEnd && c.why.join() === 'seized,wheel' && c.cure?.acts.join() === 'towShop')
 c = recoveryCard({ ...base, rolled: 2, money: 0 })
 check('on its roof with no hi-lift and no money: the end', c.canEnd && c.head === 'on its roof')
 check('on its side with a hi-lift aboard: not stuck', !recoveryCard({ ...base, rolled: -1, hiLift: true }).stuck)
 c = recoveryCard({ ...base, rolled: 1, dry: true, money: 15 })
-check('dry and on its side: the pump\'s tow truck sets it upright too', !c.canEnd && c.cure?.act === 'towFuel' && c.head === 'out of fuel')
+check('dry and on its side: the pump\'s tow truck sets it upright too', !c.canEnd && c.cure?.acts.join() === 'towFuel' && c.head === 'out of fuel')
 c = recoveryCard({ ...base, dry: true, seized: true, money: 15 })
-check('dry and seized: the fuel tow cures only the tank, so the run ends', c.canEnd && c.cure?.act === 'towShop')
+check('dry and seized: the fuel tow cures only the tank, so the run ends', c.canEnd && c.cure?.acts.join() === 'towShop')
+c = recoveryCard({ ...base, dry: true, collapsed: [1], money: 27, shopTow: tow(30), tireService: tow(12) })
+check('dry with a collapsed wheel: the fuel tow and the tire service between them', !c.canEnd
+  && c.cure?.acts.join() === 'towFuel,tireService' && near(c.cure.price, 26))
+const shop = { seized: 207, wheel: 14 }
+c = recoveryCard({ ...base, seized: true, money: 50, shopTow: { price: 10, km: 0, hours: 3 }, atShop: shop })
+check('seized AT the shop: the 0 km tow cures nothing; short of the rebuild, the run ends', c.canEnd
+  && c.cure?.acts.join() === 'shopFix' && c.cure.price === 207)
+check('…with the rebuild in the wallet it goes on', !recoveryCard({ ...base, seized: true, money: 210, atShop: shop }).canEnd)
+c = recoveryCard({ ...base, collapsed: [0, 1], spares: 1, money: 13, atShop: shop })
+check('a wheel short at the shop: one wheel and its fitting', c.canEnd && c.cure?.price === 14)
+c = recoveryCard({ ...base, rolled: 2, money: 12, shopTow: { price: 10, km: 0, hours: 3 }, atShop: shop })
+check('…but on its roof at the shop, the tow truck still sets it on its wheels', !c.canEnd && c.cure?.acts.join() === 'towShop')
+check('a sound truck at the shop: nothing to cure', recoveryCard({ ...base, money: 0, atShop: shop }).cure === null)
 
 // ── 4. The spare ──────────────────────────────────────────────────────────────────────────────
 const params = { ...RANGER_PARAMS }

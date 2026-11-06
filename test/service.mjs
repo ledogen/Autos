@@ -21,8 +21,8 @@
 //      for half price × condition; only parts sell.
 //   8. A mounted pair (the spare, or the flat pair a roadside swap left) swaps with a corner's tire and
 //      wheel for two hub swaps; the corner's pair takes its place, still mounted. A flat pair won't go on.
-//   1b. FEAT-162: a collapsed wheel (at 0) is scrap, never straightened; a seized engine (at 0) rebuilds
-//      at SEIZED_REPAIR_X × the full-wear price.
+//   1b. FEAT-162: a collapsed wheel (at 0) is scrap, never straightened; a seized engine (at 0) is rebuilt
+//      only whole, to the cap, at SEIZED_REPAIR_X × the full-wear price.
 //   9. Tire work is bead jobs and hub swaps (owner, 2026-10-23): a loose tire onto a corner is 2 hub +
 //      2 bead, charged with the shelf price; split and combine are one bead job each, every part keeping
 //      its wear and the tire its puncture; split needs a free slot; only a loose tire meets a loose wheel.
@@ -79,6 +79,7 @@ check('a spring pair is priced off the fitted pair', near(svc.repairQuote('sprin
 check('worn brakes: nothing to repair', (damage.set('brakeFront', 0.2), svc.targets('brakeFront').length === 0))
 check('a collapsed wheel is replaced, never straightened', repairTargets('wheel', 0).length === 0 && repairTargets('wheel', 0.01)[0] === 0.05)
 damage.set('engine', 0)
+check('a seized engine is rebuilt whole, to the cap, never a cheap first step', svc.targets('engine').join() === String(REPAIR_CAP))
 check('a seized engine rebuilds at 3× the full-wear price', SEIZED_REPAIR_X === 3
   && near(svc.repairQuote('engine').price, (SU.price + REPAIRS.engine.price * REPAIR_CAP) * 3), JSON.stringify(svc.repairQuote('engine')))
 damage.set('engine', 0.01)
