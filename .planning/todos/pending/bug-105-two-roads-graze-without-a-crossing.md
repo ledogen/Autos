@@ -684,3 +684,14 @@ leave these loops. When the rule holds:
 - It covers the four windows with pond no-go. No degree-2 node's runs may cross within 400 m. Each bend must have two
   runs on one deck, the site must keep no run, and the trim must be identical with the window shifted 500 m.
 - It fails on main: 10 failures, every loop caught.
+
+**Checks (feature/spare `89ffda15`, main `5028b1d9` merged):**
+- `npm run test:all`: 133 of 133 gates green.
+- `node test/cdp-smoke.mjs`: PASS, 25 steps, zero console errors.
+
+**Owed:**
+- The network-thread A/B on random seeds (`wip/bug-105/loops/ab-loop.sh`, main vs the branch), interrupted by the owner's
+  park.
+- The owner's look at the before/after page (`wip/bug-105/loops/sheet/page/`, built, not yet published), including the
+  two sharp bends.
+- The landing.
