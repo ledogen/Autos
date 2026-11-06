@@ -3565,8 +3565,24 @@ export class RoadSystem {
             // NEITHER run holds a node-merge role — its loser must have none, its winner must be plain.
             // Seed 158847947 (2020, 625): 15.3 m apart for 168 m, the trunk already merges at a node, so
             // the disjoint planner declined it 'winner' and this pass deferred it all the same.
+            // A pair this pass now takes over is judged as the gate judges it: past the GEOMETRIC throat
+            // (_v2ThroatLen — the legs' pavements have parted), not the fixed one. Legs of one node
+            // routinely run inside mergeProxM 30–120 m out while their pavements part — the junction's
+            // own ground; re-routing those moved 41 windows that shipped no touch at all (2026-11-06).
+            let tAx = tA, tBx = tB
             if (merges && ((shA || shB) ? !this._v2PlannedPair(g, drop, shA ? kA : kB, ck, pk)
-                : this._v2NodeRole(g, drop, kA, kB, ck) || this._v2NodeRole(g, drop, qA, qB, pk))) { merges = false; violates = true }
+                : this._v2NodeRole(g, drop, kA, kB, ck) || this._v2NodeRole(g, drop, qA, qB, pk))) {
+                merges = false; violates = false
+                if (shA) tAx = this._v2ThroatLen(S, true, Q)
+                if (shB) tBx = this._v2ThroatLen(S, false, Q)
+                for (let i = 0; i < S.pts.length && !violates; i++) {
+                    const s = S.polyCum[i]
+                    if ((shA && s < tAx) || (shB && s > S.L - tBx)) continue
+                    if ((S.spans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)) continue
+                    const h = _nearestWithinXZ(S.pts[i].x, S.pts[i].z, Q.pts, Q.polyCum, 60)
+                    if (h && h.d < this._v2ClearReq(S.pts[i], h)) violates = true
+                }
+            }
             if (merges || !violates) continue
             // the LOSER re-routes: the longer pass-1 route, tie broken by the larger key
             const loserIsMe = S.L > Q.L + 1e-6 || (Math.abs(S.L - Q.L) <= 1e-6 && ck > pk)
@@ -3575,7 +3591,7 @@ export class RoadSystem {
             for (let i = 0; i < Q.pts.length; i++) { flat[3 * i] = Q.pts[i].x; flat[3 * i + 1] = Q.pts[i].y; flat[3 * i + 2] = Q.pts[i].z }
             lines.push(flat)
             // exempt = [x, z, r, …]: the shared node and the fixed clearThroatM radius (corridor-router occAt)
-            for (const nk of [kA, kB]) if (nk === qA || nk === qB) { const p = this._nodePos(nk.split(',').map(Number)); exempt.push(p.x, p.z, nk === kA ? tA : tB) }
+            for (const nk of [kA, kB]) if (nk === qA || nk === qB) { const p = this._nodePos(nk.split(',').map(Number)); exempt.push(p.x, p.z, nk === kA ? tAx : tBx) }
         }
         if (!lines.length) return null
         const out = { lines, exempt, exemptM: THROAT, prm: this._v2ClearPrm() }
