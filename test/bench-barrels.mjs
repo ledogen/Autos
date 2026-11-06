@@ -31,7 +31,7 @@ const runs = [{ side: 4, count: 64, warmup: true }, ...argv.filter(a => !a.start
   return { side: Math.ceil(Math.cbrt(a) - 1e-9), count: Number(a) }
 })]
 
-const { cleanup } = launchChrome(`http://localhost:${PORT}/index.html?prof=1&nomenu=1`, { headed: HEADED, windowSize: '1440,900' })
+const { cleanup } = launchChrome(`http://localhost:${PORT}/index.html?prof=1&nomenu=1&seed=6`, { headed: HEADED, windowSize: '1440,900' })
 const c = await connect()
 const ev = async e => { const r = await c.evalJS(e); if (r.err) throw new Error(`${e}: ${r.err}`); return r.val }
 const waitFor = async (e, ms) => { const t = Date.now(); while (!(await ev(e))) { if (Date.now() - t > ms) throw new Error(`timeout: ${e}`); await sleep(250) } }

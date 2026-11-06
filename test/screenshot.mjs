@@ -52,12 +52,12 @@ const OUT = flag('out', join(process.cwd(), `screenshot_${X}_${Z}.png`))
 // --port: point at a different server (e.g. a worktree's own `npx serve . -l 8017`) — the
 // default :8000 is usually the MAIN checkout, not necessarily the code you just edited.
 const PORT = Number(flag('port', 8000)), CDP = 9222
-// default seed is 6 (main.js `_urlSeed ?? '6'`) — only add the query when overriding, so the common case
-// loads the bare URL (a ?seed= query has proven flaky to load headlessly).
+// The seed always goes in the URL: without ?seed= the game boots a random world (there is no default
+// seed, owner 2026-11-06), and 6 is this tool's test seed.
 // Fog is DISABLED by default (?nofog=1 — the main.js fog kill-switch): distance shots exist to show
 // geometry, and FogExp2 whites out anything past ~300 m. Pass --fog to keep the shipped look.
 const QS = ['nomenu=1']   // FEAT-41: skip the menu; this tool wants the world on screen
-if (SEED && SEED !== '6') QS.push(`seed=${SEED}`)
+QS.push(`seed=${SEED}`)
 if (!process.argv.includes('--fog')) QS.push('nofog=1')
 const APP = `http://localhost:${PORT}/index.html${QS.length ? '?' + QS.join('&') : ''}`
 

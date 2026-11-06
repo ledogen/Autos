@@ -73,7 +73,7 @@ The HARD RULE states every generator is a pure function of `(worldSeed, world co
 - Same seed produces different terrain on page refresh.
 - Roads on the same seed don't share the same shape between two browser sessions.
 - Terrain and road paths visually correlate (roads always exactly follow ridges or exactly follow valleys) — indicates sub-seed correlation.
-- Switching from the default seed to a custom `?seed=` produces identical terrain — indicates seed is not wired into the noise function.
+- Switching between two `?seed=` values produces identical terrain — indicates seed is not wired into the noise function.
 
 **Phase to address:** P7 (seed foundation and `seedFor()` must be locked before any procedural generator is written). P8 road router must use the pure coarse-height function, not chunk data.
 

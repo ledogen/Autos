@@ -35,7 +35,7 @@ const { makeTerrainHeadless } = await import('./lib/terrain-headless.mjs')
 const { rawHeightWorld } = makeTerrainHeadless(parseWorldSeed('6'), RANGER_PARAMS, null)
 const targetY = rawHeightWorld(X, Z) + 8            // aim at canopy height over the cluster
 
-const APP = `http://localhost:${PORT}/index.html`
+const APP = `http://localhost:${PORT}/index.html?seed=6`   // the test seed: without ?seed= the page boots a random world
 try { const r = await fetch(APP); if (!r.ok) throw 0 } catch { console.error(`No server on :${PORT}.`); process.exit(1) }
 
 const { cleanup } = launchChrome(APP, { port: 9223 })

@@ -1,7 +1,7 @@
 ---
 id: FEAT-161
 type: feature
-status: open
+status: deferred
 severity: major
 opened: 2026-11-02
 source: owner, 2026-11-02 — agreed with item C of the Sid Meier review (.planning/story-mode/review-sid-meier-2026-11-02.md):
@@ -98,3 +98,16 @@ designs. 1 keeps the order free and adds the climb without touching the world.
 
 - [ ] Options in this ticket with footprints; the owner picks.
 - [ ] The chosen version built; the final delivery is measurably harder than the median job (a number in the ticket).
+
+## Resolution — deferred, 2026-11-06
+
+**Deferred by the owner** (the page's feat161-pick, 11-06): "n/a. we keep the current shape. 1. is the best
+suggestion but i want to keep the finale specialization independent and i dont want rng to make some seeds
+significantly harder than others (if we were to leave the payload/ mission type up to rng). Currently there is no
+explicit finale and I'm okay with that. Close this ticket as deferred for now."
+
+So the run keeps its current shape, with no explicit finale. Two constraints come out of the ruling, for whoever reopens this:
+- the finale must not depend on the player's specialisation;
+- it must not let the seed pick the payload or mission type, since that would make some seeds much harder than others.
+
+The expedition's own rewards are a separate question. The owner asked for suggestions on 11-06 (runsoak-calls), and those go to the page.

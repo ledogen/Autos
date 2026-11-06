@@ -587,10 +587,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
 
   // World Seed text field (D-13 / SEED-04) — lil-gui renders a plain <input type="text">
   // automatically when the property value is a string. Initialized from the ACTIVE seed
-  // (options.initialSeed, derived from ?seed= in main.js) so the field never misreports the
+  // (options.initialSeed, the seed main.js booted on: ?seed= or a random one) so the field never misreports the
   // loaded world (CR-01). Uses onFinishChange (not onChange) so the terrain only regenerates
   // once the user commits the seed by pressing Return (or blurring), not on every keystroke.
-  const _seedState = { seed: options.initialSeed ?? '6' }
+  const _seedState = { seed: options.initialSeed ?? '' }
   terrainFolder.add(_seedState, 'seed').name('World Seed').onFinishChange(v => {
     if (typeof callbacks.changeSeed === 'function') callbacks.changeSeed(v)
   })

@@ -37,7 +37,7 @@ const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${CDP}`
     // Unlock the frame rate: vsync clamps every phase to 16.67 ms and hides any cost that fits
     // in the frame budget — unlocked, the mean frame time IS the true render cost.
     '--disable-frame-rate-limit', '--disable-gpu-vsync',
-    `http://localhost:${PORT}/index.html`], { stdio: 'ignore' })
+    `http://localhost:${PORT}/index.html?seed=6`], { stdio: 'ignore' })
 const cleanup = () => {
     try { chrome.kill() } catch {}
     try { server.kill() } catch {}
