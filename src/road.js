@@ -5523,7 +5523,7 @@ export class RoadSystem {
 
     _v2PromoteOne(g, drop, pr, pieces) {
         const decline = (why) => { this._v2MergeSkipped('promote', `${pr.sideKey} ${why}`); return false }
-        if (pr.spec.midSpan) return this._v2PromoteMidSpan(g, pr, pieces)
+        if (pr.spec.midSpan) return this._v2PromoteMidSpan(g, drop, pr, pieces)
         const MINREG = 30
         const wCells = [g.key(pr.spec.winner[0]), g.key(pr.spec.winner[1])]
         // The side run, and the shared node: the one id both the side edge and the winner touch.
@@ -5675,31 +5675,48 @@ export class RoadSystem {
      * neither is applied — half a mid-span promotion would leave the middle overlapping, which is
      * the defect this is meant to remove.
      */
-    _v2PromoteMidSpan(g, pr, pieces) {
+    _v2PromoteMidSpan(g, drop, pr, pieces) {
         const decline = (why) => { this._v2MergeSkipped('promote', `${pr.sideKey} mid-span ${why}`); return false }
         const MINREG = 30
-        const sideKeys = pieces.get(pr.sideKey) || [pr.sideKey]
-        if (sideKeys.length !== 1) return decline('side run already promoted')
-        const sideKey = sideKeys[0]
-        const side = this._network.get(sideKey)
-        if (!side || !side.points || side.points.length < 6 || !side.centerline?.slice) return decline('no side run')
         const wCells = [g.key(pr.spec.winner[0]), g.key(pr.spec.winner[1])]
         const wk0 = `g:${wCells[0]}:${wCells[1]}`
         const Rmin = this._params?.roadMinTurnRadius ?? 12
+        // BUG-105 (BUG-61's rule, mid-span): either run may already be in PIECES — another T split it as
+        // its trunk — and whether that T is in the window is a band question. The plan's arcs are on the
+        // ORIGINAL run, which is the plan's own pure sample once the registered run is gone (_registerRun
+        // and _v2RunSample are the one sampler), so each arc is found on whichever piece carries it.
+        // Declining a split run left the pair on its pure lines: seed 87 (843, 1583) 3.3 m apart for
+        // 76 m (trunk split by another T), seed 200398059 (1020, −508) 12 m for 44 m (side run split).
+        const orig = (key, c1, c2) => {
+            const e = this._network.get(key)
+            if (e) return e
+            const S = this._v2RunSample(g, drop, c1, c2)
+            return S && { points: S.pts, polyCum: S.polyCum }
+        }
+        const W0 = orig(wk0, ...pr.spec.winner)
+        const [sk0, sk1] = pr.sideKey.slice(2).split(':').map((k) => k.split(',').map(Number))
+        const S0 = orig(pr.sideKey, sk0, sk1)
+        if (!W0 || !S0) return decline('no run')
         for (const v of pr.spec.variants) {
             if (!v.midSpan) continue
+            // The side piece that carries the WHOLE strand: a strand spanning another T's fork has no
+            // single road to cut.
+            const lp0 = this._v2PieceAt(pieces, pr.sideKey, S0, v.lIn), lp1 = this._v2PieceAt(pieces, pr.sideKey, S0, v.lOut)
+            if (!lp0 || !lp1 || lp0.tKey !== lp1.tKey) continue
+            const side = lp0.T, sideKey = lp0.tKey
+            if (side.points.length < 6) continue
             // The two ends, each treated exactly as a node-anchored graft: the piece at lIn keeps
             // the side of the run the loser arrives from, the piece at lOut keeps the side it
             // leaves on. lDir says which way round the loser walks the shared middle.
             const ends = [
-                { wArc: v.wIn,  lArc: v.lIn,  nAtStart: v.lDir < 0 },
-                { wArc: v.wOut, lArc: v.lOut, nAtStart: v.lDir > 0 },
+                { wArc: v.wIn,  lArc: lp0.cum, nAtStart: v.lDir < 0 },
+                { wArc: v.wOut, lArc: lp1.cum, nAtStart: v.lDir > 0 },
             ]
             const plans = []
             let ok = true
             for (const en of ends) {
                 // Which trunk piece carries this end (the first end's commit may already have split it).
-                const wp = this._v2TrunkPieceAt(pieces, wk0, en.wArc, plans)
+                const wp = this._v2PieceAt(pieces, wk0, W0, en.wArc)
                 if (!wp) { ok = false; break }
                 const { T, tKey } = wp
                 const iP = _nearestVertexAtCum(T.polyCum, wp.cum)
@@ -5712,10 +5729,13 @@ export class RoadSystem {
                 const kept = en.nAtStart ? side.polyCum[side.polyCum.length - 1] - side.polyCum[iL] : side.polyCum[iL]
                 if (kept < MINREG) { ok = false; break }
                 const grade = _trunkGradeAt(T, iP)
+                // a split side piece ends on another T's vertex, whose deck the departure must land on
+                const farCell = en.nAtStart ? side.cellB : side.cellA
+                const farY = _isPromotedId(farCell) ? this._promoted.get(g.key(farCell))?.pos.y : undefined
                 // Same ruling as the node-anchored path: the tests rank, they do not veto.
                 let built = null, bestB = null, bestWhy = null
                 for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
-                    const b = this._v2BuildDeparture(side, iL, en.nAtStart, P, RB)
+                    const b = this._v2BuildDeparture(side, iL, en.nAtStart, P, RB, farY)
                     if (!b) continue
                     const why = this._v2DepartureAccepts(b, T, P, grade)
                     if (!why) { built = b; break }
@@ -5742,15 +5762,12 @@ export class RoadSystem {
         return decline('no variant promoted')
     }
 
-    // The live trunk piece covering a plan-layer arc on the original winner run, plus that arc
-    // re-expressed in the piece's own domain. `staged` carries commits not yet applied within this
-    // pair, so the second end of a mid-span sees the first end's split.
-    _v2TrunkPieceAt(pieces, wk0, wArc, staged) {
-        const T0 = this._network.get(wk0) ?? staged[0]?.T
-        if (!T0) return null
-        const q = _polyAtCum(T0.points, T0.polyCum, wArc)
+    // The live piece of run k0 covering a plan-layer arc on the ORIGINAL run R0 (its registered entry,
+    // or the plan's pure sample once it was split), plus that arc re-expressed in the piece's own domain.
+    _v2PieceAt(pieces, k0, R0, arc) {
+        const q = _polyAtCum(R0.points, R0.polyCum, arc)
         let best = null
-        for (const k of (pieces.get(wk0) || [wk0])) {
+        for (const k of (pieces.get(k0) || [k0])) {
             const e = this._network.get(k)
             if (!e || !e.points || e.points.length < 4 || !e.centerline?.slice) continue
             const h = _nearestOnPolyXZ(q.x, q.z, e.points, e.polyCum)
@@ -6301,7 +6318,7 @@ export class RoadSystem {
                 gx: c.grade.gx, gz: c.grade.gz,
             })
         }
-        pieces.set(pr.sideKey, halves)
+        pieces.set(pr.sideKey, [...(pieces.get(pr.sideKey) || [ps[0].sideKey]).filter((k) => k !== ps[0].sideKey), ...halves])
     }
 
     // One half of a split trunk, as an ORDINARY run: exact sub-centerline (constant-curvature
