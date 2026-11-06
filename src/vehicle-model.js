@@ -800,6 +800,10 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
         ? _camberQ.setFromAxisAngle(_AXIS_NEG_Z, lean)
         : null
       wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
+      // FEAT-162: a collapsed wheel is drawn at its contact radius (the spin axis is local X), so the
+      // corner you see on the road is the one the physics drags. MESH == PHYSICS.
+      const k = params._wheelCollapseR?.[i] ? params._wheelCollapseR[i] / params.wheelRadius : 1
+      wheelMeshes[i].scale.set(1, k, k)
       if (camberQ) wheelMeshes[i].quaternion.premultiply(camberQ)
 
       // Hub position in body space, from the LIVE params — the same mount suspension.js uses

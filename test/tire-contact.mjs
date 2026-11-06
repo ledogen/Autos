@@ -80,5 +80,13 @@ check(k && k.nx < -0.5, `at a kerb edge the normal is radial: it pushes the whee
 const b = tireContact(() => 0.5, upNormal, 0, 0.2, 0, r, w, A, out)
 check(Math.abs(b.depth - (0.5 + r - 0.2)) < 1e-12, `a buried hub reads the half-space depth (${b.depth.toFixed(3)} m)`)
 
+// A tire lying on its side (axle along the ground normal) touches with its sidewall: the cap, w/2 under the hub.
+// Distance to the axle LINE alone read depth ≈ r at any height — the truck rolled onto its side launched (2026-11-06).
+const AV = { x: 0, y: 1, z: 0 }
+const lying = tireContact(() => 0, upNormal, 0, 0.3, 0, r, w, AV, out)
+check(lying === null, `a tire lying 30 cm over the ground does not touch it (depth ${lying?.depth.toFixed(3) ?? 'none'})`)
+const flatOn = tireContact(() => 0, upNormal, 0, 0.1, 0, r, w, AV, out)
+check(flatOn && Math.abs(flatOn.depth - (w / 2 - 0.1)) < 1e-9 && flatOn.ny > 0.999, `a tire lying with its hub 10 cm up sinks w/2 − 0.1 = ${((w / 2 - 0.1) * 1000).toFixed(1)} mm (${flatOn ? (flatOn.depth * 1000).toFixed(1) : 'none'} mm)`)
+
 if (fails.length) { console.log(`\n${fails.length} FAIL`); process.exit(1) }
 console.log('\ntire-contact: all PASS')

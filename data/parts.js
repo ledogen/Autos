@@ -273,6 +273,10 @@ export const REPAIRS = {
  *  it). It keeps the shop from being a pit stop that tops everything up to the cap. A part already off
  *  the truck, in the inventory, pays the charge but not the access time. [DEFAULT] $5 / 30 min. */
 export const REPAIR_SETUP = { price: 5, hours: 0.5 }
+/** FEAT-162 (owner, 2026-11-06): a SEIZED engine (its track at exactly 0) rebuilds at this × the price
+ *  of a full-wear repair — a placeholder until FEAT-69's re-price. A collapsed wheel is not repaired at
+ *  all: it is scrap, replaced at the shop's wheel price (src/service.js repairTargets). */
+export const SEIZED_REPAIR_X = 3
 export const REPAIR_CAP = 0.8    // ratified by the owner 2026-10-24 (was [DEFAULT])
 export const REPAIR_STEP = 0.05
 /** The shop can still patch a flat: fixes the hole, not the wear — about a plug kit's price, and its

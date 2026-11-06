@@ -61,6 +61,9 @@ export const DAY_PARAMS = {
     // ×hungryRate, rising linearly to ×starvingRate over hungryRampH (ruled 2026-10-20: ×1.25 → ×1.5;
     // the ramp [DEFAULT]). A run starts on a standard meal, and BEDTIME COUNTS AS ONE (items.md's open
     // question, its simplest answer [DEFAULT]): an 8 h night wakes right at the edge of hungry.
+    // OFF for the owner's alpha playtest (2026-11-06): no shop or food vendor sells food yet, so hunger only
+    // drained the run. Flip back to true once food is buyable.
+    hungerOn:     false,
     hungryRate:   1.25,
     starvingRate: 1.5,
     hungryRampH:  4,
@@ -295,7 +298,7 @@ export class DaySystem {
     eat (holdH) { this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + holdH) }
 
     /** Past the last meal's hold. The energy meter says so in words (SM-INV-10: never a gauge). */
-    hungry () { return this.clockH() > this._fedUntilH }
+    hungry () { return DAY_PARAMS.hungerOn && this.clockH() > this._fedUntilH }
 
     /**
      * Hours of energy hunger adds to being awake from clockH h0 to h1 — 0 while fed. The rate over 1 is
@@ -303,6 +306,7 @@ export class DaySystem {
      * and a 30 min skip costs exactly what living through it would.
      */
     _hungerCost (h0, h1) {
+        if (!DAY_PARAMS.hungerOn) return 0
         const P = DAY_PARAMS, R = P.hungryRampH, a = P.hungryRate - 1, b = P.starvingRate - P.hungryRate
         const extra = (t) => {
             const x = t - this._fedUntilH
@@ -579,6 +583,7 @@ export class DaySystem {
         f.add(DAY_PARAMS, 'sleepRateWorstH', 0.5, 6, 0.05).name('sleep rate worst (h/h)')
         f.add(DAY_PARAMS, 'sleepRateBestH', 0.5, 6, 0.05).name('sleep rate best (h/h)')
         f.add(DAY_PARAMS, 'truckSleepRateH', 0.25, 6, 0.05).name('sleep rate truck (h/h)')
+        f.add(DAY_PARAMS, 'hungerOn').name('hunger')
         f.add(DAY_PARAMS, 'hungryRate', 1, 3, 0.05).name('hungry drain ×')
         f.add(DAY_PARAMS, 'starvingRate', 1, 3, 0.05).name('starving drain ×')
         f.add(DAY_PARAMS, 'hungryRampH', 0, 12, 0.5).name('hunger ramp (h)')

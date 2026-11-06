@@ -23,7 +23,7 @@
 // The renderer-agnostic half (the fuel-stop.js pattern): main.js owns the DOM, this owns the rules,
 // so a headless gate can drive a whole visit. Every dependency arrives through the constructor.
 
-import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP, REPAIR_CAP, REPAIR_STEP, PATCH, BEAD, HUB, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP, SEIZED_REPAIR_X, REPAIR_CAP, REPAIR_STEP, PATCH, BEAD, HUB, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
 import { TRACKS, TIRE_IDS, WHEEL_IDS } from './damage.js'
 import { shelfPrice } from './shop-stock.js'
 
@@ -52,6 +52,10 @@ export function repairTargets (cls, cond, partId = null) {
     // FEAT-166: a differential's only wear is the clutch LSD's packs, and a rebuild is new packs —
     // straight to 100%, and only for a part that has them (PARTS[id].rebuild).
     if (cls === 'diff') return PARTS[partId]?.rebuild && cond < 1 - EPS ? [1] : []
+    // FEAT-162: a collapsed wheel is scrap — replace it; a seized engine is rebuilt whole, to the cap
+    // (SEIZED_REPAIR_X prices it), never a cheap first step that frees it.
+    if (cls === 'wheel' && cond <= 0) return []
+    if (cls === 'engine' && cond <= 0) return [REPAIR_CAP]
     const out = []
     for (let t = Math.floor(cond / REPAIR_STEP + EPS) + 1; t * REPAIR_STEP <= REPAIR_CAP + EPS; t++) out.push(Math.round(t * REPAIR_STEP * 100) / 100)
     return out
@@ -80,7 +84,8 @@ export class ServiceCenter {
      *  mechanic has to get at it first. */
     _quote (cls, partId, cond, target, onTruck) {
         const r = REPAIRS[cls], gap = Math.max(0, target - cond)
-        return { price: cents((REPAIR_SETUP.price + (r.price ?? PARTS[partId].price) * gap) * this.tier()),
+        const seized = cls === 'engine' && cond <= 0 ? SEIZED_REPAIR_X : 1   // FEAT-162
+        return { price: cents((REPAIR_SETUP.price + (r.price ?? PARTS[partId].price) * gap) * seized * this.tier()),
                  hours: (onTruck ? REPAIR_SETUP.hours : 0) + r.hours * gap }
     }
 

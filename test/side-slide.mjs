@@ -7,6 +7,9 @@
 //   • 15 m/s along its length on flat dirt stops inside 40 m (measured 26.9 m)
 //   • at rest on its side across a 15° slope it holds: < 1 m of creep in 10 s (measured 0.42 m —
 //     the friction's low-speed regularisation, SIDEWALL_V_REG)
+// BUG-115: on its ROOF the cab hull touches, at the body's 0.1 it tobogganed down any slope over 5.7°
+// (28 m in 10 s on 8°, 110 m on 15°). The cab hull now grips at pair μ 0.3 (owner, 2026-11-06):
+//   • on its roof across 8° and 15° it holds: < 1 m in 10 s after it lands (measured 0.01 / 0.00 m)
 
 import * as THREE from 'three'
 import { stepPhysics } from '../src/physics.js'
@@ -18,8 +21,8 @@ const DT = 1 / 60
 let failed = 0
 const check = (ok, msg) => { console.log(`${ok ? '[PASS]' : '[FAIL]'} ${msg}`); if (!ok) failed++ }
 
-/** A truck dropped onto its right side on ground y = tan(slope)·x, settled 3 s. */
-async function onItsSide (slopeDeg) {
+/** A truck dropped rolled `rollDeg` (90 = its right side, 180 = its roof) on ground y = tan(slope)·x, settled 3 s. */
+async function onItsSide (slopeDeg, rollDeg = 90) {
   const t = Math.tan(slopeDeg * Math.PI / 180), n = new THREE.Vector3(-t, 1, 0).normalize()
   const ground = (x) => t * x
   const qc = (cx, cy, cz, r) => {
@@ -31,8 +34,8 @@ async function onItsSide (slopeDeg) {
   P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
   const eq = computeStaticEquilibrium(P)
   const vs = {
-    position: new THREE.Vector3(0, 1.0, 0), velocity: new THREE.Vector3(),
-    quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), Math.PI / 2),
+    position: new THREE.Vector3(0, rollDeg === 180 ? 1.3 : 1.0, 0), velocity: new THREE.Vector3(),
+    quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), rollDeg * Math.PI / 180),
     angularVelocity: new THREE.Vector3(), steerAngle: 0, throttle: 0, brake: 0, smoothThrottle: 0, smoothBrake: 0,
     wheelSteerAngles: [0, 0, 0, 0], wheelDebug: [0, 1, 2, 3].map(() => ({ fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: 0 })),
     wheelOmega: [0, 0, 0, 0], wheelPhase: [0, 0, 0, 0], slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
@@ -63,6 +66,14 @@ async function onItsSide (slopeDeg) {
   check(d < 1, `lying on its side across a 15° slope it holds: ${d.toFixed(2)} m in 10 s (< 1 m; was 75 m)`)
   ctx.dispose()
 }
+for (const slope of [8, 15]) {
+  const { vs, ctx, step } = await onItsSide(slope, 180)
+  const p0 = vs.position.clone()
+  step(600)
+  const d = vs.position.distanceTo(p0)
+  check(d < 1, `lying on its roof across a ${slope}° slope it holds: ${d.toFixed(2)} m in 10 s (< 1 m; was ${slope === 8 ? 28 : 110} m)`)
+  ctx.dispose()
+}
 
-console.log(failed ? `${failed} CHECK(S) FAILED` : 'PASS — a truck on its side scrubs to a stop')
+console.log(failed ? `${failed} CHECK(S) FAILED` : 'PASS — a truck on its side or roof scrubs to a stop')
 process.exit(failed ? 1 : 0)

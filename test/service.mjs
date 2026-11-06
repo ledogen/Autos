@@ -21,6 +21,8 @@
 //      for half price × condition; only parts sell.
 //   8. A mounted pair (the spare, or the flat pair a roadside swap left) swaps with a corner's tire and
 //      wheel for two hub swaps; the corner's pair takes its place, still mounted. A flat pair won't go on.
+//   1b. FEAT-162: a collapsed wheel (at 0) is scrap, never straightened; a seized engine (at 0) is rebuilt
+//      only whole, to the cap, at SEIZED_REPAIR_X × the full-wear price.
 //   9. Tire work is bead jobs and hub swaps (owner, 2026-10-23): a loose tire onto a corner is 2 hub +
 //      2 bead, charged with the shelf price; split and combine are one bead job each, every part keeping
 //      its wear and the tire its puncture; split needs a free slot; only a loose tire meets a loose wheel.
@@ -31,7 +33,7 @@ import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
 import { InventorySystem } from '../src/inventory.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP as SU, REPAIR_CAP, PATCH, BEAD, HUB } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP as SU, REPAIR_CAP, SEIZED_REPAIR_X, PATCH, BEAD, HUB } from '../data/parts.js'
 import { repairTargets } from '../src/service.js'
 
 let fails = 0
@@ -75,6 +77,14 @@ tier = 1
 damage.set('springRear', 0)
 check('a spring pair is priced off the fitted pair', near(svc.repairQuote('springRear', 0.8).price, SU.price + PARTS.springsRearOEM.price * 0.8))
 check('worn brakes: nothing to repair', (damage.set('brakeFront', 0.2), svc.targets('brakeFront').length === 0))
+check('a collapsed wheel is replaced, never straightened', repairTargets('wheel', 0).length === 0 && repairTargets('wheel', 0.01)[0] === 0.05)
+damage.set('engine', 0)
+check('a seized engine is rebuilt whole, to the cap, never a cheap first step', svc.targets('engine').join() === String(REPAIR_CAP))
+check('a seized engine rebuilds at 3× the full-wear price', SEIZED_REPAIR_X === 3
+  && near(svc.repairQuote('engine').price, (SU.price + REPAIRS.engine.price * REPAIR_CAP) * 3), JSON.stringify(svc.repairQuote('engine')))
+damage.set('engine', 0.01)
+check('…a hair above 0 is an ordinary rebuild', near(svc.repairQuote('engine', 0.05).price, SU.price + REPAIRS.engine.price * 0.04))
+damage.set('engine', 0.5)
 
 // ── 2. repair() ───────────────────────────────────────────────────────────────────────────────
 wallet = 100; hours = 0

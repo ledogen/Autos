@@ -121,6 +121,17 @@ status: shipped · group: truck · play: gearbox-audio.js playGearGrind
 FEAT-126 shift forced with the clutch in: a clash, then bandpassed noise chopped at the tooth-passing
 rate (engine rpm/60 × 8, sagging 20 %) over the pulse train itself. ~0.4 s.
 
+### Rod knock (a dying engine)
+status: shipped · group: truck · play: knock-sweep
+FEAT-162 P3: below 20 % the engine knocks — a wavetable impulse train at crank rate (rpm/60) ringing a
+1.8 kHz bandpass (Q 6), louder toward 0 % and with throttle. Preview: 10 % engine, full throttle, 800 →
+4000 rpm. `src/knock-audio.js`.
+
+### Engine seize bang
+status: shipped · group: truck · play: knock-audio.js playSeizeBang
+FEAT-162 P3: the running engine seizes at 0 % — a lowpassed noise hit (250 ms) over an 80 → 35 Hz thump,
+then the existing shutoff silence.
+
 ### Paper throw whoosh and impact
 status: todo · group: story
 Tracked in FEAT-64. Whoosh = bandpassed noise with a fast pitch sweep; impact = short thump + paper
