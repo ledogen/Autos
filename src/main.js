@@ -9378,6 +9378,9 @@ document.addEventListener('keydown', e => {
   const seedModal = document.getElementById('story-seed-modal')
   if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
   if (_runEndOpen) return   // FEAT-146: the run is over — the card's one button is the way out
+  // BUG-119: Esc / pad B on the towel's confirm is its back — it fell through to the pause toggle, which showed the
+  // menu over the still-open card, and the pad (menu-nav reads the card first) kept driving the card.
+  if (document.getElementById('towel-card').style.display === 'flex') { document.getElementById('tc-back').click(); return }
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
   if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule

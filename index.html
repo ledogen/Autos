@@ -321,7 +321,7 @@
     #cs-bindings td:first-child { color: var(--text-body); }
     /* FEAT-41 menu-nav.js: the keyboard/pad highlight, drawn exactly like hover. */
     #main-menu button.nav-focus { color: var(--text-bright); border-left-color: var(--accent-system); padding-left: 26px; }
-    #pause-menu button.nav-focus, #story-seed-modal button.nav-focus { background: rgba(255, 255, 255, 0.08); color: var(--text-bright); border-color: var(--line-hover); }
+    #pause-menu button.nav-focus, #towel-card button.nav-focus, #story-seed-modal button.nav-focus {   /* BUG-119: the towel card drew no highlight */ background: rgba(255, 255, 255, 0.08); color: var(--text-bright); border-color: var(--line-hover); }
     input.nav-focus { border-color: var(--accent-system) !important; outline: none; }
     /* FEAT-133: the in-game cards each style their buttons their own way, so the pad's highlight is an
        outline that reads on all of them (light paper cards and dark screens alike). */

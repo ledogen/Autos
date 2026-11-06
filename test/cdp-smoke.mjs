@@ -1313,6 +1313,15 @@ const STEPS = [
     check(await until(() => js('document.getElementById("pause-menu").style.display === "flex"'), 2000), 'Start did not pause')
     await padTo('pm-towel'); await btn(0)
     check(await until(() => js('document.getElementById("towel-card").style.display === "flex"'), 2000), 'A on "give up" opened no confirm')
+    // BUG-119: the confirm DRAWS its highlight (it had no .nav-focus style: the D-pad moved an invisible one)…
+    check(await js(`(() => { const [a, b] = document.querySelectorAll('#towel-card button'), bg = el => getComputedStyle(el).backgroundColor
+      return a.classList.contains('nav-focus') !== b.classList.contains('nav-focus') && bg(a) !== bg(b) })()`), 'the give-up confirm draws no highlight (BUG-119)')
+    // …and B is its back: the pause menu alone (it opened the menu OVER the card, and the pad kept driving the card).
+    await btn(1)
+    check(await until(() => js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 2000),
+      'B on the give-up confirm did not step back to the pause menu alone (BUG-119)')
+    await padTo('pm-towel'); await btn(0)
+    check(await until(() => js('document.getElementById("towel-card").style.display === "flex"'), 2000), 'A on "give up" opened no confirm the second time')
     await padTo('tc-end'); await btn(0)
     check(await until(() => js('document.getElementById("run-end").style.display === "block"'), 3000), 'the give-up confirm ended nothing')
     await padTo('re-menu'); await btn(0)
