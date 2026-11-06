@@ -193,3 +193,8 @@ The best-honest-drive pin is re-expressed (0.740 at slack 1.15 = 0.569 today), a
 - `paper-route` had three: its taper samples now sit around `fullTipRatio`; its slow round sits past `tipZero`;
   its "B" round moved 0.8 → 0.75 of par (0.8 is now a C).
 - Both fixed gates pass. Total: 64/64 node gates green; cdp-smoke is the landing's.
+
+**2026-11-06, owner ruling (rank-spread-knock, no option tapped).** Verbatim: "12 days includes the expedition camp
+missions. keep the spread you just built". So `campDeeds` stays **10**, and the spread stays as landed (S +10 % ·
+par +30 %, A/B interpolated). The ~10 days to the deeds gate plus the requisition's five lines make the 12-day run.
+Don't re-ask.
