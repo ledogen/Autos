@@ -680,7 +680,11 @@ const STEPS = [
     await simFor(1)
     const after = await js(`${row}.map(r => r.mesh.position.toArray())`)
     const off = after.length === 3 ? Math.max(...after.map((p, i) => Math.hypot(p[0] - before[i][0], p[1] - before[i][1], p[2] - before[i][2]))) : Infinity
-    check(off < 0.05, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off`)
+    // 15 cm, not 5: a 1 cm drop onto the sloped deck rocks to rest a few cm from where it landed, and under load that
+    // landing is not repeatable — Box3D orders contacts by body creation, and streaming creates terrain/prop bodies in
+    // another order (measured 11-06 at 6×: the first row's rest scatters 1–2 cm run to run, the reset row lands 1–6 cm
+    // from it, both at rest 3 sim-s later; idle, 0.0 cm). Not reset at all is metres: a knock is > 0.5 m above.
+    check(off < 0.15, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off`)
     console.log(`  edge: smashed through, back at ${back.r.toFixed(0)} m facing in, the row reset (worst ${(off * 100).toFixed(1)} cm)`)
   }],
   ['papers', async () => {
