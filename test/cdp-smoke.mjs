@@ -1142,10 +1142,10 @@ const STEPS = [
     await ended(/broke down/, /out of fuel — (the tow was \$[\d,.]+|no tow could reach you), you had \$0\b/)
     // FEAT-172: giving up while stranded is breaking down — a seized engine, then the towel.
     await newRun()
-    await js("window.__damage.set('engine', 0)")
+    await js("window.__damage.set('engine', 0); window.__econ.money = 1000")   // stuck, and the tow is affordable
     check(await until(() => js('window.__vs.engineHealth <= 0'), 2000), 'a 0 % engine never reached the truck')
     await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
-    await ended(/broke down/, /the engine seized — (.+, and you gave up|no tow could reach you, you had)/)
+    await ended(/broke down/, /the engine seized — (the tow was \$[\d,.]+, and you gave up|no tow could reach you, you had)/)
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     // FEAT-170: a new run starts with mom's casserole in hand, and the win waits for no job to be active (in
