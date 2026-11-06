@@ -104,6 +104,7 @@ check('5 blocked storage neither throws nor loses the result', deadR && deadR !=
 const POSE_LAT_M = 1.5    // m off the centreline
 const POSE_DOT = 0.95     // |cos| between the pose heading and the road tangent (~18°)
 for (const s of SCENARIOS) {
+    if (s.kind === 'paper') continue   // FEAT-62: no authored poses — the world's own POIs place it (test/paper-scenario.mjs)
     const seed = parseWorldSeed(s.seed)
     const params = RANGER_PARAMS
     const { rawHeightWorld } = makeTerrainHeadless(seed, params, null)

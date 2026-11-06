@@ -1204,6 +1204,9 @@ let _playedS = 0          // FEAT-146: real seconds of a live, unpaused run (the
 let _cardHold = false
 // The sim's real pauses. FEAT-62: a scenario's pause menu — its clock must not run behind the menu.
 // FEAT-42: the resume card — the run may have been saved at speed, mid-slide even. FEAT-146: the run's end.
+// FEAT-62: the paper-route scenario's definition while one runs. It is story mode under a guard: the run is built
+// fresh, never written to the player's save slot, never discards it, and leaves for the main menu (_startPaperScenario).
+let _paperScenario = null
 function _heldPause () { return _resumeHold || _runEndOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.active) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
@@ -1625,10 +1628,13 @@ function _renderScenarioList () {
   list.textContent = ''
   for (const def of SCENARIOS) {
     const b = document.createElement('button')
-    const best = scenarioLeaderboard.best(def.id)
+    const best = def.kind === 'paper'
+      ? PAPER_PARAMS.tiers.map(n => [n, scenarioLeaderboard.best(`${def.id}:${n}`)]).filter(([, t]) => t != null)
+          .map(([n, t]) => `${n}: ${formatTime(t)}`).join(', ') || null
+      : (t => t != null ? formatTime(t) : null)(scenarioLeaderboard.best(def.id))
     b.innerHTML = `${def.name}<span class="mm-sub">${def.blurb}`
-      + `${best != null ? ` &middot; best ${formatTime(best)}` : ''}</span>`
-    b.addEventListener('click', () => { void _startScenario(def) })
+      + `${best != null ? ` &middot; best ${best}` : ''}</span>`
+    b.addEventListener('click', () => { if (def.kind === 'paper') _startPaperScenario(def); else void _startScenario(def) })
     list.appendChild(b)
   }
   // Not a timed run, so not in SCENARIOS (no seed, no gates, no board): the lab's barrel cube.
@@ -4472,6 +4478,7 @@ function _pumpTut () {
 
 /** Mom's job is over (any end) and its card put away: Larry's welcome, then the opening is finished for good. */
 function _checkOpeningEnd () {
+  if (_paperScenario) return   // FEAT-62: the scenario has no opening to end
   // null = no mom on the roster (never expected — her count is hard): Larry still welcomes you.
   if (!offerBoard || ['closed', 'live', 'taken'].includes(offerBoard.firstState())) return
   if (missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
@@ -6761,6 +6768,7 @@ function _renderPaperUI () {
       break
     }
     case 'done': {
+      if (_paperScenario) { show(panel, false); show(hud, false); _renderPaperScenarioCard(); break }   // FEAT-62: the scenario's card
       show(panel, true); show(hud, false); show(acts, true, 'flex')
       panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
       const r = p.result
@@ -6819,7 +6827,7 @@ function _renderPaperUI () {
   const acc = document.getElementById('pp-accept')
   const dec = document.getElementById('pp-decline')
   if (acc) acc.textContent = p.state === 'done' ? 'continue' : 'start the route'
-  if (dec) dec.style.display = p.state === 'offer' ? '' : 'none'
+  if (dec) dec.style.display = p.state === 'offer' && !_paperScenario ? '' : 'none'   // FEAT-62: the scenario IS the round
 }
 
 document.getElementById('pp-accept')?.addEventListener('click', () => {
@@ -6861,7 +6869,7 @@ function _renderRunHud () {
   const s = economySystem.snapshot()
   // FEAT-103: the camp's gate. Every deed source settles through the wallet, and this poll reads it,
   // so this is the one place the requisition opens (openLines is idempotent).
-  if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
+  if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
   if (daySystem.clockH() >= DAY_PARAMS.dayStartHour) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
   _eveningBeats()
   const skip = document.getElementById('skip-hint')
@@ -7956,10 +7964,11 @@ function _showPauseMenu () {
   if (codeEl) codeEl.textContent = `world ${formatWorldCode(_seedString, activeWorld())}`
   // FEAT-62: restart only means something inside a scenario.
   const restartBtn = document.getElementById('pm-restart')
-  if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() ? '' : 'none'
+  if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() || _paperScenario ? '' : 'none'
+  if (storyBtn) storyBtn.style.display = _paperScenario ? 'none' : ''   // FEAT-62: out of a scenario is the main menu
   // FEAT-42: save & exit is a story-run button, greyed out with its reason while the run can't save.
   // FEAT-146: an ended run (the crash's beat before its card) has nothing left to save or throw in.
-  const live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded
+  const live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !_paperScenario   // FEAT-62: nothing to save or throw in
   const towel = document.getElementById('pm-towel')
   if (towel) towel.style.display = live ? '' : 'none'
   _syncPauseSave(live)
@@ -7968,7 +7977,7 @@ function _showPauseMenu () {
 
 /** Save & exit's state. Called when the menu opens AND every frame it is open, so parking with the
  *  menu up enables it at once (owner, 2026-10-30) instead of after a close and reopen. */
-function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded) {
+function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !_paperScenario) {
   const saveBtn = document.getElementById('pm-save')
   if (!saveBtn) return
   const why = live ? _saveExitBlock() : null
@@ -8193,6 +8202,82 @@ function _exitScenario () {
   window.__setGameMode('freeroam')
 }
 
+// ── FEAT-62: the paper-route scenario ───────────────────────────────────────────────────────────
+// Larry's round on a curated world, one click from the main menu (owner, 2026-11-06: start at Larry's, the paper
+// controls only, every rung open, story par). A paper round needs the story region — Larry, the customers and the
+// planner exist nowhere else — so this IS a story entry, under _paperScenario: _startStory skips clearRun,
+// _autosave writes nothing, _endRun shows this card instead of discarding the save, the seed never re-rolls, and
+// the opening, Larry's welcome and the camp tutorial stay quiet. The player's own run is untouched throughout
+// (cdp-smoke resumes it after a scenario with a crash in it).
+const _larry = () => poiSystem.list().find(q => q.type === 'larrysHouse') ?? null
+let _paperSizeIdx = 0   // the rung the scenario re-opens on: the owner's rated 4 first, then whatever was last driven
+
+function _startPaperScenario (def) {
+  _paperSizeIdx = 0
+  void _startStory(def.seed, WORLD_PRESETS.classic, _settings.gearbox, null, 0, def)
+}
+
+/** Seat at Larry's and put his round on offer (go-live, and every restart). */
+function _openPaperScenario () {
+  setDebugLockout(true)
+  const larry = _larry()
+  if (!larry) { console.warn('[scenario] no Larry on this world'); return }
+  paperRouteSystem.open(larry, null, _paperSizeIdx)
+}
+
+/** Restart: the same rung, a fresh truck at Larry's. The briefing has played this entry, so it stays quiet. */
+function _restartPaperScenario () {
+  _hidePauseMenu()
+  document.getElementById('scenario-panel').style.display = 'none'
+  renderer.domElement.style.filter = ''
+  if (paperRouteSystem.state !== 'idle') _paperSizeIdx = paperRouteSystem.run?.sizeIdx ?? paperRouteSystem.sizeIdx ?? _paperSizeIdx
+  paperRouteSystem.abort()
+  _clearThrownRolls()
+  damageModel.fatalImpact = null
+  damageModel.setAll(1)
+  damageModel.publish(RANGER_PARAMS)
+  vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)
+  _seatAt(_larry())
+  _openPaperScenario()
+}
+
+/** A run-ender inside the scenario (a fatal crash, a dead truck, the towel): no time, restart or leave. */
+function _paperScenarioOver (kind) {
+  damageModel.fatalImpact = null   // the frame loop would call this again every step
+  if (paperRouteSystem.isCarrying()) paperRouteSystem.abort()
+  if (kind === 'crash') renderer.domElement.style.filter = 'grayscale(1)'
+  _renderPaperScenarioCard({ over: RUN_END_TITLE[kind] ?? 'run over' })
+}
+
+/** The scenario's result card (#scenario-panel), from the paper round's result or a run-ender. */
+function _renderPaperScenarioCard ({ over = null } = {}) {
+  const panel = document.getElementById('scenario-panel')
+  if (!panel) return
+  const r = over ? null : paperRouteSystem.result
+  const valid = !!r && !r.abandoned && !r.outOfPapers && !r.expired && !!r.letter
+  const n = r?.customers ?? PAPER_PARAMS.tiers[_paperSizeIdx]
+  const board = `${_paperScenario.id}:${n}`
+  let status
+  if (over) status = `<span class="sp-miss">${over} &mdash; no time</span>`
+  else if (!valid) status = `<span class="sp-miss">${r?.abandoned ? 'abandoned' : 'not every paper delivered'} &mdash; no time</span>`
+  else {
+    if (r._boardKey !== board) { r._sub = scenarioLeaderboard.submit(board, r.elapsed); r._boardKey = board }   // once per result
+    const sub = r._sub
+    status = `<b>${r.letter}</b> &nbsp;<span class="mp-dim">par ${formatTime(r.par)}</span> &nbsp;`
+      + (sub.newBest ? '<span class="sp-best">NEW BEST</span>' : sub.rank ? `<span class="mp-dim">#${sub.rank} on the board</span>` : '<span class="mp-dim">off the board</span>')
+  }
+  const rows = scenarioLeaderboard.entries(board).slice(0, 5)
+    .map((e, i) => `<tr class="${valid && r._sub?.rank === i + 1 ? 'sp-you' : ''}"><td>${i + 1}</td>`
+      + `<td>${formatTime(e.elapsed)}</td><td class="mp-dim">${new Date(e.at).toLocaleDateString()}</td></tr>`)
+    .join('')
+  document.getElementById('sp-title').textContent = `scenario · ${_paperScenario.name} · ${n} customers`
+  document.getElementById('sp-body').innerHTML = (valid ? `<span class="mp-big">${formatTime(r.elapsed)}</span><br>` : '') + status
+    + (rows ? `<table class="sp-board">${rows}</table>` : '')
+  document.getElementById('paper-panel').style.display = 'none'
+  panel.style.display = 'block'
+  panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
+}
+
 // ── Story Mode (FEAT-43) — sandboxed gamemode ─────────────────────────────────────────────
 // StorySystem owns the whole story-mode lifecycle (src/story.js). main.js only supplies the `deps`
 // adapter so story.js stays free of engine imports; the region radius is story.js's own constant.
@@ -8228,7 +8313,7 @@ const storySystem = new StorySystem({
   // SEED_REROLLS times; only then does the refusal card show. A resume never re-rolls — that would
   // throw the saved run away — so it gets the card at once.
   onSeedRejected: (seed, report) => {
-    if (!_pendingResume && _seedRerolls < SEED_REROLLS) {
+    if (!_pendingResume && !_paperScenario && _seedRerolls < SEED_REROLLS) {
       console.info(`[story] seed "${seed}" refused (${unplayableReason(report)}) — re-roll ${_seedRerolls + 1}/${SEED_REROLLS}`)
       void _startStory(_resolveSeed(''), _runWorld, _runGearbox, null, _seedRerolls + 1)
       return
@@ -8241,9 +8326,10 @@ const storySystem = new StorySystem({
   // panel is open (backtick), which is where its users are. R-11: the moment the stage drops is the
   // first moment the player can read anything — the run's opening cards play here, once per run.
   setQuickJobVisible: (visible) => {
-    _quickJobWanted = visible
+    _quickJobWanted = visible && !_paperScenario
     _syncQuickJob()
-    if (visible) { if (!_playOpening()) dialogueSystem.play(DLG.runIntro, _runIntro()); _renderDialogue() }   // FEAT-147
+    if (visible && _paperScenario) _openPaperScenario()   // FEAT-62: straight to Larry's round — no opening, no run intro
+    else if (visible) { if (!_playOpening()) dialogueSystem.play(DLG.runIntro, _runIntro()); _renderDialogue() }   // FEAT-147
     if (visible && _resumeHold) document.getElementById('resume-card').style.display = 'flex'   // FEAT-42 (see _restoreRun)
   },
   // FEAT-41: the entry load is now WATCHED, not waited out behind a black panel. This is the one
@@ -8316,7 +8402,8 @@ const storySystem = new StorySystem({
     if (!center) return
     // FEAT-47: the run's clock opens at dayStartHour and takes over the sky — FEAT-170: a NEW run's at the
     // opening's 6 pm on day 0 (a resume puts its own clock back below).
-    daySystem.start(OPENING_START.day, OPENING_START.hour)
+    if (_paperScenario) daySystem.start(1, DAY_PARAMS.dayStartHour)   // FEAT-62: a working morning, no opening
+    else daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
     _eveningFrom = null
     _openingSeat = null
@@ -8386,12 +8473,19 @@ const storySystem = new StorySystem({
     // FEAT-42: a resume writes the save over the fresh run built above — still behind the loading
     // screen, before the handoff plays the run intro.
     // FEAT-147: a NEW run starts parked at the burger joint instead.
-    _openingRun = !_pendingResume
+    _openingRun = !_pendingResume && !_paperScenario
     if (_pendingResume) { _restoreRun(_pendingResume); _pendingResume = null }
+    else if (_paperScenario) { runPaper.tier = PAPER_PARAMS.tiers.length - 1; _seatAt(_larry()) }   // FEAT-62: every rung open (owner 11-06)
     else _seatAt(_joint())
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
+    if (_paperScenario) {   // FEAT-62: leaving the scenario's region ends the scenario (nothing carries out)
+      _paperScenario = null
+      document.getElementById('scenario-panel').style.display = 'none'
+      renderer.domElement.style.filter = ''
+      setDebugLockout(false)
+    }
     // A job cannot outlive its region. Every exit path used to have to remember this itself, and
     // the ones that forgot are how a mission ended up running in the lab.
     if (missionSystem?.isActive()) missionSystem.exit()
@@ -8567,7 +8661,7 @@ let _runWorld = null       // ...and the world knobs, so a BUG-100 re-roll keeps
 let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
 const SEED_REROLLS = 3       // BUG-100: refused seeds re-rolled before the refusal card shows
 let _seedRerolls = 0         // re-rolls behind the current entry (0 for a player-started one)
-async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0) {
+async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0, scenario = null) {
   _hideSeedModal()
   map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
   // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
@@ -8580,10 +8674,11 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _runWorld = world
   _seedRerolls = rerolls
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
+  _paperScenario = scenario   // FEAT-62: every entry sets it too — a scenario never outlives its own entry
   _runEnded = false
   _playedS = 0                       // FEAT-146 (a resume puts the saved playtime back in _restoreRun)
   damageModel.fatalImpact = null     // FEAT-146: a fatal hit before the run is not this run's death
-  if (!resume) clearRun()   // FEAT-42: one slot — a new game discards the saved run
+  if (!resume && !scenario) clearRun()   // FEAT-42: one slot — a new game discards the saved run (a scenario is not a game)
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
@@ -8615,9 +8710,9 @@ document.getElementById('quickjob-btn')?.addEventListener('click', () => {
 // renamed/removed from index.html (WR-04).
 document.getElementById('pm-resume')?.addEventListener('click', () => _hidePauseMenu())
 // FEAT-62: scenario restart (the button is only shown inside a scenario) and the finish card.
-document.getElementById('pm-restart')?.addEventListener('click', () => { void _restartScenario() })
-document.getElementById('sp-restart')?.addEventListener('click', () => { void _restartScenario() })
-document.getElementById('sp-menu')?.addEventListener('click', () => { _exitScenario(); _showMainMenu() })
+document.getElementById('pm-restart')?.addEventListener('click', () => { if (_paperScenario) _restartPaperScenario(); else void _restartScenario() })
+document.getElementById('sp-restart')?.addEventListener('click', () => { if (_paperScenario) _restartPaperScenario(); else void _restartScenario() })
+document.getElementById('sp-menu')?.addEventListener('click', () => { if (_paperScenario) _backToMenu(); else { _exitScenario(); _showMainMenu() } })
 // A clicked button keeps focus, and a focused button eats Space — the brake — as another click. The
 // #job-cancel trick: never take focus, so a restart cannot fire again under the next brake.
 for (const id of ['pm-restart', 'sp-restart', 'sp-menu']) {
@@ -8853,6 +8948,7 @@ function _resumePaper (sp) {
 
 /** Overwrite the run save with now — whenever a live, writable run exists. */
 function _autosave () {
+  if (_paperScenario) return false   // FEAT-62: the scenario's run is not the player's run — never written over it
   if (!storySystem.isActive() || storySystem.isEntering() || _restoring || _runEnded || _saveBlock()) return false
   return putRun(_runSnapshot())
 }
@@ -8895,6 +8991,7 @@ const CRASH_CARD_DELAY_S = 1.5
 
 /** End the run `kind` ('win' | 'crash' | 'broke' | 'towel'). The first ending wins. */
 function _endRun (kind) {
+  if (_paperScenario) { _paperScenarioOver(kind); return }   // FEAT-62: never _discardRunSave — the save is the player's
   if (_runEnded) return
   _discardRunSave()
   // Read the run as it ended, before the clock moves on behind the card.
@@ -9427,6 +9524,7 @@ function loop () {
       // route cache warm this resolves within a frame or two.
       // FEAT-62: inside a scenario R is RESTART — the same seat plus a fresh count and clean gates.
       if (scenarioSystem.isActive()) void _restartScenario()
+      else if (_paperScenario) _restartPaperScenario()   // FEAT-62: back to Larry's, same rung
       else if (_barrelCube) _buildBarrelCube(_barrelCube.side, _barrelCube.count)   // a fresh cube AND a fresh run-up
       else if (_eveningLeg()) _resetToRoad()   // FEAT-170: the opening's evening puts you back on the road
       else void _reseatTruckAtSpawn()
