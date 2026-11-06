@@ -79,8 +79,7 @@ import bmesh
 from mathutils import Vector
 
 OBJ_NAME = 'BBQGrill'
-_HERE = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else \
-    '/Users/ledogen/CodeShit/CarGame/assets/models/src'
+_HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_GLB = os.path.join(_HERE, '..', 'bbq-grill.glb')
 OUT_BLEND = os.path.join(_HERE, 'bbq-grill.blend')
 

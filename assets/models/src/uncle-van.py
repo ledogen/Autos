@@ -950,6 +950,8 @@ def build():
 
 
 def _ui_override():
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     area = next(a for a in win.screen.areas if a.type == "VIEW_3D")
     region = next(r for r in area.regions if r.type == "WINDOW")

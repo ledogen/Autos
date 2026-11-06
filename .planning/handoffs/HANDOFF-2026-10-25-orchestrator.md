@@ -272,3 +272,12 @@ kill timed it out).
   FEAT-168 3ea5578c (suite 124/124); BUG-114 428768a3; Spare bdf2ff5e (BUG-111/112/113) + 3518e8ed (BUG-101, PERF-36 notes)
   — the A+B+Spare suite 125/125. Owner calls owed on the page: reward-cats, rank-spread, feat170-plan, camp-gear-source,
   asset80-look, feat171-look, bug105-call, BUG-112's seam. Main NOT pushed.
+- **11-06 ~00:40, owner's overnight answers (owner asleep; "no limit on compute"):** asset76 land (merged e5134514, 28/28
+  affected) · asset77 promote, words "keep out / turn back / beware / no entry" (Lane C wires) · bug105 DON'T park — "i dont
+  care about roads moving… i do care about grazing without an intersection", and bug104 folds in: ONE holistic fix for
+  "roads intersect but dont form a junction" (Spare, after PERF-31) · bug108 go · feat162 all four, "written off wheel = at
+  0%" · feat166 defaults · feat171: fix the sleeping bag's folded corner (+ pillow), blankets to midway up (A) · rank-spread
+  "S 10% more forgiving, D 30%, interpolate" (B) · reward-cats yes + rare off-list pulls (garage part, school lunch) ·
+  camp-gear-source "camp + shelf" (B). The page's note box now says "type a note or your answer here" (owner: "be explicit").
+  Smoke queue: Lane B's INFRA-08 proof → my one landing smoke on main (covers burger joint + fire pit + INFRA-08) → Lane A's
+  clean-GPU PERF-28 batch → Spare's PERF-31 timings.

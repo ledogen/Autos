@@ -23,6 +23,7 @@ BarrelBung (one white cap; the second bung reuses BarrelBlue like the photo).
 """
 
 import bpy
+import os
 import bmesh
 import math
 
@@ -32,8 +33,9 @@ import math
 
 NAME = "barrel-plastic"
 TRI_BUDGET = 350
-OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/barrel-plastic.glb"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/barrel-plastic.blend"
+MODELS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_GLB = f"{MODELS_DIR}/barrel-plastic.glb"
+OUT_BLEND = f"{MODELS_DIR}/src/barrel-plastic.blend"
 
 SEG = 10                                 # lathe segments — faceted on purpose
 
@@ -276,6 +278,8 @@ def check_normals(ob, samples=200):
 
 
 def _ui_override():
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     scr = win.screen
     area = next(a for a in scr.areas if a.type == "VIEW_3D")

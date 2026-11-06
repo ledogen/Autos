@@ -47,6 +47,13 @@ repoint `OUT_DIR`/`OUT_BLEND`, re-export once to prove the paths (it should come
 byte-identical), then commit with the `data/prop-models.js` entry. Delete the `wip/` folder at
 promotion. Nothing in `wip/` is backed up, and `git clean -fdx` deletes it.
 
+**Paths come from the script, never a home directory** (2026-11-05). A promoted generator sets
+`OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))`, so an export from a lane
+worktree writes into that worktree, never into main, and the public repo carries no home path.
+**Exports run headless** (`blender -b --python-exit-code 1 --python <script>`; never the owner's
+GUI Blender): a window override returns `{}` (or just `scene` + `view_layer`) when there is no
+window, and an atlas bake renders with `render.render(scene=…)` instead of swapping the window's scene.
+
 **Vehicles are modelled against a reference board, never from memory** (owner, 2026-10-29, after
 rejecting a from-memory van). Take 8 photos of one real example (4 orthographic, 4 diagonal), solve
 all 8 cameras by bundle adjustment on hand-picked landmarks, and render the generator's model through

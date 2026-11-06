@@ -14,11 +14,12 @@ when both sit on the same origin.  Base-seated and centred.  Forward −Z: the A
 frame reads open from +Y (Blender) = −Z (glTF).  No collision.
 """
 import bpy, bmesh, math
+import os
 from mathutils import Vector, Matrix
 
 NAME = "cooking-kit"
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/cooking-kit.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/cooking-kit.blend"
 TRI_BUDGET = 400
 
 BAR = 0.022            # square iron bar half-width... full width
@@ -173,6 +174,8 @@ def fresh_scene():
 
 
 def _ui_override():
+    if bpy.context.screen is None:              # blender -b: no window, and the exporter needs none
+        return {}
     for area in bpy.context.screen.areas:
         if area.type == 'VIEW_3D':
             return dict(window=bpy.context.window, area=area, region=next(r for r in area.regions if r.type == 'WINDOW'))

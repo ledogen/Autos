@@ -54,6 +54,7 @@ jack carries the read on its own.
 """
 
 import bpy
+import os
 import bmesh
 import math
 
@@ -65,8 +66,9 @@ NAME = "broken-car"
 TRI_BUDGET = 2500       # raised from 2000 (2026-08-07) for the front-end rework:
                         # leading bumper, raked waterfall grille, corner signals,
                         # bumperettes + plate + ornament (2026-08-09 mid-90s pass)
-OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/broken-car.glb"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/broken-car.blend"
+MODELS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_GLB = f"{MODELS_DIR}/broken-car.glb"
+OUT_BLEND = f"{MODELS_DIR}/src/broken-car.blend"
 
 # Real 1993 Buick Century Estate wagon, metres.  L 4.88 x W 1.81 x H 1.47
 L_NOSE, L_TAIL = 2.44, -2.44
@@ -1397,6 +1399,8 @@ def _ui_override():
     """read_homefile() invalidates any window/area grabbed earlier, and the MCP
     bridge's context has no active_object — both operators below need a real one.
     Fetch it AFTER the rebuild, never before."""
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     scr = win.screen
     area = next(a for a in scr.areas if a.type == "VIEW_3D")

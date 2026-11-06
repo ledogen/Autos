@@ -25,6 +25,7 @@ AXIS.  Lathe about +Z, base-seated at z=0.  Bung pair on the Blender X axis
 """
 
 import bpy
+import os
 import bmesh
 import math
 
@@ -33,8 +34,8 @@ import math
 # ---------------------------------------------------------------------------
 
 TRI_BUDGETS = {"drum-closed": 350, "drum-open": 450, "drum-crushed": 400}
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/steel-drum.blend"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_BLEND = f"{OUT_DIR}/src/steel-drum.blend"
 
 SEG = 10
 
@@ -352,6 +353,8 @@ def check_normals(ob, samples=200):
 
 
 def _ui_override():
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     scr = win.screen
     area = next(a for a in scr.areas if a.type == "VIEW_3D")

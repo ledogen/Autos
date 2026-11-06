@@ -54,6 +54,7 @@ STYLE TRAPS this file exists to not re-learn:
 """
 
 import bpy
+import os
 import bmesh
 import math
 
@@ -64,8 +65,9 @@ import math
 NAME = "ranger"
 TRI_BUDGET = 4200      # 4000 until 2026-09-26, raised by the owner to pay for the
                        # full door shut line and the cab's rear chamfer
-OUT_GLB = "/Users/ledogen/CodeShit/CarGame/assets/models/ranger.glb"
-OUT_BLEND = "/Users/ledogen/CodeShit/CarGame/assets/models/src/ranger.blend"
+MODELS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_GLB = f"{MODELS_DIR}/ranger.glb"
+OUT_BLEND = f"{MODELS_DIR}/src/ranger.blend"
 
 # --- Hard numbers from data/ranger.js.  Do not drift from these. ---
 WHEELBASE = 2.85
@@ -3618,6 +3620,8 @@ def _ui_override():
     """read_homefile() invalidates any window/area grabbed earlier, and the MCP
     bridge's context has no active_object — both operators below need a real one.
     Fetch it AFTER the rebuild, never before."""
+    if not bpy.context.window_manager.windows:   # blender -b: no window; scene + view layer suffice
+        return dict(scene=bpy.context.scene, view_layer=bpy.context.view_layer)
     win = bpy.context.window_manager.windows[0]
     scr = win.screen
     area = next(a for a in scr.areas if a.type == "VIEW_3D")

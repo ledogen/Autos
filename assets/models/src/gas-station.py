@@ -57,7 +57,7 @@ from mathutils import Vector
 # ---------------------------------------------------------------------------
 # PARAMETERS
 # ---------------------------------------------------------------------------
-OUT_DIR = "/Users/ledogen/CodeShit/CarGame/assets/models"
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
 OUT_BLEND = f"{OUT_DIR}/src/gas-station.blend"
 NAME = "gas-station"
 TRI_BUDGET = 3500
@@ -752,13 +752,7 @@ def bake_atlas():
 
     path = os.path.join(bpy.app.tempdir, "gas-station-atlas.png")
     sc.render.filepath = path
-    win = bpy.context.window
-    prev = win.scene
-    win.scene = sc
-    try:
-        bpy.ops.render.render(write_still=True)
-    finally:
-        win.scene = prev
+    bpy.ops.render.render(write_still=True, scene=sc.name)   # no window swap: runs under blender -b too
     img = bpy.data.images.load(path, check_existing=False)
     img.name = "GasStationAtlas"
     img.pack()                                # never leave it in tempdir
