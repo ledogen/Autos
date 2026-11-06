@@ -1339,7 +1339,7 @@ const STEPS = [
     // The glyphs: the pad drove last, so every keycap reads its button.
     check(await js('document.body.classList.contains("pad-on")'), 'body.pad-on is off while the pad drives')
     // The casserole, abandoned through the B menu: its LAST entry, never the pre-selection (no B tap can arm it),
-    // labelled by its words; ↑ wraps to it, the release arms it, a second trip confirms.
+    // labelled by its words; ↑ wraps to it, the release arms it, and armed it IS the pre-selection: one B press confirms.
     const pick = async () => {
       await js('__fp.b[1] = 1'); await frames(4, 200)
       const first = await js('document.querySelector(".menu-sel")?.id')
@@ -1354,8 +1354,11 @@ const STEPS = [
     const a1 = await pick()
     check(a1.first !== 'job-cancel' && a1.sel === 'job-cancel' && /abandon job/.test(a1.label), `the B menu's abandon entry: ${JSON.stringify(a1)}`)
     check(/confirm\?/.test(await js('document.getElementById("job-cancel").textContent')), 'picking "abandon job" did not arm it')
-    await pick()
-    check(await until(() => js('window.__mission().state === "done"'), 3000), 'the second pick did not abandon the casserole')
+    // BUG-120: a second trip down the menu ran the 3 s arm out on a real pad — B held, released, nothing walked.
+    await js('__fp.b[1] = 1'); await frames(4, 200)
+    check(await js('document.querySelector(".menu-sel")?.id') === 'job-cancel', 'the armed abandon is not the B menu\'s pre-selection (BUG-120)')
+    await js('__fp.b[1] = 0'); await frames(4, 200)
+    check(await until(() => js('window.__mission().state === "done"'), 3000), 'one B press on the armed abandon did not abandon the casserole')
     await btn(13); await btn(0)   // the result card: the D-pad puts the highlight on continue, A presses it
     check(await until(dlg, 3000), 'A on the result card brought no Larry')
     await readCards()
