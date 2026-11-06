@@ -309,8 +309,8 @@ export class OfferBoard {
         }).filter(Boolean)
         this._slots.push(...this._lines)
         // FEAT-147: THE FIRST JOB — a fourth slot kind, one `f0` at mom's (data/offers.js FIRST_JOB).
-        // 'closed' until the opening calls openFirst(); then 'live' with no expiry, 'taken', and 'done'
-        // for good on ANY end. Outside _slots altogether (_at and clearRoutes add it), so advance(), the
+        // 'closed' until the opening calls openFirst(); then 'live' with no expiry, 'taken' with no deadline
+        // (BUG-117), and 'done' for good on its end (main.js offers no abandon for it, so in a run that is the delivery). Outside _slots altogether (_at and clearRoutes add it), so advance(), the
         // board census and every "always-on + budget" count stay exactly as they were.
         const mom = (pois || []).find(q => q.type === 'momsHouse')
         this._first = mom ? { poiId: mom.id, type: mom.type, slot: 'f0', k: 0, first: true, offer: null, state: 'closed', until: 0 } : null
@@ -318,8 +318,9 @@ export class OfferBoard {
 
     /**
      * FEAT-147: post the first job at mom's. Idempotent (true only when it posted), like openLines. Its
-     * spec is FIXED but shaped like any rolled courier spec — no `line` — so the card, pay, deadline,
-     * settle and deed are the ordinary ones: the owner's "same rules" principle (2026-11-02).
+     * spec is FIXED but shaped like any rolled courier spec — no `line` — so the card, pay, settle and deed
+     * are the ordinary ones: the owner's "same rules" principle (2026-11-02). Except the DEADLINE (BUG-117,
+     * owner 11-06: "this first mission must not be able to expire"): take() gives it none, as it gives a line none.
      */
     openFirst (nowH) {
         const s = this._first
@@ -553,8 +554,9 @@ export class OfferBoard {
         const s = this._slotOf(offerId)
         s.state = 'taken'
         // FEAT-113: the delivery deadline. No par (a caller with no planned route) → no deadline, and
-        // a requisition line never has one (FEAT-103: no giver lockout, or the run could be unwinnable).
-        s.offer.dueH = parS > 0 && !s.line ? nowH + this.deadlineH(s.offer, parS) : Infinity
+        // a requisition line never has one (FEAT-103: no giver lockout, or the run could be unwinnable), nor
+        // the first job (BUG-117: expired, it never reached Larry's, and his welcome is the tutorial's end).
+        s.offer.dueH = parS > 0 && !s.line && !s.first ? nowH + this.deadlineH(s.offer, parS) : Infinity
         return s.offer
     }
 
@@ -1102,7 +1104,7 @@ export class OfferBoard {
         // once taken — so say each in its own words.
         // Reworded again 2026-10-24 (owner): "available for: 10h" and "time limit: 4h 22m".
         if (!sp.stock && isFinite(expiresInH)) times.push(`available for: ${formatGameDuration(expiresInH)}`)
-        if (!sp.stock && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept
+        if (!sp.stock && !sp.line && !sp.first && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept; never on a job take() gives none
         return {
             family: sp.family,
             badge: jobBadge(sp),

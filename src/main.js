@@ -4514,7 +4514,8 @@ function _pumpTut () {
   _renderDialogue()
 }
 
-/** Mom's job is over (any end) and its card put away: Larry's welcome, then the opening is finished for good. */
+/** Mom's job is over (delivered at Larry's: BUG-117 left it no other end) and its card put away: Larry's welcome,
+ *  then the opening is finished for good. */
 function _checkOpeningEnd () {
   if (_paperScenario) return   // FEAT-62: the scenario has no opening to end
   // null = no mom on the roster (never expected — her count is hard): Larry still welcomes you.
@@ -6775,7 +6776,9 @@ function _renderMissionUI () {
   const pick = m.state === 'offer' ? _haulPick(m.offer) : null
   if (nb) nb.disabled = m.state === 'offer' && !!m.offer
     && (_offerVerdict(m.offer, pick?.n ?? null)?.verdict === 'overload' || (pick != null && pick.max < 1))
-  _syncJobCancel(hud, storySystem.isActive() && m.isOnJob())
+  // BUG-117 (owner 11-06): mom's casserole has no abandon, as it has no deadline — it ends at Larry's, where his
+  // welcome finishes the tutorial; until then one-job-at-a-time holds every other job back.
+  _syncJobCancel(hud, storySystem.isActive() && m.isOnJob() && offerBoard?.firstState() !== 'taken')
 }
 
 /**

@@ -154,6 +154,15 @@ const park = async (fresh = false) => {
   if (!await js('window.__vs.parked')) await tap(' ')
 }
 const hold = async (k, s) => { await key(k, true); await simFor(s); await key(k, false) }   // s SIM seconds
+// BUG-117: mom's casserole has no abandon and no deadline — it ends at Larry's. Seat at its route's end, facing along
+// the last segment: the first update leaves her start zone (the run starts), the next arrives (within 28 m, no park).
+const deliverFirst = async () => {
+  check(await js('window.__board().firstState() === "taken" && window.__mission().mission?.dueH === Infinity && !document.getElementById("job-cancel").offsetParent'),
+    `the casserole is not in hand with no deadline and no abandon (BUG-117): ${await js('JSON.stringify({ first: window.__board().firstState(), due: String(window.__mission().mission?.dueH), cancel: !!document.getElementById("job-cancel").offsetParent })')}`)
+  const e = await js('(() => { const p = window.__mission().mission.poly, a = p.at(-2), b = p.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
+  await seat(e.x, e.z, e.h)
+  check(await until(() => js('window.__mission().state === "done"'), 5000), `seated at Larry's, the casserole did not arrive: ${await js('window.__mission().state')}`)
+}
 // FEAT-170: every new run opens on the firing; holding M a second (the prompt says so) skips it, landing at
 // mom's at 07:00 with her casserole in hand. Wall-clock: the hold is a real-time timer, not sim time.
 const skipOpening = async () => {
@@ -315,10 +324,8 @@ const STEPS = [
     check(a.s === 'staging' && !a.a && a.d < 10 && Math.abs(a.h - 7) < 0.1, `the skip is not at mom's at 07:00 with the job staging: ${JSON.stringify(a)}`)
     check(!await dlg(), 'a card is up after the skip (FEAT-170: Larry speaks after the casserole)')
     check(await js('getComputedStyle(document.getElementById("skip-hint")).display === "none"'), 'the skip prompt outlived the skip')
-    // Put it down (parked, two clicks, then the result card): Larry's welcome, then his intro (R-11).
-    if (!await js('window.__vs.parked')) await park()
-    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
-    check(await until(() => js('window.__mission().state === "done"'), 2000), 'abandoning the casserole did not end it')
+    // Deliver it (BUG-117: it ends at Larry's), then the result card: Larry's welcome, then his intro (R-11).
+    await deliverFirst()
     await js('document.getElementById("mp-accept").click()')
     check(await until(dlg, 3000), 'no Larry after the casserole (R-11 / FEAT-170)')
     const dlgText = () => js('document.getElementById("dialogue-panel").textContent')
@@ -1138,10 +1145,8 @@ const STEPS = [
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     // FEAT-170: a new run starts with mom's casserole in hand, and the win waits for no job to be active (in
-    // play every line is a job, so the casserole is long done) — put it down, and read off Larry after it.
-    if (!await js('window.__vs.parked')) await park()
-    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
-    check(await until(() => js('window.__mission().state === "done"'), 2000), 'abandoning the casserole did not end it')
+    // play every line is a job, so the casserole is long done) — deliver it (BUG-117), and read off Larry after it.
+    await deliverFirst()
     await js('document.getElementById("mp-accept").click()')
     const larry = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     await until(larry, 3000)
@@ -1318,8 +1323,9 @@ const STEPS = [
     check(await until(() => js('window.__board().firstState() === "taken"'), 8000), 'holding View did not skip the opening')
     // The glyphs: the pad drove last, so every keycap reads its button.
     check(await js('document.body.classList.contains("pad-on")'), 'body.pad-on is off while the pad drives')
-    // The casserole, abandoned through the B menu: its LAST entry, never the pre-selection (no B tap can arm it),
-    // labelled by its words; ↑ wraps to it, the release arms it, a second trip confirms.
+    // The B menu's "abandon job": its LAST entry, never the pre-selection (no B tap can arm it), labelled by its words;
+    // ↑ wraps to it, the release arms it, a second trip confirms. Mom's casserole has none (BUG-117): driven at the
+    // giver below, on a job taken there.
     const pick = async () => {
       await js('__fp.b[1] = 1'); await frames(4, 200)
       const first = await js('document.querySelector(".menu-sel")?.id')
@@ -1329,13 +1335,7 @@ const STEPS = [
       return r
     }
     if (!await js('window.__vs.parked')) await padPark()
-    check(await js('getComputedStyle(document.querySelector("#job-cancel .kc-pad")).display !== "none" && getComputedStyle(document.querySelector("#job-cancel .kc-kb")).display === "none"'),
-      `the abandon button does not show its pad glyph: "${await js('document.getElementById("job-cancel").innerHTML')}"`)
-    const a1 = await pick()
-    check(a1.first !== 'job-cancel' && a1.sel === 'job-cancel' && /abandon job/.test(a1.label), `the B menu's abandon entry: ${JSON.stringify(a1)}`)
-    check(/confirm\?/.test(await js('document.getElementById("job-cancel").textContent')), 'picking "abandon job" did not arm it')
-    await pick()
-    check(await until(() => js('window.__mission().state === "done"'), 3000), 'the second pick did not abandon the casserole')
+    await deliverFirst()   // no abandon in the B menu either: the button it reads is hidden (checked inside)
     await btn(13); await btn(0)   // the result card: the D-pad puts the highlight on continue, A presses it
     check(await until(dlg, 3000), 'A on the result card brought no Larry')
     await readCards()
@@ -1383,8 +1383,18 @@ const STEPS = [
     await hold(5, 450)
     check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
     check(await until(offerUp, 6000), 'parking at the giver opened no offer card')
-    await padTo('mp-decline'); await btn(0)
-    check(await until(() => js('document.getElementById("mission-panel").style.display !== "block"'), 2000), 'A on decline left the offer up')
+    // Take it (A on accept), then put it down through the B menu: the abandon entry, armed, confirmed, and its result card.
+    await padTo('mp-accept'); await btn(0)
+    check(await until(() => js('window.__mission().isOnJob() && !!document.getElementById("job-cancel").offsetParent'), 3000), 'A on accept took no job with an abandon button')
+    check(await js('getComputedStyle(document.querySelector("#job-cancel .kc-pad")).display !== "none" && getComputedStyle(document.querySelector("#job-cancel .kc-kb")).display === "none"'),
+      `the abandon button does not show its pad glyph: "${await js('document.getElementById("job-cancel").innerHTML')}"`)
+    const a1 = await pick()
+    check(a1.first !== 'job-cancel' && a1.sel === 'job-cancel' && /abandon job/.test(a1.label), `the B menu's abandon entry: ${JSON.stringify(a1)}`)
+    check(/confirm\?/.test(await js('document.getElementById("job-cancel").textContent')), 'picking "abandon job" did not arm it')
+    await pick()
+    check(await until(() => js('window.__mission().state === "done"'), 3000), 'the second pick did not abandon the job')
+    await btn(13); await btn(0)
+    check(await until(() => js('!window.__mission().isActive()'), 2000), 'A on the abandoned job\'s result card left it up')
     // The pump: A held pumps, RB lets go of the brake and pays.
     const pz = (await client.cmd('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
       const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("/src/poi.js")))
