@@ -9125,6 +9125,7 @@ document.getElementById('tc-back')?.addEventListener('click', () => {
 // FEAT-172 (owner, 2026-11-06): giving up while the truck is stranded is breaking down.
 document.getElementById('tc-end')?.addEventListener('click', () => _endRun(recoveryCard(_recoveryState()).stuck ? 'broke' : 'towel'))
 window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
+window.__worldCode = () => formatWorldCode(_seedString, activeWorld())   // dev handle — cdp-smoke names a failed step's world
 window.__poi = () => poiSystem      // dev handle — test/cdp-smoke.mjs drives at a barricade row (FEAT-154)
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
