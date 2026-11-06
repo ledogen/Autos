@@ -27,8 +27,8 @@ import { FLORA_PARAMS } from '../../data/flora.js'
 import { DEFAULT_VEHICLE_MODEL } from '../../data/vehicle-models.js'
 import { makeTerrainHeadless } from './terrain-headless.mjs'
 
-const TER_RING = 2      // chunks of terrain collider around the truck (±2 → a 5×5, 320 m square)
-const ROAD_RING = 2     // road tiles likewise
+const TER_RING = 1      // chunks of terrain collider around the truck (±1 → a 3×3, 192 m square: the chassis meets nothing farther)
+const ROAD_RING = 1     // road tiles likewise
 const PROP_RING = 1     // the prop scatter's full ring (the game's near ring; trees past it are billboards)
 
 /**

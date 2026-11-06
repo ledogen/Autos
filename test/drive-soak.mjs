@@ -34,7 +34,7 @@ const STRUT_N = 40000          // N — [DEFAULT] a tire's normal force on the r
 const JOLT_DV = 0.9            // m/s in one 1/60 s step (≈ 5.5 g) — [DEFAULT]
 const HIT_IMPULSE = 1500       // N·s — a hard chassis hit (≈ 1.1 m/s of the truck) [DEFAULT]
 const CAPTURE_S = 10
-const V_MAX = 24, A_LAT = 3.5  // m/s, m/s² — the autopilot's cruise and its cornering budget
+const V_MAX = 24, A_LAT = 3.5, A_BRAKE = 3   // m/s, m/s² — the autopilot's cruise, its cornering and braking budgets
 const OFFROAD_EVERY_KM = 2
 
 const seeds = arg('seed') ? [+arg('seed')] : Array.from({ length: +arg('seeds', 4) }, () => (Math.random() * 2 ** 31) >>> 0)
@@ -145,7 +145,7 @@ async function soakSeed (seed, replay = null) {
   const stepLimit = replay ? replay.inputs.length : Infinity
   const vPrev = new THREE.Vector3()
   const simCap = KM * 1000 / 4 + 120   // s — a seed that cannot average 4 m/s is reported, not waited on
-  let lastLog = 0, stillT = 0
+  let lastLog = 0, stillT = 0, lostT = 0, resets = 0
   while (dist < KM * 1000 && steps < stepLimit && t < simCap) {
     // ── the autopilot (or the capture's inputs) ──
     let thr, brk, steer
@@ -169,16 +169,24 @@ async function soakSeed (seed, replay = null) {
         let j = idx, acc = 0
         while (j < router.path.length - 1 && acc < L && !router.path[j + 1].jump) { acc += Math.hypot(router.path[j + 1].x - router.path[j].x, router.path[j + 1].z - router.path[j].z); j++ }
         target = router.path[j]
-        // speed by the tightest turn in the next ~50 m: R from the turn angle over the arc
-        let rMin = Infinity
-        for (let a = idx, arc = 0; a < router.path.length - 6 && arc < 50; a += 3) {
-          const p0 = router.path[a], p1 = router.path[a + 3], p2 = router.path[a + 6]
-          if (router.path.slice(a + 1, a + 7).some(q => q.jump)) break
-          const h1 = Math.atan2(p1.z - p0.z, p1.x - p0.x), h2 = Math.atan2(p2.z - p1.z, p2.x - p1.x)
-          const dh = Math.abs(Math.atan2(Math.sin(h2 - h1), Math.cos(h2 - h1))), seg = Math.hypot(p2.x - p1.x, p2.z - p1.z)
-          if (dh > 1e-3) rMin = Math.min(rMin, seg / dh)
-          arc += Math.hypot(p1.x - p0.x, p1.z - p0.z)
+        // speed by the tightest turn in the next ~60 m: the circumradius of three points 8 m apart by ARC (index steps
+        // met duplicate points where two edges join — zero-length chords with any heading — and read hairpins everywhere)
+        // …and each corner's speed relaxed by the braking distance to it, so the truck arrives slow enough: v² = v_c² + 2·a·s
+        const ahead = []
+        for (let a = idx, arc = 0, last = router.path[idx]; a < router.path.length - 1 && arc < 90; a++) {
+          const q = router.path[a + 1]
+          if (q.jump) break
+          const ds = Math.hypot(q.x - last.x, q.z - last.z)
+          if (ds >= 8 || !ahead.length) { arc += ds; ahead.push({ ...q, s: arc }); last = q }
         }
+        let vPlan = V_MAX
+        for (let a = 0; a + 2 < ahead.length; a++) {
+          const A = ahead[a], Bp = ahead[a + 1], C = ahead[a + 2]
+          const ab = Math.hypot(Bp.x - A.x, Bp.z - A.z), bc = Math.hypot(C.x - Bp.x, C.z - Bp.z), ca = Math.hypot(A.x - C.x, A.z - C.z)
+          const cross = Math.abs((Bp.x - A.x) * (C.z - A.z) - (Bp.z - A.z) * (C.x - A.x))
+          if (cross > 1e-6) vPlan = Math.min(vPlan, Math.sqrt(A_LAT * ab * bc * ca / (2 * cross) + 2 * A_BRAKE * Bp.s))
+        }
+        const rMin = vPlan * vPlan / A_LAT
         vT = Math.min(V_MAX, Math.sqrt(A_LAT * rMin))
         if (dist + offDist > nextOff) {   // an off-road leg: 120–200 m out to one side, over whatever is there
           nextOff += OFFROAD_EVERY_KM * 1000
@@ -195,6 +203,10 @@ async function soakSeed (seed, replay = null) {
       const lim = P.maxSteerAngle / (1 + v / P.speedSteerRef)
       const desired = Math.max(-lim, Math.min(lim, Math.atan2(2 * P.wheelbase * Math.sin(alpha), Ld)))
       steer = vs.steerAngle + Math.max(-4.8 * DT, Math.min(4.8 * DT, desired - vs.steerAngle))
+      if (process.env.SOAK_LOG === '2' && steps % 60 === 0) {
+        let lat = Infinity; for (let j = Math.max(0, idx - 5); j < Math.min(router.path.length, idx + 5); j++) lat = Math.min(lat, Math.hypot(router.path[j].x - p.x, router.path[j].z - p.z))
+        console.log(`      t ${t.toFixed(0)} idx ${idx} lat ${lat.toFixed(1)} v ${v.toFixed(1)}/${vT.toFixed(1)} alpha ${alpha.toFixed(2)} steer ${steer.toFixed(3)} (lim ${lim.toFixed(2)}) target ${Ld.toFixed(1)} m${offroad ? ' OFF-LEG' : ''}`)
+      }
       const e = vT - v
       thr = e > 0 ? Math.min(1, 0.25 + 0.35 * e) : 0
       brk = e < -1.5 ? Math.min(1, -0.15 * e) : 0
@@ -232,15 +244,20 @@ async function soakSeed (seed, replay = null) {
       const hp = hit.point ? new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z).applyQuaternion(vs.quaternion).add(p) : p
       const near = w.props.queryProps(hp.x, hp.y, hp.z, 4, []).length || w.pois.queryContact(hp.x, hp.y, hp.z, 6)
         || w.road.tunnelSpanAt?.(nr?.runKey ?? '', nr?.arcS ?? 0)
-      const groundHit = hit.normal && Math.abs(new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z).applyQuaternion(vs.quaternion).y) > 0.7
-      if (!near && !groundHit) flag('collider', hit.impulse)
+      // On the drawn terrain or road (a bank, a kerb, the deck): visible, whatever its slope — so its normal says nothing.
+      const onSurface = Math.abs(hp.y - ground(hp.x, hp.z, hp.y)) < 0.5
+      if (!near && !onSurface) flag('collider', hit.impulse, { hitAt: { x: +hp.x.toFixed(2), y: +hp.y.toFixed(2), z: +hp.z.toFixed(2) }, surfaceY: +ground(hp.x, hp.z, hp.y).toFixed(2) })
     }
     const v = vs.velocity.length()
     stuckT = onRoad && vs.throttle > 0.5 && v < 0.5 ? stuckT + DT : 0
     if (stuckT > 5) { flag('stuck', stuckT); stuckT = 0; if (replay) break; seatAt(Math.min(idx + 40, router.path.length - 1)); continue }
-    // Anywhere else (off the road, a cliff, a pond) the autopilot is the thing stuck, not the road: put it back.
+    // Anywhere else (off the road, a cliff, a pond) the autopilot is the thing stuck, not the road: put it back. Likewise
+    // when it has lost its route (overshot a corner and circling) — an autopilot failure, not a finding.
     stillT = v < 0.5 ? stillT + DT : 0
-    if (stillT > 10 && !replay) { stillT = 0; offroad = null; seatAt(Math.min(idx + 40, router.path.length - 1)); continue }
+    let lat = Infinity
+    if (!offroad) for (let j = Math.max(0, idx - 3); j < Math.min(router.path.length, idx + 8); j++) lat = Math.min(lat, Math.hypot(router.path[j].x - p.x, router.path[j].z - p.z))
+    lostT = lat > 8 ? lostT + DT : 0
+    if ((stillT > 10 || lostT > 4) && !replay) { stillT = lostT = 0; offroad = null; resets++; seatAt(Math.min(idx + 15, router.path.length - 1)); continue }
     if (t - lastLog >= 10 && process.env.SOAK_LOG) { lastLog = t; console.log(`    t ${t.toFixed(0)} s · ${(dist / 1000).toFixed(2)} km · v ${v.toFixed(1)} · (${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}) ${onRoad ? 'road' : offroad ? 'off-road' : 'OFF'} · ${((performance.now() - t0) / 1000).toFixed(0)} s wall`) }
 
     // ── book-keeping: distance, streaming, the capture window ──
@@ -251,7 +268,7 @@ async function soakSeed (seed, replay = null) {
   }
   w.dispose()
   const wall = (performance.now() - t0) / 1000
-  return { seed, buildS: +buildS.toFixed(1), km: +(dist / 1000).toFixed(2), offKm: +(offDist / 1000).toFixed(2), simS: +t.toFixed(0), wallS: +wall.toFixed(0), counts, worst }
+  return { seed, buildS: +buildS.toFixed(1), km: +(dist / 1000).toFixed(2), offKm: +(offDist / 1000).toFixed(2), simS: +t.toFixed(0), wallS: +wall.toFixed(0), resets, counts, worst }
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -267,7 +284,7 @@ for (const seed of seeds) {
   const r = await soakSeed(seed)
   all.push(r)
   const c = Object.entries(r.counts).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(' · ') || 'clean'
-  console.log(`seed ${seed}: ${r.km} km on the road + ${r.offKm} km off, ${r.simS} sim-s in ${r.wallS} s (build ${r.buildS} s) — ${c}`)
+  console.log(`seed ${seed}: ${r.km} km on the road + ${r.offKm} km off, ${r.simS} sim-s in ${r.wallS} s (build ${r.buildS} s, ${r.resets} autopilot re-seats) — ${c}`)
   writeFileSync(`${OUT}/summary.json`, JSON.stringify(all, null, 1))
 }
 const byKind = {}
