@@ -896,11 +896,12 @@ export class PaperRouteSystem {
      * free (owner ruling). The offer is held until BOTH are finished, so a slow plan reads as a
      * long-winded uncle rather than as a hang.
      */
-    open (giver, offer = null) {
+    open (giver, offer = null, sizeIdx = runPaper.tier) {
         if (this.state !== 'idle' || !giver) return
         this.giver = giver
         this.offer = offer
-        this.sizeIdx = runPaper.tier   // the top unlocked size; setSize() picks a smaller one
+        // the top unlocked size by default; setSize() picks a smaller one. FEAT-62's scenario opens on its own rung.
+        this.sizeIdx = Math.max(0, Math.min(sizeIdx, runPaper.tier))
         this.error = null
         this.result = null
         this.route = null

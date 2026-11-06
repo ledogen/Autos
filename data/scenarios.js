@@ -12,6 +12,8 @@
 // gates standing in a field. If it fails, re-extract the poses; do not loosen the gate.
 //
 // Fields:
+//   kind              — 'trial' (default: the gates below) or 'paper' (the paper route at Larry's: no poses,
+//                       the world's own POIs place it; main.js _startPaperScenario)
 //   id, name, blurb   — menu text; id is also the leaderboard key, so never rename a shipped one
 //   seed              — world seed STRING, exactly what the seed prompt would take
 //   spawn             — truck pose at load / restart {x, z, heading}
@@ -62,5 +64,15 @@ export const SCENARIOS = [
       { x: -1371.94, z:   139.46, heading:  0.8483 },
     ],
     finish: { x: -1609.35, z:    63.98, heading:  2.0154 },
+  },
+  {
+    // FEAT-62's drafted first scenario, the paper route (FEAT-61) on the owner's seed-90 world. Owner 2026-11-06:
+    // start at Larry's, a briefing on the paper controls only, every rung of the ladder open, story par. The board
+    // keeps one list per rung (`paper-90:<customers>`).
+    kind: 'paper',
+    id: 'paper-90',
+    name: 'the paper route',
+    blurb: 'Larry\'s papers: 4, 9, 12 or 15 customers against story par',
+    seed: '90',
   },
 ]

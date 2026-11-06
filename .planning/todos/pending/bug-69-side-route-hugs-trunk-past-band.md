@@ -82,3 +82,43 @@ centre lines). That one needs its own ticket.
 
 **Next step needs a go:** the ticket's narrow fix (an occupancy price on the ~60 m past a T's departure
 band) re-routes edges, so every world moves. Not built.
+
+## Case study for the owner — Spare, 2026-11-06 (owner: "i need to see this in its own case study artifact please")
+
+**BUG-105 did not change this class.** Seeds 1–12 re-run on main `14c6feb6`: seed 2 (1619, −620) 1.43 m short over 8 m,
+seed 5 (991, −1263) 2.55 m over 8 m, seed 12 (−814, −361) 3.50 m over 48 m, plus seed 12 (−821, −1596) 2.11 m over
+4 m. It is banks-only contact, which BUG-105 reports and does not chase. Seed 10's overlapping legs, the worse
+defect this census found, are gone: BUG-105 fixed them.
+
+**On random seeds** (BUG-105's 140-window census, census 10): **25 rows** are two legs of one junction with the side
+10–23 m below, short of the rule by 1.0–6.2 m over 4–144 m.
+
+**The ticket's narrow fix has nothing to act on.** The price past a T's departure band was prototyped (`58e5b8ff`,
+reverted): it changed no row. Today's rows are mostly not a T's side road. They are two plain legs of one junction
+that leave at a narrow angle and part only 100–150 m out, one climbing, one descending. FEAT-77 already names one
+the loser and re-routes it, but the re-route comes back identical (seed 12: pass 1 = pass 2). The berth is graded,
+`wClear · (1 − d/req)`, so at 25 m against the 28.5 m the rule wants it costs ~1.5 per metre. That is less than the
+grade the leg would buy by going round.
+
+**The lever that works: a stronger berth between legs of one junction.** Prototype `474b6d42` on
+`proto/bug-69-past-band` (worktree `CarGame-bug69`): a loser re-routing against a leg of its own junction carries
+`wClear` ×10 in its occupancy payload. Seed 12: both misses clear. Seeds 2 and 5 do not move, because they are
+other mechanisms:
+- seed 2 is a T's departure;
+- seed 5's legs are 15–22 m apart for the first 100 m, the junction's own ground. A T is forecast but none ships.
+
+Census of the prototype over the 140 windows is running (what clears, GRAZE must stay 4, the footprint).
+
+**Prototype census** (BUG-105's 140 windows, `CarGame-bug69/wip/bug-105/census-p69` vs `census10`):
+
+| | main | 10× junction-leg berth |
+|---|---|---|
+| this ticket's shape (banks, legs of one node, ≥ 10 m height split) | 25 (580 m) | 22 (460 m): 5 cleared, 2 new; worst still 6.2 m short |
+| GRAZE (BUG-105's tier) | 4 | **5**: 2489161098 (308, 1132) new, 15.3 m for 32 m; seed 51 (1809, 18) back (BUG-105's forced-join T no longer forms), 19.9 m for 52 m; 2757792661 cleared |
+| windows whose roads changed | — | **94 of 140** (~150 km re-keyed) |
+
+**Case-study page:** https://claude.ai/artifact/M9S2yYEjKTCNJPZqypBAgt (7 random-seed sites: the shape, what the fix clears,
+what it breaks; generator `wip/bug-69/sheets/gen-page69.mjs`).
+- Recommendation: **leave.** It is the owner's 2026-09-20 read, and BUG-64 (a) covers banks meeting.
+- The choice put to the owner: 1 leave / 2 go with the fix as measured.
+- The prototype stays on `proto/bug-69-past-band` (`474b6d42`) until the owner answers.

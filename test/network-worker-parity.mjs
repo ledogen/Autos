@@ -312,5 +312,24 @@ const routeDispatcher = (rs, fields) => (jobs, epoch) => rs.ingestRoutedConnecti
     applyWorld(WORLD_PRESETS.classic)
 }
 
+// ── BUG-106: the owner's teleport history, on ONE warm instance (as one long-lived worker epoch) ─────────
+// Capture autos-capture-1793661649555 (seed 163384989): the session's first build at (−7571, 4361), the last stream
+// centre ~50 km away at the mark. The warm instance used to keep the FIRST request's pond discs, so the build at the
+// mark routed with no ponds and drew run g:-57,72,1:-57,73,2 through a lake; a cold build has no road there.
+{
+    const S6 = 163384989, R6 = 320, A6 = { x: -7571.26, z: 4360.75 }, M6 = { x: -36090.83, z: 46673.01 }
+    const w6 = new WaterSystem(S6, RANGER_PARAMS, makeTerrainHeadless(S6, RANGER_PARAMS, null).rawHeightWorld)
+    const d6 = (minX, minZ, maxX, maxZ) => { const o = []; for (const p of w6.pondsNear(minX, minZ, maxX, maxZ)) o.push(p.floorX, p.floorZ, p.radius + p.skirt); return o }
+    const req6 = (c) => ({ seed: S6, params: snap, center: c, radius: R6,
+                           pondDiscs: Float64Array.from(d6(c.x - R6 - DISC_PAD, c.z - R6 - DISC_PAD, c.x + R6 + DISC_PAD, c.z + R6 + DISC_PAD)) })
+    const ref6 = new RoadSystem(S6, RANGER_PARAMS)
+    ref6.setWaterNoGo((x, z) => w6.isRoadNoGo(x, z), d6)
+    ref6.setRadius(R6)
+    ref6.update(new THREE.Vector3(M6.x, 0, M6.z))
+    const first = buildNetworkSnapshot(req6(A6), null)
+    compareExports('BUG-106: teleport history (first build 50 km away) on one warm instance == cold build at the mark',
+                   ref6.exportNetwork(), structuredClone(buildNetworkSnapshot(req6(M6), first.rs).data), { skipTallies: true })
+}
+
 console.log(`\n${fail === 0 ? 'ALL NETWORK-WORKER-PARITY CHECKS PASSED' : `${fail} CHECK(S) FAILED`} (${pass} passed)`)
 process.exit(fail === 0 ? 0 : 1)
