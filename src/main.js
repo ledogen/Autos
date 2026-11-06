@@ -8187,6 +8187,7 @@ const storySystem = new StorySystem({
     // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
     daySystem.start(...(opening === 'firing' ? [OPENING_START.day, OPENING_START.hour] : []))
     _eveningGuide = undefined
+    _openingSeat = null
     _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
@@ -8737,6 +8738,7 @@ window.__cargo = () => ({ board: offerBoard, freight: _freight && { key: _freigh
                           site: _site && _site.targets.map(t => ({ x: t.pos.x, z: t.pos.z, body: t.body, smashed: t.smashed })) })   // FEAT-65
 // dev handle — test/cdp-smoke.mjs fells a demolition site's targets and reads the GPS's pick (FEAT-65 slice 2)
 window.__site = () => _site && { ..._site, gps: gpsSystem._src }
+window.__gps = () => gpsSystem._src   // the GPS's route right now (cdp-smoke: the opening's evening)
 
 /** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
 function _discardRunSave () {
