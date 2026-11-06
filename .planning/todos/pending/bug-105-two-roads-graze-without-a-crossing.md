@@ -255,3 +255,59 @@ Stage 2 is the main fix, and its T-at-the-touch design gets written up here befo
 Work on `feature/spare` (`/Users/ledogen/CodeShit/CarGame-spare`, :3885) after PERF-31 lands. Probes go in
 `wip/bug-105/`. The prototype `proto/bug-105` (`CarGame-bug105`) is the reference, and it is retired once Stage 1 is
 ported.
+
+### Stage 0 — measured (2026-11-06)
+
+`wip/bug-105/touch-census.mjs` runs on the SHIPPED network. It uses road-clearance's exact accounting, the owner's
+near-miss tolerance, and plan crossings at any height. Worlds are built the way the game builds them (pond no-go),
+and each touch is classified against the build's own plan graph, captured where assembly hands it to the T
+promotion.
+
+The sample: 127 distinct 1400 m windows, about 4 850 km of road. That is 100 random seeds (`wip/bug-105/rand100.txt`,
+mulberry32 from `0xB105B104`), the 20 seeds in `seeds.txt`, and the known sites (capture 2 does not reproduce cold,
+as recorded above).
+
+**Result: 57 touches plus 1 unregistered crossing, in 44 windows.** The crossing is at seed 3502246374 (1628, 137),
+with the decks 5.1 m apart and no bore.
+
+**No touch is made by promotion geometry.** Every touch's two points lie on the plan's own final lines. So Stage 2's
+backstop has nothing of its own to catch. Every touch is a plan-layer ownership question.
+
+**By mechanism and severity.** The severity bands are by centreline separation:
+- "overlap" is under 10 m, where the pavements lie on each other;
+- "daylight" is under 22 m, which leaves less than the owner's 12 m of daylight between pavement edges;
+- "banks only" means the pavements are clear, but one road's cut or fill reaches the other because of the height
+  between them.
+
+| class | overlap < 10 m | daylight < 12 m | banks only |
+|---|---|---|---|
+| **A: the clearance pass deferred the pair, and NO T was planned for it** | **9 (1 044 m)** | **14 (1 016 m)** | 3 (28 m) |
+| B: legs of a planned T, 32–120 m from the T | 0 | 1 (32 m) | 19 (288 m) |
+| B2: a mid-span T planned for the pair, the touch ~500 m away | 1 (76 m) | 1 (44 m) | 0 |
+| C: inside the rule, not deferred (the clearance pass's own residue) | 0 | 2 (144 m) | 7 (168 m) |
+
+**Class A is the bug the owner described.** It holds every pavement overlap but one, and most of the grazes:
+BUG-105's mark, BUG-104's seeds 10, 51 and 52, 158847947, and the worst, seed 2078771719 (−165, −430), at 0.5 m apart
+for 92 m. Splitting it by the plan GRAPH (a T promotion re-keys ends, so the shipped network's node sharing is not
+the graph's):
+- **23 are legs of one graph node** (1 796 m). This is the prototype `33b041f1`'s case.
+- **4 are graph-disjoint** (292 m): 158847947, and three touches at seed 1276865166 (−212…−267, 215…254), all against
+  edge `0,0,0|-1,1,2`. This is the disjoint forecast's case.
+
+**Class B is not a graze.** These are two legs of a T whose pavements already have ≥ 12 m of daylight. Their banks
+meet 32–120 m from the T because the legs sit 7–24 m apart in height. That is BUG-64's earthwork territory, and it is
+the shape the owner's near-miss ruling (a) covers ("reads neither these nor BUG-64's walls as a problem in play").
+The tolerance is just narrower than these: they miss by 1.2–7 m, over 4–44 m.
+
+**Plan adjustment, from the numbers:**
+1. **Two tiers.**
+   - **GRAZE gates at zero:** centres under 2·HW + clearEdgeM (22 m), outside junction ground, plus every plan
+     crossing. Over the census: **29 + 1**.
+   - **BANKS is reported and ranked, not chased:** banks-only contact. Over the census: **29, all short**.
+   - This narrows the plan's "zero inside FEAT-77's rule", and it is a call for the orchestrator and the owner. The
+     recommendation is to adopt it, because chasing banks-only means moving T legs for earthwork the owner has said
+     he does not read as a problem.
+2. **Stage 1 is the fix.** Port `33b041f1` for the 23 legs-of-one-node pairs. Add the disjoint forecast for the 4.
+3. **Stage 2 shrinks.** It no longer needs a shipped-line backstop. Its job becomes the four graze-tier pairs outside
+   class A: B2's two, where the T owns one interval and the deferral wrongly covers the whole pair, and C's two.
+   Each gets a look after Stage 1's census.
