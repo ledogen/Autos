@@ -71,5 +71,43 @@ layer, and they stack in the rendered camp: ground at the bottom, bedding on it,
   checks the layer rules, the starter Pack over 20 runs, and +35 %. inventory §6b now runs the layered rule.
 - **Sheet:** `wip/feat-171/sheet.mjs` (24 stacks, two views each, on the lab's flat floor) → `wip/feat-171/sheet.png`.
 
-**Owed:** the owner's look (the sheet, then at camp). [DEFAULT]s: the drape's fall 2.5 and reach 3 cm, the quilt's
+## Owner's look, round 1 (2026-11-06, relayed by the orchestrator) — and the fix
+
+> "literally everything looks good except the folded over corner of the sleeping bag. on its own but especially
+> with the pillow. use screenshot review to get just the bag with pillow looking right. since we're here also make
+> the blankets a little bit longer so they go midway up the bedroll/bag"
+
+What was wrong, in close renders (`wip/feat-171/bag-review.py`: the bag alone and with its pillow, four views):
+
+- The turned-back stretch of the head collar, a 12 cm tube, ran straight through the pillow's footprint. It stood
+  7 cm proud of a 5 cm flap and read as a log beside the pillow.
+- The flap's lining and the lining it uncovered were the same flannel, so the corner read as one tan square. At
+  full loft the flap stood up as a stiff wedge.
+
+Fixed (f1fb5de2, c481bf0e):
+
+- **The corner** is turned back on the opened half only (fold 0.35 m, was 0.60). The flap is pressed to 55 % of its
+  loft. The uncovered lining is a shade darker (`FlannelShade`, the inside of the bag), so the flap reads against the
+  hole it left. The collar runs along the kept head edge and ends in a round cap at the fold; on the shell side, its
+  turned stretch would lie under the flap.
+- **The pillow** sits beside the corner (y 0.105, 0.36 × 0.30 m), over the narrowest pad's top: the sleeping pad's
+  ±0.255 m plus the drape's 3 cm flat reach.
+- **The blanket and the quilt** run from the bed's middle to their old foot edge (0–0.80 m; they were 0.30/0.24–0.80).
+- Found on the in-game sheet over pads, not in the bag-alone renders:
+  - The lining was a separate 1 mm sheet on its own grid; draped, it crossed the slab and striped green. It is now
+    the slab's own top inside a 2 cm rim (`sheet(rim=)`).
+  - The drape bent the pillow vertex by vertex, shearing it into a beak over a pad's edge and the deluxe pad's 3.5 cm
+    head rise. `stackBed` now lifts a `PillowCase` mesh in one piece, by the highest field under it.
+
+Re-exported: sleeping bag 9 037 tris, blanket 5 324, quilt 2 012; bag thumbnail re-rendered. Gates green:
+camp-gear (24 stacks, worst sink 0.6 cm, hover 1.8 cm), inventory, dist-assets, model-palette, model-variant.
+
+**Known, left as is:** on the two narrow pads (0.51 m sleeping pad, 0.64 m deluxe) the turned corner hangs over the
+pad's edge, so the flap folds down with the bag's side, and on the deluxe pad over its head rise too. That is the drape
+doing its job: the bag is 35 cm wider than the sleeping pad. It only shows in the close head view.
+
+**New sheet:** `wip/feat-171/sheet.png` (bag stacks first, then bedroll; three views each, the third close on the head
+from the bag's opened side); halves `sheet-sleepingBag.png` / `sheet-bedroll.png`, preview `sheet-small.png`.
+
+**Owed:** the owner's look at the new sheet, then at camp. [DEFAULT]s: the drape's fall 2.5 and reach 3 cm, the quilt's
 mass and colours.
