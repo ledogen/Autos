@@ -137,10 +137,19 @@ function bakeBlobs(P, rng, kind) {
       // Bush soft-drag extent is the full visual reach (unchanged) — it's a gentle field, not a wall.
       collision = { kind, radius: geo.boundingSphere.radius }
     }
-    out.push({ geo, collision })
+    out.push({ geo, collision, radius: drawnRadius })
   }
   return out
 }
+
+/**
+ * BUG-54: each ROCK variant's own drawn radius, by category — what prop-scatter.js placeBlob sinks a rock by
+ * (the scatter can't replay the palette's rng, so the palette hands it over on the samplers). Bushes keep the
+ * category's nominal sink: only the rocks were ruled.
+ * @returns {Record<string, number[]>}
+ */
+export const blobRadii = (variants) => Object.fromEntries(['rock', 'boulder', 'medRock', 'smallRock']
+  .filter(c => variants[c]).map(c => [c, variants[c].map(v => v.radius)]))
 
 /**
  * Build the full prop palette.

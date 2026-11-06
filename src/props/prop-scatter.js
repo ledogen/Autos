@@ -219,8 +219,10 @@ function chunkHelpers (cx, cz, samplers, P, out, rng) {
     const variant = (rngArg() * cfg.variants) | 0
     const scale = frange(rngArg, cfg.instScale)
     const bury = frange(rngArg, buryRange)
-    // approximate exposed half-height from the variant's nominal radius * axis-y
-    const halfH = cfg.blob.radius[1] * cfg.blob.axisScale[1] * scale
+    // Exposed half-height from the variant's OWN drawn radius × axis-y (BUG-54, owner 2026-11-06 "go": the range's
+    // largest radius sank a small rock ~4× too deep, some out of sight). samplers.blobRadius is the palette's
+    // (prop-palette.js blobRadii); without it (bushes, older fixtures) the nominal largest — placements unchanged.
+    const halfH = (samplers.blobRadius?.[cat]?.[variant] ?? cfg.blob.radius[1]) * cfg.blob.axisScale[1] * scale
     const gy = heightAt(x, z)          // analyticHeight → includes the stream carve, so channel rocks sit on the bed
     const pl = {
       cat, variant, x, z,
