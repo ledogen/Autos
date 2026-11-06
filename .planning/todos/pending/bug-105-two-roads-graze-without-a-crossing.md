@@ -240,7 +240,9 @@ Stage 2 is the main fix, and its T-at-the-touch design gets written up here befo
   - Stage 1's forecast reuses plan memos that already exist, plus one promotability probe per disjoint candidate.
   - Stage 2's walk uses the same within-skip PERF-31 added, so it is roughly tens of ms per window, plus one route
     per joined touch.
-  - Budget: ≤ 5 % of the network thread. Story entry at `--cpu=4` measured before and after; it must stay < 30 s.
+  - ~~Budget: ≤ 5 % of the network thread.~~ **Superseded by the orchestrator, 11-06: the owner's bar is story
+    entry < 30 s at cpu ×4, and halving the grazes is worth the network-thread cost** (measured +22 %; story entry
+    9.0 → 9.6 s). The owner can overrule this on the tracker page.
 - **Compute to prove it:** about 100 window builds per census pass, roughly 25 min on 4 cores. Expect 3–5 passes.
 - **World movement:** unknown until Stage 0. The prototype moved 7 sites in 20 seeds for Stage 1's node-sharing half.
 
@@ -596,3 +598,19 @@ final-plan-only step after the walk, over recorded candidates; role resolution s
 - Profile share of `_v2NodeMerges` 16.1 → 10.3 %, `_v2PlannedPair` 21.4 → 19.2 %, taken under load.
 - World-identity proof running: census 10 vs census 9 run keys, `fingerprint-world` vs `ea0f4c9d`
   (scratch worktree `CarGame-b105-before`), and the affected gates.
+
+**World-identity proof for `bc9c488b`:**
+- census 10 vs census 9: 0 of 140 windows changed, GRAZE still 4;
+- `fingerprint-world` vs `ea0f4c9d`: ALL IDENTICAL;
+- affected gates 58/58.
+
+**Quiet window (orchestrator, 11-06, load 2.3–3.5), `bc9c488b` vs main:**
+
+| measure | main | branch |
+|---|---|---|
+| network thread, 3× 1400 m seed 6 | 4.68 / 5.04 / 4.98 s (4.90) | 5.81 / 5.99 / 6.07 s (5.96): **+22 %** |
+| story entry, cpu ×4, seed 6, alternating | 8.8 / 9.1 / 9.0 s (9.0) | 9.6 / 9.5 / 9.6 s (9.6): **+0.6 s** |
+
+Network hash identical on both sides. The orchestrator's rule (story entry within +2 s of main) is met, and +22 % is
+the recorded cost. Landing: `npm run test:all -- --browser` on the branch with current main merged, then the hash
+goes to the orchestrator.
