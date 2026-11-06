@@ -150,6 +150,12 @@ const BODY_FRICTION_MU  = 0.1            // the tuned pair friction (BUG-27b)
 const SIDEWALL_V_REG    = 0.1
 const TERRAIN_FRICTION_REF = 0.8         // must match terrain-physics.js TERRAIN_FRICTION
 const CHASSIS_SHAPE_MU  = BODY_FRICTION_MU * BODY_FRICTION_MU / TERRAIN_FRICTION_REF   // ≈ 0.0125
+// BUG-115: the CAB hull (cowl, windshield, roof, back panel) is not a glancing bumper. At the body's 0.1 a truck on its
+// roof tobogganed down any slope over tan⁻¹ 0.1 = 5.7° (110 m in 10 s on 15°). Owner, 2026-11-06: (b) pair μ 0.3, which
+// holds to tan⁻¹ 0.3 = 16.7° and still glances off in a swipe (0.5 grabbed). Same geometric-mean inversion, so the PAIR on
+// terrain is CAB_PAIR_MU. The slab — bumpers, sills — keeps 0.1.
+const CAB_PAIR_MU       = 0.3            // [owner call BUG-115 (b)]
+const CAB_SHAPE_MU      = CAB_PAIR_MU * CAB_PAIR_MU / TERRAIN_FRICTION_REF          // ≈ 0.11
 // FEAT-88: the open BED gets its own material. On the body material above, a firewood bundle
 // (μ 0.8) met the floor at a pair μ of √(0.8 · 0.0125) = 0.10 — measured sliding on a 6° side slope
 // — and the walls bounced loads at the body's restitution. Owner, 2026-10-05: "still very slidey,
@@ -387,7 +393,7 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   engine.addHull(chassis, extrude([
     [P.cowlZ, 0.14], [P.cowlZ, P.hoodCowlY], [P.roofFrontZ, P.roofY],
     [P.roofRearZ, P.roofY], [cabRearZ, P.railY], [cabRearZ, 0.14],
-  ], P.cabHalfW), mat)
+  ], P.cabHalfW), { ...mat, friction: CAB_SHAPE_MU })
   // 4. Bed deck: cab back to the tail at rail height — SOLID (tonneau, see header note),
   //    unless the caller supplied an open-bed spec, in which case the same region is built as a
   //    WELL — floor, four walls and the two wheelhouse boxes — so something dropped from above
