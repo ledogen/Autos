@@ -1,7 +1,8 @@
 ---
 id: PERF-28
 type: perf
-status: open
+status: completed
+closed: 2026-11-06
 severity: major
 opened: 2026-08-24
 source: owner observation (2026-08-24) — "occasionally a .1-.2ms frame loss event" while
@@ -259,3 +260,20 @@ driving, and the one it does run is the harness's own artefact.
 3. Optional: one more cpu ×4 drive A/B pair to settle the +0.7 ms (×4) per-frame CPU question above.
 
 Cleanup: the 11-05 and 11-06 traces (about 2 GB) are deleted; the JSON summaries stay in perf-runs/.
+
+## Resolution (2026-11-06, Lane A) — CLOSED on evidence (orchestrator)
+
+The 0.1–0.2 s events were other GPU clients sharing the GPU (finding 1). On a clean GPU, current main has no
+streaming hitch class left: no streaming regression against 072692f0 at cpu ×4, and no mid-play shader
+compiles (BUG-98 closed that class). One spike was left: the AudioContext being built inside a fixed step, in
+headless runs only.
+
+- Taken: proposal 2 (a2d28361). `getAudioContext(create = false)` on every playback path, so only the gesture
+  unlock constructs the context and no fixed step can.
+- Skipped: proposal 3 (the +0.2 ms native drive A/B pair). The base worktree is removed.
+- Tooling kept in `test/hitch-report.mjs`: `--trace` (JS stacks, GPU-process busy, sync GL waits),
+  `--analyze=FILE`, `--gpu` (timer queries plus program churn), `--phys` (Box3D step timer). `test/lib/cdp.mjs`
+  now kills its Chrome on SIGTERM and SIGHUP, the orphan fix behind finding 1.
+- Owed before landing: `cdp-smoke`, the only gate that covers the audio files. It was held while Spare timed
+  PERF-31 on the shared GPU.
+
