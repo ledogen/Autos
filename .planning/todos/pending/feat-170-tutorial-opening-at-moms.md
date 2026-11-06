@@ -53,7 +53,7 @@ didn't. This is fixed in FEAT-147 now, not here.
 
 ## Acceptance
 
-- [ ] A staged plan in this ticket (stages, what each lands, what the owner checks at each), signed off.
+- [x] A staged plan in this ticket (stages, what each lands, what the owner checks at each), signed off (2026-11-06).
 - [ ] Each stage lands on its own, behind cdp-smoke's opening step, with the skip path smoked too.
 - [ ] Every run's first PAID job is the casserole to Larry, with or without the tutorial.
 - [ ] The owner plays it through once with the tutorial and once skipping it.
@@ -111,3 +111,78 @@ screen, the sleepy stage and the requisition. So does Larry's welcome after the 
 4. **The evening drive's length:** the joint is sited anywhere, so joint → mom's can be 2–3 km on a wide seed.
    This is the open "joint→Mom's distance" call: re-site the joint near spawn (it reshuffles every seed's
    POI layout), or accept it as the tutorial's length?
+
+## Owner's answers — 2026-11-06 (the tracker page's feat170-plan, "my answers in the note") — SIGNED OFF
+
+> "all approved. we need to also explain the map. after waking and the player is in the truck they are prompted
+> to look at mom's mission card which shows the route on the map. then it can say "you can always open the map
+> with M/select". larry already has some text explaining the expedition camp. we should keep that and it can
+> play after the player delivers the casserole"
+
+1. **Day 0.** The evening is day 0 from 18:00; the run's day 1 starts at the morning wake.
+2. **Hold M to skip** (the pad's map button, select).
+3. **Keep the setup page's opening toggle until stage 2's hold lands, then retire it.**
+4. **Accept the long drive.** The joint stays where it is sited; the tutorial is as long as the drive.
+
+**Two beats added to the plan:**
+
+- **The map beat (stage 4, the morning).** You wake in the truck at mom's. A card prompts you to look at mom's
+  mission card, which is her parked offer panel; it shows the casserole's route on the map. A second card then
+  says "you can always open the map with M/select" (placeholder words). **This settles a stage 1 detail:** on
+  the tutorial path the casserole is ON OFFER at mom's when you wake, not in hand, so there is a card to point
+  at. The skip path still starts with it in hand.
+- **Larry's expedition-camp text stays** (`RUN_INTRO`, after `LARRY_WELCOME`). It plays once the casserole is
+  put away, as it does today. From stage 1 on that is true on BOTH paths: a skipped run no longer plays it at
+  go-live.
+
+**Stage 1 as built from this** (supersedes its paragraph above where they differ):
+
+- A new run with the opening on starts at **day 0, 18:00**, parked at the joint. The firing plays as today.
+- Mom's call ends with **the evening leg**: no job and no pay. The GPS and the HUD line take you to her house
+  ("x km to Mom's · park there to sleep"). Other givers' pads don't answer while it is on, so the casserole stays
+  the run's first paid job.
+- Parked at hers, her sleep card opens. The timer is preset to wake at 07:00.
+- **Any sleep ends the evening**, at hers or at a camp elsewhere, and so does reaching 07:00 awake. The
+  casserole is then posted at mom's. Her pad answers like a giver's: park there and her card opens, with the
+  route on the map.
+- **The skip path:** a new run with the opening off starts at mom's, day 1 07:00, with the casserole in hand
+  (staging in her start zone).
+- **On both paths,** Larry's welcome and his camp text play once the casserole is put away. The other
+  first-use cards stay tutorial-only.
+- Words are PLACEHOLDERS (FEAT-148): mom's call now sends you home for the night; the casserole is the
+  morning's.
+
+## Built — stage 1 (2026-11-06, feature/run-shape, Lane A; 2730c832, 8be8ecde, 4e7b400d)
+
+- **`src/day.js`** `start(day = 1, hour = dayStartHour)`. The opening run calls `start(0, 18)`, so the evening's
+  `clockH` runs from −6 to 7. Day 0 needs nothing else: `dayTier` clamps below day 1, the FEAT-168 `minDay`
+  check reads day 0 from a negative `bornH`, and the midnight overlay adopts the first day it sees (0), so
+  the night at mom's drops no "supplies are drying up".
+- **`src/main.js`** (the opening section):
+  - `_eveningLeg()` = the firing seen and `f0` still closed. It keeps no state of its own, so a save made
+    mid-evening resumes into it (seen-keys are set when a sequence starts, so a mid-firing save does too).
+  - In the evening, the GPS shows `_homeGuide()` (planned once from the joint, re-planned after a resume),
+    the HUD reads "x km to Mom's · park there to sleep", and `_poiInReach` returns nothing.
+  - The sleep timer is preset to `round(7 − clockH)`. Left at the preset, it wakes at 07:00 sharp. Any
+    sleep (`_sleepAtCamp`) or reaching 07:00 awake (the run-HUD poll) calls `_endEvening()`, which runs
+    `openFirst`. Her pad then answers like a giver's.
+  - The skip: `_seatAt(mom)`, then at go-live `openFirst` + `_takeFirstJob` once the seat lands. The job
+    stages in her start zone.
+  - `_tut(…, always)` lets Larry's welcome + RUN_INTRO play in a skipped run too.
+  - FEAT-147's `approachGuide` is gone; nothing takes the casserole away from her pad any more.
+- **`data/dialogue.js`** MOM_CALL: placeholder words. She sends you home tonight; the casserole is the
+  morning's.
+- **cdp-smoke:** `story` is now the skip path. It checks the run starts at mom's at 07:00 with the job
+  staging and no card, abandons the job, then checks Larry's welcome and his camp text (with its
+  direction). `opening` checks the firing at day-0 18:00, the job-free evening (HUD + GPS), her sleep
+  card preset to 07:00 and waking at 07:00 sharp with no midnight overlay, the casserole posted at the
+  wake, and the casserole taken from her pad and staging. The midnight + hunger checks follow as before.
+  `window.__gps()` is the new dev handle it reads.
+
+  The `endings` step's win run puts the casserole down first: a win waits for no active job, and in play every
+  requisition line is a job, so the casserole is long done by then.
+- **Proof:** cdp-smoke **PASS, 23 steps, zero console errors** on the branch (merged with main bc7016e5);
+  npm test affected 48/48 green.
+
+*Owner checks (stage 1):* one new run with the opening on (fired at 6 pm, drive home, sleep at mom's, take
+the casserole in the morning) and one with it off (start at mom's with it in hand; Larry after the drop).

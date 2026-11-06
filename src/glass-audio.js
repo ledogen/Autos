@@ -47,7 +47,7 @@ function _noiseHit (ctx, out, t0, dur, type, freq, q, g) {
 /** The side window going. Silent unless the shared AudioContext is running. `world`: a load in the bed
  *  breaking (the world bus) rather than the rank tile (UI, straight out). */
 export function playGlassBreak (level = 1, world = false) {
-  const ctx = getAudioContext()
+  const ctx = getAudioContext(false)
   if (!ctx || ctx.state !== 'running' || level <= 0) return
   const t = ctx.currentTime
   const out = ctx.createGain()
@@ -99,7 +99,7 @@ export function playGlassBreak (level = 1, world = false) {
  * a third or more is the full break.
  */
 export function playCargoHit (sound, cost) {
-  const ctx = getAudioContext()
+  const ctx = getAudioContext(false)
   if (!ctx || ctx.state !== 'running' || !(cost > 0)) return
   const level = Math.min(1, Math.max(0.08, 1.5 * Math.sqrt(cost)))
   if (sound === 'glass' && cost >= 1 / 3) { playGlassBreak(level, true); return }

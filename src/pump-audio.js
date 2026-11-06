@@ -31,7 +31,7 @@ import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise } from './eng
 const LEVEL = 0.45   // overall peak gain for the one-shots
 let _noise = null
 const _buf = ctx => (_noise ??= whiteNoiseBuffer(ctx, 1.0))
-const _live = () => { const c = getAudioContext(); return c && c.state === 'running' ? c : null }
+const _live = () => { const c = getAudioContext(false); return c && c.state === 'running' ? c : null }
 
 function _out (ctx, g = LEVEL) {
     const out = ctx.createGain()

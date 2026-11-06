@@ -29,7 +29,7 @@ export function setResultAudio (on, vol) {
 }
 
 const jit = pct => 1 + (Math.random() * 2 - 1) * pct
-const live = () => { const c = getAudioContext(); return enabled && c && c.state === 'running' ? c : null }
+const live = () => { const c = getAudioContext(false); return enabled && c && c.state === 'running' ? c : null }
 function out (ctx, g) { const o = ctx.createGain(); o.gain.value = g; o.connect(getMasterBus()); return o }
 
 function tone (ctx, dest, t, f, g, decay, fEnd = f) {

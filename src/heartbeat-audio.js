@@ -72,7 +72,7 @@ function _kick (ctx, t0, peak) {
  * user gesture, which has long since happened by the time a job's clock is near a line).
  */
 export function playHeartbeat (level = 1) {
-  const ctx = getAudioContext()
+  const ctx = getAudioContext(false)
   if (!ctx || ctx.state !== 'running' || level <= 0) return
   const t = ctx.currentTime
   const p = PEAK * Math.min(1, level)
