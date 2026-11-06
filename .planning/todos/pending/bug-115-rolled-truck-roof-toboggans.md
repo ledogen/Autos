@@ -46,6 +46,9 @@ inverted through the geometric mean the way the body and bed materials are:
   one press and 24/24 in two. Side: 15/15 within two. A truck dropped at 100° on 15° now tips onto its roof
   instead of sliding to its side.
 
+The prototype is committed on its own branch, **`proto/bug-115-cab-mu`** (8279f97a, off feature/machine 741ea4c2):
+`CAB_PAIR_MU` 0.5 → `CAB_SHAPE_MU` on the cab hull. If (a) is the call, cherry-pick it; (b) changes that one number.
+
 ## The call (owner)
 
 - **(a) the cab hull grips at pair μ 0.5** [recommended]. The roof stops sliding. The cost: a cab that
