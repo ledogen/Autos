@@ -435,3 +435,46 @@ New probes: `promo-why.mjs <seed> <cx> <cz> [substr]` (uncapped promote* reasons
 `where.mjs <seed> <cx> <cz> <x> <z> <substr>` (shipped runs and nearest approach), `sep-profile.mjs <seed> <cx> <cz>
 <edgeA a|b> <edgeB c|d>` (pass-1 / pass-2 separation along A from the shared node), `kinkrun.mjs <root> <window> x,z…`
 (which run carries a kink, main vs branch).
+
+### Stage 2 — built and measured (2026-11-06, `ab6d8074` → `312429a9`)
+
+Three changes, each closing a veto path the residue table names. Gates **58/58** on the affected set after each.
+1. **`ab6d8074` — the mid-span promotion works on runs already in pieces** (BUG-61's rule, now on the mid-span path).
+   The plan's arcs are located on the ORIGINAL run, which is the plan's own pure sample once the registered run
+   was split. The trunk piece under each fork is cut, and so is the one side piece that carries the whole strand.
+   A split side piece's far end pins the departure to the other T's deck. Before, `_v2TrunkPieceAt` looked the arc
+   up on `this._network.get(wk0)`, which is gone once another T split the trunk: every variant broke silently
+   (87). A split side run declined outright (200398059).
+2. **`ff47b294` — the node planner probes a mid-span from BOTH legs' walks.** One leg's walk can carry the whole
+   conflict inside its own node interval (a flare bridged) while the other's parts at once, so neither the node
+   merge (needs both ≥ 20 m) nor A's mid-span probe (starts past fA) saw the pair. 2166453044: fA 227, fB 16.
+3. **`312429a9` — FORCED JOIN**, the ladder's third rung. On the FINAL plan only (pass 1 still hands the pair to
+   SEPARATE first), a pair whose pass-2 lines still graze (centres < 22 m past both node intervals) is retried
+   as a mid-span with `MINSPAN` 60 → 30 m (the promotion's own fork spacing). Tally `forced-join`. Seed 51.
+
+| census (140 windows) | GRAZE | changed windows vs main |
+|---|---|---|
+| main (census 0 + `census0bat`) | 30 + 1 crossing | — |
+| census 6: Stage 1 + the GRAZE bar | 11 (10 + battery seed 4) | 37 |
+| census 7: + step 1 | 8 | 40 |
+| **census 8: + steps 2, 3** | **5 (1 crossing), 124 m** | **49** |
+
+Cleared by Stage 2: 87, 200398059, battery seed 4, 51, 2166453044, and two borderline pairs (1695296864, 2314412071).
+
+**Residue (5):**
+- **3502246374 (1628, 137), the crossing.** Two legs of node `2,0,1` leave together, cross 44–48 m out with
+  decks 5.1 m apart, and part by 104 m. No T builds at all (`promote-infeasible` ×8). The mid-span try has no
+  room by the node, and shove declines (transit; deflection 38 m > 30). On main too.
+- **1227226248 (−424, −275), 14.3 m / 32 m.** Tangled; role conflict, then `promote-infeasible`; shove 31 m > 30.
+  Same class as the crossing: no departure builds. These two may need an owner call.
+- **804662785 (−835, −31), 4 m / 24 m — NEW, made by step 3.** The forced join at node `-2,-1,2`
+  (`-2,-1,1|-2,-1,2` × `-2,-1,2|-3,-1,2`) puts a T at (−968, −77). The re-shaped run past it lies 4 m beside the
+  road leaving the T at (−835, −31) toward `-1,0,0`. This is the Stage 0 class "a T's departure or a sliced half
+  lands beside another road". Trace it first (`promo-why.mjs 804662785 0 0`, `where.mjs … 835250`).
+- **Borderline: 2757792661 (20.2 m / 36 m), 1276689627 (21.4 m / 32 m).** 0.6–1.8 m short of the 12 m daylight;
+  legs of Ts.
+
+**Still owed before the landing:** trace 804662785; the infeasible pair class (owner call?); build time on a
+quiet machine (`wip/perf-31/thread-bench.mjs`, ≤ 5 % of the network thread; story entry cpu ×4 < 30 s); the
+random-seed leg on `road-clearance`; the before/after sheets. Footprint grew 37 → 49 windows: the owner sees it
+on the sheets.
