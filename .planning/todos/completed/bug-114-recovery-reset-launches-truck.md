@@ -1,7 +1,7 @@
 ---
 id: BUG-114
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-05
 source: owner, 2026-11-05 (page inbox, playing main) — "first time i tried to use recovery i think the truck was teleported but maybe still upside down or somehow clipping through the ground because it got kinda launched rendering me upside down on the road outside the service center. gotta fix this"
@@ -17,9 +17,9 @@ the road outside the shop.
 
 ## Acceptance
 
-- [ ] Reproduce headlessly: tow/reset from a rolled state and from a normal one, to several service centers on random seeds. Report the seat height, orientation and the first-step impulse.
-- [ ] Every recovery seats the truck upright (yaw kept, roll and pitch zero), on its wheels at rest height, with zero velocity, clear of POI colliders.
-- [ ] A gate pins it.
+- [x] Reproduce headlessly: tow/reset from a rolled state and from a normal one, to several service centers on random seeds. Report the seat height, orientation and the first-step impulse. (Headings × slopes instead of seeds: the seat is a pure function of the pad record — work log.)
+- [x] Every recovery seats the truck upright (yaw kept, roll and pitch zero), on its wheels at rest height, with zero velocity, clear of POI colliders.
+- [x] A gate pins it.
 
 ## Work log
 
@@ -56,3 +56,8 @@ Box3D + `PoiPhysics`):
 
 Not done: a census on real seeds. The seat is a pure function of the pad record, so a seed changes
 only its heading and slope, and the gate sweeps heading. Owed: the owner tows to a shop in game.
+
+## Resolution — 2026-11-06 (orchestrator's call, Lane B)
+
+Landed on main with its acceptance met (`test/tow-seat.mjs`). Closed. The owner's tow to a shop in game stays on
+Lane B's owed list as a confirmation, not a gate.

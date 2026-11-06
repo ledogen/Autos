@@ -19,7 +19,7 @@
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, syncChassisMass, rollBalance } from './physics.js'
-import { HiLift } from './hilift.js'
+import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
@@ -30,13 +30,13 @@ import { tireContact } from './tire-contact.js'   // FEAT-70: the wheel's ground
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
-import { DamageModel, DAMAGE_PARAMS, fatalMph } from './damage.js'    // SM-3: component condition model
+import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setControlAttenuation, setSteerRateScale } from './vehicle.js'
-import { makeIgnitionState, keyPosition, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
+import { makeIgnitionState, keyPosition, seized, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
@@ -91,10 +91,10 @@ import { ITEMS } from '../data/items.js'
 import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
-import { startShelves, shelf, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
+import { startShelves, shelf, shelfPrice, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
-import { recoveryCard, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside, FIELD_REPAIR, fieldRepair,
-  fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
+import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside,
+  FIELD_REPAIR, fieldRepair, fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
@@ -118,6 +118,7 @@ import { startRankMusic, updateRankMusic, rankMusicStep, rankMusicDrop, rankMusi
 import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
+import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
 import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
@@ -1228,6 +1229,35 @@ function showSpawnToast () {
   void el.offsetWidth
   el.style.transition = 'opacity 1s ease'
   _spawnToastTimer = setTimeout(() => { el.style.opacity = '0' }, 3000)
+}
+
+// ── FEAT-162 P3: the dying truck, in words at the edge only (SM-INV-10: described, never scored) ──
+// The engine and each wheel speak twice: on dropping below KNOCK_FROM (the knock starts — the wheel
+// cracks) and at 0 (seized — gave out). Fixed back above the line, it can speak again. The first poll
+// of a live drive only takes the levels in, so a loaded run doesn't announce what it already was.
+const _CORNER_NAME = ['front-left', 'front-right', 'rear-left', 'rear-right']
+const _MACHINE_WORD = [
+  [null, 'the engine is knocking', 'the engine seized'],
+  ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is cracking`, `the ${c} wheel gave out`])),
+]
+let _wordLevels = null, _wordTimer = null
+function _machineWords () {
+  if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) { _wordLevels = null; return }
+  const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
+  const now = [lv(damageModel.get('engine')), ...WHEEL_IDS.map(id => lv(damageModel.get(id)))]
+  const rose = _wordLevels ? now.findIndex((l, i) => l > _wordLevels[i]) : -1
+  _wordLevels = now
+  if (rose < 0) return
+  const el = document.getElementById('machine-word')
+  if (!el) return
+  el.textContent = _MACHINE_WORD[rose][now[rose]]
+  el.classList.toggle('bad', now[rose] === 2)
+  clearTimeout(_wordTimer)
+  el.style.transition = 'none'
+  el.style.opacity = '1'
+  void el.offsetWidth      // reflow so the fade re-arms (same trick as showSpawnToast)
+  el.style.transition = 'opacity 1s ease'
+  _wordTimer = setTimeout(() => { el.style.opacity = '0' }, 4000)
 }
 
 // ── FEAT-33 "hold I to start the truck" hint ──────────────────────────────────────────────
@@ -5244,8 +5274,8 @@ function _renderPumpDisplay (dt) {
 // Nothing pops up when the truck gives out: the chip sits in the PARK ZONE with V and Tab (owner,
 // 2026-10-22), always there in a story run and live once parked, like them (a tow is a phone call —
 // SM-3, 2026-10-20). The card lists the tows (src/recovery.js): to the nearest gas station (dry) or
-// service center (any time). Can't continue and can't afford any of it: the run is over ("you broke
-// down", SM-INV-1).
+// service center (any time), and the mobile tire service (FEAT-162). Can't continue and can't afford
+// anything that cures it: the run ends by itself ("You broke down.", SM-INV-1, _checkStranded).
 let _recoveryOpen = false
 
 /** The nearest POI passing `test`, with its distance in km. */
@@ -5391,9 +5421,68 @@ function _partActions (row) {
 const _RC_LABEL = {
   towFuel: (o) => `tow to gas station · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
   towShop: (o) => `tow to service center · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
+  tireService: (o) => `call a tire service — $${formatMoney(o.tow.price)}`,
 }
 const _RC_ACT = {
-  towFuel: _towToFuel, towShop: _towToShop, end: () => _endRun('broke'),   // FEAT-146: death by breakdown (SM-INV-1)
+  towFuel: _towToFuel, towShop: _towToShop,
+  tireService: () => {   // FEAT-162 amendment 5: fixed where it stands; the wait and the fitting on the clock
+    const q = _recoveryState().tireService
+    if (!q || !economySystem.spend(q.price)) return
+    tireService(partsSystem, damageModel, q)
+    _recoveryOpen = false
+    _afterRoadsideWork(q.hours)
+  },
+}
+
+/** What the Recovery card reads (src/recovery.js recoveryCard) — the truck, the wallet, the tows. */
+function _recoveryState () {
+  const fuel = vehicleState.fuel
+  const owned = inventorySystem.list()
+  const kit = owned.some(r => r.id === 'tirePlugKit')
+  const shopTow = _towQuote(_SERVICE_CENTER)
+  return {
+    dry: !!fuel?.dry && fuel.gal <= 0,
+    gasCan: owned.some(r => r.id === 'emergencyGas' || r.gal > 0.05),
+    seized: seized(vehicleState),
+    rolled: basin(rollDeg(vehicleState.quaternion), rollBalance(RANGER_PARAMS)),
+    hiLift: owned.some(r => r.id === 'hiLiftJack'),
+    flats: damageModel.flat.flatMap((f, i) => f ? [i] : []),
+    collapsed: [0, 1, 2, 3].filter(i => damageModel.collapsed(i)),
+    spares: owned.filter(r => r.id === 'spareTire' && (r.wheelCond ?? 1) > 0 && (!r.flat || kit)).length,
+    money: economySystem.money(),
+    fuelTow: _towQuote(_FUEL_SELLER),
+    shopTow,
+    tireService: tireServiceQuote(damageModel, shopTow, economySystem.tierNow(), ECONOMY_PARAMS),
+    atShop: _shopCures(),
+  }
+}
+
+/** FEAT-162: parked at a service center, the least its bench or shelf charges to cure a seized engine
+ *  (the ×3 rebuild, or an engine off the shelf) and to put on one wheel, fitting included. Else null. */
+function _shopCures () {
+  const vp = vehicleState.position, q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
+  if (q?.type !== 'autoShop') return null
+  const tier = economySystem.tierNow(), onShelf = shelf(q.id, daySystem.clockH())
+  const buy = (slot, socket) => Math.min(...onShelf.filter(e => PARTS[e?.id]?.slot === slot)
+    .map(e => shelfPrice(e) * tier + serviceCenter.fitLabour(e.id, socket).price))
+  return { seized: Math.min(serviceCenter.repairQuote('engine').price, buy('engine', 'engine')), wheel: buy('wheel', 'wheelFL') }
+}
+
+/**
+ * FEAT-162 (owner, 2026-11-06): stranded, and nothing that cures it affordable — the run ends by itself
+ * (DESIGN.md "Death & the tow decision"), once the truck has sat still STRANDED_REST_S of sim time: one
+ * still rolling, or limping on a rim, is still trying. An open pump, shop, inventory or damage screen
+ * holds it — the player is looking at what they have.
+ */
+const STRANDED_REST_S = 3   // [DEFAULT]
+let _strandedSince = null
+function _checkStranded () {
+  const v = vehicleState.velocity
+  const end = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen
+    && !inventoryScreen.isOpen && !damageScreen.isOpen && Math.hypot(v.x, v.y, v.z) < 0.5 && recoveryCard(_recoveryState()).canEnd
+  if (!end) { _strandedSince = null; return }
+  _strandedSince ??= simTime
+  if (simTime - _strandedSince >= STRANDED_REST_S) _endRun('broke')
 }
 
 function _updateRecovery () {
@@ -5406,26 +5495,16 @@ function _updateRecovery () {
   icon?.classList.toggle('ready', live)
   const card = document.getElementById('recovery-card')
   if (!live) { _recoveryOpen = false; card.style.display = 'none'; icon?.classList.remove('on'); return }
-  const fuel = vehicleState.fuel
-  const owned = inventorySystem.list()
-  const money = economySystem.money()
-  const c = recoveryCard({
-    dry: !!fuel?.dry && fuel.gal <= 0,
-    gasCan: owned.some(r => r.id === 'emergencyGas' || r.gal > 0.05),
-    flats: damageModel.flat.flatMap((f, i) => f ? [i] : []),
-    money,
-    fuelTow: _towQuote(_FUEL_SELLER),
-    shopTow: _towQuote(_SERVICE_CENTER),
-  })
+  const st = _recoveryState(), money = st.money
+  const c = recoveryCard(st)
   icon?.classList.toggle('on', _recoveryOpen)
   card.style.display = _recoveryOpen ? 'block' : 'none'
   if (!_recoveryOpen) return
   const html = `<div class="rc-head">${c.head}</div>`
-    + c.opts.map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
-      + `<div class="rc-dim">${formatGameDuration(o.tow.hours)} on the hook</div>`).join('')
+    + c.opts.filter(o => _RC_LABEL[o.act]).map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
+      + `<div class="rc-dim">${formatGameDuration(o.tow.hours)} ${o.act === 'tireService' ? 'to come out and fit it' : 'on the hook'}</div>`).join('')
     + (c.opts.length ? '' : '<div class="rc-dim">no tow can reach you here</div>')
     + `<div class="rc-dim">you have $${formatMoney(money)}</div>`
-    + (c.canEnd ? '<button class="rc-opt rc-end" data-act="end">end run — you broke down</button>' : '')
   if (card.dataset.html !== html) {   // repaint only on change: the poll is 10 Hz and buttons must stay clickable
     card.dataset.html = html
     card.innerHTML = html
@@ -8999,7 +9078,7 @@ function _discardRunSave () {
 const RUN_END_TITLE = {   // owner's words (2026-11-01); the day is a row below (owner, 2026-10-30: days AND playtime)
   win:   'Congratulations! You beat the alpha.',
   crash: 'You died.',
-  broke: 'The truck is dead.',
+  broke: 'You broke down.',   // owner, 2026-11-06 (FEAT-162)
   towel: 'You gave up.',
 }
 // The fatal hit plays out in black and white before its card (owner, 2026-10-30).
@@ -9067,9 +9146,11 @@ function _runEndWhy (kind) {
       + `the ${f.region} could take ${Math.round(fatalMph(f.armor))} mph; fresh it takes ${Math.round(fatalMph(1))}</div>`
   }
   if (kind !== 'broke') return ''
-  // The tows the Recovery card offered: the cheapest is what the wallet fell short of.
-  const tow = [_towQuote(_FUEL_SELLER), _towQuote(_SERVICE_CENTER)].filter(Boolean).sort((a, b) => a.price - b.price)[0]
-  return `<div class="re-why">${tow ? `the tow was $${formatMoney(tow.price)}` : 'no tow could reach you'} &mdash; you had $${formatMoney(runEconomy.money)}</div>`
+  // What stranded it, and the cheapest of the Recovery card's cures: what the wallet fell short of.
+  const c = recoveryCard(_recoveryState()), o = c.cure
+  const words = { towFuel: 'the tow', towShop: 'the tow', tireService: 'the tire service', shopFix: 'the repair' }
+  return `<div class="re-why">${c.head} &mdash; ${o ? `${o.acts.map(a => words[a]).join(' and ')} ${o.acts.length > 1 ? 'came to' : 'was'} $${formatMoney(o.price)}`
+    : 'no tow could reach you'}, you had $${formatMoney(runEconomy.money)}</div>`
 }
 
 /** The truck's upgrades — the five most valuable parts fitted this run, or "stock" (owner, 2026-10-31). */
@@ -9402,7 +9483,7 @@ document.addEventListener('visibilitychange', () => setAudioPageActive(!document
 // FEAT-23: WebAudio may only start inside a user gesture (browser autoplay policy). ANY gesture
 // counts — a click too: a resumed run is reached by mouse alone (continue → resume) with the engine
 // already idling, and a keydown-only unlock left it silent until the first key. Idempotent.
-function _unlockAudio () { ensureEngineAudio(); ensureTireAudio(); ensureWindAudio(); ensureAmbientAudio() }
+function _unlockAudio () { ensureEngineAudio(); ensureKnockAudio(); ensureTireAudio(); ensureWindAudio(); ensureAmbientAudio() }
 window.addEventListener('pointerdown', _unlockAudio, true)
 
 document.addEventListener('keydown', e => {
@@ -9525,6 +9606,7 @@ function loop () {
     // catch on step 1 is gone by the time the frame reads it. Latch the edge here, per step.
     const ignEv = vehicleState.ignition?.event
     if (ignEv === 'catch') _ignEdge = ignEv
+    else if (ignEv === 'shutoff' && seized(vehicleState)) _ignEdge = 'seize'   // FEAT-162: the running engine seized
     if (resetRequested) {
       // R-12: R while camped breaks camp first — the same close the dialogue's "break camp" button
       // runs (un-digs the pad, hides the fire, drops the camera focus, releases the FEAT-118 clock
@@ -10019,6 +10101,8 @@ function loop () {
     updateEngineAudio(dtrain.engineRPM, vehicleState.throttle,
       (vehicleState.ignition?.state ?? 'running') === 'running' && !(fuel.sputterT > 0), RANGER_PARAMS.cylinders, RANGER_PARAMS.engine,
       vehicleState.ignition?.state === 'off')
+    setKnockAudio(heard && RANGER_PARAMS.engineAudioEnabled !== false, RANGER_PARAMS.engineAudioVolume ?? 0.5)
+    updateKnockAudio(damageModel.get('engine'), dtrain.engineRPM, vehicleState.throttle, vehicleState.ignition?.state === IGN_RUNNING)
   }
 
   // FEAT-33 ignition audio, in two halves.
@@ -10035,6 +10119,7 @@ function loop () {
   if (ign) {
     if (_starterEngaged(ign)) startCrankAudio(Math.min(dtrain?.engineRPM ?? 0, RANGER_PARAMS.starterFreeRPM ?? 280)); else stopCrankAudio()   // the overrunning clutch: the starter never turns faster than its free speed
     if (_ignEdge === 'catch') playCatchAudio()   // key-off has no one-shot: the coast-down is the motoring rows (engine-audio.js)
+    if (_ignEdge === 'seize') playSeizeBang()
     ign.event = null
   }
   _ignEdge = null
@@ -10145,6 +10230,8 @@ function loop () {
     // Still the ~10 Hz cadence: the `parked` latch is sticky, so the edge cannot fall between polls.
     _updateParkTriggers()
     _updateRecovery()           // FEAT-50 / SM-3: the recovery chip in the park zone
+    _checkStranded()            // FEAT-162: …and the breakdown that ends the run
+    _machineWords()             // FEAT-162 P3: the knock, the crack, the seize, in words
     // FEAT-45: the camping folder's read-outs ride the same 10 Hz poll and hit the same memoized
     // grade the prompt just computed. Gated to the SAME sub-20 kph window as the prompt on purpose:
     // grading costs a handful of terrain/water/scatter samples, and paying for it at speed to feed a
