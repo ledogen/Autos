@@ -1100,7 +1100,7 @@ export const PROP_MODELS = {
   // share that frame, so src/camp-gear.js stacks them by draping each layer over the ones under it (FEAT-171);
   // the bedding's slabs are gridded so they can bend.
   bedroll: { url: 'assets/models/bedroll.glb', collision: { shape: 'none', size: [0.88, 0.16, 2.04] } },   // 8308 tris, ASSET-78: unrolled on its canvas, head folded back with a pillow on it, foot still curled, straps loose
-  sleepingBag: { url: 'assets/models/sleeping-bag.glb', collision: { shape: 'none', size: [0.86, 0.22, 1.92] } },   // 10713 tris, flannel corner turned back on the opened half of the head, a pillow on the zipped half
+  sleepingBag: { url: 'assets/models/sleeping-bag.glb', collision: { shape: 'none', size: [0.86, 0.22, 1.92] } },   // 9037 tris, flannel corner turned back on the opened half of the head, a pillow beside it
   airMattress: { url: 'assets/models/air-mattress.glb', collision: { shape: 'none', size: [0.78, 0.19, 1.88] } },   // 4670 tris, flocked quilted top
   sleepingPad: { url: 'assets/models/sleeping-pad.glb', collision: { shape: 'none', size: [0.51, 0.08, 1.83] } },   // 8878 tris, baffled, valve at the foot
   deluxeSleepingPad: { url: 'assets/models/deluxe-sleeping-pad.glb', collision: { shape: 'none', size: [0.64, 0.14, 1.93] } },   // 6798 tris, raised pillow end

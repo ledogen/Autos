@@ -396,12 +396,16 @@ def rrect(w, d, r, z, per=4, cx=0.0, cy=0.0):
     return pts
 
 
-def sheet(b, L, W, T, step, mat_at, z0=0.0):
+def sheet(b, L, W, T, step, mat_at, z0=0.0, rim=0.0):
     """A flat slab L (X) x W (Y) x T, centred on the origin, gridded every ~`step` top AND bottom (FEAT-171:
     a bedding layer DRAPES over the one under it in camp — src/camp-gear.js lifts each vertex onto the
-    layers below — so a slab has to be able to bend). `mat_at(x, y)` picks each top cell's material."""
+    layers below — so a slab has to be able to bend). `mat_at(x, y)` picks each top cell's material.
+    `rim`: an extra grid line that far in from each edge, so a border can take its own material."""
     nx, ny = max(1, round(L / step)), max(1, round(W / step))
     xs = [-L / 2 + L * i / nx for i in range(nx + 1)]; ys = [-W / 2 + W * j / ny for j in range(ny + 1)]
+    if rim:
+        xs = sorted({*xs, -L / 2 + rim, L / 2 - rim}); ys = sorted({*ys, -W / 2 + rim, W / 2 - rim})
+        nx, ny = len(xs) - 1, len(ys) - 1
     for i in range(nx):
         for j in range(ny):
             c = [(xs[i], ys[j]), (xs[i + 1], ys[j]), (xs[i + 1], ys[j + 1]), (xs[i], ys[j + 1])]
@@ -1075,13 +1079,15 @@ def build_sleepingBag():
     with the pillow"): the turned corner keeps to the opened half, so the pillow has the zipped half."""
     b = Builder()
     L, W, s = 1.90, 0.85, 0.025
-    nu, nv, nc = int(round(L / s)), int(round(W / s)), 16   # fold line u + v = nc·s (0.40 m: the opened half only)
+    nu, nv, nc = int(round(L / s)), int(round(W / s)), 14   # fold line u + v = nc·s (0.35 m: inside the opened half)
     zb, ht = 0.050, 0.085   # bottom layer; the top layer's loft at its fullest
     # Bottom layer: a soft slab, outer shell; its top shows the lining where the corner is turned back,
     # a shade darker than the flap's — the inside of the bag, under the flap. Same flannel; the shade is
-    # what lets the turned flap read against the hole it left.
-    sheet(b, L, W, zb, 0.06, lambda x, y: "BagGreen")   # gridded: it drapes over a pad in camp (FEAT-171)
-    sheet(b, L - 0.04, W - 0.04, 0.001, 0.06, lambda x, y: "FlannelShade", z0=zb - 0.0005)
+    # what lets the turned flap read against the hole it left. The lining is the slab's own top inside a
+    # 2 cm shell rim, not a second sheet: draped over a pad, two sheets on different grids crossed and
+    # striped the lining green (FEAT-171).
+    lining = lambda x, y: "FlannelShade" if abs(x) < L / 2 - 0.02 and abs(y) < W / 2 - 0.02 else "BagGreen"
+    sheet(b, L, W, zb, 0.06, lining, rim=0.02)   # gridded: it drapes over a pad in camp (FEAT-171)
     # Grid in (u, v): u from the +X end, v from the −Y side. x = L/2 − u, y = v − W/2.
     def top_z(u, v):   # baffles puff between the sewn-through seams; the loft rounds down at the zips
         baffle = 0.80 + 0.20 * math.sin(math.pi * ((u % 0.19) / 0.19))
@@ -1153,9 +1159,10 @@ def build_sleepingBag():
     end = [math.sin(math.pi / 2 * k / 5) for k in range(1, 6)]   # the cap: a quarter circle in profile
     cap = [P(dc, c - dc + 0.02 - RC * e, zb + RC) for e in end]
     b.tube(kept + cap, RC, 10, "BagGreen", rs=[RC] * len(kept) + [RC * max(0.08, math.cos(math.asin(e))) for e in end])
-    # FEAT-171: the pillow at the head on the zipped half, clear of the turned-back corner, sunk a little
-    # into the baffles it rests on. 0.40 m across (the bedroll's is 0.50): the half is 0.42 m.
-    pillow(b, L / 2 - 0.32, 0.20, zb + ht - 0.006, L=0.40)
+    # FEAT-171: the pillow at the head, clear of the turned-back corner, sunk a little into the baffles it
+    # rests on. It stays over the narrowest pad's top (the sleeping pad's ±0.255 m, plus the drape's 3 cm
+    # flat reach): past it the camp drape bends the bag down over the pad's edge, and the pillow with it.
+    pillow(b, L / 2 - 0.32, 0.105, zb + ht - 0.006, L=0.36, W=0.30)
     return b.finish("sleepingBag")
 
 
