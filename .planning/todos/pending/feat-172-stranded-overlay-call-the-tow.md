@@ -37,7 +37,8 @@ the tow is the way out.
    (keycap, so it reads for the pad too). Wording `[DEFAULT]`, the owner's to change. It hides the moment the
    truck is no longer stuck (cured, or moving again). It never shows when `canEnd` (the run is ending anyway).
 2. **The towel while stranded.** `_endRun('towel')` with `recoveryCard(...).stuck` true becomes `'broke'`:
-   the card reads "You broke down." with the same cause line as the auto-end.
+   the card reads "You broke down." with FEAT-160's cause line. Watch the wording: the auto-end's line reads "the
+   tow was $X, you had $Y" with Y < X; given up, the wallet may cover it, so that half must not read as a shortfall.
 
 ## Acceptance
 
