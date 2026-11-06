@@ -46,7 +46,7 @@ export function setContactAudio (on, vol, squealVol) {
 
 const clamp01 = x => Math.max(0, Math.min(1, x))
 const jit = pct => 1 + (Math.random() * 2 - 1) * pct     // playback variety: pitch / gain jitter
-const live = () => { const c = getAudioContext(); return enabled && c && c.state === 'running' ? c : null }
+const live = () => { const c = getAudioContext(false); return enabled && c && c.state === 'running' ? c : null }
 function out (ctx, g) { const o = ctx.createGain(); o.gain.value = g; o.connect(getWorldBus()); return o }
 
 /** A sine partial with a near-instant attack and an exponential decay, optionally swept to f1. */

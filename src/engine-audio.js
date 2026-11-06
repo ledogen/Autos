@@ -40,9 +40,13 @@ const RECIPE = [
  * modules (src/tire-audio.js) hang their own master gain off it rather than opening a second context
  * — browsers cap live contexts, and independent contexts can't be mixed or resumed together.
  * Returns null if WebAudio is unavailable.
+ * `create: false` for every PLAYBACK path (a one-shot, a sting): null until a gesture's ensure* call has
+ * built the context. Constructing it costs ~38 ms, and a landing thud fired from the fixed step was doing
+ * it inside a physics step (PERF-28, headless runs with no gesture).
  */
-export function getAudioContext () {
+export function getAudioContext (create = true) {
   if (ctx) { if (pageActive && ctx.state === 'suspended') ctx.resume(); return ctx }
+  if (!create) return null
   const AC = window.AudioContext || window.webkitAudioContext
   if (!AC) return null
   ctx = new AC()
@@ -633,7 +637,7 @@ function _noiseHit (at, dur, type, freq, Q, peak) {
  * Nodes are stopped and left for GC — WebAudio tears down a stopped source's graph on its own.
  */
 function _blip (f0, f1, dur, peak, cutoff) {
-  if (!enabled || !getAudioContext()) return
+  if (!enabled || !getAudioContext(false)) return
   const now = ctx.currentTime
   const osc = ctx.createOscillator()
   osc.type = 'sawtooth'
@@ -669,7 +673,7 @@ export function playCatchAudio () {
  * second), the deeper the stumble the more and louder, and the last one, as it re-lights, is a bang.
  */
 export function playSputterPop (depth = 0.7, rpm = 800, cylinders = 6, durS = 0.4) {
-  if (!enabled || !getAudioContext() || ctx.state !== 'running') return
+  if (!enabled || !getAudioContext(false) || ctx.state !== 'running') return
   const now = ctx.currentTime, firing = 60 / (Math.max(400, rpm) * cylinders / 2)
   const slots = Math.max(2, Math.floor(durS / firing))
   const n = 2 + Math.round(3 * depth * Math.random())
