@@ -43,11 +43,13 @@ export function makeIgnitionState (state = RUNNING) {
 
 /**
  * Catch time [s] for the current engine condition. health 1 → ignitionCatchTime, approaching 0 →
- * ignitionCatchTimeWorn at 0, linear between. A worn engine ALWAYS starts (owner, 2026-10-22,
- * reversing 2026-09-04's never-catch at 0: "otherwise we don't have a game" — it is just gutless,
- * damage.js engineAtZero). Absent health reads as 1 (headless gates build vehicleState by hand).
+ * ignitionCatchTimeWorn, linear between: a worn engine is gutless but starts (owner, 2026-10-22,
+ * "otherwise we don't have a game"). At EXACTLY 0 it has SEIZED and never catches again (FEAT-162,
+ * owner approved 2026-11-06, "all four as proposed" — the tow / recovery now gives that a game).
+ * Absent health reads as 1 (headless gates build vehicleState by hand).
  */
 export function catchTime (vehicleState, params) {
+  if (seized(vehicleState)) return Infinity
   const health = Math.max(0, Math.min(1, vehicleState.engineHealth ?? 1))
   // FEAT-50: an empty tank cranks forever too — the starter turns, nothing fires (src/fuel.js).
   if (vehicleState.fuel && vehicleState.fuel.gal <= 0) return Infinity
@@ -55,6 +57,9 @@ export function catchTime (vehicleState, params) {
   const worn = params.ignitionCatchTimeWorn ?? 2.0
   return fresh + (1 - health) * (worn - fresh)
 }
+
+/** FEAT-162: the engine track at exactly 0 is a seized engine — it can't turn, so it never runs. */
+export const seized = (vehicleState) => (vehicleState.engineHealth ?? 1) <= 0
 
 /**
  * Step the ignition one fixed timestep.
@@ -71,7 +76,9 @@ export function stepIgnition (vehicleState, params, dt, keyDown) {
   const press = held && !ign.prevKey
   ign.event = null
 
-  if (ign.state === RUNNING) {
+  // FEAT-162: a running engine that seizes dies on the spot, the way a dry tank does (fuel.js).
+  if (ign.state === RUNNING && seized(vehicleState)) { ign.state = OFF; ign.crank = 0; ign.event = 'shutoff' }
+  else if (ign.state === RUNNING) {
     // A TAP kills it — not a hold. Allowed at any speed (owner, 2026-08-22): you really can turn the
     // key off at 50 mph, and the truck then coasts on a dragged engine rather than freewheeling.
     if (press) { ign.state = OFF; ign.crank = 0; ign.startHeld = false; ign.event = 'shutoff' }
