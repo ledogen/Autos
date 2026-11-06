@@ -35,8 +35,8 @@ line's site is crates and drums alone (`reqSigns` targets).
 
 ## Acceptance
 
-- [ ] `assets/models/turn-back-sign.glb` (+ build.py + .blend) per ASSETS.md, the four wordings.
-- [ ] dist-assets green; a line taken at the camp shows the boards on its site (cdp-smoke demolition step).
+- [x] `assets/models/turn-back-sign.glb` (+ build.py + .blend) per ASSETS.md, the four wordings.
+- [x] dist-assets green; a line taken at the camp shows the boards on its site (cdp-smoke demolition step).
 
 ## Progress
 
@@ -80,3 +80,9 @@ blue-grey.
   `{ kinds: [all four], n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' }`, the old sign
   line's shape. The crates of flyers and the drums stay on the site beside the boards. Dropping them is
   the owner's call.
+- Gates: `CDP_SMOKE=1 node test/run-all.mjs --changed=<branch diff>` → **33/33 green** on a quiet machine
+  (load ~3), cdp-smoke included (404 s): demolition-site, offer-board, offer-census, expedition-camp,
+  dist-assets, model-palette, model-variant, debris-stack, world-determinism, story-poi, region-pieces …
+  The smoke's demolition step seats the truck by `site[0]`, which is now a board (targets come out group by
+  group, boards first): the boards hull and sleep standing, and a kicked one counts smashed.
+  **Ready to close at landing.**
