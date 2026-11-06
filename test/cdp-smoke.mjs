@@ -1087,6 +1087,16 @@ const STEPS = [
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the opening run never went live (45 s × load)')
     const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
+    // FEAT-170 stage 4: mom's lessons queue up and hold the sim (and every key) while they are up — read off
+    // whatever comes, waiting a beat for a queued one to appear. Returns the speakers' card count.
+    const readCards = async (beatMs = 800) => {
+      let n = 0
+      for (let i = 0; i < 40; i++) {
+        if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return n }
+        n++; await tap('Enter'); await sleep(200)
+      }
+      throw new Error('cards never stopped coming')
+    }
     check(await until(async () => await speaker() === 'The manager', 3000), `the run did not open on the firing (speaker "${await speaker()}")`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
       return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
@@ -1098,6 +1108,7 @@ const STEPS = [
     for (let i = 0; i < 8 && await speaker() === 'The manager'; i++) { await tap('Enter'); await sleep(250) }
     check(await speaker() === 'Mom', `the firing was not followed by mom's call (speaker "${await speaker()}")`)
     for (let i = 0; i < 8 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
+    await readCards()   // stage 4: the driving lesson follows her call
     check(!await speaker(), "mom's call did not close")
     check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
     // FEAT-170: the EVENING LEG — no job (the casserole is the morning's), the HUD and the GPS to mom's.
@@ -1125,6 +1136,7 @@ const STEPS = [
     check(off, 'no off-road spot beside the joint')
     await seat(off.x, off.z, 0)
     check(await until(async () => /off the road/.test((await eve()).hud), 2000), `off the road, the evening's HUD offers no way back ("${(await eve()).hud}")`)
+    await readCards(300)   // a lesson landing here would take the R
     await tap('r')
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 8000), 'R in the evening did not put the truck back on the road')
     check(await until(async () => !/off the road/.test((await eve()).hud), 2000), 'the HUD still says off the road on the road')
@@ -1132,9 +1144,11 @@ const STEPS = [
     const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
       return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`)
     await seat(mom.x, mom.z, mom.h)
+    check(await readCards() >= 2, "no lessons on the way home (the damage screen halfway, parking near hers)")
     await park(true)
     const panel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     check(await until(panel, 3000), "parking at mom's in the evening opened no sleep card")
+    check(await readCards() >= 3, "her sleep card brought no sleep lessons")
     await js('document.getElementById("cp-sleep").click()')
     const want = await js('Math.round(7 - window.__day().clockH())')
     check(await js('+document.getElementById("cp-hours").value') === want, `the evening's sleep timer is not preset to 07:00 (${await js('document.getElementById("cp-hours").value')} h, want ${want})`)
@@ -1144,6 +1158,10 @@ const STEPS = [
     check(!await js('document.getElementById("midnight-card").classList.contains("on")'), "the tutorial's night dropped the midnight overlay")
     const e1 = await eve()
     check(e1.first === 'live' && !e1.hud && !e1.gps, `waking did not end the evening and post the casserole: ${JSON.stringify(e1)}`)
+    // Stage 4, the morning: breakfast feeds you (you went to bed at 6, so you wake hungry), then her card.
+    const stage = () => js('document.getElementById("em-stage").textContent')
+    check(await readCards() >= 2, 'no breakfast and no "look at my card" in the morning')
+    check(!/hungry/.test(await stage()), `mom's breakfast did not feed the driver ("${await stage()}")`)
     // The morning: her pad answers like a giver's — park and her card opens; taken there, it stages.
     await js('document.getElementById("cp-break").click()')
     check(await until(async () => !await panel(), 2000), "the sleep card's leave did not close it")
@@ -1160,7 +1178,6 @@ const STEPS = [
     check(await until(async () => !await mn(), 6000), 'the midnight overlay never cleared')
     // FEAT-169: that jump was past the run's first meal — the meter says hungry, in words; a chili dog
     // from the inventory feeds the driver.
-    const stage = () => js('document.getElementById("em-stage").textContent')
     check(await until(async () => /· hungry$/.test(await stage()), 1000), `the energy meter does not say hungry ("${await stage()}")`)
     await js('window.__inv.grant("chiliDog"); window.__inv.use("chiliDog")')
     check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)

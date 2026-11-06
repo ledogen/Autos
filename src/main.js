@@ -4304,6 +4304,8 @@ let _openingRun = false   // onRegionLive → go-live: this new run plays the op
 let _openingSeat = null   // the opening's last seat (a promise): a skip takes the casserole once the truck is on her pad
 let _firingCam = null     // { p, theta0, t } while the firing's cards are up
 let _eveningGuide         // undefined = not planned yet: the evening's way home, planned once (not saved)
+let _eveningFrom = null   // m — the truck's crow distance to mom's when the evening was first polled (stage 4)
+const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4344,6 +4346,16 @@ function _resetToRoad () {
   const v = vehicleState.position, nr = roadSystem?.queryNearest(v.x, v.z, 2000)
   if (!nr?.point || !nr.tangent) { void _reseatTruckAtSpawn(); return }
   teleportToGround(nr.point.x, nr.point.z, _pickRoadDir(Math.atan2(-nr.tangent.x, -nr.tangent.z), _currentHeading()), 0.5)
+}
+
+/** Stage 4, on the run-HUD poll: the drive home's lessons — the damage screen halfway, parking near hers. */
+function _eveningBeats () {
+  const q = _mom(), v = vehicleState.position
+  if (!_eveningLeg() || !q) return
+  const d = Math.hypot(q.x - v.x, q.z - v.z)
+  _eveningFrom ??= d
+  if (d < 0.5 * _eveningFrom) _tut('tut-diag')
+  if (d < EVENING_PARK_M) _tut('tut-park')
 }
 
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
@@ -4413,7 +4425,7 @@ function _playOpening () {
     _firingCam = null
     setCameraFocus(null)   // the chase spring swings back onto the truck, parked right there
     _cardHold = true
-    dialogueSystem.play(DLG.momCall, MOM_CALL)   // the evening leg is on from here (_eveningLeg)
+    dialogueSystem.play(DLG.momCall, MOM_CALL, () => _tut('tut-drive'))   // the evening leg is on from here (_eveningLeg)
   })
   return true
 }
@@ -5498,7 +5510,10 @@ function _updateParkTriggers (zParked = false) {
     const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
-    else { missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer') }   // FEAT-147
+    else {
+      missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer')   // FEAT-147
+      if (offers.some(o => offerBoard.spec(o)?.first)) _tut('tut-map')   // FEAT-170: her card shows the route on the map
+    }
     if (poiEl) poiEl.style.display = 'none'
     if (campRow) campRow.style.display = 'none'
     return
@@ -5522,6 +5537,7 @@ function _updateParkTriggers (zParked = false) {
     } else if (moms) {
       _campUi = { mode: 'moms', site: null, moms: true }
       _renderCampUI()
+      if (_eveningLeg()) _tut('tut-moms')   // FEAT-170 stage 4
     } else if (seeking && !camp.fast && !onRoad) {
       _campUi = { mode: 'truck', site: null, moms: false, truck: true }
       _renderCampUI()
@@ -6032,9 +6048,13 @@ function _sleepAtCamp () {
   if (_eveningLeg() && hours === Math.round(_eveningSleepH())) hours = _eveningSleepH()   // FEAT-170: the preset wakes at 07:00 sharp
   const vibe = _campVibe(_campUi)
   const back = _campHome(_campUi)
+  const evening = _eveningLeg(), atMoms = !!_campUi.moms
   _campFade(() => {
     daySystem.sleep(hours, vibe, _campRest(_campUi))
     _endEvening()   // FEAT-170: any night ends the opening's evening
+    // Stage 4, the morning: breakfast if you slept at hers (it feeds you), then her card.
+    if (evening && atMoms) _tut('tut-breakfast', TUT['tut-breakfast'], () => daySystem.eat(DAY_PARAMS.mealHoldH))
+    if (evening) _tut('tut-mapcard')
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
     // and on a worn engine it is also the morning's first piece of news about what you're driving.
@@ -6831,6 +6851,7 @@ function _renderRunHud () {
   // so this is the one place the requisition opens (openLines is idempotent).
   if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
   if (daySystem.clockH() >= DAY_PARAMS.dayStartHour) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
+  _eveningBeats()
   const skip = document.getElementById('skip-hint')
   if (skip) skip.style.display = _eveningLeg() ? '' : 'none'
   _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
@@ -8285,6 +8306,7 @@ const storySystem = new StorySystem({
     // opening's 6 pm on day 0 (a resume puts its own clock back below).
     daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
+    _eveningFrom = null
     _openingSeat = null
     _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
