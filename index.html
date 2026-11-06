@@ -1311,7 +1311,9 @@
        accented so it reads as a control rather than as part of the sentence. */
     /* FEAT-162 P3: the dying truck's words — the engine knocking / a wheel cracking (--warn), seized /
        gave out (--bad). Same toast family, a line lower so it never sits on the ignition hint. */
-    #spawn-toast, #ignition-hint, #machine-word {
+    /* FEAT-172: a stranded truck that can still pay for a tow says so and points at it. Held while stuck,
+       a line below the machine's words. */
+    #spawn-toast, #ignition-hint, #machine-word, #stranded-hint {
       position: fixed;
       top: 8%;
       left: 50%;
@@ -1330,6 +1332,7 @@
     #ignition-hint .k { color: var(--key); }
     #machine-word { top: 14%; color: var(--warn); }
     #machine-word.bad { color: var(--bad); }
+    #stranded-hint { top: 20%; }
     /* FEAT-47: the doze/blink overlay. Two eyelids that meet in the middle — a crossfade to black
        reads as a fade-out, closing lids read as a blink, which is the whole point. Above the HUD
        and panels, below the story loading screen (z 200). JS only ever writes the two transforms
@@ -1985,6 +1988,7 @@
   <!-- Spawn-point-set toast — fades out ~3 s after any spawn change (main.js showSpawnToast). -->
   <div id="spawn-toast">spawn point set</div>
   <div id="machine-word"></div>
+  <div id="stranded-hint"></div>
   <div id="ignition-hint">hold <span class="k"><span class="kc-kb">I</span><span class="kc-pad kc-round">Y</span></span> to start the truck</div>
 
   <script type="module" src="src/main.js"></script>

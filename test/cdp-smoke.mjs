@@ -1123,7 +1123,12 @@ const STEPS = [
     await js('window.__vs.fuel.gal = 0')   // the running engine's next step finds it empty: dry, stalled
     check(await until(() => js('window.__vs.fuel.dry'), 3000), 'the emptied tank never ran dry')
     await park(true)
+    // FEAT-172: stuck with money for the tow, the truck says so and points at it — until the card opens.
+    const hint = () => js('getComputedStyle(document.getElementById("stranded-hint")).opacity === "1" && document.getElementById("stranded-hint").textContent')
+    check(await until(async () => /out of fuel — .*to call a tow/.test(await hint()), 2000),
+      `no stranded hint on a dry truck with money: "${await js('document.getElementById("stranded-hint").textContent')}"`)
     await tap('x')
+    check(await until(async () => !await hint(), 2000), 'the stranded hint stayed up over the open Recovery card')
     check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]:not([disabled])")'), 3000),
       `no fuel tow on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
     // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
@@ -1135,6 +1140,12 @@ const STEPS = [
     check(!await card(), 'a dry truck with money for a tow ended the run')
     await js('window.__econ.money = 0')
     await ended(/broke down/, /out of fuel — (the tow was \$[\d,.]+|no tow could reach you), you had \$0\b/)
+    // FEAT-172: giving up while stranded is breaking down — a seized engine, then the towel.
+    await newRun()
+    await js("window.__damage.set('engine', 0); window.__econ.money = 1000")   // stuck, and the tow is affordable
+    check(await until(() => js('window.__vs.engineHealth <= 0'), 2000), 'a 0 % engine never reached the truck')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/broke down/, /the engine seized — (the tow was \$[\d,.]+, and you gave up|no tow could reach you, you had)/)
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     // FEAT-170: a new run starts with mom's casserole in hand, and the win waits for no job to be active (in
