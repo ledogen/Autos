@@ -230,6 +230,9 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
+    { id: 'expedition-rewards', kind: 'decide', tk: 'FEAT-69',
+      text: 'Expedition rewards (you asked for ideas that keep it a hard boss fight). Lane A’s four, all winnable at C, none tied to specialisation or luck. 1: a line pays only its tip, no base: $0 at D, ~$2.50 at par, $5 at S at day-1 prices, so driving the bad connector fast earns repair money at a risk to the load (recommended, simplest: one pay-table change). 2: a line at A or better hands supplies back for the lines still to go (jerrycan from fuel, a meal from food, a patch kit from gear, one free part repair from the crew, a full night’s rest from firewood). 3: all five lines at A or better puts a mark on the win card, bragging rights only. 4: the five grades and the days combine into one expedition grade on the win card, with your best kept per seed. They stack: to pick several, type the numbers in the note box below (e.g. 1 + 4).',
+      options: ['1 — tip only', '2 — supplies back', '3 — clean-sweep mark', '4 — boss grade + best per seed', 'a mix (type it in the note box below)'] },
     { id: 'feat62-try', kind: 'drive', tk: 'FEAT-62',
       text: 'On main: main menu \u2192 scenarios \u2192 the paper route. Pick a size on Larry\u2019s card and run it; crash once to see the restart. Your story run\u2019s Continue should be untouched afterwards. Defaults to check: the size is picked on his card (4 first), no deadline, times only on the board. Type anything that feels off in the note box below.',
       options: ['good', 'changes in the note'] },
