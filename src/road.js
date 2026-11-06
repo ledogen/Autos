@@ -3912,201 +3912,209 @@ export class RoadSystem {
         // _v2MidSpanPair is a method so the BUG-55 disjoint planner reuses the IDENTICAL mid-span
         // construction and guards; ctx carries this planner's floors and report tag.
         const ctx = { MINREG, MINSPAN, tag: `@${nk}` }
-        const pairs = []
-        for (let i = 0; i < inc.length; i++) for (let j = i + 1; j < inc.length; j++) {
-            const A = inc[i], B = inc[j]
-            // The node-anchored answer needs only the FIRST interval, and that is a prefix of the
-            // run — so walk it lazily and stop. Only when there is no node merge to make do we pay
-            // for the whole run (below), which is what a mid-span candidate needs.
-            const fA = firstInterval(A, B), fB = firstInterval(B, A)
-            // Under MINREG there is nothing to merge THAT STARTS AT THIS NODE — which is every pair
-            // of legs at every junction, so it is not counted. Note what it does NOT cover: a pair
-            // that parts at the node, goes its own way, and conflicts again deep mid-span — that is
-            // the mid-span pair handled just below (_v2MidSpanPair).
-            if (fA < MINREG || fB < MINREG) {
-                // Nothing to merge STARTING AT THIS NODE — which is every ordinary junction, so it
-                // is not reported. But the legs may still come back together further out: the
-                // owner's seed-6 marks part at the node, swing 82–121 m apart, and only then run
-                // 170–195 m dead parallel. That is a MID-SPAN merge, forked at both ends.
-                // BUG-55: the coarse gate runs even with the feature off, so a declined candidate
-                // is COUNTED — capture-classify can then answer "why didn't this pair merge" with
-                // a named reason instead of silence.
-                // From BOTH walks (BUG-105): one leg's walk can carry the whole conflict inside its own
-                // node interval (a flare bridged) while the other's parts at once and meets it only far
-                // out, past mergeGapM — so neither the node merge (needs both) nor A's mid-span probe
-                // (starts past fA) saw it. Seed 2166453044 (−89, −1307): fA 227, fB 16, the legs cross
-                // 160 m out and shipped 10.4 m apart for 92 m.
-                const mA = maybeMidSpan(A, B, fA), mB = maybeMidSpan(B, A, fB)
-                if (!mA && !mB) continue
-                if (!MIDSPAN_ON) { this._v2MergeSkipped('midspanOff', `${A.ck} x ${B.ck} @${nk}`); continue }
-                const midOf = (cx) => (mA && this._v2MidSpanPair(cx, A, B, conflictIntervals(A, B)))
-                    || (mB && this._v2MidSpanPair(cx, B, A, conflictIntervals(B, A))) || null
-                let mid = midOf(ctx)
-                // BUG-105 FORCED JOIN — the ladder's third rung (JOIN, SEPARATE, then this). A pair whose
-                // FINAL lines (FEAT-77's re-route already tried) still GRAZE past both node intervals is
-                // joined on a shorter strand: MINSPAN down to the promotion's own fork spacing (30 m).
-                // Seed 51 (1818, 30): the legs bulge 60 m apart and kiss at 5 m, 44 m inside mergeProxM;
-                // the berth is a price, so the re-route never moved. Final plan only, so pass 1 still
-                // hands the pair to SEPARATE first, and nothing upstream reads this answer. Judged past the
-                // GEOMETRIC throat, as the gate judges it, and it never displaces a JOIN (role order below).
-                if (!mid && !pass1 && grazes(A, B, Math.max(fA, this._v2ThroatLen(A.S, A.nodeAtStart, B.S)))) {
-                    mid = midOf({ ...ctx, MINSPAN: 30 })
-                    if (mid) { mid.forced = true; this._v2MergeSkipped('forced-join', `${A.ck} x ${B.ck} @${nk}`) }
-                }
-                if (mid) pairs.push(mid)
-                continue
-            }
-            if (fA > MAXFRAC * A.S.L || fB > MAXFRAC * B.S.L) { this._v2MergeSkipped('frac', `${A.ck} x ${B.ck} @${nk}`); continue }
-            // The SPINE survives: the longer run owns the shared pavement and the shorter legs join
-            // it, which is how a real junction is built — and it is what makes a bundle of three or
-            // more legs resolve to ONE winner, because a total order on length has a single maximum.
-            // (The shipped rule picked the shorter node→fork strand. With a proximity anchor the two
-            // strands end at the same place, so that rule degenerated into a lexicographic coin
-            // flip, and at the owner's three-leg junction it made the through-road a loser — which
-            // then barred it from serving the third leg at all.)
-            const aWins = A.S.L > B.S.L || (A.S.L === B.S.L && A.ck < B.ck)
-            const W = aWins ? A : B, L2 = aWins ? B : A
-            const fW = aWins ? fA : fB, fLw = aWins ? fB : fA
-            // R6 (owner, 2026-08-31): a merge that would overwrite a PINNED approach is a
-            // preference, not a hard rule — at seed 21 node 1,0,2 all three legs routed with their
-            // pins and the merge still replaced one leg's pinned approach with its sibling's
-            // geometry (the 86°-apart pairing over the 160° through axis). Decline where it is
-            // SAFE: the pair's routes never properly cross (a shipped crossing is delete-rung bait
-            // — B3's hard rule split seed 7) and the overlap is bounded. Count where it is not.
-            // "Did the leg keep its pin" is read off the GEOMETRY (first-leg direction vs the pin
-            // cone), never off route metadata — a cache-rehydrated route must answer identically.
-            const pinHeld = (R) => {
-                const dirs2 = this._v2EdgeDirsBase(g, drop, g.key(R.sp[0]), g.key(R.sp[1]))   // pins only (BUG-105: never the clearance pass)
-                const pin = dirs2 && (R.nodeAtStart ? dirs2.startDir
-                    : (dirs2.goalDir ? { x: -dirs2.goalDir.x, z: -dirs2.goalDir.z } : null))
-                if (!pin) return false
-                const nP = R.S.pts.length
-                const i0 = R.nodeAtStart ? 0 : nP - 1, i1 = R.nodeAtStart ? 1 : nP - 2
-                const dx = R.S.pts[i1].x - R.S.pts[i0].x, dz = R.S.pts[i1].z - R.S.pts[i0].z
-                const l = Math.hypot(dx, dz) || 1
-                return (dx * pin.x + dz * pin.z) / l >= 0.5
-            }
-            const xingsEarly = _pairProperCrossingsXZ(A.S, A.nodeAtStart, B.S, B.nodeAtStart, true)
-            if (pinHeld(L2)) {
-                // R8 refined "safe" as one road width beyond the pad. FEAT-77 (owner, 2026-09-07)
-                // supersedes it: the floor R6 declines at is THE CLEARANCE RULE (_v2ClearReq) —
-                // neither road's earthwork may reach the other. A pair that kept 16 m over 28 m
-                // used to be legal two roads and kept its pin; it is now a conflict, and declining
-                // the merge for it left it unresolved (measured the moment the predicate widened:
-                // declines 7 → 182, and the clearance residue was made of exactly those pairs).
-                // `minSep` is the worst SLACK against the rule, and a decline needs it non-negative.
-                let minSep = Infinity
-                {
-                    const nP = L2.S.pts.length
-                    for (let k2 = 0; k2 < nP; k2++) {
-                        const i2 = L2.nodeAtStart ? k2 : nP - 1 - k2
-                        const arc2 = fromNode(L2, L2.S.polyCum[i2])
-                        if (arc2 < 15) continue
-                        if (arc2 > fLw) break
-                        const h2 = _nearestOnPolyXZ(L2.S.pts[i2].x, L2.S.pts[i2].z, W.S.pts, W.S.polyCum)
-                        const slack = h2.d - this._v2ClearReq(L2.S.pts[i2], h2)
-                        if (slack < minSep) minSep = slack
-                    }
-                }
-                // The 80 m bound is graph-topology corridor-clearance's own endpoint exemption:
-                // a declined pair at 10–18 m of separation is legal R8 ground, but past 80 m from
-                // the node it would trip the 17.5 m parallel-runs floor — so a LONG hug merges
-                // (counted) even off a pinned approach. Seed 21's 175 m pair is the counted case.
-                // (History: R6 at 2·halfWidth and R8 at exactly 10 m contradicted each other, the
-                // owner ruled R8 wins and then dropped the 2·HW + 4 fix on the numbers. FEAT-77's
-                // rule settles it from above — it is stricter than both — so that record is closed.)
-                if (!xingsEarly.length && minSep >= 0 && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
-                    this._v2MergeSkipped('pin-decline', `${L2.ck} keeps its pinned approach @${nk} (R6 — overlap ${fLw.toFixed(0)} m, clear of the rule by ${minSep.toFixed(1)} m, no crossings)`)
+        // BUG-105 (perf): the pair walk is a pure function of the legs' samples, memoized on those objects
+        // (_v2NodeBase) — pass 1 and the final plan hand it the same ones wherever no leg was re-routed.
+        const base = this._v2NodeBase(nk, legacy, dead, inc, () => {
+            const pairs = [], cands = []
+            for (let i = 0; i < inc.length; i++) for (let j = i + 1; j < inc.length; j++) {
+                const A = inc[i], B = inc[j]
+                // The node-anchored answer needs only the FIRST interval, and that is a prefix of the
+                // run — so walk it lazily and stop. Only when there is no node merge to make do we pay
+                // for the whole run (below), which is what a mid-span candidate needs.
+                const fA = firstInterval(A, B), fB = firstInterval(B, A)
+                // Under MINREG there is nothing to merge THAT STARTS AT THIS NODE — which is every pair
+                // of legs at every junction, so it is not counted. Note what it does NOT cover: a pair
+                // that parts at the node, goes its own way, and conflicts again deep mid-span — that is
+                // the mid-span pair handled just below (_v2MidSpanPair).
+                if (fA < MINREG || fB < MINREG) {
+                    // Nothing to merge STARTING AT THIS NODE — which is every ordinary junction, so it
+                    // is not reported. But the legs may still come back together further out: the
+                    // owner's seed-6 marks part at the node, swing 82–121 m apart, and only then run
+                    // 170–195 m dead parallel. That is a MID-SPAN merge, forked at both ends.
+                    // BUG-55: the coarse gate runs even with the feature off, so a declined candidate
+                    // is COUNTED — capture-classify can then answer "why didn't this pair merge" with
+                    // a named reason instead of silence.
+                    // From BOTH walks (BUG-105): one leg's walk can carry the whole conflict inside its own
+                    // node interval (a flare bridged) while the other's parts at once and meets it only far
+                    // out, past mergeGapM — so neither the node merge (needs both) nor A's mid-span probe
+                    // (starts past fA) saw it. Seed 2166453044 (−89, −1307): fA 227, fB 16, the legs cross
+                    // 160 m out and shipped 10.4 m apart for 92 m.
+                    const mA = maybeMidSpan(A, B, fA), mB = maybeMidSpan(B, A, fB)
+                    if (!mA && !mB) continue
+                    if (!MIDSPAN_ON) { this._v2MergeSkipped('midspanOff', `${A.ck} x ${B.ck} @${nk}`); continue }
+                    const midOf = (cx) => (mA && this._v2MidSpanPair(cx, A, B, conflictIntervals(A, B)))
+                        || (mB && this._v2MidSpanPair(cx, B, A, conflictIntervals(B, A))) || null
+                    const mid = midOf(ctx)
+                    if (mid) pairs.push(mid)
+                    else cands.push({ A, B, fA, midOf })   // the forced join's candidates (final plan, below)
                     continue
                 }
-                this._v2MergeSkipped('pin-overwrite', `${L2.ck} @${nk} (R6 counted — ${xingsEarly.length ? 'tangled' : `inside the rule by ${(-minSep).toFixed(1)} m over ${fLw.toFixed(0)} m`})`)
-            }
-            // VARIANTS: the full merge first, then progressively shorter ones. Only a solved profile
-            // can say whether the loser's remaining road still grades from the winner's DECK at the
-            // fork, and when it cannot, sharing LESS of the pavement is a real answer — better than
-            // abandoning the merge and leaving two roads carving the same dirt. The assembly walks
-            // this list and takes the first that builds. It is a pure function of the node's 1-ring,
-            // so every window offers the same list and picks the same entry.
-            //
-            // Guards are reported only for the FULL merge: a shorter variant failing one of them is
-            // the ladder working, not a defect going unfixed.
-            const variants = []
-            // BUG-57 rung (owner re-scope, session 2): "keep the connection, trim the mess". A
-            // pair whose routes PROPERLY CROSS beyond the throat is a TANGLE — for those, and
-            // only those, the ladder relaxes: the >135° guard is waived (the crossing is the
-            // measured proof this is a mess, not a wanted hairpin), the fork may slide OUTWARD
-            // past the crossings (extra frac rungs below), and
-            // only variants whose ceded extent SPANS every crossing are kept — a merge that
-            // leaves a crossing outside its built extent resolves nothing (the crossing rung
-            // would still fire and the connection would die anyway).
-            const xingsAB = xingsEarly
-            const tangled = xingsAB.length > 0
-            let maxCrossL = 0
-            for (const x of xingsAB) maxCrossL = Math.max(maxCrossL, fromNode(L2, aWins ? x.sB : x.sA))
-            const tryFrac = (frac, report) => {
-                const fWf = fW * frac
-                if (fWf < MINREG) return
-                const wCutF = toRunArc(W, fWf)
-                const wPtF = _polyAtCum(W.S.pts, W.S.polyCum, wCutF)
-                // The loser's own arc ABREAST of the fork — NOT its own walk result: the band must
-                // start beside the winner or it would begin skewed. Windowed on the loser's own
-                // divergence, because a run that loops back can otherwise answer with a point from
-                // the wrong end of itself.
-                const lo = toRunArc(L2, Math.max(0, fLw * frac - FORKWIN))
-                const hi = toRunArc(L2, Math.min(L2.S.L, fLw * frac + FORKWIN))
-                const nearF = _nearestOnPolyXZ(wPtF.x, wPtF.z, L2.S.pts, L2.S.polyCum, Math.min(lo, hi), Math.max(lo, hi))
-                const lCutF = nearF.cum, fLf = fromNode(L2, lCutF)
-                if (fLf < MINREG) { if (report) this._v2MergeSkipped('short', `${L2.ck} x ${W.ck} @${nk} fork at ${fLf.toFixed(0)}m`); return }
-                if (fLf > MAXFRAC * L2.S.L) { if (report) this._v2MergeSkipped('frac', `${L2.ck} x ${W.ck} @${nk}`); return }
-                const tW = _polyTangentAtCum(W.S.pts, W.S.polyCum, wCutF, W.nodeAtStart)
-                const tL = _polyTangentAtCum(L2.S.pts, L2.S.polyCum, lCutF, L2.nodeAtStart)
-                const th = Math.acos(Math.max(-1, Math.min(1, tW.x * tL.x + tW.z * tL.z)))
-                // A fork may be WIDE — a leg leaving at 100° is a T, and building it as one is the
-                // point. What no band can express is a leg DOUBLING BACK: past 135° the loser would
-                // U-turn off the winner, which is a switchback, not a fork, and merging one would
-                // delete a hairpin. WAIVED for a tangled pair — its crossing already proves the
-                // shape is not a hairpin worth keeping.
-                if (th > Math.PI * 0.75 && !tangled) {
-                    if (report) {
-                        this._v2MergeSkipped('angle', `${L2.ck} x ${W.ck} @${nk} ${(th * 180 / Math.PI).toFixed(0)}deg`)
-                    }
-                    return
+                if (fA > MAXFRAC * A.S.L || fB > MAXFRAC * B.S.L) { this._v2MergeSkipped('frac', `${A.ck} x ${B.ck} @${nk}`); continue }
+                // The SPINE survives: the longer run owns the shared pavement and the shorter legs join
+                // it, which is how a real junction is built — and it is what makes a bundle of three or
+                // more legs resolve to ONE winner, because a total order on length has a single maximum.
+                // (The shipped rule picked the shorter node→fork strand. With a proximity anchor the two
+                // strands end at the same place, so that rule degenerated into a lexicographic coin
+                // flip, and at the owner's three-leg junction it made the through-road a loser — which
+                // then barred it from serving the third leg at all.)
+                const aWins = A.S.L > B.S.L || (A.S.L === B.S.L && A.ck < B.ck)
+                const W = aWins ? A : B, L2 = aWins ? B : A
+                const fW = aWins ? fA : fB, fLw = aWins ? fB : fA
+                // R6 (owner, 2026-08-31): a merge that would overwrite a PINNED approach is a
+                // preference, not a hard rule — at seed 21 node 1,0,2 all three legs routed with their
+                // pins and the merge still replaced one leg's pinned approach with its sibling's
+                // geometry (the 86°-apart pairing over the 160° through axis). Decline where it is
+                // SAFE: the pair's routes never properly cross (a shipped crossing is delete-rung bait
+                // — B3's hard rule split seed 7) and the overlap is bounded. Count where it is not.
+                // "Did the leg keep its pin" is read off the GEOMETRY (first-leg direction vs the pin
+                // cone), never off route metadata — a cache-rehydrated route must answer identically.
+                const pinHeld = (R) => {
+                    const dirs2 = this._v2EdgeDirsBase(g, drop, g.key(R.sp[0]), g.key(R.sp[1]))   // pins only (BUG-105: never the clearance pass)
+                    const pin = dirs2 && (R.nodeAtStart ? dirs2.startDir
+                        : (dirs2.goalDir ? { x: -dirs2.goalDir.x, z: -dirs2.goalDir.z } : null))
+                    if (!pin) return false
+                    const nP = R.S.pts.length
+                    const i0 = R.nodeAtStart ? 0 : nP - 1, i1 = R.nodeAtStart ? 1 : nP - 2
+                    const dx = R.S.pts[i1].x - R.S.pts[i0].x, dz = R.S.pts[i1].z - R.S.pts[i0].z
+                    const l = Math.hypot(dx, dz) || 1
+                    return (dx * pin.x + dz * pin.z) / l >= 0.5
                 }
-                if (_winnerBoreAtFork(W.S, W.nodeAtStart, wCutF)) { if (report) this._v2MergeSkipped('bore', `${L2.ck} x ${W.ck} @${nk}`); return }
-                // QUAL-30: NO BAND IS SIZED HERE any more, and the ladder that sized one is gone.
-                // A T's departure is built and judged at promotion time — _v2BuildDeparture walks
-                // its own radius ladder, _v2DepartureAccepts rules on the result — so the plan
-                // layer's whole job is to name WHERE the fork could go. One variant per fraction.
-                const ownLeft = L2.nodeAtStart ? L2.S.L - lCutF : lCutF
-                if (ownLeft < MINREG) return                  // no road left past the fork to carry on along
-                // The extent that must span the mess is the fork PLUS the departure blend, the same
-                // reach _v2CededExtents sanctions — not the bare fork. Testing the bare fork was
-                // measured to reject forks the wye's band join had cleared, and the pairs it dropped
-                // ran unsanctioned instead: 66 sample pairs under 9.5 m, worst 0.7 m
-                // (graph-topology GRAPH-CORRIDOR-CLEARANCE red at seed 6 (4060,2268)).
-                const LBmax = Math.max(20, Math.min(Math.sqrt(2 * PROX * 4 * (this._params?.roadMinTurnRadius ?? 12)), 90))
-                if (tangled && fLf + LBmax < maxCrossL + 10) return
-                variants.push({ wCut: wCutF, lCut: lCutF, forkPt: { x: wPtF.x, z: wPtF.z }, region: fLf })
+                const xingsEarly = _pairProperCrossingsXZ(A.S, A.nodeAtStart, B.S, B.nodeAtStart, true)
+                if (pinHeld(L2)) {
+                    // R8 refined "safe" as one road width beyond the pad. FEAT-77 (owner, 2026-09-07)
+                    // supersedes it: the floor R6 declines at is THE CLEARANCE RULE (_v2ClearReq) —
+                    // neither road's earthwork may reach the other. A pair that kept 16 m over 28 m
+                    // used to be legal two roads and kept its pin; it is now a conflict, and declining
+                    // the merge for it left it unresolved (measured the moment the predicate widened:
+                    // declines 7 → 182, and the clearance residue was made of exactly those pairs).
+                    // `minSep` is the worst SLACK against the rule, and a decline needs it non-negative.
+                    let minSep = Infinity
+                    {
+                        const nP = L2.S.pts.length
+                        for (let k2 = 0; k2 < nP; k2++) {
+                            const i2 = L2.nodeAtStart ? k2 : nP - 1 - k2
+                            const arc2 = fromNode(L2, L2.S.polyCum[i2])
+                            if (arc2 < 15) continue
+                            if (arc2 > fLw) break
+                            const h2 = _nearestOnPolyXZ(L2.S.pts[i2].x, L2.S.pts[i2].z, W.S.pts, W.S.polyCum)
+                            const slack = h2.d - this._v2ClearReq(L2.S.pts[i2], h2)
+                            if (slack < minSep) minSep = slack
+                        }
+                    }
+                    // The 80 m bound is graph-topology corridor-clearance's own endpoint exemption:
+                    // a declined pair at 10–18 m of separation is legal R8 ground, but past 80 m from
+                    // the node it would trip the 17.5 m parallel-runs floor — so a LONG hug merges
+                    // (counted) even off a pinned approach. Seed 21's 175 m pair is the counted case.
+                    // (History: R6 at 2·halfWidth and R8 at exactly 10 m contradicted each other, the
+                    // owner ruled R8 wins and then dropped the 2·HW + 4 fix on the numbers. FEAT-77's
+                    // rule settles it from above — it is stricter than both — so that record is closed.)
+                    if (!xingsEarly.length && minSep >= 0 && fLw <= (C.mergePinDeclineMaxM ?? 80)) {
+                        this._v2MergeSkipped('pin-decline', `${L2.ck} keeps its pinned approach @${nk} (R6 — overlap ${fLw.toFixed(0)} m, clear of the rule by ${minSep.toFixed(1)} m, no crossings)`)
+                        continue
+                    }
+                    this._v2MergeSkipped('pin-overwrite', `${L2.ck} @${nk} (R6 counted — ${xingsEarly.length ? 'tangled' : `inside the rule by ${(-minSep).toFixed(1)} m over ${fLw.toFixed(0)} m`})`)
+                }
+                // VARIANTS: the full merge first, then progressively shorter ones. Only a solved profile
+                // can say whether the loser's remaining road still grades from the winner's DECK at the
+                // fork, and when it cannot, sharing LESS of the pavement is a real answer — better than
+                // abandoning the merge and leaving two roads carving the same dirt. The assembly walks
+                // this list and takes the first that builds. It is a pure function of the node's 1-ring,
+                // so every window offers the same list and picks the same entry.
+                //
+                // Guards are reported only for the FULL merge: a shorter variant failing one of them is
+                // the ladder working, not a defect going unfixed.
+                const variants = []
+                // BUG-57 rung (owner re-scope, session 2): "keep the connection, trim the mess". A
+                // pair whose routes PROPERLY CROSS beyond the throat is a TANGLE — for those, and
+                // only those, the ladder relaxes: the >135° guard is waived (the crossing is the
+                // measured proof this is a mess, not a wanted hairpin), the fork may slide OUTWARD
+                // past the crossings (extra frac rungs below), and
+                // only variants whose ceded extent SPANS every crossing are kept — a merge that
+                // leaves a crossing outside its built extent resolves nothing (the crossing rung
+                // would still fire and the connection would die anyway).
+                const xingsAB = xingsEarly
+                const tangled = xingsAB.length > 0
+                let maxCrossL = 0
+                for (const x of xingsAB) maxCrossL = Math.max(maxCrossL, fromNode(L2, aWins ? x.sB : x.sA))
+                const tryFrac = (frac, report) => {
+                    const fWf = fW * frac
+                    if (fWf < MINREG) return
+                    const wCutF = toRunArc(W, fWf)
+                    const wPtF = _polyAtCum(W.S.pts, W.S.polyCum, wCutF)
+                    // The loser's own arc ABREAST of the fork — NOT its own walk result: the band must
+                    // start beside the winner or it would begin skewed. Windowed on the loser's own
+                    // divergence, because a run that loops back can otherwise answer with a point from
+                    // the wrong end of itself.
+                    const lo = toRunArc(L2, Math.max(0, fLw * frac - FORKWIN))
+                    const hi = toRunArc(L2, Math.min(L2.S.L, fLw * frac + FORKWIN))
+                    const nearF = _nearestOnPolyXZ(wPtF.x, wPtF.z, L2.S.pts, L2.S.polyCum, Math.min(lo, hi), Math.max(lo, hi))
+                    const lCutF = nearF.cum, fLf = fromNode(L2, lCutF)
+                    if (fLf < MINREG) { if (report) this._v2MergeSkipped('short', `${L2.ck} x ${W.ck} @${nk} fork at ${fLf.toFixed(0)}m`); return }
+                    if (fLf > MAXFRAC * L2.S.L) { if (report) this._v2MergeSkipped('frac', `${L2.ck} x ${W.ck} @${nk}`); return }
+                    const tW = _polyTangentAtCum(W.S.pts, W.S.polyCum, wCutF, W.nodeAtStart)
+                    const tL = _polyTangentAtCum(L2.S.pts, L2.S.polyCum, lCutF, L2.nodeAtStart)
+                    const th = Math.acos(Math.max(-1, Math.min(1, tW.x * tL.x + tW.z * tL.z)))
+                    // A fork may be WIDE — a leg leaving at 100° is a T, and building it as one is the
+                    // point. What no band can express is a leg DOUBLING BACK: past 135° the loser would
+                    // U-turn off the winner, which is a switchback, not a fork, and merging one would
+                    // delete a hairpin. WAIVED for a tangled pair — its crossing already proves the
+                    // shape is not a hairpin worth keeping.
+                    if (th > Math.PI * 0.75 && !tangled) {
+                        if (report) {
+                            this._v2MergeSkipped('angle', `${L2.ck} x ${W.ck} @${nk} ${(th * 180 / Math.PI).toFixed(0)}deg`)
+                        }
+                        return
+                    }
+                    if (_winnerBoreAtFork(W.S, W.nodeAtStart, wCutF)) { if (report) this._v2MergeSkipped('bore', `${L2.ck} x ${W.ck} @${nk}`); return }
+                    // QUAL-30: NO BAND IS SIZED HERE any more, and the ladder that sized one is gone.
+                    // A T's departure is built and judged at promotion time — _v2BuildDeparture walks
+                    // its own radius ladder, _v2DepartureAccepts rules on the result — so the plan
+                    // layer's whole job is to name WHERE the fork could go. One variant per fraction.
+                    const ownLeft = L2.nodeAtStart ? L2.S.L - lCutF : lCutF
+                    if (ownLeft < MINREG) return                  // no road left past the fork to carry on along
+                    // The extent that must span the mess is the fork PLUS the departure blend, the same
+                    // reach _v2CededExtents sanctions — not the bare fork. Testing the bare fork was
+                    // measured to reject forks the wye's band join had cleared, and the pairs it dropped
+                    // ran unsanctioned instead: 66 sample pairs under 9.5 m, worst 0.7 m
+                    // (graph-topology GRAPH-CORRIDOR-CLEARANCE red at seed 6 (4060,2268)).
+                    const LBmax = Math.max(20, Math.min(Math.sqrt(2 * PROX * 4 * (this._params?.roadMinTurnRadius ?? 12)), 90))
+                    if (tangled && fLf + LBmax < maxCrossL + 10) return
+                    variants.push({ wCut: wCutF, lCut: lCutF, forkPt: { x: wPtF.x, z: wPtF.z }, region: fLf })
+                }
+                for (const frac of [1, 0.75, 0.5]) tryFrac(frac, frac === 1)
+                // OUTWARD rungs — "skip the points up to past the mess, connect further out".
+                // BUG-57 introduced these for TANGLED pairs, targeted past the farthest crossing.
+                // BUG-56 (owner addition 2026-08-26) generalises the same technique to GRADE: with the
+                // departure hold in force a leg must ride the through deck until it is laterally clear,
+                // and where the fork lands on a steep stretch it can no longer both hold that deck and
+                // make its climb — the strand solve declines. Looking further out gives it a fork where
+                // it has room. Appended AFTER the standard ladder in every case, so an ordinary cession
+                // still wins wherever it builds: these rungs are reached only when the shorter ones
+                // failed to assemble.
+                if (fLw > 1e-6 && fW > 1e-6) {
+                    const cap = MAXFRAC * Math.min(W.S.L / fW, L2.S.L / fLw)
+                    const want = tangled ? (maxCrossL + 40) / fLw : 1.25
+                    const outward = [...new Set([want, want * 1.3, 1.5, 2].map((f) => Math.min(f, cap)))]
+                        .filter((f) => f > 1.01).sort((x, y) => x - y)
+                    for (const frac of outward) tryFrac(frac, false)
+                }
+                if (!variants.length) continue
+                pairs.push({ W, L: L2, variants, region: variants[0].region, sortKey: L2.ck + '>' + W.ck })
             }
-            for (const frac of [1, 0.75, 0.5]) tryFrac(frac, frac === 1)
-            // OUTWARD rungs — "skip the points up to past the mess, connect further out".
-            // BUG-57 introduced these for TANGLED pairs, targeted past the farthest crossing.
-            // BUG-56 (owner addition 2026-08-26) generalises the same technique to GRADE: with the
-            // departure hold in force a leg must ride the through deck until it is laterally clear,
-            // and where the fork lands on a steep stretch it can no longer both hold that deck and
-            // make its climb — the strand solve declines. Looking further out gives it a fork where
-            // it has room. Appended AFTER the standard ladder in every case, so an ordinary cession
-            // still wins wherever it builds: these rungs are reached only when the shorter ones
-            // failed to assemble.
-            if (fLw > 1e-6 && fW > 1e-6) {
-                const cap = MAXFRAC * Math.min(W.S.L / fW, L2.S.L / fLw)
-                const want = tangled ? (maxCrossL + 40) / fLw : 1.25
-                const outward = [...new Set([want, want * 1.3, 1.5, 2].map((f) => Math.min(f, cap)))]
-                    .filter((f) => f > 1.01).sort((x, y) => x - y)
-                for (const frac of outward) tryFrac(frac, false)
-            }
-            if (!variants.length) continue
-            pairs.push({ W, L: L2, variants, region: variants[0].region, sortKey: L2.ck + '>' + W.ck })
+            return { pairs, cands }
+        })
+        const pairs = base.pairs.slice()
+        // BUG-105 FORCED JOIN — the ladder's third rung (JOIN, SEPARATE, then this). A pair whose
+        // FINAL lines (FEAT-77's re-route already tried) still GRAZE past both node intervals is
+        // joined on a shorter strand: MINSPAN down to the promotion's own fork spacing (30 m).
+        // Seed 51 (1818, 30): the legs bulge 60 m apart and kiss at 5 m, 44 m inside mergeProxM;
+        // the berth is a price, so the re-route never moved. Final plan only, so pass 1 still
+        // hands the pair to SEPARATE first, and nothing upstream reads this answer. Judged past the
+        // GEOMETRIC throat, as the gate judges it, and it never displaces a JOIN (role order below).
+        if (!pass1) for (const { A, B, fA, midOf } of base.cands) {
+            if (!grazes(A, B, Math.max(fA, this._v2ThroatLen(A.S, A.nodeAtStart, B.S)))) continue
+            const mid = midOf({ ...ctx, MINSPAN: 30 })
+            if (mid) { mid.forced = true; this._v2MergeSkipped('forced-join', `${A.ck} x ${B.ck} @${nk}`); pairs.push(mid) }
         }
         // worst first, so a role conflict costs the SMALLER merge (deterministic: length, then key)
         // BUG-105: a FORCED join only fills a gap — it loses every role conflict, so it never makes a JOIN's
@@ -4127,6 +4135,26 @@ export class RoadSystem {
             })
         }
         memo.set(mk, out)
+        return out
+    }
+
+    // BUG-105 (perf): memo for _v2NodeMergesOn's pair walk, keyed on the legs' SAMPLE OBJECTS (+ node, legacy, dead
+    // legs). The walk is a pure function of them; a pin change re-routes a leg, so it shows as a new sample. Pass 1 and
+    // the final plan ask with the same objects wherever no leg was re-routed — on seed 6's bench windows 121 of 267
+    // final plans repeat a pass-1 walk, and Stage 1's pass-1 forecast had made the network thread +35 %. Every skip the
+    // walk logged is recorded and replayed on a hit, so the tallies read as a re-walk would leave them.
+    _v2NodeBase(nk, legacy, dead, inc, walk) {
+        if (this._v2BaseMemo?.rev !== this._networkRev) this._v2BaseMemo = { rev: this._networkRev, map: new Map(), ids: new WeakMap(), n: 0 }
+        const M = this._v2BaseMemo
+        const id = (o) => { let v = M.ids.get(o); if (v === undefined) M.ids.set(o, (v = ++M.n)); return v }
+        const key = `${nk}|${legacy ? 'L' : ''}|${dead.join(';')}|${inc.map((R) => `${R.ck}:${id(R.S)}`).join(',')}`
+        const hit = M.map.get(key)
+        if (hit) { for (const [r, p] of hit.skips) this._v2MergeSkipped(r, p); return hit }
+        const outer = this._v2SkipRec, skips = (this._v2SkipRec = [])
+        let out
+        try { out = walk() } finally { this._v2SkipRec = outer; if (outer) outer.push(...skips) }
+        out.skips = skips
+        M.map.set(key, out)
         return out
     }
 
@@ -4807,6 +4835,7 @@ export class RoadSystem {
     // test/capture-classify.mjs to answer "the owner's capture did not merge — which guard?".
     // The detail list names the pair as well as the reason (capped — this is a report, not a log).
     _v2MergeSkipped(reason, pair) {
+        if (this._v2SkipRec) this._v2SkipRec.push([reason, pair])   // BUG-105: _v2NodeBase replays these
         this._v2MergeSkip = this._v2MergeSkip || {}
         this._v2MergeSkip[reason] = (this._v2MergeSkip[reason] || 0) + 1
         if (!pair) return
