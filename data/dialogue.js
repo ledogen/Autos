@@ -93,7 +93,8 @@ export const TUT = {
     // (Lane A's draft, 2026-11-06; the owner writes them — FEAT-148).
     // On the drive home: right after her call, halfway there, and near her house (main.js _eveningBeats).
     'tut-drive': [{ speaker: 'Mom', text: `Drive safe, honey. <span class="dlg-key">W</span> and <span class="dlg-key">S</span> `
-        + `are the gas and the brake, <span class="dlg-key">A</span> and <span class="dlg-key">D</span> steer. Follow the line home.` }],
+        + `are the gas and the brake; steer with <span class="dlg-key">A</span> and <span class="dlg-key">D</span>, or the left stick. `
+        + `Follow the line home.` }],   // pad-neutral: the stick is no single key to glyph-swap (orchestrator, 2026-11-06)
     'tut-diag': [{ speaker: 'Mom', text: `If that old truck starts acting funny, stop and press <span class="dlg-key">V</span> `
         + `to look it over. <span class="dlg-key">Tab</span> shows what you've got with you.` }],
     'tut-park': [{ speaker: 'Mom', text: `Pull in at mine and stop. A tap of <span class="dlg-key">Space</span> sets the handbrake &mdash; `
