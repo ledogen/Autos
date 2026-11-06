@@ -80,7 +80,9 @@ fixed. all others are fine"
 - **Sheet:** `wip/bug-112/shots/sheet-seam.jpg`, seed 6's bore at noon. Left is before (the 11-05 lighting build),
   right is after; rows are 25 m out looking in, 15 m in looking out, and the lip. The dusk frames are `C-seam-h19-*.png`.
 - **Checks:** `node test/cdp-smoke.mjs` PASS 25/25, zero console errors.
-- **Owed before landing:**
-  - the affected road gates (`road-pad-fill` builds the tube);
-  - `fingerprint-world` vs main, where the tiles hash changes on bore windows by design and nothing else should move;
-  - the owner's look at the sheet.
+- **Gates, on main `5028b1d9` merged (`eefcc7e0`):**
+  - `road-pad-fill` PASS (the only gate whose closure holds `road-mesh.js`, besides cdp-smoke).
+  - `fingerprint-world` vs main: only `tiles` differs, in the 5 windows with bores. Each bore slice gains its floor
+    mesh (484 → 501, 474 → 492, 34 → 39, 46 → 51, 36 → 41 meshes). Seed 3, which has no bore, is identical. Network,
+    profiles, junctions, POI, surface, carve, water and props are identical everywhere.
+- **Owed:** the owner's look at the sheet, then the landing.
