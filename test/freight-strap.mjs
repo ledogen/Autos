@@ -23,7 +23,7 @@ import { makeVehicleState } from '../src/vehicle-state.js'
 import { computeStaticEquilibrium } from '../src/suspension.js'
 import { RUNNING } from '../src/ignition.js'
 import { strapPose, DebrisSystem } from '../src/debris.js'
-import { splitPayout, rankTable } from '../src/economy.js'
+import { splitPayout, rankTable, ECONOMY_PARAMS } from '../src/economy.js'
 import { amountGrade } from '../src/par.js'
 import { FREIGHT_TIP_MULT } from '../data/offers.js'
 
@@ -50,7 +50,7 @@ ok(new Set(badges).size === badges.length && jobBadge({ family: 'papers' }) === 
 console.log('pay:')
 const lineSame = [0.5, 0.77, 1, 1.2, 2].every(r => JSON.stringify(splitPayout(180, r, 1)) === JSON.stringify(splitPayout(180, r, 1, 1, 1)))
 ok(lineSame, 'tipMult 1 is the ordinary line, to the cent')
-const fS = splitPayout(230, 0.77, 1, 1, FREIGHT_TIP_MULT), cS = splitPayout(230, 0.77, 1)
+const fS = splitPayout(230, ECONOMY_PARAMS.fullTipRatio, 1, 1, FREIGHT_TIP_MULT), cS = splitPayout(230, ECONOMY_PARAMS.fullTipRatio, 1)
 ok(fS.base === cS.base && Math.abs(fS.total - fS.base * (1 + FREIGHT_TIP_MULT)) < 0.011,
   `freight at S pace pays base × ${1 + FREIGHT_TIP_MULT} ($${fS.total}), courier/haul base × 2 ($${cS.total}) on the same par`)
 // The letter is the kg DELIVERED (economy.js RANK_TABLE.freight, PROVISIONAL) — the clock never ranks it.

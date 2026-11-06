@@ -25,7 +25,7 @@ import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankTable, payoutFor, pointsFor,
   runEconomy, EconomySystem, formatDeeds, basePay, payRange, splitPayout, bonusEarned, RANKS,
 } from '../src/economy.js'
-import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade } from '../src/par.js'
+import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade, PAR_SLACK } from '../src/par.js'
 import { runState } from '../src/day.js'
 import { readFileSync } from 'node:fs'
 
@@ -42,9 +42,22 @@ const sumsTo = (base, tip, total) => Math.round((base + tip) * 100) === Math.rou
 // Pin the provisional defaults this gate asserts against (a debug-slider default drifting should
 // fail loudly HERE, not silently re-tune the gate).
 const P = ECONOMY_PARAMS
+const AVG_PAR = 180 * PAR_SLACK / 1.15   // the average region-1 job's par: 180 s measured at slack 1.15 (section 1), 234 s at FEAT-69's
 check('pinned: tier table has 30 days, tier(1) === 1', P.dayTierTable.length === 30 && dayTier(1) === 1)
-check('pinned: baseFrac 0.5, fullTipRatio 0.77, tipZero 1.23',
-  P.baseFrac === 0.5 && P.fullTipRatio === 0.77 && P.tipZero === 1.23)
+check('pinned: baseFrac 0.5, fullTipRatio 0.652, tipZero 1.348',
+  P.baseFrac === 0.5 && P.fullTipRatio === 0.652 && P.tipZero === 1.348)
+// FEAT-69 RANK SPREAD (owner, 2026-11-06: "S 10% more forgiving. D 30% more forgiving. interpolate between"):
+// par 30 % later (PAR_SLACK 1.15 → 1.495), each line's TIME later by a share interpolated on where it sat
+// between S and C, and k ÷ 1.3 so pay at each line stays put. In seconds on the average job (par 180 → 234):
+// S 138.6 → 152.6 (+10 %), A 145.8 → 165.4 (+13.5 %), B 156.6 → 185.8 (+18.7 %), C 180 → 234 (+30 %).
+check('pinned: PAR_SLACK 1.495 and the FEAT-69 lines S 0.652 · A 0.707 · B 0.794 · C 1', PAR_SLACK === 1.495
+  && RANK_THRESHOLDS_DEFAULT.S === 0.652 && RANK_THRESHOLDS_DEFAULT.A === 0.707 && RANK_THRESHOLDS_DEFAULT.B === 0.794 && RANK_THRESHOLDS_DEFAULT.C === 1)
+{
+  const was = { S: 0.77, A: 0.81, B: 0.87, C: 1 }, grow = k => 1.10 + 0.20 * (was[k] - was.S) / (was.C - was.S)
+  check('FEAT-69: each line\'s time on the average job moved by its interpolated share (S +10 % … C +30 %, within 0.2 %)',
+    ['S', 'A', 'B', 'C'].every(k => Math.abs(RANK_THRESHOLDS_DEFAULT[k] * 234 / (was[k] * 180) / grow(k) - 1) < 0.002))
+  check('FEAT-69: k ÷ 1.3 holds the average job\'s max at $10 (par 234 s)', near(P.k * 234, 10, 1e-9) && near(P.k, 10 / 180 / 1.3, 1e-12))
+}
 // [RE-CUT 2026-09-30, owner] The retired line's anchors are GONE, not parked: break-even is a DAY
 // now (1.5 base pays), not a ratio, and the max is a hard ceiling so there is no cap to insure.
 check('the retired anchors are deleted (breakEven, payoutZero, payoutCap, payoutFloor)',
@@ -66,7 +79,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('the max is k·par·tier, paid at the S threshold', near(payoutFor(par, P.fullTipRatio, tier), max))
   check('…and it is a CEILING: a faster drive pays no more (ratio 0.5, 0, −5)',
     near(payoutFor(par, 0.5, tier), max) && near(payoutFor(par, 0, tier), max) && near(payoutFor(par, -5, tier), max))
-  check('completion alone pays HALF the max (ratio 1.23, 1.5, 10)',
+  check('completion alone pays HALF the max (ratio tipZero, 1.5, 10)',
     near(payoutFor(par, P.tipZero, tier), base) && near(payoutFor(par, 1.5, tier), base) && near(payoutFor(par, 10, tier), base))
   check('par (ratio 1.0, a bare C) pays base + 25% of max = 75%', near(payoutFor(par, 1.0, tier), 0.75 * max),
     `got ${(payoutFor(par, 1.0, tier) / max).toFixed(3)} of max`)
@@ -79,9 +92,10 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   })())
   // The letters, read off the line on day 1 — what the owner's ladder comes out as.
   const frac = (r) => payoutFor(par, r, tier) / max
-  check('day-1 ladder: every S pays 100%, every C 75–91%, a slow D 50%',
-    frac(0.77) === 1 && frac(0.70) === 1 && frac(1.0) >= 0.75 - 1e-12 && frac(0.851) < 0.92 && frac(2) === 0.5,
-    `S ${frac(0.77).toFixed(3)} · B/C ${frac(0.85).toFixed(3)} · par ${frac(1).toFixed(3)} · D ${frac(2).toFixed(3)}`)
+  const R1 = rankTable('time', 1)
+  check('day-1 ladder: every S pays 100%, every C 75–90%, a slow D 50%',
+    frac(R1.S) === 1 && frac(R1.S - 0.07) === 1 && frac(1.0) >= 0.75 - 1e-12 && frac(R1.B + 0.001) < 0.90 && frac(2) === 0.5,
+    `S ${frac(R1.S).toFixed(3)} · B/C ${frac(R1.B).toFixed(3)} · par ${frac(1).toFixed(3)} · D ${frac(2).toFixed(3)}`)
   check('an S earns the WHOLE tip in every region (no region\'s S sits above fullTipRatio)', (() => {
     for (let rg = 1; rg <= 6; rg++) if (!near(payoutFor(par, rankTable('time', rg).S, tier), max)) return false
     return true
@@ -102,14 +116,15 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
 
   // THE OWNER'S DAY-1 NUMBERS, on the AVERAGE region-1 job — par 180 s, MEASURED 2026-09-30 (mean
   // 182 s over 303 planner rolls; owner: that length is right once the commute and stops are
-  // counted). These are the anchor k is set from; if any of them moves, the currency scale has
-  // been retuned and DESIGN.md is stale. Re-measure the average before touching REF.
-  const REF = 180, t1 = dayTier(1) * regionTier(1)
-  check('day 1: a D completion pays $5', near(payoutFor(REF, 2, t1), 5, 1e-9) && basePay(REF, t1) === 5)
-  check('day 1: the max (an S) pays $10', near(payoutFor(REF, 0.77, t1), 10, 1e-9))
+  // counted), × 1.3 since FEAT-69's slack = 234 s. These are the anchor k is set from; if any of them
+  // moves, the currency scale has been retuned and DESIGN.md is stale. Re-measure the average before
+  // touching REF.
+  const REF = AVG_PAR, t1 = dayTier(1) * regionTier(1)
+  check('day 1: a D completion pays $5', near(payoutFor(REF, 2, t1), 5, 1e-9) && near(basePay(REF, t1), 5, 1e-9))
+  check('day 1: the max (an S) pays $10', near(payoutFor(REF, P.fullTipRatio, t1), 10, 1e-9))
   check('day 1: a bare C at par pays $7.50 — exactly the day\'s break-even on one job', near(payoutFor(REF, 1, t1), 7.5, 1e-9))
   check('day 1 break-even ($7.50 = 1.5 base pays): two poor jobs OR one excellent job clear it, one poor job does not',
-    2 * payoutFor(REF, 2, t1) > 7.5 && payoutFor(REF, 0.77, t1) > 7.5 && payoutFor(REF, 2, t1) < 7.5)
+    2 * payoutFor(REF, 2, t1) > 7.5 && payoutFor(REF, P.fullTipRatio, t1) > 7.5 && payoutFor(REF, 2, t1) < 7.5)
 
   // Base + tip, as the two cards state it (owner, 2026-09-29): the offer quotes base, the result
   // answers base + tip, and they sum to the cent.
@@ -149,8 +164,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
       && dayTier(7) === 1.46 && dayTier(12) === 2 && dayTier(20) === 3.31)
   check('the camp opens at 10 good deeds (a ~12-day region-1 run)', P.campDeeds === 10)
   // The ticket's check on the curve: a day's costs are 1.5 base pays × dayTier; two average B jobs
-  // (at the B line, ratio 0.87, flat pay) must still clear day 12's.
-  const costs12 = 1.5 * basePay(180, 1) * dayTier(12), twoB = 2 * payoutFor(180, rankTable('time', 1).B, 1)
+  // (at the B line, flat pay) must still clear day 12's.
+  const costs12 = 1.5 * basePay(AVG_PAR, 1) * dayTier(12), twoB = 2 * payoutFor(AVG_PAR, rankTable('time', 1).B, 1)
   check(`two B jobs ($${twoB.toFixed(2)}) clear day 12's costs ($${costs12.toFixed(2)})`, twoB > costs12)
 }
 
@@ -158,11 +173,11 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
 {
   let ok = true
   const base = ECONOMY_PARAMS.baseFrac * ECONOMY_PARAMS.k * 180 * 1.5
-  for (let r = 1.3; r <= 10; r += 0.1) {
+  for (let r = P.tipZero; r <= 10; r += 0.1) {
     const p = payoutFor(180, r, 1.5)
     if (!(near(p, base) && isFinite(p))) ok = false
   }
-  check('payout === the base pay and finite over ratio 1.3..10 (a slow job never pays less)', ok)
+  check('payout === the base pay and finite over ratio tipZero..10 (a slow job never pays less)', ok)
   check('degenerate inputs pay 0, never NaN',
     payoutFor(0, 1.0, 1) === 0 && payoutFor(180, Infinity, 1) === 0 &&
     payoutFor(180, NaN, 1) === 0 && payoutFor(NaN, 1.0, 1) === 0 && payoutFor(180, 1.0, NaN) === 0)
@@ -227,9 +242,9 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   // a well-meaning tweak to either table silently breaks the progression curve. Job lengths are
   // the MEASURED region-1 average (180 s, 2026-09-30) and the ratified 2× for region 6 (the ladder
   // is mission length, run-shape.md) — not the old nominal 360/720.
-  const B_DRIVE = 0.83   // a B on region 1's time row (A 0.81 < 0.83 ≤ B 0.87) — the reference drive
+  const B_DRIVE = 0.75   // a B on region 1's time row (A 0.707 < 0.75 ≤ B 0.794, FEAT-69) — the reference drive
   const pay = (par, region) => payoutFor(par, B_DRIVE, regionTier(region))
-  const start = pay(180, 1), end = pay(360, 6)
+  const start = pay(AVG_PAR, 1), end = pay(2 * AVG_PAR, 6)
   check('a region-1 job pays $5-15', start >= 5 && start <= 15, `got $${start.toFixed(2)}`)
   // FEAT-168 took the day out of pay, so the 2026-08-17 "$500-1500 day-20 region-6" end target (which
   // leaned on dayTier ~4.6) is no longer met by regionMult alone. Regions are post-alpha (FEAT-28 / SM-4):
@@ -273,15 +288,17 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   // S MUST STAY REACHABLE. The best HONEST drive in runs-v2/ is ratio 0.740 [2026-09-07; 0003, later
   // archived to runs-v2/pre-feat80-grip/; the best new-grip drive, 0019, is also 0.740]. A 0.668 run
   // skipped 471 m of its route and must not certify a threshold. Keep every region's S at or above it.
-  check('S is reachable in every region (threshold ≥ the best HONEST recorded drive, 0.740)',
-    T.time.every(t => t.S >= 0.740))
+  // Those ratios were against par at PAR_SLACK 1.15; FEAT-69's 1.495 puts the same drive at 0.569.
+  const honest = 0.740 * 1.15 / PAR_SLACK
+  check(`S is reachable in every region (threshold ≥ the best HONEST recorded drive, ${honest.toFixed(3)} at today's slack)`,
+    T.time.every(t => t.S >= honest))
 }
 
 // ── 7. Points accrue as exact integer halves ────────────────────────────────────────────────────
 {
   const eco = new EconomySystem({ getDay: () => 1 })
   eco.start()
-  // ratio 0.95 IS a C under the re-cut bands (B 0.87 < 0.95 ≤ C 1.00). It used to read 1.1, which
+  // ratio 0.95 IS a C under the re-cut bands (B 0.794 < 0.95 ≤ C 1.00). It used to read 1.1, which
   // is now a D — the fixture would have been quietly self-contradictory.
   for (let i = 0; i < 20; i++) eco.settle({ par: 180, ratio: 0.95, letter: 'C' }, { terms: eco.terms() })
   check('20 C-grades === exactly 10.0 points (integer halves, no float drift)', eco.points() === 10.0)
@@ -296,14 +313,14 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   eco.start()
   check('start() opens the run on the last paycheck (R-01) with zero points/missions',
     runEconomy.money === ECONOMY_PARAMS.startCash && runEconomy.halfPoints === 0 && runEconomy.missions === 0)
-  // ratio 0.83 IS a B under the re-cut bands (A 0.81 < 0.83 ≤ B 0.87). Kept in step with the bands
-  // on purpose: the fixture asserts a letter, so a band move that leaves it behind would have it
-  // claiming a letter the ratio no longer earns (it read 0.78 before 2026-09-07, now an A).
-  const r = eco.settle({ par: 180, ratio: 0.83, letter: 'B' }, { terms: eco.terms() })
+  // ratio 0.75 IS a B under the re-cut bands (A 0.707 < 0.75 ≤ B 0.794, FEAT-69). Kept in step with the
+  // bands on purpose: the fixture asserts a letter, so a band move that leaves it behind would have it
+  // claiming a letter the ratio no longer earns (it read 0.78 before 2026-09-07, 0.83 before FEAT-69).
+  const r = eco.settle({ par: 180, ratio: 0.75, letter: 'B' }, { terms: eco.terms() })
   check('settle accrues money + points + mission count',
     runEconomy.money === cents(ECONOMY_PARAMS.startCash + r.payout) && eco.points() === 1 && eco.missionCount() === 1)
   check('payout is to the cent', r.payout === cents(r.payout))
-  check('payout keeps its cents (par 181 at par pays $7.54, not $8)', splitPayout(181, 1, dayTier(1) * regionTier(1)).total === 7.54)
+  check('payout keeps its cents (par 235 at par pays $7.53, not $8)', splitPayout(235, 1, dayTier(1) * regionTier(1)).total === 7.53)
   check('runState stays narrow — no money/points on the day-boundary object',
     !('money' in runState) && !('halfPoints' in runState) && !('points' in runState))
 }
@@ -352,9 +369,9 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   day = 4                            // midnight passes mid-drive
   // Settle AT the full-tip ratio so the expected payout is exactly the max (k·par·tier) and the arithmetic
   // below stays readable. (At ratio 1.0 it would be half a unit — see the re-anchored payout line.)
-  const settled = eco.settle({ par: 180, ratio: ECONOMY_PARAMS.fullTipRatio, letter: 'S' }, { terms })
+  const settled = eco.settle({ par: AVG_PAR, ratio: ECONOMY_PARAMS.fullTipRatio, letter: 'S' }, { terms })
   check('settle pays the region tier, never the day\'s (day 3 accept, day 4 finish: $10)',
-    settled.payout === cents(ECONOMY_PARAMS.k * 180 * regionTier(1)) && settled.payout === 10)
+    settled.payout === cents(ECONOMY_PARAMS.k * AVG_PAR * regionTier(1)) && settled.payout === 10)
   check('terms carry the region\'s thresholds (frozen)',
     terms.day === 3 && terms.thresholds.S === rankTable('time', terms.region).S && Object.isFrozen(terms.thresholds))
   check('terms: payTier === regionTier, dayTier rides along for costs',
@@ -470,7 +487,8 @@ console.log(fails === 0 ? '\neconomy gate: ALL OK' : `\neconomy gate: ${fails} F
         ms.accept()
         return ms.mission.terms.thresholds
     }
-    check('FEAT-142: Impatient tightens a courier\'s time thresholds at accept (S 0.77 → 0.693)', Math.abs(termsAt(0.9).S - 0.77 * 0.9) < 1e-12)
+    check(`FEAT-142: Impatient tightens a courier's time thresholds at accept (S ${RANK_THRESHOLDS_DEFAULT.S} → ${(RANK_THRESHOLDS_DEFAULT.S * 0.9).toFixed(4)})`,
+      Math.abs(termsAt(0.9).S - RANK_THRESHOLDS_DEFAULT.S * 0.9) < 1e-12)
     check('FEAT-142: …Patient loosens them, and a job with no trait keeps the region\'s own', Math.abs(termsAt(1.1).C - 1.1) < 1e-12 && termsAt(1).B === RANK_THRESHOLDS_DEFAULT.B)
 }
 process.exit(fails === 0 ? 0 : 1)
