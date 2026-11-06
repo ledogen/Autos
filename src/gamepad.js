@@ -206,6 +206,11 @@ function poll () {
   if (drive && pad.pumpActive()) keys = PUMP_KEYS
   const down = new Set(), nav = new Set()
   let bDown = false, dpad = 0, rightDown = false
+  // A press keeps the meaning it went down with until it is let go (as `held` does for every other button).
+  // RB is the drive layout's own (Space, or a held-back throw) when it went down there — rbOwned — and
+  // the generic key path's when it went down under a menu or card (held). Parking at mom's opens her
+  // sleep card mid-press: the card layout re-sent RB's Space, and the park brake latched and let go again.
+  const rbOwned = rbBrake || rbAt >= 0, rbGeneric = (!drive && !rbOwned) || held.has(RB)
   for (const gp of navigator.getGamepads()) {
     if (!gp || gp.mapping !== 'standard') continue
     any = true
@@ -215,7 +220,7 @@ function poll () {
     if (Math.abs(s) > Math.abs(steer)) steer = s
     const lx = deadzone(gp.axes[2], PAD_PARAMS.stickDeadzone), ly = deadzone(gp.axes[3], PAD_PARAMS.stickDeadzone)
     if (Math.hypot(lx, ly) > Math.hypot(lookX, lookY)) { lookX = lx; lookY = ly }
-    for (const i in keys) if (gp.buttons[i]?.pressed && !(drive && +i === RB)) down.add(+i)
+    for (const i in keys) if (gp.buttons[i]?.pressed && (+i !== RB || rbGeneric)) down.add(+i)
     if (gp.buttons[RB]?.pressed) rbDown = true
     if (gp.buttons[VIEW]?.pressed) viewDown = true
     if (gp.buttons[B]?.pressed) bDown = true
@@ -258,13 +263,13 @@ function poll () {
   if (map && (pad.zoom || lookX || lookY)) pad.active = true   // the map's cursor is the pad's, unlike the camera
 
   const now = performance.now()
-  if (drive && rbDown) {
-    if (rbAt < 0 && !rbBrake) {
+  if (rbDown && !rbGeneric) {
+    if (!rbOwned) {
       pad.active = true
       if (pad.throwReady()) rbAt = now
       else { rbBrake = true; sendKey('keydown', ' ') }
     } else if (rbAt >= 0 && now - rbAt >= PAD_PARAMS.throwTapMs) { rbAt = -1; rbBrake = true; sendKey('keydown', ' ') }
-  } else {
+  } else if (!rbDown) {
     if (drive && rbAt >= 0 && any) { sendKey('keydown', 'f'); sendKey('keyup', 'f') }   // a tap: throw
     if (rbBrake) sendKey('keyup', ' ')
     rbAt = -1; rbBrake = false
