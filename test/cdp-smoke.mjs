@@ -323,6 +323,9 @@ const STEPS = [
     const a = await s0()
     check(a.s === 'staging' && !a.a && a.d < 10 && Math.abs(a.h - 7) < 0.1, `the skip is not at mom's at 07:00 with the job staging: ${JSON.stringify(a)}`)
     check(!await dlg(), 'a card is up after the skip (FEAT-170: Larry speaks after the casserole)')
+    // FEAT-173: the skip ends fed (the evening's end serves mom's breakfast), and the run starts with her three lunches.
+    const food = await js('({ fed: window.__day().snapshot().fedUntilH - window.__day().clockH(), lunch: window.__inv.list().find(e => e.id === "packedLunch")?.n ?? 0 })')
+    check(food.fed > 7.9 && food.lunch === 3, `the skip did not wake fed with mom's three packed lunches (FEAT-173): ${JSON.stringify(food)}`)
     check(await js('getComputedStyle(document.getElementById("skip-hint")).display === "none"'), 'the skip prompt outlived the skip')
     // Deliver it (BUG-117: it ends at Larry's), then the result card: Larry's welcome, then his intro (R-11).
     await deliverFirst()

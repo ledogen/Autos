@@ -4407,6 +4407,7 @@ function _eveningBeats () {
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
 function _endEvening () {
   if (!_eveningLeg()) return
+  daySystem.eat(DAY_PARAMS.mealHoldH)   // FEAT-173: the tutorial's night ends fed — mom's breakfast, played or skipped
   offerBoard.openFirst(daySystem.clockH())
   _eveningGuide = undefined
   _renderMissionUI()   // the HUD line goes
@@ -6152,8 +6153,8 @@ function _sleepAtCamp () {
   _campFade(() => {
     daySystem.sleep(hours, vibe, _campRest(_campUi))
     _endEvening()   // FEAT-170: any night ends the opening's evening
-    // Stage 4, the morning: breakfast if you slept at hers (it feeds you), then her card.
-    if (evening && atMoms) _tut('tut-breakfast', TUT['tut-breakfast'], () => daySystem.eat(DAY_PARAMS.mealHoldH))
+    // Stage 4, the morning: breakfast if you slept at hers (the evening's end above has fed you), then her card.
+    if (evening && atMoms) _tut('tut-breakfast')
     // …and woken at hers, her card opens as that lesson ends: the route on the map (the owner's map beat).
     if (evening) _tut('tut-mapcard', TUT['tut-mapcard'], () => {
       const q = _poiInReach()
@@ -8509,6 +8510,7 @@ const storySystem = new StorySystem({
     damageModel.setAll(1)
     partsSystem.start()              // SM-3: stock parts, new…
     rollJalopy({ parts: partsSystem, damage: damageModel, inventory: inventorySystem }, (Math.random() * 2 ** 32) >>> 0)   // …then this run's jalopy (SM-INV-7)
+    inventorySystem.grant('packedLunch', 3)   // FEAT-173: mom's snack — every run starts with three packed lunches
     startShelves((Math.random() * 2 ** 32) >>> 0)   // FEAT-137: every auto shop's shelf, this run's rolls
     damageModel.publish(RANGER_PARAMS)
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"

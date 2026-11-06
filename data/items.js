@@ -27,6 +27,11 @@ export const ITEMS = {
     // placeholder for the owner's; the hold is the packed lunch's 8 h and the icon its bag [DEFAULT].
     schoolLunch:  { name: 'School lunch',  kind: 'food',       massKg: 0.5, use: 'eat', hold: 8, thumb: 'packedLunch',
                     desc: 'A brown-bag lunch from the school cafeteria.' },
+    // FEAT-173 (owner, 2026-11-06: "three middle to weak food items… maybe a snack that mom provides"): every run
+    // starts with three (main.js, the run's start). items.md §1d's packed lunch — a standard meal's 8 h, never
+    // sold. PLACEHOLDER words for the owner's.
+    packedLunch:  { name: 'Packed lunch',  kind: 'food',       massKg: 0.5, use: 'eat', hold: 8,
+                    desc: 'Mom packed it for the road.' },
     // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
     // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.
     spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: PARTS.spareTire.massKg, use: 'spare',
