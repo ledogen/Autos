@@ -288,3 +288,4 @@ kill timed it out).
   Parked for the owner's morning /clear: Lane A (86258763; lands after feat171-round2 + one smoke), Lane B (FEAT-168 item 3
   then FEAT-162 next), and this orchestrator (~500k). Spare is on BUG-105 Stage 1 (graze tier gated at zero, banks reported —
   my call from the owner's two rulings). Lane C idle.
+- **2026-11-06 morning.** The owner /cleared A, B and Spare; all three were resumed with their resume lines (C left idle: no standing session). Lane A filed camp-gear-source (c86ca54f, unlanded, docs only) and is idle until feat171-round2 / feat170-plan are answered. **Landed d4d2ad2d**: Lane B 7ed4fded, FEAT-168 item 3 (reward categories): 31/31 affected, solo smoke 23/23 on main. Tracker: feat162-front-drag added (blocks Lane B's FEAT-162 P1a landing, d8d79492).
