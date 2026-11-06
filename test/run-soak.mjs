@@ -294,7 +294,7 @@ async function take (o) {
 async function finish (o) {
   step = `job ${o.family}${o.line ? ' line ' + o.line : ''}`
   const m0 = await js(`(() => { const m = window.__mission().mission, p = m.poly, cum = m.polyCum
-    return { par: m.par, th: m.terms?.thresholds, legs: m.legs?.map(l => ({ poi: l.poiId })) ?? null, targets: !!m.targets, len: cum?.at(-1) ?? 0, n: p.length, zone: m.startZone, cargo: window.__cargo() && { freight: window.__cargo().freight?.key ?? null, loose: window.__cargo().loose, haul: window.__cargo().haul } } })()`)
+    return { bonus: m.bonus ? { id: m.bonus.rewardId, gate: m.bonus.gate } : null, par: m.par, th: m.terms?.thresholds, legs: m.legs?.map(l => ({ poi: l.poiId })) ?? null, targets: !!m.targets, len: cum?.at(-1) ?? 0, n: p.length, zone: m.startZone, cargo: window.__cargo() && { freight: window.__cargo().freight?.key ?? null, loose: window.__cargo().loose, haul: window.__cargo().haul } } })()`)
   if (m0.len > 0 && m0.par > 0) run.speed = run.speed * 0.8 + 0.2 * (m0.len / m0.par)
   // Out of the start zone along the route: the job starts.
   const out = await js(`(() => { const p = window.__mission().mission.poly, z = window.__mission().mission.startZone
@@ -324,7 +324,9 @@ async function finish (o) {
     const why = await js(`(() => { const m = window.__mission(); return { s: m.state, d: m.distanceToGo(), failed: !!m.mission?.failed, cargoOut: !!m.mission?.cargoOut, expired: !!m.mission?.expired, cargo: window.__cargo() && { freight: window.__cargo().freight, loose: window.__cargo().loose, haul: window.__cargo().haul } } })()`)
     throw new Stuck(`the job did not finish at its end: ${JSON.stringify(why)} (taken with ${JSON.stringify(m0.cargo)})`)
   }
-  const r = await js(`(() => { const r = window.__mission().result; return { letter: r.letter, ratio: r.ratio, pay: r.payout ?? 0, points: r.points ?? 0, award: r.award?.id ?? null, stowed: r.award?.stowed ?? null } })()`)
+  const r = await js(`(() => { const r = window.__mission().result; return { letter: r.letter, ratio: r.ratio, pay: r.payout ?? 0, points: r.points ?? 0, award: r.award?.rewardId ?? null, stowed: r.award?.stowed ?? null } })()`)
+  r.bonus = m0.bonus   // what the card offered; r.award is what the rank earned
+  if (r.stowed === 'dinner') run.meals++   // the card's main button stays for dinner: it feeds the driver
   // Put the result card away (the dinner invitation's "stay" is the same button: it feeds the driver).
   await js('document.getElementById("mp-accept").click()')
   check(await until(() => js('window.__mission().state === "idle"'), 5000), 'the result card would not close')
@@ -452,10 +454,19 @@ for (const seed of SEEDS) {
 }
 client.close(); cleanup()
 
+// Offers carrying a bonus, bonuses earned (by item, and how they were stowed), food among them, meals eaten.
+const FOOD = ['chiliDog', 'schoolLunch', 'dinnerMeal']
+const rewards = r => {
+  const js_ = r.jobs ?? [], off = js_.filter(j => j.bonus), got = js_.filter(j => j.award)
+  const by = Object.entries(Object.groupBy(got, j => j.award)).map(([k, v]) => `${k}×${v.length}`).join(', ')
+  return `${off.length} of ${js_.length} jobs carried a bonus · ${got.length} earned (${by || 'none'}) · food earned ${got.filter(j => FOOD.includes(j.award)).length}`
+    + ` · stowed ${JSON.stringify(Object.fromEntries(Object.entries(Object.groupBy(got, j => j.stowed)).map(([k, v]) => [k, v.length])))} · meals eaten ${r.meals ?? 0}`
+}
 const perDay = r => { const n = {}; for (const j of r.jobs ?? []) (n[j.day] ??= []).push(j.line ?? j.family); return Object.entries(n).map(([d, f]) => `d${d}: ${f.join(', ')}`).join(' · ') }
 const lines = runs.flatMap(r => [`seed ${r.seed}: ${r.result} · deeds gate day ${r.gateDay ?? '—'} · win day ${r.winDay ?? '—'} · ${r.jobs?.length ?? 0} jobs`
   + ` · soft-locks ${r.softlocks?.length ?? 0} · refused ${r.refusals?.length ?? 0} · hungry days ${JSON.stringify(r.hungryDays ?? [])} · drives ${((r.driveMin ?? 0) / 60).toFixed(1)} game h · ${r.minutes ?? '?'} min wall`,
   `  wallet at wakes: ${(r.wakes ?? []).map(w => `d${w.day} $${w.money} (${w.deeds} deeds)`).join(' · ')}`,
+  `  rewards: ${rewards(r)}`,
   `  jobs: ${perDay(r)}`,
   ...Object.entries(Object.groupBy(r.refusals ?? [], x => `${x.family} @${x.giver}: ${x.why.slice(0, 140)}`)).map(([k, v]) => `  refused ×${v.length} (first day ${v[0].day}) ${k}`),
   ...(r.softlocks ?? []).map(l => `  SOFT-LOCK day ${l.day} clockH ${l.clockH?.toFixed(2)} at (${l.pos?.x.toFixed(0)}, ${l.pos?.z.toFixed(0)}) in "${l.step}": ${l.why} · mission ${JSON.stringify(l.mission)}`)])
