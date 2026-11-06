@@ -41,9 +41,10 @@ export const DEMOLITION_PARAMS = {
  * not a DEBRIS_TYPES kind: main.js hands it to debris.js load(kind, spec) on first use, so a cold boot
  * never fetches a sign it may not need. barrel and roadBarrier are DEBRIS_TYPES already.
  * Masses: the drums are ASSET-30's 18 kg empty; a road sign is a 4x4 timber post (~10 kg) and its
- * aluminium blank (~3 kg).
+ * aluminium blank (~3 kg); a turn-back board (ASSET-77) is 12 mm ply (~3.9 kg) on two 2x2 stakes (~1.9 kg).
  */
 const SIGN = { massKg: 13, friction: 0.6, restitution: 0.1 }
+const BOARD = { massKg: 6, friction: 0.6, restitution: 0.1 }
 export const TARGET_TYPES = {
     barrel:        { model: 'drumClosed' },
     roadBarrier:   { model: 'roadBarrier' },
@@ -56,6 +57,10 @@ export const TARGET_TYPES = {
     signCross:     { model: 'signCross', ...SIGN },
     signStop:      { model: 'signStop', ...SIGN },
     signIcy:       { model: 'signIcy', ...SIGN },
+    turnBackSign:        { model: 'turnBackSign', ...BOARD },
+    turnBackSignKeepOut: { model: 'turnBackSignKeepOut', ...BOARD },
+    turnBackSignBeware:  { model: 'turnBackSignBeware', ...BOARD },
+    turnBackSignNoEntry: { model: 'turnBackSignNoEntry', ...BOARD },
 }
 
 /** Footprint radius [m] of a kind on the ground: half its collision box's diagonal in plan. */
