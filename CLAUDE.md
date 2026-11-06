@@ -179,8 +179,9 @@ not in it.
 
 A player hits **Random** or types a seed (owner, 2026-11-05). Seed 6 is a **test seed**. It is fine for
 reproducing and measuring, but a player will almost never see it. Never describe a seed-6 result as "the
-world" or what players get. World-gen calls for the owner sample random seeds. The `'6'` fallbacks in
-`main.js` / `story.js` are boot plumbing, not a player-facing default.
+world" or what players get. World-gen calls for the owner sample random seeds. Every world the player did
+not pick is random too (owner, 2026-11-06): free roam, the world built behind the menu, `?nomenu=1`. Only
+`?seed=` pins one, and the harnesses in `test/` pass `?seed=6` when they want the test seed.
 
 ### Diagnostic tools (all live in test/, triggered externally)
 
