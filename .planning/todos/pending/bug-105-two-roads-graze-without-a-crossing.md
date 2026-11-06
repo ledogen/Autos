@@ -562,3 +562,24 @@ builds 497 → 350 (main 256). `_v2PlannedPair` 27.5 % → 21.4 %, which is stil
 **Measuring under load:** wall time and CPU time are both useless while the other lanes run (main swung 4.8 →
 11.5 s). Use deterministic counts (`wip/perf-31/opcount.mjs`, `buildcount.mjs`, `probecount.mjs <root>`) and profile
 shares; take the A/B only in a quiet window from the orchestrator.
+
+**Design for the next lever (written 2026-11-06, not built): memoize on INPUTS, not on the pass.**
+- `_v2NodeMergesOn` today is memoized per (node, legacy, pass1, dead), so the final plan recomputes everything
+  pass 1 already computed, even where every leg's sample is the same object (no leg re-routed).
+- Split it:
+  1. **Base pair list** (the pair loop, before role resolution). A pure function of the legs' sample objects + dead +
+     legacy. Memoize it in a WeakMap chain keyed by those sample objects. Record the skip-tally deltas and why-lines
+     it produced (as `_v2SolveMemo` records tallies), and REPLAY them on every non-quiet (final) request, so
+     telemetry reads exactly as now. Pass-1 requests stay quiet: they never replay.
+  2. **Forced joins** (final plan only): a post-step over the base list's recorded "mid-span candidate with no mid"
+     pairs (A, B, fA, fB, mA, mB): `grazes` + `midOf({...ctx, MINSPAN: 30})`.
+  3. **Role resolution** over base + forced (forced sort last, as now). Cheap; done per request.
+- Same for `_v2PromotableFor`: memo keyed on (side.points, T.points, JSON(spec), taken) with tally replay, instead of
+  the planRev + pass key.
+- Expected: overhead falls to the pass-1 work on nodes whose legs DO differ between passes, plus margin-band nodes
+  the final plan never asks about. Measure with `opcount.mjs` (`_v2NodeMergesOn` / `_v2PromotableProbe` /
+  `_v2BuildDeparture` vs main's) before asking for a window.
+- Proof the world is unchanged: census keys vs census 9 (0 changed windows), the network hash on the bench, gates.
+- **If it still misses 5 %**, the call goes to the orchestrator and owner. The 5 % was this ticket's own budget; the
+  owner's bar is story entry < 30 s (main ~9 s at cpu ×4). Measure story entry in the same window and put both
+  numbers in front of them.
