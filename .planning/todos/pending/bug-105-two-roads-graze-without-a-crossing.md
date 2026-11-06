@@ -1,7 +1,7 @@
 ---
 id: BUG-105
 type: bug
-status: landed — owner's calls open (4 sites)
+status: landed — owner's calls built on feature/spare (loop trim), landing pending
 severity: major
 opened: 2026-11-03
 source: owner capture /Users/ledogen/Downloads/autos-capture-1793661257788.json (seed 163384989, free roam, mark
@@ -629,3 +629,58 @@ goes to the orchestrator.
 reseed, warm caches — which is not a player's path.** On random seeds (3997014678, 2623851183, 744309545) at cpu ×4,
 alternating `8739d3cb` (before) / `14c6feb6` (the BUG-105 merge): story entry 17.02 → 17.71 s (+0.70 s, +4 %); region
 bench thread +6 %, network hash identical. Inside the orchestrator's 2 s line — BUG-105 stays. Details: PERF-27.
+
+## The owner's calls answered (2026-11-06) — the loop trim built (Spare, `9029d1a1` + gate `fcc4bce2`)
+
+Owner, verbatim (bug105-calls): "24 - It looks like what actually happened here was the node was placed in a tricky
+terrain location where It took the cheapest way out. The issue is... What I see is a loop in the road that doesn't need
+to be there. The crossing point should really be the node and it should be n... n equals 2 junction. I think of the
+options that are presented I like three the best however a more elegant fix would just be to detect a loop less than 200
+meters long and trim it off completely promoting the crossing point to the intersection. 25 - Basically the same thing
+except this is a figure eight instead of a loop It should be possible to detect That this is one loop inside of another
+And trim all the road off Back to that rightmost crossing point And add a radius like we do with n equals two junctions
+of about this departure angle. 26 and 27 are fine as they are."
+
+**The class, measured first** (`wip/bug-105/loops/`):
+- On the shipped network (`loops.mjs`, 140 windows), two runs of one node that cross each other come in three shapes.
+  - Parallel `~p` runs between one node pair: a mid-span T's legitimate cycle.
+  - Degree-3 legs crossing within 27 m of their own junction: inside the pad.
+  - Degree-2 sites whose two legs loop back across each other. This is the owner's shape.
+- At plan level (`plan-loops.mjs`), 8 degree-2 sites have legs that cross. 4 of their legs already carry a T or
+  mid-span spec; those resolve and never ship as loops. The other 4 are exactly the loops that ship:
+  - 844938307 (1,0,0): 59 m, outer 300 m;
+  - 2502655950 (1,−1,1): 286 m;
+  - 1227226248 (the owner's 25): 222 m, outer 391 m;
+  - 3502246374 (the owner's 24): 339 m; it sits just outside the census windows.
+- QUAL-35 does not reach these: they are bends, not junctions. Visiting the site costs +2,032 / +2,922 cost-m over
+  going straight past.
+
+**The rule.** The cap is 400 m, not the owner's 200 m, because their own sites measure 339 m and 391 m (outer); it is
+`LOOP_TRIM_M`. `_v2LoopTrim(g, drop, wide, nk)` acts on a site when all of these hold:
+- the site has built degree 2;
+- every crossing between its two legs' routes closes a loop of at most 400 m;
+- the outermost crossing is outermost on both legs;
+- no T, mid-span or disjoint spec that registration acts on (`_v2MergeFor`, filtered) names either leg, at the site or
+  at either far end.
+
+The raw node-merge table is not enough for that last check: it lists the wyes BUG-105 later declines, which are what
+leave these loops. When the rule holds:
+- The crossing is refined on the continuous centerlines (Newton) and becomes a **bend node**, id
+  `[x·1000, z·1000, BEND_K = −2]`. Its position is a pure function of the id (`_v2NodeHeight` at that point), so no
+  table, no worker transfer, and the same answer in every window.
+- Registration slices each leg from its far end to the bend (`Centerline.slice`) and re-solves its profile. Both ends
+  pin to the node height at the bend, so the decks meet; the measured gap is 0.
+- The site leaves the road (`_promotedAway`, directed). `_siteAt` and `_graphDegreeOf` read bend ids; restamping treats
+  them like promoted ids.
+
+**Result:**
+- Census 11 vs census 10 (140 windows): the footprint is exactly the 4 windows. 8 run keys go (7.2 km) and 8 arrive
+  (5.9 km); no other run is re-drawn.
+- GRAZE 4 → 2: 24 and 25 clear; 26 and 27 stay, as ruled. BUG-69 shape 25 → 25.
+- Bends: 22° (24), 131° (25, a switchback on the ridge), 47°, 102°. Each gets the standard degree-2 connector radius.
+  Whether the two sharp ones want a wider radius is put to the owner.
+
+**Gate:** `road-loop-trim`, registered.
+- It covers the four windows with pond no-go. No degree-2 node's runs may cross within 400 m. Each bend must have two
+  runs on one deck, the site must keep no run, and the trim must be identical with the window shifted 500 m.
+- It fails on main: 10 failures, every loop caught.
