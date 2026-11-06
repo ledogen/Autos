@@ -1,9 +1,10 @@
 ---
 id: BUG-69
 type: bug
-status: pending
+status: deferred
 severity: minor
 opened: 2026-09-20
+closed: 2026-11-06
 source: >
   road-clearance residue after BUG-66's B7 departure test (feature/bug-65-66, 2026-09-14).
   Battery row: lone-pine (−68,320), 28.3 m vs a 28.5 m rule over 4 m, 60 m past the T at
@@ -13,6 +14,24 @@ relates_to: BUG-66 (closed — the T-mouth mechanism, which does not reach this)
   QUAL-26 (sibling-clearance routing — the actual lever, currently banked as OPTIONAL),
   FEAT-77 (the second routing pass)
 ---
+
+## Resolution — DEFERRED (2026-11-06, owner): leave it; the case study is the evidence
+
+Owner, verbatim (bug69-case, "1 — leave it"): "bug69 per the artifact. dont implement the "fix" You correctly identified
+where it made things better and where it made things worse. As pictured, the juice isn't worth the squeeze. It would be
+great if we could apply the fixes only where they were doing good and omit them where they were causing chaos, but I don't
+think this is worth spending cycles on right now because the road is fine as is. Close this ticket as deferred and we can
+use it as supporting evidence if this ever comes up again i.e. i find something in the world i dont like."
+
+Nothing ships. The evidence, if this comes back:
+- **Case-study page:** https://claude.ai/artifact/M9S2yYEjKTCNJPZqypBAgt (7 random-seed sites: the shape, what the 10× berth
+  clears, what it breaks).
+- **The measurement:** the prototype census table below (25 → 22 rows, GRAZE 4 → 5, 94 of 140 windows re-routed).
+- **The prototype:** `474b6d42` on `proto/bug-69-past-band` (worktree `CarGame-bug69`, census in its
+  `wip/bug-105/census-p69`). Kept, not merged.
+- **What a revisit would need:** the fix applied only where it helps — the owner's "only where they were doing good" —
+  which means a per-site test that predicts a re-route's side effects before taking it. QUAL-35 (junction placement)
+  bears on the same legs and may change the count on its own.
 
 # BUG-69 — past the band the side road's OWN ROUTE hugs the trunk, and no fork station fixes it
 
