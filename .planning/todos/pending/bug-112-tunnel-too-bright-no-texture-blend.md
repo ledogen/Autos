@@ -46,3 +46,14 @@ seated in it, low beam on, noon and 17:30, main vs fix, plus the three seam cand
 2. two tans side by side along the bore: the road's dirt shoulder and the lining's apron;
 3. the lining's smooth concrete against the masonry ring.
 **Owed:** the owner's look at the lighting, and which seam(s) were meant (then blend them or rule them hard edges).
+
+## Owner's call page (Spare, 2026-11-06)
+
+The 11-05 sheet was never queued as an owed call (the orchestrator confirmed). It is now one phone-width page,
+https://claude.ai/artifact/WvJkABRWGG5rZ35BimnXvk, generated into `wip/bug-112/page/` from the 11-05 frames.
+- **The light:** noon and 17:30, 60 m in and at the mouth.
+- **The seams:** the portal at noon and dusk, with the three candidates numbered.
+- **The calls:**
+  - A, the light inside: keep / darker / lighter;
+  - B, which seam (1 bore floor, 2 two tans, 3 lining vs ring), each one blended or ruled a hard edge.
+Queued by the orchestrator as an owed call. The build waits on the answer.
