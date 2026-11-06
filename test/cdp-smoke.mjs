@@ -803,7 +803,7 @@ const STEPS = [
     await seat(p.rx, p.rz, p.h)
     await crank()   // story seats the truck with the engine OFF (FEAT-33)
     if (await js('window.__vs.parked')) await tap(' ')   // and latched
-    const c0 = await car(); await hold('w', 6000); const c1 = await car()
+    const c0 = await car(); await hold('w', 6); const c1 = await car()
     const moved = Math.hypot(c1.x - c0.x, c1.z - c0.z)
     check(moved > 15, `truck moved ${moved.toFixed(0)} m on the job (need > 15)`)
     check(await until(async () => await hudText() !== staged, 3000), `job never started: HUD still "${staged}" after ${moved.toFixed(0)} m`)
