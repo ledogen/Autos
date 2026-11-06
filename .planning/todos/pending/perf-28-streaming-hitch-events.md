@@ -161,6 +161,23 @@ just SIGINT (main d1654a41 + 55c8b013). A stopped harness had been leaving Chrom
   (`_detectNodeJunctions`, `carveHint`'s cache, the sibling-test map). Unconfirmed — `--trace`'s JS
   profile and `--phys` will say whether it is Box3D or our code.
 
+  Code reading, 11-06 (no measurement):
+  - **`_detectNodeJunctions` is struck off.** A positional adopt pays for it eagerly, between frames:
+    `adoptNetwork` → `_adoptDirtyRegions` → `padReachNodes()` (road.js:2433, :9098). So the next physics step
+    finds it already built. The adopt runs in the worker's reply handler (`_onReply`,
+    road-network-client.js), which is a task of its own between frames, not part of any frame.
+    What is still lazy on the wheel path is `carveHint`'s 0.05 m memo and the sibling-test map.
+    The sibling-test map is one O(runs) pass, which is cheap.
+  - **In freecam the parked truck's ground streams away.** `roadStreamCenter()` (main.js) returns
+    the freecam position, so the 320 m road window and the terrain ring follow the camera. The stream
+    scenario starts the camera at the truck and moves it away along +x. The truck leaves the road window
+    after about 16 s at 20 m/s, and after about 3 s at 100 m/s. So the 45 ms step is paid by wheel queries
+    on ground outside the streamed window. It showed in 2 of 2 freecam runs and 0 of 1 drive run, so it
+    may be a freecam-only cost that a driving player never pays. That needs n > 1 to say.
+  - The program counter was 0 on all five clean spikes, not only the 105 ms one (`prog`,
+    perf28-clean-*.json). That fits churn, and also a program created on an earlier frame that links late.
+    `--gpu`'s per-tick +/− log tells the two apart.
+
 Our own GPU time per frame (timer queries): p50 9.5–12.7 ms, mostly the main scene; the shadow bake's
 renders peak at 40–68 ms in one frame at 100 m/s. Frames timed at 85 ms of GPU still had a 16.7 ms
 period, so these ANGLE/Metal readings are upper bounds, not execution time. Do not act on them alone.
