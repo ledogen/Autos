@@ -311,3 +311,15 @@ The tolerance is just narrower than these: they miss by 1.2–7 m, over 4–44 m
 3. **Stage 2 shrinks.** It no longer needs a shipped-line backstop. Its job becomes the four graze-tier pairs outside
    class A: B2's two, where the T owns one interval and the deferral wrongly covers the whole pair, and C's two.
    Each gets a look after Stage 1's census.
+
+**Tier split ADOPTED (orchestrator call, 2026-11-06; the owner is told in the morning as information).** It rests on
+two owner rulings:
+- "i do care about grazing without an intersection" (11-06);
+- BUG-64 (a), which waves off earthwork banks meeting between roads (10-31).
+
+So:
+- **GRAZE gates at zero:** centres under 22 m (under 12 m of daylight) outside junction ground, plus every plan
+  crossing.
+- **BANKS is reported, ranked, and not chased.**
+
+The proof's "zero touches" means the GRAZE tier from here on.
