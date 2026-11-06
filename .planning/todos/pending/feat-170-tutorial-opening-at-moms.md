@@ -242,7 +242,7 @@ a PLACEHOLDER in `data/dialogue.js TUT` (the owner writes them, FEAT-148):
 | `tut-park` | within 150 m of hers `[DEFAULT]` | a tap of Space sets the handbrake; parking is how you do things |
 | `tut-moms` (3) | her sleep card opens in the evening | rest here any time, better than the truck · camping off the road, a nice spot rests you better · the sleep timer and its bar |
 | `tut-breakfast` | the wake, if you slept at hers | eat before you go (its end calls `daySystem.eat(mealHoldH)`: you went to bed at 6, so you wake hungry) |
-| `tut-mapcard` | the wake (anywhere) | the casserole's ready, park at mine and look at my card, it shows the way |
+| `tut-mapcard` | the wake (anywhere) | the casserole's ready, park at mine and look at my card, it shows the way. Woken at hers, the truck still parked: her card OPENS as this lesson ends (`_openOffers`, shared with the park trigger), so there is no second park |
 | `tut-map` | her card opens (an offer with `first`) | "You can always open the map with M" — the owner's map beat; plays after `tut-offer` |
 
 cdp-smoke `opening` reads them off at each beat with `readCards()` (each card takes a fill press and a turn

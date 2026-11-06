@@ -4888,6 +4888,12 @@ function _poiInReach () {
   return q && _inPoiSpot(q) ? q : null
 }
 
+/** A giver's card opens on its live offers, with its first-use lessons. */
+function _openOffers (poi, offers) {
+  missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer')   // FEAT-147
+  if (offers.some(o => offerBoard.spec(o)?.first)) _tut('tut-map')   // FEAT-170: her card shows the route on the map
+}
+
 /**
  * Is the truck in POI `q`'s parking spot? FEAT-88: a haul giver's is its drop zone, with your BED
  * over it — that is where the load lands. ASSET-74: a POI with a PARK box (the general store's lot)
@@ -5510,10 +5516,7 @@ function _updateParkTriggers (zParked = false) {
     const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
-    else {
-      missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer')   // FEAT-147
-      if (offers.some(o => offerBoard.spec(o)?.first)) _tut('tut-map')   // FEAT-170: her card shows the route on the map
-    }
+    else _openOffers(poi, offers)
     if (poiEl) poiEl.style.display = 'none'
     if (campRow) campRow.style.display = 'none'
     return
@@ -6054,7 +6057,14 @@ function _sleepAtCamp () {
     _endEvening()   // FEAT-170: any night ends the opening's evening
     // Stage 4, the morning: breakfast if you slept at hers (it feeds you), then her card.
     if (evening && atMoms) _tut('tut-breakfast', TUT['tut-breakfast'], () => daySystem.eat(DAY_PARAMS.mealHoldH))
-    if (evening) _tut('tut-mapcard')
+    // …and woken at hers, her card opens as that lesson ends: the route on the map (the owner's map beat).
+    if (evening) _tut('tut-mapcard', TUT['tut-mapcard'], () => {
+      const q = _poiInReach()
+      if (q?.type !== 'momsHouse' || !vehicleState.parked) return
+      if (_campUi) _closeCampUi()
+      const offers = _takeableOffers(q.id, daySystem.clockH())
+      if (offers.length) _openOffers(q, offers)
+    })
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
     // and on a worn engine it is also the morning's first piece of news about what you're driving.

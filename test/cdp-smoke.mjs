@@ -1162,11 +1162,10 @@ const STEPS = [
     const stage = () => js('document.getElementById("em-stage").textContent')
     check(await readCards() >= 2, 'no breakfast and no "look at my card" in the morning')
     check(!/hungry/.test(await stage()), `mom's breakfast did not feed the driver ("${await stage()}")`)
-    // The morning: her pad answers like a giver's — park and her card opens; taken there, it stages.
-    await js('document.getElementById("cp-break").click()')
-    check(await until(async () => !await panel(), 2000), "the sleep card's leave did not close it")
-    await park(true)
-    check(await until(() => js('getComputedStyle(document.getElementById("mp-accept")).display !== "none"'), 3000), "parking at mom's in the morning opened no casserole card")
+    // Woken at hers, her card opens as the lesson ends — no second park — and the sleep card is gone.
+    check(await until(() => js('getComputedStyle(document.getElementById("mp-accept")).display !== "none"'), 3000), "her card did not open after the morning's lesson")
+    check(!await panel(), 'the sleep card stayed up under her job card')
+    await readCards()   // the job card's lessons: what a card is, and the map line
     await js('document.getElementById("mp-accept").click()')
     const job = () => js(`(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, first: window.__board().firstState() } })()`)
     check(await until(async () => { const b = await job(); return b.first === 'taken' && b.s === 'staging' && !b.a }, 3000), `taking mom's casserole did not stage it: ${JSON.stringify(await job())}`)
