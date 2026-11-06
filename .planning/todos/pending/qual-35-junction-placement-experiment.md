@@ -65,6 +65,15 @@ Report, in this order:
    junctions couple, and what margin would that need?
 6. **A screenshot sheet** on random seeds: before/after at the 10 biggest movers and 5 typical ones.
 
+7. **Conclusion: the full-redesign view.** Owner, 2026-11-06, verbatim: "Once Spare is finished with the
+   experiment, have it conclude by presenting its thoughts on a full network redesign where nodes become just points
+   along roads and junction locations are optimized versus nodes being locations where junctions are forced
+   (current) It should have a little more context on which to... ...decide the value of that fix and additional
+   caveats." Write it from what phase 0’s numbers showed: the value, the caveats, and what a flagged prototype
+   would take to build and to test against today's criteria. Those criteria are the road gates (about 25 of the 30
+   are invariants any network must meet; `wye-release` and `promoted-node-id` pin today's repairs), the census and
+   the PERF-27 benches. Plain language: the owner reads it to decide.
+
 **Stop there.** The results and the sheet go to the orchestrator, which puts them in front of the owner. Nothing
 touches `src/` until the owner rules.
 
