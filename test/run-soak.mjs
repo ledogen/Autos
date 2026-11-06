@@ -191,6 +191,13 @@ function pick (list) {
   return list.filter(o => FAMILY_ORDER.includes(o.family) && !run.skip.has(o.id)).sort((a, b) => rank(a) - rank(b))[0] ?? null
 }
 
+/** Put an open offer card down: its decline button, else Esc; a panel that will not go is a soft-lock. */
+async function decline () {
+  if (await vis('mp-decline')) await js('document.getElementById("mp-decline").click()')
+  else await tap('Escape')
+  check(await until(() => js('!["offer", "generating"].includes(window.__mission().state)'), 3000), `an offer card would not close (state ${await js('window.__mission().state')})`)
+}
+
 /** Park at the giver, open its card, take offer `o`. False when the card refuses it. */
 async function take (o) {
   step = `take ${o.family}${o.line ? ' line ' + o.line : ''} at ${o.type}`
@@ -201,7 +208,7 @@ async function take (o) {
   await readCards()
   for (let i = 0; i < 12 && await js(`window.__mission().offer?.id !== ${JSON.stringify(o.id)}`); i++) { await js('window.__mission().cycle(1)'); await sleep(100) }
   if (!await js(`window.__mission().offer?.id === ${JSON.stringify(o.id)} && !document.getElementById("mp-accept").disabled`)) {
-    run.skip.add(o.id); await tap('Escape'); await until(async () => !await vis('mp-accept'), 3000); return false
+    run.skip.add(o.id); await decline(); return false
   }
   await js('document.getElementById("mp-accept").click()')
   check(await until(() => js('["staging", "loading", "running"].includes(window.__mission().state)'), 10000), `accepting did not start the job (state ${await js('window.__mission().state')})`)
@@ -285,21 +292,20 @@ async function sleepNight () {
   check(await until(() => vis('camp-panel'), 3000), "parking at mom's opened no sleep card")
   await readCards()
   await js('document.getElementById("cp-sleep").click()')
-  const hours = Math.max(1, Math.min(14, Math.round(await js('window.__day().fullEnergyH() - window.__day().energyH()') / 2 + 1)))
-  // ponytail: hours from the energy deficit at a 2:1 recovery, not the preview's arithmetic — the wake energy is reported.
-  await js(`(() => { const s = document.getElementById("cp-hours"); s.value = ${Math.min(10, Math.max(7, hours))}; s.dispatchEvent(new Event("input")) })()`)
+  // To 07:00 (a player's night), 4–14 h on the timer.
+  const hours = Math.max(4, Math.min(14, Math.round(((7 - s0.hour) % 24 + 24) % 24)))
+  await js(`(() => { const s = document.getElementById("cp-hours"); s.value = ${hours}; s.dispatchEvent(new Event("input")) })()`)
   await js('document.getElementById("cp-sleep-go").click()')
-  check(await until(async () => (await S()).h > s0.h + 5, 15000), `the night did not move the clock (${s0.h.toFixed(2)} → ${(await S()).h.toFixed(2)})`)
+  check(await until(async () => (await S()).h > s0.h + hours - 0.5, 15000), `a ${hours} h night did not move the clock (${s0.h.toFixed(2)} → ${(await S()).h.toFixed(2)})`)
   await readCards()
   await js('document.getElementById("cp-break")?.click()')
   check(await until(async () => !await vis('camp-panel'), 3000), "mom's sleep card would not close")
   const s1 = await S()
-  check(s1.day > s0.day || s1.hour < s0.hour, `a night's sleep did not reach the next day (day ${s0.day} → ${s1.day})`)
   run.wakes.push({ day: s1.day, hour: +s1.hour.toFixed(2), money: +s1.money.toFixed(2), energy: +s1.energy.toFixed(1), deeds: s1.half / 2 })
 }
 
 async function playRun (seedIn) {
-  run = { seed: seedIn, day: 0, speed: 12, driveMin: 0, jobs: [], wakes: [], fuelBuys: [], meals: 0, skip: new Set(), notes: [], softlocks: [],
+  run = { seed: seedIn, day: 0, speed: 12, driveMin: 0, jobs: [], wakes: [], fuelBuys: [], meals: 0, hungryDays: [], skip: new Set(), notes: [], softlocks: [],
           gateDay: null, winDay: null, result: null }
   const t0 = performance.now()
   run.seed = await startRun(seedIn)
@@ -311,12 +317,15 @@ async function playRun (seedIn) {
     if (s.day > MAX_DAYS) { run.result = `no win by day ${MAX_DAYS}`; break }
     if (run.gateDay == null && s.lines.some(l => l !== 'closed')) run.gateDay = s.day
     try {
+      if (s.ms === 'offer' || s.ms === 'generating') { await decline(); continue }
       if (s.ms !== 'idle') {   // the casserole (in hand from the skip), or a job a resume brought back
-        const r = await finish({ family: 'in hand', type: 'mom', line: null })
-        run.jobs.push({ day: s.day, family: s.first === 'done' ? 'delivery (casserole)' : 'in hand', ...r })
+        const o = await js('(() => { const m = window.__mission(), sp = window.__board().spec(m.offer ?? {}); return { family: sp?.family ?? "?", line: sp?.line?.id ?? null, type: sp?.first ? "momsHouse (casserole)" : "in hand" } })()')
+        const r = await finish(o)
+        run.jobs.push({ day: s.day, family: o.family, line: o.line, giver: o.type, ...r })
         continue
       }
-      if (s.energy < 3 || s.hour >= 22 || s.hour < 5) { await sleepNight(); await saveAndResume(); continue }
+      if (s.energy < 3 || s.hour >= 21 || s.hour < 4) { await sleepNight(); await saveAndResume(); continue }
+      if (s.hungry && !run.hungryDays.includes(s.day)) run.hungryDays.push(s.day)
       if (s.hungry && await eat()) continue
       if (s.fuel < 5 && s.money > 2) { await refuel(); continue }
       const o = pick(await offers())
