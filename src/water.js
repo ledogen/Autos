@@ -911,6 +911,31 @@ export class WaterSystem {
         return true
     }
 
+    // PERF-27: the network client's dispatch warm. Before each build it primes what _getPondDiscs is about to read —
+    // the pond discs for the build's whole box (the window + pondDiscPad, ~13–18 km across) — and NOTHING else: the
+    // worker routes with pond discs only, never streams. Warming through warmRegion also traced every stream in that
+    // box (and its stream-length margin): 1.2–3.1 s of main thread per cold build at 1× (seeds 2623851183,
+    // 3997014678), ×4 at cpu ×4, for traces no build reads. Streams near the player stay warmed per frame (the ±768 m
+    // lookahead in main.js), which is the anti-hitch job warmRegion exists for. Pure cache priming, as there: the
+    // discs are byte-identical whether or not it ran.
+    warmPonds(minX, minZ, maxX, maxZ, deadlineMs = 2) {
+        const deadline = performance.now() + deadlineMs
+        const marginCells = Math.ceil((this.k.pondMaxRadius + this.k.pondSkirtWidth) / WATER_CELL) + 1   // _collectPonds' reach
+        for (const [cx, cz] of this._cellsForBBox(minX, minZ, maxX, maxZ, marginCells)) {
+            const ck = `${cx},${cz}`
+            if (this._warmedCells?.has(ck) || this._pondCells?.has(ck)) continue
+            if (performance.now() >= deadline) return false
+            const cd = this._cellData(cx, cz)
+            for (const m of cd.minima) {
+                if (performance.now() >= deadline) return false
+                this._pondForBasin(m)
+            }
+            if (!this._pondCells) this._pondCells = new Set()
+            this._pondCells.add(ck)
+        }
+        return true
+    }
+
     // ── Coordinated public API (2026-07-01 handoff naming) ────────────────────
     // Thin aliases so consumers (router route-around, scatter, terrain stream carve)
     // speak the documented contract. bbox = (minX, minZ, maxX, maxZ).
