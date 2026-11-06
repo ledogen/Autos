@@ -1,7 +1,7 @@
 ---
 id: BUG-102
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-01
 source: owner, 2026-11-01 — long-standing, surfaces under heavy machine load
@@ -91,8 +91,24 @@ The bursty dip is the exponential's own step: it takes the goal's end position f
 lands the camera nearer, never behind. Integrating it exactly would move the 60 fps trail by ~4 % (4.79 → 5.00 m of
 lag at 25 m/s), and the feel is signed off.
 
+**In the real app** (`wip/bug-102/drawprobe.mjs`: it wraps `renderer.render` and reads the camera and the truck MESH at
+each drawn frame; the "trail residual" is the trail minus the steady-state 6 m + v/k, on moving frames):
+
+| run | sim / wall | trail residual, median (p5) | camera still while the mesh moved |
+|---|---|---|---|
+| unloaded | 24.9 / 24.9 s | −1.07 m (−3.50) — the model's own offset (it ignores acceleration) | 0 |
+| 6× CPU + 50–400 ms stalls, **before** | 13.7 / 25.0 s | **−2.25 m (−4.24)**, again −2.56 (−3.88) | 0 |
+| the same load, **after** | 16.7 / 24.9 s | **−1.11 m (−2.53)**, again −1.02 (−2.53) | 0 |
+
+Under load the camera now sits where it sits unloaded. Single frames where the aim leans (≤ 0.2 of the screen, before
+and after) are FEAT-95's crash-calm aim cap on a crash. On the wall clock in slow motion that cap was effectively ~4×
+looser, so crash-calm stopped working under load; now it holds at any load.
+
 **"Freezes in space": still not reproduced, by Spare's probe or mine.** In the real app under the loads above, the
 camera never stayed still across a drawn frame while the truck mesh moved, and the truck stayed centred on screen. The
 code has only two paths that hold the camera on a fixed point: the camp/service-screen focus (each holds the truck as
 well, and each hands back on close) and freecam. If the owner sees it again, the sighting details Spare asked for
 (camera mode, a menu/map/camp, a pad look) are what's owed.
+
+**Closed 2026-11-06** on the acceptance: the trail stays in its normal band under throttle, the camera is never still
+while the truck moves, and the healthy-rate feel is unchanged by construction. A freeze sighting reopens it.
