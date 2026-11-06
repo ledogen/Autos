@@ -606,6 +606,7 @@
     /* moving: "park to abandon" — the button is inert until the brake is latched */
     #job-cancel.unparked, #job-cancel.unparked:hover { background: rgba(0, 0, 0, 0.35); border-color: var(--line); color: var(--text-body); cursor: default; }
     #job-cancel .park-badge { margin-right: 0.35em; }
+    #job-cancel .keycap { margin-right: 0.4em; }
     #mission-hud .mh-count { font-size: 44px; color: var(--key); }
 
     /* FEAT-63: the GPS re-plan indicator. Bottom-right and quiet — it reports that help is on the
@@ -852,7 +853,8 @@
        column's usable icons while it is held — the locked park zone's stay down, as they are off it. */
     body.hud-menu-on .hud-icon { opacity: 0.85; }
     body.hud-menu-on #park-zone.locked .hud-icon { opacity: 0.35; }
-    body:has(#inv-screen.open) #inv-icon, body:has(#dmg-screen.open) #dmg-icon, #hud-icons .hud-icon.menu-sel {
+    body:has(#inv-screen.open) #inv-icon, body:has(#dmg-screen.open) #dmg-icon, #hud-icons .hud-icon.menu-sel,
+    #job-cancel.menu-sel {   /* FEAT-125: the job's abandon button is the B menu's last entry (hud-menu.js) */
       opacity: 1; border-color: var(--accent-story);
       box-shadow: 0 0 0 1px var(--accent-story), 0 0 12px rgba(127, 194, 255, 0.45);
     }

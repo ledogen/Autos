@@ -100,6 +100,9 @@ export const BINDINGS = [
   { action: 'damage screen',         key: 'v',         pad: 'B (hold, ↑/↓, release)' },
   { action: 'camp',                  key: 'z',         pad: 'B (hold, ↑/↓, release)' },
   { action: 'recovery',              key: 'x',         pad: 'B (hold, ↑/↓, release)' },
+  // FEAT-125 pad audit [DEFAULT]: the job's two-press abandon button, mouse-only until now — the B menu's
+  // last entry (never pre-selected, hud-menu.js) and J on the keyboard.
+  { action: 'abandon job (parked; twice)', key: 'j',  pad: 'B (hold, ↑/↓, release)' },
 ]
 const BUTTON_KEYS = Object.fromEntries(BINDINGS.filter(b => b.button != null).map(b => [b.button, b.key]))
 // While a menu owns the screen (pad.menuActive, from src/menu-nav.js) the pad speaks the menu's keys

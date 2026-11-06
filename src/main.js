@@ -8736,11 +8736,11 @@ function _strappedJob () {
   return !paperRouteSystem.isCarrying() && !!missionSystem?.isOnJob() && !!missionSystem.mission?.load
 }
 function _jobCancelLabel () {
-  if (_expiredJob()) return vehicleState.parked ? 'mission expired' : parkPrompt('mission expired')   // FEAT-113
+  if (_expiredJob()) return vehicleState.parked ? keycap('J') + 'mission expired' : parkPrompt('mission expired')   // FEAT-113
   if (!vehicleState.parked) return parkPrompt('park to abandon')
   // An intact strapped load still costs the clean-up hour, but it reads "abandon job" (owner,
   // 2026-10-15: "clean up" only once the cargo is actually wrecked).
-  return _strappedJob() && missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'abandon job'   // FEAT-97
+  return keycap('J') + (_strappedJob() && missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'abandon job')   // FEAT-97
 }
 function _syncJobCancel (hud, on) {
   const b = document.getElementById('job-cancel')
@@ -8775,13 +8775,20 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
   if (!_jobCancelArm) {
     _jobCancelArm = setTimeout(_disarmJobCancel, JOB_CANCEL_ARM_S * 1000)
     b.classList.add('armed')
-    b.innerHTML = _strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?'   // FEAT-96: say the clean-up cost
+    b.innerHTML = keycap('J') + (_strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?')   // FEAT-96: say the clean-up cost
     return
   }
   _disarmJobCancel()
   if (_strappedJob()) daySystem.advanceMinutes(CLEANUP_H * 60)   // before the cancel: the slot locks from the clean-up's end
   const id = paperRouteSystem.isCarrying() ? paperRouteSystem.cancel() : missionSystem?.cancel(_abandonCargo())
   if (id) offerBoard?.abandon(id, daySystem.clockH())
+})
+// FEAT-125 pad audit [DEFAULT]: J presses the same button from the keyboard (the pad's way is the B menu's last
+// entry) — not while typing, nor under a menu, where the HUD it sits on is not the player's.
+window.addEventListener('keydown', (e) => {
+  if (e.repeat || e.key.toLowerCase() !== 'j' || e.target?.tagName === 'INPUT' || pad.menuActive()) return
+  const b = document.getElementById('job-cancel')
+  if (b?.offsetParent) b.click()
 })
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
 // still holds a frozen region and a live day clock would leave both running behind the scene.
