@@ -3888,6 +3888,17 @@ export class RoadSystem {
         // can run it on DISJOINT pairs too; anchored here at this node, exactly as before.
         const conflictIntervals = (P, Q) =>
             _conflictIntervalsXZ(P.S, P.nodeAtStart, Q.S, near, GAPM, FLARE, () => this._v2MergeSkipped('flare'))
+        // BUG-105: does P come inside the GRAZE floor (2·HW + clearEdgeM: under 12 m of daylight) of Q
+        // beyond node-arc `from`?
+        const FLOOR = this._v2ClearPrm().floor
+        const grazes = (P, Q, from) => {
+            for (let i = 0; i < P.S.pts.length; i++) {
+                if (fromNode(P, P.S.polyCum[i]) <= from) continue
+                const h = _nearestWithinXZ(P.S.pts[i].x, P.S.pts[i].z, Q.S.pts, Q.S.polyCum, FLOOR)
+                if (h && h.d < FLOOR) return true
+            }
+            return false
+        }
 
         // _v2MidSpanPair is a method so the BUG-55 disjoint planner reuses the IDENTICAL mid-span
         // construction and guards; ctx carries this planner's floors and report tag.
@@ -3919,8 +3930,19 @@ export class RoadSystem {
                 const mA = maybeMidSpan(A, B, fA), mB = maybeMidSpan(B, A, fB)
                 if (!mA && !mB) continue
                 if (!MIDSPAN_ON) { this._v2MergeSkipped('midspanOff', `${A.ck} x ${B.ck} @${nk}`); continue }
-                const mid = (mA && this._v2MidSpanPair(ctx, A, B, conflictIntervals(A, B)))
-                    || (mB && this._v2MidSpanPair(ctx, B, A, conflictIntervals(B, A))) || null
+                const midOf = (cx) => (mA && this._v2MidSpanPair(cx, A, B, conflictIntervals(A, B)))
+                    || (mB && this._v2MidSpanPair(cx, B, A, conflictIntervals(B, A))) || null
+                let mid = midOf(ctx)
+                // BUG-105 FORCED JOIN — the ladder's third rung (JOIN, SEPARATE, then this). A pair whose
+                // FINAL lines (FEAT-77's re-route already tried) still GRAZE past both node intervals is
+                // joined on a shorter strand: MINSPAN down to the promotion's own fork spacing (30 m).
+                // Seed 51 (1818, 30): the legs bulge 60 m apart and kiss at 5 m, 44 m inside mergeProxM;
+                // the berth is a price, so the re-route never moved. Final plan only, so pass 1 still
+                // hands the pair to SEPARATE first, and nothing upstream reads this answer.
+                if (!mid && !pass1 && grazes(A, B, Math.max(fA, THROAT))) {
+                    mid = midOf({ ...ctx, MINSPAN: 30 })
+                    if (mid) this._v2MergeSkipped('forced-join', `${A.ck} x ${B.ck} @${nk}`)
+                }
                 if (mid) pairs.push(mid)
                 continue
             }
