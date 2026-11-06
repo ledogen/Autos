@@ -3569,9 +3569,15 @@ export class RoadSystem {
             // (_v2ThroatLen — the legs' pavements have parted), not the fixed one. Legs of one node
             // routinely run inside mergeProxM 30–120 m out while their pavements part — the junction's
             // own ground; re-routing those moved 41 windows that shipped no touch at all (2026-11-06).
+            // A pair whose lines properly CROSS past the 30 m throat stays deferred: the crossing rungs
+            // (_v2DeleteFor / _v2ShoveFor, BUG-57's invariant) own it. This pass takes only the GRAZE —
+            // close, never crossing (seed 1247456971: 9 legs of one node crossing their sibling were
+            // re-routed here before the crossing rung could judge them).
             let tAx = tA, tBx = tB
-            if (merges && ((shA || shB) ? !this._v2PlannedPair(g, drop, shA ? kA : kB, ck, pk)
-                : this._v2NodeRole(g, drop, kA, kB, ck) || this._v2NodeRole(g, drop, qA, qB, pk))) {
+            const shK = shA ? kA : kB
+            if (merges && ((shA || shB) ? !this._v2PlannedPair(g, drop, shK, ck, pk)
+                : this._v2NodeRole(g, drop, kA, kB, ck) || this._v2NodeRole(g, drop, qA, qB, pk))
+                && !_pairProperCrossingsXZ(S, shK === kA, Q, shK === qA, shA || shB).length) {
                 merges = false; violates = false
                 if (shA) tAx = this._v2ThroatLen(S, true, Q)
                 if (shB) tBx = this._v2ThroatLen(S, false, Q)
