@@ -254,4 +254,22 @@ auto-end and is the orchestrator's to run on landing.
     the run ends.
   - Pinned in `test/recovery.mjs` §3b.
 
-**Next: P3**, the cues: HUD words below ~20 %, the knock, the bang.
+**2026-11-06, Lane B — P3 built (feature/machine c3dbd7b8), not landed.**
+
+- **Words** (main.js `_machineWords`, the 10 Hz poll; a `#machine-word` toast, Story family, 18 px, 4 s then a
+  1 s fade): the engine and each wheel speak twice.
+  - Crossing below 20 % (`KNOCK_FROM` `[DEFAULT]`): "the engine is knocking" / "the front-left wheel is
+    cracking", in `--warn`.
+  - At 0: "the engine seized" / "the front-left wheel gave out", in `--bad`.
+  - Repaired back above the line, it can speak again. The first poll of a drive only takes the levels in, so
+    loading a run doesn't announce what the truck already was. Nothing is shown in between: no gauge
+    (SM-INV-10). Lives mode floors at 25 %, so it never speaks there.
+- **The knock** (`src/knock-audio.js`, new): a worn rod bearing, once per crank revolution.
+  - Built as an impulse-train wavetable at rpm/60 ringing a 1.8 kHz bandpass (Q 6).
+  - It starts at a quarter strength at 20 % and grows to full at 0 %; throttle hardens it (×0.35 → ×1).
+  - It follows the engine sound's on/volume.
+- **The bang:** the running engine's seize (ignition `'shutoff'` while `seized`) plays a noise hit over an
+  80 → 35 Hz thump, then the existing shutoff silence. The hood steam stays the overheat's own cue (FEAT-51).
+- FEAT-120's sound list has both: the dashboard's ▶ plays `knock-sweep` (10 % engine, 800 → 4000 rpm) and the bang.
+- The cdp-smoke's broke-down step now checks "the engine is knocking" at 10 %.
+- **Owed (the owner's ear):** the knock and the bang are first cuts.
