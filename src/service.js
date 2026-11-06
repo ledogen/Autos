@@ -52,7 +52,10 @@ export function repairTargets (cls, cond, partId = null) {
     // FEAT-166: a differential's only wear is the clutch LSD's packs, and a rebuild is new packs —
     // straight to 100%, and only for a part that has them (PARTS[id].rebuild).
     if (cls === 'diff') return PARTS[partId]?.rebuild && cond < 1 - EPS ? [1] : []
-    if (cls === 'wheel' && cond <= 0) return []   // FEAT-162: a collapsed wheel is scrap — replace it
+    // FEAT-162: a collapsed wheel is scrap — replace it; a seized engine is rebuilt whole, to the cap
+    // (SEIZED_REPAIR_X prices it), never a cheap first step that frees it.
+    if (cls === 'wheel' && cond <= 0) return []
+    if (cls === 'engine' && cond <= 0) return [REPAIR_CAP]
     const out = []
     for (let t = Math.floor(cond / REPAIR_STEP + EPS) + 1; t * REPAIR_STEP <= REPAIR_CAP + EPS; t++) out.push(Math.round(t * REPAIR_STEP * 100) / 100)
     return out

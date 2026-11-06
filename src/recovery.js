@@ -60,9 +60,12 @@ export const PLUG_H = { pump: 2, compressor: 0.5 }          // the whole stop, b
  *   money                     the wallet
  *   fuelTow, shopTow          { price, km, hours } to the nearest gas station / service center, or null
  *   tireService               tireServiceQuote(), or null
+ *   atShop                    parked at a service center: { seized, wheel }, the least its bench or shelf
+ *                             charges to cure a seized engine, and to put on one wheel; else null
  * @returns {{ head: string, why: string[], stuck: boolean, opts: Array<{act, enabled, tow}>, canEnd: boolean, cure: object|null }}
  *   why     what strands the truck: 'dry' · 'seized' · 'wheel' · 'rolled' (empty: it can go on)
- *   canEnd  stuck, and no option that cures every `why` is affordable; `cure` is the cheapest such option
+ *   cure    the cheapest set of options that between them cure every `why`: { acts, price }, or null
+ *   canEnd  stuck, and the wallet can't cover `cure`
  */
 export function recoveryCard (s) {
   const why = []
@@ -77,11 +80,23 @@ export function recoveryCard (s) {
   const opts = []
   const opt = (act, tow, cures) => opts.push({ act, tow, cures, enabled: s.money + 1e-9 >= tow.price })
   if (s.dry && s.fuelTow) opt('towFuel', s.fuelTow, ['dry', 'rolled'])
-  if (s.shopTow) opt('towShop', s.shopTow, ['dry', 'seized', 'wheel', 'rolled'])
+  // Parked at the shop already, the "tow" there is 0 km and cures nothing but a roll; its own bench and
+  // shelf are the cure [DEFAULT — the orchestrator's reading of the owner's rule, 2026-11-06; the owner can
+  // overrule]. The card never shows it: the chip is hidden inside a POI's ring.
+  if (s.shopTow) opt('towShop', s.shopTow, s.atShop ? ['rolled'] : ['dry', 'seized', 'wheel', 'rolled'])
   if (s.tireService) opt('tireService', s.tireService, ['wheel'])
-  const cures = opts.filter(o => why.every(w => o.cures.includes(w))).sort((a, b) => a.tow.price - b.tow.price)
+  const wheels = Math.max(0, s.collapsed.length - s.spares)
+  if (s.atShop && (s.seized || wheels)) opt('shopFix', { price: (s.seized ? s.atShop.seized : 0) + wheels * s.atShop.wheel }, ['seized', 'wheel'])
+  // Between them: dry with a collapsed wheel is the fuel tow AND the tire service. A handful of options — try every set.
+  let cure = null
+  for (let m = 1; m < 1 << opts.length; m++) {
+    const set = opts.filter((_, i) => m >> i & 1)
+    if (!why.every(w => set.some(o => o.cures.includes(w)))) continue
+    const price = set.reduce((a, o) => a + o.tow.price, 0)
+    if (!cure || price < cure.price) cure = { acts: set.map(o => o.act), price }
+  }
   const stuck = why.length > 0
-  return { head, why, stuck, opts, canEnd: stuck && !cures.some(o => o.enabled), cure: cures[0] ?? null }
+  return { head, why, stuck, opts, canEnd: stuck && !(cure && s.money + 1e-9 >= cure.price), cure: stuck ? cure : null }
 }
 
 /**
