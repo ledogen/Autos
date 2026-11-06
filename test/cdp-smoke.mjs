@@ -1105,7 +1105,8 @@ const STEPS = [
     check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
     check(!await card(), 'the crash card skipped the beat')
     await ended(/died/, /hit at 90 mph — front · at 30 % armor the front could take 72 mph; fresh it takes 100/)
-    // Broke down: an empty tank, no gas can, no money for a tow → the Recovery card's "end run".
+    // Broke down (FEAT-162): an empty tank, no gas can — the Recovery card offers the tows while there
+    // is money; at $0 the run ends by itself once the truck has sat still a few seconds.
     await newRun()
     // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
     const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = window.__poi().barricades()[1]
@@ -1113,22 +1114,23 @@ const STEPS = [
       return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
     await seat(away.x, away.z, away.h)
     await js(`(() => { const inv = window.__inv; for (const r of [...inv.list()].reverse()) if (r.id === 'emergencyGas' || r.gal > 0.05) inv.drop(r.index)
-      window.__econ.money = 0 })()`)
+      window.__econ.money = 1000 })()`)
     await crank()
     await js('window.__vs.fuel.gal = 0')   // the running engine's next step finds it empty: dry, stalled
     check(await until(() => js('window.__vs.fuel.dry'), 3000), 'the emptied tank never ran dry')
     await park(true)
     await tap('x')
-    check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000),
-      `no "end run" on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]:not([disabled])")'), 3000),
+      `no fuel tow on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
     // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
     await padOn(); await btn(1); await padOff()
     check(await until(() => js('document.getElementById("recovery-card").style.display === "none"'), 2000), 'pad B left the Recovery card open (BUG-113)')
     check(await js('document.getElementById("pause-menu").style.display !== "flex"'), 'pad B on the Recovery card opened the pause menu (BUG-113)')
     await tap('x')
-    check(await until(() => js('!!document.querySelector("#recovery-card .rc-end")'), 3000), 'X did not reopen the Recovery card after B closed it')
-    await js('document.querySelector("#recovery-card .rc-end").click()')
-    await ended(/truck is dead/, /(the tow was \$[\d,.]+|no tow could reach you) — you had \$0\b/)
+    check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]")'), 3000), 'X did not reopen the Recovery card after B closed it')
+    check(!await card(), 'a dry truck with money for a tow ended the run')
+    await js('window.__econ.money = 0')
+    await ended(/broke down/, /out of fuel — (the tow was \$[\d,.]+|no tow could reach you), you had \$0\b/)
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     // FEAT-170: a new run starts with mom's casserole in hand, and the win waits for no job to be active (in
