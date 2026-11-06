@@ -249,3 +249,13 @@ Tier 1 (four customers) is the right rung: it is the one the owner has driven an
 - The default rung is 4.
 - There is no deadline (par and rank only).
 - The best-times board keeps times per rung.
+
+**Signed off (orchestrator, 2026-11-06).** The defaults stand: the rung is picked on Larry's card, default 4, no
+deadline, the board keeps times only. Seed 90 is a curated scenario's world by design, not a default seed. Two notes:
+1. Best times go through `src/leaderboard.js` `localStore()`, the descent's board (one key per scenario). If that
+   cannot hold a list per rung, extend it; do not fork it.
+2. The save guard matters most. Beyond the byte-identical check, the smoke must:
+   - start a real run and save it;
+   - play the scenario, crash, and restart in it;
+   - quit to the menu;
+   - and then **Continue must still resume the original run**.
