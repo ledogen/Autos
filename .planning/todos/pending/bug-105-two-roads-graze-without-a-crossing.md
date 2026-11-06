@@ -1,7 +1,7 @@
 ---
 id: BUG-105
 type: bug
-status: open
+status: landed — owner's calls open (4 sites)
 severity: major
 opened: 2026-11-03
 source: owner capture /Users/ledogen/Downloads/autos-capture-1793661257788.json (seed 163384989, free roam, mark
@@ -240,7 +240,9 @@ Stage 2 is the main fix, and its T-at-the-touch design gets written up here befo
   - Stage 1's forecast reuses plan memos that already exist, plus one promotability probe per disjoint candidate.
   - Stage 2's walk uses the same within-skip PERF-31 added, so it is roughly tens of ms per window, plus one route
     per joined touch.
-  - Budget: ≤ 5 % of the network thread. Story entry at `--cpu=4` measured before and after; it must stay < 30 s.
+  - ~~Budget: ≤ 5 % of the network thread.~~ **Superseded by the orchestrator, 11-06: the owner's bar is story
+    entry < 30 s at cpu ×4, and halving the grazes is worth the network-thread cost** (measured +22 %; story entry
+    9.0 → 9.6 s). The owner can overrule this on the tracker page.
 - **Compute to prove it:** about 100 window builds per census pass, roughly 25 min on 4 cores. Expect 3–5 passes.
 - **World movement:** unknown until Stage 0. The prototype moved 7 sites in 20 seeds for Stage 1's node-sharing half.
 
@@ -323,3 +325,302 @@ So:
 - **BANKS is reported, ranked, and not chased.**
 
 The proof's "zero touches" means the GRAZE tier from here on.
+
+### Stage 1 — built and measured (2026-11-06, `feature/spare` `010d5fa3` → `d2150de1`)
+
+**The rule as built.** FEAT-77's clearance pass hands a close pair (pass-1 lines inside `mergeProxM`) to the T
+machinery only when **`_v2MergeFor`'s own answer, asked on the PASS-1 lines, pairs the two roads**. A `pass1` mode
+is threaded through `_v2MergeFor`, `_v2PromotableFor`, `_v2PromotableProbe` and `_v2NodeMerges`, so the question
+reads no pass-2 line and no cycle forms. It is quiet: the skip tallies stay the real plan's. For a pair with no
+shared node, the forecast is the disjoint planner's precondition: neither road holds a node-merge role.
+
+A pair the pass now takes over is judged the way the gate judges it:
+- past the **geometric** throat (`_v2ThroatLen`), and the router exempts that same throat;
+- never on a stretch the forecast T cedes to its trunk;
+- not at all if the pass-1 lines properly **cross** past 30 m. That pair stays with the crossing rungs (BUG-57),
+  which own crossings.
+
+**Each refinement was measured over the 127-window census** (`wip/bug-105/census*`; footprint = changed windows vs
+main):
+
+| step | GRAZE | changed windows (of them, no touch on main) |
+|---|---|---|
+| main (census 0) | 29 + 1 crossing, 2 356 m | — |
+| prototype port + disjoint role forecast | 14 | 68 (41) |
+| + geometric throat | 13 | 60 (36) |
+| + pass-1 crossings stay with the crossing rungs | 15 | 25 (9) |
+| + ownership = `_v2MergeFor`'s pass-1 answer (no buildable T, or outranked by the run's other end, owns nothing) | **10, 536 m** | 40 (17) |
+
+Why the plan-only forecast was not enough:
+- Three pairs had a node plan whose T could not be built (`promote-infeasible`).
+- BUG-104's own seed-10 site had a plan that `_v2MergeFor` dropped, because the side road's larger merge at its other
+  end won.
+
+Now clean:
+- BUG-105's mark;
+- BUG-104's seeds 10 and 52;
+- 158847947;
+- the worst graze, seed 2078771719, 0.5 m apart for 92 m.
+
+**Residue (10), for Stage 2.**
+- **Separation fails** (seed 51, 5.4 m for 80 m; 2314412071; 1695296864). The loser re-routes, but FEAT-77's berth is
+  a price, not a wall: `wClear` = 12 per metre inside, while the detour out of the valley costs more grade. Only a
+  JOIN resolves these. This is the plan's forced-join rung.
+- **B2** (87: 3.3 m for 76 m; 200398059). A mid-span T was planned for the pair, but on another interval about
+  500 m away. The deferral still covers the whole pair.
+- **Deferred with no owner** (2166453044, 1227226248). Not on main's list: collateral of Stage 1's moves. To be traced.
+- **The unregistered crossing** at 3502246374 (1628, 137), decks 5.1 m apart. The crossing rung owns it but never
+  resolves it. On main too.
+- **Borderline** (2757792661, 1276689627: legs of Ts at 20–21.4 m, i.e. 10–11.4 m of daylight against the 12 m bar).
+
+**Gates on `d2150de1`** (affected set, `--changed=src/road.js`): **55/58**. All three reds are ONE site, seed 11 origin
+(1376–1385, −1170), on a battery window the census does not include:
+- `road-clearance`: two legs of node `1,-2,0` (`g:1,-2,0:2,-1,1` × `g:2,-3,2:1,-2,0`) are now 1.9 m apart for 88 m;
+- `junction-stitch`: 1 unstitched span there;
+- `vertical-curvature`: a 0.073 /m open-road crest there (line 0.07), and 20 open kinks against a ceiling of 19.
+
+A Stage 1 move CREATED this graze. Trace it first in the next session (`wip/bug-105/collat.mjs 11 0 0`, then
+`why-owned.mjs`). It is the same class as the two collateral pairs in the residue. Add the battery windows (seeds
+1–12, 19, 20) to the census list, so the census sees what the gates see.
+
+**Next session (orchestrator, 11-06):** Stage 2 (the forced join) + gate pins with written reasons + the
+before/after sheets, then ONE landing with the sheets in front of the owner. Stage 1 does not land alone.
+
+### Seed 11 traced, and census 6 (2026-11-06, `ceeb68ff` + `790c5c1b`)
+
+**The seed-11 graze was Stage 1 chasing BANKS.** The pass took over `1,-2,0|2,-1,1` × `0,-2,0|1,-2,0`, which sit
+22.1 m apart past the geometric throat. That is banks-only contact. Its loser re-routed against that one winner
+only, and swung onto the node's third leg `2,-3,2`: 1.9 m apart for 88 m. Fix: a pair Stage 1 newly owns is
+judged at the GRAZE bar (`2·HW + clearEdgeM`, 22 m), not the full banks rule. Main's own FEAT-77 losers are
+unchanged. The tier split already said banks is reported, not chased.
+
+**Gates: 58/58 on the affected set.** `vertical-curvature` re-pinned with its reason written in the gate: seed 11's
+`0,-1,1|0,0,0` pair is now joined by a new T at (184, −310). Its leg carries a 0.048 /m sag 18 m out (under the
+0.11 junction line), and a 0.030 /m open sag on the re-keyed run drops under the 0.03 flag. Junction 205 → 206,
+open 19 → 18, total 224 unchanged.
+
+**Census 6** (`wip/bug-105/census6`; the battery seeds 1–12, 19, 20 added as `battery.list`, main baseline
+`census0bat`):
+- 127 windows: **GRAZE 10, 536 m**. Same list as census 5. 2166453044 and 1227226248 were NOT banks collateral.
+- 13 battery windows: GRAZE 1, identical to main (seed 4 (1668, 375), 18.8 m for 8 m, a mid-span pair).
+- Footprint: **37 of 140 windows changed** (census 5: 40 of 127).
+
+### Stage 2 — what the residue actually is (2026-11-06)
+
+Every residual graze is **a T that should exist and does not ship**. There are five different reasons:
+
+| site | sep / len | why no T ships | probe |
+|---|---|---|---|
+| 87 (843, 1583) | 3.3 m / 76 m | A mid-span T is planned AND promotable for this exact pair. `_v2PromoteMidSpan` ends "no variant promoted": every variant dies on a silent structural check (trunk piece < 30 m past a fork, two forks on one vertex, kept piece < 30 m, ends on different pieces, forks < 30 m apart). The trunk was already split at (709, 1026) by `1,0,2`'s node T. The side road ships whole (813 m), 0.2–3.2 m off the trunk. | `promo-why.mjs`, `where.mjs` |
+| 200398059 (1020, −508) | 12.1 m / 44 m | Mid-span T planned for the pair; declined "side run already promoted". The side run is itself the trunk of another T (`-1,-2,2|0,-2,1`), so it is in pieces. BUG-61 fixed exactly this on the node-anchored path ("take the piece that touches the trunk"); the mid-span path still declines. | `promo-why.mjs` |
+| 51 (1818, 30) | 5.4 m / 80 m | No plan at all. The legs part at the node, bulge 59–60 m apart (`FLARE` is 60), and come back to 5 m 183 m out. They stay under 18 m for 44 m (`MINSPAN` is 60). SEPARATE fails: the pass-2 line is identical to pass 1, because the berth is a price and the detour costs more. | `sep-profile.mjs` |
+| 2166453044 (−89, −1307) | 10.4 m / 92 m | No plan, and nothing logged. The legs cross about 160 m out; the shove rung declines (transit; deflection 43 m > 30). The node planner drops the pair on a silent `continue`. Still to instrument. | `sep-profile.mjs`, `promo-why.mjs` (ALL=1) |
+| 1227226248 (−424, −275) | 14.3 m / 32 m | Tangled pair. A role conflict, then `promote-infeasible` (no departure builds); shove declines at 31 m > 30. | `why-owned.mjs` |
+| 3502246374 (1628, 137) | crossing, decks 5.1 m | Crossing rung owns it, never resolves. On main too. | — |
+| borderline: 1695296864, 2757792661, 2314412071, 1276689627 | 20–21.4 m / 32–76 m | 0.6–2 m short of 12 m daylight. | — |
+| seed 4 (battery) | 18.8 m / 8 m | Mid-span pair; on main too. | — |
+
+**So the forced join is not a new backstop: it is making the existing T machinery honour "a T always beats no T"
+on its remaining veto paths.** The node-anchored promotion already ranks and ships its best fork
+(`promote-residual`). The mid-span path still vetoes (87, 200398059), and the planners still drop pairs on shape
+floors (51: `FLARE` / `MINSPAN`; 2166453044: a silent planner path). Order of work, smallest blast radius first:
+1. Mid-span promotion takes the side piece covering `[lIn, lOut]` (BUG-61's rule): 200398059.
+2. Mid-span promotion: find which structural check kills 87, then rank instead of veto.
+3. A pair the clearance pass owns whose pass-2 lines still graze is planned with the shape floors relaxed
+   (`MINSPAN` → `MINREG`, then `FLARE` unbounded within `GAPM`): 51. It reads only pass-2 lines and the pass-1
+   ownership, so the plan stays acyclic.
+4. Instrument 2166453044's silent planner path.
+5. 1227226248 and the crossing: last, they may need an owner call (no departure builds at all).
+Each step: census + footprint, gates, and any pin with its reason.
+
+New probes: `promo-why.mjs <seed> <cx> <cz> [substr]` (uncapped promote* reasons; `ALL=1` for every reason),
+`where.mjs <seed> <cx> <cz> <x> <z> <substr>` (shipped runs and nearest approach), `sep-profile.mjs <seed> <cx> <cz>
+<edgeA a|b> <edgeB c|d>` (pass-1 / pass-2 separation along A from the shared node), `kinkrun.mjs <root> <window> x,z…`
+(which run carries a kink, main vs branch).
+
+### Stage 2 — built and measured (2026-11-06, `ab6d8074` → `312429a9`)
+
+Three changes, each closing a veto path the residue table names. Gates **58/58** on the affected set after each.
+1. **`ab6d8074` — the mid-span promotion works on runs already in pieces** (BUG-61's rule, now on the mid-span path).
+   The plan's arcs are located on the ORIGINAL run, which is the plan's own pure sample once the registered run
+   was split. The trunk piece under each fork is cut, and so is the one side piece that carries the whole strand.
+   A split side piece's far end pins the departure to the other T's deck. Before, `_v2TrunkPieceAt` looked the arc
+   up on `this._network.get(wk0)`, which is gone once another T split the trunk: every variant broke silently
+   (87). A split side run declined outright (200398059).
+2. **`ff47b294` — the node planner probes a mid-span from BOTH legs' walks.** One leg's walk can carry the whole
+   conflict inside its own node interval (a flare bridged) while the other's parts at once, so neither the node
+   merge (needs both ≥ 20 m) nor A's mid-span probe (starts past fA) saw the pair. 2166453044: fA 227, fB 16.
+3. **`312429a9` — FORCED JOIN**, the ladder's third rung. On the FINAL plan only (pass 1 still hands the pair to
+   SEPARATE first), a pair whose pass-2 lines still graze (centres < 22 m past both node intervals) is retried
+   as a mid-span with `MINSPAN` 60 → 30 m (the promotion's own fork spacing). Tally `forced-join`. Seed 51.
+
+| census (140 windows) | GRAZE | changed windows vs main |
+|---|---|---|
+| main (census 0 + `census0bat`) | 30 + 1 crossing | — |
+| census 6: Stage 1 + the GRAZE bar | 11 (10 + battery seed 4) | 37 |
+| census 7: + step 1 | 8 | 40 |
+| **census 8: + steps 2, 3** | **5 (1 crossing), 124 m** | **49** |
+
+Cleared by Stage 2: 87, 200398059, battery seed 4, 51, 2166453044, and two borderline pairs (1695296864, 2314412071).
+
+**Residue (5):**
+- **3502246374 (1628, 137), the crossing.** Two legs of node `2,0,1` leave together, cross 44–48 m out with
+  decks 5.1 m apart, and part by 104 m. No T builds at all (`promote-infeasible` ×8). The mid-span try has no
+  room by the node, and shove declines (transit; deflection 38 m > 30). On main too.
+- **1227226248 (−424, −275), 14.3 m / 32 m.** Tangled; role conflict, then `promote-infeasible`; shove 31 m > 30.
+  Same class as the crossing: no departure builds. These two may need an owner call.
+- **804662785 (−835, −31), 4 m / 24 m — NEW, made by step 3.** The forced join at node `-2,-1,2`
+  (`-2,-1,1|-2,-1,2` × `-2,-1,2|-3,-1,2`) puts a T at (−968, −77). The re-shaped run past it lies 4 m beside the
+  road leaving the T at (−835, −31) toward `-1,0,0`. This is the Stage 0 class "a T's departure or a sliced half
+  lands beside another road". Trace it first (`promo-why.mjs 804662785 0 0`, `where.mjs … 835250`).
+- **Borderline: 2757792661 (20.2 m / 36 m), 1276689627 (21.4 m / 32 m).** 0.6–1.8 m short of the 12 m daylight;
+  legs of Ts.
+
+**Still owed before the landing:** trace 804662785; the infeasible pair class (owner call?); build time on a
+quiet machine (`wip/perf-31/thread-bench.mjs`, ≤ 5 % of the network thread; story entry cpu ×4 < 30 s); the
+random-seed leg on `road-clearance`; the before/after sheets. Footprint grew 37 → 49 windows: the owner sees it
+on the sheets.
+
+### Collateral fixed, census 9, the gate leg, and the sheets (2026-11-06, `3735b972` → `1f1e0117`)
+
+**804662785 was forced-join collateral, now gone.** At node `-2,-1,2` main already has two ordinary Ts: legs
+`-2,0,1` (71 m) and `-1,0,0` (70 m) both join `-2,-1,1|-2,-1,2` as their trunk. The forced pair (72 m) sorted ahead
+of them by length and made that trunk a loser, so both Ts were dropped and their legs shipped 4 m apart. Fix
+`3735b972`: a forced join loses every role conflict (it only fills a gap, it never displaces a JOIN), and it is judged
+past the geometric throat, as the gate judges it. Main's runs there are now reproduced exactly. Gates 58/58.
+
+**Census 9: GRAZE 4 over 140 windows, and they are exactly the four owner-call sites, all on main as well.**
+Footprint: 48 of 140 windows changed vs main (87 run keys gone, 143 new; most are T splits re-keying unchanged
+geometry, which the sheets' maps show grey).
+
+| census (140 windows) | GRAZE | changed windows |
+|---|---|---|
+| main | 30 + 1 crossing | — |
+| census 6: Stage 1 + the GRAZE bar | 11 | 37 |
+| census 7: + mid-span on pieces | 8 | 40 |
+| census 8: + both-leg probe, forced join | 5 (one new collateral) | 49 |
+| **census 9: + forced join last in role order** | **4 (the owner's calls)** | **48** |
+
+**The owner's calls** (orchestrator 11-06: leave them, no blind tuning, own shots):
+- **3502246374 (1628, 137):** two legs of node `2,0,1` cross 45 m out, decks 5.1 m apart. No departure builds at all.
+- **1227226248 (−424, −275):** two legs weave for ~200 m. `promote-infeasible`; the shove rung declines (31 m > 30).
+- **2757792661 (−810, 444):** stacked bench. Two legs of node `-2,0,2` run 17–22 m apart for 136 m, one 17.5 m
+  above the other. A T cannot bridge the height, and the re-route never moves.
+- **1276689627 (1336, 338):** stacked bench. Two legs of a T, 21.4 m apart for 32 m, 120 m out, 23.7 m height split.
+
+**Standing gate (`1f1e0117`).** `road-clearance` has a random-seed leg: the first 12 seeds of the census list, built
+as the game builds them, with the GRAZE tier gated at zero and banks reported. Green on the branch (7 banks-only
+pairs); main is red on 3 of the 12 (3532835134 at 3.4 m for 144 m, 3259630675, 3628580736). No pins needed: no
+owner-call site is on these seeds. It adds about 4 min to the gate.
+
+**Sheets** (`wip/bug-105/sheets/shots/`, made by `wip/bug-105/sheets/{shootall.sh, maps.sh, gen-reads.mjs,
+sheet.mjs}`): all 27 sites where main grazes (31 rows, clustered), main (:8000) vs the fix (:3885). Each site gets
+a map (dashed blue = main only, orange = fix only, grey = unchanged, compared by geometry), plus top-down and
+from-the-south frames:
+- `sheet-1-captures.jpg`: the owner's two captures and BUG-104's sites;
+- `sheet-2-census-1..4.jpg`: every other graze main ships;
+- `sheet-3-owner-call.jpg`: the four owner's calls.
+
+**Left before the landing:** the build-time bench in a quiet window (`wip/perf-31/thread-bench.mjs`; ≤ 5 % of the
+network thread; story entry cpu ×4 < 30 s), then the landing with the sheets in front of the owner.
+
+### Build time — the bench failed, and where the cost is (2026-11-06)
+
+**Quiet-window bench** (orchestrator's window, load ~4): network thread, 3 windows of seed 6 (`wip/perf-31/ab.sh 3`,
+A = `CarGame-spare-base` detached at main `871d7750`):
+- main 4.82 / 4.88 / 4.84 s;
+- branch (`ea0f4c9d`) 6.47 / 6.69 / 6.54 s, which is **+35 %** against the ≤ 5 % budget.
+
+The network hash is identical on both sides (`f96eb26bd930`): the cost is pure overhead, not a different world. Story
+entry was not run; the fix changes it anyway.
+
+**Where (CPU profiles, `wip/perf-31/prof-{main,b105,b105c}`; shares hold under load, wall times do not):**
+- `_v2PlannedPair`, Stage 1's "will a T own this pair?" question asked on the PASS-1 lines, was 27.5 % of the
+  branch's thread. That is ~1.8 s, which is the whole measured overhead.
+- Inside it: pass-1 T probes (departure builds: 476 on pass 1 vs main's 222 in total) and pass-1 node plans.
+- The final probes then mostly hit the departure memo (21 builds). The pass-1 probes are extra work, for pairs the
+  final plan never asks about (margin-band edges, re-routed pairs).
+
+**Tried and dropped:**
+- A memo on the probe's fork ranking (inputs identical): no measurable change; the builds were already memoized.
+- A pre-check that the node plan names the partner: 319 → 314 probes. Nearly every asked pair is named.
+
+**Landed as wip `b1067307`: an exact reorder.** The clearance pass runs the cheap graze walk with nothing ceded
+(a superset of the walk that decides) BEFORE the ownership question. A pair that does not graze past the
+geometric throat stays deferred whatever the T machinery would answer, so its probes are never paid. Departure
+builds 497 → 350 (main 256). `_v2PlannedPair` 27.5 % → 21.4 %, which is still about **+27 %** over main.
+
+**What is left inside `_v2PlannedPair`:** pass-1 node plans 9.5 % of the thread, pass-1 probes 12.0 %.
+
+**Next levers, in order:**
+1. **Final plan reuses the pass-1 node plan when every leg's sample is the same object** (no leg re-routed, same
+   dead set). The final plan differs only by forced joins, which can be added from a recorded candidate list. Snag:
+   the skip tallies and the 64-line skip log must replay in the original order.
+2. **A probe-free ownership forecast.** Use the node plan, plus `winnerOk` / `bothEnds`, without departure builds.
+   It loses the promote-infeasible cases (3752380034, 1013531954, 3628580736); measure what that costs in the census.
+3. Short-circuit pass-1 probes at the first departure that builds (truthiness is all `_v2MergeFor` reads). Exact
+   only if sibling forks (`taken`) still come from full rankings.
+
+**Measuring under load:** wall time and CPU time are both useless while the other lanes run (main swung 4.8 →
+11.5 s). Use deterministic counts (`wip/perf-31/opcount.mjs`, `buildcount.mjs`, `probecount.mjs <root>`) and profile
+shares; take the A/B only in a quiet window from the orchestrator.
+
+**Design for the next lever (written 2026-11-06, not built): memoize on INPUTS, not on the pass.**
+- `_v2NodeMergesOn` today is memoized per (node, legacy, pass1, dead), so the final plan recomputes everything
+  pass 1 already computed, even where every leg's sample is the same object (no leg re-routed).
+- Split it:
+  1. **Base pair list** (the pair loop, before role resolution). A pure function of the legs' sample objects + dead +
+     legacy. Memoize it in a WeakMap chain keyed by those sample objects. Record the skip-tally deltas and why-lines
+     it produced (as `_v2SolveMemo` records tallies), and REPLAY them on every non-quiet (final) request, so
+     telemetry reads exactly as now. Pass-1 requests stay quiet: they never replay.
+  2. **Forced joins** (final plan only): a post-step over the base list's recorded "mid-span candidate with no mid"
+     pairs (A, B, fA, fB, mA, mB): `grazes` + `midOf({...ctx, MINSPAN: 30})`.
+  3. **Role resolution** over base + forced (forced sort last, as now). Cheap; done per request.
+- Same for `_v2PromotableFor`: memo keyed on (side.points, T.points, JSON(spec), taken) with tally replay, instead of
+  the planRev + pass key.
+- Expected: overhead falls to the pass-1 work on nodes whose legs DO differ between passes, plus margin-band nodes
+  the final plan never asks about. Measure with `opcount.mjs` (`_v2NodeMergesOn` / `_v2PromotableProbe` /
+  `_v2BuildDeparture` vs main's) before asking for a window.
+- Proof the world is unchanged: census keys vs census 9 (0 changed windows), the network hash on the bench, gates.
+- **If it still misses 5 %**, the call goes to the orchestrator and owner. The 5 % was this ticket's own budget; the
+  owner's bar is story entry < 30 s (main ~9 s at cpu ×4). Measure story entry in the same window and put both
+  numbers in front of them.
+
+**Orchestrator's call (11-06): (a), with the reuse memo first.** Build the exact reuse memo, then one quiet window for
+the thread A/B and story entry at cpu ×4. If the branch's story entry is within +2 s of main, land at about +16 %.
+If not, stop and report before trying the less exact forecast.
+
+**Built (wip `bc9c488b`): the node planner's pair walk is memoized on its inputs** (`_v2NodeBase`). The key is the
+node, legacy flag, dead legs, and each leg's edge key and sample object. A pin change re-routes a leg, so it shows up
+as a new sample. Every skip the walk logs is recorded (`_v2SkipRec`) and replayed on a hit. The forced join is now a
+final-plan-only step after the walk, over recorded candidates; role resolution stays per request.
+- Bench network hash unchanged (`f96eb26bd930`); `_v2MidSpanPair` calls 145 → 58.
+- Profile share of `_v2NodeMerges` 16.1 → 10.3 %, `_v2PlannedPair` 21.4 → 19.2 %, taken under load.
+- World-identity proof running: census 10 vs census 9 run keys, `fingerprint-world` vs `ea0f4c9d`
+  (scratch worktree `CarGame-b105-before`), and the affected gates.
+
+**World-identity proof for `bc9c488b`:**
+- census 10 vs census 9: 0 of 140 windows changed, GRAZE still 4;
+- `fingerprint-world` vs `ea0f4c9d`: ALL IDENTICAL;
+- affected gates 58/58.
+
+**Quiet window (orchestrator, 11-06, load 2.3–3.5), `bc9c488b` vs main:**
+
+| measure | main | branch |
+|---|---|---|
+| network thread, 3× 1400 m seed 6 | 4.68 / 5.04 / 4.98 s (4.90) | 5.81 / 5.99 / 6.07 s (5.96): **+22 %** |
+| story entry, cpu ×4, seed 6, alternating | 8.8 / 9.1 / 9.0 s (9.0) | 9.6 / 9.5 / 9.6 s (9.6): **+0.6 s** |
+
+Network hash identical on both sides. The orchestrator's rule (story entry within +2 s of main) is met, and +22 % is
+the recorded cost. Landing: `npm run test:all -- --browser` on the branch with current main merged, then the hash
+goes to the orchestrator.
+
+### Landed (2026-11-06, main `14c6feb6` = `fbad0c59`)
+
+- `npm run test:all -- --browser`: 130/130 on the branch with main `8739d3cb` merged. Solo smoke on main: 23/23, zero
+  console errors.
+- Coverage follow-up `6db8d0c7`: BUG-105 healed `region-pieces`' split seed 3309753130, so BUG-85's filter went
+  unexercised there. Replaced with 229165396, a census random seed whose planners' graph falls in 2 pieces and
+  strands 1.5 km. All checks pass; it still needs landing.
+- **Open: the owner's four calls**, on the sheets page https://claude.ai/artifact/U18febBn14QDM9NiPZBhKB and the
+  tracker. Close this ticket once they are answered and built, or ruled "leave".

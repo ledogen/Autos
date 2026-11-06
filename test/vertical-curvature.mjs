@@ -44,7 +44,11 @@ const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // window counts +2 kinks on its legs; every other window is unchanged.
 // junction 204 → 205 (2026-11-04, BUG-67 re-seat): seed 6 origin 30 → 32 — node 1,0,0 re-seats 40 m off a
 // face and its legs carry two mild kinks under the 0.11 line; main counts 203 here, every other window equal.
-const CEIL = { open: 19, junction: 205 }
+// junction 205 → 206, open 19 → 18 (2026-11-06, BUG-105 Stage 1): seed 11 origin only. The 0,-1,1|0,0,0 pair
+// (pass-1 line 5.1 m off its sibling 0,-1,1|0,-2,0) is joined by a new T at 184204,-310345,-1 (184, −310); its leg toward 0,0,0
+// carries a 0.048 /m sag 18 m from that node, under the 0.11 line. The 0.030 /m sag at (668.6, −596.4) on the
+// re-keyed run past it falls under KFLAG. Total kinks unchanged (224); every other window equal.
+const CEIL = { open: 18, junction: 206 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5

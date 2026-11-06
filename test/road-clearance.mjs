@@ -29,9 +29,36 @@
 // Baseline the day it was written (2026-09-07, feature/junction-stitch before FEAT-77): 52 pairs,
 // 2.2 km, 46 of them two legs of one node.
 
+//
+// RANDOM-SEED LEG (BUG-105, 2026-11-06): the battery above is nine hand-picked windows, and random seeds are where
+// the residue lived (owner: "i do care about grazing without an intersection"). Twelve 1400 m windows at the origin,
+// the first 12 of BUG-105's census list (mulberry32 from 0xB105B104, drawn once — never hand-picked), built the way
+// the game builds them (pond no-go wired). It gates the GRAZE tier at zero: centres under 2·halfWidth + clearEdgeM
+// (under 12 m of daylight), outside the same exclusions. Banks-only contact is reported, not gated (tier split
+// adopted 2026-11-06 on the owner's rulings, BUG-64 (a)). No pins: the four owner-call sites (two tangles with no
+// buildable departure, two stacked-bench pairs) are not on these seeds.
+
+import * as THREE from 'three'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { WINDOWS, buildWindow } from './lib/road-battery.mjs'
 import { closePairs } from './lib/close-pairs.mjs'
+import { RoadSystem } from '../src/road.js'
+import { WaterSystem } from '../src/water.js'
+import { parseWorldSeed } from '../src/seed.js'
+import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
+
+const RANDOM_SEEDS = ['3997014678', '2623851183', '3628580736', '744309545', '3894319881', '2086105584',
+  '3532835134', '3132835459', '1247456971', '2393607623', '430171442', '3259630675']
+const randomWindow = (seed) => {
+  const ws = parseWorldSeed(seed)
+  const { rawHeightWorld } = makeTerrainHeadless(ws, P, null)
+  const water = new WaterSystem(ws, P, rawHeightWorld)
+  const road = new RoadSystem(ws, P)
+  road.setWaterNoGo((x, z) => water.isRoadNoGo(x, z), (x0, z0, x1, z1) => {
+    const d = []; for (const p of water.pondsNear(x0, z0, x1, z1)) d.push(p.floorX, p.floorZ, p.radius + p.skirt); return d })
+  road.setRadius(1400); road.update(new THREE.Vector3(0, 0, 0))
+  return road
+}
 
 const argv = process.argv.slice(2)
 const VERBOSE = argv.includes('--verbose')
@@ -74,6 +101,34 @@ for (const W of WINDOWS) {
     console.log(`         (${r.x.toFixed(0)},${r.z.toFixed(0)})  ${r.sep.toFixed(1)} m apart, rule wants ${r.need.toFixed(1)} (${r.dy.toFixed(1)} m of height) over ${r.viol} m${r.shared ? '  [two legs of one node]' : ''}   ${r.ka} × ${r.kb}`)
   if (!VERBOSE && rows.length > TOP) console.log(`         … ${rows.length - TOP} more (--verbose)`)
 }
+
+// The random-seed leg: GRAZE gates, banks reports (header).
+const FLOOR = 2 * (P.roadHalfWidth ?? 5) + (P.roadV2?.clearEdgeM ?? 12)
+let grazeFails = 0, banksPairs = 0
+for (const seed of RANDOM_SEEDS) {
+  if (ONLY && !`rand ${seed}`.includes(ONLY)) continue
+  const road = randomWindow(seed)
+  const { pairs, runs } = closePairs(road, P)
+  const rows = []
+  for (const { ka, kb, shared, samples } of pairs) {
+    let graze = 0, banks = 0, worst = null
+    for (const q of samples) {
+      if (q.d < FLOOR) {
+        graze += STEP
+        if (!worst || q.d < worst.sep) worst = { sep: q.d, dy: Math.abs(q.ay - q.by), x: q.ax, z: q.az }
+      } else if (q.d < road._v2ClearReq({ x: q.ax, y: q.ay, z: q.az }, { d: q.d, y: q.by, fx: q.fx, fz: q.fz })) banks += STEP
+    }
+    if (banks && !graze) banksPairs++
+    if (graze && !(shared && FLOOR - worst.sep < NEAR_MISS_M && graze < NEAR_MISS_LEN)) rows.push({ ka, kb, shared, graze, ...worst })
+  }
+  const head = `rand ${seed}`.padEnd(20) + ` runs ${String(runs).padStart(3)} · grazing pairs ${String(rows.length).padStart(3)}`
+  if (!rows.length) { console.log(`  ok   ${head}`); continue }
+  grazeFails++
+  console.log(`  FAIL ${head}`)
+  for (const r of rows) console.log(`         (${r.x.toFixed(0)},${r.z.toFixed(0)})  ${r.sep.toFixed(1)} m apart (under ${FLOOR} m) over ${r.graze} m, ${r.dy.toFixed(1)} m of height${r.shared ? '  [two legs of one node]' : ''}   ${r.ka} × ${r.kb}`)
+}
+console.log(`\nroad-clearance random leg: ${RANDOM_SEEDS.length} windows · ${grazeFails} with a GRAZE (gated) · banks-only pairs (report): ${banksPairs}`)
+if (grazeFails) fails++
 
 console.log(`\nroad-clearance: ${totPairs} pair(s) inside each other's earthwork · ${(totLen / 1000).toFixed(1)} km · ${totShared} share a node · hairpin arms exempt: ${hairpins} · shared-node near-misses (report): ${nearMiss}`)
 if (fails) { console.log('FAIL — two roads sit closer than the daylight and earthwork the carve needs between them (FEAT-77)'); process.exit(1) }
