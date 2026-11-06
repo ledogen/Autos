@@ -6379,7 +6379,7 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
     + (bonus
       ? (award
         ? beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-pay">${bonus.name} &check;</span>`
-          + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; Tab to make room</span>` : ''))
+          + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; ${keycap('Tab')}to make room</span>` : ''))
         : beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-dim" data-miss>${bonus.name} missed &mdash; ${gate ?? gateText(bonus.gate)}</span>`))
       : row('Speed tip', formatMoney(tip), ` data-countup="${tip}"`))
     + (haul?.bought > 0 ? beat(`<br><span class="mp-dim">Stock bought</span> <span class="mp-pay mp-bad">&minus;$${formatMoney(haul.bought)}</span>`) : '')

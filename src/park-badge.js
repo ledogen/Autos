@@ -32,8 +32,10 @@ function padLabel (pad) {
 
 /** A key hint, drawn as a small keycap that reads the pad's button while the pad drives. `label` may be
  *  a number: the inventory's quick-slot keys 1–4. `pad` overrides the binding table's button where the
- *  moment rebinds it (FEAT-170: in the opening View is the skip, so R's pad half is the D-pad alone). */
+ *  moment rebinds it (FEAT-170: in the opening View is the skip, so R's pad half is the D-pad alone);
+ *  `false` is a key the pad has no button for (the quick slots): it hides while the pad drives. */
 export function keycap (label, pad = PAD_CAP.get(String(label).toLowerCase())) {
+  if (pad === false) return `<span class="keycap kc-kb">${label}</span>`   // keyboard-only: hidden while the pad drives
   return pad
     ? `<span class="keycap"><span class="kc-kb">${label}</span>${padLabel(pad)}</span>`
     : `<span class="keycap">${label}</span>`

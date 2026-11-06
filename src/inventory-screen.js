@@ -108,7 +108,7 @@ function slotHtml (it, attrs = '', cls = '') {
     + `<img src="${THUMB(it.id)}" alt="" onerror="this.parentNode.classList.add('noimg'); this.remove()">`
     + `<span class="sl-name">${it.name}</span>`
     + (it.n > 1 ? `<span class="sl-n">&times;${it.n}</span>` : '')
-    + (it.key ? keycap(it.key) : '')
+    + (it.key ? keycap(it.key, false) : '')   // the quick-slot keys: the pad walks the slots instead
     + `</div>`
 }
 
