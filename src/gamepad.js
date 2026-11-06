@@ -56,10 +56,11 @@ export const PAD_PARAMS = {
 // canThrow / throwReady: set by main.js — a paper throw is possible (the right stick aims), and
 // the reticle is up as well (RB tap throws). pumpActive: set by main.js — the pump is open, so A
 // pumps. hudMenu: set by src/hud-menu.js — the B-hold icon menu ({ open, move, select, cancel }).
+// skipHold: set by main.js — the opening can be skipped, so View is held M (FEAT-170).
 export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, zoom: 0,
   menuActive: () => false, cardActive: () => false, cardTabs: () => false, cardDrive: () => false,
   mapActive: () => false, canThrow: () => false, throwReady: () => false,
-  pumpActive: () => false, hudMenu: null }
+  pumpActive: () => false, skipHold: () => false, hudMenu: null }
 
 // THE BINDING TABLE (Forza-style layout, owner 2026-10-19 — the FEAT-125 ticket). Rows with a
 // `button` (standard-layout index) replay `key` while held; the rest are analog or tap-vs-hold, read
@@ -151,6 +152,9 @@ const B = 1, UP = 12, DOWN = 13, RIGHT = 15
 let bMenu = false        // the icon menu is open on this B press
 let bSpent = false       // this B press belongs to something else (it was a back)
 let dPrev = 0            // last frame's D-pad ↑ (1) / ↓ (2) bits, for edges
+// FEAT-170: while pad.skipHold() (the opening can be skipped) View is M itself — down on the press, up on
+// the release — so main.js times the hold (skip) and a tap (the map) exactly as it does the key's.
+let viewSkip = false     // this press is the skip's M
 // D-pad → (FEAT-144): held VIEW_HOLD_MS it resets the truck (r down at the threshold, up on release),
 // so a mid-drive tap does nothing. Drive layout only.
 let rightAt = -1, rightReset = false
@@ -295,16 +299,21 @@ function poll () {
 
   if (menu) {   // View is silent in a menu: a press in flight dies quietly (a reset already firing lets go)
     if (viewDownAt >= 0 && viewReset) sendKey('keyup', 'r')
-    viewDownAt = -1; viewDown = false
+    if (viewDownAt >= 0 && viewSkip) sendKey('keyup', 'm')
+    viewDownAt = -1; viewDown = false; viewSkip = false
   }
   if (viewDown) {
     const now = performance.now()
-    if (viewDownAt < 0) { viewDownAt = now; viewReset = false; pad.active = true }
-    else if (!viewReset && now - viewDownAt >= VIEW_HOLD_MS) { viewReset = true; sendKey('keydown', 'r') }
+    if (viewDownAt < 0) {
+      viewDownAt = now; viewReset = false; pad.active = true
+      viewSkip = pad.skipHold()
+      if (viewSkip) sendKey('keydown', 'm')
+    } else if (!viewSkip && !viewReset && now - viewDownAt >= VIEW_HOLD_MS) { viewReset = true; sendKey('keydown', 'r') }
   } else if (viewDownAt >= 0) {
-    if (viewReset) sendKey('keyup', 'r')
+    if (viewSkip) sendKey('keyup', 'm')
+    else if (viewReset) sendKey('keyup', 'r')
     else if (any) { sendKey('keydown', 'm'); sendKey('keyup', 'm') }   // not on an unplug mid-press
-    viewDownAt = -1
+    viewDownAt = -1; viewSkip = false
   }
   if (!any) pad.active = false   // unplugged: the keyboard drives again with no keypress needed
   // Key hints show the device that last drove (park-badge.js keycap: body.pad-on swaps the labels).

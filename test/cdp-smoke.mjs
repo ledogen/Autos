@@ -153,6 +153,14 @@ const park = async (fresh = false) => {
   if (!await js('window.__vs.parked')) await tap(' ')
 }
 const hold = async (k, s) => { await key(k, true); await simFor(s); await key(k, false) }   // s SIM seconds
+// FEAT-170: every new run opens on the firing; holding M a second (the prompt says so) skips it, landing at
+// mom's at 07:00 with her casserole in hand. Wall-clock: the hold is a real-time timer, not sim time.
+const skipOpening = async () => {
+  check(await until(() => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"'), 3000), 'the run did not open on the firing')
+  check(await js('getComputedStyle(document.getElementById("skip-hint")).display !== "none"'), 'no "hold M to skip" prompt over the firing')
+  await key('m', true); await sleep(1300); await key('m', false)
+  check(await until(() => js('window.__board().firstState() === "taken"'), 8000), `holding M did not skip to the casserole (first job ${await js('window.__board().firstState()')})`)
+}
 const car = () => js('window.__car()')
 // A fake pad: navigator.getGamepads stubbed to one standard-mapping pad whose buttons and sticks are
 // window.__fp.b / .axes (gamepad.js polls it every frame). padOff hands back the real one.
@@ -289,23 +297,23 @@ const STEPS = [
     // FEAT-41: pm-story opens the run setup page (the seed modal is left with the refusal only).
     await js('document.getElementById("pm-story").click()')
     check(await js('document.getElementById("main-menu").classList.contains("setup")'), 'story did not open the setup page')
-    // FEAT-147: a fresh profile plays the opening. This flow is the SKIPPED run — no first-use card holding the
-    // sim under the steps below (the choice is saved, so every later run skips too); the 'opening' step at the
-    // end plays it.
-    await js('const b = document.querySelector("[data-key=opening]"); if (/play/.test(b.textContent)) b.querySelector(".sel-next").click()')
+    // FEAT-147/170: every run opens on the firing. This flow HOLDS M to skip it — so no first-use card holds the
+    // sim under the steps below; the 'opening' step at the end plays it.
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'story never went live (45 s × load): no run HUD / POIs, or the load stage stayed up')
-    // FEAT-170: the skip starts at mom's, 07:00 on day 1, with her casserole IN HAND (staging in her start zone),
+    // FEAT-170: the skip lands at mom's, 07:00 on day 1, with her casserole IN HAND (staging in her start zone),
     // and no card: Larry's intro waits for the casserole to be put away.
+    await skipOpening()
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     const s0 = () => js(`(() => { const m = window.__mission(), q = window.__poi().list().find(q => q.type === 'momsHouse'), v = window.__vs.position
       return { s: m.state, a: !!m.mission?.approach, first: window.__board().firstState(), d: Math.hypot(v.x - q.x, v.z - q.z), h: window.__day().clockH() } })()`)
     check(await until(async () => (await s0()).first === 'taken', 5000), `the skip did not hand over the casserole: ${JSON.stringify(await s0())}`)
     const a = await s0()
     check(a.s === 'staging' && !a.a && a.d < 10 && Math.abs(a.h - 7) < 0.1, `the skip is not at mom's at 07:00 with the job staging: ${JSON.stringify(a)}`)
-    check(!await dlg(), 'the skipped run opened on cards (FEAT-170: Larry speaks after the casserole)')
+    check(!await dlg(), 'a card is up after the skip (FEAT-170: Larry speaks after the casserole)')
+    check(await js('getComputedStyle(document.getElementById("skip-hint")).display === "none"'), 'the skip prompt outlived the skip')
     // Put it down (parked, two clicks, then the result card): Larry's welcome, then his intro (R-11).
     if (!await js('window.__vs.parked')) await park()
     await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
@@ -987,9 +995,7 @@ const STEPS = [
         `new-game mode row: ${JSON.stringify(steps)}`)
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
       check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s × load)')
-      const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
-      await until(dlg, 3000)
-      for (let i = 0; i < 8 && await dlg(); i++) { await tap('Enter'); await sleep(250) }
+      await skipOpening()
       check(await until(saved, 3000), 'the new run wrote no save to end')
     }
     const playedS = () => js('JSON.parse(localStorage.getItem("autos-run/1")).data.playedS')
@@ -1069,7 +1075,6 @@ const STEPS = [
     // FEAT-147: a new run with the opening on starts PARKED AT THE BURGER JOINT, the firing's cards over a slow
     // orbit of it with the sim held, then mom's call. FEAT-170: then the evening at mom's, and her casserole.
     await js('document.getElementById("mm-new").click()')
-    await js('const b = document.querySelector("[data-key=opening]"); if (/skip/.test(b.textContent)) b.querySelector(".sel-next").click()')
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the opening run never went live (45 s × load)')
@@ -1094,6 +1099,12 @@ const STEPS = [
     check(e0.s === 'idle' && e0.first === 'closed', `the evening is not job-free: ${JSON.stringify(e0)}`)
     check(/to Mom's · park there to sleep/.test(e0.hud), `the evening's HUD does not point to mom's ("${e0.hud}")`)
     check(await until(async () => (await eve()).gps, 5000), "the GPS has no way to mom's in the evening")
+    // Stage 2: M is the skip's hold now, but a TAP still opens the map (on the release) and closes it.
+    await tap('m')
+    check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a tap of M in the evening did not open the map')
+    await tap('m')
+    check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'a tap of M in the evening did not close the map')
+    check(await js('window.__board().firstState() === "closed"'), 'a tap of M skipped the evening')
     // Parked at hers: her sleep card, the timer preset to wake at 07:00 — and sleeping posts the casserole.
     const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
       return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`)
