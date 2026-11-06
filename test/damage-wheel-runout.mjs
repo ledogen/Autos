@@ -58,7 +58,7 @@ console.log('\n§4 it reaches the radius, at the right amplitude, once per revol
 {
   const p = mkParams(); p.wheelRunout = 0
   const d = new DamageModel({ params: p })
-  d.setAll(0); d.publish(p)
+  d.setAll(1e-6); d.publish(p)   // the limit at 0: exactly 0 is a COLLAPSED wheel (FEAT-162, test/wheel-collapse.mjs)
   const state = { wheelPhase: [0, 0, 0, 0] }
   let lo = Infinity, hi = -Infinity
   const N = 720
