@@ -179,6 +179,7 @@ const BED_SHAPE_MU      = BED_CARGO_MU * BED_CARGO_MU / CARGO_FRICTION_REF      
 // ride in it; ranger.glb does (owner, 2026-09-29).
 const CHASSIS_PROFILE = {
   noseZ: -2.053,       // front bumper face (the chrome blade)
+  bumperLowY: -0.06,   // the blade's bottom edge (ranger.py Z_BUMP0: 0.49 m above the ground at ride height)
   tailZ: 2.651,        // rear bumper face
   cowlZ: -0.689,       // windshield base
   roofFrontZ: -0.17,   // roof leading edge (windshield top)
@@ -351,11 +352,17 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   const slabBottomTailZ = P.tailZ - 0.37   // departure chamfer
   const BED_T = 0.06   // open-bed wall/floor thickness, taken inward from each face (shape 4)
   // Top face at `topY` from z0 to z1; bottom face follows the chamfered footprint, clipped to [z0, z1].
+  // BUG-108: at the nose the face is the drawn bumper's vertical blade down to its bottom edge, and the
+  // approach chamfer starts below it. One 48° ramp from the bumper top to the undercarriage met a 45 cm
+  // crate near its foot and pressed it into the road: it wedged and the truck climbed it, 0.98 m/s lost in
+  // one step at 40 mph (2× the momentum bound). Against the blade it is pushed (test/strike-hitch.mjs).
+  // Approach angle, the tire-tangent ramp to the hull: 52° → 37° (a real Ranger is 25–30°).
   const slabPart = (z0, z1, topY) => engine.addHull(chassis, [
     -P.slabHalfW, topY, z0, P.slabHalfW, topY, z0,
     -P.slabHalfW, topY, z1, P.slabHalfW, topY, z1,
     -slabBottomHalfW, undY, Math.max(z0, slabBottomNoseZ), slabBottomHalfW, undY, Math.max(z0, slabBottomNoseZ),
     -slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ), slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ),
+    ...(z0 === P.noseZ ? [-P.slabHalfW, P.bumperLowY, z0, P.slabHalfW, P.bumperLowY, z0] : []),
   ], { ...mat, restitution: 0 })
   const bounceFrom = bed ? 2 : 1   // shapes before this index are the slab (restitution pinned 0)
   const bedShapes = [0, 0]         // [from, to) of the bed-well slabs — their own dead material (FEAT-88)

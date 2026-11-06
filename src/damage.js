@@ -149,7 +149,7 @@ export const DAMAGE_PARAMS = {
   // in costs transMissWear of condition (owner's figure: 2 %).
   transKnee: 0.50, transAtKnee: 1.2, transAtZero: 3.0,
   transMissWear: 0.02,
-  // FEAT-166 clutch-type LSD: joules of clutch slip from new packs to an open diff [DEFAULT]. A corner
+  // FEAT-166 clutch-type LSD: joules of clutch slip from new packs to an open diff (owner took the default, 2026-11-06). A corner
   // slips ~100 W through them; a one-wheel spin at full torque tens of kW — so it lasts a few days of
   // honest driving and minutes of burnouts.
   durDiffClutch: 2.0e6,

@@ -1,7 +1,7 @@
 ---
 id: FEAT-166
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-04
 source: owner, 2026-11-04 (page inbox) — "We should roadmap this for before the alpha release. I'd like to implement clutch style limited slip differentials This would be seen as an inferior option to the helical style limited sub differential Which would mimic the one that we currently have in game The clutch style ones would simulate the traction lock factory limited sub differentials that were found in the ford ranger They would wear out over time making them a temporary upgrade rather than a permanent one The worn out clutch type LSD would revert to an open diff when fully worn This way we can dangle a carat between open diff and helical LSD giving us a better progression ladder. You would also be able to pay a lot of money to rebuild the clutch type LSD, making it a cash drain that you could trade for performance."
@@ -29,14 +29,14 @@ A new rear-diff part: a **clutch-pack LSD**, modelled on the Ford Ranger's facto
 
 ## Acceptance
 
-- [ ] `diffClutchLSD` part row; its physics in the existing diff model behind the adapter rules (our
+- [x] `diffClutchLSD` part row; its physics in the existing diff model behind the adapter rules (our
       drivetrain, no engine joint).
-- [ ] Wear on the diff track; at full wear the headless split-grip launch equals the open diff's within
+- [x] Wear on the diff track; at full wear the headless split-grip launch equals the open diff's within
       noise; at zero wear it sits between open and helical.
-- [ ] Rebuild service at the shop.
-- [ ] Owner numbers, marked `[DEFAULT]` until set: price, rebuild price, wear life (km or MJ of clutch
+- [x] Rebuild service at the shop.
+- [x] Owner numbers, marked `[DEFAULT]` until set: price, rebuild price, wear life (km or MJ of clutch
       slip), new-pack preload.
-- [ ] A row in MILESTONES.md § Alpha.
+- [x] A row in MILESTONES.md § Alpha.
 
 ## Built — 2026-11-05 (Lane B, feature/machine 26efa8cc · add05d70)
 
@@ -79,3 +79,10 @@ launch to 10 m/s slips 9.5 kJ through the packs: −0.48 % of their life.
 | torque ramp `diffClutchRamp` | 0.05 of the axle torque (keeps it under the helical at full first-gear torque) |
 
 The acceptance's MILESTONES.md § Alpha row was already there.
+
+## Resolution — 2026-11-06 (Lane B)
+
+The owner took the defaults overnight (relayed by the orchestrator, 2026-11-06: "take the defaults"): $25 part,
+$30 / 3 h rebuild, 2.0 MJ pack life, 140 N·m preload, 0.05 ramp. The `[DEFAULT]` markers in `src/damage.js`,
+`data/offers.js` and `data/stock-weights.js` now record that ruling. The build landed on main earlier (Lane B
+26efa8cc · add05d70), with `test/diff-clutch.mjs` as its gate. Closed on evidence.

@@ -376,7 +376,7 @@ export const REWARDS = [
       pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
     { id: 'liftKit',    name: 'Lift kit',    kind: 'part',       gates: ['B', 'A'],
       pools: ['workSite', 'autoShop', 'farm', 'larrysHouse'] },
-    { id: 'diffClutchLSD', name: 'Clutch-type limited-slip differential', kind: 'part', gates: ['A', 'S'],   // FEAT-166 [DEFAULT]
+    { id: 'diffClutchLSD', name: 'Clutch-type limited-slip differential', kind: 'part', gates: ['A', 'S'],   // FEAT-166 (owner took the default, 2026-11-06)
       pools: ['autoShop', 'farm', 'residence', 'larrysHouse'] },
     // FEAT-168: a reward only from day 3 (owner, 2026-11-05: "helical lsd reward day 3 onward"); the shelf
     // stocks it every day, at its price × the day tier.
