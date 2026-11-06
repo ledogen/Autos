@@ -230,7 +230,7 @@ All of it ends at mom's: the sleep (or the skip) ends the evening leg. cdp-smoke
 clock holds over 2 s of sim, and that a truck seated 25–45 m off the road sees the hint, presses R, and lands
 within 5 m of the road with the hint gone. Affected gates 8/8.
 
-## Built — stage 4, the lessons (2026-11-06, ea695525; smoke owed — the orchestrator's quiet window)
+## Built — stage 4, the lessons (2026-11-06, ea695525..19dd856e)
 
 Mom's cards on the `_tut` queue (each holds the sim while up, plays once per run, never after a skip), every word
 a PLACEHOLDER in `data/dialogue.js TUT` (the owner writes them, FEAT-148):
@@ -247,8 +247,12 @@ a PLACEHOLDER in `data/dialogue.js TUT` (the owner writes them, FEAT-148):
 
 cdp-smoke `opening` reads them off at each beat with `readCards()` (each card takes a fill press and a turn
 press). It checks there are ≥ 2 cards on the way home, ≥ 3 at her sleep card and ≥ 2 in the morning, and that
-breakfast leaves the driver not hungry. Light affected gates 6/6. The heavy ones (world-determinism,
-region-pieces) and the smoke wait for the orchestrator's go.
+breakfast leaves the driver not hungry.
+
+**Proof (stages 3 + 4 together, at 19dd856e on main 87be4f96):** cdp-smoke PASS 23/23 with zero console errors;
+affected gates 8/8 (the light six, world-determinism, region-pieces). The first run caught a smoke-side hang,
+not a game bug: the seat at mom's waited a second of sim while her arrival lessons held the sim. It now reads
+them first.
 
 *Owner checks (stage 4, with stages 1–3):* one full playthrough with the tutorial, one skipping it — the
 ticket's acceptance. Every card's words.
