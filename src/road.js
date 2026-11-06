@@ -3938,10 +3938,11 @@ export class RoadSystem {
                 // joined on a shorter strand: MINSPAN down to the promotion's own fork spacing (30 m).
                 // Seed 51 (1818, 30): the legs bulge 60 m apart and kiss at 5 m, 44 m inside mergeProxM;
                 // the berth is a price, so the re-route never moved. Final plan only, so pass 1 still
-                // hands the pair to SEPARATE first, and nothing upstream reads this answer.
-                if (!mid && !pass1 && grazes(A, B, Math.max(fA, THROAT))) {
+                // hands the pair to SEPARATE first, and nothing upstream reads this answer. Judged past the
+                // GEOMETRIC throat, as the gate judges it, and it never displaces a JOIN (role order below).
+                if (!mid && !pass1 && grazes(A, B, Math.max(fA, this._v2ThroatLen(A.S, A.nodeAtStart, B.S)))) {
                     mid = midOf({ ...ctx, MINSPAN: 30 })
-                    if (mid) this._v2MergeSkipped('forced-join', `${A.ck} x ${B.ck} @${nk}`)
+                    if (mid) { mid.forced = true; this._v2MergeSkipped('forced-join', `${A.ck} x ${B.ck} @${nk}`) }
                 }
                 if (mid) pairs.push(mid)
                 continue
@@ -4099,7 +4100,10 @@ export class RoadSystem {
             pairs.push({ W, L: L2, variants, region: variants[0].region, sortKey: L2.ck + '>' + W.ck })
         }
         // worst first, so a role conflict costs the SMALLER merge (deterministic: length, then key)
-        pairs.sort((a, b) => (b.region - a.region) || (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0))
+        // BUG-105: a FORCED join only fills a gap — it loses every role conflict, so it never makes a JOIN's
+        // winner a loser (seed 804662785 node −2,−1,2: a 72 m forced pair outranked the two 70 m legs that
+        // fork off its run, both were dropped, and they shipped 4 m apart).
+        pairs.sort((a, b) => (!!a.forced - !!b.forced) || (b.region - a.region) || (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0))
         // Role sets. A winner may appear in several pairs (one throat, many forks); what is barred
         // is a run being both, or ceding twice, at this node.
         const winners = new Set(), losers = new Set()
