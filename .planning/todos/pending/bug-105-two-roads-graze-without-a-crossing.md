@@ -370,3 +370,16 @@ Now clean:
 - **The unregistered crossing** at 3502246374 (1628, 137), decks 5.1 m apart. The crossing rung owns it but never
   resolves it. On main too.
 - **Borderline** (2757792661, 1276689627: legs of Ts at 20–21.4 m, i.e. 10–11.4 m of daylight against the 12 m bar).
+
+**Gates on `d2150de1`** (affected set, `--changed=src/road.js`): **55/58**. All three reds are ONE site, seed 11 origin
+(1376–1385, −1170), on a battery window the census does not include:
+- `road-clearance`: two legs of node `1,-2,0` (`g:1,-2,0:2,-1,1` × `g:2,-3,2:1,-2,0`) are now 1.9 m apart for 88 m;
+- `junction-stitch`: 1 unstitched span there;
+- `vertical-curvature`: a 0.073 /m open-road crest there (line 0.07), and 20 open kinks against a ceiling of 19.
+
+A Stage 1 move CREATED this graze. Trace it first in the next session (`wip/bug-105/collat.mjs 11 0 0`, then
+`why-owned.mjs`). It is the same class as the two collateral pairs in the residue. Add the battery windows (seeds
+1–12, 19, 20) to the census list, so the census sees what the gates see.
+
+**Next session (orchestrator, 11-06):** Stage 2 (the forced join) + gate pins with written reasons + the
+before/after sheets, then ONE landing with the sheets in front of the owner. Stage 1 does not land alone.
