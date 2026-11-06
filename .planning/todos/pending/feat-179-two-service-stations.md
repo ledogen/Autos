@@ -19,6 +19,10 @@ The owner's seed 3867737305 seems to have one service station. Every story world
 2. **Guarantee two:** at generation time (cold, pure: nothing saved).
 3. **Gate it:** follow FEAT-164's `camp-reach` pattern.
 
+**Lead (Lane C's audit, via the orchestrator, 2026-11-06):** the roster already gives every seed TWO auto shops
+(`poi.js` `autoShop`). So on 3867737305, find out first whether the second one fails to place, lands outside the
+circle, or sits where the owner never drove. Do that before adding any guarantee.
+
 ## Acceptance
 
 - [ ] The census: the count per random seed, and how often it is under two.
