@@ -32,7 +32,7 @@ const MPH = 0.44704
 // so the physics stopped stepping (2026-11-05).
 launchChrome('about:blank', { port: +CDP, windowSize: '900,600' })
 const client = await connect({ port: +CDP })
-await client.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html?prof=1&nomenu=1` })
+await client.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html?prof=1&nomenu=1&seed=6` })
 const send = client.cmd
 async function ev (x) {
   const m = await send('Runtime.evaluate', { expression: x, returnByValue: true })

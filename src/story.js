@@ -148,7 +148,7 @@ export class StorySystem {
    * centers there predictably.
    */
   enter (seedStr) {
-    const seed = (seedStr == null || seedStr === '') ? '6' : String(seedStr).trim()
+    const seed = String(seedStr).trim()   // never blank: main.js rolls a random one for it (_resolveSeed) — there is no default seed
     const token = ++this._token
     this._d.setGameMode('story')
     this._d.hidePauseMenu()

@@ -65,7 +65,7 @@ export const CASES = [
   { id: '29-dusk', g: 'Distance', t: 'Meadow at 17:30', d: 'Same meadow under a low afternoon sun.', ...orbit(-192, -500, 0.4, 16, 2.6, 0.5, 17.5) },
   { id: '30-morning-pass', g: 'Distance', t: 'The pass at 08:00', d: 'Low morning light across the pass relief.', ...drive(704, 201, 0.83, -0.56, 40, 30, 3, 8) },
 ]
-const APP = `http://localhost:${PORT}/index.html?nomenu=1&nofog=1`
+const APP = `http://localhost:${PORT}/index.html?nomenu=1&seed=6&nofog=1`
 try { const r = await fetch(APP); if (!r.ok) throw 0 } catch { console.error('no server on', PORT); process.exit(1) }
 launchChrome(APP, { port: CDP })
 const client = await connect({ port: CDP })
