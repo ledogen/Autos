@@ -1286,7 +1286,8 @@ const PUMP_FLOOR_MS   = 0.5
 let simTime = 0  // accumulated simulation time in seconds; incremented by PHYSICS_DT each physics step
 
 let accumulator = 0
-let _cameraDrawnT = 0   // BUG-102: simTime + accumulator at the last camera update (the chase's clock)
+let _prevRenderT = 0    // BUG-102: the sim time of _prevRenderPos, so the drawn pose has a time (the chase's clock)
+let _cameraDrawnT = 0   // BUG-102: that drawn time at the last camera update
 
 // Subframe render interpolation: track the physics state from immediately before the last step.
 // After the accumulator drains, lerp(prevRender, current, accumulator/PHYSICS_DT) eliminates the
@@ -9281,6 +9282,7 @@ function loop () {
   if (_simHeld || _genHold || _heldPause()) {   // PERF-33: the freeze guard holds the sim the same way
     accumulator = 0
     _prevRenderPos.copy(vehicleState.position)
+    _prevRenderT = simTime
     _prevRenderQuat.copy(vehicleState.quaternion)
   } else if (storySystem.isActive() && !storySystem.isEntering() && !_pauseOpen && !_runEnded) {
     _playedS += frameTime   // FEAT-146: playtime — a live run, not paused (the clamp drops a hidden tab's gap)
@@ -9361,6 +9363,7 @@ function loop () {
 
     _prevRenderPos.copy(vehicleState.position)
     _prevRenderQuat.copy(vehicleState.quaternion)
+    _prevRenderT = simTime
 
     // FEAT-06b: bush soft-drag — a capped, velocity-opposing resistive force while the chassis
     // overlaps a bush volume (never a hard contact). Applied as an impulse on the body velocity
@@ -9994,9 +9997,9 @@ function loop () {
   }
 
   _updateFiringCam(frameTime)   // FEAT-147: the firing's orbit of the burger joint
-  // BUG-102: the chase follows the DRAWN truck's clock — the sim time its render pose advanced (simTime plus
-  // the interpolation's residual). Equal to frameTime at a healthy rate; behind it in PERF-32 slow motion or a hold.
-  const drawnT = simTime + accumulator
+  // BUG-102: the chase follows the DRAWN truck's clock — the sim time its render pose advanced. Equal to frameTime at
+  // a healthy rate; behind it in PERF-32 slow motion, nothing in a hold (and the hold's snap to the physics pose counts).
+  const drawnT = _prevRenderT + _renderAlpha * (simTime - _prevRenderT)
   updateCamera(camera, vehicleState, frameTime, Math.max(0, Math.min(MAX_FRAME_TIME, drawnT - _cameraDrawnT)))
   _cameraDrawnT = drawnT
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
