@@ -59,6 +59,40 @@ The prototype is committed on its own branch, **`proto/bug-115-cab-mu`** (8279f9
 
 ## Acceptance
 
-- [ ] The owner's call.
-- [ ] If (a)/(b): `test/side-slide.mjs` gains the roof on 8°/15° (holds within 1 m after it lands); the
-      physics fingerprint stays identical (it was, with the prototype); physics gates and the hi-lift grid are green.
+- [x] The owner's call: **(b), cab friction 0.3** (2026-11-06, verbatim below).
+- [x] `test/side-slide.mjs` gains the roof on 8°/15° (holds within 1 m after it lands); the physics fingerprint
+      stays identical; physics gates and the hi-lift grid are green.
+- [ ] The owner looks at it in game (they asked to be asked; the orchestrator puts it on the owed list).
+
+## The owner's call (2026-11-06)
+
+> Make sure you ask me to take a look at this in game I have a feeling we might want to implement different cab
+> friction on different surfaces but I'd like to take a look at this fix first to see if it's good enough the nice
+> thing about different surfaces providing different friction is that if you're flipped off-road the truck is more
+> likely to tumble which could cause it to land on its wheels whereas if you're upside down on-road it would slide
+> upside down realistically and not tumble
+
+## Work log
+
+**2026-11-06, Lane B — (b) built on feature/machine 863983c7.** `CAB_PAIR_MU` 0.3 on the cab hull
+(`CAB_SHAPE_MU` ≈ 0.11 after the geometric-mean inversion); the slab and bumpers keep 0.1. Holds to
+tan⁻¹ 0.3 = 16.7°.
+
+| slope | before (μ 0.1) | (b) μ 0.3 |
+|---|---|---|
+| roof 5° | 0.43 m | 0.01 m |
+| roof 8° | 28.2 m, 4.6 m/s | 0.01 m, at rest |
+| roof 12° | 77.8 m, 12.7 m/s | 0.00 m |
+| roof 15° | 110.3 m, 18.3 m/s | 0.70 m (the landing settling), at rest |
+| side 15° | 1.39 m | 0.39 m |
+
+(Probe `wip/bug-roof-slide/roof-slide.mjs`, 10 s after a 2 s landing.) Gate `side-slide` now pins the roof on 8° and
+15° (0.01 / 0.00 m; 30.6 / 124.5 m with the change backed out). Physics fingerprint ALL IDENTICAL. `hilift` grid:
+roof slopes 24/24 in one press (21/24 at μ 0.5), side 12/12, fastest roll 2.94 rad/s.
+
+## Follow-up idea (owner, not built): per-surface cab friction
+
+The cab's grip would depend on what it lands on: **off-road it digs in** (high μ, so a truck rolling across dirt or
+grass tumbles on and may land back on its wheels), **on-road it slides** (lower μ, so a truck upside down on asphalt
+skids along on its roof and doesn't tumble). The same direction as BUG-116's terrain-dependent body μ: one
+per-surface body/cab friction would serve both. Waits on the owner's in-game look at (b).
