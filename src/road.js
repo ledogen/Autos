@@ -3583,15 +3583,19 @@ export class RoadSystem {
                 if (shB) tBx = this._v2ThroatLen(S, false, Q)
                 // …and never on a stretch a pass-1 T cedes (either run's line from its node to the fork
                 // is replaced by the trunk, so it never ships).
+                // …and only for the GRAZE tier (centres inside the pavement floor, 2·HW + clearEdgeM): banks-only
+                // contact is reported, not chased (tier split, 2026-11-06). Seed 11 (1385, −1170): the pair
+                // 1,-2,0|2,-1,1 × 0,-2,0|1,-2,0 sat 22.1 m apart (banks only); re-routing it against that one
+                // winner swung the loser onto the node's third leg, 1.9 m apart for 88 m.
                 const cedS = this._v2CededPass1(g, drop, ck, kA, S.L), cedQ = this._v2CededPass1(g, drop, pk, qA, Q.L)
-                const ceded = (iv, x) => iv.some(([a, b]) => x >= a && x <= b)
+                const ceded = (iv, x) => iv.some(([a, b]) => x >= a && x <= b), FLOOR = this._v2ClearPrm().floor
                 for (let i = 0; i < S.pts.length && !violates; i++) {
                     const s = S.polyCum[i]
                     if ((shA && s < tAx) || (shB && s > S.L - tBx)) continue
                     if ((S.spans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)) continue
                     if (ceded(cedS, s)) continue
                     const h = _nearestWithinXZ(S.pts[i].x, S.pts[i].z, Q.pts, Q.polyCum, 60)
-                    if (h && !ceded(cedQ, h.cum) && h.d < this._v2ClearReq(S.pts[i], h)) violates = true
+                    if (h && !ceded(cedQ, h.cum) && h.d < FLOOR) violates = true
                 }
             }
             if (merges || !violates) continue
