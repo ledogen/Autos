@@ -235,6 +235,9 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
+    { id: 'bug117-pay', kind: 'decide', tk: 'BUG-117',
+      text: 'Mom’s first job (the casserole to Larry’s) now has no deadline and every other job waits for it (Lane A, built, lands next). It also cannot be abandoned: Lane A’s call, and the alternative is that abandoning puts it back on mom’s board. Its pay still depends on route length. 1 = no pay, a letter only (recommended), 2 = keep the pay. To overrule the no-abandon call, type it in the note box below.',
+      options: ['1 — a letter, no pay', '2 — keep the pay'] },
     { id: 'bug112-seam', kind: 'decide', tk: 'BUG-112',
       text: 'The tunnel shoulder seam you meant: the bore floor now uses the terrain’s own material, so the cut bench’s gravel runs on into the tube instead of turning flat dirt. Before/after: CarGame-spare/wip/bug-112/shots/sheet-seam.jpg (open it on the laptop). Spare’s checks pass; it lands on your OK.',
       options: ['land it', 'changes (note box below)'] },
