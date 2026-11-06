@@ -89,6 +89,9 @@
 // ASSET-31 road signs: every one of the seven is the same 4x4 timber post carrying a
 // different blank, so they share one collision box. 89 mm square, 2.18 m to the post top.
 const SIGN_POST_BOX = { shape: 'box', size: [0.089, 2.180, 0.089] }
+// ASSET-77 turn-back signs: the four wordings share one board and stakes. Mesh bbox
+// 0.93 wide x 1.30 tall x 0.13 deep (the lean included).
+const TURN_BACK_BOX = { shape: 'box', size: [0.93, 1.30, 0.13] }
 
 // ASSET-22 mailboxes: the standard-box flavours share one curated pool on their MailBox
 // material (the pillar, chicken, cast one and barn are the exceptions below). LINEAR RGB, and
@@ -900,6 +903,18 @@ export const PROP_MODELS = {
   signCross: { url: 'assets/models/sign-cross.glb', collision: SIGN_POST_BOX },
   signStop: { url: 'assets/models/sign-stop.glb', collision: SIGN_POST_BOX },
   signIcy: { url: 'assets/models/sign-icy.glb', collision: SIGN_POST_BOX },
+
+  // ASSET-77 — the TURN-BACK SIGNS, the camp's demolition line (FEAT-65, data/offers.js reqSigns): a
+  // hand-sawn 0.9 x 0.6 m ply board screwed to two 2x2 stakes at a lean, 1.30 m tall, the owner's
+  // words painted on. 360 tris, 4 materials, the face one baked image. One generator,
+  // assets/models/src/turn-back-sign.py, the steel-drum packaging: a wording is a .glb of its own
+  // (a palette can recolour, never re-letter). They stand only as demolition targets: within
+  // DEMOLITION_PARAMS.onM each becomes a debris body hulled from the whole .glb (src/demolition.js
+  // TARGET_TYPES), so the box below is the whole sign, used for spacing on the shoulder.
+  turnBackSign: { url: 'assets/models/turn-back-sign.glb', collision: TURN_BACK_BOX },
+  turnBackSignKeepOut: { url: 'assets/models/turn-back-sign-keep-out.glb', collision: TURN_BACK_BOX },
+  turnBackSignBeware: { url: 'assets/models/turn-back-sign-beware.glb', collision: TURN_BACK_BOX },
+  turnBackSignNoEntry: { url: 'assets/models/turn-back-sign-no-entry.glb', collision: TURN_BACK_BOX },
 
   // ASSET-22 — ROAD FURNITURE: the rural mailbox, ELEVEN flavours. 132–248 tris each (budget
   // 250, hard — this is the most-repeated object in the game), 2–6 flat materials, NO TEXTURES.

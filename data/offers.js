@@ -448,9 +448,10 @@ export const NOT_A_DESTINATION = new Set(['gasPump', 'expeditionCamp'])
  * (fuel), fragile (camp gear), demolition (the turn-back signs, FEAT-65).
  * FEAT-65 (owner, 2026-11-01): the demolition line is given by the CAMP ITSELF (`from: 'expeditionCamp'`)
  * and, unlike the others, goes OUT to a roadside site, never to the camp. Hand-painted boards keep
- * appearing overnight on the roads near the wall — TURN BACK, NOTHING PAST THE RIDGE — nobody admits
- * putting them up, and the crew won't drive past them. Until the painted board is modelled the site is
- * the crates of flyers and the drums left beside them.
+ * appearing overnight on the roads near the wall — KEEP OUT, TURN BACK, BEWARE, NO ENTRY (the owner's
+ * words, 2026-11-06) — nobody admits putting them up, and the crew won't drive past them. The site is
+ * the boards (ASSET-77), one at a time on the right shoulder facing the oncoming truck, plus the crates
+ * of flyers and the drums left beside them.
  */
 export const REQUISITION = [
     // 20 bundles (owner, 2026-10-31, confirmed): the yard's stock cycles, so a smart player waits a couple of
@@ -458,7 +459,9 @@ export const REQUISITION = [
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
     { id: 'reqSigns',    phrase: 'the turn-back signs knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
-      targets: [{ kinds: ['smallCrate'], n: [3, 5], cluster: [1, 3] }, { kinds: ['barrel'], n: [3, 5], cluster: [1, 2] }] },
+      targets: [{ kinds: ['turnBackSign', 'turnBackSignKeepOut', 'turnBackSignBeware', 'turnBackSignNoEntry'],
+                  n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
+                { kinds: ['smallCrate'], n: [3, 5], cluster: [1, 3] }, { kinds: ['barrel'], n: [3, 5], cluster: [1, 2] }] },
     // FEAT-157: fuel is a strapped 55-gal drum of gasoline (154 kg + an 18 kg drum); camp gear is a crate
     // of lanterns and a stove, Fragile tier.
     { id: 'reqFuel',     phrase: 'fuel',           family: 'freight',  from: 'gasStation',   massKg: 172, load: 'drum' },
