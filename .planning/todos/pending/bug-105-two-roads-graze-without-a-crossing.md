@@ -583,3 +583,16 @@ shares; take the A/B only in a quiet window from the orchestrator.
 - **If it still misses 5 %**, the call goes to the orchestrator and owner. The 5 % was this ticket's own budget; the
   owner's bar is story entry < 30 s (main ~9 s at cpu ×4). Measure story entry in the same window and put both
   numbers in front of them.
+
+**Orchestrator's call (11-06): (a), with the reuse memo first.** Build the exact reuse memo, then one quiet window for
+the thread A/B and story entry at cpu ×4. If the branch's story entry is within +2 s of main, land at about +16 %.
+If not, stop and report before trying the less exact forecast.
+
+**Built (wip `bc9c488b`): the node planner's pair walk is memoized on its inputs** (`_v2NodeBase`). The key is the
+node, legacy flag, dead legs, and each leg's edge key and sample object. A pin change re-routes a leg, so it shows up
+as a new sample. Every skip the walk logs is recorded (`_v2SkipRec`) and replayed on a hit. The forced join is now a
+final-plan-only step after the walk, over recorded candidates; role resolution stays per request.
+- Bench network hash unchanged (`f96eb26bd930`); `_v2MidSpanPair` calls 145 → 58.
+- Profile share of `_v2NodeMerges` 16.1 → 10.3 %, `_v2PlannedPair` 21.4 → 19.2 %, taken under load.
+- World-identity proof running: census 10 vs census 9 run keys, `fingerprint-world` vs `ea0f4c9d`
+  (scratch worktree `CarGame-b105-before`), and the affected gates.
