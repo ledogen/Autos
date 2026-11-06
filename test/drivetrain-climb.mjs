@@ -71,7 +71,7 @@ function runScenario (gradePct, steps, label, opts = {}) {
   const gearChanges = []
   let prevGear = opts.initGear ?? 1, lastCoupled = 0
   for (let s = 1; s <= steps; s++) {
-    vs.throttle = opts.throttleAt ? opts.throttleAt(s * DT) : 1; vs.brake = 0   // full throttle unless a pedal is given
+    vs.throttle = opts.throttleAt ? opts.throttleAt(s * DT, prevV) : 1; vs.brake = 0   // full throttle unless a pedal is given (t, road speed)
     stepPhysics(vs, P, DT, queryContacts, ctx)
     const vfwd = vs.velocity.dot(fwd)
     const accel = (vfwd - prevV) / DT; prevV = vfwd
@@ -201,6 +201,34 @@ console.log('FEAT-23 drivetrain — climb + taper gate\n')
   console.log(`  floored in 3rd at 2600 coupled (2nd would turn ${(2600 * r[1] / r[2]).toFixed(0)}): ${down ? `kicked down at ${down.t.toFixed(2)} s` : 'lugged 3rd'}`)
   if (down) pass('kicks down to 2nd when 2nd has the headroom')
   else fail('lugs 3rd with 1500+ rpm of headroom in 2nd')
+}
+
+// ── Scenario 9 (FEAT-150, owner 2026-11-06: "we want a kickdown but we also want overdrive at partial
+// throttle"): a driver holding a speed on the flat (a cruise control from rest) settles without a shift
+// after 40 s at every speed, and in overdrive (4th) at part throttle from 80 km/h; cruising in 4th, a
+// floored pedal kicks down within half a second. Measured 2026-11-06: 50 / 60 / 70 km/h hold 3rd (1570 /
+// 1879 / 2189 rpm, 17–21 % pedal), 80 / 100 hold 4th (1734 / 2165 rpm, 35 / 44 %); floored from 4th at
+// 65 / 80 / 100 km/h, 4→3 after 0.32 / 0.40 / 0.40 s. A deep stab short of the floor waits on the throttle
+// average: 85 % → 1.10 s, 70 % → 1.65 s.
+{
+  console.log('\nScenario 9: holding a speed on the flat; a floored pedal from a 4th-gear cruise')
+  for (const kmh of [50, 60, 70, 80, 100]) {
+    const cc = (t, v) => Math.max(0, Math.min(1, 0.15 + 0.25 * (kmh / 3.6 - v)))
+    const { gearChanges, samples } = runScenario(0, 60 * 60, 'cruise', { throttleAt: cc })
+    const late = gearChanges.filter(g => g.t > 40), end = samples.at(-1)
+    const pedal = samples.slice(-600).reduce((a, x) => a + cc(0, x.vfwd), 0) / 600
+    console.log(`  ${kmh} km/h: ${end.gear === 4 ? 'overdrive' : `gear ${end.gear}`} at ${(end.vfwd * 3.6).toFixed(1)} km/h, ~${(pedal * 100).toFixed(0)} % pedal; ${late.length} shift(s) after 40 s`)
+    if (late.length) fail(`holding ${kmh} km/h hunts: ${late.map(g => g.from + '→' + g.to).join(' ')}`)
+    if (kmh >= 80 && !(end.gear === 4 && pedal < 0.6)) fail(`holding ${kmh} km/h is not overdrive at part throttle (gear ${end.gear}, ${(pedal * 100).toFixed(0)} %)`)
+  }
+  for (const kmh of [65, 80, 100]) {
+    const { gearChanges } = runScenario(0, 8 * 60, 'kick', { initVfwd: kmh / 3.6, initGear: 4, throttleAt: (t) => t < 5 ? 0.25 : 1 })
+    const held = !gearChanges.some(g => g.t < 5), down = gearChanges.find(g => g.t >= 5 && g.from === 4 && g.to === 3)
+    console.log(`  ${kmh} km/h in 4th at 25 %${held ? '' : ' (did not hold 4th)'}, floored: ${down ? `4→3 after ${(down.t - 5).toFixed(2)} s` : 'no kickdown'}`)
+    if (!held) fail(`a 25 % cruise at ${kmh} km/h left overdrive`)
+    if (!down || down.t - 5 > 0.5) fail(`floored at ${kmh} km/h in 4th: ${down ? `kicked down only after ${(down.t - 5).toFixed(2)} s` : 'no kickdown'}`)
+  }
+  pass('holding a speed never hunts; overdrive from 80 km/h at part throttle; a floored pedal kicks down within 0.5 s')
 }
 
 // ── Scenario 6: wheelspin shift-lock — a burnout must NOT upshift on spin-inflated coupled RPM ─────
