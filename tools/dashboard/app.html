@@ -811,6 +811,12 @@ const DRIVERS = {
     const at = v => m.updateWindAudio({ velocity: { x: v, y: 0, z: 0 } });
     ramp(5000, u => at(45 * Math.sin(Math.PI * u)), () => at(0));
   },
+  // FEAT-162: the rod knock at 10 % engine, full throttle, 800 → 4000 rpm.
+  async 'knock-sweep'() {
+    const m = await import('/src/knock-audio.js');
+    m.ensureKnockAudio();
+    ramp(5000, u => m.updateKnockAudio(0.1, 800 + 3200 * u, 1, true), () => m.updateKnockAudio(1, 800, 0, false));
+  },
   async crank() {
     const m = await import('/src/engine-audio.js');
     m.startCrankAudio();
