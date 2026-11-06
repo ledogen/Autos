@@ -612,6 +612,18 @@
        way, it is not an alarm. Its own element rather than a line inside #paper-hud because it
        comes and goes on a different cadence to the route's three live values, and because it
        belongs with the navigation furniture rather than with the mission's numbers. */
+    /* FEAT-170: hold M to skip the opening — bottom-left (the cluster owns bottom-right), over the cards (z 96),
+       shown while the opening can be skipped. The bar fills over the hold (main.js SKIP_HOLD_MS). */
+    #skip-hint {
+      position: fixed; left: 18px; bottom: 18px; z-index: 96;
+      background: var(--hud-bg); border: 1px solid var(--line); padding: 6px 12px 8px;
+      font: 12px var(--font); color: var(--text-dim);
+    }
+    #skip-hint::after {
+      content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+      background: var(--accent-system); transform: scaleX(0); transform-origin: left;
+    }
+    #skip-hint.holding::after { transform: scaleX(1); transition: transform 1s linear; }
     #gps-recalc {
       display: none;
       position: fixed;
@@ -1890,6 +1902,7 @@
   </div>
   <div id="paper-hud"><span class="hud-text"></span></div>
   <!-- FEAT-63: shown while the GPS is re-planning the shortest way to finish. -->
+  <div id="skip-hint" style="display:none"></div>
   <div id="gps-recalc">RECALCULATING…</div>
 
   <!-- FEAT-45 Phase D: the camp dialogue. One panel, four faces — make-camp confirm, the camp

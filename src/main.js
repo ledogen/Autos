@@ -1426,9 +1426,6 @@ const SELECTORS = {
   worldPoi:     { name: 'POI spacing',     opts: KNOBS.p.map(v => [v, `${v} %`]) },
   worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
-  // FEAT-147: the firing and the first day. On for a first run; Larry's welcome turns it off
-  // (_checkOpeningEnd), and a returning player can turn it back on here.
-  opening:      { name: 'opening',         opts: [[true, 'play'], [false, 'skip']], show: () => _setupMode === 'story' },
   steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
   // A slider: 0 % linear … 100 % parabolic … 150 % (gamepad.js steerCurve), with a tiny plot of the map.
   // i / 10 so the saved value round-trips to exactly the same notch. Shown only with the assist off —
@@ -4012,6 +4009,7 @@ document.addEventListener('keyup', e => {
 // a guarantee worth relying on.
 document.addEventListener('keydown', e => {
   if (!dialogueSystem.active) return
+  if ((e.key === 'm' || e.key === 'M') && _eveningLeg()) return   // FEAT-170: M is the skip's hold (below)
   if (e.repeat) return                                          // held key ≠ several presses
   if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return  // a modifier alone is not a press
   e.preventDefault()
@@ -4239,9 +4237,10 @@ function _runIntro () {
 // 2026-11-06: the evening is the day before the run's day 1). Mom's call sends you home for the
 // night — the EVENING LEG: no job, the GPS and the HUD line to her house, every other giver quiet. Any
 // sleep ends it (at hers or anywhere), as does 07:00 reached awake, and her casserole goes up at her
-// house: the first job (the board's f0 slot), taken from her pad like any giver's. Opening OFF skips
-// the evening: the run starts at mom's, 07:00 on day 1, with the casserole in hand. Either way, its
-// result card put away, Larry's welcome is RUN_INTRO, and the opening is done.
+// house: the first job (the board's f0 slot), taken from her pad like any giver's. EVERY new run opens
+// this way; holding M (the pad's View) skips it, from the firing to mom's door at 07:00 with the
+// casserole in hand (stage 2 — the setup page's opening toggle retired with it, owner 2026-11-06). Either
+// way, its result card put away, Larry's welcome is RUN_INTRO, and the opening is done.
 //
 // STATELESS ACROSS A RESUME: "this run opened on the firing" is the dialogue seen-key DLG.firing (the
 // save carries the seen set), and the first job's progress is the board's (the save replays it) — so
@@ -4252,8 +4251,8 @@ const JOINT_SEAT_M = 2.8   // m — the truck's seat off the pad centre toward t
 // turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
 // aim point's height over the pad (m).
 const FIRING_CAM = { radius: 16, swing: 0.35, rate: 0.05, lift: 2 }
-let _openingRun = false   // onRegionLive → go-live: 'firing' (the opening) | 'skip' (start at mom's) | false (a resume)
-let _openingSeat = null   // that new run's seat (a promise): the skip takes the casserole once the truck is on her pad
+let _openingRun = false   // onRegionLive → go-live: this new run plays the opening
+let _openingSeat = null   // the opening's last seat (a promise): a skip takes the casserole once the truck is on her pad
 let _firingCam = null     // { p, theta0, t } while the firing's cards are up
 let _eveningGuide         // undefined = not planned yet: the evening's way home, planned once (not saved)
 
@@ -4261,7 +4260,7 @@ let _eveningGuide         // undefined = not planned yet: the evening's way home
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
 const _mom = () => poiSystem.list().find(q => q.type === 'momsHouse') ?? null
 
-/** onRegionLive, a new run: park the truck on POI q's lay-by (the joint's, or mom's on a skip) — _restoreRun's seat. */
+/** Park the truck on POI q's lay-by — the joint's at a new run, mom's on a skip — like _restoreRun's seat. */
 function _seatAt (q) {
   if (!q) return
   const prev = _spawnOverride
@@ -4295,20 +4294,58 @@ function _endEvening () {
   _renderMissionUI()   // the HUD line goes
 }
 
+// FEAT-170 stage 2: HOLD M (the pad's View — gamepad.js pad.skipHold) to skip the opening, from the firing's
+// first card to mom's door, with the prompt on screen the whole time (no hidden gesture). While the opening
+// can be skipped, M no longer opens the map on the press: a release under the hold opens it, the hold skips.
+const SKIP_HOLD_MS = 1000   // [DEFAULT] — the pad's View hold is the same second
+let _skipTimer = 0          // setTimeout handle while M is held, 0 when not
+function _skipRelease () {
+  if (!_skipTimer) return false
+  clearTimeout(_skipTimer); _skipTimer = 0
+  document.getElementById('skip-hint')?.classList.remove('holding')
+  return true
+}
+document.addEventListener('keydown', e => {
+  if ((e.key !== 'm' && e.key !== 'M') || !_eveningLeg()) return
+  e.preventDefault(); e.stopImmediatePropagation()   // neither the map nor a card hears it
+  if (_skipTimer || e.repeat) return
+  _skipTimer = setTimeout(() => { _skipTimer = 0; _skipOpening() }, SKIP_HOLD_MS)
+  document.getElementById('skip-hint')?.classList.add('holding')
+}, { capture: true })
+document.addEventListener('keyup', e => {
+  if ((e.key !== 'm' && e.key !== 'M') || !_skipRelease()) return
+  // A tap: the map, as M always is — unless a card owns the screen.
+  if (!dialogueSystem.active && !document.body.classList.contains('stage-on')) map2d.toggle()
+}, { capture: true })
+window.addEventListener('blur', _skipRelease)   // a key let go in another window never comes back up here
+pad.skipHold = () => _eveningLeg()
+{ const el = document.getElementById('skip-hint'); if (el) el.innerHTML = `hold ${keycap('M')} to skip the tutorial` }   // PLACEHOLDER words
+
+/** The hold landed: where a skipped evening ends — the night slept at mom's, 07:00, the casserole in hand. */
+function _skipOpening () {
+  document.getElementById('skip-hint')?.classList.remove('holding')
+  if (!_eveningLeg() || _campBusy) return
+  dialogueSystem.abort()   // the firing's or mom's card, if one is up
+  _cardHold = false
+  if (_firingCam) { _firingCam = null; setCameraFocus(null) }
+  if (_campUi) _closeCampUi()   // her sleep card
+  _tutQueue.length = 0
+  dialogueSystem.restoreSeen([DLG.skipped])   // no first-use cards this run (_tut)
+  daySystem.sleep(_eveningSleepH(), 0.5, 0)   // the night at hers (her bed's vibe, _renderCampUI): energy, the meal, 07:00
+  _endEvening()
+  _seatAt(_mom())
+  void _openingSeat?.then(_takeFirstJob)
+  _renderDialogue()
+}
+
 /**
  * Go-live: true when the opening owns the moment (so RUN_INTRO waits for Larry). Plays the firing on
  * a fresh opening run; on a resumed one it only holds RUN_INTRO back until the welcome.
  */
 function _playOpening () {
-  const run = _openingRun
+  // A resume: RUN_INTRO waits for Larry while the first job is still to do or the evening is on.
+  if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
   _openingRun = false
-  // A resume: RUN_INTRO waits for Larry while the first job is still to do (on either path) or the evening is on.
-  if (!run) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
-  if (run === 'skip') {
-    offerBoard?.openFirst(daySystem.clockH())
-    void _openingSeat?.then(_takeFirstJob)
-    return true
-  }
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
   _cardHold = true
@@ -4322,8 +4359,8 @@ function _playOpening () {
 }
 
 /**
- * The skip path's casserole IN HAND (owner 11-05: "i didnt have a job after the opening"): taken at her
- * pad as the run goes live, staging in her start zone like any job taken there.
+ * The skip's casserole IN HAND (owner 11-05: "i didnt have a job after the opening"): taken at her pad
+ * once the skip has seated the truck there, staging in her start zone like any job taken there.
  */
 function _takeFirstJob () {
   const mom = _mom()
@@ -4343,11 +4380,12 @@ function _updateFiringCam (dt) {
 // First-use cards (data/dialogue.js TUT), and Larry's welcome through the same door: queued, then
 // played by _pumpTut on the HUD poll once no other card is up, each HOLDING the sim and the clock
 // (_cardHold) — so one may land mid-drive (the rank bar appears near the drop) without the truck
-// running on under it. Only in a run that opened on the firing — `always` lifts that for Larry's welcome,
-// which every run hears after the casserole (FEAT-170); each key once per run (the seen-gate).
+// running on under it. Only in a run that played its opening rather than skipping it — `always` lifts that
+// for Larry's welcome, which every run hears after the casserole (FEAT-170); each key once per run.
 const _tutQueue = []
 function _tut (key, cards = TUT[key], done = null, always = false) {
-  if ((!always && !dialogueSystem.has(DLG.firing)) || dialogueSystem.has(key) || _tutQueue.some(t => t.key === key)) return
+  if (!always && (!dialogueSystem.has(DLG.firing) || dialogueSystem.has(DLG.skipped))) return
+  if (dialogueSystem.has(key) || _tutQueue.some(t => t.key === key)) return
   _tutQueue.push({ key, cards, done })
 }
 function _pumpTut () {
@@ -4363,10 +4401,7 @@ function _checkOpeningEnd () {
   // null = no mom on the roster (never expected — her count is hard): Larry still welcomes you.
   if (!offerBoard || ['closed', 'live', 'taken'].includes(offerBoard.firstState())) return
   if (missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
-  _tut(DLG.runIntro, [...LARRY_WELCOME, ..._runIntro()], () => {
-    _settings.opening = false   // the setup page's default flips to skip; the player can turn it back on
-    saveSettings(_settings)
-  }, true)
+  _tut(DLG.runIntro, [...LARRY_WELCOME, ..._runIntro()], null, true)
 }
 
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
@@ -6734,6 +6769,8 @@ function _renderRunHud () {
   // so this is the one place the requisition opens (openLines is idempotent).
   if (offerBoard && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
   if (daySystem.clockH() >= DAY_PARAMS.dayStartHour) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
+  const skip = document.getElementById('skip-hint')
+  if (skip) skip.style.display = _eveningLeg() ? '' : 'none'
   _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
   _pumpTut()           // …and any first-use card waiting its turn
   _checkMidnight()     // FEAT-148: the midnight overlay
@@ -8182,10 +8219,9 @@ const storySystem = new StorySystem({
    */
   onRegionLive: (center, radius) => {
     if (!center) return
-    // FEAT-147/170: a NEW run plays the opening (the firing, on day 0's evening) or skips it (mom's, day 1).
-    const opening = _pendingResume ? false : _settings.opening ? 'firing' : 'skip'
-    // FEAT-47: the run's clock opens at dayStartHour and takes over the sky
-    daySystem.start(...(opening === 'firing' ? [OPENING_START.day, OPENING_START.hour] : []))
+    // FEAT-47: the run's clock opens at dayStartHour and takes over the sky — FEAT-170: a NEW run's at the
+    // opening's 6 pm on day 0 (a resume puts its own clock back below).
+    daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
     _openingSeat = null
     _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
@@ -8253,10 +8289,10 @@ const storySystem = new StorySystem({
     }
     // FEAT-42: a resume writes the save over the fresh run built above — still behind the loading
     // screen, before the handoff plays the run intro.
-    // FEAT-147/170: a NEW run starts parked at the burger joint instead, or at mom's on a skip.
-    _openingRun = opening
+    // FEAT-147: a NEW run starts parked at the burger joint instead.
+    _openingRun = !_pendingResume
     if (_pendingResume) { _restoreRun(_pendingResume); _pendingResume = null }
-    else _seatAt(opening === 'firing' ? _joint() : _mom())
+    else _seatAt(_joint())
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {

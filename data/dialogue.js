@@ -101,4 +101,5 @@ export const DLG = {
     runIntro: 'run-intro',
     firing: 'firing',         // FEAT-147 — also how main.js knows the run opened on the firing
     momCall: 'mom-call',
+    skipped: 'opening-skipped',   // FEAT-170: the opening was held-to-skip — no first-use cards this run
 }
