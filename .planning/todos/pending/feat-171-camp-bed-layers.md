@@ -109,5 +109,33 @@ doing its job: the bag is 35 cm wider than the sleeping pad. It only shows in th
 **New sheet:** `wip/feat-171/sheet.png` (bag stacks first, then bedroll; three views each, the third close on the head
 from the bag's opened side); halves `sheet-sleepingBag.png` / `sheet-bedroll.png`, preview `sheet-small.png`.
 
+## Owner's look, round 2 (2026-11-06, the tracker page's feat171-round2, "changes in the note") — and the fix
+
+> "can we open the corner more so it takes the entire width of the bag like we did for the sleeping bag
+> thumbnail? then the pillow can go atop the folded over corner. pillow for bedroll and sleeping bag should be
+> the same size"
+
+Fixed (ba16a20c, c365fde6):
+
+- **The fold runs corner to corner across the whole width** (fold line u + v = W = 0.85 m, was 0.35 m). The
+  opened lining is the head-side triangle and the flap lies on the far side of the diagonal. The head collar is
+  gone: a full-width fold leaves no kept head edge to carry it. Carried on the flap, it lay along the far side
+  as the log round 1 removed.
+- **The pillow is the bedroll's size on both beds** (0.50 × 0.34 m; the bag's was 0.36 × 0.30). It lies at the
+  head, centred across the bag, and its foot-side corner rests on the fold. It is soft: `pillow(rest=)`
+  raises its bottom on a smooth ramp off the fold line (smoothstep over the roll's radius + 10 cm, up to the
+  roll's top, ~12 cm), and its top follows at 85 %. Its top is fanned from the centre: the bent 24-sided
+  cap was triangulated corner to corner in game and showed a crease.
+- Centred, the pillow stays inside the narrowest pad's top (±0.25 m vs the sleeping pad's ±0.255 + 3 cm reach),
+  so the camp drape's one-piece lift never leaves its edge floating.
+
+Re-exported: sleeping bag 10 819 tris, bedroll 8 404; bag thumbnail re-rendered. Gates green: camp-gear (24
+stacks, worst sink −1.0 cm, hover 1.8 cm), inventory, dist-assets, model-palette, model-variant.
+
+**Known, as round 1:** on the two narrow pads the bag's sides drape down over the pad's edges, and now the flap
+spans the whole width, so the flap drapes down with them (the head view on those rows).
+
+**New sheet:** `wip/feat-171/sheet.png` (bag stacks first, three views each; the third is close on the head).
+
 **Owed:** the owner's look at the new sheet, then at camp. [DEFAULT]s: the drape's fall 2.5 and reach 3 cm, the quilt's
 mass and colours.
