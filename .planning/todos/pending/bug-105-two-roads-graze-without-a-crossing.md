@@ -521,3 +521,44 @@ from-the-south frames:
 
 **Left before the landing:** the build-time bench in a quiet window (`wip/perf-31/thread-bench.mjs`; ≤ 5 % of the
 network thread; story entry cpu ×4 < 30 s), then the landing with the sheets in front of the owner.
+
+### Build time — the bench failed, and where the cost is (2026-11-06)
+
+**Quiet-window bench** (orchestrator's window, load ~4): network thread, 3 windows of seed 6 (`wip/perf-31/ab.sh 3`,
+A = `CarGame-spare-base` detached at main `871d7750`):
+- main 4.82 / 4.88 / 4.84 s;
+- branch (`ea0f4c9d`) 6.47 / 6.69 / 6.54 s, which is **+35 %** against the ≤ 5 % budget.
+
+The network hash is identical on both sides (`f96eb26bd930`): the cost is pure overhead, not a different world. Story
+entry was not run; the fix changes it anyway.
+
+**Where (CPU profiles, `wip/perf-31/prof-{main,b105,b105c}`; shares hold under load, wall times do not):**
+- `_v2PlannedPair`, Stage 1's "will a T own this pair?" question asked on the PASS-1 lines, was 27.5 % of the
+  branch's thread. That is ~1.8 s, which is the whole measured overhead.
+- Inside it: pass-1 T probes (departure builds: 476 on pass 1 vs main's 222 in total) and pass-1 node plans.
+- The final probes then mostly hit the departure memo (21 builds). The pass-1 probes are extra work, for pairs the
+  final plan never asks about (margin-band edges, re-routed pairs).
+
+**Tried and dropped:**
+- A memo on the probe's fork ranking (inputs identical): no measurable change; the builds were already memoized.
+- A pre-check that the node plan names the partner: 319 → 314 probes. Nearly every asked pair is named.
+
+**Landed as wip `b1067307`: an exact reorder.** The clearance pass runs the cheap graze walk with nothing ceded
+(a superset of the walk that decides) BEFORE the ownership question. A pair that does not graze past the
+geometric throat stays deferred whatever the T machinery would answer, so its probes are never paid. Departure
+builds 497 → 350 (main 256). `_v2PlannedPair` 27.5 % → 21.4 %, which is still about **+27 %** over main.
+
+**What is left inside `_v2PlannedPair`:** pass-1 node plans 9.5 % of the thread, pass-1 probes 12.0 %.
+
+**Next levers, in order:**
+1. **Final plan reuses the pass-1 node plan when every leg's sample is the same object** (no leg re-routed, same
+   dead set). The final plan differs only by forced joins, which can be added from a recorded candidate list. Snag:
+   the skip tallies and the 64-line skip log must replay in the original order.
+2. **A probe-free ownership forecast.** Use the node plan, plus `winnerOk` / `bothEnds`, without departure builds.
+   It loses the promote-infeasible cases (3752380034, 1013531954, 3628580736); measure what that costs in the census.
+3. Short-circuit pass-1 probes at the first departure that builds (truthiness is all `_v2MergeFor` reads). Exact
+   only if sibling forks (`taken`) still come from full rankings.
+
+**Measuring under load:** wall time and CPU time are both useless while the other lanes run (main swung 4.8 →
+11.5 s). Use deterministic counts (`wip/perf-31/opcount.mjs`, `buildcount.mjs`, `probecount.mjs <root>`) and profile
+shares; take the A/B only in a quiet window from the orchestrator.
