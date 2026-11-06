@@ -320,14 +320,22 @@ const STEPS = [
     check(await until(() => js('window.__mission().state === "done"'), 2000), 'abandoning the casserole did not end it')
     await js('document.getElementById("mp-accept").click()')
     check(await until(dlg, 3000), 'no Larry after the casserole (R-11 / FEAT-170)')
-    check(/Casserole/.test(await js('document.getElementById("dialogue-panel").textContent')), "Larry's welcome is not the first card")
-    await tap('Enter'); await sleep(250)
+    const dlgText = () => js('document.getElementById("dialogue-panel").textContent')
+    check(/Casserole/.test(await dlgText()), "Larry's welcome is not the first card")
+    for (let i = 0; i < 4 && /Casserole/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }
+    // The owner's word stream (feat120-blip): a card fills a word at a time (the intro's 33 words take ~2.6 s);
+    // a press fills it in place, the next turns it.
+    const shown = () => js('[...document.querySelectorAll("#dlg-text span")].filter(w => !w.children.length && w.style.visibility !== "hidden").length')
+    const all = () => js('[...document.querySelectorAll("#dlg-text span")].filter(w => !w.children.length).length')
+    check(await shown() < await all(), `the intro card did not stream in (${await shown()} of ${await all()} words at once)`)
+    await tap('Enter'); await sleep(150)
+    check(await shown() === await all(), 'the first press did not fill the card')
     // FEAT-103: the uncle names the camp's true compass direction — filled in, never the raw token.
-    const intro = await js('document.getElementById("dialogue-panel").textContent')
+    const intro = await dlgText()
     check(/expedition camped up at the (north|south)?(east|west)? road/.test(intro) && !intro.includes('{dir}'),
-      `the intro does not name the camp's direction: "${intro.slice(0, 120)}"`)
-    for (let i = 0; i < 8 && await dlg(); i++) { await tap('Enter'); await sleep(250) }
-    check(!await dlg(), 'the intro cards did not close after 8 presses')
+      `the intro does not name the camp's direction (or the fill turned the card): "${intro.slice(0, 120)}"`)
+    for (let i = 0; i < 16 && await dlg(); i++) { await tap('Enter'); await sleep(250) }   // two presses a card: fill, turn
+    check(!await dlg(), 'the intro cards did not close after 16 presses')
   }],
   ['camp', async () => {
     // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there.
@@ -1063,7 +1071,7 @@ const STEPS = [
     await js('document.getElementById("mp-accept").click()')
     const larry = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     await until(larry, 3000)
-    for (let i = 0; i < 8 && await larry(); i++) { await tap('Enter'); await sleep(250) }
+    for (let i = 0; i < 16 && await larry(); i++) { await tap('Enter'); await sleep(250) }
     await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
     check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), `${ECONOMY_PARAMS.campDeeds} deeds opened no requisition`)
     await js(`(() => { const b = window.__board(), h = window.__day().clockH()
@@ -1087,9 +1095,9 @@ const STEPS = [
     check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
     check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
     check(Math.abs(a.h + 6) < 0.1, `the firing is not at 18:00 on day 0 (clockH ${a.h})`)   // FEAT-170
-    for (let i = 0; i < 4 && await speaker() === 'The manager'; i++) { await tap('Enter'); await sleep(250) }
+    for (let i = 0; i < 8 && await speaker() === 'The manager'; i++) { await tap('Enter'); await sleep(250) }
     check(await speaker() === 'Mom', `the firing was not followed by mom's call (speaker "${await speaker()}")`)
-    for (let i = 0; i < 4 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
+    for (let i = 0; i < 8 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
     check(!await speaker(), "mom's call did not close")
     check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
     // FEAT-170: the EVENING LEG — no job (the casserole is the morning's), the HUD and the GPS to mom's.
@@ -1129,7 +1137,7 @@ const STEPS = [
     await js('document.getElementById("mp-accept").click()')
     const job = () => js(`(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, first: window.__board().firstState() } })()`)
     check(await until(async () => { const b = await job(); return b.first === 'taken' && b.s === 'staging' && !b.a }, 3000), `taking mom's casserole did not stage it: ${JSON.stringify(await job())}`)
-    for (let i = 0; i < 4 && await speaker(); i++) { await tap('Enter'); await sleep(250) }   // the job card's first-use card
+    for (let i = 0; i < 8 && await speaker(); i++) { await tap('Enter'); await sleep(250) }   // the job card's first-use card
     // FEAT-148: midnight drops its overlay over the road, then clears it (every clock path counts).
     await js('{ const d = window.__day(); d.advanceMinutes((24 - d.clockH() % 24) * 60 + 1) }')
     const mn = () => js('document.getElementById("midnight-card").classList.contains("on") && document.getElementById("mn-main").textContent')

@@ -120,7 +120,7 @@ import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } f
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
-import { playCoin, playStinger, playTickTrain, playClack, playThud, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
+import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -3658,17 +3658,64 @@ const dialogueSystem = new DialogueSystem()
  * innerHTML is correct and safe on .dlg-text — cards are authored constants in data/dialogue.js
  * carrying <span class="dlg-key"> glyphs, never player input. See the note there.
  */
+// THE WORD STREAM (owner, 2026-11-06, feat120-blip: "word by word text stream in where a keypress skips to the
+// whole card filled. blip at the end."). A new card is laid out whole with every word hidden, so it never
+// reflows as it fills, then shown a word per DLG_WORD_MS on the wall clock — a card that holds the sim still
+// streams. The first press fills it (the advance handlers below), the next one turns it; one blip when full.
+const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
+const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0 }
+/** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order. */
+function _hideWords (el) {
+  const words = []
+  const walk = (node) => {
+    for (const c of [...node.childNodes]) {
+      if (c.nodeType !== Node.TEXT_NODE) { walk(c); continue }
+      const frag = document.createDocumentFragment()
+      for (const part of c.textContent.split(/(\s+)/)) {
+        if (!part) continue
+        if (/^\s+$/.test(part)) { frag.append(part); continue }
+        const w = document.createElement('span'); w.textContent = part; w.style.visibility = 'hidden'
+        frag.append(w); words.push(w)
+      }
+      c.replaceWith(frag)
+    }
+  }
+  walk(el)
+  return words
+}
+/** Show the card's first n words; at the last, stop and blip. */
+function _dlgShow (n) {
+  const d = _dlg
+  if (!d.words) return
+  for (; d.n < Math.min(n, d.words.length); d.n++) d.words[d.n].style.visibility = ''
+  if (d.n < d.words.length) return
+  clearInterval(d.timer); d.timer = 0; d.words = null
+  playBlip(d.card.speaker)
+}
+/** The press that lands on a card still filling fills it, and is spent. */
+function _dlgFill () {
+  if (!_dlg.words) return false
+  _dlgShow(Infinity)
+  return true
+}
+
 function _renderDialogue () {
   const panel = document.getElementById('dialogue-panel')
   if (!panel) return
   const card = dialogueSystem.current()
   panel.style.display = card ? 'block' : 'none'
-  if (!card) { _cardHold = false; return }
+  if (!card) { _cardHold = false; clearInterval(_dlg.timer); Object.assign(_dlg, { card: null, words: null, timer: 0 }); return }
   const sp = document.getElementById('dlg-speaker')
   const tx = document.getElementById('dlg-text')
   const mo = document.getElementById('dlg-more')
   if (sp) sp.textContent = card.speaker
-  if (tx) tx.innerHTML = card.text
+  if (tx && card !== _dlg.card) {   // a new card streams in; a repaint of the same one leaves it be
+    tx.innerHTML = card.text
+    clearInterval(_dlg.timer)
+    Object.assign(_dlg, { card, words: _hideWords(tx), n: 0, t0: performance.now() })
+    _dlg.timer = setInterval(() => _dlgShow(Math.floor((performance.now() - _dlg.t0) / DLG_WORD_MS) + 1), DLG_WORD_MS / 2)
+    _dlgShow(1)
+  }
   const p = dialogueSystem.progress()
   // The affordance is "press anything", so name no key — the brief's press-any-key-to-continue.
   if (mo) mo.textContent = p ? `${p.n} / ${p.of}  —  press any key` : ''
@@ -4014,6 +4061,7 @@ document.addEventListener('keydown', e => {
   if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return  // a modifier alone is not a press
   e.preventDefault()
   e.stopPropagation()
+  if (_dlgFill()) return   // a card still streaming in fills first
   dialogueSystem.advance()
   _renderDialogue()
 }, { capture: true })
@@ -4026,6 +4074,7 @@ document.addEventListener('mousedown', e => {
   if (e.target.closest?.('.lil-gui')) return    // the debug panel keeps working during a briefing
   e.preventDefault()
   e.stopPropagation()
+  if (_dlgFill()) return
   dialogueSystem.advance()
   _renderDialogue()
 }, { capture: true })
