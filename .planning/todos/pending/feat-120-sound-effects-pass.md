@@ -219,8 +219,15 @@ dusk from the day clock.
 - **In game 2026-11-02 (Spare):** `ambient-audio.js`, on the sky's own night (`sky.js nightWeight`, the keyframes setTimeOfDay blends). Only under 5 mph: a 10 s swell in [DEFAULT] (linear, squared — an exponential sounded full in ~4 s), 1.5 s out. Take: `wip/audio/night-crickets/in-game-10s-fade-2026-11-02.wav`.
 
 ### Dialogue text blips
-status: todo · group: story
+status: wip · group: story · play: result-audio.js playBlip
 One short square/triangle blip per few characters, pitch per speaker.
+- **Owner, 2026-11-06 (feat120-blip): "one per card"**, with the note *"for dialogue can we do word by word text
+  stream in where a keypress skips to the whole card filled. blip at the end."*
+- **In game 2026-11-06 (Lane A, feature/run-shape 2917fe6e):** `src/result-audio.js playBlip(speaker)`. It is
+  a 70 ms triangle at the speaker's pitch, with a faint square an octave up, on the master bus dry (UI).
+  Pitches [DEFAULT]: Mom 740 Hz, Uncle Larry 494, the manager 392, anyone else 587 (what ▶ plays). It plays
+  once, when a card has filled. The card streams in a word every 80 ms [DEFAULT] (main.js `_renderDialogue`);
+  the first press fills it, the next turns it. Not owner-heard yet.
 
 ### Payout coin and grade stingers
 status: shipped · group: story · play: result-audio.js playCoin

@@ -14,6 +14,8 @@
  *   clack   — the deed tally flipping: a wood block, two inharmonic partials (~1 / 2.65 kHz) on a click.
  *   thud    — a miss ("no deed", an item missed, a load that never arrived): a dull low knock falling
  *             110 → 50 Hz under a lowpassed scuff. Not owner-heard yet.
+ *   blip    — a dialogue card filled (owner, 2026-11-06, feat120-blip: "one per card … blip at the end"):
+ *             a 70 ms triangle at the speaker's pitch with a faint square an octave up. Not owner-heard yet.
  */
 
 import { getAudioContext, getMasterBus, whiteNoiseBuffer } from './engine-audio.js'
@@ -32,8 +34,8 @@ const jit = pct => 1 + (Math.random() * 2 - 1) * pct
 const live = () => { const c = getAudioContext(false); return enabled && c && c.state === 'running' ? c : null }
 function out (ctx, g) { const o = ctx.createGain(); o.gain.value = g; o.connect(getMasterBus()); return o }
 
-function tone (ctx, dest, t, f, g, decay, fEnd = f) {
-  const o = ctx.createOscillator()
+function tone (ctx, dest, t, f, g, decay, fEnd = f, type = 'sine') {
+  const o = ctx.createOscillator(); o.type = type
   o.frequency.setValueAtTime(f, t)
   if (fEnd !== f) o.frequency.exponentialRampToValueAtTime(fEnd, t + decay)
   const e = ctx.createGain()
@@ -109,4 +111,15 @@ export function playThud () {
   const t = ctx.currentTime, o = out(ctx, 0.45 * volume)
   tone(ctx, o, t, 110, 0.6, 0.22, 50)
   hit(ctx, o, t, 'lowpass', 320, 0.3, 0.05)
+}
+
+/** A dialogue card's voice, one per speaker [DEFAULT] — FEAT-120's "pitch per speaker". */
+const BLIP_HZ = { 'Mom': 740, 'Uncle Larry': 494, 'The manager': 392 }
+
+/** A dialogue card has filled. */
+export function playBlip (speaker) {
+  const ctx = live(); if (!ctx) return
+  const t = ctx.currentTime, o = out(ctx, 0.22 * volume), f = BLIP_HZ[speaker] ?? 587
+  tone(ctx, o, t, f, 0.6, 0.07, f, 'triangle')
+  tone(ctx, o, t, 2 * f, 0.08, 0.04, 2 * f, 'square')
 }
