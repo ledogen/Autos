@@ -113,14 +113,15 @@ const HELPERS = `window.__soak = {
   // THE LOAD RIDES THE TELEPORT (soak-side, the page's engine wrapped — no game code changes): when the reseat
   // moves the chassis, every body debris.js marks in the bed (rec.cargo: haul bundles, the strapped drum, a crate,
   // the loose spare) moves by the same rigid step in the same call, velocity zeroed. A teleport otherwise leaves
-  // the load behind, and a welded drum would be yanked across the map by its joint.
+  // the load behind, and a welded drum would be yanked across the map by its joint. The chassis is the call
+  // passing vehicleState.position itself; only a jump (> 2 m) carries, so a step's own motion never touches it.
   carry () { const E = window.__physicsEngine, D = window.__debris, vs = window.__vs
     if (E.__soakSet) return; const set = E.__soakSet = E.setTransform.bind(E)
     const V = vs.position.constructor, Q = vs.quaternion.constructor, p0 = new V(), q0 = new Q(), bp = new V(), bq = new Q(), zero = { x: 0, y: 0, z: 0 }
     E.setTransform = (h, p, q) => {
-      if (!D._live.some(r => r.body === h)) {
+      if (p === vs.position) {   // the chassis: physics.js Step 1.5 pushes vehicleState itself, every step
         E.getTransform(h, p0, q0)
-        if (p0.distanceTo(vs.position) < 0.05) {   // the chassis: its pose is the truck's
+        if (p0.distanceTo(p) > 2) {   // a jump (a teleport's reseat), never a step's own motion
           const step = new Q(q.x, q.y, q.z, q.w).multiply(q0.clone().invert())
           for (const r of D._live) { if (!r.cargo) continue
             E.getTransform(r.body, bp, bq)
