@@ -370,8 +370,6 @@ export const REWARDS = [
     // FEAT-168: a reward only from day 3 (owner, 2026-11-05: "helical lsd reward day 3 onward"); the shelf
     // stocks it every day, at its price × the day tier.
     { id: 'diffLSD',    name: 'Helical limited-slip differential', kind: 'part', gates: ['S'], minDay: 3, cat: 'drivetrain' },
-    // FEAT-168 [DEFAULT]: the engine is a common part ($60), so its rarity alone would put it at B–A.
-    { id: 'engineStock', name: 'Stock engine', kind: 'part',     gates: ['S'], cat: 'engine' },
     { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'], cat: 'tires' },
     // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
     { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'], cat: 'recovery' },
