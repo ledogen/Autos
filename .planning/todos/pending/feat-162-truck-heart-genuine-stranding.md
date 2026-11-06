@@ -217,7 +217,35 @@ engine always starts" at 0 only (0.1 % still starts, gutless).
   130 °C, plus the warm-up).
 - Gates: `wheel-collapse` and `engine-seize` (new). `ignition-starter` §3 now pins "0 never catches".
 
-**Next: P2** (recovery.js, main.js): the stranded predicate (dry with no can · seized · collapsed with no spare and
-no affordable roadside repair · on its side or roof with no hi-lift), auto-end with FEAT-160's reason line, the
-"You broke down." title, the roadside tire repair (5) with its `[DEFAULT]` price and time, and the seized engine's
-3× shop price. Then **P3**, the cues.
+**2026-11-06, Lane B — P2 built on P1 (feature/machine 28a0aa15), not landed** (it waits on P1, which waits on
+`feat162-front-drag`). 66/66 affected node gates green; the cdp-smoke's broke-down step is rewritten for the
+auto-end and is the orchestrator's to run on landing.
+
+- **Stranded** (recovery.js `recoveryCard` → `why`): dry with no can · the engine seized · more collapsed wheels
+  than spares that can go on (a sound wheel, and air or a plug kit) · on its side or roof with no hi-lift.
+- **Each option cures only its own.** The shop tow cures anything. The fuel tow cures the tank, and a rolled
+  truck, since any tow truck sets it on its wheels. The tire service cures the wheels. So a seized engine plus a
+  collapsed wheel is not saved by an affordable tire service. `canEnd` = stranded, and no curing option is
+  affordable.
+- **The auto-end** (main.js `_checkStranded`, 10 Hz poll): `canEnd` held for `STRANDED_REST_S` 3 s `[DEFAULT]` of
+  sim time with the truck still (< 0.5 m/s). A truck still rolling, or limping on a rim, is still trying. An open
+  pump, shop, inventory or damage screen holds it. The manual "end run" button is gone (ruling 2).
+- **The card:** title **"You broke down."**; FEAT-160's line names the cause and the cheapest cure, e.g. "the
+  engine seized — the tow was $12.90, you had $0.00". The Recovery card's headline uses the same words.
+- **The mobile tire service** (amendment 5), on the Recovery card whenever a corner has a flat, a dead tire (0) or a
+  collapsed wheel, and a shop is in the region:
+  - A dead tire or wheel → the stock part, new, plus the shop's fitLabour (2 hub + 2 bead). A sound flat → the
+    shop's patch.
+  - Price: (that) × `roadsideMarkup` 1.5 `[DEFAULT]` + `towFlat`, all × the day tier. A collapsed corner on day 1
+    is $58: (18 + 8 + 6) × 1.5 + 10.
+  - Time: the shop tow's hours (3 h + 0.5 h/km), then the fitting.
+  - The dead parts go with the service. Each would sell for half its price × 0.
+- **At the shop** (ruling 4):
+  - A seized engine rebuilds at `SEIZED_REPAIR_X` 3 × the full-wear price ($207 to the cap on day 1, vs $69).
+  - A collapsed wheel has no repair: it's replaced.
+  - `wheelSteel` joined the always-stocked rows `[DEFAULT]`, so a tow to any shop is a way out of a collapsed wheel.
+- **Gap, flagged (owner's call if it bites):** towed to a shop with a seized engine and too little left for an
+  engine, the truck is stranded *at* the shop. The shop "tow" to itself (0 km, $10) still counts as affordable,
+  so the run doesn't auto-end, and give-up is the only door.
+
+**Next: P3**, the cues: HUD words below ~20 %, the knock, the bang.
