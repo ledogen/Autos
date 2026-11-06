@@ -1113,6 +1113,21 @@ const STEPS = [
     await tap('m')
     check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'a tap of M in the evening did not close the map')
     check(await js('window.__board().firstState() === "closed"'), 'a tap of M skipped the evening')
+    // Stage 3, the safe drive: the clock holds on the way home, and off the road R puts the truck back on it.
+    const h0 = await js('window.__day().clockH()'); await simFor(2)
+    check(await js('window.__day().clockH()') === h0, `the clock ran on the evening's drive (${h0} → ${await js('window.__day().clockH()')})`)
+    const lat = (x, z) => `(() => { const q = window.__roadSys().queryNearest(${x}, ${z}, 200); return q?.point ? Math.hypot(q.point.x - ${x}, q.point.z - ${z}) : 999 })()`
+    const off = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
+      const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
+      for (const d of [25, -25, 35, -35, 45, -45]) { const x = nr.point.x + nx * d, z = nr.point.z + nz * d
+        const q = window.__roadSys().queryNearest(x, z, 100); if (!q?.point || Math.hypot(q.point.x - x, q.point.z - z) > 15) return { x, z } }
+      return null })()`)
+    check(off, 'no off-road spot beside the joint')
+    await seat(off.x, off.z, 0)
+    check(await until(async () => /off the road/.test((await eve()).hud), 2000), `off the road, the evening's HUD offers no way back ("${(await eve()).hud}")`)
+    await tap('r')
+    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 8000), 'R in the evening did not put the truck back on the road')
+    check(await until(async () => !/off the road/.test((await eve()).hud), 2000), 'the HUD still says off the road on the road')
     // Parked at hers: her sleep card, the timer preset to wake at 07:00 — and sleeping posts the casserole.
     const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
       return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`)

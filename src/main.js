@@ -4335,6 +4335,17 @@ function _homeGuide () {
 /** Hours of sleep from now to 07:00 on day 1 — the evening's night, the sleep timer's preset. */
 const _eveningSleepH = () => DAY_PARAMS.dayStartHour - daySystem.clockH()
 
+/**
+ * FEAT-170 stage 3, THE SAFE DRIVE: while the evening leg is on, the clock, energy and hunger hold (the fixed
+ * step skips daySystem.update), the truck takes no damage and no wear (it skips damageModel.step), and R puts
+ * it back on the nearest road — not at the spawn — with the HUD line saying so whenever it is off one.
+ */
+function _resetToRoad () {
+  const v = vehicleState.position, nr = roadSystem?.queryNearest(v.x, v.z, 2000)
+  if (!nr?.point || !nr.tangent) { void _reseatTruckAtSpawn(); return }
+  teleportToGround(nr.point.x, nr.point.z, _pickRoadDir(Math.atan2(-nr.tangent.x, -nr.tangent.z), _currentHeading()), 0.5)
+}
+
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
 function _endEvening () {
   if (!_eveningLeg()) return
@@ -6625,6 +6636,8 @@ function _renderMissionUI () {
       if (_eveningLeg()) {   // FEAT-170: no job, only the way home
         const q = _mom(), vp = vehicleState.position
         if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · park there to sleep`
+        // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
+        if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · ${keycap('R', 'D-pad →')} puts you back on it`)
       }
       break
   }
@@ -9380,6 +9393,7 @@ function loop () {
       // FEAT-62: inside a scenario R is RESTART — the same seat plus a fresh count and clean gates.
       if (scenarioSystem.isActive()) void _restartScenario()
       else if (_barrelCube) _buildBarrelCube(_barrelCube.side, _barrelCube.count)   // a fresh cube AND a fresh run-up
+      else if (_eveningLeg()) _resetToRoad()   // FEAT-170: the opening's evening puts you back on the road
       else void _reseatTruckAtSpawn()
     }
 
@@ -9396,7 +9410,8 @@ function loop () {
     // FEAT-118: a pitched camp (or mom's) is a planning pause — idle there, the clock and energy
     // hold until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
     // SM-3: browsing the service center is free — its work adds its own hours (owner, 2026-10-20).
-    if ((!_campUi || _campUi.mode === 'confirm') && !serviceScreen.isOpen) daySystem.update(PHYSICS_DT)
+    // FEAT-170: the opening's evening is a safe drive — the clock, energy and hunger hold until mom's.
+    if ((!_campUi || _campUi.mode === 'confirm') && !serviceScreen.isOpen && !_eveningLeg()) daySystem.update(PHYSICS_DT)
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
@@ -9437,7 +9452,7 @@ function loop () {
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
-    damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    if (!_eveningLeg()) damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)   // FEAT-170: no damage or wear on the safe drive
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
