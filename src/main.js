@@ -3671,6 +3671,7 @@ const dialogueSystem = new DialogueSystem()
 // reflows as it fills, then shown a word per DLG_WORD_MS on the wall clock — a card that holds the sim still
 // streams. The first press fills it (the advance handlers below), the next one turns it; one blip when full.
 const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
+const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space'])   // FEAT-125: see _renderDialogue
 const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0 }
 /** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order. */
 function _hideWords (el) {
@@ -3719,6 +3720,10 @@ function _renderDialogue () {
   if (sp) sp.textContent = card.speaker
   if (tx && card !== _dlg.card) {   // a new card streams in; a repaint of the same one leaves it be
     tx.innerHTML = card.text
+    // FEAT-125: a key a card names reads the pad's button while the pad drives — the prompts' keycap(). Only keys the
+    // pad has ONE button for: A / D (the stick steers) and F (the stick aims, RB throws) need the card's own pad words,
+    // and a grade or a phrase (B, "ten good deeds") is emphasis, never a key.
+    for (const k of tx.querySelectorAll('.dlg-key')) if (_DLG_PAD_KEYS.has(k.textContent.trim().toLowerCase())) k.innerHTML = keycap(k.textContent.trim())
     clearInterval(_dlg.timer)
     Object.assign(_dlg, { card, words: _hideWords(tx), n: 0, t0: performance.now() })
     _dlg.timer = setInterval(() => _dlgShow(Math.floor((performance.now() - _dlg.t0) / DLG_WORD_MS) + 1), DLG_WORD_MS / 2)
@@ -6386,7 +6391,7 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
     + (bonus
       ? (award
         ? beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-pay">${bonus.name} &check;</span>`
-          + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; Tab to make room</span>` : ''))
+          + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; ${keycap('Tab')}to make room</span>` : ''))
         : beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-dim" data-miss>${bonus.name} missed &mdash; ${gate ?? gateText(bonus.gate)}</span>`))
       : row('Speed tip', formatMoney(tip), ` data-countup="${tip}"`))
     + (haul?.bought > 0 ? beat(`<br><span class="mp-dim">Stock bought</span> <span class="mp-pay mp-bad">&minus;$${formatMoney(haul.bought)}</span>`) : '')
@@ -8752,11 +8757,11 @@ function _strappedJob () {
   return !paperRouteSystem.isCarrying() && !!missionSystem?.isOnJob() && !!missionSystem.mission?.load
 }
 function _jobCancelLabel () {
-  if (_expiredJob()) return vehicleState.parked ? 'mission expired' : parkPrompt('mission expired')   // FEAT-113
+  if (_expiredJob()) return vehicleState.parked ? keycap('J') + 'mission expired' : parkPrompt('mission expired')   // FEAT-113
   if (!vehicleState.parked) return parkPrompt('park to abandon')
   // An intact strapped load still costs the clean-up hour, but it reads "abandon job" (owner,
   // 2026-10-15: "clean up" only once the cargo is actually wrecked).
-  return _strappedJob() && missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'abandon job'   // FEAT-97
+  return keycap('J') + (_strappedJob() && missionSystem.mission.failed ? 'cargo destroyed · clean up' : 'abandon job')   // FEAT-97
 }
 function _syncJobCancel (hud, on) {
   const b = document.getElementById('job-cancel')
@@ -8791,13 +8796,20 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
   if (!_jobCancelArm) {
     _jobCancelArm = setTimeout(_disarmJobCancel, JOB_CANCEL_ARM_S * 1000)
     b.classList.add('armed')
-    b.innerHTML = _strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?'   // FEAT-96: say the clean-up cost
+    b.innerHTML = keycap('J') + (_strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?')   // FEAT-96: say the clean-up cost
     return
   }
   _disarmJobCancel()
   if (_strappedJob()) daySystem.advanceMinutes(CLEANUP_H * 60)   // before the cancel: the slot locks from the clean-up's end
   const id = paperRouteSystem.isCarrying() ? paperRouteSystem.cancel() : missionSystem?.cancel(_abandonCargo())
   if (id) offerBoard?.abandon(id, daySystem.clockH())
+})
+// FEAT-125 pad audit [DEFAULT]: J presses the same button from the keyboard (the pad's way is the B menu's last
+// entry) — not while typing, nor under a menu, where the HUD it sits on is not the player's.
+window.addEventListener('keydown', (e) => {
+  if (e.repeat || e.key.toLowerCase() !== 'j' || e.target?.tagName === 'INPUT' || pad.menuActive()) return
+  const b = document.getElementById('job-cancel')
+  if (b?.offsetParent) b.click()
 })
 // FEAT-41: back out to the main menu. The mode is left FIRST — dropping to a menu while story mode
 // still holds a frozen region and a live day clock would leave both running behind the scene.

@@ -13,6 +13,11 @@
  *
  * Beside the pick, a label names it (its tooltip, minus the "(key)") with an ↑/↓ chevron pair that
  * teaches the D-pad walks it — dropped when there is only one item (owner, 2026-10-21).
+ *
+ * FEAT-125 pad audit (2026-11-06) [DEFAULT]: the job in hand's "abandon job" button (main.js #job-cancel, on the
+ * mission HUD — a mouse-only control until now, and the only way to clear an expired job) is the menu's LAST
+ * entry while it can act (parked). It is never the pre-selection, even alone, so no B tap can arm it: the D-pad
+ * has to walk to it. Its own two-press confirm stands.
  */
 
 import { pad } from './gamepad.js'
@@ -25,10 +30,14 @@ label.id = 'hud-menu-label'
 label.innerHTML = '<span></span><svg viewBox="0 0 10 18"><path d="M2,6 5,3 8,6 M2,12 5,15 8,12"/></svg>'
 document.body.appendChild(label)
 
-/** The column's usable icons, top to bottom as drawn (CSS `order` puts inventory first). */
+/** The job's abandon button when it can act, else null. */
+const abandon = () => { const b = document.getElementById('job-cancel'); return b?.offsetParent && !b.classList.contains('unparked') ? b : null }
+
+/** The column's usable icons, top to bottom as drawn (CSS `order` puts inventory first), then the abandon button. */
 const items = () => [...document.querySelectorAll('#hud-icons .hud-icon')]
   .filter(el => el.offsetParent !== null && !el.closest('#park-zone.locked'))
   .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+  .concat(abandon() ?? [])
 
 function mark (el) {
   sel?.classList.remove('menu-sel')
@@ -36,7 +45,8 @@ function mark (el) {
   if (!el) return
   el.classList.add('menu-sel')
   const r = el.getBoundingClientRect()
-  label.firstChild.textContent = el.title.replace(/ \(.*\)$/, '')
+  label.firstChild.textContent = el.title ? el.title.replace(/ \(.*\)$/, '')
+    : [...el.childNodes].filter(n => !n.classList?.contains('keycap')).map(n => n.textContent).join('').trim()   // a button: its words
   label.style.left = `${r.left - 12}px`
   label.style.top = `${r.top + r.height / 2}px`
 }
@@ -51,7 +61,7 @@ pad.hudMenu = {
     const list = items()
     if (!list.length) { hintPark(); return }
     label.classList.toggle('solo', list.length < 2)
-    mark(list[0])
+    mark(list.find(el => el !== abandon()) ?? null)   // never the abandon button: the D-pad walks to it
     document.body.classList.add('hud-menu-on')
   },
   move (d) {
