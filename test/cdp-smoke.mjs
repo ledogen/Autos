@@ -161,15 +161,6 @@ const park = async (fresh = false) => {
   if (!await js('window.__vs.parked')) await tap(' ')
 }
 const hold = async (k, s) => { await key(k, true); await simFor(s); await key(k, false) }   // s SIM seconds
-// BUG-117: mom's casserole has no abandon and no deadline — it ends at Larry's. Seat at its route's end, facing along
-// the last segment: the first update leaves her start zone (the run starts), the next arrives (within 28 m, no park).
-const deliverFirst = async () => {
-  check(await js('window.__board().firstState() === "taken" && window.__mission().mission?.dueH === Infinity && !document.getElementById("job-cancel").offsetParent'),
-    `the casserole is not in hand with no deadline and no abandon (BUG-117): ${await js('JSON.stringify({ first: window.__board().firstState(), due: String(window.__mission().mission?.dueH), cancel: !!document.getElementById("job-cancel").offsetParent })')}`)
-  const e = await js('(() => { const p = window.__mission().mission.poly, a = p.at(-2), b = p.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
-  await seat(e.x, e.z, e.h)
-  check(await until(() => js('window.__mission().state === "done"'), 5000), `seated at Larry's, the casserole did not arrive: ${await js('window.__mission().state')}`)
-}
 // BUG-118: way off the tutorial's line (45 m for 2 s, paper-route.js RR_PARAMS), the GPS re-plans from the truck
 // to the same door. It seats the truck ON THE ROAD at the nearest POI 150 m off the line and no nearer the door than
 // it is now, so the halfway lesson does not land early. On the road, not the pad: from a pad ~12 m off its road
@@ -193,20 +184,26 @@ const strayCheck = async (what) => {
       road: nr?.point ? Math.round(Math.hypot(nr.point.x - v.x, nr.point.z - v.z)) : null } })()`)
   check(g.start < 20 && g.end < 30, `the re-planned line ${what} does not run from the truck to the same door: ${JSON.stringify(g)}`)
 }
-// FEAT-170: every new run opens on the firing; holding M a second (the prompt says so) skips it, landing at
-// mom's at 07:00 with her casserole in hand. Wall-clock: the hold is a real-time timer, not sim time.
+// FEAT-170: every new run opens on the firing; holding M a second (the prompt says so) skips it. FEAT-184 (owner,
+// 2026-11-07): it lands at Larry's at 07:00, the casserole DELIVERED (no job in hand). Wall-clock: the hold is a
+// real-time timer, not sim time.
+const skipDone = () => js('window.__board().firstState() === "done" && window.__mission().state === "idle"')
+const skipPeek = () => js('JSON.stringify({ first: window.__board().firstState(), ms: window.__mission().state })')
 const skipOpening = async () => {
   check(await until(() => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"'), 3000), 'the run did not open on the firing')
   check(await js('getComputedStyle(document.getElementById("skip-hint")).display !== "none"'), 'no "hold M to skip" prompt over the firing')
   await key('m', true); await sleep(1300); await key('m', false)
-  check(await until(() => js('window.__board().firstState() === "taken"'), 8000), `holding M did not skip to the casserole (first job ${await js('window.__board().firstState()')})`)
+  check(await until(skipDone, 8000), `holding M did not skip to the casserole delivered: ${await skipPeek()}`)
 }
 // FEAT-184: with "always skip the tutorial" on (the first skip turns it on), a new run starts where a skip lands — the
-// casserole in hand at mom's, no firing card.
+// casserole delivered at Larry's, no firing card. His welcome is up; read it off.
 const autoSkipped = async () => {
-  check(await until(() => js('window.__board().firstState() === "taken"'), 8000),
-    `"always skip the tutorial" did not start the run with the casserole in hand (first job ${await js('window.__board().firstState()')})`)
-  check(!await js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"'), 'a card is up on a run that skips the tutorial')
+  check(await until(skipDone, 8000), `"always skip the tutorial" did not start the run with the casserole delivered: ${await skipPeek()}`)
+  const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+  check(await until(dlg, 3000), "no Larry's welcome on a run that skips the tutorial")
+  check(/Casserole/.test(await js('document.getElementById("dialogue-panel").textContent')), "Larry's welcome is not the first card on a skipped run")
+  for (let i = 0; i < 16 && await dlg(); i++) { await tap('Enter'); await sleep(250) }
+  check(!await dlg(), "Larry's welcome did not close after 16 presses")
 }
 const car = () => js('window.__car()')
 // A fake pad: navigator.getGamepads stubbed to one standard-mapping pad whose buttons and sticks are
@@ -350,34 +347,22 @@ const STEPS = [
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'story never went live (45 s × load): no run HUD / POIs, or the load stage stayed up')
-    // FEAT-170: the skip lands at mom's, 07:00 on day 1, with her casserole IN HAND (staging in her start zone),
-    // and no card: Larry's intro waits for the casserole to be put away.
+    // FEAT-184 (owner, 2026-11-07): the skip lands at Larry's, 07:00 on day 1, the casserole DELIVERED (no job in
+    // hand) — then Larry's welcome, then his intro (R-11), as after a driven casserole.
     await skipOpening()
     check(await js('window.__settings.skipTutorial') === true, 'skipping the tutorial did not turn "always skip the tutorial" on (FEAT-184)')
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
-    const s0 = () => js(`(() => { const m = window.__mission(), q = window.__poi().list().find(q => q.type === 'momsHouse'), v = window.__vs.position
-      return { s: m.state, a: !!m.mission?.approach, first: window.__board().firstState(), d: Math.hypot(v.x - q.x, v.z - q.z), h: window.__day().clockH() } })()`)
-    check(await until(async () => (await s0()).first === 'taken', 5000), `the skip did not hand over the casserole: ${JSON.stringify(await s0())}`)
-    const a = await s0()
-    // BUG-135: in her start zone (25 m), on the road in front of hers — never on her pad, which is her yard.
-    check(a.s === 'staging' && !a.a && a.d < 25 && Math.abs(a.h - 7) < 0.1, `the skip is not at mom's at 07:00 with the job staging: ${JSON.stringify(a)}`)
+    const a = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'larrysHouse'), v = window.__vs.position
+      return { d: Math.hypot(v.x - q.x, v.z - q.z), h: window.__day().clockH() } })()`)
+    // BUG-135: on the road in front of his (25 m) — never on his pad, which is his yard.
+    check(a.d < 25 && Math.abs(a.h - 7) < 0.1, `the skip is not at Larry's at 07:00: ${JSON.stringify(a)}`)
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
     check(await until(async () => await hudClock() === 'Day 1, 7 am', 3000), `the HUD clock after the skip reads "${await hudClock()}", want "Day 1, 7 am" (BUG-136)`)
-    check(!await dlg(), 'a card is up after the skip (FEAT-170: Larry speaks after the casserole)')
     // FEAT-173: the skip ends fed (the evening's end serves mom's breakfast), and the run starts with her three lunches.
     const food = await js('({ fed: window.__day().snapshot().fedUntilH - window.__day().clockH(), lunch: window.__inv.list().find(e => e.id === "packedLunch")?.n ?? 0 })')
     check(food.fed > 7.9 && food.lunch === 3, `the skip did not wake fed with mom's three packed lunches (FEAT-173): ${JSON.stringify(food)}`)
     check(await js('getComputedStyle(document.getElementById("skip-hint")).display === "none"'), 'the skip prompt outlived the skip')
-    // BUG-135 (owner, 2026-11-07: the skip parked the truck over mom's fire pit, "completely immobilized"): it drives off.
-    await crank()
-    if (await js('window.__vs.parked')) await tap(' ')
-    const c0 = await car(); await hold('w', 5); const c1 = await car(), off = Math.hypot(c1.x - c0.x, c1.z - c0.z)
-    check(off > 10, `the truck did not drive off from mom's: ${off.toFixed(1)} m in 5 s of throttle`)
-    await strayCheck('on the casserole')
-    // Deliver it (BUG-117: it ends at Larry's), then the result card: Larry's welcome, then his intro (R-11).
-    await deliverFirst()
-    await js('document.getElementById("mp-accept").click()')
-    check(await until(dlg, 3000), 'no Larry after the casserole (R-11 / FEAT-170)')
+    check(await until(dlg, 3000), 'no Larry after the skip (R-11 / FEAT-170)')
     const dlgText = () => js('document.getElementById("dialogue-panel").textContent')
     check(/Casserole/.test(await dlgText()), "Larry's welcome is not the first card")
     for (let i = 0; i < 4 && /Casserole/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }
@@ -394,6 +379,11 @@ const STEPS = [
       `the intro does not name the camp's direction (or the fill turned the card): "${intro.slice(0, 120)}"`)
     for (let i = 0; i < 16 && await dlg(); i++) { await tap('Enter'); await sleep(250) }   // two presses a card: fill, turn
     check(!await dlg(), 'the intro cards did not close after 16 presses')
+    // BUG-135 (owner, 2026-11-07: the skip parked the truck over mom's fire pit, "completely immobilized"): it drives off.
+    await crank()
+    if (await js('window.__vs.parked')) await tap(' ')
+    const c0 = await car(); await hold('w', 5); const c1 = await car(), off = Math.hypot(c1.x - c0.x, c1.z - c0.z)
+    check(off > 10, `the truck did not drive off from Larry's: ${off.toFixed(1)} m in 5 s of throttle`)
   }],
   ['camp', async () => {
     // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there.
@@ -1260,13 +1250,7 @@ const STEPS = [
     await ended(/broke down/, /the engine seized — (the tow was \$[\d,.]+, and you gave up|no tow could reach you, you had)/)
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
-    // FEAT-170: a new run starts with mom's casserole in hand, and the win waits for no job to be active (in
-    // play every line is a job, so the casserole is long done) — deliver it (BUG-117), and read off Larry after it.
-    await deliverFirst()
-    await js('document.getElementById("mp-accept").click()')
-    const larry = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
-    await until(larry, 3000)
-    for (let i = 0; i < 16 && await larry(); i++) { await tap('Enter'); await sleep(250) }
+    // FEAT-184: the skipped run starts with the casserole delivered and Larry read off (autoSkipped), so no job is active.
     await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
     check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), `${ECONOMY_PARAMS.campDeeds} deeds opened no requisition`)
     await js(`(() => { const b = window.__board(), h = window.__day().clockH()
@@ -1451,6 +1435,21 @@ const STEPS = [
       await js('window.__inv.grant("chiliDog"); window.__inv.use("chiliDog")')
       check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)
     }
+    // The played casserole (the story step's skip delivers it outright, FEAT-184): no deadline and no abandon (BUG-117),
+    // its GPS follows a stray truck (BUG-118), and it ends at Larry's — its result card, then his welcome (R-11).
+    check(await js('window.__mission().mission?.dueH === Infinity && !document.getElementById("job-cancel").offsetParent'),
+      `the casserole has a deadline or an abandon (BUG-117): ${await js('JSON.stringify({ due: String(window.__mission().mission?.dueH), cancel: !!document.getElementById("job-cancel").offsetParent })')}`)
+    await strayCheck('on the casserole')
+    await readCards()   // a first-use card the stray raised (the rank bar)
+    const e = await js('(() => { const p = window.__mission().mission.poly, a = p.at(-2), b = p.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
+    await js(`window.__seated = false; window.__teleport(${e.x}, ${e.z}, ${e.h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), "the teleport to Larry's never seated")
+    for (let i = 0; i < 20 && await js('window.__mission().state !== "done"'); i++) { await readCards(300); await simFor(0.5) }
+    check(await js('window.__mission().state === "done"'), `seated at Larry's, the casserole did not arrive: ${await js('window.__mission().state')}`)
+    await readCards(300)
+    await js('document.getElementById("mp-accept").click()')
+    check(await until(async () => await speaker() === 'Uncle Larry', 3000), `no Larry's welcome after the played casserole (speaker "${await speaker()}")`)
+    await readCards()
   }],
   ['pad', async () => {
     // FEAT-125 pad audit (2026-11-06): a run end to end on the pad alone — every screen the other steps drive with
@@ -1533,12 +1532,12 @@ const STEPS = [
     const onKb = await steerWords()
     check(onPad === 'the left stick' && onKb === 'A and D', `the drive lesson does not name one input's steering, live: pad "${onPad}", keyboard "${onKb}"`)
     await hold(8, 1400)
-    check(await until(() => js('window.__board().firstState() === "taken"'), 8000), 'holding View did not skip the opening')
+    check(await until(skipDone, 8000), `holding View did not skip the opening: ${await skipPeek()}`)
     // The glyphs: the pad drove last, so every keycap reads its button.
     check(await js('document.body.classList.contains("pad-on")'), 'body.pad-on is off while the pad drives')
     // The B menu's "abandon job": its LAST entry, never the pre-selection (no B tap can arm it), labelled by its words;
-    // ↑ wraps to it, the release arms it, and armed it IS the pre-selection: one B press confirms (BUG-120). Mom's
-    // casserole has none (BUG-117): driven at the giver below, on a job taken there.
+    // ↑ wraps to it, the release arms it, and armed it IS the pre-selection: one B press confirms (BUG-120). Driven at
+    // the giver below, on a job taken there.
     const pick = async () => {
       await js('__fp.b[1] = 1'); await frames(4, 200)
       const first = await js('document.querySelector(".menu-sel")?.id')
@@ -1547,10 +1546,8 @@ const STEPS = [
       await js('__fp.b[1] = 0'); await frames(4, 200)
       return r
     }
-    if (!await js('window.__vs.parked')) await padPark()
-    await deliverFirst()   // no abandon in the B menu either: the button it reads is hidden (checked inside)
-    await btn(13); await btn(0)   // the result card: the D-pad puts the highlight on continue, A presses it
-    check(await until(dlg, 3000), 'A on the result card brought no Larry')
+    // FEAT-184: the skip lands at Larry's with the casserole delivered — his welcome is up, and A reads it off.
+    check(await until(dlg, 3000), 'no Larry after the View skip')
     await readCards()
     // The inventory through the B menu (its first entry), parked on an open road — at a POI, mom's door included, its
     // card or pump owns the brake and the park zone's icons are off the menu by design. The quick-slot numbers are
