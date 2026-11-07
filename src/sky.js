@@ -420,9 +420,9 @@ export class SkySystem {
    * Linear RGB multiplier for the unlit particle systems (see PARTICLE_LIGHT). 1.0 on the `day`
    * look by construction, so daytime dust is bit-identical to what shipped.
    */
-  particleLight (out) {
+  particleLight (out, look = SKY_PARAMS) {
     this._ensureParticleNorm()
-    rawIrradiance(SKY_PARAMS, out)
+    rawIrradiance(look, out)
     const { gamma, floor } = PARTICLE_LIGHT
     const f = (v) => Math.min(1, floor + (1 - floor) * Math.pow(Math.max(0, v * this._particleNorm), gamma))
     return out.setRGB(f(out.r), f(out.g), f(out.b), THREE.LinearSRGBColorSpace)
