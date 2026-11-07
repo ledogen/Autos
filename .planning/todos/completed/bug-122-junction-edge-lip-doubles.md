@@ -1,7 +1,7 @@
 ---
 id: BUG-122
 type: bug
-status: open
+status: closed
 opened: 2026-11-07
 severity: major
 source: Lane B's drive soak (test/drive-soak.mjs, on feature/machine), reported to the orchestrator 2026-11-07
@@ -87,3 +87,13 @@ splits). It compares that with the pad top (`_nodeSurfaceTop`).
 |---|---|---|
 | main | 0 | 16.7 cm below |
 | with the fix | 0 | 11.8 cm below |
+
+## Resolution (closed 2026-11-07)
+
+Landed on main (a25177ca, merged with 87a28f1f; the third cause landed as BUG-123, 202a0631).
+
+- **The capture replays clean on main:** `try4/6-strut-1.json` gives strut 0, jolt 0, "not reproduced". The edge
+  there is 0.162 m.
+- **Lane B's other site,** 1527888912 at (1047, −316), is 0.153 m.
+- **The gate:** `junction-edge-lip`, added with BUG-127. Two random seeds, 52 leg edges: lip ≤ 0.25 m (worst 0.199)
+  and no dirt above the pad (tightest 9.1 cm). Before BUG-122 it fails 50 times (worst 0.66 m).
