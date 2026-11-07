@@ -75,5 +75,6 @@ export function spawnDecision (seed, params, opts = {}) {
         recenterMoved: Math.hypot(refined.point.x - preRecenter.x, refined.point.z - preRecenter.z),
         x: refined.point.x, z: refined.point.z,
         heading: Math.atan2(refined.tangent.x, refined.tangent.z),
+        road, near: refined,   // BUG-141: the free-roam seat refines from here (RoadSystem.freeRoamSeat)
     }
 }
