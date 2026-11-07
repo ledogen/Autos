@@ -47,3 +47,39 @@ inside a footprint are unchanged.
 - [ ] `fingerprint-world` on main vs the fix: any changed window is explained (poi.js and terrain.js read
       `queryNearest`, so POI or carve placement may move).
 - [ ] BUG-118's smoke workaround (strayCheck seats on the road) can drop back to an off-road stray.
+
+## Fixed on `land/bug-121` (Spare, 2026-11-07), waiting on the owner
+
+**The fix (`road.js` `queryNearest`).**
+- A sample is interior only when the query sits **beside** it: `|signedLat| ≤ footprintHW` and also
+  `|along| ≤ ds`, the sample spacing.
+- An interior sample therefore lies within `intR2 = footprintHW² + ds²` of the query. That radius bounds the tangent
+  work, and it makes the slice skip exact: skip when no sample can beat `extBestD2` and none can be interior.
+
+**Probe** (`wip/bug-121/probe.mjs`, 4 random seeds, 627 queries per offset):
+
+| offset | answers > 5 m past the nearest road, main → fix | worst | µs per query |
+|---|---|---|---|
+| 0–7 m | 0 → 0 | +0.9 m both | 45–69 → 37–71 |
+| 9–40 m | 512–557 → **0** | +189 m → **+0.2 m** | 65–77 → **35–37** |
+
+**Gate:** `query-nearest`, registered. Two random seeds; no answer may be more than 2 m past brute force. On main it
+fails with 1585 answers.
+
+**Fingerprint vs main `bdaa307c`:** ALL IDENTICAL in all six windows (network through props).
+
+**The visible change is the spawn.** `resolveSpawn`, and its replica `test/lib/spawn-decision.mjs`, take the nearest
+road to the seed's probe point, which is usually off the road. The spawn is the story region's centre.
+
+- The spawn moves 15 / 101 / 263 / 264 m on random seeds, and 199 m on the owner's 386773705. Confirmed in the app:
+  `__map2d()._getRegion()` moves exactly as predicted, and mom's house stayed put on both seeds checked.
+- The roster re-rolls with the circle. On 4 random seeds: 131 places the same, 3 moved, and the rest on different
+  pads (`wip/bug-121/poidump.mjs`).
+- **The keep-out is not a cause:** 17,525 sites were checked on both sides and 0 decisions flipped.
+- Aside, not BUG-121: most keep-out rejections (91 of 101 on main) have no other run within `lat` by brute force,
+  most likely the site's own road answering under a different run key. Worth its own look.
+
+**Owner sheet:** https://claude.ai/artifact/5Nvi71xzeE4mJyFg7utHFT, tracker item `bug121-spawn`:
+- (a) land it, and every world's spawn moves once;
+- (b) land it but keep today's spawn on the old lookup;
+- (c) hold.
