@@ -25,8 +25,8 @@
 // contact query returns), a body strike's point / face / normal with the engine's terrain round it, and a ray into the
 // struck face per layer naming the body's owner (userData: road tile, terrain chunk, prop, POI). `SOAK_LOG=1` prints a
 // progress line every 10 sim-s; `SOAK_LOG=2` the autopilot's state (path index, lateral error, target) every 1 s;
-// `--dump-path=a-b` prints the route's points a..b (spacing, turn, jumps) and exits. Site scans for a capture live in
-// wip/drive-soak/ (site-what, site-junction, site-props, site-steps). A capture recorded before a carve change may not
+// `--dump-path=a-b` prints the route's points a..b (spacing, turn, jumps) and exits. `node test/soak-site.mjs <capture>`
+// reads the site (the road, a bore, raw/carved/road-top heights, steps in the carved ground). A capture recorded before a carve change may not
 // replay (the world moved under it: BUG-129's fix buried run4's) — re-record it.
 //
 // WHAT IT HAS CAUGHT (2026-11-07): BUG-122 (a junction's road-edge lip doubled to 0.31 m: 75 kN in one step) and
