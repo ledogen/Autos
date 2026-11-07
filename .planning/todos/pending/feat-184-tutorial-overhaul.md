@@ -119,3 +119,74 @@ tutorial. Or even after the first time you see the tutorial to enable permanent 
 into the settings and press something specifically to be able to see the tutorial again. It should only really be
 needed once And to supplement it, we'll have a help section that explains the mechanics to the players, but that's a
 distant goal"
+
+## The beat sheet — the worst day ever (Lane A, 2026-11-07, from the owner's answer)
+
+The run's own world (choice 2a) and about +10 minutes (choice 3b), per the owner. Every card's words are
+**PLACEHOLDER**: the words are the owner's (FEAT-148). Each beat names its lesson, its trigger and what it leaves
+behind. "Today" marks a beat that exists and stays; **NEW** marks one to build.
+
+| # | Beat (the story) | Lesson | Trigger |
+|---|---|---|---|
+| 1 | Fired at the burger joint, 6 pm, day 0. *Today.* | — | a new run |
+| 2 | Mom calls: come home. *Today.* | — | the firing's cards end |
+| 3 | **NEW** The truck won't start until you turn the key. | **The ignition**: hold I | mom's call ends; the engine is off |
+| 4 | The road home, the GPS line on it. *Today's driving card.* | **Driving, steering, the GPS line** | the engine catches |
+| 5 | **NEW** The gauge is on E, of course. The line runs by the nearest gas station first. | **Refuelling**: park at a pump, hold to pump, pay | the run starts with a nearly empty tank; the evening's GPS goes via the nearest station; the pump's card plays there |
+| 6 | **NEW** Halfway home, a tire goes flat. | **The damage screen (V)**: the flat corner, the wear bars and their colours, what wears and what breaks. Then **fit the spare** from there | scripted: a flat on one corner once the truck is past half the drive from the station to mom's |
+| 7 | **NEW** The spare is flat too. | **The recovery menu (X)**: call a tow | fitting the spare reveals it (the spare starts flat this run) |
+| 8 | **NEW** Towed to the nearest auto shop. Hours go by. | **The shop**: buy a mounted tire and fit it (the service screen). *Buying a new spare.* | the tow lands at the shop; the screen opens on the Parts Shop with a tire on the shelf |
+| 9 | **NEW** It's the middle of the night now, and dark. Drive home. | **Headlights** (L), and the GPS in the dark | leaving the shop; the tow and the shop moved the clock to ~midnight |
+| 10 | Park at mom's and sleep. *Today.* | **Parking, the handbrake, sleep** | near hers |
+| 11 | **NEW** Morning: eat something. | **Eating from the inventory**: Tab, or a quick key, a packed lunch | waking at hers; breakfast is no longer automatic |
+| 12 | Mom's card and the map. *Today.* | **The job card, the map** | breakfast eaten |
+| 13 | The casserole to Larry's. *Today.* | **The rank bar** (its first-use card) | the job starts |
+| 14 | Larry's welcome and the camp. *Today.* | **Deeds, the expedition camp** | the casserole's result card |
+
+**The evening stays safe**: the clock holds while you drive, nothing wears. Beats 7 and 8 move the clock on purpose
+(the tow and the shop), which is what makes beat 9 night.
+
+**Defaults for the owner** (`[DEFAULT]` until answered):
+- **The tow is free** (mom's friend drives the tow truck). **The tire is paid** from your last paycheck: one real
+  purchase in the tutorial.
+- **The flat is on the front-left corner**, and the spare is the jalopy's own, flat.
+- **The tank starts at an eighth**: enough to reach the nearest station, not mom's.
+- **If the nearest station or shop is far** past a distance budget (set by the census in stage 2), that beat is
+  skipped and its lesson is left to the first-use card. The story still reads, because the flat and the tow still
+  happen.
+
+### Skip, and the setting (the owner's inbox note)
+
+- **Skipping clears the whole tutorial for the run**: every lesson card and every first-use card (the rank bar, the
+  pump, the shop, sleep, camp). This is already true in a run (`_tut` checks the skipped mark, and the save carries it).
+  The owner's rank-bar card came from cancelling mom's job, which BUG-117 removed.
+- **NEW: Settings → "always skip the tutorial"**. When it is on, a new run starts where a skip lands: mom's door,
+  7 am, the casserole in hand, no cards. It switches **on by itself** after the first tutorial is finished or skipped,
+  and stays in this browser. Turning it off in Settings plays the tutorial on the next new run.
+
+### Stages (each lands on its own)
+
+1. **Skip and the setting**: "always skip the tutorial", on after the first finished or skipped tutorial.
+2. **The census**: on random seeds, the distances joint → nearest pump → mom's, and the nearest auto shop from the
+   route home. Sets the beat 5 and beat 8 budgets.
+3. **Beats 3 and 5**: the ignition card; the low tank; the GPS via the station; the pump lesson in sequence.
+4. **Beats 6–8**: the scripted flat; the damage-screen lesson; the flat spare; the recovery menu; the tow to the shop;
+   the shop lesson.
+5. **Beats 9 and 11**: the night drive (headlights) and breakfast from the inventory.
+6. **The smoke's opening step** rewritten for the whole sequence, timed against the +10 minutes.
+
+### Stage 2 — the census (Lane A, 2026-11-07; `wip/feat184/census.mjs`, 12 random seeds, story regions)
+
+| | min | median | max |
+|---|---|---|---|
+| the drive home, joint → mom's | 0.74 km | 2.85 km | 4.65 km |
+| joint → the nearest gas station | 1.03 km | 4.03 km | 7.06 km |
+| the detour via that station, over the drive home | 1.06 km | 5.80 km | 7.79 km |
+| halfway home (the flat) → the nearest auto shop | 0.79 km | 1.91 km | 2.67 km |
+| that shop → mom's | 0.35 km | 1.83 km | 3.21 km |
+
+- **The tow to a shop always fits.** The nearest auto shop is within 2.7 km of the flat on every seed.
+- **The station often doesn't fit.** Its detour is longer than the drive home itself on most seeds. With the budget at
+  **4 km** `[DEFAULT]` (≈ 3–4 minutes of real driving; the evening holds the clock), 6 of 12 seeds get the refuel beat.
+  The rest leave refuelling to the pump's first-use card. Raising the budget to 8 km would bring every seed in, at up
+  to ~8 km of extra driving.

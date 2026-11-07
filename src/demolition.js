@@ -98,9 +98,9 @@ function walkBack (route) {
 }
 
 /**
- * The site's targets: [{ kind, x, y, z, yaw, u }], y the ground under the target's lowest footprint point
+ * The site's targets: [{ kind, x, y, z, yaw, u, g }], y the ground under the target's lowest footprint point
  * (it stands upright — a post is planted plumb), yaw in the model convention (−Z → (−sin, −cos)), u the
- * metres of route before its end (siteGuide reads it).
+ * metres of route before its end (siteGuide reads it), g its cluster ('group.cluster' — FEAT-187: one halo a cluster).
  *
  * `dressing` is a THINGS / REQUISITION row's `targets`: groups of
  *   { kinds, n: [lo, hi], cluster: [lo, hi], side?: 'right', face?: 'traffic' | 'road' }
@@ -158,7 +158,7 @@ export function siteTargets (route, dressing, key, { road, height, isWater, half
                     const yaw = grp.face === 'traffic' ? Math.atan2(c.tx, c.tz)
                         : grp.face === 'road' ? Math.atan2(-c.tz, c.tx) + (side > 0 ? 0 : Math.PI)
                         : yawRoll * 2 * Math.PI
-                    out.push({ kind, x, y: lo, z, yaw, u, r: fr })
+                    out.push({ kind, x, y: lo, z, yaw, u, r: fr, g: `${gi}.${ci}` })
                     break
                 }
             }
