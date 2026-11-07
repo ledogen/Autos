@@ -7990,7 +7990,7 @@ export class RoadSystem {
         // (QUAL-07 mesh == collision); the merged dirt `cs2.gradeY` is the surface only where no
         // asphalt is drawn.
         let gradeY = cs2.gradeY
-        const onRun = nr && latDist < halfWidth && this._leafEndDist(runKey, arcSEff) >= 0
+        const onRun = nr && latDist < halfWidth && this._leafEndDist(runKey, arcSEff) >= 0 && this._ribbonDrawnAt(runKey, arcSEff)
         if (cs2.padTopY != null) {
             // ── On-PAD (inside the junction ring) ── road-mesh.js buildJunctionFootprint puts every
             // pad vertex at `_nodeSurfaceTop(node,x,z) + apronLift`, which is exactly padTopY. So the
@@ -8004,9 +8004,9 @@ export class RoadSystem {
             // to fade that excess out over the last 1.6 m inside the ring (and, in fading, dropped
             // physics up to 0.44 m BELOW the pad triangles the truck was visibly standing on). With
             // the overlay pinned to the mesh's own field there is no excess to feather: the only step
-            // left at the ring exit is the drawn asphalt→dirt dropoff (clearance + PAD_DIRT_EXTRA
-            // ≈ 0.30 m), the same intended edge dropoff as a ribbon shoulder (BUG-15), and the MESH
-            // has that identical step there. No potholes either: potholes are an on-ribbon-only
+            // left at the ring exit is the drawn asphalt→dirt dropoff (clearance, 0.15 m — BUG-122: the
+            // pad's PAD_DIRT_EXTRA armor stops at the ring), the same edge dropoff as a ribbon shoulder
+            // (BUG-15), and the MESH has that identical step there. No potholes either: potholes are an on-ribbon-only
             // physics-side micro-noise (D-03) and the pad geometry is smooth.
             gradeY = cs2.padTopY
         } else if (onRun || (co && co.lat < halfWidth)) {
@@ -9060,7 +9060,15 @@ export class RoadSystem {
         // deliberately does not (a lifted apron just gets more clearance under it). Lift is 0 by
         // default, so this is a no-op unless the user raises the slider.
         const padTopY = bestSd <= 0 ? topC + (p.roadJunctionApronLift ?? 0) : null
-        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topC - clearanceMargin - PAD_DIRT_EXTRA, padTopY }
+        // BUG-122: PAD_DIRT_EXTRA is armor UNDER the pad's asphalt, so it stops at the ring. Outside it the
+        // dirt is exposed beside an asphalt edge (the pad's own rim, or a leg ribbon running on past the mouth)
+        // and stands clearanceMargin below the top, the same designed kerb as every ribbon edge. When the extra
+        // ran on through the hold band and the ramp, every pad rim dropped clearance + PAD_DIRT_EXTRA (0.30 m,
+        // twice the ribbon's 0.15) and dragged that doubled lip up to ~20 m along the approach ribbons' edges
+        // (36 of 52 leg edges on random seeds; a wheel climbing back on at 15 m/s took a 75 kN strut spike). The
+        // dirt steps 0.15 m at the ring edge itself, which is where the asphalt edge is: under the pad on one
+        // side, the kerb's drop on the other.
+        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topC - clearanceMargin - (bestSd <= 0 ? PAD_DIRT_EXTRA : 0), padTopY }
 
         // Outside the hold band: ramp designY → raw over shoulder + fill/cut toe, mirroring
         // _carveCrossSection (which ramps beyond carveHalfWidth). `over` = distance past the hold.
@@ -9072,10 +9080,8 @@ export class RoadSystem {
         if (over >= beyondToe) return null
         const ramp = Math.max(shoulderWidth, beyondToe)
         const u = Math.min(1, over / ramp)
-        // Feather PAD_DIRT_EXTRA away with the same smoothstep so the dirt is continuous at the hold
-        // boundary (full depth there) and the toe still lands exactly on raw terrain.
         const w = 1.0 - u * u * (3.0 - 2.0 * u)
-        return { blendW: w, gradeY: designY - PAD_DIRT_EXTRA * w, padTopY: null }
+        return { blendW: w, gradeY: designY, padTopY: null }
     }
 
     /**
@@ -10182,6 +10188,20 @@ export class RoadSystem {
      * Memoised on the netEntry, stamped with _networkRev (the same signal every other per-run cache
      * in this file uses) — the carve path calls this per vertex/probe.
      */
+    /**
+     * BUG-122: is this run's ribbon DRAWN at arcSEff? road-mesh.js trims a ribbon within (mouth ?? cutback) of every
+     * junction end it has (_buildRoadTile's trimOf, same records, same rule); inside that the junction pad is what
+     * is drawn. The physics asphalt overlay follows the same rule, or the strip a pad's ring leaves uncovered beside
+     * a trimmed leg (up to ~0.5 m wide) rode an invisible ribbon top up to ~0.35 m above the dirt drawn there.
+     */
+    _ribbonDrawnAt(runKey, arcSEff) {
+        const arcs = this._junctionCarveArcs ? this._junctionCarveArcs.get(runKey) : null
+        if (!arcs) return true
+        const cutback = this.junctionCutbackDist()
+        for (const j of arcs) if (Math.abs(arcSEff - j.arc) < (j.mouth ?? j.cutback ?? cutback)) return false
+        return true
+    }
+
     _leafEndDist(runKey, arcSEff) {
         const e = this._network ? this._network.get(runKey) : null
         if (!e) return Infinity
