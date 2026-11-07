@@ -1,7 +1,7 @@
 ---
 id: BUG-128
 type: bug
-status: open
+status: closed
 opened: 2026-11-07
 severity: critical
 source: Lane A, while gating FEAT-154 (2026-11-07)
@@ -101,3 +101,7 @@ away. The gate keeps its pinned seeds (1, 6, 2167923713) and is not loosened fur
 - [x] The 4 fade-return rows on 3109505264 are explained (same cause or separate).
 - [x] expedition-camp pins it on a random-seed sample (reported as a sample): 3109505264 (the planning half) and
       3873008110 (the placement half), with 1, 6 and 2167923713. Green on all five.
+
+## Landed (orchestrator, 2026-11-07)
+
+Merge of 4f19faf2 on main (tree identical): affected 61/61, fingerprint-world 54/54 identical, cdp-smoke 25/25.

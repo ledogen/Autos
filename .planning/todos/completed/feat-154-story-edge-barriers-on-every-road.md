@@ -1,7 +1,7 @@
 ---
 id: FEAT-154
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-10-30
 source: owner, 2026-10-30 — "make a ticket (preferably up front) that says we need to put barriers on all roads that lead out of the playable area for story mode. most still just have the invis wall."
@@ -100,3 +100,6 @@ The design moved on from "the truck stops at them":
         there, 22 of 23 before. On 3109505264: 21 of 21.
       - The new parallel row's return lands on its own road 42 m in, which the own-road rule (BUG-128) accepts.
       - World fingerprint vs main: identical.
+## Landed (orchestrator, 2026-11-07)
+
+Merge of 4f19faf2 on main (tree identical): affected 61/61, fingerprint-world 54/54 identical, cdp-smoke 25/25.
