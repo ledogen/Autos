@@ -80,11 +80,11 @@ import { LabSystem } from './lab.js'                     // FEAT-31: isolated fl
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
 import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
-import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
+import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
+import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
 import { ITEMS } from '../data/items.js'
@@ -3617,6 +3617,7 @@ const serviceCenter = new ServiceCenter({
   advanceHours: (h) => daySystem.advanceMinutes(h * 60),
   stock: () => shelf(_servicePoi.id, daySystem.clockH(), _servicePoi.type), unstock: (i) => takeShelf(_servicePoi.id, i),
   nextStock: () => _shelfNext(_servicePoi.id, daySystem.clockH(), _servicePoi.type),   // R-24: "new stock in 3h 10m"
+  freeRepairs: () => runEconomy.freeRepairs ?? 0, useFreeRepair: () => { runEconomy.freeRepairs-- },   // expedition-rewards
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
@@ -4286,9 +4287,15 @@ missionSystem = new MissionSystem({
     // or too much of the load lost) puts it back on the list unchanged.
     if (mission?.line) {
       const delivered = result.letter !== 'D'
-      offerBoard?.[delivered ? 'complete' : 'abandon'](mission.offerId, daySystem.clockH())
+      if (delivered) offerBoard?.complete(mission.offerId, daySystem.clockH(), result.letter)   // the grade, for the win card
+      else offerBoard?.abandon(mission.offerId, daySystem.clockH())
       const lines = offerBoard?.lines() ?? []
-      result.line = { delivered, done: lines.filter(l => l.state === 'done').length, of: lines.length,
+      // expedition-rewards option 2 (owner, 2026-11-07): a line at A or better hands supplies back for the lines still to go.
+      const sup = delivered && 'AS'.includes(result.letter) && lines.some(l => l.state !== 'done') ? LINE_SUPPLY[mission.line] : null
+      if (sup?.item) inventorySystem.grant(sup.item)
+      if (sup?.freeRepair) runEconomy.freeRepairs = (runEconomy.freeRepairs ?? 0) + sup.freeRepair
+      if (sup?.rest) daySystem.setEnergy(daySystem.fullEnergyH())
+      result.line = { delivered, done: lines.filter(l => l.state === 'done').length, of: lines.length, supply: sup?.text ?? null,
                       need: mission.bundles ? `${rankTable('haul', region, 'firewood').C}+ bundles`
                         : mission.fragile ? `${Math.round(_fragileLinesOf(mission).C * 100)}%+ intact`
                         : mission.targets ? `${Math.round(rankTable('demolition', region).C * 100)}%+ smashed` : 'C or better' }
@@ -6488,6 +6495,7 @@ function _lineRows (r) {
   return (r.loaded ? `<br><span class="mp-dim">Firewood delivered</span> <span class="mp-pay">${r.aboard} / ${r.loaded}</span>` : '')
     + (r.targets != null ? `<br><span class="mp-dim">Smashed</span> <span class="mp-pay">${r.smashed} / ${r.targets}</span>` : '')
     + (L.delivered ? `<br><span class="mp-deed">Requisition ${L.done} / ${L.of}</span>`
+      + (L.supply ? `<br><span class="mp-dim">The camp sends back</span> <span class="mp-pay">${L.supply}</span>` : '')   // PLACEHOLDER words
       : `<br><span class="mp-bad">not counted &mdash; back on the list</span> <span class="mp-dim">(needed ${L.need})</span>`)
 }
 
@@ -9204,10 +9212,34 @@ function _runEndHtml (kind) {
     + row('mission ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))
     + row('good deeds', `${formatDeeds(e.halfPoints)} of ${ECONOMY_PARAMS.campDeeds}`)
     + (req.some(l => l.state !== 'closed') ? row('camp deliveries', `${req.filter(l => l.state === 'done').length} / ${req.length}`) : '')
+    + (kind === 'win' ? _expeditionRows(row, req) : '')
     + row('earned', `$${formatMoney(e.money + e.spent - ECONOMY_PARAMS.startCash)}`, true)
     + row('spent', `$${formatMoney(e.spent)}`)
     + row('wallet', `<span class="re-money">$${formatMoney(e.money)}</span>`)
     + _upgradeRows(row)
+}
+
+/**
+ * expedition-rewards (owner, 2026-11-07: "2, 3 and 4"): the win card's grade. Option 4: the five lines' letters and the
+ * days make one expedition grade (economy.js expeditionGrade), and the best per seed is kept in this browser
+ * (localStorage `autos-best/<seed>`: a record, never an input to anything). Option 3: all five at A or better is a clean
+ * sweep, bragging rights only. PLACEHOLDER words.
+ */
+function _expeditionRows (row, req) {
+  const grades = req.map(l => l.grade).filter(Boolean)
+  if (!grades.length) return ''
+  const g = expeditionGrade(grades, daySystem.day())
+  const sweep = grades.length === req.length && grades.every(x => 'AS'.includes(x))
+  let best = null, isNew = false
+  try {
+    const k = `autos-best/${worldSeed}`
+    best = localStorage.getItem(k)
+    isNew = gradePoints(g) > gradePoints(best)
+    if (isNew) localStorage.setItem(k, g)
+  } catch { /* storage refused: the grade shows, the record is skipped */ }
+  const letter = (x) => `<span style="color:${RANK_COLOR[x]}">${x}</span>`
+  return row('expedition grade', letter(g) + (sweep ? ' &middot; clean sweep' : ''), true)
+    + row('best on this seed', isNew ? `${letter(g)} &middot; new best` : best ? letter(best) : '&mdash;')
 }
 
 /**

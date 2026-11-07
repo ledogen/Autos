@@ -24,6 +24,7 @@
 import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankTable, payoutFor, pointsFor,
   runEconomy, EconomySystem, formatDeeds, basePay, payRange, splitPayout, bonusEarned, RANKS,
+  expeditionGrade, gradePoints, EXPEDITION,
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade, PAR_SLACK } from '../src/par.js'
 import { runState } from '../src/day.js'
@@ -490,5 +491,17 @@ console.log(fails === 0 ? '\neconomy gate: ALL OK' : `\neconomy gate: ${fails} F
     check(`FEAT-142: Impatient tightens a courier's time thresholds at accept (S ${RANK_THRESHOLDS_DEFAULT.S} → ${(RANK_THRESHOLDS_DEFAULT.S * 0.9).toFixed(4)})`,
       Math.abs(termsAt(0.9).S - RANK_THRESHOLDS_DEFAULT.S * 0.9) < 1e-12)
     check('FEAT-142: …Patient loosens them, and a job with no trait keeps the region\'s own', Math.abs(termsAt(1.1).C - 1.1) < 1e-12 && termsAt(1).B === RANK_THRESHOLDS_DEFAULT.B)
+}
+// expedition-rewards option 4 (owner 2026-11-07): the five lines' mean, ± a quarter grade a day against the 12-day run.
+{
+    const D = EXPEDITION.days
+    check('expedition grade: five A lines on the 12th day is A', expeditionGrade(['A', 'A', 'A', 'A', 'A'], D) === 'A')
+    check('…four days early lifts it a grade (S)', expeditionGrade(['A', 'A', 'A', 'A', 'A'], D - 4) === 'S')
+    check('…four days late drops it a grade (B)', expeditionGrade(['A', 'A', 'A', 'A', 'A'], D + 4) === 'B')
+    check('…a mixed sheet rounds to the nearest letter: S S B C C on the day is B (mean 2.4)',
+        expeditionGrade(['S', 'S', 'B', 'C', 'C'], D) === 'B')
+    check('…clamped: all S very early is S, all C very late is D', expeditionGrade(['S', 'S', 'S', 'S', 'S'], 1) === 'S'
+        && expeditionGrade(['C', 'C', 'C', 'C', 'C'], D + 30) === 'D')
+    check('…and grades compare by points (a best per seed)', gradePoints('S') > gradePoints('A') && gradePoints('D') > gradePoints(null))
 }
 process.exit(fails === 0 ? 0 : 1)
