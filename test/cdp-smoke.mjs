@@ -816,7 +816,7 @@ const STEPS = [
   }],
   ['papers', async () => {
     // FEAT-141: Larry's round — any N of the customers against a deadline, the size chosen among the
-    // unlocked rungs. Unlock the 9, park at Larry's, read his briefing, and walk the size row.
+    // unlocked rungs. Unlock the 7, park at Larry's, read his briefing, and walk the size row.
     const larry = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse')
       return q ? { x: q.x - q.nx * 5, z: q.z - q.nz * 5, h: Math.atan2(-q.tx, -q.tz) } : null })()`)   // his yard: the marker stands at the house
     if (!larry) { console.log('  papers: no Larry in this region — step skipped'); return }
@@ -839,14 +839,14 @@ const STEPS = [
       return { n: p.route?.customers.length, sizes: [...document.querySelectorAll('#pp-sizes button')].map(b => b.textContent + (b.classList.contains('on') ? '*' : '')).join(' '),
                deadline: /time limit/.test(document.getElementById('pp-body').textContent) } })()`)
     const top = await view()
-    check(top.n === 9 && top.sizes === '4 9*' && top.deadline, `Larry's offer: ${JSON.stringify(top)} — want 9 customers, sizes "4 9*" and a time limit`)
+    check(top.n === 7 && top.sizes === '4 7*' && top.deadline, `Larry's offer: ${JSON.stringify(top)} — want 7 customers, sizes "4 7*" and a time limit`)   // BUG-134: the ladder 4 / 7 / 9 / 11
     // FEAT-133: a card's first D-pad / arrow press lands on its main action, not the size row above it.
     await tap('ArrowDown')
     check(await js('document.querySelector("#paper-panel .nav-focus")?.id') === 'pp-accept',
       `the first arrow press on Larry's card highlighted "${await js('document.querySelector("#paper-panel .nav-focus")?.textContent')}", not "start the route"`)
     await js('document.querySelector("#pp-sizes button[data-size=\'0\']").click()')
     const small = await view()
-    check(small.n === 4 && small.sizes === '4* 9', `picking the 4: ${JSON.stringify(small)}`)
+    check(small.n === 4 && small.sizes === '4* 7', `picking the 4: ${JSON.stringify(small)}`)
     console.log(`  papers: Larry offers ${top.sizes.replace('*', '')} — plotted ${top.n}, then ${small.n}`)
     // FEAT-133 on a LIVE round (until now only with throwReady forced): take the 4, leave Larry's
     // circle, get rolling on a fake pad, aim with the right stick and TAP RB — a paper leaves the truck.

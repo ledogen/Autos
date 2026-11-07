@@ -218,7 +218,7 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
     // we could have jumped to, price carrying on down it against re-planning from there.
     const sweepWorld = (rd, rg, origin, cust, tag) => {
         const out = []
-        for (const tier of [2, 3]) {   // tiers 3 and 4 both cap at 15 stops — the same tour
+        for (const tier of [2, 3]) {   // tiers 3 and 4: the two longest rounds (9 and 11 stops since BUG-134)
             const tour = planTour(rd, origin, cust.filter(c => (c.paperTier ?? Infinity) <= tier), customersForTier(tier), rg, 100)
             if (!tour || tour.customers.length < 4) continue
             const cum = tour.polyCum, poly = tour.poly, L = cum[cum.length - 1]

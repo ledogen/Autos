@@ -73,7 +73,8 @@ export const PAPER_PARAMS = {
     // The ROUTE SIZES Larry offers — the ladder. A finished round at B or better on the top unlocked
     // size unlocks the next (FEAT-141, reversing 2026-08-05's perfect-round rule), and the player may
     // drive any unlocked size. Run-layer, so it is re-earned every run like everything else.
-    tiers:       [4, 9, 12, 15],
+    // BUG-134 (owner, 2026-11-07, bug134-route: "a. drop customers 4 / 7 / 9 / 11 customers"): was 4 / 9 / 12 / 15.
+    tiers:       [4, 7, 9, 11],
     // …and how far out each rung's houses are PLACED, in metres of ROAD from Larry's house (owner,
     // 2026-10-15). PLACEMENT ONLY since FEAT-141: poi.js's buildHouses still fills the bands
     // innermost first (stamping `paperTier`), which spreads the customers outward, but the stamp no
@@ -86,9 +87,12 @@ export const PAPER_PARAMS = {
     // route starts at Larry, so the only distance that prices it is the drive from his door.
     // 5 km is the outer band because the top route must not need much more than ~14 km of driving.
     tierRoadM:   [1000, 2000, 3000, 5000],
+    // BUG-134: the longest round the plotter will plan, the owner's hard limit on the ~14 km budget. Past it, planTour
+    // drops a house (option (a), owner 2026-11-07), so a round can be a house short of its rung.
+    maxRouteM:   15500,
     // Spares as a fraction of the customer count, per tier: generous on the first route, thin on the
-    // last (owner). A beginner's four-house route tolerates four fluffed throws; the fifteen-house
-    // route tolerates four and a half, which is the difficulty curve stated as inventory.
+    // last (owner). A beginner's four-house route tolerates four fluffed throws; the eleven-house
+    // route tolerates three and a third (four papers, rounded up), which is the difficulty curve stated as inventory.
     sparesFrac:  [1.00, 0.75, 0.50, 0.30],
 
     // THE TIP POOL [owner, 2026-08-17 — replaces paperW / bonusMax / expediteFull].
@@ -508,10 +512,24 @@ export function roadDistFromLarry (road, larry, points, region = null, margin = 
  * @param {number} margin    keep the tour this far inside the wall
  */
 export function planTour (road, larry, allCust, want, region = null, margin = 100) {
-    const it = planTourJob(road, larry, allCust, want, region, margin)
+    const it = planRoundJob(road, larry, allCust, want, region, margin)
     let r = it.next()
     while (!r.done) r = it.next()
     return r.value
+}
+
+/**
+ * BUG-134 (owner, 2026-11-07: option (a)): plan a ROUND, as a resumable job. A round over PAPER_PARAMS.maxRouteM is
+ * planned again with one house fewer, until it fits; Held-Karp picks which house to leave off, so the shortest round
+ * that fits wins. Everything that offers a round plans through this (planTour, the map card's preview), so the preview
+ * is the round you get. The re-plan from the truck (FEAT-63) runs planTourJob itself and never drops a house: the
+ * round was promised at the offer.
+ */
+export function* planRoundJob (road, larry, allCust, want, region = null, margin = 100) {
+    for (let n = want; ; n--) {
+        const r = yield* planTourJob(road, larry, allCust, n, region, margin)
+        if (!r || r.distance <= PAPER_PARAMS.maxRouteM || n <= 1) return r
+    }
 }
 
 /**

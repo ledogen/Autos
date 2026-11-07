@@ -106,7 +106,7 @@ import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, TUT, DLG
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planTourJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
+         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -1943,7 +1943,7 @@ let missionSystem = null
 let offerBoard = null
 // FEAT-67: Larry's hover card needs his tour, which is the paper route's planner — Held-Karp, up to
 // ~14 ms at fifteen stops. It runs as a RESUMABLE job pumped a couple of ms per frame while the map
-// is open (planTourJob, the same generator the route itself uses), never blocking a hover.
+// is open (planRoundJob, the same generator the route itself uses), never blocking a hover.
 // { offerId, tier, it, done, route }. See _larryRoute / _pumpLarryTour.
 let _larryTour = null
 let _mapOpenClass = false   // mirrors body.map-open (see the frame loop)
@@ -4834,7 +4834,7 @@ function _larryRoute (offer) {
   _larryTour = {
     offerId: offer.id, tier, done: false, route: null,
     // FEAT-141: every customer is deliverable — the card previews the top unlocked size's plot.
-    it: planTourJob(roadSystem, larry, poiSystem.customers(PAPER_PARAMS.tiers.length - 1), customersForTier(),
+    it: planRoundJob(roadSystem, larry, poiSystem.customers(PAPER_PARAMS.tiers.length - 1), customersForTier(),   // BUG-134: the round you get
                     storySystem.region(), 100),
   }
   return null
