@@ -56,7 +56,7 @@ export class HiLift {
   refusal (vehicleState, now, runOver) {
     if (runOver) return 'the run is over'
     if (this.active) return 'heaving'
-    if (now < this.readyAt) return 'catching your breath'
+    if (now < this.readyAt) return `catching your breath · ${Math.ceil(this.readyAt - now)} s`   // ticks: InventoryScreen.update
     if (basin(rollDeg(vehicleState.quaternion), this.balance) === 0) return 'the truck is on its wheels'
     return null
   }
