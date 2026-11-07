@@ -83,3 +83,39 @@ road to the seed's probe point, which is usually off the road. The spawn is the 
 - (a) land it, and every world's spawn moves once;
 - (b) land it but keep today's spawn on the old lookup;
 - (c) hold.
+
+### A run saved before the fix, resumed after it (2026-11-07)
+
+**It resumes; it does not break.** Saves carry no world-gen, so the region rebuilds on the moved centre. Then
+`_restoreRun` puts the run back:
+- the day, money, inventory, parts, damage and fuel;
+- the truck at its exact saved pose;
+- the camp pads, at their saved positions;
+- the dialogue seen, and the shelves (merged by POI id: a re-rolled shop keeps its fresh roll).
+
+What can be lost:
+- **The board replay (`logBoard`) cannot throw on a re-rolled POI.** Offer ids embed the POI id, `take`, `complete`
+  and `abandon` return falsy on a slot they cannot find, and an event that no longer applies is simply not
+  re-logged.
+- **A job or paper round in hand whose giver or offer re-rolled is dropped.** `_resumeJob` and `_resumePaper` are
+  guarded: `[save] … it is dropped`, abandoned on the board. The player loses that job, never the run.
+- **Places around the truck may have moved,** and its saved pose can sit near or past the moved wall, where the edge
+  fade turns it back.
+
+**Checked node-only** (`wip/bug-121/savecheck.mjs`: save on main's code, load on the fix):
+
+| seed | spawn moves | replay | events re-applied | jobs in hand that resolve |
+|---|---|---|---|---|
+| 2686853654 | 263 m | ok | 7 / 9 | 3 / 3 |
+| 332051823 | 15 m | ok | 7 / 7 | 3 / 3 |
+
+**So option (a) needs no save-version bump.** A line in the landing note covers it: "runs in progress: places may
+move, and a job in hand may be dropped". A bump would only throw those runs away.
+
+### Follow-up (not BUG-121): the POI keep-out rejects on its own road
+
+On main, 91 of 101 `_otherRoadNear` rejections on 4 random seeds have **no other run within `lat`** by brute force.
+They are the same before and after this fix. The likely cause: `queryNearest` answers the site's own road under a
+different run key than the edge's `ownKey` (a parallel `~p`, a split run, or a different spelling), so
+`hit.runKey === ownKey` fails and the site's own road counts as "another road". The cost is about 90 good POI
+sites thrown away per 4 regions. Check the key spelling before trusting the keep-out.
