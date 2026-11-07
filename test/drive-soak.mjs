@@ -211,7 +211,11 @@ async function soakSeed (seed, replay = null) {
         }
         const rMin = vPlan * vPlan / A_LAT
         vT = Math.min(V_MAX, Math.sqrt(A_LAT * rMin))
-        if (dist + offDist > nextOff) {   // an off-road leg: 120–200 m out to one side, over whatever is there
+        // BUG-126 (closed, not a game bug): inside a bore the leg's point 120–200 m to the side is behind the lining, so the
+        // truck drove into the wall and sat pinned until the leg timed out. No leg in a bore span or within 20 m of a portal
+        // (a negative inset grows the span): it waits, re-checked every step, until the truck is out.
+        const bore = () => { const nr = w.road.queryNearest(p.x, p.z, 15); return !!nr && !!w.road.tunnelSpanAt(nr.runKey ?? '', nr.arcS ?? 0, -20) }
+        if (dist + offDist > nextOff && !bore()) {   // an off-road leg: 120–200 m out to one side, over whatever is there
           nextOff += OFFROAD_EVERY_KM * 1000
           const fx = -Math.sin(Math.atan2(-(target.x - p.x), -(target.z - p.z))), side = rng() < 0.5 ? -1 : 1, d = 120 + rng() * 80
           const hx = target.x - p.x, hz = target.z - p.z, hl = Math.hypot(hx, hz) || 1
