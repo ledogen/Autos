@@ -451,6 +451,13 @@ const STEPS = [
     await tap('z')
     check(await until(async () => !await panel(), 2000), 'Z did not close the truck face')
     check(!await lit(), 'Z closed the truck face but left the hunt on')
+    // BUG-142 (owner, 2026-11-07: "Camping menu should default to off when you break camp"): "leave", the break-camp
+    // button, calls the hunt off too. Armed again while parked, the truck face opens at once (BUG-95).
+    await tap('z')
+    check(await until(panel, 2000), 'Z while parked did not reopen the truck face')
+    await js('document.getElementById("cp-break").click()')
+    check(await until(async () => !await panel(), 2000), '"leave" did not close the truck face')
+    check(!await lit(), 'breaking camp left the hunt on (BUG-142)')
   }],
   ['inventory', async () => {
     // FEAT-122: parked only (like V) — Tab driving pulses the park sign and opens nothing; parked,
