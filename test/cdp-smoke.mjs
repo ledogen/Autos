@@ -164,22 +164,27 @@ const deliverFirst = async () => {
   check(await until(() => js('window.__mission().state === "done"'), 5000), `seated at Larry's, the casserole did not arrive: ${await js('window.__mission().state')}`)
 }
 // BUG-118: way off the tutorial's line (45 m for 2 s, paper-route.js RR_PARAMS), the GPS re-plans from the truck
-// to the same door. It seats the truck at the nearest POI 150 m off the line and no nearer the door than it is now,
-// so the halfway lesson does not land early.
+// to the same door. It seats the truck ON THE ROAD at the nearest POI 150 m off the line and no nearer the door than
+// it is now, so the halfway lesson does not land early. On the road, not the pad: from a pad ~12 m off its road
+// (outside every footprint) queryNearest can answer a point up to ~160 m along the road, which the re-plan would
+// start from (a road.js D4 issue of its own, reported 11-07; a driver who has strayed is on a road).
 const strayCheck = async (what) => {
   const far = await js(`(() => { const g = window.__gps(), e = g.poly.at(-1), v = window.__vs.position
     const d0 = Math.hypot(e.x - v.x, e.z - v.z), dv = q => Math.hypot(q.x - v.x, q.z - v.z)
-    const qs = window.__map2d()._getPois().filter(q => Math.hypot(e.x - q.x, e.z - q.z) > d0 && g.poly.every(p => Math.hypot(p.x - q.x, p.z - q.z) > 150))
+    const qs = window.__map2d()._getPois().map(q => ({ x: q.roadX, z: q.roadZ, h: Math.atan2(-q.tx, -q.tz) }))
+      .filter(q => Math.hypot(e.x - q.x, e.z - q.z) > d0 && g.poly.every(p => Math.hypot(p.x - q.x, p.z - q.z) > 150))
     const q = qs.reduce((a, b) => (!a || dv(b) < dv(a) ? b : a), null)
     window.__g0 = g
-    return q ? { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz), ex: e.x, ez: e.z } : null })()`)
+    return q ? { ...q, ex: e.x, ez: e.z } : null })()`)
   check(far, `no POI far off the line ${what} to stray to`)
   if (!far) return
   await seat(far.x, far.z, far.h)
   check(await until(() => js('window.__gps() !== window.__g0'), 6000), `way off the line ${what}, the GPS did not re-plan (BUG-118)`)
-  const g = await js(`(() => { const p = window.__gps().poly, v = window.__vs.position
-    return { start: Math.round(Math.hypot(p[0].x - v.x, p[0].z - v.z)), end: Math.round(Math.hypot(p.at(-1).x - ${far.ex}, p.at(-1).z - ${far.ez})) } })()`)
-  check(g.start < 60 && g.end < 30, `the re-planned line ${what} does not run from the truck to the same door: ${JSON.stringify(g)}`)
+  const g = await js(`(() => { const p = window.__gps().poly, v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 200)
+    return { start: Math.round(Math.hypot(p[0].x - v.x, p[0].z - v.z)), end: Math.round(Math.hypot(p.at(-1).x - ${far.ex}, p.at(-1).z - ${far.ez})),
+      seat: [${Math.round(far.x)}, ${Math.round(far.z)}], truck: [Math.round(v.x), Math.round(v.z)], p0: [Math.round(p[0].x), Math.round(p[0].z)],
+      road: nr?.point ? Math.round(Math.hypot(nr.point.x - v.x, nr.point.z - v.z)) : null } })()`)
+  check(g.start < 20 && g.end < 30, `the re-planned line ${what} does not run from the truck to the same door: ${JSON.stringify(g)}`)
 }
 // FEAT-170: every new run opens on the firing; holding M a second (the prompt says so) skips it, landing at
 // mom's at 07:00 with her casserole in hand. Wall-clock: the hold is a real-time timer, not sim time.
