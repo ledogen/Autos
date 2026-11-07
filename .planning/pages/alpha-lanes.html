@@ -210,7 +210,7 @@
       tasks: [
         { id: 'FEAT-179 · FEAT-180 · crickets', what: 'Two service stations: your 386773705 has both auto shops; the map hid the second (framed on your route, and the doctor’s diamond drawn over it). Your call: feat179-map. Crickets at half volume: built, lands with the loop trim. The lighting review and interview are yours (feat180-lighting).' },
         { id: 'BUG-105 loops', what: 'Your loop trim is built: grazes 4 → 2 (24 and 25 cleared; 26 and 27 stay), only the 4 loop windows change. Its before/after page is yours (bug105-trim); it lands after a build-time A/B (running).' },
-        { id: 'BUG-121', what: 'Found by Lane A: from more than ~7.5 m off a road, “nearest road point” can answer a point up to 164 m along the road (seed 6: 50 of 81 POI queries). Hits the reset-to-road key, the GPS re-plan, spawn and some placement. Spare takes it after the loop trim; the fix needs the world-identity check.' },
+        { id: 'BUG-121', what: 'FIXED on land/bug-121: off-road “nearest road point” was wrong ~87 % of the time (worst 189 m), now 0. The fix shifts each world’s region once, so it waits on your call (bug121-spawn). Next for Spare: BUG-122, the junction-approach lip the drive soak found.' },
         { id: 'QUAL-35', what: 'Measured: there is no small version, and Spare recommends leaving it. Report + maps + its view on a full redesign: https://claude.ai/artifact/H96gBEYDd85r4jZPiz97G4. Your call (qual35-call).' },
         { id: 'BUG-67 · FEAT-143/144', what: 'ON MAIN (38765f33) — both junction steps, world items + reach 5 m. Close the tickets on evidence.' },
         { id: 'BUG-109', what: 'ON MAIN — the pad pass. Your real-pad check owed (pad-test).' },
@@ -237,6 +237,9 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
+    { id: 'bug121-spawn', kind: 'decide', tk: 'BUG-121',
+      text: '“Nearest road point” is fixed: from 9–40 m off a road it answered >5 m wrong ~87 % of the time (worst 189 m); now 0 wrong, worst 0.2 m, and twice as fast. Your reset-to-road key and the GPS re-plan use it. One visible side effect: the story region is centred on the road nearest the seed’s start point, so every world’s region shifts once (15–264 m on random seeds, 199 m on your 386773705) and its places re-roll inside the new circle. Mom’s house stays put. Sheet: https://claude.ai/artifact/5Nvi71xzeE4mJyFg7utHFT. (a) land it, worlds move once (recommended: no seed is canonical, so nothing is lost; the moved circles also expose 2 expedition barricade rows that get fixed first). (b) land the fix but keep today’s region centres on the old lookup, so no world changes (a deliberately kept old path). (c) hold.',
+      options: ['(a) land it, worlds move once', '(b) fix, keep today’s regions', '(c) hold'] },
     { id: 'bug105-trim', kind: 'decide', tk: 'BUG-105',
       text: 'Your loop trim, built: the 4 loop sites on random seeds (your 24 and 25 first), each with a map overlay and before/after shots: https://claude.ai/artifact/C4jUxhQbgiwyHwor2aq1Ho. Two calls. 1, the length cut-off: (a) keep 400 m or (b) 200 m. Your two loops measure 339 m and 391 m, so 200 m trims neither. 2, the sharp bends this leaves (131° at your 25, 102° at site 4): (a) fine or (b) widen them, as a separate change. Type e.g. “1a 2a” in the note box below.',
       options: ['1a 2a', 'my picks in the note box below'] },
