@@ -2970,6 +2970,7 @@ const campSystem = new CampSystem({
   getTerrain: () => terrainSystem,
   getWater:   () => waterSystem,
   treesNear:  (x, z, r) => _treesNear(x, z, r),
+  getReachM:  () => inventorySystem.reachM(),   // FEAT-182: the equipped pack sets the night's tether
 })
 
 // FEAT-45: the SHADE score's tree source. Deliberately NOT the live PropSystem — the streamer is a
