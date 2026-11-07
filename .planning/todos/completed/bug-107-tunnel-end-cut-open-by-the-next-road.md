@@ -1,7 +1,7 @@
 ---
 id: BUG-107
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-03
 source: owner screenshot, seed 19 at (−1210, 1837) on the re-seat + cut build (:3896): "that tunnel mouth is broken for
@@ -75,3 +75,7 @@ in the ground at the mouth. The cover numbers above were right; the next road's 
 Seen on the way, not chased: large dark boulders hanging in the air over this portal, on main too.
 
 Closed on landing.
+
+## Landed (orchestrator, 2026-11-07)
+
+Merge of 6955dd41 on main (tree identical): cdp-smoke 25/25 on the merged tree; fingerprint-world: tiles only.
