@@ -102,7 +102,7 @@ FISH_Y0, FISH_Y1 = -0.05, 0.05                  # body slab
 FISH_POSTS = (-0.30, 0.70)
 
 # --- the canoe on its sawhorses (-X end) and the cleaning table (+X end) ---
-CANOE_X, CANOE_YC, CANOE_B, CANOE_H = (-7.5, -3.4), 0.90, 0.42, 0.36
+CANOE_X, CANOE_YC, CANOE_B, CANOE_H = (-7.6, -3.4), 0.90, 0.43, 0.36
 HORSE_X, HORSE_Z = (-6.7, -4.2), 0.72           # sawhorse beams; the gunwales rest on them
 TABLE_X, TABLE_Y, TABLE_Z = (3.55, 4.75), (0.30, 0.95), 0.90
 BUCKETS = ((4.95, 0.50), (4.97, 0.92))
@@ -537,18 +537,20 @@ def canoe(p):
     """Upside down: the keel on top, nearly straight; the gunwales underneath, resting on the sawhorse
     beams at mid-length and dropping toward the ends (the sheer, inverted).  Pointed stems."""
     (x0, x1), yc, B, H = CANOE_X, CANOE_YC, CANOE_B, CANOE_H
-    n, arc = 8, 4
+    n = 10
+    # the section, gunwale -> keel -> gunwale: (fraction of the half beam, fraction of the depth), tumblehome-free
+    sec = [(-1.0, 0.0), (-0.92, 0.6), (-0.55, 0.95), (0.0, 1.0), (0.55, 0.95), (0.92, 0.6), (1.0, 0.0)]
+    arc = len(sec) - 1
     keel = HORSE_Z + H
     stations = []
     for i in range(n + 1):
         t = i / n
         e = (2 * t - 1) ** 2
-        b = B * max(0.0, 1 - e) ** 0.55
-        zg = HORSE_Z - 0.16 * e
-        zk = keel - 0.04 * e
+        b = B * max(0.0, 1 - e) ** 0.9                       # fine ends: the beam tapers over the outer metre
+        zg = HORSE_Z - 0.22 * e ** 1.5                       # the sheer, inverted: the gunwales drop at the ends
+        zk = keel - 0.03 * e
         x = x0 + (x1 - x0) * t
-        stations.append([(x, yc - b * math.cos(math.pi * k / arc), zg + (zk - zg) * math.sin(math.pi * k / arc))
-                         for k in range(arc + 1)])
+        stations.append([(x, yc + b * fy, zg + (zk - zg) * fz) for fy, fz in sec])
     mid = Vector(((x0 + x1) / 2, yc, HORSE_Z))
     for sa, sb in zip(stations, stations[1:]):
         for k in range(arc):
