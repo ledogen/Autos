@@ -343,3 +343,280 @@ each estimate is the thing to verify first.
 | **Build the story world behind the menu** | the whole ~12 s entry | pre-roll the blank-seed `Math.random()` at boot and generate THAT world (region included) while the player is in the menu. Still pure generation — nothing saved. Design call: free roam's boot world would then be random too, or be built second. *(Owner 11-06: "not now" for this lever; the boot world IS random now, so a world nobody picked is never the same one twice.)* | hides up to all of it |
 
 The last row is the only one that changes the order of magnitude; the rest are each a second or so.
+
+## 2026-11-06 — re-measured on main `0d7c84c6` (Spare): preliminary, LOADED box (load 5–21)
+
+`test/story-coldload.mjs` now prints the click → live **split**: settle = the reseed (spawn resolve + the new
+free-roam world), region warm = the worker's region build plus pumps, seed check, and go-live (POI placement). It
+times story's own deps from the page. Built bundle (`vite preview`). Random seeds from BUG-105's census list.
+
+| seed | cpu | boot (ready) | settle | region warm | go-live | **entry** | **total** |
+|---|---|---|---|---|---|---|---|
+| 3997014678 | 1× | 7.8 s | 10.8 s | 20.5 s | 0.65 s | 33.9 s | 45.3 s |
+| 2623851183 | 1× | 8.3 s | 8.6 s | 19.4 s | 0.64 s | 30.7 s | 42.4 s |
+| 744309545 | 1× | 8.5 s | 5.7 s | 18.4 s | 0.79 s | 27.2 s | 39.3 s |
+| 3997014678 | 4× | 17.6 s | 12.1 s | 24.0 s | 2.5 s | 44.6 s | 72.1 s |
+| 2623851183 | 4× | 13.9 s | 11.6 s | 24.6 s | 2.3 s | 44.4 s | 70.3 s |
+| 744309545 | 4× | 14.3 s | 8.4 s | 27.2 s | 2.9 s | 48.0 s | 71.2 s |
+
+**Read with care; this box was loaded throughout.** Even so:
+- **Story entry on a RANDOM seed at cpu ×4 is ~44–48 s here.** PERF-31's and BUG-105's "9 s" was seed 6, the boot
+  seed: no reseed, warm caches. That is not the path a player takes.
+- **The settle is 5.6–10.8 s at 1× (09-22: ~2 s).** It is ~97 % `reseed.reseat`: the free-roam spawn resolve builds
+  networks around candidates, then the region warm builds the whole region over the same ground.
+- **Go-live (POI placement) is 0.6–0.8 s at 1×.** It meets the 09-22 row's target (0.9 + 0.3 s) and can be closed;
+  2.3–2.9 s at 4×.
+- **The region warm is the biggest row.** Region bench (`wip/perf-31/region-bench.mjs`, seed 3997014678, loaded):
+  old main `871d7750` thread 7.0 s + pool 18.1 s / 356 jobs; now thread 10.2 s + pool 28.8 s / 358 jobs. Same network
+  hash. BUG-105's pass-1 forecast lives in that warm thread.
+
+**Owed:** the same sweep, plus the region bench A/B, in a quiet window. Then the levers, and the "behind the menu"
+numbers.
+
+## 2026-11-06 — QUIET-WINDOW numbers (orchestrator's window, load 2.7–5.2) — these supersede the loaded table above
+
+**Current main `48b6c989` (= `0d7c84c6` + docs), built bundle, three random seeds** (3997014678, 2623851183,
+744309545):
+
+| | 1× | cpu ×4 |
+|---|---|---|
+| free-roam boot: ready / ring | 3.4–3.5 s / 5.0–5.2 s | 5.4–6.4 s (ready) |
+| settle (reseed: spawn resolve + world) | 2.4–3.2 s | 4.0–4.9 s |
+| region warm (worker region build + pumps) | 6.9–7.4 s | 7.4–8.8 s |
+| go-live (POI placement, board, camps) | 0.31 s | 1.2–1.3 s |
+| **story entry (click → driving)** | **11.2–11.5 s** | **17.4–18.2 s** |
+| **cold → driving** | **16.4–16.5 s** | **~28–29 s** |
+
+The loaded table above (44–48 s at 4×) was the box, not the code. Random-seed entry at cpu ×4 is ~17.7 s, under the
+owner's 30 s bar.
+
+**BUG-105's cost on a player's path** (A/B the orchestrator asked for, cpu ×4, alternating per seed):
+- story entry `8739d3cb` → `14c6feb6`: 17.02 → 17.71 s (+0.70 s, +4 %). Main is 17.73 s.
+- Region bench (1× headless, one region): thread 2.87 → 3.04 s (+6 %), pool CPU unchanged, network hash identical.
+- Well inside the orchestrator's 2 s line, so BUG-105 stays.
+
+**The rows, against the 09-22 table:**
+
+| 09-22 row | then | now (1×, quiet) | status |
+|---|---|---|---|
+| Go-live POI placement | 0.9 + 0.3 s | 0.31 s | **CLOSED: under target** |
+| Serial plan layer | ~2.7 s pre-warm + 2.0–2.5 s build | region bench thread ~3.0 s (warm 2.4 + build 0.6) | **CLOSED: met (PERF-31)** |
+| Worker pre-warm, route waves | 5.4–6.2 s | region warm wall 6.9–7.4 s, of which thread ~3 s; pool CPU ~8.5 s / 356 jobs across the nested pool | open: the wave-stall lever (longest-first dispatch) is unmeasured |
+| Spawn resolve | ~2 s | settle 2.4–3.2 s (97 % `reseed.reseat`) | open: ≤ 1 s by its own estimate |
+| Entry pump latency | ~0.5 s | not separable from the region warm wall yet | open: measure (SETTLE_MIN_MS 400 ms + 250 ms poll) |
+| **Build the story world behind the menu** | the whole ~12 s entry | **hides 11.2–11.5 s at 1×, ~17.7 s at cpu ×4** | **owner's call, made cheap below** |
+
+**The "behind the menu" call: what it would cost the menu.** Frame times on the loading screen's own frame loop, while
+the same work runs:
+- 1×: median 60 fps, p95 17 ms, worst single hitch 0.3–0.6 s. The menu truck stays smooth with an occasional
+  half-second stall.
+- cpu ×4: median 60 fps, p95 33–50 ms, worst hitch 1.6–2.3 s, all in the settle. Visible once or twice on a slow
+  machine.
+- The design call stands as framed: free roam's boot world becomes random too, or is built second. The orchestrator
+  takes it to the owner.
+
+**Tools:** `test/story-coldload.mjs` (split + frame times), `wip/perf-27/{sweep.sh, ab105.sh}`,
+`wip/perf-31/region-bench.mjs`.
+
+### The two open levers, scoped (2026-11-06)
+
+**Route waves, longest-first dispatch: below the 1 s bar, NOT built.** `wip/perf-31/wavesim.mjs` records every
+route job's time per wave in a region build, then simulates the pool (4 workers, pull dispatch) both ways: the order
+the plan issues jobs (today), and longest-first with the TRUE times, which is the upper bound for any predictor.
+- Seeds 3997014678 / 2623851183 / 744309545: FIFO 4.57 / 5.10 / 5.17 s vs longest-first 4.23 / 4.06 / 4.27 s, a
+  gain of 0.34 / 1.04 / 0.90 s at best.
+- The floor of each wave is its single longest route job (up to 2 s in the first wave), and no ordering beats it.
+- The browser's cpu ×4 throttle barely slows the region warm (6.9–7.4 → 7.4–8.8 s), so the routing in the workers
+  isn't the throttled part. The gain does not grow at 4×.
+- A real predictor (edge length, corridor size) would get perhaps half: ~0.2–0.5 s.
+
+**Settle: 2.4–3.2 s at 1×, 4.0–4.9 s at cpu ×4.**
+- The throttle only slows main-thread work. Solving the 1× and 4× numbers gives ~0.6 s of main-thread work at 1×
+  (~2.3 s at 4×), plus ~2.2 s waiting on the worker's spawn-network builds.
+- A ≥ 1 s lever at 4× has to come out of that ~2.3 s main-thread share.
+- `story-coldload.mjs --mode=reseed`, which should break it down, hung on current code at cpu ×4: its "route warm
+  drained" end condition never fired in 600 s. The predicate needs fixing before the settle can be split.
+
+**Where that leaves PERF-27:**
+- Rows closed: POI placement, plan layer.
+- Route waves: measured, < 1 s, not built.
+- Spawn resolve / settle: the 4× main-thread share (~2.3 s) is the only candidate left; it needs the reseed harness
+  fixed.
+- Pump latency: unmeasured, ≤ ~0.5 s by construction (SETTLE_MIN_MS 400 ms + 250 ms poll).
+- "Behind the menu": the owner's call, numbers above.
+
+### LANDED: the dispatch warm primes pond discs only (`25f2d7fe` → `land/perf-27` `6d51c9d7`, merged to main 2026-11-07, smoke 25/25)
+
+**Reseed harness fixed first.** `story-coldload --mode=reseed`, `hitch-report` and `profile` all waited on
+`__road().lastWarm`. Nothing has set `_lastWarmCenter` since PERF-30 (the network builds off-thread), so all three
+hung. `__road()` now reports `netIdle` (the network client has nothing active and nothing queued), and the three
+harnesses wait on it.
+
+**The lever.**
+- What the fixed reseed breakdown showed (cpu ×4, loaded box): the biggest main-thread bucket in the settle was
+  `road.dispatch.warm`, 4.35 s. That is the network client's water warm before each build, over the whole disc box
+  (~13–18 km across with its stream-length margin), and it traced every stream in that box.
+- The worker routes on pond discs only. `wip/perf-27/waterwarm.mjs`, headless 1×: full warm 1.7 s (320 m window) and
+  2.5–4.1 s (region), against 0.3–0.5 s and 0.6–1.1 s for the ponds alone.
+- New `WaterSystem.warmPonds`: cell scans + rim casts over the box with the ponds' own reach margin. The client's
+  hook uses it.
+- Streams near the player stay warmed per frame (±768 m), which is the anti-hitch job.
+- Cache priming only: the discs are byte-identical, and the world cannot change.
+
+**Measured (loaded box, load ~11–13, so indicative only):** reseed at cpu ×4, seed 2623851183:
+`road.dispatch.warm` 4.35 → 1.08 s, `reseed.reseat` 14.6 → 6.3 s, rebuild 15.2 → 6.8 s, entry 18.2 → 9.7 s.
+
+**Gates:** affected 25/25 green.
+
+**NEXT (to land):**
+1. ~~`cdp-smoke` (main.js changed).~~ PASS 25/25 on the lane head `88b5dc3a` (2026-11-07, lever included).
+2. ~~`fingerprint-world` vs main, as a formality.~~ Lane `926133ee` vs main `327fd0c9` (2026-11-07): only `tiles`
+   differs, in the 5 bore windows (+17 / +18 / +5 / +5 / +5 meshes, exactly BUG-112's bore floors). Everything else
+   is identical in all six windows (network, profiles, junctions, POIs, surface, carve, water, props), and seed 3 is
+   identical outright. The lever changes nothing headless, as expected.
+3. ~~A quiet window.~~ Done 2026-11-07 in the orchestrator's window (load 3–5), using `wip/perf-27/ab-lever.sh`
+   (log `ab-lever-327fd0c9.log`). A = main `327fd0c9` plus the harness fix only (lever line reverted); B = the lane.
+   Built app via `vite preview`, runs interleaved, random seeds 2623851183 and 3997014678:
+
+   | run | cold → driving, A → B | entry | the lever's bucket |
+   |---|---|---|---|
+   | 1× story | 16.08 → 15.50 s · 16.27 → 15.48 s | −0.45 · −0.47 s | reseat 2.7 → 2.3–2.4 s |
+   | ×4 story | 28.04 → 24.71 s · 28.12 → 25.54 s | −1.78 · −1.37 s | reseat 4.5 → 2.9 s |
+   | ×4 reseed | 17.22 → 14.29 s · 18.79 → 15.65 s | −1.57 · −1.73 s | `road.dispatch.warm` 2.2 → 0.57 s |
+
+   - The ×4 boot also drops 1.2–1.4 s, because the boot's network build pays the same warm.
+   - The settle's worst frame at ×4 goes from 2.2–2.3 s to 0.83 s.
+   - go-live is +0.1 / +0.4 s on B. B also carries BUG-112's bore floors and the loop trim; the lever does not touch
+     go-live.
+4. ~~Hash to the orchestrator.~~ `25f2d7fe`, sent 2026-11-07.
+
+**Still open after this (why PERF-27 stays open):**
+- The settle's other main-thread buckets at 4× (measured on a loaded box): `frame.physics` ~1.4 s, props ~1.2 s,
+  render ~1.0 s. Physics stepping behind a loading screen may be a lever. Measure them in a quiet window first; none
+  is built.
+- "Behind the menu", parked by the owner (below).
+- At ×4, 2026-11-07, quiet: cold → driving is still 24.7–25.5 s (boot 4.7–4.9 s + entry 15.5–16 s). The region warm
+  (worker build + pumps, ~7.4–8.1 s) is the biggest single phase left.
+
+### The region warm, traced per thread (Spare, 2026-11-07): it is the network worker's serial plan, not the waves
+
+**How it was measured.** `wip/perf-27/region-trace.mjs` boots the built bundle (main `cf7a93ff`, `vite preview`),
+enters story, and records a Chrome trace of every thread from enter to live. `--prof` adds V8's sampling profiler.
+`wip/perf-27/wave-split.mjs` then cuts the warm into **waves** (at least one route worker running a job) and
+**gaps** (none running), and says what the network worker did in each. `wip/perf-27/pump-self.mjs` sums the profile
+over one class of pump. Quiet box (load 2.7–3.4), three random seeds. No `src/` change.
+
+**The 11-06 scoping guessed the critical path wrong.** It took the route waves to be the critical path: the headless
+simulation gave them 4.6–5.2 s. In the browser they are 2.4–3.0 s, because 25 % of the routes carry over from the
+settle (245–275 jobs against 331–356 headless) and the pool keeps all 4 workers busy for most of each wave. The bigger
+share is the network worker's own thread, in the gaps between waves:
+
+| seed | warm (1×) | waves | gaps | network worker busy in the gaps |
+|---|---|---|---|---|
+| 2623851183 | 6.65 s (no profiler) | 2.40 s | 4.25 s | 3.50 s |
+| 2623851183 | 7.22 s (profiler on) | 2.62 s | 4.61 s | 3.94 s |
+| 3997014678 | 6.94 s (profiler on) | 2.99 s | 3.94 s | 3.17 s |
+| 744309545 | 7.13 s (profiler on) | 2.61 s | 4.52 s | 3.81 s |
+
+The profiler costs about 0.5 s. Read the proportions from the profiled rows and the wall from the plain one.
+
+**What the gaps hold, in order** (seed 2623851183, profiled):
+1. **0.52 s at the start with nobody working.** `SETTLE_MIN_MS` (400 ms) runs after the settle promise has resolved,
+   then the issue frame (`buildNow`'s pond warm, ~0.1 s at 1× and 0.37 s at ×4) runs before the build message leaves.
+   The region centre is captured in `_beginWarm` before the 400 ms starts, so that wait now guards nothing.
+2. **Productive serial bites, ~2.6–3.0 s per seed.** These are single pumps: the band's pass-2 pins
+   (`_v2EdgeDirs → _v2ClearanceFor`, 450–850 ms), the plan layer's pins (335–620 ms), `_v2SettleDeletions`
+   (450–640 ms), and the final pump plus the build (`_assembleGraphEdges`, 0.8–1.3 s, mostly `_v2GradePts`). This
+   matches the headless thread (3.35 s on this seed). It is the floor of the current design.
+3. **Re-scan rounds, ~0.5–0.9 s per seed.** There are 6–8 rounds of pump (140–160 ms) → small wave (10–16 jobs,
+   ~100 ms) → pump. Every pump re-runs the whole scan from the top, although only the jobs that just landed are new.
+   Summed over the 8 rounds on 744309545 (1.28 s):
+   - 31 % is node-position lookups (`_nodePos → _siteAt → _anchorSites`): a string-keyed cache hit, called twice per
+     graph edge per band edge by `_v2ClearPartners`, which is O(E²) (grows with the square of the edge count).
+   - ~32 % is the scan loops' own overhead in `warmBandComplete`, `_warmPass1` and `_warmPlanJobs`: building key
+     strings and doing Set lookups on every edge, every pump.
+   - 12 % is `_v2ClearPartners`'s chord tests.
+   - 14 % is grade solves for the new routes, which is the productive part.
+4. **The end, ~0.13–0.18 s:** the reply, the main-thread adopt (0.32 s at ×4), and up to one 250 ms story poll.
+
+During the waves the worker also re-pumps every 8 ms (pumps of 3–60 ms that find nothing new). That costs about
+1 s of CPU per warm, but it overlaps routing.
+
+**×4 adds only the main thread.** Seed 2623851183 goes from 6.65 s to 7.37 s. Main-thread-only time goes from 0.43 s
+to 1.08 s (the issue frame and the adopt). The workers' numbers do not move.
+
+**Each wave's floor is its longest single route job.** There are 1–2 jobs per seed of 680–780 ms, each of which sets
+a wave on its own (wave 3 on 2623851183: 10 jobs, 809 ms, one of them 719 ms). No dispatch order beats that.
+
+#### Levers, cheapest first (estimates at 1×, per warm of ~7 s)
+
+| lever | where | saves | risk / proof |
+|---|---|---|---|
+| L2: issue the build on the first warming frame (drop the 400 ms floor there) | `story.js` warming branch | ~0.4 s, at 1× and ×4 | one line. The centre is already captured and the settle promise awaited. cdp-smoke |
+| L3: react to the build promise instead of the 250 ms poll | `story.js` / `main.js` pumpRegionWarm | ~0.1 s on average | small. cdp-smoke |
+| L1: make the re-scan cheap. Seat each graph's node positions and edge chord boxes once per graph; memo `_v2ClearPartners` per (graph, edge, frozen-deletion set) | `road.js` plan layer | ~0.4–0.6 s on the critical path, plus ~1 s of CPU in the waves | medium. Pure caching, so the output is identical: fingerprint-world + network-worker-parity |
+| L1b: skip a pump when no route reply has landed since the last one | `road-network-worker.js` prewarm loop | CPU only (~1 s): frees a core during waves, wall gain unmeasured | small, but it needs the "nothing changed ⇒ same answer" argument checked against `_v2SettleDeletions`' frozen sets |
+| L4: the 680–780 ms single route jobs | `corridor-router.js` | up to ~0.5 s | router internals. Not cheap |
+| L5: the serial plan floor (~3 s) | plan layer | most of the 3 s | needs the per-edge grade solves fanned out to the pool. Large |
+
+**L2 + L3 + L1 ≈ 0.9–1.1 s off a ~7 s warm** (13–15 %). They would take ×4 cold → driving from ~25 s to ~24 s. None is
+built. L4 and L5 are the only ones that move the order of magnitude, and neither is cheap.
+
+#### L2 + L3 BUILT (`land/perf-27-warm`, 2026-11-07)
+
+**L2: the 400 ms `SETTLE_MIN_MS` floor is gone.** Its history:
+- **Added in `272e7ce4`** (FEAT-43, 2026-07-26), the story-mode sandbox's first commit. Its reason, verbatim: "Grace
+  after enter() before the region center is captured: the reseat/reseed is async, so the truck is not at the spawn
+  yet. deps.reseat()/applySeed() return promises we await, and this is only the belt-and-braces floor + ceiling around
+  them." The line itself said: "let the post-reseat frame land first".
+- **The centre half never held.** Even in `272e7ce4`, `_beginWarm` captures the centre and only then enters
+  'warming' with `_elapsed = 0`. The floor ran in the warming branch, after the capture, so it never delayed the
+  capture. The awaited settle promise was the real guard from day one, and it stays.
+- **The frame half held until PERF-30.** In `272e7ce4` the first warm pump ran the region on the MAIN thread
+  (`setRadius` + `warmBandComplete` + an `update` that registered the whole region): a long freeze. The floor let the
+  reseated frame paint before it. Since PERF-30 the first pump only posts the build to the network worker, after the
+  pond-disc warm (~0.1 s at 1×, 0.37 s at ×4). There is no freeze left to get ahead of, and the loading screen is up
+  either way.
+- **Nothing else reads the 400 ms.** The road stream is suspended from the moment the phase is 'warming'
+  (`isRoadStreamSuspended`), so no other build can slip in ahead of the region build. The region network is a pure
+  function of (seed, centre, radius), so the order would not matter anyway.
+
+The `SETTLE_MAX_MS` ceiling stays.
+
+**L3: the build's promise pumps story.** `pumpRegionWarm`'s `buildNow(...).then` calls `storySystem.pumpWarmNow()`,
+which sets `_pumpAcc` to `WARM_PUMP_MS`: the same "pump on the next frame" idiom `_beginWarm` uses. The finished
+build is seen on the next frame, not up to 250 ms later. The synchronous fallback (no Worker) keeps its 250 ms pump.
+
+**Measured** (`wip/perf-27/ab-warm.sh`, log `ab-warm-l23.log`). A = main `cf7a93ff`, B = this branch, built bundles,
+runs interleaved, load ~4:
+
+| seed | cpu | story entry (click → live), A → B | settle + region warm, A → B | cold → driving, A → B |
+|---|---|---|---|---|
+| 2623851183 | 1× | 10.77 → 10.46 s (−0.31) | 9.31 → 8.99 s | 15.28 → 15.14 s |
+| 3997014678 | 1× | 10.56 → 10.24 s (−0.32) | 9.15 → 8.80 s | 15.23 → 14.98 s |
+| 744309545 | 1× | 10.28 → 9.93 s (−0.35) | 8.68 → 8.33 s | 15.06 → 14.66 s |
+| 2623851183 | ×4 | 15.50 → 15.40 s (−0.10) | 10.57 → 10.45 s | 25.04 → 24.87 s |
+| 3997014678 | ×4 | 15.46 → 15.11 s (−0.35) | 10.59 → 10.40 s | 25.05 → 24.80 s |
+| 744309545 | ×4 | 15.87 → 15.49 s (−0.38) | 10.09 → 9.68 s | 25.51 → 25.14 s |
+
+- **About −0.3 s of story entry**, in every cell. That is below the 0.5 s estimate. The 400 ms seems to have been
+  absorbing some trailing settle work, which now overlaps the region build instead.
+- **Read the sum, not the split.** On B the harness's settle row grows and its region-warm row shrinks (at ×4,
+  settle +0.3–0.45 s). The issue frame (0.37 s at ×4) now runs on the very next frame, and the harness's 50 ms phase
+  poll cannot see 'warming' until that frame ends. The boundary moved; the work did not grow.
+
+### "Behind the menu" — PARKED (owner, 2026-11-06)
+
+Owner, verbatim (perf27-menu, "not now"): "not now. but record the findings we could add this later."
+
+The findings stand as recorded above, in "The 'behind the menu' call: what it would cost the menu":
+- **What it hides:** the whole story entry, 11.2–11.5 s at 1× and ~17.7 s at cpu ×4 (quiet window).
+- **What it costs the menu:** median 60 fps at both speeds. Worst hitch 0.3–0.6 s at 1× and 1.6–2.3 s at cpu ×4, all in
+  the settle.
+- **How:** pre-roll the blank-seed `Math.random()` at boot and generate that world, region included, while the player
+  is in the menu. Still pure generation, nothing saved (cold-generation rule).
+- **The design half** (free roam's boot world becomes random too, or is built second) went to Lane A with the
+  free-roam random-seed work (orchestrator, 2026-11-06).
+
+Nothing is built. If it comes back, re-time the menu hitch first: the settle's main-thread share is what stalls the
+menu, and `25f2d7fe` (above) shrinks it.

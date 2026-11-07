@@ -8499,6 +8499,7 @@ const storySystem = new StorySystem({
         roadSystem.setRadius(radius)
         netClient.buildNow('play', center.x, center.z, radius).then((ok) => {
           if (_regionNetBuild === st) { if (ok) st.done = true; else _regionNetBuild = null }
+          storySystem.pumpWarmNow()   // PERF-27: seen next frame, not up to 250 ms later
         })
       }
       return false
