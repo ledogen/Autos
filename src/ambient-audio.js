@@ -7,9 +7,11 @@
  *              each voice at its own 1.6–2.6 chirps/s, one close and the rest off in the dark. Night
  *              only (sky.js nightWeight), and ONLY with the truck under 5 mph: a slow ~10 s fade in,
  *              out above it (owner, 2026-11-02).
- *   grass    — off-road over green ground: blades (a broad ~3 kHz band) and stems dragging the bumper
- *              (~900 Hz), as discrete BRUSH HITS with a sharp attack and a tail over a quiet bed
- *              (owner, 2026-11-02: "needs attack and release" — the take's symmetric swells did not).
+ *   grass    — off-road over green ground: stems dragging the bumper (~900 Hz), as discrete BRUSH HITS
+ *              with a sharp attack and a tail over a quiet bed (owner, 2026-11-02: "needs attack and
+ *              release" — the take's symmetric swells did not). The blades' broad ~3 kHz white-noise band
+ *              is gone: it was the "high freq hiss thats super loud offroad" (owner, 2026-11-07), ~4× the
+ *              stems' level where the ear is most sensitive. A recorded gravel/brush take is owed.
  */
 
 import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
@@ -32,7 +34,7 @@ const GRASS_LEVEL = 0.5              // the take's level
 let crOut = null
 let crFade = 0         // 0..1, linear in time; the gain is its square, so the swell is even in dB
 const voices = []      // { g, rate, next }
-let hiG = null, loG = null, hi = null
+let loG = null
 
 const clamp01 = x => Math.max(0, Math.min(1, x))
 
@@ -63,9 +65,7 @@ export function ensureAmbientAudio () {
   }
 
   const out = gain(GRASS_LEVEL, bus)
-  hiG = gain(0, out); hi = filt('bandpass', 3000, 0.6, hiG)
   loG = gain(0, out)
-  loopNoise(ctx, noise).connect(hi)
   loopNoise(ctx, noise).connect(filt('bandpass', 900, 1.2, loG))
   started = true
 }
@@ -102,18 +102,12 @@ export function updateAmbientAudio (speed, night, green, dt) {
 
   // Grass: a bed at GRASS_BED of the level, and brush hits on top — sharp attack, a 0.12–0.3 s tail.
   const lvl = enabled ? grassVol * green * clamp01(speed / GRASS_FULL_MS) ** 0.8 : 0
-  hi.frequency.setTargetAtTime(2400 + 1400 * clamp01(speed / GRASS_FULL_MS), now, 0.2)
   let hits = 0
   for (let p = HITS_PER_MS * speed * green * dt; p > 0; p -= 1) if (Math.random() < Math.min(1, p)) hits++
-  if (!hits) {
-    hiG.gain.setTargetAtTime(lvl * GRASS_BED * 0.6, now, 0.15)
-    loG.gain.setTargetAtTime(lvl * GRASS_BED * 0.45, now, 0.15)
-  }
+  if (!hits) loG.gain.setTargetAtTime(lvl * GRASS_BED * 0.45, now, 0.15)
   for (let i = 0; i < hits; i++) {
     const t = now + Math.random() * dt, peak = lvl * (0.5 + 0.5 * Math.random()), rel = 0.12 + 0.18 * Math.random()
-    for (const [g, share] of [[hiG, 0.6], [loG, 0.45]]) {
-      g.gain.setTargetAtTime(peak * share, t, 0.004)
-      g.gain.setTargetAtTime(lvl * GRASS_BED * share, t + 0.015, rel)
-    }
+    loG.gain.setTargetAtTime(peak * 0.45, t, 0.004)
+    loG.gain.setTargetAtTime(lvl * GRASS_BED * 0.45, t + 0.015, rel)
   }
 }
