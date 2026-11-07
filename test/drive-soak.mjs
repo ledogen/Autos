@@ -299,7 +299,25 @@ async function soakSeed (seed, replay = null) {
         || w.road.tunnelSpanAt?.(nr?.runKey ?? '', nr?.arcS ?? 0)
       // On the drawn terrain or road (a bank, a kerb, the deck): visible, whatever its slope — so its normal says nothing.
       const onSurface = Math.abs(hp.y - ground(hp.x, hp.z, hp.y)) < 0.5
-      if (!near && !onSurface) flag('collider', hit.impulse, { hitAt: { x: +hp.x.toFixed(2), y: +hp.y.toFixed(2), z: +hp.z.toFixed(2) }, surfaceY: +ground(hp.x, hp.z, hp.y).toFixed(2) })
+      if (!near && !onSurface) {
+        flag('collider', hit.impulse, { hitAt: { x: +hp.x.toFixed(2), y: +hp.y.toFixed(2), z: +hp.z.toFixed(2) }, surfaceY: +ground(hp.x, hp.z, hp.y).toFixed(2) })
+        // SOAK_TRACE on a replay: what the ENGINE has round the hit — rays straight down from 3 m up, terrain-only and
+        // static-only (GROUP_TERRAIN 1, GROUP_STATIC 8), against the drawn ground; and the hit's own normal.
+        if (replay && process.env.SOAK_TRACE) {
+          const nw = hit.normal ? new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z).applyQuaternion(vs.quaternion) : null
+          console.log(`    collider: hit (${hp.x.toFixed(2)}, ${hp.y.toFixed(2)}, ${hp.z.toFixed(2)}) normal ${nw ? `(${nw.x.toFixed(2)}, ${nw.y.toFixed(2)}, ${nw.z.toFixed(2)})` : '-'} · truck (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)})`)
+          for (let dz = -1.5; dz <= 1.501; dz += 0.5) {
+            const row = []
+            for (let dx = -1.5; dx <= 1.501; dx += 0.5) {
+              const x = hp.x + dx, z = hp.z + dz, g = ground(x, z, hp.y)
+              const t = w.engine.castRay({ x, y: g + 3, z }, { x: 0, y: -1, z: 0 }, 6, { collidesWith: 1n })
+              const st = w.engine.castRay({ x, y: g + 3, z }, { x: 0, y: -1, z: 0 }, 6, { collidesWith: 8n })
+              row.push(`${t ? (t.point.y - g).toFixed(2) : '  -  '}${st ? 'S' + (st.point.y - g).toFixed(1) : ''}`)
+            }
+            console.log(`      dz ${dz.toFixed(1)}: ${row.join(' ')}`)
+          }
+        }
+      }
     }
     const v = vs.velocity.length()
     stuckT = onRoad && vs.throttle > 0.5 && v < 0.5 ? stuckT + DT : 0
