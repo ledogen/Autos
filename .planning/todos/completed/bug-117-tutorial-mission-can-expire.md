@@ -1,7 +1,7 @@
 ---
 id: BUG-117
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-06
 source: owner, 2026-11-06 playtest (relayed by the orchestrator, verbatim) — "Mom's tutorial mission is able to hard expire. Which means the player will never end up at Larry's house to get the final tutorial cards. This first mission must not be able to expire and needs to block the progression of the story mode upon the player arriving at Larry's. I also don't really like how this first mission can have a variable amount of pay depending on how long the route is so I think I'm considering making this part of the skippable tutorial and for it to not reward the player. Maybe just a letter reward."
@@ -48,3 +48,18 @@ recommendation it would give none, so the deeds gate counts only real jobs. Alte
 - [x] The first job never expires (gate: offer-board).
 - [x] It cannot be abandoned; it ends only at Larry's, where his welcome plays (smoke: story, endings, pad).
 - [ ] The owner's pay call, then built.
+
+## Resolution — the owner's pay call, built (Lane A, 2026-11-07)
+
+**Owner, bug117-pay: "1 — a letter, no pay".** Mom's casserole pays nothing and earns no deed. It is the tutorial's
+grade and nothing else, so every seed starts on the same wallet and the deeds count real jobs only.
+
+- **The card** (`src/offer-board.js` `card`): no pay line and no deed line on mom's offer. It still shows no time
+  limit.
+- **The settle** (`src/main.js` onSettle): `mission.first` (set in `_planOne` from the spec, so a resumed job keeps it)
+  settles with $0 and no deed, and completes the offer, so Larry's welcome follows as before.
+- **The result card**: its letter and its time, the paper route's form, with no money rows and no deed row.
+- Gate: `test/offer-board.mjs` checks the card has no pay and no deed. The smoke's `story`, `endings` and `pad` steps
+  deliver the casserole and read Larry's welcome after its card.
+
+Every acceptance line above was already ticked; this closes the last owed call.

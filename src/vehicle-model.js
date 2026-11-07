@@ -527,6 +527,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   applyHeadlights()
   /** Set the lamps directly: 0 = off, 1 = low, 2 = high. The stage parks a DEAD truck, so it wants 0. */
   const setHeadlightMode = (m) => { headlightMode = m & 3; applyHeadlights() }
+  const getHeadlightMode = () => headlightMode   // FEAT-34: the cluster's high-beam lamp (2 = high)
   if (keyBindings && typeof window !== 'undefined') {
     window.addEventListener('keydown', (e) => {
       if (e.key === 'l' || e.key === 'L') { headlightMode = (headlightMode + 1) % 3; applyHeadlights() }
@@ -1120,6 +1121,6 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   }
 
   shadeInBore(carGroup)   // BUG-112: the procedural parts (wheels, the primitive shell)
-  return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode,
+  return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, getHeadlightMode,
     prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade, headlightSpots }   // BUG-133: the billboards read the head spots
 }

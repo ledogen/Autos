@@ -51,6 +51,8 @@ const KEY_FASCIA_R = 12   // the silver escutcheon the key turns in
 // Escutcheon metal. The rest of the cluster is dark plastic; the ignition surround is the one part
 // of a real dash that is bare metal, and that contrast is what makes the switch findable.
 const LAMP_ORANGE = '#ff9a1f'   // FEAT-50 low-fuel lamp, lit
+const LAMP_RED    = '#ff3a26'   // FEAT-34 BRAKE lamp, lit
+const LAMP_BLUE   = '#3d84ff'   // FEAT-34 high-beam lamp, lit
 const STEEL_HI = '#e4e4de'
 const STEEL    = '#b4b4ac'
 const STEEL_LO = '#6f6f68'
@@ -101,6 +103,8 @@ export class GaugeCluster {
     this._fuelFrac = 0.62
     this._lowFuel = false
     this._flat = false
+    this._parkBrake = false
+    this._highBeam = false
     this._tempFrac = 0
     this._fuelShown = 0      // sweep up from rest on load, like a key-on
     this._tempShown = 0
@@ -147,6 +151,12 @@ export class GaugeCluster {
 
   /** FEAT-94: the tire-pressure lamp's sender — true while any tire is flat. Lit only with the key on. */
   setFlat (on) { this._flat = !!on }
+
+  /** FEAT-34: the BRAKE lamp's sender — the parking brake applied (latched, or held). Lit only with the key on. */
+  setParkBrake (on) { this._parkBrake = !!on }
+
+  /** FEAT-34: the high-beam lamp's sender. On the headlamp circuit, not the ignition: lit with the key off too. */
+  setHighBeam (on) { this._highBeam = !!on }
 
   /** 0 = C, 1 = H (FEAT-51: C = 90 °C, mid = 100 °C, H = 110 °C on the stock thermostat). */
   setCoolantTemp (frac) { this._tempFrac = Math.max(0, Math.min(1, frac)) }
@@ -200,12 +210,15 @@ export class GaugeCluster {
     const d = this._drawn
     if (d.speed === this._speedMph && d.rpm === this._rpm && d.temp === this._tempShown
         && d.fuel === this._fuelShown && d.odo === this._odoMiles
-        && d.key === this._keyAngle && d.keyPos === this._keyPos && d.low === this._lowLit() && d.flat === this._flatLit() && d.gear === this._gear) return
+        && d.key === this._keyAngle && d.keyPos === this._keyPos && d.low === this._lowLit() && d.flat === this._flatLit() && d.gear === this._gear
+        && d.brake === this._brakeLit() && d.high === this._highBeam) return
     d.speed = this._speedMph; d.rpm = this._rpm; d.temp = this._tempShown
     d.fuel = this._fuelShown; d.odo = this._odoMiles; d.key = this._keyAngle; d.keyPos = this._keyPos
     d.low = this._lowLit()
     d.flat = this._flatLit()
     d.gear = this._gear
+    d.brake = this._brakeLit()
+    d.high = this._highBeam
 
     const ctx = this._ctx
     ctx.clearRect(0, 0, W, H)
@@ -214,6 +227,8 @@ export class GaugeCluster {
     this._drawNeedle(ctx, TEMP, this._tempShown, 22, 2)
     this._drawLowFuelLamp(ctx)
     this._drawFlatLamp(ctx)
+    this._drawBrakeLamp(ctx)
+    this._drawHighBeamLamp(ctx)
     this._drawGear(ctx)
     this._drawNeedle(ctx, FUEL, this._fuelShown, 22, 2)
     this._drawNeedle(ctx, TACH, this._rpm / (this._tachMax * 1000), 48, 3)
@@ -596,6 +611,49 @@ export class GaugeCluster {
     ctx.beginPath()
     ctx.arc(x, y + 3.6, 1, 0, Math.PI * 2)
     ctx.fill()
+    ctx.restore()
+  }
+
+  // FEAT-34: the 2002 Ranger's two state lamps (owner guide's cluster drawing; colours per FMVSS 101 — a brake telltale
+  // is red, high beam blue). BRAKE: "((!))" over the word, as the 2002 cluster draws it at the tach's lower left —
+  // here in the tach's empty lower right, the left being this face's scale. Lit while the parking brake is applied
+  // and, as the guide says, "momentarily at start up to ensure the circuit is functional" (the key at START).
+  _brakeLit () { return this._keyPos === 'start' || (this._parkBrake && this._keyPos !== 'off') }
+  _drawBrakeLamp (ctx) {
+    const x = TACH.cx + 34, y = TACH.cy + 26
+    const lit = this._brakeLit()
+    ctx.save()
+    if (lit) { ctx.shadowColor = 'rgba(255,50,30,0.9)'; ctx.shadowBlur = 7 }
+    ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_RED : '#3a1210'
+    ctx.lineWidth = 1.4
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.arc(x, y, 4.2, 0, Math.PI * 2)                                           // the drum
+    ctx.moveTo(x - 6.4 + 1.2, y - 3.6); ctx.arc(x, y, 6.4, 214 * DEG, 146 * DEG, true)   // ( — the shoes
+    ctx.moveTo(x + 6.4 - 1.2, y + 3.6); ctx.arc(x, y, 6.4, 34 * DEG, -34 * DEG, true)    //   )
+    ctx.moveTo(x, y - 2.3); ctx.lineTo(x, y + 0.6)
+    ctx.stroke()
+    ctx.beginPath(); ctx.arc(x, y + 2.2, 0.75, 0, Math.PI * 2); ctx.fill()
+    ctx.font = 'bold 5.5px Arial, sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText('BRAKE', x, y + 11)
+    ctx.restore()
+  }
+
+  // FEAT-34: the HIGH BEAM lamp — "≡D", beams left of a lamp's flat face — in the fuel pod, mirroring the low-fuel
+  // lamp, as the 2002 cluster sets it beside its fuel gauge. Blue.
+  _drawHighBeamLamp (ctx) {
+    const x = FUEL.cx + 15, y = FUEL.cy + 9
+    const lit = this._highBeam
+    ctx.save()
+    if (lit) { ctx.shadowColor = 'rgba(70,130,255,0.9)'; ctx.shadowBlur = 7 }
+    ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_BLUE : '#10182e'
+    ctx.lineWidth = 1.3
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(x - 0.5, y - 3.5); ctx.arc(x - 0.5, y, 3.5, -90 * DEG, 90 * DEG); ctx.closePath()   // the lamp, flat face left
+    for (const dy of [-3, 0, 3]) { ctx.moveTo(x - 2.5, y + dy); ctx.lineTo(x - 6, y + dy) }        // the beams
+    ctx.stroke()
     ctx.restore()
   }
 
