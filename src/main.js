@@ -6714,7 +6714,8 @@ function _renderMissionUI () {
         const q = _mom(), vp = vehicleState.position
         if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · park there to sleep`
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
-        if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · ${keycap('R', 'D-pad →')} puts you back on it`)
+        // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
+        if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · <span class="kc-pad">hold </span>${keycap('R', 'D-pad →')} puts you back on it`)
       }
       break
   }
