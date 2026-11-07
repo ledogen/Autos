@@ -527,7 +527,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   applyHeadlights()
   /** Set the lamps directly: 0 = off, 1 = low, 2 = high. The stage parks a DEAD truck, so it wants 0. */
   const setHeadlightMode = (m) => { headlightMode = m & 3; applyHeadlights() }
-  const getHeadlightMode = () => headlightMode   // FEAT-34: the cluster's high-beam lamp (2 = high)
+  const getHeadlightMode = () => headlightMode   // FEAT-34: the cluster's headlamp lamp (1 low = green, 2 high = blue)
   if (keyBindings && typeof window !== 'undefined') {
     window.addEventListener('keydown', (e) => {
       if (e.key === 'l' || e.key === 'L') { headlightMode = (headlightMode + 1) % 3; applyHeadlights() }
