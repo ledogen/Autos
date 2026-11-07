@@ -508,13 +508,13 @@ export class GaugeCluster {
       this._labelAt(ctx, g, n / max, g.scaleR - 13, String(n))
     }
     // Legends — kept left of the cusp (see TACH): RPM x1000 at the top under the numerals, as the 2002
-    // prints it; the fuel legend under the gear.
+    // prints it; the fuel legend low and right of the gear, clear of BRAKE on the left.
     ctx.fillStyle = WHITE
     ctx.font = 'bold 8px Arial, sans-serif'
     ctx.fillText('RPM x1000', g.cx, g.cy - 22)
     ctx.font = '7px Arial, sans-serif'
-    ctx.fillText('UNLEADED', g.cx, g.cy + 35)
-    ctx.fillText('< FUEL ONLY', g.cx, g.cy + 43)
+    ctx.fillText('UNLEADED', g.cx + 13, g.cy + 38)
+    ctx.fillText('< FUEL ONLY', g.cx + 13, g.cy + 46)
   }
 
   _paintSpeedo (ctx) {
@@ -666,7 +666,7 @@ export class GaugeCluster {
   // and, as the guide says, "momentarily at start up to ensure the circuit is functional" (the key at START).
   _brakeLit () { return this._keyPos === 'start' || (this._parkBrake && this._keyPos !== 'off') }
   _drawBrakeLamp (ctx) {
-    const x = TACH.cx - 30, y = TACH.cy + 28
+    const x = TACH.cx - 27, y = TACH.cy + 27
     const lit = this._brakeLit()
     ctx.save()
     if (lit) { ctx.shadowColor = 'rgba(255,50,30,0.9)'; ctx.shadowBlur = 7 }
