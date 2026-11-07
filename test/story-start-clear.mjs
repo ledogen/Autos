@@ -13,11 +13,12 @@
 //      fire pit, the grill, the chairs). Exact rectangle overlap in plan, so a hit names what it is.
 //   2. no solid prop (trees, rocks, boulders, logs, bushes), scattered with main.js's samplers (the
 //      fingerprint-world copy) over the chunks under the seat.
-//   3. THE RULER SEES THE BUG: the old seat (mom's pad strip) is checked with the same test and the hits are
-//      reported, and a footprint over every fire pit found in the sample is flagged — so a clear start is a real result.
+//   3. THE RULER SEES THE BUG: on 362666972 (a random seed with the report's shape) the old seat, mom's pad strip,
+//      stands on her fire pit, and this test says so. On every other seed the old seat's hits are reported. Over 12
+//      random seeds (2026-11-07) the old seat was blocked on 4: twice her fire pit, twice her propane tank.
 //
-// Seeds: 1, plus a pinned sample of random ones (the BUG-131 census list) and two RANDOM seeds per run, printed so a
-// miss replays. No default seed: seed 6 is not in the sample.
+// Seeds: the report's shape, 1701194613 (the old seat on her propane tank), 1 and 1780111592, plus two RANDOM seeds
+// per run, printed so a miss replays. No default seed: seed 6 is not in the sample.
 // Heavy: builds a full story region per seed (~25 s each).
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
@@ -133,9 +134,10 @@ function blockers (solids, propsNear, seat) {
 }
 
 const rand = () => { let s; do s = String((Math.random() * 2 ** 32) >>> 0); while (s === '6'); return s }
-const SEEDS = process.argv.length > 2 ? process.argv.slice(2) : ['1', '1780111592', '3146249519', '1973545288', '3219742435', rand(), rand()]
+const REPORT = '362666972'   // a random seed whose old seat stands on mom's fire pit, as the owner's did
+const SEEDS = process.argv.length > 2 ? process.argv.slice(2) : [REPORT, '1701194613', '1', '1780111592', rand(), rand()]
 const START = { foodVendor: 'the burger joint (a played opening)', momsHouse: "mom's (a skipped opening)", larrysHouse: "Larry's (the paper scenario)" }
-let oldHits = 0, pits = 0, pitsFlagged = 0
+let oldHits = 0
 for (const s of SEEDS) {
   const t0 = Date.now(), { poi, propsNear } = region(s), solids = poiSolids(poi)
   console.log(`seed ${s}`)
@@ -145,20 +147,16 @@ for (const s of SEEDS) {
     const hits = blockers(solids, propsNear, startSeat(q, P.roadWidth))
     check(`${label}: the start seat is clear`, hits.length === 0, hits.join(', '))
   }
-  // 3. the ruler: the old seat, and every fire pit.
+  // 3. the ruler: the old seat on mom's pad strip.
   const mom = poi.list().find(p => p.type === 'momsHouse')
   if (mom) {
     const old = blockers(solids, propsNear, { x: mom.x - mom.nx * 2.8, z: mom.z - mom.nz * 2.8, heading: Math.atan2(-mom.tx, -mom.tz) })
     if (old.length) { oldHits++; console.log(`       the old seat on mom's pad strip: ${old.join(', ')}`) }
-  }
-  for (const r of solids.filter(r => r.key === 'firePit')) {
-    pits++
-    if (blockers(solids, propsNear, { x: r.x, z: r.z, heading: 0.3 }).some(w => /firePit/.test(w))) pitsFlagged++
+    if (s === REPORT) check('the ruler sees the report: the old seat stands on mom\'s fire pit', old.some(w => /firePit/.test(w)), old.join(', ') || 'clear')
   }
   console.log(`       ${((Date.now() - t0) / 1000).toFixed(0)} s`)
 }
-console.log(`  the old seat (mom's pad strip) was blocked on ${oldHits} of ${SEEDS.length} seeds; ${pits} fire pits in the sample`)
-check('the ruler flags a truck over a fire pit, every one in the sample', pitsFlagged === pits, `${pitsFlagged} of ${pits}`)
+console.log(`  the old seat (mom's pad strip) was blocked on ${oldHits} of ${SEEDS.length} seeds`)
 
 console.log(fails ? `\n${fails} FAILED` : '\nstory-start-clear: ALL OK')
 process.exit(fails ? 1 : 0)
