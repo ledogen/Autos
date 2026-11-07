@@ -38,11 +38,12 @@ sideways at 8 m/s + 3 rad/s / 10 m/s + 4 rad/s; the reported depths reach 1.5 m 
    says a prop contact is capped at r and "never trips the failsafe". Deep in a rock during a tumble it did.
 
 **Fix:** inside is a ray-parity count (one skewed ray, Möller–Trumbore; run only when the point is within reach or
-the nearest face disagrees, so the common miss costs nothing more), and an inside centre reports depth r —
-continuous with r − distance at the surface and under the failsafe. A wheel deeper in a rock than that is the
-wheel's hard core's job: the engine mirrors the rock and pushes it out over a few steps.
+the nearest face disagrees, so the common miss costs nothing more), and an inside centre keeps BUG-54's way out,
+depth r + distance, held under 1.9 r — below the failsafe's 2r. (A flat r would break BUG-54's own design: its gates
+`props` and `rock-collision-mesh` require an inside depth > r that clears the rock within three steps; 1.9 r passes
+both.) A wheel deeper in a rock than that is the wheel's hard core's job: the engine mirrors the rock and pushes it out.
 
 - **Gate** `rock-contact` (fast, 0.8 s): every rock/boulder mesh of the seed-6 palette, 20,000 points against an
   independent three-ray inside test — main 269 of 18,028 outside points read inside, deepest 12.4 m; fixed 0, deepest
-  0.368 m (= r) — and the drive/tumble scenarios above: main 16 failsafe steps, fixed 0 (deepest wheel contact 0.12 m).
+  0.699 m (< 2r) — and the drive/tumble scenarios above: main 16 failsafe steps, fixed 0 (deepest wheel contact 0.12 m).
 - Probes: `CarGame-machine/wip/bug-139/inside.mjs [seed] [n]` (the census on a world's rocks), `closed.mjs`.

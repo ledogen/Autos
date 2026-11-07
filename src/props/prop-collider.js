@@ -74,9 +74,10 @@ const _cpt = [0, 0, 0]
  * BUG-139: which side the centre is on is a ray-parity count, not the nearest face's normal. Where the
  * nearest point is an edge or vertex several faces share it, and the one picked can face away from the
  * centre: 2.3 % of points just outside the game's rocks read INSIDE, at depth r + distance (up to 4 m).
- * And inside, the depth is r, not r + distance — continuous with r − distance at the surface, and under
- * physics.js's 2r tunnelling failsafe, which a prop contact must never reach (the wheel's hard core in
- * the engine, which mirrors the rock, carries a deeper overlap). Both teleported the truck up off rocks.
+ * And inside, the depth r + distance (BUG-54's way out: stepping it along the normal clears the rock) is held
+ * under 1.9 r — physics.js's tunnelling failsafe lifts the body by any wheel contact past 2r, and a prop
+ * contact must never reach it (the wheel's hard core, which the engine mirrors the rock against, carries a
+ * deeper overlap out over a few steps). Both teleported the truck up off rocks.
  */
 export function sphereVsMesh(cx, cy, cz, r, tris) {
   let bestD2 = Infinity, bi = -1, bx = 0, by = 0, bz = 0
@@ -102,7 +103,7 @@ export function sphereVsMesh(cx, cy, cz, r, tris) {
   const inside = rayParity(cx, cy, cz, tris)
   if (!inside && d >= r) return null
   const s = inside ? -1 / d : 1 / d
-  return { nx: bx * s, ny: by * s, nz: bz * s, depth: inside ? r : r - d }
+  return { nx: bx * s, ny: by * s, nz: bz * s, depth: inside ? Math.min(r + d, 1.9 * r) : r - d }   // 1.9 r: see above
 }
 
 // Is (px,py,pz) inside the closed mesh? Crossings of one ray (Möller–Trumbore), odd = inside. The direction is skewed

@@ -6,7 +6,8 @@
 // shared by several faces the one picked can face away, and 2.3 % of points just outside the game's rocks read inside,
 // at depth r + distance (up to 4 m). A truly inside centre read r + distance too. Past 2r either fires Step 1's failsafe.
 //   1. CONTACT: points around every rock and boulder variant of the palette (seed 6), against an independent inside test
-//      (three-ray majority): no outside point reads inside (depth > r), and no depth ever exceeds r.
+//      (three-ray majority): no outside point reads inside (depth > r), and no depth ever reaches 2r (an inside centre
+//      keeps BUG-54's way out, r + distance, held under 1.9 r).
 //   2. DRIVE + TUMBLE: the truck over a half-buried rock on flat ground (the rock mirrored into the engine as the game
 //      does), driven at 5/10/15 m/s and tumbled sideways onto it: no step's wheel query reaches 2r.
 import * as THREE from 'three'
@@ -54,7 +55,7 @@ for (let k = 0; k < 20000; k++) {
   if (hit && hit.depth > r + 1e-9) falseIn++
 }
 check(falseIn === 0, `${rocks.length} rock/boulder meshes, ${outPts} points outside them: ${falseIn} read INSIDE (main: 2.3 %, up to 4 m deep)`)
-check(maxDepth <= r + 1e-9, `the deepest rock contact is ${maxDepth.toFixed(3)} m (≤ r = ${r} m; the failsafe fires past ${(2 * r).toFixed(3)} m)`)
+check(maxDepth < 2 * r, `the deepest rock contact is ${maxDepth.toFixed(3)} m (the failsafe fires past 2r = ${(2 * r).toFixed(3)} m; main 12.4 m)`)
 
 // ── 2. drive over and tumble onto a half-buried rock ─────────────────────────────────────────────────────────────
 const up = new THREE.Vector3(0, 1, 0)
