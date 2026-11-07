@@ -1,9 +1,10 @@
 ---
 id: FEAT-179
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-06
+closed: 2026-11-07
 source: owner, 2026-11-06 playtest (via the orchestrator) — "There should always be two service stations on the map, I think my current seed has one.3-8-6-7-7-3-7-0-5"
 relates: FEAT-164 (camp-reach guarantee — the gate pattern), SM-3 (parts / service / shop), feedback_cold_generation_only
 ---
@@ -112,3 +113,10 @@ Owner page: https://claude.ai/artifact/N3x8Co14XVye6XLkbXLpnf (shots in `wip/fea
 
 **Smoke on the lane head `88b5dc3a`** (main `be546ce9` merged, run through `tools/chrome-slot.sh`): PASS, 25 steps,
 zero console errors.
+
+## Resolution (2026-11-07)
+
+Closed on the gate. Owner, 2026-11-07 10:41, on `feat179-map`: "(a) leave it". The map is unchanged. Every seed's
+roster already places two auto shops, and on 386773705 both stand inside the wall. The owner saw one because the map
+opens framed on the route, and zoomed out the doctor's diamond covers the second shop's wrench. `expedition-camp`
+now pins two auto shops inside the wall on seeds 1 and 6 (`320c6d03`). That gate change rides Spare's next landing.
