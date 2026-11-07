@@ -62,13 +62,16 @@ export const DAY_PARAMS = {
     // the ramp [DEFAULT]). A run starts on a standard meal, and SLEEP STOPS THE CLOCK (FEAT-173, owner
     // 2026-11-06: "sleeping should not run the hunger meter", which retired 'bedtime counts as a meal'):
     // the hold stands still for the night, so a meal eaten at camp in the evening is all there at waking.
-    // OFF for the owner's alpha playtest (2026-11-06): no shop or food vendor sells food yet, so hunger only
-    // drained the run. Flip back to true once food is buyable.
-    hungerOn:     false,
+    // ON by default (owner, 2026-11-07, feat169-play: "turn it on by default but leave the toggle for me in case i
+    // want to turn it off in playthrough"): food is buyable since FEAT-104. The toggle is the debug folder's 'hunger'.
+    hungerOn:     true,
     hungryRate:   1.25,
     starvingRate: 1.5,
     hungryRampH:  4,
     mealHoldH:    8,      // a standard meal (the burger, the dinner invitation)
+    // The energy meter's hunger word (owner, 2026-11-07: "stuffed / full / content / peckish / hungry just as a word that
+    // appears in the sleep box"), by the hours left on the meal's hold, first match [DEFAULT]. Past the hold: hungry.
+    hungerWords:  [[6, 'stuffed'], [4, 'full'], [2, 'content'], [0, 'peckish']],
 
     // ── Sleep recovery (FEAT-45 Phase D) — hours of energy bought per hour slept ───────────────
     // THE ARITHMETIC (ratified 2026-07-30; rescaled 2026-08-02 with the 16 h tank).
@@ -300,6 +303,14 @@ export class DaySystem {
 
     /** Past the last meal's hold. The energy meter says so in words (SM-INV-10: never a gauge). */
     hungry () { return DAY_PARAMS.hungerOn && this.clockH() > this._fedUntilH }
+
+    /** FEAT-169: the energy meter's hunger word — stuffed / full / content / peckish / hungry — or null with hunger
+     *  off. A word, never a number (SM-INV-10). 'hungry' exactly when hungry() is. */
+    hungerWord () {
+        if (!DAY_PARAMS.hungerOn) return null
+        const left = this._fedUntilH - this.clockH()
+        return DAY_PARAMS.hungerWords.find(([h]) => left >= h)?.[1] ?? 'hungry'
+    }
 
     /**
      * Hours of energy hunger adds to being awake from clockH h0 to h1 — 0 while fed. The rate over 1 is
