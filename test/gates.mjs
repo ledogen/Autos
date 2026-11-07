@@ -172,7 +172,7 @@ export const GATES = [
   { file: 'drivetrain-climb.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-23: auto-trans + torque-converter climbs 20–30% grades from a stop, no drive/brake oscillation; accel tapers; 4-gear progression, no shift hunting' },
   { file: 'side-slide.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
-    desc: 'BUG-89: a truck on its side scrubs instead of skating — its down-side tires (no strut load, Pacejka off) carry ~60 % of the weight and now scrub at the tire μ: 15 m/s along its length stops inside 40 m (was 245 m); lying across a 15° slope it holds (< 1 m in 10 s, was 75 m)' },
+    desc: 'BUG-89/115/116, through the game\'s tire contact and open-bed chassis: on its side the flank hull (pair μ 0.5) and the tilted tires\' sidewalls scrub — 15 m/s along its length stops inside 30 m (20.4; was 108 m); flush across a 15° slope it holds on its side (< 1 m in 10 s; was 18 m onto its wheels); still rolling sideways, ≥ 5/9 roll on and the mean slide < 25 m (6/9, 16 m; was 3/9, 37 m); on its roof across 8°/15° it holds (< 1 m)' },
   { file: 'rock-sink.mjs', subsystem: 'props', cost: 'fast', extraDeps: [],
     desc: 'BUG-54: every rock sinks by its OWN variant radius (the palette hands them to the scatter via PropSystem): height within 0.5 − bury of its own size (the old largest-radius sink leaves it), bushes unchanged, and posed as drawn none floats or hides on flat, 45° and 60°' },
   { file: 'camera-follow-clock.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
