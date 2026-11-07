@@ -710,11 +710,13 @@ export class PoiSystem {
             // The newspaper customers already obey this exact rule (buildHouses); POIs now match.
             // Still a post-filter on (edge, region), so placement stays window-invariant.
             if (!edgeInWall(e.a) || !edgeInWall(e.b)) continue
-            // BUG-128: …and its ROAD must stay inside the wall, not only its nodes. The planner drops an edge whose road
-            // bows out (mission.js edgeLeaves, the same 10 m test), so a pad on one could only send a job out past the
-            // wall: 3873008110's one gas station stood on such a road and its fuel line never planned (SM-INV-7). The
-            // radius bound above dates from before the wall; it let pads stand past the 2410 m fade (a pump at 2443 m).
-            if ((leaves ??= edgeLeaves(road, e.a, e.b, inWall))) continue
+            // BUG-128: …and its ROAD must stay inside the wall, not only its nodes, or no POI stands on it. The planner
+            // drops an edge whose road bows out (mission.js edgeLeaves, the same 10 m test), so a POI on one could only
+            // send a job out past the wall: 3873008110's one gas station stood on such a road and its fuel line never
+            // planned (SM-INV-7). The radius bound above dates from before the wall; it let pads stand past the 2410 m
+            // fade (a pump at 2443 m). The pad stays IN the pool, flagged: it is still a place the player drives, so
+            // coverage siting keeps it in its sample, and no world whose POIs never stood on one moves (_assignRoster).
+            poi.leavesWall = (leaves ??= edgeLeaves(road, e.a, e.b, inWall))
             // BUG-85: …and it must be on the MAIN piece. A stranded piece is inside the wall but no
             // road joins it to the spawn, so a POI there is a customer nobody can drive to.
             if (nodes && (!nodes.has(e.ka) || !nodes.has(e.kb))) continue
@@ -1022,7 +1024,7 @@ export class PoiSystem {
      * order and not just a listing.
      */
     _assignRoster (pool, center, seed, P, camp = null) {
-        let free = pool.slice()
+        let free = pool.filter(q => !q.leavesWall)   // BUG-128: a pad on a road that leaves the wall holds no POI
         const out = []
         // The coverage objective's sample of "where the player will be": the lay-bys alone, so adding a
         // big-pad kind does not re-weight where the gas stations go.
