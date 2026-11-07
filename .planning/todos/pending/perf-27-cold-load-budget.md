@@ -445,7 +445,7 @@ the plan issues jobs (today), and longest-first with the TRUE times, which is th
 - Pump latency: unmeasured, ≤ ~0.5 s by construction (SETTLE_MIN_MS 400 ms + 250 ms poll).
 - "Behind the menu": the owner's call, numbers above.
 
-### Built: the dispatch warm primes pond discs only (`25f2d7fe`, NOT landed; parked 2026-11-06 for the owner's playtest)
+### LANDED: the dispatch warm primes pond discs only (`25f2d7fe` → `land/perf-27` `6d51c9d7`, merged to main 2026-11-07, smoke 25/25)
 
 **Reseed harness fixed first.** `story-coldload --mode=reseed`, `hitch-report` and `profile` all waited on
 `__road().lastWarm`. Nothing has set `_lastWarmCenter` since PERF-30 (the network builds off-thread), so all three
@@ -490,8 +490,13 @@ harnesses wait on it.
      go-live.
 4. ~~Hash to the orchestrator.~~ `25f2d7fe`, sent 2026-11-07.
 
-**Still open after this:** the settle's other main-thread buckets at 4× (loaded): `frame.physics` ~1.4 s, props
-~1.2 s, render ~1.0 s. Physics stepping behind a loading screen may be a lever; measure in the quiet window first.
+**Still open after this (why PERF-27 stays open):**
+- The settle's other main-thread buckets at 4× (measured on a loaded box): `frame.physics` ~1.4 s, props ~1.2 s,
+  render ~1.0 s. Physics stepping behind a loading screen may be a lever. Measure them in a quiet window first; none
+  is built.
+- "Behind the menu", parked by the owner (below).
+- At ×4, 2026-11-07, quiet: cold → driving is still 24.7–25.5 s (boot 4.7–4.9 s + entry 15.5–16 s). The region warm
+  (worker build + pumps, ~7.4–8.1 s) is the biggest single phase left.
 
 ### "Behind the menu" — PARKED (owner, 2026-11-06)
 
