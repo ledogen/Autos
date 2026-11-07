@@ -75,7 +75,7 @@ tier = 1.5
 check('…× the day tier', near(svc.repairQuote('engine', 0.7).price, (SU.price + REPAIRS.engine.price * 0.2) * 1.5))
 tier = 1
 damage.set('springRear', 0)
-check('a spring pair is priced off the fitted pair', near(svc.repairQuote('springRear', 0.8).price, SU.price + PARTS.springsRearOEM.price * 0.8))
+check('a spring pair is priced off the fitted pair', near(svc.repairQuote('springRear', 0.8).price, SU.price + PARTS.springsOEM.price * 0.8))
 check('worn brakes: nothing to repair', (damage.set('brakeFront', 0.2), svc.targets('brakeFront').length === 0))
 check('a collapsed wheel is replaced, never straightened', repairTargets('wheel', 0).length === 0 && repairTargets('wheel', 0.01)[0] === 0.05)
 damage.set('engine', 0)
@@ -114,19 +114,19 @@ damage.setAll(1)
 // ── 3. Buy off the shelf, fit, sell / keep ────────────────────────────────────────────────────
 wallet = 100; hours = 0
 damage.set('damperRear', 0.2)
-stock(['dampersRearHD'], ['tireSport', 0.5], ['tirePlugKit'])
+stock(['dampersHD'], ['tireSport', 0.5], ['tirePlugKit'])
 check('a used part is priced by its condition, × tier', near(svc.shelfPrice(1), PARTS.tireSport.price * 0.5)
   && (tier = 2, near(svc.shelfPrice(1), PARTS.tireSport.price)) && (tier = 1) && svc.shelfPrice(2) > 0)
-check('buy heavy-duty rear shocks, fitted for the shop\'s minimum charge', svc.buyAndFit(0, 'dampersRear') && near(wallet, 100 - PARTS.dampersRearHD.price - SU.price)
-  && params.suspensionDampingRear === PARTS.dampersRearHD.patch.suspensionDampingRear && damage.get('damperRear') === 1)
+check('buy heavy-duty rear shocks, fitted for the shop\'s minimum charge', svc.buyAndFit(0, 'dampersRear') && near(wallet, 100 - PARTS.dampersHD.price - SU.price)
+  && params.suspensionDampingRear === PARTS.dampersHD.patch.suspensionDampingRear && damage.get('damperRear') === 1)
 check('…the slot is empty now', shelf[0] === null && !svc.buyAndFit(0, 'dampersRear'))
 check('the socket\'s labour is on the clock', hours === 0.75, hours)
-check('an exchange off the tires pays the minimum charge too, × tier', svc.fitLabour('springsFrontHD', 'springsFront').price === SU.price
-  && (tier = 2, svc.fitLabour('springsFrontHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
-const oldShocks = inventory.list().find(r => r.id === 'dampersRearOEM')
+check('an exchange off the tires pays the minimum charge too, × tier', svc.fitLabour('springsHD', 'springsFront').price === SU.price
+  && (tier = 2, svc.fitLabour('springsHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
+const oldShocks = inventory.list().find(r => r.id === 'dampersOEM')
 check('the old shocks go straight into the inventory with their wear', !!oldShocks && oldShocks.cond === 0.2, JSON.stringify(oldShocks))
 const before = wallet
-check('…and sell from there for half price × condition', svc.sellOwned(oldShocks.index) && near(wallet - before, PARTS.dampersRearOEM.price * 0.5 * 0.2), wallet - before)
+check('…and sell from there for half price × condition', svc.sellOwned(oldShocks.index) && near(wallet - before, PARTS.dampersOEM.price * 0.5 * 0.2), wallet - before)
 
 check('a tire needs a corner', !svc.buyAndFit(1, 'tire') && !svc.buyAndFit(1, 'wheelFL'))
 damage.set('tireFL', 0.3); damage.flat[0] = true
@@ -176,12 +176,12 @@ wallet = 100; hours = 0
 check('patch it', svc.patchOwned(flat.index) && near(wallet, 100 - PATCH.price) && near(hours, PATCH.hours))
 check('…holding air, wear kept', inventory.list()[flat.index].flat === false && inventory.list()[flat.index].cond === 0.3)
 check('a worn tire isn\'t on the list', !svc.ownedRepairRows().some(r => r.index === flat.index))
-inventory.grant('springsRearHD', 1, { cond: 0.4 })
+inventory.grant('springsHD', 1, { cond: 0.4 })
 owned = svc.ownedRepairRows()
-const spr = owned.find(r => r.id === 'springsRearHD')
+const spr = owned.find(r => r.id === 'springsHD')
 check('a worn spring pair is, up to the cap', spr?.targets.at(-1) === REPAIR_CAP)
 wallet = 100; hours = 0
-check('re-arch it to the cap: priced off the part', svc.repairOwned(spr.index, REPAIR_CAP) && near(wallet, 100 - SU.price - PARTS.springsRearHD.price * 0.4)
+check('re-arch it to the cap: priced off the part', svc.repairOwned(spr.index, REPAIR_CAP) && near(wallet, 100 - SU.price - PARTS.springsHD.price * 0.4)
   && near(hours, REPAIRS.spring.hours * 0.4)   // off the truck: no access time
   && near(inventory.list()[spr.index].cond, REPAIR_CAP))
 inventory.take(spr.index)
