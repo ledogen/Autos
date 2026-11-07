@@ -1,7 +1,7 @@
 ---
 id: FEAT-169
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-05
 source: owner, 2026-11-05 (first serious playthrough) — "can we move hunger up on the ticket priority? i wasnt prioritizing food at all since it does nothing."
@@ -63,3 +63,17 @@ Spoilage (items.md §1b) is not part of this. It is its own ticket when bought f
   `opening` step: past the first meal the meter says hungry, a chili dog clears it.
 
 **Owed by the owner:** the play-test (a day without eating feels shorter); the three `[DEFAULT]`s above.
+
+## Resolution — the owner's play call (feat169-play, 2026-11-07), built (Lane A)
+
+Owner, verbatim: "there is no hunger indicator. i think i wanted stuffed / full / content / peckish / hungry just as a
+word that appears in the sleep box. i tried toggling it on in debug. turn it on by default but leave the toggle for me
+in case i want to turn it off in playthrough. add the status words"
+
+- **Hunger is on by default** (`DAY_PARAMS.hungerOn: true`). The debug folder's **hunger** checkbox still turns it off.
+- **The status words**, in the energy meter's stage text ("rested · full"), by the hours left on the current meal's
+  hold: **stuffed** ≥ 6 h, **full** ≥ 4 h, **content** ≥ 2 h, **peckish** while any is left, **hungry** past it
+  (`DAY_PARAMS.hungerWords`, the thresholds `[DEFAULT]`). Hungry is exactly when the drain runs faster. With hunger
+  off, no word shows. A word, never a number (SM-INV-10).
+- Gates: `test/day-clock.mjs` walks the words down a 10 h hold and checks there is none with the toggle off. The
+  smoke's hunger block (hungry past the first meal, a chili dog feeds you) now runs, since hunger is on.
