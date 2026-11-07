@@ -93,7 +93,7 @@ import { ServiceCenter } from './service.js'              // SM-3: repairs and p
 import { ServiceScreen } from './service-screen.js'
 import { startShelves, shelf, shelfPrice, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
-import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside,
+import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, swapCorners, swapCornerHours, plugTire, plugMethods, PLUG_H, fitRoadside,
   FIELD_REPAIR, fieldRepair, fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
@@ -5293,6 +5293,19 @@ function _pickSpare (e) {
     onClose: _backToInventory,
   })
 }
+
+/** FEAT-177: the damage screen's "Swap two wheels" — pick one corner, then the button for the other. */
+const _CORNER_WORD = ['front left', 'front right', 'rear left', 'rear right']
+damageScreen.onSwap = () => damageScreen.pick({
+  title: 'Swap two wheels',
+  corner: () => true,
+  note: _tireNote,
+  about: 'Each tire and wheel moves with its wear, and a flat stays flat.',
+  actions: ({ corner }) => [0, 1, 2, 3].filter(c => c !== corner).map(c => ({
+    label: `Swap with the ${_CORNER_WORD[c]} — ${formatGameDuration(swapCornerHours(inventorySystem))}`,
+    run: () => { const h = swapCornerHours(inventorySystem); if (swapCorners(partsSystem, damageModel, corner, c)) _afterRoadsideWork(h) },
+  })),
+})
 
 /**
  * The plug kit (owner, 2026-10-21): any flat — a corner, or a tire in the inventory. "Pump it by hand"
