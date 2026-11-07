@@ -692,6 +692,7 @@ export class PoiSystem {
         const wall = radius - REGION_MARGIN
         const edgeInWall = (id) => { const q = g.pos(id); return Math.hypot(q.x - center.x, q.z - center.z) <= wall }
         const inWall = (q) => Math.hypot(q.x - center.x, q.z - center.z) <= wall
+        const offWall = new Set()           // BUG-128: pool pads on a road that leaves the wall (no POI stands on one)
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek)) continue      // networkGraph can list an edge twice (both run keys)
@@ -714,9 +715,9 @@ export class PoiSystem {
             // drops an edge whose road bows out (mission.js edgeLeaves, the same 10 m test), so a POI on one could only
             // send a job out past the wall: 3873008110's one gas station stood on such a road and its fuel line never
             // planned (SM-INV-7). The radius bound above dates from before the wall; it let pads stand past the 2410 m
-            // fade (a pump at 2443 m). The pad stays IN the pool, flagged: it is still a place the player drives, so
-            // coverage siting keeps it in its sample, and no world whose POIs never stood on one moves (_assignRoster).
-            poi.leavesWall = (leaves ??= edgeLeaves(road, e.a, e.b, inWall))
+            // fade (a pump at 2443 m). The pad stays IN the pool, set aside: it is still a place the player drives, so
+            // coverage siting keeps it in its sample (_assignRoster), and the pad record itself is unchanged.
+            if ((leaves ??= edgeLeaves(road, e.a, e.b, inWall))) offWall.add(poi)
             // BUG-85: …and it must be on the MAIN piece. A stranded piece is inside the wall but no
             // road joins it to the spawn, so a POI there is a customer nobody can drive to.
             if (nodes && (!nodes.has(e.ka) || !nodes.has(e.kb))) continue
@@ -729,7 +730,7 @@ export class PoiSystem {
         const r = (q) => Math.hypot(q.x - center.x, q.z - center.z)
         const { posOf, adj } = buildGraphAdj(g, (q) => r(q) <= wall, nodes)
         const camp = this._siteCamp(road, canon, r, wall, posOf, adj, P)
-        const out = this._assignRoster(pool, center, seed, P, camp)
+        const out = this._assignRoster(pool, center, seed, P, camp, offWall)
         out.forEach((q, i) => { q.index = i })
         // FEAT-154: the barricade rows (the camp's at its pad, then one at every road out) and the
         // edge fade's return spots. Deterministic in (seed, network, centre), like the camp.
@@ -1023,8 +1024,8 @@ export class PoiSystem {
      * substituted; the roster above it is already placed, which is what makes the order a priority
      * order and not just a listing.
      */
-    _assignRoster (pool, center, seed, P, camp = null) {
-        let free = pool.filter(q => !q.leavesWall)   // BUG-128: a pad on a road that leaves the wall holds no POI
+    _assignRoster (pool, center, seed, P, camp = null, offWall = null) {
+        let free = offWall?.size ? pool.filter(q => !offWall.has(q)) : pool.slice()   // BUG-128: no POI on a road that leaves the wall
         const out = []
         // The coverage objective's sample of "where the player will be": the lay-bys alone, so adding a
         // big-pad kind does not re-weight where the gas stations go.
