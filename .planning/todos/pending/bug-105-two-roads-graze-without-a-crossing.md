@@ -1,7 +1,7 @@
 ---
 id: BUG-105
 type: bug
-status: landed — owner's calls built on feature/spare (loop trim), landing pending
+status: open — the loop trim landed (bab775af); the owner answered bug105-overlap (2026-11-07): (a) join with two Ts — to build
 severity: major
 opened: 2026-11-03
 source: owner capture /Users/ledogen/Downloads/autos-capture-1793661257788.json (seed 163384989, free roam, mark

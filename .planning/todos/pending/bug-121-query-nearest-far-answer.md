@@ -1,7 +1,7 @@
 ---
 id: BUG-121
 type: bug
-status: open
+status: open — fixed on land/bug-121 (f27962c8); the owner said land it (bug121-spawn (a), 2026-11-07) — landing pending
 opened: 2026-11-07
 severity: major
 source: Lane A, found building BUG-118 (the tutorial GPS re-plan), reported to the orchestrator 2026-11-07

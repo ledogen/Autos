@@ -21,6 +21,13 @@ every other player-facing feature (assists, cluster, story mode, scenarios) dock
 
 # FEAT-41: Game menus + UI improvements (major)
 
+**State (alpha audit, Lane A, 2026-11-07):** the frontmatter `note` is from 2026-07-20 and is stale: the menu layer exists. Built: the main
+menu (continue / new game / settings), the new-game page with the mode, world preset and terrain rows (FEAT-156), the
+settings and Controls & Assists pages, the pause menu (save & exit, give up), the run summary, and a shared UI style
+(`.planning/research/UI-STYLE.md`, the System and Story families). **The one acceptance line not met in the alpha:**
+"debug tooling correctly gated by mode". Story mode still shows the debug panel and allows teleport. That is FEAT-43's
+slice 2, and it waits on the same owner call.
+
 ## Build state — run setup + Controls & Assists (2026-10-19, `feature/feat-125-controller`)
 
 Branch commits ce57b5b → 31507cb, NOT yet merged. What landed:

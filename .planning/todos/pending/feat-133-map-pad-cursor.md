@@ -1,7 +1,7 @@
 ---
 id: FEAT-133
 type: feature
-status: in-progress
+status: open — built; waiting on the owner's pad play-test
 severity: minor
 opened: 2026-10-19
 source: owner, 2026-10-19 — "a virtual cursor in the map view that only shows up when you're using a controller and can be controlled with the right analog stick" + "lb/rb mapping to q/e for tab switching … menu controls have to be different"
