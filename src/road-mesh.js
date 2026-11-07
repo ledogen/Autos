@@ -1119,10 +1119,10 @@ export class RoadMeshSystem {
         const rings = inner + (extA ? 1 : 0) + (extB ? 1 : 0)
         const vpr = SEG + 5                  // apronR(2) + (SEG+1 arch verts) + apronL(2)
 
-        const pos = new Float32Array(rings * vpr * 3)
-        const col = new Float32Array(rings * vpr * 3)
-        const fcol = new Float32Array(rings * vpr * 3)   // BUG-112: the floor's colour — the cut bench's, shaded
-        const uv  = new Float32Array(rings * vpr * 2)
+        let pos = new Float32Array(rings * vpr * 3)   // let: the BUG-67 miter appends its cut vertices
+        let col = new Float32Array(rings * vpr * 3)
+        let fcol = new Float32Array(rings * vpr * 3)   // BUG-112: the floor's colour — the cut bench's, shaded
+        let uv  = new Float32Array(rings * vpr * 2)
         const CUT = _hexLin(params.terrainCutoutColor ?? 0x757066)   // terrain.js's cut-face colour, same convention
         const prof = { gradeY: 0, tx: 1, tz: 0 }
         let vi = 0, ui = 0
@@ -1170,22 +1170,60 @@ export class RoadMeshSystem {
             }
         }
         const idx = [], fidx = []
-        // BUG-67 shared bore: a triangle inside a sibling run's tube is not built —
-        // the two tubes merge into an underground Y (road.siblingTubeTest; the wall contact reads it too).
+        // BUG-67 shared bore: the part of this tube inside a sibling run's tube is not built — the two tubes merge
+        // into an underground Y (road.siblingTubeTest; the wall contact reads it too). The cut is a MITER: a
+        // triangle with corners on both sides is split where the sibling test flips along its edges (bisection to
+        // 1 cm). Each tube is so cut on the other's surface, and both cuts lie on the curve where the two surfaces
+        // cross, so the linings meet edge to edge. Owner's redrive 11-07: "torn and overlapping edges on the tubes"
+        // was the whole-triangle cut it replaces: a stair-stepped edge, with what was kept past it inside the sibling.
         const sib = road.siblingTubeTest?.(runKey)
-        // A triangle goes only when ALL its corners are inside the sibling: a centroid test left a
-        // sawtooth seam with triangle-sized gaps; what is kept past the seam sits in the sibling's wall.
-        const inSib = (i) => sib(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2])
-        const keep = (i, j, l) => !sib || !(inSib(i) && inSib(j) && inSib(l))
+        const nv0 = rings * vpr
+        const xPos = [], xCol = [], xFcol = [], xUv = []   // vertices the miter adds, after the nv0 ring vertices
+        const attr = (i, a, src, ext, n) => (i < nv0 ? src[n * i + a] : ext[n * (i - nv0) + a])
+        const P3 = (i, a) => attr(i, a, pos, xPos, 3)
+        const inSib = sib ? (i) => sib(P3(i, 0), P3(i, 1), P3(i, 2)) : null
+        const cut = new Map()   // edge key → the vertex on the sibling's surface (shared by both triangles on it)
+        const edgeCut = (o, n) => {   // o outside, n inside
+            const key = o < n ? o * 1e7 + n : n * 1e7 + o
+            if (cut.has(key)) return cut.get(key)
+            const L = Math.hypot(P3(n, 0) - P3(o, 0), P3(n, 1) - P3(o, 1), P3(n, 2) - P3(o, 2))
+            let t0 = 0, t1 = 1
+            while ((t1 - t0) * L > 0.01) {
+                const t = (t0 + t1) / 2
+                if (sib(P3(o, 0) + (P3(n, 0) - P3(o, 0)) * t, P3(o, 1) + (P3(n, 1) - P3(o, 1)) * t, P3(o, 2) + (P3(n, 2) - P3(o, 2)) * t)) t1 = t
+                else t0 = t
+            }
+            const lerp = (src, ext, n2) => { for (let a = 0; a < n2; a++) ext.push(attr(o, a, src, ext, n2) + (attr(n, a, src, ext, n2) - attr(o, a, src, ext, n2)) * t0) }
+            lerp(pos, xPos, 3); lerp(col, xCol, 3); lerp(fcol, xFcol, 3); lerp(uv, xUv, 2)
+            const id = nv0 + xPos.length / 3 - 1
+            cut.set(key, id)
+            return id
+        }
+        const tri = (out, i, j, l) => {
+            if (!sib) { out.push(i, j, l); return }
+            const f = [inSib(i), inSib(j), inSib(l)], ins = f.filter(Boolean).length
+            if (ins === 0) { out.push(i, j, l); return }
+            if (ins === 3) return
+            // rotate (cyclically, so the winding holds) to put the odd corner first
+            let [a, b, c] = [i, j, l], odd = ins === 1 ? f.indexOf(true) : f.indexOf(false)
+            for (; odd > 0; odd--) [a, b, c] = [b, c, a]
+            if (ins === 1) { const ab = edgeCut(b, a), ac = edgeCut(c, a); out.push(ab, b, c, ab, c, ac) }   // a inside
+            else { const ab = edgeCut(a, b), ac = edgeCut(a, c); out.push(a, ab, ac) }                      // a outside
+        }
         for (let r = 0; r < rings - 1; r++) {
             for (let k = 0; k < vpr - 1; k++) {
                 const a = r * vpr + k, b = a + vpr
                 const out = k === 0 || k === vpr - 2 ? fidx : idx   // the two apron strips are the floor
-                if (keep(a, b, a + 1)) out.push(a, b, a + 1)
-                if (keep(a + 1, b, b + 1)) out.push(a + 1, b, b + 1)
+                tri(out, a, b, a + 1)
+                tri(out, a + 1, b, b + 1)
             }
         }
         if (!idx.length && !fidx.length) return null
+        if (xPos.length) {   // the miter's vertices join the ring vertices (the index already names them)
+            const grow = (src, ext) => { const g = new Float32Array(src.length + ext.length); g.set(src); g.set(ext, src.length); return g }
+            pos = grow(pos, xPos); col = grow(col, xCol); fcol = grow(fcol, xFcol); uv = grow(uv, xUv)
+        }
+        const nv = pos.length / 3
         const P = new THREE.BufferAttribute(pos, 3)
         const mk = (ix, c) => {
             if (!ix.length) return null
@@ -1199,7 +1237,7 @@ export class RoadMeshSystem {
         if (tube) { tube.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); tube.computeVertexNormals() }
         if (floor) {
             // (grass, dirt, rock, engineered) = (0, 0, 1, 1): terrain.js's weights on a fully cut bench.
-            const surf = new Float32Array(rings * vpr * 4)
+            const surf = new Float32Array(nv * 4)
             for (let i = 2; i < surf.length; i += 4) { surf[i] = 1; surf[i + 1] = 1 }
             floor.setAttribute('aSurf', new THREE.BufferAttribute(surf, 4))
             floor.computeVertexNormals()
