@@ -150,6 +150,7 @@
       wt: '/Users/ledogen/CodeShit/CarGame-run-shape', branch: 'feature/run-shape', port: 3731,
       owns: 'story.js, camp.js, dialogue, poi.js (the camp type), the story sections of main.js',
       tasks: [
+        { id: 'BUG-135 · BUG-117 · FEAT-184', what: 'DOING (11-07), your inbox and answers: BUG-135 first, the truck spawned on mom’s fire pit after a skipped tutorial (the start moves out of mom’s yard, and every start spot gets checked clear). Then BUG-117’s letter, no pay (your pick). Then FEAT-184, the tutorial overhaul, as a plan with your choices first (lessons, which world, length). Then BUG-134’s measurements.' },
         { id: 'FEAT-104', what: 'ON MAIN (9c76c345): park at a general store, gas station or food vendor and a buy-only shop opens (coffee, energy drink, chili dog, field repairs, emergency gas, now and then a jerry can). The tackle shop sells nothing yet (its lines aren’t items). The auto shop is unchanged. Food is now buyable, so hunger (FEAT-169) can switch on whenever you say. Your look rides on feat169-play.' },
         { id: 'Alpha audit', what: 'DONE (69899626): every alpha ticket checked; stale statuses corrected, BUG-69 closed as deferred (your bug69-case). Your three calls: alpha-audit-calls.' },
         { id: 'BUG-124 · 125', what: 'BUG-124 FIXED ON MAIN (smoke 25/25): on ~4 % of worlds mom’s and Larry’s houses shared one stretch of road, and the planner never ends a job on its start’s own stretch, so the casserole could not be planned and the run could not start. Larry’s house now never goes on mom’s stretch: 3 of 51 worlds broken → 0. BUG-125 ON MAIN too (smoke 25/25): a destination on the giver’s own stretch now plans straight along it. The 7 census cases were all under the 1,050 m minimum courier distance anyway (252–566 m), so they stay unposted for that reason, per your 10-25 “too near means no offer”. Lane A closed 9 finished tickets on evidence. BUG-128 FIXED ON MAIN (smoke 25/25): on 2 of 51 worlds an expedition supply line could not be planned, so the run could not be won; now 0. Cause: some roads between two inside junctions bow out past the boundary wall. The planner now skips them, and no building is placed on one. FYI, no ruling needed: buildings moved on 11 of 51 worlds (4 had stood past the turn-back line, unreachable). FEAT-154 too: a barricade row now marks every side road that crosses the wall. Now: one barricade that can sit on a junction’s sloped apron.' },
@@ -192,6 +193,7 @@
       wt: '/Users/ledogen/CodeShit/CarGame-content', branch: 'feature/content', port: 3774,
       owns: 'assets/, wip/, src/*-audio.js, data/items.js rows + thumbnails, items.md, FEAT-120/121',
       tasks: [
+        { id: 'Tackle shop · lay-by census', what: 'DOING (11-07), your answers: the census over ~100 random seeds first (every POI type: own pad, lay-by fallback, or not placed, and the pad headroom per type). If nothing ever falls back, layby-fallback closes with no code. Then the tackle shop model (your “model it”), the last orange cube.' },
         { id: 'No orange cubes', what: 'ASSET-82 service station + ASSET-83 construction site ON MAIN (85f3c8f7, smoke 25/25); the job site now stands the construction site. Your look: asset82-83-look. The auto shops now stand the service station too (FEAT-178 on main). Still orange (census, 6 random seeds): only the tackle shop (your call, tackle-slot). The lay-by fallback never fired. The school lunch’s pink cube is fixed ON MAIN (21d048cf).' },
         { id: 'FEAT-120', what: 'Sound pass — the owner listened 11-02; verdicts per sound in the ticket on feature/content. Keepers and redos went to Spare.' },
         { id: 'FEAT-120 ↳', what: 'Strap click / release — the owner records them.' },
@@ -233,27 +235,9 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
-    { id: 'alpha-audit-calls', kind: 'decide', tk: 'FEAT-91 · FEAT-34 · BUG-64',
-      text: 'Lane A checked every alpha ticket (main 69899626): what is built, what is missing, what waits on you. Three calls are yours, each with a recommendation. 1. FEAT-91: the splitting yard posts haul jobs only, but your ruling says every yard also gives and takes courier jobs. Recommended: add its courier jobs. 2. FEAT-34: the cluster has the key, the fuel and temperature needles, and the low-fuel and flat-tire lamps. Recommended for the alpha: add a brake lamp, a headlight lamp and one lamp per damage track; the radio waits for later (music, FEAT-58, is later). 3. BUG-64 (walls between close roads): the part left would move routes, and on 11-01 you said it is “not really bothering me”. Recommended: list it under Later. Not a call: closing the sandbox (the debug panel and teleport off in story mode) is the last step of the alpha cut. Tap the button to take all three, or type your changes in the note box below.',
-      options: ['take all three', 'changes (note box below)'] },
-    { id: 'bug117-pay', kind: 'decide', tk: 'BUG-117',
-      text: 'Mom’s first job (the casserole to Larry’s) now has no deadline and every other job waits for it (ON MAIN 0a0e25a4). It also cannot be abandoned: Lane A’s call, and the alternative is that abandoning puts it back on mom’s board. Its pay still depends on route length. 1 = no pay, a letter only (recommended), 2 = keep the pay. To overrule the no-abandon call, type it in the note box below.',
-      options: ['1 — a letter, no pay', '2 — keep the pay'] },
     { id: 'asset82-83-look', kind: 'decide', tk: 'ASSET-82/83',
       text: 'Lane C built both buildings, on main now. Service station: a two-car bay with a small office, a flush lift in bay A (you drive straight on and park there), bay B’s lift raised with the car-height scissor showing, sign “AUTO SERVICE / TIRES · BRAKES · OIL”, 1558 tris. Construction site: a block building going up on a slab, pallets of block and bagged concrete, a red mixer, scaffold, lumber, a portable toilet, 1548 tris. Render sheets on the laptop: CarGame-content/wip/service-station/out/sheet.png and CarGame-content/wip/construction-site/out/sheet.png. The construction site is already in the game at every job site; the service station goes in with FEAT-178.',
       options: ['both good', 'changes (note box below)'] },
-    { id: 'bug112-seam', kind: 'decide', tk: 'BUG-112',
-      text: 'The tunnel shoulder seam you meant: the bore floor now uses the terrain’s own material, so the cut bench’s gravel runs on into the tube instead of turning flat dirt. Before/after: CarGame-spare/wip/bug-112/shots/sheet-seam.jpg (open it on the laptop). Spare’s checks pass; it lands on your OK.',
-      options: ['land it', 'changes (note box below)'] },
-    { id: 'tackle-slot', kind: 'decide', tk: 'ASSET',
-      text: 'Orange cubes: every map has a tackle shop, but fishing is deferred, so it has no model and shows as an orange cube. 1 = model it now (Lane C), 2 = drop the slot until fishing exists (recommended: no job needs it yet).',
-      options: ['1 — model it', '2 — drop it until fishing'] },
-    { id: 'layby-fallback', kind: 'decide', tk: 'ASSET',
-      text: 'Orange cubes: when a seed has no free farm pad, the gas station and the general store fall back to a 14 × 8 m lay-by, and their models do not fit there, so you get a cube. 1 = model a lay-by-sized variant of each (Lane C), 2 = these two always get a farm pad first, before other POIs (no new models). Lane C’s census on 6 random seeds: both got a farm pad every time (0 of 12 fell back), so the lay-by is a rare path and 2 is recommended.',
-      options: ['1 — smaller variants', '2 — farm pad first'] },
-    { id: 'feat172-words', kind: 'decide', tk: 'FEAT-172',
-      text: 'When the truck is stranded and you can afford the cure, a hint now reads “<cause> — [park, then] X to call a tow”, e.g. “the engine seized — X to call a tow”. Giving up then ends as “You broke down.” with “…, and you gave up” (or “you had $X” when you were short). The words are Lane B’s placeholders. Type yours in the note box below, or keep them.',
-      options: ['keep', 'my words in the note box below'] },
     { id: 'bug115-look', kind: 'drive', tk: 'BUG-115',
       text: 'On main: the cab roof now grips at 0.3 (your pick). Flip the truck onto its roof on a slope: it used to slide 110 m down 15°; now it should stop within a metre up to ~16.7°. Try on-road and off-road. If you want per-surface cab friction (tumbles off-road, slides on-road), type it in the note box below.',
       options: ['good enough', 'per-surface friction (note box below)', 'other (note box below)'] },
