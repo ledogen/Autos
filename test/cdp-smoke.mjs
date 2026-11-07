@@ -1334,6 +1334,15 @@ const STEPS = [
     for (let i = 0; i < 30 && await dlg() && !await lessonCap(); i++) { await btn(0); await sleep(150) }
     const cap = JSON.parse(await lessonCap() ?? 'null')
     check(cap && cap.kb === 'none' && cap.pad !== 'none' && /^(RT|LT|View|B|RB)$/.test(cap.text), `a lesson's key does not read the pad's button: ${JSON.stringify(cap)}`)
+    // FEAT-174: a line that differs by input says it once, for the device driving, and swaps live. The drive lesson
+    // reads "the left stick" on the pad; one keyboard press (Shift alone: hands the keyboard control, turns no card)
+    // re-reads it as "A and D".
+    for (let i = 0; i < 12 && !/^Drive safe/.test(await txt()); i++) { await btn(0); await sleep(150) }
+    const steerWords = () => js('[...document.querySelectorAll("#dlg-text > .kc-kb, #dlg-text > .kc-pad")].filter(e => getComputedStyle(e).display !== "none").map(e => e.textContent).join("|")')
+    const onPad = await steerWords()
+    await key('Shift', true); await frames(3, 80); await key('Shift', false); await frames(3, 80)
+    const onKb = await steerWords()
+    check(onPad === 'the left stick' && onKb === 'A and D', `the drive lesson does not name one input's steering, live: pad "${onPad}", keyboard "${onKb}"`)
     await hold(8, 1400)
     check(await until(() => js('window.__board().firstState() === "taken"'), 8000), 'holding View did not skip the opening')
     // The glyphs: the pad drove last, so every keycap reads its button.

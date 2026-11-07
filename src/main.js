@@ -3646,12 +3646,15 @@ const dialogueSystem = new DialogueSystem()
 const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
 const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space'])   // FEAT-125: see _renderDialogue
 const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0 }
-/** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order. */
+/** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order.
+ *  FEAT-174: the other input's half of a line (kc-kb / kc-pad) is left whole, so the stream spends no time on
+ *  words that are not shown, and a switch mid-card shows that half at once. */
 function _hideWords (el) {
   const words = []
+  const off = document.body.classList.contains('pad-on') ? 'kc-kb' : 'kc-pad'
   const walk = (node) => {
     for (const c of [...node.childNodes]) {
-      if (c.nodeType !== Node.TEXT_NODE) { walk(c); continue }
+      if (c.nodeType !== Node.TEXT_NODE) { if (!c.classList?.contains(off)) walk(c); continue }
       const frag = document.createDocumentFragment()
       for (const part of c.textContent.split(/(\s+)/)) {
         if (!part) continue
