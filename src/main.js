@@ -2516,7 +2516,10 @@ if (_PROF) {
       runs: rs._network.size, fp, pts, km: +km.toFixed(2),
       pending: rs._pendingRoutes.size,
       cls: rs._proto.cls?.size ?? 0,
-      lastWarm: !!rs._lastWarmCenter, epoch: rs._routeEpoch,
+      // PERF-27: the network is built off-thread (PERF-30), so "warm done" is the client idle — nothing in flight,
+      // nothing queued. (Was `lastWarm: !!rs._lastWarmCenter`, which nothing has set since PERF-30: every harness
+      // waiting on it hung.)
+      netIdle: !netClient || (!netClient._active && !netClient._queue.length), epoch: rs._routeEpoch,
       dispatched: _rdWrap?.count ?? 0,
       hot: _rdWrap ? [..._rdWrap.keys.entries()].filter(([, n]) => n > 2).sort((a, b) => b[1] - a[1]).slice(0, 8) : [],
     }
@@ -7595,7 +7598,7 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
     getParams: () => RANGER_PARAMS,
     getPondDiscs: _pondDiscs,
     // PERF-34: prime the water caches for the request window in slices before the discs are read.
-    warmRegion: (minX, minZ, maxX, maxZ, ms) => waterSystem ? waterSystem.warmRegion(minX, minZ, maxX, maxZ, ms) : true,
+    warmRegion: (minX, minZ, maxX, maxZ, ms) => waterSystem ? waterSystem.warmPonds(minX, minZ, maxX, maxZ, ms) : true,   // PERF-27: discs only
   })
   netClient.register('play', roadSystem, {
     onAdopted: (reason) => {
