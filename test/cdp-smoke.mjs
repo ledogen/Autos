@@ -58,6 +58,9 @@ if (!await until(() => fetch(`http://localhost:${HTTP}/`).then(r => r.ok, () => 
 
 const { cleanup } = launchChrome('about:blank', { port: CDP, headed: process.argv.includes('--headed') })
 const client = await connect({ port: CDP })
+// SMOKE_CPU_THROTTLE=4: this Chrome runs its page 4× slower (CDP Emulation) — a loaded machine's timing, repeatably,
+// without loading the machine. For chasing load-only flakes; a landing never sets it.
+if (process.env.SMOKE_CPU_THROTTLE) await client.cmd('Emulation.setCPUThrottlingRate', { rate: +process.env.SMOKE_CPU_THROTTLE })
 
 // Every console error / uncaught exception, tagged with the step that was running.
 let step = 'boot'
@@ -1420,8 +1423,10 @@ const STEPS = [
     // The map (View tap): a giver centred under the pad's cursor pages its offers on LB / RB; B closes it.
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
+    // Not an auto shop (its brake opens the service screen; the jobs are a button in it) nor Larry's (the paper route):
+    // the flake that hit A, Spare and B was a random world whose busiest giver was a shop.
     const giver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
-      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
+      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !['autoShop', 'larrysHouse'].includes(q.type)).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
     check(giver?.n > 1, `no giver with two offers to page: ${JSON.stringify(giver)}`)
     await js(`(() => { const m = window.__map2d(), s = m._sheet(); for (let i = 0; i < 6; i++) { m._panX += (m._sx(${giver.x}) - s.cx) / m._zoom; m._panZ += (m._sy(${giver.z}) - s.cy) / m._zoom } })()`)
     await js('__fp.axes[2] = 0.09'); await frames(3, 60); await js('__fp.axes[2] = 0'); await frames(3, 60)
@@ -1441,7 +1446,14 @@ const STEPS = [
     await frames(6, 300)
     await hold(5, 450)
     check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
-    check(await until(offerUp, 6000), 'parking at the giver opened no offer card')
+    // The flake (A, Spare and B under load): say what the park trigger saw, so the next miss names its cause.
+    if (!await until(offerUp, 6000)) check(false, 'parking at the giver opened no offer card: ' + await js(`JSON.stringify((() => {
+      const v = __vs, q = window.__map2d()._getPois().find(p => p.id === ${JSON.stringify(giver.id)}), m = window.__mission()
+      return { parked: v.parked, hb: v.handbrake, v: +v.velocity.length().toFixed(2), m: m.state, onJob: m.isOnJob(),
+        offers: window.__map2d()._getBoard().view(q.id, 0)?.count ?? 0, d: +Math.hypot(q.x - v.position.x, q.z - v.position.z).toFixed(1),
+        prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), hudMenu: document.body.classList.contains('hud-menu-on'),
+        open: [...document.querySelectorAll('.open, [style*="display: block"], [style*="display: flex"]')].map(e => e.id).filter(Boolean).slice(0, 8) }
+    })())`))
     // Take it (A on accept), then put it down through the B menu: the abandon entry, armed, confirmed, and its result card.
     await padTo('mp-accept'); await btn(0)
     check(await until(() => js('window.__mission().isOnJob() && !!document.getElementById("job-cancel").offsetParent'), 3000), 'A on accept took no job with an abandon button')
@@ -1475,7 +1487,8 @@ const STEPS = [
     check(await until(() => js('document.getElementById("camp-panel").style.display === "block"'), 3000), 'parking at mom\'s on the pad opened no card')
     await padTo('cp-sleep'); await btn(0); await padTo('cp-hours')
     const h0 = await js('+document.getElementById("cp-hours").value'); await btn(15)
-    check(await js('+document.getElementById("cp-hours").value') === h0 + 1, 'D-pad → did not step the sleep slider')
+    // > h0, not h0 + 1: a slow page holds btn()'s 3 frames past the D-pad's 400 ms auto-repeat, which steps it again.
+    check(await until(() => js(`+document.getElementById("cp-hours").value > ${h0}`), 2000), 'D-pad → did not step the sleep slider')
     await btn(1); await btn(1)
     check(await until(() => js('document.getElementById("camp-panel").style.display !== "block"'), 2000), 'B twice did not back out of the camp card')
     await padOff()
