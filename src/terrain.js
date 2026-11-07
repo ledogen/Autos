@@ -67,6 +67,9 @@ const        TUNNEL_CUT_FLOOR     = 1.2 // m below the axis (the deck centre) th
 const        TUNNEL_COLLAR_IN     = 0.8  // m — the portal ring's buried depth (road-mesh.js buildPortalRing D0)
 const        TUNNEL_HOLE_R        = 0.05 // m past the lining (= the ring's reveal, RIN) beyond the collar
 
+// BUG-132: two carve tables (null = no road reaches the chunk) carve the same ground.
+const _sameCarve = (a, b) => a === b || (!!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]))
+
 // ── TerrainSystem class ────────────────────────────────────────────────────
 
 export class TerrainSystem {
@@ -101,6 +104,7 @@ export class TerrainSystem {
         this._motion        = null        // PERF-33: StreamMotion of the stream centre (near-then-ahead ordering)
         this._geomPool      = []          // PERF-05: recycled chunk BufferGeometry (65×65 XZ plane; only Y/normal/color change per chunk) — avoids per-chunk PlaneGeometry alloc + GC
         this._physicsHook   = null        // FEAT-48: TerrainPhysics (engine heightfield colliders) — syncChunk/disposeChunk/clear
+        this._onRecarve     = null        // BUG-132: (cx, cz) ⇒ a re-carve changed this chunk's ground (setRecarveHook)
         this._ringScan      = { cx: 0, cz: 0, r: -1, epoch: -1, done: false }   // S-38: last request scan (skip while unchanged + complete)
 
         // Main-thread analytic noise closures (seeded same way as Worker — deterministic agreement)
@@ -820,6 +824,17 @@ export class TerrainSystem {
     }
 
     /**
+     * BUG-132: `fn(cx, cz)` runs when a re-carve CHANGES a live chunk's ground (its carve table differs
+     * from the one it replaces). Props are seated on analyticHeight when their chunk scatters, and a
+     * positional adopt re-carves ground under props that already stand: seed 19's portal cutting left
+     * its hillside rocks 5–14 m in the air. main.js releases the props standing on it (PropSystem.releaseGround);
+     * they re-scatter on the new ground. Every recarveInPlace caller goes through here, so none can strand a prop.
+     */
+    setRecarveHook(fn) {
+        this._onRecarve = fn ?? null
+    }
+
+    /**
      * Re-carve live chunks IN PLACE, keeping their meshes, colliders and raw heights. Use it when
      * the carve INPUTS changed but the seed did not: a newly adopted road network, or pads handed
      * to the carve. rebuildAllChunksFromWorker is for a new seed, where the heights themselves change.
@@ -1218,6 +1233,7 @@ export class TerrainSystem {
                 chunk.mesh.geometry.computeBoundingSphere()  // PERF-05 pooling fix: keep frustum-cull bounds in sync with re-carved Y
                 this._computeGridNormals(chunk.mesh.geometry, cx, cz)  // PERF-03: grid-FD normals (BUG-75: border rows need the chunk coords)
                 this._writeChunkVertexColors(chunk.mesh.geometry, newCarveData, chunk.heights, chunk.localMean)
+                if (this._onRecarve && !_sameCarve(chunk.carveData, newCarveData)) this._onRecarve(cx, cz)   // BUG-132
                 // Stamp the inputs this carve was BUILT against (generation + coverage at its start), so a
                 // change that landed while it was in flight is still seen as stale by the next pass.
                 chunk.carveData = newCarveData ?? null

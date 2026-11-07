@@ -327,6 +327,9 @@ const makePropSamplers = () => Object.fromEntries(Object.entries({
   // BUG-93: a tunnel mouth cuts the skin away (terrain.js tunnelCutAt — the shader's own capsule).
   // Its analytic height there is the mouth-funnel notch: rocks and grass stood on it hung in the bore.
   skinCut:     (x, z) => terrainSystem.tunnelCutAt(x, z),
+  // BUG-132: a chunk scatters only once its ground is built (see PropSystem._groundReady); every later
+  // change to that ground is a re-carve, and setRecarveHook (below) releases the chunk for it.
+  groundReady: (cx, cz) => terrainSystem.isChunkDrivable(cx, cz),
 }).map(([k, fn]) => [k, k === 'sunShear' ? fn : _timed(k, fn)]))
 const _sunShearScratch = new THREE.Vector2()
 
@@ -2665,6 +2668,9 @@ perfMark('init: before physics engine')
 const physicsEngine = await createPhysicsEngine()
 const terrainPhysics = new TerrainPhysics(physicsEngine, () => roadSystem)   // road spans → bore slots in the collider
 terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
+// BUG-132: a re-carve that changes a chunk's ground drops the props standing on it; they re-scatter on
+// the new ground. Reads the module-scope propSystem at call time (a reseed swaps the instance).
+terrainSystem.setRecarveHook((cx, cz) => propSystem?.releaseGround(cx, cz))
 // The model's open-bed spec (if it has one) builds a real well instead of the solid deck, so
 // cargo dropped in rides in it (owner, 2026-09-29: "add a couple and drive around").
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS,
