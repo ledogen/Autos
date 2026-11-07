@@ -6507,31 +6507,43 @@ export class RoadSystem {
         }
         // arc s measured from the site, on either spelling
         const at = (L, s) => L.cl.pointAt(L.fromEnd ? L.cl.length - s : s)
-        const samp = (L) => {
+        // The leg's samples out to `cap` (the first one at or past it included) — the full sampling's own points, so a
+        // capped scan tests a subset of the full scan's segment pairs.
+        const samp = (L, cap = Infinity) => {
             const n = Math.max(1, Math.ceil(L.cl.length / PROTO_SAMPLE_DS)), o = []
-            for (let i = 0; i <= n; i++) { const s = L.cl.length * i / n, p = at(L, s); o.push({ x: p.x, z: p.z, s }) }
+            for (let i = 0; i <= n; i++) { const s = L.cl.length * i / n, p = at(L, s); o.push({ x: p.x, z: p.z, s }); if (s >= cap) break }
             return o
         }
-        const [A, B] = legs, pa = samp(A), pb = samp(B)
-        let best = null, maxA = 0, maxB = 0
-        for (let i = 0; i + 1 < pa.length; i++) {
-            if (pa[i + 1].s < 8) continue   // the shared end at the site
-            const a = pa[i], rx = pa[i + 1].x - a.x, rz = pa[i + 1].z - a.z
-            for (let j = 0; j + 1 < pb.length; j++) {
-                if (pb[j + 1].s < 8) continue
-                const b = pb[j], sx = pb[j + 1].x - b.x, sz = pb[j + 1].z - b.z, den = rx * sz - rz * sx
-                if (Math.abs(den) < 1e-9) continue
-                const t = ((b.x - a.x) * sz - (b.z - a.z) * sx) / den, u = ((b.x - a.x) * rz - (b.z - a.z) * rx) / den
-                if (t < 0 || t > 1 || u < 0 || u > 1) continue
-                const sA = a.s + t * (pa[i + 1].s - a.s), sB = b.s + u * (pb[j + 1].s - b.s)
-                if (sA < 8 || sB < 8) continue
-                if (sA + sB > LOOP_TRIM_M) return null   // a crossing past the cap: not a loop this cuts off
-                maxA = Math.max(maxA, sA); maxB = Math.max(maxB, sB)
-                if (!best || sA + sB > best.sA + best.sB) best = { sA, sB }
+        // Every crossing between the legs: null when one closes a loop past the cap, else the outermost and the maxima.
+        const scan = (pa, pb) => {
+            let best = null, maxA = 0, maxB = 0
+            for (let i = 0; i + 1 < pa.length; i++) {
+                if (pa[i + 1].s < 8) continue   // the shared end at the site
+                const a = pa[i], rx = pa[i + 1].x - a.x, rz = pa[i + 1].z - a.z
+                for (let j = 0; j + 1 < pb.length; j++) {
+                    if (pb[j + 1].s < 8) continue
+                    const b = pb[j], sx = pb[j + 1].x - b.x, sz = pb[j + 1].z - b.z, den = rx * sz - rz * sx
+                    if (Math.abs(den) < 1e-9) continue
+                    const t = ((b.x - a.x) * sz - (b.z - a.z) * sx) / den, u = ((b.x - a.x) * rz - (b.z - a.z) * rx) / den
+                    if (t < 0 || t > 1 || u < 0 || u > 1) continue
+                    const sA = a.s + t * (pa[i + 1].s - a.s), sB = b.s + u * (pb[j + 1].s - b.s)
+                    if (sA < 8 || sB < 8) continue
+                    if (sA + sB > LOOP_TRIM_M) return null   // a crossing past the cap: not a loop this cuts off
+                    maxA = Math.max(maxA, sA); maxB = Math.max(maxB, sB)
+                    if (!best || sA + sB > best.sA + best.sB) best = { sA, sB }
+                }
             }
+            return { best, maxA, maxB }
         }
+        // A crossing that closes a loop within the cap lies within LOOP_TRIM_M of the site on BOTH legs, so the near
+        // stretches decide whether there is one. Nearly every site has none and stops here; the full scan (a crossing
+        // past the cap anywhere declines the trim) runs only for the few that do. Same answer, a fraction of the cost.
+        const [A, B] = legs
+        if (!scan(samp(A, LOOP_TRIM_M), samp(B, LOOP_TRIM_M))?.best) return null
+        const all = scan(samp(A), samp(B))
         // the cut must be outermost on BOTH legs, or the kept parts would still cross
-        if (!best || best.sA < maxA || best.sB < maxB) return null
+        if (!all?.best || all.best.sA < all.maxA || all.best.sB < all.maxB) return null
+        const { best } = all
         // the specs registration acts on (_v2MergeFor, filtered — the raw node table also lists the wyes BUG-105
         // declines, which is what leaves these loops) for every edge at the site and at both far ends
         const mine = new Set(nbrs.map((o) => pk(nk, o)))
