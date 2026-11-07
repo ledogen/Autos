@@ -1370,10 +1370,11 @@ const STEPS = [
     check(!await js('document.getElementById("midnight-card").classList.contains("on")'), "the tutorial's night dropped the midnight overlay")
     const e1 = await eve()
     check(e1.first === 'live' && !e1.hud && !e1.gps, `waking did not end the evening and post the casserole: ${JSON.stringify(e1)}`)
-    // Stage 4, the morning: breakfast feeds you (you went to bed at 6, so you wake hungry), then her card.
+    // Stage 4, the morning: breakfast, then her card. FEAT-184 stage 5: breakfast is the player's to eat now (her card asks
+    // for a packed lunch); the evening held the clock and the night holds the hunger clock, so you wake fed either way.
     const stage = () => js('document.getElementById("em-stage").textContent')
     check(await readCards() >= 2, 'no breakfast and no "look at my card" in the morning')
-    check(!/hungry/.test(await stage()), `mom's breakfast did not feed the driver ("${await stage()}")`)
+    check(!/hungry/.test(await stage()), `the tutorial's morning woke the driver hungry ("${await stage()}")`)
     // Woken at hers, her card opens as the lesson ends — no second park — and the sleep card is gone.
     check(await until(() => js('getComputedStyle(document.getElementById("mp-accept")).display !== "none"'), 3000), "her card did not open after the morning's lesson")
     check(!await panel(), 'the sleep card stayed up under her job card')

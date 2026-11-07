@@ -4359,7 +4359,7 @@ const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000 }
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 // FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
 // station, if there was one); the flat lands at half of it, once. Not saved: a resume carries the flat in the damage model.
-let _eveHomeFrom = null, _eveFlat = false
+let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4484,13 +4484,17 @@ function _eveningBeats () {
     }
   }
   if (damageScreen.isOpen && damageModel.flat.some(Boolean)) _tut('tut-damage')
+  // Stage 5: towed and back on the road, it's night — the headlights.
+  if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
   if (Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
 }
 
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
 function _endEvening () {
   if (!_eveningLeg()) return
-  daySystem.eat(DAY_PARAMS.mealHoldH)   // FEAT-173: the tutorial's night ends fed — mom's breakfast, played or skipped
+  // FEAT-173: a skipped tutorial's night ends fed (mom's breakfast). FEAT-184 stage 5: a played one leaves breakfast to you
+  // — her card asks you to eat one of her packed lunches.
+  if (dialogueSystem.has(DLG.skipped)) daySystem.eat(DAY_PARAMS.mealHoldH)
   offerBoard.openFirst(daySystem.clockH())
   _eveningGuide = undefined
   _renderMissionUI()   // the HUD line goes
@@ -4557,7 +4561,7 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the first job is still to do or the evening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
   _openingRun = false
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false
+  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false
   // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (mom's door, 7 am, the casserole in hand),
   // no cards: the firing counts as played and the skip runs at once.
   if (_settings.skipTutorial) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
@@ -5412,6 +5416,7 @@ const _SERVICE_CENTER = q => q.type === 'autoShop'
  */
 function _towTo (t, seat) {
   if (!t || !economySystem.spend(t.price)) return
+  if (_eveningLeg()) _eveTowed = true   // FEAT-184 stage 5: the worst day's tow — it's night when you drive home
   _recoveryOpen = false
   const prev = _spawnOverride
   _spawnOverride = { align: true, drop: 0.3, ...seat }
