@@ -12,6 +12,28 @@ being mistaken for a shipping load-time optimization — it is a DEV convenience
 making the cold load WORSE for real players."
 ---
 
+> **STATE, 2026-11-07 (Spare): open, the owner's call next.** The region warm's three cheap levers are all on main:
+> - L2 + L3 (`a05b6132`): no 400 ms floor after the settle, and the build's promise pumps story.
+> - L1 (`3276311d`): each graph's edge keys and seats are built once for the partner loops, output-identical.
+>
+> Story entry, click → driving, on the three random seeds (2623851183, 3997014678, 744309545):
+>
+> | | before (main `cf7a93ff`) | after (main `3276311d`) |
+> |---|---|---|
+> | story entry, 1× | 10.3–10.8 s | 8.7–9.5 s |
+> | story entry, ×4 | 15.5–15.9 s | 13.8–14.2 s |
+> | cold → driving, ×4 | ~25.1 s | ~23.4 s |
+>
+> **What is left is big, and NEITHER lever is built** (orchestrator, 2026-11-07):
+> - ~2.2 s of serial plan bites on the network worker: the band's and the plan layer's pin derivation, the settle
+>   deletions, and the build's `_assembleGraphEdges`. Cutting these means fanning the per-edge grade solves out to
+>   the route pool.
+> - 1–2 single route jobs per seed of 700–800 ms. Each sets its wave on its own, and no dispatch order beats it. This
+>   is router internals.
+>
+> **Whether to keep going past ~23.4 s at ×4 is the owner's call.** The owner's bar is 30 s. "Behind the menu" (hide
+> the whole entry) stays parked by the owner. The details are in the region-warm sections near the end.
+
 > **2026-09-22 — THE FRAME FOR EVERYTHING BELOW: every load is a cold generation.** The typical
 > session is Minecraft-style: a fresh random seed and a world nobody has built before; a custom seed
 > or a resumed save regenerates from nothing too (owner; recorded in DESIGN.md, "Every world is
