@@ -93,3 +93,22 @@ quiet box).
 
 **Gate:** `expedition-camp` now also checks for two auto shops inside the wall (`320c6d03`). It needs no extra build,
 because that gate already builds the full roster on seeds 1 and 6. PASS on both.
+
+### The map is why the owner saw one (2026-11-07)
+
+A story run on 386773705 (`wip/feat-179/mapshot.mjs`) puts both auto shops in the map's own POI list. The map hides
+the second in two ways:
+
+1. **It opens framed on the current route**, about 2 km across. Only the near shop is in frame; the second is 2.4 km
+   further east.
+2. **Zoomed out, the doctor's blue diamond (71 m away) covers the east shop's pale wrench.** `_drawPois` draws in
+   roster order, and the doctor comes after the auto shop.
+
+Owner page: https://claude.ai/artifact/N3x8Co14XVye6XLkbXLpnf (shots in `wip/feat-179/shots/`). Tracker item
+`feat179-map`:
+- (a) leave it, and close on the gate;
+- (b) pictogram places draw over the plain diamonds;
+- (c) the map opens on the whole region.
+
+**Smoke on the lane head `88b5dc3a`** (main `be546ce9` merged, run through `tools/chrome-slot.sh`): PASS, 25 steps,
+zero console errors.
