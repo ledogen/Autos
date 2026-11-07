@@ -1326,12 +1326,15 @@ const STEPS = [
     if (await js('window.__vs.parked')) await tap(' ')
     { const c0 = await car(); await hold('w', 5); const c1 = await car(), d = Math.hypot(c1.x - c0.x, c1.z - c0.z)
       check(d > 10, `the truck did not drive off from the burger joint: ${d.toFixed(1)} m in 5 s of throttle`) }
+    const evePeek = () => js('JSON.stringify({ first: window.__board().firstState(), h: window.__day().clockH(), dlg: getComputedStyle(document.getElementById("dialogue-panel")).display })')
+    check(await js('window.__board().firstState() === "closed"'), `the evening ended before the map taps: ${await evePeek()}`)
     // Stage 2: M is the skip's hold now, but a TAP still opens the map (on the release) and closes it.
     await tap('m')
-    check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a tap of M in the evening did not open the map')
+    check(await until(() => js('window.__map2d().isOpen()'), 2000), `a tap of M in the evening did not open the map: ${await evePeek()}`)
+    check(await js('window.__board().firstState() === "closed"'), `the first tap of M skipped the evening: ${await evePeek()}`)
     await tap('m')
     check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'a tap of M in the evening did not close the map')
-    check(await js('window.__board().firstState() === "closed"'), 'a tap of M skipped the evening')
+    check(await js('window.__board().firstState() === "closed"'), `a tap of M skipped the evening: ${await js('JSON.stringify({ first: window.__board().firstState(), wd: window.__worstDay(), h: window.__day().clockH(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), map: window.__map2d().isOpen() })')}`)
     // Stage 3, the safe drive: the clock holds on the way home, and off the road R puts the truck back on it.
     const h0 = await js('window.__day().clockH()'); await simFor(2)
     check(await js('window.__day().clockH()') === h0, `the clock ran on the evening's drive (${h0} → ${await js('window.__day().clockH()')})`)
@@ -1357,6 +1360,7 @@ const STEPS = [
       check(await until(() => js('window.__seated'), 30000, 250), `the teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
       await readCards(); await simFor(1)
     }
+    console.log(`  worst day: ${JSON.stringify(await wd())}`)
     if ((await wd()).pump) {
       const pz = await js(`(() => { const q = window.__poi().list().find(q => q.id === window.__worstDay().pump.id); return window.__towSeat(q) })()`)
       await tp(pz.x, pz.z, pz.heading); await park(true)
@@ -1365,6 +1369,7 @@ const STEPS = [
       await hold('f', 3); await tap(' ')   // pump, then the brake off pays
       check(await until(async () => (await wd()).pump.done, 3000), `filling up did not end the station's beat: ${JSON.stringify(await wd())}`)
     }
+    console.log('  worst day: halfway')
     // Halfway home: a road point at 40 % of the crow distance from mom's, once the home leg is measured.
     await simFor(0.5)
     const half = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse'), v = window.__vs.position
@@ -1373,6 +1378,7 @@ const STEPS = [
     check(half, 'no road halfway home')
     await tp(half.x, half.z, half.h)
     check(await until(async () => (await wd()).flat && await js('window.__damage.flat[0]'), 3000), `halfway home, no flat: ${JSON.stringify(await wd())}`)
+    console.log('  worst day: the flat')
     await park(true)
     await tap('v'); await readCards()   // the damage screen's card
     await tap('Escape')
@@ -1380,19 +1386,20 @@ const STEPS = [
     await tap('Escape')   // the spare's picker; closing it reopens the inventory (parked)
     if (await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000)) await tap('Escape')
     await js('window.__econ.money = Math.max(window.__econ.money, 100)')   // the tire at the shop is real money
+    console.log('  worst day: the tow')
     await tap('x'); await readCards()   // the recovery menu's card
     check(await until(() => js('!!document.querySelector("#recovery-card button[data-act=towShop]:not([disabled])")'), 2000), 'the recovery menu offers no tow to a shop')
     await js('document.querySelector("#recovery-card button[data-act=towShop]").click()')
     check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 8000), 'the tow did not land at an open shop')
     check((await wd()).towed, 'the tow was not counted (the night beat)')
+    console.log('  worst day: the shop')
     await readCards()   // the shop's cards
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     const fit = 'document.querySelector("#svc-screen button[data-act=buy][data-socket=tireFL]:not([disabled])")'
     check(await until(() => js(`!!${fit}`), 2000), 'the shop offers no tire for the front left')
     await js(`${fit}.click()`)
     check(await until(() => js('!window.__damage.flat[0]'), 2000), 'buying a tire for the flat corner did not fix it')
-    await tap('Escape'); await tap(' ')
-    await hold('w', 1)
+    await tap('Escape'); await tap(' ')   // off the brake: the night drive, whose card holds the sim
     check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')
     await readCards()
     // Parked at hers: her sleep card, the timer preset to wake at 07:00 — and sleeping posts the casserole.
@@ -1401,12 +1408,14 @@ const STEPS = [
     // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
     await js(`window.__seated = false; window.__teleport(${mom.x}, ${mom.z}, ${mom.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), "the teleport to mom's never seated")
-    check(await readCards() >= 1, "no parking lesson near hers")   // FEAT-184: the flat's lessons were read on the way
-    await simFor(1)   // the 0.5 m drop lands
-    await park(true)
+    // FEAT-184: the flat's lessons were read on the way. The truck seats latched, and after the tow that counts as a pull:
+    // her sleep card (and its lessons) may already be open on arrival — then no second park, whose Space would turn them.
     const panel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
+    let lessons = await readCards()
+    if (!await panel()) { await simFor(1); await park(true) }   // the 0.5 m drop lands, then a fresh pull
     check(await until(panel, 3000), "parking at mom's in the evening opened no sleep card")
-    check(await readCards() >= 3, "her sleep card brought no sleep lessons")
+    lessons += await readCards()
+    check(lessons >= 4, `no parking and sleep lessons at hers (${lessons} read, want her parking card and her three sleep cards)`)
     await js('document.getElementById("cp-sleep").click()')
     const want = await js('Math.round(7 - window.__day().clockH())')
     check(await js('+document.getElementById("cp-hours").value') === want, `the evening's sleep timer is not preset to 07:00 (${await js('document.getElementById("cp-hours").value')} h, want ${want})`)

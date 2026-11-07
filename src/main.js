@@ -4506,7 +4506,21 @@ function _endEvening () {
 // first card to mom's door, with the prompt on screen the whole time (no hidden gesture). While the opening
 // can be skipped, M no longer opens the map on the press: a release under the hold opens it, the hold skips.
 const SKIP_HOLD_MS = 1000   // [DEFAULT] — the pad's View hold is the same second
+const SKIP_LATE_MS = 150    // a timer this late ran behind a stalled frame — see _skipFire
 let _skipTimer = 0          // setTimeout handle while M is held, 0 when not
+let _skipDownAt = 0         // performance.now() of the press the timer measures from
+/** The hold's second is up — unless the timer ran late. A stalled frame (the map's first build) can run it seconds late
+ *  with the M RELEASE still queued behind it, and a tap would then skip the tutorial (FEAT-184 smoke, 2026-11-08). Late,
+ *  it waits one more beat for that release; a key still down then is a real hold. */
+function _skipFire () {
+  if (performance.now() - _skipDownAt > SKIP_HOLD_MS + SKIP_LATE_MS) {
+    _skipDownAt = performance.now() - SKIP_HOLD_MS
+    _skipTimer = setTimeout(_skipFire, SKIP_LATE_MS)
+    return
+  }
+  _skipTimer = 0
+  _skipOpening()
+}
 function _skipRelease () {
   if (!_skipTimer) return false
   clearTimeout(_skipTimer); _skipTimer = 0
@@ -4517,7 +4531,8 @@ document.addEventListener('keydown', e => {
   if ((e.key !== 'm' && e.key !== 'M') || !_eveningLeg()) return
   e.preventDefault(); e.stopImmediatePropagation()   // neither the map nor a card hears it
   if (_skipTimer || e.repeat) return
-  _skipTimer = setTimeout(() => { _skipTimer = 0; _skipOpening() }, SKIP_HOLD_MS)
+  _skipDownAt = performance.now()
+  _skipTimer = setTimeout(_skipFire, SKIP_HOLD_MS)
   document.getElementById('skip-hint')?.classList.add('holding')
 }, { capture: true })
 document.addEventListener('keyup', e => {
