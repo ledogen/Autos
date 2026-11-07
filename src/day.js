@@ -59,8 +59,9 @@ export const DAY_PARAMS = {
     // ── Hunger (FEAT-169, items.md §1d) — a RATE on the awake drain, never a meter (SM-INV-10) ──
     // A meal holds hunger off for its own hold (data/items.js `hold`). Past it the drain runs
     // ×hungryRate, rising linearly to ×starvingRate over hungryRampH (ruled 2026-10-20: ×1.25 → ×1.5;
-    // the ramp [DEFAULT]). A run starts on a standard meal, and BEDTIME COUNTS AS ONE (items.md's open
-    // question, its simplest answer [DEFAULT]): an 8 h night wakes right at the edge of hungry.
+    // the ramp [DEFAULT]). A run starts on a standard meal, and SLEEP STOPS THE CLOCK (FEAT-173, owner
+    // 2026-11-06: "sleeping should not run the hunger meter", which retired 'bedtime counts as a meal'):
+    // the hold stands still for the night, so a meal eaten at camp in the evening is all there at waking.
     // OFF for the owner's alpha playtest (2026-11-06): no shop or food vendor sells food yet, so hunger only
     // drained the run. Flip back to true once food is buyable.
     hungerOn:     false,
@@ -371,7 +372,7 @@ export class DaySystem {
      */
     sleep (hours, vibe, rest = 0) {
         const h = Math.max(0, hours)
-        this.eat(DAY_PARAMS.mealHoldH)   // FEAT-169: bedtime counts as a standard meal [DEFAULT]
+        this._fedUntilH += h   // FEAT-173: the hold does not run asleep — a hungry bedtime wakes exactly as hungry
         this._advanceHours(h)
         this._crashes = []   // slept off (DAY_PARAMS energyDrink*)
         // ONE CODE PATH with the sleep dialogue's live preview: previewWake IS this arithmetic, and
