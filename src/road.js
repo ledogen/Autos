@@ -2043,6 +2043,21 @@ export class RoadSystem {
     }
 
     /**
+     * BUG-63's parallel runs: a second road between one node pair (key PARALLEL_SUFFIX), in the world — drawn, carved,
+     * collided — but not in networkGraph. `[{ key, cellA, cellB, centerline, length }]`, the centerline the points-backed
+     * sampler over the run's driven arc (polyCum), as edgeParData hands out for a trimmed run. Read-only. FEAT-154:
+     * poi.js rows a parallel that crosses the story wall like any other road out.
+     */
+    parallelRuns() {
+        const out = []
+        for (const [key, e] of this._network) {
+            if (!key.endsWith(PARALLEL_SUFFIX) || !e.points || e.points.length < 2 || !e.polyCum) continue
+            out.push({ key, cellA: e.cellA, cellB: e.cellB, centerline: _pointSampler(e.points, e.polyCum), length: e.polyCum[e.polyCum.length - 1] })
+        }
+        return out
+    }
+
+    /**
      * Routed geometry for one graph edge, in the form the par oracle consumes:
      * `{ centerline, gradeAt(s), key }`. Reuses the registered network entry when the edge is
      * streamed; otherwise routes it (cached in _proto.cls) and grades a fresh sample — the same

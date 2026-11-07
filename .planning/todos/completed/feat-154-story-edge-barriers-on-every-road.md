@@ -1,7 +1,7 @@
 ---
 id: FEAT-154
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-10-30
 source: owner, 2026-10-30 — "make a ticket (preferably up front) that says we need to put barriers on all roads that lead out of the playable area for story mode. most still just have the invis wall."
@@ -11,7 +11,7 @@ lane: A
 
 # FEAT-154: Every road leaving the story play area ends at barricades, not an invisible wall
 
-**Open for one item (2026-11-07):** built and on main (755ea9e5; map ticks 1b288a82). The last follow-up below was measured and does occur: barricade rows on the `~p` parallel runs that cross the wall (2 of 51 worlds). That is Lane A work, not an owner wait.
+**The last item is built (2026-11-07, Lane A, with BUG-128):** rows on BUG-63's `~p` parallel runs that cross the wall. Close it on this landing.
 
 ## What
 
@@ -85,9 +85,21 @@ The design moved on from "the truck stops at them":
   ~30 m inside the wall, so the return seated the truck just past the barricades and it crashed back
   through them). `_returnSpots` drops a spot on a row's far side or within poiEdgeReturnM inside it;
   on seed 3852053035 the camp road's last spot moved from 17 m past the row to 20 m inside it.
-- [ ] Rows are not placed on BUG-63 `~p` parallel runs (they are absent from `networkGraph`). **MEASURED 2026-11-07
+- [x] Rows are not placed on BUG-63 `~p` parallel runs (they are absent from `networkGraph`). **MEASURED 2026-11-07
       (Lane A, `wip/feat154-parallel.mjs`, the 51-world BUG-124 census):** 37 parallel runs on 28 worlds; **2 worlds**
       have one crossing the planners' wall with no row (2167923713, 3109505264, one crossing each). It occurs, so
       it is not closed: the fix is a row at each `~p` wall crossing too (poi.js barricades, plus the expedition-camp
       gate's independent crossing count). The edge fade still returns a truck that drives out there, so it is a
       missing cue, not a hole.
+      **BUILT 2026-11-07 (Lane A):**
+      - `road.js parallelRuns()` lists the parallels, read-only: key, cells, and the points-backed centerline
+        edgeParData uses.
+      - `poi.js _wallRoads` walks every graph edge once, then the parallels, for both the rows (`_edgeRows`, same skip
+        rule) and the fade's return spots (`_returnSpots`).
+      - expedition-camp finds the parallel crossings off the network itself and pins 2167923713: 23 of 23 rows
+        there, 22 of 23 before. On 3109505264: 21 of 21.
+      - The new parallel row's return lands on its own road 42 m in, which the own-road rule (BUG-128) accepts.
+      - World fingerprint vs main: identical.
+## Landed (orchestrator, 2026-11-07)
+
+Merge of 4f19faf2 on main (tree identical): affected 61/61, fingerprint-world 54/54 identical, cdp-smoke 25/25.
