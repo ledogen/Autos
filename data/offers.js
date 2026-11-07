@@ -697,12 +697,12 @@ export const BONUS_LEG_MIN_M = 1500
 /**
  * GAME-FEEL REVIEW 2026-10-23 (R-07): what a reward is WORTH, in day-1 dollars, for the card's "Tip:
  * Compressor ($20)". A carrot with no number on it can't be weighed against the cash tip it replaces.
- * Parts and shelf items read their own price (data/parts.js, data/shop-stock.js ITEM_PRICE); these
- * are the consumables and meals from items.md §1/§7. A price, never a stat (SM-INV-10).
+ * Parts and shelf items read their own price (data/parts.js, data/shop-stock.js ITEM_PRICE — the storefronts'
+ * coffee, meals and field repairs too, FEAT-104); these are the rest. A price, never a stat (SM-INV-10).
  */
 export const REWARD_VALUE = {
-    coffee: 3, energyDrink: 4, chiliDog: 5, dinnerMeal: 5, emergencyGas: 8,
-    zipTies: 8, ductTape: 8, stopLeak: 8, rubberBedMat: 8,
+    dinnerMeal: 5,
+    zipTies: 8, stopLeak: 8, rubberBedMat: 8,
     // FEAT-168 [DEFAULT]: the school lunch and the camp gear the shelf doesn't price
     schoolLunch: 5, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,
 }

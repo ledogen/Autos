@@ -35,4 +35,25 @@ export const ITEM_PRICE = { tirePlugKit: 7, compressor: 20, quickJack: 30,   // 
     zipTies: 10, stopLeak: 10,  // owner, 2026-10-24
     hiLiftJack: 20,             // FEAT-138 [DEFAULT]: the middle of the owner's $10–30 (2026-10-24)
     // FEAT-168 camp-gear-source (owner, 2026-11-06: "camp + shelf") [DEFAULT]
-    shadeTarp: 6, awning: 12, tent: 15, cookingKit: 15 }
+    shadeTarp: 6, awning: 12, tent: 15, cookingKit: 15,
+    // FEAT-104: the storefronts' lines (items.md). Moved here from data/offers.js REWARD_VALUE, so a reward
+    // card still reads the same price. Duct tape and emergency gas are "$5–10": $8 is the reading the
+    // reward card already used [DEFAULT].
+    coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8,
+    jerryCan: 30 }              // owner, 2026-10-22: "sold at the gas station, rarely, $30" — sold full
+
+/**
+ * FEAT-104: what each storefront sells, by POI type (owner, 2026-10-07: buy only, no stock levels). Only
+ * items that exist in data/items.js and have a ruled price; items.md says which store sells what.
+ *   always   new, never out, listed after any slots (the auto shop's ALWAYS rule).
+ *   weights  the few lines items.md sells "rarely". They roll on the auto shop's slots and on its scale:
+ *            a fill lands on one of these lines as often as it would on an auto-shop part of the same
+ *            weight, and the rest of the scale turns up nothing (src/shop-stock.js).
+ * The tackle shop sells nothing yet: its lines (the coolers, ice, fishing gear) aren't items. The auto shop
+ * is the rows above (ALWAYS, data/stock-weights.js).
+ */
+export const STOREFRONT = {
+    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape'] },
+    gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas'], weights: { jerryCan: 1 } },   // Rarely
+    foodVendor:   { always: ['coffee', 'chiliDog'] },
+}
