@@ -906,10 +906,16 @@ export class PoiSystem {
      * site's own, and nothing else may pass inside the same `lat` the site keeps from its own road.
      * One query, no routing change — a router-side keep-out would move roads for a placement
      * problem.
+     *
+     * BUG-131: the query reaches 2.5 m PAST `lat`. The site sits `lat` from its own road, so at a
+     * radius of exactly `lat` the own road's nearest 2 m spline sample often fell just outside it,
+     * queryNearest fell back to the raw polyline (runKey '', its contract for "unknown"), and the
+     * site was rejected for its own road — 39 of 43 rejections on two random seeds. A sample
+     * 2.5 m out still answers with its run key; the `< lat` test below is the rule.
      */
     _otherRoadNear (road, ownKey, cx, cz, lat) {
         if (!road.queryNearest) return false
-        const hit = road.queryNearest(cx, cz, lat)
+        const hit = road.queryNearest(cx, cz, lat + 2.5)
         if (!hit || !hit.point) return false
         if (hit.runKey === ownKey) return false
         return Math.hypot(hit.point.x - cx, hit.point.z - cz) < lat

@@ -10,7 +10,7 @@ source: owner, 2026-09-30 — "mission giver quarry, it provides haul missions: 
   get their own unique POI and will represent the haul mission career path."
   Follow-ups the same day, answering the ticket's questions (see "Rulings" — the current shape).
 relates: FEAT-88 (Haul — the bed-cargo mission these givers post; HARD prerequisite), FEAT-89
-  (Courier — the other family every yard also posts and receives), FEAT-110 (ratchet straps, parked),
+  (Courier — a yard RECEIVES courier deliveries; it posts haul only, owner 2026-11-07), FEAT-110 (ratchet straps, parked),
   FEAT-67 (offer board — sources/families/slots), FEAT-46 (POI lay-by pads), FEAT-74 (POI pools),
   FEAT-36 (debris), FEAT-43 (region confinement), ASSET-36 splitting yard · ASSET-11 sawmill ·
   ASSET-35 quarry · ASSET-37 firewood armload · ASSET-38 lumber bundle · ASSET-12 lumber-yard kit
@@ -29,17 +29,18 @@ requires: FEAT-88 shipped (world-truck bed well ✅ on main f47d4a9, cargo spawn
 built as `firewoodYard` (`src/poi.js:267`, the ASSET-36 splitting yard): haul offers with the picked quantity
 (FEAT-114), the drop zone, `test/haul-load.mjs` (determinism, catch, wear, cap), and it receives courier jobs (the
 general store's chainsaw / axe / shovel, `data/offers.js`). **Missing from the alpha slice:**
-- **The yard posts no courier jobs** (`data/offers.js` SOURCES: `families: ['haul']`, "lands with FEAT-89" — FEAT-89
-  is built). No courier THING lists `firewoodYard` in its `pools`, and the 2026-10-22 "one offer at a time" ruling
-  covers this giver's board. Owner's words owed: what a splitting yard sends out, and whether the one-offer rule
-  holds once a courier job can sit beside the haul.
-- **The frame cost of the largest firewood load** (30 bundles) is not measured against the 60 fps budget.
+- ~~The yard posts no courier jobs.~~ **Ruled 2026-11-07 (owner, alpha-audit-calls): "splitting yard haul only.
+  correct the ruling. no need for courier to exist everywhere."** `families: ['haul']` is the shape, not a gap.
+  It still receives courier deliveries (the general store's chainsaw / axe / shovel); the owner's words don't
+  ask to remove that, so it stays.
+- ~~The frame cost of the largest firewood load (30 bundles) is not measured against the 60 fps budget.~~ Measured
+  2026-11-07: within budget at CPU ×1, the mid-range-laptop target (§ Frame cost of the largest load, below).
 
 ## The shape (owner, 2026-09-30)
 
 Three **yard POIs**, one per region, each with its own model and a **loading bay**. Each posts
-**haul** jobs for its own load (FEAT-88) **and also gives and takes courier jobs** (FEAT-89) — a yard
-is a working business, so small items leave from it and arrive at it like anywhere else.
+**haul** jobs for its own load (FEAT-88). ~~and also gives and takes courier jobs (FEAT-89)~~ — **corrected 2026-11-07
+(owner): a yard posts haul only**; courier deliveries may still arrive at it.
 
 | Region | Yard | Haul load | Loading beat |
 |---|---|---|---|
@@ -185,7 +186,8 @@ a POI type region-specific. This ticket adds it:
 - [ ] The full quarry load rides at road speed without escaping on a flat straight (extend
       `test/cargo-bed.mjs`), and visibly squats the rear.
 - [ ] Settling pays on mass aboard × roughness, continuous, floored at zero (FEAT-88's curve).
-- [ ] Frame cost of the largest load measured and within the 60 fps budget (PERF-08 harness).
+- [x] Frame cost of the largest load measured and within the 60 fps budget (PERF-08 harness). **Measured, within
+      budget at ×1** (2026-11-07, § Frame cost of the largest load).
 
 ## Progress — region-1 slice (2026-10-04, `feature/haul-firewood`)
 
@@ -212,3 +214,53 @@ The rolled piece count is reversed: **the player picks how many pieces to load**
 soft and hard limits (FEAT-112), and **yards run limited-time rate bonuses** for the rare, juicy
 haul. Built in **FEAT-114**. Straps are not an item for haul (FEAT-110 closed): the loose load's
 chaos is the point. See design-amendments-2026-10-14.md §8–9.
+
+## Frame cost of the largest load (Lane B, 2026-11-07)
+
+**How.** Probe `wip/feat-91/haul-cost.mjs` (not a gate; run through `tools/chrome-slot.sh`). It boots the real app
+with `?prof=1`, starts a story run on a random seed and delivers the casserole. Then it takes the splitting yard's
+haul at its bay through the real accept and loader, with the pick forced to 30 (`HAUL_STOCK`'s top). It reads the
+game's per-frame CPU buckets and a rAF recorder over five windows:
+
+- **dump**: the 30 bundles dropping into the bed, about 9 s
+- **settled**: parked with the pile, 6 s
+- **drive**: W held 12 s down the job's road
+- **empty**: the same road, same 12 s, after abandoning the job (the game's cancel clears the load)
+- **parked**: empty, 6 s
+
+Seeds 2575514571 (×1 and ×4), 1933851895 (×1) and 1343970293 (×4). There were no page errors, and all 30 bundles
+were still aboard after every drive.
+
+Mean game CPU per frame, as physics / render / everything else = total (ms), then the worst 1-second window:
+
+| window | CPU ×1 | CPU ×4 |
+|---|---|---|
+| dump | 1.3/1.8/0.8 = 3.9 · 60 fps; 1.5/2.2/1.2 = 4.8 · 60 fps | 4.4/6.7/3.0 = 14.2 · 45 fps; 8.9/8.8/6.8 = 24.4 · 24 fps |
+| settled | 1.5/2.1/0.8 = 4.3 · 60 fps; 1.5/2.5/0.8 = 4.8 · 60 fps | 4.9/8.3/3.1 = 16.3 · 38 fps; 7.1/9.2/3.5 = 19.8 · 40 fps |
+| drive, loaded | 2.2/2.3/1.1 = 5.6 · 60 fps; 1.8/3.6/1.7 = 7.1 · 58 fps | 7.9/6.9/5.4 = 20.2 · 18 fps; 12.6/8.6/8.0 = 29.2 · 14 fps |
+| drive, empty | 1.6/2.7/1.2 = 5.5 · 55 fps; 1.3/3.2/1.3 = 5.8 · 51 fps | 5.2/6.5/3.6 = 15.3 · 37 fps; 8.6/7.4/4.2 = 20.1 · 33 fps |
+| parked, empty | 1.4/2.8/1.0 = 5.2 · 60 fps | 9.3/6.9/3.5 = 19.7 · 39 fps |
+
+Draw calls: 261–292 loaded against 144–145 empty. That is +120–145, because each bundle draws about 4–5 calls with
+its shadow. The empty drive's lower worst second at ×1 is streaming hitches, not the load.
+
+**Read.**
+- At ×1, the mid-range-laptop target (CLAUDE.md), the loaded drive uses 5.6–7.1 ms of the 16.7 ms frame. The load
+  costs about +0.6 ms of physics and +0.4 ms of render per frame. Every load window holds 60 fps.
+- At ×4 the base game is already over budget with an empty truck: 15–20 ms, worst second 33–37 fps. The load adds
+  5–9 ms per frame while driving (physics +2.7–4.0, render +0.4–1.2, everything else +1.8–3.8), and the worst second
+  falls to 14–18 fps. PERF-32's catch-up brake turns that into slow motion, not a spiral.
+- The pile never sleeps: 28–30 of the 30 bodies stay awake even parked. They touch the chassis, which is
+  `canSleep: false`, and Box3D only sleeps whole islands (a touching group). While driving it couldn't sleep anyway.
+
+**Levers, if a ×4 machine ever has to hold with the load (none built; no ticket — this line is the record).**
+1. **Piece count** (physics, the biggest share). The pile costs about 20 µs per bundle per step at ×1 (+0.6 ms ÷
+   30). Cutting `HAUL_STOCK`'s top from 30 to 20 removes about a third of it. It is a one-line data change, but the
+   pick range and the pay are the owner's. There is no debris-only substep lever: Box3D runs one substep count (our
+   8) for the whole world.
+2. **Instance the three bundle variants** (render). Three InstancedMeshes take the +120–145 draw calls to about
+   10, worth about 0.4 ms (×1) / 1.2 ms (×4). The cost is debris.js's per-body mesh path for cargo kinds (`meshOf` and
+   `blink` assume one mesh per body): about 50 lines plus the cargo gates. Medium.
+3. **"Everything else" grows with the load at ×4** and is not attributed. A `test/profile.mjs --trace` run would
+   name it before anything is built against it.
+
