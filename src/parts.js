@@ -115,7 +115,9 @@ export class PartsSystem {
 
     _fit (id, socket, cond) {
         const part = PARTS[id]
-        Object.assign(this._params, part.patch)
+        // FEAT-176: a part that fits either axle names both axles' keys; this socket takes only its own.
+        const other = { Front: 'Rear', Rear: 'Front' }[/(Front|Rear)$/.exec(socket)?.[1]]
+        for (const [k, v] of Object.entries(part.patch)) if (!other || !k.endsWith(other)) this._params[k] = v
         runParts.fitted[socket] = id
         this._rideHeight()
         for (const t of SLOTS[socket].tracks) {
@@ -136,7 +138,7 @@ export class PartsSystem {
         const lift = PARTS[runParts.fitted.lift]?.patch
         if (!lift) return
         for (const ax of ['Front', 'Rear']) {
-            const drop = PARTS[runParts.fitted['springs' + ax]]?.drop ?? 0
+            const drop = PARTS[runParts.fitted['springs' + ax]]?.drop?.[ax] ?? 0
             this._params['suspensionRestLength' + ax] = lift['suspensionRestLength' + ax] - drop
             this._params['suspensionTravel' + ax] = lift['suspensionTravel' + ax] - drop
         }

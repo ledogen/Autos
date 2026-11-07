@@ -93,7 +93,7 @@ import { ServiceCenter } from './service.js'              // SM-3: repairs and p
 import { ServiceScreen } from './service-screen.js'
 import { startShelves, shelf, shelfPrice, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
-import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside,
+import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, swapCorners, swapCornerHours, plugTire, plugMethods, PLUG_H, fitRoadside,
   FIELD_REPAIR, fieldRepair, fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
@@ -106,7 +106,7 @@ import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, TUT, DLG
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planTourJob, customersForTier, PAPER_PARAMS } from './paper-route.js'
+         planTourJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -1539,8 +1539,6 @@ function _setSetupMode (mode) {
   _setupMode = mode
   const panel = document.getElementById('mm-setup-panel')
   if (panel) panel.dataset.mode = mode
-  const note = document.getElementById('su-save-note')
-  if (note) note.style.display = mode === 'story' && hasRun() ? '' : 'none'
   if (mode === 'scenarios') _renderScenarioList()
 }
 /** The new-game page, opened on story — the mode is never remembered (owner, 2026-10-31). */
@@ -1571,14 +1569,16 @@ async function _startFromSetup () {
   await _startFreeRoam(_resolveSeed(seed))
 }
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
-// discards it, and the page says so.
+// discards it, and the warning under new game says so.
 document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
-/** The main menu's continue button stands only while a run is saved. Wired here, ahead of the boot
- *  awaits (the free-roam seat is ~2.5 s of cold routing), like the buttons above: it shows with the
- *  menu, and an early click waits in _startStory's `await _worldReady`. */
+/** The main menu's continue button stands only while a run is saved, and so does the warning under new
+ *  game. Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
+ *  buttons above: it shows with the menu, and an early click waits in _startStory's `await _worldReady`. */
 function _syncContinue () {
-  const b = document.getElementById('mm-continue')
-  if (b) b.style.display = hasRun() ? '' : 'none'
+  for (const id of ['mm-continue', 'mm-save-note']) {
+    const el = document.getElementById(id)
+    if (el) el.style.display = hasRun() ? '' : 'none'
+  }
 }
 _syncContinue()
 document.getElementById('mm-continue')?.addEventListener('click', () => {
@@ -3706,12 +3706,15 @@ const dialogueSystem = new DialogueSystem()
 const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
 const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space'])   // FEAT-125: see _renderDialogue
 const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0 }
-/** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order. */
+/** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order.
+ *  FEAT-174: the other input's half of a line (kc-kb / kc-pad) is left whole, so the stream spends no time on
+ *  words that are not shown, and a switch mid-card shows that half at once. */
 function _hideWords (el) {
   const words = []
+  const off = document.body.classList.contains('pad-on') ? 'kc-kb' : 'kc-pad'
   const walk = (node) => {
     for (const c of [...node.childNodes]) {
-      if (c.nodeType !== Node.TEXT_NODE) { walk(c); continue }
+      if (c.nodeType !== Node.TEXT_NODE) { if (!c.classList?.contains(off)) walk(c); continue }
       const frag = document.createDocumentFragment()
       for (const part of c.textContent.split(/(\s+)/)) {
         if (!part) continue
@@ -4380,6 +4383,47 @@ function _homeGuide () {
   return _eveningGuide
 }
 
+// BUG-118 (owner 11-06: "way off the path in the tutorial the GPS doesn't update"): the tutorial's GPS
+// follows the truck. Once it is RR_PARAMS.offM off the line for RR_PARAMS.offS (the paper route's FEAT-63
+// trigger), the line is re-planned from the truck's own road point to the same door. It is guidance only:
+// the job's route, par and arrival never read it. A re-plan waits until the truck has moved offM from the
+// last one, so a truck parked off the tarmac does not plan every 2 s.
+let _tutDetour = null   // { base, route, x, z }: the line for `base`, planned with the truck at (x, z); or null
+let _tutOffAt = 0       // performance.now() when the truck left the line; 0 while on it
+
+/** The tutorial leg in play: the route its GPS would show and the door that route ends at, or null. */
+function _tutLeg () {
+  if (_eveningLeg()) { const base = _homeGuide(), door = _mom(); return base && door ? { base, door } : null }
+  const m = missionSystem?.mission
+  if (offerBoard?.firstState() !== 'taken' || !m || !['staging', 'running'].includes(missionSystem.state)) return null
+  const door = poiSystem.list().find(q => q.id === m.endPoiId)
+  return door ? { base: missionSystem.guideRoute(), door } : null
+}
+
+/** The line the GPS shows for `base`: its re-plan from the truck when there is one. */
+const _tutLine = base => _tutDetour?.base === base ? _tutDetour.route : base
+
+/** On the run-HUD poll: re-plan the tutorial's GPS from the truck once it is off the line. */
+function _tutDetourTick () {
+  const leg = _tutLeg(), v = vehicleState.position
+  if (!leg) { _tutDetour = null; _tutOffAt = 0; return }
+  const poly = _tutLine(leg.base)?.poly
+  if (!poly?.length) return
+  let off = Infinity
+  for (const p of poly) off = Math.min(off, Math.hypot(p.x - v.x, p.z - v.z))
+  if (off <= RR_PARAMS.offM) { _tutOffAt = 0; return }
+  const now = performance.now()
+  _tutOffAt ||= now
+  if (now - _tutOffAt < RR_PARAMS.offS * 1000) return
+  if (_tutDetour?.base === leg.base && Math.hypot(v.x - _tutDetour.x, v.z - _tutDetour.z) < RR_PARAMS.offM) return
+  _tutOffAt = 0
+  const from = roadOrigin(roadSystem, v)
+  const route = from && missionSystem.planOffer(from, { rng: Math.random,
+    dest: { kind: 'poi', pois: [leg.door], strict: true, anyLeg: true, nearest: true } })
+  // No plan (the truck on the door's own road, or off every road): keep the line, and the spot it failed at.
+  _tutDetour = { base: leg.base, route: route?.segments?.length ? route : _tutLine(leg.base), x: v.x, z: v.z }
+}
+
 /** Hours of sleep from now to 07:00 on day 1 — the evening's night, the sleep timer's preset. */
 const _eveningSleepH = () => DAY_PARAMS.dayStartHour - daySystem.clockH()
 
@@ -4597,10 +4641,10 @@ gpsSystem = new GpsSystem(scene, {
     // starts THERE; the map's start pin and the source's lit park spot are the waypoint.
     if (missionSystem?.mission?.approach) return null
     // FEAT-170: the opening's evening has no job, only the way home to mom's.
-    if (_eveningLeg()) return _homeGuide()
+    if (_eveningLeg()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
     // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
     if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
-    return (s === 'countdown' || s === 'staging' || s === 'running') ? missionSystem.guideRoute() : null
+    return (s === 'countdown' || s === 'staging' || s === 'running') ? _tutLine(missionSystem.guideRoute()) : null
   },
   getCar: () => vehicleState.position,
   // Read at BAKE time only (once per mission, plus while the bake is still partial): the design
@@ -5352,6 +5396,19 @@ function _pickSpare (e) {
     onClose: _backToInventory,
   })
 }
+
+/** FEAT-177: the damage screen's "Swap two wheels" — pick one corner, then the button for the other. */
+const _CORNER_WORD = ['front left', 'front right', 'rear left', 'rear right']
+damageScreen.onSwap = () => damageScreen.pick({
+  title: 'Swap two wheels',
+  corner: () => true,
+  note: _tireNote,
+  about: 'Each tire and wheel moves with its wear, and a flat stays flat.',
+  actions: ({ corner }) => [0, 1, 2, 3].filter(c => c !== corner).map(c => ({
+    label: `Swap with the ${_CORNER_WORD[c]} — ${formatGameDuration(swapCornerHours(inventorySystem))}`,
+    run: () => { const h = swapCornerHours(inventorySystem); if (swapCorners(partsSystem, damageModel, corner, c)) _afterRoadsideWork(h) },
+  })),
+})
 
 /**
  * The plug kit (owner, 2026-10-21): any flat — a corner, or a tire in the inventory. "Pump it by hand"
@@ -6773,7 +6830,8 @@ function _renderMissionUI () {
         const q = _mom(), vp = vehicleState.position
         if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · park there to sleep`
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
-        if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · ${keycap('R', 'D-pad →')} puts you back on it`)
+        // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
+        if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · <span class="kc-pad">hold </span>${keycap('R', 'D-pad →')} puts you back on it`)
       }
       break
   }
@@ -6971,6 +7029,7 @@ function _renderRunHud () {
   if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
   if (daySystem.clockH() >= DAY_PARAMS.dayStartHour) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
   _eveningBeats()
+  _tutDetourTick()     // BUG-118: the tutorial's GPS follows the truck
   const skip = document.getElementById('skip-hint')
   if (skip) skip.style.display = _eveningLeg() ? '' : 'none'
   _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
