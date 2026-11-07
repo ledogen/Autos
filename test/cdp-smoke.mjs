@@ -163,6 +163,24 @@ const deliverFirst = async () => {
   await seat(e.x, e.z, e.h)
   check(await until(() => js('window.__mission().state === "done"'), 5000), `seated at Larry's, the casserole did not arrive: ${await js('window.__mission().state')}`)
 }
+// BUG-118: way off the tutorial's line (45 m for 2 s, paper-route.js RR_PARAMS), the GPS re-plans from the truck
+// to the same door. It seats the truck at the nearest POI 150 m off the line and no nearer the door than it is now,
+// so the halfway lesson does not land early.
+const strayCheck = async (what) => {
+  const far = await js(`(() => { const g = window.__gps(), e = g.poly.at(-1), v = window.__vs.position
+    const d0 = Math.hypot(e.x - v.x, e.z - v.z), dv = q => Math.hypot(q.x - v.x, q.z - v.z)
+    const qs = window.__map2d()._getPois().filter(q => Math.hypot(e.x - q.x, e.z - q.z) > d0 && g.poly.every(p => Math.hypot(p.x - q.x, p.z - q.z) > 150))
+    const q = qs.reduce((a, b) => (!a || dv(b) < dv(a) ? b : a), null)
+    window.__g0 = g
+    return q ? { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz), ex: e.x, ez: e.z } : null })()`)
+  check(far, `no POI far off the line ${what} to stray to`)
+  if (!far) return
+  await seat(far.x, far.z, far.h)
+  check(await until(() => js('window.__gps() !== window.__g0'), 6000), `way off the line ${what}, the GPS did not re-plan (BUG-118)`)
+  const g = await js(`(() => { const p = window.__gps().poly, v = window.__vs.position
+    return { start: Math.round(Math.hypot(p[0].x - v.x, p[0].z - v.z)), end: Math.round(Math.hypot(p.at(-1).x - ${far.ex}, p.at(-1).z - ${far.ez})) } })()`)
+  check(g.start < 60 && g.end < 30, `the re-planned line ${what} does not run from the truck to the same door: ${JSON.stringify(g)}`)
+}
 // FEAT-170: every new run opens on the firing; holding M a second (the prompt says so) skips it, landing at
 // mom's at 07:00 with her casserole in hand. Wall-clock: the hold is a real-time timer, not sim time.
 const skipOpening = async () => {
@@ -327,6 +345,7 @@ const STEPS = [
     const food = await js('({ fed: window.__day().snapshot().fedUntilH - window.__day().clockH(), lunch: window.__inv.list().find(e => e.id === "packedLunch")?.n ?? 0 })')
     check(food.fed > 7.9 && food.lunch === 3, `the skip did not wake fed with mom's three packed lunches (FEAT-173): ${JSON.stringify(food)}`)
     check(await js('getComputedStyle(document.getElementById("skip-hint")).display === "none"'), 'the skip prompt outlived the skip')
+    await strayCheck('on the casserole')
     // Deliver it (BUG-117: it ends at Larry's), then the result card: Larry's welcome, then his intro (R-11).
     await deliverFirst()
     await js('document.getElementById("mp-accept").click()')
@@ -1222,6 +1241,7 @@ const STEPS = [
     await tap('r')
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 8000), 'R in the evening did not put the truck back on the road')
     check(await until(async () => !/off the road/.test((await eve()).hud), 2000), 'the HUD still says off the road on the road')
+    await strayCheck('in the evening')
     // Parked at hers: her sleep card, the timer preset to wake at 07:00 — and sleeping posts the casserole.
     const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
       return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`)

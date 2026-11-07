@@ -106,7 +106,7 @@ import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, TUT, DLG
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planTourJob, customersForTier, PAPER_PARAMS } from './paper-route.js'
+         planTourJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -4380,6 +4380,47 @@ function _homeGuide () {
   return _eveningGuide
 }
 
+// BUG-118 (owner 11-06: "way off the path in the tutorial the GPS doesn't update"): the tutorial's GPS
+// follows the truck. Once it is RR_PARAMS.offM off the line for RR_PARAMS.offS (the paper route's FEAT-63
+// trigger), the line is re-planned from the truck's own road point to the same door. It is guidance only:
+// the job's route, par and arrival never read it. A re-plan waits until the truck has moved offM from the
+// last one, so a truck parked off the tarmac does not plan every 2 s.
+let _tutDetour = null   // { base, route, x, z }: the line for `base`, planned with the truck at (x, z); or null
+let _tutOffAt = 0       // performance.now() when the truck left the line; 0 while on it
+
+/** The tutorial leg in play: the route its GPS would show and the door that route ends at, or null. */
+function _tutLeg () {
+  if (_eveningLeg()) { const base = _homeGuide(), door = _mom(); return base && door ? { base, door } : null }
+  const m = missionSystem?.mission
+  if (offerBoard?.firstState() !== 'taken' || !m || !['staging', 'running'].includes(missionSystem.state)) return null
+  const door = poiSystem.list().find(q => q.id === m.endPoiId)
+  return door ? { base: missionSystem.guideRoute(), door } : null
+}
+
+/** The line the GPS shows for `base`: its re-plan from the truck when there is one. */
+const _tutLine = base => _tutDetour?.base === base ? _tutDetour.route : base
+
+/** On the run-HUD poll: re-plan the tutorial's GPS from the truck once it is off the line. */
+function _tutDetourTick () {
+  const leg = _tutLeg(), v = vehicleState.position
+  if (!leg) { _tutDetour = null; _tutOffAt = 0; return }
+  const poly = _tutLine(leg.base)?.poly
+  if (!poly?.length) return
+  let off = Infinity
+  for (const p of poly) off = Math.min(off, Math.hypot(p.x - v.x, p.z - v.z))
+  if (off <= RR_PARAMS.offM) { _tutOffAt = 0; return }
+  const now = performance.now()
+  _tutOffAt ||= now
+  if (now - _tutOffAt < RR_PARAMS.offS * 1000) return
+  if (_tutDetour?.base === leg.base && Math.hypot(v.x - _tutDetour.x, v.z - _tutDetour.z) < RR_PARAMS.offM) return
+  _tutOffAt = 0
+  const from = roadOrigin(roadSystem, v)
+  const route = from && missionSystem.planOffer(from, { rng: Math.random,
+    dest: { kind: 'poi', pois: [leg.door], strict: true, anyLeg: true, nearest: true } })
+  // No plan (the truck on the door's own road, or off every road): keep the line, and the spot it failed at.
+  _tutDetour = { base: leg.base, route: route?.segments?.length ? route : _tutLine(leg.base), x: v.x, z: v.z }
+}
+
 /** Hours of sleep from now to 07:00 on day 1 — the evening's night, the sleep timer's preset. */
 const _eveningSleepH = () => DAY_PARAMS.dayStartHour - daySystem.clockH()
 
@@ -4597,10 +4638,10 @@ gpsSystem = new GpsSystem(scene, {
     // starts THERE; the map's start pin and the source's lit park spot are the waypoint.
     if (missionSystem?.mission?.approach) return null
     // FEAT-170: the opening's evening has no job, only the way home to mom's.
-    if (_eveningLeg()) return _homeGuide()
+    if (_eveningLeg()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
     // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
     if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
-    return (s === 'countdown' || s === 'staging' || s === 'running') ? missionSystem.guideRoute() : null
+    return (s === 'countdown' || s === 'staging' || s === 'running') ? _tutLine(missionSystem.guideRoute()) : null
   },
   getCar: () => vehicleState.position,
   // Read at BAKE time only (once per mission, plus while the bake is still partial): the design
@@ -6963,6 +7004,7 @@ function _renderRunHud () {
   if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
   if (daySystem.clockH() >= DAY_PARAMS.dayStartHour) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
   _eveningBeats()
+  _tutDetourTick()     // BUG-118: the tutorial's GPS follows the truck
   const skip = document.getElementById('skip-hint')
   if (skip) skip.style.display = _eveningLeg() ? '' : 'none'
   _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
