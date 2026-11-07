@@ -23,7 +23,7 @@
 // mostly junctions; a place is no likelier at a T than halfway down a road.
 
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
-import { REGION_MARGIN, buildGraphAdj, graphDijkstra } from './mission.js'   // FEAT-61: the wall a customer must sit inside; FEAT-103: the camp's road
+import { REGION_MARGIN, buildGraphAdj, graphDijkstra, edgeLeaves } from './mission.js'   // FEAT-61: the wall a customer must sit inside; FEAT-103: the camp's road; BUG-128: a road that leaves it
 import { houseRungs, roadDistFromLarry, idKey } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
@@ -147,6 +147,8 @@ export const POI_PARAMS = {
     // FEAT-154: the barricade rows — the camp's and one at every road crossing of the planners' wall.
     poiRowBarricades:  3,     // barricades in a row, spread across the paved road (owner, 2026-10-29)
     poiRowNodeClearM:  20,    // m a crossing's row keeps from either end of its edge (a junction mouth)
+    poiRowFitM:        0.04,  // m a barricade's footprint may miss its deck plane before the row moves (the gate allows 8 cm) [DEFAULT]
+    poiRowSlideM:      20,    // m a row may move from its wall crossing to find that plane (FEAT-154, 2026-11-07) [DEFAULT]
     poiEdgeFadeM:      10,    // m past the planners' wall where the edge fade starts (owner, 2026-10-31)
     poiEdgeReturnM:    10,    // m inside the planners' wall: the edge fade's return spots (returnPoint)
 }
@@ -691,10 +693,13 @@ export class PoiSystem {
         const seen = new Set()
         const wall = radius - REGION_MARGIN
         const edgeInWall = (id) => { const q = g.pos(id); return Math.hypot(q.x - center.x, q.z - center.z) <= wall }
+        const inWall = (q) => Math.hypot(q.x - center.x, q.z - center.z) <= wall
+        const offWall = new Set()           // BUG-128: pool pads on a road that leaves the wall (no POI stands on one)
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek)) continue      // networkGraph can list an edge twice (both run keys)
             seen.add(ek)
+            let leaves = null               // BUG-128, below: once per edge, and only for an edge that has a pad
             for (const kind of padKinds(P)) for (const poi of this._padsOnEdge(road, e, P, seed, kind)) {
             // THE REGION CLIP IS A POST-FILTER, NEVER A REJECT TEST. Applied inside candidate
             // selection it would make WHICH arc position wins depend on the region centre — and a
@@ -708,6 +713,13 @@ export class PoiSystem {
             // The newspaper customers already obey this exact rule (buildHouses); POIs now match.
             // Still a post-filter on (edge, region), so placement stays window-invariant.
             if (!edgeInWall(e.a) || !edgeInWall(e.b)) continue
+            // BUG-128: …and its ROAD must stay inside the wall, not only its nodes, or no POI stands on it. The planner
+            // drops an edge whose road bows out (mission.js edgeLeaves, the same 10 m test), so a POI on one could only
+            // send a job out past the wall: 3873008110's one gas station stood on such a road and its fuel line never
+            // planned (SM-INV-7). The radius bound above dates from before the wall; it let pads stand past the 2410 m
+            // fade (a pump at 2443 m). The pad stays IN the pool, set aside: it is still a place the player drives, so
+            // coverage siting keeps it in its sample (_assignRoster), and the pad record itself is unchanged.
+            if ((leaves ??= edgeLeaves(road, e.a, e.b, inWall))) offWall.add(poi)
             // BUG-85: …and it must be on the MAIN piece. A stranded piece is inside the wall but no
             // road joins it to the spawn, so a POI there is a customer nobody can drive to.
             if (nodes && (!nodes.has(e.ka) || !nodes.has(e.kb))) continue
@@ -720,7 +732,7 @@ export class PoiSystem {
         const r = (q) => Math.hypot(q.x - center.x, q.z - center.z)
         const { posOf, adj } = buildGraphAdj(g, (q) => r(q) <= wall, nodes)
         const camp = this._siteCamp(road, canon, r, wall, posOf, adj, P)
-        const out = this._assignRoster(pool, center, seed, P, camp)
+        const out = this._assignRoster(pool, center, seed, P, camp, offWall)
         out.forEach((q, i) => { q.index = i })
         // FEAT-154: the barricade rows (the camp's at its pad, then one at every road out) and the
         // edge fade's return spots. Deterministic in (seed, network, centre), like the camp.
@@ -1014,8 +1026,8 @@ export class PoiSystem {
      * substituted; the roster above it is already placed, which is what makes the order a priority
      * order and not just a listing.
      */
-    _assignRoster (pool, center, seed, P, camp = null) {
-        let free = pool.slice()
+    _assignRoster (pool, center, seed, P, camp = null, offWall = null) {
+        let free = offWall?.size ? pool.filter(q => !offWall.has(q)) : pool.slice()   // BUG-128: no POI on a road that leaves the wall
         const out = []
         // The coverage objective's sample of "where the player will be": the lay-bys alone, so adding a
         // big-pad kind does not re-weight where the gas stations go.
@@ -1489,6 +1501,65 @@ export class PoiSystem {
     }
 
     /**
+     * FEAT-154: the row at arc `s`, moved if it must be to stand on a PLANE. Each barricade is a loose body that must
+     * start at rest (_barrierRow), so the deck under its whole footprint has to fit the plane it is seated on. Near a
+     * junction it may not: on its apron (31 cm off on seed 6 under BUG-121's region circles), or on the vertical knee
+     * where a steep leg blends into it (398411380: −37 % to −62 % under one barricade's 1.15 m depth, 18 cm off, 20 m
+     * from a junction whose pad reaches 14 m). The fit is the test, not the pad's reach: a row on a bend's fillet or
+     * a ring's flat mouth stands fine (seven such on the 51-world census fit within 3.3 cm), and a 32 m ring is out
+     * of any short slide's reach. So a row whose footprints miss their planes by more than poiRowFitM moves to the
+     * nearest arc in [lo, hi], 1 m at a time either way, where they do not; failing that, to the best-fitting arc.
+     * [lo, hi] keeps it within poiRowSlideM of its wall crossing.
+     */
+    _rowOnPlane (road, ed, s, lo, hi, inward, P) {
+        const [w, , d] = PROP_MODELS.roadBarrier.collision.size
+        const misfit = (row) => {   // m: the worst gap between the deck and a barricade's plane over its footprint
+            let worst = 0
+            for (const b of row) {
+                const ax = Math.cos(b.yaw), az = -Math.sin(b.yaw), fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw)
+                for (let u = -w / 2; u <= w / 2 + 1e-9; u += w / 6) for (const v of [-d / 2, 0, d / 2]) {
+                    const dx = ax * u + fx * v, dz = az * u + fz * v, y = road.sampleRoadTopY(b.x + dx, b.z + dz)
+                    if (y != null) worst = Math.max(worst, Math.abs(y - (b.y - (b.n[0] * dx + b.n[2] * dz) / b.n[1])))
+                }
+            }
+            return worst
+        }
+        const row = this._barrierRow(road, ed, s, inward, P)
+        let best = { row, m: misfit(row) }
+        if (best.m <= P.poiRowFitM) return row
+        for (let k = 1; s - k >= lo || s + k <= hi; k++) {
+            for (const t of [s + k, s - k]) {
+                if (t < lo || t > hi) continue
+                const moved = this._barrierRow(road, ed, t, inward, P), m = misfit(moved)
+                if (m <= P.poiRowFitM) return moved
+                if (m < best.m) best = { row: moved, m }
+            }
+        }
+        return best.row
+    }
+
+    /**
+     * FEAT-154: the roads the rows and the fade's returns walk: each graph edge once (networkGraph can list one twice),
+     * then BUG-63's parallel runs (`~p`: a second road between one node pair, in the world but not in networkGraph, so
+     * a planner never routes one). On 2 of 51 census worlds a parallel crossed the wall with no row (Lane A,
+     * 2026-11-07). { ka, kb, ek, ed() }, `ed` in edgeParData's shape: a centerline and its arc span.
+     */
+    _wallRoads (road, canon) {
+        const out = [], seen = new Set()
+        for (const e of canon) {
+            const ek = `${e.ka}|${e.kb}`
+            if (seen.has(ek)) continue
+            seen.add(ek)
+            out.push({ ka: e.ka, kb: e.kb, ek, ed: () => road.edgeParData(e.a, e.b) })
+        }
+        for (const p of road.parallelRuns?.() ?? []) {
+            const ed = { centerline: p.centerline, arcOffset: 0, arcLength: p.length }
+            out.push({ ka: idKey(p.cellA), kb: idKey(p.cellB), ek: p.key, ed: () => ed })
+        }
+        return out
+    }
+
+    /**
      * FEAT-154: a row on every road out (owner, 2026-10-30). Every road from inside the planners' wall
      * to outside it crosses the wall's circle, so a row at each crossing closes them all. The edges
      * walked are those OFF the planners' graph (an end past the wall, or on a stranded piece): an edge
@@ -1496,22 +1567,23 @@ export class PoiSystem {
      * route. Each crossing (5 m samples) gets a row facing back inside, slid along the edge to keep
      * poiRowNodeClearM from both its ends (a junction mouth) — so past a junction just inside the wall
      * a leg's row can stand a few metres beyond the edge fade's line (owner, 2026-10-31: accepted). The
-     * camp's edge is skipped: its row stands at the pad.
+     * camp's edge is skipped: its row stands at the pad. BUG-63's parallel runs are roads out too (_wallRoads).
      */
     _edgeRows (road, canon, r, wall, adj, campEdge, P) {
-        const rows = [], seen = new Set()
-        for (const e of canon) {
-            const ek = `${e.ka}|${e.kb}`
-            if (seen.has(ek) || ek === campEdge || (adj.has(e.ka) && adj.has(e.kb))) continue
-            seen.add(ek)
-            const ed = road.edgeParData(e.a, e.b)
+        const rows = []
+        for (const w of this._wallRoads(road, canon)) {
+            if (w.ek === campEdge || (adj.has(w.ka) && adj.has(w.kb))) continue
+            const ed = w.ed()
             if (!ed?.centerline) continue
             const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
             const clear = Math.min(P.poiRowNodeClearM, L / 2)
             let prev = r(ed.centerline.pointAt(off)) > wall
             for (let t = 5; t < L + 5; t += 5) {
                 const tt = Math.min(t, L), out = r(ed.centerline.pointAt(off + tt)) > wall
-                if (out !== prev) rows.push(...this._barrierRow(road, ed, off + Math.min(Math.max(tt - 2.5, clear), L - clear), out ? -1 : 1, P))
+                if (out !== prev) {
+                    const sc = off + tt, s0 = off + Math.min(Math.max(tt - 2.5, clear), L - clear), win = P.poiRowSlideM
+                    rows.push(...this._rowOnPlane(road, ed, s0, Math.max(off + clear, sc - win), Math.min(off + L - clear, sc + win), out ? -1 : 1, P))
+                }
                 prev = out
             }
         }
@@ -1529,13 +1601,11 @@ export class PoiSystem {
      * (sin yaw, cos yaw)) points out, so a spot is "past" a row when it lies along that axis from it.
      */
     _returnSpots (road, canon, r, rIn, adj, barricades, P) {
-        const out = [], seen = new Set(), keep = P.poiEdgeReturnM
+        const out = [], keep = P.poiEdgeReturnM
         const past = (p) => barricades.some(b => Math.hypot(p.x - b.x, p.z - b.z) < 60 && (p.x - b.x) * Math.sin(b.yaw) + (p.z - b.z) * Math.cos(b.yaw) > -keep)
-        for (const e of canon) {
-            const ek = `${e.ka}|${e.kb}`
-            if (seen.has(ek) || (!adj.has(e.ka) && !adj.has(e.kb))) continue
-            seen.add(ek)
-            const ed = road.edgeParData(e.a, e.b)
+        for (const w of this._wallRoads(road, canon)) {
+            if (!adj.has(w.ka) && !adj.has(w.kb)) continue
+            const ed = w.ed()
             if (!ed?.centerline) continue
             const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
             for (let t = 0; t <= L; t += 10) {
