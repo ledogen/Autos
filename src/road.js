@@ -9591,9 +9591,14 @@ export class RoadSystem {
     // Through legs too: past its mouth a trunk meets its own ribbon like any leg, and _throughDeckTop's
     // 2 m edge ease left the fitted surface 21 cm off the ribbon's edge there. Inside the cut (where a
     // side road bends onto the trunk) this mask is 0 and _throughDeckTop rules, as before.
+    // BUG-144: where two legs' bands meet, `y` is not the heavier leg's deck. Two nearly parallel legs 28 m out from a
+    // big node disagree by up to 0.23 m, and the pick tore the pad where one band took over. Now: in the gap between
+    // pavements each deck is weighted by v / (its distance past its own edge), so each leg is exact at its own edge and
+    // the gap is a straight ramp between the two; where pavements overlap, by v × the depth inside each, which meets
+    // the one-leg case continuously at either edge. With one leg in range it is that leg's deck, as before.
     _padRibbonMask(node, ps, wx, wz) {
         const hw = this._params.roadHalfWidth ?? 5
-        let m = 0, y = 0
+        let m = 0, yIn = 0, wIn = 0, yOut = 0, wOut = 0
         for (let li = 0; li < node.legs.length; li++) {
             const leg = node.legs[li]
             const ne = this._network.get(leg.runKey)
@@ -9601,15 +9606,17 @@ export class RoadSystem {
             const prs = this._projectLegMemo(ne, leg, wx, wz)
             if (!prs) continue
             for (const pr of prs) {
-                const lu = Math.min(1, Math.max(0, hw + 1 - Math.sqrt(pr.d2)))
+                const d = Math.sqrt(pr.d2), lu = Math.min(1, Math.max(0, hw + 1 - d))
                 if (lu <= 0) continue
                 const au = Math.min(1, Math.max(0, (Math.abs(pr.arcS - leg.arc) - (ps.cut[li] - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
                 if (au <= 0) continue
                 const v = lu * lu * (3 - 2 * lu) * au * au * (3 - 2 * au)
-                if (v > m) { m = v; y = this._legDeckTop(ne, leg, pr, wx, wz) }
+                if (v > m) m = v
+                const y = this._legDeckTop(ne, leg, pr, wx, wz), e = d - hw
+                if (e < 0) { yIn -= e * v * y; wIn -= e * v } else { const w = v / Math.max(e, 1e-6); yOut += w * y; wOut += w }
             }
         }
-        return { m, y }
+        return { m, y: wIn > 0 ? yIn / wIn : wOut > 0 ? yOut / wOut : 0 }
     }
 
     /**

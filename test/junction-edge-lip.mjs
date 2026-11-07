@@ -7,9 +7,10 @@
 // 15 m/s); BUG-123 then took the last 0.25–0.40 m edges, where the pad's and the leg's tops differ. GATING: no edge
 // over LIP_MAX. And POKE: the terrain mesh's dirt (rebuilt as terrain.js _buildCarveTable does, on the 1 m grid,
 // worst triangle split) at points up to 1.5 m inside every ring stays under the pad top. And SMOOTH (BUG-137): across
-// every T's through road, physics never TEARS: no step over TEAR_MAX between points 5 cm apart (a 160 % slope; the steepest designed
+// every pad, physics never TEARS: no step over TEAR_MAX between points 5 cm apart (a 160 % slope; the steepest designed
 // ramp, a side road's mouth easing onto its own deck, runs ~70 %) — at seed 917338424's causeway T the through road's
-// two halves disagreed around the node and the pad stood a 0.49 m cliff on the pavement. Reported: the worst lip, the
+// two halves disagreed around the node and the pad stood a 0.49 m cliff on the pavement; BUG-144: 0.19 m on 1353361482
+// where two parallel legs' bands met. Reported: the worst lip, the
 // tightest pad margin, the steepest pad slope and the worst tear.
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
@@ -85,18 +86,16 @@ for (const S of SEEDS) {
         }
       }
     }
-    // SMOOTH: on a T's through road, the pad's surface (what the wheel rides inside the ring) on a G grid, each point
-    // against its +x and +z neighbours. A pair rising more than REFINE is re-sampled every G / 5: a ramp spreads out
-    // there, a tear does not — the TEAR is the biggest step at that spacing. Only the trunk's pavement (_throughDeckTop's
-    // reach) for now: elsewhere a pad still tears where two near-parallel legs' mouth bands meet (_padRibbonMask picks
-    // one leg's deck; 0.19 m on 1353361482, 0.14 m on 917338424 — reported with BUG-137, not fixed by it).
-    road._nodeSurfaceTop(node, node.pos.x, node.pos.z)
-    if (node.padSurf?.anyThrough) {
+    // SMOOTH: the pad's surface (what the wheel rides inside the ring) on a G grid, each point against its +x and +z
+    // neighbours. A pair rising more than REFINE is re-sampled every G / 5: a ramp spreads out there, a tear does not —
+    // the TEAR is the biggest step at that spacing. BUG-137: a T's trunk tore where it bends at its node; BUG-144: a pad
+    // tore where two nearly parallel legs' mouth bands met (_padRibbonMask took the heavier leg's deck).
+    {
     const rr = (node.ringMaxR ?? 20) + G, n = Math.ceil(2 * rr / G) + 1, x0 = node.pos.x - rr, z0 = node.pos.z - rr
     const grid = new Float64Array(n * n).fill(NaN)
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const x = x0 + i * G, z = z0 + j * G
-      if (road._signedRingDist(ring, x, z) < 0 && road._throughDeckTop(node, node.padSurf, x, z)) { const y = ph(x, z); if (y != null) { grid[j * n + i] = y; padPts++ } }
+      if (road._signedRingDist(ring, x, z) < 0) { const y = ph(x, z); if (y != null) { grid[j * n + i] = y; padPts++ } }
     }
     let nodeTear = 0, nodeAt = ''
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
@@ -121,6 +120,6 @@ for (const S of SEEDS) {
   }
 }
 console.log(`${edges} junction leg edges: worst lip ${worstLip.toFixed(3)} m (${worstLipAt}) · ${rimPts} rim points: tightest pad margin ${(margin * 100).toFixed(1)} cm`
-  + ` · ${padPts} trunk points: steepest ${worstSlope.toFixed(3)} m per ${G} m, worst tear ${worstTear.toFixed(3)} m per ${G / 5} m (${worstTearAt})`)
+  + ` · ${padPts} pad points: steepest ${worstSlope.toFixed(3)} m per ${G} m, worst tear ${worstTear.toFixed(3)} m per ${G / 5} m (${worstTearAt})`)
 console.log(fails ? `FAIL: ${fails}` : 'PASS')
 process.exit(fails ? 1 : 0)
