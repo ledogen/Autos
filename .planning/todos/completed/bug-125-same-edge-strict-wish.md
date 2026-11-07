@@ -1,7 +1,7 @@
 ---
 id: BUG-125
 type: bug
-status: open
+status: closed
 opened: 2026-11-07
 severity: minor
 source: Lane A, while fixing BUG-124 (2026-11-07)
@@ -86,3 +86,7 @@ line. It now plans the straight stretch.
 - [x] The census re-run: 0 of 51 worlds lose a strict-wish offer to the own-edge rule. (The seven pairs are refused
       by the 1050 m floor instead: all are 252–566 m apart.)
 - [x] Pay / par on a same-edge job look sane (pay follows route length; no 0-length jobs).
+
+## Resolution (orchestrator, 2026-11-07)
+
+Landed on main (merge of 93f6fb07, tree identical): affected 26/26 on the merged tree, cdp-smoke 25/25 on main.
