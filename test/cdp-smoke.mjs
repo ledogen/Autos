@@ -353,6 +353,8 @@ const STEPS = [
     const a = await s0()
     // BUG-135: in her start zone (25 m), on the road in front of hers — never on her pad, which is her yard.
     check(a.s === 'staging' && !a.a && a.d < 25 && Math.abs(a.h - 7) < 0.1, `the skip is not at mom's at 07:00 with the job staging: ${JSON.stringify(a)}`)
+    const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
+    check(await until(async () => await hudClock() === 'Day 1, 7 am', 3000), `the HUD clock after the skip reads "${await hudClock()}", want "Day 1, 7 am" (BUG-136)`)
     check(!await dlg(), 'a card is up after the skip (FEAT-170: Larry speaks after the casserole)')
     // FEAT-173: the skip ends fed (the evening's end serves mom's breakfast), and the run starts with her three lunches.
     const food = await js('({ fed: window.__day().snapshot().fedUntilH - window.__day().clockH(), lunch: window.__inv.list().find(e => e.id === "packedLunch")?.n ?? 0 })')
@@ -1280,6 +1282,9 @@ const STEPS = [
     check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
     check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
     check(Math.abs(a.h + 6) < 0.1, `the firing is not at 18:00 on day 0 (clockH ${a.h})`)   // FEAT-170
+    // BUG-136: day 0 sits before the clock's zero; the HUD read it as "Day 0, -6 am".
+    const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
+    check(await until(async () => await hudClock() === 'Day 0, 6 pm', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day 0, 6 pm" (BUG-136)`)
     for (let i = 0; i < 8 && await speaker() === 'The manager'; i++) { await tap('Enter'); await sleep(250) }
     check(await speaker() === 'Mom', `the firing was not followed by mom's call (speaker "${await speaker()}")`)
     for (let i = 0; i < 8 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
