@@ -260,6 +260,36 @@ async function soakSeed (seed, replay = null) {
       if (hub.y < hg - 0.08) { flag('wheel', hg - hub.y, { corner: i }); break }
     }
     const fz = Math.max(...P._tireFz)
+    // SOAK_TRACE=n on a replay: the last n steps, per corner — tire load, the hub's height over the ground, its lateral
+    // offset from the nearest road's centreline, and the road's top there (what each wheel is riding into).
+    if (replay && process.env.SOAK_TRACE && steps > stepLimit - +process.env.SOAK_TRACE) {
+      const cs = [0, 1, 2, 3].map(i => {
+        const hub = getWheelPosition(i, vs, P), r = w.road.queryNearest(hub.x, hub.z, 15)
+        const lat = r?.point ? Math.hypot(r.point.x - hub.x, r.point.z - hub.z) : NaN, top = w.road.sampleRoadTopY(hub.x, hub.z)
+        return `${(P._tireFz[i] / 1000).toFixed(1)}kN h${(hub.y - ground(hub.x, hub.z, hub.y)).toFixed(2)} lat${lat.toFixed(1)} top-gnd${top == null ? '-' : (top - ground(hub.x, hub.z, hub.y)).toFixed(2)}`
+      })
+      console.log(`    ${steps} v ${vs.velocity.length().toFixed(1)} rim ${hit.impulse.toFixed(0)} | ${cs.join(' | ')}`)
+      // On the last step: the surface profile along the worst-loaded wheel's track, 1 m back to 1 m ahead — the carved
+      // ground, the road top, and what the contact query (the physics) actually returns under a probe sphere.
+      if (steps === stepLimit) {
+        const k = P._tireFz.indexOf(Math.max(...P._tireFz)), hub = getWheelPosition(k, vs, P)
+        const vl = Math.hypot(vs.velocity.x, vs.velocity.z), ux = vs.velocity.x / vl, uz = vs.velocity.z / vl
+        console.log(`    corner ${k} hub (${hub.x.toFixed(2)}, ${hub.y.toFixed(2)}, ${hub.z.toFixed(2)}), along (${ux.toFixed(2)}, ${uz.toFixed(2)})`)
+        // across the road at the hub: from the centreline side outwards (the road's own normal)
+        const rn = w.road.queryNearest(hub.x, hub.z, 15), ox = hub.x - rn.point.x, oz = hub.z - rn.point.z, ol = Math.hypot(ox, oz)
+        for (let L = 4.2; L <= 6.001; L += 0.1) {
+          const x = rn.point.x + ox / ol * L, z = rn.point.z + oz / ol * L, g = ground(x, z, hub.y), top = w.road.sampleRoadTopY(x, z)
+          const hits = w.queryContacts(x, g + 0.4, z, 0.6) ?? [], surf = hits.length ? Math.max(...hits.map(h => h.contactPoint.y)) : NaN
+          console.log(`      lat ${L.toFixed(1)}  ground ${(g - hub.y).toFixed(3)}  roadTop ${top == null ? '-' : (top - hub.y).toFixed(3)}  physics ${(surf - hub.y).toFixed(3)} (${hits.length})`)
+        }
+        for (let d = -1; d <= 1.001; d += 0.1) {
+          const x = hub.x + ux * d, z = hub.z + uz * d, g = ground(x, z, hub.y), top = w.road.sampleRoadTopY(x, z), r = w.road.queryNearest(x, z, 15)
+          const hits = w.queryContacts(x, g + 0.4, z, 0.6) ?? []
+          const surf = hits.length ? Math.max(...hits.map(h => h.contactPoint.y)) : NaN
+          console.log(`      d ${d.toFixed(1)}  ground ${(g - hub.y).toFixed(3)}  roadTop ${top == null ? '-' : (top - hub.y).toFixed(3)}  physics ${(surf - hub.y).toFixed(3)} (${hits.length} hits)  lat ${r?.point ? Math.hypot(r.point.x - x, r.point.z - z).toFixed(2) : '-'} run ${r?.runKey ?? '-'}`)
+        }
+      }
+    }
     if (onRoad && fz > STRUT_N) flag('strut', fz)
     const dv = Math.hypot(vs.velocity.x - vPrev.x, vs.velocity.y - vPrev.y + 9.81 * DT, vs.velocity.z - vPrev.z)
     if (onRoad && dv > JOLT_DV) flag('jolt', dv)
