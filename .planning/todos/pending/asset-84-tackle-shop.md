@@ -42,11 +42,34 @@ pad is free. That is the case the burn-down is removing, so the shop fits the st
   ends near it (the burger joint's awning covers its centre the same way).
 
 ## Acceptance
-- [ ] `.glb` at `assets/models/tackle-shop.glb`, flat-shaded, 0 inverted first-hits (ray-cast check), 0 mirrored sign UVs.
-- [ ] Tri count reported per material and within budget; 8 materials justified.
-- [ ] Fits the 14 × 8 lay-by: the generator applies poi-yard's collider-corner rule and the flat line.
-- [ ] Headless generator in its own checkout (`assets/models/src/tackle-shop.py`, paths from `__file__`),
-      re-export byte-identical.
-- [ ] Review renders: from the road, a three-quarter view, the rear, and the porch close up.
-- [ ] `data/prop-models.js` entry `tackleShop` with `collision.boxes` and `seat`; the roster's `tackleShop`
+- [x] `.glb` at `assets/models/tackle-shop.glb`, flat-shaded, 0 inverted first-hits (ray-cast check: 0 of 6377), 0 mirrored sign UVs (of 2).
+- [x] Tri count reported per material and within budget (1627, 2 % over ~1600: see Built); 8 materials justified.
+- [x] Fits the 14 × 8 lay-by: the generator applies poi-yard's collider-corner rule (1.30 m, limit 1.35) and the flat line.
+- [x] Headless generator in its own checkout (`assets/models/src/tackle-shop.py`, paths from `__file__`),
+      re-export byte-identical (sha1 e1e36189…).
+- [x] Review renders: from the road, a three-quarter view, the rear, the porch close up, the canoe end, and from 30 m
+      down the road (`wip/tackle-shop/out/sheet.png`).
+- [x] `data/prop-models.js` entry `tackleShop` with `collision.boxes` and `seat`; the roster's `tackleShop`
       slot gets `model: 'tackleShop'`; poi-yard and the POI gates stay green.
+- [ ] The owner's look (on the tracker page).
+
+## Built (2026-11-07, feature/content)
+
+`assets/models/src/tackle-shop.py` → `assets/models/tackle-shop.glb` (174 KB, one mesh, one 1024 × 512 PNG) + `.blend`.
+Headless: `Blender -b --python-exit-code 1 --python assets/models/src/tackle-shop.py -- export render`;
+renders land in `wip/tackle-shop/out/`.
+
+- **1627 tris**: TackleWall 332, TackleTrim 331, TackleRoof 278, TackleWood 222, TackleDark 204, TackleFish 136,
+  TackleRed 120, TackleSign 4. The canoe's second pass (a 6-segment section, fine ends: it read as a red plank
+  at 4 segments) took it from 1567 to 1627.
+- **8 materials**, one per role: teal wall, cream trim, galvanised roof, wood, dark, the fish's olive, the canoe's
+  red, the atlas. Teal because the other POIs are red, cream, yellow or blue; the galvanised roof is lighter than
+  every other POI roof, so the silhouette is its own from the road.
+- **The atlas**: the board (top half, 1024 × 256: BAIT & TACKLE / LIVE BAIT · RODS · REELS) and the fridge label
+  (448 × 224: LIVE / BAIT), laid out in atlas pixels. Dither and render stamps off.
+- **Pad**: seat 3.5. The back wall stands 1.30 m past the pad's far edge (poi-yard allows 1.35). The porch step's
+  nose is the nearest ground contact to the road, at the pad centre; the lay-by is flat from pad z −2.6.
+- **Colliders** (4): the shack to the ridge, the porch from the deck to its roof, the canoe on its sawhorses, the
+  cleaning table with the buckets. The fish, the board, the porch step and the stovepipe are soft.
+- The fish: a largemouth bass, head to +X, tilted 14° up, 2.7 m long, on two posts from the ridge cap. Belly,
+  lateral stripe, gill and eye are reliefs 1.5–4 cm proud of the body, so nothing z-fights.
