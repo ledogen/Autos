@@ -38,6 +38,23 @@ line the best guidance is the shortest way to finish from where you are (2026-08
 - The truck's road point as a planner stop was a private method of the paper route (`_originPoint`). It is now the
   exported `roadOrigin(road, car)`, which both use.
 
+## Known limit: off the tarmac, the road point can be wrong
+
+The re-plan starts at `roadSystem.queryNearest(truck)`. When the truck is **outside every road's footprint**
+(half-width + shoulder, ~7.5 m), that answer can be a point far along a nearby road instead of the nearest one.
+D4's arm rule (`road.js queryNearest`) prefers any sample whose footprint would contain the query if the road ran
+on straight past it, and it has no bound on how far away that sample is. So from a pad ~12 m off its road, a sample
+100 m up a bend whose straight continuation passes through the truck wins. On seed 6 (the test seed), 50 of 81
+queries from POI markers answered a point more than 5 m farther than the POI's own road point, worst 164 m (from
+`wip/bug118-qn.mjs`). The smoke hit it at the burger joint's pad: the re-planned line started 108 m from the truck.
+
+That is a `road.js` issue with every caller exposed (the evening's R reset, the paper route's re-plan, spawn
+resolution), so it is reported to the orchestrator, not fixed here. A likely fix is one bound, sketched not
+measured: count a sample as interior only within the footprint plus the ~2 m sample spacing. Queries inside a
+footprint would be unchanged. It needs the world fingerprint proof, because world-gen reads it too (POI placement
+`poi.js:888`, terrain chunks `terrain.js:1458`, camp sites). Until then, a driver who strays OFF-road can get a line that starts up to ~160 m along the road. On a
+road, which is where a driver who took a wrong turn is, the answer is exact.
+
 ## Not done
 
 - **Ordinary jobs still show their planned route only.** The tutorial was the report. The same `_tutLine` /
@@ -47,6 +64,7 @@ line the best guidance is the shortest way to finish from where you are (2026-08
 ## Acceptance
 
 - [x] `paper-route` + `paper-reroute` gates green on the moved helper.
-- [ ] cdp-smoke `strayCheck`: in the evening and on the casserole, the truck seated at a POI 150 m off the line gets
-      a new GPS route within 6 s, starting within 60 m of the truck and ending within 30 m of the old line's end.
+- [ ] cdp-smoke `strayCheck`: in the evening and on the casserole, the truck seated on the road at a POI 150 m off
+      the line gets a new GPS route within 6 s, starting within 20 m of the truck and ending within 30 m of the old
+      line's end. (Story step green on 07c3c4ec; the evening's half runs in the opening step.)
 - [ ] Owner: drive way off the line in the tutorial, and the GPS turns you round toward the door.
