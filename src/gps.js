@@ -451,7 +451,9 @@ export class GpsSystem {
 
     this._placeChevrons(route, prog.s)
     this._placeArrow(route, prog.s)
-    this._placeRing(route, prog.s)
+    // FEAT-187: a route flagged noRing (a demolition job's) has no destination circle — its targets wear halos.
+    if (this._src?.noRing) this._ring.visible = false
+    else this._placeRing(route, prog.s)
   }
 
   /**
