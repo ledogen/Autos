@@ -1576,12 +1576,16 @@ const STEPS = [
     // parked there the brake opens the pump (world 1505891932, prompt "to use the pump").
     const giver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
       return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !${JSON.stringify(['larrysHouse', ...SHOP_TYPES])}.includes(q.type) && !q.pumpZones?.length).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
-    check(giver?.n > 1, `no giver with two offers to page: ${JSON.stringify(giver)}`)
+    // The paging needs two offers; the rest of the step needs one. A random world can have no plain giver with two at
+    // this point (2927182058/K, 11-08: the busiest had one, on main before and after that day's merges) — page there
+    // only when it can, and say so when it can't.
+    check(giver?.n > 0, `no giver with an offer: ${JSON.stringify(giver)}`)
     await js(`(() => { const m = window.__map2d(), s = m._sheet(); for (let i = 0; i < 6; i++) { m._panX += (m._sx(${giver.x}) - s.cx) / m._zoom; m._panZ += (m._sy(${giver.z}) - s.cy) / m._zoom } })()`)
     await js('__fp.axes[2] = 0.09'); await frames(3, 60); await js('__fp.axes[2] = 0'); await frames(3, 60)
     const hov = () => js('window.__map2d()._hoverPoi === ' + JSON.stringify(giver.id) + ' && window.__map2d()._hoverIdx')
     check(await hov() === 0, `the pad cursor is not on the giver (${await js('window.__map2d()._hoverPoi')})`)
-    await btn(5); check(await hov() === 1, 'RB did not page the giver\'s offers'); await btn(4); check(await hov() === 0, 'LB did not page back')
+    if (giver.n > 1) { await btn(5); check(await hov() === 1, 'RB did not page the giver\'s offers'); await btn(4); check(await hov() === 0, 'LB did not page back') }
+    else console.log(`  pad: no plain giver with two offers in ${await js('window.__worldCode?.()')}; LB/RB paging unchecked this run`)
     await btn(1); check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'B did not close the map')
     // At the giver, a LONG RB press: the offer card opens under it, and the brake must stay latched (FEAT-125: the
     // card layout re-sent RB's Space, so the park latched and let go).
