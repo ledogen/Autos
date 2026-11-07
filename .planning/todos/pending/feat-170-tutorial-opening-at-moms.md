@@ -78,6 +78,7 @@ first paid job is the casserole from stage 1 on.
 **Stage 2 — hold to skip.** Through the firing and the evening, a visible prompt says "hold M to skip the
 tutorial" (button TBD, Q2). Holding it for 1 s `[DEFAULT]` lands you where stage 1's skip does: at mom's, at
 07:00, fed, casserole in hand. It is not a hidden gesture: the prompt is on screen the whole time.
+*Superseded 2026-11-07 (owner, FEAT-184):* a skip now lands at **Larry's**, 07:00, fed, the casserole **delivered**.
 *Owner checks:* skip at the firing, mid-drive, and at mom's door.
 
 **Stage 3 — the safe drive.** While the "head home" leg is active:
