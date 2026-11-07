@@ -1101,7 +1101,7 @@ const STEPS = [
       return { d: Math.hypot(c.x - q.x, c.z - q.z), sizes: [...document.querySelectorAll('#pp-sizes button')].map(b => b.textContent + (b.classList.contains('on') ? '*' : '')).join(' '),
                deadline: /time limit/.test(document.getElementById('pp-body').textContent), decline: document.getElementById('pp-decline').style.display } })()`)
     check(at.d < 40, `paper scenario: seated ${at.d.toFixed(0)} m from Larry's`)
-    check(at.sizes === '4* 9 12 15' && !at.deadline && at.decline === 'none', `paper scenario offer: ${JSON.stringify(at)} — want "4* 9 12 15", no time limit, no decline`)
+    check(at.sizes === '4* 7 9 11' && !at.deadline && at.decline === 'none', `paper scenario offer: ${JSON.stringify(at)} — want "4* 7 9 11" (BUG-134), no time limit, no decline`)
     check(await js('window.__autosave()') === false, 'paper scenario: the autosave wrote')
     check(await slot() === before, 'paper scenario: the run save changed on entry')
     // A fatal crash: the scenario's card, never the run's end.
