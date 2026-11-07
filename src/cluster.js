@@ -28,22 +28,31 @@ const DEG = Math.PI / 180
 // W/H are FEAT-49's 416x200 plus a few px of slack: the FEAT-33 ignition switch is small enough to
 // tuck into the housing's existing bottom-right corner, so it only bumps the outline out slightly
 // rather than growing a whole extra lobe. The canvas is anchored bottom-right in CSS.
-const W = 420
+//
+// FEAT-34 round 2 (owner, 2026-11-07: "the rpm circle combined with the speedo like the reference, so the
+// circles overlap"): the 2002 Ranger's tach and speedo share ONE face — the speedo stands into the tach's
+// right side, the two rims meet in a cusp at the top, and no line divides them. Measured off the owner
+// guide's cluster drawing: hubs 0.71 of the summed radii apart (here 96 px of 132), and the tach is a short
+// arc — 0 at about half past eight, the top numeral at about twenty to one — so its scale ends before the
+// cusp and its empty lower right is where the speedo's 0–30 mph sit. Hence TACH's 130° sweep (was 195°).
+// Nothing of the tach may sit right of the cusp: BRAKE moved to the tach's lower left (where the 2002 has
+// it) and the fuel legend up under the needle hub.
+const W = 378
 const H = 204
 const TEMP  = { cx: 86,  cy: 70,  well: 33, scaleR: 26, start: 215, sweep: 110 }
 const FUEL  = { cx: 62,  cy: 136, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const TACH  = { cx: 180, cy: 102, well: 62, scaleR: 54, start: 135, sweep: 195 }    // dial top: _tachMax (setRedline)
-const SPEEDO= { cx: 318, cy: 102, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
+const TACH  = { cx: 180, cy: 102, well: 62, scaleR: 54, start: 160, sweep: 130 }    // dial top: _tachMax (setRedline)
+const SPEEDO= { cx: 276, cy: 102, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
 // FEAT-33 ignition switch — a small well tucked diagonally into the housing's bottom-right corner.
 // It carries its OWN indent pad (smaller than DIAL_PAD) because at this size the standard ring would
 // be most of the dial. Three distances have to hold, and they are tight — check all three before
-// moving it (all measured from the speedo centre, 90.5 px away):
+// moving it (all measured from the speedo centre, 90.5 px away; it moves WITH the speedo):
 //   wells apart      93.3 > SPEEDO.well + KEY.well (87)      or the key face eats the speedo face
 //   indent clears    93.3 − (well+pad) = 73.3 > SPEEDO.well   or it bites a crescent out of 120/km-h
 //   indents overlap  93.3 < SPEEDO.well + DIAL_PAD + well+pad or the switch reads as a detached island
 // The well grew 13 → 17 when the needle became a key grip: a key silhouette needs pixels to read as
 // an object, and 26 px of dial was not enough. 34 px is the most the three distances above allow.
-const KEY   = { cx: 384, cy: 168, well: 17, pad: 3 }
+const KEY   = { cx: 342, cy: 168, well: 17, pad: 3 }
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
 const KEY_ANGLE = { off: 210 * DEG, on: 270 * DEG, start: 330 * DEG }
 const KEY_TICK_R = 16.5   // detent ticks run inward from here to r=14.5 — OUTSIDE the fascia, framing it
@@ -53,6 +62,8 @@ const KEY_FASCIA_R = 12   // the silver escutcheon the key turns in
 const LAMP_ORANGE = '#ff9a1f'   // FEAT-50 low-fuel lamp, lit
 const LAMP_RED    = '#ff3a26'   // FEAT-34 BRAKE lamp, lit
 const LAMP_BLUE   = '#3d84ff'   // FEAT-34 high-beam lamp, lit
+const LAMP_UNLIT_AMBER = '#3a2410'   // an unlit amber lens: just enough to see there is a lamp there
+const LAMP_UNLIT_RED   = '#3a1210'
 const STEEL_HI = '#e4e4de'
 const STEEL    = '#b4b4ac'
 const STEEL_LO = '#6f6f68'
@@ -105,6 +116,8 @@ export class GaugeCluster {
     this._flat = false
     this._parkBrake = false
     this._highBeam = false
+    this._checkEngine = false
+    this._overheat = false
     this._tempFrac = 0
     this._fuelShown = 0      // sweep up from rest on load, like a key-on
     this._tempShown = 0
@@ -157,6 +170,12 @@ export class GaugeCluster {
 
   /** FEAT-34: the high-beam lamp's sender. On the headlamp circuit, not the ignition: lit with the key off too. */
   setHighBeam (on) { this._highBeam = !!on }
+
+  /** FEAT-34: the CHECK ENGINE lamp's sender — engine condition at or under its knee. Lit only with the key on. */
+  setCheckEngine (on) { this._checkEngine = !!on }
+
+  /** FEAT-34: the overheat lamp's sender — the coolant past H, where engine damage starts. Lit only with the key on. */
+  setOverheat (on) { this._overheat = !!on }
 
   /** 0 = C, 1 = H (FEAT-51: C = 90 °C, mid = 100 °C, H = 110 °C on the stock thermostat). */
   setCoolantTemp (frac) { this._tempFrac = Math.max(0, Math.min(1, frac)) }
@@ -211,7 +230,8 @@ export class GaugeCluster {
     if (d.speed === this._speedMph && d.rpm === this._rpm && d.temp === this._tempShown
         && d.fuel === this._fuelShown && d.odo === this._odoMiles
         && d.key === this._keyAngle && d.keyPos === this._keyPos && d.low === this._lowLit() && d.flat === this._flatLit() && d.gear === this._gear
-        && d.brake === this._brakeLit() && d.high === this._highBeam) return
+        && d.brake === this._brakeLit() && d.high === this._highBeam
+        && d.ce === this._checkEngineLit() && d.hot === this._overheatLit()) return
     d.speed = this._speedMph; d.rpm = this._rpm; d.temp = this._tempShown
     d.fuel = this._fuelShown; d.odo = this._odoMiles; d.key = this._keyAngle; d.keyPos = this._keyPos
     d.low = this._lowLit()
@@ -219,6 +239,8 @@ export class GaugeCluster {
     d.gear = this._gear
     d.brake = this._brakeLit()
     d.high = this._highBeam
+    d.ce = this._checkEngineLit()
+    d.hot = this._overheatLit()
 
     const ctx = this._ctx
     ctx.clearRect(0, 0, W, H)
@@ -229,6 +251,8 @@ export class GaugeCluster {
     this._drawFlatLamp(ctx)
     this._drawBrakeLamp(ctx)
     this._drawHighBeamLamp(ctx)
+    this._drawCheckEngineLamp(ctx)
+    this._drawOverheatLamp(ctx)
     this._drawGear(ctx)
     this._drawNeedle(ctx, FUEL, this._fuelShown, 22, 2)
     this._drawNeedle(ctx, TACH, this._rpm / (this._tachMax * 1000), 48, 3)
@@ -252,7 +276,8 @@ export class GaugeCluster {
     this._fillDilated(ctx, MARGIN - 1.5, '#282320')           // housing face
 
     this._paintIndents(ctx)
-    for (const g of [TEMP, FUEL, TACH, SPEEDO, KEY]) this._paintWell(ctx, g)
+    for (const g of [TEMP, FUEL, TACH, KEY]) this._paintWell(ctx, g)
+    this._paintJoinedWell(ctx, SPEEDO, TACH)
 
     this._paintSmallGauge(ctx, TEMP, 'C', 'H', 1)   // red mark at the H end
     this._paintSmallGauge(ctx, FUEL, 'E', 'F', 0)   // red mark at the E end
@@ -415,6 +440,26 @@ export class GaugeCluster {
     ctx.fill()
   }
 
+  // FEAT-34: the speedo's face JOINS the tach's (see TACH) — one face, no dividing rim. Outside the tach's
+  // disc it paints like any well; inside, each pixel keeps the lighter of the two shadings ('lighten'), so
+  // each rim's dark edge vanishes inside the other face and only the union's own outline stays dark.
+  _paintJoinedWell (ctx, g, under) {
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(0, 0, W, H)
+    ctx.arc(under.cx, under.cy, under.well, 0, Math.PI * 2)
+    ctx.clip('evenodd')
+    this._paintWell(ctx, g)
+    ctx.restore()
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(under.cx, under.cy, under.well, 0, Math.PI * 2)
+    ctx.clip()
+    ctx.globalCompositeOperation = 'lighten'
+    this._paintWell(ctx, g)
+    ctx.restore()
+  }
+
   // Temp and fuel share a shape: short arc over the top, end letters, red band at one end.
   _paintSmallGauge (ctx, g, loLabel, hiLabel, redEnd) {
     ctx.strokeStyle = WHITE
@@ -462,13 +507,14 @@ export class GaugeCluster {
       ctx.fillStyle = n >= red ? RED : WHITE
       this._labelAt(ctx, g, n / max, g.scaleR - 13, String(n))
     }
-    // Legends.
+    // Legends — kept left of the cusp (see TACH): RPM x1000 at the top under the numerals, as the 2002
+    // prints it; the fuel legend under the gear.
     ctx.fillStyle = WHITE
-    ctx.font = '7px Arial, sans-serif'
-    ctx.fillText('UNLEADED', g.cx + 24, g.cy - 4)
-    ctx.fillText('< FUEL ONLY', g.cx + 24, g.cy + 4)
     ctx.font = 'bold 8px Arial, sans-serif'
-    ctx.fillText('RPM x1000', g.cx, g.cy + 34)
+    ctx.fillText('RPM x1000', g.cx, g.cy - 22)
+    ctx.font = '7px Arial, sans-serif'
+    ctx.fillText('UNLEADED', g.cx, g.cy + 35)
+    ctx.fillText('< FUEL ONLY', g.cx, g.cy + 43)
   }
 
   _paintSpeedo (ctx) {
@@ -584,7 +630,7 @@ export class GaugeCluster {
       ctx.shadowBlur = 7
       ctx.fillStyle = LAMP_ORANGE
     } else {
-      ctx.fillStyle = '#3a2410'   // the unlit lens: just enough to see there is a lamp there
+      ctx.fillStyle = LAMP_UNLIT_AMBER
     }
     ctx.fill()
     ctx.restore()
@@ -600,7 +646,7 @@ export class GaugeCluster {
     const lit = this._flatLit()
     ctx.save()
     if (lit) { ctx.shadowColor = 'rgba(255,150,30,0.9)'; ctx.shadowBlur = 7 }
-    ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_ORANGE : '#3a2410'
+    ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_ORANGE : LAMP_UNLIT_AMBER
     ctx.lineWidth = 1.8
     ctx.lineCap = 'round'
     ctx.beginPath()
@@ -615,16 +661,16 @@ export class GaugeCluster {
   }
 
   // FEAT-34: the 2002 Ranger's two state lamps (owner guide's cluster drawing; colours per FMVSS 101 — a brake telltale
-  // is red, high beam blue). BRAKE: "((!))" over the word, as the 2002 cluster draws it at the tach's lower left —
-  // here in the tach's empty lower right, the left being this face's scale. Lit while the parking brake is applied
+  // is red, high beam blue). BRAKE: "((!))" over the word, at the tach's lower left as the 2002 cluster draws it (the
+  // lower right is the speedo's since the faces joined). Lit while the parking brake is applied
   // and, as the guide says, "momentarily at start up to ensure the circuit is functional" (the key at START).
   _brakeLit () { return this._keyPos === 'start' || (this._parkBrake && this._keyPos !== 'off') }
   _drawBrakeLamp (ctx) {
-    const x = TACH.cx + 34, y = TACH.cy + 26
+    const x = TACH.cx - 30, y = TACH.cy + 28
     const lit = this._brakeLit()
     ctx.save()
     if (lit) { ctx.shadowColor = 'rgba(255,50,30,0.9)'; ctx.shadowBlur = 7 }
-    ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_RED : '#3a1210'
+    ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_RED : LAMP_UNLIT_RED
     ctx.lineWidth = 1.4
     ctx.lineCap = 'round'
     ctx.beginPath()
@@ -654,6 +700,48 @@ export class GaugeCluster {
     ctx.moveTo(x - 0.5, y - 3.5); ctx.arc(x - 0.5, y, 3.5, -90 * DEG, 90 * DEG); ctx.closePath()   // the lamp, flat face left
     for (const dy of [-3, 0, 3]) { ctx.moveTo(x - 2.5, y + dy); ctx.lineTo(x - 6, y + dy) }        // the beams
     ctx.stroke()
+    ctx.restore()
+  }
+
+  // FEAT-34 round 2 (owner, 2026-11-07): the temp pod mirrors the fuel pod — a lamp each side of the glyph.
+  // CHECK ENGINE as the symbol, not the 2002's text lens (owner: "check engine (as a symbol)"): the ISO engine
+  // outline, amber, on the C side. Lit at the engine's knee (DAMAGE_PARAMS.engineKnee, 50 %), where its power
+  // loss steepens; and at START, the bulb check the 2002 guide describes for this lamp, like BRAKE.
+  _checkEngineLit () { return this._keyPos === 'start' || (this._checkEngine && this._keyPos !== 'off') }
+  _drawCheckEngineLamp (ctx) {
+    const x = TEMP.cx - 16, y = TEMP.cy + 9
+    const lit = this._checkEngineLit()
+    ctx.save()
+    if (lit) { ctx.shadowColor = 'rgba(255,150,30,0.9)'; ctx.shadowBlur = 7 }
+    ctx.strokeStyle = lit ? LAMP_ORANGE : LAMP_UNLIT_AMBER
+    ctx.lineWidth = 1.1
+    ctx.lineJoin = 'round'
+    ctx.beginPath()
+    // The block, its intake on top (a cap over a short neck), the fan pulley left, the exhaust stepping out right.
+    ctx.moveTo(x - 4, y - 1.5); ctx.lineTo(x - 1.5, y - 1.5); ctx.lineTo(x - 1.5, y - 3); ctx.lineTo(x + 1, y - 3)
+    ctx.lineTo(x + 1, y - 1.5); ctx.lineTo(x + 3, y - 1.5); ctx.lineTo(x + 3, y - 0.5); ctx.lineTo(x + 5, y - 0.5)
+    ctx.lineTo(x + 5, y + 2.5); ctx.lineTo(x + 3, y + 2.5); ctx.lineTo(x + 3, y + 3.5); ctx.lineTo(x - 4, y + 3.5)
+    ctx.closePath()
+    ctx.moveTo(x - 2.8, y - 3); ctx.lineTo(x + 2.3, y - 3)                                  // the intake's cap
+    ctx.moveTo(x - 4, y + 1); ctx.lineTo(x - 5.6, y + 1)                                    // the pulley shaft
+    ctx.moveTo(x - 5.6, y - 0.6); ctx.lineTo(x - 5.6, y + 2.6)                              // the pulley
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  // The overheat lamp — owner: "mimic low fuel with a light under the high side of coolant gauge". The low-fuel
+  // lens's twin under H, red (FMVSS 101's colour for a coolant-temperature telltale). Lit past H, where engine
+  // damage and power loss start (DAMAGE_PARAMS.tempHotC).
+  _overheatLit () { return this._overheat && this._keyPos !== 'off' }
+  _drawOverheatLamp (ctx) {
+    const x = TEMP.cx + 15, y = TEMP.cy + 9, r = 3.2
+    const lit = this._overheatLit()
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    if (lit) { ctx.shadowColor = 'rgba(255,50,30,0.9)'; ctx.shadowBlur = 7 }
+    ctx.fillStyle = lit ? LAMP_RED : LAMP_UNLIT_RED
+    ctx.fill()
     ctx.restore()
   }
 

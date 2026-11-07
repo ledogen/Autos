@@ -10623,6 +10623,8 @@ function loop () {
   gaugeCluster.setFlat(damageModel.flat.some(Boolean))   // FEAT-94
   gaugeCluster.setParkBrake(vehicleState.handbrake)       // FEAT-34: latched, held, or the launch hold
   gaugeCluster.setHighBeam(getHeadlightMode() === 2)      // FEAT-34
+  gaugeCluster.setCheckEngine(damageModel.get('engine') <= DAMAGE_PARAMS.engineKnee)   // FEAT-34 round 2
+  gaugeCluster.setOverheat(damageModel.tempGaugeFrac() > 1)                           // past H = tempHotC
   _renderPumpDisplay(frameTime)
   gaugeCluster.setRedline(RANGER_PARAMS.engineRedlineRPM)   // repaints the tach face only on an engine swap
   {
