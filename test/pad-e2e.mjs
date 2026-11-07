@@ -112,19 +112,23 @@ const z1 = await zm()
 await js('__fp.axes[3] = 1'); await sleep(400); await js('__fp.axes[3] = 0'); await sleep(100)
 const z2 = await zm()
 check(z1 > z0 * 1.5 && z2 < z1 / 1.5, `right stick up zooms in, down out (${z0.toFixed(3)} → ${z1.toFixed(3)} → ${z2.toFixed(3)})`)
+await js('__fp.axes[2] = -1'); await sleep(600); await js('__fp.axes[2] = 0'); await sleep(100)
+const c1 = await camXZ()
+check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 0.5, `the right stick does not orbit the camera behind the map (moved ${Math.hypot(c1[0] - c0[0], c1[1] - c0[1]).toFixed(2)} m)`)
+// Last, as it moves the truck: RT drives on the map (the truck is reset after the map closes).
 await js('__fp.b[7] = 0.5'); await sleep(300)
 const thrOnMap = (await vs()).thr, z3 = await zm()
 await js('__fp.b[7] = 0'); await sleep(100)
 check(thrOnMap > 0 && z3 === z2, `RT is still the throttle on the map and zooms nothing (thr ${thrOnMap}, zoom ${z2.toFixed(3)} → ${z3.toFixed(3)})`)
-await js('__fp.axes[2] = -1'); await sleep(600); await js('__fp.axes[2] = 0'); await sleep(100)
-const c1 = await camXZ()
-check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 0.5, `the right stick does not orbit the camera behind the map (moved ${Math.hypot(c1[0] - c0[0], c1[1] - c0[1]).toFixed(2)} m)`)
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!await mapShown(), 'View closes the map again')
 // B is the general back (owner, 2026-10-20): it closes the map too.
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
 check(!await mapShown(), 'B closes the map')
+// The map's RT drove the truck off its brake (FEAT-175): View held resets it, parked at rest, as the checks below found it.
+await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)
+s = await vs(); check(s.parked && s.v < 0.2, `after the map, View held puts the truck back parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // Right stick = orbit RATE. Stopped, the view LINGERS where it was pointed (owner, 2026-10-20) until a
 // pedal is pressed; then the chase swings back behind.
 // Bearing of the camera around the truck, relative to directly behind it (deg).
