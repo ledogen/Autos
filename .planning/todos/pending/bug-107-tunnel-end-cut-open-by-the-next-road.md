@@ -20,8 +20,8 @@ through the tube.
 
 ## Acceptance
 
-- [ ] At seed 19 (−1210, 1837), the hill above the tube holds its cover up to the portal (no sky through the tube).
-- [ ] A census says how many bores end under another road's cutting.
+- [x] At seed 19 (−1210, 1837), the hill above the tube holds its cover up to the portal (no sky through the tube).
+- [x] A census says how many bores end under another road's cutting.
 
 ## Measured (Spare, 2026-11-05) — the cover over the tube is the bore's own funnel; the screenshot is needed
 
@@ -39,3 +39,39 @@ ground over this tube is the tunnel's own carve, not the next road's cutting —
 at a node-end portal, the cutting's side walls beside the tube), or this is the designed funnel and the call is
 whether the funnel should start further in. **Owed before any fix:** the owner's screenshot (seed 19, (−1210, 1837)).
 The census over 10 seeds is ready for whichever measure that settles on.
+
+## Root cause and fix (Spare, 2026-11-07, land/bug-107)
+
+Reproduced on main 6120fe2d: from the owner's spot there is sky beside the tube, and from above a sky-coloured hole
+in the ground at the mouth. The cover numbers above were right; the next road's cutting is not the cause. The hole is
+**missing geometry**:
+
+1. **No lining and no ring at the mouth.** The bore of `g:-3,2,1:-2,2,0` ends AT node `-3,2,1`, a sharp degree-2 bend
+   drawn as a connector strip (`_junctionCarveArcs`, trim 10 m). `road-mesh.js` built a slice's tunnel meshes AFTER the
+   QUAL-10 junction trim, and a slice the trim drops whole `continue`d past them. Here that is the run's last slice
+   [537.55, 543.16]: its 5.6 m of lining and the portal ring were never built, while the terrain shader still cut the
+   skin for the mouth. Second, the span runs 2 cm past the run (543.18 on 543.16), so the strict `s < sHi` gave the ring
+   to no slice anyway, and the proud lip's exact-end test failed.
+2. **A floor gap.** The apron started under the ribbon's edge (halfWidth − 0.8 from the run's line). Over a connector
+   strip the asphalt leaves that line, and the sky showed through between the strip's edge and the apron.
+
+**Fix (`src/road-mesh.js` only, meshes only):**
+- the tunnel block runs BEFORE the trim, on the untrimmed slice;
+- spans are clamped to the run, and the run's last slice holds an end at L;
+- the apron floors the whole bore from the centreline (0.3 m under the ribbon, never seen).
+
+**Census** (`wip/bug-107/endcensus.mjs`, 20 seeds, R 1500, pond no-go): 389 mouths. 9 sit inside a junction trim. In
+2 of them the trim dropped the slice that holds the mouth, so main drew no ring: seed 19, and random seed 24316861 at
+(123, 375). No bore ends under another road's cutting.
+
+**Evidence:**
+- Shots, before/after, seed 19 portal + overhead and 24316861: https://claude.ai/artifact/H9Zjf9UVCkuhq7i9mxU64k.
+  An ordinary portal (the same tunnel's other end) is unchanged.
+- Gates: affected (road-pad-fill) green. cdp-smoke 25/25, zero console errors, on the second run. The first run timed
+  out in "save" at 55 s under load; it took 34 s on the rerun.
+- `fingerprint-world` vs main 6120fe2d: only `tiles` differs (5 windows; the apron is in every tube). Network,
+  profiles, junctions, poi, surface, carve, water and props are identical.
+
+Seen on the way, not chased: large dark boulders hanging in the air over this portal, on main too.
+
+Closed on landing.
