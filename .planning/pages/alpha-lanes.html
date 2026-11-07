@@ -150,6 +150,7 @@
       wt: '/Users/ledogen/CodeShit/CarGame-run-shape', branch: 'feature/run-shape', port: 3731,
       owns: 'story.js, camp.js, dialogue, poi.js (the camp type), the story sections of main.js',
       tasks: [
+        { id: 'BUG-124', what: 'CRITICAL, found by Lane B: on some worlds the game cannot plan mom’s casserole (“no route”), so the opening can’t be played or skipped, and since every job waits for it, the run can’t start. Lane A: the cause, how many worlds, then a fix that always plans it. Not caused by FEAT-178. Hold any push until it’s fixed.' },
         { id: 'BUG-117 · FEAT-173 · BUG-118', what: 'BUG-117 + FEAT-173 ON MAIN (0a0e25a4, smoke 25/25): mom’s casserole has no deadline and no abandon, and every other job waits for it (its pay is your call, bug117-pay); sleep stops draining hunger, the tutorial night ends fed, every run starts with 3 packed lunches. BUG-118 ON MAIN too (9cc5ab82): the tutorial GPS re-plans from the truck when you stray 45 m; the save warning sits under New Game on the main menu. Next: a 3-seed run-soak replay (its stuck card was the soak’s own timing, fixed).' },
         { id: 'FEAT-66', what: 'BUILT on feature/run-shape — camp gear stands at the campsite; lands with demolition slice 2 after your look.' },
         { id: 'ASSET-78/79', what: 'BUILT — the unrolled bedroll (now the starter bed) and the blanket layer; in the same look.' },
