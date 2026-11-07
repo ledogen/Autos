@@ -1,7 +1,7 @@
 ---
 id: BUG-124
 type: bug
-status: open
+status: closed
 opened: 2026-11-07
 severity: critical
 source: Lane B, chasing a cdp-smoke 'pad' miss after FEAT-178, reported to the orchestrator 2026-11-07
@@ -90,3 +90,8 @@ no other way it fails, but that part is a sample, not a guarantee.
       fallback that never blocks the run.
 - [x] A gate pins it on a random-seed sample (reported as a sample), and the smoke's pad step stops missing (its miss
       was this world: the skip takes the casserole there now, 2/2).
+
+## Resolution (orchestrator, 2026-11-07)
+
+Landed on main (merge of aa5ab254): affected 18/18, fingerprint-world 54/54 identical, cdp-smoke 25/25 on main. The
+same-edge limit for the six non-critical strict wishes is BUG-125.
