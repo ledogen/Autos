@@ -1176,15 +1176,26 @@ export class RoadMeshSystem {
         // 1 cm). Each tube is so cut on the other's surface, and both cuts lie on the curve where the two surfaces
         // cross, so the linings meet edge to edge. Owner's redrive 11-07: "torn and overlapping edges on the tubes"
         // was the whole-triangle cut it replaces: a stair-stepped edge, with what was kept past it inside the sibling.
+        // The sibling's own sharp edges (its mouth plane meeting its arch) can poke through a triangle whose corners
+        // are all outside (32 cm deep at seed 717319401's fork tip), so a triangle whose edge midpoints or centroid
+        // read differently from its corners is first quartered, down to 0.5 m edges, and the miter cuts the pieces.
         const sib = road.siblingTubeTest?.(runKey)
         const nv0 = rings * vpr
         const xPos = [], xCol = [], xFcol = [], xUv = []   // vertices the miter adds, after the nv0 ring vertices
         const attr = (i, a, src, ext, n) => (i < nv0 ? src[n * i + a] : ext[n * (i - nv0) + a])
         const P3 = (i, a) => attr(i, a, pos, xPos, 3)
-        const inSib = sib ? (i) => sib(P3(i, 0), P3(i, 1), P3(i, 2)) : null
-        const cut = new Map()   // edge key → the vertex on the sibling's surface (shared by both triangles on it)
+        const vin = []   // vertex id → inside the sibling (memo: each vertex is a corner of up to six triangles)
+        const inSib = (i) => (vin[i] ??= sib(P3(i, 0), P3(i, 1), P3(i, 2)))
+        const ekey = (i, j) => (i < j ? i * 1e7 + j : j * 1e7 + i)
+        const addV = (o, n, t) => {   // a new vertex at t along o → n, every attribute interpolated
+            const lerp = (src, ext, n2) => { for (let a = 0; a < n2; a++) ext.push(attr(o, a, src, ext, n2) + (attr(n, a, src, ext, n2) - attr(o, a, src, ext, n2)) * t) }
+            lerp(pos, xPos, 3); lerp(col, xCol, 3); lerp(fcol, xFcol, 3); lerp(uv, xUv, 2)
+            return nv0 + xPos.length / 3 - 1
+        }
+        const cut = new Map(), mids = new Map()   // edge key → its vertex on the sibling's surface / its midpoint (shared by both triangles on it)
+        const mid = (i, j) => { const key = ekey(i, j); let m = mids.get(key); if (m === undefined) mids.set(key, m = addV(i, j, 0.5)); return m }
         const edgeCut = (o, n) => {   // o outside, n inside
-            const key = o < n ? o * 1e7 + n : n * 1e7 + o
+            const key = ekey(o, n)
             if (cut.has(key)) return cut.get(key)
             const L = Math.hypot(P3(n, 0) - P3(o, 0), P3(n, 1) - P3(o, 1), P3(n, 2) - P3(o, 2))
             let t0 = 0, t1 = 1
@@ -1193,15 +1204,21 @@ export class RoadMeshSystem {
                 if (sib(P3(o, 0) + (P3(n, 0) - P3(o, 0)) * t, P3(o, 1) + (P3(n, 1) - P3(o, 1)) * t, P3(o, 2) + (P3(n, 2) - P3(o, 2)) * t)) t1 = t
                 else t0 = t
             }
-            const lerp = (src, ext, n2) => { for (let a = 0; a < n2; a++) ext.push(attr(o, a, src, ext, n2) + (attr(n, a, src, ext, n2) - attr(o, a, src, ext, n2)) * t0) }
-            lerp(pos, xPos, 3); lerp(col, xCol, 3); lerp(fcol, xFcol, 3); lerp(uv, xUv, 2)
-            const id = nv0 + xPos.length / 3 - 1
+            const id = addV(o, n, t0)
             cut.set(key, id)
             return id
         }
-        const tri = (out, i, j, l) => {
+        const sibAt = (wi, wj, wl, i, j, l) => sib(wi * P3(i, 0) + wj * P3(j, 0) + wl * P3(l, 0), wi * P3(i, 1) + wj * P3(j, 1) + wl * P3(l, 1), wi * P3(i, 2) + wj * P3(j, 2) + wl * P3(l, 2))
+        const d2 = (i, j) => (P3(i, 0) - P3(j, 0)) ** 2 + (P3(i, 1) - P3(j, 1)) ** 2 + (P3(i, 2) - P3(j, 2)) ** 2
+        const tri = (out, i, j, l, near, depth = 0) => {
             if (!sib) { out.push(i, j, l); return }
             const f = [inSib(i), inSib(j), inSib(l)], ins = f.filter(Boolean).length
+            if (near && depth < 4 && Math.max(d2(i, j), d2(j, l), d2(l, i)) > 0.25 && (ins % 3 ||
+                [[.5, .5, 0], [0, .5, .5], [.5, 0, .5], [1 / 3, 1 / 3, 1 / 3]].some(([a, b, c]) => sibAt(a, b, c, i, j, l) !== f[0]))) {
+                const ij = mid(i, j), jl = mid(j, l), li = mid(l, i), d = depth + 1
+                tri(out, i, ij, li, near, d); tri(out, ij, j, jl, near, d); tri(out, li, jl, l, near, d); tri(out, ij, jl, li, near, d)
+                return
+            }
             if (ins === 0) { out.push(i, j, l); return }
             if (ins === 3) return
             // rotate (cyclically, so the winding holds) to put the odd corner first
@@ -1210,12 +1227,17 @@ export class RoadMeshSystem {
             if (ins === 1) { const ab = edgeCut(b, a), ac = edgeCut(c, a); out.push(ab, b, c, ab, c, ac) }   // a inside
             else { const ab = edgeCut(a, b), ac = edgeCut(a, c); out.push(a, ab, ac) }                      // a outside
         }
+        // Only quads within a ring of one with a corner inside the sibling are sampled for quartering: the sibling
+        // is a 2R-wide bore, so its edges never reach a whole ring (≤ 3 m) past its last inside vertex.
+        const ringIn = []
+        for (let r = 0; sib && r < rings; r++) { ringIn[r] = false; for (let k = 0; k < vpr; k++) if (inSib(r * vpr + k)) { ringIn[r] = true; break } }
         for (let r = 0; r < rings - 1; r++) {
+            const near = !!(ringIn[r - 1] || ringIn[r] || ringIn[r + 1] || ringIn[r + 2])
             for (let k = 0; k < vpr - 1; k++) {
                 const a = r * vpr + k, b = a + vpr
                 const out = k === 0 || k === vpr - 2 ? fidx : idx   // the two apron strips are the floor
-                tri(out, a, b, a + 1)
-                tri(out, a + 1, b, b + 1)
+                tri(out, a, b, a + 1, near)
+                tri(out, a + 1, b, b + 1, near)
             }
         }
         if (!idx.length && !fidx.length) return null
