@@ -31,7 +31,7 @@ workSite). A block building in progress is built from what you bring it.
 | Real size | fits the 14 × 8 m lay-by; the slab at the back, its back edge in the 1.6 m graded rim band (the barn's precedent) |
 | Origin | base-seated, centred on the slab |
 | Forward | −Z (the road side) |
-| Collision | per part, so the yard is drivable: walls, scaffold, mixer, pallets, lumber, toilet. The slab edge (0.15 m) and the wheelbarrow are soft. |
+| Collision | per part, so the yard is drivable: walls, mixer, pallets, lumber, toilet. The slab edge (0.15 m), the scaffold (inside the walls) and the wheelbarrow are soft. |
 | `park` | one truck alongside the road on the gravel, inside the flat part of the pad (from 1.4 m in from the road edge) |
 
 ## Acceptance
