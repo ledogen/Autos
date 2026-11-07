@@ -597,9 +597,12 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
         if (n > 1 && n <= HELD_KARP_MAX) {
             const D = []                                   // D[i][j] between stops
             for (let i = 0; i < n; i++) {
+                // One row = at most one Dijkstra, run by its first lookup. Read before the row: `fresh` is the LAST
+                // lookup's, which is cached by then (BUG-134: at 11 stops the rows never yielded).
+                const fr = !searches.has(keys[i])
                 D.push([])
                 for (let j = 0; j < n; j++) D[i].push(i === j ? 0 : legLen(keys[i], keys[j]))
-                if (fresh) yield                           // one row = at most one Dijkstra
+                if (fr) yield
             }
             const from = order.map(c => legLen(larryK, ptKeyOf.get(c.id)))
             const SZ = 1 << n

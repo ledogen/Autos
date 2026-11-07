@@ -90,7 +90,8 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
         `\n        sliced ${sig(route)}\n        whole  ${sig(base)}`)
     // Not an assertion about a number, a statement that the job IS sliceable: a generator that
     // yielded once would pass every other check here while being useless to the pump.
-    check('…and the job actually yields enough times to be pumped', calls > 16,
+    // At least one yield per Dijkstra: Larry's, and one per stop's row (BUG-134: the old `> 16` assumed a 15-stop top rung).
+    check('…and the job actually yields enough times to be pumped', calls > TOP.want,
         `${calls} next() calls — a job that cannot be spread over frames is not sliced`)
     console.log(`       the top rung's job is ${calls} slices`)
 }
