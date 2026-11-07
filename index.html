@@ -287,7 +287,8 @@
     #su-run { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
     #mm-setup-panel:not([data-mode="story"]):not([data-mode="freeroam"]) #su-run,
     #mm-setup-panel:not([data-mode="scenarios"]) #mm-scenario-list,
-    #mm-setup-panel[data-mode="scenarios"] #su-start { display: none; }
+    #mm-setup-panel[data-mode="scenarios"] #su-start,
+    #mm-setup-panel:not([data-mode="story"]) #mm-save-note { display: none; }
     .mm-group { color: var(--text-faint); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; margin: 14px 0 4px 18px; }
     #pause-menu .mm-group { margin: 8px 0 0 0; }
     #su-seed {
@@ -1612,9 +1613,6 @@
       <div class="mm-title">autos</div>
       <button id="mm-continue" style="display:none">continue</button>   <!-- FEAT-42: only while a run is saved -->
       <button id="mm-new">new game</button>   <!-- FEAT-156: the game mode is a row on the new-game page -->
-      <!-- Under the button it warns about, while a run is saved (owner, 2026-11-06: "next to the new game button
-           not halfway down the page"). main.js _syncContinue shows it with continue. -->
-      <div id="mm-save-note" style="display:none">warning: starting a new story game will delete your existing save</div>
       <button id="mm-settings">settings</button>
     </div>
     <!-- FEAT-41 run setup = the GENERATION settings: what the world and the truck are. The selector rows
@@ -1629,6 +1627,9 @@
       <!-- Start and back lead, above the knobs: start is the page's first item, so it is where the
            menu highlight lands (menu-nav.js items[0]) — "just press start" (owner, 2026-10-21). -->
       <button id="su-start">start</button>
+      <!-- Beside the button that deletes the save, and only in story mode: free roam and scenarios never touch it
+           (owner, 2026-11-07). main.js _syncContinue shows it while a run is saved; the CSS hides it off story. -->
+      <div id="mm-save-note" style="display:none">warning: starting a new story game will delete your existing save</div>
       <button id="su-back">back</button>
       <button class="mm-sel" data-key="gameMode"></button>
       <div id="mm-scenario-list"></div>

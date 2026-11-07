@@ -1,7 +1,7 @@
 ---
 id: BUG-69
 type: bug
-status: pending
+status: deferred — closed on the owner's ruling (bug69-case, 2026-11-06)
 severity: minor
 opened: 2026-09-20
 source: >
@@ -122,3 +122,16 @@ what it breaks; generator `wip/bug-69/sheets/gen-page69.mjs`).
 - Recommendation: **leave.** It is the owner's 2026-09-20 read, and BUG-64 (a) covers banks meeting.
 - The choice put to the owner: 1 leave / 2 go with the fix as measured.
 - The prototype stays on `proto/bug-69-past-band` (`474b6d42`) until the owner answers.
+
+## Resolution — deferred (owner, 2026-11-06, bug69-case; filed by the alpha audit, Lane A, 2026-11-07)
+
+The owner picked **1 — leave it** on the case-study page, verbatim:
+
+> "bug69 per the artifact. dont implement the "fix" You correctly identified where it made things better and where it
+> made things worse. As pictured, the juice isn't worth the squeeze. It would be great if we could apply the fixes only
+> where they were doing good and omit them where they were causing chaos, but I don't think this is worth spending
+> cycles on right now because the road is fine as is. Close this ticket as deferred and we can use it as supporting
+> evidence if this ever comes up again i.e. i find something in the world i dont like."
+
+Nothing was built. The prototype stays on `proto/bug-69-past-band` (`474b6d42`, worktree `CarGame-bug69`) as the
+evidence, with the case-study page https://claude.ai/artifact/M9S2yYEjKTCNJPZqypBAgt.

@@ -1,7 +1,7 @@
 ---
 id: FEAT-146
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-10-23
 source: owner, 2026-10-23 — alpha scoping: "reach camp or die due to crash or run out of money"; "summary. The player should also be able to throw in the towel from the pause menu. I imagine most of the time people will see a run going south and quit before they actually get locked"
@@ -86,3 +86,7 @@ mission ranks · camp deliveries (10-31). Built on main.
 ## Open
 
 - (was: every title and row label is a placeholder — the titles and row labels are ruled above.)
+
+## Resolution — Lane A, 2026-11-07 (close-on-evidence sweep)
+
+On main (b6eaab09); the titles and row labels were ruled 2026-11-01 and built. Every acceptance box is ticked, and cdp-smoke's `endings` step drives all four endings without a console error.

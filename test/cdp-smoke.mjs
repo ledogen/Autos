@@ -121,7 +121,10 @@ const simFor = s => untilSim(() => false, s)
 // reach. Measured 2026-11-01: seated ON the farm's marker at (-936.5, 668.6) the truck starts inside the
 // barn and is thrown out at 21 m/s, on main as on any branch; the save step stalled whenever the clock
 // happened to post that farm's freight (it rolled 70–88 m off the pad, never taking the offer).
+// A POI with a PARK box (FEAT-178: the shop's lift; ASSET-74: the store's lot) answers the brake only inside it: seat
+// where a tow would (poi.js towSeat — its centre, along its long side), heading included. Callers spread this LAST.
 const PAD_SEAT = `((q) => { const P = window.__poi(), y = (q.y ?? 0) + 0.8
+  if (q.park) { const s = window.__towSeat(q); return { x: s.x, z: s.z, h: s.heading } }
   const dx = q.roadX - q.x, dz = q.roadZ - q.z, L = Math.hypot(dx, dz) || 1
   for (let t = 0; t <= Math.min(9, L); t += 0.5) {
     const x = q.x + dx / L * t, z = q.z + dz / L * t
@@ -575,7 +578,7 @@ const STEPS = [
   ['service', async () => {
     // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
-      return q ? { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
     if (!p) { console.log('  service: no auto shop in this region — step skipped'); return }
     await seat(p.x, p.z, p.h)
     await park(true)
@@ -583,6 +586,17 @@ const STEPS = [
     check(await until(open, 2000), `parking at the auto shop opened no service screen: ${JSON.stringify(await js(`(() => { const c = window.__car()
       return { parked: window.__vs.parked, v: +c.v.toFixed(2), d: +Math.hypot(c.x - ${p.x}, c.z - ${p.z}).toFixed(1), prompt: document.getElementById('poi-prompt')?.textContent.trim().slice(0, 80),
         promptShown: document.getElementById('poi-prompt')?.style.display, mission: window.__mission().state } })()`))}`)
+    // FEAT-178: parked on the service station's lift, the view snaps to the bay's inside corner — the model's camera eye.
+    await frames(3, 80)
+    const camOff = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden), c = q.camera
+      if (!c) return null
+      const cs = Math.cos(q.modelYaw), sn = Math.sin(q.modelYaw), [ex, ey, ez] = c.eye, p = window.__cam().position
+      return Math.hypot(p.x - (q.modelX + ex * cs + ez * sn), p.y - (q.baseY + ey), p.z - (q.modelZ - ex * sn + ez * cs)) })()`)
+    check(camOff !== null && camOff < 0.3, `the service view is not the bay's camera corner (${camOff?.toFixed(2)} m off its eye)`)
+    // …and the truck stands on its wheels there: the seat once sampled the road's sideways-extrapolated grade under the
+    // lift (up to 1 m below the floor) and the truck was launched onto its roof (world 2764955649/K).
+    const upY = await js('(q => 1 - 2 * (q.x * q.x + q.z * q.z))(window.__vs.quaternion)')
+    check(upY > 0.99, `the truck is not upright on the lift (up.y ${upY.toFixed(3)})`)
     // FEAT-167: no HUD behind the shop.
     check(await js('!document.getElementById("hud-dock").checkVisibility({ visibilityProperty: true })'), 'the HUD shows behind the service screen')
     // My Vehicle lists every corner's tire under a collapsed Tires; selecting one opens its repair / exchange panel.
@@ -847,7 +861,7 @@ const STEPS = [
     const p = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
       const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park && q.type !== 'expeditionCamp'
         && b.status(q.id)?.family === 'delivery' && b.view(q.id, 0)?.count > 0)
-      return q ? { ...${PAD_SEAT}(q), rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type } : null })()`)
+      return q ? { rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type, ...${PAD_SEAT}(q) } : null })()`)
     if (!p) { console.log('  offer: no plain delivery giver with a live offer — step skipped'); return }
     await seat(p.x, p.z, p.h)
     await park(true)
@@ -902,7 +916,8 @@ const STEPS = [
     const before = await js(`({ p: window.__car(), h: window.__day().clockH(), cond: window.__damage.get("armorLeft"), inv: window.__inv.list().length })`)
     await js('document.getElementById("pm-save").click()')
     check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
-    check(await js('(n => n.offsetParent !== null && n.previousElementSibling.id === "mm-new")(document.getElementById("mm-save-note"))'), 'with a run saved, no save warning under new game')
+    // The warning lives on the new-game page beside story's start (02c92535), so it is shown/hidden by style, not visibility here.
+    check(await js('(n => n.style.display !== "none" && n.previousElementSibling.id === "su-start")(document.getElementById("mm-save-note"))'), 'with a run saved, no save warning beside story\'s start')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     const paused = 'document.getElementById("resume-card").style.display === "flex"'
     const resume = async (what) => {
@@ -940,7 +955,7 @@ const STEPS = [
       for (const q of window.__map2d()._getPois()) {
         if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
         const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'freight')
-        if (o) return { ...${PAD_SEAT}(q), rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type }
+        if (o) return { rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type, ...${PAD_SEAT}(q) }
       }
       return null })()`)
     let load = null
@@ -1081,7 +1096,7 @@ const STEPS = [
       await js('document.getElementById("re-menu").click()')
       check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), `${t}: no main menu after the card`)
       check(await js('document.getElementById("mm-continue").offsetParent === null'), `${t}: "continue" offers an ended run`)
-      check(await js('document.getElementById("mm-save-note").offsetParent === null'), `${t}: the save warning outlived the save`)
+      check(await js('document.getElementById("mm-save-note").style.display === "none"'), `${t}: the save warning outlived the save`)
       check(await js('!document.querySelector("canvas").style.filter'), `${t}: the world stayed black and white`)
       check(await js('window.__stage._dragYaw === 0 && window.__stage._dragPitch === 0'), `${t}: the menu truck kept the last orbit (BUG-109: back to the resting shot)`)
       console.log(`  endings: "${t}" — ${body.replace(/\s+/g, ' ').slice(0, 100)}`)
@@ -1265,7 +1280,7 @@ const STEPS = [
     await strayCheck('in the evening')
     // Parked at hers: her sleep card, the timer preset to wake at 07:00 — and sleeping posts the casserole.
     const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
-      return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`)
+      return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
     await js(`window.__seated = false; window.__teleport(${mom.x}, ${mom.z}, ${mom.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), "the teleport to mom's never seated")
@@ -1333,7 +1348,7 @@ const STEPS = [
       check(await until(() => js('window.__seated'), 30000, 250), `teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
       await readCards(); await simFor(1)
     }
-    const seatPoi = async (test) => { const p = await js(`(() => { const q = window.__map2d()._getPois().find(${test}); return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`); await seatRead(p.x, p.z, p.h) }
+    const seatPoi = async (test) => { const p = await js(`(() => { const q = window.__map2d()._getPois().find(${test}); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`); await seatRead(p.x, p.z, p.h) }
 
     // The run the opening step left: Start → pause → give up → its confirm → the summary → the main menu.
     const inRun = await js('getComputedStyle(document.getElementById("run-hud")).display !== "none"')
@@ -1359,9 +1374,12 @@ const STEPS = [
     }
     // A new story run from the menu, the seed left blank (a pad cannot type one: blank is Random).
     if (inRun) { await padTo('mm-new'); await btn(0) }
+    // SMOKE_PAD_SEED=<seed>: repeat a failed pad step's world (its world code's number) — a development aid.
+    if (process.env.SMOKE_PAD_SEED) await js(`document.getElementById("su-seed").value = ${JSON.stringify(process.env.SMOKE_PAD_SEED)}`)
     await padTo('su-start'); await btn(0)
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the pad\'s new run never went live')
+    if (process.env.SMOKE_PAD_SEED) console.log(`  pad: world ${await js('window.__worldCode?.()')}`)
     // The firing: A fills a card, A turns it; View held skips the opening (FEAT-170, pad.skipHold).
     check(await until(dlg, 3000), 'the pad\'s run did not open on the firing')
     const txt = () => js('document.getElementById("dlg-text").textContent.slice(0, 40)')
@@ -1424,9 +1442,10 @@ const STEPS = [
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
     // Not an auto shop (its brake opens the service screen; the jobs are a button in it) nor Larry's (the paper route):
-    // the flake that hit A, Spare and B was a random world whose busiest giver was a shop.
+    // the flake that hit A, Spare and B was a random world whose busiest giver was a shop. Nor a giver with pump zones:
+    // parked there the brake opens the pump (world 1505891932, prompt "to use the pump").
     const giver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
-      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !['autoShop', 'larrysHouse'].includes(q.type)).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
+      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !['autoShop', 'larrysHouse'].includes(q.type) && !q.pumpZones?.length).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
     check(giver?.n > 1, `no giver with two offers to page: ${JSON.stringify(giver)}`)
     await js(`(() => { const m = window.__map2d(), s = m._sheet(); for (let i = 0; i < 6; i++) { m._panX += (m._sx(${giver.x}) - s.cx) / m._zoom; m._panZ += (m._sy(${giver.z}) - s.cy) / m._zoom } })()`)
     await js('__fp.axes[2] = 0.09'); await frames(3, 60); await js('__fp.axes[2] = 0'); await frames(3, 60)
@@ -1444,8 +1463,15 @@ const STEPS = [
     if (await js('window.__vs.parked')) await btn(5)
     check(await until(() => js('!window.__vs.parked'), 2000), 'RB did not let go of the brake at the giver')
     await frames(6, 300)
+    // A miss under heavy load (main, load 10–14, world 1994461851/K; 6/6 pass there at CPU throttle 1–12): log every Space
+    // down/up during the press, so the next one shows whether a second Space edge (the latch toggles on each) came.
+    await js(`window.__spaceLog = []; window.__spaceSpy ??= (e => { if (e.key === ' ') __spaceLog.push(e.type.slice(3) + '@' + (performance.now() | 0)) })
+      addEventListener('keydown', __spaceSpy, true); addEventListener('keyup', __spaceSpy, true)`)
     await hold(5, 450)
-    check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
+    if (!await js('window.__vs.parked')) check(false, 'a long RB at the giver latched the brake and let it go again (the card opened under the press): '
+      + await js(`JSON.stringify({ space: __spaceLog, hb: __vs.handbrake, v: +__vs.velocity.length().toFixed(2), mission: window.__mission().state,
+        offerUp: document.getElementById('mission-panel').style.display === 'block', map: window.__map2d().isOpen(),
+        open: [...document.querySelectorAll('.open, [style*="display: block"]')].map(e => e.id).filter(Boolean).slice(0, 8) })`))
     // The flake (A, Spare and B under load): say what the park trigger saw, so the next miss names its cause.
     if (!await until(offerUp, 6000)) check(false, 'parking at the giver opened no offer card: ' + await js(`JSON.stringify((() => {
       const v = __vs, q = window.__map2d()._getPois().find(p => p.id === ${JSON.stringify(giver.id)}), m = window.__mission()

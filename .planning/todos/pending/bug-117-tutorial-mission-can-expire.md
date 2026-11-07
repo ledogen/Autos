@@ -11,6 +11,8 @@ lane: A
 
 # BUG-117: mom's casserole can expire, so the player never reaches Larry's welcome
 
+**Waiting on the owner (2026-11-07):** the pay call (`bug117-pay`: no pay and a letter, recommended). Everything else is on main (0a0e25a4); BUG-124 (7fb41583) made sure the casserole always plans.
+
 Mom's casserole (FEAT-147, `data/offers.js FIRST_JOB`) was an ordinary courier job, so it had the ordinary deadline
 (FEAT-113, par × (1 + slack) from accept). Once past it, the job is dead in hand. Larry's welcome and his
 expedition-camp intro (`_checkOpeningEnd`) then play wherever the player happens to be, or the player never goes

@@ -1,7 +1,7 @@
 ---
 id: FEAT-66
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-08-17
 updated: 2026-11-02
@@ -158,3 +158,7 @@ campfire is not an item — it spawns to mark camp.
   must never surface as a number. Name entries for what they are, not for what rung they occupy.
 - The tent's fly is authored double-sided so the open door shows the inside — verify that survives
   the load path and is not flattened by a material default.
+
+## Resolution — Lane A, 2026-11-07 (close-on-evidence sweep)
+
+The renderer is on main (cb5dcf84); the bed stack came with FEAT-171 (7006140f, 14fd4954). The owner's look (2026-11-05): "render[s] just fine in camp". Where the four new items come from is RULED (camp + shelf) and Lane B builds it with FEAT-168 item 3. Not FEAT-66's, and still to be placed: fire shadows (they need a quality toggle first, so this is a perf item) and the bigger packs (items.md §2c).

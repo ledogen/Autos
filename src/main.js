@@ -26,7 +26,7 @@ import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
-import { tireContact } from './tire-contact.js'   // FEAT-70: the wheel's ground contact, solved for the tire cylinder
+import { makeQueryContacts } from './world-contacts.js'   // the wheels' and body's contact query (FEAT-70 tire cylinder inside)
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
@@ -327,6 +327,9 @@ const makePropSamplers = () => Object.fromEntries(Object.entries({
   // BUG-93: a tunnel mouth cuts the skin away (terrain.js tunnelCutAt — the shader's own capsule).
   // Its analytic height there is the mouth-funnel notch: rocks and grass stood on it hung in the bore.
   skinCut:     (x, z) => terrainSystem.tunnelCutAt(x, z),
+  // BUG-132: a chunk scatters only once its ground is built (see PropSystem._groundReady); every later
+  // change to that ground is a re-carve, and setRecarveHook (below) releases the chunk for it.
+  groundReady: (cx, cz) => terrainSystem.isChunkDrivable(cx, cz),
 }).map(([k, fn]) => [k, k === 'sunShear' ? fn : _timed(k, fn)]))
 const _sunShearScratch = new THREE.Vector2()
 
@@ -1052,8 +1055,13 @@ function _groundSampleY (x, z) {
   // REAL terrain/road height (~150 m over most of seed 6) and a lab teleport would drop the truck
   // out of the sky onto the plane.
   if (_labActive) return labSystem ? labSystem.groundHeight(x, z) : 0
+  // The asphalt top only ON the road's footprint (_resolveLanding's test): past it the sampler extrapolates the road's
+  // grade sideways, out to ~35 m (camp.js nearRoadInfo), so a seat on a pad beside the road — FEAT-178's lift, ~10 m
+  // out — sat up to 1 m under the pad floor and the truck was launched out of it onto its roof.
   if (roadSystem && typeof roadSystem.sampleRoadTopY === 'function') {
-    const ry = roadSystem.sampleRoadTopY(x, z)
+    const half = (RANGER_PARAMS.roadHalfWidth ?? 5) + (RANGER_PARAMS.roadShoulderWidth ?? 2.5)
+    const nr = roadSystem.queryNearest(x, z, half + 1)
+    const ry = nr?.point && Math.hypot(nr.point.x - x, nr.point.z - z) <= half ? roadSystem.sampleRoadTopY(x, z) : null
     if (ry != null) return ry
   }
   return terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
@@ -1569,10 +1577,10 @@ async function _startFromSetup () {
   await _startFreeRoam(_resolveSeed(seed))
 }
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
-// discards it, and the warning under new game says so.
+// discards it, and the warning beside story's start button says so.
 document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
-/** The main menu's continue button stands only while a run is saved, and so does the warning under new
- *  game. Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
+/** The main menu's continue button stands only while a run is saved, and so does the warning beside the
+ *  new-game page's start (story mode only). Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
  *  buttons above: it shows with the menu, and an early click waits in _startStory's `await _worldReady`. */
 function _syncContinue () {
   for (const id of ['mm-continue', 'mm-save-note']) {
@@ -1913,7 +1921,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
 const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms,
-  compileLightState, LIGHT_STATE_COUNT, setBoreShade } = createVehicleModel(scene, RANGER_PARAMS)
+  compileLightState, LIGHT_STATE_COUNT, setBoreShade, headlightSpots } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -2185,85 +2193,25 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
  * Called by stepPhysics once per wheel each physics step (footprint = true, `axle` = that wheel's spin
  * axis), and by body probes as a plain sphere.
  */
-// S-64: queryContacts' per-sample road-hint and ground samplers, hoisted to module scope so the
-// 4-wheels-per-step physics path does not allocate closures per call. The call's cy reaches them
-// through _qcY (set at the top of queryContacts; nothing in between re-enters it).
-let _qcY = 0
+// S-64: the per-sample road hint, at module scope so the 4-wheels-per-step physics path allocates no closure per call.
 const _qcHintAt = (x, z) => (!_labActive && roadSystem) ? roadSystem.carveHint(x, z) : undefined
-// FEAT-40: cy disambiguates the two stacked surfaces in a bore span (floor vs hill overhead).
-const _qcGroundH = (x, z) => _labActive ? labSystem.groundHeight(x, z)
-                                        : (terrainSystem ? terrainSystem.analyticHeight(x, z, _qcHintAt(x, z), _qcY) : 0)
 const _QC_UP = { x: 0, y: 1, z: 0 }
-const _qcGroundN = (x, z) => _labActive ? labSystem.groundNormal(x, z)
-                                        : (terrainSystem ? terrainSystem.analyticNormal(x, z, _qcHintAt(x, z), _qcY) : _QC_UP)
-const _qcTire = {}
-function queryContacts (cx, cy, cz, r, footprint = false, axle = undefined) {
-  const hits = []
-  _qcY = cy
-
-  // Ground surface — the lab's own surface in the testing lab; analytic terrain height otherwise.
-  // The road run is resolved PER SAMPLE (carveHint at each sample's own x, z), never once at the wheel
-  // centre: a centre still off the road would resolve every sample against bare terrain and the tire
-  // could not feel a road edge until its centre crossed it (owner, 2026-08-22). PERF-24's death
-  // spiral (a near-stationary wheel dispatching ~300 queries a frame on a switchback) stays bounded by
-  // carveHint's own 0.05 m memo: every substep and repeat query at the same spot reuses its cells.
-  //
-  // FEAT-70: a wheel is solved as the tire CYLINDER it is (src/tire-contact.js) — the surface point
-  // closest to the axle across three lines of the tread, depth along the radial line, the normal
-  // radial at an edge — so a kerb ahead lifts and slows the wheel continuously and ground BESIDE the
-  // tire lifts nothing. It replaced a 4-ring × 8-direction stencil round the hub, which was a sphere
-  // (a kerb 15 cm beside the tire lifted the hub 76 mm) and climbed edges in ring-seam steps.
-  if (footprint && axle && r > 0 && RANGER_PARAMS.wheelFootprint !== false) {
-    const c = tireContact(_qcGroundH, _qcGroundN, cx, cy, cz, r, RANGER_PARAMS.wheelWidth, axle, _qcTire)
-    if (c) hits.push({ normal: new THREE.Vector3(c.nx, c.ny, c.nz), depth: c.depth, contactPoint: new THREE.Vector3(c.px, c.py, c.pz) })
-  } else {
-    const h = _qcGroundH(cx, cz), gd = h + r - cy
-    if (gd > 0) {
-      const n = _qcGroundN(cx, cz)
-      hits.push({ normal: new THREE.Vector3(n.x, n.y, n.z), depth: gd, contactPoint: new THREE.Vector3(cx, h, cz) })
-    }
-  }
-
-  // Ramp triangle contacts — lab only (wheel path; the chassis gets the engine ramp prism).
-  // _labActive is the authoritative gate; RANGER_PARAMS.rampEnabled is a secondary debug toggle.
-  if (_labActive && RANGER_PARAMS.rampEnabled !== false) _triContacts(RAMP_TRIS, cx, cy, cz, r, hits)
-  if (_kick) _triContacts(_kick.tris, cx, cy, cz, r, hits)   // the barrel cube's kick ramp
-
-  // FEAT-06b: prop hard contacts (tree trunks = capsule, rocks/boulders = sphere). Local query
-  // against the per-chunk collidable grid — bushes are NOT here (soft-drag is applied separately
-  // once per physics step in the loop). Skipped in the lab (no props there). Same {normal,depth,
-  // contactPoint} shape, so the wheel + body solvers consume them unchanged.
-  if (!_labActive && propSystem) {
-    propSystem.queryProps(cx, cy, cz, r, hits)   // appends in place (S-49)
-  }
-
-  // FEAT-46: the POI marker cube is SOLID — a marker you drive through reads as scenery, and this
-  // project's premise is that the physics is honest. Same {nx,ny,nz,depth} convention as the prop
-  // hits above, converted here exactly as prop-system does. Empty list in free roam ⇒ free.
-  if (!_labActive) {
-    const poiHit = poiSystem.queryContact(cx, cy, cz, r)
-    if (poiHit) {
-      const t = r - poiHit.depth   // query centre back along -normal to the solid's surface
-      hits.push({
-        normal: new THREE.Vector3(poiHit.nx, poiHit.ny, poiHit.nz),
-        depth: poiHit.depth,
-        contactPoint: new THREE.Vector3(cx - poiHit.nx * t, cy - poiHit.ny * t, cz - poiHit.nz * t),
-      })
-    }
-  }
-
-  // BUG-37: bore WALL contact — terrainSystem's ground block above only resolves the bore FLOOR
-  // (bore-ownership rule); the curved half-tube sides have no matching collision without this. Same
-  // {normal,depth,contactPoint} shape as prop hits, so the wheel solver treats a wall like any other
-  // surface. Reuses the CENTRE's run (memoized, so no extra tile scan) — a tunnel wall is a
-  // property of the run the wheel is in, not of the envelope's outlying samples.
-  if (!_labActive && roadSystem) {
-    const wallHit = roadSystem.queryTunnelWallContact(cx, cy, cz, r, _qcHintAt(cx, cz))
-    if (wallHit) hits.push(wallHit)
-  }
-
-  return hits
-}
+// The contact query stepPhysics is handed (src/world-contacts.js — one definition, which the headless drive soak builds
+// from the same systems): the lab's own surface in the testing lab, the analytic terrain otherwise, each sample's road
+// run resolved at its own x, z and the query's own height (FEAT-40) choosing the level.
+const queryContacts = makeQueryContacts({
+  params: RANGER_PARAMS,
+  groundH: (x, z, y) => _labActive ? labSystem.groundHeight(x, z) : (terrainSystem ? terrainSystem.analyticHeight(x, z, _qcHintAt(x, z), y) : 0),
+  groundN: (x, z, y) => _labActive ? labSystem.groundNormal(x, z) : (terrainSystem ? terrainSystem.analyticNormal(x, z, _qcHintAt(x, z), y) : _QC_UP),
+  props: () => _labActive ? null : propSystem,
+  pois: () => _labActive ? null : poiSystem,
+  tunnelWall: (cx, cy, cz, r) => (!_labActive && roadSystem) ? roadSystem.queryTunnelWallContact(cx, cy, cz, r, _qcHintAt(cx, cz)) : null,
+  // Ramp triangles — lab only (_labActive is the gate; rampEnabled a debug toggle) — and the barrel cube's kick ramp.
+  extra: (cx, cy, cz, r, hits) => {
+    if (_labActive && RANGER_PARAMS.rampEnabled !== false) _triContacts(RAMP_TRIS, cx, cy, cz, r, hits)
+    if (_kick) _triContacts(_kick.tris, cx, cy, cz, r, hits)
+  },
+})
 
 // Ramp visual — inclined PlaneGeometry spanning the full slope (rise + underrun).
 // Toe is buried underground (RAMP_TOE_Y < 0); terrain clips the lower section naturally.
@@ -2516,7 +2464,10 @@ if (_PROF) {
       runs: rs._network.size, fp, pts, km: +km.toFixed(2),
       pending: rs._pendingRoutes.size,
       cls: rs._proto.cls?.size ?? 0,
-      lastWarm: !!rs._lastWarmCenter, epoch: rs._routeEpoch,
+      // PERF-27: the network is built off-thread (PERF-30), so "warm done" is the client idle — nothing in flight,
+      // nothing queued. (Was `lastWarm: !!rs._lastWarmCenter`, which nothing has set since PERF-30: every harness
+      // waiting on it hung.)
+      netIdle: !netClient || (!netClient._active && !netClient._queue.length), epoch: rs._routeEpoch,
       dispatched: _rdWrap?.count ?? 0,
       hot: _rdWrap ? [..._rdWrap.keys.entries()].filter(([, n]) => n > 2).sort((a, b) => b[1] - a[1]).slice(0, 8) : [],
     }
@@ -2717,6 +2668,9 @@ perfMark('init: before physics engine')
 const physicsEngine = await createPhysicsEngine()
 const terrainPhysics = new TerrainPhysics(physicsEngine, () => roadSystem)   // road spans → bore slots in the collider
 terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
+// BUG-132: a re-carve that changes a chunk's ground drops the props standing on it; they re-scatter on
+// the new ground. Reads the module-scope propSystem at call time (a reseed swaps the instance).
+terrainSystem.setRecarveHook((cx, cz) => propSystem?.releaseGround(cx, cz))
 // The model's open-bed spec (if it has one) builds a real well instead of the solid deck, so
 // cargo dropped in rides in it (owner, 2026-09-29: "add a couple and drive around").
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS,
@@ -3672,8 +3626,19 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
   // orbits it; closing hands the view back to the chase cam. The truck stays put on its own: the
   // latched handbrake holds it through a preview's resettle (a lift on and off fifteen times moved it
   // 6 mm on a flat pad, headless).
+  // FEAT-178 (owner, 2026-11-06: "the camera snaps to an inside corner of the service bay looking at the car"): parked on
+  // the service station's lift, the view is the model's own `camera` — its eye and look, as the same orbit's bearing,
+  // pitch and radius about the look point, so a drag still orbits from there.
   onView: (on) => {
     if (!on) { setCameraFocus(null); return }
+    const c = _servicePoi?.camera   // the screen opens only parked in the box (_serviceInReach)
+    if (c) {
+      const at = ([x, y, z]) => ({ ...dropZoneWorld(_servicePoi, { x, z }), y: _servicePoi.baseY + y })
+      const e = at(c.eye), l = at(c.look), dx = e.x - l.x, dy = e.y - l.y, dz = e.z - l.z, r = Math.hypot(dx, dy, dz)
+      setCameraFocus(l, { theta: Math.atan2(dx, dz), phi: Math.asin(dy / r), radius: r })
+      snapCamera()   // "snaps": no glide in from the chase position, through the bay's wall
+      return
+    }
     const p = vehicleState.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
     setCameraFocus({ x: p.x, y: p.y, z: p.z }, { theta: Math.atan2(f.x, f.z) + 0.7, radius: 7.5 })
   },
@@ -3685,7 +3650,7 @@ function _serviceInReach () {
   if (['generating', 'offer'].includes(missionSystem?.state)) return null
   const vp = vehicleState.position
   const q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
-  return q?.type === 'autoShop' ? q : null
+  return q?.type === 'autoShop' && _inPoiSpot(q) ? q : null   // FEAT-178: on the lift (its park box), not just near
 }
 
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
@@ -4420,7 +4385,8 @@ function _tutDetourTick () {
   const from = roadOrigin(roadSystem, v)
   const route = from && missionSystem.planOffer(from, { rng: Math.random,
     dest: { kind: 'poi', pois: [leg.door], strict: true, anyLeg: true, nearest: true } })
-  // No plan (the truck on the door's own road, or off every road): keep the line, and the spot it failed at.
+  // No plan (the truck off every road; on the door's own road it is a straight stretch since BUG-125): keep the line,
+  // and the spot it failed at.
   _tutDetour = { base: leg.base, route: route?.segments?.length ? route : _tutLine(leg.base), x: v.x, z: v.z }
 }
 
@@ -5364,7 +5330,8 @@ function _towTo (t, seat) {
     _prevParkedForPoi = false
   })
 }
-// BUG-114: the seat is poi.js towSeat — a pump zone, or a keyless pad's road-side strip, never the marker.
+// BUG-114: the seat is poi.js towSeat — a pump zone, a park box (FEAT-178: the shop's lift), or a keyless pad's
+// road-side strip, never the marker.
 function _towToFuel () {
   const t = _towQuote(_FUEL_SELLER)
   if (t) _towTo(t, towSeat(t.q))
@@ -7595,7 +7562,7 @@ if (USE_NETWORK_WORKER && typeof Worker !== 'undefined') {
     getParams: () => RANGER_PARAMS,
     getPondDiscs: _pondDiscs,
     // PERF-34: prime the water caches for the request window in slices before the discs are read.
-    warmRegion: (minX, minZ, maxX, maxZ, ms) => waterSystem ? waterSystem.warmRegion(minX, minZ, maxX, maxZ, ms) : true,
+    warmRegion: (minX, minZ, maxX, maxZ, ms) => waterSystem ? waterSystem.warmPonds(minX, minZ, maxX, maxZ, ms) : true,   // PERF-27: discs only
   })
   netClient.register('play', roadSystem, {
     onAdopted: (reason) => {
@@ -7701,7 +7668,7 @@ const applyPropImpostors = () => {
   // beside them got 100 %, i.e. a brightness step exactly at the LOD swap. The proxy re-sums the
   // pair on every read, so it stays correct if the split is ever retuned.
   const _impostorKey = { color: sun.color, get intensity () { return sun.intensity + sunFar.intensity } }
-  propSystem.setImpostors(renderer, { sun: _impostorKey, ambient, sunDir: skySystem.sunDirection })
+  propSystem.setImpostors(renderer, { sun: _impostorKey, ambient, sunDir: skySystem.sunDirection, heads: headlightSpots })   // BUG-133: + the head spots
   propSystem.setLodRing(FLORA_PARAMS.lod?.ring3d ?? 2)
   // FEAT-85: the cover's live dials ride the same hook — every path that recreates the
   // PropSystem (GUI rebuild, reseed) or switches tier lands here.
@@ -8532,6 +8499,7 @@ const storySystem = new StorySystem({
         roadSystem.setRadius(radius)
         netClient.buildNow('play', center.x, center.z, radius).then((ok) => {
           if (_regionNetBuild === st) { if (ok) st.done = true; else _regionNetBuild = null }
+          storySystem.pumpWarmNow()   // PERF-27: seen next frame, not up to 250 ms later
         })
       }
       return false
@@ -9251,6 +9219,7 @@ document.getElementById('tc-end')?.addEventListener('click', () => _endRun(recov
 window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
 window.__worldCode = () => formatWorldCode(_seedString, activeWorld())   // dev handle — cdp-smoke names a failed step's world
 window.__poi = () => poiSystem      // dev handle — test/cdp-smoke.mjs drives at a barricade row (FEAT-154)
+window.__towSeat = towSeat         // dev handle — cdp-smoke parks in a POI's park box (FEAT-178: the shop's lift) as a tow would
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
 function _runSnapshot () {

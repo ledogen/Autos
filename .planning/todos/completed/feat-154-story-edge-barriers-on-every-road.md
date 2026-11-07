@@ -1,7 +1,7 @@
 ---
 id: FEAT-154
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-10-30
 source: owner, 2026-10-30 — "make a ticket (preferably up front) that says we need to put barriers on all roads that lead out of the playable area for story mode. most still just have the invis wall."
@@ -10,6 +10,8 @@ relates: FEAT-103 (the camp's three Type III barricades, poi.js `_barriers`, POI
 lane: A
 
 # FEAT-154: Every road leaving the story play area ends at barricades, not an invisible wall
+
+**The last item is built (2026-11-07, Lane A, with BUG-128):** rows on BUG-63's `~p` parallel runs that cross the wall. Close it on this landing.
 
 ## What
 
@@ -83,5 +85,46 @@ The design moved on from "the truck stops at them":
   ~30 m inside the wall, so the return seated the truck just past the barricades and it crashed back
   through them). `_returnSpots` drops a spot on a row's far side or within poiEdgeReturnM inside it;
   on seed 3852053035 the camp road's last spot moved from 17 m past the row to 20 m inside it.
-- [ ] Rows are not placed on BUG-63 `~p` parallel runs (they are absent from `networkGraph`). Measure
-      how often a parallel crosses the wall, or close it as not occurring.
+- [x] Rows are not placed on BUG-63 `~p` parallel runs (they are absent from `networkGraph`). **MEASURED 2026-11-07
+      (Lane A, `wip/feat154-parallel.mjs`, the 51-world BUG-124 census):** 37 parallel runs on 28 worlds; **2 worlds**
+      have one crossing the planners' wall with no row (2167923713, 3109505264, one crossing each). It occurs, so
+      it is not closed: the fix is a row at each `~p` wall crossing too (poi.js barricades, plus the expedition-camp
+      gate's independent crossing count). The edge fade still returns a truck that drives out there, so it is a
+      missing cue, not a hole.
+      **BUILT 2026-11-07 (Lane A):**
+      - `road.js parallelRuns()` lists the parallels, read-only: key, cells, and the points-backed centerline
+        edgeParData uses.
+      - `poi.js _wallRoads` walks every graph edge once, then the parallels, for both the rows (`_edgeRows`, same skip
+        rule) and the fade's return spots (`_returnSpots`).
+      - expedition-camp finds the parallel crossings off the network itself and pins 2167923713: 23 of 23 rows
+        there, 22 of 23 before. On 3109505264: 21 of 21.
+      - The new parallel row's return lands on its own road 42 m in, which the own-road rule (BUG-128) accepts.
+      - World fingerprint vs main: identical.
+## Landed (orchestrator, 2026-11-07)
+
+Merge of 4f19faf2 on main (tree identical): affected 61/61, fingerprint-world 54/54 identical, cdp-smoke 25/25.
+
+## Follow-up — Lane A, 2026-11-07: rows stand on a plane
+
+Each barricade is a loose body that must start at rest, so the deck under its whole footprint has to fit the plane
+it is seated on (expedition-camp: within 8 cm). Rows kept a fixed 20 m from their edge's ends (`poiRowNodeClearM`),
+and near a junction that was not enough.
+
+- **Census on main, 51 worlds, 1194 rows** (`wip/rows-apron.mjs`): 25 rows on 19 worlds were more than 3 cm off
+  their plane. One world failed the gate's 8 cm: 398411380, rows at 17.7 cm and 13.9 cm. Those rows stood 20 m from a
+  three-leg junction whose pad reaches only 14 m, on the vertical knee where the steep leg blends into it: −37 % to
+  −62 % under one barricade's 1.15 m depth. Under BUG-121's region circles, seed 6 had one at 30.7 cm, 20 m from a
+  junction, on its apron.
+- **Fix (`poi.js _rowOnPlane`):** a row whose barricades miss their planes by more than `poiRowFitM` (4 cm
+  `[DEFAULT]`) moves to the nearest arc where they fit, 1 m at a time either way, within `poiRowSlideM` (20 m
+  `[DEFAULT]`) of its wall crossing and inside the old end clearance. Failing that, it takes the best-fitting arc.
+- **Judged by the fit, not a pad's reach.** A first cut moved rows off any junction or bend pad
+  (`road.junctionPadBlocked`). Seven census rows still touched one: five on a bend's fillet, two on a 32 m ring's
+  mouth that no 20 m slide clears. All seven fit within 3.3 cm, so the pad test was moving rows that stood fine.
+- **After, 51 worlds:** 0 rows past 8 cm (1 world before), 1 past 4 cm (4.5 cm, the best its window allows), 16
+  past 3 cm on 13 worlds (25 on 19 before). Worst 4.5 cm (17.7 cm before).
+- **Gates:** expedition-camp green on 1, 6, 2167923713, 3109505264, 3873008110 and 398411380 (now pinned). Affected
+  gates 18/18. The world fingerprint is identical to main (rows are not in it).
+- **land/bug-121, scratch merge (throwaway worktree, no commit):** seed 6's 30.7 cm barricade is cleared (its worst
+  fit is 3.9 cm), and expedition-camp is all green there. The only conflict was test/gates.mjs's registry text.
+
