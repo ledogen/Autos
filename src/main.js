@@ -62,7 +62,7 @@ import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
-import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
+import { SkySystem, SKY_CYCLE, SKY_PRESETS, nightWeight } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
 import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
@@ -1896,6 +1896,7 @@ function applyShadowResolution (mapSize, extent) {
 // tint from ONE sun elevation/azimuth (the static base a day/night cycle plugs into). SkySystem adds
 // the Sky mesh and sets scene.background = null (the mesh is the background now).
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
+const _ringDay = skySystem.particleLight(new THREE.Color(), SKY_PRESETS.day)   // FEAT-180: the curtains' noon light
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
 // NB `window.terrain` is the ground-height FUNCTION (returns metres), not the streaming system. This is the system
 // itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe, or zeroing
@@ -1907,6 +1908,7 @@ window.__terrain = () => terrainSystem
 const moonSystem = new MoonSystem(scene)
 // Scratch for the per-frame unlit-particle irradiance push (dust / smoke / dirt spray).
 const _particleLight = new THREE.Color(1, 1, 1)
+const _ringLight = new THREE.Color(1, 1, 1)
 
 // Wheel dust trails (src/dust.js). Self-contained sprite-pool puffs tinted to the dirt
 // we're driving on; driven each render frame from vehicleState (see loop). Construct here
@@ -3052,10 +3054,18 @@ function _ringAlphaTex () {
 // one ring changing meaning rather than two unrelated overlays.
 const _ringGeo = new THREE.CylinderGeometry(1, 1, 1, 48, 1, true)
 const _ringAlpha = _ringAlphaTex()
-const _ringMat = (color, opacity = 0.28) => new THREE.MeshBasicMaterial({
-  color, transparent: true, opacity, side: THREE.DoubleSide,
-  depthWrite: false, toneMapped: false, alphaMap: _ringAlpha,
-})
+// FEAT-180 (owner 11-07, 3a: "dimmed with the light, like everything else"): every curtain made here keeps its
+// authored colour in userData.base and is re-coloured each frame by the look's light (see the particle-light block).
+const _ringMats = []
+const _ringMat = (color, opacity = 0.28) => {
+  const m = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity, side: THREE.DoubleSide,
+    depthWrite: false, toneMapped: false, alphaMap: _ringAlpha,
+  })
+  m.userData.base = m.color.clone()
+  _ringMats.push(m)
+  return m
+}
 const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered a job
 const _pumpZoneMat = _ringMat(0x4fc8ff)    // FEAT-50: blue — pull alongside and park to use the pump
 const _pumpZoneMarks = []                  // the pump zones' curtains (two per island), rebuilt with the markers
@@ -10389,6 +10399,10 @@ function loop () {
   dustSystem.setLight(_particleLight, _particleAlpha)
   smokeSystem.setLight(_particleLight, _particleAlpha)
   dirtSpraySystem.setLight(_particleLight, _particleAlpha)
+  // FEAT-180: the curtains (POI rings, pump zones, start/target rings, light columns) dim with the same light, divided
+  // by the day look's own so noon is exactly the authored colour (it carries a 5 % blue cast the dust keeps).
+  _ringLight.setRGB(_particleLight.r / _ringDay.r, _particleLight.g / _ringDay.g, _particleLight.b / _ringDay.b)
+  for (const m of _ringMats) m.color.copy(m.userData.base).multiply(_ringLight)
 
   // FEAT-39: GPS overlay. Early-outs to nothing when no mission is live, so free roam pays a
   // null check. Off in the lab, which has no road network to navigate.

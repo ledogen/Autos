@@ -145,3 +145,24 @@ They land together. Piece 1 alone makes dawn worse: the too-bright dawn fog woul
 - **Open for the dusk interview:** facing a low sun, the capped haze reads as a darker band under the glow. The rule
   as written makes it so. The alternative is fog that keeps its authored brightness only toward the sun (lit from
   behind, as real haze is), which bends "never brighter than the land" there.
+
+## Piece 3 built (Spare, 2026-11-07): the rings dim with the light — `src/main.js`, `src/sky.js`
+
+Owner 3a: "dimmed with the light, like everything else".
+
+- **What dims.** Every curtain `_ringMat` makes: the POI rings, the pump zones, the start and target rings, and the
+  scenario light columns. Each keeps its authored colour in `userData.base`.
+- **How.** Each frame the colour is re-set from the dust and smoke's own light multiplier (`particleLight`), divided
+  by the day look's value. So noon is exactly the authored colour; without that division it would carry the
+  dust's 5 % blue cast.
+- **Measured** in a story run on seed 3583777560 (`wip/feat-180/ring-read.mjs`, display sRGB of the orange ring):
+
+  | Hour | Orange ring | Note |
+  |---|---|---|
+  | 12:00 | 255, 122, 24 | 0xff7a18, untouched |
+  | 17:00 | 227, 79, 9 | |
+  | 18:00 | 220, 68, 6 | warmer and redder in the evening light |
+  | 19:00 | 95, 42, 5 | |
+  | 20:00+ | 78, 38, 5 | about 30 % of noon, with the night's blue cast |
+
+  The blue pump zone goes 79, 200, 255 → 18, 67, 110.
