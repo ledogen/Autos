@@ -327,6 +327,9 @@ const makePropSamplers = () => Object.fromEntries(Object.entries({
   // BUG-93: a tunnel mouth cuts the skin away (terrain.js tunnelCutAt — the shader's own capsule).
   // Its analytic height there is the mouth-funnel notch: rocks and grass stood on it hung in the bore.
   skinCut:     (x, z) => terrainSystem.tunnelCutAt(x, z),
+  // BUG-132: a chunk scatters only once its ground is built (see PropSystem._groundReady); every later
+  // change to that ground is a re-carve, and setRecarveHook (below) releases the chunk for it.
+  groundReady: (cx, cz) => terrainSystem.isChunkDrivable(cx, cz),
 }).map(([k, fn]) => [k, k === 'sunShear' ? fn : _timed(k, fn)]))
 const _sunShearScratch = new THREE.Vector2()
 
@@ -1574,10 +1577,10 @@ async function _startFromSetup () {
   await _startFreeRoam(_resolveSeed(seed))
 }
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
-// discards it, and the warning under new game says so.
+// discards it, and the warning beside story's start button says so.
 document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
-/** The main menu's continue button stands only while a run is saved, and so does the warning under new
- *  game. Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
+/** The main menu's continue button stands only while a run is saved, and so does the warning beside the
+ *  new-game page's start (story mode only). Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
  *  buttons above: it shows with the menu, and an early click waits in _startStory's `await _worldReady`. */
 function _syncContinue () {
   for (const id of ['mm-continue', 'mm-save-note']) {
@@ -1918,7 +1921,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
 const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms,
-  compileLightState, LIGHT_STATE_COUNT, setBoreShade } = createVehicleModel(scene, RANGER_PARAMS)
+  compileLightState, LIGHT_STATE_COUNT, setBoreShade, headlightSpots } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -2665,6 +2668,9 @@ perfMark('init: before physics engine')
 const physicsEngine = await createPhysicsEngine()
 const terrainPhysics = new TerrainPhysics(physicsEngine, () => roadSystem)   // road spans → bore slots in the collider
 terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
+// BUG-132: a re-carve that changes a chunk's ground drops the props standing on it; they re-scatter on
+// the new ground. Reads the module-scope propSystem at call time (a reseed swaps the instance).
+terrainSystem.setRecarveHook((cx, cz) => propSystem?.releaseGround(cx, cz))
 // The model's open-bed spec (if it has one) builds a real well instead of the solid deck, so
 // cargo dropped in rides in it (owner, 2026-09-29: "add a couple and drive around").
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS,
@@ -7662,7 +7668,7 @@ const applyPropImpostors = () => {
   // beside them got 100 %, i.e. a brightness step exactly at the LOD swap. The proxy re-sums the
   // pair on every read, so it stays correct if the split is ever retuned.
   const _impostorKey = { color: sun.color, get intensity () { return sun.intensity + sunFar.intensity } }
-  propSystem.setImpostors(renderer, { sun: _impostorKey, ambient, sunDir: skySystem.sunDirection })
+  propSystem.setImpostors(renderer, { sun: _impostorKey, ambient, sunDir: skySystem.sunDirection, heads: headlightSpots })   // BUG-133: + the head spots
   propSystem.setLodRing(FLORA_PARAMS.lod?.ring3d ?? 2)
   // FEAT-85: the cover's live dials ride the same hook — every path that recreates the
   // PropSystem (GUI rebuild, reseed) or switches tier lands here.
@@ -8493,6 +8499,7 @@ const storySystem = new StorySystem({
         roadSystem.setRadius(radius)
         netClient.buildNow('play', center.x, center.z, radius).then((ok) => {
           if (_regionNetBuild === st) { if (ok) st.done = true; else _regionNetBuild = null }
+          storySystem.pumpWarmNow()   // PERF-27: seen next frame, not up to 250 ms later
         })
       }
       return false

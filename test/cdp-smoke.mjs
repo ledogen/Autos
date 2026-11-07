@@ -916,7 +916,8 @@ const STEPS = [
     const before = await js(`({ p: window.__car(), h: window.__day().clockH(), cond: window.__damage.get("armorLeft"), inv: window.__inv.list().length })`)
     await js('document.getElementById("pm-save").click()')
     check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
-    check(await js('(n => n.offsetParent !== null && n.previousElementSibling.id === "mm-new")(document.getElementById("mm-save-note"))'), 'with a run saved, no save warning under new game')
+    // The warning lives on the new-game page beside story's start (02c92535), so it is shown/hidden by style, not visibility here.
+    check(await js('(n => n.style.display !== "none" && n.previousElementSibling.id === "su-start")(document.getElementById("mm-save-note"))'), 'with a run saved, no save warning beside story\'s start')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     const paused = 'document.getElementById("resume-card").style.display === "flex"'
     const resume = async (what) => {
@@ -1095,7 +1096,7 @@ const STEPS = [
       await js('document.getElementById("re-menu").click()')
       check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), `${t}: no main menu after the card`)
       check(await js('document.getElementById("mm-continue").offsetParent === null'), `${t}: "continue" offers an ended run`)
-      check(await js('document.getElementById("mm-save-note").offsetParent === null'), `${t}: the save warning outlived the save`)
+      check(await js('document.getElementById("mm-save-note").style.display === "none"'), `${t}: the save warning outlived the save`)
       check(await js('!document.querySelector("canvas").style.filter'), `${t}: the world stayed black and white`)
       check(await js('window.__stage._dragYaw === 0 && window.__stage._dragPitch === 0'), `${t}: the menu truck kept the last orbit (BUG-109: back to the resting shot)`)
       console.log(`  endings: "${t}" — ${body.replace(/\s+/g, ' ').slice(0, 100)}`)
@@ -1373,9 +1374,12 @@ const STEPS = [
     }
     // A new story run from the menu, the seed left blank (a pad cannot type one: blank is Random).
     if (inRun) { await padTo('mm-new'); await btn(0) }
+    // SMOKE_PAD_SEED=<seed>: repeat a failed pad step's world (its world code's number) — a development aid.
+    if (process.env.SMOKE_PAD_SEED) await js(`document.getElementById("su-seed").value = ${JSON.stringify(process.env.SMOKE_PAD_SEED)}`)
     await padTo('su-start'); await btn(0)
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the pad\'s new run never went live')
+    if (process.env.SMOKE_PAD_SEED) console.log(`  pad: world ${await js('window.__worldCode?.()')}`)
     // The firing: A fills a card, A turns it; View held skips the opening (FEAT-170, pad.skipHold).
     check(await until(dlg, 3000), 'the pad\'s run did not open on the firing')
     const txt = () => js('document.getElementById("dlg-text").textContent.slice(0, 40)')
@@ -1438,9 +1442,10 @@ const STEPS = [
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
     // Not an auto shop (its brake opens the service screen; the jobs are a button in it) nor Larry's (the paper route):
-    // the flake that hit A, Spare and B was a random world whose busiest giver was a shop.
+    // the flake that hit A, Spare and B was a random world whose busiest giver was a shop. Nor a giver with pump zones:
+    // parked there the brake opens the pump (world 1505891932, prompt "to use the pump").
     const giver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
-      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !['autoShop', 'larrysHouse'].includes(q.type)).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
+      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !['autoShop', 'larrysHouse'].includes(q.type) && !q.pumpZones?.length).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
     check(giver?.n > 1, `no giver with two offers to page: ${JSON.stringify(giver)}`)
     await js(`(() => { const m = window.__map2d(), s = m._sheet(); for (let i = 0; i < 6; i++) { m._panX += (m._sx(${giver.x}) - s.cx) / m._zoom; m._panZ += (m._sy(${giver.z}) - s.cy) / m._zoom } })()`)
     await js('__fp.axes[2] = 0.09'); await frames(3, 60); await js('__fp.axes[2] = 0'); await frames(3, 60)
@@ -1458,8 +1463,15 @@ const STEPS = [
     if (await js('window.__vs.parked')) await btn(5)
     check(await until(() => js('!window.__vs.parked'), 2000), 'RB did not let go of the brake at the giver')
     await frames(6, 300)
+    // A miss under heavy load (main, load 10–14, world 1994461851/K; 6/6 pass there at CPU throttle 1–12): log every Space
+    // down/up during the press, so the next one shows whether a second Space edge (the latch toggles on each) came.
+    await js(`window.__spaceLog = []; window.__spaceSpy ??= (e => { if (e.key === ' ') __spaceLog.push(e.type.slice(3) + '@' + (performance.now() | 0)) })
+      addEventListener('keydown', __spaceSpy, true); addEventListener('keyup', __spaceSpy, true)`)
     await hold(5, 450)
-    check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
+    if (!await js('window.__vs.parked')) check(false, 'a long RB at the giver latched the brake and let it go again (the card opened under the press): '
+      + await js(`JSON.stringify({ space: __spaceLog, hb: __vs.handbrake, v: +__vs.velocity.length().toFixed(2), mission: window.__mission().state,
+        offerUp: document.getElementById('mission-panel').style.display === 'block', map: window.__map2d().isOpen(),
+        open: [...document.querySelectorAll('.open, [style*="display: block"]')].map(e => e.id).filter(Boolean).slice(0, 8) })`))
     // The flake (A, Spare and B under load): say what the park trigger saw, so the next miss names its cause.
     if (!await until(offerUp, 6000)) check(false, 'parking at the giver opened no offer card: ' + await js(`JSON.stringify((() => {
       const v = __vs, q = window.__map2d()._getPois().find(p => p.id === ${JSON.stringify(giver.id)}), m = window.__mission()

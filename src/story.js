@@ -51,12 +51,12 @@ export const REGION_WARM_RADIUS_M = REGION_RADIUS_M + WARM_MARGIN_M
 // flip this to true to close the mode up. Teleport is the sibling switch — flip both together.
 const DEBUG_LOCKOUT = false
 
-// Grace after enter() before the region center is captured: the reseat/reseed is async, so the
-// truck is not at the spawn yet. deps.reseat()/applySeed() return promises we await, and this is
-// only the belt-and-braces floor + ceiling around them.
-const SETTLE_MIN_MS = 400
+// The reseat/reseed is async: deps.reseat()/applySeed() return promises we await, and this is the
+// belt-and-braces ceiling around them. PERF-27 (2026-11-07) removed the 400 ms floor that sat after
+// the settle: the centre is captured in _beginWarm before the floor ran, and the floor only let the
+// post-reseat frame paint before the main-thread region build froze it — off-thread since PERF-30.
 const SETTLE_MAX_MS = 20000    // if a rebuild throws, don't hang the loading screen forever
-const WARM_PUMP_MS  = 250      // warmBandComplete() rebuilds a band graph — pump it, don't spin it
+const WARM_PUMP_MS  = 250      // warmBandComplete() rebuilds a band graph — pump it, don't spin it (the Worker path pumps on its build's promise: pumpWarmNow)
 const WARM_MAX_MS   = 180000   // cold uncached seed at this radius can be minutes; still bounded
 const HANDOFF_MAX_MS = 15000   // go-live waits for the terrain ring; bounded so a stuck ring cannot strand the player
 
@@ -201,6 +201,9 @@ export class StorySystem {
     this._d.setLoading(true, 'building the region…')
   }
 
+  /** PERF-27: the off-thread region build settled — pump on the next frame, not the next WARM_PUMP_MS tick. */
+  pumpWarmNow () { this._pumpAcc = WARM_PUMP_MS }
+
   /**
    * Warm done: is this seed actually playable on the CURRENT router and terrain parameters?
    *
@@ -333,7 +336,6 @@ export class StorySystem {
     }
 
     if (this._phase === 'warming') {
-      if (this._elapsed < SETTLE_MIN_MS) return   // let the post-reseat frame land first
       this._pumpAcc += dtMs
       if (this._pumpAcc < WARM_PUMP_MS) return
       this._pumpAcc = 0

@@ -86,6 +86,7 @@ const _HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
 const cellKey = (gx, gz) => (gx + 1048576) * 2097152 + (gz + 1048576)
 const SEQ_STRIDE = 65536   // S-45: collidable seq = chunk rank × stride + list index (a chunk holds ≪ 65,536)
 const LOD_SWAPS_MAX = 6      // PERF-21: per-frame chunk re-pool ceiling
+const LOD_HYSTERESIS = 1     // chunks — BUG-133: a chunk keeps its mode until it is this far past the ring it crossed
 const LITTER_DEFER = 1.5     // PERF-34: streamScore units a litter-only job yields to base scatters by
 const PREEMPT_MARGIN = 1.0   // PERF-33: streamScore units (≈ chunks) a queued chunk must beat the active one by
 
@@ -169,6 +170,7 @@ export class PropSystem {
     this._impMeshes = null         // key "cat#v" -> { mesh, aPos, aSize, aTint, size, free, occ, top, cap, dirtyLo, dirtyHi }
     this._impDirty = new Set()
     this._lodRing = (params.lod && params.lod.ring3d != null) ? params.lod.ring3d : 2
+    this._lodHyst = LOD_HYSTERESIS   // BUG-133 (a field so a headless harness can pin pure rings with 0)
     this._fullRing = Infinity      // full-prop radius (set each update); beyond → billboard-only
     this._ccx = null               // camera chunk (set each update; null = everything 'near')
     this._ccz = null
@@ -354,7 +356,8 @@ export class PropSystem {
    * instanced-quad mesh per billboardable variant. Live chunks re-pool over the next frames
    * via _syncChunkLod.
    * @param {THREE.WebGLRenderer} renderer
-   * @param {{sun: THREE.DirectionalLight, ambient: THREE.HemisphereLight}} lights
+   * @param {{sun: THREE.DirectionalLight, ambient: THREE.HemisphereLight, heads?: THREE.SpotLight[]}} lights — heads: the
+   *        truck's two head spots (BUG-133: billboards in the beam are lit like their 3D twins)
    */
   setImpostors(renderer, lights) {
     if (this._impostors || !renderer) return
@@ -414,6 +417,7 @@ export class PropSystem {
   ensureChunk(cx, cz) {
     const ck = cx + ',' + cz
     if (this._chunks.has(ck)) return
+    if (!this._groundReady(cx, cz)) return   // BUG-132: nothing to stand on yet (the truck is held there too)
     // PERF-26: the ONE unbudgeted scatter path. Fires when driving outruns the 3 ms/frame drip and
     // the truck's 3×3 collision chunks must exist this frame — i.e. exactly on a slow machine.
     perfEvent('props.hardScatter')
@@ -450,6 +454,18 @@ export class PropSystem {
       this._scatterSet.add(ck + '#L')
     }
     perfAdd('props.hard.commit', performance.now() - _t1)
+  }
+
+  /**
+   * BUG-132: a chunk scatters only on BUILT ground (samplers.groundReady — main.js: terrain isChunkDrivable).
+   * Props seat on analyticHeight; scattered before their terrain chunk existed, they kept that seat when
+   * the chunk then built against a newer road network — a fresh build, not a re-carve, so the terrain's
+   * recarve hook never released them (seed 3845087383: 22 rocks up to 7 m under the fill). Once the
+   * chunk is built, every later change to its ground is a re-carve, which releases the chunk. Headless
+   * (no sampler) every chunk is ready.
+   */
+  _groundReady(cx, cz) {
+    return !this._samplers.groundReady || this._samplers.groundReady(cx, cz)
   }
 
   _dequeueScatter(ck) {
@@ -633,12 +649,15 @@ export class PropSystem {
    *            (beyond the QUAL-18 fade reach anyway, and marking it would overflow the toroidal
    *            atlas at Ultra's billboard radius). This is the ring that carries trees out to the
    *            full drawn-terrain distance (user call 2026-07-17).
+   * BUG-133: `cur` (a standing chunk's mode) adds hysteresis — a chunk is promoted at the ring and demoted only
+   * LOD_HYSTERESIS chunks past it. Without it a camera stepping 1 m across one chunk line re-swapped 10 chunks every
+   * crossing, both ways (owner: billboards "flip flop … at certain angles"), and every swap changes the silhouette.
    */
-  _chunkMode(cx, cz) {
+  _chunkMode(cx, cz, cur = null) {
     if (!this._impMeshes || this._ccx === null) return 'near'
-    const d = Math.max(Math.abs(cx - this._ccx), Math.abs(cz - this._ccz))
-    if (d <= this._lodRing) return 'near'
-    return d <= this._fullRing ? 'far' : 'bbonly'
+    const d = Math.max(Math.abs(cx - this._ccx), Math.abs(cz - this._ccz)), h = this._lodHyst
+    if (d <= this._lodRing || (cur === 'near' && d <= this._lodRing + h)) return 'near'
+    return d <= this._fullRing || (cur === 'far' && d <= this._fullRing + h) ? 'far' : 'bbonly'
   }
 
   /** Allocate render-pool slots for a chunk's retained placements (see _chunkMode for modes). */
@@ -748,7 +767,7 @@ export class PropSystem {
     let budget = LOD_SWAPS_MAX
     for (const [ck, chunk] of this._chunks) {
       const { cx, cz } = chunk
-      const want = this._chunkMode(cx, cz)
+      const want = this._chunkMode(cx, cz, chunk.mode)
       if (want === chunk.mode) continue
       const promoted = chunk.mode === 'bbonly' && want !== 'bbonly'
       perfEvent('props.lodSwap')   // PERF-26: 3D ⇄ billboard re-place of a whole chunk's instances
@@ -789,6 +808,26 @@ export class PropSystem {
     // departed silhouettes (a neighbour still in-ring re-bakes without them; its own tile is reused
     // by whichever chunk lands on the toroidal slot next). Billboard-only chunks never baked.
     if (!wasBBOnly) this._markShadowTiles(cx, cz, true)
+  }
+
+  /**
+   * BUG-132: the ground of terrain chunk (cx, cz) changed (terrain setRecarveHook). Release every live
+   * chunk with a prop standing on it — its own, and a neighbour whose tree cluster spills over the
+   * border (seed 1791962762: an aspen 2.65 m deep in the next chunk's new fill) — and restart a
+   * scatter in flight there, which was sampling the old ground. They re-scatter on the new ground.
+   */
+  releaseGround(cx, cz) {
+    const cs = this._chunkSize
+    const on = (p) => Math.floor(p.x / cs) === cx && Math.floor(p.z / cs) === cz
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const chunk = this._chunks.get((cx + dx) + ',' + (cz + dz))
+      if (chunk && ((!dx && !dz) || chunk.places.some(on))) this.releaseChunk(cx + dx, cz + dz)
+    }
+    const a = this._activeScatter
+    if (a && !a.litter && Math.abs(a.cx - cx) <= 1 && Math.abs(a.cz - cz) <= 1) {
+      this._scatterQueue.push({ ck: a.ck, cx: a.cx, cz: a.cz, score: 0 })
+      this._activeScatter = null
+    }
   }
 
   /** Live (committed) prop chunks — the size of one whole-ring intrusion pass. */
@@ -887,6 +926,7 @@ export class PropSystem {
     const cs = this._chunkSize
     const ccx = Math.floor(worldX / cs), ccz = Math.floor(worldZ / cs)
     this._ccx = ccx; this._ccz = ccz               // PERF-21: LOD ring centre
+    this._impostors?.updateHeads()                  // BUG-133: the head spots' pose + output for the billboard shader
     this._fullRing = ringChunks                    // beyond this (to bbRing) = billboard-only trees
     // The billboard-only outer ring streams ONLY when impostors are active — headless (gates) and
     // pre-wire boots keep the classic full-prop ring exactly as before.
@@ -958,8 +998,9 @@ export class PropSystem {
     const deadline = budget ? budget.deadline(budgetMs) : performance.now() + budgetMs
     while (performance.now() < deadline) {
       if (!this._activeScatter) {
-        const next = this._scatterQueue.shift()
-        if (!next) break
+        const i = this._scatterQueue.findIndex((q) => this._groundReady(q.cx, q.cz))   // BUG-132
+        if (i < 0) break
+        const next = this._scatterQueue.splice(i, 1)[0]
         // Litter deferral: a chunk that will only billboard (bbonly ring) scatters WITHOUT the
         // litter passes (cover + zone rocks — the expensive half, and nothing of it is drawn
         // there). When it is later promoted, _syncChunkLod queues a litter-only job for it.

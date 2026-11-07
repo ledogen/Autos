@@ -52,8 +52,10 @@ now have real numbers behind them. The third does not.
 
 ## Moved in from FEAT-54 (2026-10-12)
 
-- [ ] **Repairs need a time cost alongside the money cost**, applied as a clock skip (the
+- [x] **Repairs need a time cost alongside the money cost**, applied as a clock skip (the
       shops/service/camp pause ruling, run-shape.md). Price the time with the money.
+      *Built with SM-3's service:* every repair quote carries `hours` beside `price` (`src/service.js:89`,
+      the shop's minimum `REPAIR_SETUP = { price: 5, hours: 0.5 }` in `data/parts.js:278`). (alpha audit, Lane A, 2026-11-07)
 
 ## Amended 2026-10-14 (owner) — what this now balances
 
@@ -193,3 +195,12 @@ The best-honest-drive pin is re-expressed (0.740 at slack 1.15 = 0.569 today), a
 - `paper-route` had three: its taper samples now sit around `fullTipRatio`; its slow round sits past `tipZero`;
   its "B" round moved 0.8 → 0.75 of par (0.8 is now a C).
 - Both fixed gates pass. Total: 64/64 node gates green; cdp-smoke is the landing's.
+
+## The owner's answer to the knock-ons (2026-11-06, tracker item rank-spread-knock, verbatim)
+
+> "12 days includes the expedition camp missions. keep the spread you just built"
+
+Read as: `campDeeds` stays **10** (the camp opens around day 10 and its requisition fills the rest of the ~12 days),
+and the spread stands as built, its par knock-ons included. Folded in by the alpha audit (Lane A, 2026-11-07).
+**What this ticket still owes for the alpha:** the point-budget recount for one region and one recorded multi-day
+run behind it.

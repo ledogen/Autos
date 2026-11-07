@@ -1,7 +1,7 @@
 ---
 id: FEAT-89
 type: feature
-status: open
+status: open — built; waiting on the owner's multi-drop play-test
 severity: major
 opened: 2026-09-29
 source: owner, 2026-09-29 — "within the small item delivery class there should be point to point

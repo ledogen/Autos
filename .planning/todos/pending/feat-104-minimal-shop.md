@@ -10,7 +10,14 @@ relates: FEAT-98, items.md, DESIGN.md (clock pauses in shops)
 
 # FEAT-104: Minimal shop at the required classes
 
-Step 7 of **Places and Missions**. No shop code exists today.
+Step 7 of **Places and Missions**.
+
+**State (alpha audit, Lane A, 2026-11-07):** only the **auto shop** sells anything: the Parts Shop screen
+(`src/service-screen.js`) over FEAT-137's rotating shelf (`src/shop-stock.js`, `ITEM_PRICE` in `data/shop-stock.js`).
+The **general store, gas station, food vendor and tackle shop have no buy menu**, so coffee, food, ice and the
+other consumables reach the player only as mission rewards (`REWARD_VALUE`, data/offers.js) and the three packed
+lunches. items.md's jerry-can row says so too: "that shop has no shelf". FEAT-121's `where:` field does not exist
+in `data/items.js`. MILESTONES.md's alpha row ("built on `feature/parts`, lands with it") covers the auto shop only.
 
 ## Scope
 

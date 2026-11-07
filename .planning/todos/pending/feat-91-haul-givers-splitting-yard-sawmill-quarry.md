@@ -25,6 +25,16 @@ requires: FEAT-88 shipped (world-truck bed well ✅ on main f47d4a9, cargo spawn
 
 # FEAT-91: Haul givers — a splitting yard, a sawmill and a quarry, one per region
 
+**Alpha state (alpha audit, Lane A, 2026-11-07):** the alpha slice is the R1 splitting yard only (MILESTONES.md § Release cuts). It is
+built as `firewoodYard` (`src/poi.js:267`, the ASSET-36 splitting yard): haul offers with the picked quantity
+(FEAT-114), the drop zone, `test/haul-load.mjs` (determinism, catch, wear, cap), and it receives courier jobs (the
+general store's chainsaw / axe / shovel, `data/offers.js`). **Missing from the alpha slice:**
+- **The yard posts no courier jobs** (`data/offers.js` SOURCES: `families: ['haul']`, "lands with FEAT-89" — FEAT-89
+  is built). No courier THING lists `firewoodYard` in its `pools`, and the 2026-10-22 "one offer at a time" ruling
+  covers this giver's board. Owner's words owed: what a splitting yard sends out, and whether the one-offer rule
+  holds once a courier job can sit beside the haul.
+- **The frame cost of the largest firewood load** (30 bundles) is not measured against the 60 fps budget.
+
 ## The shape (owner, 2026-09-30)
 
 Three **yard POIs**, one per region, each with its own model and a **loading bay**. Each posts
@@ -170,8 +180,8 @@ a POI type region-specific. This ticket adds it:
 - [ ] Haul destinations include houses for all three loads.
 - [ ] Stopping in the bay with the job accepted releases the load deterministically: same seed and
       offer → identical piece poses after settle (headless gate, `debris-stack.mjs` shape).
-- [ ] A truck parked squarely catches ≥ 90 % of the load by mass; one parked a metre off catches
-      measurably less (headless gate).
+- [x] A truck parked squarely catches ≥ ~~90~~ **80** % of the load by mass (owner, 2026-10-09: "the loader is
+      sloppy"); one parked a metre off catches measurably less (headless gate: `test/haul-load.mjs` (b)).
 - [ ] The full quarry load rides at road speed without escaping on a flat straight (extend
       `test/cargo-bed.mjs`), and visibly squats the rear.
 - [ ] Settling pays on mass aboard × roughness, continuous, floored at zero (FEAT-88's curve).
