@@ -7983,7 +7983,8 @@ export class RoadSystem {
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
         // PERF-24/25: the pad surface is the resolve-free _nodeSurfaceTop (one ruled-blend evaluation,
         // feet shared with the leg cross-section above via the per-leg memo) — no extra resolves at all.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS)
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS,
+            nr ? this._ribbonEdgeDist(runKey, arcSEff, latDist) : Infinity)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 
         // ── Physics-only asphalt overlay (the one intentional mesh↔collision difference) ──
@@ -9071,7 +9072,7 @@ export class RoadSystem {
         // (36 of 52 leg edges on random seeds; a wheel climbing back on at 15 m/s took a 75 kN strut spike). The
         // dirt steps 0.15 m at the ring edge itself, which is where the asphalt edge is: under the pad on one
         // side, the kerb's drop on the other.
-        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topC - clearanceMargin - (bestSd <= 0 ? PAD_DIRT_EXTRA : 0), padTopY }
+        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topC - clearanceMargin - (bestSd <= 0 ? PAD_DIRT_EXTRA : 0), padTopY, sd: bestSd }
 
         // Outside the hold band: ramp designY → raw over shoulder + fill/cut toe, mirroring
         // _carveCrossSection (which ramps beyond carveHalfWidth). `over` = distance past the hold.
@@ -9084,7 +9085,7 @@ export class RoadSystem {
         const ramp = Math.max(shoulderWidth, beyondToe)
         const u = Math.min(1, over / ramp)
         const w = 1.0 - u * u * (3.0 - 2.0 * u)
-        return { blendW: w, gradeY: designY, padTopY: null }
+        return { blendW: w, gradeY: designY, padTopY: null, sd: bestSd }
     }
 
     /**
@@ -9377,21 +9378,30 @@ export class RoadSystem {
      * gradeY ONLY where the leg carve is absent (nr null / beyond the leg toe — the open-side rim), which
      * is exactly the surface the pad MESH rides there (sampleRoadTopY / plane), so mesh == collision.
      */
-    _mergeCarve(a, b, duckCap = PAD_DUCK_CAP) {
+    _mergeCarve(a, b, duckCap = PAD_DUCK_CAP, dRib = Infinity) {
         if (!a) return b || null
         if (!b) return a
-        // Where the pad is at FULL depth (inside ring + rim hold, blendW 1) take the LOWER dirt: the
-        // pad's crease-ducking design (topMin − clearance − PAD_DIRT_EXTRA) must not be overridden by
-        // the leg's shallower cross-section or the tan slivers return. min(a,b) is continuous (both
-        // fields are), never RAISES dirt, and only applies under/beside the asphalt pad; everywhere the
-        // pad ramp is partial the leg gradeY still wins (its cross-section is C0 laterally, BUG-15).
-        // PAD_DUCK_CAP bounds how far b (a free resolve) may drag a pinned cross-section down, so the
-        // top field's pre-existing degenerate-node tears can't tear an otherwise-smooth shoulder; and
-        // the duck FADES with b's own blendW (1 on the pad + rim hold, smoothstepping to 0 at the pad
-        // toe) so there is no step where the full-depth band ends — the duck is C0 everywhere.
-        const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - duckCap)
-        const gradeY = a.gradeY + (low - a.gradeY) * b.blendW
-        return { blendW: Math.max(a.blendW, b.blendW), gradeY, padTopY: b.padTopY ?? null }
+        const blendW = Math.max(a.blendW, b.blendW)
+        if (b.padTopY != null) {
+            // INSIDE the ring (the pad drawn over it): take the LOWER dirt. The pad's crease-ducking design
+            // (top − clearance − PAD_DIRT_EXTRA) must not be overridden by the leg's shallower cross-section or the
+            // tan slivers return. PAD_DUCK_CAP bounds how far b (a free resolve) may drag a pinned cross-section
+            // down, so the top field's degenerate-node tears can't tear an otherwise-smooth shoulder.
+            const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - duckCap)
+            return { blendW, gradeY: a.gradeY + (low - a.gradeY) * b.blendW, padTopY: b.padTopY }
+        }
+        // BUG-123: OUTSIDE the ring the dirt is exposed beside an asphalt edge and stands clearanceMargin below THAT
+        // edge's top, so the NEARER edge governs: a drawn ribbon's (the leg's dirt, `a`) or the pad's rim (`b`). It
+        // used to take the lower of the two here too, and where the pad's top (the ruled node surface) and the leg's
+        // own top differ by 0.1–0.25 m the edge lip grew by that much: beside a ribbon past the mouth when the pad
+        // sat lower, beside the pad's rim when the leg sat lower (16 of 52 leg edges on random seeds still stood
+        // > 0.25 m after BUG-122). `dRib` is the distance to the nearest drawn ribbon edge (_ribbonEdgeDist,
+        // continuous across a leg's mouth), `b.sd` the distance outside the ring; the pad's share smoothsteps over
+        // ±0.5 m of their difference, so the hand-over is C0. duckCap bounds the pad's pull either way.
+        const u = Math.min(1, Math.max(0, dRib - (b.sd ?? 0) + 0.5))
+        const g = u * u * (3 - 2 * u)
+        const target = Math.min(a.gradeY + duckCap, Math.max(a.gradeY - duckCap, b.gradeY))
+        return { blendW, gradeY: a.gradeY + (target - a.gradeY) * b.blendW * g, padTopY: null }
     }
 
     /**
@@ -10191,6 +10201,22 @@ export class RoadSystem {
      * Memoised on the netEntry, stamped with _networkRev (the same signal every other per-run cache
      * in this file uses) — the carve path calls this per vertex/probe.
      */
+    /**
+     * BUG-123: the distance (m) from a point on run `runKey` (at arcSEff, latDist off its centreline) to the nearest
+     * edge of that run's DRAWN ribbon. Past every padded end's trim it is just the lateral distance past the edge;
+     * inside a trim (the ribbon starts at the mouth, road-mesh.js trimOf) it is the distance to where the ribbon
+     * begins, so it runs continuously across the mouth. Ringless (deg-2) ends do not count, as in _ribbonDrawnAt.
+     */
+    _ribbonEdgeDist(runKey, arcSEff, latDist) {
+        const lat = Math.max(0, latDist - (this._params.roadHalfWidth ?? 5))
+        const arcs = this._junctionCarveArcs ? this._junctionCarveArcs.get(runKey) : null
+        if (!arcs) return lat
+        const cutback = this.junctionCutbackDist()
+        let gap = 0
+        for (const j of arcs) if (j.node?.ring) gap = Math.max(gap, (j.mouth ?? j.cutback ?? cutback) - Math.abs(arcSEff - j.arc))
+        return gap > 0 ? Math.hypot(gap, lat) : lat
+    }
+
     /**
      * BUG-122: is this run's ribbon DRAWN at arcSEff, at a PADDED junction end? road-mesh.js trims a ribbon within
      * (mouth ?? cutback) of every junction end it has (_buildRoadTile's trimOf, same records, same rule); inside that

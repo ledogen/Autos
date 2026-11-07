@@ -58,3 +58,45 @@ interpolated, never above the pad top inside the ring.
 - [ ] The census: edge lip ≤ ~0.18 m on every leg edge of a random-seed sample, beside pads and on approaches.
 - [ ] No dirt above the pad top inside any ring (sampled), before and after.
 - [ ] Before/after shots of a pad rim from road height; `fingerprint-world` explained.
+
+## Fixed on `land/bug-123` (Spare, 2026-11-07)
+
+**The rule.** `_mergeCarve`: inside the ring nothing changes (the lower dirt, the armor). Outside it, the NEARER asphalt
+edge governs.
+
+- **The distances:** `dRib` is the distance to the nearest drawn ribbon edge (`_ribbonEdgeDist`). Inside a padded
+  leg's trim it measures to where the ribbon begins, so it is continuous across the mouth. `b.sd` is the distance
+  outside the ring.
+- **The blend:** the pad's share smoothsteps over ±0.5 m of `dRib − b.sd`. `duckCap` bounds its pull either way (it
+  may now raise dirt as well as lower it).
+- **Both consumers:** `terrain.js` `_buildCarveTable` and `_sampleCarveWorld` pass `dRib`, so MESH == PHYSICS by
+  construction.
+
+**Census** (`wip/bug-123/census.mjs`, edge lip = physics 5 cm inside the asphalt edge minus 5 cm outside, every
+ringed junction's legs, 2–30 m out):
+
+| sample | lip > 0.25 m beside pads | lip > 0.25 m on approaches |
+|---|---|---|
+| the BUG-122 seeds (52 edges): BUG-122 alone → this fix | 7 → 0 | 8 → 0 |
+| fresh random seeds 1717534236, 861989012, 1107599406 (116 edges): main a77c30c5 → this fix | 31 → 0 | 15 → 0 |
+
+- On the fresh seeds, the median worst lip is 0.15 m beside pads and 0.16 m on approaches, and no approach edge
+  stays above 0.2 m for more than 2 m.
+- The lowest lip anywhere is −0.103 m (dirt just above an asphalt edge). That spot is identical on main, so it is
+  pre-existing.
+
+**Poke-through** (`wip/bug-123/poke.mjs`, mesh dirt rebuilt with `dRib` as `terrain.js` does, 18,390 points up to
+1.5 m inside the rings, worst triangle split): 0 points with dirt above the pad, on main and with the fix. The
+tightest margin is 9.3 cm below the pad on main and 5.1 cm with the fix.
+
+**Gates:** all 61 affected gates green.
+
+**Fingerprint vs main a77c30c5:** surface and carve differ in the 5 windows with junctions. The stream meshes differ
+in 3 and props in 1, because they drape on the carved ground (the pond/stream data half of the hash is identical
+everywhere). Seed 3 is identical. Network, profiles, junctions, POIs and tiles are untouched.
+
+**Owner page** (no ruling): https://claude.ai/artifact/SJkBs2vrhvjVGEiM4mdc73
+
+**Lane B's sites on main (after BUG-122):**
+- The capture `try4/6-strut-1.json` replays clean: strut 0, jolt 0. The edge there is 0.162 m.
+- 1527888912 at (1047, −316): 0.153 m on one side, pad-to-pad on the other. The 0.30 m drop did not survive BUG-122.
