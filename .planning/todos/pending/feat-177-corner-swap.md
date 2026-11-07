@@ -18,3 +18,22 @@ lane: B
 - [ ] Parked, the player can pick two corners and swap their wheels (tire, wheel condition, flat state travel with them).
 - [ ] It takes 2 × the time of one tire change.
 - [ ] Pinned in a node gate (the two corners' state exchanged, the clock advanced).
+
+## Work log
+
+**2026-11-07, Lane B — built on feature/machine, not landed.**
+
+- **Where:** the damage screen (V, parked) has a "Swap two wheels" button under its parts list. It opens the
+  screen's pick mode: pick one corner on the pictogram or in the list, and the confirm buttons are the other three
+  corners, each with the time ("Swap with the rear right — 4 h"). The factory jack is no inventory item, so the
+  damage screen, where the four corners are already drawn, is its home. On the pad the D-pad reaches it like any
+  card button.
+- **What moves** (`swapCorners`, src/recovery.js): each corner's tire and wheel, each with its wear, and the tire's
+  puncture (a flat stays flat). The tire's grip goes with it. The alignment does not: it is the hub's bent geometry,
+  so a bent corner stays bent whatever wheel is on it.
+- **Time** (`swapCornerHours`): 2 × the spare change, so 4 h with the factory jack, less with the compressor and the
+  quick-jack exactly as the spare change (1 h with both). On the clock through the same `_afterRoadsideWork` the
+  spare uses.
+- **Pinned** in test/recovery.mjs §4b: FL (sport tire, worn, flat; worn wheel) ↔ RR (bent hub). Tire, wear,
+  puncture, grip and wheel moved; RR's toe stayed; a corner with itself or no corner refused; 4 h bare, 1 h with
+  both tools. recovery gate green. The button itself: cdp-smoke, owed (Chrome held).

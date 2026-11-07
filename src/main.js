@@ -93,7 +93,7 @@ import { ServiceCenter } from './service.js'              // SM-3: repairs and p
 import { ServiceScreen } from './service-screen.js'
 import { startShelves, shelf, shelfPrice, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
-import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, plugTire, plugMethods, PLUG_H, fitRoadside,
+import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, swapCorners, swapCornerHours, plugTire, plugMethods, PLUG_H, fitRoadside,
   FIELD_REPAIR, fieldRepair, fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
@@ -3706,12 +3706,15 @@ const dialogueSystem = new DialogueSystem()
 const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
 const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space'])   // FEAT-125: see _renderDialogue
 const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0 }
-/** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order. */
+/** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order.
+ *  FEAT-174: the other input's half of a line (kc-kb / kc-pad) is left whole, so the stream spends no time on
+ *  words that are not shown, and a switch mid-card shows that half at once. */
 function _hideWords (el) {
   const words = []
+  const off = document.body.classList.contains('pad-on') ? 'kc-kb' : 'kc-pad'
   const walk = (node) => {
     for (const c of [...node.childNodes]) {
-      if (c.nodeType !== Node.TEXT_NODE) { walk(c); continue }
+      if (c.nodeType !== Node.TEXT_NODE) { if (!c.classList?.contains(off)) walk(c); continue }
       const frag = document.createDocumentFragment()
       for (const part of c.textContent.split(/(\s+)/)) {
         if (!part) continue
@@ -5394,6 +5397,19 @@ function _pickSpare (e) {
   })
 }
 
+/** FEAT-177: the damage screen's "Swap two wheels" — pick one corner, then the button for the other. */
+const _CORNER_WORD = ['front left', 'front right', 'rear left', 'rear right']
+damageScreen.onSwap = () => damageScreen.pick({
+  title: 'Swap two wheels',
+  corner: () => true,
+  note: _tireNote,
+  about: 'Each tire and wheel moves with its wear, and a flat stays flat.',
+  actions: ({ corner }) => [0, 1, 2, 3].filter(c => c !== corner).map(c => ({
+    label: `Swap with the ${_CORNER_WORD[c]} — ${formatGameDuration(swapCornerHours(inventorySystem))}`,
+    run: () => { const h = swapCornerHours(inventorySystem); if (swapCorners(partsSystem, damageModel, corner, c)) _afterRoadsideWork(h) },
+  })),
+})
+
 /**
  * The plug kit (owner, 2026-10-21): any flat — a corner, or a tire in the inventory. "Pump it by hand"
  * is always offered; "Inflate it" when a compressor is aboard. Each is the whole stop.
@@ -6814,7 +6830,8 @@ function _renderMissionUI () {
         const q = _mom(), vp = vehicleState.position
         if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · park there to sleep`
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
-        if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · ${keycap('R', 'D-pad →')} puts you back on it`)
+        // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
+        if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · <span class="kc-pad">hold </span>${keycap('R', 'D-pad →')} puts you back on it`)
       }
       break
   }
