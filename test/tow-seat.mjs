@@ -44,8 +44,10 @@ const eq = computeStaticEquilibrium(P)
 /** A pad record the way PoiSystem builds one, road heading `h` (forward (−sin h, −cos h)). */
 const pad = (h, model = null) => {
     const tx = -Math.sin(h), tz = -Math.cos(h), nx = -tz, nz = tx   // n ⟂ t, the side away from the road
-    const yaw = Math.atan2(nx, nz), seat = model?.seat ?? 0   // poi.js: the model stands `seat` m back from the road
-    return { id: `pad@${h}`, x: 0, z: 0, y: 0.25, baseY: 0, tx, tz, nx, nz, yaw, modelYaw: yaw, modelX: nx * seat, modelZ: nz * seat,
+    // poi.js: the model stands `seat` m back from the road and `seatAlong` m along its own +X
+    const yaw = Math.atan2(nx, nz), seat = model?.seat ?? 0, along = model?.seatAlong ?? 0
+    return { id: `pad@${h}`, x: 0, z: 0, y: 0.25, baseY: 0, tx, tz, nx, nz, yaw, modelYaw: yaw,
+        modelX: nx * seat + Math.cos(yaw) * along, modelZ: nz * seat - Math.sin(yaw) * along,
         halfLen: POI_PARAMS.poiPadHalfLen, halfWid: POI_PARAMS.poiPadHalfWid, cornerR: POI_PARAMS.poiPadCornerR,
         collision: model?.collision ?? null, pumpZones: model?.pumpZones ?? null, park: model?.park ?? null }
 }
