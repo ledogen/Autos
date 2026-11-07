@@ -70,8 +70,13 @@ const _cpt = [0, 0, 0]
  * triangle a,b,c, wound counter-clockwise seen from outside). Returns {nx,ny,nz,depth} — the normal
  * points out of the solid toward the sphere, depth > 0 — or null.
  * The centre may be INSIDE the solid (BUG-54: a 0.37 m wheel probe can sink its centre into a 0.3 m
- * rock, which never happened against 20 m boulders). The closest triangle's face normal says which
- * side the centre is on; inside, the push is out through that nearest face, depth = r + distance.
+ * rock, which never happened against 20 m boulders); the push is then out through the nearest surface.
+ * BUG-139: which side the centre is on is a ray-parity count, not the nearest face's normal. Where the
+ * nearest point is an edge or vertex several faces share it, and the one picked can face away from the
+ * centre: 2.3 % of points just outside the game's rocks read INSIDE, at depth r + distance (up to 4 m).
+ * And inside, the depth is r, not r + distance — continuous with r − distance at the surface, and under
+ * physics.js's 2r tunnelling failsafe, which a prop contact must never reach (the wheel's hard core in
+ * the engine, which mirrors the rock, carries a deeper overlap). Both teleported the truck up off rocks.
  */
 export function sphereVsMesh(cx, cy, cz, r, tris) {
   let bestD2 = Infinity, bi = -1, bx = 0, by = 0, bz = 0
@@ -88,15 +93,39 @@ export function sphereVsMesh(cx, cy, cz, r, tris) {
   const ux = tris[bi + 3] - tris[bi], uy = tris[bi + 4] - tris[bi + 1], uz = tris[bi + 5] - tris[bi + 2]
   const vx = tris[bi + 6] - tris[bi], vy = tris[bi + 7] - tris[bi + 1], vz = tris[bi + 8] - tris[bi + 2]
   const fx = uy * vz - uz * vy, fy = uz * vx - ux * vz, fz = ux * vy - uy * vx
-  const inside = bx * fx + by * fy + bz * fz < 0
   const d = Math.sqrt(bestD2)
-  if (!inside && d >= r) return null
+  if (d >= r && bx * fx + by * fy + bz * fz >= 0) return null   // out of reach, and the face agrees: the common miss
   if (d < 1e-9) {   // on the surface: push along the face normal
     const f = Math.hypot(fx, fy, fz) || 1
     return { nx: fx / f, ny: fy / f, nz: fz / f, depth: r }
   }
+  const inside = rayParity(cx, cy, cz, tris)
+  if (!inside && d >= r) return null
   const s = inside ? -1 / d : 1 / d
-  return { nx: bx * s, ny: by * s, nz: bz * s, depth: inside ? r + d : r - d }
+  return { nx: bx * s, ny: by * s, nz: bz * s, depth: inside ? r : r - d }
+}
+
+// Is (px,py,pz) inside the closed mesh? Crossings of one ray (Möller–Trumbore), odd = inside. The direction is skewed
+// off every axis so it does not run along an edge of these blobs.
+const RAY_X = 0.267, RAY_Y = 0.873, RAY_Z = 0.408
+function rayParity(px, py, pz, tris) {
+  let n = 0
+  for (let i = 0; i < tris.length; i += 9) {
+    const ax = tris[i], ay = tris[i + 1], az = tris[i + 2]
+    const e1x = tris[i + 3] - ax, e1y = tris[i + 4] - ay, e1z = tris[i + 5] - az
+    const e2x = tris[i + 6] - ax, e2y = tris[i + 7] - ay, e2z = tris[i + 8] - az
+    const hx = RAY_Y * e2z - RAY_Z * e2y, hy = RAY_Z * e2x - RAY_X * e2z, hz = RAY_X * e2y - RAY_Y * e2x
+    const a = e1x * hx + e1y * hy + e1z * hz
+    if (a > -1e-12 && a < 1e-12) continue
+    const f = 1 / a, sx = px - ax, sy = py - ay, sz = pz - az
+    const u = f * (sx * hx + sy * hy + sz * hz)
+    if (u < 0 || u > 1) continue
+    const qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x
+    const v = f * (RAY_X * qx + RAY_Y * qy + RAY_Z * qz)
+    if (v < 0 || u + v > 1) continue
+    if (f * (e2x * qx + e2y * qy + e2z * qz) > 1e-9) n++
+  }
+  return (n & 1) === 1
 }
 
 /**
