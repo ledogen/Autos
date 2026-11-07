@@ -181,6 +181,9 @@ const PAD_DIRT_EXTRA = 0.15
 //     (momentary, at pad rims — the same accepted trade as the decal overlay riding above the trough).
 const PAD_DUCK_CAP = 1.2
 const PAD_DUCK_CAP_PHYS = 0.55
+// BUG-122: _ribbonDrawnAt keeps the physics asphalt overlay within this of a padded leg's mouth (m) — the ribbon's first
+// section lies on the mouth chord, which on a curving leg sits off arc = mouth at the ribbon's edges.
+const RIBBON_MOUTH_SLACK = 1.0
 // QUAL-16 (junction-flow) DEG2_HERMITE_TENSION: cubic-Hermite tangent magnitude, × the mouth-to-mouth
 // gap, for the deg-2 connector's rung-2 fallback (_buildDeg2ArcGeom). 1.0 (tangents as long as the
 // chord) is the standard chord-length parameterisation: it reproduces a gentle arc to within a few cm
@@ -10189,16 +10192,22 @@ export class RoadSystem {
      * in this file uses) — the carve path calls this per vertex/probe.
      */
     /**
-     * BUG-122: is this run's ribbon DRAWN at arcSEff? road-mesh.js trims a ribbon within (mouth ?? cutback) of every
-     * junction end it has (_buildRoadTile's trimOf, same records, same rule); inside that the junction pad is what
-     * is drawn. The physics asphalt overlay follows the same rule, or the strip a pad's ring leaves uncovered beside
-     * a trimmed leg (up to ~0.5 m wide) rode an invisible ribbon top up to ~0.35 m above the dirt drawn there.
+     * BUG-122: is this run's ribbon DRAWN at arcSEff, at a PADDED junction end? road-mesh.js trims a ribbon within
+     * (mouth ?? cutback) of every junction end it has (_buildRoadTile's trimOf, same records, same rule); inside that
+     * the junction pad is what is drawn. The physics asphalt overlay follows the same rule there, or the strip a
+     * pad's ring leaves uncovered beside a trimmed leg (up to ~0.5 m wide) rode an invisible ribbon top up to
+     * ~0.35 m above the dirt drawn there.
+     * Ringless (deg-2 connector) ends are left as they were: there the trimmed leg's outer corner is dirt in the
+     * mesh too, but changing what physics rides around every bend is its own job, not this one's.
+     * RIBBON_MOUTH_SLACK: the ribbon's first section lies on the pad's mouth CHORD, which on a curving leg sits off
+     * arc = mouth at the ribbon's edges; within this of the mouth the overlay stays (ribbon or pad is drawn there),
+     * or those slivers dipped clearanceMargin into the dirt (85 extra vertical-curvature kinks at junctions).
      */
     _ribbonDrawnAt(runKey, arcSEff) {
         const arcs = this._junctionCarveArcs ? this._junctionCarveArcs.get(runKey) : null
         if (!arcs) return true
         const cutback = this.junctionCutbackDist()
-        for (const j of arcs) if (Math.abs(arcSEff - j.arc) < (j.mouth ?? j.cutback ?? cutback)) return false
+        for (const j of arcs) if (j.node?.ring && Math.abs(arcSEff - j.arc) < (j.mouth ?? j.cutback ?? cutback) - RIBBON_MOUTH_SLACK) return false
         return true
     }
 
