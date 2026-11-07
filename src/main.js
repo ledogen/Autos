@@ -79,7 +79,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH } from './mission.js'  // sto
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -4312,7 +4312,6 @@ function _runIntro () {
 // save carries the seen set), and the first job's progress is the board's (the save replays it) — so
 // the evening is "the firing seen, the casserole not posted yet".
 const OPENING_START = { day: 0, hour: 18 }   // FEAT-170: the firing's clock
-const JOINT_SEAT_M = 2.8   // m — the truck's seat off the pad centre toward the road: the 14 x 8 lay-by's road-side strip
 // The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
 // turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
 // aim point's height over the pad (m).
@@ -4328,12 +4327,12 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
 const _mom = () => poiSystem.list().find(q => q.type === 'momsHouse') ?? null
 
-/** Park the truck on POI q's lay-by — the joint's at a new run, mom's on a skip — like _restoreRun's seat. */
+/** Park the truck at POI q — the joint's lay-by at a new run, in front of mom's on a skip — like _restoreRun's seat.
+ *  Where is poi.js startSeat (BUG-135: never in a yard). */
 function _seatAt (q) {
   if (!q) return
   const prev = _spawnOverride
-  // q.nx/nz points away from the road and q.tx/tz along it (poi.js _evaluate); forward = (−sin h, −cos h).
-  _spawnOverride = { align: true, x: q.x - q.nx * JOINT_SEAT_M, z: q.z - q.nz * JOINT_SEAT_M, heading: Math.atan2(-q.tx, -q.tz) }
+  _spawnOverride = { align: true, ...startSeat(q, RANGER_PARAMS.roadWidth) }
   storySystem.notifyTeleport()
   _openingSeat = _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
 }

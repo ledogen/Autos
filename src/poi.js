@@ -350,6 +350,25 @@ export function towSeat (q) {
     return { x: q.x - q.nx * lat, z: q.z - q.nz * lat, heading: Math.atan2(-q.tx, -q.tz) }
 }
 
+const SEAT_STRIP_M = 2.8   // m — a plain pad's start seat off its centre toward the road: the 14 x 8 lay-by's road-side strip
+
+/**
+ * Where a run (or the paper scenario) parks the truck at POI `q`: the burger joint at a new run, mom's on a skipped
+ * opening, Larry's for the paper scenario. Pure: main.js seats the truck here, test/story-start-clear.mjs checks it.
+ * BUG-135 (owner, 2026-11-07: "found my truck parked over the cinder block fire pit … completely immobilized"): a POI
+ * whose model has a YARD (a residence's lawn furniture; Larry's van) never takes the truck on its pad. The truck
+ * parks in the road's near lane in front, at the mission start point (q.roadX/Z). Any other pad keeps its road-side
+ * strip. Either way it faces along the road: forward (−sin h, −cos h) is q.tx/tz.
+ */
+export function startSeat (q, roadWidth) {
+    const heading = Math.atan2(-q.tx, -q.tz)
+    if (PROP_MODELS[q.modelKey]?.yard) {
+        const lane = roadWidth / 4   // the near lane's centre: a quarter of the paved width off the centreline
+        return { x: q.roadX + q.nx * lane, z: q.roadZ + q.nz * lane, heading }
+    }
+    return { x: q.x - q.nx * SEAT_STRIP_M, z: q.z - q.nz * SEAT_STRIP_M, heading }
+}
+
 /**
  * FEAT-88: is the world point (x, z) over POI `q`'s drop zone, grown by `slack` metres on every
  * side? Pure. The point is taken into the marker's own frame the way queryContact does (undo
