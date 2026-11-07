@@ -305,8 +305,10 @@ async function soakSeed (seed, replay = null) {
         const vl = Math.hypot(vs.velocity.x, vs.velocity.z), ux = vs.velocity.x / vl, uz = vs.velocity.z / vl
         console.log(`    corner ${k} hub (${hub.x.toFixed(2)}, ${hub.y.toFixed(2)}, ${hub.z.toFixed(2)}), along (${ux.toFixed(2)}, ${uz.toFixed(2)})`)
         // across the road at the hub: from the centreline side outwards (the road's own normal)
-        const rn = w.road.queryNearest(hub.x, hub.z, 15), ox = hub.x - rn.point.x, oz = hub.z - rn.point.z, ol = Math.hypot(ox, oz)
-        for (let L = 4.2; L <= 6.001; L += 0.1) {
+        // (off-road, with no road within 15 m, there is no cross-section to take)
+        const rn = w.road.queryNearest(hub.x, hub.z, 15), ox = rn?.point ? hub.x - rn.point.x : 0, oz = rn?.point ? hub.z - rn.point.z : 0, ol = Math.hypot(ox, oz)
+        if (!rn?.point || !ol) console.log('      (no road within 15 m: no cross-section)')
+        else for (let L = 4.2; L <= 6.001; L += 0.1) {
           const x = rn.point.x + ox / ol * L, z = rn.point.z + oz / ol * L, g = ground(x, z, hub.y), top = w.road.sampleRoadTopY(x, z)
           const hits = w.queryContacts(x, g + 0.4, z, 0.6) ?? [], surf = hits.length ? Math.max(...hits.map(h => h.contactPoint.y)) : NaN
           console.log(`      lat ${L.toFixed(1)}  ground ${(g - hub.y).toFixed(3)}  roadTop ${top == null ? '-' : (top - hub.y).toFixed(3)}  physics ${(surf - hub.y).toFixed(3)} (${hits.length})`)
