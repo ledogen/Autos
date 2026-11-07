@@ -119,6 +119,8 @@ function packSlotsHtml (row, attrsFor = () => '', selSlot = -1) {
   return h
 }
 
+const actsKey = (acts) => acts.map(a => `${a.label}|${a.enabled ?? true}`).join('\n')
+
 export class InventoryScreen {
   /**
    * @param {import('./inventory.js').InventorySystem} inventory
@@ -217,6 +219,14 @@ export class InventoryScreen {
     this.zone?.classList.toggle('locked', locked)
     this.iconEl.classList.toggle('ready', !locked)
     if (this.isOpen && (locked || this.isSuppressed())) this.close()
+    // FEAT-138 (owner, 11-07): a selected item's choices can change with the clock (the hi-lift's
+    // cooldown) — re-read them once a second and redraw when a label moved, so the menu needn't reopen.
+    const t = performance.now()
+    if (this.isOpen && this.sel != null && t - (this._actsAt ?? 0) >= 1000) {
+      this._actsAt = t
+      const r = this.inventory.list()[this.sel]
+      if (r && this._actsKey !== actsKey(this.actions(r))) this.render()
+    }
   }
 
   _onClick (e) {
@@ -316,6 +326,8 @@ export class InventoryScreen {
     const head = `<div class="st-name">${r.name}${r.equipped ? '<span class="st-tag">equipped</span>' : ''}</div>`
       + (condLine(r) ? `<div class="st-cond">${condLine(r)}</div>` : '')
       + `<div class="st-desc">${r.desc}</div>`
+    const acts = this.actions(r)
+    this._actsKey = actsKey(acts)   // update() redraws when these change
     if (r.contents) {
       const packed = r.contents[this.packSel]
       const canUnpack = packed && !(r.equipped && packed.bed === 'bedding') && inv.slotsUsed() < inv.slotCap()
@@ -327,7 +339,6 @@ export class InventoryScreen {
     const eq = rows.find(x => x.equipped)
     const swap = r.bed && eq?.contents.some(c => c.bed === r.bed)   // FEAT-171: one item per bed layer
     const canPack = r.kind === 'camp' && eq && (eq.contents.length < eq.packSlots || swap)
-    const acts = this.actions(r)
     return head
       + (acts.length ? `<div class="st-acts">${acts.map((a, i) => btn('action',
         (a.icon ? `<img src="${THUMB(a.icon)}" alt="">` : '') + a.label, a.enabled ?? true, `data-i="${i}"`)).join('')}</div>` : '')
