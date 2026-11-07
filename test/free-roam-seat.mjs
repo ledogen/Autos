@@ -6,7 +6,7 @@
 // random seeds from the 100-seed census (wip/bug-141), one per rule today's spawn broke plus one it did not:
 //
 //   rules   the seat is under 20 % grade (deck, ±4 m), at least 150 m from a dead end (walking through bends), and
-//           not facing the short way to a dead end;
+//           not facing the short way to a dead end (the seat's tangent is the way the nose points: main.js seats it so);
 //   stays   the seat is on the spawn's own road, within 200 m of the spawn point;
 //   clean   where the spawn broke no rule, the seat does not move it (< 1 m).
 //
@@ -16,9 +16,9 @@ import { spawnDecision } from './lib/spawn-decision.mjs'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 
 const SEEDS = [
-  ['1536055470', 'at a spur\'s dead end, facing it'],
+  ['1536055470', 'right at a spur\'s dead end'],
   ['1016364815', 'on a 25 % grade'],
-  ['2811484882', 'facing a dead end 2.2 km down a spur'],
+  ['2009835975', 'facing a dead end 1.1 km down a spur'],
   ['672275505', 'clean'],
 ]
 let fails = 0

@@ -100,7 +100,7 @@ const WIDE_SEEDS = [6, 90]
 // free roam ?seed=, the truck as seated): the replica sits 0.10, 0.06 and 0.08 m from those readings.
 // BUG-141 (11-07): free roam now refines the seat from this decision (RoadSystem.freeRoamSeat: level road, away from a
 // dead end, facing the long way), so a free-roam reading is the DECISION only where the seat did not move; story never
-// refines (its region centre is the decision). These three seeds' seats stay within 2 cm (4194356868 and 1 turn round).
+// refines (its region centre is the decision). These three seeds' seats stay within 2 cm (seed 6 turns round).
 {
     const GAME = [[4194356868, 71.24, -44.80], [1, 242.10, 198.78], [6, -45.67, 16.23]]
     for (const [seed, x, z] of GAME) {

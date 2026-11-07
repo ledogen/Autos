@@ -34,21 +34,25 @@ qualifies, the gentlest spot wins.
 unrefined spawn: its region centre is captured from it (BUG-121), and its run starts at the burger joint (BUG-135).
 So no story world moves.
 
-**Census** (`wip/bug-141/census.mjs`, the 100 fresh random seeds of BUG-105's census). Today, 23 seeds break a rule;
+**Census** (`wip/bug-141/census.mjs`, the 100 fresh random seeds of BUG-105's census). Today, 31 seeds break a rule;
 with the seat, 0:
 
 | Rule | Seeds broken today | Detail |
 |---|---|---|
-| On a 20 % or steeper grade | 10 | worst 25.8 % |
+| Facing a dead end | 23 | 0.5–2.2 km down the spur |
 | Within 150 m of a dead end | 5 | 3 of them right at it |
-| Facing a dead end | 12 | as far as 2.2 km down the spur |
+| On a 20 % or steeper grade | 10 | worst 25.8 % |
 
 The seat moves the truck on 15 seeds (median 0 m, max 161 m). On the rest it only turns it round, or leaves it.
 
+**The facing convention.** `_seatOnGroundPlane` puts the nose at −(sin h, cos h). So `main.js` converts the seat's
+tangent with `atan2(−tx, −tz)`. A first census read the nose the other way and counted 23 / 0 on the wrong column; the
+browser read caught it (the nose came out at the seat's tangent + π), and the numbers above are the corrected run.
+
 **Gate:** `test/free-roam-seat.mjs`, on four census seeds:
-- 1536055470, at a dead end: seated 93 m on, 152 m from the dead end;
+- 1536055470, right at a dead end: seated 93 m on, 152 m from it;
 - 1016364815, on a 25 % grade: seated 40 m on, at 17.5 %;
-- 2811484882, facing a spur: turned round;
+- 2009835975, facing a dead end 1.1 km away: turned round;
 - 672275505, a clean spawn: unmoved.
 
-world-determinism's three spawns stay within 2 cm, and two of them turn round.
+world-determinism's three spawns stay within 2 cm, and seed 6 turns round.

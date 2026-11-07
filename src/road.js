@@ -1183,7 +1183,8 @@ export class RoadSystem {
      * walking from a run's end through two-leg nodes (bends) to the first node that is not one: one leg = dead end.
      * Facing: away from a dead end, else toward the farther end of the run. The seat slides along the run from the
      * nearest point in SEAT_STEP_M steps, nearest first; no level spot keeps the gentlest. Story mode never calls it:
-     * its region centre is the unrefined spawn (BUG-121). Returns { point, tangent, grade, deadEnd } or null.
+     * its region centre is the unrefined spawn (BUG-121). Returns { point, tangent (the way the nose points), grade,
+     * deadEnd } or null.
      */
     freeRoamSeat(near) {
         const e = near && this._network.get(near.runKey)
