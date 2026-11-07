@@ -789,3 +789,21 @@ to the orchestrator 2026-11-07):
   allow it.
 
 Frequency: 2 in the 100 fresh seeds, 0 in the 140 census windows (Stage 1/2 already cleared BUG-104's five).
+
+### Correction (2026-11-07): one real overlap, not two
+
+**2323221349 is a census-window artefact.** The site lies 2.1 km from census 12's window centre (origin, 1400 m), in
+the frontier band. Windows centred on the site, or 700 m toward the origin, build mid-span Ts there, and no pair
+comes under 22 m (`wip/overlap/near.mjs`). BUG-104 closes on evidence with this reason.
+
+That leaves **one real overlap in 240 windows: 1394642004**, in the fresh seeds. A promoted T's departure (`g:0,1,0:
+368253,1465649,-1`, 960 m) lies within 8 m of `g:1,1,1:1,2,1` for ~80 m (1.2 m at the closest; within 22 m for 140 m).
+Reproduced from a window centred on the site.
+
+**The owner's call** (tracker item `bug105-overlap`; sheet https://claude.ai/artifact/TKp2wYytwJnKenJjHPmwDE):
+- (a) **join with two Ts** (recommended): a T where they first touch, the shared ~80 m on the trunk's pavement, a T
+  where they part. It keeps every connection and drops only the duplicate stretch.
+- (b) **drop the side road:** 960 m and its T. 0,1,0 → that T becomes 7.4 km by road instead of 0.96 km.
+- (c) **leave it.**
+
+Nothing is built until the owner answers.
