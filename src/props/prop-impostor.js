@@ -64,6 +64,40 @@ export class PropImpostors {
     this._cols = 0
     this._rows = 0
     this._litGain = LIT_GAIN
+    // BUG-133: the truck's two head spots, as uniform objects SHARED by every billboard material (one write per frame).
+    // uHeadMat holds the spots' own shadow.matrix objects — three refreshes those in place at the start of each render
+    // (WebGLLights.setup, for a spot with a map), so the cookie projection is never a frame late.
+    const heads = lights.heads || []
+    this._heads = heads
+    this._headU = {
+      uHeadPos: { value: [new THREE.Vector3(), new THREE.Vector3()] },
+      uHeadDir: { value: [new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 1)] },
+      uHeadCone: { value: [new THREE.Vector2(1, 1), new THREE.Vector2(1, 1)] },     // cos(angle), cos(angle·(1 − penumbra))
+      uHeadRange: { value: [new THREE.Vector2(0, 2), new THREE.Vector2(0, 2)] },    // cutoff distance, decay
+      uHeadC: { value: [new THREE.Vector3(), new THREE.Vector3()] },                // colour × intensity (0 when off)
+      uHeadMat: { value: [0, 1].map((i) => heads[i]?.shadow.matrix ?? new THREE.Matrix4()) },
+      uHeadMap: { value: null },
+    }
+  }
+
+  /**
+   * BUG-133: per frame — the head spots' world pose, cone, reach and output, as three's spot light uniforms carry them,
+   * so a billboard inside the beam is lit like its 3D twin (before: sun + hemisphere only, 36 % darker in the high beam).
+   */
+  updateHeads () {
+    const U = this._headU
+    for (let i = 0; i < 2; i++) {
+      const s = this._heads[i]
+      if (!s) { U.uHeadC.value[i].set(0, 0, 0); continue }
+      s.getWorldPosition(U.uHeadPos.value[i])
+      s.target.getWorldPosition(_v3)
+      U.uHeadDir.value[i].copy(U.uHeadPos.value[i]).sub(_v3).normalize()
+      U.uHeadCone.value[i].set(Math.cos(s.angle), Math.cos(s.angle * (1 - s.penumbra)))
+      U.uHeadRange.value[i].set(s.distance, s.decay)
+      const k = s.visible ? s.intensity : 0
+      U.uHeadC.value[i].set(s.color.r * k, s.color.g * k, s.color.b * k)
+    }
+    U.uHeadMap.value = this._heads[0]?.map ?? null
   }
 
   /** Live sun-contrast scale (uniforms only — no rebake needed). 1 = physical. */
@@ -239,7 +273,7 @@ export class PropImpostors {
   }
 
   _makeBillboardMaterial (uTile, y0n) {
-    return new THREE.ShaderMaterial({
+    const material = new THREE.ShaderMaterial({
       uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
         uAtlas: { value: null },      // bound lazily below (merge() would clone the texture ref)
         uNrm: { value: null },        // BUG-96: the normal atlas, bound with it
@@ -263,6 +297,7 @@ export class PropImpostors {
         varying vec3 vRight;          // the quad's frame in world space — the baked normal's x, y, z axes
         varying vec3 vUp;
         varying vec3 vBack;
+        varying vec3 vWorld;          // BUG-133: the headlight term needs the fragment's world position
         #include <fog_pars_vertex>
         void main () {
           vTint = aTint;
@@ -293,6 +328,7 @@ export class PropImpostors {
           float pull = min(aSize * 0.2, 2.5);
           wp.x += fwd.x * pull;
           wp.z += fwd.y * pull;
+          vWorld = wp;
           vec4 mvPosition = viewMatrix * vec4(wp, 1.0);
           gl_Position = projectionMatrix * mvPosition;
           #include <fog_vertex>
@@ -309,6 +345,14 @@ export class PropImpostors {
         varying vec3 vRight;
         varying vec3 vUp;
         varying vec3 vBack;
+        varying vec3 vWorld;
+        uniform vec3 uHeadPos[2];
+        uniform vec3 uHeadDir[2];
+        uniform vec2 uHeadCone[2];
+        uniform vec2 uHeadRange[2];
+        uniform vec3 uHeadC[2];
+        uniform mat4 uHeadMat[2];
+        uniform sampler2D uHeadMap;
         #include <fog_pars_fragment>
         void main () {
           vec4 texel = texture2D(uAtlas, vUv);
@@ -322,6 +366,22 @@ export class PropImpostors {
           vec3 nb = nt.rgb / max(nt.a, 1e-3) * 2.0 - 1.0;
           vec3 n = normalize(vRight * nb.x + vUp * nb.y + vBack * nb.z);
           vec3 irr = uSunC * max(dot(n, uSunDir), 0.0) + mix(uGndC, uSkyC, 0.5 * n.y + 0.5);
+          // BUG-133: the truck's head spots, as three lights the 3D trees (lights_pars_begin + lights_fragment_begin):
+          // smoothstep cone, the physical distance falloff with its cutoff window, the beam cookie through the spot's
+          // own projection, Lambert against the rebuilt normal.
+          for (int i = 0; i < 2; i++) {
+            vec3 lv = uHeadPos[i] - vWorld;
+            float dist = length(lv);
+            vec3 L = lv / max(dist, 1e-4);
+            float cone = smoothstep(uHeadCone[i].x, uHeadCone[i].y, dot(L, uHeadDir[i]));
+            if (cone <= 0.0 || dot(uHeadC[i], uHeadC[i]) == 0.0) continue;
+            float fall = 1.0 / max(pow(dist, uHeadRange[i].y), 0.01);
+            if (uHeadRange[i].x > 0.0) { float r = dist / uHeadRange[i].x; float w = clamp(1.0 - r * r * r * r, 0.0, 1.0); fall *= w * w; }
+            vec4 sc = uHeadMat[i] * vec4(vWorld, 1.0);
+            vec3 c3 = sc.xyz / sc.w;
+            vec3 cookie = all(lessThan(abs(c3 * 2.0 - 1.0), vec3(1.0))) ? texture2D(uHeadMap, c3.xy).rgb : vec3(1.0);
+            irr += uHeadC[i] * cookie * (cone * fall * max(dot(n, L), 0.0));
+          }
           // Screen-space alpha sharpening → alpha-to-coverage: re-narrow the filtered cutout edge
           // to ~1 px and let MSAA coverage dither it (renderer AA is on by default; without MSAA
           // this degrades to the plain cutout). Fixes the stair-stepped sprite edges.
@@ -336,6 +396,8 @@ export class PropImpostors {
       fog: true,
       side: THREE.DoubleSide,        // quad must read from both sides while it swings to face the camera
     })
+    Object.assign(material.uniforms, this._headU)   // BUG-133: shared, not merged (merge() would clone them per material)
+    return material
   }
 
   /** Bind the atlas into a billboard material (call after build(); kept out of merge()'s clone). */
