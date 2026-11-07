@@ -1,7 +1,7 @@
 ---
 id: BUG-108
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-03
 source: owner, 2026-11-03 — "There was a brief lag upon hitting them, I think it's the same physics bug that lane B was trying to fix where there is a momentary freeze or reduction in velocity upon contact."
@@ -123,3 +123,7 @@ this rests on the 11-04 measurements.
   - It passes at 0.89× / 0.96× / 0.55× / 0.55×. Against the old nose it fails: the crate at 1.35× and 1.92×.
 
 **Still owed:** the owner's drive through a demolition site.
+
+## Resolution (2026-11-07)
+
+Closed: the owner drove a demolition site on main and answered bug108-drive "good" (2026-11-07). The nose blade (862b1663) and test/strike-hitch.mjs stand.

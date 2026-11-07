@@ -1,7 +1,7 @@
 ---
 id: BUG-133
 type: bug
-status: open — built (land/bug-133, on main); waiting on the owner's look at e66f3987
+status: closed
 severity: major
 opened: 2026-11-07
 source: owner, 2026-11-07 (three inbox notes) — "Prop billboards particularly trees don't reflect the truck headlights making pop-in very obvious at nighttime with high beams on" · "Prop billboards flip flop and mirror their orientation at certain angles" · "Prop billboards lighting does not always match what the 3d models lighting looks like making pop-in obvious at certain times of day and certain illumination angles"
@@ -194,3 +194,7 @@ of the swap**:
 Acceptance line 3 ("no billboard changes silhouette … in one frame") still fails for the single swap per approach.
 Close once the owner has looked at `e66f3987` in game, or keep it open for the cross-fade if the owner still sees
 the swap.
+
+## Resolution (2026-11-07)
+
+Closed on the owner's look, bug133-look: "good enough, close it" (2026-11-07). On main: e66f3987 (LOD hysteresis + headlight spots on billboards) and the design note 3c82abbb. The dithered cross-fade stays unbuilt.

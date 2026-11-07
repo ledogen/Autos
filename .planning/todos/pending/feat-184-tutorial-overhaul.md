@@ -100,3 +100,22 @@ Today's tutorial is roughly 10–15 minutes played, an estimate, not timed.
 - **(c) A full first day:** (b) plus a store stop and a night at camp.
 
 The hold-M skip stays (owner, 2026-11-06). The words on every new card are the owner's (FEAT-148); placeholders until then.
+
+## Owner, 2026-11-07 (feat184-plan + inbox)
+
+feat184-plan, verbatim: "I like the suggestions. I think we should try to make the tutorial a humorous story about the
+main character having the worst day ever. I think it could be comedic that you get fired from your job, start driving
+home, get a flat tire, Change it yourself, but the spare is also flat Then have to use the recovery menu to call a tow
+truck Since so much time passes you have to drive home in the middle of the night, and it's dark and dark, etc.
+Definitely still work in those lessons that you had in there i.e. Starting the engine GPS getting gas Damage screen
+Buying a new spare Etc"
+
+Inbox, verbatim: "Additional thoughts on the tutorial. Skipping the tutorial should completely clear it. For example, I
+thought it was really slick that the first time a rank timer appears, we explain what it is, but it appeared after I
+had already skipped the tutorial by canceling mom's first mission. And it's unacceptable to show it to a player who's
+seen it before, who intentionally wanted to skip the tutorial. This ties into my thoughts about making the tutorial a
+self-contained session. I think we might also allow players to check an option in settings to always skip the
+tutorial. Or even after the first time you see the tutorial to enable permanent skipping of the tutorial unless you go
+into the settings and press something specifically to be able to see the tutorial again. It should only really be
+needed once And to supplement it, we'll have a help section that explains the mechanics to the players, but that's a
+distant goal"
