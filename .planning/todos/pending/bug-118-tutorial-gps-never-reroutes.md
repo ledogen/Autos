@@ -31,6 +31,10 @@ line the best guidance is the shortest way to finish from where you are (2026-08
 - **No re-plan storm.** The next re-plan waits until the truck has moved 45 m from the last one. A truck parked off
   the tarmac does not re-plan every 2 s. A failed plan keeps the old line. That happens with the truck already on
   the door's own road, or off every road by more than 200 m.
+- **Cost, measured** (`wip/bug118-probe.mjs`, seed 6 — the test seed — 2200 m region, from each of 26 POIs' road
+  points to mom's door): 0.78 ms per re-plan at the median, 2.1 ms at p90, 2.5 ms worst, with warm edge caches. It
+  runs synchronously on the HUD poll, at most once per 2 s. Every plan ended exactly on her road point (0.0 m). One
+  start found no plan and keeps its line.
 - The truck's road point as a planner stop was a private method of the paper route (`_originPoint`). It is now the
   exported `roadOrigin(road, car)`, which both use.
 
@@ -42,7 +46,7 @@ line the best guidance is the shortest way to finish from where you are (2026-08
 
 ## Acceptance
 
-- [ ] `paper-route` + `paper-reroute` gates green on the moved helper.
+- [x] `paper-route` + `paper-reroute` gates green on the moved helper.
 - [ ] cdp-smoke `strayCheck`: in the evening and on the casserole, the truck seated at a POI 150 m off the line gets
       a new GPS route within 6 s, starting within 60 m of the truck and ending within 30 m of the old line's end.
 - [ ] Owner: drive way off the line in the tutorial, and the GPS turns you round toward the door.

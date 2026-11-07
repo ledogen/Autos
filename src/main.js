@@ -1539,8 +1539,6 @@ function _setSetupMode (mode) {
   _setupMode = mode
   const panel = document.getElementById('mm-setup-panel')
   if (panel) panel.dataset.mode = mode
-  const note = document.getElementById('su-save-note')
-  if (note) note.style.display = mode === 'story' && hasRun() ? '' : 'none'
   if (mode === 'scenarios') _renderScenarioList()
 }
 /** The new-game page, opened on story — the mode is never remembered (owner, 2026-10-31). */
@@ -1571,14 +1569,16 @@ async function _startFromSetup () {
   await _startFreeRoam(_resolveSeed(seed))
 }
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
-// discards it, and the page says so.
+// discards it, and the warning under new game says so.
 document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
-/** The main menu's continue button stands only while a run is saved. Wired here, ahead of the boot
- *  awaits (the free-roam seat is ~2.5 s of cold routing), like the buttons above: it shows with the
- *  menu, and an early click waits in _startStory's `await _worldReady`. */
+/** The main menu's continue button stands only while a run is saved, and so does the warning under new
+ *  game. Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
+ *  buttons above: it shows with the menu, and an early click waits in _startStory's `await _worldReady`. */
 function _syncContinue () {
-  const b = document.getElementById('mm-continue')
-  if (b) b.style.display = hasRun() ? '' : 'none'
+  for (const id of ['mm-continue', 'mm-save-note']) {
+    const el = document.getElementById(id)
+    if (el) el.style.display = hasRun() ? '' : 'none'
+  }
 }
 _syncContinue()
 document.getElementById('mm-continue')?.addEventListener('click', () => {
