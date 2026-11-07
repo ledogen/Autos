@@ -11,6 +11,10 @@
 //      2646203056, the report, plus two RANDOM seeds per run. On each, mom's and Larry's are on different edges and
 //      the casserole plans a route that ends at Larry's. The random seeds are a SAMPLE, printed so a miss replays; the
 //      guarantee is part 1's rule, not this sample.
+//   3. BUG-125, a same-edge destination plans: from mom's to another pad on HER edge, a POI's spacing away
+//      (2646203056 always has one — it was Larry's), the planner drives straight along the shared road: one segment,
+//      from her marker to that pad, its length the gap between them along the road, par > 0. No out-and-back through
+//      a junction, no loop.
 //
 // Heavy: routes a full region per seed (~25 s each).
 import * as THREE from 'three'
@@ -95,6 +99,22 @@ for (const s of SEEDS) {
     check(`${s}: mom's and Larry's both placed, on different edges`, !!mom && !!larry && mom.edge !== larry.edge)
     check(`${s}: the casserole plans, and ends at Larry's`, !!m && m.endPoiId === larry?.id,
         m ? `ends at ${m.endPoiId}` : 'no route')
+
+    // 3.
+    // A pad that could hold a POI beside hers: poiPadSpacing along the edge, as the roster keeps taken pads (an
+    // overlapping pad of another kind is an alternative to hers, not a neighbour). Real same-edge pairs are never
+    // closer, and an ordinary job's floor (1050 m) is past that, so no job can be near-zero long.
+    const twin = mom && poi.pool().find(q => q.edge === mom.edge && Math.abs(q.s - mom.s) >= POI_PARAMS.poiPadSpacing)
+    if (!twin) { check(`${s}: (no pad a POI apart on mom's edge here — BUG-125's check needs 2646203056)`, s !== SEEDS[0]); continue }
+    const ed = road.edgeParData(mom.aId, mom.bId), off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
+    const gap = Math.abs(Math.max(off, Math.min(off + L, twin.s)) - Math.max(off, Math.min(off + L, mom.s)))
+    const t = ms.planOffer(mom, { rng: () => 0.5, dest: { kind: 'poi', pick: 0, pois: [twin], strict: true, anyLeg: true } })
+    const sg = t?.segments ?? []
+    check(`${s}: BUG-125 — a pad on mom's own edge (${gap.toFixed(0)} m along it) plans straight along the shared road`
+        + (t ? ` (${t.distance.toFixed(0)} m, par ${t.par.toFixed(1)} s = ${(t.par / t.distance * 1000).toFixed(0)} s/km)` : ''),
+        !!t && t.endPoiId === twin.id && sg.length === 1 && Math.abs(t.distance - gap) < 1 && t.par > 0
+            && Math.abs(sg[0].s0 - mom.s) < 1e-6 && Math.abs(sg[0].s1 - twin.s) < 1e-6,
+        t ? `${sg.length} segments, ${t.distance.toFixed(0)} m, par ${t.par.toFixed(1)} s` : 'no route')
 }
 
 console.log(fails ? `\n${fails} CASSEROLE CHECK(S) FAILED` : '\nALL CASSEROLE CHECKS PASSED')
