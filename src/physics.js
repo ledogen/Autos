@@ -937,8 +937,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   //
   // NOTE: torque arm uses hub world position as approximation for contact patch (D-06a resolution).
   // The ~0.37 m offset along the contact normal (hub to actual contact patch) contributes a small
-  // torque-arm error acceptable for body forces; a future phase may add _hubContactPoint accumulator
-  // for higher accuracy.
+  // torque-arm error acceptable for body forces. A TILTED tire's arm is its real contact (BUG-116, below).
   //
   // Gravity is the ENGINE's (world gravity acts on the chassis body) — starting the Step 3
   // accumulators at zero instead of −mg is the cutover's one-source rule.
@@ -952,34 +951,42 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     for (let i = 0; i < 4; i++) {
       const xz = params._hubNormalXZ[i]
       if (!xz || (xz.x === 0 && xz.y === 0 && xz.z === 0)) continue
-      // Hub world position for torque arm (approximation per D-06a); torque = rHub × F_xz.
       const hub_i  = hubPost[i] = getWheelPosition(i, vehicleState, params)
-      const rHubX  = hub_i.x - vehicleState.position.x
-      const rHubY  = hub_i.y - vehicleState.position.y
-      const rHubZ  = hub_i.z - vehicleState.position.z
+      // BUG-89: a tire whose load is not along its strut is touching with its SIDEWALL — the truck on its side or roof.
+      // Pacejka reads only the strut share, so that load used to be frictionless: on its side the truck skated
+      // (15 m/s → 245 m). Rubber scrubs: Coulomb μN against the contact's sliding, μ the tire's own, regularised below
+      // SIDEWALL_V_REG so it holds at rest instead of chattering.
+      // BUG-116: the gate is the tire's TILT, not an unloaded strut. Since bb585d65 a tire lying at 87° puts cos 87° of
+      // its load on the strut, a few newtons — that read as "Pacejka owns it" and its 3 kN of sidewall load slid
+      // frictionless. The sidewall's load is the share along the spin axle (a tread's normal is radial, in the wheel
+      // plane, so a kerb's push is not in it), faded in over tire-contact.js's own TILT_LO → TILT_HI. An upright tire
+      // never reaches TILT_LO, so driving is untouched.
+      // ponytail: the support is taken as static; a sidewall on a moving rock scrubs against the world.
+      const R = Math.hypot(xz.x, xz.y, xz.z), A = _axle[i], fzS = params._tireFz[i] || 0
+      const xa = xz.x * A.x + xz.y * A.y + xz.z * A.z   // the load along the axle: the sidewall's
+      const tilt = Math.min(1, Math.max(0, (Math.abs(xa) / Math.hypot(fzS, R) - TILT_LO) / (TILT_HI - TILT_LO)))
+      // Torque arm: the hub (D-06a — the ~0.37 m to an upright tire's patch lies along the normal), moved by `tilt` to a
+      // tilted tire's real contact, the rim edge of its ground-side cap (tire-contact.js's plane solve). BUG-116: at
+      // the hub, a truck on its side stood on a base 0.18 m wide instead of the tires' 0.55 m and tipped back onto its
+      // wheels on a 12° slope (statically it needs tan⁻¹(0.55 / 0.85) = 33°).
+      let rHubX = hub_i.x - vehicleState.position.x
+      let rHubY = hub_i.y - vehicleState.position.y
+      let rHubZ = hub_i.z - vehicleState.position.z
+      if (tilt > 0) {
+        // The normal is the residual plus the strut share; its part across the axle points from the cap edge to the hub.
+        const ux = xz.x + fzS * up.x - xa * A.x, uy = xz.y + fzS * up.y - xa * A.y, uz = xz.z + fzS * up.z - xa * A.z
+        const ul = Math.hypot(ux, uy, uz), ur = ul > 1e-9 ? -params.wheelRadius / ul : 0
+        const hw = (xa > 0 ? -1 : 1) * (params.wheelWidth || 0.25) / 2
+        rHubX += tilt * (hw * A.x + ur * ux); rHubY += tilt * (hw * A.y + ur * uy); rHubZ += tilt * (hw * A.z + ur * uz)
+      }
       totalForce.x  += xz.x
       totalForce.y  += xz.y
       totalForce.z  += xz.z
       totalTorque.x += rHubY * xz.z - rHubZ * xz.y
       totalTorque.y += rHubZ * xz.x - rHubX * xz.z
       totalTorque.z += rHubX * xz.y - rHubY * xz.x
-      // BUG-89: a tire with NO strut load is touching with its sidewall — the truck on its side or
-      // roof. Step 3 reads it as airborne (no Pacejka), so this whole contact load used to be
-      // frictionless: on its side the down-side tires carried ~60 % of the weight and the truck skated
-      // (15 m/s → 245 m). Rubber scrubs: Coulomb μN against the hub's sliding, μ the tire's own.
-      // Regularised below SIDEWALL_V_REG so it holds at rest instead of chattering. A loaded strut
-      // (any upright truck, slopes included) never takes this branch — Pacejka owns that tire.
-      // ponytail: the support is taken as static; a sidewall on a moving rock scrubs against the world.
-      // BUG-116: the gate is the tire's TILT, not an unloaded strut. Since bb585d65 a tire lying at 87° puts cos 87° of
-      // its load on the strut, a few newtons — that read as "Pacejka owns it" and its 3 kN of sidewall load slid
-      // frictionless. The sidewall's load is the share along the spin axle (a tread's normal is radial, in the wheel
-      // plane, so a kerb's push is not in it), faded in over tire-contact.js's own TILT_LO → TILT_HI: an upright tire
-      // never reaches TILT_LO, so driving is untouched.
-      const R = Math.hypot(xz.x, xz.y, xz.z), A = _axle[i]
-      const Nax = Math.abs(xz.x * A.x + xz.y * A.y + xz.z * A.z)
-      const tilt = Math.min(1, Math.max(0, (Nax / Math.hypot(params._tireFz[i] || 0, R) - TILT_LO) / (TILT_HI - TILT_LO)))
       if (tilt > 0) {
-        const N = tilt * Nax, nx = xz.x / R, ny = xz.y / R, nz = xz.z / R
+        const N = tilt * Math.abs(xa), nx = xz.x / R, ny = xz.y / R, nz = xz.z / R
         const w = vehicleState.angularVelocity, v = vehicleState.velocity
         let vx = v.x + w.y * rHubZ - w.z * rHubY
         let vy = v.y + w.z * rHubX - w.x * rHubZ
