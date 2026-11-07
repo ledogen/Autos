@@ -26,6 +26,7 @@
 //   PLUG    one plug per kit, on a flat corner or a flat tire in the inventory, whichever the player
 //           picks. It fixes the hole, not the wear: the tire keeps its condition. Then the air: 2 h
 //           by hand with the pump, 30 min with a compressor — each the WHOLE stop, plug included.
+//   SWAP    two corners trade wheels, no spare: twice a spare change (swapCorners, FEAT-177), from the damage screen.
 //   The player picks on the damage screen's pictogram (DamageScreen.pick), which shows each corner's
 //   tire, wheel and flat, and the time, before a confirm.
 //
@@ -151,6 +152,26 @@ export function fitSpare (parts, damage, inventory, index, corner) {
   inventory.grant('spareTire', 1, parts.fitMounted(inventory.take(index), corner))
   return corner
 }
+
+/**
+ * FEAT-177 (owner, 2026-11-06: "allow players to just perform a Corner Swap for 2x the time that it takes to change a
+ * tire"): corners `a` and `b` (0=FL … 3=RR) trade their mounted pairs, no spare needed — each tire and each wheel with
+ * its wear, the tire with its puncture. The alignment stays: it is the hub's bent geometry, not the wheel's. Returns
+ * false with nothing changed for a bad pair. The caller puts swapCornerHours() on the clock.
+ */
+export function swapCorners (parts, damage, a, b) {
+  if (a === b || !(a >= 0 && a < 4 && b >= 0 && b < 4)) return false
+  const pair = (c) => ({ tire: parts.fitted(TIRE_IDS[c]), cond: parts.condOf(TIRE_IDS[c]),
+    wheel: parts.fitted(WHEEL_IDS[c]), wheelCond: parts.condOf(WHEEL_IDS[c]), flat: damage.flat[c] })
+  const B = pair(b)
+  const A = parts.fitMounted(B, a)   // fit() puts air in a tire going on: the punctures go back after
+  parts.fitMounted(A, b)
+  damage.flat[a] = B.flat
+  damage.flat[b] = A.flat
+  return true
+}
+/** Two tire changes' time (FEAT-177): the same jack and the same tools, twice. */
+export const swapCornerHours = (inventory) => 2 * spareFitHours(inventory)
 
 /**
  * Fit a part the player can swap by hand (`roadside: true` in data/parts.js — the spare air filter,

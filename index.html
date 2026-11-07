@@ -231,6 +231,7 @@
       background: linear-gradient(100deg, rgba(4,7,10,0.92) 0%, rgba(4,7,10,0.72) 34%, rgba(4,7,10,0.0) 62%);
     }
     #mm-root { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+    #mm-save-note { color: var(--warn-text); font-size: 12px; margin: 0 0 4px 20px; }   /* caution, not failure (UI-STYLE); 20 px = a button's label */
     /* The stage behind the menu orbits on click-drag (src/stage.js) — say so with the cursor. */
     body.stage-on { cursor: grab; user-select: none; }   /* no text selection mid-drag */
     body.stage-on.stage-dragging, body.stage-on.stage-dragging * { cursor: grabbing !important; }
@@ -294,7 +295,6 @@
       font-family: var(--font); font-size: 16px; padding: 6px 10px; margin-left: 18px; width: 300px;
     }
     #su-code { color: var(--text-faint); font-size: 12px; margin: 4px 0 0 18px; }
-    #su-save-note { color: var(--warn-text); font-size: 12px; margin: 4px 0 0 18px; }   /* caution, not failure (UI-STYLE) */
     /* ◂ value ▸ selector: a row button; the arrows (or ←/→) cycle it. */
     #main-menu button.mm-sel { width: 380px; display: flex; justify-content: space-between; }
     button.mm-sel > span { white-space: nowrap; }
@@ -1612,6 +1612,9 @@
       <div class="mm-title">autos</div>
       <button id="mm-continue" style="display:none">continue</button>   <!-- FEAT-42: only while a run is saved -->
       <button id="mm-new">new game</button>   <!-- FEAT-156: the game mode is a row on the new-game page -->
+      <!-- Under the button it warns about, while a run is saved (owner, 2026-11-06: "next to the new game button
+           not halfway down the page"). main.js _syncContinue shows it with continue. -->
+      <div id="mm-save-note" style="display:none">warning: starting a new story game will delete your existing save</div>
       <button id="mm-settings">settings</button>
     </div>
     <!-- FEAT-41 run setup = the GENERATION settings: what the world and the truck are. The selector rows
@@ -1637,7 +1640,6 @@
       <button class="mm-sel" data-key="worldPoi"></button>
       <button class="mm-sel" data-key="worldRoads"></button>
       <div id="su-code"></div>
-      <div id="su-save-note" style="display:none">warning: starting a new story game will delete your existing save</div>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>
       </div>

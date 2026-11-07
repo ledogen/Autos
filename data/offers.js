@@ -406,7 +406,7 @@ export const REWARDS = [
 /** FEAT-168: the reward category of a vehicle part with no REWARDS row, by its slot (data/parts.js). */
 export const PART_REWARD_CAT = {
     tire: 'tires', wheel: 'tires', brakesFront: 'brakes', brakesRear: 'brakes',
-    springsFront: 'suspension', springsRear: 'suspension', dampersFront: 'suspension', dampersRear: 'suspension',
+    springs: 'suspension', dampers: 'suspension',
     arbFront: 'suspension', arbRear: 'suspension', lift: 'suspension',
     engine: 'engine', radiator: 'engine', airFilter: 'engine', headlight: 'engine', diff: 'drivetrain',
 }

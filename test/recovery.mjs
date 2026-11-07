@@ -30,7 +30,7 @@
 //   8. The jerry can: pours what the tank takes and stays, lighter; empty or into a full tank, nothing.
 //
 // Pure node: no THREE, no DOM.
-import { recoveryCard, tireServiceQuote, tireService, fitSpare, plugTire, plugMethods, spareFitHours, fitRoadside, fieldRepair, pourCan } from '../src/recovery.js'
+import { recoveryCard, tireServiceQuote, tireService, fitSpare, plugTire, plugMethods, spareFitHours, swapCorners, swapCornerHours, fitRoadside, fieldRepair, pourCan } from '../src/recovery.js'
 import { REPAIR_CAP, PARTS, PATCH, HUB, BEAD } from '../data/parts.js'
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { InventorySystem } from '../src/inventory.js'
@@ -152,6 +152,24 @@ tools.grant('compressor')
 check('…1 h 30 with a compressor', spareFitHours(tools) === 1.5)
 tools.grant('quickJack')
 check('…30 min with a quick-jack as well', spareFitHours(tools) === 0.5)
+
+// ── 4b. The corner swap (FEAT-177): two corners trade wheels, no spare, twice a tire change ────────────────────
+const sw = new PartsSystem({ params, damage })
+sw.start(); damage.flat.fill(false)
+sw.fit('tireSport', 0.35, 'tireFL'); damage.set('wheelFL', 0.6); damage.flat[0] = true
+damage.set('tireRR', 0.8); damage.set('wheelRR', 0.9); damage._bendWheel(3, 0.2)
+const toeRR = damage.toeOffsetDeg[3]
+check('swap FL and RR', swapCorners(sw, damage, 0, 3))
+check('…the sport tire, its wear and its puncture moved to RR', sw.fitted('tireRR') === 'tireSport' && damage.get('tireRR') === 0.35
+  && damage.flat[3] && params._tireGrip[3] === PARTS.tireSport.grip)
+check('…RR\'s tire and wheel came to FL, holding air', sw.fitted('tireFL') === 'tireStandard' && damage.get('tireFL') === 0.8
+  && damage.get('wheelFL') === 0.9 && !damage.flat[0] && params._tireGrip[0] === 1)
+check('…FL\'s wheel went with its tire', damage.get('wheelRR') === 0.6)
+check('…the bent hub stays where it is', damage.toeOffsetDeg[3] === toeRR && toeRR !== 0)
+check('a corner with itself, or no such corner: nothing', !swapCorners(sw, damage, 1, 1) && !swapCorners(sw, damage, 0, 4))
+const swapBoth = swapCornerHours(tools)   // first: a fresh inventory below resets the one run inventory
+const bare = new InventorySystem({ slotCap: () => 8 }); bare.start()
+check('the swap is two tire changes: 4 h with the factory jack, 1 h with both tools', swapCornerHours(bare) === 4 && swapBoth === 1)
 
 // ── 5. The plug kit ───────────────────────────────────────────────────────────────────────────
 const inv2 = new InventorySystem({ slotCap: () => 8 })

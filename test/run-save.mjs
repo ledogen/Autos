@@ -39,6 +39,13 @@ const memory = () => {
   check('a second write overwrites: one record, the newest', st.m.size === 1 && loadRun(st).day.hour === 14.27)
   clearRun(st)
   check('clearRun discards it', !hasRun(st) && loadRun(st) === null)
+  // FEAT-176: a save from before front and rear springs became one part loads with the part it is now — as a value
+  // (fitted, inventory) and as a key — and a socket name that merely starts the same is left alone.
+  putRun({ parts: { fitted: { springsRear: 'springsRearHD', dampersFront: 'dampersFrontOEM' } }, inventory: { entries: [{ id: 'springsFrontSport' }] }, n: { dampersRearHD: 1 } }, st)
+  const old = loadRun(st)
+  check('a save with retired part ids loads them renamed', old.parts.fitted.springsRear === 'springsHD' && old.parts.fitted.dampersFront === 'dampersOEM'
+    && old.inventory.entries[0].id === 'springsSport' && old.n.dampersHD === 1, JSON.stringify(old))
+  clearRun(st)
   check('save.js exports no second slot or history', !Object.keys(save).some(k => /slot|history|list|backup/i.test(k)))
 }
 

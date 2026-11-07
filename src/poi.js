@@ -259,9 +259,10 @@ export const POI_ROSTER = [
     // model empty, so physics never waits on a fetch.
     { type: 'firewoodYard', count: 1, model: 'splittingYard', siting: 'any',
       drop: { x: -4.0, z: -1.2, halfX: 0.92, halfZ: 0.70 } },
-    // The job site. Sited 'any' until FEAT-103 puts it on the region wall; placeholder cube until
-    // ASSET-71 ships.
-    { type: 'workSite',     count: 1, model: null, siting: 'any' },
+    // The job site, an ordinary client sited anywhere (the boss on the region wall is FEAT-103's
+    // expedition camp, its own type since 2026-10-24). ASSET-83, the construction site, on a lay-by:
+    // you park in its `park` box, alongside the road in front of the slab.
+    { type: 'workSite',     count: 1, model: 'constructionSite', siting: 'any' },
 
     // ── Additional classes (12) ────────────────────────────────────────────────────────────────
     // Job givers and receivers only, for now. They sit BELOW every required class on purpose: a

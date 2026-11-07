@@ -12,7 +12,11 @@
 // Same storage discipline as settings.js — storage can be missing, blocked or hold junk, and every
 // failure lands on "no save", which for a run save is the correct direction (the run is gone).
 
+import { RENAMED } from '../data/parts.js'
+
 const KEY = 'autos-run/1'
+// A part id the catalog retired (data/parts.js RENAMED, FEAT-176), quoted as a key or a value, anywhere in the record.
+const RETIRED = new RegExp(`"(${Object.keys(RENAMED).join('|')})"`, 'g')
 export const RUN_SAVE_VERSION = 1
 
 /** Write the run. Returns false when storage refused it (blocked, full) — the caller says so. */
@@ -26,7 +30,7 @@ export function loadRun (storage = globalThis.localStorage) {
   try { raw = storage.getItem(KEY) } catch { return null }
   if (raw == null) return null
   try {
-    const rec = JSON.parse(raw)
+    const rec = JSON.parse(raw.replace(RETIRED, (_, id) => `"${RENAMED[id]}"`))
     if (rec?.v === RUN_SAVE_VERSION && rec.data) return rec.data
   } catch { /* corrupt */ }
   clearRun(storage)

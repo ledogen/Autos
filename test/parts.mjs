@@ -9,6 +9,7 @@
 //   3. fit() lays the patch over params, returns what came off with its wear, sets the socket's track
 //      to the incoming part's condition (new = 1, used = carried), and sets its family's durability —
 //      a heavy-duty spring loses half as much to the same insult. A part refuses a socket it doesn't fit.
+//      One spring (shock) part fits either axle and writes only that axle's values (FEAT-176).
 //      The spare is carried, never fitted as itself: what it is mounted on must fit.
 //   4. Tires are single, per corner: one sport tire changes that wheel's grip only, goes on holding
 //      air, and the tire that came off reports its puncture.
@@ -71,18 +72,23 @@ check('start(): one onChange', changes === 1, changes)
 
 // ── 3. fit() ──────────────────────────────────────────────────────────────────────────────────
 damage.set('springRear', 0.4)
-const off = parts.fit('springsRearHD')
+const off = parts.fit('springsHD', null, 'springsRear')
 check('fit: patch lands on params', params.suspensionStiffnessRear === 52000 && params.suspensionStiffnessFront === 33000)
-check('fit: returns the outgoing part with its wear', off.id === 'springsRearOEM' && off.cond === 0.4, JSON.stringify(off))
+check('fit: returns the outgoing part with its wear', off.id === 'springsOEM' && off.cond === 0.4, JSON.stringify(off))
 check('fit: the new part is new', damage.get('springRear') === 1)
 damage.wear('springRear', 0.1, 1)
 check('fit: heavy-duty durability halves the wear', Math.abs(damage.get('springRear') - (1 - 0.1 / FAMILY_DURABILITY.hd)) < 1e-12,
   damage.get('springRear'))
-parts.fit('springsRearOEM', off.cond)
+parts.fit('springsOEM', off.cond, 'springsRear')
 check('fit: a used part brings its wear back', damage.get('springRear') === 0.4)
 check('fit: back to stock restores the factory rate', params.suspensionStiffnessRear === RANGER_PARAMS.suspensionStiffnessRear)
 check('fit: unknown id refused', parts.fit('nope') === null)
-check('fit: a rear spring refuses the front socket', parts.fit('springsRearHD', null, 'springsFront') === null)
+check('fit: a spring needs its axle named', parts.fit('springsHD') === null)
+check('fit: a spring refuses a shock socket', parts.fit('springsHD', null, 'dampersFront') === null)
+parts.fit('springsHD', null, 'springsFront')
+check('fit: the same spring on the front writes the front rate only (FEAT-176)', params.suspensionStiffnessFront === 46000
+  && params.suspensionStiffnessRear === RANGER_PARAMS.suspensionStiffnessRear, `${params.suspensionStiffnessFront} / ${params.suspensionStiffnessRear}`)
+parts.fit('springsOEM', null, 'springsFront')
 check('fit: a tire needs its corner', parts.fit('tireSport') === null)
 
 // ── 4. One tire, one corner ───────────────────────────────────────────────────────────────────
@@ -99,12 +105,13 @@ const limits = () => massLimits(truckConfig(DEFAULT_VEHICLE_MODEL, parts.loadUpg
 parts.start()
 const stock = limits()
 check('stock limits are the manufacturer\'s', stock.softKg === 570 && stock.hardKg === 820, JSON.stringify(stock))
-parts.fit('springsFrontHD'); parts.fit('springsRearHD'); parts.fit('dampersFrontHD'); parts.fit('dampersRearHD')
+for (const s of ['springsFront', 'springsRear']) parts.fit('springsHD', null, s)
+for (const s of ['dampersFront', 'dampersRear']) parts.fit('dampersHD', null, s)
 for (const c of ['tireFL', 'tireFR', 'tireRL']) parts.fit('tireLT', null, c)
 check('three load-range tires move nothing', limits().softKg === 570, JSON.stringify(limits()))
 parts.fit('tireLT', null, 'tireRR')
 check('the full package raises both limits', limits().softKg === 800 && limits().hardKg === 1100, JSON.stringify(limits()))
-parts.fit('dampersRearOEM')
+parts.fit('dampersOEM', null, 'dampersRear')
 check('one stock shock axle pulls them back', limits().softKg === 570, JSON.stringify(limits()))
 
 // ── 6. Ride height — lowering springs stack with the lift ─────────────────────────────────────
@@ -115,15 +122,15 @@ const bump = (ax) => params['suspensionTravel' + ax] - sag(ax)
 parts.start()
 const at = (f) => ({ Front: f('Front'), Rear: f('Rear') })
 const stockRide = at(ride), stockBump = at(bump)
-parts.fit('springsFrontSport'); parts.fit('springsRearSport')
+parts.fit('springsSport', null, 'springsFront'); parts.fit('springsSport', null, 'springsRear')
 for (const ax of ['Front', 'Rear']) {
   check(`sport springs: ${ax} sits 30 mm low`, Math.abs(stockRide[ax] - ride(ax) - 0.03) < 0.001, (stockRide[ax] - ride(ax)).toFixed(4))
   check(`sport springs: ${ax} has 30 mm less bump travel`, Math.abs(stockBump[ax] - bump(ax) - 0.03) < 0.001, (stockBump[ax] - bump(ax)).toFixed(4))
 }
 parts.fit('liftKit')
-check('lift kit over sport springs: both count', params.suspensionTravelFront === PARTS.liftKit.patch.suspensionTravelFront - PARTS.springsFrontSport.drop
-  && params.suspensionRestLengthRear === PARTS.liftKit.patch.suspensionRestLengthRear - PARTS.springsRearSport.drop)
-parts.fit('springsFrontOEM'); parts.fit('springsRearOEM'); parts.fit('liftNone')
+check('lift kit over sport springs: both count', params.suspensionTravelFront === PARTS.liftKit.patch.suspensionTravelFront - PARTS.springsSport.drop.Front
+  && params.suspensionRestLengthRear === PARTS.liftKit.patch.suspensionRestLengthRear - PARTS.springsSport.drop.Rear)
+parts.fit('springsOEM', null, 'springsFront'); parts.fit('springsOEM', null, 'springsRear'); parts.fit('liftNone')
 check('back to stock restores the factory geometry', ['RestLength', 'Travel', 'BodyOffset'].every(k =>
   ['Front', 'Rear'].every(ax => params['suspension' + k + ax] === RANGER_PARAMS['suspension' + k + ax])))
 

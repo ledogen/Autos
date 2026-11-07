@@ -1174,11 +1174,11 @@ export class Map2D {
 
     /**
      * FEAT-133: the pad's virtual cursor. Shown only while the pad is the active input (gamepad.js
-     * pad.active — whichever moved last drives). It stays pinned at the sheet centre and the right
-     * stick slides the map under it at PAD_PARAMS.mapPanRate px/s (owner, 2026-10-19: the cursor
+     * pad.active — whichever moved last drives). It stays pinned at the sheet centre and the left
+     * stick (FEAT-175) slides the map under it at PAD_PARAMS.mapPanRate px/s (owner, 2026-10-19: the cursor
      * never travels the screen). It writes the SAME _hoverX/_hoverY the mouse does, so POI hover
      * cards, Q / E (LB / RB on the pad — gamepad.js MAP_KEYS) and the coordinate marginalia all work
-     * unchanged. The triggers zoom about it (pad.zoom = RT − LT, PAD_PARAMS.mapZoomRate e-folds/s).
+     * unchanged. The right stick's vertical zooms about it (pad.zoom, PAD_PARAMS.mapZoomRate e-folds/s).
      */
     _padStep() {
         const now = performance.now()
@@ -1190,15 +1190,15 @@ export class Map2D {
         }
         const s = this._sheet()
         if (!this._padCursor) {
-            if (this._hoverX !== undefined && !pad.lookX && !pad.lookY) return   // the mouse has it
+            if (this._hoverX !== undefined && !pad.panX && !pad.panY) return   // the mouse has it
             this._padCursor = true
             this._canvas.style.cursor = 'none'   // one cursor on screen, not two
         }
         this._hoverX = s.cx; this._hoverY = s.cy
-        if (pad.lookX || pad.lookY) {
+        if (pad.panX || pad.panY) {
             const r = PAD_PARAMS.mapPanRate * dt / this._zoom
-            this._panX += pad.lookX * r
-            this._panZ += pad.lookY * r
+            this._panX += pad.panX * r
+            this._panZ += pad.panY * r
             this._deferBgRedraw()
             this._restreamIfDrifted()
         }

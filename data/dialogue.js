@@ -5,6 +5,8 @@
 //
 // `text` is TRUSTED AUTHORED MARKUP: <span class="dlg-key">…</span> colours a control glyph. Never
 // put player input or a formatted number through this field — the renderer sets innerHTML.
+// A line that differs by input says it once per input: <span class="kc-kb">…</span><span class="kc-pad">…</span>,
+// and CSS shows the half for the device driving now (body.pad-on), switching live (FEAT-174). Never both in words.
 
 /** The uncle's one-time briefing, played the first time a paper route is accepted in a run. */
 export const PAPER_ROUTE_INTRO = [
@@ -14,10 +16,13 @@ export const PAPER_ROUTE_INTRO = [
     },
     {
         speaker: 'Uncle Larry',
-        text: `Drive near the customer's house and hold <span class="dlg-key">F</span> to aim your `
-            + `throw. when you're happy with your aim, <span class="dlg-key">release F</span> to `
-            + `yeet that newspaper roll right onto their porch. On a controller, aim with the `
-            + `<span class="dlg-key">right stick</span> and tap <span class="dlg-key">RB</span> to throw.`,
+        // FEAT-174: one version per input, swapped live (kc-kb / kc-pad, as keycap() does).
+        text: `Drive near the customer's house and `
+            + `<span class="kc-kb">hold <span class="dlg-key">F</span> to aim your throw</span>`
+            + `<span class="kc-pad">aim your throw with the <span class="dlg-key">right stick</span></span>. `
+            + `When you're happy with your aim, `
+            + `<span class="kc-kb"><span class="dlg-key">release F</span></span><span class="kc-pad">tap <span class="dlg-key">RB</span></span> `
+            + `to yeet that newspaper roll right onto their porch.`,
     },
 ]
 
@@ -93,8 +98,8 @@ export const TUT = {
     // (Lane A's draft, 2026-11-06; the owner writes them — FEAT-148).
     // On the drive home: right after her call, halfway there, and near her house (main.js _eveningBeats).
     'tut-drive': [{ speaker: 'Mom', text: `Drive safe, honey. <span class="dlg-key">W</span> and <span class="dlg-key">S</span> `
-        + `are the gas and the brake; steer with <span class="dlg-key">A</span> and <span class="dlg-key">D</span>, or the left stick. `
-        + `Follow the line home.` }],   // pad-neutral: the stick is no single key to glyph-swap (orchestrator, 2026-11-06)
+        + `are the gas and the brake; steer with <span class="kc-kb"><span class="dlg-key">A</span> and <span class="dlg-key">D</span></span>`
+        + `<span class="kc-pad">the <span class="dlg-key">left stick</span></span>. Follow the line home.` }],   // FEAT-174: kc-kb / kc-pad, one per input
     'tut-diag': [{ speaker: 'Mom', text: `If that old truck starts acting funny, stop and press <span class="dlg-key">V</span> `
         + `to look it over. <span class="dlg-key">Tab</span> shows what you've got with you.` }],
     'tut-park': [{ speaker: 'Mom', text: `Pull in at mine and stop. A tap of <span class="dlg-key">Space</span> sets the handbrake &mdash; `

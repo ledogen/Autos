@@ -41,9 +41,10 @@ export const PAD_PARAMS = {
   // view at orbitRate; orbitHold seconds after the stick is let go the chase cam takes back over.
   orbitRate: 2.0,         // rad/s at full deflection (FEAT-133: one rate, aiming a paper too)
   orbitHold: 2.0,         // s
-  // FEAT-133: with the map open the right stick pans the map under a fixed centre cursor (map2d.js).
+  // FEAT-175: with the map open the LEFT stick pans the map under a fixed centre cursor (map2d.js), and
+  // the right stick's vertical zooms about it.
   mapPanRate:    600,     // CSS px/s of sheet slide at full deflection
-  mapZoomRate:   2.0,     // e-folds/s at a full trigger (RT in, LT out): ×7.4 per second
+  mapZoomRate:   2.0,     // e-folds/s at full deflection (up in, down out): ×7.4 per second
   // FEAT-133 pad throw: while aiming on a paper route an RB press shorter than throwTapMs throws;
   // held longer it is the handbrake, from that moment.
   throwTapMs: 200,        // ms
@@ -52,12 +53,13 @@ export const PAD_PARAMS = {
 // menuActive: set by src/menu-nav.js — true while a menu owns the screen (the pad then speaks MENU_KEYS).
 // cardActive: set by src/menu-nav.js — true while an in-game card is up (the pad then speaks CARD_KEYS).
 // mapActive: set by src/map2d.js — true while the map is open (the pad then speaks MAP_KEYS).
-// zoom: RT − LT while the map is open, in [-1, 1] (map2d.js reads it); 0 otherwise.
+// panX / panY: the left stick while the map is open (map2d.js pans with it); 0 otherwise.
+// zoom: the right stick pushed up (+) / pulled down (−) while the map is open, in [-1, 1]; 0 otherwise.
 // canThrow / throwReady: set by main.js — a paper throw is possible (the right stick aims), and
 // the reticle is up as well (RB tap throws). pumpActive: set by main.js — the pump is open, so A
 // pumps. hudMenu: set by src/hud-menu.js — the B-hold icon menu ({ open, move, select, cancel }).
 // skipHold: set by main.js — the opening can be skipped, so View is held M (FEAT-170).
-export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, zoom: 0,
+export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, panX: 0, panY: 0, zoom: 0,
   menuActive: () => false, cardActive: () => false, cardTabs: () => false, cardDrive: () => false,
   mapActive: () => false, canThrow: () => false, throwReady: () => false,
   pumpActive: () => false, skipHold: () => false, hudMenu: null }
@@ -76,7 +78,8 @@ export const BINDINGS = [
   { action: 'throttle',              key: 'W',         pad: 'RT' },
   { action: 'brake / reverse',       key: 'S',         pad: 'LT' },
   { action: 'steer',                 key: 'A / D',     pad: 'left stick' },
-  { action: 'look around / map cursor', key: 'mouse',   pad: 'right stick' },
+  { action: 'look around',           key: 'mouse',     pad: 'right stick' },
+  { action: 'map: pan',              key: 'mouse drag', pad: 'left stick (map open)' },
   { action: 'handbrake / park (tap)', key: ' ',        pad: 'RB', button: 5 },
   { action: 'throw paper (aiming)',  key: 'F (hold, release)', pad: 'right stick aims, RB tap' },
   { action: 'clutch (manual)',       key: 'Shift',     pad: 'LB', button: 4 },
@@ -91,7 +94,7 @@ export const BINDINGS = [
   { action: 'map',                   key: 'm',         pad: 'View (tap)' },
   { action: 'map: prev / next offer', key: 'Q / E',    pad: 'LB / RB (map open)' },
   { action: 'tabs (service shop)',   key: 'Q / E',    pad: 'LB / RB (shop open)' },
-  { action: 'map: zoom in / out',    key: 'wheel',     pad: 'RT / LT (map open)' },
+  { action: 'map: zoom in / out',    key: 'wheel',     pad: 'right stick ↑ / ↓ (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
   { action: 'reset truck',           key: 'r',         pad: 'View or D-pad → (hold 1 s)' },
   { action: 'pick up / load lost cargo (parked)', key: 'g', pad: 'D-pad ↓', button: 13 },
@@ -111,9 +114,10 @@ const BUTTON_KEYS = Object.fromEntries(BINDINGS.filter(b => b.button != null).ma
 const MENU_KEYS = { 0: 'Enter', 1: 'Escape', 9: 'Escape' }
 // FEAT-133: while the map is open, the bumpers step its offers (Q / E — LB left, RB right, like tabs)
 // and A / X go silent, so paging through offers can never shift a manual gearbox. The rest of the
-// layout drives as usual; the right stick is the map's cursor (map2d.js reads pad.lookX/Y).
-// The map also holds the truck like a menu does: its triggers are the zoom (pad.zoom).
-// B is Escape there, the general back (owner, 2026-10-20): it closes the map.
+// layout drives as usual. FEAT-175 (owner, 2026-11-06): the sticks are the map's — the left pans
+// (pad.panX/Y), the right's vertical zooms (pad.zoom) — and the triggers stay the truck's pedals, always.
+// View, which opens the map, sits under the left thumb, so that thumb is off the stick by then: there is
+// no steering to hand over. B is Escape there, the general back (owner, 2026-10-20): it closes the map.
 const MAP_KEYS = { ...BUTTON_KEYS, 1: 'Escape', 4: 'q', 5: 'e' }
 delete MAP_KEYS[0]; delete MAP_KEYS[2]
 // FEAT-133: while an in-game card is up (offer, result, camp, inventory… — menu-nav.js cardContainer)
@@ -163,12 +167,7 @@ let viewSkip = false     // this press is the skip's M
 let rightAt = -1, rightReset = false
 
 const held = new Map()   // button index → the key whose keydown was sent and keyup has not been
-// The map opened mid-drive (owner, 2026-10-20). A trigger already down when the map opens stays the
-// truck's pedal — and the left stick stays its steering — until that trigger is let go; only then does
-// it become the map's zoom. So glancing at the map at speed no longer cuts the throttle or slams the
-// zoom. Per trigger; null while the map is shut.
 let padShown = false     // body.pad-on, as last written
-let mapPass = null       // { thr, brk } — that trigger still belongs to the truck
 
 /** Center softening: sign(x)·|x|^(1+k). Shared with the settings page's plot (main.js). */
 export const steerCurve = (x, k) => Math.sign(x) * Math.abs(x) ** (1 + k)
@@ -200,7 +199,7 @@ function sendKey (type, key) {
 function poll () {
   // ponytail: every connected pad is merged (max trigger, largest stick, buttons OR'd) rather than
   // picking one — two pads on the desk both work. Per-player pads would need a real assignment.
-  let thr = 0, brk = 0, steer = 0, lookX = 0, lookY = 0, any = false, viewDown = false, rbDown = false
+  let thr = 0, brk = 0, steer = 0, lookX = 0, lookY = 0, panX = 0, panY = 0, any = false, viewDown = false, rbDown = false
   const menu = pad.menuActive(), card = !menu && pad.cardActive(), map = !menu && pad.mapActive()
   let keys = menu ? MENU_KEYS
     : card ? (pad.cardDrive() ? RESULT_KEYS : pad.cardTabs() ? CARD_TAB_KEYS : map ? CARD_MAP_KEYS : CARD_KEYS)
@@ -221,6 +220,8 @@ function poll () {
     brk = Math.max(brk, deadzone(gp.buttons[6].value, PAD_PARAMS.triggerDeadzone))
     const s = deadzone(gp.axes[0], PAD_PARAMS.stickDeadzone)
     if (Math.abs(s) > Math.abs(steer)) steer = s
+    const py = deadzone(gp.axes[1], PAD_PARAMS.stickDeadzone)
+    if (Math.hypot(s, py) > Math.hypot(panX, panY)) { panX = s; panY = py }
     const lx = deadzone(gp.axes[2], PAD_PARAMS.stickDeadzone), ly = deadzone(gp.axes[3], PAD_PARAMS.stickDeadzone)
     if (Math.hypot(lx, ly) > Math.hypot(lookX, lookY)) { lookX = lx; lookY = ly }
     for (const i in keys) if (gp.buttons[i]?.pressed && (+i !== RB || rbGeneric)) down.add(+i)
@@ -238,20 +239,12 @@ function poll () {
     }
   }
   if (drive && bDown) down.delete(DOWN)   // B held: D-pad ↓ walks the icon menu, it picks nothing up
-  if (!map) mapPass = null
-  else {
-    mapPass ??= { thr: thr > 0, brk: brk > 0 }
-    if (!thr) mapPass.thr = false
-    if (!brk) mapPass.brk = false
-  }
-  pad.zoom = map ? (mapPass.thr ? 0 : thr) - (mapPass.brk ? 0 : brk) : 0
-  // The sticks and triggers are the menu's / map's, not the truck's — bar a trigger the map opened under.
+  pad.panX = map ? panX : 0
+  pad.panY = map ? panY : 0
+  pad.zoom = map ? -lookY : 0
+  // The sticks and triggers are the menu's; on the map only the left stick is (its pan), never the pedals.
   if (menu) thr = brk = steer = 0
-  else if (map) {
-    if (!mapPass.thr) thr = 0
-    if (!mapPass.brk) brk = 0
-    if (!mapPass.thr && !mapPass.brk) steer = 0
-  }
+  else if (map) steer = 0
   pad.throttle = thr
   pad.brake = brk
   pad.steer = steerCurve(steer, PAD_PARAMS.steerAssist ? 0 : PAD_PARAMS.steerShape)
@@ -263,7 +256,7 @@ function poll () {
   for (const i of down) if (!held.has(i)) { held.set(i, keys[i]); sendKey('keydown', keys[i]); pad.active = true }
   for (const [i, k] of held) if (!down.has(i)) { held.delete(i); sendKey('keyup', k) }
   if (thr > 0 || brk > 0 || steer !== 0) pad.active = true
-  if (map && (pad.zoom || lookX || lookY)) pad.active = true   // the map's cursor is the pad's, unlike the camera
+  if (map && (pad.zoom || pad.panX || pad.panY)) pad.active = true   // the map's cursor is the pad's, unlike the camera
 
   const now = performance.now()
   if (rbDown && !rbGeneric) {

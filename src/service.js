@@ -297,9 +297,10 @@ export class ServiceCenter {
 
     /** The labour to put part `id` into `socket`: on a corner, a mounted tire is the pair off and on
      *  (2 hub); a loose tire or wheel also comes off and goes on its partner (+2 bead). Any other
-     *  socket is its hours and the shop's minimum charge, REPAIR_SETUP's price (owner, 2026-10-23). */
+     *  socket is its hours and the shop's minimum charge, REPAIR_SETUP's price (owner, 2026-10-23), × the socket's
+     *  `fitX` (the air filter's third). */
     fitLabour (id, socket) {
-        if (cornerOf(socket) < 0) return { price: cents(REPAIR_SETUP.price * this.tier()), hours: SLOTS[socket].hours }
+        if (cornerOf(socket) < 0) return { price: cents(REPAIR_SETUP.price * (SLOTS[socket].fitX ?? 1) * this.tier()), hours: SLOTS[socket].hours }
         return this._jobs(2, PARTS[id].mounted ? 0 : 2)
     }
 

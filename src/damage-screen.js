@@ -418,6 +418,7 @@ export class DamageScreen {
       + `<div class="ds-head"><span class="ds-title"></span></div>`
       + `<div class="ds-body">${buildPictogram()}`
       + `<div class="ds-side"><div class="ds-sub">Worst parts</div><div class="ds-list"></div><div class="ds-pick"></div>`
+      + `<button class="ds-pbtn ds-swap" data-act="swap">Swap two wheels</button>`   // FEAT-177: shown while onSwap is set
       + `<div class="ds-legend">${buildLegend()}</div></div></div>`
       + BACK_BUTTON
       + `</div>`
@@ -428,6 +429,7 @@ export class DamageScreen {
     this.titleEl = this.screen.querySelector('.ds-title')
     this._listKey = ''
     this._job = null       // pick mode's job (pick()), else null
+    this.onSwap = null     // FEAT-177: main.js's corner swap — the "Swap two wheels" button opens it
     this._target = null    // what it has picked: { corner }, { index } (an inventory entry) or { track }
     this.screen.querySelector('.card-back').addEventListener('mousedown', (e) => e.preventDefault())
     this.screen.querySelector('[data-act="close"]').addEventListener('click', () => this.close())
@@ -435,6 +437,7 @@ export class DamageScreen {
     this.screen.addEventListener('click', (e) => {
       if (e.target === this.screen) this.close()
       else if (this._job) this._onPick(e)
+      else if (e.target.closest('[data-act="swap"]')) this.onSwap?.()
     })
 
     // Hover card.
@@ -477,6 +480,7 @@ export class DamageScreen {
   open () {
     this.isOpen = true
     this.titleEl.textContent = this._job?.title ?? 'Vehicle condition'
+    this.screen.querySelector('.ds-swap').style.display = this.onSwap && !this._job ? '' : 'none'
     this.alerting = false        // viewed — the icon goes back to being an optional tab
     this.iconEl.classList.remove('on')
     this.screen.classList.add('open')
