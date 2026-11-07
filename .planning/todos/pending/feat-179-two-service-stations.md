@@ -11,7 +11,7 @@ lane: Spare
 
 # FEAT-179: the story map always has two service stations
 
-The owner's seed 3867737305 seems to have one service station. Every story world should have at least two.
+The owner's seed 386773705 (typed "3-8-6-7-7-3-7-0-5"; first transcribed as 3867737305) seems to have one service station. Every story world should have at least two.
 
 ## Plan (orchestrator, 2026-11-06)
 
@@ -20,13 +20,13 @@ The owner's seed 3867737305 seems to have one service station. Every story world
 3. **Gate it:** follow FEAT-164's `camp-reach` pattern.
 
 **Lead (Lane C's audit, via the orchestrator, 2026-11-06):** the roster already gives every seed TWO auto shops
-(`poi.js` `autoShop`). So on 3867737305, find out first whether the second one fails to place, lands outside the
+(`poi.js` `autoShop`). So on 386773705, find out first whether the second one fails to place, lands outside the
 circle, or sits where the owner never drove. Do that before adding any guarantee.
 
 ## Acceptance
 
 - [ ] The census: the count per random seed, and how often it is under two.
-- [ ] Every story world has ≥ 2 service stations in the circle, seed 3867737305 included.
+- [ ] Every story world has ≥ 2 service stations in the circle, seed 386773705 included.
 - [ ] A gate pins it on random seeds.
 
 ## The lead, checked (Spare, 2026-11-07)
@@ -66,3 +66,12 @@ store on a farm pad).
 - (c) **Something else** by "service station".
 
 Then a gate pins the count on random seeds.
+
+### Correction (2026-11-07, same day): wrong seed, wrong reading
+
+- **The seed.** The owner typed "3-8-6-7-7-3-7-0-5", which is **386773705**. The census above ran on 3867737305, a
+  transcription with an extra 3, so its first table is a random seed, not the owner's world.
+- **The word.** ASSET-82 (owner, 11-06) calls the auto shop's model "the service station asset": the two-car bay
+  with the scissor lift. So "service station" is the **auto shop**, and the gas-station reading above is withdrawn,
+  along with the (a)/(b)/(c) call (pulled before the owner saw it).
+- **Next:** census 386773705 and find out why its world shows one auto shop.
