@@ -40,7 +40,7 @@
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
-import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, rewardsIn } from '../src/offer-board.js'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, formatDue, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, rewardsIn } from '../src/offer-board.js'
 import { ITEMS } from '../data/items.js'
 import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARD_CATS, RARE_PULL, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
@@ -921,6 +921,15 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('FEAT-147: posting it moves no other offer (it draws no stream)', others(b) === others(twin))
     const none = new OfferBoard({ seed: 4242, pois: tagged.filter(q => q.type !== 'momsHouse'), nowH: T0 })
     check('FEAT-147: no mom on the roster → no first job, and openFirst is a no-op', none.firstState() === null && !none.openFirst(T0))
+}
+
+// ── BUG-136: the clock reads on day 0 too — the opening's evening, before the clock's zero ──────────────────────
+{
+    const want = { [-6]: 'Day 0, 6 pm', [-2]: 'Day 0, 10 pm', [-0.5]: 'Day 0, 11:30 pm', [-0.01]: 'Day 0, 11:59 pm',
+        [-24]: 'Day 0, 12 am', [-25]: 'Day -1, 11 pm', 0: 'Day 1, 12 am', 1: 'Day 1, 1 am', 7: 'Day 1, 7 am',
+        23.5: 'Day 1, 11:30 pm', 47.9999: 'Day 3, 12 am' }
+    const bad = Object.entries(want).filter(([h, w]) => formatDue(+h) !== w).map(([h, w]) => `${h} → "${formatDue(+h)}" (want "${w}")`)
+    check('BUG-136: the clock reads either side of midnight, day 0 included (no negative hours)', bad.length === 0, bad.join('; '))
 }
 
 // ── FEAT-148: the giver's line — a generic first line, a second keyed on the thing, 70 % each ──────────
