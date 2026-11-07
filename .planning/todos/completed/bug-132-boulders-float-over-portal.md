@@ -1,7 +1,7 @@
 ---
 id: BUG-132
 type: bug
-status: open
+status: closed
 opened: 2026-11-07
 severity: minor
 source: Spare, seen in BUG-107's shots (2026-11-07), on main
@@ -71,3 +71,7 @@ prompt showed instead; world 1505891932, load ~10.
 **Shots** (seed 19 portal, before/after): https://claude.ai/artifact/CfbJo9qenVmHShkLguGsF6
 
 Closed on landing.
+
+## Landed (orchestrator, 2026-11-07)
+
+Merge of fa7fd2ba on main (no src/test/data change since its base): affected 37/37, fingerprint identical, cdp-smoke 25/25 on main.

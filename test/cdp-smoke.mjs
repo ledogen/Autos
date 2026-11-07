@@ -1441,9 +1441,10 @@ const STEPS = [
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
     // Not an auto shop (its brake opens the service screen; the jobs are a button in it) nor Larry's (the paper route):
-    // the flake that hit A, Spare and B was a random world whose busiest giver was a shop.
+    // the flake that hit A, Spare and B was a random world whose busiest giver was a shop. Nor a giver with pump zones:
+    // parked there the brake opens the pump (world 1505891932, prompt "to use the pump").
     const giver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
-      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !['autoShop', 'larrysHouse'].includes(q.type)).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
+      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !['autoShop', 'larrysHouse'].includes(q.type) && !q.pumpZones?.length).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
     check(giver?.n > 1, `no giver with two offers to page: ${JSON.stringify(giver)}`)
     await js(`(() => { const m = window.__map2d(), s = m._sheet(); for (let i = 0; i < 6; i++) { m._panX += (m._sx(${giver.x}) - s.cx) / m._zoom; m._panZ += (m._sy(${giver.z}) - s.cy) / m._zoom } })()`)
     await js('__fp.axes[2] = 0.09'); await frames(3, 60); await js('__fp.axes[2] = 0'); await frames(3, 60)
