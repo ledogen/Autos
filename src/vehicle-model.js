@@ -1121,5 +1121,5 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
 
   shadeInBore(carGroup)   // BUG-112: the procedural parts (wheels, the primitive shell)
   return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode,
-    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade }
+    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade, headlightSpots }   // BUG-133: the billboards read the head spots
 }

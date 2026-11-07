@@ -86,6 +86,7 @@ const _HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
 const cellKey = (gx, gz) => (gx + 1048576) * 2097152 + (gz + 1048576)
 const SEQ_STRIDE = 65536   // S-45: collidable seq = chunk rank × stride + list index (a chunk holds ≪ 65,536)
 const LOD_SWAPS_MAX = 6      // PERF-21: per-frame chunk re-pool ceiling
+const LOD_HYSTERESIS = 1     // chunks — BUG-133: a chunk keeps its mode until it is this far past the ring it crossed
 const LITTER_DEFER = 1.5     // PERF-34: streamScore units a litter-only job yields to base scatters by
 const PREEMPT_MARGIN = 1.0   // PERF-33: streamScore units (≈ chunks) a queued chunk must beat the active one by
 
@@ -169,6 +170,7 @@ export class PropSystem {
     this._impMeshes = null         // key "cat#v" -> { mesh, aPos, aSize, aTint, size, free, occ, top, cap, dirtyLo, dirtyHi }
     this._impDirty = new Set()
     this._lodRing = (params.lod && params.lod.ring3d != null) ? params.lod.ring3d : 2
+    this._lodHyst = LOD_HYSTERESIS   // BUG-133 (a field so a headless harness can pin pure rings with 0)
     this._fullRing = Infinity      // full-prop radius (set each update); beyond → billboard-only
     this._ccx = null               // camera chunk (set each update; null = everything 'near')
     this._ccz = null
@@ -354,7 +356,8 @@ export class PropSystem {
    * instanced-quad mesh per billboardable variant. Live chunks re-pool over the next frames
    * via _syncChunkLod.
    * @param {THREE.WebGLRenderer} renderer
-   * @param {{sun: THREE.DirectionalLight, ambient: THREE.HemisphereLight}} lights
+   * @param {{sun: THREE.DirectionalLight, ambient: THREE.HemisphereLight, heads?: THREE.SpotLight[]}} lights — heads: the
+   *        truck's two head spots (BUG-133: billboards in the beam are lit like their 3D twins)
    */
   setImpostors(renderer, lights) {
     if (this._impostors || !renderer) return
@@ -646,12 +649,15 @@ export class PropSystem {
    *            (beyond the QUAL-18 fade reach anyway, and marking it would overflow the toroidal
    *            atlas at Ultra's billboard radius). This is the ring that carries trees out to the
    *            full drawn-terrain distance (user call 2026-07-17).
+   * BUG-133: `cur` (a standing chunk's mode) adds hysteresis — a chunk is promoted at the ring and demoted only
+   * LOD_HYSTERESIS chunks past it. Without it a camera stepping 1 m across one chunk line re-swapped 10 chunks every
+   * crossing, both ways (owner: billboards "flip flop … at certain angles"), and every swap changes the silhouette.
    */
-  _chunkMode(cx, cz) {
+  _chunkMode(cx, cz, cur = null) {
     if (!this._impMeshes || this._ccx === null) return 'near'
-    const d = Math.max(Math.abs(cx - this._ccx), Math.abs(cz - this._ccz))
-    if (d <= this._lodRing) return 'near'
-    return d <= this._fullRing ? 'far' : 'bbonly'
+    const d = Math.max(Math.abs(cx - this._ccx), Math.abs(cz - this._ccz)), h = this._lodHyst
+    if (d <= this._lodRing || (cur === 'near' && d <= this._lodRing + h)) return 'near'
+    return d <= this._fullRing || (cur === 'far' && d <= this._fullRing + h) ? 'far' : 'bbonly'
   }
 
   /** Allocate render-pool slots for a chunk's retained placements (see _chunkMode for modes). */
@@ -761,7 +767,7 @@ export class PropSystem {
     let budget = LOD_SWAPS_MAX
     for (const [ck, chunk] of this._chunks) {
       const { cx, cz } = chunk
-      const want = this._chunkMode(cx, cz)
+      const want = this._chunkMode(cx, cz, chunk.mode)
       if (want === chunk.mode) continue
       const promoted = chunk.mode === 'bbonly' && want !== 'bbonly'
       perfEvent('props.lodSwap')   // PERF-26: 3D ⇄ billboard re-place of a whole chunk's instances
@@ -920,6 +926,7 @@ export class PropSystem {
     const cs = this._chunkSize
     const ccx = Math.floor(worldX / cs), ccz = Math.floor(worldZ / cs)
     this._ccx = ccx; this._ccz = ccz               // PERF-21: LOD ring centre
+    this._impostors?.updateHeads()                  // BUG-133: the head spots' pose + output for the billboard shader
     this._fullRing = ringChunks                    // beyond this (to bbRing) = billboard-only trees
     // The billboard-only outer ring streams ONLY when impostors are active — headless (gates) and
     // pre-wire boots keep the classic full-prop ring exactly as before.
