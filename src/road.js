@@ -162,26 +162,15 @@ const PAD_THROUGH_BLEND = 2.0  // m of distance lead over which a T trunk's near
 // rides the asphalt top (padTopY overlay in _sampleCarveWorld), not this dirt. Hardcoded (no
 // route-cache-signature effect).
 const PAD_DIRT_EXTRA = 0.15
-// PAD_DUCK_CAP: max the pad may LOWER dirt below the leg cross-section's own design (m). The pad's
-// crease-duck free-resolves the top field, which carries pre-existing multi-metre tears at a couple of
-// degenerate steep nodes; uncapped, those tears leak into an otherwise-smooth pinned cross-section
-// (shoulder-lateral-continuity's plaza tolerance is 0.70 m). The two CONSUMERS of the duck need
-// different caps — that's why there are two constants (the pad rim is a sanctioned mesh↔physics
-// difference region, same class as the on-ribbon decal overlay):
-//   - MESH dirt (terrain _buildCarveTable → _mergeCarve default): must get fully UNDER the creased
-//     asphalt or the tan interp slivers poke through the pad (the rim earthwork fix). Pre-camber-rework
-//     creases measured ≤ ~0.45 (old cap 0.55 was enough), but the saturating-camber model
-//     (camberFromCurvature) banks sweeper leg mouths harder — legitimate creases now reach ~1.05 m at
-//     the seed-6 trident rim. 1.2 admits every measured camber-era crease with margin while still
-//     clamping the multi-metre degenerate-node tear leak.
-//   - PHYSICS (_sampleCarveWorld passes PAD_DUCK_CAP_PHYS): a pinned/hinted resolve's cross-section is
-//     SMOOTH by design (BUG-15), and the duck's reference field (free-sampled topMin) JUMPS at crease/
-//     tear lines — any duck deeper than ~0.55 puts that jump into the pinned cross-section as a single
-//     step > the 0.70 plaza tolerance. 0.55 keeps every pinned step under it; the wheel consequence is
-//     only that in tiny crease∩rim-hold dirt patches physics rides ≤ ~0.65 above the drawn dirt
-//     (momentary, at pad rims — the same accepted trade as the decal overlay riding above the trough).
+// PAD_DUCK_CAP: how far the pad may move the dirt from the leg cross-section's own design (m), mesh and physics
+// alike. Inside the ring the dirt must get fully UNDER the creased asphalt or the tan interp slivers poke through
+// the pad (the rim earthwork fix): the saturating-camber model (camberFromCurvature) banks sweeper leg mouths into
+// creases of ~1.05 m at the seed-6 trident rim, and 1.2 admits every one with margin.
+// BUG-145: physics used to cap at 0.55, against the free-sampled duck field's jumps at crease lines (the pinned
+// cross-section's 0.70 plaza tolerance). PERF-25 made the pad surface resolve-free and continuous, so the jumps are
+// gone — and the tighter cap held physics dirt up to 0.4 m under the DRAWN dirt beside a pad rim that stands high
+// over its side road (seed 917338424's causeway T: a 0.54 m drop the mesh did not have, where 0.15 m is designed).
 const PAD_DUCK_CAP = 1.2
-const PAD_DUCK_CAP_PHYS = 0.55
 // BUG-122: _ribbonDrawnAt keeps the physics asphalt overlay within this of a padded leg's mouth (m) — the ribbon's first
 // section lies on the mouth chord, which on a curving leg sits off arc = mouth at the ribbon's edges.
 const RIBBON_MOUTH_SLACK = 1.0
@@ -8322,7 +8311,7 @@ export class RoadSystem {
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
         // PERF-24/25: the pad surface is the resolve-free _nodeSurfaceTop (one ruled-blend evaluation,
         // feet shared with the leg cross-section above via the per-leg memo) — no extra resolves at all.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS,
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP,
             nr ? this._ribbonEdgeDist(runKey, arcSEff, latDist) : Infinity)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 

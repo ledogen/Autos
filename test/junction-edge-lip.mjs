@@ -21,7 +21,7 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 const SEEDS = ['1353361482', '369055107', '917338424']   // random seeds (BUG-122's census; BUG-137's causeway T)
 const R = 1000, LIP_MAX = 0.25, G = 0.25, REFINE = 0.08, TEAR_MAX = 0.08, hw = P.roadHalfWidth ?? 5
-let fails = 0, edges = 0, worstLip = 0, worstLipAt = '', rimPts = 0, margin = Infinity, padPts = 0, worstSlope = 0, worstTear = 0, worstTearAt = ''
+let fails = 0, edges = 0, worstLip = 0, worstLipAt = '', rimPts = 0, margin = Infinity, padPts = 0, worstSlope = 0, worstTear = 0, worstTearAt = '', rimEdge = 0, rimFails = 0, worstRim = 0, worstRimAt = ''
 for (const S of SEEDS) {
   const ws = parseWorldSeed(S), road = new RoadSystem(ws, P)
   wirePondNoGo(road, ws, P); road.setRadius(R + 300); road.update(new THREE.Vector3(0, 0, 0))
@@ -86,6 +86,22 @@ for (const S of SEEDS) {
         }
       }
     }
+    // RIM (BUG-145): the pad's own edge between its legs — physics 5 cm inside the ring minus 5 cm outside, every 0.5 m
+    // of ring, away from the legs' pavements (their edges are LIP's) — stands the designed kerb, no more than LIP_MAX.
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], L = Math.hypot(b.x - a.x, b.z - a.z)
+      for (let t = 0; t < L; t += 0.5) {
+        const ex = a.x + (b.x - a.x) * t / L, ez = a.z + (b.z - a.z) * t / L
+        if (node.legs.some(leg => { const ne = road._network.get(leg.runKey), prs = ne && road._projectLegMemo(ne, leg, ex, ez); return prs?.some(pr => pr.d2 < (hw + 1) ** 2) })) continue
+        const dx = node.pos.x - ex, dz = node.pos.z - ez, d = Math.hypot(dx, dz) || 1
+        const i1 = ph(ex + dx / d * 0.05, ez + dz / d * 0.05), o1 = ph(ex - dx / d * 0.05, ez - dz / d * 0.05)
+        if (i1 == null || o1 == null || road._signedRingDist(ring, ex + dx / d * 0.05, ez + dz / d * 0.05) >= 0) continue
+        rimEdge++
+        const lip = i1 - o1
+        if (lip > worstRim) { worstRim = lip; worstRimAt = `${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})` }
+        if (lip > LIP_MAX) { rimFails++; if (rimFails <= 3) console.log(`  FAIL rim lip ${lip.toFixed(3)} m at ${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})`) }
+      }
+    }
     // SMOOTH: the pad's surface (what the wheel rides inside the ring) on a G grid, each point against its +x and +z
     // neighbours. A pair rising more than REFINE is re-sampled every G / 5: a ramp spreads out there, a tear does not —
     // the TEAR is the biggest step at that spacing. BUG-137: a T's trunk tore where it bends at its node; BUG-144: a pad
@@ -121,5 +137,7 @@ for (const S of SEEDS) {
 }
 console.log(`${edges} junction leg edges: worst lip ${worstLip.toFixed(3)} m (${worstLipAt}) · ${rimPts} rim points: tightest pad margin ${(margin * 100).toFixed(1)} cm`
   + ` · ${padPts} pad points: steepest ${worstSlope.toFixed(3)} m per ${G} m, worst tear ${worstTear.toFixed(3)} m per ${G / 5} m (${worstTearAt})`)
+console.log(`${rimEdge} pad rim points: worst rim lip ${worstRim.toFixed(3)} m (${worstRimAt}), ${rimFails} over ${LIP_MAX} m`)
+fails += rimFails
 console.log(fails ? `FAIL: ${fails}` : 'PASS')
 process.exit(fails ? 1 : 0)
