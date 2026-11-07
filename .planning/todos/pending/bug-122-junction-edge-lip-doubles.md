@@ -77,3 +77,13 @@ main.
 
 **Follow-up (noted, not built):** at deg-2 connector bends, the trimmed legs' outer corner is dirt in the mesh while
 physics still rides the leg's ribbon top there.
+
+**Fix 1's risk, measured:** raising the dirt outside the ring could let terrain triangles straddling the ring edge
+poke up through the pad. `wip/bug-122/poke.mjs` rebuilds the mesh's vertex dirt as `terrain.js` `_buildCarveTable`
+does, on the 1 m grid, interpolated at 8,536 points up to 1.5 m inside the rings (worst of the two triangle
+splits). It compares that with the pad top (`_nodeSurfaceTop`).
+
+| | dirt above the pad | tightest margin |
+|---|---|---|
+| main | 0 | 16.7 cm below |
+| with the fix | 0 | 11.8 cm below |
