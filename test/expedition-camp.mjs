@@ -38,7 +38,7 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-const SEEDS = ['1', '6']
+const SEEDS = ['1', '6', '2167923713']   // 2167923713: a BUG-63 parallel crosses the wall (FEAT-154, 2026-11-07)
 let fails = 0
 const check = (label, ok, detail = '') => {
     console.log(`  ${ok ? '[ ok ]' : '[FAIL]'} ${label}${ok ? '' : '  ' + detail}`)
@@ -104,6 +104,17 @@ for (const s of SEEDS) {
         let prev = r(ed.centerline.pointAt(off)) > wall
         for (let t = 5; t < L + 5; t += 5) {
             const p = ed.centerline.pointAt(off + Math.min(t, L)), out = r(p) > wall
+            if (out !== prev) crossings.push(p)
+            prev = out
+        }
+    }
+    // FEAT-154: BUG-63's parallel runs (`~p`, not in networkGraph) are roads out too, read off the network itself.
+    for (const [k, e] of road._network) {
+        if (!k.endsWith('~p') || !e.polyCum || (adj.has(g.key(e.cellA)) && adj.has(g.key(e.cellB)))) continue
+        const L = e.polyCum[e.polyCum.length - 1]
+        let prev = r(road.runPointAt(k, 0)) > wall
+        for (let t = 5; t < L + 5; t += 5) {
+            const p = road.runPointAt(k, Math.min(t, L)), out = r(p) > wall
             if (out !== prev) crossings.push(p)
             prev = out
         }
