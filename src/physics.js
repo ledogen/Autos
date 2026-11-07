@@ -48,6 +48,7 @@ import { stepAbs } from './abs.js'
 import { stepTraction } from './traction.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
+import { TILT_LO, TILT_HI } from './tire-contact.js'
 
 // Speed threshold for input routing (rule-based, no dead-zone oscillation) is drivetrain.js's
 // REV_THRESHOLD. FEAT-23 removed FWD_THRESHOLD (the W-brake / drive-cut deadband); the drivetrain
@@ -156,6 +157,15 @@ const CHASSIS_SHAPE_MU  = BODY_FRICTION_MU * BODY_FRICTION_MU / TERRAIN_FRICTION
 // terrain is CAB_PAIR_MU. The slab — bumpers, sills — keeps 0.1.
 const CAB_PAIR_MU       = 0.3            // [owner call BUG-115 (b)]
 const CAB_SHAPE_MU      = CAB_PAIR_MU * CAB_PAIR_MU / TERRAIN_FRICTION_REF          // ≈ 0.11
+// BUG-116: on its side the truck rests on the slab's FLANK (the hip, 0.85 m out; the tires' faces stop at 0.83), and at
+// the body's 0.1 it skated 108 m from 15 m/s. Side metal on asphalt or dirt is μ ≈ 0.4–0.6 (owner, 2026-11-06), and a
+// grippy flank trips a sideways slide into a roll. The flank is its own hull (shape 6), so the bottom plane and the
+// bumpers keep BUG-27b's 0.1.
+const FLANK_PAIR_MU     = 0.5
+const FLANK_SHAPE_MU    = FLANK_PAIR_MU * FLANK_PAIR_MU / TERRAIN_FRICTION_REF      // ≈ 0.31
+const FLANK_T           = 0.02           // the slab's sides stand this far inside the flank hull [m]
+const FLANK_LIFT        = 0.05           // the flank hull stops this far above the undercarriage plane [m]
+const FLANK_IN          = 0.70           // the flank hull's inner face, |x| [m] — inside the slab
 // FEAT-88: the open BED gets its own material. On the body material above, a firewood bundle
 // (μ 0.8) met the floor at a pair μ of √(0.8 · 0.0125) = 0.10 — measured sliding on a 6° side slope
 // — and the walls bounced loads at the body's restitution. Owner, 2026-10-05: "still very slidey,
@@ -363,13 +373,21 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   // crate near its foot and pressed it into the road: it wedged and the truck climbed it, 0.98 m/s lost in
   // one step at 40 mph (2× the momentum bound). Against the blade it is pushed (test/strike-hitch.mjs).
   // Approach angle, the tire-tangent ramp to the hull: 52° → 37° (a real Ranger is 25–30°).
-  const slabPart = (z0, z1, topY) => engine.addHull(chassis, [
-    -P.slabHalfW, topY, z0, P.slabHalfW, topY, z0,
-    -P.slabHalfW, topY, z1, P.slabHalfW, topY, z1,
-    -slabBottomHalfW, undY, Math.max(z0, slabBottomNoseZ), slabBottomHalfW, undY, Math.max(z0, slabBottomNoseZ),
-    -slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ), slabBottomHalfW, undY, Math.min(z1, slabBottomTailZ),
-    ...(z0 === P.noseZ ? [-P.slabHalfW, P.bumperLowY, z0, P.slabHalfW, P.bumperLowY, z0] : []),
-  ], { ...mat, restitution: 0 })
+  // BUG-116: the slab's sides stand FLANK_T inside the true flank, which the flank hulls (added after the bed, below)
+  // carry between the chamfers — so a truck on its side rests on them alone, at their own grip.
+  const sw = P.slabHalfW - FLANK_T, bw = slabBottomHalfW - FLANK_T
+  const flanks = []
+  const slabPart = (z0, z1, topY) => {
+    engine.addHull(chassis, [
+      -sw, topY, z0, sw, topY, z0,
+      -sw, topY, z1, sw, topY, z1,
+      -bw, undY, Math.max(z0, slabBottomNoseZ), bw, undY, Math.max(z0, slabBottomNoseZ),
+      -bw, undY, Math.min(z1, slabBottomTailZ), bw, undY, Math.min(z1, slabBottomTailZ),
+      ...(z0 === P.noseZ ? [-sw, P.bumperLowY, z0, sw, P.bumperLowY, z0] : []),
+    ], { ...mat, restitution: 0 })
+    const f0 = Math.max(z0, slabBottomNoseZ), f1 = Math.min(z1, slabBottomTailZ)
+    if (f1 > f0) flanks.push([f0, f1, topY])
+  }
   const bounceFrom = bed ? 2 : 1   // shapes before this index are the slab (restitution pinned 0)
   const bedShapes = [0, 0]         // [from, to) of the bed-well slabs — their own dead material (FEAT-88)
   if (bed) {
@@ -451,6 +469,18 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   // so the Body Bounce slider never reaches it.
   for (let i = bounceFrom; i < engine.shapeCount(chassis); i++) {
     if (i < bedShapes[0] || i >= bedShapes[1]) rims.bounceShapes.push(i)
+  }
+  // 6. Flank hulls (BUG-116): the slab's own flank face — hip down to FLANK_LIFT above the undercarriage plane, which
+  // stays the slab's alone — at FLANK_PAIR_MU, plastic like the slab. Between the chamfers only: a bumper corner still
+  // glances (BUG-27b).
+  for (const [z0, z1, topY] of flanks) {
+    const yb = undY + FLANK_LIFT
+    const xb = slabBottomHalfW + (P.slabHalfW - slabBottomHalfW) * FLANK_LIFT / (topY - undY)
+    for (const s of [-1, 1]) {
+      const pts = []
+      for (const z of [z0, z1]) pts.push(s * P.slabHalfW, topY, z, s * xb, yb, z, s * FLANK_IN, topY, z, s * FLANK_IN, yb, z)
+      engine.addHull(chassis, pts, { ...mat, friction: FLANK_SHAPE_MU, restitution: 0 })
+    }
   }
   const q = vehicleState.quaternion
   for (let c = 0; c < 4; c++) {
@@ -940,8 +970,16 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // Regularised below SIDEWALL_V_REG so it holds at rest instead of chattering. A loaded strut
       // (any upright truck, slopes included) never takes this branch — Pacejka owns that tire.
       // ponytail: the support is taken as static; a sidewall on a moving rock scrubs against the world.
-      if ((params._tireFz[i] || 0) <= 0) {
-        const N = Math.hypot(xz.x, xz.y, xz.z), nx = xz.x / N, ny = xz.y / N, nz = xz.z / N
+      // BUG-116: the gate is the tire's TILT, not an unloaded strut. Since bb585d65 a tire lying at 87° puts cos 87° of
+      // its load on the strut, a few newtons — that read as "Pacejka owns it" and its 3 kN of sidewall load slid
+      // frictionless. The sidewall's load is the share along the spin axle (a tread's normal is radial, in the wheel
+      // plane, so a kerb's push is not in it), faded in over tire-contact.js's own TILT_LO → TILT_HI: an upright tire
+      // never reaches TILT_LO, so driving is untouched.
+      const R = Math.hypot(xz.x, xz.y, xz.z), A = _axle[i]
+      const Nax = Math.abs(xz.x * A.x + xz.y * A.y + xz.z * A.z)
+      const tilt = Math.min(1, Math.max(0, (Nax / Math.hypot(params._tireFz[i] || 0, R) - TILT_LO) / (TILT_HI - TILT_LO)))
+      if (tilt > 0) {
+        const N = tilt * Nax, nx = xz.x / R, ny = xz.y / R, nz = xz.z / R
         const w = vehicleState.angularVelocity, v = vehicleState.velocity
         let vx = v.x + w.y * rHubZ - w.z * rHubY
         let vy = v.y + w.z * rHubX - w.x * rHubZ
