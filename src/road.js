@@ -9500,7 +9500,7 @@ export class RoadSystem {
             if (!ps.through[li]) continue
             const leg = node.legs[li], ne = this._network.get(leg.runKey)
             const prs = ne && this._projectLegMemo(ne, leg, wx, wz)
-            if (!prs) continue
+            if (!prs?.length) continue
             let pr = null
             for (const q of prs) if (!pr || q.d2 < pr.d2) pr = q
             ys[n] = this._legDeckTop(ne, leg, pr, wx, wz, _thrOut)
@@ -9508,6 +9508,7 @@ export class RoadSystem {
             if (es[n] < eMin) eMin = es[n]
             n++
         }
+        if (!n) return null   // guard: d ≤ hw means some half projected, but never let a NaN height out
         let ySum = 0, wSum = 0
         for (let k = 0; k < n; k++) {
             const u = 1 - (es[k] - eMin) / PAD_THROUGH_BLEND
