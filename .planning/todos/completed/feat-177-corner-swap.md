@@ -1,7 +1,7 @@
 ---
 id: FEAT-177
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-06
 source: owner, 2026-11-06 playtest (relayed verbatim by the orchestrator)
@@ -37,3 +37,10 @@ lane: B
 - **Pinned** in test/recovery.mjs §4b: FL (sport tire, worn, flat; worn wheel) ↔ RR (bent hub). Tire, wear,
   puncture, grip and wheel moved; RR's toe stayed; a corner with itself or no corner refused; 4 h bare, 1 h with
   both tools. recovery gate green. The button itself: cdp-smoke, owed (Chrome held).
+
+## Resolution
+
+**Closed on evidence (Lane B, 2026-11-07).** Landed d5c03b3a. The damage screen's "Swap two wheels"; tire and
+wheel trade corners with wear, puncture and grip, the bent hub stays; 2 × the spare change. test/recovery.mjs §4b pins
+the exchange and swapCornerHours (4 h bare, 1 h with both tools); the clock advance is main.js's shared
+_afterRoadsideWork, the spare's own path.

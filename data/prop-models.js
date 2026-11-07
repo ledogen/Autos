@@ -792,10 +792,15 @@ export const PROP_MODELS = {
   //   point in the model frame, vertical fov in degrees; it frames the truck's front three-quarter
   //   with the open door behind.
   //
-  // On a 14 x 8 LAY-BY (coverage-sited, two per region, so never the farm pad). seat 1.4: the front
-  // wall stands at pad z -2.6, where the lay-by turns flat (road.js POI_ROAD_FEATHER reaches 1.4 m
-  // into the pad), so nothing nearer the road touches the ground. The back wall stands 1.4 m past the
-  // pad's far edge, inside the 1.6 m band the carve grades flat (PAD_RIM_HOLD) — the barn's precedent.
+  // On a 14 x 8 LAY-BY (coverage-sited, two per region, so never the farm pad). The 8 m depth is squeezed
+  // between two limits:
+  //   seat 1.3: the back wall stands 1.3 m past the pad's far edge, inside poi-yard's PAD_RIM_HOLD - 0.25.
+  //   The front wall stands at pad z -2.7, 0.1 m short of where the lay-by is fully flat (road.js
+  //   POI_ROAD_FEATHER reaches 1.4 m into the pad). There the feather's smoothstep already gives the
+  //   pad 99.3 % authority.
+  //   seatAlong 0.5: slides the building toward its office end, so the -X back corner clears the pad's
+  //   1.5 m corner rounding (1.32 m from the pad; poi-yard allows 1.35).
+  // seat 1.4 kept the front exactly on the flat line, but broke poi-yard at the back (Lane B, 2026-11-07).
   //
   // COLLISION per part, so both bays are drivable. The door headers (3.3 m up), the slab, lift A, the
   // ceiling strips and the drain caddy are not colliders.
@@ -820,7 +825,8 @@ export const PROP_MODELS = {
         { c: [6.7, 0.33, -1.6], s: [0.66, 0.66, 0.66] },           // tyre stack
       ],
     },
-    seat: 1.4,
+    seat: 1.3,
+    seatAlong: 0.5,
     park: { x: -3.95, z: -0.2, halfX: 1.045, halfZ: 2.3 },
     camera: { eye: [-5.9, 2.8, 3.6], look: [-3.95, 0.9, -0.499], fov: 55 },
   },

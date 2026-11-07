@@ -11,6 +11,8 @@ lane: A
 
 # FEAT-173: hunger — sleep doesn't run it, the tutorial ends fed, every run starts with mom's snack
 
+**Waiting on the owner (2026-11-07):** the packed lunch's name and line (PLACEHOLDER in data/items.js) and the call to turn hunger on (with FEAT-169). Built and on main (0a0e25a4).
+
 ## Built (Lane A, 2026-11-06)
 
 1. **Sleep doesn't run the hunger clock.** `src/day.js sleep()` moves the meal hold's end forward by the hours

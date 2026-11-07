@@ -81,6 +81,16 @@ renders land in `wip/service-station/out/` (sheet.png: road, three-quarter, rear
   - The office stack of tyres is a collider.
   - No downspouts.
 - Lane B has the printed numbers, with the sign correction (2026-11-07).
+- **seat 1.4 → 1.3 + seatAlong 0.5** (2026-11-07, d9963d58). With the station in the autoShop roster (FEAT-178),
+  test/poi-yard.mjs failed: every collision-box corner must be within PAD_RIM_HOLD − 0.25 = 1.35 m of the pad's
+  rounded outline, and the −X back corner was 1.51 m out, on the 1.5 m corner rounding. My pad_check had allowed
+  the full 1.6 m.
+  - Seat alone can't fix it: with the back wall within 1.35 m and the front wall on the flat line, there are
+    7.95 m for an 8.0 m building.
+  - So the front wall stands 0.1 m into the feather (smoothstep: 99.3 % pad authority there), and seatAlong slides
+    the building toward its office end, which leaves the −X corner 1.32 m out.
+  - pad_check now applies poi-yard's rule. poi-yard passes with the autoShop wired locally.
+  - park and camera are in the model frame, so they move with it.
 
 ## Build plan (agreed with Lane B 2026-11-06, FEAT-178 on feature/machine 78d7f315)
 

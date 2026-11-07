@@ -1,7 +1,7 @@
 ---
 id: ASSET-79
 type: asset
-status: open
+status: closed
 severity: minor
 opened: 2026-11-02
 source: owner, 2026-11-02 (FEAT-66 plan) — "build blanket as a layer that can be put on top of either"
@@ -66,3 +66,7 @@ right on a flat bedroll AND on a domed sleeping bag. The inventory thumbnail sta
   sides bridge out past the pad's edge and hang, rather than sagging onto it. It reads at camp distance.
 - Shots (2026-11-03): on the bedroll, on the bag over the bedroll (and low from the foot), on the deluxe
   pad, and through the tent's door.
+
+## Resolution — Lane A, 2026-11-07 (close-on-evidence sweep)
+
+Shipped: `assets/models/blanket.glb` (on main with FEAT-66, cb5dcf84; last touched in FEAT-171, f1fb5de2). An asset ticket closes when its .glb ships (owner, 2026-08-24); FEAT-171's round 3 was signed off with "land it".

@@ -593,12 +593,15 @@ export function isPadLooking () { return padLookT > 0 }
  * SM-3's service screen frames the parked truck through the same seam: `theta` seats the orbit's
  * bearing on entry (the front three-quarter) and `radius` backs off far enough to hold the truck.
  *
+ * FEAT-178: `phi` seats the look-down too (the service station's fixed corner).
+ *
  * @param {{x:number,y:number,z:number}|null} p
- * @param {{theta?:number, radius?:number}} [o]
+ * @param {{theta?:number, phi?:number, radius?:number}} [o]
  */
-export function setCameraFocus (p, { theta = null, radius = FOCUS_RADIUS } = {}) {
+export function setCameraFocus (p, { theta = null, phi = null, radius = FOCUS_RADIUS } = {}) {
   if (!p) { focusTarget = null; return }
   if (!focusTarget) orbitPhi = FOCUS_PHI   // seat the look-down once, on entry; drag owns it after
+  if (phi !== null) orbitPhi = phi
   if (theta !== null) orbitTheta = theta
   focusRadius = radius
   focusTarget = new THREE.Vector3(p.x, p.y, p.z)

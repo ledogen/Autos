@@ -12,6 +12,8 @@ lane: A
 
 # FEAT-169: Hunger — a rate on the energy drain
 
+**Waiting on the owner (2026-11-07):** `feat169-play` (a day without eating feels shorter), the three `[DEFAULT]`s below, and, with FEAT-173, the call to turn hunger on (`DAY_PARAMS.hungerOn` is off on main). Built and on main (cb5dcf84).
+
 Every food in the game does nothing today. The design is ratified in items.md §1d, and this ticket builds
 it. Hunger is **not a meter**. It is a multiplier on the energy drain that already ships (src/day.js:
 awake drains 1 h of energy per game hour).

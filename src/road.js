@@ -181,6 +181,9 @@ const PAD_DIRT_EXTRA = 0.15
 //     (momentary, at pad rims — the same accepted trade as the decal overlay riding above the trough).
 const PAD_DUCK_CAP = 1.2
 const PAD_DUCK_CAP_PHYS = 0.55
+// BUG-122: _ribbonDrawnAt keeps the physics asphalt overlay within this of a padded leg's mouth (m) — the ribbon's first
+// section lies on the mouth chord, which on a curving leg sits off arc = mouth at the ribbon's edges.
+const RIBBON_MOUTH_SLACK = 1.0
 // QUAL-16 (junction-flow) DEG2_HERMITE_TENSION: cubic-Hermite tangent magnitude, × the mouth-to-mouth
 // gap, for the deg-2 connector's rung-2 fallback (_buildDeg2ArcGeom). 1.0 (tangents as long as the
 // chord) is the standard chord-length parameterisation: it reproduces a gentle arc to within a few cm
@@ -908,18 +911,27 @@ const RESOLVE_CELL       = 8    // m — cell size; must divide CHUNK_SIZE so a 
 // Acceptance-radius safety factor: every candidate _resolveRoadSurface can ACCEPT lies within
 // ~1.14 × footHW of the query (interior feet have dist == |lat| ≤ footHW; vertex-clamped feet on a
 // smooth polyline (PROTO_SAMPLE_DS 4 m at min radius ≥ 8 → per-vertex turn ≤ ~29°) satisfy
-// lat ≥ dist·cos 29°; run-END clamps are offEnd-gated at endHW < footHW; rival vertex clamps are
-// rejected by its own along<2 m gate). 1.2 covers the bound with margin.
+// lat ≥ dist·cos 29°; run-END clamps are offEnd-gated at endHW < footHW; self-pass rivals are
+// local minima within footHW, so inside the same ranges). 1.2 covers the bound with margin.
 const RESOLVE_ACC_SAFETY = 1.2
 const RESOLVE_CELL_CAP   = 384  // cells kept before the map is cleared (bounded, like carveHint)
 // FEAT-40 self-overlap crease blend: a winding run that passes ITSELF within the resolver
 // footprint (switchback wrapping a spur) makes the nearest-pass projection FLIP arcs at the
 // equidistant line — with tunnel-era deep earthwork (15–25 m cuts/fills) that flip is a 25 m
-// surface cliff the terrain grid renders as accordion pleats. The resolver therefore also
-// projects the winning run EXCLUDING ±RIVAL_ARC_SEP around the winning arc, and that far pass is
-// composed with the winner as earthwork (off-ribbon only; BUG-64 _carveCrossSectionBlended) so
-// the seam is a bank, not a teleport.
-const RIVAL_ARC_SEP    = 40   // m — min arc separation for a projection to count as a distinct pass
+// surface cliff the terrain grid renders as accordion pleats. The resolver therefore also takes
+// every OTHER pass of the winning run (each other local minimum of its distance, _runPassMinima;
+// BUG-130 replaced a ±40 m arc window that hid close switchback arms) and composes it with the winner
+// as earthwork (off-ribbon only; BUG-64 _carveCrossSectionBlended), so the seam is a bank, not a teleport.
+// BUG-130: a rival's carve is faded IN, so it is zero where it is gained or lost: by distance over the last
+// RIVAL_FADE_D before footHW, and (a pass of the winner's own run) by PROMINENCE over RIVAL_PROM_M, the rise of the
+// distance between it and the neighbouring minimum, so a pass born at a fold (two minima splitting) starts at 0.
+// At a FLIP the two passes are equidistant and must weigh the same (the winner is always whole), so a self pass
+// within RIVAL_TIE_M of the winner's distance is also whole, whatever its prominence: m = max(prominence, tie).
+const RIVAL_FADE_D     = 3     // m
+const RIVAL_PROM_M     = 2     // m
+const RIVAL_TIE_M      = 2.5     // m
+const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
+let _passD = new Float64Array(256), _passT = new Float64Array(256)   // _runPassMinima scratch (grown as needed)
 // FEAT-40 bore notch: inside a bore span the terrain SKIN (Y-less / above-apex probes) is not
 // simply raw — near each mouth the open cut's cross-section continues with its floor RISING at
 // this V:H slope per metre into the span, capped at raw. The mouth face is therefore a graded
@@ -2036,6 +2048,21 @@ export class RoadSystem {
             emit(e.cellA, e.cellB, runKey, e.polyCum?.[e.polyCum.length - 1])
         }
         return { edges, adj, key: _idKey, idOf, pos: (id) => this._nodePos(id) }
+    }
+
+    /**
+     * BUG-63's parallel runs: a second road between one node pair (key PARALLEL_SUFFIX), in the world — drawn, carved,
+     * collided — but not in networkGraph. `[{ key, cellA, cellB, centerline, length }]`, the centerline the points-backed
+     * sampler over the run's driven arc (polyCum), as edgeParData hands out for a trimmed run. Read-only. FEAT-154:
+     * poi.js rows a parallel that crosses the story wall like any other road out.
+     */
+    parallelRuns() {
+        const out = []
+        for (const [key, e] of this._network) {
+            if (!key.endsWith(PARALLEL_SUFFIX) || !e.points || e.points.length < 2 || !e.polyCum) continue
+            out.push({ key, cellA: e.cellA, cellB: e.cellB, centerline: _pointSampler(e.points, e.polyCum), length: e.polyCum[e.polyCum.length - 1] })
+        }
+        return out
     }
 
     /**
@@ -7444,6 +7471,74 @@ export class RoadSystem {
     }
 
     /**
+     * BUG-130: every DISTINCT pass of one run near (wx,wz): each local minimum of the distance along its polyline (the
+     * clamped segment projection _projectOntoRun uses), with its PROMINENCE, how far the distance rises between it and
+     * the neighbouring minimum (Infinity where there is none within the scanned stretch). `cand` (a PERF-25 cell
+     * candidate) limits the scan to its segment ranges (anything outside them is beyond the cell's gate); null scans
+     * the whole run. Minima farther than maxD, or clamped past the run's ends (the ends logic owns those), are
+     * dropped. Each comes back shaped like a _projectOntoRun result (fx,fz,tx,tz,arcS,signedLat,d2,offEnd,sCL) plus
+     * d, prom and cum.
+     */
+    _runPassMinima(netEntry, cand, wx, wz, maxD, skipCum = -1) {
+        const pts = netEntry.points, N = pts ? pts.length : 0
+        const out = []
+        if (N < 2) return out
+        const ranged = !!cand && cand.pts === pts
+        const n = ranged ? cand.segIdx.length : N - 1
+        if (_passD.length < n) { _passD = new Float64Array(n * 2); _passT = new Float64Array(n * 2) }
+        const D = _passD, T = _passT, sg = ranged ? cand.seg : null, si = ranged ? cand.segIdx : null
+        // one pass: each segment's clamped-projection distance (the same maths as _projectOntoRun)
+        for (let k = 0; k < n; k++) {
+            let ax, az, ex, ez
+            if (ranged) { const o = k * 6; ax = sg[o]; az = sg[o + 1]; ex = sg[o + 2]; ez = sg[o + 3] }
+            else { ax = pts[k].x; az = pts[k].z; ex = pts[k + 1].x - ax; ez = pts[k + 1].z - az }
+            const l2 = ex * ex + ez * ez
+            let t = l2 > 1e-12 ? ((wx - ax) * ex + (wz - az) * ez) / l2 : 0
+            if (t < 0) t = 0; else if (t > 1) t = 1
+            const dx = wx - (ax + t * ex), dz = wz - (az + t * ez)
+            D[k] = Math.sqrt(dx * dx + dz * dz); T[k] = t
+        }
+        // local minima in arc order, with the peak distance since the previous minimum (Infinity across a gap in
+        // the ranges); a minimum's prominence is min(peak before it, peak after it) − its distance
+        let prevMin = -1, peak = Infinity, cntMin = 0
+        const arcOrigin = netEntry.arcOrigin ?? 0, clArc = netEntry.clArc
+        let cumFull = 0
+        for (let k = 0; k < n; k++) {
+            const i = ranged ? si[k] : k
+            const contig = k > 0 && (ranged ? si[k - 1] + 1 === i : true)
+            if (!contig) peak = Infinity
+            else if (D[k] > peak || peak === -Infinity) peak = D[k]
+            const left = contig ? D[k - 1] : Infinity
+            const right = k + 1 < n && (ranged ? si[k + 1] === i + 1 : true) ? D[k + 1] : Infinity
+            const isMin = left >= D[k] && right > D[k] && D[k] <= maxD && !((i === 0 && T[k] === 0) || (i === N - 2 && T[k] === 1))
+            if (!isMin) { if (D[k] > peak) peak = D[k]; continue }
+            // close the previous minimum's after-peak, open this one's before-peak
+            if (prevMin >= 0) out[out.length - 1].prom = Math.min(out[out.length - 1].prom, peak - out[out.length - 1].d)
+            const before = peak
+            let ax, az, ex, ez, len, cum
+            if (ranged) { const o = k * 6; ax = sg[o]; az = sg[o + 1]; ex = sg[o + 2]; ez = sg[o + 3]; len = sg[o + 4]; cum = sg[o + 5] }
+            else {
+                for (let jj = cntMin; jj < i; jj++) cumFull += Math.hypot(pts[jj + 1].x - pts[jj].x, pts[jj + 1].z - pts[jj].z)
+                cntMin = i
+                ax = pts[i].x; az = pts[i].z; ex = pts[i + 1].x - ax; ez = pts[i + 1].z - az; len = Math.sqrt(ex * ex + ez * ez) || 1e-8; cum = cumFull
+            }
+            const t = T[k], cumT = cum + t * len
+            out.push({ k, cumT, d: D[k], prom: before - D[k], ax, az, ex, ez, len, i, t })
+            prevMin = k; peak = -Infinity
+        }
+        // keep the non-winner minima, shaped like a _projectOntoRun result (the caller's rival frame refines it)
+        const res = []
+        for (const q of out) {
+            if (skipCum >= 0 && Math.abs(q.cumT - skipCum) < 1) continue
+            const fx = q.ax + q.t * q.ex, fz = q.az + q.t * q.ez, tx = q.ex / q.len, tz = q.ez / q.len
+            const sCL = clArc && q.i + 1 < clArc.length ? clArc[q.i] + (clArc[q.i + 1] - clArc[q.i]) * q.t : q.cumT
+            res.push({ fx, fz, tx, tz, arcS: q.cumT - arcOrigin, signedLat: (wx - fx) * tz - (wz - fz) * tx,
+                       d2: q.d * q.d, offEnd: false, sCL, d: q.d, prom: q.prom, cum: q.cumT })
+        }
+        return res
+    }
+
+    /**
      * PERF-25: windowed twin of _projectOntoRun — identical per-segment maths, but only the cached
      * segment-index ranges of one cell candidate are scanned, and any result farther than the cell's
      * proof gate (√gate2) is dropped. Whenever this returns non-null the result is BIT-IDENTICAL to
@@ -7904,8 +7999,8 @@ export class RoadSystem {
         const hit = this._refineFrame(ce, bestPr, wx, wz)
         if (hit) ({ fx, fz, tx, tz, arcS } = hit)
 
-        // FEAT-40 rival passes: every DISTINCT competing carve field — the winning run's own next-nearest
-        // pass (arc ≥ RIVAL_ARC_SEP away; self-overlap switchback), every other interior RUN, and every
+        // FEAT-40 rival passes: every DISTINCT competing carve field — the winning run's own other passes
+        // (self-overlap switchbacks, BUG-130), every other interior RUN, and every
         // run END in reach (BUG-64). Each keeps its projection AT this point plus its tangent frame, so
         // _carveCrossSectionBlended re-projects it LIVE (a hint reused for analyticNormal's ±0.5 m
         // offsets must still see each bank's true slope — the BUG-83 lesson); an end also keeps its
@@ -7921,23 +8016,27 @@ export class RoadSystem {
                 ? { runKey, arcS: f.arcS, lat: (wx - f.fx) * f.tz - (wz - f.fz) * f.tx, x0: wx, z0: wz, tx: f.tx, tz: f.tz, end: null }
                 : { runKey, arcS: q.arcS, lat: q.signedLat, x0: wx, z0: wz, tx: q.tx, tz: q.tz, end: end ? { x: q.fx, z: q.fz } : null }
         }
+        // BUG-130: EVERY other pass of the winner's own run (each other local minimum of its distance), not one
+        // projection outside a ±RIVAL_ARC_SEP arc window. The window hid a switchback's other arm (38.8 m of arc
+        // apart: a 9.4 m step where the resolver flipped) and showed a far one abruptly. Each rival is faded IN
+        // (rv.m): by distance before footHW, and a self pass by its prominence, so none is gained or lost as a step.
         if (ce && !bestPr.offEnd) {
-            // PERF-25: the rival pass rides the same cell windows (accepted rivals need d ≤ footHW,
-            // covered by the same proof; its own along<2 m gate rejects window-edge vertex clamps).
             const cc = cands ? cands.byKey.get(bestRunKey) : null
-            const pr2 = cc
-                ? this._projectOntoRunRanges(ce, cc, wx, wz, bestPr.arcS + (ce.arcOrigin ?? 0), RIVAL_ARC_SEP, cands.gate2)
-                : this._projectOntoRun(ce, wx, wz, bestPr.arcS + (ce.arcOrigin ?? 0), RIVAL_ARC_SEP)
-            if (pr2 && !pr2.offEnd) {
-                // Gate on true RADIAL distance, and reject clamped projections (the avoid window
-                // cuts the polyline mid-approach; a clamped vertex has a tiny perpendicular
-                // signedLat but a large along-offset — using it would fake a nearby deep pass).
-                const d2 = pr2.d2, latP = pr2.signedLat
-                if (d2 - latP * latP < 4 && d2 <= footHW * footHW) rivals.push(rivalOf(bestRunKey, pr2, false))
+            const bestCum = bestPr.arcS + (ce.arcOrigin ?? 0), dW = Math.sqrt(bestPr.d2)
+            for (const q of this._runPassMinima(ce, cc, wx, wz, footHW, bestCum)) {   // every pass but the winner's
+                const m = _rivalSmooth((footHW - q.d) / RIVAL_FADE_D)
+                    * Math.max(_rivalSmooth(q.prom / RIVAL_PROM_M), _rivalSmooth(1 - (q.d - dW) / RIVAL_TIE_M))
+                if (m > 0) { const rv = rivalOf(bestRunKey, q, false); rv.m = m; rivals.push(rv) }
             }
         }
-        for (const c of inter) if (c.pr !== bestPr) rivals.push(rivalOf(c.runKey, c.pr, false))
-        for (const c of ends) if (c.pr !== bestPr) rivals.push(rivalOf(c.runKey, c.pr, true))
+        for (const c of inter) if (c.pr !== bestPr) {
+            const m = _rivalSmooth((footHW - Math.abs(c.pr.signedLat)) / RIVAL_FADE_D)
+            if (m > 0) { const rv = rivalOf(c.runKey, c.pr, false); rv.m = m; rivals.push(rv) }
+        }
+        for (const c of ends) if (c.pr !== bestPr) {
+            const m = _rivalSmooth((footHW - Math.sqrt(c.pr.d2)) / RIVAL_FADE_D)
+            if (m > 0) { const rv = rivalOf(c.runKey, c.pr, true); rv.m = m; rivals.push(rv) }
+        }
 
         // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
         // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
@@ -8085,8 +8184,7 @@ export class RoadSystem {
             // the cliff-y run-vs-run Voronoi surface + junction step at the sharp kink with one smooth
             // graded bench, all the way from the asphalt edge out to the connector toe (co.gradeY follows
             // the legs' grades so it matches the ribbons at the weld). Run surface unchanged off connectors.
-            const domGrade = cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY
-            cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: domGrade }
+            cs = this._withConnector(cs, co)
             // latDist stays the RUN's lateral (the run ribbon's edge + the POI-pad gate below); the
             // connector strip's own edge is tested separately by the decal branch (BUG-90). Only where
             // there is NO run (the bend-outside void) does the connector's own edge stand in for it.
@@ -8110,7 +8208,8 @@ export class RoadSystem {
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
         // PERF-24/25: the pad surface is the resolve-free _nodeSurfaceTop (one ruled-blend evaluation,
         // feet shared with the leg cross-section above via the per-leg memo) — no extra resolves at all.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS)
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS,
+            nr ? this._ribbonEdgeDist(runKey, arcSEff, latDist) : Infinity)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 
         // ── Physics-only asphalt overlay (the one intentional mesh↔collision difference) ──
@@ -8120,7 +8219,7 @@ export class RoadSystem {
         // (QUAL-07 mesh == collision); the merged dirt `cs2.gradeY` is the surface only where no
         // asphalt is drawn.
         let gradeY = cs2.gradeY
-        const onRun = nr && latDist < halfWidth && this._leafEndDist(runKey, arcSEff) >= 0
+        const onRun = nr && latDist < halfWidth && this._leafEndDist(runKey, arcSEff) >= 0 && this._ribbonDrawnAt(runKey, arcSEff)
         if (cs2.padTopY != null) {
             // ── On-PAD (inside the junction ring) ── road-mesh.js buildJunctionFootprint puts every
             // pad vertex at `_nodeSurfaceTop(node,x,z) + apronLift`, which is exactly padTopY. So the
@@ -8134,9 +8233,9 @@ export class RoadSystem {
             // to fade that excess out over the last 1.6 m inside the ring (and, in fading, dropped
             // physics up to 0.44 m BELOW the pad triangles the truck was visibly standing on). With
             // the overlay pinned to the mesh's own field there is no excess to feather: the only step
-            // left at the ring exit is the drawn asphalt→dirt dropoff (clearance + PAD_DIRT_EXTRA
-            // ≈ 0.30 m), the same intended edge dropoff as a ribbon shoulder (BUG-15), and the MESH
-            // has that identical step there. No potholes either: potholes are an on-ribbon-only
+            // left at the ring exit is the drawn asphalt→dirt dropoff (clearance, 0.15 m — BUG-122: the
+            // pad's PAD_DIRT_EXTRA armor stops at the ring), the same edge dropoff as a ribbon shoulder
+            // (BUG-15), and the MESH has that identical step there. No potholes either: potholes are an on-ribbon-only
             // physics-side micro-noise (D-03) and the pad geometry is smooth.
             gradeY = cs2.padTopY
         } else if (onRun || (co && co.lat < halfWidth)) {
@@ -8434,8 +8533,9 @@ export class RoadSystem {
                     tapers.push(tu * tu * (3 - 2 * tu))
                 }
             }
-            let wSum = 0, gSum = 0, wMax = 0
+            let wSum = 0, gSum = 0, wMax = 0, tMax = 0
             for (let i = 0; i < gaps.length; i++) {
+                if (tapers[i] > tMax) tMax = tapers[i]
                 let w = tapers[i]
                 for (let j = 0; j < gaps.length; j++) if (j !== i) w *= gaps[j]   // taper_i · ∏_{j≠i} gap_j
                 wSum += w; if (w > wMax) wMax = w
@@ -8465,7 +8565,13 @@ export class RoadSystem {
                     const lu = Math.min(1, Math.max(0, (halfWidth + 2 - Math.abs(signedLat)) / 2))
                     fade *= 1 - lu * lu * (3 - 2 * lu)
                 }
-                gradeY += fade * (gSum / wSum - gradeY)
+                // BUG-129: the blend is ALSO scaled by the strongest in-range leg's taper. gSum/wSum normalises the
+                // tapers away, so when every leg in range is a SIBLING easing out at RULE_LEG_REACH (the query's own
+                // leg out of reach: beyond its end, on a far bank) the last one kept 100 % of the blend to the very
+                // edge and then popped: the design jumped from its grade to this run's own (1.15 m inside a full-
+                // weight fill bank on 24316861, the soak's 1 m cliff). Where the own leg is in range its taper is 1,
+                // so nothing changes there.
+                gradeY += fade * tMax * (gSum / wSum - gradeY)
                 // Ease the single-ribbon CROSS-SLOPE (crown + camber tilt) to flat by blend PURITY (the
                 // dominant leg's weight share) IN the faded junction region: on a clean ribbon/shoulder
                 // purity ≈ 1 (or fade 0) ⇒ crown/camber untouched = the ordinary cross-section; where legs
@@ -9190,7 +9296,15 @@ export class RoadSystem {
         // deliberately does not (a lifted apron just gets more clearance under it). Lift is 0 by
         // default, so this is a no-op unless the user raises the slider.
         const padTopY = bestSd <= 0 ? topC + (p.roadJunctionApronLift ?? 0) : null
-        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topC - clearanceMargin - PAD_DIRT_EXTRA, padTopY }
+        // BUG-122: PAD_DIRT_EXTRA is armor UNDER the pad's asphalt, so it stops at the ring. Outside it the
+        // dirt is exposed beside an asphalt edge (the pad's own rim, or a leg ribbon running on past the mouth)
+        // and stands clearanceMargin below the top, the same designed kerb as every ribbon edge. When the extra
+        // ran on through the hold band and the ramp, every pad rim dropped clearance + PAD_DIRT_EXTRA (0.30 m,
+        // twice the ribbon's 0.15) and dragged that doubled lip up to ~20 m along the approach ribbons' edges
+        // (36 of 52 leg edges on random seeds; a wheel climbing back on at 15 m/s took a 75 kN strut spike). The
+        // dirt steps 0.15 m at the ring edge itself, which is where the asphalt edge is: under the pad on one
+        // side, the kerb's drop on the other.
+        if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: topC - clearanceMargin - (bestSd <= 0 ? PAD_DIRT_EXTRA : 0), padTopY, sd: bestSd }
 
         // Outside the hold band: ramp designY → raw over shoulder + fill/cut toe, mirroring
         // _carveCrossSection (which ramps beyond carveHalfWidth). `over` = distance past the hold.
@@ -9202,10 +9316,8 @@ export class RoadSystem {
         if (over >= beyondToe) return null
         const ramp = Math.max(shoulderWidth, beyondToe)
         const u = Math.min(1, over / ramp)
-        // Feather PAD_DIRT_EXTRA away with the same smoothstep so the dirt is continuous at the hold
-        // boundary (full depth there) and the toe still lands exactly on raw terrain.
         const w = 1.0 - u * u * (3.0 - 2.0 * u)
-        return { blendW: w, gradeY: designY - PAD_DIRT_EXTRA * w, padTopY: null }
+        return { blendW: w, gradeY: designY, padTopY: null, sd: bestSd }
     }
 
     /**
@@ -9498,21 +9610,46 @@ export class RoadSystem {
      * gradeY ONLY where the leg carve is absent (nr null / beyond the leg toe — the open-side rim), which
      * is exactly the surface the pad MESH rides there (sampleRoadTopY / plane), so mesh == collision.
      */
-    _mergeCarve(a, b, duckCap = PAD_DUCK_CAP) {
+    /**
+     * The deg-2 connector's cross-section composed over the run's (QUAL-16): the connector's grade dominates its own
+     * footprint (`co.dom`), and the coverage is the larger blend weight. Shared by _sampleCarveWorld and the terrain
+     * mesh (_buildCarveTable), so mesh == collision by construction.
+     * BUG-129: the dominance fades with the connector's SHARE of that coverage. It used to apply in full right out to
+     * the connector's toe, under the run's larger weight: the connector's design leaked in under the run's bank
+     * (co.blendW 0.01, cs.blendW 0.65, dom 1) and snapped back to the run's where the connector ended (0.5 m step on
+     * 24316861). In its core (co.blendW ≥ cs.blendW) nothing changes.
+     */
+    _withConnector(cs, co) {
+        if (!cs) return { blendW: co.blendW, gradeY: co.gradeY }
+        const blendW = Math.max(cs.blendW, co.blendW)
+        const dom = co.dom * (blendW > 0 ? co.blendW / blendW : 0)
+        return { blendW, gradeY: co.gradeY * dom + cs.gradeY * (1 - dom) }
+    }
+
+    _mergeCarve(a, b, duckCap = PAD_DUCK_CAP, dRib = Infinity) {
         if (!a) return b || null
         if (!b) return a
-        // Where the pad is at FULL depth (inside ring + rim hold, blendW 1) take the LOWER dirt: the
-        // pad's crease-ducking design (topMin − clearance − PAD_DIRT_EXTRA) must not be overridden by
-        // the leg's shallower cross-section or the tan slivers return. min(a,b) is continuous (both
-        // fields are), never RAISES dirt, and only applies under/beside the asphalt pad; everywhere the
-        // pad ramp is partial the leg gradeY still wins (its cross-section is C0 laterally, BUG-15).
-        // PAD_DUCK_CAP bounds how far b (a free resolve) may drag a pinned cross-section down, so the
-        // top field's pre-existing degenerate-node tears can't tear an otherwise-smooth shoulder; and
-        // the duck FADES with b's own blendW (1 on the pad + rim hold, smoothstepping to 0 at the pad
-        // toe) so there is no step where the full-depth band ends — the duck is C0 everywhere.
-        const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - duckCap)
-        const gradeY = a.gradeY + (low - a.gradeY) * b.blendW
-        return { blendW: Math.max(a.blendW, b.blendW), gradeY, padTopY: b.padTopY ?? null }
+        const blendW = Math.max(a.blendW, b.blendW)
+        if (b.padTopY != null) {
+            // INSIDE the ring (the pad drawn over it): take the LOWER dirt. The pad's crease-ducking design
+            // (top − clearance − PAD_DIRT_EXTRA) must not be overridden by the leg's shallower cross-section or the
+            // tan slivers return. PAD_DUCK_CAP bounds how far b (a free resolve) may drag a pinned cross-section
+            // down, so the top field's degenerate-node tears can't tear an otherwise-smooth shoulder.
+            const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - duckCap)
+            return { blendW, gradeY: a.gradeY + (low - a.gradeY) * b.blendW, padTopY: b.padTopY }
+        }
+        // BUG-123: OUTSIDE the ring the dirt is exposed beside an asphalt edge and stands clearanceMargin below THAT
+        // edge's top, so the NEARER edge governs: a drawn ribbon's (the leg's dirt, `a`) or the pad's rim (`b`). It
+        // used to take the lower of the two here too, and where the pad's top (the ruled node surface) and the leg's
+        // own top differ by 0.1–0.25 m the edge lip grew by that much: beside a ribbon past the mouth when the pad
+        // sat lower, beside the pad's rim when the leg sat lower (16 of 52 leg edges on random seeds still stood
+        // > 0.25 m after BUG-122). `dRib` is the distance to the nearest drawn ribbon edge (_ribbonEdgeDist,
+        // continuous across a leg's mouth), `b.sd` the distance outside the ring; the pad's share smoothsteps over
+        // ±0.5 m of their difference, so the hand-over is C0. duckCap bounds the pad's pull either way.
+        const u = Math.min(1, Math.max(0, dRib - (b.sd ?? 0) + 0.5))
+        const g = u * u * (3 - 2 * u)
+        const target = Math.min(a.gradeY + duckCap, Math.max(a.gradeY - duckCap, b.gradeY))
+        return { blendW, gradeY: a.gradeY + (target - a.gradeY) * b.blendW * g, padTopY: null }
     }
 
     /**
@@ -10312,6 +10449,44 @@ export class RoadSystem {
      * Memoised on the netEntry, stamped with _networkRev (the same signal every other per-run cache
      * in this file uses) — the carve path calls this per vertex/probe.
      */
+    /**
+     * BUG-123: the distance (m) from a point on run `runKey` (at arcSEff, latDist off its centreline) to the nearest
+     * edge of that run's DRAWN ribbon. Past every padded end's trim it is just the lateral distance past the edge;
+     * inside a trim (the ribbon starts at the mouth, road-mesh.js trimOf) it is the distance to where the ribbon
+     * begins, so it runs continuously across the mouth. Ringless (deg-2) ends do not count, as in _ribbonDrawnAt.
+     */
+    _ribbonEdgeDist(runKey, arcSEff, latDist) {
+        const lat = Math.max(0, latDist - (this._params.roadHalfWidth ?? 5))
+        const arcs = this._junctionCarveArcs ? this._junctionCarveArcs.get(runKey) : null
+        if (!arcs) return lat
+        const cutback = this.junctionCutbackDist()
+        let gap = 0
+        for (const j of arcs) if (j.node?.ring) gap = Math.max(gap, (j.mouth ?? j.cutback ?? cutback) - Math.abs(arcSEff - j.arc))
+        return gap > 0 ? Math.hypot(gap, lat) : lat
+    }
+
+    /**
+     * BUG-122: is this run's ribbon DRAWN at arcSEff? road-mesh.js trims a ribbon within (mouth ?? cutback) of every
+     * junction end it has (_buildRoadTile's trimOf, same records, same rule); inside that the junction pad, or at a
+     * deg-2 bend the connector strip, is what is drawn. The physics asphalt overlay follows the same rule, or the
+     * strip a pad's ring leaves uncovered beside a trimmed leg (up to ~0.5 m wide) rode an invisible ribbon top up to
+     * ~0.35 m above the dirt drawn there.
+     * BUG-127: deg-2 (ringless) ends too. At a sharp bend the connector's arc cuts the corner, and the trimmed legs'
+     * OUTER corner is gravel in the mesh; physics rode the legs' ribbon tops over it, up to 0.18 m above the drawn
+     * dirt (27 % of the trimmed footprint at 7 bends on random seeds, ~340 m²). The connector strip keeps its own
+     * overlay in _sampleCarveWorld (co.lat < halfWidth), so where it is drawn nothing changes.
+     * RIBBON_MOUTH_SLACK: the ribbon's first section lies on the pad's mouth CHORD, which on a curving leg sits off
+     * arc = mouth at the ribbon's edges; within this of the mouth the overlay stays (ribbon or pad is drawn there),
+     * or those slivers dipped clearanceMargin into the dirt (85 extra vertical-curvature kinks at junctions).
+     */
+    _ribbonDrawnAt(runKey, arcSEff) {
+        const arcs = this._junctionCarveArcs ? this._junctionCarveArcs.get(runKey) : null
+        if (!arcs) return true
+        const cutback = this.junctionCutbackDist()
+        for (const j of arcs) if (Math.abs(arcSEff - j.arc) < (j.mouth ?? j.cutback ?? cutback) - RIBBON_MOUTH_SLACK) return false
+        return true
+    }
+
     _leafEndDist(runKey, arcSEff) {
         const e = this._network ? this._network.get(runKey) : null
         if (!e) return Infinity
@@ -10543,8 +10718,9 @@ export class RoadSystem {
                 !(queryY !== undefined && queryY < this.runProfile(arcS, rv.runKey, _CD_RP).gradeY + boreR)) continue
             const csR = this._carveCrossSection(lat, arcS, rv.runKey, 1, rawAmp, wx, wz)
             if (!csR) continue
-            const wR = csR.blendW
-            const dR = dB + (wR * (csR.gradeY - rawAmp) - dB) * fade
+            const m = rv.m ?? 1                                      // BUG-130: faded in where it is gained/lost
+            const wR = csR.blendW * m
+            const dR = dB + (csR.blendW * (csR.gradeY - rawAmp) - dB) * fade * m
             if (dR > fill) fill = dR
             if (dR < cut) cut = dR
             if (wR > w) w = wR

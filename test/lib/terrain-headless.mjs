@@ -6,8 +6,8 @@
 //
 // NO COPIES: it calls the REAL TerrainSystem.prototype methods on a fake `this` carrying the noise
 // closures (src/terrain-height.js, the module the game and its terrain Worker import), the params
-// and the road instance passed in. `_waterCarve: null` — the FEAT-18 stream carve is not wired
-// headless (a gate that needs it builds its own fake, see test/stream-carve.mjs).
+// and the road instance passed in. The FEAT-18 stream carve is off unless a `waterCarve` hook is passed
+// (main.js setWaterCarve's shape — test/lib/world-rig.mjs builds one; test/stream-carve.mjs its own fake).
 
 import { makeTerrainNoise } from '../../src/terrain-height.js'
 import { TerrainSystem } from '../../src/terrain.js'
@@ -25,14 +25,15 @@ export const makeNoise = makeTerrainNoise
  * @param {RoadSystem} road   — a streamed RoadSystem (or null: no carve)
  * @returns {{ analyticHeight, analyticNormal, rawHeightWorld }} bound, safe to pass as callbacks
  */
-export function makeTerrainHeadless(seed, params, road) {
+export function makeTerrainHeadless(seed, params, road, waterCarve = null) {
     const { noiseCoarse, noiseFine, noiseRegional } = makeTerrainNoise(seed)
     const T = TerrainSystem.prototype
     const self = { _noiseCoarse: noiseCoarse, _noiseFine: noiseFine, _noiseRegional: noiseRegional,
-        _params: params, _roadSystem: road ?? null, _waterCarve: null, analyticHeight: T.analyticHeight }
+        _params: params, _roadSystem: road ?? null, _waterCarve: waterCarve, analyticHeight: T.analyticHeight }
     return {
         analyticHeight: T.analyticHeight.bind(self),
         analyticNormal: T.analyticNormal.bind(self),
         rawHeightWorld: T.rawHeightWorld.bind(self),
+        self,   // the fake `this`, for a rig that calls the chunk-mesh methods (_buildCarveTable, _composeCarvedY…)
     }
 }

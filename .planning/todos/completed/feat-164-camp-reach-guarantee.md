@@ -1,7 +1,7 @@
 ---
 id: FEAT-164
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-04
 source: owner, 2026-11-04 (page inbox) — "4194356868 Huge portion of map does not have any camping areas. we need to improve the campable land generation algorithm so that it guarantees a minimum drive to a campable area from anywhere on the map."
@@ -67,3 +67,7 @@ until that is fixed.~~ BUG-110 fixed it (the replica now routes round the ponds)
 **RULED (owner, 2026-11-05): `campReachM` = 2000 m** — *"i like the 2000m spacing between camping zones
 best"*. Set in src/camp.js; camp-reach green on 4194356868, 1 and 6. `test/fingerprint-world.mjs` hashes no camp
 zones and no worldgen changed, so it cannot diff; not run.
+
+## Resolution — Lane A, 2026-11-07 (close-on-evidence sweep)
+
+On main (cb5dcf84). `campReachM` = 2000 m (owner, 2026-11-05); `CampSystem.fillReach` adds zones at go-live until the worst drive is under it. Gate camp-reach (heavy) green; before/after shots on artifact SvWko63QjRmdGWkyUSp3bD. The fingerprint does not apply: it hashes no camp zones, and no worldgen changed. The acceptance above is met as written in Built.

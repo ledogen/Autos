@@ -54,6 +54,7 @@ SEAT = 2.7
 PAD_HX, PAD_HZ, PAD_R = 7.0, 4.0, 1.5
 FLAT_Z = -2.6
 RIM = 1.6
+RIM_KEEP = RIM - 0.25       # test/poi-yard.mjs: every collision-box corner within this of the pad
 
 # --- the PARK box: where the truck's body goes, one truck alongside the road (the general store's
 # convention: main.js tests the CG inside it, so it is drawn round the truck, not round its CG) ---
@@ -590,14 +591,17 @@ def check_facing(ob, n=24):
 
 def pad_check(ob):
     """Pad frame: x along the road, pz = SEAT - y.  Everything within 0.35 m of the ground must stand on
-    flat ground: no nearer the road than FLAT_Z, and inside the pad's rounded outline grown by RIM."""
+    flat ground: no nearer the road than FLAT_Z, and inside the pad's rounded outline grown by RIM; every
+    collision-box corner within RIM_KEEP (test/poi-yard.mjs's rule)."""
     def outside(x, pz):
         qx, qz = abs(x) - (PAD_HX - PAD_R), abs(pz) - (PAD_HZ - PAD_R)
         return math.hypot(max(qx, 0), max(qz, 0)) + min(max(qx, qz), 0) - PAD_R
     low = [v.co for v in ob.data.vertices if v.co.z < 0.35]
     front = min(SEAT - v.y for v in low)
     worst = max(outside(v.x, SEAT - v.y) for v in low)
-    return front >= FLAT_Z - 1e-6 and worst <= RIM, front, worst
+    corners = max(outside(x, SEAT - y) for _, lo, hi in collider_boxes()
+                  for x in (lo[0], hi[0]) for y in (lo[1], hi[1]))
+    return front >= FLAT_Z - 1e-6 and worst <= RIM and corners <= RIM_KEEP, front, worst, corners
 
 
 def fresh_scene():
@@ -612,7 +616,7 @@ def build():
     ob = bake(build_part())
     t, per = evaluated_tris(ob)
     bad, hits = check_facing(ob)
-    ok_pad, front, worst = pad_check(ob)
+    ok_pad, front, worst, corners = pad_check(ob)
     boxes = collider_boxes()
     gap, nearest = park_check(boxes)
     lo = [min(v.co[i] for v in ob.data.vertices) for i in range(3)]
@@ -624,7 +628,7 @@ def build():
     print("  per material: " + ", ".join(f"{k} {v}" for k, v in sorted(per.items(), key=lambda kv: -kv[1])))
     print(f"  bbox  x {lo[0]:.2f}..{hi[0]:.2f}  y {lo[1]:.2f}..{hi[1]:.2f}  z {lo[2]:.2f}..{hi[2]:.2f}")
     print(f"  pad: nearest the road at ground pz {front:.2f} (flat from {FLAT_Z}), worst {worst:.2f} m past the"
-          f" pad edge (rim {RIM})  -> {'OK' if ok_pad else 'FAIL'}")
+          f" pad edge (rim {RIM}), collider corners {corners:.3f} (poi-yard {RIM_KEEP})  -> {'OK' if ok_pad else 'FAIL'}")
     print(f"  park box (pad z {SEAT - py - hy:.2f}..{SEAT - py + hy:.2f}) clears every collider"
           f" by {gap:.2f} m (nearest: {nearest})  -> {'OK' if gap > 0.2 else 'FAIL'}")
     print(f"  facing: {bad} inverted first-hits of {hits}")

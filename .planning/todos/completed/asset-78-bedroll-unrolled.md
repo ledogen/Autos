@@ -1,7 +1,7 @@
 ---
 id: ASSET-78
 type: asset
-status: open
+status: closed
 severity: minor
 opened: 2026-11-02
 source: owner, 2026-11-02 (FEAT-66 plan) — "in game we need an unrolled version to be displayed"
@@ -62,3 +62,7 @@ laid out to sleep on.
 - **Gate (camp-gear):** every bed model fits inside the tent's box, and a `seatY` lies under its model's
   top. Mutation-tested: `seatY` 0.2 fails.
 - Shots (2026-11-03): the bedroll alone, in the tent, and under the sleeping bag.
+
+## Resolution — Lane A, 2026-11-07 (close-on-evidence sweep)
+
+Shipped: `assets/models/bedroll.glb` (on main with FEAT-66, cb5dcf84; reshaped through FEAT-171's rounds, last c365fde6). An asset ticket closes when its .glb ships (owner, 2026-08-24); FEAT-171's round 3 was signed off with "land it".

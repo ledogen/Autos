@@ -10,6 +10,8 @@ relates: FEAT-147 (tutorial + opening), FEAT-142 (giver traits), FEAT-67 (offer 
 
 # FEAT-148: The owner-authored lines — giver flavor, the sleep reminder, the intro
 
+**Waiting on the owner (2026-11-07):** the words. Every card is a PLACEHOLDER (data/dialogue.js), and so is every giver-line slot, with its length budget (below). The plumbing is on main (cb5dcf84).
+
 ## What
 The alpha ships no stubs. Three places still show placeholder or model-written text:
 

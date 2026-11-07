@@ -1,7 +1,7 @@
 ---
 id: FEAT-147
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-10-23
 source: owner, 2026-10-22 — "need to finish tutorial and basic story"; 2026-10-23 — the basic story (the firing, the uncle, the expedition camp ending) is "good enough for alpha"
@@ -193,3 +193,7 @@ line it also gets a GPS route to her door (`approachGuide`, planned from the joi
 run resumed mid-approach has the pin and the HUD only). Parked at hers, it starts as the ordinary courier to
 Larry. The accept button's handler is now the named `_acceptOffer` both paths call. cdp-smoke's `opening` step
 checks the job in hand, the HUD line, the guide, and the start at mom's (PASS 23/23).
+
+## Resolution — Lane A, 2026-11-07 (close-on-evidence sweep)
+
+Built and on main (cb5dcf84; the no-job-after-the-opening fix b0cf618b), then carried by FEAT-170 (its stages on main by 6099321f) and BUG-117 / BUG-124. The teach list is the first-use cards (`_tut`) plus FEAT-170's lessons. Gates: offer-board's FEAT-147 block and cdp-smoke's `opening` and `story` steps. The card words stay with FEAT-148. The owner's open question (is the joint → mom's drive too long on a wide world?) moves to FEAT-170's playthrough.

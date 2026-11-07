@@ -11,6 +11,8 @@ lane: A
 
 # FEAT-170: The opening becomes a skippable tutorial evening at mom's
 
+**Waiting on the owner (2026-11-07):** the playthrough, once with the tutorial and once skipping it (`feat170-play`). Also to judge on that drive: whether the joint → mom's drive is too long on a wide world (FEAT-147's question), BUG-118's GPS turning you round, and the card words (FEAT-148). Everything else is on main (stages 1–4 by 6099321f; BUG-117, BUG-124).
+
 **Stage it. Do not one-shot it** (owner). Plan the stages in this ticket, get sign-off, then build one stage
 per landing.
 

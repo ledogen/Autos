@@ -12,6 +12,8 @@ relates: FEAT-28 (region unlock + the wall), FEAT-43 (story region), FEAT-91 (ha
 
 # FEAT-103: The R1 conclusion — the expedition camp on the region wall
 
+**Open for the beta half only (2026-11-07):** the alpha slice is done and on main (ac08a585), every alpha box ticked. The beta acceptance is to be written when FEAT-28's walls exist. That waits on FEAT-28, not on the owner.
+
 Step 6 of **Places and Missions**. (The file keeps its old `job-site` name so links survive.)
 
 > **Design ruled** (owner, 2026-10-16 and 2026-10-19), except one trigger (Open, below). Build waits

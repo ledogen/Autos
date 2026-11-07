@@ -1,7 +1,7 @@
 ---
 id: FEAT-175
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-06
 source: owner, 2026-11-06 playtest (relayed verbatim by the orchestrator)
@@ -40,3 +40,11 @@ lane: B
 - Pinned in `test/pad-e2e.mjs`'s map section: left stick pans and steers nothing; right stick up zooms in, down
   out; RT on the map is throttle and zooms nothing. Not run yet: Chrome held. debug-sliders and
   camera-follow-clock green.
+
+## Resolution
+
+**Closed on evidence (Lane B, 2026-11-07).** Landed d5c03b3a. Left stick pans, the right stick's vertical zooms,
+the triggers always drive; the D-pad is unchanged on the map; BINDINGS says so (the map draws no pan/zoom hint of
+its own). Pinned in test/pad-e2e.mjs's map section rather than cdp-smoke's pad step (that is where the map's pad
+checks live): left stick pans and steers nothing, right stick up/down zooms in/out, RT is throttle and zooms
+nothing. pad-e2e ALL OK on main.
