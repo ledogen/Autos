@@ -11,6 +11,8 @@ lane: A
 
 # FEAT-154: Every road leaving the story play area ends at barricades, not an invisible wall
 
+**Open for one item (2026-11-07):** built and on main (755ea9e5; map ticks 1b288a82). The last follow-up below was measured and does occur: barricade rows on the `~p` parallel runs that cross the wall (2 of 51 worlds). That is Lane A work, not an owner wait.
+
 ## What
 
 FEAT-103 put three 3 m Type III barricades across the paved road past the expedition camp — striped
@@ -83,5 +85,9 @@ The design moved on from "the truck stops at them":
   ~30 m inside the wall, so the return seated the truck just past the barricades and it crashed back
   through them). `_returnSpots` drops a spot on a row's far side or within poiEdgeReturnM inside it;
   on seed 3852053035 the camp road's last spot moved from 17 m past the row to 20 m inside it.
-- [ ] Rows are not placed on BUG-63 `~p` parallel runs (they are absent from `networkGraph`). Measure
-      how often a parallel crosses the wall, or close it as not occurring.
+- [ ] Rows are not placed on BUG-63 `~p` parallel runs (they are absent from `networkGraph`). **MEASURED 2026-11-07
+      (Lane A, `wip/feat154-parallel.mjs`, the 51-world BUG-124 census):** 37 parallel runs on 28 worlds; **2 worlds**
+      have one crossing the planners' wall with no row (2167923713, 3109505264, one crossing each). It occurs, so
+      it is not closed: the fix is a row at each `~p` wall crossing too (poi.js barricades, plus the expedition-camp
+      gate's independent crossing count). The edge fade still returns a truck that drives out there, so it is a
+      missing cue, not a hole.

@@ -1,7 +1,7 @@
 ---
 id: FEAT-155
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-10-30
 source: owner, 2026-10-30 — "good but we should hide the truck dashboard in camp" (on FEAT-128, the key turning off at camp)
@@ -39,3 +39,7 @@ it. cdp-smoke's `campGear` step checks it through the debug camp shortcut: the c
 back on break camp.
 
 **Owed:** the owner's look.
+
+## Resolution — Lane A, 2026-11-07 (close-on-evidence sweep)
+
+On main (7006140f; ff0c1452). `body.camp-on` hides the gauge cluster for as long as a camp is made, and every exit runs through `_exitCampScene`. cdp-smoke's `campGear` step checks it gone and back. No owner call is open on it.
