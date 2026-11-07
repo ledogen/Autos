@@ -123,6 +123,8 @@ check('…the slot is empty now', shelf[0] === null && !svc.buyAndFit(0, 'damper
 check('the socket\'s labour is on the clock', hours === 0.75, hours)
 check('an exchange off the tires pays the minimum charge too, × tier', svc.fitLabour('springsHD', 'springsFront').price === SU.price
   && (tier = 2, svc.fitLabour('springsHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
+check('the air filter fits for a third of the minimum charge, in 15 min (owner, 2026-11-06)',
+  svc.fitLabour('airFilterStock', 'airFilter').price === Math.round(SU.price / 3 * 100) / 100 && svc.fitLabour('airFilterStock', 'airFilter').hours === 0.25)
 const oldShocks = inventory.list().find(r => r.id === 'dampersOEM')
 check('the old shocks go straight into the inventory with their wear', !!oldShocks && oldShocks.cond === 0.2, JSON.stringify(oldShocks))
 const before = wallet
