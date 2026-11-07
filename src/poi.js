@@ -211,7 +211,10 @@ export const POI_ROSTER = [
     // trailer wall and 1.03 m off the pad's road edge (z -4.68..-2.73). The short strip keeps the lawn
     // furniture and is where you park; the 10 m interaction radius covers the whole pad. On the pad,
     // not the bare ground beside it: the carve's bench is flat, the cut/fill bank past it is not.
-    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 1,
+    // BUG-124: `offEdgeOf` — never on mom's EDGE. Mom's casserole runs to Larry's alone (data/offers.js FIRST_JOB), the
+    // planner never ends a job on its start's own edge (mission.js _roll, srcEdge), and every other job waits for the
+    // casserole (BUG-117), so a Larry two pads down mom's road was a world whose run could not start (2646203056).
+    { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 1, offEdgeOf: 'momsHouse',
       tags: ['residence', 'larry'], parked: [{ key: 'uncleVan', x: -3.5, z: -3.7, yaw: Math.PI * 0.5 }] },
 
     // ── Required classes (10) ──────────────────────────────────────────────────────────────────
@@ -1027,10 +1030,13 @@ export class PoiSystem {
             // (a region with no spot for a farm pad) falls back to lay-bys wearing its fallbackModel —
             // the roster is never short a farm for want of a big pad (owner, 2026-10-08).
             const kind = slotPadKind(slot)
-            const picks = pick(free.filter(q => (q.padKind ?? 'std') === kind), slot.count, slot.type, slot)
+            // BUG-124: a slot `offEdgeOf` a placed type takes no pad on that type's edges (see larrysHouse).
+            const apart = slot.offEdgeOf ? new Set(out.filter(p => p.type === slot.offEdgeOf).map(p => p.edge)) : null
+            const avail = apart ? free.filter(q => !apart.has(q.edge)) : free
+            const picks = pick(avail.filter(q => (q.padKind ?? 'std') === kind), slot.count, slot.type, slot)
             // `'fallbackModel' in slot`, not its truthiness: null is a real fallback — the cube.
             if (picks.length < slot.count && kind !== 'std' && 'fallbackModel' in slot) {
-                const lay = free.filter(q => (q.padKind ?? 'std') === 'std' && !picks.some(p => padsClash(p, q, P.poiPadSpacing)))
+                const lay = avail.filter(q => (q.padKind ?? 'std') === 'std' && !picks.some(p => padsClash(p, q, P.poiPadSpacing)))
                 picks.push(...pick(lay, slot.count - picks.length, `${slot.type}:fallback`, slot))
             }
             // NOTE `pool` is already this method's pad pool — the model pool needs its own name.
