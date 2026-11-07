@@ -17,11 +17,16 @@ AXES.  Blender +Y = glTF -Z = forward = the ROAD face (doors, sign).  Width runs
 road.  Base-seated (z = 0), centred on the wall footprint (bay block + office, x -6.3..6.3, y -4..4).
 Three.js model frame = (x, z, -y): every registry number below is printed in that frame.
 
-ON THE 14 x 8 LAY-BY, seat 1.4 (pad z = SEAT - y).  The pad is flat only from 1.4 m in from its road
-edge (road.js POI_ROAD_FEATHER 2.0 starts at the shoulder, 0.6 m outside the pad), so the front wall
-stands exactly there, pad z -2.6, and nothing touches the ground nearer the road.  The back wall lands
-1.4 m past the pad's far edge, inside the 1.6 m band the carve grades flat (road-carve.js
-PAD_RIM_HOLD), the barn's precedent.  pad_check() proves both for every vertex near the ground.
+ON THE 14 x 8 LAY-BY, seat 1.3 + seatAlong 0.5 (pad x = x + SEAT_ALONG, pad z = SEAT - y).  Two limits
+squeeze the 8 m depth:
+  - test/poi-yard.mjs: every collision-box corner within PAD_RIM_HOLD - 0.25 = 1.35 m of the pad's rounded
+    outline.  The back wall at seat 1.3 stands 1.3 m past the far edge.  seatAlong slides the building
+    0.5 m toward the office end so the -X back corner clears the 1.5 m pad-corner rounding (1.32 m).
+  - The pad is fully flat only from 1.4 m in from its road edge (road.js POI_ROAD_FEATHER 2.0 starts at the
+    shoulder, 0.6 m outside the pad).  The front wall stands 0.1 m short of that, at pad z -2.7, where the
+    feather's smoothstep already gives the pad 99.3 % authority.
+At seat 1.4 the front was exactly on the flat line, but the back wall broke poi-yard's 1.35 m (Lane B,
+2026-11-07).  pad_check() proves both limits.
 
 WINDING.  Every face goes through face(), which takes the direction the face must point and flips the
 polygon to suit.  check_facing() proves it by ray cast.  NOTHING IS STACKED: decals (lift plates, base
@@ -53,10 +58,13 @@ TRI_BUDGET = 2500
 RANGER_GLB = f"{REPO}/assets/models/ranger.glb"   # render scenery only, never exported
 
 # --- the lay-by (pad frame: x along the road, pad z = SEAT - y, -z = road side) ---
-SEAT = 1.4                  # registry `seat`
+SEAT = 1.3                  # registry `seat`
+SEAT_ALONG = 0.5            # registry `seatAlong`: the model slides this far along its own +X
 PAD_HX, PAD_HZ, PAD_R = 7.0, 4.0, 1.5   # poi.js poiPadHalfLen / HalfWid / CornerR
 FLAT_Z = -2.6               # the pad is flat from here back (1.4 m in from its road edge)
+FEATHER_SLACK = 0.1         # ground contact may stand this far into the feather (smoothstep: >= 99.3 % pad)
 RIM = 1.6                   # road-carve.js PAD_RIM_HOLD: graded flat this far beyond the pad
+RIM_KEEP = RIM - 0.25       # test/poi-yard.mjs: every collision-box corner within this of the pad
 
 # --- the Ranger (data/ranger.js), for the lift and the clearance print ---
 TRACK, WHEEL_R = 1.43, 0.368
@@ -811,15 +819,19 @@ def check_uv_handedness(ob):
 
 
 def pad_check(ob):
-    """Pad frame: x along the road, pz = SEAT - y.  Everything within 0.35 m of the ground must stand on
-    flat ground: no nearer the road than FLAT_Z, and inside the pad's rounded outline grown by RIM."""
-    def outside(x, pz):          # signed distance outside the pad's rounded rectangle
+    """Pad frame: px = x + SEAT_ALONG, pz = SEAT - y.  Everything within 0.35 m of the ground stands no
+    nearer the road than FLAT_Z - FEATHER_SLACK and inside the pad's rounded outline grown by RIM; every
+    collision-box corner within RIM_KEEP (test/poi-yard.mjs's rule)."""
+    def outside(x, pz):          # road-carve.js padSd: signed distance outside the rounded rectangle
         qx, qz = abs(x) - (PAD_HX - PAD_R), abs(pz) - (PAD_HZ - PAD_R)
         return math.hypot(max(qx, 0), max(qz, 0)) + min(max(qx, qz), 0) - PAD_R
     low = [v.co for v in ob.data.vertices if v.co.z < 0.35]
     front = min(SEAT - v.y for v in low)
-    worst = max(outside(v.x, SEAT - v.y) for v in low)
-    return front >= FLAT_Z - 1e-6 and worst <= RIM, front, worst
+    worst = max(outside(v.x + SEAT_ALONG, SEAT - v.y) for v in low)
+    corners = max(outside(x + SEAT_ALONG, SEAT - y) for _, lo, hi in collider_boxes()
+                  for x in (lo[0], hi[0]) for y in (lo[1], hi[1]))
+    ok = front >= FLAT_Z - FEATHER_SLACK - 1e-6 and worst <= RIM and corners <= RIM_KEEP
+    return ok, front, worst, corners
 
 
 def truck_check():
@@ -852,7 +864,7 @@ def build():
     t, per = evaluated_tris(ob)
     bad, hits = check_facing(ob)
     mir, tex = check_uv_handedness(ob)
-    ok_pad, front, worst = pad_check(ob)
+    ok_pad, front, worst, corners = pad_check(ob)
     lo = [min(v.co[i] for v in ob.data.vertices) for i in range(3)]
     hi = [max(v.co[i] for v in ob.data.vertices) for i in range(3)]
     boxes, (park, camera) = registry()
@@ -863,8 +875,9 @@ def build():
           f"  images {len(bpy.data.images)}")
     print("  per material: " + ", ".join(f"{k} {v}" for k, v in sorted(per.items(), key=lambda kv: -kv[1])))
     print(f"  bbox  x {lo[0]:.2f}..{hi[0]:.2f}  y {lo[1]:.2f}..{hi[1]:.2f}  z {lo[2]:.2f}..{hi[2]:.2f}")
-    print(f"  pad: nearest the road at ground pz {front:.2f} (flat from {FLAT_Z}), worst {worst:.2f} m past the"
-          f" pad edge (rim {RIM})  -> {'OK' if ok_pad else 'FAIL'}")
+    print(f"  pad: nearest the road at ground pz {front:.2f} (flat from {FLAT_Z}, slack {FEATHER_SLACK}), worst"
+          f" {worst:.2f} m past the pad edge (rim {RIM}), collider corners {corners:.3f} (poi-yard {RIM_KEEP})"
+          f"  -> {'OK' if ok_pad else 'FAIL'}")
     print(f"  facing: {bad} inverted first-hits of {hits}   uv handedness: {mir} mirrored of {tex} sign faces")
     print("  truck on lift A: " + ", ".join(
         f"{k} {'/'.join(f'{x:.2f}' for x in v) if isinstance(v, tuple) else f'{v:.2f}'}" for k, v in clear.items())
@@ -876,6 +889,7 @@ def build():
         print(ln)
     print("      ],")
     print(f"    seat: {SEAT},")
+    print(f"    seatAlong: {SEAT_ALONG},")
     print(f"    {park}")
     print(f"    {camera}")
     print("=" * 72)
@@ -929,7 +943,8 @@ def _plane(name, x0, x1, y0, y1, z, mat):
 def scenery():
     sc = bpy.context.scene
     _plane("Ground", -60, 60, -60, 60, -0.03, _flat("Ground", (0.16, 0.17, 0.10)))
-    _plane("Pad", -PAD_HX, PAD_HX, SEAT - PAD_HZ, SEAT + PAD_HZ, -0.005, _flat("Pad", (0.24, 0.20, 0.15)))
+    _plane("Pad", -PAD_HX - SEAT_ALONG, PAD_HX - SEAT_ALONG, SEAT - PAD_HZ, SEAT + PAD_HZ, -0.005,
+           _flat("Pad", (0.24, 0.20, 0.15)))
     ry = SEAT + PAD_HZ + 0.6
     _plane("Road", -60, 60, ry, ry + 7.0, -0.01, _flat("Road", (0.05, 0.05, 0.055), 0.8))
     # the Ranger on lift A, nose away from the road, its CG on the lift centre
