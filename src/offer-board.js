@@ -230,7 +230,9 @@ export function formatGameDuration (h) {
 export function formatDue (h) {
     const t = Math.round(h * 60)   // whole minutes FIRST, so 47.9999 h reads Day 3, 12 am
     const day = Math.floor(t / 1440) + 1
-    const mins = t % 1440
+    // BUG-136: a FLOORED modulo. The opening's evening is day 0, before the clock's zero (18:00 is −6 h), and `%`
+    // keeps the sign: 22:00 on day 0 read "Day 0, -2 am".
+    const mins = ((t % 1440) + 1440) % 1440
     const hr = Math.floor(mins / 60), m = mins % 60
     const h12 = hr % 12 || 12
     return `Day ${day}, ${h12}${m ? ':' + String(m).padStart(2, '0') : ''} ${hr < 12 ? 'am' : 'pm'}`
