@@ -5173,8 +5173,7 @@ let _campBusy = false   // a fade is in flight: no second trigger, no double-dug
 // became the tent in the top-right icon column; 2026-10-19: the tent shows everywhere in story
 // mode, because the truck is a bed anywhere). Not looking, the tent is the whole UI AND the
 // siting ray never runs AND the brake latch will not open the camp dialogue — looking is how the
-// player says "I'm shopping for ground now". Session-sticky on purpose: it stays on until they
-// turn it off.
+// player says "I'm shopping for ground now". It stays on until they turn it off, or break camp (BUG-142).
 let _campSeek = false
 
 /** Inside a POI's ring, the radius its park trigger answers: the place does the work there, so the
@@ -6240,6 +6239,14 @@ function _sleepAtCamp () {
  * no pad, so they just close. The truck hold is released by the frame loop the moment _campUi
  * goes null.
  */
+/** Break camp (the card's "break camp" / "leave", or R while camped). BUG-142 (owner, 2026-11-07: "Camping menu
+ *  should default to off when you break camp"): the hunt goes off with it, where it was sticky until now. */
+function _breakCamp () {
+  _campSeek = false
+  _closeCampUi()
+  _updateParkTriggers()   // repaint the tent now, as Z does, rather than on the next 10 Hz poll
+}
+
 function _closeCampUi () {
   const st = _campUi
   _campUi = null
@@ -6435,7 +6442,7 @@ document.addEventListener('keydown', (e) => {
 })
 document.getElementById('cp-make')?.addEventListener('click', _makeCamp)
 document.getElementById('cp-cancel')?.addEventListener('click', _closeCampUi)
-document.getElementById('cp-break')?.addEventListener('click', _closeCampUi)
+document.getElementById('cp-break')?.addEventListener('click', _breakCamp)
 document.getElementById('cp-sleep')?.addEventListener('click', () => {
   if (!_campUi) return
   // FEAT-170: the evening's night is preset to wake at 07:00.
@@ -7103,7 +7110,7 @@ function _updateEnergyMeter () {
   _emEls.strip.style.transform =
     `translateX(${EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H}px)`
   const st = daySystem.stage()
-  const label = daySystem.hungry() ? `${st} · hungry` : st   // FEAT-169: words, never a gauge (SM-INV-10)
+  const hw = daySystem.hungerWord(), label = hw ? `${st} · ${hw}` : st   // FEAT-169: words, never a gauge (SM-INV-10)
   if (label !== _emStage) {
     _emStage = label
     if (st === 'sleepy') _tut('tut-sleep')   // FEAT-147
@@ -9689,7 +9696,7 @@ function loop () {
       // R-12: R while camped breaks camp first — the same close the dialogue's "break camp" button
       // runs (un-digs the pad, hides the fire, drops the camera focus, releases the FEAT-118 clock
       // hold). A fade in flight checks that its dialogue is still up, so this is safe mid-fade too.
-      if (_campUi) _closeCampUi()
+      if (_campUi) _breakCamp()
       // R re-seats the truck to a driveable state ONLY — it does NOT touch any tunable
       // params or slider values. All tuning (vehicle AND terrain) stays exactly as set;
       // a full page reload is the only way to revert params to file defaults.
