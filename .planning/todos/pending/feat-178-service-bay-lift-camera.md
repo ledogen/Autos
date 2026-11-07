@@ -42,3 +42,28 @@ footprint); the generator prints the final numbers into the `data/prop-models.js
   from 3.3 m, soft.
 - **Roster wiring is Lane B's:** autoShop `model: null` → 'serviceStation', towSeat (BUG-114 / test/tow-seat.mjs hold the
   auto shop keyless today), the service trigger.
+
+## Work log
+
+**2026-11-07, Lane B — built on feature/machine, not landed.** ASSET-82 landed on main 85f3c8f7 with the final
+registry (Lane C): `park: { x: -3.95, z: -0.2, halfX: 1.045, halfZ: 2.3 }` — bay A's lift deck; the `lift` field was
+dropped in favour of it — and `camera: { eye: [-5.9, 2.8, 3.6], look: [-3.95, 0.9, -0.499], fov: 55 }`, seat 1.4.
+
+- **Roster** (src/poi.js): the auto shop is `model: 'serviceStation'`. Its park box gets the orange box curtain like
+  the general store's lot (main.js, no new code). `q.camera` comes off the model like `q.park`.
+- **The service trigger** (`_serviceInReach`): the brake opens the service screen only parked in the park box — on the
+  lift — through the same `_inPoiSpot` test the givers use. Before, anywhere within 10 m of the shop did.
+- **The camera snap** (the service screen's `onView`): the model's eye and look go to world (the model frame, seat
+  and yaw, `baseY` for height) and become the existing focus orbit's bearing, pitch and radius about the look point.
+  `snapCamera()` makes it a snap, not a glide through the bay's wall. A drag still orbits from there; closing hands
+  back to the chase cam, as before. camera.js `setCameraFocus` takes a `phi` (the pitch) for it. The model's `fov`
+  (55°) is NOT applied: the game keeps its own field of view (Lane C: "ignore it if you use the game's own fov").
+  A shop without a `camera` keeps the old front three-quarter orbit.
+- **The tow** (`towSeat`): a POI with a park box seats in it — its centre, nose along the box's long side (into the
+  bay, model +Z, for the lift). So a tow to the shop lands on the lift, and the service screen opens there.
+- **Gates:** test/tow-seat.mjs now holds the shop to a park box (not keyless): the seat is in reach and in the box,
+  the corners on the pad, and real physics with the station's 14 colliders at four road headings — no spin, upright,
+  at rest, at bare-ground height, not shoved. A keyless pad's strip is still checked. Green.
+- **Smoke:** `PAD_SEAT` seats a park-box POI where a tow would (dev handle `window.__towSeat`), heading included. The
+  service step checks the view lands within 0.3 m of the bay's camera eye. boot,story,tires,service,offer,pad PASS.
+- Owed: the owner's look in game (the framing; the fov question); a screenshot probe is at wip/feat-178/shot.mjs.

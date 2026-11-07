@@ -3675,8 +3675,19 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
   // orbits it; closing hands the view back to the chase cam. The truck stays put on its own: the
   // latched handbrake holds it through a preview's resettle (a lift on and off fifteen times moved it
   // 6 mm on a flat pad, headless).
+  // FEAT-178 (owner, 2026-11-06: "the camera snaps to an inside corner of the service bay looking at the car"): parked on
+  // the service station's lift, the view is the model's own `camera` — its eye and look, as the same orbit's bearing,
+  // pitch and radius about the look point, so a drag still orbits from there.
   onView: (on) => {
     if (!on) { setCameraFocus(null); return }
+    const c = _servicePoi?.camera   // the screen opens only parked in the box (_serviceInReach)
+    if (c) {
+      const at = ([x, y, z]) => ({ ...dropZoneWorld(_servicePoi, { x, z }), y: _servicePoi.baseY + y })
+      const e = at(c.eye), l = at(c.look), dx = e.x - l.x, dy = e.y - l.y, dz = e.z - l.z, r = Math.hypot(dx, dy, dz)
+      setCameraFocus(l, { theta: Math.atan2(dx, dz), phi: Math.asin(dy / r), radius: r })
+      snapCamera()   // "snaps": no glide in from the chase position, through the bay's wall
+      return
+    }
     const p = vehicleState.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
     setCameraFocus({ x: p.x, y: p.y, z: p.z }, { theta: Math.atan2(f.x, f.z) + 0.7, radius: 7.5 })
   },
@@ -3688,7 +3699,7 @@ function _serviceInReach () {
   if (['generating', 'offer'].includes(missionSystem?.state)) return null
   const vp = vehicleState.position
   const q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
-  return q?.type === 'autoShop' ? q : null
+  return q?.type === 'autoShop' && _inPoiSpot(q) ? q : null   // FEAT-178: on the lift (its park box), not just near
 }
 
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
@@ -5367,7 +5378,8 @@ function _towTo (t, seat) {
     _prevParkedForPoi = false
   })
 }
-// BUG-114: the seat is poi.js towSeat — a pump zone, or a keyless pad's road-side strip, never the marker.
+// BUG-114: the seat is poi.js towSeat — a pump zone, a park box (FEAT-178: the shop's lift), or a keyless pad's
+// road-side strip, never the marker.
 function _towToFuel () {
   const t = _towQuote(_FUEL_SELLER)
   if (t) _towTo(t, towSeat(t.q))
@@ -9254,6 +9266,7 @@ document.getElementById('tc-end')?.addEventListener('click', () => _endRun(recov
 window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
 window.__worldCode = () => formatWorldCode(_seedString, activeWorld())   // dev handle — cdp-smoke names a failed step's world
 window.__poi = () => poiSystem      // dev handle — test/cdp-smoke.mjs drives at a barricade row (FEAT-154)
+window.__towSeat = towSeat         // dev handle — cdp-smoke parks in a POI's park box (FEAT-178: the shop's lift) as a tow would
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
 function _runSnapshot () {
