@@ -26,8 +26,8 @@
 // struck face per layer naming the body's owner (userData: road tile, terrain chunk, prop, POI). `SOAK_LOG=1` prints a
 // progress line every 10 sim-s; `SOAK_LOG=2` the autopilot's state (path index, lateral error, target) every 1 s;
 // `--dump-path=a-b` prints the route's points a..b (spacing, turn, jumps) and exits. `node test/soak-site.mjs <capture>`
-// reads the site (the road, a bore, raw/carved/road-top heights, steps in the carved ground). A capture recorded before a carve change may not
-// replay (the world moved under it: BUG-129's fix buried run4's) — re-record it.
+// reads the site (the road, a bore, raw/carved/road-top heights, steps in the carved ground). A capture recorded before
+// a carve change may not replay (the world moved under it: BUG-129's fix buried run4's) — re-record it.
 //
 // WHAT IT HAS CAUGHT (2026-11-07): BUG-122 (a junction's road-edge lip doubled to 0.31 m: 75 kN in one step) and
 // BUG-129 (an embankment fill that stops in a 1 m cliff ~19 m out). BUG-126 was the autopilot, not the world.
