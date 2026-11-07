@@ -21,6 +21,10 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   tractionControl: false,   // RANGER_PARAMS.tractionControl — brake + torque traction control (FEAT-159; owner: off)
   stickDeadzone: 0.08,      // PAD_PARAMS.stickDeadzone — keep equal to gamepad.js's default
   steerShape: 0,            // PAD_PARAMS.steerShape — likewise (0 linear … 1 parabolic … 1.5)
+  // FEAT-184 (owner, 2026-11-07: "allow players to check an option in settings to always skip the tutorial … after the
+  // first time you see the tutorial"): a new run starts where a skip lands. Switched on by the first finished or skipped
+  // tutorial (main.js _tutorialDone); the settings page turns it back off.
+  skipTutorial: false,
   // No last seed: the seed field is always blank (owner, 2026-09-06) — remembering it would make
   // "just press start" mean "replay the same world forever".
 })

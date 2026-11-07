@@ -503,6 +503,21 @@ export const REQUISITION = [
 ]
 
 /**
+ * expedition-rewards (owner, 2026-11-07: "2, 3 and 4. great ideas"), option 2: a requisition line delivered at A or
+ * better hands supplies back for the lines still to go. `item` is granted (data/items.js); `freeRepair` is one repair at
+ * an auto shop's bench for nothing; `rest` puts the driver's energy at full, a night's worth, with no time passing.
+ * The owner's list named a food line, which the requisition does not have; the meal goes to the signs line, which had
+ * no supply of its own [DEFAULT]. PLACEHOLDER words on the result card.
+ */
+export const LINE_SUPPLY = {
+    reqFuel:     { item: 'jerryCan',    text: 'a full jerry can' },
+    reqGear:     { item: 'tirePlugKit', text: 'a tire plug kit' },
+    reqSigns:    { item: 'packedLunch', text: 'a meal' },
+    reqCrew:     { freeRepair: 1,       text: 'one free repair at any auto shop' },
+    reqFirewood: { rest: true,          text: "a full night's rest" },
+}
+
+/**
  * FEAT-147: THE FIRST JOB — the opening's courier run from mom's to Larry's (owner, 2026-11-02: a
  * courier TO Larry, not his paper round; 2026-11-05: mom sends it, scripted). One fixed offer at mom's,
  * posted once per run (src/offer-board.js `f0` slot): when the opening's evening ends, or at go-live on a skip (FEAT-170) — mom has no SOURCES row and posts nothing

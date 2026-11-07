@@ -236,5 +236,19 @@ const tight = new ServiceCenter({ ...svc, inventory: full, off: null })
 const si = full.list().findIndex(r => r.id === 'spareTire')
 check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].id === 'spareTire', JSON.stringify(full.list().map(r => r.id)))
 
+// expedition-rewards option 2: the crew's line owes one repair — $0 while it is held, the labour still on the clock, one use.
+{
+    let owed = 1, w = 100, h = 0
+    const dm = damage
+    const free = new ServiceCenter({ ...svc, money: () => w, spend: ($) => { if ($ > w + 1e-9) return false; w -= $; return true },
+        advanceHours: (x) => { h += x }, freeRepairs: () => owed, useFreeRepair: () => { owed-- } })
+    dm.set('engine', 0.5)
+    const fq = free.repairQuote('engine', 0.7)
+    check('a free repair quotes $0 and keeps its hours', fq.price === 0 && fq.hours > 0, JSON.stringify(fq))
+    check('…the repair takes nothing from the wallet and uses it up', free.repair('engine', 0.7) && w === 100 && owed === 0 && h > 0)
+    dm.set('engine', 0.5)
+    check('…and the next one is paid again', free.repairQuote('engine', 0.7).price > 0)
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')
 process.exit(fails ? 1 : 0)

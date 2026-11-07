@@ -4,7 +4,7 @@
 // numbers. This gate pins the other half: that a route can actually be BUILT on a real streamed,
 // routed network, and that it is the route the design says it is.
 //
-//   1. A ROUTE EXISTS AT EVERY RUNG. 4 → 9 → 12 → 15 customers, all routed from Larry's own edge,
+//   1. A ROUTE EXISTS AT EVERY RUNG. 4 → 7 → 9 → 11 customers (BUG-134), all routed from Larry's own edge,
 //      all priced. A ladder whose top rung cannot be planned is a ladder that dead-ends a run.
 //   2. ONE PAR, ONE ORACLE (SM-INV-2). The tour is one segment list and one computePar call, so
 //      par must be a single number over the whole route — not a sum of legs, and demonstrably not
@@ -109,9 +109,12 @@ for (let tier = 0; tier < PAPER_PARAMS.tiers.length; tier++) {
         // the planner dropped someone it could have served.
         for (let i = 0; i < tours.length; i++) {
             const want = customersForTier(i), have = tierCust(i).length
-            check(`tier ${i + 1} carries every customer stamped for it, and no more than it asks`,
-                tours[i].customers.length === have && have <= want,
-                `asked ${want}, stamped ${have}, routed ${tours[i].customers.length}`)
+            // BUG-134 (a): fewer only when the round was cut to fit PAPER_PARAMS.maxRouteM.
+            const routed = tours[i].customers.length, cut = routed < have && tours[i].distance <= PAPER_PARAMS.maxRouteM
+            check(`tier ${i + 1} carries every customer stamped for it (or fewer, cut to fit ${PAPER_PARAMS.maxRouteM / 1000} km), and no more than it asks`,
+                (routed === have || cut) && have <= want,
+                `asked ${want}, stamped ${have}, routed ${routed}, ${(tours[i].distance / 1000).toFixed(2)} km`)
+            if (cut) console.log(`       tier ${i + 1}: cut to ${routed} of ${have} to fit (BUG-134)`)
             if (have < want) console.log(`       NOTE: tier ${i + 1}'s ${PAPER_PARAMS.tierRoadM[i]} m road band`
                 + ` supplies ${have} of ${want} customers on this world`)
         }
@@ -171,13 +174,12 @@ for (let i = 1; i < tours.length; i++) {
         if (past.length) console.log(`       tier ${i + 1}: ${past.length} borrowed past ${band} m`
             + ` (furthest ${(Math.max(...past.map(dOf)) / 1000).toFixed(2)} km)`)
     }
-    // ~14 km is the owner's budget for the whole round (about ten minutes of straight driving).
-    // The bands bound how far each house is from Larry, not the tour through them, and nothing in
-    // src/ bounds the tour (BUG-134, owner 11-07: BUG-131 landed with seed 6's top route at 16.4 km).
-    // So this is a MEASUREMENT until BUG-134 builds the bound: it reports the length, never fails.
+    // ~14 km is the owner's budget for the whole round (about ten minutes of straight driving), 15.5 km hard.
+    // The bands bound how far each house is from Larry, not the tour through them; since BUG-134 (owner, 2026-11-07:
+    // option (a), the ladder 4 / 7 / 9 / 11) the plotter drops a house past the hard limit, so this fails again.
     const top = tours.at(-1)
-    if (top) console.log(`  · top route ${(top.distance / 1000).toFixed(2)} km against the ~14 km budget`
-        + ` (15.5 km hard)${top.distance > 15500 ? ' — OVER, BUG-134' : ''}`)
+    if (top) check(`the top route stays inside ${PAPER_PARAMS.maxRouteM / 1000} km (BUG-134)`, top.distance <= PAPER_PARAMS.maxRouteM,
+        `${(top.distance / 1000).toFixed(2)} km`)
 }
 
 // ── 3b. PAR PRICES THE STOPS (FEAT-61, owner-reported 2026-08-14) ───────────────────────────────
