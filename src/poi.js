@@ -250,8 +250,8 @@ export const POI_ROSTER = [
     // roster is never short a store (fallbackModel null = the cube, same ruling).
     { type: 'generalStore', count: 1, model: 'generalStore', fallbackModel: null, siting: 'any' },
     // The type exists so the roster is whole; fishing and The Confluence stay deferred. Do not
-    // build its systems off the back of this line.
-    { type: 'tackleShop',   count: 1, model: null, siting: 'any' },
+    // build its systems off the back of this line. ASSET-84, the bait-and-tackle shack, on a lay-by.
+    { type: 'tackleShop',   count: 1, model: 'tackleShop', siting: 'any' },
     // FEAT-88/91: the firewood yard — the region-1 haul yard. REGION 1 ONLY by design (FEAT-91
     // ruling 2): story mode has one region today, so there is nothing to window yet — the `regions`
     // field lands with region 2. It fits the standard 14 x 8 m lay-by pad (owner, 2026-10-04); the
