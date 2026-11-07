@@ -89,23 +89,37 @@ async function simFor (s) {
 }
 const vis = id => js(`!!document.getElementById("${id}")?.checkVisibility()`)
 const dlgUp = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+// The card that is up, as a key that changes when it advances ('' with the panel down). The words of a streaming
+// card are laid out whole and hidden, so a reveal does not change it; the "1 / 4" counter and the text do.
+const dlgCard = () => js(`(() => { const P = document.getElementById("dialogue-panel")
+  return getComputedStyle(P).display === "none" ? "" : (document.getElementById("dlg-more")?.textContent ?? "") + "|" + (document.getElementById("dlg-text")?.textContent ?? "") })()`)
 async function readCards () {
-  // THE STUCK CARD WAS THIS LOOP (the 3-seed replay, seed 2057513356): one sequence closed, the next opened 117 ms
-  // later, in the gap between this loop's last look and the check below, and the check failed on a card nobody had
-  // pressed (the dump logged no key at all). So read until the panel has stayed down a second, not the first frame
-  // it is down, and never check a card that has not been pressed.
-  for (let k = 0; k < 8; k++) {
-    for (let i = 0; i < 40 && await dlgUp(); i++) { await tap('Enter'); await sleep(150) }
-    // HARNESS OR GAME? An earlier stuck card's dumps showed none of the CDP Enters reaching the page (the
-    // window-capture logger saw no keydown). Press from INSIDE the page — a keydown dispatched on document, where
-    // the game's dialogue handler listens — and note which one closed it: a page-side close means the game is sound
-    // and the browser's input pipe dropped the keys; the run goes on. Still up after that is a real soft-lock.
-    if (await dlgUp()) {
-      for (let i = 0; i < 40 && await dlgUp(); i++) { await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }))`); await sleep(100) }
-      if (!await dlgUp()) run.notes.push(`day ${run.day}: a card ignored 40 CDP Enters but closed on page-side keydowns (harness input, not the game)`)
+  // THE STUCK CARD WAS THIS FUNCTION, twice over (seed 2057513356, Larry's welcome, which opens ~0.1 s after the result
+  // card closes). Both versions decided "pressed and still up" from separate looks at the panel, and the card opened
+  // between two looks, so the check failed on a card nobody had pressed (both dumps logged no key at all). So count
+  // the presses made on the CARD that is up now (a new card restarts the count), and read until the panel has stayed
+  // down a whole second.
+  // HARNESS OR GAME? An earlier stuck card's dumps showed none of the CDP Enters reaching the page (the window-capture
+  // logger saw no keydown). So after 40 CDP Enters it presses from INSIDE the page — a keydown dispatched on
+  // document, where the game's dialogue handler listens — and notes it when that is what closed the card: the game
+  // is sound and the browser's input pipe dropped the keys; the run goes on. 80 presses and still up: a soft-lock.
+  let presses = 0, downAt = null, card = ''
+  for (let i = 0; i < 2000; i++) {
+    const now = await dlgCard()
+    if (now !== card) {
+      if (presses > 40) run.notes.push(`day ${run.day}: a card ignored 40 CDP Enters but moved on page-side keydowns (harness input, not the game)`)
+      presses = 0; card = now
     }
-    if (await dlgUp()) break                   // 80 presses and still up: the check below fails
-    if (!await until(dlgUp, 1000)) return      // down a whole second: read out
+    if (!now) {
+      downAt ??= performance.now()
+      if (performance.now() - downAt >= 1000 * stretch()) return
+      await sleep(100)
+      continue
+    }
+    downAt = null
+    if (presses >= 80) break
+    if (presses++ < 40) { await tap('Enter'); await sleep(150) }
+    else { await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }))`); await sleep(100) }
   }
   check(!await dlgUp(), `a dialogue card would not close: ${JSON.stringify(await js(`({ vis: document.visibilityState, focus: document.hasFocus(),
     tickAgoMs: Math.round(performance.now() - (window.__soakTick ?? 0)), simT: window.__simT(), speaker: document.getElementById('dlg-speaker')?.textContent,
