@@ -96,6 +96,8 @@ export const GATES = [
     desc: 'FEAT-13 v2: Delaunay/Urquhart primitives — empty-circumcircle, Urquhart⊇MST (connected), order-invariant' },
   { file: 'road-connectivity.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-68: the registered network is ONE component on the eval trio (connectivity is priority #1 and it regressed silently once — the deleted v1 culls shredded v2 geometry to 54% mean largest-component share while preventing zero real crossings), and no non-adjacent runs cross' },
+  { file: 'query-nearest.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-121: queryNearest answers the nearest road off the footprint as well as on it — the D4 interior rule bounds a sample\'s along-road offset, not just its tangent-line lateral. Two random seeds (pond no-go, R 1400), 250 road points each, queries 0–40 m to the side; GATING: no answer more than 2 m past brute force (the nearest point on any run polyline). Main: 87 % of off-footprint answers wrong, worst +189 m.' },
   { file: 'road-clearance.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-77 (owner 2026-09-07): two roads may not share each other\'s earthwork — 12 m of daylight between pavement edges plus the carve\'s own apron (fill/cut slope, capped toe) for each. Measured on the shipped network against the planner\'s own _v2ClearReq; bores, junction throats and departure blends excluded. GATING: zero pairs. BUG-105 random-seed leg: 12 census seeds (pond no-go wired), GRAZE tier (centres < 22 m) gated at zero, banks-only reported (main: 3 of the 12 red).' },
   { file: 'road-carve-walls.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
