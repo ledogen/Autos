@@ -125,7 +125,10 @@ async function soakSeed (seed, replay = null) {
   let inputs = [], snapT = 0, snap = null
   mkdirSync(OUT, { recursive: true })
 
+  // Seats the truck on path point i AND moves the autopilot there: a re-seat that left idx behind had the pursuit
+  // chase a point behind the truck, lose the route, and re-seat again every 4 s for ever (seed 6, (−298, −987)).
   const seatAt = (i) => {
+    idx = i
     const a = router.path[i], b = router.path[Math.min(i + 3, router.path.length - 1)]
     const h = Math.atan2(-(b.x - a.x), -(b.z - a.z))
     restore(vs, snapshot(freshState(P, a.x, ground(a.x, a.z, 1e4) + 1.0, a.z, h)))
@@ -159,7 +162,7 @@ async function soakSeed (seed, replay = null) {
       const p = vs.position, v = Math.hypot(vs.velocity.x, vs.velocity.z)
       while (idx < router.path.length - 2 && !router.path[idx + 1].jump && Math.hypot(router.path[idx + 1].x - p.x, router.path[idx + 1].z - p.z) < Math.hypot(router.path[idx].x - p.x, router.path[idx].z - p.z)) idx++
       while (router.path.length - idx < 80) router.extend()
-      if (router.path[idx + 1]?.jump && Math.hypot(router.path[idx].x - p.x, router.path[idx].z - p.z) < 6) { seatAt(idx + 1); idx++; continue }
+      if (router.path[idx + 1]?.jump && Math.hypot(router.path[idx].x - p.x, router.path[idx].z - p.z) < 6) { seatAt(idx + 1); continue }
       let target, vT
       if (offroad) {
         target = offroad.to; vT = 9
