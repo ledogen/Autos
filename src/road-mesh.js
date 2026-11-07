@@ -880,7 +880,7 @@ export class RoadMeshSystem {
             // built by the ONE slice whose arc range contains it — streams with the tile like
             // everything else, on the UNTRIMMED arcS0/arcS1.
             // BUG-107: built BEFORE the junction trim below. A bore can end AT a node with a pad (seed 19:
-            // a sharp degree-2 bend at the portal, 1 mouth in 209 on 10 seeds), and a slice the trim drops
+            // a sharp degree-2 bend at the portal; 2 mouths of 389 on 20 seeds), and a slice the trim drops
             // whole was skipped here too — no tube over its last 5.6 m and no portal ring, so the
             // shader-cut skin left a hole onto the sky at the mouth. Its span also ran 2 cm past the run
             // (543.18 on 543.16): clamped to the run, and the run's LAST slice holds an end at L (the
