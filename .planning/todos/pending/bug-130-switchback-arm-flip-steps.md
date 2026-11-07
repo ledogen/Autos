@@ -30,9 +30,9 @@ of the 24 remaining in-section steps over 0.5 m sit at the same switchbacks.
 
 ## Acceptance
 
-- [ ] Root cause in the resolver / rival list confirmed.
-- [ ] The census: arm-flip steps over 0.5 m to 0 on random seeds, nothing new elsewhere.
-- [ ] A gate pins it (sampled); `fingerprint-world` explained; a before/after shot of a switchback bank.
+- [x] Root cause in the resolver / rival list confirmed.
+- [x] The census: arm-flip steps over 0.5 m to 0 on random seeds, nothing new elsewhere.
+- [x] A gate pins it (sampled); `fingerprint-world` explained; a before/after shot of a switchback bank.
 
 ## Diagnosis (Spare, 2026-11-07)
 
@@ -57,3 +57,51 @@ hidden behind a nearer, rejected candidate and only "appears" when it wins, as t
      (where two minima split) starts at weight 0. Two arms merging near the apex already coincide in grade.
 3. **Measure:** the census by class (arm-flip and in-section steps over 0.5 m to ~0; nothing new elsewhere), resolver
    cost (the physics hot path), `fingerprint-world`, gates, and a switchback before/after shot.
+
+## Fix (Spare, 2026-11-07, land/bug-130)
+
+`src/road.js`. `RIVAL_ARC_SEP` is gone. `_runPassMinima` walks the winner's run once (its PERF-25 cell ranges, or the
+whole polyline) and returns every other local minimum of the clamped distance within `footHW`, with its prominence
+(the rise to the higher of the two peaks between it and its neighbours; infinite across a range gap). Each rival
+carries a weight `m` that scales both its bank weight and its fade in `_carveCrossSectionBlended`:
+
+- self passes: `m = s((footHW − d)/RIVAL_FADE_D) × max(s(prom/RIVAL_PROM_M), s(1 − (d − dW)/RIVAL_TIE_M))`,
+  `s` = smoothstep, `RIVAL_FADE_D` 3 m, `RIVAL_PROM_M` 2 m, `RIVAL_TIE_M` 2.5 m, `dW` the winner's distance;
+- other runs' interiors and run ends: the distance term only (the run-flip class had the same hard gate).
+
+The tie term is what makes a flip symmetric: at the halfway line both arms are the same distance away, so the loser
+weighs 1 whatever its prominence, as the winner does (prominence alone left a weight of 0.55 at some flips and 16
+arm-flip steps; a 5 m tie popped passes in at birth, worse; 2.5 / 2 was the sweep's best).
+
+**Census** (`wip/bug-130/census.mjs`, the same three random seeds, 16.5 km), steps over 0.5 m, main → fix:
+
+| class | main | fix |
+|---|---|---|
+| arm flip | 21, worst 10.09 m | **0**, worst 0.31 m |
+| in-section | 24, worst 8.69 m | 14, worst 2.07 m |
+| run flip | 3, worst 1.22 m | 2, worst 0.66 m |
+
+The 14 left are a hairpin apex's flat-distance case (the distance along the run has a long flat bottom where the run
+turns round the point, so the minimum slides; no flip involved). Not chased here.
+
+**Cost** (`wip/bug-130/bench.mjs`, the physics hot path, interleaved main/fix, machine load ~9):
+`_resolveRoadSurface` p50 2.1–2.2 → 2.4–2.6 µs, p99 ~19 → 20.3–21.4 µs, mean 3.4 → 3.8–4.1 µs;
+`_sampleCarveWorld` p50 3.4–3.5 → 3.6–4.0 µs, mean 6.2–6.5 → 6.8–7.2 µs (about +8 %), p99 ~31–33 µs either way
+(noise).
+
+**Gate:** `test/bank-steps.mjs` (two of the census seeds, R 900): no arm-flip site over 0.5 m, the other sites
+≤ CEIL 7. Main fails it: 12 arm-flip sites (worst 10.09 m) and 14 others.
+
+**Shot:** https://claude.ai/artifact/1zPxKn5RNTxiDuFmzYjzVk (seed 861989012, the 10 m example, from road height:
+the rock spike between the arms becomes a lower mound).
+
+**Gates** (main 06a4d9f3 merged in, merge 704c3a47): affected 62/62 green, bank-steps among them (cdp-smoke held
+back, needs a browser).
+
+**`fingerprint-world` vs main 06a4d9f3:** network, profiles, junctions, poi and tiles identical in all six windows.
+Surface + carve differ in five (all but seed3 origin): the bank change itself. Water differs in three (seed6 origin
+story, seed11 origin story, seed7 origin play): stream MESHES only, which drape on the carved ground; the water data
+(ponds, streams, levels) is identical in all six. Props differ in one (seed6 fork), not traced; prop placement reads the ground
+height, which the fix changes there.
+
+Closed on landing.
