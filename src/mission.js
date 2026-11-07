@@ -182,6 +182,19 @@ export function buildGraphAdj(g, inRegion = () => true, nodes = null) {
 }
 
 /**
+ * BUG-128: does the ROAD of graph edge (a, b) leave `inside`? Sampled every 10 m along its routed centerline. One
+ * test for both sides of the wall: the planner drops such an edge from its graph (MissionSystem._bowingEdges), and
+ * poi.js places no pad on one, so placement and planning cannot disagree about what is inside.
+ */
+export function edgeLeaves(road, a, b, inside) {
+    const ed = road.edgeParData(a, b)
+    if (!ed?.centerline) return false
+    const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
+    for (let t = 0; t < L + 10; t += 10) if (!inside(ed.centerline.pointAt(off + Math.min(t, L)))) return true
+    return false
+}
+
+/**
  * Dijkstra from one node over a buildGraphAdj adjacency (road-length graph metric — cheap, nothing
  * is routed). Returns dist + parent chain to every reachable node. `maxD` stops expanding past that
  * distance (the leg planner's LEG_MAX band); the paper-route tour leaves it unbounded. Shared by the
@@ -848,6 +861,25 @@ export class MissionSystem {
     }
 
     /**
+     * BUG-128: the planners' edges ('ka|kb', ka < kb) with both nodes inside `inRegion` whose ROAD leaves it
+     * (edgeLeaves; guard 2 samples the route every 25 m). Cached per network revision and region: the network is
+     * frozen while a region is live, so this runs once per region, not once per roll.
+     */
+    _bowingEdges(road, g, inRegion, region) {
+        const tag = `${road._networkRev}|${region.x}|${region.z}|${region.r}`
+        if (this._bowing?.tag === tag) return this._bowing.set
+        const set = new Set()
+        for (const [a, b] of g.edges) {
+            if (!inRegion(g.pos(a)) || !inRegion(g.pos(b))) continue   // guard 1 drops it already
+            if (!edgeLeaves(road, a, b, inRegion)) continue
+            const ka = g.key(a), kb = g.key(b)
+            set.add(ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`)
+        }
+        this._bowing = { tag, set }
+        return set
+    }
+
+    /**
      * Roll one mission. Plan on the node graph with road-metre edge lengths (BUG-52; cheap — anchors
      * only, no routing), then route ONLY the chosen path and price it with the par oracle.
      *
@@ -891,6 +923,16 @@ export class MissionSystem {
         const inRegion = (p) => !region || Math.hypot(p.x - region.x, p.z - region.z) <= rMax
 
         const { posOf, idOf, adj } = buildGraphAdj(g, inRegion, region?.nodes)
+        // BUG-128: guard 1 by the ROAD, not only its nodes. An edge whose two nodes sit inside the wall can still bow past
+        // it (3109505264: to 2485 m, past the 2410 m fade line), and guard 2 below refuses every route that drives such
+        // an edge. Left in the graph, Dijkstra put that edge on the shortest path, guard 2 refused the route, nothing
+        // searched again, and a requisition line, which must always plan (SM-INV-7), never did. Dropped here, the search
+        // only finds routes guard 2 accepts. Planning only: poi.js places on the plain graph, so no POI moves.
+        if (region) {
+            const bow = this._bowingEdges(road, g, inRegion, region)
+            const ek = (x, y) => (x < y ? `${x}|${y}` : `${y}|${x}`)
+            if (bow.size) for (const [k, es] of adj) adj.set(k, es.filter(e => !bow.has(ek(k, e.to))))
+        }
 
         // Start node: ANY node in the planned network, not just the one nearest the car. _launch()
         // teleports the player to the start pin regardless (see accept/retry), so pinning the start
