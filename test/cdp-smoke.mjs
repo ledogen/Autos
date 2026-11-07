@@ -58,6 +58,9 @@ if (!await until(() => fetch(`http://localhost:${HTTP}/`).then(r => r.ok, () => 
 
 const { cleanup } = launchChrome('about:blank', { port: CDP, headed: process.argv.includes('--headed') })
 const client = await connect({ port: CDP })
+// SMOKE_CPU_THROTTLE=4: this Chrome runs its page 4× slower (CDP Emulation) — a loaded machine's timing, repeatably,
+// without loading the machine. For chasing load-only flakes; a landing never sets it.
+if (process.env.SMOKE_CPU_THROTTLE) await client.cmd('Emulation.setCPUThrottlingRate', { rate: +process.env.SMOKE_CPU_THROTTLE })
 
 // Every console error / uncaught exception, tagged with the step that was running.
 let step = 'boot'
@@ -1445,7 +1448,7 @@ const STEPS = [
     if (!await until(offerUp, 6000)) check(false, 'parking at the giver opened no offer card: ' + await js(`JSON.stringify((() => {
       const v = __vs, q = window.__map2d()._getPois().find(p => p.id === ${JSON.stringify(giver.id)}), m = window.__mission()
       return { parked: v.parked, hb: v.handbrake, v: +v.velocity.length().toFixed(2), m: m.state, onJob: m.isOnJob(),
-        offers: window.__board().view(q.id, 0)?.count ?? 0, d: +Math.hypot(q.x - v.position.x, q.z - v.position.z).toFixed(1),
+        offers: window.__map2d()._getBoard().view(q.id, 0)?.count ?? 0, d: +Math.hypot(q.x - v.position.x, q.z - v.position.z).toFixed(1),
         prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), hudMenu: document.body.classList.contains('hud-menu-on'),
         open: [...document.querySelectorAll('.open, [style*="display: block"], [style*="display: flex"]')].map(e => e.id).filter(Boolean).slice(0, 8) }
     })())`))
