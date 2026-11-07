@@ -1,7 +1,7 @@
 ---
 id: FEAT-171
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-05
 source: owner, 2026-11-05, after the FEAT-66 look on :3731 — "three item types: ground (sleeping pad, deluxe pad, air mattress), bedding (bedroll, sleeping bag), blanket (blanket, quilt). you can only use one of each type and the models will match (bedroll goes on top of sleeping pad and blanket on top)… tier goes air mat < pad < deluxe, bedroll < bag, blanket < quilt. since the starting pack is only two slots you wouldnt be able to use all 3 layers without a bag upgrade." Plus three answers the same evening (below).
@@ -139,3 +139,9 @@ spans the whole width, so the flap drapes down with them (the head view on those
 
 **Owed:** the owner's look at the new sheet, then at camp. [DEFAULT]s: the drape's fall 2.5 and reach 3 cm, the quilt's
 mass and colours.
+
+## Resolution — Lane A, 2026-11-06
+
+**Closed on the owner's look at round 3** (the page, 11-06, after the playtest): "land it". Round 3 (`43d2a6d6`) was
+already on main, so nothing else lands with the close. The [DEFAULT]s above (the drape's fall 2.5 and reach 3 cm,
+the quilt's mass and colours) stand as shipped. Placing the stack at camp stays with FEAT-66.

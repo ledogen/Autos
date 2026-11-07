@@ -30,7 +30,7 @@ await client.cmd('Page.addScriptToEvaluateOnNewDocument', { source: `
     }
   }` })
 try {
-  await client.cmd('Page.navigate', { url: `http://localhost:${PORT}/` })
+  await client.cmd('Page.navigate', { url: `http://localhost:${PORT}/?seed=6` })
   await until(() => js('!!window.__vs && document.getElementById("mm-new")?.offsetParent !== null'), 60000); await sleep(15000)
   await js('document.getElementById("mm-new").click()')
   await js('document.querySelector("[data-key=gameMode] .sel-next").click(); document.querySelector("[data-key=gameMode] .sel-next").click()')

@@ -1194,6 +1194,8 @@ export const PROP_MODELS = {
   lift: { url: 'assets/models/item-lift.glb', collision: { shape: 'hull-from-mesh', size: [0.39, 0.16, 0.38] } },   // 1408 tris
   engine: { url: 'assets/models/item-engine.glb', collision: { shape: 'hull-from-mesh', size: [0.74, 0.77, 0.85] } },   // 4430 tris
   headlight: { url: 'assets/models/item-headlight.glb', collision: { shape: 'hull-from-mesh', size: [0.27, 0.17, 0.50] } },   // 386 tris
+  // The school lunch's world model (data/items.js schoolLunch: thumb 'packedLunch'); before it, a dropped lunch was the pink cube.
+  packedLunch: { url: 'assets/models/item-packed-lunch.glb', collision: { shape: 'hull-from-mesh', size: [0.23, 0.20, 0.14] } },   // 1230 tris
   tire: { url: 'assets/models/item-tire.glb', collision: { shape: 'hull-from-mesh', size: [0.73, 0.25, 0.73] } },   // 6856 tris
   wheel: { url: 'assets/models/item-wheel.glb', collision: { shape: 'hull-from-mesh', size: [0.40, 0.20, 0.40] } },   // 2574 tris
   hiLiftJack: { url: 'assets/models/item-hi-lift-jack.glb', collision: { shape: 'hull-from-mesh', size: [1.48, 0.16, 0.78] } },   // 1164 tris

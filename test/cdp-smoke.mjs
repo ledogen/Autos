@@ -154,6 +154,15 @@ const park = async (fresh = false) => {
   if (!await js('window.__vs.parked')) await tap(' ')
 }
 const hold = async (k, s) => { await key(k, true); await simFor(s); await key(k, false) }   // s SIM seconds
+// BUG-117: mom's casserole has no abandon and no deadline — it ends at Larry's. Seat at its route's end, facing along
+// the last segment: the first update leaves her start zone (the run starts), the next arrives (within 28 m, no park).
+const deliverFirst = async () => {
+  check(await js('window.__board().firstState() === "taken" && window.__mission().mission?.dueH === Infinity && !document.getElementById("job-cancel").offsetParent'),
+    `the casserole is not in hand with no deadline and no abandon (BUG-117): ${await js('JSON.stringify({ first: window.__board().firstState(), due: String(window.__mission().mission?.dueH), cancel: !!document.getElementById("job-cancel").offsetParent })')}`)
+  const e = await js('(() => { const p = window.__mission().mission.poly, a = p.at(-2), b = p.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
+  await seat(e.x, e.z, e.h)
+  check(await until(() => js('window.__mission().state === "done"'), 5000), `seated at Larry's, the casserole did not arrive: ${await js('window.__mission().state')}`)
+}
 // FEAT-170: every new run opens on the firing; holding M a second (the prompt says so) skips it, landing at
 // mom's at 07:00 with her casserole in hand. Wall-clock: the hold is a real-time timer, not sim time.
 const skipOpening = async () => {
@@ -192,7 +201,7 @@ const STEPS = [
     // INFRA-08: the boot is the box's speed test (see stretch). Past TOO_SLOW × an idle boot this run cannot
     // speak for the code — it says so now, rather than failing on whichever step the load lands on.
     const t0 = performance.now()
-    await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?nomenu=1` })
+    await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?nomenu=1&seed=6` })
     const ready = await until(() => js('window.__rsReady === true'), TOO_SLOW * BOOT_IDLE_S * 1000, 250)
     const s = (performance.now() - t0) / 1000
     check(ready, `__rsReady never set in ${s.toFixed(0)} s (${TOO_SLOW}× an idle boot, load ${(loadavg()[0] / cpus().length).toFixed(1)}/core): `
@@ -314,11 +323,12 @@ const STEPS = [
     const a = await s0()
     check(a.s === 'staging' && !a.a && a.d < 10 && Math.abs(a.h - 7) < 0.1, `the skip is not at mom's at 07:00 with the job staging: ${JSON.stringify(a)}`)
     check(!await dlg(), 'a card is up after the skip (FEAT-170: Larry speaks after the casserole)')
+    // FEAT-173: the skip ends fed (the evening's end serves mom's breakfast), and the run starts with her three lunches.
+    const food = await js('({ fed: window.__day().snapshot().fedUntilH - window.__day().clockH(), lunch: window.__inv.list().find(e => e.id === "packedLunch")?.n ?? 0 })')
+    check(food.fed > 7.9 && food.lunch === 3, `the skip did not wake fed with mom's three packed lunches (FEAT-173): ${JSON.stringify(food)}`)
     check(await js('getComputedStyle(document.getElementById("skip-hint")).display === "none"'), 'the skip prompt outlived the skip')
-    // Put it down (parked, two clicks, then the result card): Larry's welcome, then his intro (R-11).
-    if (!await js('window.__vs.parked')) await park()
-    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
-    check(await until(() => js('window.__mission().state === "done"'), 2000), 'abandoning the casserole did not end it')
+    // Deliver it (BUG-117: it ends at Larry's), then the result card: Larry's welcome, then his intro (R-11).
+    await deliverFirst()
     await js('document.getElementById("mp-accept").click()')
     check(await until(dlg, 3000), 'no Larry after the casserole (R-11 / FEAT-170)')
     const dlgText = () => js('document.getElementById("dialogue-panel").textContent')
@@ -868,7 +878,7 @@ const STEPS = [
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     const paused = 'document.getElementById("resume-card").style.display === "flex"'
     const resume = async (what) => {
-      await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
+      await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?seed=6` })
       check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250),
         `${what}: no continue button after the reload`)
       // What the dying page actually wrote (pagehide), read before continue can rewrite it.
@@ -1123,7 +1133,12 @@ const STEPS = [
     await js('window.__vs.fuel.gal = 0')   // the running engine's next step finds it empty: dry, stalled
     check(await until(() => js('window.__vs.fuel.dry'), 3000), 'the emptied tank never ran dry')
     await park(true)
+    // FEAT-172: stuck with money for the tow, the truck says so and points at it — until the card opens.
+    const hint = () => js('getComputedStyle(document.getElementById("stranded-hint")).opacity === "1" && document.getElementById("stranded-hint").textContent')
+    check(await until(async () => /out of fuel — .*to call a tow/.test(await hint()), 2000),
+      `no stranded hint on a dry truck with money: "${await js('document.getElementById("stranded-hint").textContent')}"`)
     await tap('x')
+    check(await until(async () => !await hint(), 2000), 'the stranded hint stayed up over the open Recovery card')
     check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]:not([disabled])")'), 3000),
       `no fuel tow on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
     // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
@@ -1135,13 +1150,17 @@ const STEPS = [
     check(!await card(), 'a dry truck with money for a tow ended the run')
     await js('window.__econ.money = 0')
     await ended(/broke down/, /out of fuel — (the tow was \$[\d,.]+|no tow could reach you), you had \$0\b/)
+    // FEAT-172: giving up while stranded is breaking down — a seized engine, then the towel.
+    await newRun()
+    await js("window.__damage.set('engine', 0); window.__econ.money = 1000")   // stuck, and the tow is affordable
+    check(await until(() => js('window.__vs.engineHealth <= 0'), 2000), 'a 0 % engine never reached the truck')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/broke down/, /the engine seized — (the tow was \$[\d,.]+, and you gave up|no tow could reach you, you had)/)
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     // FEAT-170: a new run starts with mom's casserole in hand, and the win waits for no job to be active (in
-    // play every line is a job, so the casserole is long done) — put it down, and read off Larry after it.
-    if (!await js('window.__vs.parked')) await park()
-    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
-    check(await until(() => js('window.__mission().state === "done"'), 2000), 'abandoning the casserole did not end it')
+    // play every line is a job, so the casserole is long done) — deliver it (BUG-117), and read off Larry after it.
+    await deliverFirst()
     await js('document.getElementById("mp-accept").click()')
     const larry = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     await until(larry, 3000)
@@ -1294,6 +1313,15 @@ const STEPS = [
     check(await until(() => js('document.getElementById("pause-menu").style.display === "flex"'), 2000), 'Start did not pause')
     await padTo('pm-towel'); await btn(0)
     check(await until(() => js('document.getElementById("towel-card").style.display === "flex"'), 2000), 'A on "give up" opened no confirm')
+    // BUG-119: the confirm DRAWS its highlight (it had no .nav-focus style: the D-pad moved an invisible one)…
+    check(await js(`(() => { const [a, b] = document.querySelectorAll('#towel-card button'), bg = el => getComputedStyle(el).backgroundColor
+      return a.classList.contains('nav-focus') !== b.classList.contains('nav-focus') && bg(a) !== bg(b) })()`), 'the give-up confirm draws no highlight (BUG-119)')
+    // …and B is its back: the pause menu alone (it opened the menu OVER the card, and the pad kept driving the card).
+    await btn(1)
+    check(await until(() => js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 2000),
+      'B on the give-up confirm did not step back to the pause menu alone (BUG-119)')
+    await padTo('pm-towel'); await btn(0)
+    check(await until(() => js('document.getElementById("towel-card").style.display === "flex"'), 2000), 'A on "give up" opened no confirm the second time')
     await padTo('tc-end'); await btn(0)
     check(await until(() => js('document.getElementById("run-end").style.display === "block"'), 3000), 'the give-up confirm ended nothing')
     await padTo('re-menu'); await btn(0)
@@ -1318,8 +1346,9 @@ const STEPS = [
     check(await until(() => js('window.__board().firstState() === "taken"'), 8000), 'holding View did not skip the opening')
     // The glyphs: the pad drove last, so every keycap reads its button.
     check(await js('document.body.classList.contains("pad-on")'), 'body.pad-on is off while the pad drives')
-    // The casserole, abandoned through the B menu: its LAST entry, never the pre-selection (no B tap can arm it),
-    // labelled by its words; ↑ wraps to it, the release arms it, a second trip confirms.
+    // The B menu's "abandon job": its LAST entry, never the pre-selection (no B tap can arm it), labelled by its words;
+    // ↑ wraps to it, the release arms it, and armed it IS the pre-selection: one B press confirms (BUG-120). Mom's
+    // casserole has none (BUG-117): driven at the giver below, on a job taken there.
     const pick = async () => {
       await js('__fp.b[1] = 1'); await frames(4, 200)
       const first = await js('document.querySelector(".menu-sel")?.id')
@@ -1329,13 +1358,7 @@ const STEPS = [
       return r
     }
     if (!await js('window.__vs.parked')) await padPark()
-    check(await js('getComputedStyle(document.querySelector("#job-cancel .kc-pad")).display !== "none" && getComputedStyle(document.querySelector("#job-cancel .kc-kb")).display === "none"'),
-      `the abandon button does not show its pad glyph: "${await js('document.getElementById("job-cancel").innerHTML')}"`)
-    const a1 = await pick()
-    check(a1.first !== 'job-cancel' && a1.sel === 'job-cancel' && /abandon job/.test(a1.label), `the B menu's abandon entry: ${JSON.stringify(a1)}`)
-    check(/confirm\?/.test(await js('document.getElementById("job-cancel").textContent')), 'picking "abandon job" did not arm it')
-    await pick()
-    check(await until(() => js('window.__mission().state === "done"'), 3000), 'the second pick did not abandon the casserole')
+    await deliverFirst()   // no abandon in the B menu either: the button it reads is hidden (checked inside)
     await btn(13); await btn(0)   // the result card: the D-pad puts the highlight on continue, A presses it
     check(await until(dlg, 3000), 'A on the result card brought no Larry')
     await readCards()
@@ -1383,8 +1406,21 @@ const STEPS = [
     await hold(5, 450)
     check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
     check(await until(offerUp, 6000), 'parking at the giver opened no offer card')
-    await padTo('mp-decline'); await btn(0)
-    check(await until(() => js('document.getElementById("mission-panel").style.display !== "block"'), 2000), 'A on decline left the offer up')
+    // Take it (A on accept), then put it down through the B menu: the abandon entry, armed, confirmed, and its result card.
+    await padTo('mp-accept'); await btn(0)
+    check(await until(() => js('window.__mission().isOnJob() && !!document.getElementById("job-cancel").offsetParent'), 3000), 'A on accept took no job with an abandon button')
+    check(await js('getComputedStyle(document.querySelector("#job-cancel .kc-pad")).display !== "none" && getComputedStyle(document.querySelector("#job-cancel .kc-kb")).display === "none"'),
+      `the abandon button does not show its pad glyph: "${await js('document.getElementById("job-cancel").innerHTML')}"`)
+    const a1 = await pick()
+    check(a1.first !== 'job-cancel' && a1.sel === 'job-cancel' && /abandon job/.test(a1.label), `the B menu's abandon entry: ${JSON.stringify(a1)}`)
+    check(/confirm\?/.test(await js('document.getElementById("job-cancel").textContent')), 'picking "abandon job" did not arm it')
+    // BUG-120: a second trip down the menu ran the 3 s arm out on a real pad — B held, released, nothing walked.
+    await js('__fp.b[1] = 1'); await frames(4, 200)
+    check(await js('document.querySelector(".menu-sel")?.id') === 'job-cancel', 'the armed abandon is not the B menu\'s pre-selection (BUG-120)')
+    await js('__fp.b[1] = 0'); await frames(4, 200)
+    check(await until(() => js('window.__mission().state === "done"'), 3000), 'one B press on the armed abandon did not abandon the job')
+    await btn(13); await btn(0)
+    check(await until(() => js('!window.__mission().isActive()'), 2000), 'A on the abandoned job\'s result card left it up')
     // The pump: A held pumps, RB lets go of the brake and pays.
     const pz = (await client.cmd('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
       const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("/src/poi.js")))
@@ -1418,7 +1454,8 @@ for (const [name, fn] of STEPS) {
   if (ONLY && !ONLY.includes(name)) continue
   step = name
   const t0 = performance.now()
-  try { await fn() } catch (e) { failed = { step: name, msg: e.message } }
+  // A step on a random world (the pad step's blank seed box) names it, so a miss can be replayed (Lane A, 2026-11-06).
+  try { await fn() } catch (e) { failed = { step: name, msg: `${e.message} · ${await js('window.__worldCode?.()').catch(() => 'world code unreadable')}` } }
   times.push(`${name} ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   if (failed || errors.length) break
 }

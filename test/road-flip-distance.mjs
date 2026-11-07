@@ -35,7 +35,7 @@ const CASES = [
         ['w E→W', [[1145, 604], [-655, 604]]],
         ['w N→S', [[245, -296], [245, 1504]]],
     ] },
-    // seed 6: the boot world, a second sample
+    // seed 6: the test seed, a second sample
     { seed: 6, paths: [
         ['6 E→W', [[900, 300], [-900, 300]]],
         ['6 SW→NE', [[-640, -340], [640, 940]]],

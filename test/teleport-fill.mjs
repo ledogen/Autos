@@ -4,7 +4,7 @@
 import { launchChrome, connect, sleep } from './lib/cdp.mjs'
 const arg = (k, d) => { const f = process.argv.find(a => a.startsWith(`--${k}=`)); return f ? f.split('=')[1] : d }
 const PORT = Number(arg('port', 8000)), CDP = Number(arg('cdp', 9222)), CPU = Number(arg('cpu', 4)), JUMPS = Number(arg('jumps', 4))
-launchChrome(`http://localhost:${PORT}/index.html?prof=1&nomenu=1`, { port: CDP })
+launchChrome(`http://localhost:${PORT}/index.html?prof=1&nomenu=1&seed=6`, { port: CDP })
 const c = await connect({ port: CDP })
 const ev = async e => { const r = await c.evalJS(e); if (r.err) throw new Error(r.err); return r.val }
 const wait = async (e, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const r = await c.evalJS(e); if (!r.err && r.val) return Date.now() - t0; await sleep(100) } return -1 }

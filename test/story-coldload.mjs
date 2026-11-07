@@ -28,7 +28,7 @@
 //   node test/story-coldload.mjs --port=8001 --cpu=1
 //   node test/story-coldload.mjs --port=8001 --cpu=4 --seed=811   # uncached region
 //
-// FLAGS: --cpu=N (1 = off) --seed=S (story seed; 6 = the pre-baked one) --port --cdp --headed
+// FLAGS: --cpu=N (1 = off) --seed=S (story seed; 6 = the boot seed, so entry skips the reseed) --port --cdp --headed
 //        --mode=story|reseed  (reseed = free-roam seed change only — attributes entry cost)
 //        --out=FILE --timeout=SECONDS (per phase; scaled by --cpu automatically)
 // Not a gate. Never run by npm test.
@@ -49,7 +49,7 @@ const MODE    = flag('mode', 'story')   // story | reseed (reseed = seed change 
 // Boot the world ALREADY on this seed. Entering story on the SAME seed skips the world rebuild, so
 // `enter → live` is then the region warm ALONE — the only clean way to split entry cost between the
 // cold-world rebuild and the region routing.
-const BOOTSEED = flag('bootseed', '')
+const BOOTSEED = flag('bootseed', '6')   // the world the page boots on; without ?seed= it would be a random one
 const BASE_TIMEOUT = Number(flag('timeout', 180)) * 1000 * Math.max(1, CPU)
 
 try { const r = await fetch(`http://localhost:${PORT}/index.html`); if (!r.ok) throw 0 }

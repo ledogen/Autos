@@ -34,7 +34,7 @@ import { pad, PAD_PARAMS } from './gamepad.js'   // FEAT-133: the right stick dr
 
 // Streamed radius of the map's own RoadSystem around the pan cursor. Sized by the AREA it covers,
 // not the radius: the streamed band carries a wide margin, so 2200 actually built a 6.3 × 6.2 km
-// network. Measured coverage vs radius (default-seed spawn):
+// network. Measured coverage vs radius (seed 6 spawn, the test seed):
 //   1200 → 4.0 × 3.6 km (38 edges) · 1400 → ~4.3 × 4.0 km · 1800 → 5.6 × 4.8 km · 2200 → 6.3 × 6.2 km
 // (This used to be pinned to the mission planner's own radius, back when planning streamed a
 // second private network. Planning is on the play instance now, so this number is the map's alone.)

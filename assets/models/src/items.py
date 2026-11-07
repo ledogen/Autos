@@ -2995,7 +2995,7 @@ def export_glb(item_id):
 WORLD.update({k: ("item-" + "".join("-" + c.lower() if c.isupper() else c for c in k), Matrix.Identity(4)) for k in (
     "coffee", "chiliDog", "emergencyGas", "tirePlugKit", "rubberBedMat", "compressor", "energyDrink", "stopLeak",
     "zipTies", "ductTape", "jerryCan", "quickJack", "pack", "springs", "dampers", "pads", "shoes", "arb", "diff",
-    "lift", "engine", "headlight")})
+    "lift", "engine", "headlight", "packedLunch")})
 WORLD.update({
     "tire":       ("item-tire",        Matrix.Rotation(math.pi / 2, 4, "Y")),                                   # axis X → Z: lying flat
     "wheel":      ("item-wheel",       Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Rotation(math.radians(25), 4, "Z")),   # un-yawed, then flat

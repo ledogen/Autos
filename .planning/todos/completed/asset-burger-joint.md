@@ -1,7 +1,8 @@
 ---
 id: ASSET-80
 type: asset
-status: open
+status: done
+closed: 2026-11-06
 severity: major
 opened: 2026-11-05
 source: owner, 2026-11-05 (answering feat147-art in Lane A's window) — "have lane C build a burger joint model. for now we can just do a camera move on the burger joint in the game world and put the dialogue cards over it"
@@ -96,3 +97,6 @@ to different heights its too geometric / otherwise approve".
   back on the cube both stall at "story never went live (45 s)". So not this change, but the model's
   browser path is unproven until the smoke runs on a quiet machine. Both checks wait on wall-clock
   time, which CLAUDE.md says gates should only report.
+
+## Resolution (2026-11-06)
+Shipped on main in 7aa73ebf (`assets/models/burger-joint.glb`, registry key `burgerJoint`, `src/poi.js` foodVendor slot), approved by the owner with the two notes fixed (menu z-fighting, dripping cheese). Closed per the asset rule: the ticket closes when the .glb ships.

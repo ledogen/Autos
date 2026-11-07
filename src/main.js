@@ -139,7 +139,10 @@ import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
 
-// World seed — parsed from URL ?seed= parameter, defaulting to '6'.
+// World seed — the URL's ?seed= when it names one, else a fresh random world. There is no default
+// seed (owner, 2026-11-06): any world the player did not pick (the one built behind the menu, free roam
+// after the lab, `?nomenu=1`) is a new one each boot. The seed shows in the pause menu's world code.
+// Seed 6 is a test seed: the harnesses in test/ pass ?seed=6 when they want it.
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
 // Refreshing the same ?seed= URL reproduces the same terrain (SEED-01/03).
 const _urlParams = new URLSearchParams(window.location.search)
@@ -156,8 +159,8 @@ if (_PROF) perfEnableUserTiming()
 const _hitchArg = _urlParams.get('hitch')
 const _HITCH = _hitchArg !== null || _PROF
 if (_HITCH) perfEnableHitchLog(Number(_hitchArg) > 1 ? Number(_hitchArg) : 24)
-let worldSeed = parseWorldSeed(_urlSeed ?? '6')
-let _seedString = _urlSeed ?? '6'   // current seed STRING (reference for captures; numeric worldSeed drives repro)
+let _seedString = _resolveSeed(_urlSeed)   // current seed STRING (reference for captures; numeric worldSeed drives repro)
+let worldSeed = parseWorldSeed(_seedString)
 
 // Capture stream-center ring (Phase 4/5): last N stream centers, for event/tear reproduction. Cheap —
 // pushed only when the center moves a meaningful distance. Not required for PLACE repro (the road is
@@ -2669,7 +2672,7 @@ const _gui = initDebug(RANGER_PARAMS, {
     if (terrainSystem?._terrainUniforms?.[name]) terrainSystem._terrainUniforms[name].value = value
     if (roadMeshSystem?._roadUniforms?.[name])   roadMeshSystem._roadUniforms[name].value = value
   },
-}, { initialSeed: _urlSeed ?? '6' })
+}, { initialSeed: _seedString })
 
 // Fog kill-switch checkbox (see _fogState at the fog construction for the boot-param half).
 _gui.add(_fogState, 'disabled').name('Disable fog').onChange((v) => {
@@ -4327,7 +4330,7 @@ function _runIntro () {
 }
 
 // ── FEAT-147/170: the opening — the firing, the evening at mom's, the first job, Larry's welcome ──
-// A NEW story run with the setup page's Opening on. The firing is an in-world camera move round the
+// EVERY new story run (the setup page's toggle retired, FEAT-170). The firing is an in-world camera move round the
 // burger joint (the foodVendor POI) with the Story cards over it — no scene art (owner, 2026-11-05) —
 // so the run starts with the truck parked on the joint's lay-by, at 6 pm on DAY 0 (FEAT-170, owner
 // 2026-11-06: the evening is the day before the run's day 1). Mom's call sends you home for the
@@ -4408,6 +4411,7 @@ function _eveningBeats () {
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
 function _endEvening () {
   if (!_eveningLeg()) return
+  daySystem.eat(DAY_PARAMS.mealHoldH)   // FEAT-173: the tutorial's night ends fed — mom's breakfast, played or skipped
   offerBoard.openFirst(daySystem.clockH())
   _eveningGuide = undefined
   _renderMissionUI()   // the HUD line goes
@@ -4515,7 +4519,8 @@ function _pumpTut () {
   _renderDialogue()
 }
 
-/** Mom's job is over (any end) and its card put away: Larry's welcome, then the opening is finished for good. */
+/** Mom's job is over (delivered at Larry's: BUG-117 left it no other end) and its card put away: Larry's welcome,
+ *  then the opening is finished for good. */
 function _checkOpeningEnd () {
   if (_paperScenario) return   // FEAT-62: the scenario has no opening to end
   // null = no mom on the roster (never expected — her count is hard): Larry still welcomes you.
@@ -5479,9 +5484,17 @@ const STRANDED_REST_S = 3   // [DEFAULT]
 let _strandedSince = null
 function _checkStranded () {
   const v = vehicleState.velocity
-  const end = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen
-    && !inventoryScreen.isOpen && !damageScreen.isOpen && Math.hypot(v.x, v.y, v.z) < 0.5 && recoveryCard(_recoveryState()).canEnd
-  if (!end) { _strandedSince = null; return }
+  const c = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen
+    && !inventoryScreen.isOpen && !damageScreen.isOpen && Math.hypot(v.x, v.y, v.z) < 0.5 ? recoveryCard(_recoveryState()) : null
+  // FEAT-172 (owner, 2026-11-06): stuck but able to pay, the truck says so and points at the tow — while the
+  // Recovery chip is there to press (never inside a POI's ring) and its card is shut.
+  const hint = document.getElementById('stranded-hint')
+  const show = c?.stuck && !c.canEnd && !_recoveryOpen && document.getElementById('recovery-row')?.style.display === 'flex'
+  if (hint) {
+    hint.style.opacity = show ? '1' : '0'
+    if (show) hint.innerHTML = `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`   // PLACEHOLDER words
+  }
+  if (!c?.canEnd) { _strandedSince = null; return }
   _strandedSince ??= simTime
   if (simTime - _strandedSince >= STRANDED_REST_S) _endRun('broke')
 }
@@ -6152,8 +6165,8 @@ function _sleepAtCamp () {
   _campFade(() => {
     daySystem.sleep(hours, vibe, _campRest(_campUi))
     _endEvening()   // FEAT-170: any night ends the opening's evening
-    // Stage 4, the morning: breakfast if you slept at hers (it feeds you), then her card.
-    if (evening && atMoms) _tut('tut-breakfast', TUT['tut-breakfast'], () => daySystem.eat(DAY_PARAMS.mealHoldH))
+    // Stage 4, the morning: breakfast if you slept at hers (the evening's end above has fed you), then her card.
+    if (evening && atMoms) _tut('tut-breakfast')
     // …and woken at hers, her card opens as that lesson ends: the route on the map (the owner's map beat).
     if (evening) _tut('tut-mapcard', TUT['tut-mapcard'], () => {
       const q = _poiInReach()
@@ -6776,7 +6789,9 @@ function _renderMissionUI () {
   const pick = m.state === 'offer' ? _haulPick(m.offer) : null
   if (nb) nb.disabled = m.state === 'offer' && !!m.offer
     && (_offerVerdict(m.offer, pick?.n ?? null)?.verdict === 'overload' || (pick != null && pick.max < 1))
-  _syncJobCancel(hud, storySystem.isActive() && m.isOnJob())
+  // BUG-117 (owner 11-06): mom's casserole has no abandon, as it has no deadline — it ends at Larry's, where his
+  // welcome finishes the tutorial; until then one-job-at-a-time holds every other job back.
+  _syncJobCancel(hud, storySystem.isActive() && m.isOnJob() && offerBoard?.firstState() !== 'taken')
 }
 
 /**
@@ -8508,6 +8523,7 @@ const storySystem = new StorySystem({
     damageModel.setAll(1)
     partsSystem.start()              // SM-3: stock parts, new…
     rollJalopy({ parts: partsSystem, damage: damageModel, inventory: inventorySystem }, (Math.random() * 2 ** 32) >>> 0)   // …then this run's jalopy (SM-INV-7)
+    inventorySystem.grant('packedLunch', 3)   // FEAT-173: mom's snack — every run starts with three packed lunches
     startShelves((Math.random() * 2 ** 32) >>> 0)   // FEAT-137: every auto shop's shelf, this run's rolls
     damageModel.publish(RANGER_PARAMS)
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
@@ -8723,9 +8739,10 @@ function _exitStageLoad () {
 }
 
 /**
- * Free roam on a chosen seed. The world standing behind the menu was built on the boot seed, so
- * picking that same one costs nothing but a re-seat; anything else pays one full rebuild — behind
- * the stage, which is the entire point of the stage existing.
+ * Free roam on a chosen seed (the setup page's blank rolls a fresh one, _resolveSeed). The world
+ * standing behind the menu was built on its own random seed at boot, so picking that same one costs
+ * nothing but a re-seat; anything else pays one full rebuild — behind the stage, which is the entire
+ * point of the stage existing.
  */
 async function _startFreeRoam (seedStr) {
   if (storySystem.isActive()) storySystem.exit()
@@ -9147,11 +9164,12 @@ function _runEndWhy (kind) {
       + `the ${f.region} could take ${Math.round(fatalMph(f.armor))} mph; fresh it takes ${Math.round(fatalMph(1))}</div>`
   }
   if (kind !== 'broke') return ''
-  // What stranded it, and the cheapest of the Recovery card's cures: what the wallet fell short of.
+  // What stranded it, and the cheapest of the Recovery card's cures: what the wallet fell short of — or, given up
+  // on while the wallet covered it (FEAT-172), that it was there.
   const c = recoveryCard(_recoveryState()), o = c.cure
   const words = { towFuel: 'the tow', towShop: 'the tow', tireService: 'the tire service', shopFix: 'the repair' }
   return `<div class="re-why">${c.head} &mdash; ${o ? `${o.acts.map(a => words[a]).join(' and ')} ${o.acts.length > 1 ? 'came to' : 'was'} $${formatMoney(o.price)}`
-    : 'no tow could reach you'}, you had $${formatMoney(runEconomy.money)}</div>`
+    : 'no tow could reach you'}${o && runEconomy.money + 1e-9 >= o.price ? ', and you gave up' : `, you had $${formatMoney(runEconomy.money)}`}</div>`
 }
 
 /** The truck's upgrades — the five most valuable parts fitted this run, or "stock" (owner, 2026-10-31). */
@@ -9174,8 +9192,10 @@ document.getElementById('tc-back')?.addEventListener('click', () => {
   document.getElementById('towel-card').style.display = 'none'
   _showPauseMenu()
 })
-document.getElementById('tc-end')?.addEventListener('click', () => _endRun('towel'))
+// FEAT-172 (owner, 2026-11-06): giving up while the truck is stranded is breaking down.
+document.getElementById('tc-end')?.addEventListener('click', () => _endRun(recoveryCard(_recoveryState()).stuck ? 'broke' : 'towel'))
 window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
+window.__worldCode = () => formatWorldCode(_seedString, activeWorld())   // dev handle — cdp-smoke names a failed step's world
 window.__poi = () => poiSystem      // dev handle — test/cdp-smoke.mjs drives at a barricade row (FEAT-154)
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
@@ -9364,6 +9384,9 @@ document.addEventListener('keydown', e => {
   const seedModal = document.getElementById('story-seed-modal')
   if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
   if (_runEndOpen) return   // FEAT-146: the run is over — the card's one button is the way out
+  // BUG-119: Esc / pad B on the towel's confirm is its back — it fell through to the pause toggle, which showed the
+  // menu over the still-open card, and the pad (menu-nav reads the card first) kept driving the card.
+  if (document.getElementById('towel-card').style.display === 'flex') { document.getElementById('tc-back').click(); return }
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
   if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule
