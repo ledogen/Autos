@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
+import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
@@ -618,6 +619,36 @@ const STEPS = [
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
   }],
+  ['store', async () => {
+    // FEAT-104: park at a general store → its shop, buy only: the Shop tab alone (no My Vehicle, no My Items),
+    // coffee on the list; a buy takes its listed price off the wallet and lands in the inventory, the clock
+    // holds while the shop is open, and Esc closes it.
+    const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'generalStore' && !q.hidden)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
+    if (!p) { console.log('  store: no general store in this region — step skipped'); return }
+    await seat(p.x, p.z, p.h)
+    await park(true)
+    const open = () => js('document.getElementById("svc-screen").checkVisibility()')
+    check(await until(open, 2000), `parking at the general store opened no shop (prompt "${await js('document.getElementById("poi-prompt")?.textContent.trim()')}")`)
+    const txt = await js('document.querySelector("#svc-screen").textContent')
+    check(/Coffee/.test(txt) && !/My Vehicle|My items|Parts Shop/.test(txt), `the store's shop reads: "${txt.slice(0, 200)}"`)
+    await js('window.__econ.money = 50')
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')   // repaints with the new wallet
+    const coffees = () => js('window.__inv.list().filter(r => r.id === "coffee").reduce((a, r) => a + r.n, 0) + (window.__inv.pending()?.id === "coffee" ? 1 : 0)')
+    const row = 'Array.from(document.querySelectorAll("#svc-screen .sv-shelf")).find(r => /Coffee/.test(r.textContent))'
+    const price = await js(`+${row}.querySelector(".sv-price").textContent.replace(/[^0-9.]/g, "")`)
+    const [m0, n0, h0] = [await js('window.__econ.money'), await coffees(), await js('window.__day().clockH()')]
+    await js(`${row}.querySelector("[data-act=stow]").click()`)
+    const [m1, n1] = [await js('window.__econ.money'), await coffees()]
+    check(price > 0 && Math.abs(m0 - m1 - price) < 0.005, `buying a coffee listed at $${price} took $${(m0 - m1).toFixed(2)}`)
+    check(n1 === n0 + 1, `buying a coffee left ${n1} coffees (had ${n0})`)
+    await sleep(1000)
+    check(await js('window.__day().clockH()') === h0, 'the clock ran while the shop was open')
+    await tap('Escape')
+    check(await until(async () => !await open(), 1000), 'Esc left the shop open')
+    await tap(' ')   // brake off: the next step parks fresh
+    await sleep(300)
+  }],
   ['expedition', async () => {
     // FEAT-103: the camp's gate prompt, the requisition opening at campDeeds, the five lines at the
     // camp, and a line taken THERE waiting, untimed, until the truck parks at its source. FEAT-157: the
@@ -868,9 +899,10 @@ const STEPS = [
     // checkVisibility, not the element's own display: while the job is still planning the button
     // has no display of its own but its #mp-actions row is hidden, and a click there is lost.
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
-    // SM-3: an auto shop's brake opens the service center; its jobs button hands over to the offer.
-    if (p.type === 'autoShop') {
-      check(await until(() => vis('svc-screen'), 2000), 'parking at the auto shop opened no service screen')
+    // SM-3: an auto shop's brake opens the service center (FEAT-104: a storefront's, its shop); its jobs button hands
+    // over to the offer.
+    if (SHOP_TYPES.has(p.type)) {
+      check(await until(() => vis('svc-screen'), 2000), `parking at the ${p.type} opened no shop screen`)
       await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
     }
     check(await until(() => vis('mp-accept'), 2000), `parking at the ${p.type} pad opened no offer`)
@@ -963,7 +995,7 @@ const STEPS = [
       await seat(fr.x, fr.z, fr.h)
       await park(true)
       const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
-      if (fr.type === 'autoShop' && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      if (SHOP_TYPES.has(fr.type) && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
       if (await until(() => vis('mp-accept'), 2000)) {
         for (let i = 0; i < 8 && await js(`window.__mission().offer?.id !== ${JSON.stringify(fr.id)}`); i++) await js('document.getElementById("mp-next")?.click()')
         if (await js(`window.__mission().offer?.id === ${JSON.stringify(fr.id)} && !document.getElementById("mp-accept").disabled`)) {
@@ -1441,11 +1473,11 @@ const STEPS = [
     // The map (View tap): a giver centred under the pad's cursor pages its offers on LB / RB; B closes it.
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
-    // Not an auto shop (its brake opens the service screen; the jobs are a button in it) nor Larry's (the paper route):
+    // Not a shop (SHOP_TYPES: its brake opens the shop screen; the jobs are a button in it, FEAT-104) nor Larry's (the paper route):
     // the flake that hit A, Spare and B was a random world whose busiest giver was a shop. Nor a giver with pump zones:
     // parked there the brake opens the pump (world 1505891932, prompt "to use the pump").
     const giver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
-      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !['autoShop', 'larrysHouse'].includes(q.type) && !q.pumpZones?.length).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
+      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !${JSON.stringify(['larrysHouse', ...SHOP_TYPES])}.includes(q.type) && !q.pumpZones?.length).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
     check(giver?.n > 1, `no giver with two offers to page: ${JSON.stringify(giver)}`)
     await js(`(() => { const m = window.__map2d(), s = m._sheet(); for (let i = 0; i < 6; i++) { m._panX += (m._sx(${giver.x}) - s.cx) / m._zoom; m._panZ += (m._sy(${giver.z}) - s.cy) / m._zoom } })()`)
     await js('__fp.axes[2] = 0.09'); await frames(3, 60); await js('__fp.axes[2] = 0'); await frames(3, 60)

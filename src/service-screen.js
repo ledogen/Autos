@@ -21,6 +21,10 @@
  * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt). "map" opens
  * the map over the screen (owner, 2026-10-21); the screen hides under it and the clock stays held.
  *
+ * FEAT-104: a storefront (general store, gas station, food vendor) opens the same screen as a STORE:
+ * the Shop tab and its Jobs, nothing else. It is buy only (owner, 2026-10-07): no My Vehicle, no My
+ * Items, no selling, and the camera stays where it was, since there is nothing on the truck to look at.
+ *
  * Described, never scored (SM-INV-10): parts are names, prices are money, conditions are colour bars
  * with their percentage (wear is a state, not a score: owner, 2026-10-22),
  * rarity is the tint behind the icon (data/parts.js RARITY_COLOR). Rules live in src/service.js; this
@@ -164,6 +168,7 @@ export class ServiceScreen {
     this.isOpen = false
     this.tab = 'vehicle'
     this.name = ''
+    this.store = false    // FEAT-104: a storefront's shop, not a service center
     this.sel = null       // the selected row's key: a My Vehicle key, or `i:<inventory index>` in My Items
     this.groups = new Set()   // the My Vehicle sections opened (all start collapsed)
     this.target = {}      // repair key → the chosen target condition
@@ -185,16 +190,17 @@ export class ServiceScreen {
     window.addEventListener('keydown', () => { this._mouse = false }, true)
   }
 
-  /** `name` is the shop's sign (POI name). */
-  open (name) {
+  /** `name` is the shop's sign (POI name); `store` opens a storefront's shop (FEAT-104). */
+  open (name, store = false) {
     this.isOpen = true
     this.name = name
-    this.tab = 'vehicle'
+    this.store = store
+    this.tab = store ? 'shop' : 'vehicle'
     this.sel = null
     this.target = {}
     this.groups.clear()
     this.screen.classList.add('open')
-    this.onView(true)
+    if (!store) this.onView(true)
     this.render()
   }
 
@@ -204,7 +210,7 @@ export class ServiceScreen {
     this._pv = null
     this.service.close()
     this.screen.classList.remove('open')
-    this.onView(false)
+    if (!this.store) this.onView(false)
   }
 
   /** Per frame: driving off closes it; the shelf item under the pointer (or the pad's highlight) is
@@ -292,14 +298,14 @@ export class ServiceScreen {
     if (!this.isOpen) return
     const s = this.service
     const jobs = this.jobs()
-    if (this.tab === 'jobs' && !jobs.length) this.tab = 'vehicle'
+    if (this.tab === 'jobs' && !jobs.length) this.tab = this.store ? 'shop' : 'vehicle'
     const tab = (id, label) => `<button class="sv-tab${this.tab === id ? ' on' : ''}" data-act="tab" data-tab="${id}">${label}</button>`
     this.card.innerHTML =
-      `<div class="sv-head"><span class="sv-title">${this.name} · service</span>`
+      `<div class="sv-head"><span class="sv-title">${this.name}${this.store ? '' : ' · service'}</span>`
       + `<span class="sv-wallet">$${formatMoney(s.money())}<br><span class="sv-clock">${formatDue(Math.floor(this.nowH() * 60) / 60)}</span></span>`
       + btn('map', 'map')
       + `</div>`
-      + `<div class="sv-tabs">${tab('vehicle', 'My Vehicle')}${tab('shop', 'Parts Shop')}${jobs.length ? tab('jobs', 'Jobs') : ''}</div>`
+      + `<div class="sv-tabs">${this.store ? tab('shop', 'Shop') : tab('vehicle', 'My Vehicle') + tab('shop', 'Parts Shop')}${jobs.length ? tab('jobs', 'Jobs') : ''}</div>`
       + (this.tab === 'vehicle' ? this._vehicle() : this.tab === 'shop' ? this._shop() : this._jobs(jobs))
       + BACK_BUTTON   // the card's way out (owner, 2026-10-21: replaces the corner ×)
   }
@@ -390,7 +396,7 @@ export class ServiceScreen {
     const nxt = s.nextStock?.()
     let h = `<div class="sv-slot"><div class="sv-slothead">For sale${nxt ? ` <span class="sv-desc">· new stock in ${nxt}</span>` : ''}</div>`
     s.stock().forEach((e, i) => {
-      if (!e) { h += dim('An empty shelf.'); return }
+      if (!e) { if (!this.store) h += dim('An empty shelf.'); return }   // a store lists only what it has
       const price = s.shelfPrice(i), sockets = socketsFor(e.id)
       const fitQ = sockets.length ? s.fitLabour(e.id, sockets[0]) : { price: 0 }
       const ok = money + 1e-9 >= price + fitQ.price
@@ -404,9 +410,9 @@ export class ServiceScreen {
         + `<div class="sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</div></span>`
         + `<span class="sv-price">${e.cond !== null ? `<span class="sv-cond">${bar(e.cond)}</span>` : ''}`
         + (sockets.length ? `<span>part: $${formatMoney(price)}</span><span>installation: $${formatMoney(fitQ.price)}</span>` : `<span>$${formatMoney(price)}</span>`)
-        + `</span><span class="sv-acts">${fit} ${btn('stow', 'to inventory', money + 1e-9 >= price, `data-slot="${i}"`)}</span></div>`
+        + `</span><span class="sv-acts">${fit} ${btn('stow', this.store ? 'buy' : 'to inventory', money + 1e-9 >= price, `data-slot="${i}"`)}</span></div>`
     })
-    return h + `</div>` + this._myItems()
+    return h + `</div>` + (this.store ? '' : this._myItems())
   }
 
   // ── Jobs ────────────────────────────────────────────────────────────────────────────────────────
