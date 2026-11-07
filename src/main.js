@@ -4408,11 +4408,23 @@ function _homeGuide () {
 /** FEAT-184: where the evening's line goes now — the station while a fill-up is due, else mom's. */
 const _eveTarget = () => (_evePump && !_evePump.done ? _evePump.q : _mom())
 
-/** FEAT-184 stage 4: the worst day's spare is flat — the jalopy's own, or one granted for the evening. */
+/** FEAT-184 stage 4: the worst day's spare is flat — the jalopy's own, or one granted for the evening. Made so when the
+ *  flat happens, so a skip before it never touches the spare. Remembers which, for _undoWorstDay. */
+let _eveSpare = null   // { granted } once the spare was made flat
 function _flatSpare () {
-  let i = inventorySystem.list().findIndex(r => r.id === 'spareTire')
-  if (i < 0 && inventorySystem.grant('spareTire') === 'taken') i = inventorySystem.list().findIndex(r => r.id === 'spareTire')
-  if (i >= 0) inventorySystem.amend(i, { flat: true })
+  let i = inventorySystem.list().findIndex(r => r.id === 'spareTire'), granted = false
+  if (i < 0 && inventorySystem.grant('spareTire') === 'taken') { i = inventorySystem.list().findIndex(r => r.id === 'spareTire'); granted = true }
+  if (i >= 0) { inventorySystem.amend(i, { flat: true }); _eveSpare = { granted } }
+}
+
+/** FEAT-184 (owner: "Skipping the tutorial should completely clear it"): a skip mid-evening puts back what the worst day
+ *  did — the near-empty tank, the scripted flat, the flat spare (re-inflated, or taken back when it was granted). */
+function _undoWorstDay () {
+  if (_evePump && !_evePump.done) vehicleState.fuel.gal = Math.max(vehicleState.fuel.gal, RANGER_PARAMS.fuelTankGal * RANGER_PARAMS.fuelStartFrac)
+  if (_eveFlat) damageModel.flat[0] = false
+  const i = _eveSpare ? inventorySystem.list().findIndex(r => r.id === 'spareTire' && r.flat) : -1
+  if (i >= 0) { if (_eveSpare.granted) inventorySystem.take(i); else inventorySystem.amend(i, { flat: false }) }
+  _evePump = null; _eveFlat = false; _eveTowed = false; _eveSpare = null
 }
 
 /** FEAT-184 stage 3: at a played opening's start, the evening's station and the near-empty tank — when the nearest
@@ -4498,6 +4510,7 @@ function _eveningBeats () {
     if (!_eveFlat && Math.hypot(q.x - v.x, q.z - v.z) < 0.5 * _eveHomeFrom) {
       _eveFlat = true
       if (!damageModel.flat[0]) { damageModel.flat[0] = true; damageModel.popped.push(0) }   // the bang (drained by the game layer)
+      _flatSpare()   // …and the spare is flat too
       _tut('tut-flat')
     }
   }
@@ -4573,6 +4586,7 @@ function _skipOpening () {
   document.getElementById('skip-hint')?.classList.remove('holding')
   if (!_eveningLeg() || _campBusy) return
   _tutorialDone()
+  _undoWorstDay()   // FEAT-184: a skip clears the worst day too
   dialogueSystem.abort()   // the firing's or mom's card, if one is up
   _cardHold = false
   if (_firingCam) { _firingCam = null; setCameraFocus(null) }
@@ -4594,14 +4608,13 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the first job is still to do or the evening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
   _openingRun = false
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false
+  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null
   // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (mom's door, 7 am, the casserole in hand),
   // no cards: the firing counts as played and the skip runs at once.
   if (_settings.skipTutorial) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
   _planEvePump()   // FEAT-184 stage 3
-  _flatSpare()     // FEAT-184 stage 4: the spare is flat too
   _cardHold = true
   dialogueSystem.play(DLG.firing, FIRING, () => {
     _firingCam = null
