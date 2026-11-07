@@ -10,7 +10,7 @@ source: owner, 2026-09-30 — "mission giver quarry, it provides haul missions: 
   get their own unique POI and will represent the haul mission career path."
   Follow-ups the same day, answering the ticket's questions (see "Rulings" — the current shape).
 relates: FEAT-88 (Haul — the bed-cargo mission these givers post; HARD prerequisite), FEAT-89
-  (Courier — the other family every yard also posts and receives), FEAT-110 (ratchet straps, parked),
+  (Courier — a yard RECEIVES courier deliveries; it posts haul only, owner 2026-11-07), FEAT-110 (ratchet straps, parked),
   FEAT-67 (offer board — sources/families/slots), FEAT-46 (POI lay-by pads), FEAT-74 (POI pools),
   FEAT-36 (debris), FEAT-43 (region confinement), ASSET-36 splitting yard · ASSET-11 sawmill ·
   ASSET-35 quarry · ASSET-37 firewood armload · ASSET-38 lumber bundle · ASSET-12 lumber-yard kit
@@ -29,18 +29,18 @@ requires: FEAT-88 shipped (world-truck bed well ✅ on main f47d4a9, cargo spawn
 built as `firewoodYard` (`src/poi.js:267`, the ASSET-36 splitting yard): haul offers with the picked quantity
 (FEAT-114), the drop zone, `test/haul-load.mjs` (determinism, catch, wear, cap), and it receives courier jobs (the
 general store's chainsaw / axe / shovel, `data/offers.js`). **Missing from the alpha slice:**
-- **The yard posts no courier jobs** (`data/offers.js` SOURCES: `families: ['haul']`, "lands with FEAT-89" — FEAT-89
-  is built). No courier THING lists `firewoodYard` in its `pools`, and the 2026-10-22 "one offer at a time" ruling
-  covers this giver's board. Owner's words owed: what a splitting yard sends out, and whether the one-offer rule
-  holds once a courier job can sit beside the haul.
+- ~~The yard posts no courier jobs.~~ **Ruled 2026-11-07 (owner, alpha-audit-calls): "splitting yard haul only.
+  correct the ruling. no need for courier to exist everywhere."** `families: ['haul']` is the shape, not a gap.
+  It still receives courier deliveries (the general store's chainsaw / axe / shovel); the owner's words don't
+  ask to remove that, so it stays.
 - ~~The frame cost of the largest firewood load (30 bundles) is not measured against the 60 fps budget.~~ Measured
   2026-11-07: within budget at CPU ×1, the mid-range-laptop target (§ Frame cost of the largest load, below).
 
 ## The shape (owner, 2026-09-30)
 
 Three **yard POIs**, one per region, each with its own model and a **loading bay**. Each posts
-**haul** jobs for its own load (FEAT-88) **and also gives and takes courier jobs** (FEAT-89) — a yard
-is a working business, so small items leave from it and arrive at it like anywhere else.
+**haul** jobs for its own load (FEAT-88). ~~and also gives and takes courier jobs (FEAT-89)~~ — **corrected 2026-11-07
+(owner): a yard posts haul only**; courier deliveries may still arrive at it.
 
 | Region | Yard | Haul load | Loading beat |
 |---|---|---|---|
