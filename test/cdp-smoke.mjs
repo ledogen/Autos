@@ -593,6 +593,10 @@ const STEPS = [
       const cs = Math.cos(q.modelYaw), sn = Math.sin(q.modelYaw), [ex, ey, ez] = c.eye, p = window.__cam().position
       return Math.hypot(p.x - (q.modelX + ex * cs + ez * sn), p.y - (q.baseY + ey), p.z - (q.modelZ - ex * sn + ez * cs)) })()`)
     check(camOff !== null && camOff < 0.3, `the service view is not the bay's camera corner (${camOff?.toFixed(2)} m off its eye)`)
+    // …and the truck stands on its wheels there: the seat once sampled the road's sideways-extrapolated grade under the
+    // lift (up to 1 m below the floor) and the truck was launched onto its roof (world 2764955649/K).
+    const upY = await js('(q => 1 - 2 * (q.x * q.x + q.z * q.z))(window.__vs.quaternion)')
+    check(upY > 0.99, `the truck is not upright on the lift (up.y ${upY.toFixed(3)})`)
     // FEAT-167: no HUD behind the shop.
     check(await js('!document.getElementById("hud-dock").checkVisibility({ visibilityProperty: true })'), 'the HUD shows behind the service screen')
     // My Vehicle lists every corner's tire under a collapsed Tires; selecting one opens its repair / exchange panel.
