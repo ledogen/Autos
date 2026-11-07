@@ -1052,8 +1052,13 @@ function _groundSampleY (x, z) {
   // REAL terrain/road height (~150 m over most of seed 6) and a lab teleport would drop the truck
   // out of the sky onto the plane.
   if (_labActive) return labSystem ? labSystem.groundHeight(x, z) : 0
+  // The asphalt top only ON the road's footprint (_resolveLanding's test): past it the sampler extrapolates the road's
+  // grade sideways, out to ~35 m (camp.js nearRoadInfo), so a seat on a pad beside the road — FEAT-178's lift, ~10 m
+  // out — sat up to 1 m under the pad floor and the truck was launched out of it onto its roof.
   if (roadSystem && typeof roadSystem.sampleRoadTopY === 'function') {
-    const ry = roadSystem.sampleRoadTopY(x, z)
+    const half = (RANGER_PARAMS.roadHalfWidth ?? 5) + (RANGER_PARAMS.roadShoulderWidth ?? 2.5)
+    const nr = roadSystem.queryNearest(x, z, half + 1)
+    const ry = nr?.point && Math.hypot(nr.point.x - x, nr.point.z - z) <= half ? roadSystem.sampleRoadTopY(x, z) : null
     if (ry != null) return ry
   }
   return terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
