@@ -91,7 +91,7 @@ import { ITEMS } from '../data/items.js'
 import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
-import { startShelves, shelf, shelfPrice, take as takeShelf, shelfName, nextStockH, runShelves } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock
+import { startShelves, shelf, shelfPrice, take as takeShelf, shelfName, nextStockH, runShelves, SHOP_TYPES } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock; FEAT-104 the storefronts
 import { PARTS, SLOTS } from '../data/parts.js'   // SM-3: which inventory entries are tires; roadside labour
 import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, swapCorners, swapCornerHours, plugTire, plugMethods, PLUG_H, fitRoadside,
   FIELD_REPAIR, fieldRepair, fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
@@ -3604,8 +3604,8 @@ const serviceCenter = new ServiceCenter({
   money: () => economySystem.money(), spend: ($) => economySystem.spend($), earn: ($) => economySystem.addSpot($),
   tier: () => economySystem.tierNow(),
   advanceHours: (h) => daySystem.advanceMinutes(h * 60),
-  stock: () => shelf(_servicePoi.id, daySystem.clockH()), unstock: (i) => takeShelf(_servicePoi.id, i),
-  nextStock: () => _shelfNext(_servicePoi.id, daySystem.clockH()),   // R-24: "new stock in 3h 10m"
+  stock: () => shelf(_servicePoi.id, daySystem.clockH(), _servicePoi.type), unstock: (i) => takeShelf(_servicePoi.id, i),
+  nextStock: () => _shelfNext(_servicePoi.id, daySystem.clockH(), _servicePoi.type),   // R-24: "new stock in 3h 10m"
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
@@ -3650,7 +3650,10 @@ function _serviceInReach () {
   if (['generating', 'offer'].includes(missionSystem?.state)) return null
   const vp = vehicleState.position
   const q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
-  return q?.type === 'autoShop' && _inPoiSpot(q) ? q : null   // FEAT-178: on the lift (its park box), not just near
+  // FEAT-104: a storefront's shop too, except on the evening leg, which is for getting home (the givers' rule,
+  // _poiInReach): its Jobs tab must not hand out work before the casserole.
+  if (!SHOP_TYPES.has(q?.type) || (q.type !== 'autoShop' && _eveningLeg())) return null
+  return _inPoiSpot(q) ? q : null   // FEAT-178: on the lift (its park box), not just near
 }
 
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
@@ -4696,8 +4699,8 @@ const _boardView = {
   },
 }
 /** R-24: when the shop's next item lands, as a duration — or null when nothing is due for two days. */
-function _shelfNext (poiId, now) {
-  const h = nextStockH(poiId, now)
+function _shelfNext (poiId, now, type) {
+  const h = nextStockH(poiId, now, type)
   return h != null ? formatGameDuration(h - now) : null
 }
 
@@ -5620,18 +5623,20 @@ function _updateParkTriggers (zParked = false) {
   }
 
   // SM-3: an auto shop is a service center. The brake opens the service screen and the shop's jobs are
-  // a button inside it, so the brake means one thing here (the pump's rule).
+  // a button inside it, so the brake means one thing here (the pump's rule). FEAT-104: a storefront opens
+  // the same screen as its shop (owner, 2026-10-07: "park … and a buy menu opens"), its jobs the same way.
   const shop = serviceScreen.isOpen ? null : _serviceInReach()
   if (serviceScreen.isOpen || shop) {
     damageScreen.blocked = true
     if (shop && pulled) {
       _servicePoi = shop
-      serviceScreen.open(offerBoard?.poiName(shop.id) ?? 'Auto shop')
-      _tut('tut-service')   // FEAT-147
+      const store = shop.type !== 'autoShop'
+      serviceScreen.open(offerBoard?.poiName(shop.id) ?? (store ? 'Store' : 'Auto shop'), store)
+      if (!store) _tut('tut-service')   // FEAT-147
     }
     if (poiEl) {
       poiEl.style.display = serviceScreen.isOpen ? 'none' : 'block'
-      if (!serviceScreen.isOpen) poiEl.innerHTML = parkPrompt('park for service')
+      if (!serviceScreen.isOpen) poiEl.innerHTML = parkPrompt(shop.type === 'autoShop' ? 'park for service' : 'park to shop')   // FEAT-104 [DEFAULT words]
     }
     if (campRow) campRow.style.display = 'none'
     return
