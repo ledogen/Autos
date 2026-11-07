@@ -8427,10 +8427,18 @@ export class RoadSystem {
      * nodes (radius tunnelBoreRadius about that run's centreline, from its apron 1.5 m under the deck up,
      * within one of its spans), or null when no sibling bores — the common case, so callers skip the work.
      * Memoised per run and network revision. Meshes and the wall contact read the same test (MESH == PHYSICS).
+     * `owners`: only siblings whose key sorts before `runKey` — the tube FLOOR yields to those alone, so where two
+     * floors overlap exactly one is kept (road-mesh.js buildTunnelTube).
+     * A sibling's tube ends the way buildTunnelTube builds it: straight on along the end tangent by its lip (1.5 m
+     * at a mouth, R at an end inside another tube), then flat. The polyline search alone rounded each end into a
+     * cap of radius R about its last vertex, reaching 2.2 m past a mouth where there is no lining, and the other
+     * tube's floor was cut there (sky through the forecourt floor, seed 717319401). `basic` keeps the capped
+     * shape: isMouth reads it, because the lips themselves are read from isMouth.
      */
-    siblingTubeTest(runKey) {
+    siblingTubeTest(runKey, owners = false, basic = false) {
         if (this._sibRev !== this._networkRev) { this._sibRev = this._networkRev; this._sibTests = new Map(); this._sibByNode = null; this._mouths = new Map() }
-        if (this._sibTests.has(runKey)) return this._sibTests.get(runKey)
+        const memo = runKey + (owners ? '|owners' : '') + (basic ? '|basic' : '')
+        if (this._sibTests.has(memo)) return this._sibTests.get(memo)
         if (!this._sibByNode) {
             this._sibByNode = new Map()
             for (const [k, e] of this._network) for (const c of [e.cellA, e.cellB]) {
@@ -8444,13 +8452,22 @@ export class RoadSystem {
         for (const c of me ? [me.cellA, me.cellB] : []) {
             for (const k of (c && this._sibByNode.get(c.join(','))) || []) {
                 const e = this._network.get(k)
-                if (k === runKey || !e?.tunnelSpans || tubes.some((t) => t.k === k)) continue
+                if (k === runKey || !e?.tunnelSpans || (owners && !(k < runKey)) || tubes.some((t) => t.k === k)) continue
                 tubes.push({ k, e })
             }
         }
         let test = null
         if (tubes.length) {
             const prof = { gradeY: 0, tx: 1, tz: 0 }
+            const ends = new Map()   // span → its two ends' lip frames (outward tangent), built on first use
+            const endsOf = (k, sp) => {
+                let v = ends.get(sp)
+                if (!v) ends.set(sp, v = [[sp.s0, -1], [sp.s1, 1]].map(([s, dir]) => {
+                    const p = this.runPointAt(k, s), g = this.runProfile(s, k, { gradeY: 0, tx: 1, tz: 0 })
+                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : R }
+                }))
+                return v
+            }
             test = (x, y, z) => {
                 for (const { k, e } of tubes) {
                     const pts = e.points, cum = e.polyCum
@@ -8460,12 +8477,19 @@ export class RoadSystem {
                         for (let i = 1; i < pts.length; i++) {
                             if (cum[i] < sp.s0 || cum[i - 1] > sp.s1) continue
                             const ax = pts[i - 1].x, az = pts[i - 1].z, dx = pts[i].x - ax, dz = pts[i].z - az
-                            const L2 = dx * dx + dz * dz
-                            const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)) : 0
-                            const s = cum[i - 1] + (cum[i] - cum[i - 1]) * t
-                            if (s < sp.s0 || s > sp.s1) continue
+                            const L2 = dx * dx + dz * dz, sl = cum[i] - cum[i - 1]
+                            let t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)) : 0
+                            if (!basic && sl > 0) t = Math.max((sp.s0 - cum[i - 1]) / sl, Math.min((sp.s1 - cum[i - 1]) / sl, t))   // held to the span
+                            const s = cum[i - 1] + sl * t
+                            if (basic && (s < sp.s0 || s > sp.s1)) continue
                             const d2 = (x - ax - dx * t) ** 2 + (z - az - dz * t) ** 2
                             if (d2 < best) { best = d2; bs = s }
+                        }
+                        const end = basic ? null : bs <= sp.s0 + 1e-6 ? endsOf(k, sp)[0] : bs >= sp.s1 - 1e-6 ? endsOf(k, sp)[1] : null
+                        if (end) {   // nearest at an end: on along the lip, lateral from its line, then flat
+                            const along = (x - end.x) * end.tx + (z - end.z) * end.tz
+                            if (along > end.lip) continue
+                            if (along > 0) best -= along * along
                         }
                         if (best >= R * R) continue
                         const h = y - this.runProfile(bs, k, prof).gradeY
@@ -8475,7 +8499,7 @@ export class RoadSystem {
                 return false
             }
         }
-        this._sibTests.set(runKey, test)
+        this._sibTests.set(memo, test)
         return test
     }
 
@@ -8488,7 +8512,7 @@ export class RoadSystem {
      * Memoised per run, arc and network revision.
      */
     isMouth(runKey, s) {
-        const test = this.siblingTubeTest(runKey)   // also resets the memo on a new network revision
+        const test = this.siblingTubeTest(runKey, false, true)   // also resets the memo on a new network revision
         if (!test) return true
         const key = runKey + '|' + s
         let m = this._mouths.get(key)
