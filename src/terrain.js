@@ -1577,9 +1577,10 @@ export class TerrainSystem {
                 // Composed EXACTLY as physics (_sampleCarveWorld) does → mesh == collision.
                 let cs = null
                 let latDist = Infinity     // FEAT-46: the POI pad's road gate reads this (see below)
+                let arcSEff = 0            // BUG-123: the pad merge's ribbon-edge distance reads it (below)
                 if (nr) {
                     const dx = wx - nr.point.x, dz = wz - nr.point.z
-                    const arcSEff   = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
+                    arcSEff = (nr.arcS ?? 0) + dx * nr.tangent.x + dz * nr.tangent.z
                     const signedLat = dx * nr.tangent.z - dz * nr.tangent.x
                     latDist = Math.abs(signedLat)
                     // FEAT-40 rival blend (self-overlap/bore seams) + QUAL-10 pad-plane inter-leg ruled
@@ -1609,7 +1610,8 @@ export class TerrainSystem {
                 // Junction-pad carve composed with the leg + connector carve. The MESH uses the default
                 // PAD_DUCK_CAP (1.2); physics uses the tighter PAD_DUCK_CAP_PHYS (0.55) — the sanctioned
                 // camber-era pad-rim mesh↔collision difference. Covers the open-side rim no run reaches.
-                const csP = this._roadSystem._mergeCarve(cs, this._roadSystem._junctionPadCarve(wx, wz, rawH))
+                const csP = this._roadSystem._mergeCarve(cs, this._roadSystem._junctionPadCarve(wx, wz, rawH), undefined,
+                    nr ? this._roadSystem._ribbonEdgeDist(nr.runKey ?? '', arcSEff, latDist) : Infinity)
                 if (!csP) { table[idx] = 0; table[idx + 1] = 0; continue }
 
                 table[idx]     = csP.blendW
