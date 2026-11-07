@@ -916,7 +916,8 @@ const STEPS = [
     const before = await js(`({ p: window.__car(), h: window.__day().clockH(), cond: window.__damage.get("armorLeft"), inv: window.__inv.list().length })`)
     await js('document.getElementById("pm-save").click()')
     check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
-    check(await js('(n => n.offsetParent !== null && n.previousElementSibling.id === "mm-new")(document.getElementById("mm-save-note"))'), 'with a run saved, no save warning under new game')
+    // The warning lives on the new-game page beside story's start (02c92535), so it is shown/hidden by style, not visibility here.
+    check(await js('(n => n.style.display !== "none" && n.previousElementSibling.id === "su-start")(document.getElementById("mm-save-note"))'), 'with a run saved, no save warning beside story\'s start')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     const paused = 'document.getElementById("resume-card").style.display === "flex"'
     const resume = async (what) => {
@@ -1095,7 +1096,7 @@ const STEPS = [
       await js('document.getElementById("re-menu").click()')
       check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), `${t}: no main menu after the card`)
       check(await js('document.getElementById("mm-continue").offsetParent === null'), `${t}: "continue" offers an ended run`)
-      check(await js('document.getElementById("mm-save-note").offsetParent === null'), `${t}: the save warning outlived the save`)
+      check(await js('document.getElementById("mm-save-note").style.display === "none"'), `${t}: the save warning outlived the save`)
       check(await js('!document.querySelector("canvas").style.filter'), `${t}: the world stayed black and white`)
       check(await js('window.__stage._dragYaw === 0 && window.__stage._dragPitch === 0'), `${t}: the menu truck kept the last orbit (BUG-109: back to the resting shot)`)
       console.log(`  endings: "${t}" — ${body.replace(/\s+/g, ' ').slice(0, 100)}`)

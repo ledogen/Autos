@@ -1,9 +1,10 @@
 ---
 id: BUG-104
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-02
+closed: 2026-11-07
 source: Spare's BUG-69 census, 2026-11-02 — seed 10 (1566, −949), 1400 m window: two legs of one node overlap for ~160 m
 relates: BUG-69 (the census that found it), FEAT-77 (the clearance rule and its close-pairs walk), BUG-64 (earthwork composition between close roads), BUG-63 (`~p` parallel runs), BUG-67 (junction geometry)
 ---
@@ -91,3 +92,30 @@ the junctions at their ends re-stitch (a T losing a leg may become a deg-2 conne
 run keeps its key. It still deletes a road the player could have driven, so it is the owner's call
 against the standing "connectivity goes up" ruling; the alternative is to leave 5 % of worlds with a
 doubled stretch of road.
+
+## Rides BUG-105 (owner, 2026-11-07)
+
+QUAL-35 is closed ("leave it"), so this no longer waits on it. The owner's bug105-trim answer asks for one fix for
+"roads intersect but don't form a junction": every crossing without a junction becomes one, at any length, and loops
+under 500 m are trimmed. The work and the numbers are in BUG-105 § "Owner's ruling, 2026-11-07".
+- BUG-104's five original sites (seeds 10, 41, 51, 52, 87) stay clear on main since BUG-105's Stages 1–2.
+- Census 12's 100 fresh random seeds show the shape once more: seed 2323221349, two legs of node `-4,1,2` 2.8 m apart
+  for 168 m. Every T variant there fails a structural check.
+- It waits on the backstop call recorded in BUG-105: JOIN with a mid-span T, or DEGREE-REDUCE by dropping the duplicate
+  where the ends stay connected.
+
+## Resolution (2026-11-07): closed on evidence
+
+**Correction:** the census 12 site above is not real. Seed 2323221349 (−2021, 601) lies 2.1 km from that census
+window's centre, past its 1400 m radius, in the frontier band where runs may differ between window centres (the
+RUNKEY-SET-INVARIANT guarantee covers the interior only).
+- A window centred on the site builds mid-span Ts there: `-1954646,604192,-1` and `-1911336,686326,-1` join the legs,
+  and no pair comes under 22 m.
+- So does a window centred 700 m toward the origin.
+- A player standing there never gets the overlap (`wip/overlap/near.mjs`).
+
+**What remains of this ticket's shape:** none in 240 windows, 9,130 km (census 12: the 140 census windows + 100 fresh
+random seeds). The five original sites stay clear on main since BUG-105's Stages 1–2.
+
+The one real overlap census 12 found is a different shape: a promoted T's departure lying beside a road it shares no
+node with (seed 1394642004). It stays under BUG-105, tracker item `bug105-overlap`.

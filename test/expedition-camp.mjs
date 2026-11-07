@@ -81,6 +81,10 @@ for (const s of SEEDS) {
     check('one expedition camp, off its own edge (never the pool)',
         list.filter((q) => q.type === 'expeditionCamp').length === 1 && camp.id.startsWith('camp:')
             && !poi.pool().some((q) => q.edge === camp.edge) && camp.jobs)
+    // FEAT-179 (owner, 11-06: "There should always be two service stations on the map"): two auto shops, inside the wall.
+    const shops = list.filter((q) => q.type === 'autoShop')
+    check('two auto shops (service stations), both inside the wall', shops.length === 2 && shops.every((q) => r(q) <= wall),
+        shops.map((q) => r(q).toFixed(0) + ' m').join(', ') || 'none')
     if (!camp) continue
     const inA = adj.has(g.key(camp.aId)), inB = adj.has(g.key(camp.bId))
     const inner = inA ? g.key(camp.aId) : g.key(camp.bId)
