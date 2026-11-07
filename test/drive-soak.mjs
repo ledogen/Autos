@@ -143,7 +143,11 @@ async function soakSeed (seed, replay = null) {
     idx = i
     const a = router.path[i], b = router.path[Math.min(i + 3, router.path.length - 1)]
     const h = Math.atan2(-(b.x - a.x), -(b.z - a.z))
-    restore(vs, snapshot(freshState(P, a.x, ground(a.x, a.z, 1e4) + 1.0, a.z, h)))
+    // On the road's own top: a path point is on the ribbon, and in a bore the analytic ground "from above" is the hill
+    // 50+ m over the tube — a re-seat there put the truck on the hilltop to follow the tunnel's line across raw slope
+    // (seed 24316861: 235 kN, impulses of ~10⁶). sampleRoadTopY is the tunnel floor there and the asphalt everywhere else.
+    const top = w.road.sampleRoadTopY(a.x, a.z)
+    restore(vs, snapshot(freshState(P, a.x, (top ?? ground(a.x, a.z, 1e4)) + 1.0, a.z, h)))
     w.stream(a.x, a.z)
     inputs = []; snap = snapshot(vs); snapT = 0
   }
