@@ -54,7 +54,9 @@ pure math — read by `physics.js` and `vehicle-model.js`) · `terrain-physics.j
 `drivetrain.js` (engine/converter/gearbox, FEAT-23) · `abs.js` (FEAT-135 4-channel anti-lock
 controller — wheel + decel sensors → per-wheel line pressure; pure, stepped by `physics.js`) · `tire-contact.js` (FEAT-70 — the wheel's ground contact solved for the tire
 cylinder: three lines across the tread, closest surface point to the axle, radial normal at edges; pure, called by
-main.js `queryContacts`) · `traction.js` (FEAT-159 throttle
+`world-contacts.js`) · `world-contacts.js` (the contact query `stepPhysics` is handed — ground per sample, props, POI
+cubes, bore walls — ONE definition built from the world's systems: main.js the game's, `test/drive-soak.mjs` a headless
+one) · `traction.js` (FEAT-159 throttle
 assist + traction control — wheel + yaw sensors → a pedal cap the drivetrain reads and TC brake pressure on the rears; pure,
 stepped by `physics.js`) · `fuel.js` (FEAT-50 engine fuel map — rpm × pedal
 table off `data/engines.js` by the Willans line — and the tank's per-step drain; pure) · `ignition.js` (key/starter state machine,
