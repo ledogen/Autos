@@ -208,7 +208,7 @@
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
       tasks: [
-        { id: 'FEAT-179 · FEAT-180 · crickets', what: 'Two service stations (you mean the auto shop, the two-car bay): random seeds all have two, so Spare is finding why your 386773705 shows one. Crickets at half volume: built, lands with the loop trim. Then the lighting review page and interview (with a sun-until-8 pm proposal).' },
+        { id: 'FEAT-179 · FEAT-180 · crickets', what: 'Two service stations: your 386773705 has both auto shops; the map hid the second (framed on your route, and the doctor’s diamond drawn over it). Your call: feat179-map. Crickets at half volume: built, lands with the loop trim. Then the lighting review page and interview (with a sun-until-8 pm proposal).' },
         { id: 'BUG-105 loops', what: 'Your loop trim is built: grazes 4 → 2 (24 and 25 cleared; 26 and 27 stay), only the 4 loop windows change. Its before/after page is yours (bug105-trim); it lands after a build-time A/B (running).' },
         { id: 'BUG-121', what: 'Found by Lane A: from more than ~7.5 m off a road, “nearest road point” can answer a point up to 164 m along the road (seed 6: 50 of 81 POI queries). Hits the reset-to-road key, the GPS re-plan, spawn and some placement. Spare takes it after the loop trim; the fix needs the world-identity check.' },
         { id: 'QUAL-35', what: 'Measured: there is no small version, and Spare recommends leaving it. Report + maps + its view on a full redesign: https://claude.ai/artifact/H96gBEYDd85r4jZPiz97G4. Your call (qual35-call).' },
@@ -240,6 +240,9 @@
     { id: 'bug105-trim', kind: 'decide', tk: 'BUG-105',
       text: 'Your loop trim, built: the 4 loop sites on random seeds (your 24 and 25 first), each with a map overlay and before/after shots: https://claude.ai/artifact/C4jUxhQbgiwyHwor2aq1Ho. Two calls. 1, the length cut-off: (a) keep 400 m or (b) 200 m. Your two loops measure 339 m and 391 m, so 200 m trims neither. 2, the sharp bends this leaves (131° at your 25, 102° at site 4): (a) fine or (b) widen them, as a separate change. Type e.g. “1a 2a” in the note box below.',
       options: ['1a 2a', 'my picks in the note box below'] },
+    { id: 'feat179-map', kind: 'decide', tk: 'FEAT-179',
+      text: 'Your seed 386773705 does have two auto shops; the map hid the second, two ways. It opens framed on your route (~2 km across), and the second shop is 2.4 km further east. Zoomed out, the doctor’s blue diamond 71 m away is drawn on top of that shop’s wrench. Every seed has two (a gate now pins it). Shots: https://claude.ai/artifact/N3x8Co14XVye6XLkbXLpnf. (a) leave the map, close FEAT-179. (b) pictogram places (shops, gas…) draw over the plain diamonds. (c) the map opens on the whole region. (b) and (c) can go together: type “b c” in the note box below.',
+      options: ['(a) leave it', '(b) pictograms on top', '(c) open on the whole region', 'b c'] },
     { id: 'bug117-pay', kind: 'decide', tk: 'BUG-117',
       text: 'Mom’s first job (the casserole to Larry’s) now has no deadline and every other job waits for it (ON MAIN 0a0e25a4). It also cannot be abandoned: Lane A’s call, and the alternative is that abandoning puts it back on mom’s board. Its pay still depends on route length. 1 = no pay, a letter only (recommended), 2 = keep the pay. To overrule the no-abandon call, type it in the note box below.',
       options: ['1 — a letter, no pay', '2 — keep the pay'] },
