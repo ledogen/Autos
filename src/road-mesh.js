@@ -1267,13 +1267,21 @@ export class RoadMeshSystem {
                 uv[ui] = (foot > 0 ? -LEG : foot < 0 ? Math.PI * RMID + LEG : th * RMID) * 0.22; uv[ui + 1] = vRow * 0.22; ui += 2
             }
         }
+        // BUG-138: two legs of one T that both dive into the hill ~10 m out run their bores 11 m apart there, so the
+        // 10.6 m collar of one stood inside the other's bore — a stone block in the lane 1–4 m before the other's portal
+        // (and its upper arch 6 m up in the first's). A quad goes when ANY corner is inside a sibling's tube: the quads
+        // are 1.7 m across, so the tube's all-corners rule would keep most of the block.
+        const sib = road.siblingTubeTest?.(runKey)
+        const inSib = (i) => sib(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2])
         const idx = []
         for (let s = 0; s < rows.length; s += 2) {      // strip = row pair (s, s+1)
             for (let k = 0; k < nTheta - 1; k++) {
                 const a = s * nTheta + k, b = (s + 1) * nTheta + k
+                if (sib && (inSib(a) || inSib(b) || inSib(a + 1) || inSib(b + 1))) continue
                 idx.push(a, b, a + 1, a + 1, b, b + 1)
             }
         }
+        if (!idx.length) return null
         const geo = new THREE.BufferGeometry()
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
         geo.setAttribute('uv',       new THREE.BufferAttribute(uv, 2))
