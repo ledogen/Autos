@@ -1,7 +1,7 @@
 ---
 id: FEAT-178
 type: feature
-status: blocked
+status: closed
 severity: minor
 opened: 2026-11-06
 source: owner, 2026-11-06 playtest (relayed verbatim by the orchestrator)
@@ -67,3 +67,13 @@ dropped in favour of it — and `camera: { eye: [-5.9, 2.8, 3.6], look: [-3.95, 
 - **Smoke:** `PAD_SEAT` seats a park-box POI where a tow would (dev handle `window.__towSeat`), heading included. The
   service step checks the view lands within 0.3 m of the bay's camera eye. boot,story,tires,service,offer,pad PASS.
 - Owed: the owner's look in game (the framing; the fov question); a screenshot probe is at wip/feat-178/shot.mjs.
+
+## Resolution
+
+**Closed on evidence (Lane B, 2026-11-07).** Landed e3feee76 with ASSET-82's seat fix. The brake opens the
+service screen only parked on bay A's lift (the park box, _inPoiSpot); the lift is flush (5 mm plates, no collider);
+the view snaps to the model's camera corner and returns on close. Pinned: test/tow-seat.mjs (the tow seats on the
+lift, 14 colliders, four headings) and cdp-smoke's service step (camera within 0.3 m of the eye; truck upright).
+The lift screenshot also caught a shared seat bug, fixed in the same landing (main.js _groundSampleY takes the road
+top only on the road's footprint). Left for the owner, not blocking: a look at the framing in game, and whether to
+use the model's 55° fov (not applied — the game keeps its own).

@@ -1,7 +1,7 @@
 ---
 id: BUG-115
 type: bug
-status: open
+status: open — waiting only on the owner's look in game
 severity: minor
 opened: 2026-11-06
 source: Lane B, measuring FEAT-138's hi-lift on cross-slopes (2026-11-06) — the same complaint as BUG-89 ("slides too far when truck is on side add friction so you self right or roll more often", owner 2026-10-19), on the roof this time
@@ -96,3 +96,9 @@ The cab's grip would depend on what it lands on: **off-road it digs in** (high �
 grass tumbles on and may land back on its wheels), **on-road it slides** (lower μ, so a truck upside down on asphalt
 skids along on its roof and doesn't tumble). The same direction as BUG-116's terrain-dependent body μ: one
 per-surface body/cab friction would serve both. Waits on the owner's in-game look at (b).
+
+## Status (Lane B, 2026-11-07)
+
+Built and landed (5028b1d9); every box but the last is ticked. Open ONLY for the owner's look in game (they asked to be
+asked: "Make sure you ask me to take a look at this in game"). It is on the tracker page's owed list. Close it on their
+word; the per-surface cab-friction idea in this ticket is recorded, not built.
