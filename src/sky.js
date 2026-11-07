@@ -140,6 +140,15 @@ function skyBrightness (elevationDeg) {
   return Math.pow(Math.max(0, 1 - Math.exp(-(1.6110731556870734 - zenith) / 1.5)), 1.5)
 }
 
+// FEAT-180 night by moon phase (owner 11-07, 2: "I would describe current state as super dark i.e. what new moon
+// should be … Full moon should be bright enough to see without headlights but barely"; 8: "the current look and
+// headlight performance captures 'new moon but your headlights work' quite well"). SKY_PRESETS.night IS the new
+// moon, unchanged; the moon's lit fraction (0 new … 1 full, setMoonLit) scales its key, fill and fog radiance up to
+// FULL_MOON_GAIN at full, the gain at which the road reads without headlights, barely.
+const FULL_MOON_GAIN = 3
+let _nightLook = SKY_PRESETS.night
+const lookOf = (name) => (name === 'night' ? _nightLook : SKY_PRESETS[name])
+
 /** The two keyframe looks bracketing `hour`, the time blend `t`, and `tl`, the blend for the light fields.
  *  FEAT-180 (owner 11-07, "ground should be darker if sky is still black"): between night and a lit look the sky
  *  stays black until the sun is 2.3° under the horizon and then brightens steeply, so a light that blended
@@ -151,7 +160,7 @@ function bracket (hour) {
   let i = 0
   while (i < kf.length - 1 && h >= kf[i + 1].hour) i++
   const ka = kf[i], kb = kf[Math.min(i + 1, kf.length - 1)]
-  const a = SKY_PRESETS[ka.preset], b = SKY_PRESETS[kb.preset]
+  const a = lookOf(ka.preset), b = lookOf(kb.preset)
   const t = kb.hour > ka.hour ? (h - ka.hour) / (kb.hour - ka.hour) : 0
   const sa = skyBrightness(a.elevation), sb = skyBrightness(b.elevation)
   const tl = (sa === 0) !== (sb === 0)
@@ -289,9 +298,11 @@ export class SkySystem {
     const sm = this.sky.material
     sm.uniforms.uFog = { value: new THREE.Color() }
     sm.uniforms.uHazeTop = { value: Math.sin(THREE.MathUtils.degToRad(HAZE_DEG)) }
+    sm.uniforms.uMoonSky = { value: new THREE.Color() }   // FEAT-180 moon phase: the moonlit sky (setMoonLit)
     sm.fragmentShader = sm.fragmentShader
-      .replace('uniform float time;', 'uniform float time;\n\t\tuniform vec3 uFog;\n\t\tuniform float uHazeTop;')
+      .replace('uniform float time;', 'uniform float time;\n\t\tuniform vec3 uFog;\n\t\tuniform float uHazeTop;\n\t\tuniform vec3 uMoonSky;')
       .replace('gl_FragColor = vec4( texColor, 1.0 );', `float haze = 1.0 - smoothstep( 0.0, uHazeTop, direction.y );
+			texColor += uMoonSky * mix( 1.0, 0.35, clamp( direction.y, 0.0, 1.0 ) );
 			gl_FragColor = vec4( mix( texColor, uFog, haze * haze ), 1.0 );`)
     if (!sm.fragmentShader.includes('uHazeTop;')) throw new Error('sky.js: three Sky shader changed; FEAT-180 haze patch missed')
     scene.background = null                    // live mode: the Sky mesh is the background
@@ -363,6 +374,11 @@ export class SkySystem {
     u.mieCoefficient.value = p.mieCoefficient
     u.mieDirectionalG.value = p.mieDirectionalG
     fogRadiance(p, u.uFog.value)   // FEAT-180 horizon: the fog's radiance, as the old ground disc took it
+    // FEAT-180 moon phase: the night sky brightens with the moon by the same extra light as the haze it fades into
+    // (the moonlit share of the fog), full at the horizon and 35 % at the zenith, so a full moon's brighter haze is
+    // not a lit band under a black sky. Zero at new moon: tonight's sky as authored.
+    const g = _nightLook.sunIntensity / SKY_PRESETS.night.sunIntensity
+    u.uMoonSky.value.copy(u.uFog.value).multiplyScalar((g - 1) / g * nightWeight(SKY_CYCLE.hour))
 
     dirFromAngles(p.elevation, p.azimuth, this._skySunDir)
     u.sunPosition.value.copy(this._skySunDir)
@@ -489,6 +505,16 @@ export class SkySystem {
         SKY_PARAMS[k] = THREE.MathUtils.lerp(a[k], b[k], w)
       }
     }
+  }
+
+  /** FEAT-180: the moon's lit fraction, 0 (new: the night look as authored) … 1 (full: FULL_MOON_GAIN × its light).
+   *  Re-applies the current hour when it changes. */
+  setMoonLit (lit) {
+    const g = 1 + (FULL_MOON_GAIN - 1) * THREE.MathUtils.clamp(lit, 0, 1), n = SKY_PRESETS.night
+    if (_nightLook.sunIntensity === n.sunIntensity * g) return
+    _nightLook = g === 1 ? n : { ...n, sunIntensity: n.sunIntensity * g, hemiIntensity: n.hemiIntensity * g,
+      fogColor: _scratchA.setHex(n.fogColor).multiplyScalar(g).getHex() }
+    this.setTimeOfDay(SKY_CYCLE.hour)
   }
 
   /**
