@@ -27,6 +27,7 @@
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain.js'
 import { addWorldVaryings, tdBumpGLSL } from './terrain-detail.js'  // FEAT-05: shared procedural detail
+import { _hexLin } from './terrain-texture.js'   // BUG-112: the terrain palette's hex → rgb
 import { makeMasonryTextures } from './stone-texture.js' // FEAT-40: portal-ring masonry
 import { crownProfile, potholeNoise, earClip, padFillDelaunay } from './road-carve.js'
 // roadQuality lives in road-quality.js (Plan 09-06) to break the terrain.js → road-mesh.js →
@@ -82,9 +83,12 @@ export class RoadMeshSystem {
      *                                        (CR-04; BUG-74 reads it for the skirt's cut fade)
      * @param {object}          params     — RANGER_PARAMS (roadWidth, roadHalfWidth, crownHeight, camberMaxAngleDeg, ...)
      * @param {number}          [worldSeed=0] — world seed for roadQuality determinism (D-03)
+     * @param {THREE.Material}  [boreFloorMaterial] — BUG-112: the terrain's own material (TerrainSystem.boreFloorMaterial),
+     *                                        so a bore's dirt floor wears the cut bench's gravel. Owned by the terrain.
      */
-    constructor(scene, roadSystem, terrainRef, params, worldSeed = 0) {
+    constructor(scene, roadSystem, terrainRef, params, worldSeed = 0, boreFloorMaterial = null) {
         this._scene      = scene
+        this._boreFloorMaterial = boreFloorMaterial
         this._road       = roadSystem
         this._terrainRef = terrainRef
         this._params     = params
@@ -910,7 +914,12 @@ export class RoadMeshSystem {
                     // the proud lip is built only where the tube starts exactly at the span end. A
                     // mouth 0.25 m before a slice boundary skipped its sliver, the next slice's tube
                     // began 0.25 m inside, and the mouth had no lip: the shader-cut skin left a hole.
-                    if (b - a > 0.5 || (b > a && (a === sp.s0 || b === sp.s1))) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial(), true)   // BUG-112: the lining shades the bore — no sun on the deck or the truck inside it
+                    if (b - a > 0.5 || (b > a && (a === sp.s0 || b === sp.s1))) {
+                        const t = this.buildTunnelTube(runKey, a, b, sp, this._params)
+                        // BUG-112: the lining shades the bore — no sun on the deck or the truck inside it; the
+                        // floor wears the terrain's own material (the lining's when none was handed, headless).
+                        if (t) { addTMesh(t.tube, this._getTunnelMaterial(), true); addTMesh(t.floor, this._boreFloorMaterial ?? this._getTunnelMaterial()) }
+                    }
                     if (sp.s0 >= sLo && sp.s0 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
                     if (sp.s1 >= sLo && (sp.s1 < sHi || lastSlice)) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
                 }
@@ -1072,8 +1081,11 @@ export class RoadMeshSystem {
      * inside, so the interior reads dark while headlights (real spotlights) still light it.
      * Frame per ring = runPointAt centre + runProfile tangent — the exact ribbon frame, so the
      * tube tracks the road through curves. Pure fn of the network + params (D-16).
+     * BUG-112: the apron is its own geometry, `floor`, drawn with the terrain's material and given what a fully
+     * cut bench gets there (terrainCutoutColor, aSurf rock + engineered), so the shoulder's gravel outside the mouth
+     * runs on into the bore; it darkens by the same ramp (vertex colour × boreShade).
      *
-     * @returns {THREE.BufferGeometry|null}
+     * @returns {{tube: THREE.BufferGeometry|null, floor: THREE.BufferGeometry|null}|null}
      */
     buildTunnelTube(runKey, sA, sB, span, params) {
         const road = this._road
@@ -1109,7 +1121,9 @@ export class RoadMeshSystem {
 
         const pos = new Float32Array(rings * vpr * 3)
         const col = new Float32Array(rings * vpr * 3)
+        const fcol = new Float32Array(rings * vpr * 3)   // BUG-112: the floor's colour — the cut bench's, shaded
         const uv  = new Float32Array(rings * vpr * 2)
+        const CUT = _hexLin(params.terrainCutoutColor ?? 0x757066)   // terrain.js's cut-face colour, same convention
         const prof = { gradeY: 0, tx: 1, tz: 0 }
         let vi = 0, ui = 0
         for (let r = 0; r < rings; r++) {
@@ -1144,16 +1158,18 @@ export class RoadMeshSystem {
                 pos[vi]     = c.x + rx * lat
                 pos[vi + 1] = prof.gradeY + h
                 pos[vi + 2] = c.z + rz * lat
-                // Apron verts tint dirt-brown (vertex color × concrete base ≈ shoulder dirt).
+                // Apron verts tint dirt-brown (vertex color × concrete base ≈ shoulder dirt) — on the lining
+                // that is now only the foot of the wall's step down to the floor.
                 const apron = k < 2 || k > vpr - 3
                 col[vi]     = shade * (apron ? 0.80 : 1)
                 col[vi + 1] = shade * (apron ? 0.66 : 1)
                 col[vi + 2] = shade * (apron ? 0.52 : 1)
+                fcol[vi] = shade * CUT[0]; fcol[vi + 1] = shade * CUT[1]; fcol[vi + 2] = shade * CUT[2]
                 vi += 3
                 uv[ui] = s * 0.08; uv[ui + 1] = k / (vpr - 1); ui += 2
             }
         }
-        const idx = []
+        const idx = [], fidx = []
         // BUG-67 shared bore: a triangle inside a sibling run's tube is not built —
         // the two tubes merge into an underground Y (road.siblingTubeTest; the wall contact reads it too).
         const sib = road.siblingTubeTest?.(runKey)
@@ -1164,18 +1180,31 @@ export class RoadMeshSystem {
         for (let r = 0; r < rings - 1; r++) {
             for (let k = 0; k < vpr - 1; k++) {
                 const a = r * vpr + k, b = a + vpr
-                if (keep(a, b, a + 1)) idx.push(a, b, a + 1)
-                if (keep(a + 1, b, b + 1)) idx.push(a + 1, b, b + 1)
+                const out = k === 0 || k === vpr - 2 ? fidx : idx   // the two apron strips are the floor
+                if (keep(a, b, a + 1)) out.push(a, b, a + 1)
+                if (keep(a + 1, b, b + 1)) out.push(a + 1, b, b + 1)
             }
         }
-        if (!idx.length) return null
-        const geo = new THREE.BufferGeometry()
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-        geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
-        geo.setAttribute('uv',       new THREE.BufferAttribute(uv, 2))
-        geo.setIndex(idx)
-        geo.computeVertexNormals()
-        return geo
+        if (!idx.length && !fidx.length) return null
+        const P = new THREE.BufferAttribute(pos, 3)
+        const mk = (ix, c) => {
+            if (!ix.length) return null
+            const g = new THREE.BufferGeometry()
+            g.setAttribute('position', P)
+            g.setAttribute('color', new THREE.BufferAttribute(c, 3))
+            g.setIndex(ix)
+            return g
+        }
+        const tube = mk(idx, col), floor = mk(fidx, fcol)
+        if (tube) { tube.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); tube.computeVertexNormals() }
+        if (floor) {
+            // (grass, dirt, rock, engineered) = (0, 0, 1, 1): terrain.js's weights on a fully cut bench.
+            const surf = new Float32Array(rings * vpr * 4)
+            for (let i = 2; i < surf.length; i += 4) { surf[i] = 1; surf[i + 1] = 1 }
+            floor.setAttribute('aSurf', new THREE.BufferAttribute(surf, 4))
+            floor.computeVertexNormals()
+        }
+        return { tube, floor }
     }
 
     /**

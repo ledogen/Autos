@@ -27,6 +27,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
+import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
@@ -300,7 +301,8 @@ async function take (o) {
   step = `take ${o.family}${o.line ? ' line ' + o.line : ''} at ${o.type}`
   await drive(await js(`window.__soak.spot(window.__soak.poi(${JSON.stringify(o.poi)}))`))
   await park()
-  if (o.type === 'autoShop' && await until(() => vis('svc-screen'), 3000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+  // FEAT-104: every shop opens its screen on the brake; the jobs are its tab.
+  if (SHOP_TYPES.has(o.type) && await until(() => vis('svc-screen'), 3000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
   if (!await until(() => vis('mp-accept'), 15000)) {
     await skip(o, `no card: ${JSON.stringify(await js(`({ state: window.__mission().state, parked: window.__vs.parked, prompt: document.getElementById('poi-prompt')?.textContent ?? '', camp: !!document.getElementById('camp-panel')?.checkVisibility(), pump: !!document.getElementById('pump-display')?.checkVisibility(), svc: !!document.getElementById('svc-screen')?.checkVisibility() })`))}`)
     if (await js('window.__mission().state') !== 'idle') await decline()

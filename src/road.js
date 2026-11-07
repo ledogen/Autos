@@ -6450,6 +6450,101 @@ export class RoadSystem {
         pieces.set(pr.sideKey, [...(pieces.get(pr.sideKey) || [ps[0].sideKey]).filter((k) => k !== ps[0].sideKey), ...halves])
     }
 
+    /**
+     * BUG-105 OVERLAP JOIN (owner 2026-11-07, bug105-overlap: "(a) join with two Ts"). The after-layout backstop for
+     * two shipped runs that share no node yet lie on each other's pavement: centrelines under 2·HW apart (the decks
+     * overlap) for JOIN_MIN_M or more, without crossing in plan (a crossing is _detectJunctions' to own). The shorter
+     * run is the side road and is cut exactly as a mid-span promotion cuts one: a T where they first touch, the
+     * trunk's pavement for the shared stretch, a T where they part. Both ends are built by _v2BuildDeparture and
+     * committed together by _v2CommitMidSpan, so every connection stays and only the duplicate pavement goes.
+     * The plan never sees these pairs: the one in 240 census windows is seed 1394642004 (683, 1286), a promoted
+     * T's departure made after the plan, 1.2 m beside g:1,1,1:1,2,1 for ~80 m. Bores and T departure blends are
+     * excluded as in test/lib/close-pairs.mjs. Pure in the two registered runs, so window-invariant wherever they are.
+     */
+    _v2JoinOverlaps(g) {
+        const NEAR = 2 * (this._params?.roadHalfWidth ?? 5), JOIN_MIN_M = 20
+        const live = (e) => e && e.points && e.points.length >= 6 && e.centerline?.slice
+        const keys = [...this._network.keys()].filter((k) => live(this._network.get(k))).sort()
+        const boxes = new Map(keys.map((k) => {
+            let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+            for (const p of this._network.get(k).points) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z) }
+            return [k, [x0 - NEAR, x1 + NEAR, z0 - NEAR, z1 + NEAR]]
+        }))
+        const cells = (e) => [g.key(e.cellA), g.key(e.cellB)]
+        const found = []
+        for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
+            const a = boxes.get(keys[i]), b = boxes.get(keys[j])
+            if (a[0] > b[1] || b[0] > a[1] || a[2] > b[3] || b[2] > a[3]) continue
+            const A = this._network.get(keys[i]), B = this._network.get(keys[j])
+            if (cells(A).some((c) => cells(B).includes(c))) continue
+            const [sk, wk] = A.polyCum.at(-1) <= B.polyCum.at(-1) ? [keys[i], keys[j]] : [keys[j], keys[i]]
+            const st = this._v2OverlapStretch(this._network.get(sk), this._network.get(wk), NEAR)
+            if (st && st.len >= JOIN_MIN_M) found.push({ sk, wk, ...st })
+        }
+        // ponytail: a join that cuts a run another join also names declines that one (stale); none in 240 windows.
+        for (const f of found) this._v2JoinOne(g, f)
+    }
+
+    // The longest stretch of S (vertex range i0..i1) within `near` of W, with W's arcs at its two ends; null when
+    // there is none. A stretch inside which S crosses W is not an overlap.
+    _v2OverlapStretch(S, W, near) {
+        const out = (e, s) => (e.tunnelSpans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)
+            || (e.offCurveSpans || []).some((sp) => s >= sp.s0 - 2 && s <= sp.s1 + 2)
+        let best = null, cur = null
+        for (let i = 0; i <= S.points.length; i++) {
+            const p = S.points[i]
+            const h = p && !out(S, S.polyCum[i]) ? _nearestWithinXZ(p.x, p.z, W.points, W.polyCum, near) : null
+            if (h && h.d < near && !out(W, h.cum)) {
+                const side = Math.sign((p.x - h.fx) * h.tz - (p.z - h.fz) * h.tx)
+                if (!cur) cur = { i0: i, wIn: h.cum, side, crosses: false }
+                else if (side && cur.side && side !== cur.side) cur.crosses = true
+                cur.i1 = i; cur.wOut = h.cum
+                continue
+            }
+            if (cur && !cur.crosses) {
+                cur.len = S.polyCum[cur.i1] - S.polyCum[cur.i0]
+                if (!best || cur.len > best.len) best = cur
+            }
+            cur = null
+        }
+        return best
+    }
+
+    _v2JoinOne(g, f) {
+        const decline = (why) => { this._v2MergeSkipped('overlap-join', `${f.sk} x ${f.wk} declined: ${why}`); return false }
+        const S = this._network.get(f.sk), W = this._network.get(f.wk)
+        if (!S || !W) return decline('an earlier join cut one of the two')
+        const MINREG = 30, Rmin = this._params?.roadMinTurnRadius ?? 12
+        const L = S.polyCum.at(-1), tLen = W.polyCum.at(-1)
+        const plans = []
+        for (const en of [{ iL: f.i0, wArc: f.wIn, nAtStart: false }, { iL: f.i1, wArc: f.wOut, nAtStart: true }]) {
+            const iP = _nearestVertexAtCum(W.polyCum, en.wArc)
+            if (W.polyCum[iP] < MINREG || tLen - W.polyCum[iP] < MINREG) return decline('no trunk left past a T')
+            const P = W.points[iP], pid = _promotedId(P.x, P.z), pKey = g.key(pid)
+            if (this._promoted.has(pKey) || plans.some((q) => q.pKey === pKey)) return decline('a T already on that vertex')
+            if ((en.nAtStart ? L - S.polyCum[en.iL] : S.polyCum[en.iL]) < MINREG) return decline('no side road left past a T')
+            const farCell = en.nAtStart ? S.cellB : S.cellA
+            const farY = _isPromotedId(farCell) ? this._promoted.get(g.key(farCell))?.pos.y : undefined
+            const grade = _trunkGradeAt(W, iP)
+            // The tests rank, they never veto: a T always beats no T (the mid-span path's ruling).
+            let built = null, bestWhy = null
+            for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
+                const b = this._v2BuildDeparture(S, en.iL, en.nAtStart, P, RB, farY)
+                if (!b) continue
+                const why = this._v2DepartureAccepts(b, W, P, grade)
+                if (!why) { built = b; bestWhy = null; break }
+                if (!built || b._score < built._score) { built = b; bestWhy = why }
+            }
+            if (!built) return decline('no departure builds')
+            if (bestWhy) this._v2MergeSkipped('promote-residual', `${f.sk} overlap join shipped as the best available T — ${bestWhy}`)
+            plans.push({ T: W, tKey: f.wk, wk0: f.wk, iP, P, pid, pKey, side: S, sideKey: f.sk, nAtStart: en.nAtStart, nKey: null, built, grade })
+        }
+        if (Math.abs(W.polyCum[plans[0].iP] - W.polyCum[plans[1].iP]) < MINREG) return decline('the two Ts under MINREG apart')
+        this._v2CommitMidSpan(g, new Map(), { sideKey: f.sk }, plans)
+        this._v2MergeSkipped('overlap-join', `${f.sk} x ${f.wk} joined over ${f.len.toFixed(0)} m`)
+        return true
+    }
+
     // One half of a split trunk, as an ORDINARY run: exact sub-centerline (constant-curvature
     // primitives cut exactly), the same vertices, arc tables re-based to start at zero. Nothing is
     // re-routed and nothing is re-graded — the through road does not move.
@@ -6697,6 +6792,8 @@ export class RoadSystem {
         }
         // FEAT-76: promote every planned wye to a T. Assembly-layer only — see _v2PromoteTs.
         this._v2PromoteTs(g, drop, promos)
+        // BUG-105: two shipped roads the plan never paired that lie on each other's pavement join with two Ts.
+        this._v2JoinOverlaps(g)
         // Node incidence is derived from the REGISTERED network, AFTER promotion: a T changes both
         // the run keys along its trunk and which node the side road starts from, and every consumer
         // of nodeInc (pad planes, strands, leaf tapers) has to see the roads that exist.
