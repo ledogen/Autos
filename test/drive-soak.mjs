@@ -16,7 +16,34 @@
 //
 //   node test/drive-soak.mjs [--seeds=4 | --seed=1234] [--km=8] [--radius=1500] [--out=wip/drive-soak/run] [--replay=file]
 //
-// Pure node (no browser): the world rig builds the real modules; per seed ~45 s to build the network, then ~realtime÷N.
+// Pure node (no browser): the world rig builds the real modules; per seed 5–30 s to build, then ~0.3–0.6× realtime
+// (4 km ≈ 7–20 min wall). Random seeds only for claims about the world (seed 6 is a test seed).
+//
+// READING A FLAG. Replay it with the trace: `SOAK_TRACE=n node test/drive-soak.mjs --replay=<capture>` prints the last n
+// steps per corner (tire load kN, hub height over the ground, lateral from the nearest road, road top over the ground),
+// and on the flag step the surface profile along and ACROSS the worst wheel's track (ground vs road top vs what the
+// contact query returns), a body strike's point / face / normal with the engine's terrain round it, and a ray into the
+// struck face per layer naming the body's owner (userData: road tile, terrain chunk, prop, POI). `SOAK_LOG=1` prints a
+// progress line every 10 sim-s; `SOAK_LOG=2` the autopilot's state (path index, lateral error, target) every 1 s;
+// `--dump-path=a-b` prints the route's points a..b (spacing, turn, jumps) and exits. Site scans for a capture live in
+// wip/drive-soak/ (site-what, site-junction, site-props, site-steps). A capture recorded before a carve change may not
+// replay (the world moved under it: BUG-129's fix buried run4's) — re-record it.
+//
+// WHAT IT HAS CAUGHT (2026-11-07): BUG-122 (a junction's road-edge lip doubled to 0.31 m: 75 kN in one step) and
+// BUG-129 (an embankment fill that stops in a 1 m cliff ~19 m out). BUG-126 was the autopilot, not the world.
+// FALSE-POSITIVE CLASSES — read these before routing a flag:
+//   • the designed 0.15 m asphalt lip (≤ 0.19 m across its slope at 5.0–5.3 m): a strut / jolt where a wheel climbs back
+//     from the shoulder at speed is a kerb strike, not a seam. The cross-section shows a single lip.
+//   • the autopilot riding the shoulder or a ditch beside a junction, or off-road under an embankment at 15–20 m/s:
+//     large loads (40–120 kN) on honest rough ground. site-steps finds no step over the lip there.
+//   • a bore: the arch leans in, so a truck whose outer wheels pass ~7 m touches the lining (BUG-126's ruling). The
+//     autopilot keeps out (no off-road leg, a shorter look-ahead and ≤ 10 m/s within a bore or 20 m of a portal); a
+//     strike on a road tile's lining with the truck > 5.5 m off the centreline is still the autopilot.
+//   • a hit that does not reproduce on replay: the capture starts 10 s before, from a snapshot, and a re-seat or a
+//     streaming order can differ — treat it as noise unless it recurs.
+//   • `stuck` right after a wall strike is the same event, not a second one.
+// A REAL finding reproduces on replay AND shows the world itself disagreeing: a step in the carved ground beyond the lip
+// (site-steps), the physics surface differing from the drawn one, or a solid where nothing is drawn.
 
 import * as THREE from 'three'
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
