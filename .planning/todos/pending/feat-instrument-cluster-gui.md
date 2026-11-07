@@ -237,7 +237,12 @@ overlap instead of being fully separate"
   - Overheat, a dot under H: the low-fuel lens's twin. Red, FMVSS 101's colour for a coolant-temperature telltale
     (the low-fuel dot is amber). Lit past H (`tempGaugeFrac() > 1`, i.e. over `tempHotC` 110 °C), where engine damage
     and power loss start.
-- **Unchanged:** flat tire (speedo), parking brake (BRAKE), low fuel, and the high-beam lamp (kept until the "headlight
-  lamp = high beam?" check is answered).
+- **Unchanged:** flat tire (speedo), parking brake (BRAKE), low fuel.
+- **The headlamp lamp — owner, 2026-11-08 (the feat34-lamps check), verbatim:** "green low beams blue high beams and
+  red if your lights are both dead and you try to turn them on". The high-beam lamp's lens now follows the switch:
+  the low-beam symbol (beams angled down) in green at low beam, the high-beam symbol ("≡D", beams level) in blue at
+  high, and the switched-on symbol in red when both headlamps are at 0 % (`headlightL` and `headlightR`). Dark when
+  the lights are off. It is on the headlamp circuit, so it lights with the key off too. `setHeadlights(mode, dead)`
+  replaces `setHighBeam`.
 - The 2002's text CHECK GAGE lens is not built (the owner chose the dot).
 - Render harness: `wip/feat-34/cluster-shot.{html,mjs}` (git-invisible), which knows `checkEngine` and `overheat`.

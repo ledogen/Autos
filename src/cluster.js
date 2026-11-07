@@ -61,7 +61,8 @@ const KEY_FASCIA_R = 12   // the silver escutcheon the key turns in
 // of a real dash that is bare metal, and that contrast is what makes the switch findable.
 const LAMP_ORANGE = '#ff9a1f'   // FEAT-50 low-fuel lamp, lit
 const LAMP_RED    = '#ff3a26'   // FEAT-34 BRAKE lamp, lit
-const LAMP_BLUE   = '#3d84ff'   // FEAT-34 high-beam lamp, lit
+const LAMP_BLUE   = '#3d84ff'   // FEAT-34 headlamp lamp at high beam, lit
+const LAMP_GREEN  = '#3fd45e'   // FEAT-34 headlamp lamp at low beam, lit
 const LAMP_UNLIT_AMBER = '#3a2410'   // an unlit amber lens: just enough to see there is a lamp there
 const LAMP_UNLIT_RED   = '#3a1210'
 const STEEL_HI = '#e4e4de'
@@ -115,7 +116,8 @@ export class GaugeCluster {
     this._lowFuel = false
     this._flat = false
     this._parkBrake = false
-    this._highBeam = false
+    this._lights = 0          // headlamp switch: 0 off, 1 low, 2 high
+    this._lightsDead = false  // both headlamps at 0 %
     this._checkEngine = false
     this._overheat = false
     this._tempFrac = 0
@@ -169,7 +171,7 @@ export class GaugeCluster {
   setParkBrake (on) { this._parkBrake = !!on }
 
   /** FEAT-34: the high-beam lamp's sender. On the headlamp circuit, not the ignition: lit with the key off too. */
-  setHighBeam (on) { this._highBeam = !!on }
+  setHeadlights (mode, dead) { this._lights = mode | 0; this._lightsDead = !!dead }
 
   /** FEAT-34: the CHECK ENGINE lamp's sender — engine condition at or under its knee. Lit only with the key on. */
   setCheckEngine (on) { this._checkEngine = !!on }
@@ -230,7 +232,7 @@ export class GaugeCluster {
     if (d.speed === this._speedMph && d.rpm === this._rpm && d.temp === this._tempShown
         && d.fuel === this._fuelShown && d.odo === this._odoMiles
         && d.key === this._keyAngle && d.keyPos === this._keyPos && d.low === this._lowLit() && d.flat === this._flatLit() && d.gear === this._gear
-        && d.brake === this._brakeLit() && d.high === this._highBeam
+        && d.brake === this._brakeLit() && d.lamp === this._headlampState()
         && d.ce === this._checkEngineLit() && d.hot === this._overheatLit()) return
     d.speed = this._speedMph; d.rpm = this._rpm; d.temp = this._tempShown
     d.fuel = this._fuelShown; d.odo = this._odoMiles; d.key = this._keyAngle; d.keyPos = this._keyPos
@@ -238,7 +240,7 @@ export class GaugeCluster {
     d.flat = this._flatLit()
     d.gear = this._gear
     d.brake = this._brakeLit()
-    d.high = this._highBeam
+    d.lamp = this._headlampState()
     d.ce = this._checkEngineLit()
     d.hot = this._overheatLit()
 
@@ -250,7 +252,7 @@ export class GaugeCluster {
     this._drawLowFuelLamp(ctx)
     this._drawFlatLamp(ctx)
     this._drawBrakeLamp(ctx)
-    this._drawHighBeamLamp(ctx)
+    this._drawHeadlampLamp(ctx)
     this._drawCheckEngineLamp(ctx)
     this._drawOverheatLamp(ctx)
     this._drawGear(ctx)
@@ -686,19 +688,26 @@ export class GaugeCluster {
     ctx.restore()
   }
 
-  // FEAT-34: the HIGH BEAM lamp — "≡D", beams left of a lamp's flat face — in the fuel pod, mirroring the low-fuel
-  // lamp, as the 2002 cluster sets it beside its fuel gauge. Blue.
-  _drawHighBeamLamp (ctx) {
+  // FEAT-34: the HEADLAMP lamp, in the fuel pod mirroring the low-fuel lamp (the 2002 sets its high-beam lamp beside
+  // its fuel gauge). Owner, 2026-11-08: "green low beams blue high beams and red if your lights are both dead and you
+  // try to turn them on". So one lens follows the switch: the low-beam symbol (beams angled down) green, the high-beam
+  // symbol ("≡D", beams level) blue, and the switched-on symbol red when both headlamps are at 0 %. On the headlamp
+  // circuit, not the ignition: it lights with the key off too.
+  _headlampState () { return !this._lights ? 'off' : this._lightsDead ? 'dead' : this._lights === 2 ? 'high' : 'low' }
+  _drawHeadlampLamp (ctx) {
     const x = FUEL.cx + 15, y = FUEL.cy + 9
-    const lit = this._highBeam
+    const st = this._headlampState()
+    const [col, glow] = { off: ['#10241a', null], low: [LAMP_GREEN, 'rgba(60,210,90,0.9)'],
+      high: [LAMP_BLUE, 'rgba(70,130,255,0.9)'], dead: [LAMP_RED, 'rgba(255,50,30,0.9)'] }[st]
+    const drop = this._lights === 2 ? 0 : 1.6      // beam droop: level at high, angled down at low (and off)
     ctx.save()
-    if (lit) { ctx.shadowColor = 'rgba(70,130,255,0.9)'; ctx.shadowBlur = 7 }
-    ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_BLUE : '#10182e'
+    if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 7 }
+    ctx.strokeStyle = col
     ctx.lineWidth = 1.3
     ctx.lineCap = 'round'
     ctx.beginPath()
     ctx.moveTo(x - 0.5, y - 3.5); ctx.arc(x - 0.5, y, 3.5, -90 * DEG, 90 * DEG); ctx.closePath()   // the lamp, flat face left
-    for (const dy of [-3, 0, 3]) { ctx.moveTo(x - 2.5, y + dy); ctx.lineTo(x - 6, y + dy) }        // the beams
+    for (const dy of [-3, 0, 3]) { ctx.moveTo(x - 2.5, y + dy); ctx.lineTo(x - 6, y + dy + drop) } // the beams
     ctx.stroke()
     ctx.restore()
   }
