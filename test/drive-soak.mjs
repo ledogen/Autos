@@ -119,6 +119,18 @@ async function soakSeed (seed, replay = null) {
   const vs = vs0
   const damage = new DamageModel({ params: P }); damage.setAll(1); damage.publish(P)
   const router = makeRouter(w.road, rng)
+  // --dump-path=a-b: the route's points a..b (spacing, turn, jumps) and exit — why the autopilot left the route there.
+  const dump = arg('dump-path', null)
+  if (dump) {
+    const [a, b] = dump.split('-').map(Number)
+    while (router.path.length <= b + 2) router.extend()
+    for (let i = a; i <= b; i++) {
+      const p0 = router.path[i - 1], p1 = router.path[i], p2 = router.path[i + 1]
+      const ds = Math.hypot(p1.x - p0.x, p1.z - p0.z), turn = Math.atan2(p2.z - p1.z, p2.x - p1.x) - Math.atan2(p1.z - p0.z, p1.x - p0.x)
+      console.log(`  ${i} (${p1.x.toFixed(1)}, ${p1.z.toFixed(1)}) ds ${ds.toFixed(2)} turn ${(Math.atan2(Math.sin(turn), Math.cos(turn)) * 180 / Math.PI).toFixed(0)}°${p1.jump ? ' JUMP' : ''}`)
+    }
+    w.dispose(); return { seed, dumped: true }
+  }
   const counts = { nan: 0, fall: 0, body: 0, wheel: 0, strut: 0, collider: 0, jolt: 0, stuck: 0 }
   const worst = []
   const hist = []          // [{ s: snapshot every second }, inputs since]
@@ -160,7 +172,10 @@ async function soakSeed (seed, replay = null) {
     if (replay) ({ thr, brk, steer } = replay.inputs[steps])
     else {
       const p = vs.position, v = Math.hypot(vs.velocity.x, vs.velocity.z)
-      while (idx < router.path.length - 2 && !router.path[idx + 1].jump && Math.hypot(router.path[idx + 1].x - p.x, router.path[idx + 1].z - p.z) < Math.hypot(router.path[idx].x - p.x, router.path[idx].z - p.z)) idx++
+      // <=, not <: where two edges join the path holds the junction point TWICE, and a strict test never stepped off the
+      // first copy — the index froze there, the pursuit target fell behind the truck and it turned back off the road
+      // (seed 6, the 'junction stall' at (−298, −987) and point 139 before it).
+      while (idx < router.path.length - 2 && !router.path[idx + 1].jump && Math.hypot(router.path[idx + 1].x - p.x, router.path[idx + 1].z - p.z) <= Math.hypot(router.path[idx].x - p.x, router.path[idx].z - p.z)) idx++
       while (router.path.length - idx < 80) router.extend()
       if (router.path[idx + 1]?.jump && Math.hypot(router.path[idx].x - p.x, router.path[idx].z - p.z) < 6) { seatAt(idx + 1); continue }
       let target, vT
