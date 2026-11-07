@@ -1441,7 +1441,14 @@ const STEPS = [
     await frames(6, 300)
     await hold(5, 450)
     check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
-    check(await until(offerUp, 6000), 'parking at the giver opened no offer card')
+    // The flake (A, Spare and B under load): say what the park trigger saw, so the next miss names its cause.
+    if (!await until(offerUp, 6000)) check(false, 'parking at the giver opened no offer card: ' + await js(`JSON.stringify((() => {
+      const v = __vs, q = window.__map2d()._getPois().find(p => p.id === ${JSON.stringify(giver.id)}), m = window.__mission()
+      return { parked: v.parked, hb: v.handbrake, v: +v.velocity.length().toFixed(2), m: m.state, onJob: m.isOnJob(),
+        offers: window.__board().view(q.id, 0)?.count ?? 0, d: +Math.hypot(q.x - v.position.x, q.z - v.position.z).toFixed(1),
+        prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), hudMenu: document.body.classList.contains('hud-menu-on'),
+        open: [...document.querySelectorAll('.open, [style*="display: block"], [style*="display: flex"]')].map(e => e.id).filter(Boolean).slice(0, 8) }
+    })())`))
     // Take it (A on accept), then put it down through the B menu: the abandon entry, armed, confirmed, and its result card.
     await padTo('mp-accept'); await btn(0)
     check(await until(() => js('window.__mission().isOnJob() && !!document.getElementById("job-cancel").offsetParent'), 3000), 'A on accept took no job with an abandon button')
