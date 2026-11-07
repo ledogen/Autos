@@ -474,8 +474,21 @@ harnesses wait on it.
    differs, in the 5 bore windows (+17 / +18 / +5 / +5 / +5 meshes, exactly BUG-112's bore floors). Everything else
    is identical in all six windows (network, profiles, junctions, POIs, surface, carve, water, props), and seed 3 is
    identical outright. The lever changes nothing headless, as expected.
-3. A quiet window: `wip/perf-27/sweep.sh` on random seeds, 1× and 4×, main vs `25f2d7fe`, plus the reseed mode.
-4. Hash to the orchestrator.
+3. ~~A quiet window.~~ Done 2026-11-07 in the orchestrator's window (load 3–5), using `wip/perf-27/ab-lever.sh`
+   (log `ab-lever-327fd0c9.log`). A = main `327fd0c9` plus the harness fix only (lever line reverted); B = the lane.
+   Built app via `vite preview`, runs interleaved, random seeds 2623851183 and 3997014678:
+
+   | run | cold → driving, A → B | entry | the lever's bucket |
+   |---|---|---|---|
+   | 1× story | 16.08 → 15.50 s · 16.27 → 15.48 s | −0.45 · −0.47 s | reseat 2.7 → 2.3–2.4 s |
+   | ×4 story | 28.04 → 24.71 s · 28.12 → 25.54 s | −1.78 · −1.37 s | reseat 4.5 → 2.9 s |
+   | ×4 reseed | 17.22 → 14.29 s · 18.79 → 15.65 s | −1.57 · −1.73 s | `road.dispatch.warm` 2.2 → 0.57 s |
+
+   - The ×4 boot also drops 1.2–1.4 s, because the boot's network build pays the same warm.
+   - The settle's worst frame at ×4 goes from 2.2–2.3 s to 0.83 s.
+   - go-live is +0.1 / +0.4 s on B. B also carries BUG-112's bore floors and the loop trim; the lever does not touch
+     go-live.
+4. ~~Hash to the orchestrator.~~ `25f2d7fe`, sent 2026-11-07.
 
 **Still open after this:** the settle's other main-thread buckets at 4× (loaded): `frame.physics` ~1.4 s, props
 ~1.2 s, render ~1.0 s. Physics stepping behind a loading screen may be a lever; measure in the quiet window first.
