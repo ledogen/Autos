@@ -7958,8 +7958,7 @@ export class RoadSystem {
             // the cliff-y run-vs-run Voronoi surface + junction step at the sharp kink with one smooth
             // graded bench, all the way from the asphalt edge out to the connector toe (co.gradeY follows
             // the legs' grades so it matches the ribbons at the weld). Run surface unchanged off connectors.
-            const domGrade = cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY
-            cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: domGrade }
+            cs = this._withConnector(cs, co)
             // latDist stays the RUN's lateral (the run ribbon's edge + the POI-pad gate below); the
             // connector strip's own edge is tested separately by the decal branch (BUG-90). Only where
             // there is NO run (the bend-outside void) does the connector's own edge stand in for it.
@@ -8308,8 +8307,9 @@ export class RoadSystem {
                     tapers.push(tu * tu * (3 - 2 * tu))
                 }
             }
-            let wSum = 0, gSum = 0, wMax = 0
+            let wSum = 0, gSum = 0, wMax = 0, tMax = 0
             for (let i = 0; i < gaps.length; i++) {
+                if (tapers[i] > tMax) tMax = tapers[i]
                 let w = tapers[i]
                 for (let j = 0; j < gaps.length; j++) if (j !== i) w *= gaps[j]   // taper_i · ∏_{j≠i} gap_j
                 wSum += w; if (w > wMax) wMax = w
@@ -8339,7 +8339,13 @@ export class RoadSystem {
                     const lu = Math.min(1, Math.max(0, (halfWidth + 2 - Math.abs(signedLat)) / 2))
                     fade *= 1 - lu * lu * (3 - 2 * lu)
                 }
-                gradeY += fade * (gSum / wSum - gradeY)
+                // BUG-129: the blend is ALSO scaled by the strongest in-range leg's taper. gSum/wSum normalises the
+                // tapers away, so when every leg in range is a SIBLING easing out at RULE_LEG_REACH (the query's own
+                // leg out of reach: beyond its end, on a far bank) the last one kept 100 % of the blend to the very
+                // edge and then popped: the design jumped from its grade to this run's own (1.15 m inside a full-
+                // weight fill bank on 24316861, the soak's 1 m cliff). Where the own leg is in range its taper is 1,
+                // so nothing changes there.
+                gradeY += fade * tMax * (gSum / wSum - gradeY)
                 // Ease the single-ribbon CROSS-SLOPE (crown + camber tilt) to flat by blend PURITY (the
                 // dominant leg's weight share) IN the faded junction region: on a clean ribbon/shoulder
                 // purity ≈ 1 (or fade 0) ⇒ crown/camber untouched = the ordinary cross-section; where legs
@@ -9378,6 +9384,22 @@ export class RoadSystem {
      * gradeY ONLY where the leg carve is absent (nr null / beyond the leg toe — the open-side rim), which
      * is exactly the surface the pad MESH rides there (sampleRoadTopY / plane), so mesh == collision.
      */
+    /**
+     * The deg-2 connector's cross-section composed over the run's (QUAL-16): the connector's grade dominates its own
+     * footprint (`co.dom`), and the coverage is the larger blend weight. Shared by _sampleCarveWorld and the terrain
+     * mesh (_buildCarveTable), so mesh == collision by construction.
+     * BUG-129: the dominance fades with the connector's SHARE of that coverage. It used to apply in full right out to
+     * the connector's toe, under the run's larger weight: the connector's design leaked in under the run's bank
+     * (co.blendW 0.01, cs.blendW 0.65, dom 1) and snapped back to the run's where the connector ended (0.5 m step on
+     * 24316861). In its core (co.blendW ≥ cs.blendW) nothing changes.
+     */
+    _withConnector(cs, co) {
+        if (!cs) return { blendW: co.blendW, gradeY: co.gradeY }
+        const blendW = Math.max(cs.blendW, co.blendW)
+        const dom = co.dom * (blendW > 0 ? co.blendW / blendW : 0)
+        return { blendW, gradeY: co.gradeY * dom + cs.gradeY * (1 - dom) }
+    }
+
     _mergeCarve(a, b, duckCap = PAD_DUCK_CAP, dRib = Infinity) {
         if (!a) return b || null
         if (!b) return a
