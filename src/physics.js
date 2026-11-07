@@ -48,7 +48,7 @@ import { stepAbs } from './abs.js'
 import { stepTraction } from './traction.js'
 import { camberLean, toeOffset } from './alignment.js'
 import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
-import { TILT_LO, TILT_HI } from './tire-contact.js'
+import { TILT_HI } from './tire-contact.js'
 
 // Speed threshold for input routing (rule-based, no dead-zone oscillation) is drivetrain.js's
 // REV_THRESHOLD. FEAT-23 removed FWD_THRESHOLD (the W-brake / drive-cut deadband); the drivetrain
@@ -959,12 +959,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // BUG-116: the gate is the tire's TILT, not an unloaded strut. Since bb585d65 a tire lying at 87° puts cos 87° of
       // its load on the strut, a few newtons — that read as "Pacejka owns it" and its 3 kN of sidewall load slid
       // frictionless. The sidewall's load is the share along the spin axle (a tread's normal is radial, in the wheel
-      // plane, so a kerb's push is not in it), faded in over tire-contact.js's own TILT_LO → TILT_HI. An upright tire
-      // never reaches TILT_LO, so driving is untouched.
+      // plane, so a kerb's push is not in it), faded in from TILT_HI — where tire-contact.js has handed the tire from its
+      // tread solve to the plane solve — to lying flat. An upright tire on rough ground leans up to ~19° against a bump's
+      // flank (the physics fingerprint), still on its tread: it never reaches TILT_HI, so driving is untouched.
       // ponytail: the support is taken as static; a sidewall on a moving rock scrubs against the world.
       const R = Math.hypot(xz.x, xz.y, xz.z), A = _axle[i], fzS = params._tireFz[i] || 0
       const xa = xz.x * A.x + xz.y * A.y + xz.z * A.z   // the load along the axle: the sidewall's
-      const tilt = Math.min(1, Math.max(0, (Math.abs(xa) / Math.hypot(fzS, R) - TILT_LO) / (TILT_HI - TILT_LO)))
+      const tilt = Math.min(1, Math.max(0, (Math.abs(xa) / Math.hypot(fzS, R) - TILT_HI) / (1 - TILT_HI)))
       // Torque arm: the hub (D-06a — the ~0.37 m to an upright tire's patch lies along the normal), moved by `tilt` to a
       // tilted tire's real contact, the rim edge of its ground-side cap (tire-contact.js's plane solve). BUG-116: at
       // the hub, a truck on its side stood on a base 0.18 m wide instead of the tires' 0.55 m and tipped back onto its
