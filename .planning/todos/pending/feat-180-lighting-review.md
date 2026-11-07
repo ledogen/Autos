@@ -40,3 +40,28 @@ The low light starts really being limiting"
 
 - [ ] The artifact, in front of the owner.
 - [ ] The owner's answers → a scoped build ticket (or tickets).
+
+## The review page (Spare, 2026-11-07)
+
+https://claude.ai/artifact/DxWoxDmsUvjoaQ8CxxCksm. Built by `wip/feat-180/` (`shoot.mjs`, `gen-page.mjs`, `curve.mjs`, `page/`).
+`src/` is untouched: the 8 pm frames swap `SKY_CYCLE.keyframes` in-page.
+
+- **Shots:** the truck on a road at 05, 06, 07, 09, 12, 16, 18, 19, 20 and 22:00 on random seeds 3583777560,
+  1172941705 and 701336435. Normal preset (the default), fog on, low-beam frames at 05, 20 and 22:00. Each spot is
+  a road facing the evening sun with open ground falling away ahead.
+- **The explainer:** looks and keyframes, the Preetham sky and its cubemap, the key / fill / moon lights, exposure
+  and ACES tone mapping, FogExp2 by preset, the two shadow maps, and what ignores the light (the rings).
+- **Findings from the code and the shots:**
+  - Dawn is a 3 h blend with linear fog over a sky that jumps.
+  - The key light slides between the moon and the sun at dawn and dusk.
+  - The sky-sun swings 205° below the horizon.
+  - The rings never dim.
+  - Mountain shade ends about 200 m out and pops in as terrain streams.
+  - Shade at low sun loses about two-thirds of the light on a sun-facing slope.
+  - **The world's edge is a flat fog-coloured band with a hard line at the horizon**, the brightest thing at dawn.
+  - There are no clouds.
+- **Nine questions:** the owner answers in tracker item `feat180-lighting`.
+- **The 8 pm proposal:** evening 18:00 → 19:30 and night 20:00 → 21:00. The sun sets about 20:12 instead of 18:56.
+  It shifts the opening's light (18:00 becomes 17° afternoon sun, question 9).
+- **Ring frames dropped.** A skipped opening leaves the casserole job running, and rings hide while you're on a job.
+  Question 3 relies on the owner's own experience of the rings.
