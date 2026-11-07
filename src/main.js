@@ -1577,10 +1577,10 @@ async function _startFromSetup () {
   await _startFreeRoam(_resolveSeed(seed))
 }
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
-// discards it, and the warning under new game says so.
+// discards it, and the warning beside story's start button says so.
 document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
-/** The main menu's continue button stands only while a run is saved, and so does the warning under new
- *  game. Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
+/** The main menu's continue button stands only while a run is saved, and so does the warning beside the
+ *  new-game page's start (story mode only). Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
  *  buttons above: it shows with the menu, and an early click waits in _startStory's `await _worldReady`. */
 function _syncContinue () {
   for (const id of ['mm-continue', 'mm-save-note']) {
