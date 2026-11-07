@@ -587,6 +587,24 @@ The `SETTLE_MAX_MS` ceiling stays.
 which sets `_pumpAcc` to `WARM_PUMP_MS`: the same "pump on the next frame" idiom `_beginWarm` uses. The finished
 build is seen on the next frame, not up to 250 ms later. The synchronous fallback (no Worker) keeps its 250 ms pump.
 
+**Measured** (`wip/perf-27/ab-warm.sh`, log `ab-warm-l23.log`). A = main `cf7a93ff`, B = this branch, built bundles,
+runs interleaved, load ~4:
+
+| seed | cpu | story entry (click → live), A → B | settle + region warm, A → B | cold → driving, A → B |
+|---|---|---|---|---|
+| 2623851183 | 1× | 10.77 → 10.46 s (−0.31) | 9.31 → 8.99 s | 15.28 → 15.14 s |
+| 3997014678 | 1× | 10.56 → 10.24 s (−0.32) | 9.15 → 8.80 s | 15.23 → 14.98 s |
+| 744309545 | 1× | 10.28 → 9.93 s (−0.35) | 8.68 → 8.33 s | 15.06 → 14.66 s |
+| 2623851183 | ×4 | 15.50 → 15.40 s (−0.10) | 10.57 → 10.45 s | 25.04 → 24.87 s |
+| 3997014678 | ×4 | 15.46 → 15.11 s (−0.35) | 10.59 → 10.40 s | 25.05 → 24.80 s |
+| 744309545 | ×4 | 15.87 → 15.49 s (−0.38) | 10.09 → 9.68 s | 25.51 → 25.14 s |
+
+- **About −0.3 s of story entry**, in every cell. That is below the 0.5 s estimate. The 400 ms seems to have been
+  absorbing some trailing settle work, which now overlaps the region build instead.
+- **Read the sum, not the split.** On B the harness's settle row grows and its region-warm row shrinks (at ×4,
+  settle +0.3–0.45 s). The issue frame (0.37 s at ×4) now runs on the very next frame, and the harness's 50 ms phase
+  poll cannot see 'warming' until that frame ends. The boundary moved; the work did not grow.
+
 ### "Behind the menu" — PARKED (owner, 2026-11-06)
 
 Owner, verbatim (perf27-menu, "not now"): "not now. but record the findings we could add this later."
