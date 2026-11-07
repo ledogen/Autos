@@ -194,7 +194,7 @@
       wt: '/Users/ledogen/CodeShit/CarGame-content', branch: 'feature/content', port: 3774,
       owns: 'assets/, wip/, src/*-audio.js, data/items.js rows + thumbnails, items.md, FEAT-120/121',
       tasks: [
-        { id: 'No orange cubes', what: 'ASSET-82 service station + ASSET-83 construction site ON MAIN (85f3c8f7, smoke 25/25); the job site now stands the construction site. Your look: asset82-83-look. Still orange: the auto shop until Lane B wires FEAT-178 (next), the tackle shop and the lay-by gas station / general store (your calls). The school lunch’s pink cube is fixed ON MAIN (21d048cf).' },
+        { id: 'No orange cubes', what: 'ASSET-82 service station + ASSET-83 construction site ON MAIN (85f3c8f7, smoke 25/25); the job site now stands the construction site. Your look: asset82-83-look. Still orange (census, 6 random seeds): the 2 auto shops until Lane B wires FEAT-178 (next), and the tackle shop (your call, tackle-slot). The lay-by fallback never fired. The school lunch’s pink cube is fixed ON MAIN (21d048cf).' },
         { id: 'FEAT-120', what: 'Sound pass — the owner listened 11-02; verdicts per sound in the ticket on feature/content. Keepers and redos went to Spare.' },
         { id: 'FEAT-120 ↳', what: 'Strap click / release — the owner records them.' },
         { id: 'ASSET-80', what: 'ON MAIN (7aa73ebf) — the burger joint, approved with your two notes fixed (menu z-fighting, dripping cheese); smoke when the machine is free.' },
@@ -253,7 +253,7 @@
       text: 'Orange cubes: every map has a tackle shop, but fishing is deferred, so it has no model and shows as an orange cube. 1 = model it now (Lane C), 2 = drop the slot until fishing exists (recommended: no job needs it yet).',
       options: ['1 — model it', '2 — drop it until fishing'] },
     { id: 'layby-fallback', kind: 'decide', tk: 'ASSET',
-      text: 'Orange cubes: when a seed has no free farm pad, the gas station and the general store fall back to a 14 × 8 m lay-by, and their models do not fit there, so you get a cube. 1 = model a lay-by-sized variant of each (Lane C), 2 = these two always get a farm pad first, before other POIs (no new models; recommended if they rarely miss).',
+      text: 'Orange cubes: when a seed has no free farm pad, the gas station and the general store fall back to a 14 × 8 m lay-by, and their models do not fit there, so you get a cube. 1 = model a lay-by-sized variant of each (Lane C), 2 = these two always get a farm pad first, before other POIs (no new models). Lane C’s census on 6 random seeds: both got a farm pad every time (0 of 12 fell back), so the lay-by is a rare path and 2 is recommended.',
       options: ['1 — smaller variants', '2 — farm pad first'] },
     { id: 'feat172-words', kind: 'decide', tk: 'FEAT-172',
       text: 'When the truck is stranded and you can afford the cure, a hint now reads “<cause> — [park, then] X to call a tow”, e.g. “the engine seized — X to call a tow”. Giving up then ends as “You broke down.” with “…, and you gave up” (or “you had $X” when you were short). The words are Lane B’s placeholders. Type yours in the note box below, or keep them.',
