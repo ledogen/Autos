@@ -844,7 +844,7 @@ const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
 const ACUTE_ELBOW_COS      = Math.cos(75 * Math.PI / 180)   // BUG-86: a deg-2 elbow sharper than 75° gets no through pin
-const LOOP_TRIM_M          = 400   // m — BUG-105: the longest loop (site → crossing along both legs) a trim cuts off
+const LOOP_TRIM_M          = 500   // m — BUG-105: the longest loop (site → crossing along both legs) a trim cuts off (owner 11-07, bug105-trim: "under 500m")
 // BUG-67 (owner, 2026-11-03): sibling tunnels colliding at a junction — see _reseat and the T slide.
 const RESEAT_TRIGGER_M     = 50    // m of 22 m-ring relief above which a junction site is re-seated
 const RESEAT_FIT_M         = 25    // m — the relief a new seat must be at or under

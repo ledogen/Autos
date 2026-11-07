@@ -6,7 +6,7 @@
 // bend node (BEND_K). Over the four random-seed windows where the class ships (the three census-10 sites + the
 // owner's 3502246374), built as the game builds them (pond no-go), this asserts:
 //
-//   class   no two runs sharing a degree-2 node cross each other in plan within LOOP_TRIM_M (400 m) of loop;
+//   class   no two runs sharing a degree-2 node cross each other in plan within LOOP_TRIM_M (500 m) of loop;
 //   bend    the site's trim names a bend with exactly two runs, both ending at the bend (< 0.5 m), whose decks
 //           agree there (< 1 cm: both pin to the node-height rule at the same point), and the site keeps no run;
 //   window  the bend's two runs are bit-identical with the window shifted 500 m (the trim is decided at plan time
@@ -21,7 +21,7 @@ import { parseWorldSeed } from '../src/seed.js'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
 const VERBOSE = process.argv.includes('--verbose')
-const LOOP_M = 400
+const LOOP_M = 500
 // seed, window centre, the site node the trim must act on
 const SITES = [
   ['3502246374', 1628, 137, '2,0,1'],     // the owner's 24
