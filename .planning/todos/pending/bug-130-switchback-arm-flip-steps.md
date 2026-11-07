@@ -33,3 +33,27 @@ of the 24 remaining in-section steps over 0.5 m sit at the same switchbacks.
 - [ ] Root cause in the resolver / rival list confirmed.
 - [ ] The census: arm-flip steps over 0.5 m to 0 on random seeds, nothing new elsewhere.
 - [ ] A gate pins it (sampled); `fingerprint-world` explained; a before/after shot of a switchback bank.
+
+## Diagnosis (Spare, 2026-11-07)
+
+**Why the other arm is not a rival at the flip.** `_resolveRoadSurface` finds ONE self-pass rival, the nearest
+projection outside a ±`RIVAL_ARC_SEP` (40 m) arc window around the winner. At the example the arms are 38.8 m apart
+in arc, inside the window, so the other arm is never seen, and the bank steps by the grades' difference where the
+resolver flips. The window boundary is itself the discontinuity: a pass is hidden or shown abruptly at 40 m of arc.
+
+**Why a smaller window is wrong (prototype, reverted).** `RIVAL_ARC_SEP` 20 took arm-flip steps over 0.5 m from 21 to
+0, but in-section steps over 0.5 m went from 24 to 107 (worst 12.18 m). Worst case, 861989012 (−711.4, −182.6): a far
+arm of the same run (128 m of arc away, 24 m off) enters as a rival at the radial gate `d ≤ footHW`, with its
+deep-cut bank still at weight 0.39 there. Its 30 m cut is unioned in at once: a 12 m drop. On main the same arm is
+hidden behind a nearer, rejected candidate and only "appears" when it wins, as the arm-flip step.
+
+**The fix to build: rivals that enter continuously.**
+1. **Every DISTINCT pass of the winner's own run within reach,** meaning every other local minimum of the distance
+   along it, found in the same segment scan (the PERF-25 cell ranges). No arc window.
+2. **Each rival's contribution faded in**, so it is zero where it is born or lost:
+   - by its distance, a smoothstep over the last few metres before `footHW` (other runs' rivals too: the run-flip
+     class has the same hard gate);
+   - by its PROMINENCE, the rise of the distance between it and the neighbouring minimum, so a pass born at a fold
+     (where two minima split) starts at weight 0. Two arms merging near the apex already coincide in grade.
+3. **Measure:** the census by class (arm-flip and in-section steps over 0.5 m to ~0; nothing new elsewhere), resolver
+   cost (the physics hot path), `fingerprint-world`, gates, and a switchback before/after shot.
