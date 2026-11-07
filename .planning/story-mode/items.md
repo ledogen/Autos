@@ -608,6 +608,10 @@ still placeholders.
 | **Rucksack** | Fewer than the Duffel | Less than the Frame pack | Mid-priced | **RULED** — owner, 2026-10-16. Sits between the Duffel and the Frame pack |
 | **Frame pack** | Many | Far (up to the 120 m cap) | Expensive | **IDEA** — owner, 2026-10-16. The "good at both" pack |
 
+In the game (FEAT-182, 2026-11-07) the four are items with **placeholder** figures, [DEFAULT] until the owner rules:
+Daypack 2 slots / 100 m · Rucksack 4 / 60 m · Duffel 6 / 15 m · Frame pack 6 / 120 m. The equipped pack's reach sets
+the night's tether (`src/camp.js reachM`).
+
 **Rulings this implies, stated so they can be checked:**
 
 - **The bedroll takes a slot; the campfire is not an item** (owner, 2026-10-16). The bedroll is the

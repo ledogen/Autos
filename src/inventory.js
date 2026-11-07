@@ -86,6 +86,8 @@ export class InventorySystem {
     equippedIndex () { return runInventory.entries.findIndex(e => e.equipped) }
     /** What comes to camp: the equipped pack's contents (items.md §2c) — FEAT-66 renders exactly this. */
     packed () { return runInventory.entries.find(e => e.equipped)?.contents ?? [] }
+    /** How far past the shoulder camp may be (items.md §2c): the equipped pack's reach, camp's tether (FEAT-182). */
+    reachM () { return ITEMS[runInventory.entries.find(e => e.equipped)?.id]?.reachM }
     /** Camp sleep's recovery bonus: the `rest` of everything in the equipped pack (items.md §2b). */
     restBonus () { return this.packed().reduce((s, id) => s + (ITEMS[id].rest ?? 0), 0) }
     /** The vibe segments packed gear fills on the chosen site (camp.js vibeAssist). */
