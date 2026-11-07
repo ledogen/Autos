@@ -867,7 +867,8 @@ async function _rebuildFullNow () {
         scene, roadSystem,
         (x, z) => terrainSystem.rawHeightWorld(x, z),  // CR-04 / BUG-74: raw, like the boot-time construction below
         RANGER_PARAMS,
-        worldSeed  // D-03: roadQuality determinism
+        worldSeed,  // D-03: roadQuality determinism
+        terrainSystem.boreFloorMaterial   // BUG-112: the bore floor wears the terrain's gravel
       )
       if (!_labActive) roadMeshSystem.setPhysicsHook(roadPhysics)   // FEAT-48: re-attach after the seed-rebuild swap (exitLab does it in the lab, S-65)
       terrainSystem.setRoadSystem(roadSystem)
@@ -7631,7 +7632,8 @@ roadMeshSystem = new RoadMeshSystem(
   scene, roadSystem,
   (x, z) => terrainSystem.rawHeightWorld(x, z),  // CR-04: carve-free — no crown/camber/pothole baked into design-grade window
   RANGER_PARAMS,
-  worldSeed  // D-03: roadQuality determinism requires the world seed
+  worldSeed,  // D-03: roadQuality determinism requires the world seed
+  terrainSystem.boreFloorMaterial   // BUG-112: the bore floor wears the terrain's gravel
 )
 roadMeshSystem.setPhysicsHook(roadPhysics)   // FEAT-48: asphalt is a collider, not just a decal
 
