@@ -139,8 +139,10 @@ console.log(`balance: wheels ${bal.wheelsDeg.toFixed(1)}°, roof ${bal.roofDeg.t
           run.peak = 0
           let presses = 0, b = settled
           while (b !== 0 && presses < 2) {
-            // A second press heaves the way the truck now needs: toward its wheels from the side it lies on.
-            const d = presses === 0 || b === 2 ? dir : -b
+            // A second press heaves the way the truck now needs: toward its wheels from the side it lies on,
+            // or, still on its roof, the other way — on a cross-slope the jack can't lift it over the uphill
+            // roof rail (15°: ~14.6 kN·m against its 14.3), and a player tries the other side.
+            const d = presses === 0 ? dir : b === 2 ? -dir : -b
             heave(run, jack, d)
             run.t += HILIFT.cooldownS
             presses++
