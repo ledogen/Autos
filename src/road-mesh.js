@@ -873,6 +873,50 @@ export class RoadMeshSystem {
             const arcS0 = seg.arcS0 ?? 0
             const arcS1 = seg.arcS1 ?? 0
 
+            const _ptT = performance.now()
+            // ── FEAT-40: tunnel bore lining + portal headwalls over this slice ──────────────
+            // Spans live on the net entry (run-global arc, set by the assembly tunnel pass).
+            // Each slice builds only its own overlap [arcS0,arcS1]∩[s0,s1] and each portal is
+            // built by the ONE slice whose arc range contains it — streams with the tile like
+            // everything else, on the UNTRIMMED arcS0/arcS1.
+            // BUG-107: built BEFORE the junction trim below. A bore can end AT a node with a pad (seed 19:
+            // a sharp degree-2 bend at the portal, 1 mouth in 209 on 10 seeds), and a slice the trim drops
+            // whole was skipped here too — no tube over its last 5.6 m and no portal ring, so the
+            // shader-cut skin left a hole onto the sky at the mouth. Its span also ran 2 cm past the run
+            // (543.18 on 543.16): clamped to the run, and the run's LAST slice holds an end at L (the
+            // strict `s < sHi` gave that ring to no slice; the overshoot also cost the proud lip).
+            const tNet = this._road._network?.get(runKey), tSpans = tNet?.tunnelSpans
+            if (tSpans) {
+                const addTMesh = (g, mat, cast = false) => {
+                    if (!g) return
+                    const m = new THREE.Mesh(g, mat)
+                    m.receiveShadow = true
+                    m.castShadow = cast
+                    if (this._meshesVisible === false) m.visible = false
+                    this._scene.add(m)
+                    meshes.push(m)
+                    geometries.push(g)
+                }
+                // Slices can be stored REVERSED (E→W: arcS0 > arcS1) — normalize before the
+                // overlap/containment tests or bores in reversed slices silently get no tube
+                // (the missing-pipe bug: whichever direction the slicer happened to run decided
+                // whether a tunnel's lining existed).
+                const sLo = Math.min(arcS0, arcS1), sHi = Math.max(arcS0, arcS1)
+                const runL = tNet.polyCum?.at(-1) ?? Infinity, lastSlice = sHi >= runL - 1e-6
+                for (const sp0 of tSpans) {
+                    const sp = sp0.s0 < 0 || sp0.s1 > runL ? { ...sp0, s0: Math.max(0, sp0.s0), s1: Math.min(runL, sp0.s1) } : sp0
+                    const a = Math.max(sp.s0, sLo), b = Math.min(sp.s1, sHi)
+                    // BUG-93: a slice holding a span END always builds its piece, however short —
+                    // the proud lip is built only where the tube starts exactly at the span end. A
+                    // mouth 0.25 m before a slice boundary skipped its sliver, the next slice's tube
+                    // began 0.25 m inside, and the mouth had no lip: the shader-cut skin left a hole.
+                    if (b - a > 0.5 || (b > a && (a === sp.s0 || b === sp.s1))) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial(), true)   // BUG-112: the lining shades the bore — no sun on the deck or the truck inside it
+                    if (sp.s0 >= sLo && sp.s0 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
+                    if (sp.s1 >= sLo && (sp.s1 < sHi || lastSlice)) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
+                }
+            }
+            _bTunnel += performance.now() - _ptT
+
             // ── QUAL-10: cut the ribbon back near junction nodes so the radiused pad has room ──────
             // Node junctions sit at run ENDPOINTS, so trimming just shortens the slice end that touches
             // the node (contiguous — no mid-run split). Drop samples whose run-global arc is within
@@ -946,41 +990,6 @@ export class RoadMeshSystem {
             geometries.push(geo)
             _bMesh += performance.now() - _ptM
 
-            const _ptT = performance.now()
-            // ── FEAT-40: tunnel bore lining + portal headwalls over this slice ──────────────
-            // Spans live on the net entry (run-global arc, set by the assembly tunnel pass).
-            // Each slice builds only its own overlap [arcS0,arcS1]∩[s0,s1] and each portal is
-            // built by the ONE slice whose arc range contains it — streams with the tile like
-            // everything else. (Untrimmed arcS0/arcS1: bores are ≥ endMargin from junctions.)
-            const tSpans = this._road._network?.get(runKey)?.tunnelSpans
-            if (tSpans) {
-                const addTMesh = (g, mat, cast = false) => {
-                    if (!g) return
-                    const m = new THREE.Mesh(g, mat)
-                    m.receiveShadow = true
-                    m.castShadow = cast
-                    if (this._meshesVisible === false) m.visible = false
-                    this._scene.add(m)
-                    meshes.push(m)
-                    geometries.push(g)
-                }
-                // Slices can be stored REVERSED (E→W: arcS0 > arcS1) — normalize before the
-                // overlap/containment tests or bores in reversed slices silently get no tube
-                // (the missing-pipe bug: whichever direction the slicer happened to run decided
-                // whether a tunnel's lining existed).
-                const sLo = Math.min(arcS0, arcS1), sHi = Math.max(arcS0, arcS1)
-                for (const sp of tSpans) {
-                    const a = Math.max(sp.s0, sLo), b = Math.min(sp.s1, sHi)
-                    // BUG-93: a slice holding a span END always builds its piece, however short —
-                    // the proud lip is built only where the tube starts exactly at the span end. A
-                    // mouth 0.25 m before a slice boundary skipped its sliver, the next slice's tube
-                    // began 0.25 m inside, and the mouth had no lip: the shader-cut skin left a hole.
-                    if (b - a > 0.5 || (b > a && (a === sp.s0 || b === sp.s1))) addTMesh(this.buildTunnelTube(runKey, a, b, sp, this._params), this._getTunnelMaterial(), true)   // BUG-112: the lining shades the bore — no sun on the deck or the truck inside it
-                    if (sp.s0 >= sLo && sp.s0 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s0, -1, this._params), this._getPortalMaterial())
-                    if (sp.s1 >= sLo && sp.s1 < sHi) addTMesh(this.buildPortalRing(runKey, sp.s1, +1, this._params), this._getPortalMaterial())
-                }
-            }
-            _bTunnel += performance.now() - _ptT
         }
 
         // ── Junction footprints for nodes assigned to this tile ────────────────
