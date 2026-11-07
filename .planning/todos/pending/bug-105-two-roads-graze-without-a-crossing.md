@@ -1,7 +1,7 @@
 ---
 id: BUG-105
 type: bug
-status: landed — owner's calls open (4 sites)
+status: landed — owner's calls built on feature/spare (loop trim), landing pending
 severity: major
 opened: 2026-11-03
 source: owner capture /Users/ledogen/Downloads/autos-capture-1793661257788.json (seed 163384989, free roam, mark
@@ -624,3 +624,168 @@ goes to the orchestrator.
   strands 1.5 km. All checks pass; it still needs landing.
 - **Open: the owner's four calls**, on the sheets page https://claude.ai/artifact/U18febBn14QDM9NiPZBhKB and the
   tracker. Close this ticket once they are answered and built, or ruled "leave".
+
+**Correction (2026-11-06, PERF-27 quiet window): the acceptance numbers above were taken on seed 6, the boot seed — no
+reseed, warm caches — which is not a player's path.** On random seeds (3997014678, 2623851183, 744309545) at cpu ×4,
+alternating `8739d3cb` (before) / `14c6feb6` (the BUG-105 merge): story entry 17.02 → 17.71 s (+0.70 s, +4 %); region
+bench thread +6 %, network hash identical. Inside the orchestrator's 2 s line — BUG-105 stays. Details: PERF-27.
+
+## The owner's calls answered (2026-11-06) — the loop trim built (Spare, `9029d1a1` + gate `fcc4bce2`)
+
+Owner, verbatim (bug105-calls): "24 - It looks like what actually happened here was the node was placed in a tricky
+terrain location where It took the cheapest way out. The issue is... What I see is a loop in the road that doesn't need
+to be there. The crossing point should really be the node and it should be n... n equals 2 junction. I think of the
+options that are presented I like three the best however a more elegant fix would just be to detect a loop less than 200
+meters long and trim it off completely promoting the crossing point to the intersection. 25 - Basically the same thing
+except this is a figure eight instead of a loop It should be possible to detect That this is one loop inside of another
+And trim all the road off Back to that rightmost crossing point And add a radius like we do with n equals two junctions
+of about this departure angle. 26 and 27 are fine as they are."
+
+**The class, measured first** (`wip/bug-105/loops/`):
+- On the shipped network (`loops.mjs`, 140 windows), two runs of one node that cross each other come in three shapes.
+  - Parallel `~p` runs between one node pair: a mid-span T's legitimate cycle.
+  - Degree-3 legs crossing within 27 m of their own junction: inside the pad.
+  - Degree-2 sites whose two legs loop back across each other. This is the owner's shape.
+- At plan level (`plan-loops.mjs`), 8 degree-2 sites have legs that cross. 4 of their legs already carry a T or
+  mid-span spec; those resolve and never ship as loops. The other 4 are exactly the loops that ship:
+  - 844938307 (1,0,0): 59 m, outer 300 m;
+  - 2502655950 (1,−1,1): 286 m;
+  - 1227226248 (the owner's 25): 222 m, outer 391 m;
+  - 3502246374 (the owner's 24): 339 m; it sits just outside the census windows.
+- QUAL-35 does not reach these: they are bends, not junctions. Visiting the site costs +2,032 / +2,922 cost-m over
+  going straight past.
+
+**The rule.** The cap is 400 m, not the owner's 200 m, because their own sites measure 339 m and 391 m (outer); it is
+`LOOP_TRIM_M`. `_v2LoopTrim(g, drop, wide, nk)` acts on a site when all of these hold:
+- the site has built degree 2;
+- every crossing between its two legs' routes closes a loop of at most 400 m;
+- the outermost crossing is outermost on both legs;
+- no T, mid-span or disjoint spec that registration acts on (`_v2MergeFor`, filtered) names either leg, at the site or
+  at either far end.
+
+The raw node-merge table is not enough for that last check: it lists the wyes BUG-105 later declines, which are what
+leave these loops. When the rule holds:
+- The crossing is refined on the continuous centerlines (Newton) and becomes a **bend node**, id
+  `[x·1000, z·1000, BEND_K = −2]`. Its position is a pure function of the id (`_v2NodeHeight` at that point), so no
+  table, no worker transfer, and the same answer in every window.
+- Registration slices each leg from its far end to the bend (`Centerline.slice`) and re-solves its profile. Both ends
+  pin to the node height at the bend, so the decks meet; the measured gap is 0.
+- The site leaves the road (`_promotedAway`, directed). `_siteAt` and `_graphDegreeOf` read bend ids; restamping treats
+  them like promoted ids.
+
+**Result:**
+- Census 11 vs census 10 (140 windows): the footprint is exactly the 4 windows. 8 run keys go (7.2 km) and 8 arrive
+  (5.9 km); no other run is re-drawn.
+- GRAZE 4 → 2: 24 and 25 clear; 26 and 27 stay, as ruled. BUG-69 shape 25 → 25.
+- Bends: 22° (24), 131° (25, a switchback on the ridge), 47°, 102°. Each gets the standard degree-2 connector radius.
+  Whether the two sharp ones want a wider radius is put to the owner.
+
+**Gate:** `road-loop-trim`, registered.
+- It covers the four windows with pond no-go. No degree-2 node's runs may cross within 400 m. Each bend must have two
+  runs on one deck, the site must keep no run, and the trim must be identical with the window shifted 500 m.
+- It fails on main: 10 failures, every loop caught.
+
+**Checks (feature/spare `89ffda15`, main `5028b1d9` merged):**
+- `npm run test:all`: 133 of 133 gates green.
+- `node test/cdp-smoke.mjs`: PASS, 25 steps, zero console errors.
+
+**The cost (2026-11-07, main `21d048cf` merged at `f2d6ccaa`):**
+- **Interleaved A/B is useless here.** It ran 3 rounds × 3 random seeds (`wip/bug-105/loops/ab2-21d048cf.log`), main and
+  the branch alternating. The load average was 8 to 77 while the other lanes smoked, and the pairs swung from −32 % to
+  +84 %.
+- **Measured as a share of the same run instead** (`wip/bug-105/loops/split-trim.mjs`, QUAL-35's method): the time
+  inside `_v2LoopTrim`, less any routing nested in it, over the network thread (the build less routing). Load cancels in
+  the ratio.
+
+  | seeds | the loop trim's share of the network thread |
+  |---|---|
+  | random, no trim (3997014678, 2623851183) | 0.11 – 0.16 % |
+  | the four trim windows | 0.6 – 1.5 % |
+
+  The budget is 5 %.
+- **The scan made cheaper** (`b9a2bd74`). Every degree-2 site used to scan both whole legs: 4 m samples, about
+  140 k segment pairs at 1.5 km legs. Now it scans their first 400 m first, because a crossing that closes a loop
+  within the cap must lie there. The full scan, which declines the trim when a crossing past the cap exists, runs only
+  where a near crossing was found. The answer is the same: `road-loop-trim` PASS with the same four bends, and the
+  A/B's network hashes are identical across both versions. On the same yardstick the old scan was 0.14 – 1.76 %, so it
+  was already inside budget; this is margin.
+
+**Smoke on the lane head** (`b9a2bd74`): 24 of 25. The `pad` step failed with "parking at the giver opened no offer
+card", the brake race under load (ceilings ×5.1). The pad step alone then passed (25 steps, zero console errors). A
+full rerun on a quiet box is owed.
+
+**Owed:**
+- The owner's answer on the page https://claude.ai/artifact/C4jUxhQbgiwyHwor2aq1Ho, tracker item `bug105-trim`: the
+  400 m cut-off, and the two sharp bends.
+- The full smoke on a quiet box.
+- The landing.
+
+## Owner's ruling, 2026-11-07 (bug105-trim), and census 12 (Spare, `land/bug-105-trim`)
+
+**The ruling, verbatim** (11:05Z, relayed by the orchestrator): "1. the bigger issue for these than there being a
+redundant loop is there was no junction at the crossing which makes it undriveable. id like for redundant loops under
+500m to be trimmed out but if there is a non-intersection crossing at any length it must at least be promoted to a real
+junction if not also degree-reduced. 2a"
+
+The orchestrator read it as:
+- (i) trim redundant loops under 500 m (it was 400);
+- (ii) promote every road crossing that has no junction to a real junction, at any length, and degree-reduce it where
+  that is clean;
+- (iii) 2a: the sharp bends the trim leaves are fine.
+
+BUG-104 rides this: the owner wants one fix for "roads intersect but don't form a junction". QUAL-35 is closed
+("leave it"), so BUG-104 no longer waits on it.
+
+**Built:** `LOOP_TRIM_M` 400 → 500 (`b01193b7`). `road-loop-trim` checks 500 m.
+
+**Census 12** (`wip/bug-105/touch-census.mjs`, shipped geometry, pond no-go). 240 windows of 1400 m: the census list
+(127) + the battery (13) + 100 fresh random seeds (`fresh100.list`, drawn 2026-11-07, recorded). Main `f7f20d83`
+against the branch:
+
+| | main | branch (trim 500 m) |
+|---|---|---|
+| windows · road | 240 · 9,132 km | 240 · 9,130 km |
+| plan crossings with no junction (outside node throats and registered crossings, any height) | **1** (3502246374, the owner's 24: a 339 m loop, decks 5.1 m apart) | **0** |
+| GRAZE, centres < 22 m | 8 | 7 (1227226248, the owner's 25, gone) |
+| ⤷ of which two roads on top of each other (< 3 m) | 2 | 2 |
+| bank touches (inside FEAT-77's rule, all tiers) | 61 | 59 |
+
+- **Footprint:** 7 of 240 windows change, 12 runs re-drawn, 10.1 km → 8.2 km.
+  - Four are the trims built on 11-06: 844938307, 2502655950, 1227226248, 3502246374.
+  - One is new with the 500 m cap: 3845210450, at node `3,-3,2`.
+  - Two are new loops in the fresh seeds: 1772156947 and 346255185.
+  - Every other run keeps its key and its geometry hash.
+- **Rule (ii) has nothing left to act on:** no crossing survives at any length in 240 windows.
+  - The standing guarantee is the existing gates: `road-loop-trim` (no degree-2 node's runs cross within 500 m) and
+    `road-clearance`'s random leg (12 seeds). That leg gates any pair with centres under 22 m, and a crossing is at
+    0 m.
+  - No crossing-to-junction builder is written. With no case to act on, it would be untested code; if a crossing ever
+    survives, those gates go red.
+- **Build cost** (`wip/bug-105/loops/split-trim.mjs`: time inside `_v2LoopTrim` over the network thread, in the same
+  process so load cancels):
+  - random seeds with no trim (3997014678, 2623851183, 744309545): 0.09–0.47 % of the thread;
+  - trim windows (1227226248, 3502246374): 1.03–1.28 %;
+  - at 400 m it was 0.11–0.16 % and 0.6–1.5 %. The budget is 5 %.
+
+**The residue the owner's holistic rule still covers: two roads ON TOP of each other, never crossing.** Both are on
+main and the branch, both in the fresh seeds, and both are the class the plan layer cannot fix:
+- **2323221349 (−2021, 601):** two legs of node `-4,1,2` run 2.8 m apart for 168 m. This is BUG-104's shape.
+  - The clearance pass defers the pair: the pass-1 lines are 2.8 m apart, inside `mergeProxM`.
+  - The node planner then has a role conflict (`-3,0,2|-4,1,2 would cede to -3,1,1|-4,1,2`). Every T variant fails a
+    structural check ("no variant promoted", "has no T under the rule"), and the forced join takes a different pair.
+  - Same class as the owner's earlier "no departure builds" sites.
+- **1394642004 (683, 1286):** run `g:0,1,0:368253,1465649,-1`, the departure of a promoted T, lies 2.3 m beside
+  `g:1,1,1:1,2,1` for 152 m. No node is shared. This is BUG-105's original shape.
+  - The T machinery never sees the pair: there is no line in its log.
+  - It is Stage 0's "a T's departure lands beside another road", made after promotion and invisible to the plan.
+
+Both need the **shipped-geometry backstop** Stage 2 designed but never built: walk the registered network after
+promotion and resolve each overlap. That takes one of two forms, and choosing between them is the owner's call (sent
+to the orchestrator 2026-11-07):
+- **JOIN:** a mid-span T at the overlap, so the two share the pavement and fork at each end. It keeps both roads and
+  adds junctions.
+- **DEGREE-REDUCE:** drop the duplicated stretch of the shorter road when its ends stay connected. That deletes road
+  the player could drive, against the "connectivity goes up" ruling, unless "if not also degree-reduced" was meant to
+  allow it.
+
+Frequency: 2 in the 100 fresh seeds, 0 in the 140 census windows (Stage 1/2 already cleared BUG-104's five).
