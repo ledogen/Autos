@@ -121,7 +121,10 @@ const simFor = s => untilSim(() => false, s)
 // reach. Measured 2026-11-01: seated ON the farm's marker at (-936.5, 668.6) the truck starts inside the
 // barn and is thrown out at 21 m/s, on main as on any branch; the save step stalled whenever the clock
 // happened to post that farm's freight (it rolled 70–88 m off the pad, never taking the offer).
+// A POI with a PARK box (FEAT-178: the shop's lift; ASSET-74: the store's lot) answers the brake only inside it: seat
+// where a tow would (poi.js towSeat — its centre, along its long side), heading included. Callers spread this LAST.
 const PAD_SEAT = `((q) => { const P = window.__poi(), y = (q.y ?? 0) + 0.8
+  if (q.park) { const s = window.__towSeat(q); return { x: s.x, z: s.z, h: s.heading } }
   const dx = q.roadX - q.x, dz = q.roadZ - q.z, L = Math.hypot(dx, dz) || 1
   for (let t = 0; t <= Math.min(9, L); t += 0.5) {
     const x = q.x + dx / L * t, z = q.z + dz / L * t
@@ -575,7 +578,7 @@ const STEPS = [
   ['service', async () => {
     // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
-      return q ? { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
     if (!p) { console.log('  service: no auto shop in this region — step skipped'); return }
     await seat(p.x, p.z, p.h)
     await park(true)
@@ -583,6 +586,13 @@ const STEPS = [
     check(await until(open, 2000), `parking at the auto shop opened no service screen: ${JSON.stringify(await js(`(() => { const c = window.__car()
       return { parked: window.__vs.parked, v: +c.v.toFixed(2), d: +Math.hypot(c.x - ${p.x}, c.z - ${p.z}).toFixed(1), prompt: document.getElementById('poi-prompt')?.textContent.trim().slice(0, 80),
         promptShown: document.getElementById('poi-prompt')?.style.display, mission: window.__mission().state } })()`))}`)
+    // FEAT-178: parked on the service station's lift, the view snaps to the bay's inside corner — the model's camera eye.
+    await frames(3, 80)
+    const camOff = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden), c = q.camera
+      if (!c) return null
+      const cs = Math.cos(q.modelYaw), sn = Math.sin(q.modelYaw), [ex, ey, ez] = c.eye, p = window.__cam().position
+      return Math.hypot(p.x - (q.modelX + ex * cs + ez * sn), p.y - (q.baseY + ey), p.z - (q.modelZ - ex * sn + ez * cs)) })()`)
+    check(camOff !== null && camOff < 0.3, `the service view is not the bay's camera corner (${camOff?.toFixed(2)} m off its eye)`)
     // FEAT-167: no HUD behind the shop.
     check(await js('!document.getElementById("hud-dock").checkVisibility({ visibilityProperty: true })'), 'the HUD shows behind the service screen')
     // My Vehicle lists every corner's tire under a collapsed Tires; selecting one opens its repair / exchange panel.
@@ -847,7 +857,7 @@ const STEPS = [
     const p = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
       const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park && q.type !== 'expeditionCamp'
         && b.status(q.id)?.family === 'delivery' && b.view(q.id, 0)?.count > 0)
-      return q ? { ...${PAD_SEAT}(q), rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type } : null })()`)
+      return q ? { rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type, ...${PAD_SEAT}(q) } : null })()`)
     if (!p) { console.log('  offer: no plain delivery giver with a live offer — step skipped'); return }
     await seat(p.x, p.z, p.h)
     await park(true)
@@ -940,7 +950,7 @@ const STEPS = [
       for (const q of window.__map2d()._getPois()) {
         if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
         const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'freight')
-        if (o) return { ...${PAD_SEAT}(q), rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type }
+        if (o) return { rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type, ...${PAD_SEAT}(q) }
       }
       return null })()`)
     let load = null
@@ -1265,7 +1275,7 @@ const STEPS = [
     await strayCheck('in the evening')
     // Parked at hers: her sleep card, the timer preset to wake at 07:00 — and sleeping posts the casserole.
     const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
-      return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`)
+      return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
     await js(`window.__seated = false; window.__teleport(${mom.x}, ${mom.z}, ${mom.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), "the teleport to mom's never seated")
@@ -1333,7 +1343,7 @@ const STEPS = [
       check(await until(() => js('window.__seated'), 30000, 250), `teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
       await readCards(); await simFor(1)
     }
-    const seatPoi = async (test) => { const p = await js(`(() => { const q = window.__map2d()._getPois().find(${test}); return { ...${PAD_SEAT}(q), h: Math.atan2(-q.tx, -q.tz) } })()`); await seatRead(p.x, p.z, p.h) }
+    const seatPoi = async (test) => { const p = await js(`(() => { const q = window.__map2d()._getPois().find(${test}); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`); await seatRead(p.x, p.z, p.h) }
 
     // The run the opening step left: Start → pause → give up → its confirm → the summary → the main menu.
     const inRun = await js('getComputedStyle(document.getElementById("run-hud")).display !== "none"')
