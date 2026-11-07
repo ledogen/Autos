@@ -38,9 +38,10 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-const SEEDS = ['1', '6', '2167923713', '3109505264', '3873008110']
+const SEEDS = ['1', '6', '2167923713', '3109505264', '3873008110', '398411380']
 // 2167923713: a BUG-63 parallel crosses the wall (FEAT-154). BUG-128: 3109505264, a road bowing past the wall lay on the fuel
-// line's shortest path; 3873008110, the one gas station stood on such a road (2026-11-07).
+// line's shortest path; 3873008110, the one gas station stood on such a road. 398411380: a row 20 m from a junction stood on
+// its steep leg's vertical knee, 18 cm off its plane, until rows moved to fit one (poi.js _rowOnPlane) (2026-11-07).
 let fails = 0
 const check = (label, ok, detail = '') => {
     console.log(`  ${ok ? '[ ok ]' : '[FAIL]'} ${label}${ok ? '' : '  ' + detail}`)
