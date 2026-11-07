@@ -4317,7 +4317,7 @@ function _runIntro () {
 // ── FEAT-147/170: the opening — the firing, the evening at mom's, the first job, Larry's welcome ──
 // EVERY new story run (the setup page's toggle retired, FEAT-170). The firing is an in-world camera move round the
 // burger joint (the foodVendor POI) with the Story cards over it — no scene art (owner, 2026-11-05) —
-// so the run starts with the truck parked on the joint's lay-by, at 6 pm on DAY 0 (FEAT-170, owner
+// so the run starts with the truck parked on the joint's lay-by, at 7:30 pm on DAY 0 (FEAT-170, owner
 // 2026-11-06: the evening is the day before the run's day 1). Mom's call sends you home for the
 // night — the EVENING LEG: no job, the GPS and the HUD line to her house, every other giver quiet. Any
 // sleep ends it (at hers or anywhere), as does 07:00 reached awake, and her casserole goes up at her
@@ -4329,7 +4329,9 @@ function _runIntro () {
 // STATELESS ACROSS A RESUME: "this run opened on the firing" is the dialogue seen-key DLG.firing (the
 // save carries the seen set), and the first job's progress is the board's (the save replays it) — so
 // the evening is "the firing seen, the casserole not posted yet".
-const OPENING_START = { day: 0, hour: 18 }   // FEAT-170: the firing's clock
+// FEAT-180 (owner 11-07, 9: "Keep dusk opening"): 19:30 is the evening look's keyframe, the light 18:00 had before
+// the sun moved to 8 pm.
+const OPENING_START = { day: 0, hour: 19.5 }   // FEAT-170: the firing's clock
 // The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
 // turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
 // aim point's height over the pad (m).
@@ -8555,7 +8557,7 @@ const storySystem = new StorySystem({
   onRegionLive: (center, radius) => {
     if (!center) return
     // FEAT-47: the run's clock opens at dayStartHour and takes over the sky — FEAT-170: a NEW run's at the
-    // opening's 6 pm on day 0 (a resume puts its own clock back below).
+    // opening's 7:30 pm on day 0 (a resume puts its own clock back below).
     if (_paperScenario) daySystem.start(1, DAY_PARAMS.dayStartHour)   // FEAT-62: a working morning, no opening
     else daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
