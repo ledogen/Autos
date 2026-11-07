@@ -7106,7 +7106,7 @@ function _updateEnergyMeter () {
   _emEls.strip.style.transform =
     `translateX(${EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H}px)`
   const st = daySystem.stage()
-  const label = daySystem.hungry() ? `${st} · hungry` : st   // FEAT-169: words, never a gauge (SM-INV-10)
+  const hw = daySystem.hungerWord(), label = hw ? `${st} · ${hw}` : st   // FEAT-169: words, never a gauge (SM-INV-10)
   if (label !== _emStage) {
     _emStage = label
     if (st === 'sleepy') _tut('tut-sleep')   // FEAT-147
