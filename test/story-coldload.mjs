@@ -152,7 +152,7 @@ const LIVE = MODE === 'reseed'
   // Route warm drained AND ring full: the reseed equivalent of story's `live`.
   ? `(()=>{ const r = window.__road && window.__road(); const w = window.__world && window.__world();
             if (!r || !w) return false; const n = 2*(w.ring+w.warm)+1;
-            return r.pending === 0 && r.lastWarm && w.chunks >= n*n })()`
+            return r.pending === 0 && r.netIdle && w.chunks >= n*n })()`
   : `window.__story()._phase === 'live'`
 const tLive = await waitFor(LIVE, BASE_TIMEOUT * 3, MODE === 'reseed' ? 'route warm drained' : 'story live', 200)
 console.log(`  live        ${(tLive / 1000).toFixed(2)} s   ${MODE === 'reseed' ? 'route warm drained' : 'region routed + frozen'}`)
