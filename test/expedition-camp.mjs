@@ -152,14 +152,30 @@ for (const s of SEEDS) {
     // The edge fade's return: from 20 m outside each row, a road spot at the return radius or inside,
     // within 40 m of the row, its heading pointing inward.
     const rIn = wall - POI_PARAMS.poiEdgeReturnM
-    const badBack = rows.slice(1).filter((row) => {
+    // EXEMPT (BUG-128, 2026-11-07): a row whose road has NO END ON THE PLANNERS' GRAPH. It closes a stretch nothing
+    // inside connects to (a road that dips into the circle with both ends outside it, or a road out of a stranded
+    // pocket), so no return spot sits behind it, and the fade's answer, the nearest real road, is right however far.
+    // The road is read under the row's middle barricade, which stands on the centreline.
+    const linked = (row) => {
+        const c = mid(row), q = road.queryNearest(c.x, c.z, 15)
+        const e = q?.runKey ? g.edges.find(([, , k]) => k === q.runKey) ?? road._network.get(q.runKey) : null
+        const [a, b] = Array.isArray(e) ? e : [e?.cellA, e?.cellB]
+        return !!a && (adj.has(g.key(a)) || adj.has(g.key(b)))
+    }
+    const exempt = rows.slice(1).filter((row) => !linked(row)).length
+    const badBack = rows.slice(1).filter(linked).filter((row) => {
         const c = mid(row), f = face(c), back = poi.returnPoint(c.x - 20 * f.x, c.z - 20 * f.z)
         const fx = -Math.sin(back?.heading), fz = -Math.cos(back?.heading)
-        return !back || r(back) > rIn + 1e-6 || Math.hypot(back.x - c.x, back.z - c.z) > 40
+        // Within 40 m, or on the row's OWN road within 100 m: a road crossing the wall at a shallow angle runs further
+        // before it is poiEdgeReturnM inside (10 m deep at 14° is 42 m along; 2167923713 has two), and the same road
+        // just inside its row is exactly where the fade should put the truck (BUG-128, 2026-11-07).
+        const dRow = back && Math.hypot(back.x - c.x, back.z - c.z), qr = road.queryNearest(c.x, c.z, 15), qb = back && road.queryNearest(back.x, back.z, 15)
+        const near = back && (dRow <= 40 || (dRow <= 100 && !!qr?.runKey && qb?.runKey === qr.runKey))
+        return !back || r(back) > rIn + 1e-6 || !near
             || road.sampleRoadTopY(back.x, back.z) == null || (C.x - back.x) * fx + (C.z - back.z) * fz < 0
     })
-    check(`from past every row the fade returns to a road inside ${rIn} m, near the row, facing in`, !badBack.length,
-        `${badBack.length} rows`)
+    check(`from past every row the fade returns to a road inside ${rIn} m, near the row (40 m, or 100 m on its own road), facing in (${exempt} rows on unconnected roads exempt)`,
+        !badBack.length, `${badBack.length} rows`)
     const late = rows.slice(1).filter((row) => r(mid(row)) > wall + POI_PARAMS.poiEdgeFadeM).length
     console.log(`       rows past the fade line (a junction just inside the wall): ${late}`)
 
