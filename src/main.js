@@ -4264,6 +4264,13 @@ missionSystem = new MissionSystem({
       result.letter = amountGrade(share, rankTable('demolition', region))
       mission = { ...mission, payMult: mission.payMult * share }
     }
+    // BUG-117 (owner, 2026-11-07, bug117-pay: "1 — a letter, no pay"): mom's casserole is the tutorial's grade and
+    // nothing else. No pay and no deed, so every seed starts on the same wallet and the deeds count real jobs only.
+    if (mission?.first) {
+      result.first = true
+      if (mission.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
+      return { payout: 0, base: 0, tip: 0, points: 0 }
+    }
     // FEAT-103: a requisition line pays nothing and earns no deed. C or better delivers it; a D (late,
     // or too much of the load lost) puts it back on the list unchanged.
     if (mission?.line) {
@@ -4892,6 +4899,7 @@ function _planOne (o, exclude) {
     // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
     m.offerId = o.id
     m.line = s.line ?? null   // FEAT-103: a requisition line — settles as a line, never pays
+    m.first = !!s.first       // BUG-117: mom's casserole — a letter, no pay
     m.bonus = s.bonus
     // FEAT-114: a haul's spec pays PER PIECE; the plan assumes the whole stock until the picker
     // sets the real count at accept (bundles + payMult are rewritten there).
@@ -6763,7 +6771,11 @@ function _renderMissionUI () {
       // NO letter on any result card (owner, 2026-10-22 §2b / 2026-10-23 for haul, freight, fragile; Q-3
       // 2026-10-24 for courier too): the letter decides the item and the deeds and lives only on the live
       // rank bar, so every type's card reads the time, then the money, then the deed.
-      body.innerHTML = `<span class="mp-big">${formatTime(r.elapsed)}</span>`
+      // BUG-117: the casserole's card is its letter and its time (the paper route's form) — it pays nothing.
+      body.innerHTML = r.first
+        ? `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
+          + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
+        : `<span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (r.line ? _lineRows(r)
           : paid
           ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
@@ -6772,7 +6784,7 @@ function _renderMissionUI () {
                        site: r.targets != null ? { smashed: r.smashed, of: r.targets } : null,
                        deedNeed: _missionDeedNeed(m.mission) })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
-      if (paid && !r.line) _revealResult(body, r.letter)   // N-04: the staged reveal — tip count-up, deed tally tick
+      if (paid && !r.line && !r.first) _revealResult(body, r.letter)   // N-04: the staged reveal — tip count-up, deed tally tick
       // The result card is two actions: retry · continue (R-31, owner 2026-10-24: no "back to free roam"
       // here — leaving the mode is the pause menu's job). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.

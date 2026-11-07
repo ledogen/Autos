@@ -1077,7 +1077,7 @@ export class OfferBoard {
         // R-20 (owner, 2026-10-24): "Pay $3.63 – $7.27 based on speed" — the range and what moves it,
         // in one breath; a bonus offer pays its base flat (the TIP form below says what replaces the
         // tip). A haul reads as a trade: "Bundle costs $0.25 · sells for $0.50 – $1.00 by speed".
-        const pay = !range ? null
+        const pay = !range || sp.first ? null   // BUG-117: mom's casserole pays nothing
             : sp.stock ? `Bundle costs ${money(stockPrice(par, payTier, sp.payMult))} · sells for `
                 + (sp.bonus ? `${money(range.base)} flat` : `${money(range.base)} – ${money(range.max)} by speed`)
             : sp.bonus ? `Pay ${money(range.base)} flat`
@@ -1123,7 +1123,7 @@ export class OfferBoard {
                 + ` — ${gateLine(sp.bonus.gate, sp.family, this._region, cargoId, km)}` : null,
             // R-09: the deed line — what this job adds toward the camp, and the number behind it.
             // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
-            deed: sp.family === 'papers' ? null
+            deed: sp.family === 'papers' || sp.first ? null   // BUG-117: …and earns no deed
                 : sp.deeds === 'none' ? 'Deed: none — off the books'
                 : deedLine(sp.family, this._region, cargoId, km, sp.massKg) + (sp.deeds === 'extraHalf' ? ' · +1/2 at C or better' : ''),
             // FEAT-142: bottom-left of the card, the trait's name and what it does to THIS offer, in the
