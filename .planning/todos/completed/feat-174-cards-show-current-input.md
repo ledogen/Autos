@@ -1,7 +1,7 @@
 ---
 id: FEAT-174
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-06
 source: owner, 2026-11-06 playtest (relayed verbatim by the orchestrator)
@@ -48,3 +48,10 @@ twice for the two inputs (Larry's card is the example).
   keyboard press (Shift alone, which hands control to the keyboard without turning the card). Not run yet: Chrome
   held by the orchestrator. Light node gates (paper-route, rank-timer, par-oracle, gps-route, haul-load,
   prop-shadow-alignment) green.
+
+## Resolution
+
+**Closed on evidence (Lane B, 2026-11-07).** Landed d5c03b3a (cherry-pick of 4ef8ca32). The audit is in the work
+log above; the two doubled lines (Larry's paper-route card, mom's drive lesson) say one input's words each, swapped
+live by body.pad-on. Pinned in cdp-smoke's pad step (the drive lesson reads "the left stick" on the pad, "A and D"
+after one keyboard press).

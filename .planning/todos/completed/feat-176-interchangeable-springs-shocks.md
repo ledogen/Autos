@@ -1,7 +1,7 @@
 ---
 id: FEAT-176
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-06
 source: owner, 2026-11-06 playtest (relayed verbatim by the orchestrator)
@@ -46,3 +46,11 @@ the single part carries (the corner's stock rate stays per-axle, the part scales
 - **Gates:** parts (new: a spring needs its axle named, refuses a shock socket, and on the front writes the front
   rate only), service, shop-stock, run-save and the other light affected gates (21) green. The 9 heavy world gates
   are affected only through data/offers.js's import closure (a category map); not run.
+
+## Resolution
+
+**Closed on evidence (Lane B, 2026-11-07).** Landed d5c03b3a. One springs and one shocks part per family; either
+axle takes it and writes only its own axle's values. Stock behaviour is unchanged by construction (each stock part's
+patch equals RANGER_PARAMS, test/parts.mjs; the physics fingerprint never loads parts). Shelves and rewards list only
+the merged parts; old save ids are renamed on load (test/run-save.mjs). Flags for the owner (masses averaged, shelf
+weights summed, axle-neutral names) are in the work log.

@@ -1373,9 +1373,12 @@ const STEPS = [
     }
     // A new story run from the menu, the seed left blank (a pad cannot type one: blank is Random).
     if (inRun) { await padTo('mm-new'); await btn(0) }
+    // SMOKE_PAD_SEED=<seed>: repeat a failed pad step's world (its world code's number) — a development aid.
+    if (process.env.SMOKE_PAD_SEED) await js(`document.getElementById("su-seed").value = ${JSON.stringify(process.env.SMOKE_PAD_SEED)}`)
     await padTo('su-start'); await btn(0)
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the pad\'s new run never went live')
+    if (process.env.SMOKE_PAD_SEED) console.log(`  pad: world ${await js('window.__worldCode?.()')}`)
     // The firing: A fills a card, A turns it; View held skips the opening (FEAT-170, pad.skipHold).
     check(await until(dlg, 3000), 'the pad\'s run did not open on the firing')
     const txt = () => js('document.getElementById("dlg-text").textContent.slice(0, 40)')
@@ -1458,8 +1461,15 @@ const STEPS = [
     if (await js('window.__vs.parked')) await btn(5)
     check(await until(() => js('!window.__vs.parked'), 2000), 'RB did not let go of the brake at the giver')
     await frames(6, 300)
+    // A miss under heavy load (main, load 10–14, world 1994461851/K; 6/6 pass there at CPU throttle 1–12): log every Space
+    // down/up during the press, so the next one shows whether a second Space edge (the latch toggles on each) came.
+    await js(`window.__spaceLog = []; window.__spaceSpy ??= (e => { if (e.key === ' ') __spaceLog.push(e.type.slice(3) + '@' + (performance.now() | 0)) })
+      addEventListener('keydown', __spaceSpy, true); addEventListener('keyup', __spaceSpy, true)`)
     await hold(5, 450)
-    check(await js('window.__vs.parked'), 'a long RB at the giver latched the brake and let it go again (the card opened under the press)')
+    if (!await js('window.__vs.parked')) check(false, 'a long RB at the giver latched the brake and let it go again (the card opened under the press): '
+      + await js(`JSON.stringify({ space: __spaceLog, hb: __vs.handbrake, v: +__vs.velocity.length().toFixed(2), mission: window.__mission().state,
+        offerUp: document.getElementById('mission-panel').style.display === 'block', map: window.__map2d().isOpen(),
+        open: [...document.querySelectorAll('.open, [style*="display: block"]')].map(e => e.id).filter(Boolean).slice(0, 8) })`))
     // The flake (A, Spare and B under load): say what the park trigger saw, so the next miss names its cause.
     if (!await until(offerUp, 6000)) check(false, 'parking at the giver opened no offer card: ' + await js(`JSON.stringify((() => {
       const v = __vs, q = window.__map2d()._getPois().find(p => p.id === ${JSON.stringify(giver.id)}), m = window.__mission()

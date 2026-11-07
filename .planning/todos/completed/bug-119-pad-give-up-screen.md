@@ -1,7 +1,7 @@
 ---
 id: BUG-119
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-06
 source: owner, 2026-11-06 playtest (relayed verbatim by the orchestrator)
@@ -20,3 +20,10 @@ from it. Find which, fix it, pin it in the smoke's pad walk.
 ## Acceptance
 - [ ] Every button on the give-up path (pause → towel card → result card → main menu) is reachable and pressable on the pad alone.
 - [ ] Pinned in cdp-smoke.
+
+## Resolution
+
+**Closed on evidence (Lane B, 2026-11-07).** Landed on main with the playtest batch (409f138f..c0021dc8). The give-up
+confirm draws its pad highlight (`#towel-card button.nav-focus`), and Esc / B on it is its back instead of falling
+through to the pause toggle. Pinned in cdp-smoke's pad step: the pad walks pause → give up → its confirm (highlight
+drawn, B back to the pause menu alone) → the result card → the main menu. Smoke 25/25 on main since.
