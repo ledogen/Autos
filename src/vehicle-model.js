@@ -39,7 +39,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { camberLean, toeOffset } from './alignment.js'
-import { carcassRadialOffset, wheelRunoutOf } from './suspension.js'
+import { carcassRadialOffset, wheelRunoutOf, runoutAtContact } from './suspension.js'
 import { REV_THRESHOLD } from './drivetrain.js'
 
 // The imported GLB (described by a spec from data/vehicle-models.js) replaces the primitive truck.
@@ -725,6 +725,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // still hides a whole wheel with a single `.visible` toggle.
   applyWheelRunout(params.wheelRunout)
 
+  const tireMeshes = []   // FEAT-186: a collapsed wheel hides its tire
   const wheelMeshes = wheelLocalOffsets.map((offset, corner) => {
     const wheel = new THREE.Group()
     // Wheels are children of carGroup — position is in carGroup local space (body-relative).
@@ -740,6 +741,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     tire.castShadow = true
     rim.castShadow = true
     assembly.add(tire, rim)
+    tireMeshes.push(tire)
     wheel.add(assembly)
     carGroup.add(wheel)
     return wheel
@@ -801,9 +803,14 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
         ? _camberQ.setFromAxisAngle(_AXIS_NEG_Z, lean)
         : null
       wheelMeshes[i].quaternion.copy(steerQ).multiply(spinQ)
-      // FEAT-162: a collapsed wheel is drawn at its contact radius (the spin axis is local X), so the
-      // corner you see on the road is the one the physics drags. MESH == PHYSICS.
-      const k = params._wheelCollapseR?.[i] ? params._wheelCollapseR[i] / params.wheelRadius : 1
+      // FEAT-162 / FEAT-186 (owner, 2026-11-07: "stop rendering the tire, show only the wheel, and show it at max
+      // deformation"): a collapsed wheel is the BARE RIM — the tire is off the bead — bent by the 0 % runout already
+      // baked into it (wheelRunoutAtZero, the most a wheel bends). It is scaled (the spin axis is local X) so its
+      // radius where it meets the road is the contact radius physics drags on: MESH == PHYSICS. The rim carries the
+      // tread's runout offset there (w = 1 from RIM_R out), so k = collapseR / (RIM_R + that offset).
+      const cr = params._wheelCollapseR?.[i]
+      tireMeshes[i].visible = !cr
+      const k = cr ? cr / (RIM_R + runoutAtContact(i, state, params)) : 1
       wheelMeshes[i].scale.set(1, k, k)
       if (camberQ) wheelMeshes[i].quaternion.premultiply(camberQ)
 
