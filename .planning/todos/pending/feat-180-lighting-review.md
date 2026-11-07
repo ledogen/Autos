@@ -166,3 +166,28 @@ Owner 3a: "dimmed with the light, like everything else".
   | 20:00+ | 78, 38, 5 | about 30 % of noon, with the night's blue cast |
 
   The blue pump zone goes 79, 200, 255 → 18, 67, 110.
+
+## Piece 5 built (Spare, 2026-11-07): the 8 pm sun and the 19:30 opening — `src/sky.js`, `src/main.js`, `src/day.js`
+
+Owner 9: "Approve. Keep dusk opening."
+
+- **The sun.** The evening keyframe moves 18:00 → 19:30 and full night 20:00 → 21:00, as proposed.
+- **The opening.** It starts at 19:30 (`OPENING_START`), the evening look's own keyframe, which is the light 18:00 had
+  before the move. The smoke's firing checks read 19:30 and the HUD's "Day 0, 7:30 pm" (BUG-136's check).
+- **What the land's light does now.** With pieces 1+2 the land follows the sky's brightness, so it is two-thirds of
+  the way to night at 20:00, while the sun is still 2° up. That is earlier than the review's table, which assumed a
+  blend linear in time.
+
+| Hour | Sun | Headlight beams (night factor) | Land's light, share of night |
+|---|---|---|---|
+| 17:00 | 23° | 0 % | 0 |
+| 18:00 | 16.6° | 0 % | 0 |
+| 19:00 | 10.2° | 0 % | 0 |
+| 19:30 | 7° (the evening look) | 0 % | 0 |
+| 20:00 | 2° | 20 % | 0.67 |
+| 20:15 | −0.5° (sunset ~20:12) | 45 % | 0.91 |
+| 20:30 | −3° | 70 % | 1 |
+| 21:00 | −8° | 100 % | 1 |
+
+So the light is full until 19:30 and limiting from about 20:00: the owner's "comfortably drive until about 8 pm".
+Whether the 19:30–20:15 dusk looks nice is the combined sheet's dusk interview.

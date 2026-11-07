@@ -308,10 +308,9 @@ export const RANGER_PARAMS = {
   windAudioEnabled:   true,  // master toggle for wind sound
   windVolume:         0.4,   // 0..1 volume
 
-  // FEAT-120 contact one-shots (src/contact-audio.js): bump-stop clunk, landing thud, brake squeal.
-  contactAudioEnabled: true, // master toggle for all three
+  // FEAT-120 contact one-shots (src/contact-audio.js): bump-stop clunk, landing thud.
+  contactAudioEnabled: true, // master toggle for both
   contactVolume:      0.6,   // 0..1 — bump stop and landing
-  brakeSquealVolume:  0.3,   // 0..1 — the squeal on its own (owner, 2026-11-02: QUIET)
   // FEAT-120 ambience (src/ambient-audio.js): night crickets (parked or crawling only) and grass swish.
   ambientAudioEnabled: true, // master toggle for both
   cricketVolume:      0.5,   // 0..1

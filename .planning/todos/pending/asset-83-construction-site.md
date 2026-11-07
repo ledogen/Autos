@@ -68,3 +68,21 @@ The renders land in `wip/construction-site/out/` (sheet.png: road, three-quarter
 - **Colliders**: 18 boxes. The racked leads come out as a few steps, each to the tallest course over it.
 - **Not wired**: the roster slot (`workSite` `model: 'constructionSite'` in src/poi.js) is a code change. It also
   retires the slot's keyless orange cube.
+
+## Look round (owner, 2026-11-07, asset82-83-look)
+
+> "construction site: looks great. spend a little more geometry on the porta potty its suuuper simple and reads as a
+> rectangle rn"
+
+The toilet went from a box (~40 tris) to ~400 tris on the same 1.18 m footprint, so its collider is unchanged:
+- the shell has chamfered vertical corners;
+- three moulded ribs run down each side and the back;
+- five vent slots sit under the eaves on each side;
+- the door has a raised frame (jambs, header, sill), two stiffening ribs, three hinges on −x, a pull on standoffs and
+  the red occupied tab;
+- the light roof overhangs the shell with a low crown, and a dark vent stack with its cap rises at the back;
+- a grey skid has fork pockets front and back.
+- **1908 tris** now (was 1548; budget 3000): SiteBlock 388, SiteSteel 324, SiteConcrete 248, SiteRust 200, SiteDark 188,
+  SiteBlue 186, SiteYellow 152, SiteWood 132, SiteRed 90.
+- Byte-identical re-export (sha1 c304e0d9). Pad, park box and facing (0 of 6032) are OK. The review sheet gains a
+  `toilet` close-up: `wip/construction-site/out/sheet.png`.

@@ -734,6 +734,80 @@ def build_rucksack():
     return b.finish("rucksack")
 
 
+def build_daypack():
+    """FEAT-182: a light nylon daypack — a teardrop body on a dark base, a zipped front pocket, padded
+    shoulder straps and a grab loop."""
+    b = Builder()
+    body = ((0.0, 0.26, 0.10), (0.02, 0.28, 0.12), (0.12, 0.29, 0.135), (0.26, 0.27, 0.13), (0.36, 0.22, 0.115),
+            (0.42, 0.15, 0.09), (0.44, 0.09, 0.07))
+    b.loft([rrect(w, d, min(0.035, d / 2 - 0.002), z, per=2) for z, w, d in body], "ShellRed")
+    base = ((0.0, 0.266, 0.106), (0.02, 0.286, 0.126), (0.05, 0.292, 0.134))
+    b.loft([rrect(w, d, 0.037, z, per=2) for z, w, d in base], "NylonDark", cap_top=False)
+    # The front pocket, its zip along the top and the pull.
+    b.cbox((0.0, -0.075, 0.13), (0.20, 0.04, 0.17), "ShellRed", ch=0.016)
+    b.bar((-0.085, -0.0955, 0.200), (0.085, -0.0955, 0.200), 0.010, "NylonDark", h=0.004)
+    b.cbox((0.06, -0.099, 0.186), (0.012, 0.005, 0.026), "Buckle", ch=0.002)
+    # Padded shoulder straps on the back, a grab loop on top.
+    for x in (-0.06, 0.06):
+        b.ribbon([(x * 0.6, 0.048, 0.420), (x, 0.074, 0.38), (x * 1.1, 0.085, 0.25), (x * 1.25, 0.080, 0.10),
+                  (x * 1.3, 0.062, 0.040)], (0, 1, 0), 0.050, 0.012, "NylonDark")
+    b.ribbon([(-0.025, 0.018, 0.435), (-0.018, 0.024, 0.462), (0.018, 0.024, 0.462), (0.025, 0.018, 0.435)],
+             (0, 1, 0.3), 0.018, 0.004, "NylonDark")
+    return b.finish("daypack")
+
+
+def build_duffel():
+    """FEAT-182: a big canvas duffel lying on its side — a squashed barrel with dark end panels, two
+    leather bands round it, two padded handles over the zip on top."""
+    b = Builder()
+    R, SQ = 0.16, 0.85                          # barrel radius; the sag: its height is SQ of its width
+    b.M = Matrix.Translation((0, 0, R * SQ)) @ Matrix.Diagonal((1, 1, SQ, 1)) @ Matrix.Rotation(math.pi / 2, 4, "Y")
+    b.lathe([(0.0, -0.36), (0.10, -0.355), (0.14, -0.34), (0.155, -0.31)], 12, "CanvasDark", cap_top=False)
+    b.lathe([(0.155, -0.31), (0.16, -0.25), (0.16, 0.25), (0.155, 0.31)], 12, "Canvas", cap_bottom=False, cap_top=False)
+    b.lathe([(0.155, 0.31), (0.14, 0.34), (0.10, 0.355), (0.0, 0.36)], 12, "CanvasDark", cap_bottom=False)
+    b.M = Matrix.Identity(4)
+    zc, top = R * SQ, 2 * R * SQ
+    for x in (-0.14, 0.14):                     # leather bands, 6 mm proud, the full way round
+        ring = [(x, (R + 0.006) * math.sin(a), zc - (R * SQ + 0.006) * math.cos(a))
+                for a in (2 * math.pi * k / 12 for k in range(12))]
+        for p0, p1 in zip(ring, ring[1:] + ring[:1]):
+            b.bar(p0, p1, 0.006, "Leather", h=0.040, caps=False, up=(1, 0, 0))
+    b.bar((-0.29, 0.0, top + 0.002), (0.29, 0.0, top + 0.002), 0.012, "NylonDark", h=0.004)   # the zip
+    for y in (-0.035, 0.035):                   # handles: from band to band, arching over the zip
+        b.tube([(-0.14, y, top + 0.004), (-0.12, y, top + 0.06), (-0.07, y, top + 0.10), (0.0, y, top + 0.11),
+                (0.07, y, top + 0.10), (0.12, y, top + 0.06), (0.14, y, top + 0.004)], 0.012, 6, "Leather")
+    return b.finish("duffel")
+
+
+def build_framePack():
+    """FEAT-182: an external-frame pack — a big orange bag lashed high on an aluminium frame, side and
+    front pockets with dark zips, a lid; the frame's open bottom, padded shoulder straps and hip belt."""
+    b = Builder()
+    for x in (-0.16, 0.16):                     # the frame: two uprights following the back's curve
+        b.tube([(x, 0.100, 0.0), (x, 0.115, 0.20), (x, 0.110, 0.45), (x, 0.095, 0.70), (x, 0.075, 0.84)],
+               0.011, 6, "Chrome")
+    for z, y in ((0.10, 0.106), (0.24, 0.115), (0.62, 0.103), (0.84, 0.075)):   # cross bars, the shelf at 0.24
+        b.tube([(-0.16, y, z), (0.16, y, z)], 0.010, 6, "Chrome")
+    # The bag, from the shelf up, its back against the frame.
+    body = ((0.25, 0.30, 0.17), (0.28, 0.33, 0.20), (0.45, 0.34, 0.21), (0.70, 0.33, 0.20), (0.78, 0.30, 0.17))
+    b.loft([rrect(w, d, 0.045, z, per=2, cy=-0.02) for z, w, d in body], "NylonOrange")
+    b.cbox((0.0, -0.025, 0.795), (0.31, 0.20, 0.05), "NylonOrange", ch=0.018)                 # the lid
+    b.cbox((0.0, -0.137, 0.42), (0.22, 0.045, 0.17), "NylonOrange", ch=0.016)                 # front pocket
+    b.bar((-0.09, -0.1605, 0.488), (0.09, -0.1605, 0.488), 0.010, "NylonDark", h=0.004)
+    for s in (-1, 1):                                                                         # side pockets
+        b.cbox((s * 0.185, -0.03, 0.50), (0.05, 0.13, 0.20), "NylonOrange", ch=0.015)
+        b.bar((s * 0.2115, -0.08, 0.585), (s * 0.2115, 0.02, 0.585), 0.004, "NylonDark", h=0.010)
+    # Padded shoulder straps off the top cross bar, and the hip belt wrapping back from the uprights.
+    for x in (-0.07, 0.07):
+        b.ribbon([(x * 0.6, 0.110, 0.62), (x, 0.150, 0.58), (x * 1.15, 0.170, 0.46), (x * 1.3, 0.165, 0.33),
+                  (x * 1.4, 0.140, 0.24)], (0, 1, 0), 0.055, 0.014, "NylonDark")
+    for s in (-1, 1):
+        belt = [(s * 0.16, 0.12, 0.10), (s * 0.20, 0.17, 0.10), (s * 0.21, 0.24, 0.10), (s * 0.18, 0.31, 0.10)]
+        for p0, p1 in zip(belt, belt[1:]):
+            b.bar(p0, p1, 0.020, "NylonDark", h=0.075, up=(0, 0, 1))
+    return b.finish("framePack")
+
+
 def build_bedroll():
     """A rolled wool blanket: stepped spiral ends, cream stripe bands, two leather straps with buckles."""
     b = Builder(); SEG = 15   # owner, 2026-10-21
@@ -2843,6 +2917,7 @@ def build_rubberBedMat():
 BUILDERS = {
     "coffee": build_coffee, "chiliDog": build_chiliDog, "spareTire": build_spareTire,
     "emergencyGas": build_emergencyGas, "pack": build_pack, "rucksack": build_rucksack, "bedroll": build_bedroll,
+    "daypack": build_daypack, "duffel": build_duffel, "framePack": build_framePack,
     "airMattress": build_airMattress, "sleepingPad": build_sleepingPad, "deluxeSleepingPad": build_deluxeSleepingPad,
     "blanket": build_blanket, "quilt": build_quilt, "sleepingBag": build_sleepingBag, "zipTies": build_zipTies, "ductTape": build_ductTape,
     "tirePlugKit": build_tirePlugKit, "stopLeak": build_stopLeak, "bubbleWrap": build_bubbleWrap,
@@ -2995,13 +3070,14 @@ def export_glb(item_id):
 WORLD.update({k: ("item-" + "".join("-" + c.lower() if c.isupper() else c for c in k), Matrix.Identity(4)) for k in (
     "coffee", "chiliDog", "emergencyGas", "tirePlugKit", "rubberBedMat", "compressor", "energyDrink", "stopLeak",
     "zipTies", "ductTape", "jerryCan", "quickJack", "pack", "springs", "dampers", "pads", "shoes", "arb", "diff",
-    "lift", "engine", "headlight", "packedLunch")})
+    "lift", "engine", "headlight", "packedLunch", "daypack", "duffel", "rucksack")})
 WORLD.update({
     "tire":       ("item-tire",        Matrix.Rotation(math.pi / 2, 4, "Y")),                                   # axis X → Z: lying flat
     "wheel":      ("item-wheel",       Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Rotation(math.radians(25), 4, "Z")),   # un-yawed, then flat
     "hiLiftJack": ("item-hi-lift-jack", Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Rotation(math.radians(8), 4, "Z")),   # on its side, the lever along the ground
     "radiator":   ("item-radiator",    Matrix.Rotation(math.pi / 2, 4, "X") @ Matrix.Rotation(math.radians(-15), 4, "Z")),  # face down
     "airFilter":  ("item-air-filter",  Matrix.Rotation(math.radians(-30), 4, "X") @ Matrix.Rotation(math.radians(-35), 4, "Z")),  # the icon's tip undone
+    "framePack":  ("item-frame-pack",  Matrix.Rotation(-math.pi / 2, 4, "X")),                               # on its back, the frame down
 })
 
 
