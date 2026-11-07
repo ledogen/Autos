@@ -96,3 +96,16 @@ mechanic, so it belongs with the parts/recovery work (src/recovery.js), not in t
   side → wheels climb needs, so the truck rolls on through its side onto its wheels. That is the physics,
   not a rule; the gate accepts one or two presses and prints which. A softer landing (mud, a slope) can
   stop it on the side, and then the second press does the rest.
+
+## Rework after the owner's try (2026-11-06), and why it stays open
+
+- **The owner's try (tracker item `feat138-press`, 2026-11-06):** "it gets some angular momentum up but wasnt able
+  to get on its wheels". The owner proposed "high torque, low speed": hold the torque longer, and scale it down when
+  the roll is fast.
+- **Built the same day:** `c03fa062` (Lane B, landed alone by the orchestrator). The press now pushes at full torque
+  until the roll rate reaches half of 0.6 rad/s, then backs off, and holds for up to 8 s. Roof → side → wheels takes
+  one press. `test/hilift.mjs` gained a reliability grid: on level ground, one-press success went from 4/6 to 6/6, and
+  peak roll from 5.0 to 3.0 rad/s.
+- **Stays open (Spare's sweep, 2026-11-07).** Every acceptance box is met on main. What is missing is the owner's own
+  try of the reworked press. The owner's last try failed, and nobody has tried the fix in game. Same rule as BUG-115:
+  close on the owner's word.

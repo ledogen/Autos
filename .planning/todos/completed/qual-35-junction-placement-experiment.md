@@ -1,7 +1,7 @@
 ---
 id: QUAL-35
 type: quality
-status: open
+status: closed (leave it)
 opened: 2026-11-06
 severity: minor
 source: owner request 2026-11-06 (orchestrator conversation, after the BUG-105 cost review)
@@ -149,3 +149,10 @@ invariance). Tools: `place.mjs`, `report.mjs`, `split.mjs` (thread split), `shee
 1. leave (recommended);
 2. a flagged prototype, slides only;
 3. a flagged prototype at T = 1,000.
+
+## Resolution (2026-11-07) — CLOSED, leave it
+
+Owner, answering qual35-call: "1 — leave it". The idea moves to a post-alpha redesign ticket, FEAT-183, with the
+owner's words: smarter node placement still worth pursuing as part of a big road-network redesign, plus suggested
+speed limits through curves. BUG-104 no longer waits on this: it rides BUG-105's re-shaped trim (owner 11-07,
+bug105-trim: every crossing without a junction is promoted to one, at any length).

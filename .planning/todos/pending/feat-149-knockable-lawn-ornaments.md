@@ -39,10 +39,10 @@ for a named subset; it does not reopen FEAT-71.
 
 ## Acceptance
 
-- [ ] Drive through a residence yard: gnome / beach ball / flamingo roll away on contact; the fire pit
+- [x] Drive through a residence yard: gnome / beach ball / flamingo roll away on contact; the fire pit
       and potted plant stop the truck as today.
-- [ ] A knocked ornament never pops the truck up or damages it.
-- [ ] Headless: the yard solver (poi-yard gate) is unchanged — placement is identical, only the
+- [x] A knocked ornament never pops the truck up or damages it.
+- [x] Headless: the yard solver (poi-yard gate) is unchanged — placement is identical, only the
       runtime response differs. No engine types outside physics-engine.js (grep).
 - [ ] 60 fps budget: no body exists until something is hit.
 
@@ -74,3 +74,21 @@ came from. Shots: `wip/feat-149/`.
 
 Gates: affected 29/30 then the smoke twice alone, 21/21 both (its one failure was the free-roam drive
 step under a concurrent browser — the truck did not move at all, unrelated to POIs).
+
+## Spare's sweep, 2026-11-07: three of four met on main (`383540bb`), the fourth differs by design
+
+- **Lines 1–2: the live run in § Built.** The gnome was knocked 2.4 m, the flamingo 5.8 m and the beach ball 20.6 m.
+  The fire pit stops a wheel and the potted plant stops the truck. The ornaments are `noDamage`, and the truck took
+  only ordinary driving wear.
+- **Line 3:**
+  - FEAT-149's own commit (`bbc50be6`) adds `satSolid` and a contact check to `src/poi.js`. Nothing in the yard
+    placement changed.
+  - `test/poi-yard.mjs` passes on main `695d5edd`.
+  - `grep -rnE "vendor/box3d|b3[A-Z]…(" src` finds nothing outside `src/physics-engine.js`.
+- **Line 4 is NOT met as written.** The build swaps a knockable for a debris body within 60 m of the truck and puts
+  it to sleep at once. So bodies exist before anything is hit: asleep, near the truck only, and back to a model past
+  120 m. A sleeping body skips the solver, but nobody has measured its cost.
+- **To close:** either measure the frame time with and without the sleeping bodies near a dense yard, or have the
+  owner accept "asleep within 60 m" in place of "no body until hit". The measurement is Spare's to run. Nothing is
+  owed by the owner until it shows a cost.
+

@@ -12,6 +12,28 @@ being mistaken for a shipping load-time optimization — it is a DEV convenience
 making the cold load WORSE for real players."
 ---
 
+> **STATE, 2026-11-07 (Spare): open, the owner's call next.** The region warm's three cheap levers are all on main:
+> - L2 + L3 (`a05b6132`): no 400 ms floor after the settle, and the build's promise pumps story.
+> - L1 (`3276311d`): each graph's edge keys and seats are built once for the partner loops, output-identical.
+>
+> Story entry, click → driving, on the three random seeds (2623851183, 3997014678, 744309545):
+>
+> | | before (main `cf7a93ff`) | after (main `3276311d`) |
+> |---|---|---|
+> | story entry, 1× | 10.3–10.8 s | 8.7–9.5 s |
+> | story entry, ×4 | 15.5–15.9 s | 13.8–14.2 s |
+> | cold → driving, ×4 | ~25.1 s | ~23.4 s |
+>
+> **What is left is big, and NEITHER lever is built** (orchestrator, 2026-11-07):
+> - ~2.2 s of serial plan bites on the network worker: the band's and the plan layer's pin derivation, the settle
+>   deletions, and the build's `_assembleGraphEdges`. Cutting these means fanning the per-edge grade solves out to
+>   the route pool.
+> - 1–2 single route jobs per seed of 700–800 ms. Each sets its wave on its own, and no dispatch order beats it. This
+>   is router internals.
+>
+> **Whether to keep going past ~23.4 s at ×4 is the owner's call.** The owner's bar is 30 s. "Behind the menu" (hide
+> the whole entry) stays parked by the owner. The details are in the region-warm sections near the end.
+
 > **2026-09-22 — THE FRAME FOR EVERYTHING BELOW: every load is a cold generation.** The typical
 > session is Minecraft-style: a fresh random seed and a world nobody has built before; a custom seed
 > or a resumed save regenerates from nothing too (owner; recorded in DESIGN.md, "Every world is
@@ -561,6 +583,93 @@ a wave on its own (wave 3 on 2623851183: 10 jobs, 809 ms, one of them 719 ms). N
 
 **L2 + L3 + L1 ≈ 0.9–1.1 s off a ~7 s warm** (13–15 %). They would take ×4 cold → driving from ~25 s to ~24 s. None is
 built. L4 and L5 are the only ones that move the order of magnitude, and neither is cheap.
+
+#### L2 + L3 BUILT (`land/perf-27-warm`, 2026-11-07)
+
+**L2: the 400 ms `SETTLE_MIN_MS` floor is gone.** Its history:
+- **Added in `272e7ce4`** (FEAT-43, 2026-07-26), the story-mode sandbox's first commit. Its reason, verbatim: "Grace
+  after enter() before the region center is captured: the reseat/reseed is async, so the truck is not at the spawn
+  yet. deps.reseat()/applySeed() return promises we await, and this is only the belt-and-braces floor + ceiling around
+  them." The line itself said: "let the post-reseat frame land first".
+- **The centre half never held.** Even in `272e7ce4`, `_beginWarm` captures the centre and only then enters
+  'warming' with `_elapsed = 0`. The floor ran in the warming branch, after the capture, so it never delayed the
+  capture. The awaited settle promise was the real guard from day one, and it stays.
+- **The frame half held until PERF-30.** In `272e7ce4` the first warm pump ran the region on the MAIN thread
+  (`setRadius` + `warmBandComplete` + an `update` that registered the whole region): a long freeze. The floor let the
+  reseated frame paint before it. Since PERF-30 the first pump only posts the build to the network worker, after the
+  pond-disc warm (~0.1 s at 1×, 0.37 s at ×4). There is no freeze left to get ahead of, and the loading screen is up
+  either way.
+- **Nothing else reads the 400 ms.** The road stream is suspended from the moment the phase is 'warming'
+  (`isRoadStreamSuspended`), so no other build can slip in ahead of the region build. The region network is a pure
+  function of (seed, centre, radius), so the order would not matter anyway.
+
+The `SETTLE_MAX_MS` ceiling stays.
+
+**L3: the build's promise pumps story.** `pumpRegionWarm`'s `buildNow(...).then` calls `storySystem.pumpWarmNow()`,
+which sets `_pumpAcc` to `WARM_PUMP_MS`: the same "pump on the next frame" idiom `_beginWarm` uses. The finished
+build is seen on the next frame, not up to 250 ms later. The synchronous fallback (no Worker) keeps its 250 ms pump.
+
+**Measured** (`wip/perf-27/ab-warm.sh`, log `ab-warm-l23.log`). A = main `cf7a93ff`, B = this branch, built bundles,
+runs interleaved, load ~4:
+
+| seed | cpu | story entry (click → live), A → B | settle + region warm, A → B | cold → driving, A → B |
+|---|---|---|---|---|
+| 2623851183 | 1× | 10.77 → 10.46 s (−0.31) | 9.31 → 8.99 s | 15.28 → 15.14 s |
+| 3997014678 | 1× | 10.56 → 10.24 s (−0.32) | 9.15 → 8.80 s | 15.23 → 14.98 s |
+| 744309545 | 1× | 10.28 → 9.93 s (−0.35) | 8.68 → 8.33 s | 15.06 → 14.66 s |
+| 2623851183 | ×4 | 15.50 → 15.40 s (−0.10) | 10.57 → 10.45 s | 25.04 → 24.87 s |
+| 3997014678 | ×4 | 15.46 → 15.11 s (−0.35) | 10.59 → 10.40 s | 25.05 → 24.80 s |
+| 744309545 | ×4 | 15.87 → 15.49 s (−0.38) | 10.09 → 9.68 s | 25.51 → 25.14 s |
+
+- **About −0.3 s of story entry**, in every cell. That is below the 0.5 s estimate. The 400 ms seems to have been
+  absorbing some trailing settle work, which now overlaps the region build instead.
+- **Read the sum, not the split.** On B the harness's settle row grows and its region-warm row shrinks (at ×4,
+  settle +0.3–0.45 s). The issue frame (0.37 s at ×4) now runs on the very next frame, and the harness's 50 ms phase
+  poll cannot see 'warming' until that frame ends. The boundary moved; the work did not grow.
+
+#### L1 BUILT (`land/perf-27-rescan`, 2026-11-07): each graph's edge keys and seats are built once
+
+**What changed.** `RoadSystem._edgeEnds(g)` builds each graph object's edge list once. Every entry holds the endpoint
+keys, the directed and canonical pair keys, and the two site seats; it is cached on the graph. The four partner loops
+read it: `_warmPlanJobs`' census discovery, `_v2ClearPartners`, `_v2ShoveFor` and `_v2ConflictPairs`. Before, every
+pump paid two string-keyed `_nodePos` lookups and three key strings per graph edge per edge scanned. The check order
+inside each loop is unchanged. A graph is never mutated once built (PERF-26), and a site's seat is pure. A promoted id
+(FEAT-76, rev-dependent seat) is never seated there; it reads `_nodePos` as before.
+
+**Proof it is output-identical:**
+- `fingerprint-world`, main `cf7a93ff` vs the branch: ALL IDENTICAL, all six windows, every hash. The two JSON files
+  are byte-identical.
+- `network-worker-parity`: PASS.
+- Affected gates: 62/62 green. cdp-smoke is held for `--browser`; play-area is manual.
+
+**Measured** (`wip/perf-27/ab-warm.sh`, log `ab-warm-l1.log`). A = main `7b4fe34e` (L2+L3 included), B = the branch,
+built bundles, interleaved, load 4–6:
+
+| seed | cpu | story entry, A → B | region warm, A → B | cold → driving, A → B |
+|---|---|---|---|---|
+| 2623851183 | 1× | 10.23 → 8.79 s (−1.44) | 6.26 → 4.90 s | 14.68 → 13.36 s |
+| 3997014678 | 1× | 10.54 → 10.15 s (−0.39)\* | 6.44 → 6.06 s | 15.14 → 15.08 s |
+| 744309545 | 1× | 10.01 → 8.72 s (−1.29) | 6.41 → 5.20 s | 14.66 → 13.49 s |
+| 2623851183 | ×4 | 15.23 → 13.97 s (−1.26) | 6.80 → 5.64 s | 24.66 → 23.42 s |
+| 3997014678 | ×4 | 15.32 → 14.24 s (−1.08) | 6.90 → 5.79 s | 24.75 → 23.60 s |
+| 744309545 | ×4 | 15.43 → 13.81 s (−1.62) | 6.93 → 5.39 s | 24.92 → 23.23 s |
+
+\* Rerun twice: 10.41 → 9.20 s and 10.70 → 9.47 s (−1.21, −1.23). The first pair was noise.
+
+**About −1.1 to −1.6 s of story entry, against an estimate of 0.4–0.6 s.** The trace shows why (seed 2623851183,
+profiler on, `region-trace` + `wave-split`; the warm goes 7.22 → 5.69 s):
+- The 140–160 ms re-scan pumps are gone. The longest small pump is now 49 ms.
+- The same loops ran inside the serial bites, which the estimate did not count:
+  - `_v2SettleDeletions` (via `_v2ConflictPairs` / `_v2ShoveFor`): 448 → 283 ms.
+  - The plan-layer pins: 620 → 465 ms.
+  - The final build: 911 → 670 ms.
+- Pumps finish sooner, so the sub-waves merge: 13 waves become 9. The gaps go 4.61 → 2.78 s.
+
+**Where PERF-27 stands after L1 + L2 + L3.** Story entry at ×4 is ~15.4 s → ~14.0 s, and cold → driving at ×4 is
+~25.1 s → ~23.4 s. What is left:
+- The serial plan bites, ~2.2 s: pins, settle deletions, the build.
+- The longest single route jobs (700–800 ms each).
+- Neither is cheap.
 
 ### "Behind the menu" — PARKED (owner, 2026-11-06)
 
