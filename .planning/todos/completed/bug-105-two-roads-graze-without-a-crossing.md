@@ -1,7 +1,7 @@
 ---
 id: BUG-105
 type: bug
-status: open — the loop trim landed (bab775af); the overlap join (bug105-overlap (a)) built on land/bug-105-join, landing
+status: closed 2026-11-07 — fixed: Stage 1/2 (14c6feb6), the loop trim + crossings promoted (bab775af), the overlap join (89658b12)
 severity: major
 opened: 2026-11-03
 source: owner capture /Users/ledogen/Downloads/autos-capture-1793661257788.json (seed 163384989, free roam, mark
@@ -31,10 +31,10 @@ should have crossed at a registered crossing or should have kept clear.
 
 ## Acceptance
 
-- [ ] A census over enough seeds says how common it is (close pairs with no shared node and no registered crossing).
-- [ ] At this mark, the two runs either cross at a registered crossing or keep the FEAT-77 clearance.
-- [ ] The capture replays clean.
-- [ ] The fix keeps every world window-invariant (the invariance and restream gates stay green).
+- [x] A census over enough seeds says how common it is (close pairs with no shared node and no registered crossing).
+- [x] At this mark, the two runs either cross at a registered crossing or keep the FEAT-77 clearance.
+- [x] The capture replays clean.
+- [x] The fix keeps every world window-invariant (the invariance and restream gates stay green).
 
 ## Second capture of the class — /Users/ledogen/Downloads/autos-capture-1793661187695.json (2026-11-03)
 
@@ -837,3 +837,20 @@ Nothing is built until the owner answers.
   - Every other window has no join. The pass only reads the network until it commits, so those windows build
     as on main.
 - **Build cost:** median 2.2 ms a window, p95 17 ms, worst 48 ms; 0.017 % of road assembly.
+
+## Resolution (2026-11-07): closed on evidence
+
+The overlap join landed on main at 89658b12, as built above. With it, every acceptance line has its evidence:
+
+- **Census:** 240 windows, census 12 and census 13. 0 crossings without a junction. The join fires once, at the
+  owner's overlap site.
+- **Both captures, on main bb6bbe22**, judged with `wip/bug-105/touch-census.mjs --sites`:
+  - capture 1, seed 163384989 at (−12734, 14911): 0 touches, 0 crossings, 0 near-misses;
+  - capture 2, at (−8224, 6860): 0 touches, 0 crossings, 0 near-misses.
+- **Replays:** both captures exit 0 under `node test/replay.mjs`. The surface is identical across stream centres:
+  493 and 337 on-road points, grade Δ 0.000 m.
+- **Window invariance:** every affected gate is green at each landing (67/67 at the join). road-overlap-join pins the
+  joined runs under a 700 m window shift.
+- **Left open elsewhere, not here:** the 2323221349 two-legs-of-one-node case is BUG-104's frontier-band artefact,
+  closed with BUG-104.
+
