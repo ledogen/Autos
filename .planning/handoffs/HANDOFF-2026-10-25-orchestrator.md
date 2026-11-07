@@ -398,3 +398,53 @@ kill timed it out).
 - **11-08 ~02:40: BUG-138 landed 8df3e4e6 (smoke 26/26); Lane A batch 1 landed 83120ec5** (BUG-142 camp menu off on break; hunger ON + words stuffed/full/content/peckish/hungry by hours left 6/4/2/any [DEFAULT]; FEAT-169 closed; feat62 Larry's-van start already fixed by BUG-135 — measured; A's smoke 26/26 on the identical merged tree). Minted BUG-144/145 (B's BUG-137 scans). B: BUG-137 gates running (land/bug-137 75a7f925; fingerprint changes = carved surface near junction pads, expected), screenshot of BUG-138's clipped collars → Spare for the BUG-67 miter look. Page v186.
 - **11-08 ~03:10: FEAT-180 piece 4 landed 130305c8** (land/feat-180-p4 c6afe49e identical; my smoke on the merged tree 26/26 — A's batch 1 and p4 both touch main.js). Minted BUG-146 (drawn step where two legs' mouths touch; Spare after BUG-67). B: BUG-144 → (a) with a named gate exception; BUG-145 fixed (one 1.2 m duck cap, mesh == physics); land 137 → 145 → 144. BUG-140 cause found (60 Hz force lag pumps energy + tire-only damping on the stop, ζ≈0.13) → owner decide item once B sends lever (1)'s cost. Spare: BUG-141 built (23/100 → 0).
 - **11-08 ~03:25: owed bug140-drop added** (A in-frame body motion in the 4 suspension substeps < 0.05 ms est., B whole-physics 120/240 Hz +1.65/+5.0 ms — not rec., 2 tire damping ζ≈0.5 on the stop free; rec. A + 2; both re-pin fingerprint-physics + a feel drive). Physics baseline 1.65 ms/frame (Box3D 0.17). Page v188.
+
+## STATE AT THE OWNER'S OVERNIGHT CLEAR (2026-11-08 ~04:00 local) — read this first on "orchestrator"
+
+Owner: "sleeping soon. you get all the compute you want all night. lemme clear everyone". So: keep landing all night,
+but the lanes stay at ≤ 2 heavy processes each (that is what lets landing smokes run; ×10 load broke 3 smokes on 11-07).
+Landing smokes: `while [ "$(sysctl -n vm.loadavg | awk '{print int($3)}')" -gt 15 ]; do sleep 60; done; tools/chrome-slot.sh node test/cdp-smoke.mjs > <log>`
+in the background. NEVER merge into main while a smoke runs in this checkout (it serves these files).
+
+**Main = 9a07e268 + docs** (BUG-137 merged, smoke RUNNING at the clear: log
+/private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/68fd645d-5860-4597-a366-6081a4a2e6bc/scratchpad/smoke-bug137.log —
+read its last line; if PASS, BUG-137 is landed; if FAIL at a load-flake step, re-run it gated).
+
+**Approved, merge NEXT (together), then ONE gated smoke on the merge:**
+- Lane A batch 2: feature/run-shape c5dfa84f (BUG-134 ladder 4/7/9/11 + drop-to-fit, expedition rewards 2+3+4,
+  FEAT-187 halos, FEAT-184 worst-day stages 1–6). A's smoke predates BUG-137's road.js; that's why the combined smoke.
+- Lane B BUG-139: land/bug-139 d793185c (rock contact: ray-parity inside, depth ≤ 1.9r; 16 failsafe teleports → 0).
+After they land: add the owed item **feat184-look** to the page with A's [DEFAULT] list (below), update lane lines, publish.
+
+**In flight:** B — the 145+144 branch off main with the _throughDeckTop guard (`if (!prs?.length) continue`,
+`if (!n) return null`); then FEAT-34 round 2 (owner's lamp set + overlapping tach/speedo; the high beam was left off
+the owner's list — kept, ASKED), FEAT-185, FEAT-186, the hi-lift "catching your breath" live refresh.
+Spare — BUG-141 (free-roam seat, 23/100 → 0) to land; then BUG-67 miter (with B's BUG-138 collar shots), BUG-146;
+FEAT-180 p6 (shade fade) + p7 (clouds) WAIT for the owner's feat180-review answers. C — idle (all landed).
+
+**Owed to the owner (page v188, ~13):** side-slide-lever, bug140-drop (A + 2 rec.), feat180-review (the lighting page
+DxWoxDmsUvjoaQ8CxxCksm v2), asset82-83-relook, feat182-try, plus the older drive/make items. When an answer lands:
+relay verbatim to its lane, drop it from OWED, republish. Re-query `owed` and `inbox` with `where at >` the last read
+after every relay — answers arrive while you work.
+
+**A's [DEFAULT] list for feat184-look (exactly as built):**
+FEAT-184 the worst day — 1 refuel budget 4 km (station stop only if its detour home is ≤ 4 km; median detour 5.8 km,
+so 6/12 seeds get it; 8 km brings every seed in) · 2 low tank 1/8 (2.06 of 16.5 gal) when a station is in budget ·
+3 the flat is the front-left · 4 it lands halfway home (half the crow distance to mom's, measured at the drive home's
+start) · 5 the spare is flat too (the jalopy's own, or one granted flat for the evening, taken back on a skip) · 6 the
+tow is free on the evening (mom pays) but costs its hours, which makes the drive home night · 7 the shop's tire is paid
+at the normal price (the one real purchase) · 8 the headlights card after the tow, off the brake · 9 breakfast is the
+player's (her card asks you to eat a packed lunch, Tab); a skip still wakes fed · 10 "skip the tutorial" turns on by
+itself after the first finished or skipped tutorial; Settings turns it off · 11 a mid-evening skip puts back the tank,
+the flat, the flat spare · 12 all card words placeholders (key, gas, flat, damage, spare-flat, tow, shop, lights,
+breakfast).
+Expedition rewards — 13 a supply only for a line at A or S, while lines remain · 14 the meal goes to the signs line
+(the owner named a food line the requisition lacks) · 15 fuel → a full jerry can; gear → a plug kit; crew → one free
+repair at any auto shop (hours still pass); firewood → a full night's rest (energy full, no time) · 16 expedition grade
+= mean of the five (S4 A3 B2 C1 D0) ± 0.25/day vs the 12-day run, rounded (≥3.5 S, ≥2.5 A, ≥1.5 B, ≥0.5 C) · 17 best
+per seed in this browser only (localStorage), a record · 18 clean sweep = all five at A+, a mark only.
+Riding along — 19 hunger words: stuffed ≥6 h, full ≥4, content ≥2, peckish while any left, hungry past · 20 FEAT-187
+halo: the group's centre, radius 1.5 m past the farthest member, never under 3 m · 21 BUG-134: a round cut to fit
+keeps its rung's paper stock (one spare more).
+- **~04:15 update:** BUG-137 smoke PASS 26/26 → landed. Merged Lane A batch 2 (bd30ab95) + BUG-139 (2beb6da6); ONE gated smoke on the combination is RUNNING: log /private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/68fd645d-5860-4597-a366-6081a4a2e6bc/scratchpad/smoke-a2-139.log. If PASS: both landed → add owed feat184-look (A's [DEFAULT] list above), update lane lines (A batch 2, B BUG-137/139), publish. If FAIL: read the step; a load-flake step (freecam/tires/drive/edge/pad/endings) → re-run gated; a real failure → bisect by reverting one merge in a scratch worktree, never on main with a smoke running. B's 145+144 gates run overnight (logs /tmp/claude-501/b145-gates.log, b145-fw.log). Lanes done writing handoffs: A v75, B v69, C v27 (Spare pending at the time of writing).
+- **~04:20: ALL FOUR lanes' handoffs written** (A v75, B v69, C v27, Spare v88). **Next merge after the running smoke: Spare's BUG-141** land/bug-141 90091533 (free-roam seat: 31/100 seeds broke a rule → 0; story untouched; affected 73/73; Spare's smoke 26/26 on an older main → merge, then its own gated smoke).

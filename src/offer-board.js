@@ -379,7 +379,7 @@ export class OfferBoard {
     }
 
     /** FEAT-103: the requisition's lines, for the HUD and the win: [{ id, poiId, state }]. */
-    lines () { return this._lines.map(s => ({ id: s.line.id, poiId: s.poiId, state: s.state })) }
+    lines () { return this._lines.map(s => ({ id: s.line.id, poiId: s.poiId, state: s.state, grade: s.grade ?? null })) }
 
     /** Does this type have anything it could post — a source row and at least one built thing? */
     _postsAnything (type) { return postable(type).length > 0 }
@@ -571,7 +571,8 @@ export class OfferBoard {
     }
 
     /** A taken offer was finished — ANY settled result, D included. The slot locks (see header). */
-    complete (offerId, nowH) { return this._lock(offerId, nowH, 'done') }
+    /** `grade` (expedition-rewards): a requisition line's letter, kept on it for the win card. The save replays it. */
+    complete (offerId, nowH, grade = null) { return this._lock(offerId, nowH, 'done', grade) }
 
     /**
      * A taken offer was CANCELLED — the player phoned the customer (the cancel button is the only
@@ -585,11 +586,11 @@ export class OfferBoard {
      * locks (FEAT-103): it is delivered (`lineTo` 'done'), or back on the list unchanged ('live') with
      * its route memo dropped — the old mission object carries that job's settle and terms.
      */
-    _lock (offerId, nowH, lineTo) {
+    _lock (offerId, nowH, lineTo, grade = null) {
         this.advance(nowH)
         const s = this._takenSlot(offerId)
         if (!s) return false
-        if (s.line) { s.state = lineTo; s.offer.route = undefined }
+        if (s.line) { s.state = lineTo; s.offer.route = undefined; if (lineTo === 'done') s.grade = grade }
         else if (s.first) s.state = 'done'   // FEAT-147: posted once; mom has no SOURCES row to lock against
         else this._lockAt(s, this._now)
         return true

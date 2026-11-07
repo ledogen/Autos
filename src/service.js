@@ -69,6 +69,7 @@ export class ServiceCenter {
      *   tier()                     the price multiplier now (economySystem.tierNow)
      *   advanceHours(h)            labour on the clock (daySystem.advanceMinutes)
      *   stock() / unstock(i)       this shop's shelf now (src/shop-stock.js shelf / take)
+     *   freeRepairs() / useFreeRepair()   repairs owed for nothing (expedition-rewards); optional
      *   onChange()                 something changed; the screen re-renders
      */
     constructor (deps) {
@@ -82,10 +83,14 @@ export class ServiceCenter {
     /** Taking a part of class `cls` from `cond` to `target`: REPAIR_SETUP, then pro rata on the gap,
      *  × the day tier. `partId` prices the classes REPAIRS leaves to the part. `onTruck`: the
      *  mechanic has to get at it first. */
+    /** expedition-rewards option 2: the crew's line at A or better owes one repair — a bench repair at no charge while
+     *  one is held (the labour still goes on the clock). Deps `freeRepairs()` / `useFreeRepair()`, both optional. */
+    _free () { return (this.freeRepairs?.() ?? 0) > 0 }
+
     _quote (cls, partId, cond, target, onTruck) {
         const r = REPAIRS[cls], gap = Math.max(0, target - cond)
         const seized = cls === 'engine' && cond <= 0 ? SEIZED_REPAIR_X : 1   // FEAT-162
-        return { price: cents((REPAIR_SETUP.price + (r.price ?? PARTS[partId].price) * gap) * seized * this.tier()),
+        return { price: this._free() ? 0 : cents((REPAIR_SETUP.price + (r.price ?? PARTS[partId].price) * gap) * seized * this.tier()),
                  hours: (onTruck ? REPAIR_SETUP.hours : 0) + r.hours * gap }
     }
 
@@ -105,8 +110,9 @@ export class ServiceCenter {
      *  one or the wallet can't cover it. Alignment is never a corner on its own: align(). */
     repair (id, target = this.targets(id).at(-1)) {
         if (TRACKS[id].cls === 'alignment' || !this.targets(id).includes(target)) return false
-        const q = this.repairQuote(id, target)
+        const q = this.repairQuote(id, target), free = this._free()
         if (!this.spend(q.price)) return false
+        if (free) this.useFreeRepair()
         this.damage.set(id, target)
         this.advanceHours(q.hours)
         this.onChange()
@@ -168,8 +174,9 @@ export class ServiceCenter {
     repairOwned (index, target) {
         const r = this.ownedRepairRows().find(r => r.index === index)
         if (!r?.targets.includes(target)) return false
-        const q = this.ownedQuote(index, target)
+        const q = this.ownedQuote(index, target), free = this._free()
         if (!this.spend(q.price)) return false
+        if (free) this.useFreeRepair()
         this.inventory.amend(index, { cond: target })
         this.advanceHours(q.hours)
         this.onChange()
