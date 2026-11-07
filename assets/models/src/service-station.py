@@ -595,8 +595,8 @@ def registry():
     _, _, tcy = truck_box()
     look = (LIFT_A, CAM_LOOK_Z, -tcy)
     eye = (CAM_EYE[0], CAM_EYE[2], -CAM_EYE[1])
-    deck = f"{{ x: {f(LIFT_A)}, z: {f(-LIFT_Y)}, halfX: {f(hx)}, halfZ: {f(RUN_L / 2)} }},"
-    return lines, (f"park: {deck}\n    lift: {deck}",
+    # FEAT-178 triggers on `park` (Lane B, 2026-11-07): parked inside it = on bay A's lift
+    return lines, (f"park: {{ x: {f(LIFT_A)}, z: {f(-LIFT_Y)}, halfX: {f(hx)}, halfZ: {f(RUN_L / 2)} }},",
                    f"camera: {{ eye: [{', '.join(map(f, eye))}], look: [{', '.join(map(f, look))}], fov: {CAM_FOV} }},")
 
 
@@ -855,7 +855,7 @@ def build():
     ok_pad, front, worst = pad_check(ob)
     lo = [min(v.co[i] for v in ob.data.vertices) for i in range(3)]
     hi = [max(v.co[i] for v in ob.data.vertices) for i in range(3)]
-    boxes, (lift, camera) = registry()
+    boxes, (park, camera) = registry()
     clear = truck_check()
     ok_truck = all(min(v) > 0.3 if isinstance(v, tuple) else v > 0.3 for v in clear.values())
     print("=" * 72)
@@ -876,7 +876,7 @@ def build():
         print(ln)
     print("      ],")
     print(f"    seat: {SEAT},")
-    print(f"    {lift}")
+    print(f"    {park}")
     print(f"    {camera}")
     print("=" * 72)
     return ob, ok_pad and ok_truck and bad == 0 and mir == 0 and t <= TRI_BUDGET * 1.1

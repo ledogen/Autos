@@ -54,7 +54,7 @@ the cube on a lay-by, as the gas station and general store do now, and that defe
 - [x] Fits the 14 × 8 lay-by (the generator asserts it) and leaves an apron to turn in from the road.
 - [x] A Ranger parked on bay A's lift clears both walls, the bench and the door with margin.
 - [x] Review renders: from the road, a three-quarter view, and the FEAT-178 camera corner with the truck parked.
-- [x] `data/prop-models.js` entry with `collision.boxes`, `seat`, `lift`, `camera`. Roster wiring (`autoShop`
+- [x] `data/prop-models.js` entry with `collision.boxes`, `seat`, `park` (= the lift deck; `lift` dropped 2026-11-07, Lane B: FEAT-178 triggers on `park`), `camera`. Roster wiring (`autoShop`
       `model: 'serviceStation'`) is FEAT-178's, because `towSeat` and the keyless-marker gate change with it.
 
 ## Built (2026-11-07, feature/content 85abff04)
