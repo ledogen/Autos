@@ -82,7 +82,7 @@ await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sl
 check(!mapBefore && await mapShown(), `View tap opens the map (${mapBefore} -> ${await mapShown()})`)
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!await mapShown(), 'a second View tap closes it')
-// FEAT-133: on the map the cursor stays at the centre, the right stick pans, and LB / RB page offers as Q / E.
+// FEAT-133: on the map the cursor stays at the centre, the left stick pans (FEAT-175), and LB / RB page offers as Q / E.
 // The window spy registers before the map opens, so it sees keys ahead of the map's capture handler;
 // the document spy sits where vehicle.js listens, so a stopped Q / E never reaches the gearbox.
 await js(`window.__win = []; window.__doc = []
@@ -91,9 +91,11 @@ await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sl
 const mc = () => js('(() => { const m = __map2d(), s = m._sheet(); return { on: m._padCursor, x: m._hoverX, y: m._hoverY, cx: s.cx, cy: s.cy, x1: s.x1, px: m._panX } })()')
 let m = await mc()
 check(m.on && m.x === m.cx && m.y === m.cy, `pad cursor shows at the sheet centre (${m.on}, ${m.x?.toFixed(0)},${m.y?.toFixed(0)})`)
-await js('__fp.axes[2] = 1'); await sleep(300); await js('__fp.axes[2] = 0'); await sleep(100)
+await js('__fp.axes[0] = 1'); await sleep(300)
+const steerOnMap = (await vs()).steer
+await js('__fp.axes[0] = 0'); await sleep(100)
 const m2 = await mc()
-check(m2.x === m2.cx && m2.y === m2.cy && m2.px > m.px, `right stick pans the map under a fixed cursor (pan +${(m2.px - m.px).toFixed(0)} m)`)
+check(m2.x === m2.cx && m2.y === m2.cy && m2.px > m.px && Math.abs(steerOnMap) < 1e-3, `left stick pans the map under a fixed cursor and steers nothing (pan +${(m2.px - m.px).toFixed(0)} m, steer ${steerOnMap})`)
 await js('__win.length = 0; __doc.length = 0')   // drop the View tap's m
 await js('__fp.b[4] = 1'); await sleep(150); await js('__fp.b[4] = 0'); await sleep(150)
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(150)
@@ -101,25 +103,32 @@ await js('__fp.b[0] = 1'); await sleep(150); await js('__fp.b[0] = 0'); await sl
 const wk = await js('__win.join()'), dk = await js('__doc.join()')
 check(wk === 'q,e', `LB / RB send Q / E on the map, A is silent (window saw "${wk}")`)
 check(!/[qe]/.test(dk), `Q / E stop at the map, never reaching the gearbox (document saw "${dk}")`)
-// Triggers zoom about the cursor (RT in, LT out) and drive nothing; the camera does not orbit behind the map.
+// FEAT-175: the right stick's vertical zooms about the cursor (up in, down out); the triggers stay the pedals and
+// zoom nothing; the camera does not orbit behind the map.
 const zm = () => js('__map2d()._zoom'), camXZ = () => js('(() => { const p = __cam().position; return [p.x, p.z] })()')
 const z0 = await zm(), c0 = await camXZ()
-await js('__fp.b[7] = 1'); await sleep(400)
-const thrOnMap = (await vs()).thr
-await js('__fp.b[7] = 0'); await sleep(100)
+await js('__fp.axes[3] = -1'); await sleep(400); await js('__fp.axes[3] = 0'); await sleep(100)
 const z1 = await zm()
-await js('__fp.b[6] = 1'); await sleep(400); await js('__fp.b[6] = 0'); await sleep(100)
+await js('__fp.axes[3] = 1'); await sleep(400); await js('__fp.axes[3] = 0'); await sleep(100)
 const z2 = await zm()
-check(z1 > z0 * 1.5 && z2 < z1 / 1.5 && thrOnMap === 0, `RT zooms in, LT out, no throttle (${z0.toFixed(3)} → ${z1.toFixed(3)} → ${z2.toFixed(3)}, thr ${thrOnMap})`)
+check(z1 > z0 * 1.5 && z2 < z1 / 1.5, `right stick up zooms in, down out (${z0.toFixed(3)} → ${z1.toFixed(3)} → ${z2.toFixed(3)})`)
 await js('__fp.axes[2] = -1'); await sleep(600); await js('__fp.axes[2] = 0'); await sleep(100)
 const c1 = await camXZ()
 check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 0.5, `the right stick does not orbit the camera behind the map (moved ${Math.hypot(c1[0] - c0[0], c1[1] - c0[1]).toFixed(2)} m)`)
+// Last, as it moves the truck: RT drives on the map (the truck is reset after the map closes).
+await js('__fp.b[7] = 0.5'); await sleep(300)
+const thrOnMap = (await vs()).thr, z3 = await zm()
+await js('__fp.b[7] = 0'); await sleep(100)
+check(thrOnMap > 0 && z3 === z2, `RT is still the throttle on the map and zooms nothing (thr ${thrOnMap}, zoom ${z2.toFixed(3)} → ${z3.toFixed(3)})`)
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!await mapShown(), 'View closes the map again')
 // B is the general back (owner, 2026-10-20): it closes the map too.
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
 check(!await mapShown(), 'B closes the map')
+// The map's RT drove the truck off its brake (FEAT-175): View held resets it, parked at rest, as the checks below found it.
+await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)
+s = await vs(); check(s.parked && s.v < 0.2, `after the map, View held puts the truck back parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // Right stick = orbit RATE. Stopped, the view LINGERS where it was pointed (owner, 2026-10-20) until a
 // pedal is pressed; then the chase swings back behind.
 // Bearing of the camera around the truck, relative to directly behind it (deg).

@@ -38,18 +38,14 @@ export const STOCK_WEIGHT = {
     brakesRearRace:   1,
 
     // Springs, shocks, anti-roll bars, lift (owner, 2026-10-23)
-    springsFrontOEM:   4,
-    springsRearOEM:    4,
-    dampersFrontOEM:   4,
-    dampersRearOEM:    4,
-    springsFrontSport: 1,
-    springsRearSport:  1,
-    dampersFrontSport: 1,
-    dampersRearSport:  1,
-    springsFrontHD:    0.25,
-    springsRearHD:     0.25,
-    dampersFrontHD:    0.25,
-    dampersRearHD:     0.25,
+    // FEAT-176: one part per family now fits either axle; each weighs what its front and rear pair did together, so
+    // springs and shocks take the same share of a shelf as before, and every one of them fits.
+    springsOEM:   8,
+    dampersOEM:   8,
+    springsSport: 2,
+    dampersSport: 2,
+    springsHD:    0.5,
+    dampersHD:    0.5,
     arbFrontStock:     1,
     arbFrontSport:     0.25,
     arbRearSport:      0.25,

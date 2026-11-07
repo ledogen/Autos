@@ -49,15 +49,40 @@ the cube on a lay-by, as the gas station and general store do now, and that defe
 - `camera`: the inside back corner of bay A, as an eye point plus a look-at point (the parked truck's centre).
 
 ## Acceptance
-- [ ] `.glb` at `assets/models/service-station.glb`, flat-shaded, 0 inverted first-hits (ray-cast check).
-- [ ] Tri count reported per material and within budget; materials justified if more than 6.
-- [ ] Fits the 14 × 8 lay-by (the generator asserts it) and leaves an apron to turn in from the road.
-- [ ] A Ranger parked on bay A's lift clears both walls, the bench and the door with margin.
-- [ ] Review renders: from the road, a three-quarter view, and the FEAT-178 camera corner with the truck parked.
-- [ ] `data/prop-models.js` entry with `collision.boxes`, `seat`, `lift`, `camera`. Roster wiring (`autoShop`
+- [x] `.glb` at `assets/models/service-station.glb`, flat-shaded, 0 inverted first-hits (ray-cast check: 0 of 8453).
+- [x] Tri count reported per material and within budget (1558); materials justified if more than 6 (9: see Built).
+- [x] Fits the 14 × 8 lay-by (the generator asserts it) and leaves an apron to turn in from the road.
+- [x] A Ranger parked on bay A's lift clears both walls, the bench and the door with margin.
+- [x] Review renders: from the road, a three-quarter view, and the FEAT-178 camera corner with the truck parked.
+- [x] `data/prop-models.js` entry with `collision.boxes`, `seat`, `park` (= the lift deck; `lift` dropped 2026-11-07, Lane B: FEAT-178 triggers on `park`), `camera`. Roster wiring (`autoShop`
       `model: 'serviceStation'`) is FEAT-178's, because `towSeat` and the keyless-marker gate change with it.
 
-## Build plan (agreed with Lane B 2026-11-06, FEAT-178 on feature/machine 78d7f315) — not yet built
+## Built (2026-11-07, feature/content 85abff04)
+
+`assets/models/src/service-station.py` (straight into src/, not wip/: wip/ is git-invisible and a lane commits
+WIP at every step) → `assets/models/service-station.glb` (150 KB, one mesh, one 1024 × 256 PNG) + `.blend`.
+Headless: `Blender -b --python-exit-code 1 --python assets/models/src/service-station.py -- export render`;
+renders land in `wip/service-station/out/` (sheet.png: road, three-quarter, rear, the FEAT-178 camera, inside bay B).
+
+- **1558 tris**: ShopSteel 532, ShopDark 528, ShopYellow 176, ShopWall 120, ShopRed 106, ShopBlue 70, ShopConcrete 14,
+  ShopLight 8, ShopSign 2. Under the ~2500 budget. The interior carries the detail: the camera looks at it every visit.
+- **9 materials**, because each one is a role: wall, brand blue, dark, steel, slab, lift yellow, tool red, the
+  emissive strips, the sign atlas.
+- Pad check: nothing within 0.35 m of the ground is nearer the road than pad z −2.60. The worst point is 1.51 m past
+  the pad's rounded edge (the rim band is 1.6 m).
+- Ranger on lift A, CG on the lift centre, nose to +Z:
+  - 1.35 m from its nose to the bench, 0.95 m from its tail to the door line;
+  - 0.70 m to the tyre rack, 0.87 m to the console, 0.54 m to each jamb guard;
+  - 0.65 m of runway ahead of the front tyre and 0.36 m behind the rear tyre.
+- **Changes from the plan:**
+  - Track 1.43, wheelbase 2.85 and the CG from data/ranger.js and vehicle-models.js. So the camera's look point is
+    the truck's bbox centre, z −0.499, not −0.37.
+  - `camera.fov` 55 added.
+  - The office stack of tyres is a collider.
+  - No downspouts.
+- Lane B has the printed numbers, with the sign correction (2026-11-07).
+
+## Build plan (agreed with Lane B 2026-11-06, FEAT-178 on feature/machine 78d7f315)
 
 Generator goes in `wip/service-station/service-station.py`, cloned from `assets/models/src/burger-joint.py`
 (Part/face/solid/box/tile/relief; ray-cast facing check; headless `-b` export + render). The sign is a
