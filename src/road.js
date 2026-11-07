@@ -910,18 +910,27 @@ const RESOLVE_CELL       = 8    // m — cell size; must divide CHUNK_SIZE so a 
 // Acceptance-radius safety factor: every candidate _resolveRoadSurface can ACCEPT lies within
 // ~1.14 × footHW of the query (interior feet have dist == |lat| ≤ footHW; vertex-clamped feet on a
 // smooth polyline (PROTO_SAMPLE_DS 4 m at min radius ≥ 8 → per-vertex turn ≤ ~29°) satisfy
-// lat ≥ dist·cos 29°; run-END clamps are offEnd-gated at endHW < footHW; rival vertex clamps are
-// rejected by its own along<2 m gate). 1.2 covers the bound with margin.
+// lat ≥ dist·cos 29°; run-END clamps are offEnd-gated at endHW < footHW; self-pass rivals are
+// local minima within footHW, so inside the same ranges). 1.2 covers the bound with margin.
 const RESOLVE_ACC_SAFETY = 1.2
 const RESOLVE_CELL_CAP   = 384  // cells kept before the map is cleared (bounded, like carveHint)
 // FEAT-40 self-overlap crease blend: a winding run that passes ITSELF within the resolver
 // footprint (switchback wrapping a spur) makes the nearest-pass projection FLIP arcs at the
 // equidistant line — with tunnel-era deep earthwork (15–25 m cuts/fills) that flip is a 25 m
-// surface cliff the terrain grid renders as accordion pleats. The resolver therefore also
-// projects the winning run EXCLUDING ±RIVAL_ARC_SEP around the winning arc, and that far pass is
-// composed with the winner as earthwork (off-ribbon only; BUG-64 _carveCrossSectionBlended) so
-// the seam is a bank, not a teleport.
-const RIVAL_ARC_SEP    = 40   // m — min arc separation for a projection to count as a distinct pass
+// surface cliff the terrain grid renders as accordion pleats. The resolver therefore also takes
+// every OTHER pass of the winning run (each other local minimum of its distance, _runPassMinima;
+// BUG-130 replaced a ±40 m arc window that hid close switchback arms) and composes it with the winner
+// as earthwork (off-ribbon only; BUG-64 _carveCrossSectionBlended), so the seam is a bank, not a teleport.
+// BUG-130: a rival's carve is faded IN, so it is zero where it is gained or lost: by distance over the last
+// RIVAL_FADE_D before footHW, and (a pass of the winner's own run) by PROMINENCE over RIVAL_PROM_M, the rise of the
+// distance between it and the neighbouring minimum, so a pass born at a fold (two minima splitting) starts at 0.
+// At a FLIP the two passes are equidistant and must weigh the same (the winner is always whole), so a self pass
+// within RIVAL_TIE_M of the winner's distance is also whole, whatever its prominence: m = max(prominence, tie).
+const RIVAL_FADE_D     = 3     // m
+const RIVAL_PROM_M     = 2     // m
+const RIVAL_TIE_M      = 2.5     // m
+const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
+let _passD = new Float64Array(256), _passT = new Float64Array(256)   // _runPassMinima scratch (grown as needed)
 // FEAT-40 bore notch: inside a bore span the terrain SKIN (Y-less / above-apex probes) is not
 // simply raw — near each mouth the open cut's cross-section continues with its floor RISING at
 // this V:H slope per metre into the span, capped at raw. The mouth face is therefore a graded
@@ -7332,6 +7341,74 @@ export class RoadSystem {
     }
 
     /**
+     * BUG-130: every DISTINCT pass of one run near (wx,wz): each local minimum of the distance along its polyline (the
+     * clamped segment projection _projectOntoRun uses), with its PROMINENCE, how far the distance rises between it and
+     * the neighbouring minimum (Infinity where there is none within the scanned stretch). `cand` (a PERF-25 cell
+     * candidate) limits the scan to its segment ranges (anything outside them is beyond the cell's gate); null scans
+     * the whole run. Minima farther than maxD, or clamped past the run's ends (the ends logic owns those), are
+     * dropped. Each comes back shaped like a _projectOntoRun result (fx,fz,tx,tz,arcS,signedLat,d2,offEnd,sCL) plus
+     * d, prom and cum.
+     */
+    _runPassMinima(netEntry, cand, wx, wz, maxD, skipCum = -1) {
+        const pts = netEntry.points, N = pts ? pts.length : 0
+        const out = []
+        if (N < 2) return out
+        const ranged = !!cand && cand.pts === pts
+        const n = ranged ? cand.segIdx.length : N - 1
+        if (_passD.length < n) { _passD = new Float64Array(n * 2); _passT = new Float64Array(n * 2) }
+        const D = _passD, T = _passT, sg = ranged ? cand.seg : null, si = ranged ? cand.segIdx : null
+        // one pass: each segment's clamped-projection distance (the same maths as _projectOntoRun)
+        for (let k = 0; k < n; k++) {
+            let ax, az, ex, ez
+            if (ranged) { const o = k * 6; ax = sg[o]; az = sg[o + 1]; ex = sg[o + 2]; ez = sg[o + 3] }
+            else { ax = pts[k].x; az = pts[k].z; ex = pts[k + 1].x - ax; ez = pts[k + 1].z - az }
+            const l2 = ex * ex + ez * ez
+            let t = l2 > 1e-12 ? ((wx - ax) * ex + (wz - az) * ez) / l2 : 0
+            if (t < 0) t = 0; else if (t > 1) t = 1
+            const dx = wx - (ax + t * ex), dz = wz - (az + t * ez)
+            D[k] = Math.sqrt(dx * dx + dz * dz); T[k] = t
+        }
+        // local minima in arc order, with the peak distance since the previous minimum (Infinity across a gap in
+        // the ranges); a minimum's prominence is min(peak before it, peak after it) − its distance
+        let prevMin = -1, peak = Infinity, cntMin = 0
+        const arcOrigin = netEntry.arcOrigin ?? 0, clArc = netEntry.clArc
+        let cumFull = 0
+        for (let k = 0; k < n; k++) {
+            const i = ranged ? si[k] : k
+            const contig = k > 0 && (ranged ? si[k - 1] + 1 === i : true)
+            if (!contig) peak = Infinity
+            else if (D[k] > peak || peak === -Infinity) peak = D[k]
+            const left = contig ? D[k - 1] : Infinity
+            const right = k + 1 < n && (ranged ? si[k + 1] === i + 1 : true) ? D[k + 1] : Infinity
+            const isMin = left >= D[k] && right > D[k] && D[k] <= maxD && !((i === 0 && T[k] === 0) || (i === N - 2 && T[k] === 1))
+            if (!isMin) { if (D[k] > peak) peak = D[k]; continue }
+            // close the previous minimum's after-peak, open this one's before-peak
+            if (prevMin >= 0) out[out.length - 1].prom = Math.min(out[out.length - 1].prom, peak - out[out.length - 1].d)
+            const before = peak
+            let ax, az, ex, ez, len, cum
+            if (ranged) { const o = k * 6; ax = sg[o]; az = sg[o + 1]; ex = sg[o + 2]; ez = sg[o + 3]; len = sg[o + 4]; cum = sg[o + 5] }
+            else {
+                for (let jj = cntMin; jj < i; jj++) cumFull += Math.hypot(pts[jj + 1].x - pts[jj].x, pts[jj + 1].z - pts[jj].z)
+                cntMin = i
+                ax = pts[i].x; az = pts[i].z; ex = pts[i + 1].x - ax; ez = pts[i + 1].z - az; len = Math.sqrt(ex * ex + ez * ez) || 1e-8; cum = cumFull
+            }
+            const t = T[k], cumT = cum + t * len
+            out.push({ k, cumT, d: D[k], prom: before - D[k], ax, az, ex, ez, len, i, t })
+            prevMin = k; peak = -Infinity
+        }
+        // keep the non-winner minima, shaped like a _projectOntoRun result (the caller's rival frame refines it)
+        const res = []
+        for (const q of out) {
+            if (skipCum >= 0 && Math.abs(q.cumT - skipCum) < 1) continue
+            const fx = q.ax + q.t * q.ex, fz = q.az + q.t * q.ez, tx = q.ex / q.len, tz = q.ez / q.len
+            const sCL = clArc && q.i + 1 < clArc.length ? clArc[q.i] + (clArc[q.i + 1] - clArc[q.i]) * q.t : q.cumT
+            res.push({ fx, fz, tx, tz, arcS: q.cumT - arcOrigin, signedLat: (wx - fx) * tz - (wz - fz) * tx,
+                       d2: q.d * q.d, offEnd: false, sCL, d: q.d, prom: q.prom, cum: q.cumT })
+        }
+        return res
+    }
+
+    /**
      * PERF-25: windowed twin of _projectOntoRun — identical per-segment maths, but only the cached
      * segment-index ranges of one cell candidate are scanned, and any result farther than the cell's
      * proof gate (√gate2) is dropped. Whenever this returns non-null the result is BIT-IDENTICAL to
@@ -7792,8 +7869,8 @@ export class RoadSystem {
         const hit = this._refineFrame(ce, bestPr, wx, wz)
         if (hit) ({ fx, fz, tx, tz, arcS } = hit)
 
-        // FEAT-40 rival passes: every DISTINCT competing carve field — the winning run's own next-nearest
-        // pass (arc ≥ RIVAL_ARC_SEP away; self-overlap switchback), every other interior RUN, and every
+        // FEAT-40 rival passes: every DISTINCT competing carve field — the winning run's own other passes
+        // (self-overlap switchbacks, BUG-130), every other interior RUN, and every
         // run END in reach (BUG-64). Each keeps its projection AT this point plus its tangent frame, so
         // _carveCrossSectionBlended re-projects it LIVE (a hint reused for analyticNormal's ±0.5 m
         // offsets must still see each bank's true slope — the BUG-83 lesson); an end also keeps its
@@ -7809,23 +7886,27 @@ export class RoadSystem {
                 ? { runKey, arcS: f.arcS, lat: (wx - f.fx) * f.tz - (wz - f.fz) * f.tx, x0: wx, z0: wz, tx: f.tx, tz: f.tz, end: null }
                 : { runKey, arcS: q.arcS, lat: q.signedLat, x0: wx, z0: wz, tx: q.tx, tz: q.tz, end: end ? { x: q.fx, z: q.fz } : null }
         }
+        // BUG-130: EVERY other pass of the winner's own run (each other local minimum of its distance), not one
+        // projection outside a ±RIVAL_ARC_SEP arc window. The window hid a switchback's other arm (38.8 m of arc
+        // apart: a 9.4 m step where the resolver flipped) and showed a far one abruptly. Each rival is faded IN
+        // (rv.m): by distance before footHW, and a self pass by its prominence, so none is gained or lost as a step.
         if (ce && !bestPr.offEnd) {
-            // PERF-25: the rival pass rides the same cell windows (accepted rivals need d ≤ footHW,
-            // covered by the same proof; its own along<2 m gate rejects window-edge vertex clamps).
             const cc = cands ? cands.byKey.get(bestRunKey) : null
-            const pr2 = cc
-                ? this._projectOntoRunRanges(ce, cc, wx, wz, bestPr.arcS + (ce.arcOrigin ?? 0), RIVAL_ARC_SEP, cands.gate2)
-                : this._projectOntoRun(ce, wx, wz, bestPr.arcS + (ce.arcOrigin ?? 0), RIVAL_ARC_SEP)
-            if (pr2 && !pr2.offEnd) {
-                // Gate on true RADIAL distance, and reject clamped projections (the avoid window
-                // cuts the polyline mid-approach; a clamped vertex has a tiny perpendicular
-                // signedLat but a large along-offset — using it would fake a nearby deep pass).
-                const d2 = pr2.d2, latP = pr2.signedLat
-                if (d2 - latP * latP < 4 && d2 <= footHW * footHW) rivals.push(rivalOf(bestRunKey, pr2, false))
+            const bestCum = bestPr.arcS + (ce.arcOrigin ?? 0), dW = Math.sqrt(bestPr.d2)
+            for (const q of this._runPassMinima(ce, cc, wx, wz, footHW, bestCum)) {   // every pass but the winner's
+                const m = _rivalSmooth((footHW - q.d) / RIVAL_FADE_D)
+                    * Math.max(_rivalSmooth(q.prom / RIVAL_PROM_M), _rivalSmooth(1 - (q.d - dW) / RIVAL_TIE_M))
+                if (m > 0) { const rv = rivalOf(bestRunKey, q, false); rv.m = m; rivals.push(rv) }
             }
         }
-        for (const c of inter) if (c.pr !== bestPr) rivals.push(rivalOf(c.runKey, c.pr, false))
-        for (const c of ends) if (c.pr !== bestPr) rivals.push(rivalOf(c.runKey, c.pr, true))
+        for (const c of inter) if (c.pr !== bestPr) {
+            const m = _rivalSmooth((footHW - Math.abs(c.pr.signedLat)) / RIVAL_FADE_D)
+            if (m > 0) { const rv = rivalOf(c.runKey, c.pr, false); rv.m = m; rivals.push(rv) }
+        }
+        for (const c of ends) if (c.pr !== bestPr) {
+            const m = _rivalSmooth((footHW - Math.sqrt(c.pr.d2)) / RIVAL_FADE_D)
+            if (m > 0) { const rv = rivalOf(c.runKey, c.pr, true); rv.m = m; rivals.push(rv) }
+        }
 
         // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
         // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
@@ -10507,8 +10588,9 @@ export class RoadSystem {
                 !(queryY !== undefined && queryY < this.runProfile(arcS, rv.runKey, _CD_RP).gradeY + boreR)) continue
             const csR = this._carveCrossSection(lat, arcS, rv.runKey, 1, rawAmp, wx, wz)
             if (!csR) continue
-            const wR = csR.blendW
-            const dR = dB + (wR * (csR.gradeY - rawAmp) - dB) * fade
+            const m = rv.m ?? 1                                      // BUG-130: faded in where it is gained/lost
+            const wR = csR.blendW * m
+            const dR = dB + (csR.blendW * (csR.gradeY - rawAmp) - dB) * fade * m
             if (dR > fill) fill = dR
             if (dR < cut) cut = dR
             if (wR > w) w = wR
