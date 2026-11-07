@@ -2218,12 +2218,10 @@ export class RoadSystem {
             const own = []
             for (let i = 0; i <= n; i += 8) own.push(cl.pointAt(cl.length * i / n))
             const { minx, maxx, minz, maxz } = _xzBox(own)
-            for (const [q1, q2] of wide.edges) {
-                const qA = wide.key(q1), qB = wide.key(q2)
-                const qck = qA < qB ? qA + '|' + qB : qB + '|' + qA
+            for (const { q1, q2, ab, ck: qck, A, B } of this._edgeEnds(wide)) {
                 if (seen.has(qck)) continue
-                if (drop.has(qA + '|' + qB)) continue
-                const A2 = this._nodePos(q1), B2 = this._nodePos(q2)
+                if (drop.has(ab)) continue
+                const A2 = A ?? this._nodePos(q1), B2 = B ?? this._nodePos(q2)
                 { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
                 if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
                     || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
@@ -2761,6 +2759,21 @@ export class RoadSystem {
     // Node id → world position (a blue-noise site, or a FEAT-76 promoted T node). Every graph helper
     // reads here.
     _nodePos(id) { return this._siteAt(id) }
+
+    // PERF-27: a graph's edges with their endpoint keys and seats, built once per graph object. The warm re-scans every
+    // pump, and the partner loops (_warmPlanJobs' census discovery, _v2ClearPartners, _v2ShoveFor, _v2ConflictPairs)
+    // walk every graph edge per edge they scan — two string-keyed _nodePos site lookups and three key strings each
+    // time, ~30 % of a re-scan pump (2026-11-07 trace). A graph is never mutated once built (PERF-26) and a site's seat
+    // is pure, so the entries are what the loops computed. A promoted id (FEAT-76, its seat rev-dependent) is never
+    // seated here: its A/B is null and the loop reads _nodePos as before.
+    _edgeEnds(g) {
+        if (g._ends) return g._ends
+        const seat = (q) => _isPromotedId(q) ? null : this._nodePos(q)
+        return (g._ends = g.edges.map(([q1, q2]) => {
+            const a = g.key(q1), b = g.key(q2)
+            return { q1, q2, a, b, ab: a + '|' + b, ck: a < b ? a + '|' + b : b + '|' + a, A: seat(q1), B: seat(q2) }
+        }))
+    }
 
     // Build (or reuse) the Urquhart graph over the band [mx0,mx1]×[mz0,mz1] padded by roadGraphMargin
     // cells. Returns { edges:[[idA,idB]...], adj:Map(key→Set(key)), key(id) }. Interior edges are
@@ -3715,12 +3728,10 @@ export class RoadSystem {
             if (pk !== ck) partners.set(pk, [nk.split(',').map(Number), o.split(',').map(Number)])
         }
         const { minx, maxx, minz, maxz } = _xzBox(S.pts)
-        for (const [q1, q2] of g.edges) {
-            const a = g.key(q1), b = g.key(q2)
+        for (const { q1, q2, a, b, ck: pk, A: sA, B: sB } of this._edgeEnds(g)) {
             if (a === kA || a === kB || b === kA || b === kB || dropped(a, b)) continue
-            const pk = a < b ? a + '|' + b : b + '|' + a
             if (partners.has(pk)) continue
-            const A = this._nodePos(q1), B = this._nodePos(q2)
+            const A = sA ?? this._nodePos(q1), B = sB ?? this._nodePos(q2)
             if (Math.max(A.x, B.x) + CHORD < minx || Math.min(A.x, B.x) - CHORD > maxx || Math.max(A.z, B.z) + CHORD < minz || Math.min(A.z, B.z) - CHORD > maxz) continue
             let d = Infinity
             for (let i = 0; i < S.pts.length && d > CHORD; i += 4) d = Math.min(d, _segSegDistXZ(S.pts[i], S.pts[i], A, B))
@@ -4296,12 +4307,10 @@ export class RoadSystem {
         const spell = this._v2EdgeSpellings(g)
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         let bestSpec = null, bestRegion = -1, bestKey = ''
-        for (const [q1, q2] of wide.edges) {
-            const qA = wide.key(q1), qB = wide.key(q2)
+        for (const { q1, q2, a: qA, b: qB, ab, ck: qck, A, B } of this._edgeEnds(wide)) {
             if (qA === kA || qA === kB || qB === kA || qB === kB) continue   // per-node planner's business
-            if (drop.has(qA + '|' + qB)) continue
-            const qck = qA < qB ? qA + '|' + qB : qB + '|' + qA
-            const A2 = this._nodePos(q1), B2 = this._nodePos(q2)
+            if (drop.has(ab)) continue
+            const A2 = A ?? this._nodePos(q1), B2 = B ?? this._nodePos(q2)
             { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
             if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
                 || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue
@@ -4366,12 +4375,10 @@ export class RoadSystem {
         const { minx, maxx, minz, maxz } = _xzBox(own.pts)
         const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
         const out = []
-        for (const [q1, q2] of wide.edges) {
-            const qA = wide.key(q1), qB = wide.key(q2)
-            const qck = qA < qB ? qA + '|' + qB : qB + '|' + qA
+        for (const { q1, q2, a: qA, b: qB, ab, ck: qck, A, B } of this._edgeEnds(wide)) {
             if (qck === ck) continue
-            if (drop.has(qA + '|' + qB)) continue
-            const A2 = this._nodePos(q1), B2 = this._nodePos(q2)
+            if (drop.has(ab)) continue
+            const A2 = A ?? this._nodePos(q1), B2 = B ?? this._nodePos(q2)
             { const ex = A2.x - B2.x, ez = A2.z - B2.z; if (ex * ex + ez * ez <= _mband2) continue }
             if (Math.max(A2.x, B2.x) < minx - CHORD || Math.min(A2.x, B2.x) > maxx + CHORD
                 || Math.max(A2.z, B2.z) < minz - CHORD || Math.min(A2.z, B2.z) > maxz + CHORD) continue

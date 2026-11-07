@@ -605,6 +605,50 @@ runs interleaved, load ~4:
   settle +0.3–0.45 s). The issue frame (0.37 s at ×4) now runs on the very next frame, and the harness's 50 ms phase
   poll cannot see 'warming' until that frame ends. The boundary moved; the work did not grow.
 
+#### L1 BUILT (`land/perf-27-rescan`, 2026-11-07): each graph's edge keys and seats are built once
+
+**What changed.** `RoadSystem._edgeEnds(g)` builds each graph object's edge list once. Every entry holds the endpoint
+keys, the directed and canonical pair keys, and the two site seats; it is cached on the graph. The four partner loops
+read it: `_warmPlanJobs`' census discovery, `_v2ClearPartners`, `_v2ShoveFor` and `_v2ConflictPairs`. Before, every
+pump paid two string-keyed `_nodePos` lookups and three key strings per graph edge per edge scanned. The check order
+inside each loop is unchanged. A graph is never mutated once built (PERF-26), and a site's seat is pure. A promoted id
+(FEAT-76, rev-dependent seat) is never seated there; it reads `_nodePos` as before.
+
+**Proof it is output-identical:**
+- `fingerprint-world`, main `cf7a93ff` vs the branch: ALL IDENTICAL, all six windows, every hash. The two JSON files
+  are byte-identical.
+- `network-worker-parity`: PASS.
+- Affected gates: 62/62 green. cdp-smoke is held for `--browser`; play-area is manual.
+
+**Measured** (`wip/perf-27/ab-warm.sh`, log `ab-warm-l1.log`). A = main `7b4fe34e` (L2+L3 included), B = the branch,
+built bundles, interleaved, load 4–6:
+
+| seed | cpu | story entry, A → B | region warm, A → B | cold → driving, A → B |
+|---|---|---|---|---|
+| 2623851183 | 1× | 10.23 → 8.79 s (−1.44) | 6.26 → 4.90 s | 14.68 → 13.36 s |
+| 3997014678 | 1× | 10.54 → 10.15 s (−0.39)\* | 6.44 → 6.06 s | 15.14 → 15.08 s |
+| 744309545 | 1× | 10.01 → 8.72 s (−1.29) | 6.41 → 5.20 s | 14.66 → 13.49 s |
+| 2623851183 | ×4 | 15.23 → 13.97 s (−1.26) | 6.80 → 5.64 s | 24.66 → 23.42 s |
+| 3997014678 | ×4 | 15.32 → 14.24 s (−1.08) | 6.90 → 5.79 s | 24.75 → 23.60 s |
+| 744309545 | ×4 | 15.43 → 13.81 s (−1.62) | 6.93 → 5.39 s | 24.92 → 23.23 s |
+
+\* Rerun twice: 10.41 → 9.20 s and 10.70 → 9.47 s (−1.21, −1.23). The first pair was noise.
+
+**About −1.1 to −1.6 s of story entry, against an estimate of 0.4–0.6 s.** The trace shows why (seed 2623851183,
+profiler on, `region-trace` + `wave-split`; the warm goes 7.22 → 5.69 s):
+- The 140–160 ms re-scan pumps are gone. The longest small pump is now 49 ms.
+- The same loops ran inside the serial bites, which the estimate did not count:
+  - `_v2SettleDeletions` (via `_v2ConflictPairs` / `_v2ShoveFor`): 448 → 283 ms.
+  - The plan-layer pins: 620 → 465 ms.
+  - The final build: 911 → 670 ms.
+- Pumps finish sooner, so the sub-waves merge: 13 waves become 9. The gaps go 4.61 → 2.78 s.
+
+**Where PERF-27 stands after L1 + L2 + L3.** Story entry at ×4 is ~15.4 s → ~14.0 s, and cold → driving at ×4 is
+~25.1 s → ~23.4 s. What is left:
+- The serial plan bites, ~2.2 s: pins, settle deletions, the build.
+- The longest single route jobs (700–800 ms each).
+- Neither is cheap.
+
 ### "Behind the menu" — PARKED (owner, 2026-11-06)
 
 Owner, verbatim (perf27-menu, "not now"): "not now. but record the findings we could add this later."
