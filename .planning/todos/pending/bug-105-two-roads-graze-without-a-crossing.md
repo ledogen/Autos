@@ -689,9 +689,33 @@ leave these loops. When the rule holds:
 - `npm run test:all`: 133 of 133 gates green.
 - `node test/cdp-smoke.mjs`: PASS, 25 steps, zero console errors.
 
+**The cost (2026-11-07, main `21d048cf` merged at `f2d6ccaa`):**
+- **Interleaved A/B is useless here.** It ran 3 rounds × 3 random seeds (`wip/bug-105/loops/ab2-21d048cf.log`), main and
+  the branch alternating. The load average was 8 to 77 while the other lanes smoked, and the pairs swung from −32 % to
+  +84 %.
+- **Measured as a share of the same run instead** (`wip/bug-105/loops/split-trim.mjs`, QUAL-35's method): the time
+  inside `_v2LoopTrim`, less any routing nested in it, over the network thread (the build less routing). Load cancels in
+  the ratio.
+
+  | seeds | the loop trim's share of the network thread |
+  |---|---|
+  | random, no trim (3997014678, 2623851183) | 0.11 – 0.16 % |
+  | the four trim windows | 0.6 – 1.5 % |
+
+  The budget is 5 %.
+- **The scan made cheaper** (`b9a2bd74`). Every degree-2 site used to scan both whole legs: 4 m samples, about
+  140 k segment pairs at 1.5 km legs. Now it scans their first 400 m first, because a crossing that closes a loop
+  within the cap must lie there. The full scan, which declines the trim when a crossing past the cap exists, runs only
+  where a near crossing was found. The answer is the same: `road-loop-trim` PASS with the same four bends, and the
+  A/B's network hashes are identical across both versions. On the same yardstick the old scan was 0.14 – 1.76 %, so it
+  was already inside budget; this is margin.
+
+**Smoke on the lane head** (`b9a2bd74`): 24 of 25. The `pad` step failed with "parking at the giver opened no offer
+card", the brake race under load (ceilings ×5.1). The pad step alone then passed (25 steps, zero console errors). A
+full rerun on a quiet box is owed.
+
 **Owed:**
-- The network-thread A/B on random seeds (`wip/bug-105/loops/ab-loop.sh`, main vs the branch), interrupted by the owner's
-  park.
-- The owner's look at the before/after page (`wip/bug-105/loops/sheet/page/`, built, not yet published), including the
-  two sharp bends.
+- The owner's answer on the page https://claude.ai/artifact/C4jUxhQbgiwyHwor2aq1Ho, tracker item `bug105-trim`: the
+  400 m cut-off, and the two sharp bends.
+- The full smoke on a quiet box.
 - The landing.
