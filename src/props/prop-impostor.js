@@ -370,11 +370,12 @@ export class PropImpostors {
           // smoothstep cone, the physical distance falloff with its cutoff window, the beam cookie through the spot's
           // own projection, Lambert against the rebuilt normal.
           for (int i = 0; i < 2; i++) {
+            if (dot(uHeadC[i], uHeadC[i]) == 0.0) continue;   // lamps off: a uniform branch, the whole draw skips it
             vec3 lv = uHeadPos[i] - vWorld;
             float dist = length(lv);
             vec3 L = lv / max(dist, 1e-4);
             float cone = smoothstep(uHeadCone[i].x, uHeadCone[i].y, dot(L, uHeadDir[i]));
-            if (cone <= 0.0 || dot(uHeadC[i], uHeadC[i]) == 0.0) continue;
+            if (cone <= 0.0) continue;
             float fall = 1.0 / max(pow(dist, uHeadRange[i].y), 0.01);
             if (uHeadRange[i].x > 0.0) { float r = dist / uHeadRange[i].x; float w = clamp(1.0 - r * r * r * r, 0.0, 1.0); fall *= w * w; }
             vec4 sc = uHeadMat[i] * vec4(vWorld, 1.0);
