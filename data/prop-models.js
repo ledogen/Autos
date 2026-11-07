@@ -827,6 +827,52 @@ export const PROP_MODELS = {
     camera: { eye: [-5.9, 2.8, 3.6], look: [-3.95, 0.9, -0.499], fov: 55 },
   },
 
+  // ASSET-83 — the CONSTRUCTION SITE, 1548 tris, 9 materials, no images. The workSite POI ("the {last}
+  // job site"). A small concrete-block building half built on a fresh 8 x 5 m slab: the back corner at
+  // full height (with a window) and racked leads stepping down both walls, the front and +X walls a few
+  // courses up with rebar standing out. The site is built from its own freight (cinder-block and
+  // bagged-concrete pallets wait at the -X end by a red mixer), with frame scaffold inside, and
+  // lumber, a portable toilet and a wheelbarrow at the +X end. Nothing on it is orange: the cube it
+  // replaces is. Built by assets/models/src/construction-site.py, which prints every number below.
+  //
+  // On a 14 x 8 LAY-BY. seat 2.7: the slab's back edge stands 1.2 m past the pad's far edge, inside the
+  // 1.6 m band the carve grades flat (PAD_RIM_HOLD). Nothing touching the ground is nearer the road than
+  // pad z -1.64 (the lay-by is flat from -2.6).
+  //   park: one truck alongside the road on the open ground in front of the slab (pad z -3.4..-0.4),
+  //   0.9 m clear of the front wall and every piece of kit.
+  //
+  // COLLISION per part, so the yard is drivable. The racked leads are a few steps of boxes, each to
+  // the tallest course over it. The slab edge (0.15 m), the scaffold (inside the walls) and the
+  // wheelbarrow are not colliders.
+  constructionSite: {
+    url: 'assets/models/construction-site.glb',
+    collision: {
+      shape: 'box', size: [8, 2.95, 5],
+      boxes: [
+        { c: [-1.4, 1.475, 2.1], s: [4.6, 2.95, 0.2] },     // back wall
+        { c: [1.2, 1.175, 2.1], s: [0.6, 2.35, 0.2] },      // back wall
+        { c: [1.8, 0.875, 2.1], s: [0.6, 1.75, 0.2] },      // back wall
+        { c: [2.5, 0.575, 2.1], s: [0.8, 1.15, 0.2] },      // back wall
+        { c: [3, 0.175, 2.1], s: [0.2, 0.35, 0.2] },        // back wall
+        { c: [-3.6, 1.475, 1], s: [0.2, 2.95, 2] },         // left wall
+        { c: [-3.6, 1.175, -0.3], s: [0.2, 2.35, 0.6] },    // left wall
+        { c: [-3.6, 0.875, -0.9], s: [0.2, 1.75, 0.6] },    // left wall
+        { c: [-3.6, 0.575, -1.6], s: [0.2, 1.15, 0.8] },    // left wall
+        { c: [-2.075, 0.375, -2.1], s: [3.25, 0.75, 0.2] }, // front wall
+        { c: [2.075, 0.375, -2.1], s: [3.25, 0.75, 0.2] },  // front wall
+        { c: [3.6, 0.275, 0], s: [0.2, 0.55, 4] },          // right wall
+        { c: [-6, 0.47, -0.4], s: [1.2, 0.94, 1] },         // block pallet A
+        { c: [-6, 0.47, 1], s: [1.2, 0.94, 1] },            // block pallet B
+        { c: [-4.75, 0.2, 1], s: [1.2, 0.4, 1] },           // bag pallet
+        { c: [-5.35, 0.7, -2.625], s: [1.24, 1.4, 2.05] },  // mixer
+        { c: [6.25, 1.175, -3], s: [1.18, 2.35, 1.18] },    // toilet
+        { c: [5.05, 0.33, -0.4], s: [1, 0.66, 3.6] },       // lumber
+      ],
+    },
+    seat: 2.7,
+    park: { x: 0, z: -4.6, halfX: 3.2, halfZ: 1.5 },
+  },
+
   // ASSET-13 — the GAS STATION, 1482 tris, 7 materials, one 1024x512 atlas (FOOD MART, GAS x3, ICE,
   // PROPANE, the pump register face). The station IS the convenience store (FEAT-123, owner 2026-10-16).
   // Layout by the owner (2026-10-19): the store at the back, ONE island right in front of its doors with
