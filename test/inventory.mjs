@@ -10,6 +10,8 @@
 //   6. Backpacks (items.md §2c): packed camp gear frees its truck slot but keeps its mass; a full
 //      pack refuses; only camp gear packs; the equipped pack keeps a bed (swap, never remove);
 //      equipping a spare moves the bed across; the equipped pack and a loaded pack can't be dropped.
+//      6c. The bigger packs (FEAT-182): each has slots and a reach; the Frame pack takes a whole camp and refuses
+//      one more; camp's tether follows the equipped pack, capped at 120 m (src/camp.js reachM).
 //   7. Catalog: every REWARDS id but a dineIn meal is an ITEMS id (the grant path can't miss), and no desc carries a
 //      digit (SM-INV-10 — described, never scored).
 //
@@ -17,6 +19,7 @@
 import { InventorySystem, runInventory } from '../src/inventory.js'
 import { ITEMS } from '../data/items.js'
 import { REWARD_LIST } from '../src/offer-board.js'
+import { CampSystem, CAMP_PARAMS } from '../src/camp.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -136,6 +139,31 @@ check('bedroll + blanket = +5%, and the starter Pack is full: no room for a pad'
 inv.unpackItem(inv.equippedIndex(), inv.packed().indexOf('blanket')); inv.packItem(at6('deluxeSleepingPad'))
 check('the deluxe pad goes UNDER the bedroll: +15%, the bedroll stays packed', Math.abs(inv.restBonus() - 0.15) < 1e-9
   && inv.packed().join() === 'bedroll,deluxeSleepingPad', `${inv.restBonus()} ${inv.packed()}`)
+
+// ── 6c. The bigger packs (FEAT-182) ─────────────────────────────────────────────────────────────
+const PACKS = Object.keys(ITEMS).filter(id => ITEMS[id].kind === 'pack')
+check('five packs, each with slots and a reach', PACKS.length === 5
+  && PACKS.every(id => ITEMS[id].packSlots >= 2 && ITEMS[id].reachM > 0), PACKS.join())
+inv.start()
+const camp = new CampSystem({ getParams: () => ({}), getReachM: () => inv.reachM() })
+check('the starter Pack sets the tether to its reach', camp.reachM() === ITEMS.pack.reachM
+  && camp.tetherM() === 5 + 2.5 + ITEMS.pack.reachM, String(camp.tetherM()))
+const WHOLE = ['sleepingPad', 'blanket', 'tent', 'awning', 'cookingKit']   // with the bedroll: every camp slot
+inv.grant('framePack')
+for (const id of WHOLE) inv.grant(id)
+check('equipping the Frame pack brings the bedroll across', inv.equip(at6('framePack')) === true
+  && inv.packed().join() === 'bedroll')
+for (const id of WHOLE) inv.packItem(at6(id))
+inv.grant('shadeTarp')
+check(`the Frame pack takes a whole camp (${ITEMS.framePack.packSlots}) and refuses one more`,
+  inv.packed().length === ITEMS.framePack.packSlots && inv.packed().join() === ['bedroll', ...WHOLE].join()
+  && inv.packItem(at6('shadeTarp')) === false, inv.packed().join())
+check('the tether follows the equipped pack', camp.reachM() === ITEMS.framePack.reachM, String(camp.reachM()))
+const far = ITEMS.framePack.reachM
+ITEMS.framePack.reachM = 500
+check('no pack reaches past 120 m', camp.reachM() === 120, String(camp.reachM()))
+ITEMS.framePack.reachM = far
+check('with no pack to ask (headless), the param', new CampSystem({}).reachM() === CAMP_PARAMS.campRoadEdgeM)
 
 // ── 7. Catalog ────────────────────────────────────────────────────────────────────────────────
 const missing = REWARD_LIST.filter(r => !r.dineIn && !ITEMS[r.id]).map(r => r.id)

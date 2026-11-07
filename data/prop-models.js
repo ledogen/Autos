@@ -1316,6 +1316,10 @@ export const PROP_MODELS = {
   jerryCan: { url: 'assets/models/item-jerry-can.glb', collision: { shape: 'hull-from-mesh', size: [0.38, 0.61, 0.28] } },   // 1104 tris
   quickJack: { url: 'assets/models/item-quick-jack.glb', collision: { shape: 'hull-from-mesh', size: [0.97, 0.51, 0.65] } },   // 856 tris
   pack: { url: 'assets/models/item-pack.glb', collision: { shape: 'hull-from-mesh', size: [0.28, 0.40, 0.18] } },   // 802 tris
+  daypack: { url: 'assets/models/item-daypack.glb', collision: { shape: 'hull-from-mesh', size: [0.29, 0.47, 0.19] } },   // 422 tris (FEAT-182)
+  duffel: { url: 'assets/models/item-duffel.glb', collision: { shape: 'hull-from-mesh', size: [0.72, 0.40, 0.34] } },   // 556 tris (FEAT-182)
+  rucksack: { url: 'assets/models/item-rucksack.glb', collision: { shape: 'hull-from-mesh', size: [0.36, 0.49, 0.26] } },   // 1204 tris (FEAT-182)
+  framePack: { url: 'assets/models/item-frame-pack.glb', collision: { shape: 'hull-from-mesh', size: [0.44, 0.48, 0.85] } },   // 664 tris (FEAT-182), on its back
   springs: { url: 'assets/models/item-springs.glb', collision: { shape: 'hull-from-mesh', size: [0.15, 0.30, 0.15] } },   // 872 tris
   dampers: { url: 'assets/models/item-dampers.glb', collision: { shape: 'hull-from-mesh', size: [0.13, 0.06, 0.52] } },   // 1310 tris
   pads: { url: 'assets/models/item-pads.glb', collision: { shape: 'hull-from-mesh', size: [0.15, 0.02, 0.14] } },   // 704 tris
