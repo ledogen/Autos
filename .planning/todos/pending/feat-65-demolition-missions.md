@@ -22,6 +22,8 @@ lane: A
 
 # FEAT-65: Demolition missions — "destroy all the props"
 
+**Waiting on the owner (2026-11-07):** a drive of the per-hit window (`hitWindowS`, 40 s `[DEFAULT]`) and the GPS sequencing, then the number; the words. Built and on main (slice 1 feff5a7d, slice 2 cb5dcf84, the window 7006140f).
+
 > **2026-11-01: the rulings below are made and the slice-1 plan is APPROVED** — see
 > § "Approved plan — slice 1 (owner, 2026-11-01)" at the end. Where it and the August text above it
 > disagree (the pad, gradeRun(ratio ÷ coverage), mailboxes), the approved plan wins.

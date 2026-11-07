@@ -143,7 +143,11 @@ async function soakSeed (seed, replay = null) {
     idx = i
     const a = router.path[i], b = router.path[Math.min(i + 3, router.path.length - 1)]
     const h = Math.atan2(-(b.x - a.x), -(b.z - a.z))
-    restore(vs, snapshot(freshState(P, a.x, ground(a.x, a.z, 1e4) + 1.0, a.z, h)))
+    // On the road's own top: a path point is on the ribbon, and in a bore the analytic ground "from above" is the hill
+    // 50+ m over the tube — a re-seat there put the truck on the hilltop to follow the tunnel's line across raw slope
+    // (seed 24316861: 235 kN, impulses of ~10⁶). sampleRoadTopY is the tunnel floor there and the asphalt everywhere else.
+    const top = w.road.sampleRoadTopY(a.x, a.z)
+    restore(vs, snapshot(freshState(P, a.x, (top ?? ground(a.x, a.z, 1e4)) + 1.0, a.z, h)))
     w.stream(a.x, a.z)
     inputs = []; snap = snapshot(vs); snapT = 0
   }
@@ -188,7 +192,11 @@ async function soakSeed (seed, replay = null) {
         }
       }
       if (!offroad) {
-        const L = Math.max(6, 0.9 * v)
+        // In a bore (or within 20 m of a portal; a negative inset grows the span) the walls stand ~8 m off the centreline
+        // and the arch leans in, so a truck whose outer wheels pass ~7 m touches it (BUG-126's ruling). The pursuit cuts
+        // curves by about its look-ahead: there it looks nearer and drives no faster than 10 m/s.
+        const nrB = w.road.queryNearest(p.x, p.z, 15), inBore = !!nrB && !!w.road.tunnelSpanAt(nrB.runKey ?? '', nrB.arcS ?? 0, -20)
+        const L = inBore ? Math.max(4, 0.6 * v) : Math.max(6, 0.9 * v)
         let j = idx, acc = 0
         while (j < router.path.length - 1 && acc < L && !router.path[j + 1].jump) { acc += Math.hypot(router.path[j + 1].x - router.path[j].x, router.path[j + 1].z - router.path[j].z); j++ }
         target = router.path[j]
@@ -210,8 +218,11 @@ async function soakSeed (seed, replay = null) {
           if (cross > 1e-6) vPlan = Math.min(vPlan, Math.sqrt(A_LAT * ab * bc * ca / (2 * cross) + 2 * A_BRAKE * Bp.s))
         }
         const rMin = vPlan * vPlan / A_LAT
-        vT = Math.min(V_MAX, Math.sqrt(A_LAT * rMin))
-        if (dist + offDist > nextOff) {   // an off-road leg: 120–200 m out to one side, over whatever is there
+        vT = Math.min(inBore ? 10 : V_MAX, Math.sqrt(A_LAT * rMin))
+        // BUG-126 (closed, not a game bug): inside a bore the leg's point 120–200 m to the side is behind the lining, so the
+        // truck drove into the wall and sat pinned until the leg timed out. No leg in a bore or near a portal (inBore,
+        // above): it waits, re-checked every step, until the truck is out.
+        if (dist + offDist > nextOff && !inBore) {   // an off-road leg: 120–200 m out to one side, over whatever is there
           nextOff += OFFROAD_EVERY_KM * 1000
           const fx = -Math.sin(Math.atan2(-(target.x - p.x), -(target.z - p.z))), side = rng() < 0.5 ? -1 : 1, d = 120 + rng() * 80
           const hx = target.x - p.x, hz = target.z - p.z, hl = Math.hypot(hx, hz) || 1

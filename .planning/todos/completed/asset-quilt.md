@@ -1,7 +1,7 @@
 ---
 id: ASSET-81
 type: asset
-status: open
+status: closed
 severity: minor
 opened: 2026-11-05
 source: owner, 2026-11-05 — "blanket (blanket, quilt)… blanket < quilt"
@@ -36,3 +36,7 @@ warmer, heavier, patterned piece. The pattern is carried as geometry or flat-col
 stitched seams — the pattern is faces and geometry. Built flat, the blanket's frame (origin the bed's centre at
 its underside), 1.10 × 0.56 m, 32 mm folded; FEAT-171's drape hangs it. **1 676 tris** — over the ~1000–1400
 budget by the fold's own profile; drop to 0.15 m patches if the owner wants it inside.
+
+## Resolution — Lane A, 2026-11-07 (close-on-evidence sweep)
+
+Shipped: `assets/models/quilt.glb` and its thumbnail (aac0a2ae, on main 7006140f). An asset ticket closes when its .glb ships (owner, 2026-08-24); the owner's look is FEAT-171's round 3, "land it". The 1676 tris stand: the owner's FEAT-171 looks passed the quilt as built, and the 0.15 m-patch option is still in Built above if wanted.

@@ -1593,8 +1593,7 @@ export class TerrainSystem {
                 // cliff-y run-vs-run surface at a sharp kink) and feathers back to the run grade at its toe.
                 const co = this._roadSystem._connectorCarve(wx, wz, rawH)
                 if (co) {
-                    const domGrade = cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY
-                    cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: domGrade }
+                    cs = this._roadSystem._withConnector(cs, co)   // BUG-129: one composition, shared with physics
                 }
                 // FEAT-46 POI lay-by bench — the SAME dominance composition _sampleCarveWorld uses, so
                 // mesh == collision on the pullout by construction. latDist gates it out of the road's

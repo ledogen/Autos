@@ -925,6 +925,7 @@ export class MissionSystem {
         // distance, so the route never drives past the POI and doubles back to it. (The path to the
         // nearer node cannot pass through the farther one: that node would then be nearer.)
         let destPoi = null
+        let direct = false   // BUG-125: destPoi is on the giver's own edge, driven straight along it
         if (anchor) {
             const ka = g.key(anchor.aId), kb = g.key(anchor.bId)
             const onA = adj.has(ka), onB = adj.has(kb)
@@ -945,11 +946,27 @@ export class MissionSystem {
                 // (SM-INV-7). It takes any length and any hop count.
                 const lo = dest.anyLeg ? 0 : Math.max(POI_LEG_MIN, minM)
                 const hi = dest.anyLeg ? Infinity : LEG_MAX
+                // BUG-125: a destination on the giver's OWN edge. The route below is always head + node path +
+                // tail (out to a node, through the graph, in from a node), so it could reach one only by driving
+                // past it to the junction and back, or round the block — which is why the node-path candidates
+                // skip it (srcEdge, FEAT-67). It is driven STRAIGHT along the shared road instead: one partial
+                // segment, the leg band measured along it, joining every exit's options on equal terms.
+                const own = []
+                const se = road.edgeParData(anchor.aId, anchor.bId)
+                if (se) {
+                    const off = se.arcOffset ?? 0, L = se.arcLength ?? se.centerline.length
+                    const at = (x) => Math.max(off, Math.min(off + L, x))
+                    for (const q of dest.pois) {
+                        if (q.id === anchor.poiId || edgeKey(g.key(q.aId), g.key(q.bId)) !== srcEdge) continue
+                        const d = Math.abs(at(q.s) - at(anchor.s))
+                        if (d >= Math.max(lo, 1) && d <= hi) own.push({ q, d, direct: true })
+                    }
+                }
                 // FEAT-89: `nearest` takes the closest candidate over BOTH exits (a multi-drop's next stop).
                 let near = null
                 for (const [ex, other] of pair) {
                     const c = legCandidates(ex, lo, hi)
-                    const opts = []
+                    const opts = [...own]
                     for (const q of dest.pois) {
                         const qa = g.key(q.aId), qb = g.key(q.bId)
                         // ONE node is enough (FEAT-103): the expedition camp's road is cut at the wall,
@@ -975,10 +992,12 @@ export class MissionSystem {
                     }
                     opts.sort((a, b) => (a.q.id < b.q.id ? -1 : a.q.id > b.q.id ? 1 : 0))
                     const o = opts[Math.min(opts.length - 1, Math.floor(dest.pick * opts.length))]
+                    if (o.direct) { destPoi = o.q; direct = true; break }
                     exitK = ex; startK = ex; prev = c.prev; endK = o.entry; destPoi = o.q
                     break
                 }
-                if (near) { exitK = startK = near.ex; prev = near.c.prev; endK = near.o.entry; destPoi = near.o.q }
+                if (near?.o.direct) { destPoi = near.o.q; direct = true }
+                else if (near) { exitK = startK = near.ex; prev = near.c.prev; endK = near.o.entry; destPoi = near.o.q }
             }
             if (!destPoi && dest?.strict) return null
             if (!destPoi) {
@@ -1011,6 +1030,55 @@ export class MissionSystem {
                 break
             }
         }
+        // Price a finished route: par, the HUD's arc table, the region's guard 2, the mission record.
+        const priced = (segments, poly) => {
+            const { time, distance } = computePar(segments)
+            if (!(time > 0)) return null
+
+            // Cumulative XZ arc along the map polyline, for the HUD's route-remaining readout.
+            const polyCum = polyCumOf(poly)
+
+            // FEAT-43 guard 2: the routed road between two in-region nodes can still bow past the wall,
+            // so re-check what the player will actually drive. Cheap — poly is already built, and it is
+            // the same 25 m sampling the map draws.
+            if (region && poly.some(p => !inRegion(p))) return null
+
+            const first = segments[0], last = segments[segments.length - 1]
+            const sp = first.centerline.pointAt(first.s0)
+            const st = first.centerline.tangentAt(first.s0)
+            const dir = first.s1 >= first.s0 ? 1 : -1
+            const ep = last.centerline.pointAt(last.s1)
+
+            return {
+                start: { x: sp.x, z: sp.z, heading: headingToFace(st.x * dir, st.z * dir) },
+                end: { x: ep.x, z: ep.z },
+                par: time,
+                distance,
+                poly,
+                polyCum,
+                edges: segments.length,
+                // FEAT-67: the destination POI, or null for a roadside drop. The card names it.
+                endPoiId: destPoi?.id ?? null,
+                // The priced route, retained so par can be recomputed under a different PAR_REF
+                // without re-routing (FEAT-30 calibration). Not read by gameplay.
+                segments,
+            }
+        }
+
+        // BUG-125: a same-edge destination is the one stretch of road between the two markers.
+        if (direct) {
+            const ed = road.edgeParData(anchor.aId, anchor.bId)
+            const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
+            const s0 = Math.max(off, Math.min(off + L, anchor.s)), s1 = Math.max(off, Math.min(off + L, destPoi.s))
+            const poly = [], n = Math.max(2, Math.ceil(Math.abs(s1 - s0) / 25))
+            for (let j = 0; j <= n; j++) {
+                const p = ed.centerline.pointAt(s0 + (s1 - s0) * (j / n))
+                poly.push({ x: p.x, z: p.z })
+            }
+            return priced([{ centerline: ed.centerline, gradeAt: ed.gradeAt, s0, s1, runKey: ed.key,
+                cellA: anchor.aId, cellB: anchor.bId, endDeg: 2 }], poly)   // ends mid-edge: no junction to announce
+        }
+
         if (startK == null || endK == null) return null
 
         // Node path start → end.
@@ -1130,37 +1198,7 @@ export class MissionSystem {
             }
         }
 
-        const { time, distance } = computePar(segments)
-        if (!(time > 0)) return null
-
-        // Cumulative XZ arc along the map polyline, for the HUD's route-remaining readout.
-        const polyCum = polyCumOf(poly)
-
-        // FEAT-43 guard 2: the routed road between two in-region nodes can still bow past the wall,
-        // so re-check what the player will actually drive. Cheap — poly is already built, and it is
-        // the same 25 m sampling the map draws.
-        if (region && poly.some(p => !inRegion(p))) return null
-
-        const first = segments[0], last = segments[segments.length - 1]
-        const sp = first.centerline.pointAt(first.s0)
-        const st = first.centerline.tangentAt(first.s0)
-        const dir = first.s1 >= first.s0 ? 1 : -1
-        const ep = last.centerline.pointAt(last.s1)
-
-        return {
-            start: { x: sp.x, z: sp.z, heading: headingToFace(st.x * dir, st.z * dir) },
-            end: { x: ep.x, z: ep.z },
-            par: time,
-            distance,
-            poly,
-            polyCum,
-            edges: segments.length,
-            // FEAT-67: the destination POI, or null for a roadside drop. The card names it.
-            endPoiId: destPoi?.id ?? null,
-            // The priced route, retained so par can be recomputed under a different PAR_REF
-            // without re-routing (FEAT-30 calibration). Not read by gameplay.
-            segments,
-        }
+        return priced(segments, poly)
     }
 }
 
