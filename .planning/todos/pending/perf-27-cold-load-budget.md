@@ -498,6 +498,70 @@ harnesses wait on it.
 - At ×4, 2026-11-07, quiet: cold → driving is still 24.7–25.5 s (boot 4.7–4.9 s + entry 15.5–16 s). The region warm
   (worker build + pumps, ~7.4–8.1 s) is the biggest single phase left.
 
+### The region warm, traced per thread (Spare, 2026-11-07): it is the network worker's serial plan, not the waves
+
+**How it was measured.** `wip/perf-27/region-trace.mjs` boots the built bundle (main `cf7a93ff`, `vite preview`),
+enters story, and records a Chrome trace of every thread from enter to live. `--prof` adds V8's sampling profiler.
+`wip/perf-27/wave-split.mjs` then cuts the warm into **waves** (at least one route worker running a job) and
+**gaps** (none running), and says what the network worker did in each. `wip/perf-27/pump-self.mjs` sums the profile
+over one class of pump. Quiet box (load 2.7–3.4), three random seeds. No `src/` change.
+
+**The 11-06 scoping guessed the critical path wrong.** It took the route waves to be the critical path: the headless
+simulation gave them 4.6–5.2 s. In the browser they are 2.4–3.0 s, because 25 % of the routes carry over from the
+settle (245–275 jobs against 331–356 headless) and the pool keeps all 4 workers busy for most of each wave. The bigger
+share is the network worker's own thread, in the gaps between waves:
+
+| seed | warm (1×) | waves | gaps | network worker busy in the gaps |
+|---|---|---|---|---|
+| 2623851183 | 6.65 s (no profiler) | 2.40 s | 4.25 s | 3.50 s |
+| 2623851183 | 7.22 s (profiler on) | 2.62 s | 4.61 s | 3.94 s |
+| 3997014678 | 6.94 s (profiler on) | 2.99 s | 3.94 s | 3.17 s |
+| 744309545 | 7.13 s (profiler on) | 2.61 s | 4.52 s | 3.81 s |
+
+The profiler costs about 0.5 s. Read the proportions from the profiled rows and the wall from the plain one.
+
+**What the gaps hold, in order** (seed 2623851183, profiled):
+1. **0.52 s at the start with nobody working.** `SETTLE_MIN_MS` (400 ms) runs after the settle promise has resolved,
+   then the issue frame (`buildNow`'s pond warm, ~0.1 s at 1× and 0.37 s at ×4) runs before the build message leaves.
+   The region centre is captured in `_beginWarm` before the 400 ms starts, so that wait now guards nothing.
+2. **Productive serial bites, ~2.6–3.0 s per seed.** These are single pumps: the band's pass-2 pins
+   (`_v2EdgeDirs → _v2ClearanceFor`, 450–850 ms), the plan layer's pins (335–620 ms), `_v2SettleDeletions`
+   (450–640 ms), and the final pump plus the build (`_assembleGraphEdges`, 0.8–1.3 s, mostly `_v2GradePts`). This
+   matches the headless thread (3.35 s on this seed). It is the floor of the current design.
+3. **Re-scan rounds, ~0.5–0.9 s per seed.** There are 6–8 rounds of pump (140–160 ms) → small wave (10–16 jobs,
+   ~100 ms) → pump. Every pump re-runs the whole scan from the top, although only the jobs that just landed are new.
+   Summed over the 8 rounds on 744309545 (1.28 s):
+   - 31 % is node-position lookups (`_nodePos → _siteAt → _anchorSites`): a string-keyed cache hit, called twice per
+     graph edge per band edge by `_v2ClearPartners`, which is O(E²) (grows with the square of the edge count).
+   - ~32 % is the scan loops' own overhead in `warmBandComplete`, `_warmPass1` and `_warmPlanJobs`: building key
+     strings and doing Set lookups on every edge, every pump.
+   - 12 % is `_v2ClearPartners`'s chord tests.
+   - 14 % is grade solves for the new routes, which is the productive part.
+4. **The end, ~0.13–0.18 s:** the reply, the main-thread adopt (0.32 s at ×4), and up to one 250 ms story poll.
+
+During the waves the worker also re-pumps every 8 ms (pumps of 3–60 ms that find nothing new). That costs about
+1 s of CPU per warm, but it overlaps routing.
+
+**×4 adds only the main thread.** Seed 2623851183 goes from 6.65 s to 7.37 s. Main-thread-only time goes from 0.43 s
+to 1.08 s (the issue frame and the adopt). The workers' numbers do not move.
+
+**Each wave's floor is its longest single route job.** There are 1–2 jobs per seed of 680–780 ms, each of which sets
+a wave on its own (wave 3 on 2623851183: 10 jobs, 809 ms, one of them 719 ms). No dispatch order beats that.
+
+#### Levers, cheapest first (estimates at 1×, per warm of ~7 s)
+
+| lever | where | saves | risk / proof |
+|---|---|---|---|
+| L2: issue the build on the first warming frame (drop the 400 ms floor there) | `story.js` warming branch | ~0.4 s, at 1× and ×4 | one line. The centre is already captured and the settle promise awaited. cdp-smoke |
+| L3: react to the build promise instead of the 250 ms poll | `story.js` / `main.js` pumpRegionWarm | ~0.1 s on average | small. cdp-smoke |
+| L1: make the re-scan cheap. Seat each graph's node positions and edge chord boxes once per graph; memo `_v2ClearPartners` per (graph, edge, frozen-deletion set) | `road.js` plan layer | ~0.4–0.6 s on the critical path, plus ~1 s of CPU in the waves | medium. Pure caching, so the output is identical: fingerprint-world + network-worker-parity |
+| L1b: skip a pump when no route reply has landed since the last one | `road-network-worker.js` prewarm loop | CPU only (~1 s): frees a core during waves, wall gain unmeasured | small, but it needs the "nothing changed ⇒ same answer" argument checked against `_v2SettleDeletions`' frozen sets |
+| L4: the 680–780 ms single route jobs | `corridor-router.js` | up to ~0.5 s | router internals. Not cheap |
+| L5: the serial plan floor (~3 s) | plan layer | most of the 3 s | needs the per-edge grade solves fanned out to the pool. Large |
+
+**L2 + L3 + L1 ≈ 0.9–1.1 s off a ~7 s warm** (13–15 %). They would take ×4 cold → driving from ~25 s to ~24 s. None is
+built. L4 and L5 are the only ones that move the order of magnitude, and neither is cheap.
+
 ### "Behind the menu" — PARKED (owner, 2026-11-06)
 
 Owner, verbatim (perf27-menu, "not now"): "not now. but record the findings we could add this later."
