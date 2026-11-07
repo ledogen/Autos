@@ -1281,10 +1281,10 @@ const STEPS = [
     check(a.truck < 8, `the truck is ${a.truck.toFixed(1)} m from the burger joint's pad, want < 8`)
     check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
     check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
-    check(Math.abs(a.h + 6) < 0.1, `the firing is not at 18:00 on day 0 (clockH ${a.h})`)   // FEAT-170
+    check(Math.abs(a.h + 4.5) < 0.1, `the firing is not at 19:30 on day 0 (clockH ${a.h})`)   // FEAT-170, FEAT-180's 8 pm sun
     // BUG-136: day 0 sits before the clock's zero; the HUD read it as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
-    check(await until(async () => await hudClock() === 'Day 0, 6 pm', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day 0, 6 pm" (BUG-136)`)
+    check(await until(async () => await hudClock() === 'Day 0, 7:30 pm', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day 0, 7:30 pm" (BUG-136)`)
     for (let i = 0; i < 8 && await speaker() === 'The manager'; i++) { await tap('Enter'); await sleep(250) }
     check(await speaker() === 'Mom', `the firing was not followed by mom's call (speaker "${await speaker()}")`)
     for (let i = 0; i < 8 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
