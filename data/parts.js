@@ -22,7 +22,8 @@
 //               A colour, never a number (SM-INV-10).
 //   icon        the thumbnail stem when the slot's won't do: brakes are pads OR drum shoes by what the
 //               part is, not by axle (owner, 2026-10-21 — this truck has rear drums, a later one may not)
-//   patch       the params it writes (absolute values for THIS truck — a part is for a Ranger)
+//   patch       the params it writes (absolute values for THIS truck — a part is for a Ranger). A part that fits
+//               either axle (springs, shocks) names BOTH axles' keys, and a fit writes only its socket's (src/parts.js).
 //   grip        tires only: this tire's friction against the stock tire's (params.frictionCoeff stays
 //               the truck-wide base). Per corner, so it is published per wheel (src/parts.js).
 //   load        FEAT-112 load ratings it brings (springs / dampers / tires) — the weakest part sets
@@ -46,10 +47,11 @@ export const SLOTS = {
     wheelFR:      { name: 'Front-right wheel', takes: 'wheel', hours: 0.5, tracks: ['wheelFR'] },
     wheelRL:      { name: 'Rear-left wheel',   takes: 'wheel', hours: 0.5, tracks: ['wheelRL'] },
     wheelRR:      { name: 'Rear-right wheel',  takes: 'wheel', hours: 0.5, tracks: ['wheelRR'] },
-    springsFront: { name: 'Front springs',     hours: 1.5,  tracks: ['springFront'] },
-    springsRear:  { name: 'Rear springs',      hours: 1.5,  tracks: ['springRear'] },
-    dampersFront: { name: 'Front shocks',      hours: 0.75, tracks: ['damperFront'] },
-    dampersRear:  { name: 'Rear shocks',       hours: 0.75, tracks: ['damperRear'] },
+    // FEAT-176: either axle takes the one 'springs' part (and the one 'dampers' part), as every corner takes a tire.
+    springsFront: { name: 'Front springs',     takes: 'springs', hours: 1.5,  tracks: ['springFront'] },
+    springsRear:  { name: 'Rear springs',      takes: 'springs', hours: 1.5,  tracks: ['springRear'] },
+    dampersFront: { name: 'Front shocks',      takes: 'dampers', hours: 0.75, tracks: ['damperFront'] },
+    dampersRear:  { name: 'Rear shocks',       takes: 'dampers', hours: 0.75, tracks: ['damperRear'] },
     brakesFront:  { name: 'Front brakes',      hours: 1,    tracks: ['brakeFront'] },
     brakesRear:   { name: 'Rear brakes',       hours: 1,    tracks: ['brakeRear'] },
     arbFront:     { name: 'Front anti-roll bar', hours: 0.5, tracks: [] },
@@ -63,6 +65,15 @@ export const SLOTS = {
     airFilter:    { name: 'Air filter',        hours: 0.25, tracks: ['airFilter'] },
     headlightL:   { name: 'Left headlight',    takes: 'headlight', hours: 0.5, tracks: ['headlightL'] },
     headlightR:   { name: 'Right headlight',   takes: 'headlight', hours: 0.5, tracks: ['headlightR'] },
+}
+
+/** FEAT-176: ids retired when front and rear springs and shocks became one part each → the part now. A run save
+ *  written before is renamed on load (src/save.js), so a saved truck, inventory or shelf keeps its parts. */
+export const RENAMED = {
+    springsFrontOEM: 'springsOEM', springsRearOEM: 'springsOEM', springsFrontHD: 'springsHD', springsRearHD: 'springsHD',
+    springsFrontSport: 'springsSport', springsRearSport: 'springsSport',
+    dampersFrontOEM: 'dampersOEM', dampersRearOEM: 'dampersOEM', dampersFrontHD: 'dampersHD', dampersRearHD: 'dampersHD',
+    dampersFrontSport: 'dampersSport', dampersRearSport: 'dampersSport',
 }
 
 /** The part slot a socket accepts. */
@@ -120,45 +131,35 @@ export const PARTS = {
                      patch: {}, desc: 'Standard. Heavy. Bends before it breaks.' },
 
     // ── Springs and shocks (§3f) — one axle's pair. Load ratings: §3f's package, [DEFAULT] numbers.
-    springsFrontOEM: { name: 'Stock front springs', slot: 'springsFront', family: 'oem', rarity: 'common', price: 7, massKg: 14, stock: true,
-                       patch: { suspensionStiffnessFront: 33000 }, desc: 'The factory coils.' },
-    springsFrontHD:  { name: 'Heavy-duty front springs', slot: 'springsFront', family: 'hd', rarity: 'uncommon', price: 25, massKg: 17,
-                       patch: { suspensionStiffnessFront: 46000 }, load: HD_SPRINGS,
-                       desc: 'Stiffer coils. Hold the nose up under a load, and crash over bumps when empty.' },
-    springsRearOEM:  { name: 'Stock rear springs',  slot: 'springsRear', family: 'oem', rarity: 'common', price: 7, massKg: 16, stock: true,
-                       patch: { suspensionStiffnessRear: 33000 }, desc: 'The factory leaf packs.' },
-    springsRearHD:   { name: 'Heavy-duty rear springs', slot: 'springsRear', family: 'hd', rarity: 'uncommon', price: 25, massKg: 21,
-                       patch: { suspensionStiffnessRear: 52000 }, load: HD_SPRINGS,
-                       desc: 'An extra leaf. Sits level under a load, bucks when empty.' },
+    // FEAT-176 (owner, 2026-11-06: "make front and rear springs and shocks interchangeable. Having only one part type
+    // fitting in more slots gives the player more opportunities to get the part that they need"): ONE spring part and
+    // ONE shock part per family, either axle. Each carries what it does on EACH axle — the front and rear values it had
+    // as two parts — so the stock truck, heavy-duty and sport all behave exactly as before. Price is the old pair's
+    // (they matched); mass is their mean.
+    springsOEM:    { name: 'Stock springs', slot: 'springs', family: 'oem', rarity: 'common', price: 7, massKg: 15, stock: true,
+                     patch: { suspensionStiffnessFront: 33000, suspensionStiffnessRear: 33000 }, desc: 'The factory springs.' },
+    springsHD:     { name: 'Heavy-duty springs', slot: 'springs', family: 'hd', rarity: 'uncommon', price: 25, massKg: 19,
+                     patch: { suspensionStiffnessFront: 46000, suspensionStiffnessRear: 52000 }, load: HD_SPRINGS,
+                     desc: 'Stiffer springs. They hold the truck up under a load, and buck over bumps when empty.' },
     // Sport tier (owner, 2026-10-22): stiffer than stock, softer than HD, stock height, stock load
     // rating; Sport family, so they wear faster. [DEFAULT] +35% rate, +40% damping (the page's middle
     // options). Prices: springs $15, shocks $15 (re-asked against HD $25 and KEPT, owner 2026-10-24); heavy-duty is the endgame mod at $25 (owner, 2026-10-22).
-    // Lowering springs (owner, 2026-10-22): they sit 30 mm under stock. `drop` (m) shortens the spring's
+    // Lowering springs (owner, 2026-10-22): they sit 30 mm under stock. `drop` (m, per axle) shortens the spring's
     // free length; the stiffer rate alone sags 29 mm (front) / 24 mm (rear) less than stock, so the drop
     // is that plus 30 mm. The bump stop is bolted to the body, so the bump travel shrinks by the same
     // drop (src/parts.js _rideHeight): about 30 mm less bump travel than stock at rest.
-    springsFrontSport: { name: 'Sport front springs', slot: 'springsFront', family: 'sport', rarity: 'uncommon', price: 15, massKg: 14, drop: 0.059,
-                       patch: { suspensionStiffnessFront: 44550 },
-                       desc: 'Shorter, stiffer coils that drop the nose. Flat and sharp on pavement; they hit the stops sooner on rough ground and tire sooner.' },
-    springsRearSport:  { name: 'Sport rear springs',  slot: 'springsRear', family: 'sport', rarity: 'uncommon', price: 15, massKg: 16, drop: 0.054,
-                       patch: { suspensionStiffnessRear: 44550 },
-                       desc: 'Lowering leaves, stiffer than stock. Squats less and corners flat; bottoms out sooner loaded or on rough ground, and they tire sooner.' },
-    dampersFrontOEM: { name: 'Stock front shocks',  slot: 'dampersFront', family: 'oem', rarity: 'common', price: 6, massKg: 6, stock: true,
-                       patch: { suspensionDampingFront: 3500 }, desc: 'Factory shocks, tuned for an empty bed.' },
-    dampersFrontHD:  { name: 'Heavy-duty front shocks', slot: 'dampersFront', family: 'hd', rarity: 'uncommon', price: 25, massKg: 7,
-                       patch: { suspensionDampingFront: 5000 }, load: HD_DAMPERS,
-                       desc: 'Firm valving that settles a loaded truck. Busy and harsh when empty.' },
-    dampersRearOEM:  { name: 'Stock rear shocks',   slot: 'dampersRear', family: 'oem', rarity: 'common', price: 6, massKg: 6, stock: true,
-                       patch: { suspensionDampingRear: 4000 }, desc: 'Factory shocks, tuned for an empty bed.' },
-    dampersRearHD:   { name: 'Heavy-duty rear shocks', slot: 'dampersRear', family: 'hd', rarity: 'uncommon', price: 25, massKg: 7,
-                       patch: { suspensionDampingRear: 6000 }, load: HD_DAMPERS,
-                       desc: 'Firm valving that settles a loaded bed. Busy and harsh when empty.' },
-    dampersFrontSport: { name: 'Sport front shocks', slot: 'dampersFront', family: 'sport', rarity: 'uncommon', price: 15, massKg: 6,
-                       patch: { suspensionDampingFront: 4900 },
-                       desc: 'Quick, firm valving. The nose stays put and the ride gets busy. They wear out faster.' },
-    dampersRearSport:  { name: 'Sport rear shocks',  slot: 'dampersRear', family: 'sport', rarity: 'uncommon', price: 15, massKg: 6,
-                       patch: { suspensionDampingRear: 5600 },
-                       desc: 'Quick, firm valving. The tail settles fast and the ride gets busy. They wear out faster.' },
+    springsSport:  { name: 'Sport springs', slot: 'springs', family: 'sport', rarity: 'uncommon', price: 15, massKg: 15,
+                     drop: { Front: 0.059, Rear: 0.054 },
+                     patch: { suspensionStiffnessFront: 44550, suspensionStiffnessRear: 44550 },
+                     desc: 'Shorter, stiffer springs that drop the truck. Flat and sharp on pavement; they hit the stops sooner on rough ground and tire sooner.' },
+    dampersOEM:    { name: 'Stock shocks', slot: 'dampers', family: 'oem', rarity: 'common', price: 6, massKg: 6, stock: true,
+                     patch: { suspensionDampingFront: 3500, suspensionDampingRear: 4000 }, desc: 'Factory shocks, tuned for an empty bed.' },
+    dampersHD:     { name: 'Heavy-duty shocks', slot: 'dampers', family: 'hd', rarity: 'uncommon', price: 25, massKg: 7,
+                     patch: { suspensionDampingFront: 5000, suspensionDampingRear: 6000 }, load: HD_DAMPERS,
+                     desc: 'Firm valving that settles a loaded truck. Busy and harsh when empty.' },
+    dampersSport:  { name: 'Sport shocks', slot: 'dampers', family: 'sport', rarity: 'uncommon', price: 15, massKg: 6,
+                     patch: { suspensionDampingFront: 4900, suspensionDampingRear: 5600 },
+                     desc: 'Quick, firm valving. The truck stays flat and the ride gets busy. They wear out faster.' },
     // ── Brakes, per axle (DESIGN.md: pad grades per axle set the bias): pads up front, drum shoes at
     //    the rear on this truck. [DEFAULT] torques; the whole ladder rose 10 % with the stock brakes
     //    for ABS (FEAT-135, 2026-10-21).
