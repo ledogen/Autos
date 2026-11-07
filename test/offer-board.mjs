@@ -902,10 +902,9 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('FEAT-147: it goes to Larry\'s only, strict, at any length', wish.anyLeg === true && wish.strict && wish.pois.length === 1 && wish.pois[0].id === larry)
     const c = b.card(o, { nowH: T0, route: { par: 90, distance: 800, endPoiId: larry } })
     const text = c.sentence.map(x => x.t).join('')
-    const r = payRange(90, 1, 1, 1)
-    check('FEAT-147: the card is the ordinary one — "Mom needs …", base pay at 1x — with NO time limit (BUG-117)',
-        text.startsWith('Mom needs a casserole delivered to') && c.pay === `Pay $${formatMoney(r.base)} – $${formatMoney(r.max)} based on speed`
-        && !c.times.length, `${text} / ${c.pay} / ${c.times}`)
+    check('FEAT-147: the card is the ordinary one — "Mom needs …" — with NO time limit (BUG-117), NO pay and NO deed (bug117-pay)',
+        text.startsWith('Mom needs a casserole delivered to') && c.pay === null && c.deed === null
+        && !c.times.length, `${text} / ${c.pay} / ${c.deed} / ${c.times}`)
     b.take(o.id, T0, 90)
     check('BUG-117: taken carries NO deadline — it can never expire', b.firstState() === 'taken' && b.taken(o.id)?.dueH === Infinity)
     b.complete(o.id, T0 + 0.5)

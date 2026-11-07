@@ -79,7 +79,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH } from './mission.js'  // sto
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -1920,7 +1920,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
-const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms,
+const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, getHeadlightMode, prewarmLightPrograms,
   compileLightState, LIGHT_STATE_COUNT, setBoreShade, headlightSpots } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
@@ -4264,6 +4264,13 @@ missionSystem = new MissionSystem({
       result.letter = amountGrade(share, rankTable('demolition', region))
       mission = { ...mission, payMult: mission.payMult * share }
     }
+    // BUG-117 (owner, 2026-11-07, bug117-pay: "1 — a letter, no pay"): mom's casserole is the tutorial's grade and
+    // nothing else. No pay and no deed, so every seed starts on the same wallet and the deeds count real jobs only.
+    if (mission?.first) {
+      result.first = true
+      if (mission.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
+      return { payout: 0, base: 0, tip: 0, points: 0 }
+    }
     // FEAT-103: a requisition line pays nothing and earns no deed. C or better delivers it; a D (late,
     // or too much of the load lost) puts it back on the list unchanged.
     if (mission?.line) {
@@ -4312,7 +4319,6 @@ function _runIntro () {
 // save carries the seen set), and the first job's progress is the board's (the save replays it) — so
 // the evening is "the firing seen, the casserole not posted yet".
 const OPENING_START = { day: 0, hour: 18 }   // FEAT-170: the firing's clock
-const JOINT_SEAT_M = 2.8   // m — the truck's seat off the pad centre toward the road: the 14 x 8 lay-by's road-side strip
 // The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
 // turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
 // aim point's height over the pad (m).
@@ -4328,12 +4334,12 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
 const _mom = () => poiSystem.list().find(q => q.type === 'momsHouse') ?? null
 
-/** Park the truck on POI q's lay-by — the joint's at a new run, mom's on a skip — like _restoreRun's seat. */
+/** Park the truck at POI q — the joint's lay-by at a new run, in front of mom's on a skip — like _restoreRun's seat.
+ *  Where is poi.js startSeat (BUG-135: never in a yard). */
 function _seatAt (q) {
   if (!q) return
   const prev = _spawnOverride
-  // q.nx/nz points away from the road and q.tx/tz along it (poi.js _evaluate); forward = (−sin h, −cos h).
-  _spawnOverride = { align: true, x: q.x - q.nx * JOINT_SEAT_M, z: q.z - q.nz * JOINT_SEAT_M, heading: Math.atan2(-q.tx, -q.tz) }
+  _spawnOverride = { align: true, ...startSeat(q, RANGER_PARAMS.roadWidth) }
   storySystem.notifyTeleport()
   _openingSeat = _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
 }
@@ -4893,6 +4899,7 @@ function _planOne (o, exclude) {
     // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
     m.offerId = o.id
     m.line = s.line ?? null   // FEAT-103: a requisition line — settles as a line, never pays
+    m.first = !!s.first       // BUG-117: mom's casserole — a letter, no pay
     m.bonus = s.bonus
     // FEAT-114: a haul's spec pays PER PIECE; the plan assumes the whole stock until the picker
     // sets the real count at accept (bundles + payMult are rewritten there).
@@ -5515,7 +5522,7 @@ function _checkStranded () {
   const show = c?.stuck && !c.canEnd && !_recoveryOpen && document.getElementById('recovery-row')?.style.display === 'flex'
   if (hint) {
     hint.style.opacity = show ? '1' : '0'
-    if (show) hint.innerHTML = `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`   // PLACEHOLDER words
+    if (show) hint.innerHTML = `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`   // the owner's words (feat172-words, 2026-11-07: "keep")
   }
   if (!c?.canEnd) { _strandedSince = null; return }
   _strandedSince ??= simTime
@@ -6764,7 +6771,11 @@ function _renderMissionUI () {
       // NO letter on any result card (owner, 2026-10-22 §2b / 2026-10-23 for haul, freight, fragile; Q-3
       // 2026-10-24 for courier too): the letter decides the item and the deeds and lives only on the live
       // rank bar, so every type's card reads the time, then the money, then the deed.
-      body.innerHTML = `<span class="mp-big">${formatTime(r.elapsed)}</span>`
+      // BUG-117: the casserole's card is its letter and its time (the paper route's form) — it pays nothing.
+      body.innerHTML = r.first
+        ? `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
+          + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
+        : `<span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (r.line ? _lineRows(r)
           : paid
           ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
@@ -6773,7 +6784,7 @@ function _renderMissionUI () {
                        site: r.targets != null ? { smashed: r.smashed, of: r.targets } : null,
                        deedNeed: _missionDeedNeed(m.mission) })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
-      if (paid && !r.line) _revealResult(body, r.letter)   // N-04: the staged reveal — tip count-up, deed tally tick
+      if (paid && !r.line && !r.first) _revealResult(body, r.letter)   // N-04: the staged reveal — tip count-up, deed tally tick
       // The result card is two actions: retry · continue (R-31, owner 2026-10-24: no "back to free roam"
       // here — leaving the mode is the pause menu's job). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
@@ -10412,6 +10423,8 @@ function loop () {
   gaugeCluster.setFuelLevel(vehicleState.fuel.gal / RANGER_PARAMS.fuelTankGal)
   gaugeCluster.setLowFuel(vehicleState.fuel.gal <= RANGER_PARAMS.fuelLowLightGal)
   gaugeCluster.setFlat(damageModel.flat.some(Boolean))   // FEAT-94
+  gaugeCluster.setParkBrake(vehicleState.handbrake)       // FEAT-34: latched, held, or the launch hold
+  gaugeCluster.setHighBeam(getHeadlightMode() === 2)      // FEAT-34
   _renderPumpDisplay(frameTime)
   gaugeCluster.setRedline(RANGER_PARAMS.engineRedlineRPM)   // repaints the tach face only on an engine swap
   {

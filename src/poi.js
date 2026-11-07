@@ -250,8 +250,8 @@ export const POI_ROSTER = [
     // roster is never short a store (fallbackModel null = the cube, same ruling).
     { type: 'generalStore', count: 1, model: 'generalStore', fallbackModel: null, siting: 'any' },
     // The type exists so the roster is whole; fishing and The Confluence stay deferred. Do not
-    // build its systems off the back of this line.
-    { type: 'tackleShop',   count: 1, model: null, siting: 'any' },
+    // build its systems off the back of this line. ASSET-84, the bait-and-tackle shack, on a lay-by.
+    { type: 'tackleShop',   count: 1, model: 'tackleShop', siting: 'any' },
     // FEAT-88/91: the firewood yard — the region-1 haul yard. REGION 1 ONLY by design (FEAT-91
     // ruling 2): story mode has one region today, so there is nothing to window yet — the `regions`
     // field lands with region 2. It fits the standard 14 x 8 m lay-by pad (owner, 2026-10-04); the
@@ -348,6 +348,25 @@ export function towSeat (q) {
     }
     const lat = (POI_PARAMS.poiCubeSize / 2 + (q.halfWid ?? POI_PARAMS.poiPadHalfWid)) / 2
     return { x: q.x - q.nx * lat, z: q.z - q.nz * lat, heading: Math.atan2(-q.tx, -q.tz) }
+}
+
+const SEAT_STRIP_M = 2.8   // m — a plain pad's start seat off its centre toward the road: the 14 x 8 lay-by's road-side strip
+
+/**
+ * Where a run (or the paper scenario) parks the truck at POI `q`: the burger joint at a new run, mom's on a skipped
+ * opening, Larry's for the paper scenario. Pure: main.js seats the truck here, test/story-start-clear.mjs checks it.
+ * BUG-135 (owner, 2026-11-07: "found my truck parked over the cinder block fire pit … completely immobilized"): a POI
+ * whose model has a YARD (a residence's lawn furniture; Larry's van) never takes the truck on its pad. The truck
+ * parks in the road's near lane in front, at the mission start point (q.roadX/Z). Any other pad keeps its road-side
+ * strip. Either way it faces along the road: forward (−sin h, −cos h) is q.tx/tz.
+ */
+export function startSeat (q, roadWidth) {
+    const heading = Math.atan2(-q.tx, -q.tz)
+    if (PROP_MODELS[q.modelKey]?.yard) {
+        const lane = roadWidth / 4   // the near lane's centre: a quarter of the paved width off the centreline
+        return { x: q.roadX + q.nx * lane, z: q.roadZ + q.nz * lane, heading }
+    }
+    return { x: q.x - q.nx * SEAT_STRIP_M, z: q.z - q.nz * SEAT_STRIP_M, heading }
 }
 
 /**
