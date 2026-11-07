@@ -145,7 +145,7 @@ function skyBrightness (elevationDeg) {
 // headlight performance captures 'new moon but your headlights work' quite well"). SKY_PRESETS.night IS the new
 // moon, unchanged; the moon's lit fraction (0 new … 1 full, setMoonLit) scales its key, fill and fog radiance up to
 // FULL_MOON_GAIN at full, the gain at which the road reads without headlights, barely.
-const FULL_MOON_GAIN = 4
+const FULL_MOON_GAIN = 3
 let _nightLook = SKY_PRESETS.night
 const lookOf = (name) => (name === 'night' ? _nightLook : SKY_PRESETS[name])
 
