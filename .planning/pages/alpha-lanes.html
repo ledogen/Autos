@@ -327,7 +327,9 @@
       if (!items.length) return ''
       return `<section class="og ${g.key}"><h3>${esc(g.title)} (${items.length})</h3><p class="goal">${esc(g.goal)}</p>${items.map(o => {
         const a = state.owed[o.id] || {}
-        const opts = o.options ? `<div class="opts">${(o.options || []).map(x => `<button data-owed="${o.id}" data-opt="${esc(x)}" class="${a.choice === x ? 'on' : ''}"${canWrite ? '' : ' disabled'}>${esc(x)}</button>`).join('')}
+        // Every item answers the same way: its own options, or the usual pair by kind (owner, 2026-11-07).
+        const options = o.options || (o.kind === 'make' ? ['done', 'note (box below)'] : ['good', 'changes (note box below)'])
+        const opts = options ? `<div class="opts">${options.map(x => `<button data-owed="${o.id}" data-opt="${esc(x)}" class="${a.choice === x ? 'on' : ''}"${canWrite ? '' : ' disabled'}>${esc(x)}</button>`).join('')}
           <textarea data-owed-note="${o.id}" rows="3" placeholder="type a note or your answer here"${canWrite ? '' : ' disabled'}>${esc(a.note || '')}</textarea></div>` : ''
         return `<div class="ow${a.choice ? ' answered' : ''}"><span class="k ${o.kind}">${o.kind}</span><div class="t"><span class="id">${esc(o.tk)}</span>${esc(o.text)}${o.blocks ? `<p class="blk">blocks: ${esc(o.blocks)}</p>` : ''}${opts}</div></div>`
       }).join('')}</section>`
