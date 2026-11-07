@@ -3687,7 +3687,7 @@ const dialogueSystem = new DialogueSystem()
 // reflows as it fills, then shown a word per DLG_WORD_MS on the wall clock — a card that holds the sim still
 // streams. The first press fills it (the advance handlers below), the next one turns it; one blip when full.
 const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
-const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space'])   // FEAT-125: see _renderDialogue
+const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space', 'x'])   // FEAT-125: see _renderDialogue; FEAT-184: X (recovery)
 const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0 }
 /** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order.
  *  FEAT-174: the other input's half of a line (kc-kb / kc-pad) is left whole, so the stream spends no time on
@@ -4350,7 +4350,6 @@ let _openingRun = false   // onRegionLive → go-live: this new run plays the op
 let _openingSeat = null   // the opening's last seat (a promise): a skip takes the casserole once the truck is on her pad
 let _firingCam = null     // { p, theta0, t } while the firing's cards are up
 let _eveningGuide         // undefined = not planned yet: the evening's way home, planned once (not saved)
-let _eveningFrom = null   // m — the truck's crow distance to mom's when the evening was first polled (stage 4)
 const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // FEAT-184 stage 3 (the worst day): a played opening starts on a nearly empty tank, and the way home runs by the nearest
 // gas station first — when that detour is short. Past the budget the lesson stays the pump's first-use card.
@@ -4358,6 +4357,9 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // station's detour adds a median 5.8 km (1.1–7.8). At 4 km, 6 of 12 seeds get the refuel; the rest leave it to the pump.
 const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000 }
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
+// FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
+// station, if there was one); the flat lands at half of it, once. Not saved: a resume carries the flat in the damage model.
+let _eveHomeFrom = null, _eveFlat = false
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4387,6 +4389,13 @@ function _homeGuide () {
 }
 /** FEAT-184: where the evening's line goes now — the station while a fill-up is due, else mom's. */
 const _eveTarget = () => (_evePump && !_evePump.done ? _evePump.q : _mom())
+
+/** FEAT-184 stage 4: the worst day's spare is flat — the jalopy's own, or one granted for the evening. */
+function _flatSpare () {
+  let i = inventorySystem.list().findIndex(r => r.id === 'spareTire')
+  if (i < 0 && inventorySystem.grant('spareTire') === 'taken') i = inventorySystem.list().findIndex(r => r.id === 'spareTire')
+  if (i >= 0) inventorySystem.amend(i, { flat: true })
+}
 
 /** FEAT-184 stage 3: at a played opening's start, the evening's station and the near-empty tank — when the nearest
  *  station's detour on the way home fits TUT_PARAMS.pumpDetourM. */
@@ -4459,16 +4468,23 @@ function _resetToRoad () {
   teleportToGround(nr.point.x, nr.point.z, _pickRoadDir(Math.atan2(-nr.tangent.x, -nr.tangent.z), _currentHeading()), 0.5)
 }
 
-/** Stage 4, on the run-HUD poll: the drive home's lessons — the damage screen halfway, parking near hers. */
+/** Stage 4, on the run-HUD poll: the drive home's lessons — the key, the pedals, the gauge (FEAT-184), the flat halfway (FEAT-184 stage 4, replacing the damage card), parking near hers. */
 function _eveningBeats () {
   const q = _mom(), v = vehicleState.position
   if (!_eveningLeg() || !q) return
   // FEAT-184 stage 3: the pedals once the key has caught, then (a fill-up due) the gauge.
   if (vehicleState.ignition?.state === 'running') { _tut('tut-drive'); if (_evePump && !_evePump.done) _tut('tut-gas') }
-  const d = Math.hypot(q.x - v.x, q.z - v.z)
-  _eveningFrom ??= d
-  if (d < 0.5 * _eveningFrom) _tut('tut-diag')
-  if (d < EVENING_PARK_M) _tut('tut-park')
+  // Stage 4: halfway home (after the station, if any), the front left goes flat — once. Then V shows it.
+  if (!_evePump || _evePump.done) {
+    _eveHomeFrom ??= Math.hypot(q.x - v.x, q.z - v.z)
+    if (!_eveFlat && Math.hypot(q.x - v.x, q.z - v.z) < 0.5 * _eveHomeFrom) {
+      _eveFlat = true
+      if (!damageModel.flat[0]) { damageModel.flat[0] = true; damageModel.popped.push(0) }   // the bang (drained by the game layer)
+      _tut('tut-flat')
+    }
+  }
+  if (damageScreen.isOpen && damageModel.flat.some(Boolean)) _tut('tut-damage')
+  if (Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
 }
 
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
@@ -4541,13 +4557,14 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the first job is still to do or the evening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
   _openingRun = false
-  _evePump = null
+  _evePump = null; _eveHomeFrom = null; _eveFlat = false
   // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (mom's door, 7 am, the casserole in hand),
   // no cards: the firing counts as played and the skip runs at once.
   if (_settings.skipTutorial) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
   _planEvePump()   // FEAT-184 stage 3
+  _flatSpare()     // FEAT-184 stage 4: the spare is flat too
   _cardHold = true
   dialogueSystem.play(DLG.firing, FIRING, () => {
     _firingCam = null
@@ -5380,7 +5397,8 @@ function _nearestPoi (test) {
 function _towQuote (test) {
   const dest = _nearestPoi(test)
   if (!dest) return null
-  return { ...dest, price: towPrice(dest.km, economySystem.tierNow(), ECONOMY_PARAMS), hours: towHours(dest.km, ECONOMY_PARAMS) }
+  // FEAT-184 stage 4: the worst day's tow is on mom [DEFAULT] — the evening's only tow costs hours, not money.
+  return { ...dest, price: _eveningLeg() ? 0 : towPrice(dest.km, economySystem.tierNow(), ECONOMY_PARAMS), hours: towHours(dest.km, ECONOMY_PARAMS) }
 }
 // A pump island sells fuel (until ASSET-13's station has zones); an auto shop is a service center.
 const _FUEL_SELLER = q => !!q.pumpZones
@@ -5425,6 +5443,7 @@ const _afterRoadsideWork = (h) => { damageModel.publish(RANGER_PARAMS); daySyste
 /** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, spareFitHours() on the clock. */
 function _pickSpare (e) {
   inventoryScreen.close()
+  if (e.flat && _eveningLeg()) _tut('tut-spareflat')   // FEAT-184 stage 4: the worst day's spare
   damageScreen.pick({
     title: 'Fit the mounted tire',
     corner: () => !e.flat,
@@ -5624,6 +5643,7 @@ function _toggleRecovery () {
   if (document.getElementById('recovery-row')?.style.display !== 'flex') return
   if (!vehicleState.parked || damageScreen.blocked) { hintPark(); return }
   _recoveryOpen = !_recoveryOpen
+  if (_recoveryOpen && _eveningLeg()) _tut('tut-tow')   // FEAT-184 stage 4
   _updateRecovery()
 }
 window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'x') _toggleRecovery() })
@@ -5704,6 +5724,7 @@ function _updateParkTriggers (zParked = false) {
       const store = shop.type !== 'autoShop'
       serviceScreen.open(offerBoard?.poiName(shop.id) ?? (store ? 'Store' : 'Auto shop'), store)
       if (!store) _tut('tut-service')   // FEAT-147
+      if (!store && _eveningLeg() && damageModel.flat.some(Boolean)) _tut('tut-shopfix')   // FEAT-184 stage 4: towed here
     }
     if (poiEl) {
       poiEl.style.display = serviceScreen.isOpen ? 'none' : 'block'
@@ -8647,7 +8668,6 @@ const storySystem = new StorySystem({
     if (_paperScenario) daySystem.start(1, DAY_PARAMS.dayStartHour)   // FEAT-62: a working morning, no opening
     else daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
-    _eveningFrom = null
     _openingSeat = null
     _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region

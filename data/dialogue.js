@@ -102,12 +102,20 @@ export const TUT = {
     // …and the gauge, when the tank starts near empty and the line runs by the nearest station (main.js _evePump).
     'tut-gas': [{ speaker: 'Mom', text: `Is that gauge on empty? Of course it is. The line takes you by the gas station first: `
         + `pull up at a pump and fill her up.` }],
+    // FEAT-184 stage 4, the worst day: the flat halfway home, the screen it shows on, the spare that's flat too, the tow,
+    // and the shop it lands at (main.js _eveningBeats, _pickSpare, _toggleRecovery, _updateParkTriggers).
+    'tut-flat': [{ speaker: 'Mom', text: `Was that a bang? That's a flat, honey. Pull over, set the handbrake, `
+        + `and press <span class="dlg-key">V</span> to look at it.` }],
+    'tut-damage': [{ speaker: 'Mom', text: `That's your truck, part by part, and how worn each one is: green is fine, `
+        + `red is trouble. The front left's flat. Put your spare on: <span class="dlg-key">Tab</span>, then the mounted tire.` }],
+    'tut-spareflat': [{ speaker: 'Mom', text: `The spare's flat too? Of course it is. Call a tow: `
+        + `<span class="dlg-key">X</span> is the recovery menu.` }],
+    'tut-tow': [{ speaker: 'Mom', text: `The tow takes you to the nearest auto shop. It's on me this time.` }],
+    'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner, and a spare you can trust. Then come home &mdash; it's late.` }],
     // On the drive home: right after her call, halfway there, and near her house (main.js _eveningBeats).
     'tut-drive': [{ speaker: 'Mom', text: `Drive safe, honey. <span class="dlg-key">W</span> and <span class="dlg-key">S</span> `
         + `are the gas and the brake; steer with <span class="kc-kb"><span class="dlg-key">A</span> and <span class="dlg-key">D</span></span>`
         + `<span class="kc-pad">the <span class="dlg-key">left stick</span></span>. Follow the line home.` }],   // FEAT-174: kc-kb / kc-pad, one per input
-    'tut-diag': [{ speaker: 'Mom', text: `If that old truck starts acting funny, stop and press <span class="dlg-key">V</span> `
-        + `to look it over. <span class="dlg-key">Tab</span> shows what you've got with you.` }],
     'tut-park': [{ speaker: 'Mom', text: `Pull in at mine and stop. A tap of <span class="dlg-key">Space</span> sets the handbrake &mdash; `
         + `that's parking, and parking is how you get anything done around here.` }],
     // At hers in the evening, when her sleep card opens.
