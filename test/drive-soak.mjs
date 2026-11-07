@@ -42,8 +42,13 @@
 //   • a hit that does not reproduce on replay: the capture starts 10 s before, from a snapshot, and a re-seat or a
 //     streaming order can differ — treat it as noise unless it recurs.
 //   • `stuck` right after a wall strike is the same event, not a second one.
+//   • a truck already airborne or tumbling when its capture starts: the cause is before the window. Re-drive the seed
+//     live with SOAK_LOG=2 to see it. So far always the autopilot — now handled: a re-seat's level drop by a fill edge
+//     tipping it (no flags for SETTLE_S after a seat), or a corner tighter than its speed could steer, run wide off the
+//     road at 14 m/s (it slows when the steering is pinned at its limit). Portal walls no longer read as "collider".
 // A REAL finding reproduces on replay AND shows the world itself disagreeing: a step in the carved ground beyond the lip
-// (site-steps), the physics surface differing from the drawn one, or a solid where nothing is drawn.
+// (soak-site.mjs), the physics surface differing from the drawn one, or a solid where nothing is drawn.
+// STATE (2026-11-07): 26 random seeds, ~110 km; real findings BUG-122 and BUG-129; the last 8 seeds × 6 km found none.
 
 import * as THREE from 'three'
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
