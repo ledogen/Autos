@@ -1,7 +1,7 @@
 ---
 id: FEAT-163
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-11-02
 source: owner, 2026-11-02, listening to FEAT-120's batch-2 synth takes: "tunnel reverb needs a different ticket. it
@@ -36,7 +36,7 @@ It is an effect applied to the actual mix, never an extra sound layered on top o
 - [x] Inside a bore, the engine, tires and impacts all carry the echo; outside, the dry mix is unchanged.
 - [x] No pop or click at the portals (the crossfade).
 - [x] An enable/volume control beside the audio sliders (FEAT-120's rule).
-- [ ] Owner listens in a tunnel.
+- [x] Owner listens in a tunnel. (2026-11-07, feat120-listen: "tunnel reverb ... is good")
 
 ## Built — Spare, 2026-11-02 (feature/spare)
 
@@ -58,3 +58,8 @@ It is an effect applied to the actual mix, never an extra sound layered on top o
   out at 6 s. A clunk inside keeps a ~0.3 s tail at about −29 dB, where outside it drops straight back to the −34 dB
   engine floor. Neither portal crossing shows a step in the 100 ms envelope. Take for the owner:
   `CarGame/wip/audio/tunnel-reverb/in-game-reverb-2026-11-02.wav`. Owed: the owner's listen in a real tunnel.
+
+## Resolution (2026-11-07)
+
+The owner listened in game: "tunnel reverb and pump handle is good" (feat120-listen). That was the last open box, so
+FEAT-163 is closed. The verdict is also recorded in FEAT-120's Tunnel reverb entry.
