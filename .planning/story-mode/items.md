@@ -313,8 +313,12 @@ stage text, or a card at a stop, never a gauge. The energy meter already shows t
 
 Open, and the owner's:
 
-- **Does sleep reset hunger?** Simplest: waking counts as a meal only if you ate at camp (cooking kit,
-  fish). Otherwise you start the day already on the clock — which gives the cooking kit its real job.
+- ~~**Does sleep reset hunger?** Simplest: waking counts as a meal only if you ate at camp (cooking kit,
+  fish). Otherwise you start the day already on the clock — which gives the cooking kit its real job.~~
+  **RULED 2026-11-06 (owner, FEAT-173): sleep neither resets nor runs it.** "Sleeping should not run the hunger
+  meter. That way a player can eat at camp at night and wake up and start driving without any wasted satiation."
+  The hold stands still for the night (src/day.js sleep), so bedtime no longer counts as a meal. The same ruling
+  makes the tutorial's night end fed, played or skipped, and starts every run with three packed lunches (mom's).
 - **Food on the spoilage clock (§1b).** Bought food needs a fresh-for figure; a packed lunch that
   turns by afternoon is the natural first one.
 - ~~**Quick slot or stop?** Snacks from a quick slot while driving (§1c); meals only when stopped.~~

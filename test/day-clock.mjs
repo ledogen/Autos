@@ -336,9 +336,14 @@ const mkDay = () => {
   const snap = sys.snapshot(), back = mkDay().sys
   back.start(); back.restore(snap)
   check('the save carries the hunger clock', back.hungry() === sys.hungry() && near(back.snapshot().fedUntilH, snap.fedUntilH))
-  // Bedtime counts as a standard meal [DEFAULT]: an 8 h night wakes right at the edge of hungry.
+  // FEAT-173 (owner 11-06): sleep stops the hunger clock — what is left of the hold at bedtime is left at waking.
+  const f0 = sys.snapshot().fedUntilH, c0 = sys.clockH()
   sys.sleep(8, 0.5)
-  check('bedtime counts as a meal: an 8 h night wakes fed, hungry the moment after', !sys.hungry() && (sys.update(tick), sys.hungry()))
+  check('a hungry bedtime wakes as hungry: the night moves the hold\'s end with the clock', sys.hungry()
+    && near(sys.clockH() - c0, 8) && near(sys.snapshot().fedUntilH - f0, 8))
+  sys.eat(10); sys.update(3); sys.sleep(8, 0.5)
+  check('a meal before bed is all there in the morning: 7 h of its 10 left after the night', !sys.hungry()
+    && near(sys.snapshot().fedUntilH - sys.clockH(), 7))
   DAY_PARAMS.dayLengthSec = 1440
 }
 
