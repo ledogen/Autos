@@ -1239,23 +1239,30 @@ export class RoadSystem {
         const qTileZ = Math.floor(wz / CHUNK_SIZE)
 
         // Probe one slice: sample its spline at N arc-length intervals, track nearest U within radius.
-        // D4: at each new global nearest, check footprint membership via getTangentAt → signedLat.
-        // The first probe of a slice records the XZ box of exactly these samples (`sl.bb`); later
-        // probes skip the slice when that box is no closer than intBestD2. Exact, not a bound:
-        // extBestD2 ≤ intBestD2 always (ext is the min over a superset), so no sample of a skipped
-        // slice could pass either strict `d2 <` test, and the scan order of the rest is unchanged.
+        // D4: a sample is INTERIOR when the query sits within the footprint beside it — laterally within
+        // footprintHW of its tangent AND along the road within one sample spacing `ds` of it. BUG-121: the
+        // lateral test alone was against the tangent's infinite line, so from ~9 m off a road a sample 100+ m
+        // up a bend whose straight continuation passed the query counted as interior and beat the true nearest
+        // road (87 % of off-footprint queries on random seeds, worst +189 m). An interior sample therefore lies
+        // within intR2 = footprintHW² + ds² of the query, which bounds both the tangent work and the skip below.
+        // The first probe of a slice records the XZ box of exactly these samples (`sl.bb`); later probes skip
+        // the slice when no sample in that box could pass either test: none can beat extBestD2, and none can be
+        // interior (box beyond intR2) or beat intBestD2. Exact, not a bound — the scan order of the rest is
+        // unchanged.
         const probeSlice = (sl) => {
             const bb = sl.bb
-            if (bb) {
-                const ox = wx < bb[0] ? bb[0] - wx : wx > bb[1] ? wx - bb[1] : 0
-                const oz = wz < bb[2] ? bb[2] - wz : wz > bb[3] ? wz - bb[3] : 0
-                if (ox * ox + oz * oz >= intBestD2) return
-            }
             const spline = sl.spline, runKey = sl.runKey ?? '', arcS0In = sl.arcS0 ?? 0, arcS1In = sl.arcS1 ?? 0
-            let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
             const len = spline.getLength ? spline.getLength() : 0
             // ~1 sample / 2 m, clamped to [16, 256] — enough resolution for a 200 m radius query.
             const n = Math.max(16, Math.min(256, Math.ceil((len || 64) / 2)))
+            const ds = (len || 64) / n, intR2 = footprintHW * footprintHW + ds * ds
+            if (bb) {
+                const ox = wx < bb[0] ? bb[0] - wx : wx > bb[1] ? wx - bb[1] : 0
+                const oz = wz < bb[2] ? bb[2] - wz : wz > bb[3] ? wz - bb[3] : 0
+                const bd2 = ox * ox + oz * oz
+                if (bd2 >= extBestD2 && (bd2 > intR2 || bd2 >= intBestD2)) return
+            }
+            let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
             for (let i = 0; i <= n; i++) {
                 const u = i / n
                 spline.getPointAt(u, _scratchPt)
@@ -1271,17 +1278,18 @@ export class RoadSystem {
                     extBestArcS0 = arcS0In; extBestArcS1 = arcS1In
                 }
                 // D4: check if this sample is a new interior nearest (footprint membership)
-                if (d2 < intBestD2) {
+                if (d2 < intBestD2 && d2 <= intR2) {
                     // Compute signed lateral at this sample — getTangentAt reuses _scratchTan.
-                    // This branch fires only when a new candidate is closer than the current
-                    // interior best; the getTangentAt call is bounded by intBestD2, not extBestD2.
+                    // This branch fires only for a candidate closer than the current interior best
+                    // AND close enough to be interior at all (intR2), so it stays rare off the road too.
                     spline.getTangentAt(u, _scratchTan)
                     const tz = _scratchTan.z, tx = _scratchTan.x
                     // dx/dz are query − sample, so lateral = (sample − query) cross tangent
                     // signedLat = −dx*tz + dz*tx  (point-to-sample offset cross tangent, consistent
                     // with _sampleCarveWorld: signedLat = dx*tz − dz*tx where dx = samplePt − query)
                     const signedLat = (-dx) * tz - (-dz) * tx  // = dx_fwd*tz − dz_fwd*tx
-                    if (Math.abs(signedLat) <= footprintHW) {
+                    const along = dx * tx + dz * tz             // BUG-121: the query beside THIS sample
+                    if (Math.abs(signedLat) <= footprintHW && Math.abs(along) <= ds) {
                         intBestD2 = d2; intBestSpline = spline; intBestU = u; intBestN = n
                         intBestRunKey = runKey
                         intBestArcS0 = arcS0In; intBestArcS1 = arcS1In

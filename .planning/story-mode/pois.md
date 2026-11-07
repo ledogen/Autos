@@ -18,8 +18,8 @@ that gives nothing still costs a pad, but it adds nothing to the job supply (see
 
 | Type | Status | Region | Gives | Receives | Tags | Model | Ticket |
 |---|---|---|---|---|---|---|---|
-| `sawmill` | planned | R2 | haul (lumber), courier | any | haulYard | ASSET-11 | FEAT-91 |
-| `quarry` | planned | R3 | haul (rocks), courier | any | haulYard | ASSET-35 | FEAT-91 |
+| `sawmill` | planned | R2 | haul (lumber) (courier? beta call — owner 2026-11-07: "no need for courier to exist everywhere"; the R1 splitting yard posts haul only) | any | haulYard | ASSET-11 | FEAT-91 |
+| `quarry` | planned | R3 | haul (rocks) (courier? beta call — owner 2026-11-07: "no need for courier to exist everywhere"; the R1 splitting yard posts haul only) | any | haulYard | ASSET-35 | FEAT-91 |
 
 ## Roadside spots — destinations that are not POIs
 

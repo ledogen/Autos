@@ -45,6 +45,7 @@ How the cut works:
 |---|---|
 | FEAT-146 | the run ends: camp (win), death, or throw in the towel — then a summary |
 | FEAT-147 | tutorial + opening: the firing, the uncle, the first day |
+| FEAT-184 | the tutorial overhaul: the lessons a run needs (a flat and the spare, eating, refuelling, wear and damage), on a world that fits them (owner, 2026-11-07: "mark it to do before alpha") |
 | FEAT-103 | the expedition camp is the win. No unlock and no FEAT-28: the camp sits on the story circle's edge, at the end of an existing road cut at the wall. The road leading to it stays ordinary for the alpha; its perilous upfit comes after (owner, 2026-10-26) |
 | FEAT-43 | story region — only the slices one region needs; "confinement becomes the unlocked set" is beta |
 | FEAT-114 | haul quantity — built on `feature/mission-recut`, merge it |
@@ -98,6 +99,7 @@ example a bug that won't block the alpha.
 
 | Ticket | Why later |
 |---|---|
+| BUG-64 | walls between close roads: the class-A part left would move routes; owner, 2026-11-07: "dont take the bug64 fix. its not bothering me" |
 
 Tickets get minted into `.planning/todos/pending/` **at milestone entry, not all up front** — the
 design has open questions (DESIGN.md §Open questions) and minting everything now would freeze answers
