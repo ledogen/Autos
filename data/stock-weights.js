@@ -72,11 +72,11 @@ export const STOCK_WEIGHT = {
     awning:           1,
     cookingKit:       1,
 
-    // Rewards only: never on the shelf (REWARD_ONLY below)
+    // Rewards only: never on the auto shop's shelf (REWARD_ONLY below)
     emergencyGas:     4,
     coffee:           10,
     chiliDog:         4,
-    ductTape:         4,     // sold only at the general store, which has no shelf
+    ductTape:         4,     // sold at the general store (FEAT-104, data/shop-stock.js STOREFRONT), not the auto shop
     energyDrink:      10,
     dinnerMeal:       4,     // eaten on the spot, never stowed
     blanket:          4,     // FEAT-168 camp rewards [DEFAULT]: the bottom rungs Sometimes, the top Hardly ever
@@ -87,6 +87,7 @@ export const STOCK_WEIGHT = {
     deluxeSleepingPad: 0.25,
 }
 
-/** Weighted for mission rewards but never stocked on a shelf (the owner's reward-only rows). */
+/** Weighted for mission rewards but never stocked on an AUTO SHOP's shelf (the owner's reward-only rows). Some
+ *  are storefront lines: data/shop-stock.js STOREFRONT, which these weights don't touch. */
 export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'ductTape', 'energyDrink', 'dinnerMeal',
     'blanket', 'airMattress', 'sleepingPad', 'quilt', 'sleepingBag', 'deluxeSleepingPad'])
