@@ -1,7 +1,7 @@
 ---
 id: BUG-130
 type: bug
-status: open
+status: closed
 opened: 2026-11-07
 severity: major
 source: Spare, the BUG-129 census (2026-11-07)
@@ -105,3 +105,7 @@ story, seed11 origin story, seed7 origin play): stream MESHES only, which drape 
 height, which the fix changes there.
 
 Closed on landing.
+
+## Landed (orchestrator, 2026-11-07)
+
+Merge of dd6eb126 on main (tree identical): affected 62/62, cdp-smoke 25/25.
