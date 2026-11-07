@@ -783,14 +783,16 @@ export const PROP_MODELS = {
   //
   // THE LIFTS. Bay A, the player's, has a FLUSH scissor lift, lowered: its runways are tiled into the
   // slab 5 mm above the pad, so the wheels ride the analytic pad surface as everywhere else (no ramp,
-  // no collider, MESH == PHYSICS). Bay B's lift is RAISED 1.15 m, empty, scissor arms showing: it is
+  // no collider, MESH == PHYSICS). Bay B's lift is RAISED 0.9 m, empty, scissor arms showing: it is
   // what says the flat yellow plates in bay A are a lift. ShopLight (four ceiling strips) is emissive.
   //   park: the deck of bay A's lift (both runways); the truck's centre parks in it, nose away from the
   //   road. FEAT-178 triggers the service screen on it through the same _inPoiSpot test, so there is no
   //   separate lift box. Without it the "park here" ring would stand at the pad centre, which is on
-  //   bay B's raised lift, inside its collider. camera (FEAT-178): bay A's inside back corner on the end-wall side, eye and look
-  //   point in the model frame, vertical fov in degrees; it frames the truck's front three-quarter
-  //   with the open door behind.
+  //   bay B's raised lift, inside its collider. camera (FEAT-178): bay B's back corner on the partition side,
+  //   eye and look point in the model frame, vertical fov in degrees (main.js's 60; the render's only).
+  //   It frames the truck's driver-side front three-quarter across bay B's lift, the open doors behind
+  //   (owner, 2026-11-07: "move it to the other front corner ... in the bay next to the one you park in").
+  //   The lift sits at 0.9 m so it clears that view of the truck.
   //
   // On a 14 x 8 LAY-BY (coverage-sited, two per region, so never the farm pad). The 8 m depth is squeezed
   // between two limits:
@@ -816,7 +818,7 @@ export const PROP_MODELS = {
         { c: [-1.8, 2.3, -3.9], s: [1.1, 4.6, 0.2] },              // pier, centre
         { c: [2.225, 2.3, -3.9], s: [0.55, 4.6, 0.2] },            // pier, +X
         { c: [4.5, 1.7, -1.5], s: [3.6, 3.4, 5] },                 // office
-        { c: [0.35, 0.675, -0.2], s: [2.09, 1.35, 4.6] },          // lift B, raised
+        { c: [0.35, 0.55, -0.2], s: [2.09, 1.1, 4.6] },            // lift B, raised
         { c: [-4.3, 0.46, 3.5], s: [2.6, 0.92, 0.6] },             // bench
         { c: [1.975, 0.725, 3.45], s: [0.85, 1.45, 0.6] },         // tool chest
         { c: [-1.2, 0.775, 3.48], s: [0.48, 1.55, 0.48] },         // compressor
@@ -828,10 +830,10 @@ export const PROP_MODELS = {
     seat: 1.3,
     seatAlong: 0.5,
     park: { x: -3.95, z: -0.2, halfX: 1.045, halfZ: 2.3 },
-    camera: { eye: [-5.9, 2.8, 3.6], look: [-3.95, 0.9, -0.499], fov: 55 },
+    camera: { eye: [2.3, 3, 3.6], look: [-3.95, 0.9, -0.499], fov: 60 },
   },
 
-  // ASSET-83 — the CONSTRUCTION SITE, 1548 tris, 9 materials, no images. The workSite POI ("the {last}
+  // ASSET-83 — the CONSTRUCTION SITE, 1908 tris, 9 materials, no images. The workSite POI ("the {last}
   // job site"). A small concrete-block building half built on a fresh 8 x 5 m slab: the back corner at
   // full height (with a window) and racked leads stepping down both walls, the front and +X walls a few
   // courses up with rebar standing out. The site is built from its own freight (cinder-block and
