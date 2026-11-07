@@ -17,7 +17,8 @@
  * FEAT-125 pad audit (2026-11-06) [DEFAULT]: the job in hand's "abandon job" button (main.js #job-cancel, on the
  * mission HUD — a mouse-only control until now, and the only way to clear an expired job) is the menu's LAST
  * entry while it can act (parked). It is never the pre-selection, even alone, so no B tap can arm it: the D-pad
- * has to walk to it. Its own two-press confirm stands.
+ * has to walk to it. Its own two-press confirm stands; once armed it IS the pre-selection (BUG-120), so the confirm
+ * is one B press.
  */
 
 import { pad } from './gamepad.js'
@@ -61,7 +62,10 @@ pad.hudMenu = {
     const list = items()
     if (!list.length) { hintPark(); return }
     label.classList.toggle('solo', list.length < 2)
-    mark(list.find(el => el !== abandon()) ?? null)   // never the abandon button: the D-pad walks to it
+    // Never the abandon button: the D-pad walks to it. BUG-120: once ARMED (its "confirm?"), it is — the confirm is
+    // then one B press, inside its 3 s; walking the menu to it a second time ran the arm out on the pad.
+    const ab = abandon()
+    mark(ab?.classList.contains('armed') ? ab : list.find(el => el !== ab) ?? null)
     document.body.classList.add('hud-menu-on')
   },
   move (d) {

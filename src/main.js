@@ -5521,9 +5521,17 @@ const STRANDED_REST_S = 3   // [DEFAULT]
 let _strandedSince = null
 function _checkStranded () {
   const v = vehicleState.velocity
-  const end = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen
-    && !inventoryScreen.isOpen && !damageScreen.isOpen && Math.hypot(v.x, v.y, v.z) < 0.5 && recoveryCard(_recoveryState()).canEnd
-  if (!end) { _strandedSince = null; return }
+  const c = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen
+    && !inventoryScreen.isOpen && !damageScreen.isOpen && Math.hypot(v.x, v.y, v.z) < 0.5 ? recoveryCard(_recoveryState()) : null
+  // FEAT-172 (owner, 2026-11-06): stuck but able to pay, the truck says so and points at the tow — while the
+  // Recovery chip is there to press (never inside a POI's ring) and its card is shut.
+  const hint = document.getElementById('stranded-hint')
+  const show = c?.stuck && !c.canEnd && !_recoveryOpen && document.getElementById('recovery-row')?.style.display === 'flex'
+  if (hint) {
+    hint.style.opacity = show ? '1' : '0'
+    if (show) hint.innerHTML = `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`   // PLACEHOLDER words
+  }
+  if (!c?.canEnd) { _strandedSince = null; return }
   _strandedSince ??= simTime
   if (simTime - _strandedSince >= STRANDED_REST_S) _endRun('broke')
 }
@@ -9193,11 +9201,12 @@ function _runEndWhy (kind) {
       + `the ${f.region} could take ${Math.round(fatalMph(f.armor))} mph; fresh it takes ${Math.round(fatalMph(1))}</div>`
   }
   if (kind !== 'broke') return ''
-  // What stranded it, and the cheapest of the Recovery card's cures: what the wallet fell short of.
+  // What stranded it, and the cheapest of the Recovery card's cures: what the wallet fell short of — or, given up
+  // on while the wallet covered it (FEAT-172), that it was there.
   const c = recoveryCard(_recoveryState()), o = c.cure
   const words = { towFuel: 'the tow', towShop: 'the tow', tireService: 'the tire service', shopFix: 'the repair' }
   return `<div class="re-why">${c.head} &mdash; ${o ? `${o.acts.map(a => words[a]).join(' and ')} ${o.acts.length > 1 ? 'came to' : 'was'} $${formatMoney(o.price)}`
-    : 'no tow could reach you'}, you had $${formatMoney(runEconomy.money)}</div>`
+    : 'no tow could reach you'}${o && runEconomy.money + 1e-9 >= o.price ? ', and you gave up' : `, you had $${formatMoney(runEconomy.money)}`}</div>`
 }
 
 /** The truck's upgrades — the five most valuable parts fitted this run, or "stock" (owner, 2026-10-31). */
@@ -9220,8 +9229,10 @@ document.getElementById('tc-back')?.addEventListener('click', () => {
   document.getElementById('towel-card').style.display = 'none'
   _showPauseMenu()
 })
-document.getElementById('tc-end')?.addEventListener('click', () => _endRun('towel'))
+// FEAT-172 (owner, 2026-11-06): giving up while the truck is stranded is breaking down.
+document.getElementById('tc-end')?.addEventListener('click', () => _endRun(recoveryCard(_recoveryState()).stuck ? 'broke' : 'towel'))
 window.__board = () => offerBoard   // dev handle — test/cdp-smoke.mjs delivers the requisition (FEAT-146)
+window.__worldCode = () => formatWorldCode(_seedString, activeWorld())   // dev handle — cdp-smoke names a failed step's world
 window.__poi = () => poiSystem      // dev handle — test/cdp-smoke.mjs drives at a barricade row (FEAT-154)
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
@@ -9410,6 +9421,9 @@ document.addEventListener('keydown', e => {
   const seedModal = document.getElementById('story-seed-modal')
   if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
   if (_runEndOpen) return   // FEAT-146: the run is over — the card's one button is the way out
+  // BUG-119: Esc / pad B on the towel's confirm is its back — it fell through to the pause toggle, which showed the
+  // menu over the still-open card, and the pad (menu-nav reads the card first) kept driving the card.
+  if (document.getElementById('towel-card').style.display === 'flex') { document.getElementById('tc-back').click(); return }
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
   if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule

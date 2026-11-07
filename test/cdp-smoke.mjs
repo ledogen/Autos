@@ -1154,7 +1154,12 @@ const STEPS = [
     await js('window.__vs.fuel.gal = 0')   // the running engine's next step finds it empty: dry, stalled
     check(await until(() => js('window.__vs.fuel.dry'), 3000), 'the emptied tank never ran dry')
     await park(true)
+    // FEAT-172: stuck with money for the tow, the truck says so and points at it — until the card opens.
+    const hint = () => js('getComputedStyle(document.getElementById("stranded-hint")).opacity === "1" && document.getElementById("stranded-hint").textContent')
+    check(await until(async () => /out of fuel — .*to call a tow/.test(await hint()), 2000),
+      `no stranded hint on a dry truck with money: "${await js('document.getElementById("stranded-hint").textContent')}"`)
     await tap('x')
+    check(await until(async () => !await hint(), 2000), 'the stranded hint stayed up over the open Recovery card')
     check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]:not([disabled])")'), 3000),
       `no fuel tow on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
     // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
@@ -1166,6 +1171,12 @@ const STEPS = [
     check(!await card(), 'a dry truck with money for a tow ended the run')
     await js('window.__econ.money = 0')
     await ended(/broke down/, /out of fuel — (the tow was \$[\d,.]+|no tow could reach you), you had \$0\b/)
+    // FEAT-172: giving up while stranded is breaking down — a seized engine, then the towel.
+    await newRun()
+    await js("window.__damage.set('engine', 0); window.__econ.money = 1000")   // stuck, and the tow is affordable
+    check(await until(() => js('window.__vs.engineHealth <= 0'), 2000), 'a 0 % engine never reached the truck')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/broke down/, /the engine seized — (the tow was \$[\d,.]+, and you gave up|no tow could reach you, you had)/)
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
     // FEAT-170: a new run starts with mom's casserole in hand, and the win waits for no job to be active (in
@@ -1324,6 +1335,15 @@ const STEPS = [
     check(await until(() => js('document.getElementById("pause-menu").style.display === "flex"'), 2000), 'Start did not pause')
     await padTo('pm-towel'); await btn(0)
     check(await until(() => js('document.getElementById("towel-card").style.display === "flex"'), 2000), 'A on "give up" opened no confirm')
+    // BUG-119: the confirm DRAWS its highlight (it had no .nav-focus style: the D-pad moved an invisible one)…
+    check(await js(`(() => { const [a, b] = document.querySelectorAll('#towel-card button'), bg = el => getComputedStyle(el).backgroundColor
+      return a.classList.contains('nav-focus') !== b.classList.contains('nav-focus') && bg(a) !== bg(b) })()`), 'the give-up confirm draws no highlight (BUG-119)')
+    // …and B is its back: the pause menu alone (it opened the menu OVER the card, and the pad kept driving the card).
+    await btn(1)
+    check(await until(() => js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 2000),
+      'B on the give-up confirm did not step back to the pause menu alone (BUG-119)')
+    await padTo('pm-towel'); await btn(0)
+    check(await until(() => js('document.getElementById("towel-card").style.display === "flex"'), 2000), 'A on "give up" opened no confirm the second time')
     await padTo('tc-end'); await btn(0)
     check(await until(() => js('document.getElementById("run-end").style.display === "block"'), 3000), 'the give-up confirm ended nothing')
     await padTo('re-menu'); await btn(0)
@@ -1349,8 +1369,8 @@ const STEPS = [
     // The glyphs: the pad drove last, so every keycap reads its button.
     check(await js('document.body.classList.contains("pad-on")'), 'body.pad-on is off while the pad drives')
     // The B menu's "abandon job": its LAST entry, never the pre-selection (no B tap can arm it), labelled by its words;
-    // ↑ wraps to it, the release arms it, a second trip confirms. Mom's casserole has none (BUG-117): driven at the
-    // giver below, on a job taken there.
+    // ↑ wraps to it, the release arms it, and armed it IS the pre-selection: one B press confirms (BUG-120). Mom's
+    // casserole has none (BUG-117): driven at the giver below, on a job taken there.
     const pick = async () => {
       await js('__fp.b[1] = 1'); await frames(4, 200)
       const first = await js('document.querySelector(".menu-sel")?.id')
@@ -1416,8 +1436,11 @@ const STEPS = [
     const a1 = await pick()
     check(a1.first !== 'job-cancel' && a1.sel === 'job-cancel' && /abandon job/.test(a1.label), `the B menu's abandon entry: ${JSON.stringify(a1)}`)
     check(/confirm\?/.test(await js('document.getElementById("job-cancel").textContent')), 'picking "abandon job" did not arm it')
-    await pick()
-    check(await until(() => js('window.__mission().state === "done"'), 3000), 'the second pick did not abandon the job')
+    // BUG-120: a second trip down the menu ran the 3 s arm out on a real pad — B held, released, nothing walked.
+    await js('__fp.b[1] = 1'); await frames(4, 200)
+    check(await js('document.querySelector(".menu-sel")?.id') === 'job-cancel', 'the armed abandon is not the B menu\'s pre-selection (BUG-120)')
+    await js('__fp.b[1] = 0'); await frames(4, 200)
+    check(await until(() => js('window.__mission().state === "done"'), 3000), 'one B press on the armed abandon did not abandon the job')
     await btn(13); await btn(0)
     check(await until(() => js('!window.__mission().isActive()'), 2000), 'A on the abandoned job\'s result card left it up')
     // The pump: A held pumps, RB lets go of the brake and pays.
@@ -1453,7 +1476,8 @@ for (const [name, fn] of STEPS) {
   if (ONLY && !ONLY.includes(name)) continue
   step = name
   const t0 = performance.now()
-  try { await fn() } catch (e) { failed = { step: name, msg: e.message } }
+  // A step on a random world (the pad step's blank seed box) names it, so a miss can be replayed (Lane A, 2026-11-06).
+  try { await fn() } catch (e) { failed = { step: name, msg: `${e.message} · ${await js('window.__worldCode?.()').catch(() => 'world code unreadable')}` } }
   times.push(`${name} ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   if (failed || errors.length) break
 }
