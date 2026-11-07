@@ -1,7 +1,7 @@
 ---
 id: BUG-131
 type: bug
-status: open
+status: open — built on land/bug-131 (95c4fc5c); the owner said land it (bug131-keepout (a), 2026-11-07), route length as a new ticket — landing pending
 opened: 2026-11-07
 severity: minor
 source: Spare, found measuring BUG-121 (2026-11-07)

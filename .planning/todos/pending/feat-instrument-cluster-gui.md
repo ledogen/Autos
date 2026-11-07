@@ -18,6 +18,20 @@ land."
 
 # FEAT-34: Instrument cluster GUI (with ignition key + warning lights + radio)
 
+## State (alpha audit, Lane A, 2026-11-07) — two of the three consumers have moved
+
+- **Ignition key: built.** FEAT-33 closed (`completed/feat-ignition-starter.md`). The cluster draws the key in its own
+  well and sweeps it between detents (`src/cluster.js` `setIgnition`, `KEY`).
+- **The two needles are live.** Fuel comes from FEAT-50 (`setFuelLevel`, `src/fuel.js`), and coolant from FEAT-51
+  (`setCoolantTemp` ← `DamageModel.tempGaugeFrac()`).
+- **Two lamps are lit from real state, and only with the key on:** low fuel (FEAT-50) and tire pressure (FEAT-94,
+  any flat tire).
+- **Still missing:**
+  - the parking-brake and headlight / high-beam tell-tales (state-backed, buildable now);
+  - any health lamp from SM-3's wear model (check engine, charge, oil);
+  - the radio (FEAT-58 is still a thinking surface).
+- **Owner's call owed:** which lamps the alpha's bank carries, and whether the radio is in the alpha at all.
+
 ## ⚑ STATUS 2026-08-15 — the shell SHIPPED as FEAT-49; what's left is the three consumers
 
 **The cluster itself exists on main.** FEAT-49 (`src/cluster.js`, `GaugeCluster`, merged `54cc10d`,

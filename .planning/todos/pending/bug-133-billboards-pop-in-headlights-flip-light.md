@@ -1,7 +1,7 @@
 ---
 id: BUG-133
 type: bug
-status: open
+status: open — built (land/bug-133, on main); waiting on the owner's look at e66f3987
 severity: major
 opened: 2026-11-07
 source: owner, 2026-11-07 (three inbox notes) — "Prop billboards particularly trees don't reflect the truck headlights making pop-in very obvious at nighttime with high beams on" · "Prop billboards flip flop and mirror their orientation at certain angles" · "Prop billboards lighting does not always match what the 3d models lighting looks like making pop-in obvious at certain times of day and certain illumination angles"

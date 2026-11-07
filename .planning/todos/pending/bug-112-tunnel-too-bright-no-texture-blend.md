@@ -1,7 +1,7 @@
 ---
 id: BUG-112
 type: bug
-status: open
+status: open — the owner answered bug112-look (2026-11-06): A1, keep the light; blend only the portal's shoulder seam (gravel outside → flat dirt inside) — to build
 severity: minor
 opened: 2026-11-05
 source: owner, 2026-11-05, driving BUG-81's shoulder fix on Spare's branch (:3885) — "the tunnel shoulder drive felt was smooth as butter - close. but the lighting was off - too bright in the tunnel. and texture blending nonexistant"
@@ -57,3 +57,13 @@ https://claude.ai/artifact/WvJkABRWGG5rZ35BimnXvk, generated into `wip/bug-112/p
   - A, the light inside: keep / darker / lighter;
   - B, which seam (1 bore floor, 2 two tans, 3 lining vs ring), each one blended or ruled a hard edge.
 Queued by the orchestrator as an owed call. The build waits on the answer.
+
+## The owner's answer (2026-11-06, bug112-look, verbatim)
+
+> "bug 112 per the artifact: A1. B inconclusive. Your bubbles were not aligned in the photos with the seam that I was
+> concerned about. The only seam I'm concerned about is between the shoulder outside the tunnel and the shoulder
+> inside the tunnel. It goes from a gravel texture to a flat dirt color. That seam is the one i wanted fixed. all
+> others are fine"
+
+So the lighting stands, and the build left is one seam: the shoulder's gravel texture outside the portal against the
+flat dirt colour inside. (Folded in by the alpha audit, Lane A, 2026-11-07.)
