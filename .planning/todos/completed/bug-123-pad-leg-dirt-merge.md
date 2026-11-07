@@ -1,7 +1,7 @@
 ---
 id: BUG-123
 type: bug
-status: open
+status: closed
 opened: 2026-11-07
 severity: major
 source: Spare, found fixing BUG-122 (2026-11-07); the third cause of the doubled edge lip
@@ -100,3 +100,8 @@ everywhere). Seed 3 is identical. Network, profiles, junctions, POIs and tiles a
 **Lane B's sites on main (after BUG-122):**
 - The capture `try4/6-strut-1.json` replays clean: strut 0, jolt 0. The edge there is 0.162 m.
 - 1527888912 at (1047, −316): 0.153 m on one side, pad-to-pad on the other. The 0.30 m drop did not survive BUG-122.
+
+## Resolution (closed 2026-11-07)
+
+Landed on main (merge 202a0631; 62/62 affected gates, smoke 25/25). Pinned by the `junction-edge-lip` gate (added
+with BUG-127): 52 leg edges on two random seeds, worst lip 0.199 m, no dirt above any pad.
