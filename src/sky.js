@@ -112,18 +112,20 @@ export const SKY_CYCLE = {
   // evening 18 / night 24) every single hour was a blend and NO hour was actually the night look:
   // 23:00 was still 17 % evening, which is why the small hours carried a warm dusk haze — half of
   // the "fog is bright at night" report. A repeated preset makes that span flat, so dusk finishes
-  // at 20:00 and dawn starts at 04:00 and the hours between are genuinely `night`.
-  // Dusk is deliberately SHORT (2 h). fogColor lerps linearly but the sky's brightness falls off
+  // at 21:00 and dawn starts at 04:00 and the hours between are genuinely `night`.
+  // Dusk is deliberately SHORT (1.5 h). fogColor lerps linearly but the sky's brightness falls off
   // a cliff as the sun crosses the horizon, so any long evening→night ramp spends its middle
   // with fog much brighter than the sky behind it. Keeping the window narrow bounds that.
+  // FEAT-180 (owner 11-07, 9: "Approve"): the sun lasts until about 8 pm — evening 18:00 → 19:30, night 20:00 →
+  // 21:00, so the sun sets at ~20:12 instead of ~18:56 and 20:00 is the first limiting low light.
   keyframes: [
     { hour: 0,  preset: 'night' },
     { hour: 4,  preset: 'night' },      // flat night 00:00–04:00
     { hour: 7,  preset: 'morning' },    // dawn 04:00–07:00
     { hour: 12, preset: 'day' },
-    { hour: 18, preset: 'evening' },
-    { hour: 20, preset: 'night' },      // dusk 18:00–20:00
-    { hour: 24, preset: 'night' },      // flat night 20:00–24:00
+    { hour: 19.5, preset: 'evening' },
+    { hour: 21, preset: 'night' },      // dusk 19:30–21:00
+    { hour: 24, preset: 'night' },      // flat night 21:00–24:00
   ],
 }
 
