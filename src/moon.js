@@ -8,8 +8,8 @@
  *
  * WHY A LIVE MESH, NOT BAKED INTO THE SKY CUBEMAP: the baked sky is 512 px per cube face, so a
  * moon-sized disc would span ~30 texels and read as a mush. Drawn live it is pixel-crisp at any
- * angular size for one extra draw call. (The ground-fill disc in sky.js stays baked — it is a flat
- * colour, so resolution buys it nothing.)
+ * angular size for one extra draw call. (sky.js's below-horizon fog fill stays baked — it is a smooth
+ * gradient, so resolution buys it nothing.)
  *
  * DEPTH / FOG: the mesh sits at MOON_DIST metres from the camera with depthWrite off but depthTest
  * ON, so real terrain in front of it occludes it for free (the terrain ring is ~320 m, well inside
