@@ -503,6 +503,17 @@ export class TerrainSystem {
             )
         }
         this._material.customProgramCacheKey = () => 'feat05-alpine-terrain'
+        // BUG-112: the bore's dirt floor beside the deck (road-mesh.js buildTunnelTube) is drawn with THIS shader,
+        // so the cut bench's broken-rock gravel runs on into the tube instead of turning to a flat tan at the mouth
+        // (owner 2026-11-06: "It goes from a gravel texture to a flat dirt color"). A sibling material: the same
+        // shader text (the cache key shares the one program) and the same live uniforms, except the mouth cut-out,
+        // switched off — the floor lies inside the very capsule that discard removes.
+        this.boreFloorMaterial = this._material.clone()
+        this.boreFloorMaterial.onBeforeCompile = (shader, renderer) => {
+            this._material.onBeforeCompile(shader, renderer)
+            shader.uniforms.uTunnelN = { value: 0 }
+        }
+        this.boreFloorMaterial.customProgramCacheKey = this._material.customProgramCacheKey
 
         // PERF-19.2: spawn a small POOL of identical workers (was a single worker). The
         // ready→ring-complete fill is bound by the SERIAL per-chunk `generate` cadence, not the
