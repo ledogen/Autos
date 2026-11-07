@@ -893,7 +893,7 @@ export const PROP_MODELS = {
   tackleShop: {
     url: 'assets/models/tackle-shop.glb',
     collision: {
-      shape: 'box', size: [6.3, 3.85, 5.0],
+      shape: 'box', size: [6, 3.85, 3.6],   // the shack's walls, centred on the origin (story-poi's fits-its-pad probe)
       boxes: [
         { c: [0, 1.925, 0], s: [6, 3.85, 3.6] },                   // shack
         { c: [0, 1.2, -2.5], s: [6.3, 2.401, 1.4] },               // porch

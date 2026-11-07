@@ -903,7 +903,7 @@ def build():
           f" pad edge (rim {RIM}), collider corners {corners:.3f} (poi-yard {RIM_KEEP})  -> {'OK' if ok_pad else 'FAIL'}")
     print(f"  facing: {bad} inverted first-hits of {hits}   uv handedness: {mir} mirrored of {tex} sign faces")
     print("  ---- data/prop-models.js (three.js frame) ----")
-    print(f"      shape: 'box', size: [{2 * DECK_X:.1f}, {RIDGE}, {DECK_Y[1] + HY:.1f}],")
+    print(f"      shape: 'box', size: [{2 * HX:g}, {RIDGE}, {2 * HY:g}],   // the shack's walls, centred on the origin")
     print("      boxes: [")
     for ln in registry():
         print(ln)
