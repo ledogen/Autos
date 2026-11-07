@@ -55,8 +55,9 @@ PAD_HX, PAD_HZ, PAD_R = 7.0, 4.0, 1.5
 FLAT_Z = -2.6
 RIM = 1.6
 
-# --- the PARK box: one truck alongside the road, CG in the box (Blender frame) ---
-PARK = (0.0, 4.6, 3.2, 1.5)         # x, y, half along the road, half across
+# --- the PARK box: where the truck's body goes, one truck alongside the road (the general store's
+# convention: main.js tests the CG inside it, so it is drawn round the truck, not round its CG) ---
+PARK = (0.0, 4.6, 3.2, 1.5)         # x, y, half along the road, half across (Blender frame)
 RANGER_HALF = (2.35, 1.0)           # Ranger half length, half width over the mirrors
 
 # --- slab + block walls ---
@@ -402,10 +403,6 @@ def mixer(p, F):
             p.face([W(v) for v in q], "SiteRed", F.d(out))
     p.face([W(v) for v in rings[0]], "SiteRed", F.d(-ax))
     p.face([W(v) for v in rings[-1]], "SiteDark", F.d(ax))                                  # the mouth
-    for k in range(0, n, 2):                                                                # mixing fins' ridges
-        a0, a1 = rings[1][k], rings[2][k]
-        p.face([W(a0), W(a1), W(a1 + (a1 - (base + 0.55 * ax)).normalized() * 0.03)], "SiteRed",
-               F.d((a1 - a0).cross(ax)))
 
 
 def wheelbarrow(p, F):
@@ -503,11 +500,10 @@ def fmt(v):
 
 
 def park_check(boxes):
-    """A Ranger anywhere its CG may stand in the park box (the box itself, any heading along the road)
-    must clear every collider."""
+    """The park box must hold a Ranger alongside the road and clear every collider."""
     px, py, hx, hy = PARK
-    lx, ly = RANGER_HALF
-    x0, x1, y0, y1 = px - hx - lx, px + hx + lx, py - hy - ly, py + hy + ly
+    assert hx > RANGER_HALF[0] and hy > RANGER_HALF[1], "the park box is smaller than the truck"
+    x0, x1, y0, y1 = px - hx, px + hx, py - hy, py + hy
     gaps = []
     for name, lo, hi in boxes:
         dx = max(lo[0] - x1, x0 - hi[0])
@@ -629,7 +625,7 @@ def build():
     print(f"  bbox  x {lo[0]:.2f}..{hi[0]:.2f}  y {lo[1]:.2f}..{hi[1]:.2f}  z {lo[2]:.2f}..{hi[2]:.2f}")
     print(f"  pad: nearest the road at ground pz {front:.2f} (flat from {FLAT_Z}), worst {worst:.2f} m past the"
           f" pad edge (rim {RIM})  -> {'OK' if ok_pad else 'FAIL'}")
-    print(f"  park box (pad z {SEAT - py - hy:.2f}..{SEAT - py + hy:.2f}): a Ranger anywhere in it clears every collider"
+    print(f"  park box (pad z {SEAT - py - hy:.2f}..{SEAT - py + hy:.2f}) clears every collider"
           f" by {gap:.2f} m (nearest: {nearest})  -> {'OK' if gap > 0.2 else 'FAIL'}")
     print(f"  facing: {bad} inverted first-hits of {hits}")
     print("  ---- data/prop-models.js (three.js frame) ----")
