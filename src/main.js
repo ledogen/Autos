@@ -2665,6 +2665,9 @@ perfMark('init: before physics engine')
 const physicsEngine = await createPhysicsEngine()
 const terrainPhysics = new TerrainPhysics(physicsEngine, () => roadSystem)   // road spans → bore slots in the collider
 terrainSystem.setPhysicsHook(terrainPhysics)   // mirrors every chunk build/recarve/dispose
+// BUG-132: a re-carve that changes a chunk's ground drops that chunk's props; they re-scatter on the new
+// ground. Reads the module-scope propSystem at call time (a reseed swaps the instance).
+terrainSystem.setRecarveHook((cx, cz) => propSystem?.releaseChunk(cx, cz))
 // The model's open-bed spec (if it has one) builds a real well instead of the solid deck, so
 // cargo dropped in rides in it (owner, 2026-09-29: "add a couple and drive around").
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS,
