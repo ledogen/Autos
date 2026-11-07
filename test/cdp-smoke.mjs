@@ -1293,6 +1293,11 @@ const STEPS = [
     check(e0.s === 'idle' && e0.first === 'closed', `the evening is not job-free: ${JSON.stringify(e0)}`)
     check(/to Mom's · park there to sleep/.test(e0.hud), `the evening's HUD does not point to mom's ("${e0.hud}")`)
     check(await until(async () => (await eve()).gps, 5000), "the GPS has no way to mom's in the evening")
+    // BUG-135: the played run's start, the joint's lay-by, drives off too.
+    await crank()
+    if (await js('window.__vs.parked')) await tap(' ')
+    { const c0 = await car(); await hold('w', 5); const c1 = await car(), d = Math.hypot(c1.x - c0.x, c1.z - c0.z)
+      check(d > 10, `the truck did not drive off from the burger joint: ${d.toFixed(1)} m in 5 s of throttle`) }
     // Stage 2: M is the skip's hold now, but a TAP still opens the map (on the release) and closes it.
     await tap('m')
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a tap of M in the evening did not open the map')
