@@ -151,6 +151,7 @@ const PAD_GRID_PAST = 5.0
 const PAD_MOUTH_EASE = 1.5
 const PAD_THROUGH_EASE = 2.0   // m inside a T trunk's pavement edge over which the pad hands off to the trunk deck
 const PAD_THROUGH_FREE = 1.0   // m strip past a trunk's edge with no spline samples: room to bend onto a side road
+const PAD_THROUGH_BLEND = 2.0  // m of distance lead over which a T trunk's nearer half takes over its deck from the other (BUG-137)
 // PAD_DIRT_EXTRA: extra dirt depth (m, beyond roadClearanceMargin) under the pad + rim-hold band —
 // keeps the 1 m-grid terrain triangles below the asphalt where the ruled plaza surface bends inside
 // one cell (linear dirt interpolation rides the bend's convex hull and would poke through a bare
@@ -235,6 +236,7 @@ const _CD_A = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_B = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_OUT = { grade: 0, lateral: 0 }
 const _CD_RP = { gradeY: 0, tx: 1, tz: 0 }   // runProfile `out` wherever only .gradeY is read AT ONCE (never held)
+const _thrY = new Float64Array(4), _thrE = new Float64Array(4), _thrOut = { lat: 0, over: 0 }   // _throughDeckTop scratch (never held)
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -9538,7 +9540,13 @@ export class RoadSystem {
      * weight: 1 on the pavement, easing to 0 over the last `ease` metres INSIDE its edge (the solved
      * surface is sampled on the pavement, so it already agrees there — the ease has nothing to bend).
      * null off the pavement. null when no through leg is in
-     * range. The two through halves share P to the bit, so the nearer-half pick is continuous.
+     * range.
+     * BUG-137: the halves share the node, not their decks. Where the trunk bends at its T, a point on the
+     * inside of the bend lies beside both halves at different stations, and on a 15–20 % grade their decks
+     * there differ by the grade change between those stations (0.24 m at seed 917338424's causeway T). So the
+     * halves within PAD_THROUGH_BLEND of the nearest are smoothstep-blended by distance, not picked: equal
+     * at the bisector, the nearer alone a blend-width past it. On a straight trunk the nearer leads by more
+     * than that everywhere off the node, so nothing changes there.
      */
     _throughDistance(node, through, wx, wz) {
         let d2 = Infinity
@@ -9553,21 +9561,32 @@ export class RoadSystem {
 
     _throughDeckTop(node, ps, wx, wz, ease = PAD_THROUGH_EASE) {
         const hw = this._params.roadHalfWidth ?? 5
-        const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
-        let best = null, bestD2 = Infinity, bestLeg = null, bestNe = null
-        for (let li = 0; li < node.legs.length; li++) {
+        const d = this._throughDistance(node, ps.through, wx, wz)
+        if (!(d <= hw)) return null
+        // each through half's own deck and its distance (|lateral| + overshoot past its end); then the blend
+        const ys = _thrY, es = _thrE
+        let n = 0, eMin = Infinity
+        for (let li = 0; li < node.legs.length && n < 4; li++) {
             if (!ps.through[li]) continue
             const leg = node.legs[li], ne = this._network.get(leg.runKey)
-            if (!ne) continue
-            const prs = this._projectLegMemo(ne, leg, wx, wz)
+            const prs = ne && this._projectLegMemo(ne, leg, wx, wz)
             if (!prs) continue
-            for (const pr of prs) if (pr.d2 < bestD2) { bestD2 = pr.d2; best = pr; bestLeg = leg; bestNe = ne }
+            let pr = null
+            for (const q of prs) if (!pr || q.d2 < pr.d2) pr = q
+            ys[n] = this._legDeckTop(ne, leg, pr, wx, wz, _thrOut)
+            es[n] = _thrOut.lat + _thrOut.over
+            if (es[n] < eMin) eMin = es[n]
+            n++
         }
-        if (!best) return null
-        const d = Math.sqrt(bestD2)
-        if (d > hw) return null
+        let ySum = 0, wSum = 0
+        for (let k = 0; k < n; k++) {
+            const u = 1 - (es[k] - eMin) / PAD_THROUGH_BLEND
+            if (u <= 0) continue
+            const w = u >= 1 ? 1 : u * u * (3 - 2 * u)
+            ySum += w * ys[k]; wSum += w
+        }
         const lu = Math.min(1, Math.max(0, (hw - d) / ease))
-        return { y: this._legDeckTop(bestNe, bestLeg, best, wx, wz), m: lu * lu * (3 - 2 * lu) }
+        return { y: ySum / wSum, m: lu * lu * (3 - 2 * lu) }
     }
 
     /**
@@ -9584,21 +9603,40 @@ export class RoadSystem {
     // than the ribbon does — on a steep grade a 14–18 cm miss at the mouth corners, where the pad welds
     // to the ribbon's section vertices (BUG-82 defect, found on BUG-63's restored seed-7 T: a leg
     // turning 40° in its first 12.5 m on a 37 % cross-slope).
-    _legDeckTop(ne, leg, pr, wx, wz) {
+    // BUG-137: the station stays on the run. runPointAt clamps to the run's ends, so a point past one (the
+    // outside of a through road's kink at its T, where both halves' feet sit on the node) kept stepping s
+    // outward while the point stood still — and the two halves' runaway decks disagreed by up to 0.8 m,
+    // which the nearer-half pick in _throughDeckTop turned into a 0.49 m cliff on the pavement. Past an end
+    // the deck carries on at the end section's own grade, `over` metres along the end tangent (a trunk half
+    // read past the node then agrees with the other half, which continues the same road). `out`, if given,
+    // gets the point's |lateral| from the section line and that overshoot.
+    _legDeckTop(ne, leg, pr, wx, wz, out) {
+        const cm = this._params.roadClearanceMargin ?? 0.25
+        const sMax = ne.polyCum?.[ne.polyCum.length - 1] ?? Infinity
         let s = pr.arcS, c = null, rp = null
         for (let k = 0; k < 4; k++) {
             c = this.runPointAt(leg.runKey, s)
             rp = this.runProfile(s, leg.runKey, _CD_RP)
             if (!c) break
             const ds = (wx - c.x) * rp.tx + (wz - c.z) * rp.tz
-            s += ds
+            s = Math.max(0, Math.min(sMax, s + ds))
             if (Math.abs(ds) < 1e-4) break
         }
-        if (!c) return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
+        if (!c) {
+            if (out) { out.lat = Math.sqrt(pr.d2); out.over = 0 }
+            return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + cm
+        }
         c = this.runPointAt(leg.runKey, s)
         rp = this.runProfile(s, leg.runKey, _CD_RP)
-        const lat = (wx - c.x) * rp.tz - (wz - c.z) * rp.tx
-        return this._carveDirtY(lat, s, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
+        const tx = rp.tx, tz = rp.tz, lat = (wx - c.x) * tz - (wz - c.z) * tx, along = (wx - c.x) * tx + (wz - c.z) * tz
+        const over = s >= sMax ? Math.max(0, along) : s <= 0 ? Math.max(0, -along) : 0
+        let y = this._carveDirtY(lat, s, leg.runKey, 1) + cm
+        if (over > 0) {
+            const h = Math.min(0.5, sMax / 2)
+            y += (y - this._carveDirtY(lat, s <= 0 ? h : sMax - h, leg.runKey, 1) - cm) / h * over
+        }
+        if (out) { out.lat = Math.abs(lat); out.over = over }
+        return y
     }
 
     /**
