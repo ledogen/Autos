@@ -32,6 +32,31 @@ land."
   - the radio (FEAT-58 is still a thinking surface).
 - **Owner's call owed:** which lamps the alpha's bank carries, and whether the radio is in the alpha at all.
 
+## Owner, 2026-11-07 (alpha-audit-calls) — and what was built
+
+Verbatim: "brake and headlight lamps are approved. not sure what the other damage tracks would take form as."
+
+**Built (Lane B, 2026-11-07): the 2002 Ranger's BRAKE and high-beam lamps** (`src/cluster.js`), matched to the 2002
+Ranger Owner Guide's cluster drawing (pages 10–13). Colours follow FMVSS 101: a brake telltale is red (§S5.5.2),
+high beam blue. No photo of a lit 2002 cluster could be fetched; the listing sites block scripted downloads.
+- **BRAKE**: "((!))" over the word BRAKE. The 2002 sets it at the tach's lower left; here it sits in the tach's empty
+  lower right, because this face's scale starts at the lower left. Its sender is `vehicleState.handbrake`, which
+  covers the latched park, Space held while rolling, and the mission launch hold. It also lights at START: the guide
+  says it "momentarily illuminates at start up to ensure the circuit is functional". Dark with the key off (it is on
+  the ignition feed).
+- **High beam**: "≡D" in the fuel pod, mirroring the low-fuel lamp; the 2002 sets it beside its fuel gauge. Lit at
+  headlight mode 2 (`vehicle-model.js` gains `getHeadlightMode`). It is on the headlamp circuit, so it lights with
+  the key off too.
+- **The 2002 has no "headlamps on" lamp.** "Headlight lamp" is therefore the high-beam indicator.
+
+**The damage-track lamps: the owner's call, put cheaply.** Sheet: https://claude.ai/artifact/XJrmfoRMYu4Rd77onpbAmF.
+Of the 29 damage tracks, a real 2002 has a lamp for two: CHECK ENGINE (engine condition; proposed at 50 %, where the
+power loss steepens) and CHECK GAGE (the engine running past H, which a worn radiator causes). Everything else has
+none. Options: A both (recommended), B CHECK ENGINE only, C neither. Nothing built until the call.
+
+Noticed: the game's low-fuel dot and tire-pressure lamp are not 2002 lamps. The 2002 folds low fuel into CHECK GAGE,
+and its tire-pressure lamp arrived on later trucks. Both are already shipped; no action asked.
+
 ## ⚑ STATUS 2026-08-15 — the shell SHIPPED as FEAT-49; what's left is the three consumers
 
 **The cluster itself exists on main.** FEAT-49 (`src/cluster.js`, `GaugeCluster`, merged `54cc10d`,

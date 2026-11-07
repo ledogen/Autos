@@ -1,7 +1,8 @@
 ---
 id: FEAT-172
 type: feature
-status: open
+status: closed
+closed: 2026-11-07 — landed 6b035b97; the owner kept the hint words (feat172-words, 2026-11-07)
 severity: minor
 opened: 2026-11-06
 source: owner, 2026-11-06, answering feat162-front-drag on the tracker page (relayed verbatim by the orchestrator)
@@ -42,11 +43,11 @@ the tow is the way out.
 
 ## Acceptance
 
-- [ ] Stuck + affordable cure + at rest → the overlay shows the cause and points at the tow; it goes away when the
+- [x] Stuck + affordable cure + at rest → the overlay shows the cause and points at the tow; it goes away when the
       truck is cured or rolls on.
-- [ ] Not stuck (a flat with a spare, a dry tank with a can, on the roof with a hi-lift) → no overlay.
-- [ ] Giving up while stuck → "You broke down."; giving up while not stuck → "You gave up.".
-- [ ] Pinned headlessly where it can be (the predicate → title mapping); the cdp-smoke's broke-down step covers
+- [x] Not stuck (a flat with a spare, a dry tank with a can, on the roof with a hi-lift) → no overlay.
+- [x] Giving up while stuck → "You broke down."; giving up while not stuck → "You gave up.".
+- [x] Pinned headlessly where it can be (the predicate → title mapping); the cdp-smoke's broke-down step covers
       the overlay and the towel-while-stuck title.
 
 ## Work log
@@ -67,3 +68,11 @@ FEAT-162 landed a3b82204).
   a seized engine with $1000, given up → "You broke down." / "the engine seized — the tow was $12.12, and you gave up".
   `SMOKE_STEPS=boot,story,endings`: PASS, zero console errors. The not-stuck towel ("You gave up.") was already pinned.
 - Owed: the 9 affected node gates (held for the orchestrator's landing smokes); the owner's words for the hint.
+
+**2026-11-07 — closed.** Landed 6b035b97 (FEAT-172; node 8/8, smoke boot,story,endings PASS). The owner's call on the
+hint words (tracker item `feat172-words`, 2026-11-07): **"keep"**. "out of fuel — park, then X to call a tow" stands, and
+its PLACEHOLDER mark is gone from main.js. Evidence for the boxes: the stuck predicate is pinned in `test/recovery.mjs`
+(a flat, a dry tank with a can, a seized engine, broke); the hint, its hiding under the open card, and both towel
+titles are pinned in cdp-smoke `endings`; the hint shows only while `recoveryCard().stuck`, so a truck that is not
+stuck never shows it.
+
