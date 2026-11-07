@@ -1083,7 +1083,11 @@ export class RoadMeshSystem {
         const halfWidth   = params.roadHalfWidth       ?? 5
         const crownH      = params.crownHeight          ?? 0.05
         const clearance   = params.roadClearanceMargin  ?? 0.25
-        const APRON_IN    = Math.min(halfWidth - 0.8, R - 0.5)  // tucked under the ribbon edge
+        // BUG-107: the apron floors the WHOLE bore from the centreline out. Tucked only under the ribbon
+        // edge (halfWidth − 0.8), it left the floor open wherever the asphalt is not the run's ribbon: a
+        // bore ending at a node's pad (seed 19), where the pad's edge leaves the run's line and the sky
+        // showed through between it and the apron. Under the ribbon it is 0.3 m down and never seen.
+        const APRON_IN    = 0
         const APRON_DROP  = 0.05             // m below carve dirt (kills mouth z-fight)
         // BUG-93: the proud lip's OUTER ring sits this far ABOVE carve dirt instead. The terrain
         // outside the cut starts a few cm above a dropped apron, and that open step faced into the
