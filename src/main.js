@@ -4349,6 +4349,10 @@ let _firingCam = null     // { p, theta0, t } while the firing's cards are up
 let _eveningGuide         // undefined = not planned yet: the evening's way home, planned once (not saved)
 let _eveningFrom = null   // m — the truck's crow distance to mom's when the evening was first polled (stage 4)
 const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
+// FEAT-184 stage 3 (the worst day): a played opening starts on a nearly empty tank, and the way home runs by the nearest
+// gas station first — when that detour is short. Past the budget the lesson stays the pump's first-use card.
+const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 3000 }   // [DEFAULT] — the budget waits on the stage-2 census
+let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4370,11 +4374,28 @@ const _eveningLeg = () => !!offerBoard && dialogueSystem.has(DLG.firing) && offe
 /** The evening's GPS: the joint to mom's door, planned the first time it is asked for. */
 function _homeGuide () {
   if (_eveningGuide === undefined) {
-    const mom = _mom(), joint = _joint()
-    _eveningGuide = mom && joint ? missionSystem.planOffer(joint, { rng: offerBoard.routeRng({ poiId: mom.id, slot: 'eve', k: 0 }),
-      dest: { kind: 'poi', pois: [mom], strict: true, anyLeg: true, nearest: true } }) : null
+    const mom = _mom(), from = _evePump?.done ? _evePump.q : _joint(), to = _eveTarget()
+    _eveningGuide = from && to ? missionSystem.planOffer(from, { rng: offerBoard.routeRng({ poiId: mom.id, slot: 'eve', k: 0 }),
+      dest: { kind: 'poi', pois: [to], strict: true, anyLeg: true, nearest: true } }) : null
   }
   return _eveningGuide
+}
+/** FEAT-184: where the evening's line goes now — the station while a fill-up is due, else mom's. */
+const _eveTarget = () => (_evePump && !_evePump.done ? _evePump.q : _mom())
+
+/** FEAT-184 stage 3: at a played opening's start, the evening's station and the near-empty tank — when the nearest
+ *  station's detour on the way home fits TUT_PARAMS.pumpDetourM. */
+function _planEvePump () {
+  _evePump = null
+  const joint = _joint(), mom = _mom()
+  const stations = poiSystem.list().filter(q => q.type === 'gasStation')
+  if (!joint || !mom || !stations.length) return
+  const plan = (from, pois) => missionSystem.planOffer(from, { rng: () => 0.5, dest: { kind: 'poi', pois, strict: true, anyLeg: true, nearest: true } })
+  const home = plan(joint, [mom]), toPump = plan(joint, stations)
+  const q = toPump && poiSystem.list().find(p => p.id === toPump.endPoiId), back = q && plan(q, [mom])
+  if (!home || !back || toPump.distance + back.distance - home.distance > TUT_PARAMS.pumpDetourM) return
+  _evePump = { q, done: false }
+  vehicleState.fuel.gal = RANGER_PARAMS.fuelTankGal * TUT_PARAMS.lowTankFrac
 }
 
 // BUG-118 (owner 11-06: "way off the path in the tutorial the GPS doesn't update"): the tutorial's GPS
@@ -4387,7 +4408,7 @@ let _tutOffAt = 0       // performance.now() when the truck left the line; 0 whi
 
 /** The tutorial leg in play: the route its GPS would show and the door that route ends at, or null. */
 function _tutLeg () {
-  if (_eveningLeg()) { const base = _homeGuide(), door = _mom(); return base && door ? { base, door } : null }
+  if (_eveningLeg()) { const base = _homeGuide(), door = _eveTarget(); return base && door ? { base, door } : null }
   const m = missionSystem?.mission
   if (offerBoard?.firstState() !== 'taken' || !m || !['staging', 'running'].includes(missionSystem.state)) return null
   const door = poiSystem.list().find(q => q.id === m.endPoiId)
@@ -4437,6 +4458,8 @@ function _resetToRoad () {
 function _eveningBeats () {
   const q = _mom(), v = vehicleState.position
   if (!_eveningLeg() || !q) return
+  // FEAT-184 stage 3: the pedals once the key has caught, then (a fill-up due) the gauge.
+  if (vehicleState.ignition?.state === 'running') { _tut('tut-drive'); if (_evePump && !_evePump.done) _tut('tut-gas') }
   const d = Math.hypot(q.x - v.x, q.z - v.z)
   _eveningFrom ??= d
   if (d < 0.5 * _eveningFrom) _tut('tut-diag')
@@ -4513,17 +4536,19 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the first job is still to do or the evening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
   _openingRun = false
+  _evePump = null
   // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (mom's door, 7 am, the casserole in hand),
   // no cards: the firing counts as played and the skip runs at once.
   if (_settings.skipTutorial) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
+  _planEvePump()   // FEAT-184 stage 3
   _cardHold = true
   dialogueSystem.play(DLG.firing, FIRING, () => {
     _firingCam = null
     setCameraFocus(null)   // the chase spring swings back onto the truck, parked right there
     _cardHold = true
-    dialogueSystem.play(DLG.momCall, MOM_CALL, () => _tut('tut-drive'))   // the evening leg is on from here (_eveningLeg)
+    dialogueSystem.play(DLG.momCall, MOM_CALL, () => _tut('tut-key'))   // the evening leg is on from here (_eveningLeg); FEAT-184: the key first
   })
   return true
 }
@@ -5254,6 +5279,7 @@ function _stepFuelStop (dt) {
     if (fuelStop.cans.length) inventorySystem.refill(fuelStop.cans)
     setPumpFlow(false)
     if (sale > 0) { economySystem.spend(sale); playRegister() } else playNozzle()
+    if (sale > 0 && _evePump && !_evePump.done) { _evePump.done = true; _eveningGuide = undefined; _renderMissionUI() }   // FEAT-184
     _pumpReceiptT = sale > 0 ? 2.5 : 0
     return
   }
@@ -6878,8 +6904,8 @@ function _renderMissionUI () {
       unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
       if (_eveningLeg()) {   // FEAT-170: no job, only the way home
-        const q = _mom(), vp = vehicleState.position
-        if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · park there to sleep`
+        const q = _eveTarget(), vp = vehicleState.position, pump = q && q !== _mom()
+        if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · ${pump ? 'fill up at a pump' : 'park there to sleep'}`   // FEAT-184: PLACEHOLDER words
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
         // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
         if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · <span class="kc-pad">hold </span>${keycap('R', 'D-pad →')} puts you back on it`)

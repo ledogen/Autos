@@ -96,6 +96,12 @@ export const TUT = {
 
     // FEAT-170 stage 4: the opening's lessons, in mom's voice, in the order they come. PLACEHOLDER words
     // (Lane A's draft, 2026-11-06; the owner writes them — FEAT-148).
+    // FEAT-184 (the worst day, stage 3): the key first — the truck sits dead after her call — then the pedals.
+    'tut-key': [{ speaker: 'Mom', text: `And honey &mdash; the truck won't start itself. `
+        + `<span class="kc-kb">Hold <span class="dlg-key">I</span></span><span class="kc-pad">Hold <span class="dlg-key">Y</span></span> to turn the key.` }],
+    // …and the gauge, when the tank starts near empty and the line runs by the nearest station (main.js _evePump).
+    'tut-gas': [{ speaker: 'Mom', text: `Is that gauge on empty? Of course it is. The line takes you by the gas station first: `
+        + `pull up at a pump and fill her up.` }],
     // On the drive home: right after her call, halfway there, and near her house (main.js _eveningBeats).
     'tut-drive': [{ speaker: 'Mom', text: `Drive safe, honey. <span class="dlg-key">W</span> and <span class="dlg-key">S</span> `
         + `are the gas and the brake; steer with <span class="kc-kb"><span class="dlg-key">A</span> and <span class="dlg-key">D</span></span>`

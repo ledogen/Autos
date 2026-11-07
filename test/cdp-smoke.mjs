@@ -1315,10 +1315,14 @@ const STEPS = [
       hud: getComputedStyle(document.getElementById('mission-hud')).display !== 'none' && document.getElementById('mission-hud').textContent.trim() }))()`)
     const e0 = await eve()
     check(e0.s === 'idle' && e0.first === 'closed', `the evening is not job-free: ${JSON.stringify(e0)}`)
-    check(/to Mom's · park there to sleep/.test(e0.hud), `the evening's HUD does not point to mom's ("${e0.hud}")`)
+    // FEAT-184 stage 3: the line goes by the nearest station first when the tank starts near empty (a short detour).
+    const fill = /fill up at a pump/.test(e0.hud)
+    check(fill ? await js('window.__vs.fuel.gal < 0.2 * 16.5') : /to Mom's · park there to sleep/.test(e0.hud),
+      `the evening's HUD points neither to a station on a near-empty tank nor to mom's ("${e0.hud}", ${await js('window.__vs.fuel.gal.toFixed(2)')} gal)`)
     check(await until(async () => (await eve()).gps, 5000), "the GPS has no way to mom's in the evening")
     // BUG-135: the played run's start, the joint's lay-by, drives off too.
     await crank()
+    await readCards()   // FEAT-184 stage 3: the pedals' card (and the gauge's) once the key has caught
     if (await js('window.__vs.parked')) await tap(' ')
     { const c0 = await car(); await hold('w', 5); const c1 = await car(), d = Math.hypot(c1.x - c0.x, c1.z - c0.z)
       check(d > 10, `the truck did not drive off from the burger joint: ${d.toFixed(1)} m in 5 s of throttle`) }
@@ -1461,7 +1465,12 @@ const STEPS = [
     // FEAT-174: a line that differs by input says it once, for the device driving, and swaps live. The drive lesson
     // reads "the left stick" on the pad; one keyboard press (Shift alone: hands the keyboard control, turns no card)
     // re-reads it as "A and D".
-    for (let i = 0; i < 12 && !/^Drive safe/.test(await txt()); i++) { await btn(0); await sleep(150) }
+    // FEAT-184 stage 3: the key's card comes first and the pedals' card only once the engine runs — with no card up and
+    // the engine off, hold Y (the ignition) until it catches.
+    for (let i = 0; i < 16 && !/^Drive safe/.test(await txt()); i++) {
+      if (!await dlg() && await js('window.__vs.ignition?.state !== "running"')) await hold(3, 2000)
+      else { await btn(0); await sleep(150) }
+    }
     const steerWords = () => js('[...document.querySelectorAll("#dlg-text > .kc-kb, #dlg-text > .kc-pad")].filter(e => getComputedStyle(e).display !== "none").map(e => e.textContent).join("|")')
     const onPad = await steerWords()
     await key('Shift', true); await frames(3, 80); await key('Shift', false); await frames(3, 80)
