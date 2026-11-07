@@ -296,6 +296,34 @@ export const RR_PARAMS = {
 
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
+/**
+ * A car's position as a planner stop: the same `{aId, bId, s}` shape Larry has. This is the one genuinely
+ * new piece of machinery the sliced re-plan needs — everything else is the existing planner, driven
+ * differently. main.js's tutorial GPS (BUG-118) plans from it too.
+ *
+ * queryNearest answers in (runKey, arc-along-run) and the planner wants a graph EDGE, so the edge is the
+ * one whose arc span over that run contains the hit. Several edges can share a run (a merged deg-2 chain
+ * reports its members), hence the span test rather than a key match.
+ */
+export function roadOrigin (road, car) {
+    if (!road?.queryNearest || !car) return null
+    const q = road.queryNearest(car.x, car.z, RR_PARAMS.snapM)
+    if (!q?.runKey) return null
+    const g = road.networkGraph?.()
+    if (!g?.edges) return null
+    for (const [a, b, runKey] of g.edges) {
+        if (runKey !== q.runKey) continue
+        const ed = road.edgeParData(a, b)
+        if (!ed?.centerline) continue
+        const off = ed.arcOffset ?? 0
+        const L = ed.arcLength ?? ed.centerline.length
+        if (q.arcS < off - 1e-6 || q.arcS > off + L + 1e-6) continue
+        return { id: 'origin:truck', aId: a, bId: b, s: q.arcS,
+                 x: q.point.x, y: q.point.y, z: q.point.z }
+    }
+    return null
+}
+
 const _hkPool = []
 /**
  * The Held-Karp scratch tables, leased rather than allocated (FEAT-63).
@@ -1267,34 +1295,8 @@ export class PaperRouteSystem {
         return Math.sqrt(best)
     }
 
-    /**
-     * The truck's own position as a planner stop: the same `{aId, bId, s}` shape Larry has. This is
-     * the one genuinely new piece of machinery the sliced re-plan needs — everything else is the
-     * existing planner, driven differently.
-     *
-     * queryNearest answers in (runKey, arc-along-run) and the planner wants a graph EDGE, so the
-     * edge is the one whose arc span over that run contains the hit. Several edges can share a run
-     * (a merged deg-2 chain reports its members), hence the span test rather than a key match.
-     */
-    _originPoint () {
-        const road = this._getRoad(), car = this._getCar()
-        if (!road?.queryNearest || !car) return null
-        const q = road.queryNearest(car.x, car.z, RR_PARAMS.snapM)
-        if (!q?.runKey) return null
-        const g = road.networkGraph?.()
-        if (!g?.edges) return null
-        for (const [a, b, runKey] of g.edges) {
-            if (runKey !== q.runKey) continue
-            const ed = road.edgeParData(a, b)
-            if (!ed?.centerline) continue
-            const off = ed.arcOffset ?? 0
-            const L = ed.arcLength ?? ed.centerline.length
-            if (q.arcS < off - 1e-6 || q.arcS > off + L + 1e-6) continue
-            return { id: 'origin:truck', aId: a, bId: b, s: q.arcS,
-                     x: q.point.x, y: q.point.y, z: q.point.z }
-        }
-        return null
-    }
+    /** The truck's own position as a planner stop — see roadOrigin below. */
+    _originPoint () { return roadOrigin(this._getRoad(), this._getCar()) }
 
     /**
      * Start (or restart) a sliced re-plan of everything still undelivered.

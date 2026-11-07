@@ -775,6 +775,102 @@ export const PROP_MODELS = {
     seat: 1.95,
   },
 
+  // ASSET-82 — the SERVICE STATION, 1558 tris, 9 materials, one 1024x256 sign atlas (AUTO SERVICE /
+  // TIRES · BRAKES · OIL — generic, the name rolls per seed). The autoShop POI, the service center: a
+  // painted-block two-car bay (x -6.3..2.7) with a small office on its +X end (x 2.7..6.3), both roll-up
+  // doors open to -Z (the road). Built by assets/models/src/service-station.py, which prints every
+  // number below — copy them across. Roster wiring (autoShop `model`) is FEAT-178's.
+  //
+  // THE LIFTS. Bay A, the player's, has a FLUSH scissor lift, lowered: its runways are tiled into the
+  // slab 5 mm above the pad, so the wheels ride the analytic pad surface as everywhere else (no ramp,
+  // no collider, MESH == PHYSICS). Bay B's lift is RAISED 1.15 m, empty, scissor arms showing: it is
+  // what says the flat yellow plates in bay A are a lift. ShopLight (four ceiling strips) is emissive.
+  //   park: the deck of bay A's lift (both runways); the truck's centre parks in it, nose away from the
+  //   road. FEAT-178 triggers the service screen on it through the same _inPoiSpot test, so there is no
+  //   separate lift box. Without it the "park here" ring would stand at the pad centre, which is on
+  //   bay B's raised lift, inside its collider. camera (FEAT-178): bay A's inside back corner on the end-wall side, eye and look
+  //   point in the model frame, vertical fov in degrees; it frames the truck's front three-quarter
+  //   with the open door behind.
+  //
+  // On a 14 x 8 LAY-BY (coverage-sited, two per region, so never the farm pad). seat 1.4: the front
+  // wall stands at pad z -2.6, where the lay-by turns flat (road.js POI_ROAD_FEATHER reaches 1.4 m
+  // into the pad), so nothing nearer the road touches the ground. The back wall stands 1.4 m past the
+  // pad's far edge, inside the 1.6 m band the carve grades flat (PAD_RIM_HOLD) — the barn's precedent.
+  //
+  // COLLISION per part, so both bays are drivable. The door headers (3.3 m up), the slab, lift A, the
+  // ceiling strips and the drain caddy are not colliders.
+  serviceStation: {
+    url: 'assets/models/service-station.glb',
+    collision: {
+      shape: 'box', size: [12.6, 4.6, 8.0],
+      boxes: [
+        { c: [-1.8, 2.3, 3.9], s: [9, 4.6, 0.2] },                 // back wall
+        { c: [-6.2, 2.3, -0.1], s: [0.2, 4.6, 7.8] },              // -X end wall
+        { c: [2.6, 2.3, -0.1], s: [0.2, 4.6, 7.8] },               // partition (bay | office)
+        { c: [-5.825, 2.3, -3.9], s: [0.55, 4.6, 0.2] },           // pier, -X
+        { c: [-1.8, 2.3, -3.9], s: [1.1, 4.6, 0.2] },              // pier, centre
+        { c: [2.225, 2.3, -3.9], s: [0.55, 4.6, 0.2] },            // pier, +X
+        { c: [4.5, 1.7, -1.5], s: [3.6, 3.4, 5] },                 // office
+        { c: [0.35, 0.675, -0.2], s: [2.09, 1.35, 4.6] },          // lift B, raised
+        { c: [-4.3, 0.46, 3.5], s: [2.6, 0.92, 0.6] },             // bench
+        { c: [1.975, 0.725, 3.45], s: [0.85, 1.45, 0.6] },         // tool chest
+        { c: [-1.2, 0.775, 3.48], s: [0.48, 1.55, 0.48] },         // compressor
+        { c: [-5.875, 0.85, -0.3], s: [0.45, 1.7, 1.8] },          // tyre rack
+        { c: [-1.92, 0.69, -3.35], s: [0.32, 1.38, 0.3] },         // lift console
+        { c: [6.7, 0.33, -1.6], s: [0.66, 0.66, 0.66] },           // tyre stack
+      ],
+    },
+    seat: 1.4,
+    park: { x: -3.95, z: -0.2, halfX: 1.045, halfZ: 2.3 },
+    camera: { eye: [-5.9, 2.8, 3.6], look: [-3.95, 0.9, -0.499], fov: 55 },
+  },
+
+  // ASSET-83 — the CONSTRUCTION SITE, 1548 tris, 9 materials, no images. The workSite POI ("the {last}
+  // job site"). A small concrete-block building half built on a fresh 8 x 5 m slab: the back corner at
+  // full height (with a window) and racked leads stepping down both walls, the front and +X walls a few
+  // courses up with rebar standing out. The site is built from its own freight (cinder-block and
+  // bagged-concrete pallets wait at the -X end by a red mixer), with frame scaffold inside, and
+  // lumber, a portable toilet and a wheelbarrow at the +X end. Nothing on it is orange: the cube it
+  // replaces is. Built by assets/models/src/construction-site.py, which prints every number below.
+  //
+  // On a 14 x 8 LAY-BY. seat 2.7: the slab's back edge stands 1.2 m past the pad's far edge, inside the
+  // 1.6 m band the carve grades flat (PAD_RIM_HOLD). Nothing touching the ground is nearer the road than
+  // pad z -1.64 (the lay-by is flat from -2.6).
+  //   park: one truck alongside the road on the open ground in front of the slab (pad z -3.4..-0.4),
+  //   0.9 m clear of the front wall and every piece of kit.
+  //
+  // COLLISION per part, so the yard is drivable. The racked leads are a few steps of boxes, each to
+  // the tallest course over it. The slab edge (0.15 m), the scaffold (inside the walls) and the
+  // wheelbarrow are not colliders.
+  constructionSite: {
+    url: 'assets/models/construction-site.glb',
+    collision: {
+      shape: 'box', size: [8, 2.95, 5],
+      boxes: [
+        { c: [-1.4, 1.475, 2.1], s: [4.6, 2.95, 0.2] },     // back wall
+        { c: [1.2, 1.175, 2.1], s: [0.6, 2.35, 0.2] },      // back wall
+        { c: [1.8, 0.875, 2.1], s: [0.6, 1.75, 0.2] },      // back wall
+        { c: [2.5, 0.575, 2.1], s: [0.8, 1.15, 0.2] },      // back wall
+        { c: [3, 0.175, 2.1], s: [0.2, 0.35, 0.2] },        // back wall
+        { c: [-3.6, 1.475, 1], s: [0.2, 2.95, 2] },         // left wall
+        { c: [-3.6, 1.175, -0.3], s: [0.2, 2.35, 0.6] },    // left wall
+        { c: [-3.6, 0.875, -0.9], s: [0.2, 1.75, 0.6] },    // left wall
+        { c: [-3.6, 0.575, -1.6], s: [0.2, 1.15, 0.8] },    // left wall
+        { c: [-2.075, 0.375, -2.1], s: [3.25, 0.75, 0.2] }, // front wall
+        { c: [2.075, 0.375, -2.1], s: [3.25, 0.75, 0.2] },  // front wall
+        { c: [3.6, 0.275, 0], s: [0.2, 0.55, 4] },          // right wall
+        { c: [-6, 0.47, -0.4], s: [1.2, 0.94, 1] },         // block pallet A
+        { c: [-6, 0.47, 1], s: [1.2, 0.94, 1] },            // block pallet B
+        { c: [-4.75, 0.2, 1], s: [1.2, 0.4, 1] },           // bag pallet
+        { c: [-5.35, 0.7, -2.625], s: [1.24, 1.4, 2.05] },  // mixer
+        { c: [6.25, 1.175, -3], s: [1.18, 2.35, 1.18] },    // toilet
+        { c: [5.05, 0.33, -0.4], s: [1, 0.66, 3.6] },       // lumber
+      ],
+    },
+    seat: 2.7,
+    park: { x: 0, z: -4.6, halfX: 3.2, halfZ: 1.5 },
+  },
+
   // ASSET-13 — the GAS STATION, 1482 tris, 7 materials, one 1024x512 atlas (FOOD MART, GAS x3, ICE,
   // PROPANE, the pump register face). The station IS the convenience store (FEAT-123, owner 2026-10-16).
   // Layout by the owner (2026-10-19): the store at the back, ONE island right in front of its doors with
