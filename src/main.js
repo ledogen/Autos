@@ -1142,6 +1142,10 @@ async function _reseatTruckAtSpawnInner () {
     } else {
       const { position: spawnPos, heading: h } = await resolveSpawn(worldSeed, RANGER_PARAMS)
       cx = spawnPos.x; cz = spawnPos.z; heading = h; drop = 0
+      // BUG-141: free roam seats on level road, away from a spur's dead end, facing the long way. Story keeps the
+      // unrefined spawn: its region centre is captured from it (BUG-121), and its run starts at the burger joint.
+      const fr = _gameMode === 'freeroam' ? roadSystem?.freeRoamSeat(roadSystem.queryNearest(cx, cz, 5)) : null
+      if (fr) { cx = fr.point.x; cz = fr.point.z; heading = Math.atan2(fr.tangent.x, fr.tangent.z) }
     }
     const seat = _seatOnGroundPlane(cx, cz, heading, eq, drop)
     vehicleState.position.set(seat.x, seat.y, seat.z)
