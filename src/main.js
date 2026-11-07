@@ -119,7 +119,7 @@ import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the 
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
-import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing, brake squeal
+import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
 import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
@@ -2972,6 +2972,7 @@ const campSystem = new CampSystem({
   getTerrain: () => terrainSystem,
   getWater:   () => waterSystem,
   treesNear:  (x, z, r) => _treesNear(x, z, r),
+  getReachM:  () => inventorySystem.reachM(),   // FEAT-182: the equipped pack sets the night's tether
 })
 
 // FEAT-45: the SHADE score's tree source. Deliberately NOT the live PropSystem — the streamer is a
@@ -4326,7 +4327,7 @@ function _runIntro () {
 // ── FEAT-147/170: the opening — the firing, the evening at mom's, the first job, Larry's welcome ──
 // EVERY new story run (the setup page's toggle retired, FEAT-170). The firing is an in-world camera move round the
 // burger joint (the foodVendor POI) with the Story cards over it — no scene art (owner, 2026-11-05) —
-// so the run starts with the truck parked on the joint's lay-by, at 6 pm on DAY 0 (FEAT-170, owner
+// so the run starts with the truck parked on the joint's lay-by, at 7:30 pm on DAY 0 (FEAT-170, owner
 // 2026-11-06: the evening is the day before the run's day 1). Mom's call sends you home for the
 // night — the EVENING LEG: no job, the GPS and the HUD line to her house, every other giver quiet. Any
 // sleep ends it (at hers or anywhere), as does 07:00 reached awake, and her casserole goes up at her
@@ -4338,7 +4339,9 @@ function _runIntro () {
 // STATELESS ACROSS A RESUME: "this run opened on the firing" is the dialogue seen-key DLG.firing (the
 // save carries the seen set), and the first job's progress is the board's (the save replays it) — so
 // the evening is "the firing seen, the casserole not posted yet".
-const OPENING_START = { day: 0, hour: 18 }   // FEAT-170: the firing's clock
+// FEAT-180 (owner 11-07, 9: "Keep dusk opening"): 19:30 is the evening look's keyframe, the light 18:00 had before
+// the sun moved to 8 pm.
+const OPENING_START = { day: 0, hour: 19.5 }   // FEAT-170: the firing's clock
 // The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
 // turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
 // aim point's height over the pad (m).
@@ -8640,7 +8643,7 @@ const storySystem = new StorySystem({
   onRegionLive: (center, radius) => {
     if (!center) return
     // FEAT-47: the run's clock opens at dayStartHour and takes over the sky — FEAT-170: a NEW run's at the
-    // opening's 6 pm on day 0 (a resume puts its own clock back below).
+    // opening's 7:30 pm on day 0 (a resume puts its own clock back below).
     if (_paperScenario) daySystem.start(1, DAY_PARAMS.dayStartHour)   // FEAT-62: a working morning, no opening
     else daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
@@ -9874,8 +9877,7 @@ function loop () {
     // catch-up burst of physics steps still gets exactly one.
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
     // FEAT-120: the contact one-shots read the same per-step peaks the damage step just priced.
-    const v = vehicleState.velocity
-    stepContactAudio(vehicleState, RANGER_PARAMS._tireFz, Math.hypot(v.x, v.z), PHYSICS_DT)
+    stepContactAudio(vehicleState, RANGER_PARAMS._tireFz, PHYSICS_DT)
     // FEAT-126: a shift forced with the clutch in grinds, and is a damage event in its own right. Its
     // 2 % wear is under the damage screen's per-sample drop threshold, so it raises the alert here,
     // like a landed impact does below.
@@ -10330,7 +10332,7 @@ function loop () {
   setCabView(getCameraMode() === 'hood')   // FEAT-120 camera-aware mix: the cab hears the world through the glass
   setTunnelReverb(RANGER_PARAMS.tunnelReverbEnabled !== false, RANGER_PARAMS.tunnelReverbLevel ?? 0.9)
   setInTunnel(_listenerInBore())           // FEAT-163: the camera is the listener — it leaves a portal after the truck
-  setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6, RANGER_PARAMS.brakeSquealVolume ?? 0.3)
+  setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6)
   setResultAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)   // the card plays over a held sim
   setRankMusic(RANGER_PARAMS.rankMusicEnabled !== false, RANGER_PARAMS.rankMusicVolume ?? 0.5)   // FEAT-131 P3
   // FEAT-120 ambience: crickets on the sky's own night; grass from the green share of the ground the

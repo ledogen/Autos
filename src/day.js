@@ -158,7 +158,7 @@ export class DaySystem {
 
     /**
      * Begin a story run: dawn of day 1, full tank of energy, and seat the sky at that hour. FEAT-170: the
-     * opening's tutorial evening starts it earlier — `start(0, 18)`, day 0, the evening before day 1.
+     * opening's tutorial evening starts it earlier — `start(0, 19.5)`, day 0, the evening before day 1.
      */
     start (day = 1, hour = DAY_PARAMS.dayStartHour) {
         this._running = true
