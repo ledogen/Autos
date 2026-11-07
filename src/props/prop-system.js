@@ -414,6 +414,7 @@ export class PropSystem {
   ensureChunk(cx, cz) {
     const ck = cx + ',' + cz
     if (this._chunks.has(ck)) return
+    if (!this._groundReady(cx, cz)) return   // BUG-132: nothing to stand on yet (the truck is held there too)
     // PERF-26: the ONE unbudgeted scatter path. Fires when driving outruns the 3 ms/frame drip and
     // the truck's 3×3 collision chunks must exist this frame — i.e. exactly on a slow machine.
     perfEvent('props.hardScatter')
@@ -450,6 +451,18 @@ export class PropSystem {
       this._scatterSet.add(ck + '#L')
     }
     perfAdd('props.hard.commit', performance.now() - _t1)
+  }
+
+  /**
+   * BUG-132: a chunk scatters only on BUILT ground (samplers.groundReady — main.js: terrain isChunkDrivable).
+   * Props seat on analyticHeight; scattered before their terrain chunk existed, they kept that seat when
+   * the chunk then built against a newer road network — a fresh build, not a re-carve, so the terrain's
+   * recarve hook never released them (seed 3845087383: 22 rocks up to 7 m under the fill). Once the
+   * chunk is built, every later change to its ground is a re-carve, which releases the chunk. Headless
+   * (no sampler) every chunk is ready.
+   */
+  _groundReady(cx, cz) {
+    return !this._samplers.groundReady || this._samplers.groundReady(cx, cz)
   }
 
   _dequeueScatter(ck) {
@@ -958,8 +971,9 @@ export class PropSystem {
     const deadline = budget ? budget.deadline(budgetMs) : performance.now() + budgetMs
     while (performance.now() < deadline) {
       if (!this._activeScatter) {
-        const next = this._scatterQueue.shift()
-        if (!next) break
+        const i = this._scatterQueue.findIndex((q) => this._groundReady(q.cx, q.cz))   // BUG-132
+        if (i < 0) break
+        const next = this._scatterQueue.splice(i, 1)[0]
         // Litter deferral: a chunk that will only billboard (bbonly ring) scatters WITHOUT the
         // litter passes (cover + zone rocks — the expensive half, and nothing of it is drawn
         // there). When it is later promoted, _syncChunkLod queues a litter-only job for it.
