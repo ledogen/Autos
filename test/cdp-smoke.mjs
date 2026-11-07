@@ -739,6 +739,9 @@ const STEPS = [
     await seat(at.x, at.z, at.h)
     const bodies = 'window.__cargo().site.filter(t => t.body != null)'
     check(await until(() => js(`${bodies}.length > 0`), 3000), 'no target near the truck became a body')
+    // FEAT-187: beside the site, a cluster's paper-style halo is lit, and the GPS draws no destination circle in the road.
+    check(await until(() => js('window.__site().halos?.some(h => h.ring.visible)'), 2000), 'no cluster halo lit beside the site (FEAT-187)')
+    check(await js('window.__gps()?.noRing === true'), `the demolition GPS route still carries a destination circle (FEAT-187): ${await js('JSON.stringify(Object.keys(window.__gps() ?? {}))')}`)
     await sleep(2000)
     const awake = await js(`${bodies}.filter(t => window.__physicsEngine.isAwake(t.body)).length`)
     check(awake === 0 && await js('window.__cargo().site.every(t => !t.smashed)'), `untouched targets did not stay asleep and standing: ${awake} awake`)

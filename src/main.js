@@ -4934,6 +4934,7 @@ function _planOne (o, exclude) {
     // FEAT-65: a demolition job's site — its targets on the shoulder of the route's last km. Placed here,
     // with the plan, so the card can count them; seeded, so a resumed job re-places the same ones.
     m.targets = s.targets ? siteTargets(m, s.targets, `demo:${worldSeed}:${o.id}`, _demoWorld) : null
+    m.noRing = !!m.targets   // FEAT-187: a demolition job has no destination circle — its clusters wear halos
     if (s.load) {
       m.par *= 1 + FREIGHT_PAR_SLACK_PER_KG * s.massKg
       // Freight tips less than haul (owner, 2026-10-11; a FEAT-69 knob since 2026-10-21) —
@@ -6074,7 +6075,27 @@ function _placeSite (m, smashed = []) {
     _siteGroup.add(mesh)
     return { kind: t.kind, pos: mesh.position.clone(), q: mesh.quaternion.clone(), mesh, body: null, smashed: !mesh.visible }
   }) }
+  // FEAT-187 (owner, 2026-11-07: "a paper delivery style halo on the center of the group of prop targets … on the shoulder
+  // where the prop targets are"): one halo a cluster, at its members' centre (they stand on the shoulder), wide enough to
+  // hold them — never under the paper target's radius. The paper's ring and pip, in its white. Lit by _updateSite.
+  const groups = new Map()
+  m.targets.forEach((t, i) => groups.set(t.g, [...(groups.get(t.g) ?? []), i]))
+  _site.halos = [...groups.values()].map(members => {
+    const ts = members.map(i => m.targets[i])
+    const x = ts.reduce((a, t) => a + t.x, 0) / ts.length, z = ts.reduce((a, t) => a + t.z, 0) / ts.length
+    const y = Math.min(...ts.map(t => t.y))
+    const r = Math.max(POI_PARAMS.poiHouseTargetR, ...ts.map(t => Math.hypot(t.x - x, t.z - z) + SITE_HALO_PAD_M))
+    const ring = new THREE.Mesh(_ringGeo, _targetRingMat)
+    ring.scale.set(r, _TARGET_RING_H, r)
+    ring.position.set(x, y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, z)
+    const pip = new THREE.Mesh(_ringGeo, _targetRingMat)
+    pip.scale.set(0.5, _TARGET_PIP_H, 0.5)
+    pip.position.set(x, y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, z)
+    for (const o of [ring, pip]) { o.renderOrder = 5; o.visible = false; _siteGroup.add(o) }
+    return { members, x, z, ring, pip }
+  })
 }
+const SITE_HALO_PAD_M = 1.5   // m past a member's centre: room for the thing itself [DEFAULT]
 function _clearSite () {
   if (!_site) return
   debrisSystem.remove(_site.targets.map(t => t.body).filter(b => b != null))
@@ -6118,8 +6139,14 @@ function _updateSite () {
     _site.down = down
     m.cleared = !standing.length || (m.lastHitS != null && missionSystem.elapsed - m.lastHitS > D.hitWindowS)
     const n = _site.next = nearestTarget(m, p.x, p.z, standing, missionSystem.routeRemaining())
-    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: guideTo(m, m.targets[n.i].u, n.back) }
+    // FEAT-187: the guide is a line to the target, never a destination circle in the road (gps.js reads noRing).
+    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: { ...guideTo(m, m.targets[n.i].u, n.back), noRing: true } }
     else if (!n) _site.guide = null
+  }
+  // FEAT-187: a cluster's halo is lit while the job is live, any of it stands, and the truck is near (the paper's rule).
+  for (const h of _site.halos ?? []) {
+    const on = live && h.members.some(i => !_site.targets[i].smashed) && Math.hypot(p.x - h.x, p.z - h.z) < TARGET_RING_SHOW_R
+    h.ring.visible = h.pip.visible = on
   }
   if (!live && !near) _clearSite()
 }
