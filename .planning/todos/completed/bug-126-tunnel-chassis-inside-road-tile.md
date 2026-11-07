@@ -1,7 +1,7 @@
 ---
 id: BUG-126
 type: bug
-status: open
+status: closed (not a bug: the soak harness)
 opened: 2026-11-07
 severity: major
 source: Lane B's drive soak (test/drive-soak.mjs, on main since 2026-11-07), second pass on seed 1797933937
@@ -42,3 +42,22 @@ horizontal normal (impulse 3565).
 - [ ] Both captures replay without the strike.
 - [ ] A check over tunnel spans on random seeds: the chassis can't enter a road-tile solid from the drivable side.
 - [ ] `fingerprint-world` changes explained.
+
+## Resolution (Spare, 2026-11-07; closed by the orchestrator): NOT A GAME BUG
+
+Both strikes are on the bore lining's inner face, at the wall itself: 7.93 m from the centreline at 0.76 m up, and
+7.95 m at 1.0 m up, where a radius-8 arch has its wall at ~7.96 m. The soak's autopilot steered there. Every
+`OFFROAD_EVERY_KM` (`test/drive-soak.mjs` ~214–218) it starts an off-road leg toward a point 120–200 m to the side at
+9 m/s, and inside a bore that point is behind the wall. On jolt-1 the truck crosses the whole bore diagonally (3.6 →
+7.2 m/s) and meets the far wall at ~55°, so 7.2 → 1.3 m/s in one step is the honest answer; it then stays pinned
+until the leg's 40 s timeout (the "stuck"). collider-1 is a steady 10 m/s drift into the wall just past a portal.
+
+Ruled out: the zero-thickness two-sided shell (BUG-81's back faces). A 0.3 m shell replayed identically to the digit.
+No src change.
+
+Follow-ups:
+- **Harness (Lane B):** start no off-road leg inside a bore span (`road.tunnelSpanAt` on the resolved run/arc) or
+  within ~20 m of a portal; postpone it until the truck is out.
+- **Design note (owner's, if ever wanted):** a bore floor is drivable to ~8 m from the centreline but the arch leans
+  in, so a truck with its outer wheels past ~7 m touches the wall with its body. Real tunnel behaviour. A raised kerb at
+  the bore's edge would keep players off it.
