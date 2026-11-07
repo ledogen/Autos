@@ -147,6 +147,8 @@ export const POI_PARAMS = {
     // FEAT-154: the barricade rows — the camp's and one at every road crossing of the planners' wall.
     poiRowBarricades:  3,     // barricades in a row, spread across the paved road (owner, 2026-10-29)
     poiRowNodeClearM:  20,    // m a crossing's row keeps from either end of its edge (a junction mouth)
+    poiRowFitM:        0.04,  // m a barricade's footprint may miss its deck plane before the row moves (the gate allows 8 cm) [DEFAULT]
+    poiRowSlideM:      20,    // m a row may move from its wall crossing to find that plane (FEAT-154, 2026-11-07) [DEFAULT]
     poiEdgeFadeM:      10,    // m past the planners' wall where the edge fade starts (owner, 2026-10-31)
     poiEdgeReturnM:    10,    // m inside the planners' wall: the edge fade's return spots (returnPoint)
 }
@@ -1499,6 +1501,44 @@ export class PoiSystem {
     }
 
     /**
+     * FEAT-154: the row at arc `s`, moved if it must be to stand on a PLANE. Each barricade is a loose body that must
+     * start at rest (_barrierRow), so the deck under its whole footprint has to fit the plane it is seated on. Near a
+     * junction it may not: on its pad (31 cm off on seed 6 under BUG-121's region circles), or on the vertical knee
+     * where a steep leg blends into it (398411380: −37 % to −62 % under one barricade's 1.15 m depth, 18 cm off, 20 m
+     * from a junction whose pad reaches 14 m). So a row that touches a junction pad (road.junctionPadBlocked; a row
+     * there would close the junction, not the road), or whose footprints miss their planes by more than poiRowFitM,
+     * moves to the nearest arc in [lo, hi], 1 m at a time either way, where neither is true. If none is, it takes the
+     * best-fitting arc off the pads, or stays at `s`. [lo, hi] keeps it within poiRowSlideM of its wall crossing.
+     */
+    _rowOnPlane (road, ed, s, lo, hi, inward, P) {
+        const [w, , d] = PROP_MODELS.roadBarrier.collision.size, reach = Math.hypot(w / 2, d / 2)
+        const misfit = (row) => {   // m: the worst gap between the deck and a barricade's plane over its footprint
+            let worst = 0
+            for (const b of row) {
+                if (road.junctionPadBlocked?.(b.x, b.z, reach)) return Infinity
+                const ax = Math.cos(b.yaw), az = -Math.sin(b.yaw), fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw)
+                for (let u = -w / 2; u <= w / 2 + 1e-9; u += w / 6) for (const v of [-d / 2, 0, d / 2]) {
+                    const dx = ax * u + fx * v, dz = az * u + fz * v, y = road.sampleRoadTopY(b.x + dx, b.z + dz)
+                    if (y != null) worst = Math.max(worst, Math.abs(y - (b.y - (b.n[0] * dx + b.n[2] * dz) / b.n[1])))
+                }
+            }
+            return worst
+        }
+        const row = this._barrierRow(road, ed, s, inward, P)
+        let best = { row, m: misfit(row) }
+        if (best.m <= P.poiRowFitM) return row
+        for (let k = 1; s - k >= lo || s + k <= hi; k++) {
+            for (const t of [s + k, s - k]) {
+                if (t < lo || t > hi) continue
+                const moved = this._barrierRow(road, ed, t, inward, P), m = misfit(moved)
+                if (m <= P.poiRowFitM) return moved
+                if (m < best.m) best = { row: moved, m }
+            }
+        }
+        return best.row
+    }
+
+    /**
      * FEAT-154: the roads the rows and the fade's returns walk: each graph edge once (networkGraph can list one twice),
      * then BUG-63's parallel runs (`~p`: a second road between one node pair, in the world but not in networkGraph, so
      * a planner never routes one). On 2 of 51 census worlds a parallel crossed the wall with no row (Lane A,
@@ -1540,7 +1580,10 @@ export class PoiSystem {
             let prev = r(ed.centerline.pointAt(off)) > wall
             for (let t = 5; t < L + 5; t += 5) {
                 const tt = Math.min(t, L), out = r(ed.centerline.pointAt(off + tt)) > wall
-                if (out !== prev) rows.push(...this._barrierRow(road, ed, off + Math.min(Math.max(tt - 2.5, clear), L - clear), out ? -1 : 1, P))
+                if (out !== prev) {
+                    const sc = off + tt, s0 = off + Math.min(Math.max(tt - 2.5, clear), L - clear), win = P.poiRowSlideM
+                    rows.push(...this._rowOnPlane(road, ed, s0, Math.max(off + clear, sc - win), Math.min(off + L - clear, sc + win), out ? -1 : 1, P))
+                }
                 prev = out
             }
         }
