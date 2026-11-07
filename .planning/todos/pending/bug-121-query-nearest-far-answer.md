@@ -47,3 +47,28 @@ inside a footprint are unchanged.
 - [ ] `fingerprint-world` on main vs the fix: any changed window is explained (poi.js and terrain.js read
       `queryNearest`, so POI or carve placement may move).
 - [ ] BUG-118's smoke workaround (strayCheck seats on the road) can drop back to an off-road stray.
+
+## Measured on random seeds (Spare, 2026-11-07, before any fix)
+
+`wip/bug-121/probe.mjs`, seeds 1041979632, 2741256656, 2719853694 and 4162213362 (`wip/bug-121/seeds.txt`).
+Queries step sideways off random road points, inside a 1100 m disc of a 1400 m window. Each answer is compared with
+brute force: the nearest point on any run's polyline.
+
+| offset from the road | answers > 5 m past the true nearest road | worst |
+|---|---|---|
+| 0, 4, 7 m (inside the 7.5 m footprint) | 0 / 627 each | +0.9 m |
+| 9 m | 547 / 627 (87 %) | +189 m |
+| 12 m | 557 / 627 | +186 m |
+| 20 m | 551 / 627 | +178 m |
+| 40 m | 512 / 627 | +156 m |
+
+**Cause confirmed in `road.js` `queryNearest`.** The D4 interior test is `|signedLat| ≤ footprintHW`, measured
+against the sample's tangent line, and that line is infinite. Nothing bounds the along-road offset. Any sample within
+the 200 m search radius whose tangent line passes within 7.5 m of the query counts as interior, and an interior
+sample beats the true nearest.
+
+**Fix to build (after the BUG-105 landing):** count a sample as interior only when the along-road offset is also
+within the sample spacing (about 2 m). It is one compare in the physics hot path, with no allocation. Then:
+- rerun the probe: the 9–40 m rows go to 0, and the 0–7 m rows stay at 0;
+- run `fingerprint-world`. Expect POI and carve moves, because `poi.js` and `terrain.js` read `queryNearest`
+  off-footprint, and nearly every such query was wrong.
