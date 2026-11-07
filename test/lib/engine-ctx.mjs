@@ -17,7 +17,7 @@
 import { createPhysicsEngine } from '../../src/physics-engine.js'
 import { createVehicleChassis } from '../../src/physics.js'
 
-export async function makeEngineCtx (vs, P, { groundFn = null, extent = 128, cell = 2, friction = 0.8, cx = 0, cz = 0 } = {}) {
+export async function makeEngineCtx (vs, P, { groundFn = null, extent = 128, cell = 2, friction = 0.8, cx = 0, cz = 0, bed = null } = {}) {
   const engine = await createPhysicsEngine()
   if (groundFn) {
     const N = Math.round((2 * extent) / cell) + 1
@@ -30,6 +30,6 @@ export async function makeEngineCtx (vs, P, { groundFn = null, extent = 128, cel
     const ground = engine.createBody({ type: 'static', position: { x: cx - extent, y: 0, z: cz - extent } })
     engine.addHeightfield(ground, h, N, N, cell, { friction })
   }
-  const chassis = createVehicleChassis(engine, vs, P)
+  const chassis = createVehicleChassis(engine, vs, P, { bed })   // bed: the model's open-bed spec, as the game builds it
   return { engine, chassis, dispose: () => engine.dispose() }
 }

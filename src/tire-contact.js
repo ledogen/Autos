@@ -54,7 +54,7 @@ const REFINE = 10                        // golden-section steps per bracket: 18
 const GOLD = (3 - Math.sqrt(5)) / 2       // 0.382 — the golden section of the larger side
 const _v = new Float64Array(COARSE)
 const TILT_LO = Math.sin(15 * Math.PI / 180)   // |n·A| where the plane solve starts to blend in
-const TILT_HI = Math.sin(35 * Math.PI / 180)   //   …and where it has taken over
+export const TILT_HI = Math.sin(35 * Math.PI / 180)   //   …and where it has taken over
 const _line = {}
 
 /**
