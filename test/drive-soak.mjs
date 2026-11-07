@@ -271,6 +271,24 @@ async function soakSeed (seed, replay = null) {
       console.log(`    ${steps} v ${vs.velocity.length().toFixed(1)} rim ${hit.impulse.toFixed(0)} | ${cs.join(' | ')}`)
       // On the last step: the surface profile along the worst-loaded wheel's track, 1 m back to 1 m ahead — the carved
       // ground, the road top, and what the contact query (the physics) actually returns under a probe sphere.
+      if (steps === stepLimit && hit.impulse > 0 && hit.point) {   // a body strike on the flag step: where, which face, and the engine's ground round it
+        const hp = new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z).applyQuaternion(vs.quaternion).add(vs.position)
+        const nw = hit.normal ? new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z).applyQuaternion(vs.quaternion) : null
+        console.log(`    strike: (${hp.x.toFixed(2)}, ${hp.y.toFixed(2)}, ${hp.z.toFixed(2)}) ${(hp.y - ground(hp.x, hp.z, hp.y)).toFixed(2)} m over the drawn ground, normal ${nw ? `(${nw.x.toFixed(2)}, ${nw.y.toFixed(2)}, ${nw.z.toFixed(2)})` : '-'}, body-local (${hit.point.x.toFixed(2)}, ${hit.point.y.toFixed(2)}, ${hit.point.z.toFixed(2)})`)
+        for (let dz = -1, ln = 0; dz <= 1.001; dz += 0.5, ln++) {
+          const row = []
+          for (let dx = -1; dx <= 1.001; dx += 0.5) {
+            const x = hp.x + dx, z = hp.z + dz, g = ground(x, z, hp.y), t = w.engine.castRay({ x, y: g + 3, z }, { x: 0, y: -1, z: 0 }, 6, { collidesWith: 1n })
+            row.push(t ? (t.point.y - g).toFixed(2) : '-')
+          }
+          console.log(`      terrain-ray minus drawn, dz ${dz.toFixed(1)}: ${row.join(' ')}`)
+        }
+        // into the struck face: from 0.6 m out along its normal, per layer — terrain (1), static (8: road tiles, POI and prop solids)
+        if (nw) for (const [name, mask] of [['terrain', 1n], ['static', 8n]]) for (const dy of [-0.3, 0, 0.3]) {
+          const o = { x: hp.x + nw.x * 0.6, y: hp.y + dy, z: hp.z + nw.z * 0.6 }, r = w.engine.castRay(o, { x: -nw.x, y: 0, z: -nw.z }, 1.5, { collidesWith: mask })
+          console.log(`      into the face, ${name} ${dy >= 0 ? '+' : ''}${dy}: ${r ? `hit at ${r.distance.toFixed(2)} m, (${r.point.x.toFixed(2)}, ${r.point.y.toFixed(2)}, ${r.point.z.toFixed(2)}) normal (${r.normal.x.toFixed(2)}, ${r.normal.y.toFixed(2)}, ${r.normal.z.toFixed(2)}) body ${r.body ?? "?"} ${JSON.stringify(w.engine.getUserData(r.body))}` : "nothing"}`)
+        }
+      }
       if (steps === stepLimit) {
         const k = P._tireFz.indexOf(Math.max(...P._tireFz)), hub = getWheelPosition(k, vs, P)
         const vl = Math.hypot(vs.velocity.x, vs.velocity.z), ux = vs.velocity.x / vl, uz = vs.velocity.z / vl
