@@ -162,26 +162,15 @@ const PAD_THROUGH_BLEND = 2.0  // m of distance lead over which a T trunk's near
 // rides the asphalt top (padTopY overlay in _sampleCarveWorld), not this dirt. Hardcoded (no
 // route-cache-signature effect).
 const PAD_DIRT_EXTRA = 0.15
-// PAD_DUCK_CAP: max the pad may LOWER dirt below the leg cross-section's own design (m). The pad's
-// crease-duck free-resolves the top field, which carries pre-existing multi-metre tears at a couple of
-// degenerate steep nodes; uncapped, those tears leak into an otherwise-smooth pinned cross-section
-// (shoulder-lateral-continuity's plaza tolerance is 0.70 m). The two CONSUMERS of the duck need
-// different caps — that's why there are two constants (the pad rim is a sanctioned mesh↔physics
-// difference region, same class as the on-ribbon decal overlay):
-//   - MESH dirt (terrain _buildCarveTable → _mergeCarve default): must get fully UNDER the creased
-//     asphalt or the tan interp slivers poke through the pad (the rim earthwork fix). Pre-camber-rework
-//     creases measured ≤ ~0.45 (old cap 0.55 was enough), but the saturating-camber model
-//     (camberFromCurvature) banks sweeper leg mouths harder — legitimate creases now reach ~1.05 m at
-//     the seed-6 trident rim. 1.2 admits every measured camber-era crease with margin while still
-//     clamping the multi-metre degenerate-node tear leak.
-//   - PHYSICS (_sampleCarveWorld passes PAD_DUCK_CAP_PHYS): a pinned/hinted resolve's cross-section is
-//     SMOOTH by design (BUG-15), and the duck's reference field (free-sampled topMin) JUMPS at crease/
-//     tear lines — any duck deeper than ~0.55 puts that jump into the pinned cross-section as a single
-//     step > the 0.70 plaza tolerance. 0.55 keeps every pinned step under it; the wheel consequence is
-//     only that in tiny crease∩rim-hold dirt patches physics rides ≤ ~0.65 above the drawn dirt
-//     (momentary, at pad rims — the same accepted trade as the decal overlay riding above the trough).
+// PAD_DUCK_CAP: how far the pad may move the dirt from the leg cross-section's own design (m), mesh and physics
+// alike. Inside the ring the dirt must get fully UNDER the creased asphalt or the tan interp slivers poke through
+// the pad (the rim earthwork fix): the saturating-camber model (camberFromCurvature) banks sweeper leg mouths into
+// creases of ~1.05 m at the seed-6 trident rim, and 1.2 admits every one with margin.
+// BUG-145: physics used to cap at 0.55, against the free-sampled duck field's jumps at crease lines (the pinned
+// cross-section's 0.70 plaza tolerance). PERF-25 made the pad surface resolve-free and continuous, so the jumps are
+// gone — and the tighter cap held physics dirt up to 0.4 m under the DRAWN dirt beside a pad rim that stands high
+// over its side road (seed 917338424's causeway T: a 0.54 m drop the mesh did not have, where 0.15 m is designed).
 const PAD_DUCK_CAP = 1.2
-const PAD_DUCK_CAP_PHYS = 0.55
 // BUG-122: _ribbonDrawnAt keeps the physics asphalt overlay within this of a padded leg's mouth (m) — the ribbon's first
 // section lies on the mouth chord, which on a curving leg sits off arc = mouth at the ribbon's edges.
 const RIBBON_MOUTH_SLACK = 1.0
@@ -8322,7 +8311,7 @@ export class RoadSystem {
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
         // PERF-24/25: the pad surface is the resolve-free _nodeSurfaceTop (one ruled-blend evaluation,
         // feet shared with the leg cross-section above via the per-leg memo) — no extra resolves at all.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS,
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP,
             nr ? this._ribbonEdgeDist(runKey, arcSEff, latDist) : Infinity)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 
@@ -9511,7 +9500,7 @@ export class RoadSystem {
             if (!ps.through[li]) continue
             const leg = node.legs[li], ne = this._network.get(leg.runKey)
             const prs = ne && this._projectLegMemo(ne, leg, wx, wz)
-            if (!prs) continue
+            if (!prs?.length) continue
             let pr = null
             for (const q of prs) if (!pr || q.d2 < pr.d2) pr = q
             ys[n] = this._legDeckTop(ne, leg, pr, wx, wz, _thrOut)
@@ -9519,6 +9508,7 @@ export class RoadSystem {
             if (es[n] < eMin) eMin = es[n]
             n++
         }
+        if (!n) return null   // guard: d ≤ hw means some half projected, but never let a NaN height out
         let ySum = 0, wSum = 0
         for (let k = 0; k < n; k++) {
             const u = 1 - (es[k] - eMin) / PAD_THROUGH_BLEND
@@ -9591,9 +9581,14 @@ export class RoadSystem {
     // Through legs too: past its mouth a trunk meets its own ribbon like any leg, and _throughDeckTop's
     // 2 m edge ease left the fitted surface 21 cm off the ribbon's edge there. Inside the cut (where a
     // side road bends onto the trunk) this mask is 0 and _throughDeckTop rules, as before.
+    // BUG-144: where two legs' bands meet, `y` is not the heavier leg's deck. Two nearly parallel legs 28 m out from a
+    // big node disagree by up to 0.23 m, and the pick tore the pad where one band took over. Now: in the gap between
+    // pavements each deck is weighted by v / (its distance past its own edge), so each leg is exact at its own edge and
+    // the gap is a straight ramp between the two; where pavements overlap, by v × the depth inside each, which meets
+    // the one-leg case continuously at either edge. With one leg in range it is that leg's deck, as before.
     _padRibbonMask(node, ps, wx, wz) {
         const hw = this._params.roadHalfWidth ?? 5
-        let m = 0, y = 0
+        let m = 0, yIn = 0, wIn = 0, yOut = 0, wOut = 0
         for (let li = 0; li < node.legs.length; li++) {
             const leg = node.legs[li]
             const ne = this._network.get(leg.runKey)
@@ -9601,15 +9596,17 @@ export class RoadSystem {
             const prs = this._projectLegMemo(ne, leg, wx, wz)
             if (!prs) continue
             for (const pr of prs) {
-                const lu = Math.min(1, Math.max(0, hw + 1 - Math.sqrt(pr.d2)))
+                const d = Math.sqrt(pr.d2), lu = Math.min(1, Math.max(0, hw + 1 - d))
                 if (lu <= 0) continue
                 const au = Math.min(1, Math.max(0, (Math.abs(pr.arcS - leg.arc) - (ps.cut[li] - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
                 if (au <= 0) continue
                 const v = lu * lu * (3 - 2 * lu) * au * au * (3 - 2 * au)
-                if (v > m) { m = v; y = this._legDeckTop(ne, leg, pr, wx, wz) }
+                if (v > m) m = v
+                const y = this._legDeckTop(ne, leg, pr, wx, wz), e = d - hw
+                if (e < 0) { yIn -= e * v * y; wIn -= e * v } else { const w = v / Math.max(e, 1e-6); yOut += w * y; wOut += w }
             }
         }
-        return { m, y }
+        return { m, y: wIn > 0 ? yIn / wIn : wOut > 0 ? yOut / wOut : 0 }
     }
 
     /**
