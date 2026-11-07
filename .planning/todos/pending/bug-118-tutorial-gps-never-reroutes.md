@@ -29,8 +29,9 @@ line the best guidance is the shortest way to finish from where you are (2026-08
 - **Guidance only.** The job's route, its par and its arrival never read the re-plan. The GPS gets a new route
   object and re-bakes on its identity, the same seam FEAT-63 uses.
 - **No re-plan storm.** The next re-plan waits until the truck has moved 45 m from the last one. A truck parked off
-  the tarmac does not re-plan every 2 s. A failed plan keeps the old line. That happens with the truck already on
-  the door's own road, or off every road by more than 200 m.
+  the tarmac does not re-plan every 2 s. A failed plan keeps the old line. That happens with the truck off every road
+  by more than 200 m. (On the door's own road it failed too, until BUG-125 let the planner drive a same-edge
+  destination straight along the road.)
 - **Cost, measured** (`wip/bug118-probe.mjs`, seed 6 — the test seed — 2200 m region, from each of 26 POIs' road
   points to mom's door): 0.78 ms per re-plan at the median, 2.1 ms at p90, 2.5 ms worst, with warm edge caches. It
   runs synchronously on the HUD poll, at most once per 2 s. Every plan ended exactly on her road point (0.0 m). One

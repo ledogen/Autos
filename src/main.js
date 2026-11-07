@@ -4379,7 +4379,8 @@ function _tutDetourTick () {
   const from = roadOrigin(roadSystem, v)
   const route = from && missionSystem.planOffer(from, { rng: Math.random,
     dest: { kind: 'poi', pois: [leg.door], strict: true, anyLeg: true, nearest: true } })
-  // No plan (the truck on the door's own road, or off every road): keep the line, and the spot it failed at.
+  // No plan (the truck off every road; on the door's own road it is a straight stretch since BUG-125): keep the line,
+  // and the spot it failed at.
   _tutDetour = { base: leg.base, route: route?.segments?.length ? route : _tutLine(leg.base), x: v.x, z: v.z }
 }
 
