@@ -119,3 +119,78 @@ headless harness can pin pure rings with 0.
 
 **Still open** under this ticket: the pine orbit (the mirror part of note 2), and the yaw-aware multi-view design note
 (note 3's cause).
+
+## Pine orbit: no mirror comes from the single tile (Spare, 2026-11-07)
+
+`wip/bug-133/orbit.mjs`: the most isolated pine (`pine#3`, 16.6 m clear) on seed 6, orbited at 100 m in 30° steps.
+Each view compares the billboard's silhouette (pure ring 0) with its 3D twin's. Overlap is measured as IoU, with the
+best of ±8 px horizontal shifts, so a projected trunk a few pixels off does not count against it. It is measured both
+straight and mirrored about the trunk.
+- **Straight IoU 0.64–0.99, and mirrored is lower at every angle.** The 180° view is excluded: the tree fell in the
+  camera's own chunk, which stays 3D in both frames.
+- So the owner's "mirror" is not a mirrored tile. It was the swap itself: the outline changes by 7–36 % at each swap,
+  and without hysteresis a camera near a chunk line repeated the swap over and over. That is now fixed (`e66f3987`).
+
+## The in-beam overshoot (1.09): mostly not the normals, and too small to fix
+
+After the headlight term, billboards in the high beam read 7–9 % brighter than their 3D twins. One test: a scratch
+build with the billboard's rebuilt normal left unnormalised. The mip-averaged normal's length then carries the facets'
+spread, which is exact Lambert for every facet facing the light, and under the headlights that is every visible
+facet.
+- The ratio goes 1.09 → 1.06 (beam centre 1.07 → 1.04).
+- So mip averaging explains about a third.
+- Most of the rest is a near-black night-ambient offset: with the lamps off, billboards also read about +1.5 levels
+  of 255 (luminance 4.1 vs 5.8). It shows as a big ratio only because the values are tiny. Shadows were already ruled
+  out in E3.
+- In absolute terms the whole overshoot is about +2.4 levels of 255 on dark trees 128 m and more away at night.
+- **Not worth a fix now.** Dropping the `normalize()` is a one-line change that is more correct. But it also lowers
+  side-lit billboards by day, where the means already match within 2 %. It would need E3 rerun; it rides along with
+  any later billboard work.
+
+## Design note: per-angle (yaw-aware) billboard views — recommendation: don't build now
+
+**What it would fix that hysteresis does not.** Hysteresis stops the repeated swaps. Each tree now swaps once per
+approach. But that one swap still changes:
+- **the outline:** pine IoU 0.64–0.99 by angle; the swapped trees at the game's swap distance overlap only 29–57 %
+  (E3);
+- **the lit side:** 5–25 % of a swapped tree's pixels differ by > 10 levels, with means matching within 2 %.
+
+Both come from ONE baked front view per variant, while every 3D instance has its own yaw. Per-angle views bake N
+azimuths per variant and pick the tile for (view azimuth − instance yaw). The outline and lit side then match the 3D
+tree at the swap.
+
+**What it costs** (from the code: 8 billboardable variants; 256 px tiles; albedo RGBA16F 8 B/px, normals RGBA8
+4 B/px, both with mips ×4/3; each render target also keeps a 4 B/px depth buffer):
+
+| views per variant (N) | tiles | atlas | VRAM, as built today (16F albedo, depth kept) | VRAM, slimmed (RGBA8 albedo, bake depth released) |
+|---|---|---|---|---|
+| 1 (now) | 8 | 768² (3×3) | ≈ 14 MB | ≈ 6 MB |
+| 4 | 32 | 1536² (6×6) | ≈ 57 MB | ≈ 25 MB |
+| 8 | 64 | 2048² (8×8) | ≈ 101 MB | ≈ 45 MB |
+| 8 at 128 px tiles | 64 | 1024² | ≈ 25 MB | ≈ 11 MB |
+
+128 px tiles were already tried and rejected: stair-stepped cutout edges at 1200p (the `TILE_PX` comment).
+
+- **Draw calls:** unchanged. The same instanced mesh per variant; the tile is chosen in the shader from a per-instance
+  yaw attribute.
+- **Bake:** N× today's, once at boot.
+- **Frame time:** an estimate, not built. Picking the nearest view adds a few ALU ops per billboard fragment. Blending
+  the two nearest views doubles the texture samples (4 → 8). Billboards cover little of the screen, so it is likely
+  under 0.1 ms.
+- **The catch:** stepping between views is a pop of its own. A tree 150 m off, passed at 30 m/s, crosses a 45° view
+  boundary every ~4 s, so the forest would shimmer unless the two nearest views are blended. Blending ghosts two
+  outlines over each other.
+
+**Recommendation: don't build per-angle views.** After hysteresis the swap happens once per tree per approach, at
+128 m and more, where a tree is a few dozen pixels tall. The fix costs 25–45 MB of VRAM even slimmed, and brings its
+own popping. If the owner still sees the swap after `e66f3987`, the cheaper lever is a **dithered distance cross-fade
+of the swap**:
+- both representations draw over a short band (~15–20 m), with complementary screen-door alpha;
+- no atlas growth;
+- the cost is the overdraw in that band, plus the pool bookkeeping to hold a band instance in both the 3D and the
+  billboard pool.
+
+**State of this ticket:** headlights fixed; flip-flop fixed; mirror shown not to exist; lighting means match.
+Acceptance line 3 ("no billboard changes silhouette … in one frame") still fails for the single swap per approach.
+Close once the owner has looked at `e66f3987` in game, or keep it open for the cross-fade if the owner still sees
+the swap.
