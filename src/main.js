@@ -1484,7 +1484,9 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
+  skipTutorial: { name: 'skip the tutorial', opts: [[false, 'no'], [true, 'always']] },   // FEAT-184 [DEFAULT words]
 }
+window.__settings = _settings   // dev handle — test/cdp-smoke.mjs turns the tutorial skip off before a run that plays it
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
 function _fitGearbox (gearbox = _settings.gearbox) {
   fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
@@ -4477,10 +4479,19 @@ window.addEventListener('blur', _skipRelease)   // a key let go in another windo
 pad.skipHold = () => _eveningLeg()
 { const el = document.getElementById('skip-hint'); if (el) el.innerHTML = `hold ${keycap('M')} to skip the tutorial` }   // PLACEHOLDER words
 
+/** FEAT-184: a tutorial finished or skipped turns "always skip the tutorial" on for every later run (owner, 2026-11-07). */
+function _tutorialDone () {
+  if (_settings.skipTutorial) return
+  _settings.skipTutorial = true
+  saveSettings(_settings)
+  _renderSelectors()
+}
+
 /** The hold landed: where a skipped evening ends — the night slept at mom's, 07:00, the casserole in hand. */
 function _skipOpening () {
   document.getElementById('skip-hint')?.classList.remove('holding')
   if (!_eveningLeg() || _campBusy) return
+  _tutorialDone()
   dialogueSystem.abort()   // the firing's or mom's card, if one is up
   _cardHold = false
   if (_firingCam) { _firingCam = null; setCameraFocus(null) }
@@ -4502,6 +4513,9 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the first job is still to do or the evening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
   _openingRun = false
+  // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (mom's door, 7 am, the casserole in hand),
+  // no cards: the firing counts as played and the skip runs at once.
+  if (_settings.skipTutorial) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
   _cardHold = true
@@ -4560,6 +4574,7 @@ function _checkOpeningEnd () {
   if (!offerBoard || ['closed', 'live', 'taken'].includes(offerBoard.firstState())) return
   if (missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
   _tut(DLG.runIntro, [...LARRY_WELCOME, ..._runIntro()], null, true)
+  _tutorialDone()   // FEAT-184: the tutorial is over; later runs skip it
 }
 
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────

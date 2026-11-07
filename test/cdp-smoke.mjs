@@ -201,6 +201,13 @@ const skipOpening = async () => {
   await key('m', true); await sleep(1300); await key('m', false)
   check(await until(() => js('window.__board().firstState() === "taken"'), 8000), `holding M did not skip to the casserole (first job ${await js('window.__board().firstState()')})`)
 }
+// FEAT-184: with "always skip the tutorial" on (the first skip turns it on), a new run starts where a skip lands — the
+// casserole in hand at mom's, no firing card.
+const autoSkipped = async () => {
+  check(await until(() => js('window.__board().firstState() === "taken"'), 8000),
+    `"always skip the tutorial" did not start the run with the casserole in hand (first job ${await js('window.__board().firstState()')})`)
+  check(!await js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"'), 'a card is up on a run that skips the tutorial')
+}
 const car = () => js('window.__car()')
 // A fake pad: navigator.getGamepads stubbed to one standard-mapping pad whose buttons and sticks are
 // window.__fp.b / .axes (gamepad.js polls it every frame). padOff hands back the real one.
@@ -346,6 +353,7 @@ const STEPS = [
     // FEAT-170: the skip lands at mom's, 07:00 on day 1, with her casserole IN HAND (staging in her start zone),
     // and no card: Larry's intro waits for the casserole to be put away.
     await skipOpening()
+    check(await js('window.__settings.skipTutorial') === true, 'skipping the tutorial did not turn "always skip the tutorial" on (FEAT-184)')
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     const s0 = () => js(`(() => { const m = window.__mission(), q = window.__poi().list().find(q => q.type === 'momsHouse'), v = window.__vs.position
       return { s: m.state, a: !!m.mission?.approach, first: window.__board().firstState(), d: Math.hypot(v.x - q.x, v.z - q.z), h: window.__day().clockH() } })()`)
@@ -1175,7 +1183,7 @@ const STEPS = [
         `new-game mode row: ${JSON.stringify(steps)}`)
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
       check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s × load)')
-      await skipOpening()
+      await autoSkipped()   // FEAT-184: the story step's skip turned "always skip the tutorial" on
       check(await until(saved, 3000), 'the new run wrote no save to end')
     }
     const playedS = () => js('JSON.parse(localStorage.getItem("autos-run/1")).data.playedS')
@@ -1269,6 +1277,7 @@ const STEPS = [
   ['opening', async () => {
     // FEAT-147: a new run with the opening on starts PARKED AT THE BURGER JOINT, the firing's cards over a slow
     // orbit of it with the sim held, then mom's call. FEAT-170: then the evening at mom's, and her casserole.
+    await js('window.__settings.skipTutorial = false')   // FEAT-184: the earlier skip turned it on; this step plays the tutorial
     await js('document.getElementById("mm-new").click()')
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
@@ -1409,6 +1418,7 @@ const STEPS = [
     const seatPoi = async (test) => { const p = await js(`(() => { const q = window.__map2d()._getPois().find(${test}); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`); await seatRead(p.x, p.z, p.h) }
 
     // The run the opening step left: Start → pause → give up → its confirm → the summary → the main menu.
+    await js('window.__settings.skipTutorial = false')   // FEAT-184: this step's new run holds View at the firing
     const inRun = await js('getComputedStyle(document.getElementById("run-hud")).display !== "none"')
     if (!inRun) await js('document.getElementById("pm-story").click()')   // SMOKE_STEPS=boot,pad: free roam, no run to end — the setup page
     else {
