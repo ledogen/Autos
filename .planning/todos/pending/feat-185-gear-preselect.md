@@ -17,3 +17,17 @@ Owner, verbatim (2026-11-07 tracker inbox): "Due to the duration that each shift
 
 - [ ] Presses during a shift move the TARGET gear; the shift timer runs once, from the last press, before the gear lands.
 - [ ] 4th → N in one burst of presses; the gearbox gate pins it.
+
+## Built (Lane B, 2026-11-08, feature/machine c8b32b65)
+
+- `src/drivetrain.js` stepManual: a press during a shift steps the shift's TARGET on from the gear already chosen and
+  restarts the shift time. So the time runs once, after the last press. The checks are unchanged and apply to each
+  press: with the clutch in, a press is rejected (missShift); R only from N, and refused while moving; the gate's
+  ends hold.
+- `src/clutch-assist.js`: the assistant forwards a press during a shift too (its clutch is already open). Before,
+  it dropped those presses.
+- `test/manual-gearbox.mjs` §14: four presses from 4th land N after one shift time, measured from the last press
+  (0.317 s = 0.25 s + 3 steps); through the assistant, two quick presses take 2nd → 4th; mashing past 5th stays in
+  5th; mashing down from 1st while rolling stops at N.
+- The gear readout still shows N until the gear lands (FEAT-126's rule), so it does not show the chosen target
+  mid-shift. Say if it should.

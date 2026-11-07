@@ -156,3 +156,13 @@ high. basically \"high torque, low speed\" to try to get the flip to be more rel
 - **Stays open (Spare's sweep, 2026-11-07).** Every acceptance box is met on main. What is missing is the owner's own
   try of the reworked press. The owner's last try failed, and nobody has tried the fix in game. Same rule as BUG-115:
   close on the owner's word.
+
+## The owner's try, 2026-11-07 — works; the cooldown line ticks (Lane B)
+
+Owner (tracker `feat138-try`, "good"): "works awesome. Update the "catching your breath" once a second so the player
+doesn't have to leave the menu and re-enter it to use the high lift again."
+
+Built (feature/machine c37643cf): the refusal reads `catching your breath · N s` (`src/hilift.js`, N = whole seconds
+left, rounded up). The inventory screen re-reads the selected item's choices once a second (`InventoryScreen.update`)
+and redraws only when a label changed, so the count ticks down and the two heave buttons appear when it ends, with
+the menu left open. `test/hilift.mjs` pins the line at 2 s. **The owner's word is in, so this closes when it lands.**
