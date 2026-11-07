@@ -75,3 +75,21 @@ Then a gate pins the count on random seeds.
   with the scissor lift. So "service station" is the **auto shop**, and the gas-station reading above is withdrawn,
   along with the (a)/(b)/(c) call (pulled before the owner saw it).
 - **Next:** census 386773705 and find out why its world shows one auto shop.
+
+### The owner's seed, counted (2026-11-07)
+
+`wip/feat-179/census.mjs --seeds=386773705`, region centre (−35, 426):
+
+| place | position | distance from centre | road distance from mom's house |
+|---|---|---|---|
+| auto shop | (−301, 560), by spawn | 298 m | about 0 km (her node) |
+| auto shop | (1663, −247), east, near the rim | 1827 m | 4.07 km |
+| gas station | (−327, −1575) | 2023 m | 3.78 km |
+
+Both auto shops are placed. The map draws every POI (`map2d.js` `_drawPois` skips only an absent motorist), so it
+should show two "Auto" icons. The second one is 4 km by road toward the east rim, and a gas pump sits on the same
+road edge about 500 m short of it. A story-map screenshot on this seed is owed (`wip/feat-179/mapshot.mjs`, waits on a
+quiet box).
+
+**Gate:** `expedition-camp` now also checks for two auto shops inside the wall (`320c6d03`). It needs no extra build,
+because that gate already builds the full roster on seeds 1 and 6. PASS on both.
