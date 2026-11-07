@@ -182,6 +182,19 @@ export function buildGraphAdj(g, inRegion = () => true, nodes = null) {
 }
 
 /**
+ * BUG-128: does the ROAD of graph edge (a, b) leave `inside`? Sampled every 10 m along its routed centerline. One
+ * test for both sides of the wall: the planner drops such an edge from its graph (MissionSystem._bowingEdges), and
+ * poi.js places no pad on one, so placement and planning cannot disagree about what is inside.
+ */
+export function edgeLeaves(road, a, b, inside) {
+    const ed = road.edgeParData(a, b)
+    if (!ed?.centerline) return false
+    const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
+    for (let t = 0; t < L + 10; t += 10) if (!inside(ed.centerline.pointAt(off + Math.min(t, L)))) return true
+    return false
+}
+
+/**
  * Dijkstra from one node over a buildGraphAdj adjacency (road-length graph metric — cheap, nothing
  * is routed). Returns dist + parent chain to every reachable node. `maxD` stops expanding past that
  * distance (the leg planner's LEG_MAX band); the paper-route tour leaves it unbounded. Shared by the
@@ -848,9 +861,9 @@ export class MissionSystem {
     }
 
     /**
-     * BUG-128: the planners' edges ('ka|kb', ka < kb) with both nodes inside `inRegion` whose ROAD leaves it, sampled
-     * every 10 m along the routed centerline (guard 2 samples the route every 25 m). Cached per network revision and
-     * region: the network is frozen while a region is live, so this runs once per region, not once per roll.
+     * BUG-128: the planners' edges ('ka|kb', ka < kb) with both nodes inside `inRegion` whose ROAD leaves it
+     * (edgeLeaves; guard 2 samples the route every 25 m). Cached per network revision and region: the network is
+     * frozen while a region is live, so this runs once per region, not once per roll.
      */
     _bowingEdges(road, g, inRegion, region) {
         const tag = `${road._networkRev}|${region.x}|${region.z}|${region.r}`
@@ -858,15 +871,9 @@ export class MissionSystem {
         const set = new Set()
         for (const [a, b] of g.edges) {
             if (!inRegion(g.pos(a)) || !inRegion(g.pos(b))) continue   // guard 1 drops it already
-            const ed = road.edgeParData(a, b)
-            if (!ed?.centerline) continue
-            const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
-            for (let t = 0; t < L + 10; t += 10) {
-                if (inRegion(ed.centerline.pointAt(off + Math.min(t, L)))) continue
-                const ka = g.key(a), kb = g.key(b)
-                set.add(ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`)
-                break
-            }
+            if (!edgeLeaves(road, a, b, inRegion)) continue
+            const ka = g.key(a), kb = g.key(b)
+            set.add(ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`)
         }
         this._bowing = { tag, set }
         return set

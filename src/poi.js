@@ -23,7 +23,7 @@
 // mostly junctions; a place is no likelier at a T than halfway down a road.
 
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
-import { REGION_MARGIN, buildGraphAdj, graphDijkstra } from './mission.js'   // FEAT-61: the wall a customer must sit inside; FEAT-103: the camp's road
+import { REGION_MARGIN, buildGraphAdj, graphDijkstra, edgeLeaves } from './mission.js'   // FEAT-61: the wall a customer must sit inside; FEAT-103: the camp's road; BUG-128: a road that leaves it
 import { houseRungs, roadDistFromLarry, idKey } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
@@ -691,10 +691,12 @@ export class PoiSystem {
         const seen = new Set()
         const wall = radius - REGION_MARGIN
         const edgeInWall = (id) => { const q = g.pos(id); return Math.hypot(q.x - center.x, q.z - center.z) <= wall }
+        const inWall = (q) => Math.hypot(q.x - center.x, q.z - center.z) <= wall
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
             if (seen.has(ek)) continue      // networkGraph can list an edge twice (both run keys)
             seen.add(ek)
+            let leaves = null               // BUG-128, below: once per edge, and only for an edge that has a pad
             for (const kind of padKinds(P)) for (const poi of this._padsOnEdge(road, e, P, seed, kind)) {
             // THE REGION CLIP IS A POST-FILTER, NEVER A REJECT TEST. Applied inside candidate
             // selection it would make WHICH arc position wins depend on the region centre — and a
@@ -708,6 +710,11 @@ export class PoiSystem {
             // The newspaper customers already obey this exact rule (buildHouses); POIs now match.
             // Still a post-filter on (edge, region), so placement stays window-invariant.
             if (!edgeInWall(e.a) || !edgeInWall(e.b)) continue
+            // BUG-128: …and its ROAD must stay inside the wall, not only its nodes. The planner drops an edge whose road
+            // bows out (mission.js edgeLeaves, the same 10 m test), so a pad on one could only send a job out past the
+            // wall: 3873008110's one gas station stood on such a road and its fuel line never planned (SM-INV-7). The
+            // radius bound above dates from before the wall; it let pads stand past the 2410 m fade (a pump at 2443 m).
+            if ((leaves ??= edgeLeaves(road, e.a, e.b, inWall))) continue
             // BUG-85: …and it must be on the MAIN piece. A stranded piece is inside the wall but no
             // road joins it to the spawn, so a POI there is a customer nobody can drive to.
             if (nodes && (!nodes.has(e.ka) || !nodes.has(e.kb))) continue
