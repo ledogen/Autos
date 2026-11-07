@@ -96,6 +96,8 @@ export const GATES = [
     desc: 'FEAT-13 v2: Delaunay/Urquhart primitives — empty-circumcircle, Urquhart⊇MST (connected), order-invariant' },
   { file: 'road-connectivity.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'FEAT-68: the registered network is ONE component on the eval trio (connectivity is priority #1 and it regressed silently once — the deleted v1 culls shredded v2 geometry to 54% mean largest-component share while preventing zero real crossings), and no non-adjacent runs cross' },
+  { file: 'query-nearest.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-121: queryNearest answers the nearest road off the footprint as well as on it — the D4 interior rule bounds a sample\'s along-road offset, not just its tangent-line lateral. Two random seeds (pond no-go, R 1400), 250 road points each, queries 0–40 m to the side; GATING: no answer more than 2 m past brute force (the nearest point on any run polyline). Main: 87 % of off-footprint answers wrong, worst +189 m.' },
   { file: 'road-loop-trim.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-105 loop trim: a degree-2 site whose two legs cross each other (a loop the road paid to visit the site) is cut at the outermost crossing, which becomes a bend. Four random-seed windows (the census-10 sites + the owner\'s 3502246374), pond no-go: no degree-2 node\'s runs cross within 400 m, each bend has two runs meeting on one deck, the site keeps no road, and the trim is identical with the window shifted 500 m' },
   { file: 'junction-edge-lip.mjs', subsystem: 'road', cost: 'heavy', extraDeps: ['src/terrain.js'],
