@@ -320,6 +320,8 @@ def outer_walls(p):
     tile(p, [(OFF_Y0, HY, 0, of0, "ShopWall"), (OFF_Y0, HY, 0, BASE_H, D)], lambda y, z: (ox1, y, z), X_)
     band(p, BAY, True, *FASCIA_Z, FASCIA_OUT, "ShopBlue")
     band(p, OFFICE, False, *OFF_FASCIA_Z, FASCIA_OUT, "ShopBlue")
+    z0, z1 = OFF_FASCIA_Z          # the office band's front end stands proud of the bay's wall: cap it
+    p.face([(ox0, HY, z0), (ox0, HY + FASCIA_OUT, z0), (ox0, HY + FASCIA_OUT, z1), (ox0, HY, z1)], "ShopBlue", -X_)
     parapet(p, BAY, True, FASCIA_Z[1], DECK, FASCIA_OUT)
     parapet(p, OFFICE, False, OFF_FASCIA_Z[1], OFF_DECK, FASCIA_OUT)
 
@@ -764,8 +766,10 @@ def check_facing(ob, n=24):
     from mathutils.bvhtree import BVHTree
     tree = BVHTree.FromObject(ob, bpy.context.evaluated_depsgraph_get())
     bad, hits = [], 0
-    targets = [Vector((x, y, z)) for x in (-5, -3.5, -1.5, 0.5, 4, 6) for y in (-3, 0, 2.5, 4.5)
-               for z in (0.4, 1.4, 2.8, 4.4)]
+    # off the round numbers: a ray through an exact edge (eye z 9 -> target z 1.4 crosses the door
+    # header's edge exactly) may report either face
+    targets = [Vector((x + 0.013, y + 0.017, z + 0.011)) for x in (-5, -3.5, -1.5, 0.5, 4, 6)
+               for y in (-3, 0, 2.5, 4.5) for z in (0.4, 1.4, 2.8, 4.4)]
     eyes = [Vector((math.cos(a) * 25, math.sin(a) * 25, h))
             for a in [2 * math.pi * k / n for k in range(n)] for h in (1.2, 4, 9, 18)]
     eyes += [Vector(CAM_EYE), Vector((LIFT_B, 3.0, 1.6)), Vector((LIFT_A, 3.0, 2.2))]   # inside

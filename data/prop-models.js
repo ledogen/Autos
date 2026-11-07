@@ -775,6 +775,54 @@ export const PROP_MODELS = {
     seat: 1.95,
   },
 
+  // ASSET-82 — the SERVICE STATION, 1558 tris, 9 materials, one 1024x256 sign atlas (AUTO SERVICE /
+  // TIRES · BRAKES · OIL — generic, the name rolls per seed). The autoShop POI, the service center: a
+  // painted-block two-car bay (x -6.3..2.7) with a small office on its +X end (x 2.7..6.3), both roll-up
+  // doors open to -Z (the road). Built by assets/models/src/service-station.py, which prints every
+  // number below — copy them across. Roster wiring (autoShop `model`) is FEAT-178's.
+  //
+  // THE LIFTS. Bay A, the player's, has a FLUSH scissor lift, lowered: its runways are tiled into the
+  // slab 5 mm above the pad, so the wheels ride the analytic pad surface as everywhere else (no ramp,
+  // no collider, MESH == PHYSICS). Bay B's lift is RAISED 1.15 m, empty, scissor arms showing: it is
+  // what says the flat yellow plates in bay A are a lift. ShopLight (four ceiling strips) is emissive.
+  //   lift: the deck of bay A's lift (both runways); the truck's centre parks at its centre, nose away
+  //   from the road. camera (FEAT-178): bay A's inside back corner on the end-wall side, eye and look
+  //   point in the model frame, vertical fov in degrees; it frames the truck's front three-quarter
+  //   with the open door behind.
+  //
+  // On a 14 x 8 LAY-BY (coverage-sited, two per region, so never the farm pad). seat 1.4: the front
+  // wall stands at pad z -2.6, where the lay-by turns flat (road.js POI_ROAD_FEATHER reaches 1.4 m
+  // into the pad), so nothing nearer the road touches the ground. The back wall stands 1.4 m past the
+  // pad's far edge, inside the 1.6 m band the carve grades flat (PAD_RIM_HOLD) — the barn's precedent.
+  //
+  // COLLISION per part, so both bays are drivable. The door headers (3.3 m up), the slab, lift A, the
+  // ceiling strips and the drain caddy are not colliders.
+  serviceStation: {
+    url: 'assets/models/service-station.glb',
+    collision: {
+      shape: 'box', size: [12.6, 4.6, 8.0],
+      boxes: [
+        { c: [-1.8, 2.3, 3.9], s: [9, 4.6, 0.2] },                 // back wall
+        { c: [-6.2, 2.3, -0.1], s: [0.2, 4.6, 7.8] },              // -X end wall
+        { c: [2.6, 2.3, -0.1], s: [0.2, 4.6, 7.8] },               // partition (bay | office)
+        { c: [-5.825, 2.3, -3.9], s: [0.55, 4.6, 0.2] },           // pier, -X
+        { c: [-1.8, 2.3, -3.9], s: [1.1, 4.6, 0.2] },              // pier, centre
+        { c: [2.225, 2.3, -3.9], s: [0.55, 4.6, 0.2] },            // pier, +X
+        { c: [4.5, 1.7, -1.5], s: [3.6, 3.4, 5] },                 // office
+        { c: [0.35, 0.675, -0.2], s: [2.09, 1.35, 4.6] },          // lift B, raised
+        { c: [-4.3, 0.46, 3.5], s: [2.6, 0.92, 0.6] },             // bench
+        { c: [1.975, 0.725, 3.45], s: [0.85, 1.45, 0.6] },         // tool chest
+        { c: [-1.2, 0.775, 3.48], s: [0.48, 1.55, 0.48] },         // compressor
+        { c: [-5.875, 0.85, -0.3], s: [0.45, 1.7, 1.8] },          // tyre rack
+        { c: [-1.92, 0.69, -3.35], s: [0.32, 1.38, 0.3] },         // lift console
+        { c: [6.7, 0.33, -1.6], s: [0.66, 0.66, 0.66] },           // tyre stack
+      ],
+    },
+    seat: 1.4,
+    lift: { x: -3.95, z: -0.2, halfX: 1.045, halfZ: 2.3 },
+    camera: { eye: [-5.9, 2.8, 3.6], look: [-3.95, 0.9, -0.499], fov: 55 },
+  },
+
   // ASSET-13 — the GAS STATION, 1482 tris, 7 materials, one 1024x512 atlas (FOOD MART, GAS x3, ICE,
   // PROPANE, the pump register face). The station IS the convenience store (FEAT-123, owner 2026-10-16).
   // Layout by the owner (2026-10-19): the store at the back, ONE island right in front of its doors with
