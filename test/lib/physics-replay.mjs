@@ -34,7 +34,7 @@ const TERRAIN_SELFCHECK_HARD = 0.1   // m — worst |analyticHeight − rd_gh| a
 const DIVERGE_TOL            = 0.10  // m — position error that counts as "left the recorded trajectory"
 
 // Ackermann per-wheel steer angles — VERBATIM logic from src/vehicle.js:116-133.
-function ackermann(steerAngle, params) {
+export function ackermann(steerAngle, params) {
     const phi = steerAngle
     if (Math.abs(phi) < 1e-6) return [0, 0, 0, 0]
     const sinPhi = Math.sin(phi)
