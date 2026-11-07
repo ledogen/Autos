@@ -9525,14 +9525,19 @@ export class RoadSystem {
     // than the ribbon does — on a steep grade a 14–18 cm miss at the mouth corners, where the pad welds
     // to the ribbon's section vertices (BUG-82 defect, found on BUG-63's restored seed-7 T: a leg
     // turning 40° in its first 12.5 m on a 37 % cross-slope).
+    // BUG-137: the station stays on the run. runPointAt clamps to the run's ends, so a point past one (the
+    // outside of a through road's kink at its T, where both halves' feet sit on the node) kept stepping s
+    // outward while the point stood still — and the two halves' runaway decks disagreed by up to 0.8 m,
+    // which the nearer-half pick in _throughDeckTop turned into a 0.49 m cliff on the pavement.
     _legDeckTop(ne, leg, pr, wx, wz) {
+        const sMax = ne.polyCum?.[ne.polyCum.length - 1] ?? Infinity
         let s = pr.arcS, c = null, rp = null
         for (let k = 0; k < 4; k++) {
             c = this.runPointAt(leg.runKey, s)
             rp = this.runProfile(s, leg.runKey, _CD_RP)
             if (!c) break
             const ds = (wx - c.x) * rp.tx + (wz - c.z) * rp.tz
-            s += ds
+            s = Math.max(0, Math.min(sMax, s + ds))
             if (Math.abs(ds) < 1e-4) break
         }
         if (!c) return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + (this._params.roadClearanceMargin ?? 0.25)
