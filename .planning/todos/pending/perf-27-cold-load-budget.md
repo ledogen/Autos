@@ -469,8 +469,11 @@ harnesses wait on it.
 **Gates:** affected 25/25 green.
 
 **NEXT (to land):**
-1. `cdp-smoke` (main.js changed).
-2. `fingerprint-world` vs main, as a formality: headless worldgen never runs the client's warm.
+1. ~~`cdp-smoke` (main.js changed).~~ PASS 25/25 on the lane head `88b5dc3a` (2026-11-07, lever included).
+2. ~~`fingerprint-world` vs main, as a formality.~~ Lane `926133ee` vs main `327fd0c9` (2026-11-07): only `tiles`
+   differs, in the 5 bore windows (+17 / +18 / +5 / +5 / +5 meshes, exactly BUG-112's bore floors). Everything else
+   is identical in all six windows (network, profiles, junctions, POIs, surface, carve, water, props), and seed 3 is
+   identical outright. The lever changes nothing headless, as expected.
 3. A quiet window: `wip/perf-27/sweep.sh` on random seeds, 1× and 4×, main vs `25f2d7fe`, plus the reseed mode.
 4. Hash to the orchestrator.
 
