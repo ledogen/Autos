@@ -13,7 +13,7 @@
 //      guarantee is part 1's rule, not this sample.
 //   3. BUG-125, a same-edge destination plans: from mom's to another pad on HER edge, a POI's spacing away
 //      (2646203056 always has one — it was Larry's), the planner drives straight along the shared road: one segment,
-//      from her marker to that pad, its length the gap between them along the road, par > 0. No out-and-back through
+//      from her marker to that pad, its length the gap between them along the road (3D, so up to 5 % more on a grade), par > 0. No out-and-back through
 //      a junction, no loop.
 //
 // Heavy: routes a full region per seed (~25 s each).
@@ -112,7 +112,9 @@ for (const s of SEEDS) {
     const sg = t?.segments ?? []
     check(`${s}: BUG-125 — a pad on mom's own edge (${gap.toFixed(0)} m along it) plans straight along the shared road`
         + (t ? ` (${t.distance.toFixed(0)} m, par ${t.par.toFixed(1)} s = ${(t.par / t.distance * 1000).toFixed(0)} s/km)` : ''),
-        !!t && t.endPoiId === twin.id && sg.length === 1 && Math.abs(t.distance - gap) < 1 && t.par > 0
+        // par.js's distance is 3D (each step's plan length over the cosine of its grade); the gap is plan arc. 5 %
+        // over covers a 30 % grade.
+        !!t && t.endPoiId === twin.id && sg.length === 1 && t.distance >= gap - 1 && t.distance <= gap * 1.05 + 1 && t.par > 0
             && Math.abs(sg[0].s0 - mom.s) < 1e-6 && Math.abs(sg[0].s1 - twin.s) < 1e-6,
         t ? `${sg.length} segments, ${t.distance.toFixed(0)} m, par ${t.par.toFixed(1)} s` : 'no route')
 }
