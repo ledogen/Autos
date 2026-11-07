@@ -313,7 +313,8 @@ export function classifyImpactRegion (localPoint, localNormal) {
  * Four convex hulls tracing the visible body volume (engine hulls are convex-only, so the
  * silhouette is decomposed): full-length lower SLAB (frame, bumpers, fenders — undercarriage
  * plane unchanged from the probe era), HOOD wedge rising to the cowl, CAB with the raked
- * windshield up to the real roof, and the tonneau-height bed DECK. Body origin = CG
+ * windshield up to the real roof, and the tonneau-height bed DECK — plus the slab's two FLANK hulls at their own
+ * grip (BUG-116). Body origin = CG
  * (vehicleState.position), so mass data centers at the local origin. Overlapping hulls are
  * fine — they are one rigid body; overlap just guarantees no seam gaps.
  *
