@@ -91,3 +91,14 @@ the junctions at their ends re-stitch (a T losing a leg may become a deg-2 conne
 run keeps its key. It still deletes a road the player could have driven, so it is the owner's call
 against the standing "connectivity goes up" ruling; the alternative is to leave 5 % of worlds with a
 doubled stretch of road.
+
+## Rides BUG-105 (owner, 2026-11-07)
+
+QUAL-35 is closed ("leave it"), so this no longer waits on it. The owner's bug105-trim answer asks for one fix for
+"roads intersect but don't form a junction": every crossing without a junction becomes one, at any length, and loops
+under 500 m are trimmed. The work and the numbers are in BUG-105 § "Owner's ruling, 2026-11-07".
+- BUG-104's five original sites (seeds 10, 41, 51, 52, 87) stay clear on main since BUG-105's Stages 1–2.
+- Census 12's 100 fresh random seeds show the shape once more: seed 2323221349, two legs of node `-4,1,2` 2.8 m apart
+  for 168 m. Every T variant there fails a structural check.
+- It waits on the backstop call recorded in BUG-105: JOIN with a mid-span T, or DEGREE-REDUCE by dropping the duplicate
+  where the ends stay connected.
