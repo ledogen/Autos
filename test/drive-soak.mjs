@@ -61,6 +61,7 @@ const STRUT_N = 40000          // N — [DEFAULT] a tire's normal force on the r
 const JOLT_DV = 0.9            // m/s in one 1/60 s step (≈ 5.5 g) — [DEFAULT]
 const HIT_IMPULSE = 1500       // N·s — a hard chassis hit (≈ 1.1 m/s of the truck) [DEFAULT]
 const CAPTURE_S = 10
+const SETTLE_S = 1.5           // s — no flags (bar nan / fall) after a re-seat: the harness's drop, not the world
 const V_MAX = 24, A_LAT = 3.5, A_BRAKE = 3   // m/s, m/s² — the autopilot's cruise, its cornering and braking budgets
 const OFFROAD_EVERY_KM = 2
 
@@ -176,18 +177,24 @@ async function soakSeed (seed, replay = null) {
     const top = w.road.sampleRoadTopY(a.x, a.z)
     restore(vs, snapshot(freshState(P, a.x, (top ?? ground(a.x, a.z, 1e4)) + 1.0, a.z, h)))
     w.stream(a.x, a.z)
-    inputs = []; snap = snapshot(vs); snapT = 0
+    inputs = []; snap = snapshot(vs); snapT = 0; snapAfterSeat = true
+    // A re-seat drops the truck level, 1 m over the road top at a path point; by a fill's edge or in a junction its wheels
+    // on one side hang over the slope and it can tip (seed 1615901410 rolled 0.5 s after one). The game never seats like
+    // that (main.js fits the local plane, 0.5 m up), so the landing is the harness's: nothing but nan / fall is flagged.
+    settleT = SETTLE_S
   }
   let idx = 0
-  if (replay) { w.stream(replay.start.position.x, replay.start.position.z); restore(vs, replay.start) } else seatAt(0)
+  let settleT = 0, snapAfterSeat = false
+  if (replay) { w.stream(replay.start.position.x, replay.start.position.z); restore(vs, replay.start); settleT = replay.afterSeat ? SETTLE_S : 0 } else seatAt(0)
 
   let dist = 0, offDist = 0, offroad = null, nextOff = OFFROAD_EVERY_KM * 1000, stuckT = 0, t = 0, steps = 0, lastStream = 0
   const flag = (kind, mag, extra = {}) => {
+    if (settleT > 0 && kind !== 'nan' && kind !== 'fall') return null
     counts[kind]++
     const p = vs.position, rec = { seed, kind, mag: +mag.toFixed(3), t: +t.toFixed(2), at: { x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2) }, v: +vs.velocity.length().toFixed(2), offroad: !!offroad, ...extra }
     if (counts[kind] <= 3 && !replay) {
       const file = `${OUT}/${seed}-${kind}-${counts[kind]}.json`
-      writeFileSync(file, JSON.stringify({ ...rec, radius: RADIUS, start: snap, inputs }))
+      writeFileSync(file, JSON.stringify({ ...rec, radius: RADIUS, afterSeat: snapAfterSeat, start: snap, inputs }))
       rec.capture = file
     }
     worst.push(rec)
@@ -268,6 +275,10 @@ async function soakSeed (seed, replay = null) {
         let lat = Infinity; for (let j = Math.max(0, idx - 5); j < Math.min(router.path.length, idx + 5); j++) lat = Math.min(lat, Math.hypot(router.path[j].x - p.x, router.path[j].z - p.z))
         console.log(`      t ${t.toFixed(0)} idx ${idx} lat ${lat.toFixed(1)} v ${v.toFixed(1)}/${vT.toFixed(1)} alpha ${alpha.toFixed(2)} steer ${steer.toFixed(3)} (lim ${lim.toFixed(2)}) target ${Ld.toFixed(1)} m${offroad ? ' OFF-LEG' : ''}`)
       }
+      // Steering pinned at its speed limit (the game's lim) means the corner is tighter than this speed can turn: the
+      // curvature plan missed it, and the truck ran wide off the road at 13–15 m/s and launched (seed 856743250, t 49–54).
+      // Slow until the wheel comes off the stop.
+      if (Math.abs(Math.atan2(2 * P.wheelbase * Math.sin(alpha), Ld)) > 0.95 * lim) vT = Math.min(vT, 0.7 * v)
       const e = vT - v
       thr = e > 0 ? Math.min(1, 0.25 + 0.35 * e) : 0
       brk = e < -1.5 ? Math.min(1, -0.15 * e) : 0
@@ -285,7 +296,7 @@ async function soakSeed (seed, replay = null) {
     const hit = readRimStrikes(w.engine, w.chassis, vs.rimForce, DT, vs.rimHazard)
     damage.step(vs, P, DT)
     damage.feedContact(classifyImpactRegion(hit.point, hit.normal), hit.impulse, P.mass, DT, vs.velocity)
-    t += DT; steps++; snapT += DT
+    t += DT; steps++; snapT += DT; settleT = Math.max(0, settleT - DT)
 
     // ── the flags ──
     if (!finiteState(vs)) { flag('nan', 0); if (replay) break; seatAt(Math.min(idx + 40, router.path.length - 1)); continue }
@@ -354,7 +365,7 @@ async function soakSeed (seed, replay = null) {
     if (hit.impulse > HIT_IMPULSE) {
       const hp = hit.point ? new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z).applyQuaternion(vs.quaternion).add(p) : p
       const near = w.props.queryProps(hp.x, hp.y, hp.z, 4, []).length || w.pois.queryContact(hp.x, hp.y, hp.z, 6)
-        || w.road.tunnelSpanAt?.(nr?.runKey ?? '', nr?.arcS ?? 0)
+        || (() => { const r = w.road.queryNearest(hp.x, hp.z, 15); return !!r && !!w.road.tunnelSpanAt(r.runKey ?? '', r.arcS ?? 0, -20) })()   // a bore, or a portal's walls
       // On the drawn terrain or road (a bank, a kerb, the deck): visible, whatever its slope — so its normal says nothing.
       const onSurface = Math.abs(hp.y - ground(hp.x, hp.z, hp.y)) < 0.5
       if (!near && !onSurface) {
@@ -393,7 +404,7 @@ async function soakSeed (seed, replay = null) {
     const d = Math.hypot(vs.velocity.x, vs.velocity.z) * DT
     if (offroad) offDist += d; else dist += d
     if (t - lastStream > 1) { w.stream(p.x, p.z); lastStream = t }
-    if (snapT >= CAPTURE_S && !replay) { snap = snapshot(vs); inputs = []; snapT = 0 }
+    if (snapT >= CAPTURE_S && !replay) { snap = snapshot(vs); inputs = []; snapT = 0; snapAfterSeat = false }
   }
   w.dispose()
   const wall = (performance.now() - t0) / 1000
