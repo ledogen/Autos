@@ -1349,13 +1349,59 @@ const STEPS = [
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 8000), 'R in the evening did not put the truck back on the road')
     check(await until(async () => !/off the road/.test((await eve()).hud), 2000), 'the HUD still says off the road on the road')
     await strayCheck('in the evening')
+    // FEAT-184 stage 6, THE WORST DAY: the station (when one is due), the flat halfway home, V, the spare that's flat too,
+    // the recovery menu's free tow to the auto shop, a tire there, and the night's headlights — then mom's, as before.
+    const wd = () => js('window.__worstDay()')
+    const tp = async (x, z, h) => {   // not seat(): its settle waits on the sim, and a lesson landing holds it
+      await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
+      check(await until(() => js('window.__seated'), 30000, 250), `the teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
+      await readCards(); await simFor(1)
+    }
+    if ((await wd()).pump) {
+      const pz = await js(`(() => { const q = window.__poi().list().find(q => q.id === window.__worstDay().pump.id); return window.__towSeat(q) })()`)
+      await tp(pz.x, pz.z, pz.heading); await park(true)
+      check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), "the evening's station: parking at its pump opened no pump")
+      await readCards()   // the pump's first-use card
+      await hold('f', 3); await tap(' ')   // pump, then the brake off pays
+      check(await until(async () => (await wd()).pump.done, 3000), `filling up did not end the station's beat: ${JSON.stringify(await wd())}`)
+    }
+    // Halfway home: a road point at 40 % of the crow distance from mom's, once the home leg is measured.
+    await simFor(0.5)
+    const half = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse'), v = window.__vs.position
+      const x = q.x + (v.x - q.x) * 0.4, z = q.z + (v.z - q.z) * 0.4, nr = window.__roadSys().queryNearest(x, z, 400)
+      return nr?.point ? { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } : null })()`)
+    check(half, 'no road halfway home')
+    await tp(half.x, half.z, half.h)
+    check(await until(async () => (await wd()).flat && await js('window.__damage.flat[0]'), 3000), `halfway home, no flat: ${JSON.stringify(await wd())}`)
+    await park(true)
+    await tap('v'); await readCards()   // the damage screen's card
+    await tap('Escape')
+    await js('window.__inv.use("spareTire")'); await readCards()   // the spare: flat too
+    await tap('Escape')   // the spare's picker; closing it reopens the inventory (parked)
+    if (await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000)) await tap('Escape')
+    await js('window.__econ.money = Math.max(window.__econ.money, 100)')   // the tire at the shop is real money
+    await tap('x'); await readCards()   // the recovery menu's card
+    check(await until(() => js('!!document.querySelector("#recovery-card button[data-act=towShop]:not([disabled])")'), 2000), 'the recovery menu offers no tow to a shop')
+    await js('document.querySelector("#recovery-card button[data-act=towShop]").click()')
+    check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 8000), 'the tow did not land at an open shop')
+    check((await wd()).towed, 'the tow was not counted (the night beat)')
+    await readCards()   // the shop's cards
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+    const fit = 'document.querySelector("#svc-screen button[data-act=buy][data-socket=tireFL]:not([disabled])")'
+    check(await until(() => js(`!!${fit}`), 2000), 'the shop offers no tire for the front left')
+    await js(`${fit}.click()`)
+    check(await until(() => js('!window.__damage.flat[0]'), 2000), 'buying a tire for the flat corner did not fix it')
+    await tap('Escape'); await tap(' ')
+    await hold('w', 1)
+    check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')
+    await readCards()
     // Parked at hers: her sleep card, the timer preset to wake at 07:00 — and sleeping posts the casserole.
     const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
       return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
     await js(`window.__seated = false; window.__teleport(${mom.x}, ${mom.z}, ${mom.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), "the teleport to mom's never seated")
-    check(await readCards() >= 2, "no lessons on the way home (the damage screen halfway, parking near hers)")
+    check(await readCards() >= 1, "no parking lesson near hers")   // FEAT-184: the flat's lessons were read on the way
     await simFor(1)   // the 0.5 m drop lands
     await park(true)
     const panel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
