@@ -6241,6 +6241,7 @@ function _sleepAtCamp () {
 function _breakCamp () {
   _campSeek = false
   _closeCampUi()
+  _updateParkTriggers()   // repaint the tent now, as Z does, rather than on the next 10 Hz poll
 }
 
 function _closeCampUi () {
