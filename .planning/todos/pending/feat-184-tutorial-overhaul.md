@@ -174,3 +174,19 @@ behind. "Today" marks a beat that exists and stays; **NEW** marks one to build.
    the shop lesson.
 5. **Beats 9 and 11**: the night drive (headlights) and breakfast from the inventory.
 6. **The smoke's opening step** rewritten for the whole sequence, timed against the +10 minutes.
+
+### Stage 2 — the census (Lane A, 2026-11-07; `wip/feat184/census.mjs`, 12 random seeds, story regions)
+
+| | min | median | max |
+|---|---|---|---|
+| the drive home, joint → mom's | 0.74 km | 2.85 km | 4.65 km |
+| joint → the nearest gas station | 1.03 km | 4.03 km | 7.06 km |
+| the detour via that station, over the drive home | 1.06 km | 5.80 km | 7.79 km |
+| halfway home (the flat) → the nearest auto shop | 0.79 km | 1.91 km | 2.67 km |
+| that shop → mom's | 0.35 km | 1.83 km | 3.21 km |
+
+- **The tow to a shop always fits.** The nearest auto shop is within 2.7 km of the flat on every seed.
+- **The station often doesn't fit.** Its detour is longer than the drive home itself on most seeds. With the budget at
+  **4 km** `[DEFAULT]` (≈ 3–4 minutes of real driving; the evening holds the clock), 6 of 12 seeds get the refuel beat.
+  The rest leave refuelling to the pump's first-use card. Raising the budget to 8 km would bring every seed in, at up
+  to ~8 km of extra driving.

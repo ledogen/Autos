@@ -4351,7 +4351,9 @@ let _eveningFrom = null   // m — the truck's crow distance to mom's when the e
 const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // FEAT-184 stage 3 (the worst day): a played opening starts on a nearly empty tank, and the way home runs by the nearest
 // gas station first — when that detour is short. Past the budget the lesson stays the pump's first-use card.
-const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 3000 }   // [DEFAULT] — the budget waits on the stage-2 census
+// The budget [DEFAULT] from the stage-2 census (12 random seeds): the drive home is a median 2.9 km, but the nearest
+// station's detour adds a median 5.8 km (1.1–7.8). At 4 km, 6 of 12 seeds get the refuel; the rest leave it to the pump.
+const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000 }
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
