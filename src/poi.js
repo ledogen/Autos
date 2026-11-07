@@ -231,7 +231,9 @@ export const POI_ROSTER = [
     // box come off the model; the shop's stock waits on FEAT-121.
     { type: 'gasPump',      count: 4, modelPool: 'gasPump', siting: 'coverage', sepParam: 'poiPumpMinSep' },
     { type: 'gasStation',   count: 1, model: 'gasStation', fallbackModel: null, siting: 'any' },
-    { type: 'autoShop',     count: 2, model: null, siting: 'coverage' },
+    // FEAT-178: ASSET-82, the two-bay service station on a lay-by. Its PARK box is bay A's flush lift: the brake there
+    // opens the service screen, and the screen's camera snaps to the model's `camera` corner (main.js).
+    { type: 'autoShop',     count: 2, model: 'serviceStation', siting: 'coverage' },
     // ANY FOOD VENDOR (FEAT-67 ruling, 2026-09-26; opening.md amended): the player delivers
     // ready-made meals from it as an independent gig contractor, not as staff, so the opening's
     // "never work there again" still holds. Sited anywhere. ASSET-80, the burger joint, on a lay-by:
@@ -324,14 +326,20 @@ export function dropZoneWorld (q, box = q?.drop) {
  * climbed onto it (1.1 m up, perched on its belly) and came off it upside down.
  *   • A pump island: its first pump zone, nose along the island. Model +X in world is (cos yaw, −sin yaw)
  *     and the truck's forward is (−sin h, −cos h), so h = yaw − π/2 lays the truck alongside.
- *   • Anything else is a KEYLESS marker (the auto shop — test/tow-seat.mjs holds it to that): the
- *     road-side strip of the pad, centred between the cube's face and the pad's edge (2.4 m off the
- *     centre on a 4 m half-width), heading along the road. A 1.9 m truck clears both by ~0.6 m.
+ *   • A PARK box (FEAT-178: the service station's bay A lift): its centre, nose along the box's long side —
+ *     into the bay (model +Z, h = yaw + π) for a box deeper than wide, alongside (model +X) otherwise.
+ *   • Anything else is a KEYLESS marker (a cube): the road-side strip of the pad, centred between the cube's
+ *     face and the pad's edge (2.4 m off the centre on a 4 m half-width), heading along the road. A 1.9 m truck
+ *     clears both by ~0.6 m.
  */
 export function towSeat (q) {
     if (q.pumpZones) {
         const z = dropZoneWorld(q, q.pumpZones[0])
         return { x: z.x, z: z.z, heading: z.yaw - Math.PI / 2 }
+    }
+    if (q.park) {
+        const b = dropZoneWorld(q, q.park)
+        return { x: b.x, z: b.z, heading: b.halfZ >= b.halfX ? b.yaw + Math.PI : b.yaw - Math.PI / 2 }
     }
     const lat = (POI_PARAMS.poiCubeSize / 2 + (q.halfWid ?? POI_PARAMS.poiPadHalfWid)) / 2
     return { x: q.x - q.nx * lat, z: q.z - q.nz * lat, heading: Math.atan2(-q.tx, -q.tz) }
@@ -1079,6 +1087,7 @@ export class PoiSystem {
                 // ASSET-74: the model's PARK box — park inside it to be offered work. Off the model,
                 // not the slot: it is the painted stalls, so a fallback cube has none.
                 q.park = spec?.park ?? null
+                q.camera = spec?.camera ?? null   // FEAT-178: a fixed view while parked in the box (the service station)
                 // FEAT-50: the model's PUMP ZONES — pull alongside and pull the handbrake to use the pump.
                 // Off the model, like the park box: a pump island has them, a cube does not.
                 q.pumpZones = spec?.pumpZones ?? null
