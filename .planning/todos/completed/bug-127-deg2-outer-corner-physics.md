@@ -1,7 +1,7 @@
 ---
 id: BUG-127
 type: bug
-status: open
+status: closed
 opened: 2026-11-07
 severity: minor
 source: Spare, the BUG-122 follow-up (reserved by the orchestrator, 2026-11-07)
@@ -48,5 +48,18 @@ only the undrawn outer corner changes: physics now rides the gravel the mesh sho
 ## Acceptance
 
 - [x] Measured on random seeds, before/after.
-- [ ] Affected gates and `fingerprint-world`, explained.
-- [ ] A drive soak over sharp bends, no new flags.
+- [x] Affected gates: 61/61 green on the branch with main 725b9988 merged (BUG-129 in); vertical-curvature junction
+      kinks 203 = the new ceiling. `fingerprint-world` vs main 725b9988: only `surface` (physics) differs, in 4 windows
+      (seed6 origin story, seed11, seed6 ponds, seed7 origin); `carve` (the mesh) identical everywhere, as intended:
+      physics now matches the mesh at the outer corners.
+- [x] A drive soak over sharp bends: random seed 861989012 (two bends of 90° and 98°), 8 km, the fix vs main.
+      Struts (3) and colliders (12) are identical, same sites and values. Jolts are 6 vs 3: the 3 extra come at the
+      end of the fix run's route, which had diverged (12 autopilot re-seats vs 11). Captured
+      (`wip/bug-127/soak-events.mjs`, every jolt), all three **replay identically on main 5e55ae42** (the same strike
+      on drawn ground, the same flags). From the same state, main jolts the same, so it is route divergence, not this
+      change. The jolt spot itself is 32–37 m along the leg, on drawn ribbon, which this fix does not touch.
+
+## Resolution (closed on landing)
+
+Physics follows the drawn surface at every junction end, deg-2 bends included. The junction-edge-lip gate (BUG-122/
+123) lands with it.
