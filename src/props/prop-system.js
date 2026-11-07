@@ -804,6 +804,26 @@ export class PropSystem {
     if (!wasBBOnly) this._markShadowTiles(cx, cz, true)
   }
 
+  /**
+   * BUG-132: the ground of terrain chunk (cx, cz) changed (terrain setRecarveHook). Release every live
+   * chunk with a prop standing on it — its own, and a neighbour whose tree cluster spills over the
+   * border (seed 1791962762: an aspen 2.65 m deep in the next chunk's new fill) — and restart a
+   * scatter in flight there, which was sampling the old ground. They re-scatter on the new ground.
+   */
+  releaseGround(cx, cz) {
+    const cs = this._chunkSize
+    const on = (p) => Math.floor(p.x / cs) === cx && Math.floor(p.z / cs) === cz
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const chunk = this._chunks.get((cx + dx) + ',' + (cz + dz))
+      if (chunk && ((!dx && !dz) || chunk.places.some(on))) this.releaseChunk(cx + dx, cz + dz)
+    }
+    const a = this._activeScatter
+    if (a && !a.litter && Math.abs(a.cx - cx) <= 1 && Math.abs(a.cz - cz) <= 1) {
+      this._scatterQueue.push({ ck: a.ck, cx: a.cx, cz: a.cz, score: 0 })
+      this._activeScatter = null
+    }
+  }
+
   /** Live (committed) prop chunks — the size of one whole-ring intrusion pass. */
   liveChunkCount() { return this._chunks.size }
   /** True when chunk (cx, cz) has been scattered and committed. */

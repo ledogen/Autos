@@ -827,8 +827,8 @@ export class TerrainSystem {
      * BUG-132: `fn(cx, cz)` runs when a re-carve CHANGES a live chunk's ground (its carve table differs
      * from the one it replaces). Props are seated on analyticHeight when their chunk scatters, and a
      * positional adopt re-carves ground under props that already stand: seed 19's portal cutting left
-     * its hillside rocks 5–14 m in the air. main.js releases the prop chunk, which re-scatters on the
-     * new ground. Every recarveInPlace caller goes through here, so none can strand a prop.
+     * its hillside rocks 5–14 m in the air. main.js releases the props standing on it (PropSystem.releaseGround);
+     * they re-scatter on the new ground. Every recarveInPlace caller goes through here, so none can strand a prop.
      */
     setRecarveHook(fn) {
         this._onRecarve = fn ?? null
