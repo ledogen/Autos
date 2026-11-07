@@ -63,7 +63,7 @@ import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem, SKY_CYCLE, SKY_PRESETS, nightWeight } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
-import { MoonSystem } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
+import { MoonSystem, MOON_PARAMS } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
@@ -3528,8 +3528,24 @@ function _updateDropMarks (onMission) {
 // a quantized ladder because each push re-bakes the sky cubemap and the prop impostor atlas
 // (skySystem.onLookApplied, below). DAY_PARAMS lives in day.js, out of RANGER_PARAMS, for the
 // same reason POI_PARAMS does.
+// FEAT-180 night by moon phase: a run's moon walks a 29.53-day synodic month from a seeded start, one day per run
+// day, so runs differ by seed and a run's nights change as it goes. The disc shows that phase and the night's light
+// scales with its lit fraction (SkySystem.setMoonLit: new moon = the night look as authored). Free roam has no run
+// clock and keeps both as they were: MOON_PARAMS.phase's default disc over the new-moon light.
+const LUNAR_DAYS = 29.53
+const _moonFree = MOON_PARAMS.phase
+let _moonDay = null
+function _syncMoon () {
+  const d = daySystem._running ? daySystem.day() : null
+  if (d === _moonDay) return
+  _moonDay = d
+  const c = d == null ? null : (d / LUNAR_DAYS + seedFor(worldSeed, 'moon') / 2 ** 32) % 1
+  MOON_PARAMS.phase = c == null ? _moonFree : 1 - Math.abs(1 - 2 * c)   // 0 new … 1 full, moon.js's scale
+  moonSystem.apply()
+  skySystem.setMoonLit(c == null ? 0 : (1 - Math.cos(MOON_PARAMS.phase * Math.PI)) / 2)
+}
 const daySystem = new DaySystem({
-  setTimeOfDay: (h) => skySystem.setTimeOfDay(h),
+  setTimeOfDay: (h) => { _syncMoon(); skySystem.setTimeOfDay(h) },
 })
 
 // ── FEAT-53: the economy spine ─────────────────────────────────────────────────────────────
