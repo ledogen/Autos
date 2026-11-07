@@ -1,7 +1,7 @@
 ---
 id: BUG-129
 type: bug
-status: open
+status: closed
 opened: 2026-11-07
 severity: major
 source: Lane B's drive soak (test/drive-soak.mjs on main), run4, 2026-11-07
@@ -83,3 +83,7 @@ src change since this branch's base) → fix:
   steps by the grade difference. Example: 861989012 (−662.8, −185.9), arcs 521.6 / 560.4, 138.7 vs 129.3.
 - **The remaining in-section steps > 0.5 m (24),** many at the same switchbacks. These need their own look.
 - **Steps near bores,** mostly at portals' hill faces, which may be by design.
+
+## Landed (orchestrator, 2026-11-07)
+
+Merge of ea87ac03 on main: affected 62/62, cdp-smoke 25/25. The capture can't replay (its start state sits on the old ground); Lane B re-records stale captures.
