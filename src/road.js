@@ -10240,13 +10240,15 @@ export class RoadSystem {
     }
 
     /**
-     * BUG-122: is this run's ribbon DRAWN at arcSEff, at a PADDED junction end? road-mesh.js trims a ribbon within
-     * (mouth ?? cutback) of every junction end it has (_buildRoadTile's trimOf, same records, same rule); inside that
-     * the junction pad is what is drawn. The physics asphalt overlay follows the same rule there, or the strip a
-     * pad's ring leaves uncovered beside a trimmed leg (up to ~0.5 m wide) rode an invisible ribbon top up to
+     * BUG-122: is this run's ribbon DRAWN at arcSEff? road-mesh.js trims a ribbon within (mouth ?? cutback) of every
+     * junction end it has (_buildRoadTile's trimOf, same records, same rule); inside that the junction pad, or at a
+     * deg-2 bend the connector strip, is what is drawn. The physics asphalt overlay follows the same rule, or the
+     * strip a pad's ring leaves uncovered beside a trimmed leg (up to ~0.5 m wide) rode an invisible ribbon top up to
      * ~0.35 m above the dirt drawn there.
-     * Ringless (deg-2 connector) ends are left as they were: there the trimmed leg's outer corner is dirt in the
-     * mesh too, but changing what physics rides around every bend is its own job, not this one's.
+     * BUG-127: deg-2 (ringless) ends too. At a sharp bend the connector's arc cuts the corner, and the trimmed legs'
+     * OUTER corner is gravel in the mesh; physics rode the legs' ribbon tops over it, up to 0.18 m above the drawn
+     * dirt (27 % of the trimmed footprint at 7 bends on random seeds, ~340 m²). The connector strip keeps its own
+     * overlay in _sampleCarveWorld (co.lat < halfWidth), so where it is drawn nothing changes.
      * RIBBON_MOUTH_SLACK: the ribbon's first section lies on the pad's mouth CHORD, which on a curving leg sits off
      * arc = mouth at the ribbon's edges; within this of the mouth the overlay stays (ribbon or pad is drawn there),
      * or those slivers dipped clearanceMargin into the dirt (85 extra vertical-curvature kinks at junctions).
@@ -10255,7 +10257,7 @@ export class RoadSystem {
         const arcs = this._junctionCarveArcs ? this._junctionCarveArcs.get(runKey) : null
         if (!arcs) return true
         const cutback = this.junctionCutbackDist()
-        for (const j of arcs) if (j.node?.ring && Math.abs(arcSEff - j.arc) < (j.mouth ?? j.cutback ?? cutback) - RIBBON_MOUTH_SLACK) return false
+        for (const j of arcs) if (Math.abs(arcSEff - j.arc) < (j.mouth ?? j.cutback ?? cutback) - RIBBON_MOUTH_SLACK) return false
         return true
     }
 

@@ -39,8 +39,22 @@ function streamSpawnRegion (seedStr) {
   return { road, terr }
 }
 
+// BUG-127: a run's centerline runs on into its node, but inside a junction end's trim the ribbon is not drawn (the pad
+// is, or at a deg-2 bend the connector strip), and at a sharp bend the line crosses the gravel outer corner, then
+// climbs the connector's real kerb. A step counts only between two samples that both stand on drawn asphalt.
+function drawnAt (road, terr, x, z) {
+  const hw = P.roadHalfWidth ?? 5, raw = terr.rawHeightWorld(x, z), nr = road._resolveRoadSurface(x, z)
+  if (nr) {
+    const dx = x - nr.point.x, dz = z - nr.point.z, arc = nr.arcS + dx * nr.tangent.x + dz * nr.tangent.z
+    if (Math.abs(dx * nr.tangent.z - dz * nr.tangent.x) < hw && road._ribbonDrawnAt(nr.runKey, arc)) return true
+  }
+  const co = road._connectorCarve(x, z, raw); if (co && co.lat < hw) return true
+  return road._junctionPadCarve(x, z, raw)?.padTopY != null
+}
+
 function scanSeed (seedStr) {
   const { road, terr } = streamSpawnRegion(seedStr)
+  road._detectNodeJunctions()
   let steps = 0, worst = 0, worstAt = null, scannedM = 0
   for (const [runKey, { points, polyCum }] of road._network) {
     for (let i = 0; i < points.length - 1; i++) {
@@ -48,7 +62,7 @@ function scanSeed (seedStr) {
       const segLen = Math.hypot(b.x - a.x, b.z - a.z)
       scannedM += segLen
       const n = Math.max(1, Math.round(segLen / STEP))
-      let prev = null
+      let prev = null, px = 0, pz = 0
       for (let k = 0; k <= n; k++) {
         const t = k / n
         const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t
@@ -62,9 +76,9 @@ function scanSeed (seedStr) {
         const h = terr.analyticHeight(x, z, undefined, qy)
         if (prev !== null) {
           const d = Math.abs(h - prev)
-          if (d > WALL) { steps++; if (d > worst) { worst = d; worstAt = { x, z } } }
+          if (d > WALL && drawnAt(road, terr, x, z) && drawnAt(road, terr, px, pz)) { steps++; if (d > worst) { worst = d; worstAt = { x, z } } }
         }
-        prev = h
+        prev = h; px = x; pz = z
       }
     }
   }

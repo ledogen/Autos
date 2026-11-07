@@ -48,7 +48,10 @@ const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // (pass-1 line 5.1 m off its sibling 0,-1,1|0,-2,0) is joined by a new T at 184204,-310345,-1 (184, −310); its leg toward 0,0,0
 // carries a 0.048 /m sag 18 m from that node, under the 0.11 line. The 0.030 /m sag at (668.6, −596.4) on the
 // re-keyed run past it falls under KFLAG. Total kinks unchanged (224); every other window equal.
-const CEIL = { open: 18, junction: 206 }
+// junction 206 → 203 (2026-11-07, BUG-127): a run's lanes are driven only where asphalt is drawn under them. Inside a
+// junction end's trim at a sharp deg-2 bend the outer lanes crossed the gravel corner the connector arc cuts (730
+// samples dropped); 3 kinks sat there. The connector arcs themselves are driven as before.
+const CEIL = { open: 18, junction: 203 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5
@@ -122,13 +125,28 @@ for (const Wn of windows) {
   road._detectNodeJunctions()
   const h = (x, z) => terr.analyticHeight(x, z)
   const hits = []
+  // BUG-127: a run's line runs on into its node, but inside a junction end's trim the ribbon is not drawn: the pad is,
+  // or at a deg-2 bend the connector strip (scanned below), and at a sharp bend the line's outer lanes cross gravel
+  // there. A sample is driven only where asphalt is drawn under it; elsewhere it is off the road (a kerb is a kerb).
+  const hw = P.roadHalfWidth ?? 5, cut0 = road.junctionCutbackDist()
+  const drawn = (x, z) => {
+    const raw = terr.rawHeightWorld(x, z), nr = road._resolveRoadSurface(x, z)
+    if (nr) {
+      const dx = x - nr.point.x, dz = z - nr.point.z, arc = nr.arcS + dx * nr.tangent.x + dz * nr.tangent.z
+      if (Math.abs(dx * nr.tangent.z - dz * nr.tangent.x) < hw && road._ribbonDrawnAt(nr.runKey, arc)) return true
+    }
+    const co = road._connectorCarve(x, z, raw); if (co && co.lat < hw) return true
+    return road._junctionPadCarve(x, z, raw)?.padTopY != null
+  }
   for (const [key, e] of road._network) {
     const L = e.polyCum?.at(-1); if (!(L > 2 * WB)) continue
     const line = []
     for (let s = 0; s <= L; s += 2) line.push({ ...road.runPointAt(key, s), a: s })
-    const spans = e.tunnelSpans
+    const spans = e.tunnelSpans, ends = road._junctionCarveArcs.get(key) ?? []
     const inBore = spans ? (s) => spans.some(sp => s >= sp.s0 && s <= sp.s1) : () => false
-    for (const off of LANES) samples += scanLine(line, off, h, inBore, (s, L) => Math.min(s, L - s) < JN_ZONE ? 'junction' : 'open', hits)
+    const nearEnd = (s) => ends.some(j => Math.abs(s - j.arc) < (j.mouth ?? j.cutback ?? cut0))
+    const skip = (s, x, z) => inBore(s) || (nearEnd(s) && !drawn(x, z))
+    for (const off of LANES) samples += scanLine(line, off, h, skip, (s, L) => Math.min(s, L - s) < JN_ZONE ? 'junction' : 'open', hits)
   }
   // A connector carries no span list of its own; a lead-in that runs into a portal shows as the hill's
   // skin standing over the deck it draws.
