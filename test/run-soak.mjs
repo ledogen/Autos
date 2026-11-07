@@ -90,14 +90,22 @@ async function simFor (s) {
 const vis = id => js(`!!document.getElementById("${id}")?.checkVisibility()`)
 const dlgUp = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
 async function readCards () {
-  for (let i = 0; i < 40 && await dlgUp(); i++) { await tap('Enter'); await sleep(150) }
-  // HARNESS OR GAME? The stuck card's dumps show none of the CDP Enters reaching the page at all (the window-capture
-  // logger saw no keydown). Press from INSIDE the page — a keydown dispatched on document, where the game's dialogue
-  // handler listens — and note which one closed it: a page-side close means the game is sound and the browser's
-  // input pipe dropped the keys; the run goes on. Still stuck after that is a real soft-lock.
-  if (await dlgUp()) {
-    for (let i = 0; i < 40 && await dlgUp(); i++) { await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }))`); await sleep(100) }
-    if (!await dlgUp()) { run.notes.push(`day ${run.day}: a card ignored 40 CDP Enters but closed on page-side keydowns (harness input, not the game)`); return }
+  // THE STUCK CARD WAS THIS LOOP (the 3-seed replay, seed 2057513356): one sequence closed, the next opened 117 ms
+  // later, in the gap between this loop's last look and the check below, and the check failed on a card nobody had
+  // pressed (the dump logged no key at all). So read until the panel has stayed down a second, not the first frame
+  // it is down, and never check a card that has not been pressed.
+  for (let k = 0; k < 8; k++) {
+    for (let i = 0; i < 40 && await dlgUp(); i++) { await tap('Enter'); await sleep(150) }
+    // HARNESS OR GAME? An earlier stuck card's dumps showed none of the CDP Enters reaching the page (the
+    // window-capture logger saw no keydown). Press from INSIDE the page — a keydown dispatched on document, where
+    // the game's dialogue handler listens — and note which one closed it: a page-side close means the game is sound
+    // and the browser's input pipe dropped the keys; the run goes on. Still up after that is a real soft-lock.
+    if (await dlgUp()) {
+      for (let i = 0; i < 40 && await dlgUp(); i++) { await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }))`); await sleep(100) }
+      if (!await dlgUp()) run.notes.push(`day ${run.day}: a card ignored 40 CDP Enters but closed on page-side keydowns (harness input, not the game)`)
+    }
+    if (await dlgUp()) break                   // 80 presses and still up: the check below fails
+    if (!await until(dlgUp, 1000)) return      // down a whole second: read out
   }
   check(!await dlgUp(), `a dialogue card would not close: ${JSON.stringify(await js(`({ vis: document.visibilityState, focus: document.hasFocus(),
     tickAgoMs: Math.round(performance.now() - (window.__soakTick ?? 0)), simT: window.__simT(), speaker: document.getElementById('dlg-speaker')?.textContent,
