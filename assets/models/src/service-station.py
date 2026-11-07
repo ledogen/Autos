@@ -595,7 +595,8 @@ def registry():
     _, _, tcy = truck_box()
     look = (LIFT_A, CAM_LOOK_Z, -tcy)
     eye = (CAM_EYE[0], CAM_EYE[2], -CAM_EYE[1])
-    return lines, (f"lift: {{ x: {f(LIFT_A)}, z: {f(-LIFT_Y)}, halfX: {f(hx)}, halfZ: {f(RUN_L / 2)} }},",
+    deck = f"{{ x: {f(LIFT_A)}, z: {f(-LIFT_Y)}, halfX: {f(hx)}, halfZ: {f(RUN_L / 2)} }},"
+    return lines, (f"park: {deck}\n    lift: {deck}",
                    f"camera: {{ eye: [{', '.join(map(f, eye))}], look: [{', '.join(map(f, look))}], fov: {CAM_FOV} }},")
 
 

@@ -785,8 +785,11 @@ export const PROP_MODELS = {
   // slab 5 mm above the pad, so the wheels ride the analytic pad surface as everywhere else (no ramp,
   // no collider, MESH == PHYSICS). Bay B's lift is RAISED 1.15 m, empty, scissor arms showing: it is
   // what says the flat yellow plates in bay A are a lift. ShopLight (four ceiling strips) is emissive.
-  //   lift: the deck of bay A's lift (both runways); the truck's centre parks at its centre, nose away
-  //   from the road. camera (FEAT-178): bay A's inside back corner on the end-wall side, eye and look
+  //   park: ON bay A's lift. Without it the "park here" ring would stand at the pad centre, which is
+  //   on bay B's raised lift, inside its collider. With it the box curtain and _inPoiSpot both mean
+  //   "parked on the lift".
+  //   lift: the deck of bay A's lift (both runways), the same box; the truck's centre parks at its
+  //   centre, nose away from the road. camera (FEAT-178): bay A's inside back corner on the end-wall side, eye and look
   //   point in the model frame, vertical fov in degrees; it frames the truck's front three-quarter
   //   with the open door behind.
   //
@@ -819,6 +822,7 @@ export const PROP_MODELS = {
       ],
     },
     seat: 1.4,
+    park: { x: -3.95, z: -0.2, halfX: 1.045, halfZ: 2.3 },
     lift: { x: -3.95, z: -0.2, halfX: 1.045, halfZ: 2.3 },
     camera: { eye: [-5.9, 2.8, 3.6], look: [-3.95, 0.9, -0.499], fov: 55 },
   },
