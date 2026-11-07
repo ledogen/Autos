@@ -191,3 +191,30 @@ Owner 9: "Approve. Keep dusk opening."
 
 So the light is full until 19:30 and limiting from about 20:00: the owner's "comfortably drive until about 8 pm".
 Whether the 19:30–20:15 dusk looks nice is the combined sheet's dusk interview.
+
+## Piece 4 built (Spare, 2026-11-07): night by moon phase — `src/sky.js`, `src/main.js`
+
+Owner 2 and 8: today's night is the new moon, and the full moon is "bright enough to see without headlights but barely".
+
+- **The light.** `SKY_PRESETS.night` is the new moon, unchanged. `SkySystem.setMoonLit(lit)` scales the night's key
+  light, fill and fog radiance by 1 + (FULL_MOON_GAIN − 1) × lit, with FULL_MOON_GAIN = 3. A gain of 4 lit the road
+  well; the owner's full moon is "barely".
+- **The sky.** It lifts with the moon by the same extra light as the haze it fades into: full at the horizon, 35 %
+  at the zenith, and zero at new moon. Without it, the full moon's brighter haze stood as a lit band under a black
+  sky; the review page round 2 shows the fixed frames.
+- **The phase.** It comes from the run's day: a 29.53-day synodic month (one full cycle of moon phases) from a seeded
+  start (`seedFor(seed, 'moon')`), one step per run day.
+  - The disc shows that phase (`MOON_PARAMS.phase`), and the light follows its lit fraction (1 − cos(phase·π)) / 2.
+  - Free roam has no run clock and keeps the slider's disc over the new-moon light.
+- **Read in a story run** on seed 3583777560 (`wip/feat-180/moon-read.mjs`, the night key at 22:00):
+
+  | Run day | Phase | Key intensity |
+  |---|---|---|
+  | 1 | 0.38 | 1.14 |
+  | 3 | 0.24 | 0.89 |
+  | 6 | 0.04 | 0.71 |
+  | 7 | 0.03 | 0.70 (the new moon: the night look's own key) |
+  | 10 | 0.23 | 0.88 |
+
+- **Owner questions** (review round 2, 5 and 6): is the full-moon brightness right, and should the cycle be the real
+  month or 12 days, so that every run sees both a full and a new moon?

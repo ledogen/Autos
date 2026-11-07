@@ -298,9 +298,11 @@ export class SkySystem {
     const sm = this.sky.material
     sm.uniforms.uFog = { value: new THREE.Color() }
     sm.uniforms.uHazeTop = { value: Math.sin(THREE.MathUtils.degToRad(HAZE_DEG)) }
+    sm.uniforms.uMoonSky = { value: new THREE.Color() }   // FEAT-180 moon phase: the moonlit sky (setMoonLit)
     sm.fragmentShader = sm.fragmentShader
-      .replace('uniform float time;', 'uniform float time;\n\t\tuniform vec3 uFog;\n\t\tuniform float uHazeTop;')
+      .replace('uniform float time;', 'uniform float time;\n\t\tuniform vec3 uFog;\n\t\tuniform float uHazeTop;\n\t\tuniform vec3 uMoonSky;')
       .replace('gl_FragColor = vec4( texColor, 1.0 );', `float haze = 1.0 - smoothstep( 0.0, uHazeTop, direction.y );
+			texColor += uMoonSky * mix( 1.0, 0.35, clamp( direction.y, 0.0, 1.0 ) );
 			gl_FragColor = vec4( mix( texColor, uFog, haze * haze ), 1.0 );`)
     if (!sm.fragmentShader.includes('uHazeTop;')) throw new Error('sky.js: three Sky shader changed; FEAT-180 haze patch missed')
     scene.background = null                    // live mode: the Sky mesh is the background
@@ -372,6 +374,11 @@ export class SkySystem {
     u.mieCoefficient.value = p.mieCoefficient
     u.mieDirectionalG.value = p.mieDirectionalG
     fogRadiance(p, u.uFog.value)   // FEAT-180 horizon: the fog's radiance, as the old ground disc took it
+    // FEAT-180 moon phase: the night sky brightens with the moon by the same extra light as the haze it fades into
+    // (the moonlit share of the fog), full at the horizon and 35 % at the zenith, so a full moon's brighter haze is
+    // not a lit band under a black sky. Zero at new moon: tonight's sky as authored.
+    const g = _nightLook.sunIntensity / SKY_PRESETS.night.sunIntensity
+    u.uMoonSky.value.copy(u.uFog.value).multiplyScalar((g - 1) / g * nightWeight(SKY_CYCLE.hour))
 
     dirFromAngles(p.elevation, p.azimuth, this._skySunDir)
     u.sunPosition.value.copy(this._skySunDir)
