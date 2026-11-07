@@ -1503,19 +1503,19 @@ export class PoiSystem {
     /**
      * FEAT-154: the row at arc `s`, moved if it must be to stand on a PLANE. Each barricade is a loose body that must
      * start at rest (_barrierRow), so the deck under its whole footprint has to fit the plane it is seated on. Near a
-     * junction it may not: on its pad (31 cm off on seed 6 under BUG-121's region circles), or on the vertical knee
+     * junction it may not: on its apron (31 cm off on seed 6 under BUG-121's region circles), or on the vertical knee
      * where a steep leg blends into it (398411380: −37 % to −62 % under one barricade's 1.15 m depth, 18 cm off, 20 m
-     * from a junction whose pad reaches 14 m). So a row that touches a junction pad (road.junctionPadBlocked; a row
-     * there would close the junction, not the road), or whose footprints miss their planes by more than poiRowFitM,
-     * moves to the nearest arc in [lo, hi], 1 m at a time either way, where neither is true. If none is, it takes the
-     * best-fitting arc off the pads, or stays at `s`. [lo, hi] keeps it within poiRowSlideM of its wall crossing.
+     * from a junction whose pad reaches 14 m). The fit is the test, not the pad's reach: a row on a bend's fillet or
+     * a ring's flat mouth stands fine (seven such on the 51-world census fit within 3.3 cm), and a 32 m ring is out
+     * of any short slide's reach. So a row whose footprints miss their planes by more than poiRowFitM moves to the
+     * nearest arc in [lo, hi], 1 m at a time either way, where they do not; failing that, to the best-fitting arc.
+     * [lo, hi] keeps it within poiRowSlideM of its wall crossing.
      */
     _rowOnPlane (road, ed, s, lo, hi, inward, P) {
-        const [w, , d] = PROP_MODELS.roadBarrier.collision.size, reach = Math.hypot(w / 2, d / 2)
+        const [w, , d] = PROP_MODELS.roadBarrier.collision.size
         const misfit = (row) => {   // m: the worst gap between the deck and a barricade's plane over its footprint
             let worst = 0
             for (const b of row) {
-                if (road.junctionPadBlocked?.(b.x, b.z, reach)) return Infinity
                 const ax = Math.cos(b.yaw), az = -Math.sin(b.yaw), fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw)
                 for (let u = -w / 2; u <= w / 2 + 1e-9; u += w / 6) for (const v of [-d / 2, 0, d / 2]) {
                     const dx = ax * u + fx * v, dz = az * u + fz * v, y = road.sampleRoadTopY(b.x + dx, b.z + dz)
