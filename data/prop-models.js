@@ -877,6 +877,33 @@ export const PROP_MODELS = {
     park: { x: 0, z: -4.6, halfX: 3.2, halfZ: 1.5 },
   },
 
+  // ASSET-84 — the TACKLE SHOP, 1627 tris, 8 materials, one 1024x512 atlas (the BAIT & TACKLE board and
+  // the fridge's LIVE BAIT label; generic, the name rolls per seed). The tackleShop POI: a teal board-and-
+  // batten shack under a galvanised gable roof whose front slope runs on over a plank porch, a leaping bass
+  // (geometry) on the ridge. A LIVE BAIT fridge and a bench on the porch, a red canoe on two sawhorses off
+  // the -X end, a fish-cleaning table and buckets off the +X end. Built by assets/models/src/tackle-shop.py,
+  // which prints every number below.
+  //
+  // On a 14 x 8 LAY-BY. seat 3.5: the back wall stands 1.3 m past the pad's far edge, inside poi-yard's
+  // PAD_RIM_HOLD - 0.25. The porch step ends at the pad centre, so the ring stands at its foot (no `park`
+  // box: an ordinary giver, like the burger joint).
+  //
+  // COLLISION per part. The porch is a box from the deck to its roof, so it is not driven under. The
+  // fish, the board, the porch step and the stovepipe are not colliders.
+  tackleShop: {
+    url: 'assets/models/tackle-shop.glb',
+    collision: {
+      shape: 'box', size: [6, 3.85, 3.6],   // the shack's walls, centred on the origin (story-poi's fits-its-pad probe)
+      boxes: [
+        { c: [0, 1.925, 0], s: [6, 3.85, 3.6] },                   // shack
+        { c: [0, 1.2, -2.5], s: [6.3, 2.401, 1.4] },               // porch
+        { c: [-5.5, 0.54, -0.9], s: [4.2, 1.08, 1] },              // canoe on its sawhorses
+        { c: [4.335, 0.675, -0.675], s: [1.57, 1.35, 0.85] },      // cleaning table + buckets
+      ],
+    },
+    seat: 3.5,
+  },
+
   // ASSET-13 — the GAS STATION, 1482 tris, 7 materials, one 1024x512 atlas (FOOD MART, GAS x3, ICE,
   // PROPANE, the pump register face). The station IS the convenience store (FEAT-123, owner 2026-10-16).
   // Layout by the owner (2026-10-19): the store at the back, ONE island right in front of its doors with

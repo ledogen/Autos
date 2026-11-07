@@ -1920,7 +1920,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
-const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, prewarmLightPrograms,
+const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, getHeadlightMode, prewarmLightPrograms,
   compileLightState, LIGHT_STATE_COUNT, setBoreShade, headlightSpots } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
@@ -5522,7 +5522,7 @@ function _checkStranded () {
   const show = c?.stuck && !c.canEnd && !_recoveryOpen && document.getElementById('recovery-row')?.style.display === 'flex'
   if (hint) {
     hint.style.opacity = show ? '1' : '0'
-    if (show) hint.innerHTML = `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`   // PLACEHOLDER words
+    if (show) hint.innerHTML = `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`   // the owner's words (feat172-words, 2026-11-07: "keep")
   }
   if (!c?.canEnd) { _strandedSince = null; return }
   _strandedSince ??= simTime
@@ -10423,6 +10423,8 @@ function loop () {
   gaugeCluster.setFuelLevel(vehicleState.fuel.gal / RANGER_PARAMS.fuelTankGal)
   gaugeCluster.setLowFuel(vehicleState.fuel.gal <= RANGER_PARAMS.fuelLowLightGal)
   gaugeCluster.setFlat(damageModel.flat.some(Boolean))   // FEAT-94
+  gaugeCluster.setParkBrake(vehicleState.handbrake)       // FEAT-34: latched, held, or the launch hold
+  gaugeCluster.setHighBeam(getHeadlightMode() === 2)      // FEAT-34
   _renderPumpDisplay(frameTime)
   gaugeCluster.setRedline(RANGER_PARAMS.engineRedlineRPM)   // repaints the tach face only on an engine swap
   {
