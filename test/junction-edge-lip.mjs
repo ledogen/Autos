@@ -20,9 +20,8 @@ import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 const SEEDS = ['1353361482', '369055107', '917338424']   // random seeds (BUG-122's census; BUG-137's causeway T)
-const BUG146 = [{ S: '1353361482', x: 26.8, z: 721.0 }, { S: '917338424', x: 99.4, z: -1016.8 }]   // see SMOOTH
 const R = 1000, LIP_MAX = 0.25, G = 0.25, REFINE = 0.08, TEAR_MAX = 0.08, hw = P.roadHalfWidth ?? 5
-let fails = 0, edges = 0, worstLip = 0, worstLipAt = '', rimPts = 0, margin = Infinity, padPts = 0, worstSlope = 0, worstTear = 0, worstTearAt = '', rimEdge = 0, rimFails = 0, worstRim = 0, worstRimAt = '', worst146 = 0
+let fails = 0, edges = 0, worstLip = 0, worstLipAt = '', rimPts = 0, margin = Infinity, padPts = 0, worstSlope = 0, worstTear = 0, worstTearAt = '', rimEdge = 0, rimFails = 0, worstRim = 0, worstRimAt = ''
 for (const S of SEEDS) {
   const ws = parseWorldSeed(S), road = new RoadSystem(ws, P)
   wirePondNoGo(road, ws, P); road.setRadius(R + 300); road.update(new THREE.Vector3(0, 0, 0))
@@ -106,10 +105,9 @@ for (const S of SEEDS) {
     // SMOOTH: the pad's surface (what the wheel rides inside the ring) on a G grid, each point against its +x and +z
     // neighbours. A pair rising more than REFINE is re-sampled every G / 5: a ramp spreads out there, a tear does not —
     // the TEAR is the biggest step at that spacing. BUG-137: a T's trunk tore where it bends at its node; BUG-144: a pad
-    // tore where two nearly parallel legs' mouth bands met (_padRibbonMask took the heavier leg's deck).
-    // EXCEPTED (BUG-146, the ribbon level): where two legs' DRAWN ribbons touch at their mouths with decks apart, the pad
-    // must meet both edges, so the step is the ribbons' own — 0.14 m per 5 cm at 1353361482 (26.8, 721.0) and 0.12 m at
-    // 917338424 (99.4, −1016.8). Tears within 1.5 m of those two sites are reported, not failed; drop them with BUG-146.
+    // tore where two nearly parallel legs' mouth bands met (_padRibbonMask took the heavier leg's deck); BUG-146: their
+    // DRAWN ribbons touched at the mouths, decks apart (0.14 m per 5 cm at 1353361482 (26.8, 721.0), 0.12 m at
+    // 917338424 (99.4, −1016.8)) — the pad now paves out to where the pavements really part.
     {
     const rr = (node.ringMaxR ?? 20) + G, n = Math.ceil(2 * rr / G) + 1, x0 = node.pos.x - rr, z0 = node.pos.z - rr
     const grid = new Float64Array(n * n).fill(NaN)
@@ -132,7 +130,6 @@ for (const S of SEEDS) {
           tear = Math.max(tear, Math.abs(yf - prev)); prev = yf
         }
         const tx = x0 + i * G, tz = z0 + j * G
-        if (BUG146.some(b => b.S === S && Math.hypot(b.x - tx, b.z - tz) < 1.5)) { if (tear > worst146) worst146 = tear; continue }
         if (tear > nodeTear) { nodeTear = tear; nodeAt = `${S} (${tx.toFixed(2)}, ${tz.toFixed(2)}) ${ex ? 'x' : 'z'}` }
       }
     }
@@ -143,7 +140,6 @@ for (const S of SEEDS) {
 }
 console.log(`${edges} junction leg edges: worst lip ${worstLip.toFixed(3)} m (${worstLipAt}) · ${rimPts} rim points: tightest pad margin ${(margin * 100).toFixed(1)} cm`
   + ` · ${padPts} pad points: steepest ${worstSlope.toFixed(3)} m per ${G} m, worst tear ${worstTear.toFixed(3)} m per ${G / 5} m (${worstTearAt})`)
-console.log(`BUG-146 (excepted): worst tear ${worst146.toFixed(3)} m per ${G / 5} m at its two sites`)
 console.log(`${rimEdge} pad rim points: worst rim lip ${worstRim.toFixed(3)} m (${worstRimAt}), ${rimFails} over ${LIP_MAX} m`)
 fails += rimFails
 console.log(fails ? `FAIL: ${fails}` : 'PASS')

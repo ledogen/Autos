@@ -226,6 +226,7 @@ const _CD_B = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_OUT = { grade: 0, lateral: 0 }
 const _CD_RP = { gradeY: 0, tx: 1, tz: 0 }   // runProfile `out` wherever only .gradeY is read AT ONCE (never held)
 const _thrY = new Float64Array(4), _thrE = new Float64Array(4), _thrOut = { lat: 0, over: 0 }   // _throughDeckTop scratch (never held)
+const _ribOut = { lat: 0, over: 0, s: 0 }   // _padRibbonMask scratch (never held)
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -8965,6 +8966,26 @@ export class RoadSystem {
                         sibs.push({ pts: sb.points, cum: sb.polyCum, lo: bAtStart ? 0 : Math.max(0, L - reach), hi: bAtStart ? Math.min(L, reach) : L })
                     }
                     a.cutback = Math.max(cut0, this._legPartingReach(e, a.arc < 1e-6, sibs, JN_HOLD_MAX_PLANE))
+                    // BUG-146: the walk reads polyline VERTICES (4 m apart) and stops at the plane hold's 30 m, so on two
+                    // nearly parallel legs it could end one vertex short of where the pavements really part — and the
+                    // two mouths touched with their decks apart (0.20 m at seed 1353361482, 0.12 m at 917338424): a step
+                    // the pad can't take out, since past a mouth it must meet each ribbon exactly. So where the
+                    // pavements have not parted by the mouth (the walk's own daylight), the cutback marches out to where
+                    // they do, 0.25 m at a time — never past RULE_NODE_WINDOW − halfWidth, so the mouth stays inside
+                    // the window the pad projects its legs in. Only the pad moves: the deck hold keeps the walk.
+                    {
+                        const L = e.polyCum[e.polyCum.length - 1], atStart = a.arc < 1e-6, CLEAR = 2 * halfWidth + JN_HOLD_MARGIN
+                        const parted = (s) => {
+                            const p = this.runPointAt(a.runKey, atStart ? s : L - s)
+                            return !p || sibs.every(sb => !(_nearestOnPolyXZ(p.x, p.z, sb.pts, sb.cum, sb.lo, sb.hi)?.d < CLEAR))
+                        }
+                        const sMax = Math.min(RULE_NODE_WINDOW - halfWidth, L * 0.45 - halfWidth * 0.5)
+                        if (a.cutback < sMax && !parted(a.cutback + halfWidth * 0.5)) {
+                            let s = a.cutback
+                            while (s < sMax && !parted(s)) s += 0.25
+                            a.cutback = Math.min(s, sMax)
+                        }
+                    }
                     // The leg's MOUTH (arc from the node): the chord the ring corners sit on AND, since the
                     // ribbon-pad weld, where the ribbon ENDS — no overlap. ONE source: _junctionMouths, the
                     // ribbon trim and the marking feather all read leg.mouth. A short node↔node run pulls its
@@ -9613,7 +9634,7 @@ export class RoadSystem {
             if (Math.abs(ds) < 1e-4) break
         }
         if (!c) {
-            if (out) { out.lat = Math.sqrt(pr.d2); out.over = 0 }
+            if (out) { out.lat = Math.sqrt(pr.d2); out.over = 0; out.s = pr.arcS }
             return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + cm
         }
         c = this.runPointAt(leg.runKey, s)
@@ -9625,7 +9646,7 @@ export class RoadSystem {
             const h = Math.min(0.5, sMax / 2)
             y += (y - this._carveDirtY(lat, s <= 0 ? h : sMax - h, leg.runKey, 1) - cm) / h * over
         }
-        if (out) { out.lat = Math.abs(lat); out.over = over }
+        if (out) { out.lat = Math.abs(lat); out.over = over; out.s = s }
         return y
     }
 
@@ -9657,11 +9678,18 @@ export class RoadSystem {
             for (const pr of prs) {
                 const d = Math.sqrt(pr.d2), lu = Math.min(1, Math.max(0, hw + 1 - d))
                 if (lu <= 0) continue
-                const au = Math.min(1, Math.max(0, (Math.abs(pr.arcS - leg.arc) - (ps.cut[li] - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
+                // BUG-146: the ease runs along the station the RIBBON draws (_legDeckTop's section through the point), not
+                // the polyline foot's arcS. On the inside of a polyline kink the nearest foot jumps segments at the
+                // bisector (1 m, 4.9 m out on seed 917338424's 12° kink), and an ease sitting there tore the pad 0.11 m.
+                // A foot 2 m short of the ease (d·tan(φ/2) at 6 m out: kinks to 37°) is inside it whatever the
+                // station, and skips the deck solve as before.
+                const c0 = ps.cut[li] - PAD_MOUTH_EASE
+                if (Math.abs(pr.arcS - leg.arc) < c0 - 2) continue
+                const y = this._legDeckTop(ne, leg, pr, wx, wz, _ribOut), e = d - hw
+                const au = Math.min(1, Math.max(0, (Math.abs(_ribOut.s - leg.arc) - c0) / PAD_MOUTH_EASE))
                 if (au <= 0) continue
                 const v = lu * lu * (3 - 2 * lu) * au * au * (3 - 2 * au)
                 if (v > m) m = v
-                const y = this._legDeckTop(ne, leg, pr, wx, wz), e = d - hw
                 if (e < 0) { yIn -= e * v * y; wIn -= e * v } else { const w = v / Math.max(e, 1e-6); yOut += w * y; wOut += w }
             }
         }
