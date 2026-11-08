@@ -474,3 +474,8 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
   shot sheet owed · Spare land/bug-146 83f2e224 gates 60/~70 · C idle). BUG-152 narrowed by A: a resumed session sometimes
   builds a DIFFERENT POI roster (every id changes; ~1 in 10 probe resumes, 2/~90 soak resumes) → a world-determinism bug, not
   c87e78ac's logic (no revert). Suspects in the ticket: network client 'move' coalescing; region centre read before the seat.
+- **LOW-POWER MODE (owner on a flight, battery, 11-08):** the hold on testing stays (no gates, soaks, Chrome, smokes, landings).
+  Desk work only: A = BUG-152 root cause by reading; B = BUG-155 proposal + BUG-154 options by reading; Spare = the lighting loop
+  (owner answers feat180-review's 8 questions in the page note box → relay verbatim → Spare tunes constants on a land branch off
+  18bb2e2a, ONE Vite, the owner looks; landing waits for the hold to lift). C idle. Contexts at this point: A 290k, B 270k,
+  orchestrator 302k (clear-ready), Spare 167k (keeps context for the lighting), C 78k.
