@@ -1,7 +1,8 @@
 ---
 id: BUG-150
 type: bug
-status: open
+status: closed
+closed: 2026-11-08
 severity: minor
 opened: 2026-11-08
 source: Lane B, drive soak run9 (6 random seeds on main 2f5735eb)
@@ -60,3 +61,10 @@ leg's. Mesh and physics share `_mergeCarve`, so MESH == PHYSICS holds.
     `land/bug-146` (worst 1 cm step 1.9 mm there).
   - BUG-151's 1.8 cm poke at (46.0, −856.7).
   Add the seed when both have landed.
+
+## Resolution (2026-11-08) — CLOSED
+
+Landed on main as a1d8f03f (smoke 26/26). `_mergeCarve`'s duck cap is removed from mesh (`terrain.js
+_buildCarveTable`) and physics (`road.js _sampleCarveWorld`) alike: one uncapped `_mergeCarve`. junction-edge-lip's
+RIM check is two-sided (drop ≤ 0.25 m, dirt wall ≤ 0.05 m). BUG-149's three rim lips went with it. Left open beside
+it: BUG-151 (a 1.8 cm poke on the same seed), and BUG-149's leg lip.
