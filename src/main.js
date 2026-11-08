@@ -799,8 +799,10 @@ async function resolveSpawn (wseed, params) {
 // FEAT-43: the rebuild is AWAITABLE. Story-mode entry must not capture its region center (or start
 // the routing warm) until the new seed's world exists and the truck has been re-seated at its spawn
 // — otherwise the region would center on the OLD position. Callers that don't care ignore the
-// returned promise. Coalesced: every call inside one debounce window gets the SAME promise, settled
-// once the body finishes OR throws (a rejection here would only strand the caller; the body logs).
+// returned promise. Coalesced: every call inside one debounce window gets the SAME promise. It
+// RESOLVES true once the body finishes, or false when it throws — never rejects, which would strand
+// the callers that ignore it. BUG-152: story entry reads the false; a failure used to be a bare warn,
+// and the region then centred on a truck that was never re-seated.
 let _rebuildDebounceTimer = null
 let _reseedRequestedAt = null   // PERF-27: applyWorldSeed → rebuild-body start (debounce + scheduling)
 let _rebuildPending = null   // { promise, resolve } for the currently-debounced rebuild
@@ -813,8 +815,8 @@ function debouncedRebuildFull () {
   const pending = _rebuildPending
   _rebuildDebounceTimer = setTimeout(() => {
     void _rebuildFullNow()
-      .catch(e => console.warn('[main] full rebuild failed', e))
-      .finally(() => { if (_rebuildPending === pending) _rebuildPending = null; pending.resolve() })
+      .then(() => true, e => { console.error('[main] full rebuild failed', e); return false })
+      .then(ok => { if (_rebuildPending === pending) _rebuildPending = null; pending.resolve(ok) })
   }, 150)
   return pending.promise
 }
@@ -8609,8 +8611,13 @@ let _regionNetBuild = null   // PERF-30: { key, done } — the one in-flight sto
 const storySystem = new StorySystem({
   setGameMode: (m) => window.__setGameMode(m),
   isWorldLoaded: (seedStr) => _isWorldLoaded(seedStr),
-  applySeed: (v) => applyWorldSeed(v),     // resolves when the rebuild + reseat have settled
+  applySeed: (v) => applyWorldSeed(v),     // resolves true when the rebuild + reseat have settled, false if they threw
   reseat: () => _reseatTruckAtSpawn(),     // resolves when the truck is seated at the spawn
+  // BUG-152: the region centre is the SEED's spawn — resolveSpawn's own point, memoised (a hit right after the settle),
+  // pure in the seed (test/world-determinism.mjs link 1) and the same point every headless story gate centres on
+  // (spawnDecision). Not the truck: the seat lifts it ≤ 14 cm off along the slope normal, and a failed seat left it at
+  // the menu world's spawn, a few hundred metres away.
+  spawnCentre: async () => { const { position: p } = await resolveSpawn(worldSeed, RANGER_PARAMS); return { x: p.x, z: p.z } },
   // THE SEED DECIDES WHERE THE WORLD IS, AND NOTHING ELSE (owner, 2026-08-11). A free-roam teleport
   // leaves a spawn override behind, and _reseatTruckAtSpawnInner honours it ahead of resolveSpawn —
   // so without this, entering story mode seats the truck wherever you last teleported and the region
