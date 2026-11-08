@@ -8427,11 +8427,13 @@ export class RoadSystem {
      * nodes (radius tunnelBoreRadius about that run's centreline, from its apron 1.5 m under the deck up,
      * within one of its spans), or null when no sibling bores — the common case, so callers skip the work.
      * Memoised per run and network revision. Meshes and the wall contact read the same test (MESH == PHYSICS).
-     * A sibling's tube ends the way buildTunnelTube builds it: straight on along the end tangent by its lip (1.5 m
-     * at a mouth, R at an end inside another tube), then flat. The polyline search alone rounded each end into a
-     * cap of radius R about its last vertex, reaching 2.2 m past a mouth where there is no lining to meet the
-     * other tube's cut (seed 717319401). `basic` keeps the capped shape: isMouth reads it, because the lips
-     * themselves are read from isMouth.
+     * A sibling's tube ends flat: at a mouth 1.5 m out, where buildTunnelTube's lip meets the portal ring; at an end
+     * inside another tube, at the span end itself. The polyline search alone rounded each end into a cap of radius
+     * R about its last vertex, reaching 2.2 m past a mouth where there is no lining to meet the other tube's cut
+     * (seed 717319401). The R run-on past an end inside another tube is left out: it is open-ended, so a lining it
+     * cut stopped short where nothing covered it — a crescent of rock, 28 cm wide, round seed 4076238903's
+     * underground Y; it only closes the wedge outside the bend, which no sibling's span reaches. `basic` keeps the
+     * capped shape: isMouth reads it, because the lips themselves are read from isMouth.
      * The test's optional 4th argument `inset` (m) shrinks the bore, lip end included: the lining miter cuts on it.
      */
     siblingTubeTest(runKey, basic = false) {
@@ -8463,11 +8465,11 @@ export class RoadSystem {
                 let v = ends.get(sp)
                 if (!v) ends.set(sp, v = [[sp.s0, -1], [sp.s1, 1]].map(([s, dir]) => {
                     const p = this.runPointAt(k, s), g = this.runProfile(s, k, { gradeY: 0, tx: 1, tz: 0 })
-                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : R }
+                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : 0 }
                 }))
                 return v
             }
-            // each span's own segments and its plan box grown by 2R (the bore, plus a lip of up to R): a point outside
+            // each span's own segments and its plan box grown by 2R (the bore, plus a lip, with room): a point outside
             // the box skips the span, and the search walks only those segments, not the whole run
             const spans = tubes.flatMap(({ k, e }) => e.tunnelSpans.map((sp) => {
                 const pts = e.points, cum = e.polyCum
