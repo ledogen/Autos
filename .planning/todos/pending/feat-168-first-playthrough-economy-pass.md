@@ -146,6 +146,8 @@ waits on the owner's reward-cats call.
 7. 6 slots, `P_FILL` 0.037: the gate measures 3.03 rotating items a shelf (estimate 3.08).
 8. `campDeeds` 10; `dayTierTable` = 1.065^(d−1) to the cent (day 7 1.46, day 12 2.00, day 20 3.31,
    day 30 6.21). Gate: two B-line jobs ($17.83) clear day 12's costs ($15.00).
+   Owner, 2026-11-06 (rank-spread-knock): "12 days includes the expedition camp missions. keep the spread you
+   just built" — `campDeeds` stays 10 after FEAT-69's spread.
 
 Notes for the owner:
 - Acceptance 1 said "the day-7 tier (2.31×)"; that was the old curve. With item 8 it is 1.46×.
