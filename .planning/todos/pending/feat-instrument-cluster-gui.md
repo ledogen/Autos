@@ -246,3 +246,36 @@ overlap instead of being fully separate"
   replaces `setHighBeam`.
 - The 2002's text CHECK GAGE lens is not built (the owner chose the dot).
 - Render harness: `wip/feat-34/cluster-shot.{html,mjs}` (git-invisible), which knows `checkEngine` and `overheat`.
+
+## Owner, 2026-11-08 (feat34-r2-look) — round 3, built (Lane B, feature/machine)
+
+Choice "changes". Verbatim: "headlight light should be on if either headlight is dead. the outline and overall
+cluster shape is a little awkwardly slanted from older opus struggling with svgs can you straighten it out and make it
+a little more symmetric. blow up all the gauges like 15% the numbers are getting a little small. maybe skip every other
+10 mph too. so 0-20-40-60 and so on. its getting there though. lights are nice. get rid of unleaded fuel only. shifts
+are good. hi lift good"
+
+Kept as they are: the lamps, the shifts (FEAT-185), the hi-lift (FEAT-138).
+
+- **Headlamp lamp:** red when the lights are switched on and EITHER headlamp is at 0 % (was: both). The sender in
+  `main.js` is now `headlightL <= 0 || headlightR <= 0`. It is still dark with the switch off, per the 11-08 ruling
+  ("… and you try to turn them on").
+- **Straight and symmetric.** The layout is now mirror-symmetric about the dial axis (`AXIS`, the hubs' line):
+  - The temp/fuel pod stands upright, centred on the axis. It used to lean 20° off vertical, temp high and inboard.
+  - The key sits on the axis at the speedo's 3 o'clock. It used to hang off the bottom-right corner, which pulled
+    the bottom edge into a slope. Its three distances to the speedo are unchanged (93.3 px).
+  - The housing's two ends have one shape: the pod's corner circles, mirrored on the right around the key.
+  - The top and bottom edges are one arch each (a quadratic leaving both corners along their tangents), and the
+    bottom arch is the top one's mirror.
+  - The old construction (a hull with tangent lines and a 22 px visor lift) is gone, along with its two helpers.
+- **15 % bigger:** a single `SCALE = 1.15` on the canvas transform, so every balanced distance scales with it. The
+  canvas goes from 378 × 204 to 453 × 235 CSS px; the layout grew 16 units wider for the right end. The Quick Job
+  button rides 31 px higher to stay clear of it (`bottom: 257px`).
+- **Speedo numerals every 20 mph, from 0:** 0 · 20 · … · 120. The ticks stay major every 10, minor every 5. The 0 sits
+  where the UNLEADED legend was.
+- **UNLEADED / FUEL ONLY removed.**
+
+Checked headlessly (the low-power hold rules out Chrome): `wip/feat-34/cluster-svg.mjs` (git-invisible) records the
+canvas calls as SVG and Quick Look renders it to PNG. Shots: `wip/feat-34/shots/` holds round2 (main) and round3 in the
+same state (62 mph, 3,100 rpm, low beams with one lamp dead), plus round3-all-lamps-start. The only gate that covers
+`cluster.js` is cdp-smoke (the orchestrator's, on hold).

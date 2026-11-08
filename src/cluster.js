@@ -23,11 +23,8 @@
 // frac → startDeg + frac * sweepDeg with the scale reading left-to-right over the top.
 const DEG = Math.PI / 180
 
-// Layout in CSS pixels (canvas logical size — scaled by devicePixelRatio at construction).
-// Temp and fuel are staggered like the reference — temp high and inboard, fuel low and outboard.
-// W/H are FEAT-49's 416x200 plus a few px of slack: the FEAT-33 ignition switch is small enough to
-// tuck into the housing's existing bottom-right corner, so it only bumps the outline out slightly
-// rather than growing a whole extra lobe. The canvas is anchored bottom-right in CSS.
+// Layout units (CSS pixels before SCALE; the canvas is SCALE × devicePixelRatio device px per unit).
+// The canvas is anchored bottom-right in CSS.
 //
 // FEAT-34 round 2 (owner, 2026-11-07: "the rpm circle combined with the speedo like the reference, so the
 // circles overlap"): the 2002 Ranger's tach and speedo share ONE face — the speedo stands into the tach's
@@ -36,23 +33,39 @@ const DEG = Math.PI / 180
 // arc — 0 at about half past eight, the top numeral at about twenty to one — so its scale ends before the
 // cusp and its empty lower right is where the speedo's 0–30 mph sit. Hence TACH's 130° sweep (was 195°).
 // Nothing of the tach may sit right of the cusp: BRAKE moved to the tach's lower left (where the 2002 has
-// it) and the fuel legend up under the needle hub.
-const W = 378
+// it).
+//
+// FEAT-34 round 3 (owner, 2026-11-08: "the outline and overall cluster shape is a little awkwardly slanted …
+// straighten it out and make it a little more symmetric"): the layout is mirror-symmetric about the dial axis
+// (y = AXIS), and the housing's two ends mirror each other. The temp/fuel pod stands upright (it was staggered 20°
+// off vertical, temp high and inboard), centred on the axis; the key sits on the axis at 3 o'clock from the speedo
+// (it hung off the bottom-right corner), inside a right end with the pod end's shape (END). The top and bottom edges
+// are one symmetric arch each (_fillDilated). W grew 378 → 394 for the right end.
+// And "blow up all the gauges like 15% the numbers are getting a little small": SCALE.
+const W = 394
 const H = 204
-const TEMP  = { cx: 86,  cy: 70,  well: 33, scaleR: 26, start: 215, sweep: 110 }
-const FUEL  = { cx: 62,  cy: 136, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const TACH  = { cx: 180, cy: 102, well: 62, scaleR: 54, start: 160, sweep: 130 }    // dial top: _tachMax (setRedline)
-const SPEEDO= { cx: 276, cy: 102, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
-// FEAT-33 ignition switch — a small well tucked diagonally into the housing's bottom-right corner.
+const AXIS = H / 2   // the dial axis: tach and speedo hubs, the pod's centre, the key
+// The pod's gauges sit POD_E above and below the axis: 39 puts the pod's indent top level with the speedo's
+// (AXIS − 2·39 = AXIS − (SPEEDO.well + DIAL_PAD)), so the housing's corners and the speedo's crest share one line.
+const POD_E = 39
+const TEMP  = { cx: 56,  cy: AXIS - POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
+const FUEL  = { cx: 56,  cy: AXIS + POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
+const TACH  = { cx: 168, cy: AXIS, well: 62, scaleR: 54, start: 160, sweep: 130 }    // dial top: _tachMax (setRedline)
+const SPEEDO= { cx: 264, cy: AXIS, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
+// One factor on the canvas transform (round 3), so every distance the layout balances (the key's three below, the
+// joined faces' cusp) scales with it, and the layout keeps its own units.
+const SCALE = 1.15
+// FEAT-33 ignition switch — a small well on the dial axis at the speedo's 3 o'clock (round 3).
 // It carries its OWN indent pad (smaller than DIAL_PAD) because at this size the standard ring would
 // be most of the dial. Three distances have to hold, and they are tight — check all three before
-// moving it (all measured from the speedo centre, 90.5 px away; it moves WITH the speedo):
+// moving it (all measured from the speedo centre, KEY_DIST away; it moves WITH the speedo):
 //   wells apart      93.3 > SPEEDO.well + KEY.well (87)      or the key face eats the speedo face
 //   indent clears    93.3 − (well+pad) = 73.3 > SPEEDO.well   or it bites a crescent out of 120/km-h
 //   indents overlap  93.3 < SPEEDO.well + DIAL_PAD + well+pad or the switch reads as a detached island
 // The well grew 13 → 17 when the needle became a key grip: a key silhouette needs pixels to read as
 // an object, and 26 px of dial was not enough. 34 px is the most the three distances above allow.
-const KEY   = { cx: 342, cy: 168, well: 17, pad: 3 }
+const KEY_DIST = 93.3
+const KEY   = { cx: SPEEDO.cx + KEY_DIST, cy: AXIS, well: 17, pad: 3 }
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
 const KEY_ANGLE = { off: 210 * DEG, on: 270 * DEG, start: 330 * DEG }
 const KEY_TICK_R = 16.5   // detent ticks run inward from here to r=14.5 — OUTSIDE the fascia, framing it
@@ -78,9 +91,8 @@ const KEY_BODY_L = 8.0
 const KEY_BODY_W = 5.2
 
 // Indent geometry (the recessed regions the dials sit in) and the housing margin around them.
-// The housing outline is NOT drawn as its own shape: it is the indent geometry dilated by
-// MARGIN, so it frames every indent with a constant offset and follows their curves — including
-// the concave pinches where neighbouring shapes meet.
+// The housing outline is built from the pod's corner circles dilated by MARGIN (_fillDilated), so
+// both ends frame their indents with the same constant offset.
 const POD_R    = 39   // radius of the temp/fuel capsule indent
 const DIAL_PAD = 8    // indent ring visible around the tach/speedo wells
 const MARGIN   = 13   // constant housing frame around the indents
@@ -99,11 +111,11 @@ function gaugeAngle (g, frac) {
 export class GaugeCluster {
   constructor (canvas) {
     this._canvas = canvas
-    this._dpr = Math.min(2, window.devicePixelRatio || 1)
-    canvas.width = W * this._dpr
-    canvas.height = H * this._dpr
-    canvas.style.width = W + 'px'
-    canvas.style.height = H + 'px'
+    this._dpr = Math.min(2, window.devicePixelRatio || 1) * SCALE   // device px per layout unit
+    canvas.width = Math.ceil(W * this._dpr)
+    canvas.height = Math.ceil(H * this._dpr)
+    canvas.style.width = W * SCALE + 'px'
+    canvas.style.height = H * SCALE + 'px'
     this._ctx = canvas.getContext('2d')
     this._ctx.scale(this._dpr, this._dpr)
 
@@ -117,7 +129,7 @@ export class GaugeCluster {
     this._flat = false
     this._parkBrake = false
     this._lights = 0          // headlamp switch: 0 off, 1 low, 2 high
-    this._lightsDead = false  // both headlamps at 0 %
+    this._lightsDead = false  // either headlamp at 0 % (round 3)
     this._checkEngine = false
     this._overheat = false
     this._tempFrac = 0
@@ -136,8 +148,8 @@ export class GaugeCluster {
     this._tachMax = 6      // ×1000 rpm — the dial's top numeral
 
     this._bg = document.createElement('canvas')
-    this._bg.width = W * this._dpr
-    this._bg.height = H * this._dpr
+    this._bg.width = Math.ceil(W * this._dpr)
+    this._bg.height = Math.ceil(H * this._dpr)
     this._paintFace()
   }
 
@@ -326,71 +338,36 @@ export class GaugeCluster {
     // plus a key shape already say what it is.
   }
 
-  // Fill the housing silhouette at dilation `pad`: the convex hull of the four outline circles
-  // (temp + fuel pod discs at POD_R+pad, tach/speedo discs at well+DIAL_PAD+pad). The hull's
-  // straight tangent edges BRIDGE the circles across the top and bottom (flush on each circle,
-  // near-horizontal), while the sides stay the same circle arcs as the plain dilated union —
-  // the pod's rounded left end and the speedo's right arc are untouched.
+  // Fill the housing silhouette at dilation `pad` (round 3): a symmetric frame. Two ends with one shape — the pod's
+  // corner circles on the left, the same circles mirrored on the right (the key's end, placed so the key's indent
+  // stands MARGIN inside the edge, as the pod's does) — joined top and bottom by one arch each: a quadratic whose
+  // control point sits midway between the ends, ARCH px beyond their corners' crest line, with each end of it on the
+  // corner circle's tangent from that point, so the arch leaves both corners smoothly. The bottom arch is the top's
+  // mirror about AXIS. Every indent stays inside: the tach and speedo crest on the corners' line (POD_E), under the
+  // arch; the key sits in the right end.
   _fillDilated (ctx, pad, style) {
-    const T = { x: TEMP.cx, y: TEMP.cy, r: POD_R + pad }
-    const F = { x: FUEL.cx, y: FUEL.cy, r: POD_R + pad }
-    const K = { x: TACH.cx, y: TACH.cy, r: TACH.well + DIAL_PAD + pad }
-    const S = { x: SPEEDO.cx, y: SPEEDO.cy, r: SPEEDO.well + DIAL_PAD + pad }
-    const G = { x: KEY.cx, y: KEY.cy, r: KEY.well + KEY.pad + pad }        // FEAT-33 ignition switch
-    // Outward normals of the common external tangents, in clockwise boundary order. The tach
-    // crests above the temp→speedo line, so the top edge is two tangent segments (temp→tach,
-    // tach→speedo); it stays inside the bottom edge, so the bottom is one (speedo→fuel).
-    const nA = this._tangentNormal(T, K, (n) => n.y < 0)   // top, pod → tach
-    const nB = this._tangentNormal(K, S, (n) => n.y < 0)   // top, tach → speedo
-    // FEAT-33: the bottom edge used to run speedo → fuel in one tangent. The key well hangs below
-    // and right of the speedo, so the hull now goes speedo → key → fuel: down the OUTER (upper-right)
-    // tangent to the key, around it, then back along the bottom to the pod.
-    const nE = this._tangentNormal(S, G, (n) => n.y < 0)   // right side, speedo → key (outer tangent)
-    const nC = this._tangentNormal(G, F, (n) => n.y > 0)   // bottom, key → fuel
-    const nD = this._tangentNormal(F, T, (n) => n.x < 0)   // left side, fuel → temp (pod side)
-    const ang = (n) => Math.atan2(n.y, n.x)
-    const pt = (c, n) => ({ x: c.x + c.r * n.x, y: c.y + c.r * n.y })
-    // Top edge: ONE continuous convex curve from the pod shoulder to the speedo — a quadratic
-    // whose control point is the intersection of the two top tangent lines (so it leaves the pod
-    // and meets the speedo along their tangents), lifted a touch for the dash-visor bow. It
-    // clears the tach crest, which no longer contributes an arc of its own.
-    const pA = pt(T, nA)
-    const pB = pt(S, nB)
-    const X = this._lineHit(pA, { x: -nA.y, y: nA.x }, pB, { x: -nB.y, y: nB.x })
-    X.y -= 22   // visor arc height — the tangent-line intersection sits almost on the chord,
-                // so without this lift the "curve" renders as a straight line
+    const r = POD_R + pad, ex = KEY.cx + KEY.well + KEY.pad - POD_R   // the right end's corner circles' x
+    const ARCH = 14
+    const mx = (TEMP.cx + ex) / 2
+    // The point on a corner circle (cx, cy) where the tangent from the arch's control point (mx, ty) touches,
+    // on the side away from the axis: φ ± acos(r / d), the sign picking the outer of the two tangents.
+    const touch = (cx, cy, ty, s) => {
+      const dx = mx - cx, dy = ty - cy, a = Math.atan2(dy, dx) + s * Math.acos(r / Math.hypot(dx, dy))
+      return { a, x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }
+    }
+    const yT = AXIS - POD_E - r - ARCH, yB = AXIS + POD_E + r + ARCH   // the arches' control points
+    const tl = touch(TEMP.cx, AXIS - POD_E, yT, -1), tr = touch(ex, AXIS - POD_E, yT, 1)
+    const br = touch(ex, AXIS + POD_E, yB, -1), bl = touch(FUEL.cx, AXIS + POD_E, yB, 1)
     ctx.fillStyle = style
     ctx.beginPath()
-    ctx.arc(T.x, T.y, T.r, ang(nD), ang(nA))   // pod top-left shoulder
-    ctx.quadraticCurveTo(X.x, X.y, pB.x, pB.y) // visor curve, left edge to right edge
-    ctx.arc(S.x, S.y, S.r, ang(nB), ang(nE))   // speedo right end
-    ctx.arc(G.x, G.y, G.r, ang(nE), ang(nC))   // ignition switch — the bottom-right corner
-    ctx.arc(F.x, F.y, F.r, ang(nC), ang(nD))   // pod bottom-left nose (bottom stays straight)
-    ctx.closePath()
+    ctx.arc(TEMP.cx, AXIS - POD_E, r, Math.PI, tl.a)        // top-left corner
+    ctx.quadraticCurveTo(mx, yT, tr.x, tr.y)                 // top arch
+    ctx.arc(ex, AXIS - POD_E, r, tr.a, 0)                    // top-right corner
+    ctx.arc(ex, AXIS + POD_E, r, 0, br.a)                    // the right side, bottom-right corner
+    ctx.quadraticCurveTo(mx, yB, bl.x, bl.y)                 // bottom arch
+    ctx.arc(FUEL.cx, AXIS + POD_E, r, bl.a, Math.PI)         // bottom-left corner
+    ctx.closePath()                                          // the left side
     ctx.fill()
-  }
-
-  // Intersection of lines a + t·u and b + s·v (u/v are directions). Falls back to the segment
-  // midpoint if near-parallel (keeps the path sane if layout constants ever degenerate).
-  _lineHit (a, u, b, v) {
-    const den = u.x * v.y - u.y * v.x
-    if (Math.abs(den) < 1e-6) return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-    const t = ((b.x - a.x) * v.y - (b.y - a.y) * v.x) / den
-    return { x: a.x + t * u.x, y: a.y + t * u.y }
-  }
-
-  // Unit normal of the common external tangent line of circles a → b, on the side selected by
-  // `pick` (e.g. n.y < 0 for the upper tangent). Tangent touch points are a + r·n and b + r·n.
-  _tangentNormal (a, b, pick) {
-    const dx = b.x - a.x; const dy = b.y - a.y
-    const d = Math.hypot(dx, dy)
-    const al = (a.r - b.r) / d                     // along-axis component keeps both offsets equal
-    const be = Math.sqrt(Math.max(0, 1 - al * al))
-    for (const s of [1, -1]) {
-      const n = { x: (al * dx - s * be * dy) / d, y: (al * dy + s * be * dx) / d }
-      if (pick(n)) return n
-    }
-    return { x: 0, y: -1 }                          // degenerate fallback (concentric circles)
   }
 
   // Recessed regions the dial faces sit in (the "indents" on the real cluster): a capsule around
@@ -509,14 +486,11 @@ export class GaugeCluster {
       ctx.fillStyle = n >= red ? RED : WHITE
       this._labelAt(ctx, g, n / max, g.scaleR - 13, String(n))
     }
-    // Legends — kept left of the cusp (see TACH): RPM x1000 at the top under the numerals, as the 2002
-    // prints it; the fuel legend low and right of the gear, clear of BRAKE on the left.
+    // Legend — kept left of the cusp (see TACH): RPM x1000 at the top under the numerals, as the 2002 prints it.
+    // (The UNLEADED FUEL ONLY legend went in round 3: owner, 2026-11-08, "get rid of unleaded fuel only".)
     ctx.fillStyle = WHITE
     ctx.font = 'bold 8px Arial, sans-serif'
     ctx.fillText('RPM x1000', g.cx, g.cy - 22)
-    ctx.font = '7px Arial, sans-serif'
-    ctx.fillText('UNLEADED', g.cx + 13, g.cy + 38)
-    ctx.fillText('< FUEL ONLY', g.cx + 13, g.cy + 46)
   }
 
   _paintSpeedo (ctx) {
@@ -529,7 +503,8 @@ export class GaugeCluster {
     ctx.font = 'bold 9.5px Arial, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    for (let n = 10; n <= g.max; n += 10) {
+    // Numerals every 20 mph from 0 (round 3, owner 2026-11-08: "skip every other 10 mph too. so 0-20-40-60").
+    for (let n = 0; n <= g.max; n += 20) {
       this._labelAt(ctx, g, n / g.max, g.scaleR - 11, String(n))
     }
     // Inner km/h ring: same angular scale, kmh label sits at frac (kmh/1.609)/120.
@@ -690,9 +665,10 @@ export class GaugeCluster {
 
   // FEAT-34: the HEADLAMP lamp, in the fuel pod mirroring the low-fuel lamp (the 2002 sets its high-beam lamp beside
   // its fuel gauge). Owner, 2026-11-08: "green low beams blue high beams and red if your lights are both dead and you
-  // try to turn them on". So one lens follows the switch: the low-beam symbol (beams angled down) green, the high-beam
-  // symbol ("≡D", beams level) blue, and the switched-on symbol red when both headlamps are at 0 %. On the headlamp
-  // circuit, not the ignition: it lights with the key off too.
+  // try to turn them on"; round 3, the same day: "headlight light should be on if either headlight is dead". So one
+  // lens follows the switch: the low-beam symbol (beams angled down) green, the high-beam symbol ("≡D", beams level)
+  // blue, and the switched-on symbol red when EITHER headlamp is at 0 %. On the headlamp circuit, not the ignition:
+  // it lights with the key off too.
   _headlampState () { return !this._lights ? 'off' : this._lightsDead ? 'dead' : this._lights === 2 ? 'high' : 'low' }
   _drawHeadlampLamp (ctx) {
     const x = FUEL.cx + 15, y = FUEL.cy + 9

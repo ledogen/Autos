@@ -387,12 +387,13 @@
       user-select: none;
     }
     /* FEAT-43: Quick Job launcher (in-mode corner button). Raised above the gauge cluster
-       (FEAT-49), which owns the bottom-right corner. */
+       (FEAT-49), which owns the bottom-right corner: its 14 px inset + 235 px tall (204 × 1.15,
+       FEAT-34 round 3) + 8 px. */
     #quickjob-btn {
       display: none;
       position: fixed;
       right: 14px;
-      bottom: 226px;
+      bottom: 257px;
       background: var(--card-bg);
       border: 1px solid var(--line-card);
       color: var(--text-body);
