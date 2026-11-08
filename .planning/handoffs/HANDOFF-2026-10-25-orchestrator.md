@@ -462,3 +462,11 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
   82ecb463 · B's FEAT-34 r2 + FEAT-138 cooldown + FEAT-185 + FEAT-186 2f5735eb. Page v192 (owed feat184-look, feat34-r2-look).
   NOT pushed (owner checks first; origin = d7dc18e1). In flight: A run-soak rerun (harness fix 68fcbe7d on feature/run-shape:
   PARK boxes seat via __towSeat — merge it with A's next docs), B drive soak on 6 fresh seeds, Spare BUG-67 miter → BUG-146.
+- **HOLD (owner, 11-08 ~morning): "gotta close the lid and move. hold the work for now. including testing. and hosting. just
+  leave the main branch server up".** All four lanes told to stop their own jobs + Vite servers, commit WIP, write handoffs,
+  idle. Dashboard :8010 stopped (restart: `npm run dash`); main :8000 left up. Lift only on the owner's word, then tell A, B,
+  C, Spare. State at the hold: main 5bf20c0c + docs (BUG-150 landed, BUG-148 merged). Queued to land, in order: Spare BUG-146
+  (merging main), B BUG-147 (land/bug-147, gates 61/70 green, gate variant approved), B BUG-153 (land/bug-153, ribbon frame;
+  needs its shot sheet — I look before merging). Minted on B's branches: BUG-153 (major), BUG-154/155 to mint (major; 155 needs
+  a proposal). A: BUG-152 (casserole revives on resume, 2 in ~16 soak runs, cause unknown; bisect vs 968cd1a4 owed). Next free
+  number after B's: BUG-156. Page v195 (owed: hunger-numbers, bug67-miter-look, feat34-r2-look, feat184-look + older).
