@@ -663,16 +663,16 @@ export class SkySystem {
     // `night` is rods() of the light's own brightness.
     const ill = illuminant(st), il = lum(...ill)
     const wb = this._wb.map((w, c) => w * Math.pow(il / Math.max(ill[c], 1e-30) / this._noonCast[c], WB_ADAPT))
-    const treat = (r, g, b, out, night, o = 0) => {
+    const treat = (r, g, b, out, night) => {
       const sat = p.saturation * (1 - 0.85 * night)
       r *= wb[0]; g *= wb[1]; b *= wb[2]
       const l = lum(r, g, b)
       r += (l * NIGHT_TINT[0] - r) * night * 0.9; g += (l * NIGHT_TINT[1] - g) * night * 0.9; b += (l * NIGHT_TINT[2] - b) * night * 0.9
       const l2 = lum(r, g, b)
-      out[o] = Math.max(0, l2 + (r - l2) * sat); out[o + 1] = Math.max(0, l2 + (g - l2) * sat); out[o + 2] = Math.max(0, l2 + (b - l2) * sat)
+      out[0] = Math.max(0, l2 + (r - l2) * sat); out[1] = Math.max(0, l2 + (g - l2) * sat); out[2] = Math.max(0, l2 + (b - l2) * sat)
       return out
     }
-    // The LUT: radiance × multiple-scatter gain × adaptation × exposure, as half floats.
+    // The LUT: radiance × sky gain × adaptation × exposure, as half floats.
     const L = st.lut, t3 = [0, 0, 0]
     let hr = 0, hg = 0, hb = 0
     for (let i = 0, n = LUT_W * LUT_H; i < n; i++) {
