@@ -8021,15 +8021,16 @@ export class RoadSystem {
      * samples) so the frame is smooth and the dirt/asphalt seam stops tearing. Returns
      * {fx,fz,tx,tz,arcS} (arcS in the runProfile domain), or null where the polyline frame stands:
      * an offEnd projection (its arcS is clamped to the run end to stay C0 with the sibling arm at the
-     * shared anchor, BUG-21), a run without a centerline, and BUG-53 offCurveSpans (T departure band,
-     * shove deflection: the points left the centerline, so refining would pull the frame off the carve).
+     * shared anchor, BUG-21) and a run without a centerline. BUG-53 offCurveSpans (T departure band,
+     * shove deflection: the points left the centerline, so refining onto it would pull the frame off the
+     * carve) get the band's own continuous frame instead (_bandRefine, BUG-154).
      */
     _refineFrame(e, pr, wx, wz) {
         if (!e || pr.offEnd || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return null
         const arcOrigin = e.arcOrigin ?? 0
         if (e.offCurveSpans) {
             const a = pr.arcS + arcOrigin
-            if (e.offCurveSpans.some((csp) => a >= csp.s0 - 0.5 && a <= csp.s1 + 0.5)) return null
+            if (this._inBand(e, a)) return this._bandRefine(e, a, wx, wz)
         }
         const hit = e.centerline.nearest(wx, wz, ANALYTIC_REFINE_DS, pr.sCL - ANALYTIC_REFINE_WINDOW, pr.sCL + ANALYTIC_REFINE_WINDOW)
         if (!hit) return null
@@ -8038,6 +8039,93 @@ export class RoadSystem {
         // helper the ribbon uses in the opposite direction (chord→true).
         return { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z,
                  arcS: _interpArcTable(e.clArc, e.polyCum, hit.s) - arcOrigin }
+    }
+
+    /**
+     * BUG-154: a departure band's CONTINUOUS frame. In a BUG-53 band the points have left the centerline, so the analytic
+     * refine is declined — and the nearest CHORD's own frame was a staircase: the owning segment flips at every vertex
+     * (at the bisector on the inside of a bend; on the outside as the next chord's foot leaves the vertex), so physics
+     * stepped 0.2–0.43 m at the pavement edge on 2654449719's band while the drawn ribbon ran smooth. Here each vertex's
+     * tangent is the bisector of its two chords (the centerline's own tangent where a vertex still sits on it), interpolated
+     * linearly along each chord; positions stay ON the chords (the points _buildRunProfile integrates). _bandFrameAt samples it at a polyline cum (runFrameAt's band frame — the
+     * ribbon); _bandRefine finds the foot of (wx,wz) on it (physics). On one chord "perpendicular to the interpolated
+     * tangent" is a quadratic in the chord fraction, solved exactly; the nearest root over the chords around the
+     * nearest-chord foot `cum` wins. The frame is continuous across vertices, so the foot is too wherever the root is
+     * unique (|lat| below the band's turn radius, ~15 m on the tightest measured band). null → the polyline frame stands.
+     */
+    // Per run (cached by entry): which vertices still sit ON the centerline (they take its analytic tangent, so the band
+    // frame meets the analytic frame exactly there), and each band widened out to the nearest such vertex — the switch
+    // between the two frames happens where they coincide in both position and tangent, so it carries no step.
+    _bandInfo(e) {
+        const c = (this._bandInfoCache ??= new WeakMap()).get(e)
+        if (c) return c
+        const pts = e.points, pc = e.polyCum, n = pts.length, onCL = new Uint8Array(n)
+        for (let k = 0; k < n; k++) { const q = e.centerline.pointAt(e.clArc[k]); onCL[k] = Math.hypot(q.x - pts[k].x, q.z - pts[k].z) < 0.01 ? 1 : 0 }
+        const spans = e.offCurveSpans.map((csp) => {
+            let a = this._bandSeg(pc, csp.s0), b = Math.min(n - 1, this._bandSeg(pc, csp.s1) + (pc[this._bandSeg(pc, csp.s1)] < csp.s1 - 1e-9 ? 1 : 0))
+            while (a > 0 && !onCL[a]) a--
+            while (b < n - 1 && !onCL[b]) b++
+            return [pc[a], pc[b]]
+        })
+        const info = { onCL, spans }
+        this._bandInfoCache.set(e, info)
+        return info
+    }
+
+    _inBand(e, cum) {
+        if (!e.offCurveSpans || !e.centerline || !e.clArc || !e.polyCum) return false
+        for (const [a, b] of this._bandInfo(e).spans) if (cum >= a && cum <= b) return true
+        return false
+    }
+
+    _bandTangent(e, k, out) {
+        const pts = e.points
+        if (this._bandInfo(e).onCL[k]) { const t = e.centerline.tangentAt(e.clArc[k]); out.x = t.x; out.z = t.z; return out }
+        let x = 0, z = 0
+        if (k > 0) { const dx = pts[k].x - pts[k - 1].x, dz = pts[k].z - pts[k - 1].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+        if (k < pts.length - 1) { const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+        const l = Math.hypot(x, z) || 1
+        out.x = x / l; out.z = z / l
+        return out
+    }
+
+    _bandSeg(pc, cum) {
+        let lo = 0, hi = pc.length - 1
+        while (hi - lo > 1) { const m = (lo + hi) >> 1; if (pc[m] <= cum) lo = m; else hi = m }
+        return lo
+    }
+
+    _bandFrameAt(e, cum, out) {
+        const pts = e.points, pc = e.polyCum, i = this._bandSeg(pc, cum)
+        const u = Math.min(1, Math.max(0, (cum - pc[i]) / ((pc[i + 1] - pc[i]) || 1e-9)))
+        const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
+        const tx = A.x + (B.x - A.x) * u, tz = A.z + (B.z - A.z) * u, l = Math.hypot(tx, tz) || 1
+        out.x = pts[i].x + (pts[i + 1].x - pts[i].x) * u; out.z = pts[i].z + (pts[i + 1].z - pts[i].z) * u
+        out.tx = tx / l; out.tz = tz / l
+        return out
+    }
+
+    _bandRefine(e, cum, wx, wz) {
+        const pts = e.points, pc = e.polyCum, i0 = this._bandSeg(pc, cum)
+        let best = null, bestD2 = Infinity
+        for (let i = Math.max(0, i0 - 2); i <= Math.min(pts.length - 2, i0 + 2); i++) {
+            const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
+            const qx = wx - pts[i].x, qz = wz - pts[i].z, Dx = pts[i + 1].x - pts[i].x, Dz = pts[i + 1].z - pts[i].z
+            const Bx = B.x - A.x, Bz = B.z - A.z
+            // (q − u·D) · (A + u·B) = 0  ⇔  a·u² + b·u + c = 0
+            const a = -(Dx * Bx + Dz * Bz), b = qx * Bx + qz * Bz - (Dx * A.x + Dz * A.z), c = qx * A.x + qz * A.z
+            const roots = []
+            if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-12) roots.push(-c / b) }
+            else { const disc = b * b - 4 * a * c; if (disc >= 0) { const r = Math.sqrt(disc); roots.push((-b - r) / (2 * a), (-b + r) / (2 * a)) } }
+            for (const u of roots) {
+                if (!(u >= -1e-9 && u <= 1 + 1e-9)) continue
+                const fx = pts[i].x + Dx * u, fz = pts[i].z + Dz * u, d2 = (wx - fx) ** 2 + (wz - fz) ** 2
+                if (d2 < bestD2) { bestD2 = d2; best = { i, u: Math.min(1, Math.max(0, u)) } }
+            }
+        }
+        if (!best) return null
+        const f = this._bandFrameAt(e, pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u, this._bandOut ??= {})
+        return { fx: f.x, fz: f.z, tx: f.tx, tz: f.tz, arcS: pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u - (e.arcOrigin ?? 0) }
     }
 
     _resolveRoadSurface(wx, wz, excludeKeys = null) {
@@ -12030,8 +12118,9 @@ export class RoadSystem {
      * fix, _refineFrame). runProfile.tx is the INCOMING chord, linearly interpolated, so on a curve it trails the
      * true tangent by up to a chord's whole turn (9.5° per 4 m chord at R 24 m); every section built on it tilted
      * against the surface the wheel rides by grade × lat × tan(lag) — ~0.1 m at the pavement edge just past
-     * junction mouths, where legs bend into the node on slopes (BUG-149's leg lip). Where _refineFrame keeps the
-     * polyline frame (no centerline, BUG-53 offCurveSpans ± 0.5 m) the chord tangent stands. FEAT-10's degree-2
+     * junction mouths, where legs bend into the node on slopes (BUG-149's leg lip). In a BUG-53 band (offCurveSpans
+     * ± 0.5 m) it is the band's continuous frame, the one physics' _bandRefine projects onto (BUG-154); with no
+     * centerline the chord tangent stands. FEAT-10's degree-2
      * join seal is re-applied on top: the same weld directions, the same smoothstep over roadJoinWeldLength, so
      * two welded runs' end sections still coincide.
      * EVERY reader that draws or rebuilds the ribbon's edge takes this frame — the sweep (road-mesh
@@ -12044,9 +12133,14 @@ export class RoadSystem {
         const e = this._network?.get(runKey)
         if (!e || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return r
         const a = arcS + (e.arcOrigin ?? 0)
-        if (e.offCurveSpans && e.offCurveSpans.some((csp) => a >= csp.s0 - 0.5 && a <= csp.s1 + 0.5)) return r
-        const t = e.centerline.tangentAt(_interpArcTable(e.polyCum, e.clArc, a))
-        let bx = t.x, bz = t.z
+        let bx, bz
+        if (this._inBand(e, a)) {
+            const f = this._bandFrameAt(e, a, this._bandOut ??= {})   // BUG-154: the band's continuous frame, physics' own
+            bx = f.tx; bz = f.tz
+        } else {
+            const t = e.centerline.tangentAt(_interpArcTable(e.polyCum, e.clArc, a))
+            bx = t.x; bz = t.z
+        }
         const w = this._runProfileCache.get(runKey)?.weld
         if (w) {
             const dS = arcS - w.aS, dE = w.aE - arcS
