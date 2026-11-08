@@ -962,6 +962,8 @@ const STEPS = [
     check(await js('!document.getElementById("pm-save").disabled && document.getElementById("pm-save").offsetParent !== null'),
       `save & exit not offered: "${await js('document.getElementById("pm-save-why").textContent')}"`)
     const before = await js(`({ p: window.__car(), h: window.__day().clockH(), cond: window.__damage.get("armorLeft"), inv: window.__inv.list().length })`)
+    const roster = () => js('({ first: window.__board().firstState(), ids: window.__poi().list().map(q => q.id) })')
+    const roster0 = await roster()
     await js('document.getElementById("pm-save").click()')
     check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
     // The warning lives on the new-game page beside story's start (02c92535), so it is shown/hidden by style, not visibility here.
@@ -989,6 +991,14 @@ const STEPS = [
     check(after.h >= before.h && after.h - before.h < 0.1, `clock ${before.h.toFixed(3)} h → ${after.h.toFixed(3)} h`)
     check(after.cond === before.cond && after.inv === before.inv, `truck/kit changed: ${JSON.stringify(before)} → ${JSON.stringify(after)}`)
     console.log(`  save & exit: resumed at ${dm.toFixed(2)} m, clock +${((after.h - before.h) * 60).toFixed(1)} game min`)
+    // BUG-152: the board's history is keyed on POI ids, so the resumed session must site the SAME roster. A re-sited one
+    // dropped the opening's first-job events and mom's casserole came back 'live' over the skip's 'done'. One resume
+    // cannot catch a 1-in-10 race; this pins the contract, and the run-soak's resume check is the statistical net.
+    const roster1 = await roster()
+    const lost = roster0.ids.filter(id => !roster1.ids.includes(id)).length
+    check(!lost && roster1.ids.length === roster0.ids.length,
+      `the POI roster changed across the resume: ${lost} of ${roster0.ids.length} ids gone (${roster0.ids.length} → ${roster1.ids.length})`)
+    check(roster1.first === roster0.first, `the first job went '${roster0.first}' → '${roster1.first}' across the resume`)
     const job1 = await jobNow()
     check(JSON.stringify(job1) === JSON.stringify(job0), `the courier job did not survive the save: ${JSON.stringify(job0)} → ${JSON.stringify(job1)}`)
     console.log(`  save & exit: courier job ${job1.id} still ${job1.state}`)
