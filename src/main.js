@@ -4357,8 +4357,8 @@ function _runIntro () {
 // STATELESS ACROSS A RESUME: "this run opened on the firing" is the dialogue seen-key DLG.firing (the
 // save carries the seen set), and the first job's progress is the board's (the save replays it) — so
 // the evening is "the firing seen, the casserole not posted yet".
-// FEAT-180 (owner 11-07, 9: "Keep dusk opening"): 19:30 is the evening look's keyframe, the light 18:00 had before
-// the sun moved to 8 pm.
+// FEAT-180 (owner 11-07, 9: "Keep dusk opening"): at 19:30 the real sun is ~7° up, the golden hour before the
+// 20:18 sunset.
 const OPENING_START = { day: 0, hour: 19.5 }   // FEAT-170: the firing's clock
 // The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
 // turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the

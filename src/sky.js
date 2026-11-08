@@ -5,16 +5,17 @@
  *   1. places the sun and the moon where they really are: 37.4° N (Bishop, CA) on 21 June, so the sun
  *      rises at 05:33 and sets at 20:18 along its true arc, and the moon sits on the ecliptic at its
  *      phase's elongation, so it rises and sets as that phase does (full at sunset, first quarter at noon);
- *   2. integrates single Rayleigh + Mie scattering with ozone absorption through a spherical atmosphere,
- *      lit by the sun and the moon, for 64 × 32 sky directions — the sky LUT (look-up table: a small
- *      texture the shaders read instead of re-doing the maths per pixel);
+ *   2. integrates Rayleigh + Mie scattering with ozone absorption through a spherical atmosphere, lit by
+ *      the sun and the moon — single scattering exactly, the higher orders by Hillaire's isotropic estimate —
+ *      for 64 × 32 sky directions: the sky LUT (look-up table: a small texture the shaders read instead of
+ *      re-doing the maths per pixel). ~2 ms on the CPU per push;
  *   3. derives every natural light from that same air: the key light is the sun (or moon) through the
  *      air's transmittance, the hemisphere fill is the LUT integrated over the dome, and an eye-adaptation
  *      curve decides how bright all of it reads on screen.
  *
  * FOG IS THE SKY. The background shader and the fog are the SAME GLSL function (skyHaze) reading the same
  * texture: a fogged fragment fades to the sky radiance in the direction you look through it, and below the
- * horizon the sky is its own horizon row continued down. So the fog cannot be brighter than the sky at
+ * horizon the sky is its own lowest row (2° up, see HORIZON_Y) continued down. So the fog cannot be brighter than the sky at
  * dawn, and there is no colour step at the horizon, by construction rather than by tuning — there is no
  * second colour to drift. The same holds toward the sun: distant land glows with the sun's glare.
  *
@@ -33,9 +34,10 @@
  *
  * UNITS. The atmosphere works in "sun units": the sun's irradiance above the atmosphere is 1. The eye's
  * adaptation (adaptScale) maps those to render units — at noon a horizontal white surface reads π, so its
- * radiance is 1 — and compresses the 10⁷ range from noon to a moonless night by a power law, so night is
- * dark, not black. Artificial light (headlights, campfire, emissive lenses) is NOT scaled: it was authored
- * in render units, which is exactly why it dominates the night and barely registers at noon.
+ * radiance is 1 — and compresses the 10⁷ range from noon to a moonless night: most of a sunset is
+ * compensated, the night much less, so a moonless night is near black and a full moon barely shows the road.
+ * Artificial light (headlights, campfire, emissive lenses) is NOT scaled: it was authored in render units,
+ * which is exactly why it dominates the night and barely registers at noon.
  */
 import * as THREE from 'three'
 import { MoonSystem, MOON_PARAMS } from './moon.js'
@@ -49,7 +51,7 @@ const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 // The owner's spec: Eastern Sierra, 21 June, sunrise 05:33, sunset 20:18 (clock time, PDT). Solar noon is
 // their midpoint, 12:55.5 — Bishop's clock runs ~1 h ahead of the sun. At this latitude and declination
 // the computed day is 14 h 45 m between upper-limb crossings with standard refraction, i.e. these two
-// times to within 0.3 min — sky-ephemeris.mjs in the test folder asserts it.
+// times to within 0.3 min — the sky-ephemeris gate (test/sky-ephemeris.mjs) asserts it.
 const LAT = 37.4 * D2R
 const OBLIQUITY = 23.44 * D2R
 const SUN_DEC = OBLIQUITY                         // the June solstice
@@ -471,7 +473,8 @@ if (skyGlare.w > 0.5) {
   #ifdef FOG_EXP2
   fogFactor = fogDensity > 0.0 ? max(fogFactor, smoothstep(skyFog.x, skyFog.y, length(fogW.xz))) : 0.0;
   #endif
-  if (fogFactor > 0.0) gl_FragColor.rgb = mix(gl_FragColor.rgb, linearToOutputTexel(vec4(skyGrade(skyHaze(normalize(fogW))), 1.0)).rgb, fogFactor);
+  // Under one 8-bit step of fog (the near field: < ~20 m on Normal) skips the sky lookup — most of the screen.
+  if (fogFactor > 0.004) gl_FragColor.rgb = mix(gl_FragColor.rgb, linearToOutputTexel(vec4(skyGrade(skyHaze(normalize(fogW))), 1.0)).rgb, fogFactor);
 } else {
   #ifdef FOG_EXP2
   fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogView.z * vFogView.z);

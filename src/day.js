@@ -543,12 +543,12 @@ export class DaySystem {
     }
 
     /**
-     * THE BAKE COST — why the sky is pushed on a quantized ladder rather than every frame.
-     * SkySystem.setTimeOfDay() blends the bracketing looks and calls apply(), which re-renders the
-     * sky CUBEMAP (_bakeSky) on every single call; main.js additionally hooks onLookApplied to
-     * re-bake the prop impostor atlas. That is far too much work to do per frame for a look that
-     * changes imperceptibly between frames. So the clock runs continuously and only pushes once the
-     * hour has moved a full `dayLookQuantH` (default 0.1 h ≈ one push per 6 s real at a 24-min day).
+     * THE PUSH COST — why the sky is pushed on a quantized ladder rather than every frame.
+     * SkySystem.setTimeOfDay() integrates the atmosphere into the sky LUT on the CPU (~2 ms), and
+     * main.js hooks onLookApplied to re-light the prop impostors. ~2 ms a frame is far too much for a
+     * look that changes imperceptibly between frames. So the clock runs continuously and only pushes
+     * once the hour has moved a full `dayLookQuantH` (default 0.1 h ≈ one push per 6 s real at a
+     * 24-min day; the sun moves ~1.5° a push).
      * SKY_CYCLE.playing stays FALSE throughout — this system is the sole driver of the story sky;
      * letting sky.js self-advance too would double-drive it and re-bake per frame.
      */
