@@ -649,7 +649,9 @@ export class SkySystem {
   setWorldRadius (r) {
     const f = U.skyFog.value
     if (!(r > 0) || !isFinite(r)) { f.x = 1e8; f.y = 1e9; return }
-    f.x = r * 0.6; f.y = r
+    // The edge ramp starts at 0.4 r (round 2, owner: "i might prefer if it fades in a little closer to the player";
+    // 0.6 r read as a sudden wall). With Normal's haze: ~15 % fogged at 100 m, 37 % at 120, 65 % at 140, 89 % at 160.
+    f.x = r * 0.4; f.y = r
   }
 
   /** The cycle's single entry point: put the sky, its lights and the moon at clock `hour` (0..24, wraps). */

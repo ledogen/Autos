@@ -1721,14 +1721,14 @@ const scene = new THREE.Scene()
 // — the exp² haze, aerial perspective only — is owned by the quality presets (PERF-03/06); sky.js shades
 // it as the sky itself (a fogged fragment fades to the sky in its own direction) and adds the world-edge
 // term (_syncFogEdge). The colour is only the fallback for materials without the sky uniforms.
-scene.fog = new THREE.FogExp2(0x9bb8d4, 0.003)
+scene.fog = new THREE.FogExp2(0x9bb8d4, 0.004)
 // Fog kill-switch (owner request, 2026-08-18 — FEAT-68 checkpoint screenshots): `?nofog=1` boots
 // with fog off, and the debug-panel checkbox flips it live. Quality presets write density THROUGH
 // this state (applyQuality), so a preset change can never silently re-enable fog. FogExp2 with
 // density 0 is a no-op, so toggling needs no scene surgery. Sky looks only recolour fog — unaffected.
 const _fogState = {
   disabled: _urlParams.has('nofog'),
-  presetDensity: 0.003,   // last preset-owned density; restored when the toggle re-enables fog
+  presetDensity: 0.004,   // last preset-owned density; restored when the toggle re-enables fog
 }
 if (_fogState.disabled) scene.fog.density = 0
 
@@ -2318,10 +2318,10 @@ const _hudText = (el, s) => { if (el && el.textContent !== s) el.textContent = s
 //   prop ring stands 3–4-tri stand-ins (COVER_FAR_CAT), so the vertex cost of the extra density
 //   lands mostly inside lodRing.
 const QUALITY_PRESETS = {
-  Low:    { ring: 1, warm: 1, fogDensity: 0.006, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0   },
-  Normal: { ring: 2, warm: 1, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 3072, shadowExtent: 40, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0 },
-  High:   { ring: 3, warm: 3, fogDensity: 0.002, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6 },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.0015, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2 },
+  Low:    { ring: 1, warm: 1, fogDensity: 0.008, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0   },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 3072, shadowExtent: 40, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0 },
+  High:   { ring: 3, warm: 3, fogDensity: 0.0027, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6 },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.002, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2 },
 }
 
 // PERF-07: set once the bake system exists (browser only — headless never constructs it), so
