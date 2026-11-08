@@ -118,9 +118,11 @@ export const SKY_PARAMS = {
   landGain: 2.0,      // the natural light on the land against the sky's, into the land's ACES curve (noon matched to the legacy)
   adapt: 0.16,        // eye adaptation γ near daylight: displayed brightness ∝ illuminance^γ. Lower = brighter dusk
   nightDark: 0.021,   // how much faster the eye runs out of adaptation in the dark (log-log curvature). Higher = darker nights
-  moonAdapt: 0.25,    // how much of the moon's light the eye adapts away (1 = all of it: full and new moon look alike)
-  landNight: 0.007,   // nightDark for the land's light: the land's night is brighter than the sky's, into ACES's toe
+  moonAdapt: 0.15,    // how much of the moon's light the eye adapts away (1 = all of it: full and new moon look alike)
+  landDepth: 1.62,    // the land's eye (landEye): how far under noon the land reads at the darkest, in decades
+  landTwilight: 2.0,  // …and how fast it gets there (e-folding, decades of light). Smaller = darker golden hour and dusk
   warmth: 0.2,        // the land's white balance against the sky's: 0 = the same, 0.2 = sunlit ground warm like the legacy's
+  landCast: 1.0,      // how much of the light's colour cast the land keeps that the sky's white balance takes out (0–1)
   nightBlue: 1.5,     // colour saturation of the land's light under rod vision (the sky's drains to grey)
   bounce: 0.35,       // × the ground's bounce light (the hemisphere fill from below). The fill has no occlusion: at 1 the
                       // ground under the truck lit its wheel wells as if nothing shaded it
@@ -546,6 +548,15 @@ void main () {
   #include <colorspace_fragment>
 }`
 
+/**
+ * The LAND's eye (round 2): displayed brightness against noon, log10 B = −landDepth · (1 − e^(x / landTwilight)),
+ * x = log10(E / E_noon). The sky's curve (adapt, nightDark) compensates most of a sunset, which is what makes the
+ * twilight sky glow; on the land the same compensation lit the dusk with a shadowless fill three times noon's and
+ * read as a washed-out photo. This one falls steeply through the golden hour and dusk (sunset ≈ 11 % of noon) and
+ * levels out at night (a moonless night ≈ 2.7 %, the legacy's level), so the land's night still shows the moon.
+ */
+const landEye = (x) => -SKY_PARAMS.landDepth * (1 - Math.exp(x / SKY_PARAMS.landTwilight))
+
 // ── Day/night cycle state shared with the debug panel and main.js ─────────────────────────────────────
 export const SKY_CYCLE = { playing: false, hour: 12, dayLengthSec: 120 }
 
@@ -666,21 +677,23 @@ export class SkySystem {
    *  Displayed brightness B against noon's runs, in decades x = log10(E / E_noon), as
    *  log10 B = adapt·x − nightDark·x²: the eye compensates most of a sunset (x −2 → B 0.43) but runs out of
    *  range in the dark — a moonless night (x −7.4) reads 0.4 % of noon, a full moon (x −5.7) 2.5 %. */
-  _adaptScale (eH, nightDark = SKY_PARAMS.nightDark) {
-    const r = Math.max(eH, 1e-12) / this._noonEA, x = Math.min(0, Math.log10(r))
-    return Math.PI / this._noonEA * Math.pow(10, SKY_PARAMS.adapt * x - nightDark * x * x) / r
+  _adaptScale (eH, land = false) {
+    const p = SKY_PARAMS, r = Math.max(eH, 1e-12) / this._noonEA, x = Math.min(0, Math.log10(r))
+    return Math.PI / this._noonEA * Math.pow(10, land ? landEye(x) : p.adapt * x - p.nightDark * x * x) / r
   }
 
   _apply (st) {
     // S: the eye (sun units → render units); X: the sky's pre-exposed scale; SL: the land's light, into ACES.
-    const p = SKY_PARAMS, S = this._adaptScale(st.eEye), X = S * p.exposure
-    const SL = this._adaptScale(st.eEye, p.landNight) * p.landGain
+    const p = SKY_PARAMS, S = this._adaptScale(st.eEye), X = S * p.exposure, SL = this._adaptScale(st.eEye, true) * p.landGain
     // White balance, rod vision and the saturation trim: one colour treatment for every natural radiance.
     // `night` is rods() of the light's own brightness.
     const ill = illuminant(st), il = lum(...ill)
     const wb = this._wb.map((w, c) => w * Math.pow(il / Math.max(ill[c], 1e-30) / this._noonCast[c], WB_ADAPT))
-    const treat = (r, g, b, out, night, sat = p.saturation * (1 - 0.85 * night)) => {
-      r *= wb[0]; g *= wb[1]; b *= wb[2]
+    // The land keeps more of the light's colour cast than the sky (landCast of WB_ADAPT's correction undone): golden
+    // hour reads gold on the ground and the blue hour blue, where the sky's balance greyed both.
+    const wbL = wb.map((w, c) => w * Math.pow(il / Math.max(ill[c], 1e-30) / this._noonCast[c], -WB_ADAPT * p.landCast))
+    const treat = (r, g, b, out, night, sat = p.saturation * (1 - 0.85 * night), w = wb) => {
+      r *= w[0]; g *= w[1]; b *= w[2]
       const l = lum(r, g, b)
       r += (l * NIGHT_TINT[0] - r) * night * 0.9; g += (l * NIGHT_TINT[1] - g) * night * 0.9; b += (l * NIGHT_TINT[2] - b) * night * 0.9
       const l2 = lum(r, g, b)
@@ -723,7 +736,7 @@ export class SkySystem {
     // Rod vision on the land keeps its blue (nightBlue) rather than draining to the sky's grey: the legacy's moonlit
     // blue night, which the owner wants back.
     const wt = p.warmth * (1 - night), tint = [1, 1 - 0.25 * wt, 1 - wt], ls = p.saturation * (1 - night) + p.nightBlue * night
-    const key = treat(e[0] * SL * tint[0], e[1] * SL * tint[1], e[2] * SL * tint[2], [0, 0, 0], night, ls)
+    const key = treat(e[0] * SL * tint[0], e[1] * SL * tint[1], e[2] * SL * tint[2], [0, 0, 0], night, ls, wbL)
     const kmax = Math.max(key[0], key[1], key[2], 1e-9)
     // Shadows from a body at the horizon smear the whole map; hold the direction ≥ 3° up (its light is ~0 there).
     this.sunDirection.copy(kd)
@@ -735,7 +748,7 @@ export class SkySystem {
     this.sun.intensity = kmax * (1 - this.farSplit)
     if (this.sunFar) { this.sunFar.color.copy(this.sun.color); this.sunFar.intensity = kmax * this.farSplit }
     // The fill: the sky's own irradiance (× ambient), and the ground lit by everything above it.
-    const sky = treat(st.eSky[0] * p.skyGain * SL * tint[0], st.eSky[1] * p.skyGain * SL * tint[1], st.eSky[2] * p.skyGain * SL * tint[2], [0, 0, 0], night, ls)
+    const sky = treat(st.eSky[0] * p.skyGain * SL * tint[0], st.eSky[1] * p.skyGain * SL * tint[1], st.eSky[2] * p.skyGain * SL * tint[2], [0, 0, 0], night, ls, wbL)
     const down = Math.max(0, kd.y)
     const gnd = [0, 1, 2].map(c => GROUND_ALBEDO[c] * p.bounce * (key[c] * down + sky[c]))
     this.ambient.color.setRGB(sky[0] * p.ambient, sky[1] * p.ambient, sky[2] * p.ambient, THREE.LinearSRGBColorSpace)
@@ -782,7 +795,7 @@ export class SkySystem {
   /** Linear RGB multiplier for the unlit particles (dust/smoke/spray): their irradiance against noon's. */
   particleLight (out) {
     if (!this._particleNorm) {
-      const n = newState(), st = simulate(SOLAR_NOON_H, 0, n), S = this._adaptScale(st.eEye) * SKY_PARAMS.landGain
+      const n = newState(), st = simulate(SOLAR_NOON_H, 0, n), S = this._adaptScale(st.eEye, true) * SKY_PARAMS.landGain
       this._particleNorm = 1 / (0.5 * lum(...st.eSun) * S + 0.5 * SKY_PARAMS.skyGain * lum(...st.eSky) * S * SKY_PARAMS.ambient)
     }
     const k = this.sun.intensity + (this.sunFar ? this.sunFar.intensity : 0), a = this.ambient
