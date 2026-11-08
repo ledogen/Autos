@@ -100,7 +100,7 @@ export function nightWeight (hour) { return 1 - smooth(DARK_EL, 0, sunAt(hour).e
 
 // ── Tunables (the GUI binds these) ───────────────────────────────────────────────────────────────────
 export const SKY_PARAMS = {
-  aod: 0.02,          // aerosol optical depth above the eye at 550 nm: 0.05 is clean high-desert air, 0.3 smoggy
+  aod: 0.02,          // aerosol optical depth above the eye at 550 nm: 0.02–0.05 is clean high-desert air, 0.3 smoggy
   hazeAfternoon: 0.5, // extra aerosol the afternoon's convection lifts by 17:00 (fraction of `aod`)
   multiScatter: 1.0,  // gain on the orders ≥ 2 (1 = Hillaire's estimate as computed)
   skyGain: 2.5,       // the sky and its fill against the sun. The world's flat albedos are bright (stylised), so the
@@ -124,11 +124,11 @@ function hazeAt (hour) {
   return aerosol(p.aod) * (1 + p.hazeAfternoon * smooth(10, 17, hour) * (1 - smooth(21, 24, hour)))
 }
 
-// ── The atmosphere: single scattering in a spherical shell (km) ───────────────────────────────────────
+// ── The atmosphere: scattering in a spherical shell (km) ──────────────────────────────────────────────
 const RP = 6360, RTOP = 6420           // planet, top of atmosphere
 const OBS_H = 1.5                      // the observer's altitude — the Owens Valley floor and up
 const BETA_R = [5.802e-3, 13.558e-3, 33.1e-3]   // Rayleigh scattering at sea level, /km (Hillaire 2020)
-const BETA_M = 3.996e-3                          // Mie scattering at sea level, /km
+const BETA_M = 3.996e-3                          // Mie scattering at sea level, /km, for aerosol(…) = 1 (see SKY_PARAMS.aod)
 const MIE_EXT = BETA_M / 0.9                     // Mie extinction (single-scatter albedo 0.9)
 const BETA_O = [0.650e-3, 1.881e-3, 0.085e-3]   // ozone absorption at its layer's peak, /km — keeps twilight blue
 const H_R = 8, H_M = 1.2                         // scale heights
