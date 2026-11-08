@@ -1119,10 +1119,10 @@ export class RoadMeshSystem {
         const rings = inner + (extA ? 1 : 0) + (extB ? 1 : 0)
         const vpr = SEG + 5                  // apronR(2) + (SEG+1 arch verts) + apronL(2)
 
-        const pos = new Float32Array(rings * vpr * 3)
-        const col = new Float32Array(rings * vpr * 3)
-        const fcol = new Float32Array(rings * vpr * 3)   // BUG-112: the floor's colour — the cut bench's, shaded
-        const uv  = new Float32Array(rings * vpr * 2)
+        let pos = new Float32Array(rings * vpr * 3)   // let: the BUG-67 miter appends its cut vertices
+        let col = new Float32Array(rings * vpr * 3)
+        let fcol = new Float32Array(rings * vpr * 3)   // BUG-112: the floor's colour — the cut bench's, shaded
+        let uv  = new Float32Array(rings * vpr * 2)
         const CUT = _hexLin(params.terrainCutoutColor ?? 0x757066)   // terrain.js's cut-face colour, same convention
         const prof = { gradeY: 0, tx: 1, tz: 0 }
         let vi = 0, ui = 0
@@ -1170,22 +1170,93 @@ export class RoadMeshSystem {
             }
         }
         const idx = [], fidx = []
-        // BUG-67 shared bore: a triangle inside a sibling run's tube is not built —
-        // the two tubes merge into an underground Y (road.siblingTubeTest; the wall contact reads it too).
-        const sib = road.siblingTubeTest?.(runKey)
-        // A triangle goes only when ALL its corners are inside the sibling: a centroid test left a
-        // sawtooth seam with triangle-sized gaps; what is kept past the seam sits in the sibling's wall.
-        const inSib = (i) => sib(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2])
-        const keep = (i, j, l) => !sib || !(inSib(i) && inSib(j) && inSib(l))
+        // BUG-67 shared bore: the part of this tube inside a sibling run's tube is not built — the two tubes merge
+        // into an underground Y (road.siblingTubeTest; the wall contact reads it too). The cut is a MITER: a
+        // triangle with corners on both sides is split where the sibling test flips along its edges (bisection to
+        // 1 cm). Each tube is so cut on the other's surface, and both cuts lie on the curve where the two surfaces
+        // cross, so the linings meet edge to edge. Everything reads the bore shrunk by INSET, the depth the lining's own
+        // facets sit inside the true bore. Cut on the true bore, each lining stopped short of the other's facets (the sky
+        // as a hairline down seed 717319401's fork); and where two runs split one tunnel at an underground node their
+        // linings coincide, so each read inside the other by float noise and both were cut (a dashed ring of rock, seed
+        // 4076238903). 4 cm deep is never true of both. Owner's redrive 11-07: "torn and overlapping edges on the tubes"
+        // was the whole-triangle cut it replaces: a stair-stepped edge, with what was kept past it inside the sibling.
+        // The sibling's own sharp edges (its mouth plane meeting its arch) can poke through a triangle whose corners
+        // are all outside (32 cm deep at seed 717319401's fork tip), so a triangle whose edge midpoints or centroid
+        // read differently from its corners is first quartered, down to 0.5 m edges, and the miter cuts the pieces.
+        // The FLOOR is not cut. Cut by both tubes, the fork's overlap was a 31 m² hole; cut on one tube's footprint, a
+        // slot opened wherever the two floors differ in height (17.5 cm at seed 717319401's fork: sky at a grazing
+        // angle). Both whole, the lower runs on under the higher's edge — and both are the cut bench's terrain material.
+        // the arch polygon's chord sits R(1 − cos(π / 2SEG)) = 2.5 cm inside the true bore; the 3 m rings' chord on a
+        // curving run adds about 1 cm more
+        const INSET = R * (1 - Math.cos(Math.PI / (2 * SEG))) + 0.015
+        const sibT = road.siblingTubeTest?.(runKey)
+        const sib = sibT && ((x, y, z) => sibT(x, y, z, INSET))
+        const nv0 = rings * vpr
+        const xPos = [], xCol = [], xFcol = [], xUv = []   // vertices the miter adds, after the nv0 ring vertices
+        const attr = (i, a, src, ext, n) => (i < nv0 ? src[n * i + a] : ext[n * (i - nv0) + a])
+        const P3 = (i, a) => attr(i, a, pos, xPos, 3)
+        const vin = []   // vertex id → inside the sibling (memo: each vertex is a corner of up to six triangles)
+        const inSib = (i) => (vin[i] ??= sib(P3(i, 0), P3(i, 1), P3(i, 2)))
+        const ekey = (i, j) => (i < j ? i * 1e7 + j : j * 1e7 + i)
+        const addV = (o, n, t) => {   // a new vertex at t along o → n, every attribute interpolated
+            const lerp = (src, ext, n2) => { for (let a = 0; a < n2; a++) ext.push(attr(o, a, src, ext, n2) + (attr(n, a, src, ext, n2) - attr(o, a, src, ext, n2)) * t) }
+            lerp(pos, xPos, 3); lerp(col, xCol, 3); lerp(fcol, xFcol, 3); lerp(uv, xUv, 2)
+            return nv0 + xPos.length / 3 - 1
+        }
+        const cut = new Map(), mids = new Map()   // edge key → its vertex on the sibling's surface / its midpoint (shared by both triangles on it)
+        const mid = (i, j) => { const key = ekey(i, j); let m = mids.get(key); if (m === undefined) mids.set(key, m = addV(i, j, 0.5)); return m }
+        const edgeCut = (o, n) => {   // o outside, n inside
+            const key = ekey(o, n)
+            if (cut.has(key)) return cut.get(key)
+            const L = Math.hypot(P3(n, 0) - P3(o, 0), P3(n, 1) - P3(o, 1), P3(n, 2) - P3(o, 2))
+            let t0 = 0, t1 = 1
+            while ((t1 - t0) * L > 0.01) {
+                const t = (t0 + t1) / 2
+                if (sib(P3(o, 0) + (P3(n, 0) - P3(o, 0)) * t, P3(o, 1) + (P3(n, 1) - P3(o, 1)) * t, P3(o, 2) + (P3(n, 2) - P3(o, 2)) * t)) t1 = t
+                else t0 = t
+            }
+            const id = addV(o, n, t1)
+            cut.set(key, id)
+            return id
+        }
+        const sibAt = (wi, wj, wl, i, j, l) => sib(wi * P3(i, 0) + wj * P3(j, 0) + wl * P3(l, 0), wi * P3(i, 1) + wj * P3(j, 1) + wl * P3(l, 1), wi * P3(i, 2) + wj * P3(j, 2) + wl * P3(l, 2))
+        const d2 = (i, j) => (P3(i, 0) - P3(j, 0)) ** 2 + (P3(i, 1) - P3(j, 1)) ** 2 + (P3(i, 2) - P3(j, 2)) ** 2
+        const tri = (out, i, j, l, near, depth = 0) => {
+            if (!sib) { out.push(i, j, l); return }
+            const f = [inSib(i), inSib(j), inSib(l)], ins = f.filter(Boolean).length
+            if (near && depth < 4 && Math.max(d2(i, j), d2(j, l), d2(l, i)) > 0.25 && (ins % 3 ||
+                [[.5, .5, 0], [0, .5, .5], [.5, 0, .5], [1 / 3, 1 / 3, 1 / 3]].some(([a, b, c]) => sibAt(a, b, c, i, j, l) !== f[0]))) {
+                const ij = mid(i, j), jl = mid(j, l), li = mid(l, i), d = depth + 1
+                tri(out, i, ij, li, near, d); tri(out, ij, j, jl, near, d); tri(out, li, jl, l, near, d); tri(out, ij, jl, li, near, d)
+                return
+            }
+            if (ins === 0) { out.push(i, j, l); return }
+            if (ins === 3) return
+            // rotate (cyclically, so the winding holds) to put the odd corner first
+            let [a, b, c] = [i, j, l], odd = ins === 1 ? f.indexOf(true) : f.indexOf(false)
+            for (; odd > 0; odd--) [a, b, c] = [b, c, a]
+            if (ins === 1) { const ab = edgeCut(b, a), ac = edgeCut(c, a); out.push(ab, b, c, ab, c, ac) }   // a inside
+            else { const ab = edgeCut(a, b), ac = edgeCut(a, c); out.push(a, ab, ac) }                      // a outside
+        }
+        // Only quads within a ring of one with a corner inside the sibling are sampled for quartering: the sibling
+        // is a 2R-wide bore, so its edges never reach a whole ring (≤ 3 m) past its last inside vertex.
+        const ringIn = []
+        for (let r = 0; sib && r < rings; r++) { ringIn[r] = false; for (let k = 0; k < vpr; k++) if (inSib(r * vpr + k)) { ringIn[r] = true; break } }
         for (let r = 0; r < rings - 1; r++) {
+            const near = ringIn[r - 1] || ringIn[r] || ringIn[r + 1] || ringIn[r + 2]
             for (let k = 0; k < vpr - 1; k++) {
                 const a = r * vpr + k, b = a + vpr
-                const out = k === 0 || k === vpr - 2 ? fidx : idx   // the two apron strips are the floor
-                if (keep(a, b, a + 1)) out.push(a, b, a + 1)
-                if (keep(a + 1, b, b + 1)) out.push(a + 1, b, b + 1)
+                if (k === 0 || k === vpr - 2) { fidx.push(a, b, a + 1, a + 1, b, b + 1); continue }   // the two apron strips are the floor
+                tri(idx, a, b, a + 1, near)
+                tri(idx, a + 1, b, b + 1, near)
             }
         }
         if (!idx.length && !fidx.length) return null
+        if (xPos.length) {   // the miter's vertices join the ring vertices (the index already names them)
+            const grow = (src, ext) => { const g = new Float32Array(src.length + ext.length); g.set(src); g.set(ext, src.length); return g }
+            pos = grow(pos, xPos); col = grow(col, xCol); fcol = grow(fcol, xFcol); uv = grow(uv, xUv)
+        }
+        const nv = pos.length / 3
         const P = new THREE.BufferAttribute(pos, 3)
         const mk = (ix, c) => {
             if (!ix.length) return null
@@ -1199,7 +1270,7 @@ export class RoadMeshSystem {
         if (tube) { tube.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); tube.computeVertexNormals() }
         if (floor) {
             // (grass, dirt, rock, engineered) = (0, 0, 1, 1): terrain.js's weights on a fully cut bench.
-            const surf = new Float32Array(rings * vpr * 4)
+            const surf = new Float32Array(nv * 4)
             for (let i = 2; i < surf.length; i += 4) { surf[i] = 1; surf[i + 1] = 1 }
             floor.setAttribute('aSurf', new THREE.BufferAttribute(surf, 4))
             floor.computeVertexNormals()
