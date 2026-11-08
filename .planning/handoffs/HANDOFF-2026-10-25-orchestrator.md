@@ -470,3 +470,7 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
   needs its shot sheet — I look before merging). Minted on B's branches: BUG-153 (major), BUG-154/155 to mint (major; 155 needs
   a proposal). A: BUG-152 (casserole revives on resume, 2 in ~16 soak runs, cause unknown; bisect vs 968cd1a4 owed). Next free
   number after B's: BUG-156. Page v195 (owed: hunger-numbers, bug67-miter-look, feat34-r2-look, feat184-look + older).
+- **All four lanes confirmed the hold** (A 437b5fb3 · B land/bug-147 e4d5dacb gates 63/70, land/bug-153 a085822e gates 5/71 +
+  shot sheet owed · Spare land/bug-146 83f2e224 gates 60/~70 · C idle). BUG-152 narrowed by A: a resumed session sometimes
+  builds a DIFFERENT POI roster (every id changes; ~1 in 10 probe resumes, 2/~90 soak resumes) → a world-determinism bug, not
+  c87e78ac's logic (no revert). Suspects in the ticket: network client 'move' coalescing; region centre read before the seat.
