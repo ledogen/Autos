@@ -55,7 +55,7 @@ const DEBUG_LOCKOUT = false
 // belt-and-braces ceiling around them. PERF-27 (2026-11-07) removed the 400 ms floor that sat after
 // the settle: the centre is captured in _beginWarm before the floor ran, and the floor only let the
 // post-reseat frame paint before the main-thread region build froze it — off-thread since PERF-30.
-const SETTLE_MAX_MS = 20000    // if a rebuild throws, don't hang the loading screen forever
+const SETTLE_MAX_MS = 20000    // a settle slower than this starts the warm anyway, on the seed's spawn (update)
 const WARM_PUMP_MS  = 250      // warmBandComplete() rebuilds a band graph — pump it, don't spin it (the Worker path pumps on its build's promise: pumpWarmNow)
 const WARM_MAX_MS   = 180000   // cold uncached seed at this radius can be minutes; still bounded
 const HANDOFF_MAX_MS = 15000   // go-live waits for the terrain ring; bounded so a stuck ring cannot strand the player
@@ -166,6 +166,7 @@ export class StorySystem {
     this._armed = false
     this._handoff = false
     this._phase = 'settling'
+    this._settleLate = false   // the SETTLE_MAX_MS fallback has fired (update)
     // THE SEED DECIDES WHERE THE WORLD IS BUILT, AND NOTHING ELSE (owner, 2026-08-11).
     //
     // A free-roam teleport leaves a spawn override behind, and main.js's reseat honours it ahead of
@@ -272,7 +273,7 @@ export class StorySystem {
   }
 
   /**
-   * BUG-152: the world did not settle (failed twice, or timed out), so the truck may not be at this
+   * BUG-152: the world reported a failed settle twice, so the truck may not be at this
    * seed's spawn and there is no region to centre. Refuse the entry the way an unplayable seed is
    * refused: a fresh run re-rolls, a resume gets the seed card (main.js onSeedRejected), and no
    * "start anyway" (that button needs a report).
@@ -356,10 +357,19 @@ export class StorySystem {
     this._elapsed += dtMs
 
     if (this._phase === 'settling') {
-      // The promise above is the real signal; this only bounds a rebuild that never settled. It used
-      // to enter with the truck's position as the centre — BUG-152's leak again, since the seat may not
-      // have run. A settle this late is a failed one.
-      if (this._elapsed > SETTLE_MAX_MS) this._settleFailed(new Error(`timed out after ${SETTLE_MAX_MS / 1000} s`))
+      // The promise above is the real signal; this only stops a slow settle holding the warm back (a
+      // slow laptop at cpu ×4 takes ~23 s cold to driving). It used to enter on the truck's position,
+      // BUG-152's leak again, since the seat may not have run. Now it enters on the seed's spawn:
+      // spawnCentre waits out the in-flight seat, so it never races it. Slow is not failed, so this
+      // never refuses (orchestrator, 2026-11-08): a re-roll would be just as slow, and it would loop.
+      if (this._elapsed > SETTLE_MAX_MS && !this._settleLate) {
+        this._settleLate = true
+        console.warn('[story] world settle slow — starting the warm on the seed\'s spawn')
+        const token = this._token
+        const current = () => this._token === token && this._phase === 'settling'
+        this._d.spawnCentre().then(c => { if (current()) this._beginWarm(c) },
+                                   e => { if (current()) this._settleFailed(e) })
+      }
       return
     }
 

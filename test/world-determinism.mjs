@@ -198,7 +198,7 @@ for (const [seed, C] of [[6, { x: 4500, z: 600 }], [90, { x: -72.27, z: 140.48 }
         'the override must be gone before applySeed/reseat runs, or the reseat still honours it')
     // The trap that made this necessary: the override is consulted ahead of resolveSpawn.
     check('the region centre is the seed\'s spawn, never the truck\'s pose (BUG-152)',
-        /this\._d\.spawnCentre\(\)/.test(story) && /spawnCentre\s*:\s*async/.test(main) && !/_center = \{ x: p\.x/.test(story),
+        /this\._d\.spawnCentre\(\)/.test(story) && /spawnCentre\s*:/.test(main) && !/_center = \{ x: p\.x/.test(story),
         'story.js must centre on deps.spawnCentre() (main.js resolveSpawn), not getVehiclePosition()')
     check('the spawn override is still consulted ahead of resolveSpawn (this check is still needed)',
         main.indexOf('if (_spawnOverride)') < main.indexOf('resolveSpawn(worldSeed'),

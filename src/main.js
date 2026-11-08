@@ -8617,7 +8617,13 @@ const storySystem = new StorySystem({
   // pure in the seed (test/world-determinism.mjs link 1) and the same point every headless story gate centres on
   // (spawnDecision). Not the truck: the seat lifts it ≤ 14 cm off along the slope normal, and a failed seat left it at
   // the menu world's spawn, a few hundred metres away.
-  spawnCentre: async () => { const { position: p } = await resolveSpawn(worldSeed, RANGER_PARAMS); return { x: p.x, z: p.z } },
+  // Queued behind the in-flight seat: _rebuildFullNow has no await before its reseat, so the seat is on _reseatChain
+  // 150 ms after applySeed. Story's slow-settle fallback calls this mid-settle; it then waits for the seat and hits the
+  // memo, rather than running a second resolveSpawn across the seat's setRadius/buildNow (or on the old seed's roads).
+  spawnCentre: () => {
+    const at = () => resolveSpawn(worldSeed, RANGER_PARAMS)
+    return _reseatChain.then(at, at).then(({ position: p }) => ({ x: p.x, z: p.z }))
+  },
   // THE SEED DECIDES WHERE THE WORLD IS, AND NOTHING ELSE (owner, 2026-08-11). A free-roam teleport
   // leaves a spawn override behind, and _reseatTruckAtSpawnInner honours it ahead of resolveSpawn —
   // so without this, entering story mode seats the truck wherever you last teleported and the region

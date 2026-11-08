@@ -156,11 +156,14 @@ stats. Its multi-resume mode can't reseat after the 2nd reload (the sim stays he
     `__poi().list()` ids. It reports which seeds' rosters changed.
   - **A save made on main for an affected seed would resume onto the shifted roster.** Fix 3 now reports that
     loudly (`[save] board replay dropped …`) instead of reviving the casserole quietly. It is still a broken resume
-    for that run, so landing may want a `RUN_SAVE_VERSION` bump. That is the orchestrator's call.
-- Why the raw point, not the seated point: every headless story gate already centres on `spawnDecision`, the replica
-  of `resolveSpawn`'s raw point. Centring the live game there makes the gates measure the region players get.
-  The alternative keeps today's centre to the bit (centre = the seat transform of the spawn), avoids the siting
-  move, and leaves the 1–14 cm gate gap in place. It is a two-line swap if wanted.
+    for that run.
+  - **Ruled (orchestrator, 2026-11-08): no `RUN_SAVE_VERSION` bump by default.** A bump wipes every save, including
+    the many that would resume fine, and fix 3 makes the rare re-sited resume loud. If the roster compare shows
+    changes on 2 or more of about 10 seeds, it goes back to the orchestrator for an owner ask.
+- **Ruled (orchestrator, 2026-11-08): the centre stays `resolveSpawn`'s raw point.** Every headless story gate already
+  centres on `spawnDecision`, the replica of that point, so the gates finally measure the region the game builds.
+  The roster compare decides the rest. (The alternative was the seat transform of the spawn, which keeps today's
+  centre to the bit.)
 
 ### What changed
 
@@ -177,9 +180,13 @@ stats. Its multi-resume mode can't reseat after the 2nd reload (the sim stays he
    - `story.enter` retries a failed settle once, then `_settleFailed` refuses the entry like an unplayable seed:
      a fresh run re-rolls (BUG-100's path), and a resume gets the plain seed card with no "start anyway".
    - **A second leak of the same class:** the 20 s `SETTLE_MAX_MS` timeout used to start the warm "with the current
-     position as center". It now refuses too.
-     - Behaviour change to watch: a settle that legitimately takes over 20 s, such as a very slow machine or a loaded
-       soak box, now re-rolls where it used to enter.
+     position as center". It now starts the warm on `spawnCentre()` instead, with no behaviour change. It still enters
+     and never refuses. A first cut made it refuse (4a7f7dd0). The orchestrator ruled that out: a slow laptop at
+     cpu ×4 takes about 23 s cold to driving, so a re-roll would be just as slow and would loop.
+     - `spawnCentre` queues behind `_reseatChain`. `_rebuildFullNow` has no await before its reseat, so the seat is
+       queued 150 ms after `applySeed`. A mid-settle call therefore waits for the seat and hits the memo. It never runs
+       a second `resolveSpawn` across the seat's `setRadius`/`buildNow`, or on the old seed's `RoadSystem`.
+     - Only a settle that actually reports failure is refused.
 3. **Replay drops are reported** (b33070eb).
    - `logBoard` counts events that no longer take and logs `console.error('[save] board replay dropped N of M
      events')`.
