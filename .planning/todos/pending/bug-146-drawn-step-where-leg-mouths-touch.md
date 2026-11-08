@@ -23,3 +23,30 @@ junction-edge-lip names these two sites as its one exception (within 0.5 m of tw
 - The two legs' decks are drawn together where their mouths touch (a ribbon-level weld, or an overlap join), with no
   step over the designed lip.
 - The gate's named exception is removed, and both sites pass.
+
+## Resolution (Spare, 2026-11-08, land/bug-146)
+
+Not a ribbon weld: the ribbons should never have touched. BUG-59's ruling is "pave the gore to where the pavements
+part", and the per-leg cutback's parting walk (`_legPartingReach`, shared with the deck hold) reads polyline VERTICES
+4 m apart and stops at the plane hold's 30 m. At both sites the walk ended at 27.9 m, one vertex short: the
+pavements parted (1 m daylight, the walk's own test) only at 31.2 m (1353361482) and 32.4–32.7 m (917338424), so the
+inner edges crossed between the cutback and the mouth, where the pad's ribbon mask is already fully on.
+
+1. **The pad paves out to the real parting.** `_detectNodeJunctions`: where the pavements have not parted by the
+   mouth, the cutback marches out 0.25 m at a time to where they do, capped at RULE_NODE_WINDOW − halfWidth (35 m), so
+   the mouth stays inside the window the pad projects its legs in. The deck hold keeps the walk, so profiles do not
+   move. 16 of 193 padded legs (9 of 64 nodes) on 12 seeds move, +2.75 to +4.75 m; every other leg is untouched
+   (`wip/bug-146/moved.mjs`).
+2. **The ribbon mask eases along the ribbon's own station.** `_padRibbonMask` read the ease off the polyline foot's
+   `arcS`, which on the inside of a polyline kink jumps segments at the bisector (1 m, 4.9 m out on 917338424's 12°
+   kink). The moved mouth put an ease on that kink and tore the pad 0.11 m. The station now comes from
+   `_legDeckTop`'s section solve (continuous in position). This also took main's worst non-excepted tear on the gate
+   seeds, 0.075 m, to 0.037 m.
+
+junction-edge-lip: exception removed, PASS. Worst tear 0.037 m per 5 cm (main 0.075 outside the exception, 0.143 at
+the two sites), steepest 0.166 m per 0.25 m (main 0.193), rim lip 0.158 (same), worst leg lip 0.244 m (main 0.237): the
+new gore corner at 917338424 (−110.7, −463.7), where the narrow gore's dirt sits at the lower road's kerb.
+
+On 9 random seeds the gate's checks fail identically on main and the branch, line for line: a 9.46 m pad tear at
+749163472 (557.3, 717.0) and rim lips of 0.28–0.39 m at 1074499174 (742–746, 420–432). Both pre-existing, for the
+orchestrator to ticket.
