@@ -142,8 +142,9 @@ const HELPERS = `window.__soak = {
   // Where a giver's card answers the brake (main.js _inPoiSpot): a haul yard's BED over its drop zone (the bed's
   // centre sits 1.523 m behind the truck's origin: data/vehicle-models.js bed frontZ/tailZ; along the zone's long
   // axis, as the pump seat lies, h = yaw − π/2), inside a PARK box where a tow seats it (poi.js towSeat: the box's
-  // centre, along its LONG side — the shop's lift runs the other way to the store's lot), else the pad.
-  spot (q) { if (!q.drop && q.park) { const s = window.__towSeat(q); return { x: s.x, z: s.z, h: s.heading } }
+  // centre, along its LONG side — the shop's lift runs the other way to the store's lot), else the pad. A station
+  // has a park box AND pump zones: towSeat would pick the pump, whose brake opens the pump, not the card.
+  spot (q) { if (!q.drop && q.park) { const s = window.__towSeat({ ...q, pumpZones: null }); return { x: s.x, z: s.z, h: s.heading } }
     const box = q.drop; if (!box) return this.pad(q)
     const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
     const cx = ox + box.x * cs + box.z * sn, cz = oz - box.x * sn + box.z * cs, h = yaw - Math.PI / 2, k = 1.523
