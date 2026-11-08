@@ -108,7 +108,7 @@ export function nightWeight (hour) { return 1 - smooth(DARK_EL, 0, sunAt(hour).e
 // ── Tunables (the GUI binds these) ───────────────────────────────────────────────────────────────────
 export const SKY_PARAMS = {
   aod: 0.02,          // aerosol optical depth above the eye at 550 nm: 0.02–0.05 is clean high-desert air, 0.3 smoggy
-  hazeAfternoon: 3.0, // extra aerosol the afternoon's convection lifts, held into the evening (fraction of `aod`)
+  hazeAfternoon: 0.5, // extra aerosol the afternoon's convection lifts by 17:00 (fraction of `aod`)
   multiScatter: 1.0,  // gain on the orders ≥ 2 (1 = Hillaire's estimate as computed)
   skyGain: 2.5,       // the sky and its fill against the sun. The world's flat albedos are bright (stylised), so the
                       // sky is lifted to sit with them; 1 is the physical ratio
@@ -116,7 +116,7 @@ export const SKY_PARAMS = {
   saturation: 0.82,   // of the natural light and sky (albedo colour is untouched — man-made stays saturated)
   exposure: 1.7,      // the sky's pre-exposure (the land's camera is LAND_EXPOSURE, the legacy's)
   landGain: 2.0,      // the natural light on the land against the sky's, into the land's ACES curve (noon matched to the legacy)
-  skyAdapt: 0.35,     // the sky's eye (eyeCurve): the share of every decade of lost light it never adapts back…
+  skyAdapt: 0.45,     // the sky's eye (eyeCurve): the share of every decade of lost light it never adapts back…
   skyDepth: 1.3,      // …plus how far under noon its adaptation runs out, in decades…
   skyTwilight: 0.72,  // …and how fast it runs out (e-folding, decades of light). Smaller = a darker golden hour and dusk
   skySat: 1.0,        // colour saturation of the sky (and the fog, the same function)
@@ -140,11 +140,10 @@ export const SKY_PARAMS = {
 
 /** Aerosol (as a multiple of the profile's sea-level density, BETA_M) for an optical depth `aod` above the eye. */
 const aerosol = (aod) => aod / (MIE_EXT * H_M * Math.exp(-OBS_H / H_M))
-/** Aerosol through the day: clear at dawn, the afternoon's convection building it to a peak at sunset (round 3: the evening
- *  carries the haze, which narrows the sunset glow round the sun and darkens the sky away from it), settling at night. */
+/** Aerosol through the day: clear at dawn, hazier after the afternoon's convection, settling at night. */
 function hazeAt (hour) {
   const p = SKY_PARAMS
-  return aerosol(p.aod) * (1 + p.hazeAfternoon * smooth(14, 20, hour) * (1 - smooth(21, 24, hour)))
+  return aerosol(p.aod) * (1 + p.hazeAfternoon * smooth(10, 17, hour) * (1 - smooth(21, 24, hour)))
 }
 
 // ── The atmosphere: scattering in a spherical shell (km) ──────────────────────────────────────────────
@@ -155,7 +154,10 @@ const BETA_M = 3.996e-3                          // Mie scattering at sea level,
 const MIE_EXT = BETA_M / 0.9                     // Mie extinction (single-scatter albedo 0.9)
 const BETA_O = [0.650e-3, 1.881e-3, 0.085e-3]   // ozone absorption at its layer's peak, /km — keeps twilight blue
 const H_R = 8, H_M = 1.2                         // scale heights
-const MIE_G = 0.76                               // the broad aerosol lobe (the sharp glare is analytic, per pixel)
+// The aerosol lobe (the sharp glare is analytic, per pixel). Round 3: 0.76 → 0.85, desert dust's forward peak — at sunset it
+// gathers the glow round the sun and leaves the horizon away from it darker, where 0.76 lit the whole horizon band khaki.
+// (More evening haze did the same to the sky but halved the sunlit land's key light at 20:00.)
+const MIE_G = 0.85
 const ozone = (h) => Math.max(0, 1 - Math.abs(h - 25) / 15)   // tent, 10–40 km
 // Moonlight in sun units: full moon ≈ 0.25 lux against the sun's ≈ 127 klx above the air, and slightly red.
 const MOON_E = 2.0e-6, MOON_RGB = [1.0, 0.95, 0.88]
