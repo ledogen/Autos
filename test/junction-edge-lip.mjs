@@ -18,7 +18,7 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
-// RIM's other sign (BUG-147): dirt standing ABOVE a pad's rim — a wall. None on these seeds; seed 169372896 had 0.38 m.
+// RIM's other sign (BUG-150): dirt standing ABOVE a pad's rim — a wall. None on these seeds; seed 169372896 had 0.38 m.
 const WALL_MAX = 0.05
 let worstWall = 0, worstWallAt = ''
 
@@ -92,9 +92,9 @@ for (const S of SEEDS) {
     }
     // RIM (BUG-145): the pad's own edge between its legs — physics 5 cm inside the ring minus 5 cm outside, every 0.5 m
     // of ring, away from the legs' pavements (their edges are LIP's) — stands the designed kerb, no more than LIP_MAX.
-    // BUG-147: and the dirt never stands ABOVE the rim (a wall, not a kerb): a duck cap held seed 169372896's hillside-T
+    // BUG-150: and the dirt never stands ABOVE the rim (a wall, not a kerb): a duck cap held seed 169372896's hillside-T
     // dirt 1.2 m off the leg's section where the pad sits 1.88 m under it — 0.38 m of wall at (15.4, −910.4). That seed
-    // is not in SEEDS: it also carries BUG-148's 1.8 cm poke (and, on main, BUG-146's class of tear); add it with them.
+    // is not in SEEDS: it also carries BUG-151's 1.8 cm poke (and, on main, BUG-146's class of tear); add it with them.
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i], b = ring[(i + 1) % ring.length], L = Math.hypot(b.x - a.x, b.z - a.z)
       for (let t = 0; t < L; t += 0.5) {

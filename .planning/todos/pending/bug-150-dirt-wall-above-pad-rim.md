@@ -1,15 +1,15 @@
 ---
-id: BUG-147
+id: BUG-150
 type: bug
 status: open
 severity: minor
 opened: 2026-11-08
 source: Lane B, drive soak run9 (6 random seeds on main 2f5735eb)
-relates: BUG-145 (one PAD_DUCK_CAP for mesh and physics), BUG-122/123 (the 0.15 m designed rim kerb), BUG-148 (found beside it)
+relates: BUG-145 (one PAD_DUCK_CAP for mesh and physics), BUG-122/123 (the 0.15 m designed rim kerb), BUG-151 (found beside it)
 ---
 lane: B
 
-# BUG-147: a 0.42 m dirt wall stands above a junction pad's rim on a hillside T
+# BUG-150: a 0.42 m dirt wall stands above a junction pad's rim on a hillside T
 
 Seed 169372896, the 3-leg junction at (7.4, −904.7). The soak flagged a jolt there at 2.5 m/s (it did not replay: the
 autopilot's path differs on replay), and `soak-site` found 283 ground steps over 0.15 m within 4 m of it, the biggest
@@ -29,7 +29,7 @@ Main before tonight's pad landings (1ddea2f5) had the same wall at 1.05 m. BUG-1
 - No dirt pokes through this pad.
 - junction-edge-lip's RIM check fails dirt standing above a rim, not only a pad standing too high.
 
-## Root cause and fix (Lane B, 2026-11-08, `land/bug-147`)
+## Root cause and fix (Lane B, 2026-11-08, `land/bug-150`)
 
 **The duck cap.** `_mergeCarve` let the pad move the dirt at most `PAD_DUCK_CAP` (1.2 m) from the leg's own
 cross-section, inside the ring and out. Here the leg's section is pulled up toward the other leg by the QUAL-10
@@ -55,5 +55,5 @@ leg's. Mesh and physics share `_mergeCarve`, so MESH == PHYSICS holds.
   gate 17 times and the fix fails it twice, and both of those are older:
   - a 0.073 m-per-1 cm tear inside the pad at (372.8, −263.2). This is BUG-146's class, and it is already gone on
     `land/bug-146` (worst 1 cm step 1.9 mm there).
-  - BUG-148's 1.8 cm poke at (46.0, −856.7).
+  - BUG-151's 1.8 cm poke at (46.0, −856.7).
   Add the seed when both have landed.
