@@ -235,10 +235,19 @@ export function wheelRunoutOf (corner, params) {
 export function effectiveWheelRadius (corner, vehicleState, params) {
   const collapsed = params._wheelCollapseR?.[corner]   // FEAT-162: the folded rim, no runout to speak of
   if (collapsed) return collapsed
+  return params.wheelRadius + runoutAtContact(corner, vehicleState, params)
+}
+
+/**
+ * The out-of-round carcass's radial offset where it meets the road, at this corner's spin angle [m]:
+ * 0 on a round wheel. effectiveWheelRadius() is wheelRadius plus this; vehicle-model.js sits a collapsed
+ * wheel's bare rim on the road with it (FEAT-186), the rim carrying the same offset as the tread.
+ */
+export function runoutAtContact (corner, vehicleState, params) {
   const runout = wheelRunoutOf(corner, params)   // slider + this wheel's damage-driven runout
-  if (runout === 0) return params.wheelRadius
+  if (runout === 0) return 0
   const theta = (vehicleState.wheelPhase && vehicleState.wheelPhase[corner]) || 0
-  return params.wheelRadius + 0.5 * runout * Math.sin(RUNOUT_HARMONIC * theta + RUNOUT_PHASE[corner])
+  return 0.5 * runout * Math.sin(RUNOUT_HARMONIC * theta + RUNOUT_PHASE[corner])
 }
 
 /**

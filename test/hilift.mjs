@@ -98,7 +98,7 @@ console.log(`balance: wheels ${bal.wheelsDeg.toFixed(1)}°, roof ${bal.roofDeg.t
   check(Math.abs(h.phi) < 10, `back on its wheels (φ ${h.phi.toFixed(1)}°)`)
   check(h.heaveS < HILIFT.maxS, `cut at the wheels' balance point, not the cap (${h.heaveS.toFixed(2)} s)`)
   // heave() settled 3 s after the cut, so 2 s of the 5 s cooldown remain.
-  check(jack.refusal(run.vs, run.t, false) === 'catching your breath', `the cooldown refuses (${jack.refusal(run.vs, run.t, false)})`)
+  check(jack.refusal(run.vs, run.t, false) === 'catching your breath · 2 s', `the cooldown refuses (${jack.refusal(run.vs, run.t, false)})`)
   check(!jack.start(-1, run.vs, run.t, false), 'start() honours the refusal')
   steps(run, 150)
   check(jack.refusal(run.vs, run.t, false) === 'the truck is on its wheels', `on its wheels refuses (${jack.refusal(run.vs, run.t, false)})`)
