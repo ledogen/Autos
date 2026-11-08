@@ -9037,7 +9037,7 @@ export class RoadSystem {
     /** Does the ring carry `leg`'s mouth chord (its two corners, consecutive, to 5 cm) as an edge? */
     _ringHasMouth(ring, leg, halfWidth) {
         const arc = leg.arc + (leg.arc < 1e-6 ? 1 : -1) * leg.mouth
-        const c = this.runPointAt(leg.runKey, arc), p = this.runProfile(arc, leg.runKey)
+        const c = this.runPointAt(leg.runKey, arc), p = this.runFrameAt(arc, leg.runKey)   // BUG-153: the ribbon's frame
         if (!c || !p) return false
         const t = Math.hypot(p.tx, p.tz) || 1, nx = p.tz / t * halfWidth, nz = -p.tx / t * halfWidth
         const at = (q, x, z) => Math.abs(q.x - x) < 0.05 && Math.abs(q.z - z) < 0.05
@@ -9141,7 +9141,7 @@ export class RoadSystem {
             const mouthArc = leg.arc + s * (leg.mouth ?? Math.min((leg.cutback ?? cutback) + halfWidth * 0.5, len * 0.45))
             const c = road.runPointAt(leg.runKey, mouthArc)
             if (!c) return null
-            const prof = road.runProfile(mouthArc, leg.runKey)
+            const prof = road.runFrameAt(mouthArc, leg.runKey)     // BUG-153: the ribbon's frame (the weld's)
             let dx = prof.tx * s, dz = prof.tz * s                  // outward unit dir (away from node)
             const dl = Math.hypot(dx, dz)
             if (dl < 1e-6) return null
@@ -9304,7 +9304,7 @@ export class RoadSystem {
                 const a = a0 + l.s * e
                 const c = this.runPointAt(l.runKey, a)
                 if (!c) return null
-                const prof = this.runProfile(a, l.runKey)
+                const prof = this.runFrameAt(a, l.runKey)   // BUG-153: the ribbon's frame
                 let dx = prof.tx * l.s, dz = prof.tz * l.s
                 const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl
                 pts.push({ x: c.x + (-dz) * side * halfWidth, z: c.z + dx * side * halfWidth, ext: e, dx, dz })
@@ -9633,7 +9633,7 @@ export class RoadSystem {
         let s = pr.arcS, c = null, rp = null
         for (let k = 0; k < 4; k++) {
             c = this.runPointAt(leg.runKey, s)
-            rp = this.runProfile(s, leg.runKey, _CD_RP)
+            rp = this.runFrameAt(s, leg.runKey, _CD_RP)   // BUG-153: the drawn ribbon's section line
             if (!c) break
             const ds = (wx - c.x) * rp.tx + (wz - c.z) * rp.tz
             s = Math.max(0, Math.min(sMax, s + ds))
@@ -9644,7 +9644,7 @@ export class RoadSystem {
             return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + cm
         }
         c = this.runPointAt(leg.runKey, s)
-        rp = this.runProfile(s, leg.runKey, _CD_RP)
+        rp = this.runFrameAt(s, leg.runKey, _CD_RP)
         const tx = rp.tx, tz = rp.tz, lat = (wx - c.x) * tz - (wz - c.z) * tx, along = (wx - c.x) * tx + (wz - c.z) * tz
         const over = s >= sMax ? Math.max(0, along) : s <= 0 ? Math.max(0, -along) : 0
         let y = this._carveDirtY(lat, s, leg.runKey, 1) + cm
@@ -10161,7 +10161,7 @@ export class RoadSystem {
             const mouthArc = leg.arc + s * Math.min(T + extra, len * 0.45)
             const c = this.runPointAt(leg.runKey, mouthArc)
             if (!c) return null
-            const prof = this.runProfile(mouthArc, leg.runKey)
+            const prof = this.runFrameAt(mouthArc, leg.runKey)   // BUG-153: the ribbon's frame
             let ox = prof.tx * s, oz = prof.tz * s
             const ol = Math.hypot(ox, oz)
             if (ol < 1e-6) return null
@@ -11962,6 +11962,8 @@ export class RoadSystem {
         // v2 router does not leave a node along that chord (median 20°, up to 105° off), and aiming there
         // twisted the ribbon's first 6 m into a bow-tie (owner capture 1792452228448, 72° twist).
         // ≥3-way nodes and >120° elbows get no weld: a junction pad covers the end (cutback 10 m > 6 m).
+        // BUG-153: the weld is kept on the profile too — runFrameAt re-applies it on the analytic tangent.
+        let weld = null
         {
             const Rw = p.roadJoinWeldLength ?? 6
             const weldDir = (id, isStart) => {
@@ -11977,6 +11979,7 @@ export class RoadSystem {
             const wE = Rw > 0 ? weldDir(netEntry.cellB, false) : null
             if (wS || wE) {
                 const aS = arcPos[0], aE = arcPos[N - 1]
+                weld = { wS, wE, aS, aE, Rw }
                 for (let i = 0; i < N; i++) {
                     let bx = tx[i], bz = tz[i]
                     const dS = arcPos[i] - aS
@@ -11998,7 +12001,41 @@ export class RoadSystem {
 
         // FEAT-81: tangents for the C¹ profile, on the FINAL gradeY (post-blend).
         const gradeM = _profileTangents(arcPos, gradeY)
-        return { arcPos, gradeY, gradeM, tx, tz }
+        return { arcPos, gradeY, gradeM, tx, tz, weld }
+    }
+
+    /**
+     * BUG-153: the RIBBON's cross-section frame at run arc `arcS` — runProfile's sample, with tx/tz replaced by
+     * the tangent physics projects onto: the run's exact analytic centerline at the true arc (the corner-facet
+     * fix, _refineFrame). runProfile.tx is the INCOMING chord, linearly interpolated, so on a curve it trails the
+     * true tangent by up to a chord's whole turn (9.5° per 4 m chord at R 24 m); every section built on it tilted
+     * against the surface the wheel rides by grade × lat × tan(lag) — ~0.1 m at the pavement edge just past
+     * junction mouths, where legs bend into the node on slopes (BUG-149's leg lip). Where _refineFrame keeps the
+     * polyline frame (no centerline, BUG-53 offCurveSpans ± 0.5 m) the chord tangent stands. FEAT-10's degree-2
+     * join seal is re-applied on top: the same weld directions, the same smoothstep over roadJoinWeldLength, so
+     * two welded runs' end sections still coincide.
+     * EVERY reader that draws or rebuilds the ribbon's edge takes this frame — the sweep (road-mesh
+     * _ribbonSection), the pad mouths and ring (_junctionMouths, _ringHasMouth: the BUG-82 weld), the crotch walk,
+     * the deg-2 connector mouths and lead-ins, and the leg deck under a pad (_legDeckTop). runProfile.tx stays the
+     * chord tangent for everything else (curvature, the tunnel tube and portals, the lip frames).
+     */
+    runFrameAt(arcS, runKey, out) {
+        const r = this.runProfile(arcS, runKey, out)
+        const e = this._network?.get(runKey)
+        if (!e || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return r
+        const a = arcS + (e.arcOrigin ?? 0)
+        if (e.offCurveSpans && e.offCurveSpans.some((csp) => a >= csp.s0 - 0.5 && a <= csp.s1 + 0.5)) return r
+        const t = e.centerline.tangentAt(_interpArcTable(e.polyCum, e.clArc, a))
+        let bx = t.x, bz = t.z
+        const w = this._runProfileCache.get(runKey)?.weld
+        if (w) {
+            const dS = arcS - w.aS, dE = w.aE - arcS
+            if (w.wS && dS < w.Rw) { const u = 1 - Math.max(0, dS) / w.Rw, f = u * u * (3 - 2 * u); bx = bx * (1 - f) + w.wS.x * f; bz = bz * (1 - f) + w.wS.z * f }
+            if (w.wE && dE < w.Rw) { const u = 1 - Math.max(0, dE) / w.Rw, f = u * u * (3 - 2 * u); bx = bx * (1 - f) + w.wE.x * f; bz = bz * (1 - f) + w.wE.z * f }
+        }
+        const L = Math.hypot(bx, bz) || 1e-8
+        r.tx = bx / L; r.tz = bz / L
+        return r
     }
 
     /**
