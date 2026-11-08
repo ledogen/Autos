@@ -25,8 +25,15 @@
  * chunk still streaming in beyond it, is invisible from every vantage. A later far-ridge layer (FEAT-188)
  * belongs beyond that radius with the haze term only — see skyFog.x/y.
  *
+ * TWO CURVES (round 2, owner 11-08: "the legacy looks like you put the same pic through lightroom"). The sky and
+ * the fog keep their own hue-true grade (skyGrade, linear to 0.76): a sunset stays orange. The land — every lit
+ * surface — goes through three's ACES filmic curve at the legacy exposure, the look every asset was authored
+ * under: its toe crushes the shadows and lifts the colour of the lit subjects, and the headlights, the campfire
+ * and every emissive read exactly as they were tuned (they are authored in render units against that curve).
+ * Fog is mixed after tone mapping, so a fogged fragment still lands on the graded sky.
+ *
  * WHY THESE GLOBAL SHADER PATCHES. three's fog chunks know one flat colour. This module replaces the
- * four fog chunks (and fills three's CustomToneMapping stub with a hue-preserving curve) at import, and
+ * four fog chunks at import, and
  * adds its uniforms to every built-in material (ShaderLib) and to UniformsLib.fog (which the particle and
  * impostor ShaderMaterials merge). Those uniforms are SHARED objects (see shared()): one live value behind
  * every material. Scenes other than the world (the menu stage) keep three's plain FogExp2 colour: the world
@@ -107,9 +114,16 @@ export const SKY_PARAMS = {
                       // sky is lifted to sit with them; 1 is the physical ratio
   ambient: 1.0,       // × the sky's own irradiance on the hemisphere fill
   saturation: 0.82,   // of the natural light and sky (albedo colour is untouched — man-made stays saturated)
-  exposure: 1.25,     // renderer.toneMappingExposure, and the sky's pre-exposure (one number for both)
+  exposure: 1.25,     // the sky's pre-exposure (the land's camera is LAND_EXPOSURE, the legacy's)
+  landGain: 2.0,      // the natural light on the land against the sky's, into the land's ACES curve (noon matched to the legacy)
   adapt: 0.16,        // eye adaptation γ near daylight: displayed brightness ∝ illuminance^γ. Lower = brighter dusk
   nightDark: 0.021,   // how much faster the eye runs out of adaptation in the dark (log-log curvature). Higher = darker nights
+  moonAdapt: 0.25,    // how much of the moon's light the eye adapts away (1 = all of it: full and new moon look alike)
+  landNight: 0.007,   // nightDark for the land's light: the land's night is brighter than the sky's, into ACES's toe
+  warmth: 0.2,        // the land's white balance against the sky's: 0 = the same, 0.2 = sunlit ground warm like the legacy's
+  nightBlue: 1.5,     // colour saturation of the land's light under rod vision (the sky's drains to grey)
+  bounce: 0.35,       // × the ground's bounce light (the hemisphere fill from below). The fill has no occlusion: at 1 the
+                      // ground under the truck lit its wheel wells as if nothing shaded it
   glare: 6e-4,        // strength of the sharp forward-scatter lobe round the sun (the glare, not the disc)
   glareG: 0.93,       // its sharpness (Henyey-Greenstein g)
   sunSize: 1.2,       // drawn sun disc RADIUS, degrees (the real one is 0.27°; the moon is drawn at 2.75°)
@@ -362,9 +376,6 @@ function simulate (hour, cycle, st) {
   // The owner's "total darkness an hour after sunset": the sun's light is faded out over the last 3° to DARK_EL.
   const sunFade = smooth(DARK_EL, DARK_EL + 3 * D2R, st.sun.el)
   if (sunFade > 0) scatterLight(L, st.sunDir, [sunFade, sunFade, sunFade], haze)
-  const moonLit = MOON_E * moonPhaseLaw(cycle)
-  st.moonE = moonLit
-  if (st.moon.el > -12 * D2R && moonLit > 1e-9) scatterLight(L, st.moonDir, MOON_RGB.map(c => c * moonLit), haze)
   // The moonless night sky, brighter toward the horizon.
   for (let j = 0; j < LUT_H; j++) {
     const night = NIGHT_L * (1 + 2 * (1 - ROWS[j].y) ** 4)
@@ -373,6 +384,10 @@ function simulate (hour, cycle, st) {
       L[k] += night * NIGHT_RGB[0]; L[k + 1] += night * NIGHT_RGB[1]; L[k + 2] += night * NIGHT_RGB[2]
     }
   }
+  skyIrradiance(L, st.eSky0)   // the sky without the moon: what the eye adapts to in full (see eEye)
+  const moonLit = MOON_E * moonPhaseLaw(cycle)
+  st.moonE = moonLit
+  if (st.moon.el > -12 * D2R && moonLit > 1e-9) scatterLight(L, st.moonDir, MOON_RGB.map(c => c * moonLit), haze)
   // Direct light: the sun through the air, cut by its 0.27° disc crossing the horizon; the moon likewise.
   transmittance(st.sun.el, haze, st.tSun)
   const sunVis = clamp01((st.sun.el + 0.267 * D2R) / (0.533 * D2R)) * sunFade
@@ -385,19 +400,23 @@ function simulate (hour, cycle, st) {
   // The eye adapts to what it sees, not just to the ground: half the light falling on a sun-facing wall counts.
   // (Horizontal illuminance alone made a 4°-high sun light the walls facing it at 4× noon.)
   const g = SKY_PARAMS.skyGain
-  st.eA = lum(...st.eSun) * (sh + 0.5 * Math.sqrt(1 - sh * sh)) + lum(...st.eMoon) * (mh + 0.5 * Math.sqrt(1 - mh * mh)) +
-    g * lum(...st.eSky)
+  const eA0 = lum(...st.eSun) * (sh + 0.5 * Math.sqrt(1 - sh * sh)) + g * lum(...st.eSky0)
+  st.eA = eA0 + lum(...st.eMoon) * (mh + 0.5 * Math.sqrt(1 - mh * mh)) + g * (lum(...st.eSky) - lum(...st.eSky0))
+  // What the eye adapts to: all of the sun's light, only moonAdapt of the moon's (round 2, owner 11-08: "there is
+  // practically no difference between new moon and full moon apparent brightness"). Adapting to all of it squeezed
+  // the full moon's ~20× more light on the ground down to ~2.7× on screen, and the moonlit sky to no change at all.
+  st.eEye = eA0 + SKY_PARAMS.moonAdapt * (st.eA - eA0)
   return st
 }
 const newState = () => ({ lut: new Float32Array(LUT_W * LUT_H * 3), sunDir: new THREE.Vector3(), moonDir: new THREE.Vector3(),
-  eSky: [0, 0, 0], eSun: [0, 0, 0], eMoon: [0, 0, 0], tSun: [0, 0, 0], tMoon: [0, 0, 0], eA: 0, moonE: 0 })
+  eSky: [0, 0, 0], eSky0: [0, 0, 0], eSun: [0, 0, 0], eMoon: [0, 0, 0], tSun: [0, 0, 0], tMoon: [0, 0, 0], eA: 0, eEye: 0, moonE: 0 })
 // Ground albedo — a warm desert-granite grey: the hemisphere fill's ground colour and the sky's ground bounce.
 const GROUND_ALBEDO = [0.20, 0.18, 0.15]
 
 // ── The shared shader side ──────────────────────────────────────────────────────────────────────────
-// The tone curve: Khronos PBR Neutral's shoulder WITHOUT its toe. Linear (so hue-true: a sunset stays
-// orange instead of ACES's slide to yellow, and flat albedos read as authored) up to 0.76, then a soft
-// roll-off that only greys a channel as it saturates.
+// The SKY's tone curve (the background and the fog it lends the land): Khronos PBR Neutral's shoulder WITHOUT its
+// toe. Linear (so hue-true: a sunset stays orange instead of ACES's slide to yellow) up to 0.76, then a soft
+// roll-off that only greys a channel as it saturates. The land uses ACES (see TWO CURVES above).
 const GRADE_GLSL = /* glsl */`
 #ifndef SKY_GRADE
 #define SKY_GRADE
@@ -483,14 +502,6 @@ if (skyGlare.w > 0.5) {
 }
 #endif
 `
-{
-  const stub = 'vec3 CustomToneMapping( vec3 color ) { return color; }'
-  const tm = THREE.ShaderChunk.tonemapping_pars_fragment
-  if (!tm.includes(stub)) throw new Error('sky.js: three tonemapping chunk changed; CustomToneMapping stub missing')
-  THREE.ShaderChunk.tonemapping_pars_fragment = tm.replace(stub,
-    GRADE_GLSL + 'vec3 CustomToneMapping( vec3 color ) { return skyGrade( toneMappingExposure * color ); }')
-}
-
 // The background: a camera-centred box pinned to the far plane, shading only the pixels nothing else covers.
 const SKY_VERT = /* glsl */`
 varying vec3 vDir;
@@ -548,6 +559,9 @@ const rods = (e) => smooth(-3.5, -6.5, Math.log10(Math.max(e, 1e-12)))
 // sunlight (albedo 0.12 / π) — the latter sets how faint the moon is by day.
 const DISC_L = 9, MOON_SURFACE_L = 0.04
 const WB_STRENGTH = 0.5
+// The land's camera exposure (renderer.toneMappingExposure, into ACES): the legacy's day and night values, which
+// the headlights, the campfire and every emissive were tuned against.
+const LAND_EXPOSURE_DAY = 0.5, LAND_EXPOSURE_NIGHT = 0.36
 // Chromatic adaptation: the eye also white-balances to the light it is standing in. This share of the current
 // illuminant's cast (against noon's) is taken out, so a twilight that is honestly lilac reads blue-grey, and a
 // golden hour keeps half its gold.
@@ -571,6 +585,7 @@ export class SkySystem {
    *   density stays main.js's; its colour is only the fallback for scenes without the sky fog.
    */
   constructor ({ scene, renderer, sun, sunFar, farSplit = 0, ambient }) {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping   // the land's curve (TWO CURVES); the sky grades itself
     this.scene = scene
     this.renderer = renderer
     this.sun = sun
@@ -590,7 +605,6 @@ export class SkySystem {
     this._controllers = []
     this._lastTime = (typeof performance !== 'undefined') ? performance.now() : 0
 
-    renderer.toneMapping = THREE.CustomToneMapping
     // The world scene renders with the sky fog; every other scene (the menu stage) keeps three's flat fog.
     scene.onBeforeRender = () => { U.skyGlare.value.w = 1 }
     scene.onAfterRender = () => { U.skyGlare.value.w = 0 }
@@ -652,19 +666,20 @@ export class SkySystem {
    *  Displayed brightness B against noon's runs, in decades x = log10(E / E_noon), as
    *  log10 B = adapt·x − nightDark·x²: the eye compensates most of a sunset (x −2 → B 0.43) but runs out of
    *  range in the dark — a moonless night (x −7.4) reads 0.4 % of noon, a full moon (x −5.7) 2.5 %. */
-  _adaptScale (eH) {
+  _adaptScale (eH, nightDark = SKY_PARAMS.nightDark) {
     const r = Math.max(eH, 1e-12) / this._noonEA, x = Math.min(0, Math.log10(r))
-    return Math.PI / this._noonEA * Math.pow(10, SKY_PARAMS.adapt * x - SKY_PARAMS.nightDark * x * x) / r
+    return Math.PI / this._noonEA * Math.pow(10, SKY_PARAMS.adapt * x - nightDark * x * x) / r
   }
 
   _apply (st) {
-    const p = SKY_PARAMS, S = this._adaptScale(st.eA), X = S * p.exposure
+    // S: the eye (sun units → render units); X: the sky's pre-exposed scale; SL: the land's light, into ACES.
+    const p = SKY_PARAMS, S = this._adaptScale(st.eEye), X = S * p.exposure
+    const SL = this._adaptScale(st.eEye, p.landNight) * p.landGain
     // White balance, rod vision and the saturation trim: one colour treatment for every natural radiance.
     // `night` is rods() of the light's own brightness.
     const ill = illuminant(st), il = lum(...ill)
     const wb = this._wb.map((w, c) => w * Math.pow(il / Math.max(ill[c], 1e-30) / this._noonCast[c], WB_ADAPT))
-    const treat = (r, g, b, out, night) => {
-      const sat = p.saturation * (1 - 0.85 * night)
+    const treat = (r, g, b, out, night, sat = p.saturation * (1 - 0.85 * night)) => {
       r *= wb[0]; g *= wb[1]; b *= wb[2]
       const l = lum(r, g, b)
       r += (l * NIGHT_TINT[0] - r) * night * 0.9; g += (l * NIGHT_TINT[1] - g) * night * 0.9; b += (l * NIGHT_TINT[2] - b) * night * 0.9
@@ -703,7 +718,12 @@ export class SkySystem {
     const sunKey = lum(...st.eSun) * Math.max(0, st.sunDir.y) >= lum(...st.eMoon) * Math.max(0, st.moonDir.y)
     const e = sunKey ? st.eSun : st.eMoon, kd = sunKey ? st.sunDir : st.moonDir
     const night = rods(st.eA)   // what a surface lit by this light looks like to the adapted eye
-    const key = treat(e[0] * S, e[1] * S, e[2] * S, [0, 0, 0], night)
+    // The land's own white balance, warmer than the sky's (the legacy's sunlit ground read warm, b/r 0.92 against
+    // the rebuild's 1.15), handed over to the rods' blue-grey as the night comes in.
+    // Rod vision on the land keeps its blue (nightBlue) rather than draining to the sky's grey: the legacy's moonlit
+    // blue night, which the owner wants back.
+    const wt = p.warmth * (1 - night), tint = [1, 1 - 0.25 * wt, 1 - wt], ls = p.saturation * (1 - night) + p.nightBlue * night
+    const key = treat(e[0] * SL * tint[0], e[1] * SL * tint[1], e[2] * SL * tint[2], [0, 0, 0], night, ls)
     const kmax = Math.max(key[0], key[1], key[2], 1e-9)
     // Shadows from a body at the horizon smear the whole map; hold the direction ≥ 3° up (its light is ~0 there).
     this.sunDirection.copy(kd)
@@ -715,13 +735,14 @@ export class SkySystem {
     this.sun.intensity = kmax * (1 - this.farSplit)
     if (this.sunFar) { this.sunFar.color.copy(this.sun.color); this.sunFar.intensity = kmax * this.farSplit }
     // The fill: the sky's own irradiance (× ambient), and the ground lit by everything above it.
-    const sky = treat(st.eSky[0] * p.skyGain * S, st.eSky[1] * p.skyGain * S, st.eSky[2] * p.skyGain * S, [0, 0, 0], night)
+    const sky = treat(st.eSky[0] * p.skyGain * SL * tint[0], st.eSky[1] * p.skyGain * SL * tint[1], st.eSky[2] * p.skyGain * SL * tint[2], [0, 0, 0], night, ls)
     const down = Math.max(0, kd.y)
-    const gnd = [0, 1, 2].map(c => GROUND_ALBEDO[c] * (key[c] * down + sky[c]))
+    const gnd = [0, 1, 2].map(c => GROUND_ALBEDO[c] * p.bounce * (key[c] * down + sky[c]))
     this.ambient.color.setRGB(sky[0] * p.ambient, sky[1] * p.ambient, sky[2] * p.ambient, THREE.LinearSRGBColorSpace)
     this.ambient.groundColor.setRGB(gnd[0], gnd[1], gnd[2], THREE.LinearSRGBColorSpace)
     this.ambient.intensity = 1
-    this.renderer.toneMappingExposure = p.exposure
+    // The land's camera: the legacy's exposure, 0.5 by day to 0.36 at night, on the lamps' own clock (nightFactor).
+    this.renderer.toneMappingExposure = LAND_EXPOSURE_DAY + (LAND_EXPOSURE_NIGHT - LAND_EXPOSURE_DAY) * this.nightFactor()
 
     // The moon disc: its surface radiance through the air and the eye, against the brightness it is drawn at.
     const tm = st.tMoon, tmax = Math.max(tm[0], tm[1], tm[2], 1e-6)
@@ -761,7 +782,7 @@ export class SkySystem {
   /** Linear RGB multiplier for the unlit particles (dust/smoke/spray): their irradiance against noon's. */
   particleLight (out) {
     if (!this._particleNorm) {
-      const n = newState(), st = simulate(SOLAR_NOON_H, 0, n), S = this._adaptScale(st.eA)
+      const n = newState(), st = simulate(SOLAR_NOON_H, 0, n), S = this._adaptScale(st.eEye) * SKY_PARAMS.landGain
       this._particleNorm = 1 / (0.5 * lum(...st.eSun) * S + 0.5 * SKY_PARAMS.skyGain * lum(...st.eSky) * S * SKY_PARAMS.ambient)
     }
     const k = this.sun.intensity + (this.sunFar ? this.sunFar.intensity : 0), a = this.ambient
