@@ -52,11 +52,28 @@ PHYSICS by construction. Degree 2 is left alone: a bore ending at a degree-2 nod
 node is clear (A, B and C in to the node, the A ↔ B chord): 0 lining hits, against 6. Engine rays along C's lane are
 clear 25 m on the terrain and static layers. 0 drawn skin points inside a tube within 30 m (main 165).
 
-**Census:** the pass fires on 1 leg in 13 seeds (R 1300 round the origin: this one; 0 on 2944481254, 2190890674,
-3488188357, 1854438471, 511595902, 3636674384, 1841917782, 272419146, 6, 11, 7, 3).
+**Census — two instances.**
+- **This site:** seed 4076238903 (pond no-go world, R 1300 round the origin). The pass fires on 1 leg in 13 seeds:
+  this one, and 0 on 2944481254, 2190890674, 3488188357, 1854438471, 511595902, 3636674384, 1841917782, 272419146,
+  6, 11, 7 and 3.
+- **Corpus seed 18:** found by `bore-junction-clearance`'s own world (string seed, r 1400, no pond no-go), node
+  `1998416,642902,-1`, the same shape. The trunk `g:3,0,1:…` (out 142°) and `…:2,1,1` (out −37°) both bore from the
+  node. The side road `g:2,0,2:…` (out −105°) left it open; it is now bored [0, 37.0] to a real mouth that stands in
+  no pad. Lane rays: main 6 of 6 hit A's tube 9.6–13.6 m in; fix 0.
 
 **Gate:** `portal-clear` (BUG-138's, the same class: something solid in a bore at a T) adds seed 4076238903 and an
 open-lane check. At every node of degree ≥ 3 with a bored leg, a leg's lane (lat −4/0/+4, 1 m up, 1–30 m out)
 where it is not in its own bore must not be inside a sibling's driving envelope. The perpendicular foot must lie
 inside the sibling's span, so a lane running up to a portal is not "in" it. With the pass off: 1 fail (this lane,
 1 m out). With the fix: 0 of 60 legs, and 41 rings (C's new one included) with none inside another bore.
+
+**`bore-junction-clearance` (BUG-67's ceiling census) made shared-bore aware** (agreed with the orchestrator and
+Spare). Its header still said "there is no machinery to MERGE two bores", so on seed 18 the fix's new sibling pairs
+read 1 → 3 overlaps and 19 → 20 portals in a pad. Now:
+- (1) counts a pair only when `siblingTubeTest` does not list each as the other's sibling. Its own node index is
+  read, so a node-sharing pair the merge does not take still counts.
+- (2) and (3) count the node-nearest span end only when `isMouth` says it is a portal.
+- Ceilings drop to the measured values: MAX_OVERLAP 1 → 0, MAX_IN_PAD 19 → 17, MAX_AT_NODE 12 → 7. These are
+  identical on main f5a6c0df and on the fix.
+- On main + Spare's BUG-146 the in-pad count is 18: its seed-18 portal `g:-1,0,1:0,0,2` is a real mouth whose pad
+  reach grew. Whoever lands second sets MAX_IN_PAD = 18.
