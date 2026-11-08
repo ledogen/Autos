@@ -98,24 +98,28 @@ export function nightWeight (hour) { return 1 - smooth(DARK_EL, 0, sunAt(hour).e
 
 // ── Tunables (the GUI binds these) ───────────────────────────────────────────────────────────────────
 export const SKY_PARAMS = {
-  haze: 1.0,          // aerosol (Mie) density × Earth's standard. Mornings are clear air; see hazeAt()
-  hazeAfternoon: 0.5, // extra aerosol the afternoon's convection lifts by 17:00 (fraction of `haze`)
-  multiScatter: 2.0,  // gain on the second scattering order, standing in for the orders beyond it
-  skyGain: 2.2,       // the sky's brightness against the sun (sky and fill alike): what the model still misses
+  aod: 0.02,          // aerosol optical depth above the eye at 550 nm: 0.05 is clean high-desert air, 0.3 smoggy
+  hazeAfternoon: 0.5, // extra aerosol the afternoon's convection lifts by 17:00 (fraction of `aod`)
+  multiScatter: 1.0,  // gain on the orders ≥ 2 (1 = Hillaire's estimate as computed)
+  skyGain: 2.5,       // the sky and its fill against the sun. The world's flat albedos are bright (stylised), so the
+                      // sky is lifted to sit with them; 1 is the physical ratio
   ambient: 1.0,       // × the sky's own irradiance on the hemisphere fill
   saturation: 0.82,   // of the natural light and sky (albedo colour is untouched — man-made stays saturated)
   exposure: 1.25,     // renderer.toneMappingExposure, and the sky's pre-exposure (one number for both)
-  adapt: 0.24,        // eye adaptation γ: displayed brightness ∝ illuminance^γ. Lower = brighter nights
+  adapt: 0.16,        // eye adaptation γ near daylight: displayed brightness ∝ illuminance^γ. Lower = brighter dusk
+  nightDark: 0.021,   // how much faster the eye runs out of adaptation in the dark (log-log curvature). Higher = darker nights
   glare: 6e-4,        // strength of the sharp forward-scatter lobe round the sun (the glare, not the disc)
   glareG: 0.93,       // its sharpness (Henyey-Greenstein g)
   sunSize: 1.2,       // drawn sun disc RADIUS, degrees (the real one is 0.27°; the moon is drawn at 2.75°)
   stars: 1.0,         // star brightness
 }
 
+/** Aerosol (as a multiple of the profile's sea-level density, BETA_M) for an optical depth `aod` above the eye. */
+const aerosol = (aod) => aod / (MIE_EXT * H_M * Math.exp(-OBS_H / H_M))
 /** Aerosol through the day: clear at dawn, hazier after the afternoon's convection, settling at night. */
 function hazeAt (hour) {
   const p = SKY_PARAMS
-  return p.haze * (1 + p.hazeAfternoon * smooth(10, 17, hour) * (1 - smooth(21, 24, hour)))
+  return aerosol(p.aod) * (1 + p.hazeAfternoon * smooth(10, 17, hour) * (1 - smooth(21, 24, hour)))
 }
 
 // ── The atmosphere: single scattering in a spherical shell (km) ───────────────────────────────────────
@@ -162,11 +166,15 @@ function ozoneCol (h, mu) {
 }
 
 const LUT_W = 64, LUT_H = 32, STEPS = 16   // azimuth × elevation (row j at sin(el) = ((j + .5)/H)²) × ray samples
+// The lowest sky anyone on the ground sees. The geometric 0° row looks through ~300 km of air and is the most
+// extreme colour in the sky (salmon at dawn, beige at dusk); the fog below the horizon is that row, so it
+// showed as a slab with a hard line a degree under the real sky. Rows below 2° repeat the 2° sky instead.
+const HORIZON_Y = Math.sin(2 * D2R)
 /** Per sky row: the view ray's samples (they depend on elevation only, so they are built once). */
 const ROWS = (() => {
   const r0 = RP + OBS_H, rows = []
   for (let j = 0; j < LUT_H; j++) {
-    const y = ((j + 0.5) / LUT_H) ** 2, ce = Math.sqrt(1 - y * y)
+    const y = Math.max(((j + 0.5) / LUT_H) ** 2, HORIZON_Y), ce = Math.sqrt(1 - y * y)
     const tMax = -r0 * y + Math.sqrt(r0 * r0 * y * y - r0 * r0 + RTOP * RTOP)
     const row = { y, ce, h: [], ds: [], rR: [], rM: [], cR: [], cM: [], vR: [], vM: [], vO: [], a: [], b: [] }
     let accR = 0, accM = 0, accO = 0
@@ -192,15 +200,25 @@ const ROWS = (() => {
  */
 function scatterLight (out, dir, E, haze) {
   const sy = dir.y, sh = Math.hypot(dir.x, dir.z), saz = Math.atan2(dir.x, -dir.z)
-  const bM = MIE_EXT * haze, g = MIE_G, g2 = g * g
+  const bM = MIE_EXT * haze, g = MIE_G, g2 = g * g, ms = SKY_PARAMS.multiScatter, psi = [0, 0, 0]
+  const tv = new Float32Array(STEPS * 3)
   for (let j = 0; j < LUT_H; j++) {
     const R = ROWS[j]
+    for (let n = 0; n < STEPS; n++) {   // the view ray's own transmittance, eye → sample
+      for (let k = 0; k < 3; k++) tv[n * 3 + k] = Math.exp(-(BETA_R[k] * R.vR[n] + bM * R.vM[n] + BETA_O[k] * R.vO[n]))
+    }
     for (let i = 0; i < LUT_W; i++) {
       const hs = sh * Math.cos(2 * Math.PI * (i + 0.5) / LUT_W - saz)   // the light's horizontal share along this azimuth
       const mu = R.ce * hs + R.y * sy                                    // cos(view, light)
-      let sR0 = 0, sR1 = 0, sR2 = 0, sM0 = 0, sM1 = 0, sM2 = 0
+      let sR0 = 0, sR1 = 0, sR2 = 0, sM0 = 0, sM1 = 0, sM2 = 0, m0 = 0, m1 = 0, m2 = 0
       for (let n = 0; n < STEPS; n++) {
         const mus = R.a[n] * hs + R.b[n] * sy, h = R.h[n]
+        // Orders ≥ 2 (isotropic, so no phase function): σs · Ψ, through the view ray's air.
+        psiAt(h, mus, psi)
+        const wr = R.rR[n] * R.ds[n], wm = R.rM[n] * R.ds[n] * BETA_M * haze
+        m0 += (BETA_R[0] * wr + wm) * psi[0] * tv[n * 3]
+        m1 += (BETA_R[1] * wr + wm) * psi[1] * tv[n * 3 + 1]
+        m2 += (BETA_R[2] * wr + wm) * psi[2] * tv[n * 3 + 2]
         if (mus < 0 && (1 - mus * mus) * (RP + h) ** 2 < RP * RP) continue   // the planet's shadow
         const cR = R.vR[n] + chapman(h, H_R, R.rR[n], R.cR[n], mus)
         const cM = R.vM[n] + chapman(h, H_M, R.rM[n], R.cM[n], mus)
@@ -208,44 +226,95 @@ function scatterLight (out, dir, E, haze) {
         const t0 = Math.exp(-(BETA_R[0] * cR + tm + BETA_O[0] * cO))
         const t1 = Math.exp(-(BETA_R[1] * cR + tm + BETA_O[1] * cO))
         const t2 = Math.exp(-(BETA_R[2] * cR + tm + BETA_O[2] * cO))
-        const wr = R.rR[n] * R.ds[n], wm = R.rM[n] * R.ds[n]
         sR0 += wr * t0; sR1 += wr * t1; sR2 += wr * t2
-        sM0 += wm * t0; sM1 += wm * t1; sM2 += wm * t2
+        const wM = R.rM[n] * R.ds[n]
+        sM0 += wM * t0; sM1 += wM * t1; sM2 += wM * t2
       }
       const pR = 3 / (16 * Math.PI) * (1 + mu * mu)
       const pM = 3 / (8 * Math.PI) * (1 - g2) * (1 + mu * mu) / ((2 + g2) * Math.pow(1 + g2 - 2 * g * mu, 1.5))
       const k = (j * LUT_W + i) * 3, bm = BETA_M * haze * pM
-      out[k] += E[0] * (BETA_R[0] * sR0 * pR + bm * sM0)
-      out[k + 1] += E[1] * (BETA_R[1] * sR1 * pR + bm * sM1)
-      out[k + 2] += E[2] * (BETA_R[2] * sR2 * pR + bm * sM2)
+      out[k] += E[0] * (BETA_R[0] * sR0 * pR + bm * sM0 + ms * m0)
+      out[k + 1] += E[1] * (BETA_R[1] * sR1 * pR + bm * sM1 + ms * m1)
+      out[k + 2] += E[2] * (BETA_R[2] * sR2 * pR + bm * sM2 + ms * m2)
     }
   }
 }
 
 /**
- * Second and higher orders of scattering, which single scattering leaves out: the light that fills the
- * Earth's shadow after sunset, keeps the twilight zenith blue rather than black, and lifts the noon sky.
- * Each view ray in-scatters an isotropic light field equal to the sky and the ground's own (their fluence
- * ≈ 2·(irradiance) each, so /(2π) after the 1/(4π) phase), × `gain` for the orders beyond the second.
+ * Second and higher orders of scattering — what keeps the twilight zenith blue instead of black, fills the
+ * Earth's shadow, and lifts the noon sky. Hillaire 2020 ("A Scalable and Production Ready Sky and Atmosphere
+ * Rendering Technique", §5.5): treat the light that has scattered at least once as isotropic. Then a point at
+ * height h, with the sun at local zenith cosine mus, sees a second-order radiance L2 from the sunlit air (and
+ * lit ground) all round it, and each further order is the previous one × f_ms, the fraction of isotropic light
+ * the surrounding air scatters back. Summing the geometric series: Ψ = L2 / (1 − f_ms), per colour channel.
+ * The table depends on the air only (sun irradiance 1), so it is built once and again when the aerosol knob
+ * moves (the afternoon's extra haze is left out of it). A view ray then in-scatters σs·Ψ at every sample.
+ * Size: MS_H heights × MS_MU sun angles × MS_DIRS directions × MS_STEPS samples ≈ 0.2 M steps, ~20 ms.
  */
-function multiScatter (out, eSky, eGround, haze, gain) {
-  const bM = MIE_EXT * haze
-  for (let j = 0; j < LUT_H; j++) {
-    const R = ROWS[j]
-    let r0 = 0, r1 = 0, r2 = 0, m0 = 0, m1 = 0, m2 = 0
-    for (let n = 0; n < STEPS; n++) {
-      const tm = bM * R.vM[n], wr = R.rR[n] * R.ds[n], wm = R.rM[n] * R.ds[n]
-      const t0 = Math.exp(-(BETA_R[0] * R.vR[n] + tm + BETA_O[0] * R.vO[n]))
-      const t1 = Math.exp(-(BETA_R[1] * R.vR[n] + tm + BETA_O[1] * R.vO[n]))
-      const t2 = Math.exp(-(BETA_R[2] * R.vR[n] + tm + BETA_O[2] * R.vO[n]))
-      r0 += wr * t0; r1 += wr * t1; r2 += wr * t2; m0 += wm * t0; m1 += wm * t1; m2 += wm * t2
+const MS_H = 12, MS_MU = 32, MS_DIRS = 32, MS_STEPS = 16, MS_TOP = 60, MS_MU0 = -0.4
+const MS_DIR = Array.from({ length: MS_DIRS }, (_, k) => {   // a Fibonacci sphere: even directions, y up
+  const y = 1 - 2 * (k + 0.5) / MS_DIRS, r = Math.sqrt(1 - y * y), phi = k * 2.399963
+  return [r * Math.cos(phi), y, r * Math.sin(phi)]
+})
+/** Transmittance from a point at radius r (km from the centre) to the light at local zenith cosine mus, rgb → out;
+ *  0 inside the planet's shadow. */
+function sunT (r, mus, haze, out) {
+  if (mus < 0 && (1 - mus * mus) * r * r < RP * RP) { out[0] = out[1] = out[2] = 0; return out }
+  const h = Math.max(0, r - RP), cR = chapman(h, H_R, Math.exp(-h / H_R), Math.sqrt(Math.PI * r / H_R / 2), mus)
+  const cM = chapman(h, H_M, Math.exp(-h / H_M), Math.sqrt(Math.PI * r / H_M / 2), mus), cO = ozoneCol(h, mus)
+  for (let k = 0; k < 3; k++) out[k] = Math.exp(-(BETA_R[k] * cR + MIE_EXT * haze * cM + BETA_O[k] * cO))
+  return out
+}
+function buildMultiScatter (haze) {
+  const psi = new Float32Array(MS_H * MS_MU * 3), ts = [0, 0, 0], bM = MIE_EXT * haze, sM = BETA_M * haze
+  for (let a = 0; a < MS_H; a++) {
+    const r0 = RP + MS_TOP * (a / (MS_H - 1)) ** 2
+    for (let b = 0; b < MS_MU; b++) {
+      const mus = MS_MU0 + (1 - MS_MU0) * b / (MS_MU - 1), sx = Math.sqrt(1 - mus * mus)   // the sun in the x–y plane
+      const L = [0, 0, 0], F = [0, 0, 0]
+      for (const [dx, dy, dz] of MS_DIR) {
+        const bq = r0 * dy, dG = bq * bq - r0 * r0 + RP * RP
+        const tG = dy < 0 && dG > 0 ? -bq - Math.sqrt(dG) : -1
+        const tMax = tG > 0 ? tG : -bq + Math.sqrt(bq * bq - r0 * r0 + RTOP * RTOP), dt = tMax / MS_STEPS
+        const od = [0, 0, 0]
+        for (let n = 0; n < MS_STEPS; n++) {
+          const t = (n + 0.5) * dt, px = t * dx, py = r0 + t * dy, pz = t * dz
+          const r = Math.sqrt(px * px + py * py + pz * pz), h = Math.max(0, r - RP)
+          const rR = Math.exp(-h / H_R), rM = Math.exp(-h / H_M), rO = ozone(h)
+          sunT(r, (px * sx + py * mus) / r, haze, ts)
+          for (let k = 0; k < 3; k++) {
+            const ext = BETA_R[k] * rR + bM * rM + BETA_O[k] * rO, sc = BETA_R[k] * rR + sM * rM
+            const tv = Math.exp(-(od[k] + ext * dt / 2))
+            F[k] += tv * sc * dt
+            L[k] += tv * sc * ts[k] * dt / (4 * Math.PI)
+            od[k] += ext * dt
+          }
+        }
+        if (tG > 0) {   // the lit ground, Lambertian
+          const gx = tG * dx, gy = r0 + tG * dy, mg = (gx * sx + gy * mus) / RP
+          if (mg > 0) {
+            sunT(RP, mg, haze, ts)
+            for (let k = 0; k < 3; k++) L[k] += Math.exp(-od[k]) * ts[k] * GROUND_ALBEDO[k] / Math.PI * mg
+          }
+        }
+      }
+      const o = (a * MS_MU + b) * 3
+      for (let k = 0; k < 3; k++) psi[o + k] = (L[k] / MS_DIRS) / (1 - F[k] / MS_DIRS)
     }
-    const f = gain / (2 * Math.PI), bm = BETA_M * haze
-    const a0 = f * (eSky[0] + eGround[0]) * (BETA_R[0] * r0 + bm * m0)
-    const a1 = f * (eSky[1] + eGround[1]) * (BETA_R[1] * r1 + bm * m1)
-    const a2 = f * (eSky[2] + eGround[2]) * (BETA_R[2] * r2 + bm * m2)
-    for (let i = 0; i < LUT_W; i++) { const k = (j * LUT_W + i) * 3; out[k] += a0; out[k + 1] += a1; out[k + 2] += a2 }
   }
+  return psi
+}
+let PSI = null, PSI_AOD = -1
+/** Ψ at height h (km) and sun cosine mus, bilinear, rgb → out. */
+function psiAt (h, mus, out) {
+  const fa = Math.min(Math.sqrt(Math.max(h, 0) / MS_TOP), 1) * (MS_H - 1)
+  const fb = Math.min(Math.max((mus - MS_MU0) / (1 - MS_MU0), 0), 1) * (MS_MU - 1)
+  const a0 = Math.min(Math.floor(fa), MS_H - 2), b0 = Math.min(Math.floor(fb), MS_MU - 2), wa = fa - a0, wb = fb - b0
+  const i00 = (a0 * MS_MU + b0) * 3, i01 = i00 + 3, i10 = i00 + MS_MU * 3, i11 = i10 + 3
+  for (let k = 0; k < 3; k++) {
+    out[k] = (PSI[i00 + k] * (1 - wb) + PSI[i01 + k] * wb) * (1 - wa) + (PSI[i10 + k] * (1 - wb) + PSI[i11 + k] * wb) * wa
+  }
+  return out
 }
 
 /** Sky irradiance on a horizontal surface, ∫ L cos θ dω = Σ L · y · Δy · Δaz (y = sin el), rgb into `out`. */
@@ -284,6 +353,7 @@ function moonPhaseLaw (cycle) {
  */
 function simulate (hour, cycle, st) {
   const haze = hazeAt(hour)
+  if (PSI_AOD !== SKY_PARAMS.aod) { PSI = buildMultiScatter(aerosol(SKY_PARAMS.aod)); PSI_AOD = SKY_PARAMS.aod }
   st.sun = sunAt(hour); st.moon = moonAt(hour, cycle)
   dirOf(st.sun, st.sunDir); dirOf(st.moon, st.moonDir)
   const L = st.lut.fill(0)
@@ -308,11 +378,8 @@ function simulate (hour, cycle, st) {
   transmittance(st.moon.el, haze, st.tMoon)
   const moonVis = clamp01((st.moon.el + 0.26 * D2R) / (0.52 * D2R)) * moonLit
   for (let k = 0; k < 3; k++) st.eMoon[k] = st.tMoon[k] * moonVis * MOON_RGB[k]
-  // Higher orders, lit by the single-scattered sky plus the ground's bounce of everything falling on it.
-  const e1 = skyIrradiance(L, st.eSky), sh = Math.max(0, st.sunDir.y), mh = Math.max(0, st.moonDir.y)
-  const gnd = [0, 1, 2].map(k => GROUND_ALBEDO[k] * (e1[k] + st.eSun[k] * sh + st.eMoon[k] * mh))
-  multiScatter(L, e1, gnd, haze, SKY_PARAMS.multiScatter)
   skyIrradiance(L, st.eSky)
+  const sh = Math.max(0, st.sunDir.y), mh = Math.max(0, st.moonDir.y)
   // The eye adapts to what it sees, not just to the ground: half the light falling on a sun-facing wall counts.
   // (Horizontal illuminance alone made a 4°-high sun light the walls facing it at 4× noon.)
   const g = SKY_PARAMS.skyGain
@@ -370,7 +437,7 @@ LUT_TEX.generateMipmaps = false
 const U = {
   skyLut: { value: shared(LUT_TEX) },
   skySun: { value: shared(new THREE.Vector4(0, 1, 0, 0.93)) },
-  skyGlare: { value: shared(new THREE.Vector4()) },
+  skyGlare: { value: shared(new THREE.Vector4(0, 0, 0, 0)) },   // w starts OFF (Vector4 defaults w to 1)
   skyFog: { value: shared(new THREE.Vector4(1e8, 1e9, 0, 0)) },
 }
 for (const lib of Object.values(THREE.ShaderLib)) if (lib.uniforms.fogDensity) Object.assign(lib.uniforms, U)
@@ -468,13 +535,25 @@ void main () {
 // ── Day/night cycle state shared with the debug panel and main.js ─────────────────────────────────────
 export const SKY_CYCLE = { playing: false, hour: 12, dayLengthSec: 120 }
 
-// Rod vision: below ~1 lux colour drains toward a cool grey (the Purkinje shift). The weight runs over
-// illuminance in sun units, from deep twilight (10⁻⁴ ≈ 13 lux) to moonlight (10⁻⁶·⁵).
+// Rod vision (the Purkinje shift): as light falls through the mesopic range, ~5 cd/m² down to ~0.01, colour
+// drains toward a cool grey. It goes by each colour's OWN brightness, as an illuminance-equivalent π·L in sun
+// units (10⁻³·⁵ ≈ 40 lux … 10⁻⁶·⁵ ≈ 0.04 lux): the twilight glow stays orange while the zenith beside it and
+// the moonlit ground turn blue-grey.
 const NIGHT_TINT = [0.80, 0.98, 1.45]
+const rods = (e) => smooth(-3.5, -6.5, Math.log10(Math.max(e, 1e-12)))
 // The sun disc's radiance per unit transmitted sunlight, and the moon's surface radiance per unit
 // sunlight (albedo 0.12 / π) — the latter sets how faint the moon is by day.
 const DISC_L = 9, MOON_SURFACE_L = 0.04
-const WB_STRENGTH = 0.8
+const WB_STRENGTH = 0.5
+// Chromatic adaptation: the eye also white-balances to the light it is standing in. This share of the current
+// illuminant's cast (against noon's) is taken out, so a twilight that is honestly lilac reads blue-grey, and a
+// golden hour keeps half its gold.
+const WB_ADAPT = 0.5
+/** The light falling on a horizontal surface, rgb, sun units: what the eye adapts its colour to. */
+const illuminant = (st) => {
+  const sh = Math.max(0, st.sunDir.y), mh = Math.max(0, st.moonDir.y), g = SKY_PARAMS.skyGain
+  return [0, 1, 2].map(c => st.eSun[c] * sh + st.eMoon[c] * mh + g * st.eSky[c])
+}
 
 const _c = new THREE.Color()
 const _v = new THREE.Vector3()
@@ -505,7 +584,6 @@ export class SkySystem {
     this._particleNorm = 0
     this._moonOpacity = 0
     this._moonTint = new THREE.Color()
-    this._night = 0
     this._controllers = []
     this._lastTime = (typeof performance !== 'undefined') ? performance.now() : 0
 
@@ -562,24 +640,28 @@ export class SkySystem {
     this._noonEA = st.eA
     const l = lum(...st.tSun)
     this._wb = st.tSun.map(t => Math.pow(l / t, WB_STRENGTH))
+    const ill = illuminant(st), il = lum(...ill)
+    this._noonCast = ill.map(c => il / c)
     this._particleNorm = 0
   }
 
-  /** Eye adaptation: sun units → render units. At noon a horizontal white surface reads π (radiance 1);
-   *  elsewhere displayed brightness goes as illuminance^adapt, so 10⁷ of range reads as ~50×. */
+  /** Eye adaptation: sun units → render units. At noon a horizontal white surface reads π (radiance 1).
+   *  Displayed brightness B against noon's runs, in decades x = log10(E / E_noon), as
+   *  log10 B = adapt·x − nightDark·x²: the eye compensates most of a sunset (x −2 → B 0.43) but runs out of
+   *  range in the dark — a moonless night (x −7.4) reads 0.4 % of noon, a full moon (x −5.7) 2.5 %. */
   _adaptScale (eH) {
-    const r = Math.max(eH, 1e-12) / this._noonEA
-    return Math.PI / this._noonEA * Math.pow(r, SKY_PARAMS.adapt - 1)
+    const r = Math.max(eH, 1e-12) / this._noonEA, x = Math.min(0, Math.log10(r))
+    return Math.PI / this._noonEA * Math.pow(10, SKY_PARAMS.adapt * x - SKY_PARAMS.nightDark * x * x) / r
   }
 
   _apply (st) {
     const p = SKY_PARAMS, S = this._adaptScale(st.eA), X = S * p.exposure
-    // Rod vision and the saturation trim: one colour treatment for every natural radiance.
-    const night = smooth(-4, -6.5, Math.log10(Math.max(st.eA, 1e-12)))
-    this._night = night
-    const sat = p.saturation * (1 - 0.85 * night)
-    const wb = this._wb
-    const treat = (r, g, b, out, o = 0) => {
+    // White balance, rod vision and the saturation trim: one colour treatment for every natural radiance.
+    // `night` is rods() of the light's own brightness.
+    const ill = illuminant(st), il = lum(...ill)
+    const wb = this._wb.map((w, c) => w * Math.pow(il / Math.max(ill[c], 1e-30) / this._noonCast[c], WB_ADAPT))
+    const treat = (r, g, b, out, night, o = 0) => {
+      const sat = p.saturation * (1 - 0.85 * night)
       r *= wb[0]; g *= wb[1]; b *= wb[2]
       const l = lum(r, g, b)
       r += (l * NIGHT_TINT[0] - r) * night * 0.9; g += (l * NIGHT_TINT[1] - g) * night * 0.9; b += (l * NIGHT_TINT[2] - b) * night * 0.9
@@ -588,10 +670,11 @@ export class SkySystem {
       return out
     }
     // The LUT: radiance × multiple-scatter gain × adaptation × exposure, as half floats.
-    const L = st.lut, t3 = [0, 0, 0], k = p.skyGain * X
+    const L = st.lut, t3 = [0, 0, 0]
     let hr = 0, hg = 0, hb = 0
     for (let i = 0, n = LUT_W * LUT_H; i < n; i++) {
-      treat(L[i * 3] * k, L[i * 3 + 1] * k, L[i * 3 + 2] * k, t3)
+      const r = L[i * 3] * p.skyGain, g = L[i * 3 + 1] * p.skyGain, b = L[i * 3 + 2] * p.skyGain
+      treat(r * X, g * X, b * X, t3, rods(Math.PI * lum(r, g, b)))
       LUT_DATA[i * 4] = THREE.DataUtils.toHalfFloat(t3[0])
       LUT_DATA[i * 4 + 1] = THREE.DataUtils.toHalfFloat(t3[1])
       LUT_DATA[i * 4 + 2] = THREE.DataUtils.toHalfFloat(t3[2])
@@ -604,7 +687,7 @@ export class SkySystem {
 
     this.sunDir.copy(st.sunDir); this.moonDir.copy(st.moonDir)
     // Sun disc + glare, through the same air and the same eye.
-    const glare = treat(st.tSun[0] * X, st.tSun[1] * X, st.tSun[2] * X, [0, 0, 0])
+    const glare = treat(st.tSun[0] * X, st.tSun[1] * X, st.tSun[2] * X, [0, 0, 0], 0)
     U.skySun.value.set(st.sunDir.x, st.sunDir.y, st.sunDir.z, p.glareG)
     U.skyGlare.value.x = glare[0] * p.glare; U.skyGlare.value.y = glare[1] * p.glare; U.skyGlare.value.z = glare[2] * p.glare
     const su = this._skyMat.uniforms
@@ -616,7 +699,8 @@ export class SkySystem {
     // The key light: the sun while any of its disc is up, else the moon. Both through the air.
     const sunKey = lum(...st.eSun) * Math.max(0, st.sunDir.y) >= lum(...st.eMoon) * Math.max(0, st.moonDir.y)
     const e = sunKey ? st.eSun : st.eMoon, kd = sunKey ? st.sunDir : st.moonDir
-    const key = treat(e[0] * S, e[1] * S, e[2] * S, [0, 0, 0])
+    const night = rods(st.eA)   // what a surface lit by this light looks like to the adapted eye
+    const key = treat(e[0] * S, e[1] * S, e[2] * S, [0, 0, 0], night)
     const kmax = Math.max(key[0], key[1], key[2], 1e-9)
     // Shadows from a body at the horizon smear the whole map; hold the direction ≥ 3° up (its light is ~0 there).
     this.sunDirection.copy(kd)
@@ -628,7 +712,7 @@ export class SkySystem {
     this.sun.intensity = kmax * (1 - this.farSplit)
     if (this.sunFar) { this.sunFar.color.copy(this.sun.color); this.sunFar.intensity = kmax * this.farSplit }
     // The fill: the sky's own irradiance (× ambient), and the ground lit by everything above it.
-    const sky = treat(st.eSky[0] * p.skyGain * S, st.eSky[1] * p.skyGain * S, st.eSky[2] * p.skyGain * S, [0, 0, 0])
+    const sky = treat(st.eSky[0] * p.skyGain * S, st.eSky[1] * p.skyGain * S, st.eSky[2] * p.skyGain * S, [0, 0, 0], night)
     const down = Math.max(0, kd.y)
     const gnd = [0, 1, 2].map(c => GROUND_ALBEDO[c] * (key[c] * down + sky[c]))
     this.ambient.color.setRGB(sky[0] * p.ambient, sky[1] * p.ambient, sky[2] * p.ambient, THREE.LinearSRGBColorSpace)
@@ -702,13 +786,14 @@ export class SkySystem {
     const moon = { cycle: this._cycle }
     this._controllers.push(f.add(moon, 'cycle', 0, 1, 0.01).name('moon (0 new · .5 full)').onChange(c => this.setMoonCycle(c)))
     const a = f.addFolder('Atmosphere'); a.close()
-    a.add(SKY_PARAMS, 'haze', 0, 4, 0.05).name('aerosol').onChange(recal)
+    a.add(SKY_PARAMS, 'aod', 0, 0.5, 0.005).name('aerosol optical depth').onChange(recal)
     a.add(SKY_PARAMS, 'hazeAfternoon', 0, 2, 0.05).name('afternoon aerosol +').onChange(re)
     a.add(SKY_PARAMS, 'skyGain', 0.5, 5, 0.05).name('sky gain (multi-scatter)').onChange(recal)
     a.add(SKY_PARAMS, 'ambient', 0, 3, 0.05).name('ambient ×').onChange(re)
     a.add(SKY_PARAMS, 'saturation', 0, 1.5, 0.01).name('light saturation').onChange(re)
     a.add(SKY_PARAMS, 'exposure', 0.2, 3, 0.01).name('exposure').onChange(re)
-    a.add(SKY_PARAMS, 'adapt', 0.1, 0.6, 0.01).name('night adaptation γ').onChange(re)
+    a.add(SKY_PARAMS, 'adapt', 0.05, 0.5, 0.01).name('eye adaptation γ').onChange(re)
+    a.add(SKY_PARAMS, 'nightDark', 0, 0.06, 0.001).name('night darkness').onChange(re)
     a.add(SKY_PARAMS, 'glare', 0, 3e-3, 1e-5).name('sun glare').onChange(re)
     a.add(SKY_PARAMS, 'glareG', 0.8, 0.99, 0.001).name('glare sharpness').onChange(re)
     a.add(SKY_PARAMS, 'sunSize', 0.27, 3, 0.01).name('sun radius (deg)').onChange(re)
