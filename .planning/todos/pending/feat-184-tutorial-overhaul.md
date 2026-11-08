@@ -160,9 +160,18 @@ behind. "Today" marks a beat that exists and stays; **NEW** marks one to build.
 - **Skipping clears the whole tutorial for the run**: every lesson card and every first-use card (the rank bar, the
   pump, the shop, sleep, camp). This is already true in a run (`_tut` checks the skipped mark, and the save carries it).
   The owner's rank-bar card came from cancelling mom's job, which BUG-117 removed.
-- **NEW: Settings → "always skip the tutorial"**. When it is on, a new run starts where a skip lands: mom's door,
-  7 am, the casserole in hand, no cards. It switches **on by itself** after the first tutorial is finished or skipped,
-  and stays in this browser. Turning it off in Settings plays the tutorial on the next new run.
+- **NEW: Settings → "always skip the tutorial"**. When it is on, a new run starts where a skip lands (below), with no
+  tutorial cards. It switches **on by itself** after the first tutorial is finished or skipped, and stays in this
+  browser. Turning it off in Settings plays the tutorial on the next new run.
+- **Where a skip lands — owner, 2026-11-07 22:51Z (tracker inbox, verbatim):** "Skipping the tutorial should actually
+  land you at Larry's house with the mission complete I hate having a bunch of extra button clicks and typically I just
+  teleport there anyway." **Built (Lane A, 2026-11-08):** a skip (the M / View hold, or the setting) sleeps the night at
+  mom's as before (07:00 day 1, fed, her three lunches), then posts the casserole and **completes it on the board**
+  (`_deliverFirstJob`: take + complete, no drive, no result card; BUG-117 left it no pay and no deed, so nothing
+  settles). The truck is seated on the road in front of **Larry's** (startSeat, BUG-135). It replaced "mom's door, the
+  casserole in hand". `[DEFAULT]`s: the clock stays at 07:00 (no drive time spent); **Larry's welcome + the run intro
+  still play** — they carry the run's rules and the camp's direction for this seed, and the owner already saw them
+  after every casserole. If those cards should go too on a skip, say so: it is one line.
 
 ### Stages (each lands on its own)
 

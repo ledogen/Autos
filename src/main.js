@@ -4353,9 +4353,10 @@ function _runIntro () {
 // night — the EVENING LEG: no job, the GPS and the HUD line to her house, every other giver quiet. Any
 // sleep ends it (at hers or anywhere), as does 07:00 reached awake, and her casserole goes up at her
 // house: the first job (the board's f0 slot), taken from her pad like any giver's. EVERY new run opens
-// this way; holding M (the pad's View) skips it, from the firing to mom's door at 07:00 with the
-// casserole in hand (stage 2 — the setup page's opening toggle retired with it, owner 2026-11-06). Either
-// way, its result card put away, Larry's welcome is RUN_INTRO, and the opening is done.
+// this way; holding M (the pad's View) skips it, from the firing to Larry's at 07:00 with the casserole
+// delivered (stage 2 — the setup page's opening toggle retired with it, owner 2026-11-06; FEAT-184, owner
+// 2026-11-07: at Larry's, the job done, not at mom's with it in hand). Either way, the casserole done, Larry's
+// welcome is RUN_INTRO, and the opening is done.
 //
 // STATELESS ACROSS A RESUME: "this run opened on the firing" is the dialogue seen-key DLG.firing (the
 // save carries the seen set), and the first job's progress is the board's (the save replays it) — so
@@ -4368,7 +4369,6 @@ const OPENING_START = { day: 0, hour: 19.5 }   // FEAT-170: the firing's clock
 // aim point's height over the pad (m).
 const FIRING_CAM = { radius: 16, swing: 0.35, rate: 0.05, lift: 2 }
 let _openingRun = false   // onRegionLive → go-live: this new run plays the opening
-let _openingSeat = null   // the opening's last seat (a promise): a skip takes the casserole once the truck is on her pad
 let _firingCam = null     // { p, theta0, t } while the firing's cards are up
 let _eveningGuide         // undefined = not planned yet: the evening's way home, planned once (not saved)
 const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
@@ -4387,15 +4387,16 @@ window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePu
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
 const _mom = () => poiSystem.list().find(q => q.type === 'momsHouse') ?? null
+const _larry = () => poiSystem.list().find(q => q.type === 'larrysHouse') ?? null
 
-/** Park the truck at POI q — the joint's lay-by at a new run, in front of mom's on a skip — like _restoreRun's seat.
+/** Park the truck at POI q — the joint's lay-by at a new run, in front of Larry's on a skip — like _restoreRun's seat.
  *  Where is poi.js startSeat (BUG-135: never in a yard). */
 function _seatAt (q) {
   if (!q) return
   const prev = _spawnOverride
   _spawnOverride = { align: true, ...startSeat(q, RANGER_PARAMS.roadWidth) }
   storySystem.notifyTeleport()
-  _openingSeat = _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
+  void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
 }
 
 /** FEAT-170: the evening leg is on — the firing played, mom's casserole not posted yet. */
@@ -4537,7 +4538,7 @@ function _endEvening () {
 }
 
 // FEAT-170 stage 2: HOLD M (the pad's View — gamepad.js pad.skipHold) to skip the opening, from the firing's
-// first card to mom's door, with the prompt on screen the whole time (no hidden gesture). While the opening
+// first card to Larry's, with the prompt on screen the whole time (no hidden gesture). While the opening
 // can be skipped, M no longer opens the map on the press: a release under the hold opens it, the hold skips.
 const SKIP_HOLD_MS = 1000   // [DEFAULT] — the pad's View hold is the same second
 const SKIP_LATE_MS = 150    // a timer this late ran behind a stalled frame — see _skipFire
@@ -4586,7 +4587,9 @@ function _tutorialDone () {
   _renderSelectors()
 }
 
-/** The hold landed: where a skipped evening ends — the night slept at mom's, 07:00, the casserole in hand. */
+/** The hold landed: where a skipped tutorial ends — the night slept at mom's, 07:00, the casserole delivered, the truck at
+ *  Larry's (owner, 2026-11-07: "Skipping the tutorial should actually land you at Larry's house with the mission
+ *  complete"). His welcome follows on the HUD poll (_checkOpeningEnd), as it does after a driven casserole. */
 function _skipOpening () {
   document.getElementById('skip-hint')?.classList.remove('holding')
   if (!_eveningLeg() || _campBusy) return
@@ -4599,9 +4602,9 @@ function _skipOpening () {
   _tutQueue.length = 0
   dialogueSystem.restoreSeen([DLG.skipped])   // no first-use cards this run (_tut)
   daySystem.sleep(_eveningSleepH(), 0.5, 0)   // the night at hers (her bed's vibe, _renderCampUI): energy, the meal, 07:00
-  _endEvening()
-  _seatAt(_mom())
-  void _openingSeat?.then(_takeFirstJob)
+  _endEvening()   // posts the casserole…
+  _deliverFirstJob()   // …and it is delivered
+  _seatAt(_larry() ?? _mom())
   _renderDialogue()
 }
 
@@ -4614,8 +4617,8 @@ function _playOpening () {
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
   _openingRun = false
   _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null
-  // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (mom's door, 7 am, the casserole in hand),
-  // no cards: the firing counts as played and the skip runs at once.
+  // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (Larry's, 7 am, the casserole delivered),
+  // no tutorial cards (Larry's welcome still plays): the firing counts as played and the skip runs at once.
   if (_settings.skipTutorial) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
@@ -4630,16 +4633,12 @@ function _playOpening () {
   return true
 }
 
-/**
- * The skip's casserole IN HAND (owner 11-05: "i didnt have a job after the opening"): taken at her pad
- * once the skip has seated the truck there, staging in her start zone like any job taken there.
- */
-function _takeFirstJob () {
-  const mom = _mom()
-  const o = mom && offerBoard?.offers(mom.id, daySystem.clockH()).find(x => offerBoard.spec(x)?.first)
-  if (!o) return
-  missionSystem.enterFromPoi(mom, [o], _planOffer)
-  if (missionSystem.state === 'offer') _acceptOffer()
+/** The skip's casserole, DELIVERED: taken and completed on the board, with no drive and no result card. BUG-117's first
+ *  job pays nothing and earns no deed, so there is nothing to settle; the save replays both board calls. */
+function _deliverFirstJob () {
+  const mom = _mom(), h = daySystem.clockH()
+  const o = mom && offerBoard?.offers(mom.id, h).find(x => offerBoard.spec(x)?.first)
+  if (o && offerBoard.take(o.id, h, 0)) offerBoard.complete(o.id, h)
 }
 
 /** Per frame, before updateCamera: turn the firing's orbit (camera.js focus seam, as camp and the service screen use). */
@@ -8527,7 +8526,6 @@ function _exitScenario () {
 // _autosave writes nothing, _endRun shows this card instead of discarding the save, the seed never re-rolls, and
 // the opening, Larry's welcome and the camp tutorial stay quiet. The player's own run is untouched throughout
 // (cdp-smoke resumes it after a scenario with a crash in it).
-const _larry = () => poiSystem.list().find(q => q.type === 'larrysHouse') ?? null
 let _paperSizeIdx = 0   // the rung the scenario re-opens on: the owner's rated 4 first, then whatever was last driven
 
 function _startPaperScenario (def) {
@@ -8724,7 +8722,6 @@ const storySystem = new StorySystem({
     if (_paperScenario) daySystem.start(1, DAY_PARAMS.dayStartHour)   // FEAT-62: a working morning, no opening
     else daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
-    _openingSeat = null
     _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
