@@ -116,3 +116,27 @@ One thing for the owner, not a constraint: the steeper gores are visible.
   carve-mesh-smoothness, junction-ride, road-pad-fill, and the rest of the affected set.
 - Fingerprint: surface / carve should move only near nodes (lattice proof, as in BUG-153); props in height only.
 - A before/after shot sheet of steep gores.
+
+## Implemented (Lane B, 2026-11-08, `land/bug-155` e89dd79e, off `land/bug-153`)
+
+As proposed. `road.js`: `_ruleClamp(g, a)` mixes today's two-sided clamp with the one-sided C1 clamp (RULE_EDGE_W 0.6,
+RULE_FLOOR 1e-3). `_carveDirtY` feeds it each leg's pad-mask ramp a_i (the same smoothstep, the same cut). Nothing else
+changed.
+
+**Measured, desk probes only** (the low-power hold: no gates yet). The site is 1074499174, leg `g:745990,432424,-1:1,1,1`,
+node (746, 432):
+
+| measure | before | after |
+|---|---|---|
+| physics − own deck, 0–15 m past the mouth (`own-deck.mjs`) | −51.8 cm | 0.31 cm |
+| step across the mouth chord at lat 4.5 | −37.6 cm in 10 cm | −0.09 cm |
+| edge lip (`gore.mjs`) | 11.7–26.6 cm | 11.8–18.5 cm |
+| worst step near the gore | 19.0 cm | 19.0 cm (a cut face that was there before; not this bug) |
+
+Drawn vs physics census (`sec-census.mjs`, R 256, both fixes on, against `land/bug-153`):
+- 1074499174: junction zone 17 vertices ≥ 2 cm, worst 6.1 cm → 0, worst 0.7 cm. Every vertex on the seed is now
+  under 2 cm (worst 1.8 cm, open road).
+- 2654449719: junction-zone p99 23.4 → 2.2 cm.
+
+**Still owed when the hold lifts:** the affected gates; `ribbon-frame.mjs` with the blend class folded into its PASS;
+the fingerprint lattice proof; and the before/after shot sheet of steep gores.
