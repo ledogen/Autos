@@ -237,6 +237,9 @@
   // answer saves to the db collection `owed` (doc = the item's id: {choice, note, at}); the orchestrator reads it
   // on wake, acts, and removes the item from this array. Keep `text` to a line or two — the ticket has the rest.
   const OWED = [
+    { id: 'hunger-numbers', kind: 'decide', tk: 'FEAT-169',
+      text: 'Hunger, measured (Lane A’s soak now eats like a careful player: buys a chili dog when peckish or worse if a store is within a 2 km detour of the day’s jobs, eats before bed). 6 fresh random seeds, 6 wins (days 9–14). Bedtime word: stuffed on most nights, full or peckish on some, hungry on 4 nights of 59 (no store near that day’s jobs). Food costs $5–7.50 a day (7–11 chili dogs a run plus the free dinners and packed lunches). Wallets on day 5 are $43–112, peak around day 5–7, and fall during the requisition days, which pay nothing while food still costs; one run won with $15.68 left. The words’ thresholds are stuffed ≥ 6 h left, full ≥ 4, content ≥ 2, peckish while any is left [default]. Keep them, or change them / the price of food?',
+      options: ['keep', 'changes (note box below)'] },
     { id: 'bug67-miter-look', kind: 'decide', tk: 'BUG-67',
       text: 'Your “torn and overlapping edges on the tubes”, fixed on main (fd00b6b6, smoke 26/26). Where two tunnels share one bore, each lining triangle is now cut exactly where it crosses into the other tube, instead of kept or dropped whole. Lining standing more than 6 cm inside the other tube: 29.8 m² → 0.01 m² on one random seed, 59.9 → 0 on another; no new holes in the walls. Before/after shots at both seeds: https://claude.ai/artifact/7jCXeEf38d7wUpJzvwuECW. Its last pair also shows a wedge of terrain rock inside the bore that was there before the fix too (BUG-147, Lane B).',
       options: ['good', 'changes (note box below)'] },
