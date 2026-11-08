@@ -7,9 +7,10 @@
 // 15 m/s); BUG-123 then took the last 0.25–0.40 m edges, where the pad's and the leg's tops differ. GATING: no edge
 // over LIP_MAX. And POKE: the terrain mesh's dirt (rebuilt as terrain.js _buildCarveTable does, on the 1 m grid,
 // worst triangle split) at points up to 1.5 m inside every ring stays under the pad top. And SMOOTH (BUG-137): across
-// every T's through road, physics never TEARS: no step over TEAR_MAX between points 5 cm apart (a 160 % slope; the steepest designed
+// every pad, physics never TEARS: no step over TEAR_MAX between points 5 cm apart (a 160 % slope; the steepest designed
 // ramp, a side road's mouth easing onto its own deck, runs ~70 %) — at seed 917338424's causeway T the through road's
-// two halves disagreed around the node and the pad stood a 0.49 m cliff on the pavement. Reported: the worst lip, the
+// two halves disagreed around the node and the pad stood a 0.49 m cliff on the pavement; BUG-144: 0.19 m on 1353361482
+// where two parallel legs' bands met. Reported: the worst lip, the
 // tightest pad margin, the steepest pad slope and the worst tear.
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
@@ -19,8 +20,9 @@ import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 const SEEDS = ['1353361482', '369055107', '917338424']   // random seeds (BUG-122's census; BUG-137's causeway T)
+const BUG146 = [{ S: '1353361482', x: 26.8, z: 721.0 }, { S: '917338424', x: 99.4, z: -1016.8 }]   // see SMOOTH
 const R = 1000, LIP_MAX = 0.25, G = 0.25, REFINE = 0.08, TEAR_MAX = 0.08, hw = P.roadHalfWidth ?? 5
-let fails = 0, edges = 0, worstLip = 0, worstLipAt = '', rimPts = 0, margin = Infinity, padPts = 0, worstSlope = 0, worstTear = 0, worstTearAt = ''
+let fails = 0, edges = 0, worstLip = 0, worstLipAt = '', rimPts = 0, margin = Infinity, padPts = 0, worstSlope = 0, worstTear = 0, worstTearAt = '', rimEdge = 0, rimFails = 0, worstRim = 0, worstRimAt = '', worst146 = 0
 for (const S of SEEDS) {
   const ws = parseWorldSeed(S), road = new RoadSystem(ws, P)
   wirePondNoGo(road, ws, P); road.setRadius(R + 300); road.update(new THREE.Vector3(0, 0, 0))
@@ -85,18 +87,35 @@ for (const S of SEEDS) {
         }
       }
     }
-    // SMOOTH: on a T's through road, the pad's surface (what the wheel rides inside the ring) on a G grid, each point
-    // against its +x and +z neighbours. A pair rising more than REFINE is re-sampled every G / 5: a ramp spreads out
-    // there, a tear does not — the TEAR is the biggest step at that spacing. Only the trunk's pavement (_throughDeckTop's
-    // reach) for now: elsewhere a pad still tears where two near-parallel legs' mouth bands meet (_padRibbonMask picks
-    // one leg's deck; 0.19 m on 1353361482, 0.14 m on 917338424 — reported with BUG-137, not fixed by it).
-    road._nodeSurfaceTop(node, node.pos.x, node.pos.z)
-    if (node.padSurf?.anyThrough) {
+    // RIM (BUG-145): the pad's own edge between its legs — physics 5 cm inside the ring minus 5 cm outside, every 0.5 m
+    // of ring, away from the legs' pavements (their edges are LIP's) — stands the designed kerb, no more than LIP_MAX.
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], L = Math.hypot(b.x - a.x, b.z - a.z)
+      for (let t = 0; t < L; t += 0.5) {
+        const ex = a.x + (b.x - a.x) * t / L, ez = a.z + (b.z - a.z) * t / L
+        if (node.legs.some(leg => { const ne = road._network.get(leg.runKey), prs = ne && road._projectLegMemo(ne, leg, ex, ez); return prs?.some(pr => pr.d2 < (hw + 1) ** 2) })) continue
+        const dx = node.pos.x - ex, dz = node.pos.z - ez, d = Math.hypot(dx, dz) || 1
+        const i1 = ph(ex + dx / d * 0.05, ez + dz / d * 0.05), o1 = ph(ex - dx / d * 0.05, ez - dz / d * 0.05)
+        if (i1 == null || o1 == null || road._signedRingDist(ring, ex + dx / d * 0.05, ez + dz / d * 0.05) >= 0) continue
+        rimEdge++
+        const lip = i1 - o1
+        if (lip > worstRim) { worstRim = lip; worstRimAt = `${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})` }
+        if (lip > LIP_MAX) { rimFails++; if (rimFails <= 3) console.log(`  FAIL rim lip ${lip.toFixed(3)} m at ${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})`) }
+      }
+    }
+    // SMOOTH: the pad's surface (what the wheel rides inside the ring) on a G grid, each point against its +x and +z
+    // neighbours. A pair rising more than REFINE is re-sampled every G / 5: a ramp spreads out there, a tear does not —
+    // the TEAR is the biggest step at that spacing. BUG-137: a T's trunk tore where it bends at its node; BUG-144: a pad
+    // tore where two nearly parallel legs' mouth bands met (_padRibbonMask took the heavier leg's deck).
+    // EXCEPTED (BUG-146, the ribbon level): where two legs' DRAWN ribbons touch at their mouths with decks apart, the pad
+    // must meet both edges, so the step is the ribbons' own — 0.14 m per 5 cm at 1353361482 (26.8, 721.0) and 0.12 m at
+    // 917338424 (99.4, −1016.8). Tears within 1.5 m of those two sites are reported, not failed; drop them with BUG-146.
+    {
     const rr = (node.ringMaxR ?? 20) + G, n = Math.ceil(2 * rr / G) + 1, x0 = node.pos.x - rr, z0 = node.pos.z - rr
     const grid = new Float64Array(n * n).fill(NaN)
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const x = x0 + i * G, z = z0 + j * G
-      if (road._signedRingDist(ring, x, z) < 0 && road._throughDeckTop(node, node.padSurf, x, z)) { const y = ph(x, z); if (y != null) { grid[j * n + i] = y; padPts++ } }
+      if (road._signedRingDist(ring, x, z) < 0) { const y = ph(x, z); if (y != null) { grid[j * n + i] = y; padPts++ } }
     }
     let nodeTear = 0, nodeAt = ''
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
@@ -112,7 +131,9 @@ for (const S of SEEDS) {
           if (yf == null) { tear = 0; break }
           tear = Math.max(tear, Math.abs(yf - prev)); prev = yf
         }
-        if (tear > nodeTear) { nodeTear = tear; nodeAt = `${S} (${(x0 + i * G).toFixed(2)}, ${(z0 + j * G).toFixed(2)}) ${ex ? 'x' : 'z'}` }
+        const tx = x0 + i * G, tz = z0 + j * G
+        if (BUG146.some(b => b.S === S && Math.hypot(b.x - tx, b.z - tz) < 1.5)) { if (tear > worst146) worst146 = tear; continue }
+        if (tear > nodeTear) { nodeTear = tear; nodeAt = `${S} (${tx.toFixed(2)}, ${tz.toFixed(2)}) ${ex ? 'x' : 'z'}` }
       }
     }
     if (nodeTear > worstTear) { worstTear = nodeTear; worstTearAt = nodeAt }
@@ -121,6 +142,9 @@ for (const S of SEEDS) {
   }
 }
 console.log(`${edges} junction leg edges: worst lip ${worstLip.toFixed(3)} m (${worstLipAt}) · ${rimPts} rim points: tightest pad margin ${(margin * 100).toFixed(1)} cm`
-  + ` · ${padPts} trunk points: steepest ${worstSlope.toFixed(3)} m per ${G} m, worst tear ${worstTear.toFixed(3)} m per ${G / 5} m (${worstTearAt})`)
+  + ` · ${padPts} pad points: steepest ${worstSlope.toFixed(3)} m per ${G} m, worst tear ${worstTear.toFixed(3)} m per ${G / 5} m (${worstTearAt})`)
+console.log(`BUG-146 (excepted): worst tear ${worst146.toFixed(3)} m per ${G / 5} m at its two sites`)
+console.log(`${rimEdge} pad rim points: worst rim lip ${worstRim.toFixed(3)} m (${worstRimAt}), ${rimFails} over ${LIP_MAX} m`)
+fails += rimFails
 console.log(fails ? `FAIL: ${fails}` : 'PASS')
 process.exit(fails ? 1 : 0)
