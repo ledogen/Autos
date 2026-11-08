@@ -123,6 +123,7 @@ export const SKY_PARAMS = {
   landTwilight: 2.0,  // …and how fast it gets there (e-folding, decades of light). Smaller = darker golden hour and dusk
   warmth: 0.2,        // the land's white balance against the sky's: 0 = the same, 0.2 = sunlit ground warm like the legacy's
   landCast: 1.0,      // how much of the light's colour cast the land keeps that the sky's white balance takes out (0–1)
+  nightFog: 0.55,     // at night the fog (and the sky glow) is no brighter than this × flat ground under it
   nightBlue: 1.5,     // colour saturation of the land's light under rod vision (the sky's drains to grey)
   bounce: 0.35,       // × the ground's bounce light (the hemisphere fill from below). The fill has no occlusion: at 1 the
                       // ground under the truck lit its wheel wells as if nothing shaded it
@@ -439,13 +440,14 @@ const HAZE_GLSL = /* glsl */`
 uniform sampler2D skyLut;
 uniform vec4 skySun;     // xyz: the sun's direction; w: glare sharpness g
 uniform vec4 skyGlare;   // rgb: glare radiance (pre-exposed); w: 1 while the world scene renders
-uniform vec4 skyFog;     // x, y: the world-edge fog's start and full radius (m, horizontal)
+uniform vec4 skyFog;     // x, y: the world-edge fog's start and full radius (m, horizontal); z: the night cap
 #ifndef SKY_HAZE
 #define SKY_HAZE
 vec3 skyHaze (vec3 d) {
   vec2 uv = vec2(atan(d.x, -d.z) * 0.15915494, sqrt(clamp(d.y, 0.0, 1.0)));
   float g = skySun.w, k = 1.0 + g * g - 2.0 * g * dot(d, skySun.xyz);
-  return texture2D(skyLut, uv).rgb + skyGlare.rgb * (1.0 - g * g) / (k * sqrt(k));
+  // × the night cap (skyFog.z, see _apply): the night sky and the fog, the same function, dimmed together.
+  return (texture2D(skyLut, uv).rgb + skyGlare.rgb * (1.0 - g * g) / (k * sqrt(k))) * skyFog.z;
 }
 #endif
 `
@@ -461,7 +463,7 @@ const U = {
   skyLut: { value: shared(LUT_TEX) },
   skySun: { value: shared(new THREE.Vector4(0, 1, 0, 0.93)) },
   skyGlare: { value: shared(new THREE.Vector4(0, 0, 0, 0)) },   // w starts OFF (Vector4 defaults w to 1)
-  skyFog: { value: shared(new THREE.Vector4(1e8, 1e9, 0, 0)) },
+  skyFog: { value: shared(new THREE.Vector4(1e8, 1e9, 1, 0)) },
 }
 for (const lib of Object.values(THREE.ShaderLib)) if (lib.uniforms.fogDensity) Object.assign(lib.uniforms, U)
 Object.assign(THREE.UniformsLib.fog, U)
@@ -570,6 +572,8 @@ const rods = (e) => smooth(-3.5, -6.5, Math.log10(Math.max(e, 1e-12)))
 // sunlight (albedo 0.12 / π) — the latter sets how faint the moon is by day.
 const DISC_L = 9, MOON_SURFACE_L = 0.04
 const WB_STRENGTH = 0.5
+/** three's ACESFilmicToneMapping on a grey input (its colour matrices are identity on grey), already × exposure / 0.6. */
+const acesGrey = (v) => Math.max(0, (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081))
 // The land's camera exposure (renderer.toneMappingExposure, into ACES): the legacy's day and night values, which
 // the headlights, the campfire and every emissive were tuned against.
 const LAND_EXPOSURE_DAY = 0.5, LAND_EXPOSURE_NIGHT = 0.36
@@ -758,6 +762,19 @@ export class SkySystem {
     this.ambient.intensity = 1
     // The land's camera: the legacy's exposure, 0.5 by day to 0.36 at night, on the lamps' own clock (nightFactor).
     this.renderer.toneMappingExposure = LAND_EXPOSURE_DAY + (LAND_EXPOSURE_NIGHT - LAND_EXPOSURE_DAY) * this.nightFactor()
+    // THE NIGHT FOG CAP (round 2, owner 11-08: "rebuild nighttime still isnt dark enough … i think its the fog being
+    // brighter than the terrain"). At night the land sits in ACES's toe while the airglow horizon, which the fog is,
+    // does not: fogged land read 4.5× (new moon) to 8× (full moon) brighter than the unfogged land beside it, so the
+    // far road and every ridge stood out. Once twilight is over, the sky's own glow — and with it the fog, the same
+    // function — is dimmed until the horizon is no brighter than nightFog × flat ground (albedo 0.4 under these
+    // lights, through the land's ACES; a slope facing the moon is brighter, one facing away darker). Fully fogged land still equals the sky behind
+    // it, so the world edge stays hidden; the stars and the moon are drawn on top at their own brightness, and the
+    // cap only comes in over the last 3° of twilight (the sun's own fade), so the twilight sky is untouched. It is
+    // the whole sky, not a band near the horizon: a hillside rising 20° above the road fogs toward the sky 20° up.
+    const keyShare = (this.sun.intensity + (this.sunFar ? this.sunFar.intensity : 0)) * lum(this.sun.color.r, this.sun.color.g, this.sun.color.b) * this.sunDirection.y
+    const slope = 0.4 / Math.PI * (keyShare + lum(this.ambient.color.r, this.ambient.color.g, this.ambient.color.b))
+    const cap = Math.min(1, p.nightFog * acesGrey(slope * this.renderer.toneMappingExposure / 0.6) / Math.max(lum(hr, hg, hb) / LUT_W, 1e-12))
+    U.skyFog.value.z = cap + (1 - cap) * smooth(DARK_EL, DARK_EL + 3 * D2R, st.sun.el)
 
     // The moon disc: its surface radiance through the air and the eye, against the brightness it is drawn at.
     const tm = st.tMoon, tmax = Math.max(tm[0], tm[1], tm[2], 1e-6)
@@ -837,6 +854,16 @@ export class SkySystem {
     a.add(SKY_PARAMS, 'glareG', 0.8, 0.99, 0.001).name('glare sharpness').onChange(re)
     a.add(SKY_PARAMS, 'sunSize', 0.27, 3, 0.01).name('sun radius (deg)').onChange(re)
     a.add(SKY_PARAMS, 'stars', 0, 4, 0.05).name('stars').onChange(re)
+    a.add(SKY_PARAMS, 'moonAdapt', 0, 1, 0.01).name('eye adapts to moon').onChange(re)
+    const l = f.addFolder('Land (ACES)'); l.close()
+    l.add(SKY_PARAMS, 'landGain', 0.5, 4, 0.05).name('land gain').onChange(recal)
+    l.add(SKY_PARAMS, 'landDepth', 0.5, 3, 0.01).name('night depth (decades)').onChange(re)
+    l.add(SKY_PARAMS, 'landTwilight', 0.5, 5, 0.05).name('twilight fall').onChange(re)
+    l.add(SKY_PARAMS, 'warmth', 0, 0.6, 0.01).name('warmth').onChange(re)
+    l.add(SKY_PARAMS, 'landCast', 0, 1, 0.05).name('keep light cast').onChange(re)
+    l.add(SKY_PARAMS, 'nightBlue', 0, 3, 0.05).name('night blue').onChange(re)
+    l.add(SKY_PARAMS, 'bounce', 0, 1, 0.01).name('ground bounce').onChange(re)
+    l.add(SKY_PARAMS, 'nightFog', 0, 1.5, 0.01).name('night fog ÷ land').onChange(re)
     this.moon.addGui(f)
     return f
   }
