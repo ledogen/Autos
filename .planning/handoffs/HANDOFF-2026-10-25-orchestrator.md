@@ -501,3 +501,15 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
   1.5–2.7 ms per clock push. Comparison only: conflicts with FEAT-180 in sky.js/main.js, cut from d7dc18e1 (origin), not main.
   It ran 11 gates + cdp-smoke during the hold (not granted; reported to the owner). Sheets in the orchestrator scratchpad v5/.
 - Owner picks between them (or a mix). Nothing lands until then.
+
+### 11-08 ~21:40 — round-3 notes in; both lighting agents HELD for the owner's clear
+- Owner's notes on both builds: FEAT-180 ticket § Round 3 review (verbatim). Owner: "gimme a chance to clear the
+  lighting agent(s) before they continue". Neither lane has the notes yet.
+- **Spare:** lanes/s v104 has a RESUME HERE block with its notes verbatim (and orchestrator = cargame-c8). On the
+  owner's go, send Spare "resume FEAT-180 round 4 from lanes/s".
+- **Rebuild:** it was this session's subagent (a963acdc35996c65b), so there is nothing for the owner to clear. On
+  the owner's go, start a FRESH opus agent from `.planning/handoffs/HANDOFF-2026-11-08-lighting-redesign.md`
+  (worktree, branch, port 3890, knobs, the owner's notes, the round-2 list). Don't SendMessage the old one.
+- **Power mods intake:** 2 inbox notes + 10 item-page cards → FEAT-189 power mods, FEAT-190 I4 default + V6/V8 swaps +
+  bigger tank, FEAT-191 turbo/supercharger sim, FEAT-192 rarity tiers. Builds = lane B (behind its landing queue);
+  items.md/FEAT-121 fold + item-page cards + FEAT-192 = lane C.

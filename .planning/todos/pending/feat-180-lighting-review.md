@@ -218,3 +218,33 @@ Owner 2 and 8: today's night is the new moon, and the full moon is "bright enoug
 
 - **Owner questions** (review round 2, 5 and 6): is the full-moon brightness right, and should the cycle be the real
   month or 12 days, so that every run sees both a full and a new moon?
+
+## Round 3 review: both builds (owner, 2026-11-08 ~21:30 local, verbatim)
+
+Two builds are now under review side by side: Spare's tweaks to the current lighting (`land/feat180-next`
+0be79cae, :3887) and the Opus ground-up rebuild (`proto/lighting-redesign` 44d284d2, :3890, handoff
+`.planning/handoffs/HANDOFF-2026-11-08-lighting-redesign.md`). Owner: "im gonna give notes for both and see which
+converges first." Both lanes get their notes after the owner clears them.
+
+**Legacy (Spare, :3887):** "fog at noon is way too white and bright. it should have some blue to match the sky. the
+sky is also way too white esp near horizon and around the sun. this should be a summer day blues skies. love the
+sun sprite but its a little pixellated due to the bake. sunrise is pretty great. fog is a little smoggy brownish and
+it does a bad job of hdiding the world edge when terrain is backlit. sunset pretty samey to sunrise. i feel like we
+dont capture the blue of mornings and orange of nights well. i love the brightness of full moon and new moon. i like
+how challenging the  visibility at nighttime is."
+
+**Rebuild (:3890):** "impressive first pass i dont hate it at all. fog looks like it appears far away but very
+suddenly it hides the edge of the world much better. i might prefer if it fades in a little closer to the player.
+the color is nice. it could maybe be a teensy bit bluer but not bothered by it. the colors of terrain and esp the
+truck look a little washed out compared to before. the shadows are also a lot brighter. overall there is less
+contrast. i would say as far as subjects the rebuild looks like a raw photo and the legacy looks like you put the
+same pic through lightroom. i prefer the stylized more contrasty image of the legacy see if we can push the rebuild
+in that direction. crush the shadows and pump the saturation a little i suspect it has to do with the "eye
+adaptation" sunrise and sunset skybox colors are epic. the desaturated subject look remains. nighttime: the stars
+are epic. there is practically no difference between new moon and full moon apparent brightness probably from the
+eye autoexposure. gotta fix that. also the headlights are way overpowered now probably from the same autoexposure.
+i can see like an entire mountain if the lights are shining. gotta fix that too."
+
+Cross-reference the legacy build when tuning the rebuild: the owner's night (moon brightness, how hard it is to see at
+night) and its contrast are the legacy's. The rebuild's sunrise and sunset sky, its stars and its fog colour are the
+keepers.
