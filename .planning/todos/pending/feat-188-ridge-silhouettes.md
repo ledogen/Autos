@@ -34,6 +34,11 @@ draw distance and the perf budgets are unchanged. Effort ~1–2 days.
 
 Later, not this ticket: the real far terrain (coarse copy). Piece 6's shade skirt already builds unloaded
 ground to 1.2 km. That job means re-tuning the fog at every hour, plus treeless far land and the coarse/fine seam (week-class).
+Owner, 2026-11-08 (feat180-review note): "i dont think i am willing to eat the performance cost of a distant
+horizons style cacheing especially since the player starts a new world every hour or two on average but we can
+write it down as a potential solution … (would rather add it after alpha maybe only on higher quality settings?)".
+So the low-res far terrain is a **post-alpha, higher-quality-settings-only** option. Never a persistent cache
+(worlds are generated cold).
 
 ## Acceptance
 
