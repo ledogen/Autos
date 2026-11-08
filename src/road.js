@@ -9215,8 +9215,18 @@ export class RoadSystem {
                 // sector follows both legs' real outer edges in to the node (openBack), so the pad there
                 // is exactly the two ribbons' own pavement. (A node-centred bulb used to sweep the
                 // roadless gap — a round patch up to 29 m across, owner capture 1792452436172.)
-                if (A.dx * B.dx + A.dz * B.dz < -0.85) continue   // through-road back: straight chord
                 const ce = this._cornerEdgeFillet(A, B, halfWidth, filletR, T, true)
+                // BUG-146: the through road's straight chord is exact only while both legs run straight to their
+                // mouths. A long mouth on a bending leg (paved out to where it parts from its sibling) put it up to
+                // 2.1 m inside the pavement — dirt bitten out of the road beside the node (seed 917338424 (−111, −464);
+                // 0.84 m on main at (101, −987)). Where any true-edge point stands more than 0.3 m outside the chord
+                // (away from the node), the ring walks the true edges instead, as an open back does.
+                if (A.dx * B.dx + A.dz * B.dz < -0.85) {
+                    const lx = eB.x - eA.x, lz = eB.z - eA.z, ll = Math.hypot(lx, lz) || 1
+                    const side = (p) => ((p.x - eA.x) * lz - (p.z - eA.z) * lx) / ll
+                    const inward = Math.sign(side(node.pos)) || 1
+                    if (!ce || ce.every(p => side(p) * inward > -0.3)) continue   // through-road back: straight chord
+                }
                 for (const p of ce ?? this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
                 continue
             }
