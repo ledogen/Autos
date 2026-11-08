@@ -2,7 +2,7 @@
 // over CDP on random seeds, the way cdp-smoke boots it (its own Vite on a free port, rooted at this checkout).
 // Not a gate: a run is many minutes. A rainy-day script, like the smoke's heavier cousins.
 //
-// Each run: a new story run → hold M (skip the opening; the casserole is in hand at mom's) → each day take
+// Each run: a new story run → hold M (skip the opening; it lands at Larry's, the casserole delivered) → each day take
 // board jobs and teleport through each leg, finishing at a MID rank (the clock is advanced to the middle of
 // the A/B lines before the last arrival) → refuel when low, eat what the inventory holds when hungry → sleep
 // at mom's when tired or late → save & exit + reload + continue once a night → until the deeds gate opens the
@@ -205,12 +205,13 @@ async function startRun (seed) {
   check(await until(() => js(live), 180000, 250), 'the run never went live')
   await js(HELPERS); await js('window.__soak.carry(); window.__soak.watch()')
   // Skip the opening: hold M a second over the firing (FEAT-170 stage 2). FEAT-184: after the first skip "always skip
-  // the tutorial" is on, and a run starts with the casserole already in hand — nothing to hold.
+  // the tutorial" is on, and a run starts where a skip lands — nothing to hold. Either way, at Larry's with the casserole
+  // delivered (FEAT-184, owner 2026-11-07); the day loop reads off his welcome.
   if (!await js('window.__settings?.skipTutorial')) {
     check(await until(dlgUp, 5000), 'the run did not open on the firing')
     await key('m', true); await sleep(1300); await key('m', false)
   }
-  check(await until(() => js('window.__board().firstState() === "taken"'), 15000), `holding M did not skip to the casserole: ${JSON.stringify(await js(`({
+  check(await until(() => js('window.__board().firstState() === "done"'), 15000), `holding M did not skip to the casserole delivered: ${JSON.stringify(await js(`({
     first: window.__board().firstState(), ms: window.__mission().state, dlg: getComputedStyle(document.getElementById('dialogue-panel')).display,
     hint: document.getElementById('skip-hint')?.style.display, vis: document.visibilityState, focus: document.hasFocus(), log: (window.__soakLog ?? []).slice(-12) })`))}`)
   if (process.argv.includes('--gate-at-start')) await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)   // test the camp's lines first
@@ -432,8 +433,8 @@ async function playRun (seedIn) {
     if (run.gateDay == null && s.lines.some(l => l !== 'closed')) run.gateDay = s.day
     try {
       if (s.ms === 'offer' || s.ms === 'generating') { await decline(); continue }
-      if (s.ms !== 'idle') {   // the casserole (in hand from the skip), or a job a resume brought back
-        const o = await js('(() => { const m = window.__mission(), sp = window.__board().spec(m.offer ?? {}); return { family: sp?.family ?? "?", line: sp?.line ?? null, type: sp?.first ? "momsHouse (casserole)" : "in hand" } })()')
+      if (s.ms !== 'idle') {   // a job a resume brought back
+        const o = await js('(() => { const m = window.__mission(), sp = window.__board().spec(m.offer ?? {}); return { family: sp?.family ?? "?", line: sp?.line ?? null, type: "in hand" } })()')
         const r = await finish(o)
         run.jobs.push({ day: s.day, family: o.family, line: o.line, giver: o.type, ...r })
         continue

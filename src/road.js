@@ -834,6 +834,8 @@ export const ROAD_ROUTER_VERSION = 'v2'
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
+// BUG-141 free-roam seat (RoadSystem.freeRoamSeat): the owner's "under a 20% grade", how far from a dead end, the slide step
+const SEAT_MAX_GRADE = 0.20, SEAT_DEAD_END_M = 150, SEAT_STEP_M = 8
 const ACUTE_ELBOW_COS      = Math.cos(75 * Math.PI / 180)   // BUG-86: a deg-2 elbow sharper than 75° gets no through pin
 const LOOP_TRIM_M          = 500   // m — BUG-105: the longest loop (site → crossing along both legs) a trim cuts off (owner 11-07, bug105-trim: "under 500m")
 // BUG-67 (owner, 2026-11-03): sibling tunnels colliding at a junction — see _reseat and the T slide.
@@ -1163,6 +1165,63 @@ export class RoadSystem {
     ensureTile(tileX, tileZ) {
         this._streamNetwork(_scratchPt.set((tileX + 0.5) * CHUNK_SIZE, 0, (tileZ + 0.5) * CHUNK_SIZE))
         this._sliceNetwork()
+    }
+
+    /**
+     * BUG-141 (owner 11-07: "it should always spawn you on relatively level ground and not right at the end of the
+     * spur … under a 20% grade"). The free-roam seat near a road point `near` (queryNearest's answer): on the same run,
+     * at least SEAT_DEAD_END_M from a dead end, under SEAT_MAX_GRADE, facing the long way. A dead end is found by
+     * walking from a run's end through two-leg nodes (bends) to the first node that is not one: one leg = dead end.
+     * Facing: away from a dead end, else toward the farther end of the run. The seat slides along the run from the
+     * nearest point in SEAT_STEP_M steps, nearest first; no level spot keeps the gentlest. Story mode never calls it:
+     * its region centre is the unrefined spawn (BUG-121). Returns { point, tangent (the way the nose points), grade,
+     * deadEnd } or null.
+     */
+    freeRoamSeat(near) {
+        const e = near && this._network.get(near.runKey)
+        if (!e || !e.points || e.points.length < 2) return null
+        const P = e.points, C = e.polyCum, L = C[C.length - 1]
+        const s0 = _nearestOnPolyXZ(near.point.x, near.point.z, P, C).cum
+        const dA = this._deadEndReach(near.runKey, true), dB = this._deadEndReach(near.runKey, false)   // m past each end
+        const lo = Math.min(L / 2, Math.max(0, SEAT_DEAD_END_M - dA)), hi = Math.max(L / 2, L - Math.max(0, SEAT_DEAD_END_M - dB))
+        const grade = (s) => {
+            const a = _polyAtCum(P, C, Math.max(0, s - 4)), b = _polyAtCum(P, C, Math.min(L, s + 4))
+            return Math.abs(b.y - a.y) / Math.max(1e-6, Math.hypot(b.x - a.x, b.z - a.z))
+        }
+        let best = null
+        for (let k = 0; k * SEAT_STEP_M <= L; k++) {
+            for (const s of k ? [s0 + k * SEAT_STEP_M, s0 - k * SEAT_STEP_M] : [s0]) {
+                if (s < lo || s > hi) continue
+                const g = grade(s)
+                if (!best || g < best.g) best = { s, g }
+                if (g < SEAT_MAX_GRADE) { k = Infinity; best = { s, g }; break }
+            }
+        }
+        if (!best) best = { s: Math.min(hi, Math.max(lo, s0)), g: grade(Math.min(hi, Math.max(lo, s0))) }
+        const p = _polyAtCum(P, C, best.s)
+        const a = _polyAtCum(P, C, Math.max(0, best.s - 2)), b = _polyAtCum(P, C, Math.min(L, best.s + 2))
+        // toward B: the road ahead is the rest of the run plus whatever lies past B (Infinity at a junction)
+        const aheadB = L - best.s + dB, aheadA = best.s + dA
+        const dir = (aheadB === aheadA ? L - best.s >= best.s : aheadB > aheadA) ? 1 : -1
+        const tangent = new THREE.Vector3((b.x - a.x) * dir, 0, (b.z - a.z) * dir).normalize()
+        return { point: new THREE.Vector3(p.x, p.y, p.z), tangent, grade: best.g, deadEnd: Math.min(best.s + dA, L - best.s + dB) }
+    }
+
+    // BUG-141: metres from a run's end (A when atStart) to a dead end, walking on through two-leg nodes; Infinity when
+    // the walk reaches a junction (three or more legs) or loops back.
+    _deadEndReach(runKey, atStart) {
+        let key = runKey, e = this._network.get(key), cell = atStart ? e.cellA : e.cellB, d = 0
+        for (let hops = 0; hops < 64; hops++) {
+            const inc = this._proto.nodeInc.get(_idKey(cell)) ?? []
+            if (inc.length === 1) return d
+            if (inc.length !== 2) return Infinity
+            key = inc[0] === key ? inc[1] : inc[0]
+            e = this._network.get(key)
+            if (!e || key === runKey) return Infinity
+            d += e.polyCum[e.polyCum.length - 1]
+            cell = _idKey(e.cellA) === _idKey(cell) ? e.cellB : e.cellA
+        }
+        return Infinity
     }
 
     /**
