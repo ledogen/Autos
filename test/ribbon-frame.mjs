@@ -67,7 +67,7 @@ for (const S of SEEDS) {
     if (d > worst) { worst = d; worstAt = `(${x.toFixed(1)}, ${z.toFixed(1)}) ${runKey} lat ${lat.toFixed(2)}` }
     if (d >= MAX_D) fails++
   }
-  console.log(`  seed ${S}: ${secs.length} drawn sections, ${verts} pavement vertices on their own deck — worst |physics − drawn| ${(worst * 100).toFixed(2)} cm${worst >= MAX_D ? ` at ${worstAt}` : ''}`)
+  console.log(`  seed ${S}: ${secs.length} drawn sections, ${verts} pavement vertices on their own deck — worst |physics − drawn| ${(worst * 100).toFixed(2)} cm at ${worstAt}`)
 }
 const rep = (k) => `${apart[k][0]} ≥ ${MAX_D * 100} cm, worst ${(apart[k][1] * 100).toFixed(1)} cm`
 console.log(`  reported apart (physics is not the leg's own deck there): T departure bands ${rep('band')} · QUAL-10 ruled blend ${rep('blend')} · overlapping ribbons ${rep('overlap')}`)
