@@ -448,3 +448,17 @@ halo: the group's centre, radius 1.5 m past the farthest member, never under 3 m
 keeps its rung's paper stock (one spare more).
 - **~04:15 update:** BUG-137 smoke PASS 26/26 → landed. Merged Lane A batch 2 (bd30ab95) + BUG-139 (2beb6da6); ONE gated smoke on the combination is RUNNING: log /private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/68fd645d-5860-4597-a366-6081a4a2e6bc/scratchpad/smoke-a2-139.log. If PASS: both landed → add owed feat184-look (A's [DEFAULT] list above), update lane lines (A batch 2, B BUG-137/139), publish. If FAIL: read the step; a load-flake step (freecam/tires/drive/edge/pad/endings) → re-run gated; a real failure → bisect by reverting one merge in a scratch worktree, never on main with a smoke running. B's 145+144 gates run overnight (logs /tmp/claude-501/b145-gates.log, b145-fw.log). Lanes done writing handoffs: A v75, B v69, C v27 (Spare pending at the time of writing).
 - **~04:20: ALL FOUR lanes' handoffs written** (A v75, B v69, C v27, Spare v88). **Next merge after the running smoke: Spare's BUG-141** land/bug-141 90091533 (free-roam seat: 31/100 seeds broke a rule → 0; story untouched; affected 73/73; Spare's smoke 26/26 on an older main → merge, then its own gated smoke).
+
+## 11-08 morning (orchestrator cargame-c8, after the owner restarted every session)
+Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame-d1. Autocompact 400k now applies to all.
+- Batch 2 + BUG-139 LANDED (re-smoke 26/26). The first re-smoke failed `pad` on world 2927182058/K (no plain giver with two
+  offers); the same failure on 32a0f570 proved it was the world → d7dc18e1: the pad step needs one offer, pages only when a
+  giver has two, logs when it can't. BUG-141 merged 968cd1a4 (its gates + smoke running). Lane A fec1516a (FEAT-184 skip →
+  Larry's, casserole done; owner inbox 11-07 22:51Z) queued next, then B's 145+144.
+- **Owner rulings 11-08:** (1) keep landing on main all night, one batch per full smoke, lanes ≤ 2 heavy processes.
+  (2) PUSHED d7dc18e1 to origin (Pages) on the owner's word; **do NOT push tonight's later landings** — the owner checks first.
+  (3) feat34-lamps: "green low beams blue high beams and red if your lights are both dead and you try to turn them on" → B.
+- **Landed overnight 11-08 (each full smoke 26/26 on main):** BUG-141 968cd1a4 · FEAT-184 skip amendment c87e78ac · BUG-145/144
+  82ecb463 · B's FEAT-34 r2 + FEAT-138 cooldown + FEAT-185 + FEAT-186 2f5735eb. Page v192 (owed feat184-look, feat34-r2-look).
+  NOT pushed (owner checks first; origin = d7dc18e1). In flight: A run-soak rerun (harness fix 68fcbe7d on feature/run-shape:
+  PARK boxes seat via __towSeat — merge it with A's next docs), B drive soak on 6 fresh seeds, Spare BUG-67 miter → BUG-146.

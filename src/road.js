@@ -162,26 +162,15 @@ const PAD_THROUGH_BLEND = 2.0  // m of distance lead over which a T trunk's near
 // rides the asphalt top (padTopY overlay in _sampleCarveWorld), not this dirt. Hardcoded (no
 // route-cache-signature effect).
 const PAD_DIRT_EXTRA = 0.15
-// PAD_DUCK_CAP: max the pad may LOWER dirt below the leg cross-section's own design (m). The pad's
-// crease-duck free-resolves the top field, which carries pre-existing multi-metre tears at a couple of
-// degenerate steep nodes; uncapped, those tears leak into an otherwise-smooth pinned cross-section
-// (shoulder-lateral-continuity's plaza tolerance is 0.70 m). The two CONSUMERS of the duck need
-// different caps — that's why there are two constants (the pad rim is a sanctioned mesh↔physics
-// difference region, same class as the on-ribbon decal overlay):
-//   - MESH dirt (terrain _buildCarveTable → _mergeCarve default): must get fully UNDER the creased
-//     asphalt or the tan interp slivers poke through the pad (the rim earthwork fix). Pre-camber-rework
-//     creases measured ≤ ~0.45 (old cap 0.55 was enough), but the saturating-camber model
-//     (camberFromCurvature) banks sweeper leg mouths harder — legitimate creases now reach ~1.05 m at
-//     the seed-6 trident rim. 1.2 admits every measured camber-era crease with margin while still
-//     clamping the multi-metre degenerate-node tear leak.
-//   - PHYSICS (_sampleCarveWorld passes PAD_DUCK_CAP_PHYS): a pinned/hinted resolve's cross-section is
-//     SMOOTH by design (BUG-15), and the duck's reference field (free-sampled topMin) JUMPS at crease/
-//     tear lines — any duck deeper than ~0.55 puts that jump into the pinned cross-section as a single
-//     step > the 0.70 plaza tolerance. 0.55 keeps every pinned step under it; the wheel consequence is
-//     only that in tiny crease∩rim-hold dirt patches physics rides ≤ ~0.65 above the drawn dirt
-//     (momentary, at pad rims — the same accepted trade as the decal overlay riding above the trough).
+// PAD_DUCK_CAP: how far the pad may move the dirt from the leg cross-section's own design (m), mesh and physics
+// alike. Inside the ring the dirt must get fully UNDER the creased asphalt or the tan interp slivers poke through
+// the pad (the rim earthwork fix): the saturating-camber model (camberFromCurvature) banks sweeper leg mouths into
+// creases of ~1.05 m at the seed-6 trident rim, and 1.2 admits every one with margin.
+// BUG-145: physics used to cap at 0.55, against the free-sampled duck field's jumps at crease lines (the pinned
+// cross-section's 0.70 plaza tolerance). PERF-25 made the pad surface resolve-free and continuous, so the jumps are
+// gone — and the tighter cap held physics dirt up to 0.4 m under the DRAWN dirt beside a pad rim that stands high
+// over its side road (seed 917338424's causeway T: a 0.54 m drop the mesh did not have, where 0.15 m is designed).
 const PAD_DUCK_CAP = 1.2
-const PAD_DUCK_CAP_PHYS = 0.55
 // BUG-122: _ribbonDrawnAt keeps the physics asphalt overlay within this of a padded leg's mouth (m) — the ribbon's first
 // section lies on the mouth chord, which on a curving leg sits off arc = mouth at the ribbon's edges.
 const RIBBON_MOUTH_SLACK = 1.0
@@ -845,6 +834,8 @@ export const ROAD_ROUTER_VERSION = 'v2'
 const PROTO_ANCHOR_SPACING = 256   // m between macro-grid anchors
 const PROTO_REGEN_MOVE     = 96    // m — re-stream the trunk once the view center moves this far
 const PROTO_SAMPLE_DS      = 4     // m — centerline → polyline sampling spacing (profile/slice/query density)
+// BUG-141 free-roam seat (RoadSystem.freeRoamSeat): the owner's "under a 20% grade", how far from a dead end, the slide step
+const SEAT_MAX_GRADE = 0.20, SEAT_DEAD_END_M = 150, SEAT_STEP_M = 8
 const ACUTE_ELBOW_COS      = Math.cos(75 * Math.PI / 180)   // BUG-86: a deg-2 elbow sharper than 75° gets no through pin
 const LOOP_TRIM_M          = 500   // m — BUG-105: the longest loop (site → crossing along both legs) a trim cuts off (owner 11-07, bug105-trim: "under 500m")
 // BUG-67 (owner, 2026-11-03): sibling tunnels colliding at a junction — see _reseat and the T slide.
@@ -1174,6 +1165,63 @@ export class RoadSystem {
     ensureTile(tileX, tileZ) {
         this._streamNetwork(_scratchPt.set((tileX + 0.5) * CHUNK_SIZE, 0, (tileZ + 0.5) * CHUNK_SIZE))
         this._sliceNetwork()
+    }
+
+    /**
+     * BUG-141 (owner 11-07: "it should always spawn you on relatively level ground and not right at the end of the
+     * spur … under a 20% grade"). The free-roam seat near a road point `near` (queryNearest's answer): on the same run,
+     * at least SEAT_DEAD_END_M from a dead end, under SEAT_MAX_GRADE, facing the long way. A dead end is found by
+     * walking from a run's end through two-leg nodes (bends) to the first node that is not one: one leg = dead end.
+     * Facing: away from a dead end, else toward the farther end of the run. The seat slides along the run from the
+     * nearest point in SEAT_STEP_M steps, nearest first; no level spot keeps the gentlest. Story mode never calls it:
+     * its region centre is the unrefined spawn (BUG-121). Returns { point, tangent (the way the nose points), grade,
+     * deadEnd } or null.
+     */
+    freeRoamSeat(near) {
+        const e = near && this._network.get(near.runKey)
+        if (!e || !e.points || e.points.length < 2) return null
+        const P = e.points, C = e.polyCum, L = C[C.length - 1]
+        const s0 = _nearestOnPolyXZ(near.point.x, near.point.z, P, C).cum
+        const dA = this._deadEndReach(near.runKey, true), dB = this._deadEndReach(near.runKey, false)   // m past each end
+        const lo = Math.min(L / 2, Math.max(0, SEAT_DEAD_END_M - dA)), hi = Math.max(L / 2, L - Math.max(0, SEAT_DEAD_END_M - dB))
+        const grade = (s) => {
+            const a = _polyAtCum(P, C, Math.max(0, s - 4)), b = _polyAtCum(P, C, Math.min(L, s + 4))
+            return Math.abs(b.y - a.y) / Math.max(1e-6, Math.hypot(b.x - a.x, b.z - a.z))
+        }
+        let best = null
+        for (let k = 0; k * SEAT_STEP_M <= L; k++) {
+            for (const s of k ? [s0 + k * SEAT_STEP_M, s0 - k * SEAT_STEP_M] : [s0]) {
+                if (s < lo || s > hi) continue
+                const g = grade(s)
+                if (!best || g < best.g) best = { s, g }
+                if (g < SEAT_MAX_GRADE) { k = Infinity; best = { s, g }; break }
+            }
+        }
+        if (!best) best = { s: Math.min(hi, Math.max(lo, s0)), g: grade(Math.min(hi, Math.max(lo, s0))) }
+        const p = _polyAtCum(P, C, best.s)
+        const a = _polyAtCum(P, C, Math.max(0, best.s - 2)), b = _polyAtCum(P, C, Math.min(L, best.s + 2))
+        // toward B: the road ahead is the rest of the run plus whatever lies past B (Infinity at a junction)
+        const aheadB = L - best.s + dB, aheadA = best.s + dA
+        const dir = (aheadB === aheadA ? L - best.s >= best.s : aheadB > aheadA) ? 1 : -1
+        const tangent = new THREE.Vector3((b.x - a.x) * dir, 0, (b.z - a.z) * dir).normalize()
+        return { point: new THREE.Vector3(p.x, p.y, p.z), tangent, grade: best.g, deadEnd: Math.min(best.s + dA, L - best.s + dB) }
+    }
+
+    // BUG-141: metres from a run's end (A when atStart) to a dead end, walking on through two-leg nodes; Infinity when
+    // the walk reaches a junction (three or more legs) or loops back.
+    _deadEndReach(runKey, atStart) {
+        let key = runKey, e = this._network.get(key), cell = atStart ? e.cellA : e.cellB, d = 0
+        for (let hops = 0; hops < 64; hops++) {
+            const inc = this._proto.nodeInc.get(_idKey(cell)) ?? []
+            if (inc.length === 1) return d
+            if (inc.length !== 2) return Infinity
+            key = inc[0] === key ? inc[1] : inc[0]
+            e = this._network.get(key)
+            if (!e || key === runKey) return Infinity
+            d += e.polyCum[e.polyCum.length - 1]
+            cell = _idKey(e.cellA) === _idKey(cell) ? e.cellB : e.cellA
+        }
+        return Infinity
     }
 
     /**
@@ -8322,7 +8370,7 @@ export class RoadSystem {
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
         // PERF-24/25: the pad surface is the resolve-free _nodeSurfaceTop (one ruled-blend evaluation,
         // feet shared with the leg cross-section above via the per-leg memo) — no extra resolves at all.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP_PHYS,
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP,
             nr ? this._ribbonEdgeDist(runKey, arcSEff, latDist) : Infinity)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 
@@ -9547,7 +9595,7 @@ export class RoadSystem {
             if (!ps.through[li]) continue
             const leg = node.legs[li], ne = this._network.get(leg.runKey)
             const prs = ne && this._projectLegMemo(ne, leg, wx, wz)
-            if (!prs) continue
+            if (!prs?.length) continue
             let pr = null
             for (const q of prs) if (!pr || q.d2 < pr.d2) pr = q
             ys[n] = this._legDeckTop(ne, leg, pr, wx, wz, _thrOut)
@@ -9555,6 +9603,7 @@ export class RoadSystem {
             if (es[n] < eMin) eMin = es[n]
             n++
         }
+        if (!n) return null   // guard: d ≤ hw means some half projected, but never let a NaN height out
         let ySum = 0, wSum = 0
         for (let k = 0; k < n; k++) {
             const u = 1 - (es[k] - eMin) / PAD_THROUGH_BLEND
@@ -9627,9 +9676,14 @@ export class RoadSystem {
     // Through legs too: past its mouth a trunk meets its own ribbon like any leg, and _throughDeckTop's
     // 2 m edge ease left the fitted surface 21 cm off the ribbon's edge there. Inside the cut (where a
     // side road bends onto the trunk) this mask is 0 and _throughDeckTop rules, as before.
+    // BUG-144: where two legs' bands meet, `y` is not the heavier leg's deck. Two nearly parallel legs 28 m out from a
+    // big node disagree by up to 0.23 m, and the pick tore the pad where one band took over. Now: in the gap between
+    // pavements each deck is weighted by v / (its distance past its own edge), so each leg is exact at its own edge and
+    // the gap is a straight ramp between the two; where pavements overlap, by v × the depth inside each, which meets
+    // the one-leg case continuously at either edge. With one leg in range it is that leg's deck, as before.
     _padRibbonMask(node, ps, wx, wz) {
         const hw = this._params.roadHalfWidth ?? 5
-        let m = 0, y = 0
+        let m = 0, yIn = 0, wIn = 0, yOut = 0, wOut = 0
         for (let li = 0; li < node.legs.length; li++) {
             const leg = node.legs[li]
             const ne = this._network.get(leg.runKey)
@@ -9637,15 +9691,17 @@ export class RoadSystem {
             const prs = this._projectLegMemo(ne, leg, wx, wz)
             if (!prs) continue
             for (const pr of prs) {
-                const lu = Math.min(1, Math.max(0, hw + 1 - Math.sqrt(pr.d2)))
+                const d = Math.sqrt(pr.d2), lu = Math.min(1, Math.max(0, hw + 1 - d))
                 if (lu <= 0) continue
                 const au = Math.min(1, Math.max(0, (Math.abs(pr.arcS - leg.arc) - (ps.cut[li] - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
                 if (au <= 0) continue
                 const v = lu * lu * (3 - 2 * lu) * au * au * (3 - 2 * au)
-                if (v > m) { m = v; y = this._legDeckTop(ne, leg, pr, wx, wz) }
+                if (v > m) m = v
+                const y = this._legDeckTop(ne, leg, pr, wx, wz), e = d - hw
+                if (e < 0) { yIn -= e * v * y; wIn -= e * v } else { const w = v / Math.max(e, 1e-6); yOut += w * y; wOut += w }
             }
         }
-        return { m, y }
+        return { m, y: wIn > 0 ? yIn / wIn : wOut > 0 ? yOut / wOut : 0 }
     }
 
     /**

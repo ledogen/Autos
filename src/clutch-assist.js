@@ -48,7 +48,8 @@ export function stepClutchAssist (a, input, sim, params, dt) {
     const engage = Math.max(0, Math.min(1, ((sim.rpm || 0) - lo) / (hi - lo)))
 
     // Shift sequencing: a request opens the clutch; it is forwarded once the command is open.
-    if (input.shift && !a.pending && !sim.shifting) a.pending = Math.sign(input.shift)
+    // FEAT-185: a press during a shift is forwarded too (the clutch is already open) — it moves the shift's target.
+    if (input.shift && !a.pending) a.pending = Math.sign(input.shift)
     const target = (a.pending || sim.shifting) ? 0 : engage
     a.cmd = target < a.cmd ? target : Math.min(target, a.cmd + (params.assistReengageRate ?? 5) * dt)
     let shiftRequest = 0

@@ -1,11 +1,12 @@
 ---
 id: FEAT-138
 type: feature
-status: open
+status: closed
 severity: minor
+closed: 2026-11-08
 opened: 2026-10-22
 source: owner, 2026-10-22 (item setup page) — items.md §7 "Hi-lift jack" row; FEAT-121 row
-lane: B → Spare (2026-11-01: Lane B has no session; Spare took it)
+lane: B (back from Spare 2026-11-06, orchestrator; queued after FEAT-162)
 relates: SM-3 (recovery), SM-INV-1, FEAT-121 (item tracker), FEAT-137 (shop shelf), src/recovery.js
 ---
 
@@ -97,6 +98,53 @@ mechanic, so it belongs with the parts/recovery work (src/recovery.js), not in t
   not a rule; the gate accepts one or two presses and prints which. A softer landing (mud, a slope) can
   stop it on the side, and then the second press does the rest.
 
+## Owner, 2026-11-06 (feat138-press, no option tapped) — back to Lane B, queued after FEAT-162
+
+"shelf price is good. i tried it on a flipped truck on a level road. it gets some angular momentum up but wasnt
+able to get on its wheels. i propose the torque is held for longer but is scaled down when angular momentum is
+high. basically \"high torque, low speed\" to try to get the flip to be more reliable."
+
+- The $20 shelf price stands.
+- The press becomes a long, gentle push: hold the torque longer, and back it off as the roll rate builds, so the
+  truck walks over its tipping point instead of being flung.
+- Measure the success rate before and after: from the roof and from the side, on the level and on a slope.
+
+## Built 2026-11-06, Lane B — the long gentle press (feature/machine b5a4725d)
+
+- **The press** (`src/hilift.js` step):
+  - The full 10.5 N·m/kg until the roll rate in the push direction reaches half of `rollRate`. From there it
+    backs off linearly to zero at `rollRate`, 0.6 rad/s (34°/s) `[DEFAULT]`. The jack only pushes; it never brakes.
+  - Held up to `maxS` 8 s `[DEFAULT]` (was 3).
+  - From the roof it no longer stops at the roof's balance point. It pushes on through the side and is cut when
+    the truck reaches its wheels' balance point. So one press walks it roof → side → wheels (3.6 s on the level).
+  - From a side it stops if it goes over onto the roof (the wrong direction).
+  - $20 shelf price unchanged.
+- **Measured** (`test/hilift.mjs` §3 grid: roof and side × level and ±8°/±15° cross-slopes × three settle poses ×
+  both push directions; 45 trials):
+
+  | | before (constant 14 kN·m, cut at each balance, 3 s) | after |
+  |---|---|---|
+  | roof, level, one press | 4/6 | **6/6** |
+  | roof, slopes, one press / two | 21/24 / 24/24 | 22/24 / 24/24 |
+  | side, all, one press | 15/15 | 15/15 |
+  | fastest roll on the level | 5.0 rad/s | **3.0 rad/s** |
+
+  The push itself never rolls faster than 0.6 rad/s. The remaining 3.0 is gravity finishing the fall past each
+  balance point.
+- **Rates tried:** with the linear back-off from zero, 0.3 rad/s fell to 7/24 on the slopes. Slower means more
+  time on a sliding roof. 0.6 with full torque to half-rate is the slowest that matches or beats the old press
+  on every row.
+- **Flagged — the slope misses are a sliding roof, not the jack.** The body's pair friction is BUG-27b's 0.1, so
+  bumpers slide off a shoulder. That is below tan 5.7°, so a truck on its roof slides down any steeper slope:
+  20–480 m during a press here. Real roof metal on asphalt (μ ~0.4) would sit still on 8°. A body friction that
+  depends on the contact (low for a glancing bumper, high for a resting roof) is the complete model. It's
+  BUG-27b's call, not this ticket's.
+- **Flagged — a pure torque at the CG is the approximation.** A real hi-lift pushes up at one point with its
+  foot on the ground. That is a force, and the torque comes from its lever arm. The rate limit reproduces what
+  matters (a slow, displacement-limited push); the rest is unchanged.
+- **Not reproduced:** the owner's in-game miss on a level road (the old press did 6/6 within two presses on the
+  bench). The new one rights every level case in one press. The owner's next try is the check.
+
 ## Rework after the owner's try (2026-11-06), and why it stays open
 
 - **The owner's try (tracker item `feat138-press`, 2026-11-06):** "it gets some angular momentum up but wasnt able
@@ -109,3 +157,20 @@ mechanic, so it belongs with the parts/recovery work (src/recovery.js), not in t
 - **Stays open (Spare's sweep, 2026-11-07).** Every acceptance box is met on main. What is missing is the owner's own
   try of the reworked press. The owner's last try failed, and nobody has tried the fix in game. Same rule as BUG-115:
   close on the owner's word.
+
+## The owner's try, 2026-11-07 — works; the cooldown line ticks (Lane B)
+
+Owner (tracker `feat138-try`, "good"): "works awesome. Update the "catching your breath" once a second so the player
+doesn't have to leave the menu and re-enter it to use the high lift again."
+
+Built (feature/machine c37643cf): the refusal reads `catching your breath · N s` (`src/hilift.js`, N = whole seconds
+left, rounded up). The inventory screen re-reads the selected item's choices once a second (`InventoryScreen.update`)
+and redraws only when a label changed, so the count ticks down and the two heave buttons appear when it ends, with
+the menu left open. `test/hilift.mjs` pins the line at 2 s. **The owner's word is in, so this closes when it lands.**
+
+## Resolution (2026-11-08) — closed on main's evidence
+
+- The owner tried the reworked press (tracker `feat138-try`, choice "good"): "works awesome". That was the one
+  thing keeping this open (the 2026-11-07 sweep above: close on the owner's word).
+- The owner's follow-up (the cooldown line ticks with the menu open) landed in main 2f5735eb, with the batch whose
+  smoke went 26/26. `test/hilift.mjs` is green on main.
