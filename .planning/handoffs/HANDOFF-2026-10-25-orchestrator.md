@@ -479,3 +479,13 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
   (owner answers feat180-review's 8 questions in the page note box → relay verbatim → Spare tunes constants on a land branch off
   18bb2e2a, ONE Vite, the owner looks; landing waits for the hold to lift). C idle. Contexts at this point: A 290k, B 270k,
   orchestrator 302k (clear-ready), Spare 167k (keeps context for the lighting), C 78k.
+- **11-08 ~16:00 (cargame-c8 after a /clear): the owner's lighting review is live; the hold stands.** Relayed the owner's 07:12Z
+  feat180-review note verbatim to Spare (it had not been relayed). Spare: Vite **3887** up from CarGame-land-feat180-dusk
+  (review seeds 1172941705, 3583777560); fog/below-horizon retune 9d9c7e03 (morning blue-white, evening lilac-grey, cap ×1.8;
+  owner's dial Sky → Lights / fog → 'fog lift', number owed); far-void note: recommends **ridge silhouettes from real height()**
+  (720 dirs × ~4 bands to 12 km, ~12 ms in the terrain worker per ~250 m, one draw call) — owner's "go" owed → ticket for Spare.
+  B: BUG-155 proposal c7f81024 + BUG-154 options b1da66c8 on land/bug-153 → owed **bug155-fix**, **bug154-frame** (page v196,
+  65a49b43). A: BUG-152 fixes 1–4 desk-built on feature/run-shape (4a7f7dd0, b33070eb, 13480b31, 00130532): region centre =
+  resolveSpawn(worldSeed) (moves live centre 1–14 cm on slopes → roster compare on ~10 seeds before landing; RUN_SAVE_VERSION
+  bump only if ≥ 2 of 10 change, then ask the owner); the 20 s settle timeout centres on spawnCentre(), never refuses. A's owed
+  on lift: probe 5, affected gates, smoke, roster compare, land hash.
