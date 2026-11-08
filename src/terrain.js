@@ -1633,9 +1633,9 @@ export class TerrainSystem {
                     }
                 }
 
-                // Junction-pad carve composed with the leg + connector carve, under the same PAD_DUCK_CAP
-                // physics uses (BUG-145: one cap, mesh == collision at the rim). Covers the open-side rim no run reaches.
-                const csP = this._roadSystem._mergeCarve(cs, this._roadSystem._junctionPadCarve(wx, wz, rawH), undefined,
+                // Junction-pad carve composed with the leg + connector carve by the same _mergeCarve physics uses
+                // (mesh == collision at the rim). Covers the open-side rim no run reaches.
+                const csP = this._roadSystem._mergeCarve(cs, this._roadSystem._junctionPadCarve(wx, wz, rawH),
                     nr ? this._roadSystem._ribbonEdgeDist(nr.runKey ?? '', arcSEff, latDist) : Infinity)
                 if (!csP) { table[idx] = 0; table[idx + 1] = 0; continue }
 
