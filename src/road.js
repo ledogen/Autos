@@ -8427,17 +8427,16 @@ export class RoadSystem {
      * nodes (radius tunnelBoreRadius about that run's centreline, from its apron 1.5 m under the deck up,
      * within one of its spans), or null when no sibling bores — the common case, so callers skip the work.
      * Memoised per run and network revision. Meshes and the wall contact read the same test (MESH == PHYSICS).
-     * `owners`: only siblings whose key sorts before `runKey` — the tube FLOOR yields to those alone, so where two
-     * floors overlap exactly one is kept (road-mesh.js buildTunnelTube).
      * A sibling's tube ends the way buildTunnelTube builds it: straight on along the end tangent by its lip (1.5 m
      * at a mouth, R at an end inside another tube), then flat. The polyline search alone rounded each end into a
-     * cap of radius R about its last vertex, reaching 2.2 m past a mouth where there is no lining, and the other
-     * tube's floor was cut there (sky through the forecourt floor, seed 717319401). `basic` keeps the capped
-     * shape: isMouth reads it, because the lips themselves are read from isMouth.
+     * cap of radius R about its last vertex, reaching 2.2 m past a mouth where there is no lining to meet the
+     * other tube's cut (seed 717319401). `basic` keeps the capped shape: isMouth reads it, because the lips
+     * themselves are read from isMouth.
+     * The test's optional 4th argument `inset` (m) shrinks the bore, lip end included: the lining miter cuts on it.
      */
-    siblingTubeTest(runKey, owners = false, basic = false) {
+    siblingTubeTest(runKey, basic = false) {
         if (this._sibRev !== this._networkRev) { this._sibRev = this._networkRev; this._sibTests = new Map(); this._sibByNode = null; this._mouths = new Map() }
-        const memo = runKey + (owners ? '|owners' : '') + (basic ? '|basic' : '')
+        const memo = basic ? runKey + '|basic' : runKey
         if (this._sibTests.has(memo)) return this._sibTests.get(memo)
         if (!this._sibByNode) {
             this._sibByNode = new Map()
@@ -8452,7 +8451,7 @@ export class RoadSystem {
         for (const c of me ? [me.cellA, me.cellB] : []) {
             for (const k of (c && this._sibByNode.get(c.join(','))) || []) {
                 const e = this._network.get(k)
-                if (k === runKey || !e?.tunnelSpans || (owners && !(k < runKey)) || tubes.some((t) => t.k === k)) continue
+                if (k === runKey || !e?.tunnelSpans || tubes.some((t) => t.k === k)) continue
                 tubes.push({ k, e })
             }
         }
@@ -8468,7 +8467,8 @@ export class RoadSystem {
                 }))
                 return v
             }
-            test = (x, y, z) => {
+            test = (x, y, z, inset = 0) => {
+                const R2 = (R - inset) * (R - inset)
                 for (const { k, e } of tubes) {
                     const pts = e.points, cum = e.polyCum
                     for (const sp of e.tunnelSpans) {
@@ -8488,12 +8488,12 @@ export class RoadSystem {
                         const end = basic ? null : bs <= sp.s0 + 1e-6 ? endsOf(k, sp)[0] : bs >= sp.s1 - 1e-6 ? endsOf(k, sp)[1] : null
                         if (end) {   // nearest at an end: on along the lip, lateral from its line, then flat
                             const along = (x - end.x) * end.tx + (z - end.z) * end.tz
-                            if (along > end.lip) continue
+                            if (along > end.lip - inset) continue
                             if (along > 0) best -= along * along
                         }
-                        if (best >= R * R) continue
+                        if (best >= R2) continue
                         const h = y - this.runProfile(bs, k, prof).gradeY
-                        if (h > -1.5 && best + h * h < R * R) return true
+                        if (h > -1.5 && best + h * h < R2) return true
                     }
                 }
                 return false
@@ -8512,7 +8512,7 @@ export class RoadSystem {
      * Memoised per run, arc and network revision.
      */
     isMouth(runKey, s) {
-        const test = this.siblingTubeTest(runKey, false, true)   // also resets the memo on a new network revision
+        const test = this.siblingTubeTest(runKey, true)   // also resets the memo on a new network revision
         if (!test) return true
         const key = runKey + '|' + s
         let m = this._mouths.get(key)
