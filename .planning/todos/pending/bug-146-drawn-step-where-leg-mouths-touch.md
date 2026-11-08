@@ -60,7 +60,8 @@ was 0.244 m, at the chord bite at 917338424 (−110.7, −463.7).
 
 On 9 random seeds the gate's checks fail identically on main and the branch, line for line: a 9.46 m pad tear at
 749163472 (557.3, 717.0) and rim lips of 0.28–0.39 m at 1074499174 (742–746, 420–432). Both pre-existing, now
-BUG-148 and BUG-149.
+BUG-148 and BUG-149. Seed 169372896, which BUG-150's note in the gate keeps out of SEEDS: main's 0.080 m pad tear
+at (372.8, −263.2) goes to 0.038 m, leaving only BUG-151's 1.8 cm poke.
 
 **What else moves (fingerprint-world vs main b5974909).** Network, profiles and POIs are identical in all six windows.
 Junctions differ in 5 windows: 3 from moved mouths, 2 (seed 6 ponds, seed 7) from fix 3 re-walking a through road's
