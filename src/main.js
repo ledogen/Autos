@@ -62,8 +62,7 @@ import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
-import { SkySystem, SKY_CYCLE, SKY_PRESETS, nightWeight } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
-import { MoonSystem, MOON_PARAMS } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
+import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'   // the sky, its sun/moon/stars, the daylight and the sky fog — one atmosphere
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
@@ -1894,23 +1893,17 @@ function applyShadowResolution (mapSize, extent) {
   renderer.shadowMap.needsUpdate = true
 }
 
-// QUAL-02: atmospheric skybox + sun-driven lighting. Drives the sun light, hemisphere fill and fog
-// tint from ONE sun elevation/azimuth (the static base a day/night cycle plugs into). SkySystem adds
-// the Sky mesh and sets scene.background = null (the mesh is the background now).
+// The sky, the sun and moon on their real paths, and every natural light (key, hemisphere fill, the sky fog's
+// colour) from one simulated atmosphere — see sky.js. It owns the moon disc and the background mesh.
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
-const _ringDay = skySystem.particleLight(new THREE.Color(), SKY_PRESETS.day)   // FEAT-180: the curtains' noon light
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
 // NB `window.terrain` is the ground-height FUNCTION (returns metres), not the streaming system. This is the system
 // itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe, or zeroing
 // the FEAT-84 surface-texture uniforms to price them). A getter: a reseed swaps the instance.
 window.__terrain = () => terrainSystem
 
-// The moon rides SkySystem's KEY-LIGHT direction, so the disc you see is the thing casting the
-// night's shadows. Placed each frame from the loop (see moonSystem.update).
-const moonSystem = new MoonSystem(scene)
 // Scratch for the per-frame unlit-particle irradiance push (dust / smoke / dirt spray).
 const _particleLight = new THREE.Color(1, 1, 1)
-const _ringLight = new THREE.Color(1, 1, 1)
 
 // Wheel dust trails (src/dust.js). Self-contained sprite-pool puffs tinted to the dirt
 // we're driving on; driven each render frame from vehicleState (see loop). Construct here
@@ -2353,11 +2346,20 @@ function applyRenderResolution () {
   renderer.setSize(window.innerWidth, window.innerHeight)  // re-stamp the backing buffer at the new ratio
 }
 
+// The sky fog's edge term (sky.js setWorldRadius) reaches 100 % where the drawn terrain ends: the visible ring
+// plus the warm ring, which is built and drawn, less the ≤ 8 m the stream centre sits off the camera. Fully
+// fogged land IS the sky, so the edge, and any chunk still streaming in past it, cannot be seen from anywhere.
+// The lab is a clean room with no edge.
+function _syncFogEdge () {
+  skySystem.setWorldRadius(_labActive || !terrainSystem ? Infinity : (terrainSystem._ringRadius + terrainSystem._warmMargin) * CHUNK_SIZE - 8)
+}
+
 let _qualityName = 'Normal'   // the tier last applied (captures record it)
 function applyQuality (name) {
   const p = QUALITY_PRESETS[name] ?? QUALITY_PRESETS.Normal
   _qualityName = QUALITY_PRESETS[name] ? name : 'Normal'
   if (terrainSystem) terrainSystem.setRingRadius(p.ring, p.warm)
+  _syncFogEdge()
   // roadRadius DERIVED from the visible ring (PERF-06): (ring+0.5)·2·CHUNK_SIZE = 2× the terrain axis
   // half-width = the square ring's diagonal corner (×√2) with a ×√2 lead. The road network is a CIRCLE
   // that must enclose the SQUARE terrain ring's corner before it scrolls into view; it is a route/slice
@@ -2523,7 +2525,7 @@ if (_PROF) {
     shadowMapSize:    v => applyShadowResolution(v, null),
     shadowExtent:     v => applyShadowResolution(null, v),
     fogDensity:       v => { if (scene.fog) scene.fog.density = v },
-    ring:             v => { if (terrainSystem) terrainSystem.setRingRadius(v, 1); if (roadSystem) roadSystem.setRadius((v + 0.5) * 2 * CHUNK_SIZE) },
+    ring:             v => { if (terrainSystem) terrainSystem.setRingRadius(v, 1); _syncFogEdge(); if (roadSystem) roadSystem.setRadius((v + 0.5) * 2 * CHUNK_SIZE) },
     // PERF-27 item 3: the world reseed, as a lever. It is the same applyWorldSeed() the debug seed
     // field and Story Mode's seed prompt call, so the harness measures the shipping path — and it
     // returns the awaitable Path-B rebuild promise (see __lever below).
@@ -3025,8 +3027,8 @@ const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 
 //
 // Deliberately dumb geometry: an open-ended unit cylinder, scaled to the radius and sunk into the
 // ground so undulating terrain can never open a gap under it. depthWrite off + DoubleSide so it
-// reads as a light curtain from both approaches instead of a solid bucket, and toneMapped off so
-// the orange stays the same signal orange at every hour of the day clock.
+// reads as a light curtain from both approaches instead of a solid bucket. Lit like the world round it
+// (see _ringMat), so the headlights pick it out at night.
 const _POI_RING_H = 4.0        // m — curtain height
 const _POI_RING_SINK = 1.5     // m — how far the base is buried (terrain slop, not decoration)
 // How close you must be for a haul drop mark to light up (FEAT-60, owner 2026-08-05): past the pad and
@@ -3057,15 +3059,18 @@ function _ringAlphaTex () {
 // one ring changing meaning rather than two unrelated overlays.
 const _ringGeo = new THREE.CylinderGeometry(1, 1, 1, 48, 1, true)
 const _ringAlpha = _ringAlphaTex()
-// FEAT-180 (owner 11-07, 3a: "dimmed with the light, like everything else"): every curtain made here keeps its
-// authored colour in userData.base and is re-coloured each frame by the look's light (see the particle-light block).
+// FEAT-180 (owner 11-07, 3a: "dimmed with the light, like everything else") and the lighting redesign (owner:
+// "POI halos should be lit by the headlights, like the props behind them are"): a Lambert surface, so the sun,
+// the sky and the headlight spots light it as they light the props. A thin curtain also glows with the daylight
+// coming through it from the far side; that is its emissive, set each frame from the same daylight measure the
+// unlit particles use (see the particle-light block), so it is the authored signal colour at noon and gone at night.
 const _ringMats = []
+const RING_GLOW = 0.5   // the curtain's through-light at noon, × its colour
 const _ringMat = (color, opacity = 0.28) => {
-  const m = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity, side: THREE.DoubleSide,
-    depthWrite: false, toneMapped: false, alphaMap: _ringAlpha,
+  const m = new THREE.MeshLambertMaterial({
+    color, emissive: color, transparent: true, opacity, side: THREE.DoubleSide,
+    depthWrite: false, alphaMap: _ringAlpha,
   })
-  m.userData.base = m.color.clone()
   _ringMats.push(m)
   return m
 }
@@ -3527,24 +3532,21 @@ function _updateDropMarks (onMission) {
 // ── FEAT-47: the story-mode day clock ──────────────────────────────────────────────────────
 // Story mode only: started when the region goes live, stopped on exit (see the story deps below),
 // and a no-op every frame in between in free roam. Its one output today is the sky hour — pushed on
-// a quantized ladder because each push re-bakes the sky cubemap and the prop impostor atlas
-// (skySystem.onLookApplied, below). DAY_PARAMS lives in day.js, out of RANGER_PARAMS, for the
+// a quantized ladder because each push re-runs the sky's atmosphere (~2 ms) and moves the key light,
+// which re-renders both shadow cascades and re-rolls the baked prop shadows. DAY_PARAMS lives in day.js, out of RANGER_PARAMS, for the
 // same reason POI_PARAMS does.
 // FEAT-180 night by moon phase: a run's moon walks a 29.53-day synodic month from a seeded start, one day per run
-// day, so runs differ by seed and a run's nights change as it goes. The disc shows that phase and the night's light
-// scales with its lit fraction (SkySystem.setMoonLit: new moon = the night look as authored). Free roam has no run
-// clock and keeps both as they were: MOON_PARAMS.phase's default disc over the new-moon light.
+// day, so runs differ by seed and a run's nights change as it goes. SkySystem.setMoonCycle places the moon for that
+// phase (when it rises and sets), shows the phase on the disc, and lights the night by it. Free roam has no run
+// clock and keeps the sky's own default moon.
 const LUNAR_DAYS = 29.53
-const _moonFree = MOON_PARAMS.phase
+const _moonFree = skySystem._cycle
 let _moonDay = null
 function _syncMoon () {
   const d = daySystem._running ? daySystem.day() : null
   if (d === _moonDay) return
   _moonDay = d
-  const c = d == null ? null : (d / LUNAR_DAYS + seedFor(worldSeed, 'moon') / 2 ** 32) % 1
-  MOON_PARAMS.phase = c == null ? _moonFree : 1 - Math.abs(1 - 2 * c)   // 0 new … 1 full, moon.js's scale
-  moonSystem.apply()
-  skySystem.setMoonLit(c == null ? 0 : (1 - Math.cos(MOON_PARAMS.phase * Math.PI)) / 2)
+  skySystem.setMoonCycle(d == null ? _moonFree : (d / LUNAR_DAYS + seedFor(worldSeed, 'moon') / 2 ** 32) % 1)
 }
 const daySystem = new DaySystem({
   setTimeOfDay: (h) => { _syncMoon(); skySystem.setTimeOfDay(h) },
@@ -7886,8 +7888,7 @@ addPropGui(_gui, {
 // FEAT-39: GPS assist toggle (self-contained folder, same pattern as the props one).
 addGpsGui(_gui, gpsSystem)
 // QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
-const _skyFolder = skySystem.addGui(_gui)
-moonSystem.addGui(_skyFolder)   // moon lives under Sky / Lighting — same look, same folder
+skySystem.addGui(_gui)   // the moon's folder sits inside it
 // FEAT-47: story day clock folder (self-contained, same pattern).
 daySystem.addGui(_gui)
 // FEAT-53: economy folder — wallet/deeds/tier read-outs + the PROVISIONAL k and cap tunables.
@@ -8088,6 +8089,7 @@ function enterLab () {
   // 400 m strip and hides the 150 m skidpad entirely from any useful vantage. The lab is a clean
   // room: thin it right out and restore the player's setting on the way back.
   if (scene.fog) { _labFogDensity = scene.fog.density; scene.fog.density = 0.00035 }
+  skySystem.setWorldRadius(Infinity)
 
   if (terrainSystem) terrainSystem.setEnabled(false)   // stop streaming, not just drawing
   _setWorldgenVisible(false)
@@ -8119,6 +8121,7 @@ function exitLab () {
   propSystem?.setPhysicsHook(propPhysics)         // …and the prop colliders
 
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
+  _syncFogEdge()
 
   const pmLab = document.getElementById('pm-lab')
   if (pmLab) pmLab.textContent = 'testing lab'
@@ -8332,7 +8335,7 @@ const scenarioSystem = new ScenarioSystem({
   onChange: () => { _syncScenarioColumns(); _renderScenarioUI() },
 })
 
-// The light columns: the POI curtain material (_ringMat — vertical alpha ramp, no tone mapping, no
+// The light columns: the POI curtain material (_ringMat — vertical alpha ramp, lit, no
 // depth write) on a thin open cylinder, one each side of the road. Tall enough to read over a crest
 // from a few hundred metres; sunk so a slope can never open a gap under one.
 const _SCN_COL_R = 0.35     // m
@@ -10569,11 +10572,8 @@ function loop () {
   // physics step (~0.5 m at 30 m/s) off the truck it is measuring.
   physicsWireframes.update(camera.position, { position: _renderPos, quaternion: _renderQuat }, _debrisPose)
 
-  // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
-  skySystem.update(camera.position)
-  // Moon: billboard onto the key-light direction, faded in by nightFactor. After skySystem.update()
-  // so a playing cycle's new hour is already applied, and after the camera has been posed.
-  moonSystem.update(camera, skySystem.sunDirection, skySystem.nightFactor())
+  // The sky box and the moon billboard follow the posed camera; a playing debug cycle advances.
+  skySystem.update(camera)
   // Unlit particles get the look's irradiance as a flat multiplier (see SkySystem.particleLight).
   // Pushed here, once, rather than threaded through three different update() signatures.
   skySystem.particleLight(_particleLight)
@@ -10581,10 +10581,8 @@ function loop () {
   dustSystem.setLight(_particleLight, _particleAlpha)
   smokeSystem.setLight(_particleLight, _particleAlpha)
   dirtSpraySystem.setLight(_particleLight, _particleAlpha)
-  // FEAT-180: the curtains (POI rings, pump zones, start/target rings, light columns) dim with the same light, divided
-  // by the day look's own so noon is exactly the authored colour (it carries a 5 % blue cast the dust keeps).
-  _ringLight.setRGB(_particleLight.r / _ringDay.r, _particleLight.g / _ringDay.g, _particleLight.b / _ringDay.b)
-  for (const m of _ringMats) m.color.copy(m.userData.base).multiply(_ringLight)
+  const _ringGlow = RING_GLOW * (0.2126 * _particleLight.r + 0.7152 * _particleLight.g + 0.0722 * _particleLight.b)
+  for (const m of _ringMats) m.emissiveIntensity = _ringGlow
 
   // FEAT-39: GPS overlay. Early-outs to nothing when no mission is live, so free roam pays a
   // null check. Off in the lab, which has no road network to navigate.
