@@ -50,3 +50,20 @@ new gore corner at 917338424 (−110.7, −463.7), where the narrow gore's dirt 
 On 9 random seeds the gate's checks fail identically on main and the branch, line for line: a 9.46 m pad tear at
 749163472 (557.3, 717.0) and rim lips of 0.28–0.39 m at 1074499174 (742–746, 420–432). Both pre-existing, for the
 orchestrator to ticket.
+
+**What else moves (fingerprint-world vs main b5974909).** Network, profiles and POIs are identical in all six windows.
+Junctions differ in 3 windows (the moved mouths). Surface, carve and tiles differ in 5, water in 1 and props in 1:
+fix 2 shifts the ease on every curving leg. Measured on the pad surface, 0.5 m grid over ring + 2 m
+(`wip/bug-146/pad-delta.mjs`):
+- Nodes with no moved leg: max |Δ| 0.092 m (seed 6), 0.015 (seed 11), 0.028 (seed 7), 0.114 (917338424). Medians
+  1–3 cm, except 917338424 at 0.11 m.
+- The 0.108 m at 917338424 (−212, −543) is main's own 0.075 m tear going away.
+- The 0.114 m at (410.8, 307.7) is smooth on both trees, the pad hand-off sitting where the ribbon's sections put
+  it. The only step there is the ring's designed 0.15 m rim, the same on both.
+- Moved nodes: up to 0.27 m (the gore now paved).
+
+**bore-junction-clearance MAX_IN_PAD 19 → 20.** Seed 18's node (164.7, 6.3) moves its mouths 14.5 → 17.5 m. Its reach
+circle (ringMaxR + shoulder + toe, the carve's bound) grows 29.4 → 32.3 m and takes in the portal of
+g:-1,0,1:0,0,2 29.9 m away, 12.4 m past the ring. The carved ground within 8 m of that portal is identical to the
+last 0.1 mm (`wip/bug-146/portal-ground.mjs`): a grown circle, not a cut headwall. This follows the 18 → 19 precedent
+(BUG-63).
