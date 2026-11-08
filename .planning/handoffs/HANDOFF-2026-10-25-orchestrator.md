@@ -513,3 +513,9 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
 - **Power mods intake:** 2 inbox notes + 10 item-page cards → FEAT-189 power mods, FEAT-190 I4 default + V6/V8 swaps +
   bigger tank, FEAT-191 turbo/supercharger sim, FEAT-192 rarity tiers. Builds = lane B (behind its landing queue);
   items.md/FEAT-121 fold + item-page cards + FEAT-192 = lane C.
+- **11-08 ~22:30 Lane C done, idle on the owner's answers.** feature/content 7fc38eb0 (main 1f5c07dd merged): docs fold
+  (items.md §3b/§3d, FEAT-121 power mods + V6/V8/tank rows, 10-24 late fold), FEAT-192 mapping 98e0bdbd, UI-STYLE
+  rarity row c693db6b, ONE data change data/shop-stock.js shadeTarp 6 → 15. **Landing queue + C:** affected gates
+  (shop-stock, inventory, whatever `npm test` picks) when the hold lifts. Item page v39: FEAT-192's four calls
+  (answers/_rarity), V6/V8/tank cards, tarp "sold at" conflict (general store 10-24 vs auto shop 11-06). After the
+  rarity answers C switches stock-weights/RARITY_GATES/RARITY_COLOR; B's FEAT-189/190 rows carry `rarity` strings.
