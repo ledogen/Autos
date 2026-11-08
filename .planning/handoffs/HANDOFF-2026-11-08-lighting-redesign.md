@@ -101,3 +101,36 @@ The same notes and the owner's notes on the legacy build are in `.planning/todos
 Known gaps from round 1, unchanged: no clouds; random stars; moon ignores its orbital drift and 5° tilt; 05:00 is
 peach-lilac; the clock steps the sun ~1.5° every 6 s; the tone curve changed how every asset looks (menu included);
 conflicts with Spare's FEAT-180 work in `sky.js` and `main.js`.
+
+## Round 2 done (2026-11-08 late, second agent)
+
+Branch at **9fc6900d** (022a7499, 518125e5, 1b3be8bd, 9fc6900d), only `src/sky.js` + `src/main.js`. No gates ran
+(hold); `sky-ephemeris` is owed a run when it lifts.
+
+- **Land and sky now have separate grades.**
+  - Land and truck go through ACES at the legacy exposure (0.5 day → 0.36 night) and adapt much less. The land
+    keeps the light's colour cast, sunlit ground is warmer, and the ground bounce is cut to 0.35.
+  - The sky keeps round 1's curve, grade and adaptation, so the sunrise/sunset sky and the stars are unchanged.
+- **Moon:** the eye adapts away only 15 % of moonlight (`moonAdapt`). Full is ×1.7 the new moon's land
+  brightness; the legacy is ×2.0.
+- **Headlights:** match the legacy (0.0073 just ahead at new moon on both). No headlight code changed; round 1's
+  adapted exposure was multiplying them.
+- **Fog:** the edge ramp starts at 0.4 × r (was 0.6), haze up a third per tier (Normal 0.003 → 0.004).
+- **Night fog cap** (`nightFog` 0.55 × flat-ground brightness after twilight; the stars and discs are added after
+  it). This fixed the owner's mid-round note: night fog had been 4–8× brighter than the land under it.
+- **New knobs** (debug GUI "Land (ACES)" folder, `moonAdapt` under Atmosphere): `landGain` 2.0, `moonAdapt`
+  0.15, `landDepth` 1.62, `landTwilight` 2.0, `warmth` 0.2, `landCast` 1.0, `nightBlue` 1.5, `bounce` 0.35,
+  `nightFog` 0.55.
+- **Sheets:**
+  `/private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/f08f9df1-2394-4364-9acc-a863a66bda88/scratchpad/r2/sheets/`
+  (`sheet-drive`, `sheet-truck`, `sheet-peak`, `sheet-car`). The legacy column is Spare's ROUND 3 (0be79cae), not
+  round 4.
+- **Frame:** 6.9–7.2 ms GPU-complete at 1920×993; fog 0.25–0.33 ms, sky 0.1–0.2 ms; CPU push 1.83 ms.
+- **Gaps:**
+  - moonlit sky and fog are grey where the legacy's are blue;
+  - the 20:00 land orange is weaker than the legacy's (saturation 0.21 vs 0.55);
+  - dusk land facing the sun is darker than the fog behind it (`landTwilight` also moves golden hour);
+  - distant grass is less saturated;
+  - the POI ring glow is dimmer under ACES (`RING_GLOW` not retuned);
+  - 05:00 is twilight here (sunrise 05:33) while the legacy is still dark;
+  - round 1's gaps stand.
