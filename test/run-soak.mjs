@@ -262,8 +262,8 @@ async function saveAndResume () {
   if (await until(() => js('document.getElementById("resume-card").style.display === "flex"'), 3000)) await tap('Escape')
   await until(async () => !await js('document.getElementById("resume-card").style.display === "flex"'), 3000)
   const after = await S()
-  check(after.day === before.day && Math.abs(after.money - before.money) < 0.005 && Math.abs(after.h - before.h) < 0.2,
-    `the resume changed the run: ${JSON.stringify({ day: before.day, money: before.money, h: before.h })} → ${JSON.stringify({ day: after.day, money: after.money, h: after.h })}`)
+  check(after.day === before.day && Math.abs(after.money - before.money) < 0.005 && Math.abs(after.h - before.h) < 0.2 && after.first === before.first,
+    `the resume changed the run: ${JSON.stringify({ day: before.day, money: before.money, h: before.h, first: before.first })} → ${JSON.stringify({ day: after.day, money: after.money, h: after.h, first: after.first })}`)
 }
 
 // A 0.1 m drop, not the teleport's default 0.5: every seat with a fragile crate aboard was a half-metre fall
@@ -513,6 +513,9 @@ async function playRun (seedIn) {
     if (await until(dlgUp, 800)) await readCards()
     const s = await S()
     run.day = s.day
+    // The skip leaves mom's casserole done for good (FEAT-184); once (2026-11-08, seed 2782385833) it came back as
+    // 'live' after a night and her door offered it instead of the bed. Note the moment it leaves 'done'.
+    if (s.first !== 'done' && !run.notes.some(n => n.startsWith('first job'))) run.notes.push(`first job ${s.first} at day ${s.day} ${s.hour.toFixed(2)} h after step "${step}"`)
     if (s.ended) { run.result = s.ended; run.endMoney = +s.money.toFixed(2); if (/beat the alpha/.test(s.ended)) run.winDay = s.day; break }
     if (s.day > MAX_DAYS) { run.result = `no win by day ${MAX_DAYS}`; break }
     if (run.gateDay == null && s.lines.some(l => l !== 'closed')) run.gateDay = s.day
