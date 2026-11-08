@@ -42,10 +42,18 @@ inner edges crossed between the cutback and the mouth, where the pad's ribbon ma
    kink). The moved mouth put an ease on that kink and tore the pad 0.11 m. The station now comes from
    `_legDeckTop`'s section solve (continuous in position). This also took main's worst non-excepted tear on the gate
    seeds, 0.075 m, to 0.037 m.
+3. **A through road's back chord walks the true edges where it would bite the pavement.** `_junctionRingWeld` joins
+   two nearly opposite legs' mouth corners (cosine below −0.85) with one straight chord. That is exact only while both
+   legs run straight out to their mouths. A moved mouth on a bending leg put the chord 2.1 m inside both pavements
+   beside node 917338424 (−110.7, −463.7), a bite of dirt in the road. Main already bit 0.84 m at (100.8, −986.6) and
+   0.73 m at 1353361482 (−72.3, 41.4), where a long mouth meets an opposite leg. Where a true-edge point stands more than
+   0.3 m outside the chord, the ring now walks the true edges, as an open back does. Leg-edge points outside their own
+   ring on seeds 917338424, 1353361482 and 563927844 (`wip/bug-146/ring-bite.mjs`): main 74, branch 3. The 3 are one
+   mouth-corner point at 917338424 (−204.2, −536.3), identical on main.
 
 junction-edge-lip: exception removed, PASS. Worst tear 0.037 m per 5 cm (main 0.075 outside the exception, 0.143 at
-the two sites), steepest 0.166 m per 0.25 m (main 0.193), rim lip 0.158 (same), worst leg lip 0.244 m (main 0.237): the
-new gore corner at 917338424 (−110.7, −463.7), where the narrow gore's dirt sits at the lower road's kerb.
+the two sites), steepest 0.166 m per 0.25 m (main 0.193), rim lip 0.158 (same), worst leg lip 0.199 m (main 0.237). Before fix 3 it
+was 0.244 m, at the chord bite at 917338424 (−110.7, −463.7).
 
 On 9 random seeds the gate's checks fail identically on main and the branch, line for line: a 9.46 m pad tear at
 749163472 (557.3, 717.0) and rim lips of 0.28–0.39 m at 1074499174 (742–746, 420–432). Both pre-existing, for the
