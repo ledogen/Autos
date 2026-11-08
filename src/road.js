@@ -74,6 +74,21 @@ const BLEND_REACH_MULT = 10.0
 // distance, so the cutoff needs an explicit smooth taper).
 const RULE_SOFT = 1.2
 const RULE_SOFT2 = RULE_SOFT * RULE_SOFT
+// BUG-155: RULE_SOFT's two-sided clamp never reaches 0 on a leg's own asphalt (0.4 at lat 4.5), so a sibling 3 m off kept
+// ~12 % of the weight there and physics bent 0.34 m off the drawn ribbon (1074499174, just past a mouth) — and stepped by
+// that much across the mouth chord, where the pad's mask is the leg's own deck. Its reason was the PAD (overlapping
+// pavements, a thin handover annulus); since the solved pad (owner 2026-10-04) the ring is a thin-plate spline that never
+// reads this blend, and past a leg's cutback its pavement overlaps no sibling's (BUG-59). So past the cutback the clamp
+// turns ONE-SIDED (_ruleClamp): 0 on the asphalt, RULE_EDGE_W of C1 softening outside it. RULE_FLOOR keeps a sliver of
+// the soft clamp so pavements that still overlap past both cutbacks (a merge shape) blend exactly as before.
+const RULE_EDGE_W = 0.6
+const RULE_FLOOR = 1e-3
+function _ruleClamp(g, a) {
+    const soft = 0.5 * (g + Math.sqrt(g * g + RULE_SOFT2))
+    if (a <= 0) return soft
+    const one = g <= 0 ? 0 : g < 2 * RULE_EDGE_W ? g * g / (4 * RULE_EDGE_W) : g - RULE_EDGE_W
+    return (1 - a) * soft + a * (one + RULE_FLOOR * soft)
+}
 const RULE_TAPER = 4.0
 const RULE_LEG_REACH = 14.0
 // Arc half-window (m) for the near-node leg projection: confine each leg's nearest-foot search to this much
@@ -8676,7 +8691,7 @@ export class RoadSystem {
             // 0, so every OTHER weight (which carries that factor) decays with it and w_i alone survives ⇒ that
             // leg's grade, smoothly (the ribbon never moves). Pure function of position, and now C1 as well as
             // C0 (RULE_SOFT) ⇒ continuous across every Voronoi switch with no crease at the asphalt edges.
-            const nodeLegs = jc.node.legs
+            const nodeLegs = jc.node.legs, cutDefault = this.junctionCutbackDist()
             const gaps = [], grades = [], tapers = []
             for (const leg of nodeLegs) {
                 const ne = this._network.get(leg.runKey)
@@ -8712,7 +8727,12 @@ export class RoadSystem {
                     if (Math.abs(legGrade - jc.node.nodeY) > MAX_LEG_SLOPE * along + halfWidth) continue
                     // RULE_SOFT smooth clamp — see the const's note: a hard max(0,gap) froze the weight at
                     // the asphalt edge and squeezed the whole inter-leg handover into the throat annulus.
-                    gaps.push(0.5 * (gap + Math.sqrt(gap * gap + RULE_SOFT2))); grades.push(legGrade)
+                    // BUG-155: one-sided past this leg's cutback, over the SAME ramp as the pad's mask
+                    // (_padRibbonMask's au), so the pad, the dirt and the on-ribbon overlay all hand over to the
+                    // leg's own deck in one 1.5 m band inside the mouth. Per-leg, from its own foot ⇒ still a pure
+                    // function of position.
+                    const au = Math.min(1, Math.max(0, (along - ((leg.cutback ?? cutDefault) - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
+                    gaps.push(_ruleClamp(gap, au * au * (3 - 2 * au))); grades.push(legGrade)
                     // Smooth in-range taper (1 → 0 across the last RULE_TAPER m before the cutoff).
                     // Barycentric weight does NOT decay with a leg's OWN distance, so without this a leg
                     // crossing RULE_LEG_REACH would POP in with a non-trivial weight (a lateral shoulder
