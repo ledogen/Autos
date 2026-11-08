@@ -24,7 +24,10 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   // FEAT-184 (owner, 2026-11-07: "allow players to check an option in settings to always skip the tutorial … after the
   // first time you see the tutorial"): a new run starts where a skip lands. Switched on by the first finished or skipped
   // tutorial (main.js _tutorialDone); the settings page turns it back off.
-  skipTutorial: false,
+  // This is the owner's "tutorial flag", and it STARTS COMPLETE (owner, 2026-11-08: "For now, for testing, set the
+  // tutorial flag to complete so that I'm not faced with a tutorial every time I reload or clear the browser cache"):
+  // the tutorial is played from its own main-menu button. A stored false (the settings page) still wins.
+  skipTutorial: true,
   // No last seed: the seed field is always blank (owner, 2026-09-06) — remembering it would make
   // "just press start" mean "replay the same world forever".
 })

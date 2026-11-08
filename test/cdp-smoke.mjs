@@ -342,7 +342,9 @@ const STEPS = [
     await js('document.getElementById("pm-story").click()')
     check(await js('document.getElementById("main-menu").classList.contains("setup")'), 'story did not open the setup page')
     // FEAT-147/170: every run opens on the firing. This flow HOLDS M to skip it — so no first-use card holds the
-    // sim under the steps below; the 'opening' step at the end plays it.
+    // sim under the steps below; the 'opening' step at the end plays it. FEAT-184 (owner, 2026-11-08): the tutorial flag
+    // starts complete, so a new game would land at Larry's with nothing to hold — turn it off to test the hold.
+    await js('window.__settings.skipTutorial = false')
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
@@ -1271,11 +1273,18 @@ const STEPS = [
   ['opening', async () => {
     // FEAT-147: a new run with the opening on starts PARKED AT THE BURGER JOINT, the firing's cards over a slow
     // orbit of it with the sim held, then mom's call. FEAT-170: then the evening at mom's, and her casserole.
-    await js('window.__settings.skipTutorial = false')   // FEAT-184: the earlier skip turned it on; this step plays the tutorial
-    await js('document.getElementById("mm-new").click()')
-    await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
+    // FEAT-184 (owner, 2026-11-08): it is played from the main menu's "tutorial", with the tutorial flag left COMPLETE,
+    // on the URL's ?seed=6. It must never touch the career save: a stand-in record is planted and has to come back as is.
+    check(await js('window.__settings.skipTutorial') === true, 'the tutorial flag is not complete (FEAT-184: it starts complete)')
+    const career = JSON.stringify({ v: 1, data: { smoke: 'the career run' } })
+    await js(`localStorage.setItem("autos-run/1", ${JSON.stringify(career)})`)
+    await js('document.getElementById("mm-tutorial").click()')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the opening run never went live (45 s × load)')
+    const code = await js('window.__worldCode()')
+    check(code.split('/')[0] === '6', `the tutorial is not on the URL's seed 6: world ${code}`)
+    check(await js('window.__autosave()') === false, 'the tutorial run autosaved')
+    check(await js('localStorage.getItem("autos-run/1")') === career, 'the tutorial touched the career save')
     const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
     // FEAT-170 stage 4: mom's lessons queue up and hold the sim (and every key) while they are up — read off
     // whatever comes, waiting a beat for a queued one to appear. Returns the speakers' card count.
