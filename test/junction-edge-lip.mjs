@@ -18,6 +18,9 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
+// RIM's other sign (BUG-150): dirt standing ABOVE a pad's rim — a wall. None on these seeds; seed 169372896 had 0.38 m.
+const WALL_MAX = 0.05
+let worstWall = 0, worstWallAt = ''
 
 const SEEDS = ['1353361482', '369055107', '917338424']   // random seeds (BUG-122's census; BUG-137's causeway T)
 const BUG146 = [{ S: '1353361482', x: 26.8, z: 721.0 }, { S: '917338424', x: 99.4, z: -1016.8 }]   // see SMOOTH
@@ -41,7 +44,7 @@ for (const S of SEEDS) {
     }
     const co = road._connectorCarve(x, z, raw)
     if (co) cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY }
-    const m = road._mergeCarve(cs, road._junctionPadCarve(x, z, raw), undefined, dRib)
+    const m = road._mergeCarve(cs, road._junctionPadCarve(x, z, raw), dRib)
     const v = m ? raw + m.blendW * (m.gradeY - raw) : raw
     memo.set(key, v); return v
   }
@@ -89,6 +92,9 @@ for (const S of SEEDS) {
     }
     // RIM (BUG-145): the pad's own edge between its legs — physics 5 cm inside the ring minus 5 cm outside, every 0.5 m
     // of ring, away from the legs' pavements (their edges are LIP's) — stands the designed kerb, no more than LIP_MAX.
+    // BUG-150: and the dirt never stands ABOVE the rim (a wall, not a kerb): a duck cap held seed 169372896's hillside-T
+    // dirt 1.2 m off the leg's section where the pad sits 1.88 m under it — 0.38 m of wall at (15.4, −910.4). That seed
+    // is not in SEEDS: it also carries BUG-151's 1.8 cm poke (and, on main, BUG-146's class of tear); add it with them.
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i], b = ring[(i + 1) % ring.length], L = Math.hypot(b.x - a.x, b.z - a.z)
       for (let t = 0; t < L; t += 0.5) {
@@ -101,6 +107,8 @@ for (const S of SEEDS) {
         const lip = i1 - o1
         if (lip > worstRim) { worstRim = lip; worstRimAt = `${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})` }
         if (lip > LIP_MAX) { rimFails++; if (rimFails <= 3) console.log(`  FAIL rim lip ${lip.toFixed(3)} m at ${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})`) }
+        if (-lip > worstWall) { worstWall = -lip; worstWallAt = `${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})` }
+        if (-lip > WALL_MAX) { rimFails++; if (rimFails <= 3) console.log(`  FAIL rim wall: dirt ${(-lip).toFixed(3)} m above the pad at ${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})`) }
       }
     }
     // SMOOTH: the pad's surface (what the wheel rides inside the ring) on a G grid, each point against its +x and +z
@@ -146,5 +154,6 @@ console.log(`${edges} junction leg edges: worst lip ${worstLip.toFixed(3)} m (${
 console.log(`BUG-146 (excepted): worst tear ${worst146.toFixed(3)} m per ${G / 5} m at its two sites`)
 console.log(`${rimEdge} pad rim points: worst rim lip ${worstRim.toFixed(3)} m (${worstRimAt}), ${rimFails} over ${LIP_MAX} m`)
 fails += rimFails
+console.log(`  worst rim wall ${worstWall.toFixed(3)} m${worstWallAt ? ` (${worstWallAt})` : ''}, limit ${WALL_MAX} m`)
 console.log(fails ? `FAIL: ${fails}` : 'PASS')
 process.exit(fails ? 1 : 0)
