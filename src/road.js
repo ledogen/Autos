@@ -162,15 +162,6 @@ const PAD_THROUGH_BLEND = 2.0  // m of distance lead over which a T trunk's near
 // rides the asphalt top (padTopY overlay in _sampleCarveWorld), not this dirt. Hardcoded (no
 // route-cache-signature effect).
 const PAD_DIRT_EXTRA = 0.15
-// PAD_DUCK_CAP: how far the pad may move the dirt from the leg cross-section's own design (m), mesh and physics
-// alike. Inside the ring the dirt must get fully UNDER the creased asphalt or the tan interp slivers poke through
-// the pad (the rim earthwork fix): the saturating-camber model (camberFromCurvature) banks sweeper leg mouths into
-// creases of ~1.05 m at the seed-6 trident rim, and 1.2 admits every one with margin.
-// BUG-145: physics used to cap at 0.55, against the free-sampled duck field's jumps at crease lines (the pinned
-// cross-section's 0.70 plaza tolerance). PERF-25 made the pad surface resolve-free and continuous, so the jumps are
-// gone — and the tighter cap held physics dirt up to 0.4 m under the DRAWN dirt beside a pad rim that stands high
-// over its side road (seed 917338424's causeway T: a 0.54 m drop the mesh did not have, where 0.15 m is designed).
-const PAD_DUCK_CAP = 1.2
 // BUG-122: _ribbonDrawnAt keeps the physics asphalt overlay within this of a padded leg's mouth (m) — the ribbon's first
 // section lies on the mouth chord, which on a curving leg sits off arc = mouth at the ribbon's edges.
 const RIBBON_MOUTH_SLACK = 1.0
@@ -8370,7 +8361,7 @@ export class RoadSystem {
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
         // PERF-24/25: the pad surface is the resolve-free _nodeSurfaceTop (one ruled-blend evaluation,
         // feet shared with the leg cross-section above via the per-leg memo) — no extra resolves at all.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP,
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp),
             nr ? this._ribbonEdgeDist(runKey, arcSEff, latDist) : Infinity)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 
@@ -9832,17 +9823,18 @@ export class RoadSystem {
         return { blendW, gradeY: co.gradeY * dom + cs.gradeY * (1 - dom) }
     }
 
-    _mergeCarve(a, b, duckCap = PAD_DUCK_CAP, dRib = Infinity) {
+    _mergeCarve(a, b, dRib = Infinity) {
         if (!a) return b || null
         if (!b) return a
         const blendW = Math.max(a.blendW, b.blendW)
         if (b.padTopY != null) {
             // INSIDE the ring (the pad drawn over it): take the LOWER dirt. The pad's crease-ducking design
             // (top − clearance − PAD_DIRT_EXTRA) must not be overridden by the leg's shallower cross-section or the
-            // tan slivers return. PAD_DUCK_CAP bounds how far b (a free resolve) may drag a pinned cross-section
-            // down, so the top field's degenerate-node tears can't tear an otherwise-smooth shoulder.
-            const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - duckCap)
-            return { blendW, gradeY: a.gradeY + (low - a.gradeY) * b.blendW, padTopY: b.padTopY }
+            // tan slivers return. BUG-147: by however much — a duck cap (1.2 m, mesh and physics since BUG-145) once
+            // bounded it against the free-sampled duck field's tears, which PERF-25's resolve-free pad surface removed;
+            // all the cap still did was strand the dirt above a pad whose crease is deeper (1.88 m at seed 169372896's
+            // hillside T, where the mesh dirt poked 0.38 m up through the drawn pad).
+            return { blendW, gradeY: a.gradeY + (Math.min(a.gradeY, b.gradeY) - a.gradeY) * b.blendW, padTopY: b.padTopY }
         }
         // BUG-123: OUTSIDE the ring the dirt is exposed beside an asphalt edge and stands clearanceMargin below THAT
         // edge's top, so the NEARER edge governs: a drawn ribbon's (the leg's dirt, `a`) or the pad's rim (`b`). It
@@ -9851,11 +9843,12 @@ export class RoadSystem {
         // sat lower, beside the pad's rim when the leg sat lower (16 of 52 leg edges on random seeds still stood
         // > 0.25 m after BUG-122). `dRib` is the distance to the nearest drawn ribbon edge (_ribbonEdgeDist,
         // continuous across a leg's mouth), `b.sd` the distance outside the ring; the pad's share smoothsteps over
-        // ±0.5 m of their difference, so the hand-over is C0. duckCap bounds the pad's pull either way.
+        // ±0.5 m of their difference, so the hand-over is C0. BUG-147: uncapped — the pad's rim-hold band (b at full
+        // depth for PAD_RIM_HOLD past the ring) then always meets the rim at the designed 0.15 m, and b.blendW's ramp
+        // beyond the hold carries the dirt back to the leg's. The cap left a 0.42 m dirt WALL above the pad's rim there.
         const u = Math.min(1, Math.max(0, dRib - (b.sd ?? 0) + 0.5))
         const g = u * u * (3 - 2 * u)
-        const target = Math.min(a.gradeY + duckCap, Math.max(a.gradeY - duckCap, b.gradeY))
-        return { blendW, gradeY: a.gradeY + (target - a.gradeY) * b.blendW * g, padTopY: null }
+        return { blendW, gradeY: a.gradeY + (b.gradeY - a.gradeY) * b.blendW * g, padTopY: null }
     }
 
     /**

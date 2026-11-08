@@ -41,7 +41,7 @@ for (const S of SEEDS) {
     }
     const co = road._connectorCarve(x, z, raw)
     if (co) cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY }
-    const m = road._mergeCarve(cs, road._junctionPadCarve(x, z, raw), undefined, dRib)
+    const m = road._mergeCarve(cs, road._junctionPadCarve(x, z, raw), dRib)
     const v = m ? raw + m.blendW * (m.gradeY - raw) : raw
     memo.set(key, v); return v
   }
