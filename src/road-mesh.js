@@ -1174,9 +1174,11 @@ export class RoadMeshSystem {
         // into an underground Y (road.siblingTubeTest; the wall contact reads it too). The cut is a MITER: a
         // triangle with corners on both sides is split where the sibling test flips along its edges (bisection to
         // 1 cm). Each tube is so cut on the other's surface, and both cuts lie on the curve where the two surfaces
-        // cross, so the linings meet edge to edge. The cut reads the bore shrunk by INSET, the depth the lining's own
-        // facets sit inside the true bore: cut on the true bore, each lining stopped short of the other's facets and
-        // the sky showed as a hairline down seed 717319401's fork. Owner's redrive 11-07: "torn and overlapping edges on the tubes"
+        // cross, so the linings meet edge to edge. Everything reads the bore shrunk by INSET, the depth the lining's own
+        // facets sit inside the true bore. Cut on the true bore, each lining stopped short of the other's facets (the sky
+        // as a hairline down seed 717319401's fork); and where two runs split one tunnel at an underground node their
+        // linings coincide, so each read inside the other by float noise and both were cut (a dashed ring of rock, seed
+        // 4076238903). 4 cm deep is never true of both. Owner's redrive 11-07: "torn and overlapping edges on the tubes"
         // was the whole-triangle cut it replaces: a stair-stepped edge, with what was kept past it inside the sibling.
         // The sibling's own sharp edges (its mouth plane meeting its arch) can poke through a triangle whose corners
         // are all outside (32 cm deep at seed 717319401's fork tip), so a triangle whose edge midpoints or centroid
@@ -1184,7 +1186,11 @@ export class RoadMeshSystem {
         // The FLOOR is not cut. Cut by both tubes, the fork's overlap was a 31 m² hole; cut on one tube's footprint, a
         // slot opened wherever the two floors differ in height (17.5 cm at seed 717319401's fork: sky at a grazing
         // angle). Both whole, the lower runs on under the higher's edge — and both are the cut bench's terrain material.
-        const sib = road.siblingTubeTest?.(runKey)
+        // the arch polygon's chord sits R(1 − cos(π / 2SEG)) = 2.5 cm inside the true bore; the 3 m rings' chord on a
+        // curving run adds about 1 cm more
+        const INSET = R * (1 - Math.cos(Math.PI / (2 * SEG))) + 0.015
+        const sibT = road.siblingTubeTest?.(runKey)
+        const sib = sibT && ((x, y, z) => sibT(x, y, z, INSET))
         const nv0 = rings * vpr
         const xPos = [], xCol = [], xFcol = [], xUv = []   // vertices the miter adds, after the nv0 ring vertices
         const attr = (i, a, src, ext, n) => (i < nv0 ? src[n * i + a] : ext[n * (i - nv0) + a])
@@ -1199,9 +1205,6 @@ export class RoadMeshSystem {
         }
         const cut = new Map(), mids = new Map()   // edge key → its vertex on the sibling's surface / its midpoint (shared by both triangles on it)
         const mid = (i, j) => { const key = ekey(i, j); let m = mids.get(key); if (m === undefined) mids.set(key, m = addV(i, j, 0.5)); return m }
-        // the arch polygon's chord sits R(1 − cos(π / 2SEG)) = 2.5 cm inside the true bore; the 3 m rings' chord on a
-        // curving run adds about 1 cm more
-        const INSET = R * (1 - Math.cos(Math.PI / (2 * SEG))) + 0.015
         const edgeCut = (o, n) => {   // o outside, n inside
             const key = ekey(o, n)
             if (cut.has(key)) return cut.get(key)
@@ -1209,7 +1212,7 @@ export class RoadMeshSystem {
             let t0 = 0, t1 = 1
             while ((t1 - t0) * L > 0.01) {
                 const t = (t0 + t1) / 2
-                if (sib(P3(o, 0) + (P3(n, 0) - P3(o, 0)) * t, P3(o, 1) + (P3(n, 1) - P3(o, 1)) * t, P3(o, 2) + (P3(n, 2) - P3(o, 2)) * t, INSET)) t1 = t
+                if (sib(P3(o, 0) + (P3(n, 0) - P3(o, 0)) * t, P3(o, 1) + (P3(n, 1) - P3(o, 1)) * t, P3(o, 2) + (P3(n, 2) - P3(o, 2)) * t)) t1 = t
                 else t0 = t
             }
             const id = addV(o, n, t1)
