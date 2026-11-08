@@ -434,7 +434,7 @@ async function buyFood () {
     const price = await js(`(() => { const r = [...document.querySelectorAll('#svc-screen .sv-shelf')]
         .find(r => ${JSON.stringify(FOOD_NAMES)}.some(n => r.querySelector('.sv-name')?.textContent.startsWith(n)))
       const b = r?.querySelector('[data-act=stow]')
-      return b && !b.disabled ? +(r.querySelector('.sv-price').textContent.replace(/[^\d.]/g, '')) : null })()`)
+      return b && !b.disabled ? +(r.querySelector('.sv-price').textContent.replace(/[^\\d.]/g, '')) : null })()`)
     if (price == null || s.money - price < FOOD_FLOOR) return
     await js(`[...document.querySelectorAll('#svc-screen .sv-shelf')].find(r => ${JSON.stringify(FOOD_NAMES)}.some(n => r.querySelector('.sv-name')?.textContent.startsWith(n))).querySelector('[data-act=stow]').click()`)
     check(await until(async () => (await S()).food > s.food, 3000), `buying food at the shop screen took nothing (price $${price})`)
