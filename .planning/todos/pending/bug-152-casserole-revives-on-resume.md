@@ -47,22 +47,95 @@ The next resume changed it again. The replayed take/complete then miss mom's slo
   - a second onRegionLive (the clock is kept);
   - stale network replies (the client checks instance + seed + epoch);
   - pond discs (analytic).
-- **Next step:** catch an odd session with its build inputs. `test/zz-probe-resume.mjs` (UNTRACKED scratch copy of
-  run-soak, never commit) wraps `poiSystem.build` and records centre, radius, main-piece size,
-  `__roadSys()._network.size`, `_proto.radius` and `_lastBandSig` in `window.__ctr`. Its `--first` mode loops
-  new run → teleport → one resume and prints SAME/ODD with both sets of stats. Run it as
-  `tools/chrome-slot.sh node test/zz-probe-resume.mjs --first --seeds=2782385833 --loops=12`.
-  Its multi-resume mode can't reseat after the 2nd reload (the sim stays held), so use `--first`.
-- **Suspects to test against that capture:**
-  - (a) `RoadNetworkClient.buildNow` queues as reason `'move'`. A queued 'move' is coalesced by overwriting its
-    x/z/radius, so a per-frame move could shrink a queued region build, and the waiter still resolves true.
-  - (b) the region centre (`story._beginWarm` reads the truck position) is taken before the story seed's seat lands.
-    For example, the boot reseat's `resolveSpawn` is still in flight when Continue is clicked: it resumes against
-    the new global `roadSystem`. Continue is clicked earlier after boot than New → Start, which may be why resumes
-    are the odd ones.
 - Bisect: a detached 968cd1a4 worktree is at `../CarGame-run-shape-val`. Its probe ran clean, but most of its
   teleports failed, so that result is weak. The soak still writes `wip/run-soak/resume-<seed>-day<N>.json` when a
   resume changes the first job.
+
+## Root cause (desk read, 2026-11-08, low-power mode — no browser runs)
+
+### What the odd roster is
+
+The roster is a pure function of (region centre, radius, main piece, road network, POI params, seed). `poi.js`
+has no unseeded randomness. The odd roster on 2782385833 reuses the normal roster's PADS: the same edges, and the
+same promoted-T ids such as `1356263,-197501`. But it puts different TYPES on them. For example,
+`poi:1,0,1|1356263,-197501,-1@0` is a gas pump in the normal roster and an auto shop in the odd one.
+
+So the network was the same and the SITING moved. Siting reads the centre directly: nearSpawn is a 1000 m ring
+around the centre (mom, Larry), and the coverage picks measure from it. It also reads the main piece.
+
+### The two named suspects, ruled out by reading
+
+- **(a) 'move' coalescing cannot fire during entry.** During 'warming' nothing else sends a 'play' request while
+  the region build is queued:
+  - the frame-loop stream is off (`story.js:126` `isRoadStreamSuspended`, `main.js:10239`);
+  - resolveSpawn has already finished, because the warm only starts after the settle;
+  - every other `roadSystem.update()` caller is the 'params' adopt hook, `releaseRegion` (exit) or a debug slider.
+
+  It is still a latent trap for a future caller: `road-network-client.js:109` lets a later 'move' overwrite a queued
+  `buildNow` entry's window, and that entry's waiter still resolves `true`. Not this bug.
+- **(b) as written, the boot reseat still in flight at Continue, is impossible.** The boot awaits its seat at top
+  level (`main.js:7933`) before `__rsReady` is set.
+- Also out:
+  - a validator throw or a warm timeout: both log `[story]` warnings, and the probe captured none in the odd
+    sessions;
+  - the worker's warm-fail or timeout path: it builds the same pure routes synchronously;
+  - a shared `_rebuildPending`: only the debug sliders call `rebuildTerrainFull`.
+
+### What is left: the centre is read from the truck, after a settle that does not prove the truck was seated
+
+- `story._beginWarm` (`story.js:196`) takes the region centre from `getVehiclePosition()`. It runs when `applySeed`'s
+  promise settles.
+- That promise resolves EVEN WHEN the rebuild or its seat failed. `debouncedRebuildFull` does
+  `.catch(warn).finally(resolve)` (`main.js:816`), and `story.enter` adds `.catch(warn).then(_beginWarm)`
+  (`story.js:185`).
+- If anything in `_rebuildFullNow` or the story seed's `_reseatTruckAtSpawn` throws, the truck is still at the menu
+  world's spawn when `_beginWarm` reads it. The menu world is a random seed.
+- Every seed's spawn is within about 600 m of the origin: `_spawnProbeBase` (`main.js:598`) puts the base at
+  ±100 m, and the spawn is the nearest road within 544 m.
+- So the region gets built for the right seed, shifted a few hundred metres. That gives the same network and pads
+  with reshuffled siting, which is exactly the signature above.
+- The only trace is a `console.warn('[main] full rebuild failed')`. The soak counts only errors, and the probe's
+  warning filter (`/story|save|board/`) did not match it.
+- **Confidence:** the "siting moved, network didn't" part is high: it comes from the ids. "The centre came from a
+  stale truck after a swallowed failure" is probable but NOT proven, because what throws is unknown.
+  The remaining alternative is the main piece differing. The `--first` probe's `__ctr` (centre, main-piece size,
+  network size) decides it in one odd session.
+
+## Proposed fix
+
+1. **The region centre is a function of the seed, never of the truck.**
+   - `_beginWarm` takes the centre from a new `spawnCentre()` dependency: main.js's `resolveSpawn(worldSeed)`, which
+     is memoised and computed on the seed's own network.
+   - Main then seats the truck there. Normally it is already there, so this is a no-op.
+   - This implements the 2026-08-11 ruling ("the seed decides where the world is built, and nothing else") at its
+     source. The truck-position proxy is the leak. It closes the class whatever the failing step turns out to be.
+2. **A failed settle must not enter silently.**
+   - `debouncedRebuildFull` currently swallows the error for story entry. Return the failure instead.
+   - `story.enter` then retries the settle once, else shows the seed card.
+   - Log it with `console.error`, so cdp-smoke and the soak go red instead of building a shifted world.
+3. **Defence on resume.** `logBoard`'s replay (`save.js:66`) counts events that no longer apply (the call returned
+   falsy). If any did, it logs `console.error('[save] board replay dropped N of M events')`. Any future roster drift
+   then fails a gate loudly instead of reviving the casserole quietly. This is an integrity check at load, not
+   per-frame plumbing.
+4. **The gate owed to the orchestrator.** cdp-smoke's `save` step already does a save & exit and Continue. Add two
+   checks there:
+   - the first job's state is unchanged across the resume (the opening step leaves it 'done');
+   - every `__poi().list()` id is unchanged.
+
+   One resume can't catch a 1-in-10 race. It pins the contract, and the soak's resume check (on this branch) is the
+   statistical net. Together with fix 2, a swallowed settle failure turns any smoke red.
+5. **Proof, when power allows.** Widen the probe's warning filter to every warning, then run
+   `tools/chrome-slot.sh node test/zz-probe-resume.mjs --first --seeds=2782385833 --loops=12`. It needs Chrome and
+   Vite, so not in low-power mode.
+   - Expected for an odd session: `__ctr`'s centre ≠ the normal centre, with a `[main] full rebuild failed` warning
+     next to it.
+   - If the centre matches but the main piece differs, fix 1 is the wrong place and the network or main-piece path
+     needs the next read.
+
+`test/zz-probe-resume.mjs` (UNTRACKED scratch copy of run-soak, never commit) wraps `poiSystem.build` and records
+centre, radius, main-piece size, `__roadSys()._network.size`, `_proto.radius` and `_lastBandSig` in
+`window.__ctr`. Its `--first` mode loops new run → teleport → one resume and prints SAME/ODD with both sets of
+stats. Its multi-resume mode can't reseat after the 2nd reload (the sim stays held), so use `--first`.
 
 ## Acceptance
 
