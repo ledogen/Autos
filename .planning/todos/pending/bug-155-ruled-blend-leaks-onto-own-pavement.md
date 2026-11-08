@@ -23,6 +23,9 @@ weights. The intent in its comment is that the driving ribbon "never moves": on 
   (`_legDeckTop`, no wx,wz), and just outside it the on-ribbon branch is blended. At the site above physics drops
   0.337 m within 0.5 m at the edge.
 
+## Owner decision (2026-11-08 16:53Z, tracker owed `bug155-fix`)
+"build it + shot sheet (recommended)". Build the proposal below, with a before/after shot sheet of the steeper gores.
+
 ## Before any edit
 A proposal (orchestrator, 2026-11-08): how the inter-leg crease stays dead (the blend exists to kill the step at the
 Voronoi boundary between two legs), and whether the owner's QUAL-10 ruling constrains the fix.

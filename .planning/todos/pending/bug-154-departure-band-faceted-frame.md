@@ -53,6 +53,13 @@ wheel height). 2654449719, `g:-1,-1,0:151540,-173831,-1`, band 494.8–529.2, ve
 So a wheel near the pavement edge in a departure band meets a 0.2–0.4 m step at every vertex where the band turns
 hard. The drawn ribbon is smooth there, and that is the 0.38 m drawn/driven split.
 
+## Owner decision (2026-11-08 17:02Z, tracker owed `bug154-frame`: "changes")
+Verbatim: "i believe that this is diagnosed properly but i have not noticed itself in game myself. fix it and show proof
+of the issue with photos so i can see whats actually fixed. I may have just written this off as General Glitchiness So
+it very well could be real But I'm having trouble picturing it without pictures"
+Orchestrator: build option A. The deliverable is before/after PHOTOS: the step visible before and gone after, at
+2654449719 plus one more random seed.
+
 ## Options
 
 **A — a continuous frame on the band's own polyline (recommended).** Give each band vertex the bisector of its two
