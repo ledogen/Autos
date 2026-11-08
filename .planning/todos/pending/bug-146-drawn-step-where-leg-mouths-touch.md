@@ -49,22 +49,28 @@ inner edges crossed between the cutback and the mouth, where the pad's ribbon ma
    0.73 m at 1353361482 (−72.3, 41.4), where a long mouth meets an opposite leg. Where a true-edge point stands more than
    0.3 m outside the chord, the ring now walks the true edges, as an open back does. Leg-edge points outside their own
    ring on seeds 917338424, 1353361482 and 563927844 (`wip/bug-146/ring-bite.mjs`): main 74, branch 3. The 3 are one
-   mouth-corner point at 917338424 (−204.2, −536.3), identical on main.
+   mouth-corner point at 917338424 (−204.2, −536.3), identical on main. On 9 more random seeds: main 93 (worst 1.61 m),
+   branch 11 (worst 0.78 m, the same point on main). The fix reaches past BUG-146: main's straight chord also bites
+   ordinary T's whose mouths nothing moved, 1.48 m at seed 11's node (−472.8, −62.0) and 1.30 m at seed 7's
+   (255.8, 192.6). Both go to 0.
 
 junction-edge-lip: exception removed, PASS. Worst tear 0.037 m per 5 cm (main 0.075 outside the exception, 0.143 at
 the two sites), steepest 0.166 m per 0.25 m (main 0.193), rim lip 0.158 (same), worst leg lip 0.199 m (main 0.237). Before fix 3 it
 was 0.244 m, at the chord bite at 917338424 (−110.7, −463.7).
 
 On 9 random seeds the gate's checks fail identically on main and the branch, line for line: a 9.46 m pad tear at
-749163472 (557.3, 717.0) and rim lips of 0.28–0.39 m at 1074499174 (742–746, 420–432). Both pre-existing, for the
-orchestrator to ticket.
+749163472 (557.3, 717.0) and rim lips of 0.28–0.39 m at 1074499174 (742–746, 420–432). Both pre-existing, now
+BUG-148 and BUG-149.
 
 **What else moves (fingerprint-world vs main b5974909).** Network, profiles and POIs are identical in all six windows.
-Junctions differ in 3 windows (the moved mouths). Surface, carve and tiles differ in 5, water in 1 and props in 1:
-fix 2 shifts the ease on every curving leg. Measured on the pad surface, 0.5 m grid over ring + 2 m
-(`wip/bug-146/pad-delta.mjs`):
-- Nodes with no moved leg: max |Δ| 0.092 m (seed 6), 0.015 (seed 11), 0.028 (seed 7), 0.114 (917338424). Medians
-  1–3 cm, except 917338424 at 0.11 m.
+Junctions differ in 5 windows: 3 from moved mouths, 2 (seed 6 ponds, seed 7) from fix 3 re-walking a through road's
+back. Surface, carve and tiles differ in 5, because fix 2 shifts the ease on every curving leg. Water differs in 1, in
+the stream-mesh half only: the ponds-and-streams data half is identical, and a stream bank's blend reads the carve
+beside a pad. Props differ in 1, because the scatter's pad test reads the ring. Measured on the pad surface, 0.5 m grid
+over ring + 2 m (`wip/bug-146/pad-delta.mjs`):
+- Nodes with no moved leg: max |Δ| 0.092 m (seed 6), 0.159 (seed 11), 0.150 (seed 7), 0.114 (917338424). Medians
+  1–2 cm, except seed 7's one node and 917338424 at 0.11–0.15 m.
+- Seed 11's 0.159 m and seed 7's 0.150 m are main's 1.48 m and 1.30 m chord bites being paved (fix 3).
 - The 0.108 m at 917338424 (−212, −543) is main's own 0.075 m tear going away.
 - The 0.114 m at (410.8, 307.7) is smooth on both trees, the pad hand-off sitting where the ribbon's sections put
   it. The only step there is the ring's designed 0.15 m rim, the same on both.
