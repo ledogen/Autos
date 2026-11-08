@@ -9833,7 +9833,7 @@ export class RoadSystem {
             // tan slivers return. BUG-147: by however much — a duck cap (1.2 m, mesh and physics since BUG-145) once
             // bounded it against the free-sampled duck field's tears, which PERF-25's resolve-free pad surface removed;
             // all the cap still did was strand the dirt above a pad whose crease is deeper (1.88 m at seed 169372896's
-            // hillside T, where the mesh dirt poked 0.38 m up through the drawn pad).
+            // hillside T, where the mesh dirt poked 0.30 m up through the drawn pad).
             return { blendW, gradeY: a.gradeY + (Math.min(a.gradeY, b.gradeY) - a.gradeY) * b.blendW, padTopY: b.padTopY }
         }
         // BUG-123: OUTSIDE the ring the dirt is exposed beside an asphalt edge and stands clearanceMargin below THAT
