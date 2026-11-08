@@ -27,10 +27,42 @@ not the sleep card, so a night at mom's soft-locks. It is intermittent: 27823858
   world XZ. If mom's id differs between the saving session and the resumed one, the replayed take/complete find no
   slot, they are dropped from the new log, and every later save carries the loss.
 
-## Status
+## Status (2026-11-08, on hold by owner — resume here)
 
-Hypothesis above: unconfirmed until a captured save shows mom's id before vs after.
-The soak writes `wip/run-soak/resume-<seed>-day<N>.json` when a resume changes the first job.
+**Confirmed: a resumed session sometimes builds a DIFFERENT POI roster, not just a different mom id.**
+Every POI's id changed at once, with the same count of 27. Seed 2782385833: new run → teleport to a gas pump →
+save & resume, and the roster changed completely (mom `poi:-1,0,2|-2,0,1@1` → `poi:0,-1,1|1037088,-503982,-1@0`).
+The next resume changed it again. The replayed take/complete then miss mom's slot, and the casserole goes live.
+
+- **Not c87e78ac's logic.** The skip only logs ordinary board ops. Any board event keyed on a POI id (a taken
+  job, a line) is lost the same way when the roster changes. The first job is just the one a soak notices.
+- **Intermittent and timing-dependent**, not a function of the save. 20 idle resumes at Larry's and 30 fresh starts
+  were all identical. Probes with teleports caught 1 odd session in about 10. The soak caught 2 in about 90 resumes.
+  A resume after an odd session came back normal.
+- **Normal sessions agree exactly.** Same centre to 1 cm, same main-piece size (2782385833: centre (−24.52, −331.6),
+  74 nodes; 3523619642: (367.11, −129.94), 56; 673506946: (−95.19, 365.54), 60).
+- **Ruled out:**
+  - the save's regex rename;
+  - a swallowed `_restoreRun` throw (0 console errors);
+  - a second onRegionLive (the clock is kept);
+  - stale network replies (the client checks instance + seed + epoch);
+  - pond discs (analytic).
+- **Next step:** catch an odd session with its build inputs. `test/zz-probe-resume.mjs` (UNTRACKED scratch copy of
+  run-soak, never commit) wraps `poiSystem.build` and records centre, radius, main-piece size,
+  `__roadSys()._network.size`, `_proto.radius` and `_lastBandSig` in `window.__ctr`. Its `--first` mode loops
+  new run → teleport → one resume and prints SAME/ODD with both sets of stats. Run it as
+  `tools/chrome-slot.sh node test/zz-probe-resume.mjs --first --seeds=2782385833 --loops=12`.
+  Its multi-resume mode can't reseat after the 2nd reload (the sim stays held), so use `--first`.
+- **Suspects to test against that capture:**
+  - (a) `RoadNetworkClient.buildNow` queues as reason `'move'`. A queued 'move' is coalesced by overwriting its
+    x/z/radius, so a per-frame move could shrink a queued region build, and the waiter still resolves true.
+  - (b) the region centre (`story._beginWarm` reads the truck position) is taken before the story seed's seat lands.
+    For example, the boot reseat's `resolveSpawn` is still in flight when Continue is clicked: it resumes against
+    the new global `roadSystem`. Continue is clicked earlier after boot than New → Start, which may be why resumes
+    are the odd ones.
+- Bisect: a detached 968cd1a4 worktree is at `../CarGame-run-shape-val`. Its probe ran clean, but most of its
+  teleports failed, so that result is weak. The soak still writes `wip/run-soak/resume-<seed>-day<N>.json` when a
+  resume changes the first job.
 
 ## Acceptance
 
