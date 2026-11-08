@@ -50,6 +50,9 @@ leg's. Mesh and physics share `_mergeCarve`, so MESH == PHYSICS holds.
   cross-section went from 0.42 m per 1 cm to 0.135 m per 0.25 m, a slope.
 - **Census, 9 random seeds, 62 ringed junctions** (`wip/drive-soak/rim-wall.mjs`): main has a wall at this junction
   only; every other rim point has the pad above the dirt. After the fix: none.
+- **BUG-149's rim lips are the same cap**, the other way round (the pad's dirt more than 1.2 m above the leg's, held
+  below the rim). Seed 1074499174: 0.281 / 0.360 / 0.389 m → none over 0.25 m. BUG-149's 0.263 m leg lip is not the
+  cap and stays open.
 - **The gate:** junction-edge-lip's RIM check is two-sided. Dirt more than `WALL_MAX` 0.05 m above a rim fails. Its
   three seeds have no wall on main or on the fix. Seed 169372896 stays out of `SEEDS` for now. With it, main fails the
   gate 17 times and the fix fails it twice, and both of those are older:
