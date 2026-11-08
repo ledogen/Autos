@@ -108,29 +108,34 @@ export function nightWeight (hour) { return 1 - smooth(DARK_EL, 0, sunAt(hour).e
 // ── Tunables (the GUI binds these) ───────────────────────────────────────────────────────────────────
 export const SKY_PARAMS = {
   aod: 0.02,          // aerosol optical depth above the eye at 550 nm: 0.02–0.05 is clean high-desert air, 0.3 smoggy
-  hazeAfternoon: 0.5, // extra aerosol the afternoon's convection lifts by 17:00 (fraction of `aod`)
+  hazeAfternoon: 1.5, // extra aerosol the afternoon's convection lifts by 17:00 (fraction of `aod`)
   multiScatter: 1.0,  // gain on the orders ≥ 2 (1 = Hillaire's estimate as computed)
   skyGain: 2.5,       // the sky and its fill against the sun. The world's flat albedos are bright (stylised), so the
                       // sky is lifted to sit with them; 1 is the physical ratio
   ambient: 1.0,       // × the sky's own irradiance on the hemisphere fill
   saturation: 0.82,   // of the natural light and sky (albedo colour is untouched — man-made stays saturated)
-  exposure: 1.25,     // the sky's pre-exposure (the land's camera is LAND_EXPOSURE, the legacy's)
+  exposure: 1.7,      // the sky's pre-exposure (the land's camera is LAND_EXPOSURE, the legacy's)
   landGain: 2.0,      // the natural light on the land against the sky's, into the land's ACES curve (noon matched to the legacy)
-  adapt: 0.16,        // eye adaptation γ near daylight: displayed brightness ∝ illuminance^γ. Lower = brighter dusk
-  nightDark: 0.021,   // how much faster the eye runs out of adaptation in the dark (log-log curvature). Higher = darker nights
+  skyAdapt: 0.3,      // the sky's eye (eyeCurve): the share of every decade of lost light it never adapts back…
+  skyDepth: 1.3,      // …plus how far under noon its adaptation runs out, in decades…
+  skyTwilight: 0.72,  // …and how fast it runs out (e-folding, decades of light). Smaller = a darker golden hour and dusk
+  skySat: 1.0,        // colour saturation of the sky (and the fog, the same function)
+  skyCast: 0.5,       // how much of the light's colour cast the sky keeps that the white balance takes out (0–1)
+  duskSat: 0.6,       // the twilight grade: extra sky saturation from the sun 14° up down through the night…
+  dusk: 1.0,          // …and the strength of its teal split tone on the sky that is not the warm glow (0 = as simulated)
   moonAdapt: 0.15,    // how much of the moon's light the eye adapts away (1 = all of it: full and new moon look alike)
   landDepth: 1.62,    // the land's eye (landEye): how far under noon the land reads at the darkest, in decades
   landTwilight: 2.0,  // …and how fast it gets there (e-folding, decades of light). Smaller = darker golden hour and dusk
   warmth: 0.2,        // the land's white balance against the sky's: 0 = the same, 0.2 = sunlit ground warm like the legacy's
   landCast: 1.0,      // how much of the light's colour cast the land keeps that the sky's white balance takes out (0–1)
-  nightFog: 0.55,     // at night the fog (and the sky glow) is no brighter than this × flat ground under it
+  nightFog: 0.55,     // at night the fog (and the sky glow) is this × flat ground under it
   nightBlue: 1.5,     // colour saturation of the land's light under rod vision (the sky's drains to grey)
   bounce: 0.35,       // × the ground's bounce light (the hemisphere fill from below). The fill has no occlusion: at 1 the
                       // ground under the truck lit its wheel wells as if nothing shaded it
   glare: 6e-4,        // strength of the sharp forward-scatter lobe round the sun (the glare, not the disc)
   glareG: 0.93,       // its sharpness (Henyey-Greenstein g)
   sunSize: 1.2,       // drawn sun disc RADIUS, degrees (the real one is 0.27°; the moon is drawn at 2.75°)
-  stars: 1.0,         // star brightness
+  stars: 2.5,         // star brightness, as displayed (not through the eye: the night cap sets the sky behind them)
 }
 
 /** Aerosol (as a multiple of the profile's sea-level density, BETA_M) for an optical depth `aod` above the eye. */
@@ -147,7 +152,10 @@ const OBS_H = 1.5                      // the observer's altitude — the Owens 
 const BETA_R = [5.802e-3, 13.558e-3, 33.1e-3]   // Rayleigh scattering at sea level, /km (Hillaire 2020)
 const BETA_M = 3.996e-3                          // Mie scattering at sea level, /km, for aerosol(…) = 1 (see SKY_PARAMS.aod)
 const MIE_EXT = BETA_M / 0.9                     // Mie extinction (single-scatter albedo 0.9)
-const BETA_O = [0.650e-3, 1.881e-3, 0.085e-3]   // ozone absorption at its layer's peak, /km — keeps twilight blue
+// Ozone absorption at its layer's peak, /km — keeps twilight blue. Averaged over each colour's band, not sampled at one
+// wavelength (round 3): the Chappuis band peaks at 600 nm, inside the red band, so red absorbs ~1.2× green. Sampled at
+// 680 nm (Hillaire's 0.65e-3) red escaped the ozone and the twilight zenith went mauve instead of blue-teal.
+const BETA_O = [2.3e-3, 1.881e-3, 0.085e-3]
 const H_R = 8, H_M = 1.2                         // scale heights
 const MIE_G = 0.76                               // the broad aerosol lobe (the sharp glare is analytic, per pixel)
 const ozone = (h) => Math.max(0, 1 - Math.abs(h - 25) / 15)   // tent, 10–40 km
@@ -429,7 +437,7 @@ vec3 skyGrade (vec3 c) {
   float d = 0.24;
   float np = 1.0 - d * d / (peak + d - 0.76);
   c *= np / peak;
-  return mix(c, vec3(np), 1.0 - 1.0 / (0.15 * (peak - np) + 1.0));
+  return mix(c, vec3(np), 1.0 - 1.0 / (0.1 * (peak - np) + 1.0));
 }
 #endif
 `
@@ -518,7 +526,7 @@ const SKY_FRAG = /* glsl */`
 ${HAZE_GLSL}${GRADE_GLSL}
 uniform vec4 skyDisc;      // rgb: disc radiance (pre-exposed); w: cos(disc radius)
 uniform mat3 skyStarFrame; // world → the star sphere's frame (turns with sidereal time)
-uniform float skyStars;    // star radiance (pre-exposed); 0 by day
+uniform float skyStars;    // star radiance as displayed; 0 by day
 varying vec3 vDir;
 float hash13 (vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 void main () {
@@ -551,13 +559,15 @@ void main () {
 }`
 
 /**
- * The LAND's eye (round 2): displayed brightness against noon, log10 B = −landDepth · (1 − e^(x / landTwilight)),
- * x = log10(E / E_noon). The sky's curve (adapt, nightDark) compensates most of a sunset, which is what makes the
- * twilight sky glow; on the land the same compensation lit the dusk with a shadowless fill three times noon's and
- * read as a washed-out photo. This one falls steeply through the golden hour and dusk (sunset ≈ 11 % of noon) and
- * levels out at night (a moonless night ≈ 2.7 %, the legacy's level), so the land's night still shows the moon.
+ * The eye: displayed brightness against noon, log10 B = slope·x − depth·(1 − e^(x / fall)), x = log10(E / E_noon).
+ * The LAND's (round 2: slope 0, landDepth, landTwilight) falls steeply through the golden hour and dusk (sunset ≈ 11 %
+ * of noon) and levels out at night (a moonless night ≈ 2.7 %, the legacy's level), so the land's night still shows the
+ * moon. The SKY's (round 3: skyAdapt, skyDepth, skyTwilight) is darker still through twilight and keeps falling after
+ * it (the slope): round 2's sky curve compensated most of a sunset, held the twilight sky near noon's brightness, and
+ * blew the glow round the sun out to white ("the rebuild really blows out the sky with fogginess and scatter at dawn
+ * and dusk"). Sunset reads ≈ 2 % of noon, 21:00 ≈ 0.2 %. After twilight the night cap sets the sky's level instead.
  */
-const landEye = (x) => -SKY_PARAMS.landDepth * (1 - Math.exp(x / SKY_PARAMS.landTwilight))
+const eyeCurve = (x, slope, depth, fall) => slope * x - depth * (1 - Math.exp(x / fall))
 
 // ── Day/night cycle state shared with the debug panel and main.js ─────────────────────────────────────
 export const SKY_CYCLE = { playing: false, hour: 12, dayLengthSec: 120 }
@@ -571,6 +581,12 @@ const rods = (e) => smooth(-3.5, -6.5, Math.log10(Math.max(e, 1e-12)))
 // The sun disc's radiance per unit transmitted sunlight, and the moon's surface radiance per unit
 // sunlight (albedo 0.12 / π) — the latter sets how faint the moon is by day.
 const DISC_L = 9, MOON_SURFACE_L = 0.04
+// Stars are drawn at a fixed displayed radiance (× SKY_PARAMS.stars), fading in with the dark, NOT through the eye: through
+// it they dimmed whenever the night was retuned (round 3, owner: "it feels like i can only see the bright ones").
+// 0.167 is what the eye gave them on a moonless night through round 2.
+const STAR_L = 0.167
+// The twilight grade's teal (luminance 1), and the warmth ((r − b) / r) over which it hands over to the glow, untinted.
+const TEAL = [0.56, 1.12, 1.12], WARM_LO = 0.35, WARM_HI = 0.65
 const WB_STRENGTH = 0.5
 /** three's ACESFilmicToneMapping on a grey input (its colour matrices are identity on grey), already × exposure / 0.6. */
 const acesGrey = (v) => Math.max(0, (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081))
@@ -679,13 +695,11 @@ export class SkySystem {
     this._particleNorm = 0
   }
 
-  /** Eye adaptation: sun units → render units. At noon a horizontal white surface reads π (radiance 1).
-   *  Displayed brightness B against noon's runs, in decades x = log10(E / E_noon), as
-   *  log10 B = adapt·x − nightDark·x²: the eye compensates most of a sunset (x −2 → B 0.43) but runs out of
-   *  range in the dark — a moonless night (x −7.4) reads 0.4 % of noon, a full moon (x −5.7) 2.5 %. */
+  /** Eye adaptation: sun units → render units. At noon a horizontal white surface reads π (radiance 1); below it the
+   *  displayed brightness against noon's follows eyeCurve, the land's or the sky's. */
   _adaptScale (eH, land = false) {
     const p = SKY_PARAMS, r = Math.max(eH, 1e-12) / this._noonEA, x = Math.min(0, Math.log10(r))
-    return Math.PI / this._noonEA * Math.pow(10, land ? landEye(x) : p.adapt * x - p.nightDark * x * x) / r
+    return Math.PI / this._noonEA * Math.pow(10, land ? eyeCurve(x, 0, p.landDepth, p.landTwilight) : eyeCurve(x, p.skyAdapt, p.skyDepth, p.skyTwilight)) / r
   }
 
   _apply (st) {
@@ -694,11 +708,16 @@ export class SkySystem {
     // White balance, rod vision and the saturation trim: one colour treatment for every natural radiance.
     // `night` is rods() of the light's own brightness.
     const ill = illuminant(st), il = lum(...ill)
-    const wb = this._wb.map((w, c) => w * Math.pow(il / Math.max(ill[c], 1e-30) / this._noonCast[c], WB_ADAPT))
-    // The land keeps more of the light's colour cast than the sky (landCast of WB_ADAPT's correction undone): golden
-    // hour reads gold on the ground and the blue hour blue, where the sky's balance greyed both.
-    const wbL = wb.map((w, c) => w * Math.pow(il / Math.max(ill[c], 1e-30) / this._noonCast[c], -WB_ADAPT * p.landCast))
-    const treat = (r, g, b, out, night, sat = p.saturation * (1 - 0.85 * night), w = wb) => {
+    // keep = how much of the cast survives: 0 takes WB_ADAPT of it out (the eye's own balance), 1 keeps all of it.
+    const castWB = (keep) => this._wb.map((w, c) => w * Math.pow(il / Math.max(ill[c], 1e-30) / this._noonCast[c], WB_ADAPT * (1 - keep)))
+    const wb = castWB(p.skyCast), wbL = castWB(p.landCast)
+    // THE TWILIGHT GRADE (round 3, owner 11-09: "i much prefer the blues and greens in the sky during sunrise and sunset in
+    // the legacy sky"). A grade, not physics: from the sun 14° up down through the night, the sky (and so the fog) gets
+    // duskSat more saturation, and a teal split tone — the sky that is not the warm glow tinted toward TEAL, the glow left
+    // to the saturation's orange. Three RGB wavelengths turn the sky above a sunset mauve where film (and the legacy's
+    // Preetham sky) shows the teal; this puts the teal back.
+    const tw = 1 - smooth(4 * D2R, 14 * D2R, st.sun.el), ss = p.skySat + p.duskSat * tw, split = p.dusk * tw
+    const treat = (r, g, b, out, night, sat = ss * (1 - 0.85 * night), w = wb) => {
       r *= w[0]; g *= w[1]; b *= w[2]
       const l = lum(r, g, b)
       r += (l * NIGHT_TINT[0] - r) * night * 0.9; g += (l * NIGHT_TINT[1] - g) * night * 0.9; b += (l * NIGHT_TINT[2] - b) * night * 0.9
@@ -712,6 +731,12 @@ export class SkySystem {
     for (let i = 0, n = LUT_W * LUT_H; i < n; i++) {
       const r = L[i * 3] * p.skyGain, g = L[i * 3 + 1] * p.skyGain, b = L[i * 3 + 2] * p.skyGain
       treat(r * X, g * X, b * X, t3, rods(Math.PI * lum(r, g, b)))
+      if (tw > 0 && t3[0] > 0) {
+        const l = lum(t3[0], t3[1], t3[2]), k = split * (1 - smooth(WARM_LO, WARM_HI, (t3[0] - t3[2]) / t3[0]))
+        for (let c = 0; c < 3; c++) t3[c] *= 1 + k * (TEAL[c] - 1)
+        const l2 = lum(t3[0], t3[1], t3[2]) || 1
+        for (let c = 0; c < 3; c++) t3[c] *= l / l2
+      }
       LUT_DATA[i * 4] = THREE.DataUtils.toHalfFloat(t3[0])
       LUT_DATA[i * 4 + 1] = THREE.DataUtils.toHalfFloat(t3[1])
       LUT_DATA[i * 4 + 2] = THREE.DataUtils.toHalfFloat(t3[2])
@@ -730,7 +755,7 @@ export class SkySystem {
     const su = this._skyMat.uniforms
     su.skyDisc.value.set(glare[0] * DISC_L, glare[1] * DISC_L, glare[2] * DISC_L, Math.cos(p.sunSize * D2R))
     // Stars: a fixed radiance through the adaptation — invisible by day, out by late twilight.
-    su.skyStars.value = 4e-7 * X * p.stars * (1 - smooth(-5, -3, Math.log10(Math.max(st.eA, 1e-12))))
+    su.skyStars.value = STAR_L * p.stars * (1 - smooth(-5, -3, Math.log10(Math.max(st.eA, 1e-12))))
     su.skyStarFrame.value.copy(this._starFrame(SKY_CYCLE.hour))
 
     // The key light: the sun while any of its disc is up, else the moon. Both through the air.
@@ -766,14 +791,15 @@ export class SkySystem {
     // brighter than the terrain"). At night the land sits in ACES's toe while the airglow horizon, which the fog is,
     // does not: fogged land read 4.5× (new moon) to 8× (full moon) brighter than the unfogged land beside it, so the
     // far road and every ridge stood out. Once twilight is over, the sky's own glow — and with it the fog, the same
-    // function — is dimmed until the horizon is no brighter than nightFog × flat ground (albedo 0.4 under these
-    // lights, through the land's ACES; a slope facing the moon is brighter, one facing away darker). Fully fogged land still equals the sky behind
-    // it, so the world edge stays hidden; the stars and the moon are drawn on top at their own brightness, and the
-    // cap only comes in over the last 3° of twilight (the sun's own fade), so the twilight sky is untouched. It is
-    // the whole sky, not a band near the horizon: a hillside rising 20° above the road fogs toward the sky 20° up.
+    // function — is scaled until the horizon is nightFog × flat ground (albedo 0.4 under these lights, through the
+    // land's ACES; a slope facing the moon is brighter, one facing away darker). Round 3: up as well as down, since the
+    // sky's own curve now runs darker than that after dusk. Fully fogged land still equals the sky behind it, so the
+    // world edge stays hidden; the stars and the moon are drawn on top at their own brightness, and the cap only comes
+    // in over the last 3° of twilight (the sun's own fade), so the twilight sky is untouched. It is the whole sky, not a
+    // band near the horizon: a hillside rising 20° above the road fogs toward the sky 20° up.
     const keyShare = (this.sun.intensity + (this.sunFar ? this.sunFar.intensity : 0)) * lum(this.sun.color.r, this.sun.color.g, this.sun.color.b) * this.sunDirection.y
     const slope = 0.4 / Math.PI * (keyShare + lum(this.ambient.color.r, this.ambient.color.g, this.ambient.color.b))
-    const cap = Math.min(1, p.nightFog * acesGrey(slope * this.renderer.toneMappingExposure / 0.6) / Math.max(lum(hr, hg, hb) / LUT_W, 1e-12))
+    const cap = p.nightFog * acesGrey(slope * this.renderer.toneMappingExposure / 0.6) / Math.max(lum(hr, hg, hb) / LUT_W, 1e-12)
     U.skyFog.value.z = cap + (1 - cap) * smooth(DARK_EL, DARK_EL + 3 * D2R, st.sun.el)
 
     // The moon disc: its surface radiance through the air and the eye, against the brightness it is drawn at.
@@ -847,9 +873,14 @@ export class SkySystem {
     a.add(SKY_PARAMS, 'skyGain', 0.5, 5, 0.05).name('sky gain (multi-scatter)').onChange(recal)
     a.add(SKY_PARAMS, 'ambient', 0, 3, 0.05).name('ambient ×').onChange(re)
     a.add(SKY_PARAMS, 'saturation', 0, 1.5, 0.01).name('light saturation').onChange(re)
-    a.add(SKY_PARAMS, 'exposure', 0.2, 3, 0.01).name('exposure').onChange(re)
-    a.add(SKY_PARAMS, 'adapt', 0.05, 0.5, 0.01).name('eye adaptation γ').onChange(re)
-    a.add(SKY_PARAMS, 'nightDark', 0, 0.06, 0.001).name('night darkness').onChange(re)
+    a.add(SKY_PARAMS, 'exposure', 0.2, 3, 0.01).name('sky exposure').onChange(re)
+    a.add(SKY_PARAMS, 'skyAdapt', 0, 1, 0.01).name('sky eye: unadapted share').onChange(re)
+    a.add(SKY_PARAMS, 'skyDepth', 0, 3, 0.01).name('sky eye: depth (decades)').onChange(re)
+    a.add(SKY_PARAMS, 'skyTwilight', 0.2, 3, 0.01).name('sky eye: twilight fall').onChange(re)
+    a.add(SKY_PARAMS, 'skySat', 0, 2, 0.01).name('sky saturation').onChange(re)
+    a.add(SKY_PARAMS, 'skyCast', 0, 1, 0.05).name('sky keeps light cast').onChange(re)
+    a.add(SKY_PARAMS, 'duskSat', 0, 2, 0.05).name('twilight: + saturation').onChange(re)
+    a.add(SKY_PARAMS, 'dusk', 0, 1.5, 0.05).name('twilight: teal').onChange(re)
     a.add(SKY_PARAMS, 'glare', 0, 3e-3, 1e-5).name('sun glare').onChange(re)
     a.add(SKY_PARAMS, 'glareG', 0.8, 0.99, 0.001).name('glare sharpness').onChange(re)
     a.add(SKY_PARAMS, 'sunSize', 0.27, 3, 0.01).name('sun radius (deg)').onChange(re)
