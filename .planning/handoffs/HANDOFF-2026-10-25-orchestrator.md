@@ -458,3 +458,7 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
 - **Owner rulings 11-08:** (1) keep landing on main all night, one batch per full smoke, lanes ≤ 2 heavy processes.
   (2) PUSHED d7dc18e1 to origin (Pages) on the owner's word; **do NOT push tonight's later landings** — the owner checks first.
   (3) feat34-lamps: "green low beams blue high beams and red if your lights are both dead and you try to turn them on" → B.
+- **Landed overnight 11-08 (each full smoke 26/26 on main):** BUG-141 968cd1a4 · FEAT-184 skip amendment c87e78ac · BUG-145/144
+  82ecb463 · B's FEAT-34 r2 + FEAT-138 cooldown + FEAT-185 + FEAT-186 2f5735eb. Page v192 (owed feat184-look, feat34-r2-look).
+  NOT pushed (owner checks first; origin = d7dc18e1). In flight: A run-soak rerun (harness fix 68fcbe7d on feature/run-shape:
+  PARK boxes seat via __towSeat — merge it with A's next docs), B drive soak on 6 fresh seeds, Spare BUG-67 miter → BUG-146.
