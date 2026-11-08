@@ -27,7 +27,7 @@ not the sleep card, so a night at mom's soft-locks. It is intermittent: 27823858
   world XZ. If mom's id differs between the saving session and the resumed one, the replayed take/complete find no
   slot, they are dropped from the new log, and every later save carries the loss.
 
-## Status (2026-11-08, on hold by owner — resume here)
+## Status (2026-11-08, on hold by owner — fixes 1–4 committed as desk edits, unrun; resume at "Owed when the hold lifts")
 
 **Confirmed: a resumed session sometimes builds a DIFFERENT POI roster, not just a different mom id.**
 Every POI's id changed at once, with the same count of 27. Seed 2782385833: new run → teleport to a gas pump →
@@ -136,6 +136,69 @@ around the centre (mom, Larry), and the coverage picks measure from it. It also 
 centre, radius, main-piece size, `__roadSys()._network.size`, `_proto.radius` and `_lastBandSig` in
 `window.__ctr`. Its `--first` mode loops new run → teleport → one resume and prints SAME/ODD with both sets of
 stats. Its multi-resume mode can't reseat after the 2nd reload (the sim stays held), so use `--first`.
+
+## Fixes 1–4 on feature/run-shape (desk edits, 2026-11-08 — NOT YET RUN, low-power hold)
+
+### The orchestrator's check: today's centre is NOT exactly `resolveSpawn`'s point
+
+- Story's seat is `_seatOnGroundPlane(spawn.x, spawn.z, heading, eq, 0)` (`main.js:1078`). It lifts the body
+  centre off the road along the plane NORMAL: `x = cx + n.x × 0.6 m`, `z = cz + n.z × 0.6 m` (`eq.bodyY` = 0.600 m).
+- Nothing else moves the truck before `_beginWarm`. `story.enter` raises the stage load first, which sets
+  `_simHeld`, and the frame loop zeroes the accumulator while held (`main.js:9830`).
+- So today's centre is the spawn point shifted downhill-normal by 0.6 m × sin(grade): **1.2 cm at 2 %, 6 cm at
+  10 %, 14 cm at the 24 % cap.** It is deterministic (normal sessions agree to 1 cm), but it is not `resolveSpawn`.
+- This is very likely the 0.06–0.12 m "game vs replica" gap recorded in `world-determinism.mjs` 1b.
+- **Consequence: fix 1 moves every seed's live centre by those few cm.** A POI pick changes only where a ranking
+  or the 1000 m near-spawn ring sits within centimetres of a tie. That should be rare, but it is every seed's
+  roster in principle. So it needs a proof run plus the orchestrator's look before landing.
+  - `fingerprint-world.mjs` does not drive story entry, so it should come back IDENTICAL and proves little here.
+  - The meaningful proof is a browser roster compare: about 10 random seeds, main vs this branch, new run only,
+    `__poi().list()` ids. It reports which seeds' rosters changed.
+  - **A save made on main for an affected seed would resume onto the shifted roster.** Fix 3 now reports that
+    loudly (`[save] board replay dropped …`) instead of reviving the casserole quietly. It is still a broken resume
+    for that run, so landing may want a `RUN_SAVE_VERSION` bump. That is the orchestrator's call.
+- Why the raw point, not the seated point: every headless story gate already centres on `spawnDecision`, the replica
+  of `resolveSpawn`'s raw point. Centring the live game there makes the gates measure the region players get.
+  The alternative keeps today's centre to the bit (centre = the seat transform of the spawn), avoids the siting
+  move, and leaves the 1–14 cm gate gap in place. It is a two-line swap if wanted.
+
+### What changed
+
+1. **Centre from the seed** (4a7f7dd0).
+   - main.js has a new `spawnCentre` dependency. It returns `resolveSpawn(worldSeed)`'s point, which is memoised,
+     so it is a hit right after the settle.
+   - `story._beginWarm(c)` centres on it.
+   - The truck is only checked against the centre: more than 1 m off gives `console.error('[story] the truck is
+     not at the seed's spawn')`. That line is also probe 5's discriminator.
+   - A source-text check in `world-determinism.mjs` section 4 pins the centre to `spawnCentre()`.
+2. **A failed settle is loud and never enters** (4a7f7dd0).
+   - `debouncedRebuildFull` now resolves `true`/`false` and never rejects, because other callers ignore the promise.
+     A failure logs with `console.error`.
+   - `story.enter` retries a failed settle once, then `_settleFailed` refuses the entry like an unplayable seed:
+     a fresh run re-rolls (BUG-100's path), and a resume gets the plain seed card with no "start anyway".
+   - **A second leak of the same class:** the 20 s `SETTLE_MAX_MS` timeout used to start the warm "with the current
+     position as center". It now refuses too.
+     - Behaviour change to watch: a settle that legitimately takes over 20 s, such as a very slow machine or a loaded
+       soak box, now re-rolls where it used to enter.
+3. **Replay drops are reported** (b33070eb).
+   - `logBoard` counts events that no longer take and logs `console.error('[save] board replay dropped N of M
+     events')`.
+   - The `run-save` gate gains two checks: a faithful replay stays quiet, and a replay onto a re-sited roster
+     reports every event dropped.
+4. **Smoke contract** (13480b31). cdp-smoke's `save` step checks two things across the save & exit → Continue:
+   - every POI id survives;
+   - the first job's state is unchanged.
+
+### Owed when the hold lifts
+
+- **Probe 5:**
+  - widen the probe's warning filter to all warnings and errors;
+  - run `tools/chrome-slot.sh node test/zz-probe-resume.mjs --first --seeds=2782385833 --loops=12` on this branch;
+  - expect 12 SAME. Any ODD must now carry a console error naming its cause.
+  - On a pre-fix checkout, the same probe should show the odd session's centre away from the normal one.
+- **Gates:** `node test/run-all.mjs --serial --changed=src/story.js,src/main.js,src/save.js,test/run-save.mjs,test/world-determinism.mjs`,
+  then the smoke (`--browser`).
+- **The roster compare** above, then the orchestrator's look, before landing.
 
 ## Acceptance
 
