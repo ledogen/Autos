@@ -519,3 +519,11 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
   (shop-stock, inventory, whatever `npm test` picks) when the hold lifts. Item page v39: FEAT-192's four calls
   (answers/_rarity), V6/V8/tank cards, tarp "sold at" conflict (general store 10-24 vs auto shop 11-06). After the
   rarity answers C switches stock-weights/RARITY_GATES/RARITY_COLOR; B's FEAT-189/190 rows carry `rarity` strings.
+- **Late 11-08: two owed answers found unrelayed and relayed verbatim:** feat184-look (18:27Z: tutorial = its own menu
+  option, flag defaults complete for testing; mandatory <10-min fixed-seed tutorial, optional per-mission content,
+  always-played skippable intro fired → mom's → sleep) → Lane A (flag/menu first, plan to me before the rest, flag
+  DESIGN/opening conflicts e.g. mom vs uncle). feat34-r2-look (18:01Z: lamp if either headlight dead, straighten +
+  symmetric cluster, gauges +15 %, 20 mph labels, drop "unleaded fuel only") → Lane B. **Page cleanup owed:** remove
+  feat184-look + feat34-r2-look from OWED at the next publish (batch it).
+- Lighting: Spare on round 5 (edge fog, rebuild's stars/night scatter/orbits); rebuild agent resumed on its round 3
+  (dawn/dusk glare, noon fog, sky colours, star range). Owner's notes: FEAT-180 ticket (89e4b136).
