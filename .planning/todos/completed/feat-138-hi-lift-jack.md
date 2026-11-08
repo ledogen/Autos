@@ -1,8 +1,9 @@
 ---
 id: FEAT-138
 type: feature
-status: open
+status: closed
 severity: minor
+closed: 2026-11-08
 opened: 2026-10-22
 source: owner, 2026-10-22 (item setup page) — items.md §7 "Hi-lift jack" row; FEAT-121 row
 lane: B (back from Spare 2026-11-06, orchestrator; queued after FEAT-162)
@@ -166,3 +167,10 @@ Built (feature/machine c37643cf): the refusal reads `catching your breath · N s
 left, rounded up). The inventory screen re-reads the selected item's choices once a second (`InventoryScreen.update`)
 and redraws only when a label changed, so the count ticks down and the two heave buttons appear when it ends, with
 the menu left open. `test/hilift.mjs` pins the line at 2 s. **The owner's word is in, so this closes when it lands.**
+
+## Resolution (2026-11-08) — closed on main's evidence
+
+- The owner tried the reworked press (tracker `feat138-try`, choice "good"): "works awesome". That was the one
+  thing keeping this open (the 2026-11-07 sweep above: close on the owner's word).
+- The owner's follow-up (the cooldown line ticks with the menu open) landed in main 2f5735eb, with the batch whose
+  smoke went 26/26. `test/hilift.mjs` is green on main.
