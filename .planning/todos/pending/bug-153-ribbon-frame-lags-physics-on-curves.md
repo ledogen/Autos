@@ -91,3 +91,22 @@ BUG-149's leg (1074499174, `g:745990,432424,-1:0,1,1`, side 1): drawn == physics
   toward the sibling's grade where the ribbon does not. At the vertices: 25–88 per seed, up to 8.2 cm. Between them it
   is worse at the edge: −0.34 m at lat 4.5, 0.5 m past a mouth (1074499174 `g:745990,432424,-1:1,1,1`). And physics
   steps by that same 0.34 m across the mouth chord, because the pad side snaps to the leg's unblended deck.
+
+**World fingerprint (main 5bf20c0c vs the fix).** network, poi: identical. The other components differ, and each one
+is accounted for:
+- **profiles:** a hash artifact. `_buildRunProfile` now also returns the weld data. The md5 of every profile minus that
+  field equals main's (seed 7 origin, seed 6 fork).
+- **junctions / surface / carve / water / props:** the ring's mouth chords turn with the ribbon frame, so the pad surface
+  moves: MESH == PHYSICS by construction. Lattice proof (`analyticHeight`, 4 m grid, the four play windows): 28 / 87 /
+  51 / 2 points moved, every one within 21.3 m of a junction node, worst 7.5 cm (seed 7). Nothing moved on open road.
+- **props** (seed 6 fork window): 46 of 3,225 props changed y / gy / tilt only, worst 1.55 cm. None was added, removed
+  or moved in plan. The placer is scatterChunk's ground sampler (`heightAt` = analyticHeight) reading that pad surface.
+
+**Gate** `test/ribbon-frame.mjs` (R 448): the fix PASSES, worst 0.98 / 0.98 / 1.83 / 0.98 cm. Main FAILS with 691
+vertices ≥ 2 cm, worst 6.9 cm. The two remaining mechanisms are BUG-154 and BUG-155 (orchestrator 2026-11-08: land the
+frame as it is). The gate reports them apart until they are fixed, then folds them into its PASS.
+
+**Affected gates (71):** interrupted at 5/71 green by the owner's hold (2026-11-08). Re-run before landing. Then the
+shot sheet: 3 sloped curved mouths (candidates from main's frame-class census: 273004588 node (509.3, 412.5) leg
+`g:509295,412497,-1:1,0,1`, 17.8 cm on main; 2654449719 node (−50.6, 330.2) leg `g:-2,0,0:-1,0,0`, 6.2 cm; 1074499174
+node (190.3, −356.7) leg `g:0,-1,1:-34662,200187,-1`, 5.0 cm), chase-cam height, the same frames on main and the fix.
