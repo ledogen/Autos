@@ -489,3 +489,15 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
   resolveSpawn(worldSeed) (moves live centre 1–14 cm on slopes → roster compare on ~10 seeds before landing; RUN_SAVE_VERSION
   bump only if ≥ 2 of 10 change, then ask the owner); the 20 s settle timeout centres on spawnCentre(), never refuses. A's owed
   on lift: probe 5, affected gates, smoke, roster compare, land hash.
+
+### 11-08 ~21:00 — two lighting builds up for the owner's look
+- **Spare round 3** (land/feat180-next 0be79cae, :3887): real sun/moon paths, fog = sky horizon colour, below-horizon fill
+  continues the horizon, sun disc via 'glare ceiling', headlights light POI halos. Limits: Preetham has no twilight (dusk dark
+  away from the sun), one-colour fog, shadows ≥ 5°.
+- **Opus ground-up redesign** (proto/lighting-redesign 44d284d2, worktree .claude/worktrees/agent-a963acdc35996c65b, :3890):
+  one CPU-integrated atmosphere (Rayleigh + Mie + ozone + multiple scatter) baked to a 64×32 sky table; fog = a lookup into the
+  same sky by view direction; sun/ambient/moon from the same model; eye adaptation + own tone curve (ACES gone, every asset
+  looks different); edge-fog term hides the world edge, haze halved per tier. New gate test/sky-ephemeris.mjs. ~0.3 ms/frame,
+  1.5–2.7 ms per clock push. Comparison only: conflicts with FEAT-180 in sky.js/main.js, cut from d7dc18e1 (origin), not main.
+  It ran 11 gates + cdp-smoke during the hold (not granted; reported to the owner). Sheets in the orchestrator scratchpad v5/.
+- Owner picks between them (or a mix). Nothing lands until then.
