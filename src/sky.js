@@ -121,8 +121,8 @@ export const SKY_PARAMS = {
   skyTwilight: 0.72,  // …and how fast it runs out (e-folding, decades of light). Smaller = a darker golden hour and dusk
   skySat: 1.0,        // colour saturation of the sky (and the fog, the same function)
   skyCast: 0.5,       // how much of the light's colour cast the sky keeps that the white balance takes out (0–1)
-  duskSat: 0.6,       // the twilight grade: extra sky saturation from the sun 14° up down through the night…
-  dusk: 1.0,          // …and the strength of its teal split tone on the sky that is not the warm glow (0 = as simulated)
+  duskSat: 0.3,       // the twilight grade: extra sky saturation from the sun 14° up to the end of twilight…
+  dusk: 1.3,          // …and the strength of its teal split tone on the sky that is not the warm glow (0 = as simulated)
   moonAdapt: 0.15,    // how much of the moon's light the eye adapts away (1 = all of it: full and new moon look alike)
   landDepth: 1.62,    // the land's eye (landEye): how far under noon the land reads at the darkest, in decades
   landTwilight: 2.0,  // …and how fast it gets there (e-folding, decades of light). Smaller = darker golden hour and dusk
@@ -152,10 +152,7 @@ const OBS_H = 1.5                      // the observer's altitude — the Owens 
 const BETA_R = [5.802e-3, 13.558e-3, 33.1e-3]   // Rayleigh scattering at sea level, /km (Hillaire 2020)
 const BETA_M = 3.996e-3                          // Mie scattering at sea level, /km, for aerosol(…) = 1 (see SKY_PARAMS.aod)
 const MIE_EXT = BETA_M / 0.9                     // Mie extinction (single-scatter albedo 0.9)
-// Ozone absorption at its layer's peak, /km — keeps twilight blue. Averaged over each colour's band, not sampled at one
-// wavelength (round 3): the Chappuis band peaks at 600 nm, inside the red band, so red absorbs ~1.2× green. Sampled at
-// 680 nm (Hillaire's 0.65e-3) red escaped the ozone and the twilight zenith went mauve instead of blue-teal.
-const BETA_O = [2.3e-3, 1.881e-3, 0.085e-3]
+const BETA_O = [0.650e-3, 1.881e-3, 0.085e-3]   // ozone absorption at its layer's peak, /km — keeps twilight blue
 const H_R = 8, H_M = 1.2                         // scale heights
 const MIE_G = 0.76                               // the broad aerosol lobe (the sharp glare is analytic, per pixel)
 const ozone = (h) => Math.max(0, 1 - Math.abs(h - 25) / 15)   // tent, 10–40 km
@@ -452,7 +449,18 @@ uniform vec4 skyFog;     // x, y: the world-edge fog's start and full radius (m,
 #ifndef SKY_HAZE
 #define SKY_HAZE
 vec3 skyHaze (vec3 d) {
-  vec2 uv = vec2(atan(d.x, -d.z) * 0.15915494, sqrt(clamp(d.y, 0.0, 1.0)));
+  float az = atan(d.x, -d.z);
+  if (d.y < 0.0) {
+    // Below the horizon: the horizon row at the same ANGLE TO THE SUN, not the same azimuth (round 3). By azimuth the
+    // sunset glow came down through the fog as a straight-sided column; by angle it is the round glow the sky shows.
+    vec2 sh = skySun.xz; float shl = length(sh);
+    if (shl > 1e-3) {
+      float sa = atan(sh.x, -sh.y), c = clamp(dot(d, skySun.xyz) / shl, -1.0, 1.0);
+      float da = az - sa; da -= 6.2831853 * floor(da / 6.2831853 + 0.5);
+      az = sa + (da < 0.0 ? -1.0 : 1.0) * acos(c);
+    }
+  }
+  vec2 uv = vec2(az * 0.15915494, sqrt(clamp(d.y, 0.0, 1.0)));
   float g = skySun.w, k = 1.0 + g * g - 2.0 * g * dot(d, skySun.xyz);
   // × the night cap (skyFog.z, see _apply): the night sky and the fog, the same function, dimmed together.
   return (texture2D(skyLut, uv).rgb + skyGlare.rgb * (1.0 - g * g) / (k * sqrt(k))) * skyFog.z;
@@ -585,8 +593,9 @@ const DISC_L = 9, MOON_SURFACE_L = 0.04
 // it they dimmed whenever the night was retuned (round 3, owner: "it feels like i can only see the bright ones").
 // 0.167 is what the eye gave them on a moonless night through round 2.
 const STAR_L = 0.167
-// The twilight grade's teal (luminance 1), and the warmth ((r − b) / r) over which it hands over to the glow, untinted.
-const TEAL = [0.56, 1.12, 1.12], WARM_LO = 0.35, WARM_HI = 0.65
+// The twilight grade's teal (luminance 1); the warmth ((r − b) / r) over which it hands over to the glow, untinted; and
+// the elevations (sines, 3° → 15°) over which it comes in, so the horizon band keeps its own brown-orange all round.
+const TEAL = [0.56, 1.12, 1.12], WARM_LO = 0.65, WARM_HI = 0.9, TEAL_EL0 = Math.sin(3 * D2R), TEAL_EL1 = Math.sin(15 * D2R)
 const WB_STRENGTH = 0.5
 /** three's ACESFilmicToneMapping on a grey input (its colour matrices are identity on grey), already × exposure / 0.6. */
 const acesGrey = (v) => Math.max(0, (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081))
@@ -712,12 +721,14 @@ export class SkySystem {
     const castWB = (keep) => this._wb.map((w, c) => w * Math.pow(il / Math.max(ill[c], 1e-30) / this._noonCast[c], WB_ADAPT * (1 - keep)))
     const wb = castWB(p.skyCast), wbL = castWB(p.landCast)
     // THE TWILIGHT GRADE (round 3, owner 11-09: "i much prefer the blues and greens in the sky during sunrise and sunset in
-    // the legacy sky"). A grade, not physics: from the sun 14° up down through the night, the sky (and so the fog) gets
-    // duskSat more saturation, and a teal split tone — the sky that is not the warm glow tinted toward TEAL, the glow left
-    // to the saturation's orange. Three RGB wavelengths turn the sky above a sunset mauve where film (and the legacy's
+    // the legacy sky"). A grade, not physics: from the sun 14° up through the twilight, the sky (and so the fog) gets
+    // duskSat more saturation, and a teal split tone — the sky above the horizon band that is not the warm glow tinted
+    // toward TEAL, the glow left to the saturation's orange. Three RGB wavelengths turn the sky above a sunset mauve where film (and the legacy's
     // Preetham sky) shows the teal; this puts the teal back.
-    const tw = 1 - smooth(4 * D2R, 14 * D2R, st.sun.el), ss = p.skySat + p.duskSat * tw, split = p.dusk * tw
-    const treat = (r, g, b, out, night, sat = ss * (1 - 0.85 * night), w = wb) => {
+    // It fades out again with the last of the twilight: the moonlit sky is the rods' blue (nightBlue), as the land's is.
+    const tw = (1 - smooth(4 * D2R, 14 * D2R, st.sun.el)) * smooth(DARK_EL, DARK_EL + 6 * D2R, st.sun.el)
+    const ss = p.skySat + p.duskSat * tw, split = p.dusk * tw
+    const treat = (r, g, b, out, night, sat = ss * (1 - night) + p.nightBlue * night, w = wb) => {
       r *= w[0]; g *= w[1]; b *= w[2]
       const l = lum(r, g, b)
       r += (l * NIGHT_TINT[0] - r) * night * 0.9; g += (l * NIGHT_TINT[1] - g) * night * 0.9; b += (l * NIGHT_TINT[2] - b) * night * 0.9
@@ -732,7 +743,8 @@ export class SkySystem {
       const r = L[i * 3] * p.skyGain, g = L[i * 3 + 1] * p.skyGain, b = L[i * 3 + 2] * p.skyGain
       treat(r * X, g * X, b * X, t3, rods(Math.PI * lum(r, g, b)))
       if (tw > 0 && t3[0] > 0) {
-        const l = lum(t3[0], t3[1], t3[2]), k = split * (1 - smooth(WARM_LO, WARM_HI, (t3[0] - t3[2]) / t3[0]))
+        const up = smooth(TEAL_EL0, TEAL_EL1, ROWS[(i / LUT_W) | 0].y)
+        const l = lum(t3[0], t3[1], t3[2]), k = split * up * (1 - smooth(WARM_LO, WARM_HI, (t3[0] - t3[2]) / t3[0]))
         for (let c = 0; c < 3; c++) t3[c] *= 1 + k * (TEAL[c] - 1)
         const l2 = lum(t3[0], t3[1], t3[2]) || 1
         for (let c = 0; c < 3; c++) t3[c] *= l / l2
