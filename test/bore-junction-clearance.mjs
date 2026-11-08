@@ -43,7 +43,11 @@ const MAX_OVERLAP   = 1
 // 18 → 19 (2026-11-01, BUG-63): seed 19's node 0,-2,2 (596,-1251) gets back the road a mid-span key
 // collision used to delete (g:460933,-1467175,-1:0,-2,2~p); its pad's reach grows to 33.4 m and takes in
 // the portal of g:0,-2,2:1,-2,1 29.8 m away — a restored junction, not a moved portal.
-const MAX_IN_PAD    = 19
+// 19 → 20 (2026-11-08, BUG-146): seed 18's node (164.7, 6.3) paves its gore out to where the pavements really part (mouths
+// 14.5 → 17.5 m), so its reach circle grows 29.4 → 32.3 m and takes in the portal of g:-1,0,1:0,0,2 29.9 m away, 12.4 m
+// past the ring. The circle is the carve's bound, not its footprint: the carved ground within 8 m of that portal is
+// identical to the last 0.1 mm (wip/bug-146/portal-ground.mjs) — a grown circle, not a cut headwall.
+const MAX_IN_PAD    = 20
 const MAX_AT_NODE   = 12
 
 /** Minimum distance between two 3D segments. */
