@@ -140,11 +140,14 @@ const HELPERS = `window.__soak = {
     for (let t = 0; t <= Math.min(9, L); t += 0.5) { const x = q.x + dx / L * t, z = q.z + dz / L * t; if (!P.queryContact(x, y, z, 3)) return { x, z, h: Math.atan2(-q.tx, -q.tz) } }
     return { x: q.x, z: q.z, h: Math.atan2(-q.tx, -q.tz) } },
   // Where a giver's card answers the brake (main.js _inPoiSpot): a haul yard's BED over its drop zone (the bed's
-  // centre sits 1.523 m behind the truck's origin: data/vehicle-models.js bed frontZ/tailZ), inside a PARK box
-  // (the general store's lot), else the pad. Along the zone's long axis, as the pump seat lies (h = yaw − π/2).
-  spot (q) { const box = q.drop ?? q.park; if (!box) return this.pad(q)
+  // centre sits 1.523 m behind the truck's origin: data/vehicle-models.js bed frontZ/tailZ; along the zone's long
+  // axis, as the pump seat lies, h = yaw − π/2), inside a PARK box where a tow seats it (poi.js towSeat: the box's
+  // centre, along its LONG side — the shop's lift runs the other way to the store's lot), else the pad. A station
+  // has a park box AND pump zones: towSeat would pick the pump, whose brake opens the pump, not the card.
+  spot (q) { if (!q.drop && q.park) { const s = window.__towSeat({ ...q, pumpZones: null }); return { x: s.x, z: s.z, h: s.heading } }
+    const box = q.drop; if (!box) return this.pad(q)
     const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
-    const cx = ox + box.x * cs + box.z * sn, cz = oz - box.x * sn + box.z * cs, h = yaw - Math.PI / 2, k = q.drop ? 1.523 : 0
+    const cx = ox + box.x * cs + box.z * sn, cz = oz - box.x * sn + box.z * cs, h = yaw - Math.PI / 2, k = 1.523
     return { x: cx - k * Math.sin(h), z: cz - k * Math.cos(h), h } },
   // poi.js towSeat's pump branch: alongside the island, in its first zone.
   pump (q) { const b = q.pumpZones[0], yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
