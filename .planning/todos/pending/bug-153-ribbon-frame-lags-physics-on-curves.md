@@ -57,3 +57,37 @@ scaled by their own curvature, grade and chord spacing; not yet censused.
 - [ ] The ribbon-pad weld (BUG-82) and the deg-2 join seal (FEAT-10) still hold.
 - [ ] BUG-149's leg lip measures the designed ~0.15 m in physics, as it already does drawn.
 - [ ] A gate pins it: ribbon vertices vs physics at the same x,z.
+
+## Root cause and fix (Lane B, 2026-11-08, `land/bug-153`)
+
+**The frame.** `road.js runFrameAt(arcS, runKey)` is runProfile's sample with tx/tz replaced by the tangent physics
+projects onto: the run's analytic centerline at the true arc (`_refineFrame`'s eligibility; the chord tangent stands in a
+T departure band, as in physics). FEAT-10's degree-2 weld is re-applied on top: the same directions, the same smoothstep
+over roadJoinWeldLength. Every reader that draws or rebuilds the ribbon's edge takes it, so the BUG-82 weld still holds:
+`_ribbonSection` (the sweep and the pad mouths' weld sections), the deg-2 lead-ins, `_junctionMouths` / `_ringHasMouth`
+(the ring's mouth chords), the crotch walk, the deg-2 connector mouths, and `_legDeckTop` (the leg deck under a pad).
+`runProfile.tx` stays the chord tangent for everything else: curvature, the tunnel tube and portals, the lip frames.
+
+**Measured** (`test/ribbon-frame.mjs`'s census: every drawn section's pavement vertices vs physics at the same x,z,
+potholes off, R 640):
+
+| seed | main: verts ≥ 2 cm (frame class) | main worst | fix: verts ≥ 2 cm | fix worst |
+|---|---|---|---|---|
+| 273004588 | 232 | 19.7 cm | 0 | 1.0 cm |
+| 2654449719 | 303 | 6.2 cm | 0 | 0.5 cm |
+| 1074499174 | 461 | 6.9 cm | 0 | < 2 cm |
+| 6 (test seed) | 188 | 5.7 cm | 0 | 0.8 cm |
+
+BUG-149's leg (1074499174, `g:745990,432424,-1:0,1,1`, side 1): drawn == physics to 1 mm at s 11 / 12 / 13 (main
++0.128 / +0.134 / +0.100). The physics lip at s 12 is now 0.128 m (main 0.262 m), the designed edge.
+
+**Two other mechanisms remain, both physics-side and the same on main** (the gate reports them apart):
+- **A promoted T's departure band** (`offCurveSpans`, the last ~30 m before the T): physics deliberately frames on the
+  raw polyline chords there (the points left the centerline), so its frame jumps up to 15° at every vertex. A smooth
+  ribbon cannot follow a faceted surface: 58 / 37 / 20 / 0 vertices ≥ 2 cm, up to 0.38 m on a 10°-banked curve
+  (2654449719, (126.8, −182.1)).
+- **The QUAL-10 ruled blend leaks onto a leg's own pavement.** Near a node, physics blends every in-range leg's grade;
+  the soft gap clamp (RULE_SOFT 1.2) leaves a sibling up to ~12 % of the weight at the pavement edge, so physics bends
+  toward the sibling's grade where the ribbon does not. At the vertices: 25–88 per seed, up to 8.2 cm. Between them it
+  is worse at the edge: −0.34 m at lat 4.5, 0.5 m past a mouth (1074499174 `g:745990,432424,-1:1,1,1`). And physics
+  steps by that same 0.34 m across the mouth chord, because the pad side snaps to the leg's unblended deck.
