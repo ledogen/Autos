@@ -124,6 +124,8 @@ export const GATES = [
     desc: 'BUG-56 C: NEVER DRAPE. No shipped run exceeds the gMaxRoad+gradeTol ceiling and nothing is condemned — measured on the registered geometry, so a run nobody solved cannot hide. The terrain-follow fallback is where the 108% grades came from; it is now re-route then condemn. Also prints the grade histogram + ladder rungs (report only — the ceiling is legal by fiat).' },
   { file: 'pad-census.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-56 B0: every >=3-leg junction gets a pad. The ring ladder could end in null — 27 of 176 real junctions (15%) shipped a naked gap where the intersection should be, the owner\'s seed 6 (-3862,884) among them. Also reports which rung each pad landed on; the hull floor is a symptom counter.' },
+  { file: 'ribbon-frame.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-153: the drawn ribbon is the surface the wheel rides across its width. Every section the tile builder draws (captured from _ribbonSection with its run, R 448 on two random seeds + BUG-149\'s 1074499174 + seed 6): each pavement vertex vs physics at the same x,z, < 2 cm. Main framed sections on runProfile\'s incoming chord, which trails a curve by up to a chord\'s turn: 188–461 vertices ≥ 2 cm per seed, worst 19.7 cm. Reported apart, not gated: T departure bands (physics on the polyline chords), the QUAL-10 ruled blend near nodes, overlapping ribbons.' },
   { file: 'road-pad-fill.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-82: junction pad fill is well-shaped (aspect), follows the smooth field (chord), covers its ring exactly, and is skirted outward with no wall on a mouth' },
   { file: 'node-pin.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],

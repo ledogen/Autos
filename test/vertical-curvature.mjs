@@ -51,7 +51,13 @@ const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // junction 206 → 203 (2026-11-07, BUG-127): a run's lanes are driven only where asphalt is drawn under them. Inside a
 // junction end's trim at a sharp deg-2 bend the outer lanes crossed the gravel corner the connector arc cuts (730
 // samples dropped); 3 kinks sat there. The connector arcs themselves are driven as before.
-const CEIL = { open: 18, junction: 203 }
+// open 18 → 19, junction 203 → 201 (2026-11-09, BUG-153 + BUG-154/155, landed together; main counted 202 here). The open
+// +1 is no new kink: BUG-90 dip 1 world's sag at (903.5, 1584.6) sits 51.5 m along g:858041,1593089,-1:2,2,1, inside
+// that promoted T's 58 m departure band, where BUG-154's continuous band frame moves physics ≤ 1.1 cm — 0.0299 → 0.0303
+// /m, across KFLAG. Junction: the ribbon frame turns the ring's mouth chords (pad surface ≤ 7.5 cm within 21 m of
+// nodes) and BUG-155's one-sided clamp re-shapes the mouth blends; ~9 mild 0.030–0.035 kinks cross KFLAG each way,
+// net −1, sharpest unchanged (0.092 /m).
+const CEIL = { open: 19, junction: 201 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5
