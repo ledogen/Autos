@@ -236,9 +236,9 @@ await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html` })
 for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await sleep(250)
 await sleep(500)
 await js(fakePad)
-// FEAT-156: the menu is new game / settings, and it opens with new game highlighted.
+// FEAT-156: the menu is new game / tutorial (FEAT-184) / settings, and it opens with new game highlighted.
 await press(DOWN)
-check(await navText() === 'settings', `the menu opens on new game: D-pad down reaches settings (${await navText()})`)
+check(await navText() === 'tutorial', `the menu opens on new game: D-pad down reaches tutorial (${await navText()})`)
 await press(UP)
 check(await navText() === 'new game', `up returns to new game (${await navText()})`)
 await press(A)

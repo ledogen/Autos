@@ -55,7 +55,7 @@ const DEBUG_LOCKOUT = false
 // belt-and-braces ceiling around them. PERF-27 (2026-11-07) removed the 400 ms floor that sat after
 // the settle: the centre is captured in _beginWarm before the floor ran, and the floor only let the
 // post-reseat frame paint before the main-thread region build froze it — off-thread since PERF-30.
-const SETTLE_MAX_MS = 20000    // if a rebuild throws, don't hang the loading screen forever
+const SETTLE_MAX_MS = 20000    // a settle slower than this starts the warm anyway, on the seed's spawn (update)
 const WARM_PUMP_MS  = 250      // warmBandComplete() rebuilds a band graph — pump it, don't spin it (the Worker path pumps on its build's promise: pumpWarmNow)
 const WARM_MAX_MS   = 180000   // cold uncached seed at this radius can be minutes; still bounded
 const HANDOFF_MAX_MS = 15000   // go-live waits for the terrain ring; bounded so a stuck ring cannot strand the player
@@ -75,7 +75,9 @@ export class StorySystem {
    *   setLoading(visible, text)  — the mode-entry loading overlay
    *   isGroundReady()            — true once the visible terrain ring is built + carved (go-live
    *                                holds the loading screen until then; optional ⇒ no hold)
-   *   getVehiclePosition()       — {x,z} of the truck (region-center source, sampled post-reseat)
+   *   spawnCentre()              — BUG-152: promise of {x,z}, the SEED's spawn point (main.js
+   *                                resolveSpawn, memoised) — the region-center source
+   *   getVehiclePosition()       — {x,z} of the truck (only checked against the centre, post-reseat)
    *   isMissionActive()          — true while a Quick Job is accepted/counting/running
    *   pumpRegionWarm(c, r)       — widen the play RoadSystem to r around c and pump one warm step;
    *                                returns true once every connection is routed AND the network has
@@ -86,7 +88,8 @@ export class StorySystem {
    *   onRegionExit()             — FEAT-46: drop the POIs and their pads on the way out (optional)
    *   validateRegion(c, r)       — world-validate report for the warmed region ({playable, …});
    *                                optional ⇒ every seed is accepted (see _checkSeed)
-   *   onSeedRejected(seed, rep)  — show the unplayable-seed disclaimer (optional)
+   *   onSeedRejected(seed, rep)  — show the unplayable-seed disclaimer (optional; rep is null when
+   *                                the world itself failed to settle — BUG-152)
    */
   constructor (deps) {
     this._d = deps
@@ -163,6 +166,7 @@ export class StorySystem {
     this._armed = false
     this._handoff = false
     this._phase = 'settling'
+    this._settleLate = false   // the SETTLE_MAX_MS fallback has fired (update)
     // THE SEED DECIDES WHERE THE WORLD IS BUILT, AND NOTHING ELSE (owner, 2026-08-11).
     //
     // A free-roam teleport leaves a spawn override behind, and main.js's reseat honours it ahead of
@@ -180,21 +184,33 @@ export class StorySystem {
 
     this._seed = seed          // the disclaimer names the seed that was refused
     const reseed = this._d.applySeed && !this._d.isWorldLoaded(seed)
-    const settled = reseed ? this._d.applySeed(seed) : this._d.reseat()
-    Promise.resolve(settled)
-      .catch(e => { console.warn('[story] world settle failed', e) })
+    // BUG-152: a settle that FAILED used to fall through to the warm with the truck still at the menu
+    // world's spawn, and the region was centred there: the right seed's roads with every POI re-sited,
+    // so a resumed run's board events (keyed on POI ids) no longer applied and mom's casserole came
+    // back. Now applySeed resolves false on a failed rebuild, a failure is retried once and then
+    // refused (_settleFailed), and the centre is the SEED's spawn, never the truck's pose.
+    const settle = () => Promise.resolve(reseed ? this._d.applySeed(seed) : this._d.reseat())
+      .then(ok => { if (ok === false) throw new Error('the world rebuild failed'); return this._d.spawnCentre() })
+    const current = () => this._token === token && this._phase === 'settling'   // false once superseded
+    settle()
+      .catch(e => { console.error('[story] world settle failed — retrying once', e); return current() ? settle() : null })
       // (FEAT-68 removed the baked story-region route cache that used to be imported here — the
       // region warm now routes for real on the worker pool, ~2.8 s at 4x throttle.)
-      .then(() => {
-        if (this._token !== token || this._phase !== 'settling') return   // superseded
-        this._beginWarm()
-      })
+      .then(c => { if (current()) this._beginWarm(c) },
+            e => { if (current()) this._settleFailed(e) })
   }
 
-  /** Settle done: the truck is at the spawn, so that IS the region center. Start the routing warm. */
-  _beginWarm () {
+  /**
+   * Settle done: the truck is seated at the seed's spawn `c`, and `c` IS the region center (the
+   * 2026-08-11 ruling at its source — BUG-152). The truck is only checked against it: the seat lifts
+   * the body along the road's normal, 0.6 m × sin(grade) — 6 cm at 10 %, 14 cm at the 24 % cap.
+   * Further off than 1 m is a seat that did not happen, and a new run would start away from its spawn.
+   */
+  _beginWarm (c) {
     const p = this._d.getVehiclePosition()
-    this._center = { x: p.x, z: p.z }
+    if (Math.hypot(p.x - c.x, p.z - c.z) > 1)
+      console.error('[story] the truck is not at the seed\'s spawn', { truck: p, spawn: c })
+    this._center = { x: c.x, z: c.z }
     this._phase = 'warming'
     this._elapsed = 0
     this._pumpAcc = WARM_PUMP_MS   // pump immediately on the next frame
@@ -250,10 +266,24 @@ export class StorySystem {
    * been shown, so this is an informed choice rather than a silent one.
    */
   acceptRejectedSeed () {
-    if (this._phase !== 'rejected') return
+    if (this._phase !== 'rejected' || !this._center) return   // a failed settle has no region to enter
     console.warn('[story] entering a seed the region check rejected —', this._report?.components,
                  'components,', this._report?.condemned?.length ?? 0, 'condemned')
     this._goLive()
+  }
+
+  /**
+   * BUG-152: the world reported a failed settle twice, so the truck may not be at this
+   * seed's spawn and there is no region to centre. Refuse the entry the way an unplayable seed is
+   * refused: a fresh run re-rolls, a resume gets the seed card (main.js onSeedRejected), and no
+   * "start anyway" (that button needs a report).
+   */
+  _settleFailed (e) {
+    console.error('[story] world settle failed — entry refused', e)
+    this._phase = 'rejected'
+    this._report = null
+    this._d.setLoading(false)
+    this._d.onSeedRejected?.(this._seed, null)
   }
 
   /** True while the entry disclaimer is up: entered, warmed, and refused. */
@@ -327,10 +357,18 @@ export class StorySystem {
     this._elapsed += dtMs
 
     if (this._phase === 'settling') {
-      // The promise above is the real signal; this only bounds a rebuild that threw or never fired.
-      if (this._elapsed > SETTLE_MAX_MS) {
-        console.warn('[story] world settle timed out — entering with the current position as center')
-        this._beginWarm()
+      // The promise above is the real signal; this only stops a slow settle holding the warm back (a
+      // slow laptop at cpu ×4 takes ~23 s cold to driving). It used to enter on the truck's position,
+      // BUG-152's leak again, since the seat may not have run. Now it enters on the seed's spawn:
+      // spawnCentre waits out the in-flight seat, so it never races it. Slow is not failed, so this
+      // never refuses (orchestrator, 2026-11-08): a re-roll would be just as slow, and it would loop.
+      if (this._elapsed > SETTLE_MAX_MS && !this._settleLate) {
+        this._settleLate = true
+        console.warn('[story] world settle slow — starting the warm on the seed\'s spawn')
+        const token = this._token
+        const current = () => this._token === token && this._phase === 'settling'
+        this._d.spawnCentre().then(c => { if (current()) this._beginWarm(c) },
+                                   e => { if (current()) this._settleFailed(e) })
       }
       return
     }

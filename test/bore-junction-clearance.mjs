@@ -49,7 +49,11 @@ const AT_NODE_M = 12     // "the portal is the junction" — one profile station
 // old counts (the 1 overlap: seed 18's trunk 3,0,1 × 2,1,1, merged at their T) and 0 / 17 / 7 under these.
 // (BUG-63's 18 → 19, seed 19's restored junction at node 0,-2,2, is inside the 17.)
 const MAX_OVERLAP   = 0
-const MAX_IN_PAD    = 17
+// 17 → 18 (2026-11-08, BUG-146): seed 18's node (164.7, 6.3) paves its gore out to where the pavements really part (mouths
+// 14.5 → 17.5 m), so its reach circle grows 29.4 → 32.3 m and takes in the portal of g:-1,0,1:0,0,2 29.9 m away, 12.4 m
+// past the ring. The circle is the carve's bound, not its footprint: the carved ground within 8 m of that portal is
+// identical to the last 0.1 mm (wip/bug-146/portal-ground.mjs) — a grown circle, not a cut headwall.
+const MAX_IN_PAD    = 18
 const MAX_AT_NODE   = 7
 
 /** Minimum distance between two 3D segments. */
