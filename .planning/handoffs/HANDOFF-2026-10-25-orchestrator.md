@@ -556,3 +556,6 @@ re-measure waits for a quiet window. Nothing pushed.
   - Owed answers: tutorial-* ×5 (tracker v199), item page (FEAT-192 rarity ×4, V6/V8/tank, tarp sold-at).
 - **The rebuild agent** was this session's subagent: start a fresh opus agent from
   HANDOFF-2026-11-08-lighting-redesign.md for its next round.
+- **B BUG-153, a second red** (lanes/b v84): junction-edge-lip FAIL 2 — a 0.276 m lip at seed 917338424
+  g:-1,-1,2:0,-1,0 side -1 s 14, and a 0.081 m/0.05 m pad tear at (−212.04, −543.86). B runs the gate on main and on
+  land/bug-155 next. If 155 fixes it, land 153 + 155 together (one smoke).
