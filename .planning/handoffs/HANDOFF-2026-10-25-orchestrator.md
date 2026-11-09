@@ -537,3 +537,22 @@ test/cdp-smoke.mjs > log`), never merges while one runs. Queue: Spare BUG-146 �
 NOT landing: B FEAT-34 r3 (Chrome shots for the owner's morning look first); both lighting builds (owner picks;
 Spare makes land/feat180-next landable; the rebuild needs main merged only if picked). Lighting frame-cost
 re-measure waits for a quiet window. Nothing pushed.
+
+### 11-09 ~01:45 — ORCHESTRATOR RESUME HERE (owner clearing every session)
+- **LANDED: Lane C 8cddd77b** (fast-forward; data/shop-stock.js shadeTarp $6 → $15 + docs). C's affected 14/14,
+  solo gated smoke on main **PASS 26/26**, zero console errors. Main = 8cddd77b. NOT pushed (origin d7dc18e1).
+- **Ready-for-clear:** C (lanes/c v31), Spare (lanes/s v107), B (lanes/b v83). A: pending at the time of writing.
+- **Landing queue on resume** (each: lane's affected gates green → landing request → merge → ONE gated smoke on main):
+  1. Spare BUG-146 land/bug-146 8935c63a. Gates 23/70 green when cleared; the handoff says read the log or re-run.
+  2. B BUG-147 dc41474e (after 146; MAX_IN_PAD 18). Gates in flight.
+  3. B BUG-153 35847458. One red: vertical-curvature 205 vs 203 ceiling (sharpest 0.092 < 0.11 /m), B diffs per
+     window vs main first. Shot sheet to me.
+  4. B BUG-155+154 228c97a3: gates, plus the owner's before/after photos and the steep-gore sheet.
+  5. A BUG-152 + FEAT-184 menu/flag (feature/run-shape): probe 5, gates, roster compare (save bump ≥ 2/10 → owner).
+- **Waiting on the owner:**
+  - FEAT-34 r3 (feature/machine 1ed40292): B's Chrome shots → owner look → then land.
+  - Lighting: Spare r5 land/feat180-next 658e98d9 (landable, 11/11 green, :3887); rebuild r3 proto/lighting-redesign
+    5bfea3f5 (:3890; sky-ephemeris ladder stale; needs main merged).
+  - Owed answers: tutorial-* ×5 (tracker v199), item page (FEAT-192 rarity ×4, V6/V8/tank, tarp sold-at).
+- **The rebuild agent** was this session's subagent: start a fresh opus agent from
+  HANDOFF-2026-11-08-lighting-redesign.md for its next round.
