@@ -527,3 +527,13 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
   feat184-look + feat34-r2-look from OWED at the next publish (batch it).
 - Lighting: Spare on round 5 (edge fog, rebuild's stars/night scatter/orbits); rebuild agent resumed on its round 3
   (dawn/dusk glare, noon fog, sky colours, star range). Owner's notes: FEAT-180 ticket (89e4b136).
+
+### 11-09 ~01:00 — HOLD LIFTED (owner: "home now. power unlimited. catch up on testing. see ya in the morning")
+Told A, B, C, Spare: merge main, affected gates (≤ 2 heavy processes per lane), landing requests to cargame-c8; the
+orchestrator runs ONE gated smoke on main per landing (`while load5 > 15 sleep 60; tools/chrome-slot.sh node
+test/cdp-smoke.mjs > log`), never merges while one runs. Queue: Spare BUG-146 → B BUG-147 (MAX_IN_PAD 18) → B BUG-153
+(shot sheet to me) → B BUG-155+154 (owner's before/after photos + steep-gore sheet; 2.3 cm residual call) → A BUG-152
+(+ roster compare; save bump ≥ 2/10 → owner) + FEAT-184 menu/flag bd5a6a95 → C feature/content (tarp $15 + docs).
+NOT landing: B FEAT-34 r3 (Chrome shots for the owner's morning look first); both lighting builds (owner picks;
+Spare makes land/feat180-next landable; the rebuild needs main merged only if picked). Lighting frame-cost
+re-measure waits for a quiet window. Nothing pushed.
