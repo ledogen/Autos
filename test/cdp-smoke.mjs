@@ -1164,12 +1164,12 @@ const STEPS = [
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     let menuSeen = false
     const newRun = async () => {
-      // FEAT-156 (once): the root is continue (only with a save) · new game · settings, and the
+      // FEAT-156 (once): the root is continue (only with a save) · new game · tutorial (FEAT-184) · settings, and the
       // new-game page's mode row swaps what is below it — opening on story, never remembered.
       if (!menuSeen) {
         menuSeen = true
         const rootItems = await js('[...document.querySelectorAll("#mm-root button")].filter(b => b.offsetParent !== null).map(b => b.textContent.trim()).join(" · ")')
-        check(rootItems === 'new game · settings', `main menu root reads "${rootItems}", want "new game · settings"`)
+        check(rootItems === 'new game · tutorial · settings', `main menu root reads "${rootItems}", want "new game · tutorial · settings"`)
       }
       await js('document.getElementById("mm-new").click()')
       const modeView = () => js(`(() => { const v = id => document.getElementById(id).offsetParent !== null
