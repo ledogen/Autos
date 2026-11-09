@@ -9,10 +9,11 @@
 //
 // `--nopop` runs the same hits with punctures disabled (rim peaks still recorded, for offline
 //   thresholding), to tell an IMPACT flip from a FLAT-TIRE flip.
-// `--big` the dense grid (≈3000 hits, ~45 s). `--damp=<N·s/m>` overrides params.tireDampingDebris.
+// `--big` the dense grid (≈3000 hits, ~45 s). `--damp=<N·s/m>` overrides params.tireDampingDebris,
+//   `--stopzeta=<ζ>` params.tireStopDampingRatio (BUG-140's on-stop tire damping; 0 = off).
 // `--rear` puts the rock just ahead of the rear-left tire — a DRIVEN wheel (the Ranger is RWD), so
 //   climbing is tested where there is torque to climb with (FEAT-158).
-// `--json=<path>` dumps every run. `--rows` prints them. `--trace=<mph>,<lat>,<scale>,<yaw>` prints
+// `on stop` counts the hits that ran a strut onto its bump stop (BUG-140). `--json=<path>` dumps every run. `--rows` prints them. `--trace=<mph>,<lat>,<scale>,<yaw>` prints
 //   the per-step log of one run around the strike (TFROM=<step> to start elsewhere).
 //
 // Run: node test/census-rock-strike.mjs [--nopop] [--big] [--trace=40,0,1,0]
@@ -33,6 +34,7 @@ const args = process.argv.slice(2)
 const NOPOP = args.includes('--nopop')
 const TRACE = args.find(a => a.startsWith('--trace='))?.slice(8).split(',').map(Number)
 const DAMP = +(args.find(a => a.startsWith('--damp='))?.slice(7) ?? 0)   // N·s/m — params.tireDampingDebris override
+const STOPZ = args.find(a => a.startsWith('--stopzeta='))?.slice(11)      // BUG-140: params.tireStopDampingRatio override (0 = off)
 const JSON_OUT = args.find(a => a.startsWith('--json='))?.slice(7)        // dump every run's row
 const BIG = args.includes('--big')                                         // the dense grid (≈3000 hits)
 const SPEEDS_ARG = args.find(a => a.startsWith('--speeds='))?.slice(9).split(',').map(Number)   // override the speed list
@@ -73,6 +75,7 @@ async function drive (mph, lat, scale, yaw, trace = false) {
   const speed = mph * 0.44704
   const P = structuredClone(RANGER_PARAMS)
   if (DAMP) P.tireDampingDebris = DAMP
+  if (STOPZ !== undefined) P.tireStopDampingRatio = +STOPZ
   P._tireFz = [0, 0, 0, 0]; P._suspForceAccum = [0, 0, 0, 0]
   P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
   const engine = await createPhysicsEngine()
@@ -102,7 +105,7 @@ async function drive (mph, lat, scale, yaw, trace = false) {
   const dmg = new DamageModel({ params: P })
   const fwd = new THREE.Vector3(), up = new THREE.Vector3()
   const rp = new THREE.Vector3(), rv = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion()
-  const r = { peakRimRoad: 0, exitRatio: 0, popStep: -1, peakHz: 0, maxRoll: 0, maxPitch: 0, upMin: 1, rockV: 0, dvStep: 0, wheelDmg: 0, rockKg, peakE: 0, peakEevent: 0 }
+  const r = { peakRimRoad: 0, exitRatio: 0, popStep: -1, peakHz: 0, maxRoll: 0, maxPitch: 0, upMin: 1, rockV: 0, dvStep: 0, wheelDmg: 0, rockKg, peakE: 0, peakEevent: 0, peakBump: 0 }
   const evE = [0, 0, 0, 0]   // J — pinch work over the current squash event (consecutive steps with a pinch), per wheel
   const evN = [0, 0, 0, 0]   // steps the current squash event has run
   const rock0 = new THREE.Vector3(); engine.getTransform(rock, rock0, _q)
@@ -118,6 +121,7 @@ async function drive (mph, lat, scale, yaw, trace = false) {
     readRimStrikes(engine, chassis, vs.rimForce, DT, vs.rimHazard)
     const hz = Math.max(...vs.rimHazard)   // read BEFORE --nopop clears it, so a sweep can threshold offline
     r.peakHz = Math.max(r.peakHz, hz)
+    r.peakBump = Math.max(r.peakBump, ...vs.bumpForce)   // BUG-140: did the struck corner reach its bump stop
     r.peakRimRoad = Math.max(r.peakRimRoad, ...vs.rimHazardSoft)
     for (let i = 0; i < 4; i++) {
       evE[i] = vs.rimHazardSoft[i] > 0 ? evE[i] + vs.rimHazardWork[i] : 0
@@ -186,7 +190,7 @@ for (const mph of SPEEDS) {
   const mx = (k) => Math.max(...rs.map(x => x[k]))
   console.log(`${String(mph).padStart(3)} mph  pop ${n(x => x.popStep >= 0)}  wdmg ${n(x => x.wheelDmg > 0)}  flip ${n(x => x.upMin < 0)}  roll>30 ${n(x => x.maxRoll > 30)}  ` +
     `roll ${mx('maxRoll').toFixed(0)}°  hz ${(mx('peakHz') / 1000).toFixed(0)}k  softHz ${(mx('peakRimRoad') / 1000).toFixed(0)}k  E ${mx('peakEevent').toFixed(0)}J  rock ${mx('rockV').toFixed(1)}  exit× ${mx('exitRatio').toFixed(2)}  dv ${mx('dvStep').toFixed(2)}  ` +
-    `climb>5cm ${n(x => x.hubRise > 0.05)}  rock moved>1m ${n(x => x.rockMove > 1)}`)
-  if (args.includes('--rows')) for (const x of rs) console.log(`      sc${x.sc} lat${x.lat} yaw${x.yaw}: pop${x.popStep} hz${(x.peakHz / 1000).toFixed(0)}k soft${(x.peakRimRoad / 1000).toFixed(0)}k wd${x.wheelDmg.toFixed(2)} roll${x.maxRoll.toFixed(0)} pitch${x.maxPitch.toFixed(0)} up${x.upMin.toFixed(2)} rock${x.rockV.toFixed(1)} exit${x.exitRatio.toFixed(2)} dv${x.dvStep.toFixed(2)} kg${x.rockKg?.toFixed?.(0)} climb${(x.hubRise * 100).toFixed(0)}cm moved${x.rockMove.toFixed(2)}m`)
+    `climb>5cm ${n(x => x.hubRise > 0.05)}  rock moved>1m ${n(x => x.rockMove > 1)}  on stop ${n(x => x.peakBump > 0)} (max ${(mx('peakBump') / 1000).toFixed(0)}k)  pitch ${mx('maxPitch').toFixed(0)}°`)
+  if (args.includes('--rows')) for (const x of rs) console.log(`      sc${x.sc} lat${x.lat} yaw${x.yaw}: pop${x.popStep} hz${(x.peakHz / 1000).toFixed(0)}k soft${(x.peakRimRoad / 1000).toFixed(0)}k wd${x.wheelDmg.toFixed(2)} roll${x.maxRoll.toFixed(0)} pitch${x.maxPitch.toFixed(0)} up${x.upMin.toFixed(2)} rock${x.rockV.toFixed(1)} exit${x.exitRatio.toFixed(2)} dv${x.dvStep.toFixed(2)} kg${x.rockKg?.toFixed?.(0)} climb${(x.hubRise * 100).toFixed(0)}cm moved${x.rockMove.toFixed(2)}m stop${(x.peakBump / 1000).toFixed(0)}k`)
 }
 if (JSON_OUT) fs.writeFileSync(JSON_OUT, JSON.stringify(ALL))

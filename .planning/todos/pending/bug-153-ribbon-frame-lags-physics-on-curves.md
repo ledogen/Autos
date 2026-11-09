@@ -110,3 +110,68 @@ frame as it is). The gate reports them apart until they are fixed, then folds th
 shot sheet: 3 sloped curved mouths (candidates from main's frame-class census: 273004588 node (509.3, 412.5) leg
 `g:509295,412497,-1:1,0,1`, 17.8 cm on main; 2654449719 node (−50.6, 330.2) leg `g:-2,0,0:-1,0,0`, 6.2 cm; 1074499174
 node (190.3, −356.7) leg `g:0,-1,1:-34662,200187,-1`, 5.0 cm), chase-cam height, the same frames on main and the fix.
+
+## The two reds — decided: land 153 + 155 together (Lane B, 2026-11-09)
+
+`land/bug-153`'s affected gates: 68/70, two reds. Both measured on main (5bf20c0c, road code = main's), on `land/bug-153`
+and on `land/bug-155` (which carries 153). Logs and probes: `wip/bug-153/reds/` in the land-155 tree.
+
+**junction-edge-lip** — NEW with 153's frame, and 155 takes it out:
+
+| | worst leg lip (max 0.25) | worst pad tear (max 0.08) | tightest pad margin | BUG-146 tear (excepted) |
+|---|---|---|---|---|
+| main | 0.237 m — PASS | 0.075 m | 6.3 cm | 0.143 m |
+| 153 | **0.276 m** (917338424 `g:-1,-1,2:0,-1,0` side −1 s 14) — FAIL | **0.081 m** (917338424 (−212.04, −543.86)) — FAIL | 6.3 cm | 0.119 m |
+| 155 | 0.196 m — PASS | 0.036 m | 13.1 cm | 0.119 m |
+
+153 turns the ring's mouth chords with the ribbon frame; at that seed-917338424 node the leg's edge then reads the
+ruled blend's leak (BUG-155's mechanism) harder. 155 is better than main on every number.
+
+**vertical-curvature** (a ceiling gate; main counts junction 202 — the 203 ceiling was 1 stale):
+- 153: junction 205. One-to-one kink match vs main: 4 new, 1 gone. Two are genuinely new mild crests (0.034 /m seed 11
+  (−927.3, −1313.0), ~5 m from BUG-63's T; 0.031 /m seed 7 (−1505.3, 1177.7)). Two are the gate's 15 m de-dup
+  splitting a feature main already counts (seed 7 (−1428.6, 549.9) track 0; seed 11 (1925.3, −1250.8)). Sharpest unchanged.
+- 155: junction **201** (−1 vs main), open **19** (+1). The open one is no new kink: BUG-90 dip 1 world's sag at
+  (903.5, 1584.6), 51.5 m along `g:858041,1593089,-1:2,2,1`, inside that promoted T's 58 m departure band. BUG-154's
+  band frame moves physics ≤ 1.1 cm there: 0.0299 → 0.0303 /m, across the 0.03 flag.
+- Ceilings on `land/bug-155`: open 18 → 19, junction 203 → 201, dated in the gate's ledger. PASS.
+
+**Decision:** 153 cannot land alone (junction-edge-lip fails; a fix would be 155's clamp). Land `land/bug-155` as one
+landing for BUG-153 + 154 + 155. Its affected gates run next; still owed before the request: `ribbon-frame.mjs` with the
+band + blend classes folded into PASS, the fingerprint lattice proof vs main, and the shot sheet / photos.
+
+## Landing proof — BUG-153 + 154 + 155 (Lane B, 2026-11-09)
+
+`land/bug-155` merged main twice (577988bd: BUG-146 + BUG-152; db482dfe: BUG-147). Both merges clean. One comment
+changed in the merge's wake: BUG-146 moved the pad mask's ramp onto the ribbon's station, so BUG-155's clamp comment
+now says its ramp reads the polyline foot's station (≤ lat·tan(kink/2) apart), instead of "the SAME ramp".
+
+**`test/ribbon-frame.mjs` folds the band and blend classes into its PASS** (5243e31f). Own deck < 2 cm (worst 1.83 cm),
+ruled blend < 2 cm (worst 0.0 cm), departure band < **2.5 cm** (worst 2.3 cm, 2654449719), overlapping ribbons still
+reported only (worst 1.2 cm). The band bar is the owner's call: 2.3 cm is option A's predicted residual (the ribbon's
+centre rides the slice spline, physics' the chords). Note: the gate reads the drawn VERTICES. Rasterising the whole drawn
+surface every 25 cm (`wip/bug-153/drawn-raster.mjs`) at that bend gives, inside 3.75 m of the centreline: main 1061 of
+3111 spots ≥ 2 cm, worst 35.7 cm → branch 107, worst 4.3 cm (5.1 cm out to 4.5 m). Option B (physics on the ribbon's
+own spline) is what takes out the last few cm.
+
+**World fingerprint, main 961311ec vs 5243e31f, and again main ff39a05e (BUG-147 in) vs cd984636 — the same accounting
+both times** (`test/fingerprint-world.mjs`, six windows): network and poi PASS
+everywhere; profiles, junctions, surface, carve, tiles differ in every window; water in three; props in one. Accounted:
+- **profiles:** the added `weld` field only. md5 of every profile minus `weld` is identical on both trees in five
+  windows (seed 6 origin r 1400, seed 6 ponds, seed 6 fork, seed 7, seed 3).
+- **surface / carve / tiles / junctions / water:** lattice proof (`analyticHeight`, 4 m grid, the four play windows;
+  `wip/bug-153/lattice-class.mjs`). Every moved point is within RULE_NODE_WINDOW (40 m) of a node or resolves into a
+  departure band's widened span; NONE moved anywhere else. Seed 6 ponds 121 points (all junction, worst 0.270 m) ·
+  seed 6 fork 250 junction (worst 0.226 m) + 58 band (worst 0.164 m) · seed 7 111 junction (worst 0.251 m) · seed 3 2
+  (worst 7 mm). The two worst movers (0.27 m seed 6 (−97, 185), 0.25 m seed 7 (244, 188)) are gore dirt 8.6–8.9 m off a
+  leg's centreline, ~13 m from the node: BUG-155's handover moving off the asphalt into the gore, as designed.
+- **props** (seed 6 fork): the same props with the same fields; 114 changed y / gy (worst 0.183 m), 2 tilt (< 0.001).
+  None added, removed or moved in plan.
+
+**Gores (BUG-155's stated cost).** Steepest 3.5 m drop beside each padded leg, 0–15 m past its mouth (`gores.mjs`): it
+did NOT get steeper. Seed 1074499174 within 900 m: 85 → 82 %, 39 → 37 %, 26 → 27 % at (746, 432); 17 → 15 % at
+(190, −357). Seed 2654449719 within 448 m: worst 27 → 20 %. One exception, a hard step rather than a slope: at (737.7, 442.1),
+1.5 m past leg `g:745990,432424,-1:0,1,1`'s mouth, the gore dirt steps 0.47 m on main and 0.86 m on the branch — BUG-156.
+
+**Photos** (headless Chrome, both trees, same seed / camera / frame, potholes off in both via the module served):
+`wip/bug-153/shots/sheets/sheet-{154,155,gores,153}.jpg` (+ `.html`). Tool: `wip/bug-153/shots/physics-shots.mjs`.

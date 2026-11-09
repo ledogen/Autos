@@ -35,7 +35,8 @@ export const ITEM_PRICE = { tirePlugKit: 7, compressor: 20, quickJack: 30,   // 
     zipTies: 10, stopLeak: 10,  // owner, 2026-10-24
     hiLiftJack: 20,             // FEAT-138 [DEFAULT]: the middle of the owner's $10–30 (2026-10-24)
     // FEAT-168 camp-gear-source (owner, 2026-11-06: "camp + shelf") [DEFAULT]
-    shadeTarp: 6, awning: 12, tent: 15, cookingKit: 15,
+    shadeTarp: 15,              // owner, 2026-10-24 (the setup page; folded 2026-11-08 — was FEAT-168's $6 [DEFAULT])
+    awning: 12, tent: 15, cookingKit: 15,
     // FEAT-104: the storefronts' lines (items.md). Moved here from data/offers.js REWARD_VALUE, so a reward
     // card still reads the same price. Duct tape and emergency gas are "$5–10": $8 is the reading the
     // reward card already used [DEFAULT].

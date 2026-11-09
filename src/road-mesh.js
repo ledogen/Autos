@@ -450,7 +450,7 @@ export class RoadMeshSystem {
         const halfWidth = params.roadHalfWidth ?? 5
         const roadWidth = params.roadWidth     ?? 10
         const crownH    = params.crownHeight   ?? 0.05
-        const rp = this._road.runProfile(arcS, runKey, this._rpScratch ??= { gradeY: 0, tx: 1, tz: 0 })
+        const rp = this._road.runFrameAt(arcS, runKey, this._rpScratch ??= { gradeY: 0, tx: 1, tz: 0 })   // BUG-153: physics' frame
         const tx = camberSign * rp.tx, tz = camberSign * rp.tz, tLen = Math.sqrt(tx * tx + tz * tz)
         // Perpendicular right vector in XZ; degenerate tangent (T-09-04) falls back to unit X.
         const rightX = tLen > 1e-8 ? tz / tLen : 1
@@ -1606,7 +1606,7 @@ export class RoadMeshSystem {
             let tx, tz
             const onLead = mp && (cum[i] <= mp.aCum + 1e-6 || cum[i] >= mp.bCum - 1e-6)
             if (onLead) {
-                const rp = this._road.runProfile(arcS, onA ? mp.aKey : mp.bKey)
+                const rp = this._road.runFrameAt(arcS, onA ? mp.aKey : mp.bKey)   // BUG-153: the ribbon's own frame
                 const sig = onA ? mp.aSig : mp.bSig
                 tx = sig * rp.tx; tz = sig * rp.tz
             } else {

@@ -53,6 +53,13 @@ wheel height). 2654449719, `g:-1,-1,0:151540,-173831,-1`, band 494.8–529.2, ve
 So a wheel near the pavement edge in a departure band meets a 0.2–0.4 m step at every vertex where the band turns
 hard. The drawn ribbon is smooth there, and that is the 0.38 m drawn/driven split.
 
+## Owner decision (2026-11-08 17:02Z, tracker owed `bug154-frame`: "changes")
+Verbatim: "i believe that this is diagnosed properly but i have not noticed itself in game myself. fix it and show proof
+of the issue with photos so i can see whats actually fixed. I may have just written this off as General Glitchiness So
+it very well could be real But I'm having trouble picturing it without pictures"
+Orchestrator: build option A. The deliverable is before/after PHOTOS: the step visible before and gone after, at
+2654449719 plus one more random seed.
+
 ## Options
 
 **A — a continuous frame on the band's own polyline (recommended).** Give each band vertex the bisector of its two
@@ -87,3 +94,42 @@ itself, so everything downstream moves (fingerprint-wide), for the same outcome 
 - Gates: road-smoothness, bank-steps, shoulder-lateral-continuity, junction-edge-lip, and the rest of the affected
   set.
 - Fingerprint: surface / carve move only inside bands (lattice proof).
+
+## Implemented: option A (Lane B, 2026-11-08, `land/bug-155` f8f82d98, after BUG-155)
+
+`road.js`, under the BUG-154 docstring before `_resolveRoadSurface`:
+- `_bandInfo(e)` is cached per run. It marks which polyline vertices still sit on the centerline (within 1 cm). It
+  widens each offCurveSpan out to the nearest such vertex.
+- `_bandTangent` gives an on-centerline vertex the analytic tangent, and every other band vertex the bisector of its
+  two chords.
+- `_bandFrameAt(e, s)`: the position is on the chord, and the tangent is the linear blend of the chord's two end
+  tangents. `runFrameAt` uses it in a band, so the ribbon gets the same frame as physics.
+- `_bandRefine` (from `_refineFrame` in a band): the foot of a query point is where the frame's normal passes through
+  it. Per chord that is a quadratic in u, the fraction along the chord. It is solved exactly, and the nearest root in
+  [0, 1] over the five chords around the old foot wins.
+
+Why the widening: my first version switched from the analytic frame to the band frame at s0 − 0.5, and left a 14.3 cm
+step there. At an on-centerline vertex the two frames are identical, so switching there carries no step.
+
+**Measured, desk probes only** (no gates yet). Band `g:-1,-1,0:151540,-173831,-1` at 2654449719 (s 494.8–529.2):
+
+| measure | before | after |
+|---|---|---|
+| worst 5 cm step, lat −4.5 / −3.75 / 0 / 3.75 / 4.5 (`band-steps.mjs`) | 42.5 / 34.3 / 1.6 / 17.9 / 21.5 cm | 2.1 / 2.0 / 1.6 / 1.4 / 1.4 cm |
+| drawn vs physics, band class, R 256 (`sec-census.mjs`) | 37 vertices ≥ 2 cm, worst 37.8 cm | 5, worst 2.3 cm |
+
+The 1.6 cm at lat 0 is the grade itself over 5 cm, the same before and after. The 2.3 cm residual is the one option A
+predicted: the ribbon's centre rides the slice spline, physics' centre rides the chords. At 1074499174 the band class
+goes from 20 vertices, worst 6.6 cm, to 0.
+
+**Still owed when the hold lifts:** the affected gates; `ribbon-frame.mjs` with the band class folded in (if the
+2.3 cm residual fails 2 cm, the choice is option B or a band tolerance, and that goes back to the orchestrator); the
+fingerprint lattice proof; and the deliverable, before/after photos of the step at 2654449719 plus one more random
+seed.
+
+## Landing proof (Lane B, 2026-11-09)
+
+Lands with BUG-153 + 155 from `land/bug-155`; the full record is in BUG-153's ticket. Band class gated at 2.5 cm in
+`test/ribbon-frame.mjs` (2.3 cm measured at the drawn vertices; 4.3 cm worst over the whole drawn surface inside 3.75 m,
+was 35.7 cm). Before/after photos: `wip/bug-153/shots/sheets/sheet-154.jpg` (2654449719's band: 1316 → 164 film cells
+off by ≥ 2 cm, worst 53 cm → a few cm on the lane; 1074499174's band: 754 → 92).

@@ -6,6 +6,7 @@ severity: minor
 opened: 2026-11-08
 source: Spare, junction-edge-lip run on 9 random seeds (identical on main and the BUG-146 branch)
 relates: BUG-145 (pad rim), BUG-122/123 (junction-edge steps)
+depends: BUG-153 (the leg lip is its ribbon tilt)
 ---
 lane: B
 
@@ -58,3 +59,5 @@ Per-leg worst |physics − drawn| past the mouth:
 
 **Not fixed yet.** Which side moves (the ribbon section frame or physics' projection) is the open question. The ribbon
 is welded to the pad's mouth chord (BUG-82), and the pad agrees with physics (±5 mm on the pad).
+
+**Now BUG-153** (major, minted 2026-11-08): the engine-wide ribbon tilt. This leg lip closes with it.

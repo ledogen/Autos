@@ -32,7 +32,7 @@
  *     — engineCtx = { engine: PhysicsEngine, chassis: bodyHandle } (required)
  *   createVehicleChassis(engine, vehicleState, params, {bed}) — build the chassis body
  *   readRimStrikes / classifyImpactRegion — the damage model's contact readout
- *   setBodyRestitution / syncChassisMass — debug-panel edits that must reach the engine body
+ *   setBodyRestitution / setBodyGrip / syncChassisMass — debug-panel edits that must reach the engine body
  *   getDriveTorque(wheelIndex, vehicleState, params)
  *
  * Conventions: see docs/GLOSSARY.md
@@ -47,7 +47,7 @@ import { stepFuel } from './fuel.js'
 import { stepAbs } from './abs.js'
 import { stepTraction } from './traction.js'
 import { camberLean, toeOffset } from './alignment.js'
-import { GROUP_CHASSIS, GROUP_DEBRIS } from './physics-engine.js'
+import { GROUP_CHASSIS, GROUP_DEBRIS, GROUP_ROAD, GROUP_STATIC, GROUP_TERRAIN } from './physics-engine.js'
 import { TILT_HI } from './tire-contact.js'
 
 // Speed threshold for input routing (rule-based, no dead-zone oscillation) is drivetrain.js's
@@ -161,8 +161,15 @@ const CAB_SHAPE_MU      = CAB_PAIR_MU * CAB_PAIR_MU / TERRAIN_FRICTION_REF      
 // the body's 0.1 it skated 108 m from 15 m/s. Side metal on asphalt or dirt is μ ≈ 0.4–0.6 (owner, 2026-11-06), and a
 // grippy flank trips a sideways slide into a roll. The flank is its own hull (shape 6), so the bottom plane and the
 // bumpers keep BUG-27b's 0.1.
-const FLANK_PAIR_MU     = 0.5
-const FLANK_SHAPE_MU    = FLANK_PAIR_MU * FLANK_PAIR_MU / TERRAIN_FRICTION_REF      // ≈ 0.31
+// FEAT-193 (owner, 2026-11-08, "simplified dig in"): the flank's grip depends on what it slides on — params.bodyGripOffroad
+// (1.0) on dirt and every other off-road solid, params.bodyGripRoad (0.5, BUG-116's value) on the road deck. The engine
+// mixes μ by geometric mean with no per-pair override, so each flank is TWO coincident hulls split by collision group:
+// one sees the ground and static solids (terrain μ 0.8, props 0.8), the other the road (μ 0.9) and debris — a loose rock
+// (0.7) meets it at √(0.28 · 0.7) = 0.44, about BUG-116's 0.47. The surface is the collider it touches (MESH == PHYSICS).
+const ROAD_FRICTION_REF    = 0.9                        // must match terrain-physics.js ROAD_FRICTION
+const FLANK_OFFROAD_SEES   = GROUP_TERRAIN | GROUP_STATIC
+const FLANK_ROAD_SEES      = GROUP_ROAD | GROUP_DEBRIS
+const flankShapeMu = (pairMu, surfaceMu) => pairMu * pairMu / surfaceMu
 const FLANK_T           = 0.02           // the slab's sides stand this far inside the flank hull [m]
 const FLANK_LIFT        = 0.05           // the flank hull stops this far above the undercarriage plane [m]
 const FLANK_IN          = 0.70           // the flank hull's inner face, |x| [m] — inside the slab
@@ -472,15 +479,19 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
     if (i < bedShapes[0] || i >= bedShapes[1]) rims.bounceShapes.push(i)
   }
   // 6. Flank hulls (BUG-116): the slab's own flank face — hip down to FLANK_LIFT above the undercarriage plane, which
-  // stays the slab's alone — at FLANK_PAIR_MU, plastic like the slab. Between the chamfers only: a bumper corner still
-  // glances (BUG-27b).
+  // stays the slab's alone — plastic like the slab. Between the chamfers only: a bumper corner still glances (BUG-27b).
+  // Each one twice (FEAT-193): an off-road copy and a road copy, by collision group (see FLANK_OFFROAD_SEES).
+  rims.flankOffroad = []; rims.flankRoad = []
   for (const [z0, z1, topY] of flanks) {
     const yb = undY + FLANK_LIFT
     const xb = slabBottomHalfW + (P.slabHalfW - slabBottomHalfW) * FLANK_LIFT / (topY - undY)
     for (const s of [-1, 1]) {
       const pts = []
       for (const z of [z0, z1]) pts.push(s * P.slabHalfW, topY, z, s * xb, yb, z, s * FLANK_IN, topY, z, s * FLANK_IN, yb, z)
-      engine.addHull(chassis, pts, { ...mat, friction: FLANK_SHAPE_MU, restitution: 0 })
+      rims.flankOffroad.push(engine.shapeCount(chassis))
+      engine.addHull(chassis, pts, { ...mat, friction: flankShapeMu(params.bodyGripOffroad, TERRAIN_FRICTION_REF), restitution: 0, collidesWith: FLANK_OFFROAD_SEES })
+      rims.flankRoad.push(engine.shapeCount(chassis))
+      engine.addHull(chassis, pts, { ...mat, friction: flankShapeMu(params.bodyGripRoad, ROAD_FRICTION_REF), restitution: 0, collidesWith: FLANK_ROAD_SEES })
     }
   }
   const q = vehicleState.quaternion
@@ -532,6 +543,14 @@ function wheelCoreInertia (params) {
 export function setBodyRestitution (engine, chassis, restitution) {
   const rims = _rimsFor(engine).get(chassis)
   if (rims) engine.setMaterial(chassis, { restitution }, rims.bounceShapes)
+}
+
+/** Live-set the flank's off-road and on-road grip (FEAT-193 debug sliders) from params.bodyGripOffroad / bodyGripRoad. */
+export function setBodyGrip (engine, chassis, params) {
+  const rims = _rimsFor(engine).get(chassis)
+  if (!rims) return
+  engine.setMaterial(chassis, { friction: flankShapeMu(params.bodyGripOffroad, TERRAIN_FRICTION_REF) }, rims.flankOffroad)
+  engine.setMaterial(chassis, { friction: flankShapeMu(params.bodyGripRoad, ROAD_FRICTION_REF) }, rims.flankRoad)
 }
 
 // engine → (chassis handle → rim tracking metadata). Module-scoped: gates create their own chassis.
@@ -694,8 +713,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // its contact is followed THROUGH the step instead of read at its start:
   //   · LOOK-AHEAD: the query sphere is grown by one step of the hub's travel, so a rock the wheel
   //     will reach during this step is seen now, at its true (negative) gap.
-  //   · The overlap at substep time t is gap + u·t + (the proxy's yield)·n, where u is the hub's
-  //     closing speed on the rock's normal relative to the rock's own motion. The contact starts
+  //   · The overlap at substep time t is gap + u·t + (the proxy's yield)·n, where gap is measured
+  //     at the substep's hub — which rides the body's in-step motion and its strut (BUG-140) — and
+  //     u is the rock's own closing speed on the normal. The contact starts
   //     at the instant the surfaces meet — continuous collision detection for the soft tire.
   //   · Every substep's tire force on the body (c.onForce, from the suspension's own contact pass)
   //     accelerates the proxy at once, and the summed impulse goes to the engine once, before it
@@ -707,7 +727,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   //     is free, and the ground still takes its share through the engine. No speed rule decides.
   // Each push goes to the engine at its own contact point, so the rock's real spin matches the
   // proxy's. Small-angle within the step (a step turns a rock a few degrees). The hub's look-ahead uses the
-  // chassis' rigid motion; its strut motion is already in the hub position each substep asks at.
+  // chassis' rigid motion at the step's start; its in-step motion (strut and body) is in the hub position each substep asks at.
   // (Revives the 2026-08-15 proxy, c03a727, reverted on feel before the hard cores existed; that
   // one read the start-of-step overlap and held "resting" rocks with a speed rule.)
   const proxies = new Map()           // body → proxy, this step only
@@ -761,7 +781,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // The body's velocity at the contact: the engine's, plus what this step's pushes have added
       // there (spin included — a push high on a rock mostly turns it).
       const sv = engine.getPointVelocity(h.body, h.contactPoint, { x: 0, y: 0, z: 0 })
-      const u = -((hvx - sv.x) * h.normal.x + (hvy - sv.y) * h.normal.y + (hvz - sv.z) * h.normal.z)
+      // The rock's own closing on the hub along n. The hub's side of the closing is in (cx, cy, cz)
+      // already: the suspension asks at a hub that rides the body's in-step motion (BUG-140), so
+      // adding the hub's rigid velocity·t here as well would count it twice.
+      const u = sv.x * h.normal.x + sv.y * h.normal.y + sv.z * h.normal.z
       // gap + closing·t + the contact point's yield · n (negative while it separates along −n)
       const yx = p.D.x + p.Th.y * rz - p.Th.z * ry, yy = p.D.y + p.Th.z * rx - p.Th.x * rz, yz = p.D.z + p.Th.x * ry - p.Th.y * rx
       h.depth = h.depth - ahead + u * t + (yx * h.normal.x + yy * h.normal.y + yz * h.normal.z)
@@ -1395,6 +1418,14 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const jt = vehicleState.jackTorque   // FEAT-138: the hi-lift's roll heave (src/hilift.js), null when idle
   if (jt) { totalTorque.x += jt.x; totalTorque.y += jt.y; totalTorque.z += jt.z }
   engine.applyTorque(chassis, totalTorque)
+  // BUG-140: everything this step pushed on the body besides the struts — tires, sidewalls, drag, the
+  // jack — which next step's in-step body copy (suspension.js) carries as a constant. Without it the
+  // copy un-rolls a cornering truck inside every step (the tires' roll torque missing, the struts'
+  // present) and the dampers read that as the outside corner extending.
+  const bo = params._bodyOther || (params._bodyOther = { fx: 0, fy: 0, fz: 0, tx: 0, ty: 0, tz: 0 })
+  const sf = params._bodyStrutF, st = params._bodyStrutT
+  bo.fx = totalForce.x - sf.x; bo.fy = totalForce.y - sf.y; bo.fz = totalForce.z - sf.z
+  bo.tx = totalTorque.x - st.x; bo.ty = totalTorque.y - st.y; bo.tz = totalTorque.z - st.z
   // 8 substeps (not the engine-default 4): the chassis carries the TUNED inertia, whose x-axis
   // value sits ~3× below the hull-natural tensor, and the soft-step solver converts some of a
   // flat bare-frame slam into rocking rebound when under-substepped. 8 halves that phantom

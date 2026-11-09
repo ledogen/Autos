@@ -348,6 +348,10 @@ export const RANGER_PARAMS = {
   // the energy says it must (½·40 kg·(22 m/s)² ≈ 9.7 kJ vs ≈2 kJ of carcass). Owner, 2026-10-29: a
   // separate damper for rocks, so the road keeps its tune.
   tireDampingDebris: 150,   // N·s/m — owner + census 2026-10-29 (test/census-rock-strike.mjs --big, ≈3000 hits per value, 75–1500 swept)
+  // BUG-140 (owner, 2026-11-08): while a strut is ON ITS BUMP STOP the body rides the tire, and the
+  // tire's damper is raised to this fraction of the body-on-tire critical, 2·√(tireStiffness · the
+  // corner's sprung mass) ≈ 11.7 kN·s/m here (src/suspension.js). 0 = the road value everywhere.
+  tireStopDampingRatio: 0.5,
 
   // ── Friction ─────────────────────────────────────────────────────────────
   frictionCoeff:      0.8,       // peak tire-road friction coefficient; caps Flat and Flong at μ·gripLoad(Fn) (FEAT-80)
@@ -360,6 +364,10 @@ export const RANGER_PARAMS = {
   // Tunable now that the solver uses a sampled-once bias (see BODY_RESTITUTION_DEFAULT) — the value
   // no longer compounds with probe/pass count the way BUG-27's did.
   bodyRestitution:        0.21,  // slight bounce — a 10 m drop rebounds instead of dead-stopping
+  // FEAT-193 (owner, 2026-11-08): the body's side (the slab's flank, BUG-116) grips by what it slides on — dirt and every
+  // off-road solid, or the road deck. Pair μ; the engine material is derived in physics.js. Cab (0.3) and slab (0.1) unchanged.
+  bodyGripOffroad:        1.0,
+  bodyGripRoad:           0.5,
 
   // ── Phase 3 Pacejka Tire Model (D-07) ────────────────────────────────────
   // Combined-slip Pacejka in SLIP-VELOCITY space (m/s). One isotropic curve, evaluated at

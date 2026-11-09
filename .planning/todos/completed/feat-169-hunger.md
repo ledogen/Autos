@@ -77,3 +77,6 @@ in case i want to turn it off in playthrough. add the status words"
   off, no word shows. A word, never a number (SM-INV-10).
 - Gates: `test/day-clock.mjs` walks the words down a 10 h hold and checks there is none with the toggle off. The
   smoke's hunger block (hungry past the first meal, a chili dog feeds you) now runs, since hunger is on.
+
+**2026-11-08, owner (owed hunger-numbers): "keep"** — the measured hunger numbers stand (6/6 seeds won, food
+$5–7.50 a day).

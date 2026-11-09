@@ -30,7 +30,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { coarseHeight, makeCoarseNoise, CHUNK_SIZE } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA, padSd, PAD_RIM_HOLD } from './road-carve.js'
-import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, roundCrests, extendBorePortals, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
+import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, roundCrests, extendBorePortals, boreStopDepth, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
 import { PAR_REF } from './par.js'   // FEAT-82: the junction recovery is a vertical curve at par's junction-approach speed
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, reversePrimitives } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
@@ -74,6 +74,21 @@ const BLEND_REACH_MULT = 10.0
 // distance, so the cutoff needs an explicit smooth taper).
 const RULE_SOFT = 1.2
 const RULE_SOFT2 = RULE_SOFT * RULE_SOFT
+// BUG-155: RULE_SOFT's two-sided clamp never reaches 0 on a leg's own asphalt (0.4 at lat 4.5), so a sibling 3 m off kept
+// ~12 % of the weight there and physics bent 0.34 m off the drawn ribbon (1074499174, just past a mouth) — and stepped by
+// that much across the mouth chord, where the pad's mask is the leg's own deck. Its reason was the PAD (overlapping
+// pavements, a thin handover annulus); since the solved pad (owner 2026-10-04) the ring is a thin-plate spline that never
+// reads this blend, and past a leg's cutback its pavement overlaps no sibling's (BUG-59). So past the cutback the clamp
+// turns ONE-SIDED (_ruleClamp): 0 on the asphalt, RULE_EDGE_W of C1 softening outside it. RULE_FLOOR keeps a sliver of
+// the soft clamp so pavements that still overlap past both cutbacks (a merge shape) blend exactly as before.
+const RULE_EDGE_W = 0.6
+const RULE_FLOOR = 1e-3
+function _ruleClamp(g, a) {
+    const soft = 0.5 * (g + Math.sqrt(g * g + RULE_SOFT2))
+    if (a <= 0) return soft
+    const one = g <= 0 ? 0 : g < 2 * RULE_EDGE_W ? g * g / (4 * RULE_EDGE_W) : g - RULE_EDGE_W
+    return (1 - a) * soft + a * (one + RULE_FLOOR * soft)
+}
 const RULE_TAPER = 4.0
 const RULE_LEG_REACH = 14.0
 // Arc half-window (m) for the near-node leg projection: confine each leg's nearest-foot search to this much
@@ -217,6 +232,7 @@ const _CD_B = { grade: 0, gap: 0, xs: 0, off: 0 }
 const _CD_OUT = { grade: 0, lateral: 0 }
 const _CD_RP = { gradeY: 0, tx: 1, tz: 0 }   // runProfile `out` wherever only .gradeY is read AT ONCE (never held)
 const _thrY = new Float64Array(4), _thrE = new Float64Array(4), _thrOut = { lat: 0, over: 0 }   // _throughDeckTop scratch (never held)
+const _ribOut = { lat: 0, over: 0, s: 0 }   // _padRibbonMask scratch (never held)
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -5575,6 +5591,59 @@ export class RoadSystem {
         }
     }
 
+    // BUG-147: a leg that leaves an UNDERGROUND junction in the open. A T promoted into its trunk's bore (pass 1 of
+    // the T slide: no open-air fork, and a T always beats no T) leaves a node where the trunk bores both ways, and the
+    // side road's trench there can sit right at cutMax, which its profile classes CUT. That lane then runs into the
+    // trunk's closed lining — drawn and collider both — 3–9 m out (seed 4076238903 at (1734, −1393): 25.0 m deep).
+    // Bore such a leg from the node until it is clear of every sibling's tube AND shallower than a portal's stop
+    // depth. The node is then a shared bore (BUG-67): the linings drop inside each other's tubes, and the leg gets
+    // a real mouth out in the open. Degree ≥ 3 only: at degree 2 a bore ending at the node is the road's own portal.
+    // Spans only — the deck is untouched. Same inputs as siblingTubeTest (the legs of one node), so window-invariant
+    // on the same terms; runs before the crossing clip so an at-grade crossing still wins.
+    _boreOpenLegsAtUndergroundNodes() {
+        if (!this._network) return
+        const R = this._params?.tunnelBoreRadius ?? 8, dStop = boreStopDepth(this._v2Costs(), R)
+        const byNode = new Map()
+        for (const [k, e] of this._network) {
+            if (!e.points?.length || !e.polyCum) continue
+            const L = e.polyCum[e.polyCum.length - 1]
+            for (const [c, atStart] of [[e.cellA, true], [e.cellB, false]]) {
+                if (!c) continue
+                const n = c.join(','); if (!byNode.has(n)) byNode.set(n, [])
+                byNode.get(n).push({ k, e, L, atStart, bored: (e.tunnelSpans || []).some((sp) => atStart ? sp.s0 <= 1 : sp.s1 >= L - 1) })
+            }
+        }
+        for (const legs of byNode.values()) {
+            if (legs.length < 3) continue
+            const tubes = legs.filter((l) => l.bored)
+            if (!tubes.length) continue
+            for (const leg of legs) {
+                if (leg.bored) continue
+                const { k, e, L, atStart } = leg
+                const inTube = (x, z) => tubes.some((t) => {
+                    const h = _nearestOnPolyXZ(x, z, t.e.points, t.e.polyCum)
+                    return h && h.d < R && (t.e.tunnelSpans || []).some((sp) => h.cum >= sp.s0 && h.cum <= sp.s1)
+                })
+                let d = 0
+                for (; d < L / 2; d += 1) {
+                    const s = atStart ? d : L - d, p = this.runPointAt(k, s)
+                    if (!p) break
+                    if (!inTube(p.x, p.z) && this._coarseH(p.x, p.z) - this.runProfile(s, k).gradeY < dStop) break
+                }
+                if (d < 1) continue
+                const sp = atStart ? { s0: 0, s1: d } : { s0: L - d, s1: L }
+                // a bore already further out within MIN_BORE_M joins it, rather than leave a stub of trench between
+                const out = []
+                for (const o of e.tunnelSpans || []) {
+                    if (o.s0 <= sp.s1 + MIN_BORE_M && o.s1 >= sp.s0 - MIN_BORE_M) { sp.s0 = Math.min(sp.s0, o.s0); sp.s1 = Math.max(sp.s1, o.s1) }
+                    else out.push(o)
+                }
+                out.push(sp); out.sort((a, b) => a.s0 - b.s0)
+                e.tunnelSpans = out
+            }
+        }
+    }
+
     // Node-in-band test by WORLD extent of the macro band [mx0..mx1]×[mz0..mz1] (site ids live on
     // a different grid than the macro band).
     _nodeInBand(mx0, mx1, mz0, mz1) {
@@ -7098,6 +7167,7 @@ export class RoadSystem {
         // surface road 30 m down into a bore). Clip bores clear of each crossing; the road there
         // reverts to an open cut and the normal junction reconciliation applies. The chord profile
         // itself stays — only the bore treatment (carve-skip/physics split/tube mesh) is withdrawn.
+        this._boreOpenLegsAtUndergroundNodes()
         this._clipTunnelSpansAtCrossings()
 
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
@@ -8006,15 +8076,16 @@ export class RoadSystem {
      * samples) so the frame is smooth and the dirt/asphalt seam stops tearing. Returns
      * {fx,fz,tx,tz,arcS} (arcS in the runProfile domain), or null where the polyline frame stands:
      * an offEnd projection (its arcS is clamped to the run end to stay C0 with the sibling arm at the
-     * shared anchor, BUG-21), a run without a centerline, and BUG-53 offCurveSpans (T departure band,
-     * shove deflection: the points left the centerline, so refining would pull the frame off the carve).
+     * shared anchor, BUG-21) and a run without a centerline. BUG-53 offCurveSpans (T departure band,
+     * shove deflection: the points left the centerline, so refining onto it would pull the frame off the
+     * carve) get the band's own continuous frame instead (_bandRefine, BUG-154).
      */
     _refineFrame(e, pr, wx, wz) {
         if (!e || pr.offEnd || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return null
         const arcOrigin = e.arcOrigin ?? 0
         if (e.offCurveSpans) {
             const a = pr.arcS + arcOrigin
-            if (e.offCurveSpans.some((csp) => a >= csp.s0 - 0.5 && a <= csp.s1 + 0.5)) return null
+            if (this._inBand(e, a)) return this._bandRefine(e, a, wx, wz)
         }
         const hit = e.centerline.nearest(wx, wz, ANALYTIC_REFINE_DS, pr.sCL - ANALYTIC_REFINE_WINDOW, pr.sCL + ANALYTIC_REFINE_WINDOW)
         if (!hit) return null
@@ -8023,6 +8094,93 @@ export class RoadSystem {
         // helper the ribbon uses in the opposite direction (chord→true).
         return { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z,
                  arcS: _interpArcTable(e.clArc, e.polyCum, hit.s) - arcOrigin }
+    }
+
+    /**
+     * BUG-154: a departure band's CONTINUOUS frame. In a BUG-53 band the points have left the centerline, so the analytic
+     * refine is declined — and the nearest CHORD's own frame was a staircase: the owning segment flips at every vertex
+     * (at the bisector on the inside of a bend; on the outside as the next chord's foot leaves the vertex), so physics
+     * stepped 0.2–0.43 m at the pavement edge on 2654449719's band while the drawn ribbon ran smooth. Here each vertex's
+     * tangent is the bisector of its two chords (the centerline's own tangent where a vertex still sits on it), interpolated
+     * linearly along each chord; positions stay ON the chords (the points _buildRunProfile integrates). _bandFrameAt samples it at a polyline cum (runFrameAt's band frame — the
+     * ribbon); _bandRefine finds the foot of (wx,wz) on it (physics). On one chord "perpendicular to the interpolated
+     * tangent" is a quadratic in the chord fraction, solved exactly; the nearest root over the chords around the
+     * nearest-chord foot `cum` wins. The frame is continuous across vertices, so the foot is too wherever the root is
+     * unique (|lat| below the band's turn radius, ~15 m on the tightest measured band). null → the polyline frame stands.
+     */
+    // Per run (cached by entry): which vertices still sit ON the centerline (they take its analytic tangent, so the band
+    // frame meets the analytic frame exactly there), and each band widened out to the nearest such vertex — the switch
+    // between the two frames happens where they coincide in both position and tangent, so it carries no step.
+    _bandInfo(e) {
+        const c = (this._bandInfoCache ??= new WeakMap()).get(e)
+        if (c) return c
+        const pts = e.points, pc = e.polyCum, n = pts.length, onCL = new Uint8Array(n)
+        for (let k = 0; k < n; k++) { const q = e.centerline.pointAt(e.clArc[k]); onCL[k] = Math.hypot(q.x - pts[k].x, q.z - pts[k].z) < 0.01 ? 1 : 0 }
+        const spans = e.offCurveSpans.map((csp) => {
+            let a = this._bandSeg(pc, csp.s0), b = Math.min(n - 1, this._bandSeg(pc, csp.s1) + (pc[this._bandSeg(pc, csp.s1)] < csp.s1 - 1e-9 ? 1 : 0))
+            while (a > 0 && !onCL[a]) a--
+            while (b < n - 1 && !onCL[b]) b++
+            return [pc[a], pc[b]]
+        })
+        const info = { onCL, spans }
+        this._bandInfoCache.set(e, info)
+        return info
+    }
+
+    _inBand(e, cum) {
+        if (!e.offCurveSpans || !e.centerline || !e.clArc || !e.polyCum) return false
+        for (const [a, b] of this._bandInfo(e).spans) if (cum >= a && cum <= b) return true
+        return false
+    }
+
+    _bandTangent(e, k, out) {
+        const pts = e.points
+        if (this._bandInfo(e).onCL[k]) { const t = e.centerline.tangentAt(e.clArc[k]); out.x = t.x; out.z = t.z; return out }
+        let x = 0, z = 0
+        if (k > 0) { const dx = pts[k].x - pts[k - 1].x, dz = pts[k].z - pts[k - 1].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+        if (k < pts.length - 1) { const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+        const l = Math.hypot(x, z) || 1
+        out.x = x / l; out.z = z / l
+        return out
+    }
+
+    _bandSeg(pc, cum) {
+        let lo = 0, hi = pc.length - 1
+        while (hi - lo > 1) { const m = (lo + hi) >> 1; if (pc[m] <= cum) lo = m; else hi = m }
+        return lo
+    }
+
+    _bandFrameAt(e, cum, out) {
+        const pts = e.points, pc = e.polyCum, i = this._bandSeg(pc, cum)
+        const u = Math.min(1, Math.max(0, (cum - pc[i]) / ((pc[i + 1] - pc[i]) || 1e-9)))
+        const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
+        const tx = A.x + (B.x - A.x) * u, tz = A.z + (B.z - A.z) * u, l = Math.hypot(tx, tz) || 1
+        out.x = pts[i].x + (pts[i + 1].x - pts[i].x) * u; out.z = pts[i].z + (pts[i + 1].z - pts[i].z) * u
+        out.tx = tx / l; out.tz = tz / l
+        return out
+    }
+
+    _bandRefine(e, cum, wx, wz) {
+        const pts = e.points, pc = e.polyCum, i0 = this._bandSeg(pc, cum)
+        let best = null, bestD2 = Infinity
+        for (let i = Math.max(0, i0 - 2); i <= Math.min(pts.length - 2, i0 + 2); i++) {
+            const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
+            const qx = wx - pts[i].x, qz = wz - pts[i].z, Dx = pts[i + 1].x - pts[i].x, Dz = pts[i + 1].z - pts[i].z
+            const Bx = B.x - A.x, Bz = B.z - A.z
+            // (q − u·D) · (A + u·B) = 0  ⇔  a·u² + b·u + c = 0
+            const a = -(Dx * Bx + Dz * Bz), b = qx * Bx + qz * Bz - (Dx * A.x + Dz * A.z), c = qx * A.x + qz * A.z
+            const roots = []
+            if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-12) roots.push(-c / b) }
+            else { const disc = b * b - 4 * a * c; if (disc >= 0) { const r = Math.sqrt(disc); roots.push((-b - r) / (2 * a), (-b + r) / (2 * a)) } }
+            for (const u of roots) {
+                if (!(u >= -1e-9 && u <= 1 + 1e-9)) continue
+                const fx = pts[i].x + Dx * u, fz = pts[i].z + Dz * u, d2 = (wx - fx) ** 2 + (wz - fz) ** 2
+                if (d2 < bestD2) { bestD2 = d2; best = { i, u: Math.min(1, Math.max(0, u)) } }
+            }
+        }
+        if (!best) return null
+        const f = this._bandFrameAt(e, pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u, this._bandOut ??= {})
+        return { fx: f.x, fz: f.z, tx: f.tx, tz: f.tz, arcS: pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u - (e.arcOrigin ?? 0) }
     }
 
     _resolveRoadSurface(wx, wz, excludeKeys = null) {
@@ -8676,7 +8834,7 @@ export class RoadSystem {
             // 0, so every OTHER weight (which carries that factor) decays with it and w_i alone survives ⇒ that
             // leg's grade, smoothly (the ribbon never moves). Pure function of position, and now C1 as well as
             // C0 (RULE_SOFT) ⇒ continuous across every Voronoi switch with no crease at the asphalt edges.
-            const nodeLegs = jc.node.legs
+            const nodeLegs = jc.node.legs, cutDefault = this.junctionCutbackDist()
             const gaps = [], grades = [], tapers = []
             for (const leg of nodeLegs) {
                 const ne = this._network.get(leg.runKey)
@@ -8712,7 +8870,13 @@ export class RoadSystem {
                     if (Math.abs(legGrade - jc.node.nodeY) > MAX_LEG_SLOPE * along + halfWidth) continue
                     // RULE_SOFT smooth clamp — see the const's note: a hard max(0,gap) froze the weight at
                     // the asphalt edge and squeezed the whole inter-leg handover into the throat annulus.
-                    gaps.push(0.5 * (gap + Math.sqrt(gap * gap + RULE_SOFT2))); grades.push(legGrade)
+                    // BUG-155: one-sided past this leg's cutback, over the pad mask's ramp (_padRibbonMask's au; the
+                    // mask reads the ribbon's station since BUG-146, this the polyline foot's — ≤ lat·tan(kink/2) apart),
+                    // so the pad, the dirt and the on-ribbon overlay all hand over to the leg's own deck in one 1.5 m
+                    // band inside the mouth. Per-leg, from its own foot ⇒ still a pure
+                    // function of position.
+                    const au = Math.min(1, Math.max(0, (along - ((leg.cutback ?? cutDefault) - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
+                    gaps.push(_ruleClamp(gap, au * au * (3 - 2 * au))); grades.push(legGrade)
                     // Smooth in-range taper (1 → 0 across the last RULE_TAPER m before the cutoff).
                     // Barycentric weight does NOT decay with a leg's OWN distance, so without this a leg
                     // crossing RULE_LEG_REACH would POP in with a non-trivial weight (a lateral shoulder
@@ -8992,6 +9156,26 @@ export class RoadSystem {
                         sibs.push({ pts: sb.points, cum: sb.polyCum, lo: bAtStart ? 0 : Math.max(0, L - reach), hi: bAtStart ? Math.min(L, reach) : L })
                     }
                     a.cutback = Math.max(cut0, this._legPartingReach(e, a.arc < 1e-6, sibs, JN_HOLD_MAX_PLANE))
+                    // BUG-146: the walk reads polyline VERTICES (4 m apart) and stops at the plane hold's 30 m, so on two
+                    // nearly parallel legs it could end one vertex short of where the pavements really part — and the
+                    // two mouths touched with their decks apart (0.20 m at seed 1353361482, 0.12 m at 917338424): a step
+                    // the pad can't take out, since past a mouth it must meet each ribbon exactly. So where the
+                    // pavements have not parted by the mouth (the walk's own daylight), the cutback marches out to where
+                    // they do, 0.25 m at a time — never past RULE_NODE_WINDOW − halfWidth, so the mouth stays inside
+                    // the window the pad projects its legs in. Only the pad moves: the deck hold keeps the walk.
+                    {
+                        const L = e.polyCum[e.polyCum.length - 1], atStart = a.arc < 1e-6, CLEAR = 2 * halfWidth + JN_HOLD_MARGIN
+                        const parted = (s) => {
+                            const p = this.runPointAt(a.runKey, atStart ? s : L - s)
+                            return !p || sibs.every(sb => !(_nearestOnPolyXZ(p.x, p.z, sb.pts, sb.cum, sb.lo, sb.hi)?.d < CLEAR))
+                        }
+                        const sMax = Math.min(RULE_NODE_WINDOW - halfWidth, L * 0.45 - halfWidth * 0.5)
+                        if (a.cutback < sMax && !parted(a.cutback + halfWidth * 0.5)) {
+                            let s = a.cutback
+                            while (s < sMax && !parted(s)) s += 0.25
+                            a.cutback = Math.min(s, sMax)
+                        }
+                    }
                     // The leg's MOUTH (arc from the node): the chord the ring corners sit on AND, since the
                     // ribbon-pad weld, where the ribbon ENDS — no overlap. ONE source: _junctionMouths, the
                     // ribbon trim and the marking feather all read leg.mouth. A short node↔node run pulls its
@@ -9037,7 +9221,7 @@ export class RoadSystem {
     /** Does the ring carry `leg`'s mouth chord (its two corners, consecutive, to 5 cm) as an edge? */
     _ringHasMouth(ring, leg, halfWidth) {
         const arc = leg.arc + (leg.arc < 1e-6 ? 1 : -1) * leg.mouth
-        const c = this.runPointAt(leg.runKey, arc), p = this.runProfile(arc, leg.runKey)
+        const c = this.runPointAt(leg.runKey, arc), p = this.runFrameAt(arc, leg.runKey)   // BUG-153: the ribbon's frame
         if (!c || !p) return false
         const t = Math.hypot(p.tx, p.tz) || 1, nx = p.tz / t * halfWidth, nz = -p.tx / t * halfWidth
         const at = (q, x, z) => Math.abs(q.x - x) < 0.05 && Math.abs(q.z - z) < 0.05
@@ -9141,7 +9325,7 @@ export class RoadSystem {
             const mouthArc = leg.arc + s * (leg.mouth ?? Math.min((leg.cutback ?? cutback) + halfWidth * 0.5, len * 0.45))
             const c = road.runPointAt(leg.runKey, mouthArc)
             if (!c) return null
-            const prof = road.runProfile(mouthArc, leg.runKey)
+            const prof = road.runFrameAt(mouthArc, leg.runKey)     // BUG-153: the ribbon's frame (the weld's)
             let dx = prof.tx * s, dz = prof.tz * s                  // outward unit dir (away from node)
             const dl = Math.hypot(dx, dz)
             if (dl < 1e-6) return null
@@ -9185,8 +9369,18 @@ export class RoadSystem {
                 // sector follows both legs' real outer edges in to the node (openBack), so the pad there
                 // is exactly the two ribbons' own pavement. (A node-centred bulb used to sweep the
                 // roadless gap — a round patch up to 29 m across, owner capture 1792452436172.)
-                if (A.dx * B.dx + A.dz * B.dz < -0.85) continue   // through-road back: straight chord
                 const ce = this._cornerEdgeFillet(A, B, halfWidth, filletR, T, true)
+                // BUG-146: the through road's straight chord is exact only while both legs run straight to their
+                // mouths. A long mouth on a bending leg (paved out to where it parts from its sibling) put it up to
+                // 2.1 m inside the pavement — dirt bitten out of the road beside the node (seed 917338424 (−111, −464);
+                // 0.84 m on main at (101, −987)). Where any true-edge point stands more than 0.3 m outside the chord
+                // (away from the node), the ring walks the true edges instead, as an open back does.
+                if (A.dx * B.dx + A.dz * B.dz < -0.85) {
+                    const lx = eB.x - eA.x, lz = eB.z - eA.z, ll = Math.hypot(lx, lz) || 1
+                    const side = (p) => ((p.x - eA.x) * lz - (p.z - eA.z) * lx) / ll
+                    const inward = Math.sign(side(node.pos)) || 1
+                    if (!ce || ce.every(p => side(p) * inward > -0.3)) continue   // through-road back: straight chord
+                }
                 for (const p of ce ?? this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
                 continue
             }
@@ -9304,7 +9498,7 @@ export class RoadSystem {
                 const a = a0 + l.s * e
                 const c = this.runPointAt(l.runKey, a)
                 if (!c) return null
-                const prof = this.runProfile(a, l.runKey)
+                const prof = this.runFrameAt(a, l.runKey)   // BUG-153: the ribbon's frame
                 let dx = prof.tx * l.s, dz = prof.tz * l.s
                 const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl
                 pts.push({ x: c.x + (-dz) * side * halfWidth, z: c.z + dx * side * halfWidth, ext: e, dx, dz })
@@ -9633,18 +9827,18 @@ export class RoadSystem {
         let s = pr.arcS, c = null, rp = null
         for (let k = 0; k < 4; k++) {
             c = this.runPointAt(leg.runKey, s)
-            rp = this.runProfile(s, leg.runKey, _CD_RP)
+            rp = this.runFrameAt(s, leg.runKey, _CD_RP)   // BUG-153: the drawn ribbon's section line
             if (!c) break
             const ds = (wx - c.x) * rp.tx + (wz - c.z) * rp.tz
             s = Math.max(0, Math.min(sMax, s + ds))
             if (Math.abs(ds) < 1e-4) break
         }
         if (!c) {
-            if (out) { out.lat = Math.sqrt(pr.d2); out.over = 0 }
+            if (out) { out.lat = Math.sqrt(pr.d2); out.over = 0; out.s = pr.arcS }
             return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + cm
         }
         c = this.runPointAt(leg.runKey, s)
-        rp = this.runProfile(s, leg.runKey, _CD_RP)
+        rp = this.runFrameAt(s, leg.runKey, _CD_RP)
         const tx = rp.tx, tz = rp.tz, lat = (wx - c.x) * tz - (wz - c.z) * tx, along = (wx - c.x) * tx + (wz - c.z) * tz
         const over = s >= sMax ? Math.max(0, along) : s <= 0 ? Math.max(0, -along) : 0
         let y = this._carveDirtY(lat, s, leg.runKey, 1) + cm
@@ -9652,7 +9846,7 @@ export class RoadSystem {
             const h = Math.min(0.5, sMax / 2)
             y += (y - this._carveDirtY(lat, s <= 0 ? h : sMax - h, leg.runKey, 1) - cm) / h * over
         }
-        if (out) { out.lat = Math.abs(lat); out.over = over }
+        if (out) { out.lat = Math.abs(lat); out.over = over; out.s = s }
         return y
     }
 
@@ -9684,11 +9878,18 @@ export class RoadSystem {
             for (const pr of prs) {
                 const d = Math.sqrt(pr.d2), lu = Math.min(1, Math.max(0, hw + 1 - d))
                 if (lu <= 0) continue
-                const au = Math.min(1, Math.max(0, (Math.abs(pr.arcS - leg.arc) - (ps.cut[li] - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
+                // BUG-146: the ease runs along the station the RIBBON draws (_legDeckTop's section through the point), not
+                // the polyline foot's arcS. On the inside of a polyline kink the nearest foot jumps segments at the
+                // bisector (1 m, 4.9 m out on seed 917338424's 12° kink), and an ease sitting there tore the pad 0.11 m.
+                // A foot 2 m short of the ease (d·tan(φ/2) at 6 m out: kinks to 37°) is inside it whatever the
+                // station, and skips the deck solve as before.
+                const c0 = ps.cut[li] - PAD_MOUTH_EASE
+                if (Math.abs(pr.arcS - leg.arc) < c0 - 2) continue
+                const y = this._legDeckTop(ne, leg, pr, wx, wz, _ribOut), e = d - hw
+                const au = Math.min(1, Math.max(0, (Math.abs(_ribOut.s - leg.arc) - c0) / PAD_MOUTH_EASE))
                 if (au <= 0) continue
                 const v = lu * lu * (3 - 2 * lu) * au * au * (3 - 2 * au)
                 if (v > m) m = v
-                const y = this._legDeckTop(ne, leg, pr, wx, wz), e = d - hw
                 if (e < 0) { yIn -= e * v * y; wIn -= e * v } else { const w = v / Math.max(e, 1e-6); yOut += w * y; wOut += w }
             }
         }
@@ -10161,7 +10362,7 @@ export class RoadSystem {
             const mouthArc = leg.arc + s * Math.min(T + extra, len * 0.45)
             const c = this.runPointAt(leg.runKey, mouthArc)
             if (!c) return null
-            const prof = this.runProfile(mouthArc, leg.runKey)
+            const prof = this.runFrameAt(mouthArc, leg.runKey)   // BUG-153: the ribbon's frame
             let ox = prof.tx * s, oz = prof.tz * s
             const ol = Math.hypot(ox, oz)
             if (ol < 1e-6) return null
@@ -11962,6 +12163,8 @@ export class RoadSystem {
         // v2 router does not leave a node along that chord (median 20°, up to 105° off), and aiming there
         // twisted the ribbon's first 6 m into a bow-tie (owner capture 1792452228448, 72° twist).
         // ≥3-way nodes and >120° elbows get no weld: a junction pad covers the end (cutback 10 m > 6 m).
+        // BUG-153: the weld is kept on the profile too — runFrameAt re-applies it on the analytic tangent.
+        let weld = null
         {
             const Rw = p.roadJoinWeldLength ?? 6
             const weldDir = (id, isStart) => {
@@ -11977,6 +12180,7 @@ export class RoadSystem {
             const wE = Rw > 0 ? weldDir(netEntry.cellB, false) : null
             if (wS || wE) {
                 const aS = arcPos[0], aE = arcPos[N - 1]
+                weld = { wS, wE, aS, aE, Rw }
                 for (let i = 0; i < N; i++) {
                     let bx = tx[i], bz = tz[i]
                     const dS = arcPos[i] - aS
@@ -11998,7 +12202,47 @@ export class RoadSystem {
 
         // FEAT-81: tangents for the C¹ profile, on the FINAL gradeY (post-blend).
         const gradeM = _profileTangents(arcPos, gradeY)
-        return { arcPos, gradeY, gradeM, tx, tz }
+        return { arcPos, gradeY, gradeM, tx, tz, weld }
+    }
+
+    /**
+     * BUG-153: the RIBBON's cross-section frame at run arc `arcS` — runProfile's sample, with tx/tz replaced by
+     * the tangent physics projects onto: the run's exact analytic centerline at the true arc (the corner-facet
+     * fix, _refineFrame). runProfile.tx is the INCOMING chord, linearly interpolated, so on a curve it trails the
+     * true tangent by up to a chord's whole turn (9.5° per 4 m chord at R 24 m); every section built on it tilted
+     * against the surface the wheel rides by grade × lat × tan(lag) — ~0.1 m at the pavement edge just past
+     * junction mouths, where legs bend into the node on slopes (BUG-149's leg lip). In a BUG-53 band (offCurveSpans
+     * ± 0.5 m) it is the band's continuous frame, the one physics' _bandRefine projects onto (BUG-154); with no
+     * centerline the chord tangent stands. FEAT-10's degree-2
+     * join seal is re-applied on top: the same weld directions, the same smoothstep over roadJoinWeldLength, so
+     * two welded runs' end sections still coincide.
+     * EVERY reader that draws or rebuilds the ribbon's edge takes this frame — the sweep (road-mesh
+     * _ribbonSection), the pad mouths and ring (_junctionMouths, _ringHasMouth: the BUG-82 weld), the crotch walk,
+     * the deg-2 connector mouths and lead-ins, and the leg deck under a pad (_legDeckTop). runProfile.tx stays the
+     * chord tangent for everything else (curvature, the tunnel tube and portals, the lip frames).
+     */
+    runFrameAt(arcS, runKey, out) {
+        const r = this.runProfile(arcS, runKey, out)
+        const e = this._network?.get(runKey)
+        if (!e || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return r
+        const a = arcS + (e.arcOrigin ?? 0)
+        let bx, bz
+        if (this._inBand(e, a)) {
+            const f = this._bandFrameAt(e, a, this._bandOut ??= {})   // BUG-154: the band's continuous frame, physics' own
+            bx = f.tx; bz = f.tz
+        } else {
+            const t = e.centerline.tangentAt(_interpArcTable(e.polyCum, e.clArc, a))
+            bx = t.x; bz = t.z
+        }
+        const w = this._runProfileCache.get(runKey)?.weld
+        if (w) {
+            const dS = arcS - w.aS, dE = w.aE - arcS
+            if (w.wS && dS < w.Rw) { const u = 1 - Math.max(0, dS) / w.Rw, f = u * u * (3 - 2 * u); bx = bx * (1 - f) + w.wS.x * f; bz = bz * (1 - f) + w.wS.z * f }
+            if (w.wE && dE < w.Rw) { const u = 1 - Math.max(0, dE) / w.Rw, f = u * u * (3 - 2 * u); bx = bx * (1 - f) + w.wE.x * f; bz = bz * (1 - f) + w.wE.z * f }
+        }
+        const L = Math.hypot(bx, bz) || 1e-8
+        r.tx = bx / L; r.tz = bz / L
+        return r
     }
 
     /**

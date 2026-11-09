@@ -342,7 +342,9 @@ const STEPS = [
     await js('document.getElementById("pm-story").click()')
     check(await js('document.getElementById("main-menu").classList.contains("setup")'), 'story did not open the setup page')
     // FEAT-147/170: every run opens on the firing. This flow HOLDS M to skip it — so no first-use card holds the
-    // sim under the steps below; the 'opening' step at the end plays it.
+    // sim under the steps below; the 'opening' step at the end plays it. FEAT-184 (owner, 2026-11-08): the tutorial flag
+    // starts complete, so a new game would land at Larry's with nothing to hold — turn it off to test the hold.
+    await js('window.__settings.skipTutorial = false')
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
@@ -962,6 +964,8 @@ const STEPS = [
     check(await js('!document.getElementById("pm-save").disabled && document.getElementById("pm-save").offsetParent !== null'),
       `save & exit not offered: "${await js('document.getElementById("pm-save-why").textContent')}"`)
     const before = await js(`({ p: window.__car(), h: window.__day().clockH(), cond: window.__damage.get("armorLeft"), inv: window.__inv.list().length })`)
+    const roster = () => js('({ first: window.__board().firstState(), ids: window.__poi().list().map(q => q.id) })')
+    const roster0 = await roster()
     await js('document.getElementById("pm-save").click()')
     check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
     // The warning lives on the new-game page beside story's start (02c92535), so it is shown/hidden by style, not visibility here.
@@ -989,6 +993,14 @@ const STEPS = [
     check(after.h >= before.h && after.h - before.h < 0.1, `clock ${before.h.toFixed(3)} h → ${after.h.toFixed(3)} h`)
     check(after.cond === before.cond && after.inv === before.inv, `truck/kit changed: ${JSON.stringify(before)} → ${JSON.stringify(after)}`)
     console.log(`  save & exit: resumed at ${dm.toFixed(2)} m, clock +${((after.h - before.h) * 60).toFixed(1)} game min`)
+    // BUG-152: the board's history is keyed on POI ids, so the resumed session must site the SAME roster. A re-sited one
+    // dropped the opening's first-job events and mom's casserole came back 'live' over the skip's 'done'. One resume
+    // cannot catch a 1-in-10 race; this pins the contract, and the run-soak's resume check is the statistical net.
+    const roster1 = await roster()
+    const lost = roster0.ids.filter(id => !roster1.ids.includes(id)).length
+    check(!lost && roster1.ids.length === roster0.ids.length,
+      `the POI roster changed across the resume: ${lost} of ${roster0.ids.length} ids gone (${roster0.ids.length} → ${roster1.ids.length})`)
+    check(roster1.first === roster0.first, `the first job went '${roster0.first}' → '${roster1.first}' across the resume`)
     const job1 = await jobNow()
     check(JSON.stringify(job1) === JSON.stringify(job0), `the courier job did not survive the save: ${JSON.stringify(job0)} → ${JSON.stringify(job1)}`)
     console.log(`  save & exit: courier job ${job1.id} still ${job1.state}`)
@@ -1152,12 +1164,12 @@ const STEPS = [
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     let menuSeen = false
     const newRun = async () => {
-      // FEAT-156 (once): the root is continue (only with a save) · new game · settings, and the
+      // FEAT-156 (once): the root is continue (only with a save) · new game · tutorial (FEAT-184) · settings, and the
       // new-game page's mode row swaps what is below it — opening on story, never remembered.
       if (!menuSeen) {
         menuSeen = true
         const rootItems = await js('[...document.querySelectorAll("#mm-root button")].filter(b => b.offsetParent !== null).map(b => b.textContent.trim()).join(" · ")')
-        check(rootItems === 'new game · settings', `main menu root reads "${rootItems}", want "new game · settings"`)
+        check(rootItems === 'new game · tutorial · settings', `main menu root reads "${rootItems}", want "new game · tutorial · settings"`)
       }
       await js('document.getElementById("mm-new").click()')
       const modeView = () => js(`(() => { const v = id => document.getElementById(id).offsetParent !== null
@@ -1261,11 +1273,18 @@ const STEPS = [
   ['opening', async () => {
     // FEAT-147: a new run with the opening on starts PARKED AT THE BURGER JOINT, the firing's cards over a slow
     // orbit of it with the sim held, then mom's call. FEAT-170: then the evening at mom's, and her casserole.
-    await js('window.__settings.skipTutorial = false')   // FEAT-184: the earlier skip turned it on; this step plays the tutorial
-    await js('document.getElementById("mm-new").click()')
-    await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
+    // FEAT-184 (owner, 2026-11-08): it is played from the main menu's "tutorial", with the tutorial flag left COMPLETE,
+    // on the URL's ?seed=6. It must never touch the career save: a stand-in record is planted and has to come back as is.
+    check(await js('window.__settings.skipTutorial') === true, 'the tutorial flag is not complete (FEAT-184: it starts complete)')
+    const career = JSON.stringify({ v: 1, data: { smoke: 'the career run' } })
+    await js(`localStorage.setItem("autos-run/1", ${JSON.stringify(career)})`)
+    await js('document.getElementById("mm-tutorial").click()')
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the opening run never went live (45 s × load)')
+    const code = await js('window.__worldCode()')
+    check(code.split('/')[0] === '6', `the tutorial is not on the URL's seed 6: world ${code}`)
+    check(await js('window.__autosave()') === false, 'the tutorial run autosaved')
+    check(await js('localStorage.getItem("autos-run/1")') === career, 'the tutorial touched the career save')
     const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
     // FEAT-170 stage 4: mom's lessons queue up and hold the sim (and every key) while they are up — read off
     // whatever comes, waiting a beat for a queued one to appear. Returns the speakers' card count.
@@ -1573,9 +1592,11 @@ const STEPS = [
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
     // Not a shop (SHOP_TYPES: its brake opens the shop screen; the jobs are a button in it, FEAT-104) nor Larry's (the paper route):
     // the flake that hit A, Spare and B was a random world whose busiest giver was a shop. Nor a giver with pump zones:
-    // parked there the brake opens the pump (world 1505891932, prompt "to use the pump").
+    // parked there the brake opens the pump (world 1505891932, prompt "to use the pump"). Nor a haul giver (BUG-157):
+    // its offers open with the BED over its drop zone (FEAT-88, main.js _inPoiSpot), which PAD_SEAT does not seat
+    // (world 3397198020: the firewood yard, seated 5.5 m off its marker, answered nothing).
     const giver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
-      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !${JSON.stringify(['larrysHouse', ...SHOP_TYPES])}.includes(q.type) && !q.pumpZones?.length).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
+      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !${JSON.stringify(['larrysHouse', ...SHOP_TYPES])}.includes(q.type) && !q.pumpZones?.length && !q.drop).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
     // The paging needs two offers; the rest of the step needs one. A random world can have no plain giver with two at
     // this point (2927182058/K, 11-08: the busiest had one, on main before and after that day's merges) — page there
     // only when it can, and say so when it can't.
@@ -1611,7 +1632,7 @@ const STEPS = [
       const v = __vs, q = window.__map2d()._getPois().find(p => p.id === ${JSON.stringify(giver.id)}), m = window.__mission()
       return { parked: v.parked, hb: v.handbrake, v: +v.velocity.length().toFixed(2), m: m.state, onJob: m.isOnJob(),
         offers: window.__map2d()._getBoard().view(q.id, 0)?.count ?? 0, d: +Math.hypot(q.x - v.position.x, q.z - v.position.z).toFixed(1),
-        prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), hudMenu: document.body.classList.contains('hud-menu-on'),
+        prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), promptShown: document.getElementById('poi-prompt')?.style.display === 'block', hudMenu: document.body.classList.contains('hud-menu-on'),
         open: [...document.querySelectorAll('.open, [style*="display: block"], [style*="display: flex"]')].map(e => e.id).filter(Boolean).slice(0, 8) }
     })())`))
     // Take it (A on accept), then put it down through the B menu: the abandon entry, armed, confirmed, and its result card.
