@@ -347,3 +347,5 @@ probe with the game's own rule (REAL=1) finds 0 of the 5 known collisions; the o
 4194356868 (1375, 408), an underground T, is 0 on main too (1 with raw tubes). Not built, and not part of this
 ticket: the funnel pit over an underground T, and the two decks drifting apart inside the Y's overlap (both
 measured above) — new tickets if they show in play.
+
+**2026-11-08, owner (owed bug67-miter-look): "good"** — the shared-bore miter (fd00b6b6) is accepted.
