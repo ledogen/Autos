@@ -106,22 +106,28 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (machine clock Mon 11-09 ~01:15 PST; the owner said good night — overnight run; rewrite, don't append)
-- **Main** = this commit. Landed tonight, each smoked: BUG-147 09ea7d66 · BUG-140 + FEAT-193 51a932bf · BUG-157 f3a16777
-  (test-only) · BUG-153/154/155/149 eabc032c · BUG-152 root cause 2 b34a51e1 (batch smoke 26/26 on b34a51e1). Tickets
-  closed (154 waits on the owner's look). Unpushed since d7dc18e1 (origin). Never push.
-- **Tracker page v200 published** (owed: road-seams-look, bug140-feel, feat193-calls added; 4 answered items dropped).
-  Owner's photo page: https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8 (copies in main wip/bug-153-155-shots/).
+## Current state (machine clock Mon 11-09 06:20 PST; the owner called a HOLD for the day at 80 % credit use; rewrite, don't append)
+- **HOLD.** No agent running, no detached job, no smoke. Do not spawn until the owner says go.
+- **Main** = this commit. Landed overnight 11-08/09, each smoked: BUG-146 44ae96fd · BUG-147 09ea7d66 · BUG-140 +
+  FEAT-193 51a932bf · BUG-157 f3a16777 (test-only) · BUG-153/154/155/149 eabc032c · BUG-152 root cause 2 b34a51e1
+  (batch smoke 26/26 on b34a51e1). Unpushed since d7dc18e1 (origin). Never push without the owner's word.
 - **Clock note**: the machine clock is PST; agents' system date runs a day ahead. Git/mtimes are the truth.
-- **RUNNING**: B (00:50) — FEAT-34 round 3 in CarGame-machine → land/feat-34 + a cluster shot sheet → request. On its
-  report: relay the sheet to the owner as an owed `feat34-r3-look` (a page like road-seams), land only after the look.
-- **Idle**: A — next work (FEAT-184 stages) waits on the owner's tutorial-* answers; BUG-152's four second findings
-  are recorded in its closed ticket, no action. Spare — the FEAT-180 pick; owed a QUIET window to measure round 5's
-  frame cost (spawn it when B's agent is done and the load is low). C — no agent until an owner answer.
-- **Landing queue**: FEAT-34 round 3 (after the owner's look).
-- **Waiting on the owner**: the lighting pick (round 5 land/feat180-next :3887 vs proto/lighting-redesign :3890);
-  tutorial-* ×5 (FEAT-184); road-seams-look; bug140-feel + feat193-calls; the item page (FEAT-192 rarity ×4,
-  V6/V8/tank, tarp → Lane C); the rest of `OWED`.
+- **READY TO LAND (first thing on resume)**: BUG-156 on land/bug-156 @ 34fc3e6f (/Users/ledogen/CodeShit/CarGame-land-156,
+  base main a60e60db; main since = docs only, re-check). src/road.js only (+43/−6): a ruled-blend leg limb is weighted by
+  its depth from the fold where it is born (`_limbWeight`, tie 0.5 m). Site 1074499174 (737.7, 442.1): 0.86 → 0.12 m;
+  census 8 seeds: 111 jumps gone, 0 new, 0 gore lines worse. Gates 73/73 green (wip/bug-156/gatesA.log + gatesB.log,
+  done 03:19). Photos in wip/bug-156/shots (sheet.mjs). Its agent was stopped by me after it stalled waiting on its own
+  log watchers — its lanes/b handoff may be a step behind; the branch's ticket is current. Branch also carries BUG-151
+  (already gone on main; only "add the seed to junction-edge-lip" left) and NEW BUG-158 (junction dirt steps outside the
+  ruled blend; a 2.9 m step stays). Land: merge --no-ff, smoke, close 156, ff lanes, remove the worktree.
+- **HELD for the owner's look**: FEAT-34 round 3 on land/feat-34 @ e49bc289 (/Users/ledogen/CodeShit/CarGame-land-feat34),
+  9/9 green; owed `feat34-r3-look` (https://claude.ai/artifact/P1x9vhCQsCMop6MjiLDZfe). "approve" → merge, smoke;
+  "without the tidy-up" → drop 347e45cb's change.
+- **Owed on the tracker (v203)**: feat180-pick (compare :3887 legacy round 5 vs :3890 rebuild round 3 — keep both
+  servers up; frame cost does not separate them, ab4c90b2), feat34-r3-look, road-seams-look (photos
+  https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8, band bar 2.5 cm), bug140-feel + feat193-calls, tutorial-* ×5, rest.
+- **Lanes idle, all waiting on the owner**: A (tutorial-*), B (feat34-r3-look; then BUG-158), Spare (feat180-pick),
+  C (an owner answer).
 - **Worktrees**: CarGame-bug67 needs `! git worktree remove --force /Users/ledogen/CodeShit/CarGame-bug67` from the
   owner. Lighting pick keeps CarGame-f180-preview, -land-feat180, -land-feat180-dusk, -land-feat180-next. In use:
-  -machine (B), -spare-base (scratch main for before/after runs).
+  -land-156, -land-feat34, -machine, -spare-base.
