@@ -115,10 +115,14 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   the last ~15 min is alive. If an agent is gone and its "now" line still says running, spawn a fresh one from its
   page handoff (its gate runs are detached and survive).
   - A: BUG-152 multi-seed soak + pad-e2e rerun → close the ticket (docs-only landing).
-  - B: BUG-153's two reds (vertical-curvature 205 vs 203 — BUG-147 alone counts 202, one kink fewer; junction-edge-lip
-    FAIL 2 on main vs land-155). **B's BUG-147 request is IN: land/bug-147 @ dc41474e, affected 69/69 green**, held
-    behind BUG-146; after 146 lands a fresh B agent merges main (A's 462fe00e touches 15 of 147's gates), sets
-    MAX_IN_PAD 18, re-gates.
+  - B: FINISHED (report in). BUG-147 request: land/bug-147 @ dc41474e, 69/69 green, held behind 146. BUG-153 cannot
+    land alone (its junction-edge-lip FAIL is fixed by 155): **153 + 155 land together from land/bug-155** (f4b23f5f sets
+    vertical-curvature ceilings open 18 → 19, junction 203 → 201, dated). land-155's 71 affected gates were RUNNING
+    detached at the clear (~62 min from ~23:20 PST), log /Users/ledogen/CodeShit/CarGame-land-155/wip/bug-153/reds/gates-155.log.
+    **B's next two tasks** (one fresh agent each, one per worktree, B ≤ 2 heavy processes): (1) after 146's smoke passes —
+    land-147: merge main, MAX_IN_PAD 20 → 18, re-gate → request; (2) when gates-155.log is green — fold the band + blend
+    classes into ribbon-frame.mjs's PASS (B recommends a 2.5 cm band tolerance for the 2.3 cm residual), fingerprint
+    lattice proof vs main, shot sheet + the BUG-154/155 before/after photos for the owner → one request. Commands: lanes/b v90.
   - Spare: FINISHED (report in). **BUG-146 MERGED to main as 44ae96fd**; its ONE gated smoke was RUNNING at the clear,
     log /private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/b72f9429-bf9f-43b4-93f8-1bea70e5f27a/scratchpad/smoke-bug146-44ae96fd.log.
     PASS → landed: fast-forward the lanes, `git worktree remove /Users/ledogen/CodeShit/CarGame-land-bug146 && git branch -d
