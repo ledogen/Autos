@@ -42,3 +42,83 @@ it would also be easier if that's how the item form read. i just select rarity a
 - [ ] Reward picks and shop stock weight by rarity alone; gates filter by rank alone.
 - [ ] The item page's form has the two selects; existing answers migrate.
 - [ ] The mapping from the old likelihood scale was shown to the owner before it changed.
+
+## Proposed mapping (lane C, 2026-11-08) — owed to the owner before any data switches
+
+Built from the live data: `data/stock-weights.js`, `data/parts.js` and `data/offers.js` at main 1f5c07dd.
+Nothing below is applied yet.
+
+### 1. Shelf words → rarity tiers
+
+Recommended **(A)**: each old shelf word becomes one tier, and its weight stays the same. Legendary is a new step
+below epic, a quarter of it, which is the same ×4 step as Rarely → Hardly ever.
+
+| Old shelf word | Weight | New tier | Weight | One auto shop over a 12-day run* |
+|---|---|---|---|---|
+| Often | 10 | common | 10 | ~1.5 times |
+| Sometimes | 4 | uncommon | 4 | ~0.6 times |
+| Rarely | 1 | rare | 1 | 1 run in 7 |
+| Hardly ever | 0.25 | epic | 0.25 | 1 run in 26 |
+| — | — | legendary | 0.0625 | 1 run in 105 |
+| no word (jerry can, rubber bed mat, school lunch) | 1 as a reward | rare | 1 | rewards only |
+
+\* 4 slots, each empty slot fills at 6 % an hour, an item stays 6–48 h: ~26 fills a run. The shelf's total
+weight is 143 today. It becomes ~174 once the ten power mods and the two engine swaps are stocked at their
+ruled tiers; the column uses 174.
+
+- No item in the game today changes its odds. The tiers only relabel the words.
+- Legendary is empty until the turbo, the supercharger and the V8 arrive.
+- In a reward pool the same weights apply: a legendary is 1/160 as likely as a common in the same pool,
+  and 1/4 as likely as an epic.
+- **(B)**: legendary at 0.125 (half of epic) instead. One auto shop shows a given legendary 1 run in 53.
+
+### 2. The six doubled rows (FEAT-176)
+
+FEAT-176 merged the front and rear springs and shocks into one part each, and gave each part the pair's weight:
+stock 8 (Sometimes ×2), sport 2 (Rarely ×2), heavy-duty 0.5 (Hardly ever ×2). A tier cannot say ×2.
+
+- **(a), recommended:** tier them by their word: stock uncommon, sport rare, heavy-duty epic. Each turns up half as
+  often as now (stock springs at one shop: ~1.2 times a run → ~0.65).
+- **(b):** keep a ×2 on those six rows only.
+
+### 3. Rank requirement: `RARITY_GATES` goes, nothing moves
+
+21 priced parts have no REWARDS row, and take their reward gates from their old tint today (common → B–A,
+uncommon → A–S, rare → S). Each keeps exactly those gates, now written on its own row as its rank requirement:
+
+- **B–A:** standard front pads, standard rear shoes, stock springs, stock shocks, stock front anti-roll bar,
+  headlight, stock radiator, open differential, stock engine.
+- **A–S:** load-range E tire, sport front pads, sport rear shoes, sport springs, sport shocks, heavy-duty springs,
+  heavy-duty shocks, sport front and rear anti-roll bars, welded differential.
+- **S:** race front pads, race rear shoes.
+
+### 4. The icon tint follows the new rarity
+
+Rarity is now frequency, so the colour behind an icon changes wherever the old tint and the shelf word disagreed:
+
+| Part | Tint today | New tier |
+|---|---|---|
+| Stock engine | common (grey) | epic |
+| Helical LSD | rare (blue) | epic |
+| Heavy-duty springs, heavy-duty shocks, sport front and rear anti-roll bars | uncommon (green) | epic |
+| Stock radiator, stock front anti-roll bar | common | rare |
+| All-terrain tire, load-range E tire, lift kit, clutch-type LSD, sport springs, sport shocks | uncommon | rare |
+| Mounted tire, open differential, stock springs, stock shocks (under 2a) | common | uncommon |
+
+Tools, consumables and camp gear have no tint today. They get one.
+
+A stock engine tinted epic is the rule working: it is hardly ever on the shelf. To keep it grey, its shelf
+frequency has to rise to common.
+
+### 5. The epic colour
+
+`RARITY_COLOR` has grey, green, blue and orange (owner, 2026-10-20). Proposed: **purple `#9b5fd1`** for epic,
+between blue and orange, the usual order for these tiers. It becomes the fifth colour in that one table, which is
+the only place it lives.
+
+### What the owner answers
+
+1. Legendary's weight: (A) 0.0625 or (B) 0.125?
+2. The doubled spring and shock rows: (a) by their word, half as often, or (b) keep the ×2?
+3. The tint changes in §4, the stock engine going epic among them: accept, or raise the stock engine to common?
+4. Epic in purple `#9b5fd1`?

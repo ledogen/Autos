@@ -103,3 +103,5 @@ Gates: affected 24/24 green (cdp-smoke left to the landing). `hilift`: side on s
 are already separate engine materials, but a lower road-only body μ means lowering `ROAD_FRICTION` for every engine
 body on the road (debris, cargo, rocks), or a vendor-binding rebuild to expose Box3D's friction callback
 (per-material-pair μ). Either is its own ticket after the owner's drive.
+
+**2026-11-08, owner (owed side-slide-lever):** "can i have body grip on all offroad surfaces bumped to 1.0 mu. onroad leave 0.5 mu. simplified dig in" → FEAT-193.
