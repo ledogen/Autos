@@ -140,3 +140,10 @@ Drawn vs physics census (`sec-census.mjs`, R 256, both fixes on, against `land/b
 
 **Still owed when the hold lifts:** the affected gates; `ribbon-frame.mjs` with the blend class folded into its PASS;
 the fingerprint lattice proof; and the before/after shot sheet of steep gores.
+
+## Landing proof (Lane B, 2026-11-09)
+
+Lands with BUG-153 + 154 from `land/bug-155`; the full record is in BUG-153's ticket. Blend class gated at 2 cm in
+`test/ribbon-frame.mjs` (0.0 cm measured). At 1074499174's mouth (746, 432) on the merged tree: physics − own deck
+−51.8 cm → −0.05 cm, the step across the mouth chord at lat 4.5 −37.6 → 0.15 cm. The steeper gores did not happen
+(85 → 82 % at the steepest). Photos: `wip/bug-153/shots/sheets/sheet-155.jpg` and `sheet-gores.jpg`.

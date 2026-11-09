@@ -139,3 +139,37 @@ ruled blend's leak (BUG-155's mechanism) harder. 155 is better than main on ever
 **Decision:** 153 cannot land alone (junction-edge-lip fails; a fix would be 155's clamp). Land `land/bug-155` as one
 landing for BUG-153 + 154 + 155. Its affected gates run next; still owed before the request: `ribbon-frame.mjs` with the
 band + blend classes folded into PASS, the fingerprint lattice proof vs main, and the shot sheet / photos.
+
+## Landing proof — BUG-153 + 154 + 155 (Lane B, 2026-11-09)
+
+`land/bug-155` merged main twice (577988bd: BUG-146 + BUG-152; db482dfe: BUG-147). Both merges clean. One comment
+changed in the merge's wake: BUG-146 moved the pad mask's ramp onto the ribbon's station, so BUG-155's clamp comment
+now says its ramp reads the polyline foot's station (≤ lat·tan(kink/2) apart), instead of "the SAME ramp".
+
+**`test/ribbon-frame.mjs` folds the band and blend classes into its PASS** (5243e31f). Own deck < 2 cm (worst 1.83 cm),
+ruled blend < 2 cm (worst 0.0 cm), departure band < **2.5 cm** (worst 2.3 cm, 2654449719), overlapping ribbons still
+reported only (worst 1.2 cm). The band bar is the owner's call: 2.3 cm is option A's predicted residual (the ribbon's
+centre rides the slice spline, physics' the chords). Note: the gate reads the drawn VERTICES. Rasterising the whole drawn
+surface every 25 cm (`wip/bug-153/drawn-raster.mjs`) at that bend gives, inside 3.75 m of the centreline: main 1061 of
+3111 spots ≥ 2 cm, worst 35.7 cm → branch 107, worst 4.3 cm (5.1 cm out to 4.5 m). Option B (physics on the ribbon's
+own spline) is what takes out the last few cm.
+
+**World fingerprint, main 961311ec vs 5243e31f** (`test/fingerprint-world.mjs`, six windows): network and poi PASS
+everywhere; profiles, junctions, surface, carve, tiles differ in every window; water in three; props in one. Accounted:
+- **profiles:** the added `weld` field only. md5 of every profile minus `weld` is identical on both trees in five
+  windows (seed 6 origin r 1400, seed 6 ponds, seed 6 fork, seed 7, seed 3).
+- **surface / carve / tiles / junctions / water:** lattice proof (`analyticHeight`, 4 m grid, the four play windows;
+  `wip/bug-153/lattice-class.mjs`). Every moved point is within RULE_NODE_WINDOW (40 m) of a node or resolves into a
+  departure band's widened span; NONE moved anywhere else. Seed 6 ponds 121 points (all junction, worst 0.270 m) ·
+  seed 6 fork 250 junction (worst 0.226 m) + 58 band (worst 0.164 m) · seed 7 111 junction (worst 0.251 m) · seed 3 2
+  (worst 7 mm). The two worst movers (0.27 m seed 6 (−97, 185), 0.25 m seed 7 (244, 188)) are gore dirt 8.6–8.9 m off a
+  leg's centreline, ~13 m from the node: BUG-155's handover moving off the asphalt into the gore, as designed.
+- **props** (seed 6 fork): the same props with the same fields; 114 changed y / gy (worst 0.183 m), 2 tilt (< 0.001).
+  None added, removed or moved in plan.
+
+**Gores (BUG-155's stated cost).** Steepest 3.5 m drop beside each padded leg, 0–15 m past its mouth (`gores.mjs`): it
+did NOT get steeper. Seed 1074499174 within 900 m: 85 → 82 %, 39 → 37 %, 26 → 27 % at (746, 432); 17 → 15 % at
+(190, −357). Seed 2654449719 within 448 m: worst 27 → 20 %.
+
+**Photos** (headless Chrome, both trees, same seed / camera / frame, potholes off in both via the module served):
+`wip/bug-153/shots/sheets/sheet-{154,155,gores,153}.jpg` (+ `.html`). Tool: `wip/bug-153/shots/physics-shots.mjs`.

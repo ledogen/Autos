@@ -126,3 +126,10 @@ goes from 20 vertices, worst 6.6 cm, to 0.
 2.3 cm residual fails 2 cm, the choice is option B or a band tolerance, and that goes back to the orchestrator); the
 fingerprint lattice proof; and the deliverable, before/after photos of the step at 2654449719 plus one more random
 seed.
+
+## Landing proof (Lane B, 2026-11-09)
+
+Lands with BUG-153 + 155 from `land/bug-155`; the full record is in BUG-153's ticket. Band class gated at 2.5 cm in
+`test/ribbon-frame.mjs` (2.3 cm measured at the drawn vertices; 4.3 cm worst over the whole drawn surface inside 3.75 m,
+was 35.7 cm). Before/after photos: `wip/bug-153/shots/sheets/sheet-154.jpg` (2654449719's band: 1316 → 164 film cells
+off by ≥ 2 cm, worst 53 cm → a few cm on the lane; 1074499174's band: 754 → 92).
