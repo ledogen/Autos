@@ -8,7 +8,7 @@ A browser-based 6DOF rigid body car physics simulation built in JavaScript with 
 
 ### Constraints
 
-- **Tech stack**: Three.js + vanilla JS, Vite build (PERF-04/PERF-20.5) — `npm run dev` locally, `npm run build` → `dist/` deployed to GitHub Pages via GitHub Actions. (Was a no-bundler CDN importmap; bundling was adopted to kill the ~0.9 s per-load import waterfall. three/simplex resolve from npm, byte-identical to the retired pins; the `test/*.mjs` gates stay pure-node and never touch Vite.)
+- **Tech stack**: Three.js + vanilla JS, Vite build (PERF-04/PERF-20.5) — `npm run dev` locally, `npm run build` → `dist/` deployed to GitHub Pages via GitHub Actions. The `test/*.mjs` gates stay pure-node and never touch Vite.
 - **Runtime**: Browser only, single origin — no server, no WebSocket, no backend
 - **File structure**: ES6 modules in a `src/` directory, single `index.html` entry point. The full
   repo/file map + naming conventions live in `.planning/research/LAYOUT.md` — update it when adding
@@ -112,8 +112,7 @@ aliased to `three/examples/jsm/` in vite.config.js). Physics: Box3D WASM rigid-b
 Deploy: `npm run build` → `dist/` shipped to GitHub Pages by `.github/workflows/deploy.yml` (Pages
 Source must be set to "GitHub Actions"). Runtime assets fetched by URL — `assets/models/*.glb` —
 are copied into `dist/` by an inline plugin at their existing paths (NOT ES imports; do not convert
-to `?url`, that breaks the pure-node gates that read them). (The bundled route-cache `.gz` pair was
-deleted 2026-08-19 with the whole bake subsystem — v2 routes fast enough live.)
+to `?url`, that breaks the pure-node gates that read them).
 
 **Do NOT use:** any physics engine OUTSIDE the `physics-engine.js` adapter seam (no direct `b3*`/
 engine imports elsewhere — grep-enforceable; FEAT-48 reversed the old blanket physics-lib ban but the
@@ -215,23 +214,19 @@ into a source string and there is no `SYNC RULE` to keep: worker/main parity is 
 - **Terrain:** `src/terrain-worker.js` (a small pool, spun from `src/terrain.js`) builds chunk
   heightmaps with the same `height()` from `src/terrain-height.js` that the main thread's
   `analyticHeight`, `road.js` and the headless gates import. It returns RAW heights — the road and
-  stream carves are main-thread blends and never enter the Worker. (Until 2026-10 this Worker was a
-  `WORKER_SOURCE` template string with hand-synced copies of the seed, noise and height code.)
+  stream carves are main-thread blends and never enter the Worker.
 
-**Routing does NOT live in the terrain Worker, and there is no route mirror.** FEAT-68 deleted the `ROUTE
-SYNC` region, its verbatim `WORKER_SOURCE` copy and the `route-worker-sync` byte-equality gate along
-with the v1 arc-lattice router they served. The road workers are real ES modules that **import** the
+**Routing does NOT live in the terrain Worker, and there is no route mirror.** The road workers are real ES modules that **import** the
 same `routeEdgeV2` the synchronous path calls, so worker/sync parity is by construction — the
 **no-mirror fence**. Two of them, both spun from `src/`:
 
 - `src/road-network-worker.js` (PERF-30) runs the WHOLE build — corridor routing, the BUG-56 plan
   layer, assembly — inside its own private `RoadSystem`; the main thread adopts finished networks
   atomically between frames via `src/road-network-client.js`. It spins its own **nested** pool of
-- `src/road-route-worker.js` (via the `RoadRouteWorker` pool in `src/road-worker.js`) to fan a
-  build's route demand across cores (PERF-31 W2.2).
+  `src/road-route-worker.js` workers (the `RoadRouteWorker` pool in `src/road-worker.js`) to fan a
+  build's route demand across cores (PERF-31 W2.2). The main thread has no route pool of its own.
 
-QUAL-27 deleted the main thread's own copy of that pool: since PERF-30 every warm path was
-netClient-guarded, so it was spawned and seeded but never handed a job. Gates: `road-worker-parity`
+Gates: `road-worker-parity`
 and `network-worker-parity` pin the seams that could still drift (height-field rebuild, params
 snapshot, pond-disc reconstruction). Without a Worker at all — headless gates — routing is fully
 synchronous, which is the same code path.
@@ -254,9 +249,7 @@ consumables/tools/parts/cargo/catch, the asset burn-down surface), `cargo.md` (m
 every carried thing by delivery type, tiered early→late), `pois.md` (planned POI types + roadside
 spots with tags; live types are read from `src/poi.js`/`data/offers.js`), `spirits-and-pacts.md` (the spirit
 cast — deferred, and carrying flagged conflicts with later rulings), `IDEAS.md` (scratchpad), and
-the amendment records `design-amendments-2026-07-29.md`, `design-amendments-2026-08-17.md` and
-`design-amendments-2026-08-23-sm3.md` (provenance for each ratification pass — DESIGN.md carries the
-decisions inline and wins wherever they differ).
+the `design-amendments-*.md` records (provenance only; DESIGN.md carries every decision and wins).
 
 ## Workflow
 

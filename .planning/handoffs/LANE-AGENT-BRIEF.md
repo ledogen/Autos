@@ -39,7 +39,10 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
 ## On stop: hand off, then report
 
 1. Commit everything (WIP is fine). Long jobs may keep running detached; name their logs.
-2. **Rewrite `lanes/<id>.handoff`** (`ArtifactData update`, `if_version` = the version you read). It is a resume
+2. **Rewrite `lanes/<id>.handoff`** (`ArtifactData update`, `if_version` = the version you read; if the write is
+   refused because the doc moved — the orchestrator writes its `agent` line — re-read it and redo the write). In
+   the same update set `agent` to `stopped (<done|blocked>): <one line> · <HH:MM>`: the page shows it as the lane's
+   "now" line. The handoff is a resume
    prompt, NOT a diary: **≤ 40 lines, rewritten whole every time**. History belongs in tickets and commits. Sections:
    - `STATE` — worktree, branch, head, clean or not, servers / detached jobs running + their logs.
    - `NEXT` — the one next task and its first command.
