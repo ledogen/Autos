@@ -8,12 +8,14 @@
 // centerline: the section tilted against the surface by grade × lat × tan(lag) — 188–461 vertices ≥ 2 cm per seed,
 // worst 19.7 cm (BUG-149's leg lip, seed 1074499174, was 0.134 m of it). GATING: none ≥ MAX_D.
 //
-// Reported apart, not gated — physics is not the leg's own deck there, by design that BUG-153 does not touch:
-//   - a promoted T's departure band (offCurveSpans ± 0.5): physics frames on the raw polyline chords (the points left
-//     the centerline), a faceted frame the smooth ribbon cannot follow — up to 0.38 m on banked curves (2654449719).
-//   - the QUAL-10 ruled blend near a junction node: physics bends toward the sibling legs' grades on the leg's own
-//     pavement (the soft gap clamp leaves a sibling a few % of weight), the ribbon does not.
-//   - vertices that resolve to ANOTHER run (two ribbons overlapping).
+// Gated by class (BUG-154 / BUG-155 folded in, 2026-11-09):
+//   - a promoted T's departure band (offCurveSpans ± 0.5): physics frames on the band's own continuous polyline frame
+//     (_bandRefine, BUG-154), the ribbon's centre rides the slice spline, which rounds each vertex — ≤ ~10 cm laterally
+//     × the band's cross-slope. Measured 2.3 cm worst (2654449719); bar MAX_BAND 2.5 cm. Before BUG-154 the faceted
+//     chord frame stepped up to 0.38 m here.
+//   - the QUAL-10 ruled blend near a junction node: past a leg's cutback the clamp is one-sided (BUG-155), so physics is
+//     the leg's own deck on its own pavement. Bar MAX_D. Before BUG-155 a sibling kept ~12 % of the weight (8.2 cm).
+// Reported apart, not gated: vertices that resolve to ANOTHER run (two ribbons overlapping).
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RoadMeshSystem } from '../src/road-mesh.js'
@@ -24,7 +26,7 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { CHUNK_SIZE } from '../src/terrain.js'
 
 const SEEDS = ['273004588', '2654449719', '1074499174', '6']   // two random seeds, BUG-149's seed, the test seed
-const RAD = 448, MAX_D = 0.02
+const RAD = 448, MAX_D = 0.02, MAX_BAND = 0.025
 const P = { ...RANGER_PARAMS, potholeEnabled: false }, hw = P.roadHalfWidth ?? 5, W = P.roadWidth ?? 10
 let fails = 0
 const apart = { band: [0, 0], blend: [0, 0], overlap: [0, 0] }   // [verts ≥ MAX_D, worst]
@@ -62,15 +64,19 @@ for (const S of SEEDS) {
       : (e.offCurveSpans || []).some((c) => a >= c.s0 - 0.5 && a <= c.s1 + 0.5) ? 'band'
       : Math.abs(road._carveDirtY(sl, ae, runKey, nr.camberSign ?? 1, x, z) - road._carveDirtY(sl, ae, runKey, nr.camberSign ?? 1)) > 0.01 ? 'blend'
       : null
-    if (cls) { if (d >= MAX_D) apart[cls][0]++; apart[cls][1] = Math.max(apart[cls][1], d); continue }
+    if (cls) {
+      const bar = cls === 'band' ? MAX_BAND : MAX_D
+      if (d >= bar) { apart[cls][0]++; if (cls !== 'overlap') fails++ }
+      apart[cls][1] = Math.max(apart[cls][1], d); continue
+    }
     verts++
     if (d > worst) { worst = d; worstAt = `(${x.toFixed(1)}, ${z.toFixed(1)}) ${runKey} lat ${lat.toFixed(2)}` }
     if (d >= MAX_D) fails++
   }
   console.log(`  seed ${S}: ${secs.length} drawn sections, ${verts} pavement vertices on their own deck — worst |physics − drawn| ${(worst * 100).toFixed(2)} cm at ${worstAt}`)
 }
-const rep = (k) => `${apart[k][0]} ≥ ${MAX_D * 100} cm, worst ${(apart[k][1] * 100).toFixed(1)} cm`
-console.log(`  reported apart (physics is not the leg's own deck there): T departure bands ${rep('band')} · QUAL-10 ruled blend ${rep('blend')} · overlapping ribbons ${rep('overlap')}`)
-if (fails) { console.log(`FAIL: ${fails} ribbon vertices stand ≥ ${MAX_D * 100} cm off the surface physics rides (the section frame lags the centerline: BUG-153)`); process.exit(1) }
+const rep = (k, bar = MAX_D) => `${apart[k][0]} ≥ ${bar * 100} cm, worst ${(apart[k][1] * 100).toFixed(1)} cm`
+console.log(`  T departure bands (BUG-154): ${rep('band', MAX_BAND)} · QUAL-10 ruled blend (BUG-155): ${rep('blend')} · overlapping ribbons (reported, not gated): ${rep('overlap')}`)
+if (fails) { console.log(`FAIL: ${fails} ribbon vertices stand off the surface physics rides — own deck ≥ ${MAX_D * 100} cm (section frame: BUG-153), ruled blend ≥ ${MAX_D * 100} cm (BUG-155), departure band ≥ ${MAX_BAND * 100} cm (BUG-154)`); process.exit(1) }
 console.log('PASS')
 process.exit(0)

@@ -8816,9 +8816,10 @@ export class RoadSystem {
                     if (Math.abs(legGrade - jc.node.nodeY) > MAX_LEG_SLOPE * along + halfWidth) continue
                     // RULE_SOFT smooth clamp — see the const's note: a hard max(0,gap) froze the weight at
                     // the asphalt edge and squeezed the whole inter-leg handover into the throat annulus.
-                    // BUG-155: one-sided past this leg's cutback, over the SAME ramp as the pad's mask
-                    // (_padRibbonMask's au), so the pad, the dirt and the on-ribbon overlay all hand over to the
-                    // leg's own deck in one 1.5 m band inside the mouth. Per-leg, from its own foot ⇒ still a pure
+                    // BUG-155: one-sided past this leg's cutback, over the pad mask's ramp (_padRibbonMask's au; the
+                    // mask reads the ribbon's station since BUG-146, this the polyline foot's — ≤ lat·tan(kink/2) apart),
+                    // so the pad, the dirt and the on-ribbon overlay all hand over to the leg's own deck in one 1.5 m
+                    // band inside the mouth. Per-leg, from its own foot ⇒ still a pure
                     // function of position.
                     const au = Math.min(1, Math.max(0, (along - ((leg.cutback ?? cutDefault) - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
                     gaps.push(_ruleClamp(gap, au * au * (3 - 2 * au))); grades.push(legGrade)
