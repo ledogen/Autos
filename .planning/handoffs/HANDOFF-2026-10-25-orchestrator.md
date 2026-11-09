@@ -567,3 +567,8 @@ re-measure waits for a quiet window. Nothing pushed.
   real failure, revert the merge in a scratch worktree to confirm. Owed after: pad-e2e (A changed its D-pad check,
   not re-run), BUG-152's multi-seed soak before the ticket closes. Lane A ready for clear (lanes/a v90). ALL FOUR
   lanes are ready.
+- **A's landing smoke run 1 FAILED at 'opening'** ("the tow did not land at an open shop": the 8 s wall-clock wait
+  for #svc-screen after the tow click), at load ~9 with three lane gate processes running. `SMOKE_STEPS=boot,opening`
+  passed 2/2 alone, so it reads as a flake. Re-run of the full smoke RUNNING; log
+  …/scratchpad/smoke-a-462fe00e-r2.log. If it flakes again at the same step, lengthen that wait or gate the smoke on a
+  quieter box (lane A owns the step).
