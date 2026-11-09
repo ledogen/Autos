@@ -55,3 +55,11 @@ the body touches too (bodyRestitution 0 changes nothing).
 - For (2): damp the tire harder when the strut is on its stop (body-on-tire), leaving the road ride's 1500 alone — the
   old 4000 everywhere lifted wheels early (ranger.js). Or a damper that keeps damping onto the stop (real shocks do).
 - A force cap on the strut damper (blow-off, 4 kN) also helps at 60 Hz (5 m: 26 %), but mostly by masking (1).
+
+## The owner's call (2026-11-08, owed bug140-drop)
+
+**A + 2**, verbatim: "a+2 specifically test for hitting live physics rocks again since that's how we tuned tire
+damping before. i could see us hitting full bump stop driving over a rock prop. if it spits the rock out at mach
+jesus or starts flipping the truck again drop 2". So: build A (body moves within the frame) and 2 (stop-only tire
+damping), then drive the truck over live physics rock props headless. If 2 launches the rock or flips the truck,
+ship A alone and say so. Built by Spare with FEAT-193 (one fingerprint re-pin, one feel drive).

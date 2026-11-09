@@ -294,7 +294,7 @@
     <h3>${esc(l.name)}</h3>
     <p class="goal">${esc(l.goal)}</p>
     <div class="meta"><span>worktree</span><span><code>${esc(l.wt)}</code></span><span>branch</span><span><code>${esc(l.branch)}</code></span>
-      <span>serve</span><span><a href="http://localhost:${l.port}">localhost:${l.port}</a></span><span>session</span><span id="agent-${l.id}">—</span><span>owns</span><span>${esc(l.owns)}</span></div>
+      <span>serve</span><span><a href="http://localhost:${l.port}">localhost:${l.port}</a></span><span>now</span><span id="agent-${l.id}">—</span><span>owns</span><span>${esc(l.owns)}</span></div>
     <ul class="tasks">${l.tasks.map(t => { const id = tid(l, t); return `<li class="task" id="task-${id}">
       <button class="st" data-task="${id}" id="st-${id}">todo</button>
       <div class="what"><span class="id">${esc(t.id)}</span>${esc(t.what)}</div>
@@ -344,7 +344,7 @@
       }
     }
     for (const k of STATES) el('n-' + k).textContent = counts[k]
-    for (const l of LANES) el('agent-' + l.id).textContent = state.lanes[l.id]?.agent || '— (the orchestrator writes the agent id at spawn)'
+    for (const l of LANES) el('agent-' + l.id).textContent = state.lanes[l.id]?.agent || '— (the orchestrator writes it at spawn; the agent when it stops)'
     paintOwed()
     // The inbox: new items first (oldest at the top, the order they were written), handled ones folded.
     const items = Object.entries(state.inbox).map(([id, x]) => ({ id, ...x })).sort((a, b) => (a.at || '').localeCompare(b.at || ''))
