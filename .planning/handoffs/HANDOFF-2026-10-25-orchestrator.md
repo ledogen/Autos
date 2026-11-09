@@ -119,7 +119,8 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
     FAIL 2 on main vs land-155). **B's BUG-147 request is IN: land/bug-147 @ dc41474e, affected 69/69 green**, held
     behind BUG-146; after 146 lands a fresh B agent merges main (A's 462fe00e touches 15 of 147's gates), sets
     MAX_IN_PAD 18, re-gates.
-  - Spare: BUG-146 landing request, waiting on its gate run (PID 58261, log in its handoff).
+  - Spare: BUG-146 — 69/69 green on 8935c63a; merged main as **32b0e8e8** and re-running the 14 gates main's diff
+    reaches (PIDs 70499/70500, 11/14 green at 22:00). Its landing request is its final report (or its page handoff).
 - **Landing queue**: Spare BUG-146 → B BUG-147 (re-gate as above) → B BUG-153 (+ 155 together if 155 clears the lip;
   shot sheet to you first) → B BUG-155 + 154 (the owner wants before/after photos + the steep-gore sheet; the 2.3 cm
   band residual decided in the request) → B FEAT-34 round 3 (feature/machine 1ed40292): Chrome shots for the owner's
