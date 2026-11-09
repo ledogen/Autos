@@ -249,14 +249,15 @@ async function startRun (seed) {
 async function saveAndResume () {
   step = 'save'
   const before = await S()
+  // Read while the run is still up: save & exit releases the region, so after the click the list is empty.
+  const momBefore = await js(`window.__poi().list().find(q => q.type === 'momsHouse')?.id`)
+  const rosterBefore = await js('window.__poi().list().map(q => q.id).join()')   // BUG-152: a re-sited roster drops board events
   for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
   check(await js('!document.getElementById("pm-save").disabled && document.getElementById("pm-save").offsetParent !== null'),
     `save & exit not offered: "${await js('document.getElementById("pm-save-why")?.textContent')}"`)
   await js('document.getElementById("pm-save").click()')
   check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 10000), 'no continue after save & exit')
   const record = await js('localStorage.getItem("autos-run/1")')   // kept for a resume that changes the run (written below)
-  const momBefore = await js(`window.__poi().list().find(q => q.type === 'momsHouse')?.id`)
-  const rosterBefore = await js('window.__poi().list().map(q => q.id).join()')   // BUG-152: a re-sited roster drops board events
   await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
   check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 120000, 250), 'no continue after the reload')
   await js('document.getElementById("mm-continue").click()')
