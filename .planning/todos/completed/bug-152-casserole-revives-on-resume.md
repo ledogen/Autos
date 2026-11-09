@@ -1,9 +1,10 @@
 ---
 id: BUG-152
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-08
+closed: 2026-11-09
 source: Lane A, the run-soak's save & resume check (eating soak, 2026-11-08)
 relates: FEAT-184 (the skip lands at Larry's, casserole delivered — c87e78ac), FEAT-147 (the first job), FEAT-42 (the run save; save.js logBoard)
 ---
@@ -303,3 +304,28 @@ also let the old road ADOPT a reply built for the new seed (its seed matched the
 - Root cause named and fixed where it lives.
 - A gate resumes a skipped run's save and checks the first job stays 'done'.
 - The soak's resume check (first job unchanged) holds over a multi-seed soak.
+
+## Resolution — Lane A, 2026-11-09
+
+Two roots, both fixed where they live:
+
+1. **The region centre came from the truck** (fixes 1–4, landed on main as 462fe00e). The centre is now
+   `resolveSpawn(worldSeed)`, a failed settle is loud and never enters, a dropped board replay logs
+   `[save] board replay dropped N of M`, and cdp-smoke's `save` step checks the roster and the first job.
+2. **A network build request mixed two worlds** (b7867f4b, see "Root cause 2"). The client now posts the seed of the
+   road the entry is for, and asks for that seed's ponds; another world's water makes the entry stale. Gate
+   `network-client-world` (new) fails pre-fix and passes after.
+
+Acceptance:
+- Root cause named and fixed where it lives: both of the above.
+- A gate resumes a skipped run's save: `run-save` and cdp-smoke's `save` step (fixes 3–4).
+- The multi-seed soak (`tools/chrome-slot.sh node test/run-soak.mjs --n=6`, log `wip/run-soak/bug152-close2.log`,
+  report `wip/run-soak/2026-11-09T08-03-58-557Z.{json,txt}`): 6 random seeds, **6 wins, 48 save & resumes, 0 roster
+  or first-job changes, 0 soft-locks, 0 console errors.** Before root cause 2's fix, the same soak lost 2 resumes in
+  about 55.
+- The race forced in the real app: pre-fix 4 of 6 sessions odd, post-fix 12 of 12 normal.
+
+Left open as notes, not tickets: the board's slot-indexed offer ids (any roster change drops most replayed events),
+the ULP chaos of the region network, the browser-vs-node 0.5 m Y difference on 3 runs, and the shared route pool's
+cross-instance epoch (see "Second findings").
+
