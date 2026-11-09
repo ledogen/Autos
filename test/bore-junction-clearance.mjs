@@ -1,8 +1,12 @@
 // GATE (run-all): node test/bore-junction-clearance.mjs
 //
-// BUG-67 — tunnel bores versus junctions. There is no machinery to MERGE two bores, and none to
-// build a portal inside a junction apron, so wherever either happens the geometry breaks: one
-// tube's lining wall crosses the other's mouth, or the pad's cut face slices the headwall off.
+// BUG-67 — tunnel bores versus junctions. When this gate was written there was no machinery to MERGE
+// two bores, and none to build a portal inside a junction apron, so wherever either happened the
+// geometry broke: one tube's lining wall crossed the other's mouth, or the pad's cut face sliced the
+// headwall off. BUG-67's SHARED BORE (2026-11-05) now merges sibling tubes — runs that share a node
+// (road.siblingTubeTest) drop their linings inside each other — and a span end inside a sibling's tube
+// is not a mouth (road.isMouth: no ring, no skin cut, no headwall). The counts below skip exactly
+// those (BUG-147, 2026-11-08): what is left is still the open defect.
 // Reported by the owner from capture autos-capture-1788933513716 (seed 0, mark (−267, −1763)),
 // where a 130 m bore's portal sits exactly ON node −1,−3,1.
 //
@@ -14,11 +18,14 @@
 //
 // Three measurements, all pure functions of (seed, params) over a fixed corpus:
 //   (1) bore-vs-bore  — minimum distance between two bores' centerlines. Below 2 x boreRadius the
-//                       tubes interpenetrate and one wall opens into the other.
+//                       tubes interpenetrate and one wall opens into the other — unless the shared
+//                       bore merges them: siblingTubeTest lists each as the other's sibling (so a
+//                       node-sharing pair the merge does not take still counts).
 //   (2) portal-in-pad — a portal standing inside a real junction pad's reach (padReachNodes()),
-//                       which is the ground the pad carves flat.
+//                       which is the ground the pad carves flat. The span end nearest its node,
+//                       counted only when isMouth says it is a portal.
 //   (3) portal-at-node — a portal within 12 m of its own edge's endpoint: the extreme of (2), and
-//                       the shape the owner captured.
+//                       the shape the owner captured. Also real mouths only.
 //
 // Why clipping the span is NOT the fix (measured, and the reason this is a ceiling gate rather
 // than a clip): every portal in the corpus opens at ~25 m of cover, because BORE is the class the
@@ -37,18 +44,17 @@ const RADIUS = 1400
 const R      = P.tunnelBoreRadius ?? 8
 const AT_NODE_M = 12     // "the portal is the junction" — one profile station
 
-// Measured ceilings over this corpus, 2026-09-14 (main @ ceb1bc8). See the header: these record
-// an OPEN defect, they do not bless it.
-const MAX_OVERLAP   = 1
-// 18 → 19 (2026-11-01, BUG-63): seed 19's node 0,-2,2 (596,-1251) gets back the road a mid-span key
-// collision used to delete (g:460933,-1467175,-1:0,-2,2~p); its pad's reach grows to 33.4 m and takes in
-// the portal of g:0,-2,2:1,-2,1 29.8 m away — a restored junction, not a moved portal.
-// 19 → 20 (2026-11-08, BUG-146): seed 18's node (164.7, 6.3) paves its gore out to where the pavements really part (mouths
+// Measured ceilings over this corpus. See the header: these record an OPEN defect, they do not bless it.
+// Re-measured 2026-11-08 with the shared bore skipped (BUG-147): main f5a6c0df had 1 / 19 / 9 under the
+// old counts (the 1 overlap: seed 18's trunk 3,0,1 × 2,1,1, merged at their T) and 0 / 17 / 7 under these.
+// (BUG-63's 18 → 19, seed 19's restored junction at node 0,-2,2, is inside the 17.)
+const MAX_OVERLAP   = 0
+// 17 → 18 (2026-11-08, BUG-146): seed 18's node (164.7, 6.3) paves its gore out to where the pavements really part (mouths
 // 14.5 → 17.5 m), so its reach circle grows 29.4 → 32.3 m and takes in the portal of g:-1,0,1:0,0,2 29.9 m away, 12.4 m
 // past the ring. The circle is the carve's bound, not its footprint: the carved ground within 8 m of that portal is
 // identical to the last 0.1 mm (wip/bug-146/portal-ground.mjs) — a grown circle, not a cut headwall.
-const MAX_IN_PAD    = 20
-const MAX_AT_NODE   = 12
+const MAX_IN_PAD    = 18
+const MAX_AT_NODE   = 7
 
 /** Minimum distance between two 3D segments. */
 function segSegDist (p0, p1, q0, q1) {
@@ -95,6 +101,7 @@ for (const seed of SEEDS) {
     }
 
     for (const b of bores) {
+        if (!road.isMouth(b.runKey, b.s0 < b.L - b.s1 ? b.s0 : b.s1)) continue   // inside a sibling's tube: not a portal
         if (b.dNode < AT_NODE_M) { nAtNode++; atNodes.push({ seed, runKey: b.runKey, d: b.dNode }) }
         // Portal (the end nearest its node) against every junction pad's reach.
         const q = road.runPointAt(b.runKey, b.s0 < b.L - b.s1 ? b.s0 : b.s1)
@@ -117,7 +124,10 @@ for (const seed of SEEDS) {
                     if (dd < best) best = dd
                 }
             }
-            if (best < 2 * R) { nOverlap++; overlaps.push({ seed, A: A.runKey, B: B.runKey, d: best }) }
+            // the shared bore merges this pair: siblingTubeTest (BUG-67) has each in the other's sibling list (its own
+            // node index, built on the call) — a node-sharing pair the merge does not take still counts
+            const sibOf = (k, o) => { road.siblingTubeTest(k); const e = road._network.get(k); return [e.cellA, e.cellB].some((c) => c && road._sibByNode?.get(c.join(','))?.includes(o)) }
+            if (best < 2 * R && !(sibOf(A.runKey, B.runKey) && sibOf(B.runKey, A.runKey))) { nOverlap++; overlaps.push({ seed, A: A.runKey, B: B.runKey, d: best }) }
         }
     }
 }
@@ -128,7 +138,7 @@ console.log(`(1) bore cylinders interpenetrating (centerlines < ${2 * R} m apart
 for (const o of overlaps.sort((a, b) => a.d - b.d))
     console.log(`      seed ${o.seed.padStart(3)}  ${o.d.toFixed(1).padStart(5)} m   ${o.A}  x  ${o.B}`)
 check(nOverlap <= MAX_OVERLAP,
-    `at most ${MAX_OVERLAP} bore-vs-bore interpenetration in the corpus (got ${nOverlap}) — no merge machinery exists, so each one is a wall across a mouth`)
+    `at most ${MAX_OVERLAP} bore-vs-bore interpenetration the shared bore does not merge (got ${nOverlap}) — each one is a wall across a mouth`)
 
 console.log(`\n(2) portals standing inside a junction pad's reach: ${nInPad} of ${nBores}`)
 for (const r of inPads.sort((a, b) => b.intr - a.intr).slice(0, 8))

@@ -30,7 +30,7 @@ import * as THREE from 'three'
 import { seedFor, mulberry32 } from './seed.js'
 import { coarseHeight, makeCoarseNoise, CHUNK_SIZE } from './terrain-height.js'   // the raw coarse layer — same function the terrain renders (road grade is amplitude-independent)
 import { crownProfile, potholeNoise, signedCurvature, DEEP_BANK_TOE_EXTRA, padSd, PAD_RIM_HOLD } from './road-carve.js'
-import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, roundCrests, extendBorePortals, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
+import { truncatedHeightField, routeEdgeV2, profileSolve, dequantizeProfile, roundCrests, extendBorePortals, boreStopDepth, stationSpeeds, projectProfile, CLS, V2_COSTS, V2_TRUNC_K, clearReq } from './corridor-router.js'   // FEAT-68: router v2 · BUG-55: bundle solve · FEAT-81: crest rule · FEAT-77: clearance rule · portal placement
 import { PAR_REF } from './par.js'   // FEAT-82: the junction recovery is a vertical curve at par's junction-approach speed
 import { centerlineFromDescriptors, CenterlineCurve, Centerline, reversePrimitives } from './centerline.js'
 import { delaunay, urquhartEdges } from './road-graph.js'
@@ -5576,6 +5576,59 @@ export class RoadSystem {
         }
     }
 
+    // BUG-147: a leg that leaves an UNDERGROUND junction in the open. A T promoted into its trunk's bore (pass 1 of
+    // the T slide: no open-air fork, and a T always beats no T) leaves a node where the trunk bores both ways, and the
+    // side road's trench there can sit right at cutMax, which its profile classes CUT. That lane then runs into the
+    // trunk's closed lining — drawn and collider both — 3–9 m out (seed 4076238903 at (1734, −1393): 25.0 m deep).
+    // Bore such a leg from the node until it is clear of every sibling's tube AND shallower than a portal's stop
+    // depth. The node is then a shared bore (BUG-67): the linings drop inside each other's tubes, and the leg gets
+    // a real mouth out in the open. Degree ≥ 3 only: at degree 2 a bore ending at the node is the road's own portal.
+    // Spans only — the deck is untouched. Same inputs as siblingTubeTest (the legs of one node), so window-invariant
+    // on the same terms; runs before the crossing clip so an at-grade crossing still wins.
+    _boreOpenLegsAtUndergroundNodes() {
+        if (!this._network) return
+        const R = this._params?.tunnelBoreRadius ?? 8, dStop = boreStopDepth(this._v2Costs(), R)
+        const byNode = new Map()
+        for (const [k, e] of this._network) {
+            if (!e.points?.length || !e.polyCum) continue
+            const L = e.polyCum[e.polyCum.length - 1]
+            for (const [c, atStart] of [[e.cellA, true], [e.cellB, false]]) {
+                if (!c) continue
+                const n = c.join(','); if (!byNode.has(n)) byNode.set(n, [])
+                byNode.get(n).push({ k, e, L, atStart, bored: (e.tunnelSpans || []).some((sp) => atStart ? sp.s0 <= 1 : sp.s1 >= L - 1) })
+            }
+        }
+        for (const legs of byNode.values()) {
+            if (legs.length < 3) continue
+            const tubes = legs.filter((l) => l.bored)
+            if (!tubes.length) continue
+            for (const leg of legs) {
+                if (leg.bored) continue
+                const { k, e, L, atStart } = leg
+                const inTube = (x, z) => tubes.some((t) => {
+                    const h = _nearestOnPolyXZ(x, z, t.e.points, t.e.polyCum)
+                    return h && h.d < R && (t.e.tunnelSpans || []).some((sp) => h.cum >= sp.s0 && h.cum <= sp.s1)
+                })
+                let d = 0
+                for (; d < L / 2; d += 1) {
+                    const s = atStart ? d : L - d, p = this.runPointAt(k, s)
+                    if (!p) break
+                    if (!inTube(p.x, p.z) && this._coarseH(p.x, p.z) - this.runProfile(s, k).gradeY < dStop) break
+                }
+                if (d < 1) continue
+                const sp = atStart ? { s0: 0, s1: d } : { s0: L - d, s1: L }
+                // a bore already further out within MIN_BORE_M joins it, rather than leave a stub of trench between
+                const out = []
+                for (const o of e.tunnelSpans || []) {
+                    if (o.s0 <= sp.s1 + MIN_BORE_M && o.s1 >= sp.s0 - MIN_BORE_M) { sp.s0 = Math.min(sp.s0, o.s0); sp.s1 = Math.max(sp.s1, o.s1) }
+                    else out.push(o)
+                }
+                out.push(sp); out.sort((a, b) => a.s0 - b.s0)
+                e.tunnelSpans = out
+            }
+        }
+    }
+
     // Node-in-band test by WORLD extent of the macro band [mx0..mx1]×[mz0..mz1] (site ids live on
     // a different grid than the macro band).
     _nodeInBand(mx0, mx1, mz0, mz1) {
@@ -7099,6 +7152,7 @@ export class RoadSystem {
         // surface road 30 m down into a bore). Clip bores clear of each crossing; the road there
         // reverts to an open cut and the normal junction reconciliation applies. The chord profile
         // itself stays — only the bore treatment (carve-skip/physics split/tube mesh) is withdrawn.
+        this._boreOpenLegsAtUndergroundNodes()
         this._clipTunnelSpansAtCrossings()
 
         // NOTE (CR-02): no post-build cache eviction. _network is .clear()-ed + rebuilt for the
