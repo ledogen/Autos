@@ -271,6 +271,14 @@ also let the old road ADOPT a reply built for the new seed (its seed matched the
 - **Headless replay** (`zz-bug152-poison.mjs`, scratch): the odd session's logged requests replayed with
   `buildNetworkSnapshot` give a run-key set EQUAL to the browser's odd network (166 runs). The same requests with
   the stale one removed give 167 runs and the normal headless hash (a2136423).
+- **The race forced in the real app** (probe `--reloads --race`: right after Continue, the menu road asks for four
+  far windows inside the 150 ms debounce, so a request lands in the gap most sessions):
+  - pre-fix: **4 of 6 sessions odd**, each a different roster (the menu seed is random). Every odd one is exactly a
+    session whose gap build went out under the STORY seed. One also logged `[save] board replay dropped 2 of 3`.
+  - post-fix (b7867f4b): **12 of 12 normal**. 11 of them had a gap build, and every one went out under the menu
+    seed (dropped on reply).
+  - natural rate, unforced: pre-fix 2 odd in 90 reloads (both in the race); post-fix 39 of 39 normal.
+- Affected gates: 10/10 green (cdp-smoke held back for the orchestrator).
 - Not the culprit (measured): centre (robust to 10 m), adopt/profile history, Worker warm history (deterministic
   and random prior windows), async route arrival order, route-cache key collisions (0 multi-spec keys), pond order.
 
