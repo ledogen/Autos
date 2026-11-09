@@ -207,6 +207,16 @@ stats. Its multi-resume mode can't reseat after the 2nd reload (the sim stays he
   then the smoke (`--browser`).
 - **The roster compare** above, then the orchestrator's look, before landing.
 
+## Run results (2026-11-09, after the hold lifted; branch head 0db6eade, main merged at e5098117)
+
+- **Probe 5:** 12/12 SAME on seed 2782385833. The centre was identical on the new and the resumed run every time, with zero warnings or errors.
+- **Roster compare:** 10 random seeds, one new run each, on main (b9b32a6c) and the branch. 10/10 rosters are identical (27 POIs each, same id hashes).
+  - The centre moved 0–21 cm. The worst was seed 474840339, at 0.20 m in x and 0.05 m in z.
+  - That is more than the 14 cm the seat-lift estimate allows, so the lift is not the whole offset. No roster changed, so there is no RUN_SAVE_VERSION bump (ruling 3).
+- **Gates:** 17/17 affected gates green.
+- **Smoke:** 26/26 steps, zero console errors. The 'save' step's roster check held across the resume.
+- **Still open:** the acceptance's multi-seed soak (the soak's resume check over several seeds).
+
 ## Acceptance
 
 - Root cause named and fixed where it lives.
