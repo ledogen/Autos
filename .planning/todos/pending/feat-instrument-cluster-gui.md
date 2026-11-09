@@ -275,7 +275,13 @@ Kept as they are: the lamps, the shifts (FEAT-185), the hi-lift (FEAT-138).
   where the UNLEADED legend was.
 - **UNLEADED / FUEL ONLY removed.**
 
-Checked headlessly (the low-power hold rules out Chrome): `wip/feat-34/cluster-svg.mjs` (git-invisible) records the
-canvas calls as SVG and Quick Look renders it to PNG. Shots: `wip/feat-34/shots/` holds round2 (main) and round3 in the
-same state (62 mph, 3,100 rpm, low beams with one lamp dead), plus round3-all-lamps-start. The only gate that covers
-`cluster.js` is cdp-smoke (the orchestrator's, on hold).
+**Polish (Lane B, 2026-11-09), seen in real Chrome:** the dial numerals are placed by their own extent along the
+radius (`_numeralAt`), so the wide ones at 3 and 9 o'clock ("100", "20") no longer run into their ticks; the km/h ring
+moved inside the mph numerals (160 read as "160100"); the odometer window (`ODO`) sits lower and narrower so the 40
+and 80 clear its corners.
+
+Shots: real headless Chrome at 2×, round 2 beside round 3 and eight round-3 states (idle, cruise, 92 mph on high
+beams, every lamp lit, low beams, one lamp dead, START, key off) plus one in-game frame:
+`wip/feat-34/r3-chrome/sheet.png` (machine worktree, git-invisible). Harness `wip/feat-34/cluster-shots.mjs` +
+`cluster-shot.html` (the real `GaugeCluster` in a state from the query string) and `ingame-shot.mjs`. The only gate
+that covers `cluster.js` is cdp-smoke (the orchestrator's).
