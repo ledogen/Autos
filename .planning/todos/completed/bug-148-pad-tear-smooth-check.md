@@ -1,7 +1,8 @@
 ---
 id: BUG-148
 type: bug
-status: open
+status: closed
+closed: 2026-11-08
 severity: major
 opened: 2026-11-08
 source: Spare, junction-edge-lip run on 9 random seeds (identical on main and the BUG-146 branch)
@@ -40,3 +41,9 @@ deck. The "tear" at (557.34, 717.00) is the mouth's edge: the pad top 134.50 on 
 0.3 m). Only bore ownership reads that height, so the result is unchanged everywhere outside a bore. Seed 749163472
 joins SEEDS, the first gate seed with a portal inside a pad. The gate passes: 4 seeds, 154,810 pad points, worst tear
 0.075 m (limit 0.08). With the old height-less sampling it fails at 9.46 m.
+
+## Resolution (2026-11-08) — CLOSED
+
+Not a world defect. Landed on main as 153f82e8, gate-only: junction-edge-lip's SMOOTH check samples the pad at wheel
+height, and seed 749163472 joins its SEEDS. The portal 10.3 m from its T, inside the pad, is a lone bore at a junction,
+which BUG-67's ruling (2026-11-03) allows.
