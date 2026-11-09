@@ -170,7 +170,8 @@ everywhere; profiles, junctions, surface, carve, tiles differ in every window; w
 
 **Gores (BUG-155's stated cost).** Steepest 3.5 m drop beside each padded leg, 0–15 m past its mouth (`gores.mjs`): it
 did NOT get steeper. Seed 1074499174 within 900 m: 85 → 82 %, 39 → 37 %, 26 → 27 % at (746, 432); 17 → 15 % at
-(190, −357). Seed 2654449719 within 448 m: worst 27 → 20 %.
+(190, −357). Seed 2654449719 within 448 m: worst 27 → 20 %. One exception, a hard step rather than a slope: at (737.7, 442.1),
+1.5 m past leg `g:745990,432424,-1:0,1,1`'s mouth, the gore dirt steps 0.47 m on main and 0.86 m on the branch — BUG-156.
 
 **Photos** (headless Chrome, both trees, same seed / camera / frame, potholes off in both via the module served):
 `wip/bug-153/shots/sheets/sheet-{154,155,gores,153}.jpg` (+ `.html`). Tool: `wip/bug-153/shots/physics-shots.mjs`.
