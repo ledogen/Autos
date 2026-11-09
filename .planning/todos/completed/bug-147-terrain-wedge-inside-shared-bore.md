@@ -1,7 +1,7 @@
 ---
 id: BUG-147
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-08
 source: Spare, found while shooting BUG-67's miter before/after (pre-existing on main)
@@ -77,3 +77,7 @@ read 1 → 3 overlaps and 19 → 20 portals in a pad. Now:
   identical on main f5a6c0df and on the fix.
 - On main + Spare's BUG-146 the in-pad count is 18: its seed-18 portal `g:-1,0,1:0,0,2` is a real mouth whose pad
   reach grew. Whoever lands second sets MAX_IN_PAD = 18.
+
+## Resolution (2026-11-09)
+
+Landed on main as **09ea7d66** (merge of land/bug-147 @ da8199de, main 5da5d243 + BUG-146 merged in; bore-junction-clearance MAX_IN_PAD 18). Affected gates 74/74 green; cdp-smoke 26/26, zero console errors.
