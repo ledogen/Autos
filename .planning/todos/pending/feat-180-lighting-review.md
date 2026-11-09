@@ -272,3 +272,69 @@ stars dynamic range"
 
 The owner's fallback if the rebuild can't match the legacy's twilight: the legacy plus the rebuild's night scatter,
 stars and orbital motions.
+
+## Frame cost: main vs round 5 vs the rebuild (Spare, 2026-11-09 01:05–02:01, quiet machine)
+
+So the pick between round 5 and the rebuild can be made on the look alone.
+
+- **At 60 Hz, nothing drops a frame.** Every build, hour and seed holds a 16.6–16.7 ms median frame and a
+  17.4–17.7 ms p95 (the time 95 % of frames beat) at Normal on the M4 Air. That is vsync: the display's 60 Hz
+  refresh, where a frame that finishes early waits for the next refresh. So the median sits at 16.7 ms whatever the
+  frame costs.
+- **Uncapped, the GPU's real time per frame:** both branches cost +0.5–0.6 ms (+11 % and +13 %) over main at noon,
+  on every seed. At dusk and night all three are within ±0.2 ms of main, the retest's own spread.
+- **Draw calls** (one batch of triangles the CPU hands the GPU) are 119–121 in all three. The rebuild draws 2 % more
+  triangles.
+- **The one CPU difference is the rebuild's clock push.** Each push integrates the atmosphere on the CPU: 4.0–4.2 ms
+  by day and 2.5 ms at night, against 0.2–0.3 ms. Story pushes once per 0.1 game hour, about every 6 s at a 24-minute
+  day. That is one 4 ms spike every 6 s on top of ~1.5 ms of CPU per frame, inside the 16.7 ms budget. It was not
+  measured in a story run.
+
+| Build | Hour | 60 Hz frame median / p95 (ms) | Uncapped frame median [seed range] / p95 (ms) | Δ uncapped median vs main | Draw calls | Triangles | CPU per frame at 60 Hz (ms) | Clock push (ms) |
+|---|---|---|---|---|---|---|---|---|
+| main | 12:00 | 16.7 / 17.5 | 4.63 [4.4–4.9] / 5.97 | — | 119 | 605k | 1.57 | 0.3 |
+| main | 18:45 (main's own dusk) | 16.6 / 17.6 | 4.90 [4.6–5.2] / 6.20 | — | 119 | 605k | 1.51 | 0.2 |
+| main | 20:00 (night on main) | 16.7 / 17.4 | 5.53 [5.4–5.7] / 6.53 | — | 120 | 605k | 1.56 | 0.3 |
+| main | 23:00, low beams | 16.7 / 17.5 | 7.03 [6.8–7.2] / 8.33 | — | 120 | 605k | 1.54 | 0.3 |
+| round 5 | 12:00 | 16.7 / 17.5 | 5.13 [4.8–5.4] / 6.33 | +0.50 | 119 | 606k | 1.56 | 0.3 |
+| round 5 | 20:00 (dusk) | 16.7 / 17.7 | 5.40 [5.2–5.6] / 6.40 | −0.13 | 121 | 606k | 1.52 | 0.3 |
+| round 5 | 23:00, low beams | 16.6 / 17.6 | 6.90 [6.6–7.3] / 8.07 | −0.13 | 121 | 606k | 1.55 | 0.2 |
+| rebuild | 12:00 | 16.7 / 17.6 | 5.23 [5.0–5.4] / 6.60 | +0.60 | 120 | 619k | 1.48 | 4.0 |
+| rebuild | 20:00 (dusk) | 16.6 / 17.7 | 5.43 [5.3–5.6] / 6.50 | −0.10 | 120 | 619k | 1.42 | 4.2 |
+| rebuild | 23:00, low beams | 16.6 / 17.7 | 7.23 [6.9–7.7] / 8.50 | +0.20 | 120 | 619k | 1.44 | 2.5 |
+
+Each value is the mean over the three seeds. Per seed, the noon delta is +0.4 / +0.6 / +0.5 ms for round 5 and
++0.6 / +0.7 / +0.5 ms for the rebuild.
+
+**Method**
+
+- **Builds:** main ed0a93bb (the scratch checkout `CarGame-spare-base`); round 5 = `land/feat180-next` 31ccec77
+  (:3887); the rebuild = `proto/lighting-redesign` 5bfea3f5 (:3890). Both branches lack some of main's later
+  non-lighting `src/` (road junction geometry, prop impostors, the BUG-140 physics), so a delta includes that too.
+- **Harness:** PERF-08's idle method (`test/profile.mjs`: the `?prof=1` handles, wait for the full terrain ring and
+  for the route warm to drain, then settle), plus the clock pinned with `sky.setTimeOfDay`.
+  - The truck sits on each review spot (`wip/feat180-next/s<seed>-spot.json`). The camera is 14 m behind and 4.5 m up
+    along the spot's heading, the same for every build and hour.
+  - Normal preset: terrain ring 2, shadows on.
+- **Render size:** headless Chrome on Metal at a device pixel ratio of 2. Normal's 1200-line cap brings that to a
+  2066 × 1200 canvas, which is what the owner's Air draws at Normal.
+- **Seeds:** 3583777560, 1172941705 and 701336435, the review's random seeds.
+- **Hours:**
+  - Noon is 12:00.
+  - Dusk is 20:00, with the sun about 2° up in both branches. Main's own dusk is 18:45 and its 20:00 is already
+    night, so main has both rows.
+  - Night is 23:00 with low beams on, as driven. Free roam, so it is the new moon's light.
+- **Two passes:**
+  - **60 Hz:** vsync on, a 20 s window per hour.
+  - **Uncapped:** Chrome's `--disable-gpu-vsync --disable-frame-rate-limit`, so rAF (the browser's per-frame
+    callback) runs as fast as the GPU allows and frame time is the GPU's real time per frame. A 10 s window per hour.
+- **Thermal drift.** The Air is fanless and throttles under sustained uncapped load. A first uncapped pass drifted
+  up to +1.7 ms within 8 minutes and was discarded. The kept pass rotates the build order per seed (each build once
+  in each slot) and idles 75 s between boots. It also repeats its first boot at the end, and the repeat came within
+  0.2 ms: 4.4 → 4.5, 4.6 → 4.8, 5.4 → 5.4 and 7.2 → 7.0 ms.
+- **Compare builds within an hour, not one hour against another.** The hours always ran in the same order inside a
+  boot (12 → 20 → 23), so part of the rise from noon to night is the chip warming up.
+- **Load:** 2.3–6.8 throughout (the 1-minute average). That is this run's own headless Chrome plus four idle Vite
+  servers, and Steam briefly at 01:15. No other lane ran heavy work, and the load never went above 8.
+- **Scripts and raw runs:** `wip/feat-180/cost/` in main's checkout (git-invisible): `cost.mjs` (60 Hz),
+  `cost2.mjs` (uncapped), `batch.sh` / `batch3.sh`, `table*.mjs`, and `runs/`. No build's code was changed.
