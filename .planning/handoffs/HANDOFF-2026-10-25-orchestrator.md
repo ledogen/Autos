@@ -462,3 +462,78 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
   82ecb463 · B's FEAT-34 r2 + FEAT-138 cooldown + FEAT-185 + FEAT-186 2f5735eb. Page v192 (owed feat184-look, feat34-r2-look).
   NOT pushed (owner checks first; origin = d7dc18e1). In flight: A run-soak rerun (harness fix 68fcbe7d on feature/run-shape:
   PARK boxes seat via __towSeat — merge it with A's next docs), B drive soak on 6 fresh seeds, Spare BUG-67 miter → BUG-146.
+- **HOLD (owner, 11-08 ~morning): "gotta close the lid and move. hold the work for now. including testing. and hosting. just
+  leave the main branch server up".** All four lanes told to stop their own jobs + Vite servers, commit WIP, write handoffs,
+  idle. Dashboard :8010 stopped (restart: `npm run dash`); main :8000 left up. Lift only on the owner's word, then tell A, B,
+  C, Spare. State at the hold: main 5bf20c0c + docs (BUG-150 landed, BUG-148 merged). Queued to land, in order: Spare BUG-146
+  (merging main), B BUG-147 (land/bug-147, gates 61/70 green, gate variant approved), B BUG-153 (land/bug-153, ribbon frame;
+  needs its shot sheet — I look before merging). Minted on B's branches: BUG-153 (major), BUG-154/155 to mint (major; 155 needs
+  a proposal). A: BUG-152 (casserole revives on resume, 2 in ~16 soak runs, cause unknown; bisect vs 968cd1a4 owed). Next free
+  number after B's: BUG-156. Page v195 (owed: hunger-numbers, bug67-miter-look, feat34-r2-look, feat184-look + older).
+- **All four lanes confirmed the hold** (A 437b5fb3 · B land/bug-147 e4d5dacb gates 63/70, land/bug-153 a085822e gates 5/71 +
+  shot sheet owed · Spare land/bug-146 83f2e224 gates 60/~70 · C idle). BUG-152 narrowed by A: a resumed session sometimes
+  builds a DIFFERENT POI roster (every id changes; ~1 in 10 probe resumes, 2/~90 soak resumes) → a world-determinism bug, not
+  c87e78ac's logic (no revert). Suspects in the ticket: network client 'move' coalescing; region centre read before the seat.
+- **LOW-POWER MODE (owner on a flight, battery, 11-08):** the hold on testing stays (no gates, soaks, Chrome, smokes, landings).
+  Desk work only: A = BUG-152 root cause by reading; B = BUG-155 proposal + BUG-154 options by reading; Spare = the lighting loop
+  (owner answers feat180-review's 8 questions in the page note box → relay verbatim → Spare tunes constants on a land branch off
+  18bb2e2a, ONE Vite, the owner looks; landing waits for the hold to lift). C idle. Contexts at this point: A 290k, B 270k,
+  orchestrator 302k (clear-ready), Spare 167k (keeps context for the lighting), C 78k.
+- **11-08 ~16:00 (cargame-c8 after a /clear): the owner's lighting review is live; the hold stands.** Relayed the owner's 07:12Z
+  feat180-review note verbatim to Spare (it had not been relayed). Spare: Vite **3887** up from CarGame-land-feat180-dusk
+  (review seeds 1172941705, 3583777560); fog/below-horizon retune 9d9c7e03 (morning blue-white, evening lilac-grey, cap ×1.8;
+  owner's dial Sky → Lights / fog → 'fog lift', number owed); far-void note: recommends **ridge silhouettes from real height()**
+  (720 dirs × ~4 bands to 12 km, ~12 ms in the terrain worker per ~250 m, one draw call) — owner's "go" owed → ticket for Spare.
+  B: BUG-155 proposal c7f81024 + BUG-154 options b1da66c8 on land/bug-153 → owed **bug155-fix**, **bug154-frame** (page v196,
+  65a49b43). A: BUG-152 fixes 1–4 desk-built on feature/run-shape (4a7f7dd0, b33070eb, 13480b31, 00130532): region centre =
+  resolveSpawn(worldSeed) (moves live centre 1–14 cm on slopes → roster compare on ~10 seeds before landing; RUN_SAVE_VERSION
+  bump only if ≥ 2 of 10 change, then ask the owner); the 20 s settle timeout centres on spawnCentre(), never refuses. A's owed
+  on lift: probe 5, affected gates, smoke, roster compare, land hash.
+
+### 11-08 ~21:00 — two lighting builds up for the owner's look
+- **Spare round 3** (land/feat180-next 0be79cae, :3887): real sun/moon paths, fog = sky horizon colour, below-horizon fill
+  continues the horizon, sun disc via 'glare ceiling', headlights light POI halos. Limits: Preetham has no twilight (dusk dark
+  away from the sun), one-colour fog, shadows ≥ 5°.
+- **Opus ground-up redesign** (proto/lighting-redesign 44d284d2, worktree .claude/worktrees/agent-a963acdc35996c65b, :3890):
+  one CPU-integrated atmosphere (Rayleigh + Mie + ozone + multiple scatter) baked to a 64×32 sky table; fog = a lookup into the
+  same sky by view direction; sun/ambient/moon from the same model; eye adaptation + own tone curve (ACES gone, every asset
+  looks different); edge-fog term hides the world edge, haze halved per tier. New gate test/sky-ephemeris.mjs. ~0.3 ms/frame,
+  1.5–2.7 ms per clock push. Comparison only: conflicts with FEAT-180 in sky.js/main.js, cut from d7dc18e1 (origin), not main.
+  It ran 11 gates + cdp-smoke during the hold (not granted; reported to the owner). Sheets in the orchestrator scratchpad v5/.
+- Owner picks between them (or a mix). Nothing lands until then.
+
+### 11-08 ~21:40 — round-3 notes in; both lighting agents HELD for the owner's clear
+- Owner's notes on both builds: FEAT-180 ticket § Round 3 review (verbatim). Owner: "gimme a chance to clear the
+  lighting agent(s) before they continue". Neither lane has the notes yet.
+- **Spare:** lanes/s v104 has a RESUME HERE block with its notes verbatim (and orchestrator = cargame-c8). On the
+  owner's go, send Spare "resume FEAT-180 round 4 from lanes/s".
+- **Rebuild:** it was this session's subagent (a963acdc35996c65b), so there is nothing for the owner to clear. On
+  the owner's go, start a FRESH opus agent from `.planning/handoffs/HANDOFF-2026-11-08-lighting-redesign.md`
+  (worktree, branch, port 3890, knobs, the owner's notes, the round-2 list). Don't SendMessage the old one.
+- **Power mods intake:** 2 inbox notes + 10 item-page cards → FEAT-189 power mods, FEAT-190 I4 default + V6/V8 swaps +
+  bigger tank, FEAT-191 turbo/supercharger sim, FEAT-192 rarity tiers. Builds = lane B (behind its landing queue);
+  items.md/FEAT-121 fold + item-page cards + FEAT-192 = lane C.
+- **11-08 ~22:30 Lane C done, idle on the owner's answers.** feature/content 7fc38eb0 (main 1f5c07dd merged): docs fold
+  (items.md §3b/§3d, FEAT-121 power mods + V6/V8/tank rows, 10-24 late fold), FEAT-192 mapping 98e0bdbd, UI-STYLE
+  rarity row c693db6b, ONE data change data/shop-stock.js shadeTarp 6 → 15. **Landing queue + C:** affected gates
+  (shop-stock, inventory, whatever `npm test` picks) when the hold lifts. Item page v39: FEAT-192's four calls
+  (answers/_rarity), V6/V8/tank cards, tarp "sold at" conflict (general store 10-24 vs auto shop 11-06). After the
+  rarity answers C switches stock-weights/RARITY_GATES/RARITY_COLOR; B's FEAT-189/190 rows carry `rarity` strings.
+- **Late 11-08: two owed answers found unrelayed and relayed verbatim:** feat184-look (18:27Z: tutorial = its own menu
+  option, flag defaults complete for testing; mandatory <10-min fixed-seed tutorial, optional per-mission content,
+  always-played skippable intro fired → mom's → sleep) → Lane A (flag/menu first, plan to me before the rest, flag
+  DESIGN/opening conflicts e.g. mom vs uncle). feat34-r2-look (18:01Z: lamp if either headlight dead, straighten +
+  symmetric cluster, gauges +15 %, 20 mph labels, drop "unleaded fuel only") → Lane B. **Page cleanup owed:** remove
+  feat184-look + feat34-r2-look from OWED at the next publish (batch it).
+- Lighting: Spare on round 5 (edge fog, rebuild's stars/night scatter/orbits); rebuild agent resumed on its round 3
+  (dawn/dusk glare, noon fog, sky colours, star range). Owner's notes: FEAT-180 ticket (89e4b136).
+
+### 11-09 ~01:00 — HOLD LIFTED (owner: "home now. power unlimited. catch up on testing. see ya in the morning")
+Told A, B, C, Spare: merge main, affected gates (≤ 2 heavy processes per lane), landing requests to cargame-c8; the
+orchestrator runs ONE gated smoke on main per landing (`while load5 > 15 sleep 60; tools/chrome-slot.sh node
+test/cdp-smoke.mjs > log`), never merges while one runs. Queue: Spare BUG-146 → B BUG-147 (MAX_IN_PAD 18) → B BUG-153
+(shot sheet to me) → B BUG-155+154 (owner's before/after photos + steep-gore sheet; 2.3 cm residual call) → A BUG-152
+(+ roster compare; save bump ≥ 2/10 → owner) + FEAT-184 menu/flag bd5a6a95 → C feature/content (tarp $15 + docs).
+NOT landing: B FEAT-34 r3 (Chrome shots for the owner's morning look first); both lighting builds (owner picks;
+Spare makes land/feat180-next landable; the rebuild needs main merged only if picked). Lighting frame-cost
+re-measure waits for a quiet window. Nothing pushed.

@@ -71,6 +71,7 @@ How the cut works:
 | ASSET-71 | the job site model — the expedition camp is a real model, not a placeholder |
 | ASSET-69, ASSET-70, ASSET-73 | office, doctor's office, school — they replace placeholders the alpha shows |
 | ASSET-32 | the uncle's van — the uncle is in the alpha |
+| FEAT-188 | **optional** — far ridge silhouettes from the real terrain, after FEAT-180's fog tune (owner, 2026-11-08: "optional pre-alpha") |
 
 **Branches landed 2026-10-24:** `feature/mission-recut` (FEAT-138/114/139), `feature/game-feel` (the
 mission-feel review R-01..R-34) and `feature/parts` are on main and deleted; one checkout from here on.
