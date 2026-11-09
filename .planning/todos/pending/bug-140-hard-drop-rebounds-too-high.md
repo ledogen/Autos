@@ -118,3 +118,10 @@ rock or bigger; the 14 and 40 kg rocks (the throwable rock is 40 kg) flip nothin
 Physics fingerprint (`test/fingerprint-physics.mjs`): DIFFERS from the first checkpoint (step 100), both runs — expected,
 the in-step body changes even the settle. New digests round `567e305f509a40e2`, out-of-round `94219701950ed351` (main
 `fbf76dff2c1b6afb` / `3184433810d4d588`), one re-pin for this landing with FEAT-193.
+
+**Knock-on: fragile cargo's crest is softer.** `test/fragile-cargo.mjs` lands the truck from a 1 m crest at 15 m/s with a
+vase strapped in the bed. A alone (ζ 0 gives the same) dropped the vase's peak 4.58 → 3.91 g, so it keeps 60 % instead of
+43 % (fragile 60 → 73 %, sturdy 68 → 75 %; washboard and rollover unchanged in outcome). The gate's "very fragile loses more
+than half" went red. Its bound now reads data/offers.js's own words, "a 1 m crest costs roughly half" (keeps 30–65 %; main's
+43 % passes too). Getting 43 % back would take the vase's break 6.0 → ~4.95 g, undoing most of the owner's 1.5× raise
+(2026-10-24), so the data is unchanged. Owner call: accept the softer crest (recommended), or lower the very fragile break.
