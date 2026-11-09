@@ -154,7 +154,8 @@ surface every 25 cm (`wip/bug-153/drawn-raster.mjs`) at that bend gives, inside 
 3111 spots ≥ 2 cm, worst 35.7 cm → branch 107, worst 4.3 cm (5.1 cm out to 4.5 m). Option B (physics on the ribbon's
 own spline) is what takes out the last few cm.
 
-**World fingerprint, main 961311ec vs 5243e31f** (`test/fingerprint-world.mjs`, six windows): network and poi PASS
+**World fingerprint, main 961311ec vs 5243e31f, and again main ff39a05e (BUG-147 in) vs cd984636 — the same accounting
+both times** (`test/fingerprint-world.mjs`, six windows): network and poi PASS
 everywhere; profiles, junctions, surface, carve, tiles differ in every window; water in three; props in one. Accounted:
 - **profiles:** the added `weld` field only. md5 of every profile minus `weld` is identical on both trees in five
   windows (seed 6 origin r 1400, seed 6 ponds, seed 6 fork, seed 7, seed 3).
