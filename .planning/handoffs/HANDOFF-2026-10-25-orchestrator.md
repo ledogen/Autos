@@ -559,3 +559,11 @@ re-measure waits for a quiet window. Nothing pushed.
 - **B BUG-153, a second red** (lanes/b v84): junction-edge-lip FAIL 2 — a 0.276 m lip at seed 917338424
   g:-1,-1,2:0,-1,0 side -1 s 14, and a 0.081 m/0.05 m pad tear at (−212.04, −543.86). B runs the gate on main and on
   land/bug-155 next. If 155 fixes it, land 153 + 155 together (one smoke).
+- **11-09 ~02:00: Lane A merged to main as 462fe00e** (feature/run-shape 76e327ba: BUG-152 + FEAT-184 menu option /
+  flag starts complete; affected 17/17, probe 5 12/12 SAME, roster 10/10 identical → no save bump, branch smoke 26/26
+  at 0db6eade). ONE gated smoke on main is RUNNING; log
+  /private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/f08f9df1-2394-4364-9acc-a863a66bda88/scratchpad/smoke-a-462fe00e.log.
+  On resume: if its last line is PASS, A is landed. If it failed at a load-flake step, re-run it gated. If it's a
+  real failure, revert the merge in a scratch worktree to confirm. Owed after: pad-e2e (A changed its D-pad check,
+  not re-run), BUG-152's multi-seed soak before the ticket closes. Lane A ready for clear (lanes/a v90). ALL FOUR
+  lanes are ready.
