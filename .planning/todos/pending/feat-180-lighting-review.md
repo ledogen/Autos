@@ -248,3 +248,27 @@ i can see like an entire mountain if the lights are shining. gotta fix that too.
 Cross-reference the legacy build when tuning the rebuild: the owner's night (moon brightness, how hard it is to see at
 night) and its contrast are the legacy's. The rebuild's sunrise and sunset sky, its stars and its fog colour are the
 keepers.
+
+## Round 5 / rebuild round 3 notes (owner, 2026-11-08 late, verbatim)
+
+Spare's round 4 (`land/feat180-next` ac736514, :3887) against the rebuild's round 2 (`proto/lighting-redesign`
+9fc6900d, :3890):
+
+"i want to like the new system because it feels more flexible. its still inferior in a few ways
+first of all i think the night darkness fix may have killed a little detail in the stars. i can still see them but
+it feels like i can only see the bright ones.
+the new system has murkier fog at noon which makes look a little duller. try to match the color of the legacy
+current state.
+i much prefer the blues and greens in the sky during sunrise and sunset in the legacy sky. i can also see the sun and
+the horizon more clearly. the rebuild really blows out the sky with fogginess and scatter at dawn and dusk. if we
+cant get that i might just want to improve legacy night sky with the improved scatter and stars and then the
+orbital motions.
+rebuild fog hides the terrain edge much much better. it sacrifices some clarity to do so but i like that its honest
+about how far we actually draw.
+keep trying to converge both towards excellence. legacy - hide terrain edge better, build stars and nighttime
+scatter and the orbital motions
+rebuild - work on less fog glare at dawn and dusk. slightly lighter fog at noon. better sky colors. bring back the
+stars dynamic range"
+
+The owner's fallback if the rebuild can't match the legacy's twilight: the legacy plus the rebuild's night scatter,
+stars and orbital motions.

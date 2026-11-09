@@ -513,3 +513,27 @@ Sessions: A = cargame-8f, B = cargame-23, C = cargame-fd (idle), Spare = cargame
 - **Power mods intake:** 2 inbox notes + 10 item-page cards → FEAT-189 power mods, FEAT-190 I4 default + V6/V8 swaps +
   bigger tank, FEAT-191 turbo/supercharger sim, FEAT-192 rarity tiers. Builds = lane B (behind its landing queue);
   items.md/FEAT-121 fold + item-page cards + FEAT-192 = lane C.
+- **11-08 ~22:30 Lane C done, idle on the owner's answers.** feature/content 7fc38eb0 (main 1f5c07dd merged): docs fold
+  (items.md §3b/§3d, FEAT-121 power mods + V6/V8/tank rows, 10-24 late fold), FEAT-192 mapping 98e0bdbd, UI-STYLE
+  rarity row c693db6b, ONE data change data/shop-stock.js shadeTarp 6 → 15. **Landing queue + C:** affected gates
+  (shop-stock, inventory, whatever `npm test` picks) when the hold lifts. Item page v39: FEAT-192's four calls
+  (answers/_rarity), V6/V8/tank cards, tarp "sold at" conflict (general store 10-24 vs auto shop 11-06). After the
+  rarity answers C switches stock-weights/RARITY_GATES/RARITY_COLOR; B's FEAT-189/190 rows carry `rarity` strings.
+- **Late 11-08: two owed answers found unrelayed and relayed verbatim:** feat184-look (18:27Z: tutorial = its own menu
+  option, flag defaults complete for testing; mandatory <10-min fixed-seed tutorial, optional per-mission content,
+  always-played skippable intro fired → mom's → sleep) → Lane A (flag/menu first, plan to me before the rest, flag
+  DESIGN/opening conflicts e.g. mom vs uncle). feat34-r2-look (18:01Z: lamp if either headlight dead, straighten +
+  symmetric cluster, gauges +15 %, 20 mph labels, drop "unleaded fuel only") → Lane B. **Page cleanup owed:** remove
+  feat184-look + feat34-r2-look from OWED at the next publish (batch it).
+- Lighting: Spare on round 5 (edge fog, rebuild's stars/night scatter/orbits); rebuild agent resumed on its round 3
+  (dawn/dusk glare, noon fog, sky colours, star range). Owner's notes: FEAT-180 ticket (89e4b136).
+
+### 11-09 ~01:00 — HOLD LIFTED (owner: "home now. power unlimited. catch up on testing. see ya in the morning")
+Told A, B, C, Spare: merge main, affected gates (≤ 2 heavy processes per lane), landing requests to cargame-c8; the
+orchestrator runs ONE gated smoke on main per landing (`while load5 > 15 sleep 60; tools/chrome-slot.sh node
+test/cdp-smoke.mjs > log`), never merges while one runs. Queue: Spare BUG-146 → B BUG-147 (MAX_IN_PAD 18) → B BUG-153
+(shot sheet to me) → B BUG-155+154 (owner's before/after photos + steep-gore sheet; 2.3 cm residual call) → A BUG-152
+(+ roster compare; save bump ≥ 2/10 → owner) + FEAT-184 menu/flag bd5a6a95 → C feature/content (tarp $15 + docs).
+NOT landing: B FEAT-34 r3 (Chrome shots for the owner's morning look first); both lighting builds (owner picks;
+Spare makes land/feat180-next landable; the rebuild needs main merged only if picked). Lighting frame-cost
+re-measure waits for a quiet window. Nothing pushed.
