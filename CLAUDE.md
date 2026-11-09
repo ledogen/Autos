@@ -313,7 +313,7 @@ the norm.
 - **Parallel lanes** (lanes, ports and the tracker page are in the orchestrator handoff,
   `.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`): since 2026-11-09 every lane runs as a background
   **subagent of the orchestrator, one task per agent** — a lane agent follows
-  `.planning/handoffs/LANE-AGENT-BRIEF.md` (stop when the task is done, blocked, or told WRAP UP; rewrite its
+  `.planning/handoffs/LANE-AGENT-BRIEF.md` (stop when the task is done or blocked; rewrite its
   page handoff; report in ≤ 15 lines), and the orchestrator starts a fresh agent for the next task. When the
   page's owed list holds 10+ items, prefer work that adds nothing to the owner's review pile (gates, perf,
   closing on evidence, making a pending decision cheaper to answer).

@@ -22,12 +22,12 @@ background subagent, one task per agent; the fresh agent IS the clear.** The age
   At most one agent per worktree. Lane C gets an agent only when an owner answer gives it work.
 - **On a report** (the agent's final message, ≤ 15 lines): LANDING → merge, ONE gated smoke on main, fast-forward the
   lanes; OWED → the page's `OWED` array; then spawn a FRESH agent for NEXT. Never SendMessage a finished agent to
-  continue: that revives its whole context. Messages to a RUNNING agent are fine (an answer, an order, WRAP UP).
-- **Context watch**: `bash tools/lanes.sh` lists every running subagent's context. Keep `bash tools/lanes.sh --watch
-  250 [ids already told]` running in the background while agents work; when it exits, SendMessage that agent
-  `WRAP UP` and restart the watch with its id skipped. The agent commits, rewrites its handoff and reports.
+  continue: that revives its whole context. Messages to a RUNNING agent are fine (an answer, an order).
+- **No context watching** (owner 11-09: "no need to watch context like a hawk… just spawn a new subagent for task").
+  One task per agent keeps each one small; that is the whole mechanism.
 - **Agents never smoke**; landing smokes stay serial on main (`tools/chrome-slot.sh`, load-gated).
-- **Before the owner clears YOU**: WRAP UP every running agent, take their reports, then write this handoff.
+- **Before the owner clears YOU**: let running agents finish (or tell them to stop at their next commit), take
+  their reports, then write this handoff.
   Nothing lives only in an agent: they commit WIP every step and the page holds each lane's handoff.
 
 ## What the owner will do next

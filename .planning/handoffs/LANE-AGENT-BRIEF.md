@@ -23,7 +23,7 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
 - **CPU**: at most 2 heavy processes (`run-all --serial` or `--only`; Chrome only via `tools/chrome-slot.sh`).
   Never kill another lane's process. **No cdp-smoke on a branch**: the orchestrator smokes main after each merge.
 - **A job over ~10 min** (a gate run, a soak, a census): start it detached, `nohup <cmd> > <log> 2>&1 &`, and wait
-  on the log (a Monitor until-loop on its last line). A wrap-up then never kills it, and the next agent reads the log.
+  on the log (a Monitor until-loop on its last line). It then outlives you if you stop, and the next agent reads the log.
 - **Need the orchestrator mid-task** (another lane's file, merge order, a landing slot)? `SendMessage` to `main`,
   then carry on with whatever doesn't depend on the answer.
 - **Owner-only calls** (design, economy numbers, words in the world's voice, a look or a drive): never block on
@@ -35,10 +35,6 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
 
 1. **The task is done**: a landing request is ready, or a look / measurement / proposal is ready for the owner.
 2. **You're blocked** on the owner or on another lane.
-3. **The orchestrator sends `WRAP UP`**: your context passed its budget (~250k tokens). Finish the edit in hand,
-   commit, then hand off. Do not start anything new.
-4. **Self-check**: past ~150 tool calls, or after reading several large logs/files, wrap up at the next commit
-   boundary even if nobody asked. A fresh agent with a good handoff is cheaper than a heavy one.
 
 ## On stop: hand off, then report
 
@@ -56,5 +52,5 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
    LANDING:  branch @ hash · `git diff --stat <merge base> main -- src test data` · affected gates N/N green — or none
    OWED:     owner questions, one line each with your recommendation — or none
    NEXT:     the task the next agent should take
-   STOPPED:  done / blocked / wrap-up
+   STOPPED:  done / blocked
    ```
