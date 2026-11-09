@@ -52,6 +52,8 @@ const TEMP  = { cx: 56,  cy: AXIS - POD_E, well: 33, scaleR: 26, start: 215, swe
 const FUEL  = { cx: 56,  cy: AXIS + POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
 const TACH  = { cx: 168, cy: AXIS, well: 62, scaleR: 54, start: 160, sweep: 130 }    // dial top: _tachMax (setRedline)
 const SPEEDO= { cx: 264, cy: AXIS, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
+// The odometer drum's window, from the speedo hub. Low enough that the 40 and 80 clear its top corners (round 3).
+const ODO = { x: -29, y: -27, w: 58, h: 14 }
 // One factor on the canvas transform (round 3), so every distance the layout balances (the key's three below, the
 // joined faces' cusp) scales with it, and the layout keeps its own units.
 const SCALE = 1.15
@@ -484,7 +486,7 @@ export class GaugeCluster {
     ctx.textBaseline = 'middle'
     for (let n = 0; n <= max; n++) {
       ctx.fillStyle = n >= red ? RED : WHITE
-      this._labelAt(ctx, g, n / max, g.scaleR - 13, String(n))
+      this._numeralAt(ctx, g, n / max, String(n), 8.6)
     }
     // Legend — kept left of the cusp (see TACH): RPM x1000 at the top under the numerals, as the 2002 prints it.
     // (The UNLEADED FUEL ONLY legend went in round 3: owner, 2026-11-08, "get rid of unleaded fuel only".)
@@ -505,17 +507,18 @@ export class GaugeCluster {
     ctx.textBaseline = 'middle'
     // Numerals every 20 mph from 0 (round 3, owner 2026-11-08: "skip every other 10 mph too. so 0-20-40-60").
     for (let n = 0; n <= g.max; n += 20) {
-      this._labelAt(ctx, g, n / g.max, g.scaleR - 11, String(n))
+      this._numeralAt(ctx, g, n / g.max, String(n), 6.8)
     }
-    // Inner km/h ring: same angular scale, kmh label sits at frac (kmh/1.609)/120.
-    // Labels that would land behind the odometer box (top-center) are skipped, not overdrawn.
+    // Inner km/h ring: same angular scale, kmh label sits at frac (kmh/1.609)/120. Inside the mph numerals' widest
+    // reach (the 100 at 3 o'clock), so 160 km/h does not run into it. Labels that would land behind the odometer box
+    // are skipped, not overdrawn.
     ctx.fillStyle = DIM
     ctx.font = '6px Arial, sans-serif'
     for (let kmh = 20; kmh <= 180; kmh += 20) {
       const a = gaugeAngle(g, (kmh / 1.60934) / g.max)
-      const lx = g.cx + Math.cos(a) * (g.scaleR - 22)
-      const ly = g.cy + Math.sin(a) * (g.scaleR - 22)
-      if (Math.abs(lx - g.cx) < 38 && ly > g.cy - 40 && ly < g.cy - 14) continue
+      const lx = g.cx + Math.cos(a) * (g.scaleR - 32)
+      const ly = g.cy + Math.sin(a) * (g.scaleR - 32)
+      if (Math.abs(lx - g.cx) < ODO.w / 2 + 6 && ly > g.cy + ODO.y - 3 && ly < g.cy + ODO.y + ODO.h + 3) continue
       ctx.fillText(String(kmh), lx, ly)
     }
     ctx.fillStyle = WHITE
@@ -527,10 +530,10 @@ export class GaugeCluster {
     // Odometer bezel (digits are live — see _drawOdometer). Sits in the trip-drum slot
     // of the reference, top-center inside the speedo face.
     ctx.fillStyle = '#060606'
-    ctx.fillRect(g.cx - 34, g.cy - 34, 68, 15)
+    ctx.fillRect(g.cx + ODO.x, g.cy + ODO.y, ODO.w, ODO.h)
     ctx.strokeStyle = 'rgba(255,255,255,0.15)'
     ctx.lineWidth = 1
-    ctx.strokeRect(g.cx - 34.5, g.cy - 34.5, 69, 16)
+    ctx.strokeRect(g.cx + ODO.x - 0.5, g.cy + ODO.y - 0.5, ODO.w + 1, ODO.h + 1)
   }
 
   _tick (ctx, g, frac, rOuter, len, color, width) {
@@ -547,6 +550,15 @@ export class GaugeCluster {
   _labelAt (ctx, g, frac, r, text) {
     const a = gaugeAngle(g, frac)
     ctx.fillText(text, g.cx + Math.cos(a) * r, g.cy + Math.sin(a) * r)
+  }
+
+  // A dial numeral, its outer edge 9.5 px inside the scale (the major ticks are 7 long with a round cap, plus a 1.5 px
+  // gap): the centre is pulled in by the text's own half-extent along the radius, so a wide numeral at 3 or 9 o'clock
+  // ("100", "20") clears its tick as a narrow one at 12 does. capH = the font's digit height (0.72 × its px size).
+  _numeralAt (ctx, g, frac, text, capH) {
+    const a = gaugeAngle(g, frac), c = Math.cos(a), s = Math.sin(a)
+    const r = g.scaleR - 9.5 - (Math.abs(c) * ctx.measureText(text).width + Math.abs(s) * capH) / 2
+    ctx.fillText(text, g.cx + c * r, g.cy + s * r)
   }
 
   // Simplified thermometer glyph (bulb + stem + wave) — enough to read as "temp" at 12 px.
@@ -822,7 +834,7 @@ export class GaugeCluster {
   // Six-digit drum, white on black; the ones digit rolls continuously with the fraction.
   _drawOdometer (ctx) {
     const g = SPEEDO
-    const x0 = g.cx - 34; const y0 = g.cy - 34; const cellW = 68 / 6; const cellH = 15
+    const x0 = g.cx + ODO.x; const y0 = g.cy + ODO.y; const cellW = ODO.w / 6; const cellH = ODO.h
     const whole = Math.floor(this._odoMiles) % 1000000
     const rollFrac = this._odoMiles - Math.floor(this._odoMiles)
     ctx.font = 'bold 10px "Courier New", monospace'
