@@ -106,40 +106,27 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-09 ~22:30 local, before the owner's evening clear; rewrite this section, don't append)
-- **Main** = the commit carrying this section (docs only since Lane A's landing 462fe00e, smoke 26/26). Unpushed
-  since d7dc18e1 (origin).
-- **Three agents were RUNNING at the clear** (spawned 21:40; each was told to checkpoint its page handoff first, so
-  the page is current). Their final reports may or may not reach you. **Is one still alive?**
-  `ls -lt ~/.claude/projects/-Users-ledogen-CodeShit-CarGame/*/subagents/*.jsonl | head -5` — a transcript written in
-  the last ~15 min is alive. If an agent is gone and its "now" line still says running, spawn a fresh one from its
-  page handoff (its gate runs are detached and survive).
-  - A: BUG-152 multi-seed soak + pad-e2e rerun → close the ticket (docs-only landing).
-  - B: FINISHED (report in). BUG-147 request: land/bug-147 @ dc41474e, 69/69 green, held behind 146. BUG-153 cannot
-    land alone (its junction-edge-lip FAIL is fixed by 155): **153 + 155 land together from land/bug-155** (f4b23f5f sets
-    vertical-curvature ceilings open 18 → 19, junction 203 → 201, dated). land-155's 71 affected gates were RUNNING
-    detached at the clear (~62 min from ~23:20 PST), log /Users/ledogen/CodeShit/CarGame-land-155/wip/bug-153/reds/gates-155.log.
-    **B's next two tasks** (one fresh agent each, one per worktree, B ≤ 2 heavy processes): (1) land-147 re-gate — SPAWNED, see below; (2) when gates-155.log is green — fold the band + blend
-    classes into ribbon-frame.mjs's PASS (B recommends a 2.5 cm band tolerance for the 2.3 cm residual), fingerprint
-    lattice proof vs main, shot sheet + the BUG-154/155 before/after photos for the owner → one request. Commands: lanes/b v90.
-  - Spare: FINISHED. **BUG-146 LANDED** (44ae96fd, smoke 26/26; ticket closed 5da5d243; worktree + branch removed).
-    Spare is idle on the FEAT-180 pick (it recommends legacy round 5, the owner's own fallback) + bug133-look; find it
-    owner-free work if any exists (§ never idle a lane).
-- **B agent RUNNING (spawned ~23:50 PST)**: land-147 — merge main, MAX_IN_PAD 20 → 18, re-gate (detached) → request.
-  Its report may reach you or not; its page handoff carries it.
-- **Landing queue**: B BUG-147 (re-gate running) → B BUG-153 (+ 155 together if 155 clears the lip;
-  shot sheet to you first) → B BUG-155 + 154 (the owner wants before/after photos + the steep-gore sheet; the 2.3 cm
-  band residual decided in the request) → B FEAT-34 round 3 (feature/machine 1ed40292): Chrome shots for the owner's
-  look first, not a landing.
-- **Waiting on the owner**: the lighting pick — Spare's round 5 (land/feat180-next, :3887) vs the ground-up rebuild
-  (proto/lighting-redesign 5bfea3f5, :3890, worktree `.claude/worktrees/agent-a963acdc35996c65b`; its next round is a
-  fresh opus agent from `.planning/handoffs/HANDOFF-2026-11-08-lighting-redesign.md`); tutorial-* ×5 (A's FEAT-184
-  stages 1–5); hunger-numbers; the item page (FEAT-192 rarity ×4, V6/V8/tank cards, tarp sold-at → Lane C, which has
-  no agent until then); the rest of `OWED`.
-- **Page source** has unpublished edits (the subagent wording; the "session" label → "now"). The next OWED publish
-  carries them.
-- **Worktrees pruned 11-09** (owner: "remove recommended"; branches kept): bug74, land-148, main-snap, step1-snap,
-  bug105, bug69, land-bug141, reseat-jcut, the old node-reseat agent tree. CarGame-bug67 is still there: its
-  untracked probe folder needs `--force`, which the permission check refused — the owner runs
-  `! git worktree remove --force /Users/ledogen/CodeShit/CarGame-bug67` if they want it gone. Kept for the lighting
-  pick: CarGame-f180-preview, -land-feat180 (parked pieces 6/7), -land-feat180-dusk. In use: -soak9pre (B), -spare-base (Spare).
+## Current state (machine clock Sun 11-08 22:15 PST; the owner said good night — overnight run; rewrite, don't append)
+- **Main** 33f1a202 (docs only since BUG-146's 44ae96fd, smoke 26/26). Unpushed since d7dc18e1 (origin). Never push.
+- **Clock note**: the machine clock is PST and reads one day EARLIER than the agents' system date; git and file
+  mtimes are the truth. Older commits carry +0100. Owed `at` stamps are UTC.
+- **Agents RUNNING** (spawned by earlier orchestrator sessions; their reports may or may not reach this one — check
+  `ls -lt ~/.claude/projects/-Users-ledogen-CodeShit-CarGame/*/subagents/*.jsonl | head`):
+  - A (soak) — BUG-152 close-out, 6-seed soak, log CarGame-run-shape/wip/run-soak/bug152-close.log (3/3 wins so far).
+  - B (land-147) — merged main, MAX_IN_PAD → 18, gates running (log CarGame-land-147/wip/bug-147/gates-147-merge.log) → request.
+  - Spare (land-140, spawned 22:15) — BUG-140 A + 2 with the owner's live-rock-prop test (drop 2 if it launches the
+    rock or flips the truck) + FEAT-193 body μ 1.0 off-road / 0.5 road. One fingerprint re-pin, one feel drive owed.
+- **Detached**: land-155's 71 gates (log CarGame-land-155/wip/bug-153/reds/gates-155.log; 26 green, no red at 22:13).
+  When green, spawn B's next task: fold the band + blend classes into ribbon-frame.mjs's PASS (B recommends a 2.5 cm
+  tolerance for the 2.3 cm residual), fingerprint lattice proof vs main, shot sheet + BUG-154/155 before/after photos
+  → one request (153 + 155 land together from land/bug-155).
+- **Landing queue**: BUG-147 → BUG-153+155 (+154) → BUG-140/FEAT-193 → FEAT-34 round 3 (Chrome shots for the owner first).
+- **Owed answers recorded 11-09 (33f1a202)**: hunger-numbers keep, bug67-miter-look good, bug140-drop, side-slide-lever.
+  Those four items are STILL on the page source's OWED array: drop them at the next publish (with the subagent wording
+  edits already unpublished in the source).
+- **Waiting on the owner**: the lighting pick (Spare's round 5 land/feat180-next :3887 vs proto/lighting-redesign
+  5bfea3f5 :3890); tutorial-* ×5 (FEAT-184); the item page (FEAT-192 rarity ×4, V6/V8/tank cards, tarp sold-at → Lane
+  C); the rest of `OWED`.
+- **Worktrees**: CarGame-bug67 needs `! git worktree remove --force /Users/ledogen/CodeShit/CarGame-bug67` from the
+  owner. Kept for the lighting pick: CarGame-f180-preview, -land-feat180, -land-feat180-dusk, -land-feat180-next.
+  In use: -land-147, -land-153, -land-155 (B), -land-140 (Spare), -soak9pre, -spare-base.
