@@ -134,3 +134,26 @@ Branch at **9fc6900d** (022a7499, 518125e5, 1b3be8bd, 9fc6900d), only `src/sky.j
   - the POI ring glow is dimmer under ACES (`RING_GLOW` not retuned);
   - 05:00 is twilight here (sunrise 05:33) while the legacy is still dark;
   - round 1's gaps stand.
+
+## Round 3 done (2026-11-09 early, same agent)
+
+Branch at **5bfea3f5**, only `src/sky.js`. No gates ran (hold).
+
+- **The sky has its own eye curve:** `skyAdapt` 0.45, `skyDepth` 1.3, `skyTwilight` 0.72 (replacing `adapt`/`nightDark`).
+- **Sky exposure** 1.7, `skySat` 1.0, `skyCast` 0.5.
+- **The tone curve's shoulder** (its top roll-off) now runs per colour channel, with whitening 0.3. This fixed both the murky noon fog and the hard-edged glow.
+- **Teal twilight grade:** `duskSat` 0.3, `dusk` 1.3. A stylistic grade, not physics.
+- **"Land beyond":** below the horizon the fog darkens to ≤ `beyond` (1.5) × flat ground at twilight only.
+- Below-horizon fog is looked up by angle to the sun.
+- **Stars** at a fixed displayed brightness, `stars` 2.5, which roughly doubled the visible count. Night has its own table set to
+  `nightFog` × land.
+- **Sky colour error vs legacy round 4:** mean 96.4 → 28.5 over 8 hours.
+- Sheets: `…/scratchpad/r3/sheets/` (legacy r4 | r2 | r3).
+- **Gaps:**
+  - the anti-sun dusk sky is teal over a khaki band, where the legacy's is near-black;
+  - the glow toward the sun is narrower than the legacy's;
+  - the core on the horizon is yellow-white, where the legacy's is orange;
+  - the land beyond is olive, where the legacy's is mauve;
+  - the land's golden-hour orange is still weak;
+  - the twilight moon disc is faint;
+  - the CPU sky push read 10 ms at load average 6.5 (1.83 ms idle in round 2), so re-measure it idle.
