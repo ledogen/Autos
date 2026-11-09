@@ -27,7 +27,7 @@ Deterministic: `SMOKE_PAD_SEED=3397198020 SMOKE_STEPS=boot,pad node test/cdp-smo
   (a giver with one paper-route offer should open the card on park like every other giver). Name the evidence.
 - Fix that side; the replay above passes; a pad-step run on a few other random seeds still passes.
 
-## Resolution (Spare, 2026-11-10)
+## Resolution (Spare, 2026-11-09)
 
 **The test was wrong, not the game.** The picked giver on 3397198020/K is the **firewood yard**
 (`poi:1360315,-165762,-1|2,0,0@0`, at 1459.8, -109.2), not anything of Larry's. Nothing else stands within 60 m of it.
