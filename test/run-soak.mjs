@@ -256,6 +256,7 @@ async function saveAndResume () {
   check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 10000), 'no continue after save & exit')
   const record = await js('localStorage.getItem("autos-run/1")')   // kept for a resume that changes the run (written below)
   const momBefore = await js(`window.__poi().list().find(q => q.type === 'momsHouse')?.id`)
+  const rosterBefore = await js('window.__poi().list().map(q => q.id).join()')   // BUG-152: a re-sited roster drops board events
   await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
   check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 120000, 250), 'no continue after the reload')
   await js('document.getElementById("mm-continue").click()')
@@ -264,11 +265,12 @@ async function saveAndResume () {
   if (await until(() => js('document.getElementById("resume-card").style.display === "flex"'), 3000)) await tap('Escape')
   await until(async () => !await js('document.getElementById("resume-card").style.display === "flex"'), 3000)
   const after = await S()
-  if (after.first !== before.first) writeFileSync(join(ROOT, `wip/run-soak/resume-${run.seed}-day${before.day}.json`),
+  const sameRoster = await js('window.__poi().list().map(q => q.id).join()') === rosterBefore
+  if (after.first !== before.first || !sameRoster) writeFileSync(join(ROOT, `wip/run-soak/resume-${run.seed}-day${before.day}.json`),
     JSON.stringify({ record: JSON.parse(record), momBefore, after: await js(`({ mom: window.__poi().list().find(q => q.type === 'momsHouse')?.id,
       first: window.__board().firstState(), pois: window.__poi().list().map(q => q.id) })`) }))
-  check(after.day === before.day && Math.abs(after.money - before.money) < 0.005 && Math.abs(after.h - before.h) < 0.2 && after.first === before.first,
-    `the resume changed the run: ${JSON.stringify({ day: before.day, money: before.money, h: before.h, first: before.first })} → ${JSON.stringify({ day: after.day, money: after.money, h: after.h, first: after.first })}`)
+  check(after.day === before.day && Math.abs(after.money - before.money) < 0.005 && Math.abs(after.h - before.h) < 0.2 && after.first === before.first && sameRoster,
+    `the resume changed the run: ${JSON.stringify({ day: before.day, money: before.money, h: before.h, first: before.first })} → ${JSON.stringify({ day: after.day, money: after.money, h: after.h, first: after.first, sameRoster })}`)
 }
 
 // A 0.1 m drop, not the teleport's default 0.5: every seat with a fragile crate aboard was a half-metre fall
