@@ -119,9 +119,13 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
     FAIL 2 on main vs land-155). **B's BUG-147 request is IN: land/bug-147 @ dc41474e, affected 69/69 green**, held
     behind BUG-146; after 146 lands a fresh B agent merges main (A's 462fe00e touches 15 of 147's gates), sets
     MAX_IN_PAD 18, re-gates.
-  - Spare: BUG-146 — 69/69 green on 8935c63a; merged main as **32b0e8e8** and re-running the 14 gates main's diff
-    reaches (PIDs 70499/70500, 11/14 green at 22:00). Its landing request is its final report (or its page handoff).
-- **Landing queue**: Spare BUG-146 → B BUG-147 (re-gate as above) → B BUG-153 (+ 155 together if 155 clears the lip;
+  - Spare: FINISHED (report in). **BUG-146 MERGED to main as 44ae96fd**; its ONE gated smoke was RUNNING at the clear,
+    log /private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/b72f9429-bf9f-43b4-93f8-1bea70e5f27a/scratchpad/smoke-bug146-44ae96fd.log.
+    PASS → landed: fast-forward the lanes, `git worktree remove /Users/ledogen/CodeShit/CarGame-land-bug146 && git branch -d
+    land/bug-146`, close BUG-146, then spawn B's 147 re-gate agent (merge main, MAX_IN_PAD 20 → 18 per B's variant, re-gate).
+    FAIL → load-flake protocol (§ Landing). Spare is then idle on the FEAT-180 pick (it recommends legacy round 5, the
+    owner's own fallback) + bug133-look; find it owner-free work if any exists (§ never idle a lane).
+- **Landing queue**: B BUG-147 (re-gate as above, after 146's smoke) → B BUG-153 (+ 155 together if 155 clears the lip;
   shot sheet to you first) → B BUG-155 + 154 (the owner wants before/after photos + the steep-gore sheet; the 2.3 cm
   band residual decided in the request) → B FEAT-34 round 3 (feature/machine 1ed40292): Chrome shots for the owner's
   look first, not a landing.
