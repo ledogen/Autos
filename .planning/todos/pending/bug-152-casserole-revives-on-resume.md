@@ -46,7 +46,7 @@ The next resume changed it again. The replayed take/complete then miss mom's slo
   - a swallowed `_restoreRun` throw (0 console errors);
   - a second onRegionLive (the clock is kept);
   - stale network replies (the client checks instance + seed + epoch);
-  - pond discs (analytic).
+  - pond discs (analytic). WRONG — see Root cause 2: the discs were analytic but from the wrong world.
 - Bisect: a detached 968cd1a4 worktree is at `../CarGame-run-shape-val`. Its probe ran clean, but most of its
   teleports failed, so that result is weak. The soak still writes `wip/run-soak/resume-<seed>-day<N>.json` when a
   resume changes the first job.
@@ -216,6 +216,79 @@ stats. Its multi-resume mode can't reseat after the 2nd reload (the sim stays he
 - **Gates:** 17/17 affected gates green.
 - **Smoke:** 26/26 steps, zero console errors. The 'save' step's roster check held across the resume.
 - **Still open:** the acceptance's multi-seed soak (the soak's resume check over several seeds).
+
+## Root cause 2 (2026-11-09, Lane A): a build request carried the live seed beside the old world's ponds
+
+Fixes 1–4 closed the shifted-centre roster. The next soak still found an odd resume (seed 336086702, night 6: the
+food vendor gone, the camp re-sited, "board replay dropped 16 of 26 events"; night 7 normal). This one is a
+DIFFERENT mechanism: the road network itself differed, not just the siting.
+
+### How it was caught
+
+- A reload probe (`zz-probe-resume.mjs --reloads`: one new run, then save → reload → Continue, 40–80 times) dumps
+  everything `poiSystem.build` reads. It caught 1 odd session in 41, then 1 in 45 with scratch instrumentation in
+  the network Worker that logs every build it runs.
+- The odd network: 8 edges with the same endpoints routed up to 250 m apart, a different T layout (63 nodes, not
+  62), 166 runs, not 167. Not ULP noise: whole re-routes.
+- The Worker's log of that session shows the cause directly (`wip/run-soak/bug152-ODD-reload2-44.json`):
+  - the menu world (random seed 1707064627) built twice, then a third build at the menu truck's spot went stale
+    when Continue switched the seed;
+  - the story seed's Worker instance was then BORN from a request for that same spot, with seed 336086702 but
+    pond discs hashing equal to the menu world's 110 discs there;
+  - every later story build added its own discs to that instance (store 247 → 333 discs, against 137 → 223 in a
+    normal session).
+
+### The mechanism
+
+1. Story entry sets `worldSeed` at once, but `_rebuildFullNow` runs after the 150 ms debounce. In that gap the
+   menu world's road is still registered and keeps streaming at the menu truck's position.
+2. The network client's `_pump` read the seed LIVE (`this._getSeed()`) and the pond discs from whatever water was
+   on hand. A request queued for the menu road posted as "story seed + menu ponds".
+3. The Worker keys its instance by (client, epoch, seed, params), so that request created the story seed's
+   instance. Its pond store only grows (BUG-106), so the 110 phantom discs stayed for every later build: the spawn
+   builds and the 2800 m region warm all routed round ponds that are not in the story world.
+4. Route around phantom ponds → different routes → different T promotions → different pads → a different roster.
+   Rare because it needs the menu road to re-request in the debounce gap while a build is in flight.
+
+So it was the REQUEST, not the reply: the reply checks (instance + seed + epoch) were right. The pre-fix client
+also let the old road ADOPT a reply built for the new seed (its seed matched the live one).
+
+### The fix (b7867f4b)
+
+- `road-network-client.js` `_pump`: the request's seed is the entry's road's own `_worldSeed`, and the discs are
+  asked for THAT seed. If the water on hand is another world's, the entry is stale: its waiters get `false`, it is
+  never posted, and the road re-requests once the world is whole.
+- `main.js` `_pondDiscs(…, seed)` returns `null` when the water is not that seed's. The main-thread routers'
+  4-argument calls are unchanged.
+- In the debounce gap the menu road now posts menu-seed builds with menu ponds (coherent, and dropped on reply
+  because the live seed moved on). The story instance is born clean.
+
+### Proof
+
+- **Gate `network-client-world`** (new, fast, fake Worker): drives the reseed race and the road-swapped-before-
+  water gap. Pre-fix: 6 wrong (the live seed posted beside the old ponds, a stale reply adopted, the gap request
+  posted). Post-fix: PASS.
+- **Headless replay** (`zz-bug152-poison.mjs`, scratch): the odd session's logged requests replayed with
+  `buildNetworkSnapshot` give a run-key set EQUAL to the browser's odd network (166 runs). The same requests with
+  the stale one removed give 167 runs and the normal headless hash (a2136423).
+- Not the culprit (measured): centre (robust to 10 m), adopt/profile history, Worker warm history (deterministic
+  and random prior windows), async route arrival order, route-cache key collisions (0 multi-spec keys), pond order.
+
+### Second findings (not fixed)
+
+1. **The board cascade is real.** Budget slots `b${i}` each pick a uniformly random eligible giver from the sorted
+   giver list (`rngFor('budget:${seed}:${slot}:${k+1}:place')`), and offer ids are `${poiId}#b${i}#${k}`. So ANY
+   roster change re-places every budget offer and the replay drops most events (16 of 26 here). It is downstream of
+   a roster change, which the fixes remove, so it is noted, not fixed.
+2. **The region network is chaotic under ULP noise.** A 1-ulp `Math.pow` perturbation moves 26 runs by up to 2 m
+   and changes 6 pool pads. The roster survived it, but this is why any input leak at all re-sites POIs.
+3. **The browser's network differs from node's on 3 runs**, Y only, up to 0.5 m, the same in every session (one
+   is the food vendor's edge `g:0,2,2:0,3,2`). The headless gates' world is not the browser's at the decimetre
+   level on fragile runs. Probably a V8 version difference in a `Math.*` function. Worth its own ticket if a gate
+   ever needs browser-exact geometry.
+4. **Latent, never observed:** the Worker's nested route pool is shared by every instance, and a fresh instance's
+   route epoch restarts at the same value. A job left queued by a replaced instance (only after the 60 s warm
+   deadline) would be accepted by its successor. Instrumented: 0 cross-instance deliveries in ~50 sessions.
 
 ## Acceptance
 
