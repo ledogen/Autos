@@ -1,7 +1,7 @@
 ---
 id: BUG-146
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-08
 source: Lane B, BUG-144's remainder
@@ -82,3 +82,6 @@ circle (ringMaxR + shoulder + toe, the carve's bound) grows 29.4 → 32.3 m and 
 g:-1,0,1:0,0,2 29.9 m away, 12.4 m past the ring. The carved ground within 8 m of that portal is identical to the
 last 0.1 mm (`wip/bug-146/portal-ground.mjs`): a grown circle, not a cut headwall. This follows the 18 → 19 precedent
 (BUG-63).
+
+## Landed (orchestrator, 2026-11-09)
+Merged to main as 44ae96fd (land/bug-146 @ 32b0e8e8): affected gates 69/69 green, plus the 14 that main's diff reached 14/14 on the merged tree; landing smoke on main PASS 26/26, zero console errors. MAX_IN_PAD now 20; BUG-147 (lane B) lands next and sets it to 18 under its shared-bore-aware variant.
