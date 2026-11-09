@@ -294,6 +294,7 @@ export function carcassRadialOffset (corner, psi, runout) {
  *   - Gravity on hub = m_u * g * dot(body_up, world_up) = m_u * g * body_up.y (D-05)
  *   - Contact normal split: strut-axis component -> tireFz (hub ODE); X/Z residual -> _hubNormalXZ (D-06)
  *   - Bump and droop stops as linear penalty springs (D-08, D-09)
+ *   - The body moves under the mounts within the step, pushed by each substep's strut forces (BUG-140)
  *
  * Called once per outer physics step by physics.js BEFORE the per-wheel Pacejka contacts loop.
  * Mutates vehicleState.strutComp[i] and vehicleState.strutCompVel[i] in place.
@@ -313,10 +314,10 @@ export function carcassRadialOffset (corner, psi, runout) {
  *   Reads: wheelMass, suspensionStiffness{Front,Rear}, suspensionDamping{Front,Rear},
  *     suspensionRestLength{Front,Rear}, suspensionTravel{Front,Rear}, suspensionBodyOffset{Front,Rear},
  *     bumpStopStiffness, DROOP_STOP_STIFFNESS, arbStiffness{Front,Rear},
- *     tireStiffness, tireDamping, wheelRadius, trackFront, trackRear, wheelbase,
- *     weightFront, weightRear, cgHeight, _rotateVector (injected function),
- *     _hubNormalXZ[4] (initialized by main.js).
- *   Writes: _tireFz[4], _suspForceAccum[4], _hubNormalXZ[4].
+ *     tireStiffness, tireDamping, tireStopDampingRatio, wheelRadius, trackFront, trackRear, wheelbase,
+ *     weightFront, weightRear, cgHeight, mass, stowedKg, inertia{Pitch,Yaw,Roll}, _rotateVector (injected function),
+ *     _hubNormalXZ[4] (initialized by main.js), _bodyOther (physics.js, last step's non-strut force/torque).
+ *   Writes: _tireFz[4], _suspForceAccum[4], _hubNormalXZ[4], _bodyStrutF/_bodyStrutT (the body copy's step-mean strut push).
  * @param {number} dt - Outer physics step in seconds (== PHYSICS_DT from main.js).
  * @param {function} queryContacts - (cx, cy, cz, r, footprint, corner) → Array<{normal, depth, contactPoint}>.
  *   physics.js passes its qcPlus (analytic ground ∪ engine debris); gives the tire compression

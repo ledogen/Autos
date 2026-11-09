@@ -369,6 +369,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   tiresFolder.add(params, 'tireCarcassStiffness', 50000, 300000, 5000).name('Carcass / Rim Rate (N/m)')
   tiresFolder.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
   tiresFolder.add(params, 'tireDampingDebris', 50, 4000, 50).name('Rock Damping (N·s/m)')   // BUG-99: tire vs debris only
+  tiresFolder.add(params, 'tireStopDampingRatio', 0, 1.5, 0.05).name('On-Stop Tire Damping (ζ)')   // BUG-140: while a strut is on its bump stop
   // Out-of-round tire; 0 = perfectly round. No callback: vehicle-model.js refreshWheelRunout
   // re-bakes the tire MESH on the next frame, so the visible egg matches the contact radius the
   // physics is using.

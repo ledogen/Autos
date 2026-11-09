@@ -1,13 +1,13 @@
 ---
 id: BUG-140
 type: bug
-status: open
+status: built — landing requested (land/bug-140); owner's feel drive owed (shared with FEAT-193)
 severity: major
 opened: 2026-11-07
 source: owner, 2026-11-07 tracker inbox
 relates: FEAT-70 (tire contact), suspension.js bump stops, BUG-27 (body restitution)
 ---
-lane: B
+lane: B (built by Spare, land/bug-140, with FEAT-193)
 
 # BUG-140: a drop onto the wheels from 2 m or more rebounds too high
 
@@ -15,9 +15,11 @@ Owner, verbatim (2026-11-07 tracker inbox): "When the vehicle is dropped onto it
 
 ## Acceptance
 
-- [ ] Rebound height against drop height measured for 1, 2, 3, 5 m drops (fresh springs and dampers), and the energy returned per drop.
-- [ ] The cause named (bump stop, tire, damper saturation, or the solver), with the physics the owner can check.
-- [ ] Rebound falls with drop height the way a real truck's does; a gate pins it.
+- [x] Rebound height against drop height measured for 1, 2, 3, 5 m drops (fresh springs and dampers), and the energy returned per drop.
+- [x] The cause named (bump stop, tire, damper saturation, or the solver), with the physics the owner can check.
+- [x] Rebound no longer grows with drop height (7–10 % from 0.5 to 5 m, was 10 → 81 %); `test/drop-rebound.mjs` pins it.
+      It is flat rather than falling: past ζ ≈ 0.5 more stop damping buys nothing (see below).
+- [ ] The owner drives it (one feel drive with FEAT-193).
 
 ## Measured (Lane B, 2026-11-07) — reproduced, two causes, no fix built yet
 
@@ -63,3 +65,56 @@ damping before. i could see us hitting full bump stop driving over a rock prop. 
 jesus or starts flipping the truck again drop 2". So: build A (body moves within the frame) and 2 (stop-only tire
 damping), then drive the truck over live physics rock props headless. If 2 launches the rock or flips the truck,
 ship A alone and say so. Built by Spare with FEAT-193 (one fingerprint re-pin, one feel drive).
+
+## Built (Spare, 2026-11-09) — land/bug-140, A + 2
+
+**A — the body moves within the step** (`src/suspension.js` stepSuspensionSubsteps). Each of the 4 substeps now moves a
+copy of the body (the engine's mass and tuned inertia) by that substep's strut forces, gravity, and last step's other
+forces (tires, drag, sidewalls — `params._bodyOther`, written by physics.js after Step 3), and the next substep's mounts
+ride it, position and velocity. The engine still steps the body once on the same mean force; the copy only says where the
+mounts are inside the step. The debris look-ahead in qcPlus (BUG-99) drops its hub-closing·t term — the hub's in-step
+motion is now in the position each substep asks at, so it would count twice; the rock's own closing stays. Without the
+carried other forces the copy un-rolled a cornering truck inside every step (steady roll 4.89° vs main's 4.84° at
+0.58 g); with them steady cornering is identical to main and the braking dive moves 2.30° → 2.26°.
+
+**2 — the tire damped on the stop.** While a strut is past its travel, the tire's damper is raised to
+`params.tireStopDampingRatio` (0.5) of the body-on-tire critical 2·√(tireStiffness · the corner's sprung mass)
+≈ 11.7 kN·s/m, i.e. ≈ 5.8 kN·s/m instead of 1500, every contact by the same factor (a rock's 150 → ≈ 585), faded in over
+the stop's first 1 cm. Off the stop nothing changes. Debug slider: Vehicle → Tires → "On-Stop Tire Damping (ζ)" (0 = off).
+
+Drop table (`wip/bug-140/drop.mjs`, the settled truck dropped h m, flat ground, the game's contact; rebound share = the
+CG's peak rise above rest after first touch ÷ h):
+
+| drop | main 33f1a202 | A | A at 120 / 240 Hz | **A + 2** |
+|---|---|---|---|---|
+| 0.5 m | 9.6 % | 7.9 % | | **7.9 %** |
+| 1 m | 12.0 % | 7.7 % | 7.5 / 7.4 % | **7.1 %** |
+| 2 m | 26.7 % (tires off 0.50 s, tilts 10°) | 10.4 % | 10.3 / 10.1 % | **7.3 %** (0.20 s, 1.3°) |
+| 3 m | 40.0 % (0.78 s, 28°) | 13.5 % | 13.4 / 13.4 % | **8.7 %** (0.33 s, 2.6°) |
+| 5 m | 81.1 % (2.77 s, 89°) | 17.3 % | 18.7 / 18.7 % | **10.0 %** (0.52 s, 5.6°) |
+
+A converges: 60 Hz = 120 Hz = 240 Hz, so what is left after A is physics, not numerics (the ticket's main-at-240-Hz column
+was still pumping). The body no longer reaches the ground from 3 or 5 m. The on-stop ratio saturates: ζ 0.3 gives
+7.3 / 7.8 / 9.3 / 11.7 %, 0.5 the column above, 0.7 7.0 / 7.3 / 8.9 / 10.7 %, 1.0 7.0 / 7.5 / 9.5 / 11.9 % (1–5 m).
+
+**The owner's rock condition** — `test/census-rock-strike.mjs --nopop --scales=0.7,1,1.3,1.6,2` (new: `--stopzeta=`, an
+`on stop` column and a pitch column), the truck held at 10–50 mph into one resting rock, 3 offsets × 2 yaws × 5 sizes
+(14, 40, 88, 165, 322 kg) = 150 hits per variant, at the front-left wheel and (`--rear`) the driven rear-left:
+
+| | flips (up < 0) | roll > 30° | fastest rock | rock exit ÷ truck speed, max / p90 | hits on the stop |
+|---|---|---|---|---|---|
+| front, main | 14 | 27 | 27.0 m/s | 1.93 / 1.12 | 72 |
+| front, A | 15 | 30 | 25.3 m/s | 1.70 / 0.79 | 91 |
+| front, **A + 2** | **13** | 29 | **25.3 m/s** | 1.70 / 0.83 | 91 |
+| rear, main | 18 | 23 | 34.8 m/s | 1.91 / 1.01 | 62 |
+| rear, A | 16 | 25 | 27.8 m/s | 2.20 / 0.97 | 74 |
+| rear, **A + 2** | **14** | 23 | **27.8 m/s** | 2.20 / 0.98 | 74 |
+
+2 does not spit rocks out faster (the fastest rock is A's to the decimal, and both are slower than main's) and does not
+flip the truck more (13 / 14 flips against A's 15 / 16 and main's 14 / 18). Every flip in every variant is on the 88 kg
+rock or bigger; the 14 and 40 kg rocks (the throwable rock is 40 kg) flip nothing. With punctures on and the default sizes
+(0.7 / 1 / 1.3), A + 2 = A within one hit. **So 2 ships with A.**
+
+Physics fingerprint (`test/fingerprint-physics.mjs`): DIFFERS from the first checkpoint (step 100), both runs — expected,
+the in-step body changes even the settle. New digests round `567e305f509a40e2`, out-of-round `94219701950ed351` (main
+`fbf76dff2c1b6afb` / `3184433810d4d588`), one re-pin for this landing with FEAT-193.
