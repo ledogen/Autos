@@ -15,7 +15,8 @@
  *
  * FOG IS THE SKY. The background shader and the fog are the SAME GLSL function (skyHaze) reading the same
  * texture: a fogged fragment fades to the sky radiance in the direction you look through it, and below the
- * horizon the sky is its own lowest row (2° up, see HORIZON_Y) continued down. So the fog cannot be brighter than the sky at
+ * horizon the sky is its own lowest row (2° up, see HORIZON_Y) continued down — at twilight darkening over the first 10°
+ * toward the land's own level (THE LAND BEYOND, in skyHaze). So the fog cannot be brighter than the sky at
  * dawn, and there is no colour step at the horizon, by construction rather than by tuning — there is no
  * second colour to drift. The same holds toward the sun: distant land glows with the sun's glare.
  *
@@ -26,7 +27,8 @@
  * belongs beyond that radius with the haze term only — see skyFog.x/y.
  *
  * TWO CURVES (round 2, owner 11-08: "the legacy looks like you put the same pic through lightroom"). The sky and
- * the fog keep their own hue-true grade (skyGrade, linear to 0.76): a sunset stays orange. The land — every lit
+ * the fog keep their own grade (skyGrade, linear to 0.76, then a per-channel shoulder): no toe, so the sky keeps
+ * its colour into the dark, and a sunset's rim stays orange while its core goes yellow-white. The land — every lit
  * surface — goes through three's ACES filmic curve at the legacy exposure, the look every asset was authored
  * under: its toe crushes the shadows and lifts the colour of the lit subjects, and the headlights, the campfire
  * and every emissive read exactly as they were tuned (they are authored in render units against that curve).
@@ -123,6 +125,8 @@ export const SKY_PARAMS = {
   skyCast: 0.5,       // how much of the light's colour cast the sky keeps that the white balance takes out (0–1)
   duskSat: 0.3,       // the twilight grade: extra sky saturation from the sun 14° up to the end of twilight…
   dusk: 1.3,          // …and the strength of its teal split tone on the sky that is not the warm glow (0 = as simulated)
+  beyond: 1.5,        // twilight: the fog below the horizon (the land past the draw distance) is no brighter than this ×
+                      // flat ground. 1.5 leaves noon's as the sky (flat ground reads 0.65 of the horizon there)
   moonAdapt: 0.15,    // how much of the moon's light the eye adapts away (1 = all of it: full and new moon look alike)
   landDepth: 1.62,    // the land's eye (landEye): how far under noon the land reads at the darkest, in decades
   landTwilight: 2.0,  // …and how fast it gets there (e-folding, decades of light). Smaller = darker golden hour and dusk
@@ -154,10 +158,10 @@ const BETA_M = 3.996e-3                          // Mie scattering at sea level,
 const MIE_EXT = BETA_M / 0.9                     // Mie extinction (single-scatter albedo 0.9)
 const BETA_O = [0.650e-3, 1.881e-3, 0.085e-3]   // ozone absorption at its layer's peak, /km — keeps twilight blue
 const H_R = 8, H_M = 1.2                         // scale heights
-// The aerosol lobe (the sharp glare is analytic, per pixel). Round 3: 0.76 → 0.85, desert dust's forward peak — at sunset it
-// gathers the glow round the sun and leaves the horizon away from it darker, where 0.76 lit the whole horizon band khaki.
-// (More evening haze did the same to the sky but halved the sunlit land's key light at 20:00.)
-const MIE_G = 0.85
+// The aerosol lobe (the sharp glare is analytic, per pixel). Hillaire's 0.76. (Round 3 tried 0.85 to gather the sunset
+// glow round the sun: it drew a hard-edged orange ball instead. The land's key light does not depend on it: 3.10 vs 3.11
+// key:fill at 20:00. More evening haze, the other way to a bigger glow, halved that key light.)
+const MIE_G = 0.76
 const ozone = (h) => Math.max(0, 1 - Math.abs(h - 25) / 15)   // tent, 10–40 km
 // Moonlight in sun units: full moon ≈ 0.25 lux against the sun's ≈ 127 klx above the air, and slightly red.
 const MOON_E = 2.0e-6, MOON_RGB = [1.0, 0.95, 0.88]
@@ -430,18 +434,21 @@ const GROUND_ALBEDO = [0.20, 0.18, 0.15]
 
 // ── The shared shader side ──────────────────────────────────────────────────────────────────────────
 // The SKY's tone curve (the background and the fog it lends the land): Khronos PBR Neutral's shoulder WITHOUT its
-// toe. Linear (so hue-true: a sunset stays orange instead of ACES's slide to yellow) up to 0.76, then a soft
-// roll-off that only greys a channel as it saturates. The land uses ACES (see TWO CURVES above).
+// toe, linear up to 0.76. Round 3: the shoulder is PER CHANNEL, as film's (and the legacy's ACES) is, then greyed by
+// how far the brightest channel is over. Hue-true scaling (round 2) kept the sunset glow a saturated orange ball up
+// to its edge, and at noon the horizon's blue, the only channel over, pulled red and green down with it: the
+// murky noon fog (horizon 3° 174,209,245 → 200,234,245; the legacy's is 209,233,247). Now a glow's core goes
+// yellow-white and its rim stays orange. The land uses ACES (see TWO CURVES above).
+// min(): below 0.76 the shoulder term is ≥ c, so each channel only rolls off once it is over.
 const GRADE_GLSL = /* glsl */`
 #ifndef SKY_GRADE
 #define SKY_GRADE
 vec3 skyGrade (vec3 c) {
   float peak = max(c.r, max(c.g, c.b));
   if (peak <= 0.76) return c;
-  float d = 0.24;
-  float np = 1.0 - d * d / (peak + d - 0.76);
-  c *= np / peak;
-  return mix(c, vec3(np), 1.0 - 1.0 / (0.1 * (peak - np) + 1.0));
+  float np = 1.0 - 0.0576 / (peak - 0.52);
+  vec3 s = min(c, 1.0 - 0.0576 / max(c - 0.52, 0.24));
+  return mix(s, vec3(np), 1.0 - 1.0 / (0.3 * (peak - np) + 1.0));
 }
 #endif
 `
@@ -452,7 +459,7 @@ const HAZE_GLSL = /* glsl */`
 uniform sampler2D skyLut;
 uniform vec4 skySun;     // xyz: the sun's direction; w: glare sharpness g
 uniform vec4 skyGlare;   // rgb: glare radiance (pre-exposed); w: 1 while the world scene renders
-uniform vec4 skyFog;     // x, y: the world-edge fog's start and full radius (m, horizontal)
+uniform vec4 skyFog;     // x, y: the world-edge fog's start and full radius (m, horizontal); z, w: the land beyond (see _apply)
 #ifndef SKY_HAZE
 #define SKY_HAZE
 vec3 skyHaze (vec3 d) {
@@ -469,7 +476,15 @@ vec3 skyHaze (vec3 d) {
   }
   vec2 uv = vec2(az * 0.15915494, sqrt(clamp(d.y, 0.0, 1.0)));
   float g = skySun.w, k = 1.0 + g * g - 2.0 * g * dot(d, skySun.xyz);
-  return texture2D(skyLut, uv).rgb + skyGlare.rgb * (1.0 - g * g) / (k * sqrt(k));
+  vec3 c = texture2D(skyLut, uv).rgb + skyGlare.rgb * (1.0 - g * g) / (k * sqrt(k));
+  if (d.y < 0.0) {
+    // THE LAND BEYOND (round 3): past the draw distance is more land, seen through the air. At twilight it is darker
+    // than the sky, so below the horizon the fog darkens to no brighter than skyFog.z (luminance) over the first 10°,
+    // by skyFog.w (the twilight's weight). It is still the one function the fog uses, so the edge stays hidden.
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c *= 1.0 + (min(1.0, skyFog.z / max(l, 1e-6)) - 1.0) * skyFog.w * smoothstep(0.0, 0.17365, -d.y);
+  }
+  return c;
 }
 #endif
 `
@@ -789,6 +804,13 @@ export class SkySystem {
     for (let i = 0; i < LUT_W; i++) nh += lum(st.lutN[i * 3], st.lutN[i * 3 + 1], st.lutN[i * 3 + 2])
     const zn = p.nightFog * acesGrey(flat * this.renderer.toneMappingExposure / 0.6) / Math.max(nh / LUT_W * p.skyGain * X, 1e-12)
     const nightScale = zn + (1 - zn) * smooth(DARK_EL, DARK_EL + 3 * D2R, st.sun.el)
+    // THE LAND BEYOND (round 3, owner 11-09: "the rebuild really blows out the sky with fogginess and scatter at dawn and
+    // dusk … i can also see the sun and the horizon more clearly [in the legacy]"). Below the horizon the fog was the
+    // horizon row continued down: half the sunset glow hung under the horizon as an orange ball, and a khaki fog filled
+    // the lower half of the view. Past the draw distance is more land; at twilight it is darker than the sky. So below
+    // the horizon the fog is held to beyond × flat ground (same units as the LUT: displayed linear), over the twilight.
+    U.skyFog.value.z = p.beyond * acesGrey(flat * this.renderer.toneMappingExposure / 0.6)
+    U.skyFog.value.w = tw
 
     // The LUT: radiance × sky gain × adaptation × exposure, as half floats.
     const L = st.lut, N = st.lutN, t3 = [0, 0, 0], g0 = p.skyGain, gN = p.skyGain * nightScale
@@ -904,6 +926,7 @@ export class SkySystem {
     a.add(SKY_PARAMS, 'skyCast', 0, 1, 0.05).name('sky keeps light cast').onChange(re)
     a.add(SKY_PARAMS, 'duskSat', 0, 2, 0.05).name('twilight: + saturation').onChange(re)
     a.add(SKY_PARAMS, 'dusk', 0, 1.5, 0.05).name('twilight: teal').onChange(re)
+    a.add(SKY_PARAMS, 'beyond', 0, 3, 0.05).name('twilight: land beyond ÷ flat').onChange(re)
     a.add(SKY_PARAMS, 'glare', 0, 3e-3, 1e-5).name('sun glare').onChange(re)
     a.add(SKY_PARAMS, 'glareG', 0.8, 0.99, 0.001).name('glare sharpness').onChange(re)
     a.add(SKY_PARAMS, 'sunSize', 0.27, 3, 0.01).name('sun radius (deg)').onChange(re)
