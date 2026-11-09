@@ -9,7 +9,8 @@
 //
 // `--nopop` runs the same hits with punctures disabled (rim peaks still recorded, for offline
 //   thresholding), to tell an IMPACT flip from a FLAT-TIRE flip.
-// `--big` the dense grid (≈3000 hits, ~45 s). `--damp=<N·s/m>` overrides params.tireDampingDebris.
+// `--big` the dense grid (≈3000 hits, ~45 s). `--damp=<N·s/m>` overrides params.tireDampingDebris,
+//   `--stopzeta=<ζ>` params.tireStopDampingRatio (BUG-140's on-stop tire damping; 0 = off).
 // `--rear` puts the rock just ahead of the rear-left tire — a DRIVEN wheel (the Ranger is RWD), so
 //   climbing is tested where there is torque to climb with (FEAT-158).
 // `on stop` counts the hits that ran a strut onto its bump stop (BUG-140). `--json=<path>` dumps every run. `--rows` prints them. `--trace=<mph>,<lat>,<scale>,<yaw>` prints
@@ -33,6 +34,7 @@ const args = process.argv.slice(2)
 const NOPOP = args.includes('--nopop')
 const TRACE = args.find(a => a.startsWith('--trace='))?.slice(8).split(',').map(Number)
 const DAMP = +(args.find(a => a.startsWith('--damp='))?.slice(7) ?? 0)   // N·s/m — params.tireDampingDebris override
+const STOPZ = args.find(a => a.startsWith('--stopzeta='))?.slice(11)      // BUG-140: params.tireStopDampingRatio override (0 = off)
 const JSON_OUT = args.find(a => a.startsWith('--json='))?.slice(7)        // dump every run's row
 const BIG = args.includes('--big')                                         // the dense grid (≈3000 hits)
 const SPEEDS_ARG = args.find(a => a.startsWith('--speeds='))?.slice(9).split(',').map(Number)   // override the speed list
@@ -73,6 +75,7 @@ async function drive (mph, lat, scale, yaw, trace = false) {
   const speed = mph * 0.44704
   const P = structuredClone(RANGER_PARAMS)
   if (DAMP) P.tireDampingDebris = DAMP
+  if (STOPZ !== undefined) P.tireStopDampingRatio = +STOPZ
   P._tireFz = [0, 0, 0, 0]; P._suspForceAccum = [0, 0, 0, 0]
   P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
   const engine = await createPhysicsEngine()

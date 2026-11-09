@@ -29,6 +29,7 @@ export const GROUP_TERRAIN = 1n << 0n   // streamed heightfield tiles + lab grou
 export const GROUP_CHASSIS = 1n << 1n   // the vehicle body
 export const GROUP_DEBRIS  = 1n << 2n   // dynamic props (barrels, rocks)
 export const GROUP_STATIC  = 1n << 3n   // static props / POI solids
+export const GROUP_ROAD    = 1n << 4n   // the road deck: ribbon tiles, pads, bores (FEAT-193: the body grips it at its own μ)
 export const GROUP_ALL     = 0xffffffffffffffffn
 
 /** Category bits as a 32-bit number. Every real group is a single low bit and GROUP_ALL is all
@@ -394,6 +395,12 @@ export class PhysicsEngine {
   /** addMesh for ground: the terrain's collision group, like a heightfield (BUG-81 item 4's bore lid). */
   addTerrainMesh (handle, positions, indices, material = {}) {
     return this.addMesh(handle, positions, indices, { group: GROUP_TERRAIN, ...material })
+  }
+
+  /** The road deck's triangles (terrain-physics.js RoadPhysics), in GROUP_ROAD — so the chassis'
+   *  flank hulls can grip asphalt and dirt at different μ (FEAT-193). */
+  addRoadMesh (handle, positions, indices, material = {}) {
+    return this.addMesh(handle, positions, indices, { group: GROUP_ROAD, ...material })
   }
 
   /**

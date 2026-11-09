@@ -142,6 +142,7 @@ export const WHEEL_SOFT_BAND = 0.15
 export const SUSPENSION_SUBSTEPS = 4
 
 export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire damper by one static deflection of depth (see stepSuspensionSubsteps)
+const TIRE_STOP_RAMP = 0.01            // m — BUG-140: the on-stop tire damping fades in over this much bump-stop overshoot
 
 /**
  * THE tire contact law — the normal force [N] one contact of depth `depth` [m] produces, for a
@@ -524,11 +525,27 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       // as it should be without the explicit hub step blowing up.
       const nC = hubContacts.length
       let tireFzExplicit = 0, cTire = 0
+      // BUG-140 (owner pick 2, 2026-11-08): ON ITS BUMP STOP the strut is all but rigid, so this corner
+      // of the body (~340 kg) rides the tire's air spring with only the carcass damper — tuned as
+      // ζ ≈ 0.56 for the 18 kg wheel, which for the body is ζ ≈ 0.13 (critical 2·√(k·m) ≈ 11.7 kN·s/m),
+      // and a hard drop's rebound grew with its height. On the stop the tire's damper is raised to
+      // tireStopDampingRatio of the body-on-tire critical (0.5 ⇒ ≈ 5.8 kN·s/m), every contact by the
+      // same factor (a rock keeps its own lower rate's proportion); off the stop the road ride's
+      // tireDamping is untouched. Faded in over the stop's first TIRE_STOP_RAMP of overshoot.
+      const travel = isFront ? (params.suspensionTravelFront || 0.12) : (params.suspensionTravelRear || 0.14)
+      const onStop = Math.min(1, Math.max(0, (strutCompI - travel) / TIRE_STOP_RAMP))
+      let stopMult = 1
+      if (onStop > 0) {
+        const mCorner = params.mass * (isFront ? params.weightFront : params.weightRear) / 2
+        const cStop = (params.tireStopDampingRatio ?? 0) * 2 * Math.sqrt(params.tireStiffness * mCorner)
+        stopMult = 1 + onStop * Math.max(0, cStop / params.tireDamping - 1)
+      }
       for (let ci = 0; ci < nC; ci++) {
         const c = hubContacts[ci]
         // SM-3 flat tire: params._tireRateScale[i] collapses the air spring when the air is gone.
         const rate = params._tireRateScale ? params._tireRateScale[i] : 1
         const t = tireContactTerms(c.depth, c.sizeR, rate, params)
+        t.damp *= stopMult
         // bodyUpDot = dot(c.normal, body_up): the fraction of this contact's force along the strut axis (D-06)
         const bUp = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z
         // compressionVel: positive = hub approaching the surface = tire compressing.
@@ -578,7 +595,6 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       }
 
       // Phase 4.1 D-08/D-09: bump and droop stops. The droop stop is a linear penalty spring.
-      const travel        = isFront ? (params.suspensionTravelFront || 0.12) : (params.suspensionTravelRear || 0.14)
       const DROOP_K       = params.DROOP_STOP_STIFFNESS || 20000
       // BUMP STOP (2026-10-03, owner capture 1791092005752). Three things changed at once:
       //   · PROGRESSIVE: real stop rubber stiffens as it packs — rate × (1 + (x/x0)²), x0 =
