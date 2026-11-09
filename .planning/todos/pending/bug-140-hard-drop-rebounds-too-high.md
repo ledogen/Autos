@@ -1,7 +1,7 @@
 ---
 id: BUG-140
 type: bug
-status: built — landing requested (land/bug-140); owner's feel drive owed (shared with FEAT-193)
+status: landed 51a932bf (smoke 26/26 on re-run) — open only for the owner's feel drive (shared with FEAT-193)
 severity: major
 opened: 2026-11-07
 source: owner, 2026-11-07 tracker inbox

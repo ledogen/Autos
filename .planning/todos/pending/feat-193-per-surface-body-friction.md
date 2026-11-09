@@ -1,7 +1,7 @@
 ---
 id: FEAT-193
 type: feature
-status: built — landing requested (land/bug-140, with BUG-140); owner's feel drive owed
+status: landed 51a932bf with BUG-140 — open only for the owner's feel drive + the scope call
 severity: minor
 opened: 2026-11-09
 source: owner, 2026-11-08 tracker owed side-slide-lever — "can i have body grip on all offroad surfaces bumped to 1.0 mu. onroad leave 0.5 mu. simplified dig in"
