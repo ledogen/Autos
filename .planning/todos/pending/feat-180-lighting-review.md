@@ -218,3 +218,57 @@ Owner 2 and 8: today's night is the new moon, and the full moon is "bright enoug
 
 - **Owner questions** (review round 2, 5 and 6): is the full-moon brightness right, and should the cycle be the real
   month or 12 days, so that every run sees both a full and a new moon?
+
+## Round 3 review: both builds (owner, 2026-11-08 ~21:30 local, verbatim)
+
+Two builds are now under review side by side: Spare's tweaks to the current lighting (`land/feat180-next`
+0be79cae, :3887) and the Opus ground-up rebuild (`proto/lighting-redesign` 44d284d2, :3890, handoff
+`.planning/handoffs/HANDOFF-2026-11-08-lighting-redesign.md`). Owner: "im gonna give notes for both and see which
+converges first." Both lanes get their notes after the owner clears them.
+
+**Legacy (Spare, :3887):** "fog at noon is way too white and bright. it should have some blue to match the sky. the
+sky is also way too white esp near horizon and around the sun. this should be a summer day blues skies. love the
+sun sprite but its a little pixellated due to the bake. sunrise is pretty great. fog is a little smoggy brownish and
+it does a bad job of hdiding the world edge when terrain is backlit. sunset pretty samey to sunrise. i feel like we
+dont capture the blue of mornings and orange of nights well. i love the brightness of full moon and new moon. i like
+how challenging the  visibility at nighttime is."
+
+**Rebuild (:3890):** "impressive first pass i dont hate it at all. fog looks like it appears far away but very
+suddenly it hides the edge of the world much better. i might prefer if it fades in a little closer to the player.
+the color is nice. it could maybe be a teensy bit bluer but not bothered by it. the colors of terrain and esp the
+truck look a little washed out compared to before. the shadows are also a lot brighter. overall there is less
+contrast. i would say as far as subjects the rebuild looks like a raw photo and the legacy looks like you put the
+same pic through lightroom. i prefer the stylized more contrasty image of the legacy see if we can push the rebuild
+in that direction. crush the shadows and pump the saturation a little i suspect it has to do with the "eye
+adaptation" sunrise and sunset skybox colors are epic. the desaturated subject look remains. nighttime: the stars
+are epic. there is practically no difference between new moon and full moon apparent brightness probably from the
+eye autoexposure. gotta fix that. also the headlights are way overpowered now probably from the same autoexposure.
+i can see like an entire mountain if the lights are shining. gotta fix that too."
+
+Cross-reference the legacy build when tuning the rebuild: the owner's night (moon brightness, how hard it is to see at
+night) and its contrast are the legacy's. The rebuild's sunrise and sunset sky, its stars and its fog colour are the
+keepers.
+
+## Round 5 / rebuild round 3 notes (owner, 2026-11-08 late, verbatim)
+
+Spare's round 4 (`land/feat180-next` ac736514, :3887) against the rebuild's round 2 (`proto/lighting-redesign`
+9fc6900d, :3890):
+
+"i want to like the new system because it feels more flexible. its still inferior in a few ways
+first of all i think the night darkness fix may have killed a little detail in the stars. i can still see them but
+it feels like i can only see the bright ones.
+the new system has murkier fog at noon which makes look a little duller. try to match the color of the legacy
+current state.
+i much prefer the blues and greens in the sky during sunrise and sunset in the legacy sky. i can also see the sun and
+the horizon more clearly. the rebuild really blows out the sky with fogginess and scatter at dawn and dusk. if we
+cant get that i might just want to improve legacy night sky with the improved scatter and stars and then the
+orbital motions.
+rebuild fog hides the terrain edge much much better. it sacrifices some clarity to do so but i like that its honest
+about how far we actually draw.
+keep trying to converge both towards excellence. legacy - hide terrain edge better, build stars and nighttime
+scatter and the orbital motions
+rebuild - work on less fog glare at dawn and dusk. slightly lighter fog at noon. better sky colors. bring back the
+stars dynamic range"
+
+The owner's fallback if the rebuild can't match the legacy's twilight: the legacy plus the rebuild's night scatter,
+stars and orbital motions.
