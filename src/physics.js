@@ -694,8 +694,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // its contact is followed THROUGH the step instead of read at its start:
   //   · LOOK-AHEAD: the query sphere is grown by one step of the hub's travel, so a rock the wheel
   //     will reach during this step is seen now, at its true (negative) gap.
-  //   · The overlap at substep time t is gap + u·t + (the proxy's yield)·n, where u is the hub's
-  //     closing speed on the rock's normal relative to the rock's own motion. The contact starts
+  //   · The overlap at substep time t is gap + u·t + (the proxy's yield)·n, where gap is measured
+  //     at the substep's hub — which rides the body's in-step motion and its strut (BUG-140) — and
+  //     u is the rock's own closing speed on the normal. The contact starts
   //     at the instant the surfaces meet — continuous collision detection for the soft tire.
   //   · Every substep's tire force on the body (c.onForce, from the suspension's own contact pass)
   //     accelerates the proxy at once, and the summed impulse goes to the engine once, before it
@@ -707,7 +708,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   //     is free, and the ground still takes its share through the engine. No speed rule decides.
   // Each push goes to the engine at its own contact point, so the rock's real spin matches the
   // proxy's. Small-angle within the step (a step turns a rock a few degrees). The hub's look-ahead uses the
-  // chassis' rigid motion; its strut motion is already in the hub position each substep asks at.
+  // chassis' rigid motion at the step's start; its in-step motion (strut and body) is in the hub position each substep asks at.
   // (Revives the 2026-08-15 proxy, c03a727, reverted on feel before the hard cores existed; that
   // one read the start-of-step overlap and held "resting" rocks with a speed rule.)
   const proxies = new Map()           // body → proxy, this step only
@@ -761,7 +762,10 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // The body's velocity at the contact: the engine's, plus what this step's pushes have added
       // there (spin included — a push high on a rock mostly turns it).
       const sv = engine.getPointVelocity(h.body, h.contactPoint, { x: 0, y: 0, z: 0 })
-      const u = -((hvx - sv.x) * h.normal.x + (hvy - sv.y) * h.normal.y + (hvz - sv.z) * h.normal.z)
+      // The rock's own closing on the hub along n. The hub's side of the closing is in (cx, cy, cz)
+      // already: the suspension asks at a hub that rides the body's in-step motion (BUG-140), so
+      // adding the hub's rigid velocity·t here as well would count it twice.
+      const u = sv.x * h.normal.x + sv.y * h.normal.y + sv.z * h.normal.z
       // gap + closing·t + the contact point's yield · n (negative while it separates along −n)
       const yx = p.D.x + p.Th.y * rz - p.Th.z * ry, yy = p.D.y + p.Th.z * rx - p.Th.x * rz, yz = p.D.z + p.Th.x * ry - p.Th.y * rx
       h.depth = h.depth - ahead + u * t + (yx * h.normal.x + yy * h.normal.y + yz * h.normal.z)
@@ -1395,6 +1399,14 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const jt = vehicleState.jackTorque   // FEAT-138: the hi-lift's roll heave (src/hilift.js), null when idle
   if (jt) { totalTorque.x += jt.x; totalTorque.y += jt.y; totalTorque.z += jt.z }
   engine.applyTorque(chassis, totalTorque)
+  // BUG-140: everything this step pushed on the body besides the struts — tires, sidewalls, drag, the
+  // jack — which next step's in-step body copy (suspension.js) carries as a constant. Without it the
+  // copy un-rolls a cornering truck inside every step (the tires' roll torque missing, the struts'
+  // present) and the dampers read that as the outside corner extending.
+  const bo = params._bodyOther || (params._bodyOther = { fx: 0, fy: 0, fz: 0, tx: 0, ty: 0, tz: 0 })
+  const sf = params._bodyStrutF, st = params._bodyStrutT
+  bo.fx = totalForce.x - sf.x; bo.fy = totalForce.y - sf.y; bo.fz = totalForce.z - sf.z
+  bo.tx = totalTorque.x - st.x; bo.ty = totalTorque.y - st.y; bo.tz = totalTorque.z - st.z
   // 8 substeps (not the engine-default 4): the chassis carries the TUNED inertia, whose x-axis
   // value sits ~3× below the hull-natural tensor, and the soft-step solver converts some of a
   // flat bare-frame slam into rocking rebound when under-substepped. 8 halves that phantom
