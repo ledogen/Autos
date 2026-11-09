@@ -1,7 +1,7 @@
 ---
 id: BUG-140
 type: bug
-status: landed 51a932bf (smoke 26/26 on re-run) — open only for the owner's feel drive (shared with FEAT-193)
+status: landed 51a932bf (smoke: edge flaked once then passed alone ×2 and in the re-run; the re-run's only miss is the pre-existing pad pick, BUG-157) — open only for the owner's feel drive (shared with FEAT-193)
 severity: major
 opened: 2026-11-07
 source: owner, 2026-11-07 tracker inbox
