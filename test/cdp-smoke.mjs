@@ -1592,9 +1592,11 @@ const STEPS = [
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
     // Not a shop (SHOP_TYPES: its brake opens the shop screen; the jobs are a button in it, FEAT-104) nor Larry's (the paper route):
     // the flake that hit A, Spare and B was a random world whose busiest giver was a shop. Nor a giver with pump zones:
-    // parked there the brake opens the pump (world 1505891932, prompt "to use the pump").
+    // parked there the brake opens the pump (world 1505891932, prompt "to use the pump"). Nor a haul giver (BUG-157):
+    // its offers open with the BED over its drop zone (FEAT-88, main.js _inPoiSpot), which PAD_SEAT does not seat
+    // (world 3397198020: the firewood yard, seated 5.5 m off its marker, answered nothing).
     const giver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
-      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !${JSON.stringify(['larrysHouse', ...SHOP_TYPES])}.includes(q.type) && !q.pumpZones?.length).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
+      return m._getPois().filter(q => !q.hidden && b.status(q.id)?.source && !${JSON.stringify(['larrysHouse', ...SHOP_TYPES])}.includes(q.type) && !q.pumpZones?.length && !q.drop).map(q => ({ id: q.id, x: q.x, z: q.z, n: b.view(q.id, 0)?.count ?? 0 })).sort((a, b) => b.n - a.n)[0] })()`)
     // The paging needs two offers; the rest of the step needs one. A random world can have no plain giver with two at
     // this point (2927182058/K, 11-08: the busiest had one, on main before and after that day's merges) — page there
     // only when it can, and say so when it can't.
@@ -1630,7 +1632,7 @@ const STEPS = [
       const v = __vs, q = window.__map2d()._getPois().find(p => p.id === ${JSON.stringify(giver.id)}), m = window.__mission()
       return { parked: v.parked, hb: v.handbrake, v: +v.velocity.length().toFixed(2), m: m.state, onJob: m.isOnJob(),
         offers: window.__map2d()._getBoard().view(q.id, 0)?.count ?? 0, d: +Math.hypot(q.x - v.position.x, q.z - v.position.z).toFixed(1),
-        prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), hudMenu: document.body.classList.contains('hud-menu-on'),
+        prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), promptShown: document.getElementById('poi-prompt')?.style.display === 'block', hudMenu: document.body.classList.contains('hud-menu-on'),
         open: [...document.querySelectorAll('.open, [style*="display: block"], [style*="display: flex"]')].map(e => e.id).filter(Boolean).slice(0, 8) }
     })())`))
     // Take it (A on accept), then put it down through the B menu: the abandon entry, armed, confirmed, and its result card.
