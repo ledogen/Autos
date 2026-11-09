@@ -799,8 +799,10 @@ async function resolveSpawn (wseed, params) {
 // FEAT-43: the rebuild is AWAITABLE. Story-mode entry must not capture its region center (or start
 // the routing warm) until the new seed's world exists and the truck has been re-seated at its spawn
 // — otherwise the region would center on the OLD position. Callers that don't care ignore the
-// returned promise. Coalesced: every call inside one debounce window gets the SAME promise, settled
-// once the body finishes OR throws (a rejection here would only strand the caller; the body logs).
+// returned promise. Coalesced: every call inside one debounce window gets the SAME promise. It
+// RESOLVES true once the body finishes, or false when it throws — never rejects, which would strand
+// the callers that ignore it. BUG-152: story entry reads the false; a failure used to be a bare warn,
+// and the region then centred on a truck that was never re-seated.
 let _rebuildDebounceTimer = null
 let _reseedRequestedAt = null   // PERF-27: applyWorldSeed → rebuild-body start (debounce + scheduling)
 let _rebuildPending = null   // { promise, resolve } for the currently-debounced rebuild
@@ -813,8 +815,8 @@ function debouncedRebuildFull () {
   const pending = _rebuildPending
   _rebuildDebounceTimer = setTimeout(() => {
     void _rebuildFullNow()
-      .catch(e => console.warn('[main] full rebuild failed', e))
-      .finally(() => { if (_rebuildPending === pending) _rebuildPending = null; pending.resolve() })
+      .then(() => true, e => { console.error('[main] full rebuild failed', e); return false })
+      .then(ok => { if (_rebuildPending === pending) _rebuildPending = null; pending.resolve(ok) })
   }, 150)
   return pending.promise
 }
@@ -1587,6 +1589,12 @@ async function _startFromSetup () {
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
 // discards it, and the warning beside story's start button says so.
 document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
+// FEAT-184 (owner, 2026-11-08: "split the tutorial into its own menu option … so I can go and voluntarily test it"):
+// a run that plays the opening on purpose, outside the career (_tutorialRun). Its world is `?seed=` when the URL pins
+// one (the harnesses), else random like every world the player did not pick. A fixed tutorial seed waits for the plan.
+document.getElementById('mm-tutorial')?.addEventListener('click', () => {
+  void _startStory(_resolveSeed(_urlSeed), _world(), _settings.gearbox, null, 0, null, true)
+})
 /** The main menu's continue button stands only while a run is saved, and so does the warning beside the
  *  new-game page's start (story mode only). Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
  *  buttons above: it shows with the menu, and an early click waits in _startStory's `await _worldReady`. */
@@ -4369,6 +4377,10 @@ const OPENING_START = { day: 0, hour: 19.5 }   // FEAT-170: the firing's clock
 // aim point's height over the pad (m).
 const FIRING_CAM = { radius: 16, swing: 0.35, rate: 0.05, lift: 2 }
 let _openingRun = false   // onRegionLive → go-live: this new run plays the opening
+// FEAT-184 (owner, 2026-11-08): this run came from the main menu's "tutorial". It plays the opening whatever the tutorial
+// flag says (_playOpening), and it never touches the career save: no clear at its start, no autosave, no save & exit,
+// and its ending deletes nothing (_startStory, _autosave, _syncPauseSave, _discardRunSave).
+let _tutorialRun = false
 let _firingCam = null     // { p, theta0, t } while the firing's cards are up
 let _eveningGuide         // undefined = not planned yet: the evening's way home, planned once (not saved)
 const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
@@ -4619,7 +4631,7 @@ function _playOpening () {
   _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null
   // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (Larry's, 7 am, the casserole delivered),
   // no tutorial cards (Larry's welcome still plays): the firing counts as played and the skip runs at once.
-  if (_settings.skipTutorial) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
+  if (_settings.skipTutorial && !_tutorialRun) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
   _planEvePump()   // FEAT-184 stage 3
@@ -8297,6 +8309,7 @@ function _showPauseMenu () {
 function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !_paperScenario) {
   const saveBtn = document.getElementById('pm-save')
   if (!saveBtn) return
+  live &&= !_tutorialRun   // FEAT-184: the tutorial never saves — its ways out are the main menu and the towel
   const why = live ? _saveExitBlock() : null
   saveBtn.style.display = live ? '' : 'none'
   saveBtn.disabled = !!why
@@ -8609,8 +8622,19 @@ let _regionNetBuild = null   // PERF-30: { key, done } — the one in-flight sto
 const storySystem = new StorySystem({
   setGameMode: (m) => window.__setGameMode(m),
   isWorldLoaded: (seedStr) => _isWorldLoaded(seedStr),
-  applySeed: (v) => applyWorldSeed(v),     // resolves when the rebuild + reseat have settled
+  applySeed: (v) => applyWorldSeed(v),     // resolves true when the rebuild + reseat have settled, false if they threw
   reseat: () => _reseatTruckAtSpawn(),     // resolves when the truck is seated at the spawn
+  // BUG-152: the region centre is the SEED's spawn — resolveSpawn's own point, memoised (a hit right after the settle),
+  // pure in the seed (test/world-determinism.mjs link 1) and the same point every headless story gate centres on
+  // (spawnDecision). Not the truck: the seat lifts it ≤ 14 cm off along the slope normal, and a failed seat left it at
+  // the menu world's spawn, a few hundred metres away.
+  // Queued behind the in-flight seat: _rebuildFullNow has no await before its reseat, so the seat is on _reseatChain
+  // 150 ms after applySeed. Story's slow-settle fallback calls this mid-settle; it then waits for the seat and hits the
+  // memo, rather than running a second resolveSpawn across the seat's setRadius/buildNow (or on the old seed's roads).
+  spawnCentre: () => {
+    const at = () => resolveSpawn(worldSeed, RANGER_PARAMS)
+    return _reseatChain.then(at, at).then(({ position: p }) => ({ x: p.x, z: p.z }))
+  },
   // THE SEED DECIDES WHERE THE WORLD IS, AND NOTHING ELSE (owner, 2026-08-11). A free-roam teleport
   // leaves a spawn override behind, and _reseatTruckAtSpawnInner honours it ahead of resolveSpawn —
   // so without this, entering story mode seats the truck wherever you last teleported and the region
@@ -8631,7 +8655,7 @@ const storySystem = new StorySystem({
   onSeedRejected: (seed, report) => {
     if (!_pendingResume && !_paperScenario && _seedRerolls < SEED_REROLLS) {
       console.info(`[story] seed "${seed}" refused (${unplayableReason(report)}) — re-roll ${_seedRerolls + 1}/${SEED_REROLLS}`)
-      void _startStory(_resolveSeed(''), _runWorld, _runGearbox, null, _seedRerolls + 1)
+      void _startStory(_resolveSeed(''), _runWorld, _runGearbox, null, _seedRerolls + 1, null, _tutorialRun)
       return
     }
     _showSeedModal(report, seed)
@@ -8978,7 +9002,7 @@ let _runWorld = null       // ...and the world knobs, so a BUG-100 re-roll keeps
 let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
 const SEED_REROLLS = 3       // BUG-100: refused seeds re-rolled before the refusal card shows
 let _seedRerolls = 0         // re-rolls behind the current entry (0 for a player-started one)
-async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0, scenario = null) {
+async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0, scenario = null, tutorial = false) {
   _hideSeedModal()
   map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
   // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
@@ -8992,10 +9016,11 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _seedRerolls = rerolls
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _paperScenario = scenario   // FEAT-62: every entry sets it too — a scenario never outlives its own entry
+  _tutorialRun = tutorial     // FEAT-184: likewise
   _runEnded = false
   _playedS = 0                       // FEAT-146 (a resume puts the saved playtime back in _restoreRun)
   damageModel.fatalImpact = null     // FEAT-146: a fatal hit before the run is not this run's death
-  if (!resume && !scenario) clearRun()   // FEAT-42: one slot — a new game discards the saved run (a scenario is not a game)
+  if (!resume && !scenario && !tutorial) clearRun()   // FEAT-42: one slot — a new game discards the saved run (a scenario or the tutorial is not a game)
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
@@ -9272,7 +9297,7 @@ function _resumePaper (sp) {
 
 /** Overwrite the run save with now — whenever a live, writable run exists. */
 function _autosave () {
-  if (_paperScenario) return false   // FEAT-62: the scenario's run is not the player's run — never written over it
+  if (_paperScenario || _tutorialRun) return false   // FEAT-62: the scenario's run is not the player's run — never written over it (FEAT-184: nor is the tutorial's)
   if (!storySystem.isActive() || storySystem.isEntering() || _restoring || _runEnded || _saveBlock()) return false
   return putRun(_runSnapshot())
 }
@@ -9295,7 +9320,7 @@ window.__gps = () => gpsSystem._src   // the GPS's route right now (cdp-smoke: t
 /** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
 function _discardRunSave () {
   _runEnded = true
-  clearRun()
+  if (!_tutorialRun) clearRun()   // FEAT-184: the slot holds the career run, never the tutorial's
 }
 
 // ── FEAT-146: the run ends ──────────────────────────────────────────────────────────────────────

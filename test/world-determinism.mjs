@@ -11,10 +11,10 @@
 //      the probe ran — a session that drove 3 km, or warmed a 2500 m story region, holds far more
 //      network than a cold boot. It must not.
 //
-//   2. THE REGION CENTRE IS THE SPAWN. Story entry reseats before it captures the centre — both
-//      branches, `applySeed` on a seed change and `reseat` when the seed is already loaded
-//      (story.js `enter` → `_beginWarm`). So the centre inherits link 1's purity, and where the
-//      player was standing when they opened the menu cannot reach world generation.
+//   2. THE REGION CENTRE IS THE SPAWN. Story entry settles the world, then takes the centre from
+//      resolveSpawn itself (main.js `spawnCentre`, BUG-152) — not from the seated truck, which a
+//      failed settle left at the menu world's spawn. So the centre inherits link 1's purity, and
+//      where the player was standing when they opened the menu cannot reach world generation.
 //
 //   3. WHAT THE REGION CONTAINS IS A PURE FUNCTION OF (SEED, CENTRE). The registered network graph,
 //      the POI candidate pool, the roster and the newspaper customers must be identical from any
@@ -197,6 +197,9 @@ for (const [seed, C] of [[6, { x: 4500, z: 600 }], [90, { x: -72.27, z: 140.48 }
         story.indexOf('clearSpawnOverride') < story.indexOf('this._d.applySeed(seed)'),
         'the override must be gone before applySeed/reseat runs, or the reseat still honours it')
     // The trap that made this necessary: the override is consulted ahead of resolveSpawn.
+    check('the region centre is the seed\'s spawn, never the truck\'s pose (BUG-152)',
+        /this\._d\.spawnCentre\(\)/.test(story) && /spawnCentre\s*:/.test(main) && !/_center = \{ x: p\.x/.test(story),
+        'story.js must centre on deps.spawnCentre() (main.js resolveSpawn), not getVehiclePosition()')
     check('the spawn override is still consulted ahead of resolveSpawn (this check is still needed)',
         main.indexOf('if (_spawnOverride)') < main.indexOf('resolveSpawn(worldSeed'),
         'if this flipped, re-read whether the guard above is still the right shape')
