@@ -106,30 +106,22 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (machine clock Mon 11-09 ~00:25 PST; the owner said good night — overnight run; rewrite, don't append)
-- **Main** 438f3781: BUG-147 LANDED 09ea7d66 (smoke 26/26) · **BUG-140 + FEAT-193 LANDED 51a932bf** (smoke: "edge" flaked
-  once, then passed alone ×2 and in the full re-run; the re-run's one miss = pre-existing pad pick → BUG-157). Unpushed
-  since d7dc18e1 (origin). Never push. Spare's physics probes kept in main's wip/bug-140-probes/.
+## Current state (machine clock Mon 11-09 ~01:15 PST; the owner said good night — overnight run; rewrite, don't append)
+- **Main** = this commit. Landed tonight, each smoked: BUG-147 09ea7d66 · BUG-140 + FEAT-193 51a932bf · BUG-157 f3a16777
+  (test-only) · BUG-153/154/155/149 eabc032c · BUG-152 root cause 2 b34a51e1 (batch smoke 26/26 on b34a51e1). Tickets
+  closed (154 waits on the owner's look). Unpushed since d7dc18e1 (origin). Never push.
+- **Tracker page v200 published** (owed: road-seams-look, bug140-feel, feat193-calls added; 4 answered items dropped).
+  Owner's photo page: https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8 (copies in main wip/bug-153-155-shots/).
 - **Clock note**: the machine clock is PST; agents' system date runs a day ahead. Git/mtimes are the truth.
-- **Agents RUNNING**:
-  - A (22:35) — BUG-152 NOT closed: soak 6/6 wins but seed 336086702 resumed twice with a different POI roster
-    (2 in ~55, timing-dependent). Root-causing in CarGame-run-shape.
-  - Spare (00:25) — BUG-157 in CarGame-land-157 (smoke pad step: fallback giver's only offer is a paper route;
-    deterministic on 3397198020, also on 961311ec).
-- **B: landing request IN** — land/bug-155 @ 49c5e0be, merged with main 51a932bf by me → 6caadf81. Its own run: 83/83
-  green. I'm running the 58 gates both diffs reach (--only, log CarGame-land-155/wip/bug-153/gates-overlap-140.log).
-  Green → merge, smoke, close BUG-153/154/155 + BUG-149 (its lip now 12.8–17.6 cm, bar 0.25 m), remove CarGame-land-153
-  and CarGame-soak9pre. B's NEXT: FEAT-34 round 3 (feature/machine 1ed40292) — Chrome shots for the owner's look.
-  New BUG-156 (gore cliff 0.47 → 0.86 m at 1074499174 (737.7, 442.1), minor).
-- **Owner's photo page** for 153/154/155: https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8 (source scratchpad
-  road-seams/). Its one call: the ribbon-frame band bar 2.5 cm (measured 2.3; whole-lane worst 4.3, was 35.7).
-- **Page publish owed** (one publish): DROP owed hunger-numbers, bug67-miter-look, bug140-drop, side-slide-lever
-  (answered + recorded 33f1a202). ADD: bug140-feel (drive on :8000 — drops, rock props, rollovers dirt vs road; rebound
-  7–10 % flat, was 81 % at 5 m) + Spare's calls (FEAT-193 flank only? road 0.5 vs old 0.53? accept flat rebound?
-  fragile vase keeps 60 % not 43 % — accept?) + road-seams photos & band bar (link above). Closed rows: 146, 147, 140.
-- **Landing queue**: BUG-153+155 (+154, 149) → BUG-157 → BUG-152 fix → FEAT-34 round 3 (shots first).
+- **RUNNING**: B (00:50) — FEAT-34 round 3 in CarGame-machine → land/feat-34 + a cluster shot sheet → request. On its
+  report: relay the sheet to the owner as an owed `feat34-r3-look` (a page like road-seams), land only after the look.
+- **Idle**: A — next work (FEAT-184 stages) waits on the owner's tutorial-* answers; BUG-152's four second findings
+  are recorded in its closed ticket, no action. Spare — the FEAT-180 pick; owed a QUIET window to measure round 5's
+  frame cost (spawn it when B's agent is done and the load is low). C — no agent until an owner answer.
+- **Landing queue**: FEAT-34 round 3 (after the owner's look).
 - **Waiting on the owner**: the lighting pick (round 5 land/feat180-next :3887 vs proto/lighting-redesign :3890);
-  tutorial-* ×5 (FEAT-184); the item page (FEAT-192 rarity ×4, V6/V8/tank, tarp → Lane C); the rest of `OWED`.
+  tutorial-* ×5 (FEAT-184); road-seams-look; bug140-feel + feat193-calls; the item page (FEAT-192 rarity ×4,
+  V6/V8/tank, tarp → Lane C); the rest of `OWED`.
 - **Worktrees**: CarGame-bug67 needs `! git worktree remove --force /Users/ledogen/CodeShit/CarGame-bug67` from the
-  owner. Lighting pick keeps CarGame-f180-preview, -land-feat180, -land-feat180-dusk, -land-feat180-next.
-  In use: -land-153, -land-155 (B), -land-157 (Spare), -soak9pre, -spare-base.
+  owner. Lighting pick keeps CarGame-f180-preview, -land-feat180, -land-feat180-dusk, -land-feat180-next. In use:
+  -machine (B), -spare-base (scratch main for before/after runs).
