@@ -1,7 +1,7 @@
 ---
 id: BUG-155
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-08
 source: Lane B, BUG-153's census (test/ribbon-frame.mjs, reported apart)
@@ -147,3 +147,7 @@ Lands with BUG-153 + 154 from `land/bug-155`; the full record is in BUG-153's ti
 `test/ribbon-frame.mjs` (0.0 cm measured). At 1074499174's mouth (746, 432) on the merged tree: physics − own deck
 −51.8 cm → −0.05 cm, the step across the mouth chord at lat 4.5 −37.6 → 0.15 cm. The steeper gores did not happen
 (85 → 82 % at the steepest). Photos: `wip/bug-153/shots/sheets/sheet-155.jpg` and `sheet-gores.jpg`.
+
+## Resolution (2026-11-09)
+
+Landed on main as **eabc032c** (merge of land/bug-155 @ 6caadf81, BUG-153 + 154 + 155 together; affected 83/83 + the 58 gates shared with BUG-140 green; cdp-smoke 26/26 on b34a51e1). Before/after photo sheets: https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8 (copies in main wip/bug-153-155-shots/).

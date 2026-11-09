@@ -1,7 +1,7 @@
 ---
 id: BUG-154
 type: bug
-status: open
+status: landed eabc032c — open only for the owner's look at the photo sheets + the 2.5 cm band bar (owed road-seams-look)
 severity: major
 opened: 2026-11-08
 source: Lane B, BUG-153's census (test/ribbon-frame.mjs, reported apart)
@@ -133,3 +133,7 @@ Lands with BUG-153 + 155 from `land/bug-155`; the full record is in BUG-153's ti
 `test/ribbon-frame.mjs` (2.3 cm measured at the drawn vertices; 4.3 cm worst over the whole drawn surface inside 3.75 m,
 was 35.7 cm). Before/after photos: `wip/bug-153/shots/sheets/sheet-154.jpg` (2654449719's band: 1316 → 164 film cells
 off by ≥ 2 cm, worst 53 cm → a few cm on the lane; 1074499174's band: 754 → 92).
+
+## Resolution (2026-11-09)
+
+Landed on main as **eabc032c** (merge of land/bug-155 @ 6caadf81, BUG-153 + 154 + 155 together; affected 83/83 + the 58 gates shared with BUG-140 green; cdp-smoke 26/26 on b34a51e1). Before/after photo sheets: https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8 (copies in main wip/bug-153-155-shots/).
