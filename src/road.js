@@ -162,15 +162,6 @@ const PAD_THROUGH_BLEND = 2.0  // m of distance lead over which a T trunk's near
 // rides the asphalt top (padTopY overlay in _sampleCarveWorld), not this dirt. Hardcoded (no
 // route-cache-signature effect).
 const PAD_DIRT_EXTRA = 0.15
-// PAD_DUCK_CAP: how far the pad may move the dirt from the leg cross-section's own design (m), mesh and physics
-// alike. Inside the ring the dirt must get fully UNDER the creased asphalt or the tan interp slivers poke through
-// the pad (the rim earthwork fix): the saturating-camber model (camberFromCurvature) banks sweeper leg mouths into
-// creases of ~1.05 m at the seed-6 trident rim, and 1.2 admits every one with margin.
-// BUG-145: physics used to cap at 0.55, against the free-sampled duck field's jumps at crease lines (the pinned
-// cross-section's 0.70 plaza tolerance). PERF-25 made the pad surface resolve-free and continuous, so the jumps are
-// gone — and the tighter cap held physics dirt up to 0.4 m under the DRAWN dirt beside a pad rim that stands high
-// over its side road (seed 917338424's causeway T: a 0.54 m drop the mesh did not have, where 0.15 m is designed).
-const PAD_DUCK_CAP = 1.2
 // BUG-122: _ribbonDrawnAt keeps the physics asphalt overlay within this of a padded leg's mouth (m) — the ribbon's first
 // section lies on the mouth chord, which on a curving leg sits off arc = mouth at the ribbon's edges.
 const RIBBON_MOUTH_SLACK = 1.0
@@ -8370,7 +8361,7 @@ export class RoadSystem {
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
         // PERF-24/25: the pad surface is the resolve-free _nodeSurfaceTop (one ruled-blend evaluation,
         // feet shared with the leg cross-section above via the per-leg memo) — no extra resolves at all.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp), PAD_DUCK_CAP,
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp),
             nr ? this._ribbonEdgeDist(runKey, arcSEff, latDist) : Infinity)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 
@@ -8475,10 +8466,19 @@ export class RoadSystem {
      * nodes (radius tunnelBoreRadius about that run's centreline, from its apron 1.5 m under the deck up,
      * within one of its spans), or null when no sibling bores — the common case, so callers skip the work.
      * Memoised per run and network revision. Meshes and the wall contact read the same test (MESH == PHYSICS).
+     * A sibling's tube ends flat: at a mouth 1.5 m out, where buildTunnelTube's lip meets the portal ring; at an end
+     * inside another tube, at the span end itself. The polyline search alone rounded each end into a cap of radius
+     * R about its last vertex, reaching 2.2 m past a mouth where there is no lining to meet the other tube's cut
+     * (seed 717319401). The R run-on past an end inside another tube is left out: it is open-ended, so a lining it
+     * cut stopped short where nothing covered it — a crescent of rock, 28 cm wide, round seed 4076238903's
+     * underground Y; it only closes the wedge outside the bend, which no sibling's span reaches. `basic` keeps the
+     * capped shape: isMouth reads it, because the lips themselves are read from isMouth.
+     * The test's optional 4th argument `inset` (m) shrinks the bore, lip end included: the lining miter cuts on it.
      */
-    siblingTubeTest(runKey) {
+    siblingTubeTest(runKey, basic = false) {
         if (this._sibRev !== this._networkRev) { this._sibRev = this._networkRev; this._sibTests = new Map(); this._sibByNode = null; this._mouths = new Map() }
-        if (this._sibTests.has(runKey)) return this._sibTests.get(runKey)
+        const memo = basic ? runKey + '|basic' : runKey
+        if (this._sibTests.has(memo)) return this._sibTests.get(memo)
         if (!this._sibByNode) {
             this._sibByNode = new Map()
             for (const [k, e] of this._network) for (const c of [e.cellA, e.cellB]) {
@@ -8499,31 +8499,58 @@ export class RoadSystem {
         let test = null
         if (tubes.length) {
             const prof = { gradeY: 0, tx: 1, tz: 0 }
-            test = (x, y, z) => {
-                for (const { k, e } of tubes) {
-                    const pts = e.points, cum = e.polyCum
-                    for (const sp of e.tunnelSpans) {
-                        // nearest point of the span's centreline (the run polyline over [s0, s1])
-                        let best = Infinity, bs = 0
-                        for (let i = 1; i < pts.length; i++) {
-                            if (cum[i] < sp.s0 || cum[i - 1] > sp.s1) continue
-                            const ax = pts[i - 1].x, az = pts[i - 1].z, dx = pts[i].x - ax, dz = pts[i].z - az
-                            const L2 = dx * dx + dz * dz
-                            const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)) : 0
-                            const s = cum[i - 1] + (cum[i] - cum[i - 1]) * t
-                            if (s < sp.s0 || s > sp.s1) continue
-                            const d2 = (x - ax - dx * t) ** 2 + (z - az - dz * t) ** 2
-                            if (d2 < best) { best = d2; bs = s }
-                        }
-                        if (best >= R * R) continue
-                        const h = y - this.runProfile(bs, k, prof).gradeY
-                        if (h > -1.5 && best + h * h < R * R) return true
+            const ends = new Map()   // span → its two ends' lip frames (outward tangent), built on first use
+            const endsOf = (k, sp) => {
+                let v = ends.get(sp)
+                if (!v) ends.set(sp, v = [[sp.s0, -1], [sp.s1, 1]].map(([s, dir]) => {
+                    const p = this.runPointAt(k, s), g = this.runProfile(s, k, { gradeY: 0, tx: 1, tz: 0 })
+                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : 0 }
+                }))
+                return v
+            }
+            // each span's own segments and its plan box grown by 2R (the bore, plus a lip, with room): a point outside
+            // the box skips the span, and the search walks only those segments, not the whole run
+            const spans = tubes.flatMap(({ k, e }) => e.tunnelSpans.map((sp) => {
+                const pts = e.points, cum = e.polyCum
+                let i0 = 0, i1 = -1, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+                for (let i = 1; i < pts.length; i++) {
+                    if (cum[i] < sp.s0 || cum[i - 1] > sp.s1) continue
+                    if (!i0) i0 = i
+                    i1 = i
+                    for (const p of [pts[i - 1], pts[i]]) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z) }
+                }
+                return { k, sp, pts, cum, i0, i1, x0: x0 - 2 * R, x1: x1 + 2 * R, z0: z0 - 2 * R, z1: z1 + 2 * R }
+            }))
+            test = (x, y, z, inset = 0) => {
+                const R2 = (R - inset) * (R - inset)
+                for (const { k, sp, pts, cum, i0, i1, x0, x1, z0, z1 } of spans) {
+                    if (x < x0 || x > x1 || z < z0 || z > z1) continue
+                    // nearest point of the span's centreline (the run polyline over [s0, s1])
+                    let best = Infinity, bs = 0
+                    for (let i = i0; i <= i1; i++) {
+                        const ax = pts[i - 1].x, az = pts[i - 1].z, dx = pts[i].x - ax, dz = pts[i].z - az
+                        const L2 = dx * dx + dz * dz, sl = cum[i] - cum[i - 1]
+                        let t = L2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)) : 0
+                        if (!basic && sl > 0) t = Math.max((sp.s0 - cum[i - 1]) / sl, Math.min((sp.s1 - cum[i - 1]) / sl, t))   // held to the span
+                        const s = cum[i - 1] + sl * t
+                        if (basic && (s < sp.s0 || s > sp.s1)) continue
+                        const d2 = (x - ax - dx * t) ** 2 + (z - az - dz * t) ** 2
+                        if (d2 < best) { best = d2; bs = s }
                     }
+                    const end = basic ? null : bs <= sp.s0 + 1e-6 ? endsOf(k, sp)[0] : bs >= sp.s1 - 1e-6 ? endsOf(k, sp)[1] : null
+                    if (end) {   // nearest at an end: on along the lip, lateral from its line, then flat
+                        const along = (x - end.x) * end.tx + (z - end.z) * end.tz
+                        if (along > end.lip - inset) continue
+                        if (along > 0) best -= along * along
+                    }
+                    if (best >= R2) continue
+                    const h = y - this.runProfile(bs, k, prof).gradeY
+                    if (h > -1.5 && best + h * h < R2) return true
                 }
                 return false
             }
         }
-        this._sibTests.set(runKey, test)
+        this._sibTests.set(memo, test)
         return test
     }
 
@@ -8536,7 +8563,7 @@ export class RoadSystem {
      * Memoised per run, arc and network revision.
      */
     isMouth(runKey, s) {
-        const test = this.siblingTubeTest(runKey)   // also resets the memo on a new network revision
+        const test = this.siblingTubeTest(runKey, true)   // also resets the memo on a new network revision
         if (!test) return true
         const key = runKey + '|' + s
         let m = this._mouths.get(key)
@@ -9832,17 +9859,18 @@ export class RoadSystem {
         return { blendW, gradeY: co.gradeY * dom + cs.gradeY * (1 - dom) }
     }
 
-    _mergeCarve(a, b, duckCap = PAD_DUCK_CAP, dRib = Infinity) {
+    _mergeCarve(a, b, dRib = Infinity) {
         if (!a) return b || null
         if (!b) return a
         const blendW = Math.max(a.blendW, b.blendW)
         if (b.padTopY != null) {
             // INSIDE the ring (the pad drawn over it): take the LOWER dirt. The pad's crease-ducking design
             // (top − clearance − PAD_DIRT_EXTRA) must not be overridden by the leg's shallower cross-section or the
-            // tan slivers return. PAD_DUCK_CAP bounds how far b (a free resolve) may drag a pinned cross-section
-            // down, so the top field's degenerate-node tears can't tear an otherwise-smooth shoulder.
-            const low = Math.max(Math.min(a.gradeY, b.gradeY), a.gradeY - duckCap)
-            return { blendW, gradeY: a.gradeY + (low - a.gradeY) * b.blendW, padTopY: b.padTopY }
+            // tan slivers return. BUG-150: by however much — a duck cap (1.2 m, mesh and physics since BUG-145) once
+            // bounded it against the free-sampled duck field's tears, which PERF-25's resolve-free pad surface removed;
+            // all the cap still did was strand the dirt above a pad whose crease is deeper (1.88 m at seed 169372896's
+            // hillside T, where the mesh dirt poked 0.30 m up through the drawn pad).
+            return { blendW, gradeY: a.gradeY + (Math.min(a.gradeY, b.gradeY) - a.gradeY) * b.blendW, padTopY: b.padTopY }
         }
         // BUG-123: OUTSIDE the ring the dirt is exposed beside an asphalt edge and stands clearanceMargin below THAT
         // edge's top, so the NEARER edge governs: a drawn ribbon's (the leg's dirt, `a`) or the pad's rim (`b`). It
@@ -9851,11 +9879,12 @@ export class RoadSystem {
         // sat lower, beside the pad's rim when the leg sat lower (16 of 52 leg edges on random seeds still stood
         // > 0.25 m after BUG-122). `dRib` is the distance to the nearest drawn ribbon edge (_ribbonEdgeDist,
         // continuous across a leg's mouth), `b.sd` the distance outside the ring; the pad's share smoothsteps over
-        // ±0.5 m of their difference, so the hand-over is C0. duckCap bounds the pad's pull either way.
+        // ±0.5 m of their difference, so the hand-over is C0. BUG-150: uncapped — the pad's rim-hold band (b at full
+        // depth for PAD_RIM_HOLD past the ring) then always meets the rim at the designed 0.15 m, and b.blendW's ramp
+        // beyond the hold carries the dirt back to the leg's. The cap left a 0.42 m dirt WALL above the pad's rim there.
         const u = Math.min(1, Math.max(0, dRib - (b.sd ?? 0) + 0.5))
         const g = u * u * (3 - 2 * u)
-        const target = Math.min(a.gradeY + duckCap, Math.max(a.gradeY - duckCap, b.gradeY))
-        return { blendW, gradeY: a.gradeY + (target - a.gradeY) * b.blendW * g, padTopY: null }
+        return { blendW, gradeY: a.gradeY + (b.gradeY - a.gradeY) * b.blendW * g, padTopY: null }
     }
 
     /**

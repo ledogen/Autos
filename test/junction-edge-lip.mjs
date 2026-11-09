@@ -18,8 +18,11 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
+// RIM's other sign (BUG-150): dirt standing ABOVE a pad's rim — a wall. None on these seeds; seed 169372896 had 0.38 m.
+const WALL_MAX = 0.05
+let worstWall = 0, worstWallAt = ''
 
-const SEEDS = ['1353361482', '369055107', '917338424']   // random seeds (BUG-122's census; BUG-137's causeway T)
+const SEEDS = ['1353361482', '369055107', '917338424', '749163472']   // random seeds (BUG-122's census; BUG-137's causeway T; BUG-148's portal inside a T's pad)
 const BUG146 = [{ S: '1353361482', x: 26.8, z: 721.0 }, { S: '917338424', x: 99.4, z: -1016.8 }]   // see SMOOTH
 const R = 1000, LIP_MAX = 0.25, G = 0.25, REFINE = 0.08, TEAR_MAX = 0.08, hw = P.roadHalfWidth ?? 5
 let fails = 0, edges = 0, worstLip = 0, worstLipAt = '', rimPts = 0, margin = Infinity, padPts = 0, worstSlope = 0, worstTear = 0, worstTearAt = '', rimEdge = 0, rimFails = 0, worstRim = 0, worstRimAt = '', worst146 = 0
@@ -29,6 +32,14 @@ for (const S of SEEDS) {
   const terrain = makeTerrainHeadless(ws, P, road)
   road._detectNodeJunctions()
   const ph = (x, z) => road._sampleCarveWorld(x, z, terrain.rawHeightWorld(x, z), undefined, undefined)?.gradeY
+  // SMOOTH samples as a WHEEL on the pad does: with its height (pad top + 0.3 m). That only changes bore ownership
+  // (FEAT-40): a Y-less probe inside a tube reads the hill over it, the wheel reads the deck. BUG-148: seed 749163472's
+  // trunk portal stands 10.3 m from its T, inside the pad's ring, and the Y-less SMOOTH read a 9.46 m "tear" at the mouth
+  // that no wheel meets (0 of 5433 pad points off the pad top at wheel height; the drawn skin there is the mouth's cut).
+  const phW = (node, x, z) => {
+    const top = road._nodeSurfaceTop(node, x, z)
+    return road._sampleCarveWorld(x, z, terrain.rawHeightWorld(x, z), undefined, top == null ? undefined : top + 0.3)?.gradeY
+  }
   const memo = new Map()
   const meshDirt = (x, z) => {
     const key = x * 100000 + z; if (memo.has(key)) return memo.get(key)
@@ -41,7 +52,7 @@ for (const S of SEEDS) {
     }
     const co = road._connectorCarve(x, z, raw)
     if (co) cs = { blendW: Math.max(cs ? cs.blendW : 0, co.blendW), gradeY: cs ? co.gradeY * co.dom + cs.gradeY * (1 - co.dom) : co.gradeY }
-    const m = road._mergeCarve(cs, road._junctionPadCarve(x, z, raw), undefined, dRib)
+    const m = road._mergeCarve(cs, road._junctionPadCarve(x, z, raw), dRib)
     const v = m ? raw + m.blendW * (m.gradeY - raw) : raw
     memo.set(key, v); return v
   }
@@ -89,6 +100,9 @@ for (const S of SEEDS) {
     }
     // RIM (BUG-145): the pad's own edge between its legs — physics 5 cm inside the ring minus 5 cm outside, every 0.5 m
     // of ring, away from the legs' pavements (their edges are LIP's) — stands the designed kerb, no more than LIP_MAX.
+    // BUG-150: and the dirt never stands ABOVE the rim (a wall, not a kerb): a duck cap held seed 169372896's hillside-T
+    // dirt 1.2 m off the leg's section where the pad sits 1.88 m under it — 0.38 m of wall at (15.4, −910.4). That seed
+    // is not in SEEDS: it also carries BUG-151's 1.8 cm poke (and, on main, BUG-146's class of tear); add it with them.
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i], b = ring[(i + 1) % ring.length], L = Math.hypot(b.x - a.x, b.z - a.z)
       for (let t = 0; t < L; t += 0.5) {
@@ -101,6 +115,8 @@ for (const S of SEEDS) {
         const lip = i1 - o1
         if (lip > worstRim) { worstRim = lip; worstRimAt = `${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})` }
         if (lip > LIP_MAX) { rimFails++; if (rimFails <= 3) console.log(`  FAIL rim lip ${lip.toFixed(3)} m at ${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})`) }
+        if (-lip > worstWall) { worstWall = -lip; worstWallAt = `${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})` }
+        if (-lip > WALL_MAX) { rimFails++; if (rimFails <= 3) console.log(`  FAIL rim wall: dirt ${(-lip).toFixed(3)} m above the pad at ${S} (${ex.toFixed(1)}, ${ez.toFixed(1)})`) }
       }
     }
     // SMOOTH: the pad's surface (what the wheel rides inside the ring) on a G grid, each point against its +x and +z
@@ -115,7 +131,7 @@ for (const S of SEEDS) {
     const grid = new Float64Array(n * n).fill(NaN)
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const x = x0 + i * G, z = z0 + j * G
-      if (road._signedRingDist(ring, x, z) < 0) { const y = ph(x, z); if (y != null) { grid[j * n + i] = y; padPts++ } }
+      if (road._signedRingDist(ring, x, z) < 0) { const y = phW(node, x, z); if (y != null) { grid[j * n + i] = y; padPts++ } }
     }
     let nodeTear = 0, nodeAt = ''
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
@@ -127,7 +143,7 @@ for (const S of SEEDS) {
         if (d <= REFINE) continue
         let prev = y, tear = 0
         for (let f = 1; f <= 5; f++) {
-          const yf = f === 5 ? grid[k] : ph(x0 + (i + ex * f / 5) * G, z0 + (j + ez * f / 5) * G)
+          const yf = f === 5 ? grid[k] : phW(node, x0 + (i + ex * f / 5) * G, z0 + (j + ez * f / 5) * G)
           if (yf == null) { tear = 0; break }
           tear = Math.max(tear, Math.abs(yf - prev)); prev = yf
         }
@@ -146,5 +162,6 @@ console.log(`${edges} junction leg edges: worst lip ${worstLip.toFixed(3)} m (${
 console.log(`BUG-146 (excepted): worst tear ${worst146.toFixed(3)} m per ${G / 5} m at its two sites`)
 console.log(`${rimEdge} pad rim points: worst rim lip ${worstRim.toFixed(3)} m (${worstRimAt}), ${rimFails} over ${LIP_MAX} m`)
 fails += rimFails
+console.log(`  worst rim wall ${worstWall.toFixed(3)} m${worstWallAt ? ` (${worstWallAt})` : ''}, limit ${WALL_MAX} m`)
 console.log(fails ? `FAIL: ${fails}` : 'PASS')
 process.exit(fails ? 1 : 0)
