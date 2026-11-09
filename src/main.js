@@ -208,7 +208,10 @@ let waterRenderer = null
 const waterSyncRadius = () => ((terrainSystem?._ringRadius ?? 2) + 1) * 64
 // Pond exclusion discs [x, z, r, …] for the road router — the play/map RoadSystems and the network
 // Worker client all read this one builder. Reads module-scope waterSystem at CALL time.
-function _pondDiscs (minX, minZ, maxX, maxZ) {
+// `seed` (the network client passes it): the world the discs are FOR — null when the water on hand
+// is another world's, so a build request can never pair one seed with another's ponds (BUG-152).
+function _pondDiscs (minX, minZ, maxX, maxZ, seed) {
+  if (seed !== undefined && waterSystem?._seed !== seed >>> 0) return null
   if (!waterSystem) return []
   const discs = []
   for (const p of waterSystem.pondsNear(minX, minZ, maxX, maxZ)) discs.push(p.floorX, p.floorZ, p.radius + p.skirt)
