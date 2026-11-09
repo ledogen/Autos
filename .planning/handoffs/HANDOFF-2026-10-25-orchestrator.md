@@ -10,6 +10,26 @@ Read this file, then `.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-al
 record), then `CLAUDE.md` § "Communicating with the owner". The owner is an engineer, not a programmer: gloss
 code and platform terms inline, never physics, maths, git or design.
 
+## Lanes are YOUR subagents (owner, 2026-11-09) — read this first
+Supersedes every older line below about lane windows, session names, pasted resume prompts and the owner
+/clearing lanes. The owner no longer talks to lanes, pastes their prompts or clears them. **You run each lane as a
+background subagent, one task per agent; the fresh agent IS the clear.** The agents' rules:
+`.planning/handoffs/LANE-AGENT-BRIEF.md` (they read it themselves; never retype it).
+- **Spawn** (Agent tool, `model: opus`, general-purpose, NO `isolation` — they use the lane worktrees below):
+  `You are Lane <X> (lane id <id>). Read /Users/ledogen/CodeShit/CarGame/.planning/handoffs/LANE-AGENT-BRIEF.md
+  and follow it. Worktree <path>, branch <branch>, port <port>. Your task: <ONE task>.` plus anything the page
+  handoff doesn't have yet (an owner answer, verbatim). Then write the returned agent id to `lanes/<id>.agent`.
+  At most one agent per worktree. Lane C gets an agent only when an owner answer gives it work.
+- **On a report** (the agent's final message, ≤ 15 lines): LANDING → merge, ONE gated smoke on main, fast-forward the
+  lanes; OWED → the page's `OWED` array; then spawn a FRESH agent for NEXT. Never SendMessage a finished agent to
+  continue: that revives its whole context. Messages to a RUNNING agent are fine (an answer, an order, WRAP UP).
+- **Context watch**: `bash tools/lanes.sh` lists every running subagent's context. Keep `bash tools/lanes.sh --watch
+  250 [ids already told]` running in the background while agents work; when it exits, SendMessage that agent
+  `WRAP UP` and restart the watch with its id skipped. The agent commits, rewrites its handoff and reports.
+- **Agents never smoke**; landing smokes stay serial on main (`tools/chrome-slot.sh`, load-gated).
+- **Before the owner clears YOU**: WRAP UP every running agent, take their reports, then write this handoff.
+  Nothing lives only in an agent: they commit WIP every step and the page holds each lane's handoff.
+
 ## What the owner will do next
 
 **Resume word: `orchestrator`.** This session keeps no state of its own: read this file, then the tracker page's
@@ -204,7 +224,7 @@ orchestrator). Owed list on the page: FEAT-159 calls/drive, BUG-74 drive (+ the 
 two reference clips (YouTube blocks agents' downloads — the owner drops them on the Sounds cards) + a scrape recording,
 FEAT-153 tackle-shop reel, FEAT-163 UI-dry default, plus the older items.
 
-## Lane context — the orchestrator watches it, not the owner (owner question 2026-11-03)
+## Lane context — SUPERSEDED 2026-11-09 by § Lanes are YOUR subagents (kept for history)
 Sessions auto-compact near their limit, so a lane never stops for a full context. Lane A and Lane B had
 each auto-compacted twice by 11-03 with nobody noticing. Nothing is lost that matters: lanes commit WIP
 at every step, plans are parked in tickets, and the page holds each lane's handoff. A manual `/clear` is
@@ -572,3 +592,11 @@ re-measure waits for a quiet window. Nothing pushed.
   passed 2/2 alone, so it reads as a flake. Re-run of the full smoke RUNNING; log
   …/scratchpad/smoke-a-462fe00e-r2.log. If it flakes again at the same step, lengthen that wait or gate the smoke on a
   quieter box (lane A owns the step).
+
+### 11-09 — LANES BECOME SUBAGENTS (owner, after clearing all four windows)
+- **A LANDED**: the re-run smoke on main at 462fe00e PASSED 26/26, zero console errors (run 1's 'opening' miss was load).
+- The four lane windows are gone. From now on lanes are this session's subagents (§ Lanes are YOUR subagents, top of
+  this file; `.planning/handoffs/LANE-AGENT-BRIEF.md`; memory `feedback_lanes_are_subagents`). The tracker page's
+  source says so too, but is NOT republished yet — the next OWED publish carries it.
+- First spawns: A = BUG-152 multi-seed soak + pad-e2e rerun · B = land/bug-147 gates → landing request (held until
+  146 lands) · Spare = land/bug-146 gates → landing request. C: no agent (all owner items; FEAT-192 rarity unanswered).

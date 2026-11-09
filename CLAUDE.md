@@ -310,11 +310,13 @@ the norm.
   tree is lost work after a crash (owner, 2026-11-02). On resume, uncommitted changes in your worktree are
   yours: commit them, never discard them. **Main** (the integration branch) gets commits only at a task
   boundary (a landing, an orchestrator fix) or when asked.
-- **Parallel lanes** (when the owner runs them — lanes, ports and the tracker page are in the orchestrator
-  handoff, `.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`): on every resume, write your session
-  name (as `ListAgents` shows it) to the tracker page's `lanes/<id>.agent`. When the page's owed list holds
-  10+ items, prefer work that adds nothing to the owner's review pile (gates, perf, closing on evidence,
-  making a pending decision cheaper to answer).
+- **Parallel lanes** (lanes, ports and the tracker page are in the orchestrator handoff,
+  `.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`): since 2026-11-09 every lane runs as a background
+  **subagent of the orchestrator, one task per agent** — a lane agent follows
+  `.planning/handoffs/LANE-AGENT-BRIEF.md` (stop when the task is done, blocked, or told WRAP UP; rewrite its
+  page handoff; report in ≤ 15 lines), and the orchestrator starts a fresh agent for the next task. When the
+  page's owed list holds 10+ items, prefer work that adds nothing to the owner's review pile (gates, perf,
+  closing on evidence, making a pending decision cheaper to answer).
 
 For a large structured effort, lean on plan mode and stage the work in `.planning/`. The `.planning/`
 phase artifacts (`phases/`, `milestones/`, handoffs) are historical record; `.planning/todos/` is the
