@@ -110,3 +110,32 @@ frame as it is). The gate reports them apart until they are fixed, then folds th
 shot sheet: 3 sloped curved mouths (candidates from main's frame-class census: 273004588 node (509.3, 412.5) leg
 `g:509295,412497,-1:1,0,1`, 17.8 cm on main; 2654449719 node (−50.6, 330.2) leg `g:-2,0,0:-1,0,0`, 6.2 cm; 1074499174
 node (190.3, −356.7) leg `g:0,-1,1:-34662,200187,-1`, 5.0 cm), chase-cam height, the same frames on main and the fix.
+
+## The two reds — decided: land 153 + 155 together (Lane B, 2026-11-09)
+
+`land/bug-153`'s affected gates: 68/70, two reds. Both measured on main (5bf20c0c, road code = main's), on `land/bug-153`
+and on `land/bug-155` (which carries 153). Logs and probes: `wip/bug-153/reds/` in the land-155 tree.
+
+**junction-edge-lip** — NEW with 153's frame, and 155 takes it out:
+
+| | worst leg lip (max 0.25) | worst pad tear (max 0.08) | tightest pad margin | BUG-146 tear (excepted) |
+|---|---|---|---|---|
+| main | 0.237 m — PASS | 0.075 m | 6.3 cm | 0.143 m |
+| 153 | **0.276 m** (917338424 `g:-1,-1,2:0,-1,0` side −1 s 14) — FAIL | **0.081 m** (917338424 (−212.04, −543.86)) — FAIL | 6.3 cm | 0.119 m |
+| 155 | 0.196 m — PASS | 0.036 m | 13.1 cm | 0.119 m |
+
+153 turns the ring's mouth chords with the ribbon frame; at that seed-917338424 node the leg's edge then reads the
+ruled blend's leak (BUG-155's mechanism) harder. 155 is better than main on every number.
+
+**vertical-curvature** (a ceiling gate; main counts junction 202 — the 203 ceiling was 1 stale):
+- 153: junction 205. One-to-one kink match vs main: 4 new, 1 gone. Two are genuinely new mild crests (0.034 /m seed 11
+  (−927.3, −1313.0), ~5 m from BUG-63's T; 0.031 /m seed 7 (−1505.3, 1177.7)). Two are the gate's 15 m de-dup
+  splitting a feature main already counts (seed 7 (−1428.6, 549.9) track 0; seed 11 (1925.3, −1250.8)). Sharpest unchanged.
+- 155: junction **201** (−1 vs main), open **19** (+1). The open one is no new kink: BUG-90 dip 1 world's sag at
+  (903.5, 1584.6), 51.5 m along `g:858041,1593089,-1:2,2,1`, inside that promoted T's 58 m departure band. BUG-154's
+  band frame moves physics ≤ 1.1 cm there: 0.0299 → 0.0303 /m, across the 0.03 flag.
+- Ceilings on `land/bug-155`: open 18 → 19, junction 203 → 201, dated in the gate's ledger. PASS.
+
+**Decision:** 153 cannot land alone (junction-edge-lip fails; a fix would be 155's clamp). Land `land/bug-155` as one
+landing for BUG-153 + 154 + 155. Its affected gates run next; still owed before the request: `ribbon-frame.mjs` with the
+band + blend classes folded into PASS, the fingerprint lattice proof vs main, and the shot sheet / photos.
