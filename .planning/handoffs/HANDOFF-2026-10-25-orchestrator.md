@@ -107,20 +107,18 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
 ## Current state (machine clock Sun 11-08 22:15 PST; the owner said good night — overnight run; rewrite, don't append)
-- **Main** 33f1a202 (docs only since BUG-146's 44ae96fd, smoke 26/26). Unpushed since d7dc18e1 (origin). Never push.
+- **Main** 93cac9d4: **BUG-147 LANDED 09ea7d66** (smoke 26/26, ticket closed, land-147 removed). Unpushed since d7dc18e1 (origin). Never push.
 - **Clock note**: the machine clock is PST and reads one day EARLIER than the agents' system date; git and file
   mtimes are the truth. Older commits carry +0100. Owed `at` stamps are UTC.
 - **Agents RUNNING** (spawned by earlier orchestrator sessions; their reports may or may not reach this one — check
   `ls -lt ~/.claude/projects/-Users-ledogen-CodeShit-CarGame/*/subagents/*.jsonl | head`):
-  - A (soak) — BUG-152 close-out, 6-seed soak, log CarGame-run-shape/wip/run-soak/bug152-close.log (3/3 wins so far).
-  - B (land-147) — merged main, MAX_IN_PAD → 18, gates running (log CarGame-land-147/wip/bug-147/gates-147-merge.log) → request.
+  - A (spawned 22:35) — BUG-152 NOT closed: the soak (6/6 wins) found an odd-session POI roster on resume, seed
+    336086702 (2 in ~55, timing-dependent). Agent is root-causing it in CarGame-run-shape.
+  - B (spawned 23:00) — land/bug-155: merge main 93cac9d4 (146 + 152 + 147 since its base), ONE re-gate, ribbon-frame
+    band fold (2.5 cm vs a 2.3 cm residual — an owner ruling), fingerprint proof, before/after shot sheets → one request.
   - Spare (land-140, spawned 22:15) — BUG-140 A + 2 with the owner's live-rock-prop test (drop 2 if it launches the
     rock or flips the truck) + FEAT-193 body μ 1.0 off-road / 0.5 road. One fingerprint re-pin, one feel drive owed.
-- **Detached**: land-155's 71 gates (log CarGame-land-155/wip/bug-153/reds/gates-155.log; 26 green, no red at 22:13).
-  When green, spawn B's next task: fold the band + blend classes into ribbon-frame.mjs's PASS (B recommends a 2.5 cm
-  tolerance for the 2.3 cm residual), fingerprint lattice proof vs main, shot sheet + BUG-154/155 before/after photos
-  → one request (153 + 155 land together from land/bug-155).
-- **Landing queue**: BUG-147 → BUG-153+155 (+154) → BUG-140/FEAT-193 → FEAT-34 round 3 (Chrome shots for the owner first).
+- **Landing queue**: BUG-153+155 (+154) → BUG-140/FEAT-193 → BUG-152 fix → FEAT-34 round 3 (Chrome shots for the owner first).
 - **Owed answers recorded 11-09 (33f1a202)**: hunger-numbers keep, bug67-miter-look good, bug140-drop, side-slide-lever.
   Those four items are STILL on the page source's OWED array: drop them at the next publish (with the subagent wording
   edits already unpublished in the source).
@@ -129,4 +127,4 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   C); the rest of `OWED`.
 - **Worktrees**: CarGame-bug67 needs `! git worktree remove --force /Users/ledogen/CodeShit/CarGame-bug67` from the
   owner. Kept for the lighting pick: CarGame-f180-preview, -land-feat180, -land-feat180-dusk, -land-feat180-next.
-  In use: -land-147, -land-153, -land-155 (B), -land-140 (Spare), -soak9pre, -spare-base.
+  In use: -land-153, -land-155 (B), -land-140 (Spare), -soak9pre, -spare-base.
