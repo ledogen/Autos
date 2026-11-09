@@ -397,8 +397,12 @@ status: todo · design: idea · build: effect, model · needs: camp render · wh
 Vibe axis — fills part of the site's flatness deficit.
 
 ### Canopy / tarp
-status: todo · design: idea · build: effect, model · needs: camp render · where: generalStore
-Vibe axis — shade deficit. Model is ASSET-26.
+status: shipped · design: ratified · build: effect, model · where: autoShop, reward, found
+The shade tarp (`shadeTarp`, ASSET-26): fills the whole shade deficit (owner, 2026-11-02). A `camp`-category
+reward and on the shop shelf (owner, 2026-11-06, "camp + shelf"). The owner's setup-page answers of 2026-10-24,
+folded 2026-11-08: **B–A, $15** (replaces FEAT-168's $6 [DEFAULT]), a rare roadside find. **Open:** the same
+answers said "sold at the general store"; 11-06 put it on the auto shop's shelf, and nothing stocks it at the
+general store.
 
 ### Binoculars
 status: todo · design: idea · build: effect, model · where: generalStore, tackleShop
@@ -460,14 +464,50 @@ status: todo · design: ratified · build: param · where: autoShop, reward, fou
 shop; an S-only reward from the auto shop, stranded motorists and residences, very rare.
 
 ### Power mods
-status: todo · design: ratified · build: param · where: autoShop, reward
-A worse car without the literacy — the cursed item nobody had to author. **Ruled 2026-10-22:** +3%
-power per rung; the exhaust ladder is stock → sport → open headers → race (open headers are the
-loudest and a little sketchy, not the most powerful). Added, figures open: cold-air intake, cams,
-light flywheel, turbo, supercharger, chip tune, race ECU. Sold at the auto shop; a reward from the
-auto shop, stranded motorists and residences. **Split into its pieces 2026-10-24** (owner): sport exhaust, open
-headers, race exhaust, cold-air intake, cams, light flywheel, turbo, supercharger, chip tune, race ECU — each
-priced and specified on its own card on the setup page (gain, rev band, limiter, inertia, lag, mass).
+status: todo · design: ratified · build: effect · where: autoShop, reward, found
+A worse car without the literacy — the cursed item nobody had to author. Ten pieces, each its own item,
+with the owner's figures from the setup page (2026-11-08). **FEAT-189 builds them** (lane B): the first
+modifier layer on `data/engines.js`.
+
+Rules (owner, 2026-11-08): the gains **multiply** ("more accurate": 1.03 × 1.30 = +33.9 %); **one ECU slot**
+(chip tune or race ECU); **one forced-induction slot** (turbo or supercharger); **one exhaust**, on the ladder
+stock → sport → open headers → race ("the open headers are loudest and a lil sketchy. not the most powerful").
+The flat +3 % a rung (10-22) is superseded. Power targets: the I4 maxed out with a turbo ~275 hp, the V6 turbo
+~350, the V8 turbo ~425; supercharged ~25 hp lower with instant torque. The gains below multiply to ×1.75 at
+most, short of those targets: open in FEAT-189. All ten are sold at the auto shop.
+
+| Mod | Gain | Other effects | Rank | Rarity | Price | Found | Reward from |
+|---|---|---|---|---|---|---|---|
+| Cold-air intake | +3 % | wears faster than the paper filter, rebuilds cheaply | C–B | common | $12 | rare roadside find | auto shop, residence, motorist |
+| Light flywheel | — | inertia −25 % of the fitted engine | C–B | common | $15 (install; "flywheel is a pain") | rare roadside find | auto shop, residence, motorist |
+| Sport exhaust | +5 % | even across the range; a little deeper than stock | C–B | uncommon | $15 | rare roadside find | motorist, residence, auto shop |
+| Chip tune | +5 % | limiter +350 rpm | B–A | uncommon | $15 | rare roadside find | auto shop, residence, motorist, Larry's house |
+| Open headers | +8 % | all at the peak, slight midrange loss; hotter (more heat per unit of fuel); the loudest | C–B | rare | $15 | rare roadside find | auto shop, residence, motorist, Larry's house |
+| Cams | +8 % | low end −5 %, limiter +250 rpm | B–A | rare | $25 + $15 engine labour | barn find | auto shop, residence |
+| Race exhaust | +12 % | small midrange bump, big top-end bump | A–S | epic | $35 | barn find | motorist, auto shop, residence |
+| Race ECU | +8 % | flat gain, limiter +750 rpm | A–S | epic | $35 | barn find | motorist, auto shop, residence |
+| Supercharger | +20 % | +25 kg; instant torque; no belt cost | A–S | legendary | $60 | barn find | auto shop, residence, motorist |
+| Turbo | +30 % | +20 kg; boost from ~2500 rpm, ~1 s lag, both "just a guess": the sim decides (FEAT-191) | A–S | legendary | $60 | barn find | motorist, residence, auto shop |
+
+The rarities are the owner's five tiers (FEAT-192). Engine labour $15 is also "where engine repair should
+start" (FEAT-69).
+
+### V6 engine swap
+status: todo · design: proposed · build: effect · where: autoShop, reward
+FEAT-190 (owner, 2026-11-08): the I4 is the default engine now and the V6 is a mod. **A–S, epic.** The swap
+carries the engine's own mass. Open on the setup page: which V6 — the 3.0 Vulcan (145 hp, today's
+`vulcan30`) or the 4.0 SOHC (207 hp) — and its price and sources.
+
+### V8 engine swap
+status: todo · design: proposed · build: effect · where: autoShop, reward
+FEAT-190 (owner, 2026-11-08): **S only, legendary.** The Ford 5.0 L V8 from the 1996–2001 Explorer: 215 hp at
+4200 rpm, 288 lb·ft at 3300. A new `ENGINES` entry with its own fuel map. Open on the setup page: its mass and
+price and sources.
+
+### Bigger fuel tank
+status: todo · design: proposed · build: param · where: autoShop
+FEAT-190 (owner, 2026-11-08): a mod. Stock is 16.5 gal (`fuelTankGal`). Capacity, mass, price, rarity, rank
+and sources are open on the setup page (proposed 19.5 / 23 / 30 gal).
 
 ### Tire compound
 status: cut · design: proposed · build: param · where: autoShop
@@ -493,12 +533,14 @@ Raises the damper rating (FEAT-112).
 ### Sport springs
 status: todo · design: proposed · build: param · where: autoShop
 A sport suspension tier (owner, 2026-10-22), front and rear, §3d Sport character (wears faster).
-Rate, ride height and load ratings open on the setup page. Icon `springs.png`.
+Rate, ride height and load ratings open on the setup page. **$15 per part (owner, 2026-10-24; folded
+2026-11-08 — the game already charges it).** Icon `springs.png`.
 
 ### Sport shocks
 status: todo · design: proposed · build: param · where: autoShop
 The sport tier's shocks (owner, 2026-10-22), front and rear. Damping and load ratings open on the
-setup page. Icon `dampers.png`.
+setup page. **$15 per part (owner, 2026-10-24; folded 2026-11-08 — the game already charges it).** Icon
+`dampers.png`.
 
 ### LT load-range-E tires
 status: todo · design: ratified · build: param, effect · needs: load verdicts · where: autoShop
@@ -552,7 +594,9 @@ status: todo · design: idea · build: effect, model · needs: hazards · where:
 ### Stock engine
 status: wip · design: proposed · build: param · where: autoShop
 New part on feature/parts-shop (2026-10-22), `engineStock`: the engine bay had damage tracks and no part,
-so exchange and the shelf had nothing to sell. A used stock 4.0 V6, 180 kg, 8 h to swap, $90 stand-in.
+so exchange and the shelf had nothing to sell. 8 h to swap, $60 (owner, 2026-10-22). **The stock engine
+is the 2.3 I4 from 2026-11-08** (FEAT-190: `duratec23`, 143 hp, 209 N·m); the part was a 180 kg V6 crate and
+gets the I4's own mass. The V6 and V8 are mods (Power mods).
 Icon `engine.png`. Owner, 2026-10-22: "This would make for a sweet freight delivery as well" — a
 candidate row in cargo.md (Freight).
 

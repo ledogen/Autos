@@ -112,6 +112,7 @@ shows it reads from that place.
 | Camp vibe (flat / view / shade / water) | `.vseg-*` / `.lg-*` / `.cp-*` in `index.html` | currently copied in 3 places; a future cleanup folds them into vars |
 | Part condition (sound / worn / damaged / failing) | condition bands, `src/damage-screen.js` | damage pictogram and legend |
 | Equipped item | `#c9a24a`, `src/inventory-screen.js` | slot border, tag, tooltip |
+| Item rarity (common / uncommon / rare / legendary; epic proposed `#9b5fd1`, FEAT-192) | `RARITY_COLOR`, `data/parts.js` | the tint behind an item or part icon (inventory, service screen) |
 
 ## 4. Type
 

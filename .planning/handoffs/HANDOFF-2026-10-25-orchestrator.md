@@ -10,6 +10,26 @@ Read this file, then `.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-al
 record), then `CLAUDE.md` § "Communicating with the owner". The owner is an engineer, not a programmer: gloss
 code and platform terms inline, never physics, maths, git or design.
 
+## Lanes are YOUR subagents (owner, 2026-11-09) — read this first
+Supersedes every older line below about lane windows, session names, pasted resume prompts and the owner
+/clearing lanes. The owner no longer talks to lanes, pastes their prompts or clears them. **You run each lane as a
+background subagent, one task per agent; the fresh agent IS the clear.** The agents' rules:
+`.planning/handoffs/LANE-AGENT-BRIEF.md` (they read it themselves; never retype it).
+- **Spawn** (Agent tool, `model: opus`, general-purpose, NO `isolation` — they use the lane worktrees below):
+  `You are Lane <X> (lane id <id>). Read /Users/ledogen/CodeShit/CarGame/.planning/handoffs/LANE-AGENT-BRIEF.md
+  and follow it. Worktree <path>, branch <branch>, port <port>. Your task: <ONE task>.` plus anything the page
+  handoff doesn't have yet (an owner answer, verbatim). Then write the returned agent id to `lanes/<id>.agent`.
+  At most one agent per worktree. Lane C gets an agent only when an owner answer gives it work.
+- **On a report** (the agent's final message, ≤ 15 lines): LANDING → merge, ONE gated smoke on main, fast-forward the
+  lanes; OWED → the page's `OWED` array; then spawn a FRESH agent for NEXT. Never SendMessage a finished agent to
+  continue: that revives its whole context. Messages to a RUNNING agent are fine (an answer, an order).
+- **No context watching** (owner 11-09: "no need to watch context like a hawk… just spawn a new subagent for task").
+  One task per agent keeps each one small; that is the whole mechanism.
+- **Agents never smoke**; landing smokes stay serial on main (`tools/chrome-slot.sh`, load-gated).
+- **Before the owner clears YOU**: let running agents finish (or tell them to stop at their next commit), take
+  their reports, then write this handoff.
+  Nothing lives only in an agent: they commit WIP every step and the page holds each lane's handoff.
+
 ## What the owner will do next
 
 **Resume word: `orchestrator`.** This session keeps no state of its own: read this file, then the tracker page's
@@ -204,7 +224,7 @@ orchestrator). Owed list on the page: FEAT-159 calls/drive, BUG-74 drive (+ the 
 two reference clips (YouTube blocks agents' downloads — the owner drops them on the Sounds cards) + a scrape recording,
 FEAT-153 tackle-shop reel, FEAT-163 UI-dry default, plus the older items.
 
-## Lane context — the orchestrator watches it, not the owner (owner question 2026-11-03)
+## Lane context — SUPERSEDED 2026-11-09 by § Lanes are YOUR subagents (kept for history)
 Sessions auto-compact near their limit, so a lane never stops for a full context. Lane A and Lane B had
 each auto-compacted twice by 11-03 with nobody noticing. Nothing is lost that matters: lanes commit WIP
 at every step, plans are parked in tickets, and the page holds each lane's handoff. A manual `/clear` is
@@ -537,3 +557,46 @@ test/cdp-smoke.mjs > log`), never merges while one runs. Queue: Spare BUG-146 �
 NOT landing: B FEAT-34 r3 (Chrome shots for the owner's morning look first); both lighting builds (owner picks;
 Spare makes land/feat180-next landable; the rebuild needs main merged only if picked). Lighting frame-cost
 re-measure waits for a quiet window. Nothing pushed.
+
+### 11-09 ~01:45 — ORCHESTRATOR RESUME HERE (owner clearing every session)
+- **LANDED: Lane C 8cddd77b** (fast-forward; data/shop-stock.js shadeTarp $6 → $15 + docs). C's affected 14/14,
+  solo gated smoke on main **PASS 26/26**, zero console errors. Main = 8cddd77b. NOT pushed (origin d7dc18e1).
+- **Ready-for-clear:** C (lanes/c v31), Spare (lanes/s v107), B (lanes/b v83). A: pending at the time of writing.
+- **Landing queue on resume** (each: lane's affected gates green → landing request → merge → ONE gated smoke on main):
+  1. Spare BUG-146 land/bug-146 8935c63a. Gates 23/70 green when cleared; the handoff says read the log or re-run.
+  2. B BUG-147 dc41474e (after 146; MAX_IN_PAD 18). Gates in flight.
+  3. B BUG-153 35847458. One red: vertical-curvature 205 vs 203 ceiling (sharpest 0.092 < 0.11 /m), B diffs per
+     window vs main first. Shot sheet to me.
+  4. B BUG-155+154 228c97a3: gates, plus the owner's before/after photos and the steep-gore sheet.
+  5. A BUG-152 + FEAT-184 menu/flag (feature/run-shape): probe 5, gates, roster compare (save bump ≥ 2/10 → owner).
+- **Waiting on the owner:**
+  - FEAT-34 r3 (feature/machine 1ed40292): B's Chrome shots → owner look → then land.
+  - Lighting: Spare r5 land/feat180-next 658e98d9 (landable, 11/11 green, :3887); rebuild r3 proto/lighting-redesign
+    5bfea3f5 (:3890; sky-ephemeris ladder stale; needs main merged).
+  - Owed answers: tutorial-* ×5 (tracker v199), item page (FEAT-192 rarity ×4, V6/V8/tank, tarp sold-at).
+- **The rebuild agent** was this session's subagent: start a fresh opus agent from
+  HANDOFF-2026-11-08-lighting-redesign.md for its next round.
+- **B BUG-153, a second red** (lanes/b v84): junction-edge-lip FAIL 2 — a 0.276 m lip at seed 917338424
+  g:-1,-1,2:0,-1,0 side -1 s 14, and a 0.081 m/0.05 m pad tear at (−212.04, −543.86). B runs the gate on main and on
+  land/bug-155 next. If 155 fixes it, land 153 + 155 together (one smoke).
+- **11-09 ~02:00: Lane A merged to main as 462fe00e** (feature/run-shape 76e327ba: BUG-152 + FEAT-184 menu option /
+  flag starts complete; affected 17/17, probe 5 12/12 SAME, roster 10/10 identical → no save bump, branch smoke 26/26
+  at 0db6eade). ONE gated smoke on main is RUNNING; log
+  /private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/f08f9df1-2394-4364-9acc-a863a66bda88/scratchpad/smoke-a-462fe00e.log.
+  On resume: if its last line is PASS, A is landed. If it failed at a load-flake step, re-run it gated. If it's a
+  real failure, revert the merge in a scratch worktree to confirm. Owed after: pad-e2e (A changed its D-pad check,
+  not re-run), BUG-152's multi-seed soak before the ticket closes. Lane A ready for clear (lanes/a v90). ALL FOUR
+  lanes are ready.
+- **A's landing smoke run 1 FAILED at 'opening'** ("the tow did not land at an open shop": the 8 s wall-clock wait
+  for #svc-screen after the tow click), at load ~9 with three lane gate processes running. `SMOKE_STEPS=boot,opening`
+  passed 2/2 alone, so it reads as a flake. Re-run of the full smoke RUNNING; log
+  …/scratchpad/smoke-a-462fe00e-r2.log. If it flakes again at the same step, lengthen that wait or gate the smoke on a
+  quieter box (lane A owns the step).
+
+### 11-09 — LANES BECOME SUBAGENTS (owner, after clearing all four windows)
+- **A LANDED**: the re-run smoke on main at 462fe00e PASSED 26/26, zero console errors (run 1's 'opening' miss was load).
+- The four lane windows are gone. From now on lanes are this session's subagents (§ Lanes are YOUR subagents, top of
+  this file; `.planning/handoffs/LANE-AGENT-BRIEF.md`; memory `feedback_lanes_are_subagents`). The tracker page's
+  source says so too, but is NOT republished yet — the next OWED publish carries it.
+- First spawns: A = BUG-152 multi-seed soak + pad-e2e rerun · B = land/bug-147 gates → landing request (held until
+  146 lands) · Spare = land/bug-146 gates → landing request. C: no agent (all owner items; FEAT-192 rarity unanswered).

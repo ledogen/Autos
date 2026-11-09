@@ -96,7 +96,7 @@
 </style>
 <main>
   <h1>Alpha Lanes</h1>
-  <p class="sub">The alpha build order in four lanes, one worktree each, main as the integration branch. Click a task's status to cycle it (todo → doing → done → blocked); notes save to the page; each lane writes its own resume handoff here (<code>lanes/&lt;id&gt;.handoff</code>) before a /clear, and the copy button hands it back. The plan of record is the handoff in the repo:
+  <p class="sub">The alpha build order in four lanes, one worktree each, main as the integration branch. Click a task's status to cycle it (todo → doing → done → blocked); notes save to the page; each lane runs as a subagent of the orchestrator, one task per agent: when it stops it rewrites its handoff here (<code>lanes/&lt;id&gt;.handoff</code>) and the next agent starts from it — nobody pastes or clears lanes any more. The plan of record is the handoff in the repo:
     <code>.planning/handoffs/HANDOFF-2026-10-24-consolidation-and-alpha-lanes.md</code> (open it from the <a href="http://localhost:8010">dashboard</a> on your machine). Related pages: <a href="https://claude.ai/artifact/YHLoevQnoJ1y5BYmksVVVZ">mission-feel review</a> · <a href="https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu">item setup</a>.</p>
   <div class="strip">
     <span class="doing">doing <b id="n-doing">0</b></span>
@@ -163,7 +163,7 @@
         { id: 'FEAT-148 ↳', what: 'BUILT (336813e0) — the midnight overlay (“Supplies are drying up / costs keep rising”) and the empty giver-line table; no placeholder quote. Your lines fold in when written.' },
         { id: 'FEAT-65', what: 'ON MAIN (7006140f) — your option (b): a 40 s window that resets on every hit [default; the widest gap between targets is 341 m, 34 s at 36 km/h]; when it runs out the job settles with what you smashed. Then you check the GPS + order.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Work ONLY there. Read ' + HANDOFF + ' § Lane A, then this page\'s Lane A handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/a.agent. Before a /clear, set your task rows and write lanes/a.handoff here.' },
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-run-shape, branch feature/run-shape, serve :3731. Spawned by the orchestrator as a subagent: read /Users/ledogen/CodeShit/CarGame/.planning/handoffs/LANE-AGENT-BRIEF.md and follow it; then this page\'s Lane A handoff and tasks.' },
     { id: 'b', name: 'B — the machine bites back', goal: 'Physics, damage, parts, recovery, assists.',
       wt: '/Users/ledogen/CodeShit/CarGame-machine', branch: 'feature/machine', port: 3282,
       owns: 'damage.js, tire.js, recovery.js, parts.js, service*.js, drivetrain assists, data/parts.js, data/stock-weights.js, physics gates',
@@ -190,7 +190,7 @@
         { id: 'Drive soak', what: 'Lane B now: lesson cards show pad glyphs on the pad, then a long headless drive over many random seeds that flags sinking, jolts, stuck spots and invisible colliders.' },
         { id: 'BUG-92', what: 'ABS kick never rumbles the pad — waits on the owner’s USB probe.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Work ONLY there. Read ' + HANDOFF + ' § Lane B, then this page\'s Lane B handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/b.agent. Before a /clear, set your task rows and write lanes/b.handoff here.' },
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-machine, branch feature/machine, serve :3282. Spawned by the orchestrator as a subagent: read /Users/ledogen/CodeShit/CarGame/.planning/handoffs/LANE-AGENT-BRIEF.md and follow it; then this page\'s Lane B handoff and tasks.' },
     { id: 'c', name: 'C — content (no standing session)', goal: 'Owner-gated: runs when the owner has listening or modelling time (11-02). Code items go to Spare.',
       wt: '/Users/ledogen/CodeShit/CarGame-content', branch: 'feature/content', port: 3774,
       owns: 'assets/, wip/, src/*-audio.js, data/items.js rows + thumbnails, items.md, FEAT-120/121',
@@ -205,7 +205,7 @@
         { id: 'FEAT-129', what: 'ON MAIN (9debc110) — the favicon: a faceted pickup, system green on black.' },
         { id: 'FEAT-121', what: 'Item-setup rulings going live (needs the item-setup page\u2019s answers).' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Work ONLY there. Read ' + HANDOFF + ' § Lane C, then this page\'s Lane C handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/c.agent. Before a /clear, set your task rows and write lanes/c.handoff here.' },
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-content, branch feature/content, serve :3774. Spawned by the orchestrator as a subagent: read /Users/ledogen/CodeShit/CarGame/.planning/handoffs/LANE-AGENT-BRIEF.md and follow it; then this page\'s Lane C handoff and tasks.' },
     { id: 's', name: 'Spare — front of mind', goal: 'Whatever the owner surfaces, the alpha bugs nobody else owns, and Lane C’s code items.',
       wt: '/Users/ledogen/CodeShit/CarGame-spare', branch: 'feature/spare', port: 3885,
       owns: 'whatever the task touches — say so to the lane that owns it',
@@ -229,7 +229,7 @@
         { id: 'FEAT-133/136', what: 'Controller finish — waits on the real-pad play-test (and Safari / Firefox).' },
         { id: 'FEAT-69', what: 'The economy re-cut — after the owner’s full-run review.' },
       ],
-      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Work ONLY there. Read ' + HANDOFF + ' § Lane Spare, then this page\'s Lane Spare handoff and tasks; take the first task not done. Merge main first. Commit WIP on your branch at every step. Write your session name to lanes/s.agent. Before a /clear, set your task rows and write lanes/s.handoff here.' },
+      prompt: 'Worktree /Users/ledogen/CodeShit/CarGame-spare, branch feature/spare, serve :3885. Spawned by the orchestrator as a subagent: read /Users/ledogen/CodeShit/CarGame/.planning/handoffs/LANE-AGENT-BRIEF.md and follow it; then this page\'s Lane Spare handoff and tasks.' },
   ]
   // The owner's queue (owner 11-02): `kind` = what it costs the owner — decide (a one-line answer: tap an option
   // or type a note), drive (needs the game; the full-run review covers most), make (the owner's hands, ears or
@@ -344,7 +344,7 @@
       }
     }
     for (const k of STATES) el('n-' + k).textContent = counts[k]
-    for (const l of LANES) el('agent-' + l.id).textContent = state.lanes[l.id]?.agent || '— (the lane writes lanes/' + l.id + '.agent on resume)'
+    for (const l of LANES) el('agent-' + l.id).textContent = state.lanes[l.id]?.agent || '— (the orchestrator writes the agent id at spawn)'
     paintOwed()
     // The inbox: new items first (oldest at the top, the order they were written), handled ones folded.
     const items = Object.entries(state.inbox).map(([id, x]) => ({ id, ...x })).sort((a, b) => (a.at || '').localeCompare(b.at || ''))

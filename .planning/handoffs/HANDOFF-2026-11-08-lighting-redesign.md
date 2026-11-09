@@ -157,3 +157,8 @@ Branch at **5bfea3f5**, only `src/sky.js`. No gates ran (hold).
   - the land's golden-hour orange is still weak;
   - the twilight moon disc is faint;
   - the CPU sky push read 10 ms at load average 6.5 (1.83 ms idle in round 2), so re-measure it idle.
+- **Gate check (orchestrator, 11-09 ~01:10, on 5bfea3f5):** `node test/sky-ephemeris.mjs` → the 7 sun/moon
+  schedule checks pass, and 4 brightness-ladder checks FAIL. They were written for round 1's single eye curve:
+  noon white 1.72 vs ~1, sunset 0.12 vs 25–70 %, moonless 3.0 % vs < 1 %, full moon 11 % vs 1–5 %. Rounds 2–3 split
+  the land and sky curves, so re-pin the ladder to the land's displayed brightness (or measure both) before this
+  branch could land.

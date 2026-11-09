@@ -11,6 +11,13 @@ lane: A
 
 # FEAT-170: The opening becomes a skippable tutorial evening at mom's
 
+**Owner, 2026-11-08 (feat184-look): the tutorial splits off from the run.** A new game gets a short, skippable intro
+(the firing → the drive to mom's → she feeds you and sets up the story → sleep → free will). The tutorial becomes
+its own menu option on a fixed seed. The owner's note is verbatim in FEAT-184's section "Owner, 2026-11-08 18:27Z",
+with the conflicts it raises against this ticket: "every playthrough starts the first paid job as a delivery to
+larry's" (and the acceptance line below), where a skip lands, and the hold-M skip. Those are flagged to the
+orchestrator and not resolved here. The menu option and the flag starting complete are built (bd5a6a95).
+
 **Waiting on the owner (2026-11-07):** the playthrough, once with the tutorial and once skipping it (`feat170-play`). Also to judge on that drive: whether the joint → mom's drive is too long on a wide world (FEAT-147's question), BUG-118's GPS turning you round, and the card words (FEAT-148). Everything else is on main (stages 1–4 by 6099321f; BUG-117, BUG-124).
 
 **Stage it. Do not one-shot it** (owner). Plan the stages in this ticket, get sign-off, then build one stage
