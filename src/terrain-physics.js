@@ -180,6 +180,8 @@ export class TerrainPhysics {
 
 // Asphalt grips better than the carved dirt shoulder (terrain μ 0.8) — debris resting on the
 // road should stay put; the chassis pair-μ barely moves (geometric mean vs its 0.0125).
+// The road's shapes are GROUP_ROAD (engine.addRoadMesh), so the body's flank grips them at its own
+// on-road μ (FEAT-193, physics.js). physics.js ROAD_FRICTION_REF must match this.
 const ROAD_FRICTION = 0.9
 
 /**
@@ -222,7 +224,7 @@ export class RoadPhysics {
       // anything rolling off the edge lands on the carved-dirt heightfield centimetres below.
       const surfaceOnly = !!geo.userData?.colliderSurfaceOnly
       if (surfaceOnly) indices = this._surfaceTris(positions, indices)
-      if (indices.length >= 3 && this._eng.addMesh(body, positions, indices, { friction: ROAD_FRICTION })) shapes++
+      if (indices.length >= 3 && this._eng.addRoadMesh(body, positions, indices, { friction: ROAD_FRICTION })) shapes++
       // BUG-81 item 4: everything else here is a SHELL — the bore lining and the portal ring — and a
       // Box3D mesh triangle collides from its front face only (measured). The lining faces into the
       // bore, so a truck touching it from OUTSIDE met back faces, sank in unopposed and was thrown
@@ -230,7 +232,7 @@ export class RoadPhysics {
       if (!surfaceOnly && indices.length >= 3) {
         const back = new Uint32Array(indices.length)
         for (let i = 0; i + 2 < indices.length; i += 3) { back[i] = indices[i]; back[i + 1] = indices[i + 2]; back[i + 2] = indices[i + 1] }
-        if (this._eng.addMesh(body, positions, back, { friction: ROAD_FRICTION })) shapes++
+        if (this._eng.addRoadMesh(body, positions, back, { friction: ROAD_FRICTION })) shapes++
       }
     }
     if (shapes > 0) this._tiles.set(key, body)

@@ -142,6 +142,7 @@ export const WHEEL_SOFT_BAND = 0.15
 export const SUSPENSION_SUBSTEPS = 4
 
 export const TIRE_DAMP_ENGAGE = 0.04   // m — debris contacts: full tire damper by one static deflection of depth (see stepSuspensionSubsteps)
+const TIRE_STOP_RAMP = 0.01            // m — BUG-140: the on-stop tire damping fades in over this much bump-stop overshoot
 
 /**
  * THE tire contact law — the normal force [N] one contact of depth `depth` [m] produces, for a
@@ -293,6 +294,7 @@ export function carcassRadialOffset (corner, psi, runout) {
  *   - Gravity on hub = m_u * g * dot(body_up, world_up) = m_u * g * body_up.y (D-05)
  *   - Contact normal split: strut-axis component -> tireFz (hub ODE); X/Z residual -> _hubNormalXZ (D-06)
  *   - Bump and droop stops as linear penalty springs (D-08, D-09)
+ *   - The body moves under the mounts within the step, pushed by each substep's strut forces (BUG-140)
  *
  * Called once per outer physics step by physics.js BEFORE the per-wheel Pacejka contacts loop.
  * Mutates vehicleState.strutComp[i] and vehicleState.strutCompVel[i] in place.
@@ -312,10 +314,10 @@ export function carcassRadialOffset (corner, psi, runout) {
  *   Reads: wheelMass, suspensionStiffness{Front,Rear}, suspensionDamping{Front,Rear},
  *     suspensionRestLength{Front,Rear}, suspensionTravel{Front,Rear}, suspensionBodyOffset{Front,Rear},
  *     bumpStopStiffness, DROOP_STOP_STIFFNESS, arbStiffness{Front,Rear},
- *     tireStiffness, tireDamping, wheelRadius, trackFront, trackRear, wheelbase,
- *     weightFront, weightRear, cgHeight, _rotateVector (injected function),
- *     _hubNormalXZ[4] (initialized by main.js).
- *   Writes: _tireFz[4], _suspForceAccum[4], _hubNormalXZ[4].
+ *     tireStiffness, tireDamping, tireStopDampingRatio, wheelRadius, trackFront, trackRear, wheelbase,
+ *     weightFront, weightRear, cgHeight, mass, stowedKg, inertia{Pitch,Yaw,Roll}, _rotateVector (injected function),
+ *     _hubNormalXZ[4] (initialized by main.js), _bodyOther (physics.js, last step's non-strut force/torque).
+ *   Writes: _tireFz[4], _suspForceAccum[4], _hubNormalXZ[4], _bodyStrutF/_bodyStrutT (the body copy's step-mean strut push).
  * @param {number} dt - Outer physics step in seconds (== PHYSICS_DT from main.js).
  * @param {function} queryContacts - (cx, cy, cz, r, footprint, corner) → Array<{normal, depth, contactPoint}>.
  *   physics.js passes its qcPlus (analytic ground ∪ engine debris); gives the tire compression
@@ -326,6 +328,7 @@ export function carcassRadialOffset (corner, psi, runout) {
 // Scratch for stepSuspensionSubsteps (one truck steps at a time; nothing here outlives a call).
 const _mountX = [0, 0, 0, 0], _mountY = [0, 0, 0, 0], _mountZ = [0, 0, 0, 0]
 const _mountVX = [0, 0, 0, 0], _mountVY = [0, 0, 0, 0], _mountVZ = [0, 0, 0, 0]
+const _rMX = [0, 0, 0, 0], _rMY = [0, 0, 0, 0], _rMZ = [0, 0, 0, 0]   // mount arms from the CG, world axes (BUG-140)
 const _arbF = [0, 0, 0, 0]
 const _hub = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 }   // the hub handed to a debris contact's onForce (FEAT-158)
 // Per-contact scratch for the two passes over one wheel's contacts (a wheel rarely has more than 3).
@@ -409,25 +412,43 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   // the strut axis orientation rather than always pulling world-downward (the Phase 4 bug).
   const gravDot = body_up.y  // = dot((0,1,0), body_up) = Y component of body_up
 
-  // ── Per-corner mount point, in world space ───────────────────────────────────────────────────
-  // The body pose does not change inside this function, so the mount is the same for all N
-  // substeps; only the strut length under it moves. Local mount: the hub's rest offset from the
-  // CG, (cgHeight − wheelRadius) below it, plus the ride-height body offset (D-08).
+  // ── Per-corner mount arm, and the BODY moving under the mounts (BUG-140) ─────────────────────
+  // Local mount: the hub's rest offset from the CG, (cgHeight − wheelRadius) below it, plus the
+  // ride-height body offset (D-08), rotated into the world once (the body axes are held at the
+  // step's start, as they always were).
+  // BUG-140 (owner pick A, 2026-11-08): the body MOVES within the step as the strut forces act on
+  // it. Until then the mounts stood at the step's start pose for all N substeps (moving only in the
+  // damper, at the step's start velocity) and the body took the substeps' mean force from the
+  // engine once per 1/60 s. A force that lags the motion pushes too little on the way in and too
+  // much on the way out: on the bump stop (1–2.6 MN/m on a ~340 kg corner, ω·dt ≈ 0.9–1.5 at
+  // 60 Hz) a 5 m drop returned 81 % of its height, against 26 % with the whole step at 240 Hz and
+  // the physics unchanged. So each substep now moves a copy of the body — the mass and tuned
+  // inertia physics.js gives the engine (syncChassisMass: x pitch, y yaw, z roll) — by that
+  // substep's strut forces, gravity, and LAST step's other forces (tires, drag, sidewalls:
+  // params._bodyOther, physics.js), and the next substep's mounts ride it. The engine still steps
+  // the body once on the same mean force, so this copy only says where the mounts are inside the
+  // step. Small-angle (a step turns the body a degree or two); no gyroscopic term within a step.
+  // ponytail: the hub still rides the body frame (D-04: no m_u·a_mount pseudo-force), as it always has across steps.
+  const rot = typeof params._rotateVector === 'function' ? params._rotateVector : null
   for (let i = 0; i < 4; i++) {
     const local = mountLocal(i, params)
-    const rMount = typeof params._rotateVector === 'function'
-      ? params._rotateVector(local)
-      : local
-    _mountX[i] = vehicleState.position.x + rMount.x
-    _mountY[i] = vehicleState.position.y + rMount.y
-    _mountZ[i] = vehicleState.position.z + rMount.z
-    // Mount velocity: v_body + ω × rMount. The hub rides this plus its strut motion, and the tire
-    // damper below needs the HUB's true closing speed on the ground (see compressionVel).
-    const w = vehicleState.angularVelocity, v = vehicleState.velocity
-    _mountVX[i] = v.x + (w.y * rMount.z - w.z * rMount.y)
-    _mountVY[i] = v.y + (w.z * rMount.x - w.x * rMount.z)
-    _mountVZ[i] = v.z + (w.x * rMount.y - w.y * rMount.x)
+    const rMount = rot ? rot(local) : local
+    _rMX[i] = rMount.x; _rMY[i] = rMount.y; _rMZ[i] = rMount.z
   }
+  const pos = vehicleState.position
+  let bvx = vehicleState.velocity.x, bvy = vehicleState.velocity.y, bvz = vehicleState.velocity.z
+  let bwx = vehicleState.angularVelocity.x, bwy = vehicleState.angularVelocity.y, bwz = vehicleState.angularVelocity.z
+  let Dx = 0, Dy = 0, Dz = 0, Tx = 0, Ty = 0, Tz = 0   // the body's displacement and small rotation so far this step
+  const invM = 1 / (params.mass + (params.stowedKg || 0))
+  const ex = rot ? rot(_EX) : _EX, ez = rot ? rot(_EZ) : _EZ   // body x (pitch axis) and z (roll axis); body_up is y (yaw)
+  const iPitch = 1 / params.inertiaPitch, iYaw = 1 / params.inertiaYaw, iRoll = 1 / params.inertiaRoll
+  const o = params._bodyOther
+  const oFx = o ? o.fx : 0, oFy = o ? o.fy : 0, oFz = o ? o.fz : 0, oTx = o ? o.tx : 0, oTy = o ? o.ty : 0, oTz = o ? o.tz : 0
+  // The step-mean force and torque (about the CG) the copy took from the struts — physics.js takes
+  // it off the step's total to leave next step's _bodyOther.
+  const SF = params._bodyStrutF || (params._bodyStrutF = { x: 0, y: 0, z: 0 })
+  const ST = params._bodyStrutT || (params._bodyStrutT = { x: 0, y: 0, z: 0 })
+  SF.x = SF.y = SF.z = ST.x = ST.y = ST.z = 0
 
   const sidewall = (params.wheelRadius || 0.368) - (params.rimRadius || 0.1905)   // for the rim-load residual below
   const sc = vehicleState.strutComp, scv = vehicleState.strutCompVel
@@ -435,6 +456,20 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   const gripUp = params._rockGripUp || (params._rockGripUp = [0, 0, 0, 0])
 
   for (let s = 0; s < N; s++) {
+    // ── 0. The mounts where the body copy has carried them (BUG-140; at s = 0, the step's start).
+    // Mount velocity: v_body + ω × rMount. The hub rides this plus its strut motion, and the tire
+    // damper below needs the HUB's true closing speed on the ground (see compressionVel).
+    for (let i = 0; i < 4; i++) {
+      const rx = _rMX[i], ry = _rMY[i], rz = _rMZ[i]
+      _mountX[i] = pos.x + rx + Dx + (Ty * rz - Tz * ry)
+      _mountY[i] = pos.y + ry + Dy + (Tz * rx - Tx * rz)
+      _mountZ[i] = pos.z + rz + Dz + (Tx * ry - Ty * rx)
+      _mountVX[i] = bvx + (bwy * rz - bwz * ry)
+      _mountVY[i] = bvy + (bwz * rx - bwx * rz)
+      _mountVZ[i] = bvz + (bwx * ry - bwy * rx)
+    }
+    let Fx = 0, Fy = 0, Fz = 0, Qx = 0, Qy = 0, Qz = 0   // this substep's strut force and torque on the body
+
     // ── 1. ARB pass — from every corner's compression BEFORE any corner integrates ────────────
     // (RESEARCH §Anti-Pattern: "Computing ARB after the suspension force is already applied to hub")
     // Convention: F_arb = k_ARB * (strutComp[left] - strutComp[right]) per axle.
@@ -491,11 +526,27 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       // as it should be without the explicit hub step blowing up.
       const nC = hubContacts.length
       let tireFzExplicit = 0, cTire = 0
+      // BUG-140 (owner pick 2, 2026-11-08): ON ITS BUMP STOP the strut is all but rigid, so this corner
+      // of the body (~340 kg) rides the tire's air spring with only the carcass damper — tuned as
+      // ζ ≈ 0.56 for the 18 kg wheel, which for the body is ζ ≈ 0.13 (critical 2·√(k·m) ≈ 11.7 kN·s/m),
+      // and a hard drop's rebound grew with its height. On the stop the tire's damper is raised to
+      // tireStopDampingRatio of the body-on-tire critical (0.5 ⇒ ≈ 5.8 kN·s/m), every contact by the
+      // same factor (a rock keeps its own lower rate's proportion); off the stop the road ride's
+      // tireDamping is untouched. Faded in over the stop's first TIRE_STOP_RAMP of overshoot.
+      const travel = isFront ? (params.suspensionTravelFront || 0.12) : (params.suspensionTravelRear || 0.14)
+      const onStop = Math.min(1, Math.max(0, (strutCompI - travel) / TIRE_STOP_RAMP))
+      let stopMult = 1
+      if (onStop > 0) {
+        const mCorner = params.mass * (isFront ? params.weightFront : params.weightRear) / 2
+        const cStop = (params.tireStopDampingRatio ?? 0) * 2 * Math.sqrt(params.tireStiffness * mCorner)
+        stopMult = 1 + onStop * Math.max(0, cStop / params.tireDamping - 1)
+      }
       for (let ci = 0; ci < nC; ci++) {
         const c = hubContacts[ci]
         // SM-3 flat tire: params._tireRateScale[i] collapses the air spring when the air is gone.
         const rate = params._tireRateScale ? params._tireRateScale[i] : 1
         const t = tireContactTerms(c.depth, c.sizeR, rate, params)
+        t.damp *= stopMult
         // bodyUpDot = dot(c.normal, body_up): the fraction of this contact's force along the strut axis (D-06)
         const bUp = c.normal.x * body_up.x + c.normal.y * body_up.y + c.normal.z * body_up.z
         // compressionVel: positive = hub approaching the surface = tire compressing.
@@ -545,7 +596,6 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       }
 
       // Phase 4.1 D-08/D-09: bump and droop stops. The droop stop is a linear penalty spring.
-      const travel        = isFront ? (params.suspensionTravelFront || 0.12) : (params.suspensionTravelRear || 0.14)
       const DROOP_K       = params.DROOP_STOP_STIFFNESS || 20000
       // BUMP STOP (2026-10-03, owner capture 1791092005752). Three things changed at once:
       //   · PROGRESSIVE: real stop rubber stiffens as it packs — rate × (1 + (x/x0)²), x0 =
@@ -608,6 +658,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       _hub.vy = _mountVY[i] + newStrutCompVel * body_up.y
       _hub.vz = _mountVZ[i] + newStrutCompVel * body_up.z
       gripUp[i] = 0
+      let xzx = 0, xzy = 0, xzz = 0   // this substep's X/Z residual on the body (D-06), contacts + rock grip
       for (let ci = 0; ci < nC; ci++) {
         const c = hubContacts[ci], bUp = _cBUp[ci], rate = _cRate[ci]
         const tireFnAtContact = Math.max(0, _cSpring[ci] + _cDamp[ci] * (_cCvE[ci] - newStrutCompVel * _cCvV[ci]))
@@ -622,17 +673,11 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
         if (g) {
           const gUp = g.x * body_up.x + g.y * body_up.y + g.z * body_up.z
           gripUp[i] += gUp
-          if (params._hubNormalXZ) {
-            params._hubNormalXZ[i].x += (g.x - gUp * body_up.x) / N
-            params._hubNormalXZ[i].y += (g.y - gUp * body_up.y) / N
-            params._hubNormalXZ[i].z += (g.z - gUp * body_up.z) / N
-          }
+          xzx += g.x - gUp * body_up.x; xzy += g.y - gUp * body_up.y; xzz += g.z - gUp * body_up.z
         }
-        if (params._hubNormalXZ) {
-          params._hubNormalXZ[i].x += tireFnAtContact * (c.normal.x - bUp * body_up.x) / N
-          params._hubNormalXZ[i].y += tireFnAtContact * (c.normal.y - bUp * body_up.y) / N
-          params._hubNormalXZ[i].z += tireFnAtContact * (c.normal.z - bUp * body_up.z) / N
-        }
+        xzx += tireFnAtContact * (c.normal.x - bUp * body_up.x)
+        xzy += tireFnAtContact * (c.normal.y - bUp * body_up.y)
+        xzz += tireFnAtContact * (c.normal.z - bUp * body_up.z)
         // RIM CONTACT from the analytic path. Depth is measured from the tire's OUTER radius, so
         // once it exceeds the soft band the contact has reached the rim. A hard enough landing over
         // a shoulder step really does kiss the rim, and the engine's hard cores can never report it
@@ -697,10 +742,38 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       if (vehicleState.rimHazardSoft) vehicleState.rimHazardSoft[i] += pinch / N
       if (vehicleState.rimHazardWork) vehicleState.rimHazardWork[i] += pinchW
       params._suspForceAccum[i] += (suspForce - arbF[i]) / N  // body force along strut: spring+damper+stops + ARB reaction
-      // _hubNormalXZ[i] accumulated in the contacts pass above
+      if (params._hubNormalXZ) {
+        params._hubNormalXZ[i].x += xzx / N; params._hubNormalXZ[i].y += xzy / N; params._hubNormalXZ[i].z += xzz / N
+      }
+      // BUG-140: what this corner did to the body copy this substep — the strut along body_up at the
+      // mount, the X/Z residual at the hub (physics.js Step 2.6's arm, before its tilted-tire shift).
+      const fs = suspForce - arbF[i], rx = _rMX[i], ry = _rMY[i], rz = _rMZ[i]
+      const sx = fs * body_up.x + xzx, sy = fs * body_up.y + xzy, sz = fs * body_up.z + xzz
+      const hx = hubWorldX - pos.x - Dx, hy = hubWorldY - pos.y - Dy, hz = hubWorldZ - pos.z - Dz
+      Fx += sx; Fy += sy; Fz += sz
+      Qx += fs * (ry * body_up.z - rz * body_up.y) + hy * xzz - hz * xzy
+      Qy += fs * (rz * body_up.x - rx * body_up.z) + hz * xzx - hx * xzz
+      Qz += fs * (rx * body_up.y - ry * body_up.x) + hx * xzy - hy * xzx
     }
+
+    // ── 3. The body copy takes this substep's push (BUG-140): symplectic Euler, as the engine steps.
+    SF.x += Fx / N; SF.y += Fy / N; SF.z += Fz / N
+    ST.x += Qx / N; ST.y += Qy / N; ST.z += Qz / N
+    bvx += (Fx + oFx) * invM * sdt
+    bvy += ((Fy + oFy) * invM - 9.81) * sdt
+    bvz += (Fz + oFz) * invM * sdt
+    const qx = Qx + oTx, qy = Qy + oTy, qz = Qz + oTz   // world torque → I⁻¹ through the body axes
+    const ap = (ex.x * qx + ex.y * qy + ex.z * qz) * iPitch
+    const ay = (body_up.x * qx + body_up.y * qy + body_up.z * qz) * iYaw
+    const ar = (ez.x * qx + ez.y * qy + ez.z * qz) * iRoll
+    bwx += (ex.x * ap + body_up.x * ay + ez.x * ar) * sdt
+    bwy += (ex.y * ap + body_up.y * ay + ez.y * ar) * sdt
+    bwz += (ex.z * ap + body_up.z * ay + ez.z * ar) * sdt
+    Dx += bvx * sdt; Dy += bvy * sdt; Dz += bvz * sdt
+    Tx += bwx * sdt; Ty += bwy * sdt; Tz += bwz * sdt
   }
 }
+const _EX = { x: 1, y: 0, z: 0 }, _EZ = { x: 0, y: 0, z: 1 }
 
 // ── Static equilibrium at startup (RESEARCH §Pattern 4, Phase 4.1 D-11) ─────────────────────────────────────
 // Pre-compute strutComp and body Y so the car spawns pre-settled with no visible drop.

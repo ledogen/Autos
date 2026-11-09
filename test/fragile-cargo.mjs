@@ -178,7 +178,10 @@ ok(wb('veryFragile') <= wb('fragile') && wb('fragile') <= wb('sturdy') && res.fr
   'the tiers stay in order: very fragile ≤ fragile ≤ sturdy on washboard and on the crest')
 ok(res.sturdy.washboard.health > 0.95, `washboard costs a sturdy piece little (${pct(res.sturdy.washboard.health)})`)
 // Breaks raised 1.5× with the 1 % g held (owner, 2026-10-24): a crest no longer destroys any tier.
-ok(res.veryFragile.crest.health > 0 && res.veryFragile.crest.health < 0.5, `a 1 m crest landing costs very fragile cargo more than half (${pct(res.veryFragile.crest.health)})`)
+// BUG-140 (2026-11-09): the body now moves within the step, which stopped the bump-stop landing pumping
+// energy — the vase's crest peak fell 4.58 → 3.91 g, its health 43 → 60 %. Re-fitting the break to the old
+// 43 % would undo most of the 1.5× raise above, so the line reads the data comment's "roughly half".
+ok(res.veryFragile.crest.health > 0.3 && res.veryFragile.crest.health < 0.65, `a 1 m crest landing costs very fragile cargo roughly half (keeps ${pct(res.veryFragile.crest.health)}; 30–65 %)`)
 ok(res.sturdy.crest.health > 0.5 && res.sturdy.crest.health < 0.85, `a 1 m crest landing costs a sturdy piece about a third (${pct(res.sturdy.crest.health)})`)
 ok(['veryFragile', 'fragile', 'sturdy'].every(t => Math.abs(shockCost(onePctG(TIERS[t]), TIERS[t]) - 0.01) < 1e-12),
   'one hit at a tier\'s 1 % g costs exactly 1 %')
