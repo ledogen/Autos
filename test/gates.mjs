@@ -86,6 +86,8 @@ export const GATES = [
   { file: 'network-worker-parity.mjs', subsystem: 'road', cost: 'heavy',
     extraDeps: ['src/road-network-worker.js'],
     desc: 'PERF-30: network Worker == sync build — the worker imports the same RoadSystem, so this pins the protocol seams: the params-snapshot filter, the pond-disc reconstruction, and adoptNetwork answering surface/degree/slice queries byte-identically to the instance that built the network (incl. the warm-instance reuse path), and that a pre-warmed edge re-routes with its pins (R-01, seed 7)' },
+  { file: 'network-client-world.mjs', subsystem: 'road', cost: 'fast', extraDeps: [],
+    desc: 'BUG-152: every build request the network client posts is ONE world — its road\'s own seed (never the live one) and that seed\'s pond discs. Drives the reseed race (the menu road streaming through the rebuild debounce, then the road swapped before the water) against a fake Worker; pre-fix the story seed\'s worker instance was minted with the menu world\'s ponds and the POI roster re-sited ~1 session in 40' },
   { file: 'adopt-reconcile.mjs', subsystem: 'road', cost: 'heavy',
     extraDeps: ['src/terrain.js', 'src/road-network-worker.js', 'test/lib/bug76-route.mjs'],
     desc: 'BUG-76: a positional adopt that re-shapes road inside already-carved chunks names every one — streams the owner\'s seed-"w" route + two passes, adopts every network change into a play instance, re-carves only what lastAdoptDirty() touches (plus the coverage stamp), and fails if any built chunk is left carving a road that moved (the tyres-sink / chassis-on-stale-collider bug)' },
