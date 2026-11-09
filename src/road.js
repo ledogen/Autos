@@ -90,6 +90,8 @@ function _ruleClamp(g, a) {
     return (1 - a) * soft + a * (one + RULE_FLOOR * soft)
 }
 const RULE_TAPER = 4.0
+// BUG-156: two limbs of one leg within this much of each other's distance (m) both count whole (_limbWeight).
+const RULE_LIMB_TIE = 0.5
 const RULE_LEG_REACH = 14.0
 // Arc half-window (m) for the near-node leg projection: confine each leg's nearest-foot search to this much
 // of the leg either side of its node endpoint, so a curving/looping leg can't contribute a far-branch grade
@@ -936,20 +938,26 @@ let _legSeq = new Float64Array(256)   // _projectLegNearNode scratch: the window
 // BUG-156: one side's weight for a near-node leg limb (the foot at index q of the window's distance² sequence, d2 its own).
 // Walk outward to the KEY SADDLE b, the highest distance before it first drops below this foot's (topographic
 // prominence: a higher foot met on the way does not stop the walk), then on through the lower basin past it to its
-// floor m. With p = √b − √d2 (this limb's depth) and pj = √b − √m (the lower one's, ≥ p):
-//     wt = 1 − (1 − smooth(p / RIVAL_PROM_M)) · (1 − p / pj)
-// 0 at a fold (p = 0: the limb being born or dying beside a lower one); 1 where the two are equally near (p = pj: the
-// flip between two limbs, so neither is privileged at the swap, as BUG-130's tie term does for the resolver's passes);
-// 1 once the limb is RIVAL_PROM_M deep; 1 on a side where nothing lower lies within the window. A fold elsewhere in the
-// window moves no OTHER limb's saddle or floor, so nothing else steps either.
+// floor m. With p = √b − √d2 (this limb's depth) and δ = √d2 − √m (how much farther it is than the lower one):
+//     wt = max(1 − (1 − smooth(p / RIVAL_PROM_M)) · δ / (δ + p),  smooth(1 − δ / RULE_LIMB_TIE))
+// 0 at a fold (p = 0 with δ ≥ RULE_LIMB_TIE: a limb being born or dying beside a nearer one); 1 where the two are
+// equally near (δ = 0, the flip between two limbs, so neither is privileged at the swap); 1 once the limb is
+// RIVAL_PROM_M deep; 1 on a side where nothing nearer lies within the window. A fold elsewhere in the window moves no
+// OTHER limb's saddle or floor, so nothing else steps either. The tie term is BUG-130's (the resolver fades a self pass
+// in by max(prominence, tie)) at a shorter reach: where a leg wraps the query at an almost constant distance (it
+// bends around the gore), every limb is shallow and they trade places within centimetres, and a pure depth weight
+// rebuilt the wrap as steep ramps (up to 1.08 m per 5 cm where main has 0.62, beside 1074499174's steep T). Limbs within
+// RULE_LIMB_TIE of the nearer one stay whole, as they were. Census, 8 random seeds, 0.5 m: 111 of 5563 junction-disc
+// discontinuities gone, none new; 49 of 7254 gore lines better by > 2 cm, none worse (2.5 m: 52 gone; 0: 157 gone, 7 worse).
 function _limbWeight(seq, ns, q, d2, dir) {
     let b = d2, k = q + dir
     for (; k >= 0 && k < ns && seq[k] >= d2; k += dir) if (seq[k] > b) b = seq[k]
     if (k < 0 || k >= ns) return 1
     let m = seq[k]
     for (; k >= 0 && k < ns && seq[k] <= b; k += dir) if (seq[k] < m) m = seq[k]
-    const B = Math.sqrt(b), p = B - Math.sqrt(d2), pj = B - Math.sqrt(m)
-    return pj > 1e-9 ? 1 - (1 - _rivalSmooth(p / RIVAL_PROM_M)) * (1 - p / pj) : 1
+    const B = Math.sqrt(b), D = Math.sqrt(d2), p = B - D, dl = D - Math.sqrt(m)
+    if (!(dl + p > 1e-9)) return 1
+    return Math.max(1 - (1 - _rivalSmooth(p / RIVAL_PROM_M)) * dl / (dl + p), _rivalSmooth(1 - dl / RULE_LIMB_TIE))
 }
 // FEAT-40 bore notch: inside a bore span the terrain SKIN (Y-less / above-apex probes) is not
 // simply raw — near each mouth the open cut's cross-section continues with its floor RISING at
