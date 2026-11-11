@@ -107,6 +107,11 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
 ## Current state (machine clock Mon 11-09 06:20 PST; the owner called a HOLD for the day at 80 % credit use; rewrite, don't append)
+- **PERF-37 FIRST (owner 11-11, high priority, before more playtesting):** Normal runs hot and slow on the Air;
+  the live CPU reads 4–6× the 11-09 baseline. Suspects and the test for each are in the ticket. The :3887 and :3890
+  servers were stopped 11-11 on the owner's word (only :8000 is up). The feat180-pick compare needs them restarted
+  from their worktrees. The :8000 Vite was restarted after `fsevents` was restored: it had been polling the repo at
+  ~30 % of a core (see PERF-37 § Side finding).
 - **HOLD.** No agent running, no detached job, no smoke. Do not spawn until the owner says go.
 - **Main** = this commit. Landed overnight 11-08/09, each smoked: BUG-146 44ae96fd · BUG-147 09ea7d66 · BUG-140 +
   FEAT-193 51a932bf · BUG-157 f3a16777 (test-only) · BUG-153/154/155/149 eabc032c · BUG-152 root cause 2 b34a51e1
