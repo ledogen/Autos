@@ -181,6 +181,24 @@ Idling out front of Larry's at the intro, Normal, fresh Chrome 157. Five samples
   (efficiency cores about 38 % busy, performance cores 16–21 % at about 1.6 GHz). GPU 1.5–1.7 W at about 1.2 GHz,
   85 % busy. Driving costs less than idling at Larry's intro (2.3–3.7 W), and sample-to-sample spread is ±0.1 W.
 
+#### The owner's "throttling bad, stuttering" session (22:56–23:07, story, a haul of 16 bundles, 15:00 in game, lights on)
+
+| Reading | CPU (W) | GPU (W) | GPU clock (MHz) | GPU busy (%) | Owner's feel |
+|---|---|---|---|---|---|
+| 22:56, on the way to the haul, map opened now and then | 0.63–1.08 | **3.9–7.6** | **1003–1217** | 93–100 | stuttering |
+| 23:07, hauling, map closed the whole 15 s | 0.76–1.01 | 1.8–2.4 | 1364–1453 | 83–88 | "still felt slow" |
+
+- **Steam was idle** (about 1 %), not the cause.
+- **Headlights cost nothing by day.** The six spots always exist, cast no shadows, and only change intensity.
+- **At 22:56 the GPU did about 4× the work** of the 22:45 drive: 7.6 W against 1.7 W. It was 100 % busy, yet its
+  clock sat at 1.0–1.1 GHz, below the 1.47 GHz top. That is power or thermal capping, and it fits the stutter.
+- **At 23:07, map closed:** the GPU is back to about 2 W but runs near its top clock (1.36–1.45 GHz) at about 86 %
+  busy. That is near saturation at full clock, with little headroom left for a spike. At 22:45 the same load
+  ran at 1.2 GHz. Something in this scene costs about 20 % more GPU: the bundles, the location, or the clock hour.
+- **Suspect: the map.** While open it redraws a full-panel 2D canvas (2880 × 1864) every frame, blitting an
+  overscanned background, on top of the 3D scene still rendering behind it. The CPU of an open map was measured
+  (fine) but its GPU cost never was. A map-open reading is pending from the owner.
+
 ### Found while chasing the owner's map-open CPU burst: a Quality change in story loops the map (fixed)
 
 Owner, 21:59: a 6 s CPU burst (0.7 → 5.0 W, performance cores at 4.0 GHz) while clicking in the auto shop menu and
