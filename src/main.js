@@ -2222,8 +2222,9 @@ const _QC_UP = { x: 0, y: 1, z: 0 }
 // run resolved at its own x, z and the query's own height (FEAT-40) choosing the level.
 const queryContacts = makeQueryContacts({
   params: RANGER_PARAMS,
-  groundH: (x, z, y) => _labActive ? labSystem.groundHeight(x, z) : (terrainSystem ? terrainSystem.analyticHeight(x, z, _qcHintAt(x, z), y) : 0),
-  groundN: (x, z, y) => _labActive ? labSystem.groundNormal(x, z) : (terrainSystem ? terrainSystem.analyticNormal(x, z, _qcHintAt(x, z), y) : _QC_UP),
+  groundH: (x, z, y, hint) => _labActive ? labSystem.groundHeight(x, z) : (terrainSystem ? terrainSystem.analyticHeight(x, z, hint !== undefined ? hint : _qcHintAt(x, z), y) : 0),
+  groundN: (x, z, y, hint) => _labActive ? labSystem.groundNormal(x, z) : (terrainSystem ? terrainSystem.analyticNormal(x, z, hint !== undefined ? hint : _qcHintAt(x, z), y) : _QC_UP),
+  hintAt: _qcHintAt,
   props: () => _labActive ? null : propSystem,
   pois: () => _labActive ? null : poiSystem,
   tunnelWall: (cx, cy, cz, r) => (!_labActive && roadSystem) ? roadSystem.queryTunnelWallContact(cx, cy, cz, r, _qcHintAt(cx, cz)) : null,

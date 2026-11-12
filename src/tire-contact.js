@@ -49,10 +49,11 @@
  * Pure: no DOM, no engine types, no Three.js. `heightAt(x, z)` and `normalAt(x, z)` are the caller's.
  */
 
-const COARSE = 9                         // odd: one sample sits under the hub
-const REFINE = 10                        // golden-section steps per bracket: 18 cm → ≈1.5 mm
+// The search's sampling, a live knob (test/kerb-graze.mjs sweeps it). coarse: samples over [−r, r] per line, odd so one sits
+// under the hub. refine: golden-section steps per bracket, each shrinking it to 0.618 (18 cm → ≈1.5 mm at 10).
+export const TIRE_CONTACT = { coarse: 9, refine: 10 }
 const GOLD = (3 - Math.sqrt(5)) / 2       // 0.382 — the golden section of the larger side
-const _v = new Float64Array(COARSE)
+const _v = new Float64Array(33)
 const TILT_LO = Math.sin(15 * Math.PI / 180)   // |n·A| where the plane solve starts to blend in
 export const TILT_HI = Math.sin(35 * Math.PI / 180)   //   …and where it has taken over
 const _line = {}
@@ -96,6 +97,7 @@ export function tireContact (heightAt, normalAt, cx, cy, cz, r, w, A, out) {
 
 /** The three-line tread solve (the docblock above) — the tire near upright. */
 function treadContact (heightAt, normalAt, h0, cx, cy, cz, r, w, A, out) {
+  const COARSE = TIRE_CONTACT.coarse, REFINE = TIRE_CONTACT.refine
   // Rolling direction on the ground: horizontal, perpendicular to the axle's horizontal part.
   const ah = Math.hypot(A.x, A.z) || 1
   const fx = -A.z / ah, fz = A.x / ah
