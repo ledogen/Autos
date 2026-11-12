@@ -1619,8 +1619,10 @@ export class Map2D {
         // split (see _coverRaster).
         const cx0 = X0 - BG_SEAM_M, cz0 = Z0 - BG_SEAM_M, cw = (side + 2 * BG_SEAM_M) / COVER_CELL
         const { bin: cover } = this._coverRaster(cx0, cz0, cw, cw, false)
-        // Heights for the hillshade, one cell past the tile each side for the central differences.
-        const hc = COVER_CELL * 2 ** lv, hx0 = X0 - hc, hz0 = Z0 - hc, hw = side / hc + 2
+        // Heights for the hillshade, TWO cells past the tile each side: the texels read nodes up to one
+        // cell out, and those need a real central difference — a one-sided one at the lattice border
+        // shades the last cell differently from the neighbour tile's and prints a seam.
+        const hc = COVER_CELL * 2 ** lv, hx0 = X0 - 2 * hc, hz0 = Z0 - 2 * hc, hw = side / hc + 4
         const hg = new Float32Array(hw * hw)
         for (let j = 0; j < hw; j++) {
             const wz = hz0 + j * hc
@@ -1636,7 +1638,7 @@ export class Map2D {
         const shadeG = new Float32Array(hw * hw)
         for (let j = 0; j < hw; j++) {
             for (let i = 0; i < hw; i++) {
-                // Central differences, clamped at the lattice border (one cell outside the tile).
+                // Central differences, clamped at the lattice border (two cells outside the tile, never read).
                 const iL = i > 0 ? i - 1 : i, iR = i < hw - 1 ? i + 1 : i
                 const jU = j > 0 ? j - 1 : j, jD = j < hw - 1 ? j + 1 : j
                 const dx = (hg[j * hw + iR] - hg[j * hw + iL]) / ((iR - iL) * hc || 1)
