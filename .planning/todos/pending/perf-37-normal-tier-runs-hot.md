@@ -177,6 +177,25 @@ Idling out front of Larry's at the intro, Normal, fresh Chrome 157. Five samples
 - **Use this as the reference.** If it runs hot again, take the same reading. Several watts above about 4 W on the
   same spot means the cause is back.
 
+### Found while chasing the owner's map-open CPU burst: a Quality change in story loops the map (fixed)
+
+Owner, 21:59: a 6 s CPU burst (0.7 → 5.0 W, performance cores at 4.0 GHz) while clicking in the auto shop menu and
+briefly opening the map.
+
+- **A clean map open in story is cheap**, about +6 points of a core and flat. So the map alone did not cause the
+  burst. Its real cause is not identified: `powermetrics` does not split power by process.
+- **The bug.** `applyQuality()` set play's road radius to the ring's 320 m, even inside a story region, where
+  `pumpRegionWarm` had widened it to the region's 2800 m. `Map2D._pump` copies play's network only when play's
+  radius covers the region. So after any Quality change mid-run, the map ran its own worker build instead, at 9
+  roads against play's 183. `_playOutgrewMap()` then never settled, and the map rebuilt and repainted its
+  background about every 5 frames while it was open. Renderer 125–217 % of a core; `frame.postStream` used
+  8.8 s of CPU in a 10 s window.
+- **The fix** (main.js): a new `_regionRoadR`, set by `pumpRegionWarm` and cleared by `releaseRegion`, which is
+  story's only exit. While it is set, `applyQuality` leaves play's road radius alone.
+- **After the fix:** a Quality change in story leaves play's radius at 2800 m. The map copies 183 roads, and an
+  open map costs 30–36 % of a core. Affected gates 9/9 green, cdp-smoke 26 steps, zero console errors.
+- **Unconfirmed:** whether the owner actually changed Quality in that session.
+
 ## Acceptance
 
 - The cause is named, with before/after numbers from `test/profile.mjs` on the Air at Normal (GPU ms, CPU ms, draw

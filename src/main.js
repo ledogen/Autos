@@ -2370,6 +2370,11 @@ function applyRenderResolution () {
 }
 
 let _qualityName = 'Normal'   // the tier last applied (captures record it)
+// PERF-37: the story region's road radius while a region holds the play network (set by pumpRegionWarm, cleared by
+// releaseRegion), else 0. A Quality change inside a region must not shrink play's radius to the ring's 320 m: the map
+// adopts play's network only when play covers the region (Map2D._pump), so it would instead rebuild on the worker
+// and repaint, forever, while it is open (_playOutgrewMap never settles) — 125–217 % of a core, measured.
+let _regionRoadR = 0
 function applyQuality (name) {
   const p = QUALITY_PRESETS[name] ?? QUALITY_PRESETS.Normal
   _qualityName = QUALITY_PRESETS[name] ? name : 'Normal'
@@ -2380,7 +2385,7 @@ function applyQuality (name) {
   // radius (CPU), not a draw distance (the ribbon mesh is terrain-chunk-bound via syncToChunkRing). Low/
   // Normal land exactly on today's 192/320; High/Ultra trim 512→448 / 640→576 (the old constants were
   // routed past anything renderable). Tied to ring so it can never drift out of sync with the terrain.
-  if (roadSystem) roadSystem.setRadius((p.ring + 0.5) * 2 * CHUNK_SIZE)   // dirty → next update() re-streams
+  if (roadSystem && !_regionRoadR) roadSystem.setRadius((p.ring + 0.5) * 2 * CHUNK_SIZE)   // dirty → next update() re-streams
   _fogState.presetDensity = p.fogDensity
   if (scene.fog && !_fogState.disabled) scene.fog.density = p.fogDensity
   // Drive the FEAT-05 detail master from the tier. Mirrors setTerrainUniform: write the param (source
@@ -8699,6 +8704,7 @@ const storySystem = new StorySystem({
    */
   pumpRegionWarm: (center, radius) => {
     if (!roadSystem) return true
+    _regionRoadR = radius
     _storyWarmCenter.set(center.x, 0, center.z)
     // PERF-30: ONE off-thread region build replaces the route pre-warm + the synchronous
     // region-wide plan/register that froze the loading screen for the whole plan-layer cost.
@@ -8867,6 +8873,7 @@ const storySystem = new StorySystem({
     // mode (Map2D._syncRegionWindow, BUG-68) and only ever grows — hand it back too, or free roam keeps
     // routing the region's outer rings cold for the rest of the session.
     map2d?.resetRadiusTarget()
+    _regionRoadR = 0
     if (!roadSystem) return
     roadSystem.setRadius(320)   // PERF (Tier 1) play radius — matches the terrain ring
     roadSystem.update(roadStreamCenter())
