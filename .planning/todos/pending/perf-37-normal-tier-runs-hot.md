@@ -155,6 +155,28 @@ A headed check on the fresh Chrome 157 followed. A real 1440 × 900 window at th
 - **Next step:** close this on the owner's playtest confirmation (the acceptance's last line). If it recurs after
   days of Chrome uptime, the next suspect is Chrome's GPU process state, not the game.
 
+### Watts after the relaunch (owner's `powermetrics`, 2026-11-11 21:45 PST, on AC power)
+
+Idling out front of Larry's at the intro, Normal, fresh Chrome 157. Five samples, 3 s apart:
+
+| Sample | CPU (W) | GPU (W) | GPU clock (MHz) | GPU busy (%) |
+|---|---|---|---|---|
+| 1 | 0.46 | 1.80 | 1091 | 89 |
+| 2 | 0.40 | 2.04 | 1119 | 87 |
+| 3 | 0.39 | 3.18 | 907 | 97 |
+| 4 | 0.39 | 3.31 | 895 | 98 |
+| 5 | 0.41 | 3.26 | 894 | 98 |
+
+- **CPU + GPU together draw 2.3–3.7 W.** That is a moderate load for the fanless Air. It warms the chassis but sits
+  well below where an M4 Air throttles. The performance cores stayed parked at 0 MHz: the efficiency cores carry the
+  game's CPU work.
+- **The GPU runs near-full busy at a low clock**, 98 % at about 900 MHz against a 1470 MHz top. That is Apple's
+  power governor choosing the slowest clock that still makes the frame, the efficient setting, so there is headroom
+  left.
+- **The step at sample 3** (2.0 → 3.2 W) is most likely the intro scene changing, not drift.
+- **Use this as the reference.** If it runs hot again, take the same reading. Several watts above about 4 W on the
+  same spot means the cause is back.
+
 ## Acceptance
 
 - The cause is named, with before/after numbers from `test/profile.mjs` on the Air at Normal (GPU ms, CPU ms, draw
