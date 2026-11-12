@@ -224,6 +224,35 @@ profiles of any window with a bad second.
 - **Side find:** an open map re-draws `_drawCampZones` every frame, about 3 ms (it is not in the cached background).
 - **Next:** a second recorded session with the profiler on, to name the functions behind stalls 1 and 2.
 
+#### Recorded play session 2 (2026-11-11 23:43–23:51, Larry's route again, CPU profiler on)
+
+- **The owner's "frame drop every 9–10 s" was the harness.** `Profiler.stop` serialises the 10 s profile and stalls
+  the main thread for 100–250 ms. The long frames sit exactly on the window boundaries, 10–11 s apart. For the next
+  session: longer windows, or `Tracing` in place of `Profiler`.
+- **Milder than session 1:** 60 fps held through most of it. CPU 1–6 W, GPU 1.3–2.6 W at 0.9–1.1 GHz, about 87 %
+  busy.
+- **The physics spikes, by function** (inclusive time, i.e. the function plus everything it calls, in the spike
+  windows):
+
+  | Function | Share of main-thread busy time |
+  |---|---|
+  | `stepPhysics` | 31 % |
+  | `queryContacts` (world-contacts.js) | 26 % |
+  | `tireContact` (tire-contact.js) | 25 % |
+  | `treadContact` → `rho2` | 23 % |
+  | `groundH` → `analyticHeight` | 22 % |
+  | `road._sampleCarveWorld` (cross-sections, junction pads, centreline) | 19 % |
+
+  The tread solve (BUG-70, `c9d8fe20`…`c3a35544`, 11-04 → 11-07, in Nov 6, not in Nov 1) samples ground height
+  about 57+ times per wheel per physics step: 3 lines × (9 coarse + 10 golden-section steps per local minimum).
+  Inside a carved road each sample runs the full carve stack. Physics peaks at 100–176 ms of CPU per second, against
+  about 35 normally. The timing matches the owner's "3–5 days ago".
+- **The map stall, by function:** `render` 29 % → `_stepBackground` 24 % → `_drawTopo` 19 %, `_paintGround` 15 %,
+  `coarseHeight` 11 %. That is the background repaint after each pan or zoom settles, sampling terrain per pixel at
+  pixel ratio 2.
+- **Not yet profiled:** the workers (terrain chunks, road network). CPU power ran 1–6 W while the main thread was
+  only about 25 % busy, so the workers carry real load.
+
 ### Found while chasing the owner's map-open CPU burst: a Quality change in story loops the map (fixed)
 
 Owner, 21:59: a 6 s CPU burst (0.7 → 5.0 W, performance cores at 4.0 GHz) while clicking in the auto shop menu and
