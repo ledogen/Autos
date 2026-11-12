@@ -92,6 +92,28 @@ it to that later". So the driver is `test/lib/autopilot.mjs`, kept separate from
   `drive-soak.mjs` still has its own pursuit; fold it onto the module when convenient.
 - **Promotion:** move the file to `src/` when the AI-car consumer lands. Until then nothing in `src/` imports it.
 
+## Story mode's traps for an unattended driver (found 2026-11-12, all handled in the bench)
+
+Each of these made sessions INVALID until it was found. The validity rule caught every one; none produced a number.
+
+1. **A seat is a dead, parked truck.** `__teleport` → `_reseatTruckAtSpawn` hands back ignition OFF and the park
+   brake on, the way story mode seats you. The bench holds I until the engine runs, then RB (Space) off the brake.
+   A seat that never ends times out at 15 s and moves 100 m on.
+2. **A seat keeps the damage.** In free roam a seat repairs (`main.js` `_reseatTruckAtSpawn`, `setAll(1)`). In story
+   it does not, so a wreck stayed a wreck: wheels held, the engine at its torque-converter stall (about 1380 rpm at
+   full throttle, 0 m/s), and every later seat stuck. A recovery is now a tow. It restores the run's STARTING damage
+   (condition, flats, toe and camber), so the truck is never better than story's used truck.
+3. **Dialogues swallow every key.** A story dialogue's capture-phase handler eats all keydowns to advance itself,
+   including the crank's I. The bench closes open dialogues with Enter, counts them, and re-presses a swallowed I.
+4. **The region is walled.** The route is fenced 150 m inside `__story().region()` (`makeRoute`'s `keep`).
+5. **Stopped physics depends on the spot.** At rest it costs 0 ms/s (asleep) to 140 ms/s (on a road carve). Map and
+   park therefore run at the drive's START pose, the same spot for every build.
+6. **Brake held at rest is reverse.** Nothing brakes to a stop any more; the truck is re-seated parked instead.
+
+Seed 711969014 is swapped out of the pinned three (it stalled on every build before traps 2 and 3 were found). It is
+worth re-trying as a test of the autopilot. A build from before a world-gen change (the 2026-11-01 checkout) gives a
+different world on the same seed, so a comparison with it is "what playing that version cost", not the same drive.
+
 ## Acceptance
 
 - [ ] `test/lib/ioreport.py` checked in, with a self-check (a sample has CPU and GPU watts and a GPU MHz on the table).
