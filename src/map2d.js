@@ -2014,7 +2014,7 @@ export class Map2D {
         ctx.strokeStyle = GLYPH_WET_INK
         ctx.beginPath()
         for (const t of tiles) {
-            const a = t.glyphs.wet
+            const a = t.wet
             for (let n = 0; n < a.length; n += 2) {
                 const px = this._sx(a[n]), py = this._sy(a[n + 1])
                 ctx.moveTo(px - s * 0.5, py); ctx.lineTo(px + s * 0.5, py)
@@ -2028,7 +2028,7 @@ export class Map2D {
         ctx.strokeStyle = GLYPH_TREE_INK
         ctx.beginPath()
         for (const t of tiles) {
-            const a = t.glyphs.tree
+            const a = t.tree
             for (let n = 0; n < a.length; n += 2) {
                 const px = this._sx(a[n]), py = this._sy(a[n + 1])
                 ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px, py + s * 0.35)   // trunk
