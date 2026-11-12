@@ -151,3 +151,33 @@ export function createAutopilot ({ car, route, inBore = () => false, vMax = 24, 
   }
   return ap
 }
+
+// Self-check: `node test/lib/autopilot.mjs`. A kinematic bicycle (yaw rate = v·tan(steer)/wheelbase) on a 100 m ring
+// road cut into four edges: it must hold the line within 2 m, reach the ring's corner speed (√(aLat·R) ≈ 18.7 m/s), and
+// report 'stuck' when its wheels cannot turn.
+if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv[1]}`) {
+  const R = 100, arc = (a0) => ({ points: Array.from({ length: 53 }, (_, i) => { const a = a0 + i / 52 * Math.PI / 2; return { x: R * Math.cos(a), z: R * Math.sin(a) } }) })
+  const edges = [0, 1, 2, 3].map(k => arc(k * Math.PI / 2))
+  let s = 1; const rng = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32)
+  const car = { wheelbase: 2.474, maxSteerAngle: 0.65, speedSteerRef: 18 }
+  const run = (stuck) => {
+    const route = makeRoute(edges, rng, { x: R, z: 0 }), ap = createAutopilot({ car, route })
+    ap.locate({ x: R, z: 0 })
+    // Start at (R, 0) along the route's direction of travel (heading h: nose at −(sin h, cos h)).
+    const p1 = route.path[ap.idx + 2]; let x = R, z = 0, h = Math.atan2(-(p1.x - x), -(p1.z - z)), v = 0, maxLat = 0, maxV = 0, trouble = null
+    for (let t = 0; t < 60 && !trouble; t += 1 / 60) {
+      const vs = { position: { x, z }, velocity: { x: -Math.sin(h) * v, z: -Math.cos(h) * v }, quaternion: { x: 0, y: Math.sin(h / 2), z: 0, w: Math.cos(h / 2) } }
+      const c = ap.step(vs, 1 / 60); trouble = c.trouble
+      if (!stuck) v = Math.max(0, v + (4 * c.throttle - 7 * c.brake) / 60)
+      h += v * Math.tan(c.steer) / car.wheelbase / 60
+      x -= Math.sin(h) * v / 60; z -= Math.cos(h) * v / 60
+      if (t > 5) maxLat = Math.max(maxLat, Math.abs(Math.hypot(x, z) - R))
+      maxV = Math.max(maxV, v)
+    }
+    return { maxLat, maxV, trouble, km: ap.dist / 1000 }
+  }
+  const a = run(false), b = run(true)
+  console.log(`ring: max off-line ${a.maxLat.toFixed(2)} m, top speed ${a.maxV.toFixed(1)} m/s, ${a.km.toFixed(2)} km, trouble ${a.trouble} · wheels locked: trouble ${b.trouble}`)
+  const ok = a.maxLat < 2 && a.maxV > 15 && a.maxV < 22 && !a.trouble && b.trouble === 'stuck'
+  console.log(ok ? 'PASS' : 'FAIL'); process.exit(ok ? 0 : 1)
+}

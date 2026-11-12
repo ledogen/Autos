@@ -102,11 +102,12 @@ for (const b of BUILDS) {
 // ── the page side: the virtual pad, the autopilot, the 1 Hz probe ─────────────────────────────────────────────────────
 // Injected once a story run is live. window.__bench.phase drives it: 'drive' (pursuit), 'stop' (brake to rest), 'map'
 // (stick pan/zoom), 'idle' (hands off). Everything it records is read back by the harness per phase.
+const AUTOPILOT = readFileSync(join(HERE, 'lib/autopilot.mjs')).toString('base64')
 const PAGE = String.raw`(async () => {
   // The autopilot is test/lib/autopilot.mjs (pure: state in, controls out). This is its consumer: the controls go onto
   // a virtual pad, and its trouble reports become re-seats.
   const { RANGER_PARAMS: P } = await import('/data/ranger.js')
-  const { makeRoute, createAutopilot } = await import('/test/lib/autopilot.mjs')
+  const { makeRoute, createAutopilot } = await import('data:text/javascript;base64,${AUTOPILOT}')   // the bench's own copy, so an A/B drives both builds the same
   const road = window.__roadSys(), seed = window.__seed ?? 1
   const axes = [0, 0, 0, 0], buttons = Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 }))
   const gp = { id: 'perf-40 bench', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes, buttons, vibrationActuator: null }
