@@ -195,6 +195,14 @@ not pick is random too (owner, 2026-11-06): free roam, the world built behind th
   `test/assert-m4-*.mjs` — rainy-day manual scripts; each needs a recorded scenario log. Not in
   `npm test`.
 - **Refactor identity proof:** `node test/fingerprint-world.mjs --out=a.json [--compare=b.json]` — hashes the network, profiles, junctions, POIs, surface, carve, road tiles, water and props for six windows; run on main and the branch, require PASS.
+- **Playtest power bench (PERF-40):** `node test/playtest-bench.mjs [--b=<other checkout>] [--reps=2] [--record]` — plays
+  the real game unattended (story mode: a ~5 min road drive with one off-road leg, the map open 30 s, parked 30 s) in
+  headless Chrome at the owner's canvas, on three pinned random seeds. It reports per phase: fps, main-thread ms/s by
+  bucket, CPU % per Chrome process, and CPU / GPU / DRAM watts with GPU active cycles from `test/lib/ioreport.py` (no
+  sudo). Compare GPU load by active cycles (busy % × MHz), never by GPU ms or raw watts. A drive that did not stream
+  (≥ 3 km, new chunks) is INVALID, never a number. `--b` alternates A-B-A-B to cancel heat drift; `--record` appends to
+  `.planning/perf/history.jsonl` (the health check). About 7 min a session; wants a quiet machine. Not in `npm test`.
+  The driver is `test/lib/autopilot.mjs`: pure, state in → controls out, meant to grow into in-game AI cars.
 - **Physics identity proof:** `node test/fingerprint-physics.mjs --out=a.json [--compare=b.json]` — running full-state hash over 900 steps on bumpy ground, round and out-of-round tires.
 - **Regression gates (registered in `test/gates.mjs`):** `npm test` runs **only the AFFECTED gates** — those
   whose transitive import closure (computed live by `run-all.mjs`, + each gate's `extraDeps`) intersects

@@ -68,6 +68,30 @@ something a session can run on its own: to weigh a change before landing it, and
    the last good one by more than the noise band says so. Not in `npm test`: a run is about 20 min and wants a quiet
    machine (the shared-CPU cap applies: one bench at a time, and not while lanes run heavy gates).
 
+## The autopilot is a module, for AI cars later (owner, 2026-11-12)
+
+"general purpose autopilot will be very valuable for AI cars in game. develop your solution with the intent to expand
+it to that later". So the driver is `test/lib/autopilot.mjs`, kept separate from the bench:
+
+- **Pure.** No DOM, no window, no Three.js, no engine. One instance per car. Vehicle state goes in, and the controls a
+  driver would give come out: steer as a road-wheel angle (+ = left, the `vehicleState.steerAngle` convention),
+  throttle, brake.
+- **Pieces that swap separately:**
+  - the route (`makeRoute`, a random walk; an AI car with a destination swaps in a shortest path);
+  - the speed plan (corner speed from the next 90 m of curvature);
+  - pure pursuit (steer at the route point 0.9 s ahead);
+  - `detour(to)`, which leaves the road and rejoins the route ahead.
+- **It reports trouble and never acts on it.** The reports are stuck, flipped, off the route and a route jump.
+  `resume()` gives the pose to re-seat at, and what to do with it is the consumer's choice.
+- **Self-check:** `node test/lib/autopilot.mjs` runs a kinematic bicycle on a 100 m ring. Measured: 0.68 m off the
+  line, 20.6 m/s top, and 'stuck' reported with the wheels locked.
+- **The bench is one consumer.** It puts the controls on the virtual pad. It turns trouble into a `__teleport`, then
+  holds I to crank (a seat is a dead, parked truck) and presses RB to release the park brake. It hands the page its
+  own copy of the module (a `data:` import), so an A/B against an older checkout drives both builds identically.
+- **Missing for AI cars:** other cars and obstacles, lanes, junction right-of-way, reversing out of a dead end.
+  `drive-soak.mjs` still has its own pursuit; fold it onto the module when convenient.
+- **Promotion:** move the file to `src/` when the AI-car consumer lands. Until then nothing in `src/` imports it.
+
 ## Acceptance
 
 - [ ] `test/lib/ioreport.py` checked in, with a self-check (a sample has CPU and GPU watts and a GPU MHz on the table).

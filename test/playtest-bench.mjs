@@ -3,9 +3,10 @@
 // It plays the real game (its own Vite on the checkout, Chrome at the owner's canvas: 2090 × 1226 device px at dpr 2, the
 // Normal tier) the way PERF-37's owner sessions did, with an autopilot on a VIRTUAL GAMEPAD — a page script answers
 // navigator.getGamepads(), which src/gamepad.js polls every frame, so the game's own input path drives (no src/ change).
-// Per seed, ~6 min:
-//   drive  story mode from Larry's, a route over the road network at play speeds (drive-soak's pure pursuit: steer at
-//          a point a look-ahead ahead), one off-road leg
+// Per seed, ~7 min with the boot:
+//   drive  story mode, seated from Larry's yard onto the road network, a route at play speeds for 300 s, one off-road
+//          leg. The driver is test/lib/autopilot.mjs (pure: state in, controls out — meant to grow into in-game AI
+//          cars); this file is its consumer: controls onto the pad, trouble into re-seats (then crank, then park off)
 //   map    stopped, the map open, the left stick panning and the right stick zooming (30 s)
 //   park   stopped, the map shut (30 s) — the GPU-only cost
 // Measured per phase: fps, p95, worst frame; main-thread ms/s per __perfData bucket; CPU % per Chrome process (`ps`
