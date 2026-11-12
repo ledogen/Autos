@@ -10690,8 +10690,10 @@ function loop () {
   perfAdd('frame.postStream', _ptR - _ptPost)   // PERF-26 INSTRUMENT
   // FEAT-41: whichever scene owns the screen. Skipping the world render behind a menu or a load is
   // not just tidiness — it hands the GPU to the build that is running underneath.
+  // PERF-38: nor behind the 2D map — #map2d is an opaque full-screen canvas, so the world frame under it was the whole
+  // 3D GPU bill (owner's M4: 5 W, pinned at 890 MHz, with the map open) for a picture nobody could see.
   if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
-  else renderer.render(scene, camera)
+  else if (!map2d.isOpen()) renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // D-arc: render submit (the ~8.5 s load-cost suspect)
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.
