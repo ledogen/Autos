@@ -199,6 +199,31 @@ Idling out front of Larry's at the intro, Normal, fresh Chrome 157. Five samples
   overscanned background, on top of the 3D scene still rendering behind it. The CPU of an open map was measured
   (fine) but its GPU cost never was. A map-open reading is pending from the owner.
 
+#### Recorded play session 1 (2026-11-11 23:25–23:36): the stutter is the MAIN THREAD, not the GPU
+
+**Method.** This replaces the one-off readings. The owner plays in a headed Chrome that the harness opens (fresh
+profile, `?prof=1`, sound on). It logs `__perfData` / `__ri` / map / screen / clock / speed each second, and F9 marks
+a stutter. Beside it runs a 2 s `powermetrics` (GPU clock, busy, watts). The two are joined by wall time. Scripts:
+`playlog.mjs`, `join.mjs`, and `profsum.mjs` in the session scratchpad. playlog now also keeps rolling 10 s CPU
+profiles of any window with a bad second.
+
+- **Run 1, 0–200 s:** a story run, no mission, full speed. Smooth: 60 fps, p95 under 18 ms, GPU about 950 MHz and
+  88 % busy.
+- **Run 2, from 200 s:** the owner gave up and restarted, then took Larry's paper route. From about 380 s, a couple
+  of minutes into the route, frames degrade: 54–58 fps, p95 25–100 ms, two F9 marks at 560 s and 600 s. GPU 0.85–1.2
+  GHz, 85–94 % busy, 1.5–3.7 W. Far from its power cap, so the GPU is not what stutters. Two CPU stalls on the main
+  thread:
+  1. **Map open: `frame.postStream` used 920–960 ms per second** (380–389 s, truck stopped), at 22–30 fps, and
+     525–715 ms per second at 434 s and 490 s. Not reproduced headless: hovering and panning there cost about
+     250 ms per second. Function unknown.
+  2. **Map closed: `frame.physics` used 130–190 ms per second** (454, 543–544 and 611–613 s), against about 40
+     normally. That is 50–80 ms frames. Papers are not bodies (`throw.js` is ballistic), so it is not a paper
+     pile-up. Function unknown.
+- **Triangles drawn rose from 630k to 1.03M** across the session (calls flat at about 150, geometries 307 → 456).
+  It falls back to 900k late, so this is not clearly a leak. Watch it.
+- **Side find:** an open map re-draws `_drawCampZones` every frame, about 3 ms (it is not in the cached background).
+- **Next:** a second recorded session with the profiler on, to name the functions behind stalls 1 and 2.
+
 ### Found while chasing the owner's map-open CPU burst: a Quality change in story loops the map (fixed)
 
 Owner, 21:59: a 6 s CPU burst (0.7 → 5.0 W, performance cores at 4.0 GHz) while clicking in the auto shop menu and
