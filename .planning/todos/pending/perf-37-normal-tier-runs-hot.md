@@ -130,6 +130,31 @@ CPU read via `ps`).
   157.0.8103.39 (Nov 4) and 157.0.8103.78 (Nov 11) staged but unapplied. Its GPU process held 2.5 GB. The polling
   Vite server (above) added about 30 % of a core.
 
+## After the owner relaunched Chrome, 2026-11-11 ~21:20 PST
+
+The owner clicked Chrome's pending-update banner: a relaunch onto 157.0.8103.78, after 9.5 days on 156.0.8078.76.
+Their word: "it seems totally fixed".
+
+A headed check on the fresh Chrome 157 followed. A real 1440 × 900 window at the panel's native pixel ratio 2 gives a
+2125 × 1200 canvas at Normal. Seed 3583777560, 20 s windows, the owner away from the machine:
+
+| Run | Game tab renderer (% of a core) | Chrome GPU + browser | WindowServer | GPU util (median of samples) |
+|---|---|---|---|---|
+| Owner's reading on the old Chrome (above) | 35–53 | 18 (GPU process alone) | 23 | 94 |
+| main, free roam drive | 31.1 / 32.3 | 17.5 / 17.7 | 30.1 / 29.6 | 82 / 82 |
+| main, story idle at Larry's | 25.3 | 16.2 | 29.0 | 81 |
+| Nov 1 `21a29ea9`, free roam drive | 32.5 | 16.7 | 33.4 | 93 |
+
+- **Compositing did not regress either.** Nov 1 and main cost the same headed: WindowServer about 30 %.
+- **Read from outside, the fresh Chrome is only modestly lighter** than the owner's reading: renderer about 5–20
+  points lower, GPU utilization 82 against 94. That utilization figure is relative to the GPU's current clock, so it
+  cannot settle the question. The old state, a 9.5-day Chrome with a 2.5 GB GPU process, cannot be recreated to
+  test, so a hot-Chrome cause stays the likely reading, not a proven one.
+- **The decisive number is watts:**
+  `sudo powermetrics --samplers cpu_power,gpu_power -i 3000 -n 5` during play, now, and again if it heats up.
+- **Next step:** close this on the owner's playtest confirmation (the acceptance's last line). If it recurs after
+  days of Chrome uptime, the next suspect is Chrome's GPU process state, not the game.
+
 ## Acceptance
 
 - The cause is named, with before/after numbers from `test/profile.mjs` on the Air at Normal (GPU ms, CPU ms, draw
