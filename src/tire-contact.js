@@ -50,10 +50,10 @@
  */
 
 // The search's sampling, a live knob (test/kerb-graze.mjs sweeps it). coarse: samples over [−r, r] per line, odd so one sits
-// under the hub. refine: golden-section steps per bracket, each shrinking it to 0.618 (18 cm → 1 cm at 6). PERF-39: 9+6
-// tracks the converged 9+10 depth to within 4.6 mm, largest jump 5.7 mm per 2 mm of roll (the legacy stencil stepped 74 mm), at
-// 45 height samples a tire for 57.
-export const TIRE_CONTACT = { coarse: 9, refine: 6 }
+// under the hub. refine: golden-section steps per bracket, each shrinking it to 0.618 (18 cm → ≈1.5 mm at 10). PERF-39
+// measured the floor: 9 refine steps is the fewest that holds test/tire-contact.mjs's 2 mm (1.8 mm on a 30 cm step), so
+// the 3 samples it would save are not worth sitting on the gate's edge.
+export const TIRE_CONTACT = { coarse: 9, refine: 10 }
 const GOLD = (3 - Math.sqrt(5)) / 2       // 0.382 — the golden section of the larger side
 const _v = new Float64Array(33)
 const TILT_LO = Math.sin(15 * Math.PI / 180)   // |n·A| where the plane solve starts to blend in
