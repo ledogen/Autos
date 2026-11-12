@@ -286,21 +286,31 @@ const BG_OVERSCAN = 2
 // the view: the ground wash, the contours, the glyph slots. They used to be re-sampled for the whole
 // overscanned view after every settled pan — 50–150 ms (measured 2026-10-20, 1400×900: ~60% the
 // ground raster, ~30% contours), drawn in 16 bands at 6 ms a frame, and the owner's map session
-// (PERF-37) spent up to 950 ms/s of main thread there. Now each is built ONCE per TILE_M square of
+// (PERF-37) spent up to 950 ms/s of main thread there. Now each is built ONCE per square tile of
 // world and memoized for the life of the seed (_tile), and a rebuild only composites the tiles.
 // Missing tiles are built BG_SLICE_MS at a time while render() keeps blitting the old bitmap through
 // the transform delta; once the view's tiles are all in, the sheet is drawn in one pass and swaps in
 // whole.
-const TILE_M      = 256    // m — a multiple of COVER_CELL and of the flora chunk, so tiles share every lattice
-const TILE_TEX    = TILE_M / COVER_CELL * COVER_SS   // ground texels a tile side (4 m each)
-const TILE_MEMO_MAX = 2048 // tiles held (~40 MB at most); past it the memo starts over — a long free-roam drive
-const BG_SLICE_MS = 6      // ms of tile builds per frame (always at least one tile)
-const BG_SEAM_M   = 96     // m — (COVER_COUNT_BLUR + 2) cover cells, the widest edge effect: a tile's lattice runs this
-                           //     far past it, so its blur and hillshade see real neighbours and tiles meet without a seam
+//
+// Ground tiles come in levels of detail: GROUND_TEX texels a side at all levels, a texel of
+// GROUND_TEXEL_M · 2^level metres, and a view uses the finest level whose texel still spans
+// GROUND_TEXEL_PX device pixels. That bounds both the tiles a view needs (~100 on a 2066×1200
+// canvas zoomed all the way out) and their memory: the whole-map view used to compose ONE 4 m image
+// of the overscanned sheet per rebuild, ~100 MB at that canvas size.
+const GROUND_TEX      = 256    // texels a ground tile side (+ a 1-texel apron)
+const GROUND_TEXEL_M  = COVER_CELL / COVER_SS   // m — a level-0 texel (4 m)
+const GROUND_TEXEL_PX = 2      // device px a texel may shrink to before the next coarser level takes over
+const GROUND_LEVELS   = 4      // levels 0..3: texels of 4, 8, 16, 32 m
+const TOPO_TILE_CELLS = 64     // contour cells a contour tile side, at its own step
+const GLYPH_TILE_M    = 512    // m — a glyph tile side (a multiple of COVER_CELL)
+const TILE_MEMO_MAX   = 384    // tiles of all kinds kept, least-recently-used out (a ground tile is ~260 KB)
+const BG_SLICE_MS     = 6      // ms of tile builds per frame (always at least one tile)
+const BG_SEAM_M       = 96     // m — (COVER_COUNT_BLUR + 2) cover cells, the widest edge effect: a tile's cover
+                               //     lattice runs this far past it, so tiles meet without a seam
 // Contour sample steps a tile is built at. The step _topoStep wants is continuous in zoom; it is
-// rounded UP to one of these, so a tile's contours are reused across a band of zoom instead of
+// rounded UP to one of these, so contour tiles are reused across a band of zoom instead of
 // re-sampled at every wheel notch (each tier is ≤ 1.33× the one below, so the line stays as fine).
-const TOPO_TIERS  = [4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64]
+const TOPO_TIERS      = [4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64]
 
 // ── The collar (border) ───────────────────────────────────────────────────────────────────────
 // The sheet is buried in an off-white margin carrying tick marks and an A–Z / 1–n index, so any
@@ -498,7 +508,7 @@ export class Map2D {
         this._bgPanZ  = 0
         this._bgZoom  = 0
         this._bgTimer = 0                // settle-redraw debounce handle
-        this._bgNext  = document.createElement('canvas')   // the rebuild in progress — see TILE_M
+        this._bgNext  = document.createElement('canvas')   // the rebuild in progress — see GROUND_TEX
         this._bgJob   = null             // { panX, panZ, zoom, step, tiles, built, glyphs, rect } while one is in flight
 
         // Drag-pan state.
@@ -1382,31 +1392,45 @@ export class Map2D {
     // Begin a rebuild for the CURRENT transform. A dirty raised mid-rebuild waits for this one to
     // finish (render() checks _bgJob) instead of restarting it, so a stream ticking in chunks can
     // never starve the sheet of a finished bitmap. The job lists the world tiles under the
-    // overscanned bitmap, with ONE contour step for all of them so the sheet samples one lattice.
+    // overscanned bitmap: the ground at one level of detail and the contours at ONE step for the
+    // whole sheet, so it samples one lattice.
     _startBackground() {
         const ox = this._bgOffX, oy = this._bgOffY, s = this._sheet(), z = this._zoom
         const rect = [this._panX + (-ox - s.cx) / z, this._panZ + (-oy - s.cy) / z,
                       this._panX + (this._cssW + ox - s.cx) / z, this._panZ + (this._cssH + oy - s.cy) / z]
-        const tiles = []
-        for (let tz = Math.floor(rect[1] / TILE_M); tz * TILE_M < rect[3]; tz++)
-            for (let tx = Math.floor(rect[0] / TILE_M); tx * TILE_M < rect[2]; tx++) tiles.push(this._tile(tx, tz))
-        this._bgJob = { panX: this._panX, panZ: this._panZ, zoom: z, tiles, built: 0, rect,
-                        step: this._topoStep(this._cssW + 2 * ox, this._cssH + 2 * oy), glyphs: this._glyphsVisible() }
+        const cover = (side, f) => {
+            const out = []
+            for (let tz = Math.floor(rect[1] / side); tz * side < rect[3]; tz++)
+                for (let tx = Math.floor(rect[0] / side); tx * side < rect[2]; tx++) out.push(f(tx, tz))
+            return out
+        }
+        // Ground level: the finest whose texel still spans GROUND_TEXEL_PX device pixels.
+        const lv = Math.max(0, Math.min(GROUND_LEVELS - 1,
+            Math.ceil(Math.log2(GROUND_TEXEL_PX / (GROUND_TEXEL_M * z * this._dpr)) - 1e-9)))
+        const step = this._topoStep(this._cssW + 2 * ox, this._cssH + 2 * oy)
+        const glyphs = this._glyphsVisible()
+        const todo = [
+            ...cover(GROUND_TEX * GROUND_TEXEL_M * 2 ** lv, (tx, tz) => ['g', lv, tx, tz]),
+            ...cover(TOPO_TILE_CELLS * step, (tx, tz) => ['c', step, tx, tz]),
+            ...(glyphs ? cover(GLYPH_TILE_M, (tx, tz) => ['f', 0, tx, tz]) : []),
+        ]
+        this._bgJob = { panX: this._panX, panZ: this._panZ, zoom: z, rect, lv, step, glyphs, todo, done: [] }
     }
 
-    // Build the job's missing tiles for up to `budgetMs` (at least one a call); once all are in, draw
-    // the sheet in ONE pass and swap it in. Only tile builds sample the world, so the pass is cheap.
+    // Build the job's tiles for up to `budgetMs` (at least one a call) — a memo hit costs nothing —
+    // then, once all are in, draw the sheet in ONE pass and swap it in. Only tile BUILDS sample the
+    // world, so the pass itself is cheap.
     _stepBackground(budgetMs) {
         const job = this._bgJob
         const t0 = performance.now()
-        while (job.built < job.tiles.length) {
-            const t = job.tiles[job.built++]
-            if (!t.ground) t.ground = this._groundTile(t)
-            if (!t.topo.has(job.step)) t.topo.set(job.step, this._contourTile(t, job.step))
-            if (job.glyphs && !t.glyphs) t.glyphs = this._glyphTile(t)
+        while (job.done.length < job.todo.length) {
+            const [kind, a, tx, tz] = job.todo[job.done.length]
+            const build = kind === 'g' ? () => this._groundTile(a, tx, tz)
+                : kind === 'c' ? () => this._contourTile(a, tx, tz) : () => this._glyphTile(tx, tz)
+            job.done.push({ kind, tx, tz, ...this._tile(`${kind}${a}:${tx},${tz}`, build) })
             if (performance.now() - t0 >= budgetMs) break
         }
-        if (job.built < job.tiles.length) return
+        if (job.done.length < job.todo.length) return
 
         const n = this._bgNext
         if (n.width !== this._bg.width || n.height !== this._bg.height) { n.width = this._bg.width; n.height = this._bg.height }
@@ -1427,7 +1451,7 @@ export class Map2D {
             ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
             ctx.translate(this._bgOffX, this._bgOffY)
             this._drawWater(ctx, job.rect)
-            if (job.glyphs) this._drawGlyphs(ctx, job.tiles)
+            if (job.glyphs) this._drawGlyphs(ctx, job.done.filter(t => t.kind === 'f'))
             this._drawRoads(ctx, this._bgOffX, this._bgOffY)
             this._drawCrossings(ctx)
             this._drawNodes(ctx)
@@ -1449,15 +1473,17 @@ export class Map2D {
         ctx.setTransform(k, 0, 0, k, this._dpr * (ox + s.cx - this._panX * this._zoom), this._dpr * (oy + s.cy - this._panZ * this._zoom))
     }
 
-    // The tile at world tile coords (tx, tz), made empty on first ask; its layers fill in lazily.
-    _tile(tx, tz) {
-        const key = tx + ',' + tz
-        let t = this._tileMemo.get(key)
-        if (!t) {
-            if (this._tileMemo.size >= TILE_MEMO_MAX) this._tileMemo.clear()
-            t = { tx, tz, ground: null, topo: new Map(), glyphs: null }
-            this._tileMemo.set(key, t)
+    // The memoized tile `key`, built by `build()` on a miss. Least-recently-used: a hit moves to the
+    // back, and past TILE_MEMO_MAX the front one goes.
+    _tile(key, build) {
+        const m = this._tileMemo
+        let t = m.get(key)
+        if (t) m.delete(key)
+        else {
+            t = build()
+            if (m.size >= TILE_MEMO_MAX) m.delete(m.keys().next().value)
         }
+        m.set(key, t)
         return t
     }
 
@@ -1467,16 +1493,18 @@ export class Map2D {
         // Ground: each tile's bitmap onto its world square, the square's corners snapped to whole
         // DEVICE pixels so neighbours share an edge exactly (an antialiased fractional edge lets the
         // paper show through as a hairline). The 1-texel apron is what the filter reads across a
-        // tile edge. Smoothing ON only to take the stair-steps off the 4 m texels: _groundTile's
-        // threshold has already put every texel on one side of a cover boundary, so this antialiases
-        // a hard edge — it never fades one bin into the next.
+        // tile edge. Smoothing ON only to take the stair-steps off the texels: _groundTile's
+        // threshold has already put every texel on one side of a cover boundary (or, at a coarse
+        // level, antialiased it), so this never fades one bin into the next.
         ctx.setTransform(1, 0, 0, 1, 0, 0)
         ctx.imageSmoothingEnabled = true
         ctx.imageSmoothingQuality = 'high'
         const X = (wx) => Math.round((this._sx(wx) + ox) * dpr), Y = (wz) => Math.round((this._sy(wz) + oy) * dpr)
-        for (const t of job.tiles) {
-            const x0 = X(t.tx * TILE_M), y0 = Y(t.tz * TILE_M)
-            ctx.drawImage(t.ground, 1, 1, TILE_TEX, TILE_TEX, x0, y0, X((t.tx + 1) * TILE_M) - x0, Y((t.tz + 1) * TILE_M) - y0)
+        const side = GROUND_TEX * GROUND_TEXEL_M * 2 ** job.lv
+        for (const t of job.done) {
+            if (t.kind !== 'g') continue
+            const x0 = X(t.tx * side), y0 = Y(t.tz * side)
+            ctx.drawImage(t.img, 1, 1, GROUND_TEX, GROUND_TEX, x0, y0, X((t.tx + 1) * side) - x0, Y((t.tz + 1) * side) - y0)
         }
         // Contours: the tiles' world-space paths through the view transform, all intermediates then
         // all index lines. The index contour is told apart by INK first and weight second — both are
@@ -1487,7 +1515,7 @@ export class Map2D {
         for (const [color, width, key] of [[CONTOUR_COLOR, CONTOUR_W, 'thin'], [INDEX_COLOR, INDEX_W, 'thick']]) {
             ctx.strokeStyle = color
             ctx.lineWidth = width / this._zoom
-            for (const t of job.tiles) ctx.stroke(t.topo.get(job.step)[key])
+            for (const t of job.done) if (t.kind === 'c') ctx.stroke(t[key])
         }
         ctx.lineCap = 'butt'
     }
@@ -1502,26 +1530,24 @@ export class Map2D {
         return TOPO_TIERS.find(t => t >= want - 1e-9) ?? want
     }
 
-    // One tile's contours at sample `step`: two world-space Path2Ds, intermediate and index.
+    // One contour tile — TOPO_TILE_CELLS × TOPO_TILE_CELLS cells of sample `step` — as two world-space
+    // Path2Ds, intermediate and index.
     //
     // Contours come straight off the height field the rest of the sim already agrees on
     // (`road._coarseH`, so the labels are the metres the truck actually climbs). The tile samples a
     // grid on the WORLD lattice of `step` and MARCHING SQUARES it once per crossed level: each grid
     // cell knows which levels pass through it from its own min/max, so the field is walked ONE time
-    // regardless of how many contours cross it. The tile owns the cells whose lower corner lies in
-    // it, so each cell is marched by exactly one tile and the same lattice gives the same lines at
-    // every pan.
+    // regardless of how many contours cross it. Tiles are whole cells of their step, so neighbours
+    // meet on a shared lattice line and the same lattice gives the same lines at every pan.
     //
     // Segments are emitted disjointly (no contour tracing / polyline stitching). With a round
     // lineCap the joins are invisible at any zoom this map supports, and it saves carrying the
     // edge-adjacency bookkeeping that tracing needs.
-    _contourTile(t, step) {
+    _contourTile(step, tx, tz) {
         const road = this._road
-        const i0 = Math.ceil(t.tx * TILE_M / step), i1 = Math.ceil((t.tx + 1) * TILE_M / step)
-        const j0 = Math.ceil(t.tz * TILE_M / step), j1 = Math.ceil((t.tz + 1) * TILE_M / step)
-        const nx = i1 - i0 + 1, nz = j1 - j0 + 1
-        const h = new Float32Array(nx * nz)
-        for (let j = 0; j < nz; j++) {
+        const N = TOPO_TILE_CELLS, i0 = tx * N, j0 = tz * N, nx = N + 1
+        const h = new Float32Array(nx * nx)
+        for (let j = 0; j < nx; j++) {
             const wz = (j0 + j) * step
             for (let i = 0; i < nx; i++) h[j * nx + i] = road._coarseH((i0 + i) * step, wz)
         }
@@ -1530,10 +1556,10 @@ export class Map2D {
         // the reading aid that lets you count elevation without tracing every line).
         const thin = new Path2D(), thick = new Path2D()
         const seg = (out, x1, y1, x2, y2) => { out.moveTo(x1, y1); out.lineTo(x2, y2) }
-        for (let j = 0; j < nz - 1; j++) {
+        for (let j = 0; j < N; j++) {
             const r0 = j * nx, r1 = r0 + nx
             const yt = (j0 + j) * step, yb = yt + step
-            for (let i = 0; i < nx - 1; i++) {
+            for (let i = 0; i < N; i++) {
                 const a = h[r0 + i], b = h[r0 + i + 1], c = h[r1 + i + 1], d = h[r1 + i]
                 let lo = a, hi = a
                 if (b < lo) lo = b; else if (b > hi) hi = b
@@ -1550,7 +1576,7 @@ export class Map2D {
                     const out = (k % INDEX_EVERY === 0) ? thick : thin
                     // Crossing point on each edge, lerped by value. Only the edges the case needs
                     // are read (the ternaries below), so no wasted interpolation.
-                    const tx = () => xl + (xr - xl) * ((v - a) / (b - a))     // top edge
+                    const ex = () => xl + (xr - xl) * ((v - a) / (b - a))     // top edge
                     const bx = () => xl + (xr - xl) * ((v - d) / (c - d))     // bottom edge
                     const ly = () => yt + (yb - yt) * ((v - a) / (d - a))     // left edge
                     const ry = () => yt + (yb - yt) * ((v - b) / (c - b))     // right edge
@@ -1558,15 +1584,15 @@ export class Map2D {
                         case 1: case 14: seg(out, xl, ly(), bx(), yb); break              // left ↔ bottom
                         case 2: case 13: seg(out, bx(), yb, xr, ry()); break              // bottom ↔ right
                         case 3: case 12: seg(out, xl, ly(), xr, ry()); break              // left ↔ right
-                        case 4: case 11: seg(out, tx(), yt, xr, ry()); break              // top ↔ right
-                        case 6: case  9: seg(out, tx(), yt, bx(), yb); break              // top ↔ bottom
-                        case 7: case  8: seg(out, xl, ly(), tx(), yt); break              // top ↔ left
+                        case 4: case 11: seg(out, ex(), yt, xr, ry()); break              // top ↔ right
+                        case 6: case  9: seg(out, ex(), yt, bx(), yb); break              // top ↔ bottom
+                        case 7: case  8: seg(out, xl, ly(), ex(), yt); break              // top ↔ left
                         // Saddles: two disjoint arcs through the cell. Resolved the same way every
                         // time rather than by the corner average — at this cell size the two
                         // readings differ by a sub-pixel wiggle, and a consistent choice keeps
                         // neighbouring cells agreeing on which way the pass runs.
-                        case 5:  seg(out, xl, ly(), tx(), yt); seg(out, bx(), yb, xr, ry()); break
-                        case 10: seg(out, tx(), yt, xr, ry()); seg(out, xl, ly(), bx(), yb); break
+                        case 5:  seg(out, xl, ly(), ex(), yt); seg(out, bx(), yb, xr, ry()); break
+                        case 10: seg(out, ex(), yt, xr, ry()); seg(out, xl, ly(), bx(), yb); break
                     }
                 }
             }
@@ -1574,45 +1600,32 @@ export class Map2D {
         return { thin, thick }
     }
 
-    // One tile's ground wash: green where the forest stands, white where it does not, hillshaded — a
-    // bitmap of TILE_TEX texels a side (4 m each) plus a 1-texel apron.
+    // One ground tile at level `lv`: green where the forest stands, white where it does not,
+    // hillshaded — GROUND_TEX texels a side of GROUND_TEXEL_M · 2^lv m, plus a 1-texel apron.
     //
-    // Both layers resolve onto ONE world-aligned lattice and leave as a single image, scaled up under
+    // Both layers resolve onto world-aligned lattices and leave as a single image, scaled up under
     // the contours with smoothing on. That is what buys the soft clearing edges — a per-cell fillRect
-    // would print 16 m stair-steps no matter how the thresholds were tuned. The lattice is snapped to
-    // COVER_CELL, which is what makes the raster window-invariant: the texel covering a given patch of
-    // world is the same texel at every pan and zoom, so a clearing keeps its shape.
+    // would print 16 m stair-steps no matter how the thresholds were tuned. The lattices are snapped
+    // to the world, which is what makes the raster window-invariant: the texel covering a given patch
+    // of world is the same texel at every pan, so a clearing keeps its shape.
     //
-    // The lattice can be sampled this coarsely because of what the height field is: `_coarseH`'s
-    // finest octave is a 250 m wavelength, so a 16 m lattice is four times finer than Nyquist and
-    // the hillshade is fully resolved, not approximated.
-    _groundTile(t) {
+    // Hillshade samples `_coarseH` on a COVER_CELL · 2^lv lattice. The field's finest octave is a
+    // 250 m wavelength, so even level 2's 64 m lattice is under Nyquist and the shade is resolved.
+    _groundTile(lv, tx, tz) {
         const road = this._road
-        // The lattice runs BG_SEAM_M past the tile on every side, so the cover blur and the
-        // hillshade's differences see real neighbours at its edge.
-        const wx0 = t.tx * TILE_M - BG_SEAM_M, wz0 = t.tz * TILE_M - BG_SEAM_M
-        const gw = (TILE_M + 2 * BG_SEAM_M) / COVER_CELL, gh = gw
-
-        // Heights on the lattice, for the hillshade gradient.
-        const hg = new Float32Array(gw * gh)
-        for (let j = 0; j < gh; j++) {
-            const wz = wz0 + j * COVER_CELL
-            for (let i = 0; i < gw; i++) hg[j * gw + i] = road._coarseH(wx0 + i * COVER_CELL, wz)
+        const e = GROUND_TEXEL_M * 2 ** lv, side = GROUND_TEX * e, X0 = tx * side, Z0 = tz * side
+        // Cover bins on the COVER_CELL lattice, run BG_SEAM_M past the tile on every side so the
+        // cover blur sees real neighbours at its edge. Biome only: the fill never reads the MED/HIGH
+        // split (see _coverRaster).
+        const cx0 = X0 - BG_SEAM_M, cz0 = Z0 - BG_SEAM_M, cw = (side + 2 * BG_SEAM_M) / COVER_CELL
+        const { bin: cover } = this._coverRaster(cx0, cz0, cw, cw, false)
+        // Heights for the hillshade, one cell past the tile each side for the central differences.
+        const hc = COVER_CELL * 2 ** lv, hx0 = X0 - hc, hz0 = Z0 - hc, hw = side / hc + 2
+        const hg = new Float32Array(hw * hw)
+        for (let j = 0; j < hw; j++) {
+            const wz = hz0 + j * hc
+            for (let i = 0; i < hw; i++) hg[j * hw + i] = road._coarseH(hx0 + i * hc, wz)
         }
-        // Biome bins only — the fill never reads the MED/HIGH split (see _coverRaster).
-        const { bin: cover } = this._coverRaster(wx0, wz0, gw, gh, false)
-
-        // ── Compose, at COVER_SS texels per lattice cell.
-        //
-        // The supersample is what lets the cover stay HARD-EDGED without printing 16 m squares. The
-        // bins are interpolated as a continuous field and then re-thresholded per texel, so a
-        // boundary follows a smooth curve through the lattice while every texel on either side of
-        // it is exactly white or exactly green — never a blend of the two. Letting the upscale
-        // filter do it instead would fade green into white across the seam, which is the one thing
-        // a binned sheet must not do.
-        //
-        // Hillshade is interpolated normally: it IS a continuous quantity, and it is the one soft
-        // thing the owner asked for.
         const gR = parseInt(PAPER_GREEN.slice(1, 3), 16), gG = parseInt(PAPER_GREEN.slice(3, 5), 16),
               gB = parseInt(PAPER_GREEN.slice(5, 7), 16)
         const oR = parseInt(PAPER_OPEN.slice(1, 3), 16), oG = parseInt(PAPER_OPEN.slice(3, 5), 16),
@@ -1620,75 +1633,90 @@ export class Map2D {
         const lx = Math.cos(HILLSHADE_AZ), lz = Math.sin(HILLSHADE_AZ)
 
         // Per-cell shade, computed once on the lattice and interpolated per texel below.
-        const shadeG = new Float32Array(gw * gh)
-        for (let j = 0; j < gh; j++) {
-            for (let i = 0; i < gw; i++) {
-                // Central differences, clamped at the lattice border (which lies in the margin, so
-                // no tile ever shows it).
-                const iL = i > 0 ? i - 1 : i, iR = i < gw - 1 ? i + 1 : i
-                const jU = j > 0 ? j - 1 : j, jD = j < gh - 1 ? j + 1 : j
-                const dx = (hg[j * gw + iR] - hg[j * gw + iL]) / ((iR - iL) * COVER_CELL || 1)
-                const dz = (hg[jD * gw + i] - hg[jU * gw + i]) / ((jD - jU) * COVER_CELL || 1)
+        const shadeG = new Float32Array(hw * hw)
+        for (let j = 0; j < hw; j++) {
+            for (let i = 0; i < hw; i++) {
+                // Central differences, clamped at the lattice border (one cell outside the tile).
+                const iL = i > 0 ? i - 1 : i, iR = i < hw - 1 ? i + 1 : i
+                const jU = j > 0 ? j - 1 : j, jD = j < hw - 1 ? j + 1 : j
+                const dx = (hg[j * hw + iR] - hg[j * hw + iL]) / ((iR - iL) * hc || 1)
+                const dz = (hg[jD * hw + i] - hg[jU * hw + i]) / ((jD - jU) * hc || 1)
                 // Slope-aspect dot with the light. Not a physical lambert — a shallow, clamped
                 // ramp, because the job is to say which way a face turns, not to render it.
                 const lit = Math.max(-1, Math.min(1, -(dx * lx + dz * lz) * HILLSHADE_K))
-                shadeG[j * gw + i] = 1 + (lit < 0 ? lit : lit * 0.35) * (1 - HILLSHADE_MIN)
+                shadeG[j * hw + i] = 1 + (lit < 0 ? lit : lit * 0.35) * (1 - HILLSHADE_MIN)
             }
         }
 
-        // Bilinear read of a lattice field at texel (u,v), in lattice units.
-        const lerpG = (fld, u, v) => {
-            const i0 = Math.min(gw - 1, Math.max(0, Math.floor(u))), i1 = Math.min(gw - 1, i0 + 1)
-            const j0 = Math.min(gh - 1, Math.max(0, Math.floor(v))), j1 = Math.min(gh - 1, j0 + 1)
+        // Bilinear read of a w-wide lattice field at (u,v), in lattice units.
+        const lerpG = (fld, w, u, v) => {
+            const i0 = Math.min(w - 1, Math.max(0, Math.floor(u))), i1 = Math.min(w - 1, i0 + 1)
+            const j0 = Math.min(w - 1, Math.max(0, Math.floor(v))), j1 = Math.min(w - 1, j0 + 1)
             const fu = u - i0, fv = v - j0
-            const a = fld[j0 * gw + i0], b = fld[j0 * gw + i1]
-            const c = fld[j1 * gw + i0], d = fld[j1 * gw + i1]
+            const a = fld[j0 * w + i0], b = fld[j0 * w + i1]
+            const c = fld[j1 * w + i0], d = fld[j1 * w + i1]
             return (a + (b - a) * fu) + ((c + (d - c) * fu) - (a + (b - a) * fu)) * fv
         }
 
-        // The tile's own texels plus the apron: texel 0 of the bitmap is texel m0 of the lattice's.
-        const iw = TILE_TEX + 2, m0 = BG_SEAM_M / COVER_CELL * COVER_SS - 1
+        // ── Compose. A lattice node stands for its cell's CENTRE (node i ↔ origin + (i + ½)·cell).
+        //
+        // The cover is HARD-EDGED without printing 16 m squares: the bins are interpolated as a
+        // continuous field and re-thresholded per sample, so a boundary follows a smooth curve
+        // through the lattice while every sample on either side of it is exactly white or exactly
+        // green. At level 0 a texel is one 4 m sample, never a blend; at a coarser level it is the
+        // share of its sub-samples on each side (n² of them, n = 2^lv up to 4) — the hard edge
+        // antialiased, the way the old view-wide raster's downscale did it. Letting the upscale
+        // filter do it instead would fade green into white across the seam.
+        //
+        // Hillshade is interpolated normally: it IS a continuous quantity, and it is the one soft
+        // thing the owner asked for.
+        const iw = GROUND_TEX + 2, nSub = Math.min(4, 2 ** lv), cut = (COVER_LOW + COVER_MED) / 2
         const img = new ImageData(iw, iw)
         const px = img.data
         for (let jj = 0; jj < iw; jj++) {
-            const v = (m0 + jj + 0.5) / COVER_SS - 0.5
+            const wz = Z0 + (jj - 0.5) * e               // texel centre (texel 0 is the apron)
+            const vh = (wz - hz0) / hc - 0.5
             for (let ii = 0; ii < iw; ii++) {
-                const u = (m0 + ii + 0.5) / COVER_SS - 0.5
-                const shade = lerpG(shadeG, u, v)
-                // Cover → one of two fills, thresholded, never blended. The cut sits at
-                // COVER_LOW..COVER_MED's midpoint, so it is the LOW/MED boundary that gets drawn.
-                const open = lerpG(cover, u, v) < (COVER_LOW + COVER_MED) / 2
-                const r = open ? oR : gR, g = open ? oG : gG, b = open ? oB : gB
+                const wx = X0 + (ii - 0.5) * e
+                const shade = lerpG(shadeG, hw, (wx - hx0) / hc - 0.5, vh)
+                let green = 0
+                for (let sj = 0; sj < nSub; sj++) {
+                    const v = (wz + ((sj + 0.5) / nSub - 0.5) * e - cz0) / COVER_CELL - 0.5
+                    for (let si = 0; si < nSub; si++) {
+                        const u = (wx + ((si + 0.5) / nSub - 0.5) * e - cx0) / COVER_CELL - 0.5
+                        if (lerpG(cover, cw, u, v) >= cut) green++
+                    }
+                }
+                const f = green / (nSub * nSub)
                 const o = (jj * iw + ii) * 4
-                px[o]     = Math.max(0, Math.min(255, r * shade))
-                px[o + 1] = Math.max(0, Math.min(255, g * shade))
-                px[o + 2] = Math.max(0, Math.min(255, b * shade))
+                px[o]     = Math.max(0, Math.min(255, (oR + (gR - oR) * f) * shade))
+                px[o + 1] = Math.max(0, Math.min(255, (oG + (gG - oG) * f) * shade))
+                px[o + 2] = Math.max(0, Math.min(255, (oB + (gB - oB) * f) * shade))
                 px[o + 3] = 255
             }
         }
         const c = document.createElement('canvas')
         c.width = c.height = iw
         c.getContext('2d').putImageData(img, 0, 0)
-        return c
+        return { img: c }
     }
 
-    // One tile's glyph slots, as world points: the marsh tufts and conifer marks whose lattice slot
-    // lies in it. Both are stamped on a JITTERED WORLD LATTICE, so a glyph stays on the tuft of marsh
-    // it marks when you zoom — a screen-space scatter would make the whole sheet crawl. Built only
-    // while glyphs are visible (_glyphsVisible), and always with the scatter replay, so the two marks
-    // arrive together (owner, 2026-08-15: one pop-in for both plates).
-    _glyphTile(t) {
-        const wx0 = t.tx * TILE_M - BG_SEAM_M, wz0 = t.tz * TILE_M - BG_SEAM_M
-        const gw = (TILE_M + 2 * BG_SEAM_M) / COVER_CELL, gh = gw
-        const { bin: cover } = this._coverRaster(wx0, wz0, gw, gh, true)
+    // One glyph tile (GLYPH_TILE_M square), as world points: the marsh tufts and conifer marks whose
+    // lattice slot lies in it. Both are stamped on a JITTERED WORLD LATTICE, so a glyph stays on the
+    // tuft of marsh it marks when you zoom — a screen-space scatter would make the whole sheet crawl.
+    // Built only while glyphs are visible (_glyphsVisible), and always with the scatter replay, so
+    // the two marks arrive together (owner, 2026-08-15: one pop-in for both plates).
+    _glyphTile(tx, tz) {
+        const X0 = tx * GLYPH_TILE_M, Z0 = tz * GLYPH_TILE_M
+        const wx0 = X0 - BG_SEAM_M, wz0 = Z0 - BG_SEAM_M, gw = (GLYPH_TILE_M + 2 * BG_SEAM_M) / COVER_CELL
+        const { bin: cover } = this._coverRaster(wx0, wz0, gw, gw, true)
         // Height sampler for the drainage read. Sampled at the glyph's own world position rather
         // than off the cover lattice: isWetGround's ring is 48 m, finer than that lattice would
         // resolve, and a marsh symbol has to sit on the hollow it marks.
         const wetSamplers = { heightAt: (x, z) => this._road._coarseH(x, z) }
         const wet = [], tree = []
-        const X0 = t.tx * TILE_M, Z0 = t.tz * TILE_M
-        for (let j = Math.ceil(Z0 / GLYPH_CELL); j * GLYPH_CELL < Z0 + TILE_M; j++) {
-            for (let i = Math.ceil(X0 / GLYPH_CELL); i * GLYPH_CELL < X0 + TILE_M; i++) {
+        for (let j = Math.ceil(Z0 / GLYPH_CELL); j * GLYPH_CELL < Z0 + GLYPH_TILE_M; j++) {
+            for (let i = Math.ceil(X0 / GLYPH_CELL); i * GLYPH_CELL < X0 + GLYPH_TILE_M; i++) {
                 // Deterministic per-slot jitter from world lattice indices. Same hash discipline as
                 // the rest of the sim: the mark does not move because the view did.
                 const hsh = Math.sin(i * 127.1 + j * 311.7) * 43758.5453
