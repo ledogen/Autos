@@ -123,9 +123,14 @@ const PAGE = String.raw`(async () => {
   }
   let s = seed >>> 0
   const rng = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32)
-  const route = makeRoute([...road._network.values()], rng, window.__vs.position)
+  // Story's region is walled (REGION_RADIUS_M); a route out past it drives into the wall for good — keep 150 m clear.
+  const reg = window.__story?.()?.region?.()
+  const keep = reg ? (x, z) => Math.hypot(x - reg.x, z - reg.z) < reg.r - 150 : undefined
+  const route = makeRoute([...road._network.values()], rng, window.__vs.position, keep)
   const inBore = (x, z) => { const nr = road.queryNearest(x, z, 15); return !!nr && !!road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0, -20) }
   const ap = B.ap = createAutopilot({ car: P, route, inBore })
+  const D = window.__damage, cond0 = D?.condition ? { ...D.condition } : null
+  const kit0 = D ? Object.fromEntries(['flat', 'toeOffsetDeg', 'camberOffsetDeg'].map(f => [f, D[f] && [...D[f]]])) : {}
   ap.locate(window.__vs.position)
   // A seat is a dead, parked truck (story mode's, main.js _reseatTruckAtSpawn): after it lands, hold I until the engine
   // runs (synthetic keys, the way gamepad.js sends its own), then RB (Space in the drive layout) off the park brake.
@@ -143,6 +148,14 @@ const PAGE = String.raw`(async () => {
     if (why) B.recov.push({ why, t: +(performance.now() / 1000).toFixed(1), at: [Math.round(window.__vs.position.x), Math.round(window.__vs.position.z)] })
     const pose = ap.resume(why ? m : 0)
     if (!home) home = pose
+    // A recovery is a TOW: story keeps damage through a seat (main.js _reseatTruckAtSpawn), so a wreck would stay a
+    // wreck — wheels held, the engine at its converter stall — and every seat after it stuck. Put the truck back as
+    // the run started it (story's used truck), never better.
+    if (why && D && cond0) {
+      for (const k in cond0) D.set(k, cond0[k])
+      for (const f of ['flat', 'toeOffsetDeg', 'camberOffsetDeg']) if (D[f] && kit0[f]) kit0[f].forEach((x, i) => { D[f][i] = x })   // tyres and alignment live outside condition
+      D.publish()
+    }
     setPad(0, 0, 0); seating = true; settle = 2.5; settleT = 0
     Promise.resolve(window.__teleport(pose.x, pose.z, pose.heading)).finally(() => { seating = false })
   }
@@ -214,7 +227,7 @@ const PAGE = String.raw`(async () => {
       flat: window.__vs.tireFlat?.map(f => +f.toFixed(2)), engine: typeof window.__vs.engineHealth === 'number' ? +window.__vs.engineHealth.toFixed(2) : window.__vs.engineHealth })
     B.frames.push(...fr.map(f => [B.phase, f]))
   }, 1000)
-  return { edges: route.edges }
+  return { edges: route.edges, region: reg ? [Math.round(reg.x), Math.round(reg.z), reg.r] : null }
 })()`
 
 // ── one session: boot, story, the three phases ────────────────────────────────────────────────────────────────────
@@ -260,7 +273,7 @@ async function session (build, seed, rep) {
     const B = await js(`(() => { const B = window.__bench; return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames } })()`)
     writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples }))
     const r = summarise(B, win)
-    r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, dialogues: B.dialogues, edges: info.edges }
+    r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, dialogues: B.dialogues, edges: info.edges, region: info.region }
     r.valid = r.drive.km >= MIN_KM && r.drive.newChunks >= MIN_CHUNKS
     r.errors = errors.slice(0, 5)
     Object.assign(r, { build: build.name, dir: build.dir, commit: build.commit, branch: build.branch, dirty: build.dirty, seed, rep, load })

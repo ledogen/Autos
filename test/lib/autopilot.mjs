@@ -21,10 +21,11 @@ const hyp = (ax, az, bx, bz) => Math.hypot(bx - ax, bz - az)
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a))
 
 /** A random walk over road edges ({ points: [{x, z}…] }), joined into one polyline that grows on demand. Junctions are
- *  edge ENDS within 6 m of each other. A dead end, or only hairpins (> 100° from the arrival heading, not drivable by
+ *  edge ENDS within 6 m of each other. `keep(x, z)` fences it: only edges wholly inside are walked (a story region's
+ *  wall, an AI car's patch). A dead end, or only hairpins (> 100° from the arrival heading, not drivable by
  *  pursuit), JUMPS to a random edge elsewhere: the point carries `jump: true` and the driver reports it as trouble. */
-export function makeRoute (edges, rng, from) {
-  edges = edges.filter(e => e.points?.length >= 2)
+export function makeRoute (edges, rng, from, keep = () => true) {
+  edges = edges.filter(e => e.points?.length >= 2 && e.points.every(q => keep(q.x, q.z)))
   const ends = [], node = new Map(), nodes = []
   for (const e of edges) ends.push({ e, end: 0, p: e.points[0] }, { e, end: 1, p: e.points.at(-1) })
   // ponytail: O(ends × nodes) node match, ~40 ms on a 2500 m region; a spatial hash if networks get much bigger.
