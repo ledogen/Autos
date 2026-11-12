@@ -253,6 +253,39 @@ profiles of any window with a bad second.
 - **Not yet profiled:** the workers (terrain chunks, road network). CPU power ran 1–6 W while the main thread was
   only about 25 % busy, so the workers carry real load.
 
+#### Recorded play session 3 (2026-11-12 11:25–11:32, branch perf/perf-37-tire-map: PERF-38 map + PERF-39 tire)
+
+Owner: "I don't think the computer is thermaling anymore but it's still getting quite toasty." 7 min of story play,
+map in use. Harness: scratchpad `playlog3.mjs` (one continuous main-thread profile saved every 5 min instead of the
+10 s restarts that stalled session 2; CPU % per Chrome process from `ps` cumulative CPU time).
+
+- **60 fps, p95 17.5 ms** through the drive. **Package 2.6 W: CPU 1.15 W + GPU 1.48 W** (GPU ~1.05 GHz, 82–89 % busy).
+- **Main thread 192 ms/s** (19 % of a core): render submit 76, physics 50, postStream 25, props 13, terrain 10.
+  The profile is 78 % idle. Small CPU oddities: `cluster.js _drawOdometer` 4.7 ms/s, WebAudio `setTargetAtTime` 2.5 ms/s.
+- **Renderer process 41 % of a core** → the workers and the compositor are ~22 %, about as much as the main thread.
+  GPU process 13 %.
+- **The GPU is now the larger half.** Triangles 0.9–1.1 M a frame, but triangles are cheap on this GPU.
+
+**GPU split** (scratchpad `gpuab.mjs`, headless on the real M4 GPU at the owner's 2090 × 1226 canvas, parked after a
+25 s drive, one switch at a time). GPU timer queries are misleading here: the GPU lowers its clock as load drops, so
+ms per frame stays near 12. The measure is GPU active cycles (busy % × MHz), from the sudoless IOReport reader
+(scratchpad `ioreport.py`). Savings, two random seeds:
+
+| switch | seed 2654449719 | seed 1172941705 |
+|---|---|---|
+| terrain hidden | 60 % | 50 % |
+| ¼ the pixels | 53 % | 45 % |
+| 900-line cap (from 1226) | 30 % | 39 % |
+| terrain detail shader off (`uDetailScale` 0) | 22 % | 40 % |
+| terrain surface maps off (`uSurfOn` 0) | 12 % | 26 % |
+| all props hidden | 12 % | 28 % |
+| near (truck) shadow light off | 12 % | 23 % |
+| grass / sage / rye hidden | 7 % | 20 % |
+| far shadow light off / baked prop shadow off / rock bump off | 0–13 % | |
+
+Single readings, about ±10 %. **The GPU cost is per pixel, and most of it is the terrain's fragment shader.** The
+shadow pass runs on every frame while driving (the day clock moves the sun).
+
 ### Found while chasing the owner's map-open CPU burst: a Quality change in story loops the map (fixed)
 
 Owner, 21:59: a 6 s CPU burst (0.7 → 5.0 W, performance cores at 4.0 GHz) while clicking in the auto shop menu and
