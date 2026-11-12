@@ -36,6 +36,36 @@ The world layers become world-space objects built once and only re-drawn through
 5. **When it is built**: behind the story loading screen; in free roam, per area as the player moves.
 6. **Memory only, never saved** (cold-generation rule: no world-gen data in saves).
 
+## Built (branch, 2026-11-12)
+
+The world layers are now **world-anchored tiles**, memoised in an LRU (least-recently-used: the oldest-touched tile is
+evicted first) of `TILE_MEMO_MAX` 384. A pan or zoom only re-composites the tiles it already has. It builds only the
+tiles it has never seen, under the 6 ms slice.
+
+- **Ground** (`_groundTile`): 256 × 256 texels plus a 1-texel apron. Four levels of detail (4 / 8 / 16 / 32 m texels),
+  picked so a texel spans at least 2 device pixels.
+- **Contours** (`_contourTile`): world-space `Path2D` per 64-cell tile and contour interval (`TOPO_TIERS`).
+- **Glyphs** (`_glyphTile`): marsh tufts and conifer marks as world points, 512 m tiles.
+- **Roads, camp zones**: world-space `Path2D` memos, rebuilt only when the network changes (`_buildRoad`).
+- **The 3D world is not rendered while the map is open** (`main.js`): the map canvas is opaque and covers it.
+- Built lazily, area by area, not behind the loading screen. The first view of an area costs what one rebuild did
+  before; everything after is cheap. Prebuilding is left until a play session shows the first open still hitches.
+
+Not done: the whole-map zoom (r = 1800 m) could not be captured headless at dpr 2. The CDP socket dies there on main
+too, so it is a harness limit, not this change.
+
+Headless A/B (scratchpad harness, 1400 × 900 at dpr 2), a settled pan, ms and frames until the sheet is final:
+
+| seed, zoom | main | branch |
+|---|---|---|
+| 2654449719 mid | 243 / 15 | 16 / 1 |
+| 2654449719 close | 163 / 10 | 39 / 2 |
+| 1172941705 mid | ~263 / 16 | 15 / 1 |
+| 1172941705 close | 341 / 12 | 19 / 1 |
+
+One synchronous rebuild: 68–137 ms on main, 5–9 ms on the branch. Screenshots of both seeds at mid and close zoom
+match main. A hillshade tile seam (a one-sided height difference at the tile's lattice border) was found and fixed.
+
 ## Acceptance
 
 - [ ] Map open and still: main-thread map cost under 1 ms a frame (from `frame.postStream` up to 950 ms/s).

@@ -38,18 +38,22 @@ Each wheel query ran the full road resolve (`_resolveRoadSurface`) once per heig
    p90 4.5 cm and up to 9 cm at the deck edge, jumping whenever the 1 m grid winner changed. The step is now the exact
    arc step: foot error 0.000 cm on seeds 7 and 1172941705. This moves the carved surface (mesh AND physics, together)
    by millimetres off-centre on tight bends.
-6. **Sampling 9 + 10 → 9 + 6** (`TIRE_CONTACT`, 57 → 45 samples). Depth stays within 4.6 mm of the converged answer.
-   The largest jump is 5.7 mm per 2 mm of roll (the legacy stencil stepped 74 mm).
+6. **Sampling stays 9 + 10** (`TIRE_CONTACT`, 57 samples). 9 + 6 was tried and dropped: `tire-contact`'s 2 mm
+   convergence limit fails at 6 refine steps (5.5–8.3 mm), and 9 is the floor. The cost win is all from items 1–5.
+7. **`vertical-curvature` ceiling 201 → 202 at junctions** (documented in the gate). Item 5 moves the carved surface
+   by under 2 mm; one sample on seed 11 (2039.1, 710.6) went 0.0297 → 0.0305 /m and the 15 m merge now counts it
+   twice. The sharpest kink is unchanged at 0.092 /m.
 
-Bench (`node test/perf-tire-query.mjs <seed>`, `DECK=1` for wheels on the deck, `WIDE=1` out to ±16 m), µs per wheel query, moving truck:
+Bench (`node test/perf-tire-query.mjs <seed>`, `DECK=1` for wheels on the deck, `WIDE=1` out to ±16 m), µs per wheel
+query, moving truck, wheels on the deck:
 
-| seed | shipped 9+10 | 9+6 hub-shared | depth vs shipped (deck) |
+| seed | shipped | hub-shared | depth vs shipped |
 |---|---|---|---|
-| 3583777560 | 78.6 | 38.0 | ≤ 0.19 mm |
-| 7 | 79.2 | 39.9 | ≤ 1.28 mm (sampling; hub-sharing alone ≤ 0.20) |
-| 20 | 90.6 | 42.6 | ≤ 0.75 mm |
+| 3583777560 | 78.6 | 46.4 | ≤ 0.2 mm |
+| 7 | 79.2 | 46.9 | ≤ 0.2 mm |
+| 20 | 90.6 | 51.7 | ≤ 0.2 mm |
 
-Off the deck most samples resolve fresh, so the gain there is the 9+6 part only (about −15 %).
+That is about −42 %. Off the deck most samples resolve fresh, so there is little gain there.
 
 ## B — grazing-kerb pops (owner decision needed)
 
@@ -60,7 +64,6 @@ Off the deck most samples resolve fresh, so the gain there is the 9+6 part only 
 |---|---|---|---|---|
 | legacy 4-ring stencil | 4 / 4 / 4 | 7 | 0 | 33 |
 | shipped (radial normal at the edge), 9+10 | 12 / 14 / 23 | 23 | 1 | 57 |
-| radial normal, 9+6 | about the same as 9+10 | | | 45 |
 | surface normal at the edge ("vertN") | 3 / 4 / 8 | 12 | 0 | 57 |
 | radial-spring reference (5 lines × 61 spokes) | 0 / 0 / 0 | 0 | 0 | ~11 900 |
 
