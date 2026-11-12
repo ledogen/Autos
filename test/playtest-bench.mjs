@@ -115,7 +115,8 @@ const PAGE = String.raw`(async () => {
   const axes = [0, 0, 0, 0], buttons = Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 }))
   const gp = { id: 'perf-40 bench', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes, buttons, vibrationActuator: null }
   Object.defineProperty(navigator, 'getGamepads', { value: () => [gp], configurable: true })
-  const B = window.__bench = { phase: 'idle', recov: [], samples: [], frames: [], chunks0: null, chunks: new Set() }
+  const dlg = document.getElementById('dialogue-panel')
+  const B = window.__bench = { phase: 'idle', dialogues: 0, recov: [], samples: [], frames: [], chunks0: null, chunks: new Set() }
   const setPad = (steer, thr, brk, panY = 0, zoom = 0) => {   // left stick = steer / map pan, right stick Y = map zoom
     axes[0] = steer; axes[1] = panY; axes[2] = 0; axes[3] = zoom
     buttons[7].value = thr; buttons[7].pressed = thr > 0.05; buttons[6].value = brk; buttons[6].pressed = brk > 0.05
@@ -128,8 +129,16 @@ const PAGE = String.raw`(async () => {
   ap.locate(window.__vs.position)
   // A seat is a dead, parked truck (story mode's, main.js _reseatTruckAtSpawn): after it lands, hold I until the engine
   // runs (synthetic keys, the way gamepad.js sends its own), then RB (Space in the drive layout) off the park brake.
-  let home = null, settle = 0, settleT = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false
+  let dlgTick = 0, home = null, settle = 0, settleT = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false
   const ikey = type => (document.activeElement || document.body).dispatchEvent(new KeyboardEvent(type, { key: 'i', code: 'KeyI', bubbles: true, cancelable: true }))
+  // Hold I until it runs; a press that something swallowed (a dialogue) leaves it 'off', so press again after 1 s.
+  let crankT = 0
+  const crank = (ign, dt) => {
+    crankT += dt
+    if (ign === 'running') { if (cranking) { cranking = false; ikey('keyup') } return true }
+    if (!cranking || (ign === 'off' && crankT > 1)) { if (cranking) ikey('keyup'); ikey('keydown'); cranking = true; crankT = 0 }
+    return false
+  }
   const seat = (why, m = 25) => {
     if (why) B.recov.push({ why, t: +(performance.now() / 1000).toFixed(1), at: [Math.round(window.__vs.position.x), Math.round(window.__vs.position.z)] })
     const pose = ap.resume(why ? m : 0)
@@ -141,6 +150,12 @@ const PAGE = String.raw`(async () => {
   const tick = () => {
     const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now
     if (rbHold > 0) rbHold--; rbCool--; buttons[5].pressed = rbHold > 0; buttons[5].value = rbHold > 0 ? 1 : 0
+    // Story dialogues open mid-drive (story events), and while one is open main.js swallows EVERY key in the capture
+    // phase to advance it — the crank's I included, so a seat never starts. Close each with Enter, and count them.
+    if (++dlgTick % 10 === 0 && dlg && getComputedStyle(dlg).display !== 'none') {
+      const ev = t => document.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))
+      ev('keydown'); ev('keyup'); B.dialogues++
+    }
     const vs = window.__vs, v = Math.hypot(vs.velocity.x, vs.velocity.z)
     if (B.phase === 'drive') {
       if (!seated) { seated = true; seat(null) }   // from Larry's yard onto the route, aligned (not a recovery)
@@ -150,8 +165,7 @@ const PAGE = String.raw`(async () => {
         // A seat that never ends (an engine that will not start — seated in water, say) would hang the drive with no
         // throttle, so no 'stuck' either: give up on that spot after 15 s, say why, and seat 100 m on.
         if (settleT > 15) { if (cranking) { cranking = false; ikey('keyup') } seat('seat stalled (' + ign + (vs.parked ? ', parked' : '') + (vs.submerged ? ', submerged' : '') + (seating ? ', teleport pending' : '') + ')', 100); requestAnimationFrame(tick); return }
-        if (!seating && ign && ign !== 'running') { if (!cranking) { cranking = true; ikey('keydown') } settle = Math.max(settle, 0.5) }
-        else if (cranking) { cranking = false; ikey('keyup') }
+        if (!seating && ign && !crank(ign, dt)) settle = Math.max(settle, 0.5)
         else if (!seating && vs.parked && rbCool <= 0) { rbHold = 4; rbCool = 40; settle = Math.max(settle, 0.5) }
       } else {
         const c = ap.step(vs, dt)
@@ -170,8 +184,7 @@ const PAGE = String.raw`(async () => {
       setPad(0, 0, 0)
       if (!B.home) { B.home = 'seating'; seating = true; Promise.resolve(window.__teleport(home.x, home.z, home.heading)).finally(() => { seating = false }) }
       else if (B.home === 'seating' && !seating) {
-        if (vs.ignition?.state !== 'running') { if (!cranking) { cranking = true; ikey('keydown') } }
-        else { if (cranking) { cranking = false; ikey('keyup') } B.home = 'done' }
+        if (crank(vs.ignition?.state, dt)) B.home = 'done'
       }
     }
     else if (B.phase === 'map') {   // 5 s each: pan right, down, left, up, zoom in, zoom out
@@ -244,14 +257,14 @@ async function session (build, seed, rep) {
     await js(`window.__bench.phase = 'idle'`); await tap('m'); await until(() => js('!window.__map2d().isOpen()'), 3000)
     await sleep(2000)
     win.park = await phase('idle', PARK_S)
-    const B = await js(`(() => { const B = window.__bench; return { dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames } })()`)
+    const B = await js(`(() => { const B = window.__bench; return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames } })()`)
     writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples }))
     const r = summarise(B, win)
-    r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, edges: info.edges }
+    r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, dialogues: B.dialogues, edges: info.edges }
     r.valid = r.drive.km >= MIN_KM && r.drive.newChunks >= MIN_CHUNKS
     r.errors = errors.slice(0, 5)
     Object.assign(r, { build: build.name, dir: build.dir, commit: build.commit, branch: build.branch, dirty: build.dirty, seed, rep, load })
-    console.log(`${tag}: ${r.valid ? 'ok' : 'INVALID'} — ${r.drive.km} km, ${r.drive.newChunks} new chunks, ${r.drive.recoveries.length} recoveries · load ${load}/core`)
+    console.log(`${tag}: ${r.valid ? 'ok' : 'INVALID'} — ${r.drive.km} km, ${r.drive.newChunks} new chunks, ${r.drive.recoveries.length} recoveries, ${r.drive.dialogues} dialogues closed · load ${load}/core`)
     for (const ph of ['drive', 'map', 'park']) console.log('   ' + line(ph, r.phases[ph]))
     return r
   } catch (e) {
