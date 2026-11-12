@@ -96,7 +96,7 @@ const RESTREAM_MOVE   = 300    // m — floor; see _anchorDrifted (threshold sca
 // Vegetated ground. Sampled off the owner's USGS reference sheet (2026-08-15): the brightest,
 // UNSHADED cluster of its green family. That distinction matters — on the reference the green runs
 // #eaf2dd down to #d2d9c2, and that spread is hillshade already multiplied in, not four tints. So
-// this is the LIT end of the ramp and _paintGround darkens from it (see HILLSHADE_MIN).
+// this is the LIT end of the ramp and _groundTile darkens from it (see HILLSHADE_MIN).
 //
 // One green tint only: the dense-vs-scattered distinction is carried by tree GLYPHS, not by a
 // darker fill (owner, 2026-08-15), which is what the reference does — a single pale wash with
@@ -157,7 +157,7 @@ const MAP_LABEL_FONT = `'Open Sans', 'Segoe UI', 'Helvetica Neue', Helvetica, Ar
 //
 // The cost of the constant is at the extremes of the zoom range, and it is real: zoomed far out the
 // 10 m lines pack tighter than a pixel and collapse into a burgundy wash. That is the honest
-// behaviour of a fixed-interval sheet viewed at the wrong scale — see _drawTopo's density note.
+// behaviour of a fixed-interval sheet viewed at the wrong scale.
 const CONTOUR_IV = 20
 
 // Height-field sampling. The field is `road._coarseH` — the SAME closure the router prices grade
@@ -175,9 +175,9 @@ const TOPO_GRID_MAX = 480
 
 // ── Hillshade ─────────────────────────────────────────────────────────────────────────────────
 // Relief shading, multiplied into the ground fill. It is free in the sense that matters: it reads
-// the SAME height grid _drawTopo already built for the contours, so it adds a pass over an array in
-// hand and not one new sample of the field. Landing it in the cached background means it is paid
-// once per settled pan/zoom, never per frame.
+// the height lattice the ground tile already samples, so it adds a pass over an array in hand and
+// not one new sample of the field. It lands in the ground tile, so it is paid once per tile for the
+// life of the seed (PERF-38).
 //
 // Lit from the upper-LEFT of the screen. That is the cartographic convention, not a physical sun:
 // lighting relief from the upper left is what makes a reader see ridges standing up instead of
@@ -232,19 +232,6 @@ const COVER_SS   = 4
 // density field that BOTH the world and the map read. Flagged to the owner 2026-08-15; the current
 // values are the best available compromise pending that ruling, not a solution.
 const COVER_COUNT_BLUR = 4
-// Safety cap on chunks whose SCATTER REPLAY is resolved in one background redraw. The real gate is
-// glyph visibility (see _glyphsVisible) — the replay's only product is the MED/HIGH split, and that
-// only shows as foliage glyphs — so this exists purely to bound the pathological case where glyphs
-// are just barely visible across an enormous sheet.
-//
-// Sized against measurement: the replay costs ~31 us a chunk, so 16000 is ~0.5 s, paid once per
-// chunk for the life of the seed and inside an already-debounced redraw. It was 1400, then 6000,
-// and both were still cutting in at ordinary reading zooms — the cached background is OVERSCANNED
-// 2x per axis, so it covers 4x the chunks on screen. At GLYPH_MIN_PX the sheet spans ~4.4k chunks
-// on a 1200x800 canvas and ~9.5k on a 1920x1080 one, so anything under ~10000 makes the foliage
-// pop-in depend on the WINDOW SIZE rather than on the zoom. This must stay comfortably above that
-// or the two glyph plates drift apart again.
-const COVER_CHUNK_BUDGET = 16000
 
 // ── Water ─────────────────────────────────────────────────────────────────────────────────────
 // Rivers and ponds, straight off the play WaterSystem (injected — see the getWater ctor option).
@@ -272,10 +259,9 @@ const GLYPH_PX       = 7           // px — drawn size of one glyph
 // 9 → 12 → 16 (owner, 2026-08-15: "a little more zoomed in", then "even more"). ONE number now
 // governs BOTH marks, which
 // it did not in practice before: the marsh tufts appeared here while the conifers waited for the
-// scatter replay, and the replay was being held off by COVER_CHUNK_BUDGET until a noticeably closer
-// zoom, so the two plates popped in at different heights. That is fixed at both ends — the budget
-// below no longer binds at this threshold, and the glyph pass now refuses to stamp EITHER mark
-// unless the replay ran (see _drawGlyphs).
+// scatter replay, and the replay was being held off by a chunk budget until a noticeably closer
+// zoom, so the two plates popped in at different heights. That is fixed: both marks come out of
+// the same glyph tile, which always runs the replay (see _glyphTile).
 const GLYPH_MIN_PX   = 16
 
 // Drainage — what makes ground read as WET — lives in src/biome.js (isWetGround) with its
@@ -295,18 +281,26 @@ const GLYPH_MIN_PX   = 16
 // Costs OVERSCAN² in redraw work and bitmap memory, which is why it is 2 and not 3.
 const BG_OVERSCAN = 2
 
-// ── Background rebuild, time-sliced ───────────────────────────────────────────────────────────
-// The sharp rebuild after a pan/zoom settles costs 50–150 ms (measured 2026-10-20, 1400×900:
-// ~60% the ground raster, ~30% contours, the rest water). Done in one go it froze the whole map for
-// that long every time a pan stopped — most visible on the pad, where the stick pans continuously
-// and stops often. So it is drawn into a SECOND bitmap a band at a time, BG_SLICE_MS of bands per
-// frame, while render() keeps blitting the old bitmap through the transform delta; the finished
-// bitmap swaps in whole. Bands are clipped to whole device rows and each is drawn over a rect
-// widened by BG_SEAM_M of world, so every edge effect (cover blur, hillshade differences, raster
-// smoothing) lands outside the clip and the bands meet without a seam.
-const BG_BANDS    = 16     // horizontal bands per rebuild
-const BG_SLICE_MS = 6      // ms of bands per frame (always at least one band)
-const BG_SEAM_M   = 96     // m — (COVER_COUNT_BLUR + 2) cover cells: the widest edge effect
+// ── Background rebuild: world tiles (PERF-38) ─────────────────────────────────────────────────
+// Everything in the cached background except water and roads is a property of the WORLD, not of
+// the view: the ground wash, the contours, the glyph slots. They used to be re-sampled for the whole
+// overscanned view after every settled pan — 50–150 ms (measured 2026-10-20, 1400×900: ~60% the
+// ground raster, ~30% contours), drawn in 16 bands at 6 ms a frame, and the owner's map session
+// (PERF-37) spent up to 950 ms/s of main thread there. Now each is built ONCE per TILE_M square of
+// world and memoized for the life of the seed (_tile), and a rebuild only composites the tiles.
+// Missing tiles are built BG_SLICE_MS at a time while render() keeps blitting the old bitmap through
+// the transform delta; once the view's tiles are all in, the sheet is drawn in one pass and swaps in
+// whole.
+const TILE_M      = 256    // m — a multiple of COVER_CELL and of the flora chunk, so tiles share every lattice
+const TILE_TEX    = TILE_M / COVER_CELL * COVER_SS   // ground texels a tile side (4 m each)
+const TILE_MEMO_MAX = 2048 // tiles held (~40 MB at most); past it the memo starts over — a long free-roam drive
+const BG_SLICE_MS = 6      // ms of tile builds per frame (always at least one tile)
+const BG_SEAM_M   = 96     // m — (COVER_COUNT_BLUR + 2) cover cells, the widest edge effect: a tile's lattice runs this
+                           //     far past it, so its blur and hillshade see real neighbours and tiles meet without a seam
+// Contour sample steps a tile is built at. The step _topoStep wants is continuous in zoom; it is
+// rounded UP to one of these, so a tile's contours are reused across a band of zoom instead of
+// re-sampled at every wheel notch (each tier is ≤ 1.33× the one below, so the line stays as fine).
+const TOPO_TIERS  = [4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64]
 
 // ── The collar (border) ───────────────────────────────────────────────────────────────────────
 // The sheet is buried in an off-white margin carrying tick marks and an A–Z / 1–n index, so any
@@ -450,9 +444,10 @@ export class Map2D {
         // across every pan and zoom for the life of the seed — this is what makes _coverRaster
         // affordable. Cleared on a seed change (see _ensureRoad), never on a view change.
         this._coverMemo   = new Map()
-        this._coverCanvas = null   // offscreen the ground bitmap is scaled from; reused across redraws
         this._pondCanvas  = null   // offscreen one pond's shoreline raster is built in (see _drawPond)
-        this._coverGrid   = null   // last resolved lattice — handed from _paintGround to _drawGlyphs
+        // PERF-38: the world tiles the cached background is composited from, keyed 'tx,tz' — world
+        // properties like the cover memo, so cleared with it (seed / params) and on new water.
+        this._tileMemo    = new Map()
 
         this._open       = false
         this._road       = null          // the map's own RoadSystem; KEPT ALIVE across opens (route cache)
@@ -503,8 +498,8 @@ export class Map2D {
         this._bgPanZ  = 0
         this._bgZoom  = 0
         this._bgTimer = 0                // settle-redraw debounce handle
-        this._bgNext  = document.createElement('canvas')   // the rebuild in progress — see BG_BANDS
-        this._bgJob   = null             // { panX, panZ, zoom, step, band } while one is in flight
+        this._bgNext  = document.createElement('canvas')   // the rebuild in progress — see TILE_M
+        this._bgJob   = null             // { panX, panZ, zoom, step, tiles, built, glyphs, rect } while one is in flight
 
         // Drag-pan state.
         this._dragging = false
@@ -696,6 +691,7 @@ export class Map2D {
     setWaterNoGo(noGoFn, discsFn) {
         this._waterNoGoFns = [noGoFn, discsFn]
         this._bgDirty = true   // the blue plate is read off this water — see show()
+        this._tileMemo.clear() // …and the tiles' cover replay rejects trees standing in it
         if (this._road) this._road.setWaterNoGo(noGoFn, discsFn)
     }
 
@@ -739,7 +735,7 @@ export class Map2D {
         window.addEventListener('keydown', this._onKey, true)   // FEAT-67: Q / E cycle offers (capture: see _onKeyDown)
         // NOT marking the background dirty here. A reopen with nothing changed blits the bitmap
         // left from the last open: repainting it was the whole open hitch (measured 2026-10-15,
-        // dpr 2: ~100 ms free roam, ~300 ms story — _paintGround's cover raster, not the network).
+        // dpr 2: ~100 ms free roam, ~300 ms story — the ground's cover raster, not the network).
         // Everything the bitmap depends on dirties it at the source: pan/zoom (frameBounds, the
         // gesture debounce), the network (_pump), the world (_buildRoad), water (setWaterNoGo)
         // and the window size (_resize). The view check below catches a close mid-gesture, where
@@ -905,6 +901,7 @@ export class Map2D {
         // stale entry would print the old world's clearings on the new one. Here, not in show(), so
         // a seed change made WHILE the map is open (the deferred rebuild below) drops it too.
         this._coverMemo.clear()
+        this._tileMemo.clear()
         this._streamAt = null
         this._streamFull = false
         this._streamStep = 0
@@ -1050,7 +1047,7 @@ export class Map2D {
     // transform hangs off ITS centre instead. Anything that converts between world and screen
     // must go through here, or the map slides out from under its own border: _sx/_sy, the
     // wheel-zoom anchor, the double-click pick, the cached-background blit delta, and the
-    // sample-grid origin in _drawTopo all share this one definition.
+    // world transform of the cached layers (_worldXf) all share this one definition.
     // Computed once per _resize (the canvas CSS size is set there and nowhere else) and returned
     // by reference — _sx/_sy run per vertex, and a fresh object + a layout read each call was the
     // map's per-vertex cost. Treat the result as read-only.
@@ -1384,123 +1381,158 @@ export class Map2D {
 
     // Begin a rebuild for the CURRENT transform. A dirty raised mid-rebuild waits for this one to
     // finish (render() checks _bgJob) instead of restarting it, so a stream ticking in chunks can
-    // never starve the sheet of a finished bitmap.
+    // never starve the sheet of a finished bitmap. The job lists the world tiles under the
+    // overscanned bitmap, with ONE contour step for all of them so the sheet samples one lattice.
     _startBackground() {
-        const n = this._bgNext
-        if (n.width !== this._bg.width || n.height !== this._bg.height) { n.width = this._bg.width; n.height = this._bg.height }
-        else { const c = n.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, n.width, n.height) }
-        const ox = this._bgOffX, oy = this._bgOffY
-        // One contour step for the whole bitmap, so every band samples the same world lattice.
-        this._bgJob = { panX: this._panX, panZ: this._panZ, zoom: this._zoom, band: 0,
-                        step: this._topoStep(this._cssW + 2 * ox, this._cssH + 2 * oy) }
+        const ox = this._bgOffX, oy = this._bgOffY, s = this._sheet(), z = this._zoom
+        const rect = [this._panX + (-ox - s.cx) / z, this._panZ + (-oy - s.cy) / z,
+                      this._panX + (this._cssW + ox - s.cx) / z, this._panZ + (this._cssH + oy - s.cy) / z]
+        const tiles = []
+        for (let tz = Math.floor(rect[1] / TILE_M); tz * TILE_M < rect[3]; tz++)
+            for (let tx = Math.floor(rect[0] / TILE_M); tx * TILE_M < rect[2]; tx++) tiles.push(this._tile(tx, tz))
+        this._bgJob = { panX: this._panX, panZ: this._panZ, zoom: z, tiles, built: 0, rect,
+                        step: this._topoStep(this._cssW + 2 * ox, this._cssH + 2 * oy), glyphs: this._glyphsVisible() }
     }
 
-    // Draw bands of the rebuild for up to `budgetMs`, then swap it in once the last band is down.
+    // Build the job's missing tiles for up to `budgetMs` (at least one a call); once all are in, draw
+    // the sheet in ONE pass and swap it in. Only tile builds sample the world, so the pass is cheap.
     _stepBackground(budgetMs) {
         const job = this._bgJob
-        const ctx = this._bgNext.getContext('2d')
-        const W = this._cssW, ox = this._bgOffX, oy = this._bgOffY, dpr = this._dpr
-        const rows = this._bgNext.height
+        const t0 = performance.now()
+        while (job.built < job.tiles.length) {
+            const t = job.tiles[job.built++]
+            if (!t.ground) t.ground = this._groundTile(t)
+            if (!t.topo.has(job.step)) t.topo.set(job.step, this._contourTile(t, job.step))
+            if (job.glyphs && !t.glyphs) t.glyphs = this._glyphTile(t)
+            if (performance.now() - t0 >= budgetMs) break
+        }
+        if (job.built < job.tiles.length) return
+
+        const n = this._bgNext
+        if (n.width !== this._bg.width || n.height !== this._bg.height) { n.width = this._bg.width; n.height = this._bg.height }
+        const ctx = n.getContext('2d')
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.clearRect(0, 0, n.width, n.height)
         // Every layer reads the view through _panX/_panZ/_zoom (_sx/_sy). The live view may have
         // moved since the job began, so the job's transform is swapped in for the draw and back out.
         const live = [this._panX, this._panZ, this._zoom]
         this._panX = job.panX; this._panZ = job.panZ; this._zoom = job.zoom
-        const seam = BG_SEAM_M * job.zoom
-        const t0 = performance.now()
         try {
-            do {
-                // Band edges on whole DEVICE rows, so the antialiased clip never half-covers a row.
-                const y0 = Math.round(rows * job.band / BG_BANDS) / dpr - oy
-                const y1 = Math.round(rows * (job.band + 1) / BG_BANDS) / dpr - oy
-                // Translate by the overscan margin so every layer can keep drawing in ordinary
-                // SCREEN coordinates via _sx/_sy — the margin then falls outside [0,W]x[0,H].
-                ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-                ctx.translate(ox, oy)
-                ctx.save()
-                ctx.beginPath(); ctx.rect(-ox, y0, W + 2 * ox, y1 - y0); ctx.clip()
-                this._drawTopo(ctx, -ox, y0 - seam, W + ox, y1 + seam, job.step)
-                // Water and the vegetation/marsh glyphs go OVER the contours and UNDER the roads,
-                // which is the order a quadrangle is printed in: the blue plate reads through the
-                // brown, and the black road plate covers both.
-                this._drawWater(ctx)
-                this._drawGlyphs(ctx)
-                this._drawRoads(ctx)
-                this._drawCrossings(ctx)
-                this._drawNodes(ctx)
-                ctx.restore()
-                job.band++
-            } while (job.band < BG_BANDS && performance.now() - t0 < budgetMs)
+            this._drawSheet(ctx, job)
+            // Translate by the overscan margin so the screen-space layers keep drawing in ordinary
+            // SCREEN coordinates via _sx/_sy — the margin then falls outside [0,W]x[0,H]. Water and the
+            // vegetation/marsh glyphs go OVER the contours and UNDER the roads, which is the order a
+            // quadrangle is printed in: the blue plate reads through the brown, and the black road
+            // plate covers both.
+            ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0)
+            ctx.translate(this._bgOffX, this._bgOffY)
+            this._drawWater(ctx, job.rect)
+            if (job.glyphs) this._drawGlyphs(ctx, job.tiles)
+            this._drawRoads(ctx, this._bgOffX, this._bgOffY)
+            this._drawCrossings(ctx)
+            this._drawNodes(ctx)
         } finally {
             [this._panX, this._panZ, this._zoom] = live
         }
-        if (job.band < BG_BANDS) return
         // Done: swap the bitmaps and record the transform this one is valid for — render() blits
         // through the delta.
-        const b = this._bg; this._bg = this._bgNext; this._bgNext = b
+        const b = this._bg; this._bg = n; this._bgNext = b
         this._bgPanX = job.panX; this._bgPanZ = job.panZ; this._bgZoom = job.zoom
         this._bgJob = null
     }
 
-    // (1) The topographic sheet: pale-green vegetated ground + brown contour lines.
+    // PERF-38: point `ctx` at WORLD metres through the current view (plus a CSS-px offset — the cached
+    // bitmap's overscan margin), so the cached world-space Path2Ds stroke without re-projecting a
+    // vertex. Line widths drawn under it are in metres: divide the px weight by the zoom.
+    _worldXf(ctx, ox = 0, oy = 0) {
+        const k = this._dpr * this._zoom, s = this._sheetRect
+        ctx.setTransform(k, 0, 0, k, this._dpr * (ox + s.cx - this._panX * this._zoom), this._dpr * (oy + s.cy - this._panZ * this._zoom))
+    }
+
+    // The tile at world tile coords (tx, tz), made empty on first ask; its layers fill in lazily.
+    _tile(tx, tz) {
+        const key = tx + ',' + tz
+        let t = this._tileMemo.get(key)
+        if (!t) {
+            if (this._tileMemo.size >= TILE_MEMO_MAX) this._tileMemo.clear()
+            t = { tx, tz, ground: null, topo: new Map(), glyphs: null }
+            this._tileMemo.set(key, t)
+        }
+        return t
+    }
+
+    // (1) The topographic sheet — the ground wash and the contours, composited from the job's tiles.
+    _drawSheet(ctx, job) {
+        const dpr = this._dpr, ox = this._bgOffX, oy = this._bgOffY
+        // Ground: each tile's bitmap onto its world square, the square's corners snapped to whole
+        // DEVICE pixels so neighbours share an edge exactly (an antialiased fractional edge lets the
+        // paper show through as a hairline). The 1-texel apron is what the filter reads across a
+        // tile edge. Smoothing ON only to take the stair-steps off the 4 m texels: _groundTile's
+        // threshold has already put every texel on one side of a cover boundary, so this antialiases
+        // a hard edge — it never fades one bin into the next.
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        const X = (wx) => Math.round((this._sx(wx) + ox) * dpr), Y = (wz) => Math.round((this._sy(wz) + oy) * dpr)
+        for (const t of job.tiles) {
+            const x0 = X(t.tx * TILE_M), y0 = Y(t.tz * TILE_M)
+            ctx.drawImage(t.ground, 1, 1, TILE_TEX, TILE_TEX, x0, y0, X((t.tx + 1) * TILE_M) - x0, Y((t.tz + 1) * TILE_M) - y0)
+        }
+        // Contours: the tiles' world-space paths through the view transform, all intermediates then
+        // all index lines. The index contour is told apart by INK first and weight second — both are
+        // hairlines, so a width ratio alone would not carry it. Round caps hide the joins of the
+        // disjoint segments (see _contourTile).
+        this._worldXf(ctx, ox, oy)
+        ctx.lineCap = 'round'
+        for (const [color, width, key] of [[CONTOUR_COLOR, CONTOUR_W, 'thin'], [INDEX_COLOR, INDEX_W, 'thick']]) {
+            ctx.strokeStyle = color
+            ctx.lineWidth = width / this._zoom
+            for (const t of job.tiles) ctx.stroke(t.topo.get(job.step)[key])
+        }
+        ctx.lineCap = 'butt'
+    }
+
+    // Contour sample step (m) for a SCREEN rect of Wpx × Hpx at the current zoom: TOPO_STEP_PX on
+    // screen, clamped to the field's useful band, coarsened if the grid would pass TOPO_GRID_MAX cells
+    // on an axis, then rounded up to a TOPO_TIERS step. Computed once per rebuild for the WHOLE bitmap.
+    _topoStep(Wpx, Hpx) {
+        const step = Math.min(TOPO_STEP_MAX, Math.max(TOPO_STEP_MIN, TOPO_STEP_PX / this._zoom))
+        const n = Math.ceil(Math.max(Wpx, Hpx) / (step * this._zoom)) + 3
+        const want = n > TOPO_GRID_MAX ? step * n / TOPO_GRID_MAX : step
+        return TOPO_TIERS.find(t => t >= want - 1e-9) ?? want
+    }
+
+    // One tile's contours at sample `step`: two world-space Path2Ds, intermediate and index.
     //
     // Contours come straight off the height field the rest of the sim already agrees on
-    // (`road._coarseH`, so the labels are the metres the truck actually climbs).
-    // Sample a regular grid over the view, then MARCHING SQUARES it once per crossed level: each
-    // grid cell knows which levels pass through it from its own min/max, so the whole field is
-    // walked ONE time regardless of how many contours are on screen — the naive "sweep the grid per
-    // level" costs levels× more for an identical picture.
+    // (`road._coarseH`, so the labels are the metres the truck actually climbs). The tile samples a
+    // grid on the WORLD lattice of `step` and MARCHING SQUARES it once per crossed level: each grid
+    // cell knows which levels pass through it from its own min/max, so the field is walked ONE time
+    // regardless of how many contours cross it. The tile owns the cells whose lower corner lies in
+    // it, so each cell is marched by exactly one tile and the same lattice gives the same lines at
+    // every pan.
     //
     // Segments are emitted disjointly (no contour tracing / polyline stitching). With a round
     // lineCap the joins are invisible at any zoom this map supports, and it saves carrying the
-    // edge-adjacency bookkeeping that tracing needs. Cost lands only in the CACHED background
-    // redraw, which is already debounced behind a settled pan/zoom (see _deferBgRedraw).
-    /**
-     * @param ctx
-     * @param px0,py0,px1,py1 — the SCREEN-space rect to cover. Not necessarily the canvas: the
-     *        cached background is overscanned, so this is normally inset by a negative margin on
-     *        two sides and past the canvas on the other two.
-     */
-    _drawTopo(ctx, px0, py0, px1, py1, step) {
+    // edge-adjacency bookkeeping that tracing needs.
+    _contourTile(t, step) {
         const road = this._road
-        if (!road) return
-        const Wpx = px1 - px0, Hpx = py1 - py0
-
-        // Ground first — the green/white cover wash with hillshade multiplied through it. Painted
-        // as one scaled bitmap, so everything below (water, glyphs, contours, roads) draws over a
-        // finished sheet in the order a printer would lay them down.
-        this._paintGround(ctx, px0, py0, Wpx, Hpx)
-
-        // ── Sample grid, on a WORLD lattice of `step` (snapped, like the cover raster): every band
-        //    of a rebuild then samples the same points and meets its neighbour without a seam, and
-        //    a rebuild at the same zoom reprints the same lines instead of re-sampling them a
-        //    fraction of a cell over. One cell margin past each edge so contours reach the rect's
-        //    border instead of stopping a cell short of it.
-        const s = this._sheet()
-        const x0 = (Math.floor((this._panX + (px0 - s.cx) / this._zoom) / step) - 1) * step
-        const z0 = (Math.floor((this._panZ + (py0 - s.cy) / this._zoom) / step) - 1) * step
-        const nx = Math.ceil(Wpx / (step * this._zoom)) + 4
-        const nz = Math.ceil(Hpx / (step * this._zoom)) + 4
-
+        const i0 = Math.ceil(t.tx * TILE_M / step), i1 = Math.ceil((t.tx + 1) * TILE_M / step)
+        const j0 = Math.ceil(t.tz * TILE_M / step), j1 = Math.ceil((t.tz + 1) * TILE_M / step)
+        const nx = i1 - i0 + 1, nz = j1 - j0 + 1
         const h = new Float32Array(nx * nz)
         for (let j = 0; j < nz; j++) {
-            const wz = z0 + j * step
-            for (let i = 0; i < nx; i++) h[j * nx + i] = road._coarseH(x0 + i * step, wz)
+            const wz = (j0 + j) * step
+            for (let i = 0; i < nx; i++) h[j * nx + i] = road._coarseH((i0 + i) * step, wz)
         }
-
-        // Grid line positions in SCREEN space, precomputed — the marching-squares inner loop then
-        // interpolates in px directly (linear either way) instead of going through _sx/_sy per hit.
-        const gx = new Float64Array(nx), gy = new Float64Array(nz)
-        for (let i = 0; i < nx; i++) gx[i] = this._sx(x0 + i * step)
-        for (let j = 0; j < nz; j++) gy[j] = this._sy(z0 + j * step)
-
         const iv = CONTOUR_IV
-
-        // Two batches: intermediate contours and index contours (every INDEX_EVERY-th, drawn
-        // heavier — the reading aid that lets you count elevation without tracing every line).
-        const thin = [], thick = []
-
+        // Two paths: intermediate contours and index contours (every INDEX_EVERY-th, drawn heavier —
+        // the reading aid that lets you count elevation without tracing every line).
+        const thin = new Path2D(), thick = new Path2D()
+        const seg = (out, x1, y1, x2, y2) => { out.moveTo(x1, y1); out.lineTo(x2, y2) }
         for (let j = 0; j < nz - 1; j++) {
             const r0 = j * nx, r1 = r0 + nx
+            const yt = (j0 + j) * step, yb = yt + step
             for (let i = 0; i < nx - 1; i++) {
                 const a = h[r0 + i], b = h[r0 + i + 1], c = h[r1 + i + 1], d = h[r1 + i]
                 let lo = a, hi = a
@@ -1509,7 +1541,7 @@ export class Map2D {
                 if (d < lo) lo = d; else if (d > hi) hi = d
                 const k0 = Math.ceil(lo / iv), k1 = Math.floor(hi / iv)
                 if (k1 < k0) continue
-                const xl = gx[i], xr = gx[i + 1], yt = gy[j], yb = gy[j + 1]
+                const xl = (i0 + i) * step, xr = xl + step
                 for (let k = k0; k <= k1; k++) {
                     const v = k * iv
                     // Corner classification: a=top-left, b=top-right, c=bottom-right, d=bottom-left.
@@ -1523,79 +1555,43 @@ export class Map2D {
                     const ly = () => yt + (yb - yt) * ((v - a) / (d - a))     // left edge
                     const ry = () => yt + (yb - yt) * ((v - b) / (c - b))     // right edge
                     switch (idx) {
-                        case 1: case 14: out.push(xl, ly(), bx(), yb); break              // left ↔ bottom
-                        case 2: case 13: out.push(bx(), yb, xr, ry()); break              // bottom ↔ right
-                        case 3: case 12: out.push(xl, ly(), xr, ry()); break              // left ↔ right
-                        case 4: case 11: out.push(tx(), yt, xr, ry()); break              // top ↔ right
-                        case 6: case  9: out.push(tx(), yt, bx(), yb); break              // top ↔ bottom
-                        case 7: case  8: out.push(xl, ly(), tx(), yt); break              // top ↔ left
+                        case 1: case 14: seg(out, xl, ly(), bx(), yb); break              // left ↔ bottom
+                        case 2: case 13: seg(out, bx(), yb, xr, ry()); break              // bottom ↔ right
+                        case 3: case 12: seg(out, xl, ly(), xr, ry()); break              // left ↔ right
+                        case 4: case 11: seg(out, tx(), yt, xr, ry()); break              // top ↔ right
+                        case 6: case  9: seg(out, tx(), yt, bx(), yb); break              // top ↔ bottom
+                        case 7: case  8: seg(out, xl, ly(), tx(), yt); break              // top ↔ left
                         // Saddles: two disjoint arcs through the cell. Resolved the same way every
                         // time rather than by the corner average — at this cell size the two
                         // readings differ by a sub-pixel wiggle, and a consistent choice keeps
                         // neighbouring cells agreeing on which way the pass runs.
-                        case 5:  out.push(xl, ly(), tx(), yt,  bx(), yb, xr, ry()); break
-                        case 10: out.push(tx(), yt, xr, ry(),  xl, ly(), bx(), yb); break
+                        case 5:  seg(out, xl, ly(), tx(), yt); seg(out, bx(), yb, xr, ry()); break
+                        case 10: seg(out, tx(), yt, xr, ry()); seg(out, xl, ly(), bx(), yb); break
                     }
                 }
             }
         }
-
-        const strokeBatch = (segs, color, width) => {
-            if (!segs.length) return
-            ctx.strokeStyle = color
-            ctx.lineWidth = width
-            ctx.lineCap = 'round'
-            ctx.beginPath()
-            for (let s = 0; s < segs.length; s += 4) {
-                ctx.moveTo(segs[s], segs[s + 1])
-                ctx.lineTo(segs[s + 2], segs[s + 3])
-            }
-            ctx.stroke()
-            ctx.lineCap = 'butt'
-        }
-        // The index contour is separated from the intermediates by INK first and weight second —
-        // both are hairlines now, so a width ratio alone would not have carried the distinction.
-        strokeBatch(thin,  CONTOUR_COLOR, CONTOUR_W)
-        strokeBatch(thick, INDEX_COLOR,   INDEX_W)
+        return { thin, thick }
     }
 
-    // Contour sample step (m) for a SCREEN rect of Wpx × Hpx at the current zoom: TOPO_STEP_PX on
-    // screen, clamped to the field's useful band, and coarsened if the grid would pass TOPO_GRID_MAX
-    // cells on an axis. Computed once per rebuild for the WHOLE bitmap, never per band.
-    _topoStep(Wpx, Hpx) {
-        const step = Math.min(TOPO_STEP_MAX, Math.max(TOPO_STEP_MIN, TOPO_STEP_PX / this._zoom))
-        const n = Math.ceil(Math.max(Wpx, Hpx) / (step * this._zoom)) + 3
-        return n > TOPO_GRID_MAX ? step * n / TOPO_GRID_MAX : step
-    }
-
-    // (1a) The ground wash: green where the forest stands, white where it does not, hillshaded.
+    // One tile's ground wash: green where the forest stands, white where it does not, hillshaded — a
+    // bitmap of TILE_TEX texels a side (4 m each) plus a 1-texel apron.
     //
-    // Both layers resolve onto ONE world-aligned lattice and leave as a single ImageData, scaled up
-    // under the contours with smoothing on. That is what buys the soft clearing edges — a per-cell
-    // fillRect would print 16 m stair-steps no matter how the thresholds were tuned.
+    // Both layers resolve onto ONE world-aligned lattice and leave as a single image, scaled up under
+    // the contours with smoothing on. That is what buys the soft clearing edges — a per-cell fillRect
+    // would print 16 m stair-steps no matter how the thresholds were tuned. The lattice is snapped to
+    // COVER_CELL, which is what makes the raster window-invariant: the texel covering a given patch of
+    // world is the same texel at every pan and zoom, so a clearing keeps its shape.
     //
     // The lattice can be sampled this coarsely because of what the height field is: `_coarseH`'s
     // finest octave is a 250 m wavelength, so a 16 m lattice is four times finer than Nyquist and
     // the hillshade is fully resolved, not approximated.
-    //
-    // Leaves `this._coverGrid` behind for _drawWater (its bbox) and _drawGlyphs (the cover bins it
-    // just resolved, rather than resolving them twice). Redraw-local: written and consumed inside
-    // one cached-background rebuild.
-    _paintGround(ctx, px0, py0, Wpx, Hpx) {
+    _groundTile(t) {
         const road = this._road
-        const zoom = this._zoom
-        const s = this._sheet()
-
-        // World rect under the screen rect, snapped OUT to the cover lattice. Snapping is what
-        // makes the raster window-invariant: the texel covering a given patch of world is the same
-        // texel at every pan and zoom, so a clearing keeps its shape instead of shimmering.
-        const wx0 = Math.floor((this._panX + (px0 - s.cx) / zoom) / COVER_CELL) * COVER_CELL
-        const wz0 = Math.floor((this._panZ + (py0 - s.cy) / zoom) / COVER_CELL) * COVER_CELL
-        const wx1 = Math.ceil((this._panX + (px0 + Wpx - s.cx) / zoom) / COVER_CELL) * COVER_CELL
-        const wz1 = Math.ceil((this._panZ + (py0 + Hpx - s.cy) / zoom) / COVER_CELL) * COVER_CELL
-
-        const gw = Math.max(2, Math.round((wx1 - wx0) / COVER_CELL))
-        const gh = Math.max(2, Math.round((wz1 - wz0) / COVER_CELL))
+        // The lattice runs BG_SEAM_M past the tile on every side, so the cover blur and the
+        // hillshade's differences see real neighbours at its edge.
+        const wx0 = t.tx * TILE_M - BG_SEAM_M, wz0 = t.tz * TILE_M - BG_SEAM_M
+        const gw = (TILE_M + 2 * BG_SEAM_M) / COVER_CELL, gh = gw
 
         // Heights on the lattice, for the hillshade gradient.
         const hg = new Float32Array(gw * gh)
@@ -1603,16 +1599,8 @@ export class Map2D {
             const wz = wz0 + j * COVER_CELL
             for (let i = 0; i < gw; i++) hg[j * gw + i] = road._coarseH(wx0 + i * COVER_CELL, wz)
         }
-
-        // Cover, if the sheet is close enough in for it to mean anything — see COVER_CHUNK_BUDGET.
-        const { bin: cover, replayed } = this._coverRaster(wx0, wz0, gw, gh)
-        // Handed to _drawWater (for its bbox) and _drawGlyphs (for the cover bins). NOT the height
-        // lattice: the only thing that read it was the old inlined wet test, and drainage now
-        // samples the field directly at each glyph — see isWetGround.
-        //
-        // `replayed` travels with the bins because the glyph pass has to know whether the MED/HIGH
-        // split in them is real; see _drawGlyphs.
-        this._coverGrid = { wx0, wz0, gw, gh, cover, replayed }
+        // Biome bins only — the fill never reads the MED/HIGH split (see _coverRaster).
+        const { bin: cover } = this._coverRaster(wx0, wz0, gw, gh, false)
 
         // ── Compose, at COVER_SS texels per lattice cell.
         //
@@ -1625,9 +1613,6 @@ export class Map2D {
         //
         // Hillshade is interpolated normally: it IS a continuous quantity, and it is the one soft
         // thing the owner asked for.
-        const iw = gw * COVER_SS, ih = gh * COVER_SS
-        const img = ctx.createImageData(iw, ih)
-        const px = img.data
         const gR = parseInt(PAPER_GREEN.slice(1, 3), 16), gG = parseInt(PAPER_GREEN.slice(3, 5), 16),
               gB = parseInt(PAPER_GREEN.slice(5, 7), 16)
         const oR = parseInt(PAPER_OPEN.slice(1, 3), 16), oG = parseInt(PAPER_OPEN.slice(3, 5), 16),
@@ -1638,9 +1623,8 @@ export class Map2D {
         const shadeG = new Float32Array(gw * gh)
         for (let j = 0; j < gh; j++) {
             for (let i = 0; i < gw; i++) {
-                // Central differences, clamped at the border (a one-sided difference there would
-                // draw a bright or dark rule down the edge of every cached bitmap — and with a 2x
-                // overscan those seams land mid-sheet, not off it).
+                // Central differences, clamped at the lattice border (which lies in the margin, so
+                // no tile ever shows it).
                 const iL = i > 0 ? i - 1 : i, iR = i < gw - 1 ? i + 1 : i
                 const jU = j > 0 ? j - 1 : j, jD = j < gh - 1 ? j + 1 : j
                 const dx = (hg[j * gw + iR] - hg[j * gw + iL]) / ((iR - iL) * COVER_CELL || 1)
@@ -1662,18 +1646,19 @@ export class Map2D {
             return (a + (b - a) * fu) + ((c + (d - c) * fu) - (a + (b - a) * fu)) * fv
         }
 
-        for (let jj = 0; jj < ih; jj++) {
-            const v = (jj + 0.5) / COVER_SS - 0.5
+        // The tile's own texels plus the apron: texel 0 of the bitmap is texel m0 of the lattice's.
+        const iw = TILE_TEX + 2, m0 = BG_SEAM_M / COVER_CELL * COVER_SS - 1
+        const img = new ImageData(iw, iw)
+        const px = img.data
+        for (let jj = 0; jj < iw; jj++) {
+            const v = (m0 + jj + 0.5) / COVER_SS - 0.5
             for (let ii = 0; ii < iw; ii++) {
-                const u = (ii + 0.5) / COVER_SS - 0.5
+                const u = (m0 + ii + 0.5) / COVER_SS - 0.5
                 const shade = lerpG(shadeG, u, v)
-
-                // Cover → one of two fills, thresholded, never blended.
-                // The cut sits at COVER_LOW..COVER_MED's midpoint, so it is the LOW/MED boundary
-                // that gets drawn — HIGH and MED share a fill and are told apart by glyphs.
+                // Cover → one of two fills, thresholded, never blended. The cut sits at
+                // COVER_LOW..COVER_MED's midpoint, so it is the LOW/MED boundary that gets drawn.
                 const open = lerpG(cover, u, v) < (COVER_LOW + COVER_MED) / 2
                 const r = open ? oR : gR, g = open ? oG : gG, b = open ? oB : gB
-
                 const o = (jj * iw + ii) * 4
                 px[o]     = Math.max(0, Math.min(255, r * shade))
                 px[o + 1] = Math.max(0, Math.min(255, g * shade))
@@ -1681,25 +1666,48 @@ export class Map2D {
                 px[o + 3] = 255
             }
         }
+        const c = document.createElement('canvas')
+        c.width = c.height = iw
+        c.getContext('2d').putImageData(img, 0, 0)
+        return c
+    }
 
-        // putImageData ignores the transform and cannot scale, so the bitmap goes through an
-        // offscreen canvas to be drawn scaled + smoothed. Reused across redraws — reallocating a
-        // canvas per rebuild is what makes this kind of pass show up in a profile.
-        if (!this._coverCanvas) this._coverCanvas = document.createElement('canvas')
-        const cc = this._coverCanvas
-        if (cc.width !== iw || cc.height !== ih) { cc.width = iw; cc.height = ih }
-        cc.getContext('2d').putImageData(img, 0, 0)
-
-        const sx0 = this._sx(wx0), sy0 = this._sy(wz0)
-        const sw = (wx1 - wx0) * zoom, sh = (wz1 - wz0) * zoom
-        // Smoothing ON only to take the stair-steps off the supersampled texels (4 m each, so this
-        // is antialiasing a hard edge, NOT fading one bin into the next — the threshold above has
-        // already decided which side of the boundary every texel is on).
-        const prev = ctx.imageSmoothingEnabled
-        ctx.imageSmoothingEnabled = true
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(cc, sx0, sy0, sw, sh)
-        ctx.imageSmoothingEnabled = prev
+    // One tile's glyph slots, as world points: the marsh tufts and conifer marks whose lattice slot
+    // lies in it. Both are stamped on a JITTERED WORLD LATTICE, so a glyph stays on the tuft of marsh
+    // it marks when you zoom — a screen-space scatter would make the whole sheet crawl. Built only
+    // while glyphs are visible (_glyphsVisible), and always with the scatter replay, so the two marks
+    // arrive together (owner, 2026-08-15: one pop-in for both plates).
+    _glyphTile(t) {
+        const wx0 = t.tx * TILE_M - BG_SEAM_M, wz0 = t.tz * TILE_M - BG_SEAM_M
+        const gw = (TILE_M + 2 * BG_SEAM_M) / COVER_CELL, gh = gw
+        const { bin: cover } = this._coverRaster(wx0, wz0, gw, gh, true)
+        // Height sampler for the drainage read. Sampled at the glyph's own world position rather
+        // than off the cover lattice: isWetGround's ring is 48 m, finer than that lattice would
+        // resolve, and a marsh symbol has to sit on the hollow it marks.
+        const wetSamplers = { heightAt: (x, z) => this._road._coarseH(x, z) }
+        const wet = [], tree = []
+        const X0 = t.tx * TILE_M, Z0 = t.tz * TILE_M
+        for (let j = Math.ceil(Z0 / GLYPH_CELL); j * GLYPH_CELL < Z0 + TILE_M; j++) {
+            for (let i = Math.ceil(X0 / GLYPH_CELL); i * GLYPH_CELL < X0 + TILE_M; i++) {
+                // Deterministic per-slot jitter from world lattice indices. Same hash discipline as
+                // the rest of the sim: the mark does not move because the view did.
+                const hsh = Math.sin(i * 127.1 + j * 311.7) * 43758.5453
+                const hx = hsh - Math.floor(hsh)
+                const hs2 = Math.sin(i * 269.5 + j * 183.3) * 43758.5453
+                const hz = hs2 - Math.floor(hs2)
+                const wx = (i + 0.15 + hx * 0.7) * GLYPH_CELL
+                const wz = (j + 0.15 + hz * 0.7) * GLYPH_CELL
+                // Wet ground is independent of cover and layered over it, so a hollow under closed
+                // canopy gets a marsh mark and a well-drained meadow does not.
+                if (isWetGround(wx, wz, wetSamplers)) wet.push(wx, wz)
+                // Foliage: the HIGH bin only. MED gets the same green and no mark — the whole
+                // med-vs-high distinction is carried by this glyph, which is what the owner asked
+                // for and what the reference sheet does.
+                const k = Math.floor((wz - wz0) / COVER_CELL) * gw + Math.floor((wx - wx0) / COVER_CELL)
+                if (cover[k] === COVER_HIGH) tree.push(wx, wz)
+            }
+        }
+        return { wet, tree }
     }
 
     /**
@@ -1711,10 +1719,10 @@ export class Map2D {
      * view, so a chunk resolved once at one zoom is still valid at every other zoom and after any
      * pan. Only newly-revealed chunks ever cost anything.
      *
-     * Always returns bins. COVER_CHUNK_BUDGET only gates the scatter replay: past it the sheet
-     * still gets its biome fill, just no MED/HIGH split (and so no foliage glyphs).
+     * Always returns bins. `replay` runs the scatter replay, whose only product is the MED/HIGH
+     * split: the glyph tiles ask for it, the ground tiles (biome fill only) do not.
      */
-    _coverRaster(wx0, wz0, gw, gh) {
+    _coverRaster(wx0, wz0, gw, gh, replay) {
         const road = this._road
         const CH = FLORA_PARAMS.chunkSize
 
@@ -1724,14 +1732,7 @@ export class Map2D {
         //
         //   biome per cell   — cheap, and it ALONE decides green vs white. Always resolved.
         //   scatter replay   — ~44 candidates a chunk, and its only product is the MED/HIGH split,
-        //                      which shows up solely as foliage glyphs.
-        //
-        // So the replay is gated on whether those glyphs can be seen at all, not on area. Tying it
-        // to area instead is what made the glyphs vanish at ordinary reading zooms: the background
-        // is overscanned 2x per axis, so the chunk count is 4x what is on screen and blew a cap
-        // that looked roomy. The count check survives only as a bound on the pathological case.
-        const replay = this._glyphsVisible() &&
-                       (cx1 - cx0 + 1) * (cz1 - cz0 + 1) <= COVER_CHUNK_BUDGET
+        //                      which shows up solely as foliage glyphs — so only glyph tiles run it.
 
         // Water rejects, fetched ONCE for the whole rect rather than queried per candidate. The
         // scatter asks `is this point in a pond / in a stream channel` per tree; asking the
@@ -1842,11 +1843,10 @@ export class Map2D {
     /**
      * Is the glyph lattice far enough apart on screen to be read as separate marks?
      *
-     * ONE definition with two callers, and they must agree: _drawGlyphs uses it to decide whether
-     * to stamp, and _coverRaster uses it to decide whether the scatter replay is worth running at
-     * all — the replay's only product is the MED/HIGH split, which nothing but those glyphs
-     * expresses. If the two ever disagreed, the map would either pay for a replay it cannot show or
-     * try to stamp glyphs from densities it never resolved.
+     * ONE definition, read once per rebuild (_startBackground): it decides both whether the glyph
+     * tiles are built — the scatter replay's only product is the MED/HIGH split, which nothing but
+     * those glyphs expresses — and whether they are stamped, so the map never pays for a replay it
+     * cannot show nor stamps glyphs from densities it never resolved.
      */
     _glyphsVisible() { return GLYPH_CELL * this._zoom >= GLYPH_MIN_PX }
 
@@ -1856,13 +1856,11 @@ export class Map2D {
     // avoids, so the sheet cannot disagree with the world about where a creek runs. Both queries
     // are cell-cached inside that system, making this a fetch rather than a generation pass — the
     // reason water could be added to a per-redraw layer at all.
-    _drawWater(ctx) {
+    _drawWater(ctx, rect) {
         const water = this._getWater && this._getWater()
         if (!water) return
-        const g = this._coverGrid
-        if (!g) return
-        const x0 = g.wx0 - WATER_MARGIN, z0 = g.wz0 - WATER_MARGIN
-        const x1 = g.wx0 + g.gw * COVER_CELL + WATER_MARGIN, z1 = g.wz0 + g.gh * COVER_CELL + WATER_MARGIN
+        const x0 = rect[0] - WATER_MARGIN, z0 = rect[1] - WATER_MARGIN
+        const x1 = rect[2] + WATER_MARGIN, z1 = rect[3] + WATER_MARGIN
 
         // Ponds first: a stream draining into one should read as running INTO the water body, so
         // its centreline is drawn over the pond fill rather than under it.
@@ -1898,7 +1896,7 @@ export class Map2D {
      *
      * Rasterised rather than traced. Marching squares would give a path, but filling one needs the
      * segments stitched into closed rings — bookkeeping this map has deliberately avoided
-     * everywhere else (see _drawTopo's note on disjoint segments) — and a pond's outline can be
+     * everywhere else (see _contourTile's note on disjoint segments) — and a pond's outline can be
      * several disjoint rings anyway, once islands and inlets are in play. A small bitmap gets the
      * exact shape for none of that machinery, and the shoreline INK falls out of the same pass: a
      * water texel with a dry 4-neighbour is an edge texel.
@@ -1979,100 +1977,75 @@ export class Map2D {
     // The lattice is WORLD-anchored and jittered by world position, not by index, so a glyph stays
     // on the patch it marks through every pan and zoom. A screen-space scatter would make the whole
     // sheet crawl under the cursor, which is the single fastest way to destroy the illusion of paper.
-    _drawGlyphs(ctx) {
-        const g = this._coverGrid
-        if (!g) return
-        if (!this._glyphsVisible()) return
-        // ONE POP-IN FOR BOTH PLATES (owner, 2026-08-15). The marsh tufts need no cover data and the
-        // conifers need the scatter replay, so on any sheet where the replay was skipped the tufts
-        // used to appear alone and the trees followed at a closer zoom. Neither is drawn unless the
-        // bins under them are real — the glyph layer arrives whole or not at all.
-        if (!g.replayed) return
-
-        const { wx0, wz0, gw, gh, cover } = g
-        const x1 = wx0 + gw * COVER_CELL, z1 = wz0 + gh * COVER_CELL
-        const i0 = Math.floor(wx0 / GLYPH_CELL), i1 = Math.ceil(x1 / GLYPH_CELL)
-        const j0 = Math.floor(wz0 / GLYPH_CELL), j1 = Math.ceil(z1 / GLYPH_CELL)
+    // The glyph plate, stamped from the job's glyph tiles (_glyphTile) at a fixed screen size. One
+    // path per mark, stroked once: wet ground first, the foliage over it.
+    _drawGlyphs(ctx, tiles) {
         const s = GLYPH_PX
-
-        // Height sampler for the drainage read. Sampled at the glyph's own world position rather
-        // than off the cover lattice: isWetGround's ring is 48 m, finer than that lattice would
-        // resolve, and a marsh symbol has to sit on the hollow it marks.
-        const wetSamplers = { heightAt: (x, z) => this._road._coarseH(x, z) }
-
         ctx.lineWidth = 1
-        for (let j = j0; j <= j1; j++) {
-            for (let i = i0; i <= i1; i++) {
-                // Deterministic per-slot jitter from world lattice indices. Same hash discipline as
-                // the rest of the sim: the mark does not move because the view did.
-                const hsh = Math.sin(i * 127.1 + j * 311.7) * 43758.5453
-                const hx = hsh - Math.floor(hsh)
-                const hs2 = Math.sin(i * 269.5 + j * 183.3) * 43758.5453
-                const hz = hs2 - Math.floor(hs2)
-                const wx = (i + 0.15 + hx * 0.7) * GLYPH_CELL
-                const wz = (j + 0.15 + hz * 0.7) * GLYPH_CELL
-
-                const gi = Math.floor((wx - wx0) / COVER_CELL), gj = Math.floor((wz - wz0) / COVER_CELL)
-                if (gi < 0 || gj < 0 || gi >= gw || gj >= gh) continue
-                const k = gj * gw + gi
-
-                const px = this._sx(wx), py = this._sy(wz)
-
-                // ── Wet ground. Independent of cover and layered over it, so a hollow under closed
-                //    canopy gets a marsh mark and a well-drained meadow does not.
-                if (isWetGround(wx, wz, wetSamplers)) {
-                    // Marsh tuft: three short uprights off a baseline, the USGS wetland mark.
-                    ctx.strokeStyle = GLYPH_WET_INK
-                    ctx.beginPath()
-                    ctx.moveTo(px - s * 0.5, py); ctx.lineTo(px + s * 0.5, py)
-                    ctx.moveTo(px - s * 0.3, py); ctx.lineTo(px - s * 0.3, py - s * 0.45)
-                    ctx.moveTo(px,           py); ctx.lineTo(px,           py - s * 0.62)
-                    ctx.moveTo(px + s * 0.3, py); ctx.lineTo(px + s * 0.3, py - s * 0.45)
-                    ctx.stroke()
-                }
-
-                // ── Foliage: the HIGH bin only. MED gets the same green and no mark — the whole
-                //    med-vs-high distinction is carried by this glyph, which is what the owner
-                //    asked for and what the reference sheet does.
-                if (cover[k] === COVER_HIGH) {
-                    ctx.strokeStyle = GLYPH_TREE_INK
-                    ctx.beginPath()
-                    ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px, py + s * 0.35)   // trunk
-                    ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px - s * 0.35, py + s * 0.1)
-                    ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px + s * 0.35, py + s * 0.1)
-                    ctx.stroke()
-                }
+        // Marsh tuft: three short uprights off a baseline, the USGS wetland mark.
+        ctx.strokeStyle = GLYPH_WET_INK
+        ctx.beginPath()
+        for (const t of tiles) {
+            const a = t.glyphs.wet
+            for (let n = 0; n < a.length; n += 2) {
+                const px = this._sx(a[n]), py = this._sy(a[n + 1])
+                ctx.moveTo(px - s * 0.5, py); ctx.lineTo(px + s * 0.5, py)
+                ctx.moveTo(px - s * 0.3, py); ctx.lineTo(px - s * 0.3, py - s * 0.45)
+                ctx.moveTo(px,           py); ctx.lineTo(px,           py - s * 0.62)
+                ctx.moveTo(px + s * 0.3, py); ctx.lineTo(px + s * 0.3, py - s * 0.45)
             }
         }
+        ctx.stroke()
+        // Conifer: a trunk and two boughs.
+        ctx.strokeStyle = GLYPH_TREE_INK
+        ctx.beginPath()
+        for (const t of tiles) {
+            const a = t.glyphs.tree
+            for (let n = 0; n < a.length; n += 2) {
+                const px = this._sx(a[n]), py = this._sy(a[n + 1])
+                ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px, py + s * 0.35)   // trunk
+                ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px - s * 0.35, py + s * 0.1)
+                ctx.moveTo(px, py - s * 0.55); ctx.lineTo(px + s * 0.35, py + s * 0.1)
+            }
+        }
+        ctx.stroke()
     }
 
     // (2) Road centerlines — each streamed network run projected (x,z) → screen. A single solid
     //     black stroke (owner, 2026-08-11): the cased double line a quadrangle uses for a
     //     light-duty road needs ~4 px of width to show its fill, and below that it degrades into a
     //     grey smudge. One black line holds its weight at every zoom this map supports.
-    _drawRoads(ctx) {
+    // PERF-38: one world-space Path2D for the whole network, rebuilt only when the network changes, and
+    // stroked through the view transform (_worldXf) — no per-vertex projection per rebuild.
+    _drawRoads(ctx, ox, oy) {
         const road = this._road
         if (!road || !road._network) return
+        const m = this._roadPathMemo
+        let path = (m && m.road === road && m.rev === road._networkRev && m.size === road._network.size) ? m.path : null
+        if (!path) {
+            path = new Path2D()
+            for (const e of road._network.values()) {
+                if (!e.points || e.points.length < 2) continue
+                // Bored stretches are SKIPPED here and drawn by _drawTunnels in a lighter ink. Cutting
+                // them out at the source is what makes that possible: the alternative — laying the
+                // black road down whole and painting the tunnel over it — would need an opaque erase
+                // stroke, and that would gouge a blank swath through the contours the bore runs under.
+                // On a topo sheet the ground above a tunnel is exactly what must stay drawn.
+                for (const seg of this._surfaceSlices(e)) {
+                    path.moveTo(seg[0].x, seg[0].z)
+                    for (let i = 1; i < seg.length; i++) path.lineTo(seg[i].x, seg[i].z)
+                }
+            }
+            this._roadPathMemo = { road, rev: road._networkRev, size: road._network.size, path }
+        }
+        ctx.save()
+        this._worldXf(ctx, ox, oy)
         ctx.lineJoin = 'round'
         ctx.lineCap  = 'round'
         ctx.strokeStyle = ROAD_INK
-        ctx.lineWidth = ROAD_W
-        for (const e of road._network.values()) {
-            const { points } = e
-            if (!points || points.length < 2) continue
-            // Bored stretches are SKIPPED here and drawn by _drawTunnels in a lighter ink. Cutting
-            // them out at the source is what makes that possible: the alternative — laying the
-            // black road down whole and painting the tunnel over it — would need an opaque erase
-            // stroke, and that would gouge a blank swath through the contours the bore runs under.
-            // On a topo sheet the ground above a tunnel is exactly what must stay drawn.
-            for (const seg of this._surfaceSlices(e)) {
-                ctx.beginPath()
-                ctx.moveTo(this._sx(seg[0].x), this._sy(seg[0].z))
-                for (let i = 1; i < seg.length; i++) ctx.lineTo(this._sx(seg[i].x), this._sy(seg[i].z))
-                ctx.stroke()
-            }
-        }
-        ctx.lineCap = 'butt'
+        ctx.lineWidth = ROAD_W / this._zoom
+        ctx.stroke(path)
+        ctx.restore()
     }
 
     /**
@@ -2361,7 +2334,7 @@ export class Map2D {
                 return false
             }
 
-            // Collect the in-zone sub-polylines once, then stroke them twice (casing, then road colour).
+            // Collect the in-zone sub-polylines once (one Path2D), then stroke it twice (casing, then road colour).
             //
             // Sourced from _surfaceSlices, NOT the raw run polyline: this pass re-lays the black road
             // on top of its casing, and over a bored stretch that re-stroke was painting the tunnel
@@ -2369,7 +2342,8 @@ export class Map2D {
             // made a tunnel inside a camping area read as an ordinary road. Skipping the bores is also
             // the correct claim on its own terms: you cannot camp inside a tunnel, so the casing that
             // advertises where camping is legal has no business running through one.
-            runs = []
+            runs = new Path2D()
+            let any = false
             for (const e of road._network.values()) {
                 if (!e.points || e.points.length < 2) continue
                 for (const points of this._surfaceSlices(e)) {
@@ -2381,8 +2355,8 @@ export class Map2D {
                         // A segment belongs to a zone when BOTH endpoints do — the conservative read,
                         // so the casing never claims road that leaves the zone.
                         if (prevIn && nowIn) {
-                            if (!cur) { cur = [points[i - 1]]; runs.push(cur) }
-                            cur.push(points[i])
+                            if (!cur) { cur = true; any = true; runs.moveTo(points[i - 1].x, points[i - 1].z) }
+                            runs.lineTo(points[i].x, points[i].z)
                         } else {
                             cur = null
                         }
@@ -2390,25 +2364,20 @@ export class Map2D {
                     }
                 }
             }
+            if (!any) runs = null
             this._campRunsMemo = { road, rev: road._networkRev, size: road._network.size, zones, runs }
         }
-        if (!runs.length) return
+        if (!runs) return
 
-        const stroke = (color, width) => {
-            ctx.strokeStyle = color
-            ctx.lineWidth = width
-            ctx.lineJoin = 'round'
-            ctx.lineCap = 'round'
-            for (const r of runs) {
-                ctx.beginPath()
-                ctx.moveTo(this._sx(r[0].x), this._sy(r[0].z))
-                for (let i = 1; i < r.length; i++) ctx.lineTo(this._sx(r[i].x), this._sy(r[i].z))
-                ctx.stroke()
-            }
-        }
-        stroke(CAMP_CASING, CAMP_CASING_W)   // the casing — ~2.5x the road stroke
-        stroke(ROAD_INK, ROAD_W)             // the road itself, back on top (matches _drawRoads)
-        ctx.lineCap = 'butt'
+        // PERF-38: one world-space Path2D (memoized above), stroked through the view transform — it was
+        // re-projected vertex by vertex every frame (~3 ms a frame with the map open).
+        ctx.save()
+        this._worldXf(ctx)
+        ctx.lineJoin = 'round'
+        ctx.lineCap = 'round'
+        ctx.strokeStyle = CAMP_CASING; ctx.lineWidth = CAMP_CASING_W / this._zoom; ctx.stroke(runs)   // the casing — ~2.5x the road
+        ctx.strokeStyle = ROAD_INK;    ctx.lineWidth = ROAD_W / this._zoom;        ctx.stroke(runs)   // the road back on top (matches _drawRoads)
+        ctx.restore()
     }
 
     // Draw one 24-box glyph from data/map-icons.js centred on (sx, sy), filled in whatever
