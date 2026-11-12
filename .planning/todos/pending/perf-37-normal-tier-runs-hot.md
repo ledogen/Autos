@@ -194,7 +194,7 @@ briefly opening the map.
   story's only exit. While it is set, `applyQuality` leaves play's road radius alone.
 - **After the fix:** a Quality change in story leaves play's radius at 2800 m. The map copies 183 roads, and an
   open map costs 30–36 % of a core. Affected gates 9/9 green, cdp-smoke 26 steps, zero console errors.
-- **Unconfirmed:** whether the owner actually changed Quality in that session.
+- **The owner did not change Quality** (21:59 session). So this bug is real but was not the burst. The burst, about 6 s at up to 5 W, is still unexplained. A one-off spike that short is not heat. The heat came from sustained load. If such spikes repeat, take a `--trace` of the action (auto shop, tire swap, first map open after a mission) and read the per-thread busy time.
 
 ## Acceptance
 
