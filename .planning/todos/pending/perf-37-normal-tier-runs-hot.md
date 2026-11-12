@@ -104,6 +104,32 @@ idle 75 s between boots, rotate the build order, and repeat the first boot at th
    re-firing while parked would look exactly like this.
    **Test:** `--trace`, then `test/trace-report.mjs` for per-thread busy time.
 
+## A/B result, 2026-11-11 20:05–21:05 PST: no code regression from Nov 1 to main
+
+Headless Chrome 157 on Metal, device pixel ratio 2, so a 2066 × 1200 canvas at Normal. Seed 3583777560, spawn spot.
+Builds: Nov 1 = `21a29ea9`, Nov 6 = `871d7750` (just before the burst), main = `0f987b08`. Order alternated,
+60 s idle between boots. Script: `ab.mjs` / `soak.mjs` in the session scratchpad (PERF-08's method plus a process-tree
+CPU read via `ps`).
+
+| Measure | Nov 1 | Nov 6 | main |
+|---|---|---|---|
+| Free roam idle, uncapped GPU frame median (ms) | 6.5 / 7.3 | 5.4 | 4.2 / 4.4 / 4.4 / 4.8 |
+| Story idle (Larry's after the skip), uncapped median (ms) | 9.1 (entry unverified) | 7.9 (opening, not skipped) | 6.9 / 7.2 |
+| Free roam drive at 60 Hz: renderer process, % of a core | 33 | 35 | 33 |
+| Free roam drive: in-page CPU per frame (ms) | 2.46 | 2.62 | 2.46 |
+
+- **Main is the cheapest of the three on the GPU**, by about 2 ms against Nov 1. CPU is level across all three.
+- **A 20-minute story soak on main shows no growth.** Geometries held at 357, textures at 28 and programs at 260,
+  draw calls held at 146–156, and the JavaScript heap stayed at 167–214 MB. The truck was mostly parked, so
+  streaming growth is not covered. Suspect 2 is cleared for a parked session.
+- **Story costs about 60–70 % more GPU per frame than free roam** (7 ms against 4.3 ms; 156 calls and 790k
+  triangles against 107 and 460k). That is not new: it holds on every build.
+- **Not tested: headed compositing.** The owner's WindowServer read 23 %, and headless Chrome does not composite to
+  a real window. That is the one cost this A/B cannot see.
+- **Environment at the time of the owner's reading:** Chrome had been running 9.5 days on 156.0.8078.76, with
+  157.0.8103.39 (Nov 4) and 157.0.8103.78 (Nov 11) staged but unapplied. Its GPU process held 2.5 GB. The polling
+  Vite server (above) added about 30 % of a core.
+
 ## Acceptance
 
 - The cause is named, with before/after numbers from `test/profile.mjs` on the Air at Normal (GPU ms, CPU ms, draw
