@@ -34,8 +34,9 @@ export function makeQueryContacts (w) {
     qy = cy
 
     // FEAT-70: a wheel is solved as the tire CYLINDER it is (src/tire-contact.js) — the surface point closest to the
-    // axle across three lines of the tread, depth along the radial line, the normal radial at an edge — so a kerb
-    // ahead lifts and slows the wheel continuously and ground BESIDE the tire lifts nothing.
+    // axle across three lines of the tread, depth along the radial line, the ground's own normal at the pressure centre
+    // (PERF-39: never radial at an edge, that popped tires) — so a kerb ahead lifts the wheel continuously and ground
+    // BESIDE the tire lifts nothing.
     if (footprint && axle && r > 0 && w.params.wheelFootprint !== false) {
       // PERF-39: ONE road resolve for the whole tire, at its hub. Every tread sample lies within 0.37 m of the hub, deep
       // inside the resolver's ~18 m reach, and the resolve carries the winning run AND its rivals, each sample projected

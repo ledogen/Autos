@@ -14,7 +14,7 @@ branch: perf/perf-37-tire-map — worktree /Users/ledogen/CodeShit/CarGame-perf3
 
 # PERF-39 — the tire's ground query costs too much, and grazing a kerb pops tires
 
-Two halves. The first is cost and is built. The second is the pop rate and waits on an owner decision.
+Two halves, both built: the query cost, and the pop rate (owner picked vertN, 2026-11-12).
 
 ## A — query cost (built on the branch)
 
@@ -55,7 +55,7 @@ query, moving truck, wheels on the deck:
 
 That is about −42 %. Off the deck most samples resolve fresh, so there is little gain there.
 
-## B — grazing-kerb pops (owner decision needed)
+## B — grazing-kerb pops (built: vertN)
 
 `node test/kerb-graze.mjs` (rainy-day, not a gate) — the real `stepPhysics` against a 15 cm kerb at a grazing angle,
 72 runs. Damage thresholds are the shipped `DamageModel` ones.
@@ -71,11 +71,20 @@ The pops come from the **radial edge normal**, not from the sampling. At a grazi
 the hub on the edge line. It is deep, and its force is tilted backwards. That brakes one wheel hard and kicks a yaw: a 3°
 climb at 45 mph gave a 125 kN rim load and 28° of yaw, where the legacy stencil, vertN and the reference gave none.
 
-The FEAT-70 ruling of 2026-11-03 chose the radial normal ("a kerb now slows a wheel"). Changing it is the owner's call.
-The options go to the owner with the PERF-39 report.
+The FEAT-70 ruling of 2026-11-03 chose the radial normal ("a kerb now slows a wheel"). **Owner, 2026-11-12: "vertn of
+course. i asked for popping similar to legacy."** That reverses the 11-03 edge-normal half of the ruling.
+
+Built (`src/tire-contact.js`): the contact normal is the ground's own surface normal at the final contact point, in
+the tread solve AND the tilted-tire blend. The blend matters: over a kerb face the hub's own normal is near horizontal,
+so the blend runs there, and blending normals there kept a backward push (4 / 4 / 13 pops and one flip). With both,
+the shipped code reads exactly the benchmarked vertN: **3 / 4 / 8 pops, 12 rim strikes, 0 flips** (legacy 4 / 4 / 4,
+7, 0). At 45 % tire it is at legacy; at 10 % tire (a worn tire) it still pops 8 against legacy's 4.
+
+`tire-contact` gate: the kerb-edge check now asserts the surface normal, not radial. 27 affected gates + cdp-smoke
+green; `collision-drop-lab` drop chain identical, collision rows within main's own run-to-run noise.
 
 ## Acceptance
 
-- [ ] A: affected gates + `test:all` green; cdp-smoke PASS; `node test/collision-drop-lab.mjs` unchanged.
+- [x] A: affected gates + `test:all` green; cdp-smoke PASS; `node test/collision-drop-lab.mjs` unchanged.
 - [ ] A: the owner's play session (PERF-37 harness) shows the tire path's share of main-thread busy roughly halved.
-- [ ] B: owner picks the edge-force model; `kerb-graze.mjs` pop counts at or below legacy at 45 % tire.
+- [x] B: owner picked vertN; `kerb-graze.mjs` 3 pops at 45 % tire against legacy's 4.
