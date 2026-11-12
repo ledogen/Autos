@@ -181,7 +181,11 @@ const PAGE = String.raw`(async () => {
     const keys = [...window.__terrain()._chunkMap.keys()]
     if (B.phase === 'drive') { if (!B.chunks0) B.chunks0 = new Set(keys); for (const k of keys) if (!B.chunks0.has(k)) B.chunks.add(k) }
     B.samples.push({ t: Date.now(), phase: B.phase, frames: dn, cpu, tris: ri.triangles, calls: ri.calls, map: window.__map2d().isOpen(), v: +Math.hypot(window.__vs.velocity.x, window.__vs.velocity.z).toFixed(1),
-      thr: buttons[7].value, idx: ap.idx, dbg: ap.dbg })
+      thr: buttons[7].value, idx: ap.idx, dbg: ap.dbg,
+      // why a drive stalls: the grade (the nose's rise per metre), the drivetrain, and story mode's kept wear
+      grade: (() => { const q = window.__vs.quaternion, fy = 2 * (q.w * q.x - q.y * q.z); return +(fy / Math.sqrt(Math.max(1e-6, 1 - fy * fy)) * 100).toFixed(0) })(),
+      rpm: Math.round(window.__vs.drivetrain?.engineRPM ?? 0), gear: window.__vs.drivetrain?.gear, ign: window.__vs.ignition?.state,
+      flat: window.__vs.tireFlat?.map(f => +f.toFixed(2)), engine: typeof window.__vs.engineHealth === 'number' ? +window.__vs.engineHealth.toFixed(2) : window.__vs.engineHealth })
     B.frames.push(...fr.map(f => [B.phase, f]))
   }, 1000)
   return { edges: route.edges }
