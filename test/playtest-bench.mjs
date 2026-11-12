@@ -43,8 +43,8 @@ const has = k => process.argv.includes(`--${k}`)
 // Three seeds drawn at random once (2026-11-12) and pinned so runs compare. Not a default world (CLAUDE.md § Seeds).
 const PINNED = [1768572700, 17535907, 711969014]
 const SEEDS = arg('seed') ? [+arg('seed')] : PINNED.slice(0, +arg('seeds', PINNED.length))
-const REPS = +arg('reps', 1), DRIVE_S = +arg('drive', 240), MAP_S = +arg('map', 30), PARK_S = +arg('park', 30)
-const MIN_KM = DRIVE_S * 0.0125, MIN_CHUNKS = Math.round(DRIVE_S / 8)   // 3 km and 30 chunks at the default 240 s
+const REPS = +arg('reps', 1), DRIVE_S = +arg('drive', 300), MAP_S = +arg('map', 30), PARK_S = +arg('park', 30)
+const MIN_KM = DRIVE_S * 0.01, MIN_CHUNKS = Math.round(DRIVE_S / 8)   // 3 km and 38 chunks at the default 300 s
 const BUILDS = [{ name: 'A', dir: resolve(arg('a', ROOT)) }, ...(arg('b') ? [{ name: 'B', dir: resolve(arg('b')) }] : [])]
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 const OUT = resolve(arg('out', join(ROOT, 'perf-runs', `bench-${stamp}`)))
@@ -103,128 +103,73 @@ for (const b of BUILDS) {
 // Injected once a story run is live. window.__bench.phase drives it: 'drive' (pursuit), 'stop' (brake to rest), 'map'
 // (stick pan/zoom), 'idle' (hands off). Everything it records is read back by the harness per phase.
 const PAGE = String.raw`(async () => {
+  // The autopilot is test/lib/autopilot.mjs (pure: state in, controls out). This is its consumer: the controls go onto
+  // a virtual pad, and its trouble reports become re-seats.
   const { RANGER_PARAMS: P } = await import('/data/ranger.js')
-  const road = window.__road(), seed = window.__seed ?? 1
+  const { makeRoute, createAutopilot } = await import('/test/lib/autopilot.mjs')
+  const road = window.__roadSys(), seed = window.__seed ?? 1
   const axes = [0, 0, 0, 0], buttons = Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 }))
   const gp = { id: 'perf-40 bench', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes, buttons, vibrationActuator: null }
   Object.defineProperty(navigator, 'getGamepads', { value: () => [gp], configurable: true })
-  const B = window.__bench = { phase: 'idle', dist: 0, recov: [], samples: [], frames: [], chunks0: null, chunks: new Set(), log: [], seatAt: null }
-  const setPad = (steer, thr, brk, lx = 0, ly = 0) => {
-    axes[0] = steer; axes[1] = ly; axes[2] = 0; axes[3] = lx
+  const B = window.__bench = { phase: 'idle', recov: [], samples: [], frames: [], chunks0: null, chunks: new Set() }
+  const setPad = (steer, thr, brk, panY = 0, zoom = 0) => {   // left stick = steer / map pan, right stick Y = map zoom
+    axes[0] = steer; axes[1] = panY; axes[2] = 0; axes[3] = zoom
     buttons[7].value = thr; buttons[7].pressed = thr > 0.05; buttons[6].value = brk; buttons[6].pressed = brk > 0.05
   }
-  // ── the route (drive-soak's makeRouter): a walk over the network's edges, junctions by end proximity ──
   let s = seed >>> 0
   const rng = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32)
-  const edges = [...road._network.values()].filter(e => e.points?.length >= 2)
-  const ends = [], node = new Map(), nodes = []
-  for (const e of edges) ends.push({ e, end: 0, p: e.points[0] }, { e, end: 1, p: e.points.at(-1) })
-  for (const en of ends) { let n = nodes.find(m => Math.hypot(m.x - en.p.x, m.z - en.p.z) < 6); if (!n) { n = { x: en.p.x, z: en.p.z, ends: [] }; nodes.push(n) } n.ends.push(en); node.set(en, n) }
-  const endOf = (e, end) => ends.find(x => x.e === e && x.end === end)
-  const heading = (a, b) => Math.atan2(b.z - a.z, b.x - a.x)
-  const leaving = (en) => { const pts = en.e.points, k = Math.min(3, pts.length - 1); return en.end === 0 ? heading(pts[0], pts[k]) : heading(pts.at(-1), pts.at(-1 - k)) }
-  const path = []
-  const push = (en, jump = false) => { const pts = en.end === 0 ? en.e.points : [...en.e.points].reverse(); pts.forEach((q, i) => path.push(i === 0 && jump ? { x: q.x, z: q.z, jump: true } : { x: q.x, z: q.z })) }
-  // Start on the edge nearest the truck, heading the way the truck points.
-  const v0 = window.__vs.position
-  let cur = null, bd = Infinity
-  for (const en of ends) { const d = Math.min(...en.e.points.map(q => Math.hypot(q.x - v0.x, q.z - v0.z))); if (d < bd) { bd = d; cur = en } }
-  push(cur)
-  const extend = () => {
-    const far = endOf(cur.e, 1 - cur.end), n = node.get(far)
-    const arrive = heading(path.at(-Math.min(4, path.length)), path.at(-1))
-    const next = n.ends.filter(x => x.e !== cur.e && Math.abs(Math.atan2(Math.sin(leaving(x) - arrive), Math.cos(leaving(x) - arrive))) < 100 * Math.PI / 180)
-    if (next.length) { cur = next[Math.floor(rng() * next.length)]; push(cur) }
-    else { cur = endOf(edges[Math.floor(rng() * edges.length)], rng() < 0.5 ? 0 : 1); push(cur, true) }
+  const route = makeRoute([...road._network.values()], rng, window.__vs.position)
+  const inBore = (x, z) => { const nr = road.queryNearest(x, z, 15); return !!nr && !!road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0, -20) }
+  const ap = B.ap = createAutopilot({ car: P, route, inBore })
+  ap.locate(window.__vs.position)
+  // A seat is a dead, parked truck (story mode's, main.js _reseatTruckAtSpawn): after it lands, hold I until the engine
+  // runs (synthetic keys, the way gamepad.js sends its own), then RB (Space in the drive layout) off the park brake.
+  let settle = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false
+  const ikey = type => (document.activeElement || document.body).dispatchEvent(new KeyboardEvent(type, { key: 'i', code: 'KeyI', bubbles: true, cancelable: true }))
+  const seat = why => {
+    if (why) B.recov.push({ why, t: +(performance.now() / 1000).toFixed(1), at: [Math.round(window.__vs.position.x), Math.round(window.__vs.position.z)] })
+    const pose = ap.resume(why ? 25 : 0)
+    setPad(0, 0, 0); seating = true; settle = 2.5
+    Promise.resolve(window.__teleport(pose.x, pose.z, pose.heading)).finally(() => { seating = false })
   }
-  let idx = 0
-  { let bi = 0, bdd = Infinity; path.forEach((q, i) => { const d = Math.hypot(q.x - v0.x, q.z - v0.z); if (d < bdd) { bdd = d; bi = i } }); idx = bi }
-  // ── recovery: seat on the route AHEAD (the streaming front keeps moving), counted ──
-  let settle = 0
-  const seat = (i, why) => {
-    idx = Math.min(i, path.length - 2)
-    const a = path[idx], b = path[Math.min(idx + 3, path.length - 1)]
-    B.recov.push({ why, t: +(performance.now() / 1000).toFixed(1), at: [Math.round(window.__vs.position.x), Math.round(window.__vs.position.z)] })
-    setPad(0, 0, 0)
-    window.__teleport(a.x, a.z, Math.atan2(-(b.x - a.x), -(b.z - a.z)))
-    settle = 2.5
-  }
-  const V_MAX = 24, A_LAT = 3.5, A_BRAKE = 3
-  let stuckT = 0, flipT = 0, lostT = 0, offroad = null, offDone = false, last = performance.now()
+  let last = performance.now(), seated = false
   const tick = () => {
     const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now
-    const vs = window.__vs, p = vs.position, v = Math.hypot(vs.velocity.x, vs.velocity.z), q = vs.quaternion
+    if (rbHold > 0) rbHold--; rbCool--; buttons[5].pressed = rbHold > 0; buttons[5].value = rbHold > 0 ? 1 : 0
+    const vs = window.__vs, v = Math.hypot(vs.velocity.x, vs.velocity.z)
     if (B.phase === 'drive') {
-      if (settle > 0) { settle -= dt; setPad(0, 0, 0) }
-      else {
-        B.dist += v * dt
-        while (idx < path.length - 2 && !path[idx + 1].jump && Math.hypot(path[idx + 1].x - p.x, path[idx + 1].z - p.z) <= Math.hypot(path[idx].x - p.x, path[idx].z - p.z)) idx++
-        while (path.length - idx < 80) extend()
-        if (path[idx + 1]?.jump && Math.hypot(path[idx].x - p.x, path[idx].z - p.z) < 6) { seat(idx + 1, 'route jump'); requestAnimationFrame(tick); return }
-        let target, vT
-        if (offroad) {
-          target = offroad.to; vT = 9
-          if (Math.hypot(target.x - p.x, target.z - p.z) < 8 || now - offroad.t0 > 40000) {
-            let bi = idx, b2 = Infinity
-            for (let j = Math.max(0, idx - 200); j < path.length; j++) { const d = Math.hypot(path[j].x - p.x, path[j].z - p.z); if (d < b2) { b2 = d; bi = j } }
-            idx = bi; offroad = null
+      if (!seated) { seated = true; seat(null) }   // from Larry's yard onto the route, aligned (not a recovery)
+      if (settle > 0) {
+        settle -= dt; setPad(0, 0, 0)
+        const ign = vs.ignition?.state
+        if (!seating && ign && ign !== 'running') { if (!cranking) { cranking = true; ikey('keydown') } settle = Math.max(settle, 0.5) }
+        else if (cranking) { cranking = false; ikey('keyup') }
+        else if (!seating && vs.parked && rbCool <= 0) { rbHold = 4; rbCool = 40; settle = Math.max(settle, 0.5) }
+      } else {
+        const c = ap.step(vs, dt)
+        if (c.trouble) seat(c.trouble)
+        else {
+          setPad(Math.max(-1, Math.min(1, -c.steer / c.steerLimit)), c.throttle, c.brake)   // the game steers −stick (vehicle.js)
+          // One off-road leg, halfway through the minimum distance: 60–100 m out to one side, back onto the route ahead.
+          if (!detoured && ap.dist > B.legAt && !inBore(vs.position.x, vs.position.z)) {
+            detoured = true
+            const q = vs.quaternion, fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y)), side = rng() < 0.5 ? -1 : 1, d = 60 + rng() * 40
+            ap.detour({ x: vs.position.x + fx * 40 - fz * side * d, z: vs.position.z + fz * 40 + fx * side * d })
           }
         }
-        let inBore = false
-        if (!offroad) {
-          const nr = road.queryNearest(p.x, p.z, 15)
-          inBore = !!nr && !!road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0, -20)
-          const L = inBore ? Math.max(4, 0.6 * v) : Math.max(6, 0.9 * v)
-          let j = idx, acc = 0
-          while (j < path.length - 1 && acc < L && !path[j + 1].jump) { acc += Math.hypot(path[j + 1].x - path[j].x, path[j + 1].z - path[j].z); j++ }
-          target = path[j]
-          const ahead = []
-          for (let a = idx, arc = 0, lst = path[idx]; a < path.length - 1 && arc < 90; a++) {
-            const qq = path[a + 1]; if (qq.jump) break
-            const ds = Math.hypot(qq.x - lst.x, qq.z - lst.z)
-            if (ds >= 8 || !ahead.length) { arc += ds; ahead.push({ ...qq, s: arc }); lst = qq }
-          }
-          let vPlan = V_MAX
-          for (let a = 0; a + 2 < ahead.length; a++) {
-            const A = ahead[a], Bp = ahead[a + 1], C = ahead[a + 2]
-            const ab = Math.hypot(Bp.x - A.x, Bp.z - A.z), bc = Math.hypot(C.x - Bp.x, C.z - Bp.z), ca = Math.hypot(A.x - C.x, A.z - C.z)
-            const cross = Math.abs((Bp.x - A.x) * (C.z - A.z) - (Bp.z - A.z) * (C.x - A.x))
-            if (cross > 1e-6) vPlan = Math.min(vPlan, Math.sqrt(A_LAT * ab * bc * ca / (2 * cross) + 2 * A_BRAKE * Bp.s))
-          }
-          vT = Math.min(inBore ? 10 : V_MAX, vPlan)
-          // One off-road leg, halfway: 120–200 m out to one side over whatever is there, then back to the route.
-          if (!offDone && B.dist > B.legAt && !inBore) {
-            offDone = true
-            const hx = target.x - p.x, hz = target.z - p.z, hl = Math.hypot(hx, hz) || 1, side = rng() < 0.5 ? -1 : 1, d = 120 + rng() * 80
-            offroad = { t0: now, to: { x: p.x + (hx / hl) * 40 + (-hz / hl) * side * d, z: p.z + (hz / hl) * 40 + (hx / hl) * side * d } }
-          }
-        }
-        // Pure pursuit on the body's heading. Forward is −Z rotated by q.
-        const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
-        const hdg = Math.atan2(fx, fz), want = Math.atan2(target.x - p.x, target.z - p.z)
-        const alpha = Math.atan2(Math.sin(want - hdg), Math.cos(want - hdg))
-        const Ld = Math.max(4, Math.hypot(target.x - p.x, target.z - p.z))
-        const lim = P.maxSteerAngle / (1 + v / P.speedSteerRef)      // full stick = this, with the steering assist on
-        const desired = Math.atan2(2 * P.wheelbase * Math.sin(alpha), Ld)
-        if (Math.abs(desired) > 0.95 * lim) vT = Math.min(vT, 0.7 * v)
-        const e = vT - v
-        setPad(Math.max(-1, Math.min(1, desired / lim)), e > 0 ? Math.min(1, 0.25 + 0.35 * e) : 0, e < -1.5 ? Math.min(1, -0.15 * e) : 0)
-        // Recovery triggers.
-        const upY = 1 - 2 * (q.x * q.x + q.z * q.z)
-        stuckT = v < 1 && buttons[7].value > 0 ? stuckT + dt : 0
-        flipT = upY < 0.3 ? flipT + dt : 0
-        let lat = Infinity; for (let j = Math.max(0, idx - 5); j < Math.min(path.length, idx + 5); j++) lat = Math.min(lat, Math.hypot(path[j].x - p.x, path[j].z - p.z))
-        lostT = !offroad && lat > 15 ? lostT + dt : 0
-        if (stuckT > 4) seat(idx + 12, 'stuck'); else if (flipT > 2) seat(idx + 12, 'flipped'); else if (lostT > 3) seat(idx + 12, 'off the route')
       }
-    } else if (B.phase === 'stop') setPad(0, 0, v > 0.3 ? 0.8 : 0)
-    else if (B.phase === 'map') { const k = Math.floor(now / 5000) % 6; setPad(0, 0, 0, [0, -0.8, 0, 0.8, 0, 0][k], [0.8, 0, -0.8, 0, 0.6, -0.6][k] * (k < 4 ? 1 : 0)); if (k >= 4) axes[3] = k === 4 ? 0.7 : -0.7 }
+    } else if (B.phase === 'stop') { setPad(0, 0, v > 1 ? 0.8 : 0); if (v <= 1) B.stopped = true }   // brake held at rest is reverse
+    else if (B.phase === 'map') {   // 5 s each: pan right, down, left, up, zoom in, zoom out
+      const k = Math.floor(now / 5000) % 6
+      setPad([0.8, 0, -0.8, 0, 0, 0][k], 0, 0, [0, 0.8, 0, -0.8, 0, 0][k], [0, 0, 0, 0, 0.7, -0.7][k])
+    }
     else setPad(0, 0, 0)
     requestAnimationFrame(tick)
   }
   requestAnimationFrame(tick)
   // 1 Hz probe: per-bucket main-thread ms (deltas), the frames since the last probe, renderer info, new terrain chunks.
-  const S = { n: 0, b: {} }
+  const D0 = window.__perfData(), S = { n: D0.buckets['frame.render']?.n ?? 0, b: {} }   // counters from NOW, not page boot
+  for (const k in D0.buckets) S.b[k] = D0.buckets[k].ms
   setInterval(() => {
     const D = window.__perfData(), n = D.buckets['frame.render']?.n ?? 0, dn = n - S.n
     const cpu = {}; for (const k in D.buckets) { const d = D.buckets[k].ms - (S.b[k] ?? 0); if (k.startsWith('frame.') && d > 0) cpu[k] = d; S.b[k] = D.buckets[k].ms }
@@ -233,10 +178,11 @@ const PAGE = String.raw`(async () => {
     const ri = window.__ri()
     const keys = [...window.__terrain()._chunkMap.keys()]
     if (B.phase === 'drive') { if (!B.chunks0) B.chunks0 = new Set(keys); for (const k of keys) if (!B.chunks0.has(k)) B.chunks.add(k) }
-    B.samples.push({ t: Date.now(), phase: B.phase, frames: dn, cpu, tris: ri.triangles, calls: ri.calls, map: window.__map2d().isOpen(), v: Math.hypot(window.__vs.velocity.x, window.__vs.velocity.z) })
+    B.samples.push({ t: Date.now(), phase: B.phase, frames: dn, cpu, tris: ri.triangles, calls: ri.calls, map: window.__map2d().isOpen(), v: +Math.hypot(window.__vs.velocity.x, window.__vs.velocity.z).toFixed(1),
+      thr: buttons[7].value, idx: ap.idx, dbg: ap.dbg })
     B.frames.push(...fr.map(f => [B.phase, f]))
   }, 1000)
-  return { edges: edges.length, path: path.length }
+  return { edges: route.edges }
 })()`
 
 // ── one session: boot, story, the three phases ────────────────────────────────────────────────────────────────────
@@ -271,13 +217,14 @@ async function session (build, seed, rep) {
     const phase = async (name, s) => { const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`); await sleep(s * 1000); return [t0, Date.now()] }
     const win = {}
     win.drive = await phase('drive', DRIVE_S)
-    await phase('stop', 6); await tap(' ')                  // at rest, latch the park brake
+    await js(`window.__bench.phase = 'stop'`); await until(() => js('window.__bench.stopped'), 15000); await tap(' ')   // at rest, latch the park brake
     await tap('m'); await until(() => js('window.__map2d().isOpen()'), 3000)
     win.map = await phase('map', MAP_S)
     await js(`window.__bench.phase = 'idle'`); await tap('m'); await until(() => js('!window.__map2d().isOpen()'), 3000)
     await sleep(2000)
     win.park = await phase('idle', PARK_S)
-    const B = await js(`(() => { const B = window.__bench; return { dist: B.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames } })()`)
+    const B = await js(`(() => { const B = window.__bench; return { dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames } })()`)
+    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples }))
     const r = summarise(B, win)
     r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, edges: info.edges }
     r.valid = r.drive.km >= MIN_KM && r.drive.newChunks >= MIN_CHUNKS
