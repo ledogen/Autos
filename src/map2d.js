@@ -454,7 +454,6 @@ export class Map2D {
         // across every pan and zoom for the life of the seed — this is what makes _coverRaster
         // affordable. Cleared on a seed change (see _ensureRoad), never on a view change.
         this._coverMemo   = new Map()
-        this._pondCanvas  = null   // offscreen one pond's shoreline raster is built in (see _drawPond)
         // PERF-38: the world tiles the cached background is composited from, keyed 'tx,tz' — world
         // properties like the cover memo, so cleared with it (seed / params) and on new water.
         this._tileMemo    = new Map()
@@ -1417,7 +1416,7 @@ export class Map2D {
         this._bgJob = { panX: this._panX, panZ: this._panZ, zoom: z, rect, lv, step, glyphs, todo, done: [] }
     }
 
-    // Build the job's tiles for up to `budgetMs` (at least one a call) — a memo hit costs nothing —
+    // Build the job's tiles for up to `budgetMs` — a memo hit costs nothing —
     // then, once all are in, draw the sheet in ONE pass and swap it in. Only tile BUILDS sample the
     // world, so the pass itself is cheap.
     _stepBackground(budgetMs) {
@@ -1425,9 +1424,17 @@ export class Map2D {
         const t0 = performance.now()
         while (job.done.length < job.todo.length) {
             const [kind, a, tx, tz] = job.todo[job.done.length]
+            const key = `${kind}${a}:${tx},${tz}`
+            // A ground or glyph tile's first biome reads go chunk by chunk under the budget
+            // (_warmCover), so the tile build itself only composes from the memo.
+            if (kind !== 'c' && !this._tileMemo.has(key)) {
+                const side = kind === 'g' ? GROUND_TEX * GROUND_TEXEL_M * 2 ** a : GLYPH_TILE_M
+                const x0 = tx * side - BG_SEAM_M, z0 = tz * side - BG_SEAM_M
+                if (!this._warmCover(x0, z0, x0 + side + 2 * BG_SEAM_M, z0 + side + 2 * BG_SEAM_M, kind === 'f', t0 + budgetMs)) break
+            }
             const build = kind === 'g' ? () => this._groundTile(a, tx, tz)
                 : kind === 'c' ? () => this._contourTile(a, tx, tz) : () => this._glyphTile(tx, tz)
-            job.done.push({ kind, tx, tz, ...this._tile(`${kind}${a}:${tx},${tz}`, build) })
+            job.done.push({ kind, tx, tz, ...this._tile(key, build) })
             if (performance.now() - t0 >= budgetMs) break
         }
         if (job.done.length < job.todo.length) return
@@ -1609,8 +1616,10 @@ export class Map2D {
     // to the world, which is what makes the raster window-invariant: the texel covering a given patch
     // of world is the same texel at every pan, so a clearing keeps its shape.
     //
-    // Hillshade samples `_coarseH` on a COVER_CELL · 2^lv lattice. The field's finest octave is a
-    // 250 m wavelength, so even level 2's 64 m lattice is under Nyquist and the shade is resolved.
+    // Hillshade samples `_coarseH` on a max(COVER_CELL, texel) lattice: 16 / 16 / 16 / 32 m, the same
+    // 16 m main's view-wide raster shaded at, coarsened only where the texel itself is coarser (a finer
+    // lattice than the texel buys nothing). A 2^lv lattice was tried and is wrong: level 3's 128 m sits
+    // past the Nyquist limit of the field's finest octave (250 m wavelength) and flattened the shade.
     _groundTile(lv, tx, tz) {
         const road = this._road
         const e = GROUND_TEXEL_M * 2 ** lv, side = GROUND_TEX * e, X0 = tx * side, Z0 = tz * side
@@ -1622,7 +1631,7 @@ export class Map2D {
         // Heights for the hillshade, TWO cells past the tile each side: the texels read nodes up to one
         // cell out, and those need a real central difference — a one-sided one at the lattice border
         // shades the last cell differently from the neighbour tile's and prints a seam.
-        const hc = COVER_CELL * 2 ** lv, hx0 = X0 - 2 * hc, hz0 = Z0 - 2 * hc, hw = side / hc + 4
+        const hc = Math.max(COVER_CELL, e), hx0 = X0 - 2 * hc, hz0 = Z0 - 2 * hc, hw = side / hc + 4
         const hg = new Float32Array(hw * hw)
         for (let j = 0; j < hw; j++) {
             const wz = hz0 + j * hc
@@ -1740,40 +1749,19 @@ export class Map2D {
         return { wet, tree }
     }
 
-    /**
-     * Resolve the tree-cover raster over a lattice rect, as one cover bin per cell (COVER_LOW /
-     * _MED / _HIGH), plus whether the scatter replay ran (`replayed`).
-     *
-     * Per-chunk results are memoized FOREVER (keyed by chunk, cleared only when the seed changes),
-     * which is the whole reason this is affordable: cover is a property of the world, not of the
-     * view, so a chunk resolved once at one zoom is still valid at every other zoom and after any
-     * pan. Only newly-revealed chunks ever cost anything.
-     *
-     * Always returns bins. `replay` runs the scatter replay, whose only product is the MED/HIGH
-     * split: the glyph tiles ask for it, the ground tiles (biome fill only) do not.
-     */
-    _coverRaster(wx0, wz0, gw, gh, replay) {
+    // The samplers the cover reads, with the water rejects fetched ONCE for the rect [x0,x1]×[z0,z1].
+    _coverSamplers(x0, z0, x1, z1) {
         const road = this._road
-        const CH = FLORA_PARAMS.chunkSize
-
-        const cx0 = Math.floor(wx0 / CH), cz0 = Math.floor(wz0 / CH)
-        const cx1 = Math.floor((wx0 + gw * COVER_CELL) / CH), cz1 = Math.floor((wz0 + gh * COVER_CELL) / CH)
-        // What is gated, and what never is (owner, 2026-08-15 — the fill is drawn at every zoom):
-        //
-        //   biome per cell   — cheap, and it ALONE decides green vs white. Always resolved.
-        //   scatter replay   — ~44 candidates a chunk, and its only product is the MED/HIGH split,
-        //                      which shows up solely as foliage glyphs — so only glyph tiles run it.
-
         // Water rejects, fetched ONCE for the whole rect rather than queried per candidate. The
         // scatter asks `is this point in a pond / in a stream channel` per tree; asking the
         // WaterSystem that directly, ~44 times per chunk over hundreds of chunks, is the one way
         // this pass could have become expensive.
         const water = this._getWater ? this._getWater() : null
         const m = 64
-        const ponds = water ? water.pondsInBBox(wx0 - m, wz0 - m, wx0 + gw * COVER_CELL + m, wz0 + gh * COVER_CELL + m) : []
-        const streams = water ? water.streamsInBBox(wx0 - m, wz0 - m, wx0 + gw * COVER_CELL + m, wz0 + gh * COVER_CELL + m) : []
+        const ponds = water ? water.pondsInBBox(x0 - m, z0 - m, x1 + m, z1 + m) : []
+        const streams = water ? water.streamsInBBox(x0 - m, z0 - m, x1 + m, z1 + m) : []
 
-        const samplers = {
+        return {
             // Slope in the scatter's own units — see slopeFromGradient. The ±8 m offsets are half a
             // cover cell, matching the lattice the answer is binned into.
             slopeAt: (x, z) => {
@@ -1794,36 +1782,96 @@ export class Map2D {
                 return false
             },
         }
+    }
 
+    // One flora chunk's memoised cover: the per-cell biome always, the scatter counts when `replay`.
+    _coverChunk(cx, cz, replay, samplers) {
+        const CH = FLORA_PARAMS.chunkSize, seed = this._getSeed()
+        const key = cx + ',' + cz
+        let cc = this._coverMemo.get(key)
+        if (!cc) {
+            // The per-CELL biome read — always resolved, and the thing that draws the
+            // meadow's EDGE. The replay below evaluates biome once per CLUSTER, which is
+            // correct for deciding whether a tree stands but far too coarse to draw a
+            // boundary with: a chunk whose four clusters all landed in a meadow zeroes as
+            // one 64 m square, and the sheet grows visible blocks. 16 evaluations a chunk,
+            // and the edge then follows the terrain that defines it.
+            const bio = new Uint8Array(CELLS_PER_CHUNK * CELLS_PER_CHUNK)
+            for (let lj = 0; lj < CELLS_PER_CHUNK; lj++) {
+                for (let li = 0; li < CELLS_PER_CHUNK; li++) {
+                    const wx = cx * CH + (li + 0.5) * COVER_CELL
+                    const wz = cz * CH + (lj + 0.5) * COVER_CELL
+                    bio[lj * CELLS_PER_CHUNK + li] =
+                        biomeAt(wx, wz, seed, samplers) === BIOME.FOREST ? 0 : 1
+                }
+            }
+            cc = { counts: null, bio }
+            this._coverMemo.set(key, cc)
+        }
+        // Counts fill in lazily. A chunk first resolved while zoomed out holds biome only;
+        // zooming in upgrades it in place rather than discarding the biome read.
+        if (replay && !cc.counts) cc.counts = chunkCover(cx, cz, seed, samplers)
+        return cc
+    }
+
+    // PERF-38: resolve the cover chunks a tile will read, one chunk at a time, until `deadline`.
+    // True once all are in. The first biome read of a patch is the one expensive thing a tile does
+    // (~10 µs a 16 m cell); built inside the tile it was one 40–80 ms call, here it slices.
+    _warmCover(x0, z0, x1, z1, replay, deadline) {
+        // Samplers per 4×4-chunk BLOCK (256 m), not per rect: the first water query over unseen ground
+        // generates its water cells, and over a whole tile's rect that was one 48 ms call. Per chunk
+        // the query's own walk overhead made the warm-up 6× slower in total. The rejects only test
+        // points in the block, so the block's own box gives the same answer.
+        const CH = FLORA_PARAMS.chunkSize, B = 4
+        const missing = (cx, cz) => { const cc = this._coverMemo.get(cx + ',' + cz); return !cc || (replay && !cc.counts) }
+        const cx0 = Math.floor(x0 / CH), cz0 = Math.floor(z0 / CH), cx1 = Math.floor(x1 / CH), cz1 = Math.floor(z1 / CH)
+        for (let bz = cz0; bz <= cz1; bz += B) {
+            for (let bx = cx0; bx <= cx1; bx += B) {
+                const ex = Math.min(cx1, bx + B - 1), ez = Math.min(cz1, bz + B - 1)
+                let samplers = null
+                for (let cz = bz; cz <= ez; cz++) {
+                    for (let cx = bx; cx <= ex; cx++) {
+                        if (!missing(cx, cz)) continue
+                        if (!samplers) {
+                            if (performance.now() >= deadline) return false
+                            samplers = this._coverSamplers(bx * CH, bz * CH, (ex + 1) * CH, (ez + 1) * CH)
+                        }
+                        this._coverChunk(cx, cz, replay, samplers)
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    /**
+     * Resolve the tree-cover raster over a lattice rect, as one cover bin per cell (COVER_LOW /
+     * _MED / _HIGH), plus whether the scatter replay ran (`replayed`).
+     *
+     * Per-chunk results are memoized FOREVER (keyed by chunk, cleared only when the seed changes),
+     * which is the whole reason this is affordable: cover is a property of the world, not of the
+     * view, so a chunk resolved once at one zoom is still valid at every other zoom and after any
+     * pan. Only newly-revealed chunks ever cost anything.
+     *
+     * Always returns bins. `replay` runs the scatter replay, whose only product is the MED/HIGH
+     * split: the glyph tiles ask for it, the ground tiles (biome fill only) do not.
+     */
+    _coverRaster(wx0, wz0, gw, gh, replay) {
+        const CH = FLORA_PARAMS.chunkSize
+        const cx0 = Math.floor(wx0 / CH), cz0 = Math.floor(wz0 / CH)
+        const cx1 = Math.floor((wx0 + gw * COVER_CELL) / CH), cz1 = Math.floor((wz0 + gh * COVER_CELL) / CH)
+        // What is gated, and what never is (owner, 2026-08-15 — the fill is drawn at every zoom):
+        //
+        //   biome per cell   — cheap, and it ALONE decides green vs white. Always resolved.
+        //   scatter replay   — ~44 candidates a chunk, and its only product is the MED/HIGH split,
+        //                      which shows up solely as foliage glyphs — so only glyph tiles run it.
+
+        const samplers = this._coverSamplers(wx0, wz0, wx0 + gw * COVER_CELL, wz0 + gh * COVER_CELL)
         const out = new Float32Array(gw * gh)
         const open = new Uint8Array(gw * gh)   // 1 = biome says this cell is not forest at all
-        const seed = this._getSeed()
         for (let cz = cz0; cz <= cz1; cz++) {
             for (let cx = cx0; cx <= cx1; cx++) {
-                const key = cx + ',' + cz
-                let cc = this._coverMemo.get(key)
-                if (!cc) {
-                    // The per-CELL biome read — always resolved, and the thing that draws the
-                    // meadow's EDGE. The replay below evaluates biome once per CLUSTER, which is
-                    // correct for deciding whether a tree stands but far too coarse to draw a
-                    // boundary with: a chunk whose four clusters all landed in a meadow zeroes as
-                    // one 64 m square, and the sheet grows visible blocks. 16 evaluations a chunk,
-                    // and the edge then follows the terrain that defines it.
-                    const bio = new Uint8Array(CELLS_PER_CHUNK * CELLS_PER_CHUNK)
-                    for (let lj = 0; lj < CELLS_PER_CHUNK; lj++) {
-                        for (let li = 0; li < CELLS_PER_CHUNK; li++) {
-                            const wx = cx * CH + (li + 0.5) * COVER_CELL
-                            const wz = cz * CH + (lj + 0.5) * COVER_CELL
-                            bio[lj * CELLS_PER_CHUNK + li] =
-                                biomeAt(wx, wz, seed, samplers) === BIOME.FOREST ? 0 : 1
-                        }
-                    }
-                    cc = { counts: null, bio }
-                    this._coverMemo.set(key, cc)
-                }
-                // Counts fill in lazily. A chunk first resolved while zoomed out holds biome only;
-                // zooming in upgrades it in place rather than discarding the biome read.
-                if (replay && !cc.counts) cc.counts = chunkCover(cx, cz, seed, samplers)
+                const cc = this._coverChunk(cx, cz, replay, samplers)
                 for (let lj = 0; lj < CELLS_PER_CHUNK; lj++) {
                     const gj = Math.round((cz * CH + lj * COVER_CELL - wz0) / COVER_CELL)
                     if (gj < 0 || gj >= gh) continue
@@ -1946,49 +1994,52 @@ export class Map2D {
         // Texel grid over the pond's bounding square, ~1 screen px per texel (the square spans the
         // DIAMETER, 2·rpx px), so the shore resolves at the limit of what can be seen. Capped so a
         // large pond at high zoom cannot turn into an unbounded raster.
-        const n = Math.max(8, Math.min(POND_TEXELS_MAX, Math.ceil(rpx * 2)))
-        const d = (p.radius * 2) / n
-        const img = ctx.createImageData(n, n)
-        const px = img.data
-        const wet = new Uint8Array(n * n)
+        // PERF-38: the raster is memoised per pond and resolution, the resolution rounded up to a
+        // power of two so a zoom reuses it — the shore samples the RAW height field, ~25 ms a pass
+        // when every visible pond re-rastered on every rebuild.
+        const n = Math.min(POND_TEXELS_MAX, 2 ** Math.ceil(Math.log2(Math.max(8, rpx * 2))))
+        const { img: pc } = this._tile(`w${p.key}:${n}`, () => {
+            const d = (p.radius * 2) / n
+            const img = new ImageData(n, n)
+            const px = img.data
+            const wet = new Uint8Array(n * n)
 
-        for (let j = 0; j < n; j++) {
-            const wz = p.floorZ - p.radius + (j + 0.5) * d
-            for (let i = 0; i < n; i++) {
-                const wx = p.floorX - p.radius + (i + 0.5) * d
-                const dx = wx - p.floorX, dz = wz - p.floorZ
-                if (dx * dx + dz * dz > p.radius * p.radius) continue
-                if (hAt(wx, wz) >= p.waterLevel) continue
-                wet[j * n + i] = 1
+            for (let j = 0; j < n; j++) {
+                const wz = p.floorZ - p.radius + (j + 0.5) * d
+                for (let i = 0; i < n; i++) {
+                    const wx = p.floorX - p.radius + (i + 0.5) * d
+                    const dx = wx - p.floorX, dz = wz - p.floorZ
+                    if (dx * dx + dz * dz > p.radius * p.radius) continue
+                    if (hAt(wx, wz) >= p.waterLevel) continue
+                    wet[j * n + i] = 1
+                }
             }
-        }
 
-        const fR = parseInt(WATER_FILL.slice(1, 3), 16), fG = parseInt(WATER_FILL.slice(3, 5), 16),
-              fB = parseInt(WATER_FILL.slice(5, 7), 16)
-        const iR = parseInt(WATER_INK.slice(1, 3), 16), iG = parseInt(WATER_INK.slice(3, 5), 16),
-              iB = parseInt(WATER_INK.slice(5, 7), 16)
-        for (let j = 0; j < n; j++) {
-            for (let i = 0; i < n; i++) {
-                const k = j * n + i
-                if (!wet[k]) continue
-                // Edge texel = wet with a dry (or off-grid) 4-neighbour. Off-grid counts as dry,
-                // which is correct: the grid spans the whole disc, so there is no water past it.
-                const edge = (i === 0     || !wet[k - 1]) || (i === n - 1 || !wet[k + 1]) ||
-                             (j === 0     || !wet[k - n]) || (j === n - 1 || !wet[k + n])
-                const o = k * 4
-                px[o]     = edge ? iR : fR
-                px[o + 1] = edge ? iG : fG
-                px[o + 2] = edge ? iB : fB
-                px[o + 3] = 255
+            const fR = parseInt(WATER_FILL.slice(1, 3), 16), fG = parseInt(WATER_FILL.slice(3, 5), 16),
+                  fB = parseInt(WATER_FILL.slice(5, 7), 16)
+            const iR = parseInt(WATER_INK.slice(1, 3), 16), iG = parseInt(WATER_INK.slice(3, 5), 16),
+                  iB = parseInt(WATER_INK.slice(5, 7), 16)
+            for (let j = 0; j < n; j++) {
+                for (let i = 0; i < n; i++) {
+                    const k = j * n + i
+                    if (!wet[k]) continue
+                    // Edge texel = wet with a dry (or off-grid) 4-neighbour. Off-grid counts as dry,
+                    // which is correct: the grid spans the whole disc, so there is no water past it.
+                    const edge = (i === 0     || !wet[k - 1]) || (i === n - 1 || !wet[k + 1]) ||
+                                 (j === 0     || !wet[k - n]) || (j === n - 1 || !wet[k + n])
+                    const o = k * 4
+                    px[o]     = edge ? iR : fR
+                    px[o + 1] = edge ? iG : fG
+                    px[o + 2] = edge ? iB : fB
+                    px[o + 3] = 255
+                }
             }
-        }
 
-        if (!this._pondCanvas) this._pondCanvas = document.createElement('canvas')
-        const pc = this._pondCanvas
-        if (pc.width !== n || pc.height !== n) { pc.width = n; pc.height = n }
-        const pctx = pc.getContext('2d')
-        pctx.clearRect(0, 0, n, n)      // texels outside the shore stay transparent, not black
-        pctx.putImageData(img, 0, 0)
+            const c = document.createElement('canvas')   // texels outside the shore stay transparent
+            c.width = c.height = n
+            c.getContext('2d').putImageData(img, 0, 0)
+            return { img: c }
+        })
 
         const sx = this._sx(p.floorX - p.radius), sy = this._sy(p.floorZ - p.radius)
         const prev = ctx.imageSmoothingEnabled
