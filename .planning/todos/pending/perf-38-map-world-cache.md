@@ -51,8 +51,11 @@ tiles it has never seen, under the 6 ms slice.
 - Built lazily, area by area, not behind the loading screen. The first view of an area costs what one rebuild did
   before; everything after is cheap. Prebuilding is left until a play session shows the first open still hitches.
 
-Not done: the whole-map zoom (r = 1800 m) could not be captured headless at dpr 2. The CDP socket dies there on main
-too, so it is a harness limit, not this change.
+- **The first sight of an area slices.** The one expensive read is the first biome sample of each 16 m cell (~10 µs).
+  `_warmCover` does it per 256 m block under the 6 ms slice before a tile is built, so the tile build only composes
+  (7 ms at level 0, 13 ms at level 1). Pond shorelines are memoised per pond and resolution.
+- **Hillshade lattice = max(16 m, texel)**: 16 / 16 / 16 / 32 m, as main's 16 m. A 2^level lattice flattened the
+  whole-map shade (128 m at level 3 is past the Nyquist limit of the field's 250 m finest octave).
 
 Headless A/B (scratchpad harness, 1400 × 900 at dpr 2), a settled pan, ms and frames until the sheet is final:
 
@@ -63,8 +66,21 @@ Headless A/B (scratchpad harness, 1400 × 900 at dpr 2), a settled pan, ms and f
 | 1172941705 mid | ~263 / 16 | 15 / 1 |
 | 1172941705 close | 341 / 12 | 19 / 1 |
 
-One synchronous rebuild: 68–137 ms on main, 5–9 ms on the branch. Screenshots of both seeds at mid and close zoom
-match main. A hillshade tile seam (a one-sided height difference at the tile's lattice border) was found and fixed.
+Whole zoom (r = 1800 m, run at dpr 1 — at dpr 2 the headless CDP socket dies on main too), seed 1172941705: main
+366 ms / 16 frames per rebuild, branch 24 ms / 1.
+
+One synchronous rebuild: 68–317 ms on main, 1–11 ms on the branch.
+
+Longest single background step while panning into unseen ground (seed 1172941705, dpr 2):
+
+| zoom | main | branch |
+|---|---|---|
+| mid | 17 ms (3 of 112 calls over 16 ms) | 7 ms (none over 16) |
+| whole | 59 ms (96 of 96 over 16 ms) | 15 ms (none over 16) |
+
+Screenshots of both seeds at mid, close and whole zoom match main. Differences: a few contour islands a few metres
+across (contour tiles use a fixed step per zoom tier). Two defects were found by the A/B and fixed: a hillshade tile
+seam (a one-sided height difference at the lattice border) and the flattened whole-map shade.
 
 ## Acceptance
 
