@@ -126,12 +126,12 @@ const PAGE = String.raw`(async () => {
   ap.locate(window.__vs.position)
   // A seat is a dead, parked truck (story mode's, main.js _reseatTruckAtSpawn): after it lands, hold I until the engine
   // runs (synthetic keys, the way gamepad.js sends its own), then RB (Space in the drive layout) off the park brake.
-  let settle = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false
+  let settle = 0, settleT = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false
   const ikey = type => (document.activeElement || document.body).dispatchEvent(new KeyboardEvent(type, { key: 'i', code: 'KeyI', bubbles: true, cancelable: true }))
-  const seat = why => {
+  const seat = (why, m = 25) => {
     if (why) B.recov.push({ why, t: +(performance.now() / 1000).toFixed(1), at: [Math.round(window.__vs.position.x), Math.round(window.__vs.position.z)] })
-    const pose = ap.resume(why ? 25 : 0)
-    setPad(0, 0, 0); seating = true; settle = 2.5
+    const pose = ap.resume(why ? m : 0)
+    setPad(0, 0, 0); seating = true; settle = 2.5; settleT = 0
     Promise.resolve(window.__teleport(pose.x, pose.z, pose.heading)).finally(() => { seating = false })
   }
   let last = performance.now(), seated = false
@@ -142,8 +142,11 @@ const PAGE = String.raw`(async () => {
     if (B.phase === 'drive') {
       if (!seated) { seated = true; seat(null) }   // from Larry's yard onto the route, aligned (not a recovery)
       if (settle > 0) {
-        settle -= dt; setPad(0, 0, 0)
+        settle -= dt; settleT += dt; setPad(0, 0, 0)
         const ign = vs.ignition?.state
+        // A seat that never ends (an engine that will not start — seated in water, say) would hang the drive with no
+        // throttle, so no 'stuck' either: give up on that spot after 15 s, say why, and seat 100 m on.
+        if (settleT > 15) { if (cranking) { cranking = false; ikey('keyup') } seat('seat stalled (' + ign + (vs.parked ? ', parked' : '') + (vs.submerged ? ', submerged' : '') + (seating ? ', teleport pending' : '') + ')', 100); requestAnimationFrame(tick); return }
         if (!seating && ign && ign !== 'running') { if (!cranking) { cranking = true; ikey('keydown') } settle = Math.max(settle, 0.5) }
         else if (cranking) { cranking = false; ikey('keyup') }
         else if (!seating && vs.parked && rbCool <= 0) { rbHold = 4; rbCool = 40; settle = Math.max(settle, 0.5) }
