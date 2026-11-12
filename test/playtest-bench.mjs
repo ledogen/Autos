@@ -26,7 +26,7 @@
 //   node test/playtest-bench.mjs --reps=2 --seeds=1 --drive=120 --headed
 //   node test/playtest-bench.mjs --record                append the result to .planning/perf/history.jsonl (health check)
 //
-// Flags: --a=<checkout> (default this one) --b=<checkout> --reps=N --seeds=K (first K pinned) | --seed=N
+// Flags: --a=<checkout> (default this one) --b=<checkout> [--c=<checkout>] --reps=N --seeds=K (first K pinned) | --seed=N
 //        --drive=S --map=S --park=S --headed --out=DIR (default perf-runs/bench-<stamp>) --record
 // A run is ~7 min per seed per build per rep. Wants a quiet machine: one bench at a time, not while lanes run heavy
 // gates (the shared-CPU rule). The load average is printed with every session.
@@ -42,11 +42,13 @@ const HERE = dirname(fileURLToPath(import.meta.url)), ROOT = dirname(HERE)
 const arg = (k, d) => { const a = process.argv.find(s => s.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d }
 const has = k => process.argv.includes(`--${k}`)
 // Three seeds drawn at random once (2026-11-12) and pinned so runs compare. Not a default world (CLAUDE.md § Seeds).
-const PINNED = [1768572700, 17535907, 711969014]
+// 711969014 (the third first drawn) is swapped out: its drive stalled under full throttle on both builds, every rep —
+// the autopilot's known-hard seed, kept for debugging it (PERF-40 ticket), not for measuring. 759313244 drawn 2026-11-12.
+const PINNED = [1768572700, 17535907, 759313244]
 const SEEDS = arg('seed') ? [+arg('seed')] : PINNED.slice(0, +arg('seeds', PINNED.length))
 const REPS = +arg('reps', 1), DRIVE_S = +arg('drive', 300), MAP_S = +arg('map', 30), PARK_S = +arg('park', 30)
 const MIN_KM = DRIVE_S * 0.01, MIN_CHUNKS = Math.round(DRIVE_S / 8)   // 3 km and 38 chunks at the default 300 s
-const BUILDS = [{ name: 'A', dir: resolve(arg('a', ROOT)) }, ...(arg('b') ? [{ name: 'B', dir: resolve(arg('b')) }] : [])]
+const BUILDS = [{ name: 'A', dir: resolve(arg('a', ROOT)) }, ...['b', 'c'].filter(k => arg(k)).map(k => ({ name: k.toUpperCase(), dir: resolve(arg(k)) }))]
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 const OUT = resolve(arg('out', join(ROOT, 'perf-runs', `bench-${stamp}`)))
 if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
@@ -101,7 +103,7 @@ for (const b of BUILDS) {
 }
 
 // ── the page side: the virtual pad, the autopilot, the 1 Hz probe ─────────────────────────────────────────────────────
-// Injected once a story run is live. window.__bench.phase drives it: 'drive' (pursuit), 'stop' (brake to rest), 'map'
+// Injected once a story run is live. window.__bench.phase drives it: 'drive' (pursuit), 'home' (re-seat at the drive's start, idle, parked), 'map'
 // (stick pan/zoom), 'idle' (hands off). Everything it records is read back by the harness per phase.
 const AUTOPILOT = readFileSync(join(HERE, 'lib/autopilot.mjs')).toString('base64')
 const PAGE = String.raw`(async () => {
@@ -126,11 +128,12 @@ const PAGE = String.raw`(async () => {
   ap.locate(window.__vs.position)
   // A seat is a dead, parked truck (story mode's, main.js _reseatTruckAtSpawn): after it lands, hold I until the engine
   // runs (synthetic keys, the way gamepad.js sends its own), then RB (Space in the drive layout) off the park brake.
-  let settle = 0, settleT = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false
+  let home = null, settle = 0, settleT = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false
   const ikey = type => (document.activeElement || document.body).dispatchEvent(new KeyboardEvent(type, { key: 'i', code: 'KeyI', bubbles: true, cancelable: true }))
   const seat = (why, m = 25) => {
     if (why) B.recov.push({ why, t: +(performance.now() / 1000).toFixed(1), at: [Math.round(window.__vs.position.x), Math.round(window.__vs.position.z)] })
     const pose = ap.resume(why ? m : 0)
+    if (!home) home = pose
     setPad(0, 0, 0); seating = true; settle = 2.5; settleT = 0
     Promise.resolve(window.__teleport(pose.x, pose.z, pose.heading)).finally(() => { seating = false })
   }
@@ -163,7 +166,14 @@ const PAGE = String.raw`(async () => {
           }
         }
       }
-    } else if (B.phase === 'stop') { setPad(0, 0, v > 1 ? 0.8 : 0); if (v <= 1) B.stopped = true }   // brake held at rest is reverse
+    } else if (B.phase === 'home') {   // seat at the drive's start pose, crank to idle, stay parked
+      setPad(0, 0, 0)
+      if (!B.home) { B.home = 'seating'; seating = true; Promise.resolve(window.__teleport(home.x, home.z, home.heading)).finally(() => { seating = false }) }
+      else if (B.home === 'seating' && !seating) {
+        if (vs.ignition?.state !== 'running') { if (!cranking) { cranking = true; ikey('keydown') } }
+        else { if (cranking) { cranking = false; ikey('keyup') } B.home = 'done' }
+      }
+    }
     else if (B.phase === 'map') {   // 5 s each: pan right, down, left, up, zoom in, zoom out
       const k = Math.floor(now / 5000) % 6
       setPad([0.8, 0, -0.8, 0, 0, 0][k], 0, 0, [0, 0.8, 0, -0.8, 0, 0][k], [0, 0, 0, 0, 0.7, -0.7][k])
@@ -226,7 +236,9 @@ async function session (build, seed, rep) {
     const phase = async (name, s) => { const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`); await sleep(s * 1000); return [t0, Date.now()] }
     const win = {}
     win.drive = await phase('drive', DRIVE_S)
-    await js(`window.__bench.phase = 'stop'`); await until(() => js('window.__bench.stopped'), 15000); await tap(' ')   // at rest, latch the park brake
+    // Stop where the drive STARTED, not where it ended: at rest, physics costs 0 (asleep) to 140 ms/s (on a road carve)
+    // by spot, so map and park only compare at the same one. A seat is parked; the page cranks the engine to idle.
+    await js(`window.__bench.phase = 'home'`); await until(() => js('window.__bench.home === "done"'), 25000)
     await tap('m'); await until(() => js('window.__map2d().isOpen()'), 3000)
     win.map = await phase('map', MAP_S)
     await js(`window.__bench.phase = 'idle'`); await tap('m'); await until(() => js('!window.__map2d().isOpen()'), 3000)
@@ -305,12 +317,12 @@ const fmt = (v, b) => isNaN(v) ? '   –  ' : (b == null ? v.toFixed(v < 10 ? 2 
 console.log('phase build ' + KEYS.map(k => k.padStart(12)).join(''))
 for (const ph of ['drive', 'map', 'park']) {
   for (const b of BUILDS) { const o = agg[`${b.name}.${ph}`]; console.log(`${ph.padEnd(5)} ${b.name.padEnd(5)} ` + KEYS.map(k => fmt(o[k], o[k + '±']).padStart(12)).join('')) }
-  if (BUILDS.length === 2) {
-    const a = agg[`A.${ph}`], b = agg[`B.${ph}`]
-    console.log(`${''.padEnd(5)} B−A   ` + KEYS.map(k => { const d = b[k] - a[k], band = Math.max(a[k + '±'] ?? 0, b[k + '±'] ?? 0); return (isNaN(d) ? '–' : `${d >= 0 ? '+' : ''}${d.toFixed(Math.abs(d) < 10 ? 2 : 0)}${band && Math.abs(d) <= band ? '~' : ''}`).padStart(12) }).join(''))
+  for (const o of BUILDS.slice(1)) {
+    const a = agg[`A.${ph}`], b = agg[`${o.name}.${ph}`]
+    console.log(`${''.padEnd(5)} ${o.name}−A   ` + KEYS.map(k => { const d = b[k] - a[k], band = Math.max(a[k + '±'] ?? 0, b[k + '±'] ?? 0); return (isNaN(d) ? '–' : `${d >= 0 ? '+' : ''}${d.toFixed(Math.abs(d) < 10 ? 2 : 0)}${band && Math.abs(d) <= band ? '~' : ''}`).padStart(12) }).join(''))
   }
 }
-if (BUILDS.length === 2) console.log('(~ = within the noise band)')
+if (BUILDS.length > 1) console.log('(~ = within the noise band)')
 writeFileSync(join(OUT, 'summary.json'), JSON.stringify({ builds: BUILDS.map(({ name, dir, commit, branch, dirty }) => ({ name, dir, commit, branch, dirty })), seeds: SEEDS, reps: REPS, agg }, null, 1))
 
 // ── health check: one line per build into the committed history, compared with the last line for that branch ──────────
