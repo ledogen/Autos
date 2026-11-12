@@ -177,6 +177,10 @@ Idling out front of Larry's at the intro, Normal, fresh Chrome 157. Five samples
 - **Use this as the reference.** If it runs hot again, take the same reading. Several watts above about 4 W on the
   same spot means the cause is back.
 
+- **Driving a fragile mission** (22:45, streaming new terrain): steady 2.2–2.4 W total. CPU 0.67–0.76 W
+  (efficiency cores about 38 % busy, performance cores 16–21 % at about 1.6 GHz). GPU 1.5–1.7 W at about 1.2 GHz,
+  85 % busy. Driving costs less than idling at Larry's intro (2.3–3.7 W), and sample-to-sample spread is ±0.1 W.
+
 ### Found while chasing the owner's map-open CPU burst: a Quality change in story loops the map (fixed)
 
 Owner, 21:59: a 6 s CPU burst (0.7 → 5.0 W, performance cores at 4.0 GHz) while clicking in the auto shop menu and
