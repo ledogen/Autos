@@ -114,10 +114,25 @@ Seed 711969014 is swapped out of the pinned three (it stalled on every build bef
 worth re-trying as a test of the autopilot. A build from before a world-gen change (the 2026-11-01 checkout) gives a
 different world on the same seed, so a comparison with it is "what playing that version cost", not the same drive.
 
+## Second pass (2026-11-12, after PERF-42's per-second read)
+
+- **Spike metrics in every report.** Drive: physics ms in each moving second (v > 3 m/s in it and both neighbours, so
+  re-seats are out): p50, p99, worst, and the share over 100 ms/s. Map: postStream p95 and worst, after the first 3 s.
+  Phase averages hid both bugs (PERF-38's map stall, PERF-42's physics spikes).
+- **A harder map script.** 10 s cycles: zoom right out (2.5 s at the stick's 2 e-folds/s reaches the widest view), a
+  fast diagonal pan there (600 px/s ÷ zoom: kilometres a second, into undrawn ground), zoom back in, pan on close up.
+  The pan turns 90° each cycle.
+- **An edge leg** (owner: yes). 60 s a quarter of the way into the drive with the autopilot's new `lane` set 5 m off
+  the line, so one side's wheels ride over the lip on the shoulder. The autopilot otherwise keeps to the middle and
+  under-exercised the shoulder, which is where PERF-42 lived. `node test/lib/autopilot.mjs` now also checks a 4 m lane.
+- **Validity bar 2.5 km** (owner: keep seed 17535907; 8.3 m/s average). It was 3 km.
+- Each sample carries `x, z` and `lat` (the signed lateral off the road the physics resolves there). `--probe` adds
+  road resolves per second (a wrapper on a hot path, so a probed session is not for comparing ms).
+
 ## Acceptance
 
 - [ ] `test/lib/ioreport.py` checked in, with a self-check (a sample has CPU and GPU watts and a GPU MHz on the table).
-- [ ] `node test/playtest-bench.mjs` runs unattended to the end on three seeds, drive phase ≥ 3 km a seed with streaming
+- [ ] `node test/playtest-bench.mjs` runs unattended to the end on three seeds, drive phase ≥ 2.5 km a seed (3 km until 2026-11-12) with streaming
       verified, recoveries counted.
 - [ ] Two runs of the same build agree within the reported noise band.
 - [ ] `--a/--b` on main 07581275 vs this branch shows the PERF-39 tire saving (physics ms/s down) and the PERF-38 map
