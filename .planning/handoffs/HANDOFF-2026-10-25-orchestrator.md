@@ -166,8 +166,9 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
 - **Perf lane is YOURS (owner 11-13: "its on you to restart the performance lane now")**. Lane `p`, worktree
   `CarGame-perf`, branch feature/perf, port 8043. PERF-48's investigation is on main:
   `.planning/perf/COST-MAP-2026-11.md` (ranked levers first). Lever 1 landed. Lever 2 was a wrong lead (the map's
-  cost was lever 1's recalc; docs 8fd2d555). PERF-46 landed. Running: lever 3 (PERF-45 §1, an exact memo
-  for the parked ground query; lands as land/perf-45a). It sends "HOLD for PERF-45 run" before each bench: do the hold drill, reply
+  cost was lever 1's recalc; docs 8fd2d555). PERF-46 landed. Lever 3 is VOID (a parked truck is
+  never still: BUG-167 filed, `bug167-creep` owed; Lane B builds on a yes). Running: lever 4 (PERF-45 §2,
+  static objects stop recomputing matrices; lands as land/perf-45b). It sends "HOLD for PERF-45 run" before each bench: do the hold drill, reply
   "held", and "released" on its "done". Then the lever-1 tail (two 10 Hz writers, ~9 recalcs/s), lever 3 (parked physics
   memo, PERF-45 §1), lever 4 (scene-graph walk, PERF-45 §2). Owner calls: perf48-frame-cap, perf48-terrain-bake,
   perf48-parked-30. Reading rule from the cost map: on this Mac ms/s reads 1.6–3.3× higher under light load;
