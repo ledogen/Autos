@@ -322,7 +322,13 @@ export class TerrainSystem {
                     bool ts_xf = ts_an.x > ts_an.z;
                     float ts_sgn = ts_xf ? sign(vWorldNrm.x) : -sign(vWorldNrm.z);
                     vec2 ts_ps = (ts_xf ? vec2(vWorldPos.z * ts_sgn, vWorldPos.y) : vec2(vWorldPos.x * ts_sgn, vWorldPos.y)) * uSurfScale.z;
-                    vec4 ts_rs = texture2D(uSurfAlbR, ts_ps);
+                    // PERF-41: the side pair is read only where it has weight — ts_steep is exactly 0 below ~49° (most
+                    // pixels), where mix(·, ·, 0) and the ×ts_steep side normal discard it, so the picture is identical.
+                    // The mip derivatives are taken outside the branch (textureGrad): inside a branch the neighbouring
+                    // pixels that the implicit LOD needs may not run.
+                    vec2 ts_psX = dFdx(ts_ps), ts_psY = dFdy(ts_ps);
+                    vec4 ts_rs = vec4(0.0), ts_nRs = vec4(0.5);
+                    if (ts_steep > 0.0) { ts_rs = textureGrad(uSurfAlbR, ts_ps, ts_psX, ts_psY); ts_nRs = textureGrad(uSurfNrmR, ts_ps, ts_psX, ts_psY); }
                     ts_r = mix(ts_r, ts_rs, ts_steep);
                     // Normal maps, sampled here so their .b — the height RANK (a true quantile,
                     // terrain-texture.js _rankOf) — can rank texels for the coverage rules below;
@@ -331,7 +337,6 @@ export class TerrainSystem {
                     vec4 ts_nG = texture2D(uSurfNrmG, ts_p * uSurfScale.x);
                     vec4 ts_nD = texture2D(uSurfNrmD, ts_p * uSurfScale.y);
                     vec4 ts_nR = texture2D(uSurfNrmR, ts_p * uSurfScale.z);
-                    vec4 ts_nRs = texture2D(uSurfNrmR, ts_ps);
                     float ts_rq = mix(ts_nR.b, ts_nRs.b, ts_steep);   // rock rank, side-projected on steep faces like ts_r
                     // Rock by COVERAGE, not by contest (owner 2026-09-25): the rock share s admits
                     // s^γ of the tile, and the map's own heights rank the texels — tallest fragments
