@@ -1430,7 +1430,7 @@ const STEPS = [
     check(e1.first === 'live' && !e1.hud && !e1.gps, `waking did not end the evening and post the casserole: ${JSON.stringify(e1)}`)
     // Stage 4, the morning: breakfast, then her card. FEAT-184 stage 5: breakfast is the player's to eat now (her card asks
     // for a packed lunch); the evening held the clock and the night holds the hunger clock, so you wake fed either way.
-    const stage = () => js('document.getElementById("em-stage").textContent')
+    const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
     check(await readCards() >= 2, 'no breakfast and no "look at my card" in the morning')
     check(!/hungry/.test(await stage()), `the tutorial's morning woke the driver hungry ("${await stage()}")`)
     // Woken at hers, her card opens as the lesson ends — no second park — and the sleep card is gone.
