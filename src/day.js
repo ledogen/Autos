@@ -114,6 +114,15 @@ export const DAY_PARAMS = {
  */
 export const STAGE_COLOR = { rested: '#7ed957', sleepy: '#ffdc3c', tired: '#ff9f43', exhausted: '#ff5a4e' }
 
+/**
+ * FEAT-198: the hunger words' colours (the energy box's hunger line and bar), on the same escalation ramp as
+ * STAGE_COLOR so no new hex enters the UI: fed is green, peckish yellow, hungry orange.
+ */
+export const HUNGER_COLOR = {
+    stuffed: STAGE_COLOR.rested, full: STAGE_COLOR.rested, content: STAGE_COLOR.rested,
+    peckish: STAGE_COLOR.sleepy, hungry: STAGE_COLOR.tired,
+}
+
 
 /**
  * SM-INV-12 RUN-LAYER STATE. This is THE run-scoped state object: the things that belong to a story
@@ -308,9 +317,12 @@ export class DaySystem {
      *  off. A word, never a number (SM-INV-10). 'hungry' exactly when hungry() is. */
     hungerWord () {
         if (!DAY_PARAMS.hungerOn) return null
-        const left = this._fedUntilH - this.clockH()
+        const left = this.fedLeftH()
         return DAY_PARAMS.hungerWords.find(([h]) => left >= h)?.[1] ?? 'hungry'
     }
+
+    /** Hours left on the last meal's hold — negative once hungry. Scrolls the energy box's hunger bar (FEAT-198). */
+    fedLeftH () { return this._fedUntilH - this.clockH() }
 
     /**
      * Hours of energy hunger adds to being awake from clockH h0 to h1 — 0 while fed. The rate over 1 is
