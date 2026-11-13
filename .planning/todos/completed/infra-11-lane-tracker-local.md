@@ -1,7 +1,7 @@
 ---
 id: INFRA-11
 type: infra
-status: open
+status: closed
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-12 — the "ledorepo" brief (sculpting a personal Jira: tracker + lanes + deep-dive forms)
@@ -12,7 +12,7 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-11: ledorepo — the lane tracker runs locally (inbox, owed, lanes) instead of as a claude.ai artifact
 
 ## Next steps
-Owner: open `http://m4air:8010/` on the phone with wifi off; if it loads and an intake item saves, this closes.
+None. Closed. Deep-dive forms continue in INFRA-12.
 
 ## Summary
 The Alpha Lanes tracker is a page hosted on claude.ai with its data (inbox, owed answers, lane status) in
@@ -176,7 +176,7 @@ An answered owed item moves to an `answered/` folder so "what is new" is a direc
       this data directory only**; it still never edits a ticket.
 - [x] The orchestrator handoff's "On wake" and LANE-AGENT-BRIEF read and write those files instead of the artifact
       db. The publish ritual (read every line, `page-scripts.mjs`, republish) is deleted.
-- [ ] Reachable from the owner's phone over Tailscale; the intake box and owed cards are usable at phone width.
+- [x] Reachable from the owner's phone over Tailscale; the intake box and owed cards are usable at phone width.
 - [x] One-time import of the artifact's `inbox`, `owed`, `lanes`, `tasks` collections; the artifact gets a banner
       pointing at the local page and is then left alone.
 - [x] The server starts at login (done as a SessionStart hook, not launchd: owner preference), so the page is
@@ -213,3 +213,4 @@ An answered owed item moves to an `answered/` folder so "what is new" is a direc
   from the phone.** The artifact got no banner (its page source is deleted; it is simply no longer written).
 - Left out by the approved plan: the owner's per-task status button and note box (tasks are read-only), the
   static "Closed since" lists.
+- 2026-11-13: the owner sent an inbox item from the phone over Tailscale and it arrived as a file. Closed.
