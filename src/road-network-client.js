@@ -29,10 +29,10 @@ import { perfAdd } from './perf.js'   // PERF-34: dispatch-cost buckets
 export class RoadNetworkClient {
     /**
      * @param {object} deps
-     * @param {() => number} deps.getSeed        — live world seed
+     * @param {() => number} deps.getSeed        — live world seed (a reply for any other seed is stale)
      * @param {() => object} deps.getParams      — live RANGER_PARAMS (snapshotted per request)
-     * @param {(minX, minZ, maxX, maxZ) => number[]} deps.getPondDiscs — flat [cx,cz,r,…] for a bbox
-     *        (null-safe: return [] before water exists)
+     * @param {(minX, minZ, maxX, maxZ, seed) => number[]|null} deps.getPondDiscs — flat [cx,cz,r,…]
+     *        for a bbox of world `seed`; null when the water on hand is not that world's (BUG-152)
      */
     constructor({ getSeed, getParams, getPondDiscs, warmRegion = null }) {
         this._getSeed = getSeed
@@ -160,10 +160,19 @@ export class RoadNetworkClient {
                 return
             }
         }
-        this._active = entry
+        // BUG-152: a build request is ONE world — the seed of the road it is FOR, never the live seed,
+        // and that same seed's ponds. Across a reseed the old road keeps streaming through the 150 ms
+        // debounce while worldSeed already names the new world. Posting the live seed beside the old
+        // water's discs minted the NEW seed's worker instance with the menu world's ponds, and its pond
+        // store (BUG-106: it only grows) kept them for every later build: the story region routed round
+        // ponds that are not there and the POI roster re-sited, about one session in 40. Discs from
+        // another world come back null — the entry is stale, and its road re-requests once it is whole.
+        const seed = entry.road._worldSeed
         const _t0 = performance.now()
-        const discs = this._getPondDiscs(x0, z0, x1, z1) || []
+        const discs = this._getPondDiscs(x0, z0, x1, z1, seed)
         perfAdd('road.dispatch.pondDiscs', performance.now() - _t0)
+        if (!discs) { for (const w of entry.waiters) w(false); this._pump(); return }
+        this._active = entry
         const _t1 = performance.now()
         const params = snapshotRoadParams(this._getParams())
         perfAdd('road.dispatch.params', performance.now() - _t1)
@@ -171,7 +180,7 @@ export class RoadNetworkClient {
             type: 'build',
             client: entry.id,
             epoch: entry.epoch,
-            seed: this._getSeed(),
+            seed,
             params,
             center: { x: entry.x, z: entry.z },
             radius: entry.radius,

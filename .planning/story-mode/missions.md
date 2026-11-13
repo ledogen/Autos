@@ -896,8 +896,10 @@ was sketched and **set aside** as premature. Don't rebuild it until the customiz
 > - **After a completion** the slot waits out the original expiry.
 > - **A cancel** — a button, the only thing that abandons a job — locks the slot for the offer's full
 >   expiry length, counted from the cancel.
-> - **Bonus on 25 % of offers**, gated C / B / A / S at equal odds. D never earns one. A bonus offer's
->   cash tip is the item.
+> - **Bonus on 25 % of offers**, gated C / B / A / S at equal odds. D never earns one. ~~A bonus offer's
+>   cash tip is the item.~~ *Retired (owner, 2026-11-13, FEAT-199):* the item is **optional, priced off the
+>   cash** — a bonus offer pays its full cash, tip included, and the result card offers the cash, or the cash
+>   less the item's price (capped at what the job paid) with the item. DESIGN.md's 2026-10-08 amendment carries it.
 > - **The receiver hands the bonus over.** The item is a 50/50 roll between the giver's pool and the
 >   destination's (2026-10-20, built 2026-11-01). A fetch or a roadside drop uses the giver's pool.
 > - **Larry rolls from every reward** (2026-10-31).

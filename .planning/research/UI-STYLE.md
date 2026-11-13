@@ -108,10 +108,12 @@ shows it reads from that place.
 |---|---|---|
 | Rank S/A/B/C/D | `RANK_COLOR`, `src/economy.js` | rank timer strip, tiles, cards |
 | Energy stages | `STAGE_COLOR`, `src/day.js` | energy meter, sleep bar |
+| Hunger words | `HUNGER_COLOR`, `src/day.js` | the energy box's hunger line and bar; built from `STAGE_COLOR`'s ramp (FEAT-198) |
 | Job family | `FAMILY_COLOR`, `data/map-icons.js` | map diamonds |
 | Camp vibe (flat / view / shade / water) | `.vseg-*` / `.lg-*` / `.cp-*` in `index.html` | currently copied in 3 places; a future cleanup folds them into vars |
 | Part condition (sound / worn / damaged / failing) | condition bands, `src/damage-screen.js` | damage pictogram and legend |
 | Equipped item | `#c9a24a`, `src/inventory-screen.js` | slot border, tag, tooltip |
+| Item rarity (common / uncommon / rare / legendary; epic proposed `#9b5fd1`, FEAT-192) | `RARITY_COLOR`, `data/parts.js` | the tint behind an item or part icon (inventory, service screen) |
 
 ## 4. Type
 

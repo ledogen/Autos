@@ -344,6 +344,16 @@ const mkDay = () => {
   sys.eat(10); sys.update(3); sys.sleep(8, 0.5)
   check('a meal before bed is all there in the morning: 7 h of its 10 left after the night', !sys.hungry()
     && near(sys.snapshot().fedUntilH - sys.clockH(), 7))
+  // FEAT-169 (owner 11-07): the meter's word by the hold left — stuffed ≥ 6 h, full ≥ 4, content ≥ 2, peckish ≥ 0,
+  // then hungry, which is exactly hungry(). Walked down a fresh 10 h hold an hour at a time.
+  sys.eat(100); sys.update(100 - 10)   // exactly 10 h of a hold left
+  const words = []
+  for (let i = 0; i <= 11; i++) { words.push(`${sys.hungerWord()}${sys.hungry() ? '!' : ''}`); sys.update(1) }
+  check('the hunger words down a 10 h hold, an hour at a time', words.join(' ') ===
+    'stuffed stuffed stuffed stuffed stuffed full full content content peckish peckish hungry!', words.join(' '))
+  DAY_PARAMS.hungerOn = false
+  check('…and none with hunger switched off (the debug toggle)', sys.hungerWord() === null && !sys.hungry())
+  DAY_PARAMS.hungerOn = true
   DAY_PARAMS.dayLengthSec = 1440
 }
 

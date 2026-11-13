@@ -40,7 +40,7 @@
 import {
     THINGS, REWARDS, REWARD_CATS, RARE_PULL, PART_REWARD_CAT, RARITY_GATES, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
-    REWARD_VALUE, REQUISITION, FIRST_JOB, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP, GIVER_LINES, GIVER_LINE_P,
+    REWARD_VALUE, ITEM_COST_FRAC, REQUISITION, FIRST_JOB, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP, GIVER_LINES, GIVER_LINE_P,
 } from '../data/offers.js'
 import { PARTS } from '../data/parts.js'
 import { ITEM_PRICE } from '../data/shop-stock.js'
@@ -180,6 +180,14 @@ export function rewardValue (id) {
     return PARTS[id]?.price ?? ITEM_PRICE[id] ?? REWARD_VALUE[id] ?? null
 }
 
+/** FEAT-199: what taking an optional item takes off the job's cash, to the cent (data/offers.js ITEM_COST_FRAC),
+ *  CAPPED at `paid`, the cash the job actually paid (owner, 2026-11-13: "cap") — so taking the item never costs
+ *  more than the job paid and never reaches into the wallet. The offer card calls it uncapped (the pay is not
+ *  known yet; it says "at most" when the pay can come in below it), the result card with the payout: the charge. */
+export function itemCost (id, paid = Infinity) {
+    return Math.min(paid, Math.round((rewardValue(id) ?? 0) * ITEM_COST_FRAC * 100) / 100)
+}
+
 /**
  * GAME-FEEL REVIEW 2026-10-23 (R-09): THE GOOD-DEED LINE. Every card now states the third thing a job
  * pays — the deed toward the camp (SM-INV-14: 1 at B or better, ½ at C) — in the same plain terms the
@@ -230,7 +238,9 @@ export function formatGameDuration (h) {
 export function formatDue (h) {
     const t = Math.round(h * 60)   // whole minutes FIRST, so 47.9999 h reads Day 3, 12 am
     const day = Math.floor(t / 1440) + 1
-    const mins = t % 1440
+    // BUG-136: a FLOORED modulo. The opening's evening is day 0, before the clock's zero (18:00 is −6 h), and `%`
+    // keeps the sign: 22:00 on day 0 read "Day 0, -2 am".
+    const mins = ((t % 1440) + 1440) % 1440
     const hr = Math.floor(mins / 60), m = mins % 60
     const h12 = hr % 12 || 12
     return `Day ${day}, ${h12}${m ? ':' + String(m).padStart(2, '0') : ''} ${hr < 12 ? 'am' : 'pm'}`
@@ -377,7 +387,7 @@ export class OfferBoard {
     }
 
     /** FEAT-103: the requisition's lines, for the HUD and the win: [{ id, poiId, state }]. */
-    lines () { return this._lines.map(s => ({ id: s.line.id, poiId: s.poiId, state: s.state })) }
+    lines () { return this._lines.map(s => ({ id: s.line.id, poiId: s.poiId, state: s.state, grade: s.grade ?? null })) }
 
     /** Does this type have anything it could post — a source row and at least one built thing? */
     _postsAnything (type) { return postable(type).length > 0 }
@@ -569,7 +579,8 @@ export class OfferBoard {
     }
 
     /** A taken offer was finished — ANY settled result, D included. The slot locks (see header). */
-    complete (offerId, nowH) { return this._lock(offerId, nowH, 'done') }
+    /** `grade` (expedition-rewards): a requisition line's letter, kept on it for the win card. The save replays it. */
+    complete (offerId, nowH, grade = null) { return this._lock(offerId, nowH, 'done', grade) }
 
     /**
      * A taken offer was CANCELLED — the player phoned the customer (the cancel button is the only
@@ -583,11 +594,11 @@ export class OfferBoard {
      * locks (FEAT-103): it is delivered (`lineTo` 'done'), or back on the list unchanged ('live') with
      * its route memo dropped — the old mission object carries that job's settle and terms.
      */
-    _lock (offerId, nowH, lineTo) {
+    _lock (offerId, nowH, lineTo, grade = null) {
         this.advance(nowH)
         const s = this._takenSlot(offerId)
         if (!s) return false
-        if (s.line) { s.state = lineTo; s.offer.route = undefined }
+        if (s.line) { s.state = lineTo; s.offer.route = undefined; if (lineTo === 'done') s.grade = grade }
         else if (s.first) s.state = 'done'   // FEAT-147: posted once; mom has no SOURCES row to lock against
         else this._lockAt(s, this._now)
         return true
@@ -707,7 +718,8 @@ export class OfferBoard {
 
         // FEAT-142: the giver's trait — at most ONE (owner, 2026-11-01: no stacking), on its OWN stream
         // (a draw on `spec` would shift every existing offer's destination and place name). Big tipper
-        // never rides a bonus offer (its tip is the item, R-04). Kept a list: one trait or none.
+        // never rides a bonus offer: R-04's reason (its tip was the item) retired with FEAT-199, and the rule is
+        // kept so every seed's boards roll as they did — lifting it is an owner call. Kept a list: one trait or none.
         const traits = []
         if (thing.family !== 'papers') {
             const tr = stream('traits')
@@ -745,7 +757,7 @@ export class OfferBoard {
             massKg: stock ? stock * HAUL_BUNDLE_KG : massKg, stock,
             // Haul: PER PIECE — the pick multiplies it at accept. ÷ HAUL_PAR_SLACK: the haul's par is
             // that much longer and pay rides par (data/offers.js).
-            // R-04: a bonus offer pays the FULL base (its cash tip is the item, economy.js settle).
+            // R-04 / FEAT-199: a bonus offer pays the FULL line; its item is optional, off the cash.
             // R-05: a fragile tier's care premium rides the whole line (data/offers.js careMult).
             payMult: (stock ? HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
                 * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1)   // FEAT-96: freight's weight bonus on pay
@@ -1067,20 +1079,16 @@ export class OfferBoard {
         const km = (route?.distance ?? 0) / 1000
         const cargoId = sp.fragile ? sp.fragile.tier : sp.thingId
         // R-03: the card quotes BOTH ends of the line — the guaranteed base and the most a fast drive
-        // pays. Freight's tip is scaled (FREIGHT_TIP_MULT, stamped on the mission by main.js). On a
-        // bonus offer the cash tip is the item (R-04), so only the base is quoted and the TIP form says
-        // what replaces it. FEAT-114: a haul quotes a RATE — the load isn't picked yet; the picker
-        // shows the total.
+        // pays. Freight's tip is scaled (FREIGHT_TIP_MULT, stamped on the mission by main.js). FEAT-199: a
+        // bonus offer quotes the same range — its item is optional, off the cash. FEAT-114: a haul quotes a
+        // RATE — the load isn't picked yet; the picker shows the total.
         const tipMult = (sp.load && !sp.fragile ? FREIGHT_TIP_MULT : 1) * (sp.tipMult ?? 1)   // FEAT-142 Big tipper
         const range = par > 0 ? payRange(par, payTier, sp.payMult, tipMult) : null
         const money = (v) => `$${formatMoney(v)}`
         // R-20 (owner, 2026-10-24): "Pay $3.63 – $7.27 based on speed" — the range and what moves it,
-        // in one breath; a bonus offer pays its base flat (the TIP form below says what replaces the
-        // tip). A haul reads as a trade: "Bundle costs $0.25 · sells for $0.50 – $1.00 by speed".
-        const pay = !range ? null
-            : sp.stock ? `Bundle costs ${money(stockPrice(par, payTier, sp.payMult))} · sells for `
-                + (sp.bonus ? `${money(range.base)} flat` : `${money(range.base)} – ${money(range.max)} by speed`)
-            : sp.bonus ? `Pay ${money(range.base)} flat`
+        // in one breath. A haul reads as a trade: "Bundle costs $0.25 · sells for $0.50 – $1.00 by speed".
+        const pay = !range || sp.first ? null   // BUG-117: mom's casserole pays nothing
+            : sp.stock ? `Bundle costs ${money(stockPrice(par, payTier, sp.payMult))} · sells for ${money(range.base)} – ${money(range.max)} by speed`
             : `Pay ${money(range.base)} – ${money(range.max)} based on speed`
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
@@ -1092,10 +1100,10 @@ export class OfferBoard {
         // R-20: the tip is speed on fragile too; what the condition moves is the BASE (splitFragilePayout
         // pays half of it flat and half × health) — the owner asked, so the card says it.
         if (sp.fragile) terms.push('damage docks the base')
-        // A haul's card is the rate, the cost, the distance, the stock and the reward line — nothing
-        // else (owner, 2026-10-23: the timers overran the map card). The due time shows from accept.
         // The clocks ride their OWN row (`times`, 2026-10-23): one row of distance + tier + kg + both
-        // timers ran ~60 characters against the ~45 the map card fits, and spilled off it.
+        // timers ran ~60 characters against the ~45 the map card fits, and spilled off it. BUG-162: a
+        // haul shows both like every other job — its timers were dropped the same morning for that
+        // overflow, and the own row fixed it.
         const times = []
         const expiresInH = offer.expiresH - nowH
         // A never-expiring offer (Larry's) shows no timer at all (owner, 2026-10-07).
@@ -1103,8 +1111,8 @@ export class OfferBoard {
         // twice. The board clock is how long the offer stays POSTED; the other is the delivery window
         // once taken — so say each in its own words.
         // Reworded again 2026-10-24 (owner): "available for: 10h" and "time limit: 4h 22m".
-        if (!sp.stock && isFinite(expiresInH)) times.push(`available for: ${formatGameDuration(expiresInH)}`)
-        if (!sp.stock && !sp.line && !sp.first && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept; never on a job take() gives none
+        if (isFinite(expiresInH)) times.push(`available for: ${formatGameDuration(expiresInH)}`)
+        if (!sp.line && !sp.first && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept; never on a job take() gives none
         return {
             family: sp.family,
             badge: jobBadge(sp),
@@ -1117,13 +1125,17 @@ export class OfferBoard {
             pay,
             terms,
             times,
-            // R-04/R-07: the TIP form — the item that replaces the cash tip, with its value and its gate.
-            // Larry's card never rolls one (papers never bonus).
-            bonus: sp.bonus ? `Tip: ${sp.bonus.name}${rewardValue(sp.bonus.rewardId) != null ? ` (${money(rewardValue(sp.bonus.rewardId))})` : ''}`
+            // FEAT-199 (owner, 2026-11-11): the OPTIONAL item — earned at its gate, taken off the cash at the
+            // result card: "Optional item: Compressor (−$20) — if B or better". Larry's card never rolls one.
+            // The price is capped at what the job pays (itemCost), so where the pay can come in below it the card
+            // says "at most": under the quoted base, or on a haul or a site (paid per piece, so no floor) or a
+            // fragile job (damage docks up to half the base).
+            bonus: sp.bonus ? `Optional item: ${sp.bonus.name} (−${money(itemCost(sp.bonus.rewardId))}`
+                + `${itemCost(sp.bonus.rewardId) > (!range || sp.stock || sp.targets ? 0 : sp.fragile ? range.base / 2 : range.base) ? ' at most' : ''})`
                 + ` — ${gateLine(sp.bonus.gate, sp.family, this._region, cargoId, km)}` : null,
             // R-09: the deed line — what this job adds toward the camp, and the number behind it.
             // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
-            deed: sp.family === 'papers' ? null
+            deed: sp.family === 'papers' || sp.first ? null   // BUG-117: …and earns no deed
                 : sp.deeds === 'none' ? 'Deed: none — off the books'
                 : deedLine(sp.family, this._region, cargoId, km, sp.massKg) + (sp.deeds === 'extraHalf' ? ' · +1/2 at C or better' : ''),
             // FEAT-142: bottom-left of the card, the trait's name and what it does to THIS offer, in the

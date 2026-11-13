@@ -16,6 +16,16 @@ relates_to: >
 
 # FEAT-43: Story mode fixed region — remaining slices
 
+**State (alpha audit, Lane A, 2026-11-07):** slice 1 is superseded: the POI system (`src/poi.js`, FEAT-21/74 and Places and Missions) gives
+every mission source in the region. Slice 3's **mode selector** is built: the main menu's new-game page carries the
+mode as a row (FEAT-156, `index.html` `#mm-new`). The diegetic boundary and the unlocked-set confinement are FEAT-28,
+which is beta. **The one alpha slice left is slice 2, closing the sandbox:** `DEBUG_LOCKOUT` is still `false`
+(`src/story.js:52`) and `isTeleportEnabled()` still admits `'story'` (`src/main.js:1223`). **Ruled 2026-11-07 (owner):
+"leave teleport and debug until right before we drop alpha. they're useful for testing. even then we'll just hide it
+behind a cheat or debug mode"** — so slice 2 is the alpha cut's last step, and it HIDES the tools behind a cheat /
+debug mode rather than deleting the path (the owner held it open on 2026-07-26). FEAT-41's "debug tooling
+correctly gated by mode" is the same switch.
+
 **Phase 1 shipped and is on main** (`272e7ce` story-mode sandbox → `0597190` merge, plus
 `f3e4be0` region-confined Quick Job and the PERF-26 route-cache split). The worktree is gone.
 The full implementation record — freeze design, the routing-vs-terrain cost table, the

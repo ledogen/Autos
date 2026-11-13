@@ -338,11 +338,7 @@ export class Centerline {
                 if (k > 1) i += k - 1
             }
         }
-        // One projection refine: step along/against the tangent toward the foot of the perpendicular.
-        this._poseInto(bestS, q)
-        const along = (x - q.x) * Math.cos(q.theta) + (z - q.z) * Math.sin(q.theta)
-        bestS = Math.max(lo, Math.min(hi, bestS + along))
-        this._poseInto(bestS, q)
+        bestS = this._refineFoot(x, z, bestS, lo, hi, q)
         return {
             s: bestS,
             x: q.x, z: q.z,
@@ -350,5 +346,25 @@ export class Centerline {
             tangent: { x: Math.cos(q.theta), z: Math.sin(q.theta) },
             curvature: q.kappa,
         }
+    }
+
+    // Refine a grid foot `s` (in [lo, hi]) of (x, z) to the foot of the perpendicular; leaves the pose at it in `q`.
+    // PERF-39: the step is the EXACT one on the pose's own primitive (a line or a circular arc): with (u, v) the point's
+    // offset along / across (+ = right) the tangent and w = 1 + κ·v, the foot lies atan2(κ·u, w)/κ further on. The plain
+    // tangent step (u) it replaces is exact only on a line: it left the foot up to 0.22 m short at the deck edge of a 12 m
+    // bend, and the carve's arc with it, jumping as the grid winner changed. Repeated only when a step lands on another
+    // primitive; past the bend's centre (w ≤ 0) it is the plain step.
+    _refineFoot(x, z, s, lo, hi, q) {
+        for (let it = 0; it < 4; it++) {
+            this._poseInto(s, q)
+            const c = Math.cos(q.theta), sn = Math.sin(q.theta), dx = x - q.x, dz = z - q.z
+            const u = dx * c + dz * sn, w = 1 + q.kappa * (dx * sn - dz * c)
+            const step = (q.kappa && w > 0) ? Math.atan2(q.kappa * u, w) / q.kappa : u
+            const next = Math.max(lo, Math.min(hi, s + step))
+            if (Math.abs(next - s) < 1e-9) break
+            s = next
+        }
+        this._poseInto(s, q)
+        return s
     }
 }

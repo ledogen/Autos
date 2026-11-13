@@ -424,6 +424,23 @@ export class DamageScreen {
       + `</div>`
     document.body.appendChild(this.screen)
     this.parts = [...this.screen.querySelectorAll('[data-track]')]   // pictogram only: the list is still empty
+    // FEAT-196 (owner, 2026-11-12): ←/→ on the pad walk each axle in the diagram's order, inside out —
+    // damper, spring, body, brake, tire, wheel — instead of by distance, where a tire and its wheel share
+    // a centre and the body side's centre is mid-truck. menu-nav.js asks the card through navStep.
+    const at = (t, side = 0) => this.screen.querySelectorAll(`.ds-part[data-track="${t}"]`)[side]   // a shared axle part: left first
+    this._navRows = ['Front', 'Rear'].map((ax) => {
+      const c = ax[0], half = (s, side) => [`damper${ax}`, `spring${ax}`, `armor${s}`, `brake${ax}`].map(t => at(t, t.startsWith('armor') ? 0 : side))
+      return [at(`wheel${c}L`), at(`tire${c}L`), ...half('Left', 0).reverse(), ...half('Right', 1), at(`tire${c}R`), at(`wheel${c}R`)]
+    })
+    this._navRow = this._navRows[0]
+    this.screen.navStep = (el, dx, dy) => {
+      if (dy) return null
+      const rows = this._navRows.filter(r => r.includes(el))   // a body side is on both axles: stay on the last
+      if (!rows.length) return null
+      const row = this._navRow = rows.includes(this._navRow) ? this._navRow : rows[0]
+      const live = row.filter(p => p === el || !this._job || p.classList.contains('pickable'))   // pick mode: only what it offers
+      return live[live.indexOf(el) + dx] ?? null
+    }
     this.listEl = this.screen.querySelector('.ds-list')
     this.pickEl = this.screen.querySelector('.ds-pick')
     this.titleEl = this.screen.querySelector('.ds-title')

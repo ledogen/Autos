@@ -9,7 +9,9 @@ board, AUTO SERVICE (generic: the shop's name rolls per seed).  Bay A, the playe
 lift, lowered: its runways are tiled into the slab, so the truck drives straight onto it and the wheels
 need nothing new (they ride the analytic pad surface, physics.js).  Bay B has the same lift RAISED with
 its scissor arms showing: that is what tells you the flat yellow plates in bay A are a lift.
-FEAT-178 (Lane B) snaps the camera to bay A's inside back corner while the service screen is open.
+FEAT-178 (Lane B) snaps the camera to bay B's back corner while the service screen is open: across the
+raised lift to the parked truck's driver-side front corner (owner, 2026-11-07: "move it to the other front
+corner ... in the bay next to the one you park in").
 
     ServiceStation   one mesh, 9 materials, 1 image (the 1024 x 256 sign atlas)
 
@@ -96,7 +98,7 @@ LIFT_A, LIFT_B = -3.95, 0.35        # bay centre lines
 LIFT_Y = 0.20               # where the truck's centre parks (runways centred here)
 RUN_W, RUN_L = 0.66, 4.60   # each runway
 PIT = 0.03                  # dark gap round the lift
-RAISE = 1.15                # lift B's deck top
+RAISE = 0.90                # lift B's deck top: low enough to clear the camera's view of the truck, still raised
 RUN_T = 0.12
 
 # --- the office front ---
@@ -109,10 +111,10 @@ SIGN_X, SIGN_Z, SIGN_T = (-3.6, 0.0), (3.63, 4.53), 0.06
 TEX_W, TEX_H = 1024, 256
 SIGN_FONT = "/System/Library/Fonts/Supplemental/Arial Black.ttf"
 
-# --- the FEAT-178 camera: bay A's inside back corner, end-wall side (Blender frame) ---
-CAM_EYE = (-5.9, -3.6, 2.8)
+# --- the FEAT-178 camera: bay B's back corner, partition side (Blender frame) ---
+CAM_EYE = (2.3, -3.6, 3.0)
 CAM_LOOK_Z = 0.9
-CAM_FOV = 55
+CAM_FOV = 60                # main.js's camera (the registry's fov is for the render only)
 
 MATS = {
     #  name             base colour (linear)        rough  emissive
@@ -428,8 +430,7 @@ def lift_b(p):
 # Dressing
 # ---------------------------------------------------------------------------
 def bench(p):
-    """Bay A's back wall: a steel bench and a pegboard of tools over it (the camera sees it past the
-    truck's nose)."""
+    """Bay A's back wall: a steel bench and a pegboard of tools over it, ahead of the truck's nose."""
     x0, x1, y0, y1 = -5.6, -3.0, IY0, IY0 + 0.60
     box(p, (x0, y0, 0.86), (x1, y1, 0.92), "ShopSteel", skip={0})
     for xa, xb in ((x0, x0 + 0.05), (x1 - 0.05, x1)):
@@ -457,7 +458,7 @@ def bench(p):
 
 
 def tyre_rack(p):
-    """Bay A's end wall: a steel rack, three tyres on each of two shelves (clear of the camera's line)."""
+    """Bay A's end wall: a steel rack, three tyres on each of two shelves (behind the truck in the camera's view)."""
     x0, x1, y0, y1 = IX0, IX0 + 0.45, -0.6, 1.2
     for z in (0.08, 0.86):
         box(p, (x0, y0, z), (x1, y1, z + 0.04), "ShopSteel", skip={3})

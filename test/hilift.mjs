@@ -98,7 +98,7 @@ console.log(`balance: wheels ${bal.wheelsDeg.toFixed(1)}°, roof ${bal.roofDeg.t
   check(Math.abs(h.phi) < 10, `back on its wheels (φ ${h.phi.toFixed(1)}°)`)
   check(h.heaveS < HILIFT.maxS, `cut at the wheels' balance point, not the cap (${h.heaveS.toFixed(2)} s)`)
   // heave() settled 3 s after the cut, so 2 s of the 5 s cooldown remain.
-  check(jack.refusal(run.vs, run.t, false) === 'catching your breath', `the cooldown refuses (${jack.refusal(run.vs, run.t, false)})`)
+  check(jack.refusal(run.vs, run.t, false) === 'catching your breath · 2 s', `the cooldown refuses (${jack.refusal(run.vs, run.t, false)})`)
   check(!jack.start(-1, run.vs, run.t, false), 'start() honours the refusal')
   steps(run, 150)
   check(jack.refusal(run.vs, run.t, false) === 'the truck is on its wheels', `on its wheels refuses (${jack.refusal(run.vs, run.t, false)})`)
@@ -139,8 +139,10 @@ console.log(`balance: wheels ${bal.wheelsDeg.toFixed(1)}°, roof ${bal.roofDeg.t
           run.peak = 0
           let presses = 0, b = settled
           while (b !== 0 && presses < 2) {
-            // A second press heaves the way the truck now needs: toward its wheels from the side it lies on.
-            const d = presses === 0 || b === 2 ? dir : -b
+            // A second press heaves the way the truck now needs: toward its wheels from the side it lies on,
+            // or, still on its roof, the other way — on a cross-slope the jack can't lift it over the uphill
+            // roof rail (15°: ~14.6 kN·m against its 14.3), and a player tries the other side.
+            const d = presses === 0 ? dir : b === 2 ? -dir : -b
             heave(run, jack, d)
             run.t += HILIFT.cooldownS
             presses++

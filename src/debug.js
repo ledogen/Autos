@@ -291,6 +291,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // material now, so the slider pushes the new value into the engine on change.
   driveFolder.add(params, 'bodyRestitution', 0, 0.6, 0.01).name('Body Bounce (restitution)')
     .onChange(v => { window.__setBodyBounce?.(v) })   // hood/cab/bed hulls only — slab and wheel cores stay pinned at 0
+  // FEAT-193: the body's side grip (the flank hulls), by surface. Engine materials, so the change is pushed in.
+  driveFolder.add(params, 'bodyGripOffroad', 0, 1.5, 0.05).name('Body Grip off-road (μ)').onChange(() => window.__setBodyGrip?.())
+  driveFolder.add(params, 'bodyGripRoad', 0, 1.5, 0.05).name('Body Grip road (μ)').onChange(() => window.__setBodyGrip?.())
 
   // FEAT-36/FEAT-48: what the throw key (F) launches. 'paper' is the scoring newspaper; 'barrel'
   // and 'rock' spawn dynamic engine debris to drive over (src/debris.js) — the physics test rig.
@@ -338,7 +341,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // FEAT-120 contact one-shots (src/contact-audio.js) — read live every frame.
   driveFolder.add(params, 'contactAudioEnabled').name('Contact Sounds')
   driveFolder.add(params, 'contactVolume', 0, 1, 0.05).name('Bump / Landing Volume')
-  driveFolder.add(params, 'brakeSquealVolume', 0, 1, 0.05).name('Brake Squeal Volume')
   // FEAT-120 ambience (src/ambient-audio.js) — read live every frame.
   driveFolder.add(params, 'ambientAudioEnabled').name('Ambient Sounds')
   driveFolder.add(params, 'cricketVolume', 0, 1, 0.05).name('Cricket Volume')
@@ -367,6 +369,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   tiresFolder.add(params, 'tireCarcassStiffness', 50000, 300000, 5000).name('Carcass / Rim Rate (N/m)')
   tiresFolder.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
   tiresFolder.add(params, 'tireDampingDebris', 50, 4000, 50).name('Rock Damping (N·s/m)')   // BUG-99: tire vs debris only
+  tiresFolder.add(params, 'tireStopDampingRatio', 0, 1.5, 0.05).name('On-Stop Tire Damping (ζ)')   // BUG-140: while a strut is on its bump stop
   // Out-of-round tire; 0 = perfectly round. No callback: vehicle-model.js refreshWheelRunout
   // re-bakes the tire MESH on the next frame, so the visible egg matches the contact radius the
   // physics is using.
@@ -494,6 +497,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // puncture does (the bang and the alert come off `popped`).
   dmgFolder.add({ f: () => { const d = _damage(); const i = d ? d.flat.indexOf(false) : -1; if (i < 0) return
     d.flat[i] = true; d.popped.push(i); d.publish(params); _sync() } }, 'f').name('Puncture a Tire')
+  // BUG-160: the order a corner fails in — a road rim strike pinch-flats the inflated tire, and the wheel
+  // under air yields only this many times past its flat-tire yield.
+  dmgFolder.add(DAMAGE_PARAMS, 'rimPinchRoadMult', 4, 60, 1).name('Rim pinch pops tire (x wheel load)')
+  dmgFolder.add(DAMAGE_PARAMS, 'rimInflatedMult', 1, 4, 0.1).name('Wheel yield under air (x)')
   void _readout
 
   // ── Engine temperature (FEAT-51) ──────────────────────────────────────────────────────────────

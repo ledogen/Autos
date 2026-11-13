@@ -1,7 +1,7 @@
 ---
 id: FEAT-42
 type: feature
-status: open
+status: open — the alpha slice is done (the run save); metaState is SM-4
 opened: 2026-07-21
 rescoped: 2026-07-31 — two stores, not one (see "Reconciliation")
 severity: major
@@ -15,6 +15,14 @@ depends_on: nothing to build the stores; consumers land with SM-1/SM-3/SM-4
 blocks: SM-4's run lifecycle — a 4–6 h run is unplayable without a resume
 ---
 lane: Spare
+
+**Open for `metaState` only (alpha audit, Lane A, 2026-11-07):** the alpha slice, suspend and resume, is done and on main. The rolling
+autosave (`src/save.js`, main.js `_autosave`), main-menu **continue**, jobs that survive a save, and the run's end
+deleting the save (`_discardRunSave`, called by FEAT-146's `_endRun`) are all built. Gates: `test/run-save.mjs`,
+plus cdp-smoke's `save` step (save & exit, and a killed page) and its `endings` step ("the run save outlived the
+run"). The unchecked boxes under Acceptance are the 2026-07-21 design. The owner amended it on 2026-10-29: a rolling
+autosave, not a read-once save. The checksum was skipped on purpose (see below). What is left is `metaState` (the
+garage, story keys, export/import), which is SM-4 ("the death→new-run loop and the garage stay SM-4", DESIGN.md).
 
 ## Progress 2026-10-29 — the rolling autosave (Spare lane, feature/spare)
 

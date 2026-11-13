@@ -503,10 +503,26 @@ export const REQUISITION = [
 ]
 
 /**
+ * expedition-rewards (owner, 2026-11-07: "2, 3 and 4. great ideas"), option 2: a requisition line delivered at A or
+ * better hands supplies back for the lines still to go. `item` is granted (data/items.js); `freeRepair` is one repair at
+ * an auto shop's bench for nothing; `rest` puts the driver's energy at full, a night's worth, with no time passing.
+ * The owner's list named a food line, which the requisition does not have; the meal goes to the signs line, which had
+ * no supply of its own [DEFAULT]. PLACEHOLDER words on the result card.
+ */
+export const LINE_SUPPLY = {
+    reqFuel:     { item: 'jerryCan',    text: 'a full jerry can' },
+    reqGear:     { item: 'tirePlugKit', text: 'a tire plug kit' },
+    reqSigns:    { item: 'packedLunch', text: 'a meal' },
+    reqCrew:     { freeRepair: 1,       text: 'one free repair at any auto shop' },
+    reqFirewood: { rest: true,          text: "a full night's rest" },
+}
+
+/**
  * FEAT-147: THE FIRST JOB — the opening's courier run from mom's to Larry's (owner, 2026-11-02: a
  * courier TO Larry, not his paper round; 2026-11-05: mom sends it, scripted). One fixed offer at mom's,
  * posted once per run (src/offer-board.js `f0` slot): when the opening's evening ends, or at go-live on a skip (FEAT-170) — mom has no SOURCES row and posts nothing
- * else. Same rules as any courier job: pay, deadline, deed. PLACEHOLDER words (the owner writes them).
+ * else. A courier job with no deadline and no abandon (BUG-117), and no pay and no deed (owner, 2026-11-07: "a letter,
+ * no pay"): its result card is the tutorial's grade. PLACEHOLDER words (the owner writes them).
  */
 export const FIRST_JOB = {
     id: 'firstJob', phrase: 'a casserole', family: 'delivery', massKg: 3, to: ['larry'],
@@ -689,20 +705,29 @@ export const BONUS_CHANCE = 0.40
 // a bonus offer whose every destination is nearer simply does not plan, and is not posted as takeable.
 export const BONUS_LEG_MIN_M = 1500
 
-// BONUS_PAY_MULT (0.5× cash on a bonus offer) RETIRED — GAME-FEEL REVIEW 2026-10-23 (R-04): on a bonus
-// offer the ITEM IS THE TIP. Base pay is the full line's base, the cash tip is zero, and the item is
-// earned at its gate (economy.js settle). The reason to skip one is the same as before — you want
-// cash — but now the card can say exactly what is traded: the speed tip for the item.
+// BONUS_PAY_MULT (0.5× cash on a bonus offer) RETIRED — GAME-FEEL REVIEW 2026-10-23 (R-04). R-04's own rule
+// (the item IS the tip: no cash tip on a bonus offer) is RETIRED too — FEAT-199 (owner, 2026-11-11: "make the
+// item reward Something the player can choose to take or leave … they can choose to go with the cash"). A
+// bonus offer pays the full cash line like any job, and its item is OPTIONAL: earned at its gate, the result
+// card offers the full cash, or the cash less ITEM_COST with the item.
+
+/**
+ * FEAT-199: what taking an optional item costs off the job's cash, as a fraction of its value (rewardValue
+ * in src/offer-board.js: its part price, its shelf price, or REWARD_VALUE below — day-1 dollars). The ONE
+ * knob: offer-board.js itemCost reads it, and the card and the result card both print that.
+ * 1 [DEFAULT]: the shop price (the ticket's default until the owner rules).
+ */
+export const ITEM_COST_FRAC = 1
 
 /**
  * GAME-FEEL REVIEW 2026-10-23 (R-07): what a reward is WORTH, in day-1 dollars, for the card's "Tip:
  * Compressor ($20)". A carrot with no number on it can't be weighed against the cash tip it replaces.
- * Parts and shelf items read their own price (data/parts.js, data/shop-stock.js ITEM_PRICE); these
- * are the consumables and meals from items.md §1/§7. A price, never a stat (SM-INV-10).
+ * Parts and shelf items read their own price (data/parts.js, data/shop-stock.js ITEM_PRICE — the storefronts'
+ * coffee, meals and field repairs too, FEAT-104); these are the rest. A price, never a stat (SM-INV-10).
  */
 export const REWARD_VALUE = {
-    coffee: 3, energyDrink: 4, chiliDog: 5, dinnerMeal: 5, emergencyGas: 8,
-    zipTies: 8, ductTape: 8, stopLeak: 8, rubberBedMat: 8,
+    dinnerMeal: 5,
+    zipTies: 8, stopLeak: 8, rubberBedMat: 8,
     // FEAT-168 [DEFAULT]: the school lunch and the camp gear the shelf doesn't price
     schoolLunch: 5, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,
 }

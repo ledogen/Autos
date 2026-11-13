@@ -86,6 +86,8 @@ export class InventorySystem {
     equippedIndex () { return runInventory.entries.findIndex(e => e.equipped) }
     /** What comes to camp: the equipped pack's contents (items.md §2c) — FEAT-66 renders exactly this. */
     packed () { return runInventory.entries.find(e => e.equipped)?.contents ?? [] }
+    /** How far past the shoulder camp may be (items.md §2c): the equipped pack's reach, camp's tether (FEAT-182). */
+    reachM () { return ITEMS[runInventory.entries.find(e => e.equipped)?.id]?.reachM }
     /** Camp sleep's recovery bonus: the `rest` of everything in the equipped pack (items.md §2b). */
     restBonus () { return this.packed().reduce((s, id) => s + (ITEMS[id].rest ?? 0), 0) }
     /** The vibe segments packed gear fills on the chosen site (camp.js vibeAssist). */
@@ -201,19 +203,25 @@ export class InventorySystem {
      * slot the new one left.
      */
     packItem (index, packIndex = this.equippedIndex()) {
+        if (!this.canPack(index, packIndex)) return false
         const e = runInventory.entries[index], p = runInventory.entries[packIndex]
-        if (!e || !_isPack(p) || ITEMS[e.id].kind !== 'camp') return false
         const bedAt = _bed(e.id) ? p.contents.findIndex(c => _bed(c) === _bed(e.id)) : -1
         if (bedAt >= 0) {
             runInventory.entries[index] = { id: p.contents[bedAt], n: 1 }
             p.contents[bedAt] = e.id
         } else {
-            if (p.contents.length >= ITEMS[p.id].packSlots) return false
             p.contents.push(e.id)
             runInventory.entries.splice(index, 1)
         }
         this._changed()
         return true
+    }
+
+    /** Whether packItem(index, packIndex) would go: a camp item, a pack, and a free slot in it or a bed layer to swap. */
+    canPack (index, packIndex = this.equippedIndex()) {
+        const e = runInventory.entries[index], p = runInventory.entries[packIndex]
+        if (!e || !_isPack(p) || ITEMS[e.id].kind !== 'camp') return false
+        return p.contents.length < ITEMS[p.id].packSlots || (!!_bed(e.id) && p.contents.some(c => _bed(c) === _bed(e.id)))
     }
 
     /** Move pack slot `slot` back into a free truck slot. The equipped pack keeps its bedding. */

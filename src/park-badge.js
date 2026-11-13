@@ -26,6 +26,8 @@ PAD_CAP.set('space', PAD_CAP.get(' '))
 // X / Y in a circle, a stick as L or R in a circle. Bumpers, triggers, Start and View stay keycaps.
 const STICK = { 'left stick': 'L', 'right stick': 'R', 'left stick click': 'L', 'right stick click': 'R' }
 function padLabel (pad) {
+  const combo = /^([ABXY]) \+ (.+)$/.exec(pad)   // FEAT-195: "B + ↑" — hold the round button, press the other
+  if (combo) return `${padLabel(combo[1])}<span class="kc-pad">+${combo[2]}</span>`
   const round = /^[ABXY]$/.test(pad) ? pad : STICK[pad]
   return round ? `<span class="kc-pad kc-round">${round}</span>` : `<span class="kc-pad">${pad}</span>`
 }

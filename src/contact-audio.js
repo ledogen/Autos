@@ -1,14 +1,14 @@
 /**
  * src/contact-audio.js — FEAT-120: the truck's contact one-shots. All synthesized, on the one shared
  * AudioContext and the world bus (engine-audio.js). The owner kept each take on 2026-11-02 ("cheap but
- * acceptable for now"; the squeal QUIET). The prototypes are tools/audio-proto/proto.js.
+ * acceptable for now"). The prototypes are tools/audio-proto/proto.js.
  *
  *   bump-stop clunk — a strut bottoming on its rubber stop: a low thump 90 → 50 Hz in 40 ms and a
  *                     10 ms metallic click near 2 kHz. One per contact, at its peak force.
  *   landing thud    — after air, once per landing (not per wheel): a kick body 120 → 38 Hz, level
  *                     from the vertical speed at touchdown, then a few suspension-rattle ticks.
- *   brake squeal    — a stop from under 15 km/h on a moderate pedal, on a random share of stops: a
- *                     2–4 kHz sine with a slight vibrato, sagging as the disc slows.
+ * The brake squeal is gone (owner, 2026-11-07: "seems to trigger at random times and is way too loud.
+ * remove it for now"). Its take stays in tools/audio-proto/proto.js.
  *
  * stepContactAudio runs on the FIXED physics step (main.js, after the damage step) because the
  * signals it reads — vehicleState.bumpForce and the per-wheel tire loads — are per-step peaks.
@@ -19,7 +19,6 @@ import { getAudioContext, getWorldBus, whiteNoiseBuffer } from './engine-audio.j
 
 let enabled = true
 let volume = 0.6          // 0..1, the bump stop and the landing
-let squealVolume = 0.3    // 0..1, the brake squeal on its own (owner: QUIET)
 let noise = null
 
 const BUMP_QUIET_N = 2000     // a bump-stop contact under this peak is silent
@@ -27,21 +26,15 @@ const BUMP_FULL_N = 30000     // full clunk at this peak (the damage model's fro
 const AIR_MIN_S = 0.25        // all four wheels off this long before a touchdown counts as a landing
 const LAND_QUIET_MS = 1       // vertical speed at touchdown [m/s]: silent below …
 const LAND_FULL_MS = 8        // … full above
-const SQUEAL_MAX_MS = 15 / 3.6   // the squeal only starts under 15 km/h
-const SQUEAL_REARM_MS = 6        // a new stop needs the truck back above this first
-const SQUEAL_PEDAL = [0.15, 0.7] // moderate pedal: a panic stop does not squeal
-const SQUEAL_CHANCE = 0.35       // share of qualifying stops that squeal [DEFAULT]
 
 const bumpPeak = [0, 0, 0, 0]
 const bumpState = [0, 0, 0, 0]   // per corner: 0 off the stop · 1 force rising · 2 clunked (until it lets go)
 let airS = 0
-let squealArmed = true
 
 /** Debug-menu controls, read every frame by main.js. */
-export function setContactAudio (on, vol, squealVol) {
+export function setContactAudio (on, vol) {
   enabled = !!on
   volume = vol
-  squealVolume = squealVol
 }
 
 const clamp01 = x => Math.max(0, Math.min(1, x))
@@ -95,30 +88,11 @@ export function playLanding (s = 0.6) {
   }
 }
 
-/** Brake squeal lasting `dur` seconds (the time left to a standstill). */
-export function playBrakeSqueal (dur = 1.2) {
-  const ctx = live(); if (!ctx) return
-  const t = ctx.currentTime, o = out(ctx, 0.06 * squealVolume)
-  const f = 2000 + Math.random() * 2000
-  const osc = ctx.createOscillator(); osc.frequency.value = f
-  const vib = ctx.createOscillator(); vib.frequency.value = 5.5
-  const vg = ctx.createGain(); vg.gain.value = f * 0.006
-  vib.connect(vg); vg.connect(osc.frequency)
-  osc.frequency.setValueAtTime(f, t); osc.frequency.linearRampToValueAtTime(f * 0.94, t + dur)   // sags as the disc slows
-  const e = ctx.createGain()
-  e.gain.setValueAtTime(0.0001, t)
-  e.gain.exponentialRampToValueAtTime(1, t + 0.03)
-  e.gain.setValueAtTime(1, t + dur * 0.6)
-  e.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-  osc.connect(e); e.connect(o)
-  osc.start(t); vib.start(t); osc.stop(t + dur + 0.02); vib.stop(t + dur + 0.02)
-}
-
 /**
  * One fixed physics step. `tireFz` = the step's per-wheel tire loads (≤ 0 = that wheel is in the
- * air, physics.js D-14); `speed` = ground speed [m/s].
+ * air, physics.js D-14).
  */
-export function stepContactAudio (vehicleState, tireFz, speed, dt) {
+export function stepContactAudio (vehicleState, tireFz, dt) {
   // Bump stops: ONE clunk per contact, sized by its peak — played the step the force stops rising.
   // A truck settling and bouncing on its stops without letting go does not clunk again.
   // ponytail: a harder hit while still resting on the stop is silent; re-arm on peak × 1.5 if missed.
@@ -142,13 +116,5 @@ export function stepContactAudio (vehicleState, tireFz, speed, dt) {
       if (vy > LAND_QUIET_MS) playLanding(clamp01((vy - LAND_QUIET_MS) / (LAND_FULL_MS - LAND_QUIET_MS)))
     }
     airS = 0
-  }
-
-  // Brake squeal: one roll per stop, as the truck slows through 15 km/h on a moderate pedal.
-  const pedal = vehicleState.brake ?? 0
-  if (speed > SQUEAL_REARM_MS) squealArmed = true
-  else if (squealArmed && down && speed < SQUEAL_MAX_MS && speed > 0.5 && pedal >= SQUEAL_PEDAL[0] && pedal <= SQUEAL_PEDAL[1]) {
-    squealArmed = false
-    if (Math.random() < SQUEAL_CHANCE) playBrakeSqueal(Math.min(1.5, Math.max(0.4, speed / 3)))
   }
 }

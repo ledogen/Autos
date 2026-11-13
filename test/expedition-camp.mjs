@@ -29,7 +29,8 @@ import { parseWorldSeed } from '../src/seed.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { OfferBoard } from '../src/offer-board.js'
-import { REQUISITION } from '../data/offers.js'
+import { REQUISITION, LINE_SUPPLY } from '../data/offers.js'
+import { ITEMS } from '../data/items.js'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { validateArea, discArea } from '../src/world-validate.js'
 import { MissionSystem, buildGraphAdj, REGION_MARGIN } from '../src/mission.js'
@@ -263,9 +264,16 @@ for (const s of SEEDS) {
     check('abandon puts it back unchanged (and says so)', board.abandon(o.id, 7) === true
         && board.offers(camp.id, 7).some((x) => x.id === o.id) && o.route === undefined)
     board.take(o.id, 7, 300)
-    check('complete takes it off for good (and says so)', board.complete(o.id, 8) === true && board.lines().filter((l) => l.state === 'done').length === 1
+    check('complete takes it off for good (and says so)', board.complete(o.id, 8, 'A') === true && board.lines().filter((l) => l.state === 'done').length === 1
         && !board.offers(camp.id, 200).some((x) => x.id === o.id) && board.offers(camp.id, 200).length === REQUISITION.length - 1)
+    // expedition-rewards: a delivered line keeps its letter for the win card; a line abandoned first never had one.
+    check('a delivered line keeps its grade; the others have none', board.lines().filter((l) => l.grade).map((l) => l.grade).join() === 'A'
+        && board.lines().filter((l) => l.state !== 'done').every((l) => l.grade === null))
 }
+// expedition-rewards option 2: every line hands a supply back, and every supply item is real.
+check('every requisition line has a supply, and every supply item is an item',
+    REQUISITION.every((l) => LINE_SUPPLY[l.id]?.text) && Object.values(LINE_SUPPLY).every((s) => !s.item || ITEMS[s.item]),
+    REQUISITION.filter((l) => !LINE_SUPPLY[l.id]).map((l) => l.id).join())
 
 if (fails) { console.log(`\nexpedition-camp: ${fails} FAIL`); process.exit(1) }
 console.log('\nexpedition-camp: all ok')

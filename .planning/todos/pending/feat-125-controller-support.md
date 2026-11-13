@@ -127,8 +127,9 @@ run.
 
 ## Still open on this ticket
 
-- ~~Button glyphs in prompts (`park-badge.js keycap`).~~ Done — see the audit below. The tutorial's lesson cards are
-  the one place left: their `dlg-key` spans name keyboard keys (Lane A's `data/dialogue.js` + the word stream).
+- ~~Button glyphs in prompts (`park-badge.js keycap`).~~ Done — see the audit below. ~~The tutorial's lesson cards are
+  the one place left~~ — done in 49f8f24b: a `dlg-key` with one pad button (W S M V Tab Space) renders as `keycap()`,
+  A / D and F carry their own `kc-kb` / `kc-pad` halves (FEAT-174), pinned in cdp-smoke's `pad` step. (alpha audit, Lane A, 2026-11-07)
 - ~~Pad navigation of the in-game screens (inventory, map, offer board, damage).~~ Done (FEAT-133 / BUG-109 / the audit).
 - Acceptance re-check in story mode with real hardware (the owner).
 

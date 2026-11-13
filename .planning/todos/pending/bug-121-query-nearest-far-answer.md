@@ -1,7 +1,7 @@
 ---
 id: BUG-121
 type: bug
-status: open
+status: open — fixed on land/bug-121 (f27962c8); the owner said land it (bug121-spawn (a), 2026-11-07) — landing pending
 opened: 2026-11-07
 severity: major
 source: Lane A, found building BUG-118 (the tutorial GPS re-plan), reported to the orchestrator 2026-11-07
@@ -48,27 +48,74 @@ inside a footprint are unchanged.
       `queryNearest`, so POI or carve placement may move).
 - [ ] BUG-118's smoke workaround (strayCheck seats on the road) can drop back to an off-road stray.
 
-## Measured on random seeds (Spare, 2026-11-07, before any fix)
+## Fixed on `land/bug-121` (Spare, 2026-11-07), waiting on the owner
 
-`wip/bug-121/probe.mjs`, seeds 1041979632, 2741256656, 2719853694 and 4162213362 (`wip/bug-121/seeds.txt`).
-Queries step sideways off random road points, inside a 1100 m disc of a 1400 m window. Each answer is compared with
-brute force: the nearest point on any run's polyline.
+**The fix (`road.js` `queryNearest`).**
+- A sample is interior only when the query sits **beside** it: `|signedLat| ≤ footprintHW` and also
+  `|along| ≤ ds`, the sample spacing.
+- An interior sample therefore lies within `intR2 = footprintHW² + ds²` of the query. That radius bounds the tangent
+  work, and it makes the slice skip exact: skip when no sample can beat `extBestD2` and none can be interior.
 
-| offset from the road | answers > 5 m past the true nearest road | worst |
-|---|---|---|
-| 0, 4, 7 m (inside the 7.5 m footprint) | 0 / 627 each | +0.9 m |
-| 9 m | 547 / 627 (87 %) | +189 m |
-| 12 m | 557 / 627 | +186 m |
-| 20 m | 551 / 627 | +178 m |
-| 40 m | 512 / 627 | +156 m |
+**Probe** (`wip/bug-121/probe.mjs`, 4 random seeds, 627 queries per offset):
 
-**Cause confirmed in `road.js` `queryNearest`.** The D4 interior test is `|signedLat| ≤ footprintHW`, measured
-against the sample's tangent line, and that line is infinite. Nothing bounds the along-road offset. Any sample within
-the 200 m search radius whose tangent line passes within 7.5 m of the query counts as interior, and an interior
-sample beats the true nearest.
+| offset | answers > 5 m past the nearest road, main → fix | worst | µs per query |
+|---|---|---|---|
+| 0–7 m | 0 → 0 | +0.9 m both | 45–69 → 37–71 |
+| 9–40 m | 512–557 → **0** | +189 m → **+0.2 m** | 65–77 → **35–37** |
 
-**Fix to build (after the BUG-105 landing):** count a sample as interior only when the along-road offset is also
-within the sample spacing (about 2 m). It is one compare in the physics hot path, with no allocation. Then:
-- rerun the probe: the 9–40 m rows go to 0, and the 0–7 m rows stay at 0;
-- run `fingerprint-world`. Expect POI and carve moves, because `poi.js` and `terrain.js` read `queryNearest`
-  off-footprint, and nearly every such query was wrong.
+**Gate:** `query-nearest`, registered. Two random seeds; no answer may be more than 2 m past brute force. On main it
+fails with 1585 answers.
+
+**Fingerprint vs main `bdaa307c`:** ALL IDENTICAL in all six windows (network through props).
+
+**The visible change is the spawn.** `resolveSpawn`, and its replica `test/lib/spawn-decision.mjs`, take the nearest
+road to the seed's probe point, which is usually off the road. The spawn is the story region's centre.
+
+- The spawn moves 15 / 101 / 263 / 264 m on random seeds, and 199 m on the owner's 386773705. Confirmed in the app:
+  `__map2d()._getRegion()` moves exactly as predicted, and mom's house stayed put on both seeds checked.
+- The roster re-rolls with the circle. On 4 random seeds: 131 places the same, 3 moved, and the rest on different
+  pads (`wip/bug-121/poidump.mjs`).
+- **The keep-out is not a cause:** 17,525 sites were checked on both sides and 0 decisions flipped.
+- Aside, not BUG-121: most keep-out rejections (91 of 101 on main) have no other run within `lat` by brute force,
+  most likely the site's own road answering under a different run key. Worth its own look.
+
+**Owner sheet:** https://claude.ai/artifact/5Nvi71xzeE4mJyFg7utHFT, tracker item `bug121-spawn`:
+- (a) land it, and every world's spawn moves once;
+- (b) land it but keep today's spawn on the old lookup;
+- (c) hold.
+
+### A run saved before the fix, resumed after it (2026-11-07)
+
+**It resumes; it does not break.** Saves carry no world-gen, so the region rebuilds on the moved centre. Then
+`_restoreRun` puts the run back:
+- the day, money, inventory, parts, damage and fuel;
+- the truck at its exact saved pose;
+- the camp pads, at their saved positions;
+- the dialogue seen, and the shelves (merged by POI id: a re-rolled shop keeps its fresh roll).
+
+What can be lost:
+- **The board replay (`logBoard`) cannot throw on a re-rolled POI.** Offer ids embed the POI id, `take`, `complete`
+  and `abandon` return falsy on a slot they cannot find, and an event that no longer applies is simply not
+  re-logged.
+- **A job or paper round in hand whose giver or offer re-rolled is dropped.** `_resumeJob` and `_resumePaper` are
+  guarded: `[save] … it is dropped`, abandoned on the board. The player loses that job, never the run.
+- **Places around the truck may have moved,** and its saved pose can sit near or past the moved wall, where the edge
+  fade turns it back.
+
+**Checked node-only** (`wip/bug-121/savecheck.mjs`: save on main's code, load on the fix):
+
+| seed | spawn moves | replay | events re-applied | jobs in hand that resolve |
+|---|---|---|---|---|
+| 2686853654 | 263 m | ok | 7 / 9 | 3 / 3 |
+| 332051823 | 15 m | ok | 7 / 7 | 3 / 3 |
+
+**So option (a) needs no save-version bump.** A line in the landing note covers it: "runs in progress: places may
+move, and a job in hand may be dropped". A bump would only throw those runs away.
+
+### Follow-up (not BUG-121): the POI keep-out rejects on its own road
+
+On main, 91 of 101 `_otherRoadNear` rejections on 4 random seeds have **no other run within `lat`** by brute force.
+They are the same before and after this fix. The likely cause: `queryNearest` answers the site's own road under a
+different run key than the edge's `ownKey` (a parallel `~p`, a split run, or a different spelling), so
+`hit.runKey === ownKey` fails and the site's own road counts as "another road". The cost is about 90 good POI
+sites thrown away per 4 regions. Check the key spelling before trusting the keep-out.

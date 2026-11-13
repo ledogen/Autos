@@ -50,7 +50,9 @@ export const CAMP_PARAMS = {
                             // spacing between camping zones best")
     campRoadEdgeM:  40,    // m past the shoulder edge that dispersed camping is allowed (owner
                             // 2026-07-31: was 20 — the wider tether roughly doubles the siting
-                            // ray's candidate ladder, so watch the re-grade cost if widened again)
+                            // ray's candidate ladder, so watch the re-grade cost if widened again).
+                            // FEAT-182: in a run the equipped pack's `reachM` replaces it (reachM());
+                            // this is the reach with no pack to ask (headless).
 
     // ── The site (Phase D) ────────────────────────────────────────────────────────────────────
     campPadHalfM:    3,     // m — half-extent of the camp bench: a 6 m pad, RATIFIED
@@ -165,6 +167,8 @@ const GRADE_N = 5
 // key too: crossing the centerline flips which way the ray points, and that is a different ladder.
 const CAMP_RAY_STEP_M = 2
 const CAMP_RESAMPLE_M = 1.5
+// items.md §2c (owner, 2026-10-16): no pack reaches further than this past the shoulder.
+const CAMP_REACH_CAP_M = 120
 
 // THE PAD MUST CLEAR EVERY ROAD, NOT JUST ITS OWN (owner, 2026-10-01 capture, seed 335938443). The
 // ray is cast off the NEAREST road, and the setback lat0 keeps the pad off that road by
@@ -361,6 +365,7 @@ export class CampSystem {
      *                  (the skyline scan behind the view score)                [Phase D]
      *   getWater()   — WaterSystem, for pondsInBBox / streamChannelAt           [Phase D]
      *   treesNear(x,z,r) → count — the deterministic scatter re-roll main.js owns [Phase D]
+     *   getReachM()  — the equipped pack's reach [m] (FEAT-182); absent → campRoadEdgeM
      */
     constructor (deps) {
         this._d = deps
@@ -554,8 +559,13 @@ export class CampSystem {
 
     /** The tether distance Phase D compares `lateral` against. Exposed so callers don't re-derive it. */
     tetherM () {
-        return this._k('roadHalfWidth', 5) + this._k('roadShoulderWidth', 2.5)
-             + this._k('campRoadEdgeM', CAMP_PARAMS.campRoadEdgeM)
+        return this._k('roadHalfWidth', 5) + this._k('roadShoulderWidth', 2.5) + this.reachM()
+    }
+
+    /** How far past the shoulder camp may be tonight: the equipped pack's reach (FEAT-182, items.md §2c),
+     *  capped at CAMP_REACH_CAP_M. */
+    reachM () {
+        return Math.min(CAMP_REACH_CAP_M, this._d.getReachM?.() ?? this._k('campRoadEdgeM', CAMP_PARAMS.campRoadEdgeM))
     }
 
     // ── The site: grading, the vibe score, camps and mom's house (Phase D) ───────────────────
@@ -594,10 +604,10 @@ export class CampSystem {
     evaluate (x, z) {
         const zone = this.zoneAt(x, z)
         const nr = this.nearRoadInfo(x, z)
-        const tether = this.tetherM()
+        const tether = this.tetherM(), reach = this.reachM()
 
         const m = this._eval
-        if (m && m.rev === this._rev && m.side === nr.side
+        if (m && m.rev === this._rev && m.side === nr.side && m.reach === reach   // a new pack: a new ladder
             && Math.hypot(m.qx - x, m.qz - z) < CAMP_RESAMPLE_M) {
             // NB: qx/qz are NOT advanced here. They anchor the ball the ladder was graded in — creep
             // the anchor along with the truck and it would never re-grade at all.
@@ -609,7 +619,7 @@ export class CampSystem {
         }
 
         const out = {
-            rev: this._rev, qx: x, qz: z, side: nr.side,
+            rev: this._rev, qx: x, qz: z, side: nr.side, reach,
             inZone: !!zone, lateral: nr.lateral, withinTether: nr.lateral <= tether,
             hasRoad: isFinite(nr.lateral),
             spread: Infinity, flat: false, flatScore: 0, viewScore: 0, shadeScore: 0, waterScore: 0,
@@ -623,7 +633,6 @@ export class CampSystem {
         // the tether limit, one candidate every CAMP_RAY_STEP_M.
         const lat0 = this._k('roadHalfWidth', 5) + this._k('roadShoulderWidth', 2.5)
                    + P.campPadGapM + P.campPadHalfM
-        const reach = Math.max(0, P.campRoadEdgeM)
         const steps = Math.max(1, Math.round(reach / CAMP_RAY_STEP_M))
 
         // TWO PASSES, ON PURPOSE. Flatness is the gate and only flat candidates can win, so the
@@ -931,7 +940,6 @@ export class CampSystem {
         f.add(CAMP_PARAMS, 'campShadeFullN', 1, 12, 1).name('trees for full shade')
         f.add(CAMP_PARAMS, 'campWaterR', 5, 120, 5).name('water reach (m)')
         f.add(CAMP_PARAMS, 'campWaterBestM', 1, 30, 1).name('water full credit (m)')
-        f.add(CAMP_PARAMS, 'campRoadEdgeM', 5, 120, 1).name('road tether (m)')
         f.add(CAMP_PARAMS, 'campShadeR', 3, 30, 1).name('shade reach (m)')
         f.add(CAMP_PARAMS, 'campPadHalfM', 1, 8, 0.5).name('pad half (m)')
         f.add(CAMP_PARAMS, 'campPadGapM', 0, 3, 0.1).name('pad gap (m)')

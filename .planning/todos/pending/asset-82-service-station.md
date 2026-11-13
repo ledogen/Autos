@@ -126,3 +126,20 @@ Blender frame below (x along the road, +y = toward the road, z up). Three.js mod
   ShopLight (emissive), ShopSign (atlas: AUTO SERVICE / TIRES . BRAKES . OIL; the name rolls per seed).
 - Renders: from the road, a three-quarter view, the rear, and the FEAT-178 camera (vertical fov 55) with
   the Ranger on lift A (180 deg yaw: nose to -y).
+
+## Look round (owner, 2026-11-07, asset82-83-look)
+
+> "service station: Looks great, the camera angle is a little bit tight. Move it to the other front corner. So in the
+> bay next to the one you park in. If the raised scissor jack is obstructing the truck, lower it down a little bit. I
+> still like it being raised though because it forces the player to park in a specific bay."
+
+- **Camera** moved to bay B's back corner, partition side: eye (2.3, −3.6, 3.0) in the Blender frame,
+  `camera: { eye: [2.3, 3, 3.6], look: [-3.95, 0.9, -0.499], fov: 60 }`. It sees the truck's driver-side front
+  three-quarter across bay B's lift, 7.8 m out (it was 4.5 m from bay A's corner). The open doors are behind it.
+- **fov 60**: main.js's camera is 60° vertical and never reads the registry's fov. The render now uses 60 too, so
+  it shows what the player sees (it was 55).
+- **Lift B lowered from 1.15 m to 0.9 m.** At 1.15 its near runway cut across the truck's front wheel from the new
+  corner; at 0.9 the truck is clear. It is still raised with the scissor arms showing. Collider `lift B, raised` is now
+  1.1 m tall.
+- Byte-identical re-export (sha1 5bc7b9de). Every check is still OK: pad, facing (0 of 8456), truck on lift A. The renders are in
+  `wip/service-station/out/sheet.png`.

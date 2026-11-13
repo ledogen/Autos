@@ -226,7 +226,7 @@ check('…but accuracy is still worth real money, not a rounding error', (() => 
 })())
 resetPaperRun()
 check('a run starts on the first rung', runPaper.tier === 0 && customersForTier() === 4)
-check('the ladder is 4 → 9 → 12 → 15', JSON.stringify(PAPER_PARAMS.tiers) === '[4,9,12,15]')
+check('the ladder is 4 → 7 → 9 → 11 (BUG-134, owner 2026-11-07)', JSON.stringify(PAPER_PARAMS.tiers) === '[4,7,9,11]')
 check('a finished round at B or better advances a rung; a C does not (FEAT-141)', (() => {
     const fastSloppy = scoreRoute(Array(4).fill(accuracyScore(R, R)), 4, PAR * 0.75, PAR, TIER)  // B (FEAT-69: A 0.707 < 0.75 ≤ B 0.794), sloppy throws
     const atPar      = scoreRoute(Array(4).fill(1), 4, PAR, PAR, TIER)                           // C, clean throws
@@ -235,8 +235,8 @@ check('a finished round at B or better advances a rung; a C does not (FEAT-141)'
 check('…and an unfinished round never does, however fast', advancesTier(scoreRoute(Array(3).fill(1), 4, PAR * 0.3, PAR, TIER)) === false)
 check('spares interpolate 100% → 30% down the ladder', (() => {
     const s = [0, 1, 2, 3].map(t => stockForTier(t) - customersForTier(t))
-    return s[0] === 4 && s[3] === 5 && s.every((v, i) => v >= 0)
-        && (s[0] / 4) === 1.0 && Math.abs(s[3] / 15 - 0.333) < 0.01
+    return s[0] === 4 && s[3] === Math.ceil(customersForTier(3) * PAPER_PARAMS.sparesFrac[3]) && s.every((v, i) => v >= 0)
+        && (s[0] / 4) === 1.0 && PAPER_PARAMS.sparesFrac[3] === 0.30
 })(), JSON.stringify([0, 1, 2, 3].map(t => `${customersForTier(t)}+${stockForTier(t) - customersForTier(t)}`)))
 check('no paper-route deadline dial — the deadline is the board\'s one rule (FEAT-141)', PAPER_PARAMS.tolerance === undefined)
 

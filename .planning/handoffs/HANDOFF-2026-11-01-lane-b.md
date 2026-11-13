@@ -1,5 +1,8 @@
 # Handoff — Lane B, 2026-11-05 (compute hold; five items built, waiting to land)
 
+> **Superseded (2026-11-06 evening):** the live Lane B handoff is the tracker page's `lanes/b` doc
+> (https://claude.ai/artifact/8P7QDPAaKxKPtJuf6zvRVH). The hold below is lifted and everything listed here has landed.
+
 **Worktree** `/Users/ledogen/CodeShit/CarGame-machine` · **branch** `feature/machine` · **serve** `:3282`
 — **STOPPED under the orchestrator's compute hold: do not restart it, or run heavy gates / sweeps / CDP,
 until the hold is lifted** (the owner is playing on this machine). Light single gates are OK. Work ONLY in

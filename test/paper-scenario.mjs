@@ -3,7 +3,7 @@
 // The scenario (data/scenarios.js, kind 'paper') is a seed and nothing else: Larry, the customers and the tour
 // all come out of the world. The owner opened every rung of the ladder from the start (2026-11-06), so a world
 // change that leaves seed 90 short of a rung — no Larry, too few customers, a tour that cannot route — would
-// ship a scenario whose 12 or 15 button does nothing. This builds the region exactly as story entry does (the
+// ship a scenario whose 9 or 11 button does nothing. This builds the region exactly as story entry does (the
 // spawn's centre, pond no-go, the warm radius, validateArea's main piece) and plans each rung the way Larry's
 // card does (planTour over every customer, N of them).
 //

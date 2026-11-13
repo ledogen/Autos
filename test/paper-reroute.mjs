@@ -90,7 +90,8 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
         `\n        sliced ${sig(route)}\n        whole  ${sig(base)}`)
     // Not an assertion about a number, a statement that the job IS sliceable: a generator that
     // yielded once would pass every other check here while being useless to the pump.
-    check('…and the job actually yields enough times to be pumped', calls > 16,
+    // At least one yield per Dijkstra: Larry's, and one per stop's row (BUG-134: the old `> 16` assumed a 15-stop top rung).
+    check('…and the job actually yields enough times to be pumped', calls > TOP.want,
         `${calls} next() calls — a job that cannot be spread over frames is not sliced`)
     console.log(`       the top rung's job is ${calls} slices`)
 }
@@ -218,7 +219,7 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
     // we could have jumped to, price carrying on down it against re-planning from there.
     const sweepWorld = (rd, rg, origin, cust, tag) => {
         const out = []
-        for (const tier of [2, 3]) {   // tiers 3 and 4 both cap at 15 stops — the same tour
+        for (const tier of [2, 3]) {   // tiers 3 and 4: the two longest rounds (9 and 11 stops since BUG-134)
             const tour = planTour(rd, origin, cust.filter(c => (c.paperTier ?? Infinity) <= tier), customersForTier(tier), rg, 100)
             if (!tour || tour.customers.length < 4) continue
             const cum = tour.polyCum, poly = tour.poly, L = cum[cum.length - 1]

@@ -2,15 +2,28 @@
 // over CDP on random seeds, the way cdp-smoke boots it (its own Vite on a free port, rooted at this checkout).
 // Not a gate: a run is many minutes. A rainy-day script, like the smoke's heavier cousins.
 //
-// Each run: a new story run → hold M (skip the opening; the casserole is in hand at mom's) → each day take
+// Each run: a new story run → hold M (skip the opening; it lands at Larry's, the casserole delivered) → each day take
 // board jobs and teleport through each leg, finishing at a MID rank (the clock is advanced to the middle of
-// the A/B lines before the last arrival) → refuel when low, eat what the inventory holds when hungry → sleep
+// the A/B lines before the last arrival) → refuel when low, eat, shop and pack food (EATING, below) → sleep
 // at mom's when tired or late → save & exit + reload + continue once a night → until the deeds gate opens the
 // requisition and its five lines are delivered (the win card).
 //
 // TELEPORTS COST NO GAME TIME, a drive does. So every move to a giver advances the clock by the crow distance
 // × ROAD_FACTOR at the speed the jobs' own pars imply (route length / par, running mean) — the day counts are
 // the soak's honest estimate of a player who drives straight to the next job. Report them, never tune to them.
+//
+// EATING LIKE A CAREFUL PLAYER (orchestrator, 2026-11-08: the rule is the soak's own; every number a [DEFAULT]).
+// It reads the energy meter's hunger WORD (DAY_PARAMS.hungerWords: stuffed ≥ 6 h left on the meal's hold, full ≥ 4,
+// content ≥ 2, peckish ≥ 0, else hungry), never the hours. A meal never stacks on a hold (daySystem.eat takes the
+// later end), so eating early only throws hold away; the hold stops while asleep (FEAT-173).
+//   • EAT at peckish or hungry: the first food the inventory lists (mom's packed lunches, a bought chili dog, a reward).
+//   • STAY FOR DINNER (a job's dinner invitation) at content or below; at full or stuffed, decline and drive on.
+//   • PACK: carry PACK_MEALS meals. Any job taken at a store that sells food (FOOD_STORES: the burger joint today)
+//     tops the pack up on the same stop, as long as the wallet keeps FOOD_FLOOR after each buy.
+//   • DETOUR for food only with the pack empty: peckish with a food store within FOOD_DETOUR_M (crow), or hungry at any
+//     distance — and at bedtime within FOOD_DETOUR_M, so breakfast is in the truck.
+//   • EAT BEFORE SLEEP at content or below: the hold waits out the night, so the morning starts on that meal.
+// Reported per run: the word at each bedtime (after that meal), food $ per day, food bought, meals eaten.
 //
 // FAILS (exit 1) on any console error, any stuck state (no takeable job all day, a card that will not close,
 // a sleep that does not move the clock), or a run that never reaches the win.
@@ -27,6 +40,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
+import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
+import { STOREFRONT } from '../data/shop-stock.js'
+import { ITEMS } from '../data/items.js'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
@@ -38,6 +54,13 @@ const SEEDS = arg('seeds', null)?.split(',') ?? Array.from({ length: N }, () => 
 const ROAD_FACTOR = 1.3   // road distance ÷ crow distance for the drive to a giver [DEFAULT]
 const MID = 0.5           // where between the A and B lines a job lands (0 = on A, 1 = on B)
 const MPG = 17            // a teleport burns no fuel, a drive does: the 2002 Ranger's ballpark [DEFAULT]
+// EATING (the header): what counts as food, which stores sell it, and the careful player's numbers [DEFAULT]s.
+const FOOD_IDS = Object.keys(ITEMS).filter(id => ITEMS[id].use === 'eat')
+const FOOD_NAMES = FOOD_IDS.map(id => ITEMS[id].name)
+const FOOD_STORES = new Set(Object.entries(STOREFRONT).filter(([, s]) => s.always.some(id => FOOD_IDS.includes(id))).map(([t]) => t))
+const PACK_MEALS = 2, FOOD_FLOOR = 10, FOOD_DETOUR_M = 2000
+const EAT_AT = new Set(['peckish', 'hungry'])
+const BED_EAT_AT = new Set(['content', 'peckish', 'hungry'])   // also: stay for dinner
 
 // ── boot (cdp-smoke's) ───────────────────────────────────────────────────────────────────────────
 const freePort = () => new Promise(r => { const s = createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)) }) })
@@ -139,11 +162,14 @@ const HELPERS = `window.__soak = {
     for (let t = 0; t <= Math.min(9, L); t += 0.5) { const x = q.x + dx / L * t, z = q.z + dz / L * t; if (!P.queryContact(x, y, z, 3)) return { x, z, h: Math.atan2(-q.tx, -q.tz) } }
     return { x: q.x, z: q.z, h: Math.atan2(-q.tx, -q.tz) } },
   // Where a giver's card answers the brake (main.js _inPoiSpot): a haul yard's BED over its drop zone (the bed's
-  // centre sits 1.523 m behind the truck's origin: data/vehicle-models.js bed frontZ/tailZ), inside a PARK box
-  // (the general store's lot), else the pad. Along the zone's long axis, as the pump seat lies (h = yaw − π/2).
-  spot (q) { const box = q.drop ?? q.park; if (!box) return this.pad(q)
+  // centre sits 1.523 m behind the truck's origin: data/vehicle-models.js bed frontZ/tailZ; along the zone's long
+  // axis, as the pump seat lies, h = yaw − π/2), inside a PARK box where a tow seats it (poi.js towSeat: the box's
+  // centre, along its LONG side — the shop's lift runs the other way to the store's lot), else the pad. A station
+  // has a park box AND pump zones: towSeat would pick the pump, whose brake opens the pump, not the card.
+  spot (q) { if (!q.drop && q.park) { const s = window.__towSeat({ ...q, pumpZones: null }); return { x: s.x, z: s.z, h: s.heading } }
+    const box = q.drop; if (!box) return this.pad(q)
     const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
-    const cx = ox + box.x * cs + box.z * sn, cz = oz - box.x * sn + box.z * cs, h = yaw - Math.PI / 2, k = q.drop ? 1.523 : 0
+    const cx = ox + box.x * cs + box.z * sn, cz = oz - box.x * sn + box.z * cs, h = yaw - Math.PI / 2, k = 1.523
     return { x: cx - k * Math.sin(h), z: cz - k * Math.cos(h), h } },
   // poi.js towSeat's pump branch: alongside the island, in its first zone.
   pump (q) { const b = q.pumpZones[0], yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
@@ -183,12 +209,13 @@ const HELPERS = `window.__soak = {
       }
       set(h, p, q)
     } },
-  state () { const d = window.__day(), e = window.__econ, m = window.__mission(), b = window.__board(), v = window.__vs
-    return { day: d.day(), h: d.clockH(), hour: d.hour(), energy: d.energyH(), hungry: d.hungry(), money: e.money, half: e.halfPoints,
+  state (foodIds) { const d = window.__day(), e = window.__econ, m = window.__mission(), b = window.__board(), v = window.__vs
+    return { day: d.day(), h: d.clockH(), hour: d.hour(), energy: d.energyH(), hungry: d.hungry(), word: d.hungerWord(), money: e.money, half: e.halfPoints,
+      food: window.__inv.list().filter(r => foodIds.includes(r.id)).reduce((a, r) => a + (r.n ?? 1), 0),
       ms: m.state, fuel: v.fuel.gal, first: b?.firstState(), lines: b?.lines().map(l => l.state) ?? [], pos: window.__car(),
       ended: document.getElementById('run-end')?.style.display === 'block' && document.getElementById('re-title').textContent } },
 }`
-const S = () => js('window.__soak.state()')
+const S = () => js(`window.__soak.state(${JSON.stringify(FOOD_IDS)})`)
 
 // ── one run ──────────────────────────────────────────────────────────────────────────────────────
 const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
@@ -203,10 +230,14 @@ async function startRun (seed) {
   await js(`document.getElementById("su-seed").value = ${JSON.stringify(seed)}; document.getElementById("su-start").click()`)
   check(await until(() => js(live), 180000, 250), 'the run never went live')
   await js(HELPERS); await js('window.__soak.carry(); window.__soak.watch()')
-  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2).
-  check(await until(dlgUp, 5000), 'the run did not open on the firing')
-  await key('m', true); await sleep(1300); await key('m', false)
-  check(await until(() => js('window.__board().firstState() === "taken"'), 15000), `holding M did not skip to the casserole: ${JSON.stringify(await js(`({
+  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2). FEAT-184: after the first skip "always skip
+  // the tutorial" is on, and a run starts where a skip lands — nothing to hold. Either way, at Larry's with the casserole
+  // delivered (FEAT-184, owner 2026-11-07); the day loop reads off his welcome.
+  if (!await js('window.__settings?.skipTutorial')) {
+    check(await until(dlgUp, 5000), 'the run did not open on the firing')
+    await key('m', true); await sleep(1300); await key('m', false)
+  }
+  check(await until(() => js('window.__board().firstState() === "done"'), 15000), `holding M did not skip to the casserole delivered: ${JSON.stringify(await js(`({
     first: window.__board().firstState(), ms: window.__mission().state, dlg: getComputedStyle(document.getElementById('dialogue-panel')).display,
     hint: document.getElementById('skip-hint')?.style.display, vis: document.visibilityState, focus: document.hasFocus(), log: (window.__soakLog ?? []).slice(-12) })`))}`)
   if (process.argv.includes('--gate-at-start')) await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)   // test the camp's lines first
@@ -218,11 +249,15 @@ async function startRun (seed) {
 async function saveAndResume () {
   step = 'save'
   const before = await S()
+  // Read while the run is still up: save & exit releases the region, so after the click the list is empty.
+  const momBefore = await js(`window.__poi().list().find(q => q.type === 'momsHouse')?.id`)
+  const rosterBefore = await js('window.__poi().list().map(q => q.id).join()')   // BUG-152: a re-sited roster drops board events
   for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
   check(await js('!document.getElementById("pm-save").disabled && document.getElementById("pm-save").offsetParent !== null'),
     `save & exit not offered: "${await js('document.getElementById("pm-save-why")?.textContent')}"`)
   await js('document.getElementById("pm-save").click()')
   check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 10000), 'no continue after save & exit')
+  const record = await js('localStorage.getItem("autos-run/1")')   // kept for a resume that changes the run (written below)
   await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
   check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 120000, 250), 'no continue after the reload')
   await js('document.getElementById("mm-continue").click()')
@@ -231,8 +266,12 @@ async function saveAndResume () {
   if (await until(() => js('document.getElementById("resume-card").style.display === "flex"'), 3000)) await tap('Escape')
   await until(async () => !await js('document.getElementById("resume-card").style.display === "flex"'), 3000)
   const after = await S()
-  check(after.day === before.day && Math.abs(after.money - before.money) < 0.005 && Math.abs(after.h - before.h) < 0.2,
-    `the resume changed the run: ${JSON.stringify({ day: before.day, money: before.money, h: before.h })} → ${JSON.stringify({ day: after.day, money: after.money, h: after.h })}`)
+  const sameRoster = await js('window.__poi().list().map(q => q.id).join()') === rosterBefore
+  if (after.first !== before.first || !sameRoster) writeFileSync(join(ROOT, `wip/run-soak/resume-${run.seed}-day${before.day}.json`),
+    JSON.stringify({ record: JSON.parse(record), momBefore, after: await js(`({ mom: window.__poi().list().find(q => q.type === 'momsHouse')?.id,
+      first: window.__board().firstState(), pois: window.__poi().list().map(q => q.id) })`) }))
+  check(after.day === before.day && Math.abs(after.money - before.money) < 0.005 && Math.abs(after.h - before.h) < 0.2 && after.first === before.first && sameRoster,
+    `the resume changed the run: ${JSON.stringify({ day: before.day, money: before.money, h: before.h, first: before.first })} → ${JSON.stringify({ day: after.day, money: after.money, h: after.h, first: after.first, sameRoster })}`)
 }
 
 // A 0.1 m drop, not the teleport's default 0.5: every seat with a fragile crate aboard was a half-metre fall
@@ -300,7 +339,11 @@ async function take (o) {
   step = `take ${o.family}${o.line ? ' line ' + o.line : ''} at ${o.type}`
   await drive(await js(`window.__soak.spot(window.__soak.poi(${JSON.stringify(o.poi)}))`))
   await park()
-  if (o.type === 'autoShop' && await until(() => vis('svc-screen'), 3000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+  // FEAT-104: every shop opens its screen on the brake; the jobs are its tab.
+  if (SHOP_TYPES.has(o.type) && await until(() => vis('svc-screen'), 3000)) {
+    if (FOOD_STORES.has(o.type)) await buyFood()   // EATING: the pack tops up on the same stop
+    await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+  }
   if (!await until(() => vis('mp-accept'), 15000)) {
     await skip(o, `no card: ${JSON.stringify(await js(`({ state: window.__mission().state, parked: window.__vs.parked, prompt: document.getElementById('poi-prompt')?.textContent ?? '', camp: !!document.getElementById('camp-panel')?.checkVisibility(), pump: !!document.getElementById('pump-display')?.checkVisibility(), svc: !!document.getElementById('svc-screen')?.checkVisibility() })`))}`)
     if (await js('window.__mission().state') !== 'idle') await decline()
@@ -356,9 +399,10 @@ async function finish (o) {
   }
   const r = await js(`(() => { const r = window.__mission().result; return { letter: r.letter, ratio: r.ratio, pay: r.payout ?? 0, points: r.points ?? 0, award: r.award?.rewardId ?? null, stowed: r.award?.stowed ?? null } })()`)
   r.bonus = m0.bonus   // what the card offered; r.award is what the rank earned
-  if (r.stowed === 'dinner') run.meals++   // the card's main button stays for dinner: it feeds the driver
-  // Put the result card away (the dinner invitation's "stay" is the same button: it feeds the driver).
-  await js('document.getElementById("mp-accept").click()')
+  // The dinner invitation: the card's main button stays (it feeds the driver), its decline drives on (EATING).
+  const stay = r.stowed === 'dinner' && BED_EAT_AT.has(await js('window.__day().hungerWord()'))
+  if (stay) run.meals++
+  await js(`document.getElementById("${r.stowed === 'dinner' && !stay ? 'mp-decline' : 'mp-accept'}").click()`)
   check(await until(() => js('window.__mission().state === "idle"'), 5000), 'the result card would not close')
   await readCards()   // Larry after the casserole, the camp's lines opening…
   return r
@@ -383,10 +427,66 @@ async function refuel () {
 }
 
 async function eat () {
-  const i = await js(`window.__inv.list().findIndex(r => ['chiliDog', 'schoolLunch'].includes(r.id))`)   // data/items.js use: 'eat'
+  const i = await js(`window.__inv.list().findIndex(r => ${JSON.stringify(FOOD_IDS)}.includes(r.id))`)   // data/items.js use: 'eat'
   if (i < 0) return false
   await js(`window.__inv.use(window.__inv.list()[${i}].id, ${i})`)
   run.meals++
+  return true
+}
+
+/** EATING: at a food store's open shop screen, buy food up to PACK_MEALS, keeping FOOD_FLOOR in the wallet. */
+async function buyFood () {
+  for (let k = 0; k < PACK_MEALS; k++) {
+    const s = await S()
+    if (s.food >= PACK_MEALS) return
+    // FEAT-196: a shelf row is one button; its stow button shows under it once it is selected.
+    const price = await js(`(() => { const r = [...document.querySelectorAll('#svc-screen button.sv-shelf')]
+        .find(r => ${JSON.stringify(FOOD_NAMES)}.some(n => r.querySelector('.sv-name')?.textContent.startsWith(n)))
+      if (r && !r.classList.contains('on')) r.click()
+      const b = document.querySelector('#svc-screen .sv-panel [data-act=stow]')
+      return r && b && !b.disabled ? +(r.querySelector('.sv-price').textContent.replace(/[^\\d.]/g, '')) : null })()`)
+    if (price == null || s.money - price < FOOD_FLOOR) return
+    await js(`document.querySelector('#svc-screen .sv-panel [data-act=stow]').click()`)
+    check(await until(async () => (await S()).food > s.food, 3000), `buying food at the shop screen took nothing (price $${price})`)
+    const spent = s.money - (await S()).money
+    run.foodSpend[s.day] = +((run.foodSpend[s.day] ?? 0) + spent).toFixed(2)
+    run.foodBought++
+  }
+}
+/** The nearest store that sells food, with its crow distance from the truck, or null. */
+const nearestFoodStore = () => js(`(() => { const c = window.__car(), t = ${JSON.stringify([...FOOD_STORES])}
+  return window.__soak.pois().filter(q => t.includes(q.type) && !q.hidden).map(q => ({ id: q.id, type: q.type, d: Math.hypot(q.x - c.x, q.z - c.z) }))
+    .sort((a, b) => a.d - b.d)[0] ?? null })()`)
+/** EATING's detour: drive to food store q, buy the pack, close the screen. At most once per game hour (a wallet under the
+ *  floor buys nothing, and the loop must move on). */
+async function foodRun (q) {
+  step = 'food'
+  run.foodRunH = (await S()).h
+  await drive(await js(`window.__soak.spot(window.__soak.poi(${JSON.stringify(q.id)}))`))
+  await park()
+  check(await until(() => vis('svc-screen'), 3000), `parked at the ${q.type}, no shop screen`)
+  await buyFood()
+  await js('document.querySelector("#svc-screen [data-act=close]")?.click()')
+  check(await until(async () => !await vis('svc-screen'), 3000), 'the shop screen would not close')
+}
+const foodRunOk = (s) => !(s.h - (run.foodRunH ?? -9) < 1) && s.money >= FOOD_FLOOR + 5
+/** EATING's day rule. True when it acted (the loop re-reads the state). */
+async function feed (s) {
+  if (!EAT_AT.has(s.word)) return false
+  if (s.food) return eat()
+  if (!foodRunOk(s)) return false
+  const q = await nearestFoodStore()
+  if (!q || (s.word !== 'hungry' && q.d > FOOD_DETOUR_M)) return false
+  await foodRun(q)
+  return true
+}
+/** EATING's bedtime rule: eat at content or below; with no breakfast in the truck, a food store within the detour. */
+async function bedtimeFood (s) {
+  if (BED_EAT_AT.has(s.word) && s.food) return eat()
+  if (s.food || !foodRunOk(s)) return false
+  const q = await nearestFoodStore()
+  if (!q || q.d > FOOD_DETOUR_M) return false
+  await foodRun(q)
   return true
 }
 
@@ -413,6 +513,7 @@ async function sleepNight () {
 
 async function playRun (seedIn) {
   run = { seed: seedIn, day: 0, speed: 12, driveMin: 0, jobs: [], wakes: [], fuelBuys: [], meals: 0, hungryDays: [], skip: new Map(), refusals: [], notes: [], softlocks: [],
+          sleepWords: [], foodSpend: {}, foodBought: 0, foodRunH: null, endMoney: null,
           gateDay: null, winDay: null, result: null }
   const t0 = performance.now()
   run.seed = await startRun(seedIn)
@@ -422,20 +523,27 @@ async function playRun (seedIn) {
     if (await until(dlgUp, 800)) await readCards()
     const s = await S()
     run.day = s.day
-    if (s.ended) { run.result = s.ended; if (/beat the alpha/.test(s.ended)) run.winDay = s.day; break }
+    // The skip leaves mom's casserole done for good (FEAT-184); once (2026-11-08, seed 2782385833) it came back as
+    // 'live' after a night and her door offered it instead of the bed. Note the moment it leaves 'done'.
+    if (s.first !== 'done' && !run.notes.some(n => n.startsWith('first job'))) run.notes.push(`first job ${s.first} at day ${s.day} ${s.hour.toFixed(2)} h after step "${step}"`)
+    if (s.ended) { run.result = s.ended; run.endMoney = +s.money.toFixed(2); if (/beat the alpha/.test(s.ended)) run.winDay = s.day; break }
     if (s.day > MAX_DAYS) { run.result = `no win by day ${MAX_DAYS}`; break }
     if (run.gateDay == null && s.lines.some(l => l !== 'closed')) run.gateDay = s.day
     try {
       if (s.ms === 'offer' || s.ms === 'generating') { await decline(); continue }
-      if (s.ms !== 'idle') {   // the casserole (in hand from the skip), or a job a resume brought back
-        const o = await js('(() => { const m = window.__mission(), sp = window.__board().spec(m.offer ?? {}); return { family: sp?.family ?? "?", line: sp?.line ?? null, type: sp?.first ? "momsHouse (casserole)" : "in hand" } })()')
+      if (s.ms !== 'idle') {   // a job a resume brought back
+        const o = await js('(() => { const m = window.__mission(), sp = window.__board().spec(m.offer ?? {}); return { family: sp?.family ?? "?", line: sp?.line ?? null, type: "in hand" } })()')
         const r = await finish(o)
         run.jobs.push({ day: s.day, family: o.family, line: o.line, giver: o.type, ...r })
         continue
       }
-      if (s.energy < 3 || s.hour >= 21 || s.hour < 4) { await sleepNight(); await saveAndResume(); continue }
       if (s.hungry && !run.hungryDays.includes(s.day)) run.hungryDays.push(s.day)
-      if (s.hungry && await eat()) continue
+      if (s.energy < 3 || s.hour >= 21 || s.hour < 4) {
+        if (await bedtimeFood(s)) continue
+        run.sleepWords.push(s.word)
+        await sleepNight(); await saveAndResume(); continue
+      }
+      if (await feed(s)) continue
       if (s.fuel < 8.25 && s.money > 2) { await refuel(); continue }   // half a 16.5 gal tank: a run burns ~5 of its 10.2 start
       const o = pick(await offers(), s.h)
       if (!o) {   // nothing takeable: wait an hour for the board to turn over
@@ -489,6 +597,7 @@ const runLines = r => [`seed ${r.seed}: ${r.result} · deeds gate day ${r.gateDa
   + ` · soft-locks ${r.softlocks?.length ?? 0} · refused ${r.refusals?.length ?? 0} · hungry days ${JSON.stringify(r.hungryDays ?? [])} · drives ${((r.driveMin ?? 0) / 60).toFixed(1)} game h · ${r.minutes ?? '?'} min wall`,
   `  wallet at wakes: ${(r.wakes ?? []).map(w => `d${w.day} $${w.money} (${w.deeds} deeds)`).join(' · ')}`,
   `  rewards: ${rewards(r)}`,
+  `  food: words at bedtime ${(r.sleepWords ?? []).join(' ')} · $ per day ${JSON.stringify(r.foodSpend ?? {})} · bought ${r.foodBought ?? 0} · wallet at the end $${r.endMoney ?? '—'}`,
   ...(r.notes ?? []).map(n => `  note: ${n}`),
   `  jobs: ${perDay(r)}`,
   ...Object.entries(Object.groupBy(r.refusals ?? [], x => `${x.family} @${x.giver}: ${x.why.slice(0, 140)}`)).map(([k, v]) => `  refused ×${v.length} (first day ${v[0].day}) ${k}`),

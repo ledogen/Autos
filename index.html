@@ -813,6 +813,10 @@
       stroke-linecap: round; stroke-linejoin: round; }
     #hud-menu-label.solo svg { display: none; }
     #hud-b-hint .kc-round { color: var(--text); }
+    /* FEAT-195: B held + ↑ abandons the job (hud-menu.js) — said on the menu's own line while the job's button can act
+       (shown, parked) and is not armed (armed, the confirm is a plain B and the button's keycap says so). */
+    #hud-b-hint .bh-abandon { display: none; white-space: nowrap; }
+    body:has(#job-cancel:not(.unparked):not(.armed):not([style*="none"])) #hud-b-hint .bh-abandon { display: inline; }
     /* FEAT-122: the PARK ZONE — the icons that only work while parked (damage V, inventory Tab),
        grouped under the PARK stencil that owns them (owner, 2026-10-16). Camp stays outside:
        the brake is how you make camp. Locked (not parked, or the brake belongs to a POI here): the
@@ -897,6 +901,7 @@
       color: var(--text);
     }
     #energy-meter .em-title { margin-bottom: 4px; text-align: left; }
+    #energy-meter .em-view + .em-title { margin-top: 6px; }   /* FEAT-198: the hunger line under the energy bar */
     #energy-meter .em-view {
       position: relative;
       width: 100px;
@@ -1613,6 +1618,7 @@
       <div class="mm-title">autos</div>
       <button id="mm-continue" style="display:none">continue</button>   <!-- FEAT-42: only while a run is saved -->
       <button id="mm-new">new game</button>   <!-- FEAT-156: the game mode is a row on the new-game page -->
+      <button id="mm-tutorial">tutorial</button>   <!-- FEAT-184: the tutorial, played on purpose; never touches the save -->
       <button id="mm-settings">settings</button>
     </div>
     <!-- FEAT-41 run setup = the GENERATION settings: what the world and the truck are. The selector rows
@@ -1659,6 +1665,8 @@
       <button class="mm-sel" data-key="tractionControl"></button>
       <div class="mm-group">controller</div>
       <button class="mm-sel" data-key="stickDeadzone"></button>
+      <div class="mm-group">tutorial</div>
+      <button class="mm-sel" data-key="skipTutorial"></button>   <!-- FEAT-184: on after the first finished or skipped tutorial -->
       <div class="mm-group"></div>
       <button id="mm-bindings">bindings</button>
       <button id="mm-settings-back">back</button>
@@ -1716,6 +1724,8 @@
       <button id="mp-decline" title="the same brake tap that releases the truck">decline (space)</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
+      <!-- FEAT-199: a result card's earned item — the cash less its cost, with the item (main.js _syncItemChoice). -->
+      <button id="mp-item" style="display:none">take the item</button>
       <button id="mp-accept" data-primary>accept mission</button>
     </div>
   </div>
@@ -1768,6 +1778,19 @@
         </div>
         <div class="em-pointer"></div>
       </div>
+      <!-- FEAT-198: hunger mirrors energy in the same box — its word, then its strip, scrolled by the hours left
+           on the meal's hold (bands = DAY_PARAMS.hungerWords; the 2 h bands carry no inline label). -->
+      <div class="em-title" id="hm-title">Hunger&ensp;·&ensp;<span id="hm-stage">stuffed</span></div>
+      <div class="em-view" id="hm-view">
+        <div class="em-strip" id="hm-strip">
+          <div class="em-seg" id="hm-seg-stuffed"><span>Stuffed</span></div>
+          <div class="em-seg" id="hm-seg-full"></div>
+          <div class="em-seg" id="hm-seg-content"></div>
+          <div class="em-seg" id="hm-seg-peckish"></div>
+          <div class="em-seg" id="hm-seg-hungry"><span>Hungry</span></div>
+        </div>
+        <div class="em-pointer"></div>
+      </div>
     </div>
 
     <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
@@ -1783,7 +1806,7 @@
 
     <!-- The icon column. damage-screen.js prepends its own row (the truck, V) above these. -->
     <div id="hud-icons">
-      <div id="hud-b-hint">hold <span class="kc-pad kc-round">B</span></div>
+      <div id="hud-b-hint">hold <span class="kc-pad kc-round">B</span><span class="bh-abandon">· ↑ abandon job</span></div>
       <!-- FEAT-122: the park zone — damage-screen.js and inventory-screen.js append their rows. -->
       <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">PARK</span></div>
       <!-- FEAT-45 Phase D: making camp. The tent shows only where the old camp prompt did (a camp

@@ -62,13 +62,16 @@ export const DAY_PARAMS = {
     // the ramp [DEFAULT]). A run starts on a standard meal, and SLEEP STOPS THE CLOCK (FEAT-173, owner
     // 2026-11-06: "sleeping should not run the hunger meter", which retired 'bedtime counts as a meal'):
     // the hold stands still for the night, so a meal eaten at camp in the evening is all there at waking.
-    // OFF for the owner's alpha playtest (2026-11-06): no shop or food vendor sells food yet, so hunger only
-    // drained the run. Flip back to true once food is buyable.
-    hungerOn:     false,
+    // ON by default (owner, 2026-11-07, feat169-play: "turn it on by default but leave the toggle for me in case i
+    // want to turn it off in playthrough"): food is buyable since FEAT-104. The toggle is the debug folder's 'hunger'.
+    hungerOn:     true,
     hungryRate:   1.25,
     starvingRate: 1.5,
     hungryRampH:  4,
     mealHoldH:    8,      // a standard meal (the burger, the dinner invitation)
+    // The energy meter's hunger word (owner, 2026-11-07: "stuffed / full / content / peckish / hungry just as a word that
+    // appears in the sleep box"), by the hours left on the meal's hold, first match [DEFAULT]. Past the hold: hungry.
+    hungerWords:  [[6, 'stuffed'], [4, 'full'], [2, 'content'], [0, 'peckish']],
 
     // ── Sleep recovery (FEAT-45 Phase D) — hours of energy bought per hour slept ───────────────
     // THE ARITHMETIC (ratified 2026-07-30; rescaled 2026-08-02 with the 16 h tank).
@@ -110,6 +113,15 @@ export const DAY_PARAMS = {
  * (owner, 2026-08-02 — was white for a day; green reads "healthy" on the energy meter).
  */
 export const STAGE_COLOR = { rested: '#7ed957', sleepy: '#ffdc3c', tired: '#ff9f43', exhausted: '#ff5a4e' }
+
+/**
+ * FEAT-198: the hunger words' colours (the energy box's hunger line and bar), on the same escalation ramp as
+ * STAGE_COLOR so no new hex enters the UI: fed is green, peckish yellow, hungry orange.
+ */
+export const HUNGER_COLOR = {
+    stuffed: STAGE_COLOR.rested, full: STAGE_COLOR.rested, content: STAGE_COLOR.rested,
+    peckish: STAGE_COLOR.sleepy, hungry: STAGE_COLOR.tired,
+}
 
 
 /**
@@ -155,7 +167,7 @@ export class DaySystem {
 
     /**
      * Begin a story run: dawn of day 1, full tank of energy, and seat the sky at that hour. FEAT-170: the
-     * opening's tutorial evening starts it earlier — `start(0, 18)`, day 0, the evening before day 1.
+     * opening's tutorial evening starts it earlier — `start(0, 19.5)`, day 0, the evening before day 1.
      */
     start (day = 1, hour = DAY_PARAMS.dayStartHour) {
         this._running = true
@@ -298,8 +310,20 @@ export class DaySystem {
      */
     eat (holdH) { this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + holdH) }
 
-    /** Past the last meal's hold. The energy meter says so in words (SM-INV-10: never a gauge). */
+    /** Past the last meal's hold. The energy box says so in its hunger word and bar (FEAT-198), never a number. */
     hungry () { return DAY_PARAMS.hungerOn && this.clockH() > this._fedUntilH }
+
+    /** FEAT-169: the energy meter's hunger word — stuffed / full / content / peckish / hungry — or null with hunger
+     *  off. A word, never a number; since FEAT-198 (owner, 2026-11-11) it sits over its own scrolling bar, like energy.
+     *  'hungry' exactly when hungry() is. */
+    hungerWord () {
+        if (!DAY_PARAMS.hungerOn) return null
+        const left = this.fedLeftH()
+        return DAY_PARAMS.hungerWords.find(([h]) => left >= h)?.[1] ?? 'hungry'
+    }
+
+    /** Hours left on the last meal's hold — negative once hungry. Scrolls the energy box's hunger bar (FEAT-198). */
+    fedLeftH () { return this._fedUntilH - this.clockH() }
 
     /**
      * Hours of energy hunger adds to being awake from clockH h0 to h1 — 0 while fed. The rate over 1 is

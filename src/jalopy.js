@@ -2,8 +2,8 @@
 //
 // A seeded roll over the parts and every damage track (owner, 2026-10-21): a used Ranger that still
 // runs. The architecture stays the factory's — stock springs, shocks and brakes, the open diff, no
-// lift — and the roll is WEAR, plus tires off the bottom of the pile and sometimes no front bar, so
-// every run is still winnable. Each corner and each axle draws its own number.
+// lift — and the roll is WEAR, plus one old tire and sometimes no front bar, so every run is still
+// winnable. Each corner and each axle draws its own number.
 //
 // Run-layer randomness (DESIGN.md: "jalopy rolls" stay free): main.js hands it a fresh seed per run,
 // the gate a fixed one. Pure: no THREE, no DOM.
@@ -21,11 +21,14 @@ export const JALOPY_COND = {
 }
 /** The sockets that don't always get the stock part: per kind of socket, part id → weight. */
 export const JALOPY_PARTS = {
-  tire: { tireStandard: 50, tireOld: 35 },
   arbFront: { arbFrontStock: 90, arbFrontNone: 10 },
 }
-/** The spare in the inventory: how often there is one, and its wear. */
-export const JALOPY_SPARE = { p: 0.6, cond: [0.4, 0.8] }
+// FEAT-201 (owner, 2026-11-12: "only one old tire and it's in the front … the car still drives quite well
+// but you do have some debt to take care of"): two old rears made the truck squirrely. Exactly one old
+// tire, on a front corner drawn evenly; the other three are the stock tire.
+export const JALOPY_OLD_TIRE = ['tireFL', 'tireFR']
+/** The spare in the inventory: always one (FEAT-201), an old tire on the steel wheel, worn. */
+export const JALOPY_SPARE = { tire: 'tireOld', cond: [0.4, 0.8] }
 
 /**
  * Roll the run's truck onto `parts`, `damage` and `inventory` (all freshly started: stock, new, the
@@ -43,6 +46,7 @@ export function rollJalopy ({ parts, damage, inventory }, seed) {
     const w = JALOPY_PARTS[takes(socket)]
     if (w) parts.fit(pick(w), null, socket)
   }
+  parts.fit('tireOld', null, JALOPY_OLD_TIRE[Math.floor(rand() * JALOPY_OLD_TIRE.length)])
   for (const [id, t] of Object.entries(TRACKS)) {
     if (t.clutchOnly) continue   // FEAT-166: the jalopy's diff is open; clutch packs fitted later come new
     const range = JALOPY_COND[t.cls]
@@ -51,5 +55,5 @@ export function rollJalopy ({ parts, damage, inventory }, seed) {
     if (t.cls === 'alignment') damage._bendWheel(t.wheel, span([0, 1 - range[0]]))
     else damage.set(id, span(range))
   }
-  if (rand() < JALOPY_SPARE.p) inventory.grant('spareTire', 1, { cond: span(JALOPY_SPARE.cond) })
+  inventory.grant('spareTire', 1, { tire: JALOPY_SPARE.tire, cond: span(JALOPY_SPARE.cond) })
 }

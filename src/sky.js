@@ -112,31 +112,95 @@ export const SKY_CYCLE = {
   // evening 18 / night 24) every single hour was a blend and NO hour was actually the night look:
   // 23:00 was still 17 % evening, which is why the small hours carried a warm dusk haze — half of
   // the "fog is bright at night" report. A repeated preset makes that span flat, so dusk finishes
-  // at 20:00 and dawn starts at 04:00 and the hours between are genuinely `night`.
-  // Dusk is deliberately SHORT (2 h). fogColor lerps linearly but the sky's brightness falls off
+  // at 21:00 and dawn starts at 04:00 and the hours between are genuinely `night`.
+  // Dusk is deliberately SHORT (1.5 h). fogColor lerps linearly but the sky's brightness falls off
   // a cliff as the sun crosses the horizon, so any long evening→night ramp spends its middle
   // with fog much brighter than the sky behind it. Keeping the window narrow bounds that.
+  // FEAT-180 (owner 11-07, 9: "Approve"): the sun lasts until about 8 pm — evening 18:00 → 19:30, night 20:00 →
+  // 21:00, so the sun sets at ~20:12 instead of ~18:56 and 20:00 is the first limiting low light.
   keyframes: [
     { hour: 0,  preset: 'night' },
     { hour: 4,  preset: 'night' },      // flat night 00:00–04:00
     { hour: 7,  preset: 'morning' },    // dawn 04:00–07:00
     { hour: 12, preset: 'day' },
-    { hour: 18, preset: 'evening' },
-    { hour: 20, preset: 'night' },      // dusk 18:00–20:00
-    { hour: 24, preset: 'night' },      // flat night 20:00–24:00
+    { hour: 19.5, preset: 'evening' },
+    { hour: 21, preset: 'night' },      // dusk 19:30–21:00
+    { hour: 24, preset: 'night' },      // flat night 21:00–24:00
   ],
 }
 
-/** FEAT-120: how much of the look at `hour` is the `night` preset (0..1), by the same keyframe bracket
- *  setTimeOfDay blends — so the crickets' night is the night on screen. */
-export function nightWeight (hour) {
+// FEAT-180: the look fields that belong to the SKY (the Preetham shader's inputs). Every other field is the LIGHT on
+// the land (key, fill, exposure, fog), which follows the sky's brightness through dawn and dusk (lightT).
+const SKY_FIELDS = new Set(['elevation', 'azimuth', 'turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG'])
+
+/** The sky's own brightness at a sky-sun elevation, relative only: the Sky shader's vSunE (three Sky.js, its
+ *  cutoffAngle and steepness) raised to the 1.5 its in-scatter takes. Zero once the sun is 2.3° under the horizon. */
+function skyBrightness (elevationDeg) {
+  const zenith = THREE.MathUtils.degToRad(90 - elevationDeg)
+  return Math.pow(Math.max(0, 1 - Math.exp(-(1.6110731556870734 - zenith) / 1.5)), 1.5)
+}
+
+// FEAT-180 night by moon phase (owner 11-07, 2: "I would describe current state as super dark i.e. what new moon
+// should be … Full moon should be bright enough to see without headlights but barely"; 8: "the current look and
+// headlight performance captures 'new moon but your headlights work' quite well"). SKY_PRESETS.night IS the new
+// moon, unchanged; the moon's lit fraction (0 new … 1 full, setMoonLit) scales its key, fill and fog radiance up to
+// FULL_MOON_GAIN at full, the gain at which the road reads without headlights, barely.
+const FULL_MOON_GAIN = 3
+let _nightLook = SKY_PRESETS.night
+const lookOf = (name) => (name === 'night' ? _nightLook : SKY_PRESETS[name])
+
+/** The two keyframe looks bracketing `hour`, the time blend `t`, and `tl`, the blend for the light fields.
+ *  FEAT-180 (owner 11-07, "ground should be darker if sky is still black"): between night and a lit look the sky
+ *  stays black until the sun is 2.3° under the horizon and then brightens steeply, so a light that blended
+ *  linearly in time lit the land while the sky was still black (05:00 was a third of the way to morning). tl
+ *  instead moves the light as the sky's brightness moves: the land and the sky come up and go down together.
+ *  Between two lit looks (morning → day → evening) tl = t, so the daylight hours are unchanged. */
+function bracket (hour) {
   const kf = SKY_CYCLE.keyframes, h = ((hour % 24) + 24) % 24
   let i = 0
   while (i < kf.length - 1 && h >= kf[i + 1].hour) i++
-  const a = kf[i], b = kf[Math.min(i + 1, kf.length - 1)]
-  const t = b.hour > a.hour ? (h - a.hour) / (b.hour - a.hour) : 0
-  return (a.preset === 'night' ? 1 - t : 0) + (b.preset === 'night' ? t : 0)
+  const ka = kf[i], kb = kf[Math.min(i + 1, kf.length - 1)]
+  const a = lookOf(ka.preset), b = lookOf(kb.preset)
+  const t = kb.hour > ka.hour ? (h - ka.hour) / (kb.hour - ka.hour) : 0
+  const sa = skyBrightness(a.elevation), sb = skyBrightness(b.elevation)
+  const tl = (sa === 0) !== (sb === 0)
+    ? (skyBrightness(THREE.MathUtils.lerp(a.elevation, b.elevation, t)) - sa) / (sb - sa) : t
+  return { ka, kb, a, b, t, tl }
 }
+
+/** FEAT-120: how much of the look at `hour` is the `night` preset (0..1), by the same light blend setTimeOfDay
+ *  uses (tl) — so the crickets' night is the night on screen. */
+export function nightWeight (hour) {
+  const { ka, kb, tl } = bracket(hour)
+  return (ka.preset === 'night' ? 1 - tl : 0) + (kb.preset === 'night' ? tl : 0)
+}
+
+// FEAT-180 fog (owner 11-07: "Fog looks like it's adding light to the scene i.e. distant objects are brighter than
+// near ones" and "desaturate the fog slightly at all times of day"). A look's fogColor is still its authored
+// radiance; fogRadiance() makes it what the world shows: FOG_DESAT of the way to its own grey, then capped so the
+// fog is never brighter against the land it covers than the day look's is (FOG_LAND_MAX, its own ratio, so the
+// day look sits exactly on the cap and keeps its brightness). The land is ground of every slope under the look's
+// key light and fill (landLum): its key share (1 + sin el) / 2 is the mean of max(0, n·l) over upward normals,
+// scaled to 1 at a zenith sun, so a low sun still lights the slopes that face it. The morning and evening looks were
+// 2.8× and 4.2× over that ratio; night is under it and is untouched.
+const FOG_DESAT = 0.2
+const lum = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+function landLum (look) {
+  const key = lum(_scratchA.setHex(look.sunColor)) * look.sunIntensity * (1 + Math.sin(THREE.MathUtils.degToRad(look.lightEl))) / 2
+  return key + lum(_scratchA.setHex(look.hemiSky)) * look.hemiIntensity
+}
+let FOG_LAND_MAX = 0   // set on first use: fog ÷ land of SKY_PRESETS.day
+function fogRadiance (look, out) {
+  if (!FOG_LAND_MAX) FOG_LAND_MAX = lum(_scratchB.setHex(SKY_PRESETS.day.fogColor)) / landLum(SKY_PRESETS.day)
+  out.setHex(look.fogColor)
+  const y = lum(out)
+  out.lerp(_scratchB.setRGB(y, y, y, THREE.LinearSRGBColorSpace), FOG_DESAT)
+  const cap = FOG_LAND_MAX * landLum(look)
+  return y > cap ? out.multiplyScalar(cap / y) : out
+}
+
+// FEAT-180: how high above the horizon the sky is still converging on the fog colour (see the SkySystem constructor).
+const HAZE_DEG = 8
 
 const _scratchA = new THREE.Color()
 const _scratchB = new THREE.Color()
@@ -226,6 +290,21 @@ export class SkySystem {
     this.sky = new Sky()
     this.sky.scale.setScalar(900)             // fits inside camera.far=1000 (corner 779 m); follows camera
     this.sky.frustumCulled = false            // it's always at the camera; never cull it
+    // FEAT-180 horizon: below the horizon the background is the fog colour (what fully fogged terrain shows), and
+    // above it the sky converges on that colour over the lowest HAZE_DEG, so the world's edge, the fogged land and
+    // the sky meet with no line. Owner 11-07: "the sky clearly cuts off on a sharp line". It replaces the
+    // fog-coloured ground disc (2026-07-17), whose top edge against the raw sky WAS the line. Radiance in, like
+    // fogColor: the background pass tone-maps it with the sky (ACES × exposure), as scene.fog's colour is.
+    const sm = this.sky.material
+    sm.uniforms.uFog = { value: new THREE.Color() }
+    sm.uniforms.uHazeTop = { value: Math.sin(THREE.MathUtils.degToRad(HAZE_DEG)) }
+    sm.uniforms.uMoonSky = { value: new THREE.Color() }   // FEAT-180 moon phase: the moonlit sky (setMoonLit)
+    sm.fragmentShader = sm.fragmentShader
+      .replace('uniform float time;', 'uniform float time;\n\t\tuniform vec3 uFog;\n\t\tuniform float uHazeTop;\n\t\tuniform vec3 uMoonSky;')
+      .replace('gl_FragColor = vec4( texColor, 1.0 );', `float haze = 1.0 - smoothstep( 0.0, uHazeTop, direction.y );
+			texColor += uMoonSky * mix( 1.0, 0.35, clamp( direction.y, 0.0, 1.0 ) );
+			gl_FragColor = vec4( mix( texColor, uFog, haze * haze ), 1.0 );`)
+    if (!sm.fragmentShader.includes('uHazeTop;')) throw new Error('sky.js: three Sky shader changed; FEAT-180 haze patch missed')
     scene.background = null                    // live mode: the Sky mesh is the background
 
     // PERF-21 baked mode (see header). The Sky mesh lives in a private scene; a CubeCamera bakes it
@@ -282,25 +361,6 @@ export class SkySystem {
       this._cubeCam = new THREE.CubeCamera(0.1, 3000, this._cubeRT)
       this._bakeScene.add(this._cubeCam)
     }
-    if (!this._groundFill) {   // S-40: once — setBakeRes re-creates the RT, not the disc
-      // Below-horizon ground fill (user call 2026-07-17): the Preetham shader renders the lower
-      // hemisphere as dark void, so from any height the world reads as a floating tile against
-      // sky. A huge fog-coloured disc in the BAKE scene paints the below-horizon background as
-      // misty ground — no scene geometry, no camera.far interaction, always behind real terrain.
-      // Radius ≫ depth keeps the gap between disc edge and true horizon under ~0.1°.
-      this._groundFill = new THREE.Mesh(
-        new THREE.CircleGeometry(2900, 48).rotateX(-Math.PI / 2),
-        new THREE.MeshBasicMaterial({ color: 0xffffff })
-      )
-      this._groundFill.position.y = -5
-      this._bakeScene.add(this._groundFill)
-    }
-    // Match the fully-fogged terrain the disc extends: the RAW authored fog colour, no lift. The
-    // background pass tone-maps (ACES × exposure) what the bake stored linearly, and scene.fog
-    // carries an ALREADY tone-mapped colour (see _applyFogColor), so both end up as
-    // ACES(authored × exposure). The old eyeballed 2.2 lift (GROUND_FILL_LIFT) existed only to paper
-    // over the untone-mapped fog it had to sit next to; that mismatch was fixed at the root.
-    this._groundFill.material.color.setHex(SKY_PARAMS.fogColor)
     this._cubeCam.update(this.renderer, this._bakeScene)
     this.scene.background = this._cubeRT.texture
   }
@@ -313,6 +373,12 @@ export class SkySystem {
     u.rayleigh.value = p.rayleigh
     u.mieCoefficient.value = p.mieCoefficient
     u.mieDirectionalG.value = p.mieDirectionalG
+    fogRadiance(p, u.uFog.value)   // FEAT-180 horizon: the fog's radiance, as the old ground disc took it
+    // FEAT-180 moon phase: the night sky brightens with the moon by the same extra light as the haze it fades into
+    // (the moonlit share of the fog), full at the horizon and 35 % at the zenith, so a full moon's brighter haze is
+    // not a lit band under a black sky. Zero at new moon: tonight's sky as authored.
+    const g = _nightLook.sunIntensity / SKY_PRESETS.night.sunIntensity
+    u.uMoonSky.value.copy(u.uFog.value).multiplyScalar((g - 1) / g * nightWeight(SKY_CYCLE.hour))
 
     dirFromAngles(p.elevation, p.azimuth, this._skySunDir)
     u.sunPosition.value.copy(this._skySunDir)
@@ -353,8 +419,7 @@ export class SkySystem {
    */
   _applyFogColor () {
     if (!this.scene.fog) return
-    _scratchFog.setHex(SKY_PARAMS.fogColor)
-    this.scene.fog.color.copy(acesToneMap(_scratchFog, SKY_PARAMS.exposure))
+    this.scene.fog.color.copy(acesToneMap(fogRadiance(SKY_PARAMS, _scratchFog), SKY_PARAMS.exposure))
   }
 
   /**
@@ -373,9 +438,9 @@ export class SkySystem {
    * Linear RGB multiplier for the unlit particle systems (see PARTICLE_LIGHT). 1.0 on the `day`
    * look by construction, so daytime dust is bit-identical to what shipped.
    */
-  particleLight (out) {
+  particleLight (out, look = SKY_PARAMS) {
     this._ensureParticleNorm()
-    rawIrradiance(SKY_PARAMS, out)
+    rawIrradiance(look, out)
     const { gamma, floor } = PARTICLE_LIGHT
     const f = (v) => Math.min(1, floor + (1 - floor) * Math.pow(Math.max(0, v * this._particleNorm), gamma))
     return out.setRGB(f(out.r), f(out.g), f(out.b), THREE.LinearSRGBColorSpace)
@@ -422,28 +487,34 @@ export class SkySystem {
    */
   setTimeOfDay (hour, onlyIfChanged = false) {
     SKY_CYCLE.hour = ((hour % 24) + 24) % 24
-    const kf = SKY_CYCLE.keyframes
-    let i = 0
-    while (i < kf.length - 1 && SKY_CYCLE.hour >= kf[i + 1].hour) i++
-    const a = SKY_PRESETS[kf[i].preset]
-    const b = SKY_PRESETS[kf[i + 1].preset]
-    const span = kf[i + 1].hour - kf[i].hour
-    const t = span > 0 ? (SKY_CYCLE.hour - kf[i].hour) / span : 0
+    const { a, b, t, tl } = bracket(SKY_CYCLE.hour)
     if (onlyIfChanged) for (const k of LOOK_FIELDS) _lookBefore[k] = SKY_PARAMS[k]
-    this._blendLooks(a, b, t)
+    this._blendLooks(a, b, t, tl)
     if (!onlyIfChanged || LOOK_FIELDS.some((k) => SKY_PARAMS[k] !== _lookBefore[k])) this.apply()
     this._refreshGui()
   }
 
-  /** Interpolate two looks into SKY_PARAMS: angles/scalars linearly, colours in RGB. */
-  _blendLooks (a, b, t) {
+  /** Interpolate two looks into SKY_PARAMS: angles/scalars linearly, colours in RGB; the sky's fields by `t`, the
+   *  light's by `tl` (bracket). */
+  _blendLooks (a, b, t, tl = t) {
     for (const k of LOOK_FIELDS) {
+      const w = SKY_FIELDS.has(k) ? t : tl
       if (k === 'sunColor' || k === 'hemiSky' || k === 'hemiGround' || k === 'fogColor') {
-        SKY_PARAMS[k] = _scratchA.setHex(a[k]).lerp(_scratchB.setHex(b[k]), t).getHex()
+        SKY_PARAMS[k] = _scratchA.setHex(a[k]).lerp(_scratchB.setHex(b[k]), w).getHex()
       } else {
-        SKY_PARAMS[k] = THREE.MathUtils.lerp(a[k], b[k], t)
+        SKY_PARAMS[k] = THREE.MathUtils.lerp(a[k], b[k], w)
       }
     }
+  }
+
+  /** FEAT-180: the moon's lit fraction, 0 (new: the night look as authored) … 1 (full: FULL_MOON_GAIN × its light).
+   *  Re-applies the current hour when it changes. */
+  setMoonLit (lit) {
+    const g = 1 + (FULL_MOON_GAIN - 1) * THREE.MathUtils.clamp(lit, 0, 1), n = SKY_PRESETS.night
+    if (_nightLook.sunIntensity === n.sunIntensity * g) return
+    _nightLook = g === 1 ? n : { ...n, sunIntensity: n.sunIntensity * g, hemiIntensity: n.hemiIntensity * g,
+      fogColor: _scratchA.setHex(n.fogColor).multiplyScalar(g).getHex() }
+    this.setTimeOfDay(SKY_CYCLE.hour)
   }
 
   /**

@@ -363,13 +363,54 @@ def lumber(p):
 
 
 def toilet(p, F):
-    """A portable toilet facing the road: blue shell, a lighter roof cap, a vent strip and a pull."""
-    w, d, h = 1.10, 1.10, 2.25
-    fbox(p, F, (-w / 2, -d / 2, 0), (w / 2, d / 2, h), "SiteBlue", skip={2, "top"})
-    tile(p, [(-w / 2, w / 2, 0, h, "SiteBlue"), (-0.40, 0.40, 1.95, 2.05, "SiteDark")],
-         lambda x, z: F(x, d / 2, z), F.d((0, 1, 0)))
-    fbox(p, F, (-w / 2 - 0.04, -d / 2 - 0.04, h), (w / 2 + 0.04, d / 2 + 0.04, h + 0.10), "SiteConcrete")
-    fbox(p, F, (0.32, d / 2, 0.95), (0.40, d / 2 + 0.05, 1.20), "SiteSteel", skip={0})
+    """A portable toilet facing the road (owner, 2026-11-07: "spend a little more geometry on the porta
+    potty"): a moulded blue shell with chamfered corners, vertical ribs down its sides and back and a vent
+    grille under the eaves; a framed door with three hinges, a pull and the red occupied tab; a lighter
+    overhanging roof with the vent stack through it; all on a grey skid with fork pockets."""
+    a, c = 0.53, 0.08                        # shell half-width, corner chamfer
+    zs, ze, zr = 0.12, 2.10, 2.30            # skid top, eaves, roof crown
+    oct_ = lambda h, k: [(-h + k, -h), (h - k, -h), (h, -h + k), (h, h - k), (h - k, h), (-h + k, h),
+                         (-h, h - k), (-h, -h + k)]          # side order: 0 back, 2 +x, 4 front, 6 -x
+    ring = lambda h, k, z: [F(x, y, z) for x, y in oct_(h, k)]
+    # skid, its fork pockets cut into the front and back
+    solid(p, ring(0.57, 0.10, 0), ring(0.57, 0.10, zs), "SiteSteel", skip={0, 4, "bot"})
+    for sy in (-1, 1):
+        tile(p, [(-0.47, 0.47, 0, zs, "SiteSteel")] + [(u0, u1, 0.025, 0.09, "SiteDark")
+                                                      for u0, u1 in ((-0.36, -0.12), (0.12, 0.36))],
+             lambda u, v: F(u, sy * 0.57, v), F.d((0, sy, 0)))
+    # shell: the corners whole, the four flat sides tiled
+    solid(p, ring(a, c, zs), ring(a, c, ze), "SiteBlue", skip={0, 2, 4, 6, "bot", "top"})
+    vents = [(y - 0.045, y + 0.045, 1.88, 1.98, "SiteDark") for y in (-0.32, -0.16, 0.0, 0.16, 0.32)]
+    for sx in (-1, 1):
+        tile(p, [(-a + c, a - c, zs, ze, "SiteBlue")] + vents, lambda u, v: F(sx * a, u, v), F.d((sx, 0, 0)))
+    tile(p, [(-a + c, a - c, zs, ze, "SiteBlue")], lambda u, v: F(u, -a, v), F.d((0, -1, 0)))
+    tile(p, [(-a + c, a - c, zs, ze, "SiteBlue"), (0.22, 0.34, 1.30, 1.36, "SiteRed")],
+         lambda u, v: F(u, a, v), F.d((0, 1, 0)))
+    # moulded ribs, 25 mm proud: three down each side (under the grille) and the back
+    for u in (-0.27, 0.0, 0.27):
+        for sx in (-1, 1):
+            fbox(p, F, (min(sx * a, sx * (a + 0.025)), u - 0.03, 0.30), (max(sx * a, sx * (a + 0.025)), u + 0.03, 1.80),
+                 "SiteBlue", skip={3 if sx > 0 else 1})
+        fbox(p, F, (u - 0.03, -a - 0.025, 0.30), (u + 0.03, -a, 1.95), "SiteBlue", skip={2})
+    # the door: a raised frame round it, two stiffening ribs across it, hinges on -x, the pull on +x
+    dx, f, fp = 0.385, 0.045, 0.025
+    for x0, x1 in ((-dx - f, -dx), (dx, dx + f)):                                       # jambs
+        fbox(p, F, (x0, a, zs), (x1, a + fp, 2.03), "SiteBlue", skip={0, "bot"})
+    for z0, z1 in ((zs, 0.17), (1.98, 2.03)):                                           # sill, header
+        fbox(p, F, (-dx, a, z0), (dx, a + fp, z1), "SiteBlue", skip={0, 1, 3} | ({"bot"} if z0 == zs else set()))
+    for z in (0.60, 1.52):
+        fbox(p, F, (-0.32, a, z), (0.32, a + 0.015, z + 0.04), "SiteBlue", skip={0})
+    for z in (0.35, 1.05, 1.75):
+        fbox(p, F, (-dx - 0.01, a, z), (-dx + 0.03, a + 0.035, z + 0.10), "SiteSteel", skip={0})
+    for z in (0.97, 1.15):                                                              # pull: standoffs, bar
+        fbox(p, F, (0.275, a, z), (0.295, a + 0.045, z + 0.03), "SiteSteel", skip={0, 2})
+    fbox(p, F, (0.27, a + 0.045, 0.95), (0.30, a + 0.07, 1.20), "SiteSteel")
+    # roof: an eave slab overhanging the shell, a low crown, the vent stack and its cap at the back
+    solid(p, ring(0.58, 0.11, ze), ring(0.58, 0.11, ze + 0.06), "SiteConcrete", skip={"top"})
+    solid(p, ring(0.58, 0.11, ze + 0.06), ring(0.36, 0.06, zr), "SiteConcrete", skip={"bot"})
+    for r, z0, z1 in ((0.045, zr, 2.50), (0.075, 2.50, 2.55)):
+        solid(p, [F(x, y, z0) for x, y in ngon(r, 8, 0.28, -0.28)], [F(x, y, z1) for x, y in ngon(r, 8, 0.28, -0.28)],
+              "SiteDark", skip={"bot", "top"} if z0 == zr else ())
 
 
 def mixer(p, F):
@@ -667,6 +708,7 @@ VIEWS = {
     "three-quarter": ((12.0, 14.0, 6.5), (0.0, 0.5, 1.0), 45),
     "rear":          ((-11.0, -12.0, 7.0), (0.0, 0.0, 1.0), 45),
     "aerial":        ((0.5, 9.0, 14.0), (0.0, 1.0, 0.0), 55),
+    "toilet":        ((8.0, 5.8, 1.9), (6.25, 3.0, 1.35), 46),
 }
 
 

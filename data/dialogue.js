@@ -96,12 +96,30 @@ export const TUT = {
 
     // FEAT-170 stage 4: the opening's lessons, in mom's voice, in the order they come. PLACEHOLDER words
     // (Lane A's draft, 2026-11-06; the owner writes them — FEAT-148).
+    // FEAT-184 (the worst day, stage 3): the key first — the truck sits dead after her call — then the pedals.
+    'tut-key': [{ speaker: 'Mom', text: `And honey &mdash; the truck won't start itself. `
+        + `<span class="kc-kb">Hold <span class="dlg-key">I</span></span><span class="kc-pad">Hold <span class="dlg-key">Y</span></span> to turn the key.` }],
+    // …and the gauge, when the tank starts near empty and the line runs by the nearest station (main.js _evePump).
+    'tut-gas': [{ speaker: 'Mom', text: `Is that gauge on empty? Of course it is. The line takes you by the gas station first: `
+        + `pull up at a pump and fill her up.` }],
+    // FEAT-184 stage 4, the worst day: the flat halfway home, the screen it shows on, the spare that's flat too, the tow,
+    // and the shop it lands at (main.js _eveningBeats, _pickSpare, _toggleRecovery, _updateParkTriggers).
+    'tut-flat': [{ speaker: 'Mom', text: `Was that a bang? That's a flat, honey. Pull over, set the handbrake, `
+        + `and press <span class="dlg-key">V</span> to look at it.` }],
+    'tut-damage': [{ speaker: 'Mom', text: `That's your truck, part by part, and how worn each one is: green is fine, `
+        + `red is trouble. The front left's flat. Put your spare on: <span class="dlg-key">Tab</span>, then the mounted tire.` }],
+    'tut-spareflat': [{ speaker: 'Mom', text: `The spare's flat too? Of course it is. Call a tow: `
+        + `<span class="dlg-key">X</span> is the recovery menu.` }],
+    'tut-tow': [{ speaker: 'Mom', text: `The tow takes you to the nearest auto shop. It's on me this time.` }],
+    'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner, and a spare you can trust. Then come home &mdash; it's late.` }],
+    // Stage 5: the night drive home after the shop.
+    'tut-lights': [{ speaker: 'Mom', text: `It's pitch dark out there. `
+        + `<span class="kc-kb"><span class="dlg-key">L</span> turns</span><span class="kc-pad">the <span class="dlg-key">left stick</span> click turns</span> `
+        + `the headlights on. Follow the line home.` }],
     // On the drive home: right after her call, halfway there, and near her house (main.js _eveningBeats).
     'tut-drive': [{ speaker: 'Mom', text: `Drive safe, honey. <span class="dlg-key">W</span> and <span class="dlg-key">S</span> `
         + `are the gas and the brake; steer with <span class="kc-kb"><span class="dlg-key">A</span> and <span class="dlg-key">D</span></span>`
         + `<span class="kc-pad">the <span class="dlg-key">left stick</span></span>. Follow the line home.` }],   // FEAT-174: kc-kb / kc-pad, one per input
-    'tut-diag': [{ speaker: 'Mom', text: `If that old truck starts acting funny, stop and press <span class="dlg-key">V</span> `
-        + `to look it over. <span class="dlg-key">Tab</span> shows what you've got with you.` }],
     'tut-park': [{ speaker: 'Mom', text: `Pull in at mine and stop. A tap of <span class="dlg-key">Space</span> sets the handbrake &mdash; `
         + `that's parking, and parking is how you get anything done around here.` }],
     // At hers in the evening, when her sleep card opens.
@@ -111,7 +129,9 @@ export const TUT = {
         { speaker: 'Mom', text: `Sleep is how a day ends. Pick how long on the timer &mdash; the bar shows how rested you'll wake up.` },
     ],
     // The morning: breakfast at hers (it feeds you), then her card. Its map line plays as her card opens.
-    'tut-breakfast': [{ speaker: 'Mom', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach.` }],
+    // FEAT-184 stage 5: breakfast is yours to eat — one of her packed lunches, from the inventory.
+    'tut-breakfast': [{ speaker: 'Mom', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach. `
+        + `<span class="dlg-key">Tab</span>, and pick one of the lunches I packed you.` }],
     'tut-mapcard': [{ speaker: 'Mom', text: `The casserole's ready. Park at mine and look at my card: it shows you the way to Larry's.` }],
     'tut-map': [{ speaker: 'Mom', text: `You can always open the map with <span class="dlg-key">M</span>.` }],
 }

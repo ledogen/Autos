@@ -346,6 +346,10 @@ MATS = {
     "RangerTrim":     ((0.048, 0.048, 0.050, 1.0), 0.85, 1.0),  # bumpers, valance, mirrors, flaps
     "RangerChrome":   ((0.455, 0.455, 0.442, 1.0), 0.26, 1.0),  # bumper blade, grille bars
     "RangerLens":     ((0.700, 0.690, 0.640, 1.0), 0.22, 1.0),  # headlamps AND reverse — see spec
+    # BUG-143 (owner, 2026-11-07: "license plate lights up when the reverse lights do"): the plate was
+    # RangerLens, and every rear face of that material is split off and lit as a reverse lamp
+    # (vehicle-models.js `reverse`). Its own name, never containing "RangerLens".
+    "RangerPlate":    ((0.700, 0.690, 0.640, 1.0), 0.45, 1.0),  # the rear licence plate, painted sheet
     "RangerAmber":    ((0.640, 0.215, 0.010, 1.0), 0.28, 1.0),  # corner turn signals
     "RangerTail":     ((0.480, 0.026, 0.020, 1.0), 0.32, 1.0),  # tail/brake lamps
     # Read through glass against a bright flank, only the VALUE gap survives — so the
@@ -2363,7 +2367,7 @@ def build_rear_end(p):
     # Licence plate, PROUD of the bumper crown (which sits at Y_TAIL on the
     # centreline) — buried inside the convex face it showed only as a white diamond.
     box(p, -0.150, 0.150, Y_TAIL, Y_TAIL + 0.018, Z_RBUMP0 + 0.034,
-        Z_RBUMP0 + 0.148, "RangerLens")
+        Z_RBUMP0 + 0.148, "RangerPlate")
 
     # Exhaust tip, right rear, exiting BELOW the bumper so it is actually visible.
     tube(p, (0.470, -2.020, 0.330), (0.470, -2.470, 0.312), 0.038, 6, "RangerTrim")

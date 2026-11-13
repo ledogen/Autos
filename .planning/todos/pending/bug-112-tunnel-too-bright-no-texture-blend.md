@@ -1,7 +1,7 @@
 ---
 id: BUG-112
 type: bug
-status: open
+status: open — the owner answered bug112-look (2026-11-06): A1, keep the light; blend only the portal's shoulder seam (gravel outside → flat dirt inside) — to build
 severity: minor
 opened: 2026-11-05
 source: owner, 2026-11-05, driving BUG-81's shoulder fix on Spare's branch (:3885) — "the tunnel shoulder drive felt was smooth as butter - close. but the lighting was off - too bright in the tunnel. and texture blending nonexistant"
@@ -58,31 +58,12 @@ https://claude.ai/artifact/WvJkABRWGG5rZ35BimnXvk, generated into `wip/bug-112/p
   - B, which seam (1 bore floor, 2 two tans, 3 lining vs ring), each one blended or ruled a hard edge.
 Queued by the orchestrator as an owed call. The build waits on the answer.
 
-## Owner's look (2026-11-06) and the seam fix (Spare, `9bd1494c`)
+## The owner's answer (2026-11-06, bug112-look, verbatim)
 
-Owner, verbatim (bug112-look): "bug 112 per the artifact: A1. B inconclusive. Your bubbles were not aligned in the photos
-with the seam that I was concerned about. The only seam I'm concerned about is between the shoulder outside the tunnel
-and the shoulder inside the tunnel. It goes from a gravel texture to a flat dirt color. That seam is the one i wanted
-fixed. all others are fine"
+> "bug 112 per the artifact: A1. B inconclusive. Your bubbles were not aligned in the photos with the seam that I was
+> concerned about. The only seam I'm concerned about is between the shoulder outside the tunnel and the shoulder
+> inside the tunnel. It goes from a gravel texture to a flat dirt color. That seam is the one i wanted fixed. all
+> others are fine"
 
-- **A1: the light stays as built** (`92639ee6` + `e3ef09e8`).
-- **The seam.** Outside the mouth, the shoulder is terrain: the cut bench, coloured `terrainCutoutColor` and textured
-  with the rock map, weighted as an engineered cut (`aSurf` (0, 0, 1, 1)). Inside, the lining drew the floor beside
-  the deck itself, as flat-tinted concrete.
-  - **Fix:** the floor is its own geometry (`buildTunnelTube` returns `{tube, floor}`), drawn with
-    `TerrainSystem.boreFloorMaterial`. That material is a sibling of the shared terrain material: same shader text and
-    one program, same live uniforms, with the mouth cut-out switched off, because the floor lies inside the capsule
-    that cut discards.
-  - The floor carries what a fully cut bench gets, darkened by the same `boreShade` ramp.
-  - Headless (no terrain material handed) it falls back to the lining material.
-  - **Colliders:** the same triangles as before, now in two geometries, both faces kept.
-- **All other seams are untouched,** as ruled.
-- **Sheet:** `wip/bug-112/shots/sheet-seam.jpg`, seed 6's bore at noon. Left is before (the 11-05 lighting build),
-  right is after; rows are 25 m out looking in, 15 m in looking out, and the lip. The dusk frames are `C-seam-h19-*.png`.
-- **Checks:** `node test/cdp-smoke.mjs` PASS 25/25, zero console errors.
-- **Gates, on main `5028b1d9` merged (`eefcc7e0`):**
-  - `road-pad-fill` PASS (the only gate whose closure holds `road-mesh.js`, besides cdp-smoke).
-  - `fingerprint-world` vs main: only `tiles` differs, in the 5 windows with bores. Each bore slice gains its floor
-    mesh (484 → 501, 474 → 492, 34 → 39, 46 → 51, 36 → 41 meshes). Seed 3, which has no bore, is identical. Network,
-    profiles, junctions, POI, surface, carve, water and props are identical everywhere.
-- **Owed:** the owner's look at the sheet, then the landing.
+So the lighting stands, and the build left is one seam: the shoulder's gravel texture outside the portal against the
+flat dirt colour inside. (Folded in by the alpha audit, Lane A, 2026-11-07.)

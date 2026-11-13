@@ -432,7 +432,8 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
  *
  * Shifts are synchro physics only: vehicleState.shiftRequest (±1, consumed here) is accepted while the
  * clutch is out (< clutchShiftMax), the box sits in N for manualShiftTime × _transShiftScale (a worn
- * box shifts slower — src/damage.js) and lands. With the clutch in it is REJECTED, flagged
+ * box shifts slower — src/damage.js) and lands. A request during a shift steps its target on and
+ * restarts that time (FEAT-185). With the clutch in it is REJECTED, flagged
  * st.missShift for the damage model (−2 % transmission). R only from N, at walking pace or below.
  * STALL: engaged in gear below stallRPM kills the engine (the fuel-empty kill pattern, src/fuel.js).
  *
@@ -456,8 +457,11 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
   vehicleState.shiftRequest = 0
   st.missShift = false
   st.stalled   = false
-  if (req && !(st.shiftT > 0)) {
-    const from   = st.mGear
+  // FEAT-185 (owner, 2026-11-07: "button mash any gear … the shift timer will still be enforced before the gear
+  // lands"): a press during a shift moves its TARGET on from the one already chosen and restarts the timer, so
+  // the shift time is spent once, after the last press — 4th → N is four presses and one shift time.
+  if (req) {
+    const from   = st.shiftT > 0 ? st.shiftTo : st.mGear
     const target = Math.max(-1, Math.min(nGears, from + Math.sign(req)))
     if (target === from) { /* already at the end of the gate */ }
     else if (clutch > (params.clutchShiftMax ?? 0.15)) st.missShift = true          // clutch in: rejected

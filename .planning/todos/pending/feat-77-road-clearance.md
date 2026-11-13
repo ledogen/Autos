@@ -1,7 +1,7 @@
 ---
 id: FEAT-77
 type: feature
-status: in-progress
+status: open — the alpha slice is met (the red cleared 2026-11-01, ruling (a)); waiting on the `~p` parallels call
 severity: major
 ---
 

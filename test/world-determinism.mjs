@@ -11,10 +11,10 @@
 //      the probe ran — a session that drove 3 km, or warmed a 2500 m story region, holds far more
 //      network than a cold boot. It must not.
 //
-//   2. THE REGION CENTRE IS THE SPAWN. Story entry reseats before it captures the centre — both
-//      branches, `applySeed` on a seed change and `reseat` when the seed is already loaded
-//      (story.js `enter` → `_beginWarm`). So the centre inherits link 1's purity, and where the
-//      player was standing when they opened the menu cannot reach world generation.
+//   2. THE REGION CENTRE IS THE SPAWN. Story entry settles the world, then takes the centre from
+//      resolveSpawn itself (main.js `spawnCentre`, BUG-152) — not from the seated truck, which a
+//      failed settle left at the menu world's spawn. So the centre inherits link 1's purity, and
+//      where the player was standing when they opened the menu cannot reach world generation.
 //
 //   3. WHAT THE REGION CONTAINS IS A PURE FUNCTION OF (SEED, CENTRE). The registered network graph,
 //      the POI candidate pool, the roster and the newspaper customers must be identical from any
@@ -95,8 +95,14 @@ const WIDE_SEEDS = [6, 90]
 // 2026-11-05: free roam and story agree); a pond beside its probe is what the replica once missed.
 // 1 and 6 matched the game to centimetres in the same check, so their pins are the replica's values.
 // 0.25 m: the game's 4194356868 reading sits 0.12 m from the replica's — the same road, the same region.
+// BUG-121 (owner 11-07, bug121-spawn "(a) land it, worlds move once"): queryNearest's far answer was the spawn's
+// road, so all three spawns moved (206, 210, 135 m). Re-read in a browser on the fix (wip/bug-121/spawn-read.mjs,
+// free roam ?seed=, the truck as seated): the replica sits 0.10, 0.06 and 0.08 m from those readings.
+// BUG-141 (11-07): free roam now refines the seat from this decision (RoadSystem.freeRoamSeat: level road, away from a
+// dead end, facing the long way), so a free-roam reading is the DECISION only where the seat did not move; story never
+// refines (its region centre is the decision). These three seeds' seats stay within 2 cm (seed 6 turns round).
 {
-    const GAME = [[4194356868, 34.65, 158.45], [1, 420.69, 89.03], [6, -71.10, 149.10]]
+    const GAME = [[4194356868, 71.24, -44.80], [1, 242.10, 198.78], [6, -45.67, 16.23]]
     for (const [seed, x, z] of GAME) {
         const d = spawnDecision(seed, RANGER_PARAMS)
         const off = d.onRoad ? Math.hypot(d.x - x, d.z - z) : Infinity
@@ -191,6 +197,9 @@ for (const [seed, C] of [[6, { x: 4500, z: 600 }], [90, { x: -72.27, z: 140.48 }
         story.indexOf('clearSpawnOverride') < story.indexOf('this._d.applySeed(seed)'),
         'the override must be gone before applySeed/reseat runs, or the reseat still honours it')
     // The trap that made this necessary: the override is consulted ahead of resolveSpawn.
+    check('the region centre is the seed\'s spawn, never the truck\'s pose (BUG-152)',
+        /this\._d\.spawnCentre\(\)/.test(story) && /spawnCentre\s*:/.test(main) && !/_center = \{ x: p\.x/.test(story),
+        'story.js must centre on deps.spawnCentre() (main.js resolveSpawn), not getVehiclePosition()')
     check('the spawn override is still consulted ahead of resolveSpawn (this check is still needed)',
         main.indexOf('if (_spawnOverride)') < main.indexOf('resolveSpawn(worldSeed'),
         'if this flipped, re-read whether the guard above is still the right shape')

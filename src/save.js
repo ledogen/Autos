@@ -63,6 +63,11 @@ export function logBoard (board, t0H, events = []) {
     if (typeof f !== 'function') continue
     board[op] = (...a) => { const r = f.apply(board, a); if (r) log.events.push([op, ...a]); return r }
   }
-  for (const [op, ...a] of events) board[op](...a)
+  // BUG-152: a faithful replay takes every event (the board is pure, and only calls that took were
+  // logged). One that no longer takes is dropped from the new log and every later save carries the
+  // loss: a roster re-sited between sessions lost mom's take + complete and her casserole came back.
+  // An integrity check at load, so any future drift is loud instead of quiet.
+  const dropped = events.filter(([op, ...a]) => !board[op](...a)).length
+  if (dropped) console.error(`[save] board replay dropped ${dropped} of ${events.length} events`)
   return log
 }
