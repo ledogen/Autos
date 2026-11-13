@@ -1,7 +1,7 @@
 ---
 id: FEAT-194
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-11 inbox, three items — (1) "Tapping or holding the brakes with the parking brake on should not release it. Only the gasor shifting into gear if manual should release it." (2) "I think we should lock the parking brake on whenever the player enters a menu that requires them to be parked for example When you stop at a mission provider And you're looking around in the Map if you accidentally tap the gas and the car starts rolling you might not notice I think it's perfectly reasonable in that case to just lock the handbrake on" (3) "I think it might be interesting to have no time pass while the handbrake is pulled up. First off, let me know if there are any huge glaring issues I'm missing with this plan. I think it would give players more time to make decisions, feel less pressured, consider using more items, and looking at their car more. Right now every moment you take to make decisions is a penalty which does not feel very comfortable. It makes the gameplay feel very rushed. Because you have to completely stop to park, I think this is a reasonable trade."
@@ -12,7 +12,7 @@ lane: A (clock) + B (the brake input)
 # FEAT-194: Parking brake rules: brake pedal does not release it, parked menus set it, and no time passes while it is set
 
 ## Next steps
-Landing review (orchestrator): all three parts are built and gated; on merge the ticket closes. Owner: one drive to feel a stop (the clock stands still while the BRAKE lamp is lit).
+Closed. Owner: one drive to feel a stop (owed: feat194-drive). The clock stands still while the BRAKE lamp is lit, including after leaving a camp or shop until the brake is released.
 
 ## Summary
 The parking brake's latch gets three rules: the brake pedal never releases it (part 1), a menu that needs the truck
@@ -92,3 +92,5 @@ No glaring hole found. The one real trade is item 2.
 - 2026-11-13: parts 1–2 landed (Lane B).
 - 2026-11-13: part 3 built (Lane A, feature/run-shape): day.js `clockHeld` + main.js's clock step; DESIGN.md's clock
   bullet amended. `test/park-brake.mjs` 15/15; with `parked` dropped from clockHeld it fails 4 checks (the gate bites).
+
+- 2026-11-13: part 3 on main 5fae6fd8 (55/55 affected gates; smoke 26 steps, zero console errors after the camp step was updated in 4a4876eb: a re-seat latches the brake, so the clock holds until Space). Closed.
