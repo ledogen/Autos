@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tutorial rework: who tells the story, and where the intro ends</title>
+<h1>Tutorial rework: who tells the story, and where the intro ends</h1>
+<p>Your note on the tutorial look (feat184-look) changed the shape of the opening: the new career intro ends at
+mom's, and mom sets up the story. That collides with three earlier rulings and leaves two scope questions.
+They were five separate cards. They are one page here because the first three depend on each other: who tells
+the story decides where the first job goes, and both decide where a skip lands.</p>
+<p>Lane A's stage 1 (the career intro) is waiting on questions 1, 2 and 3.</p>
+
+<h2>1. Who sets up the story?</h2>
+<p>The new intro ends at mom's and mom sets up the story. DESIGN.md's alpha story runs differently: the firing,
+then Uncle Larry, then the camp. Larry is the tutorial's voice, and his welcome is where the player hears the
+run's goal (the deeds, the expedition camp).</p>
+<table>
+  <tr><th>Option</th><th>What the player gets</th></tr>
+  <tr><td>Both</td><td>Mom feeds you and hands you the casserole for Larry. Larry tells the goal.</td></tr>
+  <tr><td>Mom replaces Larry</td><td>Mom tells the goal. Larry stays in the world as an ordinary character.</td></tr>
+  <tr><td>Larry, not mom</td><td>The intro's drive goes to Larry's, as DESIGN.md has it today.</td></tr>
+</table>
+<dive-q id="story" options="both: mom feeds you, the casserole to Larry's, Larry tells the goal | mom replaces Larry | Larry, not mom"></dive-q>
+
+<h2>2. What happens to the first paid job?</h2>
+<p>On 11-05 you ruled: "every playthrough starts the first paid job as a delivery to larry's" (the casserole).
+The new note gives the player free will from the moment they wake. Both cannot hold as written.</p>
+<p>If you picked "both" above, the casserole run still exists; this question is only whether the player must
+take it.</p>
+<dive-q id="first-job" options="offered on day 1, not forced | stays forced, free will after it | drop it: an ordinary board from the wake"></dive-q>
+
+<h2>3. Where does skipping the intro land?</h2>
+<p>Holding M skips the career intro. On 11-07 you said a skip lands at Larry's with the casserole delivered.
+The new intro ends at mom's at 07:00 on day 1, with nothing done yet.</p>
+<p>The answer should agree with 1 and 2: a skip should leave the player where the intro would have.</p>
+<dive-q id="skip" options="mom's, 07:00 day 1, nothing done yet | Larry's, casserole delivered (the 11-07 ruling)"></dive-q>
+
+<h2>4. The optional lessons: alpha or after?</h2>
+<p>After the mandatory tutorial there would be optional lessons: one per mission type, driven with tips, on the
+tutorial seed. Each is about a day of work to build. DESIGN.md describes alpha as a "polished demo, little
+content, but complete".</p>
+<dive-q id="lessons" options="after alpha | in alpha"></dive-q>
+
+<h2>5. Five readings of your note</h2>
+<p>Each of these is how the agent read your note. Each is taken as the default unless you change it here.</p>
+
+<h3>5a. Where the skip lives</h3>
+<p>The hold-M skip moves to the career intro. The mandatory tutorial has no skip, and only finishing it clears
+the flag ("enforce").</p>
+<dive-q id="default-skip-moves" options="as written | change"></dive-q>
+
+<h3>5b. The setting's name</h3>
+<p>The "always skip the tutorial" setting becomes "always skip the intro".</p>
+<dive-q id="default-setting" options="as written | change"></dive-q>
+
+<h3>5c. The tutorial runs on a fixed seed</h3>
+<p>This is your exception to "no default seed", and it reverses your 11-07 answer (a random world). A gate checks
+the seed after world-generation changes, there is a procedure to re-pick it, and CLAUDE.md gets a line.</p>
+<dive-q id="default-fixed-seed" options="as written | change"></dive-q>
+
+<h3>5d. No cutscene layer</h3>
+<p>The "intro cinematic" stays staged in the world, like today's firing (SM-INV-11: no cutscene layer).</p>
+<dive-q id="default-staged" options="as written | change"></dive-q>
+
+<h3>5e. The tutorial's story</h3>
+<p>The worst-day story (flat, flat spare, tow, shop, night drive) becomes the mandatory tutorial's story.</p>
+<dive-q id="default-worst-day" options="as written | change"></dive-q>
+
+<p>Already built (bd5a6a95), not yet run: "tutorial" on the main menu, the flag starts complete, and a tutorial
+run never touches your career save.</p>
+
+<h2>Anything else</h2>
+<dive-q id="other"></dive-q>
+
+<script src="/dive.js"></script>
