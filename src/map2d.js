@@ -304,7 +304,10 @@ const GROUND_LEVELS   = 4      // levels 0..3: texels of 4, 8, 16, 32 m
 const TOPO_TILE_CELLS = 64     // contour cells a contour tile side, at its own step
 const GLYPH_TILE_M    = 512    // m — a glyph tile side (a multiple of COVER_CELL)
 const TILE_MEMO_MAX   = 384    // tiles of all kinds kept, least-recently-used out (a ground tile is ~260 KB)
-const BG_SLICE_MS     = 6      // ms of rebuild per frame (always at least one unit — see _stepBackground)
+const BG_SLICE_MS     = 10     // ms of rebuild per frame (always at least one unit — see _stepBackground). PERF-46: 6 → 10
+                               // when the steps stopped overrunning: under 4× slow-CPU emulation a step then runs
+                               // ≤ ~13 ms and every frame still lands in 16.7, and the sheet sharpens about as fast as
+                               // before (at 6 a zoom-out took 1.8–2× as long)
 const WATER_BAND_M    = 2048   // m — one unit of a whole-sheet water query (_waterQuery): 4 water cells of rows
 const COVER_WATER_M   = 64     // m — the cover samplers fetch the water rejects this far past their rect
 const BG_SEAM_M       = 96     // m — (COVER_COUNT_BLUR + 2) cover cells, the widest edge effect: a tile's cover

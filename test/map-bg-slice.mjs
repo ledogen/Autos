@@ -33,7 +33,7 @@ globalThis.Path2D = class { moveTo () {} lineTo () {} }
 const { Map2D } = await import('../src/map2d.js')
 
 const UNIT_MAX = 4000          // samples a step may overrun its budget by; the observed worst is printed
-const BUDGET = 6               // ms — BG_SLICE_MS
+const BUDGET = 10              // ms — BG_SLICE_MS
 const SEED = '6'               // the test seed
 let failures = 0
 const check = (cond, msg) => { if (!cond) { console.error('  FAIL:', msg); failures++ } }
