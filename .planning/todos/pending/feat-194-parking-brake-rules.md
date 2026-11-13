@@ -36,6 +36,23 @@ No glaring hole found. The one real trade is item 2.
 
 ## Acceptance
 
-- [ ] Part 1: brake input leaves the parking brake set; throttle (or a gear on manual) releases it. Pad and keyboard.
-- [ ] Part 2: opening a parked-only menu sets it; the HUD lamp shows it.
+- [x] Part 1: brake input leaves the parking brake set; throttle (or a gear on manual) releases it. Pad and keyboard.
+- [x] Part 2: opening a parked-only menu sets it; the HUD lamp shows it.
 - [ ] Part 3: built only after the owner's ruling on the six points above; then DESIGN.md's clock section is updated first.
+
+## Parts 1–2 built (2026-11-13, Lane B)
+
+- **Part 1.** The latch's rules moved into `src/park-brake.js` (pure, `stepParkBrake`); vehicle.js feeds it. Latched,
+  it lets go on the throttle (W / RT), a Space / RB tap (the lever itself — kept: the offer card's decline and the
+  pump's pay both ride that tap), or on a manual a shift that LANDS in a gear (the synchro's end, so a resume or
+  sitting in gear never counts). S / LT, tapped or held, never. Consequence on the automatic: S at rest is reverse,
+  so backing out of a parked spot starts with a Space tap.
+- **Part 2.** `setParkLock` (vehicle.js), set before every step from main.js `_parkLocked()`: an offer card (mission
+  'generating'/'offer', paper 'planning'/'offer'), the service/shop screen, the damage screen, the inventory, a camp
+  face, or the map when it was opened at rest. While set the handbrake is on even unlatched — the BRAKE lamp reads it —
+  and the throttle or a gear cannot release the latch; Space still can. The map's is a hold, not a latch: writing the
+  latch would fire the park trigger behind the map (a giver's card, a pump).
+- The pad audit's mid-press fix (gamepad.js rbOwned) is untouched.
+- Gate `test/park-brake.mjs` (real updateVehicle, keyboard listeners + pad). `test/pad-e2e.mjs` (rainy-day) updated:
+  an LT tap/hold while parked keeps it; RT on a map opened at rest does not move the truck.
+- Part 3 still waits on the owner.
