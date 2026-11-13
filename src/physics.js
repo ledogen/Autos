@@ -776,7 +776,20 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // load on the deck that spans the arch (up to 12 cm deep at the bump stop), and 2 cm into the
     // marble statue over a dip. Only the world-frame n.y filter below kept the tire off it, and a
     // compressed wheel on the HIGH side of a 15–25° roll tips that normal past −0.1.
-    const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r + ahead, { collidesWith: GROUP_DEBRIS, dynamicOnly: true, skipWeldedTo: chassis })
+    // BUG-165: and the sphere is CUT to the tire's width — the slab |(x − hub)·axle| ≤ w/2, grown by
+    // this step's hub travel ALONG the axle (the look-ahead's share that way), so a loose load
+    // between the wheelhouses, wholly inboard of the tread, is no contact at any roll. Exact for
+    // that (the axle separates them). Left as it was: a body that crosses the tread's edge plane
+    // keeps the sphere's contact, whose deepest point may lie beside the tire (the cylinder's
+    // tread-edge corner is not modelled either way).
+    let slab = null
+    if (corner !== undefined) {
+      const A = _axle[corner]
+      _slab.axis = A
+      _slab.halfWidth = (params.wheelWidth || 0.25) / 2 + Math.abs(hvx * A.x + hvy * A.y + hvz * A.z) * dt
+      slab = _slab
+    }
+    const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r + ahead, { collidesWith: GROUP_DEBRIS, dynamicOnly: true, skipWeldedTo: chassis, slab })
     for (let i = 0; i < dyn.length; i++) {
       const h = dyn[i]
       // Safety invariant, not a filter that should ever fire with exact manifolds: a body under
@@ -1494,6 +1507,7 @@ const _axle = [0, 1, 2, 3].map(() => new THREE.Vector3()), _bodyY = new THREE.Ve
 const _hubPost = [null, null, null, null]
 
 const NEWTON_TOL = 0.5                      // rad/s — ω-solve residual above this = diverged, commit the rolling fixed point instead
+const _slab = { axis: null, halfWidth: 0 }   // the wheel query's tire-width slab (BUG-165), reused per call
 const _queryCount = [0, 0, 0, 0]           // qcPlus calls per corner, reset each step (BUG-99)
 const _rockSpin = [0, 0, 0, 0]             // rad/s — rock-face grip's change to each wheel's spin this step (FEAT-158)
 const _rockLoad = [0, 0, 0, 0]             // N — strut-axis load rocks carried this step (FEAT-158)
