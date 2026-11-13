@@ -104,8 +104,9 @@ export const BINDINGS = [
   { action: 'camp',                  key: 'z',         pad: 'B (hold, ↑/↓, release)' },
   { action: 'recovery',              key: 'x',         pad: 'B (hold, ↑/↓, release)' },
   // FEAT-125 pad audit [DEFAULT]: the job's two-press abandon button, mouse-only until now — the B menu's
-  // last entry (never pre-selected, hud-menu.js) and J on the keyboard.
-  { action: 'abandon job (parked; twice)', key: 'j',  pad: 'B (hold, ↑/↓, release)' },
+  // last entry (never pre-selected, hud-menu.js) and J on the keyboard. FEAT-195 (owner, 2026-11-11): its pad
+  // binding is B held + ↑ — ↑ from the pre-selection (the top) wraps straight to it — and the keycap says so.
+  { action: 'abandon job (parked; twice)', key: 'j',  pad: 'B + ↑ (hold B, ↑, release)' },
 ]
 const BUTTON_KEYS = Object.fromEntries(BINDINGS.filter(b => b.button != null).map(b => [b.button, b.key]))
 // While a menu owns the screen (pad.menuActive, from src/menu-nav.js) the pad speaks the menu's keys

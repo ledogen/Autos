@@ -26,3 +26,13 @@ Cosmetic: a sliver of tan showing through the asphalt. Physics rides the pad top
 - No POKE failure at this pad (dirt under the pad top at every sampled point inside the ring).
 - BUG-122's kerb unchanged: the rim still drops the designed ~0.15 m.
 - Then seed 169372896 joins junction-edge-lip's `SEEDS` (BUG-150's wall site); that needs BUG-146 landed as well.
+
+## Status 2026-11-09 (Lane B, during BUG-156)
+
+The poke is already gone on main a60e60db, before BUG-156. junction-edge-lip's POKE check, run per node on seed
+169372896 (`wip/bug-156/poke.mjs` in the land/bug-156 worktree), puts the highest dirt over every pad at 12.8–16.6 cm
+**below** the pad top, on main and on land/bug-156 alike. The 1.8 cm at (46.0, −856.7) is gone. One of the landings
+since BUG-150 removed it (most likely BUG-146 or BUG-153/155, which reshaped the dirt at padded mouths). BUG-156's
+change does not touch it.
+
+Left to close it: add 169372896 to junction-edge-lip's `SEEDS` (the last acceptance line), run that gate, close.

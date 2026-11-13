@@ -1,7 +1,7 @@
 ---
 id: PERF-43
 type: perf
-status: open
+status: closed
 opened: 2026-11-12
 severity: major
 source: PERF-42's profiling, 2026-11-12. Owner, same day: "is there some way you could simplify all of those different
@@ -162,3 +162,26 @@ only.
 5. if 1–3 cannot reach ≤ 60 µs: an owner call — fewer tread samples on smooth ground, or a different target.
 Open overlap: BUG-156 (land/bug-156 @ 34fc3e6f, `_limbWeight` in the ruled blend) sits in lever 2/3's code — cherry-pick
 it here first so this gate covers it (the orchestrator is holding it).
+
+## Resolution (2026-11-12, closed by the owner)
+
+Owner, after the quiet-machine numbers: "fix the regression and then i think the rest of the juice is not worth the
+squeeze." Closed with the acceptance targets NOT met, by that ruling.
+
+What shipped:
+- the exactness gate (`test/hint-reuse.mjs`, six hub families) and the three live reuse bugs it found (3.0 m / 2.75 m /
+  5 mm of height; a 78° wheel normal near run ends);
+- layer 1: centreline-foot searches warm-started from the patch (`_refineFrame`), the hub resolve shared with the
+  tunnel-wall test through `carveHint`'s memo (aec90c63 — layer 1's own hub resolve had been a second full resolve per
+  wheel query, +10 % at seed 759313244's spikes, on main from 08130529 until this fix);
+- bit-identical trims: the pad's Newton walk reads the ribbon tangent alone (`_ribbonTangentAt`), the ruled blend's
+  arrays are module scratch, a one-slot `_legDeckTop` memo.
+
+Measured (quiet machine, interleaved, `spots.mjs` A, median µs at the bench's former spike positions, 2 reps):
+seed 759313244 149 → 150 · 1768572700 181 → 175 · 17535907 146 → 126; calm positions +1–2 µs.
+PERF-40 baseline on main b71cd825 (`.planning/perf/history.jsonl`): 7.7 % of moving seconds over 100 ms/s of physics.
+
+Not done, by the ruling: levers 1–5 above (cheaper frame evaluations, the inter-leg blend once per sample, narrowed leg
+windows, the frozen resolver reuse, fewer tread samples). `_hintHolds` / `solo` / `HINT_REACH_M` were NOT deleted —
+they still carry the deck reuse that layer 1 sits on. PERF-42 stays open at its 7.7 %. Re-open this only with a
+measured reason; the per-sample maths, not re-derived context, is what costs at the spikes (§ Progress).

@@ -203,19 +203,25 @@ export class InventorySystem {
      * slot the new one left.
      */
     packItem (index, packIndex = this.equippedIndex()) {
+        if (!this.canPack(index, packIndex)) return false
         const e = runInventory.entries[index], p = runInventory.entries[packIndex]
-        if (!e || !_isPack(p) || ITEMS[e.id].kind !== 'camp') return false
         const bedAt = _bed(e.id) ? p.contents.findIndex(c => _bed(c) === _bed(e.id)) : -1
         if (bedAt >= 0) {
             runInventory.entries[index] = { id: p.contents[bedAt], n: 1 }
             p.contents[bedAt] = e.id
         } else {
-            if (p.contents.length >= ITEMS[p.id].packSlots) return false
             p.contents.push(e.id)
             runInventory.entries.splice(index, 1)
         }
         this._changed()
         return true
+    }
+
+    /** Whether packItem(index, packIndex) would go: a camp item, a pack, and a free slot in it or a bed layer to swap. */
+    canPack (index, packIndex = this.equippedIndex()) {
+        const e = runInventory.entries[index], p = runInventory.entries[packIndex]
+        if (!e || !_isPack(p) || ITEMS[e.id].kind !== 'camp') return false
+        return p.contents.length < ITEMS[p.id].packSlots || (!!_bed(e.id) && p.contents.some(c => _bed(c) === _bed(e.id)))
     }
 
     /** Move pack slot `slot` back into a free truck slot. The equipped pack keeps its bedding. */

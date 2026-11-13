@@ -1430,7 +1430,7 @@ const STEPS = [
     check(e1.first === 'live' && !e1.hud && !e1.gps, `waking did not end the evening and post the casserole: ${JSON.stringify(e1)}`)
     // Stage 4, the morning: breakfast, then her card. FEAT-184 stage 5: breakfast is the player's to eat now (her card asks
     // for a packed lunch); the evening held the clock and the night holds the hunger clock, so you wake fed either way.
-    const stage = () => js('document.getElementById("em-stage").textContent')
+    const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
     check(await readCards() >= 2, 'no breakfast and no "look at my card" in the morning')
     check(!/hungry/.test(await stage()), `the tutorial's morning woke the driver hungry ("${await stage()}")`)
     // Woken at hers, her card opens as the lesson ends — no second park — and the sleep card is gone.
@@ -1450,7 +1450,7 @@ const STEPS = [
     // from the inventory feeds the driver.
     // (Skipped while hunger is switched off — DAY_PARAMS.hungerOn, off for the 2026-11-06 playtest.)
     if (DAY_PARAMS.hungerOn) {
-      check(await until(async () => /· hungry$/.test(await stage()), 1000), `the energy meter does not say hungry ("${await stage()}")`)
+      check(await until(async () => /^hungry$/.test(await stage()), 1000), `the hunger line does not say hungry ("${await stage()}")`)
       await js('window.__inv.grant("chiliDog"); window.__inv.use("chiliDog")')
       check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)
     }
@@ -1640,9 +1640,15 @@ const STEPS = [
     check(await until(() => js('window.__mission().isOnJob() && !!document.getElementById("job-cancel").offsetParent'), 3000), 'A on accept took no job with an abandon button')
     check(await js('getComputedStyle(document.querySelector("#job-cancel .kc-pad")).display !== "none" && getComputedStyle(document.querySelector("#job-cancel .kc-kb")).display === "none"'),
       `the abandon button does not show its pad glyph: "${await js('document.getElementById("job-cancel").innerHTML')}"`)
+    // FEAT-195: the binding is printed — B + ↑ on the button's keycap and "↑ abandon job" on the menu's "hold B" line;
+    // armed, the keycap reads plain B (the confirm) and the line drops it.
+    const padCap = () => js('[...document.querySelectorAll("#job-cancel .kc-pad")].map(e => e.textContent).join("")')
+    const hintOn = () => js('getComputedStyle(document.querySelector("#hud-b-hint .bh-abandon")).display !== "none"')
+    check(await padCap() === 'B+↑' && await hintOn(), `the abandon's B + ↑ is not printed (keycap "${await padCap()}", hint line ${await hintOn()})`)
     const a1 = await pick()
     check(a1.first !== 'job-cancel' && a1.sel === 'job-cancel' && /abandon job/.test(a1.label), `the B menu's abandon entry: ${JSON.stringify(a1)}`)
     check(/confirm\?/.test(await js('document.getElementById("job-cancel").textContent')), 'picking "abandon job" did not arm it')
+    check(await padCap() === 'B' && !await hintOn(), `armed, the abandon does not print its plain-B confirm (keycap "${await padCap()}", hint line ${await hintOn()})`)
     // BUG-120: a second trip down the menu ran the 3 s arm out on a real pad — B held, released, nothing walked.
     await js('__fp.b[1] = 1'); await frames(4, 200)
     check(await js('document.querySelector(".menu-sel")?.id') === 'job-cancel', 'the armed abandon is not the B menu\'s pre-selection (BUG-120)')

@@ -83,7 +83,7 @@ import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat, 
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
-import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
+import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
@@ -3653,6 +3653,7 @@ document.getElementById('park-zone')?.append(document.getElementById('recovery-r
 // SM-3: every auto shop is a service center (owner, 2026-10-20). Selling a part is money made, so it
 // goes through addSpot like every other mid-run credit; labour goes on the clock like the tow.
 let _servicePoi = null
+let _jobsShop = null   // FEAT-197: the shop whose "go to jobs" put the offers up — declining them goes back to it
 const serviceCenter = new ServiceCenter({
   damage: damageModel, parts: partsSystem, inventory: inventorySystem,
   money: () => economySystem.money(), spend: ($) => economySystem.spend($), earn: ($) => economySystem.addSpot($),
@@ -3664,15 +3665,15 @@ const serviceCenter = new ServiceCenter({
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
-  // The shop still posts work (FEAT-167: its Jobs tab), each offer worded as its map card is. Picking one
-  // hands the brake to the offers, as parking does elsewhere, starting at that one.
-  jobs: () => {
-    const n = _servicePoi ? _takeableOffers(_servicePoi.id, daySystem.clockH()).length : 0
-    return Array.from({ length: n }, (_, i) => _boardView.view(_servicePoi.id, i).card)
-  },
-  openJobs: (i = 0) => {
+  // The shop still posts work (FEAT-167: its Jobs tab). FEAT-197 (owner, 2026-11-11): the tab's one button,
+  // "go to jobs", hands the brake to the offers — the offer card over the map, as parking does elsewhere —
+  // and their decline comes back to this screen (_declineOffer).
+  jobs: () => _servicePoi ? _takeableOffers(_servicePoi.id, daySystem.clockH()) : [],
+  openJobs: () => {
     const offers = _takeableOffers(_servicePoi.id, daySystem.clockH())
-    if (offers.length) missionSystem.enterFromPoi(_servicePoi, [...offers.slice(i), ...offers.slice(0, i)], _planOffer)
+    if (!offers.length) return
+    missionSystem.enterFromPoi(_servicePoi, offers, _planOffer)
+    _jobsShop = _servicePoi
   },
   openMap: () => map2d.toggle(),
   nowH: () => daySystem.clockH(),
@@ -3709,6 +3710,29 @@ function _serviceInReach () {
   // _poiInReach): its Jobs tab must not hand out work before the casserole.
   if (!SHOP_TYPES.has(q?.type) || (q.type !== 'autoShop' && _eveningLeg())) return null
   return _inPoiSpot(q) ? q : null   // FEAT-178: on the lift (its park box), not just near
+}
+
+/** Open the screen of `shop` (a SHOP_TYPES POI): its service screen, or a storefront's (FEAT-104). Returns `store`. */
+function _openShop (shop) {
+  _servicePoi = shop
+  const store = shop.type !== 'autoShop'
+  serviceScreen.open(offerBoard?.poiName(shop.id) ?? (store ? 'Store' : 'Auto shop'), store)
+  return store
+}
+
+/**
+ * The offer card's DECLINE (its button, and Esc / pad B through _cardBackButton) — and the dinner invitation's.
+ * FEAT-197: offers put up by a shop's "go to jobs" go back to that shop's screen, on its Jobs tab, while the
+ * truck is still parked there. Space (the brake release) declines without this: it drives off.
+ */
+function _declineOffer () {
+  const shop = missionSystem.state === 'offer' ? _jobsShop : null
+  _jobsShop = null
+  missionSystem.exit()
+  if (!shop || _serviceInReach()?.id !== shop.id || !vehicleState.parked) return
+  _openShop(shop)
+  serviceScreen.tab = 'jobs'
+  serviceScreen.render()
 }
 
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
@@ -5798,9 +5822,7 @@ function _updateParkTriggers (zParked = false) {
   if (serviceScreen.isOpen || shop) {
     damageScreen.blocked = true
     if (shop && pulled) {
-      _servicePoi = shop
-      const store = shop.type !== 'autoShop'
-      serviceScreen.open(offerBoard?.poiName(shop.id) ?? (store ? 'Store' : 'Auto shop'), store)
+      const store = _openShop(shop)
       if (!store) _tut('tut-service')   // FEAT-147
       if (!store && _eveningLeg() && damageModel.flat.some(Boolean)) _tut('tut-shopfix')   // FEAT-184 stage 4: towed here
     }
@@ -7255,6 +7277,10 @@ function _updateEnergyMeter () {
       root,
       strip: document.getElementById('em-strip'),
       stage: document.getElementById('em-stage'),
+      hTitle: document.getElementById('hm-title'),
+      hView: document.getElementById('hm-view'),
+      hStrip: document.getElementById('hm-strip'),
+      hStage: document.getElementById('hm-stage'),
       segs: {
         rested:    document.getElementById('em-seg-rested'),
         sleepy:    document.getElementById('em-seg-sleepy'),
@@ -7280,6 +7306,11 @@ function _updateEnergyMeter () {
         el.style.width = `${hours[k] * EM_PX_PER_H}px`
         el.style.background = STAGE_COLOR[k]
       }
+      // FEAT-198: the hunger strip, laid out the same way — the hungerWords bands from the longest meal hold
+      // down to 0 h left, then 'hungry' for the hunger ramp (past the ramp the drain is flat, so the bar stops).
+      let top = _emEls.hTop = _hmTopH()
+      for (const [h, w] of DAY_PARAMS.hungerWords) { _hmSeg(w, top - h); top = h }
+      _hmSeg('hungry', DAY_PARAMS.hungryRampH)
     }
   }
   if (!on) return
@@ -7287,13 +7318,32 @@ function _updateEnergyMeter () {
   _emEls.strip.style.transform =
     `translateX(${EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H}px)`
   const st = daySystem.stage()
-  const hw = daySystem.hungerWord(), label = hw ? `${st} · ${hw}` : st   // FEAT-169: words, never a gauge (SM-INV-10)
-  if (label !== _emStage) {
-    _emStage = label
+  if (st !== _emStage) {
+    _emStage = st
     if (st === 'sleepy') _tut('tut-sleep')   // FEAT-147
-    _emEls.stage.textContent = label
+    _emEls.stage.textContent = st
     _emEls.stage.style.color = STAGE_COLOR[st]
   }
+  // FEAT-198 (owner, 2026-11-11): hunger mirrors energy — its word in its colour, then its own scrolling bar.
+  // Hidden with hunger switched off (the debug toggle: hungerWord() is null).
+  const hw = daySystem.hungerWord()
+  if (hw !== _hmWord) {
+    _hmWord = hw
+    _emEls.hTitle.style.display = _emEls.hView.style.display = hw ? '' : 'none'
+    if (hw) { _emEls.hStage.textContent = hw; _emEls.hStage.style.color = HUNGER_COLOR[hw] }
+  }
+  if (hw) {
+    const top = _emEls.hTop, left = Math.min(top, Math.max(-DAY_PARAMS.hungryRampH, daySystem.fedLeftH()))
+    _emEls.hStrip.style.transform = `translateX(${EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H}px)`
+  }
+}
+let _hmWord
+/** The hunger strip's full end: the longest hold any meal gives (meals never stack past it — DaySystem.eat). */
+const _hmTopH = () => Math.max(DAY_PARAMS.mealHoldH, ...Object.values(ITEMS).map(i => i.hold ?? 0))
+function _hmSeg (word, hours) {
+  const el = document.getElementById(`hm-seg-${word}`)
+  el.style.width = `${hours * EM_PX_PER_H}px`
+  el.style.background = HUNGER_COLOR[word]
 }
 
 // ── FEAT-87: the live rank timer (RoR2 ticker, top-centre under the mission readout) ───────
@@ -7691,6 +7741,7 @@ function _acceptOffer () {
   // FEAT-103: a requisition line taken AWAY from its source (at the camp) is untimed until you park there.
   // FEAT-147: so is mom's first job taken away from her pad.
   if ((missionSystem.mission?.line || offerBoard?.spec(o)?.first) && missionSystem.startZoneExitDist() <= 0) missionSystem.mission.approach = true
+  _jobsShop = null   // FEAT-197: taken — nothing to go back to
   missionSystem.accept()
   // §5b: the stock is bought at accept and never refunded — an expired or abandoned haul keeps it.
   if (pick && missionSystem.isOnJob()) economySystem.spend(pick.cost)
@@ -7722,8 +7773,8 @@ function _refreshParkedOffers () {
 }
 // FEAT-46: DECLINE puts the job down and leaves you in story mode with nothing active — it does not
 // leave the mode. (Leaving is the pause menu's job.) Walking away
-// from an offer is an ordinary thing to do; quitting the game mode is not.
-document.getElementById('mp-decline')?.addEventListener('click', () => missionSystem.exit())
+// from an offer is an ordinary thing to do; quitting the game mode is not. FEAT-197: from a shop's jobs, back to the shop.
+document.getElementById('mp-decline')?.addEventListener('click', _declineOffer)
 document.getElementById('mp-regen')?.addEventListener('click', () => missionSystem.regenerate())
 document.getElementById('mp-retry')?.addEventListener('click', () => missionSystem.retry())
 // FEAT-30 calibration: dump the finished run's route shape + score to a file. A score alone can't
@@ -9146,7 +9197,9 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
   if (!_jobCancelArm) {
     _jobCancelArm = setTimeout(_disarmJobCancel, JOB_CANCEL_ARM_S * 1000)
     b.classList.add('armed')
-    b.innerHTML = keycap('J') + (_strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?')   // FEAT-96: say the clean-up cost
+    // FEAT-96: say the clean-up cost. FEAT-195: armed, the pad's confirm is a plain B (the armed abandon is the B
+    // menu's pre-selection, BUG-120), so its keycap reads B, not the arming's B + ↑.
+    b.innerHTML = keycap('J', 'B') + (_strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?')
     return
   }
   _disarmJobCancel()

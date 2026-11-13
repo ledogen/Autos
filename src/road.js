@@ -90,6 +90,8 @@ function _ruleClamp(g, a) {
     return (1 - a) * soft + a * (one + RULE_FLOOR * soft)
 }
 const RULE_TAPER = 4.0
+// BUG-156: two limbs of one leg within this much of each other's distance (m) both count whole (_limbWeight).
+const RULE_LIMB_TIE = 0.5
 const RULE_LEG_REACH = 14.0
 // Arc half-window (m) for the near-node leg projection: confine each leg's nearest-foot search to this much
 // of the leg either side of its node endpoint, so a curving/looping leg can't contribute a far-branch grade
@@ -249,6 +251,8 @@ function _curvedOffset(u, v, k) {
 }
 const _thrY = new Float64Array(4), _thrE = new Float64Array(4), _thrOut = { lat: 0, over: 0 }   // _throughDeckTop scratch (never held)
 const _ribOut = { lat: 0, over: 0, s: 0 }   // _padRibbonMask scratch (never held)
+const _CD_RT = { tx: 1, tz: 0 }   // _ribbonFrameTangent scratch (never held)
+let _rbGap = new Float64Array(16), _rbGrade = new Float64Array(16), _rbTaper = new Float64Array(16)   // _carveDirtY's blend (grown)
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -959,6 +963,31 @@ const RIVAL_PROM_M     = 2     // m
 const RIVAL_TIE_M      = 2.5     // m
 const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
 let _passD = new Float64Array(256), _passT = new Float64Array(256)   // _runPassMinima scratch (grown as needed)
+let _legSeq = new Float64Array(256)   // _projectLegNearNode scratch: the window's per-segment distances² (grown as needed)
+// BUG-156: one side's weight for a near-node leg limb (the foot at index q of the window's distance² sequence, d2 its own).
+// Walk outward to the KEY SADDLE b, the highest distance before it first drops below this foot's (topographic
+// prominence: a higher foot met on the way does not stop the walk), then on through the lower basin past it to its
+// floor m. With p = √b − √d2 (this limb's depth) and δ = √d2 − √m (how much farther it is than the lower one):
+//     wt = max(1 − (1 − smooth(p / RIVAL_PROM_M)) · δ / (δ + p),  smooth(1 − δ / RULE_LIMB_TIE))
+// 0 at a fold (p = 0 with δ ≥ RULE_LIMB_TIE: a limb being born or dying beside a nearer one); 1 where the two are
+// equally near (δ = 0, the flip between two limbs, so neither is privileged at the swap); 1 once the limb is
+// RIVAL_PROM_M deep; 1 on a side where nothing nearer lies within the window. A fold elsewhere in the window moves no
+// OTHER limb's saddle or floor, so nothing else steps either. The tie term is BUG-130's (the resolver fades a self pass
+// in by max(prominence, tie)) at a shorter reach: where a leg wraps the query at an almost constant distance (it
+// bends around the gore), every limb is shallow and they trade places within centimetres, and a pure depth weight
+// rebuilt the wrap as steep ramps (up to 1.08 m per 5 cm where main has 0.62, beside 1074499174's steep T). Limbs within
+// RULE_LIMB_TIE of the nearer one stay whole, as they were. Census, 8 random seeds, 0.5 m: 111 of 5563 junction-disc
+// discontinuities gone, none new; 49 of 7254 gore lines better by > 2 cm, none worse (2.5 m: 52 gone; 0: 157 gone, 7 worse).
+function _limbWeight(seq, ns, q, d2, dir) {
+    let b = d2, k = q + dir
+    for (; k >= 0 && k < ns && seq[k] >= d2; k += dir) if (seq[k] > b) b = seq[k]
+    if (k < 0 || k >= ns) return 1
+    let m = seq[k]
+    for (; k >= 0 && k < ns && seq[k] <= b; k += dir) if (seq[k] < m) m = seq[k]
+    const B = Math.sqrt(b), D = Math.sqrt(d2), p = B - D, dl = D - Math.sqrt(m)
+    if (!(dl + p > 1e-9)) return 1
+    return Math.max(1 - (1 - _rivalSmooth(p / RIVAL_PROM_M)) * dl / (dl + p), _rivalSmooth(1 - dl / RULE_LIMB_TIE))
+}
 // FEAT-40 bore notch: inside a bore span the terrain SKIN (Y-less / above-apex probes) is not
 // simply raw — near each mouth the open cut's cross-section continues with its floor RISING at
 // this V:H slope per metre into the span, capped at raw. The mouth face is therefore a graded
@@ -7965,13 +7994,20 @@ export class RoadSystem {
         // Each kept foot also records its segment index + clamped fraction (i, t) so callers that
         // need the foot POSITION/tangent (the pad's _nodeSurfaceTop base pick) can reconstruct them
         // exactly without re-projecting. Existing consumers read only { d2, arcS }.
-        const keep = (d2, cumT, ki, kt) => {
+        // BUG-156: each foot also carries a limb weight `wt` (0–1, _limbWeight) that _carveDirtY multiplies into its
+        // taper. A local minimum is BORN at a fold, where a curving leg's distance grows a dip (the query crossing the
+        // leg's evolute), and at birth it has no depth. Weighted whole from that instant it popped in with its full
+        // taper: seed 1074499174's steep T took a 16 m-off limb 22 m up a curving leg, 3.6 m above the node, as a
+        // 0.72 m cliff in 5 cm of gore.
+        const seq = _legSeq.length >= iEnd - i0 + 1 ? _legSeq : (_legSeq = new Float64Array(2 * (iEnd - i0 + 1)))
+        let ns = 0, prevQ = -1
+        const keep = (d2, cumT, ki, kt, q) => {
             if (!out) out = []
             const last = out[out.length - 1]
             if (last && cumT - (last.arcS + arcOrigin) < 4) {
-                if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin; last.i = ki; last.t = kt }
+                if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin; last.i = ki; last.t = kt; last.q = q }
             }
-            else out.push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt })
+            else out.push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt, q, wt: 1 })
         }
         for (let i = i0; i <= iEnd; i++) {
             const ax = pts[i].x, az = pts[i].z
@@ -7984,12 +8020,14 @@ export class RoadSystem {
                 const fx = ax + t * ex, fz = az + t * ez
                 const ddx = wx - fx, ddz = wz - fz
                 const d2 = ddx * ddx + ddz * ddz
-                if (prevD2 !== Infinity && prevD2 <= prevPrevD2 && prevD2 <= d2) keep(prevD2, prevCum, prevI, prevT)
+                if (prevD2 !== Infinity && prevD2 <= prevPrevD2 && prevD2 <= d2) keep(prevD2, prevCum, prevI, prevT, prevQ)
                 prevPrevD2 = prevD2; prevD2 = d2; prevCum = cum + t * segLen; prevI = i; prevT = t
+                seq[ns] = d2; prevQ = ns++
             }
             cum += segLen
         }
-        if (prevD2 !== Infinity && prevD2 <= prevPrevD2) keep(prevD2, prevCum, prevI, prevT)
+        if (prevD2 !== Infinity && prevD2 <= prevPrevD2) keep(prevD2, prevCum, prevI, prevT, prevQ)
+        if (out && out.length > 1) for (const f of out) f.wt = Math.min(_limbWeight(seq, ns, f.q, f.d2, -1), _limbWeight(seq, ns, f.q, f.d2, 1))
         return out
     }
 
@@ -8552,9 +8590,22 @@ export class RoadSystem {
     // `valid` stays true while every sample is served (false once a sample had to search past a held answer).
     surfacePatch(hx, hz, queryY, out) {
         out.patch = true; out.hx = hx; out.hz = hz; out.qy = queryY; out.valid = true
-        if (out.feet) out.feet.clear(); else out.feet = new Map()
-        this._patch = out
-        try { out.nr = this._resolveRoadSurface(hx, hz) } finally { this._patch = undefined }
+        const feet = out.feet ??= new Map()
+        feet.clear()
+        // The hub's resolve through carveHint's memo: the tunnel-wall test asks it at the same hub (world-contacts.js), so
+        // one resolve serves both (a resolve of its own here was a second full resolve per wheel query, +10 % at seed
+        // 759313244's spikes). Its feet seed the patch: each analytic foot's true arc from its runProfile-domain arcS.
+        const nr = out.nr = this.carveHint(hx, hz)
+        const foot = (runKey, arcS) => {
+            const e = this._network.get(runKey)
+            if (!e?.clArc || !e.polyCum || !e.points) return
+            const s = _interpArcTable(e.polyCum, e.clArc, arcS + (e.arcOrigin ?? 0))
+            const l = feet.get(e.points); if (l) l.push(s); else feet.set(e.points, [s])
+        }
+        if (nr) {
+            if (nr.endRadial === undefined) foot(nr.runKey, nr.arcS)
+            for (const rv of nr.rivals) if (!rv.end) foot(rv.runKey, rv.arcS)
+        }
         return out
     }
 
@@ -8987,7 +9038,7 @@ export class RoadSystem {
             // leg's grade, smoothly (the ribbon never moves). Pure function of position, and now C1 as well as
             // C0 (RULE_SOFT) ⇒ continuous across every Voronoi switch with no crease at the asphalt edges.
             const nodeLegs = jc.node.legs, cutDefault = this.junctionCutbackDist()
-            const gaps = [], grades = [], tapers = []
+            let nB = 0   // the in-range branches, in _rbGap / _rbGrade / _rbTaper (module scratch: no arrays per sample)
             for (const leg of nodeLegs) {
                 const ne = this._network.get(leg.runKey)
                 if (!ne) continue
@@ -9028,23 +9079,25 @@ export class RoadSystem {
                     // band inside the mouth. Per-leg, from its own foot ⇒ still a pure
                     // function of position.
                     const au = Math.min(1, Math.max(0, (along - ((leg.cutback ?? cutDefault) - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
-                    gaps.push(_ruleClamp(gap, au * au * (3 - 2 * au))); grades.push(legGrade)
+                    if (nB === _rbGap.length) { const g = (a) => { const b = new Float64Array(a.length * 2); b.set(a); return b }; _rbGap = g(_rbGap); _rbGrade = g(_rbGrade); _rbTaper = g(_rbTaper) }
+                    _rbGap[nB] = _ruleClamp(gap, au * au * (3 - 2 * au)); _rbGrade[nB] = legGrade
                     // Smooth in-range taper (1 → 0 across the last RULE_TAPER m before the cutoff).
                     // Barycentric weight does NOT decay with a leg's OWN distance, so without this a leg
                     // crossing RULE_LEG_REACH would POP in with a non-trivial weight (a lateral shoulder
                     // step). The taper eases its weight to 0 at the cutoff so it fades in/out; at its own
                     // asphalt (gap 0) the taper is 1.
+                    // BUG-156: × the limb's own weight (_limbWeight), so a limb born at a fold starts at 0.
                     const tu = Math.min(1, Math.max(0, (RULE_LEG_REACH - gap) / RULE_TAPER))
-                    tapers.push(tu * tu * (3 - 2 * tu))
+                    _rbTaper[nB++] = tu * tu * (3 - 2 * tu) * pr.wt
                 }
             }
             let wSum = 0, gSum = 0, wMax = 0, tMax = 0
-            for (let i = 0; i < gaps.length; i++) {
-                if (tapers[i] > tMax) tMax = tapers[i]
-                let w = tapers[i]
-                for (let j = 0; j < gaps.length; j++) if (j !== i) w *= gaps[j]   // taper_i · ∏_{j≠i} gap_j
+            for (let i = 0; i < nB; i++) {
+                if (_rbTaper[i] > tMax) tMax = _rbTaper[i]
+                let w = _rbTaper[i]
+                for (let j = 0; j < nB; j++) if (j !== i) w *= _rbGap[j]   // taper_i · ∏_{j≠i} gap_j
                 wSum += w; if (w > wMax) wMax = w
-                gSum += w * grades[i]
+                gSum += w * _rbGrade[i]
             }
             // Apply the ruled blend (NO single/blend crossfade — that leaked a partial crease wherever the
             // "winning" single flipped at a Voronoi switch). On a CLEAN open ribbon (only one leg in range) wSum
@@ -9989,13 +10042,21 @@ export class RoadSystem {
         return y
     }
 
+    // runFrameAt(s).tx/tz without the profile sample where the run has the centreline the tangent comes from (the
+    // chord tangent otherwise IS runProfile's, so that case still takes it).
+    _ribbonFrameTangent(s, runKey) {
+        const e = this._network?.get(runKey)
+        if (!e || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return this.runFrameAt(s, runKey, _CD_RP)
+        return this._ribbonTangentAt(s, runKey, _CD_RT)
+    }
+
     _legDeckSolve(ne, leg, pr, wx, wz, out) {
         const cm = this._params.roadClearanceMargin ?? 0.25
         const sMax = ne.polyCum?.[ne.polyCum.length - 1] ?? Infinity
         let s = pr.arcS, c = null, rp = null
         for (let k = 0; k < 4; k++) {
             c = this.runPointAt(leg.runKey, s)
-            rp = this.runFrameAt(s, leg.runKey, _CD_RP)   // BUG-153: the drawn ribbon's section line
+            rp = this._ribbonFrameTangent(s, leg.runKey)   // BUG-153: the drawn ribbon's section line
             if (!c) break
             const ds = (wx - c.x) * rp.tx + (wz - c.z) * rp.tz
             s = Math.max(0, Math.min(sMax, s + ds))
@@ -10006,7 +10067,7 @@ export class RoadSystem {
             return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + cm
         }
         c = this.runPointAt(leg.runKey, s)
-        rp = this.runFrameAt(s, leg.runKey, _CD_RP)
+        rp = this._ribbonFrameTangent(s, leg.runKey)
         const tx = rp.tx, tz = rp.tz, lat = (wx - c.x) * tz - (wz - c.z) * tx, along = (wx - c.x) * tx + (wz - c.z) * tz
         const over = s >= sMax ? Math.max(0, along) : s <= 0 ? Math.max(0, -along) : 0
         let y = this._carveDirtY(lat, s, leg.runKey, 1) + cm
@@ -12401,6 +12462,14 @@ export class RoadSystem {
      */
     runFrameAt(arcS, runKey, out) {
         const r = this.runProfile(arcS, runKey, out)
+        this._ribbonTangentAt(arcS, runKey, r)
+        return r
+    }
+
+    // runFrameAt's tangent alone, written into out.tx / out.tz (left as they are with no centerline: the chord tangent
+    // runProfile already put there). PERF-43: _legDeckTop's Newton walk reads only the tangent, and the profile sample
+    // runFrameAt also takes (a binary search and an interpolation) was a third of each step.
+    _ribbonTangentAt(arcS, runKey, r) {
         const e = this._network?.get(runKey)
         if (!e || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return r
         const a = arcS + (e.arcOrigin ?? 0)
