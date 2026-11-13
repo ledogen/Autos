@@ -813,6 +813,10 @@
       stroke-linecap: round; stroke-linejoin: round; }
     #hud-menu-label.solo svg { display: none; }
     #hud-b-hint .kc-round { color: var(--text); }
+    /* FEAT-195: B held + ↑ abandons the job (hud-menu.js) — said on the menu's own line while the job's button can act
+       (shown, parked) and is not armed (armed, the confirm is a plain B and the button's keycap says so). */
+    #hud-b-hint .bh-abandon { display: none; white-space: nowrap; }
+    body:has(#job-cancel:not(.unparked):not(.armed):not([style*="none"])) #hud-b-hint .bh-abandon { display: inline; }
     /* FEAT-122: the PARK ZONE — the icons that only work while parked (damage V, inventory Tab),
        grouped under the PARK stencil that owns them (owner, 2026-10-16). Camp stays outside:
        the brake is how you make camp. Locked (not parked, or the brake belongs to a POI here): the
@@ -1800,7 +1804,7 @@
 
     <!-- The icon column. damage-screen.js prepends its own row (the truck, V) above these. -->
     <div id="hud-icons">
-      <div id="hud-b-hint">hold <span class="kc-pad kc-round">B</span></div>
+      <div id="hud-b-hint">hold <span class="kc-pad kc-round">B</span><span class="bh-abandon">· ↑ abandon job</span></div>
       <!-- FEAT-122: the park zone — damage-screen.js and inventory-screen.js append their rows. -->
       <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">PARK</span></div>
       <!-- FEAT-45 Phase D: making camp. The tent shows only where the old camp prompt did (a camp
