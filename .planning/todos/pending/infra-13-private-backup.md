@@ -12,8 +12,7 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-13: ledorepo — private GitHub backup of memory, skills, hooks and the tracker data
 
 ## Next steps
-Owner: allow the hourly schedule (the launchd agent was blocked by the session's permission check on 2026-11-13).
-Until then the backup runs only when someone runs `~/CodeShit/ledorepo/backup.sh`.
+Owner: decide `wip/` (66 MB) and Time Machine. The backup itself runs.
 
 ## Summary
 Measured 2026-11-12: **nothing outside the game repo is backed up.** `~/.claude` is not a git repository, Time
@@ -27,8 +26,9 @@ The project CLAUDE.md and all of `.planning/` are safe once pushed: they are in 
 - [x] A private repo holds a copy of: the CarGame memory folder, `~/.claude/skills/` (minus `synced/`),
       `~/.claude/hooks/`, `~/.claude/settings.json`, the project's `.claude/settings.local.json` and `RESUME.md`,
       and the INFRA-11 tracker data if the owner rules it private.
-- [ ] (script done 2026-11-13, schedule NOT installed) One script (`backup.sh`: copy with rsync, commit, push) run hourly by launchd. It commits only when
-      something changed.
+- [x] One script (`backup.sh`: rsync, commit only when something changed, push), run by Claude Code hooks —
+      SessionStart and Stop in `~/.claude/settings.json` call it with `--hourly`, so it runs on the first session
+      and then at most once an hour while any session is in use.
 - [x] Nothing secret goes up: the script copies an explicit list of paths, never all of `~/.claude` (which holds
       session transcripts, login state and caches).
 - [x] A restore was tried once on a scratch folder and the memory index loads.
@@ -53,3 +53,7 @@ The project CLAUDE.md and all of `.planning/` are safe once pushed: they are in 
   pushed (200 files, 1.1 MB). Restore check: a fresh clone's CarGame memory folder is byte-identical to the live one.
   Grepped the copied paths for keys and passwords first: none.
 - `wip/` is 66 MB; not backed up yet (tracker box above still open). Time Machine still off.
+- 2026-11-13, owner: no launchd timer; use a hook, so it backs up only while the owner is working. Done and checked
+  (a second call inside the hour is skipped; a stale stamp runs and pushes).
+- 2026-11-13, owner: also back up when a session compacts. Added `PreCompact` (fires just before a manual or automatic
+  compact) and `SessionEnd` (fires on exit and on /clear) hooks; both run the backup unconditionally.
