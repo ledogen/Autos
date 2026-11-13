@@ -17,12 +17,14 @@ import { getCameraMode } from './camera.js'
 import { stepIgnition } from './ignition.js'
 import { pad, PAD_PARAMS, padKick } from './gamepad.js'
 import { makeClutchAssist, stepClutchAssist } from './clutch-assist.js'
+import { stepParkBrake } from './park-brake.js'
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
 // shift / e / q: the FEAT-126 manual gearbox's clutch pedal (held) and up / down shifts (rising edges).
 const keys = { w: false, s: false, a: false, d: false, r: false, i: false, ' ': false, shift: false, e: false, q: false }
 let _prevHandKey = false   // Space state last frame — rising-edge (tap) detection for the parking-brake toggle
 let _prevUp = false, _prevDown = false   // E / Q last step — rising edges are the shift requests
+let _prevShifting = false   // the manual's synchro was mid-shift last step — its end is a gear landing (FEAT-194)
 const _clutchAssist = makeClutchAssist()
 
 // Register listeners at module load (module scripts run after parse — no DOMContentLoaded needed).
@@ -46,6 +48,14 @@ document.addEventListener('keyup',   e => { const k = e.key === ' ' ? ' ' : e.ke
 // (the truck could simply drive off mid-count).
 let _launchHold = false
 export function setLaunchHold (on) { _launchHold = on }
+
+// ── Park lock (FEAT-194 part 2) ──────────────────────────────────────────────
+// While set, a menu that needs the truck parked is up: the handbrake is on, and the throttle or a gear
+// cannot release the latch (src/park-brake.js). Unlike the launch hold, revving against it does not
+// drop the latch underneath — the countdown's release at zero IS the launch, a closed card's is not.
+// main.js sets it before each step, like the launch hold.
+let _parkLock = false
+export function setParkLock (on) { _parkLock = on }
 
 // ── Control attenuation (FEAT-47 story-mode doze) ────────────────────────────
 // Scales the DRIVER'S inputs — throttle, brake, and the steer-key integration — by a factor in
@@ -141,24 +151,27 @@ export function updateVehicle (vehicleState, params, dt) {
     if (out.shiftRequest) vehicleState.shiftRequest = out.shiftRequest
     _prevUp = up; _prevDown = down
   }
-  // ── Handbrake / parking-brake state machine (feature/teleport) ──────────────
+  // ── Handbrake / parking-brake state machine (feature/teleport; rules in src/park-brake.js) ─────
   // Moving (>5 km/h): the handbrake is momentary — rear torque only while Space is held.
-  // Near rest (<5 km/h): a Space TAP latches vehicleState.parked ON, so it keeps holding after
-  // release (the same held state a spawn/teleport starts in — see _reseatTruckAtSpawn). While
-  // parked, another Space tap — or pressing W/S, or either pad trigger — toggles it fully OFF so the truck can roll again.
-  // Steering (A/D) does NOT release it. Held through free-cam so the truck stays put while you fly.
-  const PARK_SPEED = 1.389   // m/s ≈ 5 km/h
-  const spd     = Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z)
+  // Near rest: a Space TAP latches vehicleState.parked ON (the same held state a spawn/teleport starts
+  // in — see _reseatTruckAtSpawn). Latched, a Space tap, the throttle (W / RT) or — manual — a shift
+  // landing in a gear lets it go; the brake pedal never does (FEAT-194). Steering does NOT release it.
+  // Held through free-cam so the truck stays put while you fly.
   const handKey = !freecamActive && keys[' ']
-  const handTap = handKey && !_prevHandKey                       // rising edge (press this frame)
-  if (vehicleState.parked) {
-    if (handTap || (!freecamActive && (keys.w || keys.s)) || rawThrottle > 0 || rawBrake > 0) vehicleState.parked = false
-  } else if (handTap && spd < PARK_SPEED) {
-    vehicleState.parked = true                                   // latch when tapped near rest
-  }
+  const shifting = !!vehicleState.drivetrain?.shifting
+  const gearIn = params.transmissionType === 'manual' && _prevShifting && !shifting && (vehicleState.drivetrain?.mGear ?? 0) !== 0
+  _prevShifting = shifting
+  vehicleState.parked = stepParkBrake(!!vehicleState.parked, {
+    tap: handKey && !_prevHandKey,                                // rising edge (press this frame)
+    throttle: (!freecamActive && keys.w) || rawThrottle > 0,
+    gearIn,
+    speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
+    lock: _parkLock,
+  })
   // _launchHold (mission countdown) forces the handbrake regardless of the latch — revving against
   // it is allowed and expected; the hold clears at zero and the brake releases the same step.
-  vehicleState.handbrake = handKey || vehicleState.parked || _launchHold
+  // _parkLock (a parked menu is up) forces it too, and keeps the latch from letting go (above).
+  vehicleState.handbrake = handKey || vehicleState.parked || _launchHold || _parkLock
   _prevHandKey = handKey
 
   // ── 2. Speed-scaled steer limit (M1-08) ────────────────────────────────────

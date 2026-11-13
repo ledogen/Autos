@@ -60,7 +60,7 @@ one) · `traction.js` (FEAT-159 throttle
 assist + traction control — wheel + yaw sensors → a pedal cap the drivetrain reads and TC brake pressure on the rears; pure,
 stepped by `physics.js`) · `fuel.js` (FEAT-50 engine fuel map — rpm × pedal
 table off `data/engines.js` by the Willans line — and the tank's per-step drain; pure) · `ignition.js` (key/starter state machine,
-FEAT-33 — pure, no DOM) · `vehicle.js` (Ackermann, input) · `vehicle-state.js` (THE canonical
+FEAT-33 — pure, no DOM) · `vehicle.js` (Ackermann, input) · `park-brake.js` (FEAT-194 parking-brake latch rules — what sets and releases it, the parked-menu lock; pure, fed by `vehicle.js`) · `vehicle-state.js` (THE canonical
 vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stage truck cannot drift) ·
 `debris.js` (FEAT-36 dynamic props) · `physics-debug.js` (collider wireframes) · `damage.js` (SM-3
 component condition model — reads vehicleState signals, writes `params._*Scale` multipliers; the

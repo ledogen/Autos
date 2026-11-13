@@ -35,7 +35,8 @@ import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdic
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
-import { updateVehicle, setLaunchHold, setControlAttenuation, setSteerRateScale } from './vehicle.js'
+import { updateVehicle, setLaunchHold, setParkLock, setControlAttenuation, setSteerRateScale } from './vehicle.js'
+import { PARK_SPEED } from './park-brake.js'
 import { makeIgnitionState, keyPosition, seized, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
 import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
@@ -5763,6 +5764,26 @@ function _atMomsHouse () {
 }
 
 /**
+ * FEAT-194 part 2 (owner, 2026-11-11: "lock the parking brake on whenever the player enters a menu that requires
+ * them to be parked … if you accidentally tap the gas and the car starts rolling you might not notice"): true while
+ * one is up — a giver's offer card, a shop's screen, the damage screen, the inventory, a camp face (each with the
+ * latch set), or the map when it was opened at rest (opened rolling, it is a driving map). vehicle.js then holds the handbrake and the throttle cannot
+ * let the latch go (src/park-brake.js); the HUD's BRAKE lamp reads the handbrake, so it shows. The map's hold is a
+ * hold, not a latch: latching would fire the park trigger below behind it (a giver's card, a pump).
+ */
+let _mapWasOpen = false, _mapAtRest = false
+function _parkLocked () {
+  const mapOpen = map2d.isOpen()
+  if (mapOpen && !_mapWasOpen) _mapAtRest = !!vehicleState.parked || Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) < PARK_SPEED
+  _mapWasOpen = mapOpen
+  // The cards and screens open on the latch, so they lock only while it is set: a Space tap lets it go and the
+  // lock with it, and the debug Quick Job's offer (taken rolling) never brakes a moving truck.
+  return (mapOpen && _mapAtRest) || (!!vehicleState.parked && (!!_campUi
+    || ['generating', 'offer'].includes(missionSystem?.state) || ['planning', 'offer'].includes(paperRouteSystem.state)
+    || serviceScreen.isOpen || damageScreen.isOpen || inventoryScreen.isOpen))
+}
+
+/**
  * THE ONE PARK TRIGGER (FEAT-46's brake latch, now shared). Rising edge of the parking brake, ONE
  * detector, and a fixed precedence: a POI in reach wins (the 18 m lay-by is the specific
  * affordance and it is what you drove onto), then making camp, then mom's door. The prompt follows
@@ -9985,6 +10006,7 @@ function loop () {
     // — W then behaves exactly as it does when you pull away from a mission launch, because the
     // player's own parking-brake latch (the thing that opened the dialogue) is still underneath it.
     setLaunchHold(!!missionSystem?.isHeld() || scenarioSystem.isHeld() || !!_campUi || _campBusy)
+    setParkLock(_parkLocked())   // FEAT-194 part 2: a parked menu is up
 
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     // S-61: stepIgnition clears ignition.event at the top of EVERY step, so on a 2+ step frame a
