@@ -7,9 +7,10 @@
 //   drive  story mode, seated from Larry's yard onto the road network, a route at play speeds for 300 s, one off-road
 //          leg. The driver is test/lib/autopilot.mjs (pure: state in, controls out — meant to grow into in-game AI
 //          cars); this file is its consumer: controls onto the pad, trouble into re-seats (then crank, then park off)
-//   map    stopped, the map open, the left stick panning and the right stick zooming (30 s)
+//   map    stopped, the map open: zoom right out, a fast pan into undrawn ground, zoom back in, pan on (30 s)
 //   park   stopped, the map shut (30 s) — the GPU-only cost
-// Measured per phase: fps, p95, worst frame; main-thread ms/s per __perfData bucket; CPU % per Chrome process (`ps`
+// Measured per phase: fps, p95, worst frame; main-thread ms/s per __perfData bucket; the per-second SPIKES (drive: physics
+// p50 / p99 / worst and the share of moving seconds over 100 ms/s; map: postStream p95 / worst); CPU % per Chrome process (`ps`
 // cumulative CPU time — the renderer minus the main thread is the workers); CPU / GPU / DRAM watts and GPU ACTIVE
 // cycles (busy % × MHz) from test/lib/ioreport.py, no root; triangles and draw calls.
 //
@@ -206,9 +207,15 @@ const PAGE = String.raw`(async () => {
         if (crank(vs.ignition?.state, dt)) B.home = 'done'
       }
     }
-    else if (B.phase === 'map') {   // 5 s each: pan right, down, left, up, zoom in, zoom out
-      const k = Math.floor(now / 5000) % 6
-      setPad([0.8, 0, -0.8, 0, 0, 0][k], 0, 0, [0, 0.8, 0, -0.8, 0, 0][k], [0, 0, 0, 0, 0.7, -0.7][k])
+    else if (B.phase === 'map') {
+      // The owner's hard case (session 2: the repaint stall at 920–960 ms/s that a gentle pan never triggered): 10 s
+      // cycles of zoom right out (2.5 s at 2 e-folds/s reaches the widest view), a fast diagonal pan there (600 px/s
+      // ÷ zoom: kilometres a second, into ground the map has not drawn), zoom back in, pan on at close range. The pan
+      // turns 90° each cycle so no two sweep the same ground.
+      B.mapT0 ??= now
+      const t = (now - B.mapT0) / 1000, c = Math.floor(t / 10) % 4, k = Math.floor((t % 10) / 2.5)
+      const [dx, dy] = [[1, 0.6], [-0.6, 1], [-1, -0.6], [0.6, -1]][c]
+      setPad(k % 2 ? (k === 1 ? dx : -dy) : 0, 0, 0, k % 2 ? (k === 1 ? dy : dx) : 0, [1, 0, -1, 0][k])   // right stick +Y = out
     }
     else setPad(0, 0, 0)
     requestAnimationFrame(tick)
@@ -311,7 +318,16 @@ function summarise (B, win) {
     const buckets = {}
     for (const s of S) for (const [k, v] of Object.entries(s.cpu)) buckets[k] = (buckets[k] ?? 0) + v / S.length
     const main = Object.values(buckets).reduce((a, b) => a + b, 0)
+    // Spikes, per second (the PERF-42 lesson: phase averages hid both bugs). Physics over MOVING seconds only — v > 3 m/s
+    // in this second and both neighbours, so a re-seat (teleport, settle, crank) is not a spike. The map: its postStream
+    // seconds after the transition.
+    const all = B.samples, phys = all.filter((s, i) => s.t >= lo && s.t <= t1 && s.v > 3 && all[i - 1]?.v > 3 && all[i + 1]?.v > 3).map(s => s.cpu['frame.physics'] ?? 0)
+    const post = S.map(s => s.cpu['frame.postStream'] ?? 0)
+    const spikes = ph === 'drive'
+      ? { physN: phys.length, physP50: +pct(phys, 0.5).toFixed(0), physP99: +pct(phys, 0.99).toFixed(0), physWorst: +Math.max(...phys, 0).toFixed(0), physOver100: +(phys.filter(x => x > 100).length / Math.max(1, phys.length) * 100).toFixed(1) }
+      : ph === 'map' ? { postP95: +pct(post, 0.95).toFixed(0), postWorst: +Math.max(...post, 0).toFixed(0) } : {}
     phases[ph] = {
+      ...spikes,
       fps: +mean(S.map(s => s.frames)).toFixed(1), p95: +pct(fr, 0.95).toFixed(1), worst: +Math.max(...fr, 0).toFixed(1),
       mainMs: +main.toFixed(0), buckets: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k.slice(6), +v.toFixed(1)]).sort((a, b) => b[1] - a[1])),
       cpuW: +mean(W.map(p => p.cpuW)).toFixed(2), gpuW: +mean(W.map(p => p.gpuW)).toFixed(2), dramW: +mean(W.map(p => p.dramW)).toFixed(2),
@@ -324,6 +340,8 @@ function summarise (B, win) {
   return { phases }
 }
 const line = (ph, x) => `${ph.padEnd(5)} ${String(x.fps).padStart(4)} fps p95 ${String(x.p95).padStart(5)} worst ${String(x.worst).padStart(5)} | main ${String(x.mainMs).padStart(4)} ms/s | `
+  + (x.physN !== undefined ? `physics/s over ${x.physN} moving s: p50 ${x.physP50} p99 ${x.physP99} worst ${x.physWorst}, ${x.physOver100} % > 100 | ` : '')
+  + (x.postWorst !== undefined ? `postStream/s p95 ${x.postP95} worst ${x.postWorst} | ` : '')
   + `rend ${x.rendererPct}% (workers ~${x.workersPct}%) gpuP ${x.gpuProcPct}% | CPU ${x.cpuW} W GPU ${x.gpuW} W DRAM ${x.dramW} W | GPU ${x.gpuMcyc} Mcyc/s @ ${x.gpuMHz} MHz | ${x.ktris}k tris`
 
 // ── run: A-B-A-B per rep and seed ─────────────────────────────────────────────────────────────────────────────────────
@@ -337,7 +355,7 @@ for (let rep = 0; rep < REPS; rep++) for (const seed of SEEDS) {
 }
 
 // ── report: per build and phase, the mean over valid sessions; the noise band is the spread between reps ─────────────
-const KEYS = ['fps', 'p95', 'mainMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW']
+const KEYS = ['fps', 'p95', 'mainMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'postWorst']   // the last three: one phase each
 const agg = {}
 for (const b of BUILDS) for (const ph of ['drive', 'map', 'park']) {
   const rs = results.filter(r => r.build === b.name && r.valid)
