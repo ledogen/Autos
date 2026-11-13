@@ -117,7 +117,7 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-13, later; rewrite, don't append)
+## Current state (2026-11-13, after the INFRA-11 cutover; rewrite, don't append)
 - **PERF HAS PRIORITY (owner 11-12, repeated 11-13): hold the lanes whenever the perf session needs a quiet machine.**
   The perf session is peer `cargame-70` (NOT your subagent; SendMessage it). PERF-43 is CLOSED by the owner and landed
   (main 8acdea46, `test:all --browser` 149/149, log wip/orch/testall-8acdea46.log). It now starts PERF-41 (terrain
@@ -131,21 +131,28 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
     road.js / terrain shader changes. Tickets routed to it: BUG-164, PERF-46.
   - The owner lets it land and push its own work from its window. You never push without the owner's word to you.
   - Lane rule in every spawn prompt: ≤ 2 heavy processes; `pgrep -f 'node test/playtest-bench'` before a heavy job.
-- **Main = 3ba37902 + docs; origin = be5da36e.** Unpushed (owner's word needed): PERF-43 close 8acdea46 · FEAT-198 +
+- **Main = 0f20d2cd; origin = be5da36e.** Unpushed (owner's word needed): PERF-43 close 8acdea46 · FEAT-198 +
   FEAT-200 a7837ddc (+ smoke fix 1f66acb7) · FEAT-197 0fca6cd4 · FEAT-195 692ceba5 · BUG-161 d2c5e2ef · BUG-156
-  3ba37902. Each smoked 26/26 (logs wip/orch/smoke-*.log).
-- **Running**: Lane B — replaying the BUG-161 soak captures where the strapped statue sat up to 174 mm off its seat
-  on the road (seeds 724783119, 198355854); fix lands as land/bug-161b. Then FEAT-201, FEAT-194 parts 1–2, FEAT-196.
-- **Running too**: Spare — FEAT-199, owner ruled 11-13 "1. yes, 2. cap" (keep the choice model; an item never costs more than the job paid): the agent adds the cap, rewords DESIGN.md, re-gates and requests the landing. Was: built and gated on land/feat-199 @ d7c4f07a (`CarGame-land-199`), HELD for
-  `feat199-design` (on a yes: reword DESIGN.md's "a bonus item rides on top of cash" line first, apply the cap if
-  chosen, then land). Lane A — FEAT-194 part 3 after `handbrake-clock`.
-- **Perf session**: PERF-41 branch rebased on 1f66acb7, tip d8625e2a, not ready (the owner picks levers in its
-  window: ~6 % terrain GPU cycles at the exact picture, ~14 % with baked noise). It will ask for a ~30 min bench hold.
-- **Owed (page v208)**, new this session: handbrake-clock, feat199-design (with the cost cap), bug160-numbers,
-  bug163-ladder, feat199-price, feat196-wheel-repair. Not on the page: the owner's look at the hunger box
-  (CarGame-run-shape/wip/feat198/*.png) and a real-mouse drag; hunger was once ruled "a word, never a gauge".
-- **Tickets to tidy**: BUG-160 and BUG-161 still in pending/ (160 closes on `bug160-numbers`; 161 on the replay).
+  3ba37902 · BUG-161b 6739947a (WELD_SLOP 10 mm) · FEAT-199 a2922b9c (item reward = a choice, capped at the job's
+  pay) · INFRA-11 5b8c0e88 (tracker = the dashboard's Lanes tab; not smoked, it touches tools/ and docs only).
+  Each game landing smoked 26/26 (logs wip/orch/smoke-*.log).
+- **INFRA-11 cutover DONE 11-13.** The artifact is dead state: never read or write it. Tooling peer
+  `lanes-tab-dashboard` did it. Lane B's running agent holds the OLD brief: when it reports, write its handoff and
+  now-line into `lanes/b.handoff.md` / `lanes/b.now` yourself, and update its rows in `lanes/b.json`.
+  The lanes/*.json task lists were imported whole and are long: prune closed rows as you touch them.
+- **Running**: Lane B agent — FEAT-201 (new game: one old tire on a front corner + an old spare; 50-seed gate) and
+  FEAT-194 parts 1–2 (brake pedal never releases the parking brake; parked menus set it), worktree `CarGame-machine`,
+  landing branch land/feat-201 (`CarGame-land-201`). Next for B: FEAT-196, then BUG-166 after `bug166-shock`.
+- **Idle**: Lane A (FEAT-194 part 3 waits on `handbrake-clock`); Spare (nothing queued; feature/spare holds old
+  unlanded docs/tests, so it needs `git merge main`, not a fast-forward); Lane C owner-gated.
+- **Perf session**: PERF-41 in `CarGame-perf41`, not ready (the owner picks levers in its window: ~6 % terrain GPU
+  cycles at the exact picture, ~14 % with baked noise). It will ask for a ~30 min bench hold.
+- **Owed (25 files in owed/)**, newest: bug166-shock, handbrake-clock, bug160-numbers, bug163-ladder, feat199-price,
+  feat196-wheel-repair. Not there: the owner's look at the hunger box (CarGame-run-shape/wip/feat198/*.png) and a
+  real-mouse drag; hunger was once ruled "a word, never a gauge".
+- **Tickets to tidy**: BUG-160 (closes on `bug160-numbers`) and BUG-161 (the owner's 2–3 s statue symptom is
+  unexplained; wants a capture-key capture and whether fps dropped) stay in pending/.
 - **Held branch**: FEAT-34 round 3 land/feat-34 @ e49bc289 (waits on `feat34-r3-look`; re-test on main first).
 - **Worktrees**: `CarGame-bug67` needs the owner's `! git worktree remove --force`. Perf keeps `-perf37`, `-perf41`,
-  `-perf43`, `-main0758`. Lighting pick keeps `-f180-preview`, `-land-feat180*`. In use: `-land-199`.
+  `-perf43`, `-main0758`. Lighting pick keeps `-f180-preview`, `-land-feat180*`. In use: `-land-201`.
 - **Clock note**: the machine clock is PST; agents' system date runs a day ahead. Git/mtimes are the truth.
