@@ -143,10 +143,10 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
     road.js / terrain shader changes. Tickets routed to it: BUG-164, PERF-46.
   - The owner lets it land and push its own work from its window. You never push without the owner's word to you.
   - Lane rule in every spawn prompt: ≤ 2 heavy processes; `pgrep -f 'node test/playtest-bench'` before a heavy job.
-- **Main = 12663c9d + docs; origin = 706808d5 (the owner said "push" 11-13; everything through BUG-165 is out).**
+- **Main = 95a1e31c + docs; origin = 706808d5 (the owner said "push" 11-13; everything through BUG-165 is out).**
   Unpushed (owner's word needed): INFRA-12 51eb8e96 · INFRA-09 02a26c36 · PERF-41 1b4cfd7c · pad-e2e test fix
-  ba9458b3 · BUG-164 0d9cb9f4 (smoke 26/26; ticket open for `bug164-look`) · bench audio-clock check + PERF-47
-  ticket 12663c9d.
+  ba9458b3 · BUG-164 0d9cb9f4 (smoke 26/26; ticket open for `bug164-look`) · bench audio-clock check 12663c9d · PERF-47's
+  game fix 95a1e31c (smoke 26/26; the owner's listen owed once audio is restarted).
 - **THE MAC'S AUDIO IS STUCK (11-13)**: coreaudiod hangs (`afplay -v 0 /System/Library/Sounds/Tink.aiff` never
   returns). Every WebAudio clock on this machine is stalled, which inflates bench main-thread ms 2–4× (PERF-47).
   NO bench record is valid until the owner runs `sudo killall coreaudiod`; the 08768a0b record was dropped, not
@@ -158,14 +158,16 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   fails on main (2.9 m/s, wants > 3): find whether FEAT-194/201 caused it. FEAT-196 is on main; its ticket stays in
   pending/ until `feat196-look`. feature/machine also carries the unlanded FEAT-34 round 3 work, so B's landings
   are cherry-picks.
-- **Idle**: Lane A (FEAT-194 part 3 waits on `handbrake-clock`). Spare's branch (feature/spare holds old
+- **Idle**: Lane B (BUG-166 waits on `bug166-shock`), Spare. Spare's branch (feature/spare holds old
   unlanded docs/tests, so it needs `git merge main`, not a fast-forward); Lane C owner-gated.
 - **Perf lane is YOURS (owner 11-13: "its on you to restart the performance lane now")**. Lane `p`, worktree
-  `CarGame-perf`, branch feature/perf, port 8043. Running: PERF-47's game half (one shared guard so per-frame
-  audio updates stop scheduling on a stalled clock; lands as land/perf-47). Queue: the re-recorded PERF-40 bench
-  (after the audio restart; quiet machine), PERF-42 (tread-solve spikes; today's spoiled run still read 2.0 % of
-  moving seconds over 100 ms/s against the 7.7 % baseline, unconfirmed), PERF-46, PERF-45, PERF-44. Perf has
-  priority over the other lanes.
+  `CarGame-perf`, branch feature/perf, port 8043. Running: PERF-48 (owner's inbox note 11-13: profile a canned
+  autopilot run end to end, architecture review against professional practice, a ranked lever list; docs only,
+  no fixes). It sends "HOLD for PERF-48 run" before each profiled run: do the hold drill on Lane A's heavy jobs,
+  reply "held", and "released" on its "done". Then the owner picks levers. Queue: the re-recorded PERF-40 bench
+  (after `audio-restart`), PERF-42, PERF-45, PERF-44, PERF-46. Perf has priority over the other lanes.
+- **Lane A running**: FEAT-194 part 3 (the clock stops while the parking brake is latched; owner ruled 11-13, in
+  the ticket's Decisions), lands as land/feat-194c.
 - **Owed (25 files in owed/)**, newest: bug166-shock, handbrake-clock, bug160-numbers, bug163-ladder, feat199-price,
   feat196-wheel-repair. Not there: the owner's look at the hunger box (CarGame-run-shape/wip/feat198/*.png) and a
   real-mouse drag; hunger was once ruled "a word, never a gauge".
