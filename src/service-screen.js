@@ -8,14 +8,17 @@
  *                header coloured by its worst part (FEAT-167). Selecting a row offers REPAIR (a
  *                repairable class: set how far with ◀ ▶, ←/→ or the D-pad, in 5% steps up to the
  *                bench's cap; price and hours follow live) and EXCHANGE (a part you own that fits that
- *                socket, or a mounted pair on a corner). Alignment is one row, one job for all four
+ *                socket, or a mounted pair on a corner); a tire or wheel also SWAPS CORNERS with the other
+ *                three (FEAT-196: the two mounted pairs trade). Alignment is one row, one job for all four
  *                corners (ServiceCenter.align); a flat has "patch"; replace-only parts only exchange.
  *   Parts Shop — ONLY this shop's shelf right now (src/shop-stock.js): name, how long before it's
  *                gone, a two-line description; on the right its condition and the part / installation
- *                prices. Buy & fit (a tire or wheel names its corner) or buy to carry. Hovering — or
+ *                prices. Every row is ONE button (FEAT-196, owner 2026-11-12: select, then the options):
+ *                selecting it opens buy & fit (a tire or wheel names its corner) and buy to carry. Hovering — or
  *                pad-focusing — an item fits it on the truck for a look (ServiceCenter.preview), on the
  *                corner under the pointer or else the worst one; moving off puts back exactly what was there.
- *                My Items, below it: sell the parts you carry, and repair or patch them as their own items.
+ *                My Items, below it: sell the parts you carry, and repair or patch them as their own items
+ *                (a mounted pair's wheel too, FEAT-196).
  *   Jobs       — only while the shop has live offers (owner, 2026-10-20: it still posts work): one
  *                button, "go to jobs" (FEAT-197, owner 2026-11-11). It closes the screen and hands over to
  *                the offers (the offer card over the map); declining them comes back to this screen.
@@ -377,7 +380,7 @@ export class ServiceScreen {
       const from = /^(tire|wheel)[FR][LR]$/.test(socket) ? CORNERS.findIndex(([c]) => socket.endsWith(c)) : -1
       if (from >= 0) {
         const q = s.cornerSwapQuote(), kind = socket.slice(0, -2)
-        h += `<div class="sv-sub">Swap corners <span class="sv-desc">tire and wheel move together</span></div>`
+        h += `<div class="sv-sub">Swap corners · the wheel goes with it</div>`
           + CORNERS.map(([c, label], to) => to === from ? '' : `<div class="sv-row"><span class="sv-name">${label}</span>`
             + bar(s.damage.get(kind + c), isFlat(s.damage, kind + c)) + `<span class="sv-cost">${cost(q.price, q.hours)}</span>`
             + btn('swap', 'swap', money + 1e-9 >= q.price, `data-a="${from}" data-b="${to}" data-to="${kind + c}"`) + `</div>`).join('')
