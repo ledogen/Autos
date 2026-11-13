@@ -1,7 +1,7 @@
 ---
 id: FEAT-197
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-12
 source: owner, 2026-11-11 inbox — "When I'm at the auto shop looking at jobs, the jobs tab should just have a single button that says go to jobs. When you select it, it takes you to the map view where you can look at them. Pressing back returns you to the auto shop menu."
@@ -20,8 +20,6 @@ to the auto shop menu, not to the world.
 
 - [ ] The tab shows only the button; select opens the map on the offers; back returns to the shop menu. Pad and mouse.
 
-## Implementation (Spare, land/feat-199, 2026-11-12)
+## Resolution (2026-11-13)
 
-The Jobs tab is one `go to jobs` button. It closes the shop screen and puts up the shop's offers — the offer card over
-the map, the same view parking at any giver gives. Decline (the button, Esc, pad B) reopens the shop screen on its Jobs
-tab while the truck is still on the lift (main.js `_declineOffer`); Space still releases the brake and drives off.
+Landed on main via land/feat-197 (b42c3392 cherry-picked): the Jobs tab holds one `go to jobs` button; it opens the shop's offers on the offer card over the map; Decline, Esc or pad B returns to the shop on its Jobs tab. 9/9 affected gates green; screenshots in CarGame-land-199/wip/feat-199/shop-*.png.

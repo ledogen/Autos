@@ -90,6 +90,8 @@ function _ruleClamp(g, a) {
     return (1 - a) * soft + a * (one + RULE_FLOOR * soft)
 }
 const RULE_TAPER = 4.0
+// BUG-156: two limbs of one leg within this much of each other's distance (m) both count whole (_limbWeight).
+const RULE_LIMB_TIE = 0.5
 const RULE_LEG_REACH = 14.0
 // Arc half-window (m) for the near-node leg projection: confine each leg's nearest-foot search to this much
 // of the leg either side of its node endpoint, so a curving/looping leg can't contribute a far-branch grade
@@ -961,6 +963,31 @@ const RIVAL_PROM_M     = 2     // m
 const RIVAL_TIE_M      = 2.5     // m
 const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
 let _passD = new Float64Array(256), _passT = new Float64Array(256)   // _runPassMinima scratch (grown as needed)
+let _legSeq = new Float64Array(256)   // _projectLegNearNode scratch: the window's per-segment distances² (grown as needed)
+// BUG-156: one side's weight for a near-node leg limb (the foot at index q of the window's distance² sequence, d2 its own).
+// Walk outward to the KEY SADDLE b, the highest distance before it first drops below this foot's (topographic
+// prominence: a higher foot met on the way does not stop the walk), then on through the lower basin past it to its
+// floor m. With p = √b − √d2 (this limb's depth) and δ = √d2 − √m (how much farther it is than the lower one):
+//     wt = max(1 − (1 − smooth(p / RIVAL_PROM_M)) · δ / (δ + p),  smooth(1 − δ / RULE_LIMB_TIE))
+// 0 at a fold (p = 0 with δ ≥ RULE_LIMB_TIE: a limb being born or dying beside a nearer one); 1 where the two are
+// equally near (δ = 0, the flip between two limbs, so neither is privileged at the swap); 1 once the limb is
+// RIVAL_PROM_M deep; 1 on a side where nothing nearer lies within the window. A fold elsewhere in the window moves no
+// OTHER limb's saddle or floor, so nothing else steps either. The tie term is BUG-130's (the resolver fades a self pass
+// in by max(prominence, tie)) at a shorter reach: where a leg wraps the query at an almost constant distance (it
+// bends around the gore), every limb is shallow and they trade places within centimetres, and a pure depth weight
+// rebuilt the wrap as steep ramps (up to 1.08 m per 5 cm where main has 0.62, beside 1074499174's steep T). Limbs within
+// RULE_LIMB_TIE of the nearer one stay whole, as they were. Census, 8 random seeds, 0.5 m: 111 of 5563 junction-disc
+// discontinuities gone, none new; 49 of 7254 gore lines better by > 2 cm, none worse (2.5 m: 52 gone; 0: 157 gone, 7 worse).
+function _limbWeight(seq, ns, q, d2, dir) {
+    let b = d2, k = q + dir
+    for (; k >= 0 && k < ns && seq[k] >= d2; k += dir) if (seq[k] > b) b = seq[k]
+    if (k < 0 || k >= ns) return 1
+    let m = seq[k]
+    for (; k >= 0 && k < ns && seq[k] <= b; k += dir) if (seq[k] < m) m = seq[k]
+    const B = Math.sqrt(b), D = Math.sqrt(d2), p = B - D, dl = D - Math.sqrt(m)
+    if (!(dl + p > 1e-9)) return 1
+    return Math.max(1 - (1 - _rivalSmooth(p / RIVAL_PROM_M)) * dl / (dl + p), _rivalSmooth(1 - dl / RULE_LIMB_TIE))
+}
 // FEAT-40 bore notch: inside a bore span the terrain SKIN (Y-less / above-apex probes) is not
 // simply raw — near each mouth the open cut's cross-section continues with its floor RISING at
 // this V:H slope per metre into the span, capped at raw. The mouth face is therefore a graded
@@ -7967,13 +7994,20 @@ export class RoadSystem {
         // Each kept foot also records its segment index + clamped fraction (i, t) so callers that
         // need the foot POSITION/tangent (the pad's _nodeSurfaceTop base pick) can reconstruct them
         // exactly without re-projecting. Existing consumers read only { d2, arcS }.
-        const keep = (d2, cumT, ki, kt) => {
+        // BUG-156: each foot also carries a limb weight `wt` (0–1, _limbWeight) that _carveDirtY multiplies into its
+        // taper. A local minimum is BORN at a fold, where a curving leg's distance grows a dip (the query crossing the
+        // leg's evolute), and at birth it has no depth. Weighted whole from that instant it popped in with its full
+        // taper: seed 1074499174's steep T took a 16 m-off limb 22 m up a curving leg, 3.6 m above the node, as a
+        // 0.72 m cliff in 5 cm of gore.
+        const seq = _legSeq.length >= iEnd - i0 + 1 ? _legSeq : (_legSeq = new Float64Array(2 * (iEnd - i0 + 1)))
+        let ns = 0, prevQ = -1
+        const keep = (d2, cumT, ki, kt, q) => {
             if (!out) out = []
             const last = out[out.length - 1]
             if (last && cumT - (last.arcS + arcOrigin) < 4) {
-                if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin; last.i = ki; last.t = kt }
+                if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin; last.i = ki; last.t = kt; last.q = q }
             }
-            else out.push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt })
+            else out.push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt, q, wt: 1 })
         }
         for (let i = i0; i <= iEnd; i++) {
             const ax = pts[i].x, az = pts[i].z
@@ -7986,12 +8020,14 @@ export class RoadSystem {
                 const fx = ax + t * ex, fz = az + t * ez
                 const ddx = wx - fx, ddz = wz - fz
                 const d2 = ddx * ddx + ddz * ddz
-                if (prevD2 !== Infinity && prevD2 <= prevPrevD2 && prevD2 <= d2) keep(prevD2, prevCum, prevI, prevT)
+                if (prevD2 !== Infinity && prevD2 <= prevPrevD2 && prevD2 <= d2) keep(prevD2, prevCum, prevI, prevT, prevQ)
                 prevPrevD2 = prevD2; prevD2 = d2; prevCum = cum + t * segLen; prevI = i; prevT = t
+                seq[ns] = d2; prevQ = ns++
             }
             cum += segLen
         }
-        if (prevD2 !== Infinity && prevD2 <= prevPrevD2) keep(prevD2, prevCum, prevI, prevT)
+        if (prevD2 !== Infinity && prevD2 <= prevPrevD2) keep(prevD2, prevCum, prevI, prevT, prevQ)
+        if (out && out.length > 1) for (const f of out) f.wt = Math.min(_limbWeight(seq, ns, f.q, f.d2, -1), _limbWeight(seq, ns, f.q, f.d2, 1))
         return out
     }
 
@@ -9050,8 +9086,9 @@ export class RoadSystem {
                     // crossing RULE_LEG_REACH would POP in with a non-trivial weight (a lateral shoulder
                     // step). The taper eases its weight to 0 at the cutoff so it fades in/out; at its own
                     // asphalt (gap 0) the taper is 1.
+                    // BUG-156: × the limb's own weight (_limbWeight), so a limb born at a fold starts at 0.
                     const tu = Math.min(1, Math.max(0, (RULE_LEG_REACH - gap) / RULE_TAPER))
-                    _rbTaper[nB++] = tu * tu * (3 - 2 * tu)
+                    _rbTaper[nB++] = tu * tu * (3 - 2 * tu) * pr.wt
                 }
             }
             let wSum = 0, gSum = 0, wMax = 0, tMax = 0
