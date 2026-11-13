@@ -156,11 +156,11 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   are cherry-picks.
 - **Idle**: Lane A (FEAT-194 part 3 waits on `handbrake-clock`). Spare's branch (feature/spare holds old
   unlanded docs/tests, so it needs `git merge main`, not a fast-forward); Lane C owner-gated.
-- **Perf session**: `cargame-70` was CLEARED by the owner 11-13 after PERF-41 landed; it holds no worktrees,
-  servers or machine hold. Its open work is unassigned: BUG-164 (POIs loaded and visible through fog), PERF-46 (map
-  pan jitter on Windows), and one final PERF-40 bench (`node test/playtest-bench.mjs --record`, quiet machine, no
-  lane Chrome). Run them as the Perf lane (`p`) unless a new perf window announces itself first. The hold drill
-  below applies to whoever runs the bench.
+- **Perf lane is YOURS (owner 11-13: "its on you to restart the performance lane now")**. The old perf session
+  is closed. Lane `p`, worktree `CarGame-perf`, branch feature/perf, port 8043. Running: BUG-164 (POIs loaded and
+  drawn through fog). Queue: one final PERF-40 bench (`node test/playtest-bench.mjs --record`; quiet machine, so
+  hold the other lanes' Chrome first), PERF-46 (map pan jitter on Windows), then the open levers in
+  .planning/perf/FINDINGS.md (PERF-42, -44, -45). Perf still has priority over the other lanes.
 - **Owed (25 files in owed/)**, newest: bug166-shock, handbrake-clock, bug160-numbers, bug163-ladder, feat199-price,
   feat196-wheel-repair. Not there: the owner's look at the hunger box (CarGame-run-shape/wip/feat198/*.png) and a
   real-mouse drag; hunger was once ruled "a word, never a gauge".
