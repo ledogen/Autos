@@ -8,7 +8,9 @@
 //      wheelhouse tops only when its strap-free width really is wider than the gap;
 //   3. the weld holds: a 400 kg load drifts < 5 mm in the bed over a rough road at 15 m/s;
 //   4. mass is real: the rear struts squat the same welded as with the same body resting loose;
-//   5. teardown: removing the body takes the weld with it — body and joint counts back to baseline.
+//   5. teardown: removing the body takes the weld with it — body and joint counts back to baseline;
+//   7. BUG-161: a welded load is part of the truck — its own tire never presses on it, even where
+//      the wheel's query sphere overlaps it with a normal the n.y filter lets through.
 
 import * as THREE from 'three'
 import { PROP_MODELS } from '../data/prop-models.js'
@@ -20,7 +22,7 @@ import { BUILT_FAMILIES, jobBadge } from '../src/offer-board.js'
 import { createPhysicsEngine, GROUP_TERRAIN, GROUP_DEBRIS } from '../src/physics-engine.js'
 import { stepPhysics, createVehicleChassis } from '../src/physics.js'
 import { makeVehicleState } from '../src/vehicle-state.js'
-import { computeStaticEquilibrium } from '../src/suspension.js'
+import { computeStaticEquilibrium, mountLocal } from '../src/suspension.js'
 import { RUNNING } from '../src/ignition.js'
 import { strapPose, DebrisSystem } from '../src/debris.js'
 import { splitPayout, rankTable, ECONOMY_PARAMS } from '../src/economy.js'
@@ -175,6 +177,29 @@ for (let f = 0; f < 120; f++) {
 }
 ok(lagMax < 0.008, `drawn load sits in the drawn bed at 1–4 steps a frame, 15 m/s: ${(lagMax * 1000).toFixed(2)} mm off its strap pose (< 8; a once-a-frame snapshot would be ${onceMax.toFixed(2)} m behind)`)
 td.engine.dispose()
+
+// 7. BUG-161: a small block seated 2 cm inside the RR wheel's query sphere, level with the hub (normal
+// horizontal, so physics.js's n.y < −0.1 filter does not stop it). Loose, the tire pushes it; welded, never.
+async function tirePushes (weld) {
+  const t = await truck(false)
+  for (let i = 0; i < 60; i++) t.step()
+  const m = mountLocal(3, t.P), half = { x: 0.05, y: 0.1, z: 0.1 }
+  const inward = -Math.sign(m.x)
+  const local = new THREE.Vector3(m.x + inward * (t.P.wheelRadius + half.x - 0.02), m.y - (t.P.suspensionRestLengthRear - t.vs.strutComp[3]), m.z)
+  const p = local.applyQuaternion(t.vs.quaternion).add(t.vs.position)
+  const b = t.engine.createBody({ type: 'dynamic', position: p, quaternion: t.vs.quaternion })
+  const pts = []; for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) pts.push(x * half.x, y * half.y, z * half.z)
+  t.engine.addHull(b, new Float32Array(pts), { density: 5 / (8 * half.x * half.y * half.z), group: GROUP_DEBRIS })   // a hull: the wheel query has no box pair test
+  if (weld) t.engine.createWeldJoint(t.chassis, b, p)
+  let n = 0
+  const ai = t.engine.applyImpulse.bind(t.engine)
+  t.engine.applyImpulse = (h, j, pt) => { if (h === b) n++; return ai(h, j, pt) }
+  t.step()
+  t.engine.dispose()
+  return n
+}
+const pushLoose = await tirePushes(false), pushWelded = await tirePushes(true)
+ok(pushLoose > 0 && pushWelded === 0, `BUG-161: the tire presses a loose block inside its query sphere (${pushLoose} pushes) and never the same block welded to the chassis (${pushWelded})`)
 
 console.log(fail ? '\nFREIGHT-STRAP: FAILED' : '\nFREIGHT-STRAP: all checks passed')
 process.exit(fail)
