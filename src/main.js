@@ -83,7 +83,7 @@ import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat, 
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
-import { DaySystem, DAY_PARAMS, STAGE_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
+import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
@@ -7277,6 +7277,10 @@ function _updateEnergyMeter () {
       root,
       strip: document.getElementById('em-strip'),
       stage: document.getElementById('em-stage'),
+      hTitle: document.getElementById('hm-title'),
+      hView: document.getElementById('hm-view'),
+      hStrip: document.getElementById('hm-strip'),
+      hStage: document.getElementById('hm-stage'),
       segs: {
         rested:    document.getElementById('em-seg-rested'),
         sleepy:    document.getElementById('em-seg-sleepy'),
@@ -7302,6 +7306,11 @@ function _updateEnergyMeter () {
         el.style.width = `${hours[k] * EM_PX_PER_H}px`
         el.style.background = STAGE_COLOR[k]
       }
+      // FEAT-198: the hunger strip, laid out the same way — the hungerWords bands from the longest meal hold
+      // down to 0 h left, then 'hungry' for the hunger ramp (past the ramp the drain is flat, so the bar stops).
+      let top = _emEls.hTop = _hmTopH()
+      for (const [h, w] of DAY_PARAMS.hungerWords) { _hmSeg(w, top - h); top = h }
+      _hmSeg('hungry', DAY_PARAMS.hungryRampH)
     }
   }
   if (!on) return
@@ -7309,13 +7318,32 @@ function _updateEnergyMeter () {
   _emEls.strip.style.transform =
     `translateX(${EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H}px)`
   const st = daySystem.stage()
-  const hw = daySystem.hungerWord(), label = hw ? `${st} · ${hw}` : st   // FEAT-169: words, never a gauge (SM-INV-10)
-  if (label !== _emStage) {
-    _emStage = label
+  if (st !== _emStage) {
+    _emStage = st
     if (st === 'sleepy') _tut('tut-sleep')   // FEAT-147
-    _emEls.stage.textContent = label
+    _emEls.stage.textContent = st
     _emEls.stage.style.color = STAGE_COLOR[st]
   }
+  // FEAT-198 (owner, 2026-11-11): hunger mirrors energy — its word in its colour, then its own scrolling bar.
+  // Hidden with hunger switched off (the debug toggle: hungerWord() is null).
+  const hw = daySystem.hungerWord()
+  if (hw !== _hmWord) {
+    _hmWord = hw
+    _emEls.hTitle.style.display = _emEls.hView.style.display = hw ? '' : 'none'
+    if (hw) { _emEls.hStage.textContent = hw; _emEls.hStage.style.color = HUNGER_COLOR[hw] }
+  }
+  if (hw) {
+    const top = _emEls.hTop, left = Math.min(top, Math.max(-DAY_PARAMS.hungryRampH, daySystem.fedLeftH()))
+    _emEls.hStrip.style.transform = `translateX(${EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H}px)`
+  }
+}
+let _hmWord
+/** The hunger strip's full end: the longest hold any meal gives (meals never stack past it — DaySystem.eat). */
+const _hmTopH = () => Math.max(DAY_PARAMS.mealHoldH, ...Object.values(ITEMS).map(i => i.hold ?? 0))
+function _hmSeg (word, hours) {
+  const el = document.getElementById(`hm-seg-${word}`)
+  el.style.width = `${hours * EM_PX_PER_H}px`
+  el.style.background = HUNGER_COLOR[word]
 }
 
 // ── FEAT-87: the live rank timer (RoR2 ticker, top-centre under the mission readout) ───────
