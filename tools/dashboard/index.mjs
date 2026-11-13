@@ -943,6 +943,16 @@ async function build() {
       ),
     },
     drift,
+    // INFRA-09: how many open tickets are written in the fixed section order of .planning/todos/TEMPLATE.md.
+    sections: (() => {
+      const ORDER = ['Next steps', 'Summary', 'Description', 'Tracker', 'Decisions', 'Open questions', 'Links', 'Files', 'Log'];
+      const ok = (t) => {
+        const at = (t.body.match(/^## .+$/gm) || []).map((h) => ORDER.indexOf(h.slice(3).trim()));
+        return ['Next steps', 'Summary', 'Tracker'].every((n) => at.includes(ORDER.indexOf(n))) && at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1]));
+      };
+      const open = tickets.filter((t) => t.status === 'open' && t.type !== 'milestone');
+      return { open: open.length, conforming: open.filter(ok).length };
+    })(),
     severityOrder: SEVERITY_ORDER,
   };
 

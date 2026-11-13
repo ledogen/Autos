@@ -150,6 +150,11 @@
   table.data td.name { font-family:var(--mono); font-size:12.5px; }
   .stale { color:var(--perf); }
   .note { color:var(--dimmer); font-size:12px; margin:6px 0 0; }
+  .thead { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 16px; margin:12px 0;
+           display:flex; flex-direction:column; gap:10px; }
+  .thead p { margin:0 0 6px; } .thead p:last-child { margin:0; }
+  .tnext { border-left:3px solid var(--accent); padding-left:12px; }
+  .tnext > b, .tprog { color:var(--dimmer); font-size:11px; text-transform:uppercase; letter-spacing:.8px; }
   .bar { height:4px; background:var(--panel2); border-radius:2px; overflow:hidden;
          margin-top:6px; }
   .bar i { display:block; height:100%; }
@@ -541,12 +546,50 @@ function viewTickets() {
     <ul class="list">${rows || '<li><span class="tblurb">nothing matches</span></li>'}</ul>`;
 }
 
+/* Every ticket page reads in ONE order (INFRA-09, owner 2026-11-13), whatever order the file is in:
+ * next steps, summary, description, tracker, decisions, open questions, links, files, log.
+ * The template is .planning/todos/TEMPLATE.md. Tickets written before it are not converted in bulk: their
+ * headings are mapped where the meaning is clear (Acceptance → Tracker, Related → Links …) and every heading
+ * that is not recognised stays, under its own name, in Description.
+ * ponytail: splits on any line starting "## ", so a "## " inside a fenced code block would split too. */
+const SECTION_ORDER = ['Next steps', 'Summary', 'Description', 'Tracker', 'Decisions', 'Open questions', 'Links', 'Files', 'Log'];
+const SECTION_ALIAS = [
+  [/^next( steps?| actions?)?$/i, 'Next steps'], [/^summary$/i, 'Summary'], [/^description$/i, 'Description'],
+  [/^(tracker|progress|acceptance( criteria)?)$/i, 'Tracker'], [/^decisions?$/i, 'Decisions'], [/^open\b/i, 'Open questions'],
+  [/^(links|related)$/i, 'Links'], [/^files$/i, 'Files'], [/^(work )?log$/i, 'Log'],
+];
+function ticketSections(body) {
+  const [pre, ...parts] = body.split(/^## /m);
+  const known = {}, other = [];
+  for (const part of parts) {
+    const nl = part.indexOf('\n'), head = (nl < 0 ? part : part.slice(0, nl)).trim(), text = nl < 0 ? '' : part.slice(nl + 1);
+    const name = SECTION_ALIAS.find(([re]) => re.test(head))?.[1];
+    if (name) known[name] = (known[name] ? known[name] + '\n' : '') + text;
+    else other.push(`## ${head}\n${text}`);
+  }
+  known.Description = [pre.trim(), known.Description, ...other].filter(Boolean).join('\n\n');
+  return known;
+}
+const boxes = (text) => text.replace(/^(\s*[-*] )\[( |x|X)\]/gm, (_, lead, c) => `${lead}${c === ' ' ? '☐' : '☑'}`);
+
 function viewTicket(id) {
   const t = BY_ID.get(id);
   if (!t) return `<p>No ticket <code>${esc(id)}</code>. <a href="#/tickets">Back to the list</a></p>`;
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim();
   const back = (BACKLINKS.get(id) || []).sort();
   const fmRow = (k, v) => (v ? `<span><b>${k}</b> ${v}</span>` : '');
+  const sec = ticketSections(t.body
+    .replace(/^#\s+.*(\n|$)/m, '')
+    .replace(/^\s*lane:.*\n/, '')   // the body's `lane:` line is routing for agents; the lane shown above is MILESTONES.md's
+    // Milestones hoist `**Requires:** …` into the gate box above; drop the
+    // original so the detail page doesn't state the same gate twice.
+    .replace(t.requires ? /^\*\*Requires:?\*\*[\s\S]*?(?=\n\s*\n)/m : /(?!)/, ''));
+  const done = (t.body.match(/^\s*[-*] \[[xX]\]/gm) || []).length, total = done + (t.body.match(/^\s*[-*] \[ \]/gm) || []).length;
+  const top = (sec['Next steps'] || sec.Summary || total) ? `<div class="thead">
+      ${sec['Next steps'] ? `<div class="tnext"><b>Next steps</b>${md(sec['Next steps'])}</div>` : ''}
+      ${sec.Summary ? `<div>${md(sec.Summary)}</div>` : ''}
+      ${total ? `<div class="tprog">${done} of ${total} done<div class="bar"><i style="width:${Math.round(100 * done / total)}%;background:var(--asset)"></i></div></div>` : ''}
+    </div>` : '';
 
   return `
     <div class="crumb"><a href="#/tickets">← tickets</a> · ${t.file}</div>
@@ -570,13 +613,9 @@ function viewTicket(id) {
       ${fmRow(t.phase === 'shipped' ? 'shipped' : 'closed', t.closed)}
     </div>
     ${t.requires ? `<div class="gate"><b>Requires</b> ${inline(esc(t.requires))}</div>` : ''}
-    <div class="body">${md(
-      t.body
-        .replace(/^#\s+.*(\n|$)/m, '')
-        // Milestones hoist `**Requires:** …` into the gate box above; drop the
-        // original so the detail page doesn't state the same gate twice.
-        .replace(t.requires ? /^\*\*Requires:?\*\*[\s\S]*?(?=\n\s*\n)/m : /(?!)/, ''),
-    )}</div>
+    ${top}
+    <div class="body">${md(boxes(SECTION_ORDER.slice(2).filter(n => sec[n]?.trim())
+      .map(n => (n === 'Description' ? '' : `## ${n}\n`) + sec[n]).join('\n\n')))}</div>
     <div class="refs">
       <h3>Links</h3>
       <div class="row"><b style="color:var(--dimmer)">references</b>
@@ -822,6 +861,10 @@ function viewStats() {
         <th style="text-align:right">total</th></tr></thead>
       <tbody>${typeRows}</tbody>
     </table>
+
+    <h2 class="sec">Ticket layout</h2>
+    <p class="note" style="font-size:13px">${s.sections.conforming} of ${s.sections.open} open tickets are written in the fixed section order
+      (<code>.planning/todos/TEMPLATE.md</code>). The rest are converted when next touched; their pages are still shown in that order.</p>
 
     <h2 class="sec">Frontmatter drift — ${s.drift.length} non-canonical values</h2>
     ${s.drift.length ? `<table class="data">

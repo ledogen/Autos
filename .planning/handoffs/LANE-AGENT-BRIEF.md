@@ -19,6 +19,8 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
 
 ## While you work
 
+- **Tickets** you write or touch follow `.planning/todos/TEMPLATE.md` (fixed sections, fixed order; keep `Next steps`
+  and the `Tracker` boxes current: the owner reads those two first).
 - **Commit WIP at every working step**: `git commit -m 'wip(NN): …' -- <paths>` (never `git add` a set).
 - **CPU**: at most 2 heavy processes (`run-all --serial` or `--only`; Chrome only via `tools/chrome-slot.sh`).
   Never kill another lane's process. **No cdp-smoke on a branch**: the orchestrator smokes main after each merge.

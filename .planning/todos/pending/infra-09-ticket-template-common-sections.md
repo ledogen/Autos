@@ -12,7 +12,7 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-09: ledorepo — one section order for every ticket
 
 ## Next steps
-Build: the template file and the dashboard rendering below. The section list is ruled.
+Landing. Then tickets convert as they are touched; nothing else is owed.
 
 ## Summary
 Tickets today use ~40 different `##` headings (133 × Acceptance, 34 × Request, 27 × What, 16 × Spec, then a long
@@ -35,12 +35,14 @@ Sections 4 and 6–10 are left out when empty; 1, 2, 3 and 5 are always present.
 
 ## Tracker
 - [x] Section list ratified by the owner (2026-11-13).
-- [ ] `.planning/todos/TEMPLATE.md` exists; the orchestrator handoff and LANE-AGENT-BRIEF point at it (one line each).
-- [ ] The dashboard renders the known sections in the fixed order whatever order the file has them in, shows
-      Next steps + Summary + a progress bar (ticked / total boxes) at the top, and lists non-conforming tickets
-      on its existing offenders report.
-- [ ] Open tickets are converted **when next touched**, not in one sweep (142 open; a sweep is churn for
-      tickets nobody will read this month). Completed tickets are never converted.
+- [x] `.planning/todos/TEMPLATE.md` exists; the orchestrator handoff, LANE-AGENT-BRIEF and CLAUDE.md point at it.
+- [x] The dashboard renders every ticket in the fixed order whatever order the file is in, with Next steps +
+      Summary + a progress bar (ticked / total boxes) on top. Old headings are mapped where the meaning is clear
+      (Acceptance → Tracker, Related → Links); unrecognised ones stay, under their own names, in Description.
+- [x] Overview shows how many open tickets are written in the order (4 of 128 on 2026-11-13). One count, not a
+      128-row offenders table: the pages already read in order, so the list would be noise.
+- [ ] Open tickets are converted **when next touched**, not in one sweep. Completed tickets are never converted.
+      (Standing practice, in the handoff and the brief; this box stays open by design.)
 
 ## Decisions
 - 2026-11-13, owner: organised like a Jira page — title, next steps, summary, description, tracker, links.

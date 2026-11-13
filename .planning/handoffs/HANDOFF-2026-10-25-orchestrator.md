@@ -41,9 +41,10 @@ just spawn a new subagent for task").
 3. Four-line board summary to the owner, then drain the inbox. Each item, in order:
    - **Can it just be done?** (a wording, CSS, a number, a doc fix, a one-function change no lane is in) → do it on
      main, `npm test`, `git commit -- <paths>`, fast-forward the lanes. If a running lane owns the file, message it.
-   - **Otherwise a ticket**: `.planning/todos/pending/<class>-<NN>-<slug>.md`, frontmatter `id`, `type`,
-     `status: open`, `severity`, `opened`, `source: owner, <date> — "<their words>"`, `relates:`, a `lane:` line,
-     `## What`, `## Acceptance`. Next free number: `grep -h '^id:' .planning/todos/*/*.md | sort -t- -k2 -n | tail`.
+   - **Otherwise a ticket**: `.planning/todos/pending/<class>-<NN>-<slug>.md`, copied from
+     `.planning/todos/TEMPLATE.md` (INFRA-09: fixed sections in a fixed order — Next steps, Summary, Tracker
+     always; `source: owner, <date> — "<their words>"`; a `lane:` line). When you touch an older ticket, move it
+     to that order. Next free number: `grep -h '^id:' .planning/todos/*/*.md | sort -t- -k2 -n | tail`.
    - **Owner-only** (design, economy numbers, words in the world's voice; the owner writes dialogue, FEAT-148) →
      ask back in one line with a recommendation; never invent.
    Write each one's `inbox/<id>.reply.json` = `{"status": "done|ticket|question", "reply": "<hash / id + lane / the question>", "handledAt": "<ISO time>"}` (a `question` stays in the owner's open list until you rewrite the reply), and
