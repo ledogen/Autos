@@ -305,6 +305,7 @@ const TOPO_TILE_CELLS = 64     // contour cells a contour tile side, at its own 
 const GLYPH_TILE_M    = 512    // m — a glyph tile side (a multiple of COVER_CELL)
 const TILE_MEMO_MAX   = 384    // tiles of all kinds kept, least-recently-used out (a ground tile is ~260 KB)
 const BG_SLICE_MS     = 6      // ms of rebuild per frame (always at least one unit — see _stepBackground)
+const WATER_BAND_M    = 2048   // m — one unit of a whole-sheet water query (_waterQuery): 4 water cells of rows
 const COVER_WATER_M   = 64     // m — the cover samplers fetch the water rejects this far past their rect
 const BG_SEAM_M       = 96     // m — (COVER_COUNT_BLUR + 2) cover cells, the widest edge effect: a tile's cover
                                //     lattice runs this far past it, so tiles meet without a seam
@@ -1420,13 +1421,13 @@ export class Map2D {
         this._bgJob.work = this._bgWork(this._bgJob)
     }
 
-    // PERF-46: run the job for up to `budgetMs`. The whole rebuild (tile builds, cover warm-up, the
-    // compose pass) is ONE generator, `_bgWork`, which yields between units of work: a row of a
-    // tile, a cover chunk, a water cell, one layer of the compose. The clock is read between units,
-    // so a step overruns its budget by at most one unit (each well under 1 ms at 1×). Before
-    // PERF-46 a step always finished the tile it started and drew the compose pass whole: 10–25 ms
-    // single steps under 4× slow-CPU emulation, one 140 ms. A unit that does not yield (a memo hit)
-    // costs nothing, so a rebuild from cached tiles still lands in the frame it starts in.
+    // PERF-46: run the job for up to `budgetMs`. The whole rebuild (cover and water warm-up, tile
+    // builds, the water queries, the draw) is ONE generator, `_bgWork`, which yields between units of
+    // work: a row of a tile, a cover chunk, a water cell, a band of a water query. The clock is read
+    // between units, so a step overruns its budget by at most one unit. Before PERF-46 a step always
+    // finished the tile it started, and the draw ran with the water queries and pond rasters inside
+    // it: 10–25 ms steps under 4× slow-CPU emulation, one 140 ms. A memo hit yields nothing, so a
+    // rebuild from cached tiles takes two frames: the water, then the draw.
     //
     // Every layer reads the view through _panX/_panZ/_zoom (_sx/_sy). The live view may have moved
     // since the job began, so the job's transform is swapped in for the step and back out. The new
@@ -1454,10 +1455,13 @@ export class Map2D {
         }
 
         const water = yield* this._waterPlate(job.rect)
+        // End the step here, so the draw starts a step of its own (unless the step is unbounded: first open).
+        if (this._bgDeadline !== Infinity) this._bgDeadline = 0
+        yield
 
-        // The draw itself is ONE unit (~1–5 ms at 1×, all canvas calls): spread over frames, the canvas
-        // rasterises it in several flushes, and Chrome then antialiases strokes differently (measured: edge
-        // pixels of the roads and streams differ, frame-timing-dependent).
+        // The draw is ONE unit, all canvas calls: spread over frames, the canvas rasterises it in several
+        // flushes, and Chrome then antialiases the strokes differently (measured: the edge pixels of roads
+        // and streams changed with frame timing).
         const n = this._bgNext
         if (n.width !== this._bg.width || n.height !== this._bg.height) { n.width = this._bg.width; n.height = this._bg.height }
         const ctx = n.getContext('2d')
@@ -1869,6 +1873,7 @@ export class Map2D {
                     }
                 }
             }
+            yield   // a coarse tile's scan for missing chunks, all memo hits, is itself ~17 k lookups
         }
     }
 
@@ -1969,7 +1974,7 @@ export class Map2D {
     // avoids, so the sheet cannot disagree with the world about where a creek runs. Both queries
     // are cell-cached inside that system, making this a fetch rather than a generation pass — the
     // reason water could be added to a per-redraw layer at all.
-    // PERF-46: fetched ahead of the draw by _waterPlate (sliced), so this only draws.
+    // PERF-46: fetched and pathed ahead of the draw by _waterPlate (sliced), so this only draws.
     _drawWater(ctx, { ponds, streams }) {
         // Ponds first: a stream draining into one should read as running INTO the water body, so
         // its centreline is drawn over the pond fill rather than under it.
@@ -1984,14 +1989,7 @@ export class Map2D {
         ctx.lineWidth = WATER_W
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
-        ctx.beginPath()
-        for (const st of streams) {
-            const pts = st.points
-            if (!pts || pts.length < 2) continue
-            ctx.moveTo(this._sx(pts[0].x), this._sy(pts[0].z))
-            for (let i = 1; i < pts.length; i++) ctx.lineTo(this._sx(pts[i].x), this._sy(pts[i].z))
-        }
-        ctx.stroke()
+        ctx.stroke(streams)
         ctx.lineCap = 'butt'; ctx.lineJoin = 'miter'
     }
 
@@ -2004,13 +2002,36 @@ export class Map2D {
         const x1 = rect[2] + WATER_MARGIN, z1 = rect[3] + WATER_MARGIN
         yield* this._warmWater(water, x0, z0, x1, z1)
         const ponds = []
-        for (const p of water.pondsInBBox(x0, z0, x1, z1)) {
-            yield
+        for (const p of yield* this._waterQuery(water, '_collectPonds', x0, z0, x1, z1)) {
             const img = yield* this._pondRaster(water, p)
             if (img) ponds.push([p, img])
         }
-        yield
-        return { ponds, streams: water.streamsInBBox(x0, z0, x1, z1) }
+        // The streams' centrelines as ONE screen-space path, stroked once by _drawWater.
+        const streams = new Path2D()
+        for (const st of yield* this._waterQuery(water, '_collectStreams', x0, z0, x1, z1)) {
+            const pts = st.points
+            if (!pts || pts.length < 2) continue
+            streams.moveTo(this._sx(pts[0].x), this._sy(pts[0].z))
+            for (let i = 1; i < pts.length; i++) streams.lineTo(this._sx(pts[i].x), this._sy(pts[i].z))
+            yield
+        }
+        return { ponds, streams }
+    }
+
+    // PERF-46: water.pondsInBBox / streamsInBBox over [x0,x1]×[z0,z1], a band of WATER_BAND_M a unit (zoomed all the
+    // way out, the whole sheet's query was a 10–15 ms unit under 4× slow-CPU emulation). The queries walk WATER cells
+    // row by row (z outer) and keep a feature at its first sighting, and `method` takes the walk box and the keep box
+    // apart: so walking band after band, keeping against the whole box and each key's first sighting, returns the
+    // whole-box list in the whole-box order (the ponds' draw order). A band re-walks its neighbours' margin rows.
+    *_waterQuery(water, method, x0, z0, x1, z1) {
+        const out = [], seen = new Set()
+        for (let b = z0; b <= z1; b += WATER_BAND_M) {
+            for (const f of water[method](x0, b, x1, Math.min(z1, b + WATER_BAND_M), x0, z0, x1, z1)) {
+                if (!seen.has(f.key)) { seen.add(f.key); out.push(f) }
+            }
+            yield
+        }
+        return out
     }
 
     /**
