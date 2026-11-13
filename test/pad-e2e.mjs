@@ -236,8 +236,18 @@ await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sl
 const gear = () => js('__vs.drivetrain.mGear')
 await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600)
 check(await gear() === 1, `manual, assist ON: A alone shifts N → 1 (gear ${await gear()})`)
-await js('__fp.b[7] = 0.6'); await sleep(2500)
-s = await vs(); check(s.v > 3 && (await js('__vs.ignition.state')) === 'running', `RT launches it on the assist (${s.v.toFixed(1)} m/s, no stall)`)
+// Since BUG-141's free-roam seat (968cd1a4) seed 6 parks the truck on an up-grade: the RB release lets it roll BACK,
+// ~1 m/s by the time RT goes down, and RT then reaches ~2.9 m/s forward in 2.5 s (on the old flat seat it was 9.7 m/s,
+// and `|v| > 3` passed with room). So read the FORWARD speed (body −Z), not |v| — a clutch that never bit rolls back
+// past 3 m/s and would pass a magnitude check — and time it in SIM seconds (INFRA-08: under load the sim runs slow).
+// Healthy: about −1 → +3 m/s in 2.5 sim-s; 2 m/s leaves ~0.6 s of launch as margin.
+const fwd = () => js(`(() => { const q = __vs.quaternion, v = __vs.velocity
+  return -(v.x * 2 * (q.x * q.z + q.w * q.y) + v.y * 2 * (q.y * q.z - q.w * q.x) + v.z * (1 - 2 * (q.x * q.x + q.y * q.y))) })()`)
+const vf0 = await fwd()
+await js('__fp.b[7] = 0.6')
+{ const t0 = await js('__simT()'), w0 = Date.now(); while (await js('__simT()') - t0 < 2.5 && Date.now() - w0 < 15000) await sleep(50) }
+const vf = await fwd()
+check(vf > 2 && (await js('__vs.ignition.state')) === 'running', `RT launches it on the assist (${vf0.toFixed(1)} → ${vf.toFixed(1)} m/s forward in 2.5 sim-s, no stall)`)
 await js('__R.clutchAssist = false')
 await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600)
 check(await gear() === 1, `assist OFF: A without LB is rejected (gear ${await gear()})`)
