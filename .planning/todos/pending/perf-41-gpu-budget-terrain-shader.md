@@ -91,3 +91,10 @@ Pixels moved > 8/255 vs base: same-picture build 0.02–0.19 % (one 0.93 %), ins
 0.05–0.26 %. All four: 0.8–5.7 %, and only 0.01–0.08 % moved more than 32/255. The baked-noise bake costs ~59 ms at boot
 (512², 64 cells, a 213 m repeat at the 0.3 /m mottle scale). Seed 17535907's vista view crashed Chrome on base too
 (not this branch). Owner's sheet: https://claude.ai/artifact/CPc7eCYh59L3ktcM4nA61y
+
+Lever 4 probe (`wip/perf-41/shadowprobe.mjs`, driving, unquiet machine, so ms are indicative only). The day clock is NOT
+the per-frame cost: day.js pushes the sun on a 0.1 h ladder (~one step per 6 s), so the far cascade re-renders only on
+that step or every 64 m. The NEAR map re-renders every moving frame (by design, the truck's own shadow): ~1.2–1.8 ms GPU,
+41 draw calls, 246 k triangles per pass. Terrain chunks do not cast into it. Ground cover (12 instanced draws) is 178 k
+of the 246 k triangles; the truck's ~25 parts and the remaining props are the rest. So the lever is ground cover's
+shadow casting (lever 5's half), not the pass's update rate. It is a visual call.
