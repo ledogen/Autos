@@ -21,7 +21,7 @@
  * ducks under the bed: export the bed's level (out.gain) for it then — nothing reads it before.
  */
 
-import { getAudioContext, getMasterBus } from './engine-audio.js'
+import { getAudioContext, getMasterBus, audioClockLive } from './engine-audio.js'
 
 const ROOT = 110                     // Hz — A2, the bed's key before any line has passed
 const TRIAD = [0, 3, 7]              // semitones — minor: root, third, fifth
@@ -66,7 +66,7 @@ export function startRankMusic () {
 /** Per frame while the bar shows: `i` the bar's intensity 0..1, `phase` the heartbeat oscillator's phase (rad). */
 export function updateRankMusic (i, phase) {
   const ctx = live()
-  if (!ctx || !bed) return
+  if (!ctx || !bed || !audioClockLive()) return
   const t = ctx.currentTime
   if (t >= bed.holdUntil) bed.flt.frequency.setTargetAtTime(CUT_LO + (CUT_HI - CUT_LO) * i * i, t, 0.08)
   bed.out.gain.setTargetAtTime(enabled ? (PAD_LO + (PAD_HI - PAD_LO) * i) * volume : 0, t, 0.1)
