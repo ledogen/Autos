@@ -156,13 +156,16 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   are cherry-picks.
 - **Idle**: Lane A (FEAT-194 part 3 waits on `handbrake-clock`). Spare's branch (feature/spare holds old
   unlanded docs/tests, so it needs `git merge main`, not a fast-forward); Lane C owner-gated.
-- **Perf session** (`cargame-70`): PERF-41 CLOSED and landed 11-13. Not holding the machine. It still owes a
-  final ~30 min PERF-40 bench window; BUG-164 and PERF-46 are routed to it.
+- **Perf session**: `cargame-70` was CLEARED by the owner 11-13 after PERF-41 landed; it holds no worktrees,
+  servers or machine hold. Its open work is unassigned: BUG-164 (POIs loaded and visible through fog), PERF-46 (map
+  pan jitter on Windows), and one final PERF-40 bench (`node test/playtest-bench.mjs --record`, quiet machine, no
+  lane Chrome). Run them as the Perf lane (`p`) unless a new perf window announces itself first. The hold drill
+  below applies to whoever runs the bench.
 - **Owed (25 files in owed/)**, newest: bug166-shock, handbrake-clock, bug160-numbers, bug163-ladder, feat199-price,
   feat196-wheel-repair. Not there: the owner's look at the hunger box (CarGame-run-shape/wip/feat198/*.png) and a
   real-mouse drag; hunger was once ruled "a word, never a gauge".
 - **Tickets to tidy**: BUG-160 (closes on `bug160-numbers`) and BUG-161 (the owner's 2–3 s statue symptom is
   unexplained; wants a capture-key capture and whether fps dropped) stay in pending/.
 - **Held branch**: FEAT-34 round 3 land/feat-34 @ e49bc289 (waits on `feat34-r3-look`; re-test on main first).
-- **Worktrees**: `CarGame-bug67` needs the owner's `! git worktree remove --force`. Perf keeps `-perf41`. Lighting pick keeps `-f180-preview`, `-land-feat180*`. In use: none.
+- **Worktrees**: `CarGame-bug67` needs the owner's `! git worktree remove --force`. Lighting pick keeps `-f180-preview`, `-land-feat180*`. In use: none.
 - **Clock note**: the machine clock is PST; agents' system date runs a day ahead. Git/mtimes are the truth.
