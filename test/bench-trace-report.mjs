@@ -83,15 +83,18 @@ async function analyse (file) {
       while (s) { chain.push(s); s = p.nodes.get(s.parent) }
       const li = chain.findIndex(x => x.callFrame.functionName === 'loop')
       const sec = li > 0 ? fname(chain[li - 1]) : li === 0 ? 'loop (self)' : (chain.at(-3) ? fname(chain.at(-3)) : fname(n))
-      const S = T.sections[sec] ??= { ms: 0, self: {} }
+      const S = T.sections[sec] ??= { ms: 0, self: {}, file: {} }
       S.ms += dt; S.self[fname(n)] = (S.self[fname(n)] ?? 0) + dt
+      const file = n.callFrame.url ? n.callFrame.url.split('/').pop().split('?')[0] : '(native)'
+      S.file[file] = (S.file[file] ?? 0) + dt
     }
   }
   for (const T of Object.values(js)) {
     for (const k of ['totalMs', 'idleMs', 'gcMs']) T[k] = +(T[k] / wall).toFixed(1)   // → ms/s
     T.sections = Object.fromEntries(Object.entries(T.sections).sort((a, b) => b[1].ms - a[1].ms).slice(0, 25).map(([k, S]) => [k, {
       msPerS: +(S.ms / wall).toFixed(1),
-      top: Object.entries(S.self).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([f, ms]) => [f, +(ms / wall).toFixed(2)]),
+      top: Object.entries(S.self).sort((a, b) => b[1] - a[1]).slice(0, 25).map(([f, ms]) => [f, +(ms / wall).toFixed(2)]),
+      byFile: Object.entries(S.file).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([f, ms]) => [f, +(ms / wall).toFixed(2)]),
     }]))
   }
   for (const k of Object.keys(js)) if (js[k].totalMs < 1) delete js[k]

@@ -12,8 +12,8 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Perf lane: profile one canned autopilot run on a quiet machine and write the cost map (step 1 of the Tracker). The
-owner then picks levers from the ranked list.
+Owner: read the ranked lever list at the top of `.planning/perf/COST-MAP-2026-11.md` and pick. Levers 1–4 need no
+owner call (exact, invisible); 5–7 are one question each (Open questions). Perf lane then builds the picks, one ticket each.
 
 ## Summary
 The owner wants the game to be a truly lightweight app. Earlier perf work chased single suspects (tire lookups, the
@@ -50,17 +50,30 @@ until `afplay -v 0 /System/Library/Sounds/Tink.aiff` returns in under a second, 
 `--disable-audio-output` fake device.
 
 ## Tracker
-- [ ] A cost map of one canned run per phase and thread, committed under `.planning/perf/`
-- [ ] The architecture review: each large cost against professional practice, with sources
-- [ ] A ranked lever list (cost today, expected gain, risk, effort), each lever a ticket or a line in an existing one
+- [x] A cost map of one canned run per phase and thread, committed under `.planning/perf/` (COST-MAP-2026-11.md)
+- [x] The architecture review: each large cost against professional practice, with sources
+- [x] A ranked lever list (cost today, expected gain, risk, effort), each lever a ticket or a line in an existing one
 - [ ] The owner picks levers (a deep dive if the list needs a table)
 
 ## Open questions
 - What "snappy" means in numbers: the owner's targets for frame time, load time and battery draw.
+- Lever 5: is the "faster MacBook" a 120 Hz (ProMotion) screen? With no frame-rate cap the game renders 120 fps there,
+  about twice the render CPU and GPU of this 60 Hz Air. Recommend a 60 / 30 / display setting, default 60.
+- Lever 6: prototype the baked terrain material (one chunk ring, before/after sheet)? Recommend yes: it is the only
+  large GPU lever left, and the GPU is ~2.5× the CPU in watts.
+- Lever 7: a 30 fps render while parked with the camera still? A look call; recommend trying it on the owner's screen.
 
 ## Links
+The deliverable: `.planning/perf/COST-MAP-2026-11.md` (lever list first). Raw runs: `perf-runs/p48-profile`, `p48-control`
+in the perf worktree (gitignored); measuring scripts in its `wip/perf-48/`.
 PERF-42 (tread-solve spikes), PERF-44 (triangles), PERF-45 (parked main thread) and PERF-46 (map pan jitter on
 Windows) are open single-suspect tickets; this ticket ranks them against everything else.
 
 ## Log
 - 2026-11-13: filed from the owner's inbox note. Perf lane agent started on step 1.
+- 2026-11-13: cost map + review + lever list done (`.planning/perf/COST-MAP-2026-11.md`). Bench gained `--profile`
+  (per-phase traces, GPU timer queries per pass, heap, scene census) and `--fake-audio`; `test/bench-trace-report.mjs`
+  reads the traces. Three seeds profiled and three unprofiled, machine held, fake audio sink (coreaudiod still stuck).
+  Findings: the HUD forces a style recalc every frame from the cluster's `ctx.font` (~45 ms/s, 21 % of the main
+  thread); the map's region dimming ~60 ms/s while open; the GPU (~2 W) outweighs the CPU (0.8 W) 2.5×; main-thread
+  ms/s rises 1.6–3.3× when the CPU is lightly loaded (macOS picks a slower core), so it is not a work measure alone.
