@@ -579,7 +579,7 @@ if (has('record')) {
     const last = prev.filter(p => p.drive === DRIVE_S && p.valid > 0).at(-1)
     if (last) {
       const worse = []
-      for (const ph of ['drive', 'map', 'park']) for (const k of ['mainMs', 'cpuW', 'gpuW', 'gpuMcyc']) {
+      for (const ph of ['drive', 'map', 'park']) for (const k of ['mainMi', 'cpuW', 'gpuW', 'gpuMcyc']) {   // work, not mainMs: ms follows the core (a record without mainMi skips it)
         const a = last.phases[ph][k], c = rec.phases[ph][k]
         if (a > 0 && c > a * 1.15) worse.push(`${ph} ${k} ${a} → ${c} (+${Math.round((c / a - 1) * 100)} %)`)
       }
