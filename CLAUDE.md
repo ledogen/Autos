@@ -266,7 +266,9 @@ The engine is in **maintenance / polish**; new gameplay lands via the **story-mo
 the norm.
 
 - **Capture** bugs/features/ideas as tickets in `.planning/todos/pending/` (frontmatter: `id`, `type`,
-  `status`, `severity`, plus a clear acceptance section). This tracker is the live source of truth for
+  `status`, `severity`). Every ticket uses the sections of `.planning/todos/TEMPLATE.md` in its order —
+  Next steps, Summary, Description, Tracker (the acceptance checkboxes), Decisions, Open questions, Links, Files,
+  Log (INFRA-09); older tickets are converted when next touched. This tracker is the live source of truth for
   outstanding work. Close a ticket by moving it to `.planning/todos/completed/` with a resolution note.
   **Browse it with `npm run dash`** (`tools/dashboard/`, serves :8010) — filterable list, rendered
   ticket bodies with cross-refs auto-linked, an "open in editor" jump, and a repo-stats page. Its home

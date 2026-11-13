@@ -15,12 +15,15 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 Owner: decide `wip/` (66 MB) and Time Machine. The backup itself runs.
 
 ## Summary
-Measured 2026-11-12: **nothing outside the game repo is backed up.** `~/.claude` is not a git repository, Time
-Machine has no destination, and the `gh` command-line tool is not installed. At risk: the memory folder (164 files,
-956 KB — every owner ruling and preference), the three hand-made skills (worktree, window-title,
-blender-game-asset; 4.6 MB), the `worktree-pin.sh` hook, and `~/.claude/settings.json`. Also `wip/` (git-invisible
-by design: in-progress models, audio takes, the item-setup handoff) and 7 commits on main that are not pushed.
-The project CLAUDE.md and all of `.planning/` are safe once pushed: they are in the public game repo.
+Claude Code state that lives outside the game repo (the memory folders, the hand-made skills, hooks, settings) and
+the tracker's data are backed up to the private `ledorepo` repo by hooks. Still exposed: `wip/` (66 MB of
+in-progress models and audio, git-invisible by design) and the machine as a whole (Time Machine is off).
+
+## Description
+Measured 2026-11-12, before the backup existed: `~/.claude` was not a git repository, Time Machine had no
+destination, `gh` was not installed. At risk were the memory folder (164 files, 956 KB — every owner ruling and
+preference), three skills (worktree, window-title, blender-game-asset), the `worktree-pin.sh` hook and
+`~/.claude/settings.json`. The project CLAUDE.md and all of `.planning/` are in the public game repo.
 
 ## Tracker
 - [x] A private repo holds a copy of: the CarGame memory folder, `~/.claude/skills/` (minus `synced/`),
