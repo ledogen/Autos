@@ -1,7 +1,7 @@
 ---
 id: INFRA-09
 type: infra
-status: open
+status: closed
 severity: minor
 opened: 2026-11-12
 source: owner, 2026-11-12 — the "ledorepo" brief (sculpting a personal Jira: tracker + lanes + deep-dive forms)
@@ -12,7 +12,7 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-09: ledorepo — one section order for every ticket
 
 ## Next steps
-Landing. Then tickets convert as they are touched; nothing else is owed.
+None. Closed. Tickets convert to the template as they are touched.
 
 ## Summary
 Tickets today use ~40 different `##` headings (133 × Acceptance, 34 × Request, 27 × What, 16 × Spec, then a long
@@ -55,3 +55,7 @@ Sections 4 and 6–10 are left out when empty; 1, 2, 3 and 5 are always present.
 
 ## Files
 `.planning/todos/TEMPLATE.md` (new) · `tools/dashboard/index.mjs` · `tools/dashboard/app.html`
+
+## Log
+- 2026-11-13: landed on main (merge of infra/infra-09-ticket-sections). Headless Chrome: a new-format ticket, an
+  old-format one, a milestone and four other classes render with no page errors.
