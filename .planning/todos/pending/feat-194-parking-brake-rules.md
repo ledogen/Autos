@@ -57,3 +57,6 @@ No glaring hole found. The one real trade is item 2.
 - Gate `test/park-brake.mjs` (real updateVehicle, keyboard listeners + pad). `test/pad-e2e.mjs` (rainy-day) updated:
   an LT tap/hold while parked keeps it; RT on a map opened at rest does not move the truck.
 - Part 3 still waits on the owner.
+
+## Decisions
+- 2026-11-13, owner, on handbrake-clock (part 3, the clock stops while the parking brake is set): "1. We only latch handbrake at a \"real stop\" already so use that logic for both. 2. A stop still costs slowing down and speeding up. It's fine. Rest fine". So: build it as written. The clock stops while the latch is set, and the latch's own real-stop condition is the only stop test (no separate 0.5 m/s rule). The speed tip measuring driving time only is accepted. Offer expiry, "due in", hunger and energy freeze with the clock; idle fuel burn and coolant heat keep running.
