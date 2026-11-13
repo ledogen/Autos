@@ -54,6 +54,8 @@ function mark (el) {
     : [...el.childNodes].filter(n => !n.classList?.contains('keycap')).map(n => n.textContent).join('').trim()   // a button: its words
   label.style.left = `${r.left - 12}px`
   label.style.top = `${r.top + r.height / 2}px`
+  // FEAT-195: the abandon button already reads its own words, and a label left of it lands on the job HUD's text.
+  label.style.visibility = el.title ? '' : 'hidden'
 }
 
 function close () {
