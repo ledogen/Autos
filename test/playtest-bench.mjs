@@ -364,6 +364,9 @@ async function session (build, seed, rep) {
   psRoot = chrome.pid; psPrev = null
   const client = await connect({ port: cdp, cmdTimeoutMs: 120000 })
   await client.cmd('Runtime.enable')
+  await client.cmd('Performance.enable')   // PERF-48: style recalcs per second, read from Chrome's own counters (unprofiled)
+  const styleNow = async () => { const m = (await client.cmd('Performance.getMetrics')).result.metrics, g = n => m.find(x => x.name === n)?.value ?? 0
+    return [Date.now(), g('RecalcStyleCount'), g('RecalcStyleDuration') * 1000] }
   const errors = []
   client.on('Runtime.exceptionThrown', p => errors.push(p.exceptionDetails.exception?.description ?? p.exceptionDetails.text))
   const js = async e => { const m = await client.cmd('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }); if (m.result?.exceptionDetails) throw new Error(JSON.stringify(m.result.exceptionDetails).slice(0, 400)); return m.result?.result?.value }
@@ -396,11 +399,11 @@ async function session (build, seed, rep) {
     const info = await js(PAGE)
     if (PROFILE) await js(PROFILE_PAGE)
     await js(`window.__bench.legAt = ${MIN_KM * 500}; window.__bench.edgeAt = ${MIN_KM * 250}`)   // the off-road leg halfway, the edge leg a quarter of the way
-    const census = {}
+    const census = {}, recalc = {}
     // --profile: the phase's trace opens after its 3 s transition and closes at its end (the flush runs after the window).
     const phase = async (name, s, label = name) => {
       const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`)
-      if (!PROFILE) { await sleep(s * 1000); return [t0, Date.now()] }
+      if (!PROFILE) { const m = recalc[label] = []; while (Date.now() - t0 < s * 1000) { m.push(await styleNow()); await sleep(1000) } return [t0, Date.now()] }
       await sleep(3000); await traceStart(client)
       await sleep(s * 500 - 3000); census[label] = await js('window.__census()'); await sleep(s * 500)
       const t1 = Date.now(); await traceStop(client, join(OUT, `${build.name}-${seed}-${rep + 1}-${label}.trace.json.gz`))
@@ -417,8 +420,8 @@ async function session (build, seed, rep) {
     await sleep(2000)
     win.park = await phase('idle', PARK_S, 'park')
     const B = await js(`(() => { const B = window.__bench; return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames, prof: B.prof, measures: performance.getEntriesByType('measure').length } })()`)
-    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples, census, prof: B.prof, measures: B.measures }))
-    const r = summarise(B, win)
+    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples, census, recalc, prof: B.prof, measures: B.measures }))
+    const r = summarise(B, win, recalc)
     r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, dialogues: B.dialogues, edges: info.edges, region: info.region }
     r.valid = r.drive.km >= MIN_KM && r.drive.newChunks >= MIN_CHUNKS
     r.errors = errors.slice(0, 5)
@@ -434,7 +437,7 @@ async function session (build, seed, rep) {
 
 const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN
 const pct = (a, p) => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))] }
-function summarise (B, win) {
+function summarise (B, win, recalc = {}) {
   const phases = {}
   for (const [ph, [t0, t1]] of Object.entries(win)) {
     const lo = t0 + 3000   // the phase's first 3 s are the transition (map open, braking)
@@ -453,8 +456,13 @@ function summarise (B, win) {
     const spikes = ph === 'drive'
       ? { physN: phys.length, physP50: +pct(phys, 0.5).toFixed(0), physP99: +pct(phys, 0.99).toFixed(0), physWorst: +Math.max(...phys, 0).toFixed(0), physOver100: +(phys.filter(x => x > 100).length / Math.max(1, phys.length) * 100).toFixed(1) }
       : ph === 'map' ? { postP95: +pct(post, 0.95).toFixed(0), postWorst: +Math.max(...post, 0).toFixed(0) } : {}
+    // PERF-48: style recalcs per wall second (count and ms), from consecutive counter reads after the transition.
+    const rc = (recalc[ph] ?? []).filter(([t]) => t >= lo), rcN = [], rcMs = []
+    for (let i = 1; i < rc.length; i++) { const dt = (rc[i][0] - rc[i - 1][0]) / 1000; rcN.push((rc[i][1] - rc[i - 1][1]) / dt); rcMs.push((rc[i][2] - rc[i - 1][2]) / dt) }
     phases[ph] = {
       ...spikes,
+      recalcS: +mean(rcN).toFixed(1), recalcP50: +pct(rcN, 0.5).toFixed(0), recalcP99: +pct(rcN, 0.99).toFixed(0), recalcWorst: +Math.max(...rcN, 0).toFixed(0),
+      recalcMs: +mean(rcMs).toFixed(1),
       fps: +mean(S.map(s => s.frames)).toFixed(1), p95: +pct(fr, 0.95).toFixed(1), worst: +Math.max(...fr, 0).toFixed(1),
       mainMs: +main.toFixed(0), buckets: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k.slice(6), +v.toFixed(1)]).sort((a, b) => b[1] - a[1])),
       cpuW: +mean(W.map(p => p.cpuW)).toFixed(2), gpuW: +mean(W.map(p => p.gpuW)).toFixed(2), dramW: +mean(W.map(p => p.dramW)).toFixed(2),
@@ -469,6 +477,7 @@ function summarise (B, win) {
 const line = (ph, x) => `${ph.padEnd(5)} ${String(x.fps).padStart(4)} fps p95 ${String(x.p95).padStart(5)} worst ${String(x.worst).padStart(5)} | main ${String(x.mainMs).padStart(4)} ms/s | `
   + (x.physN !== undefined ? `physics/s over ${x.physN} moving s: p50 ${x.physP50} p99 ${x.physP99} worst ${x.physWorst}, ${x.physOver100} % > 100 | ` : '')
   + (x.postWorst !== undefined ? `postStream/s p95 ${x.postP95} worst ${x.postWorst} | ` : '')
+  + (x.recalcS ? `recalc/s ${x.recalcS} (p50 ${x.recalcP50} p99 ${x.recalcP99} worst ${x.recalcWorst}) ${x.recalcMs} ms/s | ` : '')
   + `rend ${x.rendererPct}% (workers ~${x.workersPct}%) gpuP ${x.gpuProcPct}% | CPU ${x.cpuW} W GPU ${x.gpuW} W DRAM ${x.dramW} W | GPU ${x.gpuMcyc} Mcyc/s @ ${x.gpuMHz} MHz | ${x.ktris}k tris`
 
 // ── run: A-B-A-B per rep and seed ─────────────────────────────────────────────────────────────────────────────────────
@@ -482,7 +491,7 @@ for (let rep = 0; rep < REPS; rep++) for (const seed of SEEDS) {
 }
 
 // ── report: per build and phase, the mean over valid sessions; the noise band is the spread between reps ─────────────
-const KEYS = ['fps', 'p95', 'mainMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'postWorst']   // the last three: one phase each
+const KEYS = ['fps', 'p95', 'mainMs', 'recalcS', 'recalcMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'postWorst']   // the last three: one phase each
 const agg = {}
 for (const b of BUILDS) for (const ph of ['drive', 'map', 'park']) {
   const rs = results.filter(r => r.build === b.name && r.valid)
