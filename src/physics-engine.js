@@ -77,6 +77,10 @@ function _specReach (spec) {
 
 let _b3 = null            // the loaded engine module — module-private, never exported
 
+// How far a welded body may drift off its weld before _projectWelds puts it back [m]. The weld holds 1.6 mm
+// over road dips at speed; only the swept-collision clamp drifts it by centimetres. [DEFAULT]
+const WELD_SLOP = 0.01
+
 // maxContactImpulse's no-contact answer: shared and frozen, so a step with nothing touching allocates nothing.
 const NO_CONTACT = Object.freeze({ impulse: 0, point: null, normal: null })
 
@@ -134,7 +138,7 @@ export class PhysicsEngine {
     this._dynamic = new Map()              // the isDynamic subset of _bodies, same records and order
     this._shapeToHandle = new Map()        // shapeId.index1<<21|generation-ish key → body handle
     this._nextHandle = 1
-    this._welds = new Map()                // weld joint → [handleA, handleB] (destroyJoint clears weldedTo)
+    this._welds = new Map()                // weld joint → [handleA, handleB, B's position and rotation in A's frame] (destroyJoint clears weldedTo)
     this._heightfields = new Map()         // handle → b3HeightFieldData (owned, freed on destroy)
     this._meshDatas = new Map()            // handle → b3MeshData[] (owned, freed on destroy)
     // Hull data and the tire size hint live on the BODY RECORD, indexed by shape slot — they used
@@ -154,6 +158,35 @@ export class PhysicsEngine {
   step (dt, substeps = 4) {
     _b3.b3World_Step(this._world, dt, substeps)
     this._xfStamp++          // every cached body transform is now stale (see _bodyXf)
+    if (this._welds.size) this._projectWelds()
+  }
+
+  /**
+   * BUG-161: a weld is rigid, so B goes back where the weld holds it on A once it has drifted past WELD_SLOP.
+   *
+   * The engine's swept (continuous) collision treats the two bodies apart. The truck's chassis is a bullet:
+   * when its sweep meets the ground inside a step (a body strike in a spin), the engine parks it at the moment
+   * of impact with its velocity kept, while the welded load, swept on its own and touching nothing, makes the
+   * whole step. The joint then reels it in over ~3 steps. Measured on the cargo soak (220 kg statue, chassis
+   * sideways at 13 m/s, parked at 0.21 of its step): 174 mm off the seat, then 60, 20, 6. The load was drawn
+   * jumping out of the bed, and the reel spread the strike's deceleration over 3 steps, so the fragile load
+   * felt 3.3 g of it.
+   *
+   * Driven over dips the weld holds within 1.6 mm, so the slop never trips there. Velocity is left alone,
+   * because the clamp keeps it too. A is the anchor: main.js welds the chassis as A and the load as B.
+   */
+  _projectWelds () {
+    for (const w of this._welds.values()) {
+      const a = this._bodies.get(w[0]), b = this._bodies.get(w[1])
+      this._bodyXf(a); this._bodyXf(b)
+      const r = _rotateByQuat(w[2], a.xfQ)
+      const x = a.xfP[0] + r.x, y = a.xfP[1] + r.y, z = a.xfP[2] + r.z
+      if ((x - b.xfP[0]) ** 2 + (y - b.xfP[1]) ** 2 + (z - b.xfP[2]) ** 2 < WELD_SLOP * WELD_SLOP) continue
+      const [ax, ay, az, aw] = a.xfQ, [bx, by, bz, bw] = w[3]   // A's rotation · B's in A's frame
+      _b3.b3Body_SetTransform(b.id, [x, y, z], [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz])
+      b.xfStamp = null
+    }
   }
 
   // ── Bodies ────────────────────────────────────────────────────────────────
@@ -878,7 +911,12 @@ export class PhysicsEngine {
     const a = this._bodies.get(handleA), b = this._bodies.get(handleB)
     ;(a.weldedTo ??= new Set()).add(handleB)
     ;(b.weldedTo ??= new Set()).add(handleA)
-    this._welds.set(joint, [handleA, handleB])
+    // B's pose in A's frame, for _projectWelds: position qA⁻¹·(pB − pA), rotation qA⁻¹·qB.
+    this._bodyXf(a); this._bodyXf(b)
+    const [ax, ay, az, aw] = a.xfQ, [bx, by, bz, bw] = b.xfQ
+    const rel = _rotateByQuat({ x: b.xfP[0] - a.xfP[0], y: b.xfP[1] - a.xfP[1], z: b.xfP[2] - a.xfP[2] }, [-ax, -ay, -az, aw])
+    this._welds.set(joint, [handleA, handleB, rel, [aw * bx - ax * bw - ay * bz + az * by, aw * by + ax * bz - ay * bw - az * bx,
+      aw * bz - ax * by + ay * bx - az * bw, aw * bw + ax * bx + ay * by + az * bz]])
     return joint
   }
 
