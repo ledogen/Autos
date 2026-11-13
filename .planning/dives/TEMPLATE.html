@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Template: how to write a deep dive</title>
+<!-- Copy this file to .planning/dives/<TICKET-ID>-<slug>.html (the ticket id MUST start the name: it is how the
+     tracker links the dive to its ticket). Write ordinary HTML. Wherever you ask the owner something, put a
+     <dive-q>. Give each a short, stable id: the answers file is keyed by it. Do not write form code or styles;
+     /dive.js does both. Images go beside this file and are referenced by bare name. Then point an owed item at
+     it: "dive": "<TICKET-ID>-<slug>" in owed/<id>.json. Rules for the prose: CLAUDE.md § Communicating with the
+     owner. Put each question directly under the explanation it depends on, never in a block at the end. -->
+<h1>Template: should the clock stop while the handbrake is on?</h1>
+<p>One short paragraph: what is being decided and why it needs the owner. Then one section per decision.</p>
+
+<h2>1. What stops with the clock</h2>
+<p>Explain the options with real numbers. A table or a small diagram goes here when it helps.</p>
+<figure>
+  <svg viewBox="0 0 520 90" role="img" aria-label="Two timelines: the day clock pauses at a stop in one and runs on in the other">
+    <g font-family="ui-monospace,Menlo,monospace" font-size="12" fill="#8b94a3">
+      <text x="0" y="24">pause all</text><text x="0" y="68">job runs on</text>
+      <rect x="110" y="12" width="150" height="16" fill="#6fb3ff"/><rect x="260" y="12" width="90" height="16" fill="none" stroke="#646c7a" stroke-dasharray="4 3"/><rect x="350" y="12" width="150" height="16" fill="#6fb3ff"/>
+      <rect x="110" y="56" width="150" height="16" fill="#6fb3ff"/><rect x="260" y="56" width="90" height="16" fill="#ffc25c"/><rect x="350" y="56" width="150" height="16" fill="#6fb3ff"/>
+      <text x="270" y="46">parked 90 s</text>
+    </g>
+  </svg>
+  <figcaption>Blue: time that counts. Dashed: time that does not. Amber: time that counts against the job only.</figcaption>
+</figure>
+<dive-q id="clock" options="pause everything | the job's clock keeps running | not now"></dive-q>
+
+<h2>2. Anything this misses</h2>
+<p>A question with no options is a free-text box.</p>
+<dive-q id="misses"></dive-q>
+
+<script src="/dive.js"></script>
