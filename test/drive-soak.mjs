@@ -179,6 +179,9 @@ function makeStrap (w, vs) {
     w.engine.setBullet(st.body, inBedWell(local(r), BED, 0.1))   // DebrisSystem.beforeStep's cargo flag
     c0.copy(vs.position); cv0.copy(vs.velocity); w.engine.getTransform(st.body, l0, q); w.engine.getVelocity(st.body, lv, lw)
   }
+  // the load's own g this step, from its velocity change (gravity removed): what the joint force ought to read
+  const lv1 = new THREE.Vector3()
+  const dvG = () => { w.engine.getVelocity(st.body, lv1, lw); return Math.hypot(lv1.x - lv.x, lv1.y - lv.y + 9.81 * DT, lv1.z - lv.z) / DT / 9.81 }
   const adv = () => { w.engine.getTransform(st.body, lp, q); return `adv truck ${(vs.position.distanceTo(c0) / (cv0.length() * DT || 1)).toFixed(2)} load ${(lp.distanceTo(l0) / (lv.length() * DT || 1)).toFixed(2)}` }
   st.measure = () => (st.off = local(r).distanceTo(seat))
   // SOAK_TRACE on a replay: the load's offset from its seat (truck frame, mm) and what touched it this step (N·s).
@@ -186,7 +189,7 @@ function makeStrap (w, vs) {
   st.trace = () => {
     local(r); w.engine.contactImpulseOn(st.body, J)
     const vl = v.copy(vs.velocity).applyQuaternion(qi.copy(vs.quaternion).invert())
-    return `v local (${vl.x.toFixed(2)}, ${vl.y.toFixed(2)}, ${vl.z.toFixed(2)}) at (${vs.position.x.toFixed(2)}, ${vs.position.y.toFixed(2)}, ${vs.position.z.toFixed(2)}) cargo off (${[r.x - seat.x, r.y - seat.y, r.z - seat.z].map(d => (d * 1000).toFixed(1)).join(', ')}) mm, contact J (${[J.x, J.y, J.z].map(d => d.toFixed(0)).join(', ')}) ${adv()} felt ${feltG(w.engine.jointForce(st.joint, J), row.massKg).toFixed(2)} g`
+    return `v local (${vl.x.toFixed(2)}, ${vl.y.toFixed(2)}, ${vl.z.toFixed(2)}) at (${vs.position.x.toFixed(2)}, ${vs.position.y.toFixed(2)}, ${vs.position.z.toFixed(2)}) cargo off (${[r.x - seat.x, r.y - seat.y, r.z - seat.z].map(d => (d * 1000).toFixed(1)).join(', ')}) mm, contact J (${[J.x, J.y, J.z].map(d => d.toFixed(0)).join(', ')}) ${adv()} felt ${feltG(w.engine.jointForce(st.joint, J), row.massKg).toFixed(2)} g (by its Δv ${dvG().toFixed(2)} g)`
   }
   return st
 }
