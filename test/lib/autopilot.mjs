@@ -76,6 +76,9 @@ export function createAutopilot ({ car, route, inBore = () => false, vMax = 24, 
 
   const ap = {
     get idx () { return idx }, get dist () { return dist }, get detouring () { return !!detour }, dbg: null,
+    /** Metres off the route's line to drive, + = right of travel (0: on it). Held off in a bore. PERF-42's bench rides
+     *  the road edge with it: the shoulder is where a wheel's ground query costs most. */
+    lane: 0,
     /** Snap the route position to the point nearest `p` (a car placed by someone else). */
     locate (p) { idx = nearest(p, 0, path.length); reset() },
     /** Where to re-seat the car to carry on: `m` metres ahead on the route, facing along it. Ends any detour.
@@ -108,7 +111,12 @@ export function createAutopilot ({ car, route, inBore = () => false, vMax = 24, 
       }
       if (!detour) {
         const bore = inBore(p.x, p.z)
-        target = path[ahead(idx, bore ? Math.max(4, 0.6 * v) : Math.max(6, 0.9 * v))]
+        const ti = ahead(idx, bore ? Math.max(4, 0.6 * v) : Math.max(6, 0.9 * v))
+        target = path[ti]
+        if (ap.lane && !bore) {   // shift the target off the line, square to the route there (right of travel = (−dz, dx))
+          const a = path[Math.max(0, ti - 1)], b = path[Math.min(path.length - 1, ti + 1)], l = hyp(a.x, a.z, b.x, b.z) || 1
+          target = { x: target.x - (b.z - a.z) / l * ap.lane, z: target.z + (b.x - a.x) / l * ap.lane }
+        }
         // Speed plan: points ≥ 8 m apart over the next 90 m; at each, the corner speed √(aLat·R) plus what braking at
         // aBrake over the distance to it buys back.
         const pts = []
@@ -154,15 +162,16 @@ export function createAutopilot ({ car, route, inBore = () => false, vMax = 24, 
 }
 
 // Self-check: `node test/lib/autopilot.mjs`. A kinematic bicycle (yaw rate = v·tan(steer)/wheelbase) on a 100 m ring
-// road cut into four edges: it must hold the line within 2 m, reach the ring's corner speed (√(aLat·R) ≈ 18.7 m/s), and
-// report 'stuck' when its wheels cannot turn.
+// road cut into four edges: it must hold the line within 2 m, reach the ring's corner speed (√(aLat·R) ≈ 18.7 m/s), hold a
+// lane 4 m off the line within 2 m, and report 'stuck' when its wheels cannot turn.
 if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv[1]}`) {
   const R = 100, arc = (a0) => ({ points: Array.from({ length: 53 }, (_, i) => { const a = a0 + i / 52 * Math.PI / 2; return { x: R * Math.cos(a), z: R * Math.sin(a) } }) })
   const edges = [0, 1, 2, 3].map(k => arc(k * Math.PI / 2))
   let s = 1; const rng = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32)
   const car = { wheelbase: 2.474, maxSteerAngle: 0.65, speedSteerRef: 18 }
-  const run = (stuck) => {
+  const run = (stuck, lane = 0) => {
     const route = makeRoute(edges, rng, { x: R, z: 0 }), ap = createAutopilot({ car, route })
+    ap.lane = lane
     ap.locate({ x: R, z: 0 })
     // Start at (R, 0) along the route's direction of travel (heading h: nose at −(sin h, cos h)).
     const p1 = route.path[ap.idx + 2]; let x = R, z = 0, h = Math.atan2(-(p1.x - x), -(p1.z - z)), v = 0, maxLat = 0, maxV = 0, trouble = null
@@ -172,13 +181,13 @@ if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv
       if (!stuck) v = Math.max(0, v + (4 * c.throttle - 7 * c.brake) / 60)
       h += v * Math.tan(c.steer) / car.wheelbase / 60
       x -= Math.sin(h) * v / 60; z -= Math.cos(h) * v / 60
-      if (t > 5) maxLat = Math.max(maxLat, Math.abs(Math.hypot(x, z) - R))
+      if (t > 5) maxLat = Math.max(maxLat, Math.abs(Math.abs(Math.hypot(x, z) - R) - Math.abs(lane)))
       maxV = Math.max(maxV, v)
     }
     return { maxLat, maxV, trouble, km: ap.dist / 1000 }
   }
-  const a = run(false), b = run(true)
-  console.log(`ring: max off-line ${a.maxLat.toFixed(2)} m, top speed ${a.maxV.toFixed(1)} m/s, ${a.km.toFixed(2)} km, trouble ${a.trouble} · wheels locked: trouble ${b.trouble}`)
-  const ok = a.maxLat < 2 && a.maxV > 15 && a.maxV < 22 && !a.trouble && b.trouble === 'stuck'
+  const a = run(false), b = run(true), c = run(false, 4)
+  console.log(`ring: max off-line ${a.maxLat.toFixed(2)} m, top speed ${a.maxV.toFixed(1)} m/s, ${a.km.toFixed(2)} km, trouble ${a.trouble} · lane 4 m: max off it ${c.maxLat.toFixed(2)} m, trouble ${c.trouble} · wheels locked: trouble ${b.trouble}`)
+  const ok = a.maxLat < 2 && a.maxV > 15 && a.maxV < 22 && !a.trouble && c.maxLat < 2 && !c.trouble && b.trouble === 'stuck'
   console.log(ok ? 'PASS' : 'FAIL'); process.exit(ok ? 0 : 1)
 }

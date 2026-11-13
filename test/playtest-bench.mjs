@@ -4,8 +4,9 @@
 // Normal tier) the way PERF-37's owner sessions did, with an autopilot on a VIRTUAL GAMEPAD — a page script answers
 // navigator.getGamepads(), which src/gamepad.js polls every frame, so the game's own input path drives (no src/ change).
 // Per seed, ~7 min with the boot:
-//   drive  story mode, seated from Larry's yard onto the road network, a route at play speeds for 300 s, one off-road
-//          leg. The driver is test/lib/autopilot.mjs (pure: state in, controls out — meant to grow into in-game AI
+//   drive  story mode, seated from Larry's yard onto the road network, a route at play speeds for 300 s, one 60 s leg
+//          riding the road edge (centre 5 m off the line: one side's wheels over the lip on the shoulder — PERF-42's
+//          hot spot, the autopilot otherwise keeps to the middle), one off-road leg. The driver is test/lib/autopilot.mjs (pure: state in, controls out — meant to grow into in-game AI
 //          cars); this file is its consumer: controls onto the pad, trouble into re-seats (then crank, then park off)
 //   map    stopped, the map open: zoom right out, a fast pan into undrawn ground, zoom back in, pan on (30 s)
 //   park   stopped, the map shut (30 s) — the GPU-only cost
@@ -49,7 +50,9 @@ const has = k => process.argv.includes(`--${k}`)
 const PINNED = [1768572700, 17535907, 759313244]
 const SEEDS = arg('seed') ? [+arg('seed')] : PINNED.slice(0, +arg('seeds', PINNED.length))
 const REPS = +arg('reps', 1), DRIVE_S = +arg('drive', 300), MAP_S = +arg('map', 30), PARK_S = +arg('park', 30)
-const MIN_KM = DRIVE_S * 0.01, MIN_CHUNKS = Math.round(DRIVE_S / 8)   // 3 km and 38 chunks at the default 300 s
+// 2.5 km (8.3 m/s average) and 38 chunks at the default 300 s. The bar was 3 km until 2026-11-12: seed 17535907's roads are
+// slow (2.6–3.5 km over six sessions), and the owner kept the seed and lowered the bar.
+const MIN_KM = DRIVE_S / 120, MIN_CHUNKS = Math.round(DRIVE_S / 8)
 const BUILDS = [{ name: 'A', dir: resolve(arg('a', ROOT)) }, ...['b', 'c'].filter(k => arg(k)).map(k => ({ name: k.toUpperCase(), dir: resolve(arg(k)) }))]
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 const OUT = resolve(arg('out', join(ROOT, 'perf-runs', `bench-${stamp}`)))
@@ -141,7 +144,7 @@ const PAGE = String.raw`(async () => {
   ap.locate(window.__vs.position)
   // A seat is a dead, parked truck (story mode's, main.js _reseatTruckAtSpawn): after it lands, hold I until the engine
   // runs (synthetic keys, the way gamepad.js sends its own), then RB (Space in the drive layout) off the park brake.
-  let dlgTick = 0, home = null, settle = 0, settleT = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false
+  let dlgTick = 0, home = null, settle = 0, settleT = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false, edgeT0 = 0
   const ikey = type => (document.activeElement || document.body).dispatchEvent(new KeyboardEvent(type, { key: 'i', code: 'KeyI', bubbles: true, cancelable: true }))
   // Hold I until it runs; a press that something swallowed (a dialogue) leaves it 'off', so press again after 1 s.
   let crankT = 0
@@ -192,6 +195,10 @@ const PAGE = String.raw`(async () => {
         if (c.trouble) seat(c.trouble)
         else {
           setPad(Math.max(-1, Math.min(1, -c.steer / c.steerLimit)), c.throttle, c.brake)   // the game steers −stick (vehicle.js)
+          // One edge leg, a quarter of the way through the minimum distance: 60 s with the centre 5 m off the line (the
+          // deck's half-width; the wheels on that side ride over the lip on the shoulder), on a random side.
+          if (!edgeT0 && ap.dist > B.edgeAt) { edgeT0 = now; ap.lane = rng() < 0.5 ? -5 : 5 }
+          else if (edgeT0 && ap.lane && now - edgeT0 > 60000) ap.lane = 0
           // One off-road leg, halfway through the minimum distance: 60–100 m out to one side, back onto the route ahead.
           if (!detoured && ap.dist > B.legAt && !inBore(vs.position.x, vs.position.z)) {
             detoured = true
@@ -277,7 +284,7 @@ async function session (build, seed, rep) {
     await js(`window.__seed = ${seed}`)
     if (has('probe')) await js('window.__benchProbe = true')
     const info = await js(PAGE)
-    await js(`window.__bench.legAt = ${MIN_KM * 500}`)   // the off-road leg halfway through the minimum distance
+    await js(`window.__bench.legAt = ${MIN_KM * 500}; window.__bench.edgeAt = ${MIN_KM * 250}`)   // the off-road leg halfway, the edge leg a quarter of the way
     const phase = async (name, s) => { const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`); await sleep(s * 1000); return [t0, Date.now()] }
     const win = {}
     win.drive = await phase('drive', DRIVE_S)
