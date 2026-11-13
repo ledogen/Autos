@@ -98,3 +98,5 @@ that step or every 64 m. The NEAR map re-renders every moving frame (by design, 
 41 draw calls, 246 k triangles per pass. Terrain chunks do not cast into it. Ground cover (12 instanced draws) is 178 k
 of the 246 k triangles; the truck's ~25 parts and the remaining props are the rest. So the lever is ground cover's
 shadow casting (lever 5's half), not the pass's update rate. It is a visual call.
+
+Owner, 2026-11-13: the baked noise (1b) is APPROVED, so lever 1 ships whole (1a+1b+1c+1d).
