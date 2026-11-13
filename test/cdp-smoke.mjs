@@ -1450,7 +1450,7 @@ const STEPS = [
     // from the inventory feeds the driver.
     // (Skipped while hunger is switched off — DAY_PARAMS.hungerOn, off for the 2026-11-06 playtest.)
     if (DAY_PARAMS.hungerOn) {
-      check(await until(async () => /· hungry$/.test(await stage()), 1000), `the energy meter does not say hungry ("${await stage()}")`)
+      check(await until(async () => /^hungry$/.test(await stage()), 1000), `the hunger line does not say hungry ("${await stage()}")`)
       await js('window.__inv.grant("chiliDog"); window.__inv.use("chiliDog")')
       check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)
     }
