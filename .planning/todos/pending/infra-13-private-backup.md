@@ -55,3 +55,5 @@ The project CLAUDE.md and all of `.planning/` are safe once pushed: they are in 
 - `wip/` is 66 MB; not backed up yet (tracker box above still open). Time Machine still off.
 - 2026-11-13, owner: no launchd timer; use a hook, so it backs up only while the owner is working. Done and checked
   (a second call inside the hour is skipped; a stale stamp runs and pushes).
+- 2026-11-13, owner: also back up when a session compacts. Added `PreCompact` (fires just before a manual or automatic
+  compact) and `SessionEnd` (fires on exit and on /clear) hooks; both run the backup unconditionally.
