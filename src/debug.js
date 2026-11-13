@@ -497,6 +497,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // puncture does (the bang and the alert come off `popped`).
   dmgFolder.add({ f: () => { const d = _damage(); const i = d ? d.flat.indexOf(false) : -1; if (i < 0) return
     d.flat[i] = true; d.popped.push(i); d.publish(params); _sync() } }, 'f').name('Puncture a Tire')
+  // BUG-160: the order a corner fails in — a road rim strike pinch-flats the inflated tire, and the wheel
+  // under air yields only this many times past its flat-tire yield.
+  dmgFolder.add(DAMAGE_PARAMS, 'rimPinchRoadMult', 4, 60, 1).name('Rim pinch pops tire (x wheel load)')
+  dmgFolder.add(DAMAGE_PARAMS, 'rimInflatedMult', 1, 4, 0.1).name('Wheel yield under air (x)')
   void _readout
 
   // ── Engine temperature (FEAT-51) ──────────────────────────────────────────────────────────────
