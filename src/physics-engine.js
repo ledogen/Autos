@@ -75,6 +75,40 @@ function _specReach (spec) {
   }
 }
 
+/** A collider's extent along the BODY-LOCAL unit direction l, about the body origin, into _span
+ *  ([min, max]) — contactSphere's slab test (BUG-165). Only the shapes that query has a pair test
+ *  for; a cylinder is bounded by its round section (its polygon never reaches past it). */
+const _span = [0, 0]
+function _specSpan (spec, l) {
+  switch (spec.shape) {
+    case 'sphere': {
+      const c = spec.offset.x * l.x + spec.offset.y * l.y + spec.offset.z * l.z
+      _span[0] = c - spec.radius; _span[1] = c + spec.radius
+      return _span
+    }
+    case 'cylinder': {
+      const c = (spec.yOffset + spec.height / 2) * l.y
+      const e = spec.height / 2 * Math.abs(l.y) + spec.radius * Math.sqrt(Math.max(0, 1 - l.y * l.y))
+      _span[0] = c - e; _span[1] = c + e
+      return _span
+    }
+    case 'hull': {   // the points it was built from span what their hull spans
+      const p = spec.positions
+      let lo = Infinity, hi = -Infinity
+      for (let i = 0; i < p.length; i += 3) {
+        const d = p[i] * l.x + p[i + 1] * l.y + p[i + 2] * l.z
+        if (d < lo) lo = d
+        if (d > hi) hi = d
+      }
+      _span[0] = lo; _span[1] = hi
+      return _span
+    }
+    default:   // no pair test either — contactSphere skips it after this
+      _span[0] = -Infinity; _span[1] = Infinity
+      return _span
+  }
+}
+
 let _b3 = null            // the loaded engine module — module-private, never exported
 
 // How far a welded body may drift off its weld before _projectWelds puts it back [m]. The weld holds 1.6 mm
@@ -614,8 +648,13 @@ export class PhysicsEngine {
    *   b3CollideSpheres(A, B, xfB)        → normal A→B, separation = −penetration
    *   b3CollideHullAndSphere(hull, s, xf) → hull is at IDENTITY (its own frame); normal
    *                                         hull→sphere; results in hull-local coordinates.
+   *
+   * slab (BUG-165): `{ axis, halfWidth }` makes the query the sphere CUT to the slab
+   * |(x − center)·axis| ≤ halfWidth — the wheel's, a tire as wide as its tread. A shape whose
+   * extent along the axis misses the slab is no contact: the axis separates them, exactly. A shape
+   * that crosses the slab keeps the sphere's manifold unchanged.
    */
-  contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false, skipWeldedTo = null } = {}) {
+  contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false, skipWeldedTo = null, slab = null } = {}) {
     const hits = []
     const mask = _group32(collidesWith)
     // dynamicOnly (every wheel query, 20×/step) walks only the dynamic bodies — not the terrain,
@@ -631,10 +670,20 @@ export class PhysicsEngine {
       const bp = rec.xfP, bq = rec.xfQ
       const dx = center.x - bp[0], dy = center.y - bp[1], dz = center.z - bp[2]
       const d2 = dx * dx + dy * dy + dz * dz
+      // The slab's axis in the body's frame, and the query centre's place along it from the body origin.
+      let la = null, s0 = 0
       for (let si = 0; si < rec.shapes.length; si++) {
         if ((rec.groups[si] & mask) === 0) continue
         const span = radius + rec.reach[si]
         if (d2 > span * span) continue          // cheap reject about the body origin
+        if (slab !== null) {
+          if (la === null) {
+            la = _rotateByQuat(slab.axis, [-bq[0], -bq[1], -bq[2], bq[3]])
+            s0 = dx * slab.axis.x + dy * slab.axis.y + dz * slab.axis.z
+          }
+          const sp = _specSpan(rec.specs[si], la)
+          if (sp[0] > s0 + slab.halfWidth || sp[1] < s0 - slab.halfWidth) continue
+        }
         // What kind of shape this slot holds is known from how it was registered: a sphere spec is
         // an engine sphere, and a slot that owns hull data (addHull / addCylinder / replaceHullLocal)
         // is an engine hull. Boxes and capsules own no hull data and fall through.
