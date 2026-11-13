@@ -19,3 +19,9 @@ to the auto shop menu, not to the world.
 ## Acceptance
 
 - [ ] The tab shows only the button; select opens the map on the offers; back returns to the shop menu. Pad and mouse.
+
+## Implementation (Spare, land/feat-199, 2026-11-12)
+
+The Jobs tab is one `go to jobs` button. It closes the shop screen and puts up the shop's offers — the offer card over
+the map, the same view parking at any giver gives. Decline (the button, Esc, pad B) reopens the shop screen on its Jobs
+tab while the truck is still on the lift (main.js `_declineOffer`); Space still releases the brake and drives off.
