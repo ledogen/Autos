@@ -249,6 +249,8 @@ function _curvedOffset(u, v, k) {
 }
 const _thrY = new Float64Array(4), _thrE = new Float64Array(4), _thrOut = { lat: 0, over: 0 }   // _throughDeckTop scratch (never held)
 const _ribOut = { lat: 0, over: 0, s: 0 }   // _padRibbonMask scratch (never held)
+const _CD_RT = { tx: 1, tz: 0 }   // _ribbonFrameTangent scratch (never held)
+let _rbGap = new Float64Array(16), _rbGrade = new Float64Array(16), _rbTaper = new Float64Array(16)   // _carveDirtY's blend (grown)
 // FEAT-46 POI_ROAD_FEATHER: band (m) OUTSIDE the ribbon+shoulder across which a POI lay-by pad's
 // authority ramps 0 → 1 (see _poiPadCarve). This is not a look tunable — it is the mechanism that
 // makes the ratified "POIs never influence routing determinism" rule structural: a pad has exactly
@@ -8987,7 +8989,7 @@ export class RoadSystem {
             // leg's grade, smoothly (the ribbon never moves). Pure function of position, and now C1 as well as
             // C0 (RULE_SOFT) ⇒ continuous across every Voronoi switch with no crease at the asphalt edges.
             const nodeLegs = jc.node.legs, cutDefault = this.junctionCutbackDist()
-            const gaps = [], grades = [], tapers = []
+            let nB = 0   // the in-range branches, in _rbGap / _rbGrade / _rbTaper (module scratch: no arrays per sample)
             for (const leg of nodeLegs) {
                 const ne = this._network.get(leg.runKey)
                 if (!ne) continue
@@ -9028,23 +9030,24 @@ export class RoadSystem {
                     // band inside the mouth. Per-leg, from its own foot ⇒ still a pure
                     // function of position.
                     const au = Math.min(1, Math.max(0, (along - ((leg.cutback ?? cutDefault) - PAD_MOUTH_EASE)) / PAD_MOUTH_EASE))
-                    gaps.push(_ruleClamp(gap, au * au * (3 - 2 * au))); grades.push(legGrade)
+                    if (nB === _rbGap.length) { const g = (a) => { const b = new Float64Array(a.length * 2); b.set(a); return b }; _rbGap = g(_rbGap); _rbGrade = g(_rbGrade); _rbTaper = g(_rbTaper) }
+                    _rbGap[nB] = _ruleClamp(gap, au * au * (3 - 2 * au)); _rbGrade[nB] = legGrade
                     // Smooth in-range taper (1 → 0 across the last RULE_TAPER m before the cutoff).
                     // Barycentric weight does NOT decay with a leg's OWN distance, so without this a leg
                     // crossing RULE_LEG_REACH would POP in with a non-trivial weight (a lateral shoulder
                     // step). The taper eases its weight to 0 at the cutoff so it fades in/out; at its own
                     // asphalt (gap 0) the taper is 1.
                     const tu = Math.min(1, Math.max(0, (RULE_LEG_REACH - gap) / RULE_TAPER))
-                    tapers.push(tu * tu * (3 - 2 * tu))
+                    _rbTaper[nB++] = tu * tu * (3 - 2 * tu)
                 }
             }
             let wSum = 0, gSum = 0, wMax = 0, tMax = 0
-            for (let i = 0; i < gaps.length; i++) {
-                if (tapers[i] > tMax) tMax = tapers[i]
-                let w = tapers[i]
-                for (let j = 0; j < gaps.length; j++) if (j !== i) w *= gaps[j]   // taper_i · ∏_{j≠i} gap_j
+            for (let i = 0; i < nB; i++) {
+                if (_rbTaper[i] > tMax) tMax = _rbTaper[i]
+                let w = _rbTaper[i]
+                for (let j = 0; j < nB; j++) if (j !== i) w *= _rbGap[j]   // taper_i · ∏_{j≠i} gap_j
                 wSum += w; if (w > wMax) wMax = w
-                gSum += w * grades[i]
+                gSum += w * _rbGrade[i]
             }
             // Apply the ruled blend (NO single/blend crossfade — that leaked a partial crease wherever the
             // "winning" single flipped at a Voronoi switch). On a CLEAN open ribbon (only one leg in range) wSum
@@ -9989,13 +9992,21 @@ export class RoadSystem {
         return y
     }
 
+    // runFrameAt(s).tx/tz without the profile sample where the run has the centreline the tangent comes from (the
+    // chord tangent otherwise IS runProfile's, so that case still takes it).
+    _ribbonFrameTangent(s, runKey) {
+        const e = this._network?.get(runKey)
+        if (!e || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return this.runFrameAt(s, runKey, _CD_RP)
+        return this._ribbonTangentAt(s, runKey, _CD_RT)
+    }
+
     _legDeckSolve(ne, leg, pr, wx, wz, out) {
         const cm = this._params.roadClearanceMargin ?? 0.25
         const sMax = ne.polyCum?.[ne.polyCum.length - 1] ?? Infinity
         let s = pr.arcS, c = null, rp = null
         for (let k = 0; k < 4; k++) {
             c = this.runPointAt(leg.runKey, s)
-            rp = this.runFrameAt(s, leg.runKey, _CD_RP)   // BUG-153: the drawn ribbon's section line
+            rp = this._ribbonFrameTangent(s, leg.runKey)   // BUG-153: the drawn ribbon's section line
             if (!c) break
             const ds = (wx - c.x) * rp.tx + (wz - c.z) * rp.tz
             s = Math.max(0, Math.min(sMax, s + ds))
@@ -10006,7 +10017,7 @@ export class RoadSystem {
             return this._carveDirtY(pr.signedLat ?? 0, pr.arcS, leg.runKey, 1) + cm
         }
         c = this.runPointAt(leg.runKey, s)
-        rp = this.runFrameAt(s, leg.runKey, _CD_RP)
+        rp = this._ribbonFrameTangent(s, leg.runKey)
         const tx = rp.tx, tz = rp.tz, lat = (wx - c.x) * tz - (wz - c.z) * tx, along = (wx - c.x) * tx + (wz - c.z) * tz
         const over = s >= sMax ? Math.max(0, along) : s <= 0 ? Math.max(0, -along) : 0
         let y = this._carveDirtY(lat, s, leg.runKey, 1) + cm
@@ -12401,6 +12412,14 @@ export class RoadSystem {
      */
     runFrameAt(arcS, runKey, out) {
         const r = this.runProfile(arcS, runKey, out)
+        this._ribbonTangentAt(arcS, runKey, r)
+        return r
+    }
+
+    // runFrameAt's tangent alone, written into out.tx / out.tz (left as they are with no centerline: the chord tangent
+    // runProfile already put there). PERF-43: _legDeckTop's Newton walk reads only the tangent, and the profile sample
+    // runFrameAt also takes (a binary search and an interpolation) was a third of each step.
+    _ribbonTangentAt(arcS, runKey, r) {
         const e = this._network?.get(runKey)
         if (!e || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return r
         const a = arcS + (e.arcOrigin ?? 0)
