@@ -14,7 +14,7 @@
 // (The FEAT-18 stream carve is applied per sample outside the road stack, analyticHeight; the patch never holds it.)
 //   points  6 per hub within PATCH_R = 1 m (the tread lies within 0.39 m, a normal's ±0.5 m differences round it)
 //   check   |analyticHeight(p, patch) − analyticHeight(p, fresh)| ≤ TOL at every point, every family;
-//           and the patch VALID (no per-sample fallback) on ≥ MIN_VALID of the DRIVEN hubs (deck + 2 m, pad interiors,
+//           and the patch VALID (no sample needed a cold search) on ≥ MIN_VALID of the DRIVEN hubs (deck + 2 m, pad interiors,
 //           connector cores) — non-vacuous: the patch is in force where the wheels are
 // Seeds: two drawn at random (2026-11-12) and pinned — CLAUDE.md § Seeds: not "the world", a fixed sample.
 import * as THREE from 'three'
@@ -110,7 +110,6 @@ for (const seed of SEEDS) {
     const qy = qY ?? T.analyticHeight(hx, hz, undefined, 1e9) + (P.wheelRadius ?? 0.37)
     road.surfacePatch(hx, hz, qy, patch)
     f.hubs++
-    if (driven) { f.driven++; if (patch.valid) f.valid++ }
     for (let k = 0; k < 6; k++) {
       const ang = rng() * 2 * Math.PI, rad = PATCH_R * Math.sqrt(rng())
       const x = hx + Math.cos(ang) * rad, z = hz + Math.sin(ang) * rad
@@ -118,6 +117,7 @@ for (const seed of SEEDS) {
       const d = Math.abs(fresh - viaPatch); f.n++; if (d > 1e-3) f.mm++
       if (!(d <= f.worst)) { f.worst = d; f.at = { x: +x.toFixed(2), z: +z.toFixed(2), hub: [+hx.toFixed(2), +hz.toFixed(2)], qy: +qy.toFixed(2), valid: !!patch.valid } }
     }
+    if (driven) { f.driven++; if (patch.valid) f.valid++ }   // read AFTER the samples: false once any one searched cold
   }
   road.setPoiPads(null)
   let dr = 0, va = 0, bad = false
