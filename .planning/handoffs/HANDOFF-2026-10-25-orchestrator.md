@@ -21,9 +21,9 @@ just spawn a new subagent for task").
   and follow it. Worktree <path>, branch <branch>, port <port>. Your task: <ONE task>.` plus anything the page
   handoff doesn't have yet (an owner answer verbatim, a gate run still alive + its log). Size a task to be worth
   the ~48k an agent costs to start: bundle small items, and do one-liners yourself on main.
-- **The page's "now" line** = `lanes/<id>.agent`. At spawn write `running: <task> · since <HH:MM> · <agent id>`; the
+- **The page's "now" line** = the one-line file `/Users/ledogen/CodeShit/ledorepo/projects/cargame/lanes/<id>.now`. At spawn write `running: <task> · since <HH:MM> · <agent id>`; the
   agent overwrites it with `stopped (<done|blocked>): <one line> · <HH:MM>` when it hands off.
-- **On a report** (the agent's final message, ≤ 15 lines): LANDING → land it (below); OWED → the page's `OWED` array;
+- **On a report** (the agent's final message, ≤ 15 lines): LANDING → land it (below); OWED → one `owed/<id>.json` file each (§ The tracker);
   then spawn a FRESH agent for NEXT. Never SendMessage a finished agent to continue: that revives its whole
   context. Messages to a RUNNING agent are fine (an answer, an order); agents can SendMessage you as `main`.
 - **Never idle a lane while owner-free alpha work exists** (owner 11-07: "what is everyone waiting on?"). With 10+
@@ -34,10 +34,10 @@ just spawn a new subagent for task").
 
 ## On wake
 1. `bash tools/lanes.sh` — every worktree's branch, ahead/behind, uncommitted files (a lane's WIP: never discard).
-2. The tracker page db (url below), read with `out_dir` so it stays out of context: `lanes` (handoff + now line),
-   `tasks` (`<lane>-<TICKET>`: {status, note}), **`owed`** (the owner's answers to OWED items: doc = item id,
-   `{choice, note, at}` → act, record it in the ticket, drop the item from `OWED`, republish) and **`inbox`** (the
-   owner's typed items: `{text, at, status:'new'}`). Re-query `owed` after every relay: answers arrive while you work.
+2. The tracker's data folder `/Users/ledogen/CodeShit/ledorepo/projects/cargame/` (§ The tracker). New owner input is a directory listing:
+   `cd /Users/ledogen/CodeShit/ledorepo/projects/cargame && ls inbox | sed 's/\.reply//' | sort | uniq -u` lists inbox items with no reply yet;
+   `ls owed/*.answer.json` lists answered owed items → `cat` each, act, record it in the ticket, then
+   `mv owed/<id>.json owed/<id>.answer.json answered/`. Re-list after every relay: answers arrive while you work.
 3. Four-line board summary to the owner, then drain the inbox. Each item, in order:
    - **Can it just be done?** (a wording, CSS, a number, a doc fix, a one-function change no lane is in) → do it on
      main, `npm test`, `git commit -- <paths>`, fast-forward the lanes. If a running lane owns the file, message it.
@@ -46,7 +46,7 @@ just spawn a new subagent for task").
      `## What`, `## Acceptance`. Next free number: `grep -h '^id:' .planning/todos/*/*.md | sort -t- -k2 -n | tail`.
    - **Owner-only** (design, economy numbers, words in the world's voice; the owner writes dialogue, FEAT-148) →
      ask back in one line with a recommendation; never invent.
-   Update each inbox doc `{status: done|ticket|question, reply: '<hash / id + lane / the question>', handledAt}`, and
+   Write each one's `inbox/<id>.reply.json` = `{"status": "done|ticket|question", "reply": "<hash / id + lane / the question>", "handledAt": "<ISO time>"}` (a `question` stays in the owner's open list until you rewrite the reply), and
    report each in chat as done (hash) / ticket (id, lane) / question.
 
 ## The lanes
@@ -77,12 +77,23 @@ Spare's. Restart a dead server from its worktree: `npm run dev -- --port <port> 
 - CPU: a shared 10-core Mac. Each lane ≤ 2 heavy processes; every headless Chrome through `tools/chrome-slot.sh`
   (two machine-wide slots). For a batch of landings, call a landing window (lanes hold Chrome, gates and soaks).
 
-## The pages
-- **Alpha Lanes tracker** https://claude.ai/artifact/8P7QDPAaKxKPtJuf6zvRVH — source `.planning/pages/alpha-lanes.html`
-  (`LANES[].tasks` one line per row, closed rows to the "Closed since" list; `OWED` objects `{id, kind:
-  decide|drive|make, tk, blocks?, text, options?}`, blockers render on top). To publish: `Artifact read` the url and
-  Read every line of the saved file (the tool refuses otherwise), edit the source, run `node test/page-scripts.mjs`
-  (the page once shipped dead from a missing comma), publish the source with `url:`.
+## The tracker (INFRA-11: local files, no artifact, no publish)
+- **The owner's page** is the dashboard's home tab, http://localhost:8010/ (`npm run dash`; a SessionStart hook
+  starts it). It polls the folder every 5 s, so a file you write shows up by itself. There is no page source to
+  edit and nothing to publish.
+- **The data** is `/Users/ledogen/CodeShit/ledorepo/projects/cargame/` — in the owner's PRIVATE repo, never in this one. One writer per file:
+  | File | Writer | Contents |
+  |---|---|---|
+  | `inbox/<id>.json` | owner | `{text, at}` |
+  | `inbox/<id>.reply.json` | you | `{status, reply, handledAt}` |
+  | `owed/<id>.json` | you | `{kind: decide\|drive\|make, tk, blocks?, text, options?, order?}` — blockers render on top; `order` sorts within a group |
+  | `owed/<id>.answer.json` | owner | `{choice, note, at}` |
+  | `answered/` | you | owed pairs you have acted on (moved, not deleted) |
+  | `lanes/<id>.json` | you | `{name, goal, wt, branch, port, owns, tasks: [{id, what, status: todo\|doing\|done\|blocked, note?}]}` — one line per task; delete closed rows |
+  | `lanes/<id>.now` | you at spawn, the agent at stop | the one "now" line |
+  | `lanes/<id>.handoff.md` | that lane's agent | its resume prompt |
+  Write JSON with the Write tool (whole file). Never write a file the owner owns. The folder is committed and
+  pushed by the ledorepo backup hooks; you never commit it.
 - **Item setup** https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu — Lane C's; answers in db `answers` (e.g.
   `answers/_rarity`); its handoff `wip/_items-setup/HANDOFF.md`.
 - **Mission-feel review** https://claude.ai/artifact/YHLoevQnoJ1y5BYmksVVVZ — done; Q-6 (courier countdown digits) unruled.

@@ -10,8 +10,8 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
 ## Start
 
 1. Your prompt names your lane id (`a` / `b` / `c` / `s`), worktree, branch, port and the ONE task. Read your
-   page handoff: `ArtifactData get`, url `https://claude.ai/artifact/8P7QDPAaKxKPtJuf6zvRVH`, collection `lanes`,
-   doc `<id>` (field `handoff`; keep its `version` for the write at the end). Then read the task's ticket.
+   handoff: the file `/Users/ledogen/CodeShit/ledorepo/projects/cargame/lanes/<id>.handoff.md` (plain markdown, yours alone to write; the tracker's Lanes tab
+   at http://localhost:8010 shows it). Then read the task's ticket.
 2. Work ONLY in your worktree. **Your Bash working directory does not persist between calls**: start every Bash
    call with `cd <worktree> && …` (or use `git -C <worktree>`), and give Read/Edit absolute paths. An edit in
    `/Users/ledogen/CodeShit/CarGame/` (main) is a mistake unless the orchestrator asked for it.
@@ -39,17 +39,15 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
 ## On stop: hand off, then report
 
 1. Commit everything (WIP is fine). Long jobs may keep running detached; name their logs.
-2. **Rewrite `lanes/<id>.handoff`** (`ArtifactData update`, `if_version` = the version you read; if the write is
-   refused because the doc moved — the orchestrator writes its `agent` line — re-read it and redo the write). In
-   the same update set `agent` to `stopped (<done|blocked>): <one line> · <HH:MM>`: the page shows it as the lane's
-   "now" line. The handoff is a resume
+2. **Rewrite `/Users/ledogen/CodeShit/ledorepo/projects/cargame/lanes/<id>.handoff.md`** (the Write tool; no versions, nobody else writes
+   it). Then write ONE line, `stopped (<done|blocked>): <one line> · <HH:MM>`, to `lanes/<id>.now` in the same folder: the
+   page shows it as the lane's "now" line. Touch no other file in that folder. The handoff is a resume
    prompt, NOT a diary: **≤ 40 lines, rewritten whole every time**. History belongs in tickets and commits. Sections:
    - `STATE` — worktree, branch, head, clean or not, servers / detached jobs running + their logs.
    - `NEXT` — the one next task and its first command.
    - `WAITING ON` — owner calls and other lanes' items, one line each.
    - lane-specific rules only if they aren't in this brief or CLAUDE.md.
-3. Update your task rows (collection `tasks`, doc `<lane>-<TICKET_ID>`, `{status, note}`) if they changed.
-4. **Your final message is the report to the orchestrator, ≤ 15 lines**, exactly these heads:
+3. **Your final message is the report to the orchestrator, ≤ 15 lines**, exactly these heads:
    ```
    DONE:     what, with hashes
    LANDING:  branch @ hash · `git diff --stat <merge base> main -- src test data` · affected gates N/N green — or none
