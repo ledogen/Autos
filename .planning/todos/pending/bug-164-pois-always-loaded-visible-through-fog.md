@@ -76,3 +76,6 @@ Before/after pair (the service station 548 m out, seed 1768572700): `wip/bug-164
 ## Log
 - 2026-11-13 (perf lane): reproduced headless (census + screenshot), fixed, measured on the bench's three pinned random
   seeds before (main ba9458b3) and after.
+
+## Landing (2026-11-13)
+On main 0d9cb9f4 (smoke 26 steps, zero console errors; affected gates 9/9). Stays open for the owner look at the pop-in distance (owed: bug164-look).
