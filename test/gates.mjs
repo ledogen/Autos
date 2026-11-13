@@ -64,6 +64,8 @@ export const GATES = [
     desc: 'capture↔replay round-trip (Phase 4 place path) — guards src/capture.js + replay.mjs tooling' },
   { file: 'prop-shadow-alignment.mjs', subsystem: 'props', cost: 'fast', extraDeps: ['src/main.js', 'src/terrain.js'],
     desc: 'PERF-07: bake-camera UV == terrain-sampler UV per axis (the twice-shipped mirror bug), shear == sun-ray ground hit, prop ring ⊂ atlas' },
+  { file: 'map-bg-slice.mjs', subsystem: 'world', cost: 'fast', extraDeps: [],
+    desc: "PERF-46: the map's sheet rebuild runs on a fake clock (a tick per height sample) and no step overruns its budget by more than one unit" },
   { file: 'map-cover.mjs', subsystem: 'props', cost: 'fast', extraDeps: ['src/props/prop-scatter.js', 'src/map-cover.js'],
     desc: "SCATTER SYNC: the map's tree-cover replay (map-cover.js) bins cell-for-cell identical to prop-scatter under the same samplers" },
   { file: 'debug-sliders.mjs', subsystem: 'infra', cost: 'fast',
