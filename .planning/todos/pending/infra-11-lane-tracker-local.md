@@ -59,6 +59,10 @@ An answered owed item moves to an `answered/` folder so "what is new" is a direc
 - 2026-11-12, owner: must be usable **anywhere**, not only at the Mac. So: Tailscale (a private network between the
   owner's devices) on the Mac and phone, the server listening on the Tailscale address only, and the Lanes page
   laid out for a phone screen.
+- 2026-11-13, owner: build it as a **Lanes tab in the existing dashboard** (`tools/dashboard/`, :8010), not a new
+  app. Only the data (inbox, owed, lanes, dive answers) lives in the private repo, at
+  `~/CodeShit/ledorepo/projects/cargame/`. The generic core is pulled out into ledorepo when a second project
+  needs it, not before. This narrows the "own private repo" ruling above to the data.
 
 ## Open questions
 - Cut over at a quiet moment: the orchestrator and its agents write the artifact db all day. Who calls the window?
