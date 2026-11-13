@@ -405,8 +405,12 @@ const STEPS = [
     check(await clock() === h0, `clock ran while at mom's (FEAT-118 hold): ${h0} → ${await clock()}`)
     await tap('r')   // R-12: R closes the camp before the re-seat
     check(await until(async () => !await panel(), 2000), 'R left the camp panel up')
+    // FEAT-194 part 3: the re-seat latches the parking brake, and no time passes while it is latched.
+    check(await js('window.__vs.parked'), 'the re-seat after R did not latch the parking brake')
     const h1 = await clock(); await simFor(3)
-    check(await clock() !== h1, 'clock did not resume after R closed the camp')
+    check(await clock() === h1, `clock ran with the parking brake latched (FEAT-194): ${h1} → ${await clock()}`)
+    await tap(' '); await simFor(3)
+    check(await clock() !== h1, 'clock did not resume after R closed the camp and the brake was released')
 
     // The truck (owner, 2026-10-19): Z always opens the card, and the brake sleeps you in the cab
     // anywhere — straight to the truck face off camping ground, via "sleep in the truck" on a site.
