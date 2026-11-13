@@ -12,14 +12,16 @@
  *   node tools/dashboard/index.mjs --port N   serve on another port
  *
  * This is a dev tool. It reads the repo and writes only its own JSON files;
- * it never touches a ticket. Vocabulary drift in the tracker is normalised here
+ * it never touches a ticket. The one other thing it writes is the lane
+ * tracker's data folder, OUTSIDE the repo (INFRA-11, see DATA below). Vocabulary drift in the tracker is normalised here
  * (see CANON_*) and reported back through stats.drift rather than rewritten.
  */
 import { createServer } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import {
-  readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync,
+  readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync, renameSync, rmSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, extname, relative, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -989,6 +991,69 @@ async function upload(req, res, url) {
   res.end(JSON.stringify({ ok: true, path: `wip/audio/${slug}/${name}` }));
 }
 
+/* ── lane tracker data (INFRA-11) ─────────────────────────────────────────
+ * The Lanes tab's state is one small file per fact in the owner's PRIVATE repo
+ * (this repo is public; the owner's intake notes are not). One writer per file,
+ * so there are no versions and no races:
+ *   inbox/<id>.json            owner (page)   {text, at}
+ *   inbox/<id>.reply.json      orchestrator   {status: done|ticket|question, reply, handledAt}
+ *   owed/<id>.json             orchestrator   {kind, tk, blocks?, text, options?, order?}
+ *   owed/<id>.answer.json      owner (page)   {choice, note, at}
+ *   lanes/<id>.json            orchestrator   {name, goal, wt, branch, port, owns, tasks:[{id, what, status}]}
+ *   lanes/<id>.handoff.md      that lane's agent
+ *   lanes/<id>.now             orchestrator at spawn, the agent at stop (one line)
+ * Agents use plain file tools. An owed pair that has been acted on is MOVED to
+ * answered/ (not served), so "what is new" is a directory listing.
+ * PAGE_PUT / PAGE_DEL are the whole of what the page may change. These routes
+ * are deliberately NOT loopback-only (unlike /upload): the owner's phone
+ * reaches them over Tailscale. */
+const DATA = process.env.LEDOREPO_DATA || join(homedir(), 'CodeShit', 'ledorepo', 'projects', 'cargame');
+const DATA_DIRS = ['inbox', 'owed', 'lanes'];
+const PAGE_PUT = /^(inbox\/\d{14}-[a-z0-9]{4}\.json|owed\/[\w-]+\.answer\.json)$/;
+const PAGE_DEL = /^inbox\/\d{14}-[a-z0-9]{4}\.json$/;
+const DATA_MAX = 65536;
+
+function readData() {
+  const out = {};
+  for (const d of DATA_DIRS) {
+    out[d] = {};
+    const dir = join(DATA, d);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir).sort()) {
+      if (f.startsWith('.')) continue;
+      try {
+        const raw = readFileSync(join(dir, f), 'utf8');
+        out[d][f] = f.endsWith('.json') ? JSON.parse(raw) : raw;
+      } catch { /* an agent's write caught half-done: the next poll has it */ }
+    }
+  }
+  return out;
+}
+
+async function dataRoute(req, res, url) {
+  const send = (code, obj) => { res.writeHead(code, { 'content-type': MIME['.json'], 'cache-control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const rel = decodeURIComponent(url.pathname.slice('/data'.length)).replace(/^\//, '');
+  if (req.method === 'GET' && rel === '') return send(200, readData());
+  if (req.method === 'PUT' && PAGE_PUT.test(rel)) {
+    const chunks = []; let size = 0;
+    for await (const c of req) { size += c.length; if (size > DATA_MAX) return send(413, { ok: false, msg: 'over 64 KB' }); chunks.push(c); }
+    let doc;
+    try { doc = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send(400, { ok: false, msg: 'not JSON' }); }
+    const file = join(DATA, rel);
+    mkdirSync(dirname(file), { recursive: true });
+    // Atomic: a reader (the page's poll, an agent's cat) never sees a half-written file.
+    writeFileSync(file + '.tmp', JSON.stringify(doc, null, 1) + '\n');
+    renameSync(file + '.tmp', file);
+    return send(200, { ok: true });
+  }
+  if (req.method === 'DELETE' && PAGE_DEL.test(rel)) {
+    rmSync(join(DATA, rel), { force: true });
+    rmSync(join(DATA, rel.replace(/\.json$/, '.reply.json')), { force: true });
+    return send(200, { ok: true });
+  }
+  return send(403, { ok: false, msg: `the page may not ${req.method} ${rel || '/'}` });
+}
+
 function serve(port) {
   createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -999,6 +1064,7 @@ function serve(port) {
       return;
     }
     if (url.pathname === '/upload' && req.method === 'POST') { await upload(req, res, url); return; }
+    if (url.pathname === '/data' || url.pathname.startsWith('/data/')) { await dataRoute(req, res, url); return; }
     const p = decodeURIComponent(url.pathname);
     if (SRC_RE.test(p) && existsSync(join(ROOT, p))) { serveFile(res, join(ROOT, p), MIME['.mjs']); return; }
     for (const base of TAKE_DIRS) {
