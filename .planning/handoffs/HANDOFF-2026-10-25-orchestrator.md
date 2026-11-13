@@ -143,12 +143,13 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
     road.js / terrain shader changes. Tickets routed to it: BUG-164, PERF-46.
   - The owner lets it land and push its own work from its window. You never push without the owner's word to you.
   - Lane rule in every spawn prompt: ≤ 2 heavy processes; `pgrep -f 'node test/playtest-bench'` before a heavy job.
-- **Main = d9389e45 + docs; origin = 706808d5 (the owner said "push" 11-13; everything through BUG-165 is out).**
+- **Main = 72d1cf39 + docs; origin = 706808d5 (the owner said "push" 11-13; everything through BUG-165 is out).**
   Unpushed (owner's word needed): INFRA-12 51eb8e96 · INFRA-09 02a26c36 · PERF-41 1b4cfd7c · pad-e2e test fix
   ba9458b3 · BUG-164 0d9cb9f4 (smoke 26/26; ticket open for `bug164-look`) · bench audio-clock check 12663c9d · PERF-47's
   game fix 95a1e31c (smoke 26/26; the owner's listen owed once audio is restarted) · FEAT-194 part 3 5fae6fd8
   (closed; smoke 26/26 after the camp step was updated 4a4876eb) · PERF-48 cost map 41711353 · PERF-48 lever 1 d9389e45
-  (smoke 26/26; `perf48-hud-snap` owed: the bars step a pixel at a time).
+  (smoke 26/26; `perf48-hud-snap` owed: the bars step a pixel at a time) · PERF-46 72d1cf39 (map rebuild sliced;
+  smoke 26/26; ticket open for `perf46-windows`).
 - **THE MAC'S AUDIO IS STUCK (11-13)**: coreaudiod hangs (`afplay -v 0 /System/Library/Sounds/Tink.aiff` never
   returns). Every WebAudio clock on this machine is stalled, which inflates bench main-thread ms 2–4× (PERF-47).
   NO bench record is valid until the owner runs `sudo killall coreaudiod`; the 08768a0b record was dropped, not
@@ -165,8 +166,8 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
 - **Perf lane is YOURS (owner 11-13: "its on you to restart the performance lane now")**. Lane `p`, worktree
   `CarGame-perf`, branch feature/perf, port 8043. PERF-48's investigation is on main:
   `.planning/perf/COST-MAP-2026-11.md` (ranked levers first). Lever 1 landed. Lever 2 was a wrong lead (the map's
-  cost was lever 1's recalc; docs 8fd2d555). Running: PERF-46 (slice the map's post-pan sheet rebuild; lands as
-  land/perf-46; `perf46-windows` owed). It sends "HOLD for PERF-46 run" before each bench: do the hold drill, reply
+  cost was lever 1's recalc; docs 8fd2d555). PERF-46 landed. Running: lever 3 (PERF-45 §1, an exact memo
+  for the parked ground query; lands as land/perf-45a). It sends "HOLD for PERF-45 run" before each bench: do the hold drill, reply
   "held", and "released" on its "done". Then the lever-1 tail (two 10 Hz writers, ~9 recalcs/s), lever 3 (parked physics
   memo, PERF-45 §1), lever 4 (scene-graph walk, PERF-45 §2). Owner calls: perf48-frame-cap, perf48-terrain-bake,
   perf48-parked-30. Reading rule from the cost map: on this Mac ms/s reads 1.6–3.3× higher under light load;
