@@ -19,7 +19,7 @@
  * own master gain into the world bus (getWorldBus), so wind volume is independent of engine/tire.
  */
 
-import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise, audioClockLive } from './engine-audio.js'
 
 const V_FLOOR   = 4.0    // m/s — below this there is no wind noise at all
 const V_REF     = 45.0   // m/s (~160 km/h) — speed at which the level curve reaches 1
@@ -87,7 +87,7 @@ export function ensureWindAudio () {
  * @param {object} vehicleState  reads velocity only
  */
 export function updateWindAudio (vehicleState) {
-  if (!started) return          // no-op until the keydown gesture builds the graph (autoplay gate)
+  if (!started || !audioClockLive()) return          // no-op until the keydown gesture builds the graph (autoplay gate)
   const now = ctx.currentTime
 
   if (!enabled) { _mute(now); return }

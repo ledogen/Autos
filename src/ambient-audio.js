@@ -14,7 +14,7 @@
  *              stems' level where the ear is most sensitive. A recorded gravel/brush take is owed.
  */
 
-import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise, audioClockLive } from './engine-audio.js'
 
 let ctx = null
 let started = false
@@ -75,7 +75,7 @@ export function ensureAmbientAudio () {
  * truck off the road (0 on it); `dt` the frame's real seconds.
  */
 export function updateAmbientAudio (speed, night, green, dt) {
-  if (!started || ctx.state !== 'running') return
+  if (!started || !audioClockLive()) return
   const now = ctx.currentTime
 
   // Crickets: the gate fades in slowly and out quickly; chirps are scheduled a frame ahead. An
