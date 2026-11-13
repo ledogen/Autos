@@ -31,6 +31,12 @@
 // Flags: --a=<checkout> (default this one) --b=<checkout> [--c=<checkout>] --reps=N --seeds=K (first K pinned) | --seed=N
 //        --drive=S --map=S --park=S --headed --out=DIR (default perf-runs/bench-<stamp>) --record
 //        --probe   count road resolves per second (PERF-42) — wraps a hot path, so its ms are not for comparing
+//        --fake-audio  Chrome's --disable-audio-output (a fake sink whose clock runs at 1.0 s/s): for a host whose
+//                  CoreAudio is wedged (PERF-47). The game's audio work still runs; nothing reaches the speakers.
+//        --profile PERF-48: a Chrome trace per phase (every thread of every process, the JS sampling profiler, GC) to
+//                  <out>/<build>-<seed>-<rep>-<phase>.trace.json.gz; GPU timer queries per pass (shadow / main /
+//                  offscreen) and the JS heap in each 1 Hz sample; a scene census mid-drive and mid-park. Adds
+//                  profiler overhead, so its ms are not for comparing with an unprofiled session.
 // A run is ~7 min per seed per build per rep. Wants a quiet machine: one bench at a time, not while lanes run heavy
 // gates (the shared-CPU rule). The load average is printed with every session.
 import { spawn, execFileSync } from 'node:child_process'
@@ -255,10 +261,106 @@ const PAGE = String.raw`(async () => {
   return { edges: route.edges, region: reg ? [Math.round(reg.x), Math.round(reg.z), reg.r] : null }
 })()`
 
+// ── --profile (PERF-48): the page side — GPU timer queries per pass, the JS heap, a scene census ────────────────────
+// EXT_disjoint_timer_query_webgl2 times GPU work between two points of the command stream. Queries cannot nest, so the
+// wrappers SWITCH: renderer.render opens 'main' (the world, to the screen) or 'off' (any render to a target: impostor
+// bakes, the sky's cube map), the shadow pass (main.js's own wrapper: the near map every moving frame, the far cascade on
+// its snap) switches to 'shadow' and back. GPU ms per pass per second land in B.prof with the heap. GPU ms are NOT load
+// (the GPU's clock follows its load, PERF-40), but their SHARES split the measured active cycles between the passes.
+const PROFILE = has('profile')
+const PROFILE_PAGE = String.raw`(() => {
+  const B = window.__bench, R = window.__renderer(), gl = R.getContext(), X = gl.getExtension('EXT_disjoint_timer_query_webgl2')
+  B.prof = []; B.gqOk = !!X
+  const acc = { shadow: 0, main: 0, off: 0 }, pend = []
+  let cur = null, scene = null
+  const sw = tag => {
+    if (!X) return
+    if (cur) { gl.endQuery(X.TIME_ELAPSED_EXT); cur = null }
+    if (tag) { const q = gl.createQuery(); gl.beginQuery(X.TIME_ELAPSED_EXT, q); pend.push([q, tag]); cur = tag }
+  }
+  const render = R.render.bind(R)
+  R.render = (sc, cam) => { const was = cur, off = R.getRenderTarget() !== null; if (!off) scene = sc; sw(off ? 'off' : 'main'); render(sc, cam); sw(was) }
+  const sm = R.shadowMap, shadow = sm.render
+  sm.render = function (...a) { const was = cur; sw('shadow'); shadow.apply(this, a); sw(was) }
+  const drain = () => {
+    if (X && gl.getParameter(X.GPU_DISJOINT_EXT)) { for (const [q] of pend) gl.deleteQuery(q); pend.length = 0; B.disjoint = (B.disjoint ?? 0) + 1 }
+    while (pend.length && gl.getQueryParameter(pend[0][0], gl.QUERY_RESULT_AVAILABLE)) {
+      const [q, tag] = pend.shift(); acc[tag] += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; gl.deleteQuery(q)
+    }
+    requestAnimationFrame(drain)
+  }
+  requestAnimationFrame(drain)
+  setInterval(() => {
+    const m = performance.memory
+    B.prof.push({ t: Date.now(), phase: B.phase, gq: { shadow: +acc.shadow.toFixed(2), main: +acc.main.toFixed(2), off: +acc.off.toFixed(2) }, heapMB: m ? +(m.usedJSHeapSize / 1048576).toFixed(1) : null, pend: pend.length })
+    acc.shadow = acc.main = acc.off = 0
+  }, 1000)
+  // The census: what the renderer walks each frame. Per top-level child of the world scene: objects, meshes, visible
+  // meshes, meshes in the camera frustum (three's own test: bounding sphere vs the six planes), their triangles (× the
+  // instance count), shadow casters, and objects whose world matrix is recomputed every frame (matrixAutoUpdate /
+  // matrixWorldAutoUpdate on).
+  window.__census = () => {
+    if (!scene) return null
+    const cam = window.__cam(), e = cam.projectionMatrix.clone().multiply(cam.matrixWorldInverse).elements
+    const planes = [[e[3] - e[0], e[7] - e[4], e[11] - e[8], e[15] - e[12]], [e[3] + e[0], e[7] + e[4], e[11] + e[8], e[15] + e[12]],
+      [e[3] + e[1], e[7] + e[5], e[11] + e[9], e[15] + e[13]], [e[3] - e[1], e[7] - e[5], e[11] - e[9], e[15] - e[13]],
+      [e[3] - e[2], e[7] - e[6], e[11] - e[10], e[15] - e[14]], [e[3] + e[2], e[7] + e[6], e[11] + e[10], e[15] + e[14]]]
+      .map(([a, b, c, d]) => { const n = Math.hypot(a, b, c); return [a / n, b / n, c / n, d / n] })
+    const inView = o => {
+      if (!o.frustumCulled) return true
+      const bs = o.isInstancedMesh ? o.boundingSphere : o.geometry?.boundingSphere
+      if (!bs) return true
+      const m = o.matrixWorld.elements, c = bs.center
+      const x = m[0] * c.x + m[4] * c.y + m[8] * c.z + m[12], y = m[1] * c.x + m[5] * c.y + m[9] * c.z + m[13], z = m[2] * c.x + m[6] * c.y + m[10] * c.z + m[14]
+      const r = bs.radius * Math.sqrt(Math.max(m[0] ** 2 + m[1] ** 2 + m[2] ** 2, m[4] ** 2 + m[5] ** 2 + m[6] ** 2, m[8] ** 2 + m[9] ** 2 + m[10] ** 2))
+      for (const p of planes) if (p[0] * x + p[1] * y + p[2] * z + p[3] < -r) return false
+      return true
+    }
+    const tris = o => { const g = o.geometry; if (!g) return 0; const n = g.index ? g.index.count : g.attributes.position?.count ?? 0; return Math.min(n, g.drawRange.count) / 3 * (o.isInstancedMesh ? o.count : 1) }
+    const out = {}
+    for (const top of scene.children) {
+      const k = top.name || top.type, c = out[k] ??= { objects: 0, meshes: 0, visMeshes: 0, inView: 0, viewKtris: 0, casters: 0, autoMatrix: 0 }
+      top.traverseVisible(o => {
+        c.objects++
+        if (o.matrixAutoUpdate || o.matrixWorldAutoUpdate) c.autoMatrix++
+        if (o.isMesh || o.isPoints || o.isLine) { c.visMeshes++; if (o.castShadow) c.casters++; if (inView(o)) { c.inView++; c.viewKtris += tris(o) / 1000 } }
+      })
+      top.traverse(o => { if (o.isMesh) c.meshes++ })
+    }
+    for (const c of Object.values(out)) c.viewKtris = +c.viewKtris.toFixed(1)
+    return out
+  }
+})()`
+
+// The node side: one trace per phase, streamed gzipped to disk (a 300 s drive is too big to hold as one JSON string).
+// toplevel = every task on every thread (busy time); the sampling profiler = JS functions on the main thread AND in every
+// worker; devtools.timeline = GC (MinorGC / MajorGC with heap before/after), each requestAnimationFrame callback, layout
+// and paint.
+const TRACE_CATS = ['__metadata', 'toplevel', 'disabled-by-default-v8.cpu_profiler', 'devtools.timeline']   // ~3 MB/s raw while driving
+async function traceStart (client) {
+  await client.cmd('Tracing.start', { transferMode: 'ReturnAsStream', streamFormat: 'json', streamCompression: 'gzip',
+    traceConfig: { recordMode: 'recordAsMuchAsPossible', traceBufferSizeInKb: 1200000, includedCategories: TRACE_CATS } })
+}
+async function traceStop (client, path) {
+  const done = new Promise(r => { const off = client.on('Tracing.tracingComplete', p => { off(); r(p) }) })
+  await client.cmd('Tracing.end', {}, { timeoutMs: 300000 })
+  const { stream, dataLossOccurred } = await done
+  const parts = []
+  for (;;) {
+    const { result: r } = await client.cmd('IO.read', { handle: stream, size: 1 << 20 }, { timeoutMs: 300000 })
+    parts.push(Buffer.from(r.data, r.base64Encoded ? 'base64' : 'utf8'))
+    if (r.eof) break
+  }
+  await client.cmd('IO.close', { handle: stream })
+  writeFileSync(path, Buffer.concat(parts))
+  console.log(`   trace ${basename(path)}: ${(parts.reduce((a, b) => a + b.length, 0) / 1048576).toFixed(1)} MB gz`)
+  if (dataLossOccurred) console.log(`   trace ${basename(path)}: DATA LOSS (buffer full)`)
+}
+
 // ── one session: boot, story, the three phases ────────────────────────────────────────────────────────────────────
 async function session (build, seed, rep) {
   const cdp = await freePort()
-  const { chrome, cleanup } = launchChrome('about:blank', { port: cdp, headed: has('headed'), windowSize: '1045,700', extraArgs: ['--force-device-scale-factor=2'] })
+  const { chrome, cleanup } = launchChrome('about:blank', { port: cdp, headed: has('headed'), windowSize: '1045,700', extraArgs: ['--force-device-scale-factor=2', ...(has('fake-audio') ? ['--disable-audio-output'] : [])] })
   psRoot = chrome.pid; psPrev = null
   const client = await connect({ port: cdp, cmdTimeoutMs: 120000 })
   await client.cmd('Runtime.enable')
@@ -292,8 +394,18 @@ async function session (build, seed, rep) {
     await js(`window.__seed = ${seed}`)
     if (has('probe')) await js('window.__benchProbe = true')
     const info = await js(PAGE)
+    if (PROFILE) await js(PROFILE_PAGE)
     await js(`window.__bench.legAt = ${MIN_KM * 500}; window.__bench.edgeAt = ${MIN_KM * 250}`)   // the off-road leg halfway, the edge leg a quarter of the way
-    const phase = async (name, s) => { const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`); await sleep(s * 1000); return [t0, Date.now()] }
+    const census = {}
+    // --profile: the phase's trace opens after its 3 s transition and closes at its end (the flush runs after the window).
+    const phase = async (name, s, label = name) => {
+      const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`)
+      if (!PROFILE) { await sleep(s * 1000); return [t0, Date.now()] }
+      await sleep(3000); await traceStart(client)
+      await sleep(s * 500 - 3000); census[label] = await js('window.__census()'); await sleep(s * 500)
+      const t1 = Date.now(); await traceStop(client, join(OUT, `${build.name}-${seed}-${rep + 1}-${label}.trace.json.gz`))
+      return [t0, t1]
+    }
     const win = {}
     win.drive = await phase('drive', DRIVE_S)
     // Stop where the drive STARTED, not where it ended: at rest, physics costs 0 (asleep) to 140 ms/s (on a road carve)
@@ -303,9 +415,9 @@ async function session (build, seed, rep) {
     win.map = await phase('map', MAP_S)
     await js(`window.__bench.phase = 'idle'`); await tap('m'); await until(() => js('!window.__map2d().isOpen()'), 3000)
     await sleep(2000)
-    win.park = await phase('idle', PARK_S)
-    const B = await js(`(() => { const B = window.__bench; return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames } })()`)
-    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples }))
+    win.park = await phase('idle', PARK_S, 'park')
+    const B = await js(`(() => { const B = window.__bench; return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames, prof: B.prof, measures: performance.getEntriesByType('measure').length } })()`)
+    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples, census, prof: B.prof, measures: B.measures }))
     const r = summarise(B, win)
     r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, dialogues: B.dialogues, edges: info.edges, region: info.region }
     r.valid = r.drive.km >= MIN_KM && r.drive.newChunks >= MIN_CHUNKS
