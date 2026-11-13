@@ -8115,9 +8115,14 @@ export class RoadSystem {
         // helper the ribbon uses in the opposite direction (chord→true).
         // k + the arc to either end of the foot's primitive (lo ≤ 0 ≤ hi): a reused frame re-projects exactly only on
         // its own primitive (_curvedOffset, _hintHolds).
+        // PERF-43: and not into a departure band (its own frame, _bandRefine): a reuse 0.4 m short of one read 5 mm off.
         const cl = e.centerline, pi = cl._locate(hit.s).i
-        return { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z, k: hit.curvature,
-                 lo: cl.starts[pi] - hit.s, hi: cl.starts[pi + 1] - hit.s,
+        let lo = cl.starts[pi] - hit.s, hi = cl.starts[pi + 1] - hit.s
+        if (e.offCurveSpans) for (const [a, b] of this._bandInfo(e).spans) {
+            const sa = _interpArcTable(e.polyCum, e.clArc, a) - hit.s, sb = _interpArcTable(e.polyCum, e.clArc, b) - hit.s
+            if (sa >= 0) hi = Math.min(hi, sa); else if (sb <= 0) lo = Math.max(lo, sb)
+        }
+        return { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z, k: hit.curvature, lo, hi,
                  arcS: _interpArcTable(e.clArc, e.polyCum, hit.s) - arcOrigin }
     }
 
@@ -8484,10 +8489,14 @@ export class RoadSystem {
     //    an arc→line joint).
     //  PERF-42: except a SOLO resolve (_resolveRoadSurface) within HINT_REACH_M of where it was made, where its run does
     //  not pass again (_soloPassFree) — no rival there.
+    //  PERF-43: a run-END winner (BUG-21) is on its deck only within halfWidth RADIALLY of its terminus (the polar cap's
+    //  lateral, _carveCrossSectionBlended) — its perpendicular lateral called a point 18 m out "on the deck" and reused
+    //  it across a winner flip (2.75 m off at seed 759313244 (187.8, 1227.3)).
     _hintHolds(nr, wx, wz) {
         const dx = wx - nr.point.x, dz = wz - nr.point.z, v = dx * nr.tangent.z - dz * nr.tangent.x
         const q2 = (wx - nr.qx) ** 2 + (wz - nr.qz) ** 2
-        if (Math.abs(v) > (this._params.roadHalfWidth ?? 5) && q2 > 0.0025
+        const vEff = nr.endRadial !== undefined ? Math.max(Math.abs(v), Math.hypot(dx, dz)) : Math.abs(v)
+        if (vEff > (this._params.roadHalfWidth ?? 5) && q2 > 0.0025
             && !(nr.solo && q2 <= HINT_REACH_M * HINT_REACH_M && this._soloPassFree(nr, wx, wz))) return false
         if (nr.primLo === undefined) return true
         if (1 + nr.kappa * v < 0.5) return false
@@ -8504,7 +8513,17 @@ export class RoadSystem {
         return !!cands && this._runPassMinima(e, cands.byKey.get(nr.runKey), wx, wz, nr.solo.footHW, nr.solo.cum).length === 0
     }
 
+    // PERF-43: the per-wheel surface patch — the road context worked out ONCE at a wheel's hub for every sample within
+    // PATCH_R of it (the tread solve's ~65, world-contacts.js). analyticHeight takes it where it took a carveHint.
+    surfacePatch(hx, hz, queryY, out) {
+        out.patch = true; out.hx = hx; out.hz = hz; out.qy = queryY
+        out.nr = this._resolveRoadSurface(hx, hz)
+        out.valid = false
+        return out
+    }
+
     _sampleCarveWorld(wx, wz, rawAmp, nrHint, queryY) {
+        if (nrHint?.patch) nrHint = nrHint.nr
         const p             = this._params
         const halfWidth     = p.roadHalfWidth     ?? 5
         const clearanceMargin = p.roadClearanceMargin ?? 0.25
@@ -8549,10 +8568,12 @@ export class RoadSystem {
             // Per-point arc + signed lateral (positive = right of road heading) from the frame: for a REUSED hint
             // (analyticNormal's ±0.5 m offsets, a wheel's tread samples off its hub's resolve — PERF-39) the exact
             // polar re-projection onto the bend (_curvedOffset); for a resolve at this very point, the plain one.
-            // A run-END winner (BUG-21 apex sliver) keeps its arc clamped at the end, as a resolve here would.
+            // A run-END winner (BUG-21 apex sliver) reads its arc PAST the end, (p − terminus)·tangent, as a resolve here
+            // does (its foot is the terminus, its kappa 0). PERF-43: the reuse had pinned it at the end — past a leaf end
+            // (QUAL-24's cap) a 3.0 m height error 0.5 m from the hub (seed 759313244 (187.4, 1233.0)).
             const reused = nr === nrHint
             const off = _curvedOffset(dx * tx + dz * tz, dx * tz - dz * tx, reused ? (nr.kappa ?? 0) : 0)
-            arcSEff = (nr.arcS ?? 0) + (reused && nr.endRadial !== undefined ? 0 : off.a)
+            arcSEff = (nr.arcS ?? 0) + off.a
             const signedLat = off.l
             latDist = Math.abs(signedLat)
             runKey  = nr.runKey ?? ''
