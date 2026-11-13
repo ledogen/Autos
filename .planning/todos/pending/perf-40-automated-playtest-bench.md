@@ -15,16 +15,29 @@ relates: [PERF-37 (the regression this would have caught; sessions 1–3 are the
   test/drive-soak.mjs (the autopilot it ports)]
 branch: perf/perf-37-tire-map — worktree /Users/ledogen/CodeShit/CarGame-perf37
 ---
+lane: Perf (p)
 
 # PERF-40 — an automated playtest that measures power, without the owner
 
-## Why
+## Next steps
+Orchestrator: land `land/perf-40-norm` (the work measure; prepared by the Perf lane, gates and a bench smoke green).
+Then the owner says when a `--record` may run (none since b71cd825). That record is the first with work fields, and
+the health check compares work from then on.
+
+## Summary
+An unattended playtest (story drive, map, park) on three pinned seeds that reports fps, main-thread ms/s by bucket, CPU %
+per process, CPU / GPU / DRAM watts and GPU active cycles, without the owner and without root. Since 2026-11-13 it also
+reads the main thread's WORK (retired instructions, its clock, its P-core share), because ms/s on this Mac follows the
+core macOS picks, not the code.
+
+## Description
+### Why
 
 PERF-37 took three owner-driven sessions: the owner played in a harness window and ran `sudo powermetrics` by hand. A
 regression of about +1 W from the BUG-70 tread solve shipped and was only found by heat. This makes the measurement
 something a session can run on its own: to weigh a change before landing it, and as an occasional health check.
 
-## Design (approved 2026-11-12)
+### Design (approved 2026-11-12)
 
 1. **Power without root: `test/lib/ioreport.py`.** It reads the IOReport energy counters `powermetrics` reads: CPU
    Energy, GPU Energy and DRAM, plus the GPU P-state residency weighted by pmgr's `voltage-states9` frequency table.
@@ -67,8 +80,13 @@ something a session can run on its own: to weigh a change before landing it, and
 8. **Health check.** Each run appends one line to `.planning/perf/history.jsonl` (committed). A run that is worse than
    the last good one by more than the noise band says so. Not in `npm test`: a run is about 20 min and wants a quiet
    machine (the shared-CPU cap applies: one bench at a time, and not while lanes run heavy gates).
+   - **The record (one JSON line per build):** `t, commit, branch, dirty, seeds, reps, drive` (s), `valid, of`
+     (sessions), and `phases.{drive,map,park}` each holding the report's KEYS: `fps, p95, mainMs, mainMi, mainPpct,
+     recalcS, recalcMs, workersPct, cpuW, gpuW, gpuMcyc, dramW, physP99, physOver100, physMiP99, physMiOver, postWorst`
+     (null where a key is another phase's). `mainMi, mainPpct, physMiP99, physMiOver` since 2026-11-13; older lines lack
+     them. The worse-by-15 % check reads `mainMi` (work), not `mainMs`, plus `cpuW, gpuW, gpuMcyc`.
 
-## The autopilot is a module, for AI cars later (owner, 2026-11-12)
+### The autopilot is a module, for AI cars later (owner, 2026-11-12)
 
 "general purpose autopilot will be very valuable for AI cars in game. develop your solution with the intent to expand
 it to that later". So the driver is `test/lib/autopilot.mjs`, kept separate from the bench:
@@ -92,7 +110,7 @@ it to that later". So the driver is `test/lib/autopilot.mjs`, kept separate from
   `drive-soak.mjs` still has its own pursuit; fold it onto the module when convenient.
 - **Promotion:** move the file to `src/` when the AI-car consumer lands. Until then nothing in `src/` imports it.
 
-## Story mode's traps for an unattended driver (found 2026-11-12, all handled in the bench)
+### Story mode's traps for an unattended driver (found 2026-11-12, all handled in the bench)
 
 Each of these made sessions INVALID until it was found. The validity rule caught every one; none produced a number.
 
@@ -114,7 +132,7 @@ Seed 711969014 is swapped out of the pinned three (it stalled on every build bef
 worth re-trying as a test of the autopilot. A build from before a world-gen change (the 2026-11-01 checkout) gives a
 different world on the same seed, so a comparison with it is "what playing that version cost", not the same drive.
 
-## Second pass (2026-11-12, after PERF-42's per-second read)
+### Second pass (2026-11-12, after PERF-42's per-second read)
 
 - **Spike metrics in every report.** Drive: physics ms in each moving second (v > 3 m/s in it and both neighbours, so
   re-seats are out): p50, p99, worst, and the share over 100 ms/s. Map: postStream p95 and worst, after the first 3 s.
@@ -129,12 +147,97 @@ different world on the same seed, so a comparison with it is "what playing that 
 - Each sample carries `x, z` and `lat` (the signed lateral off the road the physics resolves there). `--probe` adds
   road resolves per second (a wrapper on a hot path, so a probed session is not for comparing ms).
 
-## Acceptance
+### Work, not time (2026-11-13)
 
-- [ ] `test/lib/ioreport.py` checked in, with a self-check (a sample has CPU and GPU watts and a GPU MHz on the table).
-- [ ] `node test/playtest-bench.mjs` runs unattended to the end on three seeds, drive phase ≥ 2.5 km a seed (3 km until 2026-11-12) with streaming
-      verified, recoveries counted.
-- [ ] Two runs of the same build agree within the reported noise band.
+**Why.** Main-thread ms/s moves 2–5× with the host state on the same build and seeds: 11-12 night (quiet host, real
+audio) physics 7.67 % of moving seconds over 100 ms/s; 11-13 (main saturated by PERF-47's audio pile-up) p50 29–31,
+1.6–2.8 %; 11-14 (macOS daemons at 0.31–0.46/core) p50 57–60, 6.1–14.4 %. No physics change landed between them. macOS
+raises a thread's clock (and moves it to a P core) when the machine is busy, so the same work takes fewer ms.
+
+**The measure: `test/lib/threadcounts.py`.** xnu keeps per-thread counters of retired instructions, cycles and CPU time
+split by core class (`proc_pidinfo` flavor 34, `PROC_PIDTHREADCOUNTS`, macOS 13+; flavor 28 lists the thread ids; both in
+xnu's private header, not the SDK). Readable for any process of the same user, no root. The bench reads the game
+renderer's `CrRendererMain` at 4 Hz and gives each 1 Hz sample `w = { mi, cpuMs, pMs, mcyc }` (Minstr, CPU ms, of which
+on P cores, Mcycles) over that sample's own window.
+- Per phase: `mainMi` (Minstr/s, the work), `mainCpuMs`, `mainPpct` (the share of CPU time on P cores), `mainGHz`.
+- Drive: physics work per moving second = physics ms × the second's instructions per CPU ms (`physMiP50 / P99 / Worst`)
+  and `physMiOver`, the share over `PHYS_SPIKE_MI` = 1000 Minstr (≈ 100 ms at the ~10 Minstr per CPU ms the main thread
+  retires in heavy seconds, a P core near 3 GHz). The ms columns stay: the player feels ms.
+- `--check` self-test: a 0.6 s spin reads 600 ms CPU, 4.16 GHz, ~6 IPC, all on P.
+- Considered and not taken: a calibration loop on the main thread (a point sample of the clock, and it adds the load that
+  moves the clock); counting resolves (`--probe`, one path of many); IOReport per-cluster residency (system-wide, not
+  per thread).
+
+**What it cannot see.** Memory stalls cost time but retire no instructions, so a change that only adds cache misses
+shows in ms, not in work. Physics' share is apportioned by its ms within the second, which assumes one instruction rate
+across the second's buckets; physics runs at a higher rate than the rest (IPC ~4 against ~2), so the split is biased by
+up to ~20 % between host states (validation below). The whole-thread figure has no such assumption.
+
+**Validation** (seed 1768572700, 120 s drive / 10 s map / 10 s park, fake audio, alternating idle and 2 × `yes > /dev/null`;
+`perf-runs/val-*`, gitignored):
+
+| | idle 1 | busy 1 | idle 2 | busy 2 | ms idle ÷ busy | work idle ÷ busy |
+|---|---|---|---|---|---|---|
+| host load /core | 0.22 | 0.29 | 0.51 | 0.32 | | |
+| park main | 166 ms · 821 Mi | 59 ms · 811 Mi | 164 ms · 833 Mi | 61 ms · 829 Mi | **2.8×** | **1.01** |
+| map main | 149 ms · 595 Mi | 32 ms · 575 Mi | 150 ms · 600 Mi | 32 ms · 593 Mi | **4.7×** | **1.02** |
+| drive main | 201 ms · 1610 Mi | 99 ms · 1466 Mi | 194 ms · 1513 Mi | 100 ms · 1465 Mi | **2.0×** | **1.07** |
+| clock / P share, drive | 2.30 GHz, 95 % | 3.89 GHz, 100 % | 2.23 GHz, 93 % | 3.79 GHz, 100 % | | |
+| physics p50 | 55 ms · 341 Mi | 24 ms · 310 Mi | 58 ms · 359 Mi | 24 ms · 305 Mi | **2.3×** | **1.14** |
+| physics > 100 ms / > 1000 Mi | 7.1 % / 4.8 % | 4.1 % / 4.1 % | 14.6 % / 8.5 % | 2.9 % / 2.9 % | | |
+
+- Parked and map (the same spot every session): ms move 2.8–4.7×, work holds within 1–3.5 %.
+- Driving the drives differ (1.28–1.5 km, the autopilot runs in real time), so work holds within 3–10 %.
+- Physics work holds within ~14 % at the median against 2.3× in ms: the apportioning bias above.
+- The quiet host's main thread is NOT on E cores while driving (93–95 % P); it is on P cores at a low clock
+  (2.2–2.3 GHz against 3.8–3.9). Parked it is 62–69 % P, the map 23–25 %.
+- Inside one session the clock follows the second's load: calm seconds 1.8 GHz at IPC 2.2, physics-spike seconds
+  3.2 GHz at IPC 4.3, so a spike second does ~5× the main-thread instructions of a calm one while reading only 1.6× the
+  ms. ms UNDER-reports the spikes; on a machine whose clock does not chase load they would read larger.
+
+**Repeat runs agree** (the PERF-42 verdict, 2026-11-13: three seeds × 2 reps, src = main 0f6fbc38, fake audio, host
+0.27–0.40/core, 6/6 valid):
+
+| seed | drive mainMi rep 1 / 2 | physics work p50 rep 1 / 2 | park mainMi rep 1 / 2 |
+|---|---|---|---|
+| 1768572700 | 1450 / 1390 | 338 / 339 | 817 / 806 |
+| 17535907 | 1606 / 1628 | 399 / 403 | 1395 / 1374 |
+| 759313244 | 1447 / 1535 | 335 / 350 | 847 / 847 |
+
+- The typical second's work repeats within 1–4 %, the drive's main-thread work within 1–6 %, parked within 0–2 %.
+- At one junction the spike seconds repeat second by second within ~10 % (seed 17535907 (−814, 719): 1274 / 1385 /
+  1029 / 1882 / 1505 Minstr on rep 1, 1279 / 1355 / 1093 / 1755 / 1662 on rep 2). A spike is a place, not noise.
+- `physMiOver` (a threshold count) moves ±1–3 points between reps of a seed. Its noise band (±2.17 pooled) is the
+  widest of the work columns; read it pooled over three seeds, never one session.
+
+**Comparing records (the rule).** Main-thread cost is compared by `mainMi`; physics spikes by `physMiOver` and
+`physMiP99`. ms columns (`mainMs`, `physP99`, `physOver100`) are read beside them for what the player feels, never alone
+as a verdict. GPU load stays by `gpuMcyc`. Records before 2026-11-13 carry no work fields, so ms is all they can be
+compared on, and only between runs on a like host. `physMi*` inherits the apportioning bias above (±~15 % between
+host states); `mainMi` has none.
+
+## Tracker
+- [x] `test/lib/ioreport.py` checked in, with a self-check (a sample has CPU and GPU watts and a GPU MHz on the table).
+- [x] `node test/playtest-bench.mjs` runs unattended to the end on three seeds, drive phase ≥ 2.5 km a seed (3 km until 2026-11-12) with streaming
+      verified, recoveries counted (PERF-42 verdict: 6 of 6 sessions valid, 3.2–4.2 km, 3–7 recoveries each).
+- [x] Two runs of the same build agree within the reported noise band: in work, the typical second within 1–4 % and the
+      main thread within 0–6 % (§ Repeat runs agree). The spike share agrees only pooled.
 - [ ] `--a/--b` on main 07581275 vs this branch shows the PERF-39 tire saving (physics ms/s down) and the PERF-38 map
       saving (map phase main-thread ms/s down).
-- [ ] CLAUDE.md § Diagnostic tools names it; LAYOUT.md lists the files.
+- [ ] CLAUDE.md § Diagnostic tools names it; LAYOUT.md lists the files. (Both done on the landing branch; the CLAUDE.md
+      sentence on comparing by instructions waits on the owner's review.)
+- [x] Work-based measure beside ms (`threadcounts.py`), validated idle vs busy host (2026-11-13).
+
+## Links
+- Validation and verdict runs: `perf-runs/val-*`, `perf-runs/perf42-verdict-0f6fbc38` (gitignored, CarGame-perf).
+- The clock trap: `.planning/perf/COST-MAP-2026-11.md`.
+
+## Files
+`test/playtest-bench.mjs` · `test/lib/autopilot.mjs` · `test/lib/ioreport.py` · `test/lib/threadcounts.py` · `.planning/perf/history.jsonl`
+
+## Log
+- 2026-11-13: the work measure (`threadcounts.py`, bench columns `mainMi`, `mainPpct`, `physMiP99`, `physMiOver`); validated
+  on seed 1768572700, 4 sessions alternating idle / 2 busy loops. history.jsonl records gain those four keys per phase
+  (null outside drive for the physics ones); older lines lack them.
+- 2026-11-13: repeat-run agreement from the PERF-42 verdict (3 seeds × 2 reps, 6/6 valid); the comparison rule
+  written. Landing prepared on `land/perf-40-norm` (Perf lane); no `--record` run (the owner's call).

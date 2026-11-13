@@ -15,6 +15,14 @@
 // cumulative CPU time — the renderer minus the main thread is the workers); CPU / GPU / DRAM watts and GPU ACTIVE
 // cycles (busy % × MHz) from test/lib/ioreport.py, no root; triangles and draw calls.
 //
+// WORK, not time (2026-11-13): the main thread's retired instructions per second, its clock and the share of its CPU time
+// on P cores, from test/lib/threadcounts.py (xnu's per-thread counters, no root). On this Mac ms/s follows the core macOS
+// picks (light load → slow core: 1.6–3.3× more ms for the same work), so ms cannot tell a regression from scheduling.
+// Instructions can. Physics work per second = its ms × the main thread's instructions per CPU ms in that second
+// ("physMi", millions of instructions); its spike share is over PHYS_SPIKE_MI (1000 Minstr ≈ 100 ms on a P core near
+// 3 GHz). Keep both: the player feels ms, a comparison reads work. Exact for the whole thread; physics' share of it is
+// apportioned by its ms, which assumes one instruction rate across the second's buckets.
+//
 // GPU load is compared by active cycles (gpuMcyc = Mcycles/s). Not GPU ms (the GPU lowers its clock as load drops, so ms
 // per frame stays near the frame budget) and not raw watts (±50 % over 6 s at a steady state) — PERF-40 ticket.
 //
@@ -77,14 +85,18 @@ io.stdout.on('data', b => { for (const l of String(b).trim().split('\n')) try { 
 const procs = []
 const secs = t => t.split(':').reduce((s, x) => s * 60 + Number(x), 0)
 let psPrev = null, psRoot = 0
-function psSample () {
-  if (!psRoot) return
+const chromeTree = () => {   // this session's Chrome processes: { pid: { type, cpu (s) } }
   const rows = execFileSync('ps', ['-Ao', 'pid=,ppid=,time=,command=']).toString().trim().split('\n').map(l => {
     const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(l); return m && { pid: +m[1], ppid: +m[2], cpu: secs(m[3]), cmd: m[4] }
   }).filter(Boolean)
   const kids = new Set([psRoot]); for (let grew = true; grew;) { grew = false; for (const r of rows) if (!kids.has(r.pid) && kids.has(r.ppid)) { kids.add(r.pid); grew = true } }
-  const t = Date.now(), now = {}
+  const now = {}
   for (const r of rows) if (kids.has(r.pid)) now[r.pid] = { type: /--type=([\w-]+)/.exec(r.cmd)?.[1] ?? 'browser', cpu: r.cpu }
+  return now
+}
+function psSample () {
+  if (!psRoot) return
+  const t = Date.now(), now = chromeTree()
   if (psPrev) {
     const dt = (t - psPrev.t) / 1000, by = { renderer: 0, gpu: 0, other: 0 }
     for (const [pid, p] of Object.entries(now)) {
@@ -100,8 +112,11 @@ function psSample () {
 }
 const psTimer = setInterval(psSample, 2000)
 
+// The main thread's counters, per session (threadcounts.py on the game's renderer, started once the page is live).
+let thr = [], tc = null
+const rendererPid = () => Object.entries(chromeTree()).filter(([, p]) => p.type === 'renderer').sort((a, b) => b[1].cpu - a[1].cpu)[0]?.[0]   // the busiest: the game's
 const vites = []
-const shutdown = () => { clearInterval(psTimer); try { io.kill() } catch {} for (const v of vites) try { v.kill() } catch {} }
+const shutdown = () => { clearInterval(psTimer); try { io.kill() } catch {} try { tc?.kill() } catch {} for (const v of vites) try { v.kill() } catch {} }
 process.on('exit', shutdown)
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { shutdown(); process.exit(1) })
 for (const b of BUILDS) {
@@ -397,6 +412,9 @@ async function session (build, seed, rep) {
     await js(`window.__seed = ${seed}`)
     if (has('probe')) await js('window.__benchProbe = true')
     const info = await js(PAGE)
+    const rpid = rendererPid()
+    thr = []; tc = rpid && spawn('python3', ['-I', join(HERE, 'lib/threadcounts.py'), String(rpid), '0.25'])
+    tc?.stdout.on('data', b => { for (const l of String(b).trim().split('\n')) try { thr.push(JSON.parse(l)) } catch {} })
     if (PROFILE) await js(PROFILE_PAGE)
     await js(`window.__bench.legAt = ${MIN_KM * 500}; window.__bench.edgeAt = ${MIN_KM * 250}`)   // the off-road leg halfway, the edge leg a quarter of the way
     const census = {}, recalc = {}
@@ -419,8 +437,14 @@ async function session (build, seed, rep) {
     await js(`window.__bench.phase = 'idle'`); await tap('m'); await until(() => js('!window.__map2d().isOpen()'), 3000)
     await sleep(2000)
     win.park = await phase('idle', PARK_S, 'park')
-    const B = await js(`(() => { const B = window.__bench; return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames, prof: B.prof, measures: performance.getEntriesByType('measure').length } })()`)
-    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples, census, recalc, prof: B.prof, measures: B.measures }))
+    // nodes: the network's edge ends merged within 6 m, [x, z, degree] — where a spike second sat (deg 2: a QUAL-16
+    // connector kink; 3+: a junction) is read off them afterwards.
+    const B = await js(`(() => { const B = window.__bench, nodes = []
+      for (const e of window.__roadSys()._network.values()) for (const p of [e.points?.[0], e.points?.at(-1)]) {
+        if (!p) continue; const n = nodes.find(m => Math.hypot(m[0] - p.x, m[1] - p.z) < 6); if (n) n[2]++; else nodes.push([Math.round(p.x), Math.round(p.z), 1]) }
+      return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames, prof: B.prof, measures: performance.getEntriesByType('measure').length, nodes } })()`)
+    work(B.samples)
+    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples, census, recalc, prof: B.prof, measures: B.measures, nodes: B.nodes }))
     const r = summarise(B, win, recalc)
     r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, dialogues: B.dialogues, edges: info.edges, region: info.region }
     r.valid = r.drive.km >= MIN_KM && r.drive.newChunks >= MIN_CHUNKS
@@ -432,9 +456,27 @@ async function session (build, seed, rep) {
   } catch (e) {
     console.log(`${tag}: FAILED — ${e.message}`)
     return { build: build.name, seed, rep, valid: false, failed: e.message, load }
-  } finally { client.close(); cleanup(); psRoot = 0 }
+  } finally { try { tc?.kill() } catch {} tc = null; client.close(); cleanup(); psRoot = 0 }
 }
 
+// Each 1 Hz sample's main-thread work, from threadcounts.py's 4 Hz cumulative reads interpolated to the sample's own
+// window: w = { mi: Minstr, cpuMs: CPU ms, pMs: of which on P cores, mcyc: Mcycles }.
+const thrAt = t => {
+  const i = thr.findIndex(r => r.t > t); if (i <= 0) return null
+  const a = thr[i - 1], b = thr[i], f = (t - a.t) / (b.t - a.t)
+  return ['P', 'E'].map(k => a[k].map((x, j) => x + (b[k][j] - x) * f))
+}
+function work (samples) {
+  for (let i = 1; i < samples.length; i++) {
+    const a = thrAt(samples[i - 1].t), b = thrAt(samples[i].t); if (!a || !b) continue
+    const d = (c, j) => (b[c][j] - a[c][j]) / 1e6
+    samples[i].w = { mi: +(d(0, 0) + d(1, 0)).toFixed(1), cpuMs: +(d(0, 2) + d(1, 2)).toFixed(1), pMs: +d(0, 2).toFixed(1), mcyc: +(d(0, 1) + d(1, 1)).toFixed(1) }
+  }
+}
+// The physics spike line in WORK, millions of instructions in one second. 1000 ≈ 100 ms at the ~10 Minstr per CPU ms the
+// main thread retires in this bench's heavy seconds (P core near 3 GHz, IPC ~3.5; 2026-11-13 validation). A calm
+// driving second is ~300. The 100 ms line stays beside it (physOver100) for history.
+const PHYS_SPIKE_MI = 1000
 const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN
 const pct = (a, p) => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))] }
 function summarise (B, win, recalc = {}) {
@@ -451,10 +493,14 @@ function summarise (B, win, recalc = {}) {
     // Spikes, per second (the PERF-42 lesson: phase averages hid both bugs). Physics over MOVING seconds only — v > 3 m/s
     // in this second and both neighbours, so a re-seat (teleport, settle, crank) is not a spike. The map: its postStream
     // seconds after the transition.
-    const all = B.samples, phys = all.filter((s, i) => s.t >= lo && s.t <= t1 && s.v > 3 && all[i - 1]?.v > 3 && all[i + 1]?.v > 3).map(s => s.cpu['frame.physics'] ?? 0)
+    const all = B.samples, mov = all.filter((s, i) => s.t >= lo && s.t <= t1 && s.v > 3 && all[i - 1]?.v > 3 && all[i + 1]?.v > 3)
+    const phys = mov.map(s => s.cpu['frame.physics'] ?? 0)
+    const physW = mov.filter(s => s.w?.cpuMs > 0).map(s => (s.cpu['frame.physics'] ?? 0) * s.w.mi / s.w.cpuMs)   // Minstr: ms × the second's instructions per CPU ms
+    const Sw = S.filter(s => s.w), sum = k => Sw.reduce((a, s) => a + s.w[k], 0)
     const post = S.map(s => s.cpu['frame.postStream'] ?? 0)
     const spikes = ph === 'drive'
-      ? { physN: phys.length, physP50: +pct(phys, 0.5).toFixed(0), physP99: +pct(phys, 0.99).toFixed(0), physWorst: +Math.max(...phys, 0).toFixed(0), physOver100: +(phys.filter(x => x > 100).length / Math.max(1, phys.length) * 100).toFixed(1) }
+      ? { physN: phys.length, physP50: +pct(phys, 0.5).toFixed(0), physP99: +pct(phys, 0.99).toFixed(0), physWorst: +Math.max(...phys, 0).toFixed(0), physOver100: +(phys.filter(x => x > 100).length / Math.max(1, phys.length) * 100).toFixed(1),
+          physMiP50: +pct(physW, 0.5).toFixed(0), physMiP99: +pct(physW, 0.99).toFixed(0), physMiWorst: +Math.max(...physW, 0).toFixed(0), physMiOver: +(physW.filter(x => x > PHYS_SPIKE_MI).length / Math.max(1, physW.length) * 100).toFixed(1) }
       : ph === 'map' ? { postP95: +pct(post, 0.95).toFixed(0), postWorst: +Math.max(...post, 0).toFixed(0) } : {}
     // PERF-48: style recalcs per wall second (count and ms), from consecutive counter reads after the transition.
     const rc = (recalc[ph] ?? []).filter(([t]) => t >= lo), rcN = [], rcMs = []
@@ -464,7 +510,11 @@ function summarise (B, win, recalc = {}) {
       recalcS: +mean(rcN).toFixed(1), recalcP50: +pct(rcN, 0.5).toFixed(0), recalcP99: +pct(rcN, 0.99).toFixed(0), recalcWorst: +Math.max(...rcN, 0).toFixed(0),
       recalcMs: +mean(rcMs).toFixed(1),
       fps: +mean(S.map(s => s.frames)).toFixed(1), p95: +pct(fr, 0.95).toFixed(1), worst: +Math.max(...fr, 0).toFixed(1),
-      mainMs: +main.toFixed(0), buckets: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k.slice(6), +v.toFixed(1)]).sort((a, b) => b[1] - a[1])),
+      mainMs: +main.toFixed(0),
+      // the main thread's WORK (threadcounts.py): Minstr/s, CPU ms/s, the share of that CPU time on P cores, its clock
+      mainMi: +(sum('mi') / Math.max(1, Sw.length)).toFixed(0), mainCpuMs: +(sum('cpuMs') / Math.max(1, Sw.length)).toFixed(0),
+      mainPpct: +(sum('pMs') / sum('cpuMs') * 100).toFixed(0), mainGHz: +(sum('mcyc') / sum('cpuMs')).toFixed(2),
+      buckets: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k.slice(6), +v.toFixed(1)]).sort((a, b) => b[1] - a[1])),
       cpuW: +mean(W.map(p => p.cpuW)).toFixed(2), gpuW: +mean(W.map(p => p.gpuW)).toFixed(2), dramW: +mean(W.map(p => p.dramW)).toFixed(2),
       gpuMcyc: +mean(W.map(p => (p.gpuBusy ?? 0) / 100 * (p.gpuMHz ?? 0))).toFixed(0), gpuMHz: +mean(W.map(p => p.gpuMHz ?? 0)).toFixed(0),
       rendererPct: +mean(Pr.map(p => p.renderer)).toFixed(0), gpuProcPct: +mean(Pr.map(p => p.gpu)).toFixed(0), otherPct: +mean(Pr.map(p => p.other)).toFixed(0),
@@ -474,8 +524,8 @@ function summarise (B, win, recalc = {}) {
   }
   return { phases }
 }
-const line = (ph, x) => `${ph.padEnd(5)} ${String(x.fps).padStart(4)} fps p95 ${String(x.p95).padStart(5)} worst ${String(x.worst).padStart(5)} | main ${String(x.mainMs).padStart(4)} ms/s | `
-  + (x.physN !== undefined ? `physics/s over ${x.physN} moving s: p50 ${x.physP50} p99 ${x.physP99} worst ${x.physWorst}, ${x.physOver100} % > 100 | ` : '')
+const line = (ph, x) => `${ph.padEnd(5)} ${String(x.fps).padStart(4)} fps p95 ${String(x.p95).padStart(5)} worst ${String(x.worst).padStart(5)} | main ${String(x.mainMs).padStart(4)} ms/s = ${x.mainMi} Minstr/s (${x.mainCpuMs} CPU ms, ${x.mainPpct} % on P, ${x.mainGHz} GHz) | `
+  + (x.physN !== undefined ? `physics/s over ${x.physN} moving s: p50 ${x.physP50} p99 ${x.physP99} worst ${x.physWorst}, ${x.physOver100} % > 100 ms · work p50 ${x.physMiP50} p99 ${x.physMiP99} worst ${x.physMiWorst} Minstr, ${x.physMiOver} % > ${PHYS_SPIKE_MI} | ` : '')
   + (x.postWorst !== undefined ? `postStream/s p95 ${x.postP95} worst ${x.postWorst} | ` : '')
   + (x.recalcS ? `recalc/s ${x.recalcS} (p50 ${x.recalcP50} p99 ${x.recalcP99} worst ${x.recalcWorst}) ${x.recalcMs} ms/s | ` : '')
   + `rend ${x.rendererPct}% (workers ~${x.workersPct}%) gpuP ${x.gpuProcPct}% | CPU ${x.cpuW} W GPU ${x.gpuW} W DRAM ${x.dramW} W | GPU ${x.gpuMcyc} Mcyc/s @ ${x.gpuMHz} MHz | ${x.ktris}k tris`
@@ -491,7 +541,7 @@ for (let rep = 0; rep < REPS; rep++) for (const seed of SEEDS) {
 }
 
 // ── report: per build and phase, the mean over valid sessions; the noise band is the spread between reps ─────────────
-const KEYS = ['fps', 'p95', 'mainMs', 'recalcS', 'recalcMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'postWorst']   // the last three: one phase each
+const KEYS = ['fps', 'p95', 'mainMs', 'mainMi', 'mainPpct', 'recalcS', 'recalcMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'physMiP99', 'physMiOver', 'postWorst']   // the last five: one phase each
 const agg = {}
 for (const b of BUILDS) for (const ph of ['drive', 'map', 'park']) {
   const rs = results.filter(r => r.build === b.name && r.valid)
@@ -529,7 +579,7 @@ if (has('record')) {
     const last = prev.filter(p => p.drive === DRIVE_S && p.valid > 0).at(-1)
     if (last) {
       const worse = []
-      for (const ph of ['drive', 'map', 'park']) for (const k of ['mainMs', 'cpuW', 'gpuW', 'gpuMcyc']) {
+      for (const ph of ['drive', 'map', 'park']) for (const k of ['mainMi', 'cpuW', 'gpuW', 'gpuMcyc']) {   // work, not mainMs: ms follows the core (a record without mainMi skips it)
         const a = last.phases[ph][k], c = rec.phases[ph][k]
         if (a > 0 && c > a * 1.15) worse.push(`${ph} ${k} ${a} → ${c} (+${Math.round((c / a - 1) * 100)} %)`)
       }

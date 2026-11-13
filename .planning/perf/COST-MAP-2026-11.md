@@ -63,6 +63,18 @@ So in this document:
   larger heat source by about 2.5×. Main-thread levers buy frame-time headroom on slower machines (PERF-46's Windows
   laptop) more than they buy heat here.
 
+**Update 2026-11-13: the work measure (PERF-40).** The bench now reads the main thread's retired instructions, cycles
+and CPU time per core class from xnu's per-thread counters (`test/lib/threadcounts.py`, no root). Instructions do not
+depend on the core or its clock, so `mainMi` (Minstr/s) and the physics work columns compare across host states where
+ms/s does not. Validated on one seed, idle host vs two busy loops (PERF-40 ticket): parked and map ms moved 2.8× and 4.7×
+while instructions held within 1–3.5 %. Two corrections to the paragraph above:
+- **It is the clock, not the core type, while driving.** The quiet host runs the driving main thread 93–95 % on P cores,
+  at 2.2–2.3 GHz against 3.8–3.9 GHz when the host is busy. Parked it is 62–69 % on P, the map 23–25 %.
+- **The clock follows the load second by second.** A physics-spike second runs at ~3.2 GHz and IPC ~4.3, a calm one at
+  ~1.8 GHz and IPC ~2.2: the spike second retires ~5× the instructions and reads only ~1.6× the ms. So ms/s
+  under-reports spikes on this Mac, and the per-second spreads below understate them in work.
+Read ms/s figures in this document as "at the quiet host's clock"; compare builds by `mainMi` / `physMi*`.
+
 ## The cost map
 
 ### Per phase, per thread (control run, three seeds pooled; ms/s)
