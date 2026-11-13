@@ -258,7 +258,11 @@ export class TerrainSystem {
                 'uniform int uTunnelN; uniform vec4 uTunnelPos[24]; uniform vec4 uTunnelAxis[24]; uniform vec3 uTunnelBend[24];\n' +
                 // Baked prop-shadow occlusion, written at <color_fragment> and consumed by the
                 // directional-light patch below. Global because those two chunks are separate scopes.
-                'float rsBakedShade = 1.0;\n' + shader.fragmentShader
+                'float rsBakedShade = 1.0;\n' +
+                // PERF-41: the base fbm at vWorldPos.xz·uNoiseScale, evaluated once at <color_fragment> (the mottle)
+                // and reused by the rock bump's centre tap and, while the two scales match (0.3 /m both by default),
+                // the biome dither's coarse octave — the same function at the same point, so the picture is identical.
+                'float tdN0 = 0.0;\n' + shader.fragmentShader
             // FEAT-40: cut the skin at tunnel mouths — capsule test in world space, then discard.
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <clipping_planes_fragment>',
@@ -298,7 +302,8 @@ export class TerrainSystem {
                 // Engineered faces (vSurf.w) keep their own cut/fill colour.
                 float ts_rockW = vSurf.z * (1.0 - vSurf.w);
                 if (uDetailScale > 0.0) {
-                    float td_n = tdFbm(vWorldPos.xz * uNoiseScale);
+                    tdN0 = tdFbm(vWorldPos.xz * uNoiseScale);
+                    float td_n = tdN0;
                     diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
                     // FEAT-84: height-weighted three-way surface blend. Each zone's map carries an
                     // albedo MODULATION (rgb, 0.5 = ×1) and its HEIGHT (a). Weight' = vertex weight ×
@@ -345,7 +350,8 @@ export class TerrainSystem {
                     // Dithered rock share: two noise octaves (~8 m and ~2 m) push the share up
                     // and down across the boundary band; the s·(1−s) weight pins the pure ends.
                     float ts_s0 = clamp(vSurf.z, 0.0, 1.0);
-                    float ts_dn0 = tdFbm(ts_p * uBiomeDither.y) * 0.7 + tdFbm(ts_p * uBiomeDither.y * 3.7 + 17.0) * 0.3 - 0.5;
+                    float ts_dc = uBiomeDither.y == uNoiseScale ? td_n : tdFbm(ts_p * uBiomeDither.y);
+                    float ts_dn0 = ts_dc * 0.7 + tdFbm(ts_p * uBiomeDither.y * 3.7 + 17.0) * 0.3 - 0.5;
                     float ts_s = clamp(ts_s0 + ts_dn0 * uBiomeDither.x * 4.0 * ts_s0 * (1.0 - ts_s0) * 2.0, 0.0, 1.0);
                     // Dirt floor in PATCHES (owner 2026-09-28: "a small baseline of rocks poking through,
                     // strongly amplified by the rock biome"): the same dither field scales the floor
@@ -499,7 +505,7 @@ export class TerrainSystem {
                     float td_rock = max(smoothstep(uCliffLo, uCliffHi, td_slp),
                                         smoothstep(uTreeLo, uTreeHi, vWorldPos.y));
                     if (td_rock > 0.001) {
-                        ${tdBumpGLSL('vWorldPos.xz * uNoiseScale', '0.6', 'uBump * uDetailScale * td_rock')}
+                        ${tdBumpGLSL('vWorldPos.xz * uNoiseScale', '0.6', 'uBump * uDetailScale * td_rock', 'tdN0')}
                     }
                     // FEAT-84: the blended surface normal map, planar in world XZ (same encoding as
                     // td_wb: x→−∂h/∂x, y→−∂h/∂z), rotated into view space like the fbm bump above.

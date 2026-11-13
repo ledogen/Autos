@@ -34,11 +34,11 @@ float tdFbm(vec2 p){
  * The 3-tap finite-difference fbm bump both consumers add to `normal` (terrain rock, road shoulder),
  * at sample point `p`, tap spacing `e` and strength `gain` (GLSL expressions). Emitted as inline
  * GLSL text — not a GLSL function — so the compiled shaders are unchanged. Its continuation lines
- * carry the 24-space indent of both call sites.
+ * carry the 24-space indent of both call sites. `h0` is the centre tap: a caller that already holds tdFbm(p) passes it.
  */
-export const tdBumpGLSL = (p, e, gain) => `vec2 td_p = ${p};
+export const tdBumpGLSL = (p, e, gain, h0 = 'tdFbm(td_p)') => `vec2 td_p = ${p};
                         float td_e = ${e};
-                        float td_h0 = tdFbm(td_p);
+                        float td_h0 = ${h0};
                         float td_hx = tdFbm(td_p + vec2(td_e, 0.0));
                         float td_hz = tdFbm(td_p + vec2(0.0, td_e));
                         vec3 td_wb = vec3(-(td_hx - td_h0), 0.0, -(td_hz - td_h0)) * (${gain});
