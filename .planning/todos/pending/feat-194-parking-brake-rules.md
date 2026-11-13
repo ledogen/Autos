@@ -48,8 +48,9 @@ No glaring hole found. The one real trade is item 2.
   sitting in gear never counts). S / LT, tapped or held, never. Consequence on the automatic: S at rest is reverse,
   so backing out of a parked spot starts with a Space tap.
 - **Part 2.** `setParkLock` (vehicle.js), set before every step from main.js `_parkLocked()`: an offer card (mission
-  'generating'/'offer', paper 'planning'/'offer'), the service/shop screen, the damage screen, the inventory, a camp
-  face, or the map when it was opened at rest. While set the handbrake is on even unlatched — the BRAKE lamp reads it —
+  'generating'/'offer', paper 'planning'/'offer'), the service/shop screen, the damage screen, the inventory or a camp
+  face — each while the latch is set, as they open on it (so the debug Quick Job's offer, taken rolling, never brakes
+  a moving truck) — or the map when it was opened at rest. While set the handbrake is on even unlatched — the BRAKE lamp reads it —
   and the throttle or a gear cannot release the latch; Space still can. The map's is a hold, not a latch: writing the
   latch would fire the park trigger behind the map (a giver's card, a pump).
 - The pad audit's mid-press fix (gamepad.js rbOwned) is untouched.
