@@ -33,6 +33,7 @@ import * as THREE from 'three'
 import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
 import { height, makeTerrainNoise, CHUNK_SIZE, GRID_SAMPLES, HEIGHT_PARAM_KEYS } from './terrain-height.js'   // THE height function — the Worker imports the same module
 import { makeSurfaceTextures, makeDetailNoiseTexture, _hexLin } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
+let _detailNoiseTex = null   // PERF-41: one bake per page, shared by every terrain rebuild (seed changes)
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 import { smooth01 as _smooth01 } from './seed.js'
@@ -145,7 +146,7 @@ export class TerrainSystem {
         this._terrainUniforms = {
             uDetailScale: { value: params.terrainDetailScale    ?? 1.0  },
             uNoiseScale:  { value: params.terrainNoiseScale      ?? 0.3 },
-            uNoiseTex:    { value: makeDetailNoiseTexture() },   // PERF-41: the fbm + its bump differences, baked
+            uNoiseTex:    { value: _detailNoiseTex ??= makeDetailNoiseTexture() },   // PERF-41: the fbm + its bump differences, baked once per page
             uMottle:      { value: params.terrainMottleStrength  ?? 0.6 },
             uBump:        { value: params.terrainBumpStrength    ?? 0.7  },
             uCliffLo:     { value: params.roadCliffSlopeLo       ?? 0.3  },
