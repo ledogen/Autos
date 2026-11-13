@@ -1,4 +1,4 @@
-# Handoff 2026-11-12 (night) — PERF-43 the per-wheel surface patch, then PERF-45 and PERF-44
+# Handoff 2026-11-12 (night) — PERF-43 the per-wheel surface patch, then PERF-45, PERF-41, PERF-44
 
 **Worktree** `/Users/ledogen/CodeShit/CarGame-perf43` · **branch** `perf/perf-43-surface-patch` (off main 3d008134) ·
 **port** 8043 (no server running; start one only for an owner look: `nohup npx vite --port 8043 --strictPort > /tmp/v8043.log 2>&1 &`).
@@ -22,9 +22,24 @@ Window title should read `CarGame-perf43 :8043`. Work ONLY in this worktree; sta
    if anything in the ticket's design has to change.
 2. **PERF-45 — the parked main thread** (170 ms/s with nothing moving). Its physics half becomes PERF-43's patch memo;
    do its render-CPU and postStream profile after PERF-43 (or in parallel only if PERF-43 is waiting on the owner).
-3. **PERF-44 — the triangle budget** (an investigation, then the owner picks). Independent of the others. Read
-   PERF-41 first: triangles were measured cheap on this GPU (the terrain shader is most of it), so the census must show
-   where triangles DO cost (shadow passes, CPU side) before proposing cuts.
+3. **PERF-41 — the GPU budget: the terrain's per-pixel shading** (`.planning/todos/pending/perf-41-gpu-budget-terrain-shader.md`).
+   Owner 2026-11-12: this investigation comes BEFORE PERF-44. PERF-41 measured, by switching pieces off one at a time
+   (GPU active cycles, two seeds): terrain hidden −50–60 %, the terrain detail shader off −22–40 %, the surface maps off
+   −12–26 %, the truck shadow light off −12–23 %, all props hidden only −12–28 %. Per terrain pixel the fragment shader
+   does 8 surface-map reads (the rock pair twice on steep ground), 3–4 `tdFbm` noise calls, 5 shadow-atlas taps, the
+   tunnel cut loop and two shadowed lights. Its levers, each to be measured with PERF-40 before choosing:
+   (1) a cheaper terrain shader at the same look — bake the noise octaves into the surface maps or a texture lookup
+   instead of `tdFbm`, branch past the steep-face second projection on flat ground, fewer atlas taps;
+   (2) distance falloff of the detail; (3) the render-resolution cap (Normal 1200 lines; 900 saved 30–39 %, a visual
+   call); (4) the truck shadow light re-rendering every frame; (5) ground cover's shadows and overdraw.
+   Deliverable: each lever's measured saving with before/after screenshot sheets; the owner picks (the look is theirs).
+   Its measuring script, `gpuab.mjs`, was only in an old session scratchpad: copied to `wip/perf-41/gpuab.mjs` here
+   (git-invisible). It imports `cdp.mjs` from the MAIN checkout by absolute path and expects `ioreport.py` beside it:
+   point both at this worktree (`test/lib/cdp.mjs`, `test/lib/ioreport.py`). PERF-41 says it is "to become a PERF-40
+   mode" — doing that is part of the work.
+4. **PERF-44 — the triangle budget** (an investigation, then the owner picks). After PERF-41, and informed by it:
+   triangles were measured cheap on this GPU (the terrain shader is most of it), so the census must show where
+   triangles DO cost (shadow passes, CPU side) before proposing cuts.
 
 ## Tools (git-invisible, in `wip/perf-42/` here; copied from the PERF-37 worktree)
 
