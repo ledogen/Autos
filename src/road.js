@@ -948,6 +948,7 @@ const RIVAL_FADE_D     = 3     // m
 // A wheel's samples lie within it (world-contacts.js: the tread ≤ 0.39 m from the hub, a normal's ±0.5 m differences
 // round the pressure centre); a point farther out resolves afresh, so the bound is the proof's, not the caller's.
 const HINT_REACH_M     = 1     // m
+const _RG_POSE = { x: 0, z: 0, theta: 0, kappa: 0 }   // _runGradeAt's foot pose (scratch)
 const RIVAL_PROM_M     = 2     // m
 const RIVAL_TIE_M      = 2.5     // m
 const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
@@ -8210,27 +8211,29 @@ export class RoadSystem {
         return { fx: f.x, fz: f.z, tx: f.tx, tz: f.tz, lo: 0, hi: 0, arcS: pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u - (e.arcOrigin ?? 0) }
     }
 
+    // The resolver's footprint half-width: endHW = carveHalfWidth + maxEmbankmentToe, plus DEEP_BANK_TOE_EXTRA. One
+    // definition, because the PERF-25 cell cache is keyed by it: _runGradeAt scans the same cells (PERF-42), and a second
+    // gate would thrash it.
+    //  · BUG-15 (fill): the footprint must reach the MESH carve extent (carveHalfWidth + shoulderWidth, carveHalfWidth =
+    //    halfWidth + carveExtraWidth capped at minRadius — same as terrain.js _buildCarveTable), not just halfWidth +
+    //    shoulderWidth. Otherwise the physics resolver returns "no road" across the outer fill embankment the mesh
+    //    raised, and the car falls through it.
+    //  · FEAT-10: the embankment reaches carveHalfWidth + roadMaxEmbankmentToe (capped apron), so the footprint extends
+    //    to the SAME toe — otherwise a wheel on the far fill embankment returns "no road" and drops through the dirt.
+    //  · FEAT-40: the interior footprint must reach the deep-bank toe (base cap + extension) or the outer half of a deep
+    //    cut wall resolves "no road" and the mesh/physics bank truncates to raw mid-slope. The BUG-21 offEnd apex-sliver
+    //    gate deliberately stays at the BASE footprint (endHW): widening the radial fallback would resurrect the "run
+    //    merely ending ~40 m off the query" teleport artifact it exists to reject.
+    _resolveFootHW() {
+        const p = this._params
+        const endHW = Math.min((p.roadHalfWidth ?? 5) + (p.roadCarveExtraWidth ?? 3.0), p.roadMinTurnRadius ?? 12) + (p.roadMaxEmbankmentToe ?? 10)
+        return endHW + DEEP_BANK_TOE_EXTRA
+    }
+
     _resolveRoadSurface(wx, wz, excludeKeys = null) {
         if (!this._tiles || !this._network) return null
         const p = this._params
-        const halfWidth     = p.roadHalfWidth     ?? 5
-        // BUG-15 (fill): the footprint must reach the MESH carve extent (carveHalfWidth + shoulderWidth,
-        // carveHalfWidth = halfWidth + carveExtraWidth capped at minRadius — same as terrain.js
-        // _buildCarveTable), not just halfWidth + shoulderWidth. Otherwise the physics resolver returns
-        // "no road" across the outer fill embankment the mesh raised, and the car falls through it.
-        const carveExtraWidth = p.roadCarveExtraWidth ?? 3.0
-        const minRadius       = p.roadMinTurnRadius   ?? 12
-        // FEAT-10: the embankment now reaches carveHalfWidth + roadMaxEmbankmentToe (capped apron), so the
-        // resolver footprint must extend to the SAME toe — otherwise a wheel on the far fill embankment
-        // (>carveHalfWidth + shoulderWidth lateral) returns "no road" and drops through the raised dirt.
-        const maxEmbankmentToe = p.roadMaxEmbankmentToe ?? 10
-        // FEAT-40: the interior footprint must reach the deep-bank toe (base cap + extension) or
-        // the outer half of a deep cut wall resolves "no road" and the mesh/physics bank truncates
-        // to raw mid-slope. The BUG-21 offEnd apex-sliver gate deliberately stays at the BASE
-        // footprint (endHW): widening the radial fallback would resurrect the "run merely ending
-        // ~40 m off the query" teleport artifact it exists to reject.
-        const endHW  = Math.min(halfWidth + carveExtraWidth, minRadius) + maxEmbankmentToe
-        const footHW = endHW + DEEP_BANK_TOE_EXTRA
+        const footHW = this._resolveFootHW()
 
         // Select the NEAREST footprint-interior run by true lateral distance (queryNearest's interior
         // policy), but via the continuous polyline projection so arcS/signedLat don't lurch at curves.
@@ -10678,7 +10681,12 @@ export class RoadSystem {
     _runGradeAt(runKey, wx, wz, out) {
         const ce = this._network.get(runKey)
         if (!ce) return null
-        const pr = this._projectOntoRun(ce, wx, wz)
+        // PERF-42: the PERF-25 windowed projection when this point's cell holds the run — bit-identical whenever it answers
+        // (the proof at _resolveCellCands); the full scan otherwise, so the result is the full scan's in every case. The
+        // full scan walked the whole run for every height sample near a deg-2 kink (two legs each, ~65 samples a wheel):
+        // a third of a wheel's ground query there, the bench's spike seconds (a wheel 6× its calm cost).
+        const cands = this._resolveCellCands(wx, wz, this._resolveFootHW()), cc = cands?.byKey.get(runKey)
+        const pr = (cc && this._projectOntoRunRanges(ce, cc, wx, wz, -1, 0, cands.gate2)) || this._projectOntoRun(ce, wx, wz)
         if (!pr) return null
         let arcS = pr.arcS
         // BUG-53: inside an offCurveSpan (T departure band, shove deflection) the run's own
@@ -10689,13 +10697,16 @@ export class RoadSystem {
             for (const csp of ce.offCurveSpans) if (aC >= csp.s0 - 0.5 && aC <= csp.s1 + 0.5) { inCeded = true; break }
         }
         if (!inCeded && ce.centerline && ce.centerline.length > 1e-6 && ce.clArc && ce.polyCum) {
-            // FINE DS (0.25 m vs _resolveRoadSurface's 1.0 m) + a wide window: the connector grade is
-            // sampled up to ~15 m OFF a leg (the footprint), where (a) the polyline foot (pr.sCL, the
-            // window centre) snaps ~2 m between segments on a curved leg — a wide window still brackets the
-            // true nearest — and (b) a coarse DS quantises the analytic arcS to ~1 m, stepping the grade
-            // ~0.18 m per snap (the residual shoulder-lateral step). Fine DS keeps the leg grade smooth.
-            const hit = ce.centerline.nearest(wx, wz, 0.25, pr.sCL - 20, pr.sCL + 20)
-            if (hit) arcS = _interpArcTable(ce.clArc, ce.polyCum, hit.s) - (ce.arcOrigin ?? 0)
+            // The analytic foot, refined straight from the polyline foot (pr.sCL) with the centerline's EXACT step on a line
+            // or an arc (_refineFoot), within ±20 m of it. The connector grade is sampled up to ~15 m OFF a leg, where the
+            // polyline foot snaps ~2 m between segments on a curved leg; the exact step walks it onto the true foot in one
+            // or two iterations, so the grade stays smooth. PERF-42: this replaced a 0.25 m grid search over the ±20 m
+            // window (then one refine) — the same foot at every one of 3,664 connector leg feet on two seeds (|Δs| and
+            // |Δgrade| < 0.5 µm, wip measurement), at 0.2 µs instead of 2.1–2.6. The search ran twice for every height
+            // sample near a deg-2 kink, half a wheel's ground query there: the bench's spike seconds.
+            const cl = ce.centerline, lo = Math.max(0, pr.sCL - 20), hi = Math.min(cl.length, pr.sCL + 20)
+            const s = cl._refineFoot(wx, wz, Math.max(lo, Math.min(hi, pr.sCL)), lo, hi, _RG_POSE)
+            arcS = _interpArcTable(ce.clArc, ce.polyCum, s) - (ce.arcOrigin ?? 0)
         }
         const p = this._params
         const halfWidth = p.roadHalfWidth ?? 5
