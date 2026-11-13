@@ -12,7 +12,7 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Owner: read the ranked lever list at the top of `.planning/perf/COST-MAP-2026-11.md` and pick. Levers 1–4 need no
+Lever 1 built (Log, 2026-11-13); landing branch `land/perf-48-l1`. Owner: read the ranked lever list at the top of `.planning/perf/COST-MAP-2026-11.md` and pick. Levers 1–4 need no
 owner call (exact, invisible); 5–7 are one question each (Open questions). Perf lane then builds the picks, one ticket each.
 
 ## Summary
@@ -77,3 +77,10 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
   Findings: the HUD forces a style recalc every frame from the cluster's `ctx.font` (~45 ms/s, 21 % of the main
   thread); the map's region dimming ~60 ms/s while open; the GPU (~2 W) outweighs the CPU (0.8 W) 2.5×; main-thread
   ms/s rises 1.6–3.3× when the CPU is lightly loaded (macOS picks a slower core), so it is not a work measure alone.
+- 2026-11-13: lever 1 built (Perf lane). Energy/hunger strips write only when their device pixel moves; the hidden
+  debug panel's live read-outs stop while hidden. Recalcs 60 → 13 /s driving, 58 → 3 parked, 57 → 6 map; postStream
+  −28 / −26 / −22 ms/s; CPU −0.13 / −0.07 / −0.16 W (A-B, 3 seeds, unprofiled, fake audio). The cluster's `ctx.font` left
+  alone (forces nothing once nothing is dirty). Stills: 0 px on the device grid, otherwise only the anti-aliased
+  column of each hour tick / band edge and the band labels' glyph edges (`wip/perf-48-l1/diff.txt` in the perf
+  worktree). No gate: the guard lives in main.js and lil-gui, both DOM-bound; a pure-node gate would need a fake DOM.
+

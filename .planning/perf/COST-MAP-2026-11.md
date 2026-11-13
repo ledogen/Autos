@@ -18,7 +18,7 @@ fraction × clock in MHz), the only GPU measure that holds still on this machine
 
 | # | Lever | Cost today | Expected gain | Risk to picture / physics | Effort | Ticket |
 |---|---|---|---|---|---|---|
-| 1 | **Stop the HUD forcing a style recalculation every frame.** Write the energy and hunger strips only when their drawn pixel moves, stop the hidden debug panel's live sliders, and draw the cluster's digits from a pre-rendered strip so no `ctx.font` is set per frame. | ~45 ms/s main thread, driving and parked (21 % of the main thread) | 35–45 ms/s (measured: freezing two writers cut the recalcs from 60/s to 9.5/s and the loop by 19 ms/s) | none: the same pixels | small (3 files) | PERF-45 §3, widened to driving |
+| 1 | **Stop the HUD forcing a style recalculation every frame.** ~~Write the energy and hunger strips only when their drawn pixel moves, stop the hidden debug panel's live sliders~~ (done, below); the cluster's `ctx.font` left as is: with nothing dirty it forces nothing. | ~45 ms/s main thread, driving and parked (21 % of the main thread) | **measured 2026-11-13** (3 seeds, A-B unprofiled, fake audio): recalcs 60 → 13 /s driving, 58 → 3 parked, 57 → 6 map; recalc time 38 → 8.5 / 32 → 2.4 / 44 → 8.7 ms/s; postStream 52 → 24 / 46 → 20 / 82 → 60 ms/s; CPU 1.11 → 0.98 / 0.77 → 0.70 / 0.69 → 0.53 W | the energy/hunger bars step one device pixel at a time: a still differs only in the anti-aliased column of each hour tick and band edge, and in the band labels' glyph edges (0 px on the device grid) | small (2 files) | PERF-48 lever 1 (PERF-45 §3) |
 | 2 | **The map's overlay: stop redrawing the region dimming every frame.** Bake the dim-outside-the-region fill into the cached background (PERF-38's cache), or a layer under the live marks. | ~60 ms/s main thread while the map is open (of 92 ms/s) | 45–55 ms/s with the map open | none | small | PERF-46 (its "repaint of the whole map canvas" suspect) |
 | 3 | **Physics at rest: memo the ground query of a tyre that has not moved.** Same hub bits in, same samples out, so exact. | ~33 ms/s parked (the road carve stack, 58 % of parked physics); 0–140 ms/s by spot | ~30 ms/s parked, more on a junction | none: bit-identical by construction | small–medium | PERF-45 §1 (PERF-43's design §4) |
 | 4 | **Static objects stop recomputing their world matrices, and far POI groups leave the scene walk.** 650–960 objects are walked every frame, all with automatic matrix updates; 120–135 meshes are on screen. | 67 ms/s main (driving), 61 parked: three.js's render call | 15–25 ms/s main, plus a share of the GPU process's 12–13 % of a core | low: an object marked static that does move would freeze (audit each) | medium | PERF-45 §2 |
@@ -203,6 +203,15 @@ For each large cost: what shipped games do, what we do, what closing the gap is 
 - **Ours.** The HUD writes transforms every frame even when the change is a fraction of a pixel. The debug panel,
   hidden, still live-updates its sliders. The cluster sets a canvas font every frame, and that forces the recalc.
 - **Worth.** ~35–45 ms/s main thread, measured, invisible.
+- **Built (2026-11-13, lever 1).** The two strips write their `transform` only when the snapped device-pixel position
+  changes (~1 write/s each instead of 60); the hidden debug panel's `.listen()` controllers stop while it is hidden
+  (`syncDebugLive` in debug.js). The cluster's `ctx.font` stays: a forced recalc only costs when something is dirty,
+  and the render step would pay that same recalc anyway. Bench A-B (`perf-runs/p48-l1`, 6/6 valid, load 0.3/core,
+  mediaanalysisd busy on one core throughout): per-second recalcs driving p50 60 → 10, p99 63 → 60, worst 64 → 61;
+  parked p50 60 → 2–8; map p50 60 → 6–9. Main thread per second, driving p50 203 → 186, p99 310 → 294; parked p50
+  177 → 170, p99 222 → 202 (the clock trap shrinks the totals; postStream and CPU watts are the clean reads).
+  Left: 9 recalcs/s from the 10 Hz writers (the POI prompt's `innerHTML`, the hidden debug HUD's Fz read-outs), and
+  7 % of driving seconds still at 60/s, all at walking pace or stuck (something animates per frame there; not found yet).
 
 ### 2. Rendering CPU (lever 4; 67 ms/s main + ~125 ms/s GPU process)
 
