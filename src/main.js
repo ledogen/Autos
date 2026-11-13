@@ -3137,6 +3137,10 @@ const _poiMeshes = new Map()
 // still owed a paper — see _updateCustomerRings.
 const _customerRings = new Map()
 const _ornaments = []   // FEAT-149: [{ kind, mesh, lift, body }] — knockable yard ornaments, rebuilt with the markers
+// BUG-164: one Group per POI holding its model (or cube) and its yard, culled as a unit past the drawn terrain
+// (_updateMissionRings). Before this every building in the region drew at any range: past the terrain edge it hung
+// in the sky as a fog-coloured silhouette, and the far ones cost ~28 draw calls and ~15 ms/s of render() CPU.
+const _poiYards = []
 
 /**
  * Rebuild the markers + interaction rings (cheap: a handful of each per region).
@@ -3149,6 +3153,7 @@ const _ornaments = []   // FEAT-149: [{ kind, mesh, lift, body }] — knockable 
 function _rebuildPoiMarkers () {
   for (const o of _ornaments) if (o.body != null) debrisSystem.remove([o.body])   // FEAT-149
   _ornaments.length = 0
+  _poiYards.length = 0
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
   _poiMeshes.clear()
@@ -3159,6 +3164,10 @@ function _rebuildPoiMarkers () {
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
+    const yard = new THREE.Group()
+    yard.userData.x = q.x; yard.userData.z = q.z
+    _poiGroup.add(yard)
+    _poiYards.push(yard)
     if (q.modelKey) {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
       // unlike the small thrown mission items FEAT-59's cast-only default was written for.
@@ -3177,13 +3186,13 @@ function _rebuildPoiMarkers () {
         c.rotation.y = v.yaw
         m.add(c)
       }
-      _poiGroup.add(m)
+      yard.add(m)
       _poiMeshes.set(q.id, m)
     } else {
       const cube = new THREE.Mesh(_poiCubeGeo, _poiCubeMat)
       cube.position.set(q.x, q.baseY + half, q.z)
       cube.castShadow = true
-      _poiGroup.add(cube)
+      yard.add(cube)
       _poiMeshes.set(q.id, cube)
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
@@ -3194,7 +3203,7 @@ function _rebuildPoiMarkers () {
       const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
       m.position.set(sat.x, sat.y, sat.z)
       m.rotation.y = sat.yaw
-      _poiGroup.add(m)
+      yard.add(m)
       const knock = PROP_MODELS[sat.key]?.knockable
       if (knock) {
         const kind = `ornament:${sat.key}`
@@ -3384,6 +3393,10 @@ function _updateMissionRings () {
   // and drop away while the pump is open (you are already in one).
   for (const m of _pumpZoneMarks)
     m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= showR
+  // BUG-164: the buildings stand only where their ground is drawn, so they go by the terrain's own stream centre.
+  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one 192 m+ away cannot be touched.
+  const sc = roadStreamCenter()
+  for (const y of _poiYards) y.visible = Math.hypot(y.userData.x - sc.x, y.userData.z - sc.z) <= showR
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
     _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)
