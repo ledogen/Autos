@@ -5766,8 +5766,8 @@ function _atMomsHouse () {
 /**
  * FEAT-194 part 2 (owner, 2026-11-11: "lock the parking brake on whenever the player enters a menu that requires
  * them to be parked … if you accidentally tap the gas and the car starts rolling you might not notice"): true while
- * one is up — a giver's offer card, a shop's screen, the damage screen, the inventory, a camp face, or the map when it
- * was opened at rest (opened rolling, it is a driving map). vehicle.js then holds the handbrake and the throttle cannot
+ * one is up — a giver's offer card, a shop's screen, the damage screen, the inventory, a camp face (each with the
+ * latch set), or the map when it was opened at rest (opened rolling, it is a driving map). vehicle.js then holds the handbrake and the throttle cannot
  * let the latch go (src/park-brake.js); the HUD's BRAKE lamp reads the handbrake, so it shows. The map's hold is a
  * hold, not a latch: latching would fire the park trigger below behind it (a giver's card, a pump).
  */
@@ -5776,9 +5776,11 @@ function _parkLocked () {
   const mapOpen = map2d.isOpen()
   if (mapOpen && !_mapWasOpen) _mapAtRest = !!vehicleState.parked || Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) < PARK_SPEED
   _mapWasOpen = mapOpen
-  return (mapOpen && _mapAtRest)
+  // The cards and screens open on the latch, so they lock only while it is set: a Space tap lets it go and the
+  // lock with it, and the debug Quick Job's offer (taken rolling) never brakes a moving truck.
+  return (mapOpen && _mapAtRest) || (!!vehicleState.parked && (!!_campUi
     || ['generating', 'offer'].includes(missionSystem?.state) || ['planning', 'offer'].includes(paperRouteSystem.state)
-    || serviceScreen.isOpen || damageScreen.isOpen || inventoryScreen.isOpen || !!_campUi
+    || serviceScreen.isOpen || damageScreen.isOpen || inventoryScreen.isOpen))
 }
 
 /**
