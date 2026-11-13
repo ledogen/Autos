@@ -1,7 +1,7 @@
 ---
 id: PERF-41
 type: perf
-status: open
+status: closed
 opened: 2026-11-12
 severity: major
 source: PERF-37 session 3 (owner play on the PERF-38/39 branch, 2026-11-12) — "I don't think the computer is thermaling
@@ -140,3 +140,6 @@ rebase onto main 51eb8e96: `cdp-smoke` 26 steps, zero console errors; `terrain-t
 (near/far shadow pass cost while driving), `shadercheck.mjs <port>` (boot + console errors), `gpuab.mjs`, `runs/`.
 
 **What is left of the GPU budget** (not this ticket): props and POI draw cost with distance (PERF-44, with BUG-164).
+
+## Resolution (2026-11-13)
+On main 1b4cfd7c (terrain-texture gate green, smoke 26 steps, zero console errors). Lever 1 with baked noise: 908 → 844 Mcyc/s GPU active cycles driving (−7 %), −8 to −18 % parked. Owner dropped the distance fade and shadow changes and declined the resolution cap. Not pushed at close.

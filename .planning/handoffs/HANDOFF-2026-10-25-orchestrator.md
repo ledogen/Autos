@@ -143,11 +143,10 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
     road.js / terrain shader changes. Tickets routed to it: BUG-164, PERF-46.
   - The owner lets it land and push its own work from its window. You never push without the owner's word to you.
   - Lane rule in every spawn prompt: ≤ 2 heavy processes; `pgrep -f 'node test/playtest-bench'` before a heavy job.
-- **Main = b512c2a2 + docs; origin = be5da36e.** Unpushed (owner's word needed): PERF-43 close 8acdea46 · FEAT-198 +
-  FEAT-200 a7837ddc (+ smoke fix 1f66acb7) · FEAT-197 0fca6cd4 · FEAT-195 692ceba5 · BUG-161 d2c5e2ef · BUG-156
-  3ba37902 · BUG-161b 6739947a (WELD_SLOP 10 mm) · FEAT-199 a2922b9c (item reward = a choice, capped at the job's
-  pay) · FEAT-201 + FEAT-194 parts 1–2 810a5d93 (new src/park-brake.js) · FEAT-196 6602da0f · BUG-165 b512c2a2 · INFRA-11 5b8c0e88 (tracker = the dashboard's Lanes tab; not smoked, it touches tools/ and docs only).
-  Each game landing smoked 26/26 (logs wip/orch/smoke-*.log).
+- **Main = 1b4cfd7c + docs; origin = 706808d5 (the owner said "push" 11-13; everything through BUG-165 is out).**
+  Unpushed (owner's word needed): INFRA-12 51eb8e96 (deep dives) · INFRA-09 02a26c36 (ticket template; dashboard
+  only) · PERF-41 1b4cfd7c (terrain shader lever 1 + baked noise; terrain-texture gate + smoke 26/26, log
+  wip/orch/smoke-perf41.log).
 - **INFRA-11 cutover DONE 11-13.** The artifact is dead state: never read or write it. Tooling peer
   `lanes-tab-dashboard` did it.
   The lanes/*.json task lists were imported whole and are long: prune closed rows as you touch them.
@@ -157,14 +156,13 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   are cherry-picks.
 - **Idle**: Lane A (FEAT-194 part 3 waits on `handbrake-clock`). Spare's branch (feature/spare holds old
   unlanded docs/tests, so it needs `git merge main`, not a fast-forward); Lane C owner-gated.
-- **Perf session**: PERF-41 in `CarGame-perf41`, not ready (the owner picks levers in its window: ~6 % terrain GPU
-  cycles at the exact picture, ~14 % with baked noise). It will ask for a ~30 min bench hold.
+- **Perf session** (`cargame-70`): PERF-41 CLOSED and landed 11-13. Not holding the machine. It still owes a
+  final ~30 min PERF-40 bench window; BUG-164 and PERF-46 are routed to it.
 - **Owed (25 files in owed/)**, newest: bug166-shock, handbrake-clock, bug160-numbers, bug163-ladder, feat199-price,
   feat196-wheel-repair. Not there: the owner's look at the hunger box (CarGame-run-shape/wip/feat198/*.png) and a
   real-mouse drag; hunger was once ruled "a word, never a gauge".
 - **Tickets to tidy**: BUG-160 (closes on `bug160-numbers`) and BUG-161 (the owner's 2–3 s statue symptom is
   unexplained; wants a capture-key capture and whether fps dropped) stay in pending/.
 - **Held branch**: FEAT-34 round 3 land/feat-34 @ e49bc289 (waits on `feat34-r3-look`; re-test on main first).
-- **Worktrees**: `CarGame-bug67` needs the owner's `! git worktree remove --force`. Perf keeps `-perf37`, `-perf41`,
-  `-perf43`, `-main0758`. Lighting pick keeps `-f180-preview`, `-land-feat180*`. In use: none.
+- **Worktrees**: `CarGame-bug67` needs the owner's `! git worktree remove --force`. Perf keeps `-perf41`. Lighting pick keeps `-f180-preview`, `-land-feat180*`. In use: none.
 - **Clock note**: the machine clock is PST; agents' system date runs a day ahead. Git/mtimes are the truth.
