@@ -770,7 +770,12 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     const hvz = vs.velocity.z + w.x * ry - w.y * rx
     const ahead = Math.hypot(hvx, hvy, hvz) * dt
     const t = corner !== undefined ? Math.min(queries[corner]++, SUSPENSION_SUBSTEPS - 1) * sdt : 0
-    const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r + ahead, { collidesWith: GROUP_DEBRIS, dynamicOnly: true })
+    // BUG-161: a load WELDED to the chassis (FEAT-96 freight) is part of the truck, not a surface
+    // under its tire — the wheelhouse wall stands between them. The query sphere is fatter than the
+    // tire (0.37 m radius against a 0.12 m half-width), so near the bump stop it reached 2 cm into a
+    // statue seated ahead of the arch; only the world-frame n.y filter below kept the tire from
+    // pressing on it, and a roll or pitch of 15–20° tips that normal past −0.1.
+    const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r + ahead, { collidesWith: GROUP_DEBRIS, dynamicOnly: true, skipWeldedTo: chassis })
     for (let i = 0; i < dyn.length; i++) {
       const h = dyn[i]
       // Safety invariant, not a filter that should ever fire with exact manifolds: a body under

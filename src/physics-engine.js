@@ -134,6 +134,7 @@ export class PhysicsEngine {
     this._dynamic = new Map()              // the isDynamic subset of _bodies, same records and order
     this._shapeToHandle = new Map()        // shapeId.index1<<21|generation-ish key → body handle
     this._nextHandle = 1
+    this._welds = new Map()                // weld joint → [handleA, handleB] (destroyJoint clears weldedTo)
     this._heightfields = new Map()         // handle → b3HeightFieldData (owned, freed on destroy)
     this._meshDatas = new Map()            // handle → b3MeshData[] (owned, freed on destroy)
     // Hull data and the tire size hint live on the BODY RECORD, indexed by shape slot — they used
@@ -185,7 +186,8 @@ export class PhysicsEngine {
     const rec = { id, shapes: [], specs: [], userData,
       isStatic: type === 'static', isDynamic: type !== 'static' && type !== 'kinematic',
       groups: [], reach: [], hulls: [], sizeR: [],
-      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null }
+      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null,
+      weldedTo: null }   // Set of the handles welded to this one (createWeldJoint) — contactSphere's skipWeldedTo
     this._bodies.set(handle, rec)
     if (rec.isDynamic) this._dynamic.set(handle, rec)
     this._rev++
@@ -204,7 +206,11 @@ export class PhysicsEngine {
       this._shapeToHandle.delete(this._shapeKey(rec.shapes[i]))
       this._freeHull(rec.hulls[i])
     }
-    _b3.b3DestroyBody(rec.id)              // destroys attached shapes with it
+    _b3.b3DestroyBody(rec.id)              // destroys attached shapes with it (and its joints)
+    if (rec.weldedTo) {
+      for (const h of rec.weldedTo) this._bodies.get(h)?.weldedTo?.delete(handle)
+      for (const [j, w] of this._welds) if (w[0] === handle || w[1] === handle) this._welds.delete(j)
+    }
     const hf = this._heightfields.get(handle)
     if (hf) { _b3.b3DestroyHeightField(hf); this._heightfields.delete(handle) }
     const mds = this._meshDatas.get(handle)
@@ -576,7 +582,7 @@ export class PhysicsEngine {
    *   b3CollideHullAndSphere(hull, s, xf) → hull is at IDENTITY (its own frame); normal
    *                                         hull→sphere; results in hull-local coordinates.
    */
-  contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false } = {}) {
+  contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false, skipWeldedTo = null } = {}) {
     const hits = []
     const mask = _group32(collidesWith)
     // dynamicOnly (every wheel query, 20×/step) walks only the dynamic bodies — not the terrain,
@@ -585,6 +591,9 @@ export class PhysicsEngine {
       // Heightfields and meshes have no sphere pair test wired (the analytic terrain query owns
       // those surfaces), so skip them before paying for a transform.
       if (this._heightfields.has(handle) || this._meshDatas.has(handle)) continue
+      // skipWeldedTo (BUG-161): a body welded to that one is part of it — the wheel query asks with
+      // the chassis, so a strapped load is never a surface the truck's own tire can press on.
+      if (skipWeldedTo !== null && rec.weldedTo?.has(skipWeldedTo)) continue
       this._bodyXf(rec)
       const bp = rec.xfP, bq = rec.xfQ
       const dx = center.x - bp[0], dy = center.y - bp[1], dz = center.z - bp[2]
@@ -865,10 +874,23 @@ export class PhysicsEngine {
     jd.base.localFrameB = frame(jd.base.bodyIdB)
     jd.linearHertz = 0
     jd.angularHertz = 0
-    return _b3.b3CreateWeldJoint(this._world, jd)
+    const joint = _b3.b3CreateWeldJoint(this._world, jd)
+    const a = this._bodies.get(handleA), b = this._bodies.get(handleB)
+    ;(a.weldedTo ??= new Set()).add(handleB)
+    ;(b.weldedTo ??= new Set()).add(handleA)
+    this._welds.set(joint, [handleA, handleB])
+    return joint
   }
 
-  destroyJoint (joint) { _b3.b3DestroyJoint(joint, true) }
+  destroyJoint (joint) {
+    const w = this._welds.get(joint)
+    if (w) {
+      this._bodies.get(w[0])?.weldedTo?.delete(w[1])
+      this._bodies.get(w[1])?.weldedTo?.delete(w[0])
+      this._welds.delete(joint)
+    }
+    _b3.b3DestroyJoint(joint, true)
+  }
 
   /**
    * The force a joint applied over the last step [N], world frame (FEAT-97: the strap's pull on a
