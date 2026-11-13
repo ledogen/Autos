@@ -5,18 +5,21 @@
 Window title `CarGame-perf43 :8043`. Work ONLY here; start every Bash call with `cd /Users/ledogen/CodeShit/CarGame-perf43 && …`.
 Commit WIP every step (`git commit -m 'wip(PERF-43): …' -- <paths>`).
 
-## Where things stand — read the ticket's "Progress" section first
+## Where things stand — PERF-43 CLOSED (owner, 2026-11-12); next is PERF-41
 
-`.planning/todos/pending/perf-43-per-wheel-surface-patch.md` § Progress has everything: the gate, the three live
-reuse bugs it found (6e731daa), layer 1 (08130529), the measurements, and **the finding that changes the plan** — the
-remaining spike cost is per-sample maths (the pad's ribbon-station Newton, the inter-leg blend twice per sample), not
-re-derived context — with the next levers in order. Spike median is still ~120–170 µs (goal ≤ 60).
+PERF-43 is closed by the owner's ruling ("the rest of the juice is not worth the squeeze"): see
+`.planning/todos/completed/perf-43-per-wheel-surface-patch.md` § Resolution — what shipped, the quiet-machine numbers
+(spike median 149→150 / 181→175 / 146→126 µs), and why the remaining cost is per-sample maths. The branch's last
+commits (9b0e93eb bit-identical trims, aec90c63 the hub-resolve regression fix, c1445806 the close) are handed to the
+orchestrator to land after `test:all --browser`. PERF-42 stays open at 7.7 % (the recorded PERF-40 baseline,
+`.planning/perf/history.jsonl`).
 
-- Gate: `node test/hint-reuse.mjs` (~10 s) — green. Affected gates at 08130529: 79/79 green (`node test/run-all.mjs --changed=src/road.js,…`).
-- Identity: fresh heights bit-identical to main (`node wip/perf-43/ab-normal.mjs <seed>`); fingerprint-world `surface`
-  differs by design (analyticNormal only, where main's reuse was wrong); fingerprint-physics identical.
-- Main is NOT pushed (a push deploys Pages). The orchestrator (main checkout) lands; hand it the branch after
-  `npm run test:all -- --browser`. It may ask the owner to ship 6e731daa's fixes early (it stands alone).
+**Next: PERF-41 — the GPU budget, the terrain's per-pixel shading** (`.planning/todos/pending/perf-41-gpu-budget-terrain-shader.md`;
+owner: before PERF-44, and taken before PERF-45). Start a fresh worktree off main after the landing
+(`perf/perf-41-terrain-shader`), not this branch. The lever list and the measuring script (`wip/perf-41/gpuab.mjs`,
+in THIS worktree — copy it; point its `cdp.mjs` / `ioreport.py` imports at the new worktree's `test/lib/`) are in the
+previous handoff text below under "Order of work" (git history of this file, 70a2ecb3). Deliverable: each lever's
+measured saving with before/after screenshot sheets; the owner picks (the look is theirs). GPU by active cycles, not watts.
 
 ## Coordination (the orchestrator, cargame-a9, 11-12)
 

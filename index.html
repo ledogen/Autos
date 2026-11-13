@@ -897,6 +897,7 @@
       color: var(--text);
     }
     #energy-meter .em-title { margin-bottom: 4px; text-align: left; }
+    #energy-meter .em-view + .em-title { margin-top: 6px; }   /* FEAT-198: the hunger line under the energy bar */
     #energy-meter .em-view {
       position: relative;
       width: 100px;
@@ -1770,6 +1771,19 @@
           <div class="em-seg" id="em-seg-sleepy"><span>Sleepy</span></div>
           <div class="em-seg" id="em-seg-tired"><span>Tired</span></div>
           <div class="em-seg" id="em-seg-exhausted"><span>Exhausted</span></div>
+        </div>
+        <div class="em-pointer"></div>
+      </div>
+      <!-- FEAT-198: hunger mirrors energy in the same box — its word, then its strip, scrolled by the hours left
+           on the meal's hold (bands = DAY_PARAMS.hungerWords; the 2 h bands carry no inline label). -->
+      <div class="em-title" id="hm-title">Hunger&ensp;·&ensp;<span id="hm-stage">stuffed</span></div>
+      <div class="em-view" id="hm-view">
+        <div class="em-strip" id="hm-strip">
+          <div class="em-seg" id="hm-seg-stuffed"><span>Stuffed</span></div>
+          <div class="em-seg" id="hm-seg-full"></div>
+          <div class="em-seg" id="hm-seg-content"></div>
+          <div class="em-seg" id="hm-seg-peckish"></div>
+          <div class="em-seg" id="hm-seg-hungry"><span>Hungry</span></div>
         </div>
         <div class="em-pointer"></div>
       </div>
