@@ -276,6 +276,14 @@ async function session (build, seed, rep) {
     await js(`document.getElementById("su-seed").value = "${seed}"; document.getElementById("su-start").click()`)
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     if (!await until(() => js(live), 180000)) throw new Error('story never went live')
+    // PERF-47: the host's audio output must be pulling samples. When CoreAudio wedges (2026-11-13: afplay hung too) a
+    // running AudioContext's clock stands still, every per-frame setTargetAtTime piles onto its param's timeline, and
+    // main-thread ms/s climbs ~2 ms/s per second of session: a cost of the host, not the build. F24 is a key the game
+    // ignores; it gives the fresh context the user activation it needs to run.
+    for (const type of ['keyDown', 'keyUp']) await client.cmd('Input.dispatchKeyEvent', { type, key: 'F24', code: 'F24', windowsVirtualKeyCode: 135 })
+    const audioS = await js(`(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), c = new AudioContext()
+      await Promise.race([c.resume(), wait(1000)]); const t = c.currentTime; await wait(1000); const d = c.currentTime - t; c.close(); return d })()`)
+    if (!(audioS > 0.5)) throw new Error(`the host's audio clock is stalled (${(audioS ?? 0).toFixed(3)} s per 1 s wall): restart coreaudiod, then rerun`)
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     for (let i = 0; i < 30 && await dlg(); i++) { await tap('Enter'); await sleep(300) }
     await sleep(2000)
