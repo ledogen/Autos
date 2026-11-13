@@ -26,6 +26,8 @@
 //   9. Tire work is bead jobs and hub swaps (owner, 2026-10-23): a loose tire onto a corner is 2 hub +
 //      2 bead, charged with the shelf price; split and combine are one bead job each, every part keeping
 //      its wear and the tire its puncture; split needs a free slot; only a loose tire meets a loose wheel.
+//  10. FEAT-196: a corner swap trades two corners' mounted pairs (each part's wear, the puncture with its tire) for
+//      four hub swaps; a mounted pair's wheel in the inventory is straightened on the bench, still mounted.
 //
 // Pure node: no THREE, no DOM.
 import { ServiceCenter } from '../src/service.js'
@@ -235,6 +237,37 @@ const full = new InventorySystem({ slotCap: () => inventory.slotsUsed() })   // 
 const tight = new ServiceCenter({ ...svc, inventory: full, off: null })
 const si = full.list().findIndex(r => r.id === 'spareTire')
 check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].id === 'spareTire', JSON.stringify(full.list().map(r => r.id)))
+
+// ── 10. FEAT-196: corner swap at the shop, and a mounted pair's wheel on the bench ───────────────
+{
+    damage.setAll(1); damage.flat.fill(false)
+    damage.set('tireFL', 0.3); damage.flat[0] = true; damage.set('wheelFL', 0.5); damage.set('tireRR', 0.9)
+    const fl = parts.fitted('tireFL'), rr = parts.fitted('tireRR')
+    wallet = 100; hours = 0
+    check('a corner swap is four hub swaps', near(svc.cornerSwapQuote().price, 4 * HUB.price) && near(svc.cornerSwapQuote().hours, 4 * HUB.hours))
+    check('a corner can\'t swap with itself', !svc.swapCorners(0, 0) && wallet === 100)
+    check('swap FL ↔ RR: tire and wheel move with their wear, the flat with its tire', svc.swapCorners(0, 3)
+      && near(damage.get('tireRR'), 0.3) && damage.flat[3] && near(damage.get('wheelRR'), 0.5) && near(damage.get('tireFL'), 0.9) && !damage.flat[0]
+      && parts.fitted('tireRR') === fl && parts.fitted('tireFL') === rr && near(wallet, 100 - 4 * HUB.price) && near(hours, 4 * HUB.hours),
+      JSON.stringify({ rr: damage.get('tireRR'), fl: damage.get('tireFL'), w: wallet, h: hours }))
+    wallet = 0
+    check('…refused short of the wallet', !svc.swapCorners(0, 3) && near(damage.get('tireRR'), 0.3))
+    damage.setAll(1); damage.flat.fill(false)
+
+    inventory.grant('spareTire', 1, { cond: 0.7, wheelCond: 0.4 })
+    const mi = inventory.list().findLastIndex(r => r.id === 'spareTire' && r.wheelCond === 0.4)
+    check('a mounted pair\'s wheel has the bench\'s targets', svc.ownedWheelTargets(mi).join() === '0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8', String(svc.ownedWheelTargets(mi)))
+    wallet = 100; hours = 0
+    const wq = svc.ownedQuote(mi, 0.8, true)
+    check('…priced as a wheel off the truck (the charge, no access time)', near(wq.price, SU.price + REPAIRS.wheel.price * 0.4) && near(wq.hours, REPAIRS.wheel.hours * 0.4), JSON.stringify(wq))
+    check('…straightened, still mounted, the tire untouched', svc.repairOwned(mi, 0.8, true) && inventory.list()[mi].id === 'spareTire'
+      && near(inventory.list()[mi].wheelCond, 0.8) && near(inventory.list()[mi].cond, 0.7) && near(wallet, 100 - wq.price) && near(hours, wq.hours),
+      JSON.stringify(inventory.list()[mi]))
+    check('…a target off the list is refused', !svc.repairOwned(mi, 0.9, true))
+    inventory.amend(mi, { wheelCond: 0 })
+    check('…a collapsed one is scrap', svc.ownedWheelTargets(mi).length === 0)
+    inventory.take(mi)
+}
 
 // expedition-rewards option 2: the crew's line owes one repair — $0 while it is held, the labour still on the clock, one use.
 {

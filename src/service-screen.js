@@ -69,7 +69,6 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
   border: 0; cursor: pointer; transition: background 0.1s; }
 #svc-screen .sv-line:hover, #svc-screen .sv-line.on { background: rgba(255,255,255,0.09); color: var(--text-bright); }
 #svc-screen .sv-name { flex: 1; min-width: 0; }
-#svc-screen .sv-row.wrap { flex-wrap: wrap; }
 #svc-screen .sv-acts { flex-basis: 100%; display: flex; justify-content: flex-end; gap: 4px; }
 #svc-screen .sv-desc { font-size: 12px; color: var(--text-dim); line-height: 1.35; }
 #svc-screen .sv-flat { font-size: 12px; color: var(--bad-text); }
@@ -247,6 +246,7 @@ export class ServiceScreen {
   /** The repair targets behind a repair key: `v:<track>` on the truck, `i:<index>` in the inventory. */
   _targets (key) {
     const [k, v] = key.split(':')
+    if (k === 'w') return this.service.ownedWheelTargets(+v)   // FEAT-196: a mounted pair's wheel
     return k === 'v' ? this.service.targets(v) : this.service.ownedRepairRows().find(r => r.index === +v)?.targets ?? []
   }
 
@@ -280,17 +280,18 @@ export class ServiceScreen {
       case 'repair': {
         const [k, v] = key.split(':')
         if (k === 'v') s.repair(v, this._target(key))
-        else s.repairOwned(+v, this._target(key))
+        else s.repairOwned(+v, this._target(key), k === 'w')
         break
       }
       case 'patch': s.patch(b.dataset.track); break
       case 'patchOwned': s.patchOwned(+b.dataset.index); break
       case 'exchange': s.exchange(+b.dataset.index, b.dataset.socket); break
+      case 'swap': s.swapCorners(+b.dataset.a, +b.dataset.b); this.sel = b.dataset.to; break   // the selection follows the tire
       case 'sellOwned': s.sellOwned(+b.dataset.index); this.sel = null; break
       case 'split': s.split(+b.dataset.index); this.sel = null; break
       case 'combine': s.combine(+b.dataset.index, +b.dataset.with); this.sel = null; break
-      case 'buy': s.buyAndFit(+b.dataset.slot, b.dataset.socket); break
-      case 'stow': s.buyToInventory(+b.dataset.slot); break
+      case 'buy': s.buyAndFit(+b.dataset.slot, b.dataset.socket); this.sel = null; break
+      case 'stow': s.buyToInventory(+b.dataset.slot); this.sel = null; break
     }
     this.render()
   }
@@ -372,6 +373,15 @@ export class ServiceScreen {
               + btn('exchange', 'exchange', money + 1e-9 >= q.price, `data-index="${r.index}" data-socket="${socket}"`) + `</div>`
           }).join('')
           : dim('Nothing you carry fits here.'))
+      // FEAT-196 (owner, 2026-11-12): a tire (or wheel) moves to another corner in one job — the pairs trade.
+      const from = /^(tire|wheel)[FR][LR]$/.test(socket) ? CORNERS.findIndex(([c]) => socket.endsWith(c)) : -1
+      if (from >= 0) {
+        const q = s.cornerSwapQuote(), kind = socket.slice(0, -2)
+        h += `<div class="sv-sub">Swap corners <span class="sv-desc">tire and wheel move together</span></div>`
+          + CORNERS.map(([c, label], to) => to === from ? '' : `<div class="sv-row"><span class="sv-name">${label}</span>`
+            + bar(s.damage.get(kind + c), isFlat(s.damage, kind + c)) + `<span class="sv-cost">${cost(q.price, q.hours)}</span>`
+            + btn('swap', 'swap', money + 1e-9 >= q.price, `data-a="${from}" data-b="${to}" data-to="${kind + c}"`) + `</div>`).join('')
+      }
     }
     return h
   }
@@ -405,13 +415,17 @@ export class ServiceScreen {
         ? sockets.map(sk => btn('buy', where(sk), ok, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
         : sockets.length ? btn('buy', 'buy & fit', ok, `data-slot="${i}" data-socket="${sockets[0]}"`) : ''
       // FEAT-167 (owner, 2026-11-05: "too much detail text"): the bar says new or used, the prices stack
-      // on the right with it, and the description is two lines at most.
-      h += `<div class="sv-row wrap sv-shelf" data-slot="${i}">${chip(e.id)}<span class="sv-name">${shelfName(e)}`
+      // on the right with it, and the description is two lines at most. FEAT-196 (owner, 2026-11-12): the
+      // row is one button; its options open under it on select, so the pad has one stop per item.
+      const key = `s:${i}`, open = this.sel === key
+      h += `<button class="sv-line sv-shelf${open ? ' on' : ''}" data-act="sel" data-key="${key}" data-slot="${i}">${chip(e.id)}<span class="sv-name">${shelfName(e)}`
         + ` <span class="sv-desc sv-left">${e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}`}</span>`
-        + `<div class="sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</div></span>`
+        + `<span class="sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</span></span>`
         + `<span class="sv-price">${e.cond !== null ? `<span class="sv-cond">${bar(e.cond)}</span>` : ''}`
         + (sockets.length ? `<span>part: $${formatMoney(price)}</span><span>installation: $${formatMoney(fitQ.price)}</span>` : `<span>$${formatMoney(price)}</span>`)
-        + `</span><span class="sv-acts">${fit} ${btn('stow', this.store ? 'buy' : 'to inventory', money + 1e-9 >= price, `data-slot="${i}"`)}</span></div>`
+        + `</span></button>`
+        + (!open ? '' : `<div class="sv-panel sv-shelf" data-slot="${i}"><div class="sv-row"><span class="sv-acts">${fit} `
+          + `${btn('stow', this.store ? 'buy' : 'to inventory', money + 1e-9 >= price, `data-slot="${i}"`)}</span></div></div>`)
     })
     return h + `</div>` + (this.store ? '' : this._myItems())
   }
@@ -454,6 +468,10 @@ export class ServiceScreen {
             + btn('combine', 'combine', canBead, `data-index="${r.index}" data-with="${p.index}"`, ' ok') + `</div>`).join('')
       }
       if (fix.get(r.index)?.targets.length) h += `<div class="sv-sub">Repair</div>` + this._repair(key, cond, (t) => s.ownedQuote(r.index, t))
+      // FEAT-196: a mounted pair's wheel is straightened on the bench, still mounted.
+      if (m && s.ownedWheelTargets(r.index).length) {
+        h += `<div class="sv-sub">Repair the wheel</div>` + this._repair(`w:${r.index}`, r.wheelCond ?? 1, (t) => s.ownedQuote(r.index, t, true))
+      }
       if (r.flat) {
         const q = s.patchQuote()
         h += `<div class="sv-row"><span class="sv-name">Patch the flat</span><span class="sv-cost">${cost(q.price, q.hours)}</span>`
