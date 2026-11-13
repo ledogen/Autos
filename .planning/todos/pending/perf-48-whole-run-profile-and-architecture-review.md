@@ -12,7 +12,7 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Lever 1 on main; lever 2 measured void (Log, 2026-11-13: the map cost it named was lever 1's recalc, now PERF-46's). Owner: read the ranked lever list at the top of `.planning/perf/COST-MAP-2026-11.md` and pick. Levers 1–4 need no
+Lever 1 on main, its tail (1b: the 10 Hz prompts and the hidden debug HUD) on land/perf-48-l1b for the orchestrator; lever 2 measured void (Log, 2026-11-13: the map cost it named was lever 1's recalc, now PERF-46's). Owner: read the ranked lever list at the top of `.planning/perf/COST-MAP-2026-11.md` and pick. Levers 1–4 need no
 owner call (exact, invisible); 5–7 are one question each (Open questions). Perf lane then builds the picks, one ticket each.
 
 ## Summary
@@ -86,3 +86,9 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
 - 2026-11-13 (Perf lane): lever 2 void. `_drawRegion`'s ~59 ms/s was the forced style recalc its `ctx.font` (the frame's first) pays, not
   its dim fill: the fill is ≤ 0.09 ms/frame (≤ 5.5 ms/s); knocking `_drawRegion` out moves the recalc to the next font setter.
   Not built. Numbers, and the pan/settle probe it led to, in PERF-46.
+- 2026-11-13 (Perf lane): lever 1b, the tail. The POI / camp / stranded prompts write `innerHTML` only when the markup
+  changes (`_hudHtml`), and the hidden debug HUD is not written (`_writeDebugHud`; refreshed the moment it shows). Recalcs
+  13 → 5 /s driving (p50 10 → 2), 5.1 → 0 map, 3.1 → 0 parked; recalc ms/s 8.4 → 2.0 / 8.3 → 0 / 2.6 → 0; mainMi within
+  noise (A-B `perf-runs/p48-l1b`, 6/6 valid, fake audio). The 60/s driving seconds were CSS animations, every one (damage
+  pulse, reseat toast fade, HUD chip fades): visible, kept, cheap. Stills 0 px (`wip/perf-48-l1b/diff.txt`). No gate (DOM).
+  Numbers and sources in COST-MAP-2026-11.md § 1.
