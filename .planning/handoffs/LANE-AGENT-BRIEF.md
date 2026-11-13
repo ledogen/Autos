@@ -40,7 +40,7 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
 
 1. Commit everything (WIP is fine). Long jobs may keep running detached; name their logs.
 2. **Rewrite `/Users/ledogen/CodeShit/ledorepo/projects/cargame/lanes/<id>.handoff.md`** (the Write tool; no versions, nobody else writes
-   it). Then write ONE line, `stopped (<done|blocked>): <one line> · <HH:MM>`, to `lanes/<id>.now` in the same folder: the
+   it). Then write ONE line, `stopped (<done|blocked>): <one line> · <HH:MM>`, to `lanes/<id>.now` in the same folder (overwrite the whole file: it holds exactly one line, never append): the
    page shows it as the lane's "now" line. Touch no other file in that folder. The handoff is a resume
    prompt, NOT a diary: **≤ 40 lines, rewritten whole every time**. History belongs in tickets and commits. Sections:
    - `STATE` — worktree, branch, head, clean or not, servers / detached jobs running + their logs.
