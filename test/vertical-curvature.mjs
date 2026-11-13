@@ -57,7 +57,12 @@ const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // /m, across KFLAG. Junction: the ribbon frame turns the ring's mouth chords (pad surface ≤ 7.5 cm within 21 m of
 // nodes) and BUG-155's one-sided clamp re-shapes the mouth blends; ~9 mild 0.030–0.035 kinks cross KFLAG each way,
 // net −1, sharpest unchanged (0.092 /m).
-const CEIL = { open: 19, junction: 201 }
+// junction 201 → 202 (2026-11-12, PERF-39: Centerline.nearest's foot refine is the exact arc step, so the carve's arc
+// position off the centreline on a bend is exact — it was up to 9 cm off at the deck edge). No new kink: seed 11's
+// crest pair on g:2,1,2:3,1,1 track −2.5 (s 810.7 −0.035 /m and s 820.2 −0.041 /m) is the same surface within 2 mm on
+// main; one sample between them moved 0.0297 → 0.0305 /m, across KFLAG, and the 15 m merge now counts the pair as two
+// (2039.1, 710.6). Sharpest unchanged (0.092 /m).
+const CEIL = { open: 19, junction: 202 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5

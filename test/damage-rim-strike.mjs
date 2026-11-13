@@ -67,23 +67,28 @@ console.log('\n§2 measured: the two sources are priced on their OWN scales')
     console.log(`  ${mph} mph over a rock peaks the core at ${kN} kN → ${lost.toFixed(2)}% of the wheel`)
     ok(lost < 1, '...which leaves the rim essentially intact, as a real tire would')
   }
-  // Landing loads come through the ROAD path and are an order of magnitude larger, so they get
-  // their own yield and overload scale. Owner's target shape: a 1 m drop damages SPRINGS ONLY, a
-  // 2 m drop damages springs AND rim. Measured with test/collision-drop-lab.mjs.
+  // Landing and kerb loads come through the ROAD path and are an order of magnitude larger, so they
+  // get their own yield and overload scale. Owner's target (2026-11-11): the tire protects the wheel
+  // from everything softer than a 7 m drop; only harder hits bend it, and a 10 m drop writes it off.
+  // Peak road rim loads measured headless on the real stepPhysics (src/damage.js rimYieldRoadMult).
   const road = (d, n, corner = 0, steps = 3) => {
     const vs = { rimForce: [0, 0, 0, 0], rimForceRoad: [0, 0, 0, 0] }
     for (let i = 0; i < steps; i++) { vs.rimForceRoad[corner] = n; d.step(vs, P, DT) }
     vs.rimForceRoad[corner] = 0
     d.step(vs, P, DT)
   }
-  const oneM = fresh(); road(oneM, 0)          // a 1 m drop never bottoms the tire at all
-  ok(oneM.get('wheelFL') === 1, 'a 1 m drop puts NO load on the rim — the tire does not bottom, so lesser drops cost springs only')
-  const twoM = fresh(); road(twoM, 86200)      // 2 m drop, measured
-  const lost2 = (1 - twoM.get('wheelFL')) * 100
-  console.log(`  a 2 m drop puts 86.2 kN past full compression → ${lost2.toFixed(1)}% of the wheel`)
-  // 2026-10-15 (owner: wheels too hard to damage, not enough when they are): road yield 16 -> 14
-  // and write-off 90 -> 60 take this from ~3.6% to ~9% per corner.
-  ok(lost2 > 5 && lost2 < 20, '...which marks the rim without writing it off')
+  const lostAt = n => { const d = fresh(); road(d, n); return (1 - d.get('wheelFL')) * 100 }
+  for (const [what, kN] of [['a 5 m drop', 1.8], ['a 15 cm kerb at 45 mph, straight on', 79.2],
+                            ['a 15 cm kerb at 30 mph, any angle', 9.1]]) {
+    const lost = lostAt(kN * 1000)
+    ok(lost === 0, `${what} puts ${kN} kN on the rim → ${lost.toFixed(1)}% of the wheel: the tire protects it`)
+  }
+  const lost7 = lostAt(80900)
+  ok(lost7 > 0 && lost7 < 0.1, `a 7 m drop (80.9 kN) is the onset: ${lost7.toFixed(2)}% of the wheel`)
+  const lost8 = lostAt(128800)
+  ok(lost8 > 5 && lost8 < 30, `an 8 m drop (128.8 kN) marks the rim without writing it off: ${lost8.toFixed(1)}%`)
+  const lost10 = lostAt(261000)
+  ok(lost10 > 99, `a 10 m drop (261 kN) writes the wheel off: ${lost10.toFixed(1)}%`)
 }
 
 console.log('\n§3 nothing but a core contact can bend a rim')

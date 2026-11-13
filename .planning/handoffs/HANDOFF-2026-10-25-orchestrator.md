@@ -106,30 +106,33 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (machine clock Mon 11-09 ~00:25 PST; the owner said good night — overnight run; rewrite, don't append)
-- **Main** 438f3781: BUG-147 LANDED 09ea7d66 (smoke 26/26) · **BUG-140 + FEAT-193 LANDED 51a932bf** (smoke: "edge" flaked
-  once, then passed alone ×2 and in the full re-run; the re-run's one miss = pre-existing pad pick → BUG-157). Unpushed
-  since d7dc18e1 (origin). Never push. Spare's physics probes kept in main's wip/bug-140-probes/.
+## Current state (machine clock Mon 11-09 06:20 PST; the owner called a HOLD for the day at 80 % credit use; rewrite, don't append)
+- **PERF-37 FIRST (owner 11-11, high priority, before more playtesting):** Normal runs hot and slow on the Air;
+  the live CPU reads 4–6× the 11-09 baseline. Suspects and the test for each are in the ticket. The :3887 and :3890
+  servers were stopped 11-11 on the owner's word (only :8000 is up). The feat180-pick compare needs them restarted
+  from their worktrees. The :8000 Vite was restarted after `fsevents` was restored: it had been polling the repo at
+  ~30 % of a core (see PERF-37 § Side finding).
+- **HOLD.** No agent running, no detached job, no smoke. Do not spawn until the owner says go.
+- **Main** = this commit. Landed overnight 11-08/09, each smoked: BUG-146 44ae96fd · BUG-147 09ea7d66 · BUG-140 +
+  FEAT-193 51a932bf · BUG-157 f3a16777 (test-only) · BUG-153/154/155/149 eabc032c · BUG-152 root cause 2 b34a51e1
+  (batch smoke 26/26 on b34a51e1). Unpushed since d7dc18e1 (origin). Never push without the owner's word.
 - **Clock note**: the machine clock is PST; agents' system date runs a day ahead. Git/mtimes are the truth.
-- **Agents RUNNING**:
-  - A (22:35) — BUG-152 NOT closed: soak 6/6 wins but seed 336086702 resumed twice with a different POI roster
-    (2 in ~55, timing-dependent). Root-causing in CarGame-run-shape.
-  - Spare (00:25) — BUG-157 in CarGame-land-157 (smoke pad step: fallback giver's only offer is a paper route;
-    deterministic on 3397198020, also on 961311ec).
-- **B: landing request IN** — land/bug-155 @ 49c5e0be, merged with main 51a932bf by me → 6caadf81. Its own run: 83/83
-  green. I'm running the 58 gates both diffs reach (--only, log CarGame-land-155/wip/bug-153/gates-overlap-140.log).
-  Green → merge, smoke, close BUG-153/154/155 + BUG-149 (its lip now 12.8–17.6 cm, bar 0.25 m), remove CarGame-land-153
-  and CarGame-soak9pre. B's NEXT: FEAT-34 round 3 (feature/machine 1ed40292) — Chrome shots for the owner's look.
-  New BUG-156 (gore cliff 0.47 → 0.86 m at 1074499174 (737.7, 442.1), minor).
-- **Owner's photo page** for 153/154/155: https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8 (source scratchpad
-  road-seams/). Its one call: the ribbon-frame band bar 2.5 cm (measured 2.3; whole-lane worst 4.3, was 35.7).
-- **Page publish owed** (one publish): DROP owed hunger-numbers, bug67-miter-look, bug140-drop, side-slide-lever
-  (answered + recorded 33f1a202). ADD: bug140-feel (drive on :8000 — drops, rock props, rollovers dirt vs road; rebound
-  7–10 % flat, was 81 % at 5 m) + Spare's calls (FEAT-193 flank only? road 0.5 vs old 0.53? accept flat rebound?
-  fragile vase keeps 60 % not 43 % — accept?) + road-seams photos & band bar (link above). Closed rows: 146, 147, 140.
-- **Landing queue**: BUG-153+155 (+154, 149) → BUG-157 → BUG-152 fix → FEAT-34 round 3 (shots first).
-- **Waiting on the owner**: the lighting pick (round 5 land/feat180-next :3887 vs proto/lighting-redesign :3890);
-  tutorial-* ×5 (FEAT-184); the item page (FEAT-192 rarity ×4, V6/V8/tank, tarp → Lane C); the rest of `OWED`.
+- **READY TO LAND (first thing on resume)**: BUG-156 on land/bug-156 @ 34fc3e6f (/Users/ledogen/CodeShit/CarGame-land-156,
+  base main a60e60db; main since = docs only, re-check). src/road.js only (+43/−6): a ruled-blend leg limb is weighted by
+  its depth from the fold where it is born (`_limbWeight`, tie 0.5 m). Site 1074499174 (737.7, 442.1): 0.86 → 0.12 m;
+  census 8 seeds: 111 jumps gone, 0 new, 0 gore lines worse. Gates 73/73 green (wip/bug-156/gatesA.log + gatesB.log,
+  done 03:19). Photos in wip/bug-156/shots (sheet.mjs). Its agent was stopped by me after it stalled waiting on its own
+  log watchers — its lanes/b handoff may be a step behind; the branch's ticket is current. Branch also carries BUG-151
+  (already gone on main; only "add the seed to junction-edge-lip" left) and NEW BUG-158 (junction dirt steps outside the
+  ruled blend; a 2.9 m step stays). Land: merge --no-ff, smoke, close 156, ff lanes, remove the worktree.
+- **HELD for the owner's look**: FEAT-34 round 3 on land/feat-34 @ e49bc289 (/Users/ledogen/CodeShit/CarGame-land-feat34),
+  9/9 green; owed `feat34-r3-look` (https://claude.ai/artifact/P1x9vhCQsCMop6MjiLDZfe). "approve" → merge, smoke;
+  "without the tidy-up" → drop 347e45cb's change.
+- **Owed on the tracker (v203)**: feat180-pick (compare :3887 legacy round 5 vs :3890 rebuild round 3 — keep both
+  servers up; frame cost does not separate them, ab4c90b2), feat34-r3-look, road-seams-look (photos
+  https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8, band bar 2.5 cm), bug140-feel + feat193-calls, tutorial-* ×5, rest.
+- **Lanes idle, all waiting on the owner**: A (tutorial-*), B (feat34-r3-look; then BUG-158), Spare (feat180-pick),
+  C (an owner answer).
 - **Worktrees**: CarGame-bug67 needs `! git worktree remove --force /Users/ledogen/CodeShit/CarGame-bug67` from the
-  owner. Lighting pick keeps CarGame-f180-preview, -land-feat180, -land-feat180-dusk, -land-feat180-next.
-  In use: -land-153, -land-155 (B), -land-157 (Spare), -soak9pre, -spare-base.
+  owner. Lighting pick keeps CarGame-f180-preview, -land-feat180, -land-feat180-dusk, -land-feat180-next. In use:
+  -land-156, -land-feat34, -machine, -spare-base.

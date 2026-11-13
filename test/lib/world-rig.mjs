@@ -91,8 +91,9 @@ export async function buildWorld (seed, P, vs, { center = { x: 0, z: 0 }, radius
 
   const queryContacts = makeQueryContacts({
     params: P,
-    groundH: (x, z, y) => terr.analyticHeight(x, z, road.carveHint(x, z), y),
-    groundN: (x, z, y) => terr.analyticNormal(x, z, road.carveHint(x, z), y),
+    groundH: (x, z, y, hint) => terr.analyticHeight(x, z, hint !== undefined ? hint : road.carveHint(x, z), y),
+    groundN: (x, z, y, hint) => terr.analyticNormal(x, z, hint !== undefined ? hint : road.carveHint(x, z), y),
+    hintAt: (x, z) => road.carveHint(x, z),
     props: () => props,
     pois: () => pois,
     tunnelWall: (cx, cy, cz, r) => road.queryTunnelWallContact(cx, cy, cz, r, road.carveHint(cx, cz)),

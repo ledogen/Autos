@@ -1,7 +1,7 @@
 ---
 id: BUG-149
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-08
 source: Spare, junction-edge-lip run on 9 random seeds (identical on main and the BUG-146 branch)
@@ -61,3 +61,9 @@ Per-leg worst |physics − drawn| past the mouth:
 is welded to the pad's mouth chord (BUG-82), and the pad agrees with physics (±5 mm on the pad).
 
 **Now BUG-153** (major, minted 2026-11-08): the engine-wide ribbon tilt. This leg lip closes with it.
+
+## Resolution (2026-11-09)
+
+Landed on main as **eabc032c** (merge of land/bug-155 @ 6caadf81, BUG-153 + 154 + 155 together; affected 83/83 + the 58 gates shared with BUG-140 green; cdp-smoke 26/26 on b34a51e1). Before/after photo sheets: https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8 (copies in main wip/bug-153-155-shots/).
+
+BUG-149: its leg lip now reads 12.8–17.6 cm against the 0.25 m bar (Lane B, on the merged tree).

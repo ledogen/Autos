@@ -490,8 +490,22 @@ export const DAMAGE_PARAMS = {
   // The tire genuinely does not bottom below 2 m, so "lesser drops damage springs only" falls out
   // of the geometry rather than being thresholded in. Yield sits under the 2 m figure and the
   // overload scale puts a 2 m landing at about a tenth of a wheel.
-  rimYieldRoadMult: 14,   // x static wheel load (≈46 kN): ROAD/terrain contacts
-  rimFullRoadMult:  60,   // x static wheel load (≈200 kN) of OVERLOAD writes the wheel off
+  // 2026-11-11 (owner: "wheels should only fail from impact in exceedingly hard impacts (7+m) and the
+  // tire should protect them" — one wheel failed from airtime and one on the shoulder kerb in a single
+  // run). BUG-140 (the body moves within the step) had already moved the drop curve: the tire now first
+  // reaches the rim at 5 m, not 2 m. But kerbs still read against the old 46 kN yield, so a 15 cm
+  // road-edge step at 45 mph and 30° cost a wheel 22 %. The yield now sits at the 7 m drop's rim load,
+  // and the write-off at the 10 m drop's. Measured headless (scratch rig, the real stepPhysics + the
+  // FEAT-70 tire cylinder):
+  //     flat drop     5 m 1.8 kN · 7 m 81 kN · 8 m 129 kN · 9 m 192 kN · 10 m 261 kN
+  //                   → 0 / 0 / 14 / 49 / 100 % of a front wheel
+  //     15 cm kerb    10–30 mph at 10–90°: ≤ 9 kN → 0 %.  45 mph straight on 79 kN → 0 %.
+  //                   45 mph at 45° 215 kN → 65 %; 60 mph often a write-off.
+  // Uneven landings stay far below the yield: nose-down 15° from 5 m 16 kN, across the road edge 14 kN.
+  // Kerbs cannot be made gentler without also making the 10 m drop harmless: both are read on this one
+  // force scale (owner chose this edge, 2026-11-11).
+  rimYieldRoadMult: 24,   // x static wheel load (≈80 kN, a 7 m drop): ROAD/terrain contacts
+  rimFullRoadMult:  54,   // x static wheel load (≈180 kN) of OVERLOAD writes the wheel off (a 10 m drop)
   rimFullMult:    400,    // x static wheel load (≈1.3 MN) of OVERLOAD writes the wheel off (DEBRIS; see R-02 note)
   rimStrikeExp:   1.5,    // between linear and square — plastic work rises faster than the overload
 

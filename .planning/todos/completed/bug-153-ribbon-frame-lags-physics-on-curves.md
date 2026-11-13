@@ -1,7 +1,7 @@
 ---
 id: BUG-153
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-08
 source: Lane B, BUG-149's leg lip (seed 1074499174)
@@ -175,3 +175,7 @@ did NOT get steeper. Seed 1074499174 within 900 m: 85 → 82 %, 39 → 37 %, 26 
 
 **Photos** (headless Chrome, both trees, same seed / camera / frame, potholes off in both via the module served):
 `wip/bug-153/shots/sheets/sheet-{154,155,gores,153}.jpg` (+ `.html`). Tool: `wip/bug-153/shots/physics-shots.mjs`.
+
+## Resolution (2026-11-09)
+
+Landed on main as **eabc032c** (merge of land/bug-155 @ 6caadf81, BUG-153 + 154 + 155 together; affected 83/83 + the 58 gates shared with BUG-140 green; cdp-smoke 26/26 on b34a51e1). Before/after photo sheets: https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8 (copies in main wip/bug-153-155-shots/).
