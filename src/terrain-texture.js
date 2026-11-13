@@ -108,6 +108,11 @@ function _tex(bytes, size) {
   t.flipY = false               // row index grows with world +Z, matching the normal encoding
   t.colorSpace = THREE.NoColorSpace   // modulation factors / normal vectors are data, never sRGB
   t.needsUpdate = true
+  // PERF-41: the map's average texel (what its top mip holds) — the terrain's far ground reads this in place of a tap.
+  const m = [0, 0, 0, 0]
+  for (let i = 0; i < bytes.length; i += 4) for (let c = 0; c < 4; c++) m[c] += bytes[i + c]
+  const n = 255 * bytes.length / 4
+  t.userData.mean = new THREE.Vector4(m[0] / n, m[1] / n, m[2] / n, m[3] / n)
   return t
 }
 

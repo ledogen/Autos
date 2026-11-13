@@ -34,6 +34,8 @@ import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural f
 import { height, makeTerrainNoise, CHUNK_SIZE, GRID_SAMPLES, HEIGHT_PARAM_KEYS } from './terrain-height.js'   // THE height function — the Worker imports the same module
 import { makeSurfaceTextures, makeDetailNoiseTexture, _hexLin } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
 let _detailNoiseTex = null   // PERF-41: one bake per page, shared by every terrain rebuild (seed changes)
+// PERF-41: the surface maps' average texels, in the shader's uSurfMean order (albedo G D R, then normal G D R).
+const _surfMeans = (s) => [s.grass.map, s.dirt.map, s.rock.map, s.grass.normalMap, s.dirt.normalMap, s.rock.normalMap].map(t => t.userData.mean)
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 import { smooth01 as _smooth01 } from './seed.js'
@@ -147,6 +149,10 @@ export class TerrainSystem {
             uDetailScale: { value: params.terrainDetailScale    ?? 1.0  },
             uNoiseScale:  { value: params.terrainNoiseScale      ?? 0.3 },
             uNoiseTex:    { value: _detailNoiseTex ??= makeDetailNoiseTexture() },   // PERF-41: the fbm + its bump differences, baked once per page
+            uNoiseMean:   { value: _detailNoiseTex.userData.mean },
+            // PERF-41 distance fade (m from the camera): full surface detail inside x, every surface/noise read
+            // eased to its map's average texel by y, and not taken at all beyond it.
+            uDetailFar:   { value: new THREE.Vector2(params.terrainDetailFarStart ?? 150, params.terrainDetailFarEnd ?? 220) },
             uMottle:      { value: params.terrainMottleStrength  ?? 0.6 },
             uBump:        { value: params.terrainBumpStrength    ?? 0.7  },
             uCliffLo:     { value: params.roadCliffSlopeLo       ?? 0.3  },
@@ -185,6 +191,7 @@ export class TerrainSystem {
             uSurfAlbG: { value: this._surfTex.grass.map }, uSurfNrmG: { value: this._surfTex.grass.normalMap },
             uSurfAlbD: { value: this._surfTex.dirt.map },  uSurfNrmD: { value: this._surfTex.dirt.normalMap },
             uSurfAlbR: { value: this._surfTex.rock.map },  uSurfNrmR: { value: this._surfTex.rock.normalMap },
+            uSurfMean: { value: _surfMeans(this._surfTex) },   // PERF-41: the six maps' average texels (far ground)
             uSurfScale:  { value: new THREE.Vector3(
                 1 / (params.terrainTexTileGrass ?? 1.6),
                 1 / (params.terrainTexTileDirt  ?? 2.4),
@@ -264,7 +271,7 @@ export class TerrainSystem {
                 // PERF-41: the detail noise is BAKED (terrain-texture.js makeDetailNoiseTexture: R = fbm, GB = the bump's
                 // finite differences), read once at <color_fragment> for the mottle and kept for the rock bump at
                 // <normal_fragment_begin>; the biome dither's coarse octave reuses it while the two scales match.
-                'uniform sampler2D uNoiseTex;\nvec4 tdT = vec4(0.0, 0.0, 0.5, 0.5);\n' + shader.fragmentShader
+                'uniform sampler2D uNoiseTex;\nuniform vec4 uNoiseMean, uSurfMean[6];\nuniform vec2 uDetailFar;\nvec4 tdT = vec4(0.0, 0.0, 0.5, 0.5);\n' + shader.fragmentShader
             // FEAT-40: cut the skin at tunnel mouths — capsule test in world space, then discard.
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <clipping_planes_fragment>',
@@ -304,7 +311,14 @@ export class TerrainSystem {
                 // Engineered faces (vSurf.w) keep their own cut/fill colour.
                 float ts_rockW = vSurf.z * (1.0 - vSurf.w);
                 if (uDetailScale > 0.0) {
-                    tdT = texture2D(uNoiseTex, vWorldPos.xz * (uNoiseScale / 64.0));
+                    // PERF-41 distance fade: every surface/noise read eases to its map's average texel (the top mip's
+                    // value, which distant ground converges to anyway) over uDetailFar and is skipped beyond it. The
+                    // reads sit in branches, so their mip derivatives are taken here, outside them (textureGrad).
+                    float ts_far = smoothstep(uDetailFar.x, uDetailFar.y, length(vViewPosition));
+                    vec2 ts_wx = dFdx(vWorldPos.xz), ts_wy = dFdy(vWorldPos.xz);
+                    float td_k = uNoiseScale / 64.0;
+                    tdT = uNoiseMean;
+                    if (ts_far < 1.0) tdT = mix(textureGrad(uNoiseTex, vWorldPos.xz * td_k, ts_wx * td_k, ts_wy * td_k), uNoiseMean, ts_far);
                     float td_n = tdT.r;
                     diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
                     // FEAT-84: height-weighted three-way surface blend. Each zone's map carries an
@@ -315,9 +329,23 @@ export class TerrainSystem {
                     // scaled away — an additive form let rock plates surface in every dirt hollow).
                     if (uSurfOn > 0.5) {
                     vec2 ts_p = vWorldPos.xz;
-                    vec4 ts_g = texture2D(uSurfAlbG, ts_p * uSurfScale.x);
-                    vec4 ts_d = texture2D(uSurfAlbD, ts_p * uSurfScale.y);
-                    vec4 ts_r = texture2D(uSurfAlbR, ts_p * uSurfScale.z);
+                    vec4 ts_g = uSurfMean[0], ts_d = uSurfMean[1], ts_r = uSurfMean[2];
+                    vec4 ts_nG = uSurfMean[3], ts_nD = uSurfMean[4], ts_nR = uSurfMean[5];
+                    float ts_df = uNoiseMean.r, ts_dc = uNoiseMean.r;
+                    if (ts_far < 1.0) {
+                        vec3 ts_s3 = uSurfScale; float ts_dk = uBiomeDither.y / 64.0;
+                        ts_g  = mix(textureGrad(uSurfAlbG, ts_p * ts_s3.x, ts_wx * ts_s3.x, ts_wy * ts_s3.x), ts_g, ts_far);
+                        ts_d  = mix(textureGrad(uSurfAlbD, ts_p * ts_s3.y, ts_wx * ts_s3.y, ts_wy * ts_s3.y), ts_d, ts_far);
+                        ts_r  = mix(textureGrad(uSurfAlbR, ts_p * ts_s3.z, ts_wx * ts_s3.z, ts_wy * ts_s3.z), ts_r, ts_far);
+                        ts_nG = mix(textureGrad(uSurfNrmG, ts_p * ts_s3.x, ts_wx * ts_s3.x, ts_wy * ts_s3.x), ts_nG, ts_far);
+                        ts_nD = mix(textureGrad(uSurfNrmD, ts_p * ts_s3.y, ts_wx * ts_s3.y, ts_wy * ts_s3.y), ts_nD, ts_far);
+                        ts_nR = mix(textureGrad(uSurfNrmR, ts_p * ts_s3.z, ts_wx * ts_s3.z, ts_wy * ts_s3.z), ts_nR, ts_far);
+                        // the dither's two octaves (the coarse one reuses the mottle read while the scales match)
+                        ts_dc = uBiomeDither.y == uNoiseScale ? td_n
+                              : mix(textureGrad(uNoiseTex, ts_p * ts_dk, ts_wx * ts_dk, ts_wy * ts_dk).r, ts_dc, ts_far);
+                        float ts_fk = ts_dk * 3.7;
+                        ts_df = mix(textureGrad(uNoiseTex, (ts_p * uBiomeDither.y * 3.7 + 17.0) / 64.0, ts_wx * ts_fk, ts_wy * ts_fk).r, ts_df, ts_far);
+                    }
                     // Steep ground: the rock zone is ALSO projected from the side (the plane facing
                     // the surface normal — ZY on ±X faces, XY on ±Z faces) and the two are blended
                     // by steepness, so a cliff keeps fragment shapes instead of streaking the
@@ -335,15 +363,15 @@ export class TerrainSystem {
                     // pixels that the implicit LOD needs may not run.
                     vec2 ts_psX = dFdx(ts_ps), ts_psY = dFdy(ts_ps);
                     vec4 ts_rs = vec4(0.0), ts_nRs = vec4(0.5);
-                    if (ts_steep > 0.0) { ts_rs = textureGrad(uSurfAlbR, ts_ps, ts_psX, ts_psY); ts_nRs = textureGrad(uSurfNrmR, ts_ps, ts_psX, ts_psY); }
+                    if (ts_steep > 0.0) {
+                        ts_rs = uSurfMean[2]; ts_nRs = uSurfMean[5];
+                        if (ts_far < 1.0) { ts_rs = mix(textureGrad(uSurfAlbR, ts_ps, ts_psX, ts_psY), ts_rs, ts_far); ts_nRs = mix(textureGrad(uSurfNrmR, ts_ps, ts_psX, ts_psY), ts_nRs, ts_far); }
+                    }
                     ts_r = mix(ts_r, ts_rs, ts_steep);
                     // Normal maps, sampled here so their .b — the height RANK (a true quantile,
                     // terrain-texture.js _rankOf) — can rank texels for the coverage rules below;
                     // .xy feed the relief at the end of the block. The absolute height ts_*.a stays
                     // the input of the height contest and the joint test.
-                    vec4 ts_nG = texture2D(uSurfNrmG, ts_p * uSurfScale.x);
-                    vec4 ts_nD = texture2D(uSurfNrmD, ts_p * uSurfScale.y);
-                    vec4 ts_nR = texture2D(uSurfNrmR, ts_p * uSurfScale.z);
                     float ts_rq = mix(ts_nR.b, ts_nRs.b, ts_steep);   // rock rank, side-projected on steep faces like ts_r
                     // Rock by COVERAGE, not by contest (owner 2026-09-25): the rock share s admits
                     // s^γ of the tile, and the map's own heights rank the texels — tallest fragments
@@ -352,8 +380,7 @@ export class TerrainSystem {
                     // Dithered rock share: two noise octaves (~8 m and ~2 m) push the share up
                     // and down across the boundary band; the s·(1−s) weight pins the pure ends.
                     float ts_s0 = clamp(vSurf.z, 0.0, 1.0);
-                    float ts_dc = uBiomeDither.y == uNoiseScale ? td_n : texture2D(uNoiseTex, ts_p * (uBiomeDither.y / 64.0)).r;
-                    float ts_dn0 = ts_dc * 0.7 + texture2D(uNoiseTex, (ts_p * uBiomeDither.y * 3.7 + 17.0) / 64.0).r * 0.3 - 0.5;
+                    float ts_dn0 = ts_dc * 0.7 + ts_df * 0.3 - 0.5;
                     float ts_s = clamp(ts_s0 + ts_dn0 * uBiomeDither.x * 4.0 * ts_s0 * (1.0 - ts_s0) * 2.0, 0.0, 1.0);
                     // Dirt floor in PATCHES (owner 2026-09-28: "a small baseline of rocks poking through,
                     // strongly amplified by the rock biome"): the same dither field scales the floor
@@ -1943,6 +1970,7 @@ export class TerrainSystem {
             U.uSurfAlbG.value = this._surfTex.grass.map; U.uSurfNrmG.value = this._surfTex.grass.normalMap
             U.uSurfAlbD.value = this._surfTex.dirt.map;  U.uSurfNrmD.value = this._surfTex.dirt.normalMap
             U.uSurfAlbR.value = this._surfTex.rock.map;  U.uSurfNrmR.value = this._surfTex.rock.normalMap
+            U.uSurfMean.value = _surfMeans(this._surfTex)
             for (const z of ['grass', 'dirt', 'rock']) { old[z].map.dispose(); old[z].normalMap.dispose() }
         }
     }
