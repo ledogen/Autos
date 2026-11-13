@@ -49,6 +49,20 @@ bodies welded to the asking body, and Step 0.5 asks with the chassis. A load wel
 Gate: freight-strap §7 — a block inside the RR wheel's sphere level with the hub (normal horizontal) is pushed
 loose (6 pushes) and never welded (0); with the skip removed the welded block takes 6.
 
-**Follow-up, not fixed here:** the same fat sphere reaches LOOSE bed cargo between the wheelhouses (firewood, the
-loose tire), held off only by the same filter. Clipping the debris query to the tire's width (the rim core is
-already a disk for this reason) is the honest fix; it changes rock contact, so it wants its own ticket.
+**Cargo soaks** (`test/drive-soak.mjs --seeds=2 --km=4 --cargo=sculptureB`, two runs, 4 random seeds, 4 km of road
+each). They were started before the `cargotire` detector existed, so they count only `cargo` (the load more than
+10 mm off its seat):
+
+| run · seed | findings | worst cargo offset |
+|---|---|---|
+| r1 · 1328188534 | cargo 5 | 92 mm at 18.5 m/s |
+| r1 · 724783119 | cargo 13 | 174 mm at 12.6 m/s |
+| r2 · 1236227223 | strut 3 · jolt 2 · cargo 3 | 90 mm at 15.0 m/s |
+| r2 · 198355854 | jolt 1 · cargo 10 | 174 mm at 13.2 m/s |
+
+The first seeds' sites were read as autopilot wrecks. The second seeds' captures are on the road, not just after a
+re-seat, and have not been replayed. Logs and captures: `wip/bug-161/soak/r1.log`, `r2.log`, `r1/`, `r2/` in the
+CarGame-machine worktree.
+
+**Follow-up, not fixed here:** BUG-165. The same fat sphere reaches LOOSE bed cargo between the wheelhouses (firewood,
+the loose tire), held off only by the same filter.
