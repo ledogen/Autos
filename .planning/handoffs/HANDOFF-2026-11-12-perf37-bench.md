@@ -1,87 +1,62 @@
-# Handoff 2026-11-12 — PERF-37 branch: the PERF-40 bench, and what it found
+# Handoff 2026-11-12 (evening) — PERF-37 branch: PERF-42 spikes, the PERF-40 bench's second pass
 
 **Worktree** `/Users/ledogen/CodeShit/CarGame-perf37` · **branch** `perf/perf-37-tire-map` (off main 07581275, not
-landed) · **dev server** :8039 (a background Vite from the earlier session; the bench starts its own Vites, so it
-does not need it). Window title should read `CarGame-perf37 :8039`.
+landed) · **dev server** :8039 (background Vite; the bench starts its own). Window title `CarGame-perf37 :8039`.
 
-Also on disk: `/Users/ledogen/CodeShit/CarGame-nov01`, a detached worktree at main 9a7e3d71 (the Nov 01 build) with a
-cloned `node_modules`, kept for comparisons. Main is clean at 07581275.
+Other worktrees this work made or uses:
+- `/Users/ledogen/CodeShit/CarGame-main0758` — detached at main 07581275 with cloned `node_modules`: the pinned A side of
+  the bench A/B (nothing can move under its Vite). Keep while A/Bs against 07581275 are wanted.
+- `/Users/ledogen/CodeShit/CarGame-nov01` — detached at 9a7e3d71 (Nov 01), for the third column. Owner 11-12: two
+  builds only for the rerun; still on disk.
 
-## Order of work (owner, 2026-11-12: "b first then a so we dont have to rerun twice")
+## What happened this session (details: the PERF-42 ticket)
 
-1. **(b) PERF-42 — the remaining tread-solve physics spikes.** Ticket `.planning/todos/pending/perf-42-…`: the data,
-   the plan, the acceptance. Find WHERE the spike seconds happen, fix at the root, keep the physics gates green.
-2. **(a) PERF-40 bench fixes**, so the bench can see both bugs:
-   - **Spike metrics in every report:** per phase, the p99 second and the share of seconds over 100 ms/s for
-     physics, and the worst postStream second for the map. Use only moving seconds for the drive: v > 3 m/s, plus
-     both neighbours, so re-seats are excluded. Copy the snippet logic from this handoff's § Numbers.
-   - **A harder map script.** Zoom right out to the whole map. Pan fast into ground the map has not drawn yet. Zoom
-     back in. The current gentle pan never triggered main's repaint stall (920–960 ms/s in the owner's session 2),
-     although it did catch Nov 01's (623 ms/s, 38 fps).
-   - Position (`x, z`) in each sample. PERF-42 needs it first, so do that part during (b).
-3. **Then ONE rerun:** main 07581275 vs the branch (with PERF-42 in it), three seeds, `--reps=2`. It must show:
-   - the PERF-38 map repaint fix (map p99 down);
-   - the PERF-38 render skip (GPU cycles under the map −90 %, already seen);
-   - PERF-42's spike share down to about Nov 01's 4 %.
-   Add Nov 01 as `--c` if the owner wants the third column again.
+1. **Shoulder fix** (`road.js _hintHolds` / `_resolveRoadSurface` `solo` / `_soloPassFree`, `HINT_REACH_M`): off the
+   deck, a wheel's one hub resolve is reused for samples within 1 m when no other carve field reaches. Headless shoulder
+   wheel 117 → 90 µs. **Not the spike** (the rerun showed it), but real.
+2. **PERF-39's reuse was inexact (48 mm)** in BUG-154 departure bands — the band frame reused as a straight line.
+   Fixed (`_bandRefine` returns `lo = hi = 0`). New gate `test/hint-reuse.mjs` (≤ 2.5 mm, solo coverage ≥ 30 %).
+3. **The spike's real cause: the deg-2 connector carve** (`_runGradeAt`, twice per height sample near a kink). At the
+   bench's spike positions a wheel query cost 241 µs vs 42 calm. Fixed: PERF-25 windowed projection (bit-identical) +
+   exact `_refineFoot` from the polyline foot instead of a ±20 m grid search (same foot on 3,664 leg feet; heights
+   move ≤ 1.3e-13 m). Spike-position median 241 → 133 µs.
+4. Bench (PERF-40): per-second spike metrics in every report; a harder map script (zoom out, fast pan, zoom in); a
+   60 s edge leg (autopilot `lane` 5 m); validity bar 2.5 km (owner); `x, z, lat` per sample; `--probe` resolves.
 
-## State of the bench (PERF-40)
+Gates: the 72 `road.js` affects are green after each change. `fingerprint-world` vs a2e95e87: only `surface` differs
+(5 windows, exact-bit hash; the change is float noise), carve/tiles identical.
 
-- `test/playtest-bench.mjs`: plays story mode unattended in headless Chrome on the real M4 GPU at the owner's canvas.
-  Phases: drive 300 s (one off-road leg) → re-seat at the drive's start pose → map open 30 s → parked 30 s.
-- `test/lib/ioreport.py`: sudo-less CPU / GPU / DRAM watts plus GPU active cycles. `--check` self-tests it.
-- `test/lib/autopilot.mjs`: a PURE autopilot (state in, controls out). The owner wants it to grow into in-game AI
-  cars, so keep it engine- and DOM-free. `node test/lib/autopilot.mjs` self-checks (PASS).
-- The ticket `.planning/todos/pending/perf-40-…` records the design, the autopilot module, and **six story-mode traps
-  for an unattended driver**, each now handled:
-  1. a seat is a dead, parked truck;
-  2. a seat keeps the damage, so a recovery is a tow restoring the run's STARTING damage;
-  3. dialogues swallow every key;
-  4. the region is walled;
-  5. physics at rest depends on the spot;
-  6. a brake held at rest is reverse.
-- CLAUDE.md § Diagnostic tools and LAYOUT.md already name the bench.
-- **Pinned seeds** 1768572700, 17535907, 759313244. 711969014 was swapped out: it failed on every build before traps
-  2–3 were fixed, and is worth retrying as an autopilot test.
+## Numbers (perf-runs/, gitignored)
 
-## Numbers (results in `perf-runs/2026-11-12-*`, gitignored, in this worktree)
+Physics ms per moving second, pooled:
 
-- `perf-runs/2026-11-12-ab-branch-vs-main/`: an A/B with reps 2. It ran before the fixed park spot and the tow fix,
-  so its map and park phases are not comparable; its drive numbers are fine.
-- `perf-runs/2026-11-12-3way-branch-main-nov01/`: the clean three-way run. 7 of 9 sessions valid; seed 17535907
-  fell short of 3 km on main (2.6) and Nov 01 (2.86).
-- `perf-runs/2026-11-12-owner-session3-powermetrics.txt`: the owner's session-3 `powermetrics`. "GPU Power" appears
-  twice per sample in this file; halve when averaging.
+| | p50 | p95 | p99 | worst | > 100 ms/s |
+|---|---|---|---|---|---|
+| main 07581275 (rerun, 6 sessions) | 61 | 122 | 171 | 255 | 8.1 % |
+| branch, shoulder fix (rerun, 6) | 52 | 137 | 184 | 270 | 10.1 % |
+| branch + connector fix (3 seeds × 1, `2026-11-12-branch-connector-fix`) | 54 | 118 | 158 | 208 | **7.7 %** |
+| Nov 01 (earlier run, no edge leg) | 52 | 90 | 129 | 153 | 4 % |
 
-**Averages, 2 seeds valid on all builds** (drive / map open / parked):
-- Main thread: Nov 01 192 / 190 / 174 ms/s; main 203 / 185 / 166; branch 201 / **146** / 164.
-- GPU active cycles: Nov 01 774 / 826 / 770 Mcyc/s; main 806 / 807 / 747; branch 818 / **81** / 820.
-- Physics while driving: Nov 01 56, main 66, branch 64 ms/s.
-- CPU power while driving: 0.77 / 0.83 / 0.80 W. Triangles: 716 k / 897 k / 883 k.
-- The owner's session 3 (branch, played): main thread 192 ms/s, GPU ~900 Mcyc/s, CPU 1.15 W, consistent with the
-  bench. The CPU is higher because a profiler was attached and the window was visible.
+The edge leg (added this session) puts more shoulder/junction time in every drive than the Nov 01 run had, so that
+row is not the same drive. Map: the harder script did NOT reproduce main's repaint stall (main's worst 54–62 ms/s
+vs 920–960 in the owner's session 2); the branch's GPU-under-map saving holds (52–66 vs 765–816 Mcyc/s).
 
-**Per-second spikes** are what matter for these bugs. Moving seconds only:
-- Physics median: Nov 01 52, main 61, branch 52.
-- Seconds over 100 ms/s: Nov 01 4 %, main 10 %, branch 10 %. Worst second: 153 / 325 / 303.
-- Map postStream, worst second after the first 3 s: Nov 01 623 (38 fps), main 98, branch 80.
-- The computation: read every `<build>-<seed>-<rep>.json` sample; drive seconds where this sample and both neighbours
-  have v > 3; `cpu['frame.physics']`; map samples `.slice(3)`.
+## What is left (PERF-42 not closed — acceptance wants ≤ 5 %)
 
-**Lesson (saved to memory):** compare per-second spikes, not phase averages. Both of these bugs were spikes, and the
-first summary's averages hid them. GPU watts from ioreport swing from 0.9 to 3.6 W for the same state, so never
-compare them; compare GPU active cycles.
+At the remaining spike positions the ground query is still 110–300 µs (calm 33–42). Profiled at seed 17535907
+(−827, 704), a junction pad in a departure band: 43.5 resolves a query (band frames now resolve per sample, the price
+of item 2), `_junctionPadCarve` 23 %. Seven spike seconds there have a CHEAP ground query (20–36 µs): another cost.
+Each next lever is a carve-core design change — the owner's call which, if any:
+- reuse in a band with a per-sample `_bandRefine` (exact, no cell scan);
+- rival weights computed per sample in `_carveCrossSectionBlended`, so a hint holds near junctions;
+- a cheaper `_junctionPadCarve` / `_carveDirtY` inter-leg blend.
+Tools: `wip/perf-42/spots.mjs <seed> <run dir> <build letter>` (query cost at a run's spike vs calm positions),
+`prof-spot.mjs` + `under.cjs` (profile one, self time under `queryContacts`), `lat.mjs`, `foot.mjs`, `ab-surface.mjs`.
 
-## Open questions for the owner (ask after the clear)
+## Open questions for the owner
 
-1. **Seed 17535907** sits on the 3 km validity bar (2.6–3.5 km over six sessions): its roads are slow. Keep it and
-   lower the bar to 2.5 km (8.3 m/s average), or swap in a new random seed?
-2. **A kerb-hugging leg in the drive?** The autopilot stays mid-lane, so the bench under-exercises the kerb and edge
-   contact where BUG-70 / PERF-39 lived. Add a leg that drives on the road edge for about 60 s?
-3. **Record the baseline** (`--record`, appending to `.planning/perf/history.jsonl`) once (a) lands, or wait until the
-   branch is on main?
-4. **Land the branch on main?** It holds PERF-38 (map), PERF-39 (tire) and PERF-40 (bench). It has been offered and
-   not yet asked for. Gates were green at the last full run; a `test:all` is owed before landing.
-5. **The Nov 01 worktree**: keep it for the rerun's third column, or remove it?
-6. Optional: GPU watts from ioreport are noisy. A 2-minute `sudo powermetrics` beside one bench session would show
-   whether the GPU energy channel is read right. Only worth it if the owner wants watts in reports.
+1. Which of the three levers above, or close PERF-42 at 7.7 % (below main's 8.1 %) and ticket the rest?
+2. Record the baseline (`--record`) now or after landing?
+3. Land the branch (PERF-38 map, PERF-39 tire, PERF-40 bench, PERF-42 so far)? A `test:all` is owed first.
+4. Remove `CarGame-nov01` / `CarGame-main0758`?
+5. Optional: `sudo powermetrics` beside one session, only if watts are wanted in reports.
