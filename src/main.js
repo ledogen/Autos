@@ -47,7 +47,7 @@ window.__view = placeFreecam
 window.__props = () => propSystem
 window.__renderer = () => renderer
 window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase heading after a freecam exit (R-11)
-import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
+import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout, syncDebugLive } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playSputterPop, setCabView, setInTunnel, setTunnelReverb } from './engine-audio.js'
@@ -7361,9 +7361,14 @@ function _updateEnergyMeter () {
     }
   }
   if (!on) return
-  const e = daySystem.energyH()
-  _emEls.strip.style.transform =
-    `translateX(${EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H}px)`
+  // PERF-48: each strip is written only when its drawn DEVICE pixel moves. Any inline-style write dirties the page's
+  // style, and the next style-dependent call in the frame (the cluster's ctx.font) then pays a whole-document style
+  // recalculation for it, ~0.3 ms. The strips creep ~0.8 device px a second, so a write every frame was 60 recalcs a
+  // second for under a pixel of motion. Snapped, the bar steps one device pixel at a time (crisp edges, never a
+  // fractional one) and writes about once a second.
+  const e = daySystem.energyH(), dpr = window.devicePixelRatio
+  const ex = Math.round((EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H) * dpr) / dpr
+  if (ex !== _emX) { _emX = ex; _emEls.strip.style.transform = `translateX(${ex}px)` }
   const st = daySystem.stage()
   if (st !== _emStage) {
     _emStage = st
@@ -7381,10 +7386,11 @@ function _updateEnergyMeter () {
   }
   if (hw) {
     const top = _emEls.hTop, left = Math.min(top, Math.max(-DAY_PARAMS.hungryRampH, daySystem.fedLeftH()))
-    _emEls.hStrip.style.transform = `translateX(${EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H}px)`
+    const hx = Math.round((EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H) * dpr) / dpr
+    if (hx !== _hmX) { _hmX = hx; _emEls.hStrip.style.transform = `translateX(${hx}px)` }
   }
 }
-let _hmWord
+let _hmWord, _emX, _hmX   // the strips' last written translateX (PERF-48)
 /** The hunger strip's full end: the longest hold any meal gives (meals never stack past it — DaySystem.eat). */
 const _hmTopH = () => Math.max(DAY_PARAMS.mealHoldH, ...Object.values(ITEMS).map(i => i.hold ?? 0))
 function _hmSeg (word, hours) {
@@ -8059,6 +8065,7 @@ addLightGui(_gui)
 // User pref: every lil-gui section collapsed by default (the root panel stays open). Runs after ALL
 // folders exist (debug + props), so it covers debug.js's folders without editing debug.js.
 _gui.foldersRecursive().forEach((f) => f.close())
+syncDebugLive(_gui)   // PERF-48: likewise after ALL folders — the hidden panel's live read-outs stop until it shows
 
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
