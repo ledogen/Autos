@@ -448,7 +448,10 @@ export class TerrainSystem {
                 // far cascade is the light that models terrain-scale sun occlusion, and baked prop
                 // shadows are terrain-scale sun occlusion, so they belong to the same light.
                 rsBakedShade = 1.0;
-                if (uShadowStrength > 0.0) {
+                // QUAL-18: the baked shadow fades out with view distance (LOD dissolve). PERF-41: the fade is taken
+                // FIRST and the taps skipped past its end (beyond ~240 m, much of a vista) — they would be ×0 there.
+                float sh_fade = 1.0 - smoothstep(uShadowFadeStart, uShadowFadeEnd, length(vViewPosition));
+                if (uShadowStrength > 0.0 && sh_fade > 0.0) {
                     vec2 sh_cf   = vWorldPos.xz / ${CHUNK_SIZE.toFixed(1)};
                     vec2 sh_tile = mod(floor(sh_cf), uShadowAtlasN);
                     vec2 sh_in   = fract(sh_cf);
@@ -463,8 +466,6 @@ export class TerrainSystem {
                         sh_a += texture2D(uShadowAtlas, (sh_tile + sh_c) / uShadowAtlasN).r;   // atlas is R8 (PERF-21)
                     }
                     sh_a *= 0.2;                                        // average of the 5 taps
-                    // QUAL-18: fade the baked shadow out with view distance (LOD dissolve).
-                    float sh_fade = 1.0 - smoothstep(uShadowFadeStart, uShadowFadeEnd, length(vViewPosition));
                     rsBakedShade = 1.0 - min(1.0, sh_a * uShadowStrength * uShadowLightGain) * sh_fade;
                 }`
             )
