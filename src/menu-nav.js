@@ -158,7 +158,9 @@ function onKey (e) {
     return
   }
   const dx = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0, dy = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
-  const next = nearest(items, cur, dx, dy)
+  // FEAT-196: a card may order its own items along a line (the damage screen's axles) — `navStep(el, dx, dy)`
+  // on the container returns the next item, or nothing to fall back to the spatial nearest.
+  const next = c.navStep?.(cur, dx, dy) ?? nearest(items, cur, dx, dy)
   if (next) highlight(next)
   else if (dy) highlight(items[(items.indexOf(cur) + dy + items.length) % items.length])
   curIdx = items.indexOf(cur)
