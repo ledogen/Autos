@@ -63,6 +63,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { buildWorld } from './lib/world-rig.mjs'
 import { ackermann } from './lib/physics-replay.mjs'
 import { strapPose, inBedWell } from '../src/debris.js'
+import { feltG } from '../src/fragile.js'
 import { FREIGHT } from '../data/freight.js'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
@@ -167,18 +168,28 @@ function makeStrap (w, vs) {
     v.copy(p).sub(vs.position).cross(vs.angularVelocity).negate().add(vs.velocity)   // ω × r + v
     st.body = w.engine.createBody({ type: 'dynamic', position: p, quaternion: vs.quaternion, linearVelocity: v, angularVelocity: vs.angularVelocity })
     w.engine.addHull(st.body, new Float32Array(pts), { density: row.massKg / (sx * sy * sz), friction: 0.6, restitution: 0.1, group: GROUP_DEBRIS })
-    w.engine.createWeldJoint(w.chassis, st.body, p)
+    st.joint = w.engine.createWeldJoint(w.chassis, st.body, p)
   }
   const local = (out) => { w.engine.getTransform(st.body, p, q); return out.copy(p).sub(vs.position).applyQuaternion(qi.copy(vs.quaternion).invert()) }
   const r = new THREE.Vector3()
-  st.beforeStep = () => w.engine.setBullet(st.body, inBedWell(local(r), BED, 0.1))   // DebrisSystem.beforeStep's cargo flag
+  // the step's advance, truck and load: how far each moved over how far its velocity going in would carry it (1 = free; a
+  // truck well under 1 with its speed kept is the engine's swept-collision clamp)
+  const c0 = new THREE.Vector3(), l0 = new THREE.Vector3(), lv = new THREE.Vector3(), lw = new THREE.Vector3(), cv0 = new THREE.Vector3(), lp = new THREE.Vector3()
+  st.beforeStep = () => {
+    w.engine.setBullet(st.body, inBedWell(local(r), BED, 0.1))   // DebrisSystem.beforeStep's cargo flag
+    c0.copy(vs.position); cv0.copy(vs.velocity); w.engine.getTransform(st.body, l0, q); w.engine.getVelocity(st.body, lv, lw)
+  }
+  // the load's own g this step, from its velocity change (gravity removed): what the joint force ought to read
+  const lv1 = new THREE.Vector3()
+  const dvG = () => { w.engine.getVelocity(st.body, lv1, lw); return Math.hypot(lv1.x - lv.x, lv1.y - lv.y + 9.81 * DT, lv1.z - lv.z) / DT / 9.81 }
+  const adv = () => { w.engine.getTransform(st.body, lp, q); return `adv truck ${(vs.position.distanceTo(c0) / (cv0.length() * DT || 1)).toFixed(2)} load ${(lp.distanceTo(l0) / (lv.length() * DT || 1)).toFixed(2)}` }
   st.measure = () => (st.off = local(r).distanceTo(seat))
   // SOAK_TRACE on a replay: the load's offset from its seat (truck frame, mm) and what touched it this step (N·s).
   const J = { x: 0, y: 0, z: 0 }
   st.trace = () => {
     local(r); w.engine.contactImpulseOn(st.body, J)
     const vl = v.copy(vs.velocity).applyQuaternion(qi.copy(vs.quaternion).invert())
-    return `v local (${vl.x.toFixed(2)}, ${vl.y.toFixed(2)}, ${vl.z.toFixed(2)}) at (${vs.position.x.toFixed(2)}, ${vs.position.y.toFixed(2)}, ${vs.position.z.toFixed(2)}) cargo off (${[r.x - seat.x, r.y - seat.y, r.z - seat.z].map(d => (d * 1000).toFixed(1)).join(', ')}) mm, contact J (${[J.x, J.y, J.z].map(d => d.toFixed(0)).join(', ')})`
+    return `v local (${vl.x.toFixed(2)}, ${vl.y.toFixed(2)}, ${vl.z.toFixed(2)}) at (${vs.position.x.toFixed(2)}, ${vs.position.y.toFixed(2)}, ${vs.position.z.toFixed(2)}) cargo off (${[r.x - seat.x, r.y - seat.y, r.z - seat.z].map(d => (d * 1000).toFixed(1)).join(', ')}) mm, contact J (${[J.x, J.y, J.z].map(d => d.toFixed(0)).join(', ')}) ${adv()} felt ${feltG(w.engine.jointForce(st.joint, J), row.massKg).toFixed(2)} g (by its Δv ${dvG().toFixed(2)} g)`
   }
   return st
 }
@@ -251,14 +262,16 @@ async function soakSeed (seed, replay = null) {
     worst.push(rec)
     return rec
   }
-  const stepLimit = replay ? replay.inputs.length : Infinity
+  // SOAK_AFTER=n on a replay: n more steps past the flag on its last input (how the event resolves); the trace window
+  // and the flag-step dumps stay on the flag step (flagStep).
+  const flagStep = replay ? replay.inputs.length : Infinity, stepLimit = flagStep + (replay ? +(process.env.SOAK_AFTER ?? 0) : 0)
   const vPrev = new THREE.Vector3()
   const simCap = KM * 1000 / 4 + 120   // s — a seed that cannot average 4 m/s is reported, not waited on
   let lastLog = 0, stillT = 0, lostT = 0, resets = 0
   while (dist < KM * 1000 && steps < stepLimit && t < simCap) {
     // ── the autopilot (or the capture's inputs) ──
     let thr, brk, steer
-    if (replay) ({ thr, brk, steer } = replay.inputs[steps])
+    if (replay) ({ thr, brk, steer } = replay.inputs[Math.min(steps, flagStep - 1)])
     else {
       const p = vs.position, v = Math.hypot(vs.velocity.x, vs.velocity.z)
       // <=, not <: where two edges join the path holds the junction point TWICE, and a strict test never stepped off the
@@ -363,7 +376,7 @@ async function soakSeed (seed, replay = null) {
     const fz = Math.max(...P._tireFz)
     // SOAK_TRACE=n on a replay: the last n steps, per corner — tire load, the hub's height over the ground, its lateral
     // offset from the nearest road's centreline, and the road's top there (what each wheel is riding into).
-    if (replay && process.env.SOAK_TRACE && steps > stepLimit - +process.env.SOAK_TRACE) {
+    if (replay && process.env.SOAK_TRACE && steps > flagStep - +process.env.SOAK_TRACE) {
       const cs = [0, 1, 2, 3].map(i => {
         const hub = getWheelPosition(i, vs, P), r = w.road.queryNearest(hub.x, hub.z, 15)
         const lat = r?.point ? Math.hypot(r.point.x - hub.x, r.point.z - hub.z) : NaN, top = w.road.sampleRoadTopY(hub.x, hub.z)
@@ -372,7 +385,7 @@ async function soakSeed (seed, replay = null) {
       console.log(`    ${steps} v ${vs.velocity.length().toFixed(1)} rim ${hit.impulse.toFixed(0)} | ${cs.join(' | ')}${strap ? ' | ' + strap.trace() : ''}`)
       // On the last step: the surface profile along the worst-loaded wheel's track, 1 m back to 1 m ahead — the carved
       // ground, the road top, and what the contact query (the physics) actually returns under a probe sphere.
-      if (steps === stepLimit && hit.impulse > 0 && hit.point) {   // a body strike on the flag step: where, which face, and the engine's ground round it
+      if (steps === flagStep && hit.impulse > 0 && hit.point) {   // a body strike on the flag step: where, which face, and the engine's ground round it
         const hp = new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z).applyQuaternion(vs.quaternion).add(vs.position)
         const nw = hit.normal ? new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z).applyQuaternion(vs.quaternion) : null
         console.log(`    strike: (${hp.x.toFixed(2)}, ${hp.y.toFixed(2)}, ${hp.z.toFixed(2)}) ${(hp.y - ground(hp.x, hp.z, hp.y)).toFixed(2)} m over the drawn ground, normal ${nw ? `(${nw.x.toFixed(2)}, ${nw.y.toFixed(2)}, ${nw.z.toFixed(2)})` : '-'}, body-local (${hit.point.x.toFixed(2)}, ${hit.point.y.toFixed(2)}, ${hit.point.z.toFixed(2)})`)
@@ -390,7 +403,7 @@ async function soakSeed (seed, replay = null) {
           console.log(`      into the face, ${name} ${dy >= 0 ? '+' : ''}${dy}: ${r ? `hit at ${r.distance.toFixed(2)} m, (${r.point.x.toFixed(2)}, ${r.point.y.toFixed(2)}, ${r.point.z.toFixed(2)}) normal (${r.normal.x.toFixed(2)}, ${r.normal.y.toFixed(2)}, ${r.normal.z.toFixed(2)}) body ${r.body ?? "?"} ${JSON.stringify(w.engine.getUserData(r.body))}` : "nothing"}`)
         }
       }
-      if (steps === stepLimit) {
+      if (steps === flagStep) {
         const k = P._tireFz.indexOf(Math.max(...P._tireFz)), hub = getWheelPosition(k, vs, P)
         const vl = Math.hypot(vs.velocity.x, vs.velocity.z), ux = vs.velocity.x / vl, uz = vs.velocity.z / vl
         console.log(`    corner ${k} hub (${hub.x.toFixed(2)}, ${hub.y.toFixed(2)}, ${hub.z.toFixed(2)}), along (${ux.toFixed(2)}, ${uz.toFixed(2)})`)
