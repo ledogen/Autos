@@ -19,7 +19,7 @@ fraction × clock in MHz), the only GPU measure that holds still on this machine
 | # | Lever | Cost today | Expected gain | Risk to picture / physics | Effort | Ticket |
 |---|---|---|---|---|---|---|
 | 1 | **Stop the HUD forcing a style recalculation every frame.** ~~Write the energy and hunger strips only when their drawn pixel moves, stop the hidden debug panel's live sliders~~ (done, below); the cluster's `ctx.font` left as is: with nothing dirty it forces nothing. | ~45 ms/s main thread, driving and parked (21 % of the main thread) | **measured 2026-11-13** (3 seeds, A-B unprofiled, fake audio): recalcs 60 → 13 /s driving, 58 → 3 parked, 57 → 6 map; recalc time 38 → 8.5 / 32 → 2.4 / 44 → 8.7 ms/s; postStream 52 → 24 / 46 → 20 / 82 → 60 ms/s; CPU 1.11 → 0.98 / 0.77 → 0.70 / 0.69 → 0.53 W | the energy/hunger bars step one device pixel at a time: a still differs only in the anti-aliased column of each hour tick and band edge, and in the band labels' glyph edges (0 px on the device grid) | small (2 files) | PERF-48 lever 1 (PERF-45 §3) |
-| 2 | **The map's overlay: stop redrawing the region dimming every frame.** Bake the dim-outside-the-region fill into the cached background (PERF-38's cache), or a layer under the live marks. | ~60 ms/s main thread while the map is open (of 92 ms/s) | 45–55 ms/s with the map open | none | small | PERF-46 (its "repaint of the whole map canvas" suspect) |
+| 2 | ~~**The map's overlay: stop redrawing the region dimming every frame.**~~ **Void, measured 2026-11-13: the dimming was never the cost.** `_drawRegion` holds the frame's FIRST `ctx.font` assignment, and that assignment is where a dirty page pays its forced style recalculation (the recalc lever 1 cut). The dim fill itself is 0.01–0.09 ms a frame. | was ~60 ms/s with the map open; of it ~44 ms/s was the forced recalc (lever 1 took it to 8.7) | **measured (in-page timers, seed 1768572700, lever 1 in):** `map2d.render` 0.86 ms/frame still, 0.86 panning, 0.98 zooming; `_drawRegion` 0.32–0.36, of which `ctx.font =` 0.16–0.24 (the 9 recalcs/s left, ~8 ms/s, paid there) and the dim fill 0.01–0.09 (≤ 5.5 ms/s). Knocking `_drawRegion` out changes `render` by nothing: its recalc moves to the next font setter. Baking the dim would buy ≤ 5 ms/s, so not built. | — | — | PERF-46; the real map levers are in its Next steps (whole-map skip when nothing changed, ~50 ms/s still; the 10 Hz writers' recalcs) |
 | 3 | **Physics at rest: memo the ground query of a tyre that has not moved.** Same hub bits in, same samples out, so exact. | ~33 ms/s parked (the road carve stack, 58 % of parked physics); 0–140 ms/s by spot | ~30 ms/s parked, more on a junction | none: bit-identical by construction | small–medium | PERF-45 §1 (PERF-43's design §4) |
 | 4 | **Static objects stop recomputing their world matrices, and far POI groups leave the scene walk.** 650–960 objects are walked every frame, all with automatic matrix updates; 120–135 meshes are on screen. | 67 ms/s main (driving), 61 parked: three.js's render call | 15–25 ms/s main, plus a share of the GPU process's 12–13 % of a core | low: an object marked static that does move would freeze (audit each) | medium | PERF-45 §2 |
 | 5 | **A frame-rate cap setting (60 / 30 / display).** `requestAnimationFrame` runs at the display's rate; on a 120 Hz screen the game renders 120 frames a second. Physics stays at its fixed 60 Hz step either way. | unknown here (this Mac is 60 Hz); on a 120 Hz display ~2× the render CPU and the GPU | up to half of the render CPU and GPU on high-refresh screens | none (a setting) | small | new — owner: is the "faster MacBook" a 120 Hz ProMotion screen? |
@@ -29,8 +29,8 @@ fraction × clock in MHz), the only GPU measure that holds still on this machine
 | 9 | **Cheaper ground samples while driving** (the spikes): the road carve stack is 48 % of driving physics. Cut its per-sample maths (PERF-43's unbuilt levers 1–3, exact), or sample a cached height lattice (an approximation: an owner call). | physics 57 ms/s driving (p50 50, p99 144); 5.3 % of moving seconds over 100 ms/s (PERF-42 target ≤ 5 %) | exact levers: unknown, PERF-43 measured small; a lattice: ~25 ms/s | exact: none; lattice: changes the physics (mm at kerb lips) | medium–large | PERF-42 (owner closed PERF-43 as "not worth the squeeze") |
 | 10 | Bench hygiene: under `?prof=1` the game mirrors every bucket into `performance.measure`, which the page keeps forever (148–155 k entries a session). Clear them from the bench page. | a bench-only cost (heap growth, and ~10 ms/s whenever a trace records user timing) | cleaner bench numbers; nothing for players | none (test/ only) | trivial | PERF-40 |
 
-Levers 1–3 are small, exact and invisible: together ~40 ms/s of main thread driving (~19 %), ~70 ms/s parked (~38 %),
-and ~50 ms/s more with the map open. Lever 6 is the only large GPU lever left, and the GPU is where this Mac's heat is. Lever 5
+Levers 1–3 are small, exact and invisible: together ~40 ms/s of main thread driving (~19 %), ~70 ms/s parked (~38 %).
+The map's ~50 ms/s turned out to be lever 1's recalc, not lever 2's fill (lever 2 is void). Lever 6 is the only large GPU lever left, and the GPU is where this Mac's heat is. Lever 5
 needs one fact from the owner. The deep-dive page is not needed yet: levers 1–4 need no owner call, and 5–7 are one
 question each (listed in the ticket's open questions).
 
@@ -140,9 +140,11 @@ Parked it is 58 % road carve, 5 % Box3D: the truck at rest pays the full tread s
 17535907's park spot sits in a departure band (`_bandTangent` 7.3 ms/s profiled), which is PERF-40's "the spot
 decides the cost".
 
-**Map open: postStream 92 ms/s, all of it `map2d.render`.** `_drawRegion` is 64 % of it (~59 ms/s): a full-canvas
-even-odd fill (everything minus the region disc) to dim the outside, on every frame, at 2.56 M pixels. `_drawTunnels`
-7 %. Physics keeps running (the truck idles): 65 ms/s.
+**Map open: postStream 92 ms/s, all of it `map2d.render`.** `_drawRegion` is 64 % of it (~59 ms/s). Corrected
+2026-11-13 (lever 2): that time is NOT its full-canvas dim fill. It is the forced style recalculation that the frame's
+first `ctx.font` assignment pays when the page's style is dirty, and `_drawRegion` happens to make that first
+assignment. The trace shows 60 forced recalcs a second, all inside the frame's `requestAnimationFrame` callback; lever 1
+removed most of them. The fill costs 0.01–0.09 ms a frame. `_drawTunnels` 7 %. Physics keeps running (the truck idles): 65 ms/s.
 
 **Streaming (props.update, terrain.update).** Means 12 and 8 ms/s, but p99 59–67 and worst 162–192 ms/s: they
 arrive in bursts as chunks enter. Inside: water stream lookups, road `queryNearest`, Box3D body creation for props, the
