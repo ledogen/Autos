@@ -13,6 +13,7 @@
 //   stuck      throttle on, on a drivable road, under 0.5 m/s for 5 s
 //   cargo      (--cargo=<data/freight.js key>, BUG-161) the strapped load more than CARGO_MM off its bed seat — welded
 //              at strapPose as main.js _loadFreight does (box hull, the cargo-in-bed bullet flag), re-strapped on a seat
+//   cargotire  (--cargo) a wheel's debris query pushed on the strapped load (the tire taking the truck's own cargo for a rock)
 // Each flag writes a capture (the state 10 s before + every input since); `--replay=file` rebuilds that seed's world,
 // seats the truck there, replays the inputs and reports whether the flag comes back.
 //
@@ -154,7 +155,10 @@ function makeStrap (w, vs) {
   const row = FREIGHT[CARGO], m = PROP_MODELS[row.model], [sx, sy, sz] = m.collision.size
   const half = { x: sx / 2, y: sy / 2, z: sz / 2 }, seat = strapPose(BED, half, m.floorSeated ? 0 : half.x)
   const pts = []; for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) pts.push(a * half.x, b * half.y, c * half.z)
-  const st = { body: null, seat, off: 0 }
+  const st = { body: null, seat, off: 0, pushJ: 0 }
+  // A wheel's debris query (physics.js Step 0.5) pushing on the load: the tire treating the truck's own cargo as a rock.
+  const ai = w.engine.applyImpulse.bind(w.engine)
+  w.engine.applyImpulse = (h, j, at) => { if (h === st.body) st.pushJ += Math.hypot(j.x, j.y, j.z); return ai(h, j, at) }
   const p = new THREE.Vector3(), v = new THREE.Vector3(), q = new THREE.Quaternion(), qi = new THREE.Quaternion()
   st.strap = () => {
     if (st.body) w.engine.destroyBody(st.body)   // the weld dies with its body
@@ -169,6 +173,13 @@ function makeStrap (w, vs) {
   const r = new THREE.Vector3()
   st.beforeStep = () => w.engine.setBullet(st.body, inBedWell(local(r), BED, 0.1))   // DebrisSystem.beforeStep's cargo flag
   st.measure = () => (st.off = local(r).distanceTo(seat))
+  // SOAK_TRACE on a replay: the load's offset from its seat (truck frame, mm) and what touched it this step (N·s).
+  const J = { x: 0, y: 0, z: 0 }
+  st.trace = () => {
+    local(r); w.engine.contactImpulseOn(st.body, J)
+    const vl = v.copy(vs.velocity).applyQuaternion(qi.copy(vs.quaternion).invert())
+    return `v local (${vl.x.toFixed(2)}, ${vl.y.toFixed(2)}, ${vl.z.toFixed(2)}) at (${vs.position.x.toFixed(2)}, ${vs.position.y.toFixed(2)}, ${vs.position.z.toFixed(2)}) cargo off (${[r.x - seat.x, r.y - seat.y, r.z - seat.z].map(d => (d * 1000).toFixed(1)).join(', ')}) mm, contact J (${[J.x, J.y, J.z].map(d => d.toFixed(0)).join(', ')})`
+  }
   return st
 }
 
@@ -197,7 +208,7 @@ async function soakSeed (seed, replay = null) {
     }
     w.dispose(); return { seed, dumped: true }
   }
-  const counts = { nan: 0, fall: 0, body: 0, wheel: 0, strut: 0, collider: 0, jolt: 0, stuck: 0, cargo: 0 }
+  const counts = { nan: 0, fall: 0, body: 0, wheel: 0, strut: 0, collider: 0, jolt: 0, stuck: 0, cargo: 0, cargotire: 0 }
   const worst = []
   const hist = []          // [{ s: snapshot every second }, inputs since]
   let inputs = [], snapT = 0, snap = null
@@ -358,7 +369,7 @@ async function soakSeed (seed, replay = null) {
         const lat = r?.point ? Math.hypot(r.point.x - hub.x, r.point.z - hub.z) : NaN, top = w.road.sampleRoadTopY(hub.x, hub.z)
         return `${(P._tireFz[i] / 1000).toFixed(1)}kN h${(hub.y - ground(hub.x, hub.z, hub.y)).toFixed(2)} lat${lat.toFixed(1)} top-gnd${top == null ? '-' : (top - ground(hub.x, hub.z, hub.y)).toFixed(2)}`
       })
-      console.log(`    ${steps} v ${vs.velocity.length().toFixed(1)} rim ${hit.impulse.toFixed(0)} | ${cs.join(' | ')}`)
+      console.log(`    ${steps} v ${vs.velocity.length().toFixed(1)} rim ${hit.impulse.toFixed(0)} | ${cs.join(' | ')}${strap ? ' | ' + strap.trace() : ''}`)
       // On the last step: the surface profile along the worst-loaded wheel's track, 1 m back to 1 m ahead — the carved
       // ground, the road top, and what the contact query (the physics) actually returns under a probe sphere.
       if (steps === stepLimit && hit.impulse > 0 && hit.point) {   // a body strike on the flag step: where, which face, and the engine's ground round it
@@ -402,6 +413,7 @@ async function soakSeed (seed, replay = null) {
     }
     if (onRoad && fz > STRUT_N) flag('strut', fz)
     if (strap && strap.measure() * 1000 > CARGO_MM) flag('cargo', strap.off * 1000)
+    if (strap?.pushJ) { flag('cargotire', strap.pushJ); strap.pushJ = 0 }
     const dv = Math.hypot(vs.velocity.x - vPrev.x, vs.velocity.y - vPrev.y + 9.81 * DT, vs.velocity.z - vPrev.z)
     if (onRoad && dv > JOLT_DV) flag('jolt', dv)
     if (hit.impulse > HIT_IMPULSE) {
