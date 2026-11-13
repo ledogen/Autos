@@ -106,33 +106,28 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (machine clock Mon 11-09 06:20 PST; the owner called a HOLD for the day at 80 % credit use; rewrite, don't append)
-- **PERF-37 FIRST (owner 11-11, high priority, before more playtesting):** Normal runs hot and slow on the Air;
-  the live CPU reads 4–6× the 11-09 baseline. Suspects and the test for each are in the ticket. The :3887 and :3890
-  servers were stopped 11-11 on the owner's word (only :8000 is up). The feat180-pick compare needs them restarted
-  from their worktrees. The :8000 Vite was restarted after `fsevents` was restored: it had been polling the repo at
-  ~30 % of a core (see PERF-37 § Side finding).
-- **HOLD.** No agent running, no detached job, no smoke. Do not spawn until the owner says go.
-- **Main** = this commit. Landed overnight 11-08/09, each smoked: BUG-146 44ae96fd · BUG-147 09ea7d66 · BUG-140 +
-  FEAT-193 51a932bf · BUG-157 f3a16777 (test-only) · BUG-153/154/155/149 eabc032c · BUG-152 root cause 2 b34a51e1
-  (batch smoke 26/26 on b34a51e1). Unpushed since d7dc18e1 (origin). Never push without the owner's word.
+## Current state (2026-11-12 22:45 PST; rewrite, don't append)
+- **PERF HAS PRIORITY (owner 11-12): "reduce the performance footprint before we continue adding complexity".** A
+  separate session (peer `cargame-70`, NOT your subagent) works in `/Users/ledogen/CodeShit/CarGame-perf43`, branch
+  `perf/perf-43-surface-patch`, handoff `.planning/handoffs/HANDOFF-2026-11-12-perf43-surface-patch.md` there:
+  PERF-43 → PERF-45 → PERF-41 → PERF-44. You orchestrate everything else and must not block it. Standing rules given
+  to every lane agent: ONE heavy process; `pgrep -f playtest-bench` before any gate or Chrome job and wait if it runs;
+  no edits to `src/road*.js` / `src/terrain*.js`. Asked it (SendMessage, 22:10) what it needs kept quiet and whether
+  main must hold still; **no reply yet — until it answers, no smoke and no landing on main.** Tickets routed to it:
+  BUG-164 (POIs always loaded, through the fog), PERF-46 (map pan jitter on Windows).
+- **The HOLD is lifted** (owner 11-12: "feel free to spin up the other lanes"). Running since 22:30, one task each:
+  Lane B BUG-160 (wheel fails before the tire; owner "top priority") · Spare BUG-162 + BUG-163 in
+  `CarGame-land-162` (land/bug-162) · Lane A FEAT-198 + FEAT-200.
+- **Inbox drained 11-12** (19 items → cb3a34e3): BUG-160..164, PERF-46, FEAT-194..201. Queues — B: BUG-161, FEAT-201,
+  FEAT-194 parts 1–2, FEAT-196 · Spare: FEAT-199, FEAT-197, FEAT-195 · A: FEAT-194 part 3 after `handbrake-clock`.
+- **Owed added (page v204)**: handbrake-clock (blocks A), feat199-price, feat196-wheel-repair, perf-push (push main +
+  record the PERF-40 baseline; the perf session's questions). Older owed unchanged: tutorial-* ×5, feat180-pick (its
+  :3887/:3890 servers are down), feat34-r3-look, road-seams-look, bug140-feel, feat193-calls, rest.
+- **Main** = df200873: the PERF-37 branch (PERF-38/39/40/42) landed 3d008134 by the perf session after
+  `test:all --browser` 149 green; docs since. Unpushed since d7dc18e1.
+- **Waiting to land, both need re-testing on today's main first** (main moved road.js and main.js under them):
+  BUG-156 land/bug-156 @ 34fc3e6f (`CarGame-land-156`, road.js only; merge main in, rerun its gates — coordinate with
+  the perf session, it is the same file) · FEAT-34 round 3 land/feat-34 @ e49bc289 (held for `feat34-r3-look`).
+- **Worktrees**: `CarGame-bug67` needs the owner's `! git worktree remove --force`. Perf keeps `-perf37` (bench runs),
+  `-main0758`, `-nov01` (owner undecided). Lighting pick keeps `-f180-preview`, `-land-feat180*`.
 - **Clock note**: the machine clock is PST; agents' system date runs a day ahead. Git/mtimes are the truth.
-- **READY TO LAND (first thing on resume)**: BUG-156 on land/bug-156 @ 34fc3e6f (/Users/ledogen/CodeShit/CarGame-land-156,
-  base main a60e60db; main since = docs only, re-check). src/road.js only (+43/−6): a ruled-blend leg limb is weighted by
-  its depth from the fold where it is born (`_limbWeight`, tie 0.5 m). Site 1074499174 (737.7, 442.1): 0.86 → 0.12 m;
-  census 8 seeds: 111 jumps gone, 0 new, 0 gore lines worse. Gates 73/73 green (wip/bug-156/gatesA.log + gatesB.log,
-  done 03:19). Photos in wip/bug-156/shots (sheet.mjs). Its agent was stopped by me after it stalled waiting on its own
-  log watchers — its lanes/b handoff may be a step behind; the branch's ticket is current. Branch also carries BUG-151
-  (already gone on main; only "add the seed to junction-edge-lip" left) and NEW BUG-158 (junction dirt steps outside the
-  ruled blend; a 2.9 m step stays). Land: merge --no-ff, smoke, close 156, ff lanes, remove the worktree.
-- **HELD for the owner's look**: FEAT-34 round 3 on land/feat-34 @ e49bc289 (/Users/ledogen/CodeShit/CarGame-land-feat34),
-  9/9 green; owed `feat34-r3-look` (https://claude.ai/artifact/P1x9vhCQsCMop6MjiLDZfe). "approve" → merge, smoke;
-  "without the tidy-up" → drop 347e45cb's change.
-- **Owed on the tracker (v203)**: feat180-pick (compare :3887 legacy round 5 vs :3890 rebuild round 3 — keep both
-  servers up; frame cost does not separate them, ab4c90b2), feat34-r3-look, road-seams-look (photos
-  https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8, band bar 2.5 cm), bug140-feel + feat193-calls, tutorial-* ×5, rest.
-- **Lanes idle, all waiting on the owner**: A (tutorial-*), B (feat34-r3-look; then BUG-158), Spare (feat180-pick),
-  C (an owner answer).
-- **Worktrees**: CarGame-bug67 needs `! git worktree remove --force /Users/ledogen/CodeShit/CarGame-bug67` from the
-  owner. Lighting pick keeps CarGame-f180-preview, -land-feat180, -land-feat180-dusk, -land-feat180-next. In use:
-  -land-156, -land-feat34, -machine, -spare-base.
