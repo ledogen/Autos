@@ -2216,6 +2216,7 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
  */
 // S-64: the per-sample road hint, at module scope so the 4-wheels-per-step physics path allocates no closure per call.
 const _qcHintAt = (x, z) => (!_labActive && roadSystem) ? roadSystem.carveHint(x, z) : undefined
+const _qcPatchAt = (x, z, y, out) => (!_labActive && roadSystem) ? roadSystem.surfacePatch(x, z, y, out) : undefined
 const _QC_UP = { x: 0, y: 1, z: 0 }
 // The contact query stepPhysics is handed (src/world-contacts.js — one definition, which the headless drive soak builds
 // from the same systems): the lab's own surface in the testing lab, the analytic terrain otherwise, each sample's road
@@ -2224,7 +2225,7 @@ const queryContacts = makeQueryContacts({
   params: RANGER_PARAMS,
   groundH: (x, z, y, hint) => _labActive ? labSystem.groundHeight(x, z) : (terrainSystem ? terrainSystem.analyticHeight(x, z, hint !== undefined ? hint : _qcHintAt(x, z), y) : 0),
   groundN: (x, z, y, hint) => _labActive ? labSystem.groundNormal(x, z) : (terrainSystem ? terrainSystem.analyticNormal(x, z, hint !== undefined ? hint : _qcHintAt(x, z), y) : _QC_UP),
-  hintAt: _qcHintAt,
+  patchAt: _qcPatchAt,
   props: () => _labActive ? null : propSystem,
   pois: () => _labActive ? null : poiSystem,
   tunnelWall: (cx, cy, cz, r) => (!_labActive && roadSystem) ? roadSystem.queryTunnelWallContact(cx, cy, cz, r, _qcHintAt(cx, cz)) : null,

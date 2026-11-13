@@ -112,3 +112,53 @@ Where a layer cannot be proven cheaply, mark the patch invalid for that disc. Co
       differences float noise only.
 - [ ] `_hintHolds`, `solo`, `_soloPassFree`, `HINT_REACH_M` and the hint plumbing deleted; net lines in `road.js` down.
 - [ ] A parked truck's ground query costs ~0 (the memo), measured in PERF-45's parked phase.
+
+## Progress (2026-11-12, night — branch perf/perf-43-surface-patch)
+
+**Step 2 done: the exactness gate** (`test/hint-reuse.mjs`, rewritten). Hub families: run (every 2.7 m, laterals ±22 m),
+junction (r 0 … ring + 14 m round every ringed node), connector (laterals 0…16 m), band (every BUG-53 span), bore (the
+query in the tube AND on the hill over it), poi (12 synthetic lay-by pads per seed). 6 points per hub within 1 m,
+`|patch − fresh| ≤ 2.5 mm`, and the patch valid (no sample had to search past a held answer) on ≥ 80 % of driven hubs.
+
+**It found three live bugs in main's PERF-39/42 hub reuse** (fixed in 6e731daa — the fresh path, so the mesh, untouched):
+- an end-winner (BUG-21 apex sliver) reused with its arc pinned at the run end, where a fresh resolve reads it past the
+  end — past a leaf cap (QUAL-24) **3.0 m** of height 0.5 m from the hub (seed 759313244 (187.4, 1233.0));
+- `_hintHolds` tested an end-winner's deck on its perpendicular lateral, so a point 18 m from the terminus was "on the
+  deck" and the hint was reused across a winner flip: **2.75 m** / 33 mm (seed 759313244 (187.8, 1227.3));
+- a primitive's reuse range ran into a departure band (its own frame): 5 mm.
+Through `analyticNormal`'s ±0.5 m reuse the first two bent wheel normals: seed 3 (−326, −280) main reads a 78° wall
+where the surface tilts 19°. fingerprint-world `surface` changes for that reason only — fresh heights are bit-identical
+to main on 361 k lattice points (`wip/perf-43/ab-normal.mjs`), normals differ at 72 of them on seed 3, each now equal to
+the four-fresh-offsets normal.
+
+**Layer 1 (08130529): the rule as built.** `road.surfacePatch(hx, hz, y, out)` replaces `carveHint` as the tire's shared
+context (`world-contacts.js patchAt`). Inside a patch every centreline-foot search (`_refineFrame`) starts from the
+nearest foot an earlier sample of the patch found (within 3 m of arc; `_refineFoot`'s exact step) instead of the ±6 m
+grid search; the first sample fills it. So the hub's frame is no longer trusted across the disc — every sample still
+selects its own winner and rivals (what the bugs above got wrong), it just does not search for them. Guard: off a bend's
+inner half (w < 0.5; a warm foot read 154 mm off there). Plus a bit-identical one-slot memo on `_legDeckTop` (a sample
+asked for the same leg's deck twice). Gate: worst 2.04 mm (a bore), valid 99.7 / 99.8 %. 79 affected gates green.
+Counted at spike positions: full centreline searches 2 per query (the fill), from ~40.
+
+**Measured: small.** Quiet machine, `spots.mjs` A: seed 17535907 142 → 119 µs median; 1768572700 and 759313244 flat
+(171 → 173, 148 → 147). A loaded interleaved A/B (load 5–9, ±20 % noise) agrees. Not near ≤ 60 µs.
+
+**Why — the finding that changes the plan:** at the remaining spike positions the cost is per-sample MATHS, not
+re-derived context. Junction pads (seed 1768572700's spikes): `_junctionPadCarve` 36 %, of it `_legDeckTop` 25 % — the
+ribbon-station Newton walk, ~5 frame evaluations (`runPointAt` + `runFrameAt`: four binary searches and a map lookup each)
+per solve, ~2 solves per sample, 415–512 `runFrameAt` per query. Starting it from an earlier sample's station saved
+nothing (Newton is quadratic: 1 m nearer is not a step fewer), so that was removed. The inter-leg blend (`_carveDirtY`)
+runs twice per sample (winner + rival / `_legSurfaceTop`), each walking every leg's ±40 m window. The resolver is down to
+18 %. The ticket's premise ("each layer re-derives context that is the same for the whole tyre") holds for the resolver
+only.
+
+**Next levers, each to be measured on a quiet machine (`spots.mjs` + `wip/perf-43/count.mjs` + `prof-all.mjs`):**
+1. cheaper frame evaluations in the Newton walk: the binary searches (`runPointAt`, `runProfile`, `tangentAt`'s
+   `_locate`, `_interpArcTable`) started from the previous iteration's index — exact, local;
+2. `_carveDirtY`'s inter-leg blend evaluated once per sample per node (both callers ask at the same point);
+3. narrowing `_projectLegNearNode` to the disc — careful: `ownIdx` picks the branch nearest in ARC among ALL minima, so
+   dropping far ones can move it;
+4. the frozen resolver reuse off the deck with live `rv.m` (design §1) — now worth ≤ 18 %, lowest priority;
+5. if 1–3 cannot reach ≤ 60 µs: an owner call — fewer tread samples on smooth ground, or a different target.
+Open overlap: BUG-156 (land/bug-156 @ 34fc3e6f, `_limbWeight` in the ruled blend) sits in lever 2/3's code — cherry-pick
+it here first so this gate covers it (the orchestrator is holding it).

@@ -93,7 +93,7 @@ export async function buildWorld (seed, P, vs, { center = { x: 0, z: 0 }, radius
     params: P,
     groundH: (x, z, y, hint) => terr.analyticHeight(x, z, hint !== undefined ? hint : road.carveHint(x, z), y),
     groundN: (x, z, y, hint) => terr.analyticNormal(x, z, hint !== undefined ? hint : road.carveHint(x, z), y),
-    hintAt: (x, z) => road.carveHint(x, z),
+    patchAt: (x, z, y, out) => road.surfacePatch(x, z, y, out),
     props: () => props,
     pois: () => pois,
     tunnelWall: (cx, cy, cz, r) => road.queryTunnelWallContact(cx, cy, cz, r, road.carveHint(cx, cz)),

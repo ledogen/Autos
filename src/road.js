@@ -949,6 +949,12 @@ const RIVAL_FADE_D     = 3     // m
 // round the pressure centre); a point farther out resolves afresh, so the bound is the proof's, not the caller's.
 const HINT_REACH_M     = 1     // m
 const _RG_POSE = { x: 0, z: 0, theta: 0, kappa: 0 }   // _runGradeAt's foot pose (scratch)
+// PERF-43: how far (m of centreline arc) a point's polyline foot may sit from a hub foot for _refineFrame to start there.
+// A wheel's samples lie within PATCH_R of the hub, so their feet within ~PATCH_R / (1 + κv) of its; 3 m covers the
+// shoulder of a 12 m bend and stays inside the refine's own ±ANALYTIC_REFINE_WINDOW.
+const PATCH_WARM_M = 3
+const PATCH_REACH2 = 1.5 * 1.5   // m² — the disc a patch serves: PATCH_R = 1 m (world-contacts.js) + margin
+const _RF_POSE = { x: 0, z: 0, theta: 0, kappa: 0 }, _RF_HIT = { s: 0, x: 0, z: 0, tangent: { x: 1, z: 0 }, curvature: 0 }   // scratch
 const RIVAL_PROM_M     = 2     // m
 const RIVAL_TIE_M      = 2.5     // m
 const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
@@ -8101,6 +8107,10 @@ export class RoadSystem {
      * shove deflection: the points left the centerline, so refining onto it would pull the frame off the
      * carve) get the band's own continuous frame instead (_bandRefine, BUG-154).
      */
+    // PERF-43: inside a surface patch (_patchAt) a foot an earlier sample found on this run within PATCH_WARM_M of this
+    // point's polyline foot is refined straight from there (_refineFoot's exact line / arc step, one or two poses) instead
+    // of the ±6 m grid search — the same foot wherever it is the window's only one, which is everywhere off a bend's inner
+    // half. A foot found by the search is added to the patch for the samples after it.
     _refineFrame(e, pr, wx, wz) {
         if (!e || pr.offEnd || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return null
         const arcOrigin = e.arcOrigin ?? 0
@@ -8108,16 +8118,41 @@ export class RoadSystem {
             const a = pr.arcS + arcOrigin
             if (this._inBand(e, a)) return this._bandRefine(e, a, wx, wz)
         }
-        const hit = e.centerline.nearest(wx, wz, ANALYTIC_REFINE_DS, pr.sCL - ANALYTIC_REFINE_WINDOW, pr.sCL + ANALYTIC_REFINE_WINDOW)
+        const wLo = pr.sCL - ANALYTIC_REFINE_WINDOW, wHi = pr.sCL + ANALYTIC_REFINE_WINDOW
+        let hit, s0 = NaN
+        const patch = this._patchAt(wx, wz), feet = patch?.feet.get(e.points)
+        if (feet) for (const s of feet) if (Math.abs(s - pr.sCL) < PATCH_WARM_M && !(Math.abs(s0 - pr.sCL) <= Math.abs(s - pr.sCL))) s0 = s
+        if (s0 === s0) {
+            const q = _RF_POSE, s = e.centerline._refineFoot(wx, wz, Math.max(wLo, Math.min(wHi, s0)), wLo, wHi, q)
+            const c = Math.cos(q.theta), sn = Math.sin(q.theta)
+            // the inner half of a bend (w = 1 + κv < 0.5, _hintHolds' test): near the centre of curvature the run is
+            // nearly equidistant along the arc and the window's feet are many — the grid search picks the one it picks
+            // (a warm foot 0.8 m of arc from it read 154 mm off, seed 759313244 (112.7, 59.0))
+            if (1 + q.kappa * ((wx - q.x) * sn - (wz - q.z) * c) >= 0.5) {
+                _RF_HIT.s = s; _RF_HIT.x = q.x; _RF_HIT.z = q.z; _RF_HIT.tangent.x = c; _RF_HIT.tangent.z = sn
+                _RF_HIT.curvature = q.kappa
+                hit = _RF_HIT
+            }
+        }
+        if (!hit) {
+            if (s0 === s0) patch.valid = false   // a foot was there and could not be used
+            hit = e.centerline.nearest(wx, wz, ANALYTIC_REFINE_DS, wLo, wHi)
+            if (hit && patch) { if (feet) feet.push(hit.s); else patch.feet.set(e.points, [hit.s]) }
+        }
         if (!hit) return null
         // Remap analytic TRUE-arc → polyline chord-arc (the runProfile/camberProfile domain), then
         // origin-shift. clArc↔polyCum are the paired per-run arrays; _interpArcTable is the same
         // helper the ribbon uses in the opposite direction (chord→true).
         // k + the arc to either end of the foot's primitive (lo ≤ 0 ≤ hi): a reused frame re-projects exactly only on
         // its own primitive (_curvedOffset, _hintHolds).
+        // PERF-43: and not into a departure band (its own frame, _bandRefine): a reuse 0.4 m short of one read 5 mm off.
         const cl = e.centerline, pi = cl._locate(hit.s).i
-        return { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z, k: hit.curvature,
-                 lo: cl.starts[pi] - hit.s, hi: cl.starts[pi + 1] - hit.s,
+        let lo = cl.starts[pi] - hit.s, hi = cl.starts[pi + 1] - hit.s
+        if (e.offCurveSpans) for (const [a, b] of this._bandInfo(e).spans) {
+            const sa = _interpArcTable(e.polyCum, e.clArc, a) - hit.s, sb = _interpArcTable(e.polyCum, e.clArc, b) - hit.s
+            if (sa >= 0) hi = Math.min(hi, sa); else if (sb <= 0) lo = Math.max(lo, sb)
+        }
+        return { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z, k: hit.curvature, lo, hi,
                  arcS: _interpArcTable(e.clArc, e.polyCum, hit.s) - arcOrigin }
     }
 
@@ -8484,10 +8519,14 @@ export class RoadSystem {
     //    an arc→line joint).
     //  PERF-42: except a SOLO resolve (_resolveRoadSurface) within HINT_REACH_M of where it was made, where its run does
     //  not pass again (_soloPassFree) — no rival there.
+    //  PERF-43: a run-END winner (BUG-21) is on its deck only within halfWidth RADIALLY of its terminus (the polar cap's
+    //  lateral, _carveCrossSectionBlended) — its perpendicular lateral called a point 18 m out "on the deck" and reused
+    //  it across a winner flip (2.75 m off at seed 759313244 (187.8, 1227.3)).
     _hintHolds(nr, wx, wz) {
         const dx = wx - nr.point.x, dz = wz - nr.point.z, v = dx * nr.tangent.z - dz * nr.tangent.x
         const q2 = (wx - nr.qx) ** 2 + (wz - nr.qz) ** 2
-        if (Math.abs(v) > (this._params.roadHalfWidth ?? 5) && q2 > 0.0025
+        const vEff = nr.endRadial !== undefined ? Math.max(Math.abs(v), Math.hypot(dx, dz)) : Math.abs(v)
+        if (vEff > (this._params.roadHalfWidth ?? 5) && q2 > 0.0025
             && !(nr.solo && q2 <= HINT_REACH_M * HINT_REACH_M && this._soloPassFree(nr, wx, wz))) return false
         if (nr.primLo === undefined) return true
         if (1 + nr.kappa * v < 0.5) return false
@@ -8504,7 +8543,35 @@ export class RoadSystem {
         return !!cands && this._runPassMinima(e, cands.byKey.get(nr.runKey), wx, wz, nr.solo.footHW, nr.solo.cum).length === 0
     }
 
+    // PERF-43: the per-wheel surface patch — the road context worked out ONCE at a wheel's hub for every sample within
+    // PATCH_R of it (the tread solve's ~65, world-contacts.js). analyticHeight takes it where it took a carveHint.
+    // THE RULE: every search in the carve stack (so far: a centreline foot) starts from the nearest answer an
+    // earlier sample of the same patch found; the first sample in the disc searches and fills it. So the context is
+    // worked out once per wheel and each sample pays only its own local maths — and a sample's answer is still the one a
+    // fresh evaluation gives (the same foot, refined from nearer), which test/hint-reuse.mjs holds to 2.5 mm everywhere.
+    // `valid` stays true while every sample is served (false once a sample had to search past a held answer).
+    surfacePatch(hx, hz, queryY, out) {
+        out.patch = true; out.hx = hx; out.hz = hz; out.qy = queryY; out.valid = true
+        if (out.feet) out.feet.clear(); else out.feet = new Map()
+        this._patch = out
+        try { out.nr = this._resolveRoadSurface(hx, hz) } finally { this._patch = undefined }
+        return out
+    }
+
+    // The active patch for a sample at (wx, wz): only within PATCH_R (+ margin) of its hub, so a lazy build that runs
+    // inside a sample at points of its own (a pad's spline bake, _buildPadSurface) cannot read a wheel's context.
+    _patchAt(wx, wz) {
+        const pa = this._patch
+        return pa && (wx - pa.hx) ** 2 + (wz - pa.hz) ** 2 <= PATCH_REACH2 ? pa : undefined
+    }
+
     _sampleCarveWorld(wx, wz, rawAmp, nrHint, queryY) {
+        if (!nrHint?.patch) return this._sampleCarve(wx, wz, rawAmp, nrHint, queryY)
+        this._patch = nrHint
+        try { return this._sampleCarve(wx, wz, rawAmp, nrHint.nr, queryY) } finally { this._patch = undefined }
+    }
+
+    _sampleCarve(wx, wz, rawAmp, nrHint, queryY) {
         const p             = this._params
         const halfWidth     = p.roadHalfWidth     ?? 5
         const clearanceMargin = p.roadClearanceMargin ?? 0.25
@@ -8549,10 +8616,12 @@ export class RoadSystem {
             // Per-point arc + signed lateral (positive = right of road heading) from the frame: for a REUSED hint
             // (analyticNormal's ±0.5 m offsets, a wheel's tread samples off its hub's resolve — PERF-39) the exact
             // polar re-projection onto the bend (_curvedOffset); for a resolve at this very point, the plain one.
-            // A run-END winner (BUG-21 apex sliver) keeps its arc clamped at the end, as a resolve here would.
+            // A run-END winner (BUG-21 apex sliver) reads its arc PAST the end, (p − terminus)·tangent, as a resolve here
+            // does (its foot is the terminus, its kappa 0). PERF-43: the reuse had pinned it at the end — past a leaf end
+            // (QUAL-24's cap) a 3.0 m height error 0.5 m from the hub (seed 759313244 (187.4, 1233.0)).
             const reused = nr === nrHint
             const off = _curvedOffset(dx * tx + dz * tz, dx * tz - dz * tx, reused ? (nr.kappa ?? 0) : 0)
-            arcSEff = (nr.arcS ?? 0) + (reused && nr.endRadial !== undefined ? 0 : off.a)
+            arcSEff = (nr.arcS ?? 0) + off.a
             const signedLat = off.l
             latDist = Math.abs(signedLat)
             runKey  = nr.runKey ?? ''
@@ -9904,7 +9973,23 @@ export class RoadSystem {
     // the deck carries on at the end section's own grade, `over` metres along the end tangent (a trunk half
     // read past the node then agrees with the other half, which continues the same road). `out`, if given,
     // gets the point's |lateral| from the section line and that overshoot.
+    // PERF-43: one sample asks for the same leg's deck at the same point twice (_padRibbonMask, then _throughDeckTop on a
+    // T's trunk): a one-slot memo on the leg answers the second. (Starting the Newton walk at a station an earlier sample
+    // converged to saved nothing — it is quadratic, so 1 m nearer is not a step fewer — so each sample walks its own.)
     _legDeckTop(ne, leg, pr, wx, wz, out) {
+        const mo = leg._ldt
+        if (mo && mo.pr === pr && mo.wx === wx && mo.wz === wz) {
+            if (out) { out.lat = mo.lat; out.over = mo.over; out.s = mo.s }
+            return mo.y
+        }
+        const o = leg._ldt ??= { pr: null, wx: 0, wz: 0, y: 0, lat: 0, over: 0, s: 0 }
+        const y = this._legDeckSolve(ne, leg, pr, wx, wz, o)
+        o.pr = pr; o.wx = wx; o.wz = wz; o.y = y
+        if (out) { out.lat = o.lat; out.over = o.over; out.s = o.s }
+        return y
+    }
+
+    _legDeckSolve(ne, leg, pr, wx, wz, out) {
         const cm = this._params.roadClearanceMargin ?? 0.25
         const sMax = ne.polyCum?.[ne.polyCum.length - 1] ?? Infinity
         let s = pr.arcS, c = null, rp = null
