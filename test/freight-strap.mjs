@@ -188,7 +188,8 @@ async function tirePushes (weld) {
   const local = new THREE.Vector3(m.x + inward * (t.P.wheelRadius + half.x - 0.02), m.y - (t.P.suspensionRestLengthRear - t.vs.strutComp[3]), m.z)
   const p = local.applyQuaternion(t.vs.quaternion).add(t.vs.position)
   const b = t.engine.createBody({ type: 'dynamic', position: p, quaternion: t.vs.quaternion })
-  t.engine.addBox(b, half, { density: 5 / (8 * half.x * half.y * half.z), group: GROUP_DEBRIS })
+  const pts = []; for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) pts.push(x * half.x, y * half.y, z * half.z)
+  t.engine.addHull(b, new Float32Array(pts), { density: 5 / (8 * half.x * half.y * half.z), group: GROUP_DEBRIS })   // a hull: the wheel query has no box pair test
   if (weld) t.engine.createWeldJoint(t.chassis, b, p)
   let n = 0
   const ai = t.engine.applyImpulse.bind(t.engine)
