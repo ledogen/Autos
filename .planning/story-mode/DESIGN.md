@@ -1127,7 +1127,11 @@ therefore the bonus objective — works on any job.
 > §2b; FEAT-114, FEAT-139.
 
 > **Amendment [OWNER 2026-10-08] — $0-cash missions are retired.** Every job pays some cash, even for
-> bare completion (SM-INV-4's base pay). A bonus item rides **on top of** cash, never instead of it;
+> bare completion (SM-INV-4's base pay). ~~A bonus item rides **on top of** cash, never instead of it~~
+> *(amended — owner, 2026-11-13, FEAT-199: a bonus item is an **optional item, priced off the cash**. The
+> job pays its full cash, speed tip included; at the result card the player chooses the full cash, or the
+> cash less the item's price with the item. The price is **capped at what the job paid**, so taking the
+> item never goes below $0 and never touches the wallet. R-04's "the item is the tip" is retired.)*;
 > the parts-only "archetype 3" of `design-amendments-2026-08-17.md` §1 is killed. A job that FAILS
 > (a fragile load destroyed) still pays $0 — that is a failure, not a completion. The boss still
 > pays in region access only (`missions.md` "Economy compliance"): a main mission, not a job.
