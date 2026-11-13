@@ -312,13 +312,13 @@ export class TerrainSystem {
                 float ts_rockW = vSurf.z * (1.0 - vSurf.w);
                 if (uDetailScale > 0.0) {
                     // PERF-41 distance fade: every surface/noise read eases to its map's average texel (the top mip's
-                    // value, which distant ground converges to anyway) over uDetailFar and is skipped beyond it. The
-                    // reads sit in branches, so their mip derivatives are taken here, outside them (textureGrad).
+                    // value, which distant ground converges to anyway) over uDetailFar and is skipped beyond it. The reads
+                    // sit in a branch and keep the implicit mip LOD (textureGrad measured SLOWER, more than the skip saved):
+                    // only quads straddling the branch edge can get a wrong LOD, and there the read is weighted ~0.
                     float ts_far = smoothstep(uDetailFar.x, uDetailFar.y, length(vViewPosition));
-                    vec2 ts_wx = dFdx(vWorldPos.xz), ts_wy = dFdy(vWorldPos.xz);
                     float td_k = uNoiseScale / 64.0;
                     tdT = uNoiseMean;
-                    if (ts_far < 1.0) tdT = mix(textureGrad(uNoiseTex, vWorldPos.xz * td_k, ts_wx * td_k, ts_wy * td_k), uNoiseMean, ts_far);
+                    if (ts_far < 1.0) tdT = mix(texture2D(uNoiseTex, vWorldPos.xz * td_k), uNoiseMean, ts_far);
                     float td_n = tdT.r;
                     diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
                     // FEAT-84: height-weighted three-way surface blend. Each zone's map carries an
@@ -334,17 +334,16 @@ export class TerrainSystem {
                     float ts_df = uNoiseMean.r, ts_dc = uNoiseMean.r;
                     if (ts_far < 1.0) {
                         vec3 ts_s3 = uSurfScale; float ts_dk = uBiomeDither.y / 64.0;
-                        ts_g  = mix(textureGrad(uSurfAlbG, ts_p * ts_s3.x, ts_wx * ts_s3.x, ts_wy * ts_s3.x), ts_g, ts_far);
-                        ts_d  = mix(textureGrad(uSurfAlbD, ts_p * ts_s3.y, ts_wx * ts_s3.y, ts_wy * ts_s3.y), ts_d, ts_far);
-                        ts_r  = mix(textureGrad(uSurfAlbR, ts_p * ts_s3.z, ts_wx * ts_s3.z, ts_wy * ts_s3.z), ts_r, ts_far);
-                        ts_nG = mix(textureGrad(uSurfNrmG, ts_p * ts_s3.x, ts_wx * ts_s3.x, ts_wy * ts_s3.x), ts_nG, ts_far);
-                        ts_nD = mix(textureGrad(uSurfNrmD, ts_p * ts_s3.y, ts_wx * ts_s3.y, ts_wy * ts_s3.y), ts_nD, ts_far);
-                        ts_nR = mix(textureGrad(uSurfNrmR, ts_p * ts_s3.z, ts_wx * ts_s3.z, ts_wy * ts_s3.z), ts_nR, ts_far);
+                        ts_g  = mix(texture2D(uSurfAlbG, ts_p * ts_s3.x), ts_g, ts_far);
+                        ts_d  = mix(texture2D(uSurfAlbD, ts_p * ts_s3.y), ts_d, ts_far);
+                        ts_r  = mix(texture2D(uSurfAlbR, ts_p * ts_s3.z), ts_r, ts_far);
+                        ts_nG = mix(texture2D(uSurfNrmG, ts_p * ts_s3.x), ts_nG, ts_far);
+                        ts_nD = mix(texture2D(uSurfNrmD, ts_p * ts_s3.y), ts_nD, ts_far);
+                        ts_nR = mix(texture2D(uSurfNrmR, ts_p * ts_s3.z), ts_nR, ts_far);
                         // the dither's two octaves (the coarse one reuses the mottle read while the scales match)
                         ts_dc = uBiomeDither.y == uNoiseScale ? td_n
-                              : mix(textureGrad(uNoiseTex, ts_p * ts_dk, ts_wx * ts_dk, ts_wy * ts_dk).r, ts_dc, ts_far);
-                        float ts_fk = ts_dk * 3.7;
-                        ts_df = mix(textureGrad(uNoiseTex, (ts_p * uBiomeDither.y * 3.7 + 17.0) / 64.0, ts_wx * ts_fk, ts_wy * ts_fk).r, ts_df, ts_far);
+                              : mix(texture2D(uNoiseTex, ts_p * ts_dk).r, ts_dc, ts_far);
+                        ts_df = mix(texture2D(uNoiseTex, (ts_p * uBiomeDither.y * 3.7 + 17.0) / 64.0).r, ts_df, ts_far);
                     }
                     // Steep ground: the rock zone is ALSO projected from the side (the plane facing
                     // the surface normal — ZY on ±X faces, XY on ±Z faces) and the two are blended
