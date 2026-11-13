@@ -84,7 +84,7 @@ import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat, 
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
-import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
+import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR, clockHeld } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
@@ -10062,7 +10062,8 @@ function loop () {
     // hold until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
     // SM-3: browsing the service center is free — its work adds its own hours (owner, 2026-10-20).
     // FEAT-170: the opening's evening is a safe drive — the clock, energy and hunger hold until mom's.
-    if ((!_campUi || _campUi.mode === 'confirm') && !serviceScreen.isOpen && !_eveningLeg()) daySystem.update(PHYSICS_DT)
+    // FEAT-194 part 3: the parking brake's latch holds it too (no time passes while parked). One rule: day.js clockHeld.
+    if (!clockHeld(!!_campUi && _campUi.mode !== 'confirm', serviceScreen.isOpen, _eveningLeg(), vehicleState.parked)) daySystem.update(PHYSICS_DT)
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
