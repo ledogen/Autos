@@ -15,6 +15,19 @@ branch: perf/perf-37-tire-map — worktree /Users/ledogen/CodeShit/CarGame-perf3
 
 # PERF-42 — the tread solve's physics spikes are still there
 
+## Next steps
+Perf lane: finish the verdict from `perf-runs/perf42-verdict-0f6fbc38` (rep 2 was running at hand-off; read it with
+`node wip/perf-40n/table.mjs` and `wip/perf-40n/where.mjs 1000`), then rewrite this ticket to the template with it.
+
+## Log
+- 2026-11-13: first verdict in WORK (PERF-40 `threadcounts.py`), main 0f6fbc38 (src identical), fake audio, rep 1 of 2,
+  host 0.27–0.35/core. Physics work per moving second p50 / p99, share over 1000 Minstr (≈ 100 ms at a P core near
+  3 GHz) vs the ms share: 1768572700 338 / 2401, 4.4 % (ms 5.3 %) · 17535907 399 / 2705, 9.0 % (ms 13.6 %) ·
+  759313244 335 / 1263, 2.3 % (ms 3.2 %). No earlier record carries work; this run is the baseline. Validation run
+  (seed 1768572700): spike seconds sit at deg-2 kinks and junctions with the truck off the deck (the edge leg), and
+  each is a real work spike (main thread retires ~5× a calm second's instructions); ms under-reports them because the
+  clock rises to meet them.
+
 ## What the bench shows
 
 Physics main-thread ms in each second of driving. Only seconds where the truck was moving above 3 m/s, together
