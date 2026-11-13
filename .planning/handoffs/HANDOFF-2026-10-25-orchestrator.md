@@ -92,6 +92,17 @@ Spare's. Restart a dead server from its worktree: `npm run dev -- --port <port> 
   | `lanes/<id>.json` | you | `{name, goal, wt, branch, port, owns, tasks: [{id, what, status: todo\|doing\|done\|blocked, note?}]}` — one line per task; delete closed rows |
   | `lanes/<id>.now` | you at spawn, the agent at stop | the one "now" line |
   | `lanes/<id>.handoff.md` | that lane's agent | its resume prompt |
+  | `dives/<slug>.answers.json` | owner (the dive page) | `{status: opened\|partial\|submitted, openedAt, submittedAt, answers: {<question id>: {choice, note}}}` |
+  | `dives/<slug>.taken` | you | empty file: "acted on"; the dive page goes read-only |
+- **A deep dive** (INFRA-12) is an explainer that is also the answer form. Write one instead of a plain owed item
+  when the call has more than one linked question, or a choice that needs a table or a picture. The document is
+  `.planning/dives/<TICKET-ID>-<slug>.html` in THIS repo: copy `.planning/dives/TEMPLATE.html` (its comment has the
+  rules), write plain HTML, and put a `<dive-q id="…" options="a | b | c">` under each explanation that asks
+  something. Commit it, then point an owed item at it: `"dive": "<TICKET-ID>-<slug>"` in `owed/<id>.json` (its
+  card shows the dive's status instead of buttons; give it no `options`). The ticket's page links it by itself.
+- **Submitted dives on wake**: `grep -l '"submitted"' dives/*.answers.json`, minus those with a `.taken` beside
+  them → read the answers, act, record each ruling in the ticket, `touch dives/<slug>.taken`, and move the owed
+  pair to `answered/`. Never edit a dive's document after the owner has opened it: a follow-up is a new dive.
   Write JSON with the Write tool (whole file). Never write a file the owner owns. The folder is committed and
   pushed by the ledorepo backup hooks; you never commit it.
 - **Item setup** https://claude.ai/artifact/HUjbtiQTyByViNedWtxhpu — Lane C's; answers in db `answers` (e.g.

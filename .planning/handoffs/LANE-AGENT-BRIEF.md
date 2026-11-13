@@ -28,6 +28,9 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
   then carry on with whatever doesn't depend on the answer.
 - **Owner-only calls** (design, economy numbers, words in the world's voice, a look or a drive): never block on
   them and never invent them. Put the question in your report, with your recommendation, and stop at that boundary.
+  If the call has several linked questions or needs a table or a picture, write it as a **deep dive**: copy
+  `.planning/dives/TEMPLATE.html` to `.planning/dives/<TICKET-ID>-<slug>.html` (rules in its comment), commit it,
+  and name the file on your report's OWED line; the orchestrator puts it on the owner's page.
 - **A dev server for an owner look**: `nohup npx vite --port <your port> --strictPort > <log> 2>&1 &` in your
   worktree, and name it in the handoff. Stop servers nobody is looking at.
 

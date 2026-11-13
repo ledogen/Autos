@@ -233,7 +233,7 @@
   .lv-opts { display:flex; gap:6px; flex-wrap:wrap; }
   .lv-opt { border:1px solid var(--line); background:var(--panel2); color:var(--fg); border-radius:6px;
             padding:6px 12px; font:inherit; cursor:pointer; text-align:left; }
-  .lv-opt:hover { border-color:var(--dimmer); }
+  .lv-opt:hover { border-color:var(--dimmer); text-decoration:none; }
   .lv-opt.on { border-color:var(--asset); color:var(--asset); font-weight:600; }
   .lv-board { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; align-items:start; }
   .lv-lane { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; min-width:0; }
@@ -583,6 +583,8 @@ function viewTicket(id) {
         ${t.refs.length ? t.refs.map(ticketLink).join(' ') : '<span style="color:var(--dimmer)">none</span>'}</div>
       <div class="row"><b style="color:var(--dimmer)">referenced by</b>
         ${back.length ? back.map(ticketLink).join(' ') : '<span style="color:var(--dimmer)">none</span>'}</div>
+      ${t.dives?.length ? `<div class="row"><b style="color:var(--dimmer)">deep dives</b>
+        ${t.dives.map(d => `<a href="/dives/${d.slug}.html">${esc(d.title)}</a> ${diveTag(d.slug)}`).join(' · ')}</div>` : ''}
       ${t.plan ? `<div class="row"><b style="color:var(--dimmer)">plan</b> ${inline(esc(t.plan))}</div>` : ''}
       ${t.handoff ? `<div class="row"><b style="color:var(--dimmer)">handoff</b> ${inline(esc(t.handoff))}</div>` : ''}
     </div>`;
@@ -1037,7 +1039,7 @@ function viewItems() {
  * State is files served by /data (index.mjs § lane tracker data); the page
  * writes only inbox/<id>.json and owed/<id>.answer.json. It polls every 5 s and
  * never repaints over a text box the owner is typing in. */
-let DATA = { inbox: {}, owed: {}, lanes: {} }, DATA_RAW = '';
+let DATA = { inbox: {}, owed: {}, lanes: {}, dives: {} }, DATA_RAW = '';
 let draft = '', lvState = '', lvBad = false, lvDirty = false;
 const lvOpen = new Set();          // <details> the owner opened, kept across repaints
 const noteTimers = new Map();
@@ -1066,6 +1068,10 @@ async function putData(path, doc) {
   } catch (e) { lvSay(`NOT SAVED — ${e.message}. Is the dashboard server running?`, true); return false; }
 }
 
+// A deep dive's status is what the owner did with it (INFRA-12); dive.js writes it.
+const diveStatus = (slug) => DATA.dives?.[slug + '.answers.json']?.status || 'not opened';
+const diveTag = (slug) => { const st = diveStatus(slug); return `<span class="lv-tag ${st === 'submitted' ? 'done' : st === 'partial' ? 'doing' : st === 'opened' ? 'question' : 'new'}">${st}</span>`; };
+const owedDone = (o) => o.dive ? diveStatus(o.dive) === 'submitted' : !!o.answer.choice;
 const OWED_GROUPS = [
   ['blocking', 'Blocking an agent', o => o.blocks],
   ['decide', 'Decisions', o => !o.blocks && o.kind === 'decide'],
@@ -1098,13 +1104,14 @@ function viewLanes() {
     const rows = owed.filter(test);
     if (!rows.length) return '';
     return `<div class="lv-og ${key}"><h3 class="subgrp">${title} <span class="count">${rows.length}</span></h3>${rows.map(o => `
-      <div class="lv-ow${o.answer.choice ? ' answered' : ''}">
+      <div class="lv-ow${owedDone(o) ? ' answered' : ''}">
         <div class="lv-row"><span class="lv-tag">${esc(o.kind || '')}</span><span>${inline(esc(o.tk || ''))}</span></div>
         <div class="txt">${inline(esc(o.text || ''))}</div>
         ${o.blocks ? `<div class="blocks">blocks: ${inline(esc(o.blocks))}</div>` : ''}
+        ${o.dive ? `<div class="lv-row"><a class="lv-opt" href="/dives/${attr(o.dive)}.html">open the deep dive</a>${diveTag(o.dive)}</div>` : `
         <div class="lv-opts">${owedOptions(o).map((opt, i) =>
           `<button class="lv-opt${o.answer.choice === opt ? ' on' : ''}" data-owed="${attr(o.id)}" data-i="${i}">${esc(opt)}</button>`).join('')}</div>
-        <textarea data-note="${attr(o.id)}" placeholder="note (saves as you type)">${esc(o.answer.note || '')}</textarea>
+        <textarea data-note="${attr(o.id)}" placeholder="note (saves as you type)">${esc(o.answer.note || '')}</textarea>`}
       </div>`).join('')}</div>`;
   }).join('');
 
@@ -1129,7 +1136,7 @@ function viewLanes() {
       ${handled.length ? details('in-done', `handled (${handled.length})`, `<ul class="lv-in">${handled.map(item).join('')}</ul>`) : ''}
     </section>
     <section>
-      <h2 class="sec">Owed by you <span class="count">${owed.filter(o => !o.answer.choice).length} open of ${owed.length}</span></h2>
+      <h2 class="sec">Owed by you <span class="count">${owed.filter(o => !owedDone(o)).length} open of ${owed.length}</span></h2>
       <div class="lv" style="gap:16px">${owedHtml || '<p class="muted">nothing owed</p>'}</div>
     </section>
     <section>
@@ -1246,6 +1253,7 @@ addEventListener('keydown', (e) => {
 });
 
 await load();
+await loadData().catch(() => {});
 if (!location.hash) location.hash = '#/lanes';   // Lanes is the home tab (owner, 2026-11-13)
 render();
 </script>
