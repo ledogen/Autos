@@ -180,10 +180,12 @@ export function rewardValue (id) {
     return PARTS[id]?.price ?? ITEM_PRICE[id] ?? REWARD_VALUE[id] ?? null
 }
 
-/** FEAT-199: what taking an optional item takes off the job's cash, to the cent (data/offers.js ITEM_COST_FRAC).
- *  The card's "(−$N)" and the result card's choice both read it, so they can never disagree. */
-export function itemCost (id) {
-    return Math.round((rewardValue(id) ?? 0) * ITEM_COST_FRAC * 100) / 100
+/** FEAT-199: what taking an optional item takes off the job's cash, to the cent (data/offers.js ITEM_COST_FRAC),
+ *  CAPPED at `paid`, the cash the job actually paid (owner, 2026-11-13: "cap") — so taking the item never costs
+ *  more than the job paid and never reaches into the wallet. The offer card calls it uncapped (the pay is not
+ *  known yet; it says "at most" when the pay can come in below it), the result card with the payout: the charge. */
+export function itemCost (id, paid = Infinity) {
+    return Math.min(paid, Math.round((rewardValue(id) ?? 0) * ITEM_COST_FRAC * 100) / 100)
 }
 
 /**
@@ -1125,7 +1127,11 @@ export class OfferBoard {
             times,
             // FEAT-199 (owner, 2026-11-11): the OPTIONAL item — earned at its gate, taken off the cash at the
             // result card: "Optional item: Compressor (−$20) — if B or better". Larry's card never rolls one.
-            bonus: sp.bonus ? `Optional item: ${sp.bonus.name} (−${money(itemCost(sp.bonus.rewardId))})`
+            // The price is capped at what the job pays (itemCost), so where the pay can come in below it the card
+            // says "at most": under the quoted base, or on a haul or a site (paid per piece, so no floor) or a
+            // fragile job (damage docks up to half the base).
+            bonus: sp.bonus ? `Optional item: ${sp.bonus.name} (−${money(itemCost(sp.bonus.rewardId))}`
+                + `${itemCost(sp.bonus.rewardId) > (!range || sp.stock || sp.targets ? 0 : sp.fragile ? range.base / 2 : range.base) ? ' at most' : ''})`
                 + ` — ${gateLine(sp.bonus.gate, sp.family, this._region, cargoId, km)}` : null,
             // R-09: the deed line — what this job adds toward the camp, and the number behind it.
             // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.

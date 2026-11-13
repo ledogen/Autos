@@ -433,9 +433,18 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('a bonus offer quotes the same whole line as a plain one (FEAT-199: its item is optional, off the cash)',
         cb.pay === cp.pay, cb.pay)
     const bw = b.spec(bonused.o).bonus
+    const atMost = itemCost(bw.rewardId) > pr.base ? ' at most' : ''
     check('FEAT-199: the card says "Optional item: <item> (−$N) — <gate>", N = itemCost = the item\'s value × ITEM_COST_FRAC',
-        cb.bonus === `Optional item: ${bw.name} (−$${formatMoney(itemCost(bw.rewardId))}) — if ${gateText(bw.gate)}`
+        cb.bonus === `Optional item: ${bw.name} (−$${formatMoney(itemCost(bw.rewardId))}${atMost}) — if ${gateText(bw.gate)}`
         && itemCost(bw.rewardId) === Math.round(rewardValue(bw.rewardId) * ITEM_COST_FRAC * 100) / 100, cb.bonus)
+    // The CAP (owner, 2026-11-13): N never exceeds what the job paid, so where the pay can come in under N the card
+    // says "at most" — and only there (a pay floor above N keeps the owner's plain "(−$N)").
+    const lo = b.card(bonused.o, { nowH: bonused.t, payTier: 0.01, route }), hi = b.card(bonused.o, { nowH: bonused.t, payTier: 1e4, route })
+    check('FEAT-199 cap: "(−$N at most)" when the base can pay less than N; plain "(−$N)" when it cannot',
+        lo.bonus.includes(`(−$${formatMoney(itemCost(bw.rewardId))} at most)`) && hi.bonus.includes(`(−$${formatMoney(itemCost(bw.rewardId))})`),
+        `${lo.bonus} | ${hi.bonus}`)
+    check('FEAT-199 cap: itemCost(id, paid) is min(price, paid) — the result card\'s charge never exceeds the pay',
+        REWARD_LIST.every(w => itemCost(w.id, 1.23) === Math.min(1.23, itemCost(w.id)) && itemCost(w.id, 1e6) === itemCost(w.id)))
     check('FEAT-199: every reward has a cost above $0 (nothing is free by omission)', REWARD_LIST.every(w => itemCost(w.id) > 0),
         REWARD_LIST.filter(w => !(itemCost(w.id) > 0)).map(w => w.id).join(', '))
     check('gate text: "S only" / "X or better"', gateText('S') === 'S only' && gateText('B') === 'B or better')

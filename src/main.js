@@ -4371,8 +4371,9 @@ missionSystem = new MissionSystem({
     const s = economySystem.settle(result, mission)
     // FEAT-199: an earned item is a CHOICE on the result card — the full cash (already paid), or the cash
     // less its cost with the item (the mp-item button). Nothing is granted here. A dine-in meal (the dinner
-    // invitation) is never stowed: 'dinner' marks it, and staying is the same choice.
-    if (s.award) { s.award.cost = itemCost(s.award.rewardId); s.award.stowed = mission.bonus.dineIn ? 'dinner' : null }
+    // invitation) is never stowed: 'dinner' marks it, and staying is the same choice. The cost is capped at
+    // this payout (owner, 2026-11-13), so the choice never goes below $0.
+    if (s.award) { s.award.cost = itemCost(s.award.rewardId, s.payout); s.award.stowed = mission.bonus.dineIn ? 'dinner' : null }
     if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
     return s
   },
@@ -7028,7 +7029,7 @@ function _renderMissionUI () {
       // FEAT-199: staying costs its item cost, like any optional item.
       if (r.award?.stowed === 'dinner') {
         btn('mp-decline', true)
-        if (nb) nb.textContent = `stay for dinner (30 min, −$${formatMoney(r.award.cost)})`   // disabled below if the wallet can't cover it
+        if (nb) nb.textContent = `stay for dinner (30 min, −$${formatMoney(r.award.cost)})`
       } else if (r.award && !r.award.stowed) {
         // FEAT-199 (owner, 2026-11-11): the choice — continue takes the full cash, the item button the
         // cash less its cost with the item. Pad: the D-pad picks, A takes (menu-nav.js); mouse: click.
@@ -7058,7 +7059,6 @@ function _renderMissionUI () {
   const pick = m.state === 'offer' ? _haulPick(m.offer) : null
   if (nb) nb.disabled = (m.state === 'offer' && !!m.offer
     && (_offerVerdict(m.offer, pick?.n ?? null)?.verdict === 'overload' || (pick != null && pick.max < 1)))
-    || (m.state === 'done' && m.result?.award?.stowed === 'dinner' && economySystem.money() < m.result.award.cost)   // FEAT-199
   // BUG-117 (owner 11-06): mom's casserole has no abandon, as it has no deadline — it ends at Larry's, where his
   // welcome finishes the tutorial; until then one-job-at-a-time holds every other job back.
   _syncJobCancel(hud, storySystem.isActive() && m.isOnJob() && offerBoard?.firstState() !== 'taken')
@@ -7732,7 +7732,7 @@ function _acceptOffer () {
   // something you go and find, not something handed to you at the drop point.
   if (missionSystem.state === 'done') {
     // The dinner invitation, taken: 30 min at their table, then fed like a standard meal (FEAT-169). FEAT-199:
-    // off the cash, like any optional item (the button is disabled when the wallet can't cover it).
+    // off the cash, like any optional item (capped at the job's pay, so the wallet always covers it).
     const aw = missionSystem.result?.award
     if (aw?.stowed === 'dinner' && economySystem.spend(aw.cost)) { daySystem.advanceMinutes(30); daySystem.eat(DAY_PARAMS.mealHoldH) }
     missionSystem.exit(); return
@@ -7768,19 +7768,17 @@ function _acceptOffer () {
   if (j?.targets && missionSystem.isOnJob()) _placeSite(j)   // FEAT-65: the site stands from accept
 }
 /**
- * FEAT-199: the result card's item button — the cash less the item's cost, and the item. Disabled while the
- * truck has no room (it says so; the inventory's onChange re-syncs it once room is made) or, for an item that
- * costs more than the job paid, while the wallet can't cover it. A full truck still takes the cash.
+ * FEAT-199: the result card's item button — the cash less the item's cost (capped at the pay, so ≥ $0), and the
+ * item. Disabled while the truck has no room (it says so; the inventory's onChange re-syncs it once room is
+ * made). A full truck still takes the cash.
  */
 function _syncItemChoice () {
   const b = document.getElementById('mp-item'), r = missionSystem?.state === 'done' ? missionSystem.result : null
   const aw = r?.award
   if (!b || !aw || aw.stowed) return
-  const net = Math.round((r.payout - aw.cost) * 100) / 100
   const room = inventorySystem.fits(aw.rewardId)
-  b.textContent = !room ? `no room for the ${aw.name} (Tab)`
-    : net >= 0 ? `take ${aw.name} + $${formatMoney(net)}` : `take ${aw.name}, pay $${formatMoney(-net)}`
-  b.disabled = !room || economySystem.money() < aw.cost
+  b.textContent = room ? `take ${aw.name} + $${formatMoney(Math.round((r.payout - aw.cost) * 100) / 100)}` : `no room for the ${aw.name} (Tab)`
+  b.disabled = !room
 }
 document.getElementById('mp-item')?.addEventListener('click', () => {
   const aw = missionSystem.state === 'done' ? missionSystem.result?.award : null

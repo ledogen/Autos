@@ -28,6 +28,7 @@ import {
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade, PAR_SLACK } from '../src/par.js'
 import { runState } from '../src/day.js'
+import { itemCost, REWARD_LIST } from '../src/offer-board.js'   // FEAT-199: the item's price, capped at the pay
 import { readFileSync } from 'node:fs'
 
 let fails = 0
@@ -440,6 +441,16 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
     withRec.base === plain.base && withRec.tip === plain.tip && withRec.tip > 0 && withRec.payout === plain.payout)
   check('payMult still scales a bonus job\'s line', halved.payout === splitPayout(par, 0.8, terms.payTier, 0.5).total)
   check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x')
+  // FEAT-199 CAP (owner, 2026-11-13): an item dearer than the job's whole pay costs exactly the pay — the
+  // choice reads "take <item> + $0.00" and the wallet ends where it started (seen: $8 shoes on a $7.28 job).
+  const dear = REWARD_LIST.reduce((m, w) => itemCost(w.id) > itemCost(m.id) ? w : m)
+  const before = runEconomy.money
+  const cheap = eco.settle({ par: 30, ratio: 0.8, letter: 'A' }, { terms, bonus: { rewardId: dear.id, name: dear.name, gate: 'B' } })
+  const charge = itemCost(cheap.award.rewardId, cheap.payout)
+  check('the cap: an item dearer than the job costs the job\'s pay, and taking it leaves the wallet unchanged',
+    itemCost(dear.id) > cheap.payout && charge === cheap.payout && eco.spend(charge) && runEconomy.money === before,
+    `${dear.id} $${itemCost(dear.id)} on a $${cheap.payout} job → $${charge}`)
+  check('the cap leaves an item cheaper than the pay at its price', itemCost(dear.id, itemCost(dear.id) + 1) === itemCost(dear.id))
   const pr = payRange(par, terms.payTier)
   check('payRange: base is basePay, max is the whole line at ratio 0 (R-03)',
     pr.base === basePay(par, terms.payTier) && pr.max === cents(payoutFor(par, 0, terms.payTier)))
