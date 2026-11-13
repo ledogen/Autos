@@ -69,13 +69,13 @@ same numbers on main after the welded-body skip landed. Every one follows the sa
 
 | capture | truck velocity, own frame (x side, z back) | chassis advance on the step | load off seat, per step | strike next step |
 |---|---|---|---|---|
-| r2 198355854-cargo-3 | (−10.1, 0.8, −8.4) m/s | 0.21 | 174 → 56 → 18 → 6 mm | 31 kN·s |
+| r2 198355854-cargo-3 | (−10.1, 0.8, −8.4) m/s | 0.21 | 162 (174 in the soak run) → 56 → 18 → 6 mm | 31 kN·s |
 | r2 198355854-cargo-1 | (−6.1, 0.8, +10.5) | 0.43 | 125 → 43 → 14 | 27 kN·s |
 | r2 1236227223-cargo-1 | (+14.2, 1.8, +3.6) | 0.35 | 175 → 58 | 0.6 kN·s |
 | r1 724783119-cargo-1 | (+9.5, 1.0, −6.4) | 0.57 | 88 → 30 → 10 | 16 kN·s |
 | r1 1328188534-cargo-1 | (−18.4, 2.2, +0.5) | 0.67 | 100 → 34 → 11 | 2–3 kN·s |
 
-- The truck is in a spin each time: sliding sideways, or backwards, at 7–19 m/s. Three have no road within 15 m. The
+- The truck is in a spin each time: sliding sideways, or backwards, at 7–19 m/s. The worst has no road within 15 m. The
   soak's `offroad: false` only means "not on a planned off-road leg". These are autopilot spin-outs ending in a body
   strike against a bank.
 - The mechanism is the engine's swept (continuous) collision. The chassis is a bullet (a body the engine sweeps so it
