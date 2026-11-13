@@ -11,10 +11,13 @@
 //   collider   a hard chassis hit with no prop / POI / bore within reach of it (something solid that isn't drawn)
 //   jolt       a body Δv over JOLT_DV in one step (gravity removed) while on the road
 //   stuck      throttle on, on a drivable road, under 0.5 m/s for 5 s
+//   cargo      (--cargo=<data/freight.js key>, BUG-161) the strapped load more than CARGO_MM off its bed seat — welded
+//              at strapPose as main.js _loadFreight does (box hull, the cargo-in-bed bullet flag), re-strapped on a seat
 // Each flag writes a capture (the state 10 s before + every input since); `--replay=file` rebuilds that seed's world,
 // seats the truck there, replays the inputs and reports whether the flag comes back.
 //
 //   node test/drive-soak.mjs [--seeds=4 | --seed=1234] [--km=8] [--radius=1500] [--out=wip/drive-soak/run] [--replay=file]
+//                            [--cargo=sculptureB]
 //
 // Pure node (no browser): the world rig builds the real modules; per seed 5–30 s to build, then ~0.3–0.6× realtime
 // (4 km ≈ 7–20 min wall). Random seeds only for claims about the world (seed 6 is a test seed).
@@ -58,6 +61,11 @@ import { DamageModel } from '../src/damage.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { buildWorld } from './lib/world-rig.mjs'
 import { ackermann } from './lib/physics-replay.mjs'
+import { strapPose, inBedWell } from '../src/debris.js'
+import { FREIGHT } from '../data/freight.js'
+import { PROP_MODELS } from '../data/prop-models.js'
+import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
+import { GROUP_DEBRIS } from '../src/physics-engine.js'
 
 const arg = (k, d) => { const a = process.argv.find(s => s.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d }
 const DT = 1 / 60
@@ -69,6 +77,7 @@ const CAPTURE_S = 10
 const SETTLE_S = 1.5           // s — no flags (bar nan / fall) after a re-seat: the harness's drop, not the world
 const V_MAX = 24, A_LAT = 3.5, A_BRAKE = 3   // m/s, m/s² — the autopilot's cruise, its cornering and braking budgets
 const OFFROAD_EVERY_KM = 2
+const CARGO = arg('cargo', null), CARGO_MM = 10   // BUG-161: the strapped load, and how far off its seat is a finding [DEFAULT]
 
 const seeds = arg('seed') ? [+arg('seed')] : Array.from({ length: +arg('seeds', 4) }, () => (Math.random() * 2 ** 31) >>> 0)
 
@@ -139,6 +148,30 @@ function makeRouter (road, rng) {
   return { path, extend }
 }
 
+// ── The strapped load (--cargo): main.js _loadFreight + _bedPoint, on the load's measured collision box ───────────────
+const BED = DEFAULT_VEHICLE_MODEL.bed
+function makeStrap (w, vs) {
+  const row = FREIGHT[CARGO], m = PROP_MODELS[row.model], [sx, sy, sz] = m.collision.size
+  const half = { x: sx / 2, y: sy / 2, z: sz / 2 }, seat = strapPose(BED, half, m.floorSeated ? 0 : half.x)
+  const pts = []; for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) pts.push(a * half.x, b * half.y, c * half.z)
+  const st = { body: null, seat, off: 0 }
+  const p = new THREE.Vector3(), v = new THREE.Vector3(), q = new THREE.Quaternion(), qi = new THREE.Quaternion()
+  st.strap = () => {
+    if (st.body) w.engine.destroyBody(st.body)   // the weld dies with its body
+    w.engine.setTransform(w.chassis, vs.position, vs.quaternion)
+    p.set(seat.x, seat.y, seat.z).applyQuaternion(vs.quaternion).add(vs.position)
+    v.copy(p).sub(vs.position).cross(vs.angularVelocity).negate().add(vs.velocity)   // ω × r + v
+    st.body = w.engine.createBody({ type: 'dynamic', position: p, quaternion: vs.quaternion, linearVelocity: v, angularVelocity: vs.angularVelocity })
+    w.engine.addHull(st.body, new Float32Array(pts), { density: row.massKg / (sx * sy * sz), friction: 0.6, restitution: 0.1, group: GROUP_DEBRIS })
+    w.engine.createWeldJoint(w.chassis, st.body, p)
+  }
+  const local = (out) => { w.engine.getTransform(st.body, p, q); return out.copy(p).sub(vs.position).applyQuaternion(qi.copy(vs.quaternion).invert()) }
+  const r = new THREE.Vector3()
+  st.beforeStep = () => w.engine.setBullet(st.body, inBedWell(local(r), BED, 0.1))   // DebrisSystem.beforeStep's cargo flag
+  st.measure = () => (st.off = local(r).distanceTo(seat))
+  return st
+}
+
 // ── One seed ────────────────────────────────────────────────────────────────────────────────────────────────────────
 async function soakSeed (seed, replay = null) {
   const P = freshParams()
@@ -164,7 +197,7 @@ async function soakSeed (seed, replay = null) {
     }
     w.dispose(); return { seed, dumped: true }
   }
-  const counts = { nan: 0, fall: 0, body: 0, wheel: 0, strut: 0, collider: 0, jolt: 0, stuck: 0 }
+  const counts = { nan: 0, fall: 0, body: 0, wheel: 0, strut: 0, collider: 0, jolt: 0, stuck: 0, cargo: 0 }
   const worst = []
   const hist = []          // [{ s: snapshot every second }, inputs since]
   let inputs = [], snapT = 0, snap = null
@@ -187,10 +220,12 @@ async function soakSeed (seed, replay = null) {
     // on one side hang over the slope and it can tip (seed 1615901410 rolled 0.5 s after one). The game never seats like
     // that (main.js fits the local plane, 0.5 m up), so the landing is the harness's: nothing but nan / fall is flagged.
     settleT = SETTLE_S
+    strap?.strap()   // main.js _restrapFreight: a seat re-straps the load on the new pose
   }
+  const strap = CARGO ? makeStrap(w, vs) : null
   let idx = 0
   let settleT = 0, snapAfterSeat = false
-  if (replay) { w.stream(replay.start.position.x, replay.start.position.z); restore(vs, replay.start); settleT = replay.afterSeat ? SETTLE_S : 0 } else seatAt(0)
+  if (replay) { w.stream(replay.start.position.x, replay.start.position.z); restore(vs, replay.start); settleT = replay.afterSeat ? SETTLE_S : 0; strap?.strap() } else seatAt(0)
 
   let dist = 0, offDist = 0, offroad = null, nextOff = OFFROAD_EVERY_KM * 1000, stuckT = 0, t = 0, steps = 0, lastStream = 0
   const flag = (kind, mag, extra = {}) => {
@@ -297,6 +332,7 @@ async function soakSeed (seed, replay = null) {
     const f = w.props.bushDragForce(pos.x, pos.y, pos.z, vel.x, vel.y, vel.z, { x: 0, y: 0, z: 0 })
     if (f.x || f.y || f.z) { const k = DT / P.mass; vel.x += f.x * k; vel.y += f.y * k; vel.z += f.z * k }
     vPrev.copy(vs.velocity)
+    strap?.beforeStep()
     stepPhysics(vs, P, DT, w.queryContacts, w.ctx)
     const hit = readRimStrikes(w.engine, w.chassis, vs.rimForce, DT, vs.rimHazard)
     damage.step(vs, P, DT)
@@ -365,6 +401,7 @@ async function soakSeed (seed, replay = null) {
       }
     }
     if (onRoad && fz > STRUT_N) flag('strut', fz)
+    if (strap && strap.measure() * 1000 > CARGO_MM) flag('cargo', strap.off * 1000)
     const dv = Math.hypot(vs.velocity.x - vPrev.x, vs.velocity.y - vPrev.y + 9.81 * DT, vs.velocity.z - vPrev.z)
     if (onRoad && dv > JOLT_DV) flag('jolt', dv)
     if (hit.impulse > HIT_IMPULSE) {
