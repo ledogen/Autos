@@ -1,7 +1,7 @@
 ---
 id: FEAT-195
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-12
 source: owner, 2026-11-11 inbox — "I still don't know how to abandon a mission on controller I think It should be triggered by holding B and going up"
