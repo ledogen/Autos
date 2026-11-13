@@ -199,7 +199,9 @@ not pick is random too (owner, 2026-11-06): free roam, the world built behind th
   the real game unattended (story mode: a ~5 min road drive with one off-road leg, the map open 30 s, parked 30 s) in
   headless Chrome at the owner's canvas, on three pinned random seeds. It reports per phase: fps, main-thread ms/s by
   bucket, CPU % per Chrome process, and CPU / GPU / DRAM watts with GPU active cycles from `test/lib/ioreport.py` (no
-  sudo). Compare GPU load by active cycles (busy % × MHz), never by GPU ms or raw watts. A drive that did not stream
+  sudo). Compare GPU load by active cycles (busy % × MHz), never by GPU ms or raw watts; compare main-thread cost by its
+  retired instructions (`mainMi`, physics `physMi*`, from `test/lib/threadcounts.py`, no sudo), never by ms/s alone, which
+  on this Mac follows the core clock macOS picks (2–5× on the same work). A drive that did not stream
   (≥ 3 km, new chunks) is INVALID, never a number. `--b` alternates A-B-A-B to cancel heat drift; `--record` appends to
   `.planning/perf/history.jsonl` (the health check). About 7 min a session; wants a quiet machine. Not in `npm test`.
   The driver is `test/lib/autopilot.mjs`: pure, state in → controls out, meant to grow into in-game AI cars.
