@@ -669,7 +669,8 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
                 + (sp.bonus ? `$${formatMoney(pr.base)} flat` : `$${formatMoney(pr.base)} – $${formatMoney(pr.max)} by speed`)
             if (Math.abs(sp.payMult - want) > 1e-12
                 || card.pay !== wantPay
-                || card.terms.join('|') !== `3.0 km|${sp.stock} bundles available`) badPay++
+                || card.terms.join('|') !== `3.0 km|${sp.stock} bundles available`
+                || card.times.join('|') !== `available for: ${formatGameDuration(o.expiresH - t)}|time limit: ${formatGameDuration(b.deadlineH(o, 300))}`) badPay++   // BUG-162
             // §6: a gate the stock can't meet never rolls; the card prints the count behind it.
             if (sp.bonus) {
                 gated++
@@ -681,7 +682,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check(`every haul stocks ${HAUL_STOCK[0]}..${HAUL_STOCK[1]} bundles (and only hauls have a stock)`, badCount === 0)
     check('the whole range rolls', counts.size === HAUL_STOCK[1] - HAUL_STOCK[0] + 1, [...counts].sort((a, b) => a - b).join(','))
     check('the offer weight is the whole stock × the bundle mass', badMass === 0)
-    check('pay is per bundle; the card is the rate, the cost, the distance and the stock — no timers', badPay === 0)
+    check('pay is per bundle; the card is the rate, the cost, the distance, the stock, and both timers like every job (BUG-162)', badPay === 0)
     check('a haul bonus gate is always reachable on the stock, and prints as a count', gated > 0 && badGate === 0
         && gateLine('B', 'haul', 1) === `if ${S.B}+ bundles delivered` && gateLine('A', 'freight', 1) === 'upon delivery'
         && gateLine('A', null, 1) === `if ${gateText('A')}`, `${badGate}/${gated} haul bonuses`)
