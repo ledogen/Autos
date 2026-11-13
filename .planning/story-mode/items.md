@@ -280,7 +280,7 @@ spends daylight, so it can't turn into a chore. Thirst is out (owner, 2026-09-30
   **as a reward it is a dinner invitation** (owner, 2026-10-22): a C–B reward from residences, the
   food vendor and farms, where the customer asks you to join them for dinner — optional, 30 min, and you
   are fully fed; **built 2026-10-23** as `dinnerMeal`, a `dineIn` reward: on any job those givers post,
-  as with every reward (owner), the result card asks *stay for dinner (30 min)* or *decline*; being fed
+  as with every reward (owner), the result card asks *stay for dinner (30 min)* or *decline* (FEAT-199, owner 2026-11-13: staying costs its price off the job's cash, capped at what the job paid, like any optional item); being fed
   waits on hunger), the chili dog
   (10 h, spoils in 16 h), the **packed lunch** (never sold — a $6 reward from homes, farms and the food
   vendor, B–A; 8 h; fresh 24 h), the **school lunch** (FEAT-168, owner 2026-11-05: "school lunch?" — the school's rare reward, its own category; B–A, 8 h, the packed lunch's bag icon, all [DEFAULT]; the owner writes its words), groceries (§1, cooked at camp: the meal holds 10 h), the **potato** (§1, cooked on the campfire, no kit

@@ -269,7 +269,11 @@ the norm.
   `status`, `severity`, plus a clear acceptance section). This tracker is the live source of truth for
   outstanding work. Close a ticket by moving it to `.planning/todos/completed/` with a resolution note.
   **Browse it with `npm run dash`** (`tools/dashboard/`, serves :8010) — filterable list, rendered
-  ticket bodies with cross-refs auto-linked, an "open in editor" jump, and a repo-stats page. It is a
+  ticket bodies with cross-refs auto-linked, an "open in editor" jump, and a repo-stats page. Its home
+  tab is **Lanes** (INFRA-11): the owner's intake box, the owed cards and the lane board. That tab's state is
+  one small JSON file per item in the owner's PRIVATE repo (`~/CodeShit/ledorepo/projects/cargame/`: `inbox/`,
+  `owed/`, `lanes/`, `answered/`; the file-by-file contract is the comment above `DATA` in
+  `tools/dashboard/index.mjs`), which agents read and write with plain file tools. For tickets it is a
   read-only viewer: it normalises the tracker's drifted `type`/`status` vocabulary for filtering and
   reports the offenders, but never edits a ticket. The frontmatter files stay the source of truth.
   It also **synthesises the story milestones as pseudo-tickets** (`SM-1`…`SM-5`, type `milestone`)

@@ -199,12 +199,63 @@
   .guide { background:var(--panel); border:1px solid var(--line); border-radius:8px;
            padding:2px 14px; margin-bottom:14px; }
   .guide summary { cursor:pointer; padding:8px 0; color:var(--dim); }
+
+  /* lanes tab (INFRA-11) — the owner's intake box, owed cards and the lane board */
+  .lv { display:flex; flex-direction:column; gap:22px; }
+  .lv textarea {
+    width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--line); color:var(--fg);
+    border-radius:6px; padding:8px 10px; font:inherit; font-size:16px; /* 16px: iOS zooms the page below that */
+    resize:vertical; min-height:2.6em; field-sizing:content;
+  }
+  .lv textarea:focus { outline:none; border-color:var(--accent); }
+  .lv-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .lv-state { color:var(--dimmer); font-size:12px; }
+  .lv-state.bad { color:var(--critical); font-weight:600; }
+  .lv-in { list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:6px; }
+  .lv-in li { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:8px 12px;
+              display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:baseline; }
+  .lv-in .txt, .lv-ow .txt { min-width:0; overflow-wrap:anywhere; white-space:pre-wrap; }
+  .lv-in .reply { grid-column:2 / -1; color:var(--dim); border-left:2px solid var(--line); padding-left:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .lv-in .when { grid-column:2 / -1; color:var(--dimmer); font-size:11.5px; }
+  .lv-tag { font:11px var(--mono); text-transform:uppercase; letter-spacing:.5px; border:1px solid var(--line);
+            border-radius:4px; padding:1px 6px; color:var(--dim); white-space:nowrap; }
+  .lv-tag.new { color:var(--accent); border-color:var(--accent); }
+  .lv-tag.question, .lv-tag.blocked { color:var(--major); border-color:var(--major); }
+  .lv-tag.done { color:var(--asset); } .lv-tag.doing { color:var(--accent); } .lv-tag.ticket { color:var(--quality); }
+  .lv-x { background:none; border:none; color:var(--dimmer); cursor:pointer; font:inherit; font-size:12px; padding:0; }
+  .lv-x:hover { color:var(--critical); }
+  .lv-og { display:flex; flex-direction:column; gap:8px; }
+  .lv-og.blocking { border-top:2px solid var(--critical); padding-top:10px; }
+  .lv-ow { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px;
+           display:flex; flex-direction:column; gap:8px; }
+  .lv-ow.answered .txt { color:var(--dim); }
+  .lv-ow .blocks { color:var(--critical); font-size:12.5px; }
+  .lv-opts { display:flex; gap:6px; flex-wrap:wrap; }
+  .lv-opt { border:1px solid var(--line); background:var(--panel2); color:var(--fg); border-radius:6px;
+            padding:6px 12px; font:inherit; cursor:pointer; text-align:left; }
+  .lv-opt:hover { border-color:var(--dimmer); }
+  .lv-opt.on { border-color:var(--asset); color:var(--asset); font-weight:600; }
+  .lv-board { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; align-items:start; }
+  .lv-lane { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; min-width:0; }
+  .lv-lane h3 { margin:0 0 2px; font-size:14.5px; }
+  .lv-lane .now { margin:8px 0; padding:6px 10px; background:var(--panel2); border-radius:6px; font-size:13px; overflow-wrap:anywhere; }
+  .lv-lane .meta { color:var(--dimmer); font-size:12px; overflow-wrap:anywhere; }
+  .lv-lane ul { list-style:none; margin:8px 0; padding:0; display:flex; flex-direction:column; gap:6px; font-size:13px; }
+  .lv-lane li { overflow-wrap:anywhere; }
+  .lv-lane summary { cursor:pointer; color:var(--dim); font-size:12.5px; }
+  #search[hidden] { display:none; }
+  #search[hidden] + #reindex { margin-left:auto; }
+  @media (max-width:600px) {
+    main { padding:12px; }
+    #search { width:100%; margin-left:0; }
+  }
 </style>
 </head>
 <body>
 <header>
   <div class="brand">AUTOS <span>· planning</span></div>
   <nav>
+    <a href="#/lanes" data-nav="lanes">Lanes</a>
     <a href="#/tickets" data-nav="tickets">Tickets</a>
     <a href="#/cargo" data-nav="cargo">Cargo</a>
     <a href="#/places" data-nav="places">Places</a>
@@ -981,14 +1032,175 @@ function viewItems() {
     ${sections || '<ul class="list"><li><span class="tblurb">nothing matches</span></li></ul>'}`;
 }
 
+/* ─────────────────────────── lanes (INFRA-11) ───────────────────────────
+ * The owner's loop: type into intake while playtesting, answer owed items later.
+ * State is files served by /data (index.mjs § lane tracker data); the page
+ * writes only inbox/<id>.json and owed/<id>.answer.json. It polls every 5 s and
+ * never repaints over a text box the owner is typing in. */
+let DATA = { inbox: {}, owed: {}, lanes: {} }, DATA_RAW = '';
+let draft = '', lvState = '', lvBad = false, lvDirty = false;
+const lvOpen = new Set();          // <details> the owner opened, kept across repaints
+const noteTimers = new Map();
+const onLanes = () => (location.hash.split('?')[0] || '#/lanes') === '#/lanes';
+const typing = () => { const a = document.activeElement; return !!(a && a.tagName === 'TEXTAREA' && a.closest('#app')); };
+const when = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+const attr = (s) => esc(s).replace(/"/g, '&quot;');
+
+async function loadData() {
+  const raw = await fetch('/data').then(r => r.text());
+  if (raw === DATA_RAW) return false;
+  DATA_RAW = raw; DATA = JSON.parse(raw); return true;
+}
+function lvSay(msg, bad = false) {
+  lvState = msg; lvBad = bad;
+  const el = document.getElementById('lv-state');
+  if (el) { el.textContent = msg; el.classList.toggle('bad', bad); }
+}
+async function putData(path, doc) {
+  lvSay('saving…');
+  try {
+    const r = await fetch('/data/' + path, { method: 'PUT', body: JSON.stringify(doc) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).msg || r.status);
+    lvSay('saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    return true;
+  } catch (e) { lvSay(`NOT SAVED — ${e.message}. Is the dashboard server running?`, true); return false; }
+}
+
+const OWED_GROUPS = [
+  ['blocking', 'Blocking an agent', o => o.blocks],
+  ['decide', 'Decisions', o => !o.blocks && o.kind === 'decide'],
+  ['drive', 'Test drives', o => !o.blocks && o.kind === 'drive'],
+  ['make', 'Things to make', o => !o.blocks && o.kind !== 'decide' && o.kind !== 'drive'],
+];
+const owedOptions = o => o.options || (o.kind === 'make' ? ['done', 'note (box below)'] : ['good', 'changes (note box below)']);
+const owedItems = () => Object.keys(DATA.owed).filter(f => !f.endsWith('.answer.json'))
+  .map(f => ({ id: f.slice(0, -5), ...DATA.owed[f], answer: DATA.owed[f.slice(0, -5) + '.answer.json'] || {} }))
+  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+function viewLanes() {
+  const ids = Object.keys(DATA.inbox).filter(f => !f.endsWith('.reply.json')).map(f => f.slice(0, -5));
+  const item = (id) => {
+    const it = DATA.inbox[id + '.json'], rp = DATA.inbox[id + '.reply.json'];
+    const st = rp?.status || 'new';
+    return `<li><span class="lv-tag ${attr(st)}">${esc(st)}</span><span class="txt">${inline(esc(it.text || ''))}</span>
+      <button class="lv-x" data-del="${id}" title="remove this item">remove</button>
+      ${rp?.reply ? `<div class="reply">${inline(esc(rp.reply))}</div>` : ''}
+      <div class="when">${when(it.at)}${rp?.handledAt ? ' → ' + when(rp.handledAt) : ''}</div></li>`;
+  };
+  // A question back from the agent stays in the open list: it is waiting on the owner.
+  const isOpen = (id) => { const s = DATA.inbox[id + '.reply.json']?.status; return !s || s === 'new' || s === 'question'; };
+  const open = ids.filter(isOpen), handled = ids.filter(id => !isOpen(id)).reverse();
+  const details = (key, summary, body) =>
+    `<details data-key="${attr(key)}"${lvOpen.has(key) ? ' open' : ''}><summary>${summary}</summary>${body}</details>`;
+
+  const owed = owedItems();
+  const owedHtml = OWED_GROUPS.map(([key, title, test]) => {
+    const rows = owed.filter(test);
+    if (!rows.length) return '';
+    return `<div class="lv-og ${key}"><h3 class="subgrp">${title} <span class="count">${rows.length}</span></h3>${rows.map(o => `
+      <div class="lv-ow${o.answer.choice ? ' answered' : ''}">
+        <div class="lv-row"><span class="lv-tag">${esc(o.kind || '')}</span><span>${inline(esc(o.tk || ''))}</span></div>
+        <div class="txt">${inline(esc(o.text || ''))}</div>
+        ${o.blocks ? `<div class="blocks">blocks: ${inline(esc(o.blocks))}</div>` : ''}
+        <div class="lv-opts">${owedOptions(o).map((opt, i) =>
+          `<button class="lv-opt${o.answer.choice === opt ? ' on' : ''}" data-owed="${attr(o.id)}" data-i="${i}">${esc(opt)}</button>`).join('')}</div>
+        <textarea data-note="${attr(o.id)}" placeholder="note (saves as you type)">${esc(o.answer.note || '')}</textarea>
+      </div>`).join('')}</div>`;
+  }).join('');
+
+  const laneIds = Object.keys(DATA.lanes).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5));
+  const board = laneIds.map(id => {
+    const l = DATA.lanes[id + '.json'], now = (DATA.lanes[id + '.now'] || '').trim(), ho = DATA.lanes[id + '.handoff.md'];
+    return `<div class="lv-lane"><h3>${esc(l.name || id)}</h3><div class="meta">${esc(l.goal || '')}</div>
+      <div class="now">${now ? inline(esc(now)) : '<span class="muted">no agent running</span>'}</div>
+      <div class="meta">${esc(l.branch || '')}${l.port ? ` · <a href="http://${location.hostname}:${l.port}/">:${l.port}</a>` : ''}${l.owns ? ` · owns ${esc(l.owns)}` : ''}</div>
+      <ul>${(l.tasks || []).map(t => `<li><span class="lv-tag ${attr(t.status || 'todo')}">${esc(t.status || 'todo')}</span>
+        <b>${inline(esc(t.id || ''))}</b> ${inline(esc(t.what || ''))}${t.note ? ` <span class="muted">— ${inline(esc(t.note))}</span>` : ''}</li>`).join('')}</ul>
+      ${ho ? details('ho-' + id, 'handoff', `<div class="body">${md(ho)}</div>`) : ''}</div>`;
+  }).join('');
+
+  return `<div class="lv">
+    <section>
+      <h2 class="sec">Intake</h2>
+      <textarea id="in-text" placeholder="Anything: a bug, an idea, a ruling. One item per add. ⌘↵ adds.">${esc(draft)}</textarea>
+      <div class="lv-row" style="margin-top:8px"><button class="act" id="in-add">add</button>
+        <span class="lv-state${lvBad ? ' bad' : ''}" id="lv-state">${esc(lvState)}</span></div>
+      <ul class="lv-in">${open.map(item).join('')}</ul>
+      ${handled.length ? details('in-done', `handled (${handled.length})`, `<ul class="lv-in">${handled.map(item).join('')}</ul>`) : ''}
+    </section>
+    <section>
+      <h2 class="sec">Owed by you <span class="count">${owed.filter(o => !o.answer.choice).length} open of ${owed.length}</span></h2>
+      <div class="lv" style="gap:16px">${owedHtml || '<p class="muted">nothing owed</p>'}</div>
+    </section>
+    <section>
+      <h2 class="sec">Lanes</h2>
+      <div class="lv-board">${board || '<p class="muted">no lanes</p>'}</div>
+    </section>
+  </div>`;
+}
+function paintLanes() {
+  if (!onLanes()) return;
+  document.getElementById('app').innerHTML = viewLanes();
+  lvDirty = false;
+}
+async function addItem() {
+  const box = document.getElementById('in-text'), text = box.value.trim();
+  if (!text) return;
+  const at = new Date().toISOString();
+  const id = at.replace(/[-:.TZ]/g, '').slice(0, 14) + '-' + Math.random().toString(36).slice(2, 6).padEnd(4, '0');
+  if (!await putData(`inbox/${id}.json`, { text, at })) return;   // on failure the text stays in the box
+  DATA.inbox[id + '.json'] = { text, at }; draft = '';
+  paintLanes(); document.getElementById('in-text').focus();
+}
+function saveAnswer(id, patch) {
+  const a = DATA.owed[id + '.answer.json'] = { choice: '', note: '', ...DATA.owed[id + '.answer.json'], ...patch, at: new Date().toISOString() };
+  return putData(`owed/${id}.answer.json`, a);
+}
+{
+  const app = document.getElementById('app');
+  app.addEventListener('click', async (e) => {
+    if (!onLanes()) return;
+    const opt = e.target.closest('[data-owed]');
+    if (opt) {
+      const o = owedItems().find(x => x.id === opt.dataset.owed), pick = owedOptions(o)[+opt.dataset.i];
+      await saveAnswer(o.id, { choice: o.answer.choice === pick ? '' : pick });   // a second click clears it
+      paintLanes();
+    }
+    if (e.target.id === 'in-add') addItem();
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      const id = del.dataset.del;
+      const r = await fetch(`/data/inbox/${id}.json`, { method: 'DELETE' }).catch(() => null);
+      if (!r?.ok) return lvSay('NOT REMOVED — is the dashboard server running?', true);
+      delete DATA.inbox[id + '.json']; delete DATA.inbox[id + '.reply.json']; paintLanes();
+    }
+  });
+  const flushNote = (t) => { clearTimeout(noteTimers.get(t.dataset.note)); noteTimers.delete(t.dataset.note); saveAnswer(t.dataset.note, { note: t.value }); };
+  app.addEventListener('input', (e) => {
+    if (e.target.id === 'in-text') draft = e.target.value;
+    const id = e.target.dataset?.note;
+    if (id) { clearTimeout(noteTimers.get(id)); noteTimers.set(id, setTimeout(() => flushNote(e.target), 600)); }
+  });
+  // leaving a note box saves at once, so a quick tab-close cannot lose the last half second
+  app.addEventListener('change', (e) => { if (e.target.dataset?.note && noteTimers.has(e.target.dataset.note)) flushNote(e.target); });
+  app.addEventListener('keydown', (e) => { if (e.target.id === 'in-text' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addItem(); } });
+  app.addEventListener('toggle', (e) => { const k = e.target.dataset?.key; if (k) lvOpen[e.target.open ? 'add' : 'delete'](k); }, true);
+  setInterval(async () => {
+    if (!onLanes() || document.hidden) return;
+    try { if (await loadData()) lvDirty = true; } catch { return lvSay('dashboard server unreachable', true); }
+    if (lvDirty && !typing() && !noteTimers.size) paintLanes();
+  }, 5000);
+}
+
 /* ─────────────────────────── router ─────────────────────────── */
 function render() {
-  const path = location.hash.split('?')[0] || '#/tickets';
+  const path = location.hash.split('?')[0] || '#/lanes';
   const app = document.getElementById('app');
   const search = document.getElementById('search');
 
   let page = 'tickets';
   if (path.startsWith('#/t/')) { app.innerHTML = viewTicket(decodeURIComponent(path.slice(4))); page = 'tickets'; }
+  else if (path === '#/lanes') { app.innerHTML = viewLanes(); page = 'lanes'; loadData().then(ch => ch && paintLanes()).catch(() => lvSay('dashboard server unreachable', true)); }
   else if (path === '#/stats') { app.innerHTML = viewStats(); page = 'stats'; }
   else if (path === '#/cargo') { app.innerHTML = viewCargo(); page = 'cargo'; }
   else if (path === '#/places') { app.innerHTML = viewPlaces(); page = 'places'; }
@@ -997,6 +1209,7 @@ function render() {
   else app.innerHTML = viewTickets();
 
   search.style.visibility = page === 'stats' || page === 'places' ? 'hidden' : 'visible';
+  search.hidden = page === 'lanes';   // gone, not just invisible: on a phone it would cost a whole header row
   for (const a of document.querySelectorAll('nav a')) a.classList.toggle('on', a.dataset.nav === page);
   if (!path.startsWith('#/t/')) window.scrollTo(0, 0);
 }
@@ -1028,12 +1241,12 @@ document.getElementById('reindex').addEventListener('click', async (e) => {
 });
 addEventListener('hashchange', render);
 addEventListener('keydown', (e) => {
-  if (e.key === '/' && e.target.tagName !== 'INPUT') { e.preventDefault(); document.getElementById('search').focus(); }
-  if (e.key === 'Escape') { document.getElementById('search').value = ''; render(); }
+  if (e.key === '/' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); document.getElementById('search').focus(); }
+  if (e.key === 'Escape' && !onLanes()) { document.getElementById('search').value = ''; render(); }
 });
 
 await load();
-if (!location.hash) location.hash = '#/tickets';
+if (!location.hash) location.hash = '#/lanes';   // Lanes is the home tab (owner, 2026-11-13)
 render();
 </script>
 </body>

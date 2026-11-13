@@ -2821,14 +2821,14 @@ export class Map2D {
         // FEAT-142: the giver's traits, bottom-left.
         for (const t of traitRows) { ty += LH; this._drawRuns(ctx, [{ t }], inL, ty, fN, fB, '#555') }
 
-        // ── the TIP form, tacked onto the bottom (R-04: the item that replaces the cash tip) ──
+        // ── the OPTIONAL ITEM form, tacked onto the bottom (FEAT-199: taken off the cash, or left) ──
         if (c.bonus) {
             const by = y + H - 1.5 * k
             this._cardFrame(ctx, x, by, W, B.BONUS * k + 1.5 * k, k, '#d4a017')
             ctx.font = fS; ctx.fillStyle = '#8a6a00'
-            ctx.fillText('TIP · INSTEAD OF CASH', inL, by + 9 * k)
+            ctx.fillText('OPTIONAL ITEM · OFF THE CASH', inL, by + 9 * k)
             ctx.font = fB; ctx.fillStyle = '#4a3a00'
-            ctx.fillText(c.bonus.replace(/^Tip:\s*/, ''), inL, by + 23 * k)
+            ctx.fillText(c.bonus.replace(/^Optional item:\s*/, ''), inL, by + 23 * k)
         }
         ctx.textBaseline = 'alphabetic'
     }
