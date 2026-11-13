@@ -115,18 +115,20 @@ check(z1 > z0 * 1.5 && z2 < z1 / 1.5, `right stick up zooms in, down out (${z0.t
 await js('__fp.axes[2] = -1'); await sleep(600); await js('__fp.axes[2] = 0'); await sleep(100)
 const c1 = await camXZ()
 check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 0.5, `the right stick does not orbit the camera behind the map (moved ${Math.hypot(c1[0] - c0[0], c1[1] - c0[1]).toFixed(2)} m)`)
-// Last, as it moves the truck: RT drives on the map (the truck is reset after the map closes).
+// Last: RT is still the throttle on the map, but the map was opened at rest, so the park lock holds the truck
+// (FEAT-194 part 2): the latch stays set and the handbrake on.
 await js('__fp.b[7] = 0.5'); await sleep(300)
-const thrOnMap = (await vs()).thr, z3 = await zm()
+const onMap = await vs(), z3 = await zm()
 await js('__fp.b[7] = 0'); await sleep(100)
-check(thrOnMap > 0 && z3 === z2, `RT is still the throttle on the map and zooms nothing (thr ${thrOnMap}, zoom ${z2.toFixed(3)} → ${z3.toFixed(3)})`)
+check(onMap.thr > 0 && z3 === z2, `RT is still the throttle on the map and zooms nothing (thr ${onMap.thr}, zoom ${z2.toFixed(3)} → ${z3.toFixed(3)})`)
+check(onMap.parked && onMap.hb && onMap.v < 0.3, `FEAT-194: RT on a map opened at rest does not release the parking brake (parked=${onMap.parked}, hb=${onMap.hb}, v=${onMap.v.toFixed(2)})`)
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!await mapShown(), 'View closes the map again')
 // B is the general back (owner, 2026-10-20): it closes the map too.
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
 check(!await mapShown(), 'B closes the map')
-// The map's RT drove the truck off its brake (FEAT-175): View held resets it, parked at rest, as the checks below found it.
+// View held resets the truck, parked at rest, as the checks below found it.
 await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)
 s = await vs(); check(s.parked && s.v < 0.2, `after the map, View held puts the truck back parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // Right stick = orbit RATE. Stopped, the view LINGERS where it was pointed (owner, 2026-10-20) until a
@@ -140,10 +142,12 @@ await js('__fp.axes[2] = 1'); await sleep(600); await js('__fp.axes[2] = 0')
 const o1 = await off(); check(Math.abs(o1) > 45, `0.6 s full right stick orbits the view (${o1.toFixed(0)} deg off behind)`)
 await sleep(1500); const o2 = await off(); check(Math.abs(o2 - o1) < 3, `1.5 s after release it HOLDS (${o2.toFixed(0)} deg)`)
 await sleep(2500); const o3 = await off(); check(Math.abs(o3 - o1) < 3, `stopped, ~4 s after release it still lingers (${o3.toFixed(0)} deg)`)
-// The tap releases the park latch and the truck sits on a slope: re-park at once (RB tap), so the
-// checks below start parked; the swing-back has already been handed over by then.
+// FEAT-194 part 1: the LT tap leaves the park latch set (only RT, RB or a gear let it go), so the checks
+// below start parked.
 await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0')
-await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0')
+check((await vs()).parked, 'FEAT-194: an LT tap while parked leaves the parking brake set')
+await js('__fp.b[6] = 0.6'); await sleep(1500); await js('__fp.b[6] = 0'); await sleep(100)
+check((await vs()).parked, 'FEAT-194: LT held 1.5 s while parked leaves it set')
 await sleep(2000); const o4 = await off(); check(Math.abs(o4) < 10, `a brake tap from a stop swings it back behind (${o4.toFixed(0)} deg)`)
 // B no longer aims (owner, 2026-10-21): held in the drive layout it is the icon menu. Off a route the
 // pad has no practice throw now; on one, the right stick aims and RB taps (checked below).
