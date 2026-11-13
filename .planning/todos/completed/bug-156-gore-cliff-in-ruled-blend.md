@@ -1,7 +1,7 @@
 ---
 id: BUG-156
 type: bug
-status: open
+status: closed — landed 3ba37902 (smoke 26/26, affected gates 72/72 incl. hint-reuse)
 severity: minor
 opened: 2026-11-09
 source: Lane B, BUG-155's gore measurements (land/bug-155)
