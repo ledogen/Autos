@@ -125,7 +125,7 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   3ba37902. Each smoked 26/26 (logs wip/orch/smoke-*.log).
 - **Running**: Lane B — replaying the BUG-161 soak captures where the strapped statue sat up to 174 mm off its seat
   on the road (seeds 724783119, 198355854); fix lands as land/bug-161b. Then FEAT-201, FEAT-194 parts 1–2, FEAT-196.
-- **Idle on the owner**: Spare — FEAT-199 built and gated on land/feat-199 @ d7c4f07a (`CarGame-land-199`), HELD for
+- **Running too**: Spare — FEAT-199, owner ruled 11-13 "1. yes, 2. cap" (keep the choice model; an item never costs more than the job paid): the agent adds the cap, rewords DESIGN.md, re-gates and requests the landing. Was: built and gated on land/feat-199 @ d7c4f07a (`CarGame-land-199`), HELD for
   `feat199-design` (on a yes: reword DESIGN.md's "a bonus item rides on top of cash" line first, apply the cap if
   chosen, then land). Lane A — FEAT-194 part 3 after `handbrake-clock`.
 - **Perf session**: PERF-41 branch rebased on 1f66acb7, tip d8625e2a, not ready (the owner picks levers in its
