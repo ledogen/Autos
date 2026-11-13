@@ -20,8 +20,9 @@ lane: Perf (p)
 # PERF-40 — an automated playtest that measures power, without the owner
 
 ## Next steps
-Perf lane: land `land/perf-40-norm` (the work measure). Then the owner says when a `--record` may run (none since
-b71cd825); that record is the first with work fields, and the health check compares work from then on.
+Orchestrator: land `land/perf-40-norm` (the work measure; prepared by the Perf lane, gates and a bench smoke green).
+Then the owner says when a `--record` may run (none since b71cd825). That record is the first with work fields, and
+the health check compares work from then on.
 
 ## Summary
 An unattended playtest (story drive, map, park) on three pinned seeds that reports fps, main-thread ms/s by bucket, CPU %
@@ -194,14 +195,37 @@ up to ~20 % between host states (validation below). The whole-thread figure has 
   3.2 GHz at IPC 4.3, so a spike second does ~5× the main-thread instructions of a calm one while reading only 1.6× the
   ms. ms UNDER-reports the spikes; on a machine whose clock does not chase load they would read larger.
 
+**Repeat runs agree** (the PERF-42 verdict, 2026-11-13: three seeds × 2 reps, src = main 0f6fbc38, fake audio, host
+0.27–0.40/core, 6/6 valid):
+
+| seed | drive mainMi rep 1 / 2 | physics work p50 rep 1 / 2 | park mainMi rep 1 / 2 |
+|---|---|---|---|
+| 1768572700 | 1450 / 1390 | 338 / 339 | 817 / 806 |
+| 17535907 | 1606 / 1628 | 399 / 403 | 1395 / 1374 |
+| 759313244 | 1447 / 1535 | 335 / 350 | 847 / 847 |
+
+- The typical second's work repeats within 1–4 %, the drive's main-thread work within 1–6 %, parked within 0–2 %.
+- At one junction the spike seconds repeat second by second within ~10 % (seed 17535907 (−814, 719): 1274 / 1385 /
+  1029 / 1882 / 1505 Minstr on rep 1, 1279 / 1355 / 1093 / 1755 / 1662 on rep 2). A spike is a place, not noise.
+- `physMiOver` (a threshold count) moves ±1–3 points between reps of a seed. Its noise band (±2.17 pooled) is the
+  widest of the work columns; read it pooled over three seeds, never one session.
+
+**Comparing records (the rule).** Main-thread cost is compared by `mainMi`; physics spikes by `physMiOver` and
+`physMiP99`. ms columns (`mainMs`, `physP99`, `physOver100`) are read beside them for what the player feels, never alone
+as a verdict. GPU load stays by `gpuMcyc`. Records before 2026-11-13 carry no work fields, so ms is all they can be
+compared on, and only between runs on a like host. `physMi*` inherits the apportioning bias above (±~15 % between
+host states); `mainMi` has none.
+
 ## Tracker
-- [ ] `test/lib/ioreport.py` checked in, with a self-check (a sample has CPU and GPU watts and a GPU MHz on the table).
-- [ ] `node test/playtest-bench.mjs` runs unattended to the end on three seeds, drive phase ≥ 2.5 km a seed (3 km until 2026-11-12) with streaming
-      verified, recoveries counted.
-- [ ] Two runs of the same build agree within the reported noise band.
+- [x] `test/lib/ioreport.py` checked in, with a self-check (a sample has CPU and GPU watts and a GPU MHz on the table).
+- [x] `node test/playtest-bench.mjs` runs unattended to the end on three seeds, drive phase ≥ 2.5 km a seed (3 km until 2026-11-12) with streaming
+      verified, recoveries counted (PERF-42 verdict: 6 of 6 sessions valid, 3.2–4.2 km, 3–7 recoveries each).
+- [x] Two runs of the same build agree within the reported noise band: in work, the typical second within 1–4 % and the
+      main thread within 0–6 % (§ Repeat runs agree). The spike share agrees only pooled.
 - [ ] `--a/--b` on main 07581275 vs this branch shows the PERF-39 tire saving (physics ms/s down) and the PERF-38 map
       saving (map phase main-thread ms/s down).
-- [ ] CLAUDE.md § Diagnostic tools names it; LAYOUT.md lists the files.
+- [ ] CLAUDE.md § Diagnostic tools names it; LAYOUT.md lists the files. (Both done on the landing branch; the CLAUDE.md
+      sentence on comparing by instructions waits on the owner's review.)
 - [x] Work-based measure beside ms (`threadcounts.py`), validated idle vs busy host (2026-11-13).
 
 ## Links
@@ -215,3 +239,5 @@ up to ~20 % between host states (validation below). The whole-thread figure has 
 - 2026-11-13: the work measure (`threadcounts.py`, bench columns `mainMi`, `mainPpct`, `physMiP99`, `physMiOver`); validated
   on seed 1768572700, 4 sessions alternating idle / 2 busy loops. history.jsonl records gain those four keys per phase
   (null outside drive for the physics ones); older lines lack them.
+- 2026-11-13: repeat-run agreement from the PERF-42 verdict (3 seeds × 2 reps, 6/6 valid); the comparison rule
+  written. Landing prepared on `land/perf-40-norm` (Perf lane); no `--record` run (the owner's call).
