@@ -39,10 +39,8 @@ The project CLAUDE.md and all of `.planning/` are safe once pushed: they are in 
 ## Decisions
 - 2026-11-12, owner: the private repo is the ledorepo repo itself (see INFRA-11 § Decisions); the backup is a
   folder in it.
-
-## Open questions
-- Push main more often? Seven landings sit only on this Mac because a push deploys the game to Pages. A second
-  remote (the private repo, or a `backup` branch that Pages ignores) would protect them without deploying.
+- 2026-11-13, owner: unpushed commits on main (7 on 2026-11-12; a push deploys Pages) are an accepted risk for
+  now. **Loose end**, not work: no second remote is built. Revisit before closing this ticket.
 
 ## Files
 `~/.claude/projects/-Users-ledogen-CodeShit-CarGame/memory/` · `~/.claude/skills/` · `~/.claude/hooks/` ·

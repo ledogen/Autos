@@ -45,6 +45,7 @@ Sections 4 and 6–10 are left out when empty; 1, 2, 3 and 5 are always present.
 ## Decisions
 - 2026-11-13, owner: organised like a Jira page — title, next steps, summary, description, tracker, links.
   No diagram section ("immutable diagrams" was a typo).
+- 2026-11-13, owner: the ten-section list as written is approved.
 
 ## Open questions
 - Should `relates:` in the frontmatter be the single source for Links (the dashboard renders it), with no
