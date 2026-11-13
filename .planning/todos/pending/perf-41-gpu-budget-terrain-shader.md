@@ -72,10 +72,10 @@ Tool: `wip/perf-41/gpucmp.mjs` (git-invisible). Note: GPU ms/frame does NOT move
 
 | lever | change | picture |
 |---|---|---|
-| 1a be6f15fb | steep-face rock pair read only where `ts_steep > 0` | same |
-| 1c 4b557907 | base fbm computed once; bump centre tap + dither coarse octave reuse it | same |
-| 1d 2cc13728 | baked prop-shadow taps skipped past the fade end (240 m) | same |
-| 1b 3dd37a6c | hash-noise fbm → one baked tileable RGBA noise texture (R fbm, GB bump differences), 2 taps | pattern moves |
+| 1a b1ccec24 | steep-face rock pair read only where `ts_steep > 0` | same |
+| 1c 6b76733f | base fbm computed once; bump centre tap + dither coarse octave reuse it | same |
+| 1d f3c43a2a | baked prop-shadow taps skipped past the fade end (240 m) | same |
+| 1b 898dfda8 | hash-noise fbm → one baked tileable RGBA noise texture (R fbm, GB bump differences), 2 taps | pattern moves |
 
 | seed | view | base Mcyc/s | 1a+1c+1d | all four |
 |---|---|---|---|---|
@@ -102,7 +102,7 @@ shadow casting (lever 5's half), not the pass's update rate. It is a visual call
 Owner, 2026-11-13: the baked noise (1b) is APPROVED, so lever 1 ships whole (1a+1b+1c+1d).
 
 ### 2026-11-13, second quiet window (base = main ee0cdc82)
-- **Lever 2, distance fade (975c8072, v2 9c7555bc):** every surface/noise read eases to its map's average texel over
+- **Lever 2, distance fade (b2d03c9f, v2 5857bad1; reverted d774c6bc):** every surface/noise read eases to its map's average texel over
   150–220 m and is skipped beyond. v1 used textureGrad (needed for reads inside a branch): **6–10 % MORE** cycles than
   lever 1. v2 used implicit-LOD reads inside the branch: −1.3…+3.3 % against lever 1, which is noise. Picture unchanged
   within the rep floor. No saving, so the recommendation is to drop it.
@@ -111,3 +111,32 @@ Owner, 2026-11-13: the baked noise (1b) is APPROVED, so lever 1 ships whole (1a+
   ceiling is about 0. The 178 k cover triangles in the near pass do not show in the GPU's total load. Leave them as they are.
 - **Lever 1 while driving:** main 908 → 844 Mcyc/s (−7 %) on the valid seed. Parked −7…−11 % (bench) / −8…−18 % (fixed views).
 - Sheet updated: https://claude.ai/artifact/CPc7eCYh59L3ktcM4nA61y
+
+### 2026-11-13, resolution — lever 1 ships, the rest closed (owner)
+Owner: "res cap shouldnt be necessary to get the game super snappy. drop the fade and shadow changes, smoke and commit."
+The branch ships **lever 1 only** (1a+1b+1c+1d; `src/terrain.js` + `src/terrain-texture.js`). The fade is reverted
+(d774c6bc). The cover-shadow cut was only ever a throwaway bench build and never touched this branch. Gates after the
+rebase onto main 51eb8e96: `cdp-smoke` 26 steps, zero console errors; `terrain-texture` green. Close this ticket at landing.
+
+**Dead ends — measured, do not redo:**
+- **Distance fade of the surface detail (lever 2).** No saving. Past ~150 m the GPU already reads the smallest mip
+  levels (pre-shrunk copies of each texture), so a skipped read saves almost nothing. A read inside a branch needs
+  `textureGrad` (explicit gradients) to stay correct, and on this GPU that read is slower than the reads it skips:
+  v1 cost +6–10 %. v2 kept plain reads in the branch: −1.3…+3.3 %, which is noise.
+- **Ground-cover shadow casting (lever 5's half).** Switching cover shadows off entirely: drive 844 vs 844 Mcyc/s.
+  The 178 k cover triangles in the near shadow pass do not show in total GPU load. So baking them (as distant props
+  are), a low-poly shadow proxy, or a rate cut cannot save anything either. They do not sway with wind (owner).
+- **The shadow pass's update rate (lever 4).** The day clock is not a per-frame cost. The sun moves on a 0.1 h ladder
+  (~6 s a step), and the far cascade redraws only on a step or every 64 m. The near map redraws every moving frame by
+  design (the truck's own shadow), and it is mostly the ground-cover triangles above.
+- **Render-resolution cap below 1200 lines (lever 3).** Declined by the owner. Not needed for snappiness.
+- **GPU ms/frame as the metric.** It does not move. The GPU lowers its clock (DVFS, dynamic voltage and frequency
+  scaling) to stay ~90 % busy at 60 fps. Compare by active cycles (busy × MHz) only.
+- **Seed 17535907's vista view** (30 m back, 45 m up) crashes headless Chrome on main too. Not this branch; pick another
+  seed for fixed-view benches.
+
+**Tools** (git-invisible, copied to the main checkout's `wip/perf-41/` so they outlive this worktree): `gpucmp.mjs`
+(fixed freecam views, cycles + pixel diff vs build 0, `--ports --labels --seeds --reps --hold --out`), `shadowprobe.mjs`
+(near/far shadow pass cost while driving), `shadercheck.mjs <port>` (boot + console errors), `gpuab.mjs`, `runs/`.
+
+**What is left of the GPU budget** (not this ticket): props and POI draw cost with distance (PERF-44, with BUG-164).
