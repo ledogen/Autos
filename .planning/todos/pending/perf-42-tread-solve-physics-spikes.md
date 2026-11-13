@@ -48,7 +48,29 @@ with both neighbouring seconds, so re-seats are excluded. Pooled over every vali
 
 ## Where they happen (measured 2026-11-12)
 
-**On the shoulder, not the junctions.** A wheel whose hub is off the deck had every tread sample resolve the road afresh.
+**At deg-2 kinks — the QUAL-16 connector carve.** (The first answer below, "the shoulder", was real per query but is NOT
+what makes the live spike seconds; the rerun showed it. Kept because its fix stands on its own.)
+
+- The rerun (`perf-runs/2026-11-12-rerun-main-vs-branch`: main 07581275 vs the branch with the shoulder fix, three
+  seeds, reps 2, 11 of 12 valid): moving seconds over 100 ms/s **main 7.1 %, branch 10 %**; the typical second
+  branch p50 51–54 vs main 60–66. Pooled by the truck's lateral, spikes sit on the deck and the shoulder about
+  equally on BOTH builds (branch: 4.4 % of moving seconds on the deck, 5.4 % on the shoulder/bank). Main, which has
+  no hub reuse at all, has a shoulder median only 8 ms/s over its deck median. So the shoulder is not the spike.
+- Headless at the bench's own spike positions (`wip/perf-42/spots.mjs`, the world rig at each 1 Hz position, 30 hubs
+  on a 6 m disc): one wheel's ground query **241 µs median at spike seconds vs 42 µs at calm seconds** (seed
+  1768572700, 39 spike seconds). Profiled at one (1443, 276), on the deck: **78 % of the query is `_connectorCarve`**
+  → `_connectorDesignAt` → `_runGradeAt`, twice per height sample (both legs), each a FULL-polyline
+  `_projectOntoRun` (34 %) and a 0.25 m grid `centerline.nearest` over ±20 m (34 %). PERF-32 had already met this
+  path (the Lipschitz skip); the hub reuse never touched it.
+- **Fixed (`_runGradeAt`):** the PERF-25 windowed projection (`_projectOntoRunRanges`, bit-identical whenever it
+  answers, the full scan otherwise — so bit-identical always), and the analytic foot refined straight from the polyline
+  foot with `_refineFoot`'s exact line/arc step instead of the grid search: the same foot at all 3,664 connector leg
+  feet on two seeds (|Δs|, |Δgrade| < 0.5 µm; `wip/perf-42/foot.mjs`), 0.2 µs instead of 2.1–2.6. Heights near every
+  connector move by ≤ 1.3e-13 m (float noise; `fingerprint-world`'s exact-bit surface hash flags 5 windows, carve and
+  tiles identical). Spike-position query median 241 → **133 µs**; the profiled spot 251 → 92 (calm 42). What is left
+  there is spread: the connector 45 %, the junction inter-leg blend (`_carveDirtY` → `_projectLegMemo`) 26 %.
+
+**First answer: the shoulder.** A wheel whose hub is off the deck had every tread sample resolve the road afresh.
 
 - Headless, one wheel's ground query on seed 1768572700's roads (`wip/perf-42/lat.mjs`, gitignored), by the hub's
   lateral off the centreline: **60 µs on the deck (1.2 road resolves a query), 117 µs at 5.5–9 m (56 resolves)**,
@@ -91,6 +113,6 @@ on the 0.15 m deck-edge lip of 12 m arcs (the reuse's exact arc projection vs th
 
 ## Acceptance
 
-- [x] Where the spike seconds happen, measured (above: the shoulder, the hub resolve refused off the deck).
+- [x] Where the spike seconds happen, measured (above: deg-2 connector carves; the shoulder was a smaller cost).
 - [ ] The spike share is back near Nov 01's (≤ 5 % of moving seconds over 100 ms/s) on the PERF-40 bench, three seeds.
 - [ ] Physics gates green; the kerb-graze bench unchanged.
