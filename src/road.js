@@ -944,6 +944,10 @@ const RESOLVE_CELL_CAP   = 384  // cells kept before the map is cleared (bounded
 // At a FLIP the two passes are equidistant and must weigh the same (the winner is always whole), so a self pass
 // within RIVAL_TIE_M of the winner's distance is also whole, whatever its prominence: m = max(prominence, tie).
 const RIVAL_FADE_D     = 3     // m
+// PERF-42: how far from its resolve point a SOLO resolve (_resolveRoadSurface) may be reused off the deck (_hintHolds).
+// A wheel's samples lie within it (world-contacts.js: the tread ≤ 0.39 m from the hub, a normal's ±0.5 m differences
+// round the pressure centre); a point farther out resolves afresh, so the bound is the proof's, not the caller's.
+const HINT_REACH_M     = 1     // m
 const RIVAL_PROM_M     = 2     // m
 const RIVAL_TIE_M      = 2.5     // m
 const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
@@ -8200,7 +8204,10 @@ export class RoadSystem {
         }
         if (!best) return null
         const f = this._bandFrameAt(e, pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u, this._bandOut ??= {})
-        return { fx: f.x, fz: f.z, tx: f.tx, tz: f.tz, arcS: pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u - (e.arcOrigin ?? 0) }
+        // lo = hi = 0: a band frame turns along its chords, so it is no line or arc and _curvedOffset cannot re-project a
+        // reused hint on it — _hintHolds then holds only at the resolve point itself. (Without them the resolve defaulted
+        // the primitive to ±Infinity and a hint was reused as a straight line: 48 mm off at a band's deck edge, PERF-42.)
+        return { fx: f.x, fz: f.z, tx: f.tx, tz: f.tz, lo: 0, hi: 0, arcS: pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u - (e.arcOrigin ?? 0) }
     }
 
     _resolveRoadSurface(wx, wz, excludeKeys = null) {
@@ -8245,6 +8252,10 @@ export class RoadSystem {
         // candidate's arcS is already clamped to the run end, so runProfile gives the endpoint gradeY —
         // C0 with the sibling arm, which shares the anchor (synced run-end camber, BUG-19/QUAL-05).
         let bestEndD2 = Infinity, bestEndPr = null, bestEndRunKey = ''
+        // PERF-42: any run kept OUT of reach here that a point HINT_REACH_M away could take in (a vertex-clamped foot's
+        // lateral can sit at cos 29° of its distance — the RESOLVE_ACC_SAFETY note), for the `solo` proof below.
+        const nearR = footHW / Math.cos(29 * Math.PI / 180) + HINT_REACH_M
+        let nearOut = false
         const consider = (runKey, pr) => {
             // QUAL-30: the ceded-ownership exclusion is gone with cededSpans. A wye's loser had
             // the winner's course verbatim over its ceded stretch, so both runs' points competed
@@ -8258,10 +8269,10 @@ export class RoadSystem {
                 if (pr.d2 <= footHW * footHW) {
                     ends.push({ runKey, pr })
                     if (pr.d2 < bestEndD2) { bestEndD2 = pr.d2; bestEndPr = pr; bestEndRunKey = runKey }
-                }
+                } else if (pr.d2 <= nearR * nearR) nearOut = true
                 return
             }
-            if (latDist > footHW) return
+            if (latDist > footHW) { if (pr.d2 <= nearR * nearR) nearOut = true; return }
             inter.push({ runKey, pr })
             if (latDist < bestLat) { bestLat = latDist; bestPr = pr; bestRunKey = runKey }
         }
@@ -8369,6 +8380,16 @@ export class RoadSystem {
             if (m > 0) { const rv = rivalOf(c.runKey, c.pr, true); rv.m = m; rivals.push(rv) }
         }
 
+        // PERF-42 SOLO: no other carve field reaches the disc HINT_REACH_M round here — no rival, no other run or run end
+        // that could fade in (distance moves at most as far as the point does), the winner's toe beyond the disc. A
+        // resolve anywhere in the disc then has the same winner and, unless the winner's OWN run passes again there
+        // (_soloPassFree checks that at the point), no rivals: the carve is the winner's own cross-section at that
+        // point's lateral and arc, which _hintHolds re-projects exactly on the winner's primitive. So off the deck a solo
+        // resolve is reused across the disc. Before, every tread sample there resolved afresh (57 a wheel): the
+        // shoulder cost a wheel twice the deck — the bench's physics spike seconds.
+        const solo = cands && ce && !endRadial && !bestPr.offEnd && rivals.length === 0 && inter.length === 1 && ends.length === 0
+            && !nearOut && bestLat + HINT_REACH_M < footHW ? { footHW, cum: bestPr.arcS + (ce.arcOrigin ?? 0) } : null
+
         // camberSign = 1: the projection uses the run's own canonical polyline direction (arcS increases
         // along it), so run-frame camber maps to the world frame directly (no E→W slice reversal here).
         return {
@@ -8382,6 +8403,7 @@ export class RoadSystem {
             primHi:     hi,
             qx: wx, qz: wz,  //   and the point it was resolved at
             rivals,
+            solo,        // PERF-42: { footHW, cum } when reusable off the deck within HINT_REACH_M (_hintHolds), else null
             endRadial,   // BUG-57: set only on an apex-sliver fallback hit — the polar-cap radius
         }
     }
@@ -8457,13 +8479,26 @@ export class RoadSystem {
     //  · in the inner half of a bend: near a hairpin's centre the nearest foot jumps round the arc.
     //  · past the end of the winner's primitive: _curvedOffset is exact on one line / arc only (8 mm of tread depth at
     //    an arc→line joint).
+    //  PERF-42: except a SOLO resolve (_resolveRoadSurface) within HINT_REACH_M of where it was made, where its run does
+    //  not pass again (_soloPassFree) — no rival there.
     _hintHolds(nr, wx, wz) {
         const dx = wx - nr.point.x, dz = wz - nr.point.z, v = dx * nr.tangent.z - dz * nr.tangent.x
-        if (Math.abs(v) > (this._params.roadHalfWidth ?? 5) && (wx - nr.qx) ** 2 + (wz - nr.qz) ** 2 > 0.0025) return false
+        const q2 = (wx - nr.qx) ** 2 + (wz - nr.qz) ** 2
+        if (Math.abs(v) > (this._params.roadHalfWidth ?? 5) && q2 > 0.0025
+            && !(nr.solo && q2 <= HINT_REACH_M * HINT_REACH_M && this._soloPassFree(nr, wx, wz))) return false
         if (nr.primLo === undefined) return true
         if (1 + nr.kappa * v < 0.5) return false
         const a = _curvedOffset(dx * nr.tangent.x + dz * nr.tangent.z, v, nr.kappa).a
         return a >= nr.primLo && a <= nr.primHi
+    }
+
+    // PERF-42: no other pass of a solo winner's own run within reach of (wx, wz) — the self-pass rivals a resolve here
+    // would find. Checked at the point, not proven at the resolve: near a bend's centre of curvature the run is nearly
+    // equidistant along the bend, so a point a metre off the resolve can see two passes where it saw one (seed
+    // 1768572700 (144, 745): 12 m inside the start of a 12 m bend, a 0.14 m step). One walk of the run's segments.
+    _soloPassFree(nr, wx, wz) {
+        const e = this._network.get(nr.runKey), cands = e && this._resolveCellCands(wx, wz, nr.solo.footHW)
+        return !!cands && this._runPassMinima(e, cands.byKey.get(nr.runKey), wx, wz, nr.solo.footHW, nr.solo.cum).length === 0
     }
 
     _sampleCarveWorld(wx, wz, rawAmp, nrHint, queryY) {
