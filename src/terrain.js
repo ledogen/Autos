@@ -30,9 +30,9 @@ import * as THREE from 'three'
 // pothole/curvature are not needed on the terrain mesh carve path.
 // QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
-import { addWorldVaryings, tdBumpGLSL } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
+import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
 import { height, makeTerrainNoise, CHUNK_SIZE, GRID_SAMPLES, HEIGHT_PARAM_KEYS } from './terrain-height.js'   // THE height function — the Worker imports the same module
-import { makeSurfaceTextures, _hexLin } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
+import { makeSurfaceTextures, makeDetailNoiseTexture, _hexLin } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 import { smooth01 as _smooth01 } from './seed.js'
@@ -145,6 +145,7 @@ export class TerrainSystem {
         this._terrainUniforms = {
             uDetailScale: { value: params.terrainDetailScale    ?? 1.0  },
             uNoiseScale:  { value: params.terrainNoiseScale      ?? 0.3 },
+            uNoiseTex:    { value: makeDetailNoiseTexture() },   // PERF-41: the fbm + its bump differences, baked
             uMottle:      { value: params.terrainMottleStrength  ?? 0.6 },
             uBump:        { value: params.terrainBumpStrength    ?? 0.7  },
             uCliffLo:     { value: params.roadCliffSlopeLo       ?? 0.3  },
@@ -259,10 +260,10 @@ export class TerrainSystem {
                 // Baked prop-shadow occlusion, written at <color_fragment> and consumed by the
                 // directional-light patch below. Global because those two chunks are separate scopes.
                 'float rsBakedShade = 1.0;\n' +
-                // PERF-41: the base fbm at vWorldPos.xz·uNoiseScale, evaluated once at <color_fragment> (the mottle)
-                // and reused by the rock bump's centre tap and, while the two scales match (0.3 /m both by default),
-                // the biome dither's coarse octave — the same function at the same point, so the picture is identical.
-                'float tdN0 = 0.0;\n' + shader.fragmentShader
+                // PERF-41: the detail noise is BAKED (terrain-texture.js makeDetailNoiseTexture: R = fbm, GB = the bump's
+                // finite differences), read once at <color_fragment> for the mottle and kept for the rock bump at
+                // <normal_fragment_begin>; the biome dither's coarse octave reuses it while the two scales match.
+                'uniform sampler2D uNoiseTex;\nvec4 tdT = vec4(0.0, 0.0, 0.5, 0.5);\n' + shader.fragmentShader
             // FEAT-40: cut the skin at tunnel mouths — capsule test in world space, then discard.
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <clipping_planes_fragment>',
@@ -302,8 +303,8 @@ export class TerrainSystem {
                 // Engineered faces (vSurf.w) keep their own cut/fill colour.
                 float ts_rockW = vSurf.z * (1.0 - vSurf.w);
                 if (uDetailScale > 0.0) {
-                    tdN0 = tdFbm(vWorldPos.xz * uNoiseScale);
-                    float td_n = tdN0;
+                    tdT = texture2D(uNoiseTex, vWorldPos.xz * (uNoiseScale / 64.0));
+                    float td_n = tdT.r;
                     diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
                     // FEAT-84: height-weighted three-way surface blend. Each zone's map carries an
                     // albedo MODULATION (rgb, 0.5 = ×1) and its HEIGHT (a). Weight' = vertex weight ×
@@ -350,8 +351,8 @@ export class TerrainSystem {
                     // Dithered rock share: two noise octaves (~8 m and ~2 m) push the share up
                     // and down across the boundary band; the s·(1−s) weight pins the pure ends.
                     float ts_s0 = clamp(vSurf.z, 0.0, 1.0);
-                    float ts_dc = uBiomeDither.y == uNoiseScale ? td_n : tdFbm(ts_p * uBiomeDither.y);
-                    float ts_dn0 = ts_dc * 0.7 + tdFbm(ts_p * uBiomeDither.y * 3.7 + 17.0) * 0.3 - 0.5;
+                    float ts_dc = uBiomeDither.y == uNoiseScale ? td_n : texture2D(uNoiseTex, ts_p * (uBiomeDither.y / 64.0)).r;
+                    float ts_dn0 = ts_dc * 0.7 + texture2D(uNoiseTex, (ts_p * uBiomeDither.y * 3.7 + 17.0) / 64.0).r * 0.3 - 0.5;
                     float ts_s = clamp(ts_s0 + ts_dn0 * uBiomeDither.x * 4.0 * ts_s0 * (1.0 - ts_s0) * 2.0, 0.0, 1.0);
                     // Dirt floor in PATCHES (owner 2026-09-28: "a small baseline of rocks poking through,
                     // strongly amplified by the rock biome"): the same dither field scales the floor
@@ -504,9 +505,8 @@ export class TerrainSystem {
                     float td_slp = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
                     float td_rock = max(smoothstep(uCliffLo, uCliffHi, td_slp),
                                         smoothstep(uTreeLo, uTreeHi, vWorldPos.y));
-                    if (td_rock > 0.001) {
-                        ${tdBumpGLSL('vWorldPos.xz * uNoiseScale', '0.6', 'uBump * uDetailScale * td_rock', 'tdN0')}
-                    }
+                    vec2 td_d = tdT.gb * 2.0 - 1.0;   // fbm(p + 0.6 x̂) − fbm(p), fbm(p + 0.6 ẑ) − fbm(p)
+                    normal = normalize(normal + mat3(viewMatrix) * (vec3(-td_d.x, 0.0, -td_d.y) * (uBump * uDetailScale * td_rock)));
                     // FEAT-84: the blended surface normal map, planar in world XZ (same encoding as
                     // td_wb: x→−∂h/∂x, y→−∂h/∂z), rotated into view space like the fbm bump above.
                     normal = normalize(normal + mat3(viewMatrix) * (vec3(tsNrm.x, 0.0, tsNrm.y) + tsNrmSide));
