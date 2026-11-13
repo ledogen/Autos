@@ -19,6 +19,10 @@
  * entry while it can act (parked). It is never the pre-selection, even alone, so no B tap can arm it: the D-pad
  * has to walk to it. Its own two-press confirm stands; once armed it IS the pre-selection (BUG-120), so the confirm
  * is one B press.
+ *
+ * FEAT-195 (owner, 2026-11-11: "triggered by holding B and going up"): that is the binding — ↑ from the pre-selection
+ * (the top icon) wraps to the last entry, the abandon. Printed twice: the job button's keycap reads B + ↑ (gamepad.js
+ * BINDINGS), and the column's "hold B" line adds "↑ abandon job" while the entry is on the menu (index.html, CSS).
  */
 
 import { pad } from './gamepad.js'
@@ -43,7 +47,7 @@ const items = () => [...document.querySelectorAll('#hud-icons .hud-icon')]
 function mark (el) {
   sel?.classList.remove('menu-sel')
   sel = el
-  if (!el) return
+  if (!el) { label.firstChild.textContent = ''; return }   // no pick (abandon alone, not yet walked to): no stale name
   el.classList.add('menu-sel')
   const r = el.getBoundingClientRect()
   label.firstChild.textContent = el.title ? el.title.replace(/ \(.*\)$/, '')

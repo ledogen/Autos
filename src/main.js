@@ -9197,7 +9197,9 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
   if (!_jobCancelArm) {
     _jobCancelArm = setTimeout(_disarmJobCancel, JOB_CANCEL_ARM_S * 1000)
     b.classList.add('armed')
-    b.innerHTML = keycap('J') + (_strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?')   // FEAT-96: say the clean-up cost
+    // FEAT-96: say the clean-up cost. FEAT-195: armed, the pad's confirm is a plain B (the armed abandon is the B
+    // menu's pre-selection, BUG-120), so its keycap reads B, not the arming's B + ↑.
+    b.innerHTML = keycap('J', 'B') + (_strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?')
     return
   }
   _disarmJobCancel()
