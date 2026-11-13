@@ -40,9 +40,9 @@
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
-import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, formatDue, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, rewardsIn } from '../src/offer-board.js'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, formatDue, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, rewardsIn, itemCost, rewardValue } from '../src/offer-board.js'
 import { ITEMS } from '../data/items.js'
-import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARD_CATS, RARE_PULL, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARD_CATS, RARE_PULL, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, ITEM_COST_FRAC } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -430,10 +430,14 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         cp.pay === `Pay $${formatMoney(pr.base)} – $${formatMoney(pr.max)} based on speed`, cp.pay)
     check('every courier card states its deed line as numerals (R-09/R-19)', cp.deed === 'Deed: 1 if B or better · 1/2 at C', cp.deed)
     const cb = b.card(bonused.o, { nowH: bonused.t, payTier: 1.52, route })
-    check('a bonus offer quotes the FULL base, flat, and no cash tip (R-04: the item is the tip)',
-        cb.pay === `Pay $${formatMoney(basePay(360, 1.52))} flat`, cb.pay)
-    check('the tip line names the item and its gate', cb.bonus?.startsWith('Tip: ') && cb.bonus.includes(b.spec(bonused.o).bonus.name)
-        && cb.bonus.includes(gateText(b.spec(bonused.o).bonus.gate)), cb.bonus)
+    check('a bonus offer quotes the same whole line as a plain one (FEAT-199: its item is optional, off the cash)',
+        cb.pay === cp.pay, cb.pay)
+    const bw = b.spec(bonused.o).bonus
+    check('FEAT-199: the card says "Optional item: <item> (−$N) — <gate>", N = itemCost = the item\'s value × ITEM_COST_FRAC',
+        cb.bonus === `Optional item: ${bw.name} (−$${formatMoney(itemCost(bw.rewardId))}) — if ${gateText(bw.gate)}`
+        && itemCost(bw.rewardId) === Math.round(rewardValue(bw.rewardId) * ITEM_COST_FRAC * 100) / 100, cb.bonus)
+    check('FEAT-199: every reward has a cost above $0 (nothing is free by omission)', REWARD_LIST.every(w => itemCost(w.id) > 0),
+        REWARD_LIST.filter(w => !(itemCost(w.id) > 0)).map(w => w.id).join(', '))
     check('gate text: "S only" / "X or better"', gateText('S') === 'S only' && gateText('B') === 'B or better')
     check('the card states distance and weight, then "available for:" and "time limit:" on their own row (R-10)',
         cp.terms.length === 2 && cp.terms[0] === '2.4 km' && cp.times.length === 2
@@ -666,7 +670,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
             const pr = payRange(300, 1, want, sp.tipMult ?? 1)
             // R-20: a haul reads as a trade — what a bundle costs, what it sells for.
             const wantPay = `Bundle costs $${formatMoney(stockPrice(300, 1, want))} · sells for `
-                + (sp.bonus ? `$${formatMoney(pr.base)} flat` : `$${formatMoney(pr.base)} – $${formatMoney(pr.max)} by speed`)
+                + `$${formatMoney(pr.base)} – $${formatMoney(pr.max)} by speed`   // FEAT-199: a bonus haul quotes the range too
             if (Math.abs(sp.payMult - want) > 1e-12
                 || card.pay !== wantPay
                 || card.terms.join('|') !== `3.0 km|${sp.stock} bundles available`

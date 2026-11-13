@@ -40,7 +40,7 @@
 import {
     THINGS, REWARDS, REWARD_CATS, RARE_PULL, PART_REWARD_CAT, RARITY_GATES, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
-    REWARD_VALUE, REQUISITION, FIRST_JOB, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP, GIVER_LINES, GIVER_LINE_P,
+    REWARD_VALUE, ITEM_COST_FRAC, REQUISITION, FIRST_JOB, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP, GIVER_LINES, GIVER_LINE_P,
 } from '../data/offers.js'
 import { PARTS } from '../data/parts.js'
 import { ITEM_PRICE } from '../data/shop-stock.js'
@@ -178,6 +178,12 @@ export function gateLine (gate, kind, region = 1, cargoId = 'firewood', km = 0) 
  */
 export function rewardValue (id) {
     return PARTS[id]?.price ?? ITEM_PRICE[id] ?? REWARD_VALUE[id] ?? null
+}
+
+/** FEAT-199: what taking an optional item takes off the job's cash, to the cent (data/offers.js ITEM_COST_FRAC).
+ *  The card's "(−$N)" and the result card's choice both read it, so they can never disagree. */
+export function itemCost (id) {
+    return Math.round((rewardValue(id) ?? 0) * ITEM_COST_FRAC * 100) / 100
 }
 
 /**
@@ -710,7 +716,8 @@ export class OfferBoard {
 
         // FEAT-142: the giver's trait — at most ONE (owner, 2026-11-01: no stacking), on its OWN stream
         // (a draw on `spec` would shift every existing offer's destination and place name). Big tipper
-        // never rides a bonus offer (its tip is the item, R-04). Kept a list: one trait or none.
+        // never rides a bonus offer: R-04's reason (its tip was the item) retired with FEAT-199, and the rule is
+        // kept so every seed's boards roll as they did — lifting it is an owner call. Kept a list: one trait or none.
         const traits = []
         if (thing.family !== 'papers') {
             const tr = stream('traits')
@@ -748,7 +755,7 @@ export class OfferBoard {
             massKg: stock ? stock * HAUL_BUNDLE_KG : massKg, stock,
             // Haul: PER PIECE — the pick multiplies it at accept. ÷ HAUL_PAR_SLACK: the haul's par is
             // that much longer and pay rides par (data/offers.js).
-            // R-04: a bonus offer pays the FULL base (its cash tip is the item, economy.js settle).
+            // R-04 / FEAT-199: a bonus offer pays the FULL line; its item is optional, off the cash.
             // R-05: a fragile tier's care premium rides the whole line (data/offers.js careMult).
             payMult: (stock ? HAUL_PAY_PER_BUNDLE / HAUL_PAR_SLACK : 1)
                 * (thing.load ? 1 + FREIGHT_PAY_PER_KG * massKg : 1)   // FEAT-96: freight's weight bonus on pay
@@ -1070,20 +1077,16 @@ export class OfferBoard {
         const km = (route?.distance ?? 0) / 1000
         const cargoId = sp.fragile ? sp.fragile.tier : sp.thingId
         // R-03: the card quotes BOTH ends of the line — the guaranteed base and the most a fast drive
-        // pays. Freight's tip is scaled (FREIGHT_TIP_MULT, stamped on the mission by main.js). On a
-        // bonus offer the cash tip is the item (R-04), so only the base is quoted and the TIP form says
-        // what replaces it. FEAT-114: a haul quotes a RATE — the load isn't picked yet; the picker
-        // shows the total.
+        // pays. Freight's tip is scaled (FREIGHT_TIP_MULT, stamped on the mission by main.js). FEAT-199: a
+        // bonus offer quotes the same range — its item is optional, off the cash. FEAT-114: a haul quotes a
+        // RATE — the load isn't picked yet; the picker shows the total.
         const tipMult = (sp.load && !sp.fragile ? FREIGHT_TIP_MULT : 1) * (sp.tipMult ?? 1)   // FEAT-142 Big tipper
         const range = par > 0 ? payRange(par, payTier, sp.payMult, tipMult) : null
         const money = (v) => `$${formatMoney(v)}`
         // R-20 (owner, 2026-10-24): "Pay $3.63 – $7.27 based on speed" — the range and what moves it,
-        // in one breath; a bonus offer pays its base flat (the TIP form below says what replaces the
-        // tip). A haul reads as a trade: "Bundle costs $0.25 · sells for $0.50 – $1.00 by speed".
+        // in one breath. A haul reads as a trade: "Bundle costs $0.25 · sells for $0.50 – $1.00 by speed".
         const pay = !range || sp.first ? null   // BUG-117: mom's casserole pays nothing
-            : sp.stock ? `Bundle costs ${money(stockPrice(par, payTier, sp.payMult))} · sells for `
-                + (sp.bonus ? `${money(range.base)} flat` : `${money(range.base)} – ${money(range.max)} by speed`)
-            : sp.bonus ? `Pay ${money(range.base)} flat`
+            : sp.stock ? `Bundle costs ${money(stockPrice(par, payTier, sp.payMult))} · sells for ${money(range.base)} – ${money(range.max)} by speed`
             : `Pay ${money(range.base)} – ${money(range.max)} based on speed`
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
@@ -1120,9 +1123,9 @@ export class OfferBoard {
             pay,
             terms,
             times,
-            // R-04/R-07: the TIP form — the item that replaces the cash tip, with its value and its gate.
-            // Larry's card never rolls one (papers never bonus).
-            bonus: sp.bonus ? `Tip: ${sp.bonus.name}${rewardValue(sp.bonus.rewardId) != null ? ` (${money(rewardValue(sp.bonus.rewardId))})` : ''}`
+            // FEAT-199 (owner, 2026-11-11): the OPTIONAL item — earned at its gate, taken off the cash at the
+            // result card: "Optional item: Compressor (−$20) — if B or better". Larry's card never rolls one.
+            bonus: sp.bonus ? `Optional item: ${sp.bonus.name} (−${money(itemCost(sp.bonus.rewardId))})`
                 + ` — ${gateLine(sp.bonus.gate, sp.family, this._region, cargoId, km)}` : null,
             // R-09: the deed line — what this job adds toward the camp, and the number behind it.
             // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.

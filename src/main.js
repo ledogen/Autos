@@ -97,7 +97,7 @@ import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, s
   FIELD_REPAIR, fieldRepair, fieldRepairable, fieldRepairTo, pourCan } from './recovery.js'   // SM-3: the Recovery card + roadside tire work
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
-import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
+import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice, itemCost } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
 import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
@@ -3626,7 +3626,7 @@ function _pourStopLeak () {
 const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
-  onChange: () => { inventoryScreen.render(); campGear.refresh(inventorySystem.packed()) },   // packing at camp re-dresses it
+  onChange: () => { inventoryScreen.render(); campGear.refresh(inventorySystem.packed()); _syncItemChoice() },   // packing at camp re-dresses it; FEAT-199: room made
   onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
@@ -4344,9 +4344,10 @@ missionSystem = new MissionSystem({
       return { payout: 0, base: 0, tip: 0, points: 0 }
     }
     const s = economySystem.settle(result, mission)
-    // FEAT-122: the earned bonus goes in the truck — or waits on the swap prompt if it's full. A dine-in
-    // meal (the dinner invitation) is never stowed: the result card offers it instead.
-    if (s.award) s.award.stowed = mission.bonus.dineIn ? 'dinner' : inventorySystem.grant(s.award.rewardId)
+    // FEAT-199: an earned item is a CHOICE on the result card — the full cash (already paid), or the cash
+    // less its cost with the item (the mp-item button). Nothing is granted here. A dine-in meal (the dinner
+    // invitation) is never stowed: 'dinner' marks it, and staying is the same choice.
+    if (s.award) { s.award.cost = itemCost(s.award.rewardId); s.award.stowed = mission.bonus.dineIn ? 'dinner' : null }
     if (mission?.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
     return s
   },
@@ -4908,7 +4909,7 @@ function _haulPick (offer) {
   const afford = price > 0 ? Math.floor(economySystem.money() / price + 1e-9) : sp.stock
   const max = Math.max(0, Math.min(sp.stock, hardN, afford))
   const n = Math.max(1, Math.min(max, parseInt(document.getElementById('mp-count')?.value, 10) || max))
-  const range = payRange(j.par, payTier, sp.payMult * n, sp.bonus ? 0 : 1)   // R-04: a bonus haul's tip is the item
+  const range = payRange(j.par, payTier, sp.payMult * n)   // FEAT-199: a bonus haul tips in cash too
   return { sp, offerId: offer.id, price, max, n, cost: Math.round(n * price * 100) / 100,
            base: range.base, maxPay: range.max,
            need: sp.bonus ? rankTable('haul', region, sp.thingId)[sp.bonus.gate] : null,
@@ -4928,11 +4929,11 @@ function _syncHaulPick (pick) {
   const t = document.getElementById('mp-pick-text'), note = document.getElementById('mp-pick-note')
   // R-14: the slider states the PROFIT — what the drive banks after the stock is paid for — rather than
   // leaving "base $5.83 · costs $2.99" for the player to subtract ("profit", owner 2026-10-24; "nets"
-  // was ambiguous). The range, or the base alone on a bonus haul (its tip is the item).
+  // was ambiguous). The range, by speed.
   const net = (v) => `$${formatMoney(Math.max(0, v - pick.cost))}`
   if (t) t.innerHTML = pick.max < 1 ? '<span class="mp-bad">can&rsquo;t afford the stock</span>'
     : `<b>${pick.n}</b> bundles &middot; cost $${formatMoney(pick.cost)} &middot; profit <span class="mp-pay">${net(pick.base)}</span>`
-      + (pick.sp.bonus ? ' flat' : ` &ndash; <span class="mp-pay">${net(pick.maxPay)}</span> by speed`)
+      + ` &ndash; <span class="mp-pay">${net(pick.maxPay)}</span> by speed`
   // R-25 (bug, owner 2026-10-24): the warnings used to be appended to the same line, so dragging under
   // the item's count grew the text, widened the panel, moved the slider under the pointer, changed the
   // value, dropped the warning — a stutter loop. They live on their OWN fixed-height line now (CSS
@@ -6709,16 +6710,17 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
     // FEAT-97: likewise the fragile load's condition (live on the HUD too since FEAT-139).
     + (condition != null ? beat(`<br><span class="mp-dim">Cargo condition</span> <span class="mp-pay">${Math.round(condition * 100)}%</span>`) : '')
     // R-20: the result says where each dollar came from — "Base pay" (docked for damage on fragile), then
-    // "Speed tip" or the item that stood in for it.
+    // "Speed tip", then the optional item (FEAT-199).
     + beat(`<br><span class="mp-dim">Base pay</span> <span class="mp-pay">$${formatMoney(base)}</span>`
         + (condition != null && condition < 1 ? ` <span class="mp-dim">docked for damage</span>` : ''))
-    // R-04: on a bonus job the Tip row IS the item — earned, or what it needed. Otherwise the cash tip.
+    + row('Speed tip', formatMoney(tip), ` data-countup="${tip}"`)
+    // FEAT-199: the optional item — earned (the buttons below pick: the cash, or the cash less its cost
+    // with it), or what it needed.
     + (bonus
       ? (award
-        ? beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-pay">${bonus.name} &check;</span>`
-          + (award.stowed === 'pending' ? ` <span class="mp-dim">no room in the truck &mdash; ${keycap('Tab')}to make room</span>` : ''))
-        : beat(`<br><span class="mp-dim">Tip (item)</span> <span class="mp-dim" data-miss>${bonus.name} missed &mdash; ${gate ?? gateText(bonus.gate)}</span>`))
-      : row('Speed tip', formatMoney(tip), ` data-countup="${tip}"`))
+        ? beat(`<br><span class="mp-dim">Optional item</span> <span class="mp-pay">${bonus.name} &check;</span> <span class="mp-dim">(&minus;$${formatMoney(award.cost)})</span>`)
+        : beat(`<br><span class="mp-dim">Optional item</span> <span class="mp-dim" data-miss>${bonus.name} missed &mdash; ${gate ?? gateText(bonus.gate)}</span>`))
+      : '')
     + (haul?.bought > 0 ? beat(`<br><span class="mp-dim">Stock bought</span> <span class="mp-pay mp-bad">&minus;$${formatMoney(haul.bought)}</span>`) : '')
     + deed
     + (spot != null ? row('Accuracy bonus', formatMoney(spot)) : '')
@@ -6821,6 +6823,7 @@ function _renderMissionUI () {
   const km = (mm) => (mm / 1000).toFixed(2) + ' km'
 
   const btn = (id, on) => { const b = document.getElementById(id); if (b) b.style.display = on ? '' : 'none' }
+  btn('mp-item', false)   // FEAT-199: only a result card with an earned item shows it (below)
 
   // FEAT-113: a job past its deadline reads the same in every on-job state — park and sign it off.
   const expired = m.isOnJob() && !!m.mission?.expired
@@ -6861,7 +6864,7 @@ function _renderMissionUI () {
           + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span><br>` : '')   // its own line (owner, 2026-10-24: the haul trade line wrapped the terms)
           + `<span class="mp-dim">${[...card.terms, ...card.times].map(esc).join(' &middot; ')}</span><br>`
           + (card.deed ? `<span class="mp-deed">${esc(card.deed)}</span><br>` : '')   // R-09; R-21 deeds wear the story blue
-          + (card.bonus ? `<span class="mp-tip">${esc(card.bonus)}</span><br>` : '')   // R-04: the item that replaces the cash tip
+          + (card.bonus ? `<span class="mp-tip">${esc(card.bonus)}</span><br>` : '')   // FEAT-199: the optional item, off the cash
           + (card.verdict ? `<span class="mp-verdict mp-${card.verdict.level}">${esc(card.verdict.text)}</span><br>` : '')
           + (card.traits ? `<span class="mp-traits">${card.traits.map(esc).join(' &middot; ')}</span><br>` : '')   // FEAT-142: bottom-left
         : `<span class="mp-big">${km(j.distance)}</span> &nbsp;<span class="mp-dim">`
@@ -6999,7 +7002,16 @@ function _renderMissionUI () {
       const nb = document.getElementById('mp-accept')
       if (nb) nb.textContent = 'continue'
       // The dinner invitation is optional (owner, 2026-10-23): accept stays 30 min, decline drives on.
-      if (r.award?.stowed === 'dinner') { btn('mp-decline', true); if (nb) nb.textContent = 'stay for dinner (30 min)' }
+      // FEAT-199: staying costs its item cost, like any optional item.
+      if (r.award?.stowed === 'dinner') {
+        btn('mp-decline', true)
+        if (nb) nb.textContent = `stay for dinner (30 min, −$${formatMoney(r.award.cost)})`   // disabled below if the wallet can't cover it
+      } else if (r.award && !r.award.stowed) {
+        // FEAT-199 (owner, 2026-11-11): the choice — continue takes the full cash, the item button the
+        // cash less its cost with the item. Pad: the D-pad picks, A takes (menu-nav.js); mouse: click.
+        if (nb) nb.textContent = `take $${formatMoney(r.payout)}`
+        btn('mp-item', true); _syncItemChoice()
+      }
       break
     }
     default:
@@ -7021,8 +7033,9 @@ function _renderMissionUI () {
   // FEAT-112: an overload cannot be taken — the card line above says why. FEAT-114: nor a haul the
   // wallet can't buy a single piece of.
   const pick = m.state === 'offer' ? _haulPick(m.offer) : null
-  if (nb) nb.disabled = m.state === 'offer' && !!m.offer
-    && (_offerVerdict(m.offer, pick?.n ?? null)?.verdict === 'overload' || (pick != null && pick.max < 1))
+  if (nb) nb.disabled = (m.state === 'offer' && !!m.offer
+    && (_offerVerdict(m.offer, pick?.n ?? null)?.verdict === 'overload' || (pick != null && pick.max < 1)))
+    || (m.state === 'done' && m.result?.award?.stowed === 'dinner' && economySystem.money() < m.result.award.cost)   // FEAT-199
   // BUG-117 (owner 11-06): mom's casserole has no abandon, as it has no deadline — it ends at Larry's, where his
   // welcome finishes the tutorial; until then one-job-at-a-time holds every other job back.
   _syncJobCancel(hud, storySystem.isActive() && m.isOnJob() && offerBoard?.firstState() !== 'taken')
@@ -7667,8 +7680,10 @@ function _acceptOffer () {
   // story mode. It no longer auto-rolls the next job — with POIs as the job source, the next one is
   // something you go and find, not something handed to you at the drop point.
   if (missionSystem.state === 'done') {
-    // The dinner invitation, taken: 30 min at their table, then fed like a standard meal (FEAT-169).
-    if (missionSystem.result?.award?.stowed === 'dinner') { daySystem.advanceMinutes(30); daySystem.eat(DAY_PARAMS.mealHoldH) }
+    // The dinner invitation, taken: 30 min at their table, then fed like a standard meal (FEAT-169). FEAT-199:
+    // off the cash, like any optional item (the button is disabled when the wallet can't cover it).
+    const aw = missionSystem.result?.award
+    if (aw?.stowed === 'dinner' && economySystem.spend(aw.cost)) { daySystem.advanceMinutes(30); daySystem.eat(DAY_PARAMS.mealHoldH) }
     missionSystem.exit(); return
   }
   // FEAT-67: take the offer OFF THE BOARD first, re-checking it is still live — a food offer lives
@@ -7700,6 +7715,27 @@ function _acceptOffer () {
   if (j?.loose && missionSystem.isOnJob()) _loadLoose(j.loose.kind, j.loose.massKg, j)
   if (j?.targets && missionSystem.isOnJob()) _placeSite(j)   // FEAT-65: the site stands from accept
 }
+/**
+ * FEAT-199: the result card's item button — the cash less the item's cost, and the item. Disabled while the
+ * truck has no room (it says so; the inventory's onChange re-syncs it once room is made) or, for an item that
+ * costs more than the job paid, while the wallet can't cover it. A full truck still takes the cash.
+ */
+function _syncItemChoice () {
+  const b = document.getElementById('mp-item'), r = missionSystem?.state === 'done' ? missionSystem.result : null
+  const aw = r?.award
+  if (!b || !aw || aw.stowed) return
+  const net = Math.round((r.payout - aw.cost) * 100) / 100
+  const room = inventorySystem.fits(aw.rewardId)
+  b.textContent = !room ? `no room for the ${aw.name} (Tab)`
+    : net >= 0 ? `take ${aw.name} + $${formatMoney(net)}` : `take ${aw.name}, pay $${formatMoney(-net)}`
+  b.disabled = !room || economySystem.money() < aw.cost
+}
+document.getElementById('mp-item')?.addEventListener('click', () => {
+  const aw = missionSystem.state === 'done' ? missionSystem.result?.award : null
+  if (!aw || aw.stowed || !inventorySystem.fits(aw.rewardId) || !economySystem.spend(aw.cost)) return
+  aw.stowed = inventorySystem.grant(aw.rewardId)
+  missionSystem.exit()
+})
 document.getElementById('mp-prev')?.addEventListener('click', () => missionSystem.cycle(-1))
 document.getElementById('mp-next')?.addEventListener('click', () => missionSystem.cycle(+1))
 

@@ -500,11 +500,10 @@ export class EconomySystem {
         // tips on SPEED, the plain ratio (FEAT-138). FEAT-96: freight's tip is then scaled by its
         // tip multiplier (a FEAT-69 balancing knob). A haul's payMult already carries the pieces
         // delivered (main.js onSettle), so base and tip both scale with the load.
-        // GAME-FEEL REVIEW 2026-10-23 (R-04): ON A BONUS OFFER THE ITEM *IS* THE TIP. The cash tip is
-        // zero and the base is the full line's base (data/offers.js: BONUS_PAY_MULT retired). One
-        // slot, two currencies: a job tips in cash for speed, or in an item for its gate, never both
-        // and never a half-price cash line the player couldn't value. Base pay stays guaranteed.
-        const tipMult = mission?.bonus ? 0 : isFinite(mission?.tipMult) ? mission.tipMult : 1
+        // FEAT-199 (owner, 2026-11-11) RETIRES R-04's "the item IS the tip": a bonus offer pays the full
+        // cash line like any job. Its item is optional — main.js's result card takes its cost off this
+        // payout only if the player picks it (offer-board.js itemCost).
+        const tipMult = isFinite(mission?.tipMult) ? mission.tipMult : 1
         // FEAT-97: a fragile job (result.health set by main.js) cuts half its base by condition.
         const tier = t.payTier ?? 1
         const { base, tip, total: payout } = result.health != null
@@ -524,9 +523,8 @@ export class EconomySystem {
 
     /**
      * FEAT-67: the offer's bonus if the letter earned it — `{ rewardId, name, gate, letter }` for the
-     * result card — or null. main.js grants the item (FEAT-122 inventory). Money is untouched either way:
-     * the item and the cash are separate, and the cash side of a bonus offer is already priced by
-     * `payMult`.
+     * result card — or null. Money is untouched here: the full cash is paid, and main.js's result card
+     * (FEAT-199) spends the item's cost and grants it (FEAT-122 inventory) only if the player takes it.
      */
     _award (bonus, letter) {
         if (!bonus || !bonusEarned(letter, bonus.gate)) return null

@@ -428,16 +428,17 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   }
   check('bonusEarned: X or better, S only, D never earns (full 5×5 truth table)', tt)
 
-  // R-04 (game-feel review 2026-10-23): on a bonus offer THE ITEM IS THE TIP — the base is the full
-  // line's base and the cash tip is zero, whatever the ratio. payMult still scales the whole line.
+  // FEAT-199 (owner, 2026-11-11; retires R-04's "the item is the tip"): a bonus job pays the FULL cash
+  // line, tip included. Its item is optional, off the cash at the result card (main.js), so settle never
+  // touches money for it. payMult still scales the whole line.
   runEconomy.money = 0
   const plain = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms })
   const withRec = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' } })
   const halved = eco.settle({ par, ratio: 0.8, letter: 'A' },
                             { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' }, payMult: 0.5 })
-  check('a bonus job pays the plain job\'s base and no cash tip (the item is the tip)',
-    withRec.base === plain.base && withRec.tip === 0 && withRec.payout === plain.base)
-  check('payMult still scales a bonus job\'s (base-only) line', halved.payout === basePay(par, terms.payTier, 0.5))
+  check('a bonus job pays exactly the plain job\'s cash, tip included (its item is optional, FEAT-199)',
+    withRec.base === plain.base && withRec.tip === plain.tip && withRec.tip > 0 && withRec.payout === plain.payout)
+  check('payMult still scales a bonus job\'s line', halved.payout === splitPayout(par, 0.8, terms.payTier, 0.5).total)
   check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x')
   const pr = payRange(par, terms.payTier)
   check('payRange: base is basePay, max is the whole line at ratio 0 (R-03)',
