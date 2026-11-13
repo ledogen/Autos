@@ -273,7 +273,10 @@ the norm.
   tab is **Lanes** (INFRA-11): the owner's intake box, the owed cards and the lane board. That tab's state is
   one small JSON file per item in the owner's PRIVATE repo (`~/CodeShit/ledorepo/projects/cargame/`: `inbox/`,
   `owed/`, `lanes/`, `answered/`; the file-by-file contract is the comment above `DATA` in
-  `tools/dashboard/index.mjs`), which agents read and write with plain file tools. For tickets it is a
+  `tools/dashboard/index.mjs`), which agents read and write with plain file tools. A complex owner call is a
+  **deep dive** (INFRA-12): an explainer page in `.planning/dives/<TICKET-ID>-<slug>.html` whose `<dive-q>` tags
+  are the answer form (copy `TEMPLATE.html` there; `tools/dashboard/dive.js` does the form), linked from an
+  owed card and from its ticket. For tickets it is a
   read-only viewer: it normalises the tracker's drifted `type`/`status` vocabulary for filtering and
   reports the offenders, but never edits a ticket. The frontmatter files stay the source of truth.
   It also **synthesises the story milestones as pseudo-tickets** (`SM-1`…`SM-5`, type `milestone`)
