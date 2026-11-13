@@ -12,8 +12,9 @@ lane: engine & world (the perf lane)
 # PERF-47: A stalled audio clock piles up AudioParam events, and main-thread cost climbs without bound
 
 ## Next steps
-Bench half done on land/perf-regress (the bench refuses a stalled host). The game half, a guard in the audio
-update path, is open: perf lane, when the orchestrator picks it. Owner: restart coreaudiod before the next bench record.
+Both halves done. Game half on land/perf-47 (the guard + the audio-clock-guard gate), for the orchestrator to land.
+Owner: a listen after landing (engine, tires, wind, crickets, starter, rank bed: nothing should change), and restart
+coreaudiod before the next bench record.
 
 ## Summary
 When the host's audio output stops pulling samples, a running WebAudio context's clock (`ctx.currentTime`) stands
@@ -41,7 +42,30 @@ Any machine whose audio output stalls, for example a wedged audio daemon or poss
 out mid-session, takes the same unbounded climb. At about 2 ms/s per second of play, the main thread fills its
 1000 ms/s in about 8 minutes. Not reproduced on a player machine. Normal audio never trips it.
 
-### Fix options (the game half)
+### The fix (the game half, 2026-11-13)
+`audioClockLive()` in engine-audio.js, next to `getAudioContext()`: over a 0.25 s wall window, did `ctx.currentTime`
+advance at least 0.25 s per wall second? Judged per window, not per call, so every module gets the same answer in a
+frame whatever order it calls in; a gap over 1 s (a hidden tab) re-anchors without a verdict. The nine per-frame
+entries return early on false: updateEngineAudio, setCabView, setInTunnel, startCrankAudio, updateKnockAudio,
+updateTireAudio, updateWindAudio, updateAmbientAudio, updateRankMusic. One-shots and on/off edges stay unguarded (a
+bounded count). Resume needs no special case: the next setTargetAtTime ramps from where the param sits, so no pop.
+
+Measured: free roam, seed 6, engine idling, parked 120 s, main-thread ms/s per second (wip/perf-47/park.mjs):
+
+| clock | build | p50 | p99 | worst | first 10 s → last 10 s |
+|---|---|---|---|---|---|
+| stalled (this host, 0 s/s) | before | 330 | 392 | 396 | 176 → 383 |
+| stalled | after | 175 | 194 | 199 | 160 → 170 (flat) |
+| live (`--disable-audio-output`, 1.0 s/s) | before | 154 | 173 | 173 | |
+| live | after | 153 | 174 | 174 | |
+
+On the stalled host after the fix, setTargetAtTime leaves the profile's top 12. On a live clock its self time is
+2.8 ms/s before, 3.1 after (CPU profile, 10 s): the healthy path is unchanged.
+
+Skipping a re-schedule when the target value has not changed was NOT added: on a live clock all of setTargetAtTime
+costs ~3 ms/s, so it would save at most that, against a value cache at all 85 call sites.
+
+### Fix options considered
 1. One `audioClockLive()` in engine-audio.js: is `ctx.currentTime` ahead of the last frame's value? Each
    per-frame `update*Audio` returns early when it is not. At 60 fps a live clock always moves (one render quantum
    is 2.9 ms), so a healthy session is unchanged. Recommended.
@@ -50,13 +74,18 @@ out mid-session, takes the same unbounded climb. At about 2 ms/s per second of p
 ## Tracker
 - [x] Cause found: a host audio stall, not a code regression (profile + same-machine A/B)
 - [x] The bench refuses a stalled host: the session FAILS before the drive with "the host's audio clock is stalled"
-- [ ] The game guards its per-frame automation on a live clock (option 1), and is proven with a page-level test
-      that pins the clock
+- [x] The game guards its per-frame automation on a live clock (option 1), proven by test/audio-clock-guard.mjs
+      (a fake context with a held clock: 0 events after 0.5 s stalled, resumes in 0.2 s) and on the stalled host
+- [ ] Owner listen after landing: nothing should sound different
 - [ ] The bench's audio check passes on a healthy host (after coreaudiod is restarted)
 
 ## Files
-`test/playtest-bench.mjs` · `src/engine-audio.js` (getAudioContext) and the six other `src/*-audio.js` / `rank-music.js`
+`test/playtest-bench.mjs` · `src/engine-audio.js` (audioClockLive) · `src/tire-audio.js` · `src/wind-audio.js` ·
+`src/ambient-audio.js` · `src/knock-audio.js` · `src/rank-music.js` · `test/audio-clock-guard.mjs` · `test/gates.mjs`
 
 ## Log
 - 2026-11-13: diagnosed. Raw data: CarGame-perf/wip/perf-regress (s1 = the A/B, prof1.log = the profile, s3 = the
   check tripping at 0.006 s/s). The 08768a0b record in history.jsonl is a host artifact. Recommend dropping it.
+- 2026-11-13: game half. audioClockLive() guard on the nine per-frame entries; gate test/audio-clock-guard.mjs (fails
+  on main: 23984 events in 9.5 s stalled). Stalled host parked 120 s: p50 330 → 175 ms/s, the climb gone. Live clock
+  (Chrome's fake output) unchanged, 154 → 153. Raw: CarGame-perf/wip/perf-47 (park.mjs, before/after-*.json).
