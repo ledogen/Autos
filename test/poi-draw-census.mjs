@@ -31,18 +31,20 @@ const PAGE_INIT = String.raw`(() => {
   }
   P.R = () => ((window.__terrain()._ringRadius ?? 2) + 1) * 64
   P.tris = (o) => { let n = 0, m = 0; o.traverseVisible(x => { if (x.isMesh) { m++; const g = x.geometry; n += (g.index ? g.index.count : g.attributes.position.count) / 3 } }); return [m, n] }
+  // a top-level child is a marker, a ring, or (BUG-164 on) a per-POI yard Group at the origin carrying its anchor
+  P.at = (c) => c.userData.x !== undefined ? { x: c.userData.x, z: c.userData.z, o: c.children[0] ?? c } : { x: c.position.x, z: c.position.z, o: c }
   P.census = () => {
     const v = window.__vs.position, R = P.R(), rows = []
     for (const c of grp.children) {
-      const d = Math.hypot(c.position.x - v.x, c.position.z - v.z)
-      const kind = c.name.startsWith('model:') ? c.name : c.geometry ? (c.geometry.type === 'BoxGeometry' ? 'cube' : c.geometry.type) : 'group'
+      const a = P.at(c), d = Math.hypot(a.x - v.x, a.z - v.z), o = a.o
+      const kind = o.name.startsWith('model:') ? o.name : o.geometry ? (o.geometry.type === 'BoxGeometry' ? 'cube' : o.geometry.type) : 'group'
       const [meshes, tris] = P.tris(c)
       rows.push({ kind, d: Math.round(d), far: d > R, visible: c.visible, meshes, tris })
     }
     return { R, rows }
   }
   P.setFar = (hide) => { const v = window.__vs.position, R = P.R(); for (const c of grp.children) {
-    if (hide) { c.userData._v = c.visible; if (Math.hypot(c.position.x - v.x, c.position.z - v.z) > R) c.visible = false }
+    if (hide) { c.userData._v = c.visible; const a = P.at(c); if (Math.hypot(a.x - v.x, a.z - v.z) > R) c.visible = false }
     else if (c.userData._v !== undefined) { c.visible = c.userData._v; delete c.userData._v } } }
   return true
 })()`
@@ -91,8 +93,8 @@ async function seedRun (client, js, seed) {
   }
   // the shot: toward the nearest far POI model (a building beyond the drawn terrain), as-is vs far-hidden
   const tgt = await js(`(() => { const v = window.__vs.position, R = window.__probe.R(); let best = null
-    for (const c of window.__probe.grp.children) { if (!c.name.startsWith('model:') || !c.visible) continue
-      const d = Math.hypot(c.position.x - v.x, c.position.z - v.z); if (d > R && (!best || d < best.d)) best = { d, x: c.position.x, y: c.position.y, z: c.position.z, name: c.name } }
+    for (const c of window.__probe.grp.children) { const a = window.__probe.at(c); if (!a.o.name.startsWith('model:')) continue
+      const d = Math.hypot(a.x - v.x, a.z - v.z); if (d > R && (!best || d < best.d)) best = { d, x: a.x, y: a.o.position.y, z: a.z, name: a.o.name } }
     return best })()`)
   const shots = []
   if (tgt) {
@@ -120,7 +122,7 @@ for (const seed of SEEDS) {
     const r = await seedRun(client, js, seed); out.push(r)
     const rows = r.census.rows, sum = (f) => rows.filter(f).reduce((a, x) => [a[0] + 1, a[1] + x.meshes, a[2] + x.tris], [0, 0, 0])
     const [nN, mN, tN] = sum(x => !x.far && x.visible), [nF, mF, tF] = sum(x => x.far && x.visible)
-    console.log(`seed ${seed}  R=${r.census.R} m  drawn near: ${nN} objs ${mN} meshes ${tN} tris  |  drawn far: ${nF} objs ${mF} meshes ${tF} tris  (models far: ${rows.filter(x => x.far && x.visible && x.kind.startsWith('model:')).length}, farthest ${Math.max(...rows.map(x => x.d))} m)`)
+    console.log(`seed ${seed}  R=${r.census.R} m  drawn near: ${nN} objs ${mN} meshes ${tN} tris  |  drawn far: ${nF} objs ${mF} meshes ${tF} tris  (models far: ${rows.filter(x => x.far && x.kind.startsWith('model:')).length}, farthest ${Math.max(...rows.map(x => x.d))} m)`)
     for (const [k, c] of Object.entries(r.cost)) console.log(`  ${k.padEnd(5)} render ms/s med ${c.msPerS.med} p99 ${c.msPerS.p99} worst ${c.msPerS.worst} | ms/frame med ${c.msPerFrame.med} p99 ${c.msPerFrame.p99} | calls ${c.calls} tris ${c.tris} (${c.frames} frames)`)
     console.log(`  shot target ${r.target?.name} @ ${r.target?.d} m  ${r.shots.join(' ')}`)
   } catch (e) { console.log(`seed ${seed} FAILED: ${e.message}`) }
