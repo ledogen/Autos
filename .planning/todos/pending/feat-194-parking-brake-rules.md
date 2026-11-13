@@ -9,9 +9,16 @@ relates: [FEAT-125, FEAT-65]
 ---
 lane: A (clock) + B (the brake input)
 
-# Parking brake rules: brake pedal does not release it, parked menus set it, and (owner call) time stops while it is set
+# FEAT-194: Parking brake rules: brake pedal does not release it, parked menus set it, and no time passes while it is set
 
-## What
+## Next steps
+Landing review (orchestrator): all three parts are built and gated; on merge the ticket closes. Owner: one drive to feel a stop (the clock stands still while the BRAKE lamp is lit).
+
+## Summary
+The parking brake's latch gets three rules: the brake pedal never releases it (part 1), a menu that needs the truck
+parked sets it (part 2), and no game time passes while it is latched (part 3, owner 2026-11-13).
+
+## Description
 
 **Part 1 — release.** The brake pedal, tapped or held, never releases the parking brake. Only the throttle
 releases it, or shifting into gear on a manual.
@@ -19,7 +26,7 @@ releases it, or shifting into gear on a manual.
 **Part 2 — parked menus set it.** Entering any menu that requires being parked (a mission giver, a shop, the
 map while stopped) sets the parking brake, so a stray throttle tap cannot roll the truck unnoticed.
 
-**Part 3 — no time passes while the parking brake is set. OWNER CALL, not built until answered.**
+**Part 3 — no time passes while the parking brake is set.** (Ruled 2026-11-13, see Decisions.)
 DESIGN.md already pauses the clock in shops and menus ("The clock runs, pauses, or skips", ratified
 2026-08-02), so this extends an existing rule rather than breaking one. The orchestrator's review of what it
 changes, for the owner to rule on:
@@ -34,13 +41,7 @@ changes, for the owner to rule on:
 6. *Part 2 then means every parked menu pauses time*, which is already true for shops.
 No glaring hole found. The one real trade is item 2.
 
-## Acceptance
-
-- [x] Part 1: brake input leaves the parking brake set; throttle (or a gear on manual) releases it. Pad and keyboard.
-- [x] Part 2: opening a parked-only menu sets it; the HUD lamp shows it.
-- [ ] Part 3: built only after the owner's ruling on the six points above; then DESIGN.md's clock section is updated first.
-
-## Parts 1–2 built (2026-11-13, Lane B)
+### Parts 1–2 built (2026-11-13, Lane B)
 
 - **Part 1.** The latch's rules moved into `src/park-brake.js` (pure, `stepParkBrake`); vehicle.js feeds it. Latched,
   it lets go on the throttle (W / RT), a Space / RB tap (the lever itself — kept: the offer card's decline and the
@@ -58,5 +59,36 @@ No glaring hole found. The one real trade is item 2.
   an LT tap/hold while parked keeps it; RT on a map opened at rest does not move the truck.
 - Part 3 still waits on the owner.
 
+### Part 3 built (2026-11-13, Lane A)
+
+- **The stop test.** The latch sets only on a Space tap with horizontal speed under `PARK_SPEED` (1.389 m/s ≈ 5 km/h,
+  park-brake.js), or on a spawn / teleport / resume, which are at rest. A handbrake slide (Space held above 5 km/h)
+  is momentary and never latches, so it never holds the clock. A tap at up to 5 km/h latches while the truck is
+  still creeping: the rear wheels lock and it stops in well under a metre (about 0.3 m at ~3.5 m/s² from 5 km/h). That creep is the owner's "real stop",
+  so there is no second threshold.
+- **One pause path.** `clockHeld(camp, service, evening, parked)` (day.js) is the rule main.js's fixed step already
+  used for camp, the service screen and the opening's evening, with the latch added. Every timed thing reads
+  `DaySystem.clockH`, so they all freeze with it: the day clock and sky, energy (and blinks / dozes), hunger, an
+  energy drink's crash, a job's elapsed time and due time, a paper route's clock, offer expiry. Fuel (stepFuel in
+  stepPhysics) and coolant heat (damageModel.step) are not on that path, so idling parked still burns fuel and heats.
+- **HUD.** No new element: the shop and camp pause show nothing extra either. The clock's minutes stop, the energy
+  and hunger bars stop scrolling, and the BRAKE lamp is lit. Nothing was restyled.
+- **What is not held.** The map opened at rest *without* the latch is a brake hold (part 2), not the latch, so the
+  clock runs there; a Space tap stops it.
+
+## Tracker
+- [x] Part 1: brake input leaves the parking brake set; throttle (or a gear on manual) releases it. Pad and keyboard.
+- [x] Part 2: opening a parked-only menu sets it; the HUD lamp shows it.
+- [x] Part 3: DESIGN.md's clock section updated first; the clock, job timer and due time, offer expiry, hunger and
+  energy stand still while latched, fuel burns on; gate `test/park-brake.mjs` §6.
+
 ## Decisions
 - 2026-11-13, owner, on handbrake-clock (part 3, the clock stops while the parking brake is set): "1. We only latch handbrake at a \"real stop\" already so use that logic for both. 2. A stop still costs slowing down and speeding up. It's fine. Rest fine". So: build it as written. The clock stops while the latch is set, and the latch's own real-stop condition is the only stop test (no separate 0.5 m/s rule). The speed tip measuring driving time only is accepted. Offer expiry, "due in", hunger and energy freeze with the clock; idle fuel burn and coolant heat keep running.
+
+## Files
+`src/park-brake.js` · `src/vehicle.js` · `src/day.js` (clockHeld) · `src/main.js` (_parkLocked, the clock step) · `test/park-brake.mjs`
+
+## Log
+- 2026-11-13: parts 1–2 landed (Lane B).
+- 2026-11-13: part 3 built (Lane A, feature/run-shape): day.js `clockHeld` + main.js's clock step; DESIGN.md's clock
+  bullet amended. `test/park-brake.mjs` 15/15; with `parked` dropped from clockHeld it fails 4 checks (the gate bites).

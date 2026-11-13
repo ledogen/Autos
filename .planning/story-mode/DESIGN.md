@@ -1569,7 +1569,11 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
 
 - **The clock runs, pauses, or skips** [RATIFIED 2026-08-02]. Driving and travel run at 1:1. **Shops,
   service stations and camp pause it** — those screens are the planning surface, and **the map must be
-  reachable from each of them.** Sleep, making camp, and an accepted repair **skip** it. Repairs cost
+  reachable from each of them.** **So does the parking brake** [OWNER 2026-11-13, FEAT-194 part 3]: no
+  time passes while it is latched, and the latch's own real stop (a tap under 5 km/h) is the only stop
+  test. The day clock, energy, hunger, a job's elapsed and due time and offer expiry stand still with it;
+  idle fuel burn and coolant heat keep running (the engine is on). A stop still costs the slowing down
+  and the pulling away, so the speed tip measures driving time — accepted. Sleep, making camp, and an accepted repair **skip** it. Repairs cost
   **money and hours** — *engine to 50% for $1000 and 10 hours* — charged as an immediate skip, which
   makes a service stop a real commitment against the day rather than a wallet transaction.
   **Energy drains across the skip — including when you pay someone else to do the work**; ten hours at
