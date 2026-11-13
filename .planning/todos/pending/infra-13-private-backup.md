@@ -12,8 +12,8 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-13: ledorepo — private GitHub backup of memory, skills, hooks and the tracker data
 
 ## Next steps
-Owner: create an empty **private** repository on github.com (suggested name `ledorepo`) and give the orchestrator
-its address. That is the one step an agent cannot do; the SSH key this Mac already uses for `Autos` will work.
+Owner: allow the hourly schedule (the launchd agent was blocked by the session's permission check on 2026-11-13).
+Until then the backup runs only when someone runs `~/CodeShit/ledorepo/backup.sh`.
 
 ## Summary
 Measured 2026-11-12: **nothing outside the game repo is backed up.** `~/.claude` is not a git repository, Time
@@ -24,14 +24,14 @@ by design: in-progress models, audio takes, the item-setup handoff) and 7 commit
 The project CLAUDE.md and all of `.planning/` are safe once pushed: they are in the public game repo.
 
 ## Tracker
-- [ ] A private repo holds a copy of: the CarGame memory folder, `~/.claude/skills/` (minus `synced/`),
+- [x] A private repo holds a copy of: the CarGame memory folder, `~/.claude/skills/` (minus `synced/`),
       `~/.claude/hooks/`, `~/.claude/settings.json`, the project's `.claude/settings.local.json` and `RESUME.md`,
       and the INFRA-11 tracker data if the owner rules it private.
-- [ ] One script (`backup.sh`: copy with rsync, commit, push) run hourly by launchd. It commits only when
+- [ ] (script done 2026-11-13, schedule NOT installed) One script (`backup.sh`: copy with rsync, commit, push) run hourly by launchd. It commits only when
       something changed.
-- [ ] Nothing secret goes up: the script copies an explicit list of paths, never all of `~/.claude` (which holds
+- [x] Nothing secret goes up: the script copies an explicit list of paths, never all of `~/.claude` (which holds
       session transcripts, login state and caches).
-- [ ] A restore was tried once on a scratch folder and the memory index loads.
+- [x] A restore was tried once on a scratch folder and the memory index loads.
 - [ ] Decide `wip/`: it holds large binaries (Blender files, audio). Size it first; back it up here only if small,
       otherwise a plain external-disk / Time Machine answer.
 - [ ] Turn on Time Machine or an equivalent whole-disk backup — the cheap, complete answer to "the laptop died".
@@ -45,3 +45,11 @@ The project CLAUDE.md and all of `.planning/` are safe once pushed: they are in 
 ## Files
 `~/.claude/projects/-Users-ledogen-CodeShit-CarGame/memory/` · `~/.claude/skills/` · `~/.claude/hooks/` ·
 `~/.claude/settings.json` · `wip/`
+
+## Log
+- 2026-11-13: the owner created `git@github.com:ledogen/ledorepo.git` (private). Cloned to `~/CodeShit/ledorepo`.
+  `backup.sh` copies every project's memory folder (CarGame, AgenticFortress, alienhunt), the three hand-made
+  skills, the hook, `settings.json`, and CarGame's `.claude/settings.local.json` + `RESUME.md`. First backup
+  pushed (200 files, 1.1 MB). Restore check: a fresh clone's CarGame memory folder is byte-identical to the live one.
+  Grepped the copied paths for keys and passwords first: none.
+- `wip/` is 66 MB; not backed up yet (tracker box above still open). Time Machine still off.
