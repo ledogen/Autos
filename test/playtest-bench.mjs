@@ -28,6 +28,7 @@
 //
 // Flags: --a=<checkout> (default this one) --b=<checkout> [--c=<checkout>] --reps=N --seeds=K (first K pinned) | --seed=N
 //        --drive=S --map=S --park=S --headed --out=DIR (default perf-runs/bench-<stamp>) --record
+//        --probe   count road resolves per second (PERF-42) — wraps a hot path, so its ms are not for comparing
 // A run is ~7 min per seed per build per rep. Wants a quiet machine: one bench at a time, not while lanes run heavy
 // gates (the shared-CPU rule). The load average is printed with every session.
 import { spawn, execFileSync } from 'node:child_process'
@@ -116,6 +117,11 @@ const PAGE = String.raw`(async () => {
   const gp = { id: 'perf-40 bench', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes, buttons, vibrationActuator: null }
   Object.defineProperty(navigator, 'getGamepads', { value: () => [gp], configurable: true })
   const dlg = document.getElementById('dialogue-panel')
+  // PERF-42 --probe: count the road resolves (the tread samples' re-resolves off the deck). A wrapper on the hot path, so
+  // a probed session's ms are not comparable with an unprobed one.
+  const resolve = road._resolveRoadSurface.bind(road)
+  let nRes = 0
+  if (window.__benchProbe) road._resolveRoadSurface = (...a) => { nRes++; return resolve(...a) }
   const B = window.__bench = { phase: 'idle', dialogues: 0, recov: [], samples: [], frames: [], chunks0: null, chunks: new Set() }
   const setPad = (steer, thr, brk, panY = 0, zoom = 0) => {   // left stick = steer / map pan, right stick Y = map zoom
     axes[0] = steer; axes[1] = panY; axes[2] = 0; axes[3] = zoom
@@ -215,11 +221,16 @@ const PAGE = String.raw`(async () => {
     const D = window.__perfData(), n = D.buckets['frame.render']?.n ?? 0, dn = n - S.n
     const cpu = {}; for (const k in D.buckets) { const d = D.buckets[k].ms - (S.b[k] ?? 0); if (k.startsWith('frame.') && d > 0) cpu[k] = d; S.b[k] = D.buckets[k].ms }
     S.n = n
+    const res = nRes; nRes = 0
     const fr = D.frames.slice(-Math.max(0, Math.min(dn, D.frames.length)))
     const ri = window.__ri()
     const keys = [...window.__terrain()._chunkMap.keys()]
     if (B.phase === 'drive') { if (!B.chunks0) B.chunks0 = new Set(keys); for (const k of keys) if (!B.chunks0.has(k)) B.chunks.add(k) }
+    // where: the position, and the signed lateral off the road the physics resolves there (null: no road in reach)
+    const P0 = window.__vs.position, nr = resolve(P0.x, P0.z)
+    const lat = nr ? +((P0.x - nr.point.x) * nr.tangent.z - (P0.z - nr.point.z) * nr.tangent.x).toFixed(1) : null
     B.samples.push({ t: Date.now(), phase: B.phase, frames: dn, cpu, tris: ri.triangles, calls: ri.calls, map: window.__map2d().isOpen(), v: +Math.hypot(window.__vs.velocity.x, window.__vs.velocity.z).toFixed(1),
+      x: Math.round(P0.x), z: Math.round(P0.z), lat, ...(window.__benchProbe ? { res } : {}),
       thr: buttons[7].value, idx: ap.idx, dbg: ap.dbg,
       // why a drive stalls: the grade (the nose's rise per metre), the drivetrain, and story mode's kept wear
       grade: (() => { const q = window.__vs.quaternion, fy = 2 * (q.w * q.x - q.y * q.z); return +(fy / Math.sqrt(Math.max(1e-6, 1 - fy * fy)) * 100).toFixed(0) })(),
@@ -257,6 +268,7 @@ async function session (build, seed, rep) {
     if (await js('window.__vs.ignition?.state') !== 'running') { await key('i', true); await until(() => js('window.__vs.ignition?.state === "running"'), 8000); await key('i', false) }
     if (await js('!!window.__vs.parked')) await tap(' ')
     await js(`window.__seed = ${seed}`)
+    if (has('probe')) await js('window.__benchProbe = true')
     const info = await js(PAGE)
     await js(`window.__bench.legAt = ${MIN_KM * 500}`)   // the off-road leg halfway through the minimum distance
     const phase = async (name, s) => { const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`); await sleep(s * 1000); return [t0, Date.now()] }
