@@ -12,7 +12,7 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-11: ledorepo — the lane tracker runs locally (inbox, owed, lanes) instead of as a claude.ai artifact
 
 ## Next steps
-Build per the approved plan (in Description). Owner: install Tailscale from the setup guide.
+Owner: open `http://m4air:8010/` on the phone with wifi off; if it loads and an intake item saves, this closes.
 
 ## Summary
 The Alpha Lanes tracker is a page hosted on claude.ai with its data (inbox, owed answers, lane status) in
@@ -169,17 +169,17 @@ An answered owed item moves to an `answered/` folder so "what is new" is a direc
 ## Tracker
 - [x] (dropped 2026-11-13: superseded, the new tab links ids and replaces the artifact) Step 0: every ticket id on the current artifact links to
       `http://localhost:8010/#/t/<ID>` (the dashboard already has that route).
-- [ ] The dashboard gains a **Lanes** tab with the artifact's three parts: the lane board (now line, tasks), the
+- [x] The dashboard gains a **Lanes** tab with the artifact's three parts: the lane board (now line, tasks), the
       **inbox** box, and the **owed** cards with their choice buttons and note box. Autosaves on every keystroke pause.
-- [ ] Storage is one small JSON file per item (`inbox/<timestamp>.json`, `owed/<id>.json`, `lanes/<id>.json`), so
+- [x] Storage is one small JSON file per item (`inbox/<timestamp>.json`, `owed/<id>.json`, `lanes/<id>.json`), so
       the owner typing and an agent replying never write the same file. The dashboard stops being read-only **for
       this data directory only**; it still never edits a ticket.
-- [ ] The orchestrator handoff's "On wake" and LANE-AGENT-BRIEF read and write those files instead of the artifact
+- [x] The orchestrator handoff's "On wake" and LANE-AGENT-BRIEF read and write those files instead of the artifact
       db. The publish ritual (read every line, `page-scripts.mjs`, republish) is deleted.
 - [ ] Reachable from the owner's phone over Tailscale; the intake box and owed cards are usable at phone width.
-- [ ] One-time import of the artifact's `inbox`, `owed`, `lanes`, `tasks` collections; the artifact gets a banner
+- [x] One-time import of the artifact's `inbox`, `owed`, `lanes`, `tasks` collections; the artifact gets a banner
       pointing at the local page and is then left alone.
-- [ ] The server starts at login (a launchd agent — macOS's way to keep a small program running), so the page is
+- [x] The server starts at login (done as a SessionStart hook, not launchd: owner preference), so the page is
       always there.
 
 ## Decisions
@@ -203,3 +203,13 @@ An answered owed item moves to an `answered/` folder so "what is new" is a direc
 ## Files
 `tools/dashboard/index.mjs` · `tools/dashboard/app.html` · `.planning/pages/alpha-lanes.html` (retired) ·
 `.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md` · `.planning/handoffs/LANE-AGENT-BRIEF.md`
+
+## Log
+- 2026-11-13: built on `infra/infra-11-lanes-tab`, landed on main 5b8c0e88 at a cutover window called with the
+  orchestrator. Imported 88 inbox items, 25 owed, 5 lanes; 74 stale answers archived in `answered/`. Checks:
+  `node tools/dashboard/data-api.check.mjs` PASS; a headless-Chrome run of intake / owed answer / agent reply /
+  reload / phone width PASS on a copy of the data before cutover. Tailscale: the Mac is `m4air`, reachable at
+  `http://m4air:8010/` from the Mac itself; the phone is on the network. **Not yet verified: the page opened
+  from the phone.** The artifact got no banner (its page source is deleted; it is simply no longer written).
+- Left out by the approved plan: the owner's per-task status button and note box (tasks are read-only), the
+  static "Closed since" lists.
