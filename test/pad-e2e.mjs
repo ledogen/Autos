@@ -204,6 +204,27 @@ await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sl
 check(!await inv() && !await menuOn(), 'B closes the inventory, and that back never opens the icon menu')
 await js('__fp.b[1] = 1'); await sleep(100); await js('__fp.b[1] = 0'); await sleep(500)
 check(await inv(), 'a B tap opens the top pick (the inventory)')
+// FEAT-196: on the damage diagram the D-pad walks each axle inside out — damper, spring, body, brake, tire, wheel —
+// the front tire included (a tire and its wheel share a centre, so the nearest-item step never reached one of them).
+await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)   // B closes the inventory
+await js('document.getElementById("dmg-icon").click()'); await sleep(300)
+const walk = async (track, side, dir, n) => {
+  await js(`document.querySelectorAll('#dmg-screen .ds-part[data-track="${track}"]')[${side}].dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))`)
+  const seen = []
+  for (let k = 0; k < n; k++) {
+    await js(`__fp.b[${dir}] = 1`); await sleep(120); await js(`__fp.b[${dir}] = 0`); await sleep(200)
+    seen.push(await js('document.querySelector("#dmg-screen .nav-focus")?.dataset.track ?? null'))
+  }
+  return seen.join(' ')
+}
+let w = await walk('damperFront', 0, 14, 5)
+check(w === 'springFront armorLeft brakeFront tireFL wheelFL', `front left, D-pad ←: ${w}`)
+w = await walk('damperRear', 0, 14, 5)
+check(w === 'springRear armorLeft brakeRear tireRL wheelRL', `rear left, D-pad ← (the body side stays on this axle): ${w}`)
+w = await walk('damperFront', 1, 15, 5)
+check(w === 'springFront armorRight brakeFront tireFR wheelFR', `front right, D-pad →: ${w}`)
+await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
+check(!await js('document.getElementById("dmg-screen").classList.contains("open")'), 'B closes the damage screen')
 // FEAT-126 manual gearbox through the pad: A up, X down, LB clutch. Swapped in the way the debug
 // selector does it, on the app's own module instances.
 const appMod = (path) => `await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("${path}")))`

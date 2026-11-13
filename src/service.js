@@ -26,6 +26,7 @@
 import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP, SEIZED_REPAIR_X, REPAIR_CAP, REPAIR_STEP, PATCH, BEAD, HUB, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
 import { TRACKS, TIRE_IDS, WHEEL_IDS } from './damage.js'
 import { shelfPrice } from './shop-stock.js'
+import { swapCorners } from './recovery.js'
 
 const cents = (x) => Math.round(x * 100) / 100
 const EPS = 1e-9
@@ -164,20 +165,28 @@ export class ServiceCenter {
             .sort((a, b) => a.cond - b.cond)
     }
 
-    /** What repairing inventory entry `index` to `target` costs now. */
-    ownedQuote (index, target) {
+    /** FEAT-196: the wheel of a mounted pair in the inventory (a spare, a pair a swap took off) is
+     *  straightened as its own part, still mounted — what the bench can bring it up to. */
+    ownedWheelTargets (index) {
         const r = this.inventory.list()[index]
-        return this._quote(classOf(r.id), r.id, r.cond ?? 1, target, false)
+        return PARTS[r?.id]?.mounted ? repairTargets('wheel', r.wheelCond ?? 1) : []
     }
 
-    /** Repair inventory entry `index` to `target`, as its own item (owner, 2026-10-20). */
-    repairOwned (index, target) {
-        const r = this.ownedRepairRows().find(r => r.index === index)
-        if (!r?.targets.includes(target)) return false
-        const q = this.ownedQuote(index, target), free = this._free()
+    /** What repairing inventory entry `index` to `target` costs now; `wheel`: a mounted pair's wheel. */
+    ownedQuote (index, target, wheel = false) {
+        const r = this.inventory.list()[index]
+        return wheel ? this._quote('wheel', r.wheel ?? PARTS[r.id].mounted.wheel, r.wheelCond ?? 1, target, false)
+                     : this._quote(classOf(r.id), r.id, r.cond ?? 1, target, false)
+    }
+
+    /** Repair inventory entry `index` to `target`, as its own item (owner, 2026-10-20); `wheel`: a mounted pair's wheel. */
+    repairOwned (index, target, wheel = false) {
+        const ts = wheel ? this.ownedWheelTargets(index) : this.ownedRepairRows().find(r => r.index === index)?.targets
+        if (!ts?.includes(target)) return false
+        const q = this.ownedQuote(index, target, wheel), free = this._free()
         if (!this.spend(q.price)) return false
         if (free) this.useFreeRepair()
-        this.inventory.amend(index, { cond: target })
+        this.inventory.amend(index, wheel ? { wheelCond: target } : { cond: target })
         this.advanceHours(q.hours)
         this.onChange()
         return true
@@ -363,6 +372,20 @@ export class ServiceCenter {
         const q = this.fitLabour(r.id, TIRE_IDS[corner])
         if (!this.spend(q.price)) return false
         this.inventory.amend(index, this.parts.fitMounted(r, corner))
+        this.advanceHours(q.hours)
+        this.onChange()
+        return true
+    }
+
+    /** FEAT-196 (owner, 2026-11-12): move a corner's tire to another corner in one job — the two mounted
+     *  pairs trade places, each tire and wheel with its wear (recovery.js swapCorners, the roadside's
+     *  "Swap two wheels"): four hub swaps, both pairs off and on. */
+    cornerSwapQuote () { return this._jobs(4, 0) }
+
+    swapCorners (a, b) {
+        const q = this.cornerSwapQuote()
+        if (a === b || !(a >= 0 && a < 4 && b >= 0 && b < 4) || !this.spend(q.price)) return false
+        swapCorners(this.parts, this.damage, a, b)
         this.advanceHours(q.hours)
         this.onChange()
         return true
