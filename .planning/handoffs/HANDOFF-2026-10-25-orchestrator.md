@@ -112,8 +112,14 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `perf/perf-43-surface-patch`, handoff `.planning/handoffs/HANDOFF-2026-11-12-perf43-surface-patch.md` there:
   PERF-43 → PERF-45 → PERF-41 → PERF-44. You orchestrate everything else and must not block it. Standing rules given
   to every lane agent: ONE heavy process; `pgrep -f playtest-bench` before any gate or Chrome job and wait if it runs;
-  no edits to `src/road*.js` / `src/terrain*.js`. Asked it (SendMessage, 22:10) what it needs kept quiet and whether
-  main must hold still; **no reply yet — until it answers, no smoke and no landing on main.** Tickets routed to it:
+  no edits to `src/road*.js` / `src/terrain*.js`. **Its answer (22:50):** main can keep moving (it measures against
+  pinned worktrees), so land and smoke as usual; message it before landing anything that touches road.js. Its files:
+  road.js's carve stack, `src/world-contacts.js`, `src/terrain.js` analyticHeight/Normal, the makeQueryContacts block
+  in main.js (~2217), `test/lib/world-rig.mjs`, `test/hint-reuse.mjs`. It will message before a ~15 min PERF-40 bench
+  A/B: hold spawns and smokes for it. It hands the PERF-43 landing to you after `test:all --browser` on the branch
+  (fingerprint-world `surface` changes by design: analyticNormal only). BUG-156 overlaps its layers: NOT landed ahead
+  of it; it decides (fold into its branch, or land after). Its 6e731daa (gate + three live reuse fixes: heights wrong
+  by up to 3.0 m and normals 78° off near run ends) can ship alone if the owner wants it early. Tickets routed to it:
   BUG-164 (POIs always loaded, through the fog), PERF-46 (map pan jitter on Windows).
 - **The HOLD is lifted** (owner 11-12: "feel free to spin up the other lanes"). Running since 22:30, one task each:
   Lane B BUG-160 (wheel fails before the tire; owner "top priority") · Spare BUG-162 + BUG-163 in
