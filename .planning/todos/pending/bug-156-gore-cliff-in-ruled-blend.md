@@ -77,7 +77,8 @@ steep ramps where a leg wraps the query); 2.5 m → only 52 gone. A tie gated by
 conflict: main's taper went into the module scratch `_rbTaper[nB++]`, which now takes `· pr.wt`). The site (`gore-prof`,
 lat 8.2 → 8.4): main 0.86 m, branch 0.12 m, the same as before. Census, same 8 seeds: main now has 1596 junction-disc
 discontinuities (5563 on a60e60db: main's own landings since removed most of them), the branch 1480: **111 gone, 0 new**;
-gore lines 51 better by > 2 cm, **0 worse**.
+gore lines 51 better by > 2 cm, **0 worse**. Affected gates for src/road.js on 18709db2: 72/72 green, hint-reuse
+(PERF-43's exactness gate) among them.
 
 **World fingerprint vs main:** every component of all six windows identical except `seed11 origin story · carve`.
 There, 14 of 1.57 M mesh vertices move, all at one junction (−1411, −726), all within 22.3 m of the node. At that
