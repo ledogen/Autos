@@ -60,9 +60,40 @@ each). They were started before the `cargotire` detector existed, so they count 
 | r2 · 1236227223 | strut 3 · jolt 2 · cargo 3 | 90 mm at 15.0 m/s |
 | r2 · 198355854 | jolt 1 · cargo 10 | 174 mm at 13.2 m/s |
 
-The first seeds' sites were read as autopilot wrecks. The second seeds' captures are on the road, not just after a
-re-seat, and have not been replayed. Logs and captures: `wip/bug-161/soak/r1.log`, `r2.log`, `r1/`, `r2/` in the
+The first seeds' sites were read as autopilot wrecks. So are the second seeds' (replayed below). Logs and captures: `wip/bug-161/soak/r1.log`, `r2.log`, `r1/`, `r2/` in the
 CarGame-machine worktree.
+
+**The soak captures, replayed (Lane B, 2026-11-13): crash steps, not the owner's symptom.** Five captures
+(`SOAK_TRACE=n SOAK_AFTER=m node test/drive-soak.mjs --cargo=sculptureB --replay=<capture>`) all reproduce, with the
+same numbers on main after the welded-body skip landed. Every one follows the same pattern:
+
+| capture | truck velocity, own frame (x side, z back) | chassis advance on the step | load off seat, per step | strike next step |
+|---|---|---|---|---|
+| r2 198355854-cargo-3 | (−10.1, 0.8, −8.4) m/s | 0.21 | 162 (174 in the soak run) → 56 → 18 → 6 mm | 31 kN·s |
+| r2 198355854-cargo-1 | (−6.1, 0.8, +10.5) | 0.43 | 125 → 43 → 14 | 27 kN·s |
+| r2 1236227223-cargo-1 | (+14.2, 1.8, +3.6) | 0.35 | 175 → 58 | 0.6 kN·s |
+| r1 724783119-cargo-1 | (+9.5, 1.0, −6.4) | 0.57 | 88 → 30 → 10 | 16 kN·s |
+| r1 1328188534-cargo-1 | (−18.4, 2.2, +0.5) | 0.67 | 100 → 34 → 11 | 2–3 kN·s |
+
+- The truck is in a spin each time: sliding sideways, or backwards, at 7–19 m/s. The worst has no road within 15 m. The
+  soak's `offroad: false` only means "not on a planned off-road leg". These are autopilot spin-outs ending in a body
+  strike against a bank.
+- The mechanism is the engine's swept (continuous) collision. The chassis is a bullet (a body the engine sweeps so it
+  cannot tunnel). When its sweep meets the ground inside a step, the engine parks it at the moment of impact and keeps
+  its velocity. The welded load is a separate body to the engine, and its sweep touches nothing, so it makes the
+  whole step. The load ends that step ahead by the chassis's shortfall: (1 − 0.21) × 13.2 m/s × 1/60 s = 174 mm, which
+  is the soak's worst. The joint then reels it back over 3 steps (50 ms, ×0.33 a step).
+- The cost was not a lag. For 1–2 frames the load was drawn jumping up to 17 cm out of its seat. And the reel spread
+  the strike over 3 steps, so the fragile load felt 3.3 g of a strike that stopped the truck sideways from 8.5 m/s in
+  one step.
+- **Fixed in the adapter:** a weld is rigid. `PhysicsEngine.step` puts a welded body back on its weld once it drifts
+  past `WELD_SLOP` (10 mm), with velocity left alone (the clamp keeps it too). Dips hold the weld within 1.6 mm, so
+  normal driving never trips it. Gate: freight-strap §8 (the chassis sideways at 13 m/s into a wall 0.10 m off its
+  flank).
+
+**The owner's 2–3 s lag, squat and slow-down is still unexplained.** None of the soak's 16 km reached it: no
+`cargotire`, and no cargo offset outside a spin. The welded-body skip (above) is the only mechanism found that can
+slow the truck. Next lead: an in-game capture (the capture key) taken while the statue lags, replayed headless.
 
 **Follow-up, not fixed here:** BUG-165. The same fat sphere reaches LOOSE bed cargo between the wheelhouses (firewood,
 the loose tire), held off only by the same filter.
