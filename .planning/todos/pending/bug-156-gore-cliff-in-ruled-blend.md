@@ -73,6 +73,12 @@ held out from tuning: no change at all. Tie values tried: 0 m → 157 gone but 7
 steep ramps where a leg wraps the query); 2.5 m → only 52 gone. A tie gated by p (so a near-tie birth also starts at
 0) brings back the same 7 worse lines; not taken.
 
+**Re-measured on main 8acdea46** (after PERF-37 / PERF-43 rewrote road.js's ground path; merge 18709db2, one mechanical
+conflict: main's taper went into the module scratch `_rbTaper[nB++]`, which now takes `· pr.wt`). The site (`gore-prof`,
+lat 8.2 → 8.4): main 0.86 m, branch 0.12 m, the same as before. Census, same 8 seeds: main now has 1596 junction-disc
+discontinuities (5563 on a60e60db: main's own landings since removed most of them), the branch 1480: **111 gone, 0 new**;
+gore lines 51 better by > 2 cm, **0 worse**.
+
 **World fingerprint vs main:** every component of all six windows identical except `seed11 origin story · carve`.
 There, 14 of 1.57 M mesh vertices move, all at one junction (−1411, −726), all within 22.3 m of the node. At that
 junction the worst 10 cm steps fall 2.05 → 1.43 m, and six steps of 1.15–2.03 m are gone. A 2.9 m step stays, the
