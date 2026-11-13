@@ -1,7 +1,7 @@
 ---
 id: INFRA-12
 type: infra
-status: open
+status: closed
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-12 — the "ledorepo" brief (sculpting a personal Jira: tracker + lanes + deep-dive forms)
@@ -12,7 +12,7 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-12: ledorepo — deep-dive documents that are also the answer form
 
 ## Next steps
-Build per the approved plan (in Description). Worktree `CarGame-dives`, branch `infra/infra-12-deep-dives`, dev port 8011.
+None. Closed. Rulings from a submitted dive become decision records under INFRA-10.
 
 ## Summary
 When a problem is complex, an agent writes an explainer page for the owner. Today the explanation is one artifact
@@ -127,18 +127,18 @@ one line pointing at the template. CLAUDE.md § Workflow: one sentence.
 - `npm test` (affected gates) and the dashboard's other tabs still load.
 
 ## Tracker
-- [ ] A deep dive is one HTML file in the repo (`.planning/dives/<ticket-id>-<slug>.html`), served by the dashboard.
+- [x] A deep dive is one HTML file in the repo (`.planning/dives/<ticket-id>-<slug>.html`), served by the dashboard.
       Agents write ordinary HTML plus two custom tags: a choice field and a free-text field, each with a question id.
       One shared script (~100 lines) wires them: load saved answers, autosave on change, Submit.
-- [ ] Answers save to `dives/<slug>.answers.json` beside the inbox/owed data: `{status, opened_at, submitted_at,
+- [x] Answers save to `dives/<slug>.answers.json` beside the inbox/owed data: `{status, opened_at, submitted_at,
       answers: {<question id>: {choice, note}}}`.
-- [ ] Status is derived from what the owner did, never set by hand: **not opened** → **opened, not started** (page
+- [x] Status is derived from what the owner did, never set by hand: **not opened** → **opened, not started** (page
       loaded) → **partial** (any field has a value) → **submitted** (button pressed). The owed card shows it and
       links to the dive.
-- [ ] A submitted dive is frozen: the document and its answers are not edited again. A follow-up is a new dive.
-- [ ] The dive is listed in the Links of its ticket(s) automatically (the dashboard matches the ticket id in the
+- [x] A submitted dive is frozen: the document and its answers are not edited again. A follow-up is a new dive.
+- [x] (the DEC half is INFRA-10's, not built here) The dive is listed in the Links of its ticket(s) automatically (the dashboard matches the ticket id in the
       filename); a ruling that comes out of it becomes a DEC (INFRA-10) citing the dive as its source.
-- [ ] The orchestrator's wake drill reads submitted dives the same way it reads owed answers.
+- [x] The orchestrator's wake drill reads submitted dives the same way it reads owed answers.
 
 ## Open questions
 - Can the owner reopen a submitted dive to change an answer before the agent has acted on it? Recommended: yes,
@@ -146,3 +146,12 @@ one line pointing at the template. CLAUDE.md § Workflow: one sentence.
 
 ## Files
 `.planning/dives/` (new) · `tools/dashboard/dive.js` (new, the shared script) · `tools/dashboard/index.mjs`
+
+## Log
+- 2026-11-13: landed on main 51eb8e96. As built, per the approved plan: one tag `<dive-q>` (not two), the shared
+  script is `tools/dashboard/dive.js`, answers in `dives/<slug>.answers.json`, read-only once the orchestrator
+  writes `dives/<slug>.taken`; the owner can Reopen a submitted dive until then. Checks: `data-api.check.mjs`
+  PASS; headless Chrome walked not opened → opened → partial → submitted → reopened → taken on a scratch copy,
+  with the owed card and the ticket page following, and no sideways scroll at 390 px.
+- First real dive: `.planning/dives/FEAT-184-tutorial-rework.html`, from the five `tutorial-*` owed items
+  (orchestrator confirmed it faithful and swaps the cards). Not yet opened by the owner on the live server.
