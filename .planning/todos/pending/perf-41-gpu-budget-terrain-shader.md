@@ -100,3 +100,14 @@ of the 246 k triangles; the truck's ~25 parts and the remaining props are the re
 shadow casting (lever 5's half), not the pass's update rate. It is a visual call.
 
 Owner, 2026-11-13: the baked noise (1b) is APPROVED, so lever 1 ships whole (1a+1b+1c+1d).
+
+### 2026-11-13, second quiet window (base = main ee0cdc82)
+- **Lever 2, distance fade (975c8072, v2 9c7555bc):** every surface/noise read eases to its map's average texel over
+  150–220 m and is skipped beyond. v1 used textureGrad (needed for reads inside a branch): **6–10 % MORE** cycles than
+  lever 1. v2 used implicit-LOD reads inside the branch: −1.3…+3.3 % against lever 1, which is noise. Picture unchanged
+  within the rep floor. No saving, so the recommendation is to drop it.
+- **Ground-cover shadow ceiling:** playtest-bench, 150 s drives, 2 seeds, lever 1 with and without cover shadows.
+  Valid seed 1768572700: drive 844 vs 844 Mcyc/s. Seed 17535907: 739 vs 751 (the no-cover drive was short). The
+  ceiling is about 0. The 178 k cover triangles in the near pass do not show in the GPU's total load. Leave them as they are.
+- **Lever 1 while driving:** main 908 → 844 Mcyc/s (−7 %) on the valid seed. Parked −7…−11 % (bench) / −8…−18 % (fixed views).
+- Sheet updated: https://claude.ai/artifact/CPc7eCYh59L3ktcM4nA61y
