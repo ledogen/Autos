@@ -1,77 +1,50 @@
-# Handoff 2026-11-12 (night) — PERF-43 the per-wheel surface patch, then PERF-45, PERF-41, PERF-44
+# Handoff 2026-11-12 (late night) — PERF-43 the per-wheel surface patch (in progress), then PERF-45, PERF-41, PERF-44
 
 **Worktree** `/Users/ledogen/CodeShit/CarGame-perf43` · **branch** `perf/perf-43-surface-patch` (off main 3d008134) ·
-**port** 8043 (no server running; start one only for an owner look: `nohup npx vite --port 8043 --strictPort > /tmp/v8043.log 2>&1 &`).
-Window title should read `CarGame-perf43 :8043`. Work ONLY in this worktree; start every Bash call with
-`cd /Users/ledogen/CodeShit/CarGame-perf43 && …`. Commit WIP at every step (`git commit -m 'wip(PERF-43): …' -- <paths>`).
+**port** 8043 (no server running; for an owner look: `nohup npx vite --port 8043 --strictPort > /tmp/v8043.log 2>&1 &`).
+Window title `CarGame-perf43 :8043`. Work ONLY here; start every Bash call with `cd /Users/ledogen/CodeShit/CarGame-perf43 && …`.
+Commit WIP every step (`git commit -m 'wip(PERF-43): …' -- <paths>`).
 
-## Where things stand
+## Where things stand — read the ticket's "Progress" section first
 
-- **The PERF-37 branch LANDED on main** 2026-11-12: fast-forward to 3d008134, after `test:all --browser` (149 gates
-  green, cdp-smoke included). It holds PERF-38 (map render skip + repaint), PERF-39 (tire normal, hub resolve), PERF-40
-  (the playtest bench), and PERF-42 so far. **Main is NOT pushed** (a push deploys Pages); the owner pushes or asks.
-- **PERF-42** (bench physics spikes) is open at 7.7 % of moving seconds over 100 ms/s (main 07581275 was 8.1 %, the
-  goal ≤ 5 %). Its ticket has every measurement. PERF-43 is the fix that finishes it.
+`.planning/todos/pending/perf-43-per-wheel-surface-patch.md` § Progress has everything: the gate, the three live
+reuse bugs it found (6e731daa), layer 1 (08130529), the measurements, and **the finding that changes the plan** — the
+remaining spike cost is per-sample maths (the pad's ribbon-station Newton, the inter-leg blend twice per sample), not
+re-derived context — with the next levers in order. Spike median is still ~120–170 µs (goal ≤ 60).
 
-## Order of work
+- Gate: `node test/hint-reuse.mjs` (~10 s) — green. Affected gates at 08130529: 79/79 green (`node test/run-all.mjs --changed=src/road.js,…`).
+- Identity: fresh heights bit-identical to main (`node wip/perf-43/ab-normal.mjs <seed>`); fingerprint-world `surface`
+  differs by design (analyticNormal only, where main's reuse was wrong); fingerprint-physics identical.
+- Main is NOT pushed (a push deploys Pages). The orchestrator (main checkout) lands; hand it the branch after
+  `npm run test:all -- --browser`. It may ask the owner to ship 6e731daa's fixes early (it stands alone).
 
-1. **PERF-43 — the per-wheel surface patch.** `.planning/todos/pending/perf-43-per-wheel-surface-patch.md` is the
-   plan: the rule, the layer table, the design, the proof obligation, the steps, the acceptance. Write its exactness
-   gate first (extend `test/hint-reuse.mjs`), red, then build layer by layer with the gate green after each.
-   This is a multi-file `road.js` refactor: per CLAUDE.md, show the owner the plan in plan mode before implementing
-   if anything in the ticket's design has to change.
-2. **PERF-45 — the parked main thread** (170 ms/s with nothing moving). Its physics half becomes PERF-43's patch memo;
-   do its render-CPU and postStream profile after PERF-43 (or in parallel only if PERF-43 is waiting on the owner).
-3. **PERF-41 — the GPU budget: the terrain's per-pixel shading** (`.planning/todos/pending/perf-41-gpu-budget-terrain-shader.md`).
-   Owner 2026-11-12: this investigation comes BEFORE PERF-44. PERF-41 measured, by switching pieces off one at a time
-   (GPU active cycles, two seeds): terrain hidden −50–60 %, the terrain detail shader off −22–40 %, the surface maps off
-   −12–26 %, the truck shadow light off −12–23 %, all props hidden only −12–28 %. Per terrain pixel the fragment shader
-   does 8 surface-map reads (the rock pair twice on steep ground), 3–4 `tdFbm` noise calls, 5 shadow-atlas taps, the
-   tunnel cut loop and two shadowed lights. Its levers, each to be measured with PERF-40 before choosing:
-   (1) a cheaper terrain shader at the same look — bake the noise octaves into the surface maps or a texture lookup
-   instead of `tdFbm`, branch past the steep-face second projection on flat ground, fewer atlas taps;
-   (2) distance falloff of the detail; (3) the render-resolution cap (Normal 1200 lines; 900 saved 30–39 %, a visual
-   call); (4) the truck shadow light re-rendering every frame; (5) ground cover's shadows and overdraw.
-   Deliverable: each lever's measured saving with before/after screenshot sheets; the owner picks (the look is theirs).
-   Its measuring script, `gpuab.mjs`, was only in an old session scratchpad: copied to `wip/perf-41/gpuab.mjs` here
-   (git-invisible). It imports `cdp.mjs` from the MAIN checkout by absolute path and expects `ioreport.py` beside it:
-   point both at this worktree (`test/lib/cdp.mjs`, `test/lib/ioreport.py`). PERF-41 says it is "to become a PERF-40
-   mode" — doing that is part of the work.
-4. **PERF-44 — the triangle budget** (an investigation, then the owner picks). After PERF-41, and informed by it:
-   triangles were measured cheap on this GPU (the terrain shader is most of it), so the census must show where
-   triangles DO cost (shadow passes, CPU side) before proposing cuts.
+## Coordination (the orchestrator, cargame-a9, 11-12)
 
-## Tools (git-invisible, in `wip/perf-42/` here; copied from the PERF-37 worktree)
+- Lanes are kept out of src/road*.js, src/terrain*.js and the files named in the ticket; message the orchestrator
+  (SendMessage) BEFORE a playtest-bench run — it holds lane spawns/smokes for ~15 min. Lanes also `pgrep -f playtest-bench`.
+- BUG-156 (land/bug-156 @ 34fc3e6f, road.js `_limbWeight`) is held for you: cherry-pick before touching the ruled blend.
+- Routed to this lane by the owner's inbox: BUG-164 (every POI loaded/visible through fog — with PERF-44's census),
+  PERF-46 (map pan jitter in bursts on Windows; may predate PERF-38).
 
-- `lat.mjs [seed]` — one wheel's ground-query µs and road resolves by lateral offset from the centreline (world rig).
-- `spots.mjs <seed> <run dir> <build letter>` — query µs at a bench run's spike-second positions vs its calm ones. Bench
-  runs live in `/Users/ledogen/CodeShit/CarGame-perf37/perf-runs/` (gitignored there): pass e.g.
-  `/Users/ledogen/CodeShit/CarGame-perf37/perf-runs/2026-11-12-branch-connector-fix/ A`. Edit its `D` default.
-- `prof-spot.mjs <seed> <idx> <run dir> <letter>` under `node --cpu-prof --cpu-prof-dir=wip/perf-42/prof`, then
-  `node wip/perf-42/under.cjs wip/perf-42/prof queryContacts` — self and inclusive time under the query only.
-- `foot.mjs`, `why.mjs`, `spot.mjs` — PERF-42's one-off checks. `ab-surface.mjs` compares heights against a base
-  checkout (its `BASE` path is gone; make a detached worktree at the base commit and point it there).
-- The world rig's water hook scans a 1 km box per call: set `W.terr.self._waterCarve = null` for timing (the scripts do).
+## Tools (git-invisible)
 
-## Measuring
+- `wip/perf-42/spots.mjs <seed> <run dir> A` — query µs at bench spike vs calm positions. Run dir:
+  `/Users/ledogen/CodeShit/CarGame-perf37/perf-runs/2026-11-12-branch-connector-fix/`. A copy for main's side is in
+  `/Users/ledogen/CodeShit/CarGame/wip/perf-43/` (interleave A/B when the machine is loaded; quiet beats both).
+- `wip/perf-43/prof-all.mjs <seed> <dir> A` under `node --cpu-prof --cpu-prof-dir=wip/perf-43/prof`, then
+  `node wip/perf-42/under.cjs wip/perf-43/prof queryContacts` — inclusive/self time under the query, all spike positions.
+- `wip/perf-43/count.mjs <seed> <dir> A` — per-query call counts (resolves, searches, Newton evaluations).
+- `wip/perf-43/why-jn.mjs`, `why-warm.mjs`, `ab-normal-pt.mjs` — the one-off diagnoses behind the ticket's numbers.
+- PERF-41's `wip/perf-41/gpuab.mjs` and the rest of `wip/perf-42/` as before (see git history of this file).
 
-- Bench: `node test/playtest-bench.mjs --a=../CarGame-main0758 --b=. --reps=2` (A = main 07581275 pinned, detached,
-  with `node_modules`). For "vs current main", make a fresh detached worktree at main instead. ~7 min per session; it
-  wants a quiet machine (load is printed per session). `--probe` counts road resolves per second (not for ms).
-- Gates: `node test/run-all.mjs --changed=<paths>` after committing (plain `npm test` diffs the working tree, so it
-  selects nothing once committed). `npm run test:all -- --browser` before landing.
-- Identity: `node test/fingerprint-world.mjs --out=… --compare=…` against main; PERF-42's connector change already
-  shows as `surface` float noise (≤ 1.3e-13 m), so compare against main, not against an older fingerprint.
+## Order of work after PERF-43
 
-## Worktrees on disk from this work
-
-- `/Users/ledogen/CodeShit/CarGame-perf37` — the landed branch; keep for its `perf-runs/` (bench data) and handoff.
-- `/Users/ledogen/CodeShit/CarGame-main0758` — main 07581275 pinned, the bench's A side.
-- `/Users/ledogen/CodeShit/CarGame-nov01` — 9a7e3d71, Nov 01, the pre-BUG-70 reference build.
-The owner has not said whether to remove the last two.
+PERF-45 (parked main thread; its physics half is PERF-43's "rest is free" memo), then PERF-41 (terrain shader — owner:
+before PERF-44), then PERF-44 (triangle census; BUG-164 rides with it). Unchanged from the previous handoff.
 
 ## Open owner questions (carry them in the report)
 
-1. Record the PERF-40 baseline (`--record`) now that the branch is on main?
-2. Push main (deploys Pages)?
-3. Remove `CarGame-nov01` / `CarGame-main0758`?
+1. Ship 6e731daa's three reuse fixes to main ahead of PERF-43?
+2. Record the PERF-40 baseline (`--record`) now that the PERF-37 branch is on main?
+3. Push main (deploys Pages)?
+4. Remove `CarGame-nov01` / `CarGame-main0758`?
