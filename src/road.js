@@ -8554,9 +8554,22 @@ export class RoadSystem {
     // `valid` stays true while every sample is served (false once a sample had to search past a held answer).
     surfacePatch(hx, hz, queryY, out) {
         out.patch = true; out.hx = hx; out.hz = hz; out.qy = queryY; out.valid = true
-        if (out.feet) out.feet.clear(); else out.feet = new Map()
-        this._patch = out
-        try { out.nr = this._resolveRoadSurface(hx, hz) } finally { this._patch = undefined }
+        const feet = out.feet ??= new Map()
+        feet.clear()
+        // The hub's resolve through carveHint's memo: the tunnel-wall test asks it at the same hub (world-contacts.js), so
+        // one resolve serves both (a resolve of its own here was a second full resolve per wheel query, +10 % at seed
+        // 759313244's spikes). Its feet seed the patch: each analytic foot's true arc from its runProfile-domain arcS.
+        const nr = out.nr = this.carveHint(hx, hz)
+        const foot = (runKey, arcS) => {
+            const e = this._network.get(runKey)
+            if (!e?.clArc || !e.polyCum || !e.points) return
+            const s = _interpArcTable(e.polyCum, e.clArc, arcS + (e.arcOrigin ?? 0))
+            const l = feet.get(e.points); if (l) l.push(s); else feet.set(e.points, [s])
+        }
+        if (nr) {
+            if (nr.endRadial === undefined) foot(nr.runKey, nr.arcS)
+            for (const rv of nr.rivals) if (!rv.end) foot(rv.runKey, rv.arcS)
+        }
         return out
     }
 
