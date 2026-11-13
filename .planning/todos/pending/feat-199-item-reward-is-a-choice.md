@@ -38,3 +38,10 @@ Owner-only number: what $N is per item. Default until ruled: the item's shop pri
 - The dinner invitation's stay costs its N the same way (`stay for dinner (30 min, −$5)`).
 - Owner calls: N per item (default = shop price, not × the day tier); whether N > pay may draw on the wallet (built: yes);
   dinner costs its $5 (built: yes); Big tipper still never rides a bonus offer (kept so every seed rolls the same).
+
+## Verified (Spare, 2026-11-13) — HELD for the owner, not closed
+
+Post-merge main 1f66acb7: the 34 affected gates are green. A Chrome drive on test seed 2879661543 took the item on the pad and with the mouse, and took the cash with the mouse; each time the wallet and the inventory matched the choice. With a full truck the item button read "no room for the Sport rear shoes (Tab)" and was disabled. Freeing a slot re-enabled it.
+Screenshots: wip/feat-199/{offer-card,result-card,result-card-noroom}.png. Owner data point: an S-only Sport rear shoes ($8) rode a
+$7.28 job, so taking it COSTS $0.72 from the wallet. Is an item worth more than the job's whole pay a sensible offer?
+Held on DESIGN.md "a bonus item rides on top of cash, never instead of it" + R-04's retirement (orchestrator asked the owner).
