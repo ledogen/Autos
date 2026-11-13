@@ -15,12 +15,14 @@ lane: Perf (p)
 
 ## Next steps
 §1 (lever 3) is void as specified: the parked truck never repeats its hub inputs bit-for-bit, so an exact memo never
-hits (Log, 2026-11-13). Owner: pick one of the three options under Open questions. Perf lane: §2 (static objects stop
-recomputing their world matrices) next, which needs no owner call.
+hits (Log, 2026-11-13). Owner: pick one of the three options under Open questions. §2 (lever 4) is measured and smaller
+than the cost map said: the matrix walk is ~20 ms/s, and skipping it outright saves at most 1–14 ms/s (§2 finding).
+Orchestrator: build the narrow version (POI groups + barricades) or leave it (Open questions).
 
 ## Summary
 Parked, with nothing moving, the main thread still spends ~170 ms/s: render ~85, physics ~50, postStream ~20. Lever 1
-(HUD style recalcs) cut postStream. §1 (physics at rest) turned out not to be memoisable exactly. §2 (render CPU) is next.
+(HUD style recalcs) cut postStream. §1 (physics at rest) turned out not to be memoisable exactly. §2 (render CPU): the
+matrix walk is ~20 ms/s of the render's ~60–95, and at most 1–14 ms/s of it can be won.
 
 ## Description
 ### What the bench shows (PERF-40, park phase, 30 s at the drive's start pose, engine idling, map shut)
@@ -87,11 +89,36 @@ Three bench seeds, three spots each, road slopes 2–17°:
 - **So an exact memo keyed on the query's inputs would hit on 0 % of parked steps**, and it was not built. The cost
   map's "same hub bits in" assumed a fixed point the simulation never reaches.
 
+### §2 finding: the matrix walk is ~20 ms/s, not 67 (2026-11-13)
+Probe: `wip/perf-45/matrix-probe.mjs` (git-invisible; `wip/perf-45/census2.mjs` for the per-kind split). Story mode on
+the three bench seeds, parked at the start, camera still, unprofiled, fake audio. It wraps `renderer.render()` and the
+scene's `updateMatrixWorld()` (the walk three.js runs at the top of every render) with timers, counts nodes, and
+alternates the walk on / off (`scene.matrixWorldAutoUpdate`) in six 3 s windows each, so clock drift cancels.
+
+| seed | nodes walked (under a hidden parent) | `updateMatrix` calls / render | walk ms/s | render ms/s walk on → off |
+|---|---|---|---|---|
+| 1768572700 | 1400 (708) | 1417 | 24.7 | 96.6 → 82.5 |
+| 17535907 | 1500 (716) | 1517 | 17.0 | 61.8 → 54.7 |
+| 759313244 | 1618 (654) | 1635 | 23.7 | 92.5 → 91.5 |
+
+- Every node has automatic matrices, so every node's local matrix is rebuilt and its world matrix multiplied every
+  frame (~0.29 µs a node at this clock). The 67 ms/s in the cost map is the whole `render()` call, not the walk.
+- Skipping the walk entirely (the most any static-flag lever can buy) cuts render ms/s by 1–14 (mean 7): the clock
+  trap takes the rest back (less work, slower clock).
+- Where the nodes are (seed 1768572700): POI groups 703, of which ~640 are hidden past the ring (BUG-164 hides them;
+  the draw skips a hidden subtree, the matrix walk does not); the FEAT-154 road-barricade models 457 (`main.js
+  _barricadeGroup`); the truck 65; terrain chunks 52; road meshes 46; ~80 others.
+- A build has two must-dos: the scene root itself goes static (its own per-frame recompose marks the whole tree
+  dirty, so without it only the local rebuilds are saved), and each static kind is flagged where it is created, with
+  an explicit `updateMatrix()` on every later move. POI groups + barricades are ~78 % of the nodes: ~15 ms/s of timed
+  walk, ~5 ms/s realised. Not built.
+
 ## Tracker
 
 - [ ] The parked cost explained per bucket with a profile, on three random seeds and three spot types.
 - [ ] Levers proposed with measured savings; exact physics only (no faked rest).
 - [x] §1: an exact ground-query memo at rest measured: 0 % hits on 9/9 spots, void (2026-11-13).
+- [x] §2: the matrix walk measured: ~20 ms/s, at most 1–14 ms/s to win (2026-11-13). Not built.
 - [ ] The owner picks; each lever lands with PERF-40's park phase showing the saving.
 
 ## Open questions
@@ -105,8 +132,17 @@ Three bench seeds, three spots each, road slopes 2–17°:
      creeping. This is a physics-honesty fix, not a perf lever: on its own it saves nothing (the body rocks instead).
      It would need a damping term and a feel check.
 
+- §2, the matrix walk (~20 ms/s timed, 1–14 realised at most). Two options:
+  1. **Leave it** (recommended). ~5 ms/s realised is 0.5 % of a core, below what the bench resolves in watts, and every
+     static flag is a mesh that freezes if a later mover forgets its `updateMatrix()`.
+  2. **The narrow build**: the scene root, the POI groups (`_rebuildPoiMarkers`) and the barricade models
+     (`_placeBarricades` / `_standRow`) go static; the movers are the FEAT-149 ornament swap, FEAT-102's motorist and
+     any POI ring or marker that animates. Worth it only for frame-time headroom on a slower machine (PERF-46's laptop).
+
 ## Files
 `src/physics.js` (SLIP_EPSILON, the relaxation update) · `src/world-contacts.js` · `test/lib/world-rig.mjs`
 
 ## Log
 - 2026-11-13 (Perf lane): §1 measured, void as an exact memo (Description, § §1 finding). Nothing built; no src change.
+- 2026-11-13 (Perf lane): §2 measured (§2 finding): the walk is ~20 ms/s, not 67; stopped before building, per the
+  task's rule (a gain much smaller than claimed is reported, not built). No src change.
