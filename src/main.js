@@ -2263,9 +2263,13 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas write — throttled to ~10 Hz
 // S-64: the debug HUD's read-out spans, looked up once (WR-04: a missing id is skipped, never thrown
 // on inside the frame loop), and written only when the string changes.
-const _hudEl = Object.fromEntries(['spinVal', 'flFzVal', 'frFzVal', 'rlFzVal', 'rrFzVal', 'slipVal', 'thrVal', 'brkVal', 'fpsVal', 'posVal']
+const _hudEl = Object.fromEntries(['hud', 'spinVal', 'flFzVal', 'frFzVal', 'rlFzVal', 'rrFzVal', 'slipVal', 'thrVal', 'brkVal', 'fpsVal', 'posVal']
   .map(id => [id, document.getElementById(id)]))
 const _hudText = (el, s) => { if (el && el.textContent !== s) el.textContent = s }
+// PERF-48: the same for markup, for the prompts the 10 Hz poll rewrites. An innerHTML write replaces the children even
+// when the markup is the same, and the frame then pays a whole-document style recalculation for it (~0.8 ms). The
+// element's serialisation is kept beside the markup, so a write by anything else (a textContent) still counts as a change.
+const _hudHtml = (el, s) => { if (!el || (el._html === s && el.innerHTML === el._htmlOut)) return; el.innerHTML = s; el._html = s; el._htmlOut = el.innerHTML }
 
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
@@ -5188,7 +5192,7 @@ function _updateLinePrompt (poiEl, pulled) {
   if (pulled && missionSystem.reachSource() && j.load) void _loadFreight(j.load, j.cargoKg, j)
   if (poiEl) {
     poiEl.style.display = pulled ? 'none' : 'block'
-    if (!pulled) poiEl.innerHTML = parkPrompt(q.drop ? 'park to load the firewood' : 'park to pick up')
+    if (!pulled) _hudHtml(poiEl, parkPrompt(q.drop ? 'park to load the firewood' : 'park to pick up'))
   }
   return true
 }
@@ -5229,12 +5233,12 @@ function _updateFetchPrompt (poiEl, pulled) {
       _fetchHomeMsg = `${at ? `${at.done} — ` : ''}${j.fetch ? 'get back to' : 'next stop:'} ${_legLabel(j, missionSystem.leg)}!`
       _fetchHomeUntil = now + FETCH_HOME_MSG_S * 1000
     } else if (near) {
-      if (poiEl) { poiEl.style.display = 'block'; poiEl.innerHTML = parkPrompt(at?.park ?? (j.fetch ? 'park to acquire mission item' : 'park to hand it over')) }
+      if (poiEl) { poiEl.style.display = 'block'; _hudHtml(poiEl, parkPrompt(at?.park ?? (j.fetch ? 'park to acquire mission item' : 'park to hand it over'))) }
       return true
     }
   }
   if (_fetchHomeMsg && now < _fetchHomeUntil && missionSystem?.state === 'running') {
-    if (poiEl) { poiEl.style.display = 'block'; poiEl.textContent = _fetchHomeMsg }
+    if (poiEl) { poiEl.style.display = 'block'; _hudText(poiEl, _fetchHomeMsg) }
     return true
   }
   _fetchHomeMsg = null
@@ -5723,7 +5727,7 @@ function _checkStranded () {
   const show = c?.stuck && !c.canEnd && !_recoveryOpen && document.getElementById('recovery-row')?.style.display === 'flex'
   if (hint) {
     hint.style.opacity = show ? '1' : '0'
-    if (show) hint.innerHTML = `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`   // the owner's words (feat172-words, 2026-11-07: "keep")
+    if (show) _hudHtml(hint, `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`)   // the owner's words (feat172-words, 2026-11-07: "keep")
   }
   if (!c?.canEnd) { _strandedSince = null; return }
   _strandedSince ??= simTime
@@ -5845,7 +5849,7 @@ function _updateParkTriggers (zParked = false) {
     }
     if (poiEl) {
       poiEl.style.display = fuelStop.isOpen ? 'none' : 'block'
-      if (!fuelStop.isOpen) poiEl.innerHTML = parkPrompt('park to use the pump')
+      if (!fuelStop.isOpen) _hudHtml(poiEl, parkPrompt('park to use the pump'))
     }
     if (campRow) campRow.style.display = 'none'
     return
@@ -5864,7 +5868,7 @@ function _updateParkTriggers (zParked = false) {
     }
     if (poiEl) {
       poiEl.style.display = serviceScreen.isOpen ? 'none' : 'block'
-      if (!serviceScreen.isOpen) poiEl.innerHTML = parkPrompt(shop.type === 'autoShop' ? 'park for service' : 'park to shop')   // FEAT-104 [DEFAULT words]
+      if (!serviceScreen.isOpen) _hudHtml(poiEl, parkPrompt(shop.type === 'autoShop' ? 'park for service' : 'park to shop'))   // FEAT-104 [DEFAULT words]
     }
     if (campRow) campRow.style.display = 'none'
     return
@@ -5923,14 +5927,14 @@ function _updateParkTriggers (zParked = false) {
       const live = _takeableOffers(poi.id, now).length
       const next = offerBoard?.nextTurnoverH(poi.id, now)
       // FEAT-90: every "park to …" line carries the PARK badge; the status line does not.
-      poiEl.innerHTML = !live
+      _hudHtml(poiEl, !live
         ? (poi.type === 'expeditionCamp' ? _campGateText()
           : next != null ? `no work here right now — new offer in ${formatGameDuration(next - now)}`
                         : 'no work here right now')
         : poi.type === 'larrysHouse' ? parkPrompt('park to take the paper route')
-        : live > 1 ? parkPrompt(`park to see ${live} offers`) : parkPrompt('park to see the offer')
+        : live > 1 ? parkPrompt(`park to see ${live} offers`) : parkPrompt('park to see the offer'))
     } else if (moms) {
-      poiEl.innerHTML = parkPrompt("park to sleep at mom's house")
+      _hudHtml(poiEl, parkPrompt("park to sleep at mom's house"))
     }
   }
   if (!campRow) return
@@ -5964,12 +5968,12 @@ function _updateParkTriggers (zParked = false) {
             : !camp.withinTether ? 'too far from the road'
             : camp.cands === 0   ? 'no room off the road'
             :                      'not flat'
-  document.getElementById('camp-prompt-text').innerHTML =
+  _hudHtml(document.getElementById('camp-prompt-text'),
       camp.fast ? 'slow down to look for a campsite'
     : site      ? parkPrompt(parked ? 'park again to make camp' : 'park to make camp')
     : moms      ? why
     : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`
-    :             `${why}<br>${parkPrompt('park to sleep in the truck')}`
+    :             `${why}<br>${parkPrompt('park to sleep in the truck')}`)
 }
 
 /** An unmade camp card is up — the cab's (its sleep timer too), or a site previewed but not dug. */
@@ -7268,6 +7272,57 @@ function _setRunHudVisible (on) {
 function _syncDebugHud () {
   const h = document.getElementById('hud')
   if (h) h.style.display = storySystem.isActive() && _gui?.domElement.style.display === 'none' ? 'none' : ''
+  _writeDebugHud()   // shown again: its numbers are fresh before it paints
+}
+// PERF-48: the readout is written (on the HUD's 10 Hz poll) only while it shows. A text write under a hidden parent
+// still dirties the page's style, and the frame then pays a whole-document style recalculation for it (~0.8 ms).
+function _writeDebugHud () {
+  if (_hudEl.hud?.style.display === 'none') return
+  // FEAT-49: speed/gear/RPM moved off the text HUD onto the gauge cluster; only the wheelspin
+  // diagnostic (no cluster equivalent) stays here.
+  const dtrain = vehicleState.drivetrain
+  if (dtrain) {
+    const spEl = _hudEl.spinVal
+    if (spEl) {
+      const spin = dtrain.wheelspin || 0
+      _hudText(spEl, spin.toFixed(1))
+      spEl.style.color = spin > (RANGER_PARAMS.wheelspinThreshold ?? 7.5) ? '#ff2222' : '#00ff88'
+    }
+  }
+
+  // M4-09 / D-12: per-wheel Fz HUD — tire spring force per corner.
+  // Uses ?. / ?? 0 nullish-default per PATTERNS §Logger field append-at-end + nullish-coalesce.
+  // toFixed(0) = whole newtons (Fz is in thousands; decimals add noise).
+  _hudText(_hudEl.flFzVal, (vehicleState.wheelDebug[0]?.fz ?? 0).toFixed(0))
+  _hudText(_hudEl.frFzVal, (vehicleState.wheelDebug[1]?.fz ?? 0).toFixed(0))
+  _hudText(_hudEl.rlFzVal, (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0))
+  _hudText(_hudEl.rrFzVal, (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0))
+
+  // M3-07: front slip velocity HUD — sa field stores slip-velocity magnitude in m/s (not slip angle).
+  // See physics.js: "sa field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad)".
+  // Thresholds: ~0.5 m/s = light slip (green), ~1.5 m/s = heavy slip (red).
+  const slipMps = (vehicleState.wheelDebug?.[0]?.sa || 0)
+  const slipEl = _hudEl.slipVal
+  if (slipEl) {
+    _hudText(slipEl, slipMps.toFixed(2) + ' m/s')
+    slipEl.style.color = slipMps < 0.5 ? '#00ff88' : slipMps < 1.5 ? '#ffaa00' : '#ff2222'
+  }
+
+  // M3-08: throttle and brake percentage HUD
+  _hudText(_hudEl.thrVal, (vehicleState.throttle * 100).toFixed(0))
+  _hudText(_hudEl.brkVal, (vehicleState.brake * 100).toFixed(0))
+
+  // FPS HUD
+  _hudText(_hudEl.fpsVal, String(Math.round(_fpsEma)))
+
+  // Road-Feel QoL: seed / x / z OSD — correlates screenshots and in-game sightings with the
+  // headless report's coords (test/road-character.mjs prints worst-offender x/z in world space).
+  if (_hudEl.posVal) {
+    // Freecam shows the CAMERA's position (you fly to a defect, the OSD must name that spot,
+    // not wherever the truck was left) — same source the capture mark uses.
+    const posSrc = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+    _hudText(_hudEl.posVal, `seed ${_seedString} / ${posSrc.x.toFixed(0)} / ${posSrc.z.toFixed(0)}`)
+  }
 }
 function _renderRunHud () {
   if (!storySystem.isActive() || storySystem.isEntering()) return
@@ -10668,50 +10723,7 @@ function loop () {
       campSystem.syncGui(vehicleState.position.x, vehicleState.position.z)
     }
 
-    // FEAT-49: speed/gear/RPM moved off the text HUD onto the gauge cluster; only the wheelspin
-    // diagnostic (no cluster equivalent) stays here.
-    if (dtrain) {
-      const spEl = _hudEl.spinVal
-      if (spEl) {
-        const spin = dtrain.wheelspin || 0
-        _hudText(spEl, spin.toFixed(1))
-        spEl.style.color = spin > (RANGER_PARAMS.wheelspinThreshold ?? 7.5) ? '#ff2222' : '#00ff88'
-      }
-    }
-
-    // M4-09 / D-12: per-wheel Fz HUD — tire spring force per corner.
-    // Uses ?. / ?? 0 nullish-default per PATTERNS §Logger field append-at-end + nullish-coalesce.
-    // toFixed(0) = whole newtons (Fz is in thousands; decimals add noise).
-    _hudText(_hudEl.flFzVal, (vehicleState.wheelDebug[0]?.fz ?? 0).toFixed(0))
-    _hudText(_hudEl.frFzVal, (vehicleState.wheelDebug[1]?.fz ?? 0).toFixed(0))
-    _hudText(_hudEl.rlFzVal, (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0))
-    _hudText(_hudEl.rrFzVal, (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0))
-
-    // M3-07: front slip velocity HUD — sa field stores slip-velocity magnitude in m/s (not slip angle).
-    // See physics.js: "sa field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad)".
-    // Thresholds: ~0.5 m/s = light slip (green), ~1.5 m/s = heavy slip (red).
-    const slipMps = (vehicleState.wheelDebug?.[0]?.sa || 0)
-    const slipEl = _hudEl.slipVal
-    if (slipEl) {
-      _hudText(slipEl, slipMps.toFixed(2) + ' m/s')
-      slipEl.style.color = slipMps < 0.5 ? '#00ff88' : slipMps < 1.5 ? '#ffaa00' : '#ff2222'
-    }
-
-    // M3-08: throttle and brake percentage HUD
-    _hudText(_hudEl.thrVal, (vehicleState.throttle * 100).toFixed(0))
-    _hudText(_hudEl.brkVal, (vehicleState.brake * 100).toFixed(0))
-
-    // FPS HUD
-    _hudText(_hudEl.fpsVal, String(Math.round(_fpsEma)))
-
-    // Road-Feel QoL: seed / x / z OSD — correlates screenshots and in-game sightings with the
-    // headless report's coords (test/road-character.mjs prints worst-offender x/z in world space).
-    if (_hudEl.posVal) {
-      // Freecam shows the CAMERA's position (you fly to a defect, the OSD must name that spot,
-      // not wherever the truck was left) — same source the capture mark uses.
-      const posSrc = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
-      _hudText(_hudEl.posVal, `seed ${_seedString} / ${posSrc.x.toFixed(0)} / ${posSrc.z.toFixed(0)}`)
-    }
+    _writeDebugHud()
 
     // M3-09 / D-13: Pacejka curve + 4-corner travel bars + slip vectors — canvas repaints, throttled
     // with the HUD. Each early-returns when its canvas is hidden (constraint #10: outside accumulator).

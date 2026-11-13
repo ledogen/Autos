@@ -38,7 +38,8 @@
 //
 // Flags: --a=<checkout> (default this one) --b=<checkout> [--c=<checkout>] --reps=N --seeds=K (first K pinned) | --seed=N
 //        --drive=S --map=S --park=S --headed --out=DIR (default perf-runs/bench-<stamp>) --record
-//        --probe   count road resolves per second (PERF-42) — wraps a hot path, so its ms are not for comparing
+//        --probe   count road resolves per second (PERF-42) and list the CSS animations running (PERF-48) — wraps a hot
+//                  path, so its ms are not for comparing
 //        --fake-audio  Chrome's --disable-audio-output (a fake sink whose clock runs at 1.0 s/s): for a host whose
 //                  CoreAudio is wedged (PERF-47). The game's audio work still runs; nothing reaches the speakers.
 //        --profile PERF-48: a Chrome trace per phase (every thread of every process, the JS sampling profiler, GC) to
@@ -265,7 +266,9 @@ const PAGE = String.raw`(async () => {
     const P0 = window.__vs.position, nr = resolve(P0.x, P0.z)
     const lat = nr ? +((P0.x - nr.point.x) * nr.tangent.z - (P0.z - nr.point.z) * nr.tangent.x).toFixed(1) : null
     B.samples.push({ t: Date.now(), phase: B.phase, frames: dn, cpu, tris: ri.triangles, calls: ri.calls, map: window.__map2d().isOpen(), v: +Math.hypot(window.__vs.velocity.x, window.__vs.velocity.z).toFixed(1),
-      x: Math.round(P0.x), z: Math.round(P0.z), lat, ...(window.__benchProbe ? { res } : {}),
+      x: Math.round(P0.x), z: Math.round(P0.z), lat,
+      // --probe: the CSS animations and transitions running at the sample (PERF-48: each one restyles every frame)
+      ...(window.__benchProbe ? { res, anim: document.getAnimations().filter(a => a.playState === 'running').map(a => (a.effect?.target?.id || '?') + ':' + (a.animationName || a.transitionProperty)) } : {}),
       thr: buttons[7].value, idx: ap.idx, dbg: ap.dbg,
       // why a drive stalls: the grade (the nose's rise per metre), the drivetrain, and story mode's kept wear
       grade: (() => { const q = window.__vs.quaternion, fy = 2 * (q.w * q.x - q.y * q.z); return +(fy / Math.sqrt(Math.max(1e-6, 1 - fy * fy)) * 100).toFixed(0) })(),
