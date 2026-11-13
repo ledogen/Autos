@@ -16,8 +16,9 @@
  *                pad-focusing — an item fits it on the truck for a look (ServiceCenter.preview), on the
  *                corner under the pointer or else the worst one; moving off puts back exactly what was there.
  *                My Items, below it: sell the parts you carry, and repair or patch them as their own items.
- *   Jobs       — only while the shop has live offers (owner, 2026-10-20: it still posts work): each as
- *                the map card words it; picking one closes the screen and hands over to its offer.
+ *   Jobs       — only while the shop has live offers (owner, 2026-10-20: it still posts work): one
+ *                button, "go to jobs" (FEAT-197, owner 2026-11-11). It closes the screen and hands over to
+ *                the offers (the offer card over the map); declining them comes back to this screen.
  * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt). "map" opens
  * the map over the screen (owner, 2026-10-21); the screen hides under it and the clock stays held.
  *
@@ -155,8 +156,8 @@ export class ServiceScreen {
    * @param {import('./service.js').ServiceCenter} service
    * @param {object} vehicleState - read-only; the brake coming off closes the screen
    * @param {object} o
-   * @param {() => object[]} o.jobs - this shop's live offers as offerBoard.card words them
-   * @param {(i:number) => void} o.openJobs - hand the brake to the offers, starting at the i-th
+   * @param {() => object[]} o.jobs - this shop's live offers (the Jobs tab shows while there are any)
+   * @param {() => void} o.openJobs - hand the brake to the offers; their decline reopens this screen (FEAT-197)
    * @param {() => void} o.openMap - show the map over the screen
    * @param {() => number} o.nowH - the game clock (daySystem.clockH): the shelf's time left
    * @param {(open:boolean) => void} o.onView - the screen opened / closed (main.js: the camera)
@@ -264,7 +265,7 @@ export class ServiceScreen {
     const key = b.dataset.key
     switch (b.dataset.act) {
       case 'close': this.close(); return
-      case 'jobs': this.close(); this.openJobs(+b.dataset.index); return
+      case 'jobs': this.close(); this.openJobs(); return
       case 'map': this.openMap(); return
       case 'tab': this.tab = b.dataset.tab; this.sel = null; break
       case 'sel': this.sel = this.sel === key ? null : key; break
@@ -306,7 +307,7 @@ export class ServiceScreen {
       + btn('map', 'map')
       + `</div>`
       + `<div class="sv-tabs">${this.store ? tab('shop', 'Shop') : tab('vehicle', 'My Vehicle') + tab('shop', 'Parts Shop')}${jobs.length ? tab('jobs', 'Jobs') : ''}</div>`
-      + (this.tab === 'vehicle' ? this._vehicle() : this.tab === 'shop' ? this._shop() : this._jobs(jobs))
+      + (this.tab === 'vehicle' ? this._vehicle() : this.tab === 'shop' ? this._shop() : this._jobs())
       + BACK_BUTTON   // the card's way out (owner, 2026-10-21: replaces the corner ×)
   }
 
@@ -417,11 +418,9 @@ export class ServiceScreen {
 
   // ── Jobs ────────────────────────────────────────────────────────────────────────────────────────
 
-  /** The shop's live offers, each in the map card's own sentence and pay line. */
-  _jobs (cards) {
-    return `<div class="sv-slot">` + cards.map((c, i) => `<div class="sv-row wrap"><span class="sv-name">`
-      + c.sentence.map(r => r.b ? `<b>${r.t}</b>` : r.t).join('') + (c.pay ? `<div class="sv-desc">${c.pay}</div>` : '')
-      + `</span><span class="sv-acts">${btn('jobs', 'see the job', true, `data-index="${i}"`, ' ok')}</span></div>`).join('') + `</div>`
+  /** FEAT-197 (owner, 2026-11-11): one button — the shop's offers on the map; back returns here (main.js openJobs). */
+  _jobs () {
+    return `<div class="sv-slot"><div class="sv-row"><span class="sv-acts">${btn('jobs', 'go to jobs', true, '', ' ok')}</span></div></div>`
   }
 
   _myItems () {
