@@ -62,3 +62,32 @@ Triangle count is cheap on this GPU: hiding 400k+ triangles of props cost less t
 - [ ] PERF-40 measures each lever (A/B against this branch, three seeds) before it is chosen.
 - [ ] The owner picks the levers from the measured numbers and before/after screenshots.
 - [ ] GPU active cycles in the PERF-40 drive phase down by the agreed amount, with the look signed off.
+
+## Progress — 2026-11-13 (branch `perf/perf-41-terrain-shader`, worktree `CarGame-perf41`)
+
+Lever 1, built as four commits. Measured parked at two fixed freecam views per seed (near: 7 m behind the spawn, 2.6 m up;
+vista: 30 m back, 45 m up), GPU active cycles (busy × MHz) over 8 s, 2 reps, builds alternated, machine held quiet.
+Tool: `wip/perf-41/gpucmp.mjs` (git-invisible). Note: GPU ms/frame does NOT move. The GPU lowers its clock to stay
+~90 % busy at 60 fps, so the saving shows only as cycles.
+
+| lever | change | picture |
+|---|---|---|
+| 1a be6f15fb | steep-face rock pair read only where `ts_steep > 0` | same |
+| 1c 4b557907 | base fbm computed once; bump centre tap + dither coarse octave reuse it | same |
+| 1d 2cc13728 | baked prop-shadow taps skipped past the fade end (240 m) | same |
+| 1b 3dd37a6c | hash-noise fbm → one baked tileable RGBA noise texture (R fbm, GB bump differences), 2 taps | pattern moves |
+
+| seed | view | base Mcyc/s | 1a+1c+1d | all four |
+|---|---|---|---|---|
+| 2654449719 | near | 593 | −5.6 % | −12.1 % |
+| 2654449719 | vista | 664 | −5.8 % | −13.9 % |
+| 1172941705 | near | 575 | −3.7 % | −12.1 % |
+| 1172941705 | vista | 660 | −5.5 % | −15.9 % |
+| 759313244 | near | 615 | −6.3 % | −14.3 % |
+| 759313244 | vista | 636 | −7.8 % | −13.9 % |
+| mean | | | **−5.8 %** | **−13.7 %** |
+
+Pixels moved > 8/255 vs base: same-picture build 0.02–0.19 % (one 0.93 %), inside the base-vs-base rep floor of
+0.05–0.26 %. All four: 0.8–5.7 %, and only 0.01–0.08 % moved more than 32/255. The baked-noise bake costs ~59 ms at boot
+(512², 64 cells, a 213 m repeat at the 0.3 /m mottle scale). Seed 17535907's vista view crashed Chrome on base too
+(not this branch). Owner's sheet: https://claude.ai/artifact/CPc7eCYh59L3ktcM4nA61y
