@@ -1,7 +1,7 @@
 ---
 id: BUG-165
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-12
 source: Lane B, BUG-161 findings (follow-up named there, not fixed in that landing)
@@ -57,3 +57,6 @@ needs its own proof, not a ride-along on BUG-161.
   by the n.y filter, as it should be.
 - `test/fingerprint-physics.mjs` vs main: ALL IDENTICAL (bumpy ground, no debris bodies, so the cut never acts).
 
+
+## Resolution (2026-11-13)
+On main b512c2a2 (smoke 26/26, affected gates 30/30, physics fingerprint identical). The debris sphere is cut to the tire width by a separating-axis test along the axle; gate test/freight-strap.mjs §7.

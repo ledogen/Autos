@@ -131,16 +131,15 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
     road.js / terrain shader changes. Tickets routed to it: BUG-164, PERF-46.
   - The owner lets it land and push its own work from its window. You never push without the owner's word to you.
   - Lane rule in every spawn prompt: ≤ 2 heavy processes; `pgrep -f 'node test/playtest-bench'` before a heavy job.
-- **Main = 6602da0f + docs; origin = be5da36e.** Unpushed (owner's word needed): PERF-43 close 8acdea46 · FEAT-198 +
+- **Main = b512c2a2 + docs; origin = be5da36e.** Unpushed (owner's word needed): PERF-43 close 8acdea46 · FEAT-198 +
   FEAT-200 a7837ddc (+ smoke fix 1f66acb7) · FEAT-197 0fca6cd4 · FEAT-195 692ceba5 · BUG-161 d2c5e2ef · BUG-156
   3ba37902 · BUG-161b 6739947a (WELD_SLOP 10 mm) · FEAT-199 a2922b9c (item reward = a choice, capped at the job's
-  pay) · FEAT-201 + FEAT-194 parts 1–2 810a5d93 (new src/park-brake.js) · FEAT-196 6602da0f · INFRA-11 5b8c0e88 (tracker = the dashboard's Lanes tab; not smoked, it touches tools/ and docs only).
+  pay) · FEAT-201 + FEAT-194 parts 1–2 810a5d93 (new src/park-brake.js) · FEAT-196 6602da0f · BUG-165 b512c2a2 · INFRA-11 5b8c0e88 (tracker = the dashboard's Lanes tab; not smoked, it touches tools/ and docs only).
   Each game landing smoked 26/26 (logs wip/orch/smoke-*.log).
 - **INFRA-11 cutover DONE 11-13.** The artifact is dead state: never read or write it. Tooling peer
   `lanes-tab-dashboard` did it.
   The lanes/*.json task lists were imported whole and are long: prune closed rows as you touch them.
-- **Running**: Lane B agent — BUG-165 (wheel debris sphere reaches loose bed cargo), worktree `CarGame-machine`.
-  Next for B: BUG-166 after `bug166-shock`. Spare agent — test/pad-e2e.mjs's "RT launches it on the assist" check
+- **Lane B idle**: BUG-165 landed; BUG-166 waits on `bug166-shock`. **Running**: Spare agent — test/pad-e2e.mjs's "RT launches it on the assist" check
   fails on main (2.9 m/s, wants > 3): find whether FEAT-194/201 caused it. FEAT-196 is on main; its ticket stays in
   pending/ until `feat196-look`. feature/machine also carries the unlanded FEAT-34 round 3 work, so B's landings
   are cherry-picks.
