@@ -1,0 +1,49 @@
+---
+id: INFRA-13
+type: infra
+status: open
+severity: major
+opened: 2026-11-12
+source: owner, 2026-11-12 — the "ledorepo" brief (sculpting a personal Jira: tracker + lanes + deep-dive forms)
+relates: INFRA-11
+---
+lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
+
+# INFRA-13: ledorepo — private GitHub backup of memory, skills, hooks and the tracker data
+
+## Summary
+Measured 2026-11-12: **nothing outside the game repo is backed up.** `~/.claude` is not a git repository, Time
+Machine has no destination, and the `gh` command-line tool is not installed. At risk: the memory folder (164 files,
+956 KB — every owner ruling and preference), the three hand-made skills (worktree, window-title,
+blender-game-asset; 4.6 MB), the `worktree-pin.sh` hook, and `~/.claude/settings.json`. Also `wip/` (git-invisible
+by design: in-progress models, audio takes, the item-setup handoff) and 7 commits on main that are not pushed.
+The project CLAUDE.md and all of `.planning/` are safe once pushed: they are in the public game repo.
+
+## Next action
+Owner: create an empty **private** repository on github.com (suggested name `ledorepo`) and give the orchestrator
+its address. That is the one step an agent cannot do; the SSH key this Mac already uses for `Autos` will work.
+
+## Decisions
+- 2026-11-12, owner: the private repo is the ledorepo repo itself (see INFRA-11 § Decisions); the backup is a
+  folder in it.
+
+## Progress
+- [ ] A private repo holds a copy of: the CarGame memory folder, `~/.claude/skills/` (minus `synced/`),
+      `~/.claude/hooks/`, `~/.claude/settings.json`, the project's `.claude/settings.local.json` and `RESUME.md`,
+      and the INFRA-11 tracker data if the owner rules it private.
+- [ ] One script (`backup.sh`: copy with rsync, commit, push) run hourly by launchd. It commits only when
+      something changed.
+- [ ] Nothing secret goes up: the script copies an explicit list of paths, never all of `~/.claude` (which holds
+      session transcripts, login state and caches).
+- [ ] A restore was tried once on a scratch folder and the memory index loads.
+- [ ] Decide `wip/`: it holds large binaries (Blender files, audio). Size it first; back it up here only if small,
+      otherwise a plain external-disk / Time Machine answer.
+- [ ] Turn on Time Machine or an equivalent whole-disk backup — the cheap, complete answer to "the laptop died".
+
+## Open questions
+- Push main more often? Seven landings sit only on this Mac because a push deploys the game to Pages. A second
+  remote (the private repo, or a `backup` branch that Pages ignores) would protect them without deploying.
+
+## Files
+`~/.claude/projects/-Users-ledogen-CodeShit-CarGame/memory/` · `~/.claude/skills/` · `~/.claude/hooks/` ·
+`~/.claude/settings.json` · `wip/`
