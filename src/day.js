@@ -310,11 +310,12 @@ export class DaySystem {
      */
     eat (holdH) { this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + holdH) }
 
-    /** Past the last meal's hold. The energy meter says so in words (SM-INV-10: never a gauge). */
+    /** Past the last meal's hold. The energy box says so in its hunger word and bar (FEAT-198), never a number. */
     hungry () { return DAY_PARAMS.hungerOn && this.clockH() > this._fedUntilH }
 
     /** FEAT-169: the energy meter's hunger word — stuffed / full / content / peckish / hungry — or null with hunger
-     *  off. A word, never a number (SM-INV-10). 'hungry' exactly when hungry() is. */
+     *  off. A word, never a number; since FEAT-198 (owner, 2026-11-11) it sits over its own scrolling bar, like energy.
+     *  'hungry' exactly when hungry() is. */
     hungerWord () {
         if (!DAY_PARAMS.hungerOn) return null
         const left = this.fedLeftH()
