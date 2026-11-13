@@ -11,6 +11,10 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 
 # INFRA-13: ledorepo — private GitHub backup of memory, skills, hooks and the tracker data
 
+## Next steps
+Owner: create an empty **private** repository on github.com (suggested name `ledorepo`) and give the orchestrator
+its address. That is the one step an agent cannot do; the SSH key this Mac already uses for `Autos` will work.
+
 ## Summary
 Measured 2026-11-12: **nothing outside the game repo is backed up.** `~/.claude` is not a git repository, Time
 Machine has no destination, and the `gh` command-line tool is not installed. At risk: the memory folder (164 files,
@@ -19,15 +23,7 @@ blender-game-asset; 4.6 MB), the `worktree-pin.sh` hook, and `~/.claude/settings
 by design: in-progress models, audio takes, the item-setup handoff) and 7 commits on main that are not pushed.
 The project CLAUDE.md and all of `.planning/` are safe once pushed: they are in the public game repo.
 
-## Next action
-Owner: create an empty **private** repository on github.com (suggested name `ledorepo`) and give the orchestrator
-its address. That is the one step an agent cannot do; the SSH key this Mac already uses for `Autos` will work.
-
-## Decisions
-- 2026-11-12, owner: the private repo is the ledorepo repo itself (see INFRA-11 § Decisions); the backup is a
-  folder in it.
-
-## Progress
+## Tracker
 - [ ] A private repo holds a copy of: the CarGame memory folder, `~/.claude/skills/` (minus `synced/`),
       `~/.claude/hooks/`, `~/.claude/settings.json`, the project's `.claude/settings.local.json` and `RESUME.md`,
       and the INFRA-11 tracker data if the owner rules it private.
@@ -39,6 +35,10 @@ its address. That is the one step an agent cannot do; the SSH key this Mac alrea
 - [ ] Decide `wip/`: it holds large binaries (Blender files, audio). Size it first; back it up here only if small,
       otherwise a plain external-disk / Time Machine answer.
 - [ ] Turn on Time Machine or an equivalent whole-disk backup — the cheap, complete answer to "the laptop died".
+
+## Decisions
+- 2026-11-12, owner: the private repo is the ledorepo repo itself (see INFRA-11 § Decisions); the backup is a
+  folder in it.
 
 ## Open questions
 - Push main more often? Seven landings sit only on this Mac because a push deploys the game to Pages. A second

@@ -11,6 +11,9 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 
 # INFRA-10: ledorepo — decision records (DEC-NN): the axioms in one place
 
+## Next steps
+Owner: answer the backfill question below.
+
 ## Summary
 The project's ground truth is spread over DESIGN.md (SM-INV-1..15), eight `design-amendments-*.md` files, CLAUDE.md,
 the memory folder's "standing do-nots", and rulings buried in tickets — about 10,400 lines in `story-mode/` alone,
@@ -19,13 +22,7 @@ contradicted nine earlier rulings. Fix: an architecture decision record (ADR —
 ruling, the date, why, what it replaced) as a ticket class, shown in the tracker and in the Links of every ticket it
 governs.
 
-## Next action
-Owner: answer the backfill question below.
-
-## Decisions
-- 2026-11-12, owner: **backfill all** existing rulings, not only new ones.
-
-## Progress
+## Tracker
 - [ ] New class `decision`, ids `DEC-NN`, files `.planning/decisions/dec-NN-<slug>.md`. Frontmatter: `id`, `status`
       (`standing` / `superseded`), `decided` (date), `supersedes`, `governs` (ticket ids, file paths, subsystems).
       Body: **Ruling** (one or two sentences, the owner's words where they exist) · **Why** · **Replaces** · **Source**.
@@ -38,6 +35,9 @@ Owner: answer the backfill question below.
 - [ ] The check that prevents "you went against 9 things": before planning a ticket, an agent reads the DECs that
       govern the files and subsystems it will touch and lists any conflict **before** work starts (one line in
       LANE-AGENT-BRIEF and the orchestrator handoff).
+
+## Decisions
+- 2026-11-12, owner: **backfill all** existing rulings, not only new ones.
 
 ## Open questions
 - Backfill everything now (roughly 60–100 records, one agent task, then an owner skim), or only record decisions
