@@ -12,7 +12,7 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Lever 1 built (Log, 2026-11-13); landing branch `land/perf-48-l1`. Owner: read the ranked lever list at the top of `.planning/perf/COST-MAP-2026-11.md` and pick. Levers 1–4 need no
+Lever 1 on main; lever 2 measured void (Log, 2026-11-13: the map cost it named was lever 1's recalc, now PERF-46's). Owner: read the ranked lever list at the top of `.planning/perf/COST-MAP-2026-11.md` and pick. Levers 1–4 need no
 owner call (exact, invisible); 5–7 are one question each (Open questions). Perf lane then builds the picks, one ticket each.
 
 ## Summary
@@ -83,4 +83,6 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
   alone (forces nothing once nothing is dirty). Stills: 0 px on the device grid, otherwise only the anti-aliased
   column of each hour tick / band edge and the band labels' glyph edges (`wip/perf-48-l1/diff.txt` in the perf
   worktree). No gate: the guard lives in main.js and lil-gui, both DOM-bound; a pure-node gate would need a fake DOM.
-
+- 2026-11-13 (Perf lane): lever 2 void. `_drawRegion`'s ~59 ms/s was the forced style recalc its `ctx.font` (the frame's first) pays, not
+  its dim fill: the fill is ≤ 0.09 ms/frame (≤ 5.5 ms/s); knocking `_drawRegion` out moves the recalc to the next font setter.
+  Not built. Numbers, and the pan/settle probe it led to, in PERF-46.
