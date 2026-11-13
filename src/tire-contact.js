@@ -1,6 +1,7 @@
 /**
  * src/tire-contact.js — FEAT-70: the tire's contact with the ground, solved for the CYLINDER it is
- * (owner ruling 2026-11-03: option A, three lines across the width, the radial normal at edges).
+ * (owner ruling 2026-11-03: option A, three lines across the width; the surface normal at the pressure
+ * centre, owner 2026-11-12, PERF-39 — the 11-03 radial edge normal popped tires on grazed kerbs).
  *
  * It replaces the tire-envelope stencil (main.js queryContacts, 4 rings × 8 directions around the
  * hub). That stencil sampled all around the hub, so it was a SPHERE: a kerb beside the tire lifted
@@ -16,12 +17,12 @@
  *            under one edge it is that edge. (The deepest point alone sat at an edge on level ground —
  *            the first line wins a tie, a hair of roll picks one — and both drive wheels' push half a
  *            tread off the same side turned the truck 5° in 3 s of straight full throttle, 2026-11-05.)
- *   normal = the surface normal with its in-plane part turned to the RADIAL line from the point to
- *            the axle. On smooth ground the closest point is where the surface is tangent to the
- *            circle, so that IS the surface normal; at an edge it is the line from the edge to the
- *            axle, so a kerb pushes back horizontally (a kerb slows the wheel that hits it). The
- *            surface's tilt along the axle is kept, so a cross-slope still pushes downhill and the
- *            tire's grip holds it, as before.
+ *   normal = the ground's own surface normal at that pressure centre. PERF-39 (owner, 2026-11-12) —
+ *            from 11-03 the edge normal was RADIAL (edge → axle), so a kerb pushed the wheel back.
+ *            Grazing a kerb, the corner sits ahead of the hub on the edge line, deep, its force
+ *            tilted backwards: one wheel braked hard and the truck yawed (a 3° climb at 45 mph: 125 kN
+ *            on the rim, 28° of yaw). test/kerb-graze.mjs, 72 runs at 45 / 25 / 10 % tire: radial
+ *            popped 12 / 14 / 23, legacy 4 / 4 / 4, this 3 / 4 / 8. Do not put the radial normal back.
  * Search per line: 9 coarse samples over [−r, r] (one under the hub, so flat ground is exact), then a
  * golden-section refinement in the bracket of every coarse local minimum (≈1.5 mm at a kink). One
  * minimum on smooth ground: 3 × (9 + 10) = 57 height samples per wheel, vs the stencil's 33 — measured
@@ -49,10 +50,13 @@
  * Pure: no DOM, no engine types, no Three.js. `heightAt(x, z)` and `normalAt(x, z)` are the caller's.
  */
 
-const COARSE = 9                         // odd: one sample sits under the hub
-const REFINE = 10                        // golden-section steps per bracket: 18 cm → ≈1.5 mm
+// The search's sampling, a live knob (test/kerb-graze.mjs sweeps it). coarse: samples over [−r, r] per line, odd so one sits
+// under the hub. refine: golden-section steps per bracket, each shrinking it to 0.618 (18 cm → ≈1.5 mm at 10). PERF-39
+// measured the floor: 9 refine steps is the fewest that holds test/tire-contact.mjs's 2 mm (1.8 mm on a 30 cm step), so
+// the 3 samples it would save are not worth sitting on the gate's edge.
+export const TIRE_CONTACT = { coarse: 9, refine: 10 }
 const GOLD = (3 - Math.sqrt(5)) / 2       // 0.382 — the golden section of the larger side
-const _v = new Float64Array(COARSE)
+const _v = new Float64Array(33)
 const TILT_LO = Math.sin(15 * Math.PI / 180)   // |n·A| where the plane solve starts to blend in
 export const TILT_HI = Math.sin(35 * Math.PI / 180)   //   …and where it has taken over
 const _line = {}
@@ -86,20 +90,22 @@ export function tireContact (heightAt, normalAt, cx, cy, cz, r, w, A, out) {
   const dl = L ? L.depth : 0, depth = (1 - k) * dl + k * dp
   if (!(depth > 0)) return null
   const px = qx + dp * n.x, py = qy + dp * n.y, pz = qz + dp * n.z
-  let nx = k * n.x, ny = k * n.y, nz = k * n.z
-  if (L) { nx += (1 - k) * L.nx; ny += (1 - k) * L.ny; nz += (1 - k) * L.nz }
-  const nl = Math.hypot(nx, ny, nz) || 1
-  out.depth = depth; out.nx = nx / nl; out.ny = ny / nl; out.nz = nz / nl
+  out.depth = depth
   out.px = L ? (1 - k) * L.px + k * px : px; out.py = L ? (1 - k) * L.py + k * py : py; out.pz = L ? (1 - k) * L.pz + k * pz : pz
+  // The ground's normal at the blended contact point, as the tread's is (PERF-39). Over a kerb face the hub's own
+  // normal is near horizontal, so the blend runs there too: blending normals instead kept a backward push.
+  const nc = normalAt(out.px, out.pz)
+  out.nx = nc.x; out.ny = nc.y; out.nz = nc.z
   return out
 }
 
 /** The three-line tread solve (the docblock above) — the tire near upright. */
 function treadContact (heightAt, normalAt, h0, cx, cy, cz, r, w, A, out) {
+  const COARSE = TIRE_CONTACT.coarse, REFINE = TIRE_CONTACT.refine
   // Rolling direction on the ground: horizontal, perpendicular to the axle's horizontal part.
   const ah = Math.hypot(A.x, A.z) || 1
   const fx = -A.z / ah, fz = A.x / ah
-  let best = Infinity, bx = 0, by = 0, bz = 0
+  let best = Infinity
   let sw = 0, sx = 0, sy = 0, sz = 0   // the lines' closest points, weighted by their depth
   for (let line = -1; line <= 1; line++) {
     const o = line * w / 2, ox = cx + o * A.x, oz = cz + o * A.z
@@ -133,23 +139,14 @@ function treadContact (heightAt, normalAt, h0, cx, cy, cz, r, w, A, out) {
     }
     const d = r - Math.sqrt(lb)
     if (d > 0) { sw += d; sx += d * lx; sy += d * ly; sz += d * lz }
-    if (lb < best) { best = lb; bx = lx; by = ly; bz = lz }
+    if (lb < best) best = lb
   }
   const rho = Math.sqrt(best)
   if (!(rho < r)) return null
-  // Radial unit, point → axle, perpendicular to the axle.
-  let ux = cx - bx, uy = cy - by, uz = cz - bz
-  const ua = ux * A.x + uy * A.y + uz * A.z
-  ux -= ua * A.x; uy -= ua * A.y; uz -= ua * A.z
-  const ul = Math.hypot(ux, uy, uz) || 1
-  ux /= ul; uy /= ul; uz /= ul
-  // The surface normal's tilt along the axle, kept; its in-plane part turned radial.
-  const n = normalAt(bx, bz)
-  const na = n.x * A.x + n.y * A.y + n.z * A.z
-  const np = Math.sqrt(Math.max(0, 1 - na * na))
-  let nx = na * A.x + np * ux, ny = na * A.y + np * uy, nz = na * A.z + np * uz
-  const nl = Math.hypot(nx, ny, nz) || 1
-  out.depth = r - rho; out.nx = nx / nl; out.ny = ny / nl; out.nz = nz / nl
-  out.px = sx / sw; out.py = sy / sw; out.pz = sz / sw   // sw > 0: the deepest line is in it
+  // The surface normal at the pressure centre (the docblock: never the radial edge normal).
+  const px = sx / sw, py = sy / sw, pz = sz / sw   // sw > 0: the deepest line is in it
+  const n = normalAt(px, pz)
+  out.depth = r - rho; out.nx = n.x; out.ny = n.y; out.nz = n.z
+  out.px = px; out.py = py; out.pz = pz
   return out
 }

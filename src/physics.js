@@ -982,8 +982,8 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // SIDEWALL_V_REG so it holds at rest instead of chattering.
       // BUG-116: the gate is the tire's TILT, not an unloaded strut. Since bb585d65 a tire lying at 87° puts cos 87° of
       // its load on the strut, a few newtons — that read as "Pacejka owns it" and its 3 kN of sidewall load slid
-      // frictionless. The sidewall's load is the share along the spin axle (a tread's normal is radial, in the wheel
-      // plane, so a kerb's push is not in it), faded in from TILT_HI — where tire-contact.js has handed the tire from its
+      // frictionless. The sidewall's load is the share along the spin axle (an upright tread's normal is the ground's,
+      // close to the wheel plane, so a kerb's push is not in it), faded in from TILT_HI — where tire-contact.js has handed the tire from its
       // tread solve to the plane solve — to lying flat. An upright tire on rough ground leans up to ~19° against a bump's
       // flank (the physics fingerprint), still on its tread: it never reaches TILT_HI, so driving is untouched.
       // ponytail: the support is taken as static; a sidewall on a moving rock scrubs against the world.

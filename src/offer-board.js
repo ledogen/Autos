@@ -1095,10 +1095,10 @@ export class OfferBoard {
         // R-20: the tip is speed on fragile too; what the condition moves is the BASE (splitFragilePayout
         // pays half of it flat and half × health) — the owner asked, so the card says it.
         if (sp.fragile) terms.push('damage docks the base')
-        // A haul's card is the rate, the cost, the distance, the stock and the reward line — nothing
-        // else (owner, 2026-10-23: the timers overran the map card). The due time shows from accept.
         // The clocks ride their OWN row (`times`, 2026-10-23): one row of distance + tier + kg + both
-        // timers ran ~60 characters against the ~45 the map card fits, and spilled off it.
+        // timers ran ~60 characters against the ~45 the map card fits, and spilled off it. BUG-162: a
+        // haul shows both like every other job — its timers were dropped the same morning for that
+        // overflow, and the own row fixed it.
         const times = []
         const expiresInH = offer.expiresH - nowH
         // A never-expiring offer (Larry's) shows no timer at all (owner, 2026-10-07).
@@ -1106,8 +1106,8 @@ export class OfferBoard {
         // twice. The board clock is how long the offer stays POSTED; the other is the delivery window
         // once taken — so say each in its own words.
         // Reworded again 2026-10-24 (owner): "available for: 10h" and "time limit: 4h 22m".
-        if (!sp.stock && isFinite(expiresInH)) times.push(`available for: ${formatGameDuration(expiresInH)}`)
-        if (!sp.stock && !sp.line && !sp.first && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept; never on a job take() gives none
+        if (isFinite(expiresInH)) times.push(`available for: ${formatGameDuration(expiresInH)}`)
+        if (!sp.line && !sp.first && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept; never on a job take() gives none
         return {
             family: sp.family,
             badge: jobBadge(sp),

@@ -23,7 +23,7 @@ const log = (ok, name, msg) => {
     ok ? pass++ : fail++
 }
 
-// The pre-PERF-32 scan, verbatim — the reference the optimisation must reproduce.
+// The pre-PERF-32 scan, verbatim — the reference the optimisation must reproduce. (The foot refine after it is shared.)
 function refNearest(cl, x, z, ds, sMin, sMax) {
     if (cl.primitives.length === 0) return null
     const lo = Math.max(0, Math.min(cl.length, sMin))
@@ -37,10 +37,8 @@ function refNearest(cl, x, z, ds, sMin, sMax) {
         const d2 = (q.x - x) * (q.x - x) + (q.z - z) * (q.z - z)
         if (d2 < bestD2) { bestD2 = d2; bestS = s }
     }
-    cl._poseInto(bestS, q)
-    const along = (x - q.x) * Math.cos(q.theta) + (z - q.z) * Math.sin(q.theta)
-    bestS = Math.max(lo, Math.min(hi, bestS + along))
-    cl._poseInto(bestS, q)
+    // The refine after the scan is shared, not under test (PERF-39 made it the exact arc step): Centerline._refineFoot.
+    bestS = cl._refineFoot(x, z, bestS, lo, hi, q)
     return {
         s: bestS, x: q.x, z: q.z,
         dist: Math.hypot(q.x - x, q.z - z),

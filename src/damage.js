@@ -490,10 +490,39 @@ export const DAMAGE_PARAMS = {
   // The tire genuinely does not bottom below 2 m, so "lesser drops damage springs only" falls out
   // of the geometry rather than being thresholded in. Yield sits under the 2 m figure and the
   // overload scale puts a 2 m landing at about a tenth of a wheel.
-  rimYieldRoadMult: 14,   // x static wheel load (≈46 kN): ROAD/terrain contacts
-  rimFullRoadMult:  60,   // x static wheel load (≈200 kN) of OVERLOAD writes the wheel off
+  // 2026-11-11 (owner: "wheels should only fail from impact in exceedingly hard impacts (7+m) and the
+  // tire should protect them" — one wheel failed from airtime and one on the shoulder kerb in a single
+  // run). BUG-140 (the body moves within the step) had already moved the drop curve: the tire now first
+  // reaches the rim at 5 m, not 2 m. But kerbs still read against the old 46 kN yield, so a 15 cm
+  // road-edge step at 45 mph and 30° cost a wheel 22 %. The yield now sits at the 7 m drop's rim load,
+  // and the write-off at the 10 m drop's. Measured headless (scratch rig, the real stepPhysics + the
+  // FEAT-70 tire cylinder):
+  //     flat drop     5 m 1.8 kN · 7 m 81 kN · 8 m 129 kN · 9 m 192 kN · 10 m 261 kN
+  //                   → 0 / 0 / 14 / 49 / 100 % of a front wheel
+  //     15 cm kerb    10–30 mph at 10–90°: ≤ 9 kN → 0 %.  45 mph straight on 79 kN → 0 %.
+  //                   45 mph at 45° 215 kN → 65 %; 60 mph often a write-off.
+  // Uneven landings stay far below the yield: nose-down 15° from 5 m 16 kN, across the road edge 14 kN.
+  // Kerbs cannot be made gentler without also making the 10 m drop harmless: both are read on this one
+  // force scale (owner chose this edge, 2026-11-11).
+  rimYieldRoadMult: 24,   // x static wheel load (≈80 kN, a 7 m drop): ROAD/terrain contacts
+  rimFullRoadMult:  54,   // x static wheel load (≈180 kN) of OVERLOAD writes the wheel off (a 10 m drop)
   rimFullMult:    400,    // x static wheel load (≈1.3 MN) of OVERLOAD writes the wheel off (DEBRIS; see R-02 note)
   rimStrikeExp:   1.5,    // between linear and square — plastic work rises faster than the overload
+  // BUG-160 (owner, 2026-11-11): "a wheel with a tire on it should be quite resilient. It's only after
+  // the puncture that it should be relatively fragile." The yields above are the wheel's under a FLAT
+  // tire. While the tire holds air the tire goes first, and the wheel only well past it:
+  //   · A ROAD rim strike past rimPinchRoadMult pinch-flats an inflated tire, at any condition (the
+  //     carcass bottomed on the flange hard enough to cut it). Before this a fresh tire could never pop
+  //     on a landing (the bump-stop puncture curve stops at punctureCond), so a 7–10 m drop bent, then
+  //     wrote off, the wheel with the tire still holding air. 24 is the old onset of wheel damage: what
+  //     used to start bending the rim now pops the tire instead.
+  //   · rimInflatedMult raises BOTH yields while the tire holds air, so the wheel survives every strike
+  //     the tire survives and a margin past it. On rocks too: the rim used to yield (≈85 kN) below the
+  //     hazard pop (≈100 kN). The overload scales (rimFull*) are unchanged.
+  // A strike is priced on the state it struck in: the pinch that pops the tire is still priced as an
+  // inflated strike (the air leaves after the hit, not during it).
+  rimPinchRoadMult: 24,   // x static wheel load (≈80 kN, a 7 m drop): a road rim strike pinch-flats an inflated tire
+  rimInflatedMult:  2,    // x both rim yields while the tire holds air (road ≈160 kN, debris ≈170 kN)
 
   // Fraction of its own peak a loaded event must FALL TO before it is banked. Waiting for the load
   // to release outright loses the event whenever the truck ends up resting on whatever it hit —
@@ -1179,10 +1208,18 @@ export class DamageModel {
    */
   _landRimStrike (corner, forceN, staticLoad, road) {
     const P = DAMAGE_PARAMS
+    // BUG-160: an inflated tire takes the strike first — a hard enough road strike pinch-flats it — and
+    // holds the wheel's yield rimInflatedMult higher. `inflated` is read BEFORE the pinch, so the strike
+    // that pops the tire is still priced as the inflated strike it was.
+    const inflated = !this.flat[corner]
+    if (road && inflated && forceN >= P.rimPinchRoadMult * staticLoad) {
+      this.flat[corner] = true
+      this.popped.push(corner)         // drained by the game layer for the bang
+    }
     // Each source carries its OWN yield and overload scale, because they are different
     // measurements: `road` is the squashed-carcass load past full compression, `debris` is what a
     // rigid pinch exchanges with the core, and the two differ by more than an order of magnitude.
-    const yieldN = (road ? P.rimYieldRoadMult : P.rimYieldMult) * staticLoad
+    const yieldN = (road ? P.rimYieldRoadMult : P.rimYieldMult) * staticLoad * (inflated ? P.rimInflatedMult : 1)
     const fullN  = (road ? P.rimFullRoadMult  : P.rimFullMult)  * staticLoad
     const overload = forceN - yieldN
     if (overload <= 0) return                       // elastic: the rim springs back, nothing kept
@@ -1412,7 +1449,12 @@ export class DamageModel {
         // was dropped without ever being banked.
         const peakRoad = this._strikeRoad[i]
         const fPeak    = peakRoad ? (road[i] || 0) : (rimF[i] || 0)
-        const tripPeak = peakRoad ? yieldRoad : yieldN
+        // BUG-160: through an inflated tire a strike counts from the lower of the pinch and the raised
+        // yield, so one that only pops the tire is still banked (_landRimStrike).
+        const k        = this.flat[i] ? 1 : P.rimInflatedMult
+        const tripPeak = peakRoad
+          ? (this.flat[i] ? yieldRoad : Math.min(P.rimPinchRoadMult * staticW, k * yieldRoad))
+          : k * yieldN
         if (peak > tripPeak && (fPeak <= tripPeak || fPeak < peak * P.eventDecayFrac)) {
           this._landRimStrike(i, peak, staticW, peakRoad)
           this._strikePeak[i] = 0

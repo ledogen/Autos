@@ -32,6 +32,9 @@ const DT = 0.004
 const STATIC = DamageModel.staticWheelLoad(P)
 const YIELD = D.rimYieldMult * STATIC
 const fresh = () => new DamageModel({ params: P })
+// BUG-160: the yields are the wheel's under a FLAT tire (an inflated one holds them rimInflatedMult higher,
+// §6), so the yield mechanics in §1 and §4 are pinned through a flat.
+const flatTires = () => { const d = fresh(); d.flat.fill(true); return d }
 
 /** Drive one strike event: `n` newtons of core contact force for a few steps, then clear. */
 function strike (d, n, corner = 0, steps = 3) {
@@ -43,15 +46,15 @@ function strike (d, n, corner = 0, steps = 3) {
 
 console.log(`§1 yield — below it the rim springs back (static ${(STATIC / 1000).toFixed(1)} kN, yield ${(YIELD / 1000).toFixed(1)} kN)`)
 {
-  const under = fresh(); strike(under, YIELD * 0.99, 0, 400)
+  const under = flatTires(); strike(under, YIELD * 0.99, 0, 400)
   ok(under.get('wheelFL') === 1,
     'a load just under yield, held for 400 steps, bends nothing — elastic is elastic however long you hold it')
-  const over = fresh(); strike(over, YIELD * 3)
+  const over = flatTires(); strike(over, YIELD * 3)
   ok(over.get('wheelFL') < 1, '...and a load past yield does take a permanent set')
 
   // Damage is the OVERLOAD, not the total load: only the excess goes into plastic work.
-  const a = fresh(); strike(a, YIELD + 10000)
-  const b = fresh(); strike(b, YIELD + 20000)
+  const a = flatTires(); strike(a, YIELD + 10000)
+  const b = flatTires(); strike(b, YIELD + 20000)
   const ratio = (1 - b.get('wheelFL')) / (1 - a.get('wheelFL'))
   ok(Math.abs(ratio - Math.pow(2, D.rimStrikeExp)) < 0.05,
     `doubling the OVERLOAD raises the damage by 2^${D.rimStrikeExp} (x${ratio.toFixed(2)}) — plastic work, not total load`)
@@ -67,23 +70,33 @@ console.log('\n§2 measured: the two sources are priced on their OWN scales')
     console.log(`  ${mph} mph over a rock peaks the core at ${kN} kN → ${lost.toFixed(2)}% of the wheel`)
     ok(lost < 1, '...which leaves the rim essentially intact, as a real tire would')
   }
-  // Landing loads come through the ROAD path and are an order of magnitude larger, so they get
-  // their own yield and overload scale. Owner's target shape: a 1 m drop damages SPRINGS ONLY, a
-  // 2 m drop damages springs AND rim. Measured with test/collision-drop-lab.mjs.
+  // Landing and kerb loads come through the ROAD path and are an order of magnitude larger, so they
+  // get their own yield and overload scale. Owner's target (2026-11-11): the tire protects the wheel
+  // from everything softer than a 7 m drop (BUG-158). Since BUG-160 the inflated tire pops first at about
+  // that load and the wheel under it bends only from twice it, so a 10 m drop marks it rather than writing it off.
+  // Peak road rim loads measured headless on the real stepPhysics (src/damage.js rimYieldRoadMult).
   const road = (d, n, corner = 0, steps = 3) => {
     const vs = { rimForce: [0, 0, 0, 0], rimForceRoad: [0, 0, 0, 0] }
     for (let i = 0; i < steps; i++) { vs.rimForceRoad[corner] = n; d.step(vs, P, DT) }
     vs.rimForceRoad[corner] = 0
     d.step(vs, P, DT)
   }
-  const oneM = fresh(); road(oneM, 0)          // a 1 m drop never bottoms the tire at all
-  ok(oneM.get('wheelFL') === 1, 'a 1 m drop puts NO load on the rim — the tire does not bottom, so lesser drops cost springs only')
-  const twoM = fresh(); road(twoM, 86200)      // 2 m drop, measured
-  const lost2 = (1 - twoM.get('wheelFL')) * 100
-  console.log(`  a 2 m drop puts 86.2 kN past full compression → ${lost2.toFixed(1)}% of the wheel`)
-  // 2026-10-15 (owner: wheels too hard to damage, not enough when they are): road yield 16 -> 14
-  // and write-off 90 -> 60 take this from ~3.6% to ~9% per corner.
-  ok(lost2 > 5 && lost2 < 20, '...which marks the rim without writing it off')
+  const lostAt = (n, d = fresh()) => { road(d, n); return (1 - d.get('wheelFL')) * 100 }
+  for (const [what, kN] of [['a 5 m drop', 1.8], ['a 15 cm kerb at 45 mph, straight on', 79.2],
+                            ['a 15 cm kerb at 30 mph, any angle', 9.1], ['a 7 m drop', 80.9], ['an 8 m drop', 128.8]]) {
+    const lost = lostAt(kN * 1000)
+    ok(lost === 0, `${what} puts ${kN} kN on the rim → ${lost.toFixed(1)}% of the wheel: the inflated tire protects it`)
+  }
+  // BUG-160: through air the wheel takes a 10 m drop as a heavy mark, not a write-off (it was, before the tire went first).
+  const lost10 = lostAt(261000)
+  ok(lost10 > 30 && lost10 < 55, `a 10 m drop (261 kN) bends the wheel under an inflated tire without writing it off: ${lost10.toFixed(1)}%`)
+  // The BUG-158 load anchors, now read through a FLAT tire (the yields are the flat-tire yields).
+  const lost7 = lostAt(80900, flatTires())
+  ok(lost7 > 0 && lost7 < 0.1, `through a flat, 80.9 kN is the onset: ${lost7.toFixed(2)}% of the wheel`)
+  const lost8 = lostAt(128800, flatTires())
+  ok(lost8 > 5 && lost8 < 30, `through a flat, 128.8 kN marks the rim without writing it off: ${lost8.toFixed(1)}%`)
+  const lostF = lostAt(261000, flatTires())
+  ok(lostF > 99, `through a flat, 261 kN writes the wheel off: ${lostF.toFixed(1)}%`)
 }
 
 console.log('\n§3 nothing but a core contact can bend a rim')
@@ -112,18 +125,18 @@ console.log('\n§3 nothing but a core contact can bend a rim')
 
 console.log('\n§4 priced past yield, banked as one event, on the corner that struck')
 {
-  const kill = fresh(); strike(kill, YIELD + D.rimFullMult * STATIC)
+  const kill = flatTires(); strike(kill, YIELD + D.rimFullMult * STATIC)
   ok(kill.get('wheelFL') <= 0.001, `${((YIELD + D.rimFullMult * STATIC) / 1000).toFixed(0)} kN writes the wheel off in one strike`)
 
-  const brief = fresh(); strike(brief, YIELD * 4, 0, 2)
-  const long  = fresh(); strike(long,  YIELD * 4, 0, 400)
+  const brief = flatTires(); strike(brief, YIELD * 4, 0, 2)
+  const long  = flatTires(); strike(long,  YIELD * 4, 0, 400)
   ok(Math.abs(brief.get('wheelFL') - long.get('wheelFL')) < 1e-12,
     'a core resting against what it hit costs the same as striking it — an event, not a dwell')
-  const d = fresh(); strike(d, YIELD * 4, 2)
+  const d = flatTires(); strike(d, YIELD * 4, 2)
   ok(d.get('wheelRL') < 1 && d.get('wheelFL') === 1 && d.get('wheelRR') === 1, 'only the corner that struck is bent')
 
   // The headroom the owner asked for: one bad strike must not be a write-off.
-  const one = fresh(); strike(one, YIELD * 4)
+  const one = flatTires(); strike(one, YIELD * 4)
   ok(one.get('wheelFL') > 0.7, 'a load four times yield still leaves most of the wheel — headroom, as asked')
 }
 
@@ -137,6 +150,45 @@ console.log('\n§5 a crash bends the rim, but only past a threshold')
   crash.applyImpact('front', impulseAt(45), P.mass)
   ok(crash.get('wheelFL') < 1, 'a 45 mph collision does')
   ok(crash.get('wheelRL') === 1, '...and only the wheels in that region — a front hit leaves the rears alone')
+}
+
+console.log('\n§6 BUG-160: the inflated tire goes first, the wheel only well past it; a flat leaves the wheel fragile')
+{
+  // Owner, 2026-11-11: "a wheel with a tire on it should be quite resilient. It's only after the puncture
+  // that it should be relatively fragile."
+  const road = (d, n) => {
+    const vs = { rimForce: [0, 0, 0, 0], rimForceRoad: [0, 0, 0, 0] }
+    for (let i = 0; i < 3; i++) { vs.rimForceRoad[0] = n; d.step(vs, P, DT) }
+    vs.rimForceRoad[0] = 0
+    d.step(vs, P, DT)
+    return d
+  }
+  const pinchN = D.rimPinchRoadMult * STATIC
+  const under = road(fresh(), pinchN * 0.99)
+  ok(!under.flat[0] && under.get('wheelFL') === 1, `${(pinchN * 0.99 / 1000).toFixed(0)} kN on the road: the tire holds, the wheel is untouched`)
+  const pop = road(fresh(), pinchN * 1.01)
+  ok(pop.flat[0] && pop.popped.includes(0), `${(pinchN * 1.01 / 1000).toFixed(0)} kN pinch-flats a FRESH tire (condition 100%), with the bang queued`)
+  ok(pop.get('wheelFL') === 1, '...and the strike that popped it leaves the wheel untouched')
+  // Sweep: whenever the tire survives, so does the wheel; the wheel's first loss sits well past the pop.
+  let firstPop = Infinity, firstBend = Infinity, order = true
+  for (let n = 1000; n <= 400000; n += 1000) {
+    const d = road(fresh(), n)
+    if (d.flat[0]) firstPop = Math.min(firstPop, n)
+    if (d.get('wheelFL') < 1) { firstBend = Math.min(firstBend, n); if (!d.flat[0]) order = false }
+  }
+  ok(order, 'no road strike bends a wheel whose tire it did not pop')
+  ok(firstBend >= 1.5 * firstPop, `the wheel's first loss (${(firstBend / 1000).toFixed(0)} kN) is ≥ 1.5× the pop (${(firstPop / 1000).toFixed(0)} kN): a clear margin`)
+  // On a flat the same strike that the inflated wheel shrugs off bends it.
+  const mid = (pinchN + D.rimInflatedMult * D.rimYieldRoadMult * STATIC) / 2
+  const air = road(fresh(), mid), flat = road(flatTires(), mid)
+  ok(air.get('wheelFL') === 1 && flat.get('wheelFL') < 1,
+    `${(mid / 1000).toFixed(0)} kN: under air the wheel is untouched, under a flat it loses ${((1 - flat.get('wheelFL')) * 100).toFixed(1)}%`)
+  // Rocks: the rim used to yield (rimYieldMult) below the hazard pop. Under air it now holds past it.
+  const hazN = D.hazardPunctureMult * STATIC
+  const rockAir = fresh(); strike(rockAir, hazN)
+  const rockFlat = flatTires(); strike(rockFlat, hazN)
+  ok(rockAir.get('wheelFL') === 1 && rockFlat.get('wheelFL') < 1,
+    `a ${(hazN / 1000).toFixed(0)} kN rock strike on the core (the hazard pop) leaves an inflated wheel whole and bends a flat one`)
 }
 
 console.log(fail ? '\nFAIL — the rim damage model has drifted' : '\nPASS — rims are bent by the core striking something, and by real crashes')

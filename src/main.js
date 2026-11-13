@@ -2216,14 +2216,16 @@ function closestPointOnTriangle (px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz)
  */
 // S-64: the per-sample road hint, at module scope so the 4-wheels-per-step physics path allocates no closure per call.
 const _qcHintAt = (x, z) => (!_labActive && roadSystem) ? roadSystem.carveHint(x, z) : undefined
+const _qcPatchAt = (x, z, y, out) => (!_labActive && roadSystem) ? roadSystem.surfacePatch(x, z, y, out) : undefined
 const _QC_UP = { x: 0, y: 1, z: 0 }
 // The contact query stepPhysics is handed (src/world-contacts.js — one definition, which the headless drive soak builds
 // from the same systems): the lab's own surface in the testing lab, the analytic terrain otherwise, each sample's road
 // run resolved at its own x, z and the query's own height (FEAT-40) choosing the level.
 const queryContacts = makeQueryContacts({
   params: RANGER_PARAMS,
-  groundH: (x, z, y) => _labActive ? labSystem.groundHeight(x, z) : (terrainSystem ? terrainSystem.analyticHeight(x, z, _qcHintAt(x, z), y) : 0),
-  groundN: (x, z, y) => _labActive ? labSystem.groundNormal(x, z) : (terrainSystem ? terrainSystem.analyticNormal(x, z, _qcHintAt(x, z), y) : _QC_UP),
+  groundH: (x, z, y, hint) => _labActive ? labSystem.groundHeight(x, z) : (terrainSystem ? terrainSystem.analyticHeight(x, z, hint !== undefined ? hint : _qcHintAt(x, z), y) : 0),
+  groundN: (x, z, y, hint) => _labActive ? labSystem.groundNormal(x, z) : (terrainSystem ? terrainSystem.analyticNormal(x, z, hint !== undefined ? hint : _qcHintAt(x, z), y) : _QC_UP),
+  patchAt: _qcPatchAt,
   props: () => _labActive ? null : propSystem,
   pois: () => _labActive ? null : poiSystem,
   tunnelWall: (cx, cy, cz, r) => (!_labActive && roadSystem) ? roadSystem.queryTunnelWallContact(cx, cy, cz, r, _qcHintAt(cx, cz)) : null,
@@ -2370,6 +2372,11 @@ function applyRenderResolution () {
 }
 
 let _qualityName = 'Normal'   // the tier last applied (captures record it)
+// PERF-37: the story region's road radius while a region holds the play network (set by pumpRegionWarm, cleared by
+// releaseRegion), else 0. A Quality change inside a region must not shrink play's radius to the ring's 320 m: the map
+// adopts play's network only when play covers the region (Map2D._pump), so it would instead rebuild on the worker
+// and repaint, forever, while it is open (_playOutgrewMap never settles) — 125–217 % of a core, measured.
+let _regionRoadR = 0
 function applyQuality (name) {
   const p = QUALITY_PRESETS[name] ?? QUALITY_PRESETS.Normal
   _qualityName = QUALITY_PRESETS[name] ? name : 'Normal'
@@ -2380,7 +2387,7 @@ function applyQuality (name) {
   // radius (CPU), not a draw distance (the ribbon mesh is terrain-chunk-bound via syncToChunkRing). Low/
   // Normal land exactly on today's 192/320; High/Ultra trim 512→448 / 640→576 (the old constants were
   // routed past anything renderable). Tied to ring so it can never drift out of sync with the terrain.
-  if (roadSystem) roadSystem.setRadius((p.ring + 0.5) * 2 * CHUNK_SIZE)   // dirty → next update() re-streams
+  if (roadSystem && !_regionRoadR) roadSystem.setRadius((p.ring + 0.5) * 2 * CHUNK_SIZE)   // dirty → next update() re-streams
   _fogState.presetDensity = p.fogDensity
   if (scene.fog && !_fogState.disabled) scene.fog.density = p.fogDensity
   // Drive the FEAT-05 detail master from the tier. Mirrors setTerrainUniform: write the param (source
@@ -8699,6 +8706,7 @@ const storySystem = new StorySystem({
    */
   pumpRegionWarm: (center, radius) => {
     if (!roadSystem) return true
+    _regionRoadR = radius
     _storyWarmCenter.set(center.x, 0, center.z)
     // PERF-30: ONE off-thread region build replaces the route pre-warm + the synchronous
     // region-wide plan/register that froze the loading screen for the whole plan-layer cost.
@@ -8867,6 +8875,7 @@ const storySystem = new StorySystem({
     // mode (Map2D._syncRegionWindow, BUG-68) and only ever grows — hand it back too, or free roam keeps
     // routing the region's outer rings cold for the rest of the session.
     map2d?.resetRadiusTarget()
+    _regionRoadR = 0
     if (!roadSystem) return
     roadSystem.setRadius(320)   // PERF (Tier 1) play radius — matches the terrain ring
     roadSystem.update(roadStreamCenter())
@@ -10682,8 +10691,10 @@ function loop () {
   perfAdd('frame.postStream', _ptR - _ptPost)   // PERF-26 INSTRUMENT
   // FEAT-41: whichever scene owns the screen. Skipping the world render behind a menu or a load is
   // not just tidiness — it hands the GPU to the build that is running underneath.
+  // PERF-38: nor behind the 2D map — #map2d is an opaque full-screen canvas, so the world frame under it was the whole
+  // 3D GPU bill (owner's M4: 5 W, pinned at 890 MHz, with the map open) for a picture nobody could see.
   if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
-  else renderer.render(scene, camera)
+  else if (!map2d.isOpen()) renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // D-arc: render submit (the ~8.5 s load-cost suspect)
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.
