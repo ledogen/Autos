@@ -30,7 +30,30 @@ needs its own proof, not a ride-along on BUG-161.
 
 ## Acceptance
 
-- [ ] A loose block on the bed level with a rear hub (the freight-strap §7 setup, unwelded) gets no tire push at
+- [x] A loose block on the bed level with a rear hub (the freight-strap §7 setup, unwelded) gets no tire push at
       any ride height or at ±30° roll.
-- [ ] Rock / debris contact at the tread is unchanged in kind: the debris gates stay green and the physics
+- [x] Rock / debris contact at the tread is unchanged in kind: the debris gates stay green and the physics
       fingerprint change (if any) is explained by the narrower query alone.
+
+## Implementation (Lane B, 2026-11-13)
+
+- `src/physics-engine.js` `contactSphere` takes `slab: { axis, halfWidth }`: the query becomes the sphere CUT to
+  |(x − hub)·axle| ≤ halfWidth. Per candidate shape, its extent along the axle (`_specSpan`: sphere offset ± radius,
+  hull vertices, cylinder by its round section) is tested against the slab; a shape wholly beside the tire is no
+  contact. That is an exact separating-axis test, not a filter on the contact normal. A shape that crosses the slab
+  keeps the sphere's manifold byte for byte.
+- `src/physics.js` Step 0.5 passes the corner's spin axle (`_axle[corner]`, Step 1's) with halfWidth
+  `wheelWidth/2` (0.1175 m) + this step's hub travel ALONG the axle × dt (the look-ahead's share in that direction).
+  `skipWeldedTo` (BUG-161) and the n.y < −0.1 filter stay.
+- Approximations left, stated: a body that crosses the tread's edge plane keeps the sphere's contact, whose deepest
+  point can lie beside the tire (up to ≈ r − √(r² − (w/2)²) = 2 cm short of the real cylinder at the tread edge, and
+  the cylinder's tread-edge corner is not modelled). Fixing that needs a cylinder narrow-phase (the engine's only
+  cylinder is a faceted hull, whose normals would jump as the tire rolls), so it is out of scope here.
+- Proof: `test/freight-strap.mjs` §7. The BUG-161 inboard block (2 cm inside the sphere, level with the RR hub) is
+  swept over roll −30/−15/0/15/30° × strut 0 / 0.12 / 0.25 m (bump stop): 0 pushes over 15 poses. With the slab removed it is 56 pushes, so the check
+  is live. The control: a loose block AHEAD of the tread is still pressed (6 pushes), and welded it is not (0).
+- `wip/bug-161/pose.mjs` with the slab (`pose-slab.mjs`): every freight load passes the filter in 0 poses (was up to
+  612). plywoodSheets still overlaps, directly ABOVE the tread at strut > travel, normal −0.88 down: overhead, held
+  by the n.y filter, as it should be.
+- `test/fingerprint-physics.mjs` vs main: ALL IDENTICAL (bumpy ground, no debris bodies, so the cut never acts).
+
