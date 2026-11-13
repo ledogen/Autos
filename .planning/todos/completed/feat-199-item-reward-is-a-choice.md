@@ -1,7 +1,7 @@
 ---
 id: FEAT-199
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-11 inbox — "I'm very happy to see more item rewards being offered I think we need to make them a choice though. The issue I'm running into now is during my playthrough it's just hard to come by money If we make the item reward Something the player can choose to take or leave Then they can choose to go with the cash on any item giving mission instead I Think the way we do this is we keep the mission card almost exactly the same except we add Optional item and then in parentheses minus the dollar amount that it takes off the reward At the end of the mission the player gets to choose to take the cash or take the reduced cash amount with the item"
@@ -67,3 +67,7 @@ annotated.
   haul or a demolition site (paid per piece, no floor), or on a fragile job (damage docks up to half the base).
 - Gates: test/economy.mjs (the dearest reward on a cheap job costs exactly the pay; the wallet ends where it started),
   test/offer-board.mjs (the "at most" switch, and min(price, paid) for every reward).
+
+## Resolution (2026-11-13)
+
+Landed on main via land/feat-199. Owner ruling 11-13 "1. yes, 2. cap": the choice model stays; an item costs min(shop price x ITEM_COST_FRAC, what the job paid). Affected gates 22/22 green (wip/feat-199/gates3.log); real-app check: $8 shoes on a $7.28 job cost $7.28, button "take Sport rear shoes + $0.00", wallet net 0. Still the owner's: ITEM_COST_FRAC (feat199-price, default 1).
