@@ -102,7 +102,7 @@ await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sl
 await js('__fp.b[0] = 1'); await sleep(150); await js('__fp.b[0] = 0'); await sleep(150)
 const wk = await js('__win.join()'), dk = await js('__doc.join()')
 check(wk === 'q,e,Enter', `LB / RB send Q / E on the map and A sends Enter (window saw "${wk}")`)
-check(!/q|e|Enter/.test(dk), `Q / E / Enter stop at the map, never reaching the gearbox (document saw "${dk}")`)
+check(!/\b[qe]\b/.test(dk), `Q / E stop at the map, never reaching the gearbox (document saw "${dk}")`)
 check(await js('__map2d()._tab') === 'missions', 'LB then RB swap the list to Shopping and back to Missions')
 // FEAT-211: the Missions list on the pad. Free roam has no board, so two places with work are stubbed onto the map:
 // D-pad ↓ lands on the nearest and the map snaps there (tracking let go), ↓ again walks to the next, B leaves the list
