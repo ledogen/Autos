@@ -333,7 +333,7 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 | Item | What it does | Source | Cost | Status |
 |---|---|---|---|---|
 | **Quick-jack** | Lifts the truck for roadside work. **Ruled 2026-10-22: it takes 1 h off changing a whole tire** — the spare's 2 h fit becomes 1 h — **and stacks with the compressor's 30 min** (both: 30 min). The spare does not need it: the factory jack is always in the truck (§1). **It does not shorten a plug repair** — *"you don't need to jack to plug"* (owner, 2026-10-22). $30; sold at the auto shop; an A–S reward from the auto shop and stranded motorists; never found. | Bought; a reward | Cash; a slot; real mass, always | **RATIFIED** — owner, 2026-10-22 (the item setup page). Was IMPLIED (named in DESIGN.md "The car") |
-| ~~**Breaker bar**~~ **[STRUCK 2026-10-22 — cut by the owner on the item setup page]** | Roadside wrenching. Paired with the quick-jack in the bible's own list. | — | — | **CUT** |
+| **Tire iron** | Roadside wrenching, the breaker bar's successor. A rare item: with the floor jack (the quick-jack), fitting the spare takes about 30 min instead of 2 h (DEC-105). | — | — | **RULED** — owner, 2026-11-13; FEAT-203 builds it (DEC-105) |
 | **Chain** | Chains onto a downed log for the drag. **A one-sided distance constraint** — zero force slack, hard tension taut — and the snatch impulse *is* the damage signal. | Main-mission equipment | The truck, by design | **RATIFIED premise** — `missions.md` "Main missions". *Open: carried item, or supplied by the mission?* |
 | **Fishing gear** | Required for the fishing minigame. **Proposed by the owner (2026-10-22, "prob"): three rods — Basic, Advanced and Professional.** | ? | ? | **IMPLIED / UNSPECIFIED** — see the gap note below |
 | **Cooler** | **A flat rate reduction on the spoilage clock (§1b).** Uncooled, a fish is good for about four or five hours — cook it on the spot or lose it. In the cooler it keeps for a day or two, so you can carry the catch, camp on it, and eat it tomorrow. **Ruled 2026-10-21: ~6 h uncooled → ~36 h in the cooler, and it holds 4 fish.** **Its running cost is ice** (owner, 2026-10-21): it must be refilled every 3 days (a bag of ice lasts 72 h), bought at the gas station and the general store. Sold at the general store and tackle shop, $10–30; a tackle-shop reward (A–S); a roadside find rarer than the common ones. **Primarily fishing kit** — it is the thing that lets a catch leave the water without being eaten where it was landed. Flavor: *"Keeps stuff cold"* (owner, 2026-10-22). | Bought/found | Cash; a slot; **deliberately trivial mass — which is the problem, see the note below** | **RATIFIED** — owner, 2026-08-22; every figure set 2026-10-21/22 (the item setup page). Was IDEA |
@@ -831,7 +831,7 @@ configuration that FEAT-112's load verdicts read.
 | **Extended (long) bed** | longer bed — long loads fit (a DIY bed swap or a bolt-on extension) |
 | **Flatbed** | wider deck with no sides — more room for strapped freight; loose haul is a warning and spills |
 | **Stake bed** | between the two — a bigger deck with stakes that keep most of a loose load in |
-| **Roof rack** | a second space for long, light loads; stacks with any bed |
+| **Roof rack** | adds inventory slots; stacks with any bed (DEC-028) |
 | **Light bar** | no load effect (§7) |
 
 **Pricing and finding them.** ~~A part costs what the furthest region you have unlocked charges.~~
@@ -1050,7 +1050,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | Acts on | Consumable | Equipable | Active |
 |---|---|---|---|
 | **Driver / energy** | coffee, fish, **meals (§1d)** | camp energy gear | coffee, energy drink, snacks |
-| **Truck / damage** | mounted tire, air filter, **zip ties, duct tape, stop-leak, tire patches** | parts (§3), quick-jack, ~~breaker bar~~, **hi-lift, bike pump (always), compressor** | Host charm |
+| **Truck / damage** | mounted tire, air filter, **zip ties, duct tape, stop-leak, tire patches** | parts (§3), quick-jack, tire iron (DEC-105), **hi-lift, bike pump (always), compressor** | Host charm |
 | **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (FEAT-119)* | — |
 | **Cargo / mission** | ~~*straps (FEAT-110)*~~ **bubble wrap, furniture pad, heavy-duty pad (§3e)** | cooler, chain, **rubber bed mat, bedliner** | — |
 | **Camp / night** | — | camp vibe gear, **backpacks (§2c)** | — |
@@ -1148,7 +1148,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 - **Hi-lift jack** (§7): a live roll torque for 2–5 s on any roll the death check did not end, the
   player picks the direction, with a cooldown; 13 kg; auto shop; a reward from the auto shop and
   stranded motorists.
-- **Cut:** the breaker bar (§2), and ABS / traction control as parts — *"these are assists available
+- **Cut:** ABS / traction control as parts — *"these are assists available
   in the settings menu. not parts"* (Rejected, below).
 - **Jerry can** (§1): every figure set — 18 kg full, 10 min parked pour, $30, rarely sold at the gas
   station, a gas-station reward (A–S), a very rare find. Both fuel cans pour with a glug (FEAT-120).
@@ -1259,7 +1259,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
   into cold worldgen. Killed.
 - **ABS / traction control as parts** (owner, 2026-10-22): *"these are assists available in the
   settings menu. not parts."* Killed as items; the assists stay in settings.
-- **Breaker bar** (owner, 2026-10-22): cut.
+- **Breaker bar** (owner, 2026-10-22): it returns as the tire iron, a rare item (DEC-105, replaces the 2026-10-22 wording).
 
 ### Spirit tokens — proposed pattern, not ruled
 
@@ -1304,7 +1304,7 @@ camber), but it is a reversal of a written ruling — **owner's call**.
 4. **Consumables-as-real-mass is stated but never quantified.** It's the rule that makes tools
    interesting (§2) and it currently has no numbers behind it.
 5. **[RESOLVED 2026-10-22]** The quick-jack is designed (−1 h off the spare change, §2) and the
-   breaker bar is cut. *Was:* quick-jack and breaker bar are named but undesigned; they appear in one
+   breaker bar returns as the tire iron, a rare item (DEC-105, replaces the 2026-10-22 wording). *Was:* quick-jack and breaker bar are named but undesigned; they appear in one
    sentence of DESIGN.md as examples of stowed consumables.
 6. **The chain may not be an item at all.** If the log drag supplies it, it belongs to the mission,
    not the inventory. Cheap to decide, and it changes whether it needs an asset.
