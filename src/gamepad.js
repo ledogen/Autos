@@ -97,6 +97,7 @@ export const BINDINGS = [
   { action: 'map: walk the list',    key: '↑ / ↓ (mouse: hover)', pad: 'D-pad ↑ / ↓ (map open)' },
   { action: 'map: open / close a shop', key: 'Enter (mouse: click)', pad: 'A (map open)' },
   { action: 'map: back on the truck', key: 'c',        pad: 'left stick click (map open)' },
+  { action: 'map: drop / clear the waypoint', key: 'N / Enter (mouse: click)', pad: 'Y (map open)' },
   { action: 'tabs (service shop)',   key: 'Q / E',    pad: 'LB / RB (shop open)' },
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'right stick ↑ / ↓ (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
@@ -121,12 +122,13 @@ const MENU_KEYS = { 0: 'Enter', 1: 'Escape', 9: 'Escape' }
 // bumpers swap the list's Missions / Shopping tabs (a card over the map still pages its offers with them), A is
 // Enter (open or close the highlighted shop, map2d.js _onKeyDown), and the D-pad
 // is the list's arrows (with the menus' hold-to-repeat), and the left stick's click is c, back on the
-// truck (map2d.js _onKeyDown) — no pick-up, spawn, headlights or reset behind the map. The rest of the
+// truck (map2d.js _onKeyDown) — no pick-up, spawn, headlights or reset behind the map. FEAT-211: Y is n, the waypoint
+// (drop / clear at the cursor), so it never holds the ignition behind the map. The rest of the
 // layout drives as usual. FEAT-175 (owner, 2026-11-06): the sticks are the map's — the left pans
 // (pad.panX/Y), the right's vertical zooms (pad.zoom) — and the triggers stay the truck's pedals, always.
 // View, which opens the map, sits under the left thumb, so that thumb is off the stick by then: there is
 // no steering to hand over. B is Escape there, the general back (owner, 2026-10-20): it closes the map.
-const MAP_KEYS = { ...BUTTON_KEYS, 0: 'Enter', 1: 'Escape', 4: 'q', 5: 'e', 10: 'c' }
+const MAP_KEYS = { ...BUTTON_KEYS, 0: 'Enter', 1: 'Escape', 3: 'n', 4: 'q', 5: 'e', 10: 'c' }
 for (const i of [2, 13, 14]) delete MAP_KEYS[i]
 // FEAT-133: while an in-game card is up (offer, result, camp, inventory… — menu-nav.js cardContainer)
 // the D-pad moves its highlight, A presses it and B is Escape (back: closes the inventory and damage

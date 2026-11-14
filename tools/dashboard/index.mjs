@@ -21,7 +21,7 @@ import { gzipSync } from 'node:zlib';
 import {
   readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync, renameSync, rmSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, networkInterfaces } from 'node:os';
 import { join, extname, relative, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -1131,7 +1131,7 @@ async function dataRoute(req, res, url) {
 }
 
 function serve(port) {
-  createServer(async (req, res) => {
+  const handle = async (req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/reindex') {
       const { tickets, stats } = await build();
@@ -1164,9 +1164,15 @@ function serve(port) {
       'cache-control': 'no-store',
     });
     res.end(readFileSync(file));
-  }).listen(port, () => {
-    console.log(`  dashboard  http://localhost:${port}/`);
-  });
+  };
+  // Owner, 2026-11-14: this Mac itself and the tailnet only, never the Wi-Fi interface (the page has no login and
+  // its inbox / answers are read as the owner's word). Tailscale addresses are 100.64.0.0/10; with Tailscale down
+  // the dashboard is loopback-only. ponytail: addresses are read once at start, restart after Tailscale comes up.
+  const tail = Object.values(networkInterfaces()).flat()
+    .filter(a => a.family === 'IPv4' && /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a.address)).map(a => a.address);
+  for (const host of ['127.0.0.1', ...tail]) {
+    createServer(handle).listen(port, host, () => console.log(`  dashboard  http://${host}:${port}/`));
+  }
 }
 
 const args = process.argv.slice(2);

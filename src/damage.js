@@ -242,16 +242,19 @@ export const DAMAGE_PARAMS = {
   // the sim already produces rather than a timer, and it means the driving that wears the engine is
   // the driving that blinds its filter.
   //
-  // Owner rate: about 30 real-world minutes of HARD driving before it needs replacing. "Hard" here
-  // is the same duty cycle the tire and brake fits use — sustained high rpm under load, which reads
-  // about 0.5 on this normalised insult — so 1800 s x 0.5 = 900.
+  // Owner rate (2026-11-14, swapped with the oil's): about 60 real-world minutes of HARD driving before
+  // it needs replacing. "Hard" here is the same duty cycle the tire and brake fits use — sustained high
+  // rpm under load, which reads about 0.5 on this normalised insult — so 3600 s x 0.5 = 1800.
   //
   // The EFFECT is the whole point and it is deliberately a cliff, not a slope: nothing measurable
   // until 20%, then engine wear multiplies hard. A filter is cheap and the warning is loud; letting
   // it bottom out silently is what kills the engine, and that asymmetry is the mechanic.
-  durFilter:        900,     // normalised load-seconds to a fully blocked filter
+  durFilter:        1800,    // normalised load-seconds to a fully blocked filter
   filterKnee:       0.20,    // below this the filter starts choking the engine
-  filterEngineMult: 20,      // engine wear multiplier at a COMPLETELY blocked filter
+  // DEC-136 (owner, 2026-11-14): the filter's and the oil's penalties ADD (engine wear x (1 + filter extra +
+  // oil extra)), the oil's extra at empty is twice the filter's at blocked, and with both at 0 a 50% engine
+  // lasts 15 min of hard driving: 20000 s at x1 → 900 s, so x 200/9 = 1 + 191/27 + 382/27.
+  filterEngineMult: 1 + 191 / 27,   // ≈ 8.07 — engine wear multiplier at a COMPLETELY blocked filter, oil fresh
   // FEAT-38 hook: dust exposure should multiply the clog rate on dirt roads. Not wired — the
   // per-surface plumbing does not exist yet — so the filter currently clogs at one rate everywhere.
   filterDustMult:   1,
@@ -260,13 +263,12 @@ export const DAMAGE_PARAMS = {
   // Wears on the same rpm x load insult as the engine and the filter (owner: "based off of load and
   // rpm"). The EFFECT is the filter's shape made "more linear ... as significant if not more": no
   // knee squared into a cliff, a straight line from oilKnee down to oilEngineMult at empty oil.
-  // Over the range, old oil costs the engine ~3.7x what a dying filter does (∫(mult − 1) dc: oil
-  // 19 × 0.5 / 2 = 4.75, filter 19 × 0.2 / 3 = 1.27). oilKnee 1 is the pure straight line from new.
-  //   [DEFAULT] all three. 1800 = 60 min of hard driving (insult 0.5) from new to empty, twice the
-  //   filter's life: it bites from 30 min, the filter's whole life.
-  durOil:           1800,    // normalised load-seconds to worn-out oil
+  // oilKnee 1 is the pure straight line from new.
+  //   900 = 30 min of hard driving (insult 0.5) from new to empty, half the filter's life (owner,
+  //   2026-11-14: "swap air filter and oil lifetimes"); it bites from 15 min. oilKnee is still [DEFAULT].
+  durOil:           900,     // normalised load-seconds to worn-out oil
   oilKnee:          0.5,     // below this old oil starts wearing the engine
-  oilEngineMult:    20,      // engine wear multiplier at empty oil (the filter's 20, linear not squared)
+  oilEngineMult:    1 + 382 / 27,   // ≈ 15.15 — at empty oil, filter clean: twice the filter's extra (DEC-136)
 
   // Springs: bump-stop EVENTS, priced on the PEAK force of each one.
   //
@@ -971,12 +973,15 @@ export class DamageModel {
   }
 
   /** FEAT-202: how much faster the engine wears for its oil — 1 above oilKnee, straight up to
-   *  oilEngineMult at empty. Multiplies with the filter's: both neglected is both costs at once. */
+   *  oilEngineMult at empty. Its extra ADDS to the filter's (DEC-136), see engineWearMultiplier. */
   oilEngineMultiplier () {
     const P = DAMAGE_PARAMS
     const c = this.get('oil')
     return c >= P.oilKnee ? 1 : 1 + (P.oilEngineMult - 1) * (P.oilKnee - c) / P.oilKnee
   }
+
+  /** DEC-136: the engine's wear multiplier for filter and oil together — the two extras add, never multiply. */
+  engineWearMultiplier () { return this.filterEngineMultiplier() + this.oilEngineMultiplier() - 1 }
 
   /** FEAT-126: synchro-time multiplier — 1 new, transAtZero (3×) when the box is dead. */
   transShiftScale () {
@@ -1581,7 +1586,7 @@ export class DamageModel {
         // punishing one. This is one of the two couplings between tracks in the model, and it is
         // deliberate: the filter has no effect of its own, it makes something else worse. FEAT-202:
         // the oil is the second coupling of the same kind (oilEngineMultiplier), worn by the same insult.
-        this.wear('engine', insult * this.filterEngineMultiplier() * this.oilEngineMultiplier() * dt, P.durEngine)
+        this.wear('engine', insult * this.engineWearMultiplier() * dt, P.durEngine)
         this.wear('airFilter', insult * P.filterDustMult * dt, P.durFilter)
         this.wear('oil', insult * dt, P.durOil)
       }

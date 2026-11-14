@@ -146,6 +146,8 @@ const LEGEND_GOLD   = '#ffc72c'
 const MAP_TEXT      = 'rgba(26,26,26,0.5)'    // collar index, scale/interval notes, coords
 const MAP_TEXT_POI  = 'rgba(16,16,16,0.68)'   // POI + mission-pin labels — still findable
 const ROUTE_BLUE    = '#2f55d4'   // FEAT-67: the drawn mission route + its start chevron (royal blue)
+const WAYPOINT_HIT_PX = 16        // FEAT-211: px — a click / N / Y this near the waypoint's pin clears it
+const CLICK_SLOP_PX   = 4         // FEAT-211: px — a press that moves less than this before its release is a click
 const INDEX_EVERY   = 5           // every Nth contour is an index contour (so 50 m at CONTOUR_IV)
 // Map lettering. No web font is loaded (browser-only, single origin, no external requests — see
 // CLAUDE.md), so this is a stack that lands on Open Sans where it's installed and on the nearest
@@ -424,11 +426,15 @@ export class Map2D {
      *        already formatted ("18 min") — main.js owns the one duration format.
      * @param {(delta:number)=>void} [o.onCycle] — FEAT-67: Q/E pressed while a card is up over the map —
      *        main.js steps the parked offer panel (the map is open behind it).
+     * @param {() => ?{x:number, z:number, poly:?{x,z}[]}} [o.getWaypoint] — FEAT-211: the player's waypoint and the line
+     *        the GPS guides along to it (poly null while a job has the guide: the pin only), or null
+     * @param {(p:?{x:number,z:number}) => boolean} [o.onWaypoint] — FEAT-211: drop the waypoint at world p, or clear it
+     *        (null); true if it acted (main.js snaps it to a road and plans the line)
      * @param {() => boolean} [o.hoverLocked] — true while the player is parked at a giver browsing its
      *        offers: no other POI's hover card (offers or shelf) then, so an accidental icon hover never
      *        claims the mouse or distracts from the panel (owner, 2026-10-30).
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked, getWaypoint, onWaypoint }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         // FEAT-211: the window the canvas sits in, and its list column (index.html #map-window).
@@ -458,6 +464,8 @@ export class Map2D {
         this._getBoard = getBoard || (() => null)
         this._onCycle = onCycle || null
         this._hoverLocked = hoverLocked || (() => false)
+        this._getWaypoint = getWaypoint || (() => null)
+        this._onWaypoint = onWaypoint || (() => false)
         pad.mapActive = () => this._open   // FEAT-133: the pad switches to its map layout (gamepad.js MAP_KEYS)
         this._hoverPoi = null      // the source POI under the cursor, or null
         this._hoverIdx = 0         // which of its live offers the card shows (Q / E)
@@ -886,7 +894,10 @@ export class Map2D {
      *   WASD             pan the map (the keyboard's stick)
      *   ↑ / ↓            walk the list; the map snaps to the row's place
      *   ← / →            flip the offers at the highlighted (or hovered) POI
-     *   Enter (pad A)    Shopping: open or close the highlighted shop (a pump has nothing to open)
+     *   Enter (pad A)    Shopping: open or close the highlighted shop (a pump has nothing to open); with nothing
+     *                    highlighted, drop / clear the waypoint (as N)
+     *   N (pad Y)        drop the waypoint under the cursor (the pad's is the sheet centre, so a highlighted row's
+     *                    place), or clear it when the cursor is on it (_waypointAt). A click on the sheet does the same.
      *   Esc (pad B)      close the open shop; else leave the list — the highlight clears and the map stays put; with
      *                    neither it falls through to main.js, which closes the map
      *   c (stick click)  back to centred on the truck, tracking
@@ -912,11 +923,13 @@ export class Map2D {
         if (e.shiftKey) return   // Shift+C is the free cam, Shift+R the spawn, Shift the clutch
         if (k === 'w' || k === 'a' || k === 's' || k === 'd') { take(); this._panKeys.add(k); return }
         if (k === 'c') { take(); if (!e.repeat) this._centre(); return }
+        if (k === 'n') { take(); if (!e.repeat) this._waypointAt(); return }
         if (k === 'ArrowUp' || k === 'ArrowDown') { take(); this._stepList(k === 'ArrowUp' ? -1 : 1); return }
         if (k === 'ArrowLeft' || k === 'ArrowRight') { take(); if (this._hoverPoi) this._flip(k === 'ArrowLeft' ? -1 : 1); return }
         // Taken only when it opened or closed a shop: a dialogue card over the map (menu-nav does not count it as a card)
         // advances on Enter, and a map that ate every Enter held the tutorial's cards for ever (cdp-smoke, "opening").
-        if (k === 'Enter' && this._toggleShop()) { take(); return }
+        // The waypoint's Enter (nothing highlighted) is refused the same way: main.js says no while a dialogue is up.
+        if (k === 'Enter' && (this._toggleShop() || (!this._listId && !e.repeat && this._waypointAt()))) { take(); return }
         if (k === 'Escape' && this._openShop) { take(); this._listId = this._openShop; this._openShop = null; this._listT = 0; return }
         if (k === 'Escape' && this._listId) { take(); this._leaveList() }
     }
@@ -936,6 +949,17 @@ export class Map2D {
         this._openShop = this._openShop === r.poi ? null : r.poi
         this._listT = 0
         return true
+    }
+
+    /**
+     * FEAT-211: drop the waypoint at screen (sx, sy) — default the cursor (the mouse's, or the pad's at the sheet centre),
+     * else the sheet centre — or clear it when that point is on the pin (WAYPOINT_HIT_PX). True if main.js acted.
+     */
+    _waypointAt(sx = this._hoverX ?? this._sheet().cx, sy = this._hoverY ?? this._sheet().cy) {
+        const w = this._getWaypoint(), s = this._sheet()
+        // On the pin = within WAYPOINT_HIT_PX of its head's centre (13 px over the point: _drawWaypoint), which takes in the tip.
+        if (w && Math.hypot(this._sx(w.x) - sx, this._sy(w.z) - 13 - sy) <= WAYPOINT_HIT_PX) return this._onWaypoint(null)
+        return this._onWaypoint({ x: (sx - s.cx) / this._zoom + this._panX, z: (sy - s.cy) / this._zoom + this._panZ })
     }
 
     /** Step the hovered POI's offer card by d, wrapping. */
@@ -1344,6 +1368,7 @@ export class Map2D {
 
     // ── Mouse: drag-pan + wheel-zoom ──────────────────────────────────────────────────────────
     _onMouseDown(e) {
+        this._downX = e.clientX; this._downY = e.clientY   // FEAT-211: a press that never moves is a click (_onMouseUp)
         this._dragging = true
         this._lastX = e.clientX
         this._lastY = e.clientY
@@ -1388,10 +1413,16 @@ export class Map2D {
         this._bgTimer = setTimeout(() => { this._bgDirty = true }, 140)
     }
 
-    _onMouseUp() {
+    _onMouseUp(e) {
         if (!this._dragging) return
         this._dragging = false
         this._canvas.style.cursor = 'grab'
+        // FEAT-211: a click (no drag) drops the waypoint there, or clears it on the pin. A double-click (the teleport) is
+        // two of them, and they cancel out: the second lands on the pin the first dropped.
+        if (e.button === 0 && Math.hypot(e.clientX - this._downX, e.clientY - this._downY) < CLICK_SLOP_PX) {
+            const r = this._canvas.getBoundingClientRect()
+            this._waypointAt(e.clientX - r.left, e.clientY - r.top)
+        }
         this._restreamIfDrifted()
     }
 
@@ -1579,6 +1610,7 @@ export class Map2D {
         this._drawCustomers(ctx) // FEAT-61: newspaper customers, UNDER the POIs — there are 15 of
                                  // them and one of them is mom, so they must never mask a landmark
         this._drawPois(ctx)      // likewise furniture: placed at entry, so not in the cached bg
+        this._drawWaypoint(ctx)  // FEAT-211: UNDER the job's line and pins — a waypoint never hides a job's destination
         this._drawMission(ctx)   // under the car marker, over the cached bg
         this._drawStartArrow(ctx)   // FEAT-61: which way to set off, on any drawn mission line
         this._drawCar(ctx)
@@ -2597,6 +2629,42 @@ export class Map2D {
     // cached bg) so re-rolling a mission repaints without a background rebuild. Endpoints are
     // arbitrary points on an edge, not nodes (DESIGN.md "Where missions and POIs live") — the pins
     // land mid-road on purpose.
+    /**
+     * FEAT-211: the player's waypoint. Its line is the job line's ink at half its weight, DASHED, so the two never read
+     * as one (and the job's is drawn over it); it shows only while the GPS guides to the waypoint. The pin is a map
+     * pin in the same blue (a shape no POI and no job pin uses), lettered like the job pins.
+     */
+    _drawWaypoint(ctx) {
+        const w = this._getWaypoint()
+        if (!w) return
+        if (w.poly?.length > 1) {
+            ctx.lineJoin = 'round'; ctx.lineCap = 'round'
+            ctx.beginPath()
+            ctx.moveTo(this._sx(w.poly[0].x), this._sy(w.poly[0].z))
+            for (let i = 1; i < w.poly.length; i++) ctx.lineTo(this._sx(w.poly[i].x), this._sy(w.poly[i].z))
+            ctx.strokeStyle = 'rgba(244,241,230,0.95)'; ctx.lineWidth = 5; ctx.stroke()
+            ctx.setLineDash([7, 6])
+            ctx.strokeStyle = ROUTE_BLUE; ctx.lineWidth = 2.5; ctx.stroke()
+            ctx.setLineDash([]); ctx.lineCap = 'butt'
+        }
+        const sx = this._sx(w.x), sy = this._sy(w.z), R = 7, H = 20   // the pin's head radius, and its tip below the head
+        ctx.beginPath()
+        ctx.moveTo(sx, sy)                                              // the tip sits ON the point
+        ctx.arc(sx, sy - H + R, R, Math.PI * 0.8, Math.PI * 0.2)       // round head over it
+        ctx.closePath()
+        ctx.fillStyle = ROUTE_BLUE; ctx.fill()
+        ctx.strokeStyle = '#101010'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke()
+        ctx.beginPath(); ctx.arc(sx, sy - H + R, 2.5, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(244,241,230,0.95)'; ctx.fill()
+        ctx.font = `600 11px ${MAP_LABEL_FONT}`
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.strokeStyle = 'rgba(242,239,228,0.92)'; ctx.lineWidth = 3.5
+        ctx.strokeText('Waypoint', sx, sy - H - 9)
+        ctx.fillStyle = MAP_TEXT_POI
+        ctx.fillText('Waypoint', sx, sy - H - 9)
+        ctx.textAlign = 'left'
+    }
+
     _drawMission(ctx) {
         // FEAT-67: a hovered offer's route TEMPORARILY REPLACES the drawn one (mid-mission too) —
         // only one route is ever on the sheet. It goes back the moment the cursor leaves the POI.
