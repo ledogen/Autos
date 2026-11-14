@@ -68,7 +68,7 @@ import { MoonSystem, MOON_PARAMS } from './moon.js'                      // QUAL
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
-import { putRun, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
+import { putRun, putTruck, loadTruck, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
@@ -1494,6 +1494,9 @@ const SELECTORS = {
   worldTerrain: { name: 'terrain relief',  opts: KNOBS.t.map(v => [v, `${v} %`]) },
   worldPoi:     { name: 'POI spacing',     opts: KNOBS.p.map(v => [v, `${v} %`]) },
   worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
+  // FEAT-205: free roam's truck — stock, or the one a won run saved. Page state, never saved; shown only with a winner to pick.
+  truck:        { name: 'truck', opts: [['stock', 'stock'], ['winner', 'winning truck']], show: () => _setupMode === 'freeroam' && !!loadTruck(),
+                  get: () => _setupTruck, set: (t) => { _setupTruck = t } },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
   steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
   // A slider: 0 % linear … 100 % parabolic … 150 % (gamepad.js steerCurve), with a tiny plot of the map.
@@ -1509,6 +1512,7 @@ const SELECTORS = {
   frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
 window.__settings = _settings   // dev handle — test/cdp-smoke.mjs marks the browser as played before (FEAT-184 playedBefore)
+let _setupTruck = 'stock'   // FEAT-205
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
 function _fitGearbox (gearbox = _settings.gearbox) {
   fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
@@ -1570,6 +1574,7 @@ for (const b of document.querySelectorAll('#main-menu button, #pause-menu button
 /** FEAT-156: switch the new-game page's mode — index.html's CSS swaps the rows on data-mode. */
 function _setSetupMode (mode) {
   _setupMode = mode
+  _setupTruck = 'stock'
   const panel = document.getElementById('mm-setup-panel')
   if (panel) panel.dataset.mode = mode
   if (mode === 'scenarios') _renderScenarioList()
@@ -1599,7 +1604,11 @@ async function _startFromSetup () {
   _enterStageLoad('building the world\u2026')
   await _worldReady
   applyWorld(_world())
-  _fitGearbox()
+  // FEAT-205: stock parts, or the winning truck (parts + its gearbox); the seat's damage wipe makes either new.
+  const winner = _setupTruck === 'winner' ? loadTruck() : null
+  partsSystem.start()
+  if (winner) partsSystem.restore(winner.parts)
+  _fitGearbox(winner?.gearbox)
   await _startFreeRoam(_resolveSeed(seed))
 }
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
@@ -9732,6 +9741,7 @@ const CRASH_CARD_DELAY_S = 1.5
 function _endRun (kind) {
   if (_paperScenario) { _paperScenarioOver(kind); return }   // FEAT-62: never _discardRunSave — the save is the player's
   if (_runEnded) return
+  if (kind === 'win') putTruck({ parts: partsSystem.snapshot(), gearbox: _runGearbox })   // FEAT-205: free roam can fit it
   _discardRunSave()
   // Read the run as it ended, before the clock moves on behind the card.
   const title = RUN_END_TITLE[kind], body = _runEndHtml(kind)
