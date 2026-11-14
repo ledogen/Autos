@@ -43,6 +43,7 @@
  */
 
 import { TRACKS, DAMAGE_PARAMS, fatalMph } from './damage.js'
+import { CLASS_INFO, infoHtml } from '../data/component-info.js'
 import { keycap, hintPark, BACK_BUTTON } from './park-badge.js'
 
 const REFRESH_S = 0.1      // 10 Hz — condition moves on the scale of minutes
@@ -378,6 +379,8 @@ const CSS = `
   font: 12px/1.45 var(--font); color: var(--text); }
 #dmg-tip .dt-name { color: var(--text-body); }
 #dmg-tip .dt-pct { font-size: 16px; font-weight: bold; }
+.info-part { color: var(--accent-story); }   /* FEAT-213: also used by the shop's (i) text */
+.info-item { color: var(--poi-text); }
 #dmg-tip .dt-extra { color: var(--bad-text); }
 #dmg-tip .dt-why { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); color: var(--text-dim);
   white-space: normal; }
@@ -749,6 +752,6 @@ export class DamageScreen {
       `<div class="dt-name">${this._label(id)}</div>`
       + `<div class="dt-pct" style="color:${bandColor(shownCond(m, id))}">${Math.round(c * 100)}%</div>`
       + symptoms(m, id).map(l => `<div class="dt-extra">${l}</div>`).join('')
-      + `<div class="dt-why">${CONSEQUENCE[t.cls] || ''}</div>`
+      + `<div class="dt-why">${infoHtml(CLASS_INFO[t.cls], DAMAGE_PARAMS) || CONSEQUENCE[t.cls] || ''}</div>`
   }
 }

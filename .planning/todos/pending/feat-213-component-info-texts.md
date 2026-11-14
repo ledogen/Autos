@@ -12,7 +12,7 @@ lane: B
 # FEAT-213: Component info texts — the (i) buttons, reused in the shop and on vehicle diagnostics
 
 ## Next steps
-Lane B, with or after FEAT-212. The lane fills each "x%" from the code's real threshold and lists the values for the owner; it does not reword the texts.
+BUILT on land/feat-213 (awaiting landing + the owner's look, card feat213-look). Open: the colour pair (component blue --accent-story, item orange --poi-text) and whether the shop shows (i) on every part.
 
 ## Summary
 Eleven short explanations, one per component, written by the owner. They sit behind an (i) button in the auto shop and are reused wherever the component is described, such as vehicle diagnostics. Component and item names are coloured. This is also the tone the owner wants for menus, tips, prompts and hovers in general.
@@ -41,12 +41,13 @@ Eleven short explanations, one per component, written by the owner. They sit beh
 - Text 8 mentions oil, which arrives with FEAT-202.
 
 ## Tracker
-- [ ] The eleven texts in one data table, verbatim
-- [ ] (i) buttons in the auto shop menu and on vehicle diagnostics read it
-- [ ] Component names and item names coloured differently
-- [ ] Every x% filled from the code, listed here
+- [x] The eleven texts in one data table, verbatim
+- [x] (i) buttons in the auto shop menu and on vehicle diagnostics read it
+- [x] Component names and item names coloured differently
+- [x] Every x% filled from the code, listed here
 
 ## Decisions
+- Built 2026-11-14 (default taken, owner may overrule): text table `data/component-info.js` (verbatim, `[[component]]` / `{{item}}` markup); shop: an (i) "About" row opens inside each open part; diagnostics: the hover tip's explanation line is the text (the old one-line CONSEQUENCE stays for oil and alignment, which have no text). x% filled live from DAMAGE_PARAMS: brakes 50% (brakeKnee), air filter 20% (filterKnee), headlights 50% (headlightFlickerCond).
 - 2026-11-13, owner: this is the tone for the game's menus, tips, prompts and hovers in general.
 
 ## Files
@@ -54,3 +55,4 @@ Eleven short explanations, one per component, written by the owner. They sit beh
 
 ## Log
 - 2026-11-13: minted from the owner's spec by the orchestrator. Nothing built.
+- 2026-11-14: built on land/feat-213, smoke 26/26 incl. a new (i) check; screenshot wip/feat-213/info-brakes.png. Diagnostics screen shows text on hover tip only.
