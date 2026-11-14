@@ -112,9 +112,10 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen button.sv-slothead:hover { background: rgba(255,255,255,0.09); }
 #svc-screen .sv-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 /* FEAT-212: a closed shelf row's fixed columns (condition, price, time left), so they line up down the list */
-#svc-screen .sv-ccol { width: 104px; flex: none; justify-content: flex-end; gap: 8px; }
+#svc-screen .sv-cond.sv-ccol { width: 104px; flex: none; justify-content: flex-end; gap: 8px; }
 #svc-screen .sv-each { width: 56px; flex: none; text-align: right; }
-#svc-screen .sv-left { width: 112px; flex: none; text-align: right; white-space: nowrap; }
+#svc-screen .sv-left { width: 88px; flex: none; text-align: right; white-space: nowrap; }
+#svc-screen .sv-line[data-slot] .sv-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #svc-screen .sv-name .sv-chip { display: inline-block; vertical-align: middle; margin-right: 4px; }
 #svc-screen .sv-cond { display: flex; align-items: center; gap: 4px; }
 #svc-screen .sv-chip { width: 28px; height: 28px; border-radius: 3px; flex: none; background-size: contain;
@@ -198,7 +199,8 @@ export class ServiceScreen {
       const items = [...this.card.querySelectorAll('button:not(.sv-tab)')].filter(b => b.offsetParent !== null)
       return items[items.indexOf(el) + dy] ?? null
     }
-    this.screen.addEventListener('mousemove', () => { this._mouse = true })
+    // isTrusted: menu-nav's highlight sends the item a synthetic mousemove (BUG-109) — that is the pad, not the pointer.
+    this.screen.addEventListener('mousemove', (e) => { if (e.isTrusted) this._mouse = true })
     window.addEventListener('keydown', () => { this._mouse = false }, true)
   }
 
@@ -469,7 +471,8 @@ export class ServiceScreen {
     const s = this.service, now = this.nowH()
     // R-24 (owner, 2026-10-24): "For sale", and when the next item lands.
     const nxt = s.nextStock?.()
-    const rows = s.stock().flatMap((e, i) => !e ? (this.store ? [] : [dim('An empty shelf.')])   // a store lists only what it has
+    // "Just a list of parts" (owner, 2026-11-13): an empty slot is no row; the head says when the next item lands.
+    const rows = s.stock().flatMap((e, i) => !e ? []
       : [Object.assign(node(String(i), chip(e.id) + shelfName(e), [this._buyOpts(e, i)], this._shelfInfo(e, i, now)), { attrs: ` data-slot="${i}"` })])
     return `<div class="sv-slot"><div class="sv-slothead">For sale${nxt ? ` <span class="sv-desc">· new stock in ${nxt}</span>` : ''}</div>`
       + this._level(rows, 0) + `</div>` + (this.store ? '' : this._myItems())
@@ -480,7 +483,7 @@ export class ServiceScreen {
   _shelfInfo (e, i, now) {
     const cond = e.cond === null ? '' : PARTS[e.id]?.mounted ? pctIn('T', e.cond) + pctIn('W', 1) : bar(e.cond)
     return `<span class="sv-cond sv-ccol">${cond}</span><span class="sv-desc sv-each">$${formatMoney(this.service.shelfPrice(i))}</span>`
-      + `<span class="sv-desc sv-left">${e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}`}</span>`
+      + `<span class="sv-desc sv-left">${e.expiresAt === Infinity ? 'always' : `${formatGameDuration(e.expiresAt - now)} left`}</span>`
   }
 
   /** An open shelf row: the two-line description, then each way to buy it with its price and hours. Landing 3 (the
