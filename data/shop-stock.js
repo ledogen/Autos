@@ -31,7 +31,7 @@ export const USED_COND = [0.4, 0.85]  //   condition, uniform
 export const ALWAYS = ['tireOld', 'airFilterStock', 'tirePlugKit', 'wheelSteel']
 
 /** Shelf items that aren't parts: no condition, priced here. */
-export const ITEM_PRICE = { tirePlugKit: 7, compressor: 20, quickJack: 30,   // owner, 2026-10-22
+export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30,   // owner, 2026-10-22
     zipTies: 10, stopLeak: 10,  // owner, 2026-10-24
     hiLiftJack: 20,             // FEAT-138 [DEFAULT]: the middle of the owner's $10–30 (2026-10-24)
     // FEAT-168 camp-gear-source (owner, 2026-11-06: "camp + shelf") [DEFAULT]

@@ -72,6 +72,8 @@ How the cut works:
 | ASSET-69, ASSET-70, ASSET-73 | office, doctor's office, school — they replace placeholders the alpha shows |
 | ASSET-32 | the uncle's van — the uncle is in the alpha |
 | FEAT-188 | **optional** — far ridge silhouettes from the real terrain, after FEAT-180's fog tune (owner, 2026-11-08: "optional pre-alpha") |
+| FEAT-204 | visual mods: light bar, bed toolbox, roof rack, bull bar (owner, 2026-11-13: "before alpha. doesnt have to be a ton") |
+| FEAT-205 | a win saves the truck configuration; free roam can load the winning truck (owner, 2026-11-13: "alpha feature … not urgent") |
 
 **Branches landed 2026-10-24:** `feature/mission-recut` (FEAT-138/114/139), `feature/game-feel` (the
 mission-feel review R-01..R-34) and `feature/parts` are on main and deleted; one checkout from here on.
@@ -101,6 +103,8 @@ example a bug that won't block the alpha.
 | Ticket | Why later |
 |---|---|
 | BUG-64 | walls between close roads: the class-A part left would move routes; owner, 2026-11-07: "dont take the bug64 fix. its not bothering me" |
+| FEAT-206 | brake heating: fade and runaway on a long descent with an overweight load (owner, 2026-11-13: "post alpha") |
+| FEAT-208 | phone calls: pay time or battery to learn what a place has (owner, 2026-11-13: "post alpha idea") |
 
 Tickets get minted into `.planning/todos/pending/` **at milestone entry, not all up front** — the
 design has open questions (DESIGN.md §Open questions) and minting everything now would freeze answers
@@ -630,6 +634,10 @@ player damage screen (FEAT-90). Open:
 | FEAT-34 | instrument cluster — the player-facing diagnostic screen |
 | FEAT-57 | ABS + traction control as parts |
 | FEAT-83 | world-placed debris that `causesDamage` — a damage source |
+| FEAT-202 | oil changes — an oil track that wears with load and rpm and scales engine wear; auto shop only (owner, 2026-11-13) |
+| FEAT-203 | tire iron + floor jack — the spare change is 2 h bare, 30 min with both (owner, 2026-11-13) |
+| FEAT-207 | rear-axle gear ratios as findable parts, shorter ratios rarer (owner, 2026-11-13) |
+| FEAT-209 | dynamic gas prices — each station within ±5 % of the day's price (owner, 2026-11-13) |
 
 ### Places and Missions — POI classes, the job budget, delivery [OWNER, 2026-10-07]
 

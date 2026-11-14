@@ -22,6 +22,7 @@ try {
   const id = '20261113120000-ab12';
   assert.equal((await req('PUT', `/inbox/${id}.json`, JSON.stringify({ text: 'hello', at: 'now' }))).status, 200);
   assert.equal((await req('PUT', '/owed/some-id.answer.json', JSON.stringify({ choice: 'good' }))).status, 200);
+  assert.equal((await req('PUT', '/dives/FEAT-1-x.answers.json', JSON.stringify({ status: 'opened' }))).status, 200);
   // agent-owned files, written straight to disk
   mkdirSync(join(dir, 'lanes'), { recursive: true });
   writeFileSync(join(dir, 'lanes', 'a.now'), 'running: x\n');
@@ -31,10 +32,12 @@ try {
   assert.equal(d.inbox[`${id}.reply.json`].status, 'done');
   assert.equal(d.owed['some-id.answer.json'].choice, 'good');
   assert.equal(d.lanes['a.now'], 'running: x\n');
+  assert.equal(d.dives['FEAT-1-x.answers.json'].status, 'opened');
   // everything the page does not own is refused
   for (const [m, p] of [
     ['PUT', `/inbox/${id}.reply.json`], ['PUT', '/owed/some-id.json'], ['PUT', '/lanes/a.json'], ['PUT', '/lanes/a.now'],
     ['PUT', '/inbox/..%2F..%2Fevil.json'], ['PUT', '/owed/..%2Fx.answer.json'], ['PUT', '/answered/x.answer.json'],
+    ['PUT', '/dives/FEAT-1-x.taken'], ['PUT', '/dives/..%2Fx.answers.json'], ['DELETE', '/dives/FEAT-1-x.answers.json'],
     ['DELETE', '/owed/some-id.answer.json'], ['DELETE', '/lanes/a.now'], ['POST', `/inbox/${id}.json`],
   ]) assert.equal((await req(m, p, '{}')).status, 403, `${m} ${p} must be refused`);
   assert.equal((await req('PUT', `/inbox/${id}.json`, 'not json')).status, 400);

@@ -1,0 +1,53 @@
+# Handoff — ledorepo (the owner's tracker tooling), 2026-11-13
+
+Worktree: none open. All work so far is landed on main (/Users/ledogen/CodeShit/CarGame), not pushed.
+Branch:   cut a new one per ticket, `infra/infra-NN-<slug>`, worktree `CarGame-<slug>`, off local main.
+Serve:    the live tracker is http://localhost:8010/ (phone: http://m4air:8010/ over Tailscale). Use :8011 with
+          `LEDOREPO_DATA=<a copy of the data folder>` for a dev copy. Never restart :8000 (main's game server).
+State:    clean. Work ONLY in a worktree: a new session starts anchored in the main checkout.
+
+Resume word: `ledorepo`. Read this, then CLAUDE.md § "Communicating with the owner".
+
+## What "ledorepo" is
+The owner's personal Jira: the dashboard in `tools/dashboard/` (this repo, public) + the private repo
+`~/CodeShit/ledorepo` (git@github.com:ledogen/ledorepo.git) holding the tracker's DATA
+(`projects/cargame/`: inbox, owed, lanes, dives, answered) and the BACKUP of Claude Code state (`backup/`).
+The file-by-file data contract is the comment above `DATA` in `tools/dashboard/index.mjs`.
+Owner rulings: the app stays in this repo until a second project needs it; only data is private; reachable
+anywhere (Tailscale, Mac = `m4air`); Lanes is the home tab; hooks, not launchd, for anything scheduled.
+
+## Done (all closed, in completed/)
+- INFRA-11 Lanes tab on local files (the claude.ai Alpha Lanes artifact is dead; never read or write it).
+- INFRA-12 deep dives: `.planning/dives/<TICKET-ID>-<slug>.html` + `<dive-q>` tags, `tools/dashboard/dive.js`.
+- INFRA-09 ticket template `.planning/todos/TEMPLATE.md`; ticket pages render in the fixed section order.
+- Backup: `~/CodeShit/ledorepo/backup.sh`, run by hooks in `~/.claude/settings.json` (SessionStart + Stop with
+  `--hourly`; PreCompact + SessionEnd always). A SessionStart hook also starts the dashboard on :8010.
+
+## Next, in order
+1. **INFRA-10 decision records (DEC-NN)** — owner ruled: backfill ALL existing rulings. Not started. Start in
+   plan mode (the owner signs off the record format before anything is written). The ticket has the shape:
+   `.planning/decisions/dec-NN-<slug>.md`, frontmatter `id / status (standing|superseded) / decided / supersedes /
+   governs`, body Ruling · Why · Replaces · Source; never edited after it is decided; a Decisions tab in the
+   dashboard; each ticket page lists the DECs whose `governs` names it (the Links block in `viewTicket`,
+   beside "deep dives"). Sources to backfill: DESIGN.md SM-INV-1..15, the eight design-amendments files, memory
+   MEMORY.md § Standing do-nots + the `feedback_*` / `project_*rulings*` files, the orchestrator handoff's
+   "Standing rulings", CLAUDE.md's hard rules. Expect 60–100 records: do the backfill as ONE subagent task with a
+   fixed format and an owner skim page (a deep dive works: one `<dive-q options="right | wrong">` per record).
+   A submitted dive's rulings should become DECs (INFRA-12 left that half to this ticket).
+2. **INFRA-14** — the orchestrator's state is now all in files, so a clear costs one word. Remaining: tidy its
+   handoff (drop the "ready for a clear at ~300k" drill or keep it only mid-merge) and make side work its
+   subagents by default. Small; the handoff is the orchestrator's file — send it the text, it applies.
+3. **INFRA-13** — waits on the owner: `wip/` (66 MB) backed up or not; Time Machine. Unpushed commits on main
+   are an accepted loose end (owner).
+
+## Working with the orchestrator (peer session; find it with ListAgents, it answers to "orchestrator")
+- It owns main's merges, `HANDOFF-2026-10-25-orchestrator.md`, `LANE-AGENT-BRIEF.md`, and every agent-side file
+  in the data folder. To land: SendMessage it the branch + which of its files you changed, wait for "go", merge
+  `--no-ff`, restart :8010 only, reply "done" with the hash. Never push. Never merge while it has a smoke running.
+- Take its side on any conflict in its handoff's "## Current state" section.
+- Ticket ids: INFRA numbers are free for this work (next INFRA-15); ask it before minting BUG/FEAT/PERF.
+
+## Checks
+- `node tools/dashboard/data-api.check.mjs` — the page may write only its own files.
+- Browser checks were scratch scripts (headless Chrome via `test/lib/cdp.mjs`, through `tools/chrome-slot.sh`,
+  against a COPY of the data on :8011). Never run a write test against the live data folder.

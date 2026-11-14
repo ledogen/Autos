@@ -179,14 +179,22 @@ for (let f = 0; f < 120; f++) {
 ok(lagMax < 0.008, `drawn load sits in the drawn bed at 1–4 steps a frame, 15 m/s: ${(lagMax * 1000).toFixed(2)} mm off its strap pose (< 8; a once-a-frame snapshot would be ${onceMax.toFixed(2)} m behind)`)
 td.engine.dispose()
 
-// 7. BUG-161: a small block seated 2 cm inside the RR wheel's query sphere, level with the hub (normal
-// horizontal, so physics.js's n.y < −0.1 filter does not stop it). Loose, the tire pushes it; welded, never.
-async function tirePushes (weld) {
+// 7. BUG-161 / BUG-165: a small block level with the RR hub, its centre r + 3 cm off the hub. INBOARD (2 cm inside the
+// wheel's query sphere, wholly inboard of the tread: the freight-strap setup BUG-161 used) the tire never presses it,
+// loose or welded, at any ride height or at ±30° of roll — the query is cut to the tire's width (BUG-165). AHEAD of the
+// tread (inside the width, normal horizontal so the n.y < −0.1 filter passes it) a loose block is pressed, the control
+// that the query still sees debris at the tread, and the same block welded to the chassis is not (BUG-161).
+const _zAxis = new THREE.Vector3(0, 0, 1)
+async function tirePushes (weld, where, rollDeg = 0, comp = null) {
   const t = await truck(false)
   for (let i = 0; i < 60; i++) t.step()
+  if (comp !== null) t.vs.strutComp[3] = comp
+  t.vs.quaternion.setFromAxisAngle(_zAxis, rollDeg * Math.PI / 180)
   const m = mountLocal(3, t.P), half = { x: 0.05, y: 0.1, z: 0.1 }
-  const inward = -Math.sign(m.x)
-  const local = new THREE.Vector3(m.x + inward * (t.P.wheelRadius + half.x - 0.02), m.y - (t.P.suspensionRestLengthRear - t.vs.strutComp[3]), m.z)
+  const inward = -Math.sign(m.x), off = t.P.wheelRadius - 0.02
+  const hubY = m.y - (t.P.suspensionRestLengthRear - t.vs.strutComp[3])
+  const local = where === 'inboard' ? new THREE.Vector3(m.x + inward * (off + half.x), hubY, m.z)
+    : new THREE.Vector3(m.x, hubY, m.z - (off + half.z))
   const p = local.applyQuaternion(t.vs.quaternion).add(t.vs.position)
   const b = t.engine.createBody({ type: 'dynamic', position: p, quaternion: t.vs.quaternion })
   const pts = []; for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) pts.push(x * half.x, y * half.y, z * half.z)
@@ -199,8 +207,13 @@ async function tirePushes (weld) {
   t.engine.dispose()
   return n
 }
-const pushLoose = await tirePushes(false), pushWelded = await tirePushes(true)
-ok(pushLoose > 0 && pushWelded === 0, `BUG-161: the tire presses a loose block inside its query sphere (${pushLoose} pushes) and never the same block welded to the chassis (${pushWelded})`)
+const pushAhead = await tirePushes(false, 'ahead'), pushWelded = await tirePushes(true, 'ahead')
+ok(pushAhead > 0 && pushWelded === 0, `BUG-161: the tire presses a loose block ahead of its tread (${pushAhead} pushes) and never the same block welded to the chassis (${pushWelded})`)
+let inboardPushes = 0, inboardRuns = 0
+for (const roll of [-30, -15, 0, 15, 30]) for (const comp of [0, 0.12, RANGER_PARAMS.suspensionTravelRear]) {
+  inboardPushes += await tirePushes(false, 'inboard', roll, comp); inboardRuns++
+}
+ok(inboardPushes === 0, `BUG-165: a LOOSE block inboard of the tread, inside the query sphere, is never pressed: ${inboardPushes} pushes over ${inboardRuns} poses (roll ±30°, strut 0 → bump stop)`)
 
 // 8. BUG-161: a hard body strike. The chassis is a bullet: its sweep meets a bank inside the step and the engine parks
 // it at the moment of impact, speed kept, while the welded load (a bullet too, as DebrisSystem flags it in the bed, so

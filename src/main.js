@@ -47,7 +47,7 @@ window.__view = placeFreecam
 window.__props = () => propSystem
 window.__renderer = () => renderer
 window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase heading after a freecam exit (R-11)
-import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout } from './debug.js'
+import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout, syncDebugLive } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
 import { buildPlaceCapture } from './capture.js'
 import { ensureEngineAudio, updateEngineAudio, setEngineAudioEnabled, setEngineAudioVolume, setEngineAudioTuning, setAudioPageActive, startCrankAudio, stopCrankAudio, playCatchAudio, playSputterPop, setCabView, setInTunnel, setTunnelReverb } from './engine-audio.js'
@@ -84,7 +84,7 @@ import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat, 
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
-import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
+import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR, clockHeld } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
@@ -2263,9 +2263,13 @@ let _fpsLastTime = 0   // will be set to currentTime on first frame
 let _lastHudWrite = 0  // PERF-16: wall-clock (ms) of the last HUD DOM/canvas write — throttled to ~10 Hz
 // S-64: the debug HUD's read-out spans, looked up once (WR-04: a missing id is skipped, never thrown
 // on inside the frame loop), and written only when the string changes.
-const _hudEl = Object.fromEntries(['spinVal', 'flFzVal', 'frFzVal', 'rlFzVal', 'rrFzVal', 'slipVal', 'thrVal', 'brkVal', 'fpsVal', 'posVal']
+const _hudEl = Object.fromEntries(['hud', 'spinVal', 'flFzVal', 'frFzVal', 'rlFzVal', 'rrFzVal', 'slipVal', 'thrVal', 'brkVal', 'fpsVal', 'posVal']
   .map(id => [id, document.getElementById(id)]))
 const _hudText = (el, s) => { if (el && el.textContent !== s) el.textContent = s }
+// PERF-48: the same for markup, for the prompts the 10 Hz poll rewrites. An innerHTML write replaces the children even
+// when the markup is the same, and the frame then pays a whole-document style recalculation for it (~0.8 ms). The
+// element's serialisation is kept beside the markup, so a write by anything else (a textContent) still counts as a change.
+const _hudHtml = (el, s) => { if (!el || (el._html === s && el.innerHTML === el._htmlOut)) return; el.innerHTML = s; el._html = s; el._htmlOut = el.innerHTML }
 
 // ── Debug panel ──────────────────────────────────────────────────────────────
 // D-10: passes mutable RANGER_PARAMS ref so sliders write directly to the object physics.js reads.
@@ -3137,6 +3141,10 @@ const _poiMeshes = new Map()
 // still owed a paper — see _updateCustomerRings.
 const _customerRings = new Map()
 const _ornaments = []   // FEAT-149: [{ kind, mesh, lift, body }] — knockable yard ornaments, rebuilt with the markers
+// BUG-164: one Group per POI holding its model (or cube) and its yard, culled as a unit past the drawn terrain
+// (_updateMissionRings). Before this every building in the region drew at any range: past the terrain edge it hung
+// in the sky as a fog-coloured silhouette, and the far ones cost ~28 draw calls and ~15 ms/s of render() CPU.
+const _poiYards = []
 
 /**
  * Rebuild the markers + interaction rings (cheap: a handful of each per region).
@@ -3149,6 +3157,7 @@ const _ornaments = []   // FEAT-149: [{ kind, mesh, lift, body }] — knockable 
 function _rebuildPoiMarkers () {
   for (const o of _ornaments) if (o.body != null) debrisSystem.remove([o.body])   // FEAT-149
   _ornaments.length = 0
+  _poiYards.length = 0
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
   _poiMeshes.clear()
@@ -3159,6 +3168,10 @@ function _rebuildPoiMarkers () {
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
+    const yard = new THREE.Group()
+    yard.userData.x = q.x; yard.userData.z = q.z
+    _poiGroup.add(yard)
+    _poiYards.push(yard)
     if (q.modelKey) {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
       // unlike the small thrown mission items FEAT-59's cast-only default was written for.
@@ -3177,13 +3190,13 @@ function _rebuildPoiMarkers () {
         c.rotation.y = v.yaw
         m.add(c)
       }
-      _poiGroup.add(m)
+      yard.add(m)
       _poiMeshes.set(q.id, m)
     } else {
       const cube = new THREE.Mesh(_poiCubeGeo, _poiCubeMat)
       cube.position.set(q.x, q.baseY + half, q.z)
       cube.castShadow = true
-      _poiGroup.add(cube)
+      yard.add(cube)
       _poiMeshes.set(q.id, cube)
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
@@ -3194,7 +3207,7 @@ function _rebuildPoiMarkers () {
       const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
       m.position.set(sat.x, sat.y, sat.z)
       m.rotation.y = sat.yaw
-      _poiGroup.add(m)
+      yard.add(m)
       const knock = PROP_MODELS[sat.key]?.knockable
       if (knock) {
         const kind = `ornament:${sat.key}`
@@ -3384,6 +3397,10 @@ function _updateMissionRings () {
   // and drop away while the pump is open (you are already in one).
   for (const m of _pumpZoneMarks)
     m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= showR
+  // BUG-164: the buildings stand only where their ground is drawn, so they go by the terrain's own stream centre.
+  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one 192 m+ away cannot be touched.
+  const sc = roadStreamCenter()
+  for (const y of _poiYards) y.visible = Math.hypot(y.userData.x - sc.x, y.userData.z - sc.z) <= showR
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
     _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)
@@ -5175,7 +5192,7 @@ function _updateLinePrompt (poiEl, pulled) {
   if (pulled && missionSystem.reachSource() && j.load) void _loadFreight(j.load, j.cargoKg, j)
   if (poiEl) {
     poiEl.style.display = pulled ? 'none' : 'block'
-    if (!pulled) poiEl.innerHTML = parkPrompt(q.drop ? 'park to load the firewood' : 'park to pick up')
+    if (!pulled) _hudHtml(poiEl, parkPrompt(q.drop ? 'park to load the firewood' : 'park to pick up'))
   }
   return true
 }
@@ -5216,12 +5233,12 @@ function _updateFetchPrompt (poiEl, pulled) {
       _fetchHomeMsg = `${at ? `${at.done} — ` : ''}${j.fetch ? 'get back to' : 'next stop:'} ${_legLabel(j, missionSystem.leg)}!`
       _fetchHomeUntil = now + FETCH_HOME_MSG_S * 1000
     } else if (near) {
-      if (poiEl) { poiEl.style.display = 'block'; poiEl.innerHTML = parkPrompt(at?.park ?? (j.fetch ? 'park to acquire mission item' : 'park to hand it over')) }
+      if (poiEl) { poiEl.style.display = 'block'; _hudHtml(poiEl, parkPrompt(at?.park ?? (j.fetch ? 'park to acquire mission item' : 'park to hand it over'))) }
       return true
     }
   }
   if (_fetchHomeMsg && now < _fetchHomeUntil && missionSystem?.state === 'running') {
-    if (poiEl) { poiEl.style.display = 'block'; poiEl.textContent = _fetchHomeMsg }
+    if (poiEl) { poiEl.style.display = 'block'; _hudText(poiEl, _fetchHomeMsg) }
     return true
   }
   _fetchHomeMsg = null
@@ -5710,7 +5727,7 @@ function _checkStranded () {
   const show = c?.stuck && !c.canEnd && !_recoveryOpen && document.getElementById('recovery-row')?.style.display === 'flex'
   if (hint) {
     hint.style.opacity = show ? '1' : '0'
-    if (show) hint.innerHTML = `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`   // the owner's words (feat172-words, 2026-11-07: "keep")
+    if (show) _hudHtml(hint, `${c.head} &mdash; ${vehicleState.parked ? '' : 'park, then '}${keycap('X')} to call a tow`)   // the owner's words (feat172-words, 2026-11-07: "keep")
   }
   if (!c?.canEnd) { _strandedSince = null; return }
   _strandedSince ??= simTime
@@ -5832,7 +5849,7 @@ function _updateParkTriggers (zParked = false) {
     }
     if (poiEl) {
       poiEl.style.display = fuelStop.isOpen ? 'none' : 'block'
-      if (!fuelStop.isOpen) poiEl.innerHTML = parkPrompt('park to use the pump')
+      if (!fuelStop.isOpen) _hudHtml(poiEl, parkPrompt('park to use the pump'))
     }
     if (campRow) campRow.style.display = 'none'
     return
@@ -5851,7 +5868,7 @@ function _updateParkTriggers (zParked = false) {
     }
     if (poiEl) {
       poiEl.style.display = serviceScreen.isOpen ? 'none' : 'block'
-      if (!serviceScreen.isOpen) poiEl.innerHTML = parkPrompt(shop.type === 'autoShop' ? 'park for service' : 'park to shop')   // FEAT-104 [DEFAULT words]
+      if (!serviceScreen.isOpen) _hudHtml(poiEl, parkPrompt(shop.type === 'autoShop' ? 'park for service' : 'park to shop'))   // FEAT-104 [DEFAULT words]
     }
     if (campRow) campRow.style.display = 'none'
     return
@@ -5910,14 +5927,14 @@ function _updateParkTriggers (zParked = false) {
       const live = _takeableOffers(poi.id, now).length
       const next = offerBoard?.nextTurnoverH(poi.id, now)
       // FEAT-90: every "park to …" line carries the PARK badge; the status line does not.
-      poiEl.innerHTML = !live
+      _hudHtml(poiEl, !live
         ? (poi.type === 'expeditionCamp' ? _campGateText()
           : next != null ? `no work here right now — new offer in ${formatGameDuration(next - now)}`
                         : 'no work here right now')
         : poi.type === 'larrysHouse' ? parkPrompt('park to take the paper route')
-        : live > 1 ? parkPrompt(`park to see ${live} offers`) : parkPrompt('park to see the offer')
+        : live > 1 ? parkPrompt(`park to see ${live} offers`) : parkPrompt('park to see the offer'))
     } else if (moms) {
-      poiEl.innerHTML = parkPrompt("park to sleep at mom's house")
+      _hudHtml(poiEl, parkPrompt("park to sleep at mom's house"))
     }
   }
   if (!campRow) return
@@ -5951,12 +5968,12 @@ function _updateParkTriggers (zParked = false) {
             : !camp.withinTether ? 'too far from the road'
             : camp.cands === 0   ? 'no room off the road'
             :                      'not flat'
-  document.getElementById('camp-prompt-text').innerHTML =
+  _hudHtml(document.getElementById('camp-prompt-text'),
       camp.fast ? 'slow down to look for a campsite'
     : site      ? parkPrompt(parked ? 'park again to make camp' : 'park to make camp')
     : moms      ? why
     : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`
-    :             `${why}<br>${parkPrompt('park to sleep in the truck')}`
+    :             `${why}<br>${parkPrompt('park to sleep in the truck')}`)
 }
 
 /** An unmade camp card is up — the cab's (its sleep timer too), or a site previewed but not dug. */
@@ -7255,6 +7272,57 @@ function _setRunHudVisible (on) {
 function _syncDebugHud () {
   const h = document.getElementById('hud')
   if (h) h.style.display = storySystem.isActive() && _gui?.domElement.style.display === 'none' ? 'none' : ''
+  _writeDebugHud()   // shown again: its numbers are fresh before it paints
+}
+// PERF-48: the readout is written (on the HUD's 10 Hz poll) only while it shows. A text write under a hidden parent
+// still dirties the page's style, and the frame then pays a whole-document style recalculation for it (~0.8 ms).
+function _writeDebugHud () {
+  if (_hudEl.hud?.style.display === 'none') return
+  // FEAT-49: speed/gear/RPM moved off the text HUD onto the gauge cluster; only the wheelspin
+  // diagnostic (no cluster equivalent) stays here.
+  const dtrain = vehicleState.drivetrain
+  if (dtrain) {
+    const spEl = _hudEl.spinVal
+    if (spEl) {
+      const spin = dtrain.wheelspin || 0
+      _hudText(spEl, spin.toFixed(1))
+      spEl.style.color = spin > (RANGER_PARAMS.wheelspinThreshold ?? 7.5) ? '#ff2222' : '#00ff88'
+    }
+  }
+
+  // M4-09 / D-12: per-wheel Fz HUD — tire spring force per corner.
+  // Uses ?. / ?? 0 nullish-default per PATTERNS §Logger field append-at-end + nullish-coalesce.
+  // toFixed(0) = whole newtons (Fz is in thousands; decimals add noise).
+  _hudText(_hudEl.flFzVal, (vehicleState.wheelDebug[0]?.fz ?? 0).toFixed(0))
+  _hudText(_hudEl.frFzVal, (vehicleState.wheelDebug[1]?.fz ?? 0).toFixed(0))
+  _hudText(_hudEl.rlFzVal, (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0))
+  _hudText(_hudEl.rrFzVal, (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0))
+
+  // M3-07: front slip velocity HUD — sa field stores slip-velocity magnitude in m/s (not slip angle).
+  // See physics.js: "sa field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad)".
+  // Thresholds: ~0.5 m/s = light slip (green), ~1.5 m/s = heavy slip (red).
+  const slipMps = (vehicleState.wheelDebug?.[0]?.sa || 0)
+  const slipEl = _hudEl.slipVal
+  if (slipEl) {
+    _hudText(slipEl, slipMps.toFixed(2) + ' m/s')
+    slipEl.style.color = slipMps < 0.5 ? '#00ff88' : slipMps < 1.5 ? '#ffaa00' : '#ff2222'
+  }
+
+  // M3-08: throttle and brake percentage HUD
+  _hudText(_hudEl.thrVal, (vehicleState.throttle * 100).toFixed(0))
+  _hudText(_hudEl.brkVal, (vehicleState.brake * 100).toFixed(0))
+
+  // FPS HUD
+  _hudText(_hudEl.fpsVal, String(Math.round(_fpsEma)))
+
+  // Road-Feel QoL: seed / x / z OSD — correlates screenshots and in-game sightings with the
+  // headless report's coords (test/road-character.mjs prints worst-offender x/z in world space).
+  if (_hudEl.posVal) {
+    // Freecam shows the CAMERA's position (you fly to a defect, the OSD must name that spot,
+    // not wherever the truck was left) — same source the capture mark uses.
+    const posSrc = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
+    _hudText(_hudEl.posVal, `seed ${_seedString} / ${posSrc.x.toFixed(0)} / ${posSrc.z.toFixed(0)}`)
+  }
 }
 function _renderRunHud () {
   if (!storySystem.isActive() || storySystem.isEntering()) return
@@ -7348,9 +7416,14 @@ function _updateEnergyMeter () {
     }
   }
   if (!on) return
-  const e = daySystem.energyH()
-  _emEls.strip.style.transform =
-    `translateX(${EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H}px)`
+  // PERF-48: each strip is written only when its drawn DEVICE pixel moves. Any inline-style write dirties the page's
+  // style, and the next style-dependent call in the frame (the cluster's ctx.font) then pays a whole-document style
+  // recalculation for it, ~0.3 ms. The strips creep ~0.8 device px a second, so a write every frame was 60 recalcs a
+  // second for under a pixel of motion. Snapped, the bar steps one device pixel at a time (crisp edges, never a
+  // fractional one) and writes about once a second.
+  const e = daySystem.energyH(), dpr = window.devicePixelRatio
+  const ex = Math.round((EM_VIEW_W / 2 - (daySystem.fullEnergyH() - e) * EM_PX_PER_H) * dpr) / dpr
+  if (ex !== _emX) { _emX = ex; _emEls.strip.style.transform = `translateX(${ex}px)` }
   const st = daySystem.stage()
   if (st !== _emStage) {
     _emStage = st
@@ -7368,10 +7441,11 @@ function _updateEnergyMeter () {
   }
   if (hw) {
     const top = _emEls.hTop, left = Math.min(top, Math.max(-DAY_PARAMS.hungryRampH, daySystem.fedLeftH()))
-    _emEls.hStrip.style.transform = `translateX(${EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H}px)`
+    const hx = Math.round((EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H) * dpr) / dpr
+    if (hx !== _hmX) { _hmX = hx; _emEls.hStrip.style.transform = `translateX(${hx}px)` }
   }
 }
-let _hmWord
+let _hmWord, _emX, _hmX   // the strips' last written translateX (PERF-48)
 /** The hunger strip's full end: the longest hold any meal gives (meals never stack past it — DaySystem.eat). */
 const _hmTopH = () => Math.max(DAY_PARAMS.mealHoldH, ...Object.values(ITEMS).map(i => i.hold ?? 0))
 function _hmSeg (word, hours) {
@@ -8046,6 +8120,7 @@ addLightGui(_gui)
 // User pref: every lil-gui section collapsed by default (the root panel stays open). Runs after ALL
 // folders exist (debug + props), so it covers debug.js's folders without editing debug.js.
 _gui.foldersRecursive().forEach((f) => f.close())
+syncDebugLive(_gui)   // PERF-48: likewise after ALL folders — the hidden panel's live read-outs stop until it shows
 
 // Phase 7 (D-14/15/16): initial-load seat via canonical resolveSpawn + analyticHeight ground-probe.
 // TerrainSystem is now alive and analyticHeight is immediately available (no chunk load required).
@@ -10049,7 +10124,8 @@ function loop () {
     // hold until an action (sleep, break camp) spends or resumes it. The confirm face is not camp yet.
     // SM-3: browsing the service center is free — its work adds its own hours (owner, 2026-10-20).
     // FEAT-170: the opening's evening is a safe drive — the clock, energy and hunger hold until mom's.
-    if ((!_campUi || _campUi.mode === 'confirm') && !serviceScreen.isOpen && !_eveningLeg()) daySystem.update(PHYSICS_DT)
+    // FEAT-194 part 3: the parking brake's latch holds it too (no time passes while parked). One rule: day.js clockHeld.
+    if (!clockHeld(!!_campUi && _campUi.mode !== 'confirm', serviceScreen.isOpen, _eveningLeg(), vehicleState.parked)) daySystem.update(PHYSICS_DT)
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }
@@ -10647,50 +10723,7 @@ function loop () {
       campSystem.syncGui(vehicleState.position.x, vehicleState.position.z)
     }
 
-    // FEAT-49: speed/gear/RPM moved off the text HUD onto the gauge cluster; only the wheelspin
-    // diagnostic (no cluster equivalent) stays here.
-    if (dtrain) {
-      const spEl = _hudEl.spinVal
-      if (spEl) {
-        const spin = dtrain.wheelspin || 0
-        _hudText(spEl, spin.toFixed(1))
-        spEl.style.color = spin > (RANGER_PARAMS.wheelspinThreshold ?? 7.5) ? '#ff2222' : '#00ff88'
-      }
-    }
-
-    // M4-09 / D-12: per-wheel Fz HUD — tire spring force per corner.
-    // Uses ?. / ?? 0 nullish-default per PATTERNS §Logger field append-at-end + nullish-coalesce.
-    // toFixed(0) = whole newtons (Fz is in thousands; decimals add noise).
-    _hudText(_hudEl.flFzVal, (vehicleState.wheelDebug[0]?.fz ?? 0).toFixed(0))
-    _hudText(_hudEl.frFzVal, (vehicleState.wheelDebug[1]?.fz ?? 0).toFixed(0))
-    _hudText(_hudEl.rlFzVal, (vehicleState.wheelDebug[2]?.fz ?? 0).toFixed(0))
-    _hudText(_hudEl.rrFzVal, (vehicleState.wheelDebug[3]?.fz ?? 0).toFixed(0))
-
-    // M3-07: front slip velocity HUD — sa field stores slip-velocity magnitude in m/s (not slip angle).
-    // See physics.js: "sa field now stores SLIP VELOCITY magnitude (m/s) instead of slip angle (rad)".
-    // Thresholds: ~0.5 m/s = light slip (green), ~1.5 m/s = heavy slip (red).
-    const slipMps = (vehicleState.wheelDebug?.[0]?.sa || 0)
-    const slipEl = _hudEl.slipVal
-    if (slipEl) {
-      _hudText(slipEl, slipMps.toFixed(2) + ' m/s')
-      slipEl.style.color = slipMps < 0.5 ? '#00ff88' : slipMps < 1.5 ? '#ffaa00' : '#ff2222'
-    }
-
-    // M3-08: throttle and brake percentage HUD
-    _hudText(_hudEl.thrVal, (vehicleState.throttle * 100).toFixed(0))
-    _hudText(_hudEl.brkVal, (vehicleState.brake * 100).toFixed(0))
-
-    // FPS HUD
-    _hudText(_hudEl.fpsVal, String(Math.round(_fpsEma)))
-
-    // Road-Feel QoL: seed / x / z OSD — correlates screenshots and in-game sightings with the
-    // headless report's coords (test/road-character.mjs prints worst-offender x/z in world space).
-    if (_hudEl.posVal) {
-      // Freecam shows the CAMERA's position (you fly to a defect, the OSD must name that spot,
-      // not wherever the truck was left) — same source the capture mark uses.
-      const posSrc = getCameraMode() === 'freecam' ? getFreecamPosition() : vehicleState.position
-      _hudText(_hudEl.posVal, `seed ${_seedString} / ${posSrc.x.toFixed(0)} / ${posSrc.z.toFixed(0)}`)
-    }
+    _writeDebugHud()
 
     // M3-09 / D-13: Pacejka curve + 4-corner travel bars + slip vectors — canvas repaints, throttled
     // with the HUD. Each early-returns when its canvas is hidden (constraint #10: outside accumulator).

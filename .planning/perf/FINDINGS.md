@@ -1,3 +1,7 @@
+> **Newer (2026-11-13): `COST-MAP-2026-11.md`** — PERF-48's whole-run profile (three random seeds, every thread, GPU by
+> pass, GC), the architecture review against professional practice, and the ranked lever list. Read it before this file:
+> the numbers below are from July (PERF-08) and several of its levers have shipped since.
+
 # PERF-08 Phase 2 — Performance Findings (2026-07-13)
 
 Baseline: post visual-polish merge (`1103240`) + harness (`0baf3b6`). M4 MacBook Air, AC power,

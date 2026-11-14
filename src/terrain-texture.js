@@ -458,3 +458,27 @@ export function makeSurfaceTextures(seed = 8401, size = 256, bases = {}) {
     rock:  build(rockFields(seed + 2, size)),   // granite colour is the SHADER's (uColRock) — not baked
   }
 }
+
+/**
+ * PERF-41: the terrain's detail NOISE, baked — one tileable RGBA texture in place of the per-pixel hash
+ * noise. `cells` lattice cells per tile edge, the shader samples it at (noise-space p) / cells:
+ *   R  = fbm(p) = ½·vnoise(p) + ¼·vnoise(2p) — tdFbm's own two octaves and range [0, 0.75];
+ *   GB = fbm(p + (0.6, 0)) − fbm(p), fbm(p + (0, 0.6)) − fbm(p), packed ±1 → [0, 1] — the rock bump's
+ *        finite differences at its 0.6 spacing, so the bump costs no tap of its own.
+ * A different pattern from the hash noise (same statistics); mipmapped, so far ground averages to the
+ * mean instead of shimmering. 64 cells at the 0.3 /m mottle scale repeat every 213 m.
+ */
+export function makeDetailNoiseTexture(seed = 8405, size = 512, cells = 64) {
+  const f = (x, y) => 0.5 * _vnoiseWrap(x, y, cells, seed) + 0.25 * _vnoiseWrap(2 * x, 2 * y, 2 * cells, seed + 131)
+  const out = new Uint8Array(size * size * 4), k = cells / size, enc = (d) => Math.round(Math.max(0, Math.min(1, d * 0.5 + 0.5)) * 255)
+  for (let z = 0; z < size; z++) {
+    for (let x = 0; x < size; x++) {
+      const px = (x + 0.5) * k, pz = (z + 0.5) * k, h0 = f(px, pz), j = (z * size + x) * 4
+      out[j] = Math.round(h0 * 255)
+      out[j + 1] = enc(f(px + 0.6, pz) - h0)
+      out[j + 2] = enc(f(px, pz + 0.6) - h0)
+      out[j + 3] = 255
+    }
+  }
+  return _tex(out, size)
+}

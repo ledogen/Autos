@@ -215,13 +215,13 @@ export function plugTire (damage, inventory, how, { corner = null, index = null 
 }
 
 /**
- * What each field repair mends, by how much, and how long a use takes. Zip ties: a headlight, a body
- * panel or the radiator; duct tape: a body panel only. Neither takes a part past REPAIR_CAP, the
+ * What each field repair mends, by how much, and how long a use takes. Zip ties: a headlight or a body
+ * panel, never the radiator, which is stop-leak's (owner, 2026-11-13); duct tape: a body panel only. Neither takes a part past REPAIR_CAP, the
  * service center's own ceiling [DEFAULT — no field cap was ruled].
  */
 const PANELS = ['armorFront', 'armorLeft', 'armorRight', 'armorRear']
 export const FIELD_REPAIR = {
-  zipTies:  { gain: 0.10, hours: 0.25, tracks: [...PANELS, 'headlightL', 'headlightR', 'radiator'] },
+  zipTies:  { gain: 0.10, hours: 0.25, tracks: [...PANELS, 'headlightL', 'headlightR'] },
   ductTape: { gain: 0.20, hours: 0.25, tracks: PANELS },
 }
 export const fieldRepairable = (damage, track) => damage.get(track) < REPAIR_CAP - 1e-9

@@ -56,6 +56,19 @@ export function setDebugLockout (locked) {
   if (locked) _forceHideDebug()
 }
 
+// PERF-48: lil-gui's .listen() gives each live controller its own requestAnimationFrame loop, and a slider read-out
+// rewrites its fill's inline width whenever its value moves: every frame for the tank and the engine temperature.
+// Hidden, those writes still dirtied the page's style, so the next style-dependent call in the frame (the cluster's
+// ctx.font) paid a whole-document style recalculation for them, ~0.3 ms. So the live controllers listen only while
+// the panel shows. They are collected on the first syncDebugLive(), which main.js makes once every folder exists
+// (a .listen() added after that would stay live while hidden; none is); the toggles below keep them in step.
+let _live = null
+const _followPanel = gui => { if (_live) for (const c of _live) c.listen(gui.domElement.style.display !== 'none') }
+export function syncDebugLive (gui) {
+  _live ??= gui.controllersRecursive().filter(c => c._listening)   // lil-gui's own flag, set by .listen()
+  _followPanel(gui)
+}
+
 /**
  * Initialize the debug panel. Creates a lil-gui instance, adds physics sliders,
  * registers the backtick toggle listener, and returns the GUI instance.
@@ -1104,6 +1117,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     plotCanvas.style.display = 'none'
     travelCanvas.style.display = 'none'
     slipCanvas.style.display = 'none'
+    _followPanel(gui)
   }
 
   // Backtick toggle listener — toggles gui panel, plotCanvas, travelCanvas, AND slipCanvas in lockstep,
@@ -1117,6 +1131,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
       plotCanvas.style.display = hidden ? '' : 'none'
       travelCanvas.style.display = hidden ? '' : 'none'
       slipCanvas.style.display = hidden ? '' : 'none'
+      _followPanel(gui)
       const wf = window.__physWireframes
       if (wf) wf.setEnabled(!wf.enabled)
     }

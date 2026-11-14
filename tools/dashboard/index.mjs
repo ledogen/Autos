@@ -386,6 +386,16 @@ function indexTickets() {
   const releases = indexReleases();
   for (const t of tickets) t.release = releaseOf(t, releases);
 
+  // Deep dives (INFRA-12): .planning/dives/<TICKET-ID>-<slug>.html belongs to the ticket whose id starts its name.
+  const diveDir = join(ROOT, '.planning', 'dives');
+  for (const f of existsSync(diveDir) ? readdirSync(diveDir).sort() : []) {
+    const m = /^((?:FEAT|BUG|PERF|QUAL|INFRA|ASSET)-\d+[a-z]?)-[\w-]+\.html$/.exec(f);
+    const t = m && tickets.find((x) => x.id === m[1]);
+    if (!t) continue;
+    const title = /<title>([^<]*)<\/title>/i.exec(readFileSync(join(diveDir, f), 'utf8'))?.[1].trim();
+    (t.dives ||= []).push({ slug: f.slice(0, -5), title: title || f });
+  }
+
   // Newest-first within a class, except milestones: SM-1..SM-5 is a build order,
   // so reading it backwards is nonsense.
   tickets.sort((a, b) => (a.prefix === b.prefix
@@ -933,6 +943,16 @@ async function build() {
       ),
     },
     drift,
+    // INFRA-09: how many open tickets are written in the fixed section order of .planning/todos/TEMPLATE.md.
+    sections: (() => {
+      const ORDER = ['Next steps', 'Summary', 'Description', 'Tracker', 'Decisions', 'Open questions', 'Links', 'Files', 'Log'];
+      const ok = (t) => {
+        const at = (t.body.match(/^## .+$/gm) || []).map((h) => ORDER.indexOf(h.slice(3).trim()));
+        return ['Next steps', 'Summary', 'Tracker'].every((n) => at.includes(ORDER.indexOf(n))) && at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1]));
+      };
+      const open = tickets.filter((t) => t.status === 'open' && t.type !== 'milestone');
+      return { open: open.length, conforming: open.filter(ok).length };
+    })(),
     severityOrder: SEVERITY_ORDER,
   };
 
@@ -953,6 +973,8 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
 };
 
 /* The Sounds tab imports the game's own audio modules (so ▶ plays the shipped
@@ -1002,14 +1024,18 @@ async function upload(req, res, url) {
  *   lanes/<id>.json            orchestrator   {name, goal, wt, branch, port, owns, tasks:[{id, what, status}]}
  *   lanes/<id>.handoff.md      that lane's agent
  *   lanes/<id>.now             orchestrator at spawn, the agent at stop (one line)
+ *   dives/<slug>.answers.json  owner (dive.js) {status: opened|partial|submitted, openedAt, submittedAt, answers:{<q>:{choice, note}}}
+ *   dives/<slug>.taken         orchestrator    empty; "acted on": the dive page goes read-only
+ * A deep dive's DOCUMENT is .planning/dives/<slug>.html in this repo (INFRA-12), served at /dives/.
  * Agents use plain file tools. An owed pair that has been acted on is MOVED to
  * answered/ (not served), so "what is new" is a directory listing.
  * PAGE_PUT / PAGE_DEL are the whole of what the page may change. These routes
  * are deliberately NOT loopback-only (unlike /upload): the owner's phone
  * reaches them over Tailscale. */
 const DATA = process.env.LEDOREPO_DATA || join(homedir(), 'CodeShit', 'ledorepo', 'projects', 'cargame');
-const DATA_DIRS = ['inbox', 'owed', 'lanes'];
-const PAGE_PUT = /^(inbox\/\d{14}-[a-z0-9]{4}\.json|owed\/[\w-]+\.answer\.json)$/;
+const DATA_DIRS = ['inbox', 'owed', 'lanes', 'dives'];
+const DIVE_RE = /^\/dives\/[\w-]+\.(html|png|jpg|svg)$/;
+const PAGE_PUT = /^(inbox\/\d{14}-[a-z0-9]{4}\.json|owed\/[\w-]+\.answer\.json|dives\/[\w-]+\.answers\.json)$/;
 const PAGE_DEL = /^inbox\/\d{14}-[a-z0-9]{4}\.json$/;
 const DATA_MAX = 65536;
 
@@ -1066,6 +1092,7 @@ function serve(port) {
     if (url.pathname === '/upload' && req.method === 'POST') { await upload(req, res, url); return; }
     if (url.pathname === '/data' || url.pathname.startsWith('/data/')) { await dataRoute(req, res, url); return; }
     const p = decodeURIComponent(url.pathname);
+    if (DIVE_RE.test(p) && existsSync(join(ROOT, '.planning', p))) { serveFile(res, join(ROOT, '.planning', p), MIME[extname(p)]); return; }
     if (SRC_RE.test(p) && existsSync(join(ROOT, p))) { serveFile(res, join(ROOT, p), MIME['.mjs']); return; }
     for (const base of TAKE_DIRS) {
       if (!p.startsWith(`/${base}/`)) continue;

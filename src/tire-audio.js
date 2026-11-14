@@ -41,7 +41,7 @@
  * into the world bus (getWorldBus), so tire volume is independent of engine volume.
  */
 
-import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise, audioClockLive } from './engine-audio.js'
 
 // ── Gating constants (user spec) ──────────────────────────────────────────────────────────
 const SLIP_FLOOR = 4.0     // m/s — combined slip below this is silent
@@ -444,7 +444,7 @@ function _slipRamp (slip) {
  * dust system uses); the paved WEIGHT for screech is 1 − that, so a wheel on the shoulder blends.
  */
 export function updateTireAudio (vehicleState, params, pavedFactorAt) {
-  if (!started) return          // no-op until the keydown gesture builds the graph (autoplay gate)
+  if (!started || !audioClockLive()) return          // no-op until the keydown gesture builds the graph (autoplay gate)
   const now = ctx.currentTime
 
   if (!enabled) { _muteAll(now); return }
