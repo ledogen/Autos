@@ -15,6 +15,14 @@
 // cumulative CPU time — the renderer minus the main thread is the workers); CPU / GPU / DRAM watts and GPU ACTIVE
 // cycles (busy % × MHz) from test/lib/ioreport.py, no root; triangles and draw calls.
 //
+// WORK, not time (2026-11-13): the main thread's retired instructions per second, its clock and the share of its CPU time
+// on P cores, from test/lib/threadcounts.py (xnu's per-thread counters, no root). On this Mac ms/s follows the core macOS
+// picks (light load → slow core: 1.6–3.3× more ms for the same work), so ms cannot tell a regression from scheduling.
+// Instructions can. Physics work per second = its ms × the main thread's instructions per CPU ms in that second
+// ("physMi", millions of instructions); its spike share is over PHYS_SPIKE_MI (1000 Minstr ≈ 100 ms on a P core near
+// 3 GHz). Keep both: the player feels ms, a comparison reads work. Exact for the whole thread; physics' share of it is
+// apportioned by its ms, which assumes one instruction rate across the second's buckets.
+//
 // GPU load is compared by active cycles (gpuMcyc = Mcycles/s). Not GPU ms (the GPU lowers its clock as load drops, so ms
 // per frame stays near the frame budget) and not raw watts (±50 % over 6 s at a steady state) — PERF-40 ticket.
 //
@@ -30,7 +38,14 @@
 //
 // Flags: --a=<checkout> (default this one) --b=<checkout> [--c=<checkout>] --reps=N --seeds=K (first K pinned) | --seed=N
 //        --drive=S --map=S --park=S --headed --out=DIR (default perf-runs/bench-<stamp>) --record
-//        --probe   count road resolves per second (PERF-42) — wraps a hot path, so its ms are not for comparing
+//        --probe   count road resolves per second (PERF-42) and list the CSS animations running (PERF-48) — wraps a hot
+//                  path, so its ms are not for comparing
+//        --fake-audio  Chrome's --disable-audio-output (a fake sink whose clock runs at 1.0 s/s): for a host whose
+//                  CoreAudio is wedged (PERF-47). The game's audio work still runs; nothing reaches the speakers.
+//        --profile PERF-48: a Chrome trace per phase (every thread of every process, the JS sampling profiler, GC) to
+//                  <out>/<build>-<seed>-<rep>-<phase>.trace.json.gz; GPU timer queries per pass (shadow / main /
+//                  offscreen) and the JS heap in each 1 Hz sample; a scene census mid-drive and mid-park. Adds
+//                  profiler overhead, so its ms are not for comparing with an unprofiled session.
 // A run is ~7 min per seed per build per rep. Wants a quiet machine: one bench at a time, not while lanes run heavy
 // gates (the shared-CPU rule). The load average is printed with every session.
 import { spawn, execFileSync } from 'node:child_process'
@@ -71,14 +86,18 @@ io.stdout.on('data', b => { for (const l of String(b).trim().split('\n')) try { 
 const procs = []
 const secs = t => t.split(':').reduce((s, x) => s * 60 + Number(x), 0)
 let psPrev = null, psRoot = 0
-function psSample () {
-  if (!psRoot) return
+const chromeTree = () => {   // this session's Chrome processes: { pid: { type, cpu (s) } }
   const rows = execFileSync('ps', ['-Ao', 'pid=,ppid=,time=,command=']).toString().trim().split('\n').map(l => {
     const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(l); return m && { pid: +m[1], ppid: +m[2], cpu: secs(m[3]), cmd: m[4] }
   }).filter(Boolean)
   const kids = new Set([psRoot]); for (let grew = true; grew;) { grew = false; for (const r of rows) if (!kids.has(r.pid) && kids.has(r.ppid)) { kids.add(r.pid); grew = true } }
-  const t = Date.now(), now = {}
+  const now = {}
   for (const r of rows) if (kids.has(r.pid)) now[r.pid] = { type: /--type=([\w-]+)/.exec(r.cmd)?.[1] ?? 'browser', cpu: r.cpu }
+  return now
+}
+function psSample () {
+  if (!psRoot) return
+  const t = Date.now(), now = chromeTree()
   if (psPrev) {
     const dt = (t - psPrev.t) / 1000, by = { renderer: 0, gpu: 0, other: 0 }
     for (const [pid, p] of Object.entries(now)) {
@@ -94,8 +113,11 @@ function psSample () {
 }
 const psTimer = setInterval(psSample, 2000)
 
+// The main thread's counters, per session (threadcounts.py on the game's renderer, started once the page is live).
+let thr = [], tc = null
+const rendererPid = () => Object.entries(chromeTree()).filter(([, p]) => p.type === 'renderer').sort((a, b) => b[1].cpu - a[1].cpu)[0]?.[0]   // the busiest: the game's
 const vites = []
-const shutdown = () => { clearInterval(psTimer); try { io.kill() } catch {} for (const v of vites) try { v.kill() } catch {} }
+const shutdown = () => { clearInterval(psTimer); try { io.kill() } catch {} try { tc?.kill() } catch {} for (const v of vites) try { v.kill() } catch {} }
 process.on('exit', shutdown)
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { shutdown(); process.exit(1) })
 for (const b of BUILDS) {
@@ -244,7 +266,9 @@ const PAGE = String.raw`(async () => {
     const P0 = window.__vs.position, nr = resolve(P0.x, P0.z)
     const lat = nr ? +((P0.x - nr.point.x) * nr.tangent.z - (P0.z - nr.point.z) * nr.tangent.x).toFixed(1) : null
     B.samples.push({ t: Date.now(), phase: B.phase, frames: dn, cpu, tris: ri.triangles, calls: ri.calls, map: window.__map2d().isOpen(), v: +Math.hypot(window.__vs.velocity.x, window.__vs.velocity.z).toFixed(1),
-      x: Math.round(P0.x), z: Math.round(P0.z), lat, ...(window.__benchProbe ? { res } : {}),
+      x: Math.round(P0.x), z: Math.round(P0.z), lat,
+      // --probe: the CSS animations and transitions running at the sample (PERF-48: each one restyles every frame)
+      ...(window.__benchProbe ? { res, anim: document.getAnimations().filter(a => a.playState === 'running').map(a => (a.effect?.target?.id || '?') + ':' + (a.animationName || a.transitionProperty)) } : {}),
       thr: buttons[7].value, idx: ap.idx, dbg: ap.dbg,
       // why a drive stalls: the grade (the nose's rise per metre), the drivetrain, and story mode's kept wear
       grade: (() => { const q = window.__vs.quaternion, fy = 2 * (q.w * q.x - q.y * q.z); return +(fy / Math.sqrt(Math.max(1e-6, 1 - fy * fy)) * 100).toFixed(0) })(),
@@ -255,13 +279,112 @@ const PAGE = String.raw`(async () => {
   return { edges: route.edges, region: reg ? [Math.round(reg.x), Math.round(reg.z), reg.r] : null }
 })()`
 
+// ── --profile (PERF-48): the page side — GPU timer queries per pass, the JS heap, a scene census ────────────────────
+// EXT_disjoint_timer_query_webgl2 times GPU work between two points of the command stream. Queries cannot nest, so the
+// wrappers SWITCH: renderer.render opens 'main' (the world, to the screen) or 'off' (any render to a target: impostor
+// bakes, the sky's cube map), the shadow pass (main.js's own wrapper: the near map every moving frame, the far cascade on
+// its snap) switches to 'shadow' and back. GPU ms per pass per second land in B.prof with the heap. GPU ms are NOT load
+// (the GPU's clock follows its load, PERF-40), but their SHARES split the measured active cycles between the passes.
+const PROFILE = has('profile')
+const PROFILE_PAGE = String.raw`(() => {
+  const B = window.__bench, R = window.__renderer(), gl = R.getContext(), X = gl.getExtension('EXT_disjoint_timer_query_webgl2')
+  B.prof = []; B.gqOk = !!X
+  const acc = { shadow: 0, main: 0, off: 0 }, pend = []
+  let cur = null, scene = null
+  const sw = tag => {
+    if (!X) return
+    if (cur) { gl.endQuery(X.TIME_ELAPSED_EXT); cur = null }
+    if (tag) { const q = gl.createQuery(); gl.beginQuery(X.TIME_ELAPSED_EXT, q); pend.push([q, tag]); cur = tag }
+  }
+  const render = R.render.bind(R)
+  R.render = (sc, cam) => { const was = cur, off = R.getRenderTarget() !== null; if (!off) scene = sc; sw(off ? 'off' : 'main'); render(sc, cam); sw(was) }
+  const sm = R.shadowMap, shadow = sm.render
+  sm.render = function (...a) { const was = cur; sw('shadow'); shadow.apply(this, a); sw(was) }
+  const drain = () => {
+    if (X && gl.getParameter(X.GPU_DISJOINT_EXT)) { for (const [q] of pend) gl.deleteQuery(q); pend.length = 0; B.disjoint = (B.disjoint ?? 0) + 1 }
+    while (pend.length && gl.getQueryParameter(pend[0][0], gl.QUERY_RESULT_AVAILABLE)) {
+      const [q, tag] = pend.shift(); acc[tag] += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; gl.deleteQuery(q)
+    }
+    requestAnimationFrame(drain)
+  }
+  requestAnimationFrame(drain)
+  setInterval(() => {
+    const m = performance.memory
+    B.prof.push({ t: Date.now(), phase: B.phase, gq: { shadow: +acc.shadow.toFixed(2), main: +acc.main.toFixed(2), off: +acc.off.toFixed(2) }, heapMB: m ? +(m.usedJSHeapSize / 1048576).toFixed(1) : null, pend: pend.length })
+    acc.shadow = acc.main = acc.off = 0
+  }, 1000)
+  // The census: what the renderer walks each frame. Per top-level child of the world scene: objects, meshes, visible
+  // meshes, meshes in the camera frustum (three's own test: bounding sphere vs the six planes), their triangles (× the
+  // instance count), shadow casters, and objects whose world matrix is recomputed every frame (matrixAutoUpdate /
+  // matrixWorldAutoUpdate on).
+  window.__census = () => {
+    if (!scene) return null
+    const cam = window.__cam(), e = cam.projectionMatrix.clone().multiply(cam.matrixWorldInverse).elements
+    const planes = [[e[3] - e[0], e[7] - e[4], e[11] - e[8], e[15] - e[12]], [e[3] + e[0], e[7] + e[4], e[11] + e[8], e[15] + e[12]],
+      [e[3] + e[1], e[7] + e[5], e[11] + e[9], e[15] + e[13]], [e[3] - e[1], e[7] - e[5], e[11] - e[9], e[15] - e[13]],
+      [e[3] - e[2], e[7] - e[6], e[11] - e[10], e[15] - e[14]], [e[3] + e[2], e[7] + e[6], e[11] + e[10], e[15] + e[14]]]
+      .map(([a, b, c, d]) => { const n = Math.hypot(a, b, c); return [a / n, b / n, c / n, d / n] })
+    const inView = o => {
+      if (!o.frustumCulled) return true
+      const bs = o.isInstancedMesh ? o.boundingSphere : o.geometry?.boundingSphere
+      if (!bs) return true
+      const m = o.matrixWorld.elements, c = bs.center
+      const x = m[0] * c.x + m[4] * c.y + m[8] * c.z + m[12], y = m[1] * c.x + m[5] * c.y + m[9] * c.z + m[13], z = m[2] * c.x + m[6] * c.y + m[10] * c.z + m[14]
+      const r = bs.radius * Math.sqrt(Math.max(m[0] ** 2 + m[1] ** 2 + m[2] ** 2, m[4] ** 2 + m[5] ** 2 + m[6] ** 2, m[8] ** 2 + m[9] ** 2 + m[10] ** 2))
+      for (const p of planes) if (p[0] * x + p[1] * y + p[2] * z + p[3] < -r) return false
+      return true
+    }
+    const tris = o => { const g = o.geometry; if (!g) return 0; const n = g.index ? g.index.count : g.attributes.position?.count ?? 0; return Math.min(n, g.drawRange.count) / 3 * (o.isInstancedMesh ? o.count : 1) }
+    const out = {}
+    for (const top of scene.children) {
+      const k = top.name || top.type, c = out[k] ??= { objects: 0, meshes: 0, visMeshes: 0, inView: 0, viewKtris: 0, casters: 0, autoMatrix: 0 }
+      top.traverseVisible(o => {
+        c.objects++
+        if (o.matrixAutoUpdate || o.matrixWorldAutoUpdate) c.autoMatrix++
+        if (o.isMesh || o.isPoints || o.isLine) { c.visMeshes++; if (o.castShadow) c.casters++; if (inView(o)) { c.inView++; c.viewKtris += tris(o) / 1000 } }
+      })
+      top.traverse(o => { if (o.isMesh) c.meshes++ })
+    }
+    for (const c of Object.values(out)) c.viewKtris = +c.viewKtris.toFixed(1)
+    return out
+  }
+})()`
+
+// The node side: one trace per phase, streamed gzipped to disk (a 300 s drive is too big to hold as one JSON string).
+// toplevel = every task on every thread (busy time); the sampling profiler = JS functions on the main thread AND in every
+// worker; devtools.timeline = GC (MinorGC / MajorGC with heap before/after), each requestAnimationFrame callback, layout
+// and paint.
+const TRACE_CATS = ['__metadata', 'toplevel', 'disabled-by-default-v8.cpu_profiler', 'devtools.timeline']   // ~3 MB/s raw while driving
+async function traceStart (client) {
+  await client.cmd('Tracing.start', { transferMode: 'ReturnAsStream', streamFormat: 'json', streamCompression: 'gzip',
+    traceConfig: { recordMode: 'recordAsMuchAsPossible', traceBufferSizeInKb: 1200000, includedCategories: TRACE_CATS } })
+}
+async function traceStop (client, path) {
+  const done = new Promise(r => { const off = client.on('Tracing.tracingComplete', p => { off(); r(p) }) })
+  await client.cmd('Tracing.end', {}, { timeoutMs: 300000 })
+  const { stream, dataLossOccurred } = await done
+  const parts = []
+  for (;;) {
+    const { result: r } = await client.cmd('IO.read', { handle: stream, size: 1 << 20 }, { timeoutMs: 300000 })
+    parts.push(Buffer.from(r.data, r.base64Encoded ? 'base64' : 'utf8'))
+    if (r.eof) break
+  }
+  await client.cmd('IO.close', { handle: stream })
+  writeFileSync(path, Buffer.concat(parts))
+  console.log(`   trace ${basename(path)}: ${(parts.reduce((a, b) => a + b.length, 0) / 1048576).toFixed(1)} MB gz`)
+  if (dataLossOccurred) console.log(`   trace ${basename(path)}: DATA LOSS (buffer full)`)
+}
+
 // ── one session: boot, story, the three phases ────────────────────────────────────────────────────────────────────
 async function session (build, seed, rep) {
   const cdp = await freePort()
-  const { chrome, cleanup } = launchChrome('about:blank', { port: cdp, headed: has('headed'), windowSize: '1045,700', extraArgs: ['--force-device-scale-factor=2'] })
+  const { chrome, cleanup } = launchChrome('about:blank', { port: cdp, headed: has('headed'), windowSize: '1045,700', extraArgs: ['--force-device-scale-factor=2', ...(has('fake-audio') ? ['--disable-audio-output'] : [])] })
   psRoot = chrome.pid; psPrev = null
   const client = await connect({ port: cdp, cmdTimeoutMs: 120000 })
   await client.cmd('Runtime.enable')
+  await client.cmd('Performance.enable')   // PERF-48: style recalcs per second, read from Chrome's own counters (unprofiled)
+  const styleNow = async () => { const m = (await client.cmd('Performance.getMetrics')).result.metrics, g = n => m.find(x => x.name === n)?.value ?? 0
+    return [Date.now(), g('RecalcStyleCount'), g('RecalcStyleDuration') * 1000] }
   const errors = []
   client.on('Runtime.exceptionThrown', p => errors.push(p.exceptionDetails.exception?.description ?? p.exceptionDetails.text))
   const js = async e => { const m = await client.cmd('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }); if (m.result?.exceptionDetails) throw new Error(JSON.stringify(m.result.exceptionDetails).slice(0, 400)); return m.result?.result?.value }
@@ -292,8 +415,21 @@ async function session (build, seed, rep) {
     await js(`window.__seed = ${seed}`)
     if (has('probe')) await js('window.__benchProbe = true')
     const info = await js(PAGE)
+    const rpid = rendererPid()
+    thr = []; tc = rpid && spawn('python3', ['-I', join(HERE, 'lib/threadcounts.py'), String(rpid), '0.25'])
+    tc?.stdout.on('data', b => { for (const l of String(b).trim().split('\n')) try { thr.push(JSON.parse(l)) } catch {} })
+    if (PROFILE) await js(PROFILE_PAGE)
     await js(`window.__bench.legAt = ${MIN_KM * 500}; window.__bench.edgeAt = ${MIN_KM * 250}`)   // the off-road leg halfway, the edge leg a quarter of the way
-    const phase = async (name, s) => { const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`); await sleep(s * 1000); return [t0, Date.now()] }
+    const census = {}, recalc = {}
+    // --profile: the phase's trace opens after its 3 s transition and closes at its end (the flush runs after the window).
+    const phase = async (name, s, label = name) => {
+      const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`)
+      if (!PROFILE) { const m = recalc[label] = []; while (Date.now() - t0 < s * 1000) { m.push(await styleNow()); await sleep(1000) } return [t0, Date.now()] }
+      await sleep(3000); await traceStart(client)
+      await sleep(s * 500 - 3000); census[label] = await js('window.__census()'); await sleep(s * 500)
+      const t1 = Date.now(); await traceStop(client, join(OUT, `${build.name}-${seed}-${rep + 1}-${label}.trace.json.gz`))
+      return [t0, t1]
+    }
     const win = {}
     win.drive = await phase('drive', DRIVE_S)
     // Stop where the drive STARTED, not where it ended: at rest, physics costs 0 (asleep) to 140 ms/s (on a road carve)
@@ -303,10 +439,16 @@ async function session (build, seed, rep) {
     win.map = await phase('map', MAP_S)
     await js(`window.__bench.phase = 'idle'`); await tap('m'); await until(() => js('!window.__map2d().isOpen()'), 3000)
     await sleep(2000)
-    win.park = await phase('idle', PARK_S)
-    const B = await js(`(() => { const B = window.__bench; return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames } })()`)
-    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples }))
-    const r = summarise(B, win)
+    win.park = await phase('idle', PARK_S, 'park')
+    // nodes: the network's edge ends merged within 6 m, [x, z, degree] — where a spike second sat (deg 2: a QUAL-16
+    // connector kink; 3+: a junction) is read off them afterwards.
+    const B = await js(`(() => { const B = window.__bench, nodes = []
+      for (const e of window.__roadSys()._network.values()) for (const p of [e.points?.[0], e.points?.at(-1)]) {
+        if (!p) continue; const n = nodes.find(m => Math.hypot(m[0] - p.x, m[1] - p.z) < 6); if (n) n[2]++; else nodes.push([Math.round(p.x), Math.round(p.z), 1]) }
+      return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames, prof: B.prof, measures: performance.getEntriesByType('measure').length, nodes } })()`)
+    work(B.samples)
+    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples, census, recalc, prof: B.prof, measures: B.measures, nodes: B.nodes }))
+    const r = summarise(B, win, recalc)
     r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, dialogues: B.dialogues, edges: info.edges, region: info.region }
     r.valid = r.drive.km >= MIN_KM && r.drive.newChunks >= MIN_CHUNKS
     r.errors = errors.slice(0, 5)
@@ -317,12 +459,30 @@ async function session (build, seed, rep) {
   } catch (e) {
     console.log(`${tag}: FAILED — ${e.message}`)
     return { build: build.name, seed, rep, valid: false, failed: e.message, load }
-  } finally { client.close(); cleanup(); psRoot = 0 }
+  } finally { try { tc?.kill() } catch {} tc = null; client.close(); cleanup(); psRoot = 0 }
 }
 
+// Each 1 Hz sample's main-thread work, from threadcounts.py's 4 Hz cumulative reads interpolated to the sample's own
+// window: w = { mi: Minstr, cpuMs: CPU ms, pMs: of which on P cores, mcyc: Mcycles }.
+const thrAt = t => {
+  const i = thr.findIndex(r => r.t > t); if (i <= 0) return null
+  const a = thr[i - 1], b = thr[i], f = (t - a.t) / (b.t - a.t)
+  return ['P', 'E'].map(k => a[k].map((x, j) => x + (b[k][j] - x) * f))
+}
+function work (samples) {
+  for (let i = 1; i < samples.length; i++) {
+    const a = thrAt(samples[i - 1].t), b = thrAt(samples[i].t); if (!a || !b) continue
+    const d = (c, j) => (b[c][j] - a[c][j]) / 1e6
+    samples[i].w = { mi: +(d(0, 0) + d(1, 0)).toFixed(1), cpuMs: +(d(0, 2) + d(1, 2)).toFixed(1), pMs: +d(0, 2).toFixed(1), mcyc: +(d(0, 1) + d(1, 1)).toFixed(1) }
+  }
+}
+// The physics spike line in WORK, millions of instructions in one second. 1000 ≈ 100 ms at the ~10 Minstr per CPU ms the
+// main thread retires in this bench's heavy seconds (P core near 3 GHz, IPC ~3.5; 2026-11-13 validation). A calm
+// driving second is ~300. The 100 ms line stays beside it (physOver100) for history.
+const PHYS_SPIKE_MI = 1000
 const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN
 const pct = (a, p) => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))] }
-function summarise (B, win) {
+function summarise (B, win, recalc = {}) {
   const phases = {}
   for (const [ph, [t0, t1]] of Object.entries(win)) {
     const lo = t0 + 3000   // the phase's first 3 s are the transition (map open, braking)
@@ -336,15 +496,28 @@ function summarise (B, win) {
     // Spikes, per second (the PERF-42 lesson: phase averages hid both bugs). Physics over MOVING seconds only — v > 3 m/s
     // in this second and both neighbours, so a re-seat (teleport, settle, crank) is not a spike. The map: its postStream
     // seconds after the transition.
-    const all = B.samples, phys = all.filter((s, i) => s.t >= lo && s.t <= t1 && s.v > 3 && all[i - 1]?.v > 3 && all[i + 1]?.v > 3).map(s => s.cpu['frame.physics'] ?? 0)
+    const all = B.samples, mov = all.filter((s, i) => s.t >= lo && s.t <= t1 && s.v > 3 && all[i - 1]?.v > 3 && all[i + 1]?.v > 3)
+    const phys = mov.map(s => s.cpu['frame.physics'] ?? 0)
+    const physW = mov.filter(s => s.w?.cpuMs > 0).map(s => (s.cpu['frame.physics'] ?? 0) * s.w.mi / s.w.cpuMs)   // Minstr: ms × the second's instructions per CPU ms
+    const Sw = S.filter(s => s.w), sum = k => Sw.reduce((a, s) => a + s.w[k], 0)
     const post = S.map(s => s.cpu['frame.postStream'] ?? 0)
     const spikes = ph === 'drive'
-      ? { physN: phys.length, physP50: +pct(phys, 0.5).toFixed(0), physP99: +pct(phys, 0.99).toFixed(0), physWorst: +Math.max(...phys, 0).toFixed(0), physOver100: +(phys.filter(x => x > 100).length / Math.max(1, phys.length) * 100).toFixed(1) }
+      ? { physN: phys.length, physP50: +pct(phys, 0.5).toFixed(0), physP99: +pct(phys, 0.99).toFixed(0), physWorst: +Math.max(...phys, 0).toFixed(0), physOver100: +(phys.filter(x => x > 100).length / Math.max(1, phys.length) * 100).toFixed(1),
+          physMiP50: +pct(physW, 0.5).toFixed(0), physMiP99: +pct(physW, 0.99).toFixed(0), physMiWorst: +Math.max(...physW, 0).toFixed(0), physMiOver: +(physW.filter(x => x > PHYS_SPIKE_MI).length / Math.max(1, physW.length) * 100).toFixed(1) }
       : ph === 'map' ? { postP95: +pct(post, 0.95).toFixed(0), postWorst: +Math.max(...post, 0).toFixed(0) } : {}
+    // PERF-48: style recalcs per wall second (count and ms), from consecutive counter reads after the transition.
+    const rc = (recalc[ph] ?? []).filter(([t]) => t >= lo), rcN = [], rcMs = []
+    for (let i = 1; i < rc.length; i++) { const dt = (rc[i][0] - rc[i - 1][0]) / 1000; rcN.push((rc[i][1] - rc[i - 1][1]) / dt); rcMs.push((rc[i][2] - rc[i - 1][2]) / dt) }
     phases[ph] = {
       ...spikes,
+      recalcS: +mean(rcN).toFixed(1), recalcP50: +pct(rcN, 0.5).toFixed(0), recalcP99: +pct(rcN, 0.99).toFixed(0), recalcWorst: +Math.max(...rcN, 0).toFixed(0),
+      recalcMs: +mean(rcMs).toFixed(1),
       fps: +mean(S.map(s => s.frames)).toFixed(1), p95: +pct(fr, 0.95).toFixed(1), worst: +Math.max(...fr, 0).toFixed(1),
-      mainMs: +main.toFixed(0), buckets: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k.slice(6), +v.toFixed(1)]).sort((a, b) => b[1] - a[1])),
+      mainMs: +main.toFixed(0),
+      // the main thread's WORK (threadcounts.py): Minstr/s, CPU ms/s, the share of that CPU time on P cores, its clock
+      mainMi: +(sum('mi') / Math.max(1, Sw.length)).toFixed(0), mainCpuMs: +(sum('cpuMs') / Math.max(1, Sw.length)).toFixed(0),
+      mainPpct: +(sum('pMs') / sum('cpuMs') * 100).toFixed(0), mainGHz: +(sum('mcyc') / sum('cpuMs')).toFixed(2),
+      buckets: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k.slice(6), +v.toFixed(1)]).sort((a, b) => b[1] - a[1])),
       cpuW: +mean(W.map(p => p.cpuW)).toFixed(2), gpuW: +mean(W.map(p => p.gpuW)).toFixed(2), dramW: +mean(W.map(p => p.dramW)).toFixed(2),
       gpuMcyc: +mean(W.map(p => (p.gpuBusy ?? 0) / 100 * (p.gpuMHz ?? 0))).toFixed(0), gpuMHz: +mean(W.map(p => p.gpuMHz ?? 0)).toFixed(0),
       rendererPct: +mean(Pr.map(p => p.renderer)).toFixed(0), gpuProcPct: +mean(Pr.map(p => p.gpu)).toFixed(0), otherPct: +mean(Pr.map(p => p.other)).toFixed(0),
@@ -354,9 +527,10 @@ function summarise (B, win) {
   }
   return { phases }
 }
-const line = (ph, x) => `${ph.padEnd(5)} ${String(x.fps).padStart(4)} fps p95 ${String(x.p95).padStart(5)} worst ${String(x.worst).padStart(5)} | main ${String(x.mainMs).padStart(4)} ms/s | `
-  + (x.physN !== undefined ? `physics/s over ${x.physN} moving s: p50 ${x.physP50} p99 ${x.physP99} worst ${x.physWorst}, ${x.physOver100} % > 100 | ` : '')
+const line = (ph, x) => `${ph.padEnd(5)} ${String(x.fps).padStart(4)} fps p95 ${String(x.p95).padStart(5)} worst ${String(x.worst).padStart(5)} | main ${String(x.mainMs).padStart(4)} ms/s = ${x.mainMi} Minstr/s (${x.mainCpuMs} CPU ms, ${x.mainPpct} % on P, ${x.mainGHz} GHz) | `
+  + (x.physN !== undefined ? `physics/s over ${x.physN} moving s: p50 ${x.physP50} p99 ${x.physP99} worst ${x.physWorst}, ${x.physOver100} % > 100 ms · work p50 ${x.physMiP50} p99 ${x.physMiP99} worst ${x.physMiWorst} Minstr, ${x.physMiOver} % > ${PHYS_SPIKE_MI} | ` : '')
   + (x.postWorst !== undefined ? `postStream/s p95 ${x.postP95} worst ${x.postWorst} | ` : '')
+  + (x.recalcS ? `recalc/s ${x.recalcS} (p50 ${x.recalcP50} p99 ${x.recalcP99} worst ${x.recalcWorst}) ${x.recalcMs} ms/s | ` : '')
   + `rend ${x.rendererPct}% (workers ~${x.workersPct}%) gpuP ${x.gpuProcPct}% | CPU ${x.cpuW} W GPU ${x.gpuW} W DRAM ${x.dramW} W | GPU ${x.gpuMcyc} Mcyc/s @ ${x.gpuMHz} MHz | ${x.ktris}k tris`
 
 // ── run: A-B-A-B per rep and seed ─────────────────────────────────────────────────────────────────────────────────────
@@ -370,7 +544,7 @@ for (let rep = 0; rep < REPS; rep++) for (const seed of SEEDS) {
 }
 
 // ── report: per build and phase, the mean over valid sessions; the noise band is the spread between reps ─────────────
-const KEYS = ['fps', 'p95', 'mainMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'postWorst']   // the last three: one phase each
+const KEYS = ['fps', 'p95', 'mainMs', 'mainMi', 'mainPpct', 'recalcS', 'recalcMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'physMiP99', 'physMiOver', 'postWorst']   // the last five: one phase each
 const agg = {}
 for (const b of BUILDS) for (const ph of ['drive', 'map', 'park']) {
   const rs = results.filter(r => r.build === b.name && r.valid)
@@ -408,7 +582,7 @@ if (has('record')) {
     const last = prev.filter(p => p.drive === DRIVE_S && p.valid > 0).at(-1)
     if (last) {
       const worse = []
-      for (const ph of ['drive', 'map', 'park']) for (const k of ['mainMs', 'cpuW', 'gpuW', 'gpuMcyc']) {
+      for (const ph of ['drive', 'map', 'park']) for (const k of ['mainMi', 'cpuW', 'gpuW', 'gpuMcyc']) {   // work, not mainMs: ms follows the core (a record without mainMi skips it)
         const a = last.phases[ph][k], c = rec.phases[ph][k]
         if (a > 0 && c > a * 1.15) worse.push(`${ph} ${k} ${a} → ${c} (+${Math.round((c / a - 1) * 100)} %)`)
       }

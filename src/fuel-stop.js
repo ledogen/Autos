@@ -18,6 +18,18 @@
  * old pumps' bell), 'settle'. A step can raise only one; 'full' outranks 'gallon'.
  */
 
+import { mulberry32, seedFor, hash32 } from './seed.js'
+
+/**
+ * FEAT-209: a station's price relative to the day's (owner, 2026-11-13: ±5 %, "so one station is
+ * always offering the best deal", eye candy). A pure function of the world seed, the station's POI id
+ * and the run day, so it is the same every look and nothing goes in the save. [DEFAULT] re-drawn each
+ * day, so the best deal moves; drop `day` from the seed to fix it per run.
+ */
+export function stationPriceFactor (worldSeed, poiId, day) {
+    return 0.95 + 0.1 * mulberry32(seedFor(worldSeed, 'fuelPrice', hash32(String(poiId)), day))()
+}
+
 export class FuelStop {
     constructor () { this.reset() }
 

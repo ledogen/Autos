@@ -622,6 +622,11 @@ export class TerrainSystem {
      *
      * @returns {Set<string>}
      */
+    /** BUG-164: is the ground under (wx, wz) a built chunk mesh? What stands on it draws only then. */
+    hasChunkAt(wx, wz) {
+        return this._chunkMap.has(this._chunkKey(Math.floor(wx / CHUNK_SIZE), Math.floor(wz / CHUNK_SIZE)))
+    }
+
     getActiveChunkKeys() {
         return new Set(this._chunkMap.keys())
     }

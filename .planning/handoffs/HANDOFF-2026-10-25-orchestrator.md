@@ -143,14 +143,19 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
     road.js / terrain shader changes. Tickets routed to it: BUG-164, PERF-46.
   - The owner lets it land and push its own work from its window. You never push without the owner's word to you.
   - Lane rule in every spawn prompt: ≤ 2 heavy processes; `pgrep -f 'node test/playtest-bench'` before a heavy job.
-- **Main = 12663c9d + docs; origin = 706808d5 (the owner said "push" 11-13; everything through BUG-165 is out).**
-  Unpushed (owner's word needed): INFRA-12 51eb8e96 · INFRA-09 02a26c36 · PERF-41 1b4cfd7c · pad-e2e test fix
-  ba9458b3 · BUG-164 0d9cb9f4 (smoke 26/26; ticket open for `bug164-look`) · bench audio-clock check + PERF-47
-  ticket 12663c9d.
-- **THE MAC'S AUDIO IS STUCK (11-13)**: coreaudiod hangs (`afplay -v 0 /System/Library/Sounds/Tink.aiff` never
-  returns). Every WebAudio clock on this machine is stalled, which inflates bench main-thread ms 2–4× (PERF-47).
-  NO bench record is valid until the owner runs `sudo killall coreaudiod`; the 08768a0b record was dropped, not
-  committed. The bench now refuses a session on a stalled clock. Re-record the baseline after the restart.
+- **Main = 6f82f733 + docs; origin = 706808d5 (the owner said "push" 11-13; everything through BUG-165 is out).**
+  Unpushed (owner's word needed), each game change smoked 26/26 on main at its merge: INFRA-12 · INFRA-09 ·
+  PERF-41 1b4cfd7c · BUG-164 0d9cb9f4 (`bug164-look`) · PERF-47 95a1e31c (owner's listen owed) · FEAT-194 part 3
+  5fae6fd8 (`feat194-drive`) · PERF-48 lever 1 d9389e45 (`perf48-hud-snap`) · PERF-46 72d1cf39
+  (`perf46-windows`) · bench work measure 6f82f733 (tests + a CLAUDE.md sentence; no smoke needed) · docs.
+- **THE MAC'S AUDIO IS STUCK (since 11-13)**: coreaudiod hangs (`afplay -v 0 /System/Library/Sounds/Tink.aiff`
+  never returns); the owner must run `sudo killall coreaudiod` (owed: `audio-restart`). Until then every bench runs
+  with `--fake-audio` (Chrome's fake sink, clock at 1.0 s/s); the bench refuses a stalled clock otherwise.
+- **READING PERF NUMBERS (11-14)**: on this Mac the same work reads 2–5× different ms/s depending on the core clock
+  macOS picks. Compare main-thread cost by WORK: `mainMi` / `physMi*` (retired instructions, test/lib/
+  threadcounts.py). Baseline with work fields recorded 11-14 at 6f82f733 (fake audio, 2 reps, load 0.10–0.21/core,
+  6/6 valid): drive mainMi 1522 ± 41, physMiOver 4.58 ± 2.10 % (target ≤ 5 %), physMiP99 1636 ± 346, GPU 687 ± 12
+  Mcyc/s (912 on 11-12), CPU 0.66 W · map mainMi 738 · park mainMi 1010, GPU 673 (845 on 11-12).
 - **INFRA-11 cutover DONE 11-13.** The artifact is dead state: never read or write it. Tooling peer
   `lanes-tab-dashboard` did it.
   The lanes/*.json task lists were imported whole and are long: prune closed rows as you touch them.
@@ -158,14 +163,29 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   fails on main (2.9 m/s, wants > 3): find whether FEAT-194/201 caused it. FEAT-196 is on main; its ticket stays in
   pending/ until `feat196-look`. feature/machine also carries the unlanded FEAT-34 round 3 work, so B's landings
   are cherry-picks.
-- **Idle**: Lane A (FEAT-194 part 3 waits on `handbrake-clock`). Spare's branch (feature/spare holds old
+- **Idle**: Lane B (BUG-166 waits on `bug166-shock`), Spare. Spare's branch (feature/spare holds old
   unlanded docs/tests, so it needs `git merge main`, not a fast-forward); Lane C owner-gated.
 - **Perf lane is YOURS (owner 11-13: "its on you to restart the performance lane now")**. Lane `p`, worktree
-  `CarGame-perf`, branch feature/perf, port 8043. Running: PERF-47's game half (one shared guard so per-frame
-  audio updates stop scheduling on a stalled clock; lands as land/perf-47). Queue: the re-recorded PERF-40 bench
-  (after the audio restart; quiet machine), PERF-42 (tread-solve spikes; today's spoiled run still read 2.0 % of
-  moving seconds over 100 ms/s against the 7.7 % baseline, unconfirmed), PERF-46, PERF-45, PERF-44. Perf has
-  priority over the other lanes.
+  `CarGame-perf`, branch feature/perf, port 8043. IDLE, waiting on owner calls. Done: PERF-48's investigation
+  (`.planning/perf/COST-MAP-2026-11.md`); lever 1 landed; levers 2 and 3 void; lever 4 too small (~5 ms/s), left;
+  PERF-46 landed; the bench work measure landed; PERF-42 verdict: spikes are real work, 3.9 of 5.2 points at
+  junctions, most on the deck. Owner calls that unblock it: `perf42-reopen-carve` (reopen PERF-43 levers 1+2:
+  measure headless with the spots script in p.handoff.md first), `perf48-terrain-bake` (the one large GPU lever),
+  `perf48-frame-cap`, `perf48-parked-30`. Free work if none is answered: the lever-1 tail (two 10 Hz writers, ~9
+  recalcs/s; 7 % of driving seconds still at 60/s at walking pace), PERF-46's leftover 40–50 ms frame on seed
+  17535907, PERF-44 (triangles). An agent sends "HOLD for <ticket> run" before a bench: do the hold drill, reply
+  "held", and "released" on its "done". Perf has priority over the other lanes.
+- **Lane A idle**: FEAT-194 closed; FEAT-184 waits on the tutorial dive (opened, not submitted).
+- **Idle**: Lane B (BUG-166 waits on `bug166-shock`), Spare. Spare's branch (feature/spare holds old
+  unlanded docs/tests, so it needs `git merge main`, not a fast-forward); Lane C owner-gated.
+- **Perf lane is YOURS (owner 11-13: "its on you to restart the performance lane now")**. Lane `p`, worktree
+  `CarGame-perf`, branch feature/perf, port 8043. Running: PERF-48 (owner's inbox note 11-13: profile a canned
+  autopilot run end to end, architecture review against professional practice, a ranked lever list; docs only,
+  no fixes). It sends "HOLD for PERF-48 run" before each profiled run: do the hold drill on Lane A's heavy jobs,
+  reply "held", and "released" on its "done". Then the owner picks levers. Queue: the re-recorded PERF-40 bench
+  (after `audio-restart`), PERF-42, PERF-45, PERF-44, PERF-46. Perf has priority over the other lanes.
+- **Lane A running**: FEAT-194 part 3 (the clock stops while the parking brake is latched; owner ruled 11-13, in
+  the ticket's Decisions), lands as land/feat-194c.
 - **Owed (25 files in owed/)**, newest: bug166-shock, handbrake-clock, bug160-numbers, bug163-ladder, feat199-price,
   feat196-wheel-repair. Not there: the owner's look at the hunger box (CarGame-run-shape/wip/feat198/*.png) and a
   real-mouse drag; hunger was once ruled "a word, never a gauge".

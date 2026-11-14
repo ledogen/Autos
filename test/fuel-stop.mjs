@@ -10,10 +10,12 @@
 //   5. One bell per whole gallon.
 //   6. Both pump zones lie on the 14 x 8 m pad and clear the island's collision box.
 //   7. The tow costs (flat + per-km) × day tier.
+//   9. FEAT-209: each station's price factor stays in ±5 %, differs between stations, and is
+//      stable for a given seed + station + day.
 //
 // Run: node test/fuel-stop.mjs
 
-import { FuelStop, towPrice, towHours } from '../src/fuel-stop.js'
+import { FuelStop, towPrice, towHours, stationPriceFactor } from '../src/fuel-stop.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { POI_PARAMS } from '../src/poi.js'
@@ -122,6 +124,19 @@ console.log('\n8. the jerry cans fill once the tank is full')
   const ev = run(s, fuel, 10, true)
   check(fuel.gal === P.fuelTankGal && cans[0].gal === 5 && cans[1].gal === 5, 'the tank first, then each can to the brim')
   check(Math.abs(s.gal - 7) < 1e-9 && ev.includes('full'), `one counter for all of it (${s.gal.toFixed(2)} gal), then the shutoff`)
+}
+
+console.log('\n9. FEAT-209: every station its own price, within ±5 %')
+{
+  const ids = Array.from({ length: 50 }, (_, i) => `poi:${i}`)
+  const f = []
+  for (const seed of [6, 1234567, 0xdeadbeef]) for (const day of [1, 2, 7]) for (const id of ids) f.push(stationPriceFactor(seed, id, day))
+  const lo = Math.min(...f), hi = Math.max(...f)
+  check(lo >= 0.95 && hi <= 1.05, `${f.length} factors all inside [0.95, 1.05] (${lo.toFixed(3)} .. ${hi.toFixed(3)})`)
+  check(new Set(ids.map(id => stationPriceFactor(6, id, 1))).size === ids.length, 'no two of 50 stations share a factor')
+  check(hi - lo > 0.08, 'and they spread across the band')
+  check(stationPriceFactor(6, 'poi:3', 2) === stationPriceFactor(6, 'poi:3', 2), 'same seed + station + day: same factor')
+  check(stationPriceFactor(6, 'poi:3', 2) !== stationPriceFactor(6, 'poi:3', 3), 'a new day re-draws it [DEFAULT]')
 }
 
 console.log(`\n${'═'.repeat(64)}`)
