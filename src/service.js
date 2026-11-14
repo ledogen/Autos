@@ -254,13 +254,22 @@ export class ServiceCenter {
         return e ? (this._mom(e.id, 'part') ? 0 : cents(shelfPrice(e) * this.tier())) : null
     }
 
+    /** FEAT-212: what buying shelf slot `i` costs, money and hours: to carry (no `socket`; no time), or bolted
+     *  into `socket` (its fitting added). Null for an empty slot. The Shop tab's every option shows it. */
+    buyQuote (i, socket = null) {
+        const e = this.stock()[i]
+        if (!e) return null
+        const f = socket ? this.fitLabour(e.id, socket) : { price: 0, hours: 0 }
+        return { price: cents(this.shelfPrice(i) + f.price), hours: f.hours }
+    }
+
     /** Buy shelf slot `i` and bolt it into `socket` (a tire or wheel needs its corner), with its
      *  condition, paying for the part and the fitting. The old part goes into the inventory. */
     buyAndFit (i, socket) {
         const e = this.stock()[i]
         if (!e || !socketsFor(e.id).includes(socket)) return false
         const q = this.fitLabour(e.id, socket), part = this._mom(e.id, 'part'), labour = this._mom(e.id, 'labour')
-        if (!this.spend(cents(this.shelfPrice(i) + q.price))) return false
+        if (!this.spend(this.buyQuote(i, socket).price)) return false
         this._usedMom(e.id, 'part', part); this._usedMom(e.id, 'labour', labour)
         this.unstock(i)
         this._swap(e.id, e.cond, socket, q)
@@ -271,7 +280,7 @@ export class ServiceCenter {
     buyToInventory (i) {
         const e = this.stock()[i]
         const part = !!e && this._mom(e.id, 'part')
-        if (!e || !this.spend(this.shelfPrice(i))) return false
+        if (!e || !this.spend(this.buyQuote(i).price)) return false
         this._usedMom(e.id, 'part', part)
         this.unstock(i)
         this.inventory.grant(e.id, 1, e.cond === null ? null : { cond: e.cond })

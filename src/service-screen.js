@@ -14,12 +14,14 @@
  *                two mounted pairs trade), ALIGN ALL (one job, four corners), PATCH, OIL CHANGE and the
  *                clutch LSD's CHANGE CLUTCHES — each with its price and its hours. "Vehicle Diagnostics"
  *                opens the V-key damage screen over this one.
- *   Shop       — ONLY this shop's shelf right now (src/shop-stock.js): name, how long before it's
- *                gone, a two-line description; on the right its condition and the part / installation
- *                prices. Every row is ONE button (FEAT-196, owner 2026-11-12: select, then the options):
- *                selecting it opens buy & fit (a tire or wheel names its corner) and buy to carry. Hovering — or
- *                pad-focusing — an item fits it on the truck for a look (ServiceCenter.preview), on the
- *                corner under the pointer or else the worst one; moving off puts back exactly what was there.
+ *   Shop       — FEAT-212 (owner, 2026-11-13: "just a list of parts"): ONLY this shop's shelf right now
+ *                (src/shop-stock.js), as one level of the Maintenance tree's rows. Closed, a row is its name,
+ *                its condition (a mounted tire: its tire's and its wheel's), its price and how long before
+ *                it's gone; open, the two-line description and its options, each with its price and hours
+ *                (ServiceCenter.buyQuote): buy & fit (a tire or wheel names its corner) and buy to carry.
+ *                One row open at a time. Hovering — or pad-focusing — an item fits it on the truck for a look
+ *                (ServiceCenter.preview), on the corner under the pointer or else the worst one; moving off
+ *                puts back exactly what was there.
  *                My Items, below it: sell the parts you carry, and repair or patch them as their own items
  *                (a mounted pair's wheel too, FEAT-196).
  *   Jobs       — only while the shop has live offers (owner, 2026-10-20: it still posts work): one
@@ -109,8 +111,12 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
   font: 12px var(--font); letter-spacing: 2px; text-align: left; background: transparent; border: 0; cursor: pointer; transition: background 0.1s; }
 #svc-screen button.sv-slothead:hover { background: rgba(255,255,255,0.09); }
 #svc-screen .sv-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-#svc-screen .sv-left { white-space: nowrap; }   /* "gone in 12 min" wraps whole, never "12 / min" */
-#svc-screen .sv-price { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; color: var(--text-dim); }
+/* FEAT-212: a closed shelf row's fixed columns (condition, price, time left), so they line up down the list */
+#svc-screen .sv-cond.sv-ccol { width: 104px; flex: none; justify-content: flex-end; gap: 8px; }
+#svc-screen .sv-each { width: 56px; flex: none; text-align: right; }
+#svc-screen .sv-left { width: 88px; flex: none; text-align: right; white-space: nowrap; }
+#svc-screen .sv-line[data-slot] .sv-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#svc-screen .sv-name .sv-chip { display: inline-block; vertical-align: middle; margin-right: 4px; }
 #svc-screen .sv-cond { display: flex; align-items: center; gap: 4px; }
 #svc-screen .sv-chip { width: 28px; height: 28px; border-radius: 3px; flex: none; background-size: contain;
   background-repeat: no-repeat; background-position: center; }
@@ -169,8 +175,8 @@ export class ServiceScreen {
     this.tab = 'maint'
     this.name = ''
     this.store = false    // FEAT-104: a storefront's shop, not a service center
-    this.sel = null       // the selected Shop row's key: `s:<shelf slot>`, or `i:<inventory index>` in My Items
-    this.path = []        // FEAT-212: the open Maintenance item per level, by id
+    this.sel = null       // the selected My Items row's key, `i:<inventory index>`
+    this.paths = {}       // FEAT-212: per tab, the open tree item per level, by id (`this.path`)
     this.target = {}      // repair key → the chosen target condition
     this._pv = null       // the live preview's `slot:socket`, or null
     this._mouse = true    // the last input was the pointer (else keys / the pad, which move .nav-focus)
@@ -193,9 +199,14 @@ export class ServiceScreen {
       const items = [...this.card.querySelectorAll('button:not(.sv-tab)')].filter(b => b.offsetParent !== null)
       return items[items.indexOf(el) + dy] ?? null
     }
-    this.screen.addEventListener('mousemove', () => { this._mouse = true })
+    // isTrusted: menu-nav's highlight sends the item a synthetic mousemove (BUG-109) — that is the pad, not the pointer.
+    this.screen.addEventListener('mousemove', (e) => { if (e.isTrusted) this._mouse = true })
     window.addEventListener('keydown', () => { this._mouse = false }, true)
   }
+
+  /** The open tree item per level on this tab: Maintenance's and the Shop's are kept apart. */
+  get path () { return this.paths[this.tab] ?? [] }
+  set path (p) { this.paths[this.tab] = p }
 
   /** `name` is the shop's sign (POI name); `store` opens a storefront's shop (FEAT-104). */
   open (name, store = false) {
@@ -205,7 +216,7 @@ export class ServiceScreen {
     this.tab = store ? 'shop' : 'maint'
     this.sel = null
     this.target = {}
-    this.path = []
+    this.paths = {}
     this.screen.classList.add('open')
     if (!store) this.onView(true)
     this.render()
@@ -237,7 +248,7 @@ export class ServiceScreen {
    *  item's one socket, else (a tire or wheel) its worst corner. */
   _previewWant () {
     const el = this._mouse ? [...this.card.querySelectorAll(':hover')].at(-1) : this.card.querySelector('.nav-focus')
-    const row = el?.closest('.sv-shelf')
+    const row = el?.closest('[data-slot]')
     const e = row && this.service.stock()[+row.dataset.slot]
     const sockets = e ? socketsFor(e.id) : []
     if (!sockets.length) return null
@@ -275,8 +286,8 @@ export class ServiceScreen {
       case 'jobs': this.close(); this.openJobs(); return
       case 'map': this.openMap(); return
       case 'tab': this.tab = b.dataset.tab; this.sel = null; break
-      case 'sel': this.sel = this.sel === key ? null : key; break
-      case 'node': { const d = +b.dataset.d; this.path = this.path[d] === b.dataset.id ? this.path.slice(0, d) : [...this.path.slice(0, d), b.dataset.id]; break }
+      case 'sel': this.sel = this.sel === key ? null : key; this.path = []; break   // one row open: My Items' or the shelf's
+      case 'node': { this.sel = null; const d = +b.dataset.d; this.path = this.path[d] === b.dataset.id ? this.path.slice(0, d) : [...this.path.slice(0, d), b.dataset.id]; break }
       case 'diag': this.openDiagnostics(); return
       case 'align': s.align(); break
       case 'oil': s.changeOil(); break
@@ -303,8 +314,8 @@ export class ServiceScreen {
       case 'sellOwned': s.sellOwned(+b.dataset.index); this.sel = null; break
       case 'split': s.split(+b.dataset.index); this.sel = null; break
       case 'combine': s.combine(+b.dataset.index, +b.dataset.with); this.sel = null; break
-      case 'buy': s.buyAndFit(+b.dataset.slot, b.dataset.socket); this.sel = null; break
-      case 'stow': s.buyToInventory(+b.dataset.slot); this.sel = null; break
+      case 'buy': s.buyAndFit(+b.dataset.slot, b.dataset.socket); this.path = []; break
+      case 'stow': s.buyToInventory(+b.dataset.slot); this.path = []; break
     }
     this.render()
   }
@@ -373,7 +384,7 @@ export class ServiceScreen {
       if (typeof n === 'string') return n
       const open = this.path[depth] === n.id
       const band = !n.info && n.c != null ? ` style="color:${bandColor(n.c)}"` : ''
-      return `<button class="sv-line${open ? ' on' : ''}" data-act="node" data-d="${depth}" data-id="${n.id}">`
+      return `<button class="sv-line${open ? ' on' : ''}" data-act="node" data-d="${depth}" data-id="${n.id}"${n.attrs ?? ''}>`
         + `<span class="sv-name"${band}>${open ? '▾' : '▸'} ${n.label}</span>${n.info}</button>`
         + (open ? `<div class="sv-kids">${this._level(n.kids, depth + 1)}</div>` : '')
     }).join('')
@@ -453,35 +464,40 @@ export class ServiceScreen {
       + btn('repair', 'repair', this.service.money() + 1e-9 >= q.price, `data-key="${key}"`, ' ok') + `</div>`
   }
 
-  // ── Parts Shop ─────────────────────────────────────────────────────────────────────────────────
+  // ── Shop (FEAT-212) ────────────────────────────────────────────────────────────────────────────
 
+  /** The shelf as one level of the tree: a row per item (one pad stop), open = its description and its options. */
   _shop () {
-    const s = this.service, money = s.money(), now = this.nowH()
+    const s = this.service, now = this.nowH()
     // R-24 (owner, 2026-10-24): "For sale", and when the next item lands.
     const nxt = s.nextStock?.()
-    let h = `<div class="sv-slot"><div class="sv-slothead">For sale${nxt ? ` <span class="sv-desc">· new stock in ${nxt}</span>` : ''}</div>`
-    s.stock().forEach((e, i) => {
-      if (!e) { if (!this.store) h += dim('An empty shelf.'); return }   // a store lists only what it has
-      const price = s.shelfPrice(i), sockets = socketsFor(e.id)
-      const fitQ = sockets.length ? s.fitLabour(e.id, sockets[0]) : { price: 0 }
-      const ok = money + 1e-9 >= price + fitQ.price
-      const fit = sockets.length > 1
-        ? sockets.map(sk => btn('buy', where(sk), ok, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
-        : sockets.length ? btn('buy', 'buy & fit', ok, `data-slot="${i}" data-socket="${sockets[0]}"`) : ''
-      // FEAT-167 (owner, 2026-11-05: "too much detail text"): the bar says new or used, the prices stack
-      // on the right with it, and the description is two lines at most. FEAT-196 (owner, 2026-11-12): the
-      // row is one button; its options open under it on select, so the pad has one stop per item.
-      const key = `s:${i}`, open = this.sel === key
-      h += `<button class="sv-line sv-shelf${open ? ' on' : ''}" data-act="sel" data-key="${key}" data-slot="${i}">${chip(e.id)}<span class="sv-name">${shelfName(e)}`
-        + ` <span class="sv-desc sv-left">${e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}`}</span>`
-        + `<span class="sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</span></span>`
-        + `<span class="sv-price">${e.cond !== null ? `<span class="sv-cond">${bar(e.cond)}</span>` : ''}`
-        + (sockets.length ? `<span>part: $${formatMoney(price)}</span><span>installation: $${formatMoney(fitQ.price)}</span>` : `<span>$${formatMoney(price)}</span>`)
-        + `</span></button>`
-        + (!open ? '' : `<div class="sv-panel sv-shelf" data-slot="${i}"><div class="sv-row"><span class="sv-acts">${fit} `
-          + `${btn('stow', this.store ? 'buy' : 'to inventory', money + 1e-9 >= price, `data-slot="${i}"`)}</span></div></div>`)
-    })
-    return h + `</div>` + (this.store ? '' : this._myItems())
+    // "Just a list of parts" (owner, 2026-11-13): an empty slot is no row; the head says when the next item lands.
+    const rows = s.stock().flatMap((e, i) => !e ? []
+      : [Object.assign(node(String(i), chip(e.id) + shelfName(e), [this._buyOpts(e, i)], this._shelfInfo(e, i, now)), { attrs: ` data-slot="${i}"` })])
+    return `<div class="sv-slot"><div class="sv-slothead">For sale${nxt ? ` <span class="sv-desc">· new stock in ${nxt}</span>` : ''}</div>`
+      + this._level(rows, 0) + `</div>` + (this.store ? '' : this._myItems())
+  }
+
+  /** A closed shelf row's columns (owner, 2026-11-13): condition (a mounted tire: its tire's and its wheel's, the
+   *  wheel new), price, how long before it's gone. An item with no condition leaves its column blank. */
+  _shelfInfo (e, i, now) {
+    const cond = e.cond === null ? '' : PARTS[e.id]?.mounted ? pctIn('T', e.cond) + pctIn('W', 1) : bar(e.cond)
+    return `<span class="sv-cond sv-ccol">${cond}</span><span class="sv-desc sv-each">$${formatMoney(this.service.shelfPrice(i))}</span>`
+      + `<span class="sv-desc sv-left">${e.expiresAt === Infinity ? 'always' : `${formatGameDuration(e.expiresAt - now)} left`}</span>`
+  }
+
+  /** An open shelf row: the two-line description, then each way to buy it with its price and hours. Landing 3 (the
+   *  cart) swaps these buttons' action for "add to cart"; until then they buy as they are pressed. `data-slot`:
+   *  the pointer anywhere on it keeps the preview on. */
+  _buyOpts (e, i) {
+    const s = this.service, money = s.money(), sockets = socketsFor(e.id)
+    const ok = (q) => money + 1e-9 >= q.price
+    const fitQ = sockets.length && s.buyQuote(i, sockets[0]), carry = s.buyQuote(i)
+    return `<div data-slot="${i}"><div class="sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</div>`
+      + (sockets.length ? this._act('Fit on the truck', fitQ, sockets.length > 1   // a tire or wheel names its corner
+        ? sockets.map(sk => btn('buy', where(sk), ok(fitQ), `data-slot="${i}" data-socket="${sk}"`)).join(' ')
+        : btn('buy', 'buy', ok(fitQ), `data-slot="${i}" data-socket="${sockets[0]}"`, ' ok')) : '')
+      + this._act('Into the inventory', carry, btn('stow', 'buy', ok(carry), `data-slot="${i}"`, sockets.length ? '' : ' ok')) + `</div>`
   }
 
   // ── Jobs ────────────────────────────────────────────────────────────────────────────────────────
