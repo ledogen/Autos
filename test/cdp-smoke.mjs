@@ -632,6 +632,11 @@ const STEPS = [
     for (const id of ['twbs', 'tw', 'RR', 'tire']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
     check(await js('/Swap with inventory/.test(document.querySelector("#svc-screen .sv-kids .sv-kids .sv-kids .sv-kids")?.textContent ?? "")'),
       'Maintenance: the rear-right tire opened no swap')
+    // FEAT-213: an open part's (i) button shows the owner's text, names coloured.
+    for (const id of ['brakes']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
+    await js('document.querySelector("#svc-screen [data-act=info]")?.click()')
+    check(await js('/below 50% they get weaker/.test(document.querySelector("#svc-screen .sv-info")?.textContent ?? "") && !!document.querySelector("#svc-screen .sv-info .info-part")'),
+      'Maintenance: the (i) on Brakes showed no info text')
     await js('document.querySelector("#svc-screen [data-act=node][data-id=twbs]")?.click()')
     check(await js('!document.querySelector("#svc-screen .sv-kids")'), 'Maintenance: selecting the top level again left items open')
     // …and the keys (the pad's D-pad and A arrive as the same keys, menu-nav.js): ↓ walks the list in order, Enter opens.
