@@ -251,7 +251,8 @@ dialogue, and the first missions are on main. **Intent and invariants live in
 build-state section; its rule: don't open a milestone whose `Requires:` aren't met, free-lane work
 is always fair game, and tickets are minted into the tracker at milestone entry, not up front.
 Read DESIGN.md before any gameplay/mission/progression/sleep/economy work — if an implementation satisfies its ticket but violates an invariant there,
-the invariant wins; stop and flag it. Open design questions listed there are the user's to
+the invariant wins; stop and flag it. Each invariant is also a decision record (§ Decision records below); where
+DESIGN.md's prose and a standing record disagree, **the record wins** (owner, 2026-11-13) and DESIGN.md is the stale one. Open design questions listed there are the user's to
 answer, not yours. Companion notes **downstream of DESIGN.md** (where they disagree, DESIGN.md wins):
 `missions.md` (mission taxonomy + XP/payout scoring + the log-drag main mission), `run-shape.md`
 (run/day length, saving), `opening.md` (the firing, the uncle), `items.md` (items catalog —
@@ -312,6 +313,18 @@ the norm.
   an existing pool to make it appear.
   Most of `.planning/story-mode/items.md` is **2D art, not models** — only camp gear, bed/dragged
   cargo, and the beacon (a shader) have a world presence.
+- **Decision records** (INFRA-10): every standing ruling is one short file, `.planning/decisions/dec-NNN-<slug>.md`
+  (`DEC-NNN`). Frontmatter `id`, `status` (`draft` = not yet the owner's: its sources conflict, or its wording is an agent's and awaits approval ·
+  `standing` · `superseded`), `decided`, `area`, `governs` (ticket ids, file paths, subsystem words), `supersedes`;
+  body **Ruling** · **Why** · **Replaces** · **Source**. The Ruling is the owner's words, or an agent's wording the
+  owner approved. **A standing record is frozen**: only its `status:` line ever changes. A change of mind is a NEW
+  record with `supersedes:`, and the old one flips to `superseded` (`node tools/dashboard/decisions.check.mjs`
+  holds both rules). A record beats DESIGN.md, a ticket and memory when they disagree.
+  **Before planning any ticket, read the records that govern what you will touch** —
+  `grep -l -e <ticket id> -e <file> -e <subsystem word> .planning/decisions/*.md` — and list every conflict with
+  the request BEFORE starting work; a conflict is the owner's call, never yours. A new owner ruling (in chat, on an
+  owed card, in a submitted deep dive) becomes a record in the same change that acts on it. The dashboard's
+  **Decisions** tab lists the standing ones by area, and a ticket's page lists the records that govern it.
 - **Plan** non-trivial / multi-file changes via plan mode (get sign-off before implementing). Skip the
   ceremony for small fixes.
 - **Implement directly** with focused edits. The headless harness is the real quality gate: `npm test`

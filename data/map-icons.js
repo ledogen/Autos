@@ -142,19 +142,16 @@ export const POI_ICONS = {
     // each side of it barely a tenth of a unit of colour survived, so the eye read as a solid black
     // dot. 2.3 units of wall keeps ~1.1 showing. Eye and wire are one subpath — the shank meets the
     // ring where the circle crosses x = centre ± 1.4, so there is no seam stroked across the join.
-    tackleShop:   { label: 'Tackle',  color: '#5fd8b8', path:
-        'M12.8 10.16 A4.2 4.2 0 1 1 15.6 10.16 L15.6 17.6 A4.4 4.4 0 0 1 6.8 17.6'
-      + ' L6.8 14.1 L5.6 10.9 L9.6 15.1 L9.6 17.6 A1.6 1.6 0 0 0 12.8 17.6 Z'
-      + 'M12.3 6.2 A1.9 1.9 0 1 0 16.1 6.2 A1.9 1.9 0 1 0 12.3 6.2 Z' },
+    // No pictogram (owner, 2026-11-13: a place gets a custom icon only if it does more than give missions).
+    tackleShop:   { label: 'Tackle',  color: '#5fd8b8', path: null },
     // FEAT-88/91 firewood yard: three log ends stacked two-and-one, the way a cord face reads from
     // the road. Each ring is its own subpath, so the outlines meet without a seam stroked across them.
     firewoodYard: { label: 'Firewood', color: '#d9925a', path:
         'M3.1 16.5 A4.4 4.4 0 1 1 11.9 16.5 A4.4 4.4 0 1 1 3.1 16.5 Z'
       + 'M12.1 16.5 A4.4 4.4 0 1 1 20.9 16.5 A4.4 4.4 0 1 1 12.1 16.5 Z'
       + 'M7.6 8.6 A4.4 4.4 0 1 1 16.4 8.6 A4.4 4.4 0 1 1 7.6 8.6 Z' },
-    // FEAT-210: the special places get a pictogram of their own (owner, 2026-11-13). Each is one of a
-    // kind on the roster, so a symbol finds it; the many look-alikes (residences, farms) stay plain
-    // diamonds, and the stranded motorist needs none.
+    // FEAT-210: a place gets a pictogram only if it does more than give missions — it sells, lets you
+    // sleep, or is the goal (owner, 2026-11-13). The doctor, site, school and office are plain diamonds.
     //
     // The expedition camp — the run's goal: a ridge tent with its door cut out and a pennant flying
     // off the apex. Tent, pole and flag are one outline (no seam where the pole meets the ridge); the
@@ -162,27 +159,6 @@ export const POI_ICONS = {
     expeditionCamp: { label: 'Expedition', color: '#e0c890', path:
         'M2 21.5 L11.3 8.02 L11.3 1.5 L12.7 1.5 L18.5 3.5 L12.7 5.5 L12.7 8.02 L22 21.5 Z'
       + 'M12 13 L9.2 21.5 L14.8 21.5 Z' },
-    // The doctor: a plain cross, the one medical sign every reader already knows.
-    doctor:       { label: 'Doctor',  color: '#ffffff', path:
-        'M9 3 L15 3 L15 9 L21 9 L21 15 L15 15 L15 21 L9 21 L9 15 L3 15 L3 9 L9 9 Z' },
-    // The work site: a traffic cone on its square foot, one reflective band cut through it.
-    workSite:     { label: 'Site',    color: '#ff8030', path:
-        'M10 3 L14 3 L18.5 18 L21.5 18 L21.5 21.5 L2.5 21.5 L2.5 18 L5.5 18 Z'
-      + 'M9.25 9.5 L8.35 12.5 L15.65 12.5 L14.75 9.5 Z' },
-    // The school: a gabled schoolhouse under a bell tower, door and two windows cut out — the tower
-    // is what tells it from a house. Tower and building are one outline, so no seam crosses the roof.
-    school:       { label: 'School',  color: '#f0d060', path:
-        'M3 11 L10 6.33 L10 1.5 L14 1.5 L14 6.33 L21 11 L21 21.5 L3 21.5 Z'
-      + 'M10 15 L10 21.5 L14 21.5 L14 15 Z'
-      + 'M5 13 L5 17 L8 17 L8 13 Z'
-      + 'M16 13 L16 17 L19 17 L19 13 Z' },
-    // The office: a tall block, two columns of windows and a door.
-    office:       { label: 'Office',  color: '#a8b8d8', path:
-        'M5 2 L19 2 L19 22 L5 22 Z'
-      + 'M7.5 4.5 L7.5 7 L10.5 7 L10.5 4.5 Z' + 'M13.5 4.5 L13.5 7 L16.5 7 L16.5 4.5 Z'
-      + 'M7.5 9 L7.5 11.5 L10.5 11.5 L10.5 9 Z' + 'M13.5 9 L13.5 11.5 L16.5 11.5 L16.5 9 Z'
-      + 'M7.5 13.5 L7.5 16 L10.5 16 L10.5 13.5 Z' + 'M13.5 13.5 L13.5 16 L16.5 16 L16.5 13.5 Z'
-      + 'M10.5 18 L10.5 22 L13.5 22 L13.5 18 Z' },
     // Every class with no glyph of its own (residence, farm, the motorist) is the diamond alone,
     // unlabelled: there are many of them and naming each would turn the map into a wall of text.
     // FEAT-67: the story map is the mission board, and hovering a diamond shows its offer. This
@@ -210,7 +186,7 @@ export const FAMILY_COLOR = {
     papers:     '#ffffff',   // white
     demolition: '#ff5a4e',   // red — smash the props (FEAT-65)
     freight:    '#5ab6ff',   // blue
-    haul:       '#5ab6ff',   // blue — FEAT-88 collapses fragile + freight into haul; freight's colour carries over
+    haul:       '#ffffff',   // white, with papers (owner, 2026-11-13: "change the haul diamond color to white for simplicity")
 }
 
 /** An empty, taken or locked diamond: nothing on offer there right now. */
