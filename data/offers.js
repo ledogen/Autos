@@ -715,9 +715,10 @@ export const BONUS_LEG_MIN_M = 1500
  * FEAT-199: what taking an optional item costs off the job's cash, as a fraction of its value (rewardValue
  * in src/offer-board.js: its part price, its shelf price, or REWARD_VALUE below — day-1 dollars). The ONE
  * knob: offer-board.js itemCost reads it, and the card and the result card both print that.
- * 1 [DEFAULT]: the shop price (the ticket's default until the owner rules).
+ * 0.5: half the shop price (owner, 2026-11-14: "this way you cant sell it for more money you have to want the
+ * item to take it").
  */
-export const ITEM_COST_FRAC = 1
+export const ITEM_COST_FRAC = 0.5
 
 /**
  * GAME-FEEL REVIEW 2026-10-23 (R-07): what a reward is WORTH, in day-1 dollars, for the card's "Tip:

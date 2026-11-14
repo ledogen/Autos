@@ -7297,6 +7297,9 @@ function _renderPaperUI () {
           + (offerBoard?.spec(p.offer) ? `time limit: ${formatGameDuration(offerBoard.deadlineH(p.offer, r.par))}` : '')
           + `</span>` : '')
         + `<br><span class="mp-deed">Deed: 1 if B or better &middot; 1/2 at C</span>`
+        // BUG-163 (owner, 2026-11-14, "keep the ladder, say it on the card"): FEAT-141's climb, in his words, while a
+        // bigger route is still locked.
+        + (p.sizes().length < PAPER_PARAMS.tiers.length ? `<br>&ldquo;I&rsquo;ll expand the route if you finish with a rank of B or better&rdquo;` : '')
       break
     }
     case 'staging':
@@ -10996,12 +10999,10 @@ function loop (t) {
   perfAdd('frame.postStream', _ptR - _ptPost)   // PERF-26 INSTRUMENT
   // FEAT-41: whichever scene owns the screen. Skipping the world render behind a menu or a load is
   // not just tidiness — it hands the GPU to the build that is running underneath.
-  // PERF-38: nor behind the 2D map — the world frame under it was the whole 3D GPU bill (owner's M4: 5 W, pinned at
-  // 890 MHz, with the map open). FEAT-211: the map is a window now, and the world shows round it — as the frame drawn
-  // the moment the map opened (a WebGL canvas keeps showing its last frame until it draws again), so the window
-  // costs no 3D at all.
+  // FEAT-211 (owner, 2026-11-14: "make the background live"): the world renders behind the map window at full rate,
+  // reversing PERF-38's skip (the frozen frame); the window covers 81 % of it, which the GPU still draws.
   if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
-  else if (!map2d.isOpen()) renderer.render(scene, camera)
+  else renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // D-arc: render submit (the ~8.5 s load-cost suspect)
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.
