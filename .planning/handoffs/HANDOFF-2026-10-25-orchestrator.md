@@ -166,6 +166,8 @@ without asking the owner where the meter stands. Land what they report, yourself
 - DONE ledorepo: INFRA-14 closed. INFRA-13 waits on the owner (Time Machine).
 Orchestrator DECs used: 190–193; next free for it: 194.
 
+**A landing 2 (feature/run-shape @ 2f42796d, main merged, gates 36/36): branch smoke FAILS in "opening" ("the sim stopped stepping, 0.07 of 1 sim-s in"), 25 other steps pass; log CarGame-run-shape/wip/feat184/smoke-branch.log. A fix agent is running on it; do NOT merge until the branch smokes green.**
+
 **Main:** physics fixes (BUG-168/166/160) merged and smoked 26/26 on the re-run, log wip/orch/smoke-phys2.log. Nothing in flight. Not pushed. BUG-167 NOT landed: wip/bug-167-carcass @ 5147a6ba fixes the creep but changes the floored launch (rear slide 55.4 → 30.6 m); needs its own Opus task. Asked the owner for the meter reading before any new agent. Owner to confirm rimInflatedMult 2 (wrote "4"). Old line follows.
 (check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
 minted: FEAT-215 (GPS U-turn arrow, Spare), FEAT-216 (damage alerts, B). Inbox fully replied; 2gdr (FEAT-204, "4x more
