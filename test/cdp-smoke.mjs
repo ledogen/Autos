@@ -1372,7 +1372,9 @@ const STEPS = [
     // FEAT-184 (DEC-151): off the road with the brake off, the evening puts the truck back on it by itself.
     await seat(off.x, off.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
-    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 12000), 'off the road with the brake off, the evening did not put the truck back on it')
+    // The reset counts 4 s of PLAY time (_playedS: real frame seconds while live, each frame clamped to 0.25 s), not wall
+    // time, so a loaded box under 4 fps accrues it slower than the clock: poll long (a pass costs nothing extra).
+    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
     await strayCheck('in the evening')
     // FEAT-184 stage 6, THE WORST DAY: the station (when one is due), the flat halfway home, V, the spare that's flat too,
     // the recovery menu's free tow to the auto shop, a tire there, and the night's headlights — then mom's, as before.
