@@ -144,7 +144,10 @@ Worktree `CarGame-decisions`, branch `infra/infra-10-decision-records`, dev dash
 - [x] The read-before-planning rule: CLAUDE.md; lines sent to the orchestrator for LANE-AGENT-BRIEF + its handoff.
 - [x] Owner's answers applied (2026-11-13): axioms are DEC-122..126, DEC-127 one source of truth, 60 drafts now
       standing (8 reworded per the owner's notes), DEC-067 and DEC-072 dropped; 131 records, all standing.
-- [ ] Source documents cite the DEC ids (DESIGN.md SM-INV headings, memory § Standing do-nots).
+- [x] Source documents corrected and citing the DEC ids (DEC-127): DESIGN.md, MILESTONES.md, items.md, ART-STYLE.md,
+      FEAT-89/103/168/69, memory. Left for the owner (the records do not cover them): what the compressor and quick-jack
+      do to a spare change beside DEC-105; whether ART-STYLE's other budget rows fall under DEC-114's floor;
+      SM-INV-14's heading says "points" where DEC-014 says good deeds.
 
 ## Decisions` sections of tickets.
    Each record quotes its source. Duplicates across sources collapse to one record citing all of them.
