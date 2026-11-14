@@ -1229,7 +1229,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       const FnRoad = Math.max(0, Fn - rockLoad[i])
       const tf = computeTireForces(sLongCur, sLatNew, FnRoad, params, muScale)
       // BUG-167: the carcass damper (Kelvin-Voigt: F = k·s + c·ṡ). See carcassDamping.
-      const cC = carcassDamping(tf.dFmagDs, FnRoad, vCon, params)
+      const cC = carcassDamping(tf.dFmagDs, FnRoad, Math.max(vCon, Math.abs(latVelCur), Math.abs(omegaCur - longVelCur)), params)   // fades on ANY patch motion: rolling, sliding, spinning
       const Flong = tf.Flong + cC * (sLongCur - sLongPrev) / dt
       const Flat  = tf.Flat  + cC * (sLatNew - sLatPrev) / dt
 
