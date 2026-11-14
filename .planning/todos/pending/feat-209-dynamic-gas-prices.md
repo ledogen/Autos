@@ -12,7 +12,7 @@ lane: Spare
 # FEAT-209: Dynamic gas prices — each station within ±5 % of the day's price
 
 ## Next steps
-Spare lane builds it; small. The owner looks at two pumps afterwards.
+Built on feature/spare, landing request with the orchestrator. Owner: pull into two different stations on the same day and compare the $/gal on the pump face; answer the two open questions.
 
 ## Summary
 Every station gets its own price, within ±5 % of the run's current price, so one station is always the best deal. Mostly eye candy (owner).
@@ -24,19 +24,20 @@ Every station gets its own price, within ±5 % of the run's current price, so on
 - The pump face shows its own price. Any other place a fuel price is shown (the map, a sign) reads the same function.
 
 ## Tracker
-- [ ] One function gives a station's price: day price × a seeded factor in ±5 %
-- [ ] The pump face and the sale use it
-- [ ] A gate: factors stay inside ±5 %, differ between stations, and are stable for a given seed, station and day
+- [x] One function gives a station's price: day price × a seeded factor in ±5 % (`stationPriceFactor` in `src/fuel-stop.js`)
+- [x] The pump face and the sale use it (the price is locked at nozzle-in; the face shows `fuelStop.price`, the sale charges it, the jerry cans fill on the same counter)
+- [x] A gate (`test/fuel-stop.mjs` §9): factors stay inside ±5 %, differ between stations, and are stable for a given seed, station and day
 
 ## Decisions
 - 2026-11-13, owner: variance ±5 %; mostly eye candy; prices keep scaling with the run.
 
 ## Open questions
-- Do prices move each day (the default) or stay fixed per station for the run?
-- Should the map show each station's price, so the best deal can be shopped for?
+- Do prices move each day (`[DEFAULT]`, built) or stay fixed per station for the run? Fixing it is one edit: drop `day` from the seed.
+- Should the map show each station's price, so the best deal can be shopped for? Not built: today the price only shows on the pump face once the nozzle is in.
 
 ## Files
 `src/fuel-stop.js` · `src/main.js` · `test/`
 
 ## Log
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
+- 2026-11-13 (Spare): built. Factor = 0.95 + 0.1 × mulberry32(seedFor(worldSeed, 'fuelPrice', hash32(poiId), day)), no save field. The pump face is the only place a fuel price shows; the tow has its own price and does not use fuel's.
