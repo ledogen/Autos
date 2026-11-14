@@ -102,6 +102,8 @@ export const TUT = {
     // …and the gauge, when the tank starts near empty and the line runs by the nearest station (main.js _evePump).
     'tut-gas': [{ speaker: 'Mom', text: `Is that gauge on empty? Of course it is. The line takes you by the gas station first: `
         + `pull up at a pump and fill her up.` }],
+    // FEAT-184 (DEC-151): the handbrake held at the evening's pump while pocket change is left. PLACEHOLDER words.
+    'tut-fillup': [{ speaker: 'Mom', text: `Not yet, honey &mdash; fill it right up. Every last dollar: you won't get far on fumes.` }],
     // FEAT-184 stage 4, the worst day: the flat halfway home, the screen it shows on, the spare that's flat too, the tow,
     // and the shop it lands at (main.js _eveningBeats, _pickSpare, _toggleRecovery, _updateParkTriggers).
     'tut-flat': [{ speaker: 'Mom', text: `Was that a bang? That's a flat, honey. Pull over, set the handbrake, `
@@ -111,7 +113,8 @@ export const TUT = {
     'tut-spareflat': [{ speaker: 'Mom', text: `The spare's flat too? Of course it is. Call a tow: `
         + `<span class="dlg-key">X</span> is the recovery menu.` }],
     'tut-tow': [{ speaker: 'Mom', text: `The tow takes you to the nearest auto shop. It's on me this time.` }],
-    'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner, and a spare you can trust. Then come home &mdash; it's late.` }],
+    // FEAT-184 (DEC-151): the tire is on mom — one mounted tire and its fitting. PLACEHOLDER words.
+    'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner &mdash; that one's on me. Then come home, it's late.` }],
     // Stage 5: the night drive home after the shop.
     'tut-lights': [{ speaker: 'Mom', text: `It's pitch dark out there. `
         + `<span class="kc-kb"><span class="dlg-key">L</span> turns</span><span class="kc-pad">the <span class="dlg-key">left stick</span> click turns</span> `

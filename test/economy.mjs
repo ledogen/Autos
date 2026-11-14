@@ -308,6 +308,20 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
     formatDeeds(7) === '3.5' && formatDeeds(1) === '0.5' && formatDeeds(4) === '2')
 }
 
+// FEAT-184 (DEC-150): a played tutorial runs on pocket change; the paycheck lands once, at its end.
+{
+  const eco = new EconomySystem({ getDay: () => 1 })
+  eco.start()
+  eco.withholdPaycheck(3)
+  check('the tutorial starts on pocket change, the paycheck due', runEconomy.money === 3 && runEconomy.paycheckDue && runEconomy.pocket === 3)
+  eco.spend(3)
+  check('…the paycheck lands once', eco.payPaycheck() && runEconomy.money === ECONOMY_PARAMS.startCash && !eco.payPaycheck()
+    && runEconomy.money === ECONOMY_PARAMS.startCash)
+  check('…and Earned (money + spent − startCash − pocket) reads 0', runEconomy.money + runEconomy.spent - ECONOMY_PARAMS.startCash - runEconomy.pocket === 0)
+  eco.start()
+  check('a new run clears both', runEconomy.pocket === 0 && !runEconomy.paycheckDue && !eco.payPaycheck())
+}
+
 // ── 8. Run-layer boundary (SM-INV-12) ───────────────────────────────────────────────────────────
 {
   const eco = new EconomySystem({ getDay: () => 3 })
