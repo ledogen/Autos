@@ -1517,7 +1517,11 @@
     #map-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; background: var(--card-bg);
                 border-left: 1px solid var(--line-card); font-family: var(--font); font-size: 14px; color: var(--text-body); }
     #map-list-head { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px 8px; font-size: 12px; }
-    #map-list-head .ml-title { color: var(--accent-story); letter-spacing: 2px; text-transform: uppercase; }
+    /* The list's two tabs (the bumpers swap them, a click too): the one showing carries the story accent. */
+    #map-list-head .ml-tab { color: var(--text-faint); letter-spacing: 2px; text-transform: uppercase; cursor: pointer; margin-right: 12px;
+                             transition: color 0.1s; }
+    #map-list-head .ml-tab:hover { color: var(--text-bright); }
+    #map-list-head .ml-tab.on { color: var(--accent-story); }
     /* The run HUD's clock, repeated: the window covers the HUD on a small screen, and the clock is where a job's due
        time is read while weighing offers (owner, 2026-10-15). */
     #map-clock { color: var(--text-dim); letter-spacing: 1px; }
@@ -1530,6 +1534,17 @@
     #map-list .ml-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #map-list .ml-dist { flex: 0 0 auto; color: var(--text-dim); }
     #map-list .ml-none { padding: 6px 14px; color: var(--text-faint); font-size: 12px; }
+    /* FEAT-211 Shopping: a shop's header wraps its pump price / new-stock line under its name; its items, open, sit
+       indented under it, each wrapping whole (name and price, condition and how long it stays, the flavour text). */
+    #map-list .ml-shop, #map-list .ml-item { flex-wrap: wrap; row-gap: 2px; }
+    #map-list .ml-open { flex: 0 0 10px; color: var(--text-dim); }
+    #map-list .ml-sub, #map-list .ml-desc { flex: 1 0 100%; font-size: 12px; color: var(--text-dim); }
+    #map-list .ml-shop .ml-sub { padding-left: 18px; }
+    #map-list .ml-item, #map-list .ml-in { padding-left: 32px; }
+    #map-list .ml-desc { color: var(--text-faint); }
+    #map-list .ml-price { flex: 0 0 auto; color: var(--money); }
+    #map-list .ml-bar { display: inline-block; width: 40px; height: 6px; margin-right: 6px; vertical-align: 1px; border: 1px solid var(--line-control); }
+    #map-list .ml-bar i { display: block; height: 100%; }
     #map-legend { flex: 0 0 auto; display: block; width: calc(100% - 24px); margin: 12px; }
     /* FEAT-67: the offer card docks in the map's corners — nothing may sit on top of it. */
     body.map-open #quickjob-btn { visibility: hidden; }
@@ -1547,7 +1562,7 @@
   <div id="map-window">
     <canvas id="map2d"></canvas>
     <div id="map-side">
-      <div id="map-list-head"><span class="ml-title">Missions</span><span id="map-clock"></span></div>
+      <div id="map-list-head"><span><span class="ml-tab on" data-tab="missions">Missions</span><span class="ml-tab" data-tab="shopping">Shopping</span></span><span id="map-clock"></span></div>
       <div id="map-list"></div>
       <canvas id="map-legend"></canvas>
     </div>

@@ -33,7 +33,7 @@ import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D 
 import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
-import { DamageScreen } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
+import { DamageScreen, bandColor } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setParkLock, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { PARK_SPEED } from './park-brake.js'
@@ -4908,6 +4908,23 @@ const _boardView = {
   name (poiId) { return offerBoard.poiName(poiId) ?? offerBoard.placeLabel(poiId) },
   /** FEAT-211: the run HUD's clock (_updateRunHud's notation), for the list's head — the window covers the HUD. */
   clock () { return formatDue(Math.floor(daySystem.clockH() * 60) / 60) },
+  /** FEAT-211: POI `q`'s Shopping row (map2d's getBoard doc), or null when it sells nothing. A pump shows its price;
+   *  a shop its new-stock clock and, `open`, its shelf as the shop screen prices it before any fitting (the
+   *  basic price: the day tier on the shelf price). A gas station is both. */
+  shop (q, open) {
+    const sells = SHOP_TYPES.has(q.type), pump = !!q.pumpZones?.length
+    if (!sells && !pump) return null
+    const now = daySystem.clockH(), next = sells ? _shelfNext(q.id, now, q.type) : null, tier = economySystem.tierNow()
+    return {
+      price: pump ? `$${formatMoney(_pumpPrice(q))}/gal` : null,
+      next: next ? `new stock in ${next}` : null,
+      opens: sells,
+      items: sells && open ? shelf(q.id, now, q.type).filter(Boolean).map(e => ({
+        name: shelfName(e), price: `$${formatMoney(Math.round(shelfPrice(e) * tier * 100) / 100)}`,
+        cond: e.cond, color: e.cond != null ? bandColor(e.cond) : null, desc: PARTS[e.id]?.desc ?? ITEMS[e.id]?.desc ?? '',
+        left: e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}` })) : null,
+    }
+  },
   status (poiId) {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
@@ -5449,6 +5466,12 @@ window.addEventListener('blur', () => { _fHeld = false })
 let _pumpReceiptT = 0     // s left on the settled receipt's hold
 let _pumpBounceT = 0      // s left on the counters' settle-bounce
 
+/** FEAT-168: fuel rides the day tier like parts and the tow, to the cent. FEAT-209: each station sits within ±5 % of
+ *  that day price. $/gal at pump POI `q` now: what its pump locks on open, and what the map's Shopping list shows. */
+function _pumpPrice (q) {
+  return Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * stationPriceFactor(worldSeed, q.id, daySystem.day()) * 100) / 100
+}
+
 /** The pump island whose zone the truck is in (story mode, no dialogue up), or null. */
 function _pumpInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
@@ -5899,10 +5922,7 @@ function _updateParkTriggers (zParked = false) {
   if (fuelStop.isOpen || pump) {
     damageScreen.blocked = true
     if (pump && pulled) {
-      // FEAT-168: fuel rides the day tier like parts and the tow, to the cent — the cans fill on the same counter.
-      // FEAT-209: each station sits within ±5 % of that day price.
-      const factor = stationPriceFactor(worldSeed, pump.id, daySystem.day())
-      fuelStop.open(pump.id, Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * factor * 100) / 100, inventorySystem.cans())
+      fuelStop.open(pump.id, _pumpPrice(pump), inventorySystem.cans())   // the cans fill on the same counter
       playNozzle()
       _tut('tut-fuel')   // FEAT-147
     }
