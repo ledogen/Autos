@@ -39,6 +39,22 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
 - **A dev server for an owner look**: `nohup npx vite --port <your port> --strictPort > <log> 2>&1 &` in your
   worktree, and name it in the handoff. Stop servers nobody is looking at.
 
+## Token discipline (owner, 2026-11-14: "max completion at satisfactory quality", paced over the week)
+
+Every tool round re-sends your whole context, so cost grows with what you have READ, not with what you write.
+- **Read narrowly.** `grep -n` first, then Read with `offset`/`limit`. Never read a whole large file (main.js, a long
+  ticket) to find one function. Of a ticket read Next steps, Tracker, Decisions; the Log only if you need it.
+- **Never print a job's output into your context.** Gates, smokes, builds: `> <log> 2>&1`, then `tail -5` or
+  `grep -c FAIL`. Open more of the log only on a failure.
+- **Test instead of re-reading.** Write the smallest failing check, make it pass, run the affected gates. Do not
+  re-read code to convince yourself; a green gate is the proof.
+- **The rulings are made.** Build to the ticket and its DECs. No option surveys, no alternatives nobody asked for,
+  no exploration beyond the files the task touches.
+- **Write short.** A ticket Log entry is ≤ 5 lines (hash, gates, what is unverified). No diary, no restating the
+  plan. One before/after screenshot pair per owner look, no artifact pages unless the orchestrator asks.
+- **Stop early when it grows.** If the task turns out about twice what the prompt implied, land the coherent slice
+  and put the rest in NEXT.
+
 ## Stop — when ANY of these is true
 
 1. **The task is done**: a landing request is ready, or a look / measurement / proposal is ready for the owner.

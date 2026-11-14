@@ -1,18 +1,18 @@
 ---
 id: BUG-168
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-13
 source: owner, 2026-11-13 (inbox) — "Not sure if this is a bug or if it just hasn't been built yet, but I've noticed you can't die from impact"
-relates: FEAT-146 (the run ends), SM-INV-1, DEC-034, src/damage.js (`fatalMphBare` 60, `fatalMphFull` 100, `fatalEnabled`), src/main.js (`_endRun('crash')`)
+relates: FEAT-146 (the run ends), SM-INV-1, DEC-034, src/damage.js (`fatalMphBare` 40, `fatalMphFull` 65, `fatalEnabled`), src/main.js (`_endRun('crash')`)
 ---
 lane: B
 
 # BUG-168: The owner cannot die from an impact — the fatal-crash rule exists but does not fire in play
 
 ## Next steps
-Owner: pick the fatal speeds (question below). Lane B's measurement fix (one crash priced once) is ready to land on its own; it does not change any threshold.
+Done. Owner picked 40 bare / 65 full (DEC-167); landed with the one-crash-priced-once fix.
 
 ## Summary
 The rule works and the hit is measured right: a head-on into a rigid wall is priced at the truck's own Δv (velocity change), which is the impact speed plus about 12 % rebound. The thresholds are out of reach in play. A story jalopy's armor is 50–90 %, so it needs 80–96 mph of Δv to die, which is a 71–85 mph square hit. Roads are designed for at most 63 mph. One real defect turned up on the way, in the other direction: a long hit was priced twice. Fixed.
@@ -51,7 +51,7 @@ Reading it: Δv tracks the impact speed honestly. A glancing wall hit sheds litt
 - [x] Cause named: thresholds out of reach (plus a double-count, fixed)
 - [x] Fix for the measurement defect; a threshold proposal for the owner
 - [x] A gate: a head-on at the fatal speed into a rigid wall is fatal, at 80 % of it is not (`test/crash-fatal.mjs`)
-- [ ] Owner: fatal speeds
+- [x] Owner: fatal speeds — 40 / 65 (DEC-167)
 
 ## Open questions
 - **The fatal speeds (owner's number, DEC-034).** Lane B recommends bare 40 / full 65 mph of Δv, keeping the armor scaling. At jalopy armor (50–90 %) that is 52–62 mph of Δv, a 47–55 mph head-on. A square hit at road speed (≤ 63 mph) kills, a 40 mph tree strike does not, and a glancing scrape never does. Reasoning: real frontal-crash data puts the fatality risk for a belted occupant steeply rising past Δv ≈ 40 mph and near even around 50–55 mph (approximate; NASS-CDS-style risk curves). The current 60 / 100 sits above anything the roads let you hold.
@@ -65,3 +65,4 @@ Reading it: Δv tracks the impact speed honestly. A glancing wall hit sheds litt
 ## Log
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
 - 2026-11-13: Lane B: reproduced headless, table above, cause = thresholds out of reach; double-count fixed in `feedContact`; gate `crash-fatal` added.
+- 2026-11-14: Lane B: fatalMphBare/Full 60/100 → 40/65 (DEC-167, supersedes DEC-034) on land/phys-1114. Affected gates 21/21 green; crash-fatal: 65 mph head-on at full armor is fatal, 52 is not. Closed.

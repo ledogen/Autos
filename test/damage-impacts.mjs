@@ -5,7 +5,7 @@
 // dead — so a glancing blow prices as the small hit it is rather than as the speed you were doing.
 //
 //   armor      nothing below 10 mph · square-law above it · 100% at 80 mph (owner 2026-08-20, §2)
-//              fatal speed scales 60 → 100 mph with the hit panel's armor (owner 2026-10-12, §7)
+//              fatal speed scales 40 → 65 mph with the hit panel's armor (owner 2026-10-12, §7)
 //   headlight  10 mph → 10%   ·  60 mph → 100%   unprotected
 //   radiator   10 mph →  5%   ·  60 mph →  50%   unprotected
 //   engine     10 mph →  1%   ·  60 mph →  20%   unprotected

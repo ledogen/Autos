@@ -60,7 +60,7 @@
       user-select: none;
     }
     /* FEAT-42: #resume-card is the pause box's sibling — a resumed run opens frozen under it until any key. */
-    #pause-menu, #resume-card, #towel-card {
+    #pause-menu, #resume-card, #towel-card, #tut-card {
       display: none;
       position: fixed;
       top: 50%;
@@ -78,7 +78,7 @@
       z-index: 100;
       min-width: 200px;
     }
-    #pause-menu .pm-title, #resume-card .pm-title, #towel-card .pm-title {
+    #pause-menu .pm-title, #resume-card .pm-title, #towel-card .pm-title, #tut-card .pm-title {
       color: var(--accent-system);
       font-size: 14px;
       letter-spacing: 2px;
@@ -86,7 +86,7 @@
       margin-bottom: 6px;
     }
     #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text; }
-    #pause-menu button, #towel-card button {
+    #pause-menu button, #towel-card button, #tut-card button {
       background: none;
       border: 1px solid var(--line-control);
       color: var(--text-body);
@@ -98,7 +98,7 @@
       text-align: left;
       transition: background 0.1s, color 0.1s;
     }
-    #pause-menu button:hover, #towel-card button:hover {
+    #pause-menu button:hover, #towel-card button:hover, #tut-card button:hover {
       background: rgba(255, 255, 255, 0.08);
       color: var(--text-bright);
       border-color: var(--line-hover);
@@ -110,6 +110,8 @@
     #pause-menu .pm-why:empty { display: none; }
     /* FEAT-146: the towel's confirm card (owner, 2026-10-31: a card in the owner's words, not a double click). */
     #towel-card { max-width: 400px; }
+    /* FEAT-184 (DEC-147): the intro's card — play the tutorial, or skip it. The towel card's shape. */
+    #tut-card { max-width: 400px; }
     #towel-card p { margin: 0 0 6px; line-height: 1.5; text-align: center; }
     /* FEAT-43: Story Mode seed prompt (minimal; full styling deferred to FEAT-41). */
     #story-seed-modal {
@@ -1506,10 +1508,9 @@
                    border: 1px solid var(--line-hover); }
     .mp-portrait svg { display: block; width: 100%; height: 100%; fill: #8a8272; }
     .mp-flavor { font-style: italic; line-height: 1.45; }
-    /* FEAT-211: the map window. The world frame behind it is the one drawn the moment the map opened (main.js skips
-       the 3D render while the map is open, PERF-38), dimmed by the window's shadow: a spread shadow is the cheapest
-       full-screen tint there is, painted once. */
-    #map-window { display: none; position: fixed; inset: 10vh 10vw; z-index: 90; background: black; /* opaque: the HUD under it must not read through the list's card tint */
+    /* FEAT-211: the map window, 90 % of the screen (owner, 2026-11-14), over the LIVE world (main.js renders it as
+       usual), dimmed by the window's shadow: a spread shadow is the cheapest full-screen tint there is. */
+    #map-window { display: none; position: fixed; inset: 5vh 5vw; z-index: 90; background: black; /* opaque: the HUD under it must not read through the list's card tint */
                   border: 1px solid var(--line-card); box-shadow: 0 0 0 100vmax rgba(0,0,0,0.35); }
     /* The sheet's backdrop is the topo sheet's PAPER_GREEN (map2d.js): mid-drag the cached background is blitted at an
        offset, and the strip that uncovers must read as more sheet, not as a gutter. flex-basis 0 + min-width 0: a
@@ -1518,10 +1519,14 @@
     #map-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; background: var(--card-bg);
                 border-left: 1px solid var(--line-card); font-family: var(--font); font-size: 14px; color: var(--text-body); }
     #map-list-head { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px 8px; font-size: 12px; }
-    #map-list-head .ml-title { color: var(--accent-story); letter-spacing: 2px; text-transform: uppercase; }
+    /* The list's two tabs (the bumpers swap them, a click too): the one showing carries the story accent. */
+    #map-list-head .ml-tab { color: var(--text-faint); letter-spacing: 1px; text-transform: uppercase; cursor: pointer; margin-right: 10px;
+                             transition: color 0.1s; }
+    #map-list-head .ml-tab:hover { color: var(--text-bright); }
+    #map-list-head .ml-tab.on { color: var(--accent-story); }
     /* The run HUD's clock, repeated: the window covers the HUD on a small screen, and the clock is where a job's due
        time is read while weighing offers (owner, 2026-10-15). */
-    #map-clock { color: var(--text-dim); letter-spacing: 1px; }
+    #map-clock { color: var(--text-dim); letter-spacing: 1px; white-space: nowrap; }
     #map-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     #map-list .ml-row { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer;
                         border-left: 2px solid transparent; transition: background-color 0.1s, border-color 0.1s; }
@@ -1531,6 +1536,17 @@
     #map-list .ml-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #map-list .ml-dist { flex: 0 0 auto; color: var(--text-dim); }
     #map-list .ml-none { padding: 6px 14px; color: var(--text-faint); font-size: 12px; }
+    /* FEAT-211 Shopping: a shop's header wraps its pump price / new-stock line under its name; its items, open, sit
+       indented under it, each wrapping whole (name and price, condition and how long it stays, the flavour text). */
+    #map-list .ml-shop, #map-list .ml-item { flex-wrap: wrap; row-gap: 2px; }
+    #map-list .ml-open { flex: 0 0 10px; color: var(--text-dim); }
+    #map-list .ml-sub, #map-list .ml-desc { flex: 1 0 100%; font-size: 12px; color: var(--text-dim); }
+    #map-list .ml-shop .ml-sub { padding-left: 18px; }
+    #map-list .ml-item, #map-list .ml-in { padding-left: 32px; }
+    #map-list .ml-desc { color: var(--text-faint); }
+    #map-list .ml-price { flex: 0 0 auto; color: var(--money); }
+    #map-list .ml-bar { display: inline-block; width: 40px; height: 6px; margin-right: 6px; vertical-align: 1px; border: 1px solid var(--line-control); }
+    #map-list .ml-bar i { display: block; height: 100%; }
     #map-legend { flex: 0 0 auto; display: block; width: calc(100% - 24px); margin: 12px; }
     /* FEAT-67: the offer card docks in the map's corners — nothing may sit on top of it. */
     body.map-open #quickjob-btn { visibility: hidden; }
@@ -1542,13 +1558,13 @@
   <!-- Canvas queried by main.js via document.querySelector('canvas') — no id required -->
   <canvas></canvas>
 
-  <!-- FEAT-211: the map is a WINDOW over the game (80 % of the screen each way), the sheet on the left and the
+  <!-- FEAT-211: the map is a WINDOW over the game (90 % of the screen each way), the sheet on the left and the
        list column on the right: the destinations list over the legend. src/map2d.js shows it, sizes the canvases
        from their laid-out size, and writes the list. -->
   <div id="map-window">
     <canvas id="map2d"></canvas>
     <div id="map-side">
-      <div id="map-list-head"><span class="ml-title">Missions</span><span id="map-clock"></span></div>
+      <div id="map-list-head"><span><span class="ml-tab on" data-tab="missions">Missions</span><span class="ml-tab" data-tab="shopping">Shopping</span></span><span id="map-clock"></span></div>
       <div id="map-list"></div>
       <canvas id="map-legend"></canvas>
     </div>
@@ -1582,6 +1598,11 @@
        (src/story.js). The beta mission generator it used to launch is now Quick Job, surfaced as a
        corner button INSIDE story mode (#quickjob-btn), not a pause-menu entry. -->
   <div id="resume-card"><div class="pm-title">paused</div>press any key to resume</div>
+  <div id="tut-card">   <!-- FEAT-184 (DEC-147): the end of the intro (main.js _syncTutCard) -->
+    <div class="pm-title">tutorial</div>
+    <button id="tc-play">play the tutorial</button>
+    <button id="tc-skip">skip</button>
+  </div>
   <div id="towel-card">
     <div class="pm-title">give up</div>
     <p>Are you sure you want to end your run? This will permanently delete the save file for this run.</p>
@@ -1645,7 +1666,6 @@
       <div class="mm-title">autos</div>
       <button id="mm-continue" style="display:none">continue</button>   <!-- FEAT-42: only while a run is saved -->
       <button id="mm-new">new game</button>   <!-- FEAT-156: the game mode is a row on the new-game page -->
-      <button id="mm-tutorial">tutorial</button>   <!-- FEAT-184: the tutorial, played on purpose; never touches the save -->
       <button id="mm-settings">settings</button>
     </div>
     <!-- FEAT-41 run setup = the GENERATION settings: what the world and the truck are. The selector rows
@@ -1692,6 +1712,8 @@
       <button class="mm-sel" data-key="tractionControl"></button>
       <div class="mm-group">controller</div>
       <button class="mm-sel" data-key="stickDeadzone"></button>
+      <div class="mm-group">display</div>
+      <button class="mm-sel" data-key="frameCap"></button>
       <div class="mm-group">tutorial</div>
       <div class="mm-group"></div>
       <button id="mm-bindings">bindings</button>

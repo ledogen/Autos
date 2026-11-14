@@ -242,16 +242,19 @@ export const DAMAGE_PARAMS = {
   // the sim already produces rather than a timer, and it means the driving that wears the engine is
   // the driving that blinds its filter.
   //
-  // Owner rate: about 30 real-world minutes of HARD driving before it needs replacing. "Hard" here
-  // is the same duty cycle the tire and brake fits use — sustained high rpm under load, which reads
-  // about 0.5 on this normalised insult — so 1800 s x 0.5 = 900.
+  // Owner rate (2026-11-14, swapped with the oil's): about 60 real-world minutes of HARD driving before
+  // it needs replacing. "Hard" here is the same duty cycle the tire and brake fits use — sustained high
+  // rpm under load, which reads about 0.5 on this normalised insult — so 3600 s x 0.5 = 1800.
   //
   // The EFFECT is the whole point and it is deliberately a cliff, not a slope: nothing measurable
   // until 20%, then engine wear multiplies hard. A filter is cheap and the warning is loud; letting
   // it bottom out silently is what kills the engine, and that asymmetry is the mechanic.
-  durFilter:        900,     // normalised load-seconds to a fully blocked filter
+  durFilter:        1800,    // normalised load-seconds to a fully blocked filter
   filterKnee:       0.20,    // below this the filter starts choking the engine
-  filterEngineMult: 20,      // engine wear multiplier at a COMPLETELY blocked filter
+  // DEC-136 (owner, 2026-11-14): the filter's and the oil's penalties ADD (engine wear x (1 + filter extra +
+  // oil extra)), the oil's extra at empty is twice the filter's at blocked, and with both at 0 a 50% engine
+  // lasts 15 min of hard driving: 20000 s at x1 → 900 s, so x 200/9 = 1 + 191/27 + 382/27.
+  filterEngineMult: 1 + 191 / 27,   // ≈ 8.07 — engine wear multiplier at a COMPLETELY blocked filter, oil fresh
   // FEAT-38 hook: dust exposure should multiply the clog rate on dirt roads. Not wired — the
   // per-surface plumbing does not exist yet — so the filter currently clogs at one rate everywhere.
   filterDustMult:   1,
@@ -260,13 +263,12 @@ export const DAMAGE_PARAMS = {
   // Wears on the same rpm x load insult as the engine and the filter (owner: "based off of load and
   // rpm"). The EFFECT is the filter's shape made "more linear ... as significant if not more": no
   // knee squared into a cliff, a straight line from oilKnee down to oilEngineMult at empty oil.
-  // Over the range, old oil costs the engine ~3.7x what a dying filter does (∫(mult − 1) dc: oil
-  // 19 × 0.5 / 2 = 4.75, filter 19 × 0.2 / 3 = 1.27). oilKnee 1 is the pure straight line from new.
-  //   [DEFAULT] all three. 1800 = 60 min of hard driving (insult 0.5) from new to empty, twice the
-  //   filter's life: it bites from 30 min, the filter's whole life.
-  durOil:           1800,    // normalised load-seconds to worn-out oil
+  // oilKnee 1 is the pure straight line from new.
+  //   900 = 30 min of hard driving (insult 0.5) from new to empty, half the filter's life (owner,
+  //   2026-11-14: "swap air filter and oil lifetimes"); it bites from 15 min. oilKnee is still [DEFAULT].
+  durOil:           900,     // normalised load-seconds to worn-out oil
   oilKnee:          0.5,     // below this old oil starts wearing the engine
-  oilEngineMult:    20,      // engine wear multiplier at empty oil (the filter's 20, linear not squared)
+  oilEngineMult:    1 + 382 / 27,   // ≈ 15.15 — at empty oil, filter clean: twice the filter's extra (DEC-136)
 
   // Springs: bump-stop EVENTS, priced on the PEAK force of each one.
   //
@@ -415,15 +417,18 @@ export const DAMAGE_PARAMS = {
 
   // Death: a hit at or above the fatal equivalent speed is the fatal-crash fail state (SM-INV-1).
   //
-  // The threshold SCALES WITH THE HIT PANEL'S ARMOR CONDITION (owner, 2026-10-12): ~60 mph into a
-  // bare panel, ~100 mph into full armor, linear in the condition read BEFORE the hit lands (a hit
+  // The threshold SCALES WITH THE HIT PANEL'S ARMOR CONDITION (owner, 2026-10-12): 40 mph into a
+  // bare panel, 65 mph into full armor, linear in the condition read BEFORE the hit lands (a hit
   // cannot protect itself, same rule as pass-through). Each landed hit lowers the panel, so the next
   // ceiling drops with it. Supersedes the 2026-08-23 single number (80, pinned to the armor curve's
   // saturation so death and total armor loss were one impact) — armor now buys survivability, which
   // is what the owner wants it to be worth. A hit with no armor region (ground/roof) uses the bare
   // figure.
-  fatalMphBare:    60,
-  fatalMphFull:    100,
+  // RETUNED 2026-11-14 (BUG-168, DEC-167): 40 bare / 65 full, was 60 / 100. The old pair sat above
+  // any Δv the roads let you hold, so no crash ever killed. Belted-occupant frontal fatality risk
+  // climbs steeply past Δv ≈ 40 mph (approximate, NASS-CDS-style risk curves).
+  fatalMphBare:    40,
+  fatalMphFull:    65,
   fatalEnabled:    true,
 
   // ── Headlights ─────────────────────────────────────────────────────────────────────────────
@@ -539,6 +544,12 @@ export const DAMAGE_PARAMS = {
   // inflated strike (the air leaves after the hit, not during it).
   rimPinchRoadMult: 24,   // x static wheel load (≈80 kN, a 7 m drop): a road rim strike pinch-flats an inflated tire
   rimInflatedMult:  2,    // x both rim yields while the tire holds air (road ≈160 kN, debris ≈170 kN)
+  // BUG-160 (owner, 2026-11-14, DEC-169): "wheels do not seem to take damage from impacts unless the tire lets go …
+  // i wouldnt mind some wheel damage triggering 50% above the amount of energy as it takes to damage the springs".
+  // Through an inflated tire a bump-stop event also prices the wheel, from the hit that stores this many times
+  // the energy of the spring's no-harm hit in the stop (wheelBumpOnsetN): front 12 → ≈15.7 kN, rear 6 → ≈7.6 kN.
+  // Above it the wheel takes the spring's own curve, measured from its own onset.
+  wheelBumpEnergyMult: 1.5,
 
   // Fraction of its own peak a loaded event must FALL TO before it is banked. Waiting for the load
   // to release outright loses the event whenever the truck ends up resting on whatever it hit —
@@ -762,6 +773,22 @@ export function armorPassThrough (c) {
   return p < 0 ? 0 : p
 }
 
+/**
+ * BUG-160: the bump-stop peak [N] past which an inflated wheel takes damage — the hit that stores `mult` × the energy
+ * of a `floorN` hit in the stop. The stop's rate is k·(1 + (x/x0)²) (suspension.js), so F = k(x + x³/x0²) and the
+ * stored energy is k(x²/2 + x⁴/(4x0²)).
+ * ponytail: quasi-static — the stop damper's share of the energy and the 8× rate cap (x > 13 cm, F > 300 kN) are
+ * left out; both sit far from the onsets this prices (7–16 kN).
+ */
+export function wheelBumpOnsetN (floorN, k, x0, mult) {
+  const a = 1 / (x0 * x0)
+  let x = floorN / k
+  for (let i = 0; i < 8; i++) x -= (x + a * x ** 3 - floorN / k) / (1 + 3 * a * x * x)   // Newton on F(x) = floorN
+  const e = mult * (x * x / 2 + a * x ** 4 / 4)                                       // target energy ÷ k
+  const xw = Math.sqrt((Math.sqrt(1 + 4 * a * e) - 1) / a)                            // E(x) = e, a quadratic in x²
+  return k * (xw + a * xw ** 3)
+}
+
 /** The fatal-crash speed [mph] for a panel at armor condition `c` (SM-INV-1; see fatalMphBare). */
 export function fatalMph (c) {
   const P = DAMAGE_PARAMS
@@ -802,6 +829,12 @@ export class DamageModel {
 
     // Set by applyImpact when a hit exceeds the fatal threshold; the run layer reads and clears it.
     this.fatalImpact = null
+
+    // FEAT-184 (DEC-151, "damage disabled so you cant break the truck"): the tutorial HOLDS the truck. While set,
+    // step() wears nothing (the temperature and the effect multipliers still run: a scripted flat still bites) and
+    // feedContact lands no impact (no armor, no component, no bend, no fatal). The game sets it each step; nothing
+    // here decides what "the tutorial" is.
+    this.held = false
 
     // In-flight collision burst tracked by feedContact: { region, impulse, t }, or null.
     this._burst = null
@@ -965,12 +998,15 @@ export class DamageModel {
   }
 
   /** FEAT-202: how much faster the engine wears for its oil — 1 above oilKnee, straight up to
-   *  oilEngineMult at empty. Multiplies with the filter's: both neglected is both costs at once. */
+   *  oilEngineMult at empty. Its extra ADDS to the filter's (DEC-136), see engineWearMultiplier. */
   oilEngineMultiplier () {
     const P = DAMAGE_PARAMS
     const c = this.get('oil')
     return c >= P.oilKnee ? 1 : 1 + (P.oilEngineMult - 1) * (P.oilKnee - c) / P.oilKnee
   }
+
+  /** DEC-136: the engine's wear multiplier for filter and oil together — the two extras add, never multiply. */
+  engineWearMultiplier () { return this.filterEngineMultiplier() + this.oilEngineMultiplier() - 1 }
 
   /** FEAT-126: synchro-time multiplier — 1 new, transAtZero (3×) when the box is dead. */
   transShiftScale () {
@@ -1119,6 +1155,7 @@ export class DamageModel {
     // the same Δv priced twice, the second time against the armor the first had already lowered
     // (measured: a 70 mph offset tree strike, 69 then 75 mph, fatal at full armor).
     if (this._velRing?.length > 1) this._velRing.splice(0, this._velRing.length - 1)
+    if (this.held) return null   // FEAT-184 (DEC-151): the burst is tracked (so none outlives the tutorial) but never lands
     // Price on the truck's OWN Δv across the burst, not on the engine's accumulated contact impulse.
     //
     // The two should agree — J = m·Δv is the definition — and on a clean flat-on wall strike they
@@ -1268,7 +1305,7 @@ export class DamageModel {
    * @param {number} corner - 0-3 (FL, FR, RL, RR).
    * @param {number} peakN - peak bump-stop force during the event [N].
    */
-  _landBumpStop (corner, peakN) {
+  _landBumpStop (corner, peakN, params) {
     const P = DAMAGE_PARAMS
     const front  = corner < 2
     const floorN = front ? P.springForceFloorFront : P.springForceFloorRear
@@ -1284,6 +1321,14 @@ export class DamageModel {
     // no durSpring any more: for an event-priced track the CURVE is the calibration. The parts
     // durability multiplier (SM-INV-10) and the wear-speed slider still apply inside wear().
     this.wear(id, dmg, 1)
+
+    // WHEEL (BUG-160, DEC-169): through an inflated tire the same event bends the wheel past wheelBumpOnsetN, on the
+    // spring's curve from that onset. Read BEFORE the puncture below: the hit that pops the tire struck it inflated.
+    // A flat tire's wheel is priced by the rim strike instead (the rim itself on the ground).
+    if (!this.flat[corner] && params?.bumpStopStiffness) {
+      const onN = wheelBumpOnsetN(floorN, params.bumpStopStiffness, params.bumpStopProgressiveM || 0.05, P.wheelBumpEnergyMult)
+      if (peakN > onN) this.wear(WHEEL_IDS[corner], Math.min(1, P.springBumpRefDmg * Math.pow((peakN - onN) / (refN - floorN), P.springBumpExp)), 1)
+    }
 
     // PUNCTURE: the same event, read against the tire rather than the spring. FEAT-112: an overloaded
     // bed caps the condition the curve reads (tireCondCap, set by the game from the load's mass) — a
@@ -1395,6 +1440,7 @@ export class DamageModel {
   step (vehicleState, params, dt) {
     const P = DAMAGE_PARAMS
     this._stepTemp(vehicleState, params, dt)
+    if (this.held) { this.publish(params); return }   // FEAT-184 (DEC-151): the tutorial wears nothing
 
     // Damage disabled: hold everything at the nominal used-truck condition. Deliberately NOT a
     // freeze — a debug session should always start from the same known state (owner, 2026-08-19).
@@ -1527,7 +1573,7 @@ export class DamageModel {
         // it there. A steady resting load does not decay, so it is never banked twice.
         const floorN = i < 2 ? P.springForceFloorFront : P.springForceFloorRear
         if (peak > floorN && (f <= floorN || f < peak * P.eventDecayFrac)) {
-          this._landBumpStop(i, peak)
+          this._landBumpStop(i, peak, params)
           this._bumpPeak[i] = 0
         } else if (f <= floorN) {
           this._bumpPeak[i] = 0
@@ -1573,7 +1619,7 @@ export class DamageModel {
         // punishing one. This is one of the two couplings between tracks in the model, and it is
         // deliberate: the filter has no effect of its own, it makes something else worse. FEAT-202:
         // the oil is the second coupling of the same kind (oilEngineMultiplier), worn by the same insult.
-        this.wear('engine', insult * this.filterEngineMultiplier() * this.oilEngineMultiplier() * dt, P.durEngine)
+        this.wear('engine', insult * this.engineWearMultiplier() * dt, P.durEngine)
         this.wear('airFilter', insult * P.filterDustMult * dt, P.durFilter)
         this.wear('oil', insult * dt, P.durOil)
       }

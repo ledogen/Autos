@@ -7,7 +7,7 @@
 //   2. repair(): charges, sets the target (never past the cap), adds the labour hours; refuses a
 //      target off the list; straightening zeroes the bent geometry; a wallet that can't cover it
 //      changes nothing. The shop patches a flat: air back in, condition unchanged.
-//   3. Buy & fit off the shelf: priced by condition × tier, charges, empties the slot, bolts the part on
+//   3. Buy & fit off the shelf: priced by condition × tier (buyQuote, the Shop tab's price and hours), charges, empties the slot, bolts the part on
 //      with its condition, adds the socket's labour; the old part goes straight into the inventory WITH
 //      its wear and its puncture (owner 11-04: no sell / keep prompt) and sells from there (half price ×
 //      condition); exchanging it back on brings that wear back, on any corner for a tire. A flat tire
@@ -30,6 +30,9 @@
 //      job on new oil or past the wallet. A run save written before the oil track loads with new oil.
 //  10. FEAT-196: a corner swap trades two corners' mounted pairs (each part's wear, the puncture with its tire) for
 //      four hub swaps; a mounted pair's wheel in the inventory is straightened on the bench, still mounted.
+//  12. FEAT-212: the cart — queued jobs show on the truck at once and pay at checkout exactly what they cost one by one,
+//      once, the clock run once; discard is exact; taking a line out replays the rest (a line that needed it comes out
+//      too); short of the wallet the jobs queue and checkout waits; the free repair and mom's tire are used once.
 //
 // Pure node: no THREE, no DOM.
 import { ServiceCenter } from '../src/service.js'
@@ -121,6 +124,9 @@ damage.set('damperRear', 0.2)
 stock(['dampersHD'], ['tireSport', 0.5], ['tirePlugKit'])
 check('a used part is priced by its condition, × tier', near(svc.shelfPrice(1), PARTS.tireSport.price * 0.5)
   && (tier = 2, near(svc.shelfPrice(1), PARTS.tireSport.price)) && (tier = 1) && svc.shelfPrice(2) > 0)
+check('FEAT-212: the Shop tab\'s quotes — to carry is the shelf price in no time; fitted adds the fitting\'s price and hours',
+  near(svc.buyQuote(0).price, PARTS.dampersHD.price) && svc.buyQuote(0).hours === 0
+  && near(svc.buyQuote(0, 'dampersRear').price, PARTS.dampersHD.price + SU.price) && svc.buyQuote(0, 'dampersRear').hours === 0.75)
 check('buy heavy-duty rear shocks, fitted for the shop\'s minimum charge', svc.buyAndFit(0, 'dampersRear') && near(wallet, 100 - PARTS.dampersHD.price - SU.price)
   && params.suspensionDampingRear === PARTS.dampersHD.patch.suspensionDampingRear && damage.get('damperRear') === 1)
 check('…the slot is empty now', shelf[0] === null && !svc.buyAndFit(0, 'dampersRear'))
@@ -309,6 +315,108 @@ check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].
     check('…the next tire is paid again', mom.shelfPrice(1) > 0 && !mom.buyToInventory(1))
     const i = inventory.list().findIndex(r => r.id === 'spareTire' && !r.flat)
     check('…and fitting it is free, once', mom.swapPair(i, 0) && w === 0 && !owes.labour && mom.fitLabour('spareTire', 'tireFL').price > 0)
+}
+
+// ── 12. FEAT-212: the cart ────────────────────────────────────────────────────────────────────
+// Queued jobs change the truck and the inventory at once and the wallet, the clock and the shelf only at checkout, which
+// charges exactly what the same jobs one by one would have. Discard puts back EXACTLY what was there; taking a line out
+// replays the rest, and a line whose part only the removed one brought comes out with it. Short of the wallet, the jobs
+// still queue and checkout waits.
+{
+    const truck = () => JSON.stringify([parts.snapshot(), damage.toeOffsetDeg, damage.camberOffsetDeg, inventory.snapshot()])
+    const world = () => JSON.stringify([wallet, hours, shelf])
+    const setup = () => {
+        svc.discard()
+        damage.setAll(1); damage.flat.fill(false); parts.start(); inventory.start()
+        damage.set('engine', 0.5); damage.set('oil', 0.4); damage.set('tireFL', 0.3); damage.flat[0] = true; damage.set('wheelRR', 0.5)
+        damage.toeOffsetDeg[1] = 0.6; damage.set('alignFR', 0.7)
+        inventory.grant('dampersHD', 1, { cond: 0.6 })
+        stock(['tireSport', 0.8], ['springsHD'], ['tirePlugKit'])
+        wallet = 1000; hours = 0
+    }
+    const flatTire = () => inventory.list().find(r => r.flat)?.index
+    // Each job's args are read when it runs (the inventory moves under them).
+    const JOBS = {
+        swap: () => ['swapCorners', [0, 3]],               // FL's flat tire goes to RR, RR's bent wheel to FL…
+        wheel: () => ['repair', ['wheelFL', 0.8]],         // …which is then straightened where it is now
+        oil: () => ['changeOil', []],
+        align: () => ['align', []],
+        plug: () => ['buyToInventory', [2]],
+        tire: () => ['buyAndFit', [0, 'tireRR']],          // the flat comes off into the inventory…
+        shocks: () => ['exchange', [inventory.list().findIndex(r => r.id === 'dampersHD'), 'dampersFront']],
+        sell: () => ['sellOwned', [flatTire()]],           // …and is sold
+    }
+    const run = (names) => names.every(n => { const [m, a] = JOBS[n](); return svc[m](...a) })
+    const queue = (names) => names.every(n => { const [m, a] = JOBS[n](); return svc.queue(m, a, n) })
+    const ALL = Object.keys(JOBS)
+
+    setup()
+    const s0 = truck(), w0 = world()
+    check('cart: the jobs one by one all go through', run(ALL), JSON.stringify(inventory.list().map(r => r.id)))
+    const s1 = truck(), paid = 1000 - wallet, worked = hours, shelf1 = JSON.stringify(shelf)
+    setup()
+    check('cart: …and the same jobs queue', truck() === s0 && queue(ALL) && svc.cart.length === ALL.length)
+    check('…the truck and the inventory show them at once', truck() === s1)
+    check('…the wallet, the clock and the shelf wait', world() === w0 && svc.pending())
+    check('…the subtotal is what they cost one by one, money and hours', near(svc.total().price, paid) && near(svc.total().hours, worked),
+        JSON.stringify({ total: svc.total(), paid, worked }))
+    check('checkout pays it once and runs the clock once', svc.checkout() && near(1000 - wallet, paid) && near(hours, worked) && JSON.stringify(shelf) === shelf1
+        && truck() === s1 && !svc.cart.length && !svc.pending(), JSON.stringify({ wallet, hours }))
+
+    setup()
+    queue(ALL)
+    svc.discard()
+    check('discard puts back exactly what was there', truck() === s0 && world() === w0 && !svc.cart.length)
+
+    const without = (n) => { setup(); run(ALL.filter(x => x !== n)); return truck() }
+    for (const n of ['oil', 'plug', 'align']) {   // 'plug' moves every later inventory row up one: found again by what it is
+        const want = without(n)
+        setup(); queue(ALL)
+        const dropped = svc.remove(ALL.indexOf(n))
+        check(`taking "${n}" out: the rest replayed, as if it had never been queued`, dropped === 0 && truck() === want && svc.cart.length === ALL.length - 1
+            && world() === w0, `dropped ${dropped}, ${svc.cart.map(l => l.label)}`)
+    }
+    setup(); queue(ALL)
+    check('taking the tire out takes the sale of the tire it took off with it', svc.remove(ALL.indexOf('tire')) === 1
+        && svc.cart.map(l => l.label).join() === ALL.filter(n => n !== 'tire' && n !== 'sell').join() && world() === w0)
+    setup(); queue(ALL)
+    check('taking the corner swap out takes the wheel repair (that wheel is not on FL now) and the sale (the flat never comes off)',
+        svc.remove(ALL.indexOf('swap')) === 2 && svc.cart.map(l => l.label).join() === 'oil,align,plug,tire,shocks' && damage.get('wheelFL') === 1 && damage.get('wheelRR') === 0.5)
+    svc.discard()
+    check('…and a discard after it is still exact', truck() === s0 && world() === w0)
+
+    setup(); wallet = 10
+    check('short of the wallet: the job still queues', svc.queue('repair', ['engine', 0.7], 'engine') && svc.short() > 0)
+    check('…checkout waits, nothing paid or clocked', !svc.checkout() && wallet === 10 && hours === 0 && svc.cart.length === 1)
+    svc.discard()
+    check('…and a discard is exact', truck() === s0 && damage.get('engine') === 0.5)
+
+    setup(); wallet = 0
+    const d0 = inventory.list().findIndex(r => r.id === 'dampersHD')
+    check('a sale in the cart pays for the work beside it', svc.queue('sellOwned', [d0], 'sell') && svc.queue('patch', ['tireFL'], 'patch')
+        && svc.short() === 0 && svc.checkout() && near(wallet, PARTS.dampersHD.price * 0.5 * 0.6 - PATCH.price) && near(hours, PATCH.hours), wallet)
+
+    setup()
+    svc.preview(0, 'tireFL')
+    check('a shelf item fitted for a look is pending too (no autosave)', svc.pending())
+    svc.unpreview()
+
+    // The free repair and mom's tire are used once across the cart, and only by its checkout.
+    setup()
+    let owed = 1
+    const owes = { part: true, labour: true }
+    const once = new ServiceCenter({ ...svc, freeRepairs: () => owed, useFreeRepair: () => { owed-- },
+        onMom: (id, k) => PARTS[id]?.slot === 'tire' && owes[k], useMom: (id, k) => { owes[k] = false } })
+    damage.set('radiator', 0.5)
+    check('cart: the free repair covers the first repair only', once.queue('repair', ['engine', 0.7], 'e') && once.queue('repair', ['radiator', 0.7], 'r')
+        && once.cart[0].price === 0 && once.cart[1].price > 0 && owed === 1)
+    check('…mom\'s tire is free once in the cart', once.shelfPrice(0) === 0 && once.queue('buyAndFit', [0, 'tireFL'], 't') && once.cart[2].price === 0
+        && once.fitLabour('tireSport', 'tireFR').price > 0 && owes.part && owes.labour)
+    once.discard()
+    check('…a discard owes them again', owed === 1 && owes.part && once.shelfPrice(0) === 0)
+    once.queue('repair', ['engine', 0.7], 'e'); once.queue('buyAndFit', [0, 'tireFL'], 't')
+    check('…a checkout uses them', once.checkout() && owed === 0 && !owes.part && !owes.labour)
+    svc.discard()
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')

@@ -77,3 +77,6 @@ of the items all at once instead of loading up one at a time."
   - equipping the Frame pack brings the bedroll across;
   - it takes a whole camp and refuses a seventh item;
   - the tether follows the equipped pack, never past 120 m, and falls back to the param headless.
+
+## Owner, 2026-11-14
+Owner, card feat182-try: "good" — note: "the flavor text for the backpacks should hint at the daypack's function/superpower". The figures stand; the flavour text is queued for Lane C.

@@ -1,20 +1,18 @@
 ---
 id: DEC-153
-status: draft
+status: standing
 decided: 2026-11-14
 area: story
 governs: FEAT-184, FEAT-170, data/offers.js, casserole, Larry, tutorial
 supersedes:
 ---
 
-# DEC-153: Does the casserole to Larry's stay in the tutorial
+# DEC-153: The paycheck replaces the casserole in the tutorial
 
-**Ruling.** Open: the tutorial keeps mom's casserole to Larry's (unpaid, his reminder of the camp) before the paycheck at the burger shop, or the paycheck replaces the casserole.
+**Ruling.** "the paycheck replaces it (Larry's reminder moves elsewhere)": the tutorial's morning goes back to the burger joint for the last paycheck, with no casserole to Larry's. "larry calls you after you pick up your last paycheck" (DEC-155).
 
-**Why.** Two answers in the same dive read differently; the tutorial's day 1 depends on it.
+**Why.** The owner's dive had two readings ("tutorial contains the casserole mission" vs the paycheck "replaces the casserole mission"); the follow-up dive settles it for the paycheck.
 
-**Replaces.** Nothing yet: this record is a draft until the owner rules.
+**Replaces.** The casserole as the tutorial's morning job and Larry's welcome at his house (FEAT-170), and the draft's open question.
 
-**Source.** FEAT-184 tutorial dive, answers "first-job" and "skip" (owner, 2026-11-14). Agent wording.
-
-**Conflict.** A: "tutorial contains the casserole mission" (FEAT-184 dive, first-job (owner, 2026-11-14)) · B: "if you choose tutorial you end up going back to pick up your last paycheck from the burger joint, which replaces the casserole mission" (FEAT-184 dive, skip (owner, 2026-11-14))
+**Source.** FEAT-184 tutorial-flow dive, answer "casserole" (owner, 2026-11-14). Owner's words.

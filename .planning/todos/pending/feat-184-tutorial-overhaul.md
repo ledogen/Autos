@@ -13,9 +13,14 @@ lane: A
 # FEAT-184: the tutorial overhaul — alpha
 
 ## Next steps
-Owner: answer the follow-up dive `.planning/dives/FEAT-184-tutorial-flow.html` (which world a played tutorial
-continues in, the day counter, the "exactly 24 h", the casserole, who tells a skipper the goal). Lane A: landing 1
-(the traps, no setting, the skip prompt and its confirmation) is built on `feature/run-shape`; landing 2 waits on that dive.
+Landing 2 is built (slices 1 + 2) and up for landing: the intro's card, the played tutorial on day −1 to the morning paycheck
+at the joint (19:30 day 0), a later run's second load and its world back, the menu button and the no-save rule retired, the
+casserole slot deleted, the joint quiet on the map, and the gate `tutorial-seed`. Unverified in a browser: the smoke's
+story / opening / pad steps were rewritten for it but not run on the branch (the orchestrator smokes main).
+Left: the intro expanded to 15 s – 1 min (the owner's words) and the smoke playing the whole sequence once it is green.
+Owner: Larry's call and the paycheck card's words (FEAT-148; PLACEHOLDER in data/dialogue.js); whether to fill the
+tutorial's day with more lessons (exact-24h, no ruling yet); confirm DEC-158 is later runs only (the switch:
+`TUT_SEED_RETURNS` in src/main.js).
 
 ## Summary
 The tutorial becomes the first part of every run: intro (the firing) → a card asking whether to play the tutorial →
@@ -370,20 +375,26 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
 ## Tracker
 - [x] The plan, answered by the owner (the tutorial dive, submitted 2026-11-14)
 - [x] Decision records DEC-146..154 (DEC-109 and DEC-110 superseded)
-- [ ] The follow-up dive answered (`FEAT-184-tutorial-flow.html`)
+- [x] The follow-up dive answered (`FEAT-184-tutorial-flow.html`): DEC-153 settled, DEC-155..160
 - Landing 1:
   - [x] No setting and no "always skip": the `skipTutorial` row and its auto-on are gone; the first playthrough ever is one stored mark
   - [x] The prompt reads "hold M to skip tutorial"; the confirmation when the player chose the tutorial or on the first playthrough ever
   - [x] Traps: no fuel burn on the evening, no damage (already), off the road puts you back on it, the pump until broke, the shop's tire on mom
   - [x] Pocket change through the tutorial; the last paycheck paid at its end
 - Landing 2 (waits on the follow-up dive):
-  - [ ] The card at the end of the intro: play the tutorial, or skip
-  - [ ] The skip lands outside the burger place when the intro ends, with the boss's check; no burger job for ~18 h
-  - [ ] The last act: back to the burger joint for the paycheck, 24 in-game hours after the firing
-  - [ ] The main menu's "tutorial" button retired; the tutorial saves as part of the run
+  - [x] The card at the end of the intro: play the tutorial, or skip
+  - [x] The skip lands outside the burger place, with the boss's check, then Larry's call (placeholder words); no burger job until 07:00 day 1
+  - [x] The played tutorial on day −1 → day 0 (DEC-159); the second load at the card, the random world back at the end (DEC-157/158)
+  - [x] The last act: back to the burger joint for the paycheck, 24 in-game hours after the firing
+  - [x] The main menu's "tutorial" button retired; the tutorial saves as part of the run
 - Landing 3 (waits on the seed):
-  - [ ] The tutorial seed: census, the owner's pick from screenshot sheets, a gate pinning its beats
-  - [ ] The first playthrough ever on it, intro included
+  - [x] No damage for the whole tutorial (DEC-151): no wear and no impact (armor, components, bends, a fatal crash) from the
+    firing to Larry's welcome; free will unchanged (`DamageModel.held`, gate damage-contact-wiring §6)
+  - [x] The census: 135 random seeds, 43 pass (`wip/feat184/seed-census.mjs`, `seed-score.mjs`, `seed-shot.mjs`, `seed-dive.mjs`)
+  - [x] The owner's pick from the sheets: 822480141
+  - [x] The pick pinned (`data/tutorial.js`); the menu's tutorial plays on it
+  - [x] A gate pinning its beats (`test/tutorial-seed.mjs`)
+  - [x] The first playthrough ever on it, intro included (a blank seed while `playedBefore` is unset)
   - [ ] The intro expanded to 15 s – 1 min (the owner's words)
 - [ ] The smoke's opening step plays the whole sequence
 
@@ -415,6 +426,15 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   "and just so you have no excuse to come back here's your last check". slight difference is no mission should be
   offered at burgers for ~18 hrs (till early next day)" (DEC-152, DEC-150; the casserole: DEC-153)
 - 2026-11-14, owner (dive, lessons): "after alpha" (DEC-154).
+- 2026-11-14, owner (tutorial-flow dive): loads "accept the second load" (DEC-157) · tutorial-world "load the random world
+  at the end" (DEC-158) · day-count "same day number for both" (DEC-159) · burger-quiet "until 07:00 the next morning"
+  (DEC-156) · casserole "the paycheck replaces it (Larry's reminder moves elsewhere)", note "larry calls you after you pick
+  up your last paycheck (so right after you get free will). he offers you a side gig delivering papers. he reminds you of
+  the expedition camp and good deeds." (DEC-153, DEC-155) · skip-goal "Larry calls after the boss's line" (DEC-155) ·
+  menu-button "retire both with the card" (DEC-160) · exact-24h, no choice, note "ideally we fill it with a couple more
+  lessons but tbh having trouble thinking of many. paycheck can set the clock if need be but maybe we can fit an actual
+  camping lesson in here, talk about upgrades and assist items, load some cargo or something im missing to give the
+  impression of a full day going by." · seed pick "822480141" (DEC-149).
 - 2026-11-14, owner (dive, 5a skip moves): "change. first playthrough ever can skip the tutorial and there is no more
   flag. the skip text: "hold m to skip tutorial" is enough to suggest how to access the tutorial (wait)" (DEC-148).
 - 2026-11-14, owner (dive, 5b setting): "no setting" (DEC-148).
@@ -433,6 +453,14 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   be "on mom"" (DEC-151, DEC-152, DEC-150)
 
 ## Open questions
+- **exact-24h** (no ruling): the owner allows "paycheck can set the clock if need be" and would like more lessons to fill
+  the day ("an actual camping lesson … talk about upgrades and assist items, load some cargo"). Built default: the paycheck
+  sets 19:30 (slice 2). A lesson proposal is on the orchestrator's owed line; nothing built.
+- **Lines owed (FEAT-148):** Larry's call (`LARRY_CALL`, brief: the paper-route side gig, the camp, the good deeds); the
+  paycheck card at the joint (slice 2).
+- Lane B: once FEAT-212's cart lands, the tutorial's on-mom tire needs "check out" before leaving the shop. Not built against.
+
+### Before the follow-up dive (answered 2026-11-14)
 The owner asked for issues with the skip flow ("lemme know if there are issues with it in the next round"). Checked
 against the code; the linked ones are written up as the follow-up dive `.planning/dives/FEAT-184-tutorial-flow.html`.
 Each has a recommendation there.
@@ -482,5 +510,39 @@ Each has a recommendation there.
   [DEFAULT]s: $3 pocket change, 4 s off-road, 5 s confirmation window, fuel off for the whole evening (not only to the
   station). [interim] The paycheck lands at Larry's until landing 2 moves the last act to the burger joint.
   Affected gates 38/38 green (`node test/run-all.mjs --serial`, wip/feat184/gates.log; cdp-smoke not run on the branch).
+- 2026-11-14: landing 3 part 1 (Lane A): the tutorial's damage trap. Lane B found (BUG-168) that the evening skipped wear
+  but not impact damage, so a crash on the safe drive still cost armor and could end the run. Now `DamageModel.held`
+  (src/damage.js) holds the truck: `step()` wears nothing (the engine temperature and the effect multipliers still run)
+  and `feedContact` tracks a burst but never lands it (no armor, no component, no bend, no `fatalImpact`). main.js sets it
+  each step from `_inTutorial()`: a played opening (the firing heard, not skipped) until Larry's welcome, so the morning's
+  casserole drive is covered too; after it (free will) nothing changes. The scripted lessons still work: the flat is set
+  straight on `damageModel.flat` and the spare is an inventory flag, neither goes through wear or impacts; the damage screen
+  (V) shows the jalopy's rolled wear. Side effect, on purpose: the evening used to skip `step()` whole, so the scripted flat
+  never reached the physics (`publish`); held still publishes, so the flat corner now drives like a flat. The gear grind's
+  damage-screen alert is off while held. Gate: damage-contact-wiring §6 (a 100 mph head-on held: nothing lands, nothing
+  wears; released, the same hit kills). cdp-smoke's story step checks `__worstDay().held` on the evening (not run on the
+  branch).
+- 2026-11-14: landing 3 part 2 (Lane A): the tutorial-seed census. Per seed, headless, with the game's own planner
+  (`MissionSystem.planOffer`, the calls `_planEvePump` and the tow make): joint → nearest station by road → mom's (the flat
+  at the leg's halfway point) · the tow to the crow-nearest auto shop · shop → mom's · mom's → Larry's · Larry's → joint
+  (landing 2's last act). Per driven leg: km, steepest pitch (% over 20 m), metres steeper than 15 %, tightest bend,
+  junctions (deg ≥ 3), tunnels. Hard rule: the station's detour over driving straight home ≤ 2 km (the median is 3.3 km);
+  then a penalty ranking. 300 seeds planned; the orchestrator paused the run at 135 (main's smoke needed the box), 43
+  pass. Finding: nearly every seed's route has a 20–25 % pitch somewhere (42 of 43): the network's character, so the
+  ranking counts the metres of it. The shortlist (4, map sheets with the legs drawn in the page by the same planner) is the
+  dive `FEAT-184-tutorial-seed.html`; rec 822480141 (steepest 16.8 %, 155 m over 15 %, one road, 7 km). Scripts in
+  `wip/feat184/` (seed-census / seed-score / seed-shot / seed-dive). Also: cdp-smoke's off-road wait 12 → 45 s (the reset
+  counts play time, `_playedS`, which a loaded box accrues slower than the wall clock).
 - 2026-11-14: the tutorial dive folded in (Lane A): DEC-146..154; DEC-109 / DEC-110 superseded; the issues checked
   against the code (Open questions; the follow-up dive).
+- 2026-11-14: landing 2 slice 1 (Lane A, 34f2e8dc): `data/tutorial.js` pins 822480141; a blank seed on the first playthrough
+  ever and the menu's tutorial (no `?seed=`) play on it. The skip lands outside the burger joint on the clock it was skipped
+  at (no night at mom's), the board's first slot closed silently, then the manager's last check (BOSS_CHECK, the owner's
+  line), Larry's call (LARRY_CALL, PLACEHOLDER) and RUN_INTRO. The joint's park trigger offers no job before 07:00 on day 1
+  (its offers still show on the map). cdp-smoke's story step rewritten for it (not run on the branch). INFRA-15's WIP
+  reverted (075d241d). Interim: a played tutorial still ends with the casserole and Larry's welcome until slice 2.
+- 2026-11-14: landing 2 slice 2 (Lane A, b0e069a1..): the intro's card (#tut-card; its skip asks once more on a first
+  playthrough); the firing on day −1, the morning leg to the joint, the paycheck card (PLACEHOLDER) sets 19:30 day 0 (a skip
+  floors there too); a non-tutorial seed's "play" loads 822480141 and its end loads the run's world back (`returnSeed` in the
+  save); #mm-tutorial / `_tutorialRun` / LARRY_WELCOME / the board's f0 slot deleted; `_jointQuiet` on every board reader.
+  Gate `tutorial-seed` added. Gates: wip/feat184/gates-l2s2.log. cdp-smoke steps rewritten, not run on the branch.

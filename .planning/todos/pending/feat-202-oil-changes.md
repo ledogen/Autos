@@ -64,3 +64,7 @@ Old oil and a clogged filter multiply: both neglected is both costs at once (× 
 ## Log
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
 - 2026-11-13, Lane B: built. The engine glyph is now a front-on 60° V (the Ranger's 4.0 V6), the filter's neck running into the valley; the oil pan sits under the crankcase at its width. My Vehicle → Engine & drivetrain → Engine Oil → "Change the oil". Screenshots: `wip/feat-202/damage-screen*.png` and `engine-crop.png` in the CarGame-machine worktree.
+- 2026-11-14: owner's numbers (DEC-136), by the orchestrator on main: lifetimes swapped (oil 30 min, filter 60 min of hard driving); the two engine-wear penalties ADD instead of multiplying; empty oil adds twice what a blocked filter adds (x15.15 and x8.07 alone, x22.2 together), so a 50% engine with both at 0 lasts 15 min of hard driving. The oil's 50% knee and the filter's 20% squared knee are unchanged. Gate damage-filter-puncture updated and green; smoke 26/26.
+
+## Owner, 2026-11-14
+Owner opened card feat202-look after the DEC-136 numbers and submitted it with no choice and no note. Read as no change asked; the orchestrator asked the owner to confirm.

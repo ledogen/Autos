@@ -2,8 +2,8 @@
  * FEAT-97 fragile cargo — the load's HEALTH, from the shocks it feels through its strap.
  *
  * Pure: no engine, no Three.js. main.js feeds it one number per fixed step — the acceleration the
- * load actually feels, in g: the weld's force on it ÷ its mass, plus gravity (physics-engine.js
- * jointForce). At rest that is 0 whatever the truck's attitude, so only real motion counts. Mass
+ * load actually feels, in g: its own change in velocity across the step ÷ the step (feltG). At rest
+ * that is 0 whatever the truck's attitude, so only real motion counts. Mass
  * does not enter: a piano and a vase feel the same g over the same bump and differ only in what
  * they can take (`shockFloorG` / `onePctG` / `breakG` on their data/offers.js tier).
  *
@@ -25,9 +25,18 @@
 export const G = 9.81
 const EVENT_DECAY_FRAC = 0.5   // same release rule as damage.js eventDecayFrac
 
-/** Felt acceleration in g from the strap's force on the load [N] and its mass [kg]. */
-export function feltG (force, massKg) {
-  return Math.hypot(force.x / massKg, force.y / massKg - G, force.z / massKg) / G
+/**
+ * Felt acceleration in g: the load's own Δv across one fixed step [m/s] over the step [s].
+ *
+ * BUG-166 (owner 2026-11-14, "yes, a crash breaks it"; DEC-168): NOT the weld's joint force. Box3D
+ * reports that from the LAST substep, which carries our tire and strut forces (spread over the step)
+ * but none of a chassis contact (solved in the first substep or two): a 53 g body strike read 0.47 g.
+ * The step-averaged Δv / dt is the same quantity, equal to the joint force to the hundredth in
+ * driving (washboard 0.78 g, a 0.15 m ledge 3.39 g), and it sees strikes. Gravity is in Δv and in the
+ * weld's force alike, so free fall reads 1 g in both and rest reads 0.
+ */
+export function feltG (v0, v1, dt) {
+  return Math.hypot(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z) / dt / G
 }
 
 /** Where one hit costs 1 % of health, in g. */

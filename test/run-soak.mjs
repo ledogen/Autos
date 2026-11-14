@@ -2,7 +2,7 @@
 // over CDP on random seeds, the way cdp-smoke boots it (its own Vite on a free port, rooted at this checkout).
 // Not a gate: a run is many minutes. A rainy-day script, like the smoke's heavier cousins.
 //
-// Each run: a new story run → hold M (skip the opening; it lands at Larry's, the casserole delivered) → each day take
+// Each run: a new story run → hold M (skip the opening; it lands outside the burger joint at 19:30 on day 0, DEC-152) → each day take
 // board jobs and teleport through each leg, finishing at a MID rank (the clock is advanced to the middle of
 // the A/B lines before the last arrival) → refuel when low, eat, shop and pack food (EATING, below) → sleep
 // at mom's when tired or late → save & exit + reload + continue once a night → until the deeds gate opens the
@@ -212,7 +212,7 @@ const HELPERS = `window.__soak = {
   state (foodIds) { const d = window.__day(), e = window.__econ, m = window.__mission(), b = window.__board(), v = window.__vs
     return { day: d.day(), h: d.clockH(), hour: d.hour(), energy: d.energyH(), hungry: d.hungry(), word: d.hungerWord(), money: e.money, half: e.halfPoints,
       food: window.__inv.list().filter(r => foodIds.includes(r.id)).reduce((a, r) => a + (r.n ?? 1), 0),
-      ms: m.state, fuel: v.fuel.gal, first: b?.firstState(), lines: b?.lines().map(l => l.state) ?? [], pos: window.__car(),
+      ms: m.state, fuel: v.fuel.gal, tut: window.__tutorial().phase, lines: b?.lines().map(l => l.state) ?? [], pos: window.__car(),
       ended: document.getElementById('run-end')?.style.display === 'block' && document.getElementById('re-title').textContent } },
 }`
 const S = () => js(`window.__soak.state(${JSON.stringify(FOOD_IDS)})`)
@@ -230,14 +230,14 @@ async function startRun (seed) {
   await js(`document.getElementById("su-seed").value = ${JSON.stringify(seed)}; document.getElementById("su-start").click()`)
   check(await until(() => js(live), 180000, 250), 'the run never went live')
   await js(HELPERS); await js('window.__soak.carry(); window.__soak.watch()')
-  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2), at Larry's with the casserole delivered
-  // (FEAT-184, owner 2026-11-07); the day loop reads off his welcome. FEAT-184 (DEC-148): every run opens on the firing,
+  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2), outside the burger joint at 19:30 on day 0
+  // (FEAT-184, DEC-152); the day loop reads off Larry's call. FEAT-184 (DEC-148): every run opens on the firing,
   // and on a browser's first playthrough the first hold only asks "are you sure" — a second hold skips.
   check(await until(dlgUp, 5000), 'the run did not open on the firing')
   await key('m', true); await sleep(1300); await key('m', false)
   if (/are you sure/.test(await js('document.getElementById("skip-hint")?.textContent ?? ""'))) { await key('m', true); await sleep(1300); await key('m', false) }
-  check(await until(() => js('window.__board().firstState() === "done"'), 15000), `holding M did not skip to the casserole delivered: ${JSON.stringify(await js(`({
-    first: window.__board().firstState(), ms: window.__mission().state, dlg: getComputedStyle(document.getElementById('dialogue-panel')).display,
+  check(await until(() => js('window.__tutorial().phase === "free"'), 15000), `holding M did not skip the tutorial: ${JSON.stringify(await js(`({
+    tut: window.__tutorial().phase, ms: window.__mission().state, dlg: getComputedStyle(document.getElementById('dialogue-panel')).display,
     hint: document.getElementById('skip-hint')?.style.display, vis: document.visibilityState, focus: document.hasFocus(), log: (window.__soakLog ?? []).slice(-12) })`))}`)
   if (process.argv.includes('--gate-at-start')) await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)   // test the camp's lines first
   await js('window.__autosave()')
@@ -266,11 +266,11 @@ async function saveAndResume () {
   await until(async () => !await js('document.getElementById("resume-card").style.display === "flex"'), 3000)
   const after = await S()
   const sameRoster = await js('window.__poi().list().map(q => q.id).join()') === rosterBefore
-  if (after.first !== before.first || !sameRoster) writeFileSync(join(ROOT, `wip/run-soak/resume-${run.seed}-day${before.day}.json`),
+  if (after.tut !== before.tut || !sameRoster) writeFileSync(join(ROOT, `wip/run-soak/resume-${run.seed}-day${before.day}.json`),
     JSON.stringify({ record: JSON.parse(record), momBefore, after: await js(`({ mom: window.__poi().list().find(q => q.type === 'momsHouse')?.id,
-      first: window.__board().firstState(), pois: window.__poi().list().map(q => q.id) })`) }))
-  check(after.day === before.day && Math.abs(after.money - before.money) < 0.005 && Math.abs(after.h - before.h) < 0.2 && after.first === before.first && sameRoster,
-    `the resume changed the run: ${JSON.stringify({ day: before.day, money: before.money, h: before.h, first: before.first })} → ${JSON.stringify({ day: after.day, money: after.money, h: after.h, first: after.first, sameRoster })}`)
+      tut: window.__tutorial().phase, pois: window.__poi().list().map(q => q.id) })`) }))
+  check(after.day === before.day && Math.abs(after.money - before.money) < 0.005 && Math.abs(after.h - before.h) < 0.2 && after.tut === before.tut && sameRoster,
+    `the resume changed the run: ${JSON.stringify({ day: before.day, money: before.money, h: before.h, tut: before.tut })} → ${JSON.stringify({ day: after.day, money: after.money, h: after.h, tut: after.tut, sameRoster })}`)
 }
 
 // A 0.1 m drop, not the teleport's default 0.5: every seat with a fragile crate aboard was a half-metre fall
@@ -435,22 +435,29 @@ async function eat () {
 
 /** EATING: at a food store's open shop screen, buy food up to PACK_MEALS, keeping FOOD_FLOOR in the wallet. */
 async function buyFood () {
+  // FEAT-212: each meal goes on the cart (the inventory fills at once); one checkout pays for them all.
+  const { money: m0, day } = await S()
+  let tab = 0
   for (let k = 0; k < PACK_MEALS; k++) {
     const s = await S()
-    if (s.food >= PACK_MEALS) return
-    // FEAT-196: a shelf row is one button; its stow button shows under it once it is selected.
-    const price = await js(`(() => { const r = [...document.querySelectorAll('#svc-screen button.sv-shelf')]
-        .find(r => ${JSON.stringify(FOOD_NAMES)}.some(n => r.querySelector('.sv-name')?.textContent.startsWith(n)))
+    if (s.food >= PACK_MEALS) break
+    // FEAT-196: a shelf row is one button; its stow button shows under it once it is selected (FEAT-212: the tree's row).
+    const price = await js(`(() => { const r = [...document.querySelectorAll('#svc-screen button[data-act=node][data-slot]')]
+        .find(r => ${JSON.stringify(FOOD_NAMES)}.some(n => r.querySelector('.sv-name')?.textContent.includes(n)))
       if (r && !r.classList.contains('on')) r.click()
-      const b = document.querySelector('#svc-screen .sv-panel [data-act=stow]')
-      return r && b && !b.disabled ? +(r.querySelector('.sv-price').textContent.replace(/[^\\d.]/g, '')) : null })()`)
-    if (price == null || s.money - price < FOOD_FLOOR) return
-    await js(`document.querySelector('#svc-screen .sv-panel [data-act=stow]').click()`)
+      const b = document.querySelector('#svc-screen .sv-kids [data-act=stow]')
+      return r && b && !b.disabled ? +(r.querySelector('.sv-each').textContent.replace(/[^\\d.]/g, '')) : null })()`)
+    if (price == null || s.money - tab - price < FOOD_FLOOR) break
+    await js(`document.querySelector('#svc-screen .sv-kids [data-act=stow]').click()`)
     check(await until(async () => (await S()).food > s.food, 3000), `buying food at the shop screen took nothing (price $${price})`)
-    const spent = s.money - (await S()).money
-    run.foodSpend[s.day] = +((run.foodSpend[s.day] ?? 0) + spent).toFixed(2)
+    tab += price
     run.foodBought++
   }
+  if (!tab) return
+  await js(`document.querySelector('#svc-screen [data-act=checkout]')?.click()`)
+  const spent = m0 - (await S()).money
+  check(Math.abs(spent - tab) < 0.01, `the food cart checked out at $${spent.toFixed(2)}, its lines at $${tab.toFixed(2)}`)
+  run.foodSpend[day] = +((run.foodSpend[day] ?? 0) + spent).toFixed(2)
 }
 /** The nearest store that sells food, with its crow distance from the truck, or null. */
 const nearestFoodStore = () => js(`(() => { const c = window.__car(), t = ${JSON.stringify([...FOOD_STORES])}
@@ -518,13 +525,12 @@ async function playRun (seedIn) {
   run.seed = await startRun(seedIn)
   let idleH = 0
   for (;;) {
-    // A card queued a beat after the last action (Larry after the casserole) would swallow the next park's Space.
+    // A card queued a beat after the last action (Larry's call after the skip) would swallow the next park's Space.
     if (await until(dlgUp, 800)) await readCards()
     const s = await S()
     run.day = s.day
-    // The skip leaves mom's casserole done for good (FEAT-184); once (2026-11-08, seed 2782385833) it came back as
-    // 'live' after a night and her door offered it instead of the bed. Note the moment it leaves 'done'.
-    if (s.first !== 'done' && !run.notes.some(n => n.startsWith('first job'))) run.notes.push(`first job ${s.first} at day ${s.day} ${s.hour.toFixed(2)} h after step "${step}"`)
+    // The skip ends the tutorial for good (FEAT-184). Note the moment it is anything else.
+    if (s.tut !== 'free' && !run.notes.some(n => n.startsWith('tutorial'))) run.notes.push(`tutorial ${s.tut} at day ${s.day} ${s.hour.toFixed(2)} h after step "${step}"`)
     if (s.ended) { run.result = s.ended; run.endMoney = +s.money.toFixed(2); if (/beat the alpha/.test(s.ended)) run.winDay = s.day; break }
     if (s.day > MAX_DAYS) { run.result = `no win by day ${MAX_DAYS}`; break }
     if (run.gateDay == null && s.lines.some(l => l !== 'closed')) run.gateDay = s.day

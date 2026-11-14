@@ -15,6 +15,12 @@
 //     stock part ('No lift') is an absence: nothing comes off.
 //   • Browsing is free — the frame loop holds the clock while the screen is open — and each repair or
 //     swap adds its labour hours, the way the tow does.
+//   • FEAT-212 (owner, 2026-11-13): THE CART. "You queue up all the work that you want to do. The vehicle updates in real
+//     time … Payment and time skip only occurs on checkout." queue() runs a job for real on the truck and the inventory
+//     (so later jobs see what earlier ones did: swap a corner, then repair what is on it now), and holds its money, its
+//     hours, its shelf take, mom's tire and a free repair on the line. checkout() pays the lot once and runs the clock
+//     once; discard() puts back the snapshot taken before the first line; remove() is that snapshot plus the other lines
+//     replayed, and a line whose part is no longer where it was (bought by the removed line) comes out with it.
 //   • Prices ride the day tier like the tow (economy.tierNow); FEAT-69 re-cuts them.
 //   • Tires and wheels (owner, 2026-10-23): a loose tire, a loose wheel, or a mounted tire (the spare's
 //     item: tire + wheel, each with its own wear). Corner work is priced as BEAD jobs and HUB swaps
@@ -41,6 +47,14 @@ const classOf = (id) => {
     const t = SLOTS[Object.keys(SLOTS).find(s => takes(s) === PARTS[id]?.slot)]?.tracks[0]
     return t ? TRACKS[t].cls : null
 }
+/** FEAT-212: which of a job's args name an inventory entry, a shelf slot or a fitted track (ServiceCenter._reads). */
+const READS = {
+    repair: { track: [0] }, repairOwned: { inv: [0] }, patchOwned: { inv: [0] }, sellOwned: { inv: [0] }, split: { inv: [0] },
+    combine: { inv: [0, 1] }, exchange: { inv: [0] }, fitFromInventory: { inv: [0] }, swapPair: { inv: [0] },
+    buyAndFit: { shelf: [0] }, buyToInventory: { shelf: [0] },
+}
+/** An inventory row as what it is, not where it is. */
+const rowKey = (r) => { if (!r) return null; const { index, key, ...rest } = r; return JSON.stringify(rest) }
 
 /**
  * The conditions a repair can bring a part of class `cls` at `cond` up to, lowest first: every
@@ -78,6 +92,131 @@ export class ServiceCenter {
         Object.assign(this, deps)
         this.onChange ??= () => {}
         this._preview = null // PartsSystem.snapshot() while a shelf item is fitted for a look
+        // FEAT-212: the cart. While a job runs through queue() (`_line` set) the wallet, the clock, the shelf, mom and the
+        // free repairs are its line's, not the world's; quotes read the cart's lines, so a tire on mom is free once.
+        this.cart = []       // the queued lines, oldest first
+        this._snap = null    // the state before the first line (_capture), or null with the cart empty
+        this._line = null    // the line being run
+        const lines = () => this._line ? [...this.cart, this._line] : this.cart
+        const d = this._deps = deps
+        this.spend = ($) => this._line ? (this._line.price += $, true) : d.spend($)
+        this.earn = ($) => this._line ? void (this._line.earn += $) : d.earn($)
+        this.advanceHours = (h) => this._line ? void (this._line.hours += h) : d.advanceHours(h)
+        this.unstock = (i) => this._line ? void this._line.taken.push(i) : d.unstock(i)
+        // A slot in the cart reads empty — unless the item is always on the shelf (shop-stock.js KINDS.always: no end).
+        this.stock = () => { const t = new Set(lines().flatMap(l => l.taken)); return d.stock().map((e, i) => t.has(i) && e?.expiresAt !== Infinity ? null : e) }
+        this.useMom = (id, k) => this._line ? void this._line.mom.push([id, k]) : d.useMom?.(id, k)
+        this.onMom = d.onMom && ((id, k) => !lines().some(l => l.mom.some(m => m[1] === k)) && d.onMom(id, k))
+        this.freeRepairs = d.freeRepairs && (() => d.freeRepairs() - lines().reduce((n, l) => n + l.free, 0))
+        this.useFreeRepair = () => this._line ? void this._line.free++ : d.useFreeRepair()
+    }
+
+    // ── The cart (FEAT-212) ──────────────────────────────────────────────────────────────────────
+
+    /** Everything a job can change that is not the wallet, the clock or the shelf: the truck and the inventory. */
+    _capture () {
+        const d = this.damage
+        return { parts: this.parts.snapshot(), toe: d.toeOffsetDeg.slice(), camber: d.camberOffsetDeg.slice(), inv: this.inventory.snapshot() }
+    }
+
+    _restore (s) {
+        this.unpreview()
+        this.parts.restore(s.parts)
+        this.damage.toeOffsetDeg.splice(0, 4, ...s.toe)
+        this.damage.camberOffsetDeg.splice(0, 4, ...s.camber)
+        this.inventory.restore(structuredClone(s.inv))
+    }
+
+    /** What line `l` read to be the job it is: each inventory entry and shelf slot it names, the track it repairs. A replay
+     *  that reads otherwise is a different job (_resolve). */
+    _reads (m, args) {
+        const r = READS[m] ?? {}, inv = this.inventory.list()
+        return { inv: (r.inv ?? []).map(p => rowKey(inv[args[p]])), shelf: (r.shelf ?? []).map(p => JSON.stringify(this.stock()[args[p]] ?? null)),
+                 track: (r.track ?? []).map(p => JSON.stringify([this.damage.get(args[p]), this.parts.fitted(socketOfTrack(args[p]))])) }
+    }
+
+    /** Line `l`'s args against the state now: an inventory entry that moved up (one before it came out) is found again by
+     *  what it is. Null when what it read is gone. */
+    _resolve (l) {
+        const args = l.args.slice(), inv = this.inventory.list(), used = new Set()
+        for (const [k, p] of (READS[l.m]?.inv ?? []).entries()) {
+            const hit = [args[p], ...inv.map(r => r.index)].find(i => !used.has(i) && rowKey(inv[i]) === l.reads.inv[k])
+            if (hit === undefined) return null
+            used.add(hit); args[p] = hit
+        }
+        const now = this._reads(l.m, args)
+        return now.shelf.join() === l.reads.shelf.join() && now.track.join() === l.reads.track.join() ? args : null
+    }
+
+    /** Run job `m` (a method below, with `args`) onto the cart under `label`: the truck and the inventory change now, its
+     *  price and hours wait for checkout. Money never refuses a line (checkout does). False, nothing queued, when the job
+     *  itself refuses. */
+    queue (m, args, label) {
+        this.unpreview()
+        this._snap ??= this._capture()
+        const line = { m, args, label, price: 0, earn: 0, hours: 0, taken: [], mom: [], free: 0, reads: this._reads(m, args) }
+        this._line = line
+        let ok = false
+        try { ok = this[m](...args) } finally { this._line = null }
+        if (ok) this.cart.push(line)
+        else if (!this.cart.length) this._snap = null
+        this.onChange()
+        return ok
+    }
+
+    /** The cart's subtotal: `price` net of what it sells, `hours` (the jobs one after another: they add), and the two sides. */
+    total () {
+        const sum = (k) => this.cart.reduce((a, l) => a + l[k], 0)
+        return { price: cents(sum('price') - sum('earn')), hours: sum('hours'), spend: cents(sum('price')), earn: cents(sum('earn')) }
+    }
+
+    /** How far the wallet (with what the cart sells) falls short of the cart; 0 when it covers it. Checkout waits for 0. */
+    short () { return Math.max(0, cents(this.total().price - this._deps.money())) }
+
+    /** Something is on the truck or in the inventory that is not paid for: a line in the cart, or a shelf item fitted for
+     *  a look. The run must not be saved like that (main.js _saveBlock). */
+    pending () { return this.cart.length > 0 || !!this._preview }
+
+    /** Pay for the cart once and run the clock once. False, nothing changed, when it is empty or the wallet falls short. */
+    checkout () {
+        if (!this.cart.length || this.short() > 0) return false
+        const d = this._deps, t = this.total()
+        this.unpreview()
+        for (const l of this.cart) {
+            for (const i of l.taken) d.unstock(i)
+            for (const [id, k] of l.mom) d.useMom?.(id, k)
+            for (let n = 0; n < l.free; n++) d.useFreeRepair()
+        }
+        if (t.earn > 0) d.earn(t.earn)   // what it sells first: it may pay for the rest
+        if (t.spend > 0) d.spend(t.spend)
+        if (t.hours > 0) d.advanceHours(t.hours)
+        this.cart = []; this._snap = null
+        this.onChange()
+        return true
+    }
+
+    /** Empty the cart: the truck and the inventory exactly as they were before its first line. */
+    discard () {
+        if (this._snap) this._restore(this._snap)
+        this.cart = []; this._snap = null
+        this.onChange()
+    }
+
+    /** Take line `j` out: back to the snapshot, the other lines replayed in order. Returns how many lines came out with it
+     *  (a part it bought that a later line fitted, a slot it sold into). */
+    remove (j) {
+        const snap = this._snap, rest = this.cart.filter((_, k) => k !== j)
+        if (!snap || rest.length === this.cart.length) return 0
+        this._restore(snap)
+        this.cart = []; this._snap = snap
+        let dropped = 0
+        for (const l of rest) {
+            const args = this._resolve(l)
+            if (!args || !this.queue(l.m, args, l.label)) dropped++
+        }
+        if (!this.cart.length) this._snap = null
+        this.onChange()
+        return dropped
     }
 
     // ── Repairs ──────────────────────────────────────────────────────────────────────────────────
@@ -254,13 +393,22 @@ export class ServiceCenter {
         return e ? (this._mom(e.id, 'part') ? 0 : cents(shelfPrice(e) * this.tier())) : null
     }
 
+    /** FEAT-212: what buying shelf slot `i` costs, money and hours: to carry (no `socket`; no time), or bolted
+     *  into `socket` (its fitting added). Null for an empty slot. The Shop tab's every option shows it. */
+    buyQuote (i, socket = null) {
+        const e = this.stock()[i]
+        if (!e) return null
+        const f = socket ? this.fitLabour(e.id, socket) : { price: 0, hours: 0 }
+        return { price: cents(this.shelfPrice(i) + f.price), hours: f.hours }
+    }
+
     /** Buy shelf slot `i` and bolt it into `socket` (a tire or wheel needs its corner), with its
      *  condition, paying for the part and the fitting. The old part goes into the inventory. */
     buyAndFit (i, socket) {
         const e = this.stock()[i]
         if (!e || !socketsFor(e.id).includes(socket)) return false
         const q = this.fitLabour(e.id, socket), part = this._mom(e.id, 'part'), labour = this._mom(e.id, 'labour')
-        if (!this.spend(cents(this.shelfPrice(i) + q.price))) return false
+        if (!this.spend(this.buyQuote(i, socket).price)) return false
         this._usedMom(e.id, 'part', part); this._usedMom(e.id, 'labour', labour)
         this.unstock(i)
         this._swap(e.id, e.cond, socket, q)
@@ -271,7 +419,7 @@ export class ServiceCenter {
     buyToInventory (i) {
         const e = this.stock()[i]
         const part = !!e && this._mom(e.id, 'part')
-        if (!e || !this.spend(this.shelfPrice(i))) return false
+        if (!e || !this.spend(this.buyQuote(i).price)) return false
         this._usedMom(e.id, 'part', part)
         this.unstock(i)
         this.inventory.grant(e.id, 1, e.cond === null ? null : { cond: e.cond })
@@ -424,5 +572,7 @@ export class ServiceCenter {
         this.onChange()
     }
 
-    close () { this.unpreview() }
+    /** The screen closed. The screen asks for checkout or discard before it lets the player go; a close it cannot ask
+     *  about (the truck towed away) discards. */
+    close () { this.unpreview(); if (this.cart.length) this.discard() }
 }
