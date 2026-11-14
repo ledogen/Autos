@@ -79,7 +79,11 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen .sv-tab:hover { color: var(--text-bright); }
 #svc-screen .sv-tab.on { color: var(--text-bright); border-bottom-color: var(--accent-story); }
 #svc-screen .sv-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; }
-#svc-screen .sv-line { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; margin: 0 -6px;
+/* FEAT-196 (owner, 2026-11-14: "a little less cramped … you only need to be looking at 12 or so entries"): one pitch for
+   every row, tree or shelf, sized so about 12 fit the card's body (the card's head, tabs, list head and foot take ~260 px
+   of the window); never tighter than the item icon's 28 px + 12 (40 px), never looser than 56 px. */
+#svc-screen .sv-line { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 6px; margin: 0 -6px;
+  min-height: clamp(28px, calc((100vh - 260px) / 12 - 12px), 44px);
   box-sizing: content-box; font: 14px var(--font); color: var(--text-body); text-align: left; background: transparent;
   border: 0; cursor: pointer; transition: background 0.1s; }
 #svc-screen .sv-line:hover, #svc-screen .sv-line.on { background: rgba(255,255,255,0.09); color: var(--text-bright); }
@@ -89,7 +93,6 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen .sv-flat { font-size: 12px; color: var(--bad-text); }
 #svc-screen .sv-bar { width: 60px; height: 6px; background: var(--line); overflow: hidden; flex: none; }
 #svc-screen .sv-bar i { display: block; height: 100%; }
-#svc-screen .sv-part { padding-left: 40px; }
 #svc-screen .sv-pct { width: 36px; text-align: right; color: var(--text-dim); font-size: 12px; flex: none; }
 #svc-screen .sv-cost { width: 112px; text-align: right; color: var(--text-dim); font-size: 12px; flex: none; }
 #svc-screen .sv-btn { font: 12px var(--font); color: var(--text-body); background: transparent; border: 1px solid var(--line-control);
@@ -100,9 +103,6 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen .sv-btn.bad { border-color: var(--bad-line); color: var(--bad-text); }
 #svc-screen .sv-foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
 #svc-screen .sv-total { color: var(--text-bright); }
-#svc-screen .sv-panel { margin: 2px 0 8px; padding: 6px 8px; border-left: 2px solid var(--accent-story); background: rgba(255,255,255,0.04); }
-#svc-screen .sv-sub { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-faint); margin-top: 6px; }
-#svc-screen .sv-sub:first-child { margin-top: 0; }
 #svc-screen .sv-step { display: flex; align-items: center; gap: 8px; margin: 4px 0; padding: 4px 6px; background: transparent;
   border: 1px solid var(--line-control); border-radius: 3px; color: var(--text-body); font: 14px var(--font); cursor: default; }
 #svc-screen .sv-step i { font-style: normal; cursor: pointer; padding: 0 4px; }
@@ -184,7 +184,6 @@ export class ServiceScreen {
     this.tab = 'maint'
     this.name = ''
     this.store = false    // FEAT-104: a storefront's shop, not a service center
-    this.sel = null       // the selected My Items row's key, `i:<inventory index>`
     this.paths = {}       // FEAT-212: per tab, the open tree item per level, by id (`this.path`)
     this.target = {}      // repair key → the chosen target condition
     this._pv = null       // the live preview's `slot:socket`, or null
@@ -225,7 +224,6 @@ export class ServiceScreen {
     this.name = name
     this.store = store
     this.tab = store ? 'shop' : 'maint'
-    this.sel = null
     this.target = {}
     this.paths = {}
     this.leaving = null
@@ -304,11 +302,10 @@ export class ServiceScreen {
       case 'jobs': this.leave(() => this.openJobs()); return
       case 'map': this.openMap(); return
       case 'checkout': if (s.checkout()) this._left(); break
-      case 'discard': s.discard(); this.sel = null; this._left(); break
-      case 'unqueue': this.note = s.remove(+b.dataset.line); this.sel = null; break
-      case 'tab': this.tab = b.dataset.tab; this.sel = null; break
-      case 'sel': this.sel = this.sel === key ? null : key; this.path = []; break   // one row open: My Items' or the shelf's
-      case 'node': { this.sel = null; const d = +b.dataset.d; this.path = this.path[d] === b.dataset.id ? this.path.slice(0, d) : [...this.path.slice(0, d), b.dataset.id]; break }
+      case 'discard': s.discard(); this.paths.shop = []; this._left(); break
+      case 'unqueue': this.note = s.remove(+b.dataset.line); this.paths.shop = []; break
+      case 'tab': this.tab = b.dataset.tab; break
+      case 'node': { const d = +b.dataset.d; this.path = this.path[d] === b.dataset.id ? this.path.slice(0, d) : [...this.path.slice(0, d), b.dataset.id]; break }
       case 'diag': this.openDiagnostics(); return
       case 'align': q('align', [], 'Align all'); break
       case 'oil': q('changeOil', [], 'Oil change'); break
@@ -332,9 +329,9 @@ export class ServiceScreen {
         if (q('swapCorners', [+b.dataset.a, +b.dataset.b], `Swap corners ${a} ↔ ${c}`)) this.path = this.path.map(id => id === a ? c : id)
         break
       }
-      case 'sellOwned': q('sellOwned', [+b.dataset.index], `Sell ${inv(b.dataset.index)}`); this.sel = null; break
-      case 'split': q('split', [+b.dataset.index], `Split ${inv(b.dataset.index)}`); this.sel = null; break
-      case 'combine': q('combine', [+b.dataset.index, +b.dataset.with], `Mount ${inv(b.dataset.index)} + ${inv(b.dataset.with)}`); this.sel = null; break
+      case 'sellOwned': q('sellOwned', [+b.dataset.index], `Sell ${inv(b.dataset.index)}`); this.path = []; break
+      case 'split': q('split', [+b.dataset.index], `Split ${inv(b.dataset.index)}`); this.path = []; break
+      case 'combine': q('combine', [+b.dataset.index, +b.dataset.with], `Mount ${inv(b.dataset.index)} + ${inv(b.dataset.with)}`); this.path = []; break
       case 'buy': q('buyAndFit', [+b.dataset.slot, b.dataset.socket], `Buy ${shelfItem()} · fit ${SLOTS[b.dataset.socket].name.toLowerCase()}`); this.path = []; break
       case 'stow': q('buyToInventory', [+b.dataset.slot], `Buy ${shelfItem()}`); this.path = []; break
     }
@@ -572,48 +569,35 @@ export class ServiceScreen {
     return `<div class="sv-slot"><div class="sv-row"><span class="sv-acts">${btn('jobs', 'go to jobs', true, '', ' ok')}</span></div></div>`
   }
 
+  /** My Items (owner, 2026-11-14: "match what you did on the maintenance tab"): the parts you carry as rows of the same
+   *  tree, sharing the shelf's one open row. Closed: name and condition (a mounted pair: T and W). Open: the pair's two
+   *  parts, then sell, split, combine (the partners), repair (FEAT-196: a mounted pair's wheel too) and patch. */
   _myItems () {
     const s = this.service
     const fix = new Map(s.ownedRepairRows().map(r => [r.index, r]))
     const owned = s.inventory.list().filter(r => r.kind === 'part')
-    let h = `<div class="sv-slot"><div class="sv-slothead">My items</div>`
-    if (!owned.length) return h + dim('You carry no parts.') + `</div>`
-    for (const r of owned) {
-      const key = `i:${r.index}`, open = this.sel === key, cond = r.cond ?? 1
-      const m = PARTS[r.id].mounted
+    const head = `<div class="sv-slot"><div class="sv-slothead">My items</div>`
+    if (!owned.length) return head + dim('You carry no parts.') + `</div>`
+    const bq = s.beadQuote()
+    const rows = owned.map(r => {
+      const key = `i:${r.index}`, cond = r.cond ?? 1, m = PARTS[r.id].mounted, wc = r.wheelCond ?? 1
       const flat = r.flat ? '<span class="sv-flat">flat</span>' : ''
-      // A mounted tire shows its two parts, each with its own wear (owner, 2026-10-23).
-      h += `<button class="sv-line${open ? ' on' : ''}" data-act="sel" data-key="${key}">${chip(r.id)}<span class="sv-name">${r.name}</span>`
-        + (m ? '' : flat + bar(cond, r.flat)) + `</button>`
-        + (m ? `<div class="sv-row sv-part"><span class="sv-name sv-desc">Tire · ${PARTS[r.tire ?? m.tire].name}</span>${flat}${bar(cond, r.flat)}</div>`
-          + `<div class="sv-row sv-part"><span class="sv-name sv-desc">Wheel · ${PARTS[r.wheel ?? m.wheel].name}</span>${bar(r.wheelCond ?? 1)}</div>` : '')
-      if (!open) continue
-      const bq = s.beadQuote()
-      h += `<div class="sv-panel"><div class="sv-row"><span class="sv-name">Sell it to the shop</span>`
-        + btn('sellOwned', `sell for $${formatMoney(s.ownedValue(r))}`, true, `data-index="${r.index}"`) + `</div>`
-      if (m) {
-        h += `<div class="sv-row"><span class="sv-name">Split into tire and wheel</span><span class="sv-cost">${cost(bq.price, bq.hours)}</span>`
-          + btn('split', 'split', s.inventory.fits(r.wheel ?? m.wheel), `data-index="${r.index}"`, ' ok') + `</div>`
-      }
       const partners = s.combineOptions(r.index)
-      if (partners.length) {
-        h += `<div class="sv-sub">Combine · ${cost(bq.price, bq.hours)}</div>`
-          + partners.map(p => `<div class="sv-row">${chip(p.id)}<span class="sv-name">${p.name}</span>`
-            + (p.flat ? '<span class="sv-flat">flat</span>' : '') + bar(p.cond ?? 1, p.flat)
-            + btn('combine', 'combine', true, `data-index="${r.index}" data-with="${p.index}"`, ' ok') + `</div>`).join('')
-      }
-      if (fix.get(r.index)?.targets.length) h += `<div class="sv-sub">Repair</div>` + this._repair(key, cond, (t) => s.ownedQuote(r.index, t))
-      // FEAT-196: a mounted pair's wheel is straightened on the bench, still mounted.
-      if (m && s.ownedWheelTargets(r.index).length) {
-        h += `<div class="sv-sub">Repair the wheel</div>` + this._repair(`w:${r.index}`, r.wheelCond ?? 1, (t) => s.ownedQuote(r.index, t, true))
-      }
-      if (r.flat) {
-        const q = s.patchQuote()
-        h += `<div class="sv-row"><span class="sv-name">Patch the flat</span><span class="sv-cost">${cost(q.price, q.hours)}</span>`
-          + btn('patchOwned', 'patch', true, `data-index="${r.index}"`, ' ok') + `</div>`
-      }
-      h += `</div>`
-    }
-    return h + `</div>`
+      const kids = [
+        // A mounted tire shows its two parts, each with its own wear (owner, 2026-10-23).
+        ...(m ? [`<div class="sv-row"><span class="sv-name sv-desc">Tire · ${PARTS[r.tire ?? m.tire].name}</span>${flat}${bar(cond, r.flat)}</div>`,
+          `<div class="sv-row"><span class="sv-name sv-desc">Wheel · ${PARTS[r.wheel ?? m.wheel].name}</span>${bar(wc)}</div>`] : []),
+        this._act('Sell it to the shop', { price: -s.ownedValue(r), hours: 0 }, btn('sellOwned', 'sell', true, `data-index="${r.index}"`)),
+        ...(m ? [this._act('Split into tire and wheel', bq, btn('split', 'split', s.inventory.fits(r.wheel ?? m.wheel), `data-index="${r.index}"`, ' ok'))] : []),
+        ...(partners.length ? [node('combine', 'Combine', partners.map(p => `<div class="sv-row">${chip(p.id)}<span class="sv-name">${p.name}</span>`
+          + (p.flat ? '<span class="sv-flat">flat</span>' : '') + bar(p.cond ?? 1, p.flat) + `<span class="sv-cost">${cost(bq.price, bq.hours)}</span>`
+          + btn('combine', 'combine', true, `data-index="${r.index}" data-with="${p.index}"`, ' ok') + `</div>`))] : []),
+        ...(fix.get(r.index)?.targets.length ? [node('repair', 'Repair', [this._repair(key, cond, (t) => s.ownedQuote(r.index, t))])] : []),
+        ...(m && s.ownedWheelTargets(r.index).length ? [node('wheel', 'Repair the wheel', [this._repair(`w:${r.index}`, wc, (t) => s.ownedQuote(r.index, t, true))])] : []),
+        ...(r.flat ? [this._act('Patch the flat', s.patchQuote(), btn('patchOwned', 'patch', true, `data-index="${r.index}"`, ' ok'))] : []),
+      ]
+      return node('i' + r.index, chip(r.id) + r.name, kids, m ? pctIn('T', cond, r.flat) + pctIn('W', wc) : flat + bar(cond, r.flat), Math.min(r.flat ? 0 : cond, m ? wc : 1))
+    })
+    return head + this._level(rows, 0) + `</div>`
   }
 }
