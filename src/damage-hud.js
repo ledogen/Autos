@@ -44,6 +44,7 @@ const GROUPS = [
   ['brake',     'Brakes'],
   ['engine',    'Engine'],
   ['filter',    'Air Filter'],
+  ['oil',       'Engine Oil'],
   ['radiator',  'Radiator'],
   ['headlights', 'Lights'],
   ['alignment', 'Alignment'],
@@ -202,6 +203,8 @@ export class DamageHUD {
           ? `${d.camberOffsetDeg[TRACKS[id].wheel] >= 0 ? '+' : ''}${d.camberOffsetDeg[TRACKS[id].wheel].toFixed(2)}°cam`
           : cls === 'filter'
             ? (d.filterEngineMultiplier() > 1.05 ? `${d.filterEngineMultiplier().toFixed(1)}× eng wear` : '')
+            : cls === 'oil'
+            ? (d.oilEngineMultiplier() > 1.05 ? `${d.oilEngineMultiplier().toFixed(1)}× eng wear` : '')
             : cls === 'wheel'
             ? `${(d.wheelRunout(TRACKS[id].wheel) * 1000).toFixed(1)}mm o-o-r`
             : (r > 0.005 ? `${r.toFixed(2)}%/min` : '')

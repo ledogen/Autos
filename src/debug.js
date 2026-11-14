@@ -537,7 +537,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // `wheel` has no continuous wear source — wheels are damaged by impacts only — so that one
   // scales how hard impacts hit the wheels rather than a rate.
   const wearFolder = dmgFolder.addFolder('Wear Speed (x calibrated)')
-  for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine', 'filter']) {
+  for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine', 'filter', 'oil']) {
     wearFolder.add(DAMAGE_PARAMS.wearScale, k, 0, 10, 0.1).name(k)
   }
 

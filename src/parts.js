@@ -106,7 +106,7 @@ export class PartsSystem {
         Object.assign(this._params, s.params)
         if (s.grip) this._params._tireGrip.splice(0, 4, ...s.grip)
         runParts.fitted = { ...s.fitted }
-        Object.assign(d.condition, s.condition)
+        for (const id in d.condition) d.condition[id] = s.condition[id] ?? 1   // a track the save predates is new (FEAT-202: the oil)
         for (const k of Object.keys(d._durabilityScale)) if (!(k in s.durability)) delete d._durabilityScale[k]
         Object.assign(d._durabilityScale, s.durability)
         d.flat.splice(0, 4, ...s.flat)

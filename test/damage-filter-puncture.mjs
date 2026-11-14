@@ -75,12 +75,41 @@ console.log('\n§2b a crash does not clog a filter')
     const d = fresh(); d.setAll(1)
     for (const id of ['armorFront', 'armorLeft', 'armorRight', 'armorRear']) d.set(id, 0)  // worst case
     d.applyImpact(region, 1360 * 80 * 0.44704, 1360)                                        // fatal-grade hit
-    ok(d.get('airFilter') === 1, `an 80 mph ${region} impact through destroyed armor leaves the filter untouched`)
+    ok(d.get('airFilter') === 1 && d.get('oil') === 1, `an 80 mph ${region} impact through destroyed armor leaves the filter (and the oil, FEAT-202) untouched`)
   }
   const d = fresh(); d.setAll(1)
   for (const id of ['armorFront', 'armorLeft', 'armorRight', 'armorRear']) d.set(id, 0)
   d.applyImpact('front', 1360 * 80 * 0.44704, 1360)
   ok(d.get('engine') < 1 && d.get('radiator') < 1, '...while the things behind that bumper that SHOULD take it, did')
+}
+
+console.log('\n§2c FEAT-202: the oil — the filter\'s kind of track, a straight line instead of a cliff')
+{
+  // The wear law: the same rpm x load insult as the filter, durOil of it from new to worn out.
+  const d = fresh(); drive(d, 0.5, D.durOil / 0.5)
+  ok(d.get('oil') <= 0.01, `${(D.durOil / 0.5 / 60).toFixed(0)} min of hard driving wears the oil out (left ${(d.get('oil') * 100).toFixed(1)}%)`)
+  const half = fresh(); drive(half, 0.5, D.durOil / 0.5 / 2)
+  ok(Math.abs(half.get('oil') - 0.5) < 0.02 && Math.abs(half.get('airFilter') - (1 - D.durOil / 2 / D.durFilter)) < 0.02,
+    '...linear in rpm x load, on the same insult as the filter')
+  const idle = fresh(); drive(idle, 0, 600)
+  ok(idle.get('oil') === 1, 'ten minutes at idle costs nothing — it wears on load and rpm, not the clock')
+
+  // The scaling: 1 above the knee, then a straight line to oilEngineMult at empty.
+  const k = (c) => { d.set('oil', c); return d.oilEngineMultiplier() }
+  ok(k(1) === 1 && k(D.oilKnee) === 1, `fresh oil, and oil down to ${(D.oilKnee * 100).toFixed(0)}%, costs the engine nothing`)
+  ok(Math.abs(k(0) - D.oilEngineMult) < 1e-9 && D.oilEngineMult >= D.filterEngineMult,
+    `empty oil wears the engine ${D.oilEngineMult}x faster — at least the filter's ${D.filterEngineMult}x`)
+  ok(Math.abs(k(D.oilKnee / 2) - (1 + D.oilEngineMult) / 2) < 1e-9 && Math.abs(k(D.oilKnee / 4) - k(D.oilKnee / 2) - (k(D.oilKnee / 2) - k(D.oilKnee * 3 / 4))) < 1e-9,
+    `linear: halfway past the knee is ${k(D.oilKnee / 2).toFixed(1)}x, every step costs the same`)
+  // The same position past each knee: old oil is the bigger cost (the filter's square back-loads it).
+  d.set('airFilter', D.filterKnee / 2)
+  ok(k(D.oilKnee / 2) > d.filterEngineMultiplier(), 'halfway past its knee the oil costs more than the filter halfway past its own')
+
+  // The coupling reaches the engine, and multiplies with the filter's.
+  const run = (oil, filt) => { const e = fresh(); e.set('oil', oil); e.set('airFilter', filt); drive(e, 0.8, 1); return 1 - e.get('engine') }
+  const base = run(1, 1)
+  ok(Math.abs(run(0, 1) / base - D.oilEngineMult) / D.oilEngineMult < 0.05, `a second at empty oil costs the engine ~${D.oilEngineMult}x a second on fresh`)
+  ok(Math.abs(run(0, 0) / base - D.oilEngineMult * D.filterEngineMult) / (D.oilEngineMult * D.filterEngineMult) < 0.05, 'both neglected: the two costs multiply')
 }
 
 console.log('\n§3 punctures — fresh rubber is safe, worn rubber is not')
