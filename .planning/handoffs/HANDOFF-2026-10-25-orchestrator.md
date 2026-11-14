@@ -166,7 +166,7 @@ without asking the owner where the meter stands. Land what they report, yourself
 - DONE ledorepo: INFRA-14 closed. INFRA-13 waits on the owner (Time Machine).
 Orchestrator DECs used: 190–193; next free for it: 194.
 
-**Main:** FEAT-184 landing 2 merged (feature/run-shape @ 478cd58a; the branch smoked 26/26 on the same tree, wip/feat184/smoke-full.log there); main smoked 26/26 (wip/orch/smoke-184.log). Nothing in flight. Not pushed. Waiting on the owner's meter reading before the next agents (BUG-167 follow-up, terrain bake prototype, FEAT-215 + music bed removal). No agents running. physics fixes (BUG-168/166/160) merged and smoked 26/26 on the re-run, log wip/orch/smoke-phys2.log. Nothing in flight. Not pushed. BUG-167 NOT landed: wip/bug-167-carcass @ 5147a6ba fixes the creep but changes the floored launch (rear slide 55.4 → 30.6 m); needs its own Opus task. Asked the owner for the meter reading before any new agent. Owner to confirm rimInflatedMult 2 (wrote "4"). Old line follows.
+**Main:** feature/spare merged (FEAT-215 U-turn ribbon, music bed removed per DEC-192); main smoked 26/26 (wip/orch/smoke-215.log). Not pushed. In flight: Lane B BUG-167 on wip/bug-167-carcass @ ff30a628 (launch fixed, affected gates running, fingerprint + ticket owed, then land); Perf terrain-bake prototype agent. Owner at 32 % weekly, stop at 40 %.
 (check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
 minted: FEAT-215 (GPS U-turn arrow, Spare), FEAT-216 (damage alerts, B). Inbox fully replied; 2gdr (FEAT-204, "4x more
 slots": 4 more or 4 times?) still waits on the owner. DEC-136, the :8001 Windows server and the Tailscale-only
