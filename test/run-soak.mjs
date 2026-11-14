@@ -435,22 +435,29 @@ async function eat () {
 
 /** EATING: at a food store's open shop screen, buy food up to PACK_MEALS, keeping FOOD_FLOOR in the wallet. */
 async function buyFood () {
+  // FEAT-212: each meal goes on the cart (the inventory fills at once); one checkout pays for them all.
+  const { money: m0, day } = await S()
+  let tab = 0
   for (let k = 0; k < PACK_MEALS; k++) {
     const s = await S()
-    if (s.food >= PACK_MEALS) return
+    if (s.food >= PACK_MEALS) break
     // FEAT-196: a shelf row is one button; its stow button shows under it once it is selected (FEAT-212: the tree's row).
     const price = await js(`(() => { const r = [...document.querySelectorAll('#svc-screen button[data-act=node][data-slot]')]
         .find(r => ${JSON.stringify(FOOD_NAMES)}.some(n => r.querySelector('.sv-name')?.textContent.includes(n)))
       if (r && !r.classList.contains('on')) r.click()
       const b = document.querySelector('#svc-screen .sv-kids [data-act=stow]')
       return r && b && !b.disabled ? +(r.querySelector('.sv-each').textContent.replace(/[^\\d.]/g, '')) : null })()`)
-    if (price == null || s.money - price < FOOD_FLOOR) return
+    if (price == null || s.money - tab - price < FOOD_FLOOR) break
     await js(`document.querySelector('#svc-screen .sv-kids [data-act=stow]').click()`)
     check(await until(async () => (await S()).food > s.food, 3000), `buying food at the shop screen took nothing (price $${price})`)
-    const spent = s.money - (await S()).money
-    run.foodSpend[s.day] = +((run.foodSpend[s.day] ?? 0) + spent).toFixed(2)
+    tab += price
     run.foodBought++
   }
+  if (!tab) return
+  await js(`document.querySelector('#svc-screen [data-act=checkout]')?.click()`)
+  const spent = m0 - (await S()).money
+  check(Math.abs(spent - tab) < 0.01, `the food cart checked out at $${spent.toFixed(2)}, its lines at $${tab.toFixed(2)}`)
+  run.foodSpend[day] = +((run.foodSpend[day] ?? 0) + spent).toFixed(2)
 }
 /** The nearest store that sells food, with its crow distance from the truck, or null. */
 const nearestFoodStore = () => js(`(() => { const c = window.__car(), t = ${JSON.stringify([...FOOD_STORES])}

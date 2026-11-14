@@ -21,6 +21,9 @@ just spawn a new subagent for task").
   and follow it. Worktree <path>, branch <branch>, port <port>. Your task: <ONE task>.` plus anything the page
   handoff doesn't have yet (an owner answer verbatim, a gate run still alive + its log). Size a task to be worth
   the ~48k an agent costs to start: bundle small items, and do one-liners yourself on main.
+- **Model and effort (DEC-193, owner 11-14):** physics and world-gen tasks `model: opus`, default effort. Routine
+  tasks (UI restyles, number changes, bookkeeping, tooling) `model: sonnet`, `effort: medium`. Pace: at most two
+  lane agents at a time, tasks sized ~100k and grouped by code area; ask the owner for the meter reading between batches.
 - **The page's "now" line** = the one-line file `/Users/ledogen/CodeShit/ledorepo/projects/cargame/lanes/<id>.now`. At spawn write `running: <task> · since <HH:MM> · <agent id>`; the
   agent overwrites it with `stopped (<done|blocked>): <one line> · <HH:MM>` when it hands off.
 - **On a report** (the agent's final message, ≤ 15 lines): LANDING → land it (below); OWED → one `owed/<id>.json` file each (§ The tracker);
@@ -29,11 +32,20 @@ just spawn a new subagent for task").
 - **Never idle a lane while owner-free alpha work exists** (owner 11-07: "what is everyone waiting on?"). With 10+
   owed items, give lanes pile-neutral work (gates, perf, closing on evidence, making a pending call cheaper).
 - At most one agent per worktree. Lane C gets an agent only when an owner answer gives it work.
-- **Your own context**: when you pass ~300k at a quiet moment (no merge or smoke mid-flight), let running agents
-  finish or note them in § Current state, rewrite that section, and tell the owner "orchestrator ready for a clear".
+- **Your own context**: no watching and no "ready for a clear" message. Session auto-compact (400k, the owner's
+  setting) is the backstop. A clear or a compact costs one word ("orchestrator") because nothing lives only in your
+  context: an owner ruling goes into its ticket or a DEC in the same change, a spawn into its `.now` line, and
+  § Current state is rewritten at each landing, spawn and owner answer. Before a merge or a smoke, write it into
+  § Current state (branch @ hash, the smoke's log path), so a compact mid-flight resumes from the file.
+- **Side work is a subagent too** (INFRA-14): a perf investigation, a tooling job (ledorepo), a one-off study. Spawn
+  it like a lane, with its own `lanes/<id>.json` + `.now` line so the board shows it (e.g. `l` for ledorepo). The
+  owner then needs one terminal. A separate window is the exception: work that needs a quiet machine (a PERF-40
+  bench window) or days of its own context.
 
 ## On wake
 1. `bash tools/lanes.sh` — every worktree's branch, ahead/behind, uncommitted files (a lane's WIP: never discard).
+   A `lanes/<id>.now` line that says `running:` for an agent you are not running is stale: overwrite it with
+   `stopped (blocked): <one line> · <HH:MM>`.
 2. The tracker's data folder `/Users/ledogen/CodeShit/ledorepo/projects/cargame/` (§ The tracker). New owner input is a directory listing:
    `cd /Users/ledogen/CodeShit/ledorepo/projects/cargame && ls inbox | sed 's/\.reply//' | sort | uniq -u` lists inbox items with no reply yet;
    `ls owed/*.answer.json` lists answered owed items → `cat` each, act, record it in the ticket, then
@@ -136,45 +148,39 @@ DESIGN.md, tickets and memory (owner 11-13, per the ledorepo session). A new own
 becomes a DEC in the same change that acts on it; a standing record is frozen, a change of mind is a new DEC with
 `supersedes`. Check: `node tools/dashboard/decisions.check.mjs`.
 
-**OWNER HOLD (11-14 ~05:30): "hold the work when you can. im worried how may tokens we're burning."** No agents are
-running. Start NOTHING (no agents, no landings, no smokes) until the owner lifts it; then one lane at a time, or only
-what they name.
+**TOKEN CAP (owner, 11-14 ~03:25): hold lifted ("start the lanes", plus the ledorepo agent for INFRA-14, "dont back up
+wip"), then: "try to keep it token lean stop at 40% weekly usage (weve used 30% since the reset 15hrs ago)".** The
+orchestrator cannot read the usage meter. So: the five agents below are the whole batch; spawn NO follow-up agent
+without asking the owner where the meter stands. Land what they report, yourself.
 
-**Since the hold, done by the orchestrator itself (no agents), all on main, not pushed:**
-- DEC-136 (owner 11-14): oil 30 min / filter 60 min of hard driving; their engine-wear penalties ADD (x8.07 filter,
-  x15.15 oil, x22.2 both); a 50% engine with both at 0 lasts 15 min. ecb2a974, gate + smoke 26/26. Card feat202-look updated.
-- Dashboard listens on 127.0.0.1 + the Tailscale address only (ac2150ad); Wi-Fi refused. Phone/Windows: http://m4air:8010.
-  Started by `nohup npm run dash` (log wip/orch/dash.log); restart it if Tailscale came up after it.
-- A second game server for the owner's Windows machine: `npx vite --host 100.111.133.99 --port 8001 --strictPort` in the
-  main checkout (log wip/orch/vite-8001.log), URL http://100.111.133.99:8001. Not permanent; `m4air:8001` is refused by
-  Vite's host check (one config line if the owner wants the name). macOS firewall is off (owner's setting).
-- Lane agents were verified as claude-opus-5-5 from their transcripts; `/model` inside a subagent view shows the
-  session's Fable 5.2.
-- Open with the owner: DEC-153 (does the casserole to Larry's stay; on card tutorial-flow); the diagnostics oil line
-  shows the oil's multiplier alone, not the combined figure.
+**Agents (pace: two at a time, DEC-193 for model/effort):**
+- RUNNING Spare (CarGame-land-211d, Opus): the map bundle (FEAT-211/210, BUG-163 line, FEAT-199 pricing). DEC 175–184.
+- RUNNING B (new CarGame-land-phys, land/phys-1114, Opus): BUG-168 speeds, BUG-166, BUG-160 wheel damage, BUG-167,
+  one commit each. DEC 167–172. Their four cards are already in answered/.
+- DONE A: FEAT-184 landing 2 SLICE 1 on feature/run-shape @ 5b3301eb (gates 9/9; NOT landing-ready, do not merge).
+  DEC-153, 155–160. Dives marked taken. Next agent = slice 2 (list in lanes/a.handoff.md and the ticket's Next steps);
+  start it when Spare reports. Owner card: tutorial-slice2 (Larry's words, DEC-158 reading, the 24 h filler).
+- DONE Perf: frame cap + PERF-49 merged. Next: the terrain bake prototype (Opus). Owner card: perf49-physics-budget.
+- DONE B (first task): cart + My Items tree + spacing merged; owner card feat212-cart-look. CarGame-land-212c/212d
+  hold the look pictures in wip/: remove the worktrees only after the owner has looked.
+- DONE ledorepo: INFRA-14 closed. INFRA-13 waits on the owner (Time Machine).
+Orchestrator DECs used: 190–193; next free for it: 194.
 
-**State at the hold.** Main smoked 26/26 at the last FEAT-184 merge (db3b04b9); origin = 706808d5; push only on the
-owner's word. Landed 11-13/14, all smoked: zip ties off the radiator, FEAT-209 gas prices, BUG-164 POIs follow the
-built chunk (DEC-135), FEAT-210 map symbols (+ the owner's icon / white-haul tweak), INFRA-10 decision records
-(`node tools/dashboard/decisions.check.mjs`), campDeeds 6 (DEC-120), FEAT-202 oil, FEAT-211 landings 1+2 (map window,
-Shopping list), BUG-168 double-count fix, FEAT-184 landing 1 and landing 3 part 1 (no setting, the traps, no damage in
-the tutorial; DEC-146..154), FEAT-212 landings 1+2 (Maintenance tree, Shop list), the QUAL-36 dive, tickets
-FEAT-202..214 and BUG-168.
+**Main:** map bundle cherry-picked (8cfcf7b5 + 413a0904 from land/feat-211d), smoke in flight, log wip/orch/smoke-map.log: check it. Old line follows.
+(check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
+minted: FEAT-215 (GPS U-turn arrow, Spare), FEAT-216 (damage alerts, B). Inbox fully replied; 2gdr (FEAT-204, "4x more
+slots": 4 more or 4 times?) still waits on the owner. DEC-136, the :8001 Windows server and the Tailscale-only
+dashboard are as before (see git log e3b0584a for detail).
 
-**Built, NOT landed (cheap to finish, no agent needed):**
-- FEAT-212 landing 3, the cart: `land/feat-212c` @ c1ffa6cf (`CarGame-land-212c`). Left: `node test/run-all.mjs --serial
-  --only=region-pieces,poi-headroom`, the smoke there, then cherry-pick + smoke main. Shots `wip/feat-212/30..34` there.
-- FEAT-211 landing 3, the waypoint: cherry-pick 929cb4f2 + 1479e9a7 from feature/spare, then smoke main (never smoked).
-- INFRA-15 (ticket not minted), the smoke robust under load: WIP fac4aebe on feature/run-shape, unproven. Repro
-  `SMOKE_STEPS=boot,story,edge SMOKE_THROTTLE=4 tools/chrome-slot.sh node test/cdp-smoke.mjs` fails every time; cause
-  open. Until fixed, smoke main only with heavy jobs paused (the "edge" step fails above load ~20).
-
-**Owner cards open (owed/):** tutorial-flow (dive; blocks FEAT-184 landing 2), tutorial-seed (dive; rec 822480141),
-perf42-reopen-carve, perf48-terrain-bake, bug167-creep, bug166-shock, qual36-grading (dive), bug168-speeds (rec
-40/65); looks: feat210-look, feat211-look, feat212-look, feat202-look, feat209-look, perf47-listen, bug164-look,
-feat180-pick (dev servers :3887 and :3890 are UP; stop them when the owner is done). The waypoint's defaults need a
-line on feat211-look once it lands.
-**Queue when lifted:** B: FEAT-213 info texts, FEAT-203 tire iron, FEAT-207 ratios. A: FEAT-184 landing 2 (after
-tutorial-flow), the seed pin (after tutorial-seed), FEAT-205. Spare: FEAT-214 lights (after feat180-pick). Perf: idle
-on the two perf cards. Lesson: a census with worker pools blew the 2-heavy cap (load 54) and failed main's smokes.
-A lane asked for a CLAUDE.md § Seeds line naming DEC-149's fixed tutorial seed: the owner's call, not done.
+**Answered cards still in owed/ = the queue (answers inside; move each to answered/ when an agent takes it):**
+- B: bug166-shock (yes, a crash breaks it), bug167-creep (fix it), bug168-speeds (40 / 65), bug160-numbers (wheel
+  damage at 50 % above the spring-damage energy; "24 and 4 are fine": check the slider), feat34-r3-look (wider, bigger
+  gauges, convex top), FEAT-216, the diagnostics engine glyph (inbox oc8a: squatter V6), FEAT-213, 203, 207.
+- Spare: feat180-pick (the rebuild wins; long tuning note; worktree .claude/worktrees/agent-a963…, servers :3887/:3890
+  can stop), QUAL-36 dive (submitted, NOT taken), FEAT-215, feat131-listen (remove the music bed, DEC-192), FEAT-214.
+- Perf: perf48-terrain-bake (build the prototype).
+- C: feat182-try (backpack flavour text should hint at the daypack's function).
+- feat202-look came back empty (no choice, no note): asked the owner to confirm "no change".
+- A after this task: INFRA-15 (parked, repro in git show fac4aebe), FEAT-205.
+Unanswered cards: bug92-usb, feat120-clips, feat120-straps, feat167-descs, givers-lines, pad-test, run-review.
+Lesson kept: a census with worker pools blew the 2-heavy cap (load 54) and failed main's smokes.

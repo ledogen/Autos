@@ -1496,6 +1496,7 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
+  frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
 window.__settings = _settings   // dev handle — test/cdp-smoke.mjs marks the browser as played before (FEAT-184 playedBefore)
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
@@ -3662,7 +3663,7 @@ const inventorySystem = new InventorySystem({
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isSuppressed: () => menuStage.isActive(),
-  isBlocked: () => damageScreen.blocked,
+  isBlocked: () => damageScreen.blocked || serviceCenter.cart.length > 0,   // FEAT-212: nothing used or dropped behind a cart a discard puts back
   actions: _partActions,
   ground: { list: _groundNearby, pick: _pickUpGround },   // FEAT-143: "Nearby on the ground"
 })
@@ -7300,6 +7301,9 @@ function _renderPaperUI () {
           + (offerBoard?.spec(p.offer) ? `time limit: ${formatGameDuration(offerBoard.deadlineH(p.offer, r.par))}` : '')
           + `</span>` : '')
         + `<br><span class="mp-deed">Deed: 1 if B or better &middot; 1/2 at C</span>`
+        // BUG-163 (owner, 2026-11-14, "keep the ladder, say it on the card"): FEAT-141's climb, in his words, while a
+        // bigger route is still locked.
+        + (p.sizes().length < PAPER_PARAMS.tiers.length ? `<br>&ldquo;I&rsquo;ll expand the route if you finish with a rank of B or better&rdquo;` : '')
       break
     }
     case 'staging':
@@ -9523,6 +9527,8 @@ let _runEnded = false         // the run is over: never write it again (_discard
 function _saveBlock () {
   if (missionSystem?.isOnJob() && !_jobSnapshot()) return 'finish or cancel the job to save'
   if (paperRouteSystem.isCarrying() && !paperRouteSystem.snapshot()) return 'finish or cancel the job to save'
+  // FEAT-212: the cart's work (or a shelf item fitted for a look) is on the truck unpaid — the save from before it stands.
+  if (serviceCenter.pending()) return 'check out or discard the cart to save'
   return null
 }
 /** The pause menu's save & exit: everything _saveBlock blocks, plus the truck must be parked (owner,
@@ -9990,7 +9996,7 @@ document.addEventListener('keydown', e => {
   // FEAT-90: an open damage screen takes Esc too — one press closes it, the next one pauses.
   if (damageScreen.isOpen) { damageScreen.close(); return }
   if (inventoryScreen.isOpen) { inventoryScreen.close(); return }   // FEAT-122: same rule
-  if (serviceScreen.isOpen && !map2d.isOpen()) { serviceScreen.close(); return }   // SM-3: same rule (the map over it goes first)
+  if (serviceScreen.isOpen && !map2d.isOpen()) { serviceScreen.back(); return }   // SM-3: same rule (the map over it goes first); FEAT-212: a full cart asks first
   // There is nothing to pause while the stage owns the screen — the sim is held, and the pause menu
   // is one of the panels body.stage-on hides, so it would open invisibly. Esc steps back out of the
   // settings page and is otherwise inert until the world is handed back.
@@ -10146,8 +10152,24 @@ document.addEventListener('keydown', e => {
 // Fixed-timestep accumulator (RESEARCH §Pattern 2, gafferongames.com/post/fix_your_timestep/)
 // PHYSICS_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
 let _ignEdge = null   // S-61: the ignition catch edge, latched per step, played once per frame
-function loop () {
+// PERF-48 (DEC-185): the frame cap. rAF (requestAnimationFrame, the browser's once-per-display-refresh
+// callback) fires at the display's rate: 120 on a ProMotion screen. A capped frame that is not yet due
+// returns before doing anything, so the whole frame (physics, streaming, render) waits for the next due
+// one. Physics loses nothing: the accumulator adds up wall time, so the next drawn frame runs every
+// PHYSICS_DT step owed (two per frame at 30 fps). `_frameDue` advances by whole intervals, so a display
+// rate that is no multiple of the cap (144 Hz) still averages the cap; a stall over one interval
+// resyncs instead of bursting. A frame is drawn when it is nearer its due time than the next refresh
+// would be (half the last refresh gap early), which absorbs vsync timestamp jitter at any display rate.
+let _frameDue = 0, _rafLast = 0
+function loop (t) {
   requestAnimationFrame(loop)
+  const cap = _settings.frameCap
+  if (cap > 0 && t !== undefined) {
+    const interval = 1000 / cap, refresh = Math.min(t - _rafLast, interval)
+    _rafLast = t
+    if (t < _frameDue - refresh * 0.5) return
+    _frameDue = t - _frameDue > interval ? t + interval : _frameDue + interval
+  }
   perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
   if (!_firstFrameMarked) {
     _firstFrameMarked = true
@@ -10203,6 +10225,8 @@ function loop () {
   damageHUD.update(frameTime)   // SM-3 diagnostic readout — returns on the first line while hidden
   damageScreen.update(frameTime)   // FEAT-90: alert detection + icon tint at 10 Hz
   inventoryScreen.update()         // FEAT-122: the park zone's lock; closes when the truck drives off
+  // FEAT-212: a full cart holds the brake (mom's pump does the same): the lever asks for checkout or discard, then lets go.
+  if (serviceScreen.isOpen && !vehicleState.parked && serviceCenter.cart.length) { vehicleState.parked = true; serviceScreen.leave(() => { vehicleState.parked = false }) }
   serviceScreen.update()           // SM-3: closes when the truck drives off
   _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
   _updateFragileG(frameTime)   // FEAT-139: the fragile load's felt-g bar
@@ -10979,12 +11003,10 @@ function loop () {
   perfAdd('frame.postStream', _ptR - _ptPost)   // PERF-26 INSTRUMENT
   // FEAT-41: whichever scene owns the screen. Skipping the world render behind a menu or a load is
   // not just tidiness — it hands the GPU to the build that is running underneath.
-  // PERF-38: nor behind the 2D map — the world frame under it was the whole 3D GPU bill (owner's M4: 5 W, pinned at
-  // 890 MHz, with the map open). FEAT-211: the map is a window now, and the world shows round it — as the frame drawn
-  // the moment the map opened (a WebGL canvas keeps showing its last frame until it draws again), so the window
-  // costs no 3D at all.
+  // FEAT-211 (owner, 2026-11-14: "make the background live"): the world renders behind the map window at full rate,
+  // reversing PERF-38's skip (the frozen frame); the window covers 81 % of it, which the GPU still draws.
   if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
-  else if (!map2d.isOpen()) renderer.render(scene, camera)
+  else renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // D-arc: render submit (the ~8.5 s load-cost suspect)
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.

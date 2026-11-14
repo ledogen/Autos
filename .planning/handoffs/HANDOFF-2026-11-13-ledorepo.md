@@ -48,11 +48,10 @@ Backfill gaps (no record exists, so nothing guards these):
   before changing junction promotion.
 
 ## Next, in order
-1. **INFRA-14** — the orchestrator's state is now all in files, so a clear costs one word. Remaining: tidy its
-   handoff (drop the "ready for a clear at ~300k" drill or keep it only mid-merge) and make side work its
-   subagents by default. Small; the handoff is the orchestrator's file — send it the text, it applies.
-2. **INFRA-13** — waits on the owner: `wip/` (66 MB) backed up or not; Time Machine. Unpushed commits on main
-   are an accepted loose end (owner).
+1. **INFRA-13** — waits on the owner: Time Machine (or an equivalent whole-disk backup). `wip/` is decided: not
+   backed up (DEC-195, owner 11-14). Unpushed commits on main are an accepted loose end (owner).
+   INFRA-14 closed 11-14 (branch infra/infra-14-context; the orchestrator applies
+   `wip/infra-14/orchestrator-handoff-patch.md` to its handoff when it lands).
 
 ## Working with the orchestrator (peer session; find it with ListAgents, it answers to "orchestrator")
 - It owns main's merges, `HANDOFF-2026-10-25-orchestrator.md`, `LANE-AGENT-BRIEF.md`, and every agent-side file

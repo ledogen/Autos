@@ -131,3 +131,6 @@ that touches the drive.
 The result card's sounds (P1) are accepted. The rank-timer music bed (P3) is still owed: the owner did not know
 what it was — it plays only once the rank bar shows (the last 25 % of a courier route, never under 400 m; a paper
 round 15 s before its S/A line), so it wants a job driven to the bar.
+
+## Owner, 2026-11-14
+Owner, card feat131-listen, on the rank-timer music bed: "drop it" (DEC-192). The bed is to be removed from src (no dead code); queued for Spare. The card sounds stay accepted.

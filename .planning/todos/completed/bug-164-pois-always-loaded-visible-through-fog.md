@@ -1,7 +1,7 @@
 ---
 id: BUG-164
 type: bug
-status: in-review
+status: closed
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-13 inbox — "I noticed that all POIs are always loaded. I can see them through the fog"
@@ -12,8 +12,7 @@ lane: engine & world (the perf lane)
 # BUG-164: Every POI stays loaded and draws through the fog
 
 ## Next steps
-Orchestrator: land `land/bug-164` (one commit on main). Owner: look at the before/after pair below and rule on the
-pop-in distance (recommendation: keep the rings' reach).
+None. Closed by the owner 2026-11-14 (see Decisions).
 
 ## Summary
 Every POI model and yard in the region was drawn at any range (~60–70 objects, ~350 meshes, ~54 k triangles out
@@ -59,10 +58,14 @@ on this GPU). Raw: `wip/bug-164/census.log` and `*-census.json` in the perf work
 - [x] POI models beyond view distance are not drawn (and not in the shadow pass) — main-thread ms/s measured; GPU
   active cycles not run (no PERF-40 leg: the in-frame triangle change is < 1 %, below what the bench resolves).
 - [x] Map markers and mission logic are unaffected by a POI's model being hidden.
-- [ ] Owner look: pop-in distance.
+- [x] Owner look: pop-in distance (DEC-135, then "keep it", 2026-11-14).
+
+## Decisions
+- 2026-11-13, owner: the pop-in matches the terrain (DEC-135).
+- 2026-11-14, owner: "keep it, close the ticket"
 
 ## Open questions
-- Pop-in distance. A POI now appears at 192 m (Normal), the same moment its ring does; at Normal fog it is ~27 %
+- ~~Pop-in distance.~~ Answered (DEC-135). A POI now appears at 192 m (Normal), the same moment its ring does; at Normal fog it is ~27 %
   visible there (High 256 m ~35 %, Ultra 320 m ~40 %). Recommendation: keep it, one reach for ring and building.
   The alternative is the full built terrain, (ring + warm) · 64 m, which only differs on High/Ultra.
 
@@ -80,3 +83,7 @@ Before/after pair (the service station 548 m out, seed 1768572700): `wip/bug-164
 ## Landing (2026-11-13)
 On main 0d9cb9f4 (smoke 26 steps, zero console errors; affected gates 9/9). Stays open for the owner look at the pop-in distance (owed: bug164-look).
 - 2026-11-13: owner looked: "lets push the poi pop in a bit further so it matches the terrain. it seems like terrain always builds out further than pois." The 192 m circle was the visible ring's inscribed reach; the terrain is a square ring plus a warm margin, so it reached further on every side. Now a POI draws exactly when the chunk under its anchor is built (`TerrainSystem.hasChunkAt`), main cc4652dd, smoke 26/26. The draw-call saving was not re-measured at the wider reach.
+- 2026-11-14: closed by the owner: "keep it, close the ticket".
+
+## Resolution (2026-11-14)
+On main: a POI draws exactly where the terrain under it is built (cc4652dd, DEC-135). Closed.
