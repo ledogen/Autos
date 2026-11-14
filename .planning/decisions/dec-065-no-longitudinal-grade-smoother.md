@@ -1,6 +1,6 @@
 ---
 id: DEC-065
-status: draft
+status: standing
 decided: 2026-09-22
 area: roads
 governs: FEAT-68, src/road.js, grade, crest
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** The FEAT-68 smoother (retired).
 
-**Source.** memory project_feat68_closed_signoff. Date from the memory note. Agent wording.
+**Source.** memory project_feat68_closed_signoff. Date from the memory note. Agent wording, owner approved 2026-11-13.

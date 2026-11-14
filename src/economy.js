@@ -125,11 +125,10 @@ export const ECONOMY_PARAMS = {
     // nothing: a fixed day-1 sum.
     startCash:    10,
     // GAME-FEEL REVIEW 2026-10-23 (R-02): the good deeds that open the expedition camp (FEAT-103,
-    // owner 2026-10-19: "gated by 6 good deeds"). The ONE copy: the run HUD's "2 / 10", the result
+    // owner 2026-10-19: "gated by 6 good deeds"). The ONE copy: the run HUD's "2 / 6", the result
     // card's tally and the intro card all read it. FEAT-103 reads it when the camp lands.
-    // FEAT-168 [DEFAULT]: 6 → 10, so a region-1 run takes ~12 days (owner, 2026-11-05: "maybe 12 days
-    // should be expected for a R1 run"; their one run made 6 deeds in 7 days — re-measure).
-    campDeeds:    10,
+    // DEC-120 (owner, 2026-11-13): 6, chosen over FEAT-168's agent default of 10.
+    campDeeds:    6,
 
     // ── FEAT-138 RANK THRESHOLDS, BY TYPE AND REGION [owner, 2026-10-21] ──────────────────────
     // Every type ranks on its own axis (design-amendments-2026-10-21-mission-recut.md §1–2, §11b).

@@ -1,6 +1,6 @@
 ---
 id: DEC-097
-status: draft
+status: standing
 decided: 2026-07-14
 area: process
 governs: test/gates.mjs, npm test
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_no_heavy_gates_for_trivial. Date from the memory note. Agent wording.
+**Source.** memory feedback_no_heavy_gates_for_trivial. Date from the memory note. Agent wording, owner approved 2026-11-13.

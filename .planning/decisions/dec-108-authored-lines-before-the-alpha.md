@@ -1,6 +1,6 @@
 ---
 id: DEC-108
-status: draft
+status: standing
 decided: 2026-10-31
 area: story
 governs: FEAT-148, data/dialogue.js, MILESTONES.md, authored lines
@@ -13,8 +13,6 @@ supersedes:
 
 **Why.** The alpha's characters need their words.
 
-**Replaces.** Nothing yet: this record is a draft until the owner rules.
+**Replaces.** "A ticket no table lists is later" (MILESTONES.md § Release cuts).
 
-**Source.** FEAT-148 § Ruled (owner, 2026-10-31); MILESTONES.md § Release cuts. Agent wording.
-
-**Conflict.** A: "write them BEFORE the alpha" (FEAT-148 § Ruled (owner, 2026-10-31)) · B: "A ticket no table lists is later" (MILESTONES.md § Release cuts)
+**Source.** FEAT-148 § Ruled (owner, 2026-10-31); MILESTONES.md § Release cuts. Agent wording, owner approved 2026-11-13 under DEC-123.

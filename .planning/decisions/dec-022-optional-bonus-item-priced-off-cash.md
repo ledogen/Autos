@@ -1,6 +1,6 @@
 ---
 id: DEC-022
-status: draft
+status: standing
 decided: 2026-11-13
 area: economy
 governs: FEAT-199, src/offer-board.js, data/items.js, bonus item, reward
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** The item-only $0 missions.
 
-**Source.** FEAT-199 source (owner, 2026-11-11 inbox, "we need to make them a choice") and § Verified (2026-11-13). The per-item cash value N is still the owner's number (default: shop price). Agent wording.
+**Source.** FEAT-199 source (owner, 2026-11-11 inbox, "we need to make them a choice") and § Verified (2026-11-13). The per-item cash value N is still the owner's number (default: shop price). Agent wording, owner approved 2026-11-13.

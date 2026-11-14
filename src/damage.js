@@ -88,6 +88,10 @@ export const TRACKS = {
   // never be reached — and there is no impact curve for the `filter` class either, so it is guarded
   // twice. Pinned in test/damage-filter-puncture.mjs.
   airFilter:  { label: 'Air Filter', cls: 'filter',     regions: [] },
+  // FEAT-202 (owner, 2026-11-13): the engine oil — the air filter's kind of track (a consumable that
+  // wears on the engine's own rpm x load and makes the engine wear faster), changed only at an auto
+  // shop (src/service.js changeOil). `regions: []` keeps impacts off it, as the filter's.
+  oil:        { label: 'Engine Oil', cls: 'oil',        regions: [] },
   radiator:   { label: 'Radiator',   cls: 'radiator',   regions: ['front'] },
   // FEAT-126: the MANUAL gearbox's synchros. Worn only by a shift forced with the clutch in (the sim
   // rejects it and flags drivetrain.missShift); a worn box SHIFTS SLOWER (owner, 2026-10-19), it never
@@ -211,7 +215,7 @@ export const DAMAGE_PARAMS = {
   // 10x FASTER as of 2026-08-23 (owner: "soooooooo slow"). At the fitted rate an engine outlasted
   // several runs and was a component the player never thought about — the same reason the brakes
   // were sped up. Hard driving now costs an engine in about eleven hours rather than a hundred and
-  // ten, and a blocked air filter multiplies that by up to twenty on top.
+  // ten, and a blocked air filter multiplies that by up to twenty on top (and old oil too, FEAT-202).
   durEngine:      2.0e4,     // normalised load-seconds
   engineRPMExp:   2.0,       // rpm term exponent — revving hurts superlinearly
 
@@ -251,6 +255,18 @@ export const DAMAGE_PARAMS = {
   // FEAT-38 hook: dust exposure should multiply the clog rate on dirt roads. Not wired — the
   // per-surface plumbing does not exist yet — so the filter currently clogs at one rate everywhere.
   filterDustMult:   1,
+
+  // ── Engine oil (FEAT-202, owner 2026-11-13) ─────────────────────────────────────────────────
+  // Wears on the same rpm x load insult as the engine and the filter (owner: "based off of load and
+  // rpm"). The EFFECT is the filter's shape made "more linear ... as significant if not more": no
+  // knee squared into a cliff, a straight line from oilKnee down to oilEngineMult at empty oil.
+  // Over the range, old oil costs the engine ~3.7x what a dying filter does (∫(mult − 1) dc: oil
+  // 19 × 0.5 / 2 = 4.75, filter 19 × 0.2 / 3 = 1.27). oilKnee 1 is the pure straight line from new.
+  //   [DEFAULT] all three. 1800 = 60 min of hard driving (insult 0.5) from new to empty, twice the
+  //   filter's life: it bites from 30 min, the filter's whole life.
+  durOil:           1800,    // normalised load-seconds to worn-out oil
+  oilKnee:          0.5,     // below this old oil starts wearing the engine
+  oilEngineMult:    20,      // engine wear multiplier at empty oil (the filter's 20, linear not squared)
 
   // Springs: bump-stop EVENTS, priced on the PEAK force of each one.
   //
@@ -621,7 +637,7 @@ export const DAMAGE_PARAMS = {
   // They are a TUNING surface, not part of the model: anything that settles here should be folded
   // back into the dur* constant it scales and the multiplier returned to 1, so there is one number
   // per rate rather than two that have to be read together.
-  wearScale: { tire: 1, brake: 1, spring: 1, damper: 1, wheel: 1, engine: 1, filter: 1 },
+  wearScale: { tire: 1, brake: 1, spring: 1, damper: 1, wheel: 1, engine: 1, filter: 1, oil: 1 },
 
   // ── Contact → impact gating (feedContact) ──────────────────────────────────────────────────
   // A contact is not an impact. The engine reports a manifold every step a body is touching
@@ -946,6 +962,14 @@ export class DamageModel {
     if (c >= P.filterKnee) return 1
     const t = (P.filterKnee - c) / P.filterKnee     // 0 at the knee → 1 at fully blocked
     return 1 + (P.filterEngineMult - 1) * t * t
+  }
+
+  /** FEAT-202: how much faster the engine wears for its oil — 1 above oilKnee, straight up to
+   *  oilEngineMult at empty. Multiplies with the filter's: both neglected is both costs at once. */
+  oilEngineMultiplier () {
+    const P = DAMAGE_PARAMS
+    const c = this.get('oil')
+    return c >= P.oilKnee ? 1 : 1 + (P.oilEngineMult - 1) * (P.oilKnee - c) / P.oilKnee
   }
 
   /** FEAT-126: synchro-time multiplier — 1 new, transAtZero (3×) when the box is dead. */
@@ -1540,10 +1564,12 @@ export class DamageModel {
       if (insult > 0) {
         // A choked filter starves the engine and accelerates its wear — the multiplier is 1 down to
         // the knee and then climbs to filterEngineMult at zero, squared so the last stretch is the
-        // punishing one. This is the ONLY coupling between two tracks in the model, and it is
-        // deliberate: the filter has no effect of its own, it makes something else worse.
-        this.wear('engine', insult * this.filterEngineMultiplier() * dt, P.durEngine)
+        // punishing one. This is one of the two couplings between tracks in the model, and it is
+        // deliberate: the filter has no effect of its own, it makes something else worse. FEAT-202:
+        // the oil is the second coupling of the same kind (oilEngineMultiplier), worn by the same insult.
+        this.wear('engine', insult * this.filterEngineMultiplier() * this.oilEngineMultiplier() * dt, P.durEngine)
         this.wear('airFilter', insult * P.filterDustMult * dt, P.durFilter)
+        this.wear('oil', insult * dt, P.durOil)
       }
     }
 

@@ -83,8 +83,9 @@ it: the stranded motorist (spare tire, jerry can) and the tackle shop (the store
   lightbulbs, screws, nails, duct tape, paper towels, toilet paper, rope, string, paper — go from
   the store to anyone as courier jobs, and the tackle shop fetches them. Until fetch is built the
   tackle shop posts nothing.
-- **The office and school post nothing at all, fetch included** (owner, 2026-10-07 — answering
-  the conflict with their receive-only ruling). Fetch comes only from receivers that are already
+- **The office and school post their own jobs** (permission slips, science-fair project, signed
+  contracts, payroll envelope); the school still receives class notes from residences only (DEC-106,
+  replaces the 2026-10-07 ruling). Fetch comes only from receivers that are already
   sources: e.g. the general store fetching empty propane, a farm fetching tractor keys.
 
 ## The three shapes

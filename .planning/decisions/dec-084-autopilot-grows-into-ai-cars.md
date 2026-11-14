@@ -1,6 +1,6 @@
 ---
 id: DEC-084
-status: draft
+status: standing
 decided: 2026-11-12
 area: repo
 governs: PERF-40, test/lib/autopilot.mjs, AI cars
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory project_autopilot_for_ai_cars (owner, 2026-11-12). Date from the memory note. Agent wording.
+**Source.** memory project_autopilot_for_ai_cars (owner, 2026-11-12). Date from the memory note. Agent wording, owner approved 2026-11-13.

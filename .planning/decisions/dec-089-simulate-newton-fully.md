@@ -1,6 +1,6 @@
 ---
 id: DEC-089
-status: draft
+status: standing
 decided: 2026-10-29
 area: physics
 governs: src/physics.js, src/tire.js, src/suspension.js
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_simulate_newton_fully. Date from the memory note. Agent wording.
+**Source.** memory feedback_simulate_newton_fully. Date from the memory note. Agent wording, owner approved 2026-11-13.

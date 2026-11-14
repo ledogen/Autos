@@ -1,6 +1,6 @@
 ---
 id: DEC-037
-status: draft
+status: standing
 decided: 2026-10-23
 area: story
 governs: FEAT-36, spirits, pacts
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** MILESTONES.md § Release cuts (beta: spirits); CLAUDE.md § Story Mode (spirits-and-pacts.md "deferred"). Agent wording.
+**Source.** MILESTONES.md § Release cuts (beta: spirits); CLAUDE.md § Story Mode (spirits-and-pacts.md "deferred"). Agent wording, owner approved 2026-11-13.

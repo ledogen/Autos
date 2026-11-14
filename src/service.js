@@ -23,7 +23,7 @@
 // The renderer-agnostic half (the fuel-stop.js pattern): main.js owns the DOM, this owns the rules,
 // so a headless gate can drive a whole visit. Every dependency arrives through the constructor.
 
-import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP, SEIZED_REPAIR_X, REPAIR_CAP, REPAIR_STEP, PATCH, BEAD, HUB, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP, SEIZED_REPAIR_X, REPAIR_CAP, REPAIR_STEP, PATCH, OIL_CHANGE, BEAD, HUB, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
 import { TRACKS, TIRE_IDS, WHEEL_IDS } from './damage.js'
 import { shelfPrice } from './shop-stock.js'
 import { swapCorners } from './recovery.js'
@@ -144,6 +144,18 @@ export class ServiceCenter {
         const d = this.damage
         for (const id of ALIGN) { d.set(id, 1); d.toeOffsetDeg[TRACKS[id].wheel] = 0; d.camberOffsetDeg[TRACKS[id].wheel] = 0 }
         this.advanceHours(q.hours)
+        this.onChange()
+        return true
+    }
+
+    /** FEAT-202: the oil change, a flat price at today's tier. Every shop, always. */
+    oilQuote () { return { price: cents(OIL_CHANGE.price * this.tier()), hours: OIL_CHANGE.hours } }
+
+    /** Change the oil: straight back to new. False, nothing charged, when it is already new or short of the wallet. */
+    changeOil () {
+        if (this.damage.get('oil') >= 1 - EPS || !this.spend(this.oilQuote().price)) return false
+        this.damage.set('oil', 1)
+        this.advanceHours(OIL_CHANGE.hours)
         this.onChange()
         return true
     }

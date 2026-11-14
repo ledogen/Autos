@@ -1,6 +1,6 @@
 ---
 id: DEC-042
-status: draft
+status: standing
 decided: 2026-10-23
 area: story
 governs: FEAT-146, src/main.js, run end, summary
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** DESIGN.md 2026-10-23 pass; FEAT-146. Agent wording.
+**Source.** DESIGN.md 2026-10-23 pass; FEAT-146. Agent wording, owner approved 2026-11-13.

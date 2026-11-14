@@ -1,18 +1,18 @@
 ---
 id: DEC-053
-status: draft
-decided: 2026-10-12
+status: standing
+decided: 2026-11-13
 area: world
-governs: FEAT-28, regions, ladder
+governs: FEAT-28, regions, story world, ladder
 supersedes:
 ---
 
-# DEC-053: The regions are "the ladder"
+# DEC-053: They are regions, inside the story world
 
-**Ruling.** The three regions are ring sections stacked north to south, and they are called "the ladder", never "rings".
+**Ruling.** They are called regions, and they sit inside the story world. The layout is linear, north to south (regions 1 and 2 are still sections of a ring); never describe or build the regions as concentric rings.
 
-**Why.** One name for one layout keeps every later note pointed at the same thing.
+**Why.** "the reason i emphasized ladder is because we originally built the regions as rings and then changed it to a more linear layout. R1 and R2 are still sections of a ring, which caused confusion with the agent"
 
-**Replaces.** The concentric-ring wording (DESIGN.md 2026-10-12 item 3).
+**Replaces.** The name "the ladder" as the regions' name (memory project_region_ladder_term), and the concentric-ring wording (DESIGN.md 2026-10-12 item 3).
 
-**Source.** memory project_region_ladder_term. Date from the memory note. Agent wording.
+**Source.** The owner's note in the deep dive INFRA-10-conflicts, 2026-11-13: "they should be called \"regions\" and are within the \"story world\"". Agent wording, owner approved 2026-11-13.

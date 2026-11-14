@@ -26,6 +26,8 @@
 //   9. Tire work is bead jobs and hub swaps (owner, 2026-10-23): a loose tire onto a corner is 2 hub +
 //      2 bead, charged with the shelf price; split and combine are one bead job each, every part keeping
 //      its wear and the tire its puncture; split needs a free slot; only a loose tire meets a loose wheel.
+//  11. FEAT-202: the oil change — a flat price × tier, straight back to new oil, its hours on the clock; no
+//      job on new oil or past the wallet. A run save written before the oil track loads with new oil.
 //  10. FEAT-196: a corner swap trades two corners' mounted pairs (each part's wear, the puncture with its tire) for
 //      four hub swaps; a mounted pair's wheel in the inventory is straightened on the bench, still mounted.
 //
@@ -35,7 +37,7 @@ import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
 import { InventorySystem } from '../src/inventory.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP as SU, REPAIR_CAP, SEIZED_REPAIR_X, PATCH, BEAD, HUB } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP as SU, REPAIR_CAP, SEIZED_REPAIR_X, PATCH, OIL_CHANGE, BEAD, HUB } from '../data/parts.js'
 import { repairTargets } from '../src/service.js'
 
 let fails = 0
@@ -127,6 +129,18 @@ check('an exchange off the tires pays the minimum charge too, × tier', svc.fitL
   && (tier = 2, svc.fitLabour('springsHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
 check('the air filter fits for a third of the minimum charge, in 15 min (owner, 2026-11-06)',
   svc.fitLabour('airFilterStock', 'airFilter').price === Math.round(SU.price / 3 * 100) / 100 && svc.fitLabour('airFilterStock', 'airFilter').hours === 0.25)
+{
+  const w0 = wallet, h0 = hours
+  damage.set('oil', 0.3); tier = 2
+  check('FEAT-202: the oil change is a flat price × tier, its hours on the clock, straight to new oil',
+    near(svc.oilQuote().price, OIL_CHANGE.price * 2) && svc.changeOil() && damage.get('oil') === 1
+    && near(w0 - wallet, OIL_CHANGE.price * 2) && near(hours - h0, OIL_CHANGE.hours))
+  tier = 1
+  const w1 = wallet; wallet = OIL_CHANGE.price - 0.01; damage.set('oil', 0.3)
+  check('…no job on new oil, nor past the wallet', !svc.changeOil() && damage.get('oil') === 0.3 && (damage.set('oil', 1), wallet = w1, !svc.changeOil()) && wallet === w1)
+  const snap = parts.snapshot(); delete snap.condition.oil; damage.set('oil', 0.2); parts.restore(snap)
+  check('…and a save from before the oil track loads with new oil', damage.get('oil') === 1)
+}
 const oldShocks = inventory.list().find(r => r.id === 'dampersOEM')
 check('the old shocks go straight into the inventory with their wear', !!oldShocks && oldShocks.cond === 0.2, JSON.stringify(oldShocks))
 const before = wallet

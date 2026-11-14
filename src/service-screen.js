@@ -148,7 +148,7 @@ const GROUPS = [
   ['Shocks', axles('dampers')],
   ['Anti-roll bars', axles('arb')],
   ['Lift', [['lift']]],
-  ['Engine & drivetrain', [['engine'], ['radiator'], ['airFilter'], ['transmission'], ['diff']]],
+  ['Engine & drivetrain', [['engine'], ['oil'], ['radiator'], ['airFilter'], ['transmission'], ['diff']]],
   ['Headlights', [['headlightL', 'Left'], ['headlightR', 'Right']]],
   ['Armor', [['armorFront', 'Front'], ['armorLeft', 'Left'], ['armorRight', 'Right'], ['armorRear', 'Rear']]],
 ]
@@ -274,6 +274,7 @@ export class ServiceScreen {
       case 'sel': this.sel = this.sel === key ? null : key; break
       case 'group': { const g = b.dataset.group; this.groups.has(g) ? this.groups.delete(g) : this.groups.add(g); break }
       case 'align': s.align(); break
+      case 'oil': s.changeOil(); break
       case 'step': {
         const d = e.target.closest('.sel-prev') ? -1 : e.target.closest('.sel-next') ? 1 : 0
         const ts = this._targets(key)
@@ -356,7 +357,11 @@ export class ServiceScreen {
   _vehicleActs (socket, track, flat) {
     const s = this.service, money = s.money(), cls = track && TRACKS[track].cls
     let h = ''
-    if (cls && REPAIRS[cls]) {
+    if (cls === 'oil') {   // FEAT-202: a flat job, every shop, always
+      const q = s.oilQuote()
+      h += `<div class="sv-row"><span class="sv-name">Change the oil</span><span class="sv-cost">${cost(q.price, q.hours)}</span>`
+        + btn('oil', 'change', s.damage.get('oil') < 1 && money + 1e-9 >= q.price, '', ' ok') + `</div>`
+    } else if (cls && REPAIRS[cls]) {
       h += `<div class="sv-sub">Repair</div>` + this._repair(`v:${track}`, s.damage.get(track), (t) => s.repairQuote(track, t))
     } else if (cls) {
       h += dim('Replace only: exchange it for one you carry, or buy one off a shelf.')

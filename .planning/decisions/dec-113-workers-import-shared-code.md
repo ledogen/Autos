@@ -1,6 +1,6 @@
 ---
 id: DEC-113
-status: draft
+status: standing
 decided: 2026-10-02
 area: repo
 governs: src/terrain-worker.js, src/terrain.js, src/road-network-worker.js, src/road-route-worker.js, workers
@@ -13,8 +13,6 @@ supersedes:
 
 **Why.** Worker/main parity by construction.
 
-**Replaces.** Nothing yet: this record is a draft until the owner rules.
+**Replaces.** "WORKER_SOURCE is the SOLE worker source." (memory project_terrain_worker_constraints (2026-06-21)).
 
-**Source.** CLAUDE.md § Workers (2026-10-02); memory project_terrain_worker_constraints (2026-06-21). Agent wording.
-
-**Conflict.** A: "Every Worker is a real ES module that imports the code the main thread runs." (CLAUDE.md § Workers (2026-10-02)) · B: "WORKER_SOURCE is the SOLE worker source." (memory project_terrain_worker_constraints (2026-06-21))
+**Source.** CLAUDE.md § Workers (2026-10-02); memory project_terrain_worker_constraints (2026-06-21). Agent wording, owner approved 2026-11-13 under DEC-125.

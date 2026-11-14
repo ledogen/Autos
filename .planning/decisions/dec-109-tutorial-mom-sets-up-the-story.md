@@ -13,8 +13,6 @@ supersedes:
 
 **Why.** The owner's tutorial note rewrites the opening around mom's house.
 
-**Replaces.** Nothing yet: this record is a draft until the owner rules.
+**Replaces.** "the alpha story is three beats: the firing, the uncle (the tutorial's voice), the expedition camp" (DESIGN.md 2026-10-23 pass, item (5)).
 
-**Source.** FEAT-184 tutorial note (owner, 2026-11-13); DESIGN.md 2026-10-23 pass, item (5). Agent wording.
-
-**Conflict.** A: "drive to mom's house she feeds you and sets up the story" (FEAT-184 tutorial note (owner, 2026-11-13)) · B: "the alpha story is three beats: the firing, the uncle (the tutorial's voice), the expedition camp" (DESIGN.md 2026-10-23 pass, item (5))
+**Source.** FEAT-184 tutorial note (owner, 2026-11-13); DESIGN.md 2026-10-23 pass, item (5). Agent wording, owner approved 2026-11-13 under DEC-124.

@@ -286,7 +286,7 @@ const STEPS = [
   }],
   ['map', async () => {
     await tap('m')
-    check(await until(() => js('window.__map2d().isOpen() && document.getElementById("map2d").style.display !== "none"'), 2000), 'M did not open the map')
+    check(await until(() => js('window.__map2d().isOpen() && document.getElementById("map-window").style.display !== "none"'), 2000), 'M did not open the map')
     const mouse = (type, x, y) => client.cmd('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 })
     await mouse('mousePressed', 600, 400); await mouse('mouseMoved', 700, 450); await mouse('mouseReleased', 700, 450)
     await sleep(200)

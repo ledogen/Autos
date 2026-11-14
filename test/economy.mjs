@@ -164,7 +164,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('the cost curve is 1.065^(d−1) to the cent: day 7 1.46, day 12 2.00, day 20 3.31',
     P.dayTierTable.every((t, i) => t === Math.round(1.065 ** i * 100) / 100)
       && dayTier(7) === 1.46 && dayTier(12) === 2 && dayTier(20) === 3.31)
-  check('the camp opens at 10 good deeds (a ~12-day region-1 run)', P.campDeeds === 10)
+  check('the camp opens at 6 good deeds (DEC-120, owner 2026-11-13)', P.campDeeds === 6)
   // The ticket's check on the curve: a day's costs are 1.5 base pays × dayTier; two average B jobs
   // (at the B line, flat pay) must still clear day 12's.
   const costs12 = 1.5 * basePay(AVG_PAR, 1) * dayTier(12), twoB = 2 * payoutFor(AVG_PAR, rankTable('time', 1).B, 1)

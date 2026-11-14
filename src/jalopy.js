@@ -16,7 +16,7 @@ import { mulberry32 } from './seed.js'
 export const JALOPY_COND = {
   tire: [0.4, 0.8], wheel: [0.7, 1], alignment: [0.75, 1],
   spring: [0.5, 0.85], damper: [0.4, 0.8], brake: [0.35, 0.75],
-  engine: [0.55, 0.85], filter: [0.4, 0.8], radiator: [0.5, 0.9], transmission: [0.5, 0.85],
+  engine: [0.55, 0.85], filter: [0.4, 0.8], oil: [0.4, 0.8], radiator: [0.5, 0.9], transmission: [0.5, 0.85],
   headlights: [0.6, 1], armor: [0.5, 0.9],
 }
 /** The sockets that don't always get the stock part: per kind of socket, part id → weight. */

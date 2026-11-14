@@ -1,6 +1,6 @@
 ---
 id: DEC-119
-status: draft
+status: standing
 decided: 2026-10-24
 area: ui
 governs: SM-INV-4, src/offer-board.js, src/main.js, offer card, pay
@@ -13,8 +13,6 @@ supersedes:
 
 **Why.** The owner specified the range wording in the game-feel review (R-20).
 
-**Replaces.** Nothing yet: this record is a draft until the owner rules.
+**Replaces.** "the offer card quotes one number, Base pay, the guaranteed amount ... and the tip is never mentioned on the offer" (DESIGN.md SM-INV-4 deadline amendment).
 
-**Source.** src/offer-board.js R-20 (owner, 2026-10-24); DESIGN.md SM-INV-4 deadline amendment. Agent wording.
-
-**Conflict.** A: "Pay $3.63 – $7.27 based on speed" (src/offer-board.js R-20 (owner, 2026-10-24)) · B: "the offer card quotes one number, Base pay, the guaranteed amount ... and the tip is never mentioned on the offer" (DESIGN.md SM-INV-4 deadline amendment)
+**Source.** src/offer-board.js R-20 (owner, 2026-10-24); DESIGN.md SM-INV-4 deadline amendment. Agent wording, owner approved 2026-11-13 under DEC-126.
