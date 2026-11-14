@@ -132,6 +132,7 @@ import { StreamMotion } from './stream-priority.js'         // PERF-33: travel d
 import { StreamBudget } from './stream-budget.js'           // PERF-33: one shared per-frame streaming budget
 import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
+import { TerrainBake } from './terrain-bake.js'   // PERF-48 lever 6 prototype (?terrainBake=)
 import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
@@ -153,6 +154,9 @@ const _urlSeed = _urlParams.get('seed')
 // renderer construction (AA can't toggle live — context creation flag). Zero cost when absent.
 const _PROF = _urlParams.get('prof') === '1'
 const _NOAA = _urlParams.get('noaa') === '1'
+// PERF-48 lever 6 PROTOTYPE: ?terrainBake=<px per chunk, e.g. 256>[&bakeNear=<m>] bakes the terrain material into an
+// atlas (src/terrain-bake.js). Absent = the live shader, main's look unchanged.
+const _terrainBakePx = parseInt(_urlParams.get('terrainBake') ?? '', 10) || 0
 if (_PROF) perfEnableUserTiming()
 // PERF-26: ?hitch=<ms> turns on per-frame hitch attribution at that frame-period threshold (?hitch=1
 // takes the default 24 ms). Independent of ?prof so it can be left on during ordinary play — the only
@@ -8207,6 +8211,8 @@ propSystem.setPhysicsHook(propPhysics)   // FEAT-48: trees/rocks/boulders are ri
 // browser-only). Wires the atlas texture into the terrain sampler, the bake triggers into the prop
 // system, and the static sun direction into the projection shear. In realtime-cast mode the terrain
 // strength is 0 (props keep casting into the sun's shadow map instead).
+const terrainBake = _terrainBakePx ? new TerrainBake(renderer, _terrainBakePx, parseFloat(_urlParams.get('bakeNear') ?? '0') || 0) : null
+if (terrainBake && _PROF) window.__terrainBake = terrainBake   // harness A/B: __terrainBake.enabled = false → live shader
 const shadowBake = new ShadowBakeSystem(renderer, FLORA_PARAMS.shadows?.tilePx ?? TILE_PX)
 shadowBake.setSun(skySystem.sunDirection)
 // Baked strength is 0 whenever the bake can't stand in: realtime-cast mode, or tilePx 0 (Low tier
@@ -10722,6 +10728,7 @@ function loop (t) {
   // moment the window moves — early-outs unless the stream centre changed chunk.
   if (shadowBake && !_labActive) shadowBake.syncCenter(Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE))
   if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(_streamBudget.deadline()) }   // PERF-26 tag
+  if (terrainBake && !_labActive) terrainBake.update(terrainSystem._material, terrainSystem._chunkMap, camera.position)
   perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()
