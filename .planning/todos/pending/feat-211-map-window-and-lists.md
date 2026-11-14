@@ -73,6 +73,10 @@ This has no separate "map tab" and no select step: the map is always live under 
   a quarter of it). Not built: an owner call.
 - **Map canvas** is smaller than before: at the owner's 1045 × 700 window, 536 × 560 css px against 1045 × 700, about 41 % of the
   pixels blitted per frame.
+- **Measured** (PERF-40 bench, A = this branch, B = main, seed 1768572700, A-B-A-B, 4/4 sessions valid; the owner was using
+  the Mac, so read the work units, not ms): the map phase costs **580 vs 617 million main-thread instructions/s (−6 %)** and
+  **35 vs 65 GPU Mcycles/s (about half)**, both outside the noise band; drive and park phases unchanged within noise.
+  Log: `wip/feat-211/bench.log` in the Spare worktree.
 - **The legend** moved out of the sheet's bottom-left corner (where it covered POIs) into the foot of the list column, on its own
   canvas painted on a resize, never per frame.
 - **Run HUD:** the window covers the top-right HUD on a small screen, so the list head repeats the day clock (the reason the HUD
