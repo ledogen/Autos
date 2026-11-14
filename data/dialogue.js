@@ -145,13 +145,12 @@ export const TUT = {
         { speaker: 'Mom', text: `When you're out late, find flat ground off the road and make camp. A nice spot rests you better than a bad one.` },
         { speaker: 'Mom', text: `Sleep is how a day ends. Pick how long on the timer &mdash; the bar shows how rested you'll wake up.` },
     ],
-    // The morning: breakfast at hers (it feeds you), then her card. Its map line plays as her card opens.
+    // The morning: breakfast at hers (it feeds you), then her word about the paycheck.
     // FEAT-184 stage 5: breakfast is yours to eat — one of her packed lunches, from the inventory.
     'tut-breakfast': [{ speaker: 'Mom', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach. `
         + `<span class="dlg-key">Tab</span>, and pick one of the lunches I packed you.` }],
     // FEAT-184 (DEC-153): woken, the morning goes back to the joint for the last paycheck. PLACEHOLDER words.
     'tut-morning': [{ speaker: 'Mom', text: `Your last check's waiting at that burger place. Follow the line, and park out front.` }],
-    'tut-map': [{ speaker: 'Mom', text: `You can always open the map with <span class="dlg-key">M</span>.` }],
 }
 
 /** FEAT-148 (owner, 2026-10-31): the midnight overlay's words — the pressure is rising. The owner's lines. */

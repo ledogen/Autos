@@ -1,6 +1,7 @@
-// GATE (BUG-124): MOM'S CASSEROLE ALWAYS PLANS, so a run can always start.
+// GATE (BUG-124): MOM'S TO LARRY'S ALWAYS PLANS. Born for mom's casserole (data/offers.js FIRST_JOB, retired by FEAT-184,
+// DEC-153); the placement rule stays (dropping it would re-site Larry, and every seed's places with him), so its gate does.
 //
-// The casserole (data/offers.js FIRST_JOB) runs to Larry's and nowhere else, and since BUG-117 every other job waits
+// The casserole ran to Larry's and nowhere else, and since BUG-117 every other job waited
 // for it. The planner never ends a job on its start's own graph edge (mission.js _roll, srcEdge), so a Larry on mom's
 // edge was a world whose run could not start (2646203056: two pads down the same road, 293 m apart). The guarantee is
 // CONSTRUCTIVE, at placement: Larry's slot is `offEdgeOf: 'momsHouse'` (src/poi.js POI_ROSTER, _assignRoster).
@@ -9,7 +10,7 @@
 //      near the spawn share one edge. Mom takes one; Larry must go elsewhere, never the other.
 //   2. THE JOB, end to end (heavy): regions built as story entry builds them (tests/expedition-camp's recipe) —
 //      2646203056, the report, plus two RANDOM seeds per run. On each, mom's and Larry's are on different edges and
-//      the casserole plans a route that ends at Larry's. The random seeds are a SAMPLE, printed so a miss replays; the
+//      a courier from mom's plans a route that ends at Larry's (the casserole's wish, strict, at any length). The random seeds are a SAMPLE, printed so a miss replays; the
 //      guarantee is part 1's rule, not this sample.
 //   3. BUG-125, a same-edge destination plans: from mom's to another pad on HER edge, a POI's spacing away
 //      (2646203056 always has one — it was Larry's), the planner drives straight along the shared road: one segment,
@@ -23,7 +24,6 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
-import { OfferBoard } from '../src/offer-board.js'
 import { validateArea, discArea } from '../src/world-validate.js'
 import { MissionSystem, REGION_MARGIN } from '../src/mission.js'
 import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
@@ -90,14 +90,11 @@ for (const s of SEEDS) {
     const mom = list.find(q => q.type === 'momsHouse'), larry = list.find(q => q.type === 'larrysHouse')
     const ms = new MissionSystem({ getRoad: () => road, getCar: () => C, getSeed: () => seed, getRegion: () => region,
                                    teleport () {}, setMapOpen () {}, onChange () {} })
-    const board = new OfferBoard({ seed, pois: list, nowH: 6 })
-    board.openFirst(6)
-    const o = mom && board.offers(mom.id, 6).find(o => board.spec(o)?.first)
-    const m = o && ms.planOffer(mom, { rng: board.routeRng(o), dest: board.destWish(o, list, new Set()) })
+    const m = mom && larry && ms.planOffer(mom, { rng: () => 0.5, dest: { kind: 'poi', pois: [larry], strict: true, anyLeg: true } })
     console.log(`seed ${s}${s === SEEDS[0] ? ' (the BUG-124 report)' : ' (random)'}  ${((Date.now() - t0) / 1000).toFixed(0)} s`
         + `  mom ${mom?.edge ?? '—'}  larry ${larry?.edge ?? '—'}  route ${m ? (m.distance / 1000).toFixed(2) + ' km' : '—'}`)
     check(`${s}: mom's and Larry's both placed, on different edges`, !!mom && !!larry && mom.edge !== larry.edge)
-    check(`${s}: the casserole plans, and ends at Larry's`, !!m && m.endPoiId === larry?.id,
+    check(`${s}: mom's to Larry's plans, and ends at Larry's`, !!m && m.endPoiId === larry?.id,
         m ? `ends at ${m.endPoiId}` : 'no route')
 
     // 3.
