@@ -1,7 +1,8 @@
 ---
 id: INFRA-10
 type: infra
-status: open
+status: closed
+closed: 2026-11-13
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-12 — the "ledorepo" brief (sculpting a personal Jira: tracker + lanes + deep-dive forms)
@@ -12,8 +13,8 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-10: ledorepo — decision records (DEC-NN): the axioms in one place
 
 ## Next steps
-ledorepo session: land the applied answers + the text cull through the orchestrator, then close this ticket.
-Code follow-ups for the lanes (not this ticket): `campDeeds` 10 → 6 in `src/economy.js` (DEC-120).
+None: closed. Follow-ups live elsewhere: `campDeeds` 10 → 6 (DEC-120, the lanes); the three contradictions under
+Tracker's last box are the owner's to rule when those areas are next touched.
 
 ## Summary
 The project's ground truth is spread over DESIGN.md (SM-INV-1..15), eight `design-amendments-*.md` files, CLAUDE.md,
@@ -227,3 +228,8 @@ Left unrecorded as unclear: par grip 0.72 (code) vs 0.80 (DESIGN.md); whether hu
 
 ## Files
 `.planning/decisions/` (new) · `tools/dashboard/index.mjs` · `tools/dashboard/app.html` · CLAUDE.md § Workflow
+
+## Log
+- 2026-11-13: CLOSED. 132 records, all standing (DEC-001..134 less the dropped 067 and 072), on main. Resolution:
+  the class, the freeze check, the Decisions tab and ticket links, the backfill, the owner's conflict pass
+  (5 axioms, 2 cases, 10 wording approvals) and the text cull (DEC-127) are all landed.

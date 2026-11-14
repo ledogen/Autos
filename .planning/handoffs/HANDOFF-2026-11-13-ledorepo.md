@@ -22,17 +22,16 @@ anywhere (Tailscale, Mac = `m4air`); Lanes is the home tab; hooks, not launchd, 
 - INFRA-09 ticket template `.planning/todos/TEMPLATE.md`; ticket pages render in the fixed section order.
 - Backup: `~/CodeShit/ledorepo/backup.sh`, run by hooks in `~/.claude/settings.json` (SessionStart + Stop with
   `--hourly`; PreCompact + SessionEnd always). A SessionStart hook also starts the dashboard on :8010.
+- INFRA-10 decision records: `.planning/decisions/dec-NNN-<slug>.md`, 132 standing, Decisions tab, the freeze
+  check `tools/dashboard/decisions.check.mjs`, rules in CLAUDE.md § Workflow. The records beat every other doc
+  (owner 11-13) and the losing text is corrected at its source (DEC-127). The backfill's ledger is
+  `.planning/decisions/conflicts.json`. Next free id: ask the orchestrator (Lane A minted from DEC-146).
 
 ## Next, in order
-1. **INFRA-10 decision records** — BUILT (branch `infra/infra-10-decision-records`, worktree `CarGame-decisions`;
-   landing asked of the orchestrator 11-13). 121 records, 59 standing, 62 draft. WAITING ON THE OWNER: the deep
-   dive `INFRA-10-conflicts` (answers land in the data folder, `dives/INFRA-10-conflicts.answers.json`). When it is
-   submitted, follow the ticket's Next steps: axioms → new DECs, drafts → standing, then DESIGN.md and memory cite
-   the ids, then close. The ledger is `.planning/decisions/conflicts.json`. Rules: CLAUDE.md § Workflow.
-2. **INFRA-14** — the orchestrator's state is now all in files, so a clear costs one word. Remaining: tidy its
+1. **INFRA-14** — the orchestrator's state is now all in files, so a clear costs one word. Remaining: tidy its
    handoff (drop the "ready for a clear at ~300k" drill or keep it only mid-merge) and make side work its
    subagents by default. Small; the handoff is the orchestrator's file — send it the text, it applies.
-3. **INFRA-13** — waits on the owner: `wip/` (66 MB) backed up or not; Time Machine. Unpushed commits on main
+2. **INFRA-13** — waits on the owner: `wip/` (66 MB) backed up or not; Time Machine. Unpushed commits on main
    are an accepted loose end (owner).
 
 ## Working with the orchestrator (peer session; find it with ListAgents, it answers to "orchestrator")
