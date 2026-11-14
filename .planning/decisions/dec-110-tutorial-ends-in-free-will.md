@@ -1,6 +1,6 @@
 ---
 id: DEC-110
-status: draft
+status: superseded
 decided: 2026-11-13
 area: story
 governs: FEAT-184, FEAT-170, data/dialogue.js, tutorial, casserole

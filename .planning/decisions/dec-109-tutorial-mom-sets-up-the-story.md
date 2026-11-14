@@ -1,6 +1,6 @@
 ---
 id: DEC-109
-status: draft
+status: superseded
 decided: 2026-11-13
 area: story
 governs: FEAT-184, FEAT-147, opening.md, data/dialogue.js, tutorial
