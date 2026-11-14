@@ -42,18 +42,25 @@ const DEG = Math.PI / 180
 // (it hung off the bottom-right corner), inside a right end with the pod end's shape (END). The top and bottom edges
 // are one symmetric arch each (_fillDilated). W grew 378 → 394 for the right end.
 // And "blow up all the gauges like 15% the numbers are getting a little small": SCALE.
-const W = 394
-const H = 204
+//
+// FEAT-34 round 4 (owner, 2026-11-14: "make it a little wider and grow the speedo and tach to fill the frame make the
+// top of the outline a little more convex than the bottom to represent the dashboard cluster shade"): W 394 → 418,
+// the tach's well 62 → 68 and the speedo's 70 → 76 (scales, needles and the key's distance follow), H 204 → 224
+// for the taller dials, and the arches differ — the top bows ARCH_TOP 26 beyond the corners' line, the bottom
+// only ARCH_BOTTOM 7 (was 14 both), the brow of the cluster's hood. The mirror symmetry of round 3 now holds
+// left–right only.
+const W = 418
+const H = 224
 const AXIS = H / 2   // the dial axis: tach and speedo hubs, the pod's centre, the key
 // The pod's gauges sit POD_E above and below the axis: 39 puts the pod's indent top level with the speedo's
 // (AXIS − 2·39 = AXIS − (SPEEDO.well + DIAL_PAD)), so the housing's corners and the speedo's crest share one line.
 const POD_E = 39
 const TEMP  = { cx: 56,  cy: AXIS - POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
 const FUEL  = { cx: 56,  cy: AXIS + POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const TACH  = { cx: 168, cy: AXIS, well: 62, scaleR: 54, start: 160, sweep: 130 }    // dial top: _tachMax (setRedline)
-const SPEEDO= { cx: 264, cy: AXIS, well: 70, scaleR: 62, start: 135, sweep: 270, max: 120 }  // MPH
+const TACH  = { cx: 174, cy: AXIS, well: 68, scaleR: 59, start: 160, sweep: 130 }    // dial top: _tachMax (setRedline)
+const SPEEDO= { cx: 276, cy: AXIS, well: 76, scaleR: 68, start: 135, sweep: 270, max: 120 }  // MPH
 // The odometer drum's window, from the speedo hub. Low enough that the 40 and 80 clear its top corners (round 3).
-const ODO = { x: -29, y: -27, w: 58, h: 14 }
+const ODO = { x: -29, y: -21, w: 58, h: 14 }
 // One factor on the canvas transform (round 3), so every distance the layout balances (the key's three below, the
 // joined faces' cusp) scales with it, and the layout keeps its own units.
 const SCALE = 1.15
@@ -66,7 +73,7 @@ const SCALE = 1.15
 //   indents overlap  93.3 < SPEEDO.well + DIAL_PAD + well+pad or the switch reads as a detached island
 // The well grew 13 → 17 when the needle became a key grip: a key silhouette needs pixels to read as
 // an object, and 26 px of dial was not enough. 34 px is the most the three distances above allow.
-const KEY_DIST = 93.3
+const KEY_DIST = 101
 const KEY   = { cx: SPEEDO.cx + KEY_DIST, cy: AXIS, well: 17, pad: 3 }
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
 const KEY_ANGLE = { off: 210 * DEG, on: 270 * DEG, start: 330 * DEG }
@@ -97,6 +104,8 @@ const KEY_BODY_W = 5.2
 // both ends frame their indents with the same constant offset.
 const POD_R    = 39   // radius of the temp/fuel capsule indent
 const DIAL_PAD = 8    // indent ring visible around the tach/speedo wells
+const ARCH_TOP    = 26   // the top arch's control point, beyond the corners' crest line (round 4: the brow)
+const ARCH_BOTTOM = 7    // the bottom's — flatter than the top
 const MARGIN   = 13   // constant housing frame around the indents
 
 const FACE   = '#171412'   // gauge face / panel
@@ -271,8 +280,8 @@ export class GaugeCluster {
     this._drawOverheatLamp(ctx)
     this._drawGear(ctx)
     this._drawNeedle(ctx, FUEL, this._fuelShown, 22, 2)
-    this._drawNeedle(ctx, TACH, this._rpm / (this._tachMax * 1000), 48, 3)
-    this._drawNeedle(ctx, SPEEDO, this._speedMph / SPEEDO.max, 56, 3)
+    this._drawNeedle(ctx, TACH, this._rpm / (this._tachMax * 1000), 53, 3)
+    this._drawNeedle(ctx, SPEEDO, this._speedMph / SPEEDO.max, 62, 3)
     this._drawKey(ctx)
   }
 
@@ -349,7 +358,6 @@ export class GaugeCluster {
   // arch; the key sits in the right end.
   _fillDilated (ctx, pad, style) {
     const r = POD_R + pad, ex = KEY.cx + KEY.well + KEY.pad - POD_R   // the right end's corner circles' x
-    const ARCH = 14
     const mx = (TEMP.cx + ex) / 2
     // The point on a corner circle (cx, cy) where the tangent from the arch's control point (mx, ty) touches,
     // on the side away from the axis: φ ± acos(r / d), the sign picking the outer of the two tangents.
@@ -357,7 +365,7 @@ export class GaugeCluster {
       const dx = mx - cx, dy = ty - cy, a = Math.atan2(dy, dx) + s * Math.acos(r / Math.hypot(dx, dy))
       return { a, x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }
     }
-    const yT = AXIS - POD_E - r - ARCH, yB = AXIS + POD_E + r + ARCH   // the arches' control points
+    const yT = AXIS - POD_E - r - ARCH_TOP, yB = AXIS + POD_E + r + ARCH_BOTTOM   // the arches' control points
     const tl = touch(TEMP.cx, AXIS - POD_E, yT, -1), tr = touch(ex, AXIS - POD_E, yT, 1)
     const br = touch(ex, AXIS + POD_E, yB, -1), bl = touch(FUEL.cx, AXIS + POD_E, yB, 1)
     ctx.fillStyle = style
