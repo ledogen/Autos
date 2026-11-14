@@ -76,6 +76,19 @@ export const LARRY_WELCOME = [
     { speaker: 'Uncle Larry', text: `Casserole, huh. Your mom worries. I heard about the burger place &mdash; their loss.` },
 ]
 
+/** FEAT-184 (DEC-152, DEC-150): a skip lands outside the burger joint, and the manager hands over the last check. The
+ *  line is the owner's words (FEAT-184 dive, 2026-11-14). */
+export const BOSS_CHECK = [
+    { speaker: 'The manager', text: `And just so you have no excuse to come back, here's your last check.` },
+]
+
+/** FEAT-184 (DEC-155): after a skip, Larry calls, then RUN_INTRO. PLACEHOLDER: the owner writes these words (FEAT-148).
+ *  The owner's brief for them: he offers you a side gig delivering papers, and reminds you of the expedition camp and
+ *  the good deeds (RUN_INTRO carries the camp and the deeds today). */
+export const LARRY_CALL = [
+    { speaker: 'Uncle Larry', text: `[placeholder] Jay, it's your uncle. Heard about the burger place. I've got a paper route if you want it &mdash; come by mine.` },
+]
+
 /**
  * First-use cards: each plays once, the first time the player meets the thing, and only in a run that
  * opened on the firing. They play once no other card is up and hold the sim while they are (main.js
@@ -152,4 +165,5 @@ export const DLG = {
     firing: 'firing',         // FEAT-147 — also how main.js knows the run opened on the firing
     momCall: 'mom-call',
     skipped: 'opening-skipped',   // FEAT-170: the opening was held-to-skip — no first-use cards this run
+    bossCheck: 'boss-check',   // FEAT-184: the skip's last check
 }

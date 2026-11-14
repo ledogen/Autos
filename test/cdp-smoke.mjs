@@ -185,7 +185,7 @@ const strayCheck = async (what) => {
   check(g.start < 20 && g.end < 30, `the re-planned line ${what} does not run from the truck to the same door: ${JSON.stringify(g)}`)
 }
 // FEAT-170: every new run opens on the firing; holding M a second (the prompt says so) skips it. FEAT-184 (owner,
-// 2026-11-07): it lands at Larry's at 07:00, the casserole DELIVERED (no job in hand). Wall-clock: the hold is a
+// 2026-11-14, DEC-152): it lands outside the burger joint at 19:30 on day 0, the casserole slot closed (no job in hand). Wall-clock: the hold is a
 // real-time timer, not sim time.
 const skipDone = () => js('window.__board().firstState() === "done" && window.__mission().state === "idle"')
 const skipPeek = () => js('JSON.stringify({ first: window.__board().firstState(), ms: window.__mission().state })')
@@ -359,25 +359,23 @@ const STEPS = [
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'story never went live (45 s × load): no run HUD / POIs, or the load stage stayed up')
-    // FEAT-184 (owner, 2026-11-07): the skip lands at Larry's, 07:00 on day 1, the casserole DELIVERED (no job in
-    // hand) — then Larry's welcome, then his intro (R-11), as after a driven casserole.
+    // FEAT-184 (DEC-152, DEC-155): the skip lands outside the burger joint at the firing's 19:30 on day 0, the casserole
+    // slot closed (no job in hand) — then the manager's last check, Larry's call, then his intro (R-11).
     await skipOpening(true)
     check(await js('window.__settings.playedBefore') === true, 'skipping did not mark this browser as played before (FEAT-184)')
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
-    const a = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'larrysHouse'), v = window.__vs.position
+    const a = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position
       return { d: Math.hypot(v.x - q.x, v.z - q.z), h: window.__day().clockH() } })()`)
-    // BUG-135: on the road in front of his (25 m) — never on his pad, which is his yard.
-    check(a.d < 25 && Math.abs(a.h - 7) < 0.1, `the skip is not at Larry's at 07:00: ${JSON.stringify(a)}`)
-    const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
-    check(await until(async () => await hudClock() === 'Day 1, 7 am', 3000), `the HUD clock after the skip reads "${await hudClock()}", want "Day 1, 7 am" (BUG-136)`)
-    // FEAT-173: the skip ends fed (the evening's end serves mom's breakfast), and the run starts with her three lunches.
+    // BUG-135: on the road in front of it (25 m) — never on its pad.
+    check(a.d < 25 && Math.abs(a.h + 4.5) < 0.1, `the skip is not at the burger joint at 19:30 on day 0: ${JSON.stringify(a)}`)
+    // FEAT-173: fed from the run's start, with mom's three lunches.
     const food = await js('({ fed: window.__day().snapshot().fedUntilH - window.__day().clockH(), lunch: window.__inv.list().find(e => e.id === "packedLunch")?.n ?? 0 })')
-    check(food.fed > 7.9 && food.lunch === 3, `the skip did not wake fed with mom's three packed lunches (FEAT-173): ${JSON.stringify(food)}`)
+    check(food.fed > 0 && food.lunch === 3, `the skip is not fed with mom's three packed lunches (FEAT-173): ${JSON.stringify(food)}`)
     check(await js('getComputedStyle(document.getElementById("skip-hint")).display === "none"'), 'the skip prompt outlived the skip')
-    check(await until(dlg, 3000), 'no Larry after the skip (R-11 / FEAT-170)')
+    check(await until(dlg, 3000), 'no card after the skip (FEAT-184: the last check, then Larry)')
     const dlgText = () => js('document.getElementById("dialogue-panel").textContent')
-    check(/Casserole/.test(await dlgText()), "Larry's welcome is not the first card")
-    for (let i = 0; i < 4 && /Casserole/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }
+    check(/last check/.test(await dlgText()), "the manager's last check is not the first card")
+    for (let i = 0; i < 8 && /last check|\[placeholder\]/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }
     // The owner's word stream (feat120-blip): a card fills a word at a time (the intro's 33 words take ~2.6 s);
     // a press fills it in place, the next turns it.
     const shown = () => js('[...document.querySelectorAll("#dlg-text span")].filter(w => !w.children.length && w.style.visibility !== "hidden").length')

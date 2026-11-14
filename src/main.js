@@ -103,7 +103,8 @@ import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
+import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, LARRY_CALL, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
+import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -1582,7 +1583,8 @@ async function _startFromSetup () {
   const { seed, world } = parseWorldCode(inp?.value ?? '')
   if (world) _setWorld(world)
   saveSettings(_settings)
-  if (_setupMode === 'story') { await _startStory(_resolveSeed(seed)); return }
+  // FEAT-184 (DEC-149): a blank seed on the first playthrough ever is the tutorial seed, not a random one.
+  if (_setupMode === 'story') { await _startStory(_resolveSeed(seed?.trim() || (_settings.playedBefore ? '' : TUTORIAL.seed))); return }
   _enterStageLoad('building the world\u2026')
   await _worldReady
   applyWorld(_world())
@@ -1594,9 +1596,9 @@ async function _startFromSetup () {
 document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
 // FEAT-184 (owner, 2026-11-08: "split the tutorial into its own menu option … so I can go and voluntarily test it"):
 // a run that plays the opening on purpose, outside the career (_tutorialRun). Its world is `?seed=` when the URL pins
-// one (the harnesses), else random like every world the player did not pick. A fixed tutorial seed waits for the plan.
+// one (the harnesses), else the tutorial seed (data/tutorial.js, DEC-111).
 document.getElementById('mm-tutorial')?.addEventListener('click', () => {
-  void _startStory(_resolveSeed(_urlSeed), _world(), _settings.gearbox, null, 0, null, true)
+  void _startStory(_resolveSeed(_urlSeed || TUTORIAL.seed), _world(), _settings.gearbox, null, 0, null, true)
 })
 /** The main menu's continue button stands only while a run is saved, and so does the warning beside the
  *  new-game page's start (story mode only). Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
@@ -4470,7 +4472,7 @@ const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
 const _mom = () => poiSystem.list().find(q => q.type === 'momsHouse') ?? null
 const _larry = () => poiSystem.list().find(q => q.type === 'larrysHouse') ?? null
 
-/** Park the truck at POI q — the joint's lay-by at a new run, in front of Larry's on a skip — like _restoreRun's seat.
+/** Park the truck at POI q — the joint's lay-by at a new run and on a skip — like _restoreRun's seat.
  *  Where is poi.js startSeat (BUG-135: never in a yard). */
 function _seatAt (q) {
   if (!q) return
@@ -4661,9 +4663,8 @@ function _eveningBeats () {
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
 function _endEvening () {
   if (!_eveningLeg()) return
-  // FEAT-173: a skipped tutorial's night ends fed (mom's breakfast). FEAT-184 stage 5: a played one leaves breakfast to you
-  // — her card asks you to eat one of her packed lunches.
-  if (dialogueSystem.has(DLG.skipped)) daySystem.eat(DAY_PARAMS.mealHoldH)
+  // FEAT-184 stage 5: breakfast is yours — her card asks you to eat one of her packed lunches. (A skip spends no night:
+  // it lands at the joint at the firing's hour, fed from the run's start.)
   offerBoard.openFirst(daySystem.clockH())
   _eveningGuide = undefined
   _renderMissionUI()   // the HUD line goes
@@ -4740,9 +4741,10 @@ function _markPlayed () {
   saveSettings(_settings)
 }
 
-/** The hold landed: where a skipped tutorial ends — the night slept at mom's, 07:00, the casserole delivered, the truck at
- *  Larry's (owner, 2026-11-07: "Skipping the tutorial should actually land you at Larry's house with the mission
- *  complete"). His welcome follows on the HUD poll (_checkOpeningEnd), as it does after a driven casserole. */
+/** The hold landed: where a skipped tutorial ends — outside the burger joint, on the clock it was skipped at, with the
+ *  manager's last check (DEC-152, DEC-150), then Larry's call and the run intro on the HUD poll (_checkOpeningEnd, DEC-155).
+ *  The board's first slot is closed silently (posted and completed, no drive, no card): BUG-117 left it no pay and no deed,
+ *  and its 'done' is what ends the evening leg and lets _checkOpeningEnd run. */
 function _skipOpening () {
   document.getElementById('skip-hint')?.classList.remove('holding')
   if (!_eveningLeg() || _campBusy) return
@@ -4756,10 +4758,10 @@ function _skipOpening () {
   if (_campUi) _closeCampUi()   // her sleep card
   _tutQueue.length = 0
   dialogueSystem.restoreSeen([DLG.skipped])   // no first-use cards this run (_tut)
-  daySystem.sleep(_eveningSleepH(), 0.5, 0)   // the night at hers (her bed's vibe, _renderCampUI): energy, the meal, 07:00
-  _endEvening()   // posts the casserole…
-  _deliverFirstJob()   // …and it is delivered
-  _seatAt(_larry() ?? _mom())
+  _endEvening()   // posts the first slot…
+  _deliverFirstJob()   // …and closes it
+  _seatAt(_joint() ?? _mom())
+  _tut(DLG.bossCheck, BOSS_CHECK, null, true)   // ahead of Larry's call in the queue
   _renderDialogue()
 }
 
@@ -4828,7 +4830,7 @@ function _checkOpeningEnd () {
   // null = no mom on the roster (never expected — her count is hard): Larry still welcomes you.
   if (!offerBoard || ['closed', 'live', 'taken'].includes(offerBoard.firstState())) return
   if (missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
-  _tut(DLG.runIntro, [...LARRY_WELCOME, ..._runIntro()], null, true)
+  _tut(DLG.runIntro, [...(dialogueSystem.has(DLG.skipped) ? LARRY_CALL : LARRY_WELCOME), ..._runIntro()], null, true)   // DEC-155: a skip hears him on the phone
   _markPlayed()   // FEAT-184: the tutorial is over
   // FEAT-184 (DEC-150): …and its last paycheck lands. [interim] At Larry's for now; landing 2 moves the tutorial's last
   // act to the burger joint (DEC-152).
@@ -5271,6 +5273,8 @@ function _poiInReach () {
   const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
                              POI_PARAMS.poiInteractR, true)
     ?? (offerBoard?.firstState() === 'live' ? poiSystem.list().find(p => p.type === 'momsHouse') : null)
+  // FEAT-184 (DEC-152, DEC-156): you were just fired — the burger joint offers no job until 07:00 on day 1.
+  if (q?.type === 'foodVendor' && daySystem.clockH() < DAY_PARAMS.dayStartHour) return null
   return q && _inPoiSpot(q) ? q : null
 }
 

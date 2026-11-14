@@ -2,7 +2,7 @@
 // over CDP on random seeds, the way cdp-smoke boots it (its own Vite on a free port, rooted at this checkout).
 // Not a gate: a run is many minutes. A rainy-day script, like the smoke's heavier cousins.
 //
-// Each run: a new story run → hold M (skip the opening; it lands at Larry's, the casserole delivered) → each day take
+// Each run: a new story run → hold M (skip the opening; it lands outside the burger joint at 19:30 on day 0, DEC-152) → each day take
 // board jobs and teleport through each leg, finishing at a MID rank (the clock is advanced to the middle of
 // the A/B lines before the last arrival) → refuel when low, eat, shop and pack food (EATING, below) → sleep
 // at mom's when tired or late → save & exit + reload + continue once a night → until the deeds gate opens the
@@ -230,8 +230,8 @@ async function startRun (seed) {
   await js(`document.getElementById("su-seed").value = ${JSON.stringify(seed)}; document.getElementById("su-start").click()`)
   check(await until(() => js(live), 180000, 250), 'the run never went live')
   await js(HELPERS); await js('window.__soak.carry(); window.__soak.watch()')
-  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2), at Larry's with the casserole delivered
-  // (FEAT-184, owner 2026-11-07); the day loop reads off his welcome. FEAT-184 (DEC-148): every run opens on the firing,
+  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2), outside the burger joint at 19:30 on day 0
+  // (FEAT-184, DEC-152); the day loop reads off Larry's call. FEAT-184 (DEC-148): every run opens on the firing,
   // and on a browser's first playthrough the first hold only asks "are you sure" — a second hold skips.
   check(await until(dlgUp, 5000), 'the run did not open on the firing')
   await key('m', true); await sleep(1300); await key('m', false)
