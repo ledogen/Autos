@@ -527,6 +527,9 @@ export const LINE_SUPPLY = {
 export const GIVER_LINES = {
     first: [],
     byThing: {},
+    // QUAL-36 (DEC-179, owner 2026-11-14): an Impatient giver SAYS the job is on the clock; the line
+    // replaces the ordinary quote, always. Owner's words (typo "ill" read as "I'll").
+    impatient: ["Make it quick and I'll throw in a little extra.", 'Make sure you head there right away.'],
 }
 export const GIVER_LINE_P = 0.7
 
@@ -575,7 +578,7 @@ export const BUDGET_JOBS = 12
  * could never count toward the camp, and nothing on the card said so. "Most jobs can't reach S" (owner)
  * still holds: S is 25.
  */
-export const HAUL_STOCK = [14, 30]
+export const HAUL_STOCK = [18, 30]   // QUAL-36 (DEC-181, owner 2026-11-14): floor = the 1-deed line (B 18), so every yard can post a full deed
 
 /**
  * What a piece costs to load, as a share of the job's base pay per piece (owner, 2026-10-22: "half of

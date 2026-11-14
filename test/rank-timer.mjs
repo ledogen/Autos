@@ -19,7 +19,7 @@
 //   7. rank-timer.js imports nothing (pure; headless by construction).
 //
 // Pure node: no THREE, no worldgen, no DOM.
-import { RANK_ORDER, RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from '../src/rank-timer.js'
+import { RANK_ORDER, RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame, rankBarWords } from '../src/rank-timer.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'
 import { bonusEarned } from '../src/economy.js'
 import { readFileSync } from 'node:fs'
@@ -176,7 +176,8 @@ const PAR = 180   // the measured day-1 average (economy.js)
   check('the rank timer driver exists in main.js', start > 0 && end > start)
   const block = main.slice(start, end)
   // FEAT-139 (§2b): freight's letter is the kg, so it gets no bar — like fragile and haul (FEAT-97).
-  check('no bar on fragile, haul or freight jobs', /if \(m\.mission\.fragile \|\| m\.mission\.bundles \|\| m\.mission\.cargoKg\) return null/.test(block))
+  // QUAL-36 (DEC-178/181): calm jobs have no bar unless the giver is Impatient (then tip-only); demolition never.
+  check('no bar on a calm job unless Impatient; none on demolition', /m\.mission\.targets\s*\|\|\s*!m\.mission\.traits\?\.includes\('impatient'\)\)\) return null/.test(block) && /tipOnly: calm/.test(block))
   check('the driver never calls formatTime (no m:ss on the bar)', !/formatTime\s*\(/.test(block))
   check('the driver never renders seconds as text (no toFixed/Math.round/`remaining` into textContent/innerHTML)',
     !/(textContent|innerHTML)\s*=\s*[^\n]*(toFixed|Math\.round|Math\.floor|remaining|elapsed|\bpar\b)/.test(block))
@@ -202,6 +203,10 @@ const PAR = 180   // the measured day-1 average (economy.js)
   check('the pulse peaks fire the heartbeat', /playHeartbeat\(/.test(block))
   check('the oscillator tops out at 140 bpm, a heartbeat not a buzz', near(P.pulseHzMax * 60, 140, 1e-9) && P.pulseHzMin < P.pulseHzMax)
 }
+
+// QUAL-36 (DEC-180/181): the bar names what a band earns, never a letter; a calm-impatient job shows the tip only.
+check('QUAL-36: no bar word is a rank letter', RANK_ORDER.every(l => !/^[SABCD]$/.test(rankBarWords(l).strip) && !/^[SABCD]$/.test(rankBarWords(l).tile)))
+check('QUAL-36: tip-only shows just the full-tip line', rankBarWords('S', true).strip === 'full tip' && RANK_ORDER.slice(1).every(l => rankBarWords(l, true).strip === ''))
 
 console.log(fails === 0 ? '\nrank-timer gate: ALL OK' : `\nrank-timer gate: ${fails} FAILURE(S)`)
 process.exit(fails === 0 ? 0 : 1)
