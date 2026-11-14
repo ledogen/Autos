@@ -416,9 +416,13 @@ export class Map2D {
      *        this module stays economy-free). null outside story mode. Shape:
      *          status(poiId) → { source:boolean, family:string|null, families:string[], nextText:string|null }
      *          view(poiId, idx) → { count, idx, card, poly, start, end, nextText } | null
+     *          name(poiId) → string; clock() → string (FEAT-211, the list's head)
+     *          shop(poi, open) → FEAT-211, the Shopping row of a POI that sells (null for one that doesn't):
+     *            { price:?string (a pump's, "$3.12/gal"), next:?string ("new stock in 5 h"), opens:boolean,
+     *              items: (open && opens ? [{ name, price, cond:?number, color:?string, left, desc }] : null) }
      *        `card` is OfferBoard.card()'s view-model; `nextText` is the time to the next turnover,
      *        already formatted ("18 min") — main.js owns the one duration format.
-     * @param {(delta:number)=>void} [o.onCycle] — FEAT-67: Q/E pressed while NOT hovering a source —
+     * @param {(delta:number)=>void} [o.onCycle] — FEAT-67: Q/E pressed while a card is up over the map —
      *        main.js steps the parked offer panel (the map is open behind it).
      * @param {() => boolean} [o.hoverLocked] — true while the player is parked at a giver browsing its
      *        offers: no other POI's hover card (offers or shelf) then, so an accidental icon hover never
@@ -489,8 +493,10 @@ export class Map2D {
         // FEAT-211: the map opens centred on the truck and follows it, until a pan input (stick, WASD, drag) or a
         // list pick lets go; the centre key ('c', the pad's stick click) takes it back.
         this._tracking   = false
-        this._listId     = null          // the POI the Missions list has highlighted, or null (the list is left)
-        this._rows       = []            // the list's rows as last built: { id, x, z }, nearest first
+        this._listId     = null          // the row the list has highlighted (a POI id; a shop's item is 'id#n'), or null
+        this._rows       = []            // the list's rows as last built: { id, x, z, poi, shop }, nearest first
+        this._tab        = 'missions'    // FEAT-211: the list's mode, 'missions' | 'shopping' (the bumpers swap it)
+        this._openShop   = null          // the POI id of the shop the Shopping list has open, or null
         this._listHtml   = ''            // what #map-list holds, so it is written only on a change
         this._listT      = 0             // performance.now() the rows were last rebuilt
         this._panKeys    = new Set()     // WASD held on the map (keyboard pan)
@@ -556,8 +562,18 @@ export class Map2D {
         this._onWinResize = () => this._measure()
         this._list?.addEventListener('mouseover', (e) => {   // hovering a row picks it, as the D-pad does
             if (pad.cardActive() || pad.menuActive()) return   // …unless a card is up over the map: it owns the screen
-            const id = e.target.closest?.('[data-poi]')?.dataset.poi
+            const id = e.target.closest?.('[data-key]')?.dataset.key
             if (id && id !== this._listId) this._pickRow(id)
+        })
+        // FEAT-211: a click on a Shopping row opens or closes its shop (A / Enter on the pad and keyboard); a click on a
+        // tab in the head swaps the list (the bumpers).
+        this._list?.addEventListener('click', (e) => {
+            const id = e.target.closest?.('[data-key]')?.dataset.key
+            if (id && !(pad.cardActive() || pad.menuActive())) { this._pickRow(id); this._toggleShop() }
+        })
+        document.getElementById('map-list-head')?.addEventListener('click', (e) => {
+            const tab = e.target.closest?.('[data-tab]')?.dataset.tab
+            if (tab && tab !== this._tab) this._swapTab()
         })
         this._onLeave = () => { this._hoverX = undefined; this._hoverPoi = null }
     }
@@ -862,15 +878,17 @@ export class Map2D {
      * stopped key is the map's alone: Q / E never shift a manual gearbox, WASD never drives). The pad reaches the
      * same keys through gamepad.js MAP_KEYS.
      *
-     * FEAT-67: Q / E (the pad's bumpers) — previous / next offer. Over a source POI they step its hover card (and the
-     * route drawn with it); anywhere else they go to main.js, which steps the parked offer panel that the map is
-     * open behind. FEAT-211 (owner, 2026-11-13, the approved scheme), only while no card or menu is up over the map
-     * (menu-nav.js owns the arrows, Enter and Esc then, and WASD is the truck's):
+     * FEAT-67: Q / E (the pad's bumpers) while a card or menu is up over the map — previous / next offer: they go to
+     * main.js, which steps the parked offer panel the map is open behind. FEAT-211 (owner, 2026-11-13, the approved
+     * scheme), only while no card or menu is up over the map (menu-nav.js owns the arrows, Enter and Esc then, and
+     * WASD is the truck's):
+     *   Q / E (LB / RB)  swap the list between Missions and Shopping
      *   WASD             pan the map (the keyboard's stick)
-     *   ↑ / ↓            walk the Missions list; the map snaps to the row's place
-     *   ← / →            flip the offers at the highlighted (or hovered) POI, like Q / E
-     *   Esc (pad B)      leave the list — the highlight clears and the map stays put; with no highlight it falls
-     *                    through to main.js, which closes the map
+     *   ↑ / ↓            walk the list; the map snaps to the row's place
+     *   ← / →            flip the offers at the highlighted (or hovered) POI
+     *   Enter (pad A)    Shopping: open or close the highlighted shop (a pump has nothing to open)
+     *   Esc (pad B)      close the open shop; else leave the list — the highlight clears and the map stays put; with
+     *                    neither it falls through to main.js, which closes the map
      *   c (stick click)  back to centred on the truck, tracking
      */
     _onKeyDown(e) {
@@ -883,12 +901,11 @@ export class Map2D {
             if (e.isTrusted) pad.active = false   // gamepad.js's own trusted-key listener sits behind this stop
         }
         if (k === 'q' || k === 'e') {
-            // FEAT-133: on the map Q / E page offers and nothing else — autorepeats are stopped too.
+            // FEAT-133: on the map Q / E never reach the gearbox — autorepeats are stopped too.
             take()
             if (e.repeat) return
-            const d = k === 'q' ? -1 : 1
-            if (this._hoverPoi) this._flip(d)
-            else if (this._onCycle) this._onCycle(d)
+            if (pad.cardActive() || pad.menuActive() || this._hoverLocked()) this._onCycle?.(k === 'q' ? -1 : 1)
+            else this._swapTab()
             return
         }
         if (pad.cardActive() || pad.menuActive()) return
@@ -897,7 +914,26 @@ export class Map2D {
         if (k === 'c') { take(); if (!e.repeat) this._centre(); return }
         if (k === 'ArrowUp' || k === 'ArrowDown') { take(); this._stepList(k === 'ArrowUp' ? -1 : 1); return }
         if (k === 'ArrowLeft' || k === 'ArrowRight') { take(); if (this._hoverPoi) this._flip(k === 'ArrowLeft' ? -1 : 1); return }
+        if (k === 'Enter' && this._toggleShop()) { take(); return }
+        if (k === 'Escape' && this._openShop) { take(); this._listId = this._openShop; this._openShop = null; this._listT = 0; return }
         if (k === 'Escape' && this._listId) { take(); this._leaveList() }
+    }
+
+    /** FEAT-211: Missions ↔ Shopping. The new list starts with nothing highlighted, the map where it is. */
+    _swapTab() {
+        this._tab = this._tab === 'missions' ? 'shopping' : 'missions'
+        this._leaveList()
+        this._list?.scrollTo?.(0, 0)
+    }
+
+    /** FEAT-211: open the highlighted shop's items in line, or close them (the header again). False if there is nothing
+     *  to open: not the Shopping list, no highlight, a pump, or one of the open shop's item rows. */
+    _toggleShop() {
+        const r = this._tab === 'shopping' && this._rows.find(q => q.id === this._listId)
+        if (!r?.shop?.opens || r.id !== r.poi) return false
+        this._openShop = this._openShop === r.poi ? null : r.poi
+        this._listT = 0
+        return true
     }
 
     /** Step the hovered POI's offer card by d, wrapping. */
@@ -921,7 +957,7 @@ export class Map2D {
         if (this._listId) this._leaveList()
     }
 
-    _leaveList() { this._listId = null; this._listT = 0 }
+    _leaveList() { this._listId = null; this._openShop = null; this._listT = 0 }
 
     /** FEAT-211: move the list highlight by d rows (wrapping); the first press lands on the nearest row. */
     _stepList(d) {
@@ -944,34 +980,68 @@ export class Map2D {
     }
 
     /**
-     * FEAT-211: the Missions list — every POI with work on offer now, nearest first (straight line from the truck).
-     * A row is the place's name, its distance and one diamond per job family on offer (FAMILY_COLOR, the map's own
-     * key). Rebuilt four times a second at most, and written to the DOM only when it reads differently.
+     * FEAT-211: the list, nearest first (straight line from the truck). Rebuilt four times a second at most, and
+     * written to the DOM only when it reads differently.
+     *   Missions  every POI with work on offer now: its name, its distance and one diamond per job family on offer
+     *             (FAMILY_COLOR, the map's own key).
+     *   Shopping  every POI that sells, pumps included, stocked or not (board.shop decides which and words it): its
+     *             name, its distance, then its pump price and its "new stock in…" timer. The open shop's items follow
+     *             its header in line, each a row of its own for the D-pad: name and price, condition, how long it
+     *             stays, the flavour text. A pump has nothing to open.
      */
     _refreshList() {
         const now = performance.now()
         if (now - this._listT < 250 || !this._list) return
         this._listT = now
-        const board = this._getBoard(), car = this._getCar()
+        const board = this._getBoard(), car = this._getCar(), shopping = this._tab === 'shopping'
+        const esc = (v) => String(v).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`)
         const rows = []
         for (const q of (board && this._getPois()) || []) {
             if (q.hidden) continue
-            const st = board.status(q.id)
-            if (!st?.source || !st.families.length) continue
             const name = board.name?.(q.id) ?? POI_ICONS[q.type]?.label ?? q.type
-            rows.push({ id: q.id, x: q.x, z: q.z, d: Math.hypot(q.x - car.x, q.z - car.z), fams: st.families,
-                        name: name[0].toUpperCase() + name.slice(1) })   // a list starts its line: "The gas station"
+            const row = { id: q.id, poi: q.id, x: q.x, z: q.z, d: Math.hypot(q.x - car.x, q.z - car.z),
+                          name: name[0].toUpperCase() + name.slice(1) }   // a list starts its line: "The gas station"
+            if (shopping) {
+                const sh = board.shop?.(q, q.id === this._openShop)
+                if (!sh) continue
+                rows.push(Object.assign(row, { shop: sh }))
+            } else {
+                const st = board.status(q.id)
+                if (!st?.source || !st.families.length) continue
+                rows.push(Object.assign(row, { fams: st.families }))
+            }
         }
         rows.sort((a, b) => a.d - b.d)
+        if (shopping) {   // the open shop's items, in line under its header
+            const i = rows.findIndex(r => r.id === this._openShop)
+            if (i < 0) this._openShop = null
+            else rows.splice(i + 1, 0, ...(rows[i].shop.items ?? []).map((it, n) => ({ ...rows[i], id: `${rows[i].id}#${n}`, item: it })))
+        }
         this._rows = rows
         const clock = board?.clock?.() ?? ''
         if (this._clockEl && this._clockEl.textContent !== clock) this._clockEl.textContent = clock
-        if (this._listId && !rows.some(r => r.id === this._listId)) this._listId = null   // its work went
-        const esc = (v) => String(v).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`)
-        const html = rows.length ? rows.map(r => `<div class="ml-row${r.id === this._listId ? ' on' : ''}" data-poi="${esc(r.id)}">`
-            + `<span class="ml-fams">${r.fams.map(f => `<i style="background:${FAMILY_COLOR[f] ?? EMPTY_DIAMOND_COLOR}"></i>`).join('')}</span>`
-            + `<span class="ml-name">${esc(r.name)}</span><span class="ml-dist">${(r.d / 1000).toFixed(1)} km</span></div>`).join('')
-            : '<div class="ml-none">No work on offer right now.</div>'   // [DEFAULT] words
+        if (this._listId && !rows.some(r => r.id === this._listId)) this._listId = null   // its work (or the item) went
+        const cls = (r, more) => `<div class="ml-row${more}${r.id === this._listId ? ' on' : ''}" data-key="${esc(r.id)}">`
+        const dist = (r) => `<span class="ml-dist">${(r.d / 1000).toFixed(1)} km</span>`
+        const shopRow = (r) => {
+            const sh = r.shop, it = r.item
+            if (it) return cls(r, ' ml-item') + `<span class="ml-name">${esc(it.name)}</span><span class="ml-price">${esc(it.price)}</span>`
+                + `<span class="ml-sub">${it.cond != null ? `<span class="ml-bar"><i style="width:${Math.round(it.cond * 100)}%;background:${it.color}"></i></span>${it.cond < 1 ? 'used' : 'new'} · ` : ''}${esc(it.left)}</span>`
+                + `<span class="ml-desc">${esc(it.desc)}</span></div>`
+            const sub = [sh.price, sh.next].filter(Boolean).join(' · ')
+            return cls(r, ' ml-shop') + `<span class="ml-open">${sh.opens ? (r.id === this._openShop ? '▾' : '▸') : ''}</span>`
+                + `<span class="ml-name">${esc(r.name)}</span>${dist(r)}${sub ? `<span class="ml-sub">${esc(sub)}</span>` : ''}</div>`
+                + (r.id === this._openShop && sh.opens && !sh.items?.length ? '<div class="ml-none ml-in">Nothing on the shelf.</div>' : '')   // [DEFAULT] words
+        }
+        const html = rows.length ? rows.map(r => shopping ? shopRow(r)
+            : cls(r, '') + `<span class="ml-fams">${r.fams.map(f => `<i style="background:${FAMILY_COLOR[f] ?? EMPTY_DIAMOND_COLOR}"></i>`).join('')}</span>`
+              + `<span class="ml-name">${esc(r.name)}</span>${dist(r)}</div>`).join('')
+            : `<div class="ml-none">${shopping ? 'No shops on the map.' : 'No work on offer right now.'}</div>`   // [DEFAULT] words
+        const head = this._tab
+        if (this._headTab !== head) {
+            this._headTab = head
+            for (const t of document.querySelectorAll('#map-list-head [data-tab]')) t.classList.toggle('on', t.dataset.tab === head)
+        }
         if (html === this._listHtml) return
         this._listHtml = html
         this._list.innerHTML = html
@@ -985,8 +1055,9 @@ export class Map2D {
     _updateHover() {
         const board = this._getBoard()
         const pois = this._getPois()
-        const listed = this._listId   // FEAT-211: a list highlight answers instead of the cursor
-        if (!board || !pois?.length || (this._hoverX === undefined && !listed) || this._dragging || this._hoverLocked()) {
+        const listed = this._tab === 'missions' ? this._listId : null   // FEAT-211: a Missions highlight answers instead of the cursor
+        if (!board || !pois?.length || (this._hoverX === undefined && !listed) || this._dragging || this._hoverLocked()
+            || (this._tab === 'shopping' && this._listId)) {   // a shop picked off the list is the subject, not a card
             this._hoverPoi = null; this._hoverView = null; return
         }
         const R = POI_ICON_PX * 0.75
