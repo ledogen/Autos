@@ -1,7 +1,7 @@
 ---
 id: FEAT-199
 type: feature
-status: closed
+status: open
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-11 inbox — "I'm very happy to see more item rewards being offered I think we need to make them a choice though. The issue I'm running into now is during my playthrough it's just hard to come by money If we make the item reward Something the player can choose to take or leave Then they can choose to go with the cash on any item giving mission instead I Think the way we do this is we keep the mission card almost exactly the same except we add Optional item and then in parentheses minus the dollar amount that it takes off the reward At the end of the mission the player gets to choose to take the cash or take the reduced cash amount with the item"
@@ -10,6 +10,14 @@ relates: [FEAT-168, FEAT-121]
 lane: Spare (mission.js / economy.js / the result card)
 
 # An item reward is optional: full cash, or the item with reduced cash
+
+## Next steps
+Re-opened 2026-11-14 on two owner rulings (DEC-176). Built: ITEM_COST_FRAC = 0.5 (land/feat-211d). NOT built: the price
+window (the item's shop price about the job's pay, up to 30 % over). It needs the pay at plan time: do it in
+`OfferBoard._receiverBonus`, which already runs on every plan (payRange(m.par, regionTier(region), payMult) is computable
+there); re-pick among the gate's rewards that fit, drop the bonus if none fit. Open: which pay (card's base or its top),
+and what "usually about equivalent" means as a lower bound (suggest 0.7 x pay, falling back to cheaper). The cap
+(min(cost, paid)) stays as the wallet guard either way.
 
 ## What
 
@@ -71,3 +79,7 @@ annotated.
 ## Resolution (2026-11-13)
 
 Landed on main via land/feat-199. Owner ruling 11-13 "1. yes, 2. cap": the choice model stays; an item costs min(shop price x ITEM_COST_FRAC, what the job paid). Affected gates 22/22 green (wip/feat-199/gates3.log); real-app check: $8 shoes on a $7.28 job cost $7.28, button "take Sport rear shoes + $0.00", wallet net 0. Still the owner's: ITEM_COST_FRAC (feat199-price, default 1).
+
+## Re-opened (2026-11-14)
+Owner: card feat199-price "half the shop price" ("this way you cant sell it for more money you have to want the item to take
+it"), and the inbox "the reward item price can be like 30% over the mission pay but usually is about equivalent". DEC-176.

@@ -9,12 +9,11 @@ relates: FEAT-210 (the symbols), FEAT-133 (the map's pad cursor), FEAT-67 (offer
 ---
 lane: Spare
 
-# FEAT-211: The map as a window — 80 % of the screen, a Missions / Shopping list beside it, live tracking
+# FEAT-211: The map as a window — 90 % of the screen, a Missions / Shopping list beside it, live tracking
 
 ## Next steps
-Landings 1 (window, tracking, edge marker, Missions list) and 2 (the Shopping list) are on main. Landing 3 (the custom
-waypoint) is built on feature/spare and waits on its landing + the owner's look (screenshots `wip/feat-211/wp-*.png`). Then the
-ticket closes on the owner's open questions below.
+Landings 1–3 are on main; landing 4 (the owner's 11-14 look: 90 %, live world, bigger card, arrows on the cards) is built on
+land/feat-211d. Then the ticket closes on the waypoint's [DEFAULT]s (Open questions).
 
 ## Summary
 The map stops covering the whole screen. It becomes a window over the live game, with a list on its right that has two modes: Missions and Shopping. Opening it centres on the truck and follows it. The player can pan freely at any point, including from a place the list just showed.
@@ -109,6 +108,19 @@ This has no separate "map tab" and no select step: the map is always live under 
 - pad-e2e covers it on a stubbed board: RB to Shopping, A on a pump opens nothing, A opens a shop, the D-pad walks onto its items,
   B closes it, A twice opens and closes, B leaves, LB back.
 
+### Built, landing 4 (Spare lane, 2026-11-14, the owner's feat211-look + inbox)
+- **90 %:** `#map-window` sits 5 % in from each edge.
+- **Live world behind:** main.js renders the 3D scene every frame with the map open (PERF-38's skip is reversed, DEC-175).
+  The window covers 81 % of the screen, and the GPU still draws those covered pixels (no cut-out): at full rate the map
+  costs what driving costs, as the owner expected.
+- **The card had shrunk** because its scale `k` was bound by 46 % of the sheet's WIDTH: full screen that gave k 1.41, but the
+  sheet now shares the window with the 300 px list, so k fell to its floor of 1. The width share is now 75 %, which gives
+  k 1.41 again at the owner's 1045 x 700 (the old full-screen size; the card's height is about half the sheet).
+- **Arrows on the cards:** the map card's keycaps read ← → (keys and D-pad alike); ←/→ already flipped the map's cards and
+  Q / E (LB / RB) are the tabs. At a POI the parked offer panel keeps Q / E: its arrows move the panel's own highlight, and
+  the map draws no hover card while parked there (hoverLocked), so the two never meet.
+- Screenshots: `wip/feat-211/before-s482913-list-pick.png` (landing 1) and `after-s482913-2-list-pick.png` (this landing).
+
 ### Built, landing 3 (Spare lane, 2026-11-13)
 - **Input.** Pad **Y** (MAP_KEYS sends `n`, so Y no longer holds the ignition behind the map), key **N**, **Enter / pad A with
   nothing highlighted**, or a **click** on the sheet (a press that moves under 4 px) drops the waypoint under the cursor: the
@@ -134,14 +146,17 @@ This has no separate "map tab" and no select step: the map is always live under 
 - 2026-11-13, owner: the map takes about 80 % of the screen with the live game behind; a list on the right with Missions and Shopping modes swapped by bumpers; both sorted nearest first; opening always centres on the truck and tracks it; B from a list starts panning from there.
 - 2026-11-13, owner (card feat211-controls): "build it like that" — the control scheme above is approved.
 - 2026-11-13, owner: "one feature request. add a custom gps waypoint function. y on pad seems appropriate or maybe we can just use a/enter."
+- 2026-11-14, owner (feat211-look): "90% window. Make the background live." Inbox: "replace q/e on the mission cards on the
+  map with left/right arrows. q/e are the tabs now. dont forget the visual on the card too." (DEC-175, superseding DEC-132.)
 - 2026-11-13, orchestrator (landing 3) [DEFAULT]: Y, and A / Enter with nothing highlighted, both drop it; a job's guidance always
   wins over the waypoint's; arrival radius 28 m.
 
 ## Open questions
-- The world behind the window: the frame from the moment the map opened [DEFAULT, zero 3D cost], or moving at a reduced rate
-  (every Nth frame costs 1/N of the 3D frame's GPU bill)?
-- At the owner's 1045 × 700 window the sheet is 536 × 560 px and an offer card covers its top half. Acceptable, or should the
-  card move into the list column (under the highlighted row) when a row is picked?
+- The waypoint's [DEFAULT]s, unruled: (1) A / Enter with nothing highlighted also drops it, alongside Y / N; (2) a job's
+  guidance always wins (the waypoint is then a pin only); (3) arrival clears it at 28 m; (4) the HUD words "1.12 km to the
+  waypoint"; (5) no legend row (the pin is lettered).
+- At the POI the parked offer panel still pages with Q / E (LB / RB), its own buttons reading "‹ Q" / "E ›". Keep that, or
+  move it to the arrows too (they would then stop moving the panel's highlight left / right)?
 
 ## Links
 Screenshots: `wip/feat-211/` in the Spare worktree (`shots.mjs` makes them).
@@ -154,3 +169,4 @@ Screenshots: `wip/feat-211/` in the Spare worktree (`shots.mjs` makes them).
 - 2026-11-13: landing 1 built by the Spare lane (window, tracking, edge marker, Missions list, legend in the column).
 - 2026-11-13: landing 2 built by the Spare lane (the Shopping list, the tabs, A opens a shop in line).
 - 2026-11-13: landing 3 built by the Spare lane (the custom waypoint).
+- 2026-11-14: landing 4 built by the Spare lane (90 %, live world, card size, arrows on the cards).

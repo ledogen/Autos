@@ -1,7 +1,7 @@
 ---
 id: BUG-163
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-12
 source: owner, 2026-11-11 inbox — "Larry doesn't seem to be offering more than four customers on the route"
@@ -19,8 +19,8 @@ unlock, or whether the roster cannot find enough customers in the alpha circle.
 
 ## Acceptance
 
-- [ ] The cause named, with how often each size is offered over a sample of random seeds and days.
-- [ ] 7 / 9 / 11 routes appear in a normal run, or the gate that holds them back is put to the owner.
+- [x] The cause named, with how often each size is offered over a sample of random seeds and days.
+- [x] 7 / 9 / 11 routes appear in a normal run, or the gate that holds them back is put to the owner.
 
 ## Findings (Spare, 2026-11-12) — not a supply bug; the FEAT-141 ladder holds 7 / 9 / 11 back
 
@@ -48,3 +48,7 @@ the 4-house route sees only the 4.
 Not removed (the brief: a deliberate gate goes to the owner). **Owner call:** keep the ladder and say it on Larry's
 offer (e.g. "B or better on this route and Larry gives you 7 next") — recommended; or relax the climb to any
 finished round (C); or drop the ladder and open every size from the start (as the FEAT-62 scenario already does).
+
+## Resolution (2026-11-14)
+Owner (card bug163): "keep the ladder, say it on the card" (DEC-177). Larry's offer panel now reads "I'll expand the route if
+you finish with a rank of B or better" while a bigger route is still locked (main.js paper panel, land/feat-211d).

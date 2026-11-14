@@ -1,6 +1,6 @@
 ---
 id: DEC-132
-status: standing
+status: superseded
 decided: 2026-11-13
 area: ui
 governs: FEAT-211, map

@@ -1,7 +1,7 @@
 ---
 id: FEAT-210
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-13
 source: owner, 2026-11-13 — the map spec pasted in chat, part 1 ("What we have is a great base to build on but it needs: consistent iconography for mission givers vs vendor / poi …")
@@ -12,7 +12,7 @@ lane: A
 # FEAT-210: The map's symbols — diamonds as mission backgrounds, vendor icons, special POIs, a forest-service legend
 
 ## Next steps
-Built on feature/run-shape (Lane A). Owner: look at the before/after sheets (Links), then answer the open questions. Orchestrator: landing review.
+None: closed 2026-11-14. The owner's feat210-look ruled calls 1, 3 and 4 as built and dropped the legend's Shop row (built on land/feat-211d).
 
 ## Summary
 One consistent symbol language for the map. A diamond means "work here" and its colour says which kind. An icon means what the place is. The clutter the owner no longer wants (barrier marks, junction dots, Larry's customer diamonds) comes off, and the map gets a legend in the style of a forest service map.
@@ -56,13 +56,14 @@ A new legend, styled after forest service map branding (follow `.planning/resear
 - **Legend.** Bottom-left of the sheet: Forest Service green title band with the title in its gold, the map's cream body, each entry drawn with the sheet's own inks. Mission (with the family colour key under it), Shop, Road, Stream, Pond, Tunnel, Camping area.
 
 ## Decisions
+- 2026-11-14, owner (feat210-look): "2. remove shop from legend It's already labeled with text. otherwise good" — the other calls stand as built.
 - 2026-11-13, owner: diamonds are backgrounds that keep their colours; split diamonds for several types; +20 % size; drop the barrier indicators and the junction dots; legend inspired by forest service map branding.
 
 ## Open questions
 - The special places given a pictogram: expedition camp, doctor, work site, school, office. Right set? (Residences, farms and the motorist left as plain diamonds.)
 - The legend sits permanently in the bottom-left corner over the map. Keep it there, or make it toggleable (FEAT-211 owns the layout)?
 - Larry's customer diamonds: dropped from the main map (the default), or shown another way?
-- Does the legend label "shop", or is the POI text enough?
+- ~~Does the legend label "shop", or is the POI text enough?~~ Owner 11-14: no Shop row (the text labels it). Questions 1, 3, 4: "otherwise good" (as built).
 
 ## Links
 Before/after sheets (worktree, git-invisible): `wip/feat-210/sheet-s6.png` (test seed), `sheet-s4117.png`, `sheet-s90233.png` (random), `sheet-glyphs.png`. Capture scripts: `wip/feat-210/shot.mjs`, `sheet.mjs`.
@@ -74,3 +75,7 @@ Before/after sheets (worktree, git-invisible): `wip/feat-210/sheet-s6.png` (test
 - 2026-11-13: minted from the owner's spec by the orchestrator. Nothing built.
 - 2026-11-13: built on feature/run-shape (Lane A); affected gates green; sheets in wip/feat-210/.
 - 2026-11-13: owner (inbox): "remove the custom map icons from the office, the site, the doctor, the school and the tackle shop. pois only get a custom icon if they do something other than provide missions. i.e. vend items, let you sleep, etc. keep larry's and the firewood vendor … change the haul diamond color to white for simplicity. update the legend". Done on main (orchestrator): the five are plain diamonds (tackle keeps its label), haul is white and the legend groups it with papers. Freight stays blue. Smoke 26/26.
+- 2026-11-14: the legend's Shop row removed (land/feat-211d, Spare). Closed.
+
+## Resolution (2026-11-14)
+Built on main (Lane A) plus the owner's 11-14 look: the legend drops Shop; every other call stands as built.
