@@ -1,7 +1,7 @@
 ---
 id: PERF-47
 type: perf
-status: open
+status: closed
 severity: minor
 opened: 2026-11-13
 source: perf lane, 2026-11-13 — the PERF-40 bench record at 08768a0b read main-thread 469 / 616 / 768 ms/s (drive / map / park) against 192 / 151 / 170 at b71cd825
@@ -12,9 +12,7 @@ lane: engine & world (the perf lane)
 # PERF-47: A stalled audio clock piles up AudioParam events, and main-thread cost climbs without bound
 
 ## Next steps
-Both halves done. Game half on land/perf-47 (the guard + the audio-clock-guard gate), for the orchestrator to land.
-Owner: a listen after landing (engine, tires, wind, crickets, starter, rank bed: nothing should change), and restart
-coreaudiod before the next bench record.
+None. Closed by the owner 2026-11-14 (see Decisions). Restart coreaudiod before the next bench record: the bench refuses a stalled host on its own.
 
 ## Summary
 When the host's audio output stops pulling samples, a running WebAudio context's clock (`ctx.currentTime`) stands
@@ -76,8 +74,11 @@ costs ~3 ms/s, so it would save at most that, against a value cache at all 85 ca
 - [x] The bench refuses a stalled host: the session FAILS before the drive with "the host's audio clock is stalled"
 - [x] The game guards its per-frame automation on a live clock (option 1), proven by test/audio-clock-guard.mjs
       (a fake context with a held clock: 0 events after 0.5 s stalled, resumes in 0.2 s) and on the stalled host
-- [ ] Owner listen after landing: nothing should sound different
-- [ ] The bench's audio check passes on a healthy host (after coreaudiod is restarted)
+- [x] Owner listen after landing: nothing should sound different ("sounds right", 2026-11-14)
+- [ ] The bench's audio check passes on a healthy host (after coreaudiod is restarted). Left open at close: a host chore, not the game's; the check refuses a stalled host by itself.
+
+## Decisions
+- 2026-11-14, owner: "sounds right"
 
 ## Files
 `test/playtest-bench.mjs` · `src/engine-audio.js` (audioClockLive) · `src/tire-audio.js` · `src/wind-audio.js` ·
@@ -89,3 +90,7 @@ costs ~3 ms/s, so it would save at most that, against a value cache at all 85 ca
 - 2026-11-13: game half. audioClockLive() guard on the nine per-frame entries; gate test/audio-clock-guard.mjs (fails
   on main: 23984 events in 9.5 s stalled). Stalled host parked 120 s: p50 330 → 175 ms/s, the climb gone. Live clock
   (Chrome's fake output) unchanged, 154 → 153. Raw: CarGame-perf/wip/perf-47 (park.mjs, before/after-*.json).
+- 2026-11-14: closed by the owner after the listen (Decisions).
+
+## Resolution (2026-11-14)
+The guard (`audioClockLive()`) and the bench's stalled-clock refusal are on main. The owner heard no change. Closed.

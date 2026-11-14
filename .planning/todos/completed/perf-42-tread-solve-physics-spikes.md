@@ -1,7 +1,7 @@
 ---
 id: PERF-42
 type: perf
-status: open
+status: closed
 opened: 2026-11-12
 severity: major
 source: PERF-40 bench, 2026-11-12 — the per-second read of the three-way run (Nov 01 / main 07581275 / this branch).
@@ -18,8 +18,7 @@ lane: Perf (p)
 # PERF-42 — the tread solve's physics spikes are still there
 
 ## Next steps
-Owner: say whether the junction carve's per-sample maths (PERF-43's levers 1 and 2, closed as "not worth the squeeze")
-is reopened on this data. The Perf lane recommends yes: it is the only lever sized for seed 17535907 (§ Verdict).
+None. Closed by the owner 2026-11-14 ("leave it, 5 % is close enough", DEC-187). The whole-frame physics budget the owner asked about instead is PERF-49.
 
 ## Summary
 In about 1 driving second in 20, physics costs several times what a calm second costs. Measured in work (retired
@@ -220,21 +219,25 @@ on the 0.15 m deck-edge lip of 12 m arcs (the reuse's exact arc projection vs th
 ## Tracker
 - [x] Where the spike seconds happen, measured: 11-12 the deg-2 connector carves (fixed; the shoulder was a smaller
       cost); 11-13 a junction's 40 m reach, 3.9 of the 5.2 points, more than half on the deck, repeatable by place.
-- [ ] Spike share ≤ 5 % of moving seconds on the PERF-40 bench, three seeds, reps 2. In work: physics over 1000 Minstr
+- [x] Spike share ≤ 5 % of moving seconds (owner: 5.18 % pooled is close enough, DEC-187) on the PERF-40 bench, three seeds, reps 2. In work: physics over 1000 Minstr
       in the second (now 5.18 ± 2.17 % pooled; seed 17535907 9.0 / 6.7 %). In ms: over 100 ms/s (now 7.92 ± 1.97 %;
       Nov 01 was ~4 %). Work decides; ms is read beside it.
-- [ ] Physics gates green; the kerb-graze bench unchanged.
+- [x] Physics gates green; the kerb-graze bench unchanged (no physics change since the 11-12 fixes).
 
 ## Decisions
 - 2026-11-12, owner (closing PERF-43, the per-wheel surface patch): "fix the regression and then i think the rest of
   the juice is not worth the squeeze." PERF-43's levers 1–5 were left unbuilt, to be reopened only with a measured
   reason. This ticket stayed open.
+- 2026-11-14, owner (perf42-reopen-carve card): "leave it, 5 % is close enough". Note: "i think we're looking at the
+  wrong thing. instead of worrying about the spikes we should be worried about the physics taking 3ms per frame. that
+  feels like a huge budget. i feel like we can get down to 1-2 ms without me perceiving a difference. what are the main
+  levers? i like the dense point sampling for rolling over obstacles things slowly but i think it provides little
+  utility at high speeds except maybe high impact and collision handling (tire pop stability)" (DEC-187; the budget
+  question is PERF-49).
 
 ## Open questions
-- Reopen PERF-43's levers 1 and 2 (the junction carve's per-sample maths) on the 11-13 verdict? Recommendation: yes.
-  Junctions are three quarters of the spike seconds, and this is the only lever sized to bring seed 17535907 near 5 %.
-- Does the 5 % target hold pooled, or on every seed? Recommendation: pooled, since one seed's share moves ±1–3 points
-  between reps; read seed 17535907 as the hard case.
+- ~~Reopen PERF-43's levers 1 and 2?~~ Answered: no, leave it (DEC-187).
+- ~~5 % pooled or per seed?~~ Moot: the pooled 5.18 % is close enough (DEC-187).
 
 ## Links
 - Verdict data: `perf-runs/perf42-verdict-0f6fbc38` and `perf-runs/perf42-verdict.log` (CarGame-perf, gitignored).
@@ -254,3 +257,8 @@ on the 0.15 m deck-edge lip of 12 m arcs (the reuse's exact arc projection vs th
   reps, 6/6 valid, host 0.27–0.40/core. Pooled 5.18 ± 2.17 % over 1000 Minstr (ms: 7.92 ± 1.97 % over 100 ms/s);
   seed 17535907 9.0 / 6.7 %. Spike places by the 11-12 method: junctions 3.9 points of 5.2; a place that spiked on one
   rep spiked on the other at 11 of 14. Not closed.
+- 2026-11-14: closed by the owner (DEC-187). PERF-43 levers 1 and 2 stay unbuilt.
+
+## Resolution (2026-11-14)
+The 11-12 fixes (connector foot, solo reuse) are on main; the spike share sits at 5.18 ± 2.17 % pooled, which the
+owner ruled close enough. The per-frame physics budget moves to PERF-49.
