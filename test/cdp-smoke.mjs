@@ -651,9 +651,25 @@ const STEPS = [
     const t0 = await tabOn(); await btn(5); const t1 = await tabOn(); await btn(4)
     check(t1 && t1 !== t0 && await tabOn() === t0, `RB then LB on the service screen: tab ${t0} → ${t1} → ${await tabOn()}`)
     await padOff()
+    // FEAT-212: the cart. A corner swap queues: the truck shows it at once, the wallet waits. With work in the cart Esc
+    // and the brake both ask (check out or discard) and the brake holds; discard puts the corners back and lets it go.
+    await js('window.__damage.set("tireFL", 0.5); document.querySelector("#svc-screen [data-tab=maint]")?.click()')
+    for (const id of ['twbs', 'tw', 'FL', 'corner']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
+    const cm0 = await js('window.__econ.money')
+    await js(`document.querySelector('#svc-screen [data-act=swap][data-a="0"][data-b="1"]')?.click()`)
+    const corners = () => js('[window.__damage.get("tireFL"), window.__damage.get("tireFR")].join()')
+    const cartLines = () => js('document.querySelectorAll("#svc-screen [data-act=unqueue]").length')
+    check(await cartLines() === 1 && await corners() === '1,0.5' && await js('window.__econ.money') === cm0,
+      `the corner swap did not queue on the cart (lines ${await cartLines()}, corners ${await corners()}, $${cm0} → $${await js('window.__econ.money')})`)
     await tap('Escape')
-    check(await until(async () => !await open(), 1000), 'Esc left the service screen open')
-    await tap(' ')   // brake off: the next step parks fresh
+    check(await open() && /Check out or discard/.test(await js('document.querySelector("#svc-screen").textContent')), 'Esc with a full cart did not ask')
+    await tap(' ')
+    await frames(3, 50)
+    check(await open() && await js('window.__vs.parked'), 'the brake let go of a truck with a full cart')
+    await js('document.querySelector("#svc-screen [data-act=discard]").click()')
+    check(await until(async () => !await open(), 1000) && await corners() === '0.5,1' && !await js('window.__vs.parked') && await js('window.__econ.money') === cm0,
+      `discard did not put the corners back and let the truck go (corners ${await corners()}, parked ${await js('window.__vs.parked')})`)
+    await js('window.__damage.set("tireFL", 1)')
     await sleep(300)
   }],
   ['store', async () => {
@@ -677,6 +693,8 @@ const STEPS = [
     const [m0, n0, h0] = [await js('window.__econ.money'), await coffees(), await js('window.__day().clockH()')]
     await js(`${row}.click()`)   // FEAT-196: select the row, then its options show
     await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]").click()')
+    check(await coffees() === n0 + 1 && await js('window.__econ.money') === m0, 'a coffee in the cart is not in the inventory yet, or is already paid for')   // FEAT-212
+    await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
     const [m1, n1] = [await js('window.__econ.money'), await coffees()]
     check(price > 0 && Math.abs(m0 - m1 - price) < 0.005, `buying a coffee listed at $${price} took $${(m0 - m1).toFixed(2)}`)
     check(n1 === n0 + 1, `buying a coffee left ${n1} coffees (had ${n0})`)
@@ -1438,6 +1456,7 @@ const STEPS = [
     const m0 = await js('window.__econ.money')
     await js(`${fit}.click()`)
     check(await until(() => js('!window.__damage.flat[0]'), 2000), 'buying a tire for the flat corner did not fix it')
+    await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
     check(await js('window.__econ.money') === m0, `the tire was not on mom (FEAT-184): $${m0} → $${await js('window.__econ.money')}`)
     await tap('Escape'); await tap(' ')   // off the brake: the night drive, whose card holds the sim
     check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')

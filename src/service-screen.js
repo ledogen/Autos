@@ -62,7 +62,10 @@ body:has(#dmg-screen.open) #svc-screen { visibility: hidden; }   /* FEAT-212: Ve
 body:has(#svc-screen.open) #quickjob-btn, body:has(#svc-screen.open) #cluster,
 body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen .sv-card { pointer-events: auto; background: var(--card-bg); border: 1px solid var(--line-card);
-  padding: 12px 16px 14px; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow-y: auto; box-sizing: border-box; }
+  padding: 12px 16px 14px; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 64px); box-sizing: border-box;
+  display: flex; flex-direction: column; }
+/* FEAT-212: the card's body scrolls; the cart's subtotal and the back button stay on its foot, below it */
+#svc-screen .sv-body { overflow-y: auto; min-height: 0; }
 #svc-screen .sv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 #svc-screen .sv-title { flex: 1; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-story); }
 #svc-screen .sv-wallet { font-size: 14px; color: var(--money); text-align: right; }
@@ -92,8 +95,7 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen .sv-btn:disabled { opacity: 0.35; cursor: default; }
 #svc-screen .sv-btn.ok { border-color: var(--accept); color: var(--accept-text); }
 #svc-screen .sv-btn.bad { border-color: var(--bad-line); color: var(--bad-text); }
-/* FEAT-212: the cart's subtotal and its checkout stay on the card's foot while the tree scrolls under them */
-#svc-screen .sv-foot { position: sticky; bottom: 0; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); background: var(--card-bg); }
+#svc-screen .sv-foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
 #svc-screen .sv-total { color: var(--text-bright); }
 #svc-screen .sv-panel { margin: 2px 0 8px; padding: 6px 8px; border-left: 2px solid var(--accent-story); background: rgba(255,255,255,0.04); }
 #svc-screen .sv-sub { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-faint); margin-top: 6px; }
@@ -365,34 +367,36 @@ export class ServiceScreen {
     const jobs = this.jobs()
     if (this.tab === 'jobs' && !jobs.length) this.tab = this.store ? 'shop' : 'maint'
     const tab = (id, label) => `<button class="sv-tab${this.tab === id ? ' on' : ''}" data-act="tab" data-tab="${id}">${label}</button>`
+    const [lines, foot] = this._cart(), top = this.card.querySelector('.sv-body')?.scrollTop ?? 0
     this.card.innerHTML =
-      `<div class="sv-head"><span class="sv-title">${this.name}${this.store ? '' : ' · service'}</span>`
+      `<div class="sv-body"><div class="sv-head"><span class="sv-title">${this.name}${this.store ? '' : ' · service'}</span>`
       + `<span class="sv-wallet">$${formatMoney(s.money())}<br><span class="sv-clock">${formatDue(Math.floor(this.nowH() * 60) / 60)}</span></span>`
       + btn('map', 'map')
       + `</div>`
       + `<div class="sv-tabs">${this.store ? tab('shop', 'Shop') : tab('maint', 'Maintenance') + tab('shop', 'Shop')}${jobs.length ? tab('jobs', 'Jobs') : ''}</div>`
       + (this.tab === 'maint' ? this._maintenance() : this.tab === 'shop' ? this._shop() : this._jobs())
-      + this._cart()
+      + lines + `</div>` + foot
       + BACK_BUTTON   // the card's way out (owner, 2026-10-21: replaces the corner ×)
+    this.card.firstChild.scrollTop = top   // a click re-renders the body: it stays where it was scrolled
   }
 
   // ── The cart (FEAT-212) ────────────────────────────────────────────────────────────────────────
 
   /** Under every tab while it holds work: each line with its price and hours and its × (take it out), then — pinned to
-   *  the card's foot, so a long tree never scrolls it away — the subtotal in money and time and the two ways out of it.
-   *  Short of the wallet, checkout waits (adding never does). */
+   *  the card's foot, below the scrolling body, so a long tree never scrolls it away — the subtotal in money and time and
+   *  the two ways out of it. Short of the wallet, checkout waits (adding never does). Returns [the lines, the foot]. */
   _cart () {
     const s = this.service
-    if (!s.cart.length) return ''
+    if (!s.cart.length) return ['', '']
     const t = s.total(), short = s.short()
-    return `<div class="sv-slot"><div class="sv-slothead">Cart <span class="sv-desc">· paid and done at checkout</span></div>`
+    return [`<div class="sv-slot"><div class="sv-slothead">Cart <span class="sv-desc">· paid and done at checkout</span></div>`
       + s.cart.map((l, j) => `<div class="sv-row"><span class="sv-name">${l.label}</span><span class="sv-cost">${cost(l.price - l.earn, l.hours)}</span>`
         + btn('unqueue', '×', true, `data-line="${j}" title="take it out"`) + `</div>`).join('')
-      + (this.note ? dim(`${this.note} more came out with it: ${this.note > 1 ? 'they' : 'it'} needed it.`) : '') + `</div>`
-      + `<div class="sv-foot"><div class="sv-row"><span class="sv-name">Subtotal</span><span class="sv-cost sv-total">${cost(t.price, t.hours)}</span></div>`
+      + (this.note ? dim(`${this.note} more came out with it: ${this.note > 1 ? 'they' : 'it'} needed it.`) : '') + `</div>`,
+      `<div class="sv-foot"><div class="sv-row"><span class="sv-name">Subtotal</span><span class="sv-cost sv-total">${cost(t.price, t.hours)}</span></div>`
       + (short > 0 ? `<div class="sv-flat">$${formatMoney(short)} short</div>` : '')
       + (this.leaving ? `<div class="sv-desc">Check out or discard before you leave.</div>` : '')
-      + `<div class="sv-row"><span class="sv-acts">${btn('discard', 'discard', true, '', ' bad')}${btn('checkout', 'check out', short <= 0, '', ' ok')}</span></div></div>`
+      + `<div class="sv-row"><span class="sv-acts">${btn('discard', 'discard', true, '', ' bad')}${btn('checkout', 'check out', short <= 0, '', ' ok')}</span></div></div>`]
   }
 
   // ── Maintenance (FEAT-212) ─────────────────────────────────────────────────────────────────────
