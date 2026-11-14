@@ -1380,6 +1380,7 @@ const STEPS = [
     check(await js('window.__board().firstState() === "closed"'), `a tap of M skipped the evening: ${await js('JSON.stringify({ first: window.__board().firstState(), wd: window.__worstDay(), h: window.__day().clockH(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), map: window.__map2d().isOpen() })')}`)
     // Stage 3, the safe drive: the clock holds on the way home, and off the road R puts the truck back on it.
     const h0 = await js('window.__day().clockH()'); await simFor(2)
+    check(await js('window.__worstDay().held'), 'the tutorial does not hold the truck: a crash would cost damage (FEAT-184, DEC-151)')
     check(await js('window.__day().clockH()') === h0, `the clock ran on the evening's drive (${h0} → ${await js('window.__day().clockH()')})`)
     const lat = (x, z) => `(() => { const q = window.__roadSys().queryNearest(${x}, ${z}, 200); return q?.point ? Math.hypot(q.point.x - ${x}, q.point.z - ${z}) : 999 })()`
     const off = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
@@ -1397,7 +1398,9 @@ const STEPS = [
     // FEAT-184 (DEC-151): off the road with the brake off, the evening puts the truck back on it by itself.
     await seat(off.x, off.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
-    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 12000), 'off the road with the brake off, the evening did not put the truck back on it')
+    // The reset counts 4 s of PLAY time (_playedS: real frame seconds while live, each frame clamped to 0.25 s), not wall
+    // time, so a loaded box under 4 fps accrues it slower than the clock: poll long (a pass costs nothing extra).
+    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
     await strayCheck('in the evening')
     // FEAT-184 stage 6, THE WORST DAY: the station (when one is due), the flat halfway home, V, the spare that's flat too,
     // the recovery menu's free tow to the auto shop, a tire there, and the night's headlights — then mom's, as before.

@@ -2052,6 +2052,10 @@ const map2d = new Map2D({
   // diamond colours. map2d stays economy-free: the card is offer-board's view-model, and every
   // number on it is computed here from the live board, clock and terms.
   getBoard: () => (offerBoard && storySystem?.isActive() ? _boardView : null),
+  // FEAT-211: the player's waypoint — { x, z, poly } with poly the line the GPS guides along (null while a job has the
+  // guide: the waypoint is then only a pin), or null; and the drop / clear (null) from the map's input, true if it acted.
+  getWaypoint: () => _waypoint && { x: _waypoint.x, z: _waypoint.z, poly: _waypointOn() ? _tutLine(_waypoint.route)?.poly ?? null : null },
+  onWaypoint: (p) => !dialogueSystem.active && _setWaypoint(p),   // a dialogue over the map keeps its Enter
   // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
   onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
   // Parked at a giver = "I want one of the jobs HERE": the map shows no other POI's card meanwhile.
@@ -4449,6 +4453,7 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // day-1 $0.50/gal it buys ~6 gal, so a fill from an eighth stops near half: "will run out of cash half tank"), and the
 // seconds off the road before the evening puts the truck back on it ("you drive off the road > reset"). Both [DEFAULT].
 const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4 }
+let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 // FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
 // station, if there was one); the flat lands at half of it, once. Not saved: a resume carries the flat in the damage model.
@@ -4458,7 +4463,7 @@ let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: sta
 const _momOwes = { part: true, labour: true }
 let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
-window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed })
+window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4475,6 +4480,8 @@ function _seatAt (q) {
   void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
 }
 
+/** FEAT-184 (DEC-151): the tutorial is on — a played opening (the firing heard, not skipped) until Larry's welcome. */
+const _inTutorial = () => storySystem.isActive() && dialogueSystem.has(DLG.firing) && !dialogueSystem.has(DLG.skipped) && !dialogueSystem.has(DLG.runIntro)
 /** FEAT-170: the evening leg is on — the firing played, mom's casserole not posted yet. */
 const _eveningLeg = () => !!offerBoard && dialogueSystem.has(DLG.firing) && offerBoard.firstState() === 'closed'
 
@@ -4536,7 +4543,9 @@ let _tutOffAt = 0       // performance.now() when the truck left the line; 0 whi
 function _tutLeg () {
   if (_eveningLeg()) { const base = _homeGuide(), door = _eveTarget(); return base && door ? { base, door } : null }
   const m = missionSystem?.mission
-  if (offerBoard?.firstState() !== 'taken' || !m || !['staging', 'running'].includes(missionSystem.state)) return null
+  if (offerBoard?.firstState() !== 'taken' || !m || !['staging', 'running'].includes(missionSystem.state)) {
+    return _waypointOn() ? { base: _waypoint.route, door: _waypoint.door } : null   // FEAT-211: the waypoint's line follows the truck too
+  }
   const door = poiSystem.list().find(q => q.id === m.endPoiId)
   return door ? { base: missionSystem.guideRoute(), door } : null
 }
@@ -4558,12 +4567,53 @@ function _tutDetourTick () {
   if (now - _tutOffAt < RR_PARAMS.offS * 1000) return
   if (_tutDetour?.base === leg.base && Math.hypot(v.x - _tutDetour.x, v.z - _tutDetour.z) < RR_PARAMS.offM) return
   _tutOffAt = 0
-  const from = roadOrigin(roadSystem, v)
-  const route = from && missionSystem.planOffer(from, { rng: Math.random,
-    dest: { kind: 'poi', pois: [leg.door], strict: true, anyLeg: true, nearest: true } })
+  const route = _planFromTruck(leg.door)
   // No plan (the truck off every road; on the door's own road it is a straight stretch since BUG-125): keep the line,
   // and the spot it failed at.
   _tutDetour = { base: leg.base, route: route?.segments?.length ? route : _tutLine(leg.base), x: v.x, z: v.z }
+}
+
+/** The shortest line by road from the truck's own road point to `door` (a POI, or anything with its { id, aId, bId, s }), or null. */
+function _planFromTruck (door) {
+  const from = roadOrigin(roadSystem, vehicleState.position)
+  return from && missionSystem.planOffer(from, { rng: Math.random,
+    dest: { kind: 'poi', pois: [door], strict: true, anyLeg: true, nearest: true } })
+}
+
+// ── FEAT-211 landing 3: the custom waypoint ─────────────────────────────────────────────────────────
+// One pin the player drops on the map (pad Y, N, Enter with nothing highlighted, a click: map2d.js _waypointAt), and
+// the same input on the pin takes it away. It is guided the way the evening is guided home, with nothing new: the same
+// planner (a one-stop line from the truck, _planFromTruck), the same in-world GPS (gpsSystem's getRoute, last in line),
+// the same re-plan when the truck strays (_tutDetourTick), the same HUD line (_renderMissionUI's default case).
+// A JOB ALWAYS WINS: while the truck is on a job (or a paper round, or the evening) the waypoint is a pin on the map and
+// nothing else, so it can never hide a job's destination. Player state for the run: saved, cleared on arrival and by
+// a new run. The pin sits on the road it snapped to, so the map's pin and the line's end are one point.
+const WAYPOINT_ARRIVE_M = 28     // m — mission.js ARRIVE_RADIUS, a job's "you're there"
+const WAYPOINT_SNAP_M   = 2000   // m — the drop snaps to the nearest road within this (_resetToRoad's reach)
+// (_waypoint, the state, is declared with the evening's, above _eveningLeg.)
+
+/** The waypoint is what the GPS guides to now: one is set, a run is live, and no job, round or evening has the guide. */
+const _waypointOn = () => !!_waypoint && storySystem.isActive() && !_runEnded && !_eveningLeg()
+  && !missionSystem?.isOnJob() && !paperRouteSystem?.isCarrying()
+
+/** Drop the waypoint at world (x, z), or clear it (null). False when nothing changed: no story run, no waypoint to
+ *  clear, or the drop found no road to snap to or no line to plan (outside the wall). */
+function _setWaypoint (p) {
+  if (!storySystem.isActive() || _runEnded) return false
+  if (!p) { if (!_waypoint) return false; _waypoint = null; _renderMissionUI(); return true }
+  const o = roadOrigin(roadSystem, p, WAYPOINT_SNAP_M)
+  const door = o && { ...o, id: 'waypoint' }
+  const route = door && _planFromTruck(door)
+  if (!route?.segments?.length) return false
+  _waypoint = { x: o.x, z: o.z, door, route }
+  _renderMissionUI()
+  return true
+}
+
+/** On the run-HUD poll: there is the waypoint's arrival. */
+function _waypointTick () {
+  const v = vehicleState.position
+  if (_waypoint && Math.hypot(_waypoint.x - v.x, _waypoint.z - v.z) < WAYPOINT_ARRIVE_M) _setWaypoint(null)
 }
 
 /** Hours of sleep from now to 07:00 on day 1 — the evening's night, the sleep timer's preset. */
@@ -4860,7 +4910,8 @@ gpsSystem = new GpsSystem(scene, {
     if (_eveningLeg()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
     // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
     if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
-    return (s === 'countdown' || s === 'staging' || s === 'running') ? _tutLine(missionSystem.guideRoute()) : null
+    if (s === 'countdown' || s === 'staging' || s === 'running') return _tutLine(missionSystem.guideRoute())
+    return _waypointOn() ? _tutLine(_waypoint.route) : null   // FEAT-211: last in line — a job's guide always wins
   },
   getCar: () => vehicleState.position,
   // Read at BAKE time only (once per mission, plus while the bake is still partial): the design
@@ -7157,7 +7208,7 @@ function _renderMissionUI () {
       break
     }
     default:
-      show(panel, false); show(hud, _eveningLeg())
+      show(panel, false); show(hud, _eveningLeg() || _waypointOn())
       unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
       if (_eveningLeg()) {   // FEAT-170: no job, only the way home
@@ -7166,6 +7217,9 @@ function _renderMissionUI () {
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
         // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
         if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · <span class="kc-pad">hold </span>${keycap('R', 'D-pad →')} puts you back on it`)
+      } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint, crow-flies like the evening's [DEFAULT] words
+        const vp = vehicleState.position
+        hudText.textContent = `${km(Math.hypot(_waypoint.x - vp.x, _waypoint.z - vp.z))} to the waypoint`
       }
       break
   }
@@ -7414,7 +7468,8 @@ function _renderRunHud () {
   if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
   if (daySystem.clockH() >= DAY_PARAMS.dayStartHour) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
   _eveningBeats()
-  _tutDetourTick()     // BUG-118: the tutorial's GPS follows the truck
+  _tutDetourTick()     // BUG-118: the tutorial's GPS follows the truck (and FEAT-211's waypoint line)
+  _waypointTick()      // FEAT-211: arrival clears the waypoint
   const skip = document.getElementById('skip-hint')
   if (skip) skip.style.display = _eveningLeg() ? '' : 'none'
   _syncSkipHint()      // FEAT-184: the confirmation reverts to the hold once it times out
@@ -9020,6 +9075,7 @@ const storySystem = new StorySystem({
     if (_paperScenario) daySystem.start(1, DAY_PARAMS.dayStartHour)   // FEAT-62: a working morning, no opening
     else daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
+    _waypoint = null   // FEAT-211: a waypoint is the run's (a resume puts its own back in _restoreRun)
     _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
@@ -9757,6 +9813,7 @@ function _runSnapshot () {
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
     job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
     playedS: _playedS,   // FEAT-146: the summary's playtime
+    waypoint: _waypoint && { x: _waypoint.x, z: _waypoint.z },   // FEAT-211: the player's pin (re-snapped and re-planned on resume)
   }
 }
 
@@ -9808,6 +9865,7 @@ function _restoreRun (s) {
     // After the motion: a load starts at rest relative to the bed. A throw loses the load, never the
     // autosave (_restoring would stay set and the run would never be written again).
     if (job) try { _reloadCargo(job, s.job) } catch (e) { console.warn('[save] cargo reload failed', e) }
+    if (s.waypoint) _setWaypoint(s.waypoint)   // FEAT-211: planned from the truck, so once it is seated
     _restoring = false
   })
 }
@@ -10253,8 +10311,9 @@ function loop () {
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
-    if (!_eveningLeg()) damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)   // FEAT-170: no damage or wear on the safe drive
-    else vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and no fuel burned ("fuel disabled"); the pump below still fills
+    damageModel.held = _inTutorial()   // FEAT-184 (DEC-151): no wear and no impact damage for the whole tutorial (the feedContact below too)
+    damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    if (_eveningLeg()) vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and the evening burns no fuel ("fuel disabled"); the pump below still fills
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
@@ -10266,7 +10325,7 @@ function loop () {
     // like a landed impact does below.
     if (vehicleState.drivetrain?.missShift) {
       playGearGrind(vehicleState.drivetrain.engineRPM)
-      if (DAMAGE_PARAMS.enabled) damageScreen.alert()
+      if (DAMAGE_PARAMS.enabled && !damageModel.held) damageScreen.alert()
     }
     // SM-3 collision damage: hand the hardest contact on the chassis this step (`hit`, read with
     // the rim strikes above) to the damage model, which decides whether that is an impact (see
@@ -10749,7 +10808,7 @@ function loop () {
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
-                          || missionSystem.state === 'running' || missionSystem.state === 'loading' || _eveningLeg())) _renderMissionUI()
+                          || missionSystem.state === 'running' || missionSystem.state === 'loading' || _eveningLeg() || _waypointOn())) _renderMissionUI()
     // FEAT-88: a load whose job is gone (cancelled, exited, a new run) leaves with it.
     if (_haul && (!missionSystem?.isOnJob() || missionSystem.mission !== _haul.mission)) _haulClear()
     // FEAT-96: …and so does a freight load, on delivery, clean-up or a new run. (A debug load has no
