@@ -166,7 +166,7 @@ without asking the owner where the meter stands. Land what they report, yourself
 - DONE ledorepo: INFRA-14 closed. INFRA-13 waits on the owner (Time Machine).
 Orchestrator DECs used: 190–193; next free for it: 194.
 
-**Main:** land/phys-1114 merged (BUG-168/166/160), smoke in flight, log wip/orch/smoke-phys.log: check it. BUG-167 is NOT landed: wip/bug-167-carcass @ 5147a6ba fixes the creep but changes the floored launch (rear slide 55.4 → 30.6 m), needs its own Opus task. Old line follows.
+**Main:** land/phys-1114 merged (BUG-168/166/160), first smoke failed only on the stale death-card speeds in the smoke itself (fixed, endings step green); FULL re-run in flight, log wip/orch/smoke-phys2.log: check it. BUG-167 is NOT landed: wip/bug-167-carcass @ 5147a6ba fixes the creep but changes the floored launch (rear slide 55.4 → 30.6 m), needs its own Opus task. Old line follows.
 (check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
 minted: FEAT-215 (GPS U-turn arrow, Spare), FEAT-216 (damage alerts, B). Inbox fully replied; 2gdr (FEAT-204, "4x more
 slots": 4 more or 4 times?) still waits on the owner. DEC-136, the :8001 Windows server and the Tailscale-only
