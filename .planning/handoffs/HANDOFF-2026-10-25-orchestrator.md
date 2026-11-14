@@ -21,6 +21,9 @@ just spawn a new subagent for task").
   and follow it. Worktree <path>, branch <branch>, port <port>. Your task: <ONE task>.` plus anything the page
   handoff doesn't have yet (an owner answer verbatim, a gate run still alive + its log). Size a task to be worth
   the ~48k an agent costs to start: bundle small items, and do one-liners yourself on main.
+- **Model and effort (DEC-193, owner 11-14):** physics and world-gen tasks `model: opus`, default effort. Routine
+  tasks (UI restyles, number changes, bookkeeping, tooling) `model: sonnet`, `effort: medium`. Pace: at most two
+  lane agents at a time, tasks sized ~100k and grouped by code area; ask the owner for the meter reading between batches.
 - **The page's "now" line** = the one-line file `/Users/ledogen/CodeShit/ledorepo/projects/cargame/lanes/<id>.now`. At spawn write `running: <task> · since <HH:MM> · <agent id>`; the
   agent overwrites it with `stopped (<done|blocked>): <one line> · <HH:MM>` when it hands off.
 - **On a report** (the agent's final message, ≤ 15 lines): LANDING → land it (below); OWED → one `owed/<id>.json` file each (§ The tracker);
