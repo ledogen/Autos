@@ -333,8 +333,8 @@ the norm.
 - **Commit** with conventional messages (`feat(NN)` / `fix(NN)` / `perf(NN)` / `docs`). **On a lane /
   feature branch, commit work in progress at every working step** (`wip(NN): …` is fine) — an uncommitted
   tree is lost work after a crash (owner, 2026-11-02). On resume, uncommitted changes in your worktree are
-  yours: commit them, never discard them. **Main** (the integration branch) gets commits only at a task
-  boundary (a landing, an orchestrator fix) or when asked.
+  yours: commit them, never discard them. Agents are free to commit whenever, on any branch; **a push happens
+  only at the owner's command** (owner, 2026-11-13; DEC-092).
 - **Parallel lanes** (lanes, ports and the tracker page are in the orchestrator handoff,
   `.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`): since 2026-11-09 every lane runs as a background
   **subagent of the orchestrator, one task per agent** — a lane agent follows

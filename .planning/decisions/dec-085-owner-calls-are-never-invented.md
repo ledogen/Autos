@@ -1,6 +1,6 @@
 ---
 id: DEC-085
-status: draft
+status: standing
 decided: 2026-07-29
 area: process
 governs: DESIGN.md, CLAUDE.md, open questions
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** CLAUDE.md § Story Mode; memory feedback_ask_on_conflicts. Agent wording.
+**Source.** CLAUDE.md § Story Mode; memory feedback_ask_on_conflicts. Agent wording, owner approved 2026-11-13.

@@ -1,7 +1,8 @@
 ---
 id: INFRA-10
 type: infra
-status: open
+status: closed
+closed: 2026-11-13
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-12 — the "ledorepo" brief (sculpting a personal Jira: tracker + lanes + deep-dive forms)
@@ -12,10 +13,8 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-10: ledorepo — decision records (DEC-NN): the axioms in one place
 
 ## Next steps
-Owner: answer the deep dive `INFRA-10-conflicts` (5 axioms, 2 cases, 10 wording approvals; owed card).
-ledorepo session, after the submit: each approved axiom becomes its own DEC; the 18 conflict drafts and the 44
-agent-worded drafts flip to `standing` (or are corrected first); then DESIGN.md's SM-INV headings and memory's
-standing do-nots cite their DEC ids; close.
+None: closed. Follow-ups live elsewhere: `campDeeds` 10 → 6 (DEC-120, the lanes); the three contradictions under
+Tracker's last box are the owner's to rule when those areas are next touched.
 
 ## Summary
 The project's ground truth is spread over DESIGN.md (SM-INV-1..15), eight `design-amendments-*.md` files, CLAUDE.md,
@@ -144,8 +143,12 @@ Worktree `CarGame-decisions`, branch `infra/infra-10-decision-records`, dev dash
 - [x] Backfill: 121 records (DEC-001..015 = SM-INV-1..15), ledger `.planning/decisions/conflicts.json`
       (9 settled by the open-alpha-ticket rule, 5 axioms over 16 drafts, 2 cases).
 - [x] The read-before-planning rule: CLAUDE.md; lines sent to the orchestrator for LANE-AGENT-BRIEF + its handoff.
-- [ ] Owner's answers applied: axioms become DECs, 62 drafts resolved to `standing`.
-- [ ] Source documents cite the DEC ids (DESIGN.md SM-INV headings, memory § Standing do-nots).
+- [x] Owner's answers applied (2026-11-13): axioms are DEC-122..126, DEC-127 one source of truth, 60 drafts now
+      standing (8 reworded per the owner's notes), DEC-067 and DEC-072 dropped; 131 records, all standing.
+- [x] Source documents corrected and citing the DEC ids (DEC-127): DESIGN.md, MILESTONES.md, items.md, ART-STYLE.md,
+      FEAT-89/103/168/69, memory. Left for the owner (the records do not cover them): what the compressor and quick-jack
+      do to a spare change beside DEC-105; whether ART-STYLE's other budget rows fall under DEC-114's floor;
+      SM-INV-14's heading says "points" where DEC-014 says good deeds.
 
 ## Decisions` sections of tickets.
    Each record quotes its source. Duplicates across sources collapse to one record citing all of them.
@@ -214,6 +217,9 @@ Worktree `CarGame-decisions`, branch `infra/infra-10-decision-records`, dev dash
 - 2026-11-13, owner: "a ruling can be an agents words if i approve them."
 - 2026-11-13, ledorepo session (not an owner ruling): a record whose ruling line is an agent's wording waits as
   `draft` until the owner approves it, so the freeze never has to be broken to fix a wording.
+- 2026-11-13, owner (dive): all five axioms approved; camp gate 6 deeds; wet-day par uses the day's grip.
+- 2026-11-13, owner (dive, AX-5 note): "One source of truth, no conflicts in the text should be the goal" (DEC-127).
+- 2026-11-13, owner (dive): "agents are free to commit whenever. push is at my command only" (DEC-092).
 
 ## Links
 Deep dive: `.planning/dives/INFRA-10-conflicts.html`. Not read by the backfill: `spirits-and-pacts.md`, `IDEAS.md`;
@@ -222,3 +228,8 @@ Left unrecorded as unclear: par grip 0.72 (code) vs 0.80 (DESIGN.md); whether hu
 
 ## Files
 `.planning/decisions/` (new) · `tools/dashboard/index.mjs` · `tools/dashboard/app.html` · CLAUDE.md § Workflow
+
+## Log
+- 2026-11-13: CLOSED. 132 records, all standing (DEC-001..134 less the dropped 067 and 072), on main. Resolution:
+  the class, the freeze check, the Decisions tab and ticket links, the backfill, the owner's conflict pass
+  (5 axioms, 2 cases, 10 wording approvals) and the text cull (DEC-127) are all landed.

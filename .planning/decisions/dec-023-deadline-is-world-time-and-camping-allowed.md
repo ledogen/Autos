@@ -1,6 +1,6 @@
 ---
 id: DEC-023
-status: draft
+status: standing
 decided: 2026-10-15
 area: economy
 governs: FEAT-113, FEAT-118, src/economy.js, deadline, camping
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** DESIGN.md SM-INV-4 deadline amendment (owner, 2026-10-15, FEAT-113); FEAT-118. Agent wording.
+**Source.** DESIGN.md SM-INV-4 deadline amendment (owner, 2026-10-15, FEAT-113); FEAT-118. Agent wording, owner approved 2026-11-13.

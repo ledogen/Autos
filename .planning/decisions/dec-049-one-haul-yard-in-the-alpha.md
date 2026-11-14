@@ -1,6 +1,6 @@
 ---
 id: DEC-049
-status: draft
+status: standing
 decided: 2026-11-07
 area: economy
 governs: FEAT-91, src/poi.js, haul yards
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** MILESTONES.md § Release cuts (FEAT-91 row); FEAT-91. Agent wording.
+**Source.** MILESTONES.md § Release cuts (FEAT-91 row); FEAT-91. Agent wording, owner approved 2026-11-13.

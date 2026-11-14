@@ -63,7 +63,7 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 | **Air filter (spare)** | Replacement for the track the player must actively *watch* — it does ~nothing until it does. **Ruled 2026-10-21:** fitting takes 15 min and sets the filter to **the spare's own condition** — every spare filter carries one, like the mounted tire: the auto shop sells them new ($10), and a roadside find is never in great shape. Sold at the auto shop; a reward from the auto shop and gas station (B–A). | Bought/found | Cash; a slot | **RATIFIED** — owner, 2026-10-21 (the item setup page) |
 | **Fuel** | The tank. Burn is a function of rpm and load, so a par-beating drive costs fuel as well as wear. **The one cost that scales with distance** — SM-INV-5 keeps wear off the distance axis, and this is what fills it. Bought at gas stations. | Gas stations (a POI type) | Cash — and the detour, if you let it get low | **RATIFIED** — owner, 2026-08-01. Reverses this row's old *NOT DESIGNED*. Ticket FEAT-50; gauge already ships (FEAT-49). See DESIGN.md "Fuel and gas stations" |
 | **Jerry can** | **A refillable 5 gal can** (owner, 2026-10-21): pour it into the tank, refill it at any pump. Fuel you carry — the cheap answer to running dry, which is otherwise the breakdown predicament (tow, or don't). **A top-tier reward**, rare on purpose: carried full, it all but retires running dry. **Ruled 2026-10-22:** poured parked, a 10 min timeskip like the emergency gas; **16 kg full** (14 kg of gas + a 2 kg plastic can — owner, 2026-10-24, matching the reference photo; was a 4 kg steel can, 18 kg). An A–S reward from the gas station; **sold at the gas station, rarely**, for $30; a very rare roadside find. **Pouring sounds like a glug glug glug** — for the jerry can and the emergency gas (owner, 2026-10-22; FEAT-120). **Built 2026-10-23 on feature/parts** (`jerryCan`, `use: 'jerry'`): poured parked in 10 min, and the can stays in the inventory; at a pump it fills after the tank, on the same counter; an A–S gas-station reward. Not built: the gas-station sale (that shop has no shelf) and the roadside find (no find system). | A reward (gas station); bought (gas station, rarely); found (very rare) | Cash; a slot; **real mass, always** — 16 kg full | **RATIFIED** — owner, 2026-10-21; every figure set 2026-10-22 (the item setup page). Was IMPLIED (falls out of the fuel ruling) |
-| **Emergency gas** | **A single-use 2 gal RotoPax** (owner, 2026-10-08). **Ruled 2026-10-21:** poured parked only, a 10 min timeskip; gone once poured. $5–10 at the gas station; a reward from gas stations and stranded motorists (B–A — mid tier, confirmed 2026-10-21), under the top-tier jerry can; never found. | Bought (gas station); a reward | Cash; a slot; 7.2 kg | **RATIFIED** — owner, 2026-10-21. In the game files (`data/items.js` `emergencyGas`, `data/offers.js` REWARDS); the grant is stubbed and the pour unbuilt |
+| **Emergency gas** | **A single-use 2 gal RotoPax** (owner, 2026-10-08). **Ruled 2026-10-21:** poured parked only, a 10 min timeskip; gone once poured. $5 (DEC-134) at the gas station; a reward from gas stations and stranded motorists (B–A — mid tier, confirmed 2026-10-21), under the top-tier jerry can; never found. | Bought (gas station); a reward | Cash; a slot; 7.2 kg | **RATIFIED** — owner, 2026-10-21. In the game files (`data/items.js` `emergencyGas`, `data/offers.js` REWARDS); the grant is stubbed and the pour unbuilt |
 | **Ice** | **The cooler's running cost** (owner, 2026-10-21). A bag lasts 72 h, so the cooler is refilled every 3 days; ice in the Ice King lasts 5 days (§2). **Ruled 2026-10-22:** $5 at the gas station and the general store; never a reward; never found. Flavor: *"Cold and wet"*. | Bought (gas station, general store) | Cash; the stop to buy it | **RATIFIED** — owner, 2026-10-21/22 (the item setup page) |
 
 > **The coffee test.** Coffee works because its cost is in a *different currency* than its payout
@@ -276,7 +276,7 @@ spends daylight, so it can't turn into a chore. Thirst is out (owner, 2026-09-30
   hunger clock; they differ in what else they do. **The roster as of 2026-10-21:** the **burger** (its
   own item at the food vendor — the standard meal, ~8 h; spoils in 16 h, $5, a C–B reward from the food
   vendor, never found), the **dinner meal** (renamed from diner meal:
-  one generic sit-down meal at the food vendor, 8 h, 30 min to eat, $5–10, eat-in only, never found;
+  one generic sit-down meal at the food vendor, 8 h, 30 min to eat, $5 (DEC-134), eat-in only, never found;
   **as a reward it is a dinner invitation** (owner, 2026-10-22): a C–B reward from residences, the
   food vendor and farms, where the customer asks you to join them for dinner — optional, 30 min, and you
   are fully fed; **built 2026-10-23** as `dinnerMeal`, a `dineIn` reward: on any job those givers post,
@@ -333,7 +333,7 @@ plus a slot**, paid on every mile you carry it, against a payoff you only occasi
 | Item | What it does | Source | Cost | Status |
 |---|---|---|---|---|
 | **Quick-jack** | Lifts the truck for roadside work. **Ruled 2026-10-22: it takes 1 h off changing a whole tire** — the spare's 2 h fit becomes 1 h — **and stacks with the compressor's 30 min** (both: 30 min). The spare does not need it: the factory jack is always in the truck (§1). **It does not shorten a plug repair** — *"you don't need to jack to plug"* (owner, 2026-10-22). $30; sold at the auto shop; an A–S reward from the auto shop and stranded motorists; never found. | Bought; a reward | Cash; a slot; real mass, always | **RATIFIED** — owner, 2026-10-22 (the item setup page). Was IMPLIED (named in DESIGN.md "The car") |
-| ~~**Breaker bar**~~ **[STRUCK 2026-10-22 — cut by the owner on the item setup page]** | Roadside wrenching. Paired with the quick-jack in the bible's own list. | — | — | **CUT** |
+| **Tire iron** | Roadside wrenching, the breaker bar's successor. A rare item: with the floor jack (the quick-jack), fitting the spare takes about 30 min instead of 2 h (DEC-105). | — | — | **RULED** — owner, 2026-11-13; FEAT-203 builds it (DEC-105) |
 | **Chain** | Chains onto a downed log for the drag. **A one-sided distance constraint** — zero force slack, hard tension taut — and the snatch impulse *is* the damage signal. | Main-mission equipment | The truck, by design | **RATIFIED premise** — `missions.md` "Main missions". *Open: carried item, or supplied by the mission?* |
 | **Fishing gear** | Required for the fishing minigame. **Proposed by the owner (2026-10-22, "prob"): three rods — Basic, Advanced and Professional.** | ? | ? | **IMPLIED / UNSPECIFIED** — see the gap note below |
 | **Cooler** | **A flat rate reduction on the spoilage clock (§1b).** Uncooled, a fish is good for about four or five hours — cook it on the spot or lose it. In the cooler it keeps for a day or two, so you can carry the catch, camp on it, and eat it tomorrow. **Ruled 2026-10-21: ~6 h uncooled → ~36 h in the cooler, and it holds 4 fish.** **Its running cost is ice** (owner, 2026-10-21): it must be refilled every 3 days (a bag of ice lasts 72 h), bought at the gas station and the general store. Sold at the general store and tackle shop, $10–30; a tackle-shop reward (A–S); a roadside find rarer than the common ones. **Primarily fishing kit** — it is the thing that lets a catch leave the water without being eaten where it was landed. Flavor: *"Keeps stuff cold"* (owner, 2026-10-22). | Bought/found | Cash; a slot; **deliberately trivial mass — which is the problem, see the note below** | **RATIFIED** — owner, 2026-08-22; every figure set 2026-10-21/22 (the item setup page). Was IDEA |
@@ -831,7 +831,7 @@ configuration that FEAT-112's load verdicts read.
 | **Extended (long) bed** | longer bed — long loads fit (a DIY bed swap or a bolt-on extension) |
 | **Flatbed** | wider deck with no sides — more room for strapped freight; loose haul is a warning and spills |
 | **Stake bed** | between the two — a bigger deck with stakes that keep most of a loose load in |
-| **Roof rack** | a second space for long, light loads; stacks with any bed |
+| **Roof rack** | adds inventory slots; stacks with any bed (DEC-028) |
 | **Light bar** | no load effect (§7) |
 
 **Pricing and finding them.** ~~A part costs what the furthest region you have unlocked charges.~~
@@ -927,12 +927,12 @@ auto shop) until set on the item setup page.~~ **Set 2026-10-22 (the item setup 
 
 | Part | Price | Reward gate | Reward from | Sold | Found |
 |---|---|---|---|---|---|
-| **Old tires** | $5–10 | C–B | auto shop, farm | auto shop | rare roadside find; they show up found or in a junkyard |
+| **Old tires** | $5 (DEC-134) | C–B | auto shop, farm | auto shop | rare roadside find; they show up found or in a junkyard |
 | **Standard tires** | $10–30 | B–A | auto shop, stranded motorist, farm | auto shop | rare roadside find |
 | **Sport tires** | $10–30 | A–S | auto shop, stranded motorist | auto shop | open |
 | **Off-road tires** | $10–30 | A–S | farm, auto shop, work site | auto shop | open |
 | **Off-road suspension (lift kit)** | $10–30 | B–A | work site, auto shop, farm | auto shop | never |
-| **Steel wheel** | $5–10 | B–A | auto shop, farm, residence | auto shop | rare roadside find |
+| **Steel wheel** | $5 (DEC-134) | B–A | auto shop, farm, residence | auto shop | rare roadside find |
 
 **A flat needs a spare** (owner, 2026-10-21). The spare, a wheel and a tire are all mission rewards and
 all sold at the auto shop — but only the spare, a tire already mounted on a wheel, goes on at the
@@ -1050,7 +1050,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 | Acts on | Consumable | Equipable | Active |
 |---|---|---|---|
 | **Driver / energy** | coffee, fish, **meals (§1d)** | camp energy gear | coffee, energy drink, snacks |
-| **Truck / damage** | mounted tire, air filter, **zip ties, duct tape, stop-leak, tire patches** | parts (§3), quick-jack, ~~breaker bar~~, **hi-lift, bike pump (always), compressor** | Host charm |
+| **Truck / damage** | mounted tire, air filter, **zip ties, duct tape, stop-leak, tire patches** | parts (§3), quick-jack, tire iron (DEC-105), **hi-lift, bike pump (always), compressor** | Host charm |
 | **Navigation / info** | — | map, beacon, GPS, shortcut GPS, **light bar**, *CB radio (FEAT-119)* | — |
 | **Cargo / mission** | ~~*straps (FEAT-110)*~~ **bubble wrap, furniture pad, heavy-duty pad (§3e)** | cooler, chain, **rubber bed mat, bedliner** | — |
 | **Camp / night** | — | camp vibe gear, **backpacks (§2c)** | — |
@@ -1060,16 +1060,16 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 
 | Item | Form | What it does | Note |
 |---|---|---|---|
-| **Zip ties** | Consumable | Field repair: restores **10%** condition on a light component — **headlights and body panels** (the `armor*` and `headlight*` tracks in `src/damage.js`; ~~the radiator~~ struck by the owner 2026-11-13: "just stop leak") | Gets you home, not fixed. **Figures set 2026-10-21:** 5 per pack, $5–10 at the general store and auto shop (**$10**, owner 2026-10-24), an auto-shop reward (B–A), a rare roadside find. Flavor: *"A mechanic's best friend"* (owner, 2026-10-22). **The repair is built on feature/parts** (2026-10-23), like duct tape's: picked on the damage screen, 15 min a use, never past **80%** [DEFAULT] |
-| **Duct tape** | Consumable | Field repair: **20%** on **body panels** (2026-10-21; was ~25%) | The bigger patch, narrower target. **Holds for the run; 15 min per use** (owner, 2026-10-20). **Figures set 2026-10-21:** 3 uses per roll, $5–10 at the general store, a reward from the auto shop, gas station and general store (B–A), a rare roadside find. **In the game 2026-10-23** (`ductTape`): the reward is live on main. **The repair is built on feature/parts** (2026-10-23): picked on the damage screen, 15 min a use, never past **80%** [DEFAULT — no field-repair cap was ruled] |
+| **Zip ties** | Consumable | Field repair: restores **10%** condition on a light component — **headlights and body panels** (the `armor*` and `headlight*` tracks in `src/damage.js`; ~~the radiator~~ struck by the owner 2026-11-13: "just stop leak") | Gets you home, not fixed. **Figures set 2026-10-21:** 5 per pack, $5 (DEC-134) at the general store and auto shop (**$10**, owner 2026-10-24), an auto-shop reward (B–A), a rare roadside find. Flavor: *"A mechanic's best friend"* (owner, 2026-10-22). **The repair is built on feature/parts** (2026-10-23), like duct tape's: picked on the damage screen, 15 min a use, never past **80%** [DEFAULT] |
+| **Duct tape** | Consumable | Field repair: **20%** on **body panels** (2026-10-21; was ~25%) | The bigger patch, narrower target. **Holds for the run; 15 min per use** (owner, 2026-10-20). **Figures set 2026-10-21:** 3 uses per roll, $5 (DEC-134) at the general store, a reward from the auto shop, gas station and general store (B–A), a rare roadside find. **In the game 2026-10-23** (`ductTape`): the reward is live on main. **The repair is built on feature/parts** (2026-10-23): picked on the damage screen, 15 min a use, never past **80%** [DEFAULT — no field-repair cap was ruled] |
 | ~~**Coolant jug**~~ | — | **STRUCK (owner, 2026-10-16).** FEAT-51 shipped with no coolant mechanic — radiator condition *is* the cooling capacity — so there is nothing to top up | Replaced by stop-leak, below |
-| **Stop-leak** | Consumable | Field repair: restores **15%** radiator condition (owner, 2026-10-16). Under FEAT-51 that is directly cooling capacity — a 35% radiator patched to 50% holds full load again | Aimed at the overheat → power loss → engine wear chain (`missions.md` §3c). Pairs with heavy hauls on long grades. **Figures set 2026-10-21:** one use per bottle; **never patches the radiator past 50%**; $5–10 at the gas station and auto shop (**$10**, owner 2026-10-24), a reward from both (B–A), never found. Flavor: *"Maybe this will keep 'er going"* (owner, 2026-10-22) |
+| **Stop-leak** | Consumable | Field repair: restores **15%** radiator condition (owner, 2026-10-16). Under FEAT-51 that is directly cooling capacity — a 35% radiator patched to 50% holds full load again | Aimed at the overheat → power loss → engine wear chain (`missions.md` §3c). Pairs with heavy hauls on long grades. **Figures set 2026-10-21:** one use per bottle; **never patches the radiator past 50%**; $5 (DEC-134) at the gas station and auto shop (**$10**, owner 2026-10-24), a reward from both (B–A), never found. Flavor: *"Maybe this will keep 'er going"* (owner, 2026-10-22) |
 | **Hi-lift jack** | Carried tool (real mass) | **Right a rolled truck** where it lies — Halo's flip, in a truck. Replaces the tow for a rollover that didn't break anything. **Ruled 2026-10-22 (owner):** usable on **any roll the death check did not end**. It **applies a roll torque for a set time (2–5 s)** to a truck that is not on its wheels, in **the direction the player chooses**. **It happens live in the physics** — you watch it — not as a timeskip. **A cooldown** stops abuse, and **it will not flip the truck in every circumstance**. 13 kg (a real 48″ hi-lift). Sold at the auto shop; a reward from the auto shop and stranded motorists | SM-INV-1 is answered by the ruling: the death check runs first, and only a roll it did not end is the jack's. A separate tool from the quick-jack (§2). **Ruled 2026-10-24:** an A–S reward, $10–30, never found. Open: the torque and cooldown figures |
 | **Light bar** | Fitted part | See further at night | Simple and safe. Pairs with the Night Owl's nocturnal bargain: makes his hours more usable, not safe. Real mass and drag up high, if we want a cost |
-| **Tire plug kit** *(was tire patches — renamed 2026-10-21)* | Consumable | **Plugging takes 30 min** (owner, 2026-10-20). **One plug per kit.** Sold at the auto shop, $5–10; a bonus item from the auto shop, gas station and work site (B–A); a rare roadside find (2026-10-21). In the game files as `tirePlugKit`. **Fixes the puncture and nothing else** — the tire keeps whatever condition it had when it popped. Restores **no durability**; a worn tire is still worn | Owner, 2026-09-30 (brought back from the rejected list; no small-vs-large puncture split). A patch alone leaves the tire flat — it still has to be re-inflated (pump or compressor, below); the 30 min is folded into those totals (2026-10-21). The spare trade: the spare is real mass all the time and a fresh tire; the patch is light and puts you back on the same rubber. §1's spare-tire row calls a puncture a hard fail; with patches it is recoverable at the roadside. Kept worth carrying on good tires by FEAT-93 (hazard punctures at any condition). Flavor: *"I hope I don't have to use this"* (owner, 2026-10-22) |
+| **Tire plug kit** *(was tire patches — renamed 2026-10-21)* | Consumable | **Plugging takes 30 min** (owner, 2026-10-20). **One plug per kit.** Sold at the auto shop, $5 (DEC-134); a bonus item from the auto shop, gas station and work site (B–A); a rare roadside find (2026-10-21). In the game files as `tirePlugKit`. **Fixes the puncture and nothing else** — the tire keeps whatever condition it had when it popped. Restores **no durability**; a worn tire is still worn | Owner, 2026-09-30 (brought back from the rejected list; no small-vs-large puncture split). A patch alone leaves the tire flat — it still has to be re-inflated (pump or compressor, below); the 30 min is folded into those totals (2026-10-21). The spare trade: the spare is real mass all the time and a fresh tire; the patch is light and puts you back on the same rubber. §1's spare-tire row calls a puncture a hard fail; with patches it is recoverable at the roadside. Kept worth carrying on good tires by FEAT-93 (hazard punctures at any condition). Flavor: *"I hope I don't have to use this"* (owner, 2026-10-22) |
 | **Bike pump** | Always in the truck — not bought, not a slot | Re-inflates a patched tire. **Plug + pump is 2 h in all** (owner, 2026-10-21) | Owner, 2026-09-30. The baseline that makes a patch usable at all. The cost is daylight. **The repair card (owner, 2026-10-21):** two confirm buttons — *Pump the tire by hand* (always there, 2 h, a small pump pictogram) and, if you own a compressor, *Inflate tire* with the compressor's icon (30 min). Both are whole-repair times, plugging included. Follows UI-STYLE.md |
 | **Compressor** | Carried tool | Re-inflates a patched tire. **Plug + compressor is 30 min in all** (owner, 2026-10-21) | Owner, 2026-09-30 — **brought back** in a different job: not airing down for grip (our tire model has no pressure–grip term), but **turning a 2 h patch stop into a 30 min one**. Worthless without patches; patches are slow without it. In the game files as `compressor` (2026-10-21). No inflation state needed — re-inflation is just a timeskip, and the `flat[]` flag clears at the end of it. **Ruled 2026-10-22:** it also **takes 30 min off the 2 h spare change**, stacking with the quick-jack (§1). It does not need the engine running. 4 kg (12 V portable). **$20** (replaces the shop session's $15 stand-in); sold at the auto shop, rarely; an A–S reward from the auto shop and work sites (rare); never found |
-| **Rubber bed mat** | Carried (loose in the bed) | Raises friction between haul cargo and the bed floor. The load stops **sliding** but can still **bounce**, so you still read the road | The cheap, early version. Physically one number — the cargo-to-floor friction coefficient in the bed well. **It is the lesser option** (owner, 2026-09-30). **Ruled 2026-10-22: it grips less than the bedliner — μ 0.30** (today's bed is 0.15). $5–10 at the auto shop; a B–A reward from the firewood yard; never found. **Still needs an in-game visual** |
+| **Rubber bed mat** | Carried (loose in the bed) | Raises friction between haul cargo and the bed floor. The load stops **sliding** but can still **bounce**, so you still read the road | The cheap, early version. Physically one number — the cargo-to-floor friction coefficient in the bed well. **It is the lesser option** (owner, 2026-09-30). **Ruled 2026-10-22: it grips less than the bedliner — μ 0.30** (today's bed is 0.15). $5 (DEC-134) at the auto shop; a B–A reward from the firewood yard; never found. **Still needs an in-game visual** |
 | **Bedliner** | Fitted part (service shop) | The same friction increase as the mat, done properly: **works well, never wears out** | **The real, desirable upgrade** (owner, 2026-09-30). "Permanent" means for the run — like every part it dies with the run (SM-INV-8). Still only stops sliding, never bouncing, so the FEAT-110 objection doesn't return. **Ruled 2026-10-22: μ 0.60.** $10–30 at the auto shop, very rarely; an A–S reward from the firewood yard (haul jobs); never found. **Still needs an in-game visual** |
 
 ### Item setup rulings (owner, 2026-10-20 — the item setup page)
@@ -1127,7 +1127,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 - **Groceries are also sold at farms** (§1); every grocery figure is now set: one meal a bag, fresh 24 h,
   +30 min to cook, $5, a farm and general-store reward (B–A), never found.
 - **Jerry can** (new): a refillable 5 gal can, a top-tier reward. **Emergency gas** is the mid-tier one (B–A):
-  parked only, 10 min, single use, $5–10, gas station and stranded motorist (B–A), never found (§1).
+  parked only, 10 min, single use, $5 (DEC-134), gas station and stranded motorist (B–A), never found (§1).
 - **Snacks**: peanuts 3 h × 3, spicy chips 3 h × 3, candy bar 3 h × 4, gummy worms 2 h × 5 (§1d).
 - **Spare air filter**: 15 min to fit; each spare carries its own condition — new from the shop ($10),
   never great from the roadside (§1).
@@ -1148,7 +1148,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 - **Hi-lift jack** (§7): a live roll torque for 2–5 s on any roll the death check did not end, the
   player picks the direction, with a cooldown; 13 kg; auto shop; a reward from the auto shop and
   stranded motorists.
-- **Cut:** the breaker bar (§2), and ABS / traction control as parts — *"these are assists available
+- **Cut:** ABS / traction control as parts — *"these are assists available
   in the settings menu. not parts"* (Rejected, below).
 - **Jerry can** (§1): every figure set — 18 kg full, 10 min parked pour, $30, rarely sold at the gas
   station, a gas-station reward (A–S), a very rare find. Both fuel cans pour with a glug (FEAT-120).
@@ -1178,7 +1178,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 - **Prices (the shop session's stand-ins, now set):** stock engine (used) **$60**; engine rebuild at
   My Vehicle 0 → 80% **$64** — *"it should be more expensive to repair an engine than to swap in a used
   one"*; stock radiator **$22**; radiator weld 0 → 80% **$22**; headlight **$6**; tire plug kit on the
-  shelf **$7** (inside §7's $5–10); the shop patching a flat **$5**, 30 min; compressor **$20**.
+  shelf **$7** (inside §7's $5 (DEC-134)); the shop patching a flat **$5**, 30 min; compressor **$20**.
 - **Welded differential replaces the locker** and a **sport suspension tier** is added (§3b).
 - **Dinner meal** as a reward is a dinner invitation (§1d).
 - **The quick-jack does not shorten a plug repair** — *"you don't need to jack to plug"* — only the spare
@@ -1259,7 +1259,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
   into cold worldgen. Killed.
 - **ABS / traction control as parts** (owner, 2026-10-22): *"these are assists available in the
   settings menu. not parts."* Killed as items; the assists stay in settings.
-- **Breaker bar** (owner, 2026-10-22): cut.
+- **Breaker bar** (owner, 2026-10-22): it returns as the tire iron, a rare item (DEC-105, replaces the 2026-10-22 wording).
 
 ### Spirit tokens — proposed pattern, not ruled
 
@@ -1304,7 +1304,7 @@ camber), but it is a reversal of a written ruling — **owner's call**.
 4. **Consumables-as-real-mass is stated but never quantified.** It's the rule that makes tools
    interesting (§2) and it currently has no numbers behind it.
 5. **[RESOLVED 2026-10-22]** The quick-jack is designed (−1 h off the spare change, §2) and the
-   breaker bar is cut. *Was:* quick-jack and breaker bar are named but undesigned; they appear in one
+   breaker bar returns as the tire iron, a rare item (DEC-105, replaces the 2026-10-22 wording). *Was:* quick-jack and breaker bar are named but undesigned; they appear in one
    sentence of DESIGN.md as examples of stowed consumables.
 6. **The chain may not be an item at all.** If the log drag supplies it, it belongs to the mission,
    not the inventory. Cheap to decide, and it changes whether it needs an asset.

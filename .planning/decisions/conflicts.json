@@ -385,5 +385,24 @@
    "alphaTickets": []
   }
  ],
- "overBudget": []
+ "overBudget": [],
+ "resolved": {
+  "at": "2026-11-13",
+  "by": "the owner, deep dive INFRA-10-conflicts",
+  "axioms": {
+   "AX-1": "DEC-122",
+   "AX-2": "DEC-123",
+   "AX-3": "DEC-124",
+   "AX-4": "DEC-125",
+   "AX-5": "DEC-126"
+  },
+  "cases": {
+   "DEC-120": "A",
+   "DEC-121": "A"
+  },
+  "dropped": [
+   "DEC-067",
+   "DEC-072"
+  ]
+ }
 }

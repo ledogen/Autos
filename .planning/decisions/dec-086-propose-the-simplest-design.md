@@ -1,6 +1,6 @@
 ---
 id: DEC-086
-status: draft
+status: standing
 decided: 2026-06-30
 area: process
 governs: process, design
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_prefer_simplest_design. Date from the memory note. Agent wording.
+**Source.** memory feedback_prefer_simplest_design. Date from the memory note. Agent wording, owner approved 2026-11-13.

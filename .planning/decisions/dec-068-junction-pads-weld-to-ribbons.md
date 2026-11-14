@@ -1,6 +1,6 @@
 ---
 id: DEC-068
-status: draft
+status: standing
 decided: 2026-10-12
 area: roads
 governs: BUG-82, src/road.js, junction pads
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** The round/flared pad rung and the back-arc bulb (BUG-82 72e72e6; last bulb retired 4bd7ad4).
 
-**Source.** memory MEMORY.md standing do-nots (BUG-82). Date from the memory note. Agent wording.
+**Source.** memory MEMORY.md standing do-nots (BUG-82). Date from the memory note. Agent wording, owner approved 2026-11-13.

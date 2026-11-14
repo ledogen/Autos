@@ -1,6 +1,6 @@
 ---
 id: DEC-059
-status: draft
+status: standing
 decided: 2026-08-03
 area: process
 governs: test/gates.mjs, seeds, world-gen calls
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory project_no_standard_seeds. Date from the memory note. Agent wording.
+**Source.** memory project_no_standard_seeds. Date from the memory note. Agent wording, owner approved 2026-11-13.

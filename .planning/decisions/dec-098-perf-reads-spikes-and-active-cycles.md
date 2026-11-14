@@ -1,6 +1,6 @@
 ---
 id: DEC-098
-status: draft
+status: standing
 decided: 2026-11-12
 area: perf
 governs: PERF-40, test/playtest-bench.mjs, test/lib/ioreport.py
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_perf_spikes_not_averages; CLAUDE.md § Diagnostic tools (PERF-40). Date from the memory note. Agent wording.
+**Source.** memory feedback_perf_spikes_not_averages; CLAUDE.md § Diagnostic tools (PERF-40). Date from the memory note. Agent wording, owner approved 2026-11-13.

@@ -1,6 +1,6 @@
 ---
 id: DEC-024
-status: draft
+status: standing
 decided: 2026-11-13
 area: story
 governs: FEAT-194, src/main.js, day clock, parking brake
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** FEAT-194 source (owner, 2026-11-11 inbox, three items) and part 3 (owner, 2026-11-13). Agent wording.
+**Source.** FEAT-194 source (owner, 2026-11-11 inbox, three items) and part 3 (owner, 2026-11-13). Agent wording, owner approved 2026-11-13.
