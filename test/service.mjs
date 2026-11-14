@@ -7,7 +7,7 @@
 //   2. repair(): charges, sets the target (never past the cap), adds the labour hours; refuses a
 //      target off the list; straightening zeroes the bent geometry; a wallet that can't cover it
 //      changes nothing. The shop patches a flat: air back in, condition unchanged.
-//   3. Buy & fit off the shelf: priced by condition × tier, charges, empties the slot, bolts the part on
+//   3. Buy & fit off the shelf: priced by condition × tier (buyQuote, the Shop tab's price and hours), charges, empties the slot, bolts the part on
 //      with its condition, adds the socket's labour; the old part goes straight into the inventory WITH
 //      its wear and its puncture (owner 11-04: no sell / keep prompt) and sells from there (half price ×
 //      condition); exchanging it back on brings that wear back, on any corner for a tire. A flat tire
@@ -121,6 +121,9 @@ damage.set('damperRear', 0.2)
 stock(['dampersHD'], ['tireSport', 0.5], ['tirePlugKit'])
 check('a used part is priced by its condition, × tier', near(svc.shelfPrice(1), PARTS.tireSport.price * 0.5)
   && (tier = 2, near(svc.shelfPrice(1), PARTS.tireSport.price)) && (tier = 1) && svc.shelfPrice(2) > 0)
+check('FEAT-212: the Shop tab\'s quotes — to carry is the shelf price in no time; fitted adds the fitting\'s price and hours',
+  near(svc.buyQuote(0).price, PARTS.dampersHD.price) && svc.buyQuote(0).hours === 0
+  && near(svc.buyQuote(0, 'dampersRear').price, PARTS.dampersHD.price + SU.price) && svc.buyQuote(0, 'dampersRear').hours === 0.75)
 check('buy heavy-duty rear shocks, fitted for the shop\'s minimum charge', svc.buyAndFit(0, 'dampersRear') && near(wallet, 100 - PARTS.dampersHD.price - SU.price)
   && params.suspensionDampingRear === PARTS.dampersHD.patch.suspensionDampingRear && damage.get('damperRear') === 1)
 check('…the slot is empty now', shelf[0] === null && !svc.buyAndFit(0, 'dampersRear'))
