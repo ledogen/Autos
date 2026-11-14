@@ -104,9 +104,12 @@ console.log('\n§3 nothing but a core contact can bend a rim')
   // The cores collide with DEBRIS ONLY (see createVehicleChassis), so terrain, roads and static
   // props can never produce this signal at all. Everything else the model integrates is hammered
   // here for a simulated minute with the cores untouched.
-  const d = fresh()
+  // BUG-160 (DEC-169): the hard bottoming now bends the wheel too, through the bump-stop path. The twin runs the same
+  // bump stops alone, so whatever else the rim takes is what this section forbids.
+  const d = fresh(), twin = fresh()
   const vs = { rimForce: [0, 0, 0, 0], tireFlat: [8000, 8000, 8000, 8000], bumpForce: [0, 0, 0, 0],
                strutCompVel: [3, 3, 3, 3], slipVel: [10, 10, 10, 10] }
+  const vb = { bumpForce: [0, 0, 0, 0] }
   for (let i = 0; i < 60 / DT; i++) {
     // Cycle the bump stops so they bank real landings rather than resting on them (a steady load
     // deliberately never banks — see the decay rule).
@@ -114,10 +117,10 @@ console.log('\n§3 nothing but a core contact can bend a rim')
     // Well past the alignment floor: the point of this line is that the OTHER tracks all move, so
     // the rim staying pristine is a real result and not an inert state. The floor rose with the
     // progressive carcass (18 -> 60 kN), so 20 kN no longer reaches alignment.
-    for (let k = 0; k < 4; k++) vs.bumpForce[k] = on ? 120000 : 0
-    d.step(vs, P, DT)
+    for (let k = 0; k < 4; k++) vs.bumpForce[k] = vb.bumpForce[k] = on ? 120000 : 0
+    d.step(vs, P, DT); twin.step(vb, P, DT)
   }
-  ok(d.get('wheelFL') === 1, 'a minute of max cornering load, repeated hard bottoming and full wheelspin bends no rim')
+  ok(d.get('wheelFL') === twin.get('wheelFL'), `a minute of max cornering load and full wheelspin bends no rim; only the hard bottoming does (${((1 - d.get('wheelFL')) * 100).toFixed(1)} %, BUG-160)`)
   ok(d.get('tireFL') < 1 && d.get('springFront') < 1 && d.get('damperFront') < 1,
     '...while the tracks those signals DO feed all moved, so the state was not simply inert')
   ok(d.get('alignFL') < 1, '...including the alignment those hard bumps threw out — the crosstalk still fires')

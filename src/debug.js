@@ -514,6 +514,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // under air yields only this many times past its flat-tire yield.
   dmgFolder.add(DAMAGE_PARAMS, 'rimPinchRoadMult', 4, 60, 1).name('Rim pinch pops tire (x wheel load)')
   dmgFolder.add(DAMAGE_PARAMS, 'rimInflatedMult', 1, 4, 0.1).name('Wheel yield under air (x)')
+  dmgFolder.add(DAMAGE_PARAMS, 'wheelBumpEnergyMult', 1, 4, 0.1).name('Wheel bends at x spring energy')   // BUG-160
   void _readout
 
   // ── Engine temperature (FEAT-51) ──────────────────────────────────────────────────────────────

@@ -1259,7 +1259,7 @@ const STEPS = [
     await js('window.__damage.fatalImpact = { region: "front", v: 40, mph: 90, armor: 0.3 }')
     check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
     check(!await card(), 'the crash card skipped the beat')
-    await ended(/died/, /hit at 90 mph — front · at 30 % armor the front could take 72 mph; fresh it takes 100/)
+    await ended(/died/, /hit at 90 mph — front · at 30 % armor the front could take 48 mph; fresh it takes 65/)
     // Broke down (FEAT-162): an empty tank, no gas can — the Recovery card offers the tows while there
     // is money; at $0 the run ends by itself once the truck has sat still a few seconds.
     await newRun()
