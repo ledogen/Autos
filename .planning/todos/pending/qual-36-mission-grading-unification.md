@@ -12,8 +12,8 @@ lane: unplaced
 # QUAL-36: Unify how mission types are graded, presented and rewarded
 
 ## Next steps
-Owner answers the deep dive (`.planning/dives/QUAL-36-mission-grading.html`, 8 questions). Then a lane builds the
-chosen direction and the bug fixes below.
+Built 2026-11-14 on feature/spare (DEC-178..183). Left: the owner's words (owed card qual36-words), the FEAT-140
+"Freight is units" line in missions.md:475, and a look at the bar on a calm-impatient job. Then close.
 
 ## Summary
 Every type tips on the same time line (whole tip at ratio 0.652, half at par, none at 1.348), but only courier and
@@ -32,12 +32,12 @@ code-side defects found, independent of the direction chosen:
 - Haul stock rolls 14–30 (`HAUL_STOCK`) under a 1-deed line of 18; a 14–17 yard posts an unreachable rung.
 
 ## Tracker
-- [ ] Owner answers the dive
-- [ ] Larry's item: paid at its gate, or no longer rolled (per `larry-item`)
-- [ ] Trait card text matches what the trait does on each family
-- [ ] Demolition's bar follows the ruling (`direction` / `demolition-bar`)
-- [ ] Haul stock vs the 1-deed line (per `haul-floor`)
-- [ ] The chosen direction built, gates updated (`economy`, `rank-timer`, `offer-board`)
+- [x] Owner answers the dive
+- [x] Larry's item: paid at its gate, or no longer rolled (per `larry-item`)
+- [x] Trait card text matches what the trait does on each family
+- [x] Demolition's bar follows the ruling (`direction` / `demolition-bar`)
+- [x] Haul stock vs the 1-deed line (per `haul-floor`)
+- [x] The chosen direction built, gates updated (`economy`, `rank-timer`, `offer-board`)
 - [ ] missions.md / DESIGN.md type table updated (demolition row; drop the stale FEAT-140 "freight is units" line)
 
 ## Open questions
@@ -51,6 +51,7 @@ Deep dive: `.planning/dives/QUAL-36-mission-grading.html`
 `data/offers.js` · `test/economy.mjs` · `test/rank-timer.mjs` · `test/offer-board.mjs` · `test/paper-route.mjs`
 
 ## Log
+- 2026-11-14: built per the answers, DEC-178..183; Larry holds the item (runPaper.held, handed over parking at his house). Gates rank-timer/offer-board updated.
 - 2026-11-13: dive written from the code at e26da3d2 (feature/content). Worked examples rolled and routed headlessly
   on random seeds 3230259412, 1046436846, 2930777188 (plus 2045452201, 3599450461 for haul and fragile cases), priced
   with the real economy functions. No game code changed.

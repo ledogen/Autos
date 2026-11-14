@@ -136,10 +136,12 @@ export const PAPER_PARAMS = {
  */
 export const runPaper = {
     tier: 0,
+    held: [],   // QUAL-36 (DEC-182): items Larry holds for the player — [{ rewardId, name, cost }], kept until collected at his house
 }
 
 export function resetPaperRun () {
     runPaper.tier = 0
+    runPaper.held = []
 }
 
 /** How many customers this tier's route visits. */
@@ -1478,6 +1480,7 @@ export class PaperRouteSystem {
             base:      r.base,          // to the cent, base + tip === payout (splitPayout)
             tip:       r.tip,
             points:    settled.points ?? 0,
+            award:     settled.award ?? null,   // QUAL-36: the item Larry now holds, if the round earned it
             advanced,
             nextTier:  advanced ? customersForTier() : null,
         }
