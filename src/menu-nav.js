@@ -32,6 +32,8 @@ function menuContainer () {
   if (re?.style.display === 'block') return re
   const tc = $('towel-card')   // FEAT-146: the towel's confirm card stands in for the pause menu
   if (tc?.style.display === 'flex') return tc
+  const tu = $('tut-card')   // FEAT-184: the intro's card (play / skip) holds the truck like a menu
+  if (tu?.style.display === 'flex') return tu
   const pm = $('pause-menu')
   if (pm?.style.display === 'flex') return pm.classList.contains('settings') ? $('mm-settings-panel') : pm
   const ss = $('story-seed-modal')

@@ -63,17 +63,18 @@ export const FIRING = [
     { speaker: 'The manager', text: `I'm letting you go. Leave the hat. And don't come back asking for shifts &mdash; there won't be any.` },
 ]
 
-/** Mom's call, the moment the firing ends: she sends you home for the night (FEAT-170). Her casserole,
- *  the first job (data/offers.js FIRST_JOB), is the morning's. */
+/** Mom's call, once the player chose the tutorial at the intro's card (FEAT-184): she sends you home for the night
+ *  (FEAT-170). The morning goes back to the burger joint for the last paycheck (DEC-153). */
 export const MOM_CALL = [
     { speaker: 'Mom', text: `Heard about the job, honey. Come home tonight &mdash; your old bed's made up.` },
-    { speaker: 'Mom', text: `I made your uncle a casserole and he isn't answering. You can run it over in the morning. `
+    { speaker: 'Mom', text: `You can pick up your last check in the morning. `
         + `Press <span class="dlg-key">M</span> for the map if you forgot the way home.` },
 ]
 
-/** Larry, once the first job is put away: this card, then RUN_INTRO (the goal, the deed rule, the pay rule). */
-export const LARRY_WELCOME = [
-    { speaker: 'Uncle Larry', text: `Casserole, huh. Your mom worries. I heard about the burger place &mdash; their loss.` },
+/** FEAT-184 (DEC-153): the played tutorial's last act — parked at the burger joint the morning after, the last paycheck.
+ *  Its clock goes to 19:30, 24 h after the firing (DEC-159). PLACEHOLDER: the owner writes these words (FEAT-148). */
+export const PAYCHECK = [
+    { speaker: 'The manager', text: `[placeholder] Your last check. Don't spend it all in one place.` },
 ]
 
 /** FEAT-184 (DEC-152, DEC-150): a skip lands outside the burger joint, and the manager hands over the last check. The
@@ -82,7 +83,7 @@ export const BOSS_CHECK = [
     { speaker: 'The manager', text: `And just so you have no excuse to come back, here's your last check.` },
 ]
 
-/** FEAT-184 (DEC-155): after a skip, Larry calls, then RUN_INTRO. PLACEHOLDER: the owner writes these words (FEAT-148).
+/** FEAT-184 (DEC-155): once the last paycheck is in hand (the skip's or the tutorial's), Larry calls, then RUN_INTRO. PLACEHOLDER: the owner writes these words (FEAT-148).
  *  The owner's brief for them: he offers you a side gig delivering papers, and reminds you of the expedition camp and
  *  the good deeds (RUN_INTRO carries the camp and the deeds today). */
 export const LARRY_CALL = [
@@ -148,7 +149,8 @@ export const TUT = {
     // FEAT-184 stage 5: breakfast is yours to eat — one of her packed lunches, from the inventory.
     'tut-breakfast': [{ speaker: 'Mom', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach. `
         + `<span class="dlg-key">Tab</span>, and pick one of the lunches I packed you.` }],
-    'tut-mapcard': [{ speaker: 'Mom', text: `The casserole's ready. Park at mine and look at my card: it shows you the way to Larry's.` }],
+    // FEAT-184 (DEC-153): woken, the morning goes back to the joint for the last paycheck. PLACEHOLDER words.
+    'tut-morning': [{ speaker: 'Mom', text: `Your last check's waiting at that burger place. Follow the line, and park out front.` }],
     'tut-map': [{ speaker: 'Mom', text: `You can always open the map with <span class="dlg-key">M</span>.` }],
 }
 
@@ -166,4 +168,7 @@ export const DLG = {
     momCall: 'mom-call',
     skipped: 'opening-skipped',   // FEAT-170: the opening was held-to-skip — no first-use cards this run
     bossCheck: 'boss-check',   // FEAT-184: the skip's last check
+    played: 'tutorial-played',   // FEAT-184: "play the tutorial" chosen at the intro's card
+    morning: 'tut-morning',      // FEAT-184 (DEC-153): the evening is over; the morning goes to the joint
+    paycheck: 'paycheck',        // FEAT-184: the tutorial's last act heard — free will from here
 }

@@ -60,7 +60,7 @@
       user-select: none;
     }
     /* FEAT-42: #resume-card is the pause box's sibling — a resumed run opens frozen under it until any key. */
-    #pause-menu, #resume-card, #towel-card {
+    #pause-menu, #resume-card, #towel-card, #tut-card {
       display: none;
       position: fixed;
       top: 50%;
@@ -78,7 +78,7 @@
       z-index: 100;
       min-width: 200px;
     }
-    #pause-menu .pm-title, #resume-card .pm-title, #towel-card .pm-title {
+    #pause-menu .pm-title, #resume-card .pm-title, #towel-card .pm-title, #tut-card .pm-title {
       color: var(--accent-system);
       font-size: 14px;
       letter-spacing: 2px;
@@ -86,7 +86,7 @@
       margin-bottom: 6px;
     }
     #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text; }
-    #pause-menu button, #towel-card button {
+    #pause-menu button, #towel-card button, #tut-card button {
       background: none;
       border: 1px solid var(--line-control);
       color: var(--text-body);
@@ -98,7 +98,7 @@
       text-align: left;
       transition: background 0.1s, color 0.1s;
     }
-    #pause-menu button:hover, #towel-card button:hover {
+    #pause-menu button:hover, #towel-card button:hover, #tut-card button:hover {
       background: rgba(255, 255, 255, 0.08);
       color: var(--text-bright);
       border-color: var(--line-hover);
@@ -110,6 +110,8 @@
     #pause-menu .pm-why:empty { display: none; }
     /* FEAT-146: the towel's confirm card (owner, 2026-10-31: a card in the owner's words, not a double click). */
     #towel-card { max-width: 400px; }
+    /* FEAT-184 (DEC-147): the intro's card — play the tutorial, or skip it. The towel card's shape. */
+    #tut-card { max-width: 400px; }
     #towel-card p { margin: 0 0 6px; line-height: 1.5; text-align: center; }
     /* FEAT-43: Story Mode seed prompt (minimal; full styling deferred to FEAT-41). */
     #story-seed-modal {
@@ -1595,6 +1597,11 @@
        (src/story.js). The beta mission generator it used to launch is now Quick Job, surfaced as a
        corner button INSIDE story mode (#quickjob-btn), not a pause-menu entry. -->
   <div id="resume-card"><div class="pm-title">paused</div>press any key to resume</div>
+  <div id="tut-card">   <!-- FEAT-184 (DEC-147): the end of the intro (main.js _syncTutCard) -->
+    <div class="pm-title">tutorial</div>
+    <button id="tc-play">play the tutorial</button>
+    <button id="tc-skip">skip</button>
+  </div>
   <div id="towel-card">
     <div class="pm-title">give up</div>
     <p>Are you sure you want to end your run? This will permanently delete the save file for this run.</p>
@@ -1658,7 +1665,6 @@
       <div class="mm-title">autos</div>
       <button id="mm-continue" style="display:none">continue</button>   <!-- FEAT-42: only while a run is saved -->
       <button id="mm-new">new game</button>   <!-- FEAT-156: the game mode is a row on the new-game page -->
-      <button id="mm-tutorial">tutorial</button>   <!-- FEAT-184: the tutorial, played on purpose; never touches the save -->
       <button id="mm-settings">settings</button>
     </div>
     <!-- FEAT-41 run setup = the GENERATION settings: what the world and the truck are. The selector rows
