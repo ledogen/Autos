@@ -1,6 +1,6 @@
 ---
 id: DEC-061
-status: draft
+status: standing
 decided: 2026-10-23
 area: world
 governs: MILESTONES.md, Highway, Shortcut
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** MILESTONES.md § Release cuts ("Highway/Shortcut pair) is beta"). Agent wording.
+**Source.** MILESTONES.md § Release cuts ("Highway/Shortcut pair) is beta"). Agent wording, owner approved 2026-11-13.

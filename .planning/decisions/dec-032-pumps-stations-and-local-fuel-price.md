@@ -1,6 +1,6 @@
 ---
 id: DEC-032
-status: draft
+status: standing
 decided: 2026-11-13
 area: economy
 governs: FEAT-209, FEAT-55, src/economy.js, fuel price
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** One flat price at every pump.
 
-**Source.** FEAT-209 (owner inbox 2026-11-13; built, open questions stand); DESIGN.md § Fuel and gas stations. Agent wording.
+**Source.** FEAT-209 (owner inbox 2026-11-13; built, open questions stand); DESIGN.md § Fuel and gas stations. Agent wording, owner approved 2026-11-13.

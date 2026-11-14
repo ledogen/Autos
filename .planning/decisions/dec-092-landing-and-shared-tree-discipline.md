@@ -1,18 +1,18 @@
 ---
 id: DEC-092
-status: draft
-decided: 2026-11-07
+status: standing
+decided: 2026-11-13
 area: process
 governs: git, landing, main
 supersedes:
 ---
 
-# DEC-092: Landing discipline: verify the base, commit by path, never push unasked
+# DEC-092: Commit whenever; push only at the owner's command
 
-**Ruling.** Before a landing claim, run `git diff --stat <base> main -- src test`; commit with `git commit -- <paths>`, never `git add` a set; never push unless asked; one agent per worktree.
+**Ruling.** Agents are free to commit whenever; push is at the owner's command only. In a shared tree commit by path (`git commit -- <paths>`), and run `git diff --stat <base> main -- src test` before claiming a landing.
 
 **Why.** A shared tree once produced a commit with another session's files.
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_verify_base_before_landing_claim and feedback_shared_worktree_commits (2026-07-27/28). Date from the memory note. Agent wording.
+**Source.** memory feedback_verify_base_before_landing_claim and feedback_shared_worktree_commits (2026-07-27/28). Date from the memory note. Owner, 2026-11-13: "agents are free to commit whenever. push is at my command only". Agent wording, owner approved 2026-11-13.

@@ -1,6 +1,6 @@
 ---
 id: DEC-082
-status: draft
+status: standing
 decided: 2026-10-29
 area: assets
 governs: assets/models/, vehicles, reference board
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_vehicle_reference_board. Date from the memory note. Agent wording.
+**Source.** memory feedback_vehicle_reference_board. Date from the memory note. Agent wording, owner approved 2026-11-13.

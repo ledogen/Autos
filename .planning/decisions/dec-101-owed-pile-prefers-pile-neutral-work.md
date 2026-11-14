@@ -1,6 +1,6 @@
 ---
 id: DEC-101
-status: draft
+status: standing
 decided: 2026-11-09
 area: process
 governs: lanes, owed cards
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** CLAUDE.md § Workflow (Parallel lanes). Agent wording.
+**Source.** CLAUDE.md § Workflow (Parallel lanes). Agent wording, owner approved 2026-11-13.

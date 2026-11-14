@@ -1,6 +1,6 @@
 ---
 id: DEC-093
-status: draft
+status: standing
 decided: 2026-10-15
 area: process
 governs: git worktrees, handoffs
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_work_in_session_worktree; worktree skill §6. Date from the memory note. Agent wording.
+**Source.** memory feedback_work_in_session_worktree; worktree skill §6. Date from the memory note. Agent wording, owner approved 2026-11-13.

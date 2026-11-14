@@ -1,6 +1,6 @@
 ---
 id: DEC-088
-status: draft
+status: standing
 decided: 2026-07-05
 area: process
 governs: src/road.js, src/economy.js, emergent
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_emergent_over_injected. Date from the memory note. Agent wording.
+**Source.** memory feedback_emergent_over_injected. Date from the memory note. Agent wording, owner approved 2026-11-13.

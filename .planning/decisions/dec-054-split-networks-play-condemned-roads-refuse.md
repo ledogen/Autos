@@ -1,6 +1,6 @@
 ---
 id: DEC-054
-status: draft
+status: standing
 decided: 2026-08-27
 area: world
 governs: BUG-100, BUG-85, src/world-validate.js, condemned road
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Refusing split networks (retired by BUG-85).
 
-**Source.** completed/bug-100-seed-2881088386-two-condemned-roads.md (owner, 2026-08-27, quoted there). Agent wording.
+**Source.** completed/bug-100-seed-2881088386-two-condemned-roads.md (owner, 2026-08-27, quoted there). Agent wording, owner approved 2026-11-13.

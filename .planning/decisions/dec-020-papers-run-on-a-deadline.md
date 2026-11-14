@@ -1,6 +1,6 @@
 ---
 id: DEC-020
-status: draft
+status: standing
 decided: 2026-10-21
 area: economy
 governs: FEAT-141, FEAT-87, data/offers.js, papers, deadline
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** DESIGN.md § Papers ("Never 'bell'"); design-amendments-2026-10-21-mission-recut.md §7; FEAT-141. Agent wording.
+**Source.** DESIGN.md § Papers ("Never 'bell'"); design-amendments-2026-10-21-mission-recut.md §7; FEAT-141. Agent wording, owner approved 2026-11-13.

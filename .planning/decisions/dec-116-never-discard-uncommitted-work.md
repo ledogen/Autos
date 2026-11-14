@@ -1,6 +1,6 @@
 ---
 id: DEC-116
-status: draft
+status: standing
 decided: 2026-11-02
 area: process
 governs: git, worktrees, executors
@@ -13,8 +13,6 @@ supersedes:
 
 **Why.** An uncommitted tree is lost work after a crash; other sessions may own it.
 
-**Replaces.** Nothing yet: this record is a draft until the owner rules.
+**Replaces.** "discard leftovers with `git checkout --`" (memory feedback_check_tree_before_executor (2026-06-10)).
 
-**Source.** memory feedback_commits (owner, 2026-11-02); memory feedback_check_tree_before_executor (2026-06-10). Date from the memory note. Agent wording.
-
-**Conflict.** A: "uncommitted changes in your worktree are YOURS: commit them, never discard them." (memory feedback_commits (owner, 2026-11-02)) · B: "discard leftovers with `git checkout --`" (memory feedback_check_tree_before_executor (2026-06-10))
+**Source.** memory feedback_commits (owner, 2026-11-02); memory feedback_check_tree_before_executor (2026-06-10). Date from the memory note. Agent wording, owner approved 2026-11-13 under DEC-125.

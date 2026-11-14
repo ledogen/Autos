@@ -1,6 +1,6 @@
 ---
 id: DEC-057
-status: draft
+status: standing
 decided: 2026-08-19
 area: world
 governs: SM-INV-12, src/save.js, worldgen
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_cold_generation_only. Date from the memory note. Agent wording.
+**Source.** memory feedback_cold_generation_only. Date from the memory note. Agent wording, owner approved 2026-11-13.

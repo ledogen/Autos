@@ -1,6 +1,6 @@
 ---
 id: DEC-091
-status: draft
+status: standing
 decided: 2026-06-27
 area: process
 governs: process, visual regression
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_visual_regression_revert_first (2026-06-27 carve work). Date from the memory note. Agent wording.
+**Source.** memory feedback_visual_regression_revert_first (2026-06-27 carve work). Date from the memory note. Agent wording, owner approved 2026-11-13.
