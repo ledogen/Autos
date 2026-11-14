@@ -653,11 +653,13 @@ const STEPS = [
     await padOff()
     // FEAT-212: the cart. A corner swap queues: the truck shows it at once, the wallet waits. With work in the cart Esc
     // and the brake both ask (check out or discard) and the brake holds; discard puts the corners back and lets it go.
-    await js('window.__damage.set("tireFL", 0.5); document.querySelector("#svc-screen [data-tab=maint]")?.click()')
-    for (const id of ['twbs', 'tw', 'FL', 'corner']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
+    // FR is pinned too (a new game starts with one old front tire, FEAT-201), and an item already open is left open
+    // (selecting it again would close it: the key walk above leaves the first section open).
+    await js('window.__damage.set("tireFL", 0.5); window.__damage.set("tireFR", 1); document.querySelector("#svc-screen [data-tab=maint]")?.click()')
+    for (const id of ['twbs', 'tw', 'FL', 'corner']) await js(`(e => e && !e.classList.contains('on') && e.click())(document.querySelector('#svc-screen [data-act=node][data-id="${id}"]'))`)
     const cm0 = await js('window.__econ.money')
     await js(`document.querySelector('#svc-screen [data-act=swap][data-a="0"][data-b="1"]')?.click()`)
-    const corners = () => js('[window.__damage.get("tireFL"), window.__damage.get("tireFR")].join()')
+    const corners = () => js('[window.__damage.get("tireFL"), window.__damage.get("tireFR")].map(v => +v.toFixed(3)).join()')   // rounded: the tires wear a hair while the bay runs
     const cartLines = () => js('document.querySelectorAll("#svc-screen [data-act=unqueue]").length')
     check(await cartLines() === 1 && await corners() === '1,0.5' && await js('window.__econ.money') === cm0,
       `the corner swap did not queue on the cart (lines ${await cartLines()}, corners ${await corners()}, $${cm0} → $${await js('window.__econ.money')})`)
