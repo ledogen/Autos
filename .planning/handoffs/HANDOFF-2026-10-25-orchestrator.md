@@ -29,11 +29,20 @@ just spawn a new subagent for task").
 - **Never idle a lane while owner-free alpha work exists** (owner 11-07: "what is everyone waiting on?"). With 10+
   owed items, give lanes pile-neutral work (gates, perf, closing on evidence, making a pending call cheaper).
 - At most one agent per worktree. Lane C gets an agent only when an owner answer gives it work.
-- **Your own context**: when you pass ~300k at a quiet moment (no merge or smoke mid-flight), let running agents
-  finish or note them in § Current state, rewrite that section, and tell the owner "orchestrator ready for a clear".
+- **Your own context**: no watching and no "ready for a clear" message. Session auto-compact (400k, the owner's
+  setting) is the backstop. A clear or a compact costs one word ("orchestrator") because nothing lives only in your
+  context: an owner ruling goes into its ticket or a DEC in the same change, a spawn into its `.now` line, and
+  § Current state is rewritten at each landing, spawn and owner answer. Before a merge or a smoke, write it into
+  § Current state (branch @ hash, the smoke's log path), so a compact mid-flight resumes from the file.
+- **Side work is a subagent too** (INFRA-14): a perf investigation, a tooling job (ledorepo), a one-off study. Spawn
+  it like a lane, with its own `lanes/<id>.json` + `.now` line so the board shows it (e.g. `l` for ledorepo). The
+  owner then needs one terminal. A separate window is the exception: work that needs a quiet machine (a PERF-40
+  bench window) or days of its own context.
 
 ## On wake
 1. `bash tools/lanes.sh` — every worktree's branch, ahead/behind, uncommitted files (a lane's WIP: never discard).
+   A `lanes/<id>.now` line that says `running:` for an agent you are not running is stale: overwrite it with
+   `stopped (blocked): <one line> · <HH:MM>`.
 2. The tracker's data folder `/Users/ledogen/CodeShit/ledorepo/projects/cargame/` (§ The tracker). New owner input is a directory listing:
    `cd /Users/ledogen/CodeShit/ledorepo/projects/cargame && ls inbox | sed 's/\.reply//' | sort | uniq -u` lists inbox items with no reply yet;
    `ls owed/*.answer.json` lists answered owed items → `cat` each, act, record it in the ticket, then
@@ -150,7 +159,7 @@ without asking the owner where the meter stands. Land what they report, yourself
   proposal for the POI page flip), legend shop row out, BUG-163 card line, FEAT-199 pricing. DEC 175–184.
 - Perf (CarGame-perf): closes PERF-46/47, BUG-164; the 60 fps cap setting; PERF-49 = physics-levers answer from
   existing data only. DEC 185–189.
-- ledorepo (new CarGame-infra-14): INFRA-14; sends the text it wants in THIS file's standing sections. DEC-195.
+- ledorepo: DONE and landed (INFRA-14 closed, DEC-195 wip not backed up). INFRA-13 waits on the owner (Time Machine).
 Orchestrator used DEC-190..192; next free for it: 193.
 
 **Main:** waypoint (FEAT-211 landing 3) cherry-picked, 3dcb887c; smoke started 03:21, log wip/orch/smoke-waypoint.log
