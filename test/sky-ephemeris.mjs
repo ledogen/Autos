@@ -50,7 +50,8 @@ check('new moon beside the sun', Math.abs(nm.el - sn.el) < 5 * D && Math.abs(nm.
 // 3. Brightness ladder through the real SkySystem.
 const scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0, 0.003)
 const sun = new THREE.DirectionalLight(), sunFar = new THREE.DirectionalLight(), ambient = new THREE.HemisphereLight()
-const sky = new SkySystem({ scene, renderer: { toneMapping: 0, toneMappingExposure: 1 }, sun, sunFar, farSplit: 0.6, ambient })
+const renderer = { toneMapping: 0, toneMappingExposure: 1 }
+const sky = new SkySystem({ scene, renderer, sun, sunFar, farSplit: 0.6, ambient })
 const lum = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
 // What a white horizontal surface reads (render units, /π like three's Lambert): key + fill.
 const white = () => (lum(sun.color) * (sun.intensity + sunFar.intensity) * Math.max(0, sky.sunDirection.y) + lum(ambient.color)) / Math.PI
@@ -65,6 +66,11 @@ check('sunset mostly compensated (25–70 % of noon)', sunsetW > 0.25 * noon && 
 check('moonless night near black (< 1 % of noon)', newMoon < 0.01 * noon, (newMoon / noon).toFixed(4))
 check('full moon dim but brighter than new (1–5 % of noon, > 2× new)', fullMoon > 0.01 * noon && fullMoon < 0.05 * noon && fullMoon > 2 * newMoon,
   (fullMoon / noon).toFixed(4))
+// FEAT-180 (owner 11-14: "right around 20.3h for like 10 mins or so its gets lighter again briefly"): through the
+// evening the land never brightens on screen (its light × the land's exposure), step to step (2 min), 18:00 to 21:00.
+let prevW = Infinity, worst = 0, worstH = 0
+for (let h = 18; h <= 21; h += 1 / 30) { const w = at(h, 0.25) * renderer.toneMappingExposure; if (w / prevW > worst) { worst = w / prevW; worstH = h } prevW = w }
+check('the evening land never brightens 18:00 → 21:00 (2-min steps)', worst <= 1.0005, `${hm(worstH)} rose ×${worst.toFixed(4)}`)
 let finite = true
 for (let h = 0; h < 24; h += 0.25) { sky.setTimeOfDay(h); finite = finite && lutOk() && isFinite(white()) }
 check('LUT finite and non-negative at every quarter hour', finite)

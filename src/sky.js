@@ -109,7 +109,8 @@ export function nightWeight (hour) { return 1 - smooth(DARK_EL, 0, sunAt(hour).e
 
 // ── Tunables (the GUI binds these) ───────────────────────────────────────────────────────────────────
 export const SKY_PARAMS = {
-  aod: 0.02,          // aerosol optical depth above the eye at 550 nm: 0.02–0.05 is clean high-desert air, 0.3 smoggy
+  aod: 0.005,         // aerosol optical depth above the eye at 550 nm: 0.02–0.05 is clean high-desert air, 0.3 smoggy.
+                      // 0.005 (owner 11-14: "i like the extra definition on props at twilight")
   hazeAfternoon: 0.5, // extra aerosol the afternoon's convection lifts by 17:00 (fraction of `aod`)
   multiScatter: 1.0,  // gain on the orders ≥ 2 (1 = Hillaire's estimate as computed)
   skyGain: 2.5,       // the sky and its fill against the sun. The world's flat albedos are bright (stylised), so the
@@ -123,10 +124,13 @@ export const SKY_PARAMS = {
   skyTwilight: 0.72,  // …and how fast it runs out (e-folding, decades of light). Smaller = a darker golden hour and dusk
   skySat: 1.0,        // colour saturation of the sky (and the fog, the same function)
   skyCast: 0.5,       // how much of the light's colour cast the sky keeps that the white balance takes out (0–1)
-  duskSat: 0.3,       // the twilight grade: extra sky saturation from the sun 14° up to the end of twilight…
-  dusk: 1.3,          // …and the strength of its teal split tone on the sky that is not the warm glow (0 = as simulated)
-  beyond: 1.5,        // twilight: the fog below the horizon (the land past the draw distance) is no brighter than this ×
-                      // flat ground. 1.5 leaves noon's as the sky (flat ground reads 0.65 of the horizon there)
+  duskSat: 0.5,       // the twilight grade: extra sky saturation from the sun 14° up to the end of twilight… (owner 11-14: 0.5)
+  dusk: 0.3,          // …and the strength of its teal split tone on the sky that is not the warm glow (0 = as simulated; owner 11-14: 0.3)
+  beyondRise: 2.2,    // twilight: the fog below the horizon (the land past the draw distance) is no brighter than this ×
+  beyondSet: 1.5,     // flat ground, morning and evening (owner 11-14: "sunrise i like it around 2.2 sunset i like it around 1.5")
+  even: 0.5,          // twilight: how far the sky's brightness is evened toward its own mean, 0 = as simulated, 1 = one
+                      // brightness all round (owner 11-14: "the brightness of the whole sky comes up/down together")
+  texture: 0.8,       // the sky's texture: the legacy's cloud-layer noise as a brightness ripple, 0 = smooth
   moonAdapt: 0.15,    // how much of the moon's light the eye adapts away (1 = all of it: full and new moon look alike)
   landDepth: 1.62,    // the land's eye (landEye): how far under noon the land reads at the darkest, in decades
   landTwilight: 2.0,  // …and how fast it gets there (e-folding, decades of light). Smaller = darker golden hour and dusk
@@ -419,13 +423,28 @@ function simulate (hour, cycle, st) {
   // The eye adapts to what it sees, not just to the ground: half the light falling on a sun-facing wall counts.
   // (Horizontal illuminance alone made a 4°-high sun light the walls facing it at 4× noon.)
   const g = SKY_PARAMS.skyGain
-  const eA0 = lum(...st.eSun) * (sh + 0.5 * Math.sqrt(1 - sh * sh)) + g * lum(...st.eSky0)
+  const eA0 = sunSeen(st.sun.el, haze) + g * lum(...st.eSky0)
   st.eA = eA0 + lum(...st.eMoon) * (mh + 0.5 * Math.sqrt(1 - mh * mh)) + g * (lum(...st.eSky) - lum(...st.eSky0))
   // What the eye adapts to: all of the sun's light, only moonAdapt of the moon's (round 2, owner 11-08: "there is
   // practically no difference between new moon and full moon apparent brightness"). Adapting to all of it squeezed
   // the full moon's ~20× more light on the ground down to ~2.7× on screen, and the moonlit sky to no change at all.
   st.eEye = eA0 + SKY_PARAMS.moonAdapt * (st.eA - eA0)
   return st
+}
+/** The direct sun as the eye sees it at elevation `el`: the light on the ground, plus half that on a sun-facing wall
+ *  (horizontal illuminance alone made a 4°-high sun light the walls facing it at 4× noon). */
+// The wall's share hands over to the ground's over the sun's last EYE_WALL_EL (owner 11-14: "right around 20.3h for
+// like 10 mins or so its gets lighter again briefly"). Held at the full half down to the disc's cut, it left the eye in
+// the ~3 min the disc takes to set while the flat ground lost only its sin 3° of key (the key is held 3° up): the eye
+// opened faster than the land darkened, and the land read ~10 % brighter from 20:12 to 20:19, the zenith with it. Over
+// 15° the eye's input never falls faster than the land's light, at dawn too, at aod 0.005 (6° still rose 1 %, 10° and
+// 12° rose ~1 % at 20:00). It also lifts the last hour's land (+85 % at 20:00), toward the legacy's golden hour.
+const EYE_WALL_EL = 15 * D2R
+const _tS = [0, 0, 0]
+function sunSeen (el, haze) {
+  const sh = Math.max(0, Math.sin(el))
+  const vis = clamp01((el + 0.267 * D2R) / (0.533 * D2R)) * smooth(DARK_EL, DARK_EL + 3 * D2R, el)
+  return vis > 0 ? lum(...transmittance(el, haze, _tS)) * vis * (sh + 0.5 * Math.sqrt(1 - sh * sh) * smooth(-0.267 * D2R, EYE_WALL_EL, el)) : 0
 }
 const newState = () => ({ lut: new Float32Array(LUT_W * LUT_H * 3), lutN: new Float32Array(LUT_W * LUT_H * 3), sunDir: new THREE.Vector3(), moonDir: new THREE.Vector3(),
   eSky: [0, 0, 0], eSky0: [0, 0, 0], eSun: [0, 0, 0], eMoon: [0, 0, 0], tSun: [0, 0, 0], tMoon: [0, 0, 0], eA: 0, eEye: 0, moonE: 0 })
@@ -556,11 +575,27 @@ ${HAZE_GLSL}${GRADE_GLSL}
 uniform vec4 skyDisc;      // rgb: disc radiance (pre-exposed); w: cos(disc radius)
 uniform mat3 skyStarFrame; // world → the star sphere's frame (turns with sidereal time)
 uniform float skyStars;    // star radiance as displayed; 0 by day
+uniform float skyTexture;  // SKY_PARAMS.texture
 varying vec3 vDir;
 float hash13 (vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+// THE SKY'S TEXTURE (owner 11-14: "i like how legacy has a bit of texture in the sky especially at twilight"). The
+// legacy's is three's Sky cloud layer, on at its defaults (scale 2e-4, elevation 0.5, static): value-noise fbm on a
+// plane overhead, so it streaks toward the horizon. Here the same noise ripples the sky's own brightness about 1
+// (zero mean, so the sky's level is unchanged), strongest where the sky is brightest: the twilight glow.
+float hash12 (vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+float vnoise (vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm (vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * vnoise(p); p *= 2.0; a *= 0.5; } return v; }
 void main () {
   vec3 d = normalize(vDir);
   vec3 L = skyHaze(d);
+  if (skyTexture > 0.0 && d.y > 0.0) {
+    vec2 uv = d.xz / (d.y * 0.55) * 0.0002;
+    float n = fbm(uv * 1000.0) + 0.5 * fbm(uv * 2000.0 + 3.7) - 0.727;   // fbm's mean is ~0.485
+    L *= max(0.0, 1.0 + skyTexture * n * smoothstep(0.0, 0.2, d.y));
+  }
   float above = step(0.0, d.y);
   // The sun disc, limb-darkened, with an anti-aliased edge one pixel wide.
   float mu = dot(d, skySun.xyz), aa = fwidth(mu);
@@ -671,7 +706,7 @@ export class SkySystem {
     scene.onAfterRender = () => { U.skyGlare.value.w = 0 }
 
     this._skyMat = new THREE.ShaderMaterial({
-      uniforms: { ...U, skyDisc: { value: new THREE.Vector4() }, skyStarFrame: { value: new THREE.Matrix3() }, skyStars: { value: 0 } },
+      uniforms: { ...U, skyDisc: { value: new THREE.Vector4() }, skyStarFrame: { value: new THREE.Matrix3() }, skyStars: { value: 0 }, skyTexture: { value: 0 } },
       vertexShader: SKY_VERT, fragmentShader: SKY_FRAG,
       side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false,
     })
@@ -809,14 +844,35 @@ export class SkySystem {
     // horizon row continued down: half the sunset glow hung under the horizon as an orange ball, and a khaki fog filled
     // the lower half of the view. Past the draw distance is more land; at twilight it is darker than the sky. So below
     // the horizon the fog is held to beyond × flat ground (same units as the LUT: displayed linear), over the twilight.
-    U.skyFog.value.z = p.beyond * acesGrey(flat * this.renderer.toneMappingExposure / 0.6)
+    U.skyFog.value.z = (SKY_CYCLE.hour < SOLAR_NOON_H ? p.beyondRise : p.beyondSet) * acesGrey(flat * this.renderer.toneMappingExposure / 0.6)
     U.skyFog.value.w = tw
 
-    // The LUT: radiance × sky gain × adaptation × exposure, as half floats.
+    // THE TWILIGHT EVENNESS (owner 11-14: "at twilight its almost like the hemisphere of the sky on the sun side is light
+    // and the other side is dark with a dramatic transition right in the middle … the brightness of the whole sky comes
+    // up/down together"). A grade, not physics: while the sun is below the horizon (fading out by 6° up) each texel of
+    // the sun's sky is pulled toward the sky's mean brightness (solid-angle weighted, above the horizon) by `even` in
+    // log: 0 is as simulated, 1 one brightness all round. Colour is kept; the light on the land is not touched.
     const L = st.lut, N = st.lutN, t3 = [0, 0, 0], g0 = p.skyGain, gN = p.skyGain * nightScale
+    const ev = p.even * (1 - smooth(0, 15 * D2R, st.sun.el))
+    let lm = 0, en = 1
+    if (ev > 0) {
+      let wsum = 0, ls = 0
+      for (let j = 0; j < LUT_H; j++) for (let i = 0; i < LUT_W; i++) {
+        const k = (j * LUT_W + i) * 3
+        lm += (j + 0.5) * lum(L[k], L[k + 1], L[k + 2]); wsum += j + 0.5   // row j spans d(sin el) ∝ j + ½
+      }
+      lm /= wsum
+      // …then the whole is scaled back to the sky's mean, so the glow comes down as much as the rest comes up.
+      for (let j = 0; j < LUT_H; j++) for (let i = 0; i < LUT_W; i++) {
+        const k = (j * LUT_W + i) * 3, l = lum(L[k], L[k + 1], L[k + 2])
+        if (l > 0) ls += (j + 0.5) * l * Math.pow(lm / l, ev)
+      }
+      en = ls > 0 ? lm * wsum / ls : 1
+    }
     let hr = 0, hg = 0, hb = 0
     for (let i = 0, n = LUT_W * LUT_H; i < n; i++) {
-      const k = i * 3, r = L[k] * g0 + N[k] * gN, g = L[k + 1] * g0 + N[k + 1] * gN, b = L[k + 2] * g0 + N[k + 2] * gN
+      const k = i * 3, ls = lum(L[k], L[k + 1], L[k + 2]), fe = ev > 0 && ls > 0 ? g0 * en * Math.pow(lm / ls, ev) : g0
+      const r = L[k] * fe + N[k] * gN, g = L[k + 1] * fe + N[k + 1] * gN, b = L[k + 2] * fe + N[k + 2] * gN
       // rods() goes by the light's real brightness, not the level the night is drawn at
       treat(r * X, g * X, b * X, t3, rods(Math.PI * g0 * lum(L[k] + N[k], L[k + 1] + N[k + 1], L[k + 2] + N[k + 2])))
       if (tw > 0 && t3[0] > 0) {
@@ -845,6 +901,7 @@ export class SkySystem {
     // Stars: a fixed radiance through the adaptation — invisible by day, out by late twilight.
     su.skyStars.value = STAR_L * p.stars * (1 - smooth(-5, -3, Math.log10(Math.max(st.eA, 1e-12))))
     su.skyStarFrame.value.copy(this._starFrame(SKY_CYCLE.hour))
+    su.skyTexture.value = p.texture
 
 
     // The moon disc: its surface radiance through the air and the eye, against the brightness it is drawn at.
@@ -926,7 +983,10 @@ export class SkySystem {
     a.add(SKY_PARAMS, 'skyCast', 0, 1, 0.05).name('sky keeps light cast').onChange(re)
     a.add(SKY_PARAMS, 'duskSat', 0, 2, 0.05).name('twilight: + saturation').onChange(re)
     a.add(SKY_PARAMS, 'dusk', 0, 1.5, 0.05).name('twilight: teal').onChange(re)
-    a.add(SKY_PARAMS, 'beyond', 0, 3, 0.05).name('twilight: land beyond ÷ flat').onChange(re)
+    a.add(SKY_PARAMS, 'beyondRise', 0, 3, 0.05).name('twilight: land beyond ÷ flat, sunrise').onChange(re)
+    a.add(SKY_PARAMS, 'beyondSet', 0, 3, 0.05).name('twilight: land beyond ÷ flat, sunset').onChange(re)
+    a.add(SKY_PARAMS, 'even', 0, 1, 0.05).name('twilight: sky evenness').onChange(re)
+    a.add(SKY_PARAMS, 'texture', 0, 3, 0.05).name('sky texture').onChange(re)
     a.add(SKY_PARAMS, 'glare', 0, 3e-3, 1e-5).name('sun glare').onChange(re)
     a.add(SKY_PARAMS, 'glareG', 0.8, 0.99, 0.001).name('glare sharpness').onChange(re)
     a.add(SKY_PARAMS, 'sunSize', 0.27, 3, 0.01).name('sun radius (deg)').onChange(re)
