@@ -53,11 +53,11 @@ export const NEWSPAPER = 'M4.5 2.5 L15.5 2.5 L19.5 6.5 L19.5 21.5 L4.5 21.5 Z'
                        + 'M7 17.5 L7 17.8 L17 17.8 L17 17.5 Z'
 
 // FEAT-210: Larry's paper van, side on, nose right (owner default 2026-11-13: "Larry's symbol becomes
-// a van"). Body, the two wheels (wound WITH the body, so they union into one silhouette with bumps
-// underneath and no seam), and two window cut-outs wound against it.
-const VAN = 'M2 4.5 L15 4.5 L19 9.5 L22 10.5 L22 16.5 L2 16.5 Z'
-          + 'M3.9 17 A2.6 2.6 0 1 1 9.1 17 A2.6 2.6 0 1 1 3.9 17 Z'
-          + 'M14.9 17 A2.6 2.6 0 1 1 20.1 17 A2.6 2.6 0 1 1 14.9 17 Z'
+// a van"). Body and wheels are ONE subpath — each wheel is an arc bulging out of the sill (r 2.6 about
+// y 17), so no seam is stroked across the body where a separate circle would overlap it — and two
+// window cut-outs are wound against it.
+const VAN = 'M2 4.5 L15 4.5 L19 9.5 L22 10.5 L22 16.5 L20.05 16.5 A2.6 2.6 0 1 1 14.95 16.5'
+          + ' L9.05 16.5 A2.6 2.6 0 1 1 3.95 16.5 L2 16.5 Z'
           + 'M14 6.5 L14 9.5 L17.4 9.5 L15.2 6.5 Z'
           + 'M4.5 6.5 L4.5 9.5 L12 9.5 L12 6.5 Z'
 
@@ -157,11 +157,10 @@ export const POI_ICONS = {
     // diamonds, and the stranded motorist needs none.
     //
     // The expedition camp — the run's goal: a ridge tent with its door cut out and a pennant flying
-    // off the apex. Tent, pole and flag are wound the same way and union; the door is wound against.
+    // off the apex. Tent, pole and flag are one outline (no seam where the pole meets the ridge); the
+    // door is wound against it.
     expeditionCamp: { label: 'Expedition', color: '#e0c890', path:
-        'M12 7 L22 21.5 L2 21.5 Z'
-      + 'M11.3 1.5 L12.7 1.5 L12.7 7.5 L11.3 7.5 Z'
-      + 'M12.7 1.5 L18.5 3.5 L12.7 5.5 Z'
+        'M2 21.5 L11.3 8.02 L11.3 1.5 L12.7 1.5 L18.5 3.5 L12.7 5.5 L12.7 8.02 L22 21.5 Z'
       + 'M12 13 L9.2 21.5 L14.8 21.5 Z' },
     // The doctor: a plain cross, the one medical sign every reader already knows.
     doctor:       { label: 'Doctor',  color: '#ffffff', path:
@@ -171,10 +170,9 @@ export const POI_ICONS = {
         'M10 3 L14 3 L18.5 18 L21.5 18 L21.5 21.5 L2.5 21.5 L2.5 18 L5.5 18 Z'
       + 'M9.25 9.5 L8.35 12.5 L15.65 12.5 L14.75 9.5 Z' },
     // The school: a gabled schoolhouse under a bell tower, door and two windows cut out — the tower
-    // is what tells it from a house.
+    // is what tells it from a house. Tower and building are one outline, so no seam crosses the roof.
     school:       { label: 'School',  color: '#f0d060', path:
-        'M3 11 L12 5 L21 11 L21 21.5 L3 21.5 Z'
-      + 'M10 1.5 L14 1.5 L14 7 L10 7 Z'
+        'M3 11 L10 6.33 L10 1.5 L14 1.5 L14 6.33 L21 11 L21 21.5 L3 21.5 Z'
       + 'M10 15 L10 21.5 L14 21.5 L14 15 Z'
       + 'M5 13 L5 17 L8 17 L8 13 Z'
       + 'M16 13 L16 17 L19 17 L19 13 Z' },
