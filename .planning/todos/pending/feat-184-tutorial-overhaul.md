@@ -382,6 +382,8 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   - [ ] The last act: back to the burger joint for the paycheck, 24 in-game hours after the firing
   - [ ] The main menu's "tutorial" button retired; the tutorial saves as part of the run
 - Landing 3 (waits on the seed):
+  - [x] No damage for the whole tutorial (DEC-151): no wear and no impact (armor, components, bends, a fatal crash) from the
+    firing to Larry's welcome; free will unchanged (`DamageModel.held`, gate damage-contact-wiring §6)
   - [ ] The tutorial seed: census, the owner's pick from screenshot sheets, a gate pinning its beats
   - [ ] The first playthrough ever on it, intro included
   - [ ] The intro expanded to 15 s – 1 min (the owner's words)
@@ -482,5 +484,17 @@ Each has a recommendation there.
   [DEFAULT]s: $3 pocket change, 4 s off-road, 5 s confirmation window, fuel off for the whole evening (not only to the
   station). [interim] The paycheck lands at Larry's until landing 2 moves the last act to the burger joint.
   Affected gates 38/38 green (`node test/run-all.mjs --serial`, wip/feat184/gates.log; cdp-smoke not run on the branch).
+- 2026-11-14: landing 3 part 1 (Lane A): the tutorial's damage trap. Lane B found (BUG-168) that the evening skipped wear
+  but not impact damage, so a crash on the safe drive still cost armor and could end the run. Now `DamageModel.held`
+  (src/damage.js) holds the truck: `step()` wears nothing (the engine temperature and the effect multipliers still run)
+  and `feedContact` tracks a burst but never lands it (no armor, no component, no bend, no `fatalImpact`). main.js sets it
+  each step from `_inTutorial()`: a played opening (the firing heard, not skipped) until Larry's welcome, so the morning's
+  casserole drive is covered too; after it (free will) nothing changes. The scripted lessons still work: the flat is set
+  straight on `damageModel.flat` and the spare is an inventory flag, neither goes through wear or impacts; the damage screen
+  (V) shows the jalopy's rolled wear. Side effect, on purpose: the evening used to skip `step()` whole, so the scripted flat
+  never reached the physics (`publish`); held still publishes, so the flat corner now drives like a flat. The gear grind's
+  damage-screen alert is off while held. Gate: damage-contact-wiring §6 (a 100 mph head-on held: nothing lands, nothing
+  wears; released, the same hit kills). cdp-smoke's story step checks `__worstDay().held` on the evening (not run on the
+  branch).
 - 2026-11-14: the tutorial dive folded in (Lane A): DEC-146..154; DEC-109 / DEC-110 superseded; the issues checked
   against the code (Open questions; the follow-up dive).
