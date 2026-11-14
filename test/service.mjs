@@ -283,5 +283,19 @@ check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].
     check('…and the next one is paid again', free.repairQuote('engine', 0.7).price > 0)
 }
 
+// FEAT-184 (DEC-151): the tutorial's tire is on mom — the part once, its fitting once; the next of each is paid.
+{
+    let w = 0
+    const owes = { part: true, labour: true }
+    const mom = new ServiceCenter({ ...svc, money: () => w, spend: ($) => { if ($ > w + 1e-9) return false; w -= $; return true },
+        onMom: (id, k) => id === 'spareTire' && owes[k], useMom: (id, k) => { owes[k] = false } })
+    stock(['spareTire'], ['spareTire'])
+    check('on mom: the mounted tire and its fitting quote $0', mom.shelfPrice(0) === 0 && mom.fitLabour('spareTire', 'tireFL').price === 0)
+    check('…a broke player buys it, and the part is used up', mom.buyToInventory(0) && w === 0 && !owes.part && owes.labour)
+    check('…the next tire is paid again', mom.shelfPrice(1) > 0 && !mom.buyToInventory(1))
+    const i = inventory.list().findIndex(r => r.id === 'spareTire' && !r.flat)
+    check('…and fitting it is free, once', mom.swapPair(i, 0) && w === 0 && !owes.labour && mom.fitLabour('spareTire', 'tireFL').price > 0)
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')
 process.exit(fails ? 1 : 0)
