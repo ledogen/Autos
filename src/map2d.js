@@ -555,6 +555,7 @@ export class Map2D {
         this._onKeyUp = (e) => this._panKeys.delete(e.key.toLowerCase())
         this._onWinResize = () => this._measure()
         this._list?.addEventListener('mouseover', (e) => {   // hovering a row picks it, as the D-pad does
+            if (pad.cardActive() || pad.menuActive()) return   // …unless a card is up over the map: it owns the screen
             const id = e.target.closest?.('[data-poi]')?.dataset.poi
             if (id && id !== this._listId) this._pickRow(id)
         })
