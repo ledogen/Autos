@@ -636,6 +636,11 @@ const STEPS = [
       'Maintenance: the rear-right tire opened no swap')
     await js('document.querySelector("#svc-screen [data-act=node][data-id=twbs]")?.click()')
     check(await js('!document.querySelector("#svc-screen .sv-kids")'), 'Maintenance: selecting the top level again left items open')
+    // …and the keys (the pad's D-pad and A arrive as the same keys, menu-nav.js): ↓ walks the list in order, Enter opens.
+    const focusId = () => js('document.querySelector("#svc-screen .nav-focus")?.dataset.id ?? null')
+    for (let i = 0; i < 6 && await focusId() !== 'twbs'; i++) await tap('ArrowDown')
+    await tap('Enter')
+    check(await js('!!document.querySelector("#svc-screen [data-act=node][data-id=twbs].on")'), 'Maintenance: ↓ and Enter did not open the first section')
     // The Parts Shop is the shop's four-slot shelf (items or empty slots) and My Items.
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     check(await js('/For sale/i.test(document.querySelector("#svc-screen").textContent) && /My items/i.test(document.querySelector("#svc-screen").textContent)'),
