@@ -12,8 +12,9 @@ lane: Spare
 # FEAT-211: The map as a window — 80 % of the screen, a Missions / Shopping list beside it, live tracking
 
 ## Next steps
-Landing 1 (window, tracking, edge marker, Missions list) is on main. Landing 2 (the Shopping list) is built on feature/spare
-and waits on its landing + the owner's look (screenshots `wip/feat-211/shop-*.png`). Next (Spare lane): landing 3, the waypoint.
+Landings 1 (window, tracking, edge marker, Missions list) and 2 (the Shopping list) are on main. Landing 3 (the custom
+waypoint) is built on feature/spare and waits on its landing + the owner's look (screenshots `wip/feat-211/wp-*.png`). Then the
+ticket closes on the owner's open questions below.
 
 ## Summary
 The map stops covering the whole screen. It becomes a window over the live game, with a list on its right that has two modes: Missions and Shopping. Opening it centres on the truck and follows it. The player can pan freely at any point, including from a place the list just showed.
@@ -61,8 +62,8 @@ This has no separate "map tab" and no select step: the map is always live under 
 - [x] Shopping list: all vendors and pumps, stock timers, in-line expansion with price, condition, flavour text, expiry
 - [x] Pump rows show the price and do not expand; gas stations do both
 - [x] B leaves the list and the map pans from there
-- [ ] Custom waypoint: Y on the pad (click / Enter with nothing highlighted) drops a waypoint at the map's centre or cursor and the game routes to it like a job's destination; the same input on the waypoint clears it
-- [ ] Pad, keyboard and mouse all reach everything; pad-e2e covers the list (both lists covered; open until the waypoint lands)
+- [x] Custom waypoint: Y on the pad (click / Enter with nothing highlighted) drops a waypoint at the map's centre or cursor and the game routes to it like a job's destination; the same input on the waypoint clears it
+- [x] Pad, keyboard and mouse all reach everything; pad-e2e covers the list (both lists and the waypoint)
 
 ### Built, landing 1 (Spare lane, 2026-11-13)
 - **The window** (`#map-window`, index.html): 10 % of the screen in from each edge, so 80 % of the width and the height. The sheet
@@ -108,10 +109,33 @@ This has no separate "map tab" and no select step: the map is always live under 
 - pad-e2e covers it on a stubbed board: RB to Shopping, A on a pump opens nothing, A opens a shop, the D-pad walks onto its items,
   B closes it, A twice opens and closes, B leaves, LB back.
 
+### Built, landing 3 (Spare lane, 2026-11-13)
+- **Input.** Pad **Y** (MAP_KEYS sends `n`, so Y no longer holds the ignition behind the map), key **N**, **Enter / pad A with
+  nothing highlighted**, or a **click** on the sheet (a press that moves under 4 px) drops the waypoint under the cursor: the
+  mouse's, or the pad's at the sheet centre, so with a list row highlighted it lands on that row's place. The same input within
+  16 px of the pin clears it. One waypoint: a new drop moves it. A on a highlighted shop still opens the shop. A double-click
+  (the teleport) is two clicks that cancel out. Story runs only; refused while a dialogue holds the screen (it keeps its Enter).
+- **Where it lands:** snapped to the nearest road within 2 km (`roadOrigin`, now with a radius), so the pin and the line's end
+  are one point. A drop that plans no line (outside the wall) does nothing.
+- **Guidance, nothing new:** the line is the evening's planner (`planOffer` to a one-stop destination from the truck's road
+  point), shown by the same in-world GPS (chevrons, junction arrow, the ring), re-planned from the truck when it strays (BUG-118's
+  `_tutDetourTick`), with the evening's HUD line: "1.12 km to the waypoint" (crow-flies, PLACEHOLDER words).
+- **A job always wins:** on a job, a paper round or the evening, the GPS and the HUD are the job's, and the waypoint is only its
+  pin on the map, drawn under the job's line and pins. Back off the job, it guides again.
+- **On the map:** a blue map pin (a shape no POI or job pin uses) lettered "Waypoint", and while it guides, its line: the job
+  line's blue at about half the weight, dashed. No legend row: the pin is lettered, and a row would take the list's room.
+- **Player state for the run:** saved (`waypoint: { x, z }`; re-snapped and re-planned from the seated truck on resume), cleared
+  on arrival within 28 m (mission.js ARRIVE_RADIUS, a job's "you're there") and by a new run.
+- Checked: `wip/feat-211/wp-shots.mjs` in a real story run (drop, GPS line end on the pin, HUD line, save & resume, N on the pin
+  clears, arrival clears), pad-e2e (Y drops at the centre with the ignition untouched, Y on the pin clears, A with nothing
+  highlighted drops, A on a shop opens it).
+
 ## Decisions
 - 2026-11-13, owner: the map takes about 80 % of the screen with the live game behind; a list on the right with Missions and Shopping modes swapped by bumpers; both sorted nearest first; opening always centres on the truck and tracks it; B from a list starts panning from there.
 - 2026-11-13, owner (card feat211-controls): "build it like that" — the control scheme above is approved.
 - 2026-11-13, owner: "one feature request. add a custom gps waypoint function. y on pad seems appropriate or maybe we can just use a/enter."
+- 2026-11-13, orchestrator (landing 3) [DEFAULT]: Y, and A / Enter with nothing highlighted, both drop it; a job's guidance always
+  wins over the waypoint's; arrival radius 28 m.
 
 ## Open questions
 - The world behind the window: the frame from the moment the map opened [DEFAULT, zero 3D cost], or moving at a reduced rate
@@ -123,9 +147,10 @@ This has no separate "map tab" and no select step: the map is always live under 
 Screenshots: `wip/feat-211/` in the Spare worktree (`shots.mjs` makes them).
 
 ## Files
-`src/map2d.js` · `src/main.js` · `src/gamepad.js` · `index.html` · `test/pad-e2e.mjs` · `test/cdp-smoke.mjs`
+`src/map2d.js` · `src/main.js` · `src/gamepad.js` · `src/paper-route.js` · `index.html` · `test/pad-e2e.mjs` · `test/cdp-smoke.mjs`
 
 ## Log
 - 2026-11-13: minted from the owner's spec by the orchestrator. Nothing built.
 - 2026-11-13: landing 1 built by the Spare lane (window, tracking, edge marker, Missions list, legend in the column).
 - 2026-11-13: landing 2 built by the Spare lane (the Shopping list, the tabs, A opens a shop in line).
+- 2026-11-13: landing 3 built by the Spare lane (the custom waypoint).
