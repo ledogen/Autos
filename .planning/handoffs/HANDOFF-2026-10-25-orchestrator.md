@@ -153,17 +153,18 @@ wip"), then: "try to keep it token lean stop at 40% weekly usage (weve used 30% 
 orchestrator cannot read the usage meter. So: the five agents below are the whole batch; spawn NO follow-up agent
 without asking the owner where the meter stands. Land what they report, yourself.
 
-**Running since 03:21 (one each; all told to stay lean):**
-- A (run-shape): FEAT-184 landing 2 from the tutorial-flow dive + seed pin 822480141; reverts INFRA-15 WIP fac4aebe
-  first. DEC range 155–164. On its report: `touch dives/FEAT-184-tutorial-{flow,seed}.taken`, move those two owed cards.
-- B (CarGame-land-212c): FEAT-212 cart to a landing request (messages `main` when ready), then list spacing
-  (feat196) and maybe the Shop tab restyle (feat212 note 3). DEC 165–174.
-- Spare (new CarGame-land-211d): map 90 % + live background + bigger offer card, arrows on map mission cards (+ a
-  proposal for the POI page flip), legend shop row out, BUG-163 card line, FEAT-199 pricing. DEC 175–184.
-- Perf (CarGame-perf): closes PERF-46/47, BUG-164; the 60 fps cap setting; PERF-49 = physics-levers answer from
-  existing data only. DEC 185–189.
-- ledorepo: DONE and landed (INFRA-14 closed, DEC-195 wip not backed up). INFRA-13 waits on the owner (Time Machine).
-Orchestrator used DEC-190..192; next free for it: 193.
+**Agents (pace: two at a time, DEC-193 for model/effort):**
+- RUNNING Spare (CarGame-land-211d, Opus): the map bundle (FEAT-211/210, BUG-163 line, FEAT-199 pricing). DEC 175–184.
+- RUNNING B (new CarGame-land-phys, land/phys-1114, Opus): BUG-168 speeds, BUG-166, BUG-160 wheel damage, BUG-167,
+  one commit each. DEC 167–172. Their four cards are already in answered/.
+- DONE A: FEAT-184 landing 2 SLICE 1 on feature/run-shape @ 5b3301eb (gates 9/9; NOT landing-ready, do not merge).
+  DEC-153, 155–160. Dives marked taken. Next agent = slice 2 (list in lanes/a.handoff.md and the ticket's Next steps);
+  start it when Spare reports. Owner card: tutorial-slice2 (Larry's words, DEC-158 reading, the 24 h filler).
+- DONE Perf: frame cap + PERF-49 merged. Next: the terrain bake prototype (Opus). Owner card: perf49-physics-budget.
+- DONE B (first task): cart + My Items tree + spacing merged; owner card feat212-cart-look. CarGame-land-212c/212d
+  hold the look pictures in wip/: remove the worktrees only after the owner has looked.
+- DONE ledorepo: INFRA-14 closed. INFRA-13 waits on the owner (Time Machine).
+Orchestrator DECs used: 190–193; next free for it: 194.
 
 **Main:** cart smoke fixed (test-only) and green on boot,story,service. Merged feature/perf (frame cap) + land/feat-212d; FULL smoke in flight, log wip/orch/smoke-capshop.log: check it. Old line follows.
 (check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
