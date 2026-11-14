@@ -427,6 +427,11 @@ export class Map2D {
     constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
+        // FEAT-211: the window the canvas sits in, and its list column (index.html #map-window).
+        this._win       = document.getElementById('map-window')
+        this._list      = document.getElementById('map-list')
+        this._legendEl  = document.getElementById('map-legend')
+        this._clockEl   = document.getElementById('map-clock')
         this._getSeed   = getSeed
         this._getParams = getParams
         this._getCar    = getCar
@@ -481,7 +486,14 @@ export class Map2D {
         this._streamAt   = null          // THREE.Vector3 the network was last streamed around
         this._streamTimer = 0            // pan-debounce handle
         this._paramTimer  = 0            // road-slider-change debounce handle (live rebuild while open)
-        this._centeredOnce = false       // pan is centred on the car on the FIRST open only
+        // FEAT-211: the map opens centred on the truck and follows it, until a pan input (stick, WASD, drag) or a
+        // list pick lets go; the centre key ('c', the pad's stick click) takes it back.
+        this._tracking   = false
+        this._listId     = null          // the POI the Missions list has highlighted, or null (the list is left)
+        this._rows       = []            // the list's rows as last built: { id, x, z }, nearest first
+        this._listHtml   = ''            // what #map-list holds, so it is written only on a change
+        this._listT      = 0             // performance.now() the rows were last rebuilt
+        this._panKeys    = new Set()     // WASD held on the map (keyboard pan)
 
         // Progressive (chunked) streaming state — see MAP_RADIUS_STEPS.
         this._streaming   = false        // a chunked stream is in flight
@@ -540,6 +552,12 @@ export class Map2D {
         this._onWheel = this._onWheelEvent.bind(this)
         this._onDbl   = this._onDblClick.bind(this)
         this._onKey   = this._onKeyDown.bind(this)
+        this._onKeyUp = (e) => this._panKeys.delete(e.key.toLowerCase())
+        this._onWinResize = () => this._measure()
+        this._list?.addEventListener('mouseover', (e) => {   // hovering a row picks it, as the D-pad does
+            const id = e.target.closest?.('[data-poi]')?.dataset.poi
+            if (id && id !== this._listId) this._pickRow(id)
+        })
         this._onLeave = () => { this._hoverX = undefined; this._hoverPoi = null }
     }
 
@@ -726,7 +744,8 @@ export class Map2D {
     show() {
         if (this._open) return
         this._open = true
-        this._canvas.style.display = 'block'
+        this._win.style.display = 'flex'
+        this._measure()
         // Resize only when the window actually changed: assigning canvas.width wipes the cached
         // background even at the same size, and _resize marks it dirty for exactly that case.
         if (this._sizeStale()) this._resize()
@@ -738,11 +757,12 @@ export class Map2D {
         const sig = this._paramSig()
         if (!this._road || sig !== this._sig) { this._buildRoad(); this._sig = sig }
 
-        if (!this._centeredOnce) {
-            const car = this._getCar()
-            this._panX = car.x; this._panZ = car.z
-            this._centeredOnce = true
-        }
+        // FEAT-211 (owner, 2026-11-13): every open is centred on the truck and follows it.
+        const car = this._getCar()
+        this._panX = car.x; this._panZ = car.z
+        this._tracking = true
+        this._listId = null
+        this._listT = 0
         // BUG-68: cover the story region before the stream decision below reads the lock.
         this._syncRegionWindow()
         // Resume/begin the chunked stream unless the anchor is already fully streamed — or the
@@ -756,7 +776,9 @@ export class Map2D {
         this._canvas.addEventListener('wheel', this._onWheel, { passive: false })
         this._canvas.addEventListener('dblclick', this._onDbl)
         this._canvas.addEventListener('mouseleave', this._onLeave)
-        window.addEventListener('keydown', this._onKey, true)   // FEAT-67: Q / E cycle offers (capture: see _onKeyDown)
+        window.addEventListener('keydown', this._onKey, true)   // FEAT-67/211: the map's keys (capture: see _onKeyDown)
+        window.addEventListener('keyup', this._onKeyUp, true)
+        window.addEventListener('resize', this._onWinResize)
         // NOT marking the background dirty here. A reopen with nothing changed blits the bitmap
         // left from the last open: repainting it was the whole open hitch (measured 2026-10-15,
         // dpr 2: ~100 ms free roam, ~300 ms story — the ground's cover raster, not the network).
@@ -785,6 +807,7 @@ export class Map2D {
         this._zoom = this._clampZoom(fit)
         this._zoomInit = true
         this._bgDirty = true
+        this._tracking = false   // FEAT-211: a framed route is the subject, not the truck
         // A programmatic pan has no mouse-up to hang the usual debounced re-stream off, so without
         // this the route would be drawn over blank noise until the user nudged the map by hand
         // (owner-reported after hitting "regenerate" while panned away).
@@ -805,7 +828,7 @@ export class Map2D {
         clearTimeout(this._paramTimer)
         this._pendingSig = null
         clearTimeout(this._bgTimer)
-        this._canvas.style.display = 'none'
+        this._win.style.display = 'none'
         this._canvas.removeEventListener('mousedown', this._onDown)
         window.removeEventListener('mousemove', this._onMove)
         window.removeEventListener('mouseup', this._onUp)
@@ -813,6 +836,9 @@ export class Map2D {
         this._canvas.removeEventListener('dblclick', this._onDbl)
         this._canvas.removeEventListener('mouseleave', this._onLeave)
         window.removeEventListener('keydown', this._onKey, true)
+        window.removeEventListener('keyup', this._onKeyUp, true)
+        window.removeEventListener('resize', this._onWinResize)
+        this._panKeys.clear()
         this._hoverX = undefined         // the cursor is not over a closed map (stale card on reopen)
         this._hoverPoi = null
         this._hoverView = null
@@ -828,30 +854,127 @@ export class Map2D {
         this.hide()
         this._road = null
         this._campRunsMemo = null   // holds the old network's points — let them go with it
-        this._centeredOnce = false
     }
 
     /**
-     * FEAT-67: Q / E — previous / next offer. Over a source POI they step its hover card (and the
-     * route drawn with it); anywhere else they go to main.js, which steps the parked offer panel
-     * that the map is open behind. Q and E are bound nowhere else in the game.
+     * The map's keys, caught at window capture and stopped, so vehicle.js's document listener never sees them (a
+     * stopped key is the map's alone: Q / E never shift a manual gearbox, WASD never drives). The pad reaches the
+     * same keys through gamepad.js MAP_KEYS.
+     *
+     * FEAT-67: Q / E (the pad's bumpers) — previous / next offer. Over a source POI they step its hover card (and the
+     * route drawn with it); anywhere else they go to main.js, which steps the parked offer panel that the map is
+     * open behind. FEAT-211 (owner, 2026-11-13, the approved scheme), only while no card or menu is up over the map
+     * (menu-nav.js owns the arrows, Enter and Esc then, and WASD is the truck's):
+     *   WASD             pan the map (the keyboard's stick)
+     *   ↑ / ↓            walk the Missions list; the map snaps to the row's place
+     *   ← / →            flip the offers at the highlighted (or hovered) POI, like Q / E
+     *   Esc (pad B)      leave the list — the highlight clears and the map stays put; with no highlight it falls
+     *                    through to main.js, which closes the map
+     *   c (stick click)  back to centred on the truck, tracking
      */
     _onKeyDown(e) {
         if (e.ctrlKey || e.metaKey || e.altKey) return
         const t = e.target
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-        const d = e.code === 'KeyQ' ? -1 : e.code === 'KeyE' ? 1 : 0
-        if (!d) return
-        // FEAT-133: on the map Q / E page offers and nothing else — caught at window capture and
-        // stopped (autorepeats too), so vehicle.js's document listener never sees a manual shift.
-        e.stopPropagation()
-        if (e.repeat) return
-        if (this._hoverPoi) {
-            const n = this._hoverView?.count ?? 0
-            if (n > 1) this._hoverIdx = ((this._hoverIdx + d) % n + n) % n
-        } else if (this._onCycle) {
-            this._onCycle(d)
+        const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
+        const take = () => {
+            e.stopPropagation(); e.preventDefault()
+            if (e.isTrusted) pad.active = false   // gamepad.js's own trusted-key listener sits behind this stop
         }
+        if (k === 'q' || k === 'e') {
+            // FEAT-133: on the map Q / E page offers and nothing else — autorepeats are stopped too.
+            take()
+            if (e.repeat) return
+            const d = k === 'q' ? -1 : 1
+            if (this._hoverPoi) this._flip(d)
+            else if (this._onCycle) this._onCycle(d)
+            return
+        }
+        if (pad.cardActive() || pad.menuActive()) return
+        if (e.shiftKey) return   // Shift+C is the free cam, Shift+R the spawn, Shift the clutch
+        if (k === 'w' || k === 'a' || k === 's' || k === 'd') { take(); this._panKeys.add(k); return }
+        if (k === 'c') { take(); if (!e.repeat) this._centre(); return }
+        if (k === 'ArrowUp' || k === 'ArrowDown') { take(); this._stepList(k === 'ArrowUp' ? -1 : 1); return }
+        if (k === 'ArrowLeft' || k === 'ArrowRight') { take(); if (this._hoverPoi) this._flip(k === 'ArrowLeft' ? -1 : 1); return }
+        if (k === 'Escape' && this._listId) { take(); this._leaveList() }
+    }
+
+    /** Step the hovered POI's offer card by d, wrapping. */
+    _flip(d) {
+        const n = this._hoverView?.count ?? 0
+        if (n > 1) this._hoverIdx = ((this._hoverIdx + d) % n + n) % n
+    }
+
+    /** FEAT-211: back to centred on the truck, following it. */
+    _centre() {
+        const car = this._getCar()
+        this._panX = car.x; this._panZ = car.z
+        this._tracking = true
+        this._leaveList()
+        this._deferBgRedraw()
+    }
+
+    /** FEAT-211: a pan input — the map is the player's now: no tracking, and the list is left. */
+    _panned() {
+        this._tracking = false
+        if (this._listId) this._leaveList()
+    }
+
+    _leaveList() { this._listId = null; this._listT = 0 }
+
+    /** FEAT-211: move the list highlight by d rows (wrapping); the first press lands on the nearest row. */
+    _stepList(d) {
+        const rows = this._rows
+        if (!rows.length) return
+        const i = rows.findIndex(r => r.id === this._listId)
+        this._pickRow(rows[i < 0 ? 0 : (i + d + rows.length) % rows.length].id)
+    }
+
+    /** FEAT-211: highlight a row and snap the map to its place. Its card shows through _updateHover. */
+    _pickRow(id) {
+        const r = this._rows.find(q => q.id === id)
+        if (!r) return
+        this._listId = id
+        this._listT = 0
+        this._tracking = false
+        this._panX = r.x; this._panZ = r.z
+        this._deferBgRedraw()
+        this._restreamIfDrifted()
+    }
+
+    /**
+     * FEAT-211: the Missions list — every POI with work on offer now, nearest first (straight line from the truck).
+     * A row is the place's name, its distance and one diamond per job family on offer (FAMILY_COLOR, the map's own
+     * key). Rebuilt four times a second at most, and written to the DOM only when it reads differently.
+     */
+    _refreshList() {
+        const now = performance.now()
+        if (now - this._listT < 250 || !this._list) return
+        this._listT = now
+        const board = this._getBoard(), car = this._getCar()
+        const rows = []
+        for (const q of (board && this._getPois()) || []) {
+            if (q.hidden) continue
+            const st = board.status(q.id)
+            if (!st?.source || !st.families.length) continue
+            const name = board.name?.(q.id) ?? POI_ICONS[q.type]?.label ?? q.type
+            rows.push({ id: q.id, x: q.x, z: q.z, d: Math.hypot(q.x - car.x, q.z - car.z), fams: st.families,
+                        name: name[0].toUpperCase() + name.slice(1) })   // a list starts its line: "The gas station"
+        }
+        rows.sort((a, b) => a.d - b.d)
+        this._rows = rows
+        const clock = board?.clock?.() ?? ''
+        if (this._clockEl && this._clockEl.textContent !== clock) this._clockEl.textContent = clock
+        if (this._listId && !rows.some(r => r.id === this._listId)) this._listId = null   // its work went
+        const esc = (v) => String(v).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`)
+        const html = rows.length ? rows.map(r => `<div class="ml-row${r.id === this._listId ? ' on' : ''}" data-poi="${esc(r.id)}">`
+            + `<span class="ml-fams">${r.fams.map(f => `<i style="background:${FAMILY_COLOR[f] ?? EMPTY_DIAMOND_COLOR}"></i>`).join('')}</span>`
+            + `<span class="ml-name">${esc(r.name)}</span><span class="ml-dist">${(r.d / 1000).toFixed(1)} km</span></div>`).join('')
+            : '<div class="ml-none">No work on offer right now.</div>'   // [DEFAULT] words
+        if (html === this._listHtml) return
+        this._listHtml = html
+        this._list.innerHTML = html
+        this._list.querySelector('.ml-row.on')?.scrollIntoView({ block: 'nearest' })
     }
 
     /**
@@ -861,12 +984,13 @@ export class Map2D {
     _updateHover() {
         const board = this._getBoard()
         const pois = this._getPois()
-        if (!board || !pois?.length || this._hoverX === undefined || this._dragging || this._hoverLocked()) {
+        const listed = this._listId   // FEAT-211: a list highlight answers instead of the cursor
+        if (!board || !pois?.length || (this._hoverX === undefined && !listed) || this._dragging || this._hoverLocked()) {
             this._hoverPoi = null; this._hoverView = null; return
         }
         const R = POI_ICON_PX * 0.75
-        let best = null, bestD = R * R
-        for (const q of pois) {
+        let best = listed ? pois.find(q => q.id === listed) ?? null : null, bestD = R * R
+        if (!listed) for (const q of pois) {
             const dx = this._sx(q.x) - this._hoverX, dy = this._sy(q.z) - this._hoverY
             const d = dx * dx + dy * dy
             if (d < bestD && !q.hidden && board.status(q.id)?.source) { bestD = d; best = q }
@@ -1099,15 +1223,24 @@ export class Map2D {
     _sx(wx) { return (wx - this._panX) * this._zoom + this._sheetRect.cx }
     _sy(wz) { return (wz - this._panZ) * this._zoom + this._sheetRect.cy }
 
+    /**
+     * FEAT-211: read the sheet canvas's laid-out size (CSS flex inside #map-window decides it). A layout read, so only
+     * on open and on a window resize — never per frame; _sizeStale and _resize use what it stored.
+     */
+    _measure() {
+        const r = this._canvas.getBoundingClientRect()
+        this._layoutW = Math.round(r.width); this._layoutH = Math.round(r.height)
+    }
+
     _sizeStale() {
         const dpr = window.devicePixelRatio || 1
-        return this._canvas.width !== Math.round(window.innerWidth * dpr)
-            || this._canvas.height !== Math.round(window.innerHeight * dpr)
+        return this._canvas.width !== Math.round(this._layoutW * dpr)
+            || this._canvas.height !== Math.round(this._layoutH * dpr)
     }
 
     _resize() {
         const dpr = window.devicePixelRatio || 1
-        const w = window.innerWidth, h = window.innerHeight
+        const w = this._layoutW, h = this._layoutH
         this._canvas.width = Math.round(w * dpr)
         this._canvas.height = Math.round(h * dpr)
         // The cached background is bigger than the screen on every side — see BG_OVERSCAN.
@@ -1117,8 +1250,6 @@ export class Map2D {
         this._bg.height = Math.round(h * BG_OVERSCAN * dpr)
         this._bgZoom = 0      // resizing cleared the bitmap: nothing valid to blit while rebuilding
         this._bgJob = null    // a half-built one is the old size
-        this._canvas.style.width = w + 'px'
-        this._canvas.style.height = h + 'px'
         // The CSS size, kept so render-time code never reads clientWidth/Height (a layout read —
         // forced synchronous if any HUD DOM was written earlier in the frame). Equal by
         // construction: #map2d has no border or padding (index.html).
@@ -1134,6 +1265,7 @@ export class Map2D {
             this._zoomInit = true
         }
         this._bgDirty = true
+        this._paintLegend()
     }
 
     // ── Mouse: drag-pan + wheel-zoom ──────────────────────────────────────────────────────────
@@ -1155,9 +1287,15 @@ export class Map2D {
         // Road-Feel QoL: remember the hover position so render() can show world coords under the
         // cursor (correlates the map with test/road-character.mjs worst-offender x/z listings).
         const rect = this._canvas.getBoundingClientRect()
-        this._hoverX = e.clientX - rect.left
-        this._hoverY = e.clientY - rect.top
+        const x = e.clientX - rect.left, y = e.clientY - rect.top
+        // A window-wide listener (a drag may leave the sheet): only a pointer ON the sheet hovers it.
+        if (x >= 0 && y >= 0 && x <= rect.width && y <= rect.height) {
+            this._hoverX = x
+            this._hoverY = y
+            if (this._listId && (e.movementX || e.movementY)) this._leaveList()   // FEAT-211: the mouse is on the sheet now
+        }
         if (!this._dragging) return
+        this._panned()
         const dx = e.clientX - this._lastX
         const dy = e.clientY - this._lastY
         this._lastX = e.clientX
@@ -1216,14 +1354,29 @@ export class Map2D {
             this._canvas.style.cursor = 'none'   // one cursor on screen, not two
         }
         this._hoverX = s.cx; this._hoverY = s.cy
-        if (pad.panX || pad.panY) {
-            const r = PAD_PARAMS.mapPanRate * dt / this._zoom
-            this._panX += pad.panX * r
-            this._panZ += pad.panY * r
-            this._deferBgRedraw()
-            this._restreamIfDrifted()
-        }
+        if (pad.panX || pad.panY) this._panBy(pad.panX, pad.panY, dt)
         if (pad.zoom) this._zoomAbout(this._hoverX, this._hoverY, Math.exp(pad.zoom * PAD_PARAMS.mapZoomRate * dt))
+    }
+
+    /** Pan by a stick-like (x, y) in [-1, 1] over dt seconds — the pad's left stick and the keyboard's WASD. */
+    _panBy(x, y, dt) {
+        const r = PAD_PARAMS.mapPanRate * dt / this._zoom
+        this._panX += x * r
+        this._panZ += y * r
+        this._panned()
+        this._deferBgRedraw()
+        this._restreamIfDrifted()
+    }
+
+    /** FEAT-211: WASD pans at the stick's full-deflection rate. */
+    _keyPan() {
+        const now = performance.now()
+        const dt = Math.min(0.1, (now - (this._keyT || now)) / 1000)
+        this._keyT = now
+        const k = this._panKeys
+        if (!k.size) return
+        const x = (k.has('d') ? 1 : 0) - (k.has('a') ? 1 : 0), y = (k.has('s') ? 1 : 0) - (k.has('w') ? 1 : 0)
+        if (x || y) this._panBy(x / Math.hypot(x, y), y / Math.hypot(x, y), dt)
     }
 
     // FEAT-133: the pad cursor — a ringed crosshair in map ink, so it reads on paper and over water.
@@ -1310,6 +1463,18 @@ export class Map2D {
         // …and if play has registered more of its region since we copied it, re-take the copy.
         if (this._playOutgrewMap()) this._startStream()
         if (this._sizeStale()) this._resize()
+        this._keyPan()           // FEAT-211: WASD, before the tracking below reads whether a pan let go of it
+        if (this._tracking) {
+            // FEAT-211: follow the truck. The cached sheet is blitted at the offset as it drifts; once the drift eats
+            // half the overscan margin a rebuild starts (sliced, PERF-46), and free roam re-streams around the new
+            // centre like a pan would (a story region never drifts).
+            const car = this._getCar()
+            this._panX = car.x; this._panZ = car.z
+            if (this._bgZoom && (Math.abs(this._panX - this._bgPanX) * this._zoom > this._bgOffX / 2
+                              || Math.abs(this._panZ - this._bgPanZ) * this._zoom > this._bgOffY / 2)) this._bgDirty = true
+            if (!this._streaming && this._streamAt && this._anchorDrifted()) this._startStream()
+        }
+        this._refreshList()
         if (this._bgDirty && !this._bgJob) { this._startBackground(); this._bgDirty = false }
         // Nothing valid on screen yet (first open, resize) → finish now rather than paint in bands.
         if (this._bgJob) this._stepBackground(this._bgZoom ? BG_SLICE_MS : Infinity)
@@ -1344,7 +1509,7 @@ export class Map2D {
         this._drawStartArrow(ctx)   // FEAT-61: which way to set off, on any drawn mission line
         this._drawCar(ctx)
         this._drawCollar(ctx)    // LAST of the map layers: it masks the margin (see _drawCollar)
-        this._drawLegend(ctx)    // FEAT-210: over the sheet's corner, under the offer card
+        this._drawCarEdge(ctx)   // FEAT-211: where the truck is when it is off the sheet
         this._drawOfferCard(ctx) // FEAT-67: over everything, clamped inside the sheet
         this._drawPadCursor(ctx) // FEAT-133: over the card it opened, or it would vanish under it
         this._drawCursorCoords(ctx)
@@ -2928,10 +3093,11 @@ export class Map2D {
         return lines
     }
 
-    // (5) Car marker — a triangle at the car's world XZ, pointing along its world-forward XZ.
-    _drawCar(ctx) {
-        const car = this._getCar()
-        const sx = this._sx(car.x), sy = this._sy(car.z)
+    // (5) Car marker — a triangle at the car's world XZ, pointing along its world-forward XZ. `at` draws the same
+    // triangle at a screen point instead ({ x, y, fx, fz }: the edge marker, FEAT-211).
+    _drawCar(ctx, at = null) {
+        const car = at ?? this._getCar()
+        const sx = at ? at.x : this._sx(car.x), sy = at ? at.y : this._sy(car.z)
         let fx = car.fx, fz = car.fz
         const m = Math.hypot(fx, fz) || 1; fx /= m; fz /= m   // forward (screen: x→right, z→down)
         const px = -fz, pz = fx                               // perpendicular
@@ -2946,6 +3112,22 @@ export class Map2D {
         ctx.closePath()
         ctx.fill()
         ctx.stroke()
+    }
+
+    /**
+     * FEAT-211: the truck's edge marker — when the truck is off the sheet (panned or zoomed away), the car's red
+     * triangle sits just inside the neatline where the line from the sheet's centre to the truck crosses it, and
+     * points along that line.
+     */
+    _drawCarEdge(ctx) {
+        const car = this._getCar(), s = this._sheet()
+        const sx = this._sx(car.x), sy = this._sy(car.z)
+        if (sx >= s.x0 && sx <= s.x1 && sy >= s.y0 && sy <= s.y1) return
+        const M = CAR_ICON_L + 6
+        const dx = sx - s.cx, dy = sy - s.cy
+        const t = Math.min((s.w / 2 - M) / (Math.abs(dx) || 1e-9), (s.h / 2 - M) / (Math.abs(dy) || 1e-9))
+        const L = Math.hypot(dx, dy)
+        this._drawCar(ctx, { x: s.cx + dx * t, y: s.cy + dy * t, fx: dx / L, fz: dy / L })
     }
 
     /**
@@ -3045,24 +3227,43 @@ export class Map2D {
         ctx.textBaseline = 'alphabetic'
     }
 
+    /** The legend's layout constants and its height (it is as wide as the column it sits in). */
+    _legendBox() {
+        const fams = new Set(Object.values(FAMILY_COLOR)).size + 1   // colours shared by families, + NO WORK NOW
+        const SYM = 34, ROW = 20, SUB = 16, PAD = 8, HEAD = 22
+        const rows = ['Mission', null, 'Shop', 'Road', 'Stream', 'Pond', 'Tunnel', 'Camping area']
+        const subH = Math.ceil(fams / 2) * SUB
+        return { SYM, ROW, SUB, PAD, HEAD, rows, subH, H: HEAD + PAD + 7 * ROW + subH + PAD }
+    }
+
     /**
-     * FEAT-210: the legend, boxed in the sheet's bottom-left corner the way a Forest Service visitor
+     * FEAT-211: the legend lives at the foot of the list column, its own small canvas (#map-legend), painted on a
+     * resize and never per frame. Over the sheet's bottom-left corner it covered whatever POI sat there.
+     */
+    _paintLegend() {
+        const el = this._legendEl
+        if (!el) return
+        const W = el.clientWidth, H = this._legendBox().H, dpr = this._dpr || 1
+        if (!W) return
+        el.width = Math.round(W * dpr); el.height = Math.round(H * dpr); el.style.height = H + 'px'
+        const c = el.getContext('2d')
+        c.setTransform(dpr, 0, 0, dpr, 0, 0)
+        this._drawLegend(c, 0, 0, W)
+    }
+
+    /**
+     * FEAT-210: the legend, boxed the way a Forest Service visitor
      * map boxes its own (owner, 2026-11-13: "inspired by forest service map branding" — a real object,
      * so the object sets the look, UI-STYLE §2): the agency's green band with the title in its gold,
      * the map's cream underneath, and each entry drawn with the SAME inks and weights the sheet uses.
      * The mission row lists the family colours under it, families sharing a colour on one line — the
      * blue diamond was the one the owner could not place.
      */
-    _drawLegend(ctx) {
-        const s = this._sheet()
+    _drawLegend(ctx, x, y, W) {
         const groups = new Map()   // colour → its family labels
         for (const [f, c] of Object.entries(FAMILY_COLOR)) groups.set(c, [...(groups.get(c) ?? []), FAMILY_LABEL[f]])
         const fams = [...groups].map(([c, l]) => [c, l.join(' / ')]).concat([[EMPTY_DIAMOND_COLOR, 'NO WORK NOW']])
-        const SYM = 34, ROW = 20, SUB = 16, PAD = 8, HEAD = 22, W = 248
-        const rows = ['Mission', null, 'Shop', 'Road', 'Stream', 'Pond', 'Tunnel', 'Camping area']
-        const subH = Math.ceil(fams.length / 2) * SUB
-        const H = HEAD + PAD + 7 * ROW + subH + PAD
-        const x = s.x0 + 10, y = s.y1 - 10 - H
+        const { SYM, ROW, SUB, PAD, HEAD, rows, subH, H } = this._legendBox()
         ctx.fillStyle = 'rgba(242,239,228,0.95)'; ctx.fillRect(x, y, W, H)
         ctx.fillStyle = LEGEND_GREEN; ctx.fillRect(x, y, W, HEAD)
         ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, W - 1, H - 1)
