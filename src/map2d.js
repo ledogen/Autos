@@ -914,7 +914,7 @@ export class Map2D {
         if (k === 'c') { take(); if (!e.repeat) this._centre(); return }
         if (k === 'ArrowUp' || k === 'ArrowDown') { take(); this._stepList(k === 'ArrowUp' ? -1 : 1); return }
         if (k === 'ArrowLeft' || k === 'ArrowRight') { take(); if (this._hoverPoi) this._flip(k === 'ArrowLeft' ? -1 : 1); return }
-        if (k === 'Enter' && this._toggleShop()) { take(); return }
+        if (k === 'Enter') { take(); this._toggleShop(); return }   // the map's alone, like Q / E (landing 3 gives it the waypoint)
         if (k === 'Escape' && this._openShop) { take(); this._listId = this._openShop; this._openShop = null; this._listT = 0; return }
         if (k === 'Escape' && this._listId) { take(); this._leaveList() }
     }

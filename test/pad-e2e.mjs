@@ -101,14 +101,18 @@ await js('__fp.b[4] = 1'); await sleep(150); await js('__fp.b[4] = 0'); await sl
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(150)
 await js('__fp.b[0] = 1'); await sleep(150); await js('__fp.b[0] = 0'); await sleep(150)
 const wk = await js('__win.join()'), dk = await js('__doc.join()')
-check(wk === 'q,e', `LB / RB send Q / E on the map, A is silent (window saw "${wk}")`)
-check(!/[qe]/.test(dk), `Q / E stop at the map, never reaching the gearbox (document saw "${dk}")`)
+check(wk === 'q,e,Enter', `LB / RB send Q / E on the map and A sends Enter (window saw "${wk}")`)
+check(!/q|e|Enter/.test(dk), `Q / E / Enter stop at the map, never reaching the gearbox (document saw "${dk}")`)
+check(await js('__map2d()._tab') === 'missions', 'LB then RB swap the list to Shopping and back to Missions')
 // FEAT-211: the Missions list on the pad. Free roam has no board, so two places with work are stubbed onto the map:
 // D-pad ↓ lands on the nearest and the map snaps there (tracking let go), ↓ again walks to the next, B leaves the list
 // with the map still open and where it was, the left stick's click puts it back on the truck, tracking.
 await js(`(() => { const m = __map2d(), c = __car(); window.__mapStub = [m._getPois, m._getBoard]
   m._getPois = () => [{ id: 'near', type: 'gasPump', x: c.x + 300, z: c.z }, { id: 'far', type: 'foodVendor', x: c.x - 700, z: c.z + 100 }]
-  m._getBoard = () => ({ status: () => ({ source: true, families: ['delivery'], nextText: null }), view: () => null, name: (id) => id })
+  m._getBoard = () => ({ status: () => ({ source: true, families: ['delivery'], nextText: null }), view: () => null, name: (id) => id,
+    shop: (q, open) => q.id === 'near' ? { price: '$3.00/gal', next: null, opens: false, items: null }
+      : { price: null, next: 'new stock in 2 h', opens: true, items: open ? [{ name: 'Old tire', price: '$20.00', cond: 0.5, color: '#888', left: 'gone in 5 h', desc: 'Flavour.' },
+                                                                          { name: 'Coffee', price: '$3.00', cond: null, color: null, left: 'always in stock', desc: 'Hot.' }] : null } })
   m._listT = 0 })()`)
 await sleep(400)
 const ls = () => js('(() => { const m = __map2d(), c = __car(); return { id: m._listId, tr: m._tracking, dx: m._panX - c.x, dz: m._panZ - c.z, open: m.isOpen(), html: document.getElementById("map-list").textContent } })()')
@@ -121,6 +125,25 @@ await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sl
 l = await ls(); check(l.open && l.id === null && Math.abs(l.dx + 700) < 1, `B leaves the list: the map stays open where it was (open ${l.open}, row ${l.id}, pan ${l.dx.toFixed(0)})`)
 await js('__fp.b[10] = 1'); await sleep(150); await js('__fp.b[10] = 0'); await sleep(300)
 l = await ls(); check(l.tr && Math.hypot(l.dx, l.dz) < 1, `the left stick click centres the map on the truck and tracks it (tracking ${l.tr}, off ${Math.hypot(l.dx, l.dz).toFixed(1)} m)`)
+// FEAT-211 landing 2: the Shopping list on the pad. RB swaps to it; the stub's 'near' is a pump (a price, nothing to open),
+// 'far' a shop: A opens its two items in line, the D-pad walks onto them, B closes the shop (the highlight back on it),
+// B again leaves the list, LB swaps back to Missions.
+const btnS = async (b) => { await js(`__fp.b[${b}] = 1`); await sleep(150); await js(`__fp.b[${b}] = 0`); await sleep(350) }
+const ss = () => js('(() => { const m = __map2d(); return { tab: m._tab, id: m._listId, open: m._openShop, open2: m.isOpen(), rows: m._rows.map(r => r.id).join(), html: document.getElementById("map-list").textContent } })()')
+await btnS(5); let sh = await ss()
+check(sh.tab === 'shopping' && /3\.00\/gal/.test(sh.html) && /new stock in 2 h/.test(sh.html), `RB swaps to the Shopping list: the pump's price, the shop's stock timer (${sh.tab}: "${sh.html}")`)
+await btnS(13); await btnS(0); sh = await ss()
+check(sh.id === 'near' && sh.open === null && sh.rows === 'near,far', `A on a pump opens nothing (${sh.id}, open ${sh.open}, rows ${sh.rows})`)
+await btnS(13); await btnS(0); sh = await ss()
+check(sh.open === 'far' && sh.rows === 'near,far,far#0,far#1' && /Old tire\$20\.00/.test(sh.html) && /gone in 5 h/.test(sh.html) && /always in stock/.test(sh.html),
+  `A on a shop opens its items in line (rows ${sh.rows}: "${sh.html}")`)
+await btnS(13); sh = await ss(); check(sh.id === 'far#0', `the D-pad walks onto the open shop's items (${sh.id})`)
+await btnS(1); sh = await ss()
+check(sh.open === null && sh.id === 'far' && sh.rows === 'near,far' && sh.open2, `the first B closes the shop, its header highlighted, the map open (${sh.id}, rows ${sh.rows})`)
+await btnS(13); await btnS(13); await btnS(0); await btnS(0); sh = await ss()
+check(sh.id === 'far' && sh.open === null, `A on the open shop's header again closes it (${sh.id}, open ${sh.open})`)
+await btnS(1); sh = await ss(); check(sh.id === null && sh.open2, `the next B leaves the list, the map still open (${sh.id})`)
+await btnS(4); sh = await ss(); check(sh.tab === 'missions', `LB swaps back to Missions (${sh.tab})`)
 await js('(() => { const m = __map2d(); [m._getPois, m._getBoard] = __mapStub; m._listT = 0 })()')
 // FEAT-175: the right stick's vertical zooms about the cursor (up in, down out); the triggers stay the pedals and
 // zoom nothing; the camera does not orbit behind the map.
