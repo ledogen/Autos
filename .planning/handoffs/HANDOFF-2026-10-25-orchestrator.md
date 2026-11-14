@@ -165,7 +165,7 @@ without asking the owner where the meter stands. Land what they report, yourself
 - ledorepo: DONE and landed (INFRA-14 closed, DEC-195 wip not backed up). INFRA-13 waits on the owner (Time Machine).
 Orchestrator used DEC-190..192; next free for it: 193.
 
-**Main:** waypoint smoke PASSED 26/26 (3dcb887c). FEAT-212 cart merged (land/feat-212c @ 60fc6bf0), smoke started, log wip/orch/smoke-cart.log: check it. Old line follows.
+**Main:** cart smoke fixed (test-only) and green on boot,story,service. Merged feature/perf (frame cap) + land/feat-212d; FULL smoke in flight, log wip/orch/smoke-capshop.log: check it. Old line follows.
 (check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
 minted: FEAT-215 (GPS U-turn arrow, Spare), FEAT-216 (damage alerts, B). Inbox fully replied; 2gdr (FEAT-204, "4x more
 slots": 4 more or 4 times?) still waits on the owner. DEC-136, the :8001 Windows server and the Tailscale-only
