@@ -406,6 +406,11 @@ export const RANGER_PARAMS = {
                                // x≈0.18 for B/C/E above) and its displacement limit auto-scales with
                                // vRef as the slosh/ratio sliders retune. Lower = lets go before peak;
                                // higher pushes past the peak into the unstable post-peak region.
+  // BUG-167: the carcass's own damping, F = k·s + c·ṡ (physics.js carcassDamping), as a damping ratio of the
+  // carcass spring against its corner's load, faded out linearly to 0 at tireCarcassDampV. At rest the relaxation
+  // term (ds/dt = v_slip − s·|v|/L) no longer bleeds the deflection, so this is what settles the parked truck.
+  tireCarcassDampRatio: 0.3,
+  tireCarcassDampV:     0.1,   // m/s — rolling speed where the carcass damper has faded out (0.36 km/h)
 
   // Wheel angular dynamics (D-02)
   // I = 0.5 × mass_wheel × r²; mass_wheel ≈ 18 kg (245/75R16 truck tire+wheel assembly)

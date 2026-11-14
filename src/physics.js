@@ -1136,6 +1136,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     let lastSLatNew     = 0   // sLat already committed (lateral doesn't iterate with ω)
     let lastLongVelCur  = 0
     let lastRelaxDen    = 1
+    let lastCarcassK    = 0   // BUG-167: the carcass spring dF/ds at the stored deflection (the damper's k)
+    let lastLatVelCur   = 0
+    let lastFlatDamp    = 0   // BUG-167: its lateral term c·ṡLat [N], for the Newton solve's friction cap
 
     // Query every surface this wheel sphere overlaps (footprint=true: tire-envelope ground sampling).
     // qcPlus = analytic terrain/props/walls ∪ engine dynamic debris (FEAT-48 translation layer).
@@ -1195,11 +1198,14 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       const longVelCur = longVel || 0
       const latVelCur  = latVel  || 0
       const omegaCur   = (vehicleState.wheelOmega?.[i] ?? 0) * params.wheelRadius
-      const vCon       = Math.max(Math.abs(omegaCur), Math.abs(longVelCur), SLIP_EPSILON)
+      // BUG-167: no speed floor on the ground. At rest the relaxation term is 0 and the deflection holds (a
+      // parked truck does not creep); the carcass damper below settles it. SLIP_EPSILON is airborne-only.
+      const vCon       = Math.max(Math.abs(omegaCur), Math.abs(longVelCur))
       const L          = params.tireRelaxationLength || 0.3
       const relaxDen   = 1 + dt * vCon / L
       const sLongPrev  = vehicleState.slipLong[i]
-      let   sLatNew    = (vehicleState.slipLat[i] + dt * latVelCur) / relaxDen
+      const sLatPrev   = vehicleState.slipLat[i]
+      let   sLatNew    = (sLatPrev + dt * latVelCur) / relaxDen
       let   sLongCur   = (sLongPrev + dt * (omegaCur - longVelCur)) / relaxDen
       // BUG-20 friction-circle break-away clamp. The carcass stores deflection up to the static-
       // friction limit, then it slides. This gives honest static friction — the relaxation spring holds
@@ -1223,7 +1229,13 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       // (rockGrip, Step 0.5), so a tire climbing a rock is not held at road speed by a full wheel
       // load the road no longer has. No rock, exactly Fn.
       const FnRoad = Math.max(0, Fn - rockLoad[i])
-      const { Flong, Flat } = computeTireForces(sLongCur, sLatNew, FnRoad, params, muScale)
+      const tf = computeTireForces(sLongCur, sLatNew, FnRoad, params, muScale)
+      // BUG-167: the carcass damper (Kelvin-Voigt: F = k·s + c·ṡ). See carcassDamping.
+      const cC = carcassDamping(tf.dFmagDs, FnRoad, Math.max(vCon, Math.abs(latVelCur), Math.abs(omegaCur - longVelCur)), params)   // fades on ANY patch motion: rolling, sliding, spinning
+      const flatDamp = cC * (sLatNew - sLatPrev) / dt
+      let   Flong = tf.Flong + cC * (sLongCur - sLongPrev) / dt
+      let   Flat  = tf.Flat  + flatDamp
+      if (cC > 0) { const k = breakawayScale(Flong, Flat, sLongCur, sLatNew, FnRoad, params, muScale, sBreak); Flong *= k; Flat *= k }
 
       // SM-3 honest wear signals for this wheel, published for src/damage.js to integrate.
       // slipVel is the RAW contact-patch sliding speed (not the relaxation-filtered displacement) —
@@ -1237,6 +1249,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       lastSLatNew    = sLatNew
       lastLongVelCur = longVelCur
       lastRelaxDen   = relaxDen
+      lastCarcassK   = tf.dFmagDs
+      lastLatVelCur  = latVelCur
+      lastFlatDamp   = flatDamp
       // REVERTED 2026-08-15 (owner): ω responds to RELATIVE slip on debris again — the
       // road-frame anchor was a containment measure from the discontinuous-depth era, when
       // force spikes launched rocks and the implicit solve chased them to 60–80 rad/s. With
@@ -1307,20 +1322,38 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       let omegaNew = omega0
       let sLongFinal = lastSLongPrev
       let lastDelta = 0
+      // BUG-167: the carcass damper's fade is read at the step's END patch speed (implicit, like ω): pass 0 solves
+      // without it; only a wheel that ends the step near rest re-solves with it. A wheel breaking loose from rest (a
+      // floored launch's first step) is sliding by the step's end, so it never sees the damper.
+      let carcassC = 0
+      for (let pass = 0; pass < 2; pass++) {
+      if (pass === 1) {
+        const vEnd = omegaNew * params.wheelRadius
+        carcassC = carcassDamping(lastCarcassK, lastFn, Math.max(Math.abs(vEnd), Math.abs(lastLongVelCur), Math.abs(lastLatVelCur), Math.abs(vEnd - lastLongVelCur)), params)
+        if (!(carcassC > 0)) break
+        omegaNew = omega0; lastDelta = 0
+      }
       for (let iter = 0; iter < 4; iter++) {
         const omegaR    = omegaNew * params.wheelRadius
         let   sLongIter = (lastSLongPrev + dt * (omegaR - lastLongVelCur)) / lastRelaxDen
         if (sLongIter >  sLongMax) sLongIter =  sLongMax
         if (sLongIter < -sLongMax) sLongIter = -sLongMax
         sLongFinal = sLongIter
-        const { Flong, dFmagDs } = computeTireForces(sLongIter, lastSLatNew, lastFn, params, params._tireMuScale?.[i] ?? 1)
+        const tfi = computeTireForces(sLongIter, lastSLatNew, lastFn, params, params._tireMuScale?.[i] ?? 1)
+        let   Flong = tfi.Flong + carcassC * (sLongIter - lastSLongPrev) / dt   // BUG-167 carcass damper
+        let   cIter = carcassC
+        if (cIter > 0) {   // ... and the friction cap: past it the patch slides and c·ṡ adds nothing (dF/dω loses c/dt)
+          const k = breakawayScale(Flong, tfi.Flat + lastFlatDamp, sLongIter, lastSLatNew, lastFn, params, params._tireMuScale?.[i] ?? 1, sBreak)
+          if (k < 1) { Flong *= k; cIter = 0 }
+        }
         const g  = omegaNew - omega0 - dt / wheelInertia * (driveTorque - Flong * params.wheelRadius - brakeSigned)
-        // g'(ω) = 1 + dt·r/I · dF/dω,  with dF/dω = dFmagDs · dsdo
-        const gp = 1 + dt * params.wheelRadius * dFmagDs * dsdo / wheelInertia
+        // g'(ω) = 1 + dt·r/I · dF/dω,  with dF/dω = (dFmagDs + c/dt) · dsdo
+        const gp = 1 + dt * params.wheelRadius * (tfi.dFmagDs + cIter / dt) * dsdo / wheelInertia
         const delta = g / gp
         omegaNew -= delta
         lastDelta = delta
         if (Math.abs(delta) < 1e-4) break
+      }
       }
       // CONVERGENCE SAFEGUARD (2026-08-15, capture 1786777538787): under a heavily loaded
       // near-stationary wheel the 4-iteration Newton can leave a LARGE residual (post-peak
@@ -1491,13 +1524,45 @@ function stepAirborneWheel (i, vehicleState, params, dt, longVel) {
   if (vehicleState.wheelDebug) vehicleState.wheelDebug[i].omega = vehicleState.wheelOmega[i]
 }
 
-// BUG-20: numeric floor only (keeps the relaxation denominator well-conditioned near rest).
-// Was 3.0 m/s — that large floor forced the stored slip displacement to bleed toward zero
+// BUG-20: relaxation speed floor, airborne wheels only since BUG-167 (an unloaded carcass springs back even
+// with the wheel stopped). On the ground it bled the deflection at rest at 0.05/L ≈ 0.4 /s, so a parked truck
+// crept downhill (≈ 10 mm/s on 17°). Was 3.0 m/s — that large floor forced the stored slip displacement to bleed toward zero
 // below ~3 m/s, so the carcass spring could not hold at rest (no static friction: a braked
 // car ran away downhill) and the tire felt slippery under ~11 km/h. The blow-up at rest that
 // the old floor guarded against is now bounded by the friction-circle break-away clamp on
 // |(sLong,sLat)| (sBreak) — the physically correct limiter.
 const SLIP_EPSILON = 0.05
+
+/**
+ * BUG-167: the tire carcass's own damping [N·s/m], the c of a Kelvin-Voigt carcass F = k·s + c·ṡ, added to the
+ * longitudinal and lateral force alike. `k` is the grip curve's slope at the stored deflection, `Fn / g` the corner's
+ * mass, so tireCarcassDampRatio is a damping ratio of that corner on its carcass spring (k ≈ 150 kN/m at rest:
+ * c ≈ 5 kN·s/m at 0.3). Faded out linearly by tireCarcassDampV: at speed the relaxation term already damps the
+ * carcass, so driving is unchanged. Without it, the floorless carcass at rest rocks the body (up to 0.4 mm/step).
+ * APPROXIMATIONS: rubber hysteresis is frequency-dependent and a real carcass damps at speed too; this is a single
+ * viscous term, active only near rest (Pacejka MF-Tyre's "low-speed damping" does the same). Its time constant c/k
+ * (≈ 33 ms) is about two 60 Hz steps, so it is under-resolved: in the implicit wheel solve it also acts as extra
+ * stiffness (c/dt). The wheel solve reads the fade at the step's END patch speed and the force is capped at the
+ * break-away force (breakawayScale), so a wheel breaking loose from rest never feels it: driving is main's to < 1 %.
+ */
+function carcassDamping (k, Fn, vCon, params) {
+  const fade = 1 - vCon / (params.tireCarcassDampV || 1)
+  if (!(fade > 0) || !(k > 0) || !(Fn > 0)) return 0
+  return fade * 2 * (params.tireCarcassDampRatio ?? 0) * Math.sqrt(k * Fn / 9.81)
+}
+
+/**
+ * BUG-167: a carcass passes the road no more force than the patch's friction holds. The damper's c·ṡ rides on top of
+ * the grip curve, so on a wheel breaking loose from rest (a floored launch's first step: ṡ ≈ sBreak/dt) it would
+ * otherwise push |F| to several times μ·Fn. Returns the factor that scales (Fl, Ft) back to the break-away force
+ * |F(sBreak)| along the deflection's direction (the same friction circle the sBreak clamp enforces), or 1.
+ */
+function breakawayScale (Fl, Ft, sL, sT, Fn, params, mu, sBreak) {
+  const m = Math.hypot(sL, sT), k = m > 1e-9 ? sBreak / m : 0
+  const fb = computeTireForces(k ? sL * k : sBreak, k ? sT * k : 0, Fn, params, mu)
+  const cap = Math.hypot(fb.Flong, fb.Flat), F = Math.hypot(Fl, Ft)
+  return F > cap ? cap / F : 1
+}
 
 // Per-step scratch (stepPhysics only; nothing holds them past the step): body axes, the per-wheel
 // steered frame, and the post-substep hubs.
