@@ -116,7 +116,7 @@ import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-6
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { startRankMusic, updateRankMusic, rankMusicStep, rankMusicDrop, rankMusicThin, resolveRankMusic, setRankMusic } from './rank-music.js'   // FEAT-131 P3: the bar's music bed
-import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
+import { FuelStop, towPrice, towHours, stationPriceFactor } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow; FEAT-209 each station's price
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
@@ -5843,7 +5843,9 @@ function _updateParkTriggers (zParked = false) {
     damageScreen.blocked = true
     if (pump && pulled) {
       // FEAT-168: fuel rides the day tier like parts and the tow, to the cent — the cans fill on the same counter.
-      fuelStop.open(pump.id, Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * 100) / 100, inventorySystem.cans())
+      // FEAT-209: each station sits within ±5 % of that day price.
+      const factor = stationPriceFactor(worldSeed, pump.id, daySystem.day())
+      fuelStop.open(pump.id, Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * factor * 100) / 100, inventorySystem.cans())
       playNozzle()
       _tut('tut-fuel')   // FEAT-147
     }
