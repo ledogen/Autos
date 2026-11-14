@@ -2857,17 +2857,22 @@ function _pickUpNear () {
 }
 
 // ── FEAT-97: the fragile load's shocks ───────────────────────────────────────────────────────
-// Per fixed step: the strap's force on the load ÷ its mass, plus gravity, is the g it feels
-// (src/fragile.js). A banked hit plays the load's sound and blinks it red, both scaled by what the
+// Per fixed step: the load's own Δv across the step ÷ the step is the g it feels (src/fragile.js
+// feltG, BUG-166). _fragilePre snapshots its velocity just before stepPhysics, so a teleport or
+// re-strap between steps is never read as a shock. A banked hit plays the load's sound and blinks it red, both scaled by what the
 // hit cost. The HUD shows the condition and the felt g (FEAT-139, reversing FEAT-97's no-number rule;
 // SM-INV-10 is about parts). At zero the job has FAILED: it pays nothing and
 // can no longer be delivered, and "clean up cargo" (+1 h) is the only way out of it.
 const FRAGILE_BLINK_S = 0.3   // s for a full-strength blink to fade out
-const _jf = { x: 0, y: 0, z: 0 }
+const _fv0 = { x: 0, y: 0, z: 0 }, _fv1 = { x: 0, y: 0, z: 0 }, _fw = { x: 0, y: 0, z: 0 }
+function _fragilePre () {
+  if (_freight?.health) physicsEngine.getVelocity(_freight.body, _fv0, _fw)
+}
 function _fragileStep () {
   const f = _freight
   if (!f?.health || f.health.health <= 0) return
-  const g = feltG(physicsEngine.jointForce(f.joint, _jf), f.massKg)
+  physicsEngine.getVelocity(f.body, _fv1, _fw)
+  const g = feltG(_fv0, _fv1, PHYSICS_DT)
   f.gPeak = Math.max(f.gPeak ?? 0, g)   // FEAT-139: the g bar reads the peak since its last frame
   const ev = f.health.step(g)
   if (!ev) return
@@ -10317,6 +10322,7 @@ function loop (t) {
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
     hiLift.step(vehicleState, RANGER_PARAMS.mass + (RANGER_PARAMS.stowedKg || 0), PHYSICS_DT, _now())   // FEAT-138
     const _galBefore = vehicleState.fuel.gal   // FEAT-184: the evening burns none (put back after the damage step)
+    _fragilePre()    // BUG-166: the fragile load's velocity before the step, for its felt g
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them

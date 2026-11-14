@@ -1,7 +1,7 @@
 ---
 id: BUG-166
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-13
 source: Lane B, BUG-161 replays (side finding)
@@ -48,10 +48,16 @@ start of each step (DebrisSystem.beforeStep already snapshots its pose).
 
 ## Owner call
 
-A crash then breaks the statue. That is the honest outcome, but it is new behaviour for fragile jobs (53 g is far
+Answered 2026-11-14: "yes, a crash breaks it" (DEC-168). A crash then breaks the statue. That is the honest outcome, but it is new behaviour for fragile jobs (53 g is far
 past every tier's break g: 6.0–8.25 g). Recommend yes.
 
 ## Acceptance
 
-- [ ] The strike capture's step reads ≥ 40 g. The washboard and the ledge read as before (0.78 / 3.39 g).
-- [ ] A gate pins both: freight-strap's §8 strike (the load's felt g on the parked step) and the ledge.
+- [x] A strike reads ≥ 40 g (rig: 22 mph wall, 55–63 g). Washboard and crest read as before, to the hundredth.
+- [x] A gate pins both: fragile-cargo's new `strike` scenario beside its washboard / crest calibration.
+
+## Log
+- 2026-11-14: Lane B, land/phys-1114: feltG(v0, v1, dt) = the load's |Δv| / dt / g; main.js snapshots the load's velocity just
+  before stepPhysics (_fragilePre). fragile-cargo: + `strike` scenario, every tier ≥ 40 g and broken (was 0.53 g on the piano);
+  calibration unchanged. Note: the rig spawns the load at rest under a moving truck, so step 0 is not read; starting it at speed
+  moves the piano's crest 75 % → 62 % (not taken). Closed.
