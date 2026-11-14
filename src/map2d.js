@@ -135,6 +135,10 @@ const PORTAL_LEN    = 8           // px — portal bar length, square across the
 const CAMP_CASING   = 'rgba(248,226,54,0.55)'
 const CAMP_CASING_W = 6           // px — ~2.5x the road stroke
 const MAP_INK       = '#1a1a1a'   // rules — neatline, collar ticks, scale bar
+// FEAT-210: the legend's title band, in the Forest Service's own green and gold (the agency's
+// branding — the legend copies that real object, UI-STYLE §2).
+const LEGEND_GREEN  = '#2c5234'
+const LEGEND_GOLD   = '#ffc72c'
 // Lettering is deliberately LIGHTER than the rules it sits between. On a sheet this dense the
 // type is reference, not content: full-strength black pulled the eye to the margin and away from
 // the terrain. Two strengths only — marginalia (which you read once) and place labels (which you
@@ -334,7 +338,12 @@ const GRID_CELL_PX  = 165
 const GRID_LETTERS  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 // Car marker, nose-to-tail half-length in px (9 originally, 18 at the 2x pass). The triangle's
 // half-width is derived from it so the arrow keeps its taper instead of going stubby or needly.
-const CAR_ICON_L = 13.5
+const CAR_ICON_L = 16.2   // 13.5 + 20 % with the POI icons (FEAT-210)
+// FEAT-210: mission diamonds, half-diagonal in px. Alone (a giver with no pictogram) it is the old
+// 0.4 × icon size; behind a pictogram it is drawn big enough that its tips stand clear of the glyph
+// on all four sides, so the family colour still reads around the icon.
+const DIAMOND_R      = POI_ICON_PX * 0.4
+const DIAMOND_BACK_R = POI_ICON_PX * 0.72
 
 // ── Ground-wash helpers (module scope: pure, no instance state) ────────────────────────────────
 
@@ -405,7 +414,7 @@ export class Map2D {
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      * @param {() => ?object} [o.getBoard] — FEAT-67: the mission board as a VIEW (main.js builds it;
      *        this module stays economy-free). null outside story mode. Shape:
-     *          status(poiId) → { source:boolean, family:string|null, nextText:string|null }
+     *          status(poiId) → { source:boolean, family:string|null, families:string[], nextText:string|null }
      *          view(poiId, idx) → { count, idx, card, poly, start, end, nextText } | null
      *        `card` is OfferBoard.card()'s view-model; `nextText` is the time to the next turnover,
      *        already formatted ("18 min") — main.js owns the one duration format.
@@ -415,7 +424,7 @@ export class Map2D {
      *        offers: no other POI's hover card (offers or shelf) then, so an accidental icon hover never
      *        claims the mouse or distracts from the panel (owner, 2026-10-30).
      */
-    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getBarricades, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked }) {
+    constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
         this._getSeed   = getSeed
@@ -430,7 +439,6 @@ export class Map2D {
         // FEAT-46: story-mode POIs. This is how the player finds one — see an icon, drive to it,
         // park (latch the handbrake). Empty outside story mode.
         this._getPois     = getPois      || (() => null)
-        this._getBarricades = getBarricades || (() => [])   // BUG-103: FEAT-154's rows, one closure tick each
         this._getCustomers = getCustomers || (() => null)   // FEAT-61 newspaper customers
         // FEAT-61: `{ onRoute: boolean, arrow: {x,z,ang}|null }`, or null when nothing is driving it.
         // onRoute is TRUE ONLY ON A PAPER ROUTE and drives the customer glyph (see _drawCustomers);
@@ -1336,6 +1344,7 @@ export class Map2D {
         this._drawStartArrow(ctx)   // FEAT-61: which way to set off, on any drawn mission line
         this._drawCar(ctx)
         this._drawCollar(ctx)    // LAST of the map layers: it masks the margin (see _drawCollar)
+        this._drawLegend(ctx)    // FEAT-210: over the sheet's corner, under the offer card
         this._drawOfferCard(ctx) // FEAT-67: over everything, clamped inside the sheet
         this._drawPadCursor(ctx) // FEAT-133: over the card it opened, or it would vanish under it
         this._drawCursorCoords(ctx)
@@ -1481,8 +1490,6 @@ export class Map2D {
         if (water) this._drawWater(ctx, water)
         if (job.glyphs) this._drawGlyphs(ctx, job.done.filter(t => t.kind === 'f'))
         this._drawRoads(ctx, this._bgOffX, this._bgOffY)
-        this._drawCrossings(ctx)
-        this._drawNodes(ctx)
         // Done: swap the bitmaps and record the transform this one is valid for — render() blits
         // through the delta.
         const b = this._bg; this._bg = n; this._bgNext = b
@@ -2301,48 +2308,6 @@ export class Map2D {
         ctx.lineCap = 'butt'
     }
 
-    // (3) Classified crossings — colored by kind (at-grade junction vs near-parallel graze).
-    _drawCrossings(ctx) {
-        const road = this._road
-        if (!road || typeof road.crossingList !== 'function') return
-        // Re-inked for the paper sheet: the old bright green/yellow were picked to glow on a near-
-        // black canvas and wash straight out on pale green. These are the same two categories in
-        // ink that holds against it.
-        const col = { AT_GRADE: '#0e6b33', NEAR_PARALLEL: '#96660a' }
-        for (const c of road.crossingList()) {
-            const p = c.point; if (!p) continue
-            ctx.fillStyle = col[c.kind] || '#666666'
-            ctx.beginPath()
-            ctx.arc(this._sx(p.x), this._sy(p.z), 3, 0, Math.PI * 2)
-            ctx.fill()
-        }
-    }
-
-    // (4) Anchor nodes — unique cells from edge cellA/cellB, colored by graph degree
-    //     (leaf vs hub — the node taxonomy the v2 rework is validating).
-    _drawNodes(ctx) {
-        const road = this._road
-        if (!road || !road._network) return
-        const seen = new Set()
-        for (const e of road._network.values()) {
-            for (const cell of [e.cellA, e.cellB]) {
-                if (!cell) continue
-                const key = cell.join(',')
-                if (seen.has(key)) continue
-                seen.add(key)
-                // FEAT-13 v2: node id is a blue-noise site id [cmx,cmz,k].
-                const a = road._nodePos(cell)
-                const deg = typeof road._graphDegreeOf === 'function' && cell.length >= 3 ? road._graphDegreeOf(cell) : 2
-                // leaf (deg≤1) dim, degree-2 pass-through mid, hub (deg≥3) strong — re-inked dark
-                // for the paper sheet (the cyan/slate ramp was tuned against the old dark canvas).
-                ctx.fillStyle = deg >= 3 ? '#15628f' : deg === 2 ? '#5d6f7d' : '#8a9298'
-                ctx.beginPath()
-                ctx.arc(this._sx(a.x), this._sy(a.z), deg >= 3 ? 4 : 2.5, 0, Math.PI * 2)
-                ctx.fill()
-            }
-        }
-    }
-
     // FEAT-43: story-mode region boundary — the map is where the player reads where the region ends.
     //
     // BUG-103 (owner 2026-11-01, ruling (f), "the honest map"): the line drawn is the EDGE FADE's
@@ -2350,12 +2315,13 @@ export class Map2D {
     // 2500 m region ring. The network is built out to the ring, so drawing the ring showed kilometres
     // of road past the fade as open — a loop behind the expedition camp looked like a way around its
     // closure when the fade already cut it. The radius is read from the same constants main.js
-    // _checkEdge uses, so the two cannot drift. Every FEAT-154 barricade row gets a closure tick.
+    // _checkEdge uses, so the two cannot drift. The FEAT-154 barricade rows stay in the world but
+    // are not drawn (FEAT-210, owner 2026-11-13).
     //
     // Drawn as: everything OUTSIDE the circle dimmed (the "you can't go there" read, done with an
-    // evenodd fill so it needs no clip/save juggling), a solid boundary ring, the row ticks, and a
-    // distance label. Per-frame layer, not the cached bg: the region is captured after entry and the
-    // bg may already have been baked by then.
+    // evenodd fill so it needs no clip/save juggling), a solid boundary ring and a distance label.
+    // Per-frame layer, not the cached bg: the region is captured after entry and the bg may already
+    // have been baked by then.
     _drawRegion(ctx) {
         const reg = this._getRegion()
         if (!reg) return
@@ -2373,15 +2339,6 @@ export class Map2D {
         ctx.strokeStyle = 'rgba(255,150,90,0.9)'
         ctx.lineWidth = 2
         ctx.stroke()
-        // The closure ticks: one bar across the road at each barricade row's middle barricade, along
-        // the row's own across axis (poi.js _barrierRow: +X = (cos yaw, −sin yaw)). A fixed 18 × 5 px, not
-        // world-sized: a crossing is radial, so the bar lies along the ring and must stand proud of it.
-        const bars = this._getBarricades(), per = POI_PARAMS.poiRowBarricades, hl = 9
-        ctx.lineWidth = 5
-        for (let i = (per - 1) >> 1; i < bars.length; i += per) {
-            const b = bars[i], ax = Math.cos(b.yaw), az = -Math.sin(b.yaw), x = this._sx(b.x), y = this._sy(b.z)
-            ctx.beginPath(); ctx.moveTo(x - ax * hl, y - az * hl); ctx.lineTo(x + ax * hl, y + az * hl); ctx.stroke()
-        }
         // Region center tick — the spawn, and the anchor the radius is measured from.
         ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2)
         ctx.fillStyle = 'rgba(255,150,90,0.9)'; ctx.fill()
@@ -2537,63 +2494,54 @@ export class Map2D {
     // the POI markers and the paper-route glyph cannot drift apart in weight or outline. Caller sets
     // fillStyle/strokeStyle; `key` is the Path2D cache key (glyphs are static, only positions move,
     // so this is a handful of objects for the life of the map).
-    _drawGlyph(ctx, key, d, sx, sy) {
-        const S = POI_ICON_PX / 24          // the icon table's viewBox is 24 units
+    _drawGlyph(ctx, key, d, sx, sy, px = POI_ICON_PX) {
+        const S = px / 24                   // the icon table's viewBox is 24 units
         let p = this._iconPaths.get(key)
         if (!p) { p = new Path2D(d); this._iconPaths.set(key, p) }
         ctx.save()
-        ctx.translate(sx - POI_ICON_PX / 2, sy - POI_ICON_PX / 2)
+        ctx.translate(sx - px / 2, sy - px / 2)
         ctx.scale(S, S)
         ctx.lineWidth = 1.5 / S             // undo the scale so the outline stays hairline
         ctx.fill(p); ctx.stroke(p)
         ctx.restore()
     }
 
+    // FEAT-210: a mission diamond of half-diagonal r, one equal wedge per colour, the first from the
+    // top going clockwise — so two families split it left | right. Outlined like a glyph.
+    _drawDiamond(ctx, sx, sy, r, colors) {
+        const outline = new Path2D(`M${sx} ${sy - r}L${sx + r} ${sy}L${sx} ${sy + r}L${sx - r} ${sy}Z`)
+        const n = colors.length, a0 = -Math.PI / 2, step = 2 * Math.PI / n
+        ctx.save()
+        ctx.clip(outline)
+        colors.forEach((c, i) => {
+            ctx.beginPath(); ctx.moveTo(sx, sy)
+            ctx.arc(sx, sy, 2 * r, a0 + i * step, a0 + (i + 1) * step)
+            ctx.closePath(); ctx.fillStyle = c; ctx.fill()
+        })
+        if (n > 1) {
+            ctx.beginPath()
+            for (let i = 0; i < n; i++) { ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a0 + i * step) * 2 * r, sy + Math.sin(a0 + i * step) * 2 * r) }
+            ctx.strokeStyle = '#101010'; ctx.lineWidth = 1.2; ctx.stroke()
+        }
+        ctx.restore()
+        ctx.strokeStyle = '#101010'; ctx.lineWidth = 1.5
+        ctx.stroke(outline)
+    }
+
     /**
-     * FEAT-61: the newspaper customers. A small green dot each — the roster glyphs are pictograms
-     * in their own colours, so a customer needs a distinct silhouette or the map stops being
-     * readable at a glance. Deliberately smaller than a POI: you plan a route AROUND landmarks and
-     * THROUGH these, and there are fifteen of them.
-     *
-     * Owner-reported (2026-08-05): the houses existed in the world as green circles but had no map
-     * presence at all, which made planning a round impossible — you cannot drive a route you cannot
-     * see. Mom appears here too (she is a customer) and then gets her roster glyph drawn over the
-     * top, which is why this runs before _drawPois.
+     * FEAT-61: the newspaper customers, drawn ONLY on a paper route (the offer preview included, so the
+     * briefing map reads the same as the drive): every one of them is a job then, and each gets the
+     * newspaper glyph. Off a route they are not on the map at all (FEAT-210, owner 2026-11-13: the
+     * small white diamonds that stood for them read as unclear clutter). Mom is a customer too and
+     * gets her roster glyph drawn over the top, which is why this runs before _drawPois.
      */
     _drawCustomers(ctx) {
         const list = this._getCustomers()
-        if (!list || !list.length) return
-        // TWO STATES, because the marker means two different things (owner, 2026-08-15).
-        //
-        // OFF a route these are scenery you are learning: fifteen anonymous white dots, deliberately
-        // quiet, saying only "papers get delivered around here". ON a route (the offer included, so
-        // the briefing map reads the same as the drive) every one of them is a job, and each gets
-        // the newspaper roll — the same object the player is about to throw. White fill with a
-        // near-black stroke on both: on the paper sheet the stroke is what carries the contrast
-        // (an unstroked glow colour is what used to sit invisibly on PAPER_GREEN).
-        const onRoute = !!this._getRouteState()?.onRoute
-        if (!onRoute) {
-            // Small white DIAMONDS (FEAT-67, owner 2026-09-26 — were circles): the same shape family
-            // as the giver diamonds, in the papers white, so a customer reads as "papers go here".
-            ctx.lineWidth = 1.2
-            ctx.strokeStyle = '#101010'
-            ctx.fillStyle = '#ffffff'
-            const r = 4.5
-            for (const c of list) {
-                const sx = this._sx(c.x), sy = this._sy(c.z)
-                ctx.beginPath()
-                ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy)
-                ctx.closePath()
-                ctx.fill(); ctx.stroke()
-            }
-            return
-        }
+        if (!list || !list.length || !this._getRouteState()?.onRoute) return
         ctx.lineWidth = 1.5
         ctx.strokeStyle = '#101010'
         ctx.fillStyle = '#ffffff'
-        for (const c of list) {
-            this._drawGlyph(ctx, '#news', NEWSPAPER, this._sx(c.x), this._sy(c.z))
-        }
+        for (const c of list) this._drawGlyph(ctx, '#news', NEWSPAPER, this._sx(c.x), this._sy(c.z))
     }
 
     /**
@@ -2650,24 +2598,22 @@ export class Map2D {
             const ico = POI_ICONS[q.type] ?? POI_ICONS.diamond
             const sx = this._sx(q.x), sy = this._sy(q.z)
             const st = board?.status(q.id) ?? null
-            ctx.lineWidth = 1.5
-            ctx.strokeStyle = '#101010'
-            // FEAT-67: ONLY diamonds take a family colour (their single slot's offer); grey when there
-            // is nothing on offer. Glyph POIs keep their own colour.
-            ctx.fillStyle = (!ico.path && st?.source)
-                ? (st.family ? FAMILY_COLOR[st.family] ?? ico.color : EMPTY_DIAMOND_COLOR)
-                : ico.color
+            // FEAT-210 (owner, 2026-11-13): a DIAMOND means "work here" and is the background of every
+            // giver, one segment per family on offer (grey when nothing is); the PICTOGRAM says what
+            // the place is and sits on top. A vendor with no work is its pictogram alone.
+            let half = POI_ICON_PX / 2   // how far the marker reaches below its centre — the label goes under it
+            if (st?.source || !ico.path) {
+                const r = ico.path ? DIAMOND_BACK_R : DIAMOND_R
+                const fams = st?.families ?? []
+                this._drawDiamond(ctx, sx, sy, r, !st?.source ? [ico.color]
+                    : fams.length ? fams.map(f => FAMILY_COLOR[f] ?? EMPTY_DIAMOND_COLOR) : [EMPTY_DIAMOND_COLOR])
+                half = Math.max(half, r)
+            }
             if (ico.path) {
+                ctx.lineWidth = 1.5
+                ctx.strokeStyle = '#101010'
+                ctx.fillStyle = ico.color
                 this._drawGlyph(ctx, q.type, ico.path, sx, sy)
-            } else {
-                // No pictogram authored yet — the plain diamond, in the type's own colour. Sized
-                // off POI_ICON_PX so it keeps pace with the drawn glyphs instead of shrinking to a
-                // speck beside them whenever the icons are resized.
-                const r = POI_ICON_PX * 0.4
-                ctx.beginPath()
-                ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy)
-                ctx.closePath()
-                ctx.fill(); ctx.stroke()
             }
             // The label is what makes the roster findable; an unlabelled marker is the problem
             // FEAT-60 set out to fix. Diamonds carry none on purpose (see data/map-icons.js).
@@ -2678,7 +2624,7 @@ export class Map2D {
                 ctx.font = `600 11px ${MAP_LABEL_FONT}`
                 ctx.textAlign = 'center'
                 ctx.textBaseline = 'top'
-                const ly = sy + POI_ICON_PX / 2 + 3
+                const ly = sy + half + 3
                 ctx.strokeStyle = 'rgba(207,226,189,0.9)'
                 ctx.lineWidth = 3.5
                 ctx.lineJoin = 'round'
@@ -2691,7 +2637,7 @@ export class Map2D {
             // FEAT-67: the one always-on addition — under every source, the shortest time until any
             // of its slots turns over (the moment a new offer appears there).
             if (st?.source && st.nextText) {
-                const ty = sy + POI_ICON_PX / 2 + (ico.label ? 17 : 3)
+                const ty = sy + half + (ico.label ? 17 : 3)
                 const txt = st.nextText
                 ctx.font = `600 10px ${MAP_LABEL_FONT}`
                 ctx.textAlign = 'center'; ctx.textBaseline = 'top'
@@ -2820,15 +2766,15 @@ export class Map2D {
         ctx.fillStyle = '#6a6458'
         let hx = inL
         if (c?.badge) {
-            // The job-type badge (OfferBoard jobBadge): a PLACEHOLDER letter in a box, owner 2026-10-10,
-            // until the card iconography pass.
-            const bw = ctx.measureText(c.badge).width + 8 * k, bh = B.FSS * k + 4 * k
-            ctx.strokeStyle = '#3a352c'; ctx.lineWidth = 1.2 * k
-            ctx.strokeRect(hx, ty - 2 * k, bw, bh)
-            ctx.fillStyle = '#3a352c'
-            ctx.fillText(c.badge, hx + 4 * k, ty)
-            ctx.fillStyle = '#6a6458'
-            hx += bw + 6 * k
+            // The job-type badge (OfferBoard jobBadge): the map's mission diamond in the family colour,
+            // its letters kept inside as the reminder (FEAT-210, owner 2026-11-13; was a letter box).
+            const r = (ctx.measureText(c.badge).width + B.FSS * k) / 2 + 3 * k
+            const cy = ty + B.FSS * k / 2
+            this._drawDiamond(ctx, hx + r, cy, r, [accent])
+            ctx.fillStyle = '#1a1a1a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+            ctx.fillText(c.badge, hx + r, cy + 0.5)
+            ctx.fillStyle = '#6a6458'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+            hx += 2 * r + 6 * k
         }
         ctx.fillText(c ? (FAMILY_LABEL[c.family] ?? c.family.toUpperCase()) : 'NO WORK', hx, ty)   // R-08: COURIER, not DELIVERY
         if (v.count > 1) {
@@ -3096,6 +3042,74 @@ export class Map2D {
 
         this._drawMarginalia(ctx, s, H)
         ctx.textAlign = 'left'
+        ctx.textBaseline = 'alphabetic'
+    }
+
+    /**
+     * FEAT-210: the legend, boxed in the sheet's bottom-left corner the way a Forest Service visitor
+     * map boxes its own (owner, 2026-11-13: "inspired by forest service map branding" — a real object,
+     * so the object sets the look, UI-STYLE §2): the agency's green band with the title in its gold,
+     * the map's cream underneath, and each entry drawn with the SAME inks and weights the sheet uses.
+     * The mission row lists the family colours under it, families sharing a colour on one line — the
+     * blue diamond was the one the owner could not place.
+     */
+    _drawLegend(ctx) {
+        const s = this._sheet()
+        const groups = new Map()   // colour → its family labels
+        for (const [f, c] of Object.entries(FAMILY_COLOR)) groups.set(c, [...(groups.get(c) ?? []), FAMILY_LABEL[f]])
+        const fams = [...groups].map(([c, l]) => [c, l.join(' / ')]).concat([[EMPTY_DIAMOND_COLOR, 'NO WORK NOW']])
+        const SYM = 34, ROW = 20, SUB = 16, PAD = 8, HEAD = 22, W = 248
+        const rows = ['Mission', null, 'Shop', 'Road', 'Stream', 'Pond', 'Tunnel', 'Camping area']
+        const subH = Math.ceil(fams.length / 2) * SUB
+        const H = HEAD + PAD + 7 * ROW + subH + PAD
+        const x = s.x0 + 10, y = s.y1 - 10 - H
+        ctx.fillStyle = 'rgba(242,239,228,0.95)'; ctx.fillRect(x, y, W, H)
+        ctx.fillStyle = LEGEND_GREEN; ctx.fillRect(x, y, W, HEAD)
+        ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, W - 1, H - 1)
+        ctx.font = `700 12px ${MAP_LABEL_FONT}`; ctx.letterSpacing = '2px'
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+        ctx.fillStyle = LEGEND_GOLD; ctx.fillText('LEGEND', x + PAD, y + HEAD / 2 + 0.5)
+        ctx.letterSpacing = '0px'
+        let cy = y + HEAD + PAD
+        for (const label of rows) {
+            if (label === null) {   // the family key, two columns
+                ctx.font = `600 10px ${MAP_LABEL_FONT}`
+                fams.forEach(([c, l], i) => {
+                    const fx = x + PAD + 14 + (i % 2) * ((W - PAD - 14) / 2), fy = cy + Math.floor(i / 2) * SUB + SUB / 2
+                    this._drawDiamond(ctx, fx + 5, fy, 5, [c])
+                    ctx.fillStyle = MAP_TEXT_POI; ctx.fillText(l, fx + 15, fy + 0.5)
+                })
+                cy += subH
+                continue
+            }
+            const mx = x + PAD + SYM / 2, my = cy + ROW / 2, l = mx - 13, r = mx + 13
+            const line = (ink, w, pts) => {
+                ctx.strokeStyle = ink; ctx.lineWidth = w; ctx.lineCap = 'round'
+                ctx.beginPath(); pts.forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.stroke()
+                ctx.lineCap = 'butt'
+            }
+            if (label === 'Mission') this._drawDiamond(ctx, mx, my, 8, [FAMILY_COLOR.delivery, FAMILY_COLOR.haul])
+            else if (label === 'Shop') {
+                ctx.lineWidth = 1.5; ctx.strokeStyle = '#101010'; ctx.fillStyle = POI_ICONS.generalStore.color
+                this._drawGlyph(ctx, 'generalStore', POI_ICONS.generalStore.path, mx, my, 18)
+            }
+            else if (label === 'Road') line(ROAD_INK, ROAD_W, [[l, my], [r, my]])
+            else if (label === 'Stream') line(WATER_INK, WATER_W, [[l, my + 2], [mx - 4, my - 3], [mx + 4, my + 3], [r, my - 2]])
+            else if (label === 'Pond') {
+                ctx.beginPath(); ctx.ellipse(mx, my, 12, 6, 0, 0, Math.PI * 2)
+                ctx.fillStyle = WATER_FILL; ctx.fill(); ctx.strokeStyle = WATER_INK; ctx.lineWidth = 1; ctx.stroke()
+            }
+            else if (label === 'Tunnel') {
+                line(TUNNEL_INK, TUNNEL_W, [[l, my], [r, my]])
+                ctx.lineWidth = PORTAL_W; ctx.strokeStyle = ROAD_INK; ctx.lineCap = 'round'
+                ctx.beginPath(); for (const px of [l + 3, r - 3]) { ctx.moveTo(px, my - PORTAL_LEN / 2); ctx.lineTo(px, my + PORTAL_LEN / 2) } ctx.stroke()
+                ctx.lineCap = 'butt'
+            }
+            else if (label === 'Camping area') { line(CAMP_CASING, CAMP_CASING_W, [[l, my], [r, my]]); line(ROAD_INK, ROAD_W, [[l, my], [r, my]]) }
+            ctx.font = `600 12px ${MAP_LABEL_FONT}`; ctx.fillStyle = MAP_TEXT_POI
+            ctx.fillText(label, x + PAD + SYM + 6, my + 0.5)
+            cy += ROW
+        }
         ctx.textBaseline = 'alphabetic'
     }
 
