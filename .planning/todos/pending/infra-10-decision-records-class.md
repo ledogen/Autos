@@ -12,10 +12,8 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-10: ledorepo — decision records (DEC-NN): the axioms in one place
 
 ## Next steps
-Owner: answer the deep dive `INFRA-10-conflicts` (5 axioms, 2 cases, 10 wording approvals; owed card).
-ledorepo session, after the submit: each approved axiom becomes its own DEC; the 18 conflict drafts and the 44
-agent-worded drafts flip to `standing` (or are corrected first); then DESIGN.md's SM-INV headings and memory's
-standing do-nots cite their DEC ids; close.
+ledorepo session: land the applied answers + the text cull through the orchestrator, then close this ticket.
+Code follow-ups for the lanes (not this ticket): `campDeeds` 10 → 6 in `src/economy.js` (DEC-120).
 
 ## Summary
 The project's ground truth is spread over DESIGN.md (SM-INV-1..15), eight `design-amendments-*.md` files, CLAUDE.md,
@@ -144,7 +142,8 @@ Worktree `CarGame-decisions`, branch `infra/infra-10-decision-records`, dev dash
 - [x] Backfill: 121 records (DEC-001..015 = SM-INV-1..15), ledger `.planning/decisions/conflicts.json`
       (9 settled by the open-alpha-ticket rule, 5 axioms over 16 drafts, 2 cases).
 - [x] The read-before-planning rule: CLAUDE.md; lines sent to the orchestrator for LANE-AGENT-BRIEF + its handoff.
-- [ ] Owner's answers applied: axioms become DECs, 62 drafts resolved to `standing`.
+- [x] Owner's answers applied (2026-11-13): axioms are DEC-122..126, DEC-127 one source of truth, 60 drafts now
+      standing (8 reworded per the owner's notes), DEC-067 and DEC-072 dropped; 131 records, all standing.
 - [ ] Source documents cite the DEC ids (DESIGN.md SM-INV headings, memory § Standing do-nots).
 
 ## Decisions` sections of tickets.
@@ -214,6 +213,9 @@ Worktree `CarGame-decisions`, branch `infra/infra-10-decision-records`, dev dash
 - 2026-11-13, owner: "a ruling can be an agents words if i approve them."
 - 2026-11-13, ledorepo session (not an owner ruling): a record whose ruling line is an agent's wording waits as
   `draft` until the owner approves it, so the freeze never has to be broken to fix a wording.
+- 2026-11-13, owner (dive): all five axioms approved; camp gate 6 deeds; wet-day par uses the day's grip.
+- 2026-11-13, owner (dive, AX-5 note): "One source of truth, no conflicts in the text should be the goal" (DEC-127).
+- 2026-11-13, owner (dive): "agents are free to commit whenever. push is at my command only" (DEC-092).
 
 ## Links
 Deep dive: `.planning/dives/INFRA-10-conflicts.html`. Not read by the backfill: `spirits-and-pacts.md`, `IDEAS.md`;
