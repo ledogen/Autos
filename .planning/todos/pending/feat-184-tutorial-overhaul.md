@@ -13,9 +13,13 @@ lane: A
 # FEAT-184: the tutorial overhaul — alpha
 
 ## Next steps
-Owner: pick the tutorial seed in `.planning/dives/FEAT-184-tutorial-seed.html` (4 candidates, map sheets; rec 822480141),
-and answer the follow-up dive `.planning/dives/FEAT-184-tutorial-flow.html` (landing 2). Lane A: after the pick, pin the
-seed (`data/tutorial.js`) behind a gate on its beats, and put the first playthrough on it.
+Lane A, landing 2 slice 2 (the follow-up dive is answered: DEC-153, DEC-155..160): the intro's card (play / skip); a played
+tutorial's morning goes to the burger joint for the paycheck instead of the casserole (DEC-153), the paycheck card sets the
+clock to 19:30 (exact-24h default) and the tutorial runs on day −1 → day 0 (DEC-159); a later run's tutorial loads the
+tutorial seed at the card (DEC-157) and its random world back at the end (DEC-158); the menu's "tutorial" button and the
+no-save rule retired with the card (DEC-160). Then the gate pinning the seed's beats (landing 3).
+Owner: Larry's call and the paycheck card's words (FEAT-148; placeholders in data/dialogue.js); whether to fill the
+tutorial's day with more lessons (exact-24h, no ruling yet).
 
 ## Summary
 The tutorial becomes the first part of every run: intro (the firing) → a card asking whether to play the tutorial →
@@ -370,7 +374,7 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
 ## Tracker
 - [x] The plan, answered by the owner (the tutorial dive, submitted 2026-11-14)
 - [x] Decision records DEC-146..154 (DEC-109 and DEC-110 superseded)
-- [ ] The follow-up dive answered (`FEAT-184-tutorial-flow.html`)
+- [x] The follow-up dive answered (`FEAT-184-tutorial-flow.html`): DEC-153 settled, DEC-155..160
 - Landing 1:
   - [x] No setting and no "always skip": the `skipTutorial` row and its auto-on are gone; the first playthrough ever is one stored mark
   - [x] The prompt reads "hold M to skip tutorial"; the confirmation when the player chose the tutorial or on the first playthrough ever
@@ -378,16 +382,18 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   - [x] Pocket change through the tutorial; the last paycheck paid at its end
 - Landing 2 (waits on the follow-up dive):
   - [ ] The card at the end of the intro: play the tutorial, or skip
-  - [ ] The skip lands outside the burger place when the intro ends, with the boss's check; no burger job for ~18 h
+  - [x] The skip lands outside the burger place, with the boss's check, then Larry's call (placeholder words); no burger job until 07:00 day 1
+  - [ ] The played tutorial on day −1 → day 0 (DEC-159); the second load at the card, the random world back at the end (DEC-157/158)
   - [ ] The last act: back to the burger joint for the paycheck, 24 in-game hours after the firing
   - [ ] The main menu's "tutorial" button retired; the tutorial saves as part of the run
 - Landing 3 (waits on the seed):
   - [x] No damage for the whole tutorial (DEC-151): no wear and no impact (armor, components, bends, a fatal crash) from the
     firing to Larry's welcome; free will unchanged (`DamageModel.held`, gate damage-contact-wiring §6)
   - [x] The census: 135 random seeds, 43 pass (`wip/feat184/seed-census.mjs`, `seed-score.mjs`, `seed-shot.mjs`, `seed-dive.mjs`)
-  - [ ] The owner's pick from the sheets (`.planning/dives/FEAT-184-tutorial-seed.html`)
-  - [ ] The pick pinned (`data/tutorial.js`), with a gate pinning its beats
-  - [ ] The first playthrough ever on it, intro included
+  - [x] The owner's pick from the sheets: 822480141
+  - [x] The pick pinned (`data/tutorial.js`); the menu's tutorial plays on it
+  - [ ] A gate pinning its beats
+  - [x] The first playthrough ever on it, intro included (a blank seed while `playedBefore` is unset)
   - [ ] The intro expanded to 15 s – 1 min (the owner's words)
 - [ ] The smoke's opening step plays the whole sequence
 
@@ -419,6 +425,15 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   "and just so you have no excuse to come back here's your last check". slight difference is no mission should be
   offered at burgers for ~18 hrs (till early next day)" (DEC-152, DEC-150; the casserole: DEC-153)
 - 2026-11-14, owner (dive, lessons): "after alpha" (DEC-154).
+- 2026-11-14, owner (tutorial-flow dive): loads "accept the second load" (DEC-157) · tutorial-world "load the random world
+  at the end" (DEC-158) · day-count "same day number for both" (DEC-159) · burger-quiet "until 07:00 the next morning"
+  (DEC-156) · casserole "the paycheck replaces it (Larry's reminder moves elsewhere)", note "larry calls you after you pick
+  up your last paycheck (so right after you get free will). he offers you a side gig delivering papers. he reminds you of
+  the expedition camp and good deeds." (DEC-153, DEC-155) · skip-goal "Larry calls after the boss's line" (DEC-155) ·
+  menu-button "retire both with the card" (DEC-160) · exact-24h, no choice, note "ideally we fill it with a couple more
+  lessons but tbh having trouble thinking of many. paycheck can set the clock if need be but maybe we can fit an actual
+  camping lesson in here, talk about upgrades and assist items, load some cargo or something im missing to give the
+  impression of a full day going by." · seed pick "822480141" (DEC-149).
 - 2026-11-14, owner (dive, 5a skip moves): "change. first playthrough ever can skip the tutorial and there is no more
   flag. the skip text: "hold m to skip tutorial" is enough to suggest how to access the tutorial (wait)" (DEC-148).
 - 2026-11-14, owner (dive, 5b setting): "no setting" (DEC-148).
@@ -437,6 +452,14 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   be "on mom"" (DEC-151, DEC-152, DEC-150)
 
 ## Open questions
+- **exact-24h** (no ruling): the owner allows "paycheck can set the clock if need be" and would like more lessons to fill
+  the day ("an actual camping lesson … talk about upgrades and assist items, load some cargo"). Built default: the paycheck
+  sets 19:30 (slice 2). A lesson proposal is on the orchestrator's owed line; nothing built.
+- **Lines owed (FEAT-148):** Larry's call (`LARRY_CALL`, brief: the paper-route side gig, the camp, the good deeds); the
+  paycheck card at the joint (slice 2).
+- Lane B: once FEAT-212's cart lands, the tutorial's on-mom tire needs "check out" before leaving the shop. Not built against.
+
+### Before the follow-up dive (answered 2026-11-14)
 The owner asked for issues with the skip flow ("lemme know if there are issues with it in the next round"). Checked
 against the code; the linked ones are written up as the follow-up dive `.planning/dives/FEAT-184-tutorial-flow.html`.
 Each has a recommendation there.
@@ -511,3 +534,9 @@ Each has a recommendation there.
   counts play time, `_playedS`, which a loaded box accrues slower than the wall clock).
 - 2026-11-14: the tutorial dive folded in (Lane A): DEC-146..154; DEC-109 / DEC-110 superseded; the issues checked
   against the code (Open questions; the follow-up dive).
+- 2026-11-14: landing 2 slice 1 (Lane A, 34f2e8dc): `data/tutorial.js` pins 822480141; a blank seed on the first playthrough
+  ever and the menu's tutorial (no `?seed=`) play on it. The skip lands outside the burger joint on the clock it was skipped
+  at (no night at mom's), the board's first slot closed silently, then the manager's last check (BOSS_CHECK, the owner's
+  line), Larry's call (LARRY_CALL, PLACEHOLDER) and RUN_INTRO. The joint's park trigger offers no job before 07:00 on day 1
+  (its offers still show on the map). cdp-smoke's story step rewritten for it (not run on the branch). INFRA-15's WIP
+  reverted (075d241d). Interim: a played tutorial still ends with the casserole and Larry's welcome until slice 2.
