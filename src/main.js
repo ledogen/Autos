@@ -154,7 +154,7 @@ const _urlSeed = _urlParams.get('seed')
 // renderer construction (AA can't toggle live — context creation flag). Zero cost when absent.
 const _PROF = _urlParams.get('prof') === '1'
 const _NOAA = _urlParams.get('noaa') === '1'
-// PERF-48 lever 6 PROTOTYPE: ?terrainBake=<px per chunk, e.g. 256>[&bakeNear=<m>] bakes the terrain material into an
+// PERF-48 lever 6 PROTOTYPE: ?terrainBake=<px per chunk, e.g. 256> bakes the terrain material into an
 // atlas (src/terrain-bake.js). Absent = the live shader, main's look unchanged.
 const _terrainBakePx = parseInt(_urlParams.get('terrainBake') ?? '', 10) || 0
 if (_PROF) perfEnableUserTiming()
@@ -8211,7 +8211,7 @@ propSystem.setPhysicsHook(propPhysics)   // FEAT-48: trees/rocks/boulders are ri
 // browser-only). Wires the atlas texture into the terrain sampler, the bake triggers into the prop
 // system, and the static sun direction into the projection shear. In realtime-cast mode the terrain
 // strength is 0 (props keep casting into the sun's shadow map instead).
-const terrainBake = _terrainBakePx ? new TerrainBake(renderer, _terrainBakePx, parseFloat(_urlParams.get('bakeNear') ?? '0') || 0) : null
+const terrainBake = _terrainBakePx ? new TerrainBake(renderer, _terrainBakePx) : null
 if (terrainBake && _PROF) window.__terrainBake = terrainBake   // harness A/B: __terrainBake.enabled = false → live shader
 const shadowBake = new ShadowBakeSystem(renderer, FLORA_PARAMS.shadows?.tilePx ?? TILE_PX)
 shadowBake.setSun(skySystem.sunDirection)
@@ -10728,7 +10728,7 @@ function loop (t) {
   // moment the window moves — early-outs unless the stream centre changed chunk.
   if (shadowBake && !_labActive) shadowBake.syncCenter(Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE))
   if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(_streamBudget.deadline()) }   // PERF-26 tag
-  if (terrainBake && !_labActive) terrainBake.update(terrainSystem._material, terrainSystem._chunkMap, camera.position)
+  if (terrainBake && !_labActive) terrainBake.update(terrainSystem._material, terrainSystem._chunkMap)
   perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()

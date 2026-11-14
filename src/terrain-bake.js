@@ -15,8 +15,10 @@
  * tiles and mip filtering blends the real world neighbour, no per-tile clamp. The −x is because the camera is
  * NOT mirrored (a mirrored camera flips the winding and with it gl_FrontFacing, which flips the baked normal).
  *
- * Known ceilings (prototype): a planar top-down bake stretches on cliffs; palette slider edits do not re-bake
- * (reload); texel 64/px m (256 px → 0.25 m) is coarser than the 1.6 m grass tile's detail near the truck.
+ * Measured (wip/perf-48/bake-ab.mjs, paired A/B, 2 random seeds): baking every pixel saves 10–24 % of GPU active
+ * cycles. Known ceilings (prototype): at 256 px (0.25 m/texel) the dirt clods and pebbles within ~20 m of the truck
+ * flatten; the top-down bake streaks steep cut faces (uBakeSteep > 0 keeps them live, but the branch ate most of
+ * the saving); palette slider edits do not re-bake (reload).
  */
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain-height.js'
@@ -26,22 +28,20 @@ const BAKES_PER_FRAME = 4    // chunks baked per frame while streaming; the full
 
 const pmod = (a, n) => ((a % n) + n) % n
 
-/** src with the text from marker a up to marker b replaced by mid (markers live in terrain.js's shader). */
-function cut(src, a, b, mid) {
-    const i = src.indexOf(a), j = src.indexOf(b)
-    if (i < 0 || j < i) throw new Error(`[terrain-bake] shader markers ${a}/${b} missing`)
-    return src.slice(0, i) + mid + src.slice(j)
+/** src with shader marker m (terrain.js) replaced by text; loud if a terrain.js edit dropped the marker. */
+function mark(src, m, text) {
+    if (!src.includes(m)) throw new Error(`[terrain-bake] shader marker ${m} missing`)
+    return src.replace(m, text)
 }
 
 export class TerrainBake {
     /**
      * @param {THREE.WebGLRenderer} renderer
      * @param {number} tilePx  atlas texels per chunk side (256 → 0.25 m/texel, atlas 3072²)
-     * @param {number} nearM   chunks closer than this (m, camera to chunk square) keep the live shader; 0 = bake all
      */
-    constructor(renderer, tilePx = 256, nearM = 0) {
+    constructor(renderer, tilePx = 256) {
         this.enabled = true          // runtime A/B toggle (window.__terrainBake in ?prof=1)
-        this.nearM = nearM
+        this.steep = { value: 0 }    // uBakeSteep (see _makeMaterials); live-tunable, 0 = bake every pixel
         this._r = renderer
         this._tp = tilePx
         const size = BAKE_N * tilePx
@@ -85,23 +85,28 @@ export class TerrainBake {
         })
         const scale = 1 / (CHUNK_SIZE * BAKE_N)
         const uv = `(vec2(-vWorldPos.x, vWorldPos.z) * ${scale.toExponential(8)})`
+        // Steep ground keeps the live block: a top-down bake stretches a face by 1/n.y and loses the live shader's
+        // side-projected rock (seen on road cuts). uBakeSteep is that n.y threshold; 0 bakes every pixel.
         this._baked = variant('perf48-baked', (s) => {
             s.uniforms.uBakeAlb = { value: this._alb.texture }
             s.uniforms.uBakeNrm = { value: this._nrm.texture }
-            let f = 'uniform sampler2D uBakeAlb, uBakeNrm;\n' + s.fragmentShader
-            f = cut(f, '// @bake-a', '// @bake-b', `diffuseColor.rgb = texture2D(uBakeAlb, ${uv}).rgb;\n`)
-            f = cut(f, '// @bake-c', '// @bake-d', `normal = normalize(mat3(viewMatrix) * (texture2D(uBakeNrm, ${uv}).xyz * 2.0 - 1.0));\n`)
+            s.uniforms.uBakeSteep = this.steep
+            let f = 'uniform sampler2D uBakeAlb, uBakeNrm; uniform float uBakeSteep;\nbool bkLive = false;\n' + s.fragmentShader
+            f = mark(f, '// @bake-a', `bkLive = vWorldNrm.y < uBakeSteep;\nif (!bkLive) diffuseColor.rgb = texture2D(uBakeAlb, ${uv}).rgb; else {\n`)
+            f = mark(f, '// @bake-b', '}\n')
+            f = mark(f, '// @bake-c', `if (!bkLive) normal = normalize(mat3(viewMatrix) * (texture2D(uBakeNrm, ${uv}).xyz * 2.0 - 1.0)); else {\n`)
+            f = mark(f, '// @bake-d', '}\n')
             s.fragmentShader = f
         })
     }
 
     /**
      * Per frame: queue chunks whose mesh or vertex data changed since their bake, bake a few, and give every
-     * chunk its material (baked once baked, live before that, inside nearM, or with the toggle off).
+     * chunk its material (baked once baked; live before that or with the toggle off).
      * @param {THREE.Material} liveMat  terrainSystem's shared material (a new TerrainSystem → new clones)
      * @param {Map} chunkMap  terrainSystem's chunk records ({ cx, cz, mesh })
      */
-    update(liveMat, chunkMap, camPos) {
+    update(liveMat, chunkMap) {
         if (liveMat !== this._live) this._makeMaterials(liveMat)
         const todo = []
         for (const [key, c] of chunkMap) {
@@ -111,11 +116,7 @@ export class TerrainBake {
             const st = this._state.get(key)
             const fresh = st && st.mesh === c.mesh && st.v === v
             if (!fresh && todo.length < BAKES_PER_FRAME) todo.push([key, c, v])
-            const h = CHUNK_SIZE / 2
-            const dx = Math.max(Math.abs(camPos.x - c.mesh.position.x) - h, 0)
-            const dz = Math.max(Math.abs(camPos.z - c.mesh.position.z) - h, 0)
-            const near = this.nearM > 0 && dx * dx + dz * dz < this.nearM * this.nearM
-            c.mesh.material = (this.enabled && fresh && !near) ? this._baked : this._live
+            c.mesh.material = (this.enabled && fresh) ? this._baked : this._live
         }
         if (todo.length) this._bakeTiles(todo)
     }
