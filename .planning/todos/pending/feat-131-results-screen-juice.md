@@ -15,7 +15,7 @@ The post-mission (results) screen feels flat. Add juice to the reveal, and a bac
 under the live rank timer that builds suspense as the run approaches/passes each grade threshold.
 
 ## Acceptance
-- [ ] Rank timer has a music bed (synthesized, like the rest of `src/*-audio.js`) whose tension
+- [x] (dropped, DEC-192) Rank timer has a music bed (synthesized, like the rest of `src/*-audio.js`) whose tension
       rises toward the next grade cutoff; drops/resolves when a grade is lost or the job ends.
 - [ ] Results screen reveal is staged (count-ups, timed stingers per grade) — fold in FEAT-120's
       "Payout coin and grade stingers" item rather than duplicating it.
