@@ -3373,7 +3373,7 @@ function _wirePoiLamps (q, inst) {
   }
 }
 function _updatePoiNightLights () {
-  const h = daySystem.hour()
+  const h = SKY_CYCLE.hour   // the sky's hour: the day clock pushes it in a run, free roam cycles it
   const on = lampsOn('shop', h)
   if (on !== _shopLampsOn) { _shopLampsOn = on; setGlow(_shopLampMats, on) }
   if (!_homeLamps.size) return
