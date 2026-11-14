@@ -1,7 +1,7 @@
 ---
 id: BUG-140
 type: bug
-status: landed 51a932bf (smoke: edge flaked once then passed alone ×2 and in the re-run; the re-run's only miss is the pre-existing pad pick, BUG-157) — open only for the owner's feel drive (shared with FEAT-193)
+status: completed
 severity: major
 opened: 2026-11-07
 source: owner, 2026-11-07 tracker inbox
@@ -125,3 +125,6 @@ vase strapped in the bed. A alone (ζ 0 gives the same) dropped the vase's peak 
 than half" went red. Its bound now reads data/offers.js's own words, "a 1 m crest costs roughly half" (keeps 30–65 %; main's
 43 % passes too). Getting 43 % back would take the vase's break 6.0 → ~4.95 g, undoing most of the owner's 1.5× raise
 (2026-10-24), so the data is unchanged. Owner call: accept the softer crest (recommended), or lower the very fragile break.
+
+## Resolution (2026-11-14)
+Owner drove it on main and answered the card bug140-feel: "good". The four build calls were accepted on feat193-calls: "all four as written" (DEC-191). Closed.
