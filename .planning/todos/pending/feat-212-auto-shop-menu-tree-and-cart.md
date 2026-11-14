@@ -12,7 +12,7 @@ lane: B
 # FEAT-212: The auto shop menu — a nested Maintenance tree, a plain Shop list, and a cart with checkout
 
 ## Next steps
-Owner: look at landing 2 (the Shop list, `wip/feat-212/2*.png` in /Users/ledogen/CodeShit/CarGame-land-212b) and answer the Open questions. Lane B next: landing 3, the cart.
+Owner: look at landing 3 (the cart, `wip/feat-212/3*.png` in /Users/ledogen/CodeShit/CarGame-land-212c) and answer the Open questions. Lane B: nothing left to build in this ticket once those are answered; it closes on the owner's look.
 
 ## Summary
 Rebuild the auto shop's menu to the owner's outline. Maintenance is a tree that shows one level at a time. Shop is a flat list of parts. Nothing is paid for or takes time until checkout: work is queued in a cart that shows a subtotal of cost and time, the truck updates live, and the player checks out or discards.
@@ -151,6 +151,48 @@ and everything under them; selecting an open item closes it and everything under
 everything). An action row (align, patch, oil change, change clutches, each swap or repair option) carries its price and
 its hours. In landing 1 an action is still paid when it is pressed; landing 3's cart moves that to checkout.
 
+### The cart (landing 3, Lane B, 2026-11-13)
+**What is carted.** Every paid action in both tabs and in a storefront's shop: repair (on the truck and in My Items, a
+mounted pair's wheel too), patch, align all, oil change, change clutches, swap with inventory, swap with corner, buy & fit,
+buy into the inventory (the tutorial's on-mom tire included), sell, split, combine. Nothing is charged as it is pressed.
+
+**How the state works (src/service.js `queue`).** No second copy of the truck. A job runs for real against the live truck
+and inventory, exactly the code that ran before, so later jobs see what earlier ones did (swap a corner, then repair the
+wheel now on it; buy a part, then fit it). What a job does to the world outside the truck is held on its cart line instead:
+its price, what it sells for, its hours, the shelf slot it takes, mom's tire, a free repair. Before the first line the
+shop takes a snapshot of the truck (parts, conditions, flats, alignment geometry) and the inventory.
+- Checkout: pays the sum once (the sales first, so they can pay for the rest), takes the shelf slots, uses mom's tire and
+  the free repair, and runs the clock once by the summed hours. The gate proves the total equals what the same jobs cost one
+  by one.
+- Discard: puts the snapshot back. The wallet, the clock and the shelf never moved, so nothing else needs restoring.
+- Remove a line: snapshot back, the other lines replayed in order. A line remembers what it read (the inventory entry, the
+  shelf slot, the condition of the part it repairs); an entry that moved up the list is found again by what it is, and a
+  line whose part is gone comes out too, with a note ("1 more came out with it"). Example: remove a tire purchase and the
+  sale of the tire it took off goes with it; remove a corner swap and the repair of the wheel it moved goes with it.
+- While a line is in the cart a slot it bought reads empty; an item that is always on the shelf stays.
+
+**Saves.** No save captures a cart: `_saveBlock` refuses while the cart holds a line or a shelf item is fitted for a look
+(that preview could be saved before, a free part on reload). The rolling autosave runs every second, so the last save is
+the moment before the first line. After checkout or discard it saves again as usual.
+
+**Leaving.** Esc / pad B, the back button and "go to jobs" ask when the cart is not empty: "Check out or discard before
+you leave." under the subtotal. Esc again takes the question back. Checkout or discard then finishes the leave. The
+parking brake holds while the cart is full (as mom's pump does): Space asks the same, and after checkout or discard the
+brake lets go. The inventory screen (Tab) stays shut while the cart is full, so nothing is used or dropped behind a cart
+that a discard would put back. A close that cannot ask (nothing does today) discards.
+
+**Over budget.** Adding is never blocked by money. Checkout is blocked and the foot says "$X short" (the owner has not
+ruled; the open question stands). Free items stay free; a cart can be all $0 and still needs checkout (its time).
+
+**Time.** The quoted hours add (each job ran its own clock before; one after another). There are no shop opening hours in
+the game, so a long cart has nothing to run past: checkout always runs the clock by the subtotal's hours. If shop hours
+land, checkout is the place to refuse ("closes at …").
+
+**On screen.** The cart is under every tab while it holds work: each line with its price and hours and a × to take it out.
+The subtotal (money and time), "$X short", the leave question and discard / check out sit on the card's foot with the back
+button, below the scrolling body, so a long tree never hides them. The Shop's buttons read "add to cart" (a tire's corner
+buttons keep their corner names); Maintenance keeps its verbs (swap, repair, align, patch, change), which now queue.
+
 ### How this sits on what exists
 - FEAT-167's collapsible sections and FEAT-196's select-then-act rows are the same idea one level deep; this ticket replaces their layout with the tree and keeps their rules (one target per row for the pad, corner swaps, repairing an inventory wheel).
 - Maintenance never shows shop stock. A swap offers only parts in the inventory or on the truck; with none, the line reads "no appropriate replacement in inventory" and buying happens in the Shop tab.
@@ -162,7 +204,7 @@ its hours. In landing 1 an action is still paid when it is pressed; landing 3's 
 - [x] Every purchasable option shows its price and its time (Maintenance; the Shop tab with landing 2)
 - [x] Swaps offer inventory and on-truck parts only; the empty case shows the owner's line
 - [x] Shop tab: flat list with name, condition, cost, time left in stock; mounted tires show two conditions; expanding shows the description and the options (each with price and hours; "buy" until the cart swaps it for "add to cart")
-- [ ] Cart: queued work, live truck preview, subtotal of cost and time, checkout or discard; payment and the time skip happen only at checkout; leaving requires one or the other
+- [x] Cart: queued work, live truck preview, subtotal of cost and time, checkout or discard; payment and the time skip happen only at checkout; leaving requires one or the other
 - [ ] Pad, keyboard and mouse; pad-e2e updated (Maintenance: ↑/↓ walk the list in order, Enter opens, checked headless; the smoke's service step walks it by keys. pad-e2e never reaches a shop, so it has nothing to update)
 
 ## Decisions
@@ -174,10 +216,12 @@ its hours. In landing 1 an action is still paid when it is pressed; landing 3's 
 - The transmission's line lists no action. Its rebuild (the synchros, REPAIRS.transmission) is kept under it as "Repair", or a worn manual box could never be fixed. Keep it (the default)?
 - My Items (sell, split / combine, repair or patch a part you carry, FEAT-196's inventory wheel) is in neither outline. It stays under the Shop tab, below the list, through landing 2 (the default). Or is it the empty item 6?
 - The outline's item 6 is empty in the doc: is a sixth section intended?
-- The cart previews work on the truck "in real time": if the player cannot afford the subtotal, block checkout (the default) or block adding the item?
+- The cart previews work on the truck "in real time": if the player cannot afford the subtotal, block checkout (the default, built) or block adding the item?
+- Storefronts (general store, gas station, food vendor) cart too, one code path: a coffee needs "check out". Keep (the default), or let a store buy at once?
+- Maintenance's buttons keep their verbs (swap, repair, align, patch, change) and queue; only the Shop's read "add to cart". Keep (the default), or "add" everywhere?
 
 ## Files
-`src/service-screen.js` · `src/service.js` · `src/menu-nav.js` · `test/service.mjs` · `test/pad-e2e.mjs`
+`src/service-screen.js` · `src/service.js` · `src/inventory.js` (snapshot) · `src/main.js` (Esc, the brake hold, `_saveBlock`, the inventory screen's block) · `src/menu-nav.js` · `test/service.mjs` · `test/cdp-smoke.mjs` · `test/run-soak.mjs` · `test/pad-e2e.mjs`
 
 ## Log
 - 2026-11-13: minted from the owner's spec by the orchestrator. Nothing built.
