@@ -12,7 +12,7 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Perf lane: lever 5, the frame cap (60 / 30 / display, default 60; DEC-185), being built. Next Perf agent: the lever 6 terrain-material bake prototype (owner: "build the prototype"), as before/after screenshots.
+Lever 5, the frame cap (60 / 30 / display rate, default 60; DEC-185), built on feature/perf 7f304aa2: orchestrator lands it and smokes main; owner can try 30 on the settings page (display group). Next Perf agent: the lever 6 terrain-material bake prototype (owner: "build the prototype"), as before/after screenshots.
 Lever 7 declined (DEC-186). Levers 1, 1b on main; 2 and 3 void; 4 at PERF-45.
 
 ## Summary
@@ -97,3 +97,7 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
   pulse, reseat toast fade, HUD chip fades): visible, kept, cheap. Stills 0 px (`wip/perf-48-l1b/diff.txt`). No gate (DOM).
   Numbers and sources in COST-MAP-2026-11.md § 1.
 - 2026-11-14: owner answers recorded (Decisions); lever 1b landed on main fb2802a6.
+- 2026-11-14 (Perf lane): lever 5 built (7f304aa2): `frameCap` in settings.js, a "frame rate" row on the settings page, and
+  `loop()` returns early on a frame not yet due. Pacing checked in a node simulation (±0.5 ms vsync jitter): 60 / 30 fps
+  exact on 60, 120 and 240 Hz, gaps 15.7–17.6 / 32.4–34.3 ms; on 144 Hz it averages the cap with uneven gaps (13–22 ms),
+  inherent to 144/60. Not yet run in the browser (no smoke on a branch); world-presets gate green.
