@@ -78,6 +78,9 @@ export class InventorySystem {
         this._changed()
     }
 
+    /** FEAT-212: a copy of everything restore() takes — the shop's cart puts it back on discard (restore a copy of it). */
+    snapshot () { return structuredClone({ entries: runInventory.entries, pending: runInventory.pending, quick: runInventory.quick }) }
+
     slotCap () { return this._slotCap() }
     slotsUsed () { return runInventory.entries.length }
     stowedKg () {
