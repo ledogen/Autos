@@ -1,0 +1,150 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Decision records: the conflicts that need you</title>
+<h1>Decision records: the conflicts that need you</h1>
+<p>The backfill wrote 121 decision records from the current planning. 59 stand already.
+18 are held back because two sources disagree and your rule (an open alpha ticket wins) could not settle them.
+44 more are held back only because an agent wrote the ruling line and you have not approved it.
+This page asks for both: 5 axioms, then 2 single cases, then the agent-worded rulings, one answer per area.
+The last section is read-only: what the alpha-ticket rule settled without you.</p>
+<p>Every record is on the <a href="/#/decisions">Decisions tab</a>. Each id below opens its record.</p>
+
+<h2>1. Axioms: one ruling that settles several conflicts</h2>
+<p>Each axiom is drafted for you. Press <b>approve</b> to take it as written. To change it, press <b>change</b> and type your version, or your edits, in the note box under the buttons. An approved axiom becomes its own decision record.</p>
+<h3>AX-1: A later owner ruling beats an earlier one, wherever it is written</h3>
+<p>Your rule (an open alpha ticket wins) assumes the alpha ticket holds the newer ruling. In these pairs it does not: a newer ruling of yours sits in a later ticket or a completed one.</p>
+<p><b>Drafted ruling.</b> When two owner rulings disagree, the later-dated one wins, whatever file holds it; the ticket rule applies only when the dates can't be told apart.</p>
+<p>It would settle these 3:</p>
+<table><tr><th colspan="2"><a href="/#/t/DEC-104">DEC-104</a> One giver trait per offer, its effect printed beside it</th></tr><tr><th>A</th><td>“i dont want them to stack. one at a time max”<br><small>completed/feat-142-giver-traits.md (owner, 2026-10-31)</small></td></tr><tr><th>B</th><td>“Giver traits, 0–2 per offer.”<br><small>DESIGN.md line 270, item (7)</small></td></tr><tr><th>result</th><td>A wins: one trait per offer.</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-105">DEC-105</a> Tire iron and floor jack: a spare change is 2 h bare, 30 min with both</th></tr><tr><th>A</th><td>“changing your tire for the spare should be like 2hrs without them and 30m with them”<br><small>FEAT-203 source (owner, 2026-11-13 inbox)</small></td></tr><tr><th>B</th><td>“The breaker bar is cut”<br><small>DESIGN.md line 1237</small></td></tr><tr><th>result</th><td>A wins: the two tools come back with the 2 h / 30 min times.</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-106">DEC-106</a> The office and school post their own jobs</th></tr><tr><th>A</th><td>“approve all proposals except notes should only come from residence. no specimen for the lab”<br><small>FEAT-153 § RULED (owner, 2026-11-02)</small></td></tr><tr><th>B</th><td>“The office and school post nothing at all, fetch included”<br><small>FEAT-89 (alpha; owner, 2026-10-07)</small></td></tr><tr><th>result</th><td>A wins (later). Under the ticket rule alone B would win, since FEAT-89 is the open alpha ticket.</td></tr></table>
+<dive-q id="AX-1" options="approve | change"></dive-q>
+<h3>AX-2: An owner's &quot;before the alpha&quot; puts a ticket in the alpha</h3>
+<p>MILESTONES.md says a ticket no cut table lists is later; two tickets carry an owner ruling that they are built before the alpha but no table lists them.</p>
+<p><b>Drafted ruling.</b> An owner ruling that a ticket is built before the alpha puts it in the alpha; the cut table is updated to list it.</p>
+<p>It would settle these 2:</p>
+<table><tr><th colspan="2"><a href="/#/t/DEC-107">DEC-107</a> Demolition missions are built before the alpha</th></tr><tr><th>A</th><td>“build demolition before the alpha”<br><small>FEAT-65 (owner, 2026-10-31)</small></td></tr><tr><th>B</th><td>“A ticket no table lists is later”<br><small>MILESTONES.md § Release cuts</small></td></tr><tr><th>result</th><td>A wins: FEAT-65 joins the alpha table.</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-108">DEC-108</a> Authored lines are written before the alpha</th></tr><tr><th>A</th><td>“write them BEFORE the alpha”<br><small>FEAT-148 § Ruled (owner, 2026-10-31)</small></td></tr><tr><th>B</th><td>“A ticket no table lists is later”<br><small>MILESTONES.md § Release cuts</small></td></tr><tr><th>result</th><td>A wins: FEAT-148 joins the alpha table.</td></tr></table>
+<dive-q id="AX-2" options="approve | change"></dive-q>
+<h3>AX-3: The owner's newest tutorial note beats the earlier tutorial rulings it contradicts</h3>
+<p>FEAT-184's tutorial note (2026-11-13) rewrites the intro; the ticket flags where it contradicts DESIGN.md, opening.md, FEAT-170 and the 2026-11-07 choices.</p>
+<p><b>Drafted ruling.</b> Where the tutorial note and an earlier tutorial ruling disagree, the note wins; the earlier ruling is recorded as replaced.</p>
+<p>It would settle these 3:</p>
+<table><tr><th colspan="2"><a href="/#/t/DEC-109">DEC-109</a> Mom sets up the story at the end of the tutorial</th></tr><tr><th>A</th><td>“drive to mom's house she feeds you and sets up the story”<br><small>FEAT-184 tutorial note (owner, 2026-11-13)</small></td></tr><tr><th>B</th><td>“the alpha story is three beats: the firing, the uncle (the tutorial's voice), the expedition camp”<br><small>DESIGN.md 2026-10-23 pass, item (5)</small></td></tr><tr><th>result</th><td>A wins: mom sets up the story. Open: where the run's goal is told.</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-110">DEC-110</a> After the tutorial the player has free will; the casserole is not forced</th></tr><tr><th>A</th><td>“you wake up the player is in the game with free will”<br><small>FEAT-184 tutorial note (owner, 2026-11-13)</small></td></tr><tr><th>B</th><td>“every playthrough starts the first paid job as a delivery to larry's”<br><small>FEAT-170 (owner, 2026-11-05)</small></td></tr><tr><th>result</th><td>A wins: free will. Open: whether the casserole stays as an offered (not forced) first job, and where a skip lands.</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-111">DEC-111</a> The tutorial plays on a pinned or hand-built world</th></tr><tr><th>A</th><td>“Maybe we should freeze a seed for this purpose or custom build a world”<br><small>FEAT-184 tutorial note (owner, 2026-11-13)</small></td></tr><tr><th>B</th><td>“The run's own world”<br><small>FEAT-184 choice 2 (owner, 2026-11-07, answered (a))</small></td></tr><tr><th>result</th><td>A wins: a pinned tutorial world, as an exception CLAUDE.md names.</td></tr></table>
+<dive-q id="AX-3" options="approve | change"></dive-q>
+<h3>AX-4: Between a memory note and a repo doc, the later-dated one wins</h3>
+<p>Agent memory notes and repo docs (CLAUDE.md, ASSETS.md, ART-STYLE.md) disagree on process and asset rules; most memory sides are older notes the repo has since moved past.</p>
+<p><b>Drafted ruling.</b> When an agent memory note and a repo doc disagree, the later-dated one wins and the loser is corrected; an owner quote beats an agent's summary of the same date.</p>
+<p>It would settle these 6:</p>
+<table><tr><th colspan="2"><a href="/#/t/DEC-112">DEC-112</a> No diagnostic plumbing in the running game</th></tr><tr><th>A</th><td>“No diagnostic plumbing in the frame loop.”<br><small>CLAUDE.md § src/ is the product (2026-06-21)</small></td></tr><tr><th>B</th><td>“Debug variable loggers — HUD overlays, console readouts, or any in-game display”<br><small>memory feedback_phase_housekeeping (2026-05-28)</small></td></tr><tr><th>result</th><td>A wins (later).</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-113">DEC-113</a> Every worker imports the code the main thread runs; nothing is mirrored</th></tr><tr><th>A</th><td>“Every Worker is a real ES module that imports the code the main thread runs.”<br><small>CLAUDE.md § Workers (2026-10-02)</small></td></tr><tr><th>B</th><td>“WORKER_SOURCE is the SOLE worker source.”<br><small>memory project_terrain_worker_constraints (2026-06-21)</small></td></tr><tr><th>result</th><td>A wins (later).</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-114">DEC-114</a> About 1000 triangles is the floor for a hand-modelled asset</th></tr><tr><th>A</th><td>“~1000 tris is the FLOOR, ticket budgets of 300–400 are too low”<br><small>memory feedback_model_quality_floor (owner, 2026-10-09)</small></td></tr><tr><th>B</th><td>“Hand props, camp gear, cargo | 350–700”<br><small>.planning/research/ART-STYLE.md budget table (2026-08-07)</small></td></tr><tr><th>result</th><td>A wins (later, and the owner's own words).</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-115">DEC-115</a> Blender exports run headless, each generator writing into its own checkout</th></tr><tr><th>A</th><td>“Exports run headless”<br><small>.planning/research/ASSETS.md (2026-11-05)</small></td></tr><tr><th>B</th><td>“headless blender NEVER exports — use GUI via blender-mcp”<br><small>memory EXPANDED.md, project_hero_ranger_asset line</small></td></tr><tr><th>result</th><td>A wins (later; MEMORY.md's standing do-not already says the same).</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-116">DEC-116</a> Uncommitted changes in your worktree are yours: commit them, never discard</th></tr><tr><th>A</th><td>“uncommitted changes in your worktree are YOURS: commit them, never discard them.”<br><small>memory feedback_commits (owner, 2026-11-02)</small></td></tr><tr><th>B</th><td>“discard leftovers with `git checkout --`”<br><small>memory feedback_check_tree_before_executor (2026-06-10)</small></td></tr><tr><th>result</th><td>A wins (later). memory feedback_visual_regression_revert_first's &quot;git checkout &lt;good&gt; -- &lt;files&gt;&quot; falls with B.</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-117">DEC-117</a> Ticket classes are feature, bug, perf, quality, infra and asset</th></tr><tr><th>A</th><td>“Classes: `feature` (FEAT-NN) · `bug` (BUG-NN) · `perf` (PERF-NN) · `quality` (QUAL-NN)”<br><small>CLAUDE.md § Workflow (2026-08-05)</small></td></tr><tr><th>B</th><td>“use CONCERN-/IDEA- for the rest”<br><small>memory feedback_scribe_lane (2026-06-10)</small></td></tr><tr><th>result</th><td>A wins (later).</td></tr></table>
+<dive-q id="AX-4" options="approve | change"></dive-q>
+<h3>AX-5: A later presentation ruling beats an invariant's older wording</h3>
+<p>Two owner rulings on what the cards show (2026-10-23/24) contradict sentences inside the invariants' amendment text, without touching what the invariants protect.</p>
+<p><b>Drafted ruling.</b> A later owner ruling on what a card or HUD shows beats an invariant's older wording about it, as long as the invariant's purpose (par never shown, pay never reading the letter) holds.</p>
+<p>It would settle these 2:</p>
+<table><tr><th colspan="2"><a href="/#/t/DEC-118">DEC-118</a> No result card shows a letter</th></tr><tr><th>A</th><td>“no letter on any result card”<br><small>.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md (game-feel review, owner 2026-10-23/24)</small></td></tr><tr><th>B</th><td>“The result card shows a letter and a number”<br><small>DESIGN.md SM-INV-3 amendment text</small></td></tr><tr><th>result</th><td>A wins: no letter anywhere; SM-INV-3's purpose (par never shown) holds.</td></tr></table>
+<table><tr><th colspan="2"><a href="/#/t/DEC-119">DEC-119</a> The offer card shows the pay range and what moves it</th></tr><tr><th>A</th><td>“Pay $3.63 – $7.27 based on speed”<br><small>src/offer-board.js R-20 (owner, 2026-10-24)</small></td></tr><tr><th>B</th><td>“the offer card quotes one number, Base pay, the guaranteed amount ... and the tip is never mentioned on the offer”<br><small>DESIGN.md SM-INV-4 deadline amendment</small></td></tr><tr><th>result</th><td>A wins: the range is shown; pay still never reads the letter.</td></tr></table>
+<dive-q id="AX-5" options="approve | change"></dive-q>
+
+<h2>2. Single cases</h2>
+<p>A is the side I recommend. The note box takes a third answer if neither is right.</p>
+<h3><a href="/#/t/DEC-120">DEC-120</a>: How many good deeds open the expedition camp in the alpha: 6, or 10?</h3>
+<table><tr><th>A</th><td>6 good deeds, as FEAT-103 rules; the run is shorter.<br>“Gated by 6 good deeds”<br><small>FEAT-103 (alpha; owner, 2026-10-19)</small></td></tr><tr><th>B</th><td>10 good deeds, as src/economy.js ships today, so a region-1 run takes about 12 days.<br>“maybe 12 days should be expected for a R1 run”<br><small>FEAT-168 (owner, 2026-11-05) and src/economy.js campDeeds = 10 [DEFAULT]</small></td></tr></table>
+<p>Why A: FEAT-103 is the open alpha ticket, but the 10 came later from the owner's own 12-day remark; it was set as an agent's default, not ruled. Open alpha tickets touched: <a href="/#/t/FEAT-103">FEAT-103</a>, <a href="/#/t/FEAT-69">FEAT-69</a>.</p>
+<dive-q id="DEC-120" options="A | B | neither"></dive-q>
+<h3><a href="/#/t/DEC-121">DEC-121</a>: When rain lands, does par use that day's grip, or does par stay purely geometric?</h3>
+<table><tr><th>A</th><td>Par uses the day's μ, so a safe driver in the wet can still make rank.<br>“Par uses that day's μ.”<br><small>FEAT-107 (later)</small></td></tr><tr><th>B</th><td>Par scales with nothing; the wet day is simply harder.<br>“It scales with nothing”<br><small>DESIGN.md SM-INV-2</small></td></tr></table>
+<p>Why A: SM-INV-2 lists what par must not scale with (the car, run age); weather is the world, not the player, so it may not be the same kind of input. Open alpha tickets touched: none.</p>
+<dive-q id="DEC-121" options="A | B | neither"></dive-q>
+
+<h2>3. Rulings in an agent's words</h2>
+<p>44 records had no quotable sentence of yours in their source, so an agent wrote the ruling line. You ruled that such wording counts once you approve it, so they wait as drafts until you do. They are grouped by area, one answer per area. Press <b>all fine</b>, or press <b>some wrong</b> and type the ids and what is wrong in the note box under the buttons.</p>
+<h3>story (5)</h3>
+<table><tr><td><a href="/#/t/DEC-024">DEC-024</a></td><td><b>The clock stands still while the parking brake is set</b><br>No game time passes while the parking brake is latched, including after leaving a camp or shop until it is released; entering a menu that needs the truck parked sets it, and only throttle (or shifting into gear on a manual) releases it.</td></tr>
+<tr><td><a href="/#/t/DEC-037">DEC-037</a></td><td><b>Spirits are beta</b><br>The spirit cast and pacts are beta, not the alpha; spirits.md carries flagged conflicts and is deferred.</td></tr>
+<tr><td><a href="/#/t/DEC-040">DEC-040</a></td><td><b>The firing plays as an in-world camera move with story cards</b><br>For now the firing is an in-world camera move with Story cards over the live world, not a graphic-novel sequence.</td></tr>
+<tr><td><a href="/#/t/DEC-042">DEC-042</a></td><td><b>An alpha run ends by winning, dying or giving up, then shows a summary</b><br>An alpha run ends three ways — the expedition camp is beaten, the player dies, or the player gives up from the pause menu — and each ends on a run summary.</td></tr>
+<tr><td><a href="/#/t/DEC-051">DEC-051</a></td><td><b>A job is player state, not world state</b><br>Never gate pumps, shops or camp on a mission: holding a job changes what the player is doing, not what the world offers.</td></tr></table>
+<dive-q id="wording-story" options="all fine | some wrong"></dive-q>
+<h3>economy (6)</h3>
+<table><tr><td><a href="/#/t/DEC-020">DEC-020</a></td><td><b>Papers jobs rank on time against a deadline, and it is called a deadline</b><br>A papers job ranks on time against a deadline, for any number of stops; the player-facing word is &quot;deadline&quot;, never &quot;bell&quot;.</td></tr>
+<tr><td><a href="/#/t/DEC-022">DEC-022</a></td><td><b>A bonus item is a choice the player can take or leave</b><br>A mission's item reward is optional: the player may take the item or its cash value, and an item can be earned at any rank but D. Missions that paid $0 plus an item are retired.</td></tr>
+<tr><td><a href="/#/t/DEC-023">DEC-023</a></td><td><b>A job's deadline is par times its slack, on the world clock</b><br>A job's deadline is par × (1 + slack) measured on world time, and the player may camp with a job in hand; a job still held past its deadline expires and pays nothing.</td></tr>
+<tr><td><a href="/#/t/DEC-026">DEC-026</a></td><td><b>Rising costs are what push a run along; the storm is not planned</b><br>Prices scale with the clock only, and that cost escalation is what pushes a run forward. The spreading &quot;storm&quot; front is not built and not planned.</td></tr>
+<tr><td><a href="/#/t/DEC-032">DEC-032</a></td><td><b>Each station's fuel price varies by ±5 %</b><br>Fuel is distance's cost; every station's price carries a factor of ±5 %, seeded by the world, the station and the day.</td></tr>
+<tr><td><a href="/#/t/DEC-049">DEC-049</a></td><td><b>The alpha has one haul yard: the region-1 splitting yard</b><br>The alpha's haul givers are the region-1 splitting yard only; the sawmill and quarry are beta. Haul yards post haul only.</td></tr></table>
+<dive-q id="wording-economy" options="all fine | some wrong"></dive-q>
+<h3>world (6)</h3>
+<table><tr><td><a href="/#/t/DEC-048">DEC-048</a></td><td><b>Missions and POIs sit mid-edge, never on nodes</b><br>Mission points and POIs sit mid-edge along roads, never on junction nodes.</td></tr>
+<tr><td><a href="/#/t/DEC-053">DEC-053</a></td><td><b>The regions are &quot;the ladder&quot;</b><br>The three regions are ring sections stacked north to south, and they are called &quot;the ladder&quot;, never &quot;rings&quot;.</td></tr>
+<tr><td><a href="/#/t/DEC-054">DEC-054</a></td><td><b>A split network never refuses a seed; a condemned road does</b><br>A road network split into pieces no longer refuses a seed; a road that can't be given a drivable profile (a condemned edge) still refuses it at story entry, failing safe and saying so.</td></tr>
+<tr><td><a href="/#/t/DEC-055">DEC-055</a></td><td><b>Story mode only prunes or restores roads, never builds them</b><br>The story layer may trim roads (at a region wall) and restore them; it never adds a road the world did not generate.</td></tr>
+<tr><td><a href="/#/t/DEC-057">DEC-057</a></td><td><b>Every world is generated cold; no worldgen data in saves</b><br>Every world is generated from scratch at load; a save carries the seed and knobs, never worldgen data.</td></tr>
+<tr><td><a href="/#/t/DEC-061">DEC-061</a></td><td><b>Skips are the beta Highway/Shortcut pair</b><br>Fast routes past the network (the Highway/Shortcut pair) are beta, and their tickets are minted at entry.</td></tr></table>
+<dive-q id="wording-world" options="all fine | some wrong"></dive-q>
+<h3>roads (6)</h3>
+<table><tr><td><a href="/#/t/DEC-064">DEC-064</a></td><td><b>Road character defaults stand: cTurn 45, wGrade 180</b><br>Do not reopen a road-character retune: cTurn 45 and wGrade 180 stand.</td></tr>
+<tr><td><a href="/#/t/DEC-065">DEC-065</a></td><td><b>Never re-add a longitudinal grade smoother</b><br>No longitudinal grade smoother; a crest is priced by par's corner speed instead.</td></tr>
+<tr><td><a href="/#/t/DEC-067">DEC-067</a></td><td><b>A T always beats no T; departure tests rank, never veto</b><br>A T junction always beats no T: departure tests rank candidates, never veto them; no 45 m guard, and the reuse discount is never rebuilt.</td></tr>
+<tr><td><a href="/#/t/DEC-068">DEC-068</a></td><td><b>Junction pads weld to their ribbons</b><br>Junction pads weld to ribbons (shared mouth vertices, the pad on each leg's own deck); never re-add a round or flared pad rung or a node-centred back-arc bulb.</td></tr>
+<tr><td><a href="/#/t/DEC-069">DEC-069</a></td><td><b>Road-stream crossings are causeways; mesh equals physics</b><br>Where a road crosses a stream it is a causeway, and the collision surface always mirrors the rendered mesh.</td></tr>
+<tr><td><a href="/#/t/DEC-070">DEC-070</a></td><td><b>Connectivity goes up; add options, not roads</b><br>Connectivity only goes up: prefer adding options to the network over culling, keep the network sparse, and keep elevation out of the site score.</td></tr></table>
+<dive-q id="wording-roads" options="all fine | some wrong"></dive-q>
+<h3>physics (1)</h3>
+<table><tr><td><a href="/#/t/DEC-089">DEC-089</a></td><td><b>Simulate Newton fully; flag every approximation</b><br>Offer the complete Newtonian model for a physics fix and flag each approximation, because a faithful simulation presents as real.</td></tr></table>
+<dive-q id="wording-physics" options="all fine | some wrong"></dive-q>
+<h3>perf (3)</h3>
+<table><tr><td><a href="/#/t/DEC-072">DEC-072</a></td><td><b>Never freeze the network adopt path for the map</b><br>Opening the map must never freeze the adoption of finished road networks.</td></tr>
+<tr><td><a href="/#/t/DEC-073">DEC-073</a></td><td><b>Never setAttribute on pooled geometry</b><br>Never call `setAttribute` (replace a vertex buffer) on pooled geometry.</td></tr>
+<tr><td><a href="/#/t/DEC-098">DEC-098</a></td><td><b>Perf A/Bs read spikes, and GPU load by active cycles</b><br>Read per-second spikes (median, p99, worst, share over a threshold), never phase averages alone; compare GPU load by active cycles (busy % × MHz), never by GPU ms or raw watts. A drive that did not stream is invalid.</td></tr></table>
+<dive-q id="wording-perf" options="all fine | some wrong"></dive-q>
+<h3>assets (1)</h3>
+<table><tr><td><a href="/#/t/DEC-082">DEC-082</a></td><td><b>Vehicles are modelled from an 8-photo reference board</b><br>A vehicle is modelled against an 8-photo reference board, primitive first, comparing named features every pass; never from memory.</td></tr></table>
+<dive-q id="wording-assets" options="all fine | some wrong"></dive-q>
+<h3>ui (1)</h3>
+<table><tr><td><a href="/#/t/DEC-062">DEC-062</a></td><td><b>Fewest buttons on menus; no hidden gestures</b><br>Menus use the fewest controller buttons: the side menu is B-hold and the D-pad is spent on actions (down pick-up, right reset, left set spawn). No hidden gestures such as double-presses as mode switches — a natural signature or a settings toggle instead.</td></tr></table>
+<dive-q id="wording-ui" options="all fine | some wrong"></dive-q>
+<h3>process (13)</h3>
+<table><tr><td><a href="/#/t/DEC-059">DEC-059</a></td><td><b>There is no standard seed set; gate constructively</b><br>World-gen work samples random seeds; no fixed set of seeds stands for the world, and gates prove a property by construction rather than on chosen seeds.</td></tr>
+<tr><td><a href="/#/t/DEC-085">DEC-085</a></td><td><b>Owner calls are never invented; a conflict goes to the owner with both sides</b><br>Open design questions are the owner's to answer; when docs or decisions conflict, ask, quoting both sides, rather than picking one.</td></tr>
+<tr><td><a href="/#/t/DEC-086">DEC-086</a></td><td><b>Propose the simplest design</b><br>Lead with the simplest design that does the job.</td></tr>
+<tr><td><a href="/#/t/DEC-087">DEC-087</a></td><td><b>Fix the root, proved in the headless harness</b><br>Fix bugs upstream at the root, and prove them with headless numeric harnesses rather than screenshots.</td></tr>
+<tr><td><a href="/#/t/DEC-088">DEC-088</a></td><td><b>Character emerges from the cost model, never injected</b><br>Road and world character emerge from the cost model; never inject a hand-placed feature to produce it.</td></tr>
+<tr><td><a href="/#/t/DEC-090">DEC-090</a></td><td><b>One playthrough is not a calibration signal</b><br>Do not rebalance numbers from a single run or data point.</td></tr>
+<tr><td><a href="/#/t/DEC-091">DEC-091</a></td><td><b>A visual regression is reverted first, then diagnosed</b><br>When a visual regression appears, revert the suspect commits first and confirm the fix before diagnosing.</td></tr>
+<tr><td><a href="/#/t/DEC-092">DEC-092</a></td><td><b>Landing discipline: verify the base, commit by path, never push unasked</b><br>Before a landing claim, run `git diff --stat &lt;base&gt; main -- src test`; commit with `git commit -- &lt;paths&gt;`, never `git add` a set; never push unless asked; one agent per worktree.</td></tr>
+<tr><td><a href="/#/t/DEC-093">DEC-093</a></td><td><b>Work in the session's worktree; every handoff names worktree, branch and port</b><br>After a context break, edit in the worktree the window names, never feature work on main; every handoff names the worktree path, branch and port.</td></tr>
+<tr><td><a href="/#/t/DEC-096">DEC-096</a></td><td><b>A lane's heavy jobs use at most two processes</b><br>On the shared 10-core Mac a lane's heavy jobs run at most 2 processes (run-all pools 8: use `--serial` / `--only` when lanes are busy).</td></tr>
+<tr><td><a href="/#/t/DEC-097">DEC-097</a></td><td><b>No heavy gates for trivial changes</b><br>A slider or tooltip change does not run the heavy gates; `npm test` already runs only the affected ones.</td></tr>
+<tr><td><a href="/#/t/DEC-099">DEC-099</a></td><td><b>World-gen calls come with before/after screenshots</b><br>A world-gen choice for the owner comes as before/after screenshot sheets with clear choices, never census tables alone, and the metric is derived from the owner's capture.</td></tr>
+<tr><td><a href="/#/t/DEC-101">DEC-101</a></td><td><b>With 10+ owed items, prefer work that adds nothing to the review pile</b><br>When the owed list holds 10 or more items, prefer work that adds nothing to the owner's review pile (gates, perf, closing on evidence, making a pending decision cheaper to answer); the owner never orders lanes and a lane is never left idle.</td></tr></table>
+<dive-q id="wording-process" options="all fine | some wrong"></dive-q>
+<h3>repo (2)</h3>
+<table><tr><td><a href="/#/t/DEC-076">DEC-076</a></td><td><b>The physics import seams</b><br>tire.js and suspension.js are pure maths; physics.js is the only module combining them with engine bodies; terrain-physics.js works through an engine it is handed; world owners import only `createPhysicsEngine` and `GROUP_*`; everything else uses opaque handles.</td></tr>
+<tr><td><a href="/#/t/DEC-084">DEC-084</a></td><td><b>The bench autopilot is to grow into in-game AI cars</b><br>`test/lib/autopilot.mjs` stays pure and per-instance (state in, controls out) so it can grow into in-game AI cars; consumers handle pads and teleports.</td></tr></table>
+<dive-q id="wording-repo" options="all fine | some wrong"></dive-q>
+
+<h2>4. Already settled by the alpha-ticket rule (read-only)</h2>
+<p>In these 9, one side was a ruling in an open alpha ticket, so it won and the record stands. Nothing to answer unless one is wrong.</p>
+<table><tr><th>record</th><th>what stands</th><th>won</th><th>lost</th></tr>
+<tr><td><a href="/#/t/DEC-025">DEC-025</a></td><td>No reputation track in the alpha; pay rides the region.</td><td>“No reputation for now”<br><small>FEAT-91 ruling 1 (alpha)</small></td><td>“pay rides the region step × a capped regional reputation”<br><small>DESIGN.md line 254</small></td></tr>
+<tr><td><a href="/#/t/DEC-045">DEC-045</a></td><td>Story debug tools are hidden behind a cheat or debug mode, not locked out.</td><td>“behind a cheat or debug mode”<br><small>FEAT-43, feat-story-mode-fixed-region.md (owner, 2026-11-07)</small></td><td>“Debug tooling is locked out”<br><small>DESIGN.md line 335</small></td></tr>
+<tr><td><a href="/#/t/DEC-052">DEC-052</a></td><td>The expedition camp, not the bridge site, is region 1's boss.</td><td>“Expedition camp (R1 boss, on the wall)”<br><small>FEAT-103 / MILESTONES.md SM-5 row 6 (owner, 2026-10-19)</small></td><td>“The bridge site is the first boss”<br><small>DESIGN.md line 229 (2026-10-12)</small></td></tr>
+<tr><td><a href="/#/t/DEC-013">DEC-013</a></td><td>The road past the camp is visibly blocked by a barrier.</td><td>“The road past the camp is blocked, not hidden”<br><small>FEAT-103 (owner, 2026-10-26)</small></td><td>“the network just stops, with no signs”<br><small>DESIGN.md SM-INV-13</small></td></tr>
+<tr><td><a href="/#/t/DEC-071">DEC-071</a></td><td>Road clearance is measured between pavement edges.</td><td>“12 m of daylight between their pavement edges”<br><small>FEAT-77 (owner, 2026-09-07/08)</small></td><td>“12 m centre-to-centre”<br><small>memory project_junction_smooth_rulings</small></td></tr>
+<tr><td><a href="/#/t/DEC-028">DEC-028</a></td><td>The roof rack adds inventory slots.</td><td>“a roof rack that gives you 4x more”<br><small>FEAT-204 (owner, 2026-11-13)</small></td><td>“a second space for long, light loads”<br><small>items.md, Roof rack row</small></td></tr>
+<tr><td><a href="/#/t/DEC-008">DEC-008</a></td><td>A won run's truck is saved for free roam only.</td><td>“if you beat the game we save your vehicle configuration to the save file so you can load up your winning truck in freeroam”<br><small>FEAT-205 (owner, 2026-11-13)</small></td><td>“Not parts, not money, not the car”<br><small>design-amendments-2026-07-29.md §2 (SM-INV-8)</small></td></tr>
+<tr><td><a href="/#/t/DEC-056">DEC-056</a></td><td>Saving is a rolling autosave; loading does not delete the slot.</td><td>“This AMENDS the ratified &quot;written on quit, deleted on load&quot;”<br><small>FEAT-42, feat-save-persistence.md (owner, 2026-10-29)</small></td><td>“one slot, written on quit, deleted on load, deleted on death”<br><small>MILESTONES.md line 752</small></td></tr>
+<tr><td><a href="/#/t/DEC-019">DEC-019</a></td><td>The camp's firewood line is a free requisition, not bought haul stock.</td><td>“The firewood line is 20 bundles, free”<br><small>FEAT-103 (owner, 2026-10-30)</small></td><td>“Haul stock is bought (owner, 2026-10-22).”<br><small>DESIGN.md line 1114</small></td></tr>
+</table>
+<p>If any of these went the wrong way, say which in the box below.</p>
+<dive-q id="settled-wrong"></dive-q>
+
+<script src="/dive.js"></script>

@@ -173,8 +173,8 @@ between."**, with `k` rescaled so pay at each line stays put (the recommended de
 - **Deeds per job: 0.75 → 0.88 (+17 %).** Both felt-slow drives now earn ½ instead of 0. No recorded drive reaches
   D any more, which undoes the 2026-08-16 slack property ("every felt-very-slow drive lands at or above 1.0").
 - **FEAT-168's 12-day run shortens to about 10 days.** The owner's one run made 6 deeds in 7 days; at +17 % the
-  10-deed camp opens around day 10. `campDeeds` **12** would restore ~12 days. Not changed; it's the owner's
-  call.
+  10-deed camp opens around day 10. `campDeeds` **12** would restore ~12 days. The owner has since ruled the camp opens at 6 good
+  deeds (DEC-120).
 - **Money: mean pay per job +9 %** on the same corpus (0.881 → 0.961 of the max). FEAT-168's affordability check
   (two B jobs clear day 12's costs) still passes, with more room.
 - **S becomes common:** 5 of 8 drives grade S (before: 2). Every felt-fast drive now pays the whole tip.
@@ -200,7 +200,7 @@ The best-honest-drive pin is re-expressed (0.740 at slack 1.15 = 0.569 today), a
 
 > "12 days includes the expedition camp missions. keep the spread you just built"
 
-Read as: `campDeeds` stays **10** (the camp opens around day 10 and its requisition fills the rest of the ~12 days),
+Read as: the camp opens at **6** good deeds (DEC-120, replaces the 2026-11-07 reading of 10),
 and the spread stands as built, its par knock-ons included. Folded in by the alpha audit (Lane A, 2026-11-07).
 **What this ticket still owes for the alpha:** the point-budget recount for one region and one recorded multi-day
 run behind it.

@@ -116,7 +116,7 @@ import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-6
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { startRankMusic, updateRankMusic, rankMusicStep, rankMusicDrop, rankMusicThin, resolveRankMusic, setRankMusic } from './rank-music.js'   // FEAT-131 P3: the bar's music bed
-import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
+import { FuelStop, towPrice, towHours, stationPriceFactor } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow; FEAT-209 each station's price
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
@@ -2029,7 +2029,6 @@ const map2d = new Map2D({
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
-  getBarricades: () => poiSystem.barricades(),   // BUG-103: a closure tick per FEAT-154 row
   getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
   // FEAT-61: what the customers MEAN right now, and which way to set off.
   //
@@ -3397,10 +3396,10 @@ function _updateMissionRings () {
   // and drop away while the pump is open (you are already in one).
   for (const m of _pumpZoneMarks)
     m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= showR
-  // BUG-164: the buildings stand only where their ground is drawn, so they go by the terrain's own stream centre.
-  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one 192 m+ away cannot be touched.
-  const sc = roadStreamCenter()
-  for (const y of _poiYards) y.visible = Math.hypot(y.userData.x - sc.x, y.userData.z - sc.z) <= showR
+  // BUG-164: a building draws exactly when the terrain chunk under it is built (owner, 2026-11-13: "push the poi
+  // pop in a bit further so it matches the terrain"; a 192 m circle fell short of the square ring and its warm margin).
+  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one that far away cannot be touched.
+  for (const y of _poiYards) y.visible = !terrainSystem || terrainSystem.hasChunkAt(y.userData.x, y.userData.z)
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
     _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)
@@ -4864,18 +4863,25 @@ labSystem = new LabSystem(scene, () => ({
  * method reads the live board, clock and terms at call time.
  */
 const _boardView = {
+  /** FEAT-211: the place's name as the map's Missions list shows it. */
+  name (poiId) { return offerBoard.poiName(poiId) ?? offerBoard.placeLabel(poiId) },
+  /** FEAT-211: the run HUD's clock (_updateRunHud's notation), for the list's head — the window covers the HUD. */
+  clock () { return formatDue(Math.floor(daySystem.clockH() * 60) / 60) },
   status (poiId) {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
-    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, nextText: null }
+    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [], nextText: null }
     // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
     // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
     // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
     const live = offerBoard.offers(poiId, now).filter(o => o.route !== null)
     const next = offerBoard.nextTurnoverH(poiId, now)
+    // FEAT-210: every family on offer, once each, in offer order — the map splits the diamond by them.
+    const families = [...new Set(live.map(o => offerBoard.spec(o)?.family).filter(Boolean))]
     return {
       source: true,
-      family: live.length ? offerBoard.spec(live[0])?.family ?? null : null,
+      family: families[0] ?? null,
+      families,
       nextText: next != null ? formatGameDuration(next - now) : null,
     }
   },
@@ -5843,7 +5849,9 @@ function _updateParkTriggers (zParked = false) {
     damageScreen.blocked = true
     if (pump && pulled) {
       // FEAT-168: fuel rides the day tier like parts and the tow, to the cent — the cans fill on the same counter.
-      fuelStop.open(pump.id, Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * 100) / 100, inventorySystem.cans())
+      // FEAT-209: each station sits within ±5 % of that day price.
+      const factor = stationPriceFactor(worldSeed, pump.id, daySystem.day())
+      fuelStop.open(pump.id, Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * factor * 100) / 100, inventorySystem.cans())
       playNozzle()
       _tut('tut-fuel')   // FEAT-147
     }
@@ -10833,8 +10841,10 @@ function loop () {
   perfAdd('frame.postStream', _ptR - _ptPost)   // PERF-26 INSTRUMENT
   // FEAT-41: whichever scene owns the screen. Skipping the world render behind a menu or a load is
   // not just tidiness — it hands the GPU to the build that is running underneath.
-  // PERF-38: nor behind the 2D map — #map2d is an opaque full-screen canvas, so the world frame under it was the whole
-  // 3D GPU bill (owner's M4: 5 W, pinned at 890 MHz, with the map open) for a picture nobody could see.
+  // PERF-38: nor behind the 2D map — the world frame under it was the whole 3D GPU bill (owner's M4: 5 W, pinned at
+  // 890 MHz, with the map open). FEAT-211: the map is a window now, and the world shows round it — as the frame drawn
+  // the moment the map opened (a WebGL canvas keeps showing its last frame until it draws again), so the window
+  // costs no 3D at all.
   if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
   else if (!map2d.isOpen()) renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // D-arc: render submit (the ~8.5 s load-cost suspect)
