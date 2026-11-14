@@ -12,12 +12,12 @@ lane: unplaced (tooling — orchestrator or a Spare agent; touches no game code)
 # INFRA-13: ledorepo — private GitHub backup of memory, skills, hooks and the tracker data
 
 ## Next steps
-Owner: decide `wip/` (66 MB) and Time Machine. The backup itself runs.
+Owner: Time Machine (or an equivalent whole-disk backup). `wip/` is decided: not backed up (DEC-195). The backup itself runs.
 
 ## Summary
 Claude Code state that lives outside the game repo (the memory folders, the hand-made skills, hooks, settings) and
 the tracker's data are backed up to the private `ledorepo` repo by hooks. Still exposed: `wip/` (66 MB of
-in-progress models and audio, git-invisible by design) and the machine as a whole (Time Machine is off).
+in-progress models and audio, git-invisible by design, left out by the owner's choice, DEC-195) and the machine as a whole (Time Machine is off).
 
 ## Description
 Measured 2026-11-12, before the backup existed: `~/.claude` was not a git repository, Time Machine had no
@@ -35,8 +35,7 @@ preference), three skills (worktree, window-title, blender-game-asset), the `wor
 - [x] Nothing secret goes up: the script copies an explicit list of paths, never all of `~/.claude` (which holds
       session transcripts, login state and caches).
 - [x] A restore was tried once on a scratch folder and the memory index loads.
-- [ ] Decide `wip/`: it holds large binaries (Blender files, audio). Size it first; back it up here only if small,
-      otherwise a plain external-disk / Time Machine answer.
+- [x] Decide `wip/`: it holds large binaries (Blender files, audio). Owner 2026-11-14: not backed up (DEC-195).
 - [ ] Turn on Time Machine or an equivalent whole-disk backup — the cheap, complete answer to "the laptop died".
 
 ## Decisions
@@ -44,6 +43,7 @@ preference), three skills (worktree, window-title, blender-game-asset), the `wor
   folder in it.
 - 2026-11-13, owner: unpushed commits on main (7 on 2026-11-12; a push deploys Pages) are an accepted risk for
   now. **Loose end**, not work: no second remote is built. Revisit before closing this ticket.
+- 2026-11-14, owner: "dont back up wip". `backup.sh` already leaves `wip/` out; nothing changes (DEC-195).
 
 ## Files
 `~/.claude/projects/-Users-ledogen-CodeShit-CarGame/memory/` · `~/.claude/skills/` · `~/.claude/hooks/` ·
