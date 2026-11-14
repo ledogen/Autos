@@ -108,4 +108,4 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
   through the live shader cut at 4 marker comments into two 3072² atlases (albedo, world normal); `?terrainBake=256`.
   Paired A/B, live ↔ baked every 2 s × 12, 2 random seeds (4127, 58301), near/mid/far views, shadow pass every frame:
   −10 to −21 % active cycles on a busy machine (absolute −40 to −190 Mcyc/s), −22 to −24 % on the one quiet run. Keeping
-  steep pixels live (uBakeSteep 0.7) ate most of it (−2 to +11 %). Shots: perf worktree wip/perf-48/shots2/. Not gated.
+  steep pixels live (uBakeSteep 0.7) ate most of it (+2 to −16 %, median −5 %). Shots: perf worktree wip/perf-48/shots2/. Not gated.
