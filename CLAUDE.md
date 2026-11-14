@@ -199,7 +199,9 @@ not pick is random too (owner, 2026-11-06): free roam, the world built behind th
   the real game unattended (story mode: a ~5 min road drive with one off-road leg, the map open 30 s, parked 30 s) in
   headless Chrome at the owner's canvas, on three pinned random seeds. It reports per phase: fps, main-thread ms/s by
   bucket, CPU % per Chrome process, and CPU / GPU / DRAM watts with GPU active cycles from `test/lib/ioreport.py` (no
-  sudo). Compare GPU load by active cycles (busy % × MHz), never by GPU ms or raw watts. A drive that did not stream
+  sudo). Compare GPU load by active cycles (busy % × MHz), never by GPU ms or raw watts; compare main-thread cost by its
+  retired instructions (`mainMi`, physics `physMi*`, from `test/lib/threadcounts.py`, no sudo), never by ms/s alone, which
+  on this Mac follows the core clock macOS picks (2–5× on the same work). A drive that did not stream
   (≥ 3 km, new chunks) is INVALID, never a number. `--b` alternates A-B-A-B to cancel heat drift; `--record` appends to
   `.planning/perf/history.jsonl` (the health check). About 7 min a session; wants a quiet machine. Not in `npm test`.
   The driver is `test/lib/autopilot.mjs`: pure, state in → controls out, meant to grow into in-game AI cars.
@@ -266,14 +268,19 @@ The engine is in **maintenance / polish**; new gameplay lands via the **story-mo
 the norm.
 
 - **Capture** bugs/features/ideas as tickets in `.planning/todos/pending/` (frontmatter: `id`, `type`,
-  `status`, `severity`, plus a clear acceptance section). This tracker is the live source of truth for
+  `status`, `severity`). Every ticket uses the sections of `.planning/todos/TEMPLATE.md` in its order —
+  Next steps, Summary, Description, Tracker (the acceptance checkboxes), Decisions, Open questions, Links, Files,
+  Log (INFRA-09); older tickets are converted when next touched. This tracker is the live source of truth for
   outstanding work. Close a ticket by moving it to `.planning/todos/completed/` with a resolution note.
   **Browse it with `npm run dash`** (`tools/dashboard/`, serves :8010) — filterable list, rendered
   ticket bodies with cross-refs auto-linked, an "open in editor" jump, and a repo-stats page. Its home
   tab is **Lanes** (INFRA-11): the owner's intake box, the owed cards and the lane board. That tab's state is
   one small JSON file per item in the owner's PRIVATE repo (`~/CodeShit/ledorepo/projects/cargame/`: `inbox/`,
   `owed/`, `lanes/`, `answered/`; the file-by-file contract is the comment above `DATA` in
-  `tools/dashboard/index.mjs`), which agents read and write with plain file tools. For tickets it is a
+  `tools/dashboard/index.mjs`), which agents read and write with plain file tools. A complex owner call is a
+  **deep dive** (INFRA-12): an explainer page in `.planning/dives/<TICKET-ID>-<slug>.html` whose `<dive-q>` tags
+  are the answer form (copy `TEMPLATE.html` there; `tools/dashboard/dive.js` does the form), linked from an
+  owed card and from its ticket. For tickets it is a
   read-only viewer: it normalises the tracker's drifted `type`/`status` vocabulary for filtering and
   reports the offenders, but never edits a ticket. The frontmatter files stay the source of truth.
   It also **synthesises the story milestones as pseudo-tickets** (`SM-1`…`SM-5`, type `milestone`)

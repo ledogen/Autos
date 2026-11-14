@@ -134,6 +134,17 @@ export const HUNGER_COLOR = {
  * a test drift the day. Keep it minimal — a field earns its place here only if a run boundary is the
  * only thing that may move it.
  */
+/**
+ * THE CLOCK'S PAUSE PATH ("The clock runs, pauses, or skips", DESIGN.md). main.js's fixed step skips
+ * DaySystem.update() while this holds: a pitched camp (FEAT-118; its confirm face is not camp yet), the
+ * service screen (SM-3), the opening's safe evening (FEAT-170), and the parking brake's latch (FEAT-194
+ * part 3, owner 2026-11-13). Energy, hunger, a job's elapsed and due time and every offer's expiry all
+ * read clockH, so they stand still with it; fuel and coolant are the engine's, not the clock's, and keep
+ * running. The latch is its own stop test (park-brake.js: a Space tap under PARK_SPEED), so there is no
+ * second speed threshold here: a handbrake slide never latches, so it never holds the clock.
+ */
+export const clockHeld = (camp, service, evening, parked) => !!(camp || service || evening || parked)
+
 export const runState = {
     day: 1,   // 1-based day index of the current run; increments at each midnight crossed
 }

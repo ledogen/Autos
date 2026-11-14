@@ -1060,7 +1060,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 
 | Item | Form | What it does | Note |
 |---|---|---|---|
-| **Zip ties** | Consumable | Field repair: restores **10%** condition on a light component — **headlights, body panels and the radiator** (the `armor*`, `headlight*` and radiator tracks in `src/damage.js`) | Gets you home, not fixed. **Figures set 2026-10-21:** 5 per pack, $5–10 at the general store and auto shop (**$10**, owner 2026-10-24), an auto-shop reward (B–A), a rare roadside find. Flavor: *"A mechanic's best friend"* (owner, 2026-10-22). **The repair is built on feature/parts** (2026-10-23), like duct tape's: picked on the damage screen, 15 min a use, never past **80%** [DEFAULT] |
+| **Zip ties** | Consumable | Field repair: restores **10%** condition on a light component — **headlights and body panels** (the `armor*` and `headlight*` tracks in `src/damage.js`; ~~the radiator~~ struck by the owner 2026-11-13: "just stop leak") | Gets you home, not fixed. **Figures set 2026-10-21:** 5 per pack, $5–10 at the general store and auto shop (**$10**, owner 2026-10-24), an auto-shop reward (B–A), a rare roadside find. Flavor: *"A mechanic's best friend"* (owner, 2026-10-22). **The repair is built on feature/parts** (2026-10-23), like duct tape's: picked on the damage screen, 15 min a use, never past **80%** [DEFAULT] |
 | **Duct tape** | Consumable | Field repair: **20%** on **body panels** (2026-10-21; was ~25%) | The bigger patch, narrower target. **Holds for the run; 15 min per use** (owner, 2026-10-20). **Figures set 2026-10-21:** 3 uses per roll, $5–10 at the general store, a reward from the auto shop, gas station and general store (B–A), a rare roadside find. **In the game 2026-10-23** (`ductTape`): the reward is live on main. **The repair is built on feature/parts** (2026-10-23): picked on the damage screen, 15 min a use, never past **80%** [DEFAULT — no field-repair cap was ruled] |
 | ~~**Coolant jug**~~ | — | **STRUCK (owner, 2026-10-16).** FEAT-51 shipped with no coolant mechanic — radiator condition *is* the cooling capacity — so there is nothing to top up | Replaced by stop-leak, below |
 | **Stop-leak** | Consumable | Field repair: restores **15%** radiator condition (owner, 2026-10-16). Under FEAT-51 that is directly cooling capacity — a 35% radiator patched to 50% holds full load again | Aimed at the overheat → power loss → engine wear chain (`missions.md` §3c). Pairs with heavy hauls on long grades. **Figures set 2026-10-21:** one use per bottle; **never patches the radiator past 50%**; $5–10 at the gas station and auto shop (**$10**, owner 2026-10-24), a reward from both (B–A), never found. Flavor: *"Maybe this will keep 'er going"* (owner, 2026-10-22) |
@@ -1131,7 +1131,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 - **Snacks**: peanuts 3 h × 3, spicy chips 3 h × 3, candy bar 3 h × 4, gummy worms 2 h × 5 (§1d).
 - **Spare air filter**: 15 min to fit; each spare carries its own condition — new from the shop ($10),
   never great from the roadside (§1).
-- **Field repairs**: zip ties 10% × 5 and now also the radiator; duct tape 20% × 3; stop-leak one use,
+- **Field repairs**: zip ties 10% × 5 (the radiator was removed 2026-11-13, stop-leak only); duct tape 20% × 3; stop-leak one use,
   never past 50% (§7).
 - **Bubble wrap** ×2, spent by the job it protects; how it is put on is open (§3e).
 

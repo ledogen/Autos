@@ -150,6 +150,11 @@
   table.data td.name { font-family:var(--mono); font-size:12.5px; }
   .stale { color:var(--perf); }
   .note { color:var(--dimmer); font-size:12px; margin:6px 0 0; }
+  .thead { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 16px; margin:12px 0;
+           display:flex; flex-direction:column; gap:10px; }
+  .thead p { margin:0 0 6px; } .thead p:last-child { margin:0; }
+  .tnext { border-left:3px solid var(--accent); padding-left:12px; }
+  .tnext > b, .tprog { color:var(--dimmer); font-size:11px; text-transform:uppercase; letter-spacing:.8px; }
   .bar { height:4px; background:var(--panel2); border-radius:2px; overflow:hidden;
          margin-top:6px; }
   .bar i { display:block; height:100%; }
@@ -233,7 +238,7 @@
   .lv-opts { display:flex; gap:6px; flex-wrap:wrap; }
   .lv-opt { border:1px solid var(--line); background:var(--panel2); color:var(--fg); border-radius:6px;
             padding:6px 12px; font:inherit; cursor:pointer; text-align:left; }
-  .lv-opt:hover { border-color:var(--dimmer); }
+  .lv-opt:hover { border-color:var(--dimmer); text-decoration:none; }
   .lv-opt.on { border-color:var(--asset); color:var(--asset); font-weight:600; }
   .lv-board { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; align-items:start; }
   .lv-lane { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; min-width:0; }
@@ -541,12 +546,50 @@ function viewTickets() {
     <ul class="list">${rows || '<li><span class="tblurb">nothing matches</span></li>'}</ul>`;
 }
 
+/* Every ticket page reads in ONE order (INFRA-09, owner 2026-11-13), whatever order the file is in:
+ * next steps, summary, description, tracker, decisions, open questions, links, files, log.
+ * The template is .planning/todos/TEMPLATE.md. Tickets written before it are not converted in bulk: their
+ * headings are mapped where the meaning is clear (Acceptance → Tracker, Related → Links …) and every heading
+ * that is not recognised stays, under its own name, in Description.
+ * ponytail: splits on any line starting "## ", so a "## " inside a fenced code block would split too. */
+const SECTION_ORDER = ['Next steps', 'Summary', 'Description', 'Tracker', 'Decisions', 'Open questions', 'Links', 'Files', 'Log'];
+const SECTION_ALIAS = [
+  [/^next( steps?| actions?)?$/i, 'Next steps'], [/^summary$/i, 'Summary'], [/^description$/i, 'Description'],
+  [/^(tracker|progress|acceptance( criteria)?)$/i, 'Tracker'], [/^decisions?$/i, 'Decisions'], [/^open\b/i, 'Open questions'],
+  [/^(links|related)$/i, 'Links'], [/^files$/i, 'Files'], [/^(work )?log$/i, 'Log'],
+];
+function ticketSections(body) {
+  const [pre, ...parts] = body.split(/^## /m);
+  const known = {}, other = [];
+  for (const part of parts) {
+    const nl = part.indexOf('\n'), head = (nl < 0 ? part : part.slice(0, nl)).trim(), text = nl < 0 ? '' : part.slice(nl + 1);
+    const name = SECTION_ALIAS.find(([re]) => re.test(head))?.[1];
+    if (name) known[name] = (known[name] ? known[name] + '\n' : '') + text;
+    else other.push(`## ${head}\n${text}`);
+  }
+  known.Description = [pre.trim(), known.Description, ...other].filter(Boolean).join('\n\n');
+  return known;
+}
+const boxes = (text) => text.replace(/^(\s*[-*] )\[( |x|X)\]/gm, (_, lead, c) => `${lead}${c === ' ' ? '☐' : '☑'}`);
+
 function viewTicket(id) {
   const t = BY_ID.get(id);
   if (!t) return `<p>No ticket <code>${esc(id)}</code>. <a href="#/tickets">Back to the list</a></p>`;
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim();
   const back = (BACKLINKS.get(id) || []).sort();
   const fmRow = (k, v) => (v ? `<span><b>${k}</b> ${v}</span>` : '');
+  const sec = ticketSections(t.body
+    .replace(/^#\s+.*(\n|$)/m, '')
+    .replace(/^\s*lane:.*\n/, '')   // the body's `lane:` line is routing for agents; the lane shown above is MILESTONES.md's
+    // Milestones hoist `**Requires:** …` into the gate box above; drop the
+    // original so the detail page doesn't state the same gate twice.
+    .replace(t.requires ? /^\*\*Requires:?\*\*[\s\S]*?(?=\n\s*\n)/m : /(?!)/, ''));
+  const done = (t.body.match(/^\s*[-*] \[[xX]\]/gm) || []).length, total = done + (t.body.match(/^\s*[-*] \[ \]/gm) || []).length;
+  const top = (sec['Next steps'] || sec.Summary || total) ? `<div class="thead">
+      ${sec['Next steps'] ? `<div class="tnext"><b>Next steps</b>${md(sec['Next steps'])}</div>` : ''}
+      ${sec.Summary ? `<div>${md(sec.Summary)}</div>` : ''}
+      ${total ? `<div class="tprog">${done} of ${total} done<div class="bar"><i style="width:${Math.round(100 * done / total)}%;background:var(--asset)"></i></div></div>` : ''}
+    </div>` : '';
 
   return `
     <div class="crumb"><a href="#/tickets">← tickets</a> · ${t.file}</div>
@@ -570,19 +613,17 @@ function viewTicket(id) {
       ${fmRow(t.phase === 'shipped' ? 'shipped' : 'closed', t.closed)}
     </div>
     ${t.requires ? `<div class="gate"><b>Requires</b> ${inline(esc(t.requires))}</div>` : ''}
-    <div class="body">${md(
-      t.body
-        .replace(/^#\s+.*(\n|$)/m, '')
-        // Milestones hoist `**Requires:** …` into the gate box above; drop the
-        // original so the detail page doesn't state the same gate twice.
-        .replace(t.requires ? /^\*\*Requires:?\*\*[\s\S]*?(?=\n\s*\n)/m : /(?!)/, ''),
-    )}</div>
+    ${top}
+    <div class="body">${md(boxes(SECTION_ORDER.slice(2).filter(n => sec[n]?.trim())
+      .map(n => (n === 'Description' ? '' : `## ${n}\n`) + sec[n]).join('\n\n')))}</div>
     <div class="refs">
       <h3>Links</h3>
       <div class="row"><b style="color:var(--dimmer)">references</b>
         ${t.refs.length ? t.refs.map(ticketLink).join(' ') : '<span style="color:var(--dimmer)">none</span>'}</div>
       <div class="row"><b style="color:var(--dimmer)">referenced by</b>
         ${back.length ? back.map(ticketLink).join(' ') : '<span style="color:var(--dimmer)">none</span>'}</div>
+      ${t.dives?.length ? `<div class="row"><b style="color:var(--dimmer)">deep dives</b>
+        ${t.dives.map(d => `<a href="/dives/${d.slug}.html">${esc(d.title)}</a> ${diveTag(d.slug)}`).join(' · ')}</div>` : ''}
       ${t.plan ? `<div class="row"><b style="color:var(--dimmer)">plan</b> ${inline(esc(t.plan))}</div>` : ''}
       ${t.handoff ? `<div class="row"><b style="color:var(--dimmer)">handoff</b> ${inline(esc(t.handoff))}</div>` : ''}
     </div>`;
@@ -821,6 +862,10 @@ function viewStats() {
       <tbody>${typeRows}</tbody>
     </table>
 
+    <h2 class="sec">Ticket layout</h2>
+    <p class="note" style="font-size:13px">${s.sections.conforming} of ${s.sections.open} open tickets are written in the fixed section order
+      (<code>.planning/todos/TEMPLATE.md</code>). The rest are converted when next touched; their pages are still shown in that order.</p>
+
     <h2 class="sec">Frontmatter drift — ${s.drift.length} non-canonical values</h2>
     ${s.drift.length ? `<table class="data">
       <thead><tr><th>ticket</th><th>field</th><th>written</th><th>read as</th></tr></thead>
@@ -1037,7 +1082,7 @@ function viewItems() {
  * State is files served by /data (index.mjs § lane tracker data); the page
  * writes only inbox/<id>.json and owed/<id>.answer.json. It polls every 5 s and
  * never repaints over a text box the owner is typing in. */
-let DATA = { inbox: {}, owed: {}, lanes: {} }, DATA_RAW = '';
+let DATA = { inbox: {}, owed: {}, lanes: {}, dives: {} }, DATA_RAW = '';
 let draft = '', lvState = '', lvBad = false, lvDirty = false;
 const lvOpen = new Set();          // <details> the owner opened, kept across repaints
 const noteTimers = new Map();
@@ -1066,6 +1111,10 @@ async function putData(path, doc) {
   } catch (e) { lvSay(`NOT SAVED — ${e.message}. Is the dashboard server running?`, true); return false; }
 }
 
+// A deep dive's status is what the owner did with it (INFRA-12); dive.js writes it.
+const diveStatus = (slug) => DATA.dives?.[slug + '.answers.json']?.status || 'not opened';
+const diveTag = (slug) => { const st = diveStatus(slug); return `<span class="lv-tag ${st === 'submitted' ? 'done' : st === 'partial' ? 'doing' : st === 'opened' ? 'question' : 'new'}">${st}</span>`; };
+const owedDone = (o) => o.dive ? diveStatus(o.dive) === 'submitted' : !!o.answer.choice;
 const OWED_GROUPS = [
   ['blocking', 'Blocking an agent', o => o.blocks],
   ['decide', 'Decisions', o => !o.blocks && o.kind === 'decide'],
@@ -1098,13 +1147,14 @@ function viewLanes() {
     const rows = owed.filter(test);
     if (!rows.length) return '';
     return `<div class="lv-og ${key}"><h3 class="subgrp">${title} <span class="count">${rows.length}</span></h3>${rows.map(o => `
-      <div class="lv-ow${o.answer.choice ? ' answered' : ''}">
+      <div class="lv-ow${owedDone(o) ? ' answered' : ''}">
         <div class="lv-row"><span class="lv-tag">${esc(o.kind || '')}</span><span>${inline(esc(o.tk || ''))}</span></div>
         <div class="txt">${inline(esc(o.text || ''))}</div>
         ${o.blocks ? `<div class="blocks">blocks: ${inline(esc(o.blocks))}</div>` : ''}
+        ${o.dive ? `<div class="lv-row"><a class="lv-opt" href="/dives/${attr(o.dive)}.html">open the deep dive</a>${diveTag(o.dive)}</div>` : `
         <div class="lv-opts">${owedOptions(o).map((opt, i) =>
           `<button class="lv-opt${o.answer.choice === opt ? ' on' : ''}" data-owed="${attr(o.id)}" data-i="${i}">${esc(opt)}</button>`).join('')}</div>
-        <textarea data-note="${attr(o.id)}" placeholder="note (saves as you type)">${esc(o.answer.note || '')}</textarea>
+        <textarea data-note="${attr(o.id)}" placeholder="note (saves as you type)">${esc(o.answer.note || '')}</textarea>`}
       </div>`).join('')}</div>`;
   }).join('');
 
@@ -1129,7 +1179,7 @@ function viewLanes() {
       ${handled.length ? details('in-done', `handled (${handled.length})`, `<ul class="lv-in">${handled.map(item).join('')}</ul>`) : ''}
     </section>
     <section>
-      <h2 class="sec">Owed by you <span class="count">${owed.filter(o => !o.answer.choice).length} open of ${owed.length}</span></h2>
+      <h2 class="sec">Owed by you <span class="count">${owed.filter(o => !owedDone(o)).length} open of ${owed.length}</span></h2>
       <div class="lv" style="gap:16px">${owedHtml || '<p class="muted">nothing owed</p>'}</div>
     </section>
     <section>
@@ -1246,6 +1296,7 @@ addEventListener('keydown', (e) => {
 });
 
 await load();
+await loadData().catch(() => {});
 if (!location.hash) location.hash = '#/lanes';   // Lanes is the home tab (owner, 2026-11-13)
 render();
 </script>
