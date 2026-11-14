@@ -1595,7 +1595,8 @@ const STEPS = [
     check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 2000), `a B tap did not open the inventory: ${menu}`)
     check(await js('[...document.querySelectorAll("#inv-screen .inv-slot .keycap")].every(k => getComputedStyle(k).display === "none")'), 'the inventory shows quick-slot keys while the pad drives')
     await btn(1); check(await until(() => js('!document.getElementById("inv-screen").classList.contains("open")'), 2000), 'B did not close the inventory')
-    // The map (View tap): a giver centred under the pad's cursor pages its offers on LB / RB; B closes it.
+    // The map (View tap), FEAT-211's approved controls: the D-pad walks the Missions list to a giver (the map snaps to it
+    // and its card shows), D-pad ← / → page its offers, the first B leaves the list with the map still open, the second closes it.
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
     // Not a shop (SHOP_TYPES: its brake opens the shop screen; the jobs are a button in it, FEAT-104) nor Larry's (the paper route):
@@ -1609,13 +1610,16 @@ const STEPS = [
     // this point (2927182058/K, 11-08: the busiest had one, on main before and after that day's merges) — page there
     // only when it can, and say so when it can't.
     check(giver?.n > 0, `no giver with an offer: ${JSON.stringify(giver)}`)
-    await js(`(() => { const m = window.__map2d(), s = m._sheet(); for (let i = 0; i < 6; i++) { m._panX += (m._sx(${giver.x}) - s.cx) / m._zoom; m._panZ += (m._sy(${giver.z}) - s.cy) / m._zoom } })()`)
-    await js('__fp.axes[2] = 0.09'); await frames(3, 60); await js('__fp.axes[2] = 0'); await frames(3, 60)
+    const lid = () => js('window.__map2d()._listId')
+    await until(() => js('window.__map2d()._rows.length > 0'), 2000)
+    for (let i = 0; i < 60 && await lid() !== giver.id; i++) await btn(13)
+    check(await lid() === giver.id, `the D-pad never reached the giver in the Missions list (${await lid()} · rows ${await js('JSON.stringify(window.__map2d()._rows.map(r => r.id))')})`)
     const hov = () => js('window.__map2d()._hoverPoi === ' + JSON.stringify(giver.id) + ' && window.__map2d()._hoverIdx')
-    check(await hov() === 0, `the pad cursor is not on the giver (${await js('window.__map2d()._hoverPoi')})`)
-    if (giver.n > 1) { await btn(5); check(await hov() === 1, 'RB did not page the giver\'s offers'); await btn(4); check(await hov() === 0, 'LB did not page back') }
-    else console.log(`  pad: no plain giver with two offers in ${await js('window.__worldCode?.()')}; LB/RB paging unchecked this run`)
-    await btn(1); check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'B did not close the map')
+    check(await until(async () => await hov() === 0, 1000), `the list pick did not show the giver's card (${await js('window.__map2d()._hoverPoi')})`)
+    if (giver.n > 1) { await btn(15); check(await hov() === 1, 'D-pad → did not page the giver\'s offers'); await btn(14); check(await hov() === 0, 'D-pad ← did not page back') }
+    else console.log(`  pad: no plain giver with two offers in ${await js('window.__worldCode?.()')}; D-pad ←/→ paging unchecked this run`)
+    await btn(1); check(await js('window.__map2d().isOpen() && window.__map2d()._listId === null'), 'the first B did not leave the list with the map still open')
+    await btn(1); check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'the second B did not close the map')
     // At the giver, a LONG RB press: the offer card opens under it, and the brake must stay latched (FEAT-125: the
     // card layout re-sent RB's Space, so the park latched and let go).
     await seatPoi(`q => q.id === ${JSON.stringify(giver.id)}`)
