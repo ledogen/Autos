@@ -12,8 +12,8 @@ lane: Spare
 # FEAT-211: The map as a window — 80 % of the screen, a Missions / Shopping list beside it, live tracking
 
 ## Next steps
-Landing 1 (window, tracking, edge marker, Missions list) is built on feature/spare and waits on its landing + the owner's
-look. Next (Spare lane): landing 2, the Shopping list (bumpers swap the tabs, A expands a vendor), then landing 3, the waypoint.
+Landing 1 (window, tracking, edge marker, Missions list) is on main. Landing 2 (the Shopping list) is built on feature/spare
+and waits on its landing + the owner's look (screenshots `wip/feat-211/shop-*.png`). Next (Spare lane): landing 3, the waypoint.
 
 ## Summary
 The map stops covering the whole screen. It becomes a window over the live game, with a list on its right that has two modes: Missions and Shopping. Opening it centres on the truck and follows it. The player can pan freely at any point, including from a place the list just showed.
@@ -58,11 +58,11 @@ This has no separate "map tab" and no select step: the map is always live under 
 - [x] Opens centred on the truck and tracks it; any pan input releases the tracking; one input restores it
 - [x] Edge indicator for the truck when it is off the visible map
 - [x] Missions list: name, distance, type colours; highlight pans the map and shows the card; left / right flips cards
-- [ ] Shopping list: all vendors and pumps, stock timers, in-line expansion with price, condition, flavour text, expiry
-- [ ] Pump rows show the price and do not expand; gas stations do both
+- [x] Shopping list: all vendors and pumps, stock timers, in-line expansion with price, condition, flavour text, expiry
+- [x] Pump rows show the price and do not expand; gas stations do both
 - [x] B leaves the list and the map pans from there
 - [ ] Custom waypoint: Y on the pad (click / Enter with nothing highlighted) drops a waypoint at the map's centre or cursor and the game routes to it like a job's destination; the same input on the waypoint clears it
-- [ ] Pad, keyboard and mouse all reach everything; pad-e2e covers the list
+- [ ] Pad, keyboard and mouse all reach everything; pad-e2e covers the list (both lists covered; open until the waypoint lands)
 
 ### Built, landing 1 (Spare lane, 2026-11-13)
 - **The window** (`#map-window`, index.html): 10 % of the screen in from each edge, so 80 % of the width and the height. The sheet
@@ -88,6 +88,26 @@ This has no separate "map tab" and no select step: the map is always live under 
 - Distances are straight-line from the truck, one decimal of a km. Rows are written to the DOM only when they read differently,
   at most four times a second.
 
+### Built, landing 2 (Spare lane, 2026-11-13)
+- **Tabs:** the list head reads MISSIONS SHOPPING, the one showing in the story accent. LB / RB (Q / E) swap them, and so does a
+  click on a tab. A swap clears the highlight and leaves the map where it is. While a card is up over the map (the parked offer
+  panel) the bumpers still page that card's offers. The tab is kept between opens [DEFAULT].
+- **Shopping rows**, nearest first: every POI that sells (`SHOP_TYPES`: auto shop, general store, gas station, food vendor) and
+  every POI with pump zones (gas pump, gas station), stocked or not. A row is the name and distance, then a dim line: the pump
+  price (`$x.xx/gal`, the price the pump would lock now: day tier × FEAT-209's station factor, `_pumpPrice` in main.js, shared
+  with the pump) and the shelf's "new stock in…" (R-24's `nextStockH`). A storefront that only sells its always-rows has no
+  timer (nothing new ever lands there). A ▸ marks a row that opens.
+- **A (Enter, click)** opens a shop's items in line, under its header: name and price (the shelf price × the day tier, no
+  fitting or labour), the condition bar (damage-screen's bands) with new / used, "gone in…" or "always in stock", and the
+  flavour text (the part's or item's `desc`), wrapped whole. So every row holds everything and no item needs a second expand.
+  Each item is a row of its own, so the D-pad walks through a long shelf. A on the open header closes it; a pump does not open.
+  One shop is open at a time.
+- **B (Esc):** closes the open shop (the highlight goes back to its header), else leaves the list, else closes the map. A pan
+  input leaves the list and closes the shop with it.
+- A Shopping highlight snaps the map to the place but shows no mission card (the place is the subject).
+- pad-e2e covers it on a stubbed board: RB to Shopping, A on a pump opens nothing, A opens a shop, the D-pad walks onto its items,
+  B closes it, A twice opens and closes, B leaves, LB back.
+
 ## Decisions
 - 2026-11-13, owner: the map takes about 80 % of the screen with the live game behind; a list on the right with Missions and Shopping modes swapped by bumpers; both sorted nearest first; opening always centres on the truck and tracks it; B from a list starts panning from there.
 - 2026-11-13, owner (card feat211-controls): "build it like that" — the control scheme above is approved.
@@ -108,3 +128,4 @@ Screenshots: `wip/feat-211/` in the Spare worktree (`shots.mjs` makes them).
 ## Log
 - 2026-11-13: minted from the owner's spec by the orchestrator. Nothing built.
 - 2026-11-13: landing 1 built by the Spare lane (window, tracking, edge marker, Missions list, legend in the column).
+- 2026-11-13: landing 2 built by the Spare lane (the Shopping list, the tabs, A opens a shop in line).
