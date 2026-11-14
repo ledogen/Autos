@@ -3397,10 +3397,10 @@ function _updateMissionRings () {
   // and drop away while the pump is open (you are already in one).
   for (const m of _pumpZoneMarks)
     m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= showR
-  // BUG-164: the buildings stand only where their ground is drawn, so they go by the terrain's own stream centre.
-  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one 192 m+ away cannot be touched.
-  const sc = roadStreamCenter()
-  for (const y of _poiYards) y.visible = Math.hypot(y.userData.x - sc.x, y.userData.z - sc.z) <= showR
+  // BUG-164: a building draws exactly when the terrain chunk under it is built (owner, 2026-11-13: "push the poi
+  // pop in a bit further so it matches the terrain"; a 192 m circle fell short of the square ring and its warm margin).
+  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one that far away cannot be touched.
+  for (const y of _poiYards) y.visible = !terrainSystem || terrainSystem.hasChunkAt(y.userData.x, y.userData.z)
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
     _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)
