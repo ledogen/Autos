@@ -1,0 +1,87 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tutorial flow: the issues you asked for</title>
+<h1>Tutorial flow: the issues you asked for</h1>
+<p>On the skip flow you wrote "lemme know if there are issues with it in the next round". These are the issues,
+checked against the code. Each has a recommendation; pick it or change it. They are on one page because they lean
+on each other: which world the tutorial plays in decides how many loads there are, and the tutorial's length decides
+which day free will starts on.</p>
+<p>Already built from your answers, because nothing below blocks it (Lane A, landing 1): no setting and no "always
+skip"; the prompt reads "hold M to skip tutorial"; the extra confirmation on the first playthrough ever and when you
+chose the tutorial; the traps (no fuel burn and no damage on the evening, off the road puts you back on it, mom makes
+you fill until the pocket change is gone, the shop's tire is on mom); pocket change until the paycheck at the end.</p>
+
+<h2>1. One world at a time, so the intro cannot hide a load</h2>
+<p>The game holds one world: one road network, one terrain, one physics world. Building another means replacing that
+one, behind the loading screen. The intro is staged in the world (the camera circles the real burger joint), so the
+world it plays in has to be built before it starts. "Load the story seed during the intro" is not possible; the load
+before the intro is the one you already see after "start".</p>
+<table>
+<tr><th></th><th>Skips at the card</th><th>Plays the tutorial</th></tr>
+<tr><td>First playthrough ever (intro on the tutorial seed)</td><td>1 load</td><td>1 load</td></tr>
+<tr><td>Any later run (intro on its random seed)</td><td>1 load</td><td>2 loads: the tutorial seed is built at the card</td></tr>
+</table>
+<p>Recommendation: accept the second load. Only a returning player who chooses to replay the tutorial sees it.</p>
+<dive-q id="loads" options="accept the second load | something else (say what)"></dive-q>
+
+<h2>2. Which world a played tutorial continues in</h2>
+<p>The tutorial ends at the tutorial seed's burger joint and flows straight into free will. On the first playthrough
+that is fine: the run's world is the tutorial seed. On a later run the intro played on a random world, and the
+tutorial on a different one. When it ends, free will has to be in one of them.</p>
+<ul>
+<li><b>The tutorial seed</b> (recommended): a run that plays the tutorial is played on the tutorial seed, the same as
+the first playthrough. No load at the end, so the end stays seamless.</li>
+<li><b>Back to the random world</b>: a third load at the tutorial's end, then outside that world's burger joint.</li>
+</ul>
+<dive-q id="tutorial-world" options="the run continues on the tutorial seed | load the random world at the end"></dive-q>
+
+<h2>3. The day counter</h2>
+<p>Costs ride the day (DEC-025): parts, repairs, the tow and fuel are × 1.065<sup>(day − 1)</sup>, with day 0 counted as
+day 1. The firing is at 19:30 on day 0. A skip enters free will at 19:30 on day 0, so its first working morning is
+day 1 (1.00×). A played tutorial enters free will 24 h later, at 19:30 on day 1, so its first working morning is day 2
+(1.065×). The tutorial player pays 6.5 % more for everything for the whole run, and is one day further into the
+escalation.</p>
+<p>Recommendation: both enter free will on the same day number. The tutorial's 24 hours are counted as the day before
+(it starts at 19:30 on the eve of day 0).</p>
+<dive-q id="day-count" options="same day number for both | the tutorial costs a day, keep it"></dive-q>
+
+<h2>4. "Exactly 24 h", and the ~18 h without a burger job</h2>
+<p>The evening holds the clock, the tow and the shop move it to about midnight, and sleep sets 07:00. The morning runs
+on the real clock, so the player reaches the burger joint at whatever hour they get there
+Nothing makes that 19:30 on its own.</p>
+<p>Recommendation: the paycheck card sets the clock to 19:30, as sleep sets 07:00 (the manager made you wait all
+day). The alternative is a card that sends you away until 19:30, which leaves the player an empty day inside the
+tutorial.</p>
+<dive-q id="exact-24h" options="the paycheck sets the clock to 19:30 | come back at 19:30 | not exact, it ends when it ends"></dive-q>
+<p>The firing is at 19:30, not 18:00 (FEAT-180 moved it for the dusk light). 18 h from 19:30 is 13:30 the next day,
+which is not "early next day". 07:00 (when the day starts) is 11.5 h.</p>
+<dive-q id="burger-quiet" options="18 h (to 13:30) | until 07:00 the next morning | another number (say it)"></dive-q>
+
+<h2>5. Does the casserole stay?</h2>
+<p>Two of your answers read differently. First-job: "tutorial contains the casserole mission". Skip: "go back to pick
+up your last paycheck from the burger joint, which replaces the casserole mission". Your story answer has Larry remind
+you of the camp when you arrive at his house, which only happens if the casserole stays.</p>
+<p>Recommendation: keep it. The morning is breakfast, mom's casserole to Larry's (unpaid, his one reminder of the
+camp), then back to the burger joint for the paycheck as the last act.</p>
+<dive-q id="casserole" options="keep the casserole, then the paycheck | the paycheck replaces it (Larry's reminder moves elsewhere)"></dive-q>
+
+<h2>6. Who tells a skipper what the run is for</h2>
+<p>Today a skip still hears Larry's welcome and the run intro (the goal, ten good deeds, the expedition camp and its
+direction, the pay rule). That is the one card that says what the run is for: the map shows the camp, but nothing says
+why. A skip outside the burger joint meets neither mom nor Larry.</p>
+<p>Recommendation: after the boss's line, Larry calls (like mom's call today) and his run intro plays. The words are
+yours.</p>
+<dive-q id="skip-goal" options="Larry calls after the boss's line | the boss's card is enough | something else (say what)"></dive-q>
+
+<h2>7. The menu's "tutorial" button and "the tutorial never saves"</h2>
+<p>On 11-08 the tutorial became a main-menu button, and a tutorial run never touches the career save. Once every new
+game offers the tutorial at the card, and the tutorial flows into free will as the start of the run, the button
+duplicates the card and the no-save rule would lose the run.</p>
+<p>Recommendation: retire both when the card lands. Until then the button stays, and counts as "chose the tutorial"
+for the confirmation.</p>
+<dive-q id="menu-button" options="retire both with the card | keep the button"></dive-q>
+
+<h2>8. Anything this misses</h2>
+<dive-q id="misses"></dive-q>
+
+<script src="/dive.js"></script>

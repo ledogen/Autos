@@ -125,11 +125,10 @@ export const ECONOMY_PARAMS = {
     // nothing: a fixed day-1 sum.
     startCash:    10,
     // GAME-FEEL REVIEW 2026-10-23 (R-02): the good deeds that open the expedition camp (FEAT-103,
-    // owner 2026-10-19: "gated by 6 good deeds"). The ONE copy: the run HUD's "2 / 10", the result
+    // owner 2026-10-19: "gated by 6 good deeds"). The ONE copy: the run HUD's "2 / 6", the result
     // card's tally and the intro card all read it. FEAT-103 reads it when the camp lands.
-    // FEAT-168 [DEFAULT]: 6 → 10, so a region-1 run takes ~12 days (owner, 2026-11-05: "maybe 12 days
-    // should be expected for a R1 run"; their one run made 6 deeds in 7 days — re-measure).
-    campDeeds:    10,
+    // DEC-120 (owner, 2026-11-13): 6, chosen over FEAT-168's agent default of 10.
+    campDeeds:    6,
 
     // ── FEAT-138 RANK THRESHOLDS, BY TYPE AND REGION [owner, 2026-10-21] ──────────────────────
     // Every type ranks on its own axis (design-amendments-2026-10-21-mission-recut.md §1–2, §11b).
@@ -417,10 +416,13 @@ export const runEconomy = {
                      // additions cannot drift into 20.700000000000003 — see addSpot()
     halfPoints: 0,   // mission points × 2
     missions: 0,     // settled (paid) missions this run
-    // FEAT-146: the run summary's rows. Earned is derived (money + spent − startCash), so no counter.
+    // FEAT-146: the run summary's rows. Earned is derived (money + spent − startCash − pocket), so no counter.
     ranks: { D: 0, C: 0, B: 0, A: 0, S: 0 },   // settled missions by letter
     spent: 0,        // dollars out through spend(), to the cent
     freeRepairs: 0,  // expedition-rewards option 2: the crew's line at A or better — repairs owed at a bench for nothing
+    // FEAT-184 (DEC-150): a played tutorial holds the last paycheck back until its end and runs on pocket change.
+    pocket: 0,           // the pocket change given on top of startCash (so Earned subtracts it too)
+    paycheckDue: false,  // the last paycheck is still to be paid (payPaycheck)
 }
 
 /** Round to whole cents. Money is added a paper at a time now, so drift is a real hazard. */
@@ -461,6 +463,24 @@ export class EconomySystem {
         runEconomy.ranks = { D: 0, C: 0, B: 0, A: 0, S: 0 }
         runEconomy.spent = 0
         runEconomy.freeRepairs = 0
+        runEconomy.pocket = 0
+        runEconomy.paycheckDue = false
+    }
+
+    /** FEAT-184 (DEC-150, owner 2026-11-14: "you shouldnt get your last paycheck until the end of the tutorial so you'll
+     *  have pocket change"): at a played tutorial's start, the wallet is `pocket` and the paycheck waits. */
+    withholdPaycheck (pocket) {
+        runEconomy.money = _cents(pocket)
+        runEconomy.pocket = _cents(pocket)
+        runEconomy.paycheckDue = true
+    }
+
+    /** The tutorial is over (or skipped): the last paycheck, startCash, lands. True if it was still due. */
+    payPaycheck () {
+        if (!runEconomy.paycheckDue) return false
+        runEconomy.paycheckDue = false
+        runEconomy.money = _cents(runEconomy.money + ECONOMY_PARAMS.startCash)
+        return true
     }
 
     /**

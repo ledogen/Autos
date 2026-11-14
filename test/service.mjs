@@ -7,7 +7,7 @@
 //   2. repair(): charges, sets the target (never past the cap), adds the labour hours; refuses a
 //      target off the list; straightening zeroes the bent geometry; a wallet that can't cover it
 //      changes nothing. The shop patches a flat: air back in, condition unchanged.
-//   3. Buy & fit off the shelf: priced by condition × tier, charges, empties the slot, bolts the part on
+//   3. Buy & fit off the shelf: priced by condition × tier (buyQuote, the Shop tab's price and hours), charges, empties the slot, bolts the part on
 //      with its condition, adds the socket's labour; the old part goes straight into the inventory WITH
 //      its wear and its puncture (owner 11-04: no sell / keep prompt) and sells from there (half price ×
 //      condition); exchanging it back on brings that wear back, on any corner for a tire. A flat tire
@@ -26,6 +26,8 @@
 //   9. Tire work is bead jobs and hub swaps (owner, 2026-10-23): a loose tire onto a corner is 2 hub +
 //      2 bead, charged with the shelf price; split and combine are one bead job each, every part keeping
 //      its wear and the tire its puncture; split needs a free slot; only a loose tire meets a loose wheel.
+//  11. FEAT-202: the oil change — a flat price × tier, straight back to new oil, its hours on the clock; no
+//      job on new oil or past the wallet. A run save written before the oil track loads with new oil.
 //  10. FEAT-196: a corner swap trades two corners' mounted pairs (each part's wear, the puncture with its tire) for
 //      four hub swaps; a mounted pair's wheel in the inventory is straightened on the bench, still mounted.
 //
@@ -35,7 +37,7 @@ import { PartsSystem } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
 import { InventorySystem } from '../src/inventory.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP as SU, REPAIR_CAP, SEIZED_REPAIR_X, PATCH, BEAD, HUB } from '../data/parts.js'
+import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP as SU, REPAIR_CAP, SEIZED_REPAIR_X, PATCH, OIL_CHANGE, BEAD, HUB } from '../data/parts.js'
 import { repairTargets } from '../src/service.js'
 
 let fails = 0
@@ -119,6 +121,9 @@ damage.set('damperRear', 0.2)
 stock(['dampersHD'], ['tireSport', 0.5], ['tirePlugKit'])
 check('a used part is priced by its condition, × tier', near(svc.shelfPrice(1), PARTS.tireSport.price * 0.5)
   && (tier = 2, near(svc.shelfPrice(1), PARTS.tireSport.price)) && (tier = 1) && svc.shelfPrice(2) > 0)
+check('FEAT-212: the Shop tab\'s quotes — to carry is the shelf price in no time; fitted adds the fitting\'s price and hours',
+  near(svc.buyQuote(0).price, PARTS.dampersHD.price) && svc.buyQuote(0).hours === 0
+  && near(svc.buyQuote(0, 'dampersRear').price, PARTS.dampersHD.price + SU.price) && svc.buyQuote(0, 'dampersRear').hours === 0.75)
 check('buy heavy-duty rear shocks, fitted for the shop\'s minimum charge', svc.buyAndFit(0, 'dampersRear') && near(wallet, 100 - PARTS.dampersHD.price - SU.price)
   && params.suspensionDampingRear === PARTS.dampersHD.patch.suspensionDampingRear && damage.get('damperRear') === 1)
 check('…the slot is empty now', shelf[0] === null && !svc.buyAndFit(0, 'dampersRear'))
@@ -127,6 +132,18 @@ check('an exchange off the tires pays the minimum charge too, × tier', svc.fitL
   && (tier = 2, svc.fitLabour('springsHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
 check('the air filter fits for a third of the minimum charge, in 15 min (owner, 2026-11-06)',
   svc.fitLabour('airFilterStock', 'airFilter').price === Math.round(SU.price / 3 * 100) / 100 && svc.fitLabour('airFilterStock', 'airFilter').hours === 0.25)
+{
+  const w0 = wallet, h0 = hours
+  damage.set('oil', 0.3); tier = 2
+  check('FEAT-202: the oil change is a flat price × tier, its hours on the clock, straight to new oil',
+    near(svc.oilQuote().price, OIL_CHANGE.price * 2) && svc.changeOil() && damage.get('oil') === 1
+    && near(w0 - wallet, OIL_CHANGE.price * 2) && near(hours - h0, OIL_CHANGE.hours))
+  tier = 1
+  const w1 = wallet; wallet = OIL_CHANGE.price - 0.01; damage.set('oil', 0.3)
+  check('…no job on new oil, nor past the wallet', !svc.changeOil() && damage.get('oil') === 0.3 && (damage.set('oil', 1), wallet = w1, !svc.changeOil()) && wallet === w1)
+  const snap = parts.snapshot(); delete snap.condition.oil; damage.set('oil', 0.2); parts.restore(snap)
+  check('…and a save from before the oil track loads with new oil', damage.get('oil') === 1)
+}
 const oldShocks = inventory.list().find(r => r.id === 'dampersOEM')
 check('the old shocks go straight into the inventory with their wear', !!oldShocks && oldShocks.cond === 0.2, JSON.stringify(oldShocks))
 const before = wallet
@@ -281,6 +298,20 @@ check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].
     check('…the repair takes nothing from the wallet and uses it up', free.repair('engine', 0.7) && w === 100 && owed === 0 && h > 0)
     dm.set('engine', 0.5)
     check('…and the next one is paid again', free.repairQuote('engine', 0.7).price > 0)
+}
+
+// FEAT-184 (DEC-151): the tutorial's tire is on mom — the part once, its fitting once; the next of each is paid.
+{
+    let w = 0
+    const owes = { part: true, labour: true }
+    const mom = new ServiceCenter({ ...svc, money: () => w, spend: ($) => { if ($ > w + 1e-9) return false; w -= $; return true },
+        onMom: (id, k) => id === 'spareTire' && owes[k], useMom: (id, k) => { owes[k] = false } })
+    stock(['spareTire'], ['spareTire'])
+    check('on mom: the mounted tire and its fitting quote $0', mom.shelfPrice(0) === 0 && mom.fitLabour('spareTire', 'tireFL').price === 0)
+    check('…a broke player buys it, and the part is used up', mom.buyToInventory(0) && w === 0 && !owes.part && owes.labour)
+    check('…the next tire is paid again', mom.shelfPrice(1) > 0 && !mom.buyToInventory(1))
+    const i = inventory.list().findIndex(r => r.id === 'spareTire' && !r.flat)
+    check('…and fitting it is free, once', mom.swapPair(i, 0) && w === 0 && !owes.labour && mom.fitLabour('spareTire', 'tireFL').price > 0)
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')

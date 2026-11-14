@@ -88,6 +88,10 @@ export const TRACKS = {
   // never be reached — and there is no impact curve for the `filter` class either, so it is guarded
   // twice. Pinned in test/damage-filter-puncture.mjs.
   airFilter:  { label: 'Air Filter', cls: 'filter',     regions: [] },
+  // FEAT-202 (owner, 2026-11-13): the engine oil — the air filter's kind of track (a consumable that
+  // wears on the engine's own rpm x load and makes the engine wear faster), changed only at an auto
+  // shop (src/service.js changeOil). `regions: []` keeps impacts off it, as the filter's.
+  oil:        { label: 'Engine Oil', cls: 'oil',        regions: [] },
   radiator:   { label: 'Radiator',   cls: 'radiator',   regions: ['front'] },
   // FEAT-126: the MANUAL gearbox's synchros. Worn only by a shift forced with the clutch in (the sim
   // rejects it and flags drivetrain.missShift); a worn box SHIFTS SLOWER (owner, 2026-10-19), it never
@@ -211,7 +215,7 @@ export const DAMAGE_PARAMS = {
   // 10x FASTER as of 2026-08-23 (owner: "soooooooo slow"). At the fitted rate an engine outlasted
   // several runs and was a component the player never thought about — the same reason the brakes
   // were sped up. Hard driving now costs an engine in about eleven hours rather than a hundred and
-  // ten, and a blocked air filter multiplies that by up to twenty on top.
+  // ten, and a blocked air filter multiplies that by up to twenty on top (and old oil too, FEAT-202).
   durEngine:      2.0e4,     // normalised load-seconds
   engineRPMExp:   2.0,       // rpm term exponent — revving hurts superlinearly
 
@@ -238,19 +242,33 @@ export const DAMAGE_PARAMS = {
   // the sim already produces rather than a timer, and it means the driving that wears the engine is
   // the driving that blinds its filter.
   //
-  // Owner rate: about 30 real-world minutes of HARD driving before it needs replacing. "Hard" here
-  // is the same duty cycle the tire and brake fits use — sustained high rpm under load, which reads
-  // about 0.5 on this normalised insult — so 1800 s x 0.5 = 900.
+  // Owner rate (2026-11-14, swapped with the oil's): about 60 real-world minutes of HARD driving before
+  // it needs replacing. "Hard" here is the same duty cycle the tire and brake fits use — sustained high
+  // rpm under load, which reads about 0.5 on this normalised insult — so 3600 s x 0.5 = 1800.
   //
   // The EFFECT is the whole point and it is deliberately a cliff, not a slope: nothing measurable
   // until 20%, then engine wear multiplies hard. A filter is cheap and the warning is loud; letting
   // it bottom out silently is what kills the engine, and that asymmetry is the mechanic.
-  durFilter:        900,     // normalised load-seconds to a fully blocked filter
+  durFilter:        1800,    // normalised load-seconds to a fully blocked filter
   filterKnee:       0.20,    // below this the filter starts choking the engine
-  filterEngineMult: 20,      // engine wear multiplier at a COMPLETELY blocked filter
+  // DEC-136 (owner, 2026-11-14): the filter's and the oil's penalties ADD (engine wear x (1 + filter extra +
+  // oil extra)), the oil's extra at empty is twice the filter's at blocked, and with both at 0 a 50% engine
+  // lasts 15 min of hard driving: 20000 s at x1 → 900 s, so x 200/9 = 1 + 191/27 + 382/27.
+  filterEngineMult: 1 + 191 / 27,   // ≈ 8.07 — engine wear multiplier at a COMPLETELY blocked filter, oil fresh
   // FEAT-38 hook: dust exposure should multiply the clog rate on dirt roads. Not wired — the
   // per-surface plumbing does not exist yet — so the filter currently clogs at one rate everywhere.
   filterDustMult:   1,
+
+  // ── Engine oil (FEAT-202, owner 2026-11-13) ─────────────────────────────────────────────────
+  // Wears on the same rpm x load insult as the engine and the filter (owner: "based off of load and
+  // rpm"). The EFFECT is the filter's shape made "more linear ... as significant if not more": no
+  // knee squared into a cliff, a straight line from oilKnee down to oilEngineMult at empty oil.
+  // oilKnee 1 is the pure straight line from new.
+  //   900 = 30 min of hard driving (insult 0.5) from new to empty, half the filter's life (owner,
+  //   2026-11-14: "swap air filter and oil lifetimes"); it bites from 15 min. oilKnee is still [DEFAULT].
+  durOil:           900,     // normalised load-seconds to worn-out oil
+  oilKnee:          0.5,     // below this old oil starts wearing the engine
+  oilEngineMult:    1 + 382 / 27,   // ≈ 15.15 — at empty oil, filter clean: twice the filter's extra (DEC-136)
 
   // Springs: bump-stop EVENTS, priced on the PEAK force of each one.
   //
@@ -621,7 +639,7 @@ export const DAMAGE_PARAMS = {
   // They are a TUNING surface, not part of the model: anything that settles here should be folded
   // back into the dur* constant it scales and the multiplier returned to 1, so there is one number
   // per rate rather than two that have to be read together.
-  wearScale: { tire: 1, brake: 1, spring: 1, damper: 1, wheel: 1, engine: 1, filter: 1 },
+  wearScale: { tire: 1, brake: 1, spring: 1, damper: 1, wheel: 1, engine: 1, filter: 1, oil: 1 },
 
   // ── Contact → impact gating (feedContact) ──────────────────────────────────────────────────
   // A contact is not an impact. The engine reports a manifold every step a body is touching
@@ -787,6 +805,12 @@ export class DamageModel {
     // Set by applyImpact when a hit exceeds the fatal threshold; the run layer reads and clears it.
     this.fatalImpact = null
 
+    // FEAT-184 (DEC-151, "damage disabled so you cant break the truck"): the tutorial HOLDS the truck. While set,
+    // step() wears nothing (the temperature and the effect multipliers still run: a scripted flat still bites) and
+    // feedContact lands no impact (no armor, no component, no bend, no fatal). The game sets it each step; nothing
+    // here decides what "the tutorial" is.
+    this.held = false
+
     // In-flight collision burst tracked by feedContact: { region, impulse, t }, or null.
     this._burst = null
 
@@ -948,6 +972,17 @@ export class DamageModel {
     return 1 + (P.filterEngineMult - 1) * t * t
   }
 
+  /** FEAT-202: how much faster the engine wears for its oil — 1 above oilKnee, straight up to
+   *  oilEngineMult at empty. Its extra ADDS to the filter's (DEC-136), see engineWearMultiplier. */
+  oilEngineMultiplier () {
+    const P = DAMAGE_PARAMS
+    const c = this.get('oil')
+    return c >= P.oilKnee ? 1 : 1 + (P.oilEngineMult - 1) * (P.oilKnee - c) / P.oilKnee
+  }
+
+  /** DEC-136: the engine's wear multiplier for filter and oil together — the two extras add, never multiply. */
+  engineWearMultiplier () { return this.filterEngineMultiplier() + this.oilEngineMultiplier() - 1 }
+
   /** FEAT-126: synchro-time multiplier — 1 new, transAtZero (3×) when the box is dead. */
   transShiftScale () {
     const P = DAMAGE_PARAMS
@@ -1089,6 +1124,13 @@ export class DamageModel {
     const b = this._burst
     if (!b) return null
     this._burst = null
+    // BUG-168: the velocity this burst priced up to is the next burst's floor. Without this, a hit
+    // that outlasts impactHoldMaxCrash (a truck pivoting round a tree it struck off-centre) banked,
+    // started a second burst at once, and that burst's reach-back landed BEFORE the first one began:
+    // the same Δv priced twice, the second time against the armor the first had already lowered
+    // (measured: a 70 mph offset tree strike, 69 then 75 mph, fatal at full armor).
+    if (this._velRing?.length > 1) this._velRing.splice(0, this._velRing.length - 1)
+    if (this.held) return null   // FEAT-184 (DEC-151): the burst is tracked (so none outlives the tutorial) but never lands
     // Price on the truck's OWN Δv across the burst, not on the engine's accumulated contact impulse.
     //
     // The two should agree — J = m·Δv is the definition — and on a clean flat-on wall strike they
@@ -1365,6 +1407,7 @@ export class DamageModel {
   step (vehicleState, params, dt) {
     const P = DAMAGE_PARAMS
     this._stepTemp(vehicleState, params, dt)
+    if (this.held) { this.publish(params); return }   // FEAT-184 (DEC-151): the tutorial wears nothing
 
     // Damage disabled: hold everything at the nominal used-truck condition. Deliberately NOT a
     // freeze — a debug session should always start from the same known state (owner, 2026-08-19).
@@ -1540,10 +1583,12 @@ export class DamageModel {
       if (insult > 0) {
         // A choked filter starves the engine and accelerates its wear — the multiplier is 1 down to
         // the knee and then climbs to filterEngineMult at zero, squared so the last stretch is the
-        // punishing one. This is the ONLY coupling between two tracks in the model, and it is
-        // deliberate: the filter has no effect of its own, it makes something else worse.
-        this.wear('engine', insult * this.filterEngineMultiplier() * dt, P.durEngine)
+        // punishing one. This is one of the two couplings between tracks in the model, and it is
+        // deliberate: the filter has no effect of its own, it makes something else worse. FEAT-202:
+        // the oil is the second coupling of the same kind (oilEngineMultiplier), worn by the same insult.
+        this.wear('engine', insult * this.engineWearMultiplier() * dt, P.durEngine)
         this.wear('airFilter', insult * P.filterDustMult * dt, P.durFilter)
+        this.wear('oil', insult * dt, P.durOil)
       }
     }
 

@@ -230,13 +230,12 @@ async function startRun (seed) {
   await js(`document.getElementById("su-seed").value = ${JSON.stringify(seed)}; document.getElementById("su-start").click()`)
   check(await until(() => js(live), 180000, 250), 'the run never went live')
   await js(HELPERS); await js('window.__soak.carry(); window.__soak.watch()')
-  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2). FEAT-184: after the first skip "always skip
-  // the tutorial" is on, and a run starts where a skip lands — nothing to hold. Either way, at Larry's with the casserole
-  // delivered (FEAT-184, owner 2026-11-07); the day loop reads off his welcome.
-  if (!await js('window.__settings?.skipTutorial')) {
-    check(await until(dlgUp, 5000), 'the run did not open on the firing')
-    await key('m', true); await sleep(1300); await key('m', false)
-  }
+  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2), at Larry's with the casserole delivered
+  // (FEAT-184, owner 2026-11-07); the day loop reads off his welcome. FEAT-184 (DEC-148): every run opens on the firing,
+  // and on a browser's first playthrough the first hold only asks "are you sure" — a second hold skips.
+  check(await until(dlgUp, 5000), 'the run did not open on the firing')
+  await key('m', true); await sleep(1300); await key('m', false)
+  if (/are you sure/.test(await js('document.getElementById("skip-hint")?.textContent ?? ""'))) { await key('m', true); await sleep(1300); await key('m', false) }
   check(await until(() => js('window.__board().firstState() === "done"'), 15000), `holding M did not skip to the casserole delivered: ${JSON.stringify(await js(`({
     first: window.__board().firstState(), ms: window.__mission().state, dlg: getComputedStyle(document.getElementById('dialogue-panel')).display,
     hint: document.getElementById('skip-hint')?.style.display, vis: document.visibilityState, focus: document.hasFocus(), log: (window.__soakLog ?? []).slice(-12) })`))}`)
@@ -439,14 +438,14 @@ async function buyFood () {
   for (let k = 0; k < PACK_MEALS; k++) {
     const s = await S()
     if (s.food >= PACK_MEALS) return
-    // FEAT-196: a shelf row is one button; its stow button shows under it once it is selected.
-    const price = await js(`(() => { const r = [...document.querySelectorAll('#svc-screen button.sv-shelf')]
-        .find(r => ${JSON.stringify(FOOD_NAMES)}.some(n => r.querySelector('.sv-name')?.textContent.startsWith(n)))
+    // FEAT-196: a shelf row is one button; its stow button shows under it once it is selected (FEAT-212: the tree's row).
+    const price = await js(`(() => { const r = [...document.querySelectorAll('#svc-screen button[data-act=node][data-slot]')]
+        .find(r => ${JSON.stringify(FOOD_NAMES)}.some(n => r.querySelector('.sv-name')?.textContent.includes(n)))
       if (r && !r.classList.contains('on')) r.click()
-      const b = document.querySelector('#svc-screen .sv-panel [data-act=stow]')
-      return r && b && !b.disabled ? +(r.querySelector('.sv-price').textContent.replace(/[^\\d.]/g, '')) : null })()`)
+      const b = document.querySelector('#svc-screen .sv-kids [data-act=stow]')
+      return r && b && !b.disabled ? +(r.querySelector('.sv-each').textContent.replace(/[^\\d.]/g, '')) : null })()`)
     if (price == null || s.money - price < FOOD_FLOOR) return
-    await js(`document.querySelector('#svc-screen .sv-panel [data-act=stow]').click()`)
+    await js(`document.querySelector('#svc-screen .sv-kids [data-act=stow]').click()`)
     check(await until(async () => (await S()).food > s.food, 3000), `buying food at the shop screen took nothing (price $${price})`)
     const spent = s.money - (await S()).money
     run.foodSpend[s.day] = +((run.foodSpend[s.day] ?? 0) + spent).toFixed(2)

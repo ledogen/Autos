@@ -189,16 +189,26 @@ const strayCheck = async (what) => {
 // real-time timer, not sim time.
 const skipDone = () => js('window.__board().firstState() === "done" && window.__mission().state === "idle"')
 const skipPeek = () => js('JSON.stringify({ first: window.__board().firstState(), ms: window.__mission().state })')
-const skipOpening = async () => {
+// FEAT-184 (DEC-148): the prompt reads "hold M to skip tutorial"; `confirm` (the first playthrough ever, or a chosen
+// tutorial): the first hold only asks "are you sure you want to skip the tutorial", and a second hold skips.
+const skipHint = () => js('document.getElementById("skip-hint").textContent')
+const skipOpening = async (confirm = false) => {
   check(await until(() => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"'), 3000), 'the run did not open on the firing')
   check(await js('getComputedStyle(document.getElementById("skip-hint")).display !== "none"'), 'no "hold M to skip" prompt over the firing')
+  // the keycap carries the pad's glyph too, hence the `.*`
+  check(/^hold M.* to skip tutorial$/.test(await skipHint()), `the skip prompt reads "${await skipHint()}" (FEAT-184: "hold M to skip tutorial")`)
   await key('m', true); await sleep(1300); await key('m', false)
+  if (confirm) {
+    check(await until(async () => /are you sure you want to skip the tutorial/.test(await skipHint()), 2000), `the first hold asked nothing: "${await skipHint()}"`)
+    check(await js('window.__board().firstState() === "closed"'), `the first hold skipped without the confirmation: ${await skipPeek()}`)
+    await key('m', true); await sleep(1300); await key('m', false)
+  }
   check(await until(skipDone, 8000), `holding M did not skip to the casserole delivered: ${await skipPeek()}`)
 }
-// FEAT-184: with "always skip the tutorial" on (the first skip turns it on), a new run starts where a skip lands — the
-// casserole delivered at Larry's, no firing card. His welcome is up; read it off.
-const autoSkipped = async () => {
-  check(await until(skipDone, 8000), `"always skip the tutorial" did not start the run with the casserole delivered: ${await skipPeek()}`)
+// FEAT-184 (DEC-148: no setting, no "always skip"): every new run opens on the firing; skip it and read Larry's
+// welcome off.
+const skipAndReadLarry = async () => {
+  await skipOpening()
   const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
   check(await until(dlg, 3000), "no Larry's welcome on a run that skips the tutorial")
   check(/Casserole/.test(await js('document.getElementById("dialogue-panel").textContent')), "Larry's welcome is not the first card on a skipped run")
@@ -277,7 +287,7 @@ const STEPS = [
   }],
   ['map', async () => {
     await tap('m')
-    check(await until(() => js('window.__map2d().isOpen() && document.getElementById("map2d").style.display !== "none"'), 2000), 'M did not open the map')
+    check(await until(() => js('window.__map2d().isOpen() && document.getElementById("map-window").style.display !== "none"'), 2000), 'M did not open the map')
     const mouse = (type, x, y) => client.cmd('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 })
     await mouse('mousePressed', 600, 400); await mouse('mouseMoved', 700, 450); await mouse('mouseReleased', 700, 450)
     await sleep(200)
@@ -342,17 +352,17 @@ const STEPS = [
     await js('document.getElementById("pm-story").click()')
     check(await js('document.getElementById("main-menu").classList.contains("setup")'), 'story did not open the setup page')
     // FEAT-147/170: every run opens on the firing. This flow HOLDS M to skip it — so no first-use card holds the
-    // sim under the steps below; the 'opening' step at the end plays it. FEAT-184 (owner, 2026-11-08): the tutorial flag
-    // starts complete, so a new game would land at Larry's with nothing to hold — turn it off to test the hold.
-    await js('window.__settings.skipTutorial = false')
+    // sim under the steps below; the 'opening' step at the end plays it. FEAT-184 (DEC-148): this browser has not played
+    // before, so the skip asks for a confirmation first.
+    await js('window.__settings.playedBefore = false')
     await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
     // Live = the loading stage is down, the run HUD is up and the region has POIs (__story is ?prof-only).
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'story never went live (45 s × load): no run HUD / POIs, or the load stage stayed up')
     // FEAT-184 (owner, 2026-11-07): the skip lands at Larry's, 07:00 on day 1, the casserole DELIVERED (no job in
     // hand) — then Larry's welcome, then his intro (R-11), as after a driven casserole.
-    await skipOpening()
-    check(await js('window.__settings.skipTutorial') === true, 'skipping the tutorial did not turn "always skip the tutorial" on (FEAT-184)')
+    await skipOpening(true)
+    check(await js('window.__settings.playedBefore') === true, 'skipping did not mark this browser as played before (FEAT-184)')
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     const a = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'larrysHouse'), v = window.__vs.position
       return { d: Math.hypot(v.x - q.x, v.z - q.z), h: window.__day().clockH() } })()`)
@@ -619,11 +629,19 @@ const STEPS = [
     check(upY > 0.99, `the truck is not upright on the lift (up.y ${upY.toFixed(3)})`)
     // FEAT-167: no HUD behind the shop.
     check(await js('!document.getElementById("hud-dock").checkVisibility({ visibilityProperty: true })'), 'the HUD shows behind the service screen')
-    // My Vehicle lists every corner's tire under a collapsed Tires; selecting one opens its repair / exchange panel.
-    await js('document.querySelector("#svc-screen [data-group=Tires]")?.click()')
-    await js('document.querySelector("#svc-screen [data-act=sel][data-key=tireRR]")?.click()')
-    check(await js('!!document.querySelector("#svc-screen .sv-panel")'), 'selecting a My Vehicle row opened no panel')
-    // The Parts Shop is the shop's four-slot shelf (items or empty slots) and My Items.
+    // FEAT-212: Maintenance is a tree, one item open per level — Tires, Wheels… → Tires and Wheels → Rear right → Tire
+    // shows its swap; selecting the top level again collapses everything.
+    for (const id of ['twbs', 'tw', 'RR', 'tire']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
+    check(await js('/Swap with inventory/.test(document.querySelector("#svc-screen .sv-kids .sv-kids .sv-kids .sv-kids")?.textContent ?? "")'),
+      'Maintenance: the rear-right tire opened no swap')
+    await js('document.querySelector("#svc-screen [data-act=node][data-id=twbs]")?.click()')
+    check(await js('!document.querySelector("#svc-screen .sv-kids")'), 'Maintenance: selecting the top level again left items open')
+    // …and the keys (the pad's D-pad and A arrive as the same keys, menu-nav.js): ↓ walks the list in order, Enter opens.
+    const focusId = () => js('document.querySelector("#svc-screen .nav-focus")?.dataset.id ?? null')
+    for (let i = 0; i < 6 && await focusId() !== 'twbs'; i++) await tap('ArrowDown')
+    await tap('Enter')
+    check(await js('!!document.querySelector("#svc-screen [data-act=node][data-id=twbs].on")'), 'Maintenance: ↓ and Enter did not open the first section')
+    // The Shop tab is the shop's shelf, one row per item (FEAT-212), and My Items.
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     check(await js('/For sale/i.test(document.querySelector("#svc-screen").textContent) && /My items/i.test(document.querySelector("#svc-screen").textContent)'),
       'the Parts Shop tab shows no shelf')
@@ -654,11 +672,11 @@ const STEPS = [
     await js('window.__econ.money = 50')
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')   // repaints with the new wallet
     const coffees = () => js('window.__inv.list().filter(r => r.id === "coffee").reduce((a, r) => a + r.n, 0) + (window.__inv.pending()?.id === "coffee" ? 1 : 0)')
-    const row = 'Array.from(document.querySelectorAll("#svc-screen .sv-shelf")).find(r => /Coffee/.test(r.textContent))'
-    const price = await js(`+${row}.querySelector(".sv-price").textContent.replace(/[^0-9.]/g, "")`)
+    const row = 'Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => /Coffee/.test(r.textContent))'
+    const price = await js(`+${row}.querySelector(".sv-each").textContent.replace(/[^0-9.]/g, "")`)   // FEAT-212: the closed row's price
     const [m0, n0, h0] = [await js('window.__econ.money'), await coffees(), await js('window.__day().clockH()')]
     await js(`${row}.click()`)   // FEAT-196: select the row, then its options show
-    await js('document.querySelector("#svc-screen .sv-panel [data-act=stow]").click()')
+    await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]").click()')
     const [m1, n1] = [await js('window.__econ.money'), await coffees()]
     check(price > 0 && Math.abs(m0 - m1 - price) < 0.005, `buying a coffee listed at $${price} took $${(m0 - m1).toFixed(2)}`)
     check(n1 === n0 + 1, `buying a coffee left ${n1} coffees (had ${n0})`)
@@ -1190,7 +1208,7 @@ const STEPS = [
         `new-game mode row: ${JSON.stringify(steps)}`)
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
       check(await until(() => js(live), 45000, 250), 'a new run never went live (45 s × load)')
-      await autoSkipped()   // FEAT-184: the story step's skip turned "always skip the tutorial" on
+      await skipAndReadLarry()   // FEAT-184: played before (the story step's skip), so one hold
       check(await until(saved, 3000), 'the new run wrote no save to end')
     }
     const playedS = () => js('JSON.parse(localStorage.getItem("autos-run/1")).data.playedS')
@@ -1267,7 +1285,7 @@ const STEPS = [
     await ended(/broke down/, /the engine seized — (the tow was \$[\d,.]+, and you gave up|no tow could reach you, you had)/)
     // The win: campDeeds deeds open the requisition; all five lines delivered → the win card.
     await newRun()
-    // FEAT-184: the skipped run starts with the casserole delivered and Larry read off (autoSkipped), so no job is active.
+    // FEAT-184: the skipped run starts with the casserole delivered and Larry read off (skipAndReadLarry), so no job is active.
     await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
     check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), `${ECONOMY_PARAMS.campDeeds} deeds opened no requisition`)
     await js(`(() => { const b = window.__board(), h = window.__day().clockH()
@@ -1278,9 +1296,8 @@ const STEPS = [
   ['opening', async () => {
     // FEAT-147: a new run with the opening on starts PARKED AT THE BURGER JOINT, the firing's cards over a slow
     // orbit of it with the sim held, then mom's call. FEAT-170: then the evening at mom's, and her casserole.
-    // FEAT-184 (owner, 2026-11-08): it is played from the main menu's "tutorial", with the tutorial flag left COMPLETE,
-    // on the URL's ?seed=6. It must never touch the career save: a stand-in record is planted and has to come back as is.
-    check(await js('window.__settings.skipTutorial') === true, 'the tutorial flag is not complete (FEAT-184: it starts complete)')
+    // FEAT-184 (owner, 2026-11-08): it is played from the main menu's "tutorial", on the URL's ?seed=6. It must never
+    // touch the career save: a stand-in record is planted and has to come back as is.
     const career = JSON.stringify({ v: 1, data: { smoke: 'the career run' } })
     await js(`localStorage.setItem("autos-run/1", ${JSON.stringify(career)})`)
     await js('document.getElementById("mm-tutorial").click()')
@@ -1345,6 +1362,7 @@ const STEPS = [
     check(await js('window.__board().firstState() === "closed"'), `a tap of M skipped the evening: ${await js('JSON.stringify({ first: window.__board().firstState(), wd: window.__worstDay(), h: window.__day().clockH(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), map: window.__map2d().isOpen() })')}`)
     // Stage 3, the safe drive: the clock holds on the way home, and off the road R puts the truck back on it.
     const h0 = await js('window.__day().clockH()'); await simFor(2)
+    check(await js('window.__worstDay().held'), 'the tutorial does not hold the truck: a crash would cost damage (FEAT-184, DEC-151)')
     check(await js('window.__day().clockH()') === h0, `the clock ran on the evening's drive (${h0} → ${await js('window.__day().clockH()')})`)
     const lat = (x, z) => `(() => { const q = window.__roadSys().queryNearest(${x}, ${z}, 200); return q?.point ? Math.hypot(q.point.x - ${x}, q.point.z - ${z}) : 999 })()`
     const off = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
@@ -1359,6 +1377,12 @@ const STEPS = [
     await tap('r')
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 8000), 'R in the evening did not put the truck back on the road')
     check(await until(async () => !/off the road/.test((await eve()).hud), 2000), 'the HUD still says off the road on the road')
+    // FEAT-184 (DEC-151): off the road with the brake off, the evening puts the truck back on it by itself.
+    await seat(off.x, off.z, 0); await readCards(300)
+    if (await js('window.__vs.parked')) await tap(' ')
+    // The reset counts 4 s of PLAY time (_playedS: real frame seconds while live, each frame clamped to 0.25 s), not wall
+    // time, so a loaded box under 4 fps accrues it slower than the clock: poll long (a pass costs nothing extra).
+    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
     await strayCheck('in the evening')
     // FEAT-184 stage 6, THE WORST DAY: the station (when one is due), the flat halfway home, V, the spare that's flat too,
     // the recovery menu's free tow to the auto shop, a tire there, and the night's headlights — then mom's, as before.
@@ -1374,8 +1398,15 @@ const STEPS = [
       await tp(pz.x, pz.z, pz.heading); await park(true)
       check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), "the evening's station: parking at its pump opened no pump")
       await readCards()   // the pump's first-use card
-      await hold('f', 3); await tap(' ')   // pump, then the brake off pays
+      // FEAT-184 (DEC-150/151): the tutorial runs on pocket change, and mom makes you fill until it is gone — the brake
+      // does not let go before (her card says so).
+      check(await js('window.__econ.money') === 3, `the tutorial did not start on its $3 of pocket change: $${await js('window.__econ.money')}`)
+      await hold('f', 1); await tap(' '); await readCards()
+      check(await js('document.getElementById("pump-display").classList.contains("on") && !window.__worstDay().pump.done'),
+        `the brake let go at the evening's pump with money left: ${JSON.stringify(await wd())}, $${await js('window.__econ.money')}`)
+      await hold('f', 6); await tap(' ')   // pump till the money runs out, then the brake off pays
       check(await until(async () => (await wd()).pump.done, 3000), `filling up did not end the station's beat: ${JSON.stringify(await wd())}`)
+      check(await js('window.__econ.money < 0.05'), `the fill-up left money in the wallet: $${await js('window.__econ.money')}`)
     }
     console.log('  worst day: halfway')
     // Halfway home: a road point at 40 % of the crow distance from mom's, once the home leg is measured.
@@ -1393,7 +1424,6 @@ const STEPS = [
     await js('window.__inv.use("spareTire")'); await readCards()   // the spare: flat too
     await tap('Escape')   // the spare's picker; closing it reopens the inventory (parked)
     if (await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000)) await tap('Escape')
-    await js('window.__econ.money = Math.max(window.__econ.money, 100)')   // the tire at the shop is real money
     console.log('  worst day: the tow')
     await tap('x'); await readCards()   // the recovery menu's card
     check(await until(() => js('!!document.querySelector("#recovery-card button[data-act=towShop]:not([disabled])")'), 2000), 'the recovery menu offers no tow to a shop')
@@ -1405,11 +1435,13 @@ const STEPS = [
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     const fit = 'document.querySelector("#svc-screen button[data-act=buy][data-socket=tireFL]:not([disabled])")'
     // FEAT-196: a shelf row's options show only while it is selected — select each in turn until one fits the front left.
-    await js(`(() => { const lines = () => [...document.querySelectorAll("#svc-screen button.sv-line.sv-shelf")]
+    await js(`(() => { const lines = () => [...document.querySelectorAll("#svc-screen button[data-act=node][data-slot]")]
       for (let i = 0; i < lines().length && !${fit}; i++) lines()[i].click() })()`)
     check(await until(() => js(`!!${fit}`), 2000), 'the shop offers no tire for the front left')
+    const m0 = await js('window.__econ.money')
     await js(`${fit}.click()`)
     check(await until(() => js('!window.__damage.flat[0]'), 2000), 'buying a tire for the flat corner did not fix it')
+    check(await js('window.__econ.money') === m0, `the tire was not on mom (FEAT-184): $${m0} → $${await js('window.__econ.money')}`)
     await tap('Escape'); await tap(' ')   // off the brake: the night drive, whose card holds the sim
     check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')
     await readCards()
@@ -1504,7 +1536,7 @@ const STEPS = [
     const seatPoi = async (test) => { const p = await js(`(() => { const q = window.__map2d()._getPois().find(${test}); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`); await seatRead(p.x, p.z, p.h) }
 
     // The run the opening step left: Start → pause → give up → its confirm → the summary → the main menu.
-    await js('window.__settings.skipTutorial = false')   // FEAT-184: this step's new run holds View at the firing
+    await js('window.__settings.playedBefore = true')   // FEAT-184: one View hold skips (the confirmation is the story step's)
     const inRun = await js('getComputedStyle(document.getElementById("run-hud")).display !== "none"')
     if (!inRun) await js('document.getElementById("pm-story").click()')   // SMOKE_STEPS=boot,pad: free roam, no run to end — the setup page
     else {
@@ -1595,7 +1627,8 @@ const STEPS = [
     check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 2000), `a B tap did not open the inventory: ${menu}`)
     check(await js('[...document.querySelectorAll("#inv-screen .inv-slot .keycap")].every(k => getComputedStyle(k).display === "none")'), 'the inventory shows quick-slot keys while the pad drives')
     await btn(1); check(await until(() => js('!document.getElementById("inv-screen").classList.contains("open")'), 2000), 'B did not close the inventory')
-    // The map (View tap): a giver centred under the pad's cursor pages its offers on LB / RB; B closes it.
+    // The map (View tap), FEAT-211's approved controls: the D-pad walks the Missions list to a giver (the map snaps to it
+    // and its card shows), D-pad ← / → page its offers, the first B leaves the list with the map still open, the second closes it.
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
     // Not a shop (SHOP_TYPES: its brake opens the shop screen; the jobs are a button in it, FEAT-104) nor Larry's (the paper route):
@@ -1609,13 +1642,16 @@ const STEPS = [
     // this point (2927182058/K, 11-08: the busiest had one, on main before and after that day's merges) — page there
     // only when it can, and say so when it can't.
     check(giver?.n > 0, `no giver with an offer: ${JSON.stringify(giver)}`)
-    await js(`(() => { const m = window.__map2d(), s = m._sheet(); for (let i = 0; i < 6; i++) { m._panX += (m._sx(${giver.x}) - s.cx) / m._zoom; m._panZ += (m._sy(${giver.z}) - s.cy) / m._zoom } })()`)
-    await js('__fp.axes[2] = 0.09'); await frames(3, 60); await js('__fp.axes[2] = 0'); await frames(3, 60)
+    const lid = () => js('window.__map2d()._listId')
+    await until(() => js('window.__map2d()._rows.length > 0'), 2000)
+    for (let i = 0; i < 60 && await lid() !== giver.id; i++) await btn(13)
+    check(await lid() === giver.id, `the D-pad never reached the giver in the Missions list (${await lid()} · rows ${await js('JSON.stringify(window.__map2d()._rows.map(r => r.id))')})`)
     const hov = () => js('window.__map2d()._hoverPoi === ' + JSON.stringify(giver.id) + ' && window.__map2d()._hoverIdx')
-    check(await hov() === 0, `the pad cursor is not on the giver (${await js('window.__map2d()._hoverPoi')})`)
-    if (giver.n > 1) { await btn(5); check(await hov() === 1, 'RB did not page the giver\'s offers'); await btn(4); check(await hov() === 0, 'LB did not page back') }
-    else console.log(`  pad: no plain giver with two offers in ${await js('window.__worldCode?.()')}; LB/RB paging unchecked this run`)
-    await btn(1); check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'B did not close the map')
+    check(await until(async () => await hov() === 0, 1000), `the list pick did not show the giver's card (${await js('window.__map2d()._hoverPoi')})`)
+    if (giver.n > 1) { await btn(15); check(await hov() === 1, 'D-pad → did not page the giver\'s offers'); await btn(14); check(await hov() === 0, 'D-pad ← did not page back') }
+    else console.log(`  pad: no plain giver with two offers in ${await js('window.__worldCode?.()')}; D-pad ←/→ paging unchecked this run`)
+    await btn(1); check(await js('window.__map2d().isOpen() && window.__map2d()._listId === null'), 'the first B did not leave the list with the map still open')
+    await btn(1); check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'the second B did not close the map')
     // At the giver, a LONG RB press: the offer card opens under it, and the brake must stay latched (FEAT-125: the
     // card layout re-sent RB's Space, so the park latched and let go).
     await seatPoi(`q => q.id === ${JSON.stringify(giver.id)}`)

@@ -307,11 +307,12 @@ const _now = () => (typeof performance !== 'undefined' ? performance.now() : Dat
  *
  * queryNearest answers in (runKey, arc-along-run) and the planner wants a graph EDGE, so the edge is the
  * one whose arc span over that run contains the hit. Several edges can share a run (a merged deg-2 chain
- * reports its members), hence the span test rather than a key match.
+ * reports its members), hence the span test rather than a key match. `snapM` is the search radius (FEAT-211: the map's
+ * waypoint snaps from wherever it was dropped).
  */
-export function roadOrigin (road, car) {
+export function roadOrigin (road, car, snapM = RR_PARAMS.snapM) {
     if (!road?.queryNearest || !car) return null
-    const q = road.queryNearest(car.x, car.z, RR_PARAMS.snapM)
+    const q = road.queryNearest(car.x, car.z, snapM)
     if (!q?.runKey) return null
     const g = road.networkGraph?.()
     if (!g?.edges) return null

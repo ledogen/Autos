@@ -33,7 +33,7 @@ import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D 
 import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
-import { DamageScreen } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
+import { DamageScreen, bandColor } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
 import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
 import { updateVehicle, setLaunchHold, setParkLock, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { PARK_SPEED } from './park-brake.js'
@@ -116,7 +116,7 @@ import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-6
 import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { startRankMusic, updateRankMusic, rankMusicStep, rankMusicDrop, rankMusicThin, resolveRankMusic, setRankMusic } from './rank-music.js'   // FEAT-131 P3: the bar's music bed
-import { FuelStop, towPrice, towHours } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow
+import { FuelStop, towPrice, towHours, stationPriceFactor } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow; FEAT-209 each station's price
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
@@ -1495,9 +1495,8 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
-  skipTutorial: { name: 'skip the tutorial', opts: [[false, 'no'], [true, 'always']] },   // FEAT-184 [DEFAULT words]
 }
-window.__settings = _settings   // dev handle — test/cdp-smoke.mjs turns the tutorial skip off before a run that plays it
+window.__settings = _settings   // dev handle — test/cdp-smoke.mjs marks the browser as played before (FEAT-184 playedBefore)
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
 function _fitGearbox (gearbox = _settings.gearbox) {
   fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
@@ -2029,7 +2028,6 @@ const map2d = new Map2D({
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
-  getBarricades: () => poiSystem.barricades(),   // BUG-103: a closure tick per FEAT-154 row
   getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
   // FEAT-61: what the customers MEAN right now, and which way to set off.
   //
@@ -2054,6 +2052,10 @@ const map2d = new Map2D({
   // diamond colours. map2d stays economy-free: the card is offer-board's view-model, and every
   // number on it is computed here from the live board, clock and terms.
   getBoard: () => (offerBoard && storySystem?.isActive() ? _boardView : null),
+  // FEAT-211: the player's waypoint — { x, z, poly } with poly the line the GPS guides along (null while a job has the
+  // guide: the waypoint is then only a pin), or null; and the drop / clear (null) from the map's input, true if it acted.
+  getWaypoint: () => _waypoint && { x: _waypoint.x, z: _waypoint.z, poly: _waypointOn() ? _tutLine(_waypoint.route)?.poly ?? null : null },
+  onWaypoint: (p) => !dialogueSystem.active && _setWaypoint(p),   // a dialogue over the map keeps its Enter
   // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
   onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
   // Parked at a giver = "I want one of the jobs HERE": the map shows no other POI's card meanwhile.
@@ -3397,10 +3399,10 @@ function _updateMissionRings () {
   // and drop away while the pump is open (you are already in one).
   for (const m of _pumpZoneMarks)
     m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= showR
-  // BUG-164: the buildings stand only where their ground is drawn, so they go by the terrain's own stream centre.
-  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one 192 m+ away cannot be touched.
-  const sc = roadStreamCenter()
-  for (const y of _poiYards) y.visible = Math.hypot(y.userData.x - sc.x, y.userData.z - sc.z) <= showR
+  // BUG-164: a building draws exactly when the terrain chunk under it is built (owner, 2026-11-13: "push the poi
+  // pop in a bit further so it matches the terrain"; a 192 m circle fell short of the square ring and its warm margin).
+  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one that far away cannot be touched.
+  for (const y of _poiYards) y.visible = !terrainSystem || terrainSystem.hasChunkAt(y.userData.x, y.userData.z)
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
     _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)
@@ -3680,6 +3682,9 @@ const serviceCenter = new ServiceCenter({
   stock: () => shelf(_servicePoi.id, daySystem.clockH(), _servicePoi.type), unstock: (i) => takeShelf(_servicePoi.id, i),
   nextStock: () => _shelfNext(_servicePoi.id, daySystem.clockH(), _servicePoi.type),   // R-24: "new stock in 3h 10m"
   freeRepairs: () => runEconomy.freeRepairs ?? 0, useFreeRepair: () => { runEconomy.freeRepairs-- },   // expedition-rewards
+  // FEAT-184 (DEC-151): on the evening, one tire is on mom — a mounted one or a bare one (the shelf's old tire is always
+  // there), the part once and its fitting once.
+  onMom: (id, k) => _eveningLeg() && _momOwes[k] && (id === 'spareTire' || PARTS[id]?.slot === 'tire'), useMom: (id, k) => { _momOwes[k] = false },
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
@@ -3694,6 +3699,7 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
     _jobsShop = _servicePoi
   },
   openMap: () => map2d.toggle(),
+  openDiagnostics: () => damageScreen.open(),   // FEAT-212: Maintenance's first item, the V-key screen over the shop's
   nowH: () => daySystem.clockH(),
   // A front three-quarter view of the parked truck while the screen is open (owner, 2026-10-22): the
   // orbit's bearing is the nose turned 40° aside, far enough back to hold the whole truck. A drag still
@@ -4443,13 +4449,21 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // gas station first — when that detour is short. Past the budget the lesson stays the pump's first-use card.
 // The budget [DEFAULT] from the stage-2 census (12 random seeds): the drive home is a median 2.9 km, but the nearest
 // station's detour adds a median 5.8 km (1.1–7.8). At 4 km, 6 of 12 seeds get the refuel; the rest leave it to the pump.
-const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000 }
+// FEAT-184 (DEC-150/151, owner 2026-11-14): the pocket change a played tutorial runs on until the paycheck ($ — at the
+// day-1 $0.50/gal it buys ~6 gal, so a fill from an eighth stops near half: "will run out of cash half tank"), and the
+// seconds off the road before the evening puts the truck back on it ("you drive off the road > reset"). Both [DEFAULT].
+const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4 }
+let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 // FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
 // station, if there was one); the flat lands at half of it, once. Not saved: a resume carries the flat in the damage model.
 let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
+// FEAT-184 (DEC-151): the evening's tire is on mom — the part once and its fitting once (ServiceCenter onMom). Not saved:
+// a resume mid-evening owes it again.
+const _momOwes = { part: true, labour: true }
+let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
-window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed })
+window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4466,6 +4480,8 @@ function _seatAt (q) {
   void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
 }
 
+/** FEAT-184 (DEC-151): the tutorial is on — a played opening (the firing heard, not skipped) until Larry's welcome. */
+const _inTutorial = () => storySystem.isActive() && dialogueSystem.has(DLG.firing) && !dialogueSystem.has(DLG.skipped) && !dialogueSystem.has(DLG.runIntro)
 /** FEAT-170: the evening leg is on — the firing played, mom's casserole not posted yet. */
 const _eveningLeg = () => !!offerBoard && dialogueSystem.has(DLG.firing) && offerBoard.firstState() === 'closed'
 
@@ -4527,7 +4543,9 @@ let _tutOffAt = 0       // performance.now() when the truck left the line; 0 whi
 function _tutLeg () {
   if (_eveningLeg()) { const base = _homeGuide(), door = _eveTarget(); return base && door ? { base, door } : null }
   const m = missionSystem?.mission
-  if (offerBoard?.firstState() !== 'taken' || !m || !['staging', 'running'].includes(missionSystem.state)) return null
+  if (offerBoard?.firstState() !== 'taken' || !m || !['staging', 'running'].includes(missionSystem.state)) {
+    return _waypointOn() ? { base: _waypoint.route, door: _waypoint.door } : null   // FEAT-211: the waypoint's line follows the truck too
+  }
   const door = poiSystem.list().find(q => q.id === m.endPoiId)
   return door ? { base: missionSystem.guideRoute(), door } : null
 }
@@ -4549,12 +4567,53 @@ function _tutDetourTick () {
   if (now - _tutOffAt < RR_PARAMS.offS * 1000) return
   if (_tutDetour?.base === leg.base && Math.hypot(v.x - _tutDetour.x, v.z - _tutDetour.z) < RR_PARAMS.offM) return
   _tutOffAt = 0
-  const from = roadOrigin(roadSystem, v)
-  const route = from && missionSystem.planOffer(from, { rng: Math.random,
-    dest: { kind: 'poi', pois: [leg.door], strict: true, anyLeg: true, nearest: true } })
+  const route = _planFromTruck(leg.door)
   // No plan (the truck off every road; on the door's own road it is a straight stretch since BUG-125): keep the line,
   // and the spot it failed at.
   _tutDetour = { base: leg.base, route: route?.segments?.length ? route : _tutLine(leg.base), x: v.x, z: v.z }
+}
+
+/** The shortest line by road from the truck's own road point to `door` (a POI, or anything with its { id, aId, bId, s }), or null. */
+function _planFromTruck (door) {
+  const from = roadOrigin(roadSystem, vehicleState.position)
+  return from && missionSystem.planOffer(from, { rng: Math.random,
+    dest: { kind: 'poi', pois: [door], strict: true, anyLeg: true, nearest: true } })
+}
+
+// ── FEAT-211 landing 3: the custom waypoint ─────────────────────────────────────────────────────────
+// One pin the player drops on the map (pad Y, N, Enter with nothing highlighted, a click: map2d.js _waypointAt), and
+// the same input on the pin takes it away. It is guided the way the evening is guided home, with nothing new: the same
+// planner (a one-stop line from the truck, _planFromTruck), the same in-world GPS (gpsSystem's getRoute, last in line),
+// the same re-plan when the truck strays (_tutDetourTick), the same HUD line (_renderMissionUI's default case).
+// A JOB ALWAYS WINS: while the truck is on a job (or a paper round, or the evening) the waypoint is a pin on the map and
+// nothing else, so it can never hide a job's destination. Player state for the run: saved, cleared on arrival and by
+// a new run. The pin sits on the road it snapped to, so the map's pin and the line's end are one point.
+const WAYPOINT_ARRIVE_M = 28     // m — mission.js ARRIVE_RADIUS, a job's "you're there"
+const WAYPOINT_SNAP_M   = 2000   // m — the drop snaps to the nearest road within this (_resetToRoad's reach)
+// (_waypoint, the state, is declared with the evening's, above _eveningLeg.)
+
+/** The waypoint is what the GPS guides to now: one is set, a run is live, and no job, round or evening has the guide. */
+const _waypointOn = () => !!_waypoint && storySystem.isActive() && !_runEnded && !_eveningLeg()
+  && !missionSystem?.isOnJob() && !paperRouteSystem?.isCarrying()
+
+/** Drop the waypoint at world (x, z), or clear it (null). False when nothing changed: no story run, no waypoint to
+ *  clear, or the drop found no road to snap to or no line to plan (outside the wall). */
+function _setWaypoint (p) {
+  if (!storySystem.isActive() || _runEnded) return false
+  if (!p) { if (!_waypoint) return false; _waypoint = null; _renderMissionUI(); return true }
+  const o = roadOrigin(roadSystem, p, WAYPOINT_SNAP_M)
+  const door = o && { ...o, id: 'waypoint' }
+  const route = door && _planFromTruck(door)
+  if (!route?.segments?.length) return false
+  _waypoint = { x: o.x, z: o.z, door, route }
+  _renderMissionUI()
+  return true
+}
+
+/** On the run-HUD poll: there is the waypoint's arrival. */
+function _waypointTick () {
+  const v = vehicleState.position
+  if (_waypoint && Math.hypot(_waypoint.x - v.x, _waypoint.z - v.z) < WAYPOINT_ARRIVE_M) _setWaypoint(null)
 }
 
 /** Hours of sleep from now to 07:00 on day 1 — the evening's night, the sleep timer's preset. */
@@ -4591,6 +4650,12 @@ function _eveningBeats () {
   // Stage 5: towed and back on the road, it's night — the headlights.
   if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
   if (Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
+  // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
+  // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
+  // (_playedS), so a pause or a card never counts.
+  const off = !vehicleState.parked && !_inPoiRing() && !_truckOnRibbon()
+  _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
+  if (off && _playedS - _eveOffAt > TUT_PARAMS.offRoadS) { _eveOffAt = null; _resetToRoad() }
 }
 
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
@@ -4621,7 +4686,29 @@ function _skipFire () {
     return
   }
   _skipTimer = 0
+  // FEAT-184 (DEC-148): a player who chose the tutorial, or one on their first playthrough ever, confirms with a second hold.
+  if (_skipNeedsConfirm() && performance.now() > _skipArmedUntil) {
+    _skipArmedUntil = performance.now() + SKIP_CONFIRM_MS
+    document.getElementById('skip-hint')?.classList.remove('holding')
+    _syncSkipHint()
+    return
+  }
   _skipOpening()
+}
+/** FEAT-184 (DEC-148, owner 2026-11-14: "If you enter the tutorial or its the first playthrough ever it will have an
+ *  additional confirmation"): the menu's "tutorial" stands for "chose the tutorial" until the intro's card exists. */
+const _skipNeedsConfirm = () => _tutorialRun || !_settings.playedBefore
+const SKIP_CONFIRM_MS = 5000   // [DEFAULT] how long the confirmation waits for the second hold
+let _skipArmedUntil = 0        // performance.now() until which a completed hold skips at once
+let _skipHintHtml = ''
+/** The prompt: the hold, or (armed) the owner's confirmation. */
+function _syncSkipHint () {
+  const el = document.getElementById('skip-hint')
+  if (!el) return
+  const html = performance.now() < _skipArmedUntil
+    ? `are you sure you want to skip the tutorial? hold ${keycap('M')} again`   // the question is the owner's; "hold M again" PLACEHOLDER
+    : `hold ${keycap('M')} to skip tutorial`   // the owner's words (DEC-148)
+  if (html !== _skipHintHtml) { _skipHintHtml = html; el.innerHTML = html }
 }
 function _skipRelease () {
   if (!_skipTimer) return false
@@ -4644,14 +4731,13 @@ document.addEventListener('keyup', e => {
 }, { capture: true })
 window.addEventListener('blur', _skipRelease)   // a key let go in another window never comes back up here
 pad.skipHold = () => _eveningLeg()
-{ const el = document.getElementById('skip-hint'); if (el) el.innerHTML = `hold ${keycap('M')} to skip the tutorial` }   // PLACEHOLDER words
+_syncSkipHint()
 
-/** FEAT-184: a tutorial finished or skipped turns "always skip the tutorial" on for every later run (owner, 2026-11-07). */
-function _tutorialDone () {
-  if (_settings.skipTutorial) return
-  _settings.skipTutorial = true
+/** FEAT-184 (DEC-148): an opening finished or skipped marks this browser as played before — no more confirmation. */
+function _markPlayed () {
+  if (_settings.playedBefore) return
+  _settings.playedBefore = true
   saveSettings(_settings)
-  _renderSelectors()
 }
 
 /** The hold landed: where a skipped tutorial ends — the night slept at mom's, 07:00, the casserole delivered, the truck at
@@ -4660,8 +4746,10 @@ function _tutorialDone () {
 function _skipOpening () {
   document.getElementById('skip-hint')?.classList.remove('holding')
   if (!_eveningLeg() || _campBusy) return
-  _tutorialDone()
+  _markPlayed()
+  _skipArmedUntil = 0
   _undoWorstDay()   // FEAT-184: a skip clears the worst day too
+  economySystem.payPaycheck()   // FEAT-184 (DEC-150): a skip lands with the last paycheck, as every run starts
   dialogueSystem.abort()   // the firing's or mom's card, if one is up
   _cardHold = false
   if (_firingCam) { _firingCam = null; setCameraFocus(null) }
@@ -4683,10 +4771,9 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the first job is still to do or the evening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
   _openingRun = false
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null
-  // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (Larry's, 7 am, the casserole delivered),
-  // no tutorial cards (Larry's welcome still plays): the firing counts as played and the skip runs at once.
-  if (_settings.skipTutorial && !_tutorialRun) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
+  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
+  _momOwes.part = _momOwes.labour = true; _skipArmedUntil = 0
+  economySystem.withholdPaycheck(TUT_PARAMS.pocketCash)   // FEAT-184 (DEC-150): pocket change until the paycheck
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
   _planEvePump()   // FEAT-184 stage 3
@@ -4742,7 +4829,10 @@ function _checkOpeningEnd () {
   if (!offerBoard || ['closed', 'live', 'taken'].includes(offerBoard.firstState())) return
   if (missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
   _tut(DLG.runIntro, [...LARRY_WELCOME, ..._runIntro()], null, true)
-  _tutorialDone()   // FEAT-184: the tutorial is over; later runs skip it
+  _markPlayed()   // FEAT-184: the tutorial is over
+  // FEAT-184 (DEC-150): …and its last paycheck lands. [interim] At Larry's for now; landing 2 moves the tutorial's last
+  // act to the burger joint (DEC-152).
+  economySystem.payPaycheck()
 }
 
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
@@ -4820,7 +4910,8 @@ gpsSystem = new GpsSystem(scene, {
     if (_eveningLeg()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
     // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
     if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
-    return (s === 'countdown' || s === 'staging' || s === 'running') ? _tutLine(missionSystem.guideRoute()) : null
+    if (s === 'countdown' || s === 'staging' || s === 'running') return _tutLine(missionSystem.guideRoute())
+    return _waypointOn() ? _tutLine(_waypoint.route) : null   // FEAT-211: last in line — a job's guide always wins
   },
   getCar: () => vehicleState.position,
   // Read at BAKE time only (once per mission, plus while the bake is still partial): the design
@@ -4864,18 +4955,42 @@ labSystem = new LabSystem(scene, () => ({
  * method reads the live board, clock and terms at call time.
  */
 const _boardView = {
+  /** FEAT-211: the place's name as the map's Missions list shows it. */
+  name (poiId) { return offerBoard.poiName(poiId) ?? offerBoard.placeLabel(poiId) },
+  /** FEAT-211: the run HUD's clock (_updateRunHud's notation), for the list's head — the window covers the HUD. */
+  clock () { return formatDue(Math.floor(daySystem.clockH() * 60) / 60) },
+  /** FEAT-211: POI `q`'s Shopping row (map2d's getBoard doc), or null when it sells nothing. A pump shows its price;
+   *  a shop its new-stock clock and, `open`, its shelf as the shop screen prices it before any fitting (the
+   *  basic price: the day tier on the shelf price). A gas station is both. */
+  shop (q, open) {
+    const sells = SHOP_TYPES.has(q.type), pump = !!q.pumpZones?.length
+    if (!sells && !pump) return null
+    const now = daySystem.clockH(), next = sells ? _shelfNext(q.id, now, q.type) : null, tier = economySystem.tierNow()
+    return {
+      price: pump ? `$${formatMoney(_pumpPrice(q))}/gal` : null,
+      next: next ? `new stock in ${next}` : null,
+      opens: sells,
+      items: sells && open ? shelf(q.id, now, q.type).filter(Boolean).map(e => ({
+        name: shelfName(e), price: `$${formatMoney(Math.round(shelfPrice(e) * tier * 100) / 100)}`,
+        cond: e.cond, color: e.cond != null ? bandColor(e.cond) : null, desc: PARTS[e.id]?.desc ?? ITEMS[e.id]?.desc ?? '',
+        left: e.expiresAt === Infinity ? 'always in stock' : `gone in ${formatGameDuration(e.expiresAt - now)}` })) : null,
+    }
+  },
   status (poiId) {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
-    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, nextText: null }
+    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [], nextText: null }
     // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
     // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
     // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
     const live = offerBoard.offers(poiId, now).filter(o => o.route !== null)
     const next = offerBoard.nextTurnoverH(poiId, now)
+    // FEAT-210: every family on offer, once each, in offer order — the map splits the diamond by them.
+    const families = [...new Set(live.map(o => offerBoard.spec(o)?.family).filter(Boolean))]
     return {
       source: true,
-      family: live.length ? offerBoard.spec(live[0])?.family ?? null : null,
+      family: families[0] ?? null,
+      families,
       nextText: next != null ? formatGameDuration(next - now) : null,
     }
   },
@@ -5402,6 +5517,12 @@ window.addEventListener('blur', () => { _fHeld = false })
 let _pumpReceiptT = 0     // s left on the settled receipt's hold
 let _pumpBounceT = 0      // s left on the counters' settle-bounce
 
+/** FEAT-168: fuel rides the day tier like parts and the tow, to the cent. FEAT-209: each station sits within ±5 % of
+ *  that day price. $/gal at pump POI `q` now: what its pump locks on open, and what the map's Shopping list shows. */
+function _pumpPrice (q) {
+  return Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * stationPriceFactor(worldSeed, q.id, daySystem.day()) * 100) / 100
+}
+
 /** The pump island whose zone the truck is in (story mode, no dialogue up), or null. */
 function _pumpInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
@@ -5414,9 +5535,17 @@ function _pumpInReach () {
   return null
 }
 
+/** FEAT-184 (DEC-151, owner 2026-11-14: "fueling up you cant leave the pump until you spend every last dollar"): at the
+ *  evening's station, while there is pocket change left and room in the tank, mom makes you fill — the handbrake holds. */
+function _momMakesYouFill () {
+  if (!_eveningLeg() || !_evePump || _evePump.done || fuelStop.poiId !== _evePump.q.id || !(fuelStop.price > 0)) return false
+  const room = RANGER_PARAMS.fuelTankGal - vehicleState.fuel.gal > 0.05
+  return room && economySystem.money() - fuelStop.sale >= fuelStop.price * 0.05   // a twentieth of a gallon's worth left
+}
 /** One physics step of an open pump. Handbrake down (or leaving story mode) settles the sale. */
 function _stepFuelStop (dt) {
   if (!fuelStop.isOpen) return
+  if (!vehicleState.parked && storySystem.isActive() && _momMakesYouFill()) { vehicleState.parked = true; _tut('tut-fillup') }
   if (!vehicleState.parked || !storySystem.isActive()) {
     const { sale } = fuelStop.settle()
     if (fuelStop.cans.length) inventorySystem.refill(fuelStop.cans)
@@ -5488,6 +5617,7 @@ function _renderPumpDisplay (dt) {
   const tankFull = vehicleState.fuel.gal >= RANGER_PARAMS.fuelTankGal - 1e-6
   const full = (tankFull && !fuelStop.cans.some(c => c.cap - c.gal > 1e-6)) || (fuelStop.cutoff && !broke)
   document.getElementById('pd-hint').innerHTML = !fuelStop.isOpen ? 'thank you — drive safe'
+    : _momMakesYouFill() ? `mom says fill it up · hold ${keycap('F')} till the money's gone`   // FEAT-184 PLACEHOLDER words
     : full ? `${fuelStop.cans.length ? 'all full' : 'tank full'} · release the handbrake to pay`
     : broke ? `that's all you can afford · release the handbrake to pay`
     : tankFull ? `tank full · hold ${keycap('F')} to fill the jerry can · release the handbrake to pay`
@@ -5795,6 +5925,7 @@ function _parkLocked () {
   _mapWasOpen = mapOpen
   // The cards and screens open on the latch, so they lock only while it is set: a Space tap lets it go and the
   // lock with it, and the debug Quick Job's offer (taken rolling) never brakes a moving truck.
+  if (fuelStop.isOpen && _momMakesYouFill()) return true   // FEAT-184 (DEC-151): mom's fill-up — not even the lever lets go
   return (mapOpen && _mapAtRest) || (!!vehicleState.parked && (!!_campUi
     || ['generating', 'offer'].includes(missionSystem?.state) || ['planning', 'offer'].includes(paperRouteSystem.state)
     || serviceScreen.isOpen || damageScreen.isOpen || inventoryScreen.isOpen))
@@ -5842,8 +5973,7 @@ function _updateParkTriggers (zParked = false) {
   if (fuelStop.isOpen || pump) {
     damageScreen.blocked = true
     if (pump && pulled) {
-      // FEAT-168: fuel rides the day tier like parts and the tow, to the cent — the cans fill on the same counter.
-      fuelStop.open(pump.id, Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * 100) / 100, inventorySystem.cans())
+      fuelStop.open(pump.id, _pumpPrice(pump), inventorySystem.cans())   // the cans fill on the same counter
       playNozzle()
       _tut('tut-fuel')   // FEAT-147
     }
@@ -5860,7 +5990,8 @@ function _updateParkTriggers (zParked = false) {
   // the same screen as its shop (owner, 2026-10-07: "park … and a buy menu opens"), its jobs the same way.
   const shop = serviceScreen.isOpen ? null : _serviceInReach()
   if (serviceScreen.isOpen || shop) {
-    damageScreen.blocked = true
+    // FEAT-212: an open service screen hands the damage screen over (its Vehicle Diagnostics); a storefront's never.
+    damageScreen.blocked = !serviceScreen.isOpen || serviceScreen.store
     if (shop && pulled) {
       const store = _openShop(shop)
       if (!store) _tut('tut-service')   // FEAT-147
@@ -7077,7 +7208,7 @@ function _renderMissionUI () {
       break
     }
     default:
-      show(panel, false); show(hud, _eveningLeg())
+      show(panel, false); show(hud, _eveningLeg() || _waypointOn())
       unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
       if (_eveningLeg()) {   // FEAT-170: no job, only the way home
@@ -7086,6 +7217,9 @@ function _renderMissionUI () {
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
         // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
         if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · <span class="kc-pad">hold </span>${keycap('R', 'D-pad →')} puts you back on it`)
+      } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint, crow-flies like the evening's [DEFAULT] words
+        const vp = vehicleState.position
+        hudText.textContent = `${km(Math.hypot(_waypoint.x - vp.x, _waypoint.z - vp.z))} to the waypoint`
       }
       break
   }
@@ -7334,9 +7468,11 @@ function _renderRunHud () {
   if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
   if (daySystem.clockH() >= DAY_PARAMS.dayStartHour) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
   _eveningBeats()
-  _tutDetourTick()     // BUG-118: the tutorial's GPS follows the truck
+  _tutDetourTick()     // BUG-118: the tutorial's GPS follows the truck (and FEAT-211's waypoint line)
+  _waypointTick()      // FEAT-211: arrival clears the waypoint
   const skip = document.getElementById('skip-hint')
   if (skip) skip.style.display = _eveningLeg() ? '' : 'none'
+  _syncSkipHint()      // FEAT-184: the confirmation reverts to the hold once it times out
   _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
   _pumpTut()           // …and any first-use card waiting its turn
   _checkMidnight()     // FEAT-148: the midnight overlay
@@ -8939,6 +9075,7 @@ const storySystem = new StorySystem({
     if (_paperScenario) daySystem.start(1, DAY_PARAMS.dayStartHour)   // FEAT-62: a working morning, no opening
     else daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
+    _waypoint = null   // FEAT-211: a waypoint is the run's (a resume puts its own back in _restoreRun)
     _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
     economySystem.start()            // FEAT-53: fresh run, empty wallet, zero deeds
@@ -9580,7 +9717,7 @@ function _runEndHtml (kind) {
     + row('good deeds', `${formatDeeds(e.halfPoints)} of ${ECONOMY_PARAMS.campDeeds}`)
     + (req.some(l => l.state !== 'closed') ? row('camp deliveries', `${req.filter(l => l.state === 'done').length} / ${req.length}`) : '')
     + (kind === 'win' ? _expeditionRows(row, req) : '')
-    + row('earned', `$${formatMoney(e.money + e.spent - ECONOMY_PARAMS.startCash)}`, true)
+    + row('earned', `$${formatMoney(e.money + e.spent - ECONOMY_PARAMS.startCash - (e.pocket ?? 0))}`, true)
     + row('spent', `$${formatMoney(e.spent)}`)
     + row('wallet', `<span class="re-money">$${formatMoney(e.money)}</span>`)
     + _upgradeRows(row)
@@ -9674,6 +9811,7 @@ function _runSnapshot () {
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
     job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
     playedS: _playedS,   // FEAT-146: the summary's playtime
+    waypoint: _waypoint && { x: _waypoint.x, z: _waypoint.z },   // FEAT-211: the player's pin (re-snapped and re-planned on resume)
   }
 }
 
@@ -9725,6 +9863,7 @@ function _restoreRun (s) {
     // After the motion: a load starts at rest relative to the bed. A throw loses the load, never the
     // autosave (_restoring would stay set and the run would never be written again).
     if (job) try { _reloadCargo(job, s.job) } catch (e) { console.warn('[save] cargo reload failed', e) }
+    if (s.waypoint) _setWaypoint(s.waypoint)   // FEAT-211: planned from the truck, so once it is seated
     _restoring = false
   })
 }
@@ -10156,6 +10295,7 @@ function loop () {
     // FEAT-36: debris pre-step — render snapshot + cargo-in-bed bullet flag (see debris.js).
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
     hiLift.step(vehicleState, RANGER_PARAMS.mass + (RANGER_PARAMS.stowedKg || 0), PHYSICS_DT, _now())   // FEAT-138
+    const _galBefore = vehicleState.fuel.gal   // FEAT-184: the evening burns none (put back after the damage step)
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them
@@ -10167,7 +10307,9 @@ function loop () {
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
-    if (!_eveningLeg()) damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)   // FEAT-170: no damage or wear on the safe drive
+    damageModel.held = _inTutorial()   // FEAT-184 (DEC-151): no wear and no impact damage for the whole tutorial (the feedContact below too)
+    damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    if (_eveningLeg()) vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and the evening burns no fuel ("fuel disabled"); the pump below still fills
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
@@ -10179,7 +10321,7 @@ function loop () {
     // like a landed impact does below.
     if (vehicleState.drivetrain?.missShift) {
       playGearGrind(vehicleState.drivetrain.engineRPM)
-      if (DAMAGE_PARAMS.enabled) damageScreen.alert()
+      if (DAMAGE_PARAMS.enabled && !damageModel.held) damageScreen.alert()
     }
     // SM-3 collision damage: hand the hardest contact on the chassis this step (`hit`, read with
     // the rim strikes above) to the damage model, which decides whether that is an impact (see
@@ -10662,7 +10804,7 @@ function loop () {
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
-                          || missionSystem.state === 'running' || missionSystem.state === 'loading' || _eveningLeg())) _renderMissionUI()
+                          || missionSystem.state === 'running' || missionSystem.state === 'loading' || _eveningLeg() || _waypointOn())) _renderMissionUI()
     // FEAT-88: a load whose job is gone (cancelled, exited, a new run) leaves with it.
     if (_haul && (!missionSystem?.isOnJob() || missionSystem.mission !== _haul.mission)) _haulClear()
     // FEAT-96: …and so does a freight load, on delivery, clean-up or a new run. (A debug load has no
@@ -10833,8 +10975,10 @@ function loop () {
   perfAdd('frame.postStream', _ptR - _ptPost)   // PERF-26 INSTRUMENT
   // FEAT-41: whichever scene owns the screen. Skipping the world render behind a menu or a load is
   // not just tidiness — it hands the GPU to the build that is running underneath.
-  // PERF-38: nor behind the 2D map — #map2d is an opaque full-screen canvas, so the world frame under it was the whole
-  // 3D GPU bill (owner's M4: 5 W, pinned at 890 MHz, with the map open) for a picture nobody could see.
+  // PERF-38: nor behind the 2D map — the world frame under it was the whole 3D GPU bill (owner's M4: 5 W, pinned at
+  // 890 MHz, with the map open). FEAT-211: the map is a window now, and the world shows round it — as the frame drawn
+  // the moment the map opened (a WebGL canvas keeps showing its last frame until it draws again), so the window
+  // costs no 3D at all.
   if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
   else if (!map2d.isOpen()) renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // D-arc: render submit (the ~8.5 s load-cost suspect)

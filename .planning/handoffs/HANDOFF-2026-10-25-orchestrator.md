@@ -130,67 +130,51 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
 ## Current state (2026-11-13, after the INFRA-11 cutover; rewrite, don't append)
-- **PERF HAS PRIORITY (owner 11-12, repeated 11-13): hold the lanes whenever the perf session needs a quiet machine.**
-  The perf session is peer `cargame-70` (NOT your subagent; SendMessage it). PERF-43 is CLOSED by the owner and landed
-  (main 8acdea46, `test:all --browser` 149/149, log wip/orch/testall-8acdea46.log). It now starts PERF-41 (terrain
-  shader GPU cost) in `CarGame-perf41`, branch perf/perf-41-terrain-shader, port 8041, and will ask for a quiet
-  window per Chrome GPU A/B.
-  - **The hold drill**: it sends one line; you SIGSTOP the lanes' heavy node jobs (list:
-    `ps -Ao pid,command | grep -E 'CarGame-(machine|land-[0-9]+|run-shape)/test/|test/drive-soak|test/run-all\.mjs --serial|wip/(feat|bug)'`,
-    save the pids), check no chrome-slot job runs, reply "held", tell running agents to start nothing; on its done
-    message `kill -CONT` the pids and message "released". Paused gates resume cleanly.
-  - It no longer owns road.js's carve stack (PERF-43 closed); BUG-156 is yours to land. Still tell it before landing
-    road.js / terrain shader changes. Tickets routed to it: BUG-164, PERF-46.
-  - The owner lets it land and push its own work from its window. You never push without the owner's word to you.
-  - Lane rule in every spawn prompt: ≤ 2 heavy processes; `pgrep -f 'node test/playtest-bench'` before a heavy job.
-- **Main = 6f82f733 + docs; origin = 706808d5 (the owner said "push" 11-13; everything through BUG-165 is out).**
-  Unpushed (owner's word needed), each game change smoked 26/26 on main at its merge: INFRA-12 · INFRA-09 ·
-  PERF-41 1b4cfd7c · BUG-164 0d9cb9f4 (`bug164-look`) · PERF-47 95a1e31c (owner's listen owed) · FEAT-194 part 3
-  5fae6fd8 (`feat194-drive`) · PERF-48 lever 1 d9389e45 (`perf48-hud-snap`) · PERF-46 72d1cf39
-  (`perf46-windows`) · bench work measure 6f82f733 (tests + a CLAUDE.md sentence; no smoke needed) · docs.
-- **THE MAC'S AUDIO IS STUCK (since 11-13)**: coreaudiod hangs (`afplay -v 0 /System/Library/Sounds/Tink.aiff`
-  never returns); the owner must run `sudo killall coreaudiod` (owed: `audio-restart`). Until then every bench runs
-  with `--fake-audio` (Chrome's fake sink, clock at 1.0 s/s); the bench refuses a stalled clock otherwise.
-- **READING PERF NUMBERS (11-14)**: on this Mac the same work reads 2–5× different ms/s depending on the core clock
-  macOS picks. Compare main-thread cost by WORK: `mainMi` / `physMi*` (retired instructions, test/lib/
-  threadcounts.py). Baseline with work fields recorded 11-14 at 6f82f733 (fake audio, 2 reps, load 0.10–0.21/core,
-  6/6 valid): drive mainMi 1522 ± 41, physMiOver 4.58 ± 2.10 % (target ≤ 5 %), physMiP99 1636 ± 346, GPU 687 ± 12
-  Mcyc/s (912 on 11-12), CPU 0.66 W · map mainMi 738 · park mainMi 1010, GPU 673 (845 on 11-12).
-- **INFRA-11 cutover DONE 11-13.** The artifact is dead state: never read or write it. Tooling peer
-  `lanes-tab-dashboard` did it.
-  The lanes/*.json task lists were imported whole and are long: prune closed rows as you touch them.
-- **Lane B idle**: BUG-165 landed; BUG-166 waits on `bug166-shock`. **Running**: Spare agent — test/pad-e2e.mjs's "RT launches it on the assist" check
-  fails on main (2.9 m/s, wants > 3): find whether FEAT-194/201 caused it. FEAT-196 is on main; its ticket stays in
-  pending/ until `feat196-look`. feature/machine also carries the unlanded FEAT-34 round 3 work, so B's landings
-  are cherry-picks.
-- **Idle**: Lane B (BUG-166 waits on `bug166-shock`), Spare. Spare's branch (feature/spare holds old
-  unlanded docs/tests, so it needs `git merge main`, not a fast-forward); Lane C owner-gated.
-- **Perf lane is YOURS (owner 11-13: "its on you to restart the performance lane now")**. Lane `p`, worktree
-  `CarGame-perf`, branch feature/perf, port 8043. IDLE, waiting on owner calls. Done: PERF-48's investigation
-  (`.planning/perf/COST-MAP-2026-11.md`); lever 1 landed; levers 2 and 3 void; lever 4 too small (~5 ms/s), left;
-  PERF-46 landed; the bench work measure landed; PERF-42 verdict: spikes are real work, 3.9 of 5.2 points at
-  junctions, most on the deck. Owner calls that unblock it: `perf42-reopen-carve` (reopen PERF-43 levers 1+2:
-  measure headless with the spots script in p.handoff.md first), `perf48-terrain-bake` (the one large GPU lever),
-  `perf48-frame-cap`, `perf48-parked-30`. Free work if none is answered: the lever-1 tail (two 10 Hz writers, ~9
-  recalcs/s; 7 % of driving seconds still at 60/s at walking pace), PERF-46's leftover 40–50 ms frame on seed
-  17535907, PERF-44 (triangles). An agent sends "HOLD for <ticket> run" before a bench: do the hold drill, reply
-  "held", and "released" on its "done". Perf has priority over the other lanes.
-- **Lane A idle**: FEAT-194 closed; FEAT-184 waits on the tutorial dive (opened, not submitted).
-- **Idle**: Lane B (BUG-166 waits on `bug166-shock`), Spare. Spare's branch (feature/spare holds old
-  unlanded docs/tests, so it needs `git merge main`, not a fast-forward); Lane C owner-gated.
-- **Perf lane is YOURS (owner 11-13: "its on you to restart the performance lane now")**. Lane `p`, worktree
-  `CarGame-perf`, branch feature/perf, port 8043. Running: PERF-48 (owner's inbox note 11-13: profile a canned
-  autopilot run end to end, architecture review against professional practice, a ranked lever list; docs only,
-  no fixes). It sends "HOLD for PERF-48 run" before each profiled run: do the hold drill on Lane A's heavy jobs,
-  reply "held", and "released" on its "done". Then the owner picks levers. Queue: the re-recorded PERF-40 bench
-  (after `audio-restart`), PERF-42, PERF-45, PERF-44, PERF-46. Perf has priority over the other lanes.
-- **Lane A running**: FEAT-194 part 3 (the clock stops while the parking brake is latched; owner ruled 11-13, in
-  the ticket's Decisions), lands as land/feat-194c.
-- **Owed (25 files in owed/)**, newest: bug166-shock, handbrake-clock, bug160-numbers, bug163-ladder, feat199-price,
-  feat196-wheel-repair. Not there: the owner's look at the hunger box (CarGame-run-shape/wip/feat198/*.png) and a
-  real-mouse drag; hunger was once ruled "a word, never a gauge".
-- **Tickets to tidy**: BUG-160 (closes on `bug160-numbers`) and BUG-161 (the owner's 2–3 s statue symptom is
-  unexplained; wants a capture-key capture and whether fps dropped) stay in pending/.
-- **Held branch**: FEAT-34 round 3 land/feat-34 @ e49bc289 (waits on `feat34-r3-look`; re-test on main first).
-- **Worktrees**: `CarGame-bug67` needs the owner's `! git worktree remove --force`. Lighting pick keeps `-f180-preview`, `-land-feat180*`. In use: none.
-- **Clock note**: the machine clock is PST; agents' system date runs a day ahead. Git/mtimes are the truth.
+
+**Decision records (INFRA-10, on main 14aaa9da):** `.planning/decisions/dec-NNN-*.md` are the ground truth and beat
+DESIGN.md, tickets and memory (owner 11-13, per the ledorepo session). A new owner ruling (chat, owed card, a taken dive)
+becomes a DEC in the same change that acts on it; a standing record is frozen, a change of mind is a new DEC with
+`supersedes`. Check: `node tools/dashboard/decisions.check.mjs`.
+
+**OWNER HOLD (11-14 ~05:30): "hold the work when you can. im worried how may tokens we're burning."** No agents are
+running. Start NOTHING (no agents, no landings, no smokes) until the owner lifts it; then one lane at a time, or only
+what they name.
+
+**Since the hold, done by the orchestrator itself (no agents), all on main, not pushed:**
+- DEC-136 (owner 11-14): oil 30 min / filter 60 min of hard driving; their engine-wear penalties ADD (x8.07 filter,
+  x15.15 oil, x22.2 both); a 50% engine with both at 0 lasts 15 min. ecb2a974, gate + smoke 26/26. Card feat202-look updated.
+- Dashboard listens on 127.0.0.1 + the Tailscale address only (ac2150ad); Wi-Fi refused. Phone/Windows: http://m4air:8010.
+  Started by `nohup npm run dash` (log wip/orch/dash.log); restart it if Tailscale came up after it.
+- A second game server for the owner's Windows machine: `npx vite --host 100.111.133.99 --port 8001 --strictPort` in the
+  main checkout (log wip/orch/vite-8001.log), URL http://100.111.133.99:8001. Not permanent; `m4air:8001` is refused by
+  Vite's host check (one config line if the owner wants the name). macOS firewall is off (owner's setting).
+- Lane agents were verified as claude-opus-5-5 from their transcripts; `/model` inside a subagent view shows the
+  session's Fable 5.2.
+- Open with the owner: DEC-153 (does the casserole to Larry's stay; on card tutorial-flow); the diagnostics oil line
+  shows the oil's multiplier alone, not the combined figure.
+
+**State at the hold.** Main smoked 26/26 at the last FEAT-184 merge (db3b04b9); origin = 706808d5; push only on the
+owner's word. Landed 11-13/14, all smoked: zip ties off the radiator, FEAT-209 gas prices, BUG-164 POIs follow the
+built chunk (DEC-135), FEAT-210 map symbols (+ the owner's icon / white-haul tweak), INFRA-10 decision records
+(`node tools/dashboard/decisions.check.mjs`), campDeeds 6 (DEC-120), FEAT-202 oil, FEAT-211 landings 1+2 (map window,
+Shopping list), BUG-168 double-count fix, FEAT-184 landing 1 and landing 3 part 1 (no setting, the traps, no damage in
+the tutorial; DEC-146..154), FEAT-212 landings 1+2 (Maintenance tree, Shop list), the QUAL-36 dive, tickets
+FEAT-202..214 and BUG-168.
+
+**Built, NOT landed (cheap to finish, no agent needed):**
+- FEAT-212 landing 3, the cart: `land/feat-212c` @ c1ffa6cf (`CarGame-land-212c`). Left: `node test/run-all.mjs --serial
+  --only=region-pieces,poi-headroom`, the smoke there, then cherry-pick + smoke main. Shots `wip/feat-212/30..34` there.
+- FEAT-211 landing 3, the waypoint: cherry-pick 929cb4f2 + 1479e9a7 from feature/spare, then smoke main (never smoked).
+- INFRA-15 (ticket not minted), the smoke robust under load: WIP fac4aebe on feature/run-shape, unproven. Repro
+  `SMOKE_STEPS=boot,story,edge SMOKE_THROTTLE=4 tools/chrome-slot.sh node test/cdp-smoke.mjs` fails every time; cause
+  open. Until fixed, smoke main only with heavy jobs paused (the "edge" step fails above load ~20).
+
+**Owner cards open (owed/):** tutorial-flow (dive; blocks FEAT-184 landing 2), tutorial-seed (dive; rec 822480141),
+perf42-reopen-carve, perf48-terrain-bake, bug167-creep, bug166-shock, qual36-grading (dive), bug168-speeds (rec
+40/65); looks: feat210-look, feat211-look, feat212-look, feat202-look, feat209-look, perf47-listen, bug164-look,
+feat180-pick (dev servers :3887 and :3890 are UP; stop them when the owner is done). The waypoint's defaults need a
+line on feat211-look once it lands.
+**Queue when lifted:** B: FEAT-213 info texts, FEAT-203 tire iron, FEAT-207 ratios. A: FEAT-184 landing 2 (after
+tutorial-flow), the seed pin (after tutorial-seed), FEAT-205. Spare: FEAT-214 lights (after feat180-pick). Perf: idle
+on the two perf cards. Lesson: a census with worker pools blew the 2-heavy cap (load 54) and failed main's smokes.
+A lane asked for a CLAUDE.md § Seeds line naming DEC-149's fixed tutorial seed: the owner's call, not done.
