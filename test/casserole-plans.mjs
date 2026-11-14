@@ -90,7 +90,7 @@ for (const s of SEEDS) {
     const mom = list.find(q => q.type === 'momsHouse'), larry = list.find(q => q.type === 'larrysHouse')
     const ms = new MissionSystem({ getRoad: () => road, getCar: () => C, getSeed: () => seed, getRegion: () => region,
                                    teleport () {}, setMapOpen () {}, onChange () {} })
-    const m = mom && larry && ms.planOffer(mom, { rng: () => 0.5, dest: { kind: 'poi', pois: [larry], strict: true, anyLeg: true } })
+    const m = mom && larry && ms.planOffer(mom, { rng: () => 0.5, dest: { kind: 'poi', pick: 0, pois: [larry], strict: true, anyLeg: true } })
     console.log(`seed ${s}${s === SEEDS[0] ? ' (the BUG-124 report)' : ' (random)'}  ${((Date.now() - t0) / 1000).toFixed(0)} s`
         + `  mom ${mom?.edge ?? '—'}  larry ${larry?.edge ?? '—'}  route ${m ? (m.distance / 1000).toFixed(2) + ' km' : '—'}`)
     check(`${s}: mom's and Larry's both placed, on different edges`, !!mom && !!larry && mom.edge !== larry.edge)
