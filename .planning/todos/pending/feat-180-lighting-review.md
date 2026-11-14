@@ -218,3 +218,123 @@ Owner 2 and 8: today's night is the new moon, and the full moon is "bright enoug
 
 - **Owner questions** (review round 2, 5 and 6): is the full-moon brightness right, and should the cycle be the real
   month or 12 days, so that every run sees both a full and a new moon?
+
+## Round 3 review: both builds (owner, 2026-11-08 ~21:30 local, verbatim)
+
+Two builds are now under review side by side: Spare's tweaks to the current lighting (`land/feat180-next`
+0be79cae, :3887) and the Opus ground-up rebuild (`proto/lighting-redesign` 44d284d2, :3890, handoff
+`.planning/handoffs/HANDOFF-2026-11-08-lighting-redesign.md`). Owner: "im gonna give notes for both and see which
+converges first." Both lanes get their notes after the owner clears them.
+
+**Legacy (Spare, :3887):** "fog at noon is way too white and bright. it should have some blue to match the sky. the
+sky is also way too white esp near horizon and around the sun. this should be a summer day blues skies. love the
+sun sprite but its a little pixellated due to the bake. sunrise is pretty great. fog is a little smoggy brownish and
+it does a bad job of hdiding the world edge when terrain is backlit. sunset pretty samey to sunrise. i feel like we
+dont capture the blue of mornings and orange of nights well. i love the brightness of full moon and new moon. i like
+how challenging the  visibility at nighttime is."
+
+**Rebuild (:3890):** "impressive first pass i dont hate it at all. fog looks like it appears far away but very
+suddenly it hides the edge of the world much better. i might prefer if it fades in a little closer to the player.
+the color is nice. it could maybe be a teensy bit bluer but not bothered by it. the colors of terrain and esp the
+truck look a little washed out compared to before. the shadows are also a lot brighter. overall there is less
+contrast. i would say as far as subjects the rebuild looks like a raw photo and the legacy looks like you put the
+same pic through lightroom. i prefer the stylized more contrasty image of the legacy see if we can push the rebuild
+in that direction. crush the shadows and pump the saturation a little i suspect it has to do with the "eye
+adaptation" sunrise and sunset skybox colors are epic. the desaturated subject look remains. nighttime: the stars
+are epic. there is practically no difference between new moon and full moon apparent brightness probably from the
+eye autoexposure. gotta fix that. also the headlights are way overpowered now probably from the same autoexposure.
+i can see like an entire mountain if the lights are shining. gotta fix that too."
+
+Cross-reference the legacy build when tuning the rebuild: the owner's night (moon brightness, how hard it is to see at
+night) and its contrast are the legacy's. The rebuild's sunrise and sunset sky, its stars and its fog colour are the
+keepers.
+
+## Round 5 / rebuild round 3 notes (owner, 2026-11-08 late, verbatim)
+
+Spare's round 4 (`land/feat180-next` ac736514, :3887) against the rebuild's round 2 (`proto/lighting-redesign`
+9fc6900d, :3890):
+
+"i want to like the new system because it feels more flexible. its still inferior in a few ways
+first of all i think the night darkness fix may have killed a little detail in the stars. i can still see them but
+it feels like i can only see the bright ones.
+the new system has murkier fog at noon which makes look a little duller. try to match the color of the legacy
+current state.
+i much prefer the blues and greens in the sky during sunrise and sunset in the legacy sky. i can also see the sun and
+the horizon more clearly. the rebuild really blows out the sky with fogginess and scatter at dawn and dusk. if we
+cant get that i might just want to improve legacy night sky with the improved scatter and stars and then the
+orbital motions.
+rebuild fog hides the terrain edge much much better. it sacrifices some clarity to do so but i like that its honest
+about how far we actually draw.
+keep trying to converge both towards excellence. legacy - hide terrain edge better, build stars and nighttime
+scatter and the orbital motions
+rebuild - work on less fog glare at dawn and dusk. slightly lighter fog at noon. better sky colors. bring back the
+stars dynamic range"
+
+The owner's fallback if the rebuild can't match the legacy's twilight: the legacy plus the rebuild's night scatter,
+stars and orbital motions.
+
+## Frame cost: main vs round 5 vs the rebuild (Spare, 2026-11-09 01:05–02:01, quiet machine)
+
+So the pick between round 5 and the rebuild can be made on the look alone.
+
+- **At 60 Hz, nothing drops a frame.** Every build, hour and seed holds a 16.6–16.7 ms median frame and a
+  17.4–17.7 ms p95 (the time 95 % of frames beat) at Normal on the M4 Air. That is vsync: the display's 60 Hz
+  refresh, where a frame that finishes early waits for the next refresh. So the median sits at 16.7 ms whatever the
+  frame costs.
+- **Uncapped, the GPU's real time per frame:** both branches cost +0.5–0.6 ms (+11 % and +13 %) over main at noon,
+  on every seed. At dusk and night all three are within ±0.2 ms of main, the retest's own spread.
+- **Draw calls** (one batch of triangles the CPU hands the GPU) are 119–121 in all three. The rebuild draws 2 % more
+  triangles.
+- **The one CPU difference is the rebuild's clock push.** Each push integrates the atmosphere on the CPU: 4.0–4.2 ms
+  by day and 2.5 ms at night, against 0.2–0.3 ms. Story pushes once per 0.1 game hour, about every 6 s at a 24-minute
+  day. That is one 4 ms spike every 6 s on top of ~1.5 ms of CPU per frame, inside the 16.7 ms budget. It was not
+  measured in a story run.
+
+| Build | Hour | 60 Hz frame median / p95 (ms) | Uncapped frame median [seed range] / p95 (ms) | Δ uncapped median vs main | Draw calls | Triangles | CPU per frame at 60 Hz (ms) | Clock push (ms) |
+|---|---|---|---|---|---|---|---|---|
+| main | 12:00 | 16.7 / 17.5 | 4.63 [4.4–4.9] / 5.97 | — | 119 | 605k | 1.57 | 0.3 |
+| main | 18:45 (main's own dusk) | 16.6 / 17.6 | 4.90 [4.6–5.2] / 6.20 | — | 119 | 605k | 1.51 | 0.2 |
+| main | 20:00 (night on main) | 16.7 / 17.4 | 5.53 [5.4–5.7] / 6.53 | — | 120 | 605k | 1.56 | 0.3 |
+| main | 23:00, low beams | 16.7 / 17.5 | 7.03 [6.8–7.2] / 8.33 | — | 120 | 605k | 1.54 | 0.3 |
+| round 5 | 12:00 | 16.7 / 17.5 | 5.13 [4.8–5.4] / 6.33 | +0.50 | 119 | 606k | 1.56 | 0.3 |
+| round 5 | 20:00 (dusk) | 16.7 / 17.7 | 5.40 [5.2–5.6] / 6.40 | −0.13 | 121 | 606k | 1.52 | 0.3 |
+| round 5 | 23:00, low beams | 16.6 / 17.6 | 6.90 [6.6–7.3] / 8.07 | −0.13 | 121 | 606k | 1.55 | 0.2 |
+| rebuild | 12:00 | 16.7 / 17.6 | 5.23 [5.0–5.4] / 6.60 | +0.60 | 120 | 619k | 1.48 | 4.0 |
+| rebuild | 20:00 (dusk) | 16.6 / 17.7 | 5.43 [5.3–5.6] / 6.50 | −0.10 | 120 | 619k | 1.42 | 4.2 |
+| rebuild | 23:00, low beams | 16.6 / 17.7 | 7.23 [6.9–7.7] / 8.50 | +0.20 | 120 | 619k | 1.44 | 2.5 |
+
+Each value is the mean over the three seeds. Per seed, the noon delta is +0.4 / +0.6 / +0.5 ms for round 5 and
++0.6 / +0.7 / +0.5 ms for the rebuild.
+
+**Method**
+
+- **Builds:** main ed0a93bb (the scratch checkout `CarGame-spare-base`); round 5 = `land/feat180-next` 31ccec77
+  (:3887); the rebuild = `proto/lighting-redesign` 5bfea3f5 (:3890). Both branches lack some of main's later
+  non-lighting `src/` (road junction geometry, prop impostors, the BUG-140 physics), so a delta includes that too.
+- **Harness:** PERF-08's idle method (`test/profile.mjs`: the `?prof=1` handles, wait for the full terrain ring and
+  for the route warm to drain, then settle), plus the clock pinned with `sky.setTimeOfDay`.
+  - The truck sits on each review spot (`wip/feat180-next/s<seed>-spot.json`). The camera is 14 m behind and 4.5 m up
+    along the spot's heading, the same for every build and hour.
+  - Normal preset: terrain ring 2, shadows on.
+- **Render size:** headless Chrome on Metal at a device pixel ratio of 2. Normal's 1200-line cap brings that to a
+  2066 × 1200 canvas, which is what the owner's Air draws at Normal.
+- **Seeds:** 3583777560, 1172941705 and 701336435, the review's random seeds.
+- **Hours:**
+  - Noon is 12:00.
+  - Dusk is 20:00, with the sun about 2° up in both branches. Main's own dusk is 18:45 and its 20:00 is already
+    night, so main has both rows.
+  - Night is 23:00 with low beams on, as driven. Free roam, so it is the new moon's light.
+- **Two passes:**
+  - **60 Hz:** vsync on, a 20 s window per hour.
+  - **Uncapped:** Chrome's `--disable-gpu-vsync --disable-frame-rate-limit`, so rAF (the browser's per-frame
+    callback) runs as fast as the GPU allows and frame time is the GPU's real time per frame. A 10 s window per hour.
+- **Thermal drift.** The Air is fanless and throttles under sustained uncapped load. A first uncapped pass drifted
+  up to +1.7 ms within 8 minutes and was discarded. The kept pass rotates the build order per seed (each build once
+  in each slot) and idles 75 s between boots. It also repeats its first boot at the end, and the repeat came within
+  0.2 ms: 4.4 → 4.5, 4.6 → 4.8, 5.4 → 5.4 and 7.2 → 7.0 ms.
+- **Compare builds within an hour, not one hour against another.** The hours always ran in the same order inside a
+  boot (12 → 20 → 23), so part of the rise from noon to night is the chip warming up.
+- **Load:** 2.3–6.8 throughout (the 1-minute average). That is this run's own headless Chrome plus four idle Vite
+  servers, and Steam briefly at 01:15. No other lane ran heavy work, and the load never went above 8.
+- **Scripts and raw runs:** `wip/feat-180/cost/` in main's checkout (git-invisible): `cost.mjs` (60 Hz),
+  `cost2.mjs` (uncapped), `batch.sh` / `batch3.sh`, `table*.mjs`, and `runs/`. No build's code was changed.

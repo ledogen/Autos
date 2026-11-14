@@ -12,14 +12,16 @@
  *   node tools/dashboard/index.mjs --port N   serve on another port
  *
  * This is a dev tool. It reads the repo and writes only its own JSON files;
- * it never touches a ticket. Vocabulary drift in the tracker is normalised here
+ * it never touches a ticket. The one other thing it writes is the lane
+ * tracker's data folder, OUTSIDE the repo (INFRA-11, see DATA below). Vocabulary drift in the tracker is normalised here
  * (see CANON_*) and reported back through stats.drift rather than rewritten.
  */
 import { createServer } from 'node:http';
 import { gzipSync } from 'node:zlib';
 import {
-  readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync,
+  readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync, renameSync, rmSync,
 } from 'node:fs';
+import { homedir, networkInterfaces } from 'node:os';
 import { join, extname, relative, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -61,7 +63,7 @@ const SEVERITY_ORDER = ['critical', 'high', 'major', 'medium', 'minor', 'trivial
 /* `SM` is last and requires digits immediately after the dash, so the design
  * docs' `SM-INV-14` invariant tags can never be read as milestone refs. The
  * optional letter is for split tickets (FEAT-04a). */
-const TICKET_RE = /\b(FEAT|BUG|PERF|QUAL|INFRA|ASSET|SM)-(\d+[a-z]?)\b/g;
+const TICKET_RE = /\b(FEAT|BUG|PERF|QUAL|INFRA|ASSET|DEC|SM)-(\d+[a-z]?)\b/g;
 
 /* ── frontmatter ──────────────────────────────────────────────────────────
  * Deliberately lenient, not a YAML parser. Values wrap across lines
@@ -144,6 +146,49 @@ function walk(dir, out = []) {
     else out.push({ path: p, size: st.size });
   }
   return out;
+}
+
+/* ── decision records (INFRA-10) ──────────────────────────────────────────
+ * One ruling per file: .planning/decisions/dec-NNN-<slug>.md. Frontmatter `id`, `status` (draft = not yet the owner's: its
+ * sources conflict, or an agent's wording awaits approval · standing · superseded), `decided`, `area`, `governs` (ticket ids, file
+ * paths, subsystem words), `supersedes`. A standing record is frozen except its `status:` line; a change of mind
+ * is a new record (decisions.check.mjs holds that). They ride beside the tickets, never among them: own tab, no
+ * part in the open counts. A ticket named in `governs` lists the record on its page. */
+const DEC_AREAS = ['story', 'economy', 'world', 'roads', 'physics', 'perf', 'assets', 'ui', 'process', 'repo'];
+const DEC_STATUSES = ['draft', 'standing', 'superseded'];
+
+function indexDecisions() {
+  const dir = join(ROOT, '.planning', 'decisions');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((n) => /^dec-\d+[\w-]*\.md$/.test(n)).sort().map((name) => {
+    const abs = join(dir, name);
+    const { fm, body } = parseFrontmatter(readFileSync(abs, 'utf8'));
+    const id = stripComment(fm.id) || name;
+    const status = stripComment(fm.status).toLowerCase();
+    const governs = stripComment(fm.governs).split(',').map((g) => g.trim()).filter(Boolean);
+    const ruling = /\*\*Ruling\.?\*\*\.?\s*([\s\S]*?)(?=\n\s*\*\*[A-Z]|\n\s*\n|$(?![\s\S]))/.exec(body)?.[1] || '';
+    return {
+      id,
+      prefix: 'DEC',
+      num: Number(/\d+/.exec(id)?.[0] || 0),
+      title: titleOf(body, fm, id),
+      blurb: ruling.replace(/[*_`]/g, '').replace(/\s+/g, ' ').trim(),
+      type: 'decision',
+      typeRaw: 'decision',
+      status,
+      statusRaw: status,
+      severity: null,
+      bucket: 'decision',
+      area: stripComment(fm.area).toLowerCase(),
+      governs,
+      supersedes: stripComment(fm.supersedes) || null,
+      opened: stripComment(fm.decided) || null,
+      refs: [...new Set(`${fm.governs} ${fm.supersedes} ${body}`.match(TICKET_RE) || [])].filter((r) => r !== id),
+      file: relative(ROOT, abs),
+      abs,
+      body,
+    };
+  });
 }
 
 /* ── milestones ───────────────────────────────────────────────────────────
@@ -384,6 +429,23 @@ function indexTickets() {
   const releases = indexReleases();
   for (const t of tickets) t.release = releaseOf(t, releases);
 
+  // Deep dives (INFRA-12): .planning/dives/<TICKET-ID>-<slug>.html belongs to the ticket whose id starts its name.
+  const diveDir = join(ROOT, '.planning', 'dives');
+  for (const f of existsSync(diveDir) ? readdirSync(diveDir).sort() : []) {
+    const m = /^((?:FEAT|BUG|PERF|QUAL|INFRA|ASSET)-\d+[a-z]?)-[\w-]+\.html$/.exec(f);
+    const t = m && tickets.find((x) => x.id === m[1]);
+    if (!t) continue;
+    const title = /<title>([^<]*)<\/title>/i.exec(readFileSync(join(diveDir, f), 'utf8'))?.[1].trim();
+    (t.dives ||= []).push({ slug: f.slice(0, -5), title: title || f });
+  }
+
+  const decisions = indexDecisions();
+  for (const d of decisions) {
+    for (const g of d.governs) {
+      const t = tickets.find((x) => x.id === g);
+      if (t) (t.decisions ||= []).push(d.id);
+    }
+  }
   // Newest-first within a class, except milestones: SM-1..SM-5 is a build order,
   // so reading it backwards is nonsense.
   tickets.sort((a, b) => (a.prefix === b.prefix
@@ -391,7 +453,7 @@ function indexTickets() {
     : a.prefix.localeCompare(b.prefix)));
   // Chip order: the doc's own lane order, then the type fallbacks.
   const laneOrder = [...new Set([...lanes.values(), 'engine & world', 'asset', 'unplaced'])];
-  return { tickets, drift, laneOrder };
+  return { tickets, decisions, drift, laneOrder };
 }
 
 /* ── cargo + places ───────────────────────────────────────────────────────
@@ -900,7 +962,7 @@ function measurePerf() {
 
 /* ── build ────────────────────────────────────────────────────────────── */
 async function build() {
-  const { tickets, drift, laneOrder } = indexTickets();
+  const { tickets, decisions, drift, laneOrder } = indexTickets();
   const story = await indexStory(tickets);
   const code = measureCode();
 
@@ -931,10 +993,20 @@ async function build() {
       ),
     },
     drift,
+    // INFRA-09: how many open tickets are written in the fixed section order of .planning/todos/TEMPLATE.md.
+    sections: (() => {
+      const ORDER = ['Next steps', 'Summary', 'Description', 'Tracker', 'Decisions', 'Open questions', 'Links', 'Files', 'Log'];
+      const ok = (t) => {
+        const at = (t.body.match(/^## .+$/gm) || []).map((h) => ORDER.indexOf(h.slice(3).trim()));
+        return ['Next steps', 'Summary', 'Tracker'].every((n) => at.includes(ORDER.indexOf(n))) && at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1]));
+      };
+      const open = tickets.filter((t) => t.status === 'open' && t.type !== 'milestone');
+      return { open: open.length, conforming: open.filter(ok).length };
+    })(),
     severityOrder: SEVERITY_ORDER,
   };
 
-  writeFileSync(join(HERE, 'tickets.json'), JSON.stringify({ tickets, laneOrder }));
+  writeFileSync(join(HERE, 'tickets.json'), JSON.stringify({ tickets, decisions, laneOrder }));
   writeFileSync(join(HERE, 'stats.json'), JSON.stringify(stats, null, 1));
   writeFileSync(join(HERE, 'cargo.json'), JSON.stringify(story));
   const sounds = indexSounds(tickets);
@@ -951,6 +1023,8 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
 };
 
 /* The Sounds tab imports the game's own audio modules (so ▶ plays the shipped
@@ -989,8 +1063,75 @@ async function upload(req, res, url) {
   res.end(JSON.stringify({ ok: true, path: `wip/audio/${slug}/${name}` }));
 }
 
+/* ── lane tracker data (INFRA-11) ─────────────────────────────────────────
+ * The Lanes tab's state is one small file per fact in the owner's PRIVATE repo
+ * (this repo is public; the owner's intake notes are not). One writer per file,
+ * so there are no versions and no races:
+ *   inbox/<id>.json            owner (page)   {text, at}
+ *   inbox/<id>.reply.json      orchestrator   {status: done|ticket|question, reply, handledAt}
+ *   owed/<id>.json             orchestrator   {kind, tk, blocks?, text, options?, order?}
+ *   owed/<id>.answer.json      owner (page)   {choice, note, at}
+ *   lanes/<id>.json            orchestrator   {name, goal, wt, branch, port, owns, tasks:[{id, what, status}]}
+ *   lanes/<id>.handoff.md      that lane's agent
+ *   lanes/<id>.now             orchestrator at spawn, the agent at stop (one line)
+ *   dives/<slug>.answers.json  owner (dive.js) {status: opened|partial|submitted, openedAt, submittedAt, answers:{<q>:{choice, note}}}
+ *   dives/<slug>.taken         orchestrator    empty; "acted on": the dive page goes read-only
+ * A deep dive's DOCUMENT is .planning/dives/<slug>.html in this repo (INFRA-12), served at /dives/.
+ * Agents use plain file tools. An owed pair that has been acted on is MOVED to
+ * answered/ (not served), so "what is new" is a directory listing.
+ * PAGE_PUT / PAGE_DEL are the whole of what the page may change. These routes
+ * are deliberately NOT loopback-only (unlike /upload): the owner's phone
+ * reaches them over Tailscale. */
+const DATA = process.env.LEDOREPO_DATA || join(homedir(), 'CodeShit', 'ledorepo', 'projects', 'cargame');
+const DATA_DIRS = ['inbox', 'owed', 'lanes', 'dives'];
+const DIVE_RE = /^\/dives\/[\w-]+\.(html|png|jpg|svg)$/;
+const PAGE_PUT = /^(inbox\/\d{14}-[a-z0-9]{4}\.json|owed\/[\w-]+\.answer\.json|dives\/[\w-]+\.answers\.json)$/;
+const PAGE_DEL = /^inbox\/\d{14}-[a-z0-9]{4}\.json$/;
+const DATA_MAX = 65536;
+
+function readData() {
+  const out = {};
+  for (const d of DATA_DIRS) {
+    out[d] = {};
+    const dir = join(DATA, d);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir).sort()) {
+      if (f.startsWith('.')) continue;
+      try {
+        const raw = readFileSync(join(dir, f), 'utf8');
+        out[d][f] = f.endsWith('.json') ? JSON.parse(raw) : raw;
+      } catch { /* an agent's write caught half-done: the next poll has it */ }
+    }
+  }
+  return out;
+}
+
+async function dataRoute(req, res, url) {
+  const send = (code, obj) => { res.writeHead(code, { 'content-type': MIME['.json'], 'cache-control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const rel = decodeURIComponent(url.pathname.slice('/data'.length)).replace(/^\//, '');
+  if (req.method === 'GET' && rel === '') return send(200, readData());
+  if (req.method === 'PUT' && PAGE_PUT.test(rel)) {
+    const chunks = []; let size = 0;
+    for await (const c of req) { size += c.length; if (size > DATA_MAX) return send(413, { ok: false, msg: 'over 64 KB' }); chunks.push(c); }
+    let doc;
+    try { doc = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send(400, { ok: false, msg: 'not JSON' }); }
+    const file = join(DATA, rel);
+    mkdirSync(dirname(file), { recursive: true });
+    // Atomic: a reader (the page's poll, an agent's cat) never sees a half-written file.
+    writeFileSync(file + '.tmp', JSON.stringify(doc, null, 1) + '\n');
+    renameSync(file + '.tmp', file);
+    return send(200, { ok: true });
+  }
+  if (req.method === 'DELETE' && PAGE_DEL.test(rel)) {
+    rmSync(join(DATA, rel), { force: true });
+    rmSync(join(DATA, rel.replace(/\.json$/, '.reply.json')), { force: true });
+    return send(200, { ok: true });
+  }
+  return send(403, { ok: false, msg: `the page may not ${req.method} ${rel || '/'}` });
+}
+
 function serve(port) {
-  createServer(async (req, res) => {
+  const handle = async (req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/reindex') {
       const { tickets, stats } = await build();
@@ -999,7 +1140,9 @@ function serve(port) {
       return;
     }
     if (url.pathname === '/upload' && req.method === 'POST') { await upload(req, res, url); return; }
+    if (url.pathname === '/data' || url.pathname.startsWith('/data/')) { await dataRoute(req, res, url); return; }
     const p = decodeURIComponent(url.pathname);
+    if (DIVE_RE.test(p) && existsSync(join(ROOT, '.planning', p))) { serveFile(res, join(ROOT, '.planning', p), MIME[extname(p)]); return; }
     if (SRC_RE.test(p) && existsSync(join(ROOT, p))) { serveFile(res, join(ROOT, p), MIME['.mjs']); return; }
     for (const base of TAKE_DIRS) {
       if (!p.startsWith(`/${base}/`)) continue;
@@ -1021,9 +1164,15 @@ function serve(port) {
       'cache-control': 'no-store',
     });
     res.end(readFileSync(file));
-  }).listen(port, () => {
-    console.log(`  dashboard  http://localhost:${port}/`);
-  });
+  };
+  // Owner, 2026-11-14: this Mac itself and the tailnet only, never the Wi-Fi interface (the page has no login and
+  // its inbox / answers are read as the owner's word). Tailscale addresses are 100.64.0.0/10; with Tailscale down
+  // the dashboard is loopback-only. ponytail: addresses are read once at start, restart after Tailscale comes up.
+  const tail = Object.values(networkInterfaces()).flat()
+    .filter(a => a.family === 'IPv4' && /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a.address)).map(a => a.address);
+  for (const host of ['127.0.0.1', ...tail]) {
+    createServer(handle).listen(port, host, () => console.log(`  dashboard  http://${host}:${port}/`));
+  }
 }
 
 const args = process.argv.slice(2);

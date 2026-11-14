@@ -5,7 +5,7 @@
 //     travel bigger than the exact cylinder's own, and within 2 mm of a dense exact solve throughout;
 //   • a kerb running beside the tire, outside its width, lifts nothing (the stencil lifted 76 mm);
 //   • flat ground is exact (depth h + r − cy, normal up); a cross-slope keeps its tilted normal;
-//   • at a kerb edge the normal is radial: it pushes the wheel back, not just up;
+//   • at a kerb edge the normal is the surface's (PERF-39, owner 2026-11-12: the 11-03 radial edge normal popped tires);
 //   • a buried hub reads the unbounded half-space depth (physics.js's tunnelling failsafe keys on it).
 
 import { tireContact } from '../src/tire-contact.js'
@@ -75,7 +75,7 @@ const c = tireContact((x, z) => cs * z, () => csN, 0, 0.3, 0, r, w, A, out)
 check(Math.abs(c.nz - csN.z) < 1e-3 && Math.abs(c.ny - csN.y) < 1e-3, `a cross-slope keeps its tilted normal (n ${c.nx.toFixed(3)}, ${c.ny.toFixed(3)}, ${c.nz.toFixed(3)})`)
 
 const k = tireContact(kerb(0.15), upNormal, -0.2, 0.45, 0, r, w, A, out)   // the corner (0, 0.15) is 0.36 m from the axle, the ground under it 0.45
-check(k && k.nx < -0.5, `at a kerb edge the normal is radial: it pushes the wheel back (n ${k?.nx.toFixed(3)}, ${k?.ny.toFixed(3)})`)
+check(k && k.ny === 1, `at a kerb edge the normal is the surface's, not radial (n ${k?.nx.toFixed(3)}, ${k?.ny.toFixed(3)})`)
 
 const b = tireContact(() => 0.5, upNormal, 0, 0.2, 0, r, w, A, out)
 check(Math.abs(b.depth - (0.5 + r - 0.2)) < 1e-12, `a buried hub reads the half-space depth (${b.depth.toFixed(3)} m)`)

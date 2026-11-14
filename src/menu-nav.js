@@ -32,6 +32,8 @@ function menuContainer () {
   if (re?.style.display === 'block') return re
   const tc = $('towel-card')   // FEAT-146: the towel's confirm card stands in for the pause menu
   if (tc?.style.display === 'flex') return tc
+  const tu = $('tut-card')   // FEAT-184: the intro's card (play / skip) holds the truck like a menu
+  if (tu?.style.display === 'flex') return tu
   const pm = $('pause-menu')
   if (pm?.style.display === 'flex') return pm.classList.contains('settings') ? $('mm-settings-panel') : pm
   const ss = $('story-seed-modal')
@@ -158,7 +160,9 @@ function onKey (e) {
     return
   }
   const dx = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0, dy = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
-  const next = nearest(items, cur, dx, dy)
+  // FEAT-196: a card may order its own items along a line (the damage screen's axles) — `navStep(el, dx, dy)`
+  // on the container returns the next item, or nothing to fall back to the spatial nearest.
+  const next = c.navStep?.(cur, dx, dy) ?? nearest(items, cur, dx, dy)
   if (next) highlight(next)
   else if (dy) highlight(items[(items.indexOf(cur) + dy + items.length) % items.length])
   curIdx = items.indexOf(cur)

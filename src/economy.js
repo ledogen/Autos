@@ -125,11 +125,10 @@ export const ECONOMY_PARAMS = {
     // nothing: a fixed day-1 sum.
     startCash:    10,
     // GAME-FEEL REVIEW 2026-10-23 (R-02): the good deeds that open the expedition camp (FEAT-103,
-    // owner 2026-10-19: "gated by 6 good deeds"). The ONE copy: the run HUD's "2 / 10", the result
+    // owner 2026-10-19: "gated by 6 good deeds"). The ONE copy: the run HUD's "2 / 6", the result
     // card's tally and the intro card all read it. FEAT-103 reads it when the camp lands.
-    // FEAT-168 [DEFAULT]: 6 → 10, so a region-1 run takes ~12 days (owner, 2026-11-05: "maybe 12 days
-    // should be expected for a R1 run"; their one run made 6 deeds in 7 days — re-measure).
-    campDeeds:    10,
+    // DEC-120 (owner, 2026-11-13): 6, chosen over FEAT-168's agent default of 10.
+    campDeeds:    6,
 
     // ── FEAT-138 RANK THRESHOLDS, BY TYPE AND REGION [owner, 2026-10-21] ──────────────────────
     // Every type ranks on its own axis (design-amendments-2026-10-21-mission-recut.md §1–2, §11b).
@@ -417,10 +416,13 @@ export const runEconomy = {
                      // additions cannot drift into 20.700000000000003 — see addSpot()
     halfPoints: 0,   // mission points × 2
     missions: 0,     // settled (paid) missions this run
-    // FEAT-146: the run summary's rows. Earned is derived (money + spent − startCash), so no counter.
+    // FEAT-146: the run summary's rows. Earned is derived (money + spent − startCash − pocket), so no counter.
     ranks: { D: 0, C: 0, B: 0, A: 0, S: 0 },   // settled missions by letter
     spent: 0,        // dollars out through spend(), to the cent
     freeRepairs: 0,  // expedition-rewards option 2: the crew's line at A or better — repairs owed at a bench for nothing
+    // FEAT-184 (DEC-150): a played tutorial holds the last paycheck back until its end and runs on pocket change.
+    pocket: 0,           // the pocket change given on top of startCash (so Earned subtracts it too)
+    paycheckDue: false,  // the last paycheck is still to be paid (payPaycheck)
 }
 
 /** Round to whole cents. Money is added a paper at a time now, so drift is a real hazard. */
@@ -461,6 +463,24 @@ export class EconomySystem {
         runEconomy.ranks = { D: 0, C: 0, B: 0, A: 0, S: 0 }
         runEconomy.spent = 0
         runEconomy.freeRepairs = 0
+        runEconomy.pocket = 0
+        runEconomy.paycheckDue = false
+    }
+
+    /** FEAT-184 (DEC-150, owner 2026-11-14: "you shouldnt get your last paycheck until the end of the tutorial so you'll
+     *  have pocket change"): at a played tutorial's start, the wallet is `pocket` and the paycheck waits. */
+    withholdPaycheck (pocket) {
+        runEconomy.money = _cents(pocket)
+        runEconomy.pocket = _cents(pocket)
+        runEconomy.paycheckDue = true
+    }
+
+    /** The tutorial is over (or skipped): the last paycheck, startCash, lands. True if it was still due. */
+    payPaycheck () {
+        if (!runEconomy.paycheckDue) return false
+        runEconomy.paycheckDue = false
+        runEconomy.money = _cents(runEconomy.money + ECONOMY_PARAMS.startCash)
+        return true
     }
 
     /**
@@ -500,11 +520,10 @@ export class EconomySystem {
         // tips on SPEED, the plain ratio (FEAT-138). FEAT-96: freight's tip is then scaled by its
         // tip multiplier (a FEAT-69 balancing knob). A haul's payMult already carries the pieces
         // delivered (main.js onSettle), so base and tip both scale with the load.
-        // GAME-FEEL REVIEW 2026-10-23 (R-04): ON A BONUS OFFER THE ITEM *IS* THE TIP. The cash tip is
-        // zero and the base is the full line's base (data/offers.js: BONUS_PAY_MULT retired). One
-        // slot, two currencies: a job tips in cash for speed, or in an item for its gate, never both
-        // and never a half-price cash line the player couldn't value. Base pay stays guaranteed.
-        const tipMult = mission?.bonus ? 0 : isFinite(mission?.tipMult) ? mission.tipMult : 1
+        // FEAT-199 (owner, 2026-11-11) RETIRES R-04's "the item IS the tip": a bonus offer pays the full
+        // cash line like any job. Its item is optional — main.js's result card takes its cost off this
+        // payout only if the player picks it (offer-board.js itemCost).
+        const tipMult = isFinite(mission?.tipMult) ? mission.tipMult : 1
         // FEAT-97: a fragile job (result.health set by main.js) cuts half its base by condition.
         const tier = t.payTier ?? 1
         const { base, tip, total: payout } = result.health != null
@@ -524,9 +543,8 @@ export class EconomySystem {
 
     /**
      * FEAT-67: the offer's bonus if the letter earned it — `{ rewardId, name, gate, letter }` for the
-     * result card — or null. main.js grants the item (FEAT-122 inventory). Money is untouched either way:
-     * the item and the cash are separate, and the cash side of a bonus offer is already priced by
-     * `payMult`.
+     * result card — or null. Money is untouched here: the full cash is paid, and main.js's result card
+     * (FEAT-199) spends the item's cost and grants it (FEAT-122 inventory) only if the player takes it.
      */
     _award (bonus, letter) {
         if (!bonus || !bonusEarned(letter, bonus.gate)) return null

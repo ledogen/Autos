@@ -108,10 +108,12 @@ shows it reads from that place.
 |---|---|---|
 | Rank S/A/B/C/D | `RANK_COLOR`, `src/economy.js` | rank timer strip, tiles, cards |
 | Energy stages | `STAGE_COLOR`, `src/day.js` | energy meter, sleep bar |
+| Hunger words | `HUNGER_COLOR`, `src/day.js` | the energy box's hunger line and bar; built from `STAGE_COLOR`'s ramp (FEAT-198) |
 | Job family | `FAMILY_COLOR`, `data/map-icons.js` | map diamonds |
 | Camp vibe (flat / view / shade / water) | `.vseg-*` / `.lg-*` / `.cp-*` in `index.html` | currently copied in 3 places; a future cleanup folds them into vars |
 | Part condition (sound / worn / damaged / failing) | condition bands, `src/damage-screen.js` | damage pictogram and legend |
 | Equipped item | `#c9a24a`, `src/inventory-screen.js` | slot border, tag, tooltip |
+| Item rarity (common / uncommon / rare / legendary; epic proposed `#9b5fd1`, FEAT-192) | `RARITY_COLOR`, `data/parts.js` | the tint behind an item or part icon (inventory, service screen) |
 
 ## 4. Type
 
@@ -168,7 +170,7 @@ band; do not invent a number between bands.
 | Band | z | Members |
 |---|---|---|
 | World chrome | 86–89 | gauge cluster 86, HUD readouts / dock / prompts 88, pump face 89 |
-| Map | 90–91 | 2D map 90; run HUD lifts to 91 while the map is open |
+| Map | 90 | the map window (FEAT-211: its list head repeats the run HUD's clock, so the HUD no longer lifts over it) |
 | Story cards | 95–97 | cards 95, dialogue / quick-job / toasts 96, aim reticle + throw readout 97 |
 | Pause | 100 | pause menu |
 | Full-screen fades | 150–160 | doze lids 150, camp fade 160 |

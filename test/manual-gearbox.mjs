@@ -13,6 +13,7 @@
 //   7. a worn box (_transShiftScale 3) takes 3× as long in N;
 //   8. engine braking: lifting in 3rd slows harder than coasting in N;
 //   9. a clutch dumped at the rev limiter spins the rears.
+//  14. FEAT-185: mashing — presses during a shift move its target; the shift time runs once, after the last.
 //
 // Run: node test/manual-gearbox.mjs   (self-checking; exits non-zero on failure)
 
@@ -267,6 +268,34 @@ console.log('\n13. a clutch dump at 2200 rpm (the capture\'s pedal) locks at onc
   check(lockedAt >= 0 && lockedAt <= 3, `locked ${lockedAt} step(s) after the bite`)
   check(flips === 0, `the rear wheels never reverse (${flips} sign flips — the chatter flipped every step)`)
   check(vs.ignition.state === 'running' && vf(vs) > 4, `still running, ${(vf(vs) * MPH).toFixed(1)} mph after 2 s`)
+}
+console.log('\n14. FEAT-185: mash to any gear, the shift time after the last press')
+{
+  // 4th → N: four presses one step apart, clutch out (the OFF assistant's pass-through).
+  const { P, vs } = fresh({ gear: 4, v0: 15 })
+  const tShift = (P.manualShiftTime ?? 0.25) * (P._transShiftScale ?? 1)
+  vs.clutch = 0
+  for (let i = 0; i < 4; i++) { vs.shiftRequest = -1; step(P, vs, 1) }
+  check(dt(vs).shifting && dt(vs).shiftTo === 0, `four presses in four steps: shifting to N (target ${dt(vs).shiftTo})`)
+  let n = 0; while (dt(vs).shifting && n++ < 300) step(P, vs, 1)
+  check(dt(vs).mGear === 0, `4th → N in one burst (gear ${dt(vs).mGear})`)
+  const spent = (n + 4) * DT, once = tShift + 3 * DT
+  check(Math.abs(spent - once) <= DT + 1e-9, `one shift time after the last press: ${spent.toFixed(3)} s for the burst (${tShift.toFixed(3)} s + 3 steps of presses)`)
+  // Through the assistant: 2nd → 4th by two quick presses, no pedal.
+  const b = fresh({ gear: 2, v0: 10 })
+  driveAssisted(b.P, b.vs, 90, (i) => ({ throttle: 0, shift: i === 0 || i === 3 ? 1 : 0 }))
+  check(b.vs.drivetrain.mGear === 4, `assisted: two quick upshift presses land 4th (gear ${b.vs.drivetrain.mGear})`)
+  // The gate's end is still the end: mashing past 5th stays in 5th, past N into R refused while moving.
+  const c = fresh({ gear: 4, v0: 15 })
+  c.vs.clutch = 0
+  for (let i = 0; i < 4; i++) { c.vs.shiftRequest = 1; step(c.P, c.vs, 1) }
+  n = 0; while (dt(c.vs).shifting && n++ < 300) step(c.P, c.vs, 1)
+  check(dt(c.vs).mGear === 5, `mashing up from 4th stops at 5th (gear ${dt(c.vs).mGear})`)
+  const d = fresh({ gear: 1, v0: 6 })
+  d.vs.clutch = 0
+  for (let i = 0; i < 3; i++) { d.vs.shiftRequest = -1; step(d.P, d.vs, 1) }
+  n = 0; while (dt(d.vs).shifting && n++ < 300) step(d.P, d.vs, 1)
+  check(dt(d.vs).mGear === 0, `mashing down from 1st while rolling stops at N, R refused (gear ${dt(d.vs).mGear})`)
 }
 console.log(`\nMANUAL-GEARBOX GATE: ${failures ? `${failures} FAILURE(S)` : 'all checks passed ✓'}`)
 process.exit(failures ? 1 : 0)

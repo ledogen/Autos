@@ -75,7 +75,8 @@ systems stay flag-gated (FEAT-26 precedent). Determinism is *stronger* under thi
 
 Not parts, not money, not the car — **and no longer the world, and no longer XP.** What persists is
 **player literacy** (reading the truck, reading the weirdness) and **the garage** (unlocked starting
-vehicles, story keys).
+vehicles, story keys). A won run's truck configuration may be saved for free roam only, which
+carries nothing into a story run (DEC-008).
 
 > Struck: "world state (permanent unlocks, generator parameter states) persists." Permanent unlocks
 > persist as garage entries, not as terrain.

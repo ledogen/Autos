@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>FEAT-184: the tutorial's world</title>
+<h1>FEAT-184: which world does the tutorial play on?</h1>
+<p>You ruled that the tutorial, and every player's first playthrough, runs on one fixed seed (DEC-149). This page is
+the shortlist to pick it from. Nothing is pinned until you pick.</p>
+
+<h2>How the shortlist was made</h2>
+<p>I generated <b>135</b> random seeds headless and ran the tutorial's legs on each one with the game's own
+route planner (the same calls the game makes). Every driven leg was then measured: its length, its steepest pitch,
+how many metres of it are steeper than 15 %, the junctions it passes (a junction here means a node with three or more
+roads, so a place the driver has to choose), and the tunnels it goes through (a tunnel on two legs counts twice).</p>
+<ul>
+<li><b>The one hard rule:</b> the gas station has to be close to the way home. Its detour over driving straight home is at most
+2 km. 43 of 135 seeds pass. On the rest the station is so far off that the refuel lesson would be a
+long errand.</li>
+<li><b>Then a penalty ranking</b>, lower is better: total driving outside 5–9 km, the metres steeper than 15 %, the
+junctions, the tunnels, and the station's detour.</li>
+<li><b>Steep roads are normal here.</b> On 42 of 43 of the seeds that pass, the route's steepest pitch is 20 %
+or more somewhere. That is the road network's character, not something a seed can avoid, so the ranking counts the
+metres of it instead.</li>
+</ul>
+
+<h2>How to read a map</h2>
+<p>Each map is the game's own map of that seed, with the tutorial drawn over it.</p>
+<ul>
+<li><b>B</b> the burger joint (the firing, and in landing 2 the last paycheck) · <b>G</b> the gas station (mom's fill-up)
+· <b>F</b> where the flat lands · <b>S</b> the auto shop (the tow lands here, the tire is on mom) · <b>M</b> mom's ·
+<b>L</b> Larry's.</li>
+<li><span style="color:#ff9a1f">Orange</span>: the evening drive, B → G → M. <span style="color:#d93636">Red dashed</span>:
+the tow, F → S (not driven). <span style="color:#d93636">Red</span>: the night drive, S → M.
+<span style="color:#2f7fd6">Blue</span>: the morning, M → L. <span style="color:#2e9e48">Green</span>: L → B, the last
+act (landing 2). Where two legs share a road, the later one is drawn wider underneath.</li>
+</ul>
+
+<h2>1. Seed 822480141</h2>
+<img src="FEAT-184-seed-822480141.jpg" alt="The map of seed 822480141 with the tutorial's legs drawn on it" style="max-width:100%">
+<p><b>One road, every stop on it.</b> The station is a short spur 0.6 km north of the joint. From there the drive home runs back past the joint and west along one road: the flat lands just before the auto shop (a 0.4 km tow), then mom's, with Larry's 0.7 km further on. The morning drives the same road back. <b>The gentlest roads in the census by far:</b> the steepest pitch is 16.8 %, and only 155 m of the whole tutorial is steeper than 15 % (every other candidate has 600–1400 m). The catch: the player sees one road twice, and a 250 m tunnel between the shop and mom's is driven three times (evening, night, and back to the joint; its tick marks hide under the drawn route).</p>
+<table>
+<tr><th>Leg</th><th>When</th><th>km</th><th>Steepest %</th><th>m over 15 %</th><th>Junctions</th><th>Tunnels driven</th></tr>
+<tr><td>Burger joint → gas station</td><td>evening</td><td>0.60</td><td>14.5</td><td>0</td><td>1</td><td>0</td></tr>
+<tr><td>Gas station → mom's (the flat halfway)</td><td>evening</td><td>2.60</td><td>15.7</td><td>45</td><td>3</td><td>1</td></tr>
+<tr><td>Auto shop → mom's</td><td>night</td><td>0.94</td><td>15.7</td><td>45</td><td>1</td><td>1</td></tr>
+<tr><td>Mom's → Larry's (the casserole)</td><td>morning</td><td>0.70</td><td>16.8</td><td>10</td><td>1</td><td>0</td></tr>
+<tr><td>Larry's → burger joint (the paycheck)</td><td>morning</td><td>2.13</td><td>16.8</td><td>55</td><td>2</td><td>1</td></tr>
+<tr><td><b>Driven in all</b></td><td></td><td><b>7.0</b></td><td><b>16.8</b></td><td><b>155</b></td><td><b>8</b></td><td><b>3</b></td></tr>
+</table>
+<p>The station's detour over driving straight home: <b>1.19 km</b>. The tow, the flat to the shop: <b>0.38 km</b> (not driven).</p>
+
+<h2>2. Seed 3037637875</h2>
+<img src="FEAT-184-seed-3037637875.jpg" alt="The map of seed 3037637875 with the tutorial's legs drawn on it" style="max-width:100%">
+<p><b>A loop.</b> The evening goes the long way round, east via the station (2.6 + 1.8 km); the morning comes back the short way west, mom's → Larry's → the joint. So the player drives two different roads and comes home by a new one. A general store sits right where the flat lands; the shop is a 0.4 km tow. Longer than the others (9.2 km), 1040 m steeper than 15 %, one tunnel on the evening's southern road, and the evening passes close to the region's edge (the shaded corner, bottom right).</p>
+<table>
+<tr><th>Leg</th><th>When</th><th>km</th><th>Steepest %</th><th>m over 15 %</th><th>Junctions</th><th>Tunnels driven</th></tr>
+<tr><td>Burger joint → gas station</td><td>evening</td><td>2.63</td><td>24</td><td>215</td><td>1</td><td>1</td></tr>
+<tr><td>Gas station → mom's (the flat halfway)</td><td>evening</td><td>1.82</td><td>24</td><td>160</td><td>3</td><td>0</td></tr>
+<tr><td>Auto shop → mom's</td><td>night</td><td>1.40</td><td>24</td><td>145</td><td>3</td><td>0</td></tr>
+<tr><td>Mom's → Larry's (the casserole)</td><td>morning</td><td>1.05</td><td>24</td><td>125</td><td>2</td><td>0</td></tr>
+<tr><td>Larry's → burger joint (the paycheck)</td><td>morning</td><td>2.32</td><td>25.1</td><td>395</td><td>1</td><td>0</td></tr>
+<tr><td><b>Driven in all</b></td><td></td><td><b>9.2</b></td><td><b>25.1</b></td><td><b>1040</b></td><td><b>10</b></td><td><b>1</b></td></tr>
+</table>
+<p>The station's detour over driving straight home: <b>1.08 km</b>. The tow, the flat to the shop: <b>0.40 km</b> (not driven).</p>
+
+<h2>3. Seed 2448267508</h2>
+<img src="FEAT-184-seed-2448267508.jpg" alt="The map of seed 2448267508 with the tutorial's legs drawn on it" style="max-width:100%">
+<p><b>A line.</b> Every place sits on one road: the station at its north end, then the joint, the shop, the flat, Larry's, mom's. The station is 0.9 km the wrong way, so the evening drives out and back past the joint (a 1.8 km detour, the most of the four). The flat lands next to the shop (a 0.2 km tow), and Larry's is between the shop and mom's, so the morning's casserole is only 0.6 km. 1385 m steeper than 15 % and one tunnel, driven three times.</p>
+<table>
+<tr><th>Leg</th><th>When</th><th>km</th><th>Steepest %</th><th>m over 15 %</th><th>Junctions</th><th>Tunnels driven</th></tr>
+<tr><td>Burger joint → gas station</td><td>evening</td><td>0.90</td><td>25.1</td><td>220</td><td>1</td><td>0</td></tr>
+<tr><td>Gas station → mom's (the flat halfway)</td><td>evening</td><td>3.24</td><td>25.1</td><td>535</td><td>3</td><td>1</td></tr>
+<tr><td>Auto shop → mom's</td><td>night</td><td>1.91</td><td>23.9</td><td>315</td><td>2</td><td>1</td></tr>
+<tr><td>Mom's → Larry's (the casserole)</td><td>morning</td><td>0.59</td><td>22.6</td><td>95</td><td>0</td><td>0</td></tr>
+<tr><td>Larry's → burger joint (the paycheck)</td><td>morning</td><td>1.75</td><td>23.9</td><td>220</td><td>2</td><td>1</td></tr>
+<tr><td><b>Driven in all</b></td><td></td><td><b>8.4</b></td><td><b>25.1</b></td><td><b>1385</b></td><td><b>8</b></td><td><b>3</b></td></tr>
+</table>
+<p>The station's detour over driving straight home: <b>1.79 km</b>. The tow, the flat to the shop: <b>0.23 km</b> (not driven).</p>
+
+<h2>4. Seed 491271994</h2>
+<img src="FEAT-184-seed-491271994.jpg" alt="The map of seed 491271994 with the tutorial's legs drawn on it" style="max-width:100%">
+<p><b>The most compact.</b> Everything sits within about 1.5 km of the joint, and it is the shortest tutorial of the four (6.1 km driven). The flat lands between the station and mom's, but the shop is off to the north-west, so the tow runs 0.9 km away from home and the night drive comes back 1.3 km. The catch: the steepest pitch on the shortlist (29.2 %), and 12 junctions to choose at. One tunnel near Larry's, driven twice.</p>
+<table>
+<tr><th>Leg</th><th>When</th><th>km</th><th>Steepest %</th><th>m over 15 %</th><th>Junctions</th><th>Tunnels driven</th></tr>
+<tr><td>Burger joint → gas station</td><td>evening</td><td>0.86</td><td>17</td><td>60</td><td>1</td><td>0</td></tr>
+<tr><td>Gas station → mom's (the flat halfway)</td><td>evening</td><td>1.00</td><td>17</td><td>60</td><td>1</td><td>0</td></tr>
+<tr><td>Auto shop → mom's</td><td>night</td><td>1.30</td><td>29.2</td><td>290</td><td>3</td><td>0</td></tr>
+<tr><td>Mom's → Larry's (the casserole)</td><td>morning</td><td>1.62</td><td>29.2</td><td>90</td><td>4</td><td>1</td></tr>
+<tr><td>Larry's → burger joint (the paycheck)</td><td>morning</td><td>1.30</td><td>29.2</td><td>90</td><td>3</td><td>1</td></tr>
+<tr><td><b>Driven in all</b></td><td></td><td><b>6.1</b></td><td><b>29.2</b></td><td><b>590</b></td><td><b>12</b></td><td><b>2</b></td></tr>
+</table>
+<p>The station's detour over driving straight home: <b>1.54 km</b>. The tow, the flat to the shop: <b>0.90 km</b> (not driven).</p>
+
+<h2>5. The pick</h2>
+<p><b>My recommendation: 822480141.</b> For a first drive it is the gentlest road in the census by a wide margin, every stop is on one road you cannot get lost on, and the whole tutorial is 7 km of driving. If you would rather the player saw more of the world, 3037637875's loop is the pick. A census note: 300 seeds were planned; the run was paused at 135 to keep the machine free for main's smoke. 43 of those 135 passed, which is plenty to choose from; I can run the rest if you want a wider pool.</p>
+<p>Whichever you pick, a gate then pins its beats (every place where it should be, every leg within its distance), and
+any change to world generation that moves them fails that gate. Then a new seed has to be picked, from a fresh run of
+this census.</p>
+<dive-q id="pick" options="822480141 | 3037637875 | 2448267508 | 491271994 | none of these: search more seeds"></dive-q>
+
+<h2>6. Anything else</h2>
+<p>Anything about the tutorial's world these maps should have shown, or a place you want closer.</p>
+<dive-q id="misses"></dive-q>
+
+<script src="/dive.js"></script>

@@ -29,6 +29,7 @@ export const GROUP_TERRAIN = 1n << 0n   // streamed heightfield tiles + lab grou
 export const GROUP_CHASSIS = 1n << 1n   // the vehicle body
 export const GROUP_DEBRIS  = 1n << 2n   // dynamic props (barrels, rocks)
 export const GROUP_STATIC  = 1n << 3n   // static props / POI solids
+export const GROUP_ROAD    = 1n << 4n   // the road deck: ribbon tiles, pads, bores (FEAT-193: the body grips it at its own μ)
 export const GROUP_ALL     = 0xffffffffffffffffn
 
 /** Category bits as a 32-bit number. Every real group is a single low bit and GROUP_ALL is all
@@ -74,7 +75,45 @@ function _specReach (spec) {
   }
 }
 
+/** A collider's extent along the BODY-LOCAL unit direction l, about the body origin, into _span
+ *  ([min, max]) — contactSphere's slab test (BUG-165). Only the shapes that query has a pair test
+ *  for; a cylinder is bounded by its round section (its polygon never reaches past it). */
+const _span = [0, 0]
+function _specSpan (spec, l) {
+  switch (spec.shape) {
+    case 'sphere': {
+      const c = spec.offset.x * l.x + spec.offset.y * l.y + spec.offset.z * l.z
+      _span[0] = c - spec.radius; _span[1] = c + spec.radius
+      return _span
+    }
+    case 'cylinder': {
+      const c = (spec.yOffset + spec.height / 2) * l.y
+      const e = spec.height / 2 * Math.abs(l.y) + spec.radius * Math.sqrt(Math.max(0, 1 - l.y * l.y))
+      _span[0] = c - e; _span[1] = c + e
+      return _span
+    }
+    case 'hull': {   // the points it was built from span what their hull spans
+      const p = spec.positions
+      let lo = Infinity, hi = -Infinity
+      for (let i = 0; i < p.length; i += 3) {
+        const d = p[i] * l.x + p[i + 1] * l.y + p[i + 2] * l.z
+        if (d < lo) lo = d
+        if (d > hi) hi = d
+      }
+      _span[0] = lo; _span[1] = hi
+      return _span
+    }
+    default:   // no pair test either — contactSphere skips it after this
+      _span[0] = -Infinity; _span[1] = Infinity
+      return _span
+  }
+}
+
 let _b3 = null            // the loaded engine module — module-private, never exported
+
+// How far a welded body may drift off its weld before _projectWelds puts it back [m]. The weld holds 1.6 mm
+// over road dips at speed; only the swept-collision clamp drifts it by centimetres. [DEFAULT]
+const WELD_SLOP = 0.01
 
 // maxContactImpulse's no-contact answer: shared and frozen, so a step with nothing touching allocates nothing.
 const NO_CONTACT = Object.freeze({ impulse: 0, point: null, normal: null })
@@ -133,6 +172,7 @@ export class PhysicsEngine {
     this._dynamic = new Map()              // the isDynamic subset of _bodies, same records and order
     this._shapeToHandle = new Map()        // shapeId.index1<<21|generation-ish key → body handle
     this._nextHandle = 1
+    this._welds = new Map()                // weld joint → [handleA, handleB, B's position and rotation in A's frame] (destroyJoint clears weldedTo)
     this._heightfields = new Map()         // handle → b3HeightFieldData (owned, freed on destroy)
     this._meshDatas = new Map()            // handle → b3MeshData[] (owned, freed on destroy)
     // Hull data and the tire size hint live on the BODY RECORD, indexed by shape slot — they used
@@ -152,6 +192,35 @@ export class PhysicsEngine {
   step (dt, substeps = 4) {
     _b3.b3World_Step(this._world, dt, substeps)
     this._xfStamp++          // every cached body transform is now stale (see _bodyXf)
+    if (this._welds.size) this._projectWelds()
+  }
+
+  /**
+   * BUG-161: a weld is rigid, so B goes back where the weld holds it on A once it has drifted past WELD_SLOP.
+   *
+   * The engine's swept (continuous) collision treats the two bodies apart. The truck's chassis is a bullet:
+   * when its sweep meets the ground inside a step (a body strike in a spin), the engine parks it at the moment
+   * of impact with its velocity kept, while the welded load, swept on its own and touching nothing, makes the
+   * whole step. The joint then reels it in over ~3 steps. Measured on the cargo soak (220 kg statue, chassis
+   * sideways at 13 m/s, parked at 0.21 of its step): 174 mm off the seat, then 60, 20, 6. The load was drawn
+   * jumping out of the bed, and the reel spread the strike's deceleration over 3 steps, so the fragile load
+   * felt 3.3 g of it.
+   *
+   * Driven over dips the weld holds within 1.6 mm, so the slop never trips there. Velocity is left alone,
+   * because the clamp keeps it too. A is the anchor: main.js welds the chassis as A and the load as B.
+   */
+  _projectWelds () {
+    for (const w of this._welds.values()) {
+      const a = this._bodies.get(w[0]), b = this._bodies.get(w[1])
+      this._bodyXf(a); this._bodyXf(b)
+      const r = _rotateByQuat(w[2], a.xfQ)
+      const x = a.xfP[0] + r.x, y = a.xfP[1] + r.y, z = a.xfP[2] + r.z
+      if ((x - b.xfP[0]) ** 2 + (y - b.xfP[1]) ** 2 + (z - b.xfP[2]) ** 2 < WELD_SLOP * WELD_SLOP) continue
+      const [ax, ay, az, aw] = a.xfQ, [bx, by, bz, bw] = w[3]   // A's rotation · B's in A's frame
+      _b3.b3Body_SetTransform(b.id, [x, y, z], [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz])
+      b.xfStamp = null
+    }
   }
 
   // ── Bodies ────────────────────────────────────────────────────────────────
@@ -184,7 +253,8 @@ export class PhysicsEngine {
     const rec = { id, shapes: [], specs: [], userData,
       isStatic: type === 'static', isDynamic: type !== 'static' && type !== 'kinematic',
       groups: [], reach: [], hulls: [], sizeR: [],
-      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null }
+      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null,
+      weldedTo: null }   // Set of the handles welded to this one (createWeldJoint) — contactSphere's skipWeldedTo
     this._bodies.set(handle, rec)
     if (rec.isDynamic) this._dynamic.set(handle, rec)
     this._rev++
@@ -203,7 +273,11 @@ export class PhysicsEngine {
       this._shapeToHandle.delete(this._shapeKey(rec.shapes[i]))
       this._freeHull(rec.hulls[i])
     }
-    _b3.b3DestroyBody(rec.id)              // destroys attached shapes with it
+    _b3.b3DestroyBody(rec.id)              // destroys attached shapes with it (and its joints)
+    if (rec.weldedTo) {
+      for (const h of rec.weldedTo) this._bodies.get(h)?.weldedTo?.delete(handle)
+      for (const [j, w] of this._welds) if (w[0] === handle || w[1] === handle) this._welds.delete(j)
+    }
     const hf = this._heightfields.get(handle)
     if (hf) { _b3.b3DestroyHeightField(hf); this._heightfields.delete(handle) }
     const mds = this._meshDatas.get(handle)
@@ -396,6 +470,12 @@ export class PhysicsEngine {
     return this.addMesh(handle, positions, indices, { group: GROUP_TERRAIN, ...material })
   }
 
+  /** The road deck's triangles (terrain-physics.js RoadPhysics), in GROUP_ROAD — so the chassis'
+   *  flank hulls can grip asphalt and dirt at different μ (FEAT-193). */
+  addRoadMesh (handle, positions, indices, material = {}) {
+    return this.addMesh(handle, positions, indices, { group: GROUP_ROAD, ...material })
+  }
+
   /**
    * Heightfield collider. `heights` is a Float32Array of countX·countZ metres,
    * row-major over Z then X, sampled on a grid of `cellSize` metres. The field's
@@ -568,8 +648,13 @@ export class PhysicsEngine {
    *   b3CollideSpheres(A, B, xfB)        → normal A→B, separation = −penetration
    *   b3CollideHullAndSphere(hull, s, xf) → hull is at IDENTITY (its own frame); normal
    *                                         hull→sphere; results in hull-local coordinates.
+   *
+   * slab (BUG-165): `{ axis, halfWidth }` makes the query the sphere CUT to the slab
+   * |(x − center)·axis| ≤ halfWidth — the wheel's, a tire as wide as its tread. A shape whose
+   * extent along the axis misses the slab is no contact: the axis separates them, exactly. A shape
+   * that crosses the slab keeps the sphere's manifold unchanged.
    */
-  contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false } = {}) {
+  contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false, skipWeldedTo = null, slab = null } = {}) {
     const hits = []
     const mask = _group32(collidesWith)
     // dynamicOnly (every wheel query, 20×/step) walks only the dynamic bodies — not the terrain,
@@ -578,14 +663,27 @@ export class PhysicsEngine {
       // Heightfields and meshes have no sphere pair test wired (the analytic terrain query owns
       // those surfaces), so skip them before paying for a transform.
       if (this._heightfields.has(handle) || this._meshDatas.has(handle)) continue
+      // skipWeldedTo (BUG-161): a body welded to that one is part of it — the wheel query asks with
+      // the chassis, so a strapped load is never a surface the truck's own tire can press on.
+      if (skipWeldedTo !== null && rec.weldedTo?.has(skipWeldedTo)) continue
       this._bodyXf(rec)
       const bp = rec.xfP, bq = rec.xfQ
       const dx = center.x - bp[0], dy = center.y - bp[1], dz = center.z - bp[2]
       const d2 = dx * dx + dy * dy + dz * dz
+      // The slab's axis in the body's frame, and the query centre's place along it from the body origin.
+      let la = null, s0 = 0
       for (let si = 0; si < rec.shapes.length; si++) {
         if ((rec.groups[si] & mask) === 0) continue
         const span = radius + rec.reach[si]
         if (d2 > span * span) continue          // cheap reject about the body origin
+        if (slab !== null) {
+          if (la === null) {
+            la = _rotateByQuat(slab.axis, [-bq[0], -bq[1], -bq[2], bq[3]])
+            s0 = dx * slab.axis.x + dy * slab.axis.y + dz * slab.axis.z
+          }
+          const sp = _specSpan(rec.specs[si], la)
+          if (sp[0] > s0 + slab.halfWidth || sp[1] < s0 - slab.halfWidth) continue
+        }
         // What kind of shape this slot holds is known from how it was registered: a sphere spec is
         // an engine sphere, and a slot that owns hull data (addHull / addCylinder / replaceHullLocal)
         // is an engine hull. Boxes and capsules own no hull data and fall through.
@@ -858,10 +956,28 @@ export class PhysicsEngine {
     jd.base.localFrameB = frame(jd.base.bodyIdB)
     jd.linearHertz = 0
     jd.angularHertz = 0
-    return _b3.b3CreateWeldJoint(this._world, jd)
+    const joint = _b3.b3CreateWeldJoint(this._world, jd)
+    const a = this._bodies.get(handleA), b = this._bodies.get(handleB)
+    ;(a.weldedTo ??= new Set()).add(handleB)
+    ;(b.weldedTo ??= new Set()).add(handleA)
+    // B's pose in A's frame, for _projectWelds: position qA⁻¹·(pB − pA), rotation qA⁻¹·qB.
+    this._bodyXf(a); this._bodyXf(b)
+    const [ax, ay, az, aw] = a.xfQ, [bx, by, bz, bw] = b.xfQ
+    const rel = _rotateByQuat({ x: b.xfP[0] - a.xfP[0], y: b.xfP[1] - a.xfP[1], z: b.xfP[2] - a.xfP[2] }, [-ax, -ay, -az, aw])
+    this._welds.set(joint, [handleA, handleB, rel, [aw * bx - ax * bw - ay * bz + az * by, aw * by + ax * bz - ay * bw - az * bx,
+      aw * bz - ax * by + ay * bx - az * bw, aw * bw + ax * bx + ay * by + az * bz]])
+    return joint
   }
 
-  destroyJoint (joint) { _b3.b3DestroyJoint(joint, true) }
+  destroyJoint (joint) {
+    const w = this._welds.get(joint)
+    if (w) {
+      this._bodies.get(w[0])?.weldedTo?.delete(w[1])
+      this._bodies.get(w[1])?.weldedTo?.delete(w[0])
+      this._welds.delete(joint)
+    }
+    _b3.b3DestroyJoint(joint, true)
+  }
 
   /**
    * The force a joint applied over the last step [N], world frame (FEAT-97: the strap's pull on a

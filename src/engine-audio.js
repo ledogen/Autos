@@ -54,6 +54,33 @@ export function getAudioContext (create = true) {
 }
 
 /**
+ * PERF-47: is the context's clock running? Every per-frame update in the audio modules returns early
+ * when it is not. Each frame re-targets ~85 AudioParams with setTargetAtTime, and the browser drops a
+ * timeline's events only once the clock has passed them. When the host's output stops pulling samples
+ * (a wedged coreaudiod, 2026-11-13: currentTime stood still) nothing is ever dropped, every call
+ * inserts into a longer list, and main-thread cost climbed ~2 ms/s per second of play until the
+ * thread was full. A suspended context (no gesture yet, a hidden tab) reads as stalled too.
+ *
+ * Judged over CLOCK_WINDOW_S of wall time, not frame to frame, so every module gets the same answer
+ * in a frame whatever order it calls in. A live clock keeps pace with the wall (render callbacks are
+ * ~10 ms apart); under CLOCK_MIN_RATE it is stalled. A gap over 1 s (rAF stops in a hidden tab)
+ * re-anchors without a verdict. Resuming needs no special case: the next setTargetAtTime ramps from
+ * wherever the param sits, so the sound comes back without a pop, within about one window.
+ */
+const CLOCK_WINDOW_S = 0.25
+const CLOCK_MIN_RATE = 0.25   // audio seconds per wall second: a stalled host reads 0–0.006, a live one ~1
+let clockWall = -Infinity, clockAt = 0, clockLive = true
+export function audioClockLive () {
+  if (!ctx) return false
+  const wall = performance.now() / 1000, dw = wall - clockWall
+  if (dw < CLOCK_WINDOW_S) return clockLive
+  if (dw < 1) clockLive = ctx.currentTime - clockAt > CLOCK_MIN_RATE * dw
+  clockWall = wall
+  clockAt = ctx.currentTime
+  return clockLive
+}
+
+/**
  * The mix (FEAT-120 / FEAT-163). Nothing connects to ctx.destination but the master bus:
  *
  *   world sounds → WORLD bus ─┬─ dry ────────────────┬─ cab lowpass ─→ MASTER bus → speakers
@@ -95,7 +122,7 @@ export function getWorldBus () {
 }
 /** Camera-aware mix (FEAT-120, the owner kept the take 2026-11-02): true while the camera is in the cab. */
 export function setCabView (inCab) {
-  if (worldLp) worldLp.frequency.setTargetAtTime(inCab ? CAB_GLASS_HZ : CAB_OPEN_HZ, ctx.currentTime, 0.08)
+  if (worldLp && audioClockLive()) worldLp.frequency.setTargetAtTime(inCab ? CAB_GLASS_HZ : CAB_OPEN_HZ, ctx.currentTime, 0.08)
 }
 
 // ── FEAT-163: the tunnel reverb ──────────────────────────────────────────────────────────────────
@@ -130,7 +157,7 @@ function tunnelIR (c) {
 export function setTunnelReverb (on, level) { tunnelOn = !!on; tunnelLevel = level }
 /** Per frame: is the LISTENER (the camera) inside a bore? Crossfades the wet send; connects it on demand. */
 export function setInTunnel (inBore) {
-  if (!worldBus || !ctx || ctx.state !== 'running') return
+  if (!worldBus || !audioClockLive()) return
   const now = ctx.currentTime, want = inBore && tunnelOn
   if (want && !tunnelConv) {
     tunnelConv = ctx.createConvolver()
@@ -211,7 +238,7 @@ export function ensureEngineAudio () {
  * Ramps every param with setTargetAtTime (~50 ms) so nothing zippers.
  */
 export function updateEngineAudio (rpm, throttle, firing = true, cylinders = 6, engine = null, keyOff = false) {
-  if (!started || !ctx) return
+  if (!started || !audioClockLive()) return
   const now = ctx.currentTime
   const tc = 0.05
 
@@ -599,7 +626,7 @@ async function ensureStarter () {
 export function startCrankAudio (rpm = STARTER_REF_RPM) {
   if (!enabled) return
   ensureStarter()
-  if (!starterGain) return
+  if (!starterGain || !audioClockLive()) return
   if (starterSrc) starterSrc.playbackRate.setTargetAtTime(Math.max(CRANK_SOUND_FLOOR_RPM, rpm) / STARTER_REF_RPM, ctx.currentTime, 0.02)
   starterGain.gain.setTargetAtTime(volume * starterLevel, ctx.currentTime, 0.02)
   if (crankOn) return

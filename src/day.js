@@ -114,6 +114,15 @@ export const DAY_PARAMS = {
  */
 export const STAGE_COLOR = { rested: '#7ed957', sleepy: '#ffdc3c', tired: '#ff9f43', exhausted: '#ff5a4e' }
 
+/**
+ * FEAT-198: the hunger words' colours (the energy box's hunger line and bar), on the same escalation ramp as
+ * STAGE_COLOR so no new hex enters the UI: fed is green, peckish yellow, hungry orange.
+ */
+export const HUNGER_COLOR = {
+    stuffed: STAGE_COLOR.rested, full: STAGE_COLOR.rested, content: STAGE_COLOR.rested,
+    peckish: STAGE_COLOR.sleepy, hungry: STAGE_COLOR.tired,
+}
+
 
 /**
  * SM-INV-12 RUN-LAYER STATE. This is THE run-scoped state object: the things that belong to a story
@@ -125,6 +134,17 @@ export const STAGE_COLOR = { rested: '#7ed957', sleepy: '#ffdc3c', tired: '#ff9f
  * a test drift the day. Keep it minimal — a field earns its place here only if a run boundary is the
  * only thing that may move it.
  */
+/**
+ * THE CLOCK'S PAUSE PATH ("The clock runs, pauses, or skips", DESIGN.md). main.js's fixed step skips
+ * DaySystem.update() while this holds: a pitched camp (FEAT-118; its confirm face is not camp yet), the
+ * service screen (SM-3), the opening's safe evening (FEAT-170), and the parking brake's latch (FEAT-194
+ * part 3, owner 2026-11-13). Energy, hunger, a job's elapsed and due time and every offer's expiry all
+ * read clockH, so they stand still with it; fuel and coolant are the engine's, not the clock's, and keep
+ * running. The latch is its own stop test (park-brake.js: a Space tap under PARK_SPEED), so there is no
+ * second speed threshold here: a handbrake slide never latches, so it never holds the clock.
+ */
+export const clockHeld = (camp, service, evening, parked) => !!(camp || service || evening || parked)
+
 export const runState = {
     day: 1,   // 1-based day index of the current run; increments at each midnight crossed
 }
@@ -301,16 +321,20 @@ export class DaySystem {
      */
     eat (holdH) { this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + holdH) }
 
-    /** Past the last meal's hold. The energy meter says so in words (SM-INV-10: never a gauge). */
+    /** Past the last meal's hold. The energy box says so in its hunger word and bar (FEAT-198), never a number. */
     hungry () { return DAY_PARAMS.hungerOn && this.clockH() > this._fedUntilH }
 
     /** FEAT-169: the energy meter's hunger word — stuffed / full / content / peckish / hungry — or null with hunger
-     *  off. A word, never a number (SM-INV-10). 'hungry' exactly when hungry() is. */
+     *  off. A word, never a number; since FEAT-198 (owner, 2026-11-11) it sits over its own scrolling bar, like energy.
+     *  'hungry' exactly when hungry() is. */
     hungerWord () {
         if (!DAY_PARAMS.hungerOn) return null
-        const left = this._fedUntilH - this.clockH()
+        const left = this.fedLeftH()
         return DAY_PARAMS.hungerWords.find(([h]) => left >= h)?.[1] ?? 'hungry'
     }
+
+    /** Hours left on the last meal's hold — negative once hungry. Scrolls the energy box's hunger bar (FEAT-198). */
+    fedLeftH () { return this._fedUntilH - this.clockH() }
 
     /**
      * Hours of energy hunger adds to being awake from clockH h0 to h1 — 0 while fed. The rate over 1 is

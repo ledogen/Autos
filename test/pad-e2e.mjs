@@ -76,7 +76,7 @@ s = await vs(); check(!s.parked, `RB tap while parked unlatches (parked=${s.park
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(300)
 s = await vs(); check(s.parked, `RB tap near rest re-latches (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // View tap -> map (M); a second tap closes it.
-const mapShown = () => js('getComputedStyle(document.getElementById("map2d")).display !== "none"')
+const mapShown = () => js('getComputedStyle(document.getElementById("map-window")).display !== "none"')
 const mapBefore = await mapShown()
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!mapBefore && await mapShown(), `View tap opens the map (${mapBefore} -> ${await mapShown()})`)
@@ -101,8 +101,69 @@ await js('__fp.b[4] = 1'); await sleep(150); await js('__fp.b[4] = 0'); await sl
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(150)
 await js('__fp.b[0] = 1'); await sleep(150); await js('__fp.b[0] = 0'); await sleep(150)
 const wk = await js('__win.join()'), dk = await js('__doc.join()')
-check(wk === 'q,e', `LB / RB send Q / E on the map, A is silent (window saw "${wk}")`)
-check(!/[qe]/.test(dk), `Q / E stop at the map, never reaching the gearbox (document saw "${dk}")`)
+check(wk === 'q,e,Enter', `LB / RB send Q / E on the map and A sends Enter (window saw "${wk}")`)
+check(!/\b[qe]\b/.test(dk), `Q / E stop at the map, never reaching the gearbox (document saw "${dk}")`)
+check(await js('__map2d()._tab') === 'missions', 'LB then RB swap the list to Shopping and back to Missions')
+// FEAT-211: the Missions list on the pad. Free roam has no board, so two places with work are stubbed onto the map:
+// D-pad ↓ lands on the nearest and the map snaps there (tracking let go), ↓ again walks to the next, B leaves the list
+// with the map still open and where it was, the left stick's click puts it back on the truck, tracking.
+await js(`(() => { const m = __map2d(), c = __car(); window.__mapStub = [m._getPois, m._getBoard]
+  m._getPois = () => [{ id: 'near', type: 'gasPump', x: c.x + 300, z: c.z }, { id: 'far', type: 'foodVendor', x: c.x - 700, z: c.z + 100 }]
+  m._getBoard = () => ({ status: () => ({ source: true, families: ['delivery'], nextText: null }), view: () => null, name: (id) => id,
+    shop: (q, open) => q.id === 'near' ? { price: '$3.00/gal', next: null, opens: false, items: null }
+      : { price: null, next: 'new stock in 2 h', opens: true, items: open ? [{ name: 'Old tire', price: '$20.00', cond: 0.5, color: '#888', left: 'gone in 5 h', desc: 'Flavour.' },
+                                                                          { name: 'Coffee', price: '$3.00', cond: null, color: null, left: 'always in stock', desc: 'Hot.' }] : null } })
+  m._listT = 0 })()`)
+await sleep(400)
+const ls = () => js('(() => { const m = __map2d(), c = __car(); return { id: m._listId, tr: m._tracking, dx: m._panX - c.x, dz: m._panZ - c.z, open: m.isOpen(), html: document.getElementById("map-list").textContent } })()')
+await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(300)
+let l = await ls()
+check(l.id === 'near' && !l.tr && Math.abs(l.dx - 300) < 1 && Math.abs(l.dz) < 1 && /Near/.test(l.html), `D-pad ↓ picks the nearest row and snaps the map to it (${l.id}, pan +${l.dx.toFixed(0)},${l.dz.toFixed(0)}, tracking ${l.tr})`)
+await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(300)
+l = await ls(); check(l.id === 'far' && Math.abs(l.dx + 700) < 1, `D-pad ↓ again walks to the next row (${l.id}, pan ${l.dx.toFixed(0)})`)
+await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
+l = await ls(); check(l.open && l.id === null && Math.abs(l.dx + 700) < 1, `B leaves the list: the map stays open where it was (open ${l.open}, row ${l.id}, pan ${l.dx.toFixed(0)})`)
+await js('__fp.b[10] = 1'); await sleep(150); await js('__fp.b[10] = 0'); await sleep(300)
+l = await ls(); check(l.tr && Math.hypot(l.dx, l.dz) < 1, `the left stick click centres the map on the truck and tracks it (tracking ${l.tr}, off ${Math.hypot(l.dx, l.dz).toFixed(1)} m)`)
+// FEAT-211 landing 2: the Shopping list on the pad. RB swaps to it; the stub's 'near' is a pump (a price, nothing to open),
+// 'far' a shop: A opens its two items in line, the D-pad walks onto them, B closes the shop (the highlight back on it),
+// B again leaves the list, LB swaps back to Missions.
+const btnS = async (b) => { await js(`__fp.b[${b}] = 1`); await sleep(150); await js(`__fp.b[${b}] = 0`); await sleep(350) }
+const ss = () => js('(() => { const m = __map2d(); return { tab: m._tab, id: m._listId, open: m._openShop, open2: m.isOpen(), rows: m._rows.map(r => r.id).join(), html: document.getElementById("map-list").textContent } })()')
+await btnS(5); let sh = await ss()
+check(sh.tab === 'shopping' && /3\.00\/gal/.test(sh.html) && /new stock in 2 h/.test(sh.html), `RB swaps to the Shopping list: the pump's price, the shop's stock timer (${sh.tab}: "${sh.html}")`)
+await btnS(13); await btnS(0); sh = await ss()
+check(sh.id === 'near' && sh.open === null && sh.rows === 'near,far', `A on a pump opens nothing (${sh.id}, open ${sh.open}, rows ${sh.rows})`)
+await btnS(13); await btnS(0); sh = await ss()
+check(sh.open === 'far' && sh.rows === 'near,far,far#0,far#1' && /Old tire\$20\.00/.test(sh.html) && /gone in 5 h/.test(sh.html) && /always in stock/.test(sh.html),
+  `A on a shop opens its items in line (rows ${sh.rows}: "${sh.html}")`)
+await btnS(13); sh = await ss(); check(sh.id === 'far#0', `the D-pad walks onto the open shop's items (${sh.id})`)
+await btnS(1); sh = await ss()
+check(sh.open === null && sh.id === 'far' && sh.rows === 'near,far' && sh.open2, `the first B closes the shop, its header highlighted, the map open (${sh.id}, rows ${sh.rows})`)
+await btnS(13); await btnS(13); await btnS(0); await btnS(0); sh = await ss()
+check(sh.id === 'far' && sh.open === null, `A on the open shop's header again closes it (${sh.id}, open ${sh.open})`)
+await btnS(1); sh = await ss(); check(sh.id === null && sh.open2, `the next B leaves the list, the map still open (${sh.id})`)
+await btnS(4); sh = await ss(); check(sh.tab === 'missions', `LB swaps back to Missions (${sh.tab})`)
+// FEAT-211 landing 3: the waypoint on the pad. Free roam has no run, so main.js's side is stubbed (it records the drop and
+// says yes). Y sends n and drops it at the pad cursor (the sheet centre) without touching the ignition; Y again, on the pin,
+// clears it; A with nothing highlighted drops it as well (Enter), and A on a highlighted shop still opens the shop instead.
+await js(`(() => { const m = __map2d(); window.__wpStub = [m._getWaypoint, m._onWaypoint]; window.__wp = { at: null, calls: 0 }
+  m._getWaypoint = () => __wp.at && { ...__wp.at, poly: null }
+  m._onWaypoint = (p) => { __wp.calls++; __wp.at = p; return true } })()`)
+const wp = () => js('(() => { const m = __map2d(); return { at: __wp.at, calls: __wp.calls, px: m._panX, pz: m._panZ, ign: __vs.ignition.state, win: __win.join() } })()')
+await js('__win.length = 0')
+const ign0 = await js('__vs.ignition.state')
+await js('__fp.b[3] = 1'); await sleep(1500); await js('__fp.b[3] = 0'); await sleep(300)   // held past any ignition hold
+let wq = await wp()
+check(wq.win === 'n' && wq.calls === 1 && Math.abs(wq.at?.x - wq.px) < 0.5 && Math.abs(wq.at?.z - wq.pz) < 0.5 && wq.ign === ign0,
+  `Y sends n: a waypoint at the sheet centre (${wq.at?.x.toFixed(0)},${wq.at?.z.toFixed(0)} vs ${wq.px.toFixed(0)},${wq.pz.toFixed(0)}), ignition untouched (${ign0} → ${wq.ign}; window saw "${wq.win}")`)
+await btnS(3); wq = await wp(); check(wq.calls === 2 && wq.at === null, `Y on the pin clears it (calls ${wq.calls}, at ${JSON.stringify(wq.at)})`)
+await btnS(0); wq = await wp(); check(wq.calls === 3 && wq.at !== null, `A with nothing highlighted drops it too (calls ${wq.calls})`)
+await btnS(5); await btnS(13); await btnS(13); await btnS(0); sh = await ss(); wq = await wp()
+check(sh.open === 'far' && wq.calls === 3, `A on a highlighted shop opens the shop and drops nothing (open ${sh.open}, calls ${wq.calls})`)
+await btnS(1); await btnS(1); await btnS(4)
+await js('(() => { const m = __map2d(); [m._getWaypoint, m._onWaypoint] = __wpStub })()')
+await js('(() => { const m = __map2d(); [m._getPois, m._getBoard] = __mapStub; m._listT = 0 })()')
 // FEAT-175: the right stick's vertical zooms about the cursor (up in, down out); the triggers stay the pedals and
 // zoom nothing; the camera does not orbit behind the map.
 const zm = () => js('__map2d()._zoom'), camXZ = () => js('(() => { const p = __cam().position; return [p.x, p.z] })()')
@@ -115,18 +176,20 @@ check(z1 > z0 * 1.5 && z2 < z1 / 1.5, `right stick up zooms in, down out (${z0.t
 await js('__fp.axes[2] = -1'); await sleep(600); await js('__fp.axes[2] = 0'); await sleep(100)
 const c1 = await camXZ()
 check(Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 0.5, `the right stick does not orbit the camera behind the map (moved ${Math.hypot(c1[0] - c0[0], c1[1] - c0[1]).toFixed(2)} m)`)
-// Last, as it moves the truck: RT drives on the map (the truck is reset after the map closes).
+// Last: RT is still the throttle on the map, but the map was opened at rest, so the park lock holds the truck
+// (FEAT-194 part 2): the latch stays set and the handbrake on.
 await js('__fp.b[7] = 0.5'); await sleep(300)
-const thrOnMap = (await vs()).thr, z3 = await zm()
+const onMap = await vs(), z3 = await zm()
 await js('__fp.b[7] = 0'); await sleep(100)
-check(thrOnMap > 0 && z3 === z2, `RT is still the throttle on the map and zooms nothing (thr ${thrOnMap}, zoom ${z2.toFixed(3)} → ${z3.toFixed(3)})`)
+check(onMap.thr > 0 && z3 === z2, `RT is still the throttle on the map and zooms nothing (thr ${onMap.thr}, zoom ${z2.toFixed(3)} → ${z3.toFixed(3)})`)
+check(onMap.parked && onMap.hb && onMap.v < 0.3, `FEAT-194: RT on a map opened at rest does not release the parking brake (parked=${onMap.parked}, hb=${onMap.hb}, v=${onMap.v.toFixed(2)})`)
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!await mapShown(), 'View closes the map again')
 // B is the general back (owner, 2026-10-20): it closes the map too.
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
 check(!await mapShown(), 'B closes the map')
-// The map's RT drove the truck off its brake (FEAT-175): View held resets it, parked at rest, as the checks below found it.
+// View held resets the truck, parked at rest, as the checks below found it.
 await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)
 s = await vs(); check(s.parked && s.v < 0.2, `after the map, View held puts the truck back parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // Right stick = orbit RATE. Stopped, the view LINGERS where it was pointed (owner, 2026-10-20) until a
@@ -140,10 +203,12 @@ await js('__fp.axes[2] = 1'); await sleep(600); await js('__fp.axes[2] = 0')
 const o1 = await off(); check(Math.abs(o1) > 45, `0.6 s full right stick orbits the view (${o1.toFixed(0)} deg off behind)`)
 await sleep(1500); const o2 = await off(); check(Math.abs(o2 - o1) < 3, `1.5 s after release it HOLDS (${o2.toFixed(0)} deg)`)
 await sleep(2500); const o3 = await off(); check(Math.abs(o3 - o1) < 3, `stopped, ~4 s after release it still lingers (${o3.toFixed(0)} deg)`)
-// The tap releases the park latch and the truck sits on a slope: re-park at once (RB tap), so the
-// checks below start parked; the swing-back has already been handed over by then.
+// FEAT-194 part 1: the LT tap leaves the park latch set (only RT, RB or a gear let it go), so the checks
+// below start parked.
 await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0')
-await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0')
+check((await vs()).parked, 'FEAT-194: an LT tap while parked leaves the parking brake set')
+await js('__fp.b[6] = 0.6'); await sleep(1500); await js('__fp.b[6] = 0'); await sleep(100)
+check((await vs()).parked, 'FEAT-194: LT held 1.5 s while parked leaves it set')
 await sleep(2000); const o4 = await off(); check(Math.abs(o4) < 10, `a brake tap from a stop swings it back behind (${o4.toFixed(0)} deg)`)
 // B no longer aims (owner, 2026-10-21): held in the drive layout it is the icon menu. Off a route the
 // pad has no practice throw now; on one, the right stick aims and RB taps (checked below).
@@ -200,6 +265,27 @@ await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sl
 check(!await inv() && !await menuOn(), 'B closes the inventory, and that back never opens the icon menu')
 await js('__fp.b[1] = 1'); await sleep(100); await js('__fp.b[1] = 0'); await sleep(500)
 check(await inv(), 'a B tap opens the top pick (the inventory)')
+// FEAT-196: on the damage diagram the D-pad walks each axle inside out — damper, spring, body, brake, tire, wheel —
+// the front tire included (a tire and its wheel share a centre, so the nearest-item step never reached one of them).
+await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)   // B closes the inventory
+await js('document.getElementById("dmg-icon").click()'); await sleep(300)
+const walk = async (track, side, dir, n) => {
+  await js(`document.querySelectorAll('#dmg-screen .ds-part[data-track="${track}"]')[${side}].dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))`)
+  const seen = []
+  for (let k = 0; k < n; k++) {
+    await js(`__fp.b[${dir}] = 1`); await sleep(120); await js(`__fp.b[${dir}] = 0`); await sleep(200)
+    seen.push(await js('document.querySelector("#dmg-screen .nav-focus")?.dataset.track ?? null'))
+  }
+  return seen.join(' ')
+}
+let w = await walk('damperFront', 0, 14, 5)
+check(w === 'springFront armorLeft brakeFront tireFL wheelFL', `front left, D-pad ←: ${w}`)
+w = await walk('damperRear', 0, 14, 5)
+check(w === 'springRear armorLeft brakeRear tireRL wheelRL', `rear left, D-pad ← (the body side stays on this axle): ${w}`)
+w = await walk('damperFront', 1, 15, 5)
+check(w === 'springFront armorRight brakeFront tireFR wheelFR', `front right, D-pad →: ${w}`)
+await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
+check(!await js('document.getElementById("dmg-screen").classList.contains("open")'), 'B closes the damage screen')
 // FEAT-126 manual gearbox through the pad: A up, X down, LB clutch. Swapped in the way the debug
 // selector does it, on the app's own module instances.
 const appMod = (path) => `await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("${path}")))`
@@ -211,8 +297,18 @@ await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sl
 const gear = () => js('__vs.drivetrain.mGear')
 await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600)
 check(await gear() === 1, `manual, assist ON: A alone shifts N → 1 (gear ${await gear()})`)
-await js('__fp.b[7] = 0.6'); await sleep(2500)
-s = await vs(); check(s.v > 3 && (await js('__vs.ignition.state')) === 'running', `RT launches it on the assist (${s.v.toFixed(1)} m/s, no stall)`)
+// Since BUG-141's free-roam seat (968cd1a4) seed 6 parks the truck on an up-grade: the RB release lets it roll BACK,
+// ~1 m/s by the time RT goes down, and RT then reaches ~2.9 m/s forward in 2.5 s (on the old flat seat it was 9.7 m/s,
+// and `|v| > 3` passed with room). So read the FORWARD speed (body −Z), not |v| — a clutch that never bit rolls back
+// past 3 m/s and would pass a magnitude check — and time it in SIM seconds (INFRA-08: under load the sim runs slow).
+// Healthy: about −1 → +3 m/s in 2.5 sim-s; 2 m/s leaves ~0.6 s of launch as margin.
+const fwd = () => js(`(() => { const q = __vs.quaternion, v = __vs.velocity
+  return -(v.x * 2 * (q.x * q.z + q.w * q.y) + v.y * 2 * (q.y * q.z - q.w * q.x) + v.z * (1 - 2 * (q.x * q.x + q.y * q.y))) })()`)
+const vf0 = await fwd()
+await js('__fp.b[7] = 0.6')
+{ const t0 = await js('__simT()'), w0 = Date.now(); while (await js('__simT()') - t0 < 2.5 && Date.now() - w0 < 15000) await sleep(50) }
+const vf = await fwd()
+check(vf > 2 && (await js('__vs.ignition.state')) === 'running', `RT launches it on the assist (${vf0.toFixed(1)} → ${vf.toFixed(1)} m/s forward in 2.5 sim-s, no stall)`)
 await js('__R.clutchAssist = false')
 await js('__fp.b[0] = 1'); await sleep(120); await js('__fp.b[0] = 0'); await sleep(600)
 check(await gear() === 1, `assist OFF: A without LB is rejected (gear ${await gear()})`)
@@ -236,9 +332,9 @@ await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html` })
 for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await sleep(250)
 await sleep(500)
 await js(fakePad)
-// FEAT-156: the menu is new game / settings, and it opens with new game highlighted.
+// FEAT-156: the menu is new game / tutorial (FEAT-184) / settings, and it opens with new game highlighted.
 await press(DOWN)
-check(await navText() === 'settings', `the menu opens on new game: D-pad down reaches settings (${await navText()})`)
+check(await navText() === 'tutorial', `the menu opens on new game: D-pad down reaches tutorial (${await navText()})`)
 await press(UP)
 check(await navText() === 'new game', `up returns to new game (${await navText()})`)
 await press(A)

@@ -13,6 +13,8 @@
  *     rendered thumbnail (assets/items/<id>.png; the name stands in until the art exists).
  *   - Backpacks (items.md §2c): hover a pack to see its slots; click it to open it and pack or
  *     unpack. Counts may show (×3); mass and effects never do (SM-INV-10).
+ *   - FEAT-200 (owner, 2026-11-12): a camp item can be DRAGGED onto any backpack to pack it (native HTML
+ *     drag-and-drop). A pack it won't go into refuses the drop (the no-drop cursor). Select → pack stays: the pad's path.
  *   - A grant that doesn't fit shows here first as the swap prompt.
  *   - A part shows its wear (owner, 2026-10-22): a spare is a tire on a wheel, so both, and whether
  *     it holds air. condLine() — the roadside tire picker (damage-screen.js) shows the same line.
@@ -45,6 +47,7 @@ const CSS = `
 .inv-slot.full:hover { border-color: var(--text-body); }
 .inv-slot.sel { border-color: var(--text); box-shadow: 0 0 0 2px rgba(230,236,242,0.35); }
 .inv-slot.worn { border-color: #c9a24a; }
+.inv-slot.drop { border-color: var(--accept); box-shadow: 0 0 0 2px var(--accept); }
 .inv-slot img { position: absolute; inset: 6%; width: 88%; height: 88%; object-fit: contain; pointer-events: none; }
 .inv-slot .sl-name { display: none; position: absolute; inset: 0; align-items: center; justify-content: center;
   text-align: center; font-size: 12px; line-height: 1.2; color: var(--text-body); padding: 3px; pointer-events: none; }
@@ -119,6 +122,8 @@ function packSlotsHtml (row, attrsFor = () => '', selSlot = -1) {
   return h
 }
 
+const actsKey = (acts) => acts.map(a => `${a.label}|${a.enabled ?? true}`).join('\n')
+
 export class InventoryScreen {
   /**
    * @param {import('./inventory.js').InventorySystem} inventory
@@ -168,7 +173,35 @@ export class InventoryScreen {
     this.tip.id = 'inv-tip'
     document.body.appendChild(this.tip)
 
-    this.screen.addEventListener('mousedown', (e) => { if (e.target.closest('button, .inv-slot')) e.preventDefault() })
+    // A draggable slot keeps its mousedown: preventDefault there would stop the drag starting (FEAT-200). A div takes
+    // no focus, so Space still reaches the brake.
+    this.screen.addEventListener('mousedown', (e) => { if (e.target.closest('button, .inv-slot:not([draggable])')) e.preventDefault() })
+    // FEAT-200: drag a camp item onto a backpack in the grid. dragover's preventDefault is what accepts a drop.
+    this._drag = null
+    const packAt = (e) => e.target.closest('.inv-slot.full[data-slot]')
+    const unmark = () => this.card.querySelector('.inv-slot.drop')?.classList.remove('drop')
+    this.screen.addEventListener('dragstart', (e) => {
+      const s = e.target.closest?.('.inv-slot[draggable][data-slot]')
+      if (!s) return
+      this._drag = +s.dataset.slot
+      e.dataTransfer.effectAllowed = 'move'
+      this.tip.style.display = 'none'
+    })
+    this.screen.addEventListener('dragover', (e) => {
+      const t = this._drag != null && packAt(e)
+      const ok = t && this.inventory.canPack(this._drag, +t.dataset.slot)
+      if (t?.classList.contains('drop') && ok) { e.preventDefault(); return }
+      unmark()
+      if (ok) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; t.classList.add('drop') }
+    })
+    this.screen.addEventListener('drop', (e) => {
+      e.preventDefault()
+      const t = packAt(e)
+      if (this._drag != null && t && this.inventory.packItem(this._drag, +t.dataset.slot)) { this.sel = null; this.packSel = -1 }
+      this._drag = null
+      this.render()
+    })
+    this.screen.addEventListener('dragend', () => { this._drag = null; unmark() })
     this.screen.addEventListener('click', (e) => this._onClick(e))
     this.screen.addEventListener('mousemove', (e) => this._onHover(e))
     this.screen.addEventListener('mouseleave', () => { this.tip.style.display = 'none' })
@@ -217,6 +250,14 @@ export class InventoryScreen {
     this.zone?.classList.toggle('locked', locked)
     this.iconEl.classList.toggle('ready', !locked)
     if (this.isOpen && (locked || this.isSuppressed())) this.close()
+    // FEAT-138 (owner, 11-07): a selected item's choices can change with the clock (the hi-lift's
+    // cooldown) — re-read them once a second and redraw when a label moved, so the menu needn't reopen.
+    const t = performance.now()
+    if (this.isOpen && this.sel != null && t - (this._actsAt ?? 0) >= 1000) {
+      this._actsAt = t
+      const r = this.inventory.list()[this.sel]
+      if (r && this._actsKey !== actsKey(this.actions(r))) this.render()
+    }
   }
 
   _onClick (e) {
@@ -281,7 +322,8 @@ export class InventoryScreen {
     const p = inv.pending()
     let grid = ''
     for (let i = 0; i < Math.max(inv.slotCap(), rows.length); i++) {
-      grid += slotHtml(rows[i] ?? null, rows[i] ? `data-slot="${i}"` : '', i === this.sel ? 'sel' : '')
+      grid += slotHtml(rows[i] ?? null, rows[i] ? `data-slot="${i}"${rows[i].kind === 'camp' ? ' draggable="true"' : ''}` : '',
+        i === this.sel ? 'sel' : '')
     }
     const ground = this.ground.list()
     if (!ground.some(g => g.it === this.groundSel)) this.groundSel = null
@@ -311,11 +353,13 @@ export class InventoryScreen {
   /** What you can do with the selected item. */
   _strip (rows) {
     const r = this.sel != null ? rows[this.sel] : null
-    if (!r) return `<div class="st-hint">Click an item to use it, drop it, or open a pack.</div>`
+    if (!r) return `<div class="st-hint">Click an item to use it, drop it, or open a pack. Drag camp gear onto a pack to pack it.</div>`
     const inv = this.inventory
     const head = `<div class="st-name">${r.name}${r.equipped ? '<span class="st-tag">equipped</span>' : ''}</div>`
       + (condLine(r) ? `<div class="st-cond">${condLine(r)}</div>` : '')
       + `<div class="st-desc">${r.desc}</div>`
+    const acts = this.actions(r)
+    this._actsKey = actsKey(acts)   // update() redraws when these change
     if (r.contents) {
       const packed = r.contents[this.packSel]
       const canUnpack = packed && !(r.equipped && packed.bed === 'bedding') && inv.slotsUsed() < inv.slotCap()
@@ -326,8 +370,7 @@ export class InventoryScreen {
     }
     const eq = rows.find(x => x.equipped)
     const swap = r.bed && eq?.contents.some(c => c.bed === r.bed)   // FEAT-171: one item per bed layer
-    const canPack = r.kind === 'camp' && eq && (eq.contents.length < eq.packSlots || swap)
-    const acts = this.actions(r)
+    const canPack = inv.canPack(this.sel)
     return head
       + (acts.length ? `<div class="st-acts">${acts.map((a, i) => btn('action',
         (a.icon ? `<img src="${THUMB(a.icon)}" alt="">` : '') + a.label, a.enabled ?? true, `data-i="${i}"`)).join('')}</div>` : '')

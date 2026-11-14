@@ -60,7 +60,7 @@
       user-select: none;
     }
     /* FEAT-42: #resume-card is the pause box's sibling — a resumed run opens frozen under it until any key. */
-    #pause-menu, #resume-card, #towel-card {
+    #pause-menu, #resume-card, #towel-card, #tut-card {
       display: none;
       position: fixed;
       top: 50%;
@@ -78,7 +78,7 @@
       z-index: 100;
       min-width: 200px;
     }
-    #pause-menu .pm-title, #resume-card .pm-title, #towel-card .pm-title {
+    #pause-menu .pm-title, #resume-card .pm-title, #towel-card .pm-title, #tut-card .pm-title {
       color: var(--accent-system);
       font-size: 14px;
       letter-spacing: 2px;
@@ -86,7 +86,7 @@
       margin-bottom: 6px;
     }
     #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text; }
-    #pause-menu button, #towel-card button {
+    #pause-menu button, #towel-card button, #tut-card button {
       background: none;
       border: 1px solid var(--line-control);
       color: var(--text-body);
@@ -98,7 +98,7 @@
       text-align: left;
       transition: background 0.1s, color 0.1s;
     }
-    #pause-menu button:hover, #towel-card button:hover {
+    #pause-menu button:hover, #towel-card button:hover, #tut-card button:hover {
       background: rgba(255, 255, 255, 0.08);
       color: var(--text-bright);
       border-color: var(--line-hover);
@@ -110,6 +110,8 @@
     #pause-menu .pm-why:empty { display: none; }
     /* FEAT-146: the towel's confirm card (owner, 2026-10-31: a card in the owner's words, not a double click). */
     #towel-card { max-width: 400px; }
+    /* FEAT-184 (DEC-147): the intro's card — play the tutorial, or skip it. The towel card's shape. */
+    #tut-card { max-width: 400px; }
     #towel-card p { margin: 0 0 6px; line-height: 1.5; text-align: center; }
     /* FEAT-43: Story Mode seed prompt (minimal; full styling deferred to FEAT-41). */
     #story-seed-modal {
@@ -346,7 +348,6 @@
        style.display from main.js cannot leak a panel onto the menu, and so simply dropping the class
        restores every element's own display without main.js re-asserting any of them. */
     body.stage-on > div:not(#main-menu):not(#load-caption):not(#story-seed-modal):not(#boot-loading),
-    body.stage-on > canvas#map2d,
     body.stage-on > canvas#cluster { display: none !important; }
     /* FEAT-155 (owner 2026-10-30): a made camp turns the key off, and the truck's dashboard goes with it.
        The run readout (wallet, deeds, clock) is the dock's, not the dashboard's: it stays. */
@@ -813,6 +814,10 @@
       stroke-linecap: round; stroke-linejoin: round; }
     #hud-menu-label.solo svg { display: none; }
     #hud-b-hint .kc-round { color: var(--text); }
+    /* FEAT-195: B held + ↑ abandons the job (hud-menu.js) — said on the menu's own line while the job's button can act
+       (shown, parked) and is not armed (armed, the confirm is a plain B and the button's keycap says so). */
+    #hud-b-hint .bh-abandon { display: none; white-space: nowrap; }
+    body:has(#job-cancel:not(.unparked):not(.armed):not([style*="none"])) #hud-b-hint .bh-abandon { display: inline; }
     /* FEAT-122: the PARK ZONE — the icons that only work while parked (damage V, inventory Tab),
        grouped under the PARK stencil that owns them (owner, 2026-10-16). Camp stays outside:
        the brake is how you make camp. Locked (not parked, or the brake belongs to a POI here): the
@@ -880,9 +885,6 @@
        Revert = this line back to var(--key) and the .mp-deed / .jp-deed rules below. */
     #run-hud .rh-deeds { color: var(--accent-story); }
     #run-hud .rh-clock { color: var(--text-dim); letter-spacing: 1px; }
-    /* Over the map too (it sits at z 90): the clock is where a job card's "due Day 3, 2 am" is read,
-       and offers are mostly weighed from the map (owner, 2026-10-15). */
-    body.map-open #run-hud { z-index: 91; }
 
     /* FEAT-55: the Energy meter (RoR2 ticker), top-right under the wallet. Story-only; shown and
        scrolled per frame by _updateEnergyMeter. Segment colours come from day.js STAGE_COLOR via
@@ -897,6 +899,7 @@
       color: var(--text);
     }
     #energy-meter .em-title { margin-bottom: 4px; text-align: left; }
+    #energy-meter .em-view + .em-title { margin-top: 6px; }   /* FEAT-198: the hunger line under the energy bar */
     #energy-meter .em-view {
       position: relative;
       width: 100px;
@@ -1504,6 +1507,46 @@
                    border: 1px solid var(--line-hover); }
     .mp-portrait svg { display: block; width: 100%; height: 100%; fill: #8a8272; }
     .mp-flavor { font-style: italic; line-height: 1.45; }
+    /* FEAT-211: the map window, 90 % of the screen (owner, 2026-11-14), over the LIVE world (main.js renders it as
+       usual), dimmed by the window's shadow: a spread shadow is the cheapest full-screen tint there is. */
+    #map-window { display: none; position: fixed; inset: 5vh 5vw; z-index: 90; background: black; /* opaque: the HUD under it must not read through the list's card tint */
+                  border: 1px solid var(--line-card); box-shadow: 0 0 0 100vmax rgba(0,0,0,0.35); }
+    /* The sheet's backdrop is the topo sheet's PAPER_GREEN (map2d.js): mid-drag the cached background is blitted at an
+       offset, and the strip that uncovers must read as more sheet, not as a gutter. flex-basis 0 + min-width 0: a
+       canvas's intrinsic width is its backing size, which must never decide the layout. */
+    #map2d { flex: 1 1 0; min-width: 0; height: 100%; display: block; background: #cfe2bd; cursor: grab; }
+    #map-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; background: var(--card-bg);
+                border-left: 1px solid var(--line-card); font-family: var(--font); font-size: 14px; color: var(--text-body); }
+    #map-list-head { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px 8px; font-size: 12px; }
+    /* The list's two tabs (the bumpers swap them, a click too): the one showing carries the story accent. */
+    #map-list-head .ml-tab { color: var(--text-faint); letter-spacing: 1px; text-transform: uppercase; cursor: pointer; margin-right: 10px;
+                             transition: color 0.1s; }
+    #map-list-head .ml-tab:hover { color: var(--text-bright); }
+    #map-list-head .ml-tab.on { color: var(--accent-story); }
+    /* The run HUD's clock, repeated: the window covers the HUD on a small screen, and the clock is where a job's due
+       time is read while weighing offers (owner, 2026-10-15). */
+    #map-clock { color: var(--text-dim); letter-spacing: 1px; white-space: nowrap; }
+    #map-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+    #map-list .ml-row { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer;
+                        border-left: 2px solid transparent; transition: background-color 0.1s, border-color 0.1s; }
+    #map-list .ml-row.on { background: rgba(255,255,255,0.09); border-left-color: var(--accent-system); color: var(--text-bright); }
+    #map-list .ml-fams { flex: 0 0 auto; display: flex; gap: 3px; }
+    #map-list .ml-fams i { width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid rgba(0,0,0,0.6); }
+    #map-list .ml-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #map-list .ml-dist { flex: 0 0 auto; color: var(--text-dim); }
+    #map-list .ml-none { padding: 6px 14px; color: var(--text-faint); font-size: 12px; }
+    /* FEAT-211 Shopping: a shop's header wraps its pump price / new-stock line under its name; its items, open, sit
+       indented under it, each wrapping whole (name and price, condition and how long it stays, the flavour text). */
+    #map-list .ml-shop, #map-list .ml-item { flex-wrap: wrap; row-gap: 2px; }
+    #map-list .ml-open { flex: 0 0 10px; color: var(--text-dim); }
+    #map-list .ml-sub, #map-list .ml-desc { flex: 1 0 100%; font-size: 12px; color: var(--text-dim); }
+    #map-list .ml-shop .ml-sub { padding-left: 18px; }
+    #map-list .ml-item, #map-list .ml-in { padding-left: 32px; }
+    #map-list .ml-desc { color: var(--text-faint); }
+    #map-list .ml-price { flex: 0 0 auto; color: var(--money); }
+    #map-list .ml-bar { display: inline-block; width: 40px; height: 6px; margin-right: 6px; vertical-align: 1px; border: 1px solid var(--line-control); }
+    #map-list .ml-bar i { display: block; height: 100%; }
+    #map-legend { flex: 0 0 auto; display: block; width: calc(100% - 24px); margin: 12px; }
     /* FEAT-67: the offer card docks in the map's corners — nothing may sit on top of it. */
     body.map-open #quickjob-btn { visibility: hidden; }
   </style>
@@ -1514,13 +1557,17 @@
   <!-- Canvas queried by main.js via document.querySelector('canvas') — no id required -->
   <canvas></canvas>
 
-  <!-- FEAT-16: 2D top-down map overlay (dev/validation tool, toggled with M).
-       Fullscreen 2d-context canvas above the WebGL canvas but below the pause menu
-       (z 100). Hidden by default; src/map2d.js owns its draw + pan/zoom handlers.
-       Backdrop is the topo sheet's PAPER_GREEN (map2d.js): mid-drag the cached background is
-       blitted at an offset, and whatever strip that uncovers must read as more sheet rather than
-       as a black gutter opening at the edge of the world. -->
-  <canvas id="map2d" style="position:fixed; inset:0; display:none; z-index:90; background:#cfe2bd; cursor:grab;"></canvas>
+  <!-- FEAT-211: the map is a WINDOW over the game (90 % of the screen each way), the sheet on the left and the
+       list column on the right: the destinations list over the legend. src/map2d.js shows it, sizes the canvases
+       from their laid-out size, and writes the list. -->
+  <div id="map-window">
+    <canvas id="map2d"></canvas>
+    <div id="map-side">
+      <div id="map-list-head"><span><span class="ml-tab on" data-tab="missions">Missions</span><span class="ml-tab" data-tab="shopping">Shopping</span></span><span id="map-clock"></span></div>
+      <div id="map-list"></div>
+      <canvas id="map-legend"></canvas>
+    </div>
+  </div>
 
   <!-- FEAT-47: story-mode eyelids (blink / doze). Inert until main.js writes the transforms. -->
   <div id="doze-overlay">
@@ -1550,6 +1597,11 @@
        (src/story.js). The beta mission generator it used to launch is now Quick Job, surfaced as a
        corner button INSIDE story mode (#quickjob-btn), not a pause-menu entry. -->
   <div id="resume-card"><div class="pm-title">paused</div>press any key to resume</div>
+  <div id="tut-card">   <!-- FEAT-184 (DEC-147): the end of the intro (main.js _syncTutCard) -->
+    <div class="pm-title">tutorial</div>
+    <button id="tc-play">play the tutorial</button>
+    <button id="tc-skip">skip</button>
+  </div>
   <div id="towel-card">
     <div class="pm-title">give up</div>
     <p>Are you sure you want to end your run? This will permanently delete the save file for this run.</p>
@@ -1659,8 +1711,9 @@
       <button class="mm-sel" data-key="tractionControl"></button>
       <div class="mm-group">controller</div>
       <button class="mm-sel" data-key="stickDeadzone"></button>
+      <div class="mm-group">display</div>
+      <button class="mm-sel" data-key="frameCap"></button>
       <div class="mm-group">tutorial</div>
-      <button class="mm-sel" data-key="skipTutorial"></button>   <!-- FEAT-184: on after the first finished or skipped tutorial -->
       <div class="mm-group"></div>
       <button id="mm-bindings">bindings</button>
       <button id="mm-settings-back">back</button>
@@ -1718,6 +1771,8 @@
       <button id="mp-decline" title="the same brake tap that releases the truck">decline (space)</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
+      <!-- FEAT-199: a result card's earned item — the cash less its cost, with the item (main.js _syncItemChoice). -->
+      <button id="mp-item" style="display:none">take the item</button>
       <button id="mp-accept" data-primary>accept mission</button>
     </div>
   </div>
@@ -1770,6 +1825,19 @@
         </div>
         <div class="em-pointer"></div>
       </div>
+      <!-- FEAT-198: hunger mirrors energy in the same box — its word, then its strip, scrolled by the hours left
+           on the meal's hold (bands = DAY_PARAMS.hungerWords; the 2 h bands carry no inline label). -->
+      <div class="em-title" id="hm-title">Hunger&ensp;·&ensp;<span id="hm-stage">stuffed</span></div>
+      <div class="em-view" id="hm-view">
+        <div class="em-strip" id="hm-strip">
+          <div class="em-seg" id="hm-seg-stuffed"><span>Stuffed</span></div>
+          <div class="em-seg" id="hm-seg-full"></div>
+          <div class="em-seg" id="hm-seg-content"></div>
+          <div class="em-seg" id="hm-seg-peckish"></div>
+          <div class="em-seg" id="hm-seg-hungry"><span>Hungry</span></div>
+        </div>
+        <div class="em-pointer"></div>
+      </div>
     </div>
 
     <!-- FEAT-31 testing lab: live status + best-of-each-track table. The right-hand column is the
@@ -1785,7 +1853,7 @@
 
     <!-- The icon column. damage-screen.js prepends its own row (the truck, V) above these. -->
     <div id="hud-icons">
-      <div id="hud-b-hint">hold <span class="kc-pad kc-round">B</span></div>
+      <div id="hud-b-hint">hold <span class="kc-pad kc-round">B</span><span class="bh-abandon">· ↑ abandon job</span></div>
       <!-- FEAT-122: the park zone — damage-screen.js and inventory-screen.js append their rows. -->
       <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">PARK</span></div>
       <!-- FEAT-45 Phase D: making camp. The tent shows only where the old camp prompt did (a camp

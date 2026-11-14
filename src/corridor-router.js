@@ -872,18 +872,21 @@ export function priceProfile(st, y, C) {
  *        rescued at a node, was the only new portal-at-node in the BUG-67 corpus)
  * @returns {object} a profile of the same shape; the input itself when no portal moves
  */
+// A portal's stopping depth: the deeper of the buildability floor (bore radius + portal cover) and the cut = bore
+// price crossover (cRoadM + cCutM·d + cCut2·d² = cBoreM; ≈ 9.0 m at the defaults). Also road.js BUG-147.
+export function boreStopDepth(C, boreRadius) {
+    const a2 = C.cCut2 ?? 0, a1 = C.cCutM, a0 = C.cRoadM - C.cBoreM
+    const dCross = a2 > 0 ? (-a1 + Math.sqrt(a1 * a1 - 4 * a2 * a0)) / (2 * a2) : -a0 / a1
+    return Math.max(boreRadius + (C.portalCover ?? 2), dCross)
+}
+
 export function extendBorePortals(st, prof, C, boreRadius, endGuard, minLen) {
     const n = st.s.length
     if (!prof.cls.includes(CLS.BORE)) return prof
     const y = prof.y, orig = prof.cls, cls = orig.slice()
     const depth = (i) => st.ground[i] - y[i]
     const gradeOk = (a, b) => Math.abs((y[b] - y[a]) / Math.max(1e-9, st.s[b] - st.s[a])) <= C.gMaxBore + 1e-9
-    // Stopping depth: the deeper of the buildability floor and the cut = bore price crossover
-    // (cRoadM + cCutM·d + cCut2·d² = cBoreM; ≈ 9.0 m at the defaults).
-    const dMin = boreRadius + (C.portalCover ?? 2)
-    const a2 = C.cCut2 ?? 0, a1 = C.cCutM, a0 = C.cRoadM - C.cBoreM
-    const dCross = a2 > 0 ? (-a1 + Math.sqrt(a1 * a1 - 4 * a2 * a0)) / (2 * a2) : -a0 / a1
-    const dStop = Math.max(dMin, dCross)
+    const dStop = boreStopDepth(C, boreRadius)
     const sLo = endGuard, sHi = st.s[n - 1] - endGuard
     const ok = (i) => depth(i) >= dStop && st.s[i] >= sLo && st.s[i] <= sHi
     // Grow outward from every ORIGINAL bore station. Stations 0 and n−1 are node-pinned run ends

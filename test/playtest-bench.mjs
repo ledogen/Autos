@@ -1,0 +1,595 @@
+// test/playtest-bench.mjs — PERF-40: an unattended playtest that measures what a session costs, in watts. NOT a gate.
+//
+// It plays the real game (its own Vite on the checkout, Chrome at the owner's canvas: 2090 × 1226 device px at dpr 2, the
+// Normal tier) the way PERF-37's owner sessions did, with an autopilot on a VIRTUAL GAMEPAD — a page script answers
+// navigator.getGamepads(), which src/gamepad.js polls every frame, so the game's own input path drives (no src/ change).
+// Per seed, ~7 min with the boot:
+//   drive  story mode, seated from Larry's yard onto the road network, a route at play speeds for 300 s, one 60 s leg
+//          riding the road edge (centre 5 m off the line: one side's wheels over the lip on the shoulder — PERF-42's
+//          hot spot, the autopilot otherwise keeps to the middle), one off-road leg. The driver is test/lib/autopilot.mjs (pure: state in, controls out — meant to grow into in-game AI
+//          cars); this file is its consumer: controls onto the pad, trouble into re-seats (then crank, then park off)
+//   map    stopped, the map open: zoom right out, a fast pan into undrawn ground, zoom back in, pan on (30 s)
+//   park   stopped, the map shut (30 s) — the GPU-only cost
+// Measured per phase: fps, p95, worst frame; main-thread ms/s per __perfData bucket; the per-second SPIKES (drive: physics
+// p50 / p99 / worst and the share of moving seconds over 100 ms/s; map: postStream p95 / worst); CPU % per Chrome process (`ps`
+// cumulative CPU time — the renderer minus the main thread is the workers); CPU / GPU / DRAM watts and GPU ACTIVE
+// cycles (busy % × MHz) from test/lib/ioreport.py, no root; triangles and draw calls.
+//
+// WORK, not time (2026-11-13): the main thread's retired instructions per second, its clock and the share of its CPU time
+// on P cores, from test/lib/threadcounts.py (xnu's per-thread counters, no root). On this Mac ms/s follows the core macOS
+// picks (light load → slow core: 1.6–3.3× more ms for the same work), so ms cannot tell a regression from scheduling.
+// Instructions can. Physics work per second = its ms × the main thread's instructions per CPU ms in that second
+// ("physMi", millions of instructions); its spike share is over PHYS_SPIKE_MI (1000 Minstr ≈ 100 ms on a P core near
+// 3 GHz). Keep both: the player feels ms, a comparison reads work. Exact for the whole thread; physics' share of it is
+// apportioned by its ms, which assumes one instruction rate across the second's buckets.
+//
+// GPU load is compared by active cycles (gpuMcyc = Mcycles/s). Not GPU ms (the GPU lowers its clock as load drops, so ms
+// per frame stays near the frame budget) and not raw watts (±50 % over 6 s at a steady state) — PERF-40 ticket.
+//
+// THE OWNER'S RULE (2026-11-12): an autopilot that crashes stops streaming, and the run would report a cheap world. So the
+// autopilot RECOVERS — stuck, flipped or lost, it re-seats on the route AHEAD (window.__teleport) — and every recovery
+// is counted. A drive that did not cover MIN_KM or build MIN_CHUNKS new terrain chunks is INVALID: reported as such, never
+// as a number.
+//
+//   node test/playtest-bench.mjs                         this checkout, the three pinned seeds, 1 rep
+//   node test/playtest-bench.mjs --b=../CarGame          A/B: this checkout vs another, alternating A-B-A-B (heat drift)
+//   node test/playtest-bench.mjs --reps=2 --seeds=1 --drive=120 --headed
+//   node test/playtest-bench.mjs --record                append the result to .planning/perf/history.jsonl (health check)
+//
+// Flags: --a=<checkout> (default this one) --b=<checkout> [--c=<checkout>] --reps=N --seeds=K (first K pinned) | --seed=N
+//        --drive=S --map=S --park=S --headed --out=DIR (default perf-runs/bench-<stamp>) --record
+//        --probe   count road resolves per second (PERF-42) and list the CSS animations running (PERF-48) — wraps a hot
+//                  path, so its ms are not for comparing
+//        --fake-audio  Chrome's --disable-audio-output (a fake sink whose clock runs at 1.0 s/s): for a host whose
+//                  CoreAudio is wedged (PERF-47). The game's audio work still runs; nothing reaches the speakers.
+//        --profile PERF-48: a Chrome trace per phase (every thread of every process, the JS sampling profiler, GC) to
+//                  <out>/<build>-<seed>-<rep>-<phase>.trace.json.gz; GPU timer queries per pass (shadow / main /
+//                  offscreen) and the JS heap in each 1 Hz sample; a scene census mid-drive and mid-park. Adds
+//                  profiler overhead, so its ms are not for comparing with an unprofiled session.
+// A run is ~7 min per seed per build per rep. Wants a quiet machine: one bench at a time, not while lanes run heavy
+// gates (the shared-CPU rule). The load average is printed with every session.
+import { spawn, execFileSync } from 'node:child_process'
+import { createServer } from 'node:net'
+import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve, basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { loadavg, cpus } from 'node:os'
+import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
+
+const HERE = dirname(fileURLToPath(import.meta.url)), ROOT = dirname(HERE)
+const arg = (k, d) => { const a = process.argv.find(s => s.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d }
+const has = k => process.argv.includes(`--${k}`)
+// Three seeds drawn at random once (2026-11-12) and pinned so runs compare. Not a default world (CLAUDE.md § Seeds).
+// 711969014 (the third first drawn) is swapped out: its drive stalled under full throttle on both builds, every rep —
+// the autopilot's known-hard seed, kept for debugging it (PERF-40 ticket), not for measuring. 759313244 drawn 2026-11-12.
+const PINNED = [1768572700, 17535907, 759313244]
+const SEEDS = arg('seed') ? [+arg('seed')] : PINNED.slice(0, +arg('seeds', PINNED.length))
+const REPS = +arg('reps', 1), DRIVE_S = +arg('drive', 300), MAP_S = +arg('map', 30), PARK_S = +arg('park', 30)
+// 2.5 km (8.3 m/s average) and 38 chunks at the default 300 s. The bar was 3 km until 2026-11-12: seed 17535907's roads are
+// slow (2.6–3.5 km over six sessions), and the owner kept the seed and lowered the bar.
+const MIN_KM = DRIVE_S / 120, MIN_CHUNKS = Math.round(DRIVE_S / 8)
+const BUILDS = [{ name: 'A', dir: resolve(arg('a', ROOT)) }, ...['b', 'c'].filter(k => arg(k)).map(k => ({ name: k.toUpperCase(), dir: resolve(arg(k)) }))]
+const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+const OUT = resolve(arg('out', join(ROOT, 'perf-runs', `bench-${stamp}`)))
+if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
+for (const b of BUILDS) if (!existsSync(join(b.dir, 'node_modules/vite/bin/vite.js'))) { console.error(`no vite in ${b.dir}`); process.exit(1) }
+mkdirSync(OUT, { recursive: true })
+
+const freePort = () => new Promise(r => { const s = createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)) }) })
+const until = async (fn, ms, every = 200) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn().catch(() => null); if (v) return v; await sleep(every) } return null }
+const git = (dir, ...a) => { try { return execFileSync('git', ['-C', dir, ...a]).toString().trim() } catch { return '?' } }
+
+// ── the samplers that run beside the page: power (ioreport.py) and CPU per process (ps) ───────────────────────────────
+const power = []
+const io = spawn('python3', ['-I', join(HERE, 'lib/ioreport.py'), '0.5'])
+io.stdout.on('data', b => { for (const l of String(b).trim().split('\n')) try { power.push(JSON.parse(l)) } catch {} })
+const procs = []
+const secs = t => t.split(':').reduce((s, x) => s * 60 + Number(x), 0)
+let psPrev = null, psRoot = 0
+const chromeTree = () => {   // this session's Chrome processes: { pid: { type, cpu (s) } }
+  const rows = execFileSync('ps', ['-Ao', 'pid=,ppid=,time=,command=']).toString().trim().split('\n').map(l => {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(l); return m && { pid: +m[1], ppid: +m[2], cpu: secs(m[3]), cmd: m[4] }
+  }).filter(Boolean)
+  const kids = new Set([psRoot]); for (let grew = true; grew;) { grew = false; for (const r of rows) if (!kids.has(r.pid) && kids.has(r.ppid)) { kids.add(r.pid); grew = true } }
+  const now = {}
+  for (const r of rows) if (kids.has(r.pid)) now[r.pid] = { type: /--type=([\w-]+)/.exec(r.cmd)?.[1] ?? 'browser', cpu: r.cpu }
+  return now
+}
+function psSample () {
+  if (!psRoot) return
+  const t = Date.now(), now = chromeTree()
+  if (psPrev) {
+    const dt = (t - psPrev.t) / 1000, by = { renderer: 0, gpu: 0, other: 0 }
+    for (const [pid, p] of Object.entries(now)) {
+      const q = psPrev.now[pid]; if (!q) continue
+      const pct = (p.cpu - q.cpu) / dt * 100
+      if (p.type === 'renderer') by.renderer = Math.max(by.renderer, pct)   // the game's renderer is the busy one
+      else if (p.type === 'gpu-process') by.gpu += pct
+      else by.other += pct
+    }
+    procs.push({ t, ...by })
+  }
+  psPrev = { t, now }
+}
+const psTimer = setInterval(psSample, 2000)
+
+// The main thread's counters, per session (threadcounts.py on the game's renderer, started once the page is live).
+let thr = [], tc = null
+const rendererPid = () => Object.entries(chromeTree()).filter(([, p]) => p.type === 'renderer').sort((a, b) => b[1].cpu - a[1].cpu)[0]?.[0]   // the busiest: the game's
+const vites = []
+const shutdown = () => { clearInterval(psTimer); try { io.kill() } catch {} try { tc?.kill() } catch {} for (const v of vites) try { v.kill() } catch {} }
+process.on('exit', shutdown)
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { shutdown(); process.exit(1) })
+for (const b of BUILDS) {
+  b.port = await freePort()
+  const v = spawn(process.execPath, [join(b.dir, 'node_modules/vite/bin/vite.js'), '--port', String(b.port), '--strictPort'], { cwd: b.dir, stdio: 'ignore' })
+  vites.push(v)
+  if (!await until(() => fetch(`http://localhost:${b.port}/`).then(r => r.ok), 20000)) { console.error(`vite never served ${b.dir}`); process.exit(1) }
+  b.commit = git(b.dir, 'rev-parse', '--short', 'HEAD'); b.branch = git(b.dir, 'rev-parse', '--abbrev-ref', 'HEAD')
+  b.dirty = git(b.dir, 'status', '--porcelain', '--', 'src', 'data') !== ''
+}
+
+// ── the page side: the virtual pad, the autopilot, the 1 Hz probe ─────────────────────────────────────────────────────
+// Injected once a story run is live. window.__bench.phase drives it: 'drive' (pursuit), 'home' (re-seat at the drive's start, idle, parked), 'map'
+// (stick pan/zoom), 'idle' (hands off). Everything it records is read back by the harness per phase.
+const AUTOPILOT = readFileSync(join(HERE, 'lib/autopilot.mjs')).toString('base64')
+const PAGE = String.raw`(async () => {
+  // The autopilot is test/lib/autopilot.mjs (pure: state in, controls out). This is its consumer: the controls go onto
+  // a virtual pad, and its trouble reports become re-seats.
+  const { RANGER_PARAMS: P } = await import('/data/ranger.js')
+  const { makeRoute, createAutopilot } = await import('data:text/javascript;base64,${AUTOPILOT}')   // the bench's own copy, so an A/B drives both builds the same
+  const road = window.__roadSys(), seed = window.__seed ?? 1
+  const axes = [0, 0, 0, 0], buttons = Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 }))
+  const gp = { id: 'perf-40 bench', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes, buttons, vibrationActuator: null }
+  Object.defineProperty(navigator, 'getGamepads', { value: () => [gp], configurable: true })
+  const dlg = document.getElementById('dialogue-panel')
+  // PERF-42 --probe: count the road resolves (the tread samples' re-resolves off the deck). A wrapper on the hot path, so
+  // a probed session's ms are not comparable with an unprobed one.
+  const resolve = road._resolveRoadSurface.bind(road)
+  let nRes = 0
+  if (window.__benchProbe) road._resolveRoadSurface = (...a) => { nRes++; return resolve(...a) }
+  const B = window.__bench = { phase: 'idle', dialogues: 0, recov: [], samples: [], frames: [], chunks0: null, chunks: new Set() }
+  const setPad = (steer, thr, brk, panY = 0, zoom = 0) => {   // left stick = steer / map pan, right stick Y = map zoom
+    axes[0] = steer; axes[1] = panY; axes[2] = 0; axes[3] = zoom
+    buttons[7].value = thr; buttons[7].pressed = thr > 0.05; buttons[6].value = brk; buttons[6].pressed = brk > 0.05
+  }
+  let s = seed >>> 0
+  const rng = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32)
+  // Story's region is walled (REGION_RADIUS_M); a route out past it drives into the wall for good — keep 150 m clear.
+  const reg = window.__story?.()?.region?.()
+  const keep = reg ? (x, z) => Math.hypot(x - reg.x, z - reg.z) < reg.r - 150 : undefined
+  const route = makeRoute([...road._network.values()], rng, window.__vs.position, keep)
+  const inBore = (x, z) => { const nr = road.queryNearest(x, z, 15); return !!nr && !!road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0, -20) }
+  const ap = B.ap = createAutopilot({ car: P, route, inBore })
+  const D = window.__damage, cond0 = D?.condition ? { ...D.condition } : null
+  const kit0 = D ? Object.fromEntries(['flat', 'toeOffsetDeg', 'camberOffsetDeg'].map(f => [f, D[f] && [...D[f]]])) : {}
+  ap.locate(window.__vs.position)
+  // A seat is a dead, parked truck (story mode's, main.js _reseatTruckAtSpawn): after it lands, hold I until the engine
+  // runs (synthetic keys, the way gamepad.js sends its own), then RB (Space in the drive layout) off the park brake.
+  let dlgTick = 0, home = null, settle = 0, settleT = 0, seating = false, cranking = false, rbHold = 0, rbCool = 0, detoured = false, edgeT0 = 0
+  const ikey = type => (document.activeElement || document.body).dispatchEvent(new KeyboardEvent(type, { key: 'i', code: 'KeyI', bubbles: true, cancelable: true }))
+  // Hold I until it runs; a press that something swallowed (a dialogue) leaves it 'off', so press again after 1 s.
+  let crankT = 0
+  const crank = (ign, dt) => {
+    crankT += dt
+    if (ign === 'running') { if (cranking) { cranking = false; ikey('keyup') } return true }
+    if (!cranking || (ign === 'off' && crankT > 1)) { if (cranking) ikey('keyup'); ikey('keydown'); cranking = true; crankT = 0 }
+    return false
+  }
+  const seat = (why, m = 25) => {
+    if (why) B.recov.push({ why, t: +(performance.now() / 1000).toFixed(1), at: [Math.round(window.__vs.position.x), Math.round(window.__vs.position.z)] })
+    const pose = ap.resume(why ? m : 0)
+    if (!home) home = pose
+    // A recovery is a TOW: story keeps damage through a seat (main.js _reseatTruckAtSpawn), so a wreck would stay a
+    // wreck — wheels held, the engine at its converter stall — and every seat after it stuck. Put the truck back as
+    // the run started it (story's used truck), never better.
+    if (why && D && cond0) {
+      for (const k in cond0) D.set(k, cond0[k])
+      for (const f of ['flat', 'toeOffsetDeg', 'camberOffsetDeg']) if (D[f] && kit0[f]) kit0[f].forEach((x, i) => { D[f][i] = x })   // tyres and alignment live outside condition
+      D.publish()
+    }
+    setPad(0, 0, 0); seating = true; settle = 2.5; settleT = 0
+    Promise.resolve(window.__teleport(pose.x, pose.z, pose.heading)).finally(() => { seating = false })
+  }
+  let last = performance.now(), seated = false
+  const tick = () => {
+    const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now
+    if (rbHold > 0) rbHold--; rbCool--; buttons[5].pressed = rbHold > 0; buttons[5].value = rbHold > 0 ? 1 : 0
+    // Story dialogues open mid-drive (story events), and while one is open main.js swallows EVERY key in the capture
+    // phase to advance it — the crank's I included, so a seat never starts. Close each with Enter, and count them.
+    if (++dlgTick % 10 === 0 && dlg && getComputedStyle(dlg).display !== 'none') {
+      const ev = t => document.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))
+      ev('keydown'); ev('keyup'); B.dialogues++
+    }
+    const vs = window.__vs, v = Math.hypot(vs.velocity.x, vs.velocity.z)
+    if (B.phase === 'drive') {
+      if (!seated) { seated = true; seat(null) }   // from Larry's yard onto the route, aligned (not a recovery)
+      if (settle > 0) {
+        settle -= dt; settleT += dt; setPad(0, 0, 0)
+        const ign = vs.ignition?.state
+        // A seat that never ends (an engine that will not start — seated in water, say) would hang the drive with no
+        // throttle, so no 'stuck' either: give up on that spot after 15 s, say why, and seat 100 m on.
+        if (settleT > 15) { if (cranking) { cranking = false; ikey('keyup') } seat('seat stalled (' + ign + (vs.parked ? ', parked' : '') + (vs.submerged ? ', submerged' : '') + (seating ? ', teleport pending' : '') + ')', 100); requestAnimationFrame(tick); return }
+        if (!seating && ign && !crank(ign, dt)) settle = Math.max(settle, 0.5)
+        else if (!seating && vs.parked && rbCool <= 0) { rbHold = 4; rbCool = 40; settle = Math.max(settle, 0.5) }
+      } else {
+        const c = ap.step(vs, dt)
+        if (c.trouble) seat(c.trouble)
+        else {
+          setPad(Math.max(-1, Math.min(1, -c.steer / c.steerLimit)), c.throttle, c.brake)   // the game steers −stick (vehicle.js)
+          // One edge leg, a quarter of the way through the minimum distance: 60 s with the centre 5 m off the line (the
+          // deck's half-width; the wheels on that side ride over the lip on the shoulder), on a random side.
+          if (!edgeT0 && ap.dist > B.edgeAt) { edgeT0 = now; ap.lane = rng() < 0.5 ? -5 : 5 }
+          else if (edgeT0 && ap.lane && now - edgeT0 > 60000) ap.lane = 0
+          // One off-road leg, halfway through the minimum distance: 60–100 m out to one side, back onto the route ahead.
+          if (!detoured && ap.dist > B.legAt && !inBore(vs.position.x, vs.position.z)) {
+            detoured = true
+            const q = vs.quaternion, fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y)), side = rng() < 0.5 ? -1 : 1, d = 60 + rng() * 40
+            ap.detour({ x: vs.position.x + fx * 40 - fz * side * d, z: vs.position.z + fz * 40 + fx * side * d })
+          }
+        }
+      }
+    } else if (B.phase === 'home') {   // seat at the drive's start pose, crank to idle, stay parked
+      setPad(0, 0, 0)
+      if (!B.home) { B.home = 'seating'; seating = true; Promise.resolve(window.__teleport(home.x, home.z, home.heading)).finally(() => { seating = false }) }
+      else if (B.home === 'seating' && !seating) {
+        if (crank(vs.ignition?.state, dt)) B.home = 'done'
+      }
+    }
+    else if (B.phase === 'map') {
+      // The owner's hard case (session 2: the repaint stall at 920–960 ms/s that a gentle pan never triggered): 10 s
+      // cycles of zoom right out (2.5 s at 2 e-folds/s reaches the widest view), a fast diagonal pan there (600 px/s
+      // ÷ zoom: kilometres a second, into ground the map has not drawn), zoom back in, pan on at close range. The pan
+      // turns 90° each cycle so no two sweep the same ground.
+      B.mapT0 ??= now
+      const t = (now - B.mapT0) / 1000, c = Math.floor(t / 10) % 4, k = Math.floor((t % 10) / 2.5)
+      const [dx, dy] = [[1, 0.6], [-0.6, 1], [-1, -0.6], [0.6, -1]][c]
+      setPad(k % 2 ? (k === 1 ? dx : -dy) : 0, 0, 0, k % 2 ? (k === 1 ? dy : dx) : 0, [1, 0, -1, 0][k])   // right stick +Y = out
+    }
+    else setPad(0, 0, 0)
+    requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+  // 1 Hz probe: per-bucket main-thread ms (deltas), the frames since the last probe, renderer info, new terrain chunks.
+  const D0 = window.__perfData(), S = { n: D0.buckets['frame.render']?.n ?? 0, b: {} }   // counters from NOW, not page boot
+  for (const k in D0.buckets) S.b[k] = D0.buckets[k].ms
+  setInterval(() => {
+    const D = window.__perfData(), n = D.buckets['frame.render']?.n ?? 0, dn = n - S.n
+    const cpu = {}; for (const k in D.buckets) { const d = D.buckets[k].ms - (S.b[k] ?? 0); if (k.startsWith('frame.') && d > 0) cpu[k] = d; S.b[k] = D.buckets[k].ms }
+    S.n = n
+    const res = nRes; nRes = 0
+    const fr = D.frames.slice(-Math.max(0, Math.min(dn, D.frames.length)))
+    const ri = window.__ri()
+    const keys = [...window.__terrain()._chunkMap.keys()]
+    if (B.phase === 'drive') { if (!B.chunks0) B.chunks0 = new Set(keys); for (const k of keys) if (!B.chunks0.has(k)) B.chunks.add(k) }
+    // where: the position, and the signed lateral off the road the physics resolves there (null: no road in reach)
+    const P0 = window.__vs.position, nr = resolve(P0.x, P0.z)
+    const lat = nr ? +((P0.x - nr.point.x) * nr.tangent.z - (P0.z - nr.point.z) * nr.tangent.x).toFixed(1) : null
+    B.samples.push({ t: Date.now(), phase: B.phase, frames: dn, cpu, tris: ri.triangles, calls: ri.calls, map: window.__map2d().isOpen(), v: +Math.hypot(window.__vs.velocity.x, window.__vs.velocity.z).toFixed(1),
+      x: Math.round(P0.x), z: Math.round(P0.z), lat,
+      // --probe: the CSS animations and transitions running at the sample (PERF-48: each one restyles every frame)
+      ...(window.__benchProbe ? { res, anim: document.getAnimations().filter(a => a.playState === 'running').map(a => (a.effect?.target?.id || '?') + ':' + (a.animationName || a.transitionProperty)) } : {}),
+      thr: buttons[7].value, idx: ap.idx, dbg: ap.dbg,
+      // why a drive stalls: the grade (the nose's rise per metre), the drivetrain, and story mode's kept wear
+      grade: (() => { const q = window.__vs.quaternion, fy = 2 * (q.w * q.x - q.y * q.z); return +(fy / Math.sqrt(Math.max(1e-6, 1 - fy * fy)) * 100).toFixed(0) })(),
+      rpm: Math.round(window.__vs.drivetrain?.engineRPM ?? 0), gear: window.__vs.drivetrain?.gear, ign: window.__vs.ignition?.state,
+      flat: window.__vs.tireFlat?.map(f => +f.toFixed(2)), engine: typeof window.__vs.engineHealth === 'number' ? +window.__vs.engineHealth.toFixed(2) : window.__vs.engineHealth })
+    B.frames.push(...fr.map(f => [B.phase, f]))
+  }, 1000)
+  return { edges: route.edges, region: reg ? [Math.round(reg.x), Math.round(reg.z), reg.r] : null }
+})()`
+
+// ── --profile (PERF-48): the page side — GPU timer queries per pass, the JS heap, a scene census ────────────────────
+// EXT_disjoint_timer_query_webgl2 times GPU work between two points of the command stream. Queries cannot nest, so the
+// wrappers SWITCH: renderer.render opens 'main' (the world, to the screen) or 'off' (any render to a target: impostor
+// bakes, the sky's cube map), the shadow pass (main.js's own wrapper: the near map every moving frame, the far cascade on
+// its snap) switches to 'shadow' and back. GPU ms per pass per second land in B.prof with the heap. GPU ms are NOT load
+// (the GPU's clock follows its load, PERF-40), but their SHARES split the measured active cycles between the passes.
+const PROFILE = has('profile')
+const PROFILE_PAGE = String.raw`(() => {
+  const B = window.__bench, R = window.__renderer(), gl = R.getContext(), X = gl.getExtension('EXT_disjoint_timer_query_webgl2')
+  B.prof = []; B.gqOk = !!X
+  const acc = { shadow: 0, main: 0, off: 0 }, pend = []
+  let cur = null, scene = null
+  const sw = tag => {
+    if (!X) return
+    if (cur) { gl.endQuery(X.TIME_ELAPSED_EXT); cur = null }
+    if (tag) { const q = gl.createQuery(); gl.beginQuery(X.TIME_ELAPSED_EXT, q); pend.push([q, tag]); cur = tag }
+  }
+  const render = R.render.bind(R)
+  R.render = (sc, cam) => { const was = cur, off = R.getRenderTarget() !== null; if (!off) scene = sc; sw(off ? 'off' : 'main'); render(sc, cam); sw(was) }
+  const sm = R.shadowMap, shadow = sm.render
+  sm.render = function (...a) { const was = cur; sw('shadow'); shadow.apply(this, a); sw(was) }
+  const drain = () => {
+    if (X && gl.getParameter(X.GPU_DISJOINT_EXT)) { for (const [q] of pend) gl.deleteQuery(q); pend.length = 0; B.disjoint = (B.disjoint ?? 0) + 1 }
+    while (pend.length && gl.getQueryParameter(pend[0][0], gl.QUERY_RESULT_AVAILABLE)) {
+      const [q, tag] = pend.shift(); acc[tag] += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; gl.deleteQuery(q)
+    }
+    requestAnimationFrame(drain)
+  }
+  requestAnimationFrame(drain)
+  setInterval(() => {
+    const m = performance.memory
+    B.prof.push({ t: Date.now(), phase: B.phase, gq: { shadow: +acc.shadow.toFixed(2), main: +acc.main.toFixed(2), off: +acc.off.toFixed(2) }, heapMB: m ? +(m.usedJSHeapSize / 1048576).toFixed(1) : null, pend: pend.length })
+    acc.shadow = acc.main = acc.off = 0
+  }, 1000)
+  // The census: what the renderer walks each frame. Per top-level child of the world scene: objects, meshes, visible
+  // meshes, meshes in the camera frustum (three's own test: bounding sphere vs the six planes), their triangles (× the
+  // instance count), shadow casters, and objects whose world matrix is recomputed every frame (matrixAutoUpdate /
+  // matrixWorldAutoUpdate on).
+  window.__census = () => {
+    if (!scene) return null
+    const cam = window.__cam(), e = cam.projectionMatrix.clone().multiply(cam.matrixWorldInverse).elements
+    const planes = [[e[3] - e[0], e[7] - e[4], e[11] - e[8], e[15] - e[12]], [e[3] + e[0], e[7] + e[4], e[11] + e[8], e[15] + e[12]],
+      [e[3] + e[1], e[7] + e[5], e[11] + e[9], e[15] + e[13]], [e[3] - e[1], e[7] - e[5], e[11] - e[9], e[15] - e[13]],
+      [e[3] - e[2], e[7] - e[6], e[11] - e[10], e[15] - e[14]], [e[3] + e[2], e[7] + e[6], e[11] + e[10], e[15] + e[14]]]
+      .map(([a, b, c, d]) => { const n = Math.hypot(a, b, c); return [a / n, b / n, c / n, d / n] })
+    const inView = o => {
+      if (!o.frustumCulled) return true
+      const bs = o.isInstancedMesh ? o.boundingSphere : o.geometry?.boundingSphere
+      if (!bs) return true
+      const m = o.matrixWorld.elements, c = bs.center
+      const x = m[0] * c.x + m[4] * c.y + m[8] * c.z + m[12], y = m[1] * c.x + m[5] * c.y + m[9] * c.z + m[13], z = m[2] * c.x + m[6] * c.y + m[10] * c.z + m[14]
+      const r = bs.radius * Math.sqrt(Math.max(m[0] ** 2 + m[1] ** 2 + m[2] ** 2, m[4] ** 2 + m[5] ** 2 + m[6] ** 2, m[8] ** 2 + m[9] ** 2 + m[10] ** 2))
+      for (const p of planes) if (p[0] * x + p[1] * y + p[2] * z + p[3] < -r) return false
+      return true
+    }
+    const tris = o => { const g = o.geometry; if (!g) return 0; const n = g.index ? g.index.count : g.attributes.position?.count ?? 0; return Math.min(n, g.drawRange.count) / 3 * (o.isInstancedMesh ? o.count : 1) }
+    const out = {}
+    for (const top of scene.children) {
+      const k = top.name || top.type, c = out[k] ??= { objects: 0, meshes: 0, visMeshes: 0, inView: 0, viewKtris: 0, casters: 0, autoMatrix: 0 }
+      top.traverseVisible(o => {
+        c.objects++
+        if (o.matrixAutoUpdate || o.matrixWorldAutoUpdate) c.autoMatrix++
+        if (o.isMesh || o.isPoints || o.isLine) { c.visMeshes++; if (o.castShadow) c.casters++; if (inView(o)) { c.inView++; c.viewKtris += tris(o) / 1000 } }
+      })
+      top.traverse(o => { if (o.isMesh) c.meshes++ })
+    }
+    for (const c of Object.values(out)) c.viewKtris = +c.viewKtris.toFixed(1)
+    return out
+  }
+})()`
+
+// The node side: one trace per phase, streamed gzipped to disk (a 300 s drive is too big to hold as one JSON string).
+// toplevel = every task on every thread (busy time); the sampling profiler = JS functions on the main thread AND in every
+// worker; devtools.timeline = GC (MinorGC / MajorGC with heap before/after), each requestAnimationFrame callback, layout
+// and paint.
+const TRACE_CATS = ['__metadata', 'toplevel', 'disabled-by-default-v8.cpu_profiler', 'devtools.timeline']   // ~3 MB/s raw while driving
+async function traceStart (client) {
+  await client.cmd('Tracing.start', { transferMode: 'ReturnAsStream', streamFormat: 'json', streamCompression: 'gzip',
+    traceConfig: { recordMode: 'recordAsMuchAsPossible', traceBufferSizeInKb: 1200000, includedCategories: TRACE_CATS } })
+}
+async function traceStop (client, path) {
+  const done = new Promise(r => { const off = client.on('Tracing.tracingComplete', p => { off(); r(p) }) })
+  await client.cmd('Tracing.end', {}, { timeoutMs: 300000 })
+  const { stream, dataLossOccurred } = await done
+  const parts = []
+  for (;;) {
+    const { result: r } = await client.cmd('IO.read', { handle: stream, size: 1 << 20 }, { timeoutMs: 300000 })
+    parts.push(Buffer.from(r.data, r.base64Encoded ? 'base64' : 'utf8'))
+    if (r.eof) break
+  }
+  await client.cmd('IO.close', { handle: stream })
+  writeFileSync(path, Buffer.concat(parts))
+  console.log(`   trace ${basename(path)}: ${(parts.reduce((a, b) => a + b.length, 0) / 1048576).toFixed(1)} MB gz`)
+  if (dataLossOccurred) console.log(`   trace ${basename(path)}: DATA LOSS (buffer full)`)
+}
+
+// ── one session: boot, story, the three phases ────────────────────────────────────────────────────────────────────
+async function session (build, seed, rep) {
+  const cdp = await freePort()
+  const { chrome, cleanup } = launchChrome('about:blank', { port: cdp, headed: has('headed'), windowSize: '1045,700', extraArgs: ['--force-device-scale-factor=2', ...(has('fake-audio') ? ['--disable-audio-output'] : [])] })
+  psRoot = chrome.pid; psPrev = null
+  const client = await connect({ port: cdp, cmdTimeoutMs: 120000 })
+  await client.cmd('Runtime.enable')
+  await client.cmd('Performance.enable')   // PERF-48: style recalcs per second, read from Chrome's own counters (unprofiled)
+  const styleNow = async () => { const m = (await client.cmd('Performance.getMetrics')).result.metrics, g = n => m.find(x => x.name === n)?.value ?? 0
+    return [Date.now(), g('RecalcStyleCount'), g('RecalcStyleDuration') * 1000] }
+  const errors = []
+  client.on('Runtime.exceptionThrown', p => errors.push(p.exceptionDetails.exception?.description ?? p.exceptionDetails.text))
+  const js = async e => { const m = await client.cmd('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }); if (m.result?.exceptionDetails) throw new Error(JSON.stringify(m.result.exceptionDetails).slice(0, 400)); return m.result?.result?.value }
+  const key = (k, down) => client.cmd('Input.dispatchKeyEvent', { type: down ? 'keyDown' : 'keyUp', key: k, code: k === ' ' ? 'Space' : k.length === 1 ? `Key${k.toUpperCase()}` : k, windowsVirtualKeyCode: k === ' ' ? 32 : k === 'Enter' ? 13 : k.toUpperCase().charCodeAt(0) })
+  const tap = async k => { await key(k, true); await sleep(150); await key(k, false) }
+  const load = +(loadavg()[0] / cpus().length).toFixed(2)
+  const tag = `${build.name} seed ${seed} rep ${rep + 1}`
+  try {
+    await client.cmd('Page.navigate', { url: `http://localhost:${build.port}/index.html?prof=1` })
+    if (!await until(() => js('!!document.getElementById("pm-story") && window.__rsReady === true'), 90000)) throw new Error('the menu never came up')
+    await js('document.getElementById("pm-story").click()')
+    await js(`document.getElementById("su-seed").value = "${seed}"; document.getElementById("su-start").click()`)
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    if (!await until(() => js(live), 180000)) throw new Error('story never went live')
+    // PERF-47: the host's audio output must be pulling samples. When CoreAudio wedges (2026-11-13: afplay hung too) a
+    // running AudioContext's clock stands still, every per-frame setTargetAtTime piles onto its param's timeline, and
+    // main-thread ms/s climbs ~2 ms/s per second of session: a cost of the host, not the build. F24 is a key the game
+    // ignores; it gives the fresh context the user activation it needs to run.
+    for (const type of ['keyDown', 'keyUp']) await client.cmd('Input.dispatchKeyEvent', { type, key: 'F24', code: 'F24', windowsVirtualKeyCode: 135 })
+    const audioS = await js(`(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), c = new AudioContext()
+      await Promise.race([c.resume(), wait(1000)]); const t = c.currentTime; await wait(1000); const d = c.currentTime - t; c.close(); return d })()`)
+    if (!(audioS > 0.5)) throw new Error(`the host's audio clock is stalled (${(audioS ?? 0).toFixed(3)} s per 1 s wall): restart coreaudiod, then rerun`)
+    const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    for (let i = 0; i < 30 && await dlg(); i++) { await tap('Enter'); await sleep(300) }
+    await sleep(2000)
+    if (await js('window.__vs.ignition?.state') !== 'running') { await key('i', true); await until(() => js('window.__vs.ignition?.state === "running"'), 8000); await key('i', false) }
+    if (await js('!!window.__vs.parked')) await tap(' ')
+    await js(`window.__seed = ${seed}`)
+    if (has('probe')) await js('window.__benchProbe = true')
+    const info = await js(PAGE)
+    const rpid = rendererPid()
+    thr = []; tc = rpid && spawn('python3', ['-I', join(HERE, 'lib/threadcounts.py'), String(rpid), '0.25'])
+    tc?.stdout.on('data', b => { for (const l of String(b).trim().split('\n')) try { thr.push(JSON.parse(l)) } catch {} })
+    if (PROFILE) await js(PROFILE_PAGE)
+    await js(`window.__bench.legAt = ${MIN_KM * 500}; window.__bench.edgeAt = ${MIN_KM * 250}`)   // the off-road leg halfway, the edge leg a quarter of the way
+    const census = {}, recalc = {}
+    // --profile: the phase's trace opens after its 3 s transition and closes at its end (the flush runs after the window).
+    const phase = async (name, s, label = name) => {
+      const t0 = Date.now(); await js(`window.__bench.phase = '${name}'`)
+      if (!PROFILE) { const m = recalc[label] = []; while (Date.now() - t0 < s * 1000) { m.push(await styleNow()); await sleep(1000) } return [t0, Date.now()] }
+      await sleep(3000); await traceStart(client)
+      await sleep(s * 500 - 3000); census[label] = await js('window.__census()'); await sleep(s * 500)
+      const t1 = Date.now(); await traceStop(client, join(OUT, `${build.name}-${seed}-${rep + 1}-${label}.trace.json.gz`))
+      return [t0, t1]
+    }
+    const win = {}
+    win.drive = await phase('drive', DRIVE_S)
+    // Stop where the drive STARTED, not where it ended: at rest, physics costs 0 (asleep) to 140 ms/s (on a road carve)
+    // by spot, so map and park only compare at the same one. A seat is parked; the page cranks the engine to idle.
+    await js(`window.__bench.phase = 'home'`); await until(() => js('window.__bench.home === "done"'), 25000)
+    await tap('m'); await until(() => js('window.__map2d().isOpen()'), 3000)
+    win.map = await phase('map', MAP_S)
+    await js(`window.__bench.phase = 'idle'`); await tap('m'); await until(() => js('!window.__map2d().isOpen()'), 3000)
+    await sleep(2000)
+    win.park = await phase('idle', PARK_S, 'park')
+    // nodes: the network's edge ends merged within 6 m, [x, z, degree] — where a spike second sat (deg 2: a QUAL-16
+    // connector kink; 3+: a junction) is read off them afterwards.
+    const B = await js(`(() => { const B = window.__bench, nodes = []
+      for (const e of window.__roadSys()._network.values()) for (const p of [e.points?.[0], e.points?.at(-1)]) {
+        if (!p) continue; const n = nodes.find(m => Math.hypot(m[0] - p.x, m[1] - p.z) < 6); if (n) n[2]++; else nodes.push([Math.round(p.x), Math.round(p.z), 1]) }
+      return { dialogues: B.dialogues, dist: B.ap.dist, recov: B.recov, chunks: B.chunks.size, samples: B.samples, frames: B.frames, prof: B.prof, measures: performance.getEntriesByType('measure').length, nodes } })()`)
+    work(B.samples)
+    writeFileSync(join(OUT, `${build.name}-${seed}-${rep + 1}.json`), JSON.stringify({ win, recov: B.recov, samples: B.samples, census, recalc, prof: B.prof, measures: B.measures, nodes: B.nodes }))
+    const r = summarise(B, win, recalc)
+    r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, dialogues: B.dialogues, edges: info.edges, region: info.region }
+    r.valid = r.drive.km >= MIN_KM && r.drive.newChunks >= MIN_CHUNKS
+    r.errors = errors.slice(0, 5)
+    Object.assign(r, { build: build.name, dir: build.dir, commit: build.commit, branch: build.branch, dirty: build.dirty, seed, rep, load })
+    console.log(`${tag}: ${r.valid ? 'ok' : 'INVALID'} — ${r.drive.km} km, ${r.drive.newChunks} new chunks, ${r.drive.recoveries.length} recoveries, ${r.drive.dialogues} dialogues closed · load ${load}/core`)
+    for (const ph of ['drive', 'map', 'park']) console.log('   ' + line(ph, r.phases[ph]))
+    return r
+  } catch (e) {
+    console.log(`${tag}: FAILED — ${e.message}`)
+    return { build: build.name, seed, rep, valid: false, failed: e.message, load }
+  } finally { try { tc?.kill() } catch {} tc = null; client.close(); cleanup(); psRoot = 0 }
+}
+
+// Each 1 Hz sample's main-thread work, from threadcounts.py's 4 Hz cumulative reads interpolated to the sample's own
+// window: w = { mi: Minstr, cpuMs: CPU ms, pMs: of which on P cores, mcyc: Mcycles }.
+const thrAt = t => {
+  const i = thr.findIndex(r => r.t > t); if (i <= 0) return null
+  const a = thr[i - 1], b = thr[i], f = (t - a.t) / (b.t - a.t)
+  return ['P', 'E'].map(k => a[k].map((x, j) => x + (b[k][j] - x) * f))
+}
+function work (samples) {
+  for (let i = 1; i < samples.length; i++) {
+    const a = thrAt(samples[i - 1].t), b = thrAt(samples[i].t); if (!a || !b) continue
+    const d = (c, j) => (b[c][j] - a[c][j]) / 1e6
+    samples[i].w = { mi: +(d(0, 0) + d(1, 0)).toFixed(1), cpuMs: +(d(0, 2) + d(1, 2)).toFixed(1), pMs: +d(0, 2).toFixed(1), mcyc: +(d(0, 1) + d(1, 1)).toFixed(1) }
+  }
+}
+// The physics spike line in WORK, millions of instructions in one second. 1000 ≈ 100 ms at the ~10 Minstr per CPU ms the
+// main thread retires in this bench's heavy seconds (P core near 3 GHz, IPC ~3.5; 2026-11-13 validation). A calm
+// driving second is ~300. The 100 ms line stays beside it (physOver100) for history.
+const PHYS_SPIKE_MI = 1000
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN
+const pct = (a, p) => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))] }
+function summarise (B, win, recalc = {}) {
+  const phases = {}
+  for (const [ph, [t0, t1]] of Object.entries(win)) {
+    const lo = t0 + 3000   // the phase's first 3 s are the transition (map open, braking)
+    const S = B.samples.filter(s => s.t >= lo && s.t <= t1)
+    const pname = { drive: 'drive', map: 'map', park: 'idle' }[ph]
+    const fr = B.frames.filter(f => f[0] === pname).map(f => f[1])
+    const W = power.filter(p => p.t >= lo && p.t <= t1), Pr = procs.filter(p => p.t >= lo && p.t <= t1)
+    const buckets = {}
+    for (const s of S) for (const [k, v] of Object.entries(s.cpu)) buckets[k] = (buckets[k] ?? 0) + v / S.length
+    const main = Object.values(buckets).reduce((a, b) => a + b, 0)
+    // Spikes, per second (the PERF-42 lesson: phase averages hid both bugs). Physics over MOVING seconds only — v > 3 m/s
+    // in this second and both neighbours, so a re-seat (teleport, settle, crank) is not a spike. The map: its postStream
+    // seconds after the transition.
+    const all = B.samples, mov = all.filter((s, i) => s.t >= lo && s.t <= t1 && s.v > 3 && all[i - 1]?.v > 3 && all[i + 1]?.v > 3)
+    const phys = mov.map(s => s.cpu['frame.physics'] ?? 0)
+    const physW = mov.filter(s => s.w?.cpuMs > 0).map(s => (s.cpu['frame.physics'] ?? 0) * s.w.mi / s.w.cpuMs)   // Minstr: ms × the second's instructions per CPU ms
+    const Sw = S.filter(s => s.w), sum = k => Sw.reduce((a, s) => a + s.w[k], 0)
+    const post = S.map(s => s.cpu['frame.postStream'] ?? 0)
+    const spikes = ph === 'drive'
+      ? { physN: phys.length, physP50: +pct(phys, 0.5).toFixed(0), physP99: +pct(phys, 0.99).toFixed(0), physWorst: +Math.max(...phys, 0).toFixed(0), physOver100: +(phys.filter(x => x > 100).length / Math.max(1, phys.length) * 100).toFixed(1),
+          physMiP50: +pct(physW, 0.5).toFixed(0), physMiP99: +pct(physW, 0.99).toFixed(0), physMiWorst: +Math.max(...physW, 0).toFixed(0), physMiOver: +(physW.filter(x => x > PHYS_SPIKE_MI).length / Math.max(1, physW.length) * 100).toFixed(1) }
+      : ph === 'map' ? { postP95: +pct(post, 0.95).toFixed(0), postWorst: +Math.max(...post, 0).toFixed(0) } : {}
+    // PERF-48: style recalcs per wall second (count and ms), from consecutive counter reads after the transition.
+    const rc = (recalc[ph] ?? []).filter(([t]) => t >= lo), rcN = [], rcMs = []
+    for (let i = 1; i < rc.length; i++) { const dt = (rc[i][0] - rc[i - 1][0]) / 1000; rcN.push((rc[i][1] - rc[i - 1][1]) / dt); rcMs.push((rc[i][2] - rc[i - 1][2]) / dt) }
+    phases[ph] = {
+      ...spikes,
+      recalcS: +mean(rcN).toFixed(1), recalcP50: +pct(rcN, 0.5).toFixed(0), recalcP99: +pct(rcN, 0.99).toFixed(0), recalcWorst: +Math.max(...rcN, 0).toFixed(0),
+      recalcMs: +mean(rcMs).toFixed(1),
+      fps: +mean(S.map(s => s.frames)).toFixed(1), p95: +pct(fr, 0.95).toFixed(1), worst: +Math.max(...fr, 0).toFixed(1),
+      mainMs: +main.toFixed(0),
+      // the main thread's WORK (threadcounts.py): Minstr/s, CPU ms/s, the share of that CPU time on P cores, its clock
+      mainMi: +(sum('mi') / Math.max(1, Sw.length)).toFixed(0), mainCpuMs: +(sum('cpuMs') / Math.max(1, Sw.length)).toFixed(0),
+      mainPpct: +(sum('pMs') / sum('cpuMs') * 100).toFixed(0), mainGHz: +(sum('mcyc') / sum('cpuMs')).toFixed(2),
+      buckets: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k.slice(6), +v.toFixed(1)]).sort((a, b) => b[1] - a[1])),
+      cpuW: +mean(W.map(p => p.cpuW)).toFixed(2), gpuW: +mean(W.map(p => p.gpuW)).toFixed(2), dramW: +mean(W.map(p => p.dramW)).toFixed(2),
+      gpuMcyc: +mean(W.map(p => (p.gpuBusy ?? 0) / 100 * (p.gpuMHz ?? 0))).toFixed(0), gpuMHz: +mean(W.map(p => p.gpuMHz ?? 0)).toFixed(0),
+      rendererPct: +mean(Pr.map(p => p.renderer)).toFixed(0), gpuProcPct: +mean(Pr.map(p => p.gpu)).toFixed(0), otherPct: +mean(Pr.map(p => p.other)).toFixed(0),
+      workersPct: +(mean(Pr.map(p => p.renderer)) - main / 10).toFixed(0),   // renderer − main thread (ms/s ÷ 10 = % of a core)
+      ktris: +(mean(S.map(s => s.tris)) / 1000).toFixed(0), calls: +mean(S.map(s => s.calls)).toFixed(0),
+    }
+  }
+  return { phases }
+}
+const line = (ph, x) => `${ph.padEnd(5)} ${String(x.fps).padStart(4)} fps p95 ${String(x.p95).padStart(5)} worst ${String(x.worst).padStart(5)} | main ${String(x.mainMs).padStart(4)} ms/s = ${x.mainMi} Minstr/s (${x.mainCpuMs} CPU ms, ${x.mainPpct} % on P, ${x.mainGHz} GHz) | `
+  + (x.physN !== undefined ? `physics/s over ${x.physN} moving s: p50 ${x.physP50} p99 ${x.physP99} worst ${x.physWorst}, ${x.physOver100} % > 100 ms · work p50 ${x.physMiP50} p99 ${x.physMiP99} worst ${x.physMiWorst} Minstr, ${x.physMiOver} % > ${PHYS_SPIKE_MI} | ` : '')
+  + (x.postWorst !== undefined ? `postStream/s p95 ${x.postP95} worst ${x.postWorst} | ` : '')
+  + (x.recalcS ? `recalc/s ${x.recalcS} (p50 ${x.recalcP50} p99 ${x.recalcP99} worst ${x.recalcWorst}) ${x.recalcMs} ms/s | ` : '')
+  + `rend ${x.rendererPct}% (workers ~${x.workersPct}%) gpuP ${x.gpuProcPct}% | CPU ${x.cpuW} W GPU ${x.gpuW} W DRAM ${x.dramW} W | GPU ${x.gpuMcyc} Mcyc/s @ ${x.gpuMHz} MHz | ${x.ktris}k tris`
+
+// ── run: A-B-A-B per rep and seed ─────────────────────────────────────────────────────────────────────────────────────
+console.log(`PERF-40 bench → ${OUT}`)
+for (const b of BUILDS) console.log(`  ${b.name}: ${b.dir} ${b.branch}@${b.commit}${b.dirty ? ' (uncommitted src/data changes)' : ''}`)
+console.log(`  seeds ${SEEDS.join(', ')} · reps ${REPS} · drive ${DRIVE_S} s (valid ≥ ${MIN_KM} km, ≥ ${MIN_CHUNKS} new chunks) · map ${MAP_S} s · park ${PARK_S} s\n`)
+const results = []
+for (let rep = 0; rep < REPS; rep++) for (const seed of SEEDS) {
+  const order = rep % 2 ? [...BUILDS].reverse() : BUILDS
+  for (const b of order) { const r = await session(b, seed, rep); results.push(r); writeFileSync(join(OUT, 'results.json'), JSON.stringify(results, null, 1)) }
+}
+
+// ── report: per build and phase, the mean over valid sessions; the noise band is the spread between reps ─────────────
+const KEYS = ['fps', 'p95', 'mainMs', 'mainMi', 'mainPpct', 'recalcS', 'recalcMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'physMiP99', 'physMiOver', 'postWorst']   // the last five: one phase each
+const agg = {}
+for (const b of BUILDS) for (const ph of ['drive', 'map', 'park']) {
+  const rs = results.filter(r => r.build === b.name && r.valid)
+  const o = agg[`${b.name}.${ph}`] = {}
+  for (const k of KEYS) {
+    o[k] = mean(rs.map(r => r.phases[ph][k]))
+    // Noise: per seed, the spread between its reps; the band is the mean of those spreads (n/a with one rep).
+    const spreads = SEEDS.map(sd => rs.filter(r => r.seed === sd).map(r => r.phases[ph][k])).filter(a => a.length > 1).map(a => Math.max(...a) - Math.min(...a))
+    o[k + '±'] = spreads.length ? mean(spreads) : null
+  }
+}
+const invalid = results.filter(r => !r.valid)
+console.log(`\n═══ ${results.length - invalid.length} of ${results.length} sessions valid${invalid.length ? ' — INVALID: ' + invalid.map(r => `${r.build}/${r.seed}/${r.rep + 1} (${r.failed ?? `${r.drive?.km} km, ${r.drive?.newChunks} chunks`})`).join(', ') : ''}`)
+const fmt = (v, b) => isNaN(v) ? '   –  ' : (b == null ? v.toFixed(v < 10 ? 2 : 0) : `${v.toFixed(v < 10 ? 2 : 0)}±${b.toFixed(b < 10 ? 2 : 0)}`)
+console.log('phase build ' + KEYS.map(k => k.padStart(12)).join(''))
+for (const ph of ['drive', 'map', 'park']) {
+  for (const b of BUILDS) { const o = agg[`${b.name}.${ph}`]; console.log(`${ph.padEnd(5)} ${b.name.padEnd(5)} ` + KEYS.map(k => fmt(o[k], o[k + '±']).padStart(12)).join('')) }
+  for (const o of BUILDS.slice(1)) {
+    const a = agg[`A.${ph}`], b = agg[`${o.name}.${ph}`]
+    console.log(`${''.padEnd(5)} ${o.name}−A   ` + KEYS.map(k => { const d = b[k] - a[k], band = Math.max(a[k + '±'] ?? 0, b[k + '±'] ?? 0); return (isNaN(d) ? '–' : `${d >= 0 ? '+' : ''}${d.toFixed(Math.abs(d) < 10 ? 2 : 0)}${band && Math.abs(d) <= band ? '~' : ''}`).padStart(12) }).join(''))
+  }
+}
+if (BUILDS.length > 1) console.log('(~ = within the noise band)')
+writeFileSync(join(OUT, 'summary.json'), JSON.stringify({ builds: BUILDS.map(({ name, dir, commit, branch, dirty }) => ({ name, dir, commit, branch, dirty })), seeds: SEEDS, reps: REPS, agg }, null, 1))
+
+// ── health check: one line per build into the committed history, compared with the last line for that branch ──────────
+if (has('record')) {
+  const H = join(ROOT, '.planning/perf/history.jsonl')
+  mkdirSync(dirname(H), { recursive: true })
+  const prev = existsSync(H) ? readFileSync(H, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []
+  for (const b of BUILDS) {
+    const rec = { t: new Date().toISOString(), commit: b.commit, branch: b.branch, dirty: b.dirty, seeds: SEEDS, reps: REPS, drive: DRIVE_S,
+      valid: results.filter(r => r.build === b.name && r.valid).length, of: results.filter(r => r.build === b.name).length,
+      phases: Object.fromEntries(['drive', 'map', 'park'].map(ph => [ph, Object.fromEntries(KEYS.map(k => [k, +(agg[`${b.name}.${ph}`][k] ?? NaN).toFixed(2)]))])) }
+    const last = prev.filter(p => p.drive === DRIVE_S && p.valid > 0).at(-1)
+    if (last) {
+      const worse = []
+      for (const ph of ['drive', 'map', 'park']) for (const k of ['mainMi', 'cpuW', 'gpuW', 'gpuMcyc']) {   // work, not mainMs: ms follows the core (a record without mainMi skips it)
+        const a = last.phases[ph][k], c = rec.phases[ph][k]
+        if (a > 0 && c > a * 1.15) worse.push(`${ph} ${k} ${a} → ${c} (+${Math.round((c / a - 1) * 100)} %)`)
+      }
+      console.log(`\nvs the last record (${last.commit}, ${last.t.slice(0, 10)}): ${worse.length ? 'WORSE by > 15 %: ' + worse.join(' · ') : 'nothing worse by > 15 %'}`)
+    }
+    appendFileSync(H, JSON.stringify(rec) + '\n')
+  }
+  console.log(`recorded → ${H}`)
+}
+process.exit(invalid.length ? 2 : 0)

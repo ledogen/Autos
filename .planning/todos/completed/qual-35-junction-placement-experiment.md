@@ -87,6 +87,69 @@ touches `src/` until the owner rules.
 - Downstream systems (pads, carve, causeways, stitching) take a junction position as input and do not care where it
   came from. The repairs that become dead get deleted, not retuned.
 
+## Work log
+
+**2026-11-06, Spare: method and tools (`wip/qual-35/`, git-invisible).**
+- `place.mjs`: the census windows built as the game builds them (pond no-go, 1400 m). For every plan node of degree
+  ≥ 3 whose site lies in the window, ground-following cost fields on a world-aligned 12 m grid, 16-neighbour, step cost
+  `ds·(1 + wGrade·g²)` on the corridor's own height field, pond+skirt discs blocked: one from each leg's far end, one
+  from the site. **The site stays on the network.** A set M of 2 to n−1 legs leaves the site down one shared trunk to a
+  junction J and splits there; the other legs still start at the site. J minimises `Σ_{i∈M} F_i + F_site`; the saving
+  is that sum at the site (today's cost of those legs) minus its minimum. With |M| = n−1 the site becomes a bend on a
+  through road; with fewer it keeps a T of its own (twin Ts). J must lie nearer its own site than any far end (and
+  ≥ 60 m from one), so the Urquhart graph still decides which sites connect. One move per site (a 4-way that would
+  split into two pairs takes the better pair only).
+- **The field is checked against the router** (`calib.mjs`, seed 6, 119 legs): field cost / the corridor search's own
+  cost with the turn term off has median 1.02 and 10–90 % range 0.88–1.21. A fair stand-in, minus curvature.
+- `report.mjs` (bill, absorbs, coupling, time; today's leftovers from BUG-105's census 10), `invariance.mjs` (one seed,
+  two window centres, every shared node must place identically), `sheet-data.mjs` + `gen-page.mjs` (plan-view maps:
+  today's roads, today's lines of the merging legs, the router's own lines from J; no plan-layer passes).
+- Early signal, one 600 m window of seed 6 (a smoke run, not a result): all 3 nodes move 260–320 m, each saving
+  1 000–3 700 cost-m: legs climbing over the same ridge side by side, merged into one crossing.
+- Waiting on the orchestrator's GO (machine hold for the owner's playtest).
+
+## Phase 0 result (Spare, 2026-11-06) — measured; recommendation: leave it
+
+**Page:** https://claude.ai/artifact/H96gBEYDd85r4jZPiz97G4: the report, bill first; the full-redesign view (item 7);
+15 maps (10 biggest movers + 5 typical, random seeds, T = 500), with the router's own lines from the new junction.
+**Data:** `wip/qual-35/out/` (`report.txt`, `report.json`, `*.jsonl`); the first pass is kept in `out-v1/` (timing and
+invariance). Tools: `place.mjs`, `report.mjs`, `split.mjs` (thread split), `sheet-data.mjs`, `gen-page.mjs`,
+`prose.html`.
+
+140 census windows (all127 + battery), 1,439 junction sites (degree ≥ 3), 5,354 km.
+
+| saves more than (cost-m) | 100 | 500 | 1,000 |
+|---|---|---|---|
+| junctions moved | 1,402 (97 %) | 1,047 (73 %) | 571 (40 %) |
+| median move | 261 m | 278 m | 296 m |
+| road re-routed | 1,855 km (35 %) | 1,498 km (28 %) | 908 km (17 %) |
+| windows touched / 140 | 140 | 140 | 139 |
+| slides (today's routes / field's unmerged lines) | 24 / 202 | 9 / 124 | 2 / 54 |
+| GRAZE absorbed / 4 | 2 | 1 | 0 |
+| BUG-69 absorbed / 25 | 3 | 2 | 2 |
+| planned wyes absorbed / 1,613 | 337 | 266 | 134 |
+| bridges 1,478 → | 1,483 | 1,481 | 1,481 |
+| sites off a loop | 5 | 3 | 3 |
+| ridge crossings on merging legs, fair (field unmerged → merged) | 801 → 427 | 661 → 332 | 425 → 212 |
+| saving, share of junction-leg cost | 15.0 % | 13.9 % | 10.3 % |
+| coupled legs (both ends move + re-route) | 511 / 2,375 | 292 / 1,881 | 118 / 1,090 |
+
+- **Time** (`split.mjs`, 13 battery windows, one process): placement 556 ms median against the network thread's
+  1,673 ms (= build 7,292 − routing 5,202). That is 32 % (15–58 %), on the critical path before routing; per-site
+  independent, so the route pool could take it.
+- **Invariance:** 3 seeds at dx = 700 m, 13 of 13 shared junctions identical.
+- **Close Ts:** no twin-T move lands within D (40/60/80) of its site; 4/8/9 new close pairs at T = 500.
+- **Deletes:** nothing at this absorption (inventory in the page, section 3).
+- **BUG-105 sites 24/25:** degree-2 sites (bends), out of scope here; visiting the site costs +2,032 / +2,922
+  cost-m over going straight past. The owner's loop trim is the fix; it comes next.
+- **Measurement note:** the raw "today vs field" crossings (1,980 → 332) overstate the loss. Today's roads cut and
+  bore where a ground-following line goes round, so the fair column uses the field on both sides.
+
+**Owner's call:**
+1. leave (recommended);
+2. a flagged prototype, slides only;
+3. a flagged prototype at T = 1,000.
+
 ## Resolution (2026-11-07) — CLOSED, leave it
 
 Owner, answering qual35-call: "1 — leave it". The idea moves to a post-alpha redesign ticket, FEAT-183, with the

@@ -74,6 +74,12 @@ const POIS = [
   { id: 'poi:29|30', type: 'firewoodYard' }, { id: 'poi:31|32', type: 'workSite' }, { id: 'poi:35|36', type: 'farm' },
 ]
 const T0 = 6
+const errorsOf = (fn) => {   // console.error lines fn() printed
+  const errs = [], e0 = console.error
+  console.error = (...a) => errs.push(a.join(' '))
+  try { fn() } finally { console.error = e0 }
+  return errs
+}
 const state = (b) => b._slots.map(s => `${s.slot}:${s.poiId}:${s.offer?.id}@${s.offer?.expiresH?.toFixed(9)}:${s.offer?.dueH}:${s.state}:${s.until}`).join('|')
 for (const seed of [6, 1536014377, 42]) {
   const live = new OfferBoard({ seed, pois: POIS, nowH: T0 })
@@ -94,7 +100,13 @@ for (const seed of [6, 1536014377, 42]) {
   const saved = JSON.parse(JSON.stringify(log))
   check(`seed ${seed}: the log holds every call that took (${n} jobs)`, saved.events.length === 2 * n, `${saved.events.length} vs ${2 * n}`)
   const back = new OfferBoard({ seed, pois: POIS, nowH: saved.t0H })
-  const log2 = logBoard(back, saved.t0H, saved.events)
+  let log2
+  check(`seed ${seed}: a faithful replay reports no dropped events`, !errorsOf(() => { log2 = logBoard(back, saved.t0H, saved.events) }).length)
+  // BUG-152: a roster re-sited between sessions (every POI id new) leaves no event able to take — say so loudly.
+  const moved = POIS.map(p => ({ ...p, id: p.id + '@moved' }))
+  const errs = errorsOf(() => logBoard(new OfferBoard({ seed, pois: moved, nowH: saved.t0H }), saved.t0H, saved.events))
+  check(`seed ${seed}: a replay onto a re-sited roster reports every event dropped`,
+        errs.some(e => e.includes(`dropped ${saved.events.length} of ${saved.events.length} events`)), JSON.stringify(errs))
   let same = true
   for (const at of [h, h + 0.5]) { live.advance(at); back.advance(at); same &&= state(live) === state(back) }
   check(`seed ${seed}: the replayed board equals the live one, now and half an hour on`, same)

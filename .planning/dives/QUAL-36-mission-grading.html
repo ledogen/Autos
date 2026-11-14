@@ -1,0 +1,208 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mission grading: one clock, one grammar, six identities</title>
+<h1>Mission grading: one clock, one grammar, six identities</h1>
+<p>You asked how every mission type is paid, graded and rewarded, and for a few levers that make it read as one
+system. Everything below is read from the code on <code>feature/content</code> (merged with main at e26da3d2),
+not from the design notes. Where the two disagree, the list in section 4 says so. Every number has a source in
+section 7.</p>
+<p>The worked examples come from real offers, rolled and routed headlessly on three random seeds (3230259412,
+1046436846, 2930777188; region 1, pay tier 1). They are what those boards posted, not typical values.</p>
+
+<h2>1. The one formula underneath every type</h2>
+<p>Every type except the papers' accuracy money runs through the same pay line (<code>payoutFor</code> in
+<code>src/economy.js</code>). <b>ratio</b> = time on the job clock ÷ par. Par is the C/D line by definition.</p>
+<table>
+  <tr><th>Term</th><th>Formula</th><th>Value</th></tr>
+  <tr><td>max pay</td><td>k × par × payMult</td><td>k = $10 / 234 per par-second. The measured average region-1 job (par 234 s) pays $5 base, $10 max.</td></tr>
+  <tr><td>base pay</td><td>0.5 × max</td><td>Guaranteed on arrival, however slow, until the deadline.</td></tr>
+  <tr><td>tip share</td><td>(1.348 − ratio) ÷ (1.348 − 0.652), held between 0 and 1</td><td>Whole tip at ratio ≤ 0.652 (the time S line). Half at 1.0 (par). None at ≥ 1.348.</td></tr>
+  <tr><td>payout</td><td>base + tip share × (max − base) × tipMult</td><td>tipMult is 1, except freight (0.5) and the Big tipper trait (× 1.6).</td></tr>
+  <tr><td>deadline</td><td>par × (1 + slack), counted from accept, on the world clock</td><td>Past it the job pays nothing and earns no deed. Slack per type is in the table.</td></tr>
+  <tr><td>good deed</td><td>1 at B or better, ½ at C, 0 at D, on the type's own letter</td><td>Off the books: 0. The right thing to do: +½ at C or better.</td></tr>
+</table>
+<p>Times below are on the job clock: one real second is one game minute, so a 5:16 drive is also 5 h 16 min of
+game time.</p>
+<p>So <b>the tip is a clock on every type</b>, with the same lines (0.652 / 1.0 / 1.348). Only courier and papers
+(and, by accident, demolition) show that clock. The <b>letter</b> is a separate thing: it is the type's own axis,
+and it decides only the deed and the optional item, never the money.</p>
+
+<h2>2. The comparison table</h2>
+<table>
+  <tr><th>Type</th><th>Base pay</th><th>Tip</th><th>Letter (deed + item) is</th><th>Letter shown?</th><th>Rank bar / countdown?</th><th>Par stretched by</th><th>Item tier chosen by</th><th>Deadline</th><th>Slow loses the deed?</th></tr>
+  <tr><td><b>Courier</b> (incl. multi-drop)</td><td>0.5 × k × par</td><td>time</td><td>time: S 0.652 · A 0.707 · B 0.794 · C 1.0</td><td>on the bar only; no result-card letter</td><td>yes: "finish in m:ss or better for X rank", then the bar in the last 25 % of the route (min 400 m)</td><td>nothing</td><td>giver's item categories; gate C/B/A/S equally likely</td><td>2 × par (takeout 1.5 ×)</td><td><b>yes</b>: B needs ratio ≤ 0.794, past par is D (0)</td></tr>
+  <tr><td><b>Fetch / ride</b> (motorist, tackle shop)</td><td>as courier</td><td>time</td><td>time, as courier</td><td>as courier</td><td>as courier</td><td>+ 15 s for the tire change (15 game min)</td><td>as courier</td><td>2 × par</td><td><b>yes</b>, as courier</td></tr>
+  <tr><td><b>Papers</b> (Larry)</td><td>the courier line on the plotted tour's par</td><td>time, plus accuracy money: 0.30 × k × par ÷ customers, × throw quality (1.0 centre → 0.30 edge), banked per throw</td><td>time, as courier</td><td><b>yes, on the result card</b></td><td>bar from 15 s before the S line</td><td>nothing (tour par)</td><td><b>rolls an item but never pays it</b> (section 4)</td><td>1.5 × par; unfinished = no fare, no deed, throws kept</td><td><b>yes</b>, as courier; B+ also climbs the route ladder</td></tr>
+  <tr><td><b>Fragile</b></td><td>(0.5 + 0.5 × health) × base. The whole line × care premium (1.3 / 1.15 / 1.0 by tier) × (1 + 0.0003 × kg)</td><td>time (no clock shown)</td><td>health on arrival, tier lines eased 0.03 / 0.02 / 0.01 per km of route</td><td>no; card says "if 69 %+ intact"</td><td><b>no</b></td><td>× (1 + 0.0007 × kg), as freight</td><td>as courier</td><td>3 × par</td><td>no (health only)</td></tr>
+  <tr><td><b>Haul</b> (firewood)</td><td>per bundle: courier line × 0.1 ÷ 1.1, × bundles delivered; you buy each bundle at half its base</td><td>time × bundles delivered (no clock shown)</td><td>bundles delivered: S 25 · A 22 · B 18 · C 14</td><td>no; "if 18+ bundles delivered"</td><td><b>no</b></td><td>× 1.1 flat, any load</td><td>as courier; the yard's stock is floored at the gate's count</td><td>3 × par</td><td>no (count only)</td></tr>
+  <tr><td><b>Freight</b></td><td>courier line × (1 + 0.0003 × kg)</td><td>time × 0.5 (no clock shown)</td><td>kg posted: S 712 · A 570 · B 285 · C 0</td><td>no; "upon delivery"</td><td><b>no</b></td><td>× (1 + 0.0007 × kg)</td><td><b>the posted kg</b>: under 285 kg no item; 285+ B; 570+ A; 712+ S</td><td>4 × par</td><td>no: fixed at posting, ≥ ½ always</td></tr>
+  <tr><td><b>Demolition</b></td><td>courier line × share smashed</td><td>time × share smashed</td><td>share smashed: S 100 % · A 90 % · B 75 % · C 60 %</td><td>no; "if 75 %+ smashed"</td><td><b>yes, but on time</b>: the bar runs S→D on the clock while the letter is the share</td><td>nothing</td><td>as courier</td><td>2 × par; after the first hit, 40 s to the next or the job ends</td><td>indirectly: a lapsed 40 s window ends the job with what is smashed</td></tr>
+  <tr><td><b>Expedition line</b> (the camp's five)</td><td>none</td><td>none</td><td>its type's own axis; C or better delivers it</td><td>no</td><td>courier and signs lines show the bar</td><td>as its type</td><td>none; A or better hands back one supply</td><td>none</td><td>only the time-graded lines (the crew): a D puts it back on the list</td></tr>
+</table>
+<p>Common to every type with an item: 40 % of offers carry one. A bonus offer must plan a leg of at least 1.5 km.
+The item's gate follows its rarity (common B–A, uncommon A–S, rare S). <b>Distance, pay and load never pick the
+item</b>, except freight's kg. Taking it costs its shop price off the cash, capped at what the job paid.</p>
+<p><b>Slow always costs pay</b> on every type: the tip runs from whole at ratio 0.652 to none at 1.348. Only courier,
+fetch and papers also cost the deed.</p>
+
+<h3>Worked examples (real offers)</h3>
+<table>
+  <tr><th>Type</th><th>The offer</th><th>Card says</th><th>Outcomes (pay · deed)</th></tr>
+  <tr><td>Courier</td><td>full propane tank, gas station, 4.32 km, par 316 s</td><td>Pay $6.75 – $13.49 · deadline 10h 31m</td><td>in 3:26 (S): $13.49 · 1 &nbsp;|&nbsp; 4:11 (B): $12.11 · 1 &nbsp;|&nbsp; 5:16 (par, C): $10.12 · ½ &nbsp;|&nbsp; 7:06+: $6.75 · 0</td></tr>
+  <tr><td>Fetch</td><td>motorist's spare tire via an auto shop, 10.53 km, par 783 s, "the right thing to do" (pay × 0.85)</td><td>Pay $14.22 – $28.43 · item Steel wheel (−$8) if B or better</td><td>S pace $28.43 · 1.5 &nbsp;|&nbsp; par $21.33 · 1 &nbsp;|&nbsp; ratio 1.348+: $14.22 · 0</td></tr>
+  <tr><td>Papers</td><td>4 customers, 8 papers, 1.95 km, par 209 s</td><td>Pay $4.46 – $8.91 · deed 1 if B or better</td><td>S + perfect throws: $8.91 fare + $2.67 throws ≈ $11.59 · 1 &nbsp;|&nbsp; par, 65 % throws: $6.68 + $1.74 = $8.42 · ½ &nbsp;|&nbsp; deadline 5h 13m</td></tr>
+  <tr><td>Fragile</td><td>crate of eggs (Fragile tier, 31 kg), farm, 3.86 km, par 268 s</td><td>Pay $6.65 – $13.30 · deed 1 if 69 %+ intact · ½ at 62 %+</td><td>100 % at S pace: $13.30 · 1 &nbsp;|&nbsp; 90 % at par: $6.32 + $3.33 = $9.65 · 1 &nbsp;|&nbsp; 50 % at par: $4.99 + $3.33 = $8.32 · 0</td></tr>
+  <tr><td>Haul</td><td>firewood, stock 28, 4.50 km, par 374 s</td><td>Bundle costs $0.37 · sells for $0.73 – $1.45 by speed</td><td>load 28 ($10.36): 28 in at par $30.48 · 1 &nbsp;|&nbsp; 18 in at par $19.59 · 1 &nbsp;|&nbsp; 14 in at par $15.24 · ½ &nbsp;|&nbsp; 10 in: $10.89 · 0</td></tr>
+  <tr><td>Freight</td><td>pallet of tomatoes, 365 kg, farm, 2.86 km, par 292 s (× 1.256 for the mass)</td><td>Pay $6.93 – $10.40 · Deed 1 upon delivery</td><td>S pace $10.40 · 1 &nbsp;|&nbsp; par $8.67 · 1 &nbsp;|&nbsp; slow $6.93 · 1. Item could only roll at B.</td></tr>
+  <tr><td>Demolition</td><td>farmer's old drums (8–12), 4.91 km, par 354 s</td><td>Pay $7.56 – $15.12 · deed 1 if 75 %+ smashed</td><td>100 % at S pace: $15.12 · 1 &nbsp;|&nbsp; 80 % at par: $9.07 · 1 &nbsp;|&nbsp; 60 % at par: $6.80 · ½ &nbsp;|&nbsp; 50 %: $5.67 · 0</td></tr>
+</table>
+<p>One thing the examples show: a full haul pays about <b>2.8 ×</b> a courier job over the same road (28 bundles at
+0.1 courier each), less the $10 of stock.</p>
+
+<h2>3. What each type asks the player to be good at</h2>
+<ul>
+  <li><b>Courier: be quick and know the roads.</b> Time is the whole job. The deed, the item and the tip all ride
+  the same clock, and it is the only type where the shot clock means exactly what it shows.</li>
+  <li><b>Fetch / ride: courier with an errand in it.</b> Drive out, park at the pickup, come back. The motorist's
+  tire rides loose in the bed, and the job will not finish until it is back in.</li>
+  <li><b>Papers: drive a tour fast and throw well.</b> The clock grades, the throws pay. Throw money is yours even
+  if the round fails. A B or better on the top size earns Larry's next route.</li>
+  <li><b>Fragile: drive smooth.</b> Condition is the deed and half the base. It is the calm type: no clock on
+  screen, and the deadline is 3 × par. Speed still pays the tip, but nothing shows it.</li>
+  <li><b>Haul: load smart and keep it in the bed.</b> You choose the count and pay for it, so spare bundles are
+  insurance you buy. It is the biggest earner per trip.</li>
+  <li><b>Freight: carry heavy with the truck you have.</b> The poster sets the load, so the deed and the item are
+  known before you leave. The job is surviving the drive, with a 4 × par deadline and half the usual tip.</li>
+  <li><b>Demolition: clear the whole shoulder.</b> The share smashed is the deed and scales all the pay. The 40 s
+  window between hits is its real clock.</li>
+</ul>
+
+<h2>4. What a new player trips on</h2>
+<ol>
+  <li><b>Demolition shows a time bar that does not grade it.</b> The bar falls S → A → B on the clock, but the letter
+  is the share smashed. A 100 % site in "D time" earns a full deed. (FEAT-65 calls the bar interim.)</li>
+  <li><b>Larry's item is advertised and never paid.</b> His offers roll an item 40 % of the time (a gate pins this,
+  per your 10-31 "give him every item"), and the map card prints it. The paper settle never passes it on, so it
+  can never be earned. The old FEAT-87 note "rounds carry no bonus item" is stale.</li>
+  <li><b>Impatient / Patient lie on calm types.</b> Their card line says "rank times 10 % tighter" on fragile, haul
+  and freight, where it changes nothing. On courier it moves the C line to 0.9 × par, but the tip line does not
+  move, so an Impatient job still pays half its tip at par while grading it D.</li>
+  <li><b>"Pay based on speed" with no clock to see.</b> Every card says it. Only courier and papers show the clock.
+  On fragile, haul and freight the tip drains on an invisible timer, including while you stop for gas.</li>
+  <li><b>A haul can promise a deed rung its stock cannot reach.</b> Stock rolls 14–30, the 1-deed line is 18. A
+  15-bundle yard (seed 3599450461) posts "Deed: 1 if 18+ bundles delivered".</li>
+  <li><b>The letter shows on one result card only.</b> The paper round's result card prints it. Every POI result
+  card prints none (your Q-3, 10-24). The casserole's prints it.</li>
+  <li><b>Fragile par grows with mass, like freight.</b> The code stretches any job with a strapped load. DEC-002
+  names freight only. Small for most items (+2 % for eggs), +16 % for the piano.</li>
+  <li><b>The courier countdown is a par clock.</b> Before the bar appears it prints "finish in m:ss or better for C
+  rank", and the C line is par. DEC-003 allows it (Q-6), but it is the one place par reaches the screen as digits.</li>
+</ol>
+<p>Stale design text, for the record: missions.md still lists "Freight is units (FEAT-140)", cancelled by DEC-019.
+DEC-018's type table has no demolition row.</p>
+
+<h2>5. Four ways to unify it</h2>
+<p>Each is one or two levers. What changes for each type, what stays, and the build cost.</p>
+
+<h3>A. Drop the letter; let the numbers speak</h3>
+<p><b>Changes:</b> the bar's bands are labelled with what they hold ("full tip", "deed 1", "deed ½", the item)
+instead of S/A/B/C/D. The paper and casserole result cards lose the letter. The stinger plays by the deed earned.
+<b>Stays:</b> letters inside the code (item gates, deeds, the expedition grade). Fragile, haul, freight and
+demolition already show no letter, so they are untouched. <b>Cost:</b> small: the strip's labels, two result
+cards, the stinger map. <b>Downside:</b> the five-colour S-rank chase goes, and the win card's expedition grade is
+still a letter. Courier's deed must then be stated as times on the card ("deed 1 if in by 4:11"), which prints a
+rank line as digits from accept, a bigger par leak than Q-6.</p>
+
+<h3>B. Hurried and calm jobs (recommended)</h3>
+<p>One lever: a job is <b>hurried</b> or <b>calm</b>, and only hurried jobs get the shot clock (the bar, the
+heartbeat, the music, the "finish in" countdown).</p>
+<table>
+  <tr><th>Type</th><th>Default</th><th>With an Impatient giver</th></tr>
+  <tr><td>Courier, fetch, ride, papers</td><td>hurried (as now)</td><td>hurried, lines 10 % tighter (as now)</td></tr>
+  <tr><td>Fragile, haul, freight</td><td>calm (as now)</td><td>hurried: the bar shows the <b>tip</b>; the deed stays on condition / count / kg</td></tr>
+  <tr><td>Demolition</td><td>calm: the time bar goes, the 40 s hit window is its clock</td><td>hurried, as the calm types</td></tr>
+</table>
+<p>The Impatient giver <b>says it</b> in their line (GIVER_LINES is still empty, so this would be the first
+owner-written line), and the trait line reads "on the clock" instead of "rank times 10 % tighter".
+About 6–7 % of offers are Impatient (one trait on half the offers, Impatient one of 7–9 eligible). With ~17 live
+offers a board, that is about one Impatient job per board, and an Impatient calm job every two or three boards. <b>Stays:</b> every pay formula, every deed rule, DEC-018's "the tip is speed".
+<b>Cost:</b> small: the bar's on/off rule (one function), a tip-only label mode for the bar on calm types, the
+trait text, a rank-timer gate case, and your words for the line. <b>Downside:</b> a calm job's tip still drains
+while you stop for gas; B only makes that visible on the hurried ones.</p>
+
+<h3>C. The clock only on Impatient jobs (your literal idea)</h3>
+<p><b>Changes:</b> no bar anywhere except Impatient jobs, of any type. A plain courier job's deed becomes "1 on
+delivery", because time no longer grades it. <b>Stays:</b> the tip on time. <b>Cost:</b> small. <b>Downside:</b>
+courier loses its only skill: about 93 % of courier jobs become "drive there". Deeds inflate, since courier is
+the most common offer on the sampled boards (about half) and today a slow one earns 0; the 10-deed camp gate and the ~12-day run would need
+re-measuring. The shot clock becomes rare (~1 per board), the opposite of "only present in one or two types".</p>
+
+<h3>D. Calm jobs are truly calm</h3>
+<p><b>Changes:</b> fragile's tip follows condition (whole at 100 %, none at 50 % or below, the 10-15 rule) instead of
+time. Stopping for gas costs only the deadline. <b>Stays:</b> everything else. <b>Cost:</b> small: one payout
+function, the card's "based on condition", the economy gate. <b>Downside:</b> it reverses DEC-018 (your 10-21
+ruling reversed exactly this). Health then drives the base and the tip, and a fast fragile drive earns nothing
+over a slow one. Works alone or on top of B.</p>
+
+<p><b>Recommendation: B.</b> It keeps the shot clock where time is the job, puts it on calm types only when a
+character asks for it, and fixes the demolition mismatch with no pay change. Take A's labels on the bar if you
+want to drop the letters too (question 3). The bugs in section 4 (Larry's item, the trait text) get fixed either
+way.</p>
+<dive-q id="direction" options="B: hurried and calm | A: drop the letter | C: clock only on Impatient jobs | D: fragile tip on condition | B plus D | as now"></dive-q>
+
+<h2>6. The details</h2>
+<p>How should a hurried calm job be announced? The trait already shows bottom-left on the card.</p>
+<dive-q id="announce" options="the giver's line says it, and the trait line reads 'on the clock' | the trait line only | a one-off HUD prompt when the bar first appears"></dive-q>
+
+<p>What should the bar's lines say? Today they are S/A/B/C/D. On a calm type under B, letters on the bar would
+contradict the card's "69 %+ intact".</p>
+<dive-q id="bar-labels" options="what each line earns (full tip, deed 1, deed ½, the item), no letters | letters on courier and papers, tip labels on calm types | letters everywhere, as now"></dive-q>
+
+<p>On an Impatient fragile, haul or freight job, what does the clock decide?</p>
+<dive-q id="calm-impatient" options="the tip only; the deed stays on the type's own axis | the tip and the deed: miss the time line and the deed drops a rung"></dive-q>
+
+<p>Larry's item: his offers roll one at 40 %, and none is ever paid.</p>
+<dive-q id="larry-item" options="pay it at its gate on the round's time letter, like any job | stop rolling items on Larry's offers"></dive-q>
+
+<p>A haul yard can post 14–17 bundles under a "Deed: 1 if 18+" line it cannot reach.</p>
+<dive-q id="haul-floor" options="raise the stock floor to 18, the 1-deed line | keep 14; the card says 'at most 1/2 deed' when stock is under 18 | as now"></dive-q>
+
+<p>Demolition's clock, if you did not pick B (B removes the time bar).</p>
+<dive-q id="demolition-bar" options="the 40 s hit window only, no time bar | keep the time bar"></dive-q>
+
+<p>Anything this misses, or a number you want moved.</p>
+<dive-q id="misses"></dive-q>
+
+<h2>7. Sources</h2>
+<ul>
+  <li>Pay line, k, base share, tip lines, deeds, rank tables, fragile easing, region tiers: <code>src/economy.js</code>
+  (ECONOMY_PARAMS, payoutFor, splitPayout, splitFragilePayout, fragileLines, pointsFor, settle, settleFlat). Pinned by
+  <code>test/economy.mjs</code> (fullTipRatio = the S line, tipZero = 2 − fullTipRatio).</li>
+  <li>Par, PAR_SLACK 1.495, time thresholds 0.652 / 0.707 / 0.794 / 1.0, gradeRun, amountGrade: <code>src/par.js</code>;
+  <code>test/par-oracle.mjs</code>.</li>
+  <li>Care premium, freight 0.0003 / 0.0007 per kg, tip × 0.5, haul 0.1 ÷ 1.1 per bundle and stock 14–30 at half base,
+  deadline slacks, traits, 40 % item share, 1.5 km bonus leg, item gates by rarity, giver categories:
+  <code>data/offers.js</code>.</li>
+  <li>Par stretches for haul, freight (and fragile, via its load), the 15-minute tire wait: <code>src/main.js</code>
+  _planOne. Per-type letters at settle, requisition lines: <code>src/main.js</code> missionSystem onSettle. Larry's
+  settle with no item: <code>src/main.js</code> paperRouteSystem onSettle.</li>
+  <li>Which jobs show the bar, the near-the-goal latch, the "finish in" countdown, the HUD promise rows:
+  <code>src/main.js</code> _rankTimerSource and _promiseRows; bar geometry (15 s pop, 25 % / 400 m): <code>src/rank-timer.js</code>;
+  <code>test/rank-timer.mjs</code>.</li>
+  <li>Card text, item gate draw, freight kg filter, haul stock floor, trait lines, deadline: <code>src/offer-board.js</code>
+  (_rollSpec, card, gateLine, deedLine, _traitLine, deadlineH, itemCost). Larry's 40 % item share: <code>test/offer-board.mjs</code>.</li>
+  <li>Papers fare, accuracy tips (0.30), route ladder: <code>src/paper-route.js</code> (scoreRoute, tipPerPaper,
+  advancesTier); throw quality floor 0.30: <code>src/throw.js</code>; <code>test/paper-route.mjs</code>.</li>
+  <li>Demolition hit window 40 s: <code>src/demolition.js</code>. Result cards (no POI letter, paper letter):
+  <code>src/main.js</code> _renderMissionUI and _renderPaperUI.</li>
+  <li>Worked examples: the live board (OfferBoard) and planner (MissionSystem.planOffer, planTour) on built regions, priced
+  with the functions above. Script kept out of the repo; rerun on any seed reproduces the method.</li>
+  <li>Impatient share (6–7 %): derived from TRAIT_COUNT_WEIGHTS (half the offers carry one trait) and the eligible-trait
+  count per family in <code>data/offers.js</code>; not measured on boards.</li>
+  <li>Design side: DESIGN.md SM-INV-3 / 4 / 14 and the 2026-10-21 type table; missions.md; DEC-002, 003, 004, 014, 017,
+  018, 019, 020, 022, 023.</li>
+</ul>
+<p><b>Not determined:</b> the demolition example's target count (the headless card prints "?" because sites are placed
+in the browser), and how often a real player sees each type (no play-time census was run).</p>
+
+<script src="/dive.js"></script>

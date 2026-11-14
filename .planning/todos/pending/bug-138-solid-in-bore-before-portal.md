@@ -53,3 +53,12 @@ where the block stood; the floor runs on smoothly (−0.15 m at 2 m out to −1.
   main 2 of 234 rings (both at this T, both a sibling's bore); this branch 0 of 234. No portal met an unrelated bore.
 - **The capture** replays clean (no flags; main: the 10.4 m/s jolt).
 - **The gate:** new `portal-clear` pins seed 717319401 (22 rings): main fails 2, this branch passes.
+
+**The look (2026-11-07, main with the fix, seed 717319401, freecam through the Chrome slot):**
+- `CarGame-machine/wip/bug-138/shots/forecourt.png` — from the T node's side, looking at both mouths: two masonry
+  arches side by side, their collars meeting at the crown; nothing in either lane.
+- `CarGame-machine/wip/bug-138/shots/inside-leg1.png` — from inside leg 1 (arcS 505) looking out: the right-hand lining
+  ends in a stepped, jagged grey edge where the merged Y drops it inside leg 2's tube (BUG-67's sibling cut), with the
+  hill showing past it. That edge, and the dark wedge between the mouths in the forecourt shot, are the shared-bore
+  geometry BUG-67's miter is about, not this fix. Re-shoot: `node wip/bug-138/shot.mjs` (test/screenshot.mjs on CDP
+  port 9341), arguments in the shot names' commit.

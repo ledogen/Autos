@@ -12,7 +12,7 @@
  * (main.js setKnockAudio), since it is the engine's own sound.
  */
 
-import { getAudioContext, getWorldBus, whiteNoiseBuffer } from './engine-audio.js'
+import { getAudioContext, getWorldBus, whiteNoiseBuffer, audioClockLive } from './engine-audio.js'
 
 export const KNOCK_FROM = 0.2   // [DEFAULT] engine condition below which it knocks — the HUD word's line too
 const KNOCK_LEVEL = 0.25        // peak gain at 0 % and full throttle, before the volume
@@ -44,7 +44,7 @@ export function setKnockAudio (on, vol) { enabled = !!on; volume = vol }
 
 /** Per render frame. `cond` the engine track 0..1, `rpm`, `throttle` 0..1, `running` (turning under its own power). */
 export function updateKnockAudio (cond, rpm, throttle, running) {
-  if (!osc) return
+  if (!osc || !audioClockLive()) return
   const worn = enabled && running && cond < KNOCK_FROM ? 0.25 + 0.75 * (1 - Math.max(0, cond) / KNOCK_FROM) : 0
   const t = osc.context.currentTime
   osc.frequency.setTargetAtTime(Math.max(5, rpm / 60), t, 0.03)

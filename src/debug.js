@@ -56,6 +56,19 @@ export function setDebugLockout (locked) {
   if (locked) _forceHideDebug()
 }
 
+// PERF-48: lil-gui's .listen() gives each live controller its own requestAnimationFrame loop, and a slider read-out
+// rewrites its fill's inline width whenever its value moves: every frame for the tank and the engine temperature.
+// Hidden, those writes still dirtied the page's style, so the next style-dependent call in the frame (the cluster's
+// ctx.font) paid a whole-document style recalculation for them, ~0.3 ms. So the live controllers listen only while
+// the panel shows. They are collected on the first syncDebugLive(), which main.js makes once every folder exists
+// (a .listen() added after that would stay live while hidden; none is); the toggles below keep them in step.
+let _live = null
+const _followPanel = gui => { if (_live) for (const c of _live) c.listen(gui.domElement.style.display !== 'none') }
+export function syncDebugLive (gui) {
+  _live ??= gui.controllersRecursive().filter(c => c._listening)   // lil-gui's own flag, set by .listen()
+  _followPanel(gui)
+}
+
 /**
  * Initialize the debug panel. Creates a lil-gui instance, adds physics sliders,
  * registers the backtick toggle listener, and returns the GUI instance.
@@ -291,6 +304,9 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // material now, so the slider pushes the new value into the engine on change.
   driveFolder.add(params, 'bodyRestitution', 0, 0.6, 0.01).name('Body Bounce (restitution)')
     .onChange(v => { window.__setBodyBounce?.(v) })   // hood/cab/bed hulls only — slab and wheel cores stay pinned at 0
+  // FEAT-193: the body's side grip (the flank hulls), by surface. Engine materials, so the change is pushed in.
+  driveFolder.add(params, 'bodyGripOffroad', 0, 1.5, 0.05).name('Body Grip off-road (μ)').onChange(() => window.__setBodyGrip?.())
+  driveFolder.add(params, 'bodyGripRoad', 0, 1.5, 0.05).name('Body Grip road (μ)').onChange(() => window.__setBodyGrip?.())
 
   // FEAT-36/FEAT-48: what the throw key (F) launches. 'paper' is the scoring newspaper; 'barrel'
   // and 'rock' spawn dynamic engine debris to drive over (src/debris.js) — the physics test rig.
@@ -344,8 +360,6 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'grassVolume', 0, 1, 0.05).name('Grass Volume')
   driveFolder.add(params, 'resultAudioEnabled').name('Result Card Sounds')
   driveFolder.add(params, 'resultAudioVolume', 0, 1, 0.05).name('Coin / Stinger Volume')
-  driveFolder.add(params, 'rankMusicEnabled').name('Rank Timer Music')
-  driveFolder.add(params, 'rankMusicVolume', 0, 1, 0.05).name('Rank Music Volume')
   driveFolder.add(params, 'tunnelReverbEnabled').name('Tunnel Reverb')
   driveFolder.add(params, 'tunnelReverbLevel', 0, 1, 0.05).name('Tunnel Reverb Level')
 
@@ -366,6 +380,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   tiresFolder.add(params, 'tireCarcassStiffness', 50000, 300000, 5000).name('Carcass / Rim Rate (N/m)')
   tiresFolder.add(params, 'tireDamping', 200, 4000, 100).name('Tire Damping (N·s/m)')
   tiresFolder.add(params, 'tireDampingDebris', 50, 4000, 50).name('Rock Damping (N·s/m)')   // BUG-99: tire vs debris only
+  tiresFolder.add(params, 'tireStopDampingRatio', 0, 1.5, 0.05).name('On-Stop Tire Damping (ζ)')   // BUG-140: while a strut is on its bump stop
   // Out-of-round tire; 0 = perfectly round. No callback: vehicle-model.js refreshWheelRunout
   // re-bakes the tire MESH on the next frame, so the visible egg matches the contact radius the
   // physics is using.
@@ -493,6 +508,11 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // puncture does (the bang and the alert come off `popped`).
   dmgFolder.add({ f: () => { const d = _damage(); const i = d ? d.flat.indexOf(false) : -1; if (i < 0) return
     d.flat[i] = true; d.popped.push(i); d.publish(params); _sync() } }, 'f').name('Puncture a Tire')
+  // BUG-160: the order a corner fails in — a road rim strike pinch-flats the inflated tire, and the wheel
+  // under air yields only this many times past its flat-tire yield.
+  dmgFolder.add(DAMAGE_PARAMS, 'rimPinchRoadMult', 4, 60, 1).name('Rim pinch pops tire (x wheel load)')
+  dmgFolder.add(DAMAGE_PARAMS, 'rimInflatedMult', 1, 4, 0.1).name('Wheel yield under air (x)')
+  dmgFolder.add(DAMAGE_PARAMS, 'wheelBumpEnergyMult', 1, 4, 0.1).name('Wheel bends at x spring energy')   // BUG-160
   void _readout
 
   // ── Engine temperature (FEAT-51) ──────────────────────────────────────────────────────────────
@@ -516,7 +536,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // `wheel` has no continuous wear source — wheels are damaged by impacts only — so that one
   // scales how hard impacts hit the wheels rather than a rate.
   const wearFolder = dmgFolder.addFolder('Wear Speed (x calibrated)')
-  for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine', 'filter']) {
+  for (const k of ['tire', 'brake', 'spring', 'damper', 'wheel', 'engine', 'filter', 'oil']) {
     wearFolder.add(DAMAGE_PARAMS.wearScale, k, 0, 10, 0.1).name(k)
   }
 
@@ -1096,6 +1116,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
     plotCanvas.style.display = 'none'
     travelCanvas.style.display = 'none'
     slipCanvas.style.display = 'none'
+    _followPanel(gui)
   }
 
   // Backtick toggle listener — toggles gui panel, plotCanvas, travelCanvas, AND slipCanvas in lockstep,
@@ -1109,6 +1130,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
       plotCanvas.style.display = hidden ? '' : 'none'
       travelCanvas.style.display = hidden ? '' : 'none'
       slipCanvas.style.display = hidden ? '' : 'none'
+      _followPanel(gui)
       const wf = window.__physWireframes
       if (wf) wf.setEnabled(!wf.enabled)
     }

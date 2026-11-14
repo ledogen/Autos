@@ -8,7 +8,10 @@
 //      wheelhouse tops only when its strap-free width really is wider than the gap;
 //   3. the weld holds: a 400 kg load drifts < 5 mm in the bed over a rough road at 15 m/s;
 //   4. mass is real: the rear struts squat the same welded as with the same body resting loose;
-//   5. teardown: removing the body takes the weld with it — body and joint counts back to baseline.
+//   5. teardown: removing the body takes the weld with it — body and joint counts back to baseline;
+//   7. BUG-161: a welded load is part of the truck — its own tire never presses on it, even where
+//      the wheel's query sphere overlaps it with a normal the n.y filter lets through;
+//   8. BUG-161: …and stays on its seat when the engine's swept collision parks the chassis mid-step.
 
 import * as THREE from 'three'
 import { PROP_MODELS } from '../data/prop-models.js'
@@ -20,7 +23,7 @@ import { BUILT_FAMILIES, jobBadge } from '../src/offer-board.js'
 import { createPhysicsEngine, GROUP_TERRAIN, GROUP_DEBRIS } from '../src/physics-engine.js'
 import { stepPhysics, createVehicleChassis } from '../src/physics.js'
 import { makeVehicleState } from '../src/vehicle-state.js'
-import { computeStaticEquilibrium } from '../src/suspension.js'
+import { computeStaticEquilibrium, mountLocal } from '../src/suspension.js'
 import { RUNNING } from '../src/ignition.js'
 import { strapPose, DebrisSystem } from '../src/debris.js'
 import { splitPayout, rankTable, ECONOMY_PARAMS } from '../src/economy.js'
@@ -175,6 +178,66 @@ for (let f = 0; f < 120; f++) {
 }
 ok(lagMax < 0.008, `drawn load sits in the drawn bed at 1–4 steps a frame, 15 m/s: ${(lagMax * 1000).toFixed(2)} mm off its strap pose (< 8; a once-a-frame snapshot would be ${onceMax.toFixed(2)} m behind)`)
 td.engine.dispose()
+
+// 7. BUG-161 / BUG-165: a small block level with the RR hub, its centre r + 3 cm off the hub. INBOARD (2 cm inside the
+// wheel's query sphere, wholly inboard of the tread: the freight-strap setup BUG-161 used) the tire never presses it,
+// loose or welded, at any ride height or at ±30° of roll — the query is cut to the tire's width (BUG-165). AHEAD of the
+// tread (inside the width, normal horizontal so the n.y < −0.1 filter passes it) a loose block is pressed, the control
+// that the query still sees debris at the tread, and the same block welded to the chassis is not (BUG-161).
+const _zAxis = new THREE.Vector3(0, 0, 1)
+async function tirePushes (weld, where, rollDeg = 0, comp = null) {
+  const t = await truck(false)
+  for (let i = 0; i < 60; i++) t.step()
+  if (comp !== null) t.vs.strutComp[3] = comp
+  t.vs.quaternion.setFromAxisAngle(_zAxis, rollDeg * Math.PI / 180)
+  const m = mountLocal(3, t.P), half = { x: 0.05, y: 0.1, z: 0.1 }
+  const inward = -Math.sign(m.x), off = t.P.wheelRadius - 0.02
+  const hubY = m.y - (t.P.suspensionRestLengthRear - t.vs.strutComp[3])
+  const local = where === 'inboard' ? new THREE.Vector3(m.x + inward * (off + half.x), hubY, m.z)
+    : new THREE.Vector3(m.x, hubY, m.z - (off + half.z))
+  const p = local.applyQuaternion(t.vs.quaternion).add(t.vs.position)
+  const b = t.engine.createBody({ type: 'dynamic', position: p, quaternion: t.vs.quaternion })
+  const pts = []; for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) pts.push(x * half.x, y * half.y, z * half.z)
+  t.engine.addHull(b, new Float32Array(pts), { density: 5 / (8 * half.x * half.y * half.z), group: GROUP_DEBRIS })   // a hull: the wheel query has no box pair test
+  if (weld) t.engine.createWeldJoint(t.chassis, b, p)
+  let n = 0
+  const ai = t.engine.applyImpulse.bind(t.engine)
+  t.engine.applyImpulse = (h, j, pt) => { if (h === b) n++; return ai(h, j, pt) }
+  t.step()
+  t.engine.dispose()
+  return n
+}
+const pushAhead = await tirePushes(false, 'ahead'), pushWelded = await tirePushes(true, 'ahead')
+ok(pushAhead > 0 && pushWelded === 0, `BUG-161: the tire presses a loose block ahead of its tread (${pushAhead} pushes) and never the same block welded to the chassis (${pushWelded})`)
+let inboardPushes = 0, inboardRuns = 0
+for (const roll of [-30, -15, 0, 15, 30]) for (const comp of [0, 0.12, RANGER_PARAMS.suspensionTravelRear]) {
+  inboardPushes += await tirePushes(false, 'inboard', roll, comp); inboardRuns++
+}
+ok(inboardPushes === 0, `BUG-165: a LOOSE block inboard of the tread, inside the query sphere, is never pressed: ${inboardPushes} pushes over ${inboardRuns} poses (roll ±30°, strut 0 → bump stop)`)
+
+// 8. BUG-161: a hard body strike. The chassis is a bullet: its sweep meets a bank inside the step and the engine parks
+// it at the moment of impact, speed kept, while the welded load (a bullet too, as DebrisSystem flags it in the bed, so
+// the truck's sweep skips it) makes the whole step. The cargo soak's worst (seed 198355854, the truck sideways at
+// 13 m/s, parked at 0.21 of its step) left the load 174 mm off its seat. The adapter puts it back (_projectWelds).
+// Here: sideways at 13 m/s, the widest body point 0.10 m short of a wall, so the sweep stops near half a step.
+const ts = await truck(false)
+for (let i = 0; i < 60; i++) ts.step()
+const sl = addLoad(ts)
+ts.engine.createWeldJoint(ts.chassis, sl.b, sl.p)
+ts.engine.setBullet(sl.b, true)
+const V = 13, SLAB_HALF_W = 0.85
+const wall = ts.engine.createBody({ type: 'static', position: { x: ts.vs.position.x + SLAB_HALF_W + 0.10 + 0.5, y: ts.vs.position.y, z: ts.vs.position.z } })
+ts.engine.addBox(wall, { x: 0.5, y: 1, z: 4 }, { group: GROUP_TERRAIN })
+ts.vs.velocity.set(V, 0, 0)
+ts.engine.setVelocity(sl.b, { x: V, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })
+const sx0 = ts.vs.position.x
+ts.step()
+const sAdv = (ts.vs.position.x - sx0) / (V * DT)
+ts.engine.getTransform(sl.b, bp, bq)
+const sOff = rel.copy(bp).sub(ts.vs.position).applyQuaternion(qi.copy(ts.vs.quaternion).invert()).distanceTo(LOCAL)
+ok(sAdv < 0.9, `the strike parks the chassis inside the step (advance ${sAdv.toFixed(2)} of its step, < 0.9) — the case below is live`)
+ok(sOff < 0.012, `BUG-161: the welded load stays on its seat through the parked step: ${(sOff * 1000).toFixed(1)} mm (< 12; unprojected it is the step's shortfall)`)
+ts.engine.dispose()
 
 console.log(fail ? '\nFREIGHT-STRAP: FAILED' : '\nFREIGHT-STRAP: all checks passed')
 process.exit(fail)

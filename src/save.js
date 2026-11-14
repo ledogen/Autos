@@ -53,7 +53,7 @@ export function clearRun (storage = globalThis.localStorage) {
 // every mutator once, where the board is built, log the calls that took (a truthy return), and a
 // resume rebuilds the board and replays them. Every caller is covered without touching one — a new
 // mutator only has to be named here and return truthy when it changed something.
-const BOARD_OPS = ['take', 'complete', 'abandon', 'openLines', 'openFirst']   // FEAT-147: the first job
+const BOARD_OPS = ['take', 'complete', 'abandon', 'openLines']
 
 /** Wrap `board`'s mutators to log into the returned { t0H, events }, after replaying `events` onto it. */
 export function logBoard (board, t0H, events = []) {
@@ -63,6 +63,12 @@ export function logBoard (board, t0H, events = []) {
     if (typeof f !== 'function') continue
     board[op] = (...a) => { const r = f.apply(board, a); if (r) log.events.push([op, ...a]); return r }
   }
-  for (const [op, ...a] of events) board[op](...a)
+  // BUG-152: a faithful replay takes every event (the board is pure, and only calls that took were
+  // logged). One that no longer takes is dropped from the new log and every later save carries the
+  // loss: a roster re-sited between sessions lost mom's take + complete and her casserole came back.
+  // An integrity check at load, so any future drift is loud instead of quiet.
+  // FEAT-184: an op the board no longer has (the casserole's openFirst) counts as dropped, never a throw.
+  const dropped = events.filter(([op, ...a]) => !BOARD_OPS.includes(op) || !board[op](...a)).length
+  if (dropped) console.error(`[save] board replay dropped ${dropped} of ${events.length} events`)
   return log
 }

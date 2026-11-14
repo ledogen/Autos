@@ -44,6 +44,7 @@ const GROUPS = [
   ['brake',     'Brakes'],
   ['engine',    'Engine'],
   ['filter',    'Air Filter'],
+  ['oil',       'Engine Oil'],
   ['radiator',  'Radiator'],
   ['headlights', 'Lights'],
   ['alignment', 'Alignment'],
@@ -202,6 +203,8 @@ export class DamageHUD {
           ? `${d.camberOffsetDeg[TRACKS[id].wheel] >= 0 ? '+' : ''}${d.camberOffsetDeg[TRACKS[id].wheel].toFixed(2)}°cam`
           : cls === 'filter'
             ? (d.filterEngineMultiplier() > 1.05 ? `${d.filterEngineMultiplier().toFixed(1)}× eng wear` : '')
+            : cls === 'oil'
+            ? (d.oilEngineMultiplier() > 1.05 ? `${d.oilEngineMultiplier().toFixed(1)}× eng wear` : '')
             : cls === 'wheel'
             ? `${(d.wheelRunout(TRACKS[id].wheel) * 1000).toFixed(1)}mm o-o-r`
             : (r > 0.005 ? `${r.toFixed(2)}%/min` : '')
@@ -237,7 +240,8 @@ export class DamageHUD {
     out.push(`<div class="dh-note">floors — slip ${P.tireSlipFloor} m/s · bump ${(P.springForceFloorFront / 1000).toFixed(0)}/${(P.springForceFloorRear / 1000).toFixed(0)} kN F/R`
       + ` (align ${(P.alignBumpFloorN / 1000).toFixed(0)} kN) · strut ${P.damperVelFloor} m/s`
       + ` · rim yield — rock ${(trip / 1000).toFixed(1)} kN on the core, road ${(tripRoad / 1000).toFixed(0)} kN past full tire compression`
-      + ` (peaks held ${HOLD_S}s). Below yield the rim springs back.</div>`)
+      + ` (peaks held ${HOLD_S}s). Below yield the rim springs back. Those are the yields under a flat;`
+      + ` under air ×${P.rimInflatedMult}, and a road strike past ${(P.rimPinchRoadMult * sw / 1000).toFixed(0)} kN pops the tire.</div>`)
     out.push('<div class="dh-note">a floor that is red on ordinary road is wrong, or the signal under it is noise.</div>')
 
     // ── IMPACTS ───────────────────────────────────────────────────────────────────────────────

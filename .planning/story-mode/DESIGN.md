@@ -223,11 +223,11 @@ safe, and the ramp lives on the driving side.** (1) **Finishable if safe:** cons
 crashes must fund gas, repairs and the upgrades later regions demand; a risky early mission may hand
 large run-layer power ("send it"). (2) **Three regions, three bosses, ~12–14 days** — supersedes the
 six-region / 20-day shape; the authored point and day budgets are **owed a re-cut** (open question 2).
-(3) **Concentric-ring layout:** terrain intensity rises toward the origin; R1 a ~30° sector on the
+(3) **Linear layout, north to south, inside the story world; regions 1 and 2 are still ring sections, never concentric rings** (DEC-053, replaces the 2026-10-12 "concentric-ring" wording): terrain intensity rises toward the origin; R1 a ~30° sector on the
 outer gentle ring, R2 an equal-area parallel-sided band one ring in, R3 the centre; today's steepness
 IS region 2; road character varies by ring with region 2 keeping the ratified defaults (not a QUAL-29
-retune). R3's jobs often send you back out to R2. Radii open (question 10). (4) **The bridge site is
-the first boss; the log drag is demoted** to a free-roam toy / scenario. (5) **Story-mode difficulty
+retune). R3's jobs often send you back out to R2. Radii open (question 10). (4) **The expedition camp is
+the first boss** (DEC-052, replaces the 2026-10-12 wording); **the log drag is demoted** to a free-roam toy / scenario. (5) **Story-mode difficulty
 settings:** lives, free tows, assists, and inflation split into damage / gas / upgrade-and-item knobs.
 A lost life = reset to road, cargo lost, vehicle condition floored at 25%; respawn stays dev /
 free-roam only (SM-INV-1, SM-INV-8 amended with a lives clause). (6) **Armor scales the fatal speed
@@ -251,8 +251,7 @@ overnight" with the deadline. (6) **The camp pause** (2026-08-02) is restated an
 **Haul: the player picks the quantity**; yards run rate bonuses. (8) **Straps are not an item**
 (FEAT-110 closed). (9) **Cargo protection is proportional**, never additive. (10) ~~**Parts are priced
 by the furthest region unlocked.**~~ **Retired 2026-10-21 (owner, the item setup page): costs scale with the clock only (`dayTier`); a region gives better income and rewards, never higher prices.** (11) **Pay grows with work, not the day:** `dayTier` leaves pay
-and scales costs only; pay rides the region step × a capped **regional reputation** shown on the
-result card. Retires "accept at 1 a.m., buy tomorrow's rate". (12) ~~**Alpha run shape: three regions,
+and scales costs only; pay rides the region step; there is no reputation track in the alpha, Larry being the one exception (DEC-025, replaces the 2026-10-14 wording). Retires "accept at 1 a.m., buy tomorrow's rate". (12) ~~**Alpha run shape: three regions,
 provisionally 7 / 6 / 5 days.**~~ *Re-scoped 2026-10-23: this is now a **beta** candidate — alpha is one
 region.* ~~Open: what earns haul's and freight's tip and bonus item.~~ *Answered 2026-10-21, below.*
 Provenance: [design-amendments-2026-10-14.md](design-amendments-2026-10-14.md).
@@ -267,7 +266,7 @@ stock**; the player picks the load; a bonus gate prints as a count or kg and onl
 can meet it. (4) ~~**Freight is units:** the bed fills visibly; indivisible loads keep their mass.~~ *(Reversed 2026-10-22: every freight load is as-built.)* (5)
 **Papers: any N customers, a deadline from the shortest route through N, the route ends at N.** (6)
 **The HUD strip shows each type's rank axis and the live letter**; fragile adds a health bar and a
-combined-g bar. (7) **Giver traits**, 0–2 per offer. (8) **Rank thresholds step by region, never by
+combined-g bar. (7) **Giver traits**, one per offer at most, never stacked, the card printing the trait's effect in plain numbers beside its name (DEC-104, replaces the 2026-10-21 wording). (8) **Rank thresholds step by region, never by
 day** — the day ramp retires (SM-INV-2 below). Tickets FEAT-138 to FEAT-142 and a re-scoped FEAT-114.
 Provenance: [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md).
 
@@ -291,9 +290,9 @@ ticket is later (open bugs default to alpha), and design text past the alpha kee
 under a one-line banner. (3) **The alpha run ends three ways:** reach the expedition camp (win), die
 (SM-INV-1 unchanged — running out of money ends the run as an unaffordable recovery), or **throw in
 the towel** from the pause menu. (4) **Every ending shows a run summary**; the death→new-run loop
-and the garage stay SM-4. (5) **The alpha story is three beats:** the firing, the uncle (the
-tutorial's voice), the expedition camp. (6) With one region, FEAT-103's camp needs no unlock and no
-FEAT-28. (7) **The alpha region is today's 2500 m story circle**; the ladder's R1 sector is beta. (8)
+and the garage stay SM-4. (5) **The alpha story is three beats:** the firing, mom (the intro
+ends at her house, where she feeds the player and sets up the story), the expedition camp (DEC-109, replaces the 2026-10-23 wording). (6) With one region, FEAT-103's camp needs no unlock and no
+FEAT-28. (7) **The alpha region is today's 2500 m story circle**; the story world's R1 sector is beta (DEC-053). (8)
 **The alpha is a polished demo**: little content, but what is there is complete — no stubs, no
 placeholder models. Provenance:
 [design-amendments-2026-10-23-release-cuts.md](design-amendments-2026-10-23-release-cuts.md).
@@ -332,7 +331,7 @@ Story mode does not replace what exists — it **forks** it. A **main menu** sel
   every slider live. The infinite-world identity lives here, undiminished.
 - **Story Mode** — a fork of free roam limited to 1–several regions at first, more unlocking
   with run progression (FEAT-28). Meta progression between runs modifies what elements come
-  out in single runs. **Debug tooling is locked out**; sliders are fixed. World-parameter
+  out in single runs. **Debug tooling and teleports sit behind a cheat or debug mode** (DEC-045); sliders are fixed. World-parameter
   manipulation for story purposes (you wake up one morning and all the trees are gone) is
   driven by hard tooling / baked parameter states, not realtime slider access. Regional
   difficulty likewise comes from baked per-region parameters. **Difficulty settings [RATIFIED
@@ -451,9 +450,11 @@ timer could give it.
 
 ## Invariants
 
+Each invariant is also a decision record in `.planning/decisions/`; where this prose and a standing record disagree, the record wins (owner, 2026-11-13).
+
 These are the load-bearing walls. Cite them in tickets and code comments as `SM-INV-N`.
 
-- **SM-INV-1 — Death is crash or breakdown only.** No other fail states. Dozing is not a
+- **SM-INV-1 — Death is crash or breakdown only.** (DEC-001) No other fail states. Dozing is not a
   fail state; it hands a mountain road to a driver with their eyes shut and lets the
   physics decide. [RATIFIED; lives clause 2026-10-12]
   > **Lives clause [RATIFIED 2026-10-12].** A story-mode *difficulty setting* may grant lives. With a
@@ -463,12 +464,12 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > has no lives. **Respawn is a development / free-roam tool only** and never exists in story mode.
   > **Throwing in the towel [owner, 2026-10-23]** — ending the run from the pause menu — is the
   > player's choice, not a fail state, so this invariant holds. It shows the same run summary (FEAT-146).
-- **SM-INV-2 — Par never scales with the car.** Fixed reference friction, road geometry
+- **SM-INV-2 — Par never scales with the car.** (DEC-002) Fixed reference friction, road geometry
   only. If a better build raises par, every upgrade quietly hands back its own reward and
   the flywheel stalls. A better car raises *payout*, not lowers *risk* — the player drives
   at their own limit regardless of what's underneath, which is where crashes live. Godlike
   runs stay lethal. **There is exactly ONE par**, derived from route geometry. It scales with nothing
-  — not the car, not run age. *Job-contract time slack is not par scaling [owner, 2026-10-15]:* a
+  — not the car, not run age — with one exception: when rain lands, par uses that day's grip (DEC-121). *Job-contract time slack is not par scaling [owner, 2026-10-15]:* a
   loaded job's contract stretches the par it is held to — haul × 1.1 (`HAUL_PAR_SLACK`), freight
   × (1 + 0.0007·kg) (`FREIGHT_PAR_SLACK_PER_KG`), both data/offers.js — because the load the job
   hands you slows the truck; the geometric par underneath is untouched. [DEFAULT — load-bearing]
@@ -519,7 +520,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > is the clause's own logic — *a better car raises payout* — with the region step making the next
   > region hard again. Thresholds never read the player's truck (FEAT-112). Provenance:
   > [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md) §11b; FEAT-138.
-- **SM-INV-3 — Par is never rendered as a countdown; timers are a flavor, not the driver.**
+- **SM-INV-3 — Par is never rendered as a countdown; timers are a flavor, not the driver.** (DEC-003)
   [RATIFIED as amended 2026-07-16] The par economy is a payout curve, felt as *how hard am I
   willing to push*, never *3:41 remaining* — putting par on the HUD makes the whole game a
   time trial. BUT hard timers are not banned: **some mission types** carry an explicit,
@@ -591,8 +592,8 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > collateral from a mu change. Gated now: `test/economy.mjs` pins day-20 S at or above the best
   > recorded human drive, so the letter cannot go extinct silently a second time.
   >
-  > *And par is now invisible.* The result card shows a letter and a number — how you did and what
-  > you earned. It no longer prints par or "±0:12 vs par". Par-as-the-failing-line is exactly the
+  > *And par is now invisible.* No result card shows a rank letter on any type: the letter stays internal, deciding the
+  > bonus item and the good deeds, and the card names the threshold instead (DEC-118). It no longer prints par or "±0:12 vs par". Par-as-the-failing-line is exactly the
   > thing that would invite a stopwatch relationship with the road if you could see it.
 
   > **⚠ Amendment [RATIFIED 2026-08-17] — the never-live clause is RETIRED; rank boundaries are shown
@@ -625,7 +626,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > a scale where **C contains par**, which is the band a live readout will spend most of its time
   > in. Whoever implements the live surface should check it reads sensibly there rather than
   > assuming the old B-centred spacing.
-- **SM-INV-4 — Payout is continuous margin against par; ~~bare completion pays ~nothing~~ completion pays half the max.** *(title amended 2026-09-30 — see the last amendment below, which carries the current anchors)*
+- **SM-INV-4 — Payout is continuous margin against par; ~~bare completion pays ~nothing~~ completion pays half the max.** (DEC-004) *(title amended 2026-09-30 — see the last amendment below, which carries the current anchors)*
   [RATIFIED 2026-08-01 — was DEFAULT] Payout is a **continuous linear function of the par ratio**,
   not a set of bins. ~~Three anchors fix the line: **+20% over par pays ~nothing · par pays one day's
   maintenance · −20% under par pays generously (2×)**.~~ *(anchors re-set 2026-08-16 — see below)*
@@ -721,18 +722,15 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > past it is **expired** — it can no longer be delivered and **pays nothing**. Nothing pops up
   > while driving: the job button turns into "mission expired", pressable only when parked, and the
   > card follows (a strapped load still costs the 1 h clean-up). The giver's slot locks at the
-  > deadline under the lock rule. **The two cards are a pair:** the offer card quotes one number,
-  > *Base pay*, the guaranteed amount; the result card answers it in the same words — *Base pay*,
-  > then *Tip* — and the tip is never mentioned on the offer. *(One exception, owner 2026-10-21: the
-  > "Big tipper" giver trait names it by design — FEAT-142. Haul quotes a **rate** — "Base
-  > pay $0.40 a bundle" — because the load is picked after the card; the picker shows the total.
-  > Freight's load is posted, so its card quotes one Base pay number (owner, 2026-10-22).)*
-- **SM-INV-5 — Wear accrues on time + intensity, never distance.** Hours and engine torque
+  > deadline under the lock rule. **The two cards are a pair:** the offer card reads "Pay $B – $M based on speed"
+  > ("flat" when nothing moves it), and the result card says where each dollar came from (DEC-119).
+  > *(Haul quotes a **rate**, because the load is picked after the card; the picker shows the total.)*
+- **SM-INV-5 — Wear accrues on time + intensity, never distance.** (DEC-005) Hours and engine torque
   are both integrated; wear compounds with how hard you drive, not just how long. This is
   the lever that separates intense mission driving from casual point-to-point freeroam
   between missions — easing off the throttle on the way to the next job is how the player
   protects the truck. [RATIFIED 2026-07-19]
-- **SM-INV-6 — Camping is a button, but the place decides the quality.** You commit to
+- **SM-INV-6 — Camping is a button, but the place decides the quality.** (DEC-006) You commit to
   sleep with an explicit action, and the game previews the campsite's quality where you
   stand — scored from shade, flatness, proximity to streams and lakes, and other worldgen
   factors. Some regions are campable and some are not, so the button is gated by where you
@@ -748,13 +746,14 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > bands were relaxed (flatness score zero at 1.2 m, campable to 1.5 m) and water/fishable reach
   > went 30 → 50 m, so a bad campsite stays a real step up from the cab.
 - **SM-INV-7 — Every run starts in a randomized jalopy, and every run is technically
-  capable of beating the game.** No meta power curve that makes early runs uncompletable
+  capable of beating the game.** (DEC-007) No meta power curve that makes early runs uncompletable
   or late runs comfortable. The randomized bad car forces the player to re-read the truck
   at minute one and makes a mid-run part find land as an *event*. [RATIFIED]
-- **SM-INV-8 — What survives death is literacy and the garage.** Not parts, not money, not
+- **SM-INV-8 — What survives death is literacy and the garage.** (DEC-008) Not parts, not money, not
   the car — **and, as of 2026-07-29, not the world and not XP.** What persists is **player
   literacy** (reading the truck, reading the weirdness) and **the garage** (unlocked starting
-  vehicles and story keys). A returning player isn't stronger, they're *fluent*.
+  vehicles and story keys). A returning player isn't stronger, they're *fluent*. A won run's truck
+  configuration may be saved for free roam only, which carries nothing into a story run (DEC-008).
   [RATIFIED premise; scope narrowed 2026-07-29] *(A lost **life** under the SM-INV-1 lives clause is
   not a death: the run, money, parts and clearance all persist; only position, cargo and condition
   above 25% are touched. 2026-10-12.)*
@@ -766,7 +765,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   **Cost recorded honestly:** the line *"the player accumulated the weirdness voluntarily by going
   too far; there is no button to put it back"* is no longer literally true of the world — the
   accumulation moves into the player's reading of it. Something real was given up here.
-- **SM-INV-9 — Spirits/permanent unlocks change rules, never balance sheets.** The moment
+- **SM-INV-9 — Spirits/permanent unlocks change rules, never balance sheets.** (DEC-009) The moment
   an unlock hands out resources, SM-INV-7 softens into "late runs are comfortable" and the
   jalopy pool stops mattering. The fire keeps burning while you sleep; you dream something;
   it moves your truck. Ambiguous benefit is still benefit. This is the most likely invariant
@@ -781,14 +780,14 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   handout and is forbidden. Litmus test for any unlock: *does it raise the floor / make late
   runs comfortable?* If yes, it's illegal regardless of how it's dressed. [DEFAULT — load-bearing;
   breadth-not-floor / roguelike-unlock model RATIFIED 2026-07-19]
-- **SM-INV-10 — Parts are described, never scored.** No number on a part, ever. An LSD
+- **SM-INV-10 — Parts are described, never scored.** (DEC-010) No number on a part, ever. An LSD
   doesn't grant +5 handling; it changes what the truck does when you get greedy mid-corner.
   Power mods on an open-diff RWD truck are a *worse car* for a driver without the literacy —
   that's a cursed item nobody had to author, and it only works because nothing is hidden.
   Wear is a state, not a score: the service screen shows a part's condition as a percentage
   (owner, 2026-10-22). [DEFAULT]
 - **SM-INV-11 — The *ambient* world-story is emergent (parameter states + the doze); authored
-  story beats are permitted, but stay in-world.** *Re-keyed 2026-07-29: parameter states are driven
+  story beats are permitted, but stay in-world.** (DEC-011) *Re-keyed 2026-07-29: parameter states are driven
   by **run progress** (`runState`), not `metaState` — the mechanism is unchanged, the input moved
   when worldgen was decoupled from meta-progression (SM-INV-12). Escalation now happens **within a
   run** and resets with it; the ambient/authored split below is untouched.* The leaning trees, the
@@ -809,7 +808,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   world-story — the surreal texture and the through-line's atmosphere — stays emergent (parameter
   states + doze); the world still doesn't narrate itself moment-to-moment; (3) the doze remains the
   everyday channel. Authored beats are the exception at gates, not the texture.*
-- **SM-INV-12 — Determinism discipline: worldgen is meta-free.**
+- **SM-INV-12 — Determinism discipline: worldgen is meta-free.** (DEC-012)
   **[RATIFIED 2026-07-29, superseding the 2026-07-16 widening]** Three layers, not two:
   - **Worldgen is a pure function of `(worldSeed, worldKnobs, coords)`.** Terrain, router output,
     POI placement and the road network are identical for every player on a given world, forever,
@@ -837,15 +836,15 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   Headless gates pin a default `runState` exactly as they previously pinned `metaState`;
   live-reactive systems (doze, ambush timing) stay flag-gated off (FEAT-26 precedent). Determinism
   is *stronger* under this rule, not weaker.
-- **SM-INV-13 — Progression gates are diegetic.** ~~Region locks are trail-closed barriers a
+- **SM-INV-13 — Progression gates are diegetic.** (DEC-013) ~~Region locks are trail-closed barriers a
   ranger reopens (FEAT-28), not menu walls.~~ **Roads end before the wall** — every road crossing
-  it is trimmed back to its junction, so the network just stops, with no signs. **The region boss
+  it is trimmed back to its junction, so the network just stops; in the alpha the road past the expedition camp is blocked by the camp and a barrier, not hidden (DEC-013). **The region boss
   opens the way** (R1: the expedition camp finds the trail, FEAT-103). Off-road, the one non-diegetic
   piece is honest rather than hidden: near the wall a warning, then a **visible hard wall**. XP-gating
   harder country needs an in-world frame or it fights the world premise. [DEFAULT; **amended
   2026-10-19** by the owner — a softer teleport-and-reorient was rejected as more complicated and
   less transparent than showing the wall]
-- **SM-INV-14 — Region access is bought with mission *points*, not XP, and they are run-layer.**
+- **SM-INV-14 — Region access is bought with mission *points*, not XP, and they are run-layer.** (DEC-014)
   [RATIFIED 2026-08-01, replacing the XP formulation of 2026-07-29] Progress toward the next region
   is a **count of well-driven missions**, not an accumulating quantity:
 
@@ -909,7 +908,7 @@ These are the load-bearing walls. Cite them in tickets and code comments as `SM-
   > (285 kg in R1), *"Deed: 1/2 upon delivery — under 285 kg"* below it; C is 0 kg, so every freight
   > job earns at least ½ (R-18, owner: *"freight should always give at least half a good deed"*). The
   > letter stays internal, but the player reads the deed before accepting — nothing is hidden.
-- **SM-INV-15 — No in-run vehicle purchase.** [RATIFIED 2026-07-29] **You cannot buy a different car
+- **SM-INV-15 — No in-run vehicle purchase.** (DEC-015) [RATIFIED 2026-07-29] **You cannot buy a different car
   during a run.** Parts, yes — deeply. Vehicles, no. Three reasons, all owner-stated, and worth
   keeping in the code comment that will inevitably ask *"why not just add a dealership"*:
   1. **It doesn't survive its own economy.** A new vehicle's price is impossible to justify against
@@ -983,7 +982,7 @@ another's job.
 |---|---|---|---|
 | **par** | route geometry, nothing else | fixed | what a road is *worth* |
 | **rank thresholds** | run day | tighten | how hard the good letters get |
-| **day tier** | run day, **locked at mission start** | rise | ~~how much a mission pays~~ **what things cost** [2026-10-14: pay rides region × reputation instead, FEAT-117] |
+| **day tier** | run day, **locked at mission start** | rise | ~~how much a mission pays~~ **what things cost** [2026-10-14: pay rides the region instead; no reputation track in the alpha (DEC-025)] |
 | **region tier** | region index, **locked at mission start** | rise | the reward for pushing into harder country |
 
 *(Re-anchored 2026-08-16 — SM-INV-3 and SM-INV-4 amendments.)*
@@ -1111,7 +1110,7 @@ therefore the bonus objective — works on any job.
 > nothing. Every pay term reads the count, kg, health or time, never the letter (SM-INV-4 holds). Base
 > pay is still × par. Provenance: [design-amendments-2026-10-21-mission-recut.md](design-amendments-2026-10-21-mission-recut.md); FEAT-138.
 >
-> **Haul stock is bought (owner, 2026-10-22).** The yard charges for every piece loaded, at **half
+> **Haul stock is bought (owner, 2026-10-22); the expedition camp's firewood line is the exception: 20 bundles, free, a requisition rather than a haul job (DEC-019).** The yard charges for every piece loaded, at **half
 > that job's base pay per piece**, and the delivery pays per piece as above. A spare piece is paid-for
 > insurance on the rank, not free; a piece that spills, misses the bed at the yard, or rides an
 > expired job is money lost. The price is kept cheap on purpose: a failed haul already costs money
@@ -1127,7 +1126,11 @@ therefore the bonus objective — works on any job.
 > §2b; FEAT-114, FEAT-139.
 
 > **Amendment [OWNER 2026-10-08] — $0-cash missions are retired.** Every job pays some cash, even for
-> bare completion (SM-INV-4's base pay). A bonus item rides **on top of** cash, never instead of it;
+> bare completion (SM-INV-4's base pay). ~~A bonus item rides **on top of** cash, never instead of it~~
+> *(amended — owner, 2026-11-13, FEAT-199: a bonus item is an **optional item, priced off the cash**. The
+> job pays its full cash, speed tip included; at the result card the player chooses the full cash, or the
+> cash less the item's price with the item. The price is **capped at what the job paid**, so taking the
+> item never goes below $0 and never touches the wallet. R-04's "the item is the tip" is retired.)*;
 > the parts-only "archetype 3" of `design-amendments-2026-08-17.md` §1 is killed. A job that FAILS
 > (a fragile load destroyed) still pays $0 — that is a failure, not a completion. The boss still
 > pays in region access only (`missions.md` "Economy compliance"): a main mission, not a job.
@@ -1230,8 +1233,8 @@ tracks obey SM-INV-5 (time + intensity, never distance).
   FEAT-93. Driving on a flat: FEAT-94.
 - **Repair = roadside self-change.** Pull over and swap the tire — **not a minigame**, it just burns
   ~1–2 in-game hours (OEM kit) and **requires a spare/replacement tire in inventory**. A found/bought
-  **quick-jack cuts the time** (−1 h, above; you still need a tire ready). The breaker bar is cut
-  (owner, 2026-10-22).
+  **quick-jack cuts the time** (−1 h, above; you still need a tire ready). The tire iron and floor jack
+  return as rare items: fitting the spare takes about 2 h without them and 30 min with both (DEC-105).
 - **Inventory weight is real load** (honest physics): carried spare tires and the quick-change tool have
   mass, shifting the truck's CoG and handling while stowed — a load, never a stat (SM-INV-10).
 
@@ -1529,20 +1532,20 @@ repetition. Full model and the cast: `spirits-and-pacts.md`.
 Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
 
 - ~~**6 regions**, region 1 at 2500 m (~12 min to cross) and **growing with depth on a sparser grid**~~
-  **THREE regions, three bosses, laid out on concentric rings [RATIFIED 2026-10-12]** — terrain
+  **THREE regions, three bosses, laid out north to south inside the story world, never as concentric rings (DEC-053) [RATIFIED 2026-10-12]** — terrain
   intensity rises toward the origin; region 1 a ~30° sector on the outer gentle ring, region 2 an
   equal-area parallel-sided band one ring in, region 3 the centre disc; today's steepness IS region 2.
   **Radii [RATIFIED 2026-10-12]: centre disc 1.5 km · rings 1.8 km deep · region 1 a 50° sector
   (3.3–5.1 km out, ≈6.6 km²) · region 2 a parallel-sided band of equal area (≈3.2 km wide, 1.5–3.3 km
-  out, so its inner edge wraps the whole centre disc).** The three regions are **the ladder**: ring
-  sections that do not envelop one another; only the terrain and road-character field is radial.
-  **Orientation and connectivity [RATIFIED 2026-10-15, BUG-85]:** the ladder is **fixed north–south**,
+  out, so its inner edge wraps the whole centre disc).** The three **regions** are ring
+  sections that do not envelop one another (DEC-053); only the terrain and road-character field is radial.
+  **Orientation and connectivity [RATIFIED 2026-10-15, BUG-85]:** the regions are **fixed north–south**,
   R1 at six o'clock, for every seed. A wall can cut the road graph into pieces; that never refuses a
   seed, and there is no reroll and no heading search. Pieces are counted with roads **cut at the
   wall**, and a piece counts once it reaches **500 m inside** it. The **largest piece is the region's
   network**. A **stranded piece** gets **no POIs, roadside destinations or mission endpoints**.
   *Optional:* it rejoins once the region it connects through unlocks. [DEFAULT 2026-10-15: the
-  spawn is seated on the largest piece of R1. The ladder is drawn from the world origin, so the
+  spawn is seated on the largest piece of R1. The regions are drawn from the world origin, so the
   spawn no longer draws the region.] ·
   **6 hours** to beat · **24-minute sky cycle** = **16 waking h + 8 h sleep** ·
   **~18 real minutes per day** · ~~**20 days per run**~~ ~~**~12–14 days per run** [2026-10-12]~~ **~18 days: three regions of
@@ -1565,7 +1568,11 @@ Full working-through in [run-shape.md](run-shape.md); the ratified numbers:
 
 - **The clock runs, pauses, or skips** [RATIFIED 2026-08-02]. Driving and travel run at 1:1. **Shops,
   service stations and camp pause it** — those screens are the planning surface, and **the map must be
-  reachable from each of them.** Sleep, making camp, and an accepted repair **skip** it. Repairs cost
+  reachable from each of them.** **So does the parking brake** [OWNER 2026-11-13, FEAT-194 part 3]: no
+  time passes while it is latched, and the latch's own real stop (a tap under 5 km/h) is the only stop
+  test. The day clock, energy, hunger, a job's elapsed and due time and offer expiry stand still with it;
+  idle fuel burn and coolant heat keep running (the engine is on). A stop still costs the slowing down
+  and the pulling away, so the speed tip measures driving time — accepted. Sleep, making camp, and an accepted repair **skip** it. Repairs cost
   **money and hours** — *engine to 50% for $1000 and 10 hours* — charged as an immediate skip, which
   makes a service stop a real commitment against the day rather than a wallet transaction.
   **Energy drains across the skip — including when you pay someone else to do the work**; ten hours at
@@ -1938,7 +1945,7 @@ escalate rather than assuming the pane is licensed for it.
     SM-4/SM-5 planning; escalate rather than deciding in a ticket.
 
 **Resolved 2026-07-16:** timers (ex-Q2 → SM-INV-3 as amended); debug-panel ownership
-(ex-Q8 → "Game modes": story mode locks out debug tooling, sliders fixed, story/difficulty
+(ex-Q8 → "Game modes": story mode hides debug tooling behind a cheat or debug mode (DEC-045, replaces the 2026-07-16 wording), sliders fixed, story/difficulty
 parameter states come from hard tooling, not realtime slider manipulation).
 
 ## Tensions with existing tenets — and their resolutions
@@ -1950,9 +1957,9 @@ parameter states come from hard tooling, not realtime slider manipulation).
 | Headless gate determinism | Doze, ambush timing, live mission state | Flag-gated live systems (FEAT-26 precedent); gates pin a default **`runState`** (2026-07-29 — was `metaState`) |
 | Meta-progression = breadth, not floor (SM-INV-9) | The roster mechanism was spirits/characters-with-perks | **RATIFIED 2026-07-29**: the roster is a **garage** — unlocked *starting vehicles*, lateral not upward. Easier to keep honest than perks, because a vehicle's differences are physical and visible. Spirits/classes **deferred**, not deleted (see "The garage") |
 | Parts are the upgrade path (SM-INV-10) | An obvious dealership/"buy a better truck" affordance | **RATIFIED 2026-07-29**: no in-run vehicle purchase (SM-INV-15). Aspiration is deep parts customization within one rig, plus unlocked *starting* vehicles chosen before the run |
-| SM-INV-1 death is permanent | A 6-hour run needs saving, and a reloadable save destroys the loss economy | **RATIFIED 2026-07-29**: suspend-and-resume — one slot, written on quit, **deleted on load**, deleted on death. A pause button that survives closing the browser, not a checkpoint (see "Run shape and saving") |
+| SM-INV-1 death is permanent | A 6-hour run needs saving, and a reloadable save destroys the loss economy | **RATIFIED 2026-07-29**: one rolling autosave slot per profile, overwritten about once a second while a run is live, deleted on death; loading does not delete it (DEC-056, replaces the 2026-07-29 wording). A pause button that survives closing the browser, not a checkpoint (see "Run shape and saving") |
 | SM-INV-8 "the world persists" | Region/trail clearance persisting is a power *floor* (SM-INV-9) | **RATIFIED 2026-07-29**: clearance and region access are **run-layer**; SM-INV-8 narrowed to literacy + garage. The deck widens, the map doesn't. Resolves Open Q3 |
-| USER-OWNED debug sliders (FEAT-06 etc.) | Story mode drives world params | **RATIFIED 2026-07-16**: story mode locks out debug tooling; sliders fixed; story/difficulty states baked via hard tooling |
+| USER-OWNED debug sliders (FEAT-06 etc.) | Story mode drives world params | **RATIFIED 2026-07-16**: story mode hides debug tooling behind a cheat or debug mode (DEC-045, replaces the 2026-07-16 wording); sliders fixed; story/difficulty states baked via hard tooling |
 | `feedback_emergent_over_injected` | — | **Alignment, not tension**: par derived from the router, cursed items emerging from honest physics, story as parameter states, damage read from real bump-stop forces — all this tenet applied to game design |
 | Core value "physics that feel honest" | — | Alignment: missions reward driving at the limit; parts change behavior, not numbers |
 | No damage model exists (noted in FEAT-26) | Breakdown death needs one | Build ONE wear/condition model (SM milestone 3) shared by economy wear and hazard impacts; **confirmed required 2026-07-16**, expected hard |

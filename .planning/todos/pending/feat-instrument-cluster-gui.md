@@ -214,3 +214,35 @@ one. Wire what's real; leave clean seams for the rest.
   model); SM-INV-10 described-not-scored.
 - State sources: FEAT-23 drivetrain (`src/drivetrain.js`), FEAT-14 cast lights (`src/vehicle-model.js`),
   parking brake (teleport feature — [[project_teleport_feature]]), current HUD (`src/debug.js`).
+
+## Owner, 2026-11-07 (feat34-lamps) — round 2, built (Lane B, feature/machine)
+
+Verbatim: "lamps i want: check engine (as a symbol), overheating coolant (mimic low fuel with a light under the high
+side of coolant gauge), flat tire, parking brake, low fuel stays the same. you pulled a great reference image for the
+actual ranger dash. could i also have the rpm "circle" combined with the speedo like the reference. so the circles
+overlap instead of being fully separate"
+
+- **The tach and speedo share one face**, as the 2002 owner guide's cluster drawing (pp. 10–13) has them. Measured
+  off that drawing: the hubs sit 0.71 of the summed radii apart (here 96 px of 132), and the 2002's tach is a short
+  arc (0 at about half past eight, the top numeral at about twenty to one). So the tach's sweep went 195° → 130°
+  (160° → 290°), which ends its scale before the cusp where the two rims meet. The speedo's 0–30 mph now sit in the
+  tach's old lower right. The faces are painted as one region: inside the tach's disc each pixel keeps the lighter of
+  the two shadings, so no rim line divides them (`_paintJoinedWell`). The cluster is 42 px narrower (W 420 → 378).
+- **Moved to stay left of the cusp:** BRAKE to the tach's lower left (where the 2002 has it); RPM x1000 to the top
+  under the numerals (as the 2002 prints it); the UNLEADED / FUEL ONLY legend low and right of the gear.
+- **The temp pod mirrors the fuel pod**, a lamp each side of its glyph:
+  - CHECK ENGINE, amber, as the ISO engine symbol on the C side. Lit at the engine track's knee
+    (`DAMAGE_PARAMS.engineKnee`, 50 %), where its power loss steepens. It also lights at START: the 2002 guide's bulb
+    check for this lamp, the same as BRAKE.
+  - Overheat, a dot under H: the low-fuel lens's twin. Red, FMVSS 101's colour for a coolant-temperature telltale
+    (the low-fuel dot is amber). Lit past H (`tempGaugeFrac() > 1`, i.e. over `tempHotC` 110 °C), where engine damage
+    and power loss start.
+- **Unchanged:** flat tire (speedo), parking brake (BRAKE), low fuel.
+- **The headlamp lamp — owner, 2026-11-08 (the feat34-lamps check), verbatim:** "green low beams blue high beams and
+  red if your lights are both dead and you try to turn them on". The high-beam lamp's lens now follows the switch:
+  the low-beam symbol (beams angled down) in green at low beam, the high-beam symbol ("≡D", beams level) in blue at
+  high, and the switched-on symbol in red when both headlamps are at 0 % (`headlightL` and `headlightR`). Dark when
+  the lights are off. It is on the headlamp circuit, so it lights with the key off too. `setHeadlights(mode, dead)`
+  replaces `setHighBeam`.
+- The 2002's text CHECK GAGE lens is not built (the owner chose the dot).
+- Render harness: `wip/feat-34/cluster-shot.{html,mjs}` (git-invisible), which knows `checkEngine` and `overheat`.

@@ -40,9 +40,9 @@
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
-import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, formatDue, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, rewardsIn } from '../src/offer-board.js'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, formatDue, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, rewardsIn, itemCost, rewardValue } from '../src/offer-board.js'
 import { ITEMS } from '../data/items.js'
-import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARD_CATS, RARE_PULL, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK } from '../data/offers.js'
+import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARD_CATS, RARE_PULL, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, ITEM_COST_FRAC } from '../data/offers.js'
 import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
@@ -430,10 +430,23 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         cp.pay === `Pay $${formatMoney(pr.base)} – $${formatMoney(pr.max)} based on speed`, cp.pay)
     check('every courier card states its deed line as numerals (R-09/R-19)', cp.deed === 'Deed: 1 if B or better · 1/2 at C', cp.deed)
     const cb = b.card(bonused.o, { nowH: bonused.t, payTier: 1.52, route })
-    check('a bonus offer quotes the FULL base, flat, and no cash tip (R-04: the item is the tip)',
-        cb.pay === `Pay $${formatMoney(basePay(360, 1.52))} flat`, cb.pay)
-    check('the tip line names the item and its gate', cb.bonus?.startsWith('Tip: ') && cb.bonus.includes(b.spec(bonused.o).bonus.name)
-        && cb.bonus.includes(gateText(b.spec(bonused.o).bonus.gate)), cb.bonus)
+    check('a bonus offer quotes the same whole line as a plain one (FEAT-199: its item is optional, off the cash)',
+        cb.pay === cp.pay, cb.pay)
+    const bw = b.spec(bonused.o).bonus
+    const atMost = itemCost(bw.rewardId) > pr.base ? ' at most' : ''
+    check('FEAT-199: the card says "Optional item: <item> (−$N) — <gate>", N = itemCost = the item\'s value × ITEM_COST_FRAC',
+        cb.bonus === `Optional item: ${bw.name} (−$${formatMoney(itemCost(bw.rewardId))}${atMost}) — if ${gateText(bw.gate)}`
+        && itemCost(bw.rewardId) === Math.round(rewardValue(bw.rewardId) * ITEM_COST_FRAC * 100) / 100, cb.bonus)
+    // The CAP (owner, 2026-11-13): N never exceeds what the job paid, so where the pay can come in under N the card
+    // says "at most" — and only there (a pay floor above N keeps the owner's plain "(−$N)").
+    const lo = b.card(bonused.o, { nowH: bonused.t, payTier: 0.01, route }), hi = b.card(bonused.o, { nowH: bonused.t, payTier: 1e4, route })
+    check('FEAT-199 cap: "(−$N at most)" when the base can pay less than N; plain "(−$N)" when it cannot',
+        lo.bonus.includes(`(−$${formatMoney(itemCost(bw.rewardId))} at most)`) && hi.bonus.includes(`(−$${formatMoney(itemCost(bw.rewardId))})`),
+        `${lo.bonus} | ${hi.bonus}`)
+    check('FEAT-199 cap: itemCost(id, paid) is min(price, paid) — the result card\'s charge never exceeds the pay',
+        REWARD_LIST.every(w => itemCost(w.id, 1.23) === Math.min(1.23, itemCost(w.id)) && itemCost(w.id, 1e6) === itemCost(w.id)))
+    check('FEAT-199: every reward has a cost above $0 (nothing is free by omission)', REWARD_LIST.every(w => itemCost(w.id) > 0),
+        REWARD_LIST.filter(w => !(itemCost(w.id) > 0)).map(w => w.id).join(', '))
     check('gate text: "S only" / "X or better"', gateText('S') === 'S only' && gateText('B') === 'B or better')
     check('the card states distance and weight, then "available for:" and "time limit:" on their own row (R-10)',
         cp.terms.length === 2 && cp.terms[0] === '2.4 km' && cp.times.length === 2
@@ -666,10 +679,11 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
             const pr = payRange(300, 1, want, sp.tipMult ?? 1)
             // R-20: a haul reads as a trade — what a bundle costs, what it sells for.
             const wantPay = `Bundle costs $${formatMoney(stockPrice(300, 1, want))} · sells for `
-                + (sp.bonus ? `$${formatMoney(pr.base)} flat` : `$${formatMoney(pr.base)} – $${formatMoney(pr.max)} by speed`)
+                + `$${formatMoney(pr.base)} – $${formatMoney(pr.max)} by speed`   // FEAT-199: a bonus haul quotes the range too
             if (Math.abs(sp.payMult - want) > 1e-12
                 || card.pay !== wantPay
-                || card.terms.join('|') !== `3.0 km|${sp.stock} bundles available`) badPay++
+                || card.terms.join('|') !== `3.0 km|${sp.stock} bundles available`
+                || card.times.join('|') !== `available for: ${formatGameDuration(o.expiresH - t)}|time limit: ${formatGameDuration(b.deadlineH(o, 300))}`) badPay++   // BUG-162
             // §6: a gate the stock can't meet never rolls; the card prints the count behind it.
             if (sp.bonus) {
                 gated++
@@ -681,7 +695,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check(`every haul stocks ${HAUL_STOCK[0]}..${HAUL_STOCK[1]} bundles (and only hauls have a stock)`, badCount === 0)
     check('the whole range rolls', counts.size === HAUL_STOCK[1] - HAUL_STOCK[0] + 1, [...counts].sort((a, b) => a - b).join(','))
     check('the offer weight is the whole stock × the bundle mass', badMass === 0)
-    check('pay is per bundle; the card is the rate, the cost, the distance and the stock — no timers', badPay === 0)
+    check('pay is per bundle; the card is the rate, the cost, the distance, the stock, and both timers like every job (BUG-162)', badPay === 0)
     check('a haul bonus gate is always reachable on the stock, and prints as a count', gated > 0 && badGate === 0
         && gateLine('B', 'haul', 1) === `if ${S.B}+ bundles delivered` && gateLine('A', 'freight', 1) === 'upon delivery'
         && gateLine('A', null, 1) === `if ${gateText('A')}`, `${badGate}/${gated} haul bonuses`)
@@ -885,42 +899,6 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('FEAT-142: every trait rolls somewhere in the corpus', TRAITS.every(t => seen.has(t.id)), [...TRAITS.map(t => t.id)].filter(x => !seen.has(x)).join(','))
     check('FEAT-142: the terms move as tabled — deadline, tip pool, courier thresholds, deeds', badTerms === 0, `${badTerms} of ${n}`)
     check('FEAT-142: Wholesale stocks the whole yard', whole > 0 && wholeBad === 0, `${whole} wholesale, ${wholeBad} short`)
-}
-
-// ── FEAT-147: the first job — mom's one fixed courier run to Larry, posted by the opening ─────────
-{
-    const tagged = POIS.map(q => ({ ...q, tags: [q.type, ...(q.type === 'larrysHouse' ? ['residence', 'larry'] : [])] }))
-    const mom = ofType('momsHouse')[0], larry = ofType('larrysHouse')[0]
-    const b = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 }), twin = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 })
-    check('FEAT-147: closed until the opening posts it — mom shows nothing', b.firstState() === 'closed' && b.offers(mom, T0).length === 0)
-    const opened = b.openFirst(T0), again = b.openFirst(T0)
-    const [o] = b.offers(mom, T0), sp = o && b.spec(o)
-    check('FEAT-147: openFirst posts one offer at mom\'s, once (idempotent)', opened && !again && b.offers(mom, T0).length === 1)
-    check('FEAT-147: an ORDINARY courier spec — no line, pay 1x, no bonus, no trait, the family\'s slack',
-        sp && !sp.line && sp.family === 'delivery' && sp.payMult === 1 && !sp.bonus && !sp.traits.length && sp.deadlineSlack === DEADLINE_SLACK.delivery)
-    const wish = b.destWish(o, tagged, new Set())
-    check('FEAT-147: it goes to Larry\'s only, strict, at any length', wish.anyLeg === true && wish.strict && wish.pois.length === 1 && wish.pois[0].id === larry)
-    const c = b.card(o, { nowH: T0, route: { par: 90, distance: 800, endPoiId: larry } })
-    const text = c.sentence.map(x => x.t).join('')
-    check('FEAT-147: the card is the ordinary one — "Mom needs …" — with NO time limit (BUG-117), NO pay and NO deed (bug117-pay)',
-        text.startsWith('Mom needs a casserole delivered to') && c.pay === null && c.deed === null
-        && !c.times.length, `${text} / ${c.pay} / ${c.deed} / ${c.times}`)
-    b.take(o.id, T0, 90)
-    check('BUG-117: taken carries NO deadline — it can never expire', b.firstState() === 'taken' && b.taken(o.id)?.dueH === Infinity)
-    b.complete(o.id, T0 + 0.5)
-    b.advance(T0 + 30)
-    check('FEAT-147: any end closes it for good — never re-posted', b.firstState() === 'done' && b.offers(mom, T0 + 30).length === 0 && !b.openFirst(T0 + 30))
-    const c2 = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 })
-    c2.openFirst(T0); const o2 = c2.offers(mom, T0)[0]; c2.take(o2.id, T0, 90); c2.abandon(o2.id, T0 + 0.2)
-    check('FEAT-147: a cancel closes it too', c2.firstState() === 'done')
-    const c3 = new OfferBoard({ seed: 4242, pois: tagged, nowH: T0 })
-    c3.openFirst(T0); const o3 = c3.offers(mom, T0)[0]; c3.take(o3.id, T0, 90); c3.advance(T0 + 200)
-    check('BUG-117: still in hand 200 h on — no lock at a deadline', c3.firstState() === 'taken' && !!c3.taken(o3.id))
-    twin.advance(T0 + 30)
-    const others = (x) => tagged.filter(q => q.id !== mom).map(q => x.offers(q.id, T0 + 30).map(y => y.id).join(',')).join('|')
-    check('FEAT-147: posting it moves no other offer (it draws no stream)', others(b) === others(twin))
-    const none = new OfferBoard({ seed: 4242, pois: tagged.filter(q => q.type !== 'momsHouse'), nowH: T0 })
-    check('FEAT-147: no mom on the roster → no first job, and openFirst is a no-op', none.firstState() === null && !none.openFirst(T0))
 }
 
 // ── BUG-136: the clock reads on day 0 too — the opening's evening, before the clock's zero ──────────────────────

@@ -55,7 +55,7 @@ ALWAYS list, the clutch LSD's stock weight, and the tire prices.
    top.
 8. **A region-1 run takes ~12 days** (owner: "there is a lot of content i didnt engage with… i wouldnt mind
    the runs taking a little longer. maybe 12 days should be expected for a R1 run"). The run's length is
-   the deeds gate: `campDeeds` 6 → **10** `[DEFAULT]`. The owner's one run made 6 deeds in 7 days; that's a
+   the deeds gate: the expedition camp opens at **6** good deeds (DEC-120, replaces the `[DEFAULT]` of 10). The owner's one run made 6 deeds in 7 days; that's a
    single sample, so re-measure on the next playthrough. **The cost curve has to come down with it.**
    Prices now ride the day while pay is flat, and today's ×1.15/day table reaches 3.68× on day 12. A day's
    costs (1.5 × a base pay) would then be $27.60 against about $20 for two top jobs. Re-cut
@@ -118,7 +118,7 @@ with no pool edits.
 - [ ] No `diffLSD` reward appears before day 3. The shelf still stocks it.
 - [ ] The three tire durabilities are set (0.7 / 0.9 / 0.8).
 - [ ] 6 slots; a headless census over N seeds × days averages ~3 rotating items per shop.
-- [ ] `campDeeds` 10 and the re-cut cost curve; `test/economy.mjs` pins both.
+- [ ] `campDeeds` 6 (DEC-120) and the re-cut cost curve; `test/economy.mjs` pins both.
 - [ ] If the owner takes the categories: every giver type has at least one category, and every part and
       camp item is a reward somewhere. A census reports each giver's reward count before and after.
 - [ ] The owner plays a run and confirms the wear feel, the economy and the run length.
@@ -144,8 +144,10 @@ waits on the owner's reward-cats call.
    filter switched off, 398 early.
 6. Tire durability: old 0.7 (family), standard 0.9 (its own), sport 0.8 (unchanged).
 7. 6 slots, `P_FILL` 0.037: the gate measures 3.03 rotating items a shelf (estimate 3.08).
-8. `campDeeds` 10; `dayTierTable` = 1.065^(d−1) to the cent (day 7 1.46, day 12 2.00, day 20 3.31,
+8. `campDeeds` 10, to change to 6 (DEC-120); `dayTierTable` = 1.065^(d−1) to the cent (day 7 1.46, day 12 2.00, day 20 3.31,
    day 30 6.21). Gate: two B-line jobs ($17.83) clear day 12's costs ($15.00).
+   Owner, 2026-11-06 (rank-spread-knock): "12 days includes the expedition camp missions. keep the spread you
+   just built" — the spread stays; the camp opens at 6 good deeds (DEC-120).
 
 Notes for the owner:
 - Acceptance 1 said "the day-7 tier (2.31×)"; that was the old curve. With item 8 it is 1.46×.

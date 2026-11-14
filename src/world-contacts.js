@@ -15,8 +15,11 @@ import { tireContact } from './tire-contact.js'
 /**
  * @param {object} w
  *   params            RANGER_PARAMS (wheelFootprint, wheelWidth)
- *   groundH(x, z, y)  the surface height at (x, z) for a query at height y
- *   groundN(x, z, y)  its unit normal {x, y, z}
+ *   groundH(x, z, y, hint)  the surface height at (x, z) for a query at height y; `hint` is a road resolve to use in
+ *                           place of resolving at (x, z) (undefined: resolve it there)
+ *   groundN(x, z, y, hint)  its unit normal {x, y, z}
+ *   patchAt(x, z, y, out)  the road's surface patch at a hub (roadSystem.surfacePatch), shared by one tire's
+ *                     samples, filled into `out`; optional
  *   props()           the PropSystem whose hard props collide (queryProps), or null
  *   pois()            the PoiSystem whose marker cubes are solid (queryContact), or null
  *   tunnelWall(cx, cy, cz, r)   a bore wall hit {normal, depth, contactPoint}, or null
@@ -24,18 +27,25 @@ import { tireContact } from './tire-contact.js'
  * @returns {(cx, cy, cz, r, footprint?, axle?) => Array<{normal, depth, contactPoint}>}
  */
 export function makeQueryContacts (w) {
-  let qy = 0
-  const gH = (x, z) => w.groundH(x, z, qy), gN = (x, z) => w.groundN(x, z, qy)
+  let qy = 0, qh   // the query's height, and the surface patch shared by one tire's samples (undefined = none)
+  const patch = {}
+  const gH = (x, z) => w.groundH(x, z, qy, qh), gN = (x, z) => w.groundN(x, z, qy, qh)
   const tire = {}
   return function queryContacts (cx, cy, cz, r, footprint = false, axle = undefined) {
     const hits = []
     qy = cy
 
     // FEAT-70: a wheel is solved as the tire CYLINDER it is (src/tire-contact.js) — the surface point closest to the
-    // axle across three lines of the tread, depth along the radial line, the normal radial at an edge — so a kerb
-    // ahead lifts and slows the wheel continuously and ground BESIDE the tire lifts nothing.
+    // axle across three lines of the tread, depth along the radial line, the ground's own normal at the pressure centre
+    // (PERF-39: never radial at an edge, that popped tires) — so a kerb ahead lifts the wheel continuously and ground
+    // BESIDE the tire lifts nothing.
     if (footprint && axle && r > 0 && w.params.wheelFootprint !== false) {
+      // PERF-43: ONE surface patch for the whole tire, at its hub — the road context every tread and normal sample
+      // within 1 m shares (road.js surfacePatch); each sample then does only its own local maths, and its height is
+      // what a fresh evaluation there gives (test/hint-reuse.mjs). PERF-39 shared one road resolve the same way.
+      qh = w.patchAt?.(cx, cz, cy, patch)
       const c = tireContact(gH, gN, cx, cy, cz, r, w.params.wheelWidth, axle, tire)
+      qh = undefined
       if (c) hits.push({ normal: new THREE.Vector3(c.nx, c.ny, c.nz), depth: c.depth, contactPoint: new THREE.Vector3(c.px, c.py, c.pz) })
     } else {
       const h = gH(cx, cz), gd = h + r - cy

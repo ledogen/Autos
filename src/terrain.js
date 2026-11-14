@@ -30,9 +30,10 @@ import * as THREE from 'three'
 // pothole/curvature are not needed on the terrain mesh carve path.
 // QUAL-07: crownProfile no longer imported — the crown/camber fold moved into the one shared
 // RoadSystem._carveCrossSection; the mesh resolves (signedLat, arcS) per vertex and calls it.
-import { addWorldVaryings, tdBumpGLSL } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
+import { addWorldVaryings } from './terrain-detail.js'  // FEAT-05: procedural fbm mottle + bump
 import { height, makeTerrainNoise, CHUNK_SIZE, GRID_SAMPLES, HEIGHT_PARAM_KEYS } from './terrain-height.js'   // THE height function — the Worker imports the same module
-import { makeSurfaceTextures, _hexLin } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
+import { makeSurfaceTextures, makeDetailNoiseTexture, _hexLin } from './terrain-texture.js'  // FEAT-84: grass/dirt/rock detail maps (procedural, no assets)
+let _detailNoiseTex = null   // PERF-41: one bake per page, shared by every terrain rebuild (seed changes)
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 import { smooth01 as _smooth01 } from './seed.js'
@@ -145,6 +146,7 @@ export class TerrainSystem {
         this._terrainUniforms = {
             uDetailScale: { value: params.terrainDetailScale    ?? 1.0  },
             uNoiseScale:  { value: params.terrainNoiseScale      ?? 0.3 },
+            uNoiseTex:    { value: _detailNoiseTex ??= makeDetailNoiseTexture() },   // PERF-41: the fbm + its bump differences, baked once per page
             uMottle:      { value: params.terrainMottleStrength  ?? 0.6 },
             uBump:        { value: params.terrainBumpStrength    ?? 0.7  },
             uCliffLo:     { value: params.roadCliffSlopeLo       ?? 0.3  },
@@ -258,7 +260,11 @@ export class TerrainSystem {
                 'uniform int uTunnelN; uniform vec4 uTunnelPos[24]; uniform vec4 uTunnelAxis[24]; uniform vec3 uTunnelBend[24];\n' +
                 // Baked prop-shadow occlusion, written at <color_fragment> and consumed by the
                 // directional-light patch below. Global because those two chunks are separate scopes.
-                'float rsBakedShade = 1.0;\n' + shader.fragmentShader
+                'float rsBakedShade = 1.0;\n' +
+                // PERF-41: the detail noise is BAKED (terrain-texture.js makeDetailNoiseTexture: R = fbm, GB = the bump's
+                // finite differences), read once at <color_fragment> for the mottle and kept for the rock bump at
+                // <normal_fragment_begin>; the biome dither's coarse octave reuses it while the two scales match.
+                'uniform sampler2D uNoiseTex;\nvec4 tdT = vec4(0.0, 0.0, 0.5, 0.5);\n' + shader.fragmentShader
             // FEAT-40: cut the skin at tunnel mouths — capsule test in world space, then discard.
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <clipping_planes_fragment>',
@@ -298,7 +304,8 @@ export class TerrainSystem {
                 // Engineered faces (vSurf.w) keep their own cut/fill colour.
                 float ts_rockW = vSurf.z * (1.0 - vSurf.w);
                 if (uDetailScale > 0.0) {
-                    float td_n = tdFbm(vWorldPos.xz * uNoiseScale);
+                    tdT = texture2D(uNoiseTex, vWorldPos.xz * (uNoiseScale / 64.0));
+                    float td_n = tdT.r;
                     diffuseColor.rgb *= 1.0 + uMottle * uDetailScale * (td_n - 0.5);
                     // FEAT-84: height-weighted three-way surface blend. Each zone's map carries an
                     // albedo MODULATION (rgb, 0.5 = ×1) and its HEIGHT (a). Weight' = vertex weight ×
@@ -322,7 +329,13 @@ export class TerrainSystem {
                     bool ts_xf = ts_an.x > ts_an.z;
                     float ts_sgn = ts_xf ? sign(vWorldNrm.x) : -sign(vWorldNrm.z);
                     vec2 ts_ps = (ts_xf ? vec2(vWorldPos.z * ts_sgn, vWorldPos.y) : vec2(vWorldPos.x * ts_sgn, vWorldPos.y)) * uSurfScale.z;
-                    vec4 ts_rs = texture2D(uSurfAlbR, ts_ps);
+                    // PERF-41: the side pair is read only where it has weight — ts_steep is exactly 0 below ~49° (most
+                    // pixels), where mix(·, ·, 0) and the ×ts_steep side normal discard it, so the picture is identical.
+                    // The mip derivatives are taken outside the branch (textureGrad): inside a branch the neighbouring
+                    // pixels that the implicit LOD needs may not run.
+                    vec2 ts_psX = dFdx(ts_ps), ts_psY = dFdy(ts_ps);
+                    vec4 ts_rs = vec4(0.0), ts_nRs = vec4(0.5);
+                    if (ts_steep > 0.0) { ts_rs = textureGrad(uSurfAlbR, ts_ps, ts_psX, ts_psY); ts_nRs = textureGrad(uSurfNrmR, ts_ps, ts_psX, ts_psY); }
                     ts_r = mix(ts_r, ts_rs, ts_steep);
                     // Normal maps, sampled here so their .b — the height RANK (a true quantile,
                     // terrain-texture.js _rankOf) — can rank texels for the coverage rules below;
@@ -331,7 +344,6 @@ export class TerrainSystem {
                     vec4 ts_nG = texture2D(uSurfNrmG, ts_p * uSurfScale.x);
                     vec4 ts_nD = texture2D(uSurfNrmD, ts_p * uSurfScale.y);
                     vec4 ts_nR = texture2D(uSurfNrmR, ts_p * uSurfScale.z);
-                    vec4 ts_nRs = texture2D(uSurfNrmR, ts_ps);
                     float ts_rq = mix(ts_nR.b, ts_nRs.b, ts_steep);   // rock rank, side-projected on steep faces like ts_r
                     // Rock by COVERAGE, not by contest (owner 2026-09-25): the rock share s admits
                     // s^γ of the tile, and the map's own heights rank the texels — tallest fragments
@@ -340,7 +352,8 @@ export class TerrainSystem {
                     // Dithered rock share: two noise octaves (~8 m and ~2 m) push the share up
                     // and down across the boundary band; the s·(1−s) weight pins the pure ends.
                     float ts_s0 = clamp(vSurf.z, 0.0, 1.0);
-                    float ts_dn0 = tdFbm(ts_p * uBiomeDither.y) * 0.7 + tdFbm(ts_p * uBiomeDither.y * 3.7 + 17.0) * 0.3 - 0.5;
+                    float ts_dc = uBiomeDither.y == uNoiseScale ? td_n : texture2D(uNoiseTex, ts_p * (uBiomeDither.y / 64.0)).r;
+                    float ts_dn0 = ts_dc * 0.7 + texture2D(uNoiseTex, (ts_p * uBiomeDither.y * 3.7 + 17.0) / 64.0).r * 0.3 - 0.5;
                     float ts_s = clamp(ts_s0 + ts_dn0 * uBiomeDither.x * 4.0 * ts_s0 * (1.0 - ts_s0) * 2.0, 0.0, 1.0);
                     // Dirt floor in PATCHES (owner 2026-09-28: "a small baseline of rocks poking through,
                     // strongly amplified by the rock biome"): the same dither field scales the floor
@@ -436,7 +449,10 @@ export class TerrainSystem {
                 // far cascade is the light that models terrain-scale sun occlusion, and baked prop
                 // shadows are terrain-scale sun occlusion, so they belong to the same light.
                 rsBakedShade = 1.0;
-                if (uShadowStrength > 0.0) {
+                // QUAL-18: the baked shadow fades out with view distance (LOD dissolve). PERF-41: the fade is taken
+                // FIRST and the taps skipped past its end (beyond ~240 m, much of a vista) — they would be ×0 there.
+                float sh_fade = 1.0 - smoothstep(uShadowFadeStart, uShadowFadeEnd, length(vViewPosition));
+                if (uShadowStrength > 0.0 && sh_fade > 0.0) {
                     vec2 sh_cf   = vWorldPos.xz / ${CHUNK_SIZE.toFixed(1)};
                     vec2 sh_tile = mod(floor(sh_cf), uShadowAtlasN);
                     vec2 sh_in   = fract(sh_cf);
@@ -451,8 +467,6 @@ export class TerrainSystem {
                         sh_a += texture2D(uShadowAtlas, (sh_tile + sh_c) / uShadowAtlasN).r;   // atlas is R8 (PERF-21)
                     }
                     sh_a *= 0.2;                                        // average of the 5 taps
-                    // QUAL-18: fade the baked shadow out with view distance (LOD dissolve).
-                    float sh_fade = 1.0 - smoothstep(uShadowFadeStart, uShadowFadeEnd, length(vViewPosition));
                     rsBakedShade = 1.0 - min(1.0, sh_a * uShadowStrength * uShadowLightGain) * sh_fade;
                 }`
             )
@@ -493,9 +507,8 @@ export class TerrainSystem {
                     float td_slp = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
                     float td_rock = max(smoothstep(uCliffLo, uCliffHi, td_slp),
                                         smoothstep(uTreeLo, uTreeHi, vWorldPos.y));
-                    if (td_rock > 0.001) {
-                        ${tdBumpGLSL('vWorldPos.xz * uNoiseScale', '0.6', 'uBump * uDetailScale * td_rock')}
-                    }
+                    vec2 td_d = tdT.gb * 2.0 - 1.0;   // fbm(p + 0.6 x̂) − fbm(p), fbm(p + 0.6 ẑ) − fbm(p)
+                    normal = normalize(normal + mat3(viewMatrix) * (vec3(-td_d.x, 0.0, -td_d.y) * (uBump * uDetailScale * td_rock)));
                     // FEAT-84: the blended surface normal map, planar in world XZ (same encoding as
                     // td_wb: x→−∂h/∂x, y→−∂h/∂z), rotated into view space like the fbm bump above.
                     normal = normalize(normal + mat3(viewMatrix) * (vec3(tsNrm.x, 0.0, tsNrm.y) + tsNrmSide));
@@ -609,6 +622,11 @@ export class TerrainSystem {
      *
      * @returns {Set<string>}
      */
+    /** BUG-164: is the ground under (wx, wz) a built chunk mesh? What stands on it draws only then. */
+    hasChunkAt(wx, wz) {
+        return this._chunkMap.has(this._chunkKey(Math.floor(wx / CHUNK_SIZE), Math.floor(wz / CHUNK_SIZE)))
+    }
+
     getActiveChunkKeys() {
         return new Set(this._chunkMap.keys())
     }
@@ -1633,10 +1651,9 @@ export class TerrainSystem {
                     }
                 }
 
-                // Junction-pad carve composed with the leg + connector carve. The MESH uses the default
-                // PAD_DUCK_CAP (1.2); physics uses the tighter PAD_DUCK_CAP_PHYS (0.55) — the sanctioned
-                // camber-era pad-rim mesh↔collision difference. Covers the open-side rim no run reaches.
-                const csP = this._roadSystem._mergeCarve(cs, this._roadSystem._junctionPadCarve(wx, wz, rawH), undefined,
+                // Junction-pad carve composed with the leg + connector carve by the same _mergeCarve physics uses
+                // (mesh == collision at the rim). Covers the open-side rim no run reaches.
+                const csP = this._roadSystem._mergeCarve(cs, this._roadSystem._junctionPadCarve(wx, wz, rawH),
                     nr ? this._roadSystem._ribbonEdgeDist(nr.runKey ?? '', arcSEff, latDist) : Infinity)
                 if (!csP) { table[idx] = 0; table[idx + 1] = 0; continue }
 

@@ -28,6 +28,7 @@ import {
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade, PAR_SLACK } from '../src/par.js'
 import { runState } from '../src/day.js'
+import { itemCost, REWARD_LIST } from '../src/offer-board.js'   // FEAT-199: the item's price, capped at the pay
 import { readFileSync } from 'node:fs'
 
 let fails = 0
@@ -163,7 +164,7 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('the cost curve is 1.065^(d−1) to the cent: day 7 1.46, day 12 2.00, day 20 3.31',
     P.dayTierTable.every((t, i) => t === Math.round(1.065 ** i * 100) / 100)
       && dayTier(7) === 1.46 && dayTier(12) === 2 && dayTier(20) === 3.31)
-  check('the camp opens at 10 good deeds (a ~12-day region-1 run)', P.campDeeds === 10)
+  check('the camp opens at 6 good deeds (DEC-120, owner 2026-11-13)', P.campDeeds === 6)
   // The ticket's check on the curve: a day's costs are 1.5 base pays × dayTier; two average B jobs
   // (at the B line, flat pay) must still clear day 12's.
   const costs12 = 1.5 * basePay(AVG_PAR, 1) * dayTier(12), twoB = 2 * payoutFor(AVG_PAR, rankTable('time', 1).B, 1)
@@ -307,6 +308,20 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
     formatDeeds(7) === '3.5' && formatDeeds(1) === '0.5' && formatDeeds(4) === '2')
 }
 
+// FEAT-184 (DEC-150): a played tutorial runs on pocket change; the paycheck lands once, at its end.
+{
+  const eco = new EconomySystem({ getDay: () => 1 })
+  eco.start()
+  eco.withholdPaycheck(3)
+  check('the tutorial starts on pocket change, the paycheck due', runEconomy.money === 3 && runEconomy.paycheckDue && runEconomy.pocket === 3)
+  eco.spend(3)
+  check('…the paycheck lands once', eco.payPaycheck() && runEconomy.money === ECONOMY_PARAMS.startCash && !eco.payPaycheck()
+    && runEconomy.money === ECONOMY_PARAMS.startCash)
+  check('…and Earned (money + spent − startCash − pocket) reads 0', runEconomy.money + runEconomy.spent - ECONOMY_PARAMS.startCash - runEconomy.pocket === 0)
+  eco.start()
+  check('a new run clears both', runEconomy.pocket === 0 && !runEconomy.paycheckDue && !eco.payPaycheck())
+}
+
 // ── 8. Run-layer boundary (SM-INV-12) ───────────────────────────────────────────────────────────
 {
   const eco = new EconomySystem({ getDay: () => 3 })
@@ -428,17 +443,28 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   }
   check('bonusEarned: X or better, S only, D never earns (full 5×5 truth table)', tt)
 
-  // R-04 (game-feel review 2026-10-23): on a bonus offer THE ITEM IS THE TIP — the base is the full
-  // line's base and the cash tip is zero, whatever the ratio. payMult still scales the whole line.
+  // FEAT-199 (owner, 2026-11-11; retires R-04's "the item is the tip"): a bonus job pays the FULL cash
+  // line, tip included. Its item is optional, off the cash at the result card (main.js), so settle never
+  // touches money for it. payMult still scales the whole line.
   runEconomy.money = 0
   const plain = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms })
   const withRec = eco.settle({ par, ratio: 0.8, letter: 'A' }, { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' } })
   const halved = eco.settle({ par, ratio: 0.8, letter: 'A' },
                             { terms, bonus: { rewardId: 'x', name: 'X', gate: 'B' }, payMult: 0.5 })
-  check('a bonus job pays the plain job\'s base and no cash tip (the item is the tip)',
-    withRec.base === plain.base && withRec.tip === 0 && withRec.payout === plain.base)
-  check('payMult still scales a bonus job\'s (base-only) line', halved.payout === basePay(par, terms.payTier, 0.5))
+  check('a bonus job pays exactly the plain job\'s cash, tip included (its item is optional, FEAT-199)',
+    withRec.base === plain.base && withRec.tip === plain.tip && withRec.tip > 0 && withRec.payout === plain.payout)
+  check('payMult still scales a bonus job\'s line', halved.payout === splitPayout(par, 0.8, terms.payTier, 0.5).total)
   check('an earned bonus is recorded as an award', withRec.award?.rewardId === 'x')
+  // FEAT-199 CAP (owner, 2026-11-13): an item dearer than the job's whole pay costs exactly the pay — the
+  // choice reads "take <item> + $0.00" and the wallet ends where it started (seen: $8 shoes on a $7.28 job).
+  const dear = REWARD_LIST.reduce((m, w) => itemCost(w.id) > itemCost(m.id) ? w : m)
+  const before = runEconomy.money
+  const cheap = eco.settle({ par: 30, ratio: 0.8, letter: 'A' }, { terms, bonus: { rewardId: dear.id, name: dear.name, gate: 'B' } })
+  const charge = itemCost(cheap.award.rewardId, cheap.payout)
+  check('the cap: an item dearer than the job costs the job\'s pay, and taking it leaves the wallet unchanged',
+    itemCost(dear.id) > cheap.payout && charge === cheap.payout && eco.spend(charge) && runEconomy.money === before,
+    `${dear.id} $${itemCost(dear.id)} on a $${cheap.payout} job → $${charge}`)
+  check('the cap leaves an item cheaper than the pay at its price', itemCost(dear.id, itemCost(dear.id) + 1) === itemCost(dear.id))
   const pr = payRange(par, terms.payTier)
   check('payRange: base is basePay, max is the whole line at ratio 0 (R-03)',
     pr.base === basePay(par, terms.payTier) && pr.max === cents(payoutFor(par, 0, terms.payTier)))

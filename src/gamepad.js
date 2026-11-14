@@ -79,7 +79,7 @@ export const BINDINGS = [
   { action: 'brake / reverse',       key: 'S',         pad: 'LT' },
   { action: 'steer',                 key: 'A / D',     pad: 'left stick' },
   { action: 'look around',           key: 'mouse',     pad: 'right stick' },
-  { action: 'map: pan',              key: 'mouse drag', pad: 'left stick (map open)' },
+  { action: 'map: pan',              key: 'WASD / mouse drag', pad: 'left stick (map open)' },
   { action: 'handbrake / park (tap)', key: ' ',        pad: 'RB', button: 5 },
   { action: 'throw paper (aiming)',  key: 'F (hold, release)', pad: 'right stick aims, RB tap' },
   { action: 'clutch (manual)',       key: 'Shift',     pad: 'LB', button: 4 },
@@ -92,7 +92,12 @@ export const BINDINGS = [
   { action: 'pause',                 key: 'Escape',    pad: 'Start', button: 9 },
   { action: 'back (menus, cards, map)', key: 'Esc',     pad: 'B' },
   { action: 'map',                   key: 'm',         pad: 'View (tap)' },
-  { action: 'map: prev / next offer', key: 'Q / E',    pad: 'LB / RB (map open)' },
+  { action: 'map: prev / next offer', key: '← / →',     pad: 'D-pad ← / → (map open)' },
+  { action: 'map: Missions / Shopping', key: 'Q / E (mouse: click the tab)', pad: 'LB / RB (map open)' },
+  { action: 'map: walk the list',    key: '↑ / ↓ (mouse: hover)', pad: 'D-pad ↑ / ↓ (map open)' },
+  { action: 'map: open / close a shop', key: 'Enter (mouse: click)', pad: 'A (map open)' },
+  { action: 'map: back on the truck', key: 'c',        pad: 'left stick click (map open)' },
+  { action: 'map: drop / clear the waypoint', key: 'N / Enter (mouse: click)', pad: 'Y (map open)' },
   { action: 'tabs (service shop)',   key: 'Q / E',    pad: 'LB / RB (shop open)' },
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'right stick ↑ / ↓ (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
@@ -104,22 +109,27 @@ export const BINDINGS = [
   { action: 'camp',                  key: 'z',         pad: 'B (hold, ↑/↓, release)' },
   { action: 'recovery',              key: 'x',         pad: 'B (hold, ↑/↓, release)' },
   // FEAT-125 pad audit [DEFAULT]: the job's two-press abandon button, mouse-only until now — the B menu's
-  // last entry (never pre-selected, hud-menu.js) and J on the keyboard.
-  { action: 'abandon job (parked; twice)', key: 'j',  pad: 'B (hold, ↑/↓, release)' },
+  // last entry (never pre-selected, hud-menu.js) and J on the keyboard. FEAT-195 (owner, 2026-11-11): its pad
+  // binding is B held + ↑ — ↑ from the pre-selection (the top) wraps straight to it — and the keycap says so.
+  { action: 'abandon job (parked; twice)', key: 'j',  pad: 'B + ↑ (hold B, ↑, release)' },
 ]
 const BUTTON_KEYS = Object.fromEntries(BINDINGS.filter(b => b.button != null).map(b => [b.button, b.key]))
 // While a menu owns the screen (pad.menuActive, from src/menu-nav.js) the pad speaks the menu's keys
 // instead: A = Enter, B = Escape (back), Start = Escape (unpause), D-pad and left stick = arrows with
 // hold-to-repeat. Every other button is silent, so A cannot upshift and B cannot pump behind a menu.
 const MENU_KEYS = { 0: 'Enter', 1: 'Escape', 9: 'Escape' }
-// FEAT-133: while the map is open, the bumpers step its offers (Q / E — LB left, RB right, like tabs)
-// and A / X go silent, so paging through offers can never shift a manual gearbox. The rest of the
+// FEAT-133: while the map is open, the bumpers are Q / E and A / X never shift a manual gearbox. FEAT-211: the
+// bumpers swap the list's Missions / Shopping tabs (a card over the map still pages its offers with them), A is
+// Enter (open or close the highlighted shop, map2d.js _onKeyDown), and the D-pad
+// is the list's arrows (with the menus' hold-to-repeat), and the left stick's click is c, back on the
+// truck (map2d.js _onKeyDown) — no pick-up, spawn, headlights or reset behind the map. FEAT-211: Y is n, the waypoint
+// (drop / clear at the cursor), so it never holds the ignition behind the map. The rest of the
 // layout drives as usual. FEAT-175 (owner, 2026-11-06): the sticks are the map's — the left pans
 // (pad.panX/Y), the right's vertical zooms (pad.zoom) — and the triggers stay the truck's pedals, always.
 // View, which opens the map, sits under the left thumb, so that thumb is off the stick by then: there is
 // no steering to hand over. B is Escape there, the general back (owner, 2026-10-20): it closes the map.
-const MAP_KEYS = { ...BUTTON_KEYS, 1: 'Escape', 4: 'q', 5: 'e' }
-delete MAP_KEYS[0]; delete MAP_KEYS[2]
+const MAP_KEYS = { ...BUTTON_KEYS, 0: 'Enter', 1: 'Escape', 3: 'n', 4: 'q', 5: 'e', 10: 'c' }
+for (const i of [2, 13, 14]) delete MAP_KEYS[i]
 // FEAT-133: while an in-game card is up (offer, result, camp, inventory… — menu-nav.js cardContainer)
 // the D-pad moves its highlight, A presses it and B is Escape (back: closes the inventory and damage
 // screens). X goes silent with A. Unlike a menu the truck still drives — triggers, stick, RB, LB.
@@ -231,7 +241,7 @@ function poll () {
     if (gp.buttons[UP]?.pressed) dpad |= 1
     if (gp.buttons[DOWN]?.pressed) dpad |= 2
     if (gp.buttons[RIGHT]?.pressed) rightDown = true
-    if (menu || card) for (const [k, b] of NAV) if (gp.buttons[b]?.pressed) nav.add(k)
+    if (menu || card || map) for (const [k, b] of NAV) if (gp.buttons[b]?.pressed) nav.add(k)
     if (menu) {   // the left stick navigates a menu; on a card it is still steering
       const ax = gp.axes[0], ay = gp.axes[1]
       if (ay < -NAV_STICK) nav.add('ArrowUp'); if (ay > NAV_STICK) nav.add('ArrowDown')
