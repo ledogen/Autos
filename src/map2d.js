@@ -2986,7 +2986,9 @@ export class Map2D {
         const B = { W: 340, PAD: 14, LH: 17, HEAD: 16, FS: 11, FSS: 10.5, BAR: 6, INSET: 4, BONUS: 42 }
         const baseH = B.PAD * 2 + B.HEAD + 5 * B.LH
         const baseFull = baseH + B.BONUS
-        const k = Math.max(1, Math.min(1.6, (s.w * 0.46) / B.W, (s.h * 0.62) / baseFull))
+        // FEAT-211 (owner, 2026-11-14): 0.46 of the sheet's width bound the card at k = 1 once the sheet shared the window
+        // with the list column; 0.75 gives back the 1.4x it had full screen at the owner's 1045 x 700.
+        const k = Math.max(1, Math.min(1.6, (s.w * 0.75) / B.W, (s.h * 0.62) / baseFull))
         const W = B.W * k, PAD = B.PAD * k, LH = B.LH * k, HEAD = B.HEAD * k
         const PORT = 3 * LH                               // portrait spans the sentence block
         const TX = PAD + B.BAR * k + PORT + 12 * k        // text column, right of the portrait
@@ -3092,8 +3094,8 @@ export class Map2D {
             const cap = B.FSS * k + 6 * k
             const ins = 4 * k + 3 * k                        // inner rule inset + breathing room
             const ktop = y + ins
-            // FEAT-133: the pad pages with its bumpers, so a pad player is shown those instead.
-            const keys = pad.active ? ['RB', 'LB'] : ['E', 'Q']
+            // FEAT-211 (owner, 2026-11-14): the arrows (keys and D-pad) flip the map's cards; Q / E are the list's tabs.
+            const keys = ['→', '←']
             const capW = Math.max(cap, ctx.measureText(keys[0]).width + 6 * k)
             let kx = x + W - ins - capW
             for (const key of keys) {
@@ -3373,9 +3375,10 @@ export class Map2D {
     _legendBox() {
         const fams = new Set(Object.values(FAMILY_COLOR)).size + 1   // colours shared by families, + NO WORK NOW
         const SYM = 34, ROW = 20, SUB = 16, PAD = 8, HEAD = 22
-        const rows = ['Mission', null, 'Shop', 'Road', 'Stream', 'Pond', 'Tunnel', 'Camping area']
+        const rows = ['Mission', null, 'Road',   // no Shop row: a shop is lettered on the sheet (owner, 2026-11-14, feat210-look)
+                      'Stream', 'Pond', 'Tunnel', 'Camping area']
         const subH = Math.ceil(fams / 2) * SUB
-        return { SYM, ROW, SUB, PAD, HEAD, rows, subH, H: HEAD + PAD + 7 * ROW + subH + PAD }
+        return { SYM, ROW, SUB, PAD, HEAD, rows, subH, H: HEAD + PAD + 6 * ROW + subH + PAD }
     }
 
     /**
@@ -3432,10 +3435,6 @@ export class Map2D {
                 ctx.lineCap = 'butt'
             }
             if (label === 'Mission') this._drawDiamond(ctx, mx, my, 8, [FAMILY_COLOR.delivery, FAMILY_COLOR.haul])
-            else if (label === 'Shop') {
-                ctx.lineWidth = 1.5; ctx.strokeStyle = '#101010'; ctx.fillStyle = POI_ICONS.generalStore.color
-                this._drawGlyph(ctx, 'generalStore', POI_ICONS.generalStore.path, mx, my, 18)
-            }
             else if (label === 'Road') line(ROAD_INK, ROAD_W, [[l, my], [r, my]])
             else if (label === 'Stream') line(WATER_INK, WATER_W, [[l, my + 2], [mx - 4, my - 3], [mx + 4, my + 3], [r, my - 2]])
             else if (label === 'Pond') {

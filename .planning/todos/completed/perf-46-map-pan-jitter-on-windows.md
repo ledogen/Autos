@@ -1,7 +1,7 @@
 ---
 id: PERF-46
 type: perf
-status: open
+status: closed
 severity: minor
 opened: 2026-11-12
 source: owner, 2026-11-11 inbox — "I didn't notice this on my faster MacBook processor but on Windows, panning the map seems like it has periods where it is laggy and jittery and periods where it's perfectly smooth"
@@ -12,10 +12,7 @@ lane: engine & world (the perf session)
 # PERF-46: Map panning is jittery in bursts on the Windows machine
 
 ## Next steps
-Owner, on the Windows machine, once the slicing is on main: (1) open `chrome://gpu` and read the "Canvas" line,
-"Hardware accelerated" or "Software only"; (2) pan and zoom, let go, and say whether the bursts of jitter are gone. The
-ticket stays open for that check. Perf lane: trace the one 40–50 ms frame left (seed 17535907, zooming back in after
-the widest zoom-out; likely a garbage-collection pause, unproven).
+None. Closed by the owner 2026-11-14 (see Decisions).
 
 ## Summary
 Smooth on the MacBook, alternately smooth and jittery on Windows. Under 4× slow-CPU emulation on this Mac the cause
@@ -120,12 +117,15 @@ that machine draws canvas in software, every full-canvas pass (the sheet blit, t
 instead, and the dimming bake becomes worth doing after all.
 
 ## Tracker
-- [ ] Owner retest on a build with PERF-38 (landed 3d008134) and PERF-48 lever 1.
-- [ ] Owner: the `chrome://gpu` Canvas line, and whether the jitter follows letting go of a pan.
+- [x] Owner retest on a build with PERF-38 (landed 3d008134) and PERF-48 lever 1.
+- [x] ~~Owner: the `chrome://gpu` Canvas line~~ not needed: the jitter is gone (owner, 2026-11-14).
 - [x] The rebuild sliced to the frame budget: settle and zoom-hold frames under 20 ms at 4× emulation, before and after
   (one 40–50 ms frame left on one seed, see Next steps).
 - [x] The finished sheet pixel-identical (9/9 views by hash) and as quick to sharpen (within ~10–20 %, faster on zoom-in).
-- [ ] Owner: the jitter gone on the Windows machine.
+- [x] Owner: the jitter gone on the Windows machine.
+
+## Decisions
+- 2026-11-14, owner: "this has been fixed since we started cacheing the map. close"
 
 ## Links
 - `.planning/perf/COST-MAP-2026-11.md` lever 2 (void). Probe: `wip/perf-48-l2/probe.mjs` (`[checkout] [throttle]`),
@@ -142,3 +142,7 @@ instead, and the dimming bake becomes worth doing after all.
   27–154 ms before lever 1, are not yet traced to a cause); the probe holds on purpose.
 - 2026-11-13 (Perf lane): the rebuild sliced (feature/perf c88f0301, 75c919db, 2b85577d, fdf891b2). Before/after above;
   gate map-bg-slice added. Landing branch land/perf-46.
+- 2026-11-14: closed by the owner (Decisions). The one 40–50 ms frame on seed 17535907 is left untraced.
+
+## Resolution (2026-11-14)
+Fixed on the owner's Windows machine by the cached map sheet and its sliced rebuild (on main). Closed.

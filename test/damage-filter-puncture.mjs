@@ -28,14 +28,14 @@ const drive = (d, x, secs) => {
   for (let i = 0; i < secs / DT; i++) d.step(vs, P, DT)
 }
 
-console.log('§1 the air filter lasts the owner\'s 30 minutes of hard driving')
+console.log('§1 the air filter lasts 60 minutes of hard driving (owner, 2026-11-14: swapped with the oil)')
 {
   // "Hard driving" is the duty cycle the tire and brake fits use — sustained high rpm under load,
   // which reads about 0.5 on this normalised insult.
   const d = fresh()
-  drive(d, 0.5, 30 * 60)
-  ok(d.get('airFilter') <= 0.02, `30 minutes of hard driving finishes the filter (left ${(d.get('airFilter') * 100).toFixed(1)}%)`)
-  const half = fresh(); drive(half, 0.5, 15 * 60)
+  drive(d, 0.5, 60 * 60)
+  ok(d.get('airFilter') <= 0.02, `60 minutes of hard driving finishes the filter (left ${(d.get('airFilter') * 100).toFixed(1)}%)`)
+  const half = fresh(); drive(half, 0.5, 30 * 60)
   ok(Math.abs(half.get('airFilter') - 0.5) < 0.03, '...and it is linear in the air moved, so half the drive is half the filter')
 
   const gentle = fresh(); drive(gentle, 0.1, 30 * 60)
@@ -109,7 +109,11 @@ console.log('\n§2c FEAT-202: the oil — the filter\'s kind of track, a straigh
   const run = (oil, filt) => { const e = fresh(); e.set('oil', oil); e.set('airFilter', filt); drive(e, 0.8, 1); return 1 - e.get('engine') }
   const base = run(1, 1)
   ok(Math.abs(run(0, 1) / base - D.oilEngineMult) / D.oilEngineMult < 0.05, `a second at empty oil costs the engine ~${D.oilEngineMult}x a second on fresh`)
-  ok(Math.abs(run(0, 0) / base - D.oilEngineMult * D.filterEngineMult) / (D.oilEngineMult * D.filterEngineMult) < 0.05, 'both neglected: the two costs multiply')
+  const both = D.oilEngineMult + D.filterEngineMult - 1
+  ok(Math.abs(run(0, 0) / base - both) / both < 0.05, 'both neglected: the two extras ADD (DEC-136)')
+  ok(Math.abs((D.oilEngineMult - 1) - 2 * (D.filterEngineMult - 1)) < 1e-9, 'empty oil adds twice what a blocked filter adds')
+  ok(Math.abs(0.5 * D.durEngine / (0.5 * both) - 900) < 1e-6, 'a 50% engine on empty oil and a blocked filter lasts 15 min of hard driving')
+  ok(D.durOil * 2 === D.durFilter, 'the oil lasts half as long as the filter (30 and 60 min hard)')
 }
 
 console.log('\n§3 punctures — fresh rubber is safe, worn rubber is not')

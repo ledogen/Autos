@@ -21,6 +21,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   tractionControl: false,   // RANGER_PARAMS.tractionControl — brake + torque traction control (FEAT-159; owner: off)
   stickDeadzone: 0.08,      // PAD_PARAMS.stickDeadzone — keep equal to gamepad.js's default
   steerShape: 0,            // PAD_PARAMS.steerShape — likewise (0 linear … 1 parabolic … 1.5)
+  frameCap: 60,             // PERF-48 (DEC-185): render frames per second — 60 · 30 · 0 = the display's own rate. Physics is not capped
   // FEAT-184 (DEC-148, owner 2026-11-14: "no setting", "there is no more flag"): not a choice and not on any page — the
   // one mark of "this browser has played an opening before" (finished or skipped: main.js _markPlayed). Until it is set,
   // a skip asks "are you sure" first. It replaced the "always skip the tutorial" setting.

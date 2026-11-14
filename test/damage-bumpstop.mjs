@@ -14,18 +14,19 @@
 // truck's alignment out. Its floor is deliberately far above the spring floor — ordinary bottoming
 // must never touch alignment, or every rough road would knock the truck out of line.
 
-import { DamageModel, DAMAGE_PARAMS as D } from '../src/damage.js'
+import { DamageModel, DAMAGE_PARAMS as D, wheelBumpOnsetN } from '../src/damage.js'
+import { RANGER_PARAMS } from '../data/ranger.js'
 
 let fail = 0
 const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fail = 1 }
 const DT = 0.004
 
 /** Drive one bump-stop event through step(): on the stop at `peakN`, then off it. */
-function bump (d, peakN, corner = 0, steps = 5) {
+function bump (d, peakN, corner = 0, steps = 5, params = {}) {
   const vs = { bumpForce: [0, 0, 0, 0] }
-  for (let i = 0; i < steps; i++) { vs.bumpForce[corner] = peakN; d.step(vs, {}, DT) }
+  for (let i = 0; i < steps; i++) { vs.bumpForce[corner] = peakN; d.step(vs, params, DT) }
   vs.bumpForce[corner] = 0
-  d.step(vs, {}, DT)
+  d.step(vs, params, DT)
 }
 const fresh = () => new DamageModel({ params: {} })
 
@@ -156,6 +157,23 @@ console.log('\n§5 the drop anchors, re-measured after the progressive tire carc
   // The no-harm floor still holds at the bottom: a gentle landing must be free.
   ok(fresh().get('springFront') === 1 && (() => { const d = fresh(); bump(d, D.springForceFloorFront - 1); return d.get('springFront') === 1 })(),
     'a bump-stop touch below the floor still costs nothing')
+}
+
+console.log('\nBUG-160: through an inflated tire, the wheel takes damage from 1.5× the stop energy that starts spring damage')
+{
+  const P = RANGER_PARAMS, k = P.bumpStopStiffness, x0 = P.bumpStopProgressiveM
+  const stored = (F) => { let x = F / k; for (let i = 0; i < 40; i++) x = F / (k * (1 + (x / x0) ** 2)); return k * (x * x / 2 + x ** 4 / (4 * x0 * x0)) }
+  for (const [corner, floorN, wheel] of [[0, D.springForceFloorFront, 'wheelFL'], [2, D.springForceFloorRear, 'wheelRL']]) {
+    const onN = wheelBumpOnsetN(floorN, k, x0, D.wheelBumpEnergyMult)
+    ok(Math.abs(stored(onN) / stored(floorN) - D.wheelBumpEnergyMult) < 1e-3,
+      `${wheel}: onset ${(onN / 1000).toFixed(1)} kN stores ${(stored(onN) / stored(floorN)).toFixed(3)}× the ${(floorN / 1000).toFixed(0)} kN spring floor's energy`)
+    const under = fresh(); bump(under, onN - 50, corner, 5, P)
+    ok(under.get(wheel) === 1 && under.get(corner < 2 ? 'springFront' : 'springRear') < 1, `${wheel}: just under the onset the spring takes damage, the wheel none`)
+    const over = fresh(); bump(over, 2 * onN, corner, 5, P)
+    ok(over.get(wheel) < 1 && over.get(wheel) > 0.97, `${wheel}: a ${(2 * onN / 1000).toFixed(0)} kN hit bends it a little (${((1 - over.get(wheel)) * 100).toFixed(2)} %)`)
+    const flat = fresh(); flat.flat[corner] = true; bump(flat, 2 * onN, corner, 5, P)
+    ok(flat.get(wheel) === 1, `${wheel}: through a flat tire this path prices nothing (the rim strike does)`)
+  }
 }
 
 console.log(fail ? '\nFAIL — the bump-stop model has drifted' : '\nPASS — bump-stop hits are peak-priced events, and hard ones throw the alignment')

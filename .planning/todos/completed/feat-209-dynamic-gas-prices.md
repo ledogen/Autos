@@ -1,7 +1,7 @@
 ---
 id: FEAT-209
 type: feature
-status: open
+status: completed
 severity: minor
 opened: 2026-11-13
 source: owner, 2026-11-13 (inbox) — "we should have dynamic gas prices. Not only should they scale with the run, but they should also Very relative to one another So one station is always offering the best deal. I want this mostly just for eye candy. Make the variance plus or minus 5%"
@@ -41,3 +41,6 @@ Every station gets its own price, within ±5 % of the run's current price, so on
 ## Log
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
 - 2026-11-13 (Spare): built. Factor = 0.95 + 0.1 × mulberry32(seedFor(worldSeed, 'fuelPrice', hash32(poiId), day)), no save field. The pump face is the only place a fuel price shows; the tow has its own price and does not use fuel's.
+
+## Resolution (2026-11-14)
+Owner, card feat209-look: "fine as built" — prices re-drawn daily per station (DEC-130). Closed.

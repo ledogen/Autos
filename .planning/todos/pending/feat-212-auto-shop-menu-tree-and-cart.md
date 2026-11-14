@@ -12,7 +12,7 @@ lane: B
 # FEAT-212: The auto shop menu — a nested Maintenance tree, a plain Shop list, and a cart with checkout
 
 ## Next steps
-Owner: look at landing 2 (the Shop list, `wip/feat-212/2*.png` in /Users/ledogen/CodeShit/CarGame-land-212b) and answer the Open questions. Lane B next: landing 3, the cart.
+Orchestrator: land the cart (land/feat-212c @ 60fc6bf0, 17/17 gates), then landing 4 (land/feat-212d: My Items as tree rows, the row pitch; only cdp-smoke covers it). Owner: look at the cart and landing 4 (`wip/feat-212/3*.png`, `4*.png` in /Users/ledogen/CodeShit/CarGame-land-212d) and answer the three Open questions left; the ticket closes on that look.
 
 ## Summary
 Rebuild the auto shop's menu to the owner's outline. Maintenance is a tree that shows one level at a time. Shop is a flat list of parts. Nothing is paid for or takes time until checkout: work is queued in a cart that shows a subtotal of cost and time, the truck updates live, and the player checks out or discards.
@@ -151,6 +151,48 @@ and everything under them; selecting an open item closes it and everything under
 everything). An action row (align, patch, oil change, change clutches, each swap or repair option) carries its price and
 its hours. In landing 1 an action is still paid when it is pressed; landing 3's cart moves that to checkout.
 
+### The cart (landing 3, Lane B, 2026-11-13)
+**What is carted.** Every paid action in both tabs and in a storefront's shop: repair (on the truck and in My Items, a
+mounted pair's wheel too), patch, align all, oil change, change clutches, swap with inventory, swap with corner, buy & fit,
+buy into the inventory (the tutorial's on-mom tire included), sell, split, combine. Nothing is charged as it is pressed.
+
+**How the state works (src/service.js `queue`).** No second copy of the truck. A job runs for real against the live truck
+and inventory, exactly the code that ran before, so later jobs see what earlier ones did (swap a corner, then repair the
+wheel now on it; buy a part, then fit it). What a job does to the world outside the truck is held on its cart line instead:
+its price, what it sells for, its hours, the shelf slot it takes, mom's tire, a free repair. Before the first line the
+shop takes a snapshot of the truck (parts, conditions, flats, alignment geometry) and the inventory.
+- Checkout: pays the sum once (the sales first, so they can pay for the rest), takes the shelf slots, uses mom's tire and
+  the free repair, and runs the clock once by the summed hours. The gate proves the total equals what the same jobs cost one
+  by one.
+- Discard: puts the snapshot back. The wallet, the clock and the shelf never moved, so nothing else needs restoring.
+- Remove a line: snapshot back, the other lines replayed in order. A line remembers what it read (the inventory entry, the
+  shelf slot, the condition of the part it repairs); an entry that moved up the list is found again by what it is, and a
+  line whose part is gone comes out too, with a note ("1 more came out with it"). Example: remove a tire purchase and the
+  sale of the tire it took off goes with it; remove a corner swap and the repair of the wheel it moved goes with it.
+- While a line is in the cart a slot it bought reads empty; an item that is always on the shelf stays.
+
+**Saves.** No save captures a cart: `_saveBlock` refuses while the cart holds a line or a shelf item is fitted for a look
+(that preview could be saved before, a free part on reload). The rolling autosave runs every second, so the last save is
+the moment before the first line. After checkout or discard it saves again as usual.
+
+**Leaving.** Esc / pad B, the back button and "go to jobs" ask when the cart is not empty: "Check out or discard before
+you leave." under the subtotal. Esc again takes the question back. Checkout or discard then finishes the leave. The
+parking brake holds while the cart is full (as mom's pump does): Space asks the same, and after checkout or discard the
+brake lets go. The inventory screen (Tab) stays shut while the cart is full, so nothing is used or dropped behind a cart
+that a discard would put back. A close that cannot ask (nothing does today) discards.
+
+**Over budget.** Adding is never blocked by money. Checkout is blocked and the foot says "$X short" (the owner has not
+ruled; the open question stands). Free items stay free; a cart can be all $0 and still needs checkout (its time).
+
+**Time.** The quoted hours add (each job ran its own clock before; one after another). There are no shop opening hours in
+the game, so a long cart has nothing to run past: checkout always runs the clock by the subtotal's hours. If shop hours
+land, checkout is the place to refuse ("closes at …").
+
+**On screen.** The cart is under every tab while it holds work: each line with its price and hours and a × to take it out.
+The subtotal (money and time), "$X short", the leave question and discard / check out sit on the card's foot with the back
+button, below the scrolling body, so a long tree never hides them. The Shop's buttons read "add to cart" (a tire's corner
+buttons keep their corner names); Maintenance keeps its verbs (swap, repair, align, patch, change), which now queue.
+
 ### How this sits on what exists
 - FEAT-167's collapsible sections and FEAT-196's select-then-act rows are the same idea one level deep; this ticket replaces their layout with the tree and keeps their rules (one target per row for the pad, corner swaps, repairing an inventory wheel).
 - Maintenance never shows shop stock. A swap offers only parts in the inventory or on the truck; with none, the line reads "no appropriate replacement in inventory" and buying happens in the Shop tab.
@@ -162,24 +204,24 @@ its hours. In landing 1 an action is still paid when it is pressed; landing 3's 
 - [x] Every purchasable option shows its price and its time (Maintenance; the Shop tab with landing 2)
 - [x] Swaps offer inventory and on-truck parts only; the empty case shows the owner's line
 - [x] Shop tab: flat list with name, condition, cost, time left in stock; mounted tires show two conditions; expanding shows the description and the options (each with price and hours; "buy" until the cart swaps it for "add to cart")
-- [ ] Cart: queued work, live truck preview, subtotal of cost and time, checkout or discard; payment and the time skip happen only at checkout; leaving requires one or the other
+- [x] Cart: queued work, live truck preview, subtotal of cost and time, checkout or discard; payment and the time skip happen only at checkout; leaving requires one or the other
+- [x] My Items under the Shop tab as rows of the Maintenance tree (owner 2026-11-14, DEC-165)
 - [ ] Pad, keyboard and mouse; pad-e2e updated (Maintenance: ↑/↓ walk the list in order, Enter opens, checked headless; the smoke's service step walks it by keys. pad-e2e never reaches a shop, so it has nothing to update)
 
 ## Decisions
 - 2026-11-13, owner: nested menu, one level at a time; price and time on every purchasable option; a cart with a cost-and-time subtotal, paid only at checkout; Maintenance shows no shop stock.
+- 2026-11-14, owner: "3. Update shop design to match what you did on the maintenance tab. 5.yup keep out" — My Items stays under Shop, drawn as the Maintenance tree; empty shelf slots stay out; calls 1, 2, 4 (hidden lines, the transmission's Repair, over budget blocks checkout) stand as built (DEC-165).
 
 ## Open questions
-- The Shop list leaves empty shelf slots out ("just a list of parts"; the head still says when new stock lands). Before, each read "An empty shelf." Keep them out (the default)?
-- Lines in the outline with nothing in the game yet. Checked (the plan): roll bars, engine repair, engine swap and patching at the shop all exist and show. Hidden until they exist: the cold air intake's "clean", and the "Swap with corner" under Tire and under Wheel (a tire-only or wheel-only move is not a job today; the corner's own "Swap with corner" moves the pair, FEAT-196). Keep them hidden (the default), or mint tickets?
-- The transmission's line lists no action. Its rebuild (the synchros, REPAIRS.transmission) is kept under it as "Repair", or a worn manual box could never be fixed. Keep it (the default)?
-- My Items (sell, split / combine, repair or patch a part you carry, FEAT-196's inventory wheel) is in neither outline. It stays under the Shop tab, below the list, through landing 2 (the default). Or is it the empty item 6?
-- The outline's item 6 is empty in the doc: is a sixth section intended?
-- The cart previews work on the truck "in real time": if the player cannot afford the subtotal, block checkout (the default) or block adding the item?
+- The outline's item 6 is empty in the doc: is a sixth section intended? (My Items was not it: DEC-165.)
+- Storefronts (general store, gas station, food vendor) cart too, one code path: a coffee needs "check out". Keep (the default), or let a store buy at once?
+- Maintenance's buttons keep their verbs (swap, repair, align, patch, change) and queue; only the Shop's read "add to cart". Keep (the default), or "add" everywhere?
 
 ## Files
-`src/service-screen.js` · `src/service.js` · `src/menu-nav.js` · `test/service.mjs` · `test/pad-e2e.mjs`
+`src/service-screen.js` · `src/service.js` · `src/inventory.js` (snapshot) · `src/main.js` (Esc, the brake hold, `_saveBlock`, the inventory screen's block) · `src/menu-nav.js` · `test/service.mjs` · `test/cdp-smoke.mjs` · `test/run-soak.mjs` · `test/pad-e2e.mjs`
 
 ## Log
 - 2026-11-13: minted from the owner's spec by the orchestrator. Nothing built.
 - 2026-11-13, Lane B: the plan (135ed4ec). Landing 1 on `land/feat-212` (/Users/ledogen/CodeShit/CarGame-land-212): the My Vehicle tab is now Maintenance, the outline as a tree (src/service-screen.js `_maintenance`); its section list and `group` toggles are deleted. "Parts Shop" is now "Shop" (otherwise unchanged until landing 2). Vehicle Diagnostics opens the V screen over the shop (main.js: the damage screen is no longer blocked while the service screen is open; the shop card hides under it). ↑/↓ walk the card's buttons in list order (`navStep`): the spatial nearest went from the map button straight to the back button past the indented tree. Verified headless (wip/feat-212/shot.mjs, seed 6, story, parked on the lift): every level opens and closes, the top level again collapses all, a corner swap charges $4 and the open path follows the tire to its new corner, a wheel from the inventory goes on for its fitting price, ↓/Enter/↑ drive it, no console errors. cdp-smoke's service step updated, not run on the branch.
 - 2026-11-13, Lane B: landing 2 on `land/feat-212b` (/Users/ledogen/CodeShit/CarGame-land-212b). The Shop tab is one level of the Maintenance tree's rows (`_level`; the open path is kept per tab). A closed row: chip and name, condition (a mounted tire: T and W), price, time left ("7h 30m left" / "always"); open: the two-line description, then "Fit on the truck" (the corners as buttons for a tire or wheel) and "Into the inventory", each with its price and hours (`ServiceCenter.buyQuote`, also what buyAndFit / buyToInventory charge). One row open at a time, shared with My Items (still under the Shop tab). The pad's focus previews the part again: menu-nav's synthetic mousemove had been read as the pointer. Smoke's store and tow steps and run-soak's buyFood follow the new rows.
+- 2026-11-14, Lane B: the cart's branch merged with main (FEAT-211, DEC-136), 17/17 affected gates green --serial incl. region-pieces and poi-headroom (land-212c wip/feat-212/gates4.log); landing request sent. Landing 4 on `land/feat-212d` (/Users/ledogen/CodeShit/CarGame-land-212d, 473240e4): My Items' rows are tree items on the Shop tab's open path (one row open across shelf and My Items): closed, name and condition (a mounted pair: T and W); open, the pair's two parts, sell (−$ · 0 min), split, Combine ▸ partners, Repair ▸ the stepper, Repair the wheel ▸, patch. The `sel` state, `.sv-panel`, `.sv-sub` and `.sv-part` are deleted. FEAT-196's row pitch applies to every row (DEC-166). Verified headless at 1045 × 526 / 613 / 900 (wip/feat-212/look4.mjs, shots 40–43), no console errors; only cdp-smoke covers the file (not run on the branch).

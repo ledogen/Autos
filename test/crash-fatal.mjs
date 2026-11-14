@@ -1,7 +1,7 @@
 // test/crash-fatal.mjs — BUG-168 gate: a crash into something rigid is measured as the crash it was, and kills on the
 // threshold. The real truck, the real engine, the game's contact → damage step (test/crash-lab.mjs).
 //
-// Pinned RELATIVE to fatalMph(), so the owner can move the 60 / 100 mph numbers without touching this:
+// Pinned RELATIVE to fatalMph(), so the owner can move the 40 / 65 mph numbers without touching this:
 //   §1 a head-on into a rigid wall prices the truck's own Δv: the impact speed plus its small rebound (1.0–1.2×).
 //   §2 at the fatal speed it is fatal; at 80 % of it, it is not. Fresh armor and worn.
 //   §3 one crash is priced once: an off-centre tree strike outlasts the burst window, and its second burst must

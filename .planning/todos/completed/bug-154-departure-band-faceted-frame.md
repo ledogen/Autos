@@ -1,7 +1,7 @@
 ---
 id: BUG-154
 type: bug
-status: landed eabc032c — open only for the owner's look at the photo sheets + the 2.5 cm band bar (owed road-seams-look)
+status: completed
 severity: major
 opened: 2026-11-08
 source: Lane B, BUG-153's census (test/ribbon-frame.mjs, reported apart)
@@ -137,3 +137,6 @@ off by ≥ 2 cm, worst 53 cm → a few cm on the lane; 1074499174's band: 754 �
 ## Resolution (2026-11-09)
 
 Landed on main as **eabc032c** (merge of land/bug-155 @ 6caadf81, BUG-153 + 154 + 155 together; affected 83/83 + the 58 gates shared with BUG-140 green; cdp-smoke 26/26 on b34a51e1). Before/after photo sheets: https://claude.ai/artifact/HLqtsmsrjVJJVqrEpkMpr8 (copies in main wip/bug-153-155-shots/).
+
+## Resolution (2026-11-14)
+Owner, card road-seams-look: "good, 2.5 cm stands" (DEC-190). Option B (physics on the drawn road's smooth curve) is not taken. Closed.

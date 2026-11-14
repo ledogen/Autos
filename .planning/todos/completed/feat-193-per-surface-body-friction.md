@@ -1,7 +1,7 @@
 ---
 id: FEAT-193
 type: feature
-status: landed 51a932bf with BUG-140 — open only for the owner's feel drive + the scope call
+status: completed
 severity: minor
 opened: 2026-11-09
 source: owner, 2026-11-08 tracker owed side-slide-lever — "can i have body grip on all offroad surfaces bumped to 1.0 mu. onroad leave 0.5 mu. simplified dig in"
@@ -60,3 +60,6 @@ none of these (dirt at 0.5 on the branch: 20.4 m / 25.9 m / 6 of 9, identical to
 grip, not BUG-140: main's flank (shape μ 0.31, tuned against dirt's 0.8) met the road's 0.9 at **0.53**, not 0.5; at
 `bodyGripRoad` 0.53 the branch gives main's 6/9 back. The three 3 rad/s cases sit on that edge.
 `test/side-slide.mjs` now pins the split (road slide > 1.3× dirt's; `lib/engine-ctx.mjs` `road: true` builds the deck).
+
+## Resolution (2026-11-14)
+Owner, card feat193-calls: "all four as written" — body grip on the flank only; road grip exactly 0.5; the flat 7–10 % rebound at every drop height; the very fragile vase keeps about 60 % on a 1 m crest (DEC-191). Feel drive bug140-feel: "good". Closed.
