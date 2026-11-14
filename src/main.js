@@ -1495,6 +1495,7 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
+  frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
 window.__settings = _settings   // dev handle — test/cdp-smoke.mjs marks the browser as played before (FEAT-184 playedBefore)
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
@@ -10142,8 +10143,24 @@ document.addEventListener('keydown', e => {
 // Fixed-timestep accumulator (RESEARCH §Pattern 2, gafferongames.com/post/fix_your_timestep/)
 // PHYSICS_DT = 1/60s; MAX_FRAME_TIME = 0.25s (T-01-04: spiral-of-death mitigation)
 let _ignEdge = null   // S-61: the ignition catch edge, latched per step, played once per frame
-function loop () {
+// PERF-48 (DEC-185): the frame cap. rAF (requestAnimationFrame, the browser's once-per-display-refresh
+// callback) fires at the display's rate: 120 on a ProMotion screen. A capped frame that is not yet due
+// returns before doing anything, so the whole frame (physics, streaming, render) waits for the next due
+// one. Physics loses nothing: the accumulator adds up wall time, so the next drawn frame runs every
+// PHYSICS_DT step owed (two per frame at 30 fps). `_frameDue` advances by whole intervals, so a display
+// rate that is no multiple of the cap (144 Hz) still averages the cap; a stall over one interval
+// resyncs instead of bursting. A frame is drawn when it is nearer its due time than the next refresh
+// would be (half the last refresh gap early), which absorbs vsync timestamp jitter at any display rate.
+let _frameDue = 0, _rafLast = 0
+function loop (t) {
   requestAnimationFrame(loop)
+  const cap = _settings.frameCap
+  if (cap > 0 && t !== undefined) {
+    const interval = 1000 / cap, refresh = Math.min(t - _rafLast, interval)
+    _rafLast = t
+    if (t < _frameDue - refresh * 0.5) return
+    _frameDue = t - _frameDue > interval ? t + interval : _frameDue + interval
+  }
   perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
   if (!_firstFrameMarked) {
     _firstFrameMarked = true
