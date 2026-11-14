@@ -3695,6 +3695,7 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
     _jobsShop = _servicePoi
   },
   openMap: () => map2d.toggle(),
+  openDiagnostics: () => damageScreen.open(),   // FEAT-212: Maintenance's first item, the V-key screen over the shop's
   nowH: () => daySystem.clockH(),
   // A front three-quarter view of the parked truck while the screen is open (owner, 2026-10-22): the
   // orbit's bearing is the nose turned 40° aside, far enough back to hold the whole truck. A drag still
@@ -5938,7 +5939,8 @@ function _updateParkTriggers (zParked = false) {
   // the same screen as its shop (owner, 2026-10-07: "park … and a buy menu opens"), its jobs the same way.
   const shop = serviceScreen.isOpen ? null : _serviceInReach()
   if (serviceScreen.isOpen || shop) {
-    damageScreen.blocked = true
+    // FEAT-212: an open service screen hands the damage screen over (its Vehicle Diagnostics); a storefront's never.
+    damageScreen.blocked = !serviceScreen.isOpen || serviceScreen.store
     if (shop && pulled) {
       const store = _openShop(shop)
       if (!store) _tut('tut-service')   // FEAT-147
