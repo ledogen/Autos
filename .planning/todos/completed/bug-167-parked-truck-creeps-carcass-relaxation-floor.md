@@ -1,7 +1,7 @@
 ---
 id: BUG-167
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-13
 source: Perf lane, 2026-11-13 — found while testing PERF-45 §1 (a memo for the parked ground query could never hit, because a parked truck is never still)
@@ -45,10 +45,10 @@ time. PERF-45 §1 (about 33 ms/s of parked physics) also cannot be memoised whil
 
 ## Tracker
 - [x] Owner ruling on `bug167-creep` — "fix it" (2026-11-14)
-- [ ] A parked truck on a 17° road holds within 1 mm over 60 s, handbrake on
-- [ ] No rocking at rest: hub motion per step below 1e-6 m after settling
-- [ ] Low-speed gates unchanged or re-baselined with the reason stated; physics fingerprint diff explained
-- [ ] The complete model is stated, with any approximation flagged
+- [x] A parked truck on a 17° road holds within 1 mm over 60 s, handbrake on
+- [x] No rocking at rest: hub motion per step below 1e-6 m after settling
+- [x] Low-speed gates unchanged or re-baselined with the reason stated; physics fingerprint diff explained
+- [x] The complete model is stated, with any approximation flagged
 
 ## Open questions
 - Fix now, or leave it (20 cm per 30 s on the steepest slopes; millimetres on ordinary ones)?
@@ -59,3 +59,14 @@ time. PERF-45 §1 (about 33 ms/s of parked physics) also cannot be memoised whil
   mass, faded out by 0.1 m/s of rolling, sliding or spin speed). park-hold: 17° holds 0.015 mm / 60 s (was 616 mm). Floor
   removal alone rocks (0.4 mm/step) but leaves launches bit-identical. With the damper: side-slide green once the fade read
   lateral speed; traction red (floored launch slide 55.4 → 30.6 m, same 0–30 mph time). 77 of 102 affected gates had run.
+- 2026-11-14 (second pass, ff30a628): the launch change was the damper, not the floor. Its fade was read at the wheel's
+  START-of-step speed, so from rest the full damper (≈ 5 kN·s/m) acted in the step the rear breaks loose: c·ṡ ≈ 18 kN on a
+  tire that grips ≈ 3.1 kN. Fix in `src/physics.js`: the fade is read at the step-END patch speed (solve without the damper,
+  re-solve with it only if the wheel ends near rest), and tire force including the damper is capped at the break-away force
+  (`breakawayScale`, the same friction circle as the deflection clamp). Results: park-hold 0.000 mm / 60 s at 17°; fixed
+  pedal 0.3–0.9 0–30 mph identical to main; floored launch slide 55.9 m vs 55.4 m, same 3.40 s (main itself swings 35.9 →
+  30.2 m between throttle 0.999 and 0.995, so this is noise); traction within 1 % on every line; all 103 affected gates
+  green. Physics fingerprint differs from step 100 on both runs: expected, the model at rest genuinely changed.
+  **Approximation, flagged:** the carcass damper is one viscous term faded out by 0.1 m/s; real rubber damping is
+  frequency-dependent and the fade is a model choice. It is not a parking-brake hack.
+- 2026-11-14: landed on main by the orchestrator. Closed.
