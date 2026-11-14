@@ -4599,7 +4599,7 @@ function _eveningBeats () {
   // Stage 5: towed and back on the road, it's night — the headlights.
   if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
   if (Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
-  // FEAT-184 (DEC-151): off the road and rolling for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
+  // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
   // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
   // (_playedS), so a pause or a card never counts.
   const off = !vehicleState.parked && !_inPoiRing() && !_truckOnRibbon()
@@ -5456,7 +5456,6 @@ function _pumpInReach () {
   return null
 }
 
-/** One physics step of an open pump. Handbrake down (or leaving story mode) settles the sale. */
 /** FEAT-184 (DEC-151, owner 2026-11-14: "fueling up you cant leave the pump until you spend every last dollar"): at the
  *  evening's station, while there is pocket change left and room in the tank, mom makes you fill — the handbrake holds. */
 function _momMakesYouFill () {
@@ -5464,6 +5463,7 @@ function _momMakesYouFill () {
   const room = RANGER_PARAMS.fuelTankGal - vehicleState.fuel.gal > 0.05
   return room && economySystem.money() - fuelStop.sale >= fuelStop.price * 0.05   // a twentieth of a gallon's worth left
 }
+/** One physics step of an open pump. Handbrake down (or leaving story mode) settles the sale. */
 function _stepFuelStop (dt) {
   if (!fuelStop.isOpen) return
   if (!vehicleState.parked && storySystem.isActive() && _momMakesYouFill()) { vehicleState.parked = true; _tut('tut-fillup') }
