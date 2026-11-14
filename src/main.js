@@ -2029,7 +2029,6 @@ const map2d = new Map2D({
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
-  getBarricades: () => poiSystem.barricades(),   // BUG-103: a closure tick per FEAT-154 row
   getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
   // FEAT-61: what the customers MEAN right now, and which way to set off.
   //
@@ -4867,15 +4866,18 @@ const _boardView = {
   status (poiId) {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
-    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, nextText: null }
+    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [], nextText: null }
     // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
     // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
     // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
     const live = offerBoard.offers(poiId, now).filter(o => o.route !== null)
     const next = offerBoard.nextTurnoverH(poiId, now)
+    // FEAT-210: every family on offer, once each, in offer order — the map splits the diamond by them.
+    const families = [...new Set(live.map(o => offerBoard.spec(o)?.family).filter(Boolean))]
     return {
       source: true,
-      family: live.length ? offerBoard.spec(live[0])?.family ?? null : null,
+      family: families[0] ?? null,
+      families,
       nextText: next != null ? formatGameDuration(next - now) : null,
     }
   },
