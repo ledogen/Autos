@@ -12,7 +12,7 @@ lane: B
 # FEAT-212: The auto shop menu — a nested Maintenance tree, a plain Shop list, and a cart with checkout
 
 ## Next steps
-Lane B: the plan is below (Description § The plan). Landing 1, the Maintenance tree, is being built on `land/feat-212`.
+Owner: look at landing 1 (the Maintenance tree, screenshots under `wip/feat-212/` in the land worktree) and answer the Open questions. Lane B next: landing 2, the Shop tab as a flat list.
 
 ## Summary
 Rebuild the auto shop's menu to the owner's outline. Maintenance is a tree that shows one level at a time. Shop is a flat list of parts. Nothing is paid for or takes time until checkout: work is queued in a cart that shows a subtotal of cost and time, the truck updates live, and the player checks out or discards.
@@ -158,18 +158,20 @@ its hours. In landing 1 an action is still paid when it is pressed; landing 3's 
 
 ## Tracker
 - [x] Plan: every outline line mapped to an existing part / track, the gaps listed
-- [ ] Maintenance tree: one level shown at a time, one selection per level, selecting the top level again collapses all
-- [ ] Every purchasable option shows its price and its time
-- [ ] Swaps offer inventory and on-truck parts only; the empty case shows the owner's line
+- [x] Maintenance tree: one level shown at a time, one selection per level, selecting the top level again collapses all
+- [x] Every purchasable option shows its price and its time (Maintenance; the Shop tab with landing 2)
+- [x] Swaps offer inventory and on-truck parts only; the empty case shows the owner's line
 - [ ] Shop tab: flat list with name, condition, cost, time left in stock; mounted tires show two conditions; expanding shows the description and "add to cart"
 - [ ] Cart: queued work, live truck preview, subtotal of cost and time, checkout or discard; payment and the time skip happen only at checkout; leaving requires one or the other
-- [ ] Pad, keyboard and mouse; pad-e2e updated
+- [ ] Pad, keyboard and mouse; pad-e2e updated (Maintenance: ↑/↓ walk the list in order, Enter opens, checked headless; the smoke's service step walks it by keys. pad-e2e never reaches a shop, so it has nothing to update)
 
 ## Decisions
 - 2026-11-13, owner: nested menu, one level at a time; price and time on every purchasable option; a cart with a cost-and-time subtotal, paid only at checkout; Maintenance shows no shop stock.
 
 ## Open questions
-- Lines in the outline with nothing in the game yet, as far as a first read shows: roll bars, the cold air intake's "clean", engine repair and engine swap, the transmission as a serviceable part, patching a tire at the shop. Hide them until they exist (the default), or mint tickets for them now?
+- Lines in the outline with nothing in the game yet. Checked (the plan): roll bars, engine repair, engine swap and patching at the shop all exist and show. Hidden until they exist: the cold air intake's "clean", and the "Swap with corner" under Tire and under Wheel (a tire-only or wheel-only move is not a job today; the corner's own "Swap with corner" moves the pair, FEAT-196). Keep them hidden (the default), or mint tickets?
+- The transmission's line lists no action. Its rebuild (the synchros, REPAIRS.transmission) is kept under it as "Repair", or a worn manual box could never be fixed. Keep it (the default)?
+- My Items (sell, split / combine, repair or patch a part you carry, FEAT-196's inventory wheel) is in neither outline. It stays under the Shop tab, below the list, through landing 2 (the default). Or is it the empty item 6?
 - The outline's item 6 is empty in the doc: is a sixth section intended?
 - The cart previews work on the truck "in real time": if the player cannot afford the subtotal, block checkout (the default) or block adding the item?
 
@@ -178,3 +180,4 @@ its hours. In landing 1 an action is still paid when it is pressed; landing 3's 
 
 ## Log
 - 2026-11-13: minted from the owner's spec by the orchestrator. Nothing built.
+- 2026-11-13, Lane B: the plan (135ed4ec). Landing 1 on `land/feat-212` (/Users/ledogen/CodeShit/CarGame-land-212): the My Vehicle tab is now Maintenance, the outline as a tree (src/service-screen.js `_maintenance`); its section list and `group` toggles are deleted. "Parts Shop" is now "Shop" (otherwise unchanged until landing 2). Vehicle Diagnostics opens the V screen over the shop (main.js: the damage screen is no longer blocked while the service screen is open; the shop card hides under it). ↑/↓ walk the card's buttons in list order (`navStep`): the spatial nearest went from the map button straight to the back button past the indented tree. Verified headless (wip/feat-212/shot.mjs, seed 6, story, parked on the lift): every level opens and closes, the top level again collapses all, a corner swap charges $4 and the open path follows the tire to its new corner, a wheel from the inventory goes on for its fitting price, ↓/Enter/↑ drive it, no console errors. cdp-smoke's service step updated, not run on the branch.
