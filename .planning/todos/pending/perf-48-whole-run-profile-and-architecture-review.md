@@ -12,7 +12,9 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Lever 5, the frame cap (60 / 30 / display rate, default 60; DEC-185), built on feature/perf 7f304aa2: orchestrator lands it and smokes main; owner can try 30 on the settings page (display group). Next Perf agent: the lever 6 terrain-material bake prototype (owner: "build the prototype"), as before/after screenshots.
+Lever 6 prototype built on feature/perf (8b1b0dbc, `?terrainBake=256`, off by default): saves 10–24 % of GPU active
+cycles, but flattens the dirt detail within ~20 m and streaks steep cut faces. Owner look owed (`owed/perf48-bake-look.json`):
+ship / drop / changes. Lever 5 (frame cap) awaits landing.
 Lever 7 declined (DEC-186). Levers 1, 1b on main; 2 and 3 void; 4 at PERF-45.
 
 ## Summary
@@ -65,6 +67,7 @@ until `afplay -v 0 /System/Library/Sounds/Tink.aiff` returns in under a second, 
 - What "snappy" means in numbers: the owner's targets for frame time, load time and battery draw.
 - ~~Lever 5~~ answered: a 60 / 30 / display setting, default 60 (DEC-185).
 - ~~Lever 6~~ answered: build the prototype.
+- Lever 6 prototype: ship as is, drop, or change (owed card perf48-bake-look)?
 - ~~Lever 7~~ answered: no, keep 60 (DEC-186).
 
 ## Links
@@ -101,3 +104,8 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
   `loop()` returns early on a frame not yet due. Pacing checked in a node simulation (±0.5 ms vsync jitter): 60 / 30 fps
   exact on 60, 120 and 240 Hz, gaps 15.7–17.6 / 32.4–34.3 ms; on 144 Hz it averages the cap with uneven gaps (13–22 ms),
   inherent to 144/60. Not yet run in the browser (no smoke on a branch); world-presets gate green.
+- 2026-11-14 (Perf lane): lever 6 prototype (eb28f67b, 8b1b0dbc): src/terrain-bake.js renders each chunk once, top-down,
+  through the live shader cut at 4 marker comments into two 3072² atlases (albedo, world normal); `?terrainBake=256`.
+  Paired A/B, live ↔ baked every 2 s × 12, 2 random seeds (4127, 58301), near/mid/far views, shadow pass every frame:
+  −10 to −21 % active cycles on a busy machine (absolute −40 to −190 Mcyc/s), −22 to −24 % on the one quiet run. Keeping
+  steep pixels live (uBakeSteep 0.7) ate most of it (−2 to +11 %). Shots: perf worktree wip/perf-48/shots2/. Not gated.
