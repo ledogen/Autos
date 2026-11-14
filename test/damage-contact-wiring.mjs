@@ -157,5 +157,28 @@ console.log('\n§5 brakes wear on ENERGY, so holding a hill costs nothing')
     'and the fronts wear faster than the rears, which is how brakes actually behave')
 }
 
+console.log('\n§6 FEAT-184 (DEC-151): the tutorial holds the truck — no impact lands, nothing wears')
+{
+  // The same 100 mph head-on into a wall, fed to a held model and to a free one.
+  const v = (mph) => ({ x: mph * MPH, y: 0, z: 0 })
+  const smash = (d) => { let r = null
+    for (let i = 0; i < 12; i++) d.feedContact(null, 0, MASS, DT, v(100))
+    for (let i = 0; i < 10; i++) { const x = d.feedContact('front', impulseAt(60), MASS, DT, v(100 - 100 * Math.min(1, i / 6))); if (x && !r) r = x }
+    for (let i = 0; i < 20; i++) { const x = d.feedContact(null, 0, MASS, DT, v(0)); if (x && !r) r = x }
+    return r }
+  const held = new DamageModel({ params: {} }); held.held = true
+  const before = { ...held.condition }
+  const r = smash(held)
+  ok(!r && !held.fatalImpact, 'held: a 100 mph head-on lands no impact and is not fatal')
+  ok(Object.keys(before).every(id => held.condition[id] === before[id]) && held.camberOffsetDeg.every(x => x === 0),
+    'held: no armor, no component, no bend')
+  const moving = { brakeTorque: [1300, 1300, 450, 450], wheelOmega: [49, 49, 49, 49], slipVel: [3, 3, 3, 3] }
+  for (let i = 0; i < 60 / DT; i++) held.step(moving, {}, DT)
+  ok(held.get('brakeFront') === 1 && held.get('tireFL') === before.tireFL, 'held: a minute braking hard at speed wears nothing')
+  held.held = false
+  const r2 = smash(held)
+  ok(r2 && held.fatalImpact, '...and released (free will), the same hit lands and kills')
+}
+
 console.log(fail ? '\nFAIL — the contact→impact wiring has drifted' : '\nPASS — engine contacts reach the right armor regions, and only when they are impacts')
 process.exit(fail)

@@ -4457,7 +4457,7 @@ let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: sta
 const _momOwes = { part: true, labour: true }
 let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
-window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed })
+window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4474,6 +4474,8 @@ function _seatAt (q) {
   void _reseatTruckAtSpawn().then(() => { _spawnOverride = prev })
 }
 
+/** FEAT-184 (DEC-151): the tutorial is on — a played opening (the firing heard, not skipped) until Larry's welcome. */
+const _inTutorial = () => storySystem.isActive() && dialogueSystem.has(DLG.firing) && !dialogueSystem.has(DLG.skipped) && !dialogueSystem.has(DLG.runIntro)
 /** FEAT-170: the evening leg is on — the firing played, mom's casserole not posted yet. */
 const _eveningLeg = () => !!offerBoard && dialogueSystem.has(DLG.firing) && offerBoard.firstState() === 'closed'
 
@@ -10227,8 +10229,9 @@ function loop () {
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
-    if (!_eveningLeg()) damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)   // FEAT-170: no damage or wear on the safe drive
-    else vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and no fuel burned ("fuel disabled"); the pump below still fills
+    damageModel.held = _inTutorial()   // FEAT-184 (DEC-151): no wear and no impact damage for the whole tutorial (the feedContact below too)
+    damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
+    if (_eveningLeg()) vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and the evening burns no fuel ("fuel disabled"); the pump below still fills
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
@@ -10240,7 +10243,7 @@ function loop () {
     // like a landed impact does below.
     if (vehicleState.drivetrain?.missShift) {
       playGearGrind(vehicleState.drivetrain.engineRPM)
-      if (DAMAGE_PARAMS.enabled) damageScreen.alert()
+      if (DAMAGE_PARAMS.enabled && !damageModel.held) damageScreen.alert()
     }
     // SM-3 collision damage: hand the hardest contact on the chassis this step (`hit`, read with
     // the rim strikes above) to the damage model, which decides whether that is an impact (see

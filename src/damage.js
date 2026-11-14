@@ -803,6 +803,12 @@ export class DamageModel {
     // Set by applyImpact when a hit exceeds the fatal threshold; the run layer reads and clears it.
     this.fatalImpact = null
 
+    // FEAT-184 (DEC-151, "damage disabled so you cant break the truck"): the tutorial HOLDS the truck. While set,
+    // step() wears nothing (the temperature and the effect multipliers still run: a scripted flat still bites) and
+    // feedContact lands no impact (no armor, no component, no bend, no fatal). The game sets it each step; nothing
+    // here decides what "the tutorial" is.
+    this.held = false
+
     // In-flight collision burst tracked by feedContact: { region, impulse, t }, or null.
     this._burst = null
 
@@ -1119,6 +1125,7 @@ export class DamageModel {
     // the same Δv priced twice, the second time against the armor the first had already lowered
     // (measured: a 70 mph offset tree strike, 69 then 75 mph, fatal at full armor).
     if (this._velRing?.length > 1) this._velRing.splice(0, this._velRing.length - 1)
+    if (this.held) return null   // FEAT-184 (DEC-151): the burst is tracked (so none outlives the tutorial) but never lands
     // Price on the truck's OWN Δv across the burst, not on the engine's accumulated contact impulse.
     //
     // The two should agree — J = m·Δv is the definition — and on a clean flat-on wall strike they
@@ -1395,6 +1402,7 @@ export class DamageModel {
   step (vehicleState, params, dt) {
     const P = DAMAGE_PARAMS
     this._stepTemp(vehicleState, params, dt)
+    if (this.held) { this.publish(params); return }   // FEAT-184 (DEC-151): the tutorial wears nothing
 
     // Damage disabled: hold everything at the nominal used-truck condition. Deliberately NOT a
     // freeze — a debug session should always start from the same known state (owner, 2026-08-19).
