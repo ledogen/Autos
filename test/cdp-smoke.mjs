@@ -1326,10 +1326,11 @@ const STEPS = [
     const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
     // FEAT-170 stage 4: mom's lessons queue up and hold the sim (and every key) while they are up — read off
     // whatever comes, waiting a beat for a queued one to appear. Returns the speakers' card count.
-    const readCards = async (beatMs = 800) => {
+    const readCards = async (beatMs = 800, stopAt = null) => {   // stopAt: leave that speaker's card up, unread
       let n = 0
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return n }
+        if (stopAt && await speaker() === stopAt) return n
         n++; await tap('Enter'); await sleep(200)
       }
       throw new Error('cards never stopped coming')
@@ -1514,7 +1515,10 @@ const STEPS = [
       return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     await js(`window.__seated = false; window.__teleport(${jt.x}, ${jt.z}, ${jt.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the joint never seated')
-    await readCards(); await simFor(1); await park(true)
+    // The truck seats latched, which counts as parked: the paycheck may open on arrival, and reading it loads seed 6
+    // (the sim held under the load and Larry's call) — so stop at the manager, and park only when he is not up yet.
+    await readCards(800, 'The manager')
+    if (await speaker() !== 'The manager') { await simFor(1); await park(true) }
     check(await until(async () => await speaker() === 'The manager', 5000), `parked at the joint in the morning, no paycheck card (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
     const cash0 = await js('window.__econ.money')
     await readCards()
