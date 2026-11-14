@@ -10,7 +10,7 @@
     --fg:#dfe3ea; --dim:#8b94a3; --dimmer:#646c7a;
     --accent:#6fb3ff;
     --feature:#6fb3ff; --bug:#ff7a7a; --perf:#ffc25c; --quality:#b78bff;
-    --infra:#5fd0c0; --asset:#7fd97f; --unknown:#8b94a3; --milestone:#ff9ad5;
+    --infra:#5fd0c0; --asset:#7fd97f; --unknown:#8b94a3; --milestone:#ff9ad5; --decision:#d9b36f;
     --critical:#ff5c5c; --high:#ff8a5c; --major:#ffc25c;
     --medium:#9fd06f; --minor:#6a7382; --trivial:#4d545f;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
@@ -262,6 +262,7 @@
   <nav>
     <a href="#/lanes" data-nav="lanes">Lanes</a>
     <a href="#/tickets" data-nav="tickets">Tickets</a>
+    <a href="#/decisions" data-nav="decisions">Decisions</a>
     <a href="#/cargo" data-nav="cargo">Cargo</a>
     <a href="#/places" data-nav="places">Places</a>
     <a href="#/items" data-nav="items">Items</a>
@@ -275,7 +276,7 @@
 
 <script type="module">
 /* ─────────────────────────── data ─────────────────────────── */
-let TICKETS = [], LANES = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null, STORY = null, SOUNDS = null, ITEMS = null;
+let TICKETS = [], DECISIONS = [], LANES = [], BY_ID = new Map(), BACKLINKS = new Map(), STATS = null, STORY = null, SOUNDS = null, ITEMS = null;
 
 async function load() {
   const [t, s, c, so, it] = await Promise.all([
@@ -285,10 +286,10 @@ async function load() {
     fetch('sounds.json?' + Date.now()).then(r => r.json()),
     fetch('items.json?' + Date.now()).then(r => r.json()),
   ]);
-  TICKETS = t.tickets; LANES = t.laneOrder || []; STATS = s; STORY = c; SOUNDS = so; ITEMS = it;
-  BY_ID = new Map(TICKETS.map(x => [x.id, x]));
+  TICKETS = t.tickets; DECISIONS = t.decisions || []; LANES = t.laneOrder || []; STATS = s; STORY = c; SOUNDS = so; ITEMS = it;
+  BY_ID = new Map([...TICKETS, ...DECISIONS].map(x => [x.id, x]));
   BACKLINKS = new Map();
-  for (const tk of TICKETS) {
+  for (const tk of [...TICKETS, ...DECISIONS]) {
     for (const r of tk.refs) {
       if (!BACKLINKS.has(r)) BACKLINKS.set(r, []);
       BACKLINKS.get(r).push(tk.id);
@@ -303,7 +304,7 @@ async function load() {
  * placeholder tokens first, so emphasis can never chew through generated HTML. */
 const esc = s => s.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
 
-const TICKET_RE = /\b(?:FEAT|BUG|PERF|QUAL|INFRA|ASSET|SM)-\d+\b/;
+const TICKET_RE = /\b(?:FEAT|BUG|PERF|QUAL|INFRA|ASSET|DEC|SM)-\d+\b/;
 const PATH_RE = /(?:\.planning|src|test|data|assets|tools|scenarios|docs)\/[\w./@-]*[\w]\.\w{1,5}/;
 // Emphasis and links must survive a line break: the tickets are hard-wrapped at
 // ~100 columns, so most bold runs of any length straddle a newline.
@@ -546,6 +547,35 @@ function viewTickets() {
     <ul class="list">${rows || '<li><span class="tblurb">nothing matches</span></li>'}</ul>`;
 }
 
+/* Decision records (INFRA-10): the standing rulings by area, one line each. Drafts (sources conflict, the owner
+ * has not ruled) sit under "unsettled"; superseded records show only with ?all=1. */
+const DEC_AREAS = ['story', 'economy', 'world', 'roads', 'physics', 'perf', 'assets', 'ui', 'process', 'repo'];
+function viewDecisions() {
+  const all = new URLSearchParams(location.hash.split('?')[1] || '').has('all');
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const hit = (d) => !q || q.split(/\s+/).every(w => `${d.id} ${d.title} ${d.governs.join(' ')} ${d.body}`.toLowerCase().includes(w));
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim();
+  const group = (label, list) => (list.length ? `<h2 class="sec grp">${label} <span class="muted">${list.length}</span></h2>
+    <ul class="list">${list.map(d => `
+    <li>
+      <a class="tid" href="#/t/${d.id}" style="color:${css('decision')}">${d.id}</a>
+      <span class="ttitle">${esc(d.title)}</span>
+      <span class="tblurb">${esc(d.blurb)}</span>
+      <span class="tmeta"><span class="sev">${d.opened || ''}</span></span>
+    </li>`).join('')}</ul>` : '');
+  const shown = DECISIONS.filter(hit);
+  const of = (st) => shown.filter(d => d.status === st);
+  const standing = of('standing'), areas = [...DEC_AREAS, ...new Set(standing.map(d => d.area).filter(a => !DEC_AREAS.includes(a)))];
+  const nSup = of('superseded').length;
+  return `
+    <div class="count">${standing.length} standing · ${of('draft').length} awaiting the owner · ${nSup} superseded${q ? ` matching “${esc(q)}”` : ''}
+      ${nSup ? ` · <a href="#/decisions${all ? '' : '?all=1'}">${all ? 'hide' : 'show'} superseded</a>` : ''}</div>
+    ${areas.map(a => group(a, standing.filter(d => d.area === a))).join('')}
+    ${group('awaiting the owner — sources conflict, or an agent wrote the wording', of('draft'))}
+    ${all ? group('superseded', of('superseded')) : ''}
+    ${DECISIONS.length ? '' : '<p class="muted">No decision records yet (.planning/decisions/).</p>'}`;
+}
+
 /* Every ticket page reads in ONE order (INFRA-09, owner 2026-11-13), whatever order the file is in:
  * next steps, summary, description, tracker, decisions, open questions, links, files, log.
  * The template is .planning/todos/TEMPLATE.md. Tickets written before it are not converted in bulk: their
@@ -576,9 +606,10 @@ function viewTicket(id) {
   const t = BY_ID.get(id);
   if (!t) return `<p>No ticket <code>${esc(id)}</code>. <a href="#/tickets">Back to the list</a></p>`;
   const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim();
-  const back = (BACKLINKS.get(id) || []).sort();
+  const dec = t.type === 'decision';
+  const back = (BACKLINKS.get(id) || []).filter(b => !t.decisions?.includes(b)).sort();
   const fmRow = (k, v) => (v ? `<span><b>${k}</b> ${v}</span>` : '');
-  const sec = ticketSections(t.body
+  const sec = ticketSections((dec ? t.body.replace(/\n(?=\*\*[A-Z])/g, '\n\n') : t.body)   // a record's Ruling / Why / Replaces / Source lines are one paragraph each
     .replace(/^#\s+.*(\n|$)/m, '')
     .replace(/^\s*lane:.*\n/, '')   // the body's `lane:` line is routing for agents; the lane shown above is MILESTONES.md's
     // Milestones hoist `**Requires:** …` into the gate box above; drop the
@@ -592,7 +623,7 @@ function viewTicket(id) {
     </div>` : '';
 
   return `
-    <div class="crumb"><a href="#/tickets">← tickets</a> · ${t.file}</div>
+    <div class="crumb">${dec ? '<a href="#/decisions">← decisions</a>' : '<a href="#/tickets">← tickets</a>'} · ${t.file}</div>
     <div class="dhead">
       <div>
         <div class="id" style="color:${css(t.type)}">${t.id}</div>
@@ -606,10 +637,13 @@ function viewTicket(id) {
     <div class="fm">
       ${fmRow('type', t.type + (t.typeRaw !== t.type ? ` <i style="color:var(--perf)">(${t.typeRaw})</i>` : ''))}
       ${fmRow('status', t.status + (t.statusRaw !== t.status ? ` <i style="color:var(--perf)">(${t.statusRaw})</i>` : ''))}
+      ${fmRow('area', t.area && esc(t.area))}
       ${fmRow('lane', t.lane && esc(t.lane))}
       ${fmRow('release', t.release && esc(t.release))}
       ${t.severity ? fmRow('severity', `<span style="color:${css(t.severity)}">${t.severity}</span>`) : ''}
-      ${fmRow('opened', t.opened)} ${fmRow('updated', t.updated)}
+      ${fmRow(dec ? 'decided' : 'opened', t.opened)} ${fmRow('updated', t.updated)}
+      ${fmRow('supersedes', t.supersedes && ticketLink(t.supersedes))}
+      ${fmRow('governs', t.governs?.length && inline(esc(t.governs.join(', '))))}
       ${fmRow(t.phase === 'shipped' ? 'shipped' : 'closed', t.closed)}
     </div>
     ${t.requires ? `<div class="gate"><b>Requires</b> ${inline(esc(t.requires))}</div>` : ''}
@@ -622,6 +656,8 @@ function viewTicket(id) {
         ${t.refs.length ? t.refs.map(ticketLink).join(' ') : '<span style="color:var(--dimmer)">none</span>'}</div>
       <div class="row"><b style="color:var(--dimmer)">referenced by</b>
         ${back.length ? back.map(ticketLink).join(' ') : '<span style="color:var(--dimmer)">none</span>'}</div>
+      ${t.decisions?.length ? `<div class="row"><b style="color:var(--dimmer)">decisions</b>
+        ${t.decisions.map(d => { const x = BY_ID.get(d); return `${ticketLink(d)} ${esc(x.title)}${x.status === 'standing' ? '' : ` <i style="color:var(--perf)">(${x.status})</i>`}`; }).join('<br>')}</div>` : ''}
       ${t.dives?.length ? `<div class="row"><b style="color:var(--dimmer)">deep dives</b>
         ${t.dives.map(d => `<a href="/dives/${d.slug}.html">${esc(d.title)}</a> ${diveTag(d.slug)}`).join(' · ')}</div>` : ''}
       ${t.plan ? `<div class="row"><b style="color:var(--dimmer)">plan</b> ${inline(esc(t.plan))}</div>` : ''}
@@ -1251,6 +1287,7 @@ function render() {
   let page = 'tickets';
   if (path.startsWith('#/t/')) { app.innerHTML = viewTicket(decodeURIComponent(path.slice(4))); page = 'tickets'; }
   else if (path === '#/lanes') { app.innerHTML = viewLanes(); page = 'lanes'; loadData().then(ch => ch && paintLanes()).catch(() => lvSay('dashboard server unreachable', true)); }
+  else if (path === '#/decisions') { app.innerHTML = viewDecisions(); page = 'decisions'; }
   else if (path === '#/stats') { app.innerHTML = viewStats(); page = 'stats'; }
   else if (path === '#/cargo') { app.innerHTML = viewCargo(); page = 'cargo'; }
   else if (path === '#/places') { app.innerHTML = viewPlaces(); page = 'places'; }
