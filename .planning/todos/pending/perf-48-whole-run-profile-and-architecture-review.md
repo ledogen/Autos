@@ -12,8 +12,8 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Lever 1 on main, its tail (1b: the 10 Hz prompts and the hidden debug HUD) on land/perf-48-l1b for the orchestrator; lever 2 measured void (Log, 2026-11-13: the map cost it named was lever 1's recalc, now PERF-46's). Owner: read the ranked lever list at the top of `.planning/perf/COST-MAP-2026-11.md` and pick. Levers 1–4 need no
-owner call (exact, invisible); 5–7 are one question each (Open questions). Perf lane then builds the picks, one ticket each.
+Perf lane: lever 5, the frame cap (60 / 30 / display, default 60; DEC-185), being built. Next Perf agent: the lever 6 terrain-material bake prototype (owner: "build the prototype"), as before/after screenshots.
+Lever 7 declined (DEC-186). Levers 1, 1b on main; 2 and 3 void; 4 at PERF-45.
 
 ## Summary
 The owner wants the game to be a truly lightweight app. Earlier perf work chased single suspects (tire lookups, the
@@ -55,13 +55,17 @@ until `afplay -v 0 /System/Library/Sounds/Tink.aiff` returns in under a second, 
 - [x] A ranked lever list (cost today, expected gain, risk, effort), each lever a ticket or a line in an existing one
 - [ ] The owner picks levers (a deep dive if the list needs a table)
 
+## Decisions
+- 2026-11-14, owner (lever 1, the energy/hunger strips stepping one device pixel at a time): "keep the pixel steps".
+- 2026-11-14, owner (lever 5): "yes, default 60" to a 60 / 30 / display-rate setting (DEC-185).
+- 2026-11-14, owner (lever 6): "build the prototype".
+- 2026-11-14, owner (lever 7, 30 fps while parked): "no, keep 60" (DEC-186).
+
 ## Open questions
 - What "snappy" means in numbers: the owner's targets for frame time, load time and battery draw.
-- Lever 5: is the "faster MacBook" a 120 Hz (ProMotion) screen? With no frame-rate cap the game renders 120 fps there,
-  about twice the render CPU and GPU of this 60 Hz Air. Recommend a 60 / 30 / display setting, default 60.
-- Lever 6: prototype the baked terrain material (one chunk ring, before/after sheet)? Recommend yes: it is the only
-  large GPU lever left, and the GPU is ~2.5× the CPU in watts.
-- Lever 7: a 30 fps render while parked with the camera still? A look call; recommend trying it on the owner's screen.
+- ~~Lever 5~~ answered: a 60 / 30 / display setting, default 60 (DEC-185).
+- ~~Lever 6~~ answered: build the prototype.
+- ~~Lever 7~~ answered: no, keep 60 (DEC-186).
 
 ## Links
 The deliverable: `.planning/perf/COST-MAP-2026-11.md` (lever list first). Raw runs: `perf-runs/p48-profile`, `p48-control`
@@ -92,3 +96,4 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
   noise (A-B `perf-runs/p48-l1b`, 6/6 valid, fake audio). The 60/s driving seconds were CSS animations, every one (damage
   pulse, reseat toast fade, HUD chip fades): visible, kept, cheap. Stills 0 px (`wip/perf-48-l1b/diff.txt`). No gate (DOM).
   Numbers and sources in COST-MAP-2026-11.md § 1.
+- 2026-11-14: owner answers recorded (Decisions); lever 1b landed on main fb2802a6.
