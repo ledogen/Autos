@@ -59,11 +59,9 @@ if (!await until(() => fetch(`http://localhost:${HTTP}/`).then(r => r.ok, () => 
 
 const { cleanup } = launchChrome('about:blank', { port: CDP, headed: process.argv.includes('--headed') })
 const client = await connect({ port: CDP })
-// SMOKE_THROTTLE=4 (or SMOKE_CPU_THROTTLE): this Chrome runs its page 4× slower (CDP Emulation) — a loaded machine's
-// timing, repeatably, without loading the machine. For chasing load-only flakes; a landing never sets it. INFRA-15:
-// the full smoke passes at 4×.
-const THROTTLE = +(process.env.SMOKE_THROTTLE ?? process.env.SMOKE_CPU_THROTTLE ?? 0)
-if (THROTTLE > 1) await client.cmd('Emulation.setCPUThrottlingRate', { rate: THROTTLE })
+// SMOKE_CPU_THROTTLE=4: this Chrome runs its page 4× slower (CDP Emulation) — a loaded machine's timing, repeatably,
+// without loading the machine. For chasing load-only flakes; a landing never sets it.
+if (process.env.SMOKE_CPU_THROTTLE) await client.cmd('Emulation.setCPUThrottlingRate', { rate: +process.env.SMOKE_CPU_THROTTLE })
 
 // Every console error / uncaught exception, tagged with the step that was running.
 let step = 'boot'
@@ -805,8 +803,6 @@ const STEPS = [
   // the return radius facing in, with every barricade back where it stood.
   ['edge', async () => {
     const P = await js('(() => { const p = window.__poi(), b = p.barricades()[4], c = p._built; return { b, c } })()')
-    // Steps share one session and build on each other (INFRA-15): the rows exist only in the run the "story" step starts.
-    check(P.b, 'no barricade row: the edge step needs the run the "story" step starts — SMOKE_STEPS=boot,story,edge')
     const f = { x: -Math.sin(P.b.yaw), z: -Math.cos(P.b.yaw) }   // the striped face: back into the area
     // A row far off is plain models; near the truck its three barricades are loose bodies (main.js).
     const row = `window.__debris._live.filter(r => r.kind === "roadBarrier" && Math.hypot(r.mesh.position.x - ${P.b.x}, r.mesh.position.z - ${P.b.z}) < 8)`
@@ -819,15 +815,9 @@ const STEPS = [
     await crank()
     if (await js('window.__vs.parked')) await tap(' ')
     const black = 'document.getElementById("camp-fade").classList.contains("on")'
-    // Moved is latched in-page, every rendered frame: the fade stands the row again EDGE_FADE_S (wall) after it goes
-    // black, and under load the poll below saw black only after that, reading a row already back (INFRA-15).
-    await js(`window.__edgeMoved = false; { const rows = window.__edgeRow, b0 = ${JSON.stringify(before)}
-      const f = () => { if (rows.some((r, i) => Math.hypot(r.mesh.position.x - b0[i][0], r.mesh.position.z - b0[i][2]) > 0.5)) window.__edgeMoved = true
-        else if (rows.every(r => window.__debris._live.includes(r))) requestAnimationFrame(f) }
-      requestAnimationFrame(f) }`)
     await key('w', true)
     const went = await untilSim(() => js(black), 20)
-    const smashed = went && await js('window.__edgeMoved')
+    const smashed = went && (await js(pos)).some((p, i) => Math.hypot(p[0] - before[i][0], p[2] - before[i][2]) > 0.5)
     await key('w', false)
     check(went, `the edge never faded: the truck at ${(await js(`Math.hypot(window.__car().x - ${P.c.x}, window.__car().z - ${P.c.z})`)).toFixed(0)} m`)
     check(smashed, 'the truck reached the fade line without moving a barricade')
@@ -847,7 +837,7 @@ const STEPS = [
     // landing is not repeatable — Box3D orders contacts by body creation, and streaming creates terrain/prop bodies in
     // another order (measured 11-06 at 6×: the first row's rest scatters 1–2 cm run to run, the reset row lands 1–6 cm
     // from it, both at rest 3 sim-s later; idle, 0.0 cm). Not reset at all is metres: a knock is > 0.5 m above.
-    check(off < 0.15, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off · Δxyz ${JSON.stringify(after.map((p, i) => p.map((v, k) => +(v - before[i][k]).toFixed(2))))}`)
+    check(off < 0.15, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off`)
     console.log(`  edge: smashed through, back at ${back.r.toFixed(0)} m facing in, the row reset (worst ${(off * 100).toFixed(1)} cm)`)
   }],
   ['papers', async () => {
@@ -1438,9 +1428,7 @@ const STEPS = [
     await tap('x'); await readCards()   // the recovery menu's card
     check(await until(() => js('!!document.querySelector("#recovery-card button[data-act=towShop]:not([disabled])")'), 2000), 'the recovery menu offers no tow to a shop')
     await js('document.querySelector("#recovery-card button[data-act=towShop]").click()')
-    // The shop opens on the parked edge after the tow's reseat, which awaits the seat like a teleport: seat()'s ceiling.
-    check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 30000), `the tow did not land at an open shop: ${await js(`JSON.stringify({ parked: window.__vs.parked,
-      v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent })`)}`)
+    check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 8000), 'the tow did not land at an open shop')
     check((await wd()).towed, 'the tow was not counted (the night beat)')
     console.log('  worst day: the shop')
     await readCards()   // the shop's cards
