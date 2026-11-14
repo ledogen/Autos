@@ -13,9 +13,9 @@ lane: A
 # FEAT-184: the tutorial overhaul — alpha
 
 ## Next steps
-Owner: answer the follow-up dive `.planning/dives/FEAT-184-tutorial-flow.html` (which world a played tutorial
-continues in, the day counter, the "exactly 24 h", the casserole, who tells a skipper the goal). Lane A: landing 1
-(the traps, no setting, the skip prompt and its confirmation) is built on `feature/run-shape`; landing 2 waits on that dive.
+Owner: pick the tutorial seed in `.planning/dives/FEAT-184-tutorial-seed.html` (4 candidates, map sheets; rec 822480141),
+and answer the follow-up dive `.planning/dives/FEAT-184-tutorial-flow.html` (landing 2). Lane A: after the pick, pin the
+seed (`data/tutorial.js`) behind a gate on its beats, and put the first playthrough on it.
 
 ## Summary
 The tutorial becomes the first part of every run: intro (the firing) → a card asking whether to play the tutorial →
@@ -384,7 +384,9 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
 - Landing 3 (waits on the seed):
   - [x] No damage for the whole tutorial (DEC-151): no wear and no impact (armor, components, bends, a fatal crash) from the
     firing to Larry's welcome; free will unchanged (`DamageModel.held`, gate damage-contact-wiring §6)
-  - [ ] The tutorial seed: census, the owner's pick from screenshot sheets, a gate pinning its beats
+  - [x] The census: 135 random seeds, 43 pass (`wip/feat184/seed-census.mjs`, `seed-score.mjs`, `seed-shot.mjs`, `seed-dive.mjs`)
+  - [ ] The owner's pick from the sheets (`.planning/dives/FEAT-184-tutorial-seed.html`)
+  - [ ] The pick pinned (`data/tutorial.js`), with a gate pinning its beats
   - [ ] The first playthrough ever on it, intro included
   - [ ] The intro expanded to 15 s – 1 min (the owner's words)
 - [ ] The smoke's opening step plays the whole sequence
@@ -496,5 +498,16 @@ Each has a recommendation there.
   damage-screen alert is off while held. Gate: damage-contact-wiring §6 (a 100 mph head-on held: nothing lands, nothing
   wears; released, the same hit kills). cdp-smoke's story step checks `__worstDay().held` on the evening (not run on the
   branch).
+- 2026-11-14: landing 3 part 2 (Lane A): the tutorial-seed census. Per seed, headless, with the game's own planner
+  (`MissionSystem.planOffer`, the calls `_planEvePump` and the tow make): joint → nearest station by road → mom's (the flat
+  at the leg's halfway point) · the tow to the crow-nearest auto shop · shop → mom's · mom's → Larry's · Larry's → joint
+  (landing 2's last act). Per driven leg: km, steepest pitch (% over 20 m), metres steeper than 15 %, tightest bend,
+  junctions (deg ≥ 3), tunnels. Hard rule: the station's detour over driving straight home ≤ 2 km (the median is 3.3 km);
+  then a penalty ranking. 300 seeds planned; the orchestrator paused the run at 135 (main's smoke needed the box), 43
+  pass. Finding: nearly every seed's route has a 20–25 % pitch somewhere (42 of 43): the network's character, so the
+  ranking counts the metres of it. The shortlist (4, map sheets with the legs drawn in the page by the same planner) is the
+  dive `FEAT-184-tutorial-seed.html`; rec 822480141 (steepest 16.8 %, 155 m over 15 %, one road, 7 km). Scripts in
+  `wip/feat184/` (seed-census / seed-score / seed-shot / seed-dive). Also: cdp-smoke's off-road wait 12 → 45 s (the reset
+  counts play time, `_playedS`, which a loaded box accrues slower than the wall clock).
 - 2026-11-14: the tutorial dive folded in (Lane A): DEC-146..154; DEC-109 / DEC-110 superseded; the issues checked
   against the code (Open questions; the follow-up dive).
