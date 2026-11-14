@@ -1508,7 +1508,7 @@
     /* FEAT-211: the map window. The world frame behind it is the one drawn the moment the map opened (main.js skips
        the 3D render while the map is open, PERF-38), dimmed by the window's shadow: a spread shadow is the cheapest
        full-screen tint there is, painted once. */
-    #map-window { display: none; position: fixed; inset: 10vh 10vw; z-index: 90;
+    #map-window { display: none; position: fixed; inset: 10vh 10vw; z-index: 90; background: black; /* opaque: the HUD under it must not read through the list's card tint */
                   border: 1px solid var(--line-card); box-shadow: 0 0 0 100vmax rgba(0,0,0,0.35); }
     /* The sheet's backdrop is the topo sheet's PAPER_GREEN (map2d.js): mid-drag the cached background is blitted at an
        offset, and the strip that uncovers must read as more sheet, not as a gutter. flex-basis 0 + min-width 0: a

@@ -76,7 +76,7 @@ s = await vs(); check(!s.parked, `RB tap while parked unlatches (parked=${s.park
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(300)
 s = await vs(); check(s.parked, `RB tap near rest re-latches (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // View tap -> map (M); a second tap closes it.
-const mapShown = () => js('getComputedStyle(document.getElementById("map2d")).display !== "none"')
+const mapShown = () => js('getComputedStyle(document.getElementById("map-window")).display !== "none"')
 const mapBefore = await mapShown()
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!mapBefore && await mapShown(), `View tap opens the map (${mapBefore} -> ${await mapShown()})`)
@@ -103,6 +103,25 @@ await js('__fp.b[0] = 1'); await sleep(150); await js('__fp.b[0] = 0'); await sl
 const wk = await js('__win.join()'), dk = await js('__doc.join()')
 check(wk === 'q,e', `LB / RB send Q / E on the map, A is silent (window saw "${wk}")`)
 check(!/[qe]/.test(dk), `Q / E stop at the map, never reaching the gearbox (document saw "${dk}")`)
+// FEAT-211: the Missions list on the pad. Free roam has no board, so two places with work are stubbed onto the map:
+// D-pad ↓ lands on the nearest and the map snaps there (tracking let go), ↓ again walks to the next, B leaves the list
+// with the map still open and where it was, the left stick's click puts it back on the truck, tracking.
+await js(`(() => { const m = __map2d(), c = __car(); window.__mapStub = [m._getPois, m._getBoard]
+  m._getPois = () => [{ id: 'near', type: 'gasPump', x: c.x + 300, z: c.z }, { id: 'far', type: 'foodVendor', x: c.x - 700, z: c.z + 100 }]
+  m._getBoard = () => ({ status: () => ({ source: true, families: ['delivery'], nextText: null }), view: () => null, name: (id) => id })
+  m._listT = 0 })()`)
+await sleep(400)
+const ls = () => js('(() => { const m = __map2d(), c = __car(); return { id: m._listId, tr: m._tracking, dx: m._panX - c.x, dz: m._panZ - c.z, open: m.isOpen(), html: document.getElementById("map-list").textContent } })()')
+await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(300)
+let l = await ls()
+check(l.id === 'near' && !l.tr && Math.abs(l.dx - 300) < 1 && Math.abs(l.dz) < 1 && /Near/.test(l.html), `D-pad ↓ picks the nearest row and snaps the map to it (${l.id}, pan +${l.dx.toFixed(0)},${l.dz.toFixed(0)}, tracking ${l.tr})`)
+await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(300)
+l = await ls(); check(l.id === 'far' && Math.abs(l.dx + 700) < 1, `D-pad ↓ again walks to the next row (${l.id}, pan ${l.dx.toFixed(0)})`)
+await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
+l = await ls(); check(l.open && l.id === null && Math.abs(l.dx + 700) < 1, `B leaves the list: the map stays open where it was (open ${l.open}, row ${l.id}, pan ${l.dx.toFixed(0)})`)
+await js('__fp.b[10] = 1'); await sleep(150); await js('__fp.b[10] = 0'); await sleep(300)
+l = await ls(); check(l.tr && Math.hypot(l.dx, l.dz) < 1, `the left stick click centres the map on the truck and tracks it (tracking ${l.tr}, off ${Math.hypot(l.dx, l.dz).toFixed(1)} m)`)
+await js('(() => { const m = __map2d(); [m._getPois, m._getBoard] = __mapStub; m._listT = 0 })()')
 // FEAT-175: the right stick's vertical zooms about the cursor (up in, down out); the triggers stay the pedals and
 // zoom nothing; the camera does not orbit behind the map.
 const zm = () => js('__map2d()._zoom'), camXZ = () => js('(() => { const p = __cam().position; return [p.x, p.z] })()')
