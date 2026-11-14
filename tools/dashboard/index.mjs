@@ -63,7 +63,7 @@ const SEVERITY_ORDER = ['critical', 'high', 'major', 'medium', 'minor', 'trivial
 /* `SM` is last and requires digits immediately after the dash, so the design
  * docs' `SM-INV-14` invariant tags can never be read as milestone refs. The
  * optional letter is for split tickets (FEAT-04a). */
-const TICKET_RE = /\b(FEAT|BUG|PERF|QUAL|INFRA|ASSET|SM)-(\d+[a-z]?)\b/g;
+const TICKET_RE = /\b(FEAT|BUG|PERF|QUAL|INFRA|ASSET|DEC|SM)-(\d+[a-z]?)\b/g;
 
 /* ── frontmatter ──────────────────────────────────────────────────────────
  * Deliberately lenient, not a YAML parser. Values wrap across lines
@@ -146,6 +146,49 @@ function walk(dir, out = []) {
     else out.push({ path: p, size: st.size });
   }
   return out;
+}
+
+/* ── decision records (INFRA-10) ──────────────────────────────────────────
+ * One ruling per file: .planning/decisions/dec-NNN-<slug>.md. Frontmatter `id`, `status` (draft = its sources
+ * conflict and the owner has not ruled · standing · superseded), `decided`, `area`, `governs` (ticket ids, file
+ * paths, subsystem words), `supersedes`. A standing record is frozen except its `status:` line; a change of mind
+ * is a new record (decisions.check.mjs holds that). They ride beside the tickets, never among them: own tab, no
+ * part in the open counts. A ticket named in `governs` lists the record on its page. */
+const DEC_AREAS = ['story', 'economy', 'world', 'roads', 'physics', 'perf', 'assets', 'ui', 'process', 'repo'];
+const DEC_STATUSES = ['draft', 'standing', 'superseded'];
+
+function indexDecisions() {
+  const dir = join(ROOT, '.planning', 'decisions');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((n) => /^dec-\d+[\w-]*\.md$/.test(n)).sort().map((name) => {
+    const abs = join(dir, name);
+    const { fm, body } = parseFrontmatter(readFileSync(abs, 'utf8'));
+    const id = stripComment(fm.id) || name;
+    const status = stripComment(fm.status).toLowerCase();
+    const governs = stripComment(fm.governs).split(',').map((g) => g.trim()).filter(Boolean);
+    const ruling = /\*\*Ruling\.?\*\*\.?\s*([\s\S]*?)(?=\n\s*\*\*[A-Z]|\n\s*\n|$(?![\s\S]))/.exec(body)?.[1] || '';
+    return {
+      id,
+      prefix: 'DEC',
+      num: Number(/\d+/.exec(id)?.[0] || 0),
+      title: titleOf(body, fm, id),
+      blurb: ruling.replace(/[*_`]/g, '').replace(/\s+/g, ' ').trim(),
+      type: 'decision',
+      typeRaw: 'decision',
+      status,
+      statusRaw: status,
+      severity: null,
+      bucket: 'decision',
+      area: stripComment(fm.area).toLowerCase(),
+      governs,
+      supersedes: stripComment(fm.supersedes) || null,
+      opened: stripComment(fm.decided) || null,
+      refs: [...new Set(`${fm.governs} ${fm.supersedes} ${body}`.match(TICKET_RE) || [])].filter((r) => r !== id),
+      file: relative(ROOT, abs),
+      abs,
+      body,
+    };
+  });
 }
 
 /* ── milestones ───────────────────────────────────────────────────────────
@@ -396,6 +439,13 @@ function indexTickets() {
     (t.dives ||= []).push({ slug: f.slice(0, -5), title: title || f });
   }
 
+  const decisions = indexDecisions();
+  for (const d of decisions) {
+    for (const g of d.governs) {
+      const t = tickets.find((x) => x.id === g);
+      if (t) (t.decisions ||= []).push(d.id);
+    }
+  }
   // Newest-first within a class, except milestones: SM-1..SM-5 is a build order,
   // so reading it backwards is nonsense.
   tickets.sort((a, b) => (a.prefix === b.prefix
@@ -403,7 +453,7 @@ function indexTickets() {
     : a.prefix.localeCompare(b.prefix)));
   // Chip order: the doc's own lane order, then the type fallbacks.
   const laneOrder = [...new Set([...lanes.values(), 'engine & world', 'asset', 'unplaced'])];
-  return { tickets, drift, laneOrder };
+  return { tickets, decisions, drift, laneOrder };
 }
 
 /* ── cargo + places ───────────────────────────────────────────────────────
@@ -912,7 +962,7 @@ function measurePerf() {
 
 /* ── build ────────────────────────────────────────────────────────────── */
 async function build() {
-  const { tickets, drift, laneOrder } = indexTickets();
+  const { tickets, decisions, drift, laneOrder } = indexTickets();
   const story = await indexStory(tickets);
   const code = measureCode();
 
@@ -956,7 +1006,7 @@ async function build() {
     severityOrder: SEVERITY_ORDER,
   };
 
-  writeFileSync(join(HERE, 'tickets.json'), JSON.stringify({ tickets, laneOrder }));
+  writeFileSync(join(HERE, 'tickets.json'), JSON.stringify({ tickets, decisions, laneOrder }));
   writeFileSync(join(HERE, 'stats.json'), JSON.stringify(stats, null, 1));
   writeFileSync(join(HERE, 'cargo.json'), JSON.stringify(story));
   const sounds = indexSounds(tickets);
