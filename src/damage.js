@@ -1113,6 +1113,12 @@ export class DamageModel {
     const b = this._burst
     if (!b) return null
     this._burst = null
+    // BUG-168: the velocity this burst priced up to is the next burst's floor. Without this, a hit
+    // that outlasts impactHoldMaxCrash (a truck pivoting round a tree it struck off-centre) banked,
+    // started a second burst at once, and that burst's reach-back landed BEFORE the first one began:
+    // the same Δv priced twice, the second time against the armor the first had already lowered
+    // (measured: a 70 mph offset tree strike, 69 then 75 mph, fatal at full armor).
+    if (this._velRing?.length > 1) this._velRing.splice(0, this._velRing.length - 1)
     // Price on the truck's OWN Δv across the burst, not on the engine's accumulated contact impulse.
     //
     // The two should agree — J = m·Δv is the definition — and on a clean flat-on wall strike they
