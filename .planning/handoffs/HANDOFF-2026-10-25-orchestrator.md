@@ -136,45 +136,38 @@ DESIGN.md, tickets and memory (owner 11-13, per the ledorepo session). A new own
 becomes a DEC in the same change that acts on it; a standing record is frozen, a change of mind is a new DEC with
 `supersedes`. Check: `node tools/dashboard/decisions.check.mjs`.
 
-**OWNER HOLD (11-14 ~05:30): "hold the work when you can. im worried how may tokens we're burning."** No agents are
-running. Start NOTHING (no agents, no landings, no smokes) until the owner lifts it; then one lane at a time, or only
-what they name.
+**TOKEN CAP (owner, 11-14 ~03:25): hold lifted ("start the lanes", plus the ledorepo agent for INFRA-14, "dont back up
+wip"), then: "try to keep it token lean stop at 40% weekly usage (weve used 30% since the reset 15hrs ago)".** The
+orchestrator cannot read the usage meter. So: the five agents below are the whole batch; spawn NO follow-up agent
+without asking the owner where the meter stands. Land what they report, yourself.
 
-**Since the hold, done by the orchestrator itself (no agents), all on main, not pushed:**
-- DEC-136 (owner 11-14): oil 30 min / filter 60 min of hard driving; their engine-wear penalties ADD (x8.07 filter,
-  x15.15 oil, x22.2 both); a 50% engine with both at 0 lasts 15 min. ecb2a974, gate + smoke 26/26. Card feat202-look updated.
-- Dashboard listens on 127.0.0.1 + the Tailscale address only (ac2150ad); Wi-Fi refused. Phone/Windows: http://m4air:8010.
-  Started by `nohup npm run dash` (log wip/orch/dash.log); restart it if Tailscale came up after it.
-- A second game server for the owner's Windows machine: `npx vite --host 100.111.133.99 --port 8001 --strictPort` in the
-  main checkout (log wip/orch/vite-8001.log), URL http://100.111.133.99:8001. Not permanent; `m4air:8001` is refused by
-  Vite's host check (one config line if the owner wants the name). macOS firewall is off (owner's setting).
-- Lane agents were verified as claude-opus-5-5 from their transcripts; `/model` inside a subagent view shows the
-  session's Fable 5.2.
-- Open with the owner: DEC-153 (does the casserole to Larry's stay; on card tutorial-flow); the diagnostics oil line
-  shows the oil's multiplier alone, not the combined figure.
+**Running since 03:21 (one each; all told to stay lean):**
+- A (run-shape): FEAT-184 landing 2 from the tutorial-flow dive + seed pin 822480141; reverts INFRA-15 WIP fac4aebe
+  first. DEC range 155–164. On its report: `touch dives/FEAT-184-tutorial-{flow,seed}.taken`, move those two owed cards.
+- B (CarGame-land-212c): FEAT-212 cart to a landing request (messages `main` when ready), then list spacing
+  (feat196) and maybe the Shop tab restyle (feat212 note 3). DEC 165–174.
+- Spare (new CarGame-land-211d): map 90 % + live background + bigger offer card, arrows on map mission cards (+ a
+  proposal for the POI page flip), legend shop row out, BUG-163 card line, FEAT-199 pricing. DEC 175–184.
+- Perf (CarGame-perf): closes PERF-46/47, BUG-164; the 60 fps cap setting; PERF-49 = physics-levers answer from
+  existing data only. DEC 185–189.
+- ledorepo (new CarGame-infra-14): INFRA-14; sends the text it wants in THIS file's standing sections. DEC-195.
+Orchestrator used DEC-190..192; next free for it: 193.
 
-**State at the hold.** Main smoked 26/26 at the last FEAT-184 merge (db3b04b9); origin = 706808d5; push only on the
-owner's word. Landed 11-13/14, all smoked: zip ties off the radiator, FEAT-209 gas prices, BUG-164 POIs follow the
-built chunk (DEC-135), FEAT-210 map symbols (+ the owner's icon / white-haul tweak), INFRA-10 decision records
-(`node tools/dashboard/decisions.check.mjs`), campDeeds 6 (DEC-120), FEAT-202 oil, FEAT-211 landings 1+2 (map window,
-Shopping list), BUG-168 double-count fix, FEAT-184 landing 1 and landing 3 part 1 (no setting, the traps, no damage in
-the tutorial; DEC-146..154), FEAT-212 landings 1+2 (Maintenance tree, Shop list), the QUAL-36 dive, tickets
-FEAT-202..214 and BUG-168.
+**Main:** waypoint (FEAT-211 landing 3) cherry-picked, 3dcb887c; smoke started 03:21, log wip/orch/smoke-waypoint.log
+(check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
+minted: FEAT-215 (GPS U-turn arrow, Spare), FEAT-216 (damage alerts, B). Inbox fully replied; 2gdr (FEAT-204, "4x more
+slots": 4 more or 4 times?) still waits on the owner. DEC-136, the :8001 Windows server and the Tailscale-only
+dashboard are as before (see git log e3b0584a for detail).
 
-**Built, NOT landed (cheap to finish, no agent needed):**
-- FEAT-212 landing 3, the cart: `land/feat-212c` @ c1ffa6cf (`CarGame-land-212c`). Left: `node test/run-all.mjs --serial
-  --only=region-pieces,poi-headroom`, the smoke there, then cherry-pick + smoke main. Shots `wip/feat-212/30..34` there.
-- FEAT-211 landing 3, the waypoint: cherry-pick 929cb4f2 + 1479e9a7 from feature/spare, then smoke main (never smoked).
-- INFRA-15 (ticket not minted), the smoke robust under load: WIP fac4aebe on feature/run-shape, unproven. Repro
-  `SMOKE_STEPS=boot,story,edge SMOKE_THROTTLE=4 tools/chrome-slot.sh node test/cdp-smoke.mjs` fails every time; cause
-  open. Until fixed, smoke main only with heavy jobs paused (the "edge" step fails above load ~20).
-
-**Owner cards open (owed/):** tutorial-flow (dive; blocks FEAT-184 landing 2), tutorial-seed (dive; rec 822480141),
-perf42-reopen-carve, perf48-terrain-bake, bug167-creep, bug166-shock, qual36-grading (dive), bug168-speeds (rec
-40/65); looks: feat210-look, feat211-look, feat212-look, feat202-look, feat209-look, perf47-listen, bug164-look,
-feat180-pick (dev servers :3887 and :3890 are UP; stop them when the owner is done). The waypoint's defaults need a
-line on feat211-look once it lands.
-**Queue when lifted:** B: FEAT-213 info texts, FEAT-203 tire iron, FEAT-207 ratios. A: FEAT-184 landing 2 (after
-tutorial-flow), the seed pin (after tutorial-seed), FEAT-205. Spare: FEAT-214 lights (after feat180-pick). Perf: idle
-on the two perf cards. Lesson: a census with worker pools blew the 2-heavy cap (load 54) and failed main's smokes.
-A lane asked for a CLAUDE.md § Seeds line naming DEC-149's fixed tutorial seed: the owner's call, not done.
+**Answered cards still in owed/ = the queue (answers inside; move each to answered/ when an agent takes it):**
+- B: bug166-shock (yes, a crash breaks it), bug167-creep (fix it), bug168-speeds (40 / 65), bug160-numbers (wheel
+  damage at 50 % above the spring-damage energy; "24 and 4 are fine": check the slider), feat34-r3-look (wider, bigger
+  gauges, convex top), FEAT-216, the diagnostics engine glyph (inbox oc8a: squatter V6), FEAT-213, 203, 207.
+- Spare: feat180-pick (the rebuild wins; long tuning note; worktree .claude/worktrees/agent-a963…, servers :3887/:3890
+  can stop), QUAL-36 dive (submitted, NOT taken), FEAT-215, feat131-listen (remove the music bed, DEC-192), FEAT-214.
+- Perf: perf48-terrain-bake (build the prototype).
+- C: feat182-try (backpack flavour text should hint at the daypack's function).
+- feat202-look came back empty (no choice, no note): asked the owner to confirm "no change".
+- A after this task: INFRA-15 (parked, repro in git show fac4aebe), FEAT-205.
+Unanswered cards: bug92-usb, feat120-clips, feat120-straps, feat167-descs, givers-lines, pad-test, run-review.
+Lesson kept: a census with worker pools blew the 2-heavy cap (load 54) and failed main's smokes.
