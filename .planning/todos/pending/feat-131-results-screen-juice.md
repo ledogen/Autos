@@ -15,7 +15,7 @@ The post-mission (results) screen feels flat. Add juice to the reveal, and a bac
 under the live rank timer that builds suspense as the run approaches/passes each grade threshold.
 
 ## Acceptance
-- [ ] Rank timer has a music bed (synthesized, like the rest of `src/*-audio.js`) whose tension
+- [x] (dropped, DEC-192) Rank timer has a music bed (synthesized, like the rest of `src/*-audio.js`) whose tension
       rises toward the next grade cutoff; drops/resolves when a grade is lost or the job ends.
 - [ ] Results screen reveal is staged (count-ups, timed stingers per grade) — fold in FEAT-120's
       "Payout coin and grade stingers" item rather than duplicating it.
@@ -72,7 +72,7 @@ new copy. The juice is motion, timing and sound only.
 - The box's border warms on a full deed and stays neutral on a miss.
 - A missed item's line nudges once, sideways.
 
-**Phase 3 — the rank timer's music bed.** About 200 lines (`src/rank-music.js`) + 4 hooks in main.js.
+**Phase 3 — the rank timer's music bed. DROPPED (DEC-192, 2026-11-14): code, settings and the dashboard driver deleted.** About 200 lines (`src/rank-music.js`) + 4 hooks in main.js.
 - It starts when the bar shows (the same moment the bar decides it matters) and rides the
   `intensity` already computed:
   - a low synthesized pad whose filter opens with intensity;
@@ -116,8 +116,7 @@ that touches the drive.
   0.5 s → 1.4 s by size (`COUNTUP_FULL` $20 [DEFAULT] — day 1's S tip is $5, so early tips sit near 0.7 s); the
   deed numeral pops 1.15 → 1; a full deed warms the card's border (`--warn-line`, 2.4 s, then back); a missed
   line nudges once, sideways, just after it lands. UI-STYLE tokens only.
-- **Owed:** the owner's look + listen (the card shows on any finished job). P3 (the rank-timer music bed)
-  not started.
+- P3 (the music bed) dropped by the owner, DEC-192.
 - **P3** (`src/rank-music.js`, Spare 2026-11-05): built, not owner-heard. Starts with the bar; minor-triad pad
   (A2) whose lowpass opens on intensity²; arpeggio four notes per heartbeat, stepped by the heartbeat
   oscillator's own phase (main.js hands it over, so they cannot drift); a semitone up per line passed; drop on

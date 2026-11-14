@@ -34,8 +34,7 @@ const T = await import('../src/tire-audio.js')
 const W = await import('../src/wind-audio.js')
 const A = await import('../src/ambient-audio.js')
 const K = await import('../src/knock-audio.js')
-const R = await import('../src/rank-music.js')
-E.ensureEngineAudio(); K.ensureKnockAudio(); T.ensureTireAudio(); W.ensureWindAudio(); A.ensureAmbientAudio(); R.startRankMusic()
+E.ensureEngineAudio(); K.ensureKnockAudio(); T.ensureTireAudio(); W.ensureWindAudio(); A.ensureAmbientAudio()
 A.setAmbientAudio(true, 0.5, 0.5); K.setKnockAudio(true, 0.5)
 
 const vs = { position: { x: 0, y: 0, z: 0 }, velocity: { x: 12, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } }
@@ -52,7 +51,6 @@ function frame (clockRuns) {
   E.setCabView(false)
   E.setInTunnel(true)
   A.updateAmbientAudio(4, 1, 0.5, DT)
-  R.updateRankMusic(0.5, 0)
   wall += DT * 1000
   if (clockRuns) clock += DT
   return events - before
