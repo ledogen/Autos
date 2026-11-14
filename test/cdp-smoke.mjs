@@ -629,10 +629,13 @@ const STEPS = [
     check(upY > 0.99, `the truck is not upright on the lift (up.y ${upY.toFixed(3)})`)
     // FEAT-167: no HUD behind the shop.
     check(await js('!document.getElementById("hud-dock").checkVisibility({ visibilityProperty: true })'), 'the HUD shows behind the service screen')
-    // My Vehicle lists every corner's tire under a collapsed Tires; selecting one opens its repair / exchange panel.
-    await js('document.querySelector("#svc-screen [data-group=Tires]")?.click()')
-    await js('document.querySelector("#svc-screen [data-act=sel][data-key=tireRR]")?.click()')
-    check(await js('!!document.querySelector("#svc-screen .sv-panel")'), 'selecting a My Vehicle row opened no panel')
+    // FEAT-212: Maintenance is a tree, one item open per level — Tires, Wheels… → Tires and Wheels → Rear right → Tire
+    // shows its swap; selecting the top level again collapses everything.
+    for (const id of ['twbs', 'tw', 'RR', 'tire']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
+    check(await js('/Swap with inventory/.test(document.querySelector("#svc-screen .sv-kids .sv-kids .sv-kids .sv-kids")?.textContent ?? "")'),
+      'Maintenance: the rear-right tire opened no swap')
+    await js('document.querySelector("#svc-screen [data-act=node][data-id=twbs]")?.click()')
+    check(await js('!document.querySelector("#svc-screen .sv-kids")'), 'Maintenance: selecting the top level again left items open')
     // The Parts Shop is the shop's four-slot shelf (items or empty slots) and My Items.
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     check(await js('/For sale/i.test(document.querySelector("#svc-screen").textContent) && /My items/i.test(document.querySelector("#svc-screen").textContent)'),
