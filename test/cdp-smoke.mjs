@@ -641,7 +641,7 @@ const STEPS = [
     for (let i = 0; i < 6 && await focusId() !== 'twbs'; i++) await tap('ArrowDown')
     await tap('Enter')
     check(await js('!!document.querySelector("#svc-screen [data-act=node][data-id=twbs].on")'), 'Maintenance: ↓ and Enter did not open the first section')
-    // The Parts Shop is the shop's four-slot shelf (items or empty slots) and My Items.
+    // The Shop tab is the shop's shelf, one row per item (FEAT-212), and My Items.
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     check(await js('/For sale/i.test(document.querySelector("#svc-screen").textContent) && /My items/i.test(document.querySelector("#svc-screen").textContent)'),
       'the Parts Shop tab shows no shelf')
@@ -672,11 +672,11 @@ const STEPS = [
     await js('window.__econ.money = 50')
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')   // repaints with the new wallet
     const coffees = () => js('window.__inv.list().filter(r => r.id === "coffee").reduce((a, r) => a + r.n, 0) + (window.__inv.pending()?.id === "coffee" ? 1 : 0)')
-    const row = 'Array.from(document.querySelectorAll("#svc-screen .sv-shelf")).find(r => /Coffee/.test(r.textContent))'
-    const price = await js(`+${row}.querySelector(".sv-price").textContent.replace(/[^0-9.]/g, "")`)
+    const row = 'Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => /Coffee/.test(r.textContent))'
+    const price = await js(`+${row}.querySelector(".sv-each").textContent.replace(/[^0-9.]/g, "")`)   // FEAT-212: the closed row's price
     const [m0, n0, h0] = [await js('window.__econ.money'), await coffees(), await js('window.__day().clockH()')]
     await js(`${row}.click()`)   // FEAT-196: select the row, then its options show
-    await js('document.querySelector("#svc-screen .sv-panel [data-act=stow]").click()')
+    await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]").click()')
     const [m1, n1] = [await js('window.__econ.money'), await coffees()]
     check(price > 0 && Math.abs(m0 - m1 - price) < 0.005, `buying a coffee listed at $${price} took $${(m0 - m1).toFixed(2)}`)
     check(n1 === n0 + 1, `buying a coffee left ${n1} coffees (had ${n0})`)
@@ -1432,7 +1432,7 @@ const STEPS = [
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     const fit = 'document.querySelector("#svc-screen button[data-act=buy][data-socket=tireFL]:not([disabled])")'
     // FEAT-196: a shelf row's options show only while it is selected — select each in turn until one fits the front left.
-    await js(`(() => { const lines = () => [...document.querySelectorAll("#svc-screen button.sv-line.sv-shelf")]
+    await js(`(() => { const lines = () => [...document.querySelectorAll("#svc-screen button[data-act=node][data-slot]")]
       for (let i = 0; i < lines().length && !${fit}; i++) lines()[i].click() })()`)
     check(await until(() => js(`!!${fit}`), 2000), 'the shop offers no tire for the front left')
     const m0 = await js('window.__econ.money')
