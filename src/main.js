@@ -4863,6 +4863,10 @@ labSystem = new LabSystem(scene, () => ({
  * method reads the live board, clock and terms at call time.
  */
 const _boardView = {
+  /** FEAT-211: the place's name as the map's Missions list shows it. */
+  name (poiId) { return offerBoard.poiName(poiId) ?? offerBoard.placeLabel(poiId) },
+  /** FEAT-211: the run HUD's clock (_updateRunHud's notation), for the list's head — the window covers the HUD. */
+  clock () { return formatDue(Math.floor(daySystem.clockH() * 60) / 60) },
   status (poiId) {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
@@ -10837,8 +10841,10 @@ function loop () {
   perfAdd('frame.postStream', _ptR - _ptPost)   // PERF-26 INSTRUMENT
   // FEAT-41: whichever scene owns the screen. Skipping the world render behind a menu or a load is
   // not just tidiness — it hands the GPU to the build that is running underneath.
-  // PERF-38: nor behind the 2D map — #map2d is an opaque full-screen canvas, so the world frame under it was the whole
-  // 3D GPU bill (owner's M4: 5 W, pinned at 890 MHz, with the map open) for a picture nobody could see.
+  // PERF-38: nor behind the 2D map — the world frame under it was the whole 3D GPU bill (owner's M4: 5 W, pinned at
+  // 890 MHz, with the map open). FEAT-211: the map is a window now, and the world shows round it — as the frame drawn
+  // the moment the map opened (a WebGL canvas keeps showing its last frame until it draws again), so the window
+  // costs no 3D at all.
   if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
   else if (!map2d.isOpen()) renderer.render(scene, camera)
   perfAdd('frame.render', performance.now() - _ptR)  // D-arc: render submit (the ~8.5 s load-cost suspect)
