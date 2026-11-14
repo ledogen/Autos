@@ -195,7 +195,8 @@ const skipHint = () => js('document.getElementById("skip-hint").textContent')
 const skipOpening = async (confirm = false) => {
   check(await until(() => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"'), 3000), 'the run did not open on the firing')
   check(await js('getComputedStyle(document.getElementById("skip-hint")).display !== "none"'), 'no "hold M to skip" prompt over the firing')
-  check(/^hold M.* to skip tutorial$/.test(await skipHint()),   // the keycap carries the pad's glyph too `the skip prompt reads "${await skipHint()}" (FEAT-184: "hold M to skip tutorial")`)
+  // the keycap carries the pad's glyph too, hence the `.*`
+  check(/^hold M.* to skip tutorial$/.test(await skipHint()), `the skip prompt reads "${await skipHint()}" (FEAT-184: "hold M to skip tutorial")`)
   await key('m', true); await sleep(1300); await key('m', false)
   if (confirm) {
     check(await until(async () => /are you sure you want to skip the tutorial/.test(await skipHint()), 2000), `the first hold asked nothing: "${await skipHint()}"`)
