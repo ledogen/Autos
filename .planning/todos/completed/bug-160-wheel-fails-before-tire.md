@@ -1,7 +1,7 @@
 ---
 id: BUG-160
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-11 inbox, marked "top priority right now" — "A front right wheel gave out after maybe a meter of air and landing down on the front I didn't even hear the tire pop So that's pretty interesting I think we should double check when a wheel fails versus where the tire fails A wheel with a tire on it should be quite resilient It's only after the puncture that it should be relatively fragile"
@@ -26,7 +26,7 @@ tire and wheel.
 
 - [x] Headless: the drop height / impact load at which (a) an inflated tire pops, (b) the wheel under an inflated
   tire fails, (c) the wheel under a flat tire fails. Report the three numbers before and after.
-- [x] With an inflated tire the wheel survives every landing the tire survives, and by a clear margin beyond it.
+- [x] With an inflated tire the wheel survives every landing the tire survives, and by a clear margin beyond it. (Superseded 2026-11-14 by DEC-169: some wheel damage from 1.5× the spring's onset energy.)
 - [x] A flat-tire wheel is fragile (today's behaviour or the owner's number).
 - [x] If the tire did pop without a sound, the pop is audible. (It did not pop: see Cause.)
 - [x] Physics fingerprint re-pinned only if the step changed; damage gates green. (The step did not change.)
@@ -119,3 +119,10 @@ hazard-pop rock strike leaves an inflated wheel whole. 20/20 affected gates gree
   only at about 14 m. BUG-158 had "10 m writes it off". 1.5 would give a first loss at about 7.7 m and about 70 %
   at 10 m.
 - The flat-tire wheel stays at today's numbers (first loss at a 3 m drop).
+
+## Log
+- 2026-11-14: Lane B, land/phys-1114: owner note → DEC-169. `wheelBumpEnergyMult` 1.5 (slider "Wheel bends at x spring energy"):
+  through an inflated tire a bump-stop event bends the wheel past the force storing 1.5× the spring floor's stop energy
+  (front 15.7 kN, rear 7.6 kN), on the spring's curve. Front wheel: 1 m drop ≈ 1 %, 2 m ≈ 4 %, 10 m ≈ 11 % (from the spring
+  table's forces). Gates: damage-bumpstop + new section, damage-rim-strike §3 rewritten (twin), 21/21 green. Main's sliders are
+  24 / 2 (not 4); left at 2. Closed.

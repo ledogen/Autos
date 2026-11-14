@@ -116,13 +116,16 @@ const TIERS = {
 }
 // One scenario, one tier: the truck on a flat ground box (the chassis's crash surface) with the
 // wheels on an analytic road; a load of the tier's real mass welded at strapPose.
-async function run (thing, { amp = 0, speed = 0, drop = 0, roll = 0, steer = 0, steps = 300 }) {
+async function run (thing, { amp = 0, speed = 0, drop = 0, roll = 0, steer = 0, wall = 0, steps = 300 }) {
   const P = { ...RANGER_PARAMS }
   P._tireFz = [0, 0, 0, 0]; P._suspForceAccum = [0, 0, 0, 0]
   P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
   const engine = await createPhysicsEngine()
   const ground = engine.createBody({ type: 'static', position: { x: 0, y: -5, z: 0 } })
   engine.addBox(ground, { x: 3000, y: 5, z: 3000 }, { friction: 0.9, group: GROUP_TERRAIN })
+  // BUG-166: a rigid wall `wall` m ahead of the truck, for a body strike (the chassis's own contact, not a tire's).
+  if (wall) engine.addBox(engine.createBody({ type: 'static', position: { x: 0, y: 1.5, z: 1000 - wall } }),
+    { x: 5, y: 1.5, z: 0.5 }, { friction: 0.9, group: GROUP_TERRAIN })
   const vs = makeVehicleState(P, RUNNING), eq = computeStaticEquilibrium(P)
   vs.position.set(0, eq.bodyY + drop, 1000)
   vs.strutComp = [...eq.strutComp]
@@ -140,13 +143,18 @@ async function run (thing, { amp = 0, speed = 0, drop = 0, roll = 0, steer = 0, 
   const joint = engine.createWeldJoint(chassis, b, p)
   vs.velocity.set(0, 0, -speed)
   vs.wheelOmega = [0, 1, 2, 3].map(() => speed / P.wheelRadius)
-  const load = makeFragile(thing), f = { x: 0, y: 0, z: 0 }
+  const load = makeFragile(thing), v0 = { x: 0, y: 0, z: 0 }, v1 = { x: 0, y: 0, z: 0 }, w = { x: 0, y: 0, z: 0 }
   let peak = 0, g = 0
   for (let i = 0; i < steps; i++) {
     vs.throttle = speed ? 0.3 : 0
     if (steer) { const a = steer * Math.sin(i * DT * 2 * Math.PI / 3); vs.wheelSteerAngles = [a, a, 0, 0] }
+    engine.getVelocity(b, v0, w)
     stepPhysics(vs, P, DT, road, { engine, chassis })
-    g = feltG(engine.jointForce(joint, f), kg)
+    engine.getVelocity(b, v1, w)
+    // The load's own Δv / dt, as main.js _fragileStep (BUG-166). Step 0 is not read: this rig spawns the
+    // load at rest under a moving truck and the weld yanks it up to speed (main.js spawns it at the bed's
+    // velocity). Starting it at speed instead moves the calibration (a piano's 1 m crest 75 % → 62 %).
+    g = i ? feltG(v0, v1, DT) : 0
     peak = Math.max(peak, g)
     load.step(g)
   }
@@ -160,6 +168,7 @@ const SCEN = {
   washboard: { speed: 15, amp: 0.04 },              // ±4 cm at 34 mph
   crest:    { speed: 15, drop: 1 },                 // a 1 m crest landing
   rollover: { speed: 10, drop: 1, roll: 1.4 },      // tipped onto its side from 1 m
+  strike:   { speed: 10, wall: 6, steps: 120 },       // BUG-166: a 22 mph head-on into a rigid wall
 }
 const res = {}
 for (const [tk, thing] of Object.entries(TIERS)) {
@@ -183,6 +192,10 @@ ok(res.sturdy.washboard.health > 0.95, `washboard costs a sturdy piece little ($
 // 43 % would undo most of the 1.5× raise above, so the line reads the data comment's "roughly half".
 ok(res.veryFragile.crest.health > 0.3 && res.veryFragile.crest.health < 0.65, `a 1 m crest landing costs very fragile cargo roughly half (keeps ${pct(res.veryFragile.crest.health)}; 30–65 %)`)
 ok(res.sturdy.crest.health > 0.5 && res.sturdy.crest.health < 0.85, `a 1 m crest landing costs a sturdy piece about a third (${pct(res.sturdy.crest.health)})`)
+// BUG-166 (owner 2026-11-14, "yes, a crash breaks it"): a body strike is felt. The weld's joint force (last substep
+// only) read a sturdy piano at 0.53 g in this 22 mph wall hit; its own Δv / dt reads ~55 g.
+ok(all.every(r => r.strike.peak >= 40 && r.strike.health === 0),
+  `a 22 mph head-on into a wall is felt (≥ 40 g: ${all.map(r => r.strike.peak.toFixed(0)).join(' / ')} g) and breaks every tier`)
 ok(['veryFragile', 'fragile', 'sturdy'].every(t => Math.abs(shockCost(onePctG(TIERS[t]), TIERS[t]) - 0.01) < 1e-12),
   'one hit at a tier\'s 1 % g costs exactly 1 %')
 ok(all.every(r => r.rollover.health === 0), 'a rollover destroys every tier')

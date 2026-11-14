@@ -63,7 +63,6 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { buildWorld } from './lib/world-rig.mjs'
 import { ackermann } from './lib/physics-replay.mjs'
 import { strapPose, inBedWell } from '../src/debris.js'
-import { feltG } from '../src/fragile.js'
 import { FREIGHT } from '../data/freight.js'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
@@ -189,7 +188,7 @@ function makeStrap (w, vs) {
   st.trace = () => {
     local(r); w.engine.contactImpulseOn(st.body, J)
     const vl = v.copy(vs.velocity).applyQuaternion(qi.copy(vs.quaternion).invert())
-    return `v local (${vl.x.toFixed(2)}, ${vl.y.toFixed(2)}, ${vl.z.toFixed(2)}) at (${vs.position.x.toFixed(2)}, ${vs.position.y.toFixed(2)}, ${vs.position.z.toFixed(2)}) cargo off (${[r.x - seat.x, r.y - seat.y, r.z - seat.z].map(d => (d * 1000).toFixed(1)).join(', ')}) mm, contact J (${[J.x, J.y, J.z].map(d => d.toFixed(0)).join(', ')}) ${adv()} felt ${feltG(w.engine.jointForce(st.joint, J), row.massKg).toFixed(2)} g (by its Δv ${dvG().toFixed(2)} g)`
+    return `v local (${vl.x.toFixed(2)}, ${vl.y.toFixed(2)}, ${vl.z.toFixed(2)}) at (${vs.position.x.toFixed(2)}, ${vs.position.y.toFixed(2)}, ${vs.position.z.toFixed(2)}) cargo off (${[r.x - seat.x, r.y - seat.y, r.z - seat.z].map(d => (d * 1000).toFixed(1)).join(', ')}) mm, contact J (${[J.x, J.y, J.z].map(d => d.toFixed(0)).join(', ')}) ${adv()} load accel ${dvG().toFixed(2)} g (its Δv, incl. 1 g)`
   }
   return st
 }

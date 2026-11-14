@@ -12,7 +12,10 @@ lane: B
 # BUG-167: A parked truck creeps downhill — the tire's carcass spring leaks at rest
 
 ## Next steps
-Owner: rule on `bug167-creep` (fix it, or leave it). Lane B builds on a yes.
+Owner said "fix it" (2026-11-14). A first build is on branch `wip/bug-167-carcass` (not landable): it fixes the creep
+(`test/park-hold.mjs` green) but a floored unassisted launch now slides its rears 30.6 m instead of 55.4 m (`traction` gate
+red). Next: find why ANY carcass damper (ζ 0.1 or 0.3, fade on every patch speed) flips that launch's wheelspin, which
+floor removal alone does not. First command: `node test/traction.mjs | grep 'best fixed'` on that branch.
 
 ## Summary
 With the handbrake on, a parked truck slides 0.4–6.7 mm/s downhill: about 20 cm over a 30 s park on a 17° slope.
@@ -41,7 +44,7 @@ FEAT-194 stops the clock while the parking brake is latched, so a player may sit
 time. PERF-45 §1 (about 33 ms/s of parked physics) also cannot be memoised while the truck never comes to rest.
 
 ## Tracker
-- [ ] Owner ruling on `bug167-creep`
+- [x] Owner ruling on `bug167-creep` — "fix it" (2026-11-14)
 - [ ] A parked truck on a 17° road holds within 1 mm over 60 s, handbrake on
 - [ ] No rocking at rest: hub motion per step below 1e-6 m after settling
 - [ ] Low-speed gates unchanged or re-baselined with the reason stated; physics fingerprint diff explained
@@ -52,3 +55,7 @@ time. PERF-45 §1 (about 33 ms/s of parked physics) also cannot be memoised whil
 
 ## Log
 - 2026-11-13: filed from the Perf lane's PERF-45 §1 finding.
+- 2026-11-14: Lane B, `wip/bug-167-carcass`: no grounded relaxation floor + Kelvin-Voigt carcass damper (ζ 0.3 on the corner
+  mass, faded out by 0.1 m/s of rolling, sliding or spin speed). park-hold: 17° holds 0.015 mm / 60 s (was 616 mm). Floor
+  removal alone rocks (0.4 mm/step) but leaves launches bit-identical. With the damper: side-slide green once the fade read
+  lateral speed; traction red (floored launch slide 55.4 → 30.6 m, same 0–30 mph time). 77 of 102 affected gates had run.
