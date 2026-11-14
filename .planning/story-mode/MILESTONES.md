@@ -72,6 +72,8 @@ How the cut works:
 | ASSET-69, ASSET-70, ASSET-73 | office, doctor's office, school — they replace placeholders the alpha shows |
 | ASSET-32 | the uncle's van — the uncle is in the alpha |
 | FEAT-188 | **optional** — far ridge silhouettes from the real terrain, after FEAT-180's fog tune (owner, 2026-11-08: "optional pre-alpha") |
+| FEAT-210, FEAT-211 | the map: one symbol language and a legend; the map as an 80 % window with Missions / Shopping lists (owner's map spec, 2026-11-13) |
+| FEAT-212, FEAT-213 | the auto shop menu: nested Maintenance tree, Shop list, cart and checkout; the component info texts (owner's menu spec, 2026-11-13) |
 | FEAT-204 | visual mods: light bar, bed toolbox, roof rack, bull bar (owner, 2026-11-13: "before alpha. doesnt have to be a ton") |
 | FEAT-205 | a win saves the truck configuration; free roam can load the winning truck (owner, 2026-11-13: "alpha feature … not urgent") |
 

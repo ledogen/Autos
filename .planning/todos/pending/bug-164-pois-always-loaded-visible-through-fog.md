@@ -79,3 +79,4 @@ Before/after pair (the service station 548 m out, seed 1768572700): `wip/bug-164
 
 ## Landing (2026-11-13)
 On main 0d9cb9f4 (smoke 26 steps, zero console errors; affected gates 9/9). Stays open for the owner look at the pop-in distance (owed: bug164-look).
+- 2026-11-13: owner looked: "lets push the poi pop in a bit further so it matches the terrain. it seems like terrain always builds out further than pois." The 192 m circle was the visible ring's inscribed reach; the terrain is a square ring plus a warm margin, so it reached further on every side. Now a POI draws exactly when the chunk under its anchor is built (`TerrainSystem.hasChunkAt`), main cc4652dd, smoke 26/26. The draw-call saving was not re-measured at the wider reach.
