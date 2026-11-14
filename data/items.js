@@ -71,6 +71,10 @@ export const ITEMS = {
     // (owner, 2026-10-22 — "you don't need to jack to plug"). The time saving is the parts session's.
     quickJack:    { name: 'Quick-jack',    kind: 'tool',       massKg: 15,
                     desc: 'A low trolley jack that rolls under the truck. Gets a spare on quicker than the factory jack.' },
+    // FEAT-203 (DEC-105): rare; with the floor jack it takes the spare change from 2 h to 30 min.
+    tireIron:     { name: 'Tire iron',     kind: 'tool',       massKg: 2, thumb: 'quickJack',   // placeholder art until its own icon is rendered
+                   
+                    desc: 'A long lug wrench. Breaks the nuts loose in a fraction of the time the factory wrench takes.' },
     // FEAT-138: a real 48-inch farm jack, 13 kg. Rights a rolled truck where it lies, live in the physics
     // (src/hilift.js) — from the inventory menu, left or right (owner, 2026-10-22 / 10-31).
     hiLiftJack:   { name: 'Hi-lift jack',  kind: 'tool',       massKg: 13,

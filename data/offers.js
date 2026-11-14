@@ -371,7 +371,9 @@ export const REWARDS = [
     // stocks it every day, at its price × the day tier.
     { id: 'diffLSD',    name: 'Helical limited-slip differential', kind: 'part', gates: ['S'], minDay: 3, cat: 'drivetrain' },
     { id: 'compressor', name: 'Compressor',  kind: 'tool',       gates: ['A', 'S'], cat: 'tires' },
-    // Takes an hour off a spare change (src/recovery.js spareFitHours), never off a plug.
+    // Takes 45 min off a spare change, as does the tire iron (src/recovery.js spareFitHours), never off a plug.
+    { id: 'tireIron',   name: 'Tire iron',   kind: 'tool',       gates: ['A', 'S'], cat: 'recovery' },
+    // (quick-jack:) takes 45 min off a spare change (src/recovery.js spareFitHours), never off a plug.
     { id: 'quickJack',  name: 'Quick-jack',  kind: 'tool',       gates: ['A', 'S'], cat: 'recovery' },
     // FEAT-138: rights a rolled truck. A–S, never a roadside find (owner, 2026-10-24).
     { id: 'hiLiftJack', name: 'Hi-lift jack', kind: 'tool',     gates: ['A', 'S'], cat: 'recovery' },
