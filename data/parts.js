@@ -285,6 +285,9 @@ export const REPAIR_STEP = 0.05
 /** The shop can still patch a flat: fixes the hole, not the wear — about a plug kit's price, and its
  *  half hour (owner, 2026-10-22). */
 export const PATCH = { price: 5, hours: 0.5 }
+/** FEAT-202 (owner, 2026-11-13): the oil change — every auto shop, always; a flat job straight back to
+ *  new oil, never a part on the shelf. [DEFAULT] $8 / 30 min. */
+export const OIL_CHANGE = { price: 8, hours: 0.5 }
 
 /** Tire work at the shop is two jobs, and every corner action is a count of them (owner, 2026-10-23):
  *  a BEAD job mounts or unmounts a tire on a wheel; a HUB swap takes a mounted tire off a corner or
