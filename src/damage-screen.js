@@ -228,14 +228,15 @@ function buildPictogram () {
   // running back into the intake. Pleat lines in the dark detail colour, like the grille.
   s.push(P('airFilter', `<path d="M114,43 L126,43 L131,55 L124,55 L124,59 L116,59 L116,55 L109,55 Z"/>`))
   s.push(`<path class="ds-detail" d="M117,44.5 L115,53.5 M120,44.5 V53.5 M123,44.5 L125,53.5"/>`)
-  // FEAT-202 (owner, 2026-11-13): the engine is drawn FRONT-ON, the one part of the plan that is not —
-  // a 60° V (the Ranger's 4.0 V6) whose banks lean out from the crank, the filter's neck running into
-  // the valley, head-gasket lines across both banks and the crank pulley in the dark detail colour.
-  // The oil pan sits under the crankcase, the same width, so engine and oil read as one assembly.
-  s.push(P('engine', `<path d="M101.2,66.5 L110.8,61 L120,77 L129.2,61 L138.8,66.5 L132,78.2 L132,92 L108,92 L108,78.2 Z"/>`))
-  s.push(`<path class="ds-detail" d="M104.7,72.6 L114.3,67.1 M135.3,72.6 L125.7,67.1"/>`)
-  s.push(`<g class="ds-detail-dot"><circle cx="120" cy="86" r="3"/></g>`)
-  s.push(P('oil', `<path d="M108,94 L132,94 L132,97 L127,102 L113,102 L108,97 Z"/>`))
+  // FEAT-202 (owner, 2026-11-13; squatter 2026-11-14): the engine is drawn FRONT-ON, the one part of the
+  // plan that is not — a V6 (the Ranger's 4.0) seen as a wide, short block, 44 x 23 (was 38 x 31): shallow
+  // banks lean out from the crank, the filter's neck running into the valley, head-gasket lines across
+  // both banks and the crank pulley in the dark detail colour. The oil pan sits under the crankcase,
+  // so engine and oil read as one assembly.
+  s.push(P('engine', `<path d="M98,68 L109,62 L120,73 L131,62 L142,68 L136,76 L136,85 L104,85 L104,76 Z"/>`))
+  s.push(`<path class="ds-detail" d="M103,72 L111,67.5 M137,72 L129,67.5"/>`)
+  s.push(`<g class="ds-detail-dot"><circle cx="120" cy="80" r="3"/></g>`)
+  s.push(P('oil', `<path d="M106,87 L134,87 L134,90 L129,95 L111,95 L106,90 Z"/>`))
 
   // Corners: tire (outline), wheel (rim), and the alignment readout as text under the wheel.
   for (let c = 0; c < 4; c++) {

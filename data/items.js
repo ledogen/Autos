@@ -85,13 +85,13 @@ export const ITEMS = {
     // the Rucksack's place (between the Duffel and the Frame pack) is ruled. No source yet: the debug
     // grant hands them out until the owner rules shelf and/or rewards.
     daypack:      { name: 'Daypack',       kind: 'pack',       massKg: 0.8, packSlots: 2, reachM: 100,
-                    desc: 'A light nylon daypack. Not much room, but it goes anywhere.' },
+                    desc: 'A light nylon daypack. Not much room, but it lets you camp a long way off the road.' },
     duffel:       { name: 'Duffel',        kind: 'pack',       massKg: 3,   packSlots: 6, reachM: 15,
-                    desc: 'A big canvas duffel. Takes the lot, but you won\'t carry it far from the truck.' },
+                    desc: 'A big canvas duffel. Takes the lot, but you won\'t haul it far from the road.' },
     rucksack:     { name: 'Rucksack',      kind: 'pack',       massKg: 2,   packSlots: 4, reachM: 60,
-                    desc: 'An old canvas rucksack with a top flap. Room for a proper camp.' },
+                    desc: 'An old canvas rucksack with a top flap. Room for a proper camp, a fair way in.' },
     framePack:    { name: 'Frame pack',    kind: 'pack',       massKg: 3.5, packSlots: 6, reachM: 120,
-                    desc: 'A big bag on an aluminium frame. Carries everything, a long way.' },
+                    desc: 'A big bag on an aluminium frame. Carries everything, farther than the daypack even.' },
 
     // ── Camp gear (items.md §2b). FEAT-66: what is PACKED is what stands at camp. `campSlot` is where on
     //    the pad (src/camp-gear.js CAMP_SLOTS) and `model` the PROP_MODELS key; no `model` renders nothing
