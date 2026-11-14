@@ -11,6 +11,10 @@ lane: Spare
 
 # FEAT-180: a lighting review and interview, then a sun that lasts until about 8 pm
 
+## Next steps
+Owner: look at the rebuild's round 4 (card `feat180-r2-look`, :3890 or the sheets in `wip/feat-180/r4/` of the
+rebuild worktree) and answer its questions. Then Spare: the moonlit-night brightening at ~21:15 (below) if the owner wants it.
+
 Owner, verbatim: "I think we could do a bit better on the lighting system And Skybox. Go ahead and create an artifact
 with screenshots of the car on a road with a landscape in the background at different times of day. And then design
 some questions For me to help understand what it is about the lighting system that isn't doing it for me. My initial
@@ -338,3 +342,28 @@ Each value is the mean over the three seeds. Per seed, the noon delta is +0.4 / 
   servers, and Steam briefly at 01:15. No other lane ran heavy work, and the load never went above 8.
 - **Scripts and raw runs:** `wip/feat-180/cost/` in main's checkout (git-invisible): `cost.mjs` (60 Hz),
   `cost2.mjs` (uncapped), `batch.sh` / `batch3.sh`, `table*.mjs`, and `runs/`. No build's code was changed.
+
+## Rebuild round 4 (Spare, 2026-11-14): the owner's 11-14 notes — `src/sky.js`, `test/sky-ephemeris.mjs`
+
+Owner's pick (card `feat180-pick`, 11-14, now DEC-196): the rebuild is carried forward. Built on
+`proto/lighting-redesign` (main merged in, 754aa802), one item per line of the note:
+- `aod` 0.02 → **0.005**; `duskSat` ("twilight: + saturation") 0.3 → **0.5**; `dusk` ("twilight: teal") 1.3 → **0.3**;
+  `skySat` was already 1.0.
+- "land beyond ÷ flat" split in two: **`beyondRise` 2.2**, **`beyondSet` 1.5** (morning / evening by solar noon).
+- **Sky texture** (`texture` 0.8, "sky texture"): the legacy's texture is three's Sky cloud layer left on at its defaults
+  (value-noise fbm on a plane overhead). Ported as a zero-mean brightness ripple of the sky (sky only, not the fog).
+- **Twilight evenness** (`even` 0.5, "twilight: sky evenness", Atmosphere folder): while the sun is under the horizon
+  (fading out by 15° up) the sun's sky is pulled toward its own mean brightness in log, the mean kept. At 20:30 the
+  sun-side : anti-sun ratio 4° up goes 16 → 4 (0.5) → 1 (1.0); at 04:36 5.3 → 2.1. Colour is kept; the land is untouched.
+- **The 20:16 brightening, root cause:** the eye counted half of a sun-facing wall's light, the flat land only sin 3°
+  of it (the key is held 3° up), and both lose the sun in the ~3 min its disc takes to set, so the eye opened faster
+  than the land darkened: +5–10 % from 20:12 to 20:19. Fix: the wall's share of the eye hands over to the ground's
+  over the sun's last 15° (`EYE_WALL_EL`). The land at 20:00 reads +85 %. `sky-ephemeris` now pins it (2-min steps
+  18:00–21:00; fails ×1.048 at 20:16 before, passes after). The evenness fade went to 15° for the same reason (over 6°
+  it lifted the zenith 22 % from 19:46 to 20:07).
+- **Found, not fixed (owner call):** on a moonlit night the land brightens ~3× from 21:10 to 21:20 (and dims ~23 % at
+  04:37 at full moon). Cause: the eye adapts to only `moonAdapt` (0.15) of the moon, so when the sun's twilight leaves
+  its input the eye opens onto the moonlit land. Gone at `moonAdapt` 1, which also loses the full/new-moon difference.
+
+Log: 972b1ab4 (+ the sheet commit). sky-ephemeris: the new check passes; its 4 brightness-ladder FAILs are the
+round-3 ones (single eye curve, re-pin before landing). Smoke boot,drive: see the card.
