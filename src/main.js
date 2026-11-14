@@ -30,7 +30,7 @@ import { makeQueryContacts } from './world-contacts.js'   // the wheels' and bod
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
-import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
+import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, TIRE_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen, bandColor } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
@@ -1260,12 +1260,22 @@ const _CORNER_NAME = ['front-left', 'front-right', 'rear-left', 'rear-right']
 const _MACHINE_WORD = [
   [null, 'the engine is knocking', 'the engine seized'],
   ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is cracking`, `the ${c} wheel gave out`])),
+  // FEAT-216 damage alerts (words are the owner's to approve): a wheel bent 10 %, a tire flat / failed,
+  // the air filter and the oil at their wear thresholds. Spring and body-panel damage stay sound-only.
+  ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is bent`])),
+  ...(_CORNER_NAME.map(c => [null, `the ${c} tire is flat`, `the ${c} tire failed`])),
+  [null, 'the air filter is clogging'],
+  [null, 'the oil is worn'],
 ]
 let _wordLevels = null, _wordTimer = null
 function _machineWords () {
   if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) { _wordLevels = null; return }
   const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
-  const now = [lv(damageModel.get('engine')), ...WHEEL_IDS.map(id => lv(damageModel.get(id)))]
+  const now = [lv(damageModel.get('engine')), ...WHEEL_IDS.map(id => lv(damageModel.get(id))),
+    ...WHEEL_IDS.map(id => damageModel.get(id) <= 0.9 ? 1 : 0),
+    ...TIRE_IDS.map((id, i) => damageModel.get(id) <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
+    damageModel.get('airFilter') < DAMAGE_PARAMS.filterKnee ? 1 : 0,
+    damageModel.get('oil') < DAMAGE_PARAMS.oilKnee ? 1 : 0]
   const rose = _wordLevels ? now.findIndex((l, i) => l > _wordLevels[i]) : -1
   _wordLevels = now
   if (rose < 0) return
