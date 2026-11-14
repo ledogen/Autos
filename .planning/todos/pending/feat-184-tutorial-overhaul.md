@@ -481,5 +481,6 @@ Each has a recommendation there.
   the confirmation, the fill-up, the off-road reset and the tire on mom; NOT run on the branch.
   [DEFAULT]s: $3 pocket change, 4 s off-road, 5 s confirmation window, fuel off for the whole evening (not only to the
   station). [interim] The paycheck lands at Larry's until landing 2 moves the last act to the burger joint.
+  Affected gates 38/38 green (`node test/run-all.mjs --serial`, wip/feat184/gates.log; cdp-smoke not run on the branch).
 - 2026-11-14: the tutorial dive folded in (Lane A): DEC-146..154; DEC-109 / DEC-110 superseded; the issues checked
   against the code (Open questions; the follow-up dive).
