@@ -27,6 +27,9 @@
  *   Jobs       — only while the shop has live offers (owner, 2026-10-20: it still posts work): one
  *                button, "go to jobs" (FEAT-197, owner 2026-11-11). It closes the screen and hands over to
  *                the offers (the offer card over the map); declining them comes back to this screen.
+ * THE CART (FEAT-212, owner 2026-11-13): every button that costs money or time queues its job (ServiceCenter.queue) —
+ * the truck shows it at once, the money and the clock wait for "check out" on the card's foot; "discard" puts it all
+ * back; a line's × takes one out. With work in the cart, leaving (Esc / B, back, go to jobs, the brake) asks first.
  * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt). "map" opens
  * the map over the screen (owner, 2026-10-21); the screen hides under it and the clock stays held.
  *
