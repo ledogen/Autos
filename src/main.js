@@ -4637,12 +4637,12 @@ function _resetToRoad () {
 /** Stage 4, on the run-HUD poll: the drive home's lessons — the key, the pedals, the gauge (FEAT-184), the flat halfway (FEAT-184 stage 4, replacing the damage card), parking near hers.
  *  FEAT-184 (DEC-153): the morning's one beat — parked at the joint, the last paycheck. */
 function _eveningBeats () {
-  const q = _mom(), v = vehicleState.position
+  const q = _mom(), j = _joint()
+  if (!_tutDrive()) return
   if (_morningLeg()) {
-    const j = _joint()
+    _tut('tut-morning')   // after breakfast, which the sleep queued
     if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
-  } else if (!_eveningLeg() || !q) return
-  else _eveningLessons(q, v)
+  } else if (q) _eveningLessons(q, vehicleState.position)
   // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
   // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
   // (_playedS), so a pause or a card never counts.
@@ -4673,7 +4673,6 @@ function _eveningLessons (q, v) {
 function _endEvening () {
   if (!_eveningLeg() || !dialogueSystem.has(DLG.played)) return
   dialogueSystem.restoreSeen([DLG.morning])   // the key IS the leg (resume-safe); mom's card says so on the poll
-  _tut(DLG.morning)
   _eveningGuide = undefined
   _renderMissionUI()   // the HUD line goes
 }
@@ -7519,6 +7518,7 @@ function _renderRunHud () {
   if (skip) skip.style.display = _tutDrive() ? '' : 'none'
   _syncSkipHint()      // FEAT-184: the confirmation reverts to the hold once it times out
   _checkOpeningEnd()   // FEAT-147: Larry's call once the tutorial is over
+  if (!storySystem.isActive() || storySystem.isEntering()) return   // FEAT-184: …which may have left for the run's own world
   _pumpTut()           // …and any first-use card waiting its turn
   _checkMidnight()     // FEAT-148: the midnight overlay
   const req = offerBoard?.lines() ?? []

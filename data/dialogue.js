@@ -127,8 +127,8 @@ export const TUT = {
     'tut-spareflat': [{ speaker: 'Mom', text: `The spare's flat too? Of course it is. Call a tow: `
         + `<span class="dlg-key">X</span> is the recovery menu.` }],
     'tut-tow': [{ speaker: 'Mom', text: `The tow takes you to the nearest auto shop. It's on me this time.` }],
-    // FEAT-184 (DEC-151): the tire is on mom — one mounted tire and its fitting. PLACEHOLDER words.
-    'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner &mdash; that one's on me. Then come home, it's late.` }],
+    // FEAT-184 (DEC-151): the tire is on mom — one mounted tire and its fitting, paid at the cart's check out (FEAT-212). PLACEHOLDER words.
+    'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner &mdash; that one's on me. Check out at the counter, then come home, it's late.` }],
     // Stage 5: the night drive home after the shop.
     'tut-lights': [{ speaker: 'Mom', text: `It's pitch dark out there. `
         + `<span class="kc-kb"><span class="dlg-key">L</span> turns</span><span class="kc-pad">the <span class="dlg-key">left stick</span> click turns</span> `
@@ -168,6 +168,6 @@ export const DLG = {
     skipped: 'opening-skipped',   // FEAT-170: the opening was held-to-skip — no first-use cards this run
     bossCheck: 'boss-check',   // FEAT-184: the skip's last check
     played: 'tutorial-played',   // FEAT-184: "play the tutorial" chosen at the intro's card
-    morning: 'tut-morning',      // FEAT-184 (DEC-153): the evening is over; the morning goes to the joint
+    morning: 'morning',          // FEAT-184 (DEC-153): the evening is over; the morning goes to the joint (mom says so: TUT 'tut-morning')
     paycheck: 'paycheck',        // FEAT-184: the tutorial's last act heard — free will from here
 }
