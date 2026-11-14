@@ -28,7 +28,7 @@
 
 // Glyphs below are hand-authored to this file's rules (24×24, filled, one `d`, nonzero holes wound
 // against their outer subpath). They are deliberately BLUNT: the outline is a fixed 1.5 SCREEN px,
-// so at POI_ICON_PX 22.5 it eats ~1.6 viewBox units and any interior feature thinner than that is
+// so at POI_ICON_PX 27 it eats ~1.3 viewBox units and any interior feature thinner than that is
 // swallowed whole by its own stroke. Hence one or two chunky cut-outs per glyph and nothing finer
 // — the door of the house, the patty of the burger, the eye of the hook. Anything the drawing can
 // carry as SILHOUETTE it carries as silhouette; interior lines are the last resort, not the first.
@@ -40,33 +40,34 @@
 const HOUSE = 'M12 2.5 L22.5 11.5 L19.5 11.5 L19.5 21.5 L4.5 21.5 L4.5 11.5 L1.5 11.5 Z'
             + 'M10 14 L10 21.5 L14 21.5 L14 14 Z'
 
-// FEAT-61: a FOLDED newspaper — the page, the rolled spine down its left edge, and four blocks of
-// type punched out of it (owner-supplied reference, 2026-08-15). The first attempt was a rolled
-// paper on the diagonal, matching the object the player throws; it read as a stick, because a roll
-// seen end-on is a bar and one small hole cannot rescue a bar.
-//
-// Five subpaths in one `d`, which the header's rules allow: page and spine are wound the SAME way
-// so nonzero unions them into one silhouette (they overlap by half a unit on purpose — a gap would
-// show as a seam), and the three type blocks are wound AGAINST them so they punch through.
-//
-// THE GRID IS EXACT, because at 22.5 px an uneven margin reads as a mistake rather than as texture.
-// The page is 7..21.5 x 5..21.5; every block sits inside a 2.0-unit margin on all four sides, and
-// the gaps between blocks are 2.0 as well — so margin and gutter are one number and the whitespace
-// is even wherever you measure it. Headline across the top, then two columns. A fourth block was
-// tried and dropped: it packed the lower half tight enough that the gutters closed up at size.
-export const NEWSPAPER = 'M7 5 L21.5 5 L21.5 21.5 L7 21.5 Z'
-                       + 'M2.5 8 L7.5 8 L7.5 21.5 L2.5 21.5 Z'
-                       + 'M19.5 7 L9 7 L9 10 L19.5 10 Z'
-                       + 'M13.25 12 L9 12 L9 19.5 L13.25 19.5 Z'
-                       + 'M19.5 12 L15.25 12 L15.25 19.5 L19.5 19.5 Z'
+// FEAT-210: the paper-route customer's mark — a FRONT PAGE, white, with a dog-eared corner (owner,
+// 2026-11-13: the old folded paper with three type blocks punched through was "shoddy and unclear").
+// The old blocks were holes wide enough to show the map through them, so the glyph read as a white
+// frame around green mush. Here every interior feature is a slot NARROWER than the outline, which
+// fills it solid: the 1.3-unit masthead comes out a black bar and the 0.3-unit slots come out black
+// rules — print, not holes. Page wound one way, the four slots against it (nonzero cuts them).
+export const NEWSPAPER = 'M4.5 2.5 L15.5 2.5 L19.5 6.5 L19.5 21.5 L4.5 21.5 Z'
+                       + 'M7 5.5 L7 6.8 L14 6.8 L14 5.5 Z'
+                       + 'M7 10.5 L7 10.8 L17 10.8 L17 10.5 Z'
+                       + 'M7 14 L7 14.3 L17 14.3 L17 14 Z'
+                       + 'M7 17.5 L7 17.8 L17 17.8 L17 17.5 Z'
+
+// FEAT-210: Larry's paper van, side on, nose right (owner default 2026-11-13: "Larry's symbol becomes
+// a van"). Body, the two wheels (wound WITH the body, so they union into one silhouette with bumps
+// underneath and no seam), and two window cut-outs wound against it.
+const VAN = 'M2 4.5 L15 4.5 L19 9.5 L22 10.5 L22 16.5 L2 16.5 Z'
+          + 'M3.9 17 A2.6 2.6 0 1 1 9.1 17 A2.6 2.6 0 1 1 3.9 17 Z'
+          + 'M14.9 17 A2.6 2.6 0 1 1 20.1 17 A2.6 2.6 0 1 1 14.9 17 Z'
+          + 'M14 6.5 L14 9.5 L17.4 9.5 L15.2 6.5 Z'
+          + 'M4.5 6.5 L4.5 9.5 L12 9.5 L12 6.5 Z'
 
 export const POI_ICONS = {
     // Mom's house — where you can sleep. NOT a camp (see camp.js build()); it is a POI with a
     // building on it that happens to have a bed.
     momsHouse:    { label: "Mom's",   color: '#ff8fd0', path: HOUSE },
-    // FEAT-67: Larry is the newspaper now (owner, 2026-09-26) — his offer is the paper route, and the
-    // glyph says so before you ever hover him.
-    larrysHouse:  { label: "Larry's", color: '#8fd0ff', path: NEWSPAPER },
+    // FEAT-210: Larry is his paper van (owner, 2026-11-13; was the newspaper, which now marks only
+    // the customers on a paper route).
+    larrysHouse:  { label: "Larry's", color: '#8fd0ff', path: VAN },
     // Burger: domed top bun, flat-bottomed heel, one slot for the patty.
     foodVendor:   { label: 'Food',    color: '#ffc84a', path:
         'M2 11.5 A10 7.5 0 0 1 22 11.5 L22 16.5 A10 4.5 0 0 1 2 16.5 Z'
@@ -151,24 +152,46 @@ export const POI_ICONS = {
         'M3.1 16.5 A4.4 4.4 0 1 1 11.9 16.5 A4.4 4.4 0 1 1 3.1 16.5 Z'
       + 'M12.1 16.5 A4.4 4.4 0 1 1 20.9 16.5 A4.4 4.4 0 1 1 12.1 16.5 Z'
       + 'M7.6 8.6 A4.4 4.4 0 1 1 16.4 8.6 A4.4 4.4 0 1 1 7.6 8.6 Z' },
-    // Every class with no glyph of its own (residence, farm, office, school, doctor, the job site,
-    // the motorist) is the diamond, unlabelled: there are a dozen of them and naming each would turn
-    // the map into a wall of text. FEAT-67 SUPERSEDES the old "finding out what a marker offers is
-    // what driving to it is for": the story map is now the mission board, and hovering a diamond
-    // shows its offer. The diamond's fill is its current offer's FAMILY (FAMILY_COLOR below), grey
-    // when a giver has nothing on offer. This colour is for a diamond that NEVER gives work (office,
-    // school — destinations only): the map paper, so it reads hollow. It was orange, which read as
-    // a live job with no card behind it (owner, 2026-10-12).
-    // FEAT-103: the expedition camp — the run's goal, so it is the one diamond with a name.
-    expeditionCamp: { label: 'Expedition', color: '#cfe2bd', path: null },
+    // FEAT-210: the special places get a pictogram of their own (owner, 2026-11-13). Each is one of a
+    // kind on the roster, so a symbol finds it; the many look-alikes (residences, farms) stay plain
+    // diamonds, and the stranded motorist needs none.
+    //
+    // The expedition camp — the run's goal: a ridge tent with its door cut out and a pennant flying
+    // off the apex. Tent, pole and flag are wound the same way and union; the door is wound against.
+    expeditionCamp: { label: 'Expedition', color: '#e0c890', path:
+        'M12 7 L22 21.5 L2 21.5 Z'
+      + 'M11.3 1.5 L12.7 1.5 L12.7 7.5 L11.3 7.5 Z'
+      + 'M12.7 1.5 L18.5 3.5 L12.7 5.5 Z'
+      + 'M12 13 L9.2 21.5 L14.8 21.5 Z' },
+    // The doctor: a plain cross, the one medical sign every reader already knows.
+    doctor:       { label: 'Doctor',  color: '#ffffff', path:
+        'M9 3 L15 3 L15 9 L21 9 L21 15 L15 15 L15 21 L9 21 L9 15 L3 15 L3 9 L9 9 Z' },
+    // The work site: a traffic cone on its square foot, one reflective band cut through it.
+    workSite:     { label: 'Site',    color: '#ff8030', path:
+        'M10 3 L14 3 L18.5 18 L21.5 18 L21.5 21.5 L2.5 21.5 L2.5 18 L5.5 18 Z'
+      + 'M9.25 9.5 L8.35 12.5 L15.65 12.5 L14.75 9.5 Z' },
+    // The school: a gabled schoolhouse under a bell tower, door and two windows cut out — the tower
+    // is what tells it from a house.
+    school:       { label: 'School',  color: '#f0d060', path:
+        'M3 11 L12 5 L21 11 L21 21.5 L3 21.5 Z'
+      + 'M10 1.5 L14 1.5 L14 7 L10 7 Z'
+      + 'M10 15 L10 21.5 L14 21.5 L14 15 Z'
+      + 'M5 13 L5 17 L8 17 L8 13 Z'
+      + 'M16 13 L16 17 L19 17 L19 13 Z' },
+    // The office: a tall block, two columns of windows and a door.
+    office:       { label: 'Office',  color: '#a8b8d8', path:
+        'M5 2 L19 2 L19 22 L5 22 Z'
+      + 'M7.5 4.5 L7.5 7 L10.5 7 L10.5 4.5 Z' + 'M13.5 4.5 L13.5 7 L16.5 7 L16.5 4.5 Z'
+      + 'M7.5 9 L7.5 11.5 L10.5 11.5 L10.5 9 Z' + 'M13.5 9 L13.5 11.5 L16.5 11.5 L16.5 9 Z'
+      + 'M7.5 13.5 L7.5 16 L10.5 16 L10.5 13.5 Z' + 'M13.5 13.5 L13.5 16 L16.5 16 L16.5 13.5 Z'
+      + 'M10.5 18 L10.5 22 L13.5 22 L13.5 18 Z' },
+    // Every class with no glyph of its own (residence, farm, the motorist) is the diamond alone,
+    // unlabelled: there are many of them and naming each would turn the map into a wall of text.
+    // FEAT-67: the story map is the mission board, and hovering a diamond shows its offer. This
+    // colour is for a diamond that NEVER gives work: the map paper, so it reads hollow.
     diamond:      { label: null,      color: '#cfe2bd', path: null },
 }
 
-/**
- * FEAT-67: diamond fill by mission family (owner, 2026-09-26) — a table lookup, not code. ONLY
- * diamonds take a family colour; glyph POIs (food, store, auto shop, Larry) keep their own. A
- * diamond's colour is its first live offer's family (a budget giver holds up to two, FEAT-101).
- */
 /**
  * GAME-FEEL REVIEW 2026-10-23 (R-08): how a card HEADS each family. The code key `delivery` stays
  * (never rename a key), but the player reads COURIER — FEAT-89's ratified name — because every one
@@ -178,6 +201,11 @@ export const FAMILY_LABEL = {
     delivery: 'COURIER', fragile: 'FRAGILE', papers: 'PAPERS', haul: 'HAUL', demolition: 'DEMOLITION', freight: 'FREIGHT',
 }
 
+/**
+ * FEAT-67/210: mission diamond fill by family — a table lookup, not code. The diamond is the BACKGROUND
+ * of every place with work on offer (owner, 2026-11-13); a pictogram, when the place has one, is drawn
+ * over it in its own colour. One segment per family on offer there (map2d _drawDiamond).
+ */
 export const FAMILY_COLOR = {
     delivery:   '#5ad06a',   // green
     fragile:    '#ff9f43',   // orange
@@ -192,8 +220,9 @@ export const EMPTY_DIAMOND_COLOR = '#9aa0a6'
 
 /**
  * Rendered size of a pictogram on the map, in px (the 24-unit viewBox scales to this).
- * 15 as first drawn, 30 at the doubling pass, 22.5 after that read too heavy (owner, 2026-08-07).
+ * 15 as first drawn, 30 at the doubling pass, 22.5 after that read too heavy (owner, 2026-08-07),
+ * 27 = 22.5 + 20 % with the diamonds (FEAT-210, owner 2026-11-13).
  * The car marker in map2d.js is sized to match — move them together or the map stops looking like
  * one drawing.
  */
-export const POI_ICON_PX = 22.5
+export const POI_ICON_PX = 27
