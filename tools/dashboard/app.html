@@ -659,7 +659,7 @@ function viewTicket(id) {
       ${t.decisions?.length ? `<div class="row"><b style="color:var(--dimmer)">decisions</b>
         ${t.decisions.map(d => { const x = BY_ID.get(d); return `${ticketLink(d)} ${esc(x.title)}${x.status === 'standing' ? '' : ` <i style="color:var(--perf)">(${x.status})</i>`}`; }).join('<br>')}</div>` : ''}
       ${t.dives?.length ? `<div class="row"><b style="color:var(--dimmer)">deep dives</b>
-        ${t.dives.map(d => `<a href="/dives/${d.slug}.html">${esc(d.title)}</a> ${diveTag(d.slug)}`).join(' · ')}</div>` : ''}
+        ${t.dives.map(d => `<a href="/dives/${d.slug}.html" target="_blank" rel="noopener">${esc(d.title)}</a> ${diveTag(d.slug)}`).join(' · ')}</div>` : ''}
       ${t.plan ? `<div class="row"><b style="color:var(--dimmer)">plan</b> ${inline(esc(t.plan))}</div>` : ''}
       ${t.handoff ? `<div class="row"><b style="color:var(--dimmer)">handoff</b> ${inline(esc(t.handoff))}</div>` : ''}
     </div>`;
@@ -1187,7 +1187,7 @@ function viewLanes() {
         <div class="lv-row"><span class="lv-tag">${esc(o.kind || '')}</span><span>${inline(esc(o.tk || ''))}</span></div>
         <div class="txt">${inline(esc(o.text || ''))}</div>
         ${o.blocks ? `<div class="blocks">blocks: ${inline(esc(o.blocks))}</div>` : ''}
-        ${o.dive ? `<div class="lv-row"><a class="lv-opt" href="/dives/${attr(o.dive)}.html">open the deep dive</a>${diveTag(o.dive)}</div>` : `
+        ${o.dive ? `<div class="lv-row"><a class="lv-opt" href="/dives/${attr(o.dive)}.html" target="_blank" rel="noopener">open the deep dive</a>${diveTag(o.dive)}</div>` : `
         <div class="lv-opts">${owedOptions(o).map((opt, i) =>
           `<button class="lv-opt${o.answer.choice === opt ? ' on' : ''}" data-owed="${attr(o.id)}" data-i="${i}">${esc(opt)}</button>`).join('')}</div>
         <textarea data-note="${attr(o.id)}" placeholder="note (saves as you type)">${esc(o.answer.note || '')}</textarea>`}
