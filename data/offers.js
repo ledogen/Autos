@@ -518,18 +518,6 @@ export const LINE_SUPPLY = {
 }
 
 /**
- * FEAT-147: THE FIRST JOB — the opening's courier run from mom's to Larry's (owner, 2026-11-02: a
- * courier TO Larry, not his paper round; 2026-11-05: mom sends it, scripted). One fixed offer at mom's,
- * posted once per run (src/offer-board.js `f0` slot): when the opening's evening ends, or at go-live on a skip (FEAT-170) — mom has no SOURCES row and posts nothing
- * else. A courier job with no deadline and no abandon (BUG-117), and no pay and no deed (owner, 2026-11-07: "a letter,
- * no pay"): its result card is the tutorial's grade. PLACEHOLDER words (the owner writes them).
- */
-export const FIRST_JOB = {
-    id: 'firstJob', phrase: 'a casserole', family: 'delivery', massKg: 3, to: ['larry'],
-    person: { sex: 'female', first: 'Mom', nick: null, last: null },
-}
-
-/**
  * FEAT-148 (owner, 2026-10-31): the giver's line on the parked offer panel, in two parts — a FIRST line
  * that fits any job ("looking for work?") and a SECOND keyed on the thing (`byThing[thingId]`). Each comes
  * GIVER_LINE_P of the time, and the first always comes when the second does not (offer-board.js
@@ -715,9 +703,10 @@ export const BONUS_LEG_MIN_M = 1500
  * FEAT-199: what taking an optional item costs off the job's cash, as a fraction of its value (rewardValue
  * in src/offer-board.js: its part price, its shelf price, or REWARD_VALUE below — day-1 dollars). The ONE
  * knob: offer-board.js itemCost reads it, and the card and the result card both print that.
- * 1 [DEFAULT]: the shop price (the ticket's default until the owner rules).
+ * 0.5: half the shop price (owner, 2026-11-14: "this way you cant sell it for more money you have to want the
+ * item to take it").
  */
-export const ITEM_COST_FRAC = 1
+export const ITEM_COST_FRAC = 0.5
 
 /**
  * GAME-FEEL REVIEW 2026-10-23 (R-07): what a reward is WORTH, in day-1 dollars, for the card's "Tip:
