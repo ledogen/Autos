@@ -417,15 +417,18 @@ export const DAMAGE_PARAMS = {
 
   // Death: a hit at or above the fatal equivalent speed is the fatal-crash fail state (SM-INV-1).
   //
-  // The threshold SCALES WITH THE HIT PANEL'S ARMOR CONDITION (owner, 2026-10-12): ~60 mph into a
-  // bare panel, ~100 mph into full armor, linear in the condition read BEFORE the hit lands (a hit
+  // The threshold SCALES WITH THE HIT PANEL'S ARMOR CONDITION (owner, 2026-10-12): 40 mph into a
+  // bare panel, 65 mph into full armor, linear in the condition read BEFORE the hit lands (a hit
   // cannot protect itself, same rule as pass-through). Each landed hit lowers the panel, so the next
   // ceiling drops with it. Supersedes the 2026-08-23 single number (80, pinned to the armor curve's
   // saturation so death and total armor loss were one impact) — armor now buys survivability, which
   // is what the owner wants it to be worth. A hit with no armor region (ground/roof) uses the bare
   // figure.
-  fatalMphBare:    60,
-  fatalMphFull:    100,
+  // RETUNED 2026-11-14 (BUG-168, DEC-167): 40 bare / 65 full, was 60 / 100. The old pair sat above
+  // any Δv the roads let you hold, so no crash ever killed. Belted-occupant frontal fatality risk
+  // climbs steeply past Δv ≈ 40 mph (approximate, NASS-CDS-style risk curves).
+  fatalMphBare:    40,
+  fatalMphFull:    65,
   fatalEnabled:    true,
 
   // ── Headlights ─────────────────────────────────────────────────────────────────────────────

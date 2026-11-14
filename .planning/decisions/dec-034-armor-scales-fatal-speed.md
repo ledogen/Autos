@@ -1,6 +1,6 @@
 ---
 id: DEC-034
-status: standing
+status: superseded
 decided: 2026-10-12
 area: physics
 governs: SM-INV-1, src/damage.js, armorFront, fatal crash
