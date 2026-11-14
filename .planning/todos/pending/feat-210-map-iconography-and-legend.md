@@ -73,3 +73,4 @@ Before/after sheets (worktree, git-invisible): `wip/feat-210/sheet-s6.png` (test
 ## Log
 - 2026-11-13: minted from the owner's spec by the orchestrator. Nothing built.
 - 2026-11-13: built on feature/run-shape (Lane A); affected gates green; sheets in wip/feat-210/.
+- 2026-11-13: owner (inbox): "remove the custom map icons from the office, the site, the doctor, the school and the tackle shop. pois only get a custom icon if they do something other than provide missions. i.e. vend items, let you sleep, etc. keep larry's and the firewood vendor … change the haul diamond color to white for simplicity. update the legend". Done on main (orchestrator): the five are plain diamonds (tackle keeps its label), haul is white and the legend groups it with papers. Freight stays blue. Smoke 26/26.

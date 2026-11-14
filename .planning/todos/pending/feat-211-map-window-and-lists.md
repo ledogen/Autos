@@ -12,7 +12,7 @@ lane: A
 # FEAT-211: The map as a window — 80 % of the screen, a Missions / Shopping list beside it, live tracking
 
 ## Next steps
-Owner rules on the control scheme (owed card `feat211-controls`: one recommended scheme, approve or change). Lane A builds after that, and after FEAT-210.
+The control scheme is approved. The Spare lane builds it (2026-11-13). Missions and Shopping are tabs, as written.
 
 ## Summary
 The map stops covering the whole screen. It becomes a window over the live game, with a list on its right that has two modes: Missions and Shopping. Opening it centres on the truck and follows it. The player can pan freely at any point, including from a place the list just showed.
@@ -60,14 +60,13 @@ This has no separate "map tab" and no select step: the map is always live under 
 - [ ] Shopping list: all vendors and pumps, stock timers, in-line expansion with price, condition, flavour text, expiry
 - [ ] Pump rows show the price and do not expand; gas stations do both
 - [ ] B leaves the list and the map pans from there
+- [ ] Custom waypoint: Y on the pad (click / Enter with nothing highlighted) drops a waypoint at the map's centre or cursor and the game routes to it like a job's destination; the same input on the waypoint clears it
 - [ ] Pad, keyboard and mouse all reach everything; pad-e2e covers the list
 
 ## Decisions
 - 2026-11-13, owner: the map takes about 80 % of the screen with the live game behind; a list on the right with Missions and Shopping modes swapped by bumpers; both sorted nearest first; opening always centres on the truck and tracks it; B from a list starts panning from there.
-
-## Open questions
-- The control scheme above: approve or change (owed card `feat211-controls`).
-- Are Missions and Shopping tabs (the recommendation, as written) or filters on one list?
+- 2026-11-13, owner (card feat211-controls): "build it like that" — the control scheme above is approved.
+- 2026-11-13, owner: "one feature request. add a custom gps waypoint function. y on pad seems appropriate or maybe we can just use a/enter."
 
 ## Files
 `src/map2d.js` · `src/main.js` · `src/menu-nav.js` · `test/pad-e2e.mjs`
