@@ -213,9 +213,8 @@ export const POI_ROSTER = [
     // trailer wall and 1.03 m off the pad's road edge (z -4.68..-2.73). The short strip keeps the lawn
     // furniture and is where you park; the 10 m interaction radius covers the whole pad. On the pad,
     // not the bare ground beside it: the carve's bench is flat, the cut/fill bank past it is not.
-    // BUG-124: `offEdgeOf` — never on mom's EDGE. Mom's casserole runs to Larry's alone (data/offers.js FIRST_JOB), the
-    // planner never ends a job on its start's own edge (mission.js _roll, srcEdge), and every other job waits for the
-    // casserole (BUG-117), so a Larry two pads down mom's road was a world whose run could not start (2646203056).
+    // BUG-124: `offEdgeOf` — never on mom's EDGE. Born for mom's casserole to Larry's (retired by FEAT-184, DEC-153); it
+    // stays because dropping it would re-site Larry, and with him every seed's places — the tutorial seed's (DEC-149) too.
     { type: 'larrysHouse',  count: 1, model: 'trailerHomeA', siting: 'nearSpawn', variant: 1, offEdgeOf: 'momsHouse',
       tags: ['residence', 'larry'], parked: [{ key: 'uncleVan', x: -3.5, z: -3.7, yaw: Math.PI * 0.5 }] },
 

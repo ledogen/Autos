@@ -103,7 +103,8 @@ import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_WELCOME, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
+import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, PAYCHECK, LARRY_CALL, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
+import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -1220,6 +1221,7 @@ let _gameMode = 'freeroam'   // 'freeroam' | 'story' | 'scenario' | 'lab'
 let _pauseOpen = false
 let _resumeHold = false   // FEAT-42: a resumed run opens frozen under #resume-card until any key
 let _runEndOpen = false   // FEAT-146: the run's summary card is up — nothing behind it is in play
+let _tutCardOpen = false  // FEAT-184: the intro's card (play / skip) is up — it holds the sim like a menu
 let _edgeArmed = false    // FEAT-154: the edge fade is live (a deliberate teleport disarms it, like the wall; read early)
 let _playedS = 0          // FEAT-146: real seconds of a live, unpaused run (the summary's playtime; the save carries it)
 // FEAT-147: a HOLDING card sequence was started (the firing, mom's call, a first-use card). It holds only
@@ -1231,7 +1233,7 @@ let _cardHold = false
 // FEAT-62: the paper-route scenario's definition while one runs. It is story mode under a guard: the run is built
 // fresh, never written to the player's save slot, never discards it, and leaves for the main menu (_startPaperScenario).
 let _paperScenario = null
-function _heldPause () { return _resumeHold || _runEndOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.active) }
+function _heldPause () { return _resumeHold || _runEndOpen || _tutCardOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.active) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -1583,7 +1585,8 @@ async function _startFromSetup () {
   const { seed, world } = parseWorldCode(inp?.value ?? '')
   if (world) _setWorld(world)
   saveSettings(_settings)
-  if (_setupMode === 'story') { await _startStory(_resolveSeed(seed)); return }
+  // FEAT-184 (DEC-149): a blank seed on the first playthrough ever is the tutorial seed, not a random one.
+  if (_setupMode === 'story') { await _startStory(_resolveSeed(seed?.trim() || (_settings.playedBefore ? '' : TUTORIAL.seed))); return }
   _enterStageLoad('building the world\u2026')
   await _worldReady
   applyWorld(_world())
@@ -1593,12 +1596,6 @@ async function _startFromSetup () {
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
 // discards it, and the warning beside story's start button says so.
 document.getElementById('mm-new')?.addEventListener('click', () => _openSetup())
-// FEAT-184 (owner, 2026-11-08: "split the tutorial into its own menu option … so I can go and voluntarily test it"):
-// a run that plays the opening on purpose, outside the career (_tutorialRun). Its world is `?seed=` when the URL pins
-// one (the harnesses), else random like every world the player did not pick. A fixed tutorial seed waits for the plan.
-document.getElementById('mm-tutorial')?.addEventListener('click', () => {
-  void _startStory(_resolveSeed(_urlSeed), _world(), _settings.gearbox, null, 0, null, true)
-})
 /** The main menu's continue button stands only while a run is saved, and so does the warning beside the
  *  new-game page's start (story mode only). Wired here, ahead of the boot awaits (the free-roam seat is ~2.5 s of cold routing), like the
  *  buttons above: it shows with the menu, and an early click waits in _startStory's `await _worldReady`. */
@@ -3591,7 +3588,7 @@ function _syncMoon () {
   const d = daySystem._running ? daySystem.day() : null
   if (d === _moonDay) return
   _moonDay = d
-  const c = d == null ? null : (d / LUNAR_DAYS + seedFor(worldSeed, 'moon') / 2 ** 32) % 1
+  const c = d == null ? null : ((d / LUNAR_DAYS + seedFor(worldSeed, 'moon') / 2 ** 32) % 1 + 1) % 1   // FEAT-184: day −1 and 0 too
   MOON_PARAMS.phase = c == null ? _moonFree : 1 - Math.abs(1 - 2 * c)   // 0 new … 1 full, moon.js's scale
   moonSystem.apply()
   skySystem.setMoonLit(c == null ? 0 : (1 - Math.cos(MOON_PARAMS.phase * Math.PI)) / 2)
@@ -4182,7 +4179,7 @@ document.addEventListener('keyup', e => {
 // a guarantee worth relying on.
 document.addEventListener('keydown', e => {
   if (!dialogueSystem.active) return
-  if ((e.key === 'm' || e.key === 'M') && _eveningLeg()) return   // FEAT-170: M is the skip's hold (below)
+  if ((e.key === 'm' || e.key === 'M') && _tutDrive()) return   // FEAT-170: M is the skip's hold (below)
   if (e.repeat) return                                          // held key ≠ several presses
   if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return  // a modifier alone is not a press
   e.preventDefault()
@@ -4373,13 +4370,6 @@ missionSystem = new MissionSystem({
       result.letter = amountGrade(share, rankTable('demolition', region))
       mission = { ...mission, payMult: mission.payMult * share }
     }
-    // BUG-117 (owner, 2026-11-07, bug117-pay: "1 — a letter, no pay"): mom's casserole is the tutorial's grade and
-    // nothing else. No pay and no deed, so every seed starts on the same wallet and the deeds count real jobs only.
-    if (mission?.first) {
-      result.first = true
-      if (mission.offerId) offerBoard?.complete(mission.offerId, daySystem.clockH())
-      return { payout: 0, base: 0, tip: 0, points: 0 }
-    }
     // FEAT-103: a requisition line pays nothing and earns no deed. C or better delivers it; a D (late,
     // or too much of the load lost) puts it back on the list unchanged.
     if (mission?.line) {
@@ -4423,31 +4413,36 @@ function _runIntro () {
 // ── FEAT-147/170: the opening — the firing, the evening at mom's, the first job, Larry's welcome ──
 // EVERY new story run (the setup page's toggle retired, FEAT-170). The firing is an in-world camera move round the
 // burger joint (the foodVendor POI) with the Story cards over it — no scene art (owner, 2026-11-05) —
-// so the run starts with the truck parked on the joint's lay-by, at 7:30 pm on DAY 0 (FEAT-170, owner
-// 2026-11-06: the evening is the day before the run's day 1). Mom's call sends you home for the
-// night — the EVENING LEG: no job, the GPS and the HUD line to her house, every other giver quiet. Any
-// sleep ends it (at hers or anywhere), as does 07:00 reached awake, and her casserole goes up at her
-// house: the first job (the board's f0 slot), taken from her pad like any giver's. EVERY new run opens
-// this way; holding M (the pad's View) skips it, from the firing to Larry's at 07:00 with the casserole
-// delivered (stage 2 — the setup page's opening toggle retired with it, owner 2026-11-06; FEAT-184, owner
-// 2026-11-07: at Larry's, the job done, not at mom's with it in hand). Either way, the casserole done, Larry's
-// welcome is RUN_INTRO, and the opening is done.
+// so the run starts with the truck parked on the joint's lay-by, at 7:30 pm on DAY −1 (FEAT-184, DEC-159: the
+// tutorial's 24 h are the day before free will's day 0). FEAT-184 (DEC-147): the intro ends on a card, play the
+// tutorial or skip it (#tut-card). Played, mom's call sends you home for the night — the EVENING LEG: no job, the GPS and
+// the HUD line to her house, every other giver quiet. Any sleep ends it (at hers or anywhere), as does 07:00 reached
+// awake; then the MORNING LEG goes back to the joint, and parked there the last paycheck (DEC-153) sets the clock to
+// 19:30 on day 0, 24 h after the firing. Holding M (the pad's View) skips it all at any point before then; a skip lands
+// outside the joint at 19:30 on day 0 (or later) with the manager's check. Either way, Larry's call and RUN_INTRO
+// (DEC-155), and the opening is done.
+// DEC-157/158: a run that is not on the tutorial seed plays its intro on its own world; "play" loads the tutorial seed
+// (_returnSeed = the run's own) and the tutorial's end loads the run's world back (_returnToRunWorld).
 //
-// STATELESS ACROSS A RESUME: "this run opened on the firing" is the dialogue seen-key DLG.firing (the
-// save carries the seen set), and the first job's progress is the board's (the save replays it) — so
-// the evening is "the firing seen, the casserole not posted yet".
+// STATELESS ACROSS A RESUME: the legs are dialogue seen-keys (the save carries the seen set): the evening is "the
+// firing seen, the morning not yet", the morning "the morning seen, the paycheck not yet".
 // FEAT-180 (owner 11-07, 9: "Keep dusk opening"): 19:30 is the evening look's keyframe, the light 18:00 had before
 // the sun moved to 8 pm.
-const OPENING_START = { day: 0, hour: 19.5 }   // FEAT-170: the firing's clock
+const OPENING_START = { day: -1, hour: 19.5 }   // FEAT-170: the firing's clock (FEAT-184, DEC-159: day −1)
+// FEAT-184 (DEC-159, the exact-24h default): free will opens 24 h after the firing — the paycheck's clock and a skip's floor.
+const FREE_WILL = { day: OPENING_START.day + 1, hour: OPENING_START.hour }
+const FREE_WILL_H = (FREE_WILL.day - 1) * 24 + FREE_WILL.hour   // as daySystem.clockH() reads it
 // The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
 // turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
 // aim point's height over the pad (m).
 const FIRING_CAM = { radius: 16, swing: 0.35, rate: 0.05, lift: 2 }
 let _openingRun = false   // onRegionLive → go-live: this new run plays the opening
-// FEAT-184 (owner, 2026-11-08): this run came from the main menu's "tutorial". It plays the opening whatever the tutorial
-// flag says (_playOpening), and it never touches the career save: no clear at its start, no autosave, no save & exit,
-// and its ending deletes nothing (_startStory, _autosave, _syncPauseSave, _discardRunSave).
-let _tutorialRun = false
+// FEAT-184 (DEC-157/158): while a run plays its tutorial on the tutorial seed, the run's own world to load back at the
+// tutorial's end (the run save carries it); null otherwise.
+let _returnSeed = null
+// DEC-158 is read as later runs only: the first playthrough ever (on the tutorial seed, DEC-149) stays on it. The switch:
+// true gives a run that plays the tutorial on the tutorial seed a random world back at its end too.
+const TUT_SEED_RETURNS = false
 let _firingCam = null     // { p, theta0, t } while the firing's cards are up
 let _eveningGuide         // undefined = not planned yet: the evening's way home, planned once (not saved)
 const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
@@ -4468,15 +4463,22 @@ let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: sta
 // a resume mid-evening owes it again.
 const _momOwes = { part: true, labour: true }
 let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
+// dev handle — test/cdp-smoke.mjs and run-soak read where the tutorial stands (FEAT-184): 'intro' (the firing) · 'card' ·
+// 'evening' · 'morning' · 'free' (the paycheck heard, or skipped), and the run's own world while it plays on the tutorial seed
+window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _eveningLeg() ? (dialogueSystem.has(DLG.played) ? 'evening' : 'intro')
+  : _morningLeg() ? 'morning' : 'free', returnSeed: _returnSeed, seed: _seedString })
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
 window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
+/** FEAT-184 (DEC-152, DEC-156): you were just fired — the burger joint offers no job until 07:00 on day 1: not on its
+ *  pad, not on the map (every board reader: _poiInReach, _takeableOffers, the map's status). */
+const _jointQuiet = (poiId, now) => now < DAY_PARAMS.dayStartHour && poiId === _joint()?.id
 const _mom = () => poiSystem.list().find(q => q.type === 'momsHouse') ?? null
 const _larry = () => poiSystem.list().find(q => q.type === 'larrysHouse') ?? null
 
-/** Park the truck at POI q — the joint's lay-by at a new run, in front of Larry's on a skip — like _restoreRun's seat.
+/** Park the truck at POI q — the joint's lay-by at a new run and on a skip — like _restoreRun's seat.
  *  Where is poi.js startSeat (BUG-135: never in a yard). */
 function _seatAt (q) {
   if (!q) return
@@ -4488,20 +4490,24 @@ function _seatAt (q) {
 
 /** FEAT-184 (DEC-151): the tutorial is on — a played opening (the firing heard, not skipped) until Larry's welcome. */
 const _inTutorial = () => storySystem.isActive() && dialogueSystem.has(DLG.firing) && !dialogueSystem.has(DLG.skipped) && !dialogueSystem.has(DLG.runIntro)
-/** FEAT-170: the evening leg is on — the firing played, mom's casserole not posted yet. */
-const _eveningLeg = () => !!offerBoard && dialogueSystem.has(DLG.firing) && offerBoard.firstState() === 'closed'
+/** FEAT-170: the evening leg is on — the firing played, the night not over yet (nor skipped). Includes the intro's card. */
+const _eveningLeg = () => !!offerBoard && dialogueSystem.has(DLG.firing) && !dialogueSystem.has(DLG.morning) && !dialogueSystem.has(DLG.skipped)
+/** FEAT-184 (DEC-153): the morning leg — woken, on the way back to the joint, the paycheck not heard yet. */
+const _morningLeg = () => !!offerBoard && dialogueSystem.has(DLG.morning) && !dialogueSystem.has(DLG.paycheck) && !dialogueSystem.has(DLG.skipped)
+/** Either leg: the tutorial's traps (no fuel burn, off the road puts you back, the tow on mom, no givers) and its line. */
+const _tutDrive = () => _eveningLeg() || _morningLeg()
 
-/** The evening's GPS: the joint to mom's door, planned the first time it is asked for. */
+/** The tutorial's GPS: the joint (or the station) to mom's door; in the morning, hers to the joint. Planned once per leg. */
 function _homeGuide () {
   if (_eveningGuide === undefined) {
-    const mom = _mom(), from = _evePump?.done ? _evePump.q : _joint(), to = _eveTarget()
+    const mom = _mom(), from = _morningLeg() ? mom : _evePump?.done ? _evePump.q : _joint(), to = _eveTarget()
     _eveningGuide = from && to ? missionSystem.planOffer(from, { rng: offerBoard.routeRng({ poiId: mom.id, slot: 'eve', k: 0 }),
       dest: { kind: 'poi', pois: [to], strict: true, anyLeg: true, nearest: true } }) : null
   }
   return _eveningGuide
 }
-/** FEAT-184: where the evening's line goes now — the station while a fill-up is due, else mom's. */
-const _eveTarget = () => (_evePump && !_evePump.done ? _evePump.q : _mom())
+/** FEAT-184: where the tutorial's line goes now — the station while a fill-up is due, else mom's; the joint in the morning. */
+const _eveTarget = () => (_morningLeg() ? _joint() : _evePump && !_evePump.done ? _evePump.q : _mom())
 
 /** FEAT-184 stage 4: the worst day's spare is flat — the jalopy's own, or one granted for the evening. Made so when the
  *  flat happens, so a skip before it never touches the spare. Remembers which, for _undoWorstDay. */
@@ -4547,13 +4553,8 @@ let _tutOffAt = 0       // performance.now() when the truck left the line; 0 whi
 
 /** The tutorial leg in play: the route its GPS would show and the door that route ends at, or null. */
 function _tutLeg () {
-  if (_eveningLeg()) { const base = _homeGuide(), door = _eveTarget(); return base && door ? { base, door } : null }
-  const m = missionSystem?.mission
-  if (offerBoard?.firstState() !== 'taken' || !m || !['staging', 'running'].includes(missionSystem.state)) {
-    return _waypointOn() ? { base: _waypoint.route, door: _waypoint.door } : null   // FEAT-211: the waypoint's line follows the truck too
-  }
-  const door = poiSystem.list().find(q => q.id === m.endPoiId)
-  return door ? { base: missionSystem.guideRoute(), door } : null
+  if (_tutDrive()) { const base = _homeGuide(), door = _eveTarget(); return base && door ? { base, door } : null }
+  return _waypointOn() ? { base: _waypoint.route, door: _waypoint.door } : null   // FEAT-211: the waypoint's line follows the truck too
 }
 
 /** The line the GPS shows for `base`: its re-plan from the truck when there is one. */
@@ -4599,7 +4600,7 @@ const WAYPOINT_SNAP_M   = 2000   // m — the drop snaps to the nearest road wit
 // (_waypoint, the state, is declared with the evening's, above _eveningLeg.)
 
 /** The waypoint is what the GPS guides to now: one is set, a run is live, and no job, round or evening has the guide. */
-const _waypointOn = () => !!_waypoint && storySystem.isActive() && !_runEnded && !_eveningLeg()
+const _waypointOn = () => !!_waypoint && storySystem.isActive() && !_runEnded && !_tutDrive()
   && !missionSystem?.isOnJob() && !paperRouteSystem?.isCarrying()
 
 /** Drop the waypoint at world (x, z), or clear it (null). False when nothing changed: no story run, no waypoint to
@@ -4622,8 +4623,10 @@ function _waypointTick () {
   if (_waypoint && Math.hypot(_waypoint.x - v.x, _waypoint.z - v.z) < WAYPOINT_ARRIVE_M) _setWaypoint(null)
 }
 
-/** Hours of sleep from now to 07:00 on day 1 — the evening's night, the sleep timer's preset. */
-const _eveningSleepH = () => DAY_PARAMS.dayStartHour - daySystem.clockH()
+/** The clockH of the evening's morning: 07:00 the day after the firing (day 0, DEC-159). */
+const _eveWakeH = () => OPENING_START.day * 24 + DAY_PARAMS.dayStartHour
+/** Hours of sleep from now to that 07:00 — the evening's night, the sleep timer's preset. */
+const _eveningSleepH = () => _eveWakeH() - daySystem.clockH()
 
 /**
  * FEAT-170 stage 3, THE SAFE DRIVE: while the evening leg is on, the clock, energy and hunger hold (the fixed
@@ -4636,10 +4639,23 @@ function _resetToRoad () {
   teleportToGround(nr.point.x, nr.point.z, _pickRoadDir(Math.atan2(-nr.tangent.x, -nr.tangent.z), _currentHeading()), 0.5)
 }
 
-/** Stage 4, on the run-HUD poll: the drive home's lessons — the key, the pedals, the gauge (FEAT-184), the flat halfway (FEAT-184 stage 4, replacing the damage card), parking near hers. */
+/** Stage 4, on the run-HUD poll: the drive home's lessons — the key, the pedals, the gauge (FEAT-184), the flat halfway (FEAT-184 stage 4, replacing the damage card), parking near hers.
+ *  FEAT-184 (DEC-153): the morning's one beat — parked at the joint, the last paycheck. */
 function _eveningBeats () {
-  const q = _mom(), v = vehicleState.position
-  if (!_eveningLeg() || !q) return
+  const q = _mom(), j = _joint()
+  if (!_tutDrive()) return
+  if (_morningLeg()) {
+    _tut('tut-morning')   // after breakfast, which the sleep queued
+    if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
+  } else if (q) _eveningLessons(q, vehicleState.position)
+  // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
+  // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
+  // (_playedS), so a pause or a card never counts.
+  const off = !vehicleState.parked && !_inPoiRing() && !_truckOnRibbon()
+  _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
+  if (off && _playedS - _eveOffAt > TUT_PARAMS.offRoadS) { _eveOffAt = null; _resetToRoad() }
+}
+function _eveningLessons (q, v) {
   // FEAT-184 stage 3: the pedals once the key has caught, then (a fill-up due) the gauge.
   if (vehicleState.ignition?.state === 'running') { _tut('tut-drive'); if (_evePump && !_evePump.done) _tut('tut-gas') }
   // Stage 4: halfway home (after the station, if any), the front left goes flat — once. Then V shows it.
@@ -4656,21 +4672,12 @@ function _eveningBeats () {
   // Stage 5: towed and back on the road, it's night — the headlights.
   if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
   if (Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
-  // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
-  // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
-  // (_playedS), so a pause or a card never counts.
-  const off = !vehicleState.parked && !_inPoiRing() && !_truckOnRibbon()
-  _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
-  if (off && _playedS - _eveOffAt > TUT_PARAMS.offRoadS) { _eveOffAt = null; _resetToRoad() }
 }
 
-/** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
+/** The evening is over (a sleep, or 07:00 awake): the morning leg, back to the joint for the paycheck (DEC-153). */
 function _endEvening () {
-  if (!_eveningLeg()) return
-  // FEAT-173: a skipped tutorial's night ends fed (mom's breakfast). FEAT-184 stage 5: a played one leaves breakfast to you
-  // — her card asks you to eat one of her packed lunches.
-  if (dialogueSystem.has(DLG.skipped)) daySystem.eat(DAY_PARAMS.mealHoldH)
-  offerBoard.openFirst(daySystem.clockH())
+  if (!_eveningLeg() || !dialogueSystem.has(DLG.played)) return
+  dialogueSystem.restoreSeen([DLG.morning])   // the key IS the leg (resume-safe); mom's card says so on the poll
   _eveningGuide = undefined
   _renderMissionUI()   // the HUD line goes
 }
@@ -4702,8 +4709,8 @@ function _skipFire () {
   _skipOpening()
 }
 /** FEAT-184 (DEC-148, owner 2026-11-14: "If you enter the tutorial or its the first playthrough ever it will have an
- *  additional confirmation"): the menu's "tutorial" stands for "chose the tutorial" until the intro's card exists. */
-const _skipNeedsConfirm = () => _tutorialRun || !_settings.playedBefore
+ *  additional confirmation"). */
+const _skipNeedsConfirm = () => dialogueSystem.has(DLG.played) || !_settings.playedBefore
 const SKIP_CONFIRM_MS = 5000   // [DEFAULT] how long the confirmation waits for the second hold
 let _skipArmedUntil = 0        // performance.now() until which a completed hold skips at once
 let _skipHintHtml = ''
@@ -4723,7 +4730,7 @@ function _skipRelease () {
   return true
 }
 document.addEventListener('keydown', e => {
-  if ((e.key !== 'm' && e.key !== 'M') || !_eveningLeg()) return
+  if ((e.key !== 'm' && e.key !== 'M') || !_tutDrive()) return
   e.preventDefault(); e.stopImmediatePropagation()   // neither the map nor a card hears it
   if (_skipTimer || e.repeat) return
   _skipDownAt = performance.now()
@@ -4736,7 +4743,7 @@ document.addEventListener('keyup', e => {
   if (!dialogueSystem.active && !document.body.classList.contains('stage-on')) map2d.toggle()
 }, { capture: true })
 window.addEventListener('blur', _skipRelease)   // a key let go in another window never comes back up here
-pad.skipHold = () => _eveningLeg()
+pad.skipHold = () => _tutDrive()
 _syncSkipHint()
 
 /** FEAT-184 (DEC-148): an opening finished or skipped marks this browser as played before — no more confirmation. */
@@ -4746,27 +4753,27 @@ function _markPlayed () {
   saveSettings(_settings)
 }
 
-/** The hold landed: where a skipped tutorial ends — the night slept at mom's, 07:00, the casserole delivered, the truck at
- *  Larry's (owner, 2026-11-07: "Skipping the tutorial should actually land you at Larry's house with the mission
- *  complete"). His welcome follows on the HUD poll (_checkOpeningEnd), as it does after a driven casserole. */
+/** The hold (or the card's skip) landed: where a skipped tutorial ends — outside the burger joint at free will's 19:30 on
+ *  day 0, or the clock it was skipped at if later (DEC-152, DEC-159), with the manager's last check (DEC-150), then Larry's
+ *  call and the run intro — all on the HUD poll (_checkOpeningEnd, DEC-155), after the run's own world is loaded back
+ *  when the skip came on the tutorial seed (DEC-158). DLG.skipped is what ends both legs. */
 function _skipOpening () {
   document.getElementById('skip-hint')?.classList.remove('holding')
-  if (!_eveningLeg() || _campBusy) return
+  if (!_tutDrive() || _campBusy) return
   _markPlayed()
   _skipArmedUntil = 0
   _undoWorstDay()   // FEAT-184: a skip clears the worst day too
-  economySystem.payPaycheck()   // FEAT-184 (DEC-150): a skip lands with the last paycheck, as every run starts
   dialogueSystem.abort()   // the firing's or mom's card, if one is up
   _cardHold = false
   if (_firingCam) { _firingCam = null; setCameraFocus(null) }
   if (_campUi) _closeCampUi()   // her sleep card
   _tutQueue.length = 0
   dialogueSystem.restoreSeen([DLG.skipped])   // no first-use cards this run (_tut)
-  daySystem.sleep(_eveningSleepH(), 0.5, 0)   // the night at hers (her bed's vibe, _renderCampUI): energy, the meal, 07:00
-  _endEvening()   // posts the casserole…
-  _deliverFirstJob()   // …and it is delivered
-  _seatAt(_larry() ?? _mom())
+  _eveningGuide = undefined
+  _syncTutCard()
+  if (!_returnSeed) _seatAt(_joint() ?? _mom())   // on the tutorial seed, the load back seats it (_returnToRunWorld)
   _renderDialogue()
+  _renderMissionUI()   // the HUD line goes
 }
 
 /**
@@ -4774,31 +4781,77 @@ function _skipOpening () {
  * a fresh opening run; on a resumed one it only holds RUN_INTRO back until the welcome.
  */
 function _playOpening () {
-  // A resume: RUN_INTRO waits for Larry while the first job is still to do or the evening is on.
-  if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
+  // A resume: RUN_INTRO waits for Larry while the opening is on.
+  if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && dialogueSystem.has(DLG.firing)
   _openingRun = false
   _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
   _momOwes.part = _momOwes.labour = true; _skipArmedUntil = 0
   economySystem.withholdPaycheck(TUT_PARAMS.pocketCash)   // FEAT-184 (DEC-150): pocket change until the paycheck
+  _planEvePump()   // FEAT-184 stage 3
+  // DEC-157: the card's second load — the intro played on the run's own world, so straight to mom's call.
+  if (_returnSeed) { dialogueSystem.restoreSeen([DLG.firing]); _playTutorial(); return true }
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
-  _planEvePump()   // FEAT-184 stage 3
   _cardHold = true
   dialogueSystem.play(DLG.firing, FIRING, () => {
     _firingCam = null
     setCameraFocus(null)   // the chase spring swings back onto the truck, parked right there
-    _cardHold = true
-    dialogueSystem.play(DLG.momCall, MOM_CALL, () => _tut('tut-key'))   // the evening leg is on from here (_eveningLeg); FEAT-184: the key first
+    _syncTutCard()         // FEAT-184 (DEC-147): the intro ends on the card
   })
   return true
 }
 
-/** The skip's casserole, DELIVERED: taken and completed on the board, with no drive and no result card. BUG-117's first
- *  job pays nothing and earns no deed, so there is nothing to settle; the save replays both board calls. */
-function _deliverFirstJob () {
-  const mom = _mom(), h = daySystem.clockH()
-  const o = mom && offerBoard?.offers(mom.id, h).find(x => offerBoard.spec(x)?.first)
-  if (o && offerBoard.take(o.id, h, 0)) offerBoard.complete(o.id, h)
+// ── FEAT-184 (DEC-147): the intro's card — play the tutorial, or skip it ──
+// Up whenever the firing is heard and neither answer is (so a resume puts it back); it holds the sim like a menu. A skip
+// here is the hold's skip (_skipOpening); on the first playthrough ever it asks once more first (DEC-148).
+const _tutCardDue = () => storySystem.isActive() && !storySystem.isEntering() && !!offerBoard && dialogueSystem.has(DLG.firing)
+  && !dialogueSystem.has(DLG.played) && !dialogueSystem.has(DLG.skipped) && !dialogueSystem.active
+function _syncTutCard () {
+  const on = _tutCardDue()
+  if (on === _tutCardOpen) return
+  _tutCardOpen = on
+  const el = document.getElementById('tut-card')
+  if (el) el.style.display = on ? 'flex' : 'none'
+  _tutCardArmed = false
+  _syncTutCardSkip()
+}
+let _tutCardArmed = false
+function _syncTutCardSkip () {
+  const b = document.getElementById('tc-skip')
+  if (b) b.textContent = _tutCardArmed ? 'are you sure you want to skip the tutorial?' : 'skip'   // the owner's question (DEC-148)
+}
+/** "play": mom's call, on this world when it is the tutorial seed, else on the tutorial seed (DEC-157). */
+function _playTutorial () {
+  if (!_returnSeed && _seedString !== TUTORIAL.seed) {
+    // The save is left as it stands (the card up) until the tutorial's world writes over it, its return seed in it.
+    const back = _seedString
+    storySystem.exit()   // hides the card (onRegionExit)
+    void _startStory(TUTORIAL.seed, _runWorld, _runGearbox, null, 0, null, back)
+    return
+  }
+  dialogueSystem.restoreSeen([DLG.played])
+  _syncTutCard()
+  if (TUT_SEED_RETURNS && !_returnSeed) _returnSeed = _resolveSeed('')
+  _cardHold = true
+  dialogueSystem.play(DLG.momCall, MOM_CALL, () => _tut('tut-key'))   // the evening leg; FEAT-184: the key first
+  _renderDialogue()
+}
+document.getElementById('tc-play')?.addEventListener('click', () => { if (_tutCardOpen) _playTutorial() })
+document.getElementById('tc-skip')?.addEventListener('click', () => {
+  if (!_tutCardOpen) return
+  if (!_settings.playedBefore && !_tutCardArmed) { _tutCardArmed = true; _syncTutCardSkip(); return }
+  _skipOpening()
+})
+
+/** DEC-158: the tutorial (played or skipped) is over on the tutorial seed — load the run's own world, the run carried over
+ *  as a resume is (_restoreRun) with nothing of the tutorial's world in it: no board, no job, no camps, no drops, and the
+ *  truck seated outside that world's joint. */
+function _returnToRunWorld () {
+  const seed = _returnSeed
+  _returnSeed = null
+  const s = { ..._runSnapshot(), seed, board: null, job: null, paper: null, worldItems: [], campPads: [], pose: null, waypoint: null }
+  storySystem.exit()
+  void _startStory(seed, s.world, s.gearbox, s)
 }
 
 /** Per frame, before updateCamera: turn the firing's orbit (camera.js focus seam, as camp and the service screen use). */
@@ -4812,7 +4865,7 @@ function _updateFiringCam (dt) {
 // played by _pumpTut on the HUD poll once no other card is up, each HOLDING the sim and the clock
 // (_cardHold) — so one may land mid-drive (the rank bar appears near the drop) without the truck
 // running on under it. Only in a run that played its opening rather than skipping it — `always` lifts that
-// for Larry's welcome, which every run hears after the casserole (FEAT-170); each key once per run.
+// for the story's own beats (the paycheck, the boss's check, Larry's call); each key once per run.
 const _tutQueue = []
 function _tut (key, cards = TUT[key], done = null, always = false) {
   if (!always && (!dialogueSystem.has(DLG.firing) || dialogueSystem.has(DLG.skipped))) return
@@ -4827,18 +4880,21 @@ function _pumpTut () {
   _renderDialogue()
 }
 
-/** Mom's job is over (delivered at Larry's: BUG-117 left it no other end) and its card put away: Larry's welcome,
- *  then the opening is finished for good. */
+/** The tutorial is over — its paycheck heard, or skipped — and no card is up: free will (FEAT-184). The clock to free
+ *  will's 19:30 on day 0 at the earliest (DEC-159), the last paycheck in the wallet (DEC-150), the run's own world loaded
+ *  back from the tutorial seed (DEC-158); then on a skip the manager's check (DEC-152), and Larry's call with RUN_INTRO
+ *  (DEC-155). Every step is idempotent or keyed, so a resume between any two of them picks up where it stood. */
 function _checkOpeningEnd () {
-  if (_paperScenario) return   // FEAT-62: the scenario has no opening to end
-  // null = no mom on the roster (never expected — her count is hard): Larry still welcomes you.
-  if (!offerBoard || ['closed', 'live', 'taken'].includes(offerBoard.firstState())) return
-  if (missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
-  _tut(DLG.runIntro, [...LARRY_WELCOME, ..._runIntro()], null, true)
-  _markPlayed()   // FEAT-184: the tutorial is over
-  // FEAT-184 (DEC-150): …and its last paycheck lands. [interim] At Larry's for now; landing 2 moves the tutorial's last
-  // act to the burger joint (DEC-152).
+  if (_paperScenario || !offerBoard || storySystem.isEntering()) return   // FEAT-62: the scenario has no opening to end
+  const skipped = dialogueSystem.has(DLG.skipped)
+  if (!skipped && !dialogueSystem.has(DLG.paycheck)) return
+  if (dialogueSystem.active || _tutQueue.length || missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
+  if (daySystem.clockH() < FREE_WILL_H) daySystem.start(FREE_WILL.day, FREE_WILL.hour)   // a fresh start, fed and rested, as a skip's run
   economySystem.payPaycheck()
+  if (_returnSeed) { _returnToRunWorld(); return }
+  if (skipped && !dialogueSystem.has(DLG.bossCheck)) { _tut(DLG.bossCheck, BOSS_CHECK, null, true); return }
+  _tut(DLG.runIntro, [...LARRY_CALL, ..._runIntro()], null, true)
+  _markPlayed()   // FEAT-184: the tutorial is over
 }
 
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
@@ -4912,8 +4968,8 @@ gpsSystem = new GpsSystem(scene, {
     // FEAT-103: nor while a line taken at the camp is still on its way to the source — the route
     // starts THERE; the map's start pin and the source's lit park spot are the waypoint.
     if (missionSystem?.mission?.approach) return null
-    // FEAT-170: the opening's evening has no job, only the way home to mom's.
-    if (_eveningLeg()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
+    // FEAT-170: the opening's evening has no job, only the way home to mom's (FEAT-184: the morning's, back to the joint).
+    if (_tutDrive()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
     // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
     if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
     if (s === 'countdown' || s === 'staging' || s === 'running') return _tutLine(missionSystem.guideRoute())
@@ -4989,7 +5045,7 @@ const _boardView = {
     // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
     // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
     // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
-    const live = offerBoard.offers(poiId, now).filter(o => o.route !== null)
+    const live = _jointQuiet(poiId, now) ? [] : offerBoard.offers(poiId, now).filter(o => o.route !== null)
     const next = offerBoard.nextTurnoverH(poiId, now)
     // FEAT-210: every family on offer, once each, in offer order — the map splits the diamond by them.
     const families = [...new Set(live.map(o => offerBoard.spec(o)?.family).filter(Boolean))]
@@ -5185,7 +5241,7 @@ function _dropLarryTour () {
  * passes as-is: his tour plans asynchronously and is the paper route's to judge.
  */
 function _takeableOffers (poiId, now) {
-  if (!offerBoard) return []
+  if (!offerBoard || _jointQuiet(poiId, now)) return []
   return offerBoard.offers(poiId, now).filter(o => offerBoard.spec(o)?.family === 'papers' || _planOffer(o))
 }
 
@@ -5221,7 +5277,6 @@ function _planOne (o, exclude) {
     // the bonus it carries, and its cash multiplier (a bonus offer pays BONUS_PAY_MULT of the line).
     m.offerId = o.id
     m.line = s.line ?? null   // FEAT-103: a requisition line — settles as a line, never pays
-    m.first = !!s.first       // BUG-117: mom's casserole — a letter, no pay
     m.bonus = s.bonus
     // FEAT-114: a haul's spec pays PER PIECE; the plan assumes the whole stock until the picker
     // sets the real count at accept (bundles + payMult are rewritten there).
@@ -5266,24 +5321,22 @@ function _planOne (o, exclude) {
 function _poiInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (missionSystem && missionSystem.state !== 'idle') return null
-  if (_eveningLeg()) return null   // FEAT-170: the evening is for getting home — the casserole is the run's first job
+  if (_tutDrive()) return null   // FEAT-170: the tutorial is for getting home, then for the paycheck — no job before free will
   // FEAT-61: a route is a job in flight, same as any other — you cannot take work while doing work,
   // and Larry's own marker must not re-offer the route you are three houses into.
   if (paperRouteSystem.isActive()) return null
   // jobsOnly (FEAT-60): only a job source answers the park trigger. Without this the roster's
   // other six types would each win the trigger and then have nothing to say — and mom's house,
   // which outranks her own front door in the precedence below, would offer freight instead of bed.
-  // FEAT-147: …except mom's, while her first job is on offer — then her pad answers like a giver's.
   const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
                              POI_PARAMS.poiInteractR, true)
-    ?? (offerBoard?.firstState() === 'live' ? poiSystem.list().find(p => p.type === 'momsHouse') : null)
+  if (q && _jointQuiet(q.id, daySystem.clockH())) return null
   return q && _inPoiSpot(q) ? q : null
 }
 
 /** A giver's card opens on its live offers, with its first-use lessons. */
 function _openOffers (poi, offers) {
   missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer')   // FEAT-147
-  if (offers.some(o => offerBoard.spec(o)?.first)) _tut('tut-map')   // FEAT-170: her card shows the route on the map
 }
 
 /**
@@ -5655,7 +5708,7 @@ function _towQuote (test) {
   const dest = _nearestPoi(test)
   if (!dest) return null
   // FEAT-184 stage 4: the worst day's tow is on mom [DEFAULT] — the evening's only tow costs hours, not money.
-  return { ...dest, price: _eveningLeg() ? 0 : towPrice(dest.km, economySystem.tierNow(), ECONOMY_PARAMS), hours: towHours(dest.km, ECONOMY_PARAMS) }
+  return { ...dest, price: _tutDrive() ? 0 : towPrice(dest.km, economySystem.tierNow(), ECONOMY_PARAMS), hours: towHours(dest.km, ECONOMY_PARAMS) }
 }
 // A pump island sells fuel (until ASSET-13's station has zones); an auto shop is a service center.
 const _FUEL_SELLER = q => !!q.pumpZones
@@ -6587,14 +6640,6 @@ function _sleepAtCamp () {
     _endEvening()   // FEAT-170: any night ends the opening's evening
     // Stage 4, the morning: breakfast if you slept at hers (the evening's end above has fed you), then her card.
     if (evening && atMoms) _tut('tut-breakfast')
-    // …and woken at hers, her card opens as that lesson ends: the route on the map (the owner's map beat).
-    if (evening) _tut('tut-mapcard', TUT['tut-mapcard'], () => {
-      const q = _poiInReach()
-      if (q?.type !== 'momsHouse' || !vehicleState.parked) return
-      if (_campUi) _closeCampUi()
-      const offers = _takeableOffers(q.id, daySystem.clockH())
-      if (offers.length) _openOffers(q, offers)
-    })
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
     // and on a worn engine it is also the morning's first piece of news about what you're driving.
@@ -7170,11 +7215,7 @@ function _renderMissionUI () {
       // NO letter on any result card (owner, 2026-10-22 §2b / 2026-10-23 for haul, freight, fragile; Q-3
       // 2026-10-24 for courier too): the letter decides the item and the deeds and lives only on the live
       // rank bar, so every type's card reads the time, then the money, then the deed.
-      // BUG-117: the casserole's card is its letter and its time (the paper route's form) — it pays nothing.
-      body.innerHTML = r.first
-        ? `<span class="mp-big" style="color:${RANK_COLOR[r.letter] || 'var(--text-bright)'}">${r.letter}</span>`
-          + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
-        : `<span class="mp-big">${formatTime(r.elapsed)}</span>`
+      body.innerHTML = `<span class="mp-big">${formatTime(r.elapsed)}</span>`
         + (r.line ? _lineRows(r)
           : paid
           ? _payRows({ base: r.base, tip: r.tip, points: r.points, bonus: m.mission?.bonus, award: r.award,
@@ -7183,7 +7224,7 @@ function _renderMissionUI () {
                        site: r.targets != null ? { smashed: r.smashed, of: r.targets } : null,
                        deedNeed: _missionDeedNeed(m.mission) })
           : (m.mission?.fromPoi ? '' : `<br><span class="mp-dim">test job &mdash; no pay</span>`))
-      if (paid && !r.line && !r.first) _revealResult(body, r.letter)   // N-04: the staged reveal — tip count-up, deed tally tick
+      if (paid && !r.line) _revealResult(body, r.letter)   // N-04: the staged reveal — tip count-up, deed tally tick
       // The result card is two actions: retry · continue (R-31, owner 2026-10-24: no "back to free roam"
       // here — leaving the mode is the pause menu's job). The calibration form above them stays — the subjective read is the ground
       // truth PAR_REF is fitted to, and it is only reliably captured here, in the same click.
@@ -7214,12 +7255,12 @@ function _renderMissionUI () {
       break
     }
     default:
-      show(panel, false); show(hud, _eveningLeg() || _waypointOn())
+      show(panel, false); show(hud, _tutDrive() || _waypointOn())
       unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
-      if (_eveningLeg()) {   // FEAT-170: no job, only the way home
-        const q = _eveTarget(), vp = vehicleState.position, pump = q && q !== _mom()
-        if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · ${pump ? 'fill up at a pump' : 'park there to sleep'}`   // FEAT-184: PLACEHOLDER words
+      if (_tutDrive()) {   // FEAT-170: no job, only the way home (FEAT-184: the morning's, to the paycheck)
+        const q = _eveTarget(), vp = vehicleState.position, what = _morningLeg() ? 'park there for your last check' : q !== _mom() ? 'fill up at a pump' : 'park there to sleep'
+        if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
         // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
         if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · <span class="kc-pad">hold </span>${keycap('R', 'D-pad →')} puts you back on it`)
@@ -7237,9 +7278,7 @@ function _renderMissionUI () {
   const pick = m.state === 'offer' ? _haulPick(m.offer) : null
   if (nb) nb.disabled = (m.state === 'offer' && !!m.offer
     && (_offerVerdict(m.offer, pick?.n ?? null)?.verdict === 'overload' || (pick != null && pick.max < 1)))
-  // BUG-117 (owner 11-06): mom's casserole has no abandon, as it has no deadline — it ends at Larry's, where his
-  // welcome finishes the tutorial; until then one-job-at-a-time holds every other job back.
-  _syncJobCancel(hud, storySystem.isActive() && m.isOnJob() && offerBoard?.firstState() !== 'taken')
+  _syncJobCancel(hud, storySystem.isActive() && m.isOnJob())
 }
 
 /**
@@ -7475,14 +7514,16 @@ function _renderRunHud () {
   // FEAT-103: the camp's gate. Every deed source settles through the wallet, and this poll reads it,
   // so this is the one place the requisition opens (openLines is idempotent).
   if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
-  if (daySystem.clockH() >= DAY_PARAMS.dayStartHour) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
+  if (daySystem.clockH() >= _eveWakeH()) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
+  _syncTutCard()       // FEAT-184: the intro's card, back after a resume
   _eveningBeats()
   _tutDetourTick()     // BUG-118: the tutorial's GPS follows the truck (and FEAT-211's waypoint line)
   _waypointTick()      // FEAT-211: arrival clears the waypoint
   const skip = document.getElementById('skip-hint')
-  if (skip) skip.style.display = _eveningLeg() ? '' : 'none'
+  if (skip) skip.style.display = _tutDrive() ? '' : 'none'
   _syncSkipHint()      // FEAT-184: the confirmation reverts to the hold once it times out
-  _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
+  _checkOpeningEnd()   // FEAT-147: Larry's call once the tutorial is over
+  if (!storySystem.isActive() || storySystem.isEntering()) return   // FEAT-184: …which may have left for the run's own world
   _pumpTut()           // …and any first-use card waiting its turn
   _checkMidnight()     // FEAT-148: the midnight overlay
   const req = offerBoard?.lines() ?? []
@@ -7994,8 +8035,7 @@ function _acceptOffer () {
     pm.stockCost = pick.cost
   }
   // FEAT-103: a requisition line taken AWAY from its source (at the camp) is untimed until you park there.
-  // FEAT-147: so is mom's first job taken away from her pad.
-  if ((missionSystem.mission?.line || offerBoard?.spec(o)?.first) && missionSystem.startZoneExitDist() <= 0) missionSystem.mission.approach = true
+  if (missionSystem.mission?.line && missionSystem.startZoneExitDist() <= 0) missionSystem.mission.approach = true
   _jobsShop = null   // FEAT-197: taken — nothing to go back to
   missionSystem.accept()
   // §5b: the stock is bought at accept and never refunded — an expired or abandoned haul keeps it.
@@ -8646,7 +8686,6 @@ function _showPauseMenu () {
 function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !_paperScenario) {
   const saveBtn = document.getElementById('pm-save')
   if (!saveBtn) return
-  live &&= !_tutorialRun   // FEAT-184: the tutorial never saves — its ways out are the main menu and the towel
   const why = live ? _saveExitBlock() : null
   saveBtn.style.display = live ? '' : 'none'
   saveBtn.disabled = !!why
@@ -8992,7 +9031,7 @@ const storySystem = new StorySystem({
   onSeedRejected: (seed, report) => {
     if (!_pendingResume && !_paperScenario && _seedRerolls < SEED_REROLLS) {
       console.info(`[story] seed "${seed}" refused (${unplayableReason(report)}) — re-roll ${_seedRerolls + 1}/${SEED_REROLLS}`)
-      void _startStory(_resolveSeed(''), _runWorld, _runGearbox, null, _seedRerolls + 1, null, _tutorialRun)
+      void _startStory(_resolveSeed(''), _runWorld, _runGearbox, null, _seedRerolls + 1)
       return
     }
     _showSeedModal(report, seed)
@@ -9182,6 +9221,7 @@ const storySystem = new StorySystem({
     _firingCam = null
     _openingRun = false
     _tutQueue.length = 0                // …and no first-use card waits for a run that is gone
+    _syncTutCard()                      // …nor the intro's card (FEAT-184)
     paperRouteSystem.abort()            // …and an unfinished route is dropped, never settled
     _renderPaperUI()
     _clearThrownRolls()                 // …and no papers from a story run lying about in free roam
@@ -9342,7 +9382,7 @@ let _runWorld = null       // ...and the world knobs, so a BUG-100 re-roll keeps
 let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
 const SEED_REROLLS = 3       // BUG-100: refused seeds re-rolled before the refusal card shows
 let _seedRerolls = 0         // re-rolls behind the current entry (0 for a player-started one)
-async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0, scenario = null, tutorial = false) {
+async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0, scenario = null, returnSeed = null) {
   _hideSeedModal()
   map2d.reset()   // story always starts on a fresh map, even on the seed already loaded
   // The caption goes up BEFORE the await, not after: the player clicked, and the whole point of
@@ -9356,11 +9396,11 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _seedRerolls = rerolls
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _paperScenario = scenario   // FEAT-62: every entry sets it too — a scenario never outlives its own entry
-  _tutorialRun = tutorial     // FEAT-184: likewise
+  _returnSeed = resume?.returnSeed ?? returnSeed   // FEAT-184 (DEC-158): likewise; a resume carries its own
   _runEnded = false
   _playedS = 0                       // FEAT-146 (a resume puts the saved playtime back in _restoreRun)
   damageModel.fatalImpact = null     // FEAT-146: a fatal hit before the run is not this run's death
-  if (!resume && !scenario && !tutorial) clearRun()   // FEAT-42: one slot — a new game discards the saved run (a scenario or the tutorial is not a game)
+  if (!resume && !scenario && !returnSeed) clearRun()   // FEAT-42: one slot — a new game discards the saved run (a scenario is not a game)
   if (_labActive) exitLab()
   _enterStageLoad('entering the region\u2026', LOAD_HINT_STORY)   // ahead of enter(), so the world is never on screen mid-reseed
   gaugeCluster.seedOdometer()   // FEAT-49: a story entry is a fresh run — fresh jalopy, fresh mileage
@@ -9641,7 +9681,7 @@ function _resumePaper (sp) {
 
 /** Overwrite the run save with now — whenever a live, writable run exists. */
 function _autosave () {
-  if (_paperScenario || _tutorialRun) return false   // FEAT-62: the scenario's run is not the player's run — never written over it (FEAT-184: nor is the tutorial's)
+  if (_paperScenario) return false   // FEAT-62: the scenario's run is not the player's run — never written over it
   if (!storySystem.isActive() || storySystem.isEntering() || _restoring || _runEnded || _saveBlock()) return false
   return putRun(_runSnapshot())
 }
@@ -9664,7 +9704,7 @@ window.__gps = () => gpsSystem._src   // the GPS's route right now (cdp-smoke: t
 /** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
 function _discardRunSave () {
   _runEnded = true
-  if (!_tutorialRun) clearRun()   // FEAT-184: the slot holds the career run, never the tutorial's
+  clearRun()
 }
 
 // ── FEAT-146: the run ends ──────────────────────────────────────────────────────────────────────
@@ -9823,13 +9863,14 @@ function _runSnapshot () {
     job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
     playedS: _playedS,   // FEAT-146: the summary's playtime
     waypoint: _waypoint && { x: _waypoint.x, z: _waypoint.z },   // FEAT-211: the player's pin (re-snapped and re-planned on resume)
+    returnSeed: _returnSeed,   // FEAT-184 (DEC-158): the run's own world, while its tutorial plays on the tutorial seed
   }
 }
 
 /** Write save `s` over the fresh run onRegionLive just built (the jalopy roll, the shelf seed, all of it). */
 function _restoreRun (s) {
   _restoring = true
-  _resumeHold = true
+  _resumeHold = !!s.pose   // FEAT-184: a tutorial's load back (no pose, _returnToRunWorld) drives on at once
   daySystem.restore(s.day)
   _midnightDay = 0   // FEAT-148: the restored day is no midnight crossed
   Object.assign(runEconomy, s.economy)
@@ -9850,11 +9891,14 @@ function _restoreRun (s) {
   _renderPaperUI()
   dialogueSystem.restoreSeen(s.dialogueSeen)   // before the handoff, or the run intro plays again
   for (const pad of s.campPads) { roadSystem?.setCampPads(campSystem.makeCampAt(pad)); _refreshGroundAround(pad) }
-  offerBoard = new OfferBoard({ seed: worldSeed, pois: poiSystem.list(), nowH: s.board.t0H,
-                                region: economySystem.terms().region })
-  _boardLog = logBoard(offerBoard, s.board.t0H, s.board.events)
+  if (s.board) {   // null: a tutorial's load back keeps the fresh board onRegionLive built
+    offerBoard = new OfferBoard({ seed: worldSeed, pois: poiSystem.list(), nowH: s.board.t0H,
+                                  region: economySystem.terms().region })
+    _boardLog = logBoard(offerBoard, s.board.t0H, s.board.events)
+  }
   const job = s.job ? _resumeJob(s.job) : null   // the board replay left its offer taken; re-plan it
   if (s.paper) _resumePaper(s.paper)
+  if (!s.pose) { _seatAt(_joint()); _restoring = false; return }   // DEC-158: outside the run's own joint
   // The seat: the exact saved pose, put back the way a tow does it, so R still respawns where it did.
   // A seat is a fresh parked truck, so the motion goes back on top of it once it lands.
   const prev = _spawnOverride
@@ -9990,7 +10034,7 @@ document.addEventListener('keydown', e => {
   // because the alternative is standing in a region the playability check just rejected.
   const seedModal = document.getElementById('story-seed-modal')
   if (seedModal && seedModal.style.display === 'flex') { _cancelSeedModal(); return }
-  if (_runEndOpen) return   // FEAT-146: the run is over — the card's one button is the way out
+  if (_runEndOpen || _tutCardOpen) return   // FEAT-146: the run is over — the card's one button is the way out (FEAT-184: the intro's card, its two)
   // BUG-119: Esc / pad B on the towel's confirm is its back — it fell through to the pause toggle, which showed the
   // menu over the still-open card, and the pad (menu-nav reads the card first) kept driving the card.
   if (document.getElementById('towel-card').style.display === 'flex') { document.getElementById('tc-back').click(); return }
@@ -10274,7 +10318,7 @@ function loop (t) {
       if (scenarioSystem.isActive()) void _restartScenario()
       else if (_paperScenario) _restartPaperScenario()   // FEAT-62: back to Larry's, same rung
       else if (_barrelCube) _buildBarrelCube(_barrelCube.side, _barrelCube.count)   // a fresh cube AND a fresh run-up
-      else if (_eveningLeg()) _resetToRoad()   // FEAT-170: the opening's evening puts you back on the road
+      else if (_tutDrive()) _resetToRoad()   // FEAT-170: the tutorial puts you back on the road
       else void _reseatTruckAtSpawn()
     }
 
@@ -10339,7 +10383,7 @@ function loop (t) {
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
     damageModel.held = _inTutorial()   // FEAT-184 (DEC-151): no wear and no impact damage for the whole tutorial (the feedContact below too)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
-    if (_eveningLeg()) vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and the evening burns no fuel ("fuel disabled"); the pump below still fills
+    if (_tutDrive()) vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and the tutorial burns no fuel ("fuel disabled"); the pump below still fills
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
@@ -10834,7 +10878,7 @@ function loop (t) {
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
-                          || missionSystem.state === 'running' || missionSystem.state === 'loading' || _eveningLeg() || _waypointOn())) _renderMissionUI()
+                          || missionSystem.state === 'running' || missionSystem.state === 'loading' || _tutDrive() || _waypointOn())) _renderMissionUI()
     // FEAT-88: a load whose job is gone (cancelled, exited, a new run) leaves with it.
     if (_haul && (!missionSystem?.isOnJob() || missionSystem.mission !== _haul.mission)) _haulClear()
     // FEAT-96: …and so does a freight load, on delivery, clean-up or a new run. (A debug load has no
