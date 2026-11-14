@@ -166,7 +166,7 @@ without asking the owner where the meter stands. Land what they report, yourself
 - DONE ledorepo: INFRA-14 closed. INFRA-13 waits on the owner (Time Machine).
 Orchestrator DECs used: 190–193; next free for it: 194.
 
-**Main:** BUG-167 landed (merge of wip/bug-167-carcass @ ff30a628, ticket closed, 103 affected gates green, fingerprint differs from step 100 as expected); feature/spare landed before it (FEAT-215, music bed removed). Main smoked 26/26 (wip/orch/smoke-167.log). Not pushed. In flight: Perf terrain-bake prototype agent (feature/perf); Lane B FEAT-34 round 4 agent (feature/machine, Sonnet). Owner at 32 % weekly at start of this batch, stop at 40 %.
+**Main:** FEAT-216 damage alerts landed (merge of land/feat-216 @ 2f49270e); before it BUG-167 and feature/spare (FEAT-215, music bed removed). Main smoked 26/26 (wip/orch/smoke-216.log). Not pushed. On a branch awaiting the owner: FEAT-34 round 4 (feature/machine, card feat34-r4-look). In flight: Perf terrain-bake prototype agent (feature/perf). Owed pile is 20+ cards: no new look-producing work until the owner drains some. Owner at 32 % weekly at the start of this batch, stop at 40 %.
 (check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
 minted: FEAT-215 (GPS U-turn arrow, Spare), FEAT-216 (damage alerts, B). Inbox fully replied; 2gdr (FEAT-204, "4x more
 slots": 4 more or 4 times?) still waits on the owner. DEC-136, the :8001 Windows server and the Tailscale-only
