@@ -230,13 +230,12 @@ async function startRun (seed) {
   await js(`document.getElementById("su-seed").value = ${JSON.stringify(seed)}; document.getElementById("su-start").click()`)
   check(await until(() => js(live), 180000, 250), 'the run never went live')
   await js(HELPERS); await js('window.__soak.carry(); window.__soak.watch()')
-  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2). FEAT-184: after the first skip "always skip
-  // the tutorial" is on, and a run starts where a skip lands — nothing to hold. Either way, at Larry's with the casserole
-  // delivered (FEAT-184, owner 2026-11-07); the day loop reads off his welcome.
-  if (!await js('window.__settings?.skipTutorial')) {
-    check(await until(dlgUp, 5000), 'the run did not open on the firing')
-    await key('m', true); await sleep(1300); await key('m', false)
-  }
+  // Skip the opening: hold M a second over the firing (FEAT-170 stage 2), at Larry's with the casserole delivered
+  // (FEAT-184, owner 2026-11-07); the day loop reads off his welcome. FEAT-184 (DEC-148): every run opens on the firing,
+  // and on a browser's first playthrough the first hold only asks "are you sure" — a second hold skips.
+  check(await until(dlgUp, 5000), 'the run did not open on the firing')
+  await key('m', true); await sleep(1300); await key('m', false)
+  if (/are you sure/.test(await js('document.getElementById("skip-hint")?.textContent ?? ""'))) { await key('m', true); await sleep(1300); await key('m', false) }
   check(await until(() => js('window.__board().firstState() === "done"'), 15000), `holding M did not skip to the casserole delivered: ${JSON.stringify(await js(`({
     first: window.__board().firstState(), ms: window.__mission().state, dlg: getComputedStyle(document.getElementById('dialogue-panel')).display,
     hint: document.getElementById('skip-hint')?.style.display, vis: document.visibilityState, focus: document.hasFocus(), log: (window.__soakLog ?? []).slice(-12) })`))}`)

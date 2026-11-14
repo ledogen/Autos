@@ -1495,9 +1495,8 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
-  skipTutorial: { name: 'skip the tutorial', opts: [[false, 'no'], [true, 'always']] },   // FEAT-184 [DEFAULT words]
 }
-window.__settings = _settings   // dev handle — test/cdp-smoke.mjs turns the tutorial skip off before a run that plays it
+window.__settings = _settings   // dev handle — test/cdp-smoke.mjs marks the browser as played before (FEAT-184 playedBefore)
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
 function _fitGearbox (gearbox = _settings.gearbox) {
   fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
@@ -3679,6 +3678,9 @@ const serviceCenter = new ServiceCenter({
   stock: () => shelf(_servicePoi.id, daySystem.clockH(), _servicePoi.type), unstock: (i) => takeShelf(_servicePoi.id, i),
   nextStock: () => _shelfNext(_servicePoi.id, daySystem.clockH(), _servicePoi.type),   // R-24: "new stock in 3h 10m"
   freeRepairs: () => runEconomy.freeRepairs ?? 0, useFreeRepair: () => { runEconomy.freeRepairs-- },   // expedition-rewards
+  // FEAT-184 (DEC-151): on the evening, one tire is on mom — a mounted one or a bare one (the shelf's old tire is always
+  // there), the part once and its fitting once.
+  onMom: (id, k) => _eveningLeg() && _momOwes[k] && (id === 'spareTire' || PARTS[id]?.slot === 'tire'), useMom: (id, k) => { _momOwes[k] = false },
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
@@ -4442,11 +4444,18 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // gas station first — when that detour is short. Past the budget the lesson stays the pump's first-use card.
 // The budget [DEFAULT] from the stage-2 census (12 random seeds): the drive home is a median 2.9 km, but the nearest
 // station's detour adds a median 5.8 km (1.1–7.8). At 4 km, 6 of 12 seeds get the refuel; the rest leave it to the pump.
-const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000 }
+// FEAT-184 (DEC-150/151, owner 2026-11-14): the pocket change a played tutorial runs on until the paycheck ($ — at the
+// day-1 $0.50/gal it buys ~6 gal, so a fill from an eighth stops near half: "will run out of cash half tank"), and the
+// seconds off the road before the evening puts the truck back on it ("you drive off the road > reset"). Both [DEFAULT].
+const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4 }
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 // FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
 // station, if there was one); the flat lands at half of it, once. Not saved: a resume carries the flat in the damage model.
 let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
+// FEAT-184 (DEC-151): the evening's tire is on mom — the part once and its fitting once (ServiceCenter onMom). Not saved:
+// a resume mid-evening owes it again.
+const _momOwes = { part: true, labour: true }
+let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
 window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed })
 
@@ -4590,6 +4599,12 @@ function _eveningBeats () {
   // Stage 5: towed and back on the road, it's night — the headlights.
   if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
   if (Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
+  // FEAT-184 (DEC-151): off the road and rolling for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
+  // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
+  // (_playedS), so a pause or a card never counts.
+  const off = !vehicleState.parked && !_inPoiRing() && !_truckOnRibbon()
+  _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
+  if (off && _playedS - _eveOffAt > TUT_PARAMS.offRoadS) { _eveOffAt = null; _resetToRoad() }
 }
 
 /** The evening is over (a sleep, or 07:00 awake): mom's casserole goes up at her house. */
@@ -4620,7 +4635,29 @@ function _skipFire () {
     return
   }
   _skipTimer = 0
+  // FEAT-184 (DEC-148): a player who chose the tutorial, or one on their first playthrough ever, confirms with a second hold.
+  if (_skipNeedsConfirm() && performance.now() > _skipArmedUntil) {
+    _skipArmedUntil = performance.now() + SKIP_CONFIRM_MS
+    document.getElementById('skip-hint')?.classList.remove('holding')
+    _syncSkipHint()
+    return
+  }
   _skipOpening()
+}
+/** FEAT-184 (DEC-148, owner 2026-11-14: "If you enter the tutorial or its the first playthrough ever it will have an
+ *  additional confirmation"): the menu's "tutorial" stands for "chose the tutorial" until the intro's card exists. */
+const _skipNeedsConfirm = () => _tutorialRun || !_settings.playedBefore
+const SKIP_CONFIRM_MS = 5000   // [DEFAULT] how long the confirmation waits for the second hold
+let _skipArmedUntil = 0        // performance.now() until which a completed hold skips at once
+let _skipHintHtml = ''
+/** The prompt: the hold, or (armed) the owner's confirmation. */
+function _syncSkipHint () {
+  const el = document.getElementById('skip-hint')
+  if (!el) return
+  const html = performance.now() < _skipArmedUntil
+    ? `are you sure you want to skip the tutorial? hold ${keycap('M')} again`   // the question is the owner's; "hold M again" PLACEHOLDER
+    : `hold ${keycap('M')} to skip tutorial`   // the owner's words (DEC-148)
+  if (html !== _skipHintHtml) { _skipHintHtml = html; el.innerHTML = html }
 }
 function _skipRelease () {
   if (!_skipTimer) return false
@@ -4643,14 +4680,13 @@ document.addEventListener('keyup', e => {
 }, { capture: true })
 window.addEventListener('blur', _skipRelease)   // a key let go in another window never comes back up here
 pad.skipHold = () => _eveningLeg()
-{ const el = document.getElementById('skip-hint'); if (el) el.innerHTML = `hold ${keycap('M')} to skip the tutorial` }   // PLACEHOLDER words
+_syncSkipHint()
 
-/** FEAT-184: a tutorial finished or skipped turns "always skip the tutorial" on for every later run (owner, 2026-11-07). */
-function _tutorialDone () {
-  if (_settings.skipTutorial) return
-  _settings.skipTutorial = true
+/** FEAT-184 (DEC-148): an opening finished or skipped marks this browser as played before — no more confirmation. */
+function _markPlayed () {
+  if (_settings.playedBefore) return
+  _settings.playedBefore = true
   saveSettings(_settings)
-  _renderSelectors()
 }
 
 /** The hold landed: where a skipped tutorial ends — the night slept at mom's, 07:00, the casserole delivered, the truck at
@@ -4659,8 +4695,10 @@ function _tutorialDone () {
 function _skipOpening () {
   document.getElementById('skip-hint')?.classList.remove('holding')
   if (!_eveningLeg() || _campBusy) return
-  _tutorialDone()
+  _markPlayed()
+  _skipArmedUntil = 0
   _undoWorstDay()   // FEAT-184: a skip clears the worst day too
+  economySystem.payPaycheck()   // FEAT-184 (DEC-150): a skip lands with the last paycheck, as every run starts
   dialogueSystem.abort()   // the firing's or mom's card, if one is up
   _cardHold = false
   if (_firingCam) { _firingCam = null; setCameraFocus(null) }
@@ -4682,10 +4720,9 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the first job is still to do or the evening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && (dialogueSystem.has(DLG.firing) || (offerBoard?.firstState() ?? 'closed') !== 'closed')
   _openingRun = false
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null
-  // FEAT-184: "always skip the tutorial" — the run starts where a skip lands (Larry's, 7 am, the casserole delivered),
-  // no tutorial cards (Larry's welcome still plays): the firing counts as played and the skip runs at once.
-  if (_settings.skipTutorial && !_tutorialRun) { dialogueSystem.restoreSeen([DLG.firing]); _skipOpening(); return true }
+  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
+  _momOwes.part = _momOwes.labour = true; _skipArmedUntil = 0
+  economySystem.withholdPaycheck(TUT_PARAMS.pocketCash)   // FEAT-184 (DEC-150): pocket change until the paycheck
   const q = _joint()
   if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
   _planEvePump()   // FEAT-184 stage 3
@@ -4741,7 +4778,10 @@ function _checkOpeningEnd () {
   if (!offerBoard || ['closed', 'live', 'taken'].includes(offerBoard.firstState())) return
   if (missionSystem?.isActive() || dialogueSystem.has(DLG.runIntro)) return
   _tut(DLG.runIntro, [...LARRY_WELCOME, ..._runIntro()], null, true)
-  _tutorialDone()   // FEAT-184: the tutorial is over; later runs skip it
+  _markPlayed()   // FEAT-184: the tutorial is over
+  // FEAT-184 (DEC-150): …and its last paycheck lands. [interim] At Larry's for now; landing 2 moves the tutorial's last
+  // act to the burger joint (DEC-152).
+  economySystem.payPaycheck()
 }
 
 // ── FEAT-61: the paper route ───────────────────────────────────────────────────────────────
@@ -5417,8 +5457,16 @@ function _pumpInReach () {
 }
 
 /** One physics step of an open pump. Handbrake down (or leaving story mode) settles the sale. */
+/** FEAT-184 (DEC-151, owner 2026-11-14: "fueling up you cant leave the pump until you spend every last dollar"): at the
+ *  evening's station, while there is pocket change left and room in the tank, mom makes you fill — the handbrake holds. */
+function _momMakesYouFill () {
+  if (!_eveningLeg() || !_evePump || _evePump.done || fuelStop.poiId !== _evePump.q.id || !(fuelStop.price > 0)) return false
+  const room = RANGER_PARAMS.fuelTankGal - vehicleState.fuel.gal > 0.05
+  return room && economySystem.money() - fuelStop.sale >= fuelStop.price * 0.05   // a twentieth of a gallon's worth left
+}
 function _stepFuelStop (dt) {
   if (!fuelStop.isOpen) return
+  if (!vehicleState.parked && storySystem.isActive() && _momMakesYouFill()) { vehicleState.parked = true; _tut('tut-fillup') }
   if (!vehicleState.parked || !storySystem.isActive()) {
     const { sale } = fuelStop.settle()
     if (fuelStop.cans.length) inventorySystem.refill(fuelStop.cans)
@@ -5490,6 +5538,7 @@ function _renderPumpDisplay (dt) {
   const tankFull = vehicleState.fuel.gal >= RANGER_PARAMS.fuelTankGal - 1e-6
   const full = (tankFull && !fuelStop.cans.some(c => c.cap - c.gal > 1e-6)) || (fuelStop.cutoff && !broke)
   document.getElementById('pd-hint').innerHTML = !fuelStop.isOpen ? 'thank you — drive safe'
+    : _momMakesYouFill() ? `mom says fill it up · hold ${keycap('F')} till the money's gone`   // FEAT-184 PLACEHOLDER words
     : full ? `${fuelStop.cans.length ? 'all full' : 'tank full'} · release the handbrake to pay`
     : broke ? `that's all you can afford · release the handbrake to pay`
     : tankFull ? `tank full · hold ${keycap('F')} to fill the jerry can · release the handbrake to pay`
@@ -5797,6 +5846,7 @@ function _parkLocked () {
   _mapWasOpen = mapOpen
   // The cards and screens open on the latch, so they lock only while it is set: a Space tap lets it go and the
   // lock with it, and the debug Quick Job's offer (taken rolling) never brakes a moving truck.
+  if (fuelStop.isOpen && _momMakesYouFill()) return true   // FEAT-184 (DEC-151): mom's fill-up — not even the lever lets go
   return (mapOpen && _mapAtRest) || (!!vehicleState.parked && (!!_campUi
     || ['generating', 'offer'].includes(missionSystem?.state) || ['planning', 'offer'].includes(paperRouteSystem.state)
     || serviceScreen.isOpen || damageScreen.isOpen || inventoryScreen.isOpen))
@@ -7341,6 +7391,7 @@ function _renderRunHud () {
   _tutDetourTick()     // BUG-118: the tutorial's GPS follows the truck
   const skip = document.getElementById('skip-hint')
   if (skip) skip.style.display = _eveningLeg() ? '' : 'none'
+  _syncSkipHint()      // FEAT-184: the confirmation reverts to the hold once it times out
   _checkOpeningEnd()   // FEAT-147: Larry's welcome once mom's job is put away
   _pumpTut()           // …and any first-use card waiting its turn
   _checkMidnight()     // FEAT-148: the midnight overlay
@@ -9584,7 +9635,7 @@ function _runEndHtml (kind) {
     + row('good deeds', `${formatDeeds(e.halfPoints)} of ${ECONOMY_PARAMS.campDeeds}`)
     + (req.some(l => l.state !== 'closed') ? row('camp deliveries', `${req.filter(l => l.state === 'done').length} / ${req.length}`) : '')
     + (kind === 'win' ? _expeditionRows(row, req) : '')
-    + row('earned', `$${formatMoney(e.money + e.spent - ECONOMY_PARAMS.startCash)}`, true)
+    + row('earned', `$${formatMoney(e.money + e.spent - ECONOMY_PARAMS.startCash - (e.pocket ?? 0))}`, true)
     + row('spent', `$${formatMoney(e.spent)}`)
     + row('wallet', `<span class="re-money">$${formatMoney(e.money)}</span>`)
     + _upgradeRows(row)
@@ -10160,6 +10211,7 @@ function loop () {
     // FEAT-36: debris pre-step — render snapshot + cargo-in-bed bullet flag (see debris.js).
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
     hiLift.step(vehicleState, RANGER_PARAMS.mass + (RANGER_PARAMS.stowedKg || 0), PHYSICS_DT, _now())   // FEAT-138
+    const _galBefore = vehicleState.fuel.gal   // FEAT-184: the evening burns none (put back after the damage step)
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them
@@ -10172,6 +10224,7 @@ function loop () {
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
     if (!_eveningLeg()) damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)   // FEAT-170: no damage or wear on the safe drive
+    else vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and no fuel burned ("fuel disabled"); the pump below still fills
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.

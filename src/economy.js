@@ -417,10 +417,13 @@ export const runEconomy = {
                      // additions cannot drift into 20.700000000000003 — see addSpot()
     halfPoints: 0,   // mission points × 2
     missions: 0,     // settled (paid) missions this run
-    // FEAT-146: the run summary's rows. Earned is derived (money + spent − startCash), so no counter.
+    // FEAT-146: the run summary's rows. Earned is derived (money + spent − startCash − pocket), so no counter.
     ranks: { D: 0, C: 0, B: 0, A: 0, S: 0 },   // settled missions by letter
     spent: 0,        // dollars out through spend(), to the cent
     freeRepairs: 0,  // expedition-rewards option 2: the crew's line at A or better — repairs owed at a bench for nothing
+    // FEAT-184 (DEC-150): a played tutorial holds the last paycheck back until its end and runs on pocket change.
+    pocket: 0,           // the pocket change given on top of startCash (so Earned subtracts it too)
+    paycheckDue: false,  // the last paycheck is still to be paid (payPaycheck)
 }
 
 /** Round to whole cents. Money is added a paper at a time now, so drift is a real hazard. */
@@ -461,6 +464,24 @@ export class EconomySystem {
         runEconomy.ranks = { D: 0, C: 0, B: 0, A: 0, S: 0 }
         runEconomy.spent = 0
         runEconomy.freeRepairs = 0
+        runEconomy.pocket = 0
+        runEconomy.paycheckDue = false
+    }
+
+    /** FEAT-184 (DEC-150, owner 2026-11-14: "you shouldnt get your last paycheck until the end of the tutorial so you'll
+     *  have pocket change"): at a played tutorial's start, the wallet is `pocket` and the paycheck waits. */
+    withholdPaycheck (pocket) {
+        runEconomy.money = _cents(pocket)
+        runEconomy.pocket = _cents(pocket)
+        runEconomy.paycheckDue = true
+    }
+
+    /** The tutorial is over (or skipped): the last paycheck, startCash, lands. True if it was still due. */
+    payPaycheck () {
+        if (!runEconomy.paycheckDue) return false
+        runEconomy.paycheckDue = false
+        runEconomy.money = _cents(runEconomy.money + ECONOMY_PARAMS.startCash)
+        return true
     }
 
     /**
