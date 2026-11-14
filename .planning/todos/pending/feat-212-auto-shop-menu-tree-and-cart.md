@@ -12,7 +12,7 @@ lane: B
 # FEAT-212: The auto shop menu — a nested Maintenance tree, a plain Shop list, and a cart with checkout
 
 ## Next steps
-Lane B, after FEAT-202 lands. First step is a short plan in this ticket mapping every line of the outline to a part or track that exists, and listing the lines that have nothing behind them yet (see Open questions).
+Lane B: the plan is below (Description § The plan). Landing 1, the Maintenance tree, is being built on `land/feat-212`.
 
 ## Summary
 Rebuild the auto shop's menu to the owner's outline. Maintenance is a tree that shows one level at a time. Shop is a flat list of parts. Nothing is paid for or takes time until checkout: work is queued in a cart that shows a subtotal of cost and time, the truck updates live, and the player checks out or discards.
@@ -102,13 +102,62 @@ Maintenance (note we do not show shop stock anywhere in this tab). The only opti
 Just a list of parts. Without expanding any of them you only see the name (including “old” for tires), condition, cost, how long they will be in stock. Mounted tires need two health indicators.   
 When expanded you see more details: i.e. the short 2 line description and the “add to cart” button
 
+### The plan: every outline line → what is behind it (Lane B, 2026-11-13)
+`s.` = `ServiceCenter` (src/service.js), `d.` = the damage tracks (src/damage.js TRACKS), sockets = data/parts.js SLOTS.
+Hidden = nothing in the game does it yet; the row is left out until it exists (the default).
+
+| Outline line | Behind it today | Shown |
+|---|---|---|
+| 1 Vehicle Diagnostics | the V-key damage screen (src/damage-screen.js), opened over the shop | yes |
+| 2.1.1 Alignment, 2×2 chart | tracks alignFL…RR, one condition per corner | yes |
+| 2.1.1.1 Align all | `s.align()` / `alignQuote()` (FEAT-167: one job, four corners) | yes |
+| 2.1.2–5 FL…RR, "T:xx% W:xx%", flat / wheel failure | tracks tireXX / wheelXX, `d.flat[]`, a wheel at 0 = collapsed | yes |
+| …Swap with corner (the corner) | `s.swapCorners(a, b)` (FEAT-196: the pairs trade, tire and wheel together) | yes |
+| …Tire → Swap with corner | nothing: a tire-only move (wheels stay) is not a job today | **hidden** |
+| …Tire → Swap with player inventory | `s.exchangeOptions(tireXX)` + `s.exchange()`: loose tires, and mounted pairs (which swap whole) | yes |
+| …Tire → Patch | `s.patch()` / `patchQuote()`; only while that tire is flat | yes |
+| …Wheel → Swap with corner | nothing: a wheel-only move is not a job today | **hidden** |
+| …Wheel → Swap with (inventory only) | `s.exchange()` with the loose wheels in `exchangeOptions(wheelXX)` | yes |
+| …Wheel → Repair | `s.targets` / `repair()` (REPAIRS.wheel); a collapsed wheel is scrap, no repair (FEAT-162) | yes |
+| 2.2 Brakes Front / Rear → Swap with inventory | sockets brakesFront / brakesRear, tracks brakeFront/Rear; replace-only | yes |
+| 2.3.1 Springs, 2.3.2 Dampers, Front / Rear → Swap, Repair | sockets springsX / dampersX, tracks springX / damperX, REPAIRS.spring / .damper | yes |
+| 2.3.3 Roll bars Front / Rear → Swap with inventory | sockets arbFront / arbRear and their parts (stock, sport, none); no wear track, so no HP | yes |
+| 2.3.4 Lift → Swap with inventory | socket lift (no lift, lift kit); no wear track | yes |
+| 3.1 Air filter → Swap with inventory | socket airFilter, track airFilter | yes |
+| 3.1 Air filter → Clean (cold air intake) | nothing: no cold air intake part, no clean job | **hidden** |
+| 3.2 Radiator → Repair, Swap | socket radiator, REPAIRS.radiator | yes |
+| 3.3 Engine (hp, filter hp, oil hp) → Oil change, Repair, Swap | `s.changeOil()` (FEAT-202), REPAIRS.engine (a seized one rebuilds whole), socket engine (stock engine) | yes |
+| 4.1 Transmission (only if manual, hp) | track transmission (manualOnly), REPAIRS.transmission; no part to swap. The outline lists no action: the repair it has today stays under it, or the synchro wear could never be fixed | yes, with Repair |
+| 4.2 Rear differential (hp if clutch type) → Change clutches, Swap | socket diff, track diff (clutchOnly), the rebuild = `repair('diff', 1)` (FEAT-166) | yes |
+| 5.1 Headlights Left / Right → Swap with inventory | sockets headlightL/R, tracks headlightL/R; replace-only | yes |
+| 5.2 Body Panels Front / Left / Right / Rear → Repair | tracks armorFront…Rear, REPAIRS.armor | yes |
+| 6 (empty in the doc) | nothing | no |
+
+The first Open question's suspects, checked: roll bars, engine repair, engine swap and patching at the shop all exist
+(above). The real gaps are the cold air intake's clean, the transmission as a swappable part (the outline does not ask for
+one), and the tire-only / wheel-only corner swaps.
+
+**Not in the outline, kept where it is until landing 2:** My Items (sell, split / combine, repair or patch a part you
+carry, FEAT-196's inventory wheel). It stays under the Shop tab as today; where it lives after the Shop rebuild is an
+open question.
+
+**FEAT-167 and FEAT-196 fold in.** Their rules stay: everything starts collapsed; a header wears the band colour of the
+worst part under it (a flat reads as nothing left); one alignment job; a row is one button and its options open on select
+(one pad target per row); a corner's tire moves to another corner in one job; an inventory wheel is repaired at the bench.
+Their layout goes: the flat My Vehicle section list is replaced by the tree, and its code is deleted.
+
+**How the tree behaves.** The open path is one id per level. Selecting a closed item opens it and closes its siblings
+and everything under them; selecting an open item closes it and everything under it (so the top level again collapses
+everything). An action row (align, patch, oil change, change clutches, each swap or repair option) carries its price and
+its hours. In landing 1 an action is still paid when it is pressed; landing 3's cart moves that to checkout.
+
 ### How this sits on what exists
 - FEAT-167's collapsible sections and FEAT-196's select-then-act rows are the same idea one level deep; this ticket replaces their layout with the tree and keeps their rules (one target per row for the pad, corner swaps, repairing an inventory wheel).
 - Maintenance never shows shop stock. A swap offers only parts in the inventory or on the truck; with none, the line reads "no appropriate replacement in inventory" and buying happens in the Shop tab.
 - The cart changes when money and time are spent: today each action is paid as it is clicked.
 
 ## Tracker
-- [ ] Plan: every outline line mapped to an existing part / track, the gaps listed
+- [x] Plan: every outline line mapped to an existing part / track, the gaps listed
 - [ ] Maintenance tree: one level shown at a time, one selection per level, selecting the top level again collapses all
 - [ ] Every purchasable option shows its price and its time
 - [ ] Swaps offer inventory and on-truck parts only; the empty case shows the owner's line
