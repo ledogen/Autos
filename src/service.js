@@ -71,6 +71,7 @@ export class ServiceCenter {
      *   advanceHours(h)            labour on the clock (daySystem.advanceMinutes)
      *   stock() / unstock(i)       this shop's shelf now (src/shop-stock.js shelf / take)
      *   freeRepairs() / useFreeRepair()   repairs owed for nothing (expedition-rewards); optional
+     *   onMom(id, k) / useMom(id, k)   on mom (FEAT-184): part `id`'s k = 'part' or 'labour' is free, once; optional
      *   onChange()                 something changed; the screen re-renders
      */
     constructor (deps) {
@@ -87,6 +88,11 @@ export class ServiceCenter {
     /** expedition-rewards option 2: the crew's line at A or better owes one repair — a bench repair at no charge while
      *  one is held (the labour still goes on the clock). Deps `freeRepairs()` / `useFreeRepair()`, both optional. */
     _free () { return (this.freeRepairs?.() ?? 0) > 0 }
+    /** FEAT-184 (DEC-151, owner 2026-11-14: "i had no money to buy a spare. that should also be 'on mom'"): the
+     *  tutorial's tire. While `onMom(id, 'part')` holds the part costs nothing, and while `onMom(id, 'labour')` holds
+     *  its fitting doesn't either; each is used up (`useMom`) by the purchase or the fitting it paid for. */
+    _mom (id, k) { return !!this.onMom?.(id, k) }
+    _usedMom (id, k, was) { if (was) this.useMom?.(id, k) }
 
     _quote (cls, partId, cond, target, onTruck) {
         const r = REPAIRS[cls], gap = Math.max(0, target - cond)
@@ -245,7 +251,7 @@ export class ServiceCenter {
     /** Shelf slot `i`'s price now (a used part is priced by its condition), or null if it is empty. */
     shelfPrice (i) {
         const e = this.stock()[i]
-        return e ? cents(shelfPrice(e) * this.tier()) : null
+        return e ? (this._mom(e.id, 'part') ? 0 : cents(shelfPrice(e) * this.tier())) : null
     }
 
     /** Buy shelf slot `i` and bolt it into `socket` (a tire or wheel needs its corner), with its
@@ -253,8 +259,9 @@ export class ServiceCenter {
     buyAndFit (i, socket) {
         const e = this.stock()[i]
         if (!e || !socketsFor(e.id).includes(socket)) return false
-        const q = this.fitLabour(e.id, socket)
+        const q = this.fitLabour(e.id, socket), part = this._mom(e.id, 'part'), labour = this._mom(e.id, 'labour')
         if (!this.spend(cents(this.shelfPrice(i) + q.price))) return false
+        this._usedMom(e.id, 'part', part); this._usedMom(e.id, 'labour', labour)
         this.unstock(i)
         this._swap(e.id, e.cond, socket, q)
         return true
@@ -263,7 +270,9 @@ export class ServiceCenter {
     /** Buy shelf slot `i` to carry. Full inventory → the swap prompt. */
     buyToInventory (i) {
         const e = this.stock()[i]
+        const part = !!e && this._mom(e.id, 'part')
         if (!e || !this.spend(this.shelfPrice(i))) return false
+        this._usedMom(e.id, 'part', part)
         this.unstock(i)
         this.inventory.grant(e.id, 1, e.cond === null ? null : { cond: e.cond })
         this.onChange()
@@ -311,8 +320,9 @@ export class ServiceCenter {
         const e = this.inventory.list()[index]
         socket ??= PARTS[e?.id]?.slot
         if (!e || e.flat || !socketsFor(e.id).includes(socket)) return false
-        const q = this.fitLabour(e.id, socket)
+        const q = this.fitLabour(e.id, socket), labour = this._mom(e.id, 'labour')
         if (!this.spend(q.price)) return false
+        this._usedMom(e.id, 'labour', labour)
         this.inventory.take(index)
         this._swap(e.id, e.cond, socket, q)
         return true
@@ -328,8 +338,9 @@ export class ServiceCenter {
      *  socket is its hours and the shop's minimum charge, REPAIR_SETUP's price (owner, 2026-10-23), × the socket's
      *  `fitX` (the air filter's third). */
     fitLabour (id, socket) {
-        if (cornerOf(socket) < 0) return { price: cents(REPAIR_SETUP.price * (SLOTS[socket].fitX ?? 1) * this.tier()), hours: SLOTS[socket].hours }
-        return this._jobs(2, PARTS[id].mounted ? 0 : 2)
+        const q = cornerOf(socket) < 0 ? { price: cents(REPAIR_SETUP.price * (SLOTS[socket].fitX ?? 1) * this.tier()), hours: SLOTS[socket].hours }
+            : this._jobs(2, PARTS[id].mounted ? 0 : 2)
+        return this._mom(id, 'labour') ? { ...q, price: 0 } : q
     }
 
     /** Splitting a mounted tire, or combining a tire and a wheel: one bead job. */
@@ -381,8 +392,9 @@ export class ServiceCenter {
     swapPair (index, corner) {
         const r = this.inventory.list()[index]
         if (!PARTS[r?.id]?.mounted || r.flat) return false
-        const q = this.fitLabour(r.id, TIRE_IDS[corner])
+        const q = this.fitLabour(r.id, TIRE_IDS[corner]), labour = this._mom(r.id, 'labour')
         if (!this.spend(q.price)) return false
+        this._usedMom(r.id, 'labour', labour)
         this.inventory.amend(index, this.parts.fitMounted(r, corner))
         this.advanceHours(q.hours)
         this.onChange()
