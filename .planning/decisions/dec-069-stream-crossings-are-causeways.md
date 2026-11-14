@@ -1,6 +1,6 @@
 ---
 id: DEC-069
-status: standing
+status: draft
 decided: 2026-07-16
 area: roads
 governs: src/road.js, src/terrain-physics.js, streams, causeway

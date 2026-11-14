@@ -1,6 +1,6 @@
 ---
 id: DEC-026
-status: standing
+status: draft
 decided: 2026-10-31
 area: economy
 governs: FEAT-117, FEAT-168, src/economy.js, inflation, storm

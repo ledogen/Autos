@@ -314,7 +314,7 @@ the norm.
   Most of `.planning/story-mode/items.md` is **2D art, not models** — only camp gear, bed/dragged
   cargo, and the beacon (a shader) have a world presence.
 - **Decision records** (INFRA-10): every standing ruling is one short file, `.planning/decisions/dec-NNN-<slug>.md`
-  (`DEC-NNN`). Frontmatter `id`, `status` (`draft` = its sources conflict and the owner has not ruled ·
+  (`DEC-NNN`). Frontmatter `id`, `status` (`draft` = not yet the owner's: its sources conflict, or its wording is an agent's and awaits approval ·
   `standing` · `superseded`), `decided`, `area`, `governs` (ticket ids, file paths, subsystem words), `supersedes`;
   body **Ruling** · **Why** · **Replaces** · **Source**. The Ruling is the owner's words, or an agent's wording the
   owner approved. **A standing record is frozen**: only its `status:` line ever changes. A change of mind is a NEW

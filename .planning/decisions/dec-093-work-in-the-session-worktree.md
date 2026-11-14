@@ -1,6 +1,6 @@
 ---
 id: DEC-093
-status: standing
+status: draft
 decided: 2026-10-15
 area: process
 governs: git worktrees, handoffs

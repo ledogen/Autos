@@ -1,6 +1,6 @@
 ---
 id: DEC-049
-status: standing
+status: draft
 decided: 2026-11-07
 area: economy
 governs: FEAT-91, src/poi.js, haul yards

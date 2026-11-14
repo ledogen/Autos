@@ -1,6 +1,6 @@
 ---
 id: DEC-040
-status: standing
+status: draft
 decided: 2026-11-02
 area: story
 governs: FEAT-147, SM-INV-11, firing, opening

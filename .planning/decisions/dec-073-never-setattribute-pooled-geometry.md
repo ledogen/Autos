@@ -1,6 +1,6 @@
 ---
 id: DEC-073
-status: standing
+status: draft
 decided: 2026-09-25
 area: perf
 governs: BUG-72, src/road.js, pooled geometry

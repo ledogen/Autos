@@ -1,6 +1,6 @@
 ---
 id: DEC-089
-status: standing
+status: draft
 decided: 2026-10-29
 area: physics
 governs: src/physics.js, src/tire.js, src/suspension.js

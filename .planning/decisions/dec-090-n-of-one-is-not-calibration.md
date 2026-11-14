@@ -1,6 +1,6 @@
 ---
 id: DEC-090
-status: standing
+status: draft
 decided: 2026-08-17
 area: process
 governs: src/economy.js, FEAT-168, balance

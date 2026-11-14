@@ -1,6 +1,6 @@
 ---
 id: DEC-087
-status: standing
+status: draft
 decided: 2026-06-12
 area: process
 governs: test/, test/replay.mjs, bugs

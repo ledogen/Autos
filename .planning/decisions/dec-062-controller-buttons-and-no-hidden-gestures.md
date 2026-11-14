@@ -1,6 +1,6 @@
 ---
 id: DEC-062
-status: standing
+status: draft
 decided: 2026-11-03
 area: ui
 governs: src/gamepad.js, controller, gamepad

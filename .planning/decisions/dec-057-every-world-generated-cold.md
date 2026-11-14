@@ -1,6 +1,6 @@
 ---
 id: DEC-057
-status: standing
+status: draft
 decided: 2026-08-19
 area: world
 governs: SM-INV-12, src/save.js, worldgen

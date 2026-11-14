@@ -1,6 +1,6 @@
 ---
 id: DEC-076
-status: standing
+status: draft
 decided: 2026-08-16
 area: repo
 governs: src/physics-engine.js, src/tire.js, src/suspension.js, src/physics.js, src/terrain-physics.js, src/debris.js

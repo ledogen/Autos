@@ -1,6 +1,6 @@
 ---
 id: DEC-023
-status: standing
+status: draft
 decided: 2026-10-15
 area: economy
 governs: FEAT-113, FEAT-118, src/economy.js, deadline, camping

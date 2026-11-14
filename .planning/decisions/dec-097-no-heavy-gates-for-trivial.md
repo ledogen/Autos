@@ -1,6 +1,6 @@
 ---
 id: DEC-097
-status: standing
+status: draft
 decided: 2026-07-14
 area: process
 governs: test/gates.mjs, npm test

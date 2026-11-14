@@ -1,389 +1,389 @@
 {
-  "settled": [
+ "settled": [
+  {
+   "dec": "DEC-025",
+   "summary": "No reputation track in the alpha; pay rides the region.",
+   "winner": {
+    "where": "FEAT-91 ruling 1 (alpha)",
+    "quote": "No reputation for now"
+   },
+   "loser": {
+    "where": "DESIGN.md line 254",
+    "quote": "pay rides the region step × a capped regional reputation"
+   }
+  },
+  {
+   "dec": "DEC-045",
+   "summary": "Story debug tools are hidden behind a cheat or debug mode, not locked out.",
+   "winner": {
+    "where": "FEAT-43, feat-story-mode-fixed-region.md (owner, 2026-11-07)",
+    "quote": "behind a cheat or debug mode"
+   },
+   "loser": {
+    "where": "DESIGN.md line 335",
+    "quote": "Debug tooling is locked out"
+   }
+  },
+  {
+   "dec": "DEC-052",
+   "summary": "The expedition camp, not the bridge site, is region 1's boss.",
+   "winner": {
+    "where": "FEAT-103 / MILESTONES.md SM-5 row 6 (owner, 2026-10-19)",
+    "quote": "Expedition camp (R1 boss, on the wall)"
+   },
+   "loser": {
+    "where": "DESIGN.md line 229 (2026-10-12)",
+    "quote": "The bridge site is the first boss"
+   }
+  },
+  {
+   "dec": "DEC-013",
+   "summary": "The road past the camp is visibly blocked by a barrier.",
+   "winner": {
+    "where": "FEAT-103 (owner, 2026-10-26)",
+    "quote": "The road past the camp is blocked, not hidden"
+   },
+   "loser": {
+    "where": "DESIGN.md SM-INV-13",
+    "quote": "the network just stops, with no signs"
+   }
+  },
+  {
+   "dec": "DEC-071",
+   "summary": "Road clearance is measured between pavement edges.",
+   "winner": {
+    "where": "FEAT-77 (owner, 2026-09-07/08)",
+    "quote": "12 m of daylight between their pavement edges"
+   },
+   "loser": {
+    "where": "memory project_junction_smooth_rulings",
+    "quote": "12 m centre-to-centre"
+   }
+  },
+  {
+   "dec": "DEC-028",
+   "summary": "The roof rack adds inventory slots.",
+   "winner": {
+    "where": "FEAT-204 (owner, 2026-11-13)",
+    "quote": "a roof rack that gives you 4x more"
+   },
+   "loser": {
+    "where": "items.md, Roof rack row",
+    "quote": "a second space for long, light loads"
+   }
+  },
+  {
+   "dec": "DEC-008",
+   "summary": "A won run's truck is saved for free roam only.",
+   "winner": {
+    "where": "FEAT-205 (owner, 2026-11-13)",
+    "quote": "if you beat the game we save your vehicle configuration to the save file so you can load up your winning truck in freeroam"
+   },
+   "loser": {
+    "where": "design-amendments-2026-07-29.md §2 (SM-INV-8)",
+    "quote": "Not parts, not money, not the car"
+   }
+  },
+  {
+   "dec": "DEC-056",
+   "summary": "Saving is a rolling autosave; loading does not delete the slot.",
+   "winner": {
+    "where": "FEAT-42, feat-save-persistence.md (owner, 2026-10-29)",
+    "quote": "This AMENDS the ratified \"written on quit, deleted on load\""
+   },
+   "loser": {
+    "where": "MILESTONES.md line 752",
+    "quote": "one slot, written on quit, deleted on load, deleted on death"
+   }
+  },
+  {
+   "dec": "DEC-019",
+   "summary": "The camp's firewood line is a free requisition, not bought haul stock.",
+   "winner": {
+    "where": "FEAT-103 (owner, 2026-10-30)",
+    "quote": "The firewood line is 20 bundles, free"
+   },
+   "loser": {
+    "where": "DESIGN.md line 1114",
+    "quote": "Haul stock is bought (owner, 2026-10-22)."
+   }
+  }
+ ],
+ "axioms": [
+  {
+   "id": "AX-1",
+   "area": "process",
+   "title": "A later owner ruling beats an earlier one, wherever it is written",
+   "conflict": "Your rule (an open alpha ticket wins) assumes the alpha ticket holds the newer ruling. In these pairs it does not: a newer ruling of yours sits in a later ticket or a completed one.",
+   "draftRuling": "When two owner rulings disagree, the later-dated one wins, whatever file holds it; the ticket rule applies only when the dates can't be told apart.",
+   "settles": [
     {
-      "dec": "DEC-025",
-      "summary": "No reputation track in the alpha; pay rides the region.",
-      "winner": {
-        "where": "FEAT-91 ruling 1 (alpha)",
-        "quote": "No reputation for now"
-      },
-      "loser": {
-        "where": "DESIGN.md line 254",
-        "quote": "pay rides the region step × a capped regional reputation"
-      }
+     "dec": "DEC-104",
+     "a": {
+      "where": "completed/feat-142-giver-traits.md (owner, 2026-10-31)",
+      "quote": "i dont want them to stack. one at a time max"
+     },
+     "b": {
+      "where": "DESIGN.md line 270, item (7)",
+      "quote": "Giver traits, 0–2 per offer."
+     },
+     "underDraft": "A wins: one trait per offer."
     },
     {
-      "dec": "DEC-045",
-      "summary": "Story debug tools are hidden behind a cheat or debug mode, not locked out.",
-      "winner": {
-        "where": "FEAT-43, feat-story-mode-fixed-region.md (owner, 2026-11-07)",
-        "quote": "behind a cheat or debug mode"
-      },
-      "loser": {
-        "where": "DESIGN.md line 335",
-        "quote": "Debug tooling is locked out"
-      }
+     "dec": "DEC-105",
+     "a": {
+      "where": "FEAT-203 source (owner, 2026-11-13 inbox)",
+      "quote": "changing your tire for the spare should be like 2hrs without them and 30m with them"
+     },
+     "b": {
+      "where": "DESIGN.md line 1237",
+      "quote": "The breaker bar is cut"
+     },
+     "underDraft": "A wins: the two tools come back with the 2 h / 30 min times."
     },
     {
-      "dec": "DEC-052",
-      "summary": "The expedition camp, not the bridge site, is region 1's boss.",
-      "winner": {
-        "where": "FEAT-103 / MILESTONES.md SM-5 row 6 (owner, 2026-10-19)",
-        "quote": "Expedition camp (R1 boss, on the wall)"
-      },
-      "loser": {
-        "where": "DESIGN.md line 229 (2026-10-12)",
-        "quote": "The bridge site is the first boss"
-      }
-    },
-    {
-      "dec": "DEC-013",
-      "summary": "The road past the camp is visibly blocked by a barrier.",
-      "winner": {
-        "where": "FEAT-103 (owner, 2026-10-26)",
-        "quote": "The road past the camp is blocked, not hidden"
-      },
-      "loser": {
-        "where": "DESIGN.md SM-INV-13",
-        "quote": "the network just stops, with no signs"
-      }
-    },
-    {
-      "dec": "DEC-071",
-      "summary": "Road clearance is measured between pavement edges.",
-      "winner": {
-        "where": "FEAT-77 (owner, 2026-09-07/08)",
-        "quote": "12 m of daylight between their pavement edges"
-      },
-      "loser": {
-        "where": "memory project_junction_smooth_rulings",
-        "quote": "12 m centre-to-centre"
-      }
-    },
-    {
-      "dec": "DEC-028",
-      "summary": "The roof rack adds inventory slots.",
-      "winner": {
-        "where": "FEAT-204 (owner, 2026-11-13)",
-        "quote": "a roof rack that gives you 4x more"
-      },
-      "loser": {
-        "where": "items.md, Roof rack row",
-        "quote": "a second space for long, light loads"
-      }
-    },
-    {
-      "dec": "DEC-008",
-      "summary": "A won run's truck is saved for free roam only.",
-      "winner": {
-        "where": "FEAT-205 (owner, 2026-11-13)",
-        "quote": "if you beat the game we save your vehicle configuration to the save file so you can load up your winning truck in freeroam"
-      },
-      "loser": {
-        "where": "design-amendments-2026-07-29.md §2 (SM-INV-8)",
-        "quote": "Not parts, not money, not the car"
-      }
-    },
-    {
-      "dec": "DEC-056",
-      "summary": "Saving is a rolling autosave; loading does not delete the slot.",
-      "winner": {
-        "where": "FEAT-42, feat-save-persistence.md (owner, 2026-10-29)",
-        "quote": "This AMENDS the ratified \"written on quit, deleted on load\""
-      },
-      "loser": {
-        "where": "MILESTONES.md line 752",
-        "quote": "one slot, written on quit, deleted on load, deleted on death"
-      }
-    },
-    {
-      "dec": "DEC-019",
-      "summary": "The camp's firewood line is a free requisition, not bought haul stock.",
-      "winner": {
-        "where": "FEAT-103 (owner, 2026-10-30)",
-        "quote": "The firewood line is 20 bundles, free"
-      },
-      "loser": {
-        "where": "DESIGN.md line 1114",
-        "quote": "Haul stock is bought (owner, 2026-10-22)."
-      }
+     "dec": "DEC-106",
+     "a": {
+      "where": "FEAT-153 § RULED (owner, 2026-11-02)",
+      "quote": "approve all proposals except notes should only come from residence. no specimen for the lab"
+     },
+     "b": {
+      "where": "FEAT-89 (alpha; owner, 2026-10-07)",
+      "quote": "The office and school post nothing at all, fetch included"
+     },
+     "underDraft": "A wins (later). Under the ticket rule alone B would win, since FEAT-89 is the open alpha ticket."
     }
-  ],
-  "axioms": [
+   ]
+  },
+  {
+   "id": "AX-2",
+   "area": "process",
+   "title": "An owner's \"before the alpha\" puts a ticket in the alpha",
+   "conflict": "MILESTONES.md says a ticket no cut table lists is later; two tickets carry an owner ruling that they are built before the alpha but no table lists them.",
+   "draftRuling": "An owner ruling that a ticket is built before the alpha puts it in the alpha; the cut table is updated to list it.",
+   "settles": [
     {
-      "id": "AX-1",
-      "area": "process",
-      "title": "A later owner ruling beats an earlier one, wherever it is written",
-      "conflict": "The ticket rule (\"open pre-alpha tickets win\") was meant as a recency proxy; these pairs are where an older alpha ticket or design note meets a newer owner ruling in a later or completed ticket.",
-      "draftRuling": "When two owner rulings disagree, the later-dated one wins, whatever file holds it; the ticket rule applies only when the dates can't be told apart.",
-      "settles": [
-        {
-          "dec": "DEC-104",
-          "a": {
-            "where": "completed/feat-142-giver-traits.md (owner, 2026-10-31)",
-            "quote": "i dont want them to stack. one at a time max"
-          },
-          "b": {
-            "where": "DESIGN.md line 270, item (7)",
-            "quote": "Giver traits, 0–2 per offer."
-          },
-          "underDraft": "A wins: one trait per offer."
-        },
-        {
-          "dec": "DEC-105",
-          "a": {
-            "where": "FEAT-203 source (owner, 2026-11-13 inbox)",
-            "quote": "changing your tire for the spare should be like 2hrs without them and 30m with them"
-          },
-          "b": {
-            "where": "DESIGN.md line 1237",
-            "quote": "The breaker bar is cut"
-          },
-          "underDraft": "A wins: the two tools come back with the 2 h / 30 min times."
-        },
-        {
-          "dec": "DEC-106",
-          "a": {
-            "where": "FEAT-153 § RULED (owner, 2026-11-02)",
-            "quote": "approve all proposals except notes should only come from residence. no specimen for the lab"
-          },
-          "b": {
-            "where": "FEAT-89 (alpha; owner, 2026-10-07)",
-            "quote": "The office and school post nothing at all, fetch included"
-          },
-          "underDraft": "A wins (later). Under the ticket rule alone B would win, since FEAT-89 is the open alpha ticket."
-        }
-      ]
+     "dec": "DEC-107",
+     "a": {
+      "where": "FEAT-65 (owner, 2026-10-31)",
+      "quote": "build demolition before the alpha"
+     },
+     "b": {
+      "where": "MILESTONES.md § Release cuts",
+      "quote": "A ticket no table lists is later"
+     },
+     "underDraft": "A wins: FEAT-65 joins the alpha table."
     },
     {
-      "id": "AX-2",
-      "area": "process",
-      "title": "An owner's \"before the alpha\" puts a ticket in the alpha",
-      "conflict": "MILESTONES.md says a ticket no cut table lists is later; two tickets carry an owner ruling that they are built before the alpha but no table lists them.",
-      "draftRuling": "An owner ruling that a ticket is built before the alpha puts it in the alpha; the cut table is updated to list it.",
-      "settles": [
-        {
-          "dec": "DEC-107",
-          "a": {
-            "where": "FEAT-65 (owner, 2026-10-31)",
-            "quote": "build demolition before the alpha"
-          },
-          "b": {
-            "where": "MILESTONES.md § Release cuts",
-            "quote": "A ticket no table lists is later"
-          },
-          "underDraft": "A wins: FEAT-65 joins the alpha table."
-        },
-        {
-          "dec": "DEC-108",
-          "a": {
-            "where": "FEAT-148 § Ruled (owner, 2026-10-31)",
-            "quote": "write them BEFORE the alpha"
-          },
-          "b": {
-            "where": "MILESTONES.md § Release cuts",
-            "quote": "A ticket no table lists is later"
-          },
-          "underDraft": "A wins: FEAT-148 joins the alpha table."
-        }
-      ]
-    },
-    {
-      "id": "AX-3",
-      "area": "story",
-      "title": "The owner's newest tutorial note beats the earlier tutorial rulings it contradicts",
-      "conflict": "FEAT-184's tutorial note (2026-11-13) rewrites the intro; the ticket flags where it contradicts DESIGN.md, opening.md, FEAT-170 and the 2026-11-07 choices.",
-      "draftRuling": "Where the tutorial note and an earlier tutorial ruling disagree, the note wins; the earlier ruling is recorded as replaced.",
-      "settles": [
-        {
-          "dec": "DEC-109",
-          "a": {
-            "where": "FEAT-184 tutorial note (owner, 2026-11-13)",
-            "quote": "drive to mom's house she feeds you and sets up the story"
-          },
-          "b": {
-            "where": "DESIGN.md 2026-10-23 pass, item (5)",
-            "quote": "the alpha story is three beats: the firing, the uncle (the tutorial's voice), the expedition camp"
-          },
-          "underDraft": "A wins: mom sets up the story. Open: where the run's goal is told."
-        },
-        {
-          "dec": "DEC-110",
-          "a": {
-            "where": "FEAT-184 tutorial note (owner, 2026-11-13)",
-            "quote": "you wake up the player is in the game with free will"
-          },
-          "b": {
-            "where": "FEAT-170 (owner, 2026-11-05)",
-            "quote": "every playthrough starts the first paid job as a delivery to larry's"
-          },
-          "underDraft": "A wins: free will. Open: whether the casserole stays as an offered (not forced) first job, and where a skip lands."
-        },
-        {
-          "dec": "DEC-111",
-          "a": {
-            "where": "FEAT-184 tutorial note (owner, 2026-11-13)",
-            "quote": "Maybe we should freeze a seed for this purpose or custom build a world"
-          },
-          "b": {
-            "where": "FEAT-184 choice 2 (owner, 2026-11-07, answered (a))",
-            "quote": "The run's own world"
-          },
-          "underDraft": "A wins: a pinned tutorial world, as an exception CLAUDE.md names."
-        }
-      ]
-    },
-    {
-      "id": "AX-4",
-      "area": "process",
-      "title": "Between a memory note and a repo doc, the later-dated one wins",
-      "conflict": "Agent memory notes and repo docs (CLAUDE.md, ASSETS.md, ART-STYLE.md) disagree on process and asset rules; most memory sides are older notes the repo has since moved past.",
-      "draftRuling": "When an agent memory note and a repo doc disagree, the later-dated one wins and the loser is corrected; an owner quote beats an agent's summary of the same date.",
-      "settles": [
-        {
-          "dec": "DEC-112",
-          "a": {
-            "where": "CLAUDE.md § src/ is the product (2026-06-21)",
-            "quote": "No diagnostic plumbing in the frame loop."
-          },
-          "b": {
-            "where": "memory feedback_phase_housekeeping (2026-05-28)",
-            "quote": "Debug variable loggers — HUD overlays, console readouts, or any in-game display"
-          },
-          "underDraft": "A wins (later)."
-        },
-        {
-          "dec": "DEC-113",
-          "a": {
-            "where": "CLAUDE.md § Workers (2026-10-02)",
-            "quote": "Every Worker is a real ES module that imports the code the main thread runs."
-          },
-          "b": {
-            "where": "memory project_terrain_worker_constraints (2026-06-21)",
-            "quote": "WORKER_SOURCE is the SOLE worker source."
-          },
-          "underDraft": "A wins (later)."
-        },
-        {
-          "dec": "DEC-114",
-          "a": {
-            "where": "memory feedback_model_quality_floor (owner, 2026-10-09)",
-            "quote": "~1000 tris is the FLOOR, ticket budgets of 300–400 are too low"
-          },
-          "b": {
-            "where": ".planning/research/ART-STYLE.md budget table (2026-08-07)",
-            "quote": "Hand props, camp gear, cargo | 350–700"
-          },
-          "underDraft": "A wins (later, and the owner's own words)."
-        },
-        {
-          "dec": "DEC-115",
-          "a": {
-            "where": ".planning/research/ASSETS.md (2026-11-05)",
-            "quote": "Exports run headless"
-          },
-          "b": {
-            "where": "memory EXPANDED.md, project_hero_ranger_asset line",
-            "quote": "headless blender NEVER exports — use GUI via blender-mcp"
-          },
-          "underDraft": "A wins (later; MEMORY.md's standing do-not already says the same)."
-        },
-        {
-          "dec": "DEC-116",
-          "a": {
-            "where": "memory feedback_commits (owner, 2026-11-02)",
-            "quote": "uncommitted changes in your worktree are YOURS: commit them, never discard them."
-          },
-          "b": {
-            "where": "memory feedback_check_tree_before_executor (2026-06-10)",
-            "quote": "discard leftovers with `git checkout --`"
-          },
-          "underDraft": "A wins (later). memory feedback_visual_regression_revert_first's \"git checkout <good> -- <files>\" falls with B."
-        },
-        {
-          "dec": "DEC-117",
-          "a": {
-            "where": "CLAUDE.md § Workflow (2026-08-05)",
-            "quote": "Classes: `feature` (FEAT-NN) · `bug` (BUG-NN) · `perf` (PERF-NN) · `quality` (QUAL-NN)"
-          },
-          "b": {
-            "where": "memory feedback_scribe_lane (2026-06-10)",
-            "quote": "use CONCERN-/IDEA- for the rest"
-          },
-          "underDraft": "A wins (later)."
-        }
-      ]
-    },
-    {
-      "id": "AX-5",
-      "area": "ui",
-      "title": "A later presentation ruling beats an invariant's older wording",
-      "conflict": "Two owner rulings on what the cards show (2026-10-23/24) contradict sentences inside the invariants' amendment text, without touching what the invariants protect.",
-      "draftRuling": "A later owner ruling on what a card or HUD shows beats an invariant's older wording about it, as long as the invariant's purpose (par never shown, pay never reading the letter) holds.",
-      "settles": [
-        {
-          "dec": "DEC-118",
-          "a": {
-            "where": ".planning/handoffs/HANDOFF-2026-10-25-orchestrator.md (game-feel review, owner 2026-10-23/24)",
-            "quote": "no letter on any result card"
-          },
-          "b": {
-            "where": "DESIGN.md SM-INV-3 amendment text",
-            "quote": "The result card shows a letter and a number"
-          },
-          "underDraft": "A wins: no letter anywhere; SM-INV-3's purpose (par never shown) holds."
-        },
-        {
-          "dec": "DEC-119",
-          "a": {
-            "where": "src/offer-board.js R-20 (owner, 2026-10-24)",
-            "quote": "Pay $3.63 – $7.27 based on speed"
-          },
-          "b": {
-            "where": "DESIGN.md SM-INV-4 deadline amendment",
-            "quote": "the offer card quotes one number, Base pay, the guaranteed amount ... and the tip is never mentioned on the offer"
-          },
-          "underDraft": "A wins: the range is shown; pay still never reads the letter."
-        }
-      ]
+     "dec": "DEC-108",
+     "a": {
+      "where": "FEAT-148 § Ruled (owner, 2026-10-31)",
+      "quote": "write them BEFORE the alpha"
+     },
+     "b": {
+      "where": "MILESTONES.md § Release cuts",
+      "quote": "A ticket no table lists is later"
+     },
+     "underDraft": "A wins: FEAT-148 joins the alpha table."
     }
-  ],
-  "cases": [
+   ]
+  },
+  {
+   "id": "AX-3",
+   "area": "story",
+   "title": "The owner's newest tutorial note beats the earlier tutorial rulings it contradicts",
+   "conflict": "FEAT-184's tutorial note (2026-11-13) rewrites the intro; the ticket flags where it contradicts DESIGN.md, opening.md, FEAT-170 and the 2026-11-07 choices.",
+   "draftRuling": "Where the tutorial note and an earlier tutorial ruling disagree, the note wins; the earlier ruling is recorded as replaced.",
+   "settles": [
     {
-      "dec": "DEC-120",
-      "question": "How many good deeds open the expedition camp in the alpha: 6, or 10?",
-      "a": {
-        "text": "6 good deeds, as FEAT-103 rules; the run is shorter.",
-        "where": "FEAT-103 (alpha; owner, 2026-10-19)",
-        "quote": "Gated by 6 good deeds"
-      },
-      "b": {
-        "text": "10 good deeds, as src/economy.js ships today, so a region-1 run takes about 12 days.",
-        "where": "FEAT-168 (owner, 2026-11-05) and src/economy.js campDeeds = 10 [DEFAULT]",
-        "quote": "maybe 12 days should be expected for a R1 run"
-      },
-      "why": "FEAT-103 is the open alpha ticket, but the 10 came later from the owner's own 12-day remark; it was set as an agent's default, not ruled.",
-      "alphaTickets": [
-        "FEAT-103",
-        "FEAT-69"
-      ]
+     "dec": "DEC-109",
+     "a": {
+      "where": "FEAT-184 tutorial note (owner, 2026-11-13)",
+      "quote": "drive to mom's house she feeds you and sets up the story"
+     },
+     "b": {
+      "where": "DESIGN.md 2026-10-23 pass, item (5)",
+      "quote": "the alpha story is three beats: the firing, the uncle (the tutorial's voice), the expedition camp"
+     },
+     "underDraft": "A wins: mom sets up the story. Open: where the run's goal is told."
     },
     {
-      "dec": "DEC-121",
-      "question": "When rain lands, does par use that day's grip, or does par stay purely geometric?",
-      "a": {
-        "text": "Par uses the day's μ, so a safe driver in the wet can still make rank.",
-        "where": "FEAT-107 (later)",
-        "quote": "Par uses that day's μ."
-      },
-      "b": {
-        "text": "Par scales with nothing; the wet day is simply harder.",
-        "where": "DESIGN.md SM-INV-2",
-        "quote": "It scales with nothing"
-      },
-      "why": "SM-INV-2 lists what par must not scale with (the car, run age); weather is the world, not the player, so it may not be the same kind of input.",
-      "alphaTickets": []
+     "dec": "DEC-110",
+     "a": {
+      "where": "FEAT-184 tutorial note (owner, 2026-11-13)",
+      "quote": "you wake up the player is in the game with free will"
+     },
+     "b": {
+      "where": "FEAT-170 (owner, 2026-11-05)",
+      "quote": "every playthrough starts the first paid job as a delivery to larry's"
+     },
+     "underDraft": "A wins: free will. Open: whether the casserole stays as an offered (not forced) first job, and where a skip lands."
+    },
+    {
+     "dec": "DEC-111",
+     "a": {
+      "where": "FEAT-184 tutorial note (owner, 2026-11-13)",
+      "quote": "Maybe we should freeze a seed for this purpose or custom build a world"
+     },
+     "b": {
+      "where": "FEAT-184 choice 2 (owner, 2026-11-07, answered (a))",
+      "quote": "The run's own world"
+     },
+     "underDraft": "A wins: a pinned tutorial world, as an exception CLAUDE.md names."
     }
-  ],
-  "overBudget": []
+   ]
+  },
+  {
+   "id": "AX-4",
+   "area": "process",
+   "title": "Between a memory note and a repo doc, the later-dated one wins",
+   "conflict": "Agent memory notes and repo docs (CLAUDE.md, ASSETS.md, ART-STYLE.md) disagree on process and asset rules; most memory sides are older notes the repo has since moved past.",
+   "draftRuling": "When an agent memory note and a repo doc disagree, the later-dated one wins and the loser is corrected; an owner quote beats an agent's summary of the same date.",
+   "settles": [
+    {
+     "dec": "DEC-112",
+     "a": {
+      "where": "CLAUDE.md § src/ is the product (2026-06-21)",
+      "quote": "No diagnostic plumbing in the frame loop."
+     },
+     "b": {
+      "where": "memory feedback_phase_housekeeping (2026-05-28)",
+      "quote": "Debug variable loggers — HUD overlays, console readouts, or any in-game display"
+     },
+     "underDraft": "A wins (later)."
+    },
+    {
+     "dec": "DEC-113",
+     "a": {
+      "where": "CLAUDE.md § Workers (2026-10-02)",
+      "quote": "Every Worker is a real ES module that imports the code the main thread runs."
+     },
+     "b": {
+      "where": "memory project_terrain_worker_constraints (2026-06-21)",
+      "quote": "WORKER_SOURCE is the SOLE worker source."
+     },
+     "underDraft": "A wins (later)."
+    },
+    {
+     "dec": "DEC-114",
+     "a": {
+      "where": "memory feedback_model_quality_floor (owner, 2026-10-09)",
+      "quote": "~1000 tris is the FLOOR, ticket budgets of 300–400 are too low"
+     },
+     "b": {
+      "where": ".planning/research/ART-STYLE.md budget table (2026-08-07)",
+      "quote": "Hand props, camp gear, cargo | 350–700"
+     },
+     "underDraft": "A wins (later, and the owner's own words)."
+    },
+    {
+     "dec": "DEC-115",
+     "a": {
+      "where": ".planning/research/ASSETS.md (2026-11-05)",
+      "quote": "Exports run headless"
+     },
+     "b": {
+      "where": "memory EXPANDED.md, project_hero_ranger_asset line",
+      "quote": "headless blender NEVER exports — use GUI via blender-mcp"
+     },
+     "underDraft": "A wins (later; MEMORY.md's standing do-not already says the same)."
+    },
+    {
+     "dec": "DEC-116",
+     "a": {
+      "where": "memory feedback_commits (owner, 2026-11-02)",
+      "quote": "uncommitted changes in your worktree are YOURS: commit them, never discard them."
+     },
+     "b": {
+      "where": "memory feedback_check_tree_before_executor (2026-06-10)",
+      "quote": "discard leftovers with `git checkout --`"
+     },
+     "underDraft": "A wins (later). memory feedback_visual_regression_revert_first's \"git checkout <good> -- <files>\" falls with B."
+    },
+    {
+     "dec": "DEC-117",
+     "a": {
+      "where": "CLAUDE.md § Workflow (2026-08-05)",
+      "quote": "Classes: `feature` (FEAT-NN) · `bug` (BUG-NN) · `perf` (PERF-NN) · `quality` (QUAL-NN)"
+     },
+     "b": {
+      "where": "memory feedback_scribe_lane (2026-06-10)",
+      "quote": "use CONCERN-/IDEA- for the rest"
+     },
+     "underDraft": "A wins (later)."
+    }
+   ]
+  },
+  {
+   "id": "AX-5",
+   "area": "ui",
+   "title": "A later presentation ruling beats an invariant's older wording",
+   "conflict": "Two owner rulings on what the cards show (2026-10-23/24) contradict sentences inside the invariants' amendment text, without touching what the invariants protect.",
+   "draftRuling": "A later owner ruling on what a card or HUD shows beats an invariant's older wording about it, as long as the invariant's purpose (par never shown, pay never reading the letter) holds.",
+   "settles": [
+    {
+     "dec": "DEC-118",
+     "a": {
+      "where": ".planning/handoffs/HANDOFF-2026-10-25-orchestrator.md (game-feel review, owner 2026-10-23/24)",
+      "quote": "no letter on any result card"
+     },
+     "b": {
+      "where": "DESIGN.md SM-INV-3 amendment text",
+      "quote": "The result card shows a letter and a number"
+     },
+     "underDraft": "A wins: no letter anywhere; SM-INV-3's purpose (par never shown) holds."
+    },
+    {
+     "dec": "DEC-119",
+     "a": {
+      "where": "src/offer-board.js R-20 (owner, 2026-10-24)",
+      "quote": "Pay $3.63 – $7.27 based on speed"
+     },
+     "b": {
+      "where": "DESIGN.md SM-INV-4 deadline amendment",
+      "quote": "the offer card quotes one number, Base pay, the guaranteed amount ... and the tip is never mentioned on the offer"
+     },
+     "underDraft": "A wins: the range is shown; pay still never reads the letter."
+    }
+   ]
+  }
+ ],
+ "cases": [
+  {
+   "dec": "DEC-120",
+   "question": "How many good deeds open the expedition camp in the alpha: 6, or 10?",
+   "a": {
+    "text": "6 good deeds, as FEAT-103 rules; the run is shorter.",
+    "where": "FEAT-103 (alpha; owner, 2026-10-19)",
+    "quote": "Gated by 6 good deeds"
+   },
+   "b": {
+    "text": "10 good deeds, as src/economy.js ships today, so a region-1 run takes about 12 days.",
+    "where": "FEAT-168 (owner, 2026-11-05) and src/economy.js campDeeds = 10 [DEFAULT]",
+    "quote": "maybe 12 days should be expected for a R1 run"
+   },
+   "why": "FEAT-103 is the open alpha ticket, but the 10 came later from the owner's own 12-day remark; it was set as an agent's default, not ruled.",
+   "alphaTickets": [
+    "FEAT-103",
+    "FEAT-69"
+   ]
+  },
+  {
+   "dec": "DEC-121",
+   "question": "When rain lands, does par use that day's grip, or does par stay purely geometric?",
+   "a": {
+    "text": "Par uses the day's μ, so a safe driver in the wet can still make rank.",
+    "where": "FEAT-107 (later)",
+    "quote": "Par uses that day's μ."
+   },
+   "b": {
+    "text": "Par scales with nothing; the wet day is simply harder.",
+    "where": "DESIGN.md SM-INV-2",
+    "quote": "It scales with nothing"
+   },
+   "why": "SM-INV-2 lists what par must not scale with (the car, run age); weather is the world, not the player, so it may not be the same kind of input.",
+   "alphaTickets": []
+  }
+ ],
+ "overBudget": []
 }

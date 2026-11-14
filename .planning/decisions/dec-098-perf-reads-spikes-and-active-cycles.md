@@ -1,6 +1,6 @@
 ---
 id: DEC-098
-status: standing
+status: draft
 decided: 2026-11-12
 area: perf
 governs: PERF-40, test/playtest-bench.mjs, test/lib/ioreport.py

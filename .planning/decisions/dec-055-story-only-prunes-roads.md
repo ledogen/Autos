@@ -1,6 +1,6 @@
 ---
 id: DEC-055
-status: standing
+status: draft
 decided: 2026-10-19
 area: world
 governs: SM-INV-13, SM-INV-12, src/road.js, region wall

@@ -1,6 +1,6 @@
 ---
 id: DEC-020
-status: standing
+status: draft
 decided: 2026-10-21
 area: economy
 governs: FEAT-141, FEAT-87, data/offers.js, papers, deadline

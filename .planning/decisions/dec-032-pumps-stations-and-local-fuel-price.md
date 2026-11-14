@@ -1,6 +1,6 @@
 ---
 id: DEC-032
-status: standing
+status: draft
 decided: 2026-11-13
 area: economy
 governs: FEAT-209, FEAT-55, src/economy.js, fuel price

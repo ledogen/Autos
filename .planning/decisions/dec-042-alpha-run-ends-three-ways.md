@@ -1,6 +1,6 @@
 ---
 id: DEC-042
-status: standing
+status: draft
 decided: 2026-10-23
 area: story
 governs: FEAT-146, src/main.js, run end, summary

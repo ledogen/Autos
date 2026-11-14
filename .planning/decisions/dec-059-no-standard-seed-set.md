@@ -1,6 +1,6 @@
 ---
 id: DEC-059
-status: standing
+status: draft
 decided: 2026-08-03
 area: process
 governs: test/gates.mjs, seeds, world-gen calls

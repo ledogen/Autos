@@ -1,6 +1,6 @@
 ---
 id: DEC-099
-status: standing
+status: draft
 decided: 2026-11-02
 area: process
 governs: world-gen calls, review pages

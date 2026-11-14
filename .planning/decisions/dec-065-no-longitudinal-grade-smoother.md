@@ -1,6 +1,6 @@
 ---
 id: DEC-065
-status: standing
+status: draft
 decided: 2026-09-22
 area: roads
 governs: FEAT-68, src/road.js, grade, crest

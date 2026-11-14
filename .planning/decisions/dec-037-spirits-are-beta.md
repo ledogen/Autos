@@ -1,6 +1,6 @@
 ---
 id: DEC-037
-status: standing
+status: draft
 decided: 2026-10-23
 area: story
 governs: FEAT-36, spirits, pacts

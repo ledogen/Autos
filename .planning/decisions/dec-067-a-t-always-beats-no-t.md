@@ -1,6 +1,6 @@
 ---
 id: DEC-067
-status: standing
+status: draft
 decided: 2026-08-31
 area: roads
 governs: src/road.js, junctions, T promotion

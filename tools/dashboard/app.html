@@ -568,10 +568,10 @@ function viewDecisions() {
   const standing = of('standing'), areas = [...DEC_AREAS, ...new Set(standing.map(d => d.area).filter(a => !DEC_AREAS.includes(a)))];
   const nSup = of('superseded').length;
   return `
-    <div class="count">${standing.length} standing · ${of('draft').length} unsettled · ${nSup} superseded${q ? ` matching “${esc(q)}”` : ''}
+    <div class="count">${standing.length} standing · ${of('draft').length} awaiting the owner · ${nSup} superseded${q ? ` matching “${esc(q)}”` : ''}
       ${nSup ? ` · <a href="#/decisions${all ? '' : '?all=1'}">${all ? 'hide' : 'show'} superseded</a>` : ''}</div>
     ${areas.map(a => group(a, standing.filter(d => d.area === a))).join('')}
-    ${group('unsettled — sources conflict, the owner has not ruled', of('draft'))}
+    ${group('awaiting the owner — sources conflict, or an agent wrote the wording', of('draft'))}
     ${all ? group('superseded', of('superseded')) : ''}
     ${DECISIONS.length ? '' : '<p class="muted">No decision records yet (.planning/decisions/).</p>'}`;
 }

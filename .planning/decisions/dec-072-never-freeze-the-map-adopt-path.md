@@ -1,6 +1,6 @@
 ---
 id: DEC-072
-status: standing
+status: draft
 decided: 2026-09-20
 area: perf
 governs: BUG-68, src/road-network-client.js, story map

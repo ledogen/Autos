@@ -1,6 +1,6 @@
 ---
 id: DEC-061
-status: standing
+status: draft
 decided: 2026-10-23
 area: world
 governs: MILESTONES.md, Highway, Shortcut

@@ -1,6 +1,6 @@
 ---
 id: DEC-068
-status: standing
+status: draft
 decided: 2026-10-12
 area: roads
 governs: BUG-82, src/road.js, junction pads

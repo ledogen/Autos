@@ -1,6 +1,6 @@
 ---
 id: DEC-086
-status: standing
+status: draft
 decided: 2026-06-30
 area: process
 governs: process, design

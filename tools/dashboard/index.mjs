@@ -149,8 +149,8 @@ function walk(dir, out = []) {
 }
 
 /* ── decision records (INFRA-10) ──────────────────────────────────────────
- * One ruling per file: .planning/decisions/dec-NNN-<slug>.md. Frontmatter `id`, `status` (draft = its sources
- * conflict and the owner has not ruled · standing · superseded), `decided`, `area`, `governs` (ticket ids, file
+ * One ruling per file: .planning/decisions/dec-NNN-<slug>.md. Frontmatter `id`, `status` (draft = not yet the owner's: its
+ * sources conflict, or an agent's wording awaits approval · standing · superseded), `decided`, `area`, `governs` (ticket ids, file
  * paths, subsystem words), `supersedes`. A standing record is frozen except its `status:` line; a change of mind
  * is a new record (decisions.check.mjs holds that). They ride beside the tickets, never among them: own tab, no
  * part in the open counts. A ticket named in `governs` lists the record on its page. */

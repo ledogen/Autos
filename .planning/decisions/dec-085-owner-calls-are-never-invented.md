@@ -1,6 +1,6 @@
 ---
 id: DEC-085
-status: standing
+status: draft
 decided: 2026-07-29
 area: process
 governs: DESIGN.md, CLAUDE.md, open questions

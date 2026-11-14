@@ -1,6 +1,6 @@
 ---
 id: DEC-053
-status: standing
+status: draft
 decided: 2026-10-12
 area: world
 governs: FEAT-28, regions, ladder

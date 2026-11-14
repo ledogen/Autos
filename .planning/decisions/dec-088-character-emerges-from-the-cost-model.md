@@ -1,6 +1,6 @@
 ---
 id: DEC-088
-status: standing
+status: draft
 decided: 2026-07-05
 area: process
 governs: src/road.js, src/economy.js, emergent

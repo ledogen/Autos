@@ -1,6 +1,6 @@
 ---
 id: DEC-048
-status: standing
+status: draft
 decided: 2026-07-20
 area: world
 governs: src/poi.js, src/road.js, POI placement

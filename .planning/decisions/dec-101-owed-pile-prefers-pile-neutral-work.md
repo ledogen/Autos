@@ -1,6 +1,6 @@
 ---
 id: DEC-101
-status: standing
+status: draft
 decided: 2026-11-09
 area: process
 governs: lanes, owed cards

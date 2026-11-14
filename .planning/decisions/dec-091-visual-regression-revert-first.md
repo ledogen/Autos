@@ -1,6 +1,6 @@
 ---
 id: DEC-091
-status: standing
+status: draft
 decided: 2026-06-27
 area: process
 governs: process, visual regression

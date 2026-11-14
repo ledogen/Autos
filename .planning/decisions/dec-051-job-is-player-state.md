@@ -1,6 +1,6 @@
 ---
 id: DEC-051
-status: standing
+status: draft
 decided: 2026-10-19
 area: story
 governs: src/poi.js, src/camp.js, pumps, shops

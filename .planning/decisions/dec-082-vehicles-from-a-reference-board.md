@@ -1,6 +1,6 @@
 ---
 id: DEC-082
-status: standing
+status: draft
 decided: 2026-10-29
 area: assets
 governs: assets/models/, vehicles, reference board

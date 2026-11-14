@@ -1,6 +1,6 @@
 ---
 id: DEC-070
-status: standing
+status: draft
 decided: 2026-08-17
 area: roads
 governs: src/road.js, src/road-network-worker.js, connectivity, site score

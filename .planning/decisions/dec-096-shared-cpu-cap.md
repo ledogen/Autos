@@ -1,6 +1,6 @@
 ---
 id: DEC-096
-status: standing
+status: draft
 decided: 2026-11-07
 area: process
 governs: test/run-all.mjs, test/cdp-smoke.mjs, CPU

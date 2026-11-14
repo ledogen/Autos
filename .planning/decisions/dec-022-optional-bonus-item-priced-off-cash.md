@@ -1,6 +1,6 @@
 ---
 id: DEC-022
-status: standing
+status: draft
 decided: 2026-11-13
 area: economy
 governs: FEAT-199, src/offer-board.js, data/items.js, bonus item, reward

@@ -1,6 +1,6 @@
 ---
 id: DEC-084
-status: standing
+status: draft
 decided: 2026-11-12
 area: repo
 governs: PERF-40, test/lib/autopilot.mjs, AI cars

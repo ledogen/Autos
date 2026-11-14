@@ -1,6 +1,6 @@
 ---
 id: DEC-064
-status: standing
+status: draft
 decided: 2026-09-06
 area: roads
 governs: QUAL-29, src/road.js, cTurn, wGrade

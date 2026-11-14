@@ -1,6 +1,6 @@
 ---
 id: DEC-054
-status: standing
+status: draft
 decided: 2026-08-27
 area: world
 governs: BUG-100, BUG-85, src/world-validate.js, condemned road

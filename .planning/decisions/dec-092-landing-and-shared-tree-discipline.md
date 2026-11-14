@@ -1,6 +1,6 @@
 ---
 id: DEC-092
-status: standing
+status: draft
 decided: 2026-11-07
 area: process
 governs: git, landing, main
