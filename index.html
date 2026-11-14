@@ -1518,13 +1518,13 @@
                 border-left: 1px solid var(--line-card); font-family: var(--font); font-size: 14px; color: var(--text-body); }
     #map-list-head { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px 8px; font-size: 12px; }
     /* The list's two tabs (the bumpers swap them, a click too): the one showing carries the story accent. */
-    #map-list-head .ml-tab { color: var(--text-faint); letter-spacing: 2px; text-transform: uppercase; cursor: pointer; margin-right: 12px;
+    #map-list-head .ml-tab { color: var(--text-faint); letter-spacing: 1px; text-transform: uppercase; cursor: pointer; margin-right: 10px;
                              transition: color 0.1s; }
     #map-list-head .ml-tab:hover { color: var(--text-bright); }
     #map-list-head .ml-tab.on { color: var(--accent-story); }
     /* The run HUD's clock, repeated: the window covers the HUD on a small screen, and the clock is where a job's due
        time is read while weighing offers (owner, 2026-10-15). */
-    #map-clock { color: var(--text-dim); letter-spacing: 1px; }
+    #map-clock { color: var(--text-dim); letter-spacing: 1px; white-space: nowrap; }
     #map-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     #map-list .ml-row { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer;
                         border-left: 2px solid transparent; transition: background-color 0.1s, border-color 0.1s; }
