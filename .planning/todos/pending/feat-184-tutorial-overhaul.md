@@ -372,10 +372,10 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
 - [x] Decision records DEC-146..154 (DEC-109 and DEC-110 superseded)
 - [ ] The follow-up dive answered (`FEAT-184-tutorial-flow.html`)
 - Landing 1:
-  - [ ] No setting and no "always skip": the `skipTutorial` row and its auto-on are gone; the first playthrough ever is one stored mark
-  - [ ] The prompt reads "hold M to skip tutorial"; the confirmation when the player chose the tutorial or on the first playthrough ever
-  - [ ] Traps: no fuel burn on the evening, no damage (already), off the road puts you back on it, the pump until broke, the shop's tire on mom
-  - [ ] Pocket change through the tutorial; the last paycheck paid at its end
+  - [x] No setting and no "always skip": the `skipTutorial` row and its auto-on are gone; the first playthrough ever is one stored mark
+  - [x] The prompt reads "hold M to skip tutorial"; the confirmation when the player chose the tutorial or on the first playthrough ever
+  - [x] Traps: no fuel burn on the evening, no damage (already), off the road puts you back on it, the pump until broke, the shop's tire on mom
+  - [x] Pocket change through the tutorial; the last paycheck paid at its end
 - Landing 2 (waits on the follow-up dive):
   - [ ] The card at the end of the intro: play the tutorial, or skip
   - [ ] The skip lands outside the burger place when the intro ends, with the boss's check; no burger job for ~18 h
@@ -469,5 +469,17 @@ Each has a recommendation there.
 ## Log
 - 2026-11-07 / 11-08: the plan, the beat sheet, the census, stages 1–5 and the menu split (see the history above;
   hashes there).
+- 2026-11-14: landing 1 built on feature/run-shape (Lane A): 115cf26b (ServiceCenter onMom / useMom: one tire on mom,
+  the part once and its fitting once) · 913d0be2 (main.js: the `skipTutorial` setting and its auto-on removed,
+  `playedBefore` in settings.js is the first-playthrough mark; the prompt "hold M to skip tutorial"; a completed hold
+  arms "are you sure you want to skip the tutorial" for 5 s on a first playthrough or a menu-chosen tutorial, and a
+  second hold skips; the evening burns no fuel; off the road and unparked outside a place's ring for 4 s of play, the
+  truck goes back on the road; at the evening's pump the park lock holds the brake while pocket change and tank room
+  are left (her "tut-fillup" card); a played opening runs on $3 of pocket change (economy.js withholdPaycheck), the
+  $10 paycheck lands at Larry's welcome or on a skip (payPaycheck; Earned subtracts the pocket change)). Gates:
+  service + economy gained FEAT-184 checks. cdp-smoke's story / opening / pad steps and run-soak's skip rewritten for
+  the confirmation, the fill-up, the off-road reset and the tire on mom; NOT run on the branch.
+  [DEFAULT]s: $3 pocket change, 4 s off-road, 5 s confirmation window, fuel off for the whole evening (not only to the
+  station). [interim] The paycheck lands at Larry's until landing 2 moves the last act to the burger joint.
 - 2026-11-14: the tutorial dive folded in (Lane A): DEC-146..154; DEC-109 / DEC-110 superseded; the issues checked
   against the code (Open questions; the follow-up dive).
