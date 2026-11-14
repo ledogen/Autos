@@ -134,6 +134,7 @@ import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
 import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
+import { lampsOn, homeLamps, shopLamps, setGlow } from './poi-night.js'   // FEAT-214: POI night lights
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -3184,6 +3185,7 @@ function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
   _poiMeshes.clear()
+  _homeLamps.clear(); _shopLampMats.clear(); _shopLampsOn = null
   for (const { mesh } of _dropMarks.values()) mesh.geometry.dispose()   // per-mark geometry, not shared
   _dropMarks.clear()
   _customerRings.clear()
@@ -3198,7 +3200,8 @@ function _rebuildPoiMarkers () {
     if (q.modelKey) {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
       // unlike the small thrown mission items FEAT-59's cast-only default was written for.
-      const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant })
+      const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant,
+        onReady: (inst) => _wirePoiLamps(q, inst) })
       // pad records are base-seated, and so are the models. modelX/Z, not the pad centre: a model
       // may be `seat`ed toward the back of the pad to leave its yard on the road side (FEAT-71).
       m.position.set(q.modelX, q.baseY, q.modelZ)   // BUG-91: the carved ground, not the pad's design top
@@ -3356,6 +3359,32 @@ function _updateCustomerRings () {
  * once the truck is clear of the pad, so a car never spawns into the chassis. Colliders re-sync
  * only when a flag flips (or on `force`, the marker rebuild). Deterministic: it reads the board.
  */
+// FEAT-214 — night lights (src/poi-night.js). Shop lamp materials are SHARED across instances, so one
+// flag drives them all; a residence owns its clone, driven by its own offer / delivery state.
+const _SHOP_TYPES = new Set(['gasPump', 'gasStation', 'autoShop', 'foodVendor', 'generalStore', 'tackleShop'])
+const _shopLampMats = new Set()
+const _homeLamps = new Map()   // poi id → { mats, on }
+let _shopLampsOn = null
+function _wirePoiLamps (q, inst) {
+  if (_SHOP_TYPES.has(q.type)) { shopLamps(inst, _shopLampMats); _shopLampsOn = null }
+  else if (q.type === 'residence' || q.tags?.includes('residence')) {
+    const mats = homeLamps(inst)
+    if (mats.length) _homeLamps.set(q.id, { mats, on: null })
+  }
+}
+function _updatePoiNightLights () {
+  const h = daySystem.hour()
+  const on = lampsOn('shop', h)
+  if (on !== _shopLampsOn) { _shopLampsOn = on; setGlow(_shopLampMats, on) }
+  if (!_homeLamps.size) return
+  const now = daySystem.clockH(), m = missionSystem?.mission
+  for (const [id, hl] of _homeLamps) {
+    const keep = !!m && (m.endPoiId === id || m.stopIds?.includes(id)) ||
+                 !!offerBoard && offerBoard.slotStates(id, now).some(s => s.state === 'live')
+    const lit = lampsOn('home', h, keep)
+    if (lit !== hl.on) { hl.on = lit; setGlow(hl.mats, lit) }
+  }
+}
 function _updatePoiPresence (force = false) {
   let changed = force
   const vp = vehicleState.position
@@ -10946,6 +10975,7 @@ function loop (t) {
     _updateCustomerRings()
     // FEAT-102: the motorist's car comes and goes with its work — before the rings read the flag.
     _updatePoiPresence()
+    _updatePoiNightLights()
     // FEAT-46: the orange interaction ring ↔ green start-zone ring swap rides the same poll.
     _updateMissionRings()
 
