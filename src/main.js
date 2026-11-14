@@ -4946,6 +4946,7 @@ let _recalcOn = false
 // RoadSystem query, and nothing anywhere near the input/physics path. Shown only once the run is
 // live: during 'offer' the truck has not been teleported to the start yet, so arrows would point
 // off elsewhere.
+const _gpsFwd = new THREE.Vector3()
 gpsSystem = new GpsSystem(scene, {
   getRoute: () => {
     // FEAT-61/63: the paper route gets guidance too, and it gets the SHORTEST WAY TO FINISH from
@@ -4975,6 +4976,7 @@ gpsSystem = new GpsSystem(scene, {
     return _waypointOn() ? _tutLine(_waypoint.route) : null   // FEAT-211: last in line — a job's guide always wins
   },
   getCar: () => vehicleState.position,
+  getFwd: () => { _gpsFwd.set(0, 0, -1).applyQuaternion(vehicleState.quaternion); const m = Math.hypot(_gpsFwd.x, _gpsFwd.z) || 1; return { x: _gpsFwd.x / m, z: _gpsFwd.z / m } },   // FEAT-215
   // Read at BAKE time only (once per mission, plus while the bake is still partial): the design
   // profile the carve, the ribbon mesh and the physics all read. Without it the overlay bakes the
   // par oracle's elevation instead, which is a different pipeline stage and disagrees by up to

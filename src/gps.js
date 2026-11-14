@@ -39,6 +39,13 @@ const ARROW_IN     = 140    // m: arrow starts fading in
 const ARROW_FULL   = 110    // m: fully opaque
 const ARROW_PAST   = 12     // m past the node before it is dropped
 const RING_HOVER   = 1.4
+// FEAT-215: the U-turn ribbon. Shows while the truck points >120° off the route's direction (cos < UT_ON),
+// clears once it is within ~100° (cos > UT_OFF) — the gap is the hysteresis so it does not flicker at 90–120°.
+const UT_ON        = -0.5
+const UT_OFF       = -0.2
+const UT_R         = 4      // m: radius of the half-circle
+const UT_AHEAD     = 7      // m: its centre ahead of the truck
+const UT_HOVER     = 2.5    // m above the truck
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
 // FEAT-61 self-overlap (a paper route drives some streets out and back). A vertex counts as a
@@ -316,6 +323,25 @@ function _arrowGeometry () {
   return g
 }
 
+/**
+ * FEAT-215: a flat ribbon bent through 180° with an arrowhead on its end, in the turn arrow's colour.
+ * Local frame: +Z = the truck's forward, the ribbon leaves at (+R, 0), swings round the far side and ends
+ * at (-R, 0) heading back (-Z). A right-hand turn is this mirrored (scale.x = -1; the material is double-sided).
+ */
+function _uturnGeometry () {
+  const hw = 0.6, N = 24, pos = []
+  const at = (a, r) => [r * Math.cos(a), 0, r * Math.sin(a)]
+  for (let i = 0; i < N; i++) {
+    const a0 = Math.PI * i / N, a1 = Math.PI * (i + 1) / N
+    const q = [at(a0, UT_R - hw), at(a0, UT_R + hw), at(a1, UT_R + hw), at(a1, UT_R - hw)]
+    for (const k of [0, 1, 2, 0, 2, 3]) pos.push(...q[k])
+  }
+  pos.push(-UT_R - 1.5, 0, 0, -UT_R + 1.5, 0, 0, -UT_R, 0, -2.2)   // the head, past the ribbon's end
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  return g
+}
+
 // ── the system ──────────────────────────────────────────────────────────────────────────────
 
 export class GpsSystem {
@@ -328,10 +354,12 @@ export class GpsSystem {
    *   getRoad returns the RoadSystem, read ONLY at bake time (not per frame) for the design
    *   profile the carve actually uses — see bakeRoute's ELEVATION SOURCE note.
    */
-  constructor (scene, { getRoute, getCar, getRoad = null }) {
+  constructor (scene, { getRoute, getCar, getFwd = null, getRoad = null }) {
     this._scene = scene
     this._getRoute = getRoute
     this._getCar = getCar
+    this._getFwd = getFwd     // FEAT-215: the truck's forward {x, z}, unit, horizontal
+    this._uturn = false
     this._getRoad = getRoad
     this._route = null
     this._src = null          // the mission object the current bake came from (identity compare)
@@ -368,6 +396,13 @@ export class GpsSystem {
     this._arrow.renderOrder = 3
     this._arrow.visible = false
     this.group.add(this._arrow)
+
+    this._uturnMat = mat()
+    this._uturnMesh = new THREE.Mesh(_uturnGeometry(), this._uturnMat)
+    this._uturnMesh.frustumCulled = false
+    this._uturnMesh.renderOrder = 3
+    this._uturnMesh.visible = false
+    this.group.add(this._uturnMesh)
 
     this._ringGeo = new THREE.TorusGeometry(6, 0.35, 8, 40)
     this._ringGeo.rotateX(Math.PI / 2)
@@ -413,7 +448,7 @@ export class GpsSystem {
     return Number.isFinite(p?.gradeY) ? p.gradeY : null
   }
 
-  _hideAll () { this._chev.visible = false; this._arrow.visible = false; this._ring.visible = false }
+  _hideAll () { this._chev.visible = false; this._arrow.visible = false; this._ring.visible = false; this._uturnMesh.visible = false; this._uturn = false }
 
   update (dt) {
     if (!this.enabled) return
@@ -451,6 +486,7 @@ export class GpsSystem {
 
     this._placeChevrons(route, prog.s)
     this._placeArrow(route, prog.s)
+    this._placeUturn(route, prog.s, car)
     // FEAT-187: a route flagged noRing (a demolition job's) has no destination circle — its targets wear halos.
     if (this._src?.noRing) this._ring.visible = false
     else this._placeRing(route, prog.s)
@@ -545,6 +581,22 @@ export class GpsSystem {
     this._arrow.rotation.set(0, Math.atan2(-j.oz, j.ox), 0)
     this._arrowMat.opacity = Math.max(0, Math.min(1, fade))
     this._arrow.visible = this._arrowMat.opacity > 0.02
+  }
+
+  _placeUturn (route, s, car) {
+    const f = this._getFwd?.()
+    if (!f || route.length - s < 30) { this._uturnMesh.visible = this._uturn = false; return }
+    const t = sampleRoute(route, s + 8)
+    const c = f.x * t.dx + f.z * t.dz
+    this._uturn = c < UT_ON || (this._uturn && c < UT_OFF)
+    this._uturnMesh.visible = this._uturn
+    if (!this._uturn) return
+    // The turn goes to the side the route lies on (right·(ahead − truck) > 0 → mirror).
+    const ahead = sampleRoute(route, s + 20)
+    const right = f.z * (ahead.x - car.x) - f.x * (ahead.z - car.z)
+    this._uturnMesh.position.set(car.x + f.x * UT_AHEAD, car.y + UT_HOVER + Math.sin(this._t * 1.6) * 0.12, car.z + f.z * UT_AHEAD)
+    this._uturnMesh.rotation.set(0, Math.atan2(f.x, f.z), 0)
+    this._uturnMesh.scale.x = right > 0 ? -1 : 1
   }
 
   _placeRing (route, s) {
