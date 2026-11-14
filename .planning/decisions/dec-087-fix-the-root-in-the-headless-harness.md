@@ -1,6 +1,6 @@
 ---
 id: DEC-087
-status: draft
+status: standing
 decided: 2026-06-12
 area: process
 governs: test/, test/replay.mjs, bugs
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_fix_root_not_symptom; CLAUDE.md § Workflow. Date from the memory note. Agent wording.
+**Source.** memory feedback_fix_root_not_symptom; CLAUDE.md § Workflow. Date from the memory note. Agent wording, owner approved 2026-11-13.

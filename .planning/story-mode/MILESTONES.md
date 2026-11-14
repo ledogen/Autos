@@ -24,7 +24,7 @@ that visible before you start rather than after.
 2026-10-23) — "it'll be missing a lot of content but the things that are there should be complete."
 So an alpha ticket closes on its whole acceptance, not a stub, and anything the player sees in the
 alpha is real: no placeholder models. **The region is today's 2500 m story circle** (owner,
-2026-10-23); the ladder's R1 sector is beta. **Beta = three or five regions**,
+2026-10-23); the story world's R1 sector is beta (DEC-053). **Beta = three or five regions**,
 plus shortcuts, dirt roads and spirits. **Later** = everything else. Provenance:
 [design-amendments-2026-10-23-release-cuts.md](design-amendments-2026-10-23-release-cuts.md).
 
@@ -76,6 +76,8 @@ How the cut works:
 | FEAT-212, FEAT-213 | the auto shop menu: nested Maintenance tree, Shop list, cart and checkout; the component info texts (owner's menu spec, 2026-11-13) |
 | FEAT-204 | visual mods: light bar, bed toolbox, roof rack, bull bar (owner, 2026-11-13: "before alpha. doesnt have to be a ton") |
 | FEAT-205 | a win saves the truck configuration; free roam can load the winning truck (owner, 2026-11-13: "alpha feature … not urgent") |
+| FEAT-65 | demolition missions, the expedition camp requisition's fifth line (owner, 2026-10-31: "build demolition before the alpha"; DEC-107) |
+| FEAT-148 | the owner-authored lines: giver flavor, the sleep reminder, the intro (owner, 2026-10-31: "write them BEFORE the alpha"; DEC-108) |
 
 **Branches landed 2026-10-24:** `feature/mission-recut` (FEAT-138/114/139), `feature/game-feel` (the
 mission-feel review R-01..R-34) and `feature/parts` are on main and deleted; one checkout from here on.
@@ -89,7 +91,7 @@ The alpha build order and lanes: `.planning/handoffs/HANDOFF-2026-10-24-consolid
 
 | Ticket | Why beta |
 |---|---|
-| FEAT-28 | region unlocks — the ladder, the walls, the unlock load |
+| FEAT-28 | region unlocks — the regions north to south, the walls, the unlock load (DEC-053) |
 | FEAT-52 | the off-network generator — shortcuts, spurs, cuts |
 | FEAT-38 | dirt roads |
 | FEAT-32 | logged forest — sited by FEAT-52 |
@@ -261,7 +263,7 @@ what exists.**
 economy attached. The last leg of the day is the game (SM-INV-6).
 
 - **Game-mode shell** (ratified 2026-07-16): main menu selecting Free Roam / Story Mode (/ one-off
-  scenarios later). Story mode boots region-limited with **debug tooling locked out** and sliders
+  scenarios later). Story mode boots region-limited with **debug tooling behind a cheat or debug mode** (DEC-045) and sliders
   fixed. Extend the existing `window.__setGameMode` seam — do not invent a second mode mechanism.
   Free Roam remains exactly the game built to date. *(FEAT-41 is the fuller version of this.)*
 - Run clock: **24-minute in-game day** [RATIFIED 2026-07-29] mapped onto sky time-of-day
@@ -723,7 +725,7 @@ Take the first item that is not blocked. Each one is a ticket with its own accep
 | 8 | **FEAT-69** + **FEAT-117** economy re-cut and reputation | balance once the costs and the 7 / 6 / 5 shape are real | multi-day run data |
 
 **Behind SM-4, deliberately unticketed** (tickets are minted at milestone entry): the region
-bosses (~~R1 log drag, R2 bridge meter~~ **R1 bridge site; the log drag is a toy/scenario, 2026-10-12**), region modifiers, motorist relocation, and POI/job counts
+bosses (~~R1 log drag, R2 bridge meter~~ **R1 the expedition camp (DEC-052); the log drag is a toy/scenario, 2026-10-12**), region modifiers, motorist relocation, and POI/job counts
 scaled to region size. The candidate classes (ranger station, campground, …) are liked, not
 adopted — do not build them unprompted.
 
@@ -751,11 +753,11 @@ adopted — do not build them unprompted.
 - What persists: **literacy + the garage**. What doesn't: car, parts, money, **mission points, region/trail
   clearance, and world parameter states** (SM-INV-8 narrowed, SM-INV-14).
 - **The garage** — meta-progression is unlocked *starting vehicles*, lateral never upward.
-- **Suspend-and-resume saving**: one slot, written on quit, **deleted on load**, deleted on death.
+- **Saving is one rolling autosave**: one slot per profile, overwritten about once a second while a run is live, deleted on death; loading does not delete it (DEC-056).
   Cheap precisely because worldgen is meta-free — the world is never serialized. (FEAT-42.)
 - Run shape target: ~~**6 regions** (chapters — the play space is cumulative, later missions may span
-  regions, and **regions grow with depth on a sparser grid**), **20 days**~~ **three regions on
-  concentric rings, ~12–14 days [2026-10-12]**, **6 h** to beat, ~~**27 points**~~ points owed a re-cut. The full trail chain must fit in **one run** (SM-INV-7) — that bounds region count.
+  regions, and **regions grow with depth on a sparser grid**), **20 days**~~ **three regions laid
+  out north to south, ~12–14 days [2026-10-12] (DEC-053)**, **6 h** to beat, ~~**27 points**~~ points owed a re-cut. The full trail chain must fit in **one run** (SM-INV-7) — that bounds region count.
   See [run-shape.md](run-shape.md).
 
 ### Tickets (minted so far — the rest are minted at entry)
@@ -791,7 +793,7 @@ before it can close.
 - **Authored in-world beats** (SM-INV-11 relaxed 2026-07-20): staged in real world-space, not a
   bolted-on cutscene layer. The **main missions** gating region unlocks are the primary carriers.
   ~~**The log drag** is the candidate main mission (`missions.md`)~~ **The log drag was demoted to a
-  free-roam toy / scenario on 2026-10-12; the bridge site is the R1 boss** — and note the **beat/labor split**:
+  free-roam toy / scenario on 2026-10-12; the expedition camp is the R1 boss (DEC-052)** — and note the **beat/labor split**:
   the staged scene is once per profile (a story key on `metaState`), the chaining and clearing is
   run-layer and re-driven every run. **The bridge site** (owner, 2026-09-30) is the second shape:
   "deliver x of y" — workers by courier, lumber and stone by haul — the career lines pointed at the

@@ -1,6 +1,6 @@
 ---
 id: DEC-070
-status: draft
+status: standing
 decided: 2026-08-17
 area: roads
 governs: src/road.js, src/road-network-worker.js, connectivity, site score
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_connectivity_over_culling. Date from the memory note. Agent wording.
+**Source.** memory feedback_connectivity_over_culling. Date from the memory note. Agent wording, owner approved 2026-11-13.

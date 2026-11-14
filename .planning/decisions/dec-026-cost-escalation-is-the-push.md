@@ -1,6 +1,6 @@
 ---
 id: DEC-026
-status: draft
+status: standing
 decided: 2026-10-31
 area: economy
 governs: FEAT-117, FEAT-168, src/economy.js, inflation, storm
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Option (B), the spreading miasma / storm (DESIGN.md Open questions).
 
-**Source.** DESIGN.md Open questions (the storm "is not built"); rulings 2026-10-21 and 2026-10-31. Agent wording.
+**Source.** DESIGN.md Open questions (the storm "is not built"); rulings 2026-10-21 and 2026-10-31. Agent wording, owner approved 2026-11-13.

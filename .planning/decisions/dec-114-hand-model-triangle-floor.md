@@ -1,6 +1,6 @@
 ---
 id: DEC-114
-status: draft
+status: standing
 decided: 2026-10-09
 area: assets
 governs: .planning/research/ART-STYLE.md, .planning/research/ASSETS.md, assets/models/, tri budget
@@ -13,8 +13,6 @@ supersedes:
 
 **Why.** Ticket budgets of 300–400 produced models below the owner's quality bar.
 
-**Replaces.** Nothing yet: this record is a draft until the owner rules.
+**Replaces.** "Hand props, camp gear, cargo | 350–700" (.planning/research/ART-STYLE.md budget table (2026-08-07)).
 
-**Source.** memory feedback_model_quality_floor (owner, 2026-10-09); .planning/research/ART-STYLE.md budget table (2026-08-07). Date from the memory note. Agent wording.
-
-**Conflict.** A: "~1000 tris is the FLOOR, ticket budgets of 300–400 are too low" (memory feedback_model_quality_floor (owner, 2026-10-09)) · B: "Hand props, camp gear, cargo | 350–700" (.planning/research/ART-STYLE.md budget table (2026-08-07))
+**Source.** memory feedback_model_quality_floor (owner, 2026-10-09); .planning/research/ART-STYLE.md budget table (2026-08-07). Date from the memory note. Agent wording, owner approved 2026-11-13 under DEC-125.

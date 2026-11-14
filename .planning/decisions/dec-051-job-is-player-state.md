@@ -1,6 +1,6 @@
 ---
 id: DEC-051
-status: draft
+status: standing
 decided: 2026-10-19
 area: story
 governs: src/poi.js, src/camp.js, pumps, shops
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_job_is_player_state (standing do-not). Date from the memory note. Agent wording.
+**Source.** memory feedback_job_is_player_state (standing do-not). Date from the memory note. Agent wording, owner approved 2026-11-13.

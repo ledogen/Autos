@@ -61,6 +61,7 @@ const CONSEQUENCE = {
   brake:      'Worn brakes need more distance to stop.',
   engine:     'Less power. It falls away fast below half. A worn engine still starts, just slower.',
   filter:     'A clogged filter wears the engine out faster. Cheap to replace.',
+  oil:        'Old oil wears the engine out faster, more the older it gets. Any auto shop changes it.',
   radiator:   'Cools the engine. Below half it cannot hold full throttle; near zero it barely holds idle.',
   headlights: 'A worn lamp dims, down to 40% when broken. Below half health it flickers over bumps.',
   alignment:  'Knocked-out toe and camber make the truck pull to one side.',
@@ -135,6 +136,11 @@ function symptoms (m, id) {
     case 'engine': if (c < P.engineKnee) out.push(`Losing power fast under ${pct(P.engineKnee)}`); break
     case 'radiator': if (c < 0.5) out.push(`Overheats under full load below 50%`); break
     case 'filter': if (c < P.filterKnee) out.push(`Wearing out the engine under ${pct(P.filterKnee)}`); break
+    case 'oil': {
+      const k = m.oilEngineMultiplier()
+      if (k > 1.05) out.push(`The engine wears ${k.toFixed(1)}× as fast`)
+      break
+    }
     case 'transmission': {
       const k = m.transShiftScale()
       if (k > 1.05) out.push(`Shifts take ${k.toFixed(1)}× as long`)
@@ -222,8 +228,14 @@ function buildPictogram () {
   // running back into the intake. Pleat lines in the dark detail colour, like the grille.
   s.push(P('airFilter', `<path d="M114,43 L126,43 L131,55 L124,55 L124,59 L116,59 L116,55 L109,55 Z"/>`))
   s.push(`<path class="ds-detail" d="M117,44.5 L115,53.5 M120,44.5 V53.5 M123,44.5 L125,53.5"/>`)
-  s.push(P('engine', `<rect x="106" y="62" width="28" height="40" rx="3"/>`))
-  s.push(`<g class="ds-detail-dot"><circle cx="120" cy="72" r="3"/><circle cx="120" cy="82" r="3"/><circle cx="120" cy="92" r="3"/></g>`)
+  // FEAT-202 (owner, 2026-11-13): the engine is drawn FRONT-ON, the one part of the plan that is not —
+  // a 60° V (the Ranger's 4.0 V6) whose banks lean out from the crank, the filter's neck running into
+  // the valley, head-gasket lines across both banks and the crank pulley in the dark detail colour.
+  // The oil pan sits under the crankcase, the same width, so engine and oil read as one assembly.
+  s.push(P('engine', `<path d="M101.2,66.5 L110.8,61 L120,77 L129.2,61 L138.8,66.5 L132,78.2 L132,92 L108,92 L108,78.2 Z"/>`))
+  s.push(`<path class="ds-detail" d="M104.7,72.6 L114.3,67.1 M135.3,72.6 L125.7,67.1"/>`)
+  s.push(`<g class="ds-detail-dot"><circle cx="120" cy="86" r="3"/></g>`)
+  s.push(P('oil', `<path d="M108,94 L132,94 L132,97 L127,102 L113,102 L108,97 Z"/>`))
 
   // Corners: tire (outline), wheel (rim), and the alignment readout as text under the wheel.
   for (let c = 0; c < 4; c++) {
@@ -661,7 +673,7 @@ export class DamageScreen {
       const a = el.dataset.agg
       let c
       if (a === 'armor') c = min('armorFront', 'armorLeft', 'armorRight', 'armorRear')
-      else if (a === 'power') c = min('engine', 'radiator', 'airFilter')
+      else if (a === 'power') c = min('engine', 'oil', 'radiator', 'airFilter')
       else {
         const k = +a[1]
         c = m.flat[k] ? 0 : min(`tire${CORNERS[k]}`, `wheel${CORNERS[k]}`)

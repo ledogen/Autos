@@ -1,6 +1,6 @@
 ---
 id: DEC-099
-status: draft
+status: standing
 decided: 2026-11-02
 area: process
 governs: world-gen calls, review pages
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory feedback_screenshots_for_worldgen_calls. Date from the memory note. Agent wording.
+**Source.** memory feedback_screenshots_for_worldgen_calls. Date from the memory note. Agent wording, owner approved 2026-11-13.

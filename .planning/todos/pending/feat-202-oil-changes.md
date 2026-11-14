@@ -12,7 +12,7 @@ lane: B
 # FEAT-202: Oil changes — an oil track that wears with load and rpm and scales engine wear
 
 ## Next steps
-Lane B builds it when free. No owner call is needed to start; the wear rate and the price are lane defaults for the owner to tune afterwards.
+Built on `feature/machine` (Lane B), landing pending. Owner: tune the four `[DEFAULT]` numbers below (oil life, knee, multiplier, price) and look at the glyph screenshots named in the Log.
 
 ## Summary
 A new condition track, engine oil, built the way the air filter is. It wears with engine load and rpm, and old oil makes the engine wear faster. The only fix is an oil change at an auto shop, which every auto shop always offers.
@@ -28,21 +28,39 @@ A new condition track, engine oil, built the way the air filter is. It wears wit
 ### Lane defaults to set and flag `[DEFAULT]`
 The wear rate (hours of hard driving for a full oil life), the engine-wear multiplier at 0 % oil, and the price of a change. Read the air filter's numbers first and put oil's beside them in the ticket.
 
+### The numbers, beside the air filter's
+
+| | Air filter | Engine oil (FEAT-202) |
+|---|---|---|
+| Wear input | rpm² × throttle (the engine's insult) | the same insult |
+| Life | 900 load-s = 30 min hard driving | `durOil` **1800** load-s = **60 min** hard driving `[DEFAULT]` |
+| Effect starts | below 20 % | below `oilKnee` **50 %** `[DEFAULT]` |
+| Curve below the knee | squared (back-loaded cliff) | **straight line** |
+| Engine wear at 0 % | × 20 | × `oilEngineMult` **20** `[DEFAULT]` |
+| Extra wear over the range, ∫(mult − 1) dc | 1.27 | 4.75 (≈ 3.7 × the filter's) |
+| Fix | part, $7 + fitting (any shelf, roadside) | oil change **$8 × day tier, 30 min** `[DEFAULT]`, auto shop only, always |
+| Jalopy start | 40–80 % | 40–80 % `[DEFAULT]` |
+
+Old oil and a clogged filter multiply: both neglected is both costs at once (× 400 at both empty).
+`oilKnee = 1` makes it the pure straight line from new (every percent of oil costs from the first one).
+
 ## Tracker
-- [ ] Oil track in `src/damage.js`, wearing with load × rpm; saved and restored like the other tracks
-- [ ] Old oil scales engine wear, more linearly than the air filter and at least as strongly; numbers in this ticket
-- [ ] Oil change on the auto shop service screen, always offered, priced
-- [ ] Diagnostics: front-on V-engine glyph and an aligned oil-pan glyph; oil listed as its own component
-- [ ] A gate pins the wear law and the engine-wear scaling
+- [x] Oil track in `src/damage.js`, wearing with load × rpm; saved and restored like the other tracks (an old save without it loads with new oil)
+- [x] Old oil scales engine wear, more linearly than the air filter and at least as strongly; numbers in this ticket
+- [x] Oil change on the auto shop service screen, always offered, priced
+- [x] Diagnostics: front-on V-engine glyph and an aligned oil-pan glyph; oil listed as its own component
+- [x] A gate pins the wear law and the engine-wear scaling (`test/damage-filter-puncture.mjs` §2c; the shop job in `test/service.mjs` §11)
+- [ ] Owner tunes the `[DEFAULT]` numbers
 
 ## Decisions
 - 2026-11-13, owner: auto shop only, always available; same component shape as the air filter; two new glyphs (front-on V engine, oil pan aligned under it).
 
 ## Open questions
-- The price of an oil change, and the oil life in driving hours (the lane proposes both).
+- The four `[DEFAULT]` numbers in the table (oil life 60 min hard, knee 50 %, × 20 at empty, $8 / 30 min), and the jalopy's 40–80 % starting oil.
 
 ## Files
-`src/damage.js` · `src/damage-screen.js` · `src/service-screen.js` · `data/parts.js` · `data/shop-stock.js`
+`src/damage.js` (track, DAMAGE_PARAMS durOil/oilKnee/oilEngineMult, oilEngineMultiplier) · `src/damage-screen.js` (glyphs, hover text) · `src/service.js` (oilQuote/changeOil) · `src/service-screen.js` (the row) · `data/parts.js` (OIL_CHANGE) · `src/parts.js` (restore: a missing track is new) · `src/jalopy.js` · `src/damage-hud.js` · `src/debug.js` (wear-speed slider)
 
 ## Log
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
+- 2026-11-13, Lane B: built. The engine glyph is now a front-on 60° V (the Ranger's 4.0 V6), the filter's neck running into the valley; the oil pan sits under the crankcase at its width. My Vehicle → Engine & drivetrain → Engine Oil → "Change the oil". Screenshots: `wip/feat-202/damage-screen*.png` and `engine-crop.png` in the CarGame-machine worktree.

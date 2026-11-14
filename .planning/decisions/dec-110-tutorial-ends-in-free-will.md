@@ -1,6 +1,6 @@
 ---
 id: DEC-110
-status: draft
+status: standing
 decided: 2026-11-13
 area: story
 governs: FEAT-184, FEAT-170, data/dialogue.js, tutorial, casserole
@@ -13,8 +13,6 @@ supersedes:
 
 **Why.** The note ends the scripted part at the wake.
 
-**Replaces.** Nothing yet: this record is a draft until the owner rules.
+**Replaces.** "every playthrough starts the first paid job as a delivery to larry's" (FEAT-170 (owner, 2026-11-05)).
 
-**Source.** FEAT-184 tutorial note (owner, 2026-11-13); FEAT-170 (owner, 2026-11-05). Agent wording.
-
-**Conflict.** A: "you wake up the player is in the game with free will" (FEAT-184 tutorial note (owner, 2026-11-13)) · B: "every playthrough starts the first paid job as a delivery to larry's" (FEAT-170 (owner, 2026-11-05))
+**Source.** FEAT-184 tutorial note (owner, 2026-11-13); FEAT-170 (owner, 2026-11-05). Agent wording, owner approved 2026-11-13 under DEC-124.

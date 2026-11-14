@@ -1,6 +1,6 @@
 ---
 id: DEC-076
-status: draft
+status: standing
 decided: 2026-08-16
 area: repo
 governs: src/physics-engine.js, src/tire.js, src/suspension.js, src/physics.js, src/terrain-physics.js, src/debris.js
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** CLAUDE.md § Import seams (date from git). Agent wording.
+**Source.** CLAUDE.md § Import seams (date from git). Agent wording, owner approved 2026-11-13.

@@ -1,6 +1,6 @@
 ---
 id: DEC-069
-status: draft
+status: standing
 decided: 2026-07-16
 area: roads
 governs: src/road.js, src/terrain-physics.js, streams, causeway
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** memory project_stream_crossing_causeway. Date from the memory note. Agent wording.
+**Source.** memory project_stream_crossing_causeway. Date from the memory note. Agent wording, owner approved 2026-11-13.

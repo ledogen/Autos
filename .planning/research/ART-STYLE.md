@@ -145,7 +145,7 @@ Real budgets from the shipped asset tickets:
 | Role | Tris | Examples |
 |---|---|---|
 | Small scatter / repeated dressing | **250–500** | mailbox, crate, pallet, gnome, beach ball |
-| Hand props, camp gear, cargo | **350–700** | newspaper roll (358), cooking kit, propane tank |
+| Hand props, camp gear, cargo | **~1000 is the floor**; under it only when the silhouette needs no more (DEC-114) | newspaper roll (358), cooking kit, propane tank |
 | Mid structures, furniture clusters | **700–1800** | awning, produce stall, fire pit |
 | POI buildings, vehicles | **1200–4000** | trailer home (1192), broken car (2086), sawmill, gas station |
 | **The hero vehicle** (one asset) | **4000** | `ranger.glb` (2910) — budgeted by hours looked at, not by repeats |

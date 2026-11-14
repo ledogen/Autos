@@ -1,6 +1,6 @@
 ---
 id: DEC-105
-status: draft
+status: standing
 decided: 2026-11-13
 area: economy
 governs: FEAT-203, FEAT-121, src/recovery.js, data/items.js, tire iron, floor jack
@@ -13,8 +13,6 @@ supersedes:
 
 **Why.** The owner asked where the two tools went and set the times himself.
 
-**Replaces.** Nothing yet: this record is a draft until the owner rules.
+**Replaces.** "The breaker bar is cut" (DESIGN.md line 1237).
 
-**Source.** FEAT-203 source (owner, 2026-11-13 inbox); DESIGN.md line 1237. Agent wording.
-
-**Conflict.** A: "changing your tire for the spare should be like 2hrs without them and 30m with them" (FEAT-203 source (owner, 2026-11-13 inbox)) · B: "The breaker bar is cut" (DESIGN.md line 1237)
+**Source.** FEAT-203 source (owner, 2026-11-13 inbox); DESIGN.md line 1237. Agent wording, owner approved 2026-11-13 under DEC-122.

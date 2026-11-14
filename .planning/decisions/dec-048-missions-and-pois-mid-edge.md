@@ -1,6 +1,6 @@
 ---
 id: DEC-048
-status: draft
+status: standing
 decided: 2026-07-20
 area: world
 governs: src/poi.js, src/road.js, POI placement
@@ -15,4 +15,4 @@ supersedes:
 
 **Replaces.** Nothing.
 
-**Source.** DESIGN.md § POIs (date from git: 2026-07-20). Agent wording.
+**Source.** DESIGN.md § POIs (date from git: 2026-07-20). Agent wording, owner approved 2026-11-13.

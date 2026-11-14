@@ -17,11 +17,11 @@ relates: FEAT-28 (region unlock + the wall), FEAT-43 (story region), FEAT-91 (ha
 Step 6 of **Places and Missions**. (The file keeps its old `job-site` name so links survive.)
 
 > **Design ruled** (owner, 2026-10-16 and 2026-10-19), except one trigger (Open, below). Build waits
-> on FEAT-28 (the ladder's walls and the unlock) and is SM-4 work.
+> on FEAT-28 (the region walls and the unlock) and is SM-4 work.
 
 ## The region and the wall it opens
 
-The ladder (DESIGN.md, ratified 2026-10-12/15): **R1** is a 50° sector at six o'clock, 3.3–5.1 km
+The regions (DESIGN.md, ratified 2026-10-12/15; DEC-053): **R1** is a 50° sector at six o'clock, 3.3–5.1 km
 from the origin; **R2** is the parallel-sided band 1.5–3.3 km out. So R1's wall to R2 is its **north
 edge, the 3.3 km arc (~2.9 km long)**. R1's outer arc and two side walls never open.
 
