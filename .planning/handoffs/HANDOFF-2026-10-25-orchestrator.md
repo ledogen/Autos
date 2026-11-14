@@ -166,7 +166,7 @@ without asking the owner where the meter stands. Land what they report, yourself
 - DONE ledorepo: INFRA-14 closed. INFRA-13 waits on the owner (Time Machine).
 Orchestrator DECs used: 190–193; next free for it: 194.
 
-**Main:** map bundle cherry-picked (8cfcf7b5 + 413a0904 from land/feat-211d), smoke in flight, log wip/orch/smoke-map.log: check it. Old line follows.
+**Main:** b736d442 (map bundle on top of cart, shop restyle, frame cap) smoked 26/26, log wip/orch/smoke-map.log. Nothing in flight. Not pushed. Owner cards written: feat211-map-look, feat199-window. Running: B physics (land/phys-1114), A slice 2 (feature/run-shape). Next Spare task: FEAT-215 + removing the music bed (Sonnet), then QUAL-36, FEAT-180. Old line follows.
 (check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
 minted: FEAT-215 (GPS U-turn arrow, Spare), FEAT-216 (damage alerts, B). Inbox fully replied; 2gdr (FEAT-204, "4x more
 slots": 4 more or 4 times?) still waits on the owner. DEC-136, the :8001 Windows server and the Tailscale-only
