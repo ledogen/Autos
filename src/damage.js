@@ -544,6 +544,12 @@ export const DAMAGE_PARAMS = {
   // inflated strike (the air leaves after the hit, not during it).
   rimPinchRoadMult: 24,   // x static wheel load (≈80 kN, a 7 m drop): a road rim strike pinch-flats an inflated tire
   rimInflatedMult:  2,    // x both rim yields while the tire holds air (road ≈160 kN, debris ≈170 kN)
+  // BUG-160 (owner, 2026-11-14, DEC-169): "wheels do not seem to take damage from impacts unless the tire lets go …
+  // i wouldnt mind some wheel damage triggering 50% above the amount of energy as it takes to damage the springs".
+  // Through an inflated tire a bump-stop event also prices the wheel, from the hit that stores this many times
+  // the energy of the spring's no-harm hit in the stop (wheelBumpOnsetN): front 12 → ≈15.7 kN, rear 6 → ≈7.6 kN.
+  // Above it the wheel takes the spring's own curve, measured from its own onset.
+  wheelBumpEnergyMult: 1.5,
 
   // Fraction of its own peak a loaded event must FALL TO before it is banked. Waiting for the load
   // to release outright loses the event whenever the truck ends up resting on whatever it hit —
@@ -765,6 +771,22 @@ export function impactDamage (v, curve) {
 export function armorPassThrough (c) {
   const p = 1 - DAMAGE_PARAMS.armorAbsorbAtFull * (c < 0 ? 0 : c > 1 ? 1 : c)
   return p < 0 ? 0 : p
+}
+
+/**
+ * BUG-160: the bump-stop peak [N] past which an inflated wheel takes damage — the hit that stores `mult` × the energy
+ * of a `floorN` hit in the stop. The stop's rate is k·(1 + (x/x0)²) (suspension.js), so F = k(x + x³/x0²) and the
+ * stored energy is k(x²/2 + x⁴/(4x0²)).
+ * ponytail: quasi-static — the stop damper's share of the energy and the 8× rate cap (x > 13 cm, F > 300 kN) are
+ * left out; both sit far from the onsets this prices (7–16 kN).
+ */
+export function wheelBumpOnsetN (floorN, k, x0, mult) {
+  const a = 1 / (x0 * x0)
+  let x = floorN / k
+  for (let i = 0; i < 8; i++) x -= (x + a * x ** 3 - floorN / k) / (1 + 3 * a * x * x)   // Newton on F(x) = floorN
+  const e = mult * (x * x / 2 + a * x ** 4 / 4)                                       // target energy ÷ k
+  const xw = Math.sqrt((Math.sqrt(1 + 4 * a * e) - 1) / a)                            // E(x) = e, a quadratic in x²
+  return k * (xw + a * xw ** 3)
 }
 
 /** The fatal-crash speed [mph] for a panel at armor condition `c` (SM-INV-1; see fatalMphBare). */
@@ -1283,7 +1305,7 @@ export class DamageModel {
    * @param {number} corner - 0-3 (FL, FR, RL, RR).
    * @param {number} peakN - peak bump-stop force during the event [N].
    */
-  _landBumpStop (corner, peakN) {
+  _landBumpStop (corner, peakN, params) {
     const P = DAMAGE_PARAMS
     const front  = corner < 2
     const floorN = front ? P.springForceFloorFront : P.springForceFloorRear
@@ -1299,6 +1321,14 @@ export class DamageModel {
     // no durSpring any more: for an event-priced track the CURVE is the calibration. The parts
     // durability multiplier (SM-INV-10) and the wear-speed slider still apply inside wear().
     this.wear(id, dmg, 1)
+
+    // WHEEL (BUG-160, DEC-169): through an inflated tire the same event bends the wheel past wheelBumpOnsetN, on the
+    // spring's curve from that onset. Read BEFORE the puncture below: the hit that pops the tire struck it inflated.
+    // A flat tire's wheel is priced by the rim strike instead (the rim itself on the ground).
+    if (!this.flat[corner] && params?.bumpStopStiffness) {
+      const onN = wheelBumpOnsetN(floorN, params.bumpStopStiffness, params.bumpStopProgressiveM || 0.05, P.wheelBumpEnergyMult)
+      if (peakN > onN) this.wear(WHEEL_IDS[corner], Math.min(1, P.springBumpRefDmg * Math.pow((peakN - onN) / (refN - floorN), P.springBumpExp)), 1)
+    }
 
     // PUNCTURE: the same event, read against the tire rather than the spring. FEAT-112: an overloaded
     // bed caps the condition the curve reads (tireCondCap, set by the game from the load's mass) — a
@@ -1543,7 +1573,7 @@ export class DamageModel {
         // it there. A steady resting load does not decay, so it is never banked twice.
         const floorN = i < 2 ? P.springForceFloorFront : P.springForceFloorRear
         if (peak > floorN && (f <= floorN || f < peak * P.eventDecayFrac)) {
-          this._landBumpStop(i, peak)
+          this._landBumpStop(i, peak, params)
           this._bumpPeak[i] = 0
         } else if (f <= floorN) {
           this._bumpPeak[i] = 0
