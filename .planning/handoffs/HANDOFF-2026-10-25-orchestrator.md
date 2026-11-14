@@ -140,6 +140,19 @@ becomes a DEC in the same change that acts on it; a standing record is frozen, a
 running. Start NOTHING (no agents, no landings, no smokes) until the owner lifts it; then one lane at a time, or only
 what they name.
 
+**Since the hold, done by the orchestrator itself (no agents), all on main, not pushed:**
+- DEC-136 (owner 11-14): oil 30 min / filter 60 min of hard driving; their engine-wear penalties ADD (x8.07 filter,
+  x15.15 oil, x22.2 both); a 50% engine with both at 0 lasts 15 min. ecb2a974, gate + smoke 26/26. Card feat202-look updated.
+- Dashboard listens on 127.0.0.1 + the Tailscale address only (ac2150ad); Wi-Fi refused. Phone/Windows: http://m4air:8010.
+  Started by `nohup npm run dash` (log wip/orch/dash.log); restart it if Tailscale came up after it.
+- A second game server for the owner's Windows machine: `npx vite --host 100.111.133.99 --port 8001 --strictPort` in the
+  main checkout (log wip/orch/vite-8001.log), URL http://100.111.133.99:8001. Not permanent; `m4air:8001` is refused by
+  Vite's host check (one config line if the owner wants the name). macOS firewall is off (owner's setting).
+- Lane agents were verified as claude-opus-5-5 from their transcripts; `/model` inside a subagent view shows the
+  session's Fable 5.2.
+- Open with the owner: DEC-153 (does the casserole to Larry's stay; on card tutorial-flow); the diagnostics oil line
+  shows the oil's multiplier alone, not the combined figure.
+
 **State at the hold.** Main smoked 26/26 at the last FEAT-184 merge (db3b04b9); origin = 706808d5; push only on the
 owner's word. Landed 11-13/14, all smoked: zip ties off the radiator, FEAT-209 gas prices, BUG-164 POIs follow the
 built chunk (DEC-135), FEAT-210 map symbols (+ the owner's icon / white-haul tweak), INFRA-10 decision records
