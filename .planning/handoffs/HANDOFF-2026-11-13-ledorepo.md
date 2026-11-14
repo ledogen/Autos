@@ -24,16 +24,11 @@ anywhere (Tailscale, Mac = `m4air`); Lanes is the home tab; hooks, not launchd, 
   `--hourly`; PreCompact + SessionEnd always). A SessionStart hook also starts the dashboard on :8010.
 
 ## Next, in order
-1. **INFRA-10 decision records (DEC-NN)** — owner ruled: backfill ALL existing rulings. Not started. Start in
-   plan mode (the owner signs off the record format before anything is written). The ticket has the shape:
-   `.planning/decisions/dec-NN-<slug>.md`, frontmatter `id / status (standing|superseded) / decided / supersedes /
-   governs`, body Ruling · Why · Replaces · Source; never edited after it is decided; a Decisions tab in the
-   dashboard; each ticket page lists the DECs whose `governs` names it (the Links block in `viewTicket`,
-   beside "deep dives"). Sources to backfill: DESIGN.md SM-INV-1..15, the eight design-amendments files, memory
-   MEMORY.md § Standing do-nots + the `feedback_*` / `project_*rulings*` files, the orchestrator handoff's
-   "Standing rulings", CLAUDE.md's hard rules. Expect 60–100 records: do the backfill as ONE subagent task with a
-   fixed format and an owner skim page (a deep dive works: one `<dive-q options="right | wrong">` per record).
-   A submitted dive's rulings should become DECs (INFRA-12 left that half to this ticket).
+1. **INFRA-10 decision records** — BUILT (branch `infra/infra-10-decision-records`, worktree `CarGame-decisions`;
+   landing asked of the orchestrator 11-13). 121 records, 59 standing, 62 draft. WAITING ON THE OWNER: the deep
+   dive `INFRA-10-conflicts` (answers land in the data folder, `dives/INFRA-10-conflicts.answers.json`). When it is
+   submitted, follow the ticket's Next steps: axioms → new DECs, drafts → standing, then DESIGN.md and memory cite
+   the ids, then close. The ledger is `.planning/decisions/conflicts.json`. Rules: CLAUDE.md § Workflow.
 2. **INFRA-14** — the orchestrator's state is now all in files, so a clear costs one word. Remaining: tidy its
    handoff (drop the "ready for a clear at ~300k" drill or keep it only mid-merge) and make side work its
    subagents by default. Small; the handoff is the orchestrator's file — send it the text, it applies.

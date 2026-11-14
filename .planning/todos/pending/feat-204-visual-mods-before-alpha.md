@@ -12,7 +12,7 @@ lane: B
 # FEAT-204: Visual mods for the alpha — light bar, bed toolbox, roof rack, bull bar
 
 ## Next steps
-Owner answers the one question below (4 more slots or 4 times the slots). Then the content lane models the four parts and Lane B wires them.
+Slots are answered (+4 each). The content lane models the four parts and Lane B wires them.
 
 ## Summary
 Four bolt-on parts the player can see on the truck, wanted before the alpha: a light bar, an in-bed toolbox, a roof rack and a bull bar. Each one does something. It does not have to be a large set.
@@ -36,10 +36,10 @@ Four bolt-on parts the player can see on the truck, wanted before the alpha: a l
 - [ ] The toolbox and bed cargo do not overlap
 
 ## Decisions
+- 2026-11-13, owner: "4x more inventory slots means +4 slots" — the toolbox and the roof rack each add 4 slots.
 - 2026-11-13, owner: before alpha; light bar is the older 4-reflector incandescent style; toolbox sits right behind the cab.
 
 ## Open questions
-- "4x more inventory slots": 4 more slots each, or 4 times the slot count? (Today's cap is read from `slotCap` in `src/inventory.js`.)
 - Does the bull bar cost anything (mass on the front axle is real already; anything else)?
 
 ## Files

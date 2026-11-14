@@ -130,6 +130,17 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
 ## Current state (2026-11-13, after the INFRA-11 cutover; rewrite, don't append)
+
+**Decision records (INFRA-10, on main 14aaa9da):** `.planning/decisions/dec-NNN-*.md` are the ground truth and beat
+DESIGN.md, tickets and memory (owner 11-13, per the ledorepo session). A new owner ruling (chat, owed card, a taken dive)
+becomes a DEC in the same change that acts on it; a standing record is frozen, a change of mind is a new DEC with
+`supersedes`. Check: `node tools/dashboard/decisions.check.mjs`.
+
+**11-13 evening, after the text below:** on main and NOT pushed: zip ties off the radiator 23572cf2, FEAT-209 gas
+prices c21a7b23, BUG-164 POIs follow the built chunk cc4652dd, tickets FEAT-202..213 (inbox, map spec, shop menu
+spec). Running: Lane B FEAT-202 (oil), Lane A FEAT-210 (map symbols). Queued: FEAT-212 then 213 (B, after 202),
+FEAT-211 (A, waits owed `feat211-controls`), FEAT-203 / 207 (B). Top-5 owed are pinned with negative `order`.
+Lane-B and Lane-A landings are cherry-picks. Owner still owes `sudo killall coreaudiod` from a real terminal.
 - **PERF HAS PRIORITY (owner 11-12, repeated 11-13): hold the lanes whenever the perf session needs a quiet machine.**
   The perf session is peer `cargame-70` (NOT your subagent; SendMessage it). PERF-43 is CLOSED by the owner and landed
   (main 8acdea46, `test:all --browser` 149/149, log wip/orch/testall-8acdea46.log). It now starts PERF-41 (terrain

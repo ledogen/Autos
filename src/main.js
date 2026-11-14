@@ -2029,7 +2029,6 @@ const map2d = new Map2D({
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
-  getBarricades: () => poiSystem.barricades(),   // BUG-103: a closure tick per FEAT-154 row
   getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
   // FEAT-61: what the customers MEAN right now, and which way to set off.
   //
@@ -3397,10 +3396,10 @@ function _updateMissionRings () {
   // and drop away while the pump is open (you are already in one).
   for (const m of _pumpZoneMarks)
     m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= showR
-  // BUG-164: the buildings stand only where their ground is drawn, so they go by the terrain's own stream centre.
-  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one 192 m+ away cannot be touched.
-  const sc = roadStreamCenter()
-  for (const y of _poiYards) y.visible = Math.hypot(y.userData.x - sc.x, y.userData.z - sc.z) <= showR
+  // BUG-164: a building draws exactly when the terrain chunk under it is built (owner, 2026-11-13: "push the poi
+  // pop in a bit further so it matches the terrain"; a 192 m circle fell short of the square ring and its warm margin).
+  // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one that far away cannot be touched.
+  for (const y of _poiYards) y.visible = !terrainSystem || terrainSystem.hasChunkAt(y.userData.x, y.userData.z)
   if (!zone) { if (_stageRing) _stageRing.visible = false; return }
   if (!_stageRing) {
     _stageRing = new THREE.Mesh(_ringGeo, _stageRingMat)
@@ -4867,15 +4866,18 @@ const _boardView = {
   status (poiId) {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
-    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, nextText: null }
+    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [], nextText: null }
     // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
     // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
     // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
     const live = offerBoard.offers(poiId, now).filter(o => o.route !== null)
     const next = offerBoard.nextTurnoverH(poiId, now)
+    // FEAT-210: every family on offer, once each, in offer order — the map splits the diamond by them.
+    const families = [...new Set(live.map(o => offerBoard.spec(o)?.family).filter(Boolean))]
     return {
       source: true,
-      family: live.length ? offerBoard.spec(live[0])?.family ?? null : null,
+      family: families[0] ?? null,
+      families,
       nextText: next != null ? formatGameDuration(next - now) : null,
     }
   },

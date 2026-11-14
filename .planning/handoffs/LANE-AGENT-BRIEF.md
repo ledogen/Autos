@@ -16,6 +16,9 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
    call with `cd <worktree> && …` (or use `git -C <worktree>`), and give Read/Edit absolute paths. An edit in
    `/Users/ledogen/CodeShit/CarGame/` (main) is a mistake unless the orchestrator asked for it.
 3. Merge main first if you're behind (`git merge main`), unless the branch is a landing branch already under review.
+4. **Before planning**: read the decision records that govern what you will touch
+   (`grep -l -e <ticket id> -e <file> -e <subsystem word> .planning/decisions/*.md`) and list any conflict with the
+   task in your report BEFORE starting work. A conflict is the owner's call.
 
 ## While you work
 
