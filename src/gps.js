@@ -44,7 +44,7 @@ const RING_HOVER   = 1.4
 const UT_ON        = -0.5
 const UT_OFF       = -0.2
 const UT_AHEAD     = 20     // m: how far up the road (against the route) the ribbon stands
-const UT_W         = 1.2    // m: ribbon width; the head is 2.5x
+const UT_W         = 1.6    // m: ribbon width; the head is 2.5x (4 m)
 const UT_RAD       = 1.7    // m: radius of the upward loop (3.4 m tall; the whole glyph fits a 5 m cube)
 const UT_HOVER     = 0.2    // m above the road surface
 // FEAT-218: an objective further than this from the route's last road point is OFF the road: it gets the turn arrow, not the ring.
@@ -329,7 +329,7 @@ function _arrowGeometry () {
 /**
  * FEAT-215 (redesigned 2026-11-14): a ribbon that leaves along local +Z (away from the player), loops UPWARD through
  * 180 degrees in the vertical plane and ends heading back along -Z at the top, with an arrowhead that faces the player.
- * Origin on the ground; spans z about -1.7..2.2, y 0..3.4, x +-1.5 (inside a 5 m cube). Double-sided material, so no mirror variant.
+ * Origin on the ground; spans z about -1.7..2.2, y 0..3.4, x +-2 (inside a 5 m cube). Double-sided material, so no mirror variant.
  */
 function _uturnGeometry () {
   const R = UT_RAD, hw = UT_W / 2, N = 24, A1 = 215 * Math.PI / 180   // loop past 180 degrees so the head tips down toward the camera
