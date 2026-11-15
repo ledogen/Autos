@@ -92,3 +92,11 @@ step under a concurrent browser — the truck did not move at all, unrelated to 
   owner accept "asleep within 60 m" in place of "no body until hit". The measurement is Spare's to run. Nothing is
   owed by the owner until it shows a cost.
 
+
+## Log
+
+- 2026-11-14 (Lane B): cost of sleeping debris bodies, engine-level (`physics-engine.js`, heightfield + N convex-hull bodies,
+  4 substeps/step, median of 5 x 600 steps): 0 bodies 2.4 us/step, 12 sleeping 2.0, 24 sleeping 1.4-1.5 us (noise), 24
+  settled-and-self-slept 2.2. A frame is 16 700 us, so the cost is under 0.02 %. Seed-independent (a yard has 3-6 satellites,
+  capped by what is within 60 m), so no world run; main-thread work is the `_updateOrnaments` distance loop only. No lever
+  needed. Closed. Script was a one-off in the scratchpad, not kept.
