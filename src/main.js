@@ -5843,15 +5843,16 @@ const _afterRoadsideWork = (h) => { damageModel.publish(RANGER_PARAMS); daySyste
 /** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, spareFitHours() on the clock. */
 function _pickSpare (e) {
   inventoryScreen.close()
-  if (e.flat && _eveningLeg()) _tut('tut-spareflat')   // FEAT-184 stage 4: the worst day's spare
+  const trap = e.flat && _eveningLeg()   // FEAT-184 stage 4 / FEAT-217 (xbnc): the worst day's flat spare is found out AFTER the player tries it on a corner
   damageScreen.pick({
     title: 'Fit the mounted tire',
-    corner: () => !e.flat,
+    corner: () => trap || !e.flat,
     note: _tireNote,
     about: `The mounted tire: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
     actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(spareFitHours(inventorySystem))}`, run: () => {
       const h = spareFitHours(inventorySystem)
       if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterRoadsideWork(h)
+      else if (trap) { _tut('tut-spareflat') }
     } }],
     onClose: _backToInventory,
   })
