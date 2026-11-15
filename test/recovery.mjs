@@ -149,9 +149,14 @@ check('done: the corner stands on a new stock pair, the flat holds air, the worn
 const tools = new InventorySystem({ slotCap: () => 8 }); tools.start()
 check('the spare takes 2 h with the factory jack', spareFitHours(tools) === 2)
 tools.grant('compressor')
-check('…1 h 30 with a compressor', spareFitHours(tools) === 1.5)
+check('…and a compressor changes nothing (FEAT-203)', spareFitHours(tools) === 2)
 tools.grant('quickJack')
-check('…30 min with a quick-jack as well', spareFitHours(tools) === 0.5)
+check('…1 h 15 with the floor jack alone', spareFitHours(tools) === 1.25)
+tools.grant('tireIron')
+check('…30 min with both', spareFitHours(tools) === 0.5)
+const swapBoth = swapCornerHours(tools)   // before a fresh inventory resets the one run inventory
+const ironOnly = new InventorySystem({ slotCap: () => 8 }); ironOnly.start(); ironOnly.grant('tireIron')   // start() resets the one run inventory: last
+check('…1 h 15 with the tire iron alone', spareFitHours(ironOnly) === 1.25)
 
 // ── 4b. The corner swap (FEAT-177): two corners trade wheels, no spare, twice a tire change ────────────────────
 const sw = new PartsSystem({ params, damage })
@@ -167,7 +172,6 @@ check('…RR\'s tire and wheel came to FL, holding air', sw.fitted('tireFL') ===
 check('…FL\'s wheel went with its tire', damage.get('wheelRR') === 0.6)
 check('…the bent hub stays where it is', damage.toeOffsetDeg[3] === toeRR && toeRR !== 0)
 check('a corner with itself, or no such corner: nothing', !swapCorners(sw, damage, 1, 1) && !swapCorners(sw, damage, 0, 4))
-const swapBoth = swapCornerHours(tools)   // first: a fresh inventory below resets the one run inventory
 const bare = new InventorySystem({ slotCap: () => 8 }); bare.start()
 check('the swap is two tire changes: 4 h with the factory jack, 1 h with both tools', swapCornerHours(bare) === 4 && swapBoth === 1)
 
@@ -182,7 +186,8 @@ check('a tire holding air spends no plug', plugTire(damage, inv2, 'pump', { corn
 check('the pump is always there; no compressor, no compressor', plugMethods(inv2).join() === 'pump'
   && plugTire(damage, inv2, 'compressor', { corner: 1 }) === -1)
 damage.flat[1] = true; damage.set('tireFR', 0.6)
-check('by hand: the whole stop is two hours', plugTire(damage, inv2, 'pump', { corner: 1 }) === 2)
+inv2.grant('quickJack')
+check('by hand, floor jack aboard: the whole stop is still two hours (FEAT-203)', plugTire(damage, inv2, 'pump', { corner: 1 }) === 2)
 check('…the hole is fixed, the wear is not, one plug spent', !damage.flat[1] && damage.get('tireFR') === 0.6 && kits() === 1)
 inv2.grant('compressor'); inv2.grant('tireSport', 1, { cond: 0.7, flat: true })
 const looseTire = inv2.list().find(r => r.id === 'tireSport')

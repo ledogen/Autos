@@ -670,6 +670,9 @@ export class PropSystem {
       // (sub-pixel 3D noise at that range) UNLESS they're landmark-scale (BBONLY_3D_CATS).
       if (mode === 'bbonly' && this._impMeshes && !this._impMeshes.has(pr.key)
           && !BBONLY_3D_CATS.has(pr.key.slice(0, pr.key.indexOf('#')))) continue
+      // PERF-44: ground litter (pebbles, medium rocks) has shrunk to nothing by ~0.7 × fadeEnd; the far ring
+      // starts ≥ one chunk (64 m) out, so with farLitter off it gets no slots (the 3D pools are drawn whole).
+      if (mode === 'far' && FADE_CATS.has(pr.key.slice(0, pr.key.indexOf('#'))) && this._params.scatter?.cover?.farLitter === false) continue
       if ((mode === 'far' || mode === 'bbonly') && this._impMeshes) {
         const irec = this._impMeshes.get(pr.key)
         if (irec && irec.free.length > 0) {

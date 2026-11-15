@@ -7,9 +7,21 @@ opened: 2026-11-09
 source: Lane B, BUG-156's gore census (land/bug-156)
 relates: BUG-156 (the limb-birth step, fixed in the ruled blend), BUG-130 / FEAT-40 (the resolver's rivals), QUAL-10 (_carveDirtY)
 ---
+lane: C
 
 # BUG-158: hard steps in junction dirt that do not come from the ruled blend
 
+## Next steps
+Lane C, a fresh agent with the full budget (2026-11-14: not started; it was queued behind BUG-159). First rebuild the
+5 cm line walk and the census: `wip/bug-156/` is gone (the land-156 worktree was removed without copying it). Five
+separate resolver classes below; land them one class per commit.
+
+## Summary
+BUG-156's gore census found physics-ground steps of 0.15–2.9 m in junction dirt that the ruled blend does not cause.
+Each traces to a switch in the road resolver (winner leg, foot arc, end-cap frame, connector carve) between two
+samples 5 cm apart.
+
+## Description
 BUG-156's census walked the gore dirt beside every padded leg on 8 random seeds, at 5 cm. BUG-156 removed the steps that
 come from a leg limb appearing inside `_carveDirtY`. The steps below are the same on main a60e60db and on land/bug-156,
 and each one traces to something outside the blend. In every case the physics ground jumps inside one 5 cm move.
@@ -31,6 +43,6 @@ per-leg worst step and its class.
 The seed-11 one is in fingerprint-world's `seed11 origin story` window. BUG-156 moves 14 carve vertices next to it,
 which smooths the steps around it but leaves this one at 2.9 m.
 
-## Acceptance
+## Tracker
 - [ ] Each site above: no step over 5 cm inside one 5 cm move, measured with the same walk.
 - [ ] Re-run BUG-156's census (`wip/bug-156/census.mjs` + `cmp.mjs`) on its 8 seeds: no gore line worse than before.

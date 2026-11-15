@@ -880,7 +880,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
                 const t = byId[ids[0]], line = b.card(o, { nowH: t + 0, route: { par: 300, distance: 2000 } })?.traits?.[0] ?? ''
                 lines++
                 const payM = (t.pay ?? 1) * (t.perPiece ?? 1)
-                const want = [payM !== 1 && (payM > 1 ? '+$' : '−$'), t.deadline && 'deadline ', t.thresholds && 'rank times ',
+                const want = [payM !== 1 && (payM > 1 ? '+$' : '−$'), t.deadline && 'deadline ', t.thresholds && (sp.family === 'delivery' ? 'rank times ' : t.id === 'impatient' && 'on the clock'),   // QUAL-36: thresholdScale is 1 off delivery
                               t.floors && 'load ', t.tip && 'tip', t.deeds && 'deed', t.stockFull && `the whole yard: ${HAUL_STOCK[1]}`].filter(Boolean)
                 if (!line.startsWith(`${t.name}: `) || !want.every(w => line.includes(w))) { badLine++; lineEg ||= `${t.id}: "${line}"` }
                 else if (!lineEg && payM !== 1 && t.deadline) lineEg = `"${line}"`
@@ -925,6 +925,9 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     check('FEAT-148: a revisit says the same thing (the offer\'s own stream)', ids.every((id, i) => giverLine(id, 'note') === lines[i]))
     check('FEAT-148: a thing with no second lines gets a first line every time', ids.every(id => /^F\d$/.test(giverLine(id, 'takeout'))))
     GIVER_LINES.first.length = 0; delete GIVER_LINES.byThing.note
+    // QUAL-36 (DEC-179): an Impatient giver always says one of the owner's impatient lines.
+    check('QUAL-36: an impatient giver says an impatient line, every time', ids.slice(0, 200).every(id => GIVER_LINES.impatient.includes(giverLine(id, 'note', true))))
+    check('QUAL-36: haul stock floor is the 1-deed line (18)', HAUL_STOCK[0] === 18)
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall offer-board checks passed')

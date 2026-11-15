@@ -8,6 +8,17 @@ documentation) is licensed under the
 
 SPDX-License-Identifier: CC-BY-NC-4.0
 
+THIRD-PARTY FILES ARE NOT COVERED. Files made by others and included here
+(fonts, sound effects, 3D models, rendered engine audio) remain the property of
+their respective copyright holders and are used under their own licences, which
+this CC BY-NC licence does not replace or extend. Each is listed, with its
+licence, in the CREDITS.md file of its folder (assets/audio/CREDITS.md,
+assets/models/CREDITS.md) or in the licence file beside it
+(assets/fonts/OFL.txt). Sound effects from the Sonniss #GameAudioGDC bundles
+are licensed to the project's author for use in this game only: they may not be
+reused, sold or redistributed on their own, and may not be used to train
+artificial intelligence.
+
 --------------------------------------------------------------------------------
 SUMMARY (human-readable; not a substitute for the full license)
 --------------------------------------------------------------------------------

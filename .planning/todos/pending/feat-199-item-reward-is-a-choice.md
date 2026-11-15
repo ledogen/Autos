@@ -12,12 +12,7 @@ lane: Spare (mission.js / economy.js / the result card)
 # An item reward is optional: full cash, or the item with reduced cash
 
 ## Next steps
-Re-opened 2026-11-14 on two owner rulings (DEC-176). Built: ITEM_COST_FRAC = 0.5 (land/feat-211d). NOT built: the price
-window (the item's shop price about the job's pay, up to 30 % over). It needs the pay at plan time: do it in
-`OfferBoard._receiverBonus`, which already runs on every plan (payRange(m.par, regionTier(region), payMult) is computable
-there); re-pick among the gate's rewards that fit, drop the bonus if none fit. Open: which pay (card's base or its top),
-and what "usually about equivalent" means as a lower bound (suggest 0.7 x pay, falling back to cheaper). The cap
-(min(cost, paid)) stays as the wallet guard either way.
+Owner answered 2026-11-14 (DEC-204): the price window is built on the card's TOP figure (base pay plus the full tip), items from 0.7x to 1.3x of it, falling back to cheaper items when none fit; the cap min(cost, paid) stays. Spare builds it in `OfferBoard._receiverBonus` and reports which items can never be offered (Tracker).
 
 ## What
 
@@ -83,3 +78,13 @@ Landed on main via land/feat-199. Owner ruling 11-13 "1. yes, 2. cap": the choic
 ## Re-opened (2026-11-14)
 Owner: card feat199-price "half the shop price" ("this way you cant sell it for more money you have to want the item to take
 it"), and the inbox "the reward item price can be like 30% over the mission pay but usually is about equivalent". DEC-176.
+
+## Tracker
+- [ ] The price window: reward items priced 0.7x to 1.3x of the job's TOP figure (base plus full tip), cheaper fallback, cap stays (DEC-204)
+- [ ] The builder REPORTS the list of items that can never be offered as a reward under this rule (the owner's guess: engines, LSDs and other top items), to the owner
+
+## Decisions
+- 2026-11-14, owner (card feat199-window, answer "top figure, 0.7× to 1.3×"): "lemme know which items will never be offered as a reward due to this rule. my guess is the engines, lsds and other top items will likely never be offered as a reward" (DEC-204).
+
+## Log
+- 2026-11-14: scribe recorded the owner's answer (card feat199-window).

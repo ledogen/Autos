@@ -12,8 +12,8 @@
 //      runState (day 1) exactly as the invariant prescribes, then asserts the only movers are the
 //      midnight wrap and the sleep skip.
 //   3. THE BAKE THROTTLE — setTimeOfDay is pushed on the dayLookQuantH ladder, not per tick.
-//      A minute of 60 fps updates must push ~11 times, not ~3600 (each push re-bakes the sky
-//      cubemap AND the prop impostor atlas).
+//      A minute of 60 fps updates must push ~11 times, not ~3600 (each push integrates the sky's
+//      atmosphere on the CPU, ~2 ms, and re-lights the prop impostors).
 //   4. The ratified arithmetic (2026-07-30, tank 18 → 16 h 2026-08-02 per run-shape.md): stage
 //      ladder at 12/14/16 h awake (energy 4/2/0), coffee +5 now / −3 at wake (net positive),
 //      r(vibe) with average = full-from-empty in 8 h and best = exactly 2× worst, the tired

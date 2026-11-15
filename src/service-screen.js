@@ -45,7 +45,8 @@
 
 import { PARTS, SLOTS, REPAIRS, REPAIR_CAP, RARITY_COLOR, socketsFor } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
-import { TRACKS } from './damage.js'
+import { TRACKS, DAMAGE_PARAMS } from './damage.js'
+import { infoHtml } from '../data/component-info.js'
 import { formatMoney } from './economy.js'
 import { bandColor } from './damage-screen.js'
 import { formatGameDuration, formatDue } from './offer-board.js'
@@ -68,7 +69,9 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
   padding: 12px 16px 14px; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 64px); box-sizing: border-box;
   display: flex; flex-direction: column; }
 /* FEAT-212: the card's body scrolls; the cart's subtotal and the back button stay on its foot, below it */
-#svc-screen .sv-body { overflow-y: auto; min-height: 0; }
+/* BUG-170: the rows bleed 6 px each side (margin 0 -6px) so their hover bar reaches past the text; the scrolling body
+   carries that 6 px as padding (and gives it back as margin), else the row's right edge overhung it and scrolled sideways. */
+#svc-screen .sv-body { overflow-y: auto; min-height: 0; padding: 0 6px; margin: 0 -6px; }
 #svc-screen .sv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 #svc-screen .sv-title { flex: 1; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-story); }
 #svc-screen .sv-wallet { font-size: 14px; color: var(--money); text-align: right; }
@@ -129,6 +132,8 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen .sv-cond { display: flex; align-items: center; gap: 4px; }
 #svc-screen .sv-chip { width: 28px; height: 28px; border-radius: 3px; flex: none; background-size: contain;
   background-repeat: no-repeat; background-position: center; }
+#svc-screen .sv-i { color: var(--accent-story); }   /* FEAT-213 */
+#svc-screen .sv-info { font-size: 12px; line-height: 1.45; color: var(--text-body); padding: 4px 8px 6px; }
 #svc-screen .sv-kids { margin-left: 6px; padding-left: 6px; border-left: 2px solid var(--accent-story); }   /* FEAT-212: one level in */
 #svc-screen .sv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; padding: 4px 0; font-size: 14px; }
 #svc-screen .sv-empty { font-size: 14px; color: var(--text-faint); padding: 4px 0; }
@@ -151,6 +156,9 @@ const cost = (price, hours) => `${price < 0 ? '−' : ''}$${formatMoney(Math.abs
 /** A many-socket part's button names where it goes: a corner (FL…RR) or a side (left / right). */
 const where = (sk) => /[FR][LR]$/.test(sk) ? sk.slice(-2) : { L: 'left', R: 'right' }[sk.slice(-1)]
 const dim = (t) => `<div class="sv-empty">${t}</div>`
+/** Maintenance node id → COMPONENT_INFO key (depth ≥ 1; the 'engine' section at depth 0 is not the part). */
+const NODE_INFO = { tire: 'tires', wheel: 'wheels', brakes: 'brakes', springs: 'springs', dampers: 'dampers', filter: 'filter',
+  radiator: 'radiator', engine: 'engine', trans: 'transmission', lights: 'lights', panels: 'panels' }
 const isFlat = (d, track) => TRACKS[track]?.cls === 'tire' && d.flat[TRACKS[track].wheel]
 
 const CORNERS = [['FL', 'Front left'], ['FR', 'Front right'], ['RL', 'Rear left'], ['RR', 'Rear right']]
@@ -307,6 +315,7 @@ export class ServiceScreen {
       case 'tab': this.tab = b.dataset.tab; break
       case 'node': { const d = +b.dataset.d; this.path = this.path[d] === b.dataset.id ? this.path.slice(0, d) : [...this.path.slice(0, d), b.dataset.id]; break }
       case 'diag': this.openDiagnostics(); return
+      case 'info': this.info = this.info === b.dataset.k ? null : b.dataset.k; break
       case 'align': q('align', [], 'Align all'); break
       case 'oil': q('changeOil', [], 'Oil change'); break
       case 'step': {
@@ -431,6 +440,7 @@ export class ServiceScreen {
         ...(d.manualBox ? [this._part('trans', 'Transmission', { track: 'transmission', acts: ['repair'] })] : []),
         this._part('diff', 'Rear differential', { socket: 'diff', track: d.clutchDiff ? 'diff' : null, acts: sw,
           pre: d.clutchDiff ? [this._act('Change clutches', clutch, btn('repair', 'change', s.targets('diff').length > 0, 'data-key="v:diff"', ' ok'))] : [] }),
+        this._part('axle', 'Final drive', { socket: 'axle', acts: sw }),
       ]),
       node('body', 'Headlights and Body Panels', [
         node('lights', 'Headlights', [['L', 'Left'], ['R', 'Right']].map(([k, l]) => this._part(k, l, { socket: 'headlight' + k, track: 'headlight' + k, acts: sw }))),
@@ -449,8 +459,14 @@ export class ServiceScreen {
       const band = !n.info && n.c != null ? ` style="color:${bandColor(n.c)}"` : ''
       return `<button class="sv-line${open ? ' on' : ''}" data-act="node" data-d="${depth}" data-id="${n.id}"${n.attrs ?? ''}>`
         + `<span class="sv-name"${band}>${open ? '▾' : '▸'} ${n.label}</span>${n.info}</button>`
-        + (open ? `<div class="sv-kids">${this._level(n.kids, depth + 1)}</div>` : '')
+        + (open ? `<div class="sv-kids">${depth && NODE_INFO[n.id] ? this._infoRow(NODE_INFO[n.id]) : ''}${this._level(n.kids, depth + 1)}</div>` : '')
     }).join('')
+  }
+
+  /** FEAT-213: the (i) button of an open part (a pad stop), and its text under it while toggled on. */
+  _infoRow (k) {
+    return `<button class="sv-line" data-act="info" data-k="${k}"><span class="sv-name"><span class="sv-i">(i)</span> About</span></button>`
+      + (this.info === k ? `<div class="sv-info">${infoHtml(k, DAMAGE_PARAMS)}</div>` : '')
   }
 
   /** An action row: what it does, its price and hours, its one button. */

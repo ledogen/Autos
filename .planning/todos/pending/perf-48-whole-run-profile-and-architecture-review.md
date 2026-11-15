@@ -12,10 +12,7 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Lever 6 prototype built on feature/perf (8b1b0dbc, `?terrainBake=256`, off by default): saves 10–24 % of GPU active
-cycles, but flattens the dirt detail within ~20 m and streaks steep cut faces. Owner look owed (`owed/perf48-bake-look.json`):
-ship / drop / changes. Lever 5 (frame cap) awaits landing.
-Lever 7 declined (DEC-186). Levers 1, 1b on main; 2 and 3 void; 4 at PERF-45.
+Owner answered the lever 6 card 2026-11-14 (DEC-207): not the all-baked version. Perf lane builds a hybrid: the bake for ground 70 m and farther from the truck, the live shader nearby, and reports how much of the 10-21 % GPU saving survives (the earlier "hybrid" test kept steep ground live, saving ~5 %: this one splits by distance).
 
 ## Summary
 The owner wants the game to be a truly lightweight app. Earlier perf work chased single suspects (tire lookups, the
@@ -56,12 +53,14 @@ until `afplay -v 0 /System/Library/Sounds/Tink.aiff` returns in under a second, 
 - [x] The architecture review: each large cost against professional practice, with sources
 - [x] A ranked lever list (cost today, expected gain, risk, effort), each lever a ticket or a line in an existing one
 - [ ] The owner picks levers (a deep dive if the list needs a table)
+- [ ] Lever 6 hybrid: baked look at 70 m+ from the truck, live shader nearby; before/after screenshots; the GPU saving that remains is MEASURED and reported to the owner (DEC-207)
 
 ## Decisions
 - 2026-11-14, owner (lever 1, the energy/hunger strips stepping one device pixel at a time): "keep the pixel steps".
 - 2026-11-14, owner (lever 5): "yes, default 60" to a 60 / 30 / display-rate setting (DEC-185).
 - 2026-11-14, owner (lever 6): "build the prototype".
 - 2026-11-14, owner (lever 7, 30 fps while parked): "no, keep 60" (DEC-186).
+- 2026-11-14, owner (lever 6 card perf48-bake-look): "i dont like the loss of detail nearby. can we build it so it uses the bake for things 70m+ from the truck and uses live for the things nearby? how much of our savings would we lose?" (DEC-207).
 
 ## Open questions
 - What "snappy" means in numbers: the owner's targets for frame time, load time and battery draw.
@@ -109,3 +108,4 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
   Paired A/B, live ↔ baked every 2 s × 12, 2 random seeds (4127, 58301), near/mid/far views, shadow pass every frame:
   −10 to −21 % active cycles on a busy machine (absolute −40 to −190 Mcyc/s), −22 to −24 % on the one quiet run. Keeping
   steep pixels live (uBakeSteep 0.7) ate most of it (+2 to −16 %, median −5 %). Shots: perf worktree wip/perf-48/shots2/. Not gated.
+- 2026-11-14: scribe recorded the owner's answer to the terrain-bake card.

@@ -1,7 +1,7 @@
 ---
 id: FEAT-104
 type: feature
-status: open — the storefronts are built (feature/run-shape); waiting on the landing, then the owner's look
+status: open — storefronts built and on main (9c76c345); the owner's look is outstanding (no card)
 severity: major
 opened: 2026-10-07
 source: owner, 2026-10-07 — "Places and Missions" (pois.md § Places and Missions)

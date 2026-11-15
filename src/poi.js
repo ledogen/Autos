@@ -1129,6 +1129,7 @@ export class PoiSystem {
                 // ASSET-74: the model's PARK box — park inside it to be offered work. Off the model,
                 // not the slot: it is the painted stalls, so a fallback cube has none.
                 q.park = spec?.park ?? null
+                q.cameraViews = spec?.cameraViews ?? null   // FEAT-220
                 q.camera = spec?.camera ?? null   // FEAT-178: a fixed view while parked in the box (the service station)
                 // FEAT-50: the model's PUMP ZONES — pull alongside and pull the handbrake to use the pump.
                 // Off the model, like the park box: a pump island has them, a cube does not.

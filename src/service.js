@@ -300,12 +300,14 @@ export class ServiceCenter {
     }
 
     /** The shop's flat patch, at today's tier. */
-    patchQuote () { return { price: cents(PATCH.price * this.tier()), hours: PATCH.hours } }
+    patchQuote () { return { price: this._mom('patch', 'patch') ? 0 : cents(PATCH.price * this.tier()), hours: PATCH.hours } }   // FEAT-217 (526f): the evening's first patch is on mom too, so a broke player is never $5 short
 
     /** Patch the flat on fitted tire track `id`: air back in, condition unchanged. */
     patch (id) {
         const w = TIRE_IDS.indexOf(id)
+        const free = this._mom('patch', 'patch')
         if (w < 0 || !this.damage.flat[w] || !this.spend(this.patchQuote().price)) return false
+        this._usedMom('patch', 'patch', free)
         this.damage.flat[w] = false
         this.advanceHours(PATCH.hours)
         this.onChange()
@@ -352,7 +354,9 @@ export class ServiceCenter {
     /** Patch the flat tire (or mounted pair) at inventory entry `index`. */
     patchOwned (index) {
         const r = this.inventory.list()[index]
+        const free = this._mom('patch', 'patch')
         if (!r?.flat || !this.spend(this.patchQuote().price)) return false
+        this._usedMom('patch', 'patch', free)
         this.inventory.amend(index, { flat: false })
         this.advanceHours(PATCH.hours)
         this.onChange()

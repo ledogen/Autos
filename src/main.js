@@ -30,7 +30,7 @@ import { makeQueryContacts } from './world-contacts.js'   // the wheels' and bod
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
-import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
+import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, TIRE_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen, bandColor } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
@@ -38,7 +38,7 @@ import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90
 import { updateVehicle, setLaunchHold, setParkLock, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { PARK_SPEED } from './park-brake.js'
 import { makeIgnitionState, keyPosition, seized, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -63,12 +63,12 @@ import { RoadMeshSystem } from './road-mesh.js'
 import { DustSystem } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
-import { SkySystem, SKY_CYCLE, SKY_PRESETS, nightWeight } from './sky.js'                        // QUAL-02: atmospheric skybox + sun-driven lighting
-import { MoonSystem, MOON_PARAMS } from './moon.js'                      // QUAL-02: night moon disc on the key-light direction
+import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'   // the sky, its sun/moon/stars, the daylight and the sky fog — one atmosphere
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
-import { putRun, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
+import { createFrameCap } from './frame-cap.js'   // PERF-48 / BUG-169: the render cap skip decision (pure, gated)
+import { putRun, putTruck, loadTruck, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
@@ -114,7 +114,7 @@ import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   //
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
-import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
+import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame, rankBarWords } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { FuelStop, towPrice, towHours, stationPriceFactor } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow; FEAT-209 each station's price
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
@@ -135,6 +135,7 @@ import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-s
 import { TerrainBake } from './terrain-bake.js'   // PERF-48 lever 6 prototype (?terrainBake=)
 import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
+import { lampsOn, homeLamps, shopLamps, setGlow } from './poi-night.js'   // FEAT-214: POI night lights
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -1264,12 +1265,22 @@ const _CORNER_NAME = ['front-left', 'front-right', 'rear-left', 'rear-right']
 const _MACHINE_WORD = [
   [null, 'the engine is knocking', 'the engine seized'],
   ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is cracking`, `the ${c} wheel gave out`])),
+  // FEAT-216 damage alerts (words are the owner's to approve): a wheel bent 10 %, a tire flat / failed,
+  // the air filter and the oil at their wear thresholds. Spring and body-panel damage stay sound-only.
+  ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is bent`])),
+  ...(_CORNER_NAME.map(c => [null, `the ${c} tire is flat`, `the ${c} tire failed`])),
+  [null, 'the air filter is clogging'],
+  [null, 'the oil is worn'],
 ]
 let _wordLevels = null, _wordTimer = null
 function _machineWords () {
   if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) { _wordLevels = null; return }
   const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
-  const now = [lv(damageModel.get('engine')), ...WHEEL_IDS.map(id => lv(damageModel.get(id)))]
+  const now = [lv(damageModel.get('engine')), ...WHEEL_IDS.map(id => lv(damageModel.get(id))),
+    ...WHEEL_IDS.map(id => damageModel.get(id) <= 0.9 ? 1 : 0),
+    ...TIRE_IDS.map((id, i) => damageModel.get(id) <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
+    damageModel.get('airFilter') < DAMAGE_PARAMS.filterKnee ? 1 : 0,
+    damageModel.get('oil') < DAMAGE_PARAMS.oilKnee ? 1 : 0]
   const rose = _wordLevels ? now.findIndex((l, i) => l > _wordLevels[i]) : -1
   _wordLevels = now
   if (rose < 0) return
@@ -1488,6 +1499,9 @@ const SELECTORS = {
   worldTerrain: { name: 'terrain relief',  opts: KNOBS.t.map(v => [v, `${v} %`]) },
   worldPoi:     { name: 'POI spacing',     opts: KNOBS.p.map(v => [v, `${v} %`]) },
   worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
+  // FEAT-205: free roam's truck — stock, or the one a won run saved. Page state, never saved; shown only with a winner to pick.
+  truck:        { name: 'truck', opts: [['stock', 'stock'], ['winner', 'winning truck']], show: () => _setupMode === 'freeroam' && !!loadTruck(),
+                  get: () => _setupTruck, set: (t) => { _setupTruck = t } },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
   steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
   // A slider: 0 % linear … 100 % parabolic … 150 % (gamepad.js steerCurve), with a tiny plot of the map.
@@ -1500,9 +1514,10 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
-  frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
+  frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [90, '90 fps'], [120, '120 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
 window.__settings = _settings   // dev handle — test/cdp-smoke.mjs marks the browser as played before (FEAT-184 playedBefore)
+let _setupTruck = 'stock'   // FEAT-205
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
 function _fitGearbox (gearbox = _settings.gearbox) {
   fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
@@ -1564,6 +1579,7 @@ for (const b of document.querySelectorAll('#main-menu button, #pause-menu button
 /** FEAT-156: switch the new-game page's mode — index.html's CSS swaps the rows on data-mode. */
 function _setSetupMode (mode) {
   _setupMode = mode
+  _setupTruck = 'stock'
   const panel = document.getElementById('mm-setup-panel')
   if (panel) panel.dataset.mode = mode
   if (mode === 'scenarios') _renderScenarioList()
@@ -1593,7 +1609,11 @@ async function _startFromSetup () {
   _enterStageLoad('building the world\u2026')
   await _worldReady
   applyWorld(_world())
-  _fitGearbox()
+  // FEAT-205: stock parts, or the winning truck (parts + its gearbox); the seat's damage wipe makes either new.
+  const winner = _setupTruck === 'winner' ? loadTruck() : null
+  partsSystem.start()
+  if (winner) partsSystem.restore(winner.parts)
+  _fitGearbox(winner?.gearbox)
   await _startFreeRoam(_resolveSeed(seed))
 }
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
@@ -1735,19 +1755,18 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 
 // ── Scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene()
-// QUAL-02: the flat-colour background is replaced by SkySystem's atmospheric Sky mesh (constructed
-// after the lights, below — it needs the sun/hemisphere refs). Fog stays here: its DENSITY is owned
-// by the draw-distance presets (PERF-03), while SkySystem recolours it to match the sky horizon so
-// the FEAT-05 "no hard band at the horizon" invariant is preserved. Initial colour is a placeholder
-// overwritten by SkySystem.apply() on construction (it applies the active look's fog colour).
-scene.fog = new THREE.FogExp2(0x9bb8d4, 0.006)
+// The background is SkySystem's sky box (constructed after the lights, below). Fog stays here: its DENSITY
+// — the exp² haze, aerial perspective only — is owned by the quality presets (PERF-03/06); sky.js shades
+// it as the sky itself (a fogged fragment fades to the sky in its own direction) and adds the world-edge
+// term (_syncFogEdge). The colour is only the fallback for materials without the sky uniforms.
+scene.fog = new THREE.FogExp2(0x9bb8d4, 0.004)
 // Fog kill-switch (owner request, 2026-08-18 — FEAT-68 checkpoint screenshots): `?nofog=1` boots
 // with fog off, and the debug-panel checkbox flips it live. Quality presets write density THROUGH
 // this state (applyQuality), so a preset change can never silently re-enable fog. FogExp2 with
 // density 0 is a no-op, so toggling needs no scene surgery. Sky looks only recolour fog — unaffected.
 const _fogState = {
   disabled: _urlParams.has('nofog'),
-  presetDensity: 0.006,   // last preset-owned density; restored when the toggle re-enables fog
+  presetDensity: 0.004,   // last preset-owned density; restored when the toggle re-enables fog
 }
 if (_fogState.disabled) scene.fog.density = 0
 
@@ -1911,23 +1930,17 @@ function applyShadowResolution (mapSize, extent) {
   renderer.shadowMap.needsUpdate = true
 }
 
-// QUAL-02: atmospheric skybox + sun-driven lighting. Drives the sun light, hemisphere fill and fog
-// tint from ONE sun elevation/azimuth (the static base a day/night cycle plugs into). SkySystem adds
-// the Sky mesh and sets scene.background = null (the mesh is the background now).
+// The sky, the sun and moon on their real paths, and every natural light (key, hemisphere fill, the sky fog's
+// colour) from one simulated atmosphere — see sky.js. It owns the moon disc and the background mesh.
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
-const _ringDay = skySystem.particleLight(new THREE.Color(), SKY_PRESETS.day)   // FEAT-180: the curtains' noon light
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
 // NB `window.terrain` is the ground-height FUNCTION (returns metres), not the streaming system. This is the system
 // itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe, or zeroing
 // the FEAT-84 surface-texture uniforms to price them). A getter: a reseed swaps the instance.
 window.__terrain = () => terrainSystem
 
-// The moon rides SkySystem's KEY-LIGHT direction, so the disc you see is the thing casting the
-// night's shadows. Placed each frame from the loop (see moonSystem.update).
-const moonSystem = new MoonSystem(scene)
 // Scratch for the per-frame unlit-particle irradiance push (dust / smoke / dirt spray).
 const _particleLight = new THREE.Color(1, 1, 1)
-const _ringLight = new THREE.Color(1, 1, 1)
 
 // Wheel dust trails (src/dust.js). Self-contained sprite-pool puffs tinted to the dirt
 // we're driving on; driven each render frame from vehicleState (see loop). Construct here
@@ -2281,10 +2294,11 @@ const _hudHtml = (el, s) => { if (!el || (el._html === s && el.innerHTML === el.
 // dynamic shadows, prop render radius, an internal render-resolution cap, and (PERF-12) the shadow
 // map size + ortho extent. Normal is the boot default (applied via applyQuality at bootstrap) and is
 // the thermal-friendly laptop tier; LOW strips every non-gameplay GPU cost.
-//   `warm` = rings GENERATED beyond the visible ring (pop-in lead). It grows with draw distance: the
-//   higher tiers run lighter fog (you see further), so the build frontier must sit further out to stay
-//   hidden — a flat 1-ring margin left obvious pop-in at High/Ultra. Sized so build radius (ring+warm)
-//   reaches roughly where the fog goes ~opaque (density·d ≈ 1.3).
+//   `warm` = rings GENERATED beyond the visible ring (pop-in lead). It grows with draw distance — a flat
+//   1-ring margin left obvious pop-in at High/Ultra. The fog hides the build frontier by construction:
+//   the sky fog's edge term is opaque at (ring + warm) chunks (_syncFogEdge).
+// fogDensity: the exp² haze, aerial perspective only (it no longer has to hide the edge), lighter as
+//   the tier sees further.
 // detailScale (PERF-05 × FEAT-05): Low is the low-end / GPU-bound path (PERF-05 found the residual
 //   stutter on weak iGPUs is render-bound), so it disables the per-pixel fbm shader entirely (0).
 //   Normal+ keep FEAT-05's tuned look (1.0). The shader gates on uDetailScale > 0.0, so 0 is a kill-switch.
@@ -2351,10 +2365,10 @@ const _hudHtml = (el, s) => { if (!el || (el._html === s && el.innerHTML === el.
 //   prop ring stands 3–4-tri stand-ins (COVER_FAR_CAT), so the vertex cost of the extra density
 //   lands mostly inside lodRing.
 const QUALITY_PRESETS = {
-  Low:    { ring: 1, warm: 1, fogDensity: 0.012, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0   },
-  Normal: { ring: 2, warm: 1, fogDensity: 0.006, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 3072, shadowExtent: 40, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0 },
-  High:   { ring: 3, warm: 3, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6 },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.003, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2 },
+  Low:    { ring: 1, warm: 1, fogDensity: 0.008, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0   },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 3072, shadowExtent: 40, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0 },
+  High:   { ring: 3, warm: 3, fogDensity: 0.0027, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6 },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.002, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2 },
 }
 
 // PERF-07: set once the bake system exists (browser only — headless never constructs it), so
@@ -2379,6 +2393,14 @@ function applyRenderResolution () {
   renderer.setSize(window.innerWidth, window.innerHeight)  // re-stamp the backing buffer at the new ratio
 }
 
+// The sky fog's edge term (sky.js setWorldRadius) reaches 100 % where the drawn terrain ends: the visible ring
+// plus the warm ring, which is built and drawn, less the ≤ 8 m the stream centre sits off the camera. Fully
+// fogged land IS the sky, so the edge, and any chunk still streaming in past it, cannot be seen from anywhere.
+// The lab is a clean room with no edge.
+function _syncFogEdge () {
+  skySystem.setWorldRadius(_labActive || !terrainSystem ? Infinity : (terrainSystem._ringRadius + terrainSystem._warmMargin) * CHUNK_SIZE - 8)
+}
+
 let _qualityName = 'Normal'   // the tier last applied (captures record it)
 // PERF-37: the story region's road radius while a region holds the play network (set by pumpRegionWarm, cleared by
 // releaseRegion), else 0. A Quality change inside a region must not shrink play's radius to the ring's 320 m: the map
@@ -2389,6 +2411,7 @@ function applyQuality (name) {
   const p = QUALITY_PRESETS[name] ?? QUALITY_PRESETS.Normal
   _qualityName = QUALITY_PRESETS[name] ? name : 'Normal'
   if (terrainSystem) terrainSystem.setRingRadius(p.ring, p.warm)
+  _syncFogEdge()
   // roadRadius DERIVED from the visible ring (PERF-06): (ring+0.5)·2·CHUNK_SIZE = 2× the terrain axis
   // half-width = the square ring's diagonal corner (×√2) with a ×√2 lead. The road network is a CIRCLE
   // that must enclose the SQUARE terrain ring's corner before it scrolls into view; it is a route/slice
@@ -2554,7 +2577,7 @@ if (_PROF) {
     shadowMapSize:    v => applyShadowResolution(v, null),
     shadowExtent:     v => applyShadowResolution(null, v),
     fogDensity:       v => { if (scene.fog) scene.fog.density = v },
-    ring:             v => { if (terrainSystem) terrainSystem.setRingRadius(v, 1); if (roadSystem) roadSystem.setRadius((v + 0.5) * 2 * CHUNK_SIZE) },
+    ring:             v => { if (terrainSystem) terrainSystem.setRingRadius(v, 1); _syncFogEdge(); if (roadSystem) roadSystem.setRadius((v + 0.5) * 2 * CHUNK_SIZE) },
     // PERF-27 item 3: the world reseed, as a lever. It is the same applyWorldSeed() the debug seed
     // field and Story Mode's seed prompt call, so the harness measures the shipping path — and it
     // returns the awaitable Path-B rebuild promise (see __lever below).
@@ -3062,8 +3085,8 @@ const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 
 //
 // Deliberately dumb geometry: an open-ended unit cylinder, scaled to the radius and sunk into the
 // ground so undulating terrain can never open a gap under it. depthWrite off + DoubleSide so it
-// reads as a light curtain from both approaches instead of a solid bucket, and toneMapped off so
-// the orange stays the same signal orange at every hour of the day clock.
+// reads as a light curtain from both approaches instead of a solid bucket. Lit like the world round it
+// (see _ringMat), so the headlights pick it out at night.
 const _POI_RING_H = 4.0        // m — curtain height
 const _POI_RING_SINK = 1.5     // m — how far the base is buried (terrain slop, not decoration)
 // How close you must be for a haul drop mark to light up (FEAT-60, owner 2026-08-05): past the pad and
@@ -3094,15 +3117,18 @@ function _ringAlphaTex () {
 // one ring changing meaning rather than two unrelated overlays.
 const _ringGeo = new THREE.CylinderGeometry(1, 1, 1, 48, 1, true)
 const _ringAlpha = _ringAlphaTex()
-// FEAT-180 (owner 11-07, 3a: "dimmed with the light, like everything else"): every curtain made here keeps its
-// authored colour in userData.base and is re-coloured each frame by the look's light (see the particle-light block).
+// FEAT-180 (owner 11-07, 3a: "dimmed with the light, like everything else") and the lighting redesign (owner:
+// "POI halos should be lit by the headlights, like the props behind them are"): a Lambert surface, so the sun,
+// the sky and the headlight spots light it as they light the props. A thin curtain also glows with the daylight
+// coming through it from the far side; that is its emissive, set each frame from the same daylight measure the
+// unlit particles use (see the particle-light block), so it is the authored signal colour at noon and gone at night.
 const _ringMats = []
+const RING_GLOW = 0.5   // the curtain's through-light at noon, × its colour
 const _ringMat = (color, opacity = 0.28) => {
-  const m = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity, side: THREE.DoubleSide,
-    depthWrite: false, toneMapped: false, alphaMap: _ringAlpha,
+  const m = new THREE.MeshLambertMaterial({
+    color, emissive: color, transparent: true, opacity, side: THREE.DoubleSide,
+    depthWrite: false, alphaMap: _ringAlpha,
   })
-  m.userData.base = m.color.clone()
   _ringMats.push(m)
   return m
 }
@@ -3169,6 +3195,7 @@ function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
   _poiMeshes.clear()
+  _homeLamps.clear(); _shopLampMats.clear(); _shopLampsOn = null
   for (const { mesh } of _dropMarks.values()) mesh.geometry.dispose()   // per-mark geometry, not shared
   _dropMarks.clear()
   _customerRings.clear()
@@ -3183,7 +3210,8 @@ function _rebuildPoiMarkers () {
     if (q.modelKey) {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
       // unlike the small thrown mission items FEAT-59's cast-only default was written for.
-      const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant })
+      const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant,
+        onReady: (inst) => _wirePoiLamps(q, inst) })
       // pad records are base-seated, and so are the models. modelX/Z, not the pad centre: a model
       // may be `seat`ed toward the back of the pad to leave its yard on the road side (FEAT-71).
       m.position.set(q.modelX, q.baseY, q.modelZ)   // BUG-91: the carved ground, not the pad's design top
@@ -3341,6 +3369,32 @@ function _updateCustomerRings () {
  * once the truck is clear of the pad, so a car never spawns into the chassis. Colliders re-sync
  * only when a flag flips (or on `force`, the marker rebuild). Deterministic: it reads the board.
  */
+// FEAT-214 — night lights (src/poi-night.js). Shop lamp materials are SHARED across instances, so one
+// flag drives them all; a residence owns its clone, driven by its own offer / delivery state.
+const _SHOP_TYPES = new Set(['gasPump', 'gasStation', 'autoShop', 'foodVendor', 'generalStore', 'tackleShop'])
+const _shopLampMats = new Set()
+const _homeLamps = new Map()   // poi id → { mats, on }
+let _shopLampsOn = null
+function _wirePoiLamps (q, inst) {
+  if (_SHOP_TYPES.has(q.type)) { shopLamps(inst, _shopLampMats); _shopLampsOn = null }
+  else if (q.type === 'residence' || q.tags?.includes('residence')) {
+    const mats = homeLamps(inst)
+    if (mats.length) _homeLamps.set(q.id, { mats, on: null })
+  }
+}
+function _updatePoiNightLights () {
+  const h = SKY_CYCLE.hour   // the sky's hour: the day clock pushes it in a run, free roam cycles it
+  const on = lampsOn('shop', h)
+  if (on !== _shopLampsOn) { _shopLampsOn = on; setGlow(_shopLampMats, on) }
+  if (!_homeLamps.size) return
+  const now = daySystem.clockH(), m = missionSystem?.mission
+  for (const [id, hl] of _homeLamps) {
+    const keep = !!m && (m.endPoiId === id || m.stopIds?.includes(id)) ||
+                 !!offerBoard && offerBoard.slotStates(id, now).some(s => s.state === 'live')
+    const lit = lampsOn('home', h, keep)
+    if (lit !== hl.on) { hl.on = lit; setGlow(hl.mats, lit) }
+  }
+}
 function _updatePoiPresence (force = false) {
   let changed = force
   const vp = vehicleState.position
@@ -3577,24 +3631,22 @@ function _updateDropMarks (onMission) {
 // ── FEAT-47: the story-mode day clock ──────────────────────────────────────────────────────
 // Story mode only: started when the region goes live, stopped on exit (see the story deps below),
 // and a no-op every frame in between in free roam. Its one output today is the sky hour — pushed on
-// a quantized ladder because each push re-bakes the sky cubemap and the prop impostor atlas
-// (skySystem.onLookApplied, below). DAY_PARAMS lives in day.js, out of RANGER_PARAMS, for the
+// a quantized ladder because each push re-runs the sky's atmosphere (~2 ms) and moves the key light,
+// which re-renders both shadow cascades and re-rolls the baked prop shadows. DAY_PARAMS lives in day.js, out of RANGER_PARAMS, for the
 // same reason POI_PARAMS does.
 // FEAT-180 night by moon phase: a run's moon walks a 29.53-day synodic month from a seeded start, one day per run
-// day, so runs differ by seed and a run's nights change as it goes. The disc shows that phase and the night's light
-// scales with its lit fraction (SkySystem.setMoonLit: new moon = the night look as authored). Free roam has no run
-// clock and keeps both as they were: MOON_PARAMS.phase's default disc over the new-moon light.
+// day, so runs differ by seed and a run's nights change as it goes. SkySystem.setMoonCycle places the moon for that
+// phase (when it rises and sets), shows the phase on the disc, and lights the night by it. Free roam has no run
+// clock and keeps the sky's own default moon.
 const LUNAR_DAYS = 29.53
-const _moonFree = MOON_PARAMS.phase
+const _moonFree = skySystem._cycle
 let _moonDay = null
 function _syncMoon () {
   const d = daySystem._running ? daySystem.day() : null
   if (d === _moonDay) return
   _moonDay = d
   const c = d == null ? null : ((d / LUNAR_DAYS + seedFor(worldSeed, 'moon') / 2 ** 32) % 1 + 1) % 1   // FEAT-184: day −1 and 0 too
-  MOON_PARAMS.phase = c == null ? _moonFree : 1 - Math.abs(1 - 2 * c)   // 0 new … 1 full, moon.js's scale
-  moonSystem.apply()
-  skySystem.setMoonLit(c == null ? 0 : (1 - Math.cos(MOON_PARAMS.phase * Math.PI)) / 2)
+  skySystem.setMoonCycle(c == null ? _moonFree : c)
 }
 const daySystem = new DaySystem({
   setTimeOfDay: (h) => { _syncMoon(); skySystem.setTimeOfDay(h) },
@@ -3690,9 +3742,23 @@ const serviceCenter = new ServiceCenter({
   freeRepairs: () => runEconomy.freeRepairs ?? 0, useFreeRepair: () => { runEconomy.freeRepairs-- },   // expedition-rewards
   // FEAT-184 (DEC-151): on the evening, one tire is on mom — a mounted one or a bare one (the shelf's old tire is always
   // there), the part once and its fitting once.
-  onMom: (id, k) => _eveningLeg() && _momOwes[k] && (id === 'spareTire' || PARTS[id]?.slot === 'tire'), useMom: (id, k) => { _momOwes[k] = false },
+  onMom: (id, k) => _eveningLeg() && _momOwes[k] && (k === 'patch' ? id === 'patch' : id === 'spareTire' || PARTS[id]?.slot === 'tire'), useMom: (id, k) => { _momOwes[k] = false },
   onChange: () => serviceScreen.render(),
 })
+// FEAT-219 (owner, 2026-11-14: "it's just dark in there"): the bay's walls and roof shut the sun and sky out. The ceiling strips
+// are emissive already (the model's ShopLight); this ONE point light, no shadows, exists only while the screen is open in the bay
+// (created on entry, removed on exit: a light that is not in the scene costs every lit material nothing). Retune after FEAT-180
+// changes the exposure: SERVICE_LIGHT.intensity (cd) is the one knob; `at` is the model frame, over the lift (park box centre).
+const SERVICE_LIGHT = { color: 0xfff0d8, intensity: 60, distance: 12, decay: 2, at: [-3.95, 2.9, -0.2] }
+let _bayLight = null
+function _setBayLight (on, poi) {
+  if (_bayLight) { scene.remove(_bayLight); _bayLight = null }
+  if (!on) return
+  const L = SERVICE_LIGHT, w = dropZoneWorld(poi, { x: L.at[0], z: L.at[2] })
+  _bayLight = new THREE.PointLight(L.color, L.intensity, L.distance, L.decay)
+  _bayLight.position.set(w.x, poi.baseY + L.at[1], w.z)
+  scene.add(_bayLight)
+}
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
   // The shop still posts work (FEAT-167: its Jobs tab). FEAT-197 (owner, 2026-11-11): the tab's one button,
   // "go to jobs", hands the brake to the offers — the offer card over the map, as parking does elsewhere —
@@ -3716,14 +3782,17 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
   // the service station's lift, the view is the model's own `camera` — its eye and look, as the same orbit's bearing,
   // pitch and radius about the look point, so a drag still orbits from there.
   onView: (on) => {
-    if (!on) { setCameraFocus(null); return }
+    if (!on) { setCameraFocus(null); _setBayLight(false); return }
     const c = _servicePoi?.camera   // the screen opens only parked in the box (_serviceInReach)
     if (c) {
       const at = ([x, y, z]) => ({ ...dropZoneWorld(_servicePoi, { x, z }), y: _servicePoi.baseY + y })
-      const e = at(c.eye), l = at(c.look), dx = e.x - l.x, dy = e.y - l.y, dz = e.z - l.z, r = Math.hypot(dx, dy, dz)
-      setCameraFocus(l, { theta: Math.atan2(dx, dz), phi: Math.asin(dy / r), radius: r })
-      snapCamera()   // "snaps": no glide in from the chase position, through the bay's wall
-      return
+      const e = at(c.eye), l = at(c.look)
+      const view = (e, l) => { const dx = e.x - l.x, dy = e.y - l.y, dz = e.z - l.z, r = Math.hypot(dx, dy, dz)
+        return { p: l, theta: Math.atan2(dx, dz), phi: Math.asin(dy / r), radius: r } }
+      // FEAT-220: the camera is locked to these (the wall hides the truck from a free orbit); C / right-stick click cycles.
+      _setBayLight(true, _servicePoi)
+      setCameraViews([view(e, l), ...(_servicePoi.cameraViews ?? []).map(v => view(at(v.eye), at(v.look)))])
+      return   // each viewpoint is a cut (camera.js), no glide in from the chase position, through the bay's wall
     }
     const p = vehicleState.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
     setCameraFocus({ x: p.x, y: p.y, z: p.z }, { theta: Math.atan2(f.x, f.z) + 0.7, radius: 7.5 })
@@ -4429,8 +4498,8 @@ function _runIntro () {
 //
 // STATELESS ACROSS A RESUME: the legs are dialogue seen-keys (the save carries the seen set): the evening is "the
 // firing seen, the morning not yet", the morning "the morning seen, the paycheck not yet".
-// FEAT-180 (owner 11-07, 9: "Keep dusk opening"): 19:30 is the evening look's keyframe, the light 18:00 had before
-// the sun moved to 8 pm.
+// FEAT-180 (owner 11-07, 9: "Keep dusk opening"): at 19:30 the real sun is ~7° up, the golden hour before the
+// 20:18 sunset.
 const OPENING_START = { day: -1, hour: 19.5 }   // FEAT-170: the firing's clock (FEAT-184, DEC-159: day −1)
 // FEAT-184 (DEC-159, the exact-24h default): free will opens 24 h after the firing — the paycheck's clock and a skip's floor.
 const FREE_WILL = { day: OPENING_START.day + 1, hour: OPENING_START.hour }
@@ -4456,7 +4525,9 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // FEAT-184 (DEC-150/151, owner 2026-11-14): the pocket change a played tutorial runs on until the paycheck ($ — at the
 // day-1 $0.50/gal it buys ~6 gal, so a fill from an eighth stops near half: "will run out of cash half tank"), and the
 // seconds off the road before the evening puts the truck back on it ("you drive off the road > reset"). Both [DEFAULT].
-const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4 }
+const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4,
+  offRoadM: 10,    // FEAT-217 (of3s, DEC-219): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
+  safeNearPoiM: 75 }   // FEAT-217 (bfs1, owner said 50 or 100) [DEFAULT]: no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 // FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
@@ -4464,7 +4535,7 @@ let _evePump = null   // { q, done }: the evening's station while a fill-up is d
 let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
 // FEAT-184 (DEC-151): the evening's tire is on mom — the part once and its fitting once (ServiceCenter onMom). Not saved:
 // a resume mid-evening owes it again.
-const _momOwes = { part: true, labour: true }
+const _momOwes = { part: true, labour: true, patch: true }   // patch: FEAT-217, the first flat patched at the shop
 let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
 // dev handle — test/cdp-smoke.mjs and run-soak read where the tutorial stands (FEAT-184): 'intro' (the firing) · 'card' ·
 // 'evening' · 'morning' · 'free' (the paycheck heard, or skipped), and the run's own world while it plays on the tutorial seed
@@ -4646,7 +4717,7 @@ function _resetToRoad () {
  *  FEAT-184 (DEC-153): the morning's one beat — parked at the joint, the last paycheck. */
 function _eveningBeats () {
   const q = _mom(), j = _joint()
-  if (!_tutDrive()) return
+  if (!_tutDrive()) { _showResetCountdown(0); return }
   if (_morningLeg()) {
     _tut('tut-morning')   // after breakfast, which the sleep queued
     if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
@@ -4654,9 +4725,19 @@ function _eveningBeats () {
   // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
   // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
   // (_playedS), so a pause or a card never counts.
-  const off = !vehicleState.parked && !_inPoiRing() && !_truckOnRibbon()
+  const vp = vehicleState.position
+  const off = !vehicleState.parked && !_inPoiRing() && !poiSystem.nearest(vp.x, vp.z, TUT_PARAMS.safeNearPoiM)
+    && campSystem.nearRoadInfo(vp.x, vp.z).lateral > (RANGER_PARAMS.roadHalfWidth ?? 5) + TUT_PARAMS.offRoadM
   _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
-  if (off && _playedS - _eveOffAt > TUT_PARAMS.offRoadS) { _eveOffAt = null; _resetToRoad() }
+  const left = off ? TUT_PARAMS.offRoadS - (_playedS - _eveOffAt) : 0
+  _showResetCountdown(left > 0 ? Math.ceil(left) : 0)   // FEAT-217: styled like the start-the-truck hint, same size and place
+  if (off && left <= 0) { _eveOffAt = null; _resetToRoad() }
+}
+function _showResetCountdown (n) {
+  const el = document.getElementById('reset-countdown')
+  if (!el) return
+  if (n) el.textContent = `off the road · back on it in ${n}`
+  el.style.opacity = n ? '1' : '0'
 }
 function _eveningLessons (q, v) {
   // FEAT-184 stage 3: the pedals once the key has caught, then (a fill-up due) the gauge.
@@ -4674,7 +4755,7 @@ function _eveningLessons (q, v) {
   if (damageScreen.isOpen && damageModel.flat.some(Boolean)) _tut('tut-damage')
   // Stage 5: towed and back on the road, it's night — the headlights.
   if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
-  if (Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
+  if (!_flatOwed() && Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
 }
 
 /** The evening is over (a sleep, or 07:00 awake): the morning leg, back to the joint for the paycheck (DEC-153). */
@@ -4779,6 +4860,18 @@ function _skipOpening () {
   _renderMissionUI()   // the HUD line goes
 }
 
+/** FEAT-217 (owner 2026-11-14: give-up leaves the pump open and the tutorial half done; free cam survives into a new game):
+ *  the ONE reset of what a run keeps outside the systems' own start(). Called from region exit AND run entry, so
+ *  a state added here can never leak either way. */
+function _resetRunLocals () {
+  fuelStop.reset(); _pumpReceiptT = 0; _showResetCountdown(0)
+  _waypoint = null
+  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
+  _momOwes.part = _momOwes.labour = _momOwes.patch = true; _skipArmedUntil = 0
+  exitFreecam()
+  serviceScreen.close?.(); damageScreen.close?.(); inventoryScreen.close?.()
+}
+
 /**
  * Go-live: true when the opening owns the moment (so RUN_INTRO waits for Larry). Plays the firing on
  * a fresh opening run; on a resumed one it only holds RUN_INTRO back until the welcome.
@@ -4787,8 +4880,6 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the opening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && dialogueSystem.has(DLG.firing)
   _openingRun = false
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
-  _momOwes.part = _momOwes.labour = true; _skipArmedUntil = 0
   economySystem.withholdPaycheck(TUT_PARAMS.pocketCash)   // FEAT-184 (DEC-150): pocket change until the paycheck
   _planEvePump()   // FEAT-184 stage 3
   // DEC-157: the card's second load — the intro played on the run's own world, so straight to mom's call.
@@ -4917,7 +5008,10 @@ const paperRouteSystem = new PaperRouteSystem({
   // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
   // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
   onSettle:  (payout, letter) => {
-    const s = economySystem.settleFlat(payout, letter)
+    const s = economySystem.settleFlat(payout, letter, offerBoard?.spec(paperRouteSystem.offer)?.bonus)
+    // QUAL-36 (DEC-182): Larry's item is not stowed on the result card — he HOLDS it, indefinitely, until the
+    // player parks at his house and takes it (cost off the cash, as on any job; _larryHandsOver).
+    if (s.award) runPaper.held.push({ rewardId: s.award.rewardId, name: s.award.name, cost: itemCost(s.award.rewardId, s.payout) })
     const id = paperRouteSystem.offer?.id
     if (id) offerBoard?.complete(id, daySystem.clockH())   // FEAT-67: Larry's slot then empties
     return s
@@ -4940,6 +5034,21 @@ const paperRouteSystem = new PaperRouteSystem({
   getClockH: () => daySystem.clockH(),   // FEAT-113: world-time elapsed + Larry's deadline
   onChange:  () => _renderPaperUI(),
 })
+/**
+ * QUAL-36 (DEC-182, owner 2026-11-14): parking at Larry's hands over the items he holds — each one that fits the truck
+ * and that the wallet covers (its cost comes off the cash, as on any job). What cannot be taken stays held,
+ * and his line reminds the player. PLACEHOLDER words (the owner writes character text, FEAT-148).
+ */
+function _larryHandsOver () {
+  const kept = [], gave = []
+  for (const h of runPaper.held) {
+    if (inventorySystem.fits(h.rewardId) && economySystem.spend(h.cost)) { inventorySystem.grant(h.rewardId); gave.push(h.name) } else kept.push(h)
+  }
+  runPaper.held = kept
+  const say = (text) => { dialogueSystem.play(null, [{ speaker: 'Uncle Larry', text }]); _renderDialogue() }
+  if (gave.length) say(`[placeholder] Here's your ${gave.join(' and ')}. Told you I'd hold it.`)
+  else if (kept.length) say(`[placeholder] Still holding your ${kept.map(h => h.name).join(' and ')} for you. Make room in the truck and bring some cash, then it's yours.`)
+}
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
 const _recalcEl = document.getElementById('gps-recalc')
 let _recalcOn = false
@@ -5759,15 +5868,16 @@ const _afterRoadsideWork = (h) => { damageModel.publish(RANGER_PARAMS); daySyste
 /** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, spareFitHours() on the clock. */
 function _pickSpare (e) {
   inventoryScreen.close()
-  if (e.flat && _eveningLeg()) _tut('tut-spareflat')   // FEAT-184 stage 4: the worst day's spare
+  const trap = e.flat && _eveningLeg()   // FEAT-184 stage 4 / FEAT-217 (xbnc): the worst day's flat spare is found out AFTER the player tries it on a corner
   damageScreen.pick({
     title: 'Fit the mounted tire',
-    corner: () => !e.flat,
+    corner: () => trap || !e.flat,
     note: _tireNote,
     about: `The mounted tire: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
     actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(spareFitHours(inventorySystem))}`, run: () => {
       const h = spareFitHours(inventorySystem)
       if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterRoadsideWork(h)
+      else if (trap) { _tut('tut-spareflat') }
     } }],
     onClose: _backToInventory,
   })
@@ -5966,7 +6076,11 @@ window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() =
 document.getElementById('recovery-icon')?.addEventListener('click', _toggleRecovery)
 
 /** Can the truck knock on mom's door from here? (Same gates, minus the zone and the grading.) */
+/** FEAT-217 (8l9k): the evening's flat is still on the truck (tow, plug or shop not done yet). Mom's card and her door
+ *  wait for it, so limping home on the flat cannot skip the tow and the shop. */
+const _flatOwed = () => _eveningLeg() && _eveFlat && damageModel.flat.some(Boolean)
 function _atMomsHouse () {
+  if (_flatOwed()) return false
   if (!storySystem.isActive() || storySystem.isEntering()) return false
   if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return false   // FEAT-113: as _campPromptState
   if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return false
@@ -6075,6 +6189,7 @@ function _updateParkTriggers (zParked = false) {
     // siblings — each leaves 'idle' and each other's reach test then returns null.
     // FEAT-67: what is on offer is the BOARD's — live offers only. With nothing live the brake opens
     // nothing and the prompt says when the next offer turns up (the prompt shows it; see below).
+    if (poi.type === 'larrysHouse' && runPaper.held.length) _larryHandsOver()
     const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
@@ -6542,7 +6657,7 @@ function _updateSite () {
     m.cleared = !standing.length || (m.lastHitS != null && missionSystem.elapsed - m.lastHitS > D.hitWindowS)
     const n = _site.next = nearestTarget(m, p.x, p.z, standing, missionSystem.routeRemaining())
     // FEAT-187: the guide is a line to the target, never a destination circle in the road (gps.js reads noRing).
-    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: { ...guideTo(m, m.targets[n.i].u, n.back), noRing: true } }
+    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: { ...guideTo(m, m.targets[n.i].u, n.back), noRing: true, objective: m.targets[n.i] } }
     else if (!n) _site.guide = null
   }
   // FEAT-187: a cluster's halo is lit while the job is live, any of it stands, and the truck is near (the paper's rule).
@@ -7394,6 +7509,7 @@ function _renderPaperUI () {
         // The same rows the POI result card shows (_payRows), plus the accuracy bonus — a third
         // payment, banked as the papers landed. Showing only the settlement would look like a pay cut.
         + _payRows({ base: r.base, tip: r.tip, spot: r.spot, points: r.points })
+        + (r.award ? `<br><span style="color:var(--money)">Larry&rsquo;s holding your ${r.award.name} &mdash; come by his house to pick it up</span>` : '')
         + (r.advanced
           ? `<br><span style="color:var(--money)">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
@@ -7691,11 +7807,12 @@ function _rankTimerSource () {
   const m = missionSystem
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
     if (m.mission.expired) return null   // FEAT-113: a job that pays nothing has no rank to chase
-    // No bar where the clock is not what the letter reads (owner, 2026-10-15): a fragile job is
-    // lettered on condition, a haul on the count delivered — a bar falling S → A on the clock
-    // promises a grade the job does not give. Freight too (FEAT-139, §2b): its letter is the kg,
-    // internal, though time still pays its tip. Courier keeps the bar.
-    if (m.mission.fragile || m.mission.bundles || m.mission.cargoKg) return null
+    // QUAL-36 (DEC-178/181, owner 2026-11-14): a job is HURRIED or CALM. Courier-family jobs are hurried; fragile,
+    // haul and freight are calm (their letter is condition / count / kg, so a time bar would promise a grade
+    // the job does not give) unless the giver is Impatient — then the bar shows the TIP only. Demolition is
+    // always calm: its clock is the 40 s hit window.
+    const calm = !!(m.mission.fragile || m.mission.bundles || m.mission.cargoKg || m.mission.targets)
+    if (calm && (m.mission.targets || !m.mission.traits?.includes('impatient'))) return null
     // R-22 (owner, 2026-10-24): the bar shows only once the goal is NEAR — the last nearFrac of the
     // route (never under nearMinM) — and stays from there. Latched per job, so a GPS re-plan that
     // lengthens the route cannot take it away again.
@@ -7703,7 +7820,7 @@ function _rankTimerSource () {
     if (!_rtNear && m.state === 'running') _rtNear = m.routeRemaining() <= Math.max(RT.nearMinM, RT.nearFrac * (m.mission.distance ?? 0))
     return { key: m.mission, elapsed: m.elapsed, par: m.mission.par,
              thresholds: m.mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT,
-             gate: m.mission.bonus?.gate ?? null, near: _rtNear }
+             gate: calm ? null : m.mission.bonus?.gate ?? null, near: _rtNear, tipOnly: calm }
   }
   const p = paperRouteSystem
   if (p && p.isCarrying() && p.run && p.route && !p.run.expired) {
@@ -7885,7 +8002,8 @@ function _updateRankTimer () {
         el.className = w > RT.viewW / 2 ? 'rt-seg wide' : 'rt-seg'   // wide: letter at the left edge
         el.style.width = `${w}px`
         el.style.background = RANK_COLOR[b.letter]
-        el.textContent = w >= 14 ? b.letter : ''   // a letter half-clipped reads worse than none
+        const word = rankBarWords(b.letter, src.tipOnly).strip
+        el.textContent = w >= 8 * word.length ? word : ''   // a word half-clipped reads worse than none
         E.strip.insertBefore(el, E.gate)
         E.segs.push(el)
       }
@@ -7919,7 +8037,7 @@ function _updateRankTimer () {
     const old = _rtLetter
     _rtLetter = f.letter
     if (old) _rtBreakLetter(old)   // a line went past: the old letter breaks and falls
-    E.letter.textContent = f.letter
+    E.letter.textContent = rankBarWords(f.letter, src.tipOnly).tile
     E.letterBox.style.background = RANK_COLOR[f.letter]   // the tile; the letter on it is dark (CSS)
     if (old) { E.letter.classList.remove('rt-slam'); void E.letter.offsetWidth; E.letter.classList.add('rt-slam') }
   }
@@ -8280,8 +8398,7 @@ addPropGui(_gui, {
 // FEAT-39: GPS assist toggle (self-contained folder, same pattern as the props one).
 addGpsGui(_gui, gpsSystem)
 // QUAL-02: sky/lighting tuning folder (self-contained — attaches to _gui like the props folder).
-const _skyFolder = skySystem.addGui(_gui)
-moonSystem.addGui(_skyFolder)   // moon lives under Sky / Lighting — same look, same folder
+skySystem.addGui(_gui)   // the moon's folder sits inside it
 // FEAT-47: story day clock folder (self-contained, same pattern).
 daySystem.addGui(_gui)
 // FEAT-53: economy folder — wallet/deeds/tier read-outs + the PROVISIONAL k and cap tunables.
@@ -8483,6 +8600,7 @@ function enterLab () {
   // 400 m strip and hides the 150 m skidpad entirely from any useful vantage. The lab is a clean
   // room: thin it right out and restore the player's setting on the way back.
   if (scene.fog) { _labFogDensity = scene.fog.density; scene.fog.density = 0.00035 }
+  skySystem.setWorldRadius(Infinity)
 
   if (terrainSystem) terrainSystem.setEnabled(false)   // stop streaming, not just drawing
   _setWorldgenVisible(false)
@@ -8514,6 +8632,7 @@ function exitLab () {
   propSystem?.setPhysicsHook(propPhysics)         // …and the prop colliders
 
   if (scene.fog && _labFogDensity != null) { scene.fog.density = _labFogDensity; _labFogDensity = null }
+  _syncFogEdge()
 
   const pmLab = document.getElementById('pm-lab')
   if (pmLab) pmLab.textContent = 'testing lab'
@@ -8727,7 +8846,7 @@ const scenarioSystem = new ScenarioSystem({
   onChange: () => { _syncScenarioColumns(); _renderScenarioUI() },
 })
 
-// The light columns: the POI curtain material (_ringMat — vertical alpha ramp, no tone mapping, no
+// The light columns: the POI curtain material (_ringMat — vertical alpha ramp, lit, no
 // depth write) on a thin open cylinder, one each side of the road. Tall enough to read over a crest
 // from a few hundred metres; sunk so a slope can never open a gap under one.
 const _SCN_COL_R = 0.35     // m
@@ -9143,6 +9262,7 @@ const storySystem = new StorySystem({
     damageModel.publish(RANGER_PARAMS)
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
+    _resetRunLocals()                // FEAT-217: nothing of the last run's tutorial, pump or camera
     resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)
     paperRouteSystem.abort()
     _renderDialogue()
@@ -9217,6 +9337,7 @@ const storySystem = new StorySystem({
     offerBoard = null                   // …and the board belongs to the run that just ended
     _dropLarryTour()
     _setRunHudVisible(false)
+    _resetRunLocals()                   // FEAT-217: giving up (or any exit) resets the tutorial, the pump and the camera
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
     if (_firingCam) setCameraFocus(null)   // FEAT-147: a run left mid-firing hands the camera back…
@@ -9728,6 +9849,7 @@ const CRASH_CARD_DELAY_S = 1.5
 function _endRun (kind) {
   if (_paperScenario) { _paperScenarioOver(kind); return }   // FEAT-62: never _discardRunSave — the save is the player's
   if (_runEnded) return
+  if (kind === 'win') putTruck({ parts: partsSystem.snapshot(), gearbox: _runGearbox })   // FEAT-205: free roam can fit it
   _discardRunSave()
   // Read the run as it ended, before the clock moves on behind the card.
   const title = RUN_END_TITLE[kind], body = _runEndHtml(kind)
@@ -9860,7 +9982,7 @@ function _runSnapshot () {
     motion: { v: vs.velocity.toArray(), w: vs.angularVelocity.toArray(), wheelOmega: vs.wheelOmega,
               strutComp: vs.strutComp, strutCompVel: vs.strutCompVel, steerAngle: vs.steerAngle,
               drivetrain: vs.drivetrain, ignition: vs.ignition, handbrake: vs.handbrake, parked: vs.parked },
-    shelves: runShelves, paperTier: runPaper.tier,
+    shelves: runShelves, paperTier: runPaper.tier, paperHeld: runPaper.held,
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
     job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
     playedS: _playedS,   // FEAT-146: the summary's playtime
@@ -9890,6 +10012,7 @@ function _restoreRun (s) {
   gaugeCluster.seedOdometer(s.odometer)
   Object.assign(runShelves, s.shelves)
   runPaper.tier = s.paperTier
+  runPaper.held = s.paperHeld ?? []
   _renderPaperUI()
   dialogueSystem.restoreSeen(s.dialogueSeen)   // before the handoff, or the run intro plays again
   for (const pad of s.campPads) { roadSystem?.setCampPads(campSystem.makeCampAt(pad)); _refreshGroundAround(pad) }
@@ -10207,16 +10330,10 @@ let _ignEdge = null   // S-61: the ignition catch edge, latched per step, played
 // rate that is no multiple of the cap (144 Hz) still averages the cap; a stall over one interval
 // resyncs instead of bursting. A frame is drawn when it is nearer its due time than the next refresh
 // would be (half the last refresh gap early), which absorbs vsync timestamp jitter at any display rate.
-let _frameDue = 0, _rafLast = 0
+const _frameDue = createFrameCap()   // src/frame-cap.js
 function loop (t) {
   requestAnimationFrame(loop)
-  const cap = _settings.frameCap
-  if (cap > 0 && t !== undefined) {
-    const interval = 1000 / cap, refresh = Math.min(t - _rafLast, interval)
-    _rafLast = t
-    if (t < _frameDue - refresh * 0.5) return
-    _frameDue = t - _frameDue > interval ? t + interval : _frameDue + interval
-  }
+  if (!_frameDue(t, _settings.frameCap)) return
   perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
   if (!_firstFrameMarked) {
     _firstFrameMarked = true
@@ -10910,6 +11027,7 @@ function loop (t) {
     _updateCustomerRings()
     // FEAT-102: the motorist's car comes and goes with its work — before the rings read the flag.
     _updatePoiPresence()
+    _updatePoiNightLights()
     // FEAT-46: the orange interaction ring ↔ green start-zone ring swap rides the same poll.
     _updateMissionRings()
 
@@ -10969,11 +11087,8 @@ function loop (t) {
   // physics step (~0.5 m at 30 m/s) off the truck it is measuring.
   physicsWireframes.update(camera.position, { position: _renderPos, quaternion: _renderQuat }, _debrisPose)
 
-  // QUAL-02: keep the (finite) sky box centred on the camera so it always surrounds the view.
-  skySystem.update(camera.position)
-  // Moon: billboard onto the key-light direction, faded in by nightFactor. After skySystem.update()
-  // so a playing cycle's new hour is already applied, and after the camera has been posed.
-  moonSystem.update(camera, skySystem.sunDirection, skySystem.nightFactor())
+  // The sky box and the moon billboard follow the posed camera; a playing debug cycle advances.
+  skySystem.update(camera)
   // Unlit particles get the look's irradiance as a flat multiplier (see SkySystem.particleLight).
   // Pushed here, once, rather than threaded through three different update() signatures.
   skySystem.particleLight(_particleLight)
@@ -10981,10 +11096,8 @@ function loop (t) {
   dustSystem.setLight(_particleLight, _particleAlpha)
   smokeSystem.setLight(_particleLight, _particleAlpha)
   dirtSpraySystem.setLight(_particleLight, _particleAlpha)
-  // FEAT-180: the curtains (POI rings, pump zones, start/target rings, light columns) dim with the same light, divided
-  // by the day look's own so noon is exactly the authored colour (it carries a 5 % blue cast the dust keeps).
-  _ringLight.setRGB(_particleLight.r / _ringDay.r, _particleLight.g / _ringDay.g, _particleLight.b / _ringDay.b)
-  for (const m of _ringMats) m.color.copy(m.userData.base).multiply(_ringLight)
+  const _ringGlow = RING_GLOW * (0.2126 * _particleLight.r + 0.7152 * _particleLight.g + 0.0722 * _particleLight.b)
+  for (const m of _ringMats) m.emissiveIntensity = _ringGlow
 
   // FEAT-39: GPS overlay. Early-outs to nothing when no mission is live, so free roam pays a
   // null check. Off in the lab, which has no road network to navigate.

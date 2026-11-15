@@ -159,7 +159,7 @@ export function instantiate (rec, variant = 0) {
  * share geometry/materials with the template, so per-spawn cost is scene-graph nodes only).
  * @param {string} key — a key of PROP_MODELS
  * @param {{castShadow?: boolean, receiveShadow?: boolean, variant?: number}} [opts]
- *   shadow flags are per-spawn (default cast, don't receive: right for small items; a static POI
+ *   `onReady(inst)` runs once the clone is in the group (the spawn itself is async). Shadow flags are per-spawn (default cast, don't receive: right for small items; a static POI
  *   prop may want both). `variant` selects from the model's curated palette if it declares one —
  *   ANY integer, taken modulo the palette length, so callers pass a raw hash and never track the
  *   count. THE CALLER OWNS DETERMINISM: derive it from the seed the way poi.js derives modelKey
@@ -168,7 +168,7 @@ export function instantiate (rec, variant = 0) {
  *   userData.collision / userData.failed are set when the load resolves.
  */
 export function spawnModel (key, opts = {}) {
-  const { castShadow = true, receiveShadow = false, variant = 0 } = opts
+  const { castShadow = true, receiveShadow = false, variant = 0, onReady = null } = opts
   const root = new THREE.Group()
   root.name = `model:${key}`
   getModel(key).then((rec) => {
@@ -179,6 +179,7 @@ export function spawnModel (key, opts = {}) {
     root.add(inst)
     root.userData.collision = rec.collision
     root.userData.failed = rec.failed
+    onReady?.(inst)   // FEAT-214: callers that need the model's materials (night lamps) hook here
   })
   return root
 }

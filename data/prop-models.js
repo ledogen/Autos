@@ -831,6 +831,12 @@ export const PROP_MODELS = {
     seatAlong: 0.5,
     park: { x: -3.95, z: -0.2, halfX: 1.045, halfZ: 2.3 },
     camera: { eye: [2.3, 3, 3.6], look: [-3.95, 0.9, -0.499], fov: 60 },
+    // FEAT-220 (owner, 2026-11-14): the other fixed viewpoints, snapped through with C / the pad's right-stick click
+    // while the screen is open (the camera is locked there). The truck's centre is (-3.95, -0.2), nose to +Z.
+    cameraViews: [
+      { eye: [-1, 1.7, -0.2], look: [-3.95, 1.0, -0.2] },       // a closer, head-height view of the passenger side
+      { eye: [-3.95, 1.7, -7.2], look: [-3.95, 1.0, -0.2] },     // outside the door, looking in at the rear
+    ],
   },
 
   // ASSET-83 — the CONSTRUCTION SITE, 1908 tris, 9 materials, no images. The workSite POI ("the {last}

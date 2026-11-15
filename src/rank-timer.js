@@ -36,6 +36,24 @@
 /** Rank letters in the order the bands lie along the time axis. */
 export const RANK_ORDER = ['S', 'A', 'B', 'C', 'D']
 
+/**
+ * QUAL-36 (DEC-180, owner 2026-11-14): the bar names what each band EARNS, never a letter. `strip` is
+ * the band's own label (blank where the previous band's word still holds), `tile` the live tile's word.
+ * `tipOnly` is a calm job under an Impatient giver (DEC-181): the clock decides the tip, the deed stays
+ * on the type's own axis, so only the tip line is on the bar.
+ */
+const BAR_WORDS = {
+    S: { strip: 'full tip', tile: 'TIP+DEED' },
+    A: { strip: '',         tile: 'DEED' },
+    B: { strip: 'deed 1',   tile: 'DEED' },
+    C: { strip: 'deed ½',   tile: '½ DEED' },
+    D: { strip: '',         tile: '—' },
+}
+export function rankBarWords (letter, tipOnly = false) {
+    const w = BAR_WORDS[letter]
+    return tipOnly ? { strip: letter === 'S' ? w.strip : '', tile: letter === 'S' ? 'TIP' : '—' } : w
+}
+
 // GEOMETRY [owner, 2026-10-01]: the targets are A·B·C·D, so they get the bar. The pointer sits
 // near the LEFT edge (little of the past is worth showing), the scale is 6 px/s so the 7-second
 // A and B bands are real targets (43 px) rather than slivers, and the view is 40 s wide. The bar

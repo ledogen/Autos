@@ -114,6 +114,7 @@ export function addPropGui(gui, { params, rebuild, getPropSystem, onShadowModeCh
     cover.add(CV, 'enabled').name('enabled').onFinishChange(done)
     cover.add(CV, 'density', 0, 4, 0.1).name('density × (tier writes)').onFinishChange(done)
     cover.add(CV, 'farLod').name('far ring: cheap clumps').onFinishChange(done)
+    cover.add(CV, 'farLitter').name('far ring: pebbles (PERF-44)').onFinishChange(done)
     cover.add(CV.wallBeatBack, '0', 0, 6, 0.25).name('beat-back min (m)').onFinishChange(done)
     cover.add(CV.wallBeatBack, '1', 0, 10, 0.25).name('beat-back max (m)').onFinishChange(done)
     cover.add(CV, 'wallDepth', 0.5, 6, 0.1).name('wall depth (m)').onFinishChange(done)
