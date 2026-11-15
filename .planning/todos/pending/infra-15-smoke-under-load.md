@@ -33,7 +33,7 @@ fac4aebe (SMOKE_THROTTLE alias, edge guard, tow wait 8 to 30 s) is folded into t
 ## Tracker
 - [x] Smoke removes its own Chrome profile (pass, fail, signal)
 - [x] Edge step root cause found (game-side spawn race) and the test made to wait on the ground
-- [ ] Full smoke 3 times at 4x through chrome-slot (see Log)
+- [x] Full smoke 3 times at 4x through chrome-slot (see Log)
 - [ ] Owner: the existing 378 stale profiles (476 MB) deleted
 - [ ] Owner / lane: src fix, spawn a row's bodies only once its ground collider exists
 
@@ -45,3 +45,4 @@ fac4aebe (SMOKE_THROTTLE alias, edge guard, tow wait 8 to 30 s) is folded into t
 
 ## Log
 - 2026-11-14: opened. Profile leak fixed.
+- 2026-11-14: full smoke at 4x via chrome-slot, ddee43c2: PASS; FAIL in step "opening": FEAT-217 shoulder (seed 822480141, the known coin toss, not this ticket's); PASS. Before the fix 4 of 4 failed in "edge".
