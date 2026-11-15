@@ -4501,7 +4501,7 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // day-1 $0.50/gal it buys ~6 gal, so a fill from an eighth stops near half: "will run out of cash half tank"), and the
 // seconds off the road before the evening puts the truck back on it ("you drive off the road > reset"). Both [DEFAULT].
 const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4,
-  offRoadM: 10,    // FEAT-217 (of3s, DEC-209): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
+  offRoadM: 10,    // FEAT-217 (of3s, DEC-219): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
   safeNearPoiM: 75 }   // FEAT-217 (bfs1, owner said 50 or 100) [DEFAULT]: no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)

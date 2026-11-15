@@ -55,7 +55,7 @@ Inbox wggu:
 - [x] wggu: free cam (and similar state: camera, UI, modes) is reset on every entry and exit, so a new game never starts in the last run's free cam
 
 ## Open questions
-- ANSWERED by defaults (owner may change): 75 m built (TUT_PARAMS.safeNearPoiM); DEC-209 records the narrowing of DEC-151.
+- ANSWERED by defaults (owner may change): 75 m built (TUT_PARAMS.safeNearPoiM); DEC-219 records the narrowing of DEC-151.
 - of3s says 10 m off the sides of the road; bfs1 says 50 or 100 m of destinations. Which of 50 / 100? Default 75 until told.
 - DEC-151 ("drive off the road > reset") stands; of3s narrows where it engages. Treated as an amendment, not a conflict; confirm if wanted.
 
@@ -63,5 +63,5 @@ Inbox wggu:
 `src/main.js` · `src/tutorial.js` · `src/service.js` · `src/hud.js`
 
 ## Log
-- 2026-11-14 (lane A): built. Teardown: ONE `_resetRunLocals` (main.js) called from onRegionExit and run entry (pump, tutorial vars, waypoint, free cam, screens). Reset: 10 m past the road + 75 m from any POI + countdown (DEC-209). Spare flat is found out after the corner try. Flat gate: mom's card and door wait while the evening's flat is on (`_flatOwed`). $5: the first patch is on mom (`_momOwes.patch`). Pad focus CSS for #tut-card. Horizontal scroll in shop/maintenance tabs (526f second half) NOT done, not in the tracker. Smoke extended (countdown, shoulder, give-up cam/pump).
+- 2026-11-14 (lane A): built. Teardown: ONE `_resetRunLocals` (main.js) called from onRegionExit and run entry (pump, tutorial vars, waypoint, free cam, screens). Reset: 10 m past the road + 75 m from any POI + countdown (DEC-219). Spare flat is found out after the corner try. Flat gate: mom's card and door wait while the evening's flat is on (`_flatOwed`). $5: the first patch is on mom (`_momOwes.patch`). Pad focus CSS for #tut-card. Horizontal scroll in shop/maintenance tabs (526f second half) NOT done, not in the tracker. Smoke extended (countdown, shoulder, give-up cam/pump).
 - 2026-11-14: minted from the owner's inbox by the scribe. Nothing built.
