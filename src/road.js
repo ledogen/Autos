@@ -11354,7 +11354,11 @@ export class RoadSystem {
         const p = this._params
         const halfWidth = p.roadHalfWidth ?? 5
         // The winner's deck is never blended — a wheel on the ribbon rides exactly its run's surface.
-        const latDist = Math.abs(signedLat)
+        // BUG-158: measured on the lateral the winner's cross-section is priced at (latEff). A run-END winner's deck is
+        // the disc round its terminus, not the strip straight off its end: the perpendicular lat dropped every rival
+        // out to footHW along that axis, so where an end and an interior leg tie the surface jumped from the cap's
+        // toe to the leg's full bank (1.08 m at 13 m from seed 1074499174's node (−35, 200), 7.16 m on 3561904408).
+        const latDist = Math.abs(latEff)
         if (latDist <= halfWidth) return cs
         // BUG-64: the passes compose as EARTHWORK, not as a nearness cross-fade. Each pass's offset
         // from raw (its blendW folded in) is unioned: the fills by max (the higher bank stands), the
