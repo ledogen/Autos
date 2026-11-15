@@ -66,6 +66,7 @@ export function shopLamps (root, into) {
       const hit = _lampOf(SHOP_LAMPS, m)
       if (!hit || into.has(m)) continue
       if (hit[1] != null) m.emissive.setHex(hit[1])
+      else if (m.map) { m.emissive.setHex(0xffffff); m.emissiveMap = m.map; m.needsUpdate = true }   // BUG-177: a textured face glows AS its picture; copying the (white) base colour made a flat white panel
       else if (m.emissive.getHex() === 0) m.emissive.copy(m.color)
       into.add(m)
     }
