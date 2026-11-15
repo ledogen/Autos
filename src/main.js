@@ -1930,9 +1930,8 @@ function applyShadowResolution (mapSize, extent) {
 // The sky, the sun and moon on their real paths, and every natural light (key, hemisphere fill, the sky fog's
 // colour) from one simulated atmosphere — see sky.js. It owns the moon disc and the background mesh.
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
-// FEAT-221 PROTOTYPE: live exposure, only with ?ae=<avg|centre|low> (src/exposure.js). Absent: never constructed.
-const liveExposure = _urlParams.has('ae') ? new LiveExposure(renderer, skySystem, _urlParams) : null
-window.__ae = () => liveExposure
+// FEAT-221 (DEC-262): live exposure, the camera metering its own frame (src/exposure.js). `?ae=0` = off (A/B).
+const liveExposure = _urlParams.get('ae') === '0' ? null : new LiveExposure(renderer, skySystem)
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
 // NB `window.terrain` is the ground-height FUNCTION (returns metres), not the streaming system. This is the system
 // itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe, or zeroing
@@ -11218,7 +11217,7 @@ function loop (t) {
   // not just tidiness — it hands the GPU to the build that is running underneath.
   // FEAT-211 (owner, 2026-11-14: "make the background live"): the world renders behind the map window at full rate,
   // reversing PERF-38's skip (the frozen frame); the window covers 81 % of it, which the GPU still draws.
-  if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
+  if (menuStage.isActive()) { skySystem.setLiveExposure(1); menuStage.update(frameTime); menuStage.render(renderer) }
   else {
     liveExposure?.update(frameTime)
     renderer.render(scene, camera)

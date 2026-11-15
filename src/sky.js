@@ -464,7 +464,7 @@ const GROUND_ALBEDO = [0.20, 0.18, 0.15]
 const GRADE_GLSL = /* glsl */`
 #ifndef SKY_GRADE
 #define SKY_GRADE
-uniform vec2 skyAE;   // x: the live exposure (FEAT-221 prototype, src/exposure.js); 1 unless ?ae= is on
+uniform vec2 skyAE;   // x: the live exposure k (FEAT-221, src/exposure.js); 1 with ?ae=0
 vec3 skyGrade (vec3 c) {
   c *= skyAE.x;
   float peak = max(c.r, max(c.g, c.b));
@@ -957,10 +957,10 @@ export class SkySystem {
     this.moon.update(camera, this.moonDir, this.sunDir, this._moonOpacity, this._moonTint)
   }
 
-  /** 0 = daylight … 1 = night, for the lamps (headlight pools, campfire): sun from 4° above to 6° below. */
-  /** FEAT-221 prototype: the live exposure k on top of the eye (land into ACES and sky + fog into their grade alike). */
+  /** FEAT-221: the live exposure k on top of the eye (land into ACES and sky + fog into their grade alike). */
   setLiveExposure (k) { U.skyAE.value.x = k; this.renderer.toneMappingExposure = this.landExposure * k }
 
+  /** 0 = daylight … 1 = night, for the lamps (headlight pools, campfire): sun from 4° above to 6° below. */
   nightFactor () { return clamp01((4 * D2R - Math.asin(this.sunDir.y)) / (10 * D2R)) }
 
   /** Linear RGB multiplier for the unlit particles (dust/smoke/spray): their irradiance against noon's. */
