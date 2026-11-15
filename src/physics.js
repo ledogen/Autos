@@ -694,7 +694,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // only penetrating contacts — so a touchdown inside the step could not appear until the next
   // one (up to a step of extra sink, ~50 mm at a 3 m/s landing). Such a corner keeps asking the
   // real query every substep, so a landing is caught at the substep it happens, as before. Costs
-  // nothing while the wheels are on the ground.
+  // nothing while the wheels are on the ground. PERF-49: except the ask at Step 1's very hub (substep 0
+  // before the body has moved): the same question, so Step 1's empty answer is the answer — an airborne
+  // truck asked it twice (4 of its 20 queries a step, every one a full tread solve).
   const base = [null, null, null, null]   // per corner: { x, y, z, r, list } — Step 1's analytic answer
 
   // BUG-99 WITHIN-STEP DEBRIS COUPLING — Newton's third law, at the suspension's own cadence.
@@ -753,7 +755,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const qcPlus = (cx, cy, cz, r, footprint, corner) => {
     let list = null
     const b = corner !== undefined ? base[corner] : null
-    if (b && footprint && b.list.length) {
+    if (b && footprint && (b.list.length || (cx === b.x && cy === b.y && cz === b.z && r === b.r))) {
       const dx = cx - b.x, dy = cy - b.y, dz = cz - b.z, dr = r - b.r
       list = []
       for (const c of b.list) {

@@ -12,7 +12,9 @@ lane: Lane B (the physics files are theirs); the Perf lane measures
 # PERF-49: The physics budget per frame — the levers, ranked
 
 ## Next steps
-Owner answered 2026-11-14 (DEC-208): 0.9 ms a frame is fine; keep physics there. Lane B builds PERF-43's levers 1 and 2 (lever E) and lever C, and measures each; the owner drives kerbs to judge feel before any lands. Open: confirm "all three" (see Open questions).
+LANDING: `land/perf-49-spikes` (worktree CarGame-land-211d) carries everything: lever 1, lever C, the two spike cuts;
+lever 2 reverted (DEC-232). Main merged, gates green. Orchestrator: merge it (land/perf-49 is contained in it), then close
+this ticket. The airborne early-out stays unbuilt (DEC-232).
 
 ## Summary
 The owner wants physics cut from "3 ms a frame" to 1–2 ms with no felt difference. This ticket is the answer as a
@@ -90,18 +92,23 @@ owner's 3 ms read scales the same, 3 → ~2 ms. Getting to a third of today need
 ## Tracker
 - [x] The levers listed with estimated savings and risks, from the numbers on file
 - [ ] Owner: where the 3 ms is read, and which lever(s) to try
-- [ ] The pick measured headless (µs per wheel query, fingerprint drift, kerb-graze unchanged)
-- [ ] Built by Lane B, or closed
-- [ ] Lever C (edge-adaptive refine) built and measured: physics stays around 0.9 ms a frame
-- [ ] PERF-43 levers 1 and 2 (lever E, exact) built and measured
-- [ ] All three test well (gates, fingerprint-physics, measured per-second spikes)
-- [ ] The owner drives kerbs and judges game feel BEFORE any of them lands (DEC-208)
+- [x] The pick measured headless (retired instructions per step, contact error, kerb-graze unchanged) — Log 2026-11-14
+- [x] Built by Lane B (land/perf-49-spikes)
+- [x] Lever C (edge-adaptive refine) built and measured: physics stays around 0.9 ms a frame
+- [x] PERF-43 levers 1 and 2 (lever E, exact) built and measured
+- [x] All three test well (gates, fingerprint-physics, measured per-second spikes) — lever 2 saves nothing measurable
+- [x] The owner drives kerbs and judges game feel BEFORE any of them lands (DEC-208): C feels the same, drop lever 2 (DEC-232)
+- [ ] Landed on main
 
 ## Open questions
 - Where is "3 ms per frame" read: the in-game readout, a profile, or the Windows machine?
 - Which levers to try? Recommendation: C first (bounded approximation, no speed seam), D only with the slam gate
   re-read, F when parked heat matters. A only if a third of today's cost is the real target.
 - "the perf-43 levers ... add in lever C. all three": read as PERF-43 lever 1, lever 2 and lever C. If the owner meant another three (A, B, C), say so in the note box.
+- Airborne spike (land/perf-49-spikes): only approximations are left. The candidate is an airborne early-out: skip a
+  tread line's refine (or re-use an empty answer across substeps) when its coarse clearance is over a margin m (~0.1 m).
+  It misses a contact only where the ground rises more than m between two coarse samples 9 cm apart, and then catches it
+  one substep (4 ms) later. Expected: the airborne steps drop ~50–75 %. Answered 2026-11-15: not built (DEC-232).
 
 ## Links
 - `.planning/perf/COST-MAP-2026-11.md` § physics and § 3 (the split and the professional practice).
@@ -113,6 +120,25 @@ owner's 3 ms read scales the same, 3 → ~2 ms. Getting to a third of today need
 ## Log
 - 2026-11-14 (Perf lane): minted from the owner's PERF-42 note; levers written from numbers on file, no new runs.
 - 2026-11-14: scribe recorded the owner's answer.
+- 2026-11-14 (Lane B): built on land/perf-49. Measured headless: test/drive-soak's drive (3 pinned random seeds × 1.5 km,
+  real world rig + the game's stream cache), retired instructions per physics step from xnu's thread counters (main
+  → branch: median 6.40 → 4.34 M, p90 19.3 → 12.0, p99 53.5 → 38.1, worst 126 → 125; same-code noise ±2 %).
+  C (bee1aaf4) approximation: median −28 % / p90 −40 % / p99 −28 %; vs the refine |Δdepth| worst 0.0095 mm, pressure
+  centre median 0.09 / worst 1.4 mm; kerb-graze identical (pops 3/4/8, rim 12, 0 flips), 57 → 30 samples a query.
+  Lever 1 (0e0f6beb) exact: median −7 %, spikes flat. Lever 2 (2acc9f02) exact, ≈ 0 (only 7 % of blends repeat a point).
+  Exact = drive full-state sha256 identical + fingerprint-world ALL IDENTICAL. Gates: C 28/28, 1 75/75, 2 75/75. Tools: wip/perf-49/.
+  Not covered: the worst steps (~125 M, a seed-759313244 junction at 12 m/s) — no lever reaches them.
+- 2026-11-14 (Lane B, land/perf-49-spikes): the worst steps are the truck AIRBORNE off a junction's fill (seed 759313244
+  (−402, 1488), 10 m off the centreline, 1–2 m up, 3 s): every wheel's query is empty, so each substep re-asks the full
+  tread solve (16–20 a step × 61 samples), and off the deck beside a junction every sample re-resolves (hint not solo).
+  Exact cuts: 5bf86440 (substep 0 reuses Step 1's empty answer at its own hub; band tangents cached per run), d1d3e1dc.
+  Worst 129.6 → 88–90 M, p99 39.1 → 29.1–29.5, median flat (repeat noise ±1.5 %); drive sha256 + fingerprint-world identical.
+- 2026-11-15 (Lane B): owner kept 1 + C + spike cuts, dropped lever 2 (DEC-232). Lever 2 reverted, main merged.
+  Same drive, main → landing (Minstr/step): median 6.99 → 4.67 (−33 %), p90 19.6 → 11.8 (−40 %), p99 53.6 → 29.5 (−45 %),
+  worst 127 → 90 (−29 %); vs the spikes branch with lever 2 all within noise. Drive sha256 6cb6e79e… unchanged by the
+  revert (main's 568b9cef… differs: lever C). fingerprint-physics ALL IDENTICAL to main (its own contact model, so it
+  never runs lever C). Gates: see the landing report.
 
 ## Decisions
+- 2026-11-15, owner (card perf49-kerb-drive): "C feels the same, keep all three (drop 2)" · "nice wins" (DEC-232).
 - 2026-11-14, owner (card perf49-physics-budget): "0.9ms / frame is chill. chase the perf-43 levers to try to keep it to that. ive got tokens and a charger for days so im happy to invest in stability here now. add in lever C. all three must test well and i need to drive curbs to check game feel before they land" (DEC-208).
