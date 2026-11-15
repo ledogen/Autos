@@ -4500,7 +4500,9 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // FEAT-184 (DEC-150/151, owner 2026-11-14): the pocket change a played tutorial runs on until the paycheck ($ — at the
 // day-1 $0.50/gal it buys ~6 gal, so a fill from an eighth stops near half: "will run out of cash half tank"), and the
 // seconds off the road before the evening puts the truck back on it ("you drive off the road > reset"). Both [DEFAULT].
-const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4 }
+const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4,
+  offRoadM: 10,    // FEAT-217 (of3s, DEC-209): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
+  safeNearPoiM: 75 }   // FEAT-217 (bfs1, owner said 50 or 100) [DEFAULT]: no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 // FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
@@ -4690,7 +4692,7 @@ function _resetToRoad () {
  *  FEAT-184 (DEC-153): the morning's one beat — parked at the joint, the last paycheck. */
 function _eveningBeats () {
   const q = _mom(), j = _joint()
-  if (!_tutDrive()) return
+  if (!_tutDrive()) { _showResetCountdown(0); return }
   if (_morningLeg()) {
     _tut('tut-morning')   // after breakfast, which the sleep queued
     if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
@@ -4698,9 +4700,19 @@ function _eveningBeats () {
   // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
   // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
   // (_playedS), so a pause or a card never counts.
-  const off = !vehicleState.parked && !_inPoiRing() && !_truckOnRibbon()
+  const vp = vehicleState.position
+  const off = !vehicleState.parked && !_inPoiRing() && !poiSystem.nearest(vp.x, vp.z, TUT_PARAMS.safeNearPoiM)
+    && campSystem.nearRoadInfo(vp.x, vp.z).lateral > (RANGER_PARAMS.roadHalfWidth ?? 5) + TUT_PARAMS.offRoadM
   _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
-  if (off && _playedS - _eveOffAt > TUT_PARAMS.offRoadS) { _eveOffAt = null; _resetToRoad() }
+  const left = off ? TUT_PARAMS.offRoadS - (_playedS - _eveOffAt) : 0
+  _showResetCountdown(left > 0 ? Math.ceil(left) : 0)   // FEAT-217: styled like the start-the-truck hint, same size and place
+  if (off && left <= 0) { _eveOffAt = null; _resetToRoad() }
+}
+function _showResetCountdown (n) {
+  const el = document.getElementById('reset-countdown')
+  if (!el) return
+  if (n) el.textContent = `off the road · back on it in ${n}`
+  el.style.opacity = n ? '1' : '0'
 }
 function _eveningLessons (q, v) {
   // FEAT-184 stage 3: the pedals once the key has caught, then (a fill-up due) the gauge.
@@ -4827,7 +4839,7 @@ function _skipOpening () {
  *  the ONE reset of what a run keeps outside the systems' own start(). Called from region exit AND run entry, so
  *  a state added here can never leak either way. */
 function _resetRunLocals () {
-  fuelStop.reset(); _pumpReceiptT = 0
+  fuelStop.reset(); _pumpReceiptT = 0; _showResetCountdown(0)
   _waypoint = null
   _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
   _momOwes.part = _momOwes.labour = true; _skipArmedUntil = 0

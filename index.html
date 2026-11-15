@@ -1317,7 +1317,7 @@
        gave out (--bad). Same toast family, a line lower so it never sits on the ignition hint. */
     /* FEAT-172: a stranded truck that can still pay for a tow says so and points at it. Held while stuck,
        a line below the machine's words. */
-    #spawn-toast, #ignition-hint, #machine-word, #stranded-hint {
+    #spawn-toast, #ignition-hint, #reset-countdown, #machine-word, #stranded-hint {
       position: fixed;
       top: 8%;
       left: 50%;
@@ -2062,6 +2062,7 @@
   <div id="spawn-toast">spawn point set</div>
   <div id="machine-word"></div>
   <div id="stranded-hint"></div>
+  <div id="reset-countdown"></div>
   <div id="ignition-hint">hold <span class="k"><span class="kc-kb">I</span><span class="kc-pad kc-round">Y</span></span> to start the truck</div>
 
   <script type="module" src="src/main.js"></script>
