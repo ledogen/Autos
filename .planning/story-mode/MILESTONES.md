@@ -46,6 +46,7 @@ How the cut works:
 | FEAT-146 | the run ends: camp (win), death, or throw in the towel — then a summary |
 | FEAT-147 | tutorial + opening: the firing, the uncle, the first day |
 | FEAT-184 | the tutorial overhaul: the lessons a run needs (a flat and the spare, eating, refuelling, wear and damage), on a world that fits them (owner, 2026-11-07: "mark it to do before alpha") |
+| FEAT-217 | tutorial fixes from the 11-14 playtest: reset countdown and shoulder rules, give-up reset, the flat, dialogue order, soft locks, pad focus (owner, 2026-11-14) |
 | FEAT-103 | the expedition camp is the win. No unlock and no FEAT-28: the camp sits on the story circle's edge, at the end of an existing road cut at the wall. The road leading to it stays ordinary for the alpha; its perilous upfit comes after (owner, 2026-10-26) |
 | FEAT-43 | story region — only the slices one region needs; "confinement becomes the unlocked set" is beta |
 | FEAT-114 | haul quantity — built on `feature/mission-recut`, merge it |
@@ -75,6 +76,7 @@ How the cut works:
 | FEAT-210, FEAT-211 | the map: one symbol language and a legend; the map as an 80 % window with Missions / Shopping lists (owner's map spec, 2026-11-13) |
 | FEAT-212, FEAT-213 | the auto shop menu: nested Maintenance tree, Shop list, cart and checkout; the component info texts (owner's menu spec, 2026-11-13) |
 | FEAT-204 | visual mods: light bar, bed toolbox, roof rack, bull bar (owner, 2026-11-13: "before alpha. doesnt have to be a ton") |
+| FEAT-207 | rear-axle ratios as parts, the part renamed "final drive" (owner, 2026-11-14: "alpha") |
 | FEAT-205 | a win saves the truck configuration; free roam can load the winning truck (owner, 2026-11-13: "alpha feature … not urgent") |
 | FEAT-65 | demolition missions, the expedition camp requisition's fifth line (owner, 2026-10-31: "build demolition before the alpha"; DEC-107) |
 | FEAT-148 | the owner-authored lines: giver flavor, the sleep reminder, the intro (owner, 2026-10-31: "write them BEFORE the alpha"; DEC-108) |
