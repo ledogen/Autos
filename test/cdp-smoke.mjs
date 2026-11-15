@@ -1446,15 +1446,19 @@ const STEPS = [
     // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
     const sh = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
       const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
-      for (const along of [0, 100, -100, 160, -160]) for (const d of [9, -9]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
+      for (const along of [0, 100, -100, 160, -160, 40, -40, 220, -220]) for (const d of [9, -9]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
         if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
+        // Flat ground (≤ 0.4 m over the truck's ±4 m): released on a bank's lip the truck rolls off the shoulder, honestly.
+        const g = [[0, 0], [4, 0], [-4, 0], [0, 4], [0, -4]].map(([a, b]) => window.terrain(x + a, z + b))
+        if (Math.max(...g) - Math.min(...g) > 0.4) continue
         const q = window.__roadSys().queryNearest(x, z, 100); if (q?.point && Math.hypot(q.point.x - x, q.point.z - z) > 6.5) return { x, z } }
       return null })()`)
     check(sh, 'FEAT-217: no shoulder spot found')
     await seat(sh.x, sh.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
     await sleep(9000)   // > the 4 s of play it takes off the road
-    { const v = await car(); check(await js(lat(v.x, v.z)) > 5.5 && await js('document.getElementById("reset-countdown").style.opacity !== "1"'), 'FEAT-217: the truck was reset (or counted down) on the shoulder') }
+    { const v = await car(), d = await js(lat(v.x, v.z)), cd = await js('document.getElementById("reset-countdown").style.opacity')
+      check(d > 5.5 && cd !== "1", `FEAT-217: the truck was reset (or counted down) on the shoulder: ${d.toFixed(1)} m off the road, ${Math.hypot(v.x - sh.x, v.z - sh.z).toFixed(1)} m from its seat, countdown "${cd}", parked ${await js('window.__vs.parked')}`) }
     // FEAT-184 stage 6, THE WORST DAY: the station (when one is due), the flat halfway home, V, the spare that's flat too,
     // the recovery menu's free tow to the auto shop, a tire there, and the night's headlights — then mom's, as before.
     const wd = () => js('window.__worstDay()')
@@ -1501,7 +1505,9 @@ const STEPS = [
     await js('document.querySelector("#recovery-card button[data-act=towShop]").click()')
     // The shop opens on the parked edge after the tow's reseat, which awaits the seat like a teleport: seat()'s ceiling.
     check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 30000), `the tow did not land at an open shop: ${await js(`JSON.stringify({ parked: window.__vs.parked,
-      v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent })`)}`)
+      v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent,
+      shop: (() => { const p = window.__vs.position, q = window.__poi().list().filter(q => q.type === 'autoShop').sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0], s = q && window.__towSeat(q)
+        return s && { fromSeat: +Math.hypot(p.x - s.x, p.z - s.z).toFixed(1), fromMarker: +Math.hypot(p.x - q.x, p.z - q.z).toFixed(1) } })(), h: window.__day().clockH() })`)}`)
     check((await wd()).towed, 'the tow was not counted (the night beat)')
     console.log('  worst day: the shop')
     await readCards()   // the shop's cards
