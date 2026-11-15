@@ -8236,7 +8236,18 @@ export class RoadSystem {
             while (b < n - 1 && !onCL[b]) b++
             return [pc[a], pc[b]]
         })
-        const info = { onCL, spans }
+        // PERF-49: each vertex's band tangent, worked out once per run (_bandTangent was ~10 % of an airborne step
+        // beside a junction: every tread sample's resolve re-derived the same five chords' ten tangents).
+        const tx = new Float64Array(n), tz = new Float64Array(n)
+        for (let k = 0; k < n; k++) {
+            if (onCL[k]) { const t = e.centerline.tangentAt(e.clArc[k]); tx[k] = t.x; tz[k] = t.z; continue }
+            let x = 0, z = 0
+            if (k > 0) { const dx = pts[k].x - pts[k - 1].x, dz = pts[k].z - pts[k - 1].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+            if (k < n - 1) { const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+            const l = Math.hypot(x, z) || 1
+            tx[k] = x / l; tz[k] = z / l
+        }
+        const info = { onCL, spans, tx, tz }
         this._bandInfoCache.set(e, info)
         return info
     }
@@ -8248,13 +8259,8 @@ export class RoadSystem {
     }
 
     _bandTangent(e, k, out) {
-        const pts = e.points
-        if (this._bandInfo(e).onCL[k]) { const t = e.centerline.tangentAt(e.clArc[k]); out.x = t.x; out.z = t.z; return out }
-        let x = 0, z = 0
-        if (k > 0) { const dx = pts[k].x - pts[k - 1].x, dz = pts[k].z - pts[k - 1].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
-        if (k < pts.length - 1) { const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
-        const l = Math.hypot(x, z) || 1
-        out.x = x / l; out.z = z / l
+        const b = this._bandInfo(e)
+        out.x = b.tx[k]; out.z = b.tz[k]
         return out
     }
 
