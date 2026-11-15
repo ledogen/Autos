@@ -386,8 +386,10 @@ const STEPS = [
     await tap('Enter'); await sleep(150)
     check(await shown() === await all(), 'the first press did not fill the card')
     // FEAT-103: the uncle names the camp's true compass direction — filled in, never the raw token.
+    // DEC-236 (owner's four cards, 2026-11-15): the direction is on card 2 — turn card 1, fill card 2, then read.
+    await tap('Enter'); await sleep(250); await tap('Enter'); await sleep(150)
     const intro = await dlgText()
-    check(/expedition camped up at the (north|south)?(east|west)? road/.test(intro) && !intro.includes('{dir}'),
+    check(/expedition camp up at the old (north|south)?(east|west)? road/.test(intro) && !intro.includes('{dir}') && !intro.includes('[DIRECTION]'),
       `the intro does not name the camp's direction (or the fill turned the card): "${intro.slice(0, 120)}"`)
     for (let i = 0; i < 16 && await dlg(); i++) { await tap('Enter'); await sleep(250) }   // two presses a card: fill, turn
     check(!await dlg(), 'the intro cards did not close after 16 presses')
