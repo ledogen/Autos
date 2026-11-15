@@ -2,7 +2,8 @@
 // (vehicle.js's own key listeners, fed synthetic keydown/keyup) and pad (gamepad.js's `pad`, as its poll writes it).
 //
 //   1. A Space tap at rest latches; at speed it does not.
-//   2. Latched, the brake pedal — S tapped or held, LT tapped or held — never releases it (owner, 2026-11-11).
+//   2. Manual: latched, the brake pedal (S / LT, tapped or held) never releases it (owner, 2026-11-11). Automatic: S / LT from
+//      a parked stop is reverse, i.e. gas, and releases it (DEC-255, owner 2026-11-15).
 //   3. Latched, the throttle releases it: W, RT. A Space tap releases it (the lever).
 //   4. Manual: a shift that lands in a gear releases it; sitting latched in a gear does not.
 //   5. Park lock (a parked menu is up): handbrake on even unlatched; W / RT / a gear cannot release the
@@ -47,19 +48,28 @@ const parked = (params) => { const vs = fresh(params); tap(vs, ' ', params); ret
   const moving = fresh(); moving.velocity.x = 5; tap(moving, ' ')
   check('1. a Space tap at rest latches; at 5 m/s it does not', vs.parked && !moving.parked, `rest ${vs.parked}, moving ${moving.parked}`)
 }
-// 2. keyboard S, then pad LT, tapped and held.
+// 2. MANUAL: the brake pedal (keyboard S, pad LT, tapped and held) never releases the latch (FEAT-194, DEC-255).
+const MANUAL = { ...RANGER_PARAMS, transmissionType: 'manual' }
 {
-  const vs = parked()
-  tap(vs, 's')
+  const vs = parked(MANUAL)
+  tap(vs, 's', MANUAL)
   const afterTap = vs.parked
-  key('s', true); step(vs, RANGER_PARAMS, 500); key('s', false); step(vs)
-  check('2. keyboard: S tapped, then held 2 s, leaves the parking brake set', afterTap && vs.parked && vs.handbrake, `tap ${afterTap}, hold ${vs.parked}`)
+  key('s', true); step(vs, MANUAL, 500); key('s', false); step(vs, MANUAL)
+  check('2. manual, keyboard: S tapped, then held 2 s, leaves the parking brake set', afterTap && vs.parked && vs.handbrake, `tap ${afterTap}, hold ${vs.parked}`)
   pad.active = true
-  pad.brake = 1; step(vs, RANGER_PARAMS, 1); pad.brake = 0; step(vs)
+  pad.brake = 1; step(vs, MANUAL, 1); pad.brake = 0; step(vs, MANUAL)
   const lt = vs.parked
-  pad.brake = 0.6; step(vs, RANGER_PARAMS, 500); pad.brake = 0; step(vs)
-  check('   pad: LT tapped, then held 2 s, leaves it set', lt && vs.parked, `tap ${lt}, hold ${vs.parked}`)
+  pad.brake = 0.6; step(vs, MANUAL, 500); pad.brake = 0; step(vs, MANUAL)
+  check('   manual, pad: LT tapped, then held 2 s, leaves it set', lt && vs.parked, `tap ${lt}, hold ${vs.parked}`)
   pad.active = false
+}
+// 2b. AUTOMATIC (DEC-255): from a parked stop S / LT is the reverse pedal, so holding it releases the latch.
+{
+  const k = parked(); key('s', true); step(k, RANGER_PARAMS, 50); key('s', false)
+  const p = parked(); pad.active = true; pad.brake = 0.6; step(p, RANGER_PARAMS, 50); pad.brake = 0; pad.active = false
+  const lk = parked(); setParkLock(true); key('s', true); step(lk, RANGER_PARAMS, 50); key('s', false); setParkLock(false)
+  check('2b. automatic: holding S or LT from a parked stop releases the parking brake (reverse is gas); a park lock still holds it',
+    !k.parked && !p.parked && lk.parked, `S ${k.parked}, LT ${p.parked}, locked ${lk.parked}`)
 }
 // 3.
 {
@@ -70,7 +80,6 @@ const parked = (params) => { const vs = fresh(params); tap(vs, ' ', params); ret
     `W ${w.parked}, RT ${rt.parked}, Space ${sp.parked}`)
 }
 // 4. manual: the drivetrain's synchro is mid-shift, then lands (drivetrain.js stepManual writes these).
-const MANUAL = { ...RANGER_PARAMS, transmissionType: 'manual' }
 {
   const land = (vs, gear) => {
     vs.drivetrain = { ...(vs.drivetrain ?? {}), shifting: true, mGear: 0 }; step(vs, MANUAL)

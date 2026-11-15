@@ -5084,14 +5084,18 @@ const paperRouteSystem = new PaperRouteSystem({
  * and his line reminds the player. PLACEHOLDER words (the owner writes character text, FEAT-148).
  */
 function _larryHandsOver () {
-  const kept = [], gave = []
+  const kept = [], gave = [], noRoom = []
   for (const h of runPaper.held) {
-    if (inventorySystem.fits(h.rewardId) && economySystem.spend(h.cost)) { inventorySystem.grant(h.rewardId); gave.push(h.name) } else kept.push(h)
+    // DEC-252: collecting costs HALF the item's price (owner 2026-11-15), to the cent.
+    if (!inventorySystem.fits(h.rewardId)) { kept.push(h); noRoom.push(h.name) }
+    else if (economySystem.spend(Math.round(h.cost * 50) / 100)) { inventorySystem.grant(h.rewardId); gave.push(h.name) } else kept.push(h)
   }
   runPaper.held = kept
   const say = (text) => { dialogueSystem.play(null, [{ speaker: 'Uncle Larry', text }]); _renderDialogue() }
-  if (gave.length) say(`[placeholder] Here's your ${gave.join(' and ')}. Told you I'd hold it.`)
-  else if (kept.length) say(`[placeholder] Still holding your ${kept.map(h => h.name).join(' and ')} for you. Make room in the truck and bring some cash, then it's yours.`)
+  // DEC-253: the owner's own words (QUAL-36 answers 1 and 2).
+  if (gave.length) say(`Did ya come back to grab your ${gave.join(' and ')}? I been keepin' it safe for ya.`)
+  else if (noRoom.length) say("Well that's too bad. Looks like ya dont have room for it right now. Go drop something and check back with me.")
+  else if (kept.length) say(`[placeholder] Not enough cash for your ${kept.map(h => h.name).join(' and ')} yet. Come back with some money.`)   // OWED: the owner's "not enough cash" line (QUAL-36)
 }
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
 const _recalcEl = document.getElementById('gps-recalc')
