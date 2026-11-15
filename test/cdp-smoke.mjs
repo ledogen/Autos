@@ -1246,6 +1246,8 @@ const STEPS = [
     check(await until(() => js('document.getElementById("towel-card").style.display === "flex"'), 1000), 'A on the towel opened no confirm card')
     await padTo('tc-back')
     check(await until(() => js('document.getElementById("towel-card").style.display !== "flex" && document.getElementById("pause-menu").style.display === "flex"'), 1000), 'back did not restore the pause menu')
+    // FEAT-217 (wggu): the run's state does not outlive it. Free cam left up 300 m away; giving up, then a new run, starts in chase.
+    await js('(() => { const v = window.__vs.position; window.__view(v.x + 300, v.y + 20, v.z, 0, 0) })()')
     await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
     await ended(/gave up/)
     // BUG-109: the right stick orbits the menu truck (and the next return to the menu re-centres it: ended()).
@@ -1255,6 +1257,8 @@ const STEPS = [
     // The crash: black and white at once, the card after the beat. First, the playtime counts (the save
     // carries it, a second at a time) and stops while paused.
     await newRun()
+    check(await js('(() => { const v = window.__vs.position, c = window.__cam().position; return Math.hypot(c.x - v.x, c.z - v.z) < 30 })()'), 'FEAT-217: a new run after a give-up started in the last run\'s free cam')
+    check(await js('!document.getElementById("pump-display").classList.contains("on")'), 'FEAT-217: a pump UI outlived the run')
     const p0 = await playedS(); await sleep(3000); const p1 = await playedS()
     check(p1 - p0 > 1.5 && p1 - p0 < 4.5, `playtime counted ${(p1 - p0).toFixed(1)} s of a 3 s drive`)
     await tap('Escape'); await sleep(1300)   // a whole save tick inside the pause before the first read
@@ -1403,7 +1407,9 @@ const STEPS = [
     const lat = (x, z) => `(() => { const q = window.__roadSys().queryNearest(${x}, ${z}, 200); return q?.point ? Math.hypot(q.point.x - ${x}, q.point.z - ${z}) : 999 })()`
     const off = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
       const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
-      for (const d of [25, -25, 35, -35, 45, -45]) { const x = nr.point.x + nx * d, z = nr.point.z + nz * d
+      for (const along of [0, 100, -100, 160, -160]) for (const d of [25, -25, 35, -35, 45, -45]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
+        // FEAT-217: past the 75 m no-reset radius of every place (TUT_PARAMS.safeNearPoiM), and 15+ m from the road (10 m past its side)
+        if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
         const q = window.__roadSys().queryNearest(x, z, 100); if (!q?.point || Math.hypot(q.point.x - x, q.point.z - z) > 15) return { x, z } }
       return null })()`)
     check(off, 'no off-road spot beside the joint')
@@ -1416,10 +1422,23 @@ const STEPS = [
     // FEAT-184 (DEC-151): off the road with the brake off, the evening puts the truck back on it by itself.
     await seat(off.x, off.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
+    check(await until(() => js('document.getElementById("reset-countdown").style.opacity === "1" && /back on it in \\d/.test(document.getElementById("reset-countdown").textContent)'), 3000), 'FEAT-217: off the road, no reset countdown showed')
     // The reset counts 4 s of PLAY time (_playedS: real frame seconds while live, each frame clamped to 0.25 s), not wall
     // time, so a loaded box under 4 fps accrues it slower than the clock: poll long (a pass costs nothing extra).
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
     await strayCheck('in the evening')
+    // FEAT-217 (of3s, DEC-209): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
+    const sh = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
+      const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
+      for (const along of [0, 100, -100, 160, -160]) for (const d of [9, -9]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
+        if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
+        const q = window.__roadSys().queryNearest(x, z, 100); if (q?.point && Math.hypot(q.point.x - x, q.point.z - z) > 6.5) return { x, z } }
+      return null })()`)
+    check(sh, 'FEAT-217: no shoulder spot found')
+    await seat(sh.x, sh.z, 0); await readCards(300)
+    if (await js('window.__vs.parked')) await tap(' ')
+    await sleep(9000)   // > the 4 s of play it takes off the road
+    { const v = await car(); check(await js(lat(v.x, v.z)) > 5.5 && await js('document.getElementById("reset-countdown").style.opacity !== "1"'), 'FEAT-217: the truck was reset (or counted down) on the shoulder') }
     // FEAT-184 stage 6, THE WORST DAY: the station (when one is due), the flat halfway home, V, the spare that's flat too,
     // the recovery menu's free tow to the auto shop, a tire there, and the night's headlights — then mom's, as before.
     const wd = () => js('window.__worstDay()')
