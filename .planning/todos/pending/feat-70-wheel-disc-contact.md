@@ -224,3 +224,11 @@ fixes first (bb9cd475, ae68e4c4, ee0627dc).
   contact depth moved: understand it, don't absorb it. The COLLISION half is chassis contact, so it
   should match;
 - a drive onto a kerb and over rough ground on :3282.
+
+## Log
+
+- 2026-11-14 (Lane B): `collision-drop-lab` on the branch (= main 13e46388), headless via chrome-slot. COLLISION in family with
+  the 11-05 check (26 mph: 15,658 N·s vs 15,496, 1.09x). DROP is NOT the 11-05 line: 3 m now 81.1 kN tire / 74.8 kN bump /
+  rim 0 (was 108.5 / 99.2 / 63.9 kN); 1 m 22.7 / 12.5 kN, 2 m 51.9 / 42.0 kN, camber -0.065 deg at 3 m. Box3D (FEAT-48) and
+  later tire/rim changes sit between the two baselines, so this is not attributable to FEAT-70 without an A/B at c24bbbfc.
+  Left open: the owed "in family" claim is unproven either way. cdp-smoke not run on the branch (brief); the orchestrator smokes main.
