@@ -15,7 +15,9 @@
  *   centre  centre-weighted (a Gaussian, σ = 0.22 of the width)
  *   low     ground-weighted: nothing from the top third, ramping to full by mid-frame (mostly keeps the sky out)
  *
- * ADAPTATION, in stops (log2 k): target = strength × (log2 openGrey + cal − log2 metered), clamped to [−lo, +hi];
+ * ADAPTATION, in stops (log2 k): d = log2 openGrey + cal − (log2 metered − log2 k), the metered key as it would be at
+ * k = 1 against open ground's. Within ±band of it nothing moves (what an open view meters swings ~±1 stop with the
+ * hour and the scene, and the eye already owns the open view); past it, target = strength × the excess, clamped to [−lo, +hi];
  * k eases toward it with time constant `dark` when opening up (into shade) and `bright` when stopping down (out
  * into the light: the overexposed moment). Every knob is a URL parameter, defaults below.
  */
@@ -48,7 +50,7 @@ export class LiveExposure {
     const num = (k, d) => { const v = parseFloat(params.get(k)); return Number.isFinite(v) ? v : d }
     this.mode = CAL[params.get('ae')] !== undefined ? params.get('ae') : 'centre'
     this.strength = num('aeS', 0.75); this.lo = num('aeLo', 2); this.hi = num('aeHi', 1.5)
-    this.dark = num('aeDark', 2.0); this.bright = num('aeBright', 0.6)
+    this.band = num('aeBand', 1); this.dark = num('aeDark', 2.0); this.bright = num('aeBright', 0.6)
     this.renderer = renderer; this.sky = sky
     this.ev = 0                       // current log2 k
     this.metered = 0                  // last metered key, log2 of displayed luminance (read by the shoot script)
@@ -68,13 +70,14 @@ export class LiveExposure {
     this._cam = new THREE.Camera()
     this._size = new THREE.Vector2()
     // Cell weights per mode (row 0 of the read-back is the BOTTOM of the frame).
-    this._w = new Float32Array(METER_W * METER_H)
+    this._w = { avg: new Float32Array(METER_W * METER_H), centre: new Float32Array(METER_W * METER_H), low: new Float32Array(METER_W * METER_H) }
+    this.keys = { avg: 0, centre: 0, low: 0 }   // every mode's metered key, log2 (the mode in use drives k)
     for (let y = 0; y < METER_H; y++) for (let x = 0; x < METER_W; x++) {
       const u = (x + 0.5) / METER_W - 0.5, v = (y + 0.5) / METER_H, i = y * METER_W + x
       const dy = (v - 0.5) * METER_H / METER_W
-      this._w[i] = this.mode === 'avg' ? 1
-        : this.mode === 'centre' ? Math.exp(-(u * u + dy * dy) / (2 * 0.22 * 0.22))
-          : Math.min(1, Math.max(0, (2 / 3 - v) / (1 / 6)))
+      this._w.avg[i] = 1
+      this._w.centre[i] = Math.exp(-(u * u + dy * dy) / (2 * 0.22 * 0.22))
+      this._w.low[i] = Math.min(1, Math.max(0, (2 / 3 - v) / (1 / 6)))
     }
   }
 
@@ -102,12 +105,16 @@ export class LiveExposure {
     const evAt = this.ev, ref = Math.log2(Math.max(this.sky.openGrey, 1e-6)) + CAL[this.mode]
     this._busy = true
     r.readRenderTargetPixelsAsync(this._rt, 0, 0, METER_W, METER_H, this._buf).then(() => {
-      let s = 0, ws = 0
-      for (let i = 0; i < this._w.length; i++) { s += this._w[i] * (this._buf[i * 4] / 255 * 16 - 16); ws += this._w[i] }
+      for (const m in this._w) {
+        const w = this._w[m]; let s = 0, ws = 0
+        for (let i = 0; i < w.length; i++) { s += w[i] * (this._buf[i * 4] / 255 * 16 - 16); ws += w[i] }
+        this.keys[m] = s / ws - evAt
+      }
       // ponytail: undoes k as if the response were linear (it is through the sky's grade, not quite through ACES's
       // toe/shoulder), so the effective strength drifts a little off `strength`; invert ACES if that ever matters.
-      this.metered = s / ws
-      this._target = Math.min(this.hi, Math.max(-this.lo, this.strength * (ref - (this.metered - evAt))))
+      this.metered = this.keys[this.mode]
+      const d = ref - this.metered, e = Math.sign(d) * Math.max(0, Math.abs(d) - this.band)
+      this._target = Math.min(this.hi, Math.max(-this.lo, this.strength * e))
     }).finally(() => { this._busy = false })
   }
 }
