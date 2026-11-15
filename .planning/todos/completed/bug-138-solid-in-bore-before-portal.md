@@ -1,7 +1,7 @@
 ---
 id: BUG-138
 type: bug
-status: open
+status: completed
 severity: major
 opened: 2026-11-07
 source: Lane B drive soak run8 (6 random seeds × 6 km, with BUG-116)
@@ -62,3 +62,6 @@ where the block stood; the floor runs on smoothly (−0.15 m at 2 m out to −1.
   hill showing past it. That edge, and the dark wedge between the mouths in the forecourt shot, are the shared-bore
   geometry BUG-67's miter is about, not this fix. Re-shoot: `node wip/bug-138/shot.mjs` (test/screenshot.mjs on CDP
   port 9341), arguments in the shot names' commit.
+
+## Resolution (2026-11-14, tracker audit)
+merged 8df3e4e6.

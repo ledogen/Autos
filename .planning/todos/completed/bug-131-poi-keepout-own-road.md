@@ -1,7 +1,7 @@
 ---
 id: BUG-131
 type: bug
-status: open — built on land/bug-131 (95c4fc5c); the owner said land it (bug131-keepout (a), 2026-11-07), route length as a new ticket — landing pending
+status: completed
 opened: 2026-11-07
 severity: minor
 source: Spare, found measuring BUG-121 (2026-11-07)
@@ -60,3 +60,6 @@ bails.
 (a) land now, seed-6 budget check becomes a measurement and a ticket bounds the top route;
 (b) bound the route first, then land this with the check kept;
 (c) hold.
+
+## Resolution (2026-11-14, tracker audit)
+merged 229bb439; owner said land it (bug131-keepout (a), 2026-11-07); route length is BUG-134.

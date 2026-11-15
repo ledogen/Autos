@@ -12,7 +12,7 @@
 //      identical board at every later hour. A call that did not take (an offer no longer live) is not
 //      logged, so a replay never re-tries it.
 import * as save from '../src/save.js'
-import { putRun, loadRun, hasRun, clearRun, logBoard, RUN_SAVE_VERSION } from '../src/save.js'
+import { putTruck, loadTruck, putRun, loadRun, hasRun, clearRun, logBoard, RUN_SAVE_VERSION } from '../src/save.js'
 import { OfferBoard } from '../src/offer-board.js'
 
 let fails = 0
@@ -23,6 +23,20 @@ const check = (label, ok, detail = '') => {
 const memory = () => {
   const m = new Map()
   return { m, getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }
+}
+
+// ── FEAT-205: the winning truck — its own slot, survives the run's end, one truck, bad records drop ──
+{
+  const st = memory()
+  const truck = { parts: { fitted: { tireFront: 'tireStock' }, condition: { engine: 0.4 }, flat: [false, true, false, false] }, gearbox: 'manual' }
+  check('no truck yet is null', loadTruck(st) === null)
+  check('putTruck stores', putTruck(truck, st))
+  check('truck round-trips', JSON.stringify(loadTruck(st)) === JSON.stringify(truck))
+  putRun({ x: 1 }, st); clearRun(st)
+  check('the run save ending leaves the truck', loadTruck(st) !== null)
+  putTruck({ ...truck, gearbox: 'auto' }, st)
+  check('the latest win replaces it', loadTruck(st).gearbox === 'auto')
+  st.m.set('autos-truck/1', '{junk'); check('corrupt is null and dropped', loadTruck(st) === null && st.m.size === 0)
 }
 
 // ── 1. one slot, always now ──────────────────────────────────────────────────────────────────────

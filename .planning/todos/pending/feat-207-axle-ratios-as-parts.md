@@ -1,7 +1,7 @@
 ---
 id: FEAT-207
 type: feature
-status: open
+status: open — built on land/feat-207, NOT on main; waiting on the owner's try (owed card feat207-try)
 severity: minor
 opened: 2026-11-13
 source: owner, 2026-11-13 (inbox) — "the rear end gear ratios should be available to find as mods in game as well. generally the shorter ratios can be a little rarer."

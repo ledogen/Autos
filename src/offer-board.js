@@ -77,9 +77,10 @@ const rngFor = (key) => mulberry32(djb2(key))
  * time too, and always when the second did not. From the offer's OWN stream, so a revisit says the same
  * thing and no spec draw moves.
  */
-export function giverLine (offerId, thingId) {
+export function giverLine (offerId, thingId, impatient = false) {
     const r = rngFor(`line:${offerId}`)
     const pick = (a) => a[Math.floor(r() * a.length)]
+    if (impatient && GIVER_LINES.impatient?.length) return pick(GIVER_LINES.impatient)   // QUAL-36: says "on the clock"
     const seconds = GIVER_LINES.byThing[thingId] ?? []
     const second = seconds.length && r() < GIVER_LINE_P ? pick(seconds) : null
     const first = GIVER_LINES.first.length && (r() < GIVER_LINE_P || !second) ? pick(GIVER_LINES.first) : null
@@ -1079,7 +1080,7 @@ export class OfferBoard {
             // portrait pool (ruled 2026-09-26: sex is rolled first so name and picture agree).
             portrait: sp.person ? { sex: sp.person.sex, name: sp.person.first } : null,
             // FEAT-148: the giver's line on the parked panel (data/offers.js GIVER_LINES), or null — no quote.
-            flavor: giverLine(offer.id, sp.thingId),
+            flavor: giverLine(offer.id, sp.thingId, sp.traits?.includes('impatient')),
             sentence,
             pay,
             terms,
@@ -1122,7 +1123,10 @@ export class OfferBoard {
         const payM = (t.pay ?? 1) * (t.perPiece ?? 1)
         if (payM !== 1) fx.push(range ? `${signed(range.base * (1 - 1 / payM), money)} ${sp.stock ? 'a bundle' : 'pay'}` : `${signed(payM - 1, () => pct(payM))} pay`)
         if (t.deadline && par > 0) fx.push(`deadline ${signed(this.deadlineH(offer, par) - par / (DAY_PARAMS.dayLengthSec / 24) * (1 + sp.deadlineSlack / t.deadline), formatGameDuration)}`)
-        if (t.thresholds) fx.push(`rank times ${pct(t.thresholds)} ${t.thresholds < 1 ? 'tighter' : 'looser'}`)
+        // QUAL-36 (DEC-179): thresholdScale is 1 off the delivery family, so the rank lines do not move there —
+        // an Impatient fragile / haul / freight job is "on the clock" (the tip bar shows), Patient says nothing.
+        if (t.thresholds && sp.thresholdScale !== 1) fx.push(`rank times ${pct(t.thresholds)} ${t.thresholds < 1 ? 'tighter' : 'looser'}`)
+        else if (t.id === 'impatient') fx.push('on the clock')
         if (t.floors) fx.push(`load ${pct(t.floors)} ${t.floors < 1 ? 'more delicate' : 'sturdier'}`)
         if (t.tip) fx.push(`${signed(t.tip - 1, () => pct(t.tip))} tip`)
         if (t.deeds === 'none') fx.push('no good deed')

@@ -67,7 +67,7 @@ import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'   // the sky, its s
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
-import { putRun, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
+import { putRun, putTruck, loadTruck, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
@@ -113,7 +113,7 @@ import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   //
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
-import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87
+import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame, rankBarWords } from './rank-timer.js'   // FEAT-87
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { FuelStop, towPrice, towHours, stationPriceFactor } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow; FEAT-209 each station's price
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
@@ -133,6 +133,7 @@ import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
 import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
+import { lampsOn, homeLamps, shopLamps, setGlow } from './poi-night.js'   // FEAT-214: POI night lights
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -1493,6 +1494,9 @@ const SELECTORS = {
   worldTerrain: { name: 'terrain relief',  opts: KNOBS.t.map(v => [v, `${v} %`]) },
   worldPoi:     { name: 'POI spacing',     opts: KNOBS.p.map(v => [v, `${v} %`]) },
   worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
+  // FEAT-205: free roam's truck — stock, or the one a won run saved. Page state, never saved; shown only with a winner to pick.
+  truck:        { name: 'truck', opts: [['stock', 'stock'], ['winner', 'winning truck']], show: () => _setupMode === 'freeroam' && !!loadTruck(),
+                  get: () => _setupTruck, set: (t) => { _setupTruck = t } },
   gearbox:      { name: 'gearbox',         opts: [['auto', 'automatic'], ['manual', 'manual']] },
   steerAssist:  { name: 'steering assist', opts: [[true, 'on'], [false, 'off']] },
   // A slider: 0 % linear … 100 % parabolic … 150 % (gamepad.js steerCurve), with a tiny plot of the map.
@@ -1508,6 +1512,7 @@ const SELECTORS = {
   frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
 window.__settings = _settings   // dev handle — test/cdp-smoke.mjs marks the browser as played before (FEAT-184 playedBefore)
+let _setupTruck = 'stock'   // FEAT-205
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
 function _fitGearbox (gearbox = _settings.gearbox) {
   fitTransmission(RANGER_PARAMS, vehicleState, gearbox === 'manual' ? 'm5odr1' : _STOCK_BOX)
@@ -1569,6 +1574,7 @@ for (const b of document.querySelectorAll('#main-menu button, #pause-menu button
 /** FEAT-156: switch the new-game page's mode — index.html's CSS swaps the rows on data-mode. */
 function _setSetupMode (mode) {
   _setupMode = mode
+  _setupTruck = 'stock'
   const panel = document.getElementById('mm-setup-panel')
   if (panel) panel.dataset.mode = mode
   if (mode === 'scenarios') _renderScenarioList()
@@ -1598,7 +1604,11 @@ async function _startFromSetup () {
   _enterStageLoad('building the world\u2026')
   await _worldReady
   applyWorld(_world())
-  _fitGearbox()
+  // FEAT-205: stock parts, or the winning truck (parts + its gearbox); the seat's damage wipe makes either new.
+  const winner = _setupTruck === 'winner' ? loadTruck() : null
+  partsSystem.start()
+  if (winner) partsSystem.restore(winner.parts)
+  _fitGearbox(winner?.gearbox)
   await _startFreeRoam(_resolveSeed(seed))
 }
 // A saved run is resumed from its own button (#mm-continue, FEAT-42); starting a new story over it
@@ -3180,6 +3190,7 @@ function _rebuildPoiMarkers () {
   _poiGroup.clear()   // geometry + material are shared singletons — nothing per-cube to dispose
   _poiRings.clear()
   _poiMeshes.clear()
+  _homeLamps.clear(); _shopLampMats.clear(); _shopLampsOn = null
   for (const { mesh } of _dropMarks.values()) mesh.geometry.dispose()   // per-mark geometry, not shared
   _dropMarks.clear()
   _customerRings.clear()
@@ -3194,7 +3205,8 @@ function _rebuildPoiMarkers () {
     if (q.modelKey) {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
       // unlike the small thrown mission items FEAT-59's cast-only default was written for.
-      const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant })
+      const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant,
+        onReady: (inst) => _wirePoiLamps(q, inst) })
       // pad records are base-seated, and so are the models. modelX/Z, not the pad centre: a model
       // may be `seat`ed toward the back of the pad to leave its yard on the road side (FEAT-71).
       m.position.set(q.modelX, q.baseY, q.modelZ)   // BUG-91: the carved ground, not the pad's design top
@@ -3352,6 +3364,32 @@ function _updateCustomerRings () {
  * once the truck is clear of the pad, so a car never spawns into the chassis. Colliders re-sync
  * only when a flag flips (or on `force`, the marker rebuild). Deterministic: it reads the board.
  */
+// FEAT-214 — night lights (src/poi-night.js). Shop lamp materials are SHARED across instances, so one
+// flag drives them all; a residence owns its clone, driven by its own offer / delivery state.
+const _SHOP_TYPES = new Set(['gasPump', 'gasStation', 'autoShop', 'foodVendor', 'generalStore', 'tackleShop'])
+const _shopLampMats = new Set()
+const _homeLamps = new Map()   // poi id → { mats, on }
+let _shopLampsOn = null
+function _wirePoiLamps (q, inst) {
+  if (_SHOP_TYPES.has(q.type)) { shopLamps(inst, _shopLampMats); _shopLampsOn = null }
+  else if (q.type === 'residence' || q.tags?.includes('residence')) {
+    const mats = homeLamps(inst)
+    if (mats.length) _homeLamps.set(q.id, { mats, on: null })
+  }
+}
+function _updatePoiNightLights () {
+  const h = SKY_CYCLE.hour   // the sky's hour: the day clock pushes it in a run, free roam cycles it
+  const on = lampsOn('shop', h)
+  if (on !== _shopLampsOn) { _shopLampsOn = on; setGlow(_shopLampMats, on) }
+  if (!_homeLamps.size) return
+  const now = daySystem.clockH(), m = missionSystem?.mission
+  for (const [id, hl] of _homeLamps) {
+    const keep = !!m && (m.endPoiId === id || m.stopIds?.includes(id)) ||
+                 !!offerBoard && offerBoard.slotStates(id, now).some(s => s.state === 'live')
+    const lit = lampsOn('home', h, keep)
+    if (lit !== hl.on) { hl.on = lit; setGlow(hl.mats, lit) }
+  }
+}
 function _updatePoiPresence (force = false) {
   let changed = force
   const vp = vehicleState.position
@@ -4926,7 +4964,10 @@ const paperRouteSystem = new PaperRouteSystem({
   // The ONE money path (FEAT-53). This mission prices itself on its own axis and hands over a
   // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
   onSettle:  (payout, letter) => {
-    const s = economySystem.settleFlat(payout, letter)
+    const s = economySystem.settleFlat(payout, letter, offerBoard?.spec(paperRouteSystem.offer)?.bonus)
+    // QUAL-36 (DEC-182): Larry's item is not stowed on the result card — he HOLDS it, indefinitely, until the
+    // player parks at his house and takes it (cost off the cash, as on any job; _larryHandsOver).
+    if (s.award) runPaper.held.push({ rewardId: s.award.rewardId, name: s.award.name, cost: itemCost(s.award.rewardId, s.payout) })
     const id = paperRouteSystem.offer?.id
     if (id) offerBoard?.complete(id, daySystem.clockH())   // FEAT-67: Larry's slot then empties
     return s
@@ -4949,6 +4990,21 @@ const paperRouteSystem = new PaperRouteSystem({
   getClockH: () => daySystem.clockH(),   // FEAT-113: world-time elapsed + Larry's deadline
   onChange:  () => _renderPaperUI(),
 })
+/**
+ * QUAL-36 (DEC-182, owner 2026-11-14): parking at Larry's hands over the items he holds — each one that fits the truck
+ * and that the wallet covers (its cost comes off the cash, as on any job). What cannot be taken stays held,
+ * and his line reminds the player. PLACEHOLDER words (the owner writes character text, FEAT-148).
+ */
+function _larryHandsOver () {
+  const kept = [], gave = []
+  for (const h of runPaper.held) {
+    if (inventorySystem.fits(h.rewardId) && economySystem.spend(h.cost)) { inventorySystem.grant(h.rewardId); gave.push(h.name) } else kept.push(h)
+  }
+  runPaper.held = kept
+  const say = (text) => { dialogueSystem.play(null, [{ speaker: 'Uncle Larry', text }]); _renderDialogue() }
+  if (gave.length) say(`[placeholder] Here's your ${gave.join(' and ')}. Told you I'd hold it.`)
+  else if (kept.length) say(`[placeholder] Still holding your ${kept.map(h => h.name).join(' and ')} for you. Make room in the truck and bring some cash, then it's yours.`)
+}
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
 const _recalcEl = document.getElementById('gps-recalc')
 let _recalcOn = false
@@ -6084,6 +6140,7 @@ function _updateParkTriggers (zParked = false) {
     // siblings — each leaves 'idle' and each other's reach test then returns null.
     // FEAT-67: what is on offer is the BOARD's — live offers only. With nothing live the brake opens
     // nothing and the prompt says when the next offer turns up (the prompt shows it; see below).
+    if (poi.type === 'larrysHouse' && runPaper.held.length) _larryHandsOver()
     const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
@@ -7403,6 +7460,7 @@ function _renderPaperUI () {
         // The same rows the POI result card shows (_payRows), plus the accuracy bonus — a third
         // payment, banked as the papers landed. Showing only the settlement would look like a pay cut.
         + _payRows({ base: r.base, tip: r.tip, spot: r.spot, points: r.points })
+        + (r.award ? `<br><span style="color:var(--money)">Larry&rsquo;s holding your ${r.award.name} &mdash; come by his house to pick it up</span>` : '')
         + (r.advanced
           ? `<br><span style="color:var(--money)">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
@@ -7700,11 +7758,12 @@ function _rankTimerSource () {
   const m = missionSystem
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
     if (m.mission.expired) return null   // FEAT-113: a job that pays nothing has no rank to chase
-    // No bar where the clock is not what the letter reads (owner, 2026-10-15): a fragile job is
-    // lettered on condition, a haul on the count delivered — a bar falling S → A on the clock
-    // promises a grade the job does not give. Freight too (FEAT-139, §2b): its letter is the kg,
-    // internal, though time still pays its tip. Courier keeps the bar.
-    if (m.mission.fragile || m.mission.bundles || m.mission.cargoKg) return null
+    // QUAL-36 (DEC-178/181, owner 2026-11-14): a job is HURRIED or CALM. Courier-family jobs are hurried; fragile,
+    // haul and freight are calm (their letter is condition / count / kg, so a time bar would promise a grade
+    // the job does not give) unless the giver is Impatient — then the bar shows the TIP only. Demolition is
+    // always calm: its clock is the 40 s hit window.
+    const calm = !!(m.mission.fragile || m.mission.bundles || m.mission.cargoKg || m.mission.targets)
+    if (calm && (m.mission.targets || !m.mission.traits?.includes('impatient'))) return null
     // R-22 (owner, 2026-10-24): the bar shows only once the goal is NEAR — the last nearFrac of the
     // route (never under nearMinM) — and stays from there. Latched per job, so a GPS re-plan that
     // lengthens the route cannot take it away again.
@@ -7712,7 +7771,7 @@ function _rankTimerSource () {
     if (!_rtNear && m.state === 'running') _rtNear = m.routeRemaining() <= Math.max(RT.nearMinM, RT.nearFrac * (m.mission.distance ?? 0))
     return { key: m.mission, elapsed: m.elapsed, par: m.mission.par,
              thresholds: m.mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT,
-             gate: m.mission.bonus?.gate ?? null, near: _rtNear }
+             gate: calm ? null : m.mission.bonus?.gate ?? null, near: _rtNear, tipOnly: calm }
   }
   const p = paperRouteSystem
   if (p && p.isCarrying() && p.run && p.route && !p.run.expired) {
@@ -7894,7 +7953,8 @@ function _updateRankTimer () {
         el.className = w > RT.viewW / 2 ? 'rt-seg wide' : 'rt-seg'   // wide: letter at the left edge
         el.style.width = `${w}px`
         el.style.background = RANK_COLOR[b.letter]
-        el.textContent = w >= 14 ? b.letter : ''   // a letter half-clipped reads worse than none
+        const word = rankBarWords(b.letter, src.tipOnly).strip
+        el.textContent = w >= 8 * word.length ? word : ''   // a word half-clipped reads worse than none
         E.strip.insertBefore(el, E.gate)
         E.segs.push(el)
       }
@@ -7928,7 +7988,7 @@ function _updateRankTimer () {
     const old = _rtLetter
     _rtLetter = f.letter
     if (old) _rtBreakLetter(old)   // a line went past: the old letter breaks and falls
-    E.letter.textContent = f.letter
+    E.letter.textContent = rankBarWords(f.letter, src.tipOnly).tile
     E.letterBox.style.background = RANK_COLOR[f.letter]   // the tile; the letter on it is dark (CSS)
     if (old) { E.letter.classList.remove('rt-slam'); void E.letter.offsetWidth; E.letter.classList.add('rt-slam') }
   }
@@ -9736,6 +9796,7 @@ const CRASH_CARD_DELAY_S = 1.5
 function _endRun (kind) {
   if (_paperScenario) { _paperScenarioOver(kind); return }   // FEAT-62: never _discardRunSave — the save is the player's
   if (_runEnded) return
+  if (kind === 'win') putTruck({ parts: partsSystem.snapshot(), gearbox: _runGearbox })   // FEAT-205: free roam can fit it
   _discardRunSave()
   // Read the run as it ended, before the clock moves on behind the card.
   const title = RUN_END_TITLE[kind], body = _runEndHtml(kind)
@@ -9868,7 +9929,7 @@ function _runSnapshot () {
     motion: { v: vs.velocity.toArray(), w: vs.angularVelocity.toArray(), wheelOmega: vs.wheelOmega,
               strutComp: vs.strutComp, strutCompVel: vs.strutCompVel, steerAngle: vs.steerAngle,
               drivetrain: vs.drivetrain, ignition: vs.ignition, handbrake: vs.handbrake, parked: vs.parked },
-    shelves: runShelves, paperTier: runPaper.tier,
+    shelves: runShelves, paperTier: runPaper.tier, paperHeld: runPaper.held,
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
     job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
     playedS: _playedS,   // FEAT-146: the summary's playtime
@@ -9898,6 +9959,7 @@ function _restoreRun (s) {
   gaugeCluster.seedOdometer(s.odometer)
   Object.assign(runShelves, s.shelves)
   runPaper.tier = s.paperTier
+  runPaper.held = s.paperHeld ?? []
   _renderPaperUI()
   dialogueSystem.restoreSeen(s.dialogueSeen)   // before the handoff, or the run intro plays again
   for (const pad of s.campPads) { roadSystem?.setCampPads(campSystem.makeCampAt(pad)); _refreshGroundAround(pad) }
@@ -10917,6 +10979,7 @@ function loop (t) {
     _updateCustomerRings()
     // FEAT-102: the motorist's car comes and goes with its work — before the rings read the flag.
     _updatePoiPresence()
+    _updatePoiNightLights()
     // FEAT-46: the orange interaction ring ↔ green start-zone ring swap rides the same poll.
     _updateMissionRings()
 

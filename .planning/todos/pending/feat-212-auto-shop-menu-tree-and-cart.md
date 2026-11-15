@@ -1,7 +1,7 @@
 ---
 id: FEAT-212
 type: feature
-status: open
+status: open — landings 1-4 on main (e427a332); waiting on the owner's cart look (owed card feat212-cart-look)
 severity: major
 opened: 2026-11-13
 source: owner, 2026-11-13 — the Google Doc "Cargame menus" (exported to Markdown), copied below with its numbering and nesting intact

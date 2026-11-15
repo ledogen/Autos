@@ -1,7 +1,7 @@
 ---
 id: BUG-144
 type: bug
-status: open
+status: completed
 severity: minor
 opened: 2026-11-08
 source: Lane B, BUG-137's scans
@@ -44,3 +44,6 @@ per node.
 - **The gate:** `junction-edge-lip`'s tear check (SMOOTH) now covers whole pads, not just T trunks; BUG-146's two
   sites are a named exception (tears within 1.5 m of them reported, not failed). Elsewhere the worst tear on the three
   seeds is 0.075 m per 5 cm (BUG-137's node, the side road's mouth ramp onto its own deck — a ramp, under 0.08).
+
+## Resolution (2026-11-14, tracker audit)
+merged 82ecb463 (8dce9951); the drawn step left over is BUG-146.

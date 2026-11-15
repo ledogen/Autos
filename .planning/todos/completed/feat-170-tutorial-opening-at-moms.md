@@ -1,7 +1,7 @@
 ---
 id: FEAT-170
 type: feature
-status: open
+status: completed
 severity: major
 opened: 2026-11-05
 source: owner, 2026-11-05, driving FEAT-147 on :3731 — "opening is good for now. will definitely want a rewrite before alpha release… my proposal (ticket dont attempt to one shot)" (quoted in full below)
@@ -266,3 +266,6 @@ them first.
 
 *Owner checks (stage 4, with stages 1–3):* one full playthrough with the tutorial, one skipping it — the
 ticket's acceptance. Every card's words.
+
+## Resolution (2026-11-14, tracker audit)
+stages 1-4 merged to main (47d2b352 and earlier); the owner's 2026-11-07 play answer (feat170-play) says it is superseded by FEAT-184.

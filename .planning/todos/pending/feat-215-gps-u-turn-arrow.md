@@ -1,7 +1,7 @@
 ---
 id: FEAT-215
 type: feature
-status: open
+status: open — built and on main (abf84352); waiting on the owner's look (owed card feat215-look)
 severity: minor
 opened: 2026-11-14
 source: owner, 2026-11-14 — "gps u turn arrow: same style as the turn indicator arrows but pointing you to turn around. a 3d ribbon arrow making a 180 would be a nice way to draw this i think."

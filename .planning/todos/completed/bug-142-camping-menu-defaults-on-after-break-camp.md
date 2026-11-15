@@ -1,7 +1,7 @@
 ---
 id: BUG-142
 type: bug
-status: open
+status: completed
 severity: minor
 opened: 2026-11-07
 source: owner, 2026-11-07 tracker inbox
@@ -16,3 +16,6 @@ Owner, verbatim (2026-11-07 tracker inbox): "Camping menu should default to off 
 ## Acceptance
 
 - [ ] Breaking camp leaves the camping menu closed.
+
+## Resolution (2026-11-14, tracker audit)
+merged 83120ec5 (breaking camp turns the camping menu off).

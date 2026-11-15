@@ -1,7 +1,7 @@
 ---
 id: FEAT-185
 type: feature
-status: open
+status: open — built and on main (2f5735eb); the owner's feel check is outstanding (no card)
 severity: minor
 opened: 2026-11-07
 source: owner, 2026-11-07 tracker inbox

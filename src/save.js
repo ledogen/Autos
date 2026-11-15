@@ -47,6 +47,30 @@ export function clearRun (storage = globalThis.localStorage) {
   try { storage.removeItem(KEY) } catch { /* blocked → there was nothing to clear */ }
 }
 
+// ── The winning truck (FEAT-205) ────────────────────────────────────────────────────────────────
+// A won run writes its truck here, in its own slot, beside the run save — and the run's end deletes the run save,
+// not this. Player state only (DEC-008): { parts: PartsSystem.snapshot(), gearbox } — never the world. One truck:
+// the latest win replaces it. Free roam fits it; the wear is not carried (free roam wipes damage on every seat).
+const TRUCK_KEY = 'autos-truck/1'
+
+/** Write the winning truck. Returns false when storage refused it. */
+export function putTruck (truck, storage = globalThis.localStorage) {
+  try { storage.setItem(TRUCK_KEY, JSON.stringify({ v: RUN_SAVE_VERSION, truck })); return true } catch { return false }
+}
+
+/** The winning truck, or null (none yet, corrupt, other version — a bad record is dropped). */
+export function loadTruck (storage = globalThis.localStorage) {
+  let raw = null
+  try { raw = storage.getItem(TRUCK_KEY) } catch { return null }
+  if (raw == null) return null
+  try {
+    const rec = JSON.parse(raw.replace(RETIRED, (_, id) => `"${RENAMED[id]}"`))
+    if (rec?.v === RUN_SAVE_VERSION && rec.truck?.parts?.fitted) return rec.truck
+  } catch { /* corrupt */ }
+  try { storage.removeItem(TRUCK_KEY) } catch { /* blocked */ }
+  return null
+}
+
 // ── The mission board's history ─────────────────────────────────────────────────────────────────
 // OfferBoard is a pure function of (seed, roster, creation hour) and the calls made on it, and each
 // mutator advances the board's own clock to its nowH. So the board's history IS its call list: wrap

@@ -1,7 +1,7 @@
 ---
 id: FEAT-216
 type: feature
-status: open
+status: open — built and on main (4cfb735b); waiting on the owner's look and the alert wording (owed card feat216-look)
 severity: major
 opened: 2026-11-14
 source: owner, 2026-11-14 — "We need damage alerts. I thought it could be slick and get away with sound and visual effects but i think we need alerts for driving on a flat, driving on a failed tire, air filter starting at the wear drop off threshold, oil at its threshold. add bent a wheel (10% threshold).for bump stops (spring damage) I think the sound effect can be improved but is sufficient. Same with body panels"

@@ -1,7 +1,7 @@
 ---
 id: BUG-141
 type: bug
-status: open
+status: completed
 severity: major
 opened: 2026-11-07
 source: owner, 2026-11-07 tracker inbox
@@ -56,3 +56,6 @@ browser read caught it (the nose came out at the seat's tangent + π), and the n
 - 672275505, a clean spawn: unmoved.
 
 world-determinism's three spawns stay within 2 cm, and seed 6 turns round.
+
+## Resolution (2026-11-14, tracker audit)
+merged 968cd1a4 (RoadSystem.freeRoamSeat: 31/100 random seeds broke a rule, now 0).

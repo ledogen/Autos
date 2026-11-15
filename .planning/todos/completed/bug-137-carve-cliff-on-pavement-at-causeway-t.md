@@ -1,7 +1,7 @@
 ---
 id: BUG-137
 type: bug
-status: open
+status: completed
 severity: major
 opened: 2026-11-07
 source: Lane B drive soak run8 (6 random seeds × 6 km, with BUG-116)
@@ -70,3 +70,6 @@ side road and the trunk (−212.4, −540.8): the pad stands 0.95 m above the si
 `_mergeCarve`'s 0.55 m duck cap holds the dirt beside the rim 0.4 m low — a 0.54 m kerb where 0.15 m is designed.
 
 Probes: `CarGame-machine/wip/bug-137/` (`padtop.mjs`, `halves.mjs`, `branch.mjs`, `decomp.mjs`, `vs-old.mjs`).
+
+## Resolution (2026-11-14, tracker audit)
+merged 9a07e268; the separate pad classes it found became BUG-144/145, also closed.

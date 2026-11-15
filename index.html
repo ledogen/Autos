@@ -1055,7 +1055,7 @@
        every heartbeat kick — the thump. Overflow stays visible so the shards can fall out of it. */
     #rank-timer .rt-letter-box {
       position: relative; display: inline-block;
-      width: 46px; height: 46px; line-height: 46px; text-align: center;
+      min-width: 46px; height: 46px; line-height: 46px; padding: 0 5px; text-align: center;   /* QUAL-36: words, so it grows */
       font-size: 30px; font-weight: bold;
       color: rgba(0, 0, 0, 0.78);
       background: #e6ecf2;
@@ -1067,7 +1067,7 @@
       box-sizing: border-box;
     }
     #rank-timer #rt-letter {
-      display: inline-block;
+      display: inline-block; font-size: 12px; letter-spacing: 0;   /* QUAL-36: the tile names what the band earns (words, not a letter) */
       /* the slam animation owns this element's scale while it runs; the thump scales the tile */
     }
     /* The slam: the new letter lands from large with a squash on impact, plus a white flash. */
@@ -1920,7 +1920,7 @@
         <div class="rt-beat" id="rt-beat"></div>
       </div>
     </div>
-    <div class="rt-title"><span class="rt-label">Rank:</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">S</span></span></div>
+    <div class="rt-title"><span class="rt-label">Earns:</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">TIP+DEED</span></span></div>
   </div>
   <!-- R-17/R-28: the promise lines — the load aboard, the job's reward and its deed, restated live in one
        format on every type, written by _updateJobPromise in main.js (each value coloured by its margin).
