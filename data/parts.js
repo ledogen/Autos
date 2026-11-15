@@ -58,7 +58,7 @@ export const SLOTS = {
     arbRear:      { name: 'Rear anti-roll bar',  hours: 0.5, tracks: [] },
     diff:         { name: 'Rear differential', hours: 3,    tracks: ['diff'] },   // FEAT-166: the clutch LSD's packs
     // FEAT-207: the rear axle's final-drive ratio — a part with no wear track, like the lift (the sizes Ford sold).
-    axle:         { name: 'Rear axle ratio',   hours: 3,    tracks: [] },
+    axle:         { name: 'Final drive',   hours: 3,    tracks: [] },
     lift:         { name: 'Lift',              hours: 4,    tracks: [] },
     // The engine bay (owner, 2026-10-22): these were damage tracks with no part; exchange and the shop
     // shelf need them to exist as parts. Either headlight socket takes the one 'headlight' part.
@@ -201,13 +201,13 @@ export const PARTS = {
 
     // ── Rear axle ratio (FEAT-207, owner 2026-11-13: findable mods, "shorter ratios a little rarer"). The patch is
     //    the existing `finalDrive` param (drivetrain.js); the stock ratio is data/ranger.js's 3.73. Prices [DEFAULT].
-    axle345:       { name: '3.45 axle ratio', slot: 'axle', icon: 'diff', family: 'oem', rarity: 'common', price: 12, massKg: 8,
+    axle345:       { name: '3.45 final drive', slot: 'axle', icon: 'diff', family: 'oem', rarity: 'common', price: 12, massKg: 8,
                      patch: { finalDrive: 3.45 }, desc: 'Tall gearing: lazier off the line, calmer at highway speed.' },
-    axle355:       { name: '3.55 axle ratio', slot: 'axle', icon: 'diff', family: 'oem', rarity: 'common', price: 12, massKg: 8,
+    axle355:       { name: '3.55 final drive', slot: 'axle', icon: 'diff', family: 'oem', rarity: 'common', price: 12, massKg: 8,
                      patch: { finalDrive: 3.55 }, desc: 'A little taller than the factory gearing.' },
-    axle373:       { name: '3.73 axle ratio', slot: 'axle', icon: 'diff', family: 'oem', rarity: 'common', price: 10, massKg: 8, stock: true,
+    axle373:       { name: '3.73 final drive', slot: 'axle', icon: 'diff', family: 'oem', rarity: 'common', price: 10, massKg: 8, stock: true,
                      patch: { finalDrive: 3.73 }, desc: 'The factory gearing.' },
-    axle410:       { name: '4.10 axle ratio', slot: 'axle', icon: 'diff', family: 'oem', rarity: 'uncommon', price: 20, massKg: 8,
+    axle410:       { name: '4.10 final drive', slot: 'axle', icon: 'diff', family: 'oem', rarity: 'uncommon', price: 20, massKg: 8,
                      patch: { finalDrive: 4.10 }, desc: 'Short gearing: pulls harder, turns more rpm at speed.' },
 
     // ── Rear differential (§3b — the canonical described-never-scored part).
