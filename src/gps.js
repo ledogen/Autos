@@ -43,9 +43,12 @@ const RING_HOVER   = 1.4
 // clears once it is within ~100° (cos > UT_OFF) — the gap is the hysteresis so it does not flicker at 90–120°.
 const UT_ON        = -0.5
 const UT_OFF       = -0.2
-const UT_R         = 4      // m: radius of the half-circle
-const UT_AHEAD     = 7      // m: its centre ahead of the truck
-const UT_HOVER     = 2.5    // m above the truck
+const UT_AHEAD     = 20     // m: how far up the road (against the route) the ribbon stands
+const UT_W         = 1.2    // m: ribbon width; the head is 2.5x
+const UT_RAD       = 2.0    // m: radius of the upward half-loop (so it is 4 m tall; the whole glyph fits a 5 m cube)
+const UT_HOVER     = 0.2    // m above the road surface
+// FEAT-218: an objective further than this from the route's last road point is OFF the road: it gets the turn arrow, not the ring.
+const OFFROAD_M    = 8
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
 // FEAT-61 self-overlap (a paper route drives some streets out and back). A vertex counts as a
@@ -324,19 +327,21 @@ function _arrowGeometry () {
 }
 
 /**
- * FEAT-215: a flat ribbon bent through 180° with an arrowhead on its end, in the turn arrow's colour.
- * Local frame: +Z = the truck's forward, the ribbon leaves at (+R, 0), swings round the far side and ends
- * at (-R, 0) heading back (-Z). A right-hand turn is this mirrored (scale.x = -1; the material is double-sided).
+ * FEAT-215 (redesigned 2026-11-14): a ribbon that leaves along local +Z (away from the player), loops UPWARD through
+ * 180 degrees in the vertical plane and ends heading back along -Z at the top, with an arrowhead that faces the player.
+ * Origin on the ground; spans z -1.9..2.5, y 0..4, x +-1.5 (inside a 5 m cube). Double-sided material, so no mirror variant.
  */
 function _uturnGeometry () {
-  const hw = 0.6, N = 24, pos = []
-  const at = (a, r) => [r * Math.cos(a), 0, r * Math.sin(a)]
-  for (let i = 0; i < N; i++) {
-    const a0 = Math.PI * i / N, a1 = Math.PI * (i + 1) / N
-    const q = [at(a0, UT_R - hw), at(a0, UT_R + hw), at(a1, UT_R + hw), at(a1, UT_R - hw)]
+  const R = UT_RAD, hw = UT_W / 2, N = 20, path = [[0, -1.5], [0, 0.5]]   // [y, z] along the ribbon
+  for (let i = 1; i <= N; i++) { const a = -Math.PI / 2 + Math.PI * i / N; path.push([R + R * Math.sin(a), 0.5 + R * Math.cos(a)]) }
+  path.push([2 * R, -0.1])
+  const pos = []
+  for (let i = 0; i < path.length - 1; i++) {
+    const [y0, z0] = path[i], [y1, z1] = path[i + 1]
+    const q = [[-hw, y0, z0], [hw, y0, z0], [hw, y1, z1], [-hw, y1, z1]]
     for (const k of [0, 1, 2, 0, 2, 3]) pos.push(...q[k])
   }
-  pos.push(-UT_R - 1.5, 0, 0, -UT_R + 1.5, 0, 0, -UT_R, 0, -2.2)   // the head, past the ribbon's end
+  pos.push(-UT_W * 1.25, 2 * R, -0.1, UT_W * 1.25, 2 * R, -0.1, 0, 2 * R, -1.9)   // the head, tip toward the player
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
   return g
@@ -397,6 +402,13 @@ export class GpsSystem {
     this._arrow.visible = false
     this.group.add(this._arrow)
 
+    this._objMat = mat()
+    this._objArrow = new THREE.Mesh(this._arrowGeo, this._objMat)   // FEAT-218: the same board, at the road point nearest an off-road objective
+    this._objArrow.frustumCulled = false
+    this._objArrow.renderOrder = 3
+    this._objArrow.visible = false
+    this.group.add(this._objArrow)
+
     this._uturnMat = mat()
     this._uturnMesh = new THREE.Mesh(_uturnGeometry(), this._uturnMat)
     this._uturnMesh.frustumCulled = false
@@ -448,7 +460,7 @@ export class GpsSystem {
     return Number.isFinite(p?.gradeY) ? p.gradeY : null
   }
 
-  _hideAll () { this._chev.visible = false; this._arrow.visible = false; this._ring.visible = false; this._uturnMesh.visible = false; this._uturn = false }
+  _hideAll () { this._chev.visible = false; this._arrow.visible = false; this._ring.visible = false; this._objArrow.visible = false; this._uturnMesh.visible = false; this._uturn = false }
 
   update (dt) {
     if (!this.enabled) return
@@ -488,8 +500,7 @@ export class GpsSystem {
     this._placeArrow(route, prog.s)
     this._placeUturn(route, prog.s, car)
     // FEAT-187: a route flagged noRing (a demolition job's) has no destination circle — its targets wear halos.
-    if (this._src?.noRing) this._ring.visible = false
-    else this._placeRing(route, prog.s)
+    this._placeRing(route, prog.s)
   }
 
   /**
@@ -591,21 +602,43 @@ export class GpsSystem {
     this._uturn = c < UT_ON || (this._uturn && c < UT_OFF)
     this._uturnMesh.visible = this._uturn
     if (!this._uturn) return
-    // The turn goes to the side the route lies on (right·(ahead − truck) > 0 → mirror).
-    const ahead = sampleRoute(route, s + 20)
-    const right = f.z * (ahead.x - car.x) - f.x * (ahead.z - car.z)
-    this._uturnMesh.position.set(car.x + f.x * UT_AHEAD, car.y + UT_HOVER + Math.sin(this._t * 1.6) * 0.12, car.z + f.z * UT_AHEAD)
-    this._uturnMesh.rotation.set(0, Math.atan2(f.x, f.z), 0)
-    this._uturnMesh.scale.x = right > 0 ? -1 : 1
+    // On the road UT_AHEAD m ahead of the truck: wrong way means ahead = back down the route. With less than that
+    // behind the truck there is no route there, so it stands on the line the truck points along instead.
+    const bob = Math.sin(this._t * 1.6) * 0.12
+    if (s >= UT_AHEAD) {
+      const p = sampleRoute(route, s - UT_AHEAD)
+      this._uturnMesh.position.set(p.x, p.y + UT_HOVER + bob, p.z)
+      this._uturnMesh.rotation.y = Math.atan2(-p.dx, -p.dz)
+    } else {
+      this._uturnMesh.position.set(car.x + f.x * UT_AHEAD, car.y - 0.6 + bob, car.z + f.z * UT_AHEAD)
+      this._uturnMesh.rotation.y = Math.atan2(f.x, f.z)
+    }
   }
 
+  /**
+   * The route's end. An objective that sits OFF the road (FEAT-218: `objective`/`end` further than OFFROAD_M from the
+   * route's last road point: a paper stop, a demolition target, a POI) gets the turn arrow at that road point aimed at
+   * it; one on the road keeps the ring.
+   */
   _placeRing (route, s) {
     const remain = route.length - s
-    if (remain > 260) { this._ring.visible = false; return }
     const n = route.n - 1
+    const o = this._src?.objective ?? this._src?.end
+    const off = o && Math.hypot(o.x - route.px[n], o.z - route.pz[n]) > OFFROAD_M
+    this._ring.visible = this._objArrow.visible = false
+    if (remain > 260) return
+    const fade = Math.min(1, (260 - remain) / 60)
+    if (off) {
+      this._objArrow.position.set(route.px[n], route.py[n] + ARROW_HOVER + Math.sin(this._t * 1.6) * 0.12, route.pz[n])
+      this._objArrow.rotation.y = Math.atan2(-(o.z - route.pz[n]), o.x - route.px[n])
+      this._objMat.opacity = fade
+      this._objArrow.visible = true
+      return
+    }
+    if (this._src?.noRing) return
     this._ring.position.set(route.px[n], route.py[n] + RING_HOVER, route.pz[n])
     this._ring.rotation.y = this._t * 0.5
-    this._ringMat.opacity = Math.min(1, (260 - remain) / 60)
+    this._ringMat.opacity = fade
     this._ring.visible = true
   }
 
