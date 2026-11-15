@@ -1,7 +1,7 @@
 ---
 id: BUG-172
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-14
 source: orchestrator, 2026-11-14 — found by INFRA-15 (the browser smoke's edge step at 4× CPU throttle)
@@ -44,3 +44,6 @@ src/main.js (`_updateBarricades`), src/terrain-physics.js, test/cdp-smoke.mjs (e
 - 2026-11-14: fixed 31c007c9 (query + 4 guards + gate `barricade-ground.mjs`). Affected gates 13/13 green. Edge step
   with the 150 m pre-seat bypassed locally (not committed), `SMOKE_THROTTLE=4 SMOKE_STEPS=boot,story,edge`: 3/3 PASS,
   row reset worst 0.4 / 1.0 / 1.4 cm (was 1.9–5.8 m). The committed smoke still has its pre-seat.
+
+## Resolution (2026-11-14)
+On main (31c007c9, merge 6f673926): a row swaps to bodies only once the terrain chunk and the road deck are built under every pose (TerrainPhysics.hasChunkAt, RoadPhysics.hasTileAt); lawn ornaments, ground items and demolition targets got the same chunk guard. Gate test/barricade-ground.mjs; main gates 13/13, smoke 26/26 (wip/orch/smoke-1114i.log). The smoke keeps its 150 m pre-seat (harmless). Left as noted in the Log: resumed haul pieces (one-shot, slept at once) and a ground item on a road deck (waits for the chunk, not the deck tile).
