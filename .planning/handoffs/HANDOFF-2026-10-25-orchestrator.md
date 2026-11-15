@@ -179,6 +179,7 @@ run-review, service-center-look, top-items-path.
 **Smoke notes:** flaky above load ~13; until BUG-173 lands, an "opening ... on the shoulder" failure is the known coin
 toss (rerun `SMOKE_STEPS=boot,opening`). Never merge while a smoke runs.
 
-**IN FLIGHT 11-15:** main @ c5433368 = small-1115 + run-shape (tutorial errand) + shopui-1115 merged; smoke running -> wip/orch/smoke-1115a.log. Do NOT merge until it ends. PERF-49 (land/perf-49-spikes @ af450f09) merges next once its gate log shows RUN-ALL green, then its own smoke.
-
-**SMOKE RED on main @ fbc98de7 (11-15):** step "opening" fails alone, twice, load 6: "the sim stopped stepping, 0.02 of 1 sim-s in · 822480141" right after "worst day: the shop" (logs wip/orch/smoke-1115b.log, smoke-1115b-opening.log). All other steps passed up to it. Lane A agent is on it in CarGame-run-shape. Do not merge PERF-49 or anything else until main is green.
+**11-15 landings (main @ 41e5d82f+, smoke 26/26 wip/orch/smoke-1115c.log, NOT pushed):** small-1115 (QUAL-36 words, half price, card text, lighting defaults, camera trail, auto park brake; DEC-252..257), run-shape (FEAT-184 Larry's cards + mom's errand, DEC-236..239, and the smoke's tutorial fixes), shopui-1115 (DEC-244..250), BUG-173 (closed; DEC-230; smoke spot finder = Lane C's). Lanes a, s, u are FREE. New owner cards: qual36-cash-line, tutorial-errand, top-items-path.
+**PERF-49:** land/perf-49-spikes, gates 102/102 at af450f09, but main has since changed road.js (BUG-173): main is merged into the branch in CarGame-land-211d and the gates re-run there -> wip/perf-49/runs/gates-land2.log. Merge + own smoke when RUN-ALL is green.
+**RUNNING:** c = BUG-171 option 2 + deep dive (land/bug-171 in CarGame-content, DEC 231/260/261); p = terrain bake default on (feature/perf).
+**Known unexplained:** smoke "the tow did not land at an open shop" failed 1 run in ~20 on 11-15; its message now prints distance + clock.
