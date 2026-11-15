@@ -77,17 +77,19 @@ export function buildPondMesh(pond, material, segments = 48) {
 //    the water sits exactly waterDepth above the carved bed, so waterY > h + waterDepth + slack
 //    means SOMETHING was pulled up through the channel.
 //
-// Returns { spans, ground } or null. `ground` holds the three probe heights h per centreline point
-// (−w, 0, +w; NaN where a point was not probed) so the bed reuses them instead of re-sampling.
+// Returns { spans, ground, roadW } or null. `ground` holds the three probe heights h per centreline
+// point (−w, 0, +w; NaN where a point was not probed) and `roadW` their road-carve blends, so the bed
+// reuses them instead of re-sampling.
 export function computeStreamSpans(stream, surfaceLift, bbox, surfaceAt) {
     const pts = stream.points
     if (pts.length < 2) return null
 
     const spans = []
     const ground = new Float64Array(pts.length * 3).fill(NaN)
+    const roadW = new Float32Array(pts.length * 3)
     if (!bbox && !surfaceAt) {
         spans.push([0, pts.length - 1])
-        return { spans, ground }
+        return { spans, ground, roadW }
     }
     const pad = (stream.maxWidth ?? stream.width)
     const STAND_SLACK = 0.25   // m — composition tolerance above the honest waterDepth stand
@@ -113,6 +115,7 @@ export function computeStreamSpans(stream, surfaceLift, bbox, surfaceAt) {
                 const sf = surfaceAt(px, pz)   // one composed-surface sample per probe
                 const g = sf.h
                 ground[i * 3 + e + 1] = g
+                roadW[i * 3 + e + 1] = sf.blendW
                 // Road rule: a road core under the probe, with water NOT clearly below
                 // the deck → the deck fills the channel; water cannot stand there.
                 if (sf.blendW > 0.5 && waterY > g - 0.1) return OVER_ROAD
@@ -143,7 +146,7 @@ export function computeStreamSpans(stream, surfaceLift, bbox, surfaceAt) {
             start = -1
         }
     }
-    return spans.length === 0 ? null : { spans, ground }
+    return spans.length === 0 ? null : { spans, ground, roadW }
 }
 
 /** The span set a stream's water ribbon AND its cobble bed are built on (WATER-surface lift). */
@@ -220,12 +223,18 @@ export function buildStreamMesh(stream, material, bbox, surfaceAt, sp = streamSp
 //   - margin = bankWidth/2 : the lower half of each bank ramp gets cobbled.
 //   - UVs : u = 0..1 across the strip, v = arcS / 12 → one cobble repeat per ~12 m of stream.
 // It reuses computeStreamSpans with the WATER-surface lift (waterDepth − depth) so the bed is
-// suppressed on the IDENTICAL spans as the water — never visible over a road deck or lifted pad.
+// suppressed on the IDENTICAL spans as the water — never visible over a lifted pad.
+// BUG-159: the span rule KEEPS water clearly below a road deck (the opaque deck hides it). The bed
+// is not at water level — it drapes the composed surface, which on a road core IS the deck — so
+// those kept rows laid cobble on the pavement, and chords between a deck row and the channel below
+// hung a sheet up to ~1.2 m over the road (seed 2879661543, a stream running under its causeway).
+// So the bed drops every quad with a corner on a road core (blendW > 0.5, the road rule's own
+// threshold), all five columns checked; the water ribbon keeps the span set unchanged.
 export function buildStreamBedMesh(stream, material, bbox, surfaceAt, sp = streamSpans(stream, bbox, surfaceAt)) {
     const pts = stream.points
     if (pts.length < 2) return null
     if (!sp) return null
-    const { spans, ground } = sp
+    const { spans, ground, roadW } = sp
 
     const margin = (stream.bankWidth ?? 5) * 0.5
     const COLS = 5
@@ -233,6 +242,7 @@ export function buildStreamBedMesh(stream, material, bbox, surfaceAt, sp = strea
     for (const [a, b] of spans) nPts += b - a + 1
     const positions = new Float32Array(nPts * COLS * 3)
     const uvs = new Float32Array(nPts * COLS * 2)
+    const onRoad = new Uint8Array(nPts * COLS)          // BUG-159: vertex sits on a road core
     const indices = []
     let row = 0
 
@@ -255,7 +265,12 @@ export function buildStreamBedMesh(stream, material, bbox, surfaceAt, sp = strea
                 const px = p.x + nx * off, pz = p.z + nz * off
                 // Columns 1/2/3 (off = +w/0/−w) are the span probes e = +1/0/−1 → ground[i·3 + 2/1/0].
                 const g = (c >= 1 && c <= 3) ? ground[i * 3 + 3 - c] : NaN
-                const y = surfaceAt ? (Number.isNaN(g) ? surfaceAt(px, pz).h : g) + 0.06 : bedFallbackY
+                let y = bedFallbackY
+                if (surfaceAt) {
+                    const sf = Number.isNaN(g) ? surfaceAt(px, pz) : null
+                    y = (sf ? sf.h : g) + 0.06
+                    onRoad[row * COLS + c] = (sf ? sf.blendW : roadW[i * 3 + 3 - c]) > 0.5 ? 1 : 0
+                }
                 const o = (row * COLS + c) * 3
                 positions[o + 0] = px; positions[o + 1] = y; positions[o + 2] = pz
                 const u = (row * COLS + c) * 2
@@ -265,6 +280,7 @@ export function buildStreamBedMesh(stream, material, bbox, surfaceAt, sp = strea
         for (let r = rowStart; r < row - 1; r++) {
             for (let c = 0; c < COLS - 1; c++) {
                 const l0 = r * COLS + c, r0 = l0 + 1, l1 = (r + 1) * COLS + c, r1 = l1 + 1
+                if (onRoad[l0] | onRoad[r0] | onRoad[l1] | onRoad[r1]) continue
                 indices.push(l0, r0, l1,  r0, r1, l1)
             }
         }
