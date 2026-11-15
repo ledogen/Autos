@@ -40,10 +40,10 @@
 //  14. IMPORT DISCIPLINE — the board imports only its tables, seed.js and economy.js, and never
 //      reads Math.random.
 import { readFileSync } from 'node:fs'
-import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, formatDue, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, rewardsIn, itemCost, rewardValue } from '../src/offer-board.js'
+import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, formatDue, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, pickReward, rewardsIn, itemCost, rewardValue, windowPick } from '../src/offer-board.js'
 import { ITEMS } from '../data/items.js'
-import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARD_CATS, RARE_PULL, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, ITEM_COST_FRAC } from '../data/offers.js'
-import { basePay, payRange, formatMoney, rankTable } from '../src/economy.js'
+import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARD_CATS, RARE_PULL, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, ITEM_COST_FRAC, REWARD_WINDOW_LO, REWARD_WINDOW_HI } from '../data/offers.js'
+import { basePay, payRange, regionTier, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
 
 // Could POI `q`'s rolled name have come from one of its class's forms? Each form becomes a regex
@@ -928,6 +928,44 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     // QUAL-36 (DEC-179): an Impatient giver always says one of the owner's impatient lines.
     check('QUAL-36: an impatient giver says an impatient line, every time', ids.slice(0, 200).every(id => GIVER_LINES.impatient.includes(giverLine(id, 'note', true))))
     check('QUAL-36: haul stock floor is the 1-deed line (18)', HAUL_STOCK[0] === 18)
+}
+
+// ── DEC-204: the reward price window ────────────────────────────────────────────────────────────
+{
+    const at = REWARD_LIST.filter(w => w.gates.includes('A'))
+    const c = (x) => itemCost(x.id)
+    for (const top of [8, 15, 40]) {
+        const lo = top * REWARD_WINDOW_LO, hi = top * REWARD_WINDOW_HI
+        const ok = [0.01, 0.3, 0.6, 0.99].every(u => { const w = windowPick(at, u, top); return c(w) >= lo && c(w) <= hi })
+        check(`DEC-204: top $${top}: every draw lands inside ${REWARD_WINDOW_LO}-${REWARD_WINDOW_HI}x`, ok)
+    }
+    const lo = 1e4 * REWARD_WINDOW_LO
+    check('DEC-204: nothing in the window -> a cheaper item', [0.01, 0.5, 0.99].every(u => c(windowPick(at, u, 1e4)) < lo))
+    check('DEC-204: nothing cheaper either -> the cheapest there is', c(windowPick(at, 0.5, 0.001)) === Math.min(...at.map(c)))
+    check('DEC-204: no top figure -> the plain weighted pick', windowPick(at, 0.37, 0) === pickReward(at, 0.37))
+    check('DEC-204: the cap min(cost, paid) stays', itemCost('engineStock', 3) === 3)
+    // On a real board: every planned bonus is priced inside the window of its OWN card's top figure (or falls back
+    // cheaper / cheapest) and keeps its gate.
+    let n = 0, bad = 0, moved = 0
+    for (const seed of [1, 2, 3, 6, 11, 99]) {
+        const b = make(seed)
+        for (let t = T0; t < T0 + 24 * 5; t += 3) for (const q of POIS) for (const o of b.offers(q.id, t)) {
+            if (!b.spec(o)?.bonus) continue
+            const par = 300, m = b.planDistinct(o, () => ({ par, distance: 2000, endPoiId: null }))
+            const sp = b.spec(o)
+            if (!m || !sp.bonus) continue
+            n++
+            const top = payRange(par, regionTier(1), sp.payMult, sp.tipMult ?? 1).max
+            const cost = itemCost(sp.bonus.rewardId), lo = top * REWARD_WINDOW_LO, hi = top * REWARD_WINDOW_HI
+            const cat = REWARD_LIST.find(w => w.id === sp.bonus.rewardId).cat   // fallback is the cheapest of the pool it was drawn from: at least no dearer than its own category's cheapest at the gate
+            const pool = REWARD_LIST.filter(w => w.cat === cat && w.gates.includes(sp.bonus.gate)).map(w => itemCost(w.id))
+            if (!(cost >= lo && cost <= hi) && !(cost < lo) && cost !== Math.min(...pool)) bad++
+            if (sp.bonus.gate !== sp.rawBonus.gate) bad++
+            if (sp.bonus.rewardId !== sp.rawBonus.rewardId) moved++
+            if (m.bonus !== sp.bonus) bad++
+        }
+    }
+    check(`DEC-204: ${n} planned bonuses, none outside the rule (${moved} re-picked by the window)`, n > 50 && bad === 0, `bad ${bad}`)
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall offer-board checks passed')
