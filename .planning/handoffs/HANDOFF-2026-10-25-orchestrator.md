@@ -178,3 +178,7 @@ run-review, service-center-look, top-items-path.
 **Dev servers up:** :8000 main · :3731 Lane A · :3282 PERF-49 levers · :3885 FEAT-221 exposure · :8010 dashboard.
 **Smoke notes:** flaky above load ~13; until BUG-173 lands, an "opening ... on the shoulder" failure is the known coin
 toss (rerun `SMOKE_STEPS=boot,opening`). Never merge while a smoke runs.
+
+**IN FLIGHT 11-15:** main @ c5433368 = small-1115 + run-shape (tutorial errand) + shopui-1115 merged; smoke running -> wip/orch/smoke-1115a.log. Do NOT merge until it ends. PERF-49 (land/perf-49-spikes @ af450f09) merges next once its gate log shows RUN-ALL green, then its own smoke.
+
+**SMOKE RED on main @ fbc98de7 (11-15):** step "opening" fails alone, twice, load 6: "the sim stopped stepping, 0.02 of 1 sim-s in · 822480141" right after "worst day: the shop" (logs wip/orch/smoke-1115b.log, smoke-1115b-opening.log). All other steps passed up to it. Lane A agent is on it in CarGame-run-shape. Do not merge PERF-49 or anything else until main is green.
