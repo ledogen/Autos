@@ -1512,12 +1512,17 @@ const STEPS = [
     console.log('  worst day: the tow')
     await tap('x'); await readCards()   // the recovery menu's card
     check(await until(() => js('!!document.querySelector("#recovery-card button[data-act=towShop]:not([disabled])")'), 2000), 'the recovery menu offers no tow to a shop')
+    await js(`window.__towTrace = []; (() => { const t0 = performance.now(), id = setInterval(() => { const p = window.__vs.position, q = window.__poi().nearest(p.x, p.z), pe = document.getElementById("poi-prompt")
+      window.__towTrace.push([Math.round(performance.now() - t0), window.__vs.parked, +p.x.toFixed(1), +p.z.toFixed(1), q && q.type, q && +Math.hypot(q.x - p.x, q.z - p.z).toFixed(1), window.__mission()?.state, window.__story?.()?.isEntering(),
+        document.getElementById("svc-screen").checkVisibility(), window.__tutorial().phase, pe.style.display, pe.textContent.slice(0, 40), +window.__day().clockH().toFixed(2), document.getElementById("inv-screen")?.classList.contains("open"), document.getElementById("recovery-card")?.checkVisibility(), document.getElementById("svc-screen").className, document.getElementById("pump-display").classList.contains("on")])
+      if (window.__towTrace.length > 80) clearInterval(id) }, 50) })()`)
     await js('document.querySelector("#recovery-card button[data-act=towShop]").click()')
     // The shop opens on the parked edge after the tow's reseat, which awaits the seat like a teleport: seat()'s ceiling.
     check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 30000), `the tow did not land at an open shop: ${await js(`JSON.stringify({ parked: window.__vs.parked,
       v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent,
       shop: (() => { const p = window.__vs.position, q = window.__poi().list().filter(q => q.type === 'autoShop').sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0], s = q && window.__towSeat(q)
-        return s && { fromSeat: +Math.hypot(p.x - s.x, p.z - s.z).toFixed(1), fromMarker: +Math.hypot(p.x - q.x, p.z - q.z).toFixed(1) } })(), h: window.__day().clockH() })`)}`)
+        return s && { fromSeat: +Math.hypot(p.x - s.x, p.z - s.z).toFixed(1), fromMarker: +Math.hypot(p.x - q.x, p.z - q.z).toFixed(1) } })(), h: window.__day().clockH(), trace: window.__towTrace })`)}`)
+    console.log(`  tow trace: ${await js('JSON.stringify(window.__towTrace.slice(0, 40))')}`)
     check((await wd()).towed, 'the tow was not counted (the night beat)')
     console.log('  worst day: the shop')
     await readCards()   // the shop's cards
