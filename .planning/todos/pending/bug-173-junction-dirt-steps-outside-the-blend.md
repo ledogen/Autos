@@ -1,5 +1,5 @@
 ---
-id: BUG-158
+id: BUG-173
 type: bug
 status: open
 severity: minor
@@ -9,7 +9,7 @@ relates: BUG-156 (the limb-birth step, fixed in the ruled blend), BUG-130 / FEAT
 ---
 lane: C
 
-# BUG-158: hard steps in junction dirt that do not come from the ruled blend
+# BUG-173: hard steps in junction dirt that do not come from the ruled blend
 
 ## Next steps
 Lane C, a fresh agent with the full budget (2026-11-14: not started; it was queued behind BUG-159). First rebuild the
@@ -46,3 +46,4 @@ which smooths the steps around it but leaves this one at 2.9 m.
 ## Tracker
 - [ ] Each site above: no step over 5 cm inside one 5 cm move, measured with the same walk.
 - [ ] Re-run BUG-156's census (`wip/bug-156/census.mjs` + `cmp.mjs`) on its 8 seeds: no gore line worse than before.
+- 2026-11-15 (orchestrator): renumbered BUG-158 → BUG-173. The id was minted twice: this ticket by Lane B on 11-09, and the owner's "wheels fail from kerbs and airtime" on 11-11 (closed, keeps BUG-158). Commits and the branch land/bug-158b made before today say 158 and mean this ticket.

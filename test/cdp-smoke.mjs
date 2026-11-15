@@ -59,9 +59,11 @@ if (!await until(() => fetch(`http://localhost:${HTTP}/`).then(r => r.ok, () => 
 
 const { cleanup } = launchChrome('about:blank', { port: CDP, headed: process.argv.includes('--headed') })
 const client = await connect({ port: CDP })
-// SMOKE_CPU_THROTTLE=4: this Chrome runs its page 4× slower (CDP Emulation) — a loaded machine's timing, repeatably,
-// without loading the machine. For chasing load-only flakes; a landing never sets it.
-if (process.env.SMOKE_CPU_THROTTLE) await client.cmd('Emulation.setCPUThrottlingRate', { rate: +process.env.SMOKE_CPU_THROTTLE })
+// SMOKE_THROTTLE=4 (or SMOKE_CPU_THROTTLE): this Chrome runs its page 4× slower (CDP Emulation) — a loaded machine's
+// timing, repeatably, without loading the machine. For chasing load-only flakes; a landing never sets it. INFRA-15:
+// the full smoke passes at 4×.
+const THROTTLE = +(process.env.SMOKE_THROTTLE ?? process.env.SMOKE_CPU_THROTTLE ?? 0)
+if (THROTTLE > 1) await client.cmd('Emulation.setCPUThrottlingRate', { rate: THROTTLE })
 
 // Every console error / uncaught exception, tagged with the step that was running.
 let step = 'boot'
@@ -826,10 +828,14 @@ const STEPS = [
   // the return radius facing in, with every barricade back where it stood.
   ['edge', async () => {
     const P = await js('(() => { const p = window.__poi(), b = p.barricades()[4], c = p._built; return { b, c } })()')
+    // Steps share one session and build on each other (INFRA-15): the rows exist only in the run the "story" step starts.
+    check(P.b, 'no barricade row: the edge step needs the run the "story" step starts — SMOKE_STEPS=boot,story,edge')
     const f = { x: -Math.sin(P.b.yaw), z: -Math.cos(P.b.yaw) }   // the striped face: back into the area
     // A row far off is plain models; near the truck its three barricades are loose bodies (main.js).
     const row = `window.__debris._live.filter(r => r.kind === "roadBarrier" && Math.hypot(r.mesh.position.x - ${P.b.x}, r.mesh.position.z - ${P.b.z}) < 8)`
     check(await js(`${row}.length`) === 0, 'a row 2 km from the truck already has bodies (they would fall through the world)')
+    await seat(P.b.x + f.x * 150, P.b.z + f.z * 150, Math.atan2(f.x, f.z))   // first OUTSIDE the bodies' 120 m, to let the ground stream (INFRA-15)
+    await simFor(5)
     await seat(P.b.x + f.x * 30, P.b.z + f.z * 30, Math.atan2(f.x, f.z))   // 30 m inside, nose at the row
     check(await until(() => js(`(window.__edgeRow = ${row}).length === 3`), 2000), `the row near the truck has ${await js(`${row}.length`)} bodies, want 3`)
     await simFor(1)   // settled on the deck
@@ -838,9 +844,15 @@ const STEPS = [
     await crank()
     if (await js('window.__vs.parked')) await tap(' ')
     const black = 'document.getElementById("camp-fade").classList.contains("on")'
+    // Moved is latched in-page, every rendered frame: the fade stands the row again EDGE_FADE_S (wall) after it goes
+    // black, and under load the poll below saw black only after that, reading a row already back (INFRA-15).
+    await js(`window.__edgeMoved = false; { const rows = window.__edgeRow, b0 = ${JSON.stringify(before)}
+      const f = () => { if (rows.some((r, i) => Math.hypot(r.mesh.position.x - b0[i][0], r.mesh.position.z - b0[i][2]) > 0.5)) window.__edgeMoved = true
+        else if (rows.every(r => window.__debris._live.includes(r))) requestAnimationFrame(f) }
+      requestAnimationFrame(f) }`)
     await key('w', true)
     const went = await untilSim(() => js(black), 20)
-    const smashed = went && (await js(pos)).some((p, i) => Math.hypot(p[0] - before[i][0], p[2] - before[i][2]) > 0.5)
+    const smashed = went && await js('window.__edgeMoved')
     await key('w', false)
     check(went, `the edge never faded: the truck at ${(await js(`Math.hypot(window.__car().x - ${P.c.x}, window.__car().z - ${P.c.z})`)).toFixed(0)} m`)
     check(smashed, 'the truck reached the fade line without moving a barricade')
@@ -853,14 +865,13 @@ const STEPS = [
     // it the way `before` was — three bodies, then a sim second to settle (INFRA-08: under load the respawn lags the
     // fade, and a read a wall second after it caught the new bodies mid-settle, 5–7 cm off; idle reads 0.0 cm).
     await until(() => js(`${row}.length === 3`), 2000)
-    await simFor(1)
     const after = await js(`${row}.map(r => r.mesh.position.toArray())`)
     const off = after.length === 3 ? Math.max(...after.map((p, i) => Math.hypot(p[0] - before[i][0], p[1] - before[i][1], p[2] - before[i][2]))) : Infinity
     // 15 cm, not 5: a 1 cm drop onto the sloped deck rocks to rest a few cm from where it landed, and under load that
     // landing is not repeatable — Box3D orders contacts by body creation, and streaming creates terrain/prop bodies in
     // another order (measured 11-06 at 6×: the first row's rest scatters 1–2 cm run to run, the reset row lands 1–6 cm
     // from it, both at rest 3 sim-s later; idle, 0.0 cm). Not reset at all is metres: a knock is > 0.5 m above.
-    check(off < 0.15, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off`)
+    check(off < 0.15, `the barricades are not back: ${after.length}/3, worst ${off.toFixed(2)} m off · Δxyz ${JSON.stringify(after.map((p, i) => p.map((v, k) => +(v - before[i][k]).toFixed(2))))}`)
     console.log(`  edge: smashed through, back at ${back.r.toFixed(0)} m facing in, the row reset (worst ${(off * 100).toFixed(1)} cm)`)
   }],
   ['papers', async () => {
@@ -1483,7 +1494,9 @@ const STEPS = [
     await tap('x'); await readCards()   // the recovery menu's card
     check(await until(() => js('!!document.querySelector("#recovery-card button[data-act=towShop]:not([disabled])")'), 2000), 'the recovery menu offers no tow to a shop')
     await js('document.querySelector("#recovery-card button[data-act=towShop]").click()')
-    check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 8000), 'the tow did not land at an open shop')
+    // The shop opens on the parked edge after the tow's reseat, which awaits the seat like a teleport: seat()'s ceiling.
+    check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 30000), `the tow did not land at an open shop: ${await js(`JSON.stringify({ parked: window.__vs.parked,
+      v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent })`)}`)
     check((await wd()).towed, 'the tow was not counted (the night beat)')
     console.log('  worst day: the shop')
     await readCards()   // the shop's cards
