@@ -11050,10 +11050,16 @@ export class RoadSystem {
         // _carveCrossSection uses (QUAL-06/07) — ramp = max(shoulderWidth, toeExt−carveHalfWidth), C1 at
         // both ends. So the connector flanks get an ordinary graded road cut/fill bench (no wall/sawtooth
         // at the asphalt edge), identical in shape to a run's embankment.
-        const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)
+        // BUG-158: the ramp ENDS at the toe. The toe is anchored at halfWidth + shoulder (not carveHalfWidth, as a run's
+        // is), so on a shallow bank it falls inside carveHalfWidth + shoulderWidth, and a ramp of max(shoulderWidth, ·)
+        // from carveHalfWidth still stood blendW > 0 there: the connector vanished at the toe with up to a third of its
+        // weight (seed 11's hairpin (−1396.7, −740.3)). The core gives way instead — never below halfWidth, because
+        // toeExt ≥ halfWidth + shoulderWidth — and the toe (the earthwork footprint) stays where it was.
+        const coreW = Math.min(carveHalfWidth, toeExt - shoulderWidth)
+        const ramp = toeExt - coreW
         let blendW
-        if (bestLat < carveHalfWidth) blendW = 1.0
-        else { const u = Math.min(1, (bestLat - carveHalfWidth) / ramp); blendW = 1.0 - u * u * (3.0 - 2.0 * u) }
+        if (bestLat < coreW) blendW = 1.0
+        else { const u = Math.min(1, (bestLat - coreW) / ramp); blendW = 1.0 - u * u * (3.0 - 2.0 * u) }
         // Longitudinal end-feather `dom`: the connector rides ONTO each leg over its ribbon-ride ends, so
         // near arc-length 0 / totalLen the connector grade should hand back to the RUN grade rather than
         // hard-cut to null at the anchor (where a run grazing the connector's end saw a step, co(flat) vs
