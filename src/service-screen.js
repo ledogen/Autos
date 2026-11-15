@@ -69,7 +69,9 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
   padding: 12px 16px 14px; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 64px); box-sizing: border-box;
   display: flex; flex-direction: column; }
 /* FEAT-212: the card's body scrolls; the cart's subtotal and the back button stay on its foot, below it */
-#svc-screen .sv-body { overflow-y: auto; min-height: 0; }
+/* BUG-170: the rows bleed 6 px each side (margin 0 -6px) so their hover bar reaches past the text; the scrolling body
+   carries that 6 px as padding (and gives it back as margin), else the row's right edge overhung it and scrolled sideways. */
+#svc-screen .sv-body { overflow-y: auto; min-height: 0; padding: 0 6px; margin: 0 -6px; }
 #svc-screen .sv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 #svc-screen .sv-title { flex: 1; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-story); }
 #svc-screen .sv-wallet { font-size: 14px; color: var(--money); text-align: right; }

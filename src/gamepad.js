@@ -87,7 +87,7 @@ export const BINDINGS = [
   { action: 'downshift (manual)',    key: 'q',         pad: 'X',  button: 2 },
   { action: 'ignition (hold)',       key: 'i',         pad: 'Y',  button: 3 },
   { action: 'pump (hold)',           key: 'f',         pad: 'A (pump open)' },
-  { action: 'camera mode',           key: 'c',         pad: 'right stick click', button: 11 },
+  { action: 'camera mode (service: next viewpoint)', key: 'c',         pad: 'right stick click', button: 11 },
   { action: 'headlights',            key: 'l',         pad: 'left stick click', button: 10 },
   { action: 'pause',                 key: 'Escape',    pad: 'Start', button: 9 },
   { action: 'back (menus, cards, map)', key: 'Esc',     pad: 'B' },
