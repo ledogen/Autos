@@ -11257,7 +11257,7 @@ function loop (t) {
 // that EXISTED at boot. Streamed terrain, road tiles, props and the truck's .glb arrive later, and
 // each would otherwise compile one variant per lamp state the first time that state appears — the
 // "first headlights lag". So: if a render compiled anything new (the program count moved since our
-// own last compile), sweep every light state again, ONE per frame (~1.2 ms each on a warm scene).
+// own last compile), sweep every light state again, ONE per frame, each a 1-pixel draw (BUG-175).
 // A render that compiles something mid-sweep restarts it, so nothing that arrived during it is missed.
 let _lampSweepI = -1, _lampSweepProgs = -1
 function _lampSweepStep () {
