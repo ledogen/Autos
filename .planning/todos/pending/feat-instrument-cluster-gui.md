@@ -285,3 +285,9 @@ beams, every lamp lit, low beams, one lamp dead, START, key off) plus one in-gam
 `wip/feat-34/r3-chrome/sheet.png` (machine worktree, git-invisible). Harness `wip/feat-34/cluster-shots.mjs` +
 `cluster-shot.html` (the real `GaugeCluster` in a state from the query string) and `ingame-shot.mjs`. The only gate
 that covers `cluster.js` is cdp-smoke (the orchestrator's).
+
+## Round 5 (Lane B, 2026-11-15) — built, awaits the owner's look
+
+Owner on card feat34-r4-look: "move the key back to the bottom right corner. then grow the speedo and tach gauges so they fill the rectangular frame nicely. it looks like we could bump their size 10%..." (DEC-267, DEC-268).
+Key now in the bottom-right corner (`END_X`, `KEY_CORNER`); tach well 68 → 75, speedo 76 → 84, POD_E 39 → 46, W 466, H 240; needles, odometer and lamp offsets follow. Frame grew to fit (the key cannot sit nearer the corner than 103 from the speedo hub, so the right end is wider than round 4's).
+Shots: `wip/feat-34/shots/r5/{before,after,after-lamps}.png` (before = round 4 at 55 mph). Not run: gates (cluster.js is not in a gate's closure; node import ok).
