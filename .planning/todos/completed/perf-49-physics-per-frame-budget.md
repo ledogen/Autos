@@ -1,7 +1,7 @@
 ---
 id: PERF-49
 type: perf
-status: open
+status: closed
 severity: minor
 opened: 2026-11-14
 source: owner, 2026-11-14, perf42-reopen-carve card — "i think we're looking at the wrong thing. instead of worrying about the spikes we should be worried about the physics taking 3ms per frame. that feels like a huge budget. i feel like we can get down to 1-2 ms without me perceiving a difference. what are the main levers? i like the dense point sampling for rolling over obstacles things slowly but i think it provides little utility at high speeds except maybe high impact and collision handling (tire pop stability)"
@@ -142,3 +142,5 @@ owner's 3 ms read scales the same, 3 → ~2 ms. Getting to a third of today need
 ## Decisions
 - 2026-11-15, owner (card perf49-kerb-drive): "C feels the same, keep all three (drop 2)" · "nice wins" (DEC-232).
 - 2026-11-14, owner (card perf49-physics-budget): "0.9ms / frame is chill. chase the perf-43 levers to try to keep it to that. ive got tokens and a charger for days so im happy to invest in stability here now. add in lever C. all three must test well and i need to drive curbs to check game feel before they land" (DEC-208).
+
+**Resolution (2026-11-15):** merged into main e614e2d1 after the owner's kerb drive (DEC-232: levers 1 + C + the two exact spike cuts, lever 2 dropped). Gates 102/102 on the merged branch, main smoke 26/26 (wip/orch/smoke-1115f.log). Per physics step, main -> landing: median 6.99 -> 4.67 M instructions, p99 53.6 -> 29.5, worst 127 -> 90.
