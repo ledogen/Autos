@@ -8149,6 +8149,31 @@ export class RoadSystem {
     // point's polyline foot is refined straight from there (_refineFoot's exact line / arc step, one or two poses) instead
     // of the ±6 m grid search — the same foot wherever it is the window's only one, which is everywhere off a bend's inner
     // half. A foot found by the search is added to the patch for the samples after it.
+    // BUG-158: near a run end, decide END (polar cap) or INTERIOR by the frame the carve is priced in, not the polyline.
+    // The interior frame is the analytic centreline (_refineFrame), whose end ray (the normal at s = 0 or s = length) is
+    // not the polyline's: on a run that starts in a 12 m bend the two part by ~3°, and a point between them read the
+    // polyline's end cap on one side and the analytic foot 1.4 m in on the other (0.67 m in the gore 25 m off seed
+    // 1074499174's node (746, 432)). Decided by the analytic foot, the switch lies on the analytic end ray, where both
+    // agree: the foot IS the terminus, arc = the end, |lat| = the radius to the terminus (the cap's lat'). An end's frame
+    // takes the analytic end tangent for the same reason (its arc past the end, (p − terminus)·t, is 0 on that ray).
+    // Returns pr itself (with the interior frame cached as pr.rf) or a replacement record; no centreline → pr unchanged.
+    _reframeEnd(e, pr, wx, wz) {
+        if (!e?.centerline || !e.polyCum || !e.points) return pr
+        const ao = e.arcOrigin ?? 0, L = e.polyCum[e.polyCum.length - 1], cum = pr.arcS + ao
+        if (cum > ANALYTIC_REFINE_WINDOW && cum < L - ANALYTIC_REFINE_WINDOW) return pr
+        const f = this._refineFrame(e, pr.offEnd ? { arcS: pr.arcS, sCL: pr.sCL, offEnd: false } : pr, wx, wz)
+        if (!f) { if (!pr.offEnd) pr.rf = null; return pr }
+        const fc = f.arcS + ao, atStart = fc <= 1e-9, atEnd = fc >= L - 1e-9
+        const lat = (wx - f.fx) * f.tz - (wz - f.fz) * f.tx
+        if (!atStart && !atEnd) {
+            if (!pr.offEnd) { pr.rf = f; return pr }
+            return { fx: f.fx, fz: f.fz, tx: f.tx, tz: f.tz, arcS: f.arcS, signedLat: lat, d2: (wx - f.fx) ** 2 + (wz - f.fz) ** 2, offEnd: false, sCL: pr.sCL, rf: f }
+        }
+        const t = { x: f.fx, z: f.fz }   // the centreline's own end (the polyline's terminus vertex, to rounding)
+        return { fx: t.x, fz: t.z, tx: f.tx, tz: f.tz, arcS: (atStart ? 0 : L) - ao, signedLat: (wx - t.x) * f.tz - (wz - t.z) * f.tx,
+                 d2: (wx - t.x) ** 2 + (wz - t.z) ** 2, offEnd: true, sCL: pr.sCL }
+    }
+
     _refineFrame(e, pr, wx, wz) {
         if (!e || pr.offEnd || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return null
         const arcOrigin = e.arcOrigin ?? 0
@@ -8333,6 +8358,7 @@ export class RoadSystem {
         const nearR = footHW / Math.cos(29 * Math.PI / 180) + HINT_REACH_M
         let nearOut = false
         const consider = (runKey, pr) => {
+            pr = this._reframeEnd(this._network.get(runKey), pr, wx, wz)   // BUG-158: end or interior by the analytic frame
             // QUAL-30: the ceded-ownership exclusion is gone with cededSpans. A wye's loser had
             // the winner's course verbatim over its ceded stretch, so both runs' points competed
             // for surface ownership on the same ground and the loser had to stand down. A promoted
@@ -8414,7 +8440,7 @@ export class RoadSystem {
         // Analytic frame refinement (_refineFrame). Both carve consumers (terrain _buildCarveTable,
         // physics _sampleCarveWorld) rebuild signedLat/arcSEff from point+tangent, so they inherit it.
         const ce = this._network.get(bestRunKey)
-        const hit = this._refineFrame(ce, bestPr, wx, wz)
+        const hit = bestPr.rf !== undefined ? bestPr.rf : this._refineFrame(ce, bestPr, wx, wz)
         if (hit) ({ fx, fz, tx, tz, arcS, k = 0, lo = -Infinity, hi = Infinity } = hit)   // k, lo, hi: for a reused hint (_hintHolds)
 
         // FEAT-40 rival passes: every DISTINCT competing carve field — the winning run's own other passes
@@ -8429,7 +8455,7 @@ export class RoadSystem {
         const rivalOf = (runKey, q, end) => {
             // Same analytic frame the winner gets, or the flip between them is a step (0.45 m at 27 m
             // out on a seed-7 bend, chord vs centreline).
-            const f = end ? null : this._refineFrame(this._network.get(runKey), q, wx, wz)
+            const f = end ? null : q.rf !== undefined ? q.rf : this._refineFrame(this._network.get(runKey), q, wx, wz)
             return f
                 ? { runKey, arcS: f.arcS, lat: (wx - f.fx) * f.tz - (wz - f.fz) * f.tx, x0: wx, z0: wz, tx: f.tx, tz: f.tz, k: f.k ?? 0, end: null }
                 : { runKey, arcS: q.arcS, lat: q.signedLat, x0: wx, z0: wz, tx: q.tx, tz: q.tz, end: end ? { x: q.fx, z: q.fz } : null }
