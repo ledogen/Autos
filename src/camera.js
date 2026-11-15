@@ -156,6 +156,10 @@ export function snapCamera () { _snapNext = true }
 // Freecam still wins outright: it is the dev tool and must never be trapped by a game state.
 let focusTarget    = null              // THREE.Vector3 or null
 const FOCUS_RADIUS = 5                 // m — the fire fills the frame (owner, 2026-10-01: 10 → 7 → 5)
+// FEAT-220: a LOCKED focus (the service center) has a fixed list of viewpoints instead of a free orbit: drag and the
+// right stick do nothing, and C (the pad's right-stick click) snaps to the next one. null = unlocked.
+let focusViews     = null              // [{ p, theta, phi, radius }] or null
+let focusViewIdx   = 0
 let focusRadius    = FOCUS_RADIUS      // the live focus's radius (the service screen frames the whole truck)
 const FOCUS_PHI    = 0.45              // rad — a gentle look-down set on entry; drag from there
 
@@ -173,7 +177,7 @@ document.addEventListener('mousedown', e => {
   // NOT while the menu stage owns the screen (body.stage-on). On a load the menu overlay is gone, so
   // the click DID land on the canvas: this took the pointer lock, which freezes clientX/Y, and the
   // stage's own drag-orbit (src/stage.js, client deltas) died for the whole load (owner, 2026-10-05).
-  if (e.button === 0 && (cameraMode === 'chase' || cameraMode === 'hood')
+  if (e.button === 0 && !focusViews && (cameraMode === 'chase' || cameraMode === 'hood')
       && e.target === document.querySelector('canvas')
       && !document.body.classList.contains('stage-on')) {
     isDragging = true
@@ -304,6 +308,8 @@ document.addEventListener('keydown', e => {
     } else {
       _exitFreecam()
     }
+  } else if (focusViews && cameraMode !== 'freecam') {
+    _seatView((focusViewIdx + 1) % focusViews.length)
   } else {
     if (cameraMode !== 'freecam') {
       cameraMode = cameraMode === 'chase' ? 'hood' : 'chase'
@@ -379,7 +385,7 @@ export function updateCamera (camera, vehicleState, dt, followDt = dt) {
   if (pedal && !_pedalWas && still) padLookT = 0
   _pedalWas = pedal
   // FEAT-133: not while the map is open — there the right stick pans the map.
-  if (cameraMode !== 'freecam' && !pad.mapActive() && (pad.lookX || pad.lookY)) {
+  if (cameraMode !== 'freecam' && !focusViews && !pad.mapActive() && (pad.lookX || pad.lookY)) {
     padLookT = PAD_PARAMS.orbitHold
     const r = PAD_PARAMS.orbitRate * dt
     if (cameraMode === 'hood') {   // stick right / up = look right / up
@@ -599,12 +605,25 @@ export function isPadLooking () { return padLookT > 0 }
  * @param {{theta?:number, phi?:number, radius?:number}} [o]
  */
 export function setCameraFocus (p, { theta = null, phi = null, radius = FOCUS_RADIUS } = {}) {
-  if (!p) { focusTarget = null; return }
+  if (!p) { focusTarget = null; focusViews = null; return }
   if (!focusTarget) orbitPhi = FOCUS_PHI   // seat the look-down once, on entry; drag owns it after
   if (phi !== null) orbitPhi = phi
   if (theta !== null) orbitTheta = theta
   focusRadius = radius
   focusTarget = new THREE.Vector3(p.x, p.y, p.z)
+}
+
+/** FEAT-220: lock the camera to `views` (the first is seated now) until setCameraFocus(null) clears the focus. */
+export function setCameraViews (views) {
+  focusViews = views
+  _seatView(0)
+}
+
+function _seatView (i) {
+  focusViewIdx = i
+  const v = focusViews[i]
+  setCameraFocus(v.p, v)
+  snapCamera()   // a viewpoint is a cut, never a glide through the wall
 }
 
 /**

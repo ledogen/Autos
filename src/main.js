@@ -38,7 +38,7 @@ import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90
 import { updateVehicle, setLaunchHold, setParkLock, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { PARK_SPEED } from './park-brake.js'
 import { makeIgnitionState, keyPosition, seized, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -3764,10 +3764,12 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
     const c = _servicePoi?.camera   // the screen opens only parked in the box (_serviceInReach)
     if (c) {
       const at = ([x, y, z]) => ({ ...dropZoneWorld(_servicePoi, { x, z }), y: _servicePoi.baseY + y })
-      const e = at(c.eye), l = at(c.look), dx = e.x - l.x, dy = e.y - l.y, dz = e.z - l.z, r = Math.hypot(dx, dy, dz)
-      setCameraFocus(l, { theta: Math.atan2(dx, dz), phi: Math.asin(dy / r), radius: r })
-      snapCamera()   // "snaps": no glide in from the chase position, through the bay's wall
-      return
+      const e = at(c.eye), l = at(c.look)
+      const view = (e, l) => { const dx = e.x - l.x, dy = e.y - l.y, dz = e.z - l.z, r = Math.hypot(dx, dy, dz)
+        return { p: l, theta: Math.atan2(dx, dz), phi: Math.asin(dy / r), radius: r } }
+      // FEAT-220: the camera is locked to these (the wall hides the truck from a free orbit); C / right-stick click cycles.
+      setCameraViews([view(e, l), ...(_servicePoi.cameraViews ?? []).map(v => view(at(v.eye), at(v.look)))])
+      return   // each viewpoint is a cut (camera.js), no glide in from the chase position, through the bay's wall
     }
     const p = vehicleState.position, f = new THREE.Vector3(0, 0, -1).applyQuaternion(vehicleState.quaternion)
     setCameraFocus({ x: p.x, y: p.y, z: p.z }, { theta: Math.atan2(f.x, f.z) + 0.7, radius: 7.5 })
