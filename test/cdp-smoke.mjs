@@ -1559,6 +1559,8 @@ const STEPS = [
     const lq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'larrysHouse'); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     await js(`window.__seated = false; window.__teleport(${lq.x}, ${lq.z}, ${lq.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), "the teleport to Larry's never seated")
+    // The truck seats latched, which counts as parked: his hand-over may open a beat after the seat (as the joint's paycheck).
+    await readCards(800, 'Uncle Larry')
     if (await speaker() !== 'Uncle Larry') { await simFor(1); await park(true) }
     check(await until(async () => await speaker() === 'Uncle Larry', 5000), `parked at Larry's with his pack, no hand-over (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
     await readCards()
