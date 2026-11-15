@@ -71,6 +71,9 @@ export const SLOTS = {
     headlightR:   { name: 'Right headlight',   takes: 'headlight', hours: 0.5, tracks: ['headlightR'] },
 }
 
+/** FEAT-222: every part id a socket takes (the debug part selector's dropdown; the inverse of socketsFor). */
+export const partChoices = (socket) => Object.keys(PARTS).filter(id => !PARTS[id].mounted && PARTS[id].slot === takes(socket))
+
 /** FEAT-176: ids retired when front and rear springs and shocks became one part each → the part now. A run save
  *  written before is renamed on load (src/save.js), so a saved truck, inventory or shelf keeps its parts. */
 export const RENAMED = {

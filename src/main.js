@@ -2595,6 +2595,7 @@ if (_PROF) {
 // Phase 7 (SEED-04 / D-09): rebuildTerrainFull = Path B debounced rebuild (Worker reinit + re-seat);
 //   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
+  parts: partsSystem,   // FEAT-222: the debug part selector fits through the shop's own path
   // The ramp is a LAB rig: the mesh shows only there, and the chassis's engine prism follows the
   // toggle too (the wheels' RAMP_TRIS already did) — no invisible ramp, no ramp in free roam.
   setRampVisible:      (v) => {
