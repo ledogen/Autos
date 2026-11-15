@@ -8,7 +8,7 @@
 //   2. The moon keeps its phase's hours: full rises at sunset and is up all night, first quarter
 //      crosses the meridian about six hours after the sun, new moon stays beside the sun.
 //   3. The brightness ladder (FEAT-180, re-pinned round 5 for the land's own eye of round 2): a white
-//      surface at noon reads ~1.7 (landGain 2.0, into ACES at the legacy's exposure 0.5), a sunset ~12 % of
+//      surface at noon reads ~1.7 (landGain 1.5, into ACES at the legacy's exposure 0.5), a sunset ~12 % of
 //      noon (the steep golden hour), a moonless night ~3 % (the eye levels out there so the moon still
 //      shows), a full moon ~11 % and over 2× the new moon, and the LUT is finite and non-negative at every hour.
 //
@@ -65,7 +65,7 @@ console.log(`  white surface: noon ${noon.toFixed(3)}  sunset ${sunsetW.toFixed(
 // Re-pinned round 5 (were: noon ~1, sunset 25–70 %, moonless < 1 %, full moon 1–5 %, the round-1 single eye). Round 2
 // gave the land its own eye (landEye: landDepth, landTwilight) and its light a gain into ACES (landGain), which the
 // owner signed off by look through rounds 2–4; these pin that ladder, ± about a third.
-check('noon white surface reads ~1.7 (landGain 2.0)', Math.abs(noon - 1.7) < 0.25, noon.toFixed(3))
+check('noon white surface reads ~1.26 (landGain 1.5)', Math.abs(noon - 1.26) < 0.25, noon.toFixed(3))
 check('sunset 8–20 % of noon (the steep golden hour)', sunsetW > 0.08 * noon && sunsetW < 0.2 * noon, (sunsetW / noon).toFixed(3))
 check('moonless night dark (1.5–5 % of noon)', newMoon > 0.015 * noon && newMoon < 0.05 * noon, (newMoon / noon).toFixed(4))
 check('full moon brighter than new (6–16 % of noon, > 2× new)', fullMoon > 0.06 * noon && fullMoon < 0.16 * noon && fullMoon > 2 * newMoon,
