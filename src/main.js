@@ -17,6 +17,7 @@
  */
 
 import * as THREE from 'three'
+import { LiveExposure } from './exposure.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, syncChassisMass, rollBalance } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
@@ -1929,6 +1930,9 @@ function applyShadowResolution (mapSize, extent) {
 // The sky, the sun and moon on their real paths, and every natural light (key, hemisphere fill, the sky fog's
 // colour) from one simulated atmosphere — see sky.js. It owns the moon disc and the background mesh.
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
+// FEAT-221 PROTOTYPE: live exposure, only with ?ae=<avg|centre|low> (src/exposure.js). Absent: never constructed.
+const liveExposure = _urlParams.has('ae') ? new LiveExposure(renderer, skySystem, _urlParams) : null
+window.__ae = () => liveExposure
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
 // NB `window.terrain` is the ground-height FUNCTION (returns metres), not the streaming system. This is the system
 // itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe, or zeroing
@@ -11160,7 +11164,11 @@ function loop (t) {
   // FEAT-211 (owner, 2026-11-14: "make the background live"): the world renders behind the map window at full rate,
   // reversing PERF-38's skip (the frozen frame); the window covers 81 % of it, which the GPU still draws.
   if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
-  else renderer.render(scene, camera)
+  else {
+    liveExposure?.update(frameTime)
+    renderer.render(scene, camera)
+    liveExposure?.meter()
+  }
   perfAdd('frame.render', performance.now() - _ptR)  // D-arc: render submit (the ~8.5 s load-cost suspect)
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.

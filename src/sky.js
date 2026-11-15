@@ -464,7 +464,9 @@ const GROUND_ALBEDO = [0.20, 0.18, 0.15]
 const GRADE_GLSL = /* glsl */`
 #ifndef SKY_GRADE
 #define SKY_GRADE
+uniform vec2 skyAE;   // x: the live exposure (FEAT-221 prototype, src/exposure.js); 1 unless ?ae= is on
 vec3 skyGrade (vec3 c) {
+  c *= skyAE.x;
   float peak = max(c.r, max(c.g, c.b));
   if (peak <= 0.76) return c;
   float np = 1.0 - 0.0576 / (peak - 0.52);
@@ -522,6 +524,7 @@ const U = {
   skySun: { value: shared(new THREE.Vector4(0, 1, 0, 0.93)) },
   skyGlare: { value: shared(new THREE.Vector4(0, 0, 0, 0)) },   // w starts OFF (Vector4 defaults w to 1)
   skyFog: { value: shared(new THREE.Vector4(1e8, 1e9, 1, 0)) },
+  skyAE: { value: shared(new THREE.Vector2(1, 0)) },            // see GRADE_GLSL; a Vector so it stays shared
 }
 for (const lib of Object.values(THREE.ShaderLib)) if (lib.uniforms.fogDensity) Object.assign(lib.uniforms, U)
 Object.assign(THREE.UniformsLib.fog, U)
@@ -831,7 +834,7 @@ export class SkySystem {
     this.ambient.groundColor.setRGB(gnd[0], gnd[1], gnd[2], THREE.LinearSRGBColorSpace)
     this.ambient.intensity = 1
     // The land's camera: the legacy's exposure, 0.5 by day to 0.36 at night, on the lamps' own clock (nightFactor).
-    this.renderer.toneMappingExposure = LAND_EXPOSURE_DAY + (LAND_EXPOSURE_NIGHT - LAND_EXPOSURE_DAY) * this.nightFactor()
+    this.renderer.toneMappingExposure = this.landExposure = LAND_EXPOSURE_DAY + (LAND_EXPOSURE_NIGHT - LAND_EXPOSURE_DAY) * this.nightFactor()
     // THE NIGHT SKY'S LEVEL (round 2's night fog cap, owner 11-08: "rebuild nighttime still isnt dark enough … i think
     // its the fog being brighter than the terrain"). At night the land sits in ACES's toe while the airglow horizon, which
     // the fog is, does not: fogged land read 4.5× (new moon) to 8× (full moon) brighter than the unfogged land beside it,
@@ -854,7 +857,9 @@ export class SkySystem {
     // horizon row continued down: half the sunset glow hung under the horizon as an orange ball, and a khaki fog filled
     // the lower half of the view. Past the draw distance is more land; at twilight it is darker than the sky. So below
     // the horizon the fog is held to beyond × flat ground (same units as the LUT: displayed linear), over the twilight.
-    U.skyFog.value.z = (SKY_CYCLE.hour < SOLAR_NOON_H ? p.beyondRise : p.beyondSet) * acesGrey(flat * this.renderer.toneMappingExposure / 0.6)
+    // openGrey: flat open ground (albedo 0.4) as displayed, linear — the live exposure's reference (src/exposure.js).
+    this.openGrey = acesGrey(flat * this.renderer.toneMappingExposure / 0.6)
+    U.skyFog.value.z = (SKY_CYCLE.hour < SOLAR_NOON_H ? p.beyondRise : p.beyondSet) * this.openGrey
     U.skyFog.value.w = tw
 
     // THE TWILIGHT EVENNESS (owner 11-14: "at twilight its almost like the hemisphere of the sky on the sun side is light
@@ -953,6 +958,9 @@ export class SkySystem {
   }
 
   /** 0 = daylight … 1 = night, for the lamps (headlight pools, campfire): sun from 4° above to 6° below. */
+  /** FEAT-221 prototype: the live exposure k on top of the eye (land into ACES and sky + fog into their grade alike). */
+  setLiveExposure (k) { U.skyAE.value.x = k; this.renderer.toneMappingExposure = this.landExposure * k }
+
   nightFactor () { return clamp01((4 * D2R - Math.asin(this.sunDir.y)) / (10 * D2R)) }
 
   /** Linear RGB multiplier for the unlit particles (dust/smoke/spray): their irradiance against noon's. */
