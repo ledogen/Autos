@@ -1441,9 +1441,13 @@ const STEPS = [
     // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
     const sh = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
       const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
-      for (const along of [0, 100, -100, 160, -160]) for (const d of [9, -9]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
+      // BUG-173 (DEC-230): the spot is clear of hard props within 6 m and graded under 1.5 % — a trunk or a 13–35 %
+      // cross-slope let the truck roll or perch, so the outcome hung on frame timing. The check below is unchanged.
+      const H = window.terrain, grade = (x, z) => Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
+      for (let along = -160; along <= 160; along += 10) for (const d of [9, -9, 10, -10]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
         if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
-        const q = window.__roadSys().queryNearest(x, z, 100); if (q?.point && Math.hypot(q.point.x - x, q.point.z - z) > 6.5) return { x, z } }
+        const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
+        if (lt > 6.5 && lt < 14 && grade(x, z) < 0.015 && !window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) return { x, z } }
       return null })()`)
     check(sh, 'FEAT-217: no shoulder spot found')
     await seat(sh.x, sh.z, 0); await readCards(300)
