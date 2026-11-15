@@ -946,7 +946,7 @@ const RESOLVE_CELL_CAP   = 384  // cells kept before the map is cleared (bounded
 // RIVAL_FADE_D before footHW, and (a pass of the winner's own run) by PROMINENCE over RIVAL_PROM_M, the rise of the
 // distance between it and the neighbouring minimum, so a pass born at a fold (two minima splitting) starts at 0.
 // At a FLIP the two passes are equidistant and must weigh the same (the winner is always whole), so a self pass
-// within RIVAL_TIE_M of the winner's distance is also whole, whatever its prominence: m = max(prominence, tie).
+// within RIVAL_TIE_M of the winner's distance is also whole once it stands out (BUG-171: m = max(prominence, tie · gate)).
 const RIVAL_FADE_D     = 3     // m
 // PERF-42: how far from its resolve point a SOLO resolve (_resolveRoadSurface) may be reused off the deck (_hintHolds).
 // A wheel's samples lie within it (world-contacts.js: the tread ≤ 0.39 m from the hub, a normal's ±0.5 m differences
@@ -961,6 +961,10 @@ const PATCH_REACH2 = 1.5 * 1.5   // m² — the disc a patch serves: PATCH_R = 1
 const _RF_POSE = { x: 0, z: 0, theta: 0, kappa: 0 }, _RF_HIT = { s: 0, x: 0, z: 0, tangent: { x: 1, z: 0 }, curvature: 0 }   // scratch
 const RIVAL_PROM_M     = 2     // m
 const RIVAL_TIE_M      = 2.5     // m
+// BUG-171: the tie term counts only for a pass that already stands out: × smooth(prominence / TIE_PROM_M). A pass (or
+// limb) born at a fold has prominence 0, so it starts at weight 0 instead of arriving whole as a step inside the tie
+// distance; at a flip of two developed minima (prominence > TIE_PROM_M) it is whole, as before.
+const TIE_PROM_M       = 0.1     // m
 const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
 let _passD = new Float64Array(256), _passT = new Float64Array(256)   // _runPassMinima scratch (grown as needed)
 let _legSeq = new Float64Array(256)   // _projectLegNearNode scratch: the window's per-segment distances² (grown as needed)
@@ -968,7 +972,7 @@ let _legSeq = new Float64Array(256)   // _projectLegNearNode scratch: the window
 // Walk outward to the KEY SADDLE b, the highest distance before it first drops below this foot's (topographic
 // prominence: a higher foot met on the way does not stop the walk), then on through the lower basin past it to its
 // floor m. With p = √b − √d2 (this limb's depth) and δ = √d2 − √m (how much farther it is than the lower one):
-//     wt = max(1 − (1 − smooth(p / RIVAL_PROM_M)) · δ / (δ + p),  smooth(1 − δ / RULE_LIMB_TIE))
+//     wt = max(1 − (1 − smooth(p / RIVAL_PROM_M)) · δ / (δ + p),  smooth(1 − δ / RULE_LIMB_TIE) · smooth(p / TIE_PROM_M))
 // 0 at a fold (p = 0 with δ ≥ RULE_LIMB_TIE: a limb being born or dying beside a nearer one); 1 where the two are
 // equally near (δ = 0, the flip between two limbs, so neither is privileged at the swap); 1 once the limb is
 // RIVAL_PROM_M deep; 1 on a side where nothing nearer lies within the window. A fold elsewhere in the window moves no
@@ -986,7 +990,7 @@ function _limbWeight(seq, ns, q, d2, dir) {
     for (; k >= 0 && k < ns && seq[k] <= b; k += dir) if (seq[k] < m) m = seq[k]
     const B = Math.sqrt(b), D = Math.sqrt(d2), p = B - D, dl = D - Math.sqrt(m)
     if (!(dl + p > 1e-9)) return 1
-    return Math.max(1 - (1 - _rivalSmooth(p / RIVAL_PROM_M)) * dl / (dl + p), _rivalSmooth(1 - dl / RULE_LIMB_TIE))
+    return Math.max(1 - (1 - _rivalSmooth(p / RIVAL_PROM_M)) * dl / (dl + p), _rivalSmooth(1 - dl / RULE_LIMB_TIE) * _rivalSmooth(p / TIE_PROM_M))
 }
 // FEAT-40 bore notch: inside a bore span the terrain SKIN (Y-less / above-apex probes) is not
 // simply raw — near each mouth the open cut's cross-section continues with its floor RISING at
@@ -8469,7 +8473,7 @@ export class RoadSystem {
             const bestCum = bestPr.arcS + (ce.arcOrigin ?? 0), dW = Math.sqrt(bestPr.d2)
             for (const q of this._runPassMinima(ce, cc, wx, wz, footHW, bestCum)) {   // every pass but the winner's
                 const m = _rivalSmooth((footHW - q.d) / RIVAL_FADE_D)
-                    * Math.max(_rivalSmooth(q.prom / RIVAL_PROM_M), _rivalSmooth(1 - (q.d - dW) / RIVAL_TIE_M))
+                    * Math.max(_rivalSmooth(q.prom / RIVAL_PROM_M), _rivalSmooth(1 - (q.d - dW) / RIVAL_TIE_M) * _rivalSmooth(q.prom / TIE_PROM_M))
                 if (m > 0) { const rv = rivalOf(bestRunKey, q, false); rv.m = m; rivals.push(rv) }
             }
         }
