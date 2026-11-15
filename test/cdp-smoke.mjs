@@ -1441,16 +1441,21 @@ const STEPS = [
     // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
     const sh = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
       const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
-      // BUG-173 (DEC-230): the spot is clear of hard props within 6 m and graded under 1.5 % — a trunk or a 13–35 %
-      // cross-slope let the truck roll or perch, so the outcome hung on frame timing. The check below is unchanged.
-      const H = window.terrain, grade = (x, z) => Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
-      for (let along = -160; along <= 160; along += 10) for (const d of [9, -9, 10, -10]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
+      // BUG-173 (DEC-230): the spot is clear of hard props within 6 m, graded under 10 %, and the truck faces along the
+      // contour, so the grade along its wheels is ~0 (under the 1.5 % rolling resistance) and the tires hold the cross-slope.
+      // The old pick (first ±9 m point, heading 0) sat on a 13–35 % cross-slope 2.3 m from a trunk: it perched or rolled,
+      // by frame timing. No point near seed 822480141's joint is under 1.5 % in every direction (flattest 6.4 %). The
+      // check below is unchanged.
+      const H = window.terrain
+      for (let along = -250; along <= 250; along += 10) for (const d of [7, -7, 8, -8, 9, -9, 10, -10, 11, -11, 12, -12]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
         if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
         const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
-        if (lt > 6.5 && lt < 14 && grade(x, z) < 0.015 && !window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) return { x, z } }
+        const gx = (H(x + 1, z) - H(x - 1, z)) / 2, gz = (H(x, z + 1) - H(x, z - 1)) / 2
+        if (lt > 6.5 && lt < 14 && Math.hypot(gx, gz) < 0.10 && !window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length)
+          return { x, z, h: Math.atan2(gz, -gx) } }   // forward (−gz, gx) ⟂ the fall line; heading = atan2(−fwd.x, −fwd.z)
       return null })()`)
     check(sh, 'FEAT-217: no shoulder spot found')
-    await seat(sh.x, sh.z, 0); await readCards(300)
+    await seat(sh.x, sh.z, sh.h); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
     await sleep(9000)   // > the 4 s of play it takes off the road
     { const v = await car(); check(await js(lat(v.x, v.z)) > 5.5 && await js('document.getElementById("reset-countdown").style.opacity !== "1"'), 'FEAT-217: the truck was reset (or counted down) on the shoulder') }
