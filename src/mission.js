@@ -1255,6 +1255,20 @@ export function polyCumOf (poly) {
     return cum
 }
 
+/** FEAT-217 (DEC-270): metres left ALONG a planned route ({ poly, polyCum }) from (x, z) — the arc past the line's nearest
+ *  vertex, floored at the crow distance to its end (routeRemaining's rule). For a line with no job behind it (the
+ *  tutorial's GPS). ponytail: a full scan with no window, so a line that doubles back past itself can match the far arm;
+ *  routeRemaining's window is the upgrade if a tutorial line ever does. */
+export function routeLeftM ({ poly, polyCum: cum }, x, z) {
+    let bi = 0, bd = Infinity
+    for (let i = 0; i < poly.length; i++) {
+        const d = (poly[i].x - x) ** 2 + (poly[i].z - z) ** 2
+        if (d < bd) { bd = d; bi = i }
+    }
+    const e = poly[poly.length - 1]
+    return Math.max(Math.hypot(e.x - x, e.z - z), cum[cum.length - 1] - cum[bi])
+}
+
 /**
  * FEAT-102: turn a planned giver → pickup route into the whole FETCH — out to the pickup and back
  * the same way (FEAT-89: "the return re-uses the outbound route"). One par over both legs: the

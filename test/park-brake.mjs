@@ -12,6 +12,8 @@
 //      clock through). Latched at rest: the day clock, energy, hunger, a job's elapsed time and its due
 //      time, and an offer's expiry all stand still while idle fuel still burns. Released, all run again.
 //      The job's elapsed is the driven time only; its par never moves. A handbrake slide holds nothing.
+//   7. FEAT-217 (DEC-272): the throttle cut (the tutorial's flat) — W / RT give no throttle and W cannot release the latch;
+//      the brake and steering still work; off, W drives as before. (DEC-270) routeLeftM reads the arc left, not the crow.
 //
 // Pure node: DOM stubs only (no THREE scene, no engine).
 const listeners = {}
@@ -20,7 +22,7 @@ globalThis.window = globalThis
 globalThis.requestAnimationFrame = () => 0
 Object.defineProperty(globalThis, 'navigator', { value: { getGamepads: () => [] }, configurable: true })
 
-const { updateVehicle, setParkLock } = await import('../src/vehicle.js')
+const { updateVehicle, setParkLock, setThrottleCut } = await import('../src/vehicle.js')
 const { pad } = await import('../src/gamepad.js')
 const { makeVehicleState } = await import('../src/vehicle-state.js')
 const { RANGER_PARAMS } = await import('../data/ranger.js')
@@ -156,6 +158,24 @@ const MANUAL = { ...RANGER_PARAMS, transmissionType: 'manual' }
   const slide = fresh(); slide.velocity.x = 15; key(' ', true); step(slide, RANGER_PARAMS, 50); key(' ', false); step(slide)
   check('   a handbrake slide at 15 m/s never latches, so it never holds the clock',
     !slide.parked && !clockHeld(false, false, false, slide.parked))
+}
+
+// 7.
+{
+  setThrottleCut(true)
+  const w = fresh(); key('w', true); step(w, RANGER_PARAMS, 250); key('w', false)
+  const rt = fresh(); pad.active = true; pad.throttle = 1; step(rt, RANGER_PARAMS, 250); pad.throttle = 0; pad.active = false
+  const lt = parked(); tap(lt, 'w'); key('w', true); step(lt, RANGER_PARAMS, 50); key('w', false)
+  const br = fresh(); br.velocity.x = 10; key('s', true); step(br, RANGER_PARAMS, 250); key('s', false)
+  setThrottleCut(false)
+  check('7. throttle cut: W and RT give no throttle, W does not release the latch, S still brakes',
+    w.throttle === 0 && rt.throttle === 0 && lt.parked && br.brake > 0.5, `W ${w.throttle}, RT ${rt.throttle}, latched ${lt.parked}, brake ${br.brake}`)
+  const on = fresh(); key('w', true); step(on, RANGER_PARAMS, 250); key('w', false)
+  check('   cut off, W gives throttle as before', on.throttle > 0.5, `W ${on.throttle}`)
+  const { routeLeftM, polyCumOf } = await import('../src/mission.js')
+  const poly = [{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 100, z: 100 }, { x: 0, z: 100 }]   // a U: 300 m of road, ends 100 m from its start
+  const left = routeLeftM({ poly, polyCum: polyCumOf(poly) }, 1, 1)
+  check('   routeLeftM: at the start of a U-shaped 300 m line, 300 m to go (the crow reads 100)', Math.abs(left - 300) < 1e-9, `${left}`)
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\npark-brake gate: ALL OK')
