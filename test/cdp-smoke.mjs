@@ -1407,11 +1407,14 @@ const STEPS = [
     const evening = () => js('window.__tutorial().phase === "evening"')
     check(await evening(), `the evening ended before the map taps: ${await evePeek()}`)
     // Stage 2: M is the skip's hold now, but a TAP still opens the map (on the release) and closes it.
-    await tap('m')
+    // M is heard on its key events, not polled per step, so tap it as a player does (~100 ms of wall time): tap()'s two
+    // RENDERED frames ran past the 1 s hold behind the map's first build, and the second tap armed the skip instead.
+    const tapM = async () => { await key('m', true); await sleep(100); await key('m', false) }
+    await tapM()
     check(await until(() => js('window.__map2d().isOpen()'), 2000), `a tap of M in the evening did not open the map: ${await evePeek()}`)
     check(await evening(), `the first tap of M skipped the evening: ${await evePeek()}`)
-    await tap('m')
-    check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'a tap of M in the evening did not close the map')
+    await tapM()
+    check(await until(() => js('!window.__map2d().isOpen()'), 2000), `a tap of M in the evening did not close the map: ${await evePeek()}`)
     check(await evening(), `a tap of M skipped the evening: ${await js('JSON.stringify({ tut: window.__tutorial().phase, wd: window.__worstDay(), h: window.__day().clockH(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), map: window.__map2d().isOpen() })')}`)
     // Stage 3, the safe drive: the clock holds on the way home, and off the road R puts the truck back on it.
     const h0 = await js('window.__day().clockH()'); await simFor(2)
