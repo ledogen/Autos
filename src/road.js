@@ -8236,7 +8236,7 @@ export class RoadSystem {
             while (b < n - 1 && !onCL[b]) b++
             return [pc[a], pc[b]]
         })
-        // PERF-49: each vertex's band tangent, worked out once per run (_bandTangent was ~10 % of an airborne step
+        // PERF-49: each vertex's band tangent, worked out once per run (re-deriving them per call was ~10 % of an airborne step
         // beside a junction: every tread sample's resolve re-derived the same five chords' ten tangents).
         const tx = new Float64Array(n), tz = new Float64Array(n)
         for (let k = 0; k < n; k++) {
@@ -8258,12 +8258,6 @@ export class RoadSystem {
         return false
     }
 
-    _bandTangent(e, k, out) {
-        const b = this._bandInfo(e)
-        out.x = b.tx[k]; out.z = b.tz[k]
-        return out
-    }
-
     _bandSeg(pc, cum) {
         let lo = 0, hi = pc.length - 1
         while (hi - lo > 1) { const m = (lo + hi) >> 1; if (pc[m] <= cum) lo = m; else hi = m }
@@ -8273,8 +8267,8 @@ export class RoadSystem {
     _bandFrameAt(e, cum, out) {
         const pts = e.points, pc = e.polyCum, i = this._bandSeg(pc, cum)
         const u = Math.min(1, Math.max(0, (cum - pc[i]) / ((pc[i + 1] - pc[i]) || 1e-9)))
-        const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
-        const tx = A.x + (B.x - A.x) * u, tz = A.z + (B.z - A.z) * u, l = Math.hypot(tx, tz) || 1
+        const T = this._bandInfo(e), Ax = T.tx[i], Az = T.tz[i]
+        const tx = Ax + (T.tx[i + 1] - Ax) * u, tz = Az + (T.tz[i + 1] - Az) * u, l = Math.hypot(tx, tz) || 1
         out.x = pts[i].x + (pts[i + 1].x - pts[i].x) * u; out.z = pts[i].z + (pts[i + 1].z - pts[i].z) * u
         out.tx = tx / l; out.tz = tz / l
         return out
@@ -8283,20 +8277,20 @@ export class RoadSystem {
     _bandRefine(e, cum, wx, wz) {
         const pts = e.points, pc = e.polyCum, i0 = this._bandSeg(pc, cum)
         let best = null, bestD2 = Infinity
+        const T = this._bandInfo(e), TX = T.tx, TZ = T.tz   // PERF-49: the run's cached vertex tangents
+        const root = (i, Dx, Dz, u) => {
+            if (!(u >= -1e-9 && u <= 1 + 1e-9)) return
+            const fx = pts[i].x + Dx * u, fz = pts[i].z + Dz * u, d2 = (wx - fx) ** 2 + (wz - fz) ** 2
+            if (d2 < bestD2) { bestD2 = d2; best = { i, u: Math.min(1, Math.max(0, u)) } }
+        }
         for (let i = Math.max(0, i0 - 2); i <= Math.min(pts.length - 2, i0 + 2); i++) {
-            const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
+            const Ax = TX[i], Az = TZ[i]
             const qx = wx - pts[i].x, qz = wz - pts[i].z, Dx = pts[i + 1].x - pts[i].x, Dz = pts[i + 1].z - pts[i].z
-            const Bx = B.x - A.x, Bz = B.z - A.z
+            const Bx = TX[i + 1] - Ax, Bz = TZ[i + 1] - Az
             // (q − u·D) · (A + u·B) = 0  ⇔  a·u² + b·u + c = 0
-            const a = -(Dx * Bx + Dz * Bz), b = qx * Bx + qz * Bz - (Dx * A.x + Dz * A.z), c = qx * A.x + qz * A.z
-            const roots = []
-            if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-12) roots.push(-c / b) }
-            else { const disc = b * b - 4 * a * c; if (disc >= 0) { const r = Math.sqrt(disc); roots.push((-b - r) / (2 * a), (-b + r) / (2 * a)) } }
-            for (const u of roots) {
-                if (!(u >= -1e-9 && u <= 1 + 1e-9)) continue
-                const fx = pts[i].x + Dx * u, fz = pts[i].z + Dz * u, d2 = (wx - fx) ** 2 + (wz - fz) ** 2
-                if (d2 < bestD2) { bestD2 = d2; best = { i, u: Math.min(1, Math.max(0, u)) } }
-            }
+            const a = -(Dx * Bx + Dz * Bz), b = qx * Bx + qz * Bz - (Dx * Ax + Dz * Az), c = qx * Ax + qz * Az
+            if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-12) root(i, Dx, Dz, -c / b) }
+            else { const disc = b * b - 4 * a * c; if (disc >= 0) { const r = Math.sqrt(disc); root(i, Dx, Dz, (-b - r) / (2 * a)); root(i, Dx, Dz, (-b + r) / (2 * a)) } }
         }
         if (!best) return null
         const f = this._bandFrameAt(e, pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u, this._bandOut ??= {})
