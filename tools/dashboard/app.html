@@ -302,7 +302,7 @@ async function load() {
  * fenced code, tables, blockquotes, rules) and nothing more. Inline runs in two
  * passes: code spans / links / ticket refs / file paths are pulled out into
  * placeholder tokens first, so emphasis can never chew through generated HTML. */
-const esc = s => s.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
 
 const TICKET_RE = /\b(?:FEAT|BUG|PERF|QUAL|INFRA|ASSET|DEC|SM)-\d+\b/;
 const PATH_RE = /(?:\.planning|src|test|data|assets|tools|scenarios|docs)\/[\w./@-]*[\w]\.\w{1,5}/;
