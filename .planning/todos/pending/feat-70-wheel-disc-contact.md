@@ -224,3 +224,20 @@ fixes first (bb9cd475, ae68e4c4, ee0627dc).
   contact depth moved: understand it, don't absorb it. The COLLISION half is chassis contact, so it
   should match;
 - a drive onto a kerb and over rough ground on :3282.
+
+## Log
+
+- 2026-11-14 (Lane B): `collision-drop-lab` on the branch (= main 13e46388), headless via chrome-slot. COLLISION in family with
+  the 11-05 check (26 mph: 15,658 N·s vs 15,496, 1.09x). DROP is NOT the 11-05 line: 3 m now 81.1 kN tire / 74.8 kN bump /
+  rim 0 (was 108.5 / 99.2 / 63.9 kN); 1 m 22.7 / 12.5 kN, 2 m 51.9 / 42.0 kN, camber -0.065 deg at 3 m. Box3D (FEAT-48) and
+  later tire/rim changes sit between the two baselines, so this is not attributable to FEAT-70 without an A/B at c24bbbfc.
+  Left open: the owed "in family" claim is unproven either way. cdp-smoke not run on the branch (brief); the orchestrator smokes main.
+- 2026-11-14 (Lane B, attribution; `SKIP_COLL=1` lab, detached checkouts, 3 m DROP tire / bump / rim kN): the 11-05 line
+  reproduces exactly at c24bbbfc, 30bc59f6 and 8b645f18 (108.5 / 99.2 / 63.9). Two steps, both BUG-140 (owner: a 2 m+ drop
+  rebounds too high), both INTENDED and ratified by DEC-191 (flat 7-10 % rebound, "all four as written"):
+  | commit | ticket | 3 m tire / bump / rim | intended |
+  |---|---|---|---|
+  | f5149b28 | BUG-140 A, the body moves within the step as strut forces act | 108.5 / 99.2 / 63.9 -> 72.2 / 65.0 / 23.2 (2 m 66.2 -> 43.7) | yes |
+  | 95b740ca | BUG-140 + FEAT-193, on-stop tire damping 2 | 72.2 / 65.0 / 23.2 -> 81.1 / 74.8 / 0 (+12 % / +15 %) | yes |
+  Unchanged from 95b740ca to main (checked 5e493433 rim yield 14 -> 24, 10958a67 BUG-160): 81.1 / 74.8 / 0. Not the Box3D cutover
+  or FEAT-70 itself. The lab's "in family" clause is explained, not absorbed; kerb drive and cdp-smoke still unrun here.
