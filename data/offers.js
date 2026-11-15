@@ -714,6 +714,13 @@ export const BONUS_LEG_MIN_M = 1500
 export const ITEM_COST_FRAC = 0.5
 
 /**
+ * DEC-204 (owner, 2026-11-14: "top figure, 0.7x to 1.3x"): a job's optional item is priced (itemCost, after
+ * ITEM_COST_FRAC) from LO to HI times the card's TOP figure (base pay plus the full tip). None fit: a cheaper item.
+ */
+export const REWARD_WINDOW_LO = 0.7
+export const REWARD_WINDOW_HI = 1.3
+
+/**
  * GAME-FEEL REVIEW 2026-10-23 (R-07): what a reward is WORTH, in day-1 dollars, for the card's "Tip:
  * Compressor ($20)". A carrot with no number on it can't be weighed against the cash tip it replaces.
  * Parts and shelf items read their own price (data/parts.js, data/shop-stock.js ITEM_PRICE — the storefronts'

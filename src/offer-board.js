@@ -40,7 +40,7 @@
 import {
     THINGS, REWARDS, REWARD_CATS, RARE_PULL, PART_REWARD_CAT, RARITY_GATES, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
-    REWARD_VALUE, ITEM_COST_FRAC, REQUISITION, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP, GIVER_LINES, GIVER_LINE_P,
+    REWARD_VALUE, ITEM_COST_FRAC, REWARD_WINDOW_LO, REWARD_WINDOW_HI, REQUISITION, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP, GIVER_LINES, GIVER_LINE_P,
 } from '../data/offers.js'
 import { PARTS } from '../data/parts.js'
 import { ITEM_PRICE } from '../data/shop-stock.js'
@@ -50,7 +50,7 @@ import {
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
 import { STOCK_WEIGHT } from '../data/stock-weights.js'   // the bonus reward pick shares the shelf's weights
-import { basePay, payRange, formatMoney, rankTable, fragileLines } from './economy.js'
+import { basePay, payRange, regionTier, formatMoney, rankTable, fragileLines } from './economy.js'
 import { DAY_PARAMS } from './day.js'
 
 /**
@@ -109,6 +109,18 @@ const pick = (r, list) => list[Math.floor(r() * list.length)]
 /** The bonus reward among eligible REWARDS rows `at`, for a uniform draw `u`: weighted by the stock
  *  table the auto-shop shelf uses (owner, 2026-10-22). A reward the table doesn't list weighs 1 [DEFAULT]. */
 export const pickReward = (at, u) => at.find(x => x.id === pickWeighted(u, Object.fromEntries(at.map(x => [x.id, STOCK_WEIGHT[x.id] ?? 1]))))
+
+/** DEC-204: the reward among `at` for draw `u`, priced (itemCost) within REWARD_WINDOW_LO..HI x the card's `top`
+ *  figure; none fit -> the cheaper ones; none cheaper -> the cheapest there is. No top (no plan) -> the plain pick. */
+export function windowPick (at, u, top) {
+    if (!(top > 0)) return pickReward(at, u)
+    const c = (x) => itemCost(x.id), lo = top * REWARD_WINDOW_LO, hi = top * REWARD_WINDOW_HI
+    const inside = at.filter(x => c(x) >= lo && c(x) <= hi)
+    if (inside.length) return pickReward(inside, u)
+    const cheaper = at.filter(x => c(x) < lo)
+    if (cheaper.length) return pickReward(cheaper, u)
+    return at.reduce((a, x) => (c(x) < c(a) ? x : a))
+}
 
 /** FEAT-168: may an offer born at `bornH` (DaySystem.clockH, day 1 starts at 0) carry REWARDS row `w`? */
 const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24) + 1)
@@ -646,7 +658,7 @@ export class OfferBoard {
         // the load meets — a freight bonus is always earned on delivery. A haul gate is a count, and
         // the STOCK follows the gate instead (below): the bonus keeps its full share (owner, 2026-10-23:
         // filtering on a pre-drawn stock cut the yard's share to 18 %).
-        let bonus = null
+        let bonus = null, bonusPick = null
         const bonusRoll = r(), gateRoll = r(), rewardRoll = r()
         const amount = thing.family === 'freight' ? { have: massKg, row: rankTable('freight', this._region) } : null
         if (bonusRoll < BONUS_CHANCE) {
@@ -666,6 +678,7 @@ export class OfferBoard {
                 const at = pool.filter(x => x.gates.includes(gate))
                 const reward = pickReward(at, rewardRoll)
                 bonus = { rewardId: reward.id, name: reward.name, gate, ...(reward.dineIn && { dineIn: true }) }
+                bonusPick = { at, u: rewardRoll }   // DEC-204: _receiverBonus re-picks within the price window once the plan is known
             }
         }
         // The haul stock: uniform over HAUL_STOCK, floored at the bonus gate's count so the reward is
@@ -714,7 +727,7 @@ export class OfferBoard {
             deeds: traits.find(t => t.deeds)?.deeds ?? null,
             shape: fetch ? 'fetch' : stops ? 'multi' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
             stops, multiPhrase: stops ? thing.multi : null,
-            family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus,
+            family: thing.family, thingId: thing.id, phrase: thing.phrase, person, bonus, bonusPick,
             massKg: stock ? stock * HAUL_BUNDLE_KG : massKg, stock,
             // Haul: PER PIECE — the pick multiplies it at accept. ÷ HAUL_PAR_SLACK: the haul's par is
             // that much longer and pay rides par (data/offers.js).
@@ -817,7 +830,13 @@ export class OfferBoard {
     _receiverBonus (offer, m, n) {
         const sp = offer._spec
         if (!sp?.bonus) return
-        sp.giverBonus ??= sp.bonus   // idempotent: a re-plan of a kept spec starts from the giver's item
+        sp.rawBonus ??= sp.bonus   // idempotent: a re-plan of a kept spec starts from the giver's rolled item
+        const top = m?.par > 0 ? payRange(m.par, regionTier(this._region), sp.payMult, (sp.load && !sp.fragile ? FREIGHT_TIP_MULT : 1) * (sp.tipMult ?? 1)).max : 0
+        const give = (pick) => {   // DEC-204: the same draw, re-picked inside the price window; the gate never moves
+            const reward = windowPick(pick.at, pick.u, top)
+            return { rewardId: reward.id, name: reward.name, gate: sp.rawBonus.gate, ...(reward.dineIn && { dineIn: true }) }
+        }
+        sp.giverBonus = sp.bonusPick && top > 0 ? give(sp.bonusPick) : sp.rawBonus
         sp.bonus = sp.giverBonus
         if (m) m.bonus = sp.bonus
         if (!m || sp.shape !== 'courier' || !m.endPoiId) return
@@ -825,10 +844,9 @@ export class OfferBoard {
         if (r() < 0.5) return
         const q = this._pois.get(m.endPoiId)
         const cats = [q?.type, ...(q?.tags ?? [])].flatMap(k => REWARD_CATS[k]?.cats ?? [])
-        const at = rewardsIn(cats, offer.bornH).filter(w => w.gates.includes(sp.bonus.gate))
+        const at = rewardsIn(cats, offer.bornH).filter(w => w.gates.includes(sp.rawBonus.gate))
         if (!at.length) return
-        const reward = pickReward(at, r())
-        sp.bonus = { rewardId: reward.id, name: reward.name, gate: sp.bonus.gate, ...(reward.dineIn && { dineIn: true }) }
+        sp.bonus = give({ at, u: r() })
         m.bonus = sp.bonus
     }
 

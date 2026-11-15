@@ -80,11 +80,14 @@ Owner: card feat199-price "half the shop price" ("this way you cant sell it for 
 it"), and the inbox "the reward item price can be like 30% over the mission pay but usually is about equivalent". DEC-176.
 
 ## Tracker
-- [ ] The price window: reward items priced 0.7x to 1.3x of the job's TOP figure (base plus full tip), cheaper fallback, cap stays (DEC-204)
-- [ ] The builder REPORTS the list of items that can never be offered as a reward under this rule (the owner's guess: engines, LSDs and other top items), to the owner
+- [x] The price window: reward items priced 0.7x to 1.3x of the job's TOP figure (base plus full tip), cheaper fallback, cap stays (DEC-204)
+- [x] The builder REPORTS the list of items that can never be offered as a reward under this rule (the owner's guess: engines, LSDs and other top items), to the owner
 
 ## Decisions
 - 2026-11-14, owner (card feat199-window, answer "top figure, 0.7× to 1.3×"): "lemme know which items will never be offered as a reward due to this rule. my guess is the engines, lsds and other top items will likely never be offered as a reward" (DEC-204).
 
 ## Log
 - 2026-11-14: scribe recorded the owner's answer (card feat199-window).
+- 2026-11-14 (Spare, land/feat-199w): window built. `windowPick` in offer-board.js, applied in `_receiverBonus` to the giver's item AND the receiver's, on the top figure `payRange(par, regionTier, payMult, tipMult).max`; data/offers.js REWARD_WINDOW_LO/HI 0.7/1.3. Same RNG draw, re-picked inside the window (gate never moves); none fit -> cheaper ones; none cheaper -> the cheapest of its pool. Item costs are after ITEM_COST_FRAC 0.5.
+  NEVER OFFERED, census over every reward pool x gate x par (analytic, all 6 region tiers; not a seed sample): in region 1 (the alpha) with a par up to 520 s (top $22.22, window ceiling $28.89): only engineStock ($30 cost). A single leg tops out near par 300-400 s (top $12.8-17.1, ceiling $16.7-22.2): then diffLSD ($20) and engineStock ($30) are out. A job whose top is under $10 (par < 240 s) also loses jerryCan, liftKit, tireIron, quickJack ($15 each). From region 2 up every item can be offered (R2 top at par 520 $35.56). Needs the top >= cost/1.3: engineStock $23.1 (par ~540 R1), diffLSD $15.4 (par ~360 R1).
+  Owner's guess (engines, LSDs, top items) holds for the alpha: the only two are the stock engine and the helical LSD; there is no other engine or LSD row.
