@@ -22,11 +22,12 @@ the turn indicator arrows; the owner suggests a 3D ribbon arrow that makes a 180
 - [x] A U-turn arrow in the turn arrows' style shows when the guide wants the truck turned around
 - [x] It clears once the truck faces the route
 - [ ] Owner's look
-- [ ] Redesign: a 3D ribbon heading away from the player, then turning upward 180 degrees so the arrowhead faces the player
-- [ ] Placed on the road about 20 m ahead of the player (not floating, not locked to the car), fits within a 5 m cube
-- [ ] Wrong way: the player is caught between the U-turn arrow on one side and the GPS chevrons on the other; hidden when heading the correct way
+- [x] Redesign: a 3D ribbon heading away from the player, then turning upward 180 degrees so the arrowhead faces the player
+- [x] Placed on the road about 20 m ahead of the player (not floating, not locked to the car), fits within a 5 m cube
+- [x] Wrong way: the player is caught between the U-turn arrow on one side and the GPS chevrons on the other; hidden when heading the correct way
 
 ## Log
+- 2026-11-14 Spare: redesigned (src/gps.js _uturnGeometry/_placeUturn): vertical 215-degree loop ribbon (R 1.7 m), 3.4 m tall, about 4 m long, 1.6 m wide with a 4 m head, standing on the road 20 m up it from the truck (route s-20; truck line when <20 m of route behind), arrowhead back at the player. Shown under the same cos hysteresis. Shots in wip/feat-218/. Owner look: card feat218-look.
 - 2026-11-14 Spare: flat 180° ribbon + head, 7 m ahead of the truck at 2.5 m, bends toward the route's side; on at >120° off the route direction, off inside ~100°. gps-route gate + smoke boot,story green. Not seen in-game; flat (not tilted) so a low chase cam may want a tilt.
 - 2026-11-14: scribe recorded the owner's redesign.
 

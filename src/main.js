@@ -6635,7 +6635,7 @@ function _updateSite () {
     m.cleared = !standing.length || (m.lastHitS != null && missionSystem.elapsed - m.lastHitS > D.hitWindowS)
     const n = _site.next = nearestTarget(m, p.x, p.z, standing, missionSystem.routeRemaining())
     // FEAT-187: the guide is a line to the target, never a destination circle in the road (gps.js reads noRing).
-    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: { ...guideTo(m, m.targets[n.i].u, n.back), noRing: true } }
+    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: { ...guideTo(m, m.targets[n.i].u, n.back), noRing: true, objective: m.targets[n.i] } }
     else if (!n) _site.guide = null
   }
   // FEAT-187: a cluster's halo is lit while the job is live, any of it stands, and the truck is near (the paper's rule).

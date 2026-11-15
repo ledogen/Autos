@@ -579,7 +579,7 @@ export class MissionSystem {
         if (!m?.legs) return m
         if (!m._legRoutes) {
             const cut = [0, ...m.legs.slice(0, -1).map(l => l.segIdx), m.segments.length]
-            m._legRoutes = m.legs.map((_, i) => ({ segments: m.segments.slice(cut[i], cut[i + 1]) }))
+            m._legRoutes = m.legs.map((l, i) => ({ segments: m.segments.slice(cut[i], cut[i + 1]), objective: l.objective }))
         }
         return m._legRoutes[this.leg ?? 0]
     }
@@ -1101,6 +1101,8 @@ export class MissionSystem {
                 edges: segments.length,
                 // FEAT-67: the destination POI, or null for a roadside drop. The card names it.
                 endPoiId: destPoi?.id ?? null,
+                // FEAT-218: where the destination actually stands (the route ends at its road point); gps.js aims the turn arrow at it when it is off the road.
+                objective: destPoi ? { x: destPoi.x, z: destPoi.z } : null,
                 // The priced route, retained so par can be recomputed under a different PAR_REF
                 // without re-routing (FEAT-30 calibration). Not read by gameplay.
                 segments,
@@ -1280,7 +1282,8 @@ function fetchRoute (m, giverId) {
     return {
         ...m, par: time, distance, poly, polyCum, segments, edges: segments.length, end: home,
         fetch: true,
-        legs: [{ end: m.end, poiId: m.endPoiId, polyIdx: m.poly.length - 1, segIdx: n }, { end: home, poiId: giverId }],
+        objective: null,
+        legs: [{ end: m.end, poiId: m.endPoiId, polyIdx: m.poly.length - 1, segIdx: n, objective: m.objective }, { end: home, poiId: giverId }],
     }
 }
 
@@ -1297,12 +1300,12 @@ function joinLegs (legs) {
         const last = i === legs.length - 1
         segments.push(...l.segments.map((g, j, a) => (!last && j === a.length - 1 ? { ...g, stop: true } : g)))
         poly.push(...(i ? l.poly.slice(1) : l.poly))   // each leg starts where the one before ended
-        out.push({ end: l.end, poiId: l.endPoiId, polyIdx: poly.length - 1, segIdx: segments.length })
+        out.push({ end: l.end, poiId: l.endPoiId, polyIdx: poly.length - 1, segIdx: segments.length, objective: l.objective })
     })
     const { time, distance } = computePar(segments)
     const fin = legs[legs.length - 1]
     return {
-        ...legs[0], end: fin.end, endPoiId: fin.endPoiId, par: time, distance, poly, polyCum: polyCumOf(poly),
+        ...legs[0], end: fin.end, endPoiId: fin.endPoiId, objective: fin.objective, par: time, distance, poly, polyCum: polyCumOf(poly),
         segments, edges: segments.length, legs: out, stopIds: out.map(l => l.poiId),
     }
 }
