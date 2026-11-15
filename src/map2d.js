@@ -3152,7 +3152,7 @@ export class Map2D {
             const by = y + H - 1.5 * k
             this._cardFrame(ctx, x, by, W, B.BONUS * k + 1.5 * k, k, '#d4a017')
             ctx.font = fS; ctx.fillStyle = '#8a6a00'
-            ctx.fillText('OPTIONAL ITEM · OFF THE CASH', inL, by + 9 * k)
+            ctx.fillText('OPTIONAL ITEM', inL, by + 9 * k)
             ctx.font = fB; ctx.fillStyle = '#4a3a00'
             ctx.fillText(c.bonus.replace(/^Optional item:\s*/, ''), inL, by + 23 * k)
         }
