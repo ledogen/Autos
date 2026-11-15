@@ -7,13 +7,14 @@
 //      darkness from an hour after sunset to an hour before sunrise (nightWeight ≡ 1 there).
 //   2. The moon keeps its phase's hours: full rises at sunset and is up all night, first quarter
 //      crosses the meridian about six hours after the sun, new moon stays beside the sun.
-//   3. The brightness ladder the owner asked for (FEAT-180): noon reads 1, a sunset is mostly
-//      compensated, a moonless night is near black (under 1 % of noon), a full moon is dim but more
-//      than the new moon (1–5 % of noon), and the LUT is finite and non-negative at every hour.
+//   3. The brightness ladder (FEAT-180, re-pinned round 5 for the land's own eye of round 2): a white
+//      surface at noon reads ~1.7 (landGain 2.0, into ACES at the legacy's exposure 0.5), a sunset ~12 % of
+//      noon (the steep golden hour), a moonless night ~3 % (the eye levels out there so the moon still
+//      shows), a full moon ~11 % and over 2× the new moon, and the LUT is finite and non-negative at every hour.
 //
 // Pure node: SkySystem gets plain three objects and a stub renderer. The push cost is REPORTED only.
 import * as THREE from 'three'
-import { SkySystem, sunAt, moonAt, nightWeight, SUNRISE_H, SUNSET_H } from '../src/sky.js'
+import { SkySystem, SKY_PARAMS, sunAt, moonAt, nightWeight, SUNRISE_H, SUNSET_H } from '../src/sky.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -61,16 +62,36 @@ const noon = at(12.925, 0.25)
 const sunsetW = at(SUNSET_H, 0.25)
 const newMoon = at(0.5, 0.0), fullMoon = at(0.5, 0.5)
 console.log(`  white surface: noon ${noon.toFixed(3)}  sunset ${sunsetW.toFixed(3)}  full moon ${fullMoon.toFixed(4)}  new moon ${newMoon.toFixed(5)}`)
-check('noon white surface reads ~1', Math.abs(noon - 1) < 0.25, noon.toFixed(3))
-check('sunset mostly compensated (25–70 % of noon)', sunsetW > 0.25 * noon && sunsetW < 0.7 * noon, (sunsetW / noon).toFixed(3))
-check('moonless night near black (< 1 % of noon)', newMoon < 0.01 * noon, (newMoon / noon).toFixed(4))
-check('full moon dim but brighter than new (1–5 % of noon, > 2× new)', fullMoon > 0.01 * noon && fullMoon < 0.05 * noon && fullMoon > 2 * newMoon,
+// Re-pinned round 5 (were: noon ~1, sunset 25–70 %, moonless < 1 %, full moon 1–5 %, the round-1 single eye). Round 2
+// gave the land its own eye (landEye: landDepth, landTwilight) and its light a gain into ACES (landGain), which the
+// owner signed off by look through rounds 2–4; these pin that ladder, ± about a third.
+check('noon white surface reads ~1.7 (landGain 2.0)', Math.abs(noon - 1.7) < 0.25, noon.toFixed(3))
+check('sunset 8–20 % of noon (the steep golden hour)', sunsetW > 0.08 * noon && sunsetW < 0.2 * noon, (sunsetW / noon).toFixed(3))
+check('moonless night dark (1.5–5 % of noon)', newMoon > 0.015 * noon && newMoon < 0.05 * noon, (newMoon / noon).toFixed(4))
+check('full moon brighter than new (6–16 % of noon, > 2× new)', fullMoon > 0.06 * noon && fullMoon < 0.16 * noon && fullMoon > 2 * newMoon,
   (fullMoon / noon).toFixed(4))
 // FEAT-180 (owner 11-14: "right around 20.3h for like 10 mins or so its gets lighter again briefly"): through the
 // evening the land never brightens on screen (its light × the land's exposure), step to step (2 min), 18:00 to 21:00.
 let prevW = Infinity, worst = 0, worstH = 0
 for (let h = 18; h <= 21; h += 1 / 30) { const w = at(h, 0.25) * renderer.toneMappingExposure; if (w / prevW > worst) { worst = w / prevW; worstH = h } prevW = w }
 check('the evening land never brightens 18:00 → 21:00 (2-min steps)', worst <= 1.0005, `${hm(worstH)} rose ×${worst.toFixed(4)}`)
+// FEAT-180 r5 (owner 11-14: "the yellow green fog is sweet when looking into the sun but jarring when looking away"): at
+// 05:43 and its sunset mirror the horizon row opposite the sun is near grey (chroma = (max − min) / max of the linear LUT
+// texel; 1.0 with duskAway 0, its blue clipped to 0), and the row toward the sun is within 2 % of it (the nearest
+// column sits up to 2.8° off the sun's azimuth, so it is desaturated by (1 − cos) / 2 of that).
+const horizonTexel = (h, da) => {
+  sky.setTimeOfDay(h)
+  const d = sky._skyMat.uniforms.skyLut.value.image.data, a = (((sunAt(h).az + da) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
+  const k = (Math.round(a / (2 * Math.PI) * 64 - 0.5) % 64) * 4
+  return [0, 1, 2].map(c => THREE.DataUtils.fromHalfFloat(d[k + c]))
+}
+const chroma = (c) => (Math.max(...c) - Math.min(...c)) / Math.max(...c, 1e-9)
+for (const h of [5.71, 2 * 12.925 - 5.71]) {
+  const away = SKY_PARAMS.duskAway, toward = horizonTexel(h, 0), anti = chroma(horizonTexel(h, Math.PI))
+  SKY_PARAMS.duskAway = 0; const toward0 = horizonTexel(h, 0), anti0 = chroma(horizonTexel(h, Math.PI)); SKY_PARAMS.duskAway = away
+  check(`${hm(h)}: the fog opposite the sun is desaturated, the sun's side untouched`, anti < 0.5 && toward.every((v, c) => Math.abs(v - toward0[c]) <= 0.02 * Math.max(...toward0)),
+    `chroma ${anti0.toFixed(2)} → ${anti.toFixed(2)}; toward ${toward.map(v => v.toFixed(3))} vs ${toward0.map(v => v.toFixed(3))}`)
+}
 let finite = true
 for (let h = 0; h < 24; h += 0.25) { sky.setTimeOfDay(h); finite = finite && lutOk() && isFinite(white()) }
 check('LUT finite and non-negative at every quarter hour', finite)
