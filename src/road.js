@@ -8023,7 +8023,7 @@ export class RoadSystem {
             if (last && cumT - (last.arcS + arcOrigin) < 4) {
                 if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin; last.i = ki; last.t = kt; last.q = q }
             }
-            else out.push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt, q, wt: 1, g: NaN })   // g: _carveDirtY's profile memo (PERF-49)
+            else out.push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt, q, wt: 1 })
         }
         for (let i = i0; i <= iEnd; i++) {
             const ax = pts[i].x, az = pts[i].z
@@ -9078,11 +9078,7 @@ export class RoadSystem {
                     const pr = prs[bi]
                     const gap = Math.sqrt(pr.d2) - halfWidth
                     if (gap >= RULE_LEG_REACH) continue                  // out of range: not a co-leg here
-                    // PERF-49 lever 2 (PERF-43's): a branch's profile grade is a pure function of its foot, so it is memoised
-                    // on the branch (pr.g). _projectLegMemo hands a second blend at the same point (the winner's cross-section,
-                    // then _legSurfaceTop) the SAME branch objects, so that blend reuses it — exact. Branches live per
-                    // network rev with their leg records, as the profile cache does.
-                    const legGrade = bi === ownIdx ? gradeY : pr.g === pr.g ? pr.g : (pr.g = this.runProfile(pr.arcS, leg.runKey, _CD_RP).gradeY)
+                    const legGrade = bi === ownIdx ? gradeY : this.runProfile(pr.arcS, leg.runKey, _CD_RP).gradeY
                     // Plausibility guard: every leg leaves the node welded at nodeY with a bounded road
                     // grade, so at arc distance `along` its grade must lie within nodeY ± MAX_LEG_SLOPE·
                     // along. A projected grade outside that is a WRONG-BRANCH artifact (an unrelated road
