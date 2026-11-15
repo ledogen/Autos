@@ -616,14 +616,14 @@ export class GpsSystem {
   }
 
   /**
-   * The route's end. An objective that sits OFF the road (FEAT-218: `objective`/`end` further than OFFROAD_M from the
+   * The route's end. An objective that sits OFF the road (FEAT-218: `objective` further than OFFROAD_M from the
    * route's last road point: a paper stop, a demolition target, a POI) gets the turn arrow at that road point aimed at
    * it; one on the road keeps the ring.
    */
   _placeRing (route, s) {
     const remain = route.length - s
     const n = route.n - 1
-    const o = this._src?.objective ?? this._src?.end ?? this._src?.customers?.at(-1)   // a paper round ends at its last customer
+    const o = this._src?.objective ?? this._src?.customers?.at(-1)   // a paper round ends at its last customer
     const off = o && Math.hypot(o.x - route.px[n], o.z - route.pz[n]) > OFFROAD_M
     this._ring.visible = this._objArrow.visible = false
     if (remain > 260) return
