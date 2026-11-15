@@ -1,7 +1,7 @@
 ---
 id: PERF-44
 type: perf
-status: open
+status: open  # measured 2026-11-14; lever built behind a flag, owner picks
 opened: 2026-11-12
 severity: minor
 source: Owner, 2026-11-12: "an investigation into where we can reduce triangles without loss of visual fidelity".
@@ -44,8 +44,49 @@ relates: [PERF-41 (the GPU budget — measured that the terrain's per-pixel shad
 5. **Report**: a table of subsystem → triangles, % sub-pixel, GPU % and main-thread ms saved when hidden, and the
    levers ranked by saving per visual risk. Then the owner picks.
 
+## Measured (2026-11-14, lane p; harness `wip/perf-44/census.mjs` + `cost.mjs`, untracked, 2090x1400 canvas)
+
+Triangles drawn per frame, mean of seeds 4127 / 58301 / 9917 (calls are the main pass; shadow = the near truck-light
+map + the far terrain map; counted by hide-diff, so exact). Near view = chase camera; far = 120 m up. Drive/bench
+numbers (850-990 k) run higher than these parked-at-spawn frames.
+
+| subsystem | main tris (near) | share | shadow tris | calls | sub-pixel (<1 px2) |
+|---|---|---|---|---|---|
+| props: rocks/pebbles (rock, smallRock, medRock, boulder) | 219 k | 43 % | 0 | 14 | 67 % |
+| terrain (49 chunks x 8192, all 1 m grid, no LOD) | 158 k | 31 % | 82 k | 19 | 15 % (3 % far view) |
+| ground cover (grass, rye, sage + Lo) | 79 k | 15 % | 71 k | 22 | 24 % |
+| trees + bushes + logs | 40 k | 8 % | 0 | 15 | 0-18 % |
+| truck | 10 k | 2 % | 10 k | 23 | 25 % |
+| road, other | 5 k | 1 % | 0 | 18 | 8 % |
+| total | 512 k | | 164 k | 111 | |
+
+GPU cost when the subsystem is hidden (active cycles, paired alternation, median of 8, shadow pass every frame; the
+machine was shared with other lanes so single cells swing +-10 points; read the pattern, not the cell):
+terrain 23-51 % (the fragment shader, as PERF-41), rocks 0-13 % (median ~7 %), cover 2-9 %, trees 3-12 %, whole shadow
+pass 6-14 %. Main-thread render() submit cost is 1-2 ms/frame whatever is hidden, so triangles are not a CPU lever.
+Triangles stay cheap: the table's biggest triangle owner (rocks, 43 %) is worth ~7 % of GPU.
+
+Findings: (1) every instanced prop pool has `frustumCulled = false` (PERF-05), so ~80 % of drawn rock/cover triangles
+are off screen; (2) pebbles (smallRock 5967 x 20 tris) and medium rocks are shrunk to zero by the shader past ~77 m but
+stay drawn out to 160 m; (3) near cover casts into the +-40 m shadow map from the whole 3x3 chunk ring (72 % of those
+casters, 110 k tris on seed 4127, lie outside the box); (4) no terrain LOD at all.
+
+## Built: `scatter.cover.farLitter` (data/flora.js, default true = today)
+
+false = the 'far' prop ring (chunks >= 64 m out) gets no pebbles / medium rocks. Main-pass triangles at spawn:
+595 586 -> 494 486 (-17 %), 484 662 -> 359 562 (-26 %), 456 003 -> 342 743 (-25 %) on the three seeds; rock sub-pixel
+share 67 -> 42 %. Expected GPU ~2-3 % (40 % of the ~7 % rock cost); not resolvable against the noise here. Look risk:
+pebbles at 64-77 m, already shrunk to a fraction of their size. Owed card `perf44-budget`. Screenshots (on/off, 3 seeds x
+near/mid/far): `wip/perf-44/out/{on,off}-seed<N>-<view>.png`.
+
+## Next steps
+
+- Owner picks farLitter (card). Unbuilt levers, ranked by saving per look risk: near-cover caster cull to the shadow box
+  (needs per-chunk cover pools; invisible; ~110 k shadow tris on cover-heavy seeds), terrain far-ring LOD (2 m grid beyond
+  ~128 m: -75 % of far chunk tris but road/terrain seam risk, MESH == PHYSICS stays), instance culling of off-screen pools.
+
 ## Acceptance
 
-- [ ] The census table on three random seeds (main pass and shadow passes, by subsystem).
-- [ ] Each subsystem's GPU-cycle and render-ms cost measured by hiding it.
+- [x] The census table on three random seeds (main pass and shadow passes, by subsystem).
+- [x] Each subsystem's GPU-cycle and render-ms cost measured by hiding it.
 - [ ] Ranked levers with before/after screenshot sheets; the owner picks which to build (each its own ticket).

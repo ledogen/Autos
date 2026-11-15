@@ -90,6 +90,7 @@ export const FLORA_PARAMS = {
       enabled:          true,     // tier-written: Low turns it off (new chunks skip the pass)
       density:          1.0,      // tier-written: × on the BACKCOUNTRY attempts (Normal 1, High/Ultra more; the wall is a road feature and does not scale)
       farLod:           true,     // chunks in the 'far' prop ring stand the cheap Lo clumps (3–4 tris) in place of the full ones (see prop-system _placeChunk)
+      farLitter:        true,      // PERF-44: false = the 'far' prop ring gets no pebbles/medium rocks (their shader fade ends ~77 m; the ring starts >= 64 m out). true = today's look until the owner picks
       sink:             0.05,     // m — clump origin below ground so the roots dig in on slopes
       slopeMax:         0.30,     // reject above this slope (1 - normal.y) regardless of greenness
       // the wall — owner 2026-09-23: 80 % less than the 4-row / 0.9 band, and SPORADIC: a third
