@@ -120,7 +120,8 @@ owner's 3 ms read scales the same, 3 → ~2 ms. Getting to a third of today need
   → branch: median 6.40 → 4.34 M, p90 19.3 → 12.0, p99 53.5 → 38.1, worst 126 → 125; same-code noise ±2 %).
   C (bee1aaf4) approximation: median −28 % / p90 −40 % / p99 −28 %; vs the refine |Δdepth| worst 0.0095 mm, pressure
   centre median 0.09 / worst 1.4 mm; kerb-graze identical (pops 3/4/8, rim 12, 0 flips), 57 → 30 samples a query.
-  Lever 1 (0e0f6beb) exact: median −7 %, spikes flat. Lever 2 exact, ≈ 0 (only 7 % of blends repeat a point). Tools: wip/perf-49/.
+  Lever 1 (0e0f6beb) exact: median −7 %, spikes flat. Lever 2 (2acc9f02) exact, ≈ 0 (only 7 % of blends repeat a point).
+  Exact = drive full-state sha256 identical + fingerprint-world ALL IDENTICAL. Gates: C 28/28, 1 75/75, 2 75/75. Tools: wip/perf-49/.
   Not covered: the worst steps (~125 M, a seed-759313244 junction at 12 m/s) — no lever reaches them.
 
 ## Decisions
