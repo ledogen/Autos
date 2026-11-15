@@ -20,7 +20,7 @@
  * hour and the scene, and the eye already owns the open view); past it, target = strength × the excess, clamped to
  * [−lo, +hi], +hi fading to 0 at night. k eases toward it with time constant `dark` when opening up (into shade) and
  * `bright` when stopping down (out into the light: the overexposed moment). Every knob is a URL parameter:
- *   ?ae=centre&aeS=0.75&aeBand=1&aeLo=2&aeHi=2.5&aeDark=2&aeBright=0.6   (the defaults; mode avg | centre | low)
+ *   ?ae=centre&aeS=0.75&aeBand=1&aeLo=2&aeHi=2.5&aeDark=2&aeBright=0.6&aeNight=0   (the defaults; mode avg | centre | low)
  */
 import * as THREE from 'three'
 
@@ -52,7 +52,7 @@ export class LiveExposure {
     const num = (k, d) => { const v = parseFloat(params.get(k)); return Number.isFinite(v) ? v : d }
     this.mode = CAL[params.get('ae')] !== undefined ? params.get('ae') : 'centre'
     this.strength = num('aeS', 0.75); this.lo = num('aeLo', 2); this.hi = num('aeHi', 2.5)
-    this.band = num('aeBand', 1); this.dark = num('aeDark', 2.0); this.bright = num('aeBright', 0.6)
+    this.band = num('aeBand', 1); this.nightOpen = num('aeNight', 0); this.dark = num('aeDark', 2.0); this.bright = num('aeBright', 0.6)
     this.renderer = renderer; this.sky = sky
     this.ev = 0                       // current log2 k
     this.metered = 0                  // last metered key, log2 of displayed luminance (read by the shoot script)
@@ -118,7 +118,8 @@ export class LiveExposure {
       const d = ref - this.metered, e = Math.sign(d) * Math.max(0, Math.abs(d) - this.band)
       // Opening up fades out with the night (the lamps' clock): the night's darkness is the eye's (DEC-199), so after
       // dark the camera only stops down, for a lit patch or a lit interior.
-      this._target = Math.min(this.hi * (1 - this.sky.nightFactor()), Math.max(-this.lo, this.strength * e))
+      const hi = this.nightOpen ? this.hi : this.hi * (1 - this.sky.nightFactor())   // ?aeNight=1: open up at night too
+      this._target = Math.min(hi, Math.max(-this.lo, this.strength * e))
     }).finally(() => { this._busy = false })
   }
 }
