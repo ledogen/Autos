@@ -289,3 +289,10 @@ deadline, the board keeps times only. Seed 90 is a curated scenario's world by d
     `paper-90:4`; restart; pause → main menu; the run save is byte-identical at every step; Continue resumes the
     original run at 0.00 m with its wallet.
   - First full smoke: PASS, 24 steps, zero console errors.
+
+## Log
+
+- 2026-11-14 (Lane B): owner's 11-07 try note ("spawn bugged into Larry's van, flips the truck") was already fixed the same
+  evening by BUG-135 (`dc4123f6`, 19:59, 8 min after the note): `poi.js startSeat` parks a yard POI's truck in the road's near
+  lane, never on the pad; `_seatAt(_larry())` uses it. `test/story-start-clear.mjs` checks Larry's seat against the van's
+  solids: ALL OK on 6 seeds incl. 1 random pair (3146596535 among them). Browser smoke not run on the branch (brief). Ticket stays open (other Tracker items).

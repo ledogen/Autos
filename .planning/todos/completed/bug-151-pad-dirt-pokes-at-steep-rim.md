@@ -1,7 +1,7 @@
 ---
 id: BUG-151
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-08
 source: Lane B, BUG-150's gate run on seed 169372896
@@ -36,3 +36,7 @@ since BUG-150 removed it (most likely BUG-146 or BUG-153/155, which reshaped the
 change does not touch it.
 
 Left to close it: add 169372896 to junction-edge-lip's `SEEDS` (the last acceptance line), run that gate, close.
+
+## Log
+
+- 2026-11-14 (Lane B): closed on evidence, no src change. Added 169372896 to junction-edge-lip's SEEDS (5 seeds now): PASS, tightest dirt-under-pad margin 12.5 cm, 0 pokes, rim wall 0.000 m, steepest pad 0.167 m per 0.25 m. Red-before is unavailable: main already green (gone since BUG-146/153/155).

@@ -302,7 +302,7 @@ async function load() {
  * fenced code, tables, blockquotes, rules) and nothing more. Inline runs in two
  * passes: code spans / links / ticket refs / file paths are pulled out into
  * placeholder tokens first, so emphasis can never chew through generated HTML. */
-const esc = s => s.replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
 
 const TICKET_RE = /\b(?:FEAT|BUG|PERF|QUAL|INFRA|ASSET|DEC|SM)-\d+\b/;
 const PATH_RE = /(?:\.planning|src|test|data|assets|tools|scenarios|docs)\/[\w./@-]*[\w]\.\w{1,5}/;
@@ -1199,7 +1199,7 @@ function viewLanes() {
       <div class="lv-row" style="margin-top:8px"><button class="act" id="in-add">add</button>
         <span class="lv-state${lvBad ? ' bad' : ''}" id="lv-state">${esc(lvState)}</span></div>
       <ul class="lv-in">${open.map(item).join('')}</ul>
-      ${handled.length ? details('in-done', `handled (${handled.length})`, `<ul class="lv-in">${handled.map(item).join('')}</ul>`) : ''}
+      ${handled.length ? details('in-done', `handled (${handled.length})`, lvOpen.has('in-done') ? `<ul class="lv-in">${handled.map(item).join('')}</ul>` : '') : ''}
     </section>
     <section>
       <h2 class="sec">Owed by you <span class="count">${owed.filter(o => !owedDone(o)).length} open of ${owed.length}</span></h2>
@@ -1257,7 +1257,8 @@ function saveAnswer(id, patch) {
   // leaving a note box saves at once, so a quick tab-close cannot lose the last half second
   app.addEventListener('change', (e) => { if (e.target.dataset?.note && noteTimers.has(e.target.dataset.note)) flushNote(e.target); });
   app.addEventListener('keydown', (e) => { if (e.target.id === 'in-text' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addItem(); } });
-  app.addEventListener('toggle', (e) => { const k = e.target.dataset?.key; if (k) lvOpen[e.target.open ? 'add' : 'delete'](k); }, true);
+  // The handled list is only in the page while its fold is open, so find-in-page (which opens any fold holding a match) never lands in it.
+  app.addEventListener('toggle', (e) => { const k = e.target.dataset?.key; if (!k) return; const was = lvOpen.has(k); lvOpen[e.target.open ? 'add' : 'delete'](k); if (k === 'in-done' && was !== e.target.open) paintLanes(); }, true);
   setInterval(async () => {
     if (!onLanes() || document.hidden) return;
     try { if (await loadData()) lvDirty = true; } catch { return lvSay('dashboard server unreachable', true); }

@@ -12,9 +12,7 @@ lane: Lane B (the physics files are theirs); the Perf lane measures
 # PERF-49: The physics budget per frame — the levers, ranked
 
 ## Next steps
-Owner: (1) where does the 3 ms read come from (see "What a frame costs")? (2) pick the levers to try, if any. Then
-one agent measures the pick headless before anything is built: the numbers below are from earlier runs, and every
-saving is an estimate.
+Owner answered 2026-11-14 (DEC-208): 0.9 ms a frame is fine; keep physics there. Lane B builds PERF-43's levers 1 and 2 (lever E) and lever C, and measures each; the owner drives kerbs to judge feel before any lands. Open: confirm "all three" (see Open questions).
 
 ## Summary
 The owner wants physics cut from "3 ms a frame" to 1–2 ms with no felt difference. This ticket is the answer as a
@@ -94,11 +92,16 @@ owner's 3 ms read scales the same, 3 → ~2 ms. Getting to a third of today need
 - [ ] Owner: where the 3 ms is read, and which lever(s) to try
 - [ ] The pick measured headless (µs per wheel query, fingerprint drift, kerb-graze unchanged)
 - [ ] Built by Lane B, or closed
+- [ ] Lever C (edge-adaptive refine) built and measured: physics stays around 0.9 ms a frame
+- [ ] PERF-43 levers 1 and 2 (lever E, exact) built and measured
+- [ ] All three test well (gates, fingerprint-physics, measured per-second spikes)
+- [ ] The owner drives kerbs and judges game feel BEFORE any of them lands (DEC-208)
 
 ## Open questions
 - Where is "3 ms per frame" read: the in-game readout, a profile, or the Windows machine?
 - Which levers to try? Recommendation: C first (bounded approximation, no speed seam), D only with the slam gate
   re-read, F when parked heat matters. A only if a third of today's cost is the real target.
+- "the perf-43 levers ... add in lever C. all three": read as PERF-43 lever 1, lever 2 and lever C. If the owner meant another three (A, B, C), say so in the note box.
 
 ## Links
 - `.planning/perf/COST-MAP-2026-11.md` § physics and § 3 (the split and the professional practice).
@@ -109,3 +112,7 @@ owner's 3 ms read scales the same, 3 → ~2 ms. Getting to a third of today need
 
 ## Log
 - 2026-11-14 (Perf lane): minted from the owner's PERF-42 note; levers written from numbers on file, no new runs.
+- 2026-11-14: scribe recorded the owner's answer.
+
+## Decisions
+- 2026-11-14, owner (card perf49-physics-budget): "0.9ms / frame is chill. chase the perf-43 levers to try to keep it to that. ive got tokens and a charger for days so im happy to invest in stability here now. add in lever C. all three must test well and i need to drive curbs to check game feel before they land" (DEC-208).

@@ -410,7 +410,7 @@ export const PART_REWARD_CAT = {
     tire: 'tires', wheel: 'tires', brakesFront: 'brakes', brakesRear: 'brakes',
     springs: 'suspension', dampers: 'suspension',
     arbFront: 'suspension', arbRear: 'suspension', lift: 'suspension',
-    engine: 'engine', radiator: 'engine', airFilter: 'engine', headlight: 'engine', diff: 'drivetrain',
+    engine: 'engine', radiator: 'engine', airFilter: 'engine', headlight: 'engine', diff: 'drivetrain', axle: 'drivetrain',
 }
 /** FEAT-168: a part's gates from its rarity, unless a REWARDS row overrides them. */
 export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['S'], legendary: ['S'] }
