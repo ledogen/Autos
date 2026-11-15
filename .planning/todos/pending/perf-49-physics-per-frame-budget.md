@@ -104,6 +104,10 @@ owner's 3 ms read scales the same, 3 → ~2 ms. Getting to a third of today need
 - Which levers to try? Recommendation: C first (bounded approximation, no speed seam), D only with the slam gate
   re-read, F when parked heat matters. A only if a third of today's cost is the real target.
 - "the perf-43 levers ... add in lever C. all three": read as PERF-43 lever 1, lever 2 and lever C. If the owner meant another three (A, B, C), say so in the note box.
+- Airborne spike (land/perf-49-spikes): only approximations are left. The candidate is an airborne early-out: skip a
+  tread line's refine (or re-use an empty answer across substeps) when its coarse clearance is over a margin m (~0.1 m).
+  It misses a contact only where the ground rises more than m between two coarse samples 9 cm apart, and then catches it
+  one substep (4 ms) later. Expected: the airborne steps drop ~50–75 %. Build it, or leave the worst at ~90 M?
 
 ## Links
 - `.planning/perf/COST-MAP-2026-11.md` § physics and § 3 (the split and the professional practice).
@@ -123,6 +127,11 @@ owner's 3 ms read scales the same, 3 → ~2 ms. Getting to a third of today need
   Lever 1 (0e0f6beb) exact: median −7 %, spikes flat. Lever 2 (2acc9f02) exact, ≈ 0 (only 7 % of blends repeat a point).
   Exact = drive full-state sha256 identical + fingerprint-world ALL IDENTICAL. Gates: C 28/28, 1 75/75, 2 75/75. Tools: wip/perf-49/.
   Not covered: the worst steps (~125 M, a seed-759313244 junction at 12 m/s) — no lever reaches them.
+- 2026-11-14 (Lane B, land/perf-49-spikes): the worst steps are the truck AIRBORNE off a junction's fill (seed 759313244
+  (−402, 1488), 10 m off the centreline, 1–2 m up, 3 s): every wheel's query is empty, so each substep re-asks the full
+  tread solve (16–20 a step × 61 samples), and off the deck beside a junction every sample re-resolves (hint not solo).
+  Exact cuts: 5bf86440 (substep 0 reuses Step 1's empty answer at its own hub; band tangents cached per run), d1d3e1dc.
+  Worst 129.6 → 88–90 M, p99 39.1 → 29.1–29.5, median flat (repeat noise ±1.5 %); drive sha256 + fingerprint-world identical.
 
 ## Decisions
 - 2026-11-14, owner (card perf49-physics-budget): "0.9ms / frame is chill. chase the perf-43 levers to try to keep it to that. ive got tokens and a charger for days so im happy to invest in stability here now. add in lever C. all three must test well and i need to drive curbs to check game feel before they land" (DEC-208).
