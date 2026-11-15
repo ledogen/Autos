@@ -118,7 +118,7 @@ export const SKY_PARAMS = {
   ambient: 1.0,       // × the sky's own irradiance on the hemisphere fill
   saturation: 0.82,   // of the natural light and sky (albedo colour is untouched — man-made stays saturated)
   exposure: 1.7,      // the sky's pre-exposure (the land's camera is LAND_EXPOSURE, the legacy's)
-  landGain: 2.0,      // the natural light on the land against the sky's, into the land's ACES curve (noon matched to the legacy)
+  landGain: 1.5,      // the natural light on the land against the sky's, into the land's ACES curve (noon matched to the legacy)
   skyAdapt: 0.45,     // the sky's eye (eyeCurve): the share of every decade of lost light it never adapts back…
   skyDepth: 1.3,      // …plus how far under noon its adaptation runs out, in decades…
   skyTwilight: 0.72,  // …and how fast it runs out (e-folding, decades of light). Smaller = a darker golden hour and dusk
@@ -136,7 +136,7 @@ export const SKY_PARAMS = {
   moonAdapt: 0.15,    // how much of the moon's light the eye adapts away (1 = all of it: full and new moon look alike)
   landDepth: 1.62,    // the land's eye (landEye): how far under noon the land reads at the darkest, in decades
   landTwilight: 2.0,  // …and how fast it gets there (e-folding, decades of light). Smaller = darker golden hour and dusk
-  warmth: 0.2,        // the land's white balance against the sky's: 0 = the same, 0.2 = sunlit ground warm like the legacy's
+  warmth: 0.28,       // the land's white balance against the sky's: 0 = the same, 0.2 = sunlit ground warm like the legacy's
   landCast: 1.0,      // how much of the light's colour cast the land keeps that the sky's white balance takes out (0–1)
   nightFog: 0.55,     // at night the fog (and the sky glow) is this × flat ground under it
   nightBlue: 1.5,     // colour saturation of the land's light under rod vision (the sky's drains to grey)

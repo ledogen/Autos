@@ -386,8 +386,10 @@ const STEPS = [
     await tap('Enter'); await sleep(150)
     check(await shown() === await all(), 'the first press did not fill the card')
     // FEAT-103: the uncle names the camp's true compass direction — filled in, never the raw token.
+    // DEC-236 (owner's four cards, 2026-11-15): the direction is on card 2 — turn card 1, fill card 2, then read.
+    await tap('Enter'); await sleep(250); await tap('Enter'); await sleep(150)
     const intro = await dlgText()
-    check(/expedition camped up at the (north|south)?(east|west)? road/.test(intro) && !intro.includes('{dir}'),
+    check(/expedition camp up at the old (north|south)?(east|west)? road/.test(intro) && !intro.includes('{dir}') && !intro.includes('[DIRECTION]'),
       `the intro does not name the camp's direction (or the fill turned the card): "${intro.slice(0, 120)}"`)
     for (let i = 0; i < 16 && await dlg(); i++) { await tap('Enter'); await sleep(250) }   // two presses a card: fill, turn
     check(!await dlg(), 'the intro cards did not close after 16 presses')
@@ -1544,14 +1546,31 @@ const STEPS = [
     check(Math.abs(await js('window.__day().clockH()') + 17) < 0.02, `the evening's night did not wake at 07:00 sharp on day 0 (clockH ${await js('window.__day().clockH()')})`)
     check(!await js('document.getElementById("midnight-card").classList.contains("on")'), "the tutorial's night dropped the midnight overlay")
     const e1 = await eve()
-    check(e1.tut === 'morning' && /last check/.test(e1.hud) && e1.gps, `waking did not end the evening and point the morning at the joint: ${JSON.stringify(e1)}`)
-    // Stage 4, the morning: breakfast, then her word about the paycheck (DEC-153). FEAT-184 stage 5: breakfast is the
+    check(e1.tut === 'morning' && /pack/.test(e1.hud), `waking did not end the evening and send the morning for Larry's pack: ${JSON.stringify(e1)}`)
+    // Stage 4, the morning: breakfast, then her errand (DEC-238). FEAT-184 stage 5: breakfast is the
     // player's to eat now (her card asks for a packed lunch); the evening held the clock and the night holds the hunger
     // clock, so you wake fed either way.
     const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
-    check(await readCards() >= 2, 'no breakfast and no word about the paycheck in the morning')
+    check(await readCards() >= 2, 'no breakfast and no errand in the morning')
     check(!/hungry/.test(await stage()), `the tutorial's morning woke the driver hungry ("${await stage()}")`)
     if (await panel()) await tap('Escape')   // her sleep card, if it is still up over the morning
+    // DEC-238, the errand: the pack lands by her steps; parked beside it, G loads it; parked at Larry's, he gives it you.
+    check(await until(async () => !!(await tut()).pack, 3000), `mom's toss put no pack on the ground: ${JSON.stringify(await tut())}`)
+    await readCards()   // the pick-up lesson
+    const pk = (await tut()).pack, mq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'momsHouse'); return { x: q.roadX, z: q.roadZ } })()`)
+    const toRoad = Math.atan2(mq.x - pk.x, mq.z - pk.z)   // the truck 3 m out from the pack, nose to the road
+    await js(`window.__seated = false; window.__teleport(${pk.x + 3 * Math.sin(toRoad)}, ${pk.z + 3 * Math.cos(toRoad)}, ${toRoad + Math.PI}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the pack never seated')
+    await simFor(2); await park(true); await tap('g')
+    check(await until(async () => (await tut()).stop === 'larry', 3000), `G beside the pack did not load it: ${JSON.stringify(await tut())}`)
+    check(await until(async () => (await eve()).gps, 3000), `the pack loaded, no GPS to Larry's: ${JSON.stringify(await eve())}`)
+    const lq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'larrysHouse'); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
+    await js(`window.__seated = false; window.__teleport(${lq.x}, ${lq.z}, ${lq.h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), "the teleport to Larry's never seated")
+    if (await speaker() !== 'Uncle Larry') { await simFor(1); await park(true) }
+    check(await until(async () => await speaker() === 'Uncle Larry', 5000), `parked at Larry's with his pack, no hand-over (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
+    await readCards()
+    check((await tut()).stop === 'joint' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the morning to the joint: ${JSON.stringify(await tut())}`)
     // The morning's GPS follows a stray truck (BUG-118).
     await strayCheck('on the way to the paycheck')
     await readCards()

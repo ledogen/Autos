@@ -146,6 +146,12 @@ function onKey (e) {
   curIdx = items.indexOf(cur)
   if (e.key === 'Enter') {
     press(cur)
+    // A card that re-renders on the press (the shop's rows) detached the highlighted node: put the highlight back on
+    // the same place, else it vanishes and the next D-pad press has to find it (owner, 2026-11-15).
+    if (!cur.isConnected && (menuContainer() ?? cardContainer()) === c) {
+      const now = [...c.querySelectorAll(ITEMS)].filter(el => el.offsetParent !== null)
+      if (now.length) highlight(now[Math.min(curIdx, now.length - 1)])
+    }
     requestAnimationFrame(sync)
     return
   }
@@ -186,7 +192,13 @@ export function initMenuNav () {
   // left on it from the offer came back with the result and A pressed continue instead of shifting.
   setInterval(() => { sync(); wakeMenu() }, 100)
   // The mouse and the highlight agree: pointing at an item moves the highlight to it.
+  // BUG: a list that scrolls under a resting pointer (the highlight stepping up the shop's list) makes the browser
+  // fire pointerover for whatever slid under it, which snapped the highlight to that — the bottom, by the pointer.
+  // Only a pointer that actually MOVED counts: pointerover arrives before its pointermove, so px / py are the old spot.
+  let px = NaN, py = NaN
+  document.addEventListener('pointermove', (e) => { px = e.clientX; py = e.clientY }, true)
   document.addEventListener('pointerover', (e) => {
+    if (e.clientX === px && e.clientY === py) return
     const c = menuContainer() ?? cardContainer()
     const el = e.target.closest?.(ITEMS)
     if (c && el && c.contains(el)) highlight(el, false)

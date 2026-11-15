@@ -12,8 +12,10 @@ lane: unplaced
 # QUAL-36: Unify how mission types are graded, presented and rewarded
 
 ## Next steps
-Built 2026-11-14 on feature/spare (DEC-178..183). Left: the owner's words (owed card qual36-words), the FEAT-140
-"Freight is units" line in missions.md:475, and a look at the bar on a calm-impatient job. Then close.
+Built 2026-11-14 on feature/spare (DEC-178..183). Words answered 2026-11-15 (DEC-252..254, branch land/small-1115).
+Left: Larry's "not enough cash" line (marked placeholder in `_larryHandsOver`, owed), the FEAT-140 "Freight is units"
+line in missions.md:475, and the owner's look at the bar's tile words on a calm-impatient job (rank-timer.js WORDS: strip
+"full tip / deed 1 / deed ½", tile "TIP+DEED / DEED / ½ DEED"). Then close.
 
 ## Summary
 Every type tips on the same time line (whole tip at ratio 0.652, half at par, none at 1.348), but only courier and
@@ -51,6 +53,7 @@ Deep dive: `.planning/dives/QUAL-36-mission-grading.html`
 `data/offers.js` · `test/economy.mjs` · `test/rank-timer.mjs` · `test/offer-board.mjs` · `test/paper-route.mjs`
 
 ## Log
+- 2026-11-15: words in (DEC-252 half price on collect, DEC-253 Larry's lines, DEC-254 card text plain); no-room vs no-cash split, cash line still [placeholder]. Gates: offer-board, sky-ephemeris.
 - 2026-11-14: built per the answers, DEC-178..183; Larry holds the item (runPaper.held, handed over parking at his house). Gates rank-timer/offer-board updated.
 - 2026-11-13: dive written from the code at e26da3d2 (feature/content). Worked examples rolled and routed headlessly
   on random seeds 3230259412, 1046436846, 2930777188 (plus 2045452201, 3599450461 for haul and fragile cases), priced

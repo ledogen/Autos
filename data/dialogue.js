@@ -27,29 +27,33 @@ export const PAPER_ROUTE_INTRO = [
 ]
 
 /**
- * GAME-FEEL REVIEW 2026-10-23 (R-11): the run's opening cards — the goal, the deed rule, the pay
- * rule — played once when a story run goes live. Until FEAT-147 builds the firing and the uncle's
- * first day, this is the one place the player is told WHAT THE RUN IS FOR: ten good deeds (economy.js
- * campDeeds — keep the word in step, FEAT-168) and the
- * expedition camp (FEAT-103). The uncle is the tutorial's voice (FEAT-147). Three cards, no more.
+ * FEAT-184 (DEC-236, owner 2026-11-15): Larry's call — the run's opening cards, the owner's words exactly as written (the
+ * owner writes dialogue: never correct them). Played once the last paycheck is in hand (DEC-155), and the one place the
+ * player is told WHAT THE RUN IS FOR. Two fills, both from the game, never typed (main.js _runIntro): {dir} is the
+ * expedition camp's true compass direction from the spawn (COMPASS below), {deeds} the camp's gate,
+ * ECONOMY_PARAMS.campDeeds. Both are words or digits of our own, so they are safe in this markup.
  */
 export const RUN_INTRO = [
     {
         speaker: 'Uncle Larry',
-        // FEAT-103: {dir} is the camp's true compass direction from the spawn, filled in at run start
-        // (main.js _runIntro) from COMPASS below — never a number, so it is safe in this markup.
-        text: `Jay. There's an expedition camped up at the {dir} road, looking for a way out of here. `
-            + `They take on anyone with <span class="dlg-key">ten good deeds</span> to their name. That's your way out too.`,
+        text: `Heyyo JJ, its your uncle Larry! Listen, I heard ol' <i>greasebeard</i> let you go. Just remember if you need a little cash `
+            + `you can always sling a few papers on the route for me. If you prove you can deliver fast enough I can even expand the route.`,
     },
     {
         speaker: 'Uncle Larry',
-        text: `A good deed is a job done right &mdash; a <span class="dlg-key">B</span> or better. Scrape a C and it's half of one. `
-            + `Every job card tells you what it's asking for. Read it before you take it.`,
+        text: `Speaking of work, I hear there's an expedition camp up at the old {dir} road. I think they're looking to make an new supply route. `
+            + `I heard them say they'd take anyone with {deeds} good deeds to their name. Don't expect it to be easy if you join up with them, `
+            + `but it might be the best way to get connected back up with the outside world`,
     },
     {
         speaker: 'Uncle Larry',
-        text: `Pay is a base you keep no matter what, plus a tip for driving it quick &mdash; unless the card offers you `
-            + `an item instead of the tip. Your last paycheck's in the glovebox. Go.`,
+        text: `Gettin' a good deed is as simple as taking delivery jobs and keeping the pace. Or sometimes getting the cargo there in one piece `
+            + `is all that matters. Listen closely to the client because they'll tell ya exactly what they need.`,
+    },
+    {
+        speaker: 'Uncle Larry',
+        text: `The client will also tell you the base pay ahead of time. Usually they tip better if you drive better. Some folks might even `
+            + `throw in an item. Just be careful, you know how sometimes these roads can surprise ya.`,
     },
 ]
 
@@ -83,11 +87,10 @@ export const BOSS_CHECK = [
     { speaker: 'The manager', text: `And just so you have no excuse to come back, here's your last check.` },
 ]
 
-/** FEAT-184 (DEC-155): once the last paycheck is in hand (the skip's or the tutorial's), Larry calls, then RUN_INTRO. PLACEHOLDER: the owner writes these words (FEAT-148).
- *  The owner's brief for them: he offers you a side gig delivering papers, and reminds you of the expedition camp and
- *  the good deeds (RUN_INTRO carries the camp and the deeds today). */
-export const LARRY_CALL = [
-    { speaker: 'Uncle Larry', text: `[placeholder] Jay, it's your uncle. Heard about the burger place. I've got a paper route if you want it &mdash; come by mine.` },
+/** FEAT-184 (DEC-238): parked at Larry's with his old pack, he gives it to you — his old camping pack, bedroll and all.
+ *  PLACEHOLDER: the owner writes these words (FEAT-148). */
+export const LARRY_PACK = [
+    { speaker: 'Uncle Larry', text: `[placeholder] My old pack! You know what, keep it &mdash; bedroll's still in it. You'll want it out there.` },
 ]
 
 /**
@@ -151,6 +154,12 @@ export const TUT = {
         + `<span class="dlg-key">Tab</span>, and pick one of the lunches I packed you.` }],
     // FEAT-184 (DEC-153): woken, the morning goes back to the joint for the last paycheck. PLACEHOLDER words.
     'tut-morning': [{ speaker: 'Mom', text: `Your last check's waiting at that burger place. Follow the line, and park out front.` }],
+    // FEAT-184 (DEC-238): the morning's errand — mom tosses Larry's old pack out her front door, and the pick-up lesson.
+    // PLACEHOLDER words, both (the owner writes character text, FEAT-148); the lesson's keys are the game's (D-pad ↓ / G).
+    'tut-errand': [{ speaker: 'Mom', text: `[placeholder] Before your check &mdash; take your uncle's old pack back to him. Here, catch!` }],
+    'tut-pickup': [{ speaker: 'Mom', text: `[placeholder] Park next to it and `
+        + `<span class="kc-kb">press <span class="dlg-key">G</span></span><span class="kc-pad">press <span class="dlg-key">D-pad ↓</span></span> `
+        + `to load anything loose nearby. Then run it over to Larry's.` }],
 }
 
 /** FEAT-148 (owner, 2026-10-31): the midnight overlay's words — the pressure is rising. The owner's lines. */
@@ -170,4 +179,5 @@ export const DLG = {
     played: 'tutorial-played',   // FEAT-184: "play the tutorial" chosen at the intro's card
     morning: 'morning',          // FEAT-184 (DEC-153): the evening is over; the morning goes to the joint (mom says so: TUT 'tut-morning')
     paycheck: 'paycheck',        // FEAT-184: the tutorial's last act heard — free will from here
+    larryPack: 'larry-pack',     // FEAT-184 (DEC-238): the errand's end — Larry gave you his old pack; the morning goes on to the joint
 }

@@ -85,6 +85,7 @@ const HOOD_OFFSET_LOCAL = new THREE.Vector3(0, 0.75, -1.0)
 // acceleration, so the true gap is often much larger than the design offset. Re-projecting
 // the orbit at a fixed nominal radius on drag-start snapped the camera toward the car
 // (BUG: freecam-drag-snap) — using the synced actual radius keeps the transition seamless.
+const _trail = new THREE.Vector3(), _prevTruck = new THREE.Vector3()   // DEC-256: the follow lerp's lag behind the goal, and last frame's truck
 const ORBIT_RADIUS_DEFAULT = Math.hypot(0, 2.5, 6.0)  // ≈ 6.5 m, matches CHASE_OFFSET_LOCAL length
 const DRAG_SENSITIVITY      = 0.005                     // rad/px
 
@@ -449,7 +450,14 @@ export function updateCamera (camera, vehicleState, dt, followDt = dt) {
       // AND the actual radius captured at drag-start (see orbitRadius comment above) —
       // using the nominal design radius here would snap the camera on entry whenever the
       // follow-mode lerp was lagging (e.g. under acceleration).
+      // DEC-256: the speed-based trail keeps updating while orbiting (_trail runs the follow lerp's lag in the
+      // background, ignoring the goal's own rotation), so the radius breathes with speed and recentring does not jump.
+      const moved = _delta.copy(vehicleState.position).sub(_prevTruck)
+      if (snap || moved.lengthSq() > 25) _trail.set(0, 0, 0)
+      else _trail.sub(moved).multiplyScalar(Math.exp(-CHASE_STIFFNESS * followDt))
+      _prevTruck.copy(vehicleState.position)
       const cosP   = Math.cos(orbitPhi)
+      orbitRadius = Math.max(0.01, ORBIT_RADIUS_DEFAULT + _trail.x * cosP * Math.sin(orbitTheta) + _trail.y * Math.sin(orbitPhi) + _trail.z * cosP * Math.cos(orbitTheta))
       const offset = _offset.set(
         orbitRadius * cosP * Math.sin(orbitTheta),
         orbitRadius * Math.sin(orbitPhi),
@@ -517,6 +525,8 @@ export function updateCamera (camera, vehicleState, dt, followDt = dt) {
       // a stiff sideways spring (tried 2026-10-01) killed it and read as "too much chassis lock".
       const alpha = snap ? 1 : 1 - Math.exp(-CHASE_STIFFNESS * boost * followDt)
       camera.position.lerp(goalPos, alpha)
+      _trail.copy(camera.position).sub(goalPos)   // DEC-256: seeds the orbit's continuing trail
+      _prevTruck.copy(vehicleState.position)
 
       // Aim: lookAt gives the target orientation; the camera slerps toward it (the rotational
       // equivalent of a lerp) by at most the rate cap. Both ends are roll-free, so it stays level.

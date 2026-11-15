@@ -1105,11 +1105,9 @@ export class OfferBoard {
             times,
             // FEAT-199 (owner, 2026-11-11): the OPTIONAL item — earned at its gate, taken off the cash at the
             // result card: "Optional item: Compressor (−$20) — if B or better". Larry's card never rolls one.
-            // The price is capped at what the job pays (itemCost), so where the pay can come in below it the card
-            // says "at most": under the quoted base, or on a haul or a site (paid per piece, so no floor) or a
-            // fragile job (damage docks up to half the base).
-            bonus: sp.bonus ? `Optional item: ${sp.bonus.name} (−${money(itemCost(sp.bonus.rewardId))}`
-                + `${itemCost(sp.bonus.rewardId) > (!range || sp.stock || sp.targets ? 0 : sp.fragile ? range.base / 2 : range.base) ? ' at most' : ''})`
+            // The price is capped at what the job pays (itemCost), so the card
+            // prints a plain "(−$N)" (DEC-254, owner 2026-11-15: "at most" dropped).
+            bonus: sp.bonus ? `Optional item: ${sp.bonus.name} (−${money(itemCost(sp.bonus.rewardId))})`
                 + ` — ${gateLine(sp.bonus.gate, sp.family, this._region, cargoId, km)}` : null,
             // R-09: the deed line — what this job adds toward the camp, and the number behind it.
             // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
