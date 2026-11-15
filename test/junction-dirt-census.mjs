@@ -16,23 +16,28 @@
 //   jcNode     _junctionCarve changes node
 //   pad        _junctionPadCarve switches on / off
 //   other      none of the above
+//   ramp       NOT a discontinuity, but a 5 cm move rising more than RAMP_MIN: a fix that turns a step into a ramp this
+//              steep has not fixed it (the ticket's yardstick is the 5 cm move), so ramps are counted beside the steps
 // A step the mesh DIRT (the composition test/junction-edge-lip.mjs rebuilds) does not share is the designed asphalt
 // edge (a ribbon shoulder or the pad rim kerb), counted as `asphalt` and not classed. Steps within 1 m of each other are
 // one SITE; the report gives sites and the worst jump per class, then the worst sites with their coordinates.
 import * as THREE from 'three'
 import { writeFileSync } from 'node:fs'
-import { RoadSystem } from '../src/road.js'
-import { RANGER_PARAMS as P } from '../data/ranger.js'
-import { parseWorldSeed } from '../src/seed.js'
-import { wirePondNoGo } from './lib/pond-no-go.mjs'
-import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
+// CENSUS_ROOT=<another checkout> measures that checkout's code with this script (the before of an A/B).
+const ROOT = process.env.CENSUS_ROOT ? new URL(`file://${process.env.CENSUS_ROOT.replace(/\/$/, '')}/`) : new URL('../', import.meta.url)
+const { RoadSystem } = await import(new URL('src/road.js', ROOT))
+const { RANGER_PARAMS: P } = await import(new URL('data/ranger.js', ROOT))
+const { parseWorldSeed } = await import(new URL('src/seed.js', ROOT))
+const { wirePondNoGo } = await import(new URL('test/lib/pond-no-go.mjs', ROOT))
+const { makeTerrainHeadless } = await import(new URL('test/lib/terrain-headless.mjs', ROOT))
 
 const args = process.argv.slice(2), opt = (k, d) => (args.find(a => a.startsWith(`--${k}=`)) ?? `=${d}`).split('=')[1]
 // BUG-158's five seeds (BUG-156's gore census) + four drawn at random for this census (2026-11-14). No default seed.
 const SEEDS = (args.find(a => !a.startsWith('--')) ?? '1074499174,565500664,11,917338424,169372896,2840193377,407711925,3561904408,1290356127').split(',')
 const R = +opt('r', 1000), TOP = +opt('top', 8), JSON_OUT = opt('json', '')
 const STEP_MIN = 0.05, DS = 0.05, hw = P.roadHalfWidth ?? 5
-const CLASSES = ['winner', 'connector', 'rivalFrame', 'rivalSet', 'arcHop', 'limb', 'jcNode', 'pad', 'other']
+const CLASSES = ['winner', 'connector', 'rivalFrame', 'rivalSet', 'arcHop', 'limb', 'jcNode', 'pad', 'other', 'ramp']
+const RAMP_MIN = 0.08   // a CONTINUOUS rise over one 5 cm move steeper than any designed bank (160 %, junction-edge-lip's TEAR_MAX)
 
 const all = []   // every classed step: { seed, cls, jump, x, z, node, detail }
 for (const S of SEEDS) {
@@ -106,12 +111,20 @@ for (const S of SEEDS) {
           if (Math.abs(hm - hLo) >= Math.abs(hHi - hm)) { hi = mid; hHi = hm } else { lo = mid; hLo = hm }
         }
         const jump = Math.abs(hHi - hLo)
+        if (jump <= 0.02 && Math.abs(h - hPrev) > RAMP_MIN) {   // no discontinuity, but too steep to be a bank
+          const xa = x0 + ux * tPrev, za = z0 + uz * tPrev
+          if (Math.abs(dirt(x0 + ux * t, z0 + uz * t) - dirt(xa, za)) >= 0.5 * Math.abs(h - hPrev))
+            found.push({ seed: S, cls: 'ramp', jump: Math.abs(h - hPrev), x: xa, z: za, ux: ux * DS, uz: uz * DS, node: nodeTag, detail: 'per 5 cm' })
+        }
         if (jump > 0.02) {
           const xa = x0 + ux * lo, za = z0 + uz * lo, xb = x0 + ux * hi, zb = z0 + uz * hi
           if (Math.abs(dirt(xb, zb) - dirt(xa, za)) < 0.5 * jump) asphalt++
           else {
             const sa = state(xa, za), sb = state(xb, zb)
-            if (!sa.bore && !sb.bore) { const [cls, detail] = classify(sa, sb); found.push({ seed: S, cls, jump, x: xa, z: za, ux: xb - xa, uz: zb - za, node: nodeTag, detail }) }
+            // the pad rim: the drawn asphalt → dirt dropoff the ring's own edge stands (designed, BUG-122)
+            const rim = (x, z) => nodes.some(n => Math.hypot(x - n.pos.x, z - n.pos.z) < 60 && road._signedRingDist(n.ring, x, z) < 0)
+            if (rim(xa, za) !== rim(xb, zb)) asphalt++
+            else if (!sa.bore && !sb.bore) { const [cls, detail] = classify(sa, sb); found.push({ seed: S, cls, jump, x: xa, z: za, ux: xb - xa, uz: zb - za, node: nodeTag, detail: detail + (process.env.RECHECK ? ` re ${hLo.toFixed(3)}/${hHi.toFixed(3)} now ${H(xa, za).toFixed(3)}/${H(xb, zb).toFixed(3)} line (${x0},${z0}) u(${ux},${uz}) t ${lo}` : '') }) }
           }
         }
       }
