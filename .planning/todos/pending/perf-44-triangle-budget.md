@@ -90,3 +90,5 @@ near/mid/far): `wip/perf-44/out/{on,off}-seed<N>-<view>.png`.
 - [x] The census table on three random seeds (main pass and shadow passes, by subsystem).
 - [x] Each subsystem's GPU-cycle and render-ms cost measured by hiding it.
 - [ ] Ranked levers with before/after screenshot sheets; the owner picks which to build (each its own ticket).
+
+- 2026-11-14: owner answered card perf44-budget "ship it (farLitter false by default)" -> DEC-223; default flipped, affected gates 9/9 green (wip/perf-44/gates-flip.log). The unbuilt levers start only if the owner wants more triangle cuts.
