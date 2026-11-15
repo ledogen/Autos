@@ -623,7 +623,7 @@ export class GpsSystem {
   _placeRing (route, s) {
     const remain = route.length - s
     const n = route.n - 1
-    const o = this._src?.objective ?? this._src?.end
+    const o = this._src?.objective ?? this._src?.end ?? this._src?.customers?.at(-1)   // a paper round ends at its last customer
     const off = o && Math.hypot(o.x - route.px[n], o.z - route.pz[n]) > OFFROAD_M
     this._ring.visible = this._objArrow.visible = false
     if (remain > 260) return
