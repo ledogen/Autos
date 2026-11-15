@@ -17,6 +17,7 @@ import { getCameraMode } from './camera.js'
 import { stepIgnition } from './ignition.js'
 import { pad, PAD_PARAMS, padKick } from './gamepad.js'
 import { makeClutchAssist, stepClutchAssist } from './clutch-assist.js'
+import { REV_THRESHOLD } from './drivetrain.js'
 import { stepParkBrake } from './park-brake.js'
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
@@ -161,9 +162,14 @@ export function updateVehicle (vehicleState, params, dt) {
   const shifting = !!vehicleState.drivetrain?.shifting
   const gearIn = params.transmissionType === 'manual' && _prevShifting && !shifting && (vehicleState.drivetrain?.mGear ?? 0) !== 0
   _prevShifting = shifting
+  // DEC-255: on the AUTOMATIC, S / LT at rest IS the reverse pedal (drivetrain.js autoReverse), so it is gas, not brake, and
+  // releases the latch. On the manual it is only a brake and never does. ponytail: speed magnitude stands in for forward
+  // speed — the latch only holds near rest, so the two agree where it matters.
+  const autoReverse = params.transmissionType !== 'manual' && rawBrake > 0 && rawThrottle <= 0
+    && Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) <= REV_THRESHOLD
   vehicleState.parked = stepParkBrake(!!vehicleState.parked, {
     tap: handKey && !_prevHandKey,                                // rising edge (press this frame)
-    throttle: (!freecamActive && keys.w) || rawThrottle > 0,
+    throttle: (!freecamActive && keys.w) || rawThrottle > 0 || autoReverse,
     gearIn,
     speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
     lock: _parkLock,
