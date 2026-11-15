@@ -1,6 +1,6 @@
 ---
 id: DEC-101
-status: standing
+status: superseded
 decided: 2026-11-09
 area: process
 governs: lanes, owed cards
