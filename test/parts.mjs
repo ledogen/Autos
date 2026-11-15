@@ -19,6 +19,7 @@
 //      with the lift kit instead of overwriting it (owner, 2026-10-22).
 //
 // Pure node: no THREE, no DOM.
+import { stepDrivetrain } from '../src/drivetrain.js'
 import { PARTS, SLOTS, FAMILY_DURABILITY, RARITY_COLOR, takes, socketsFor } from '../data/parts.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
@@ -133,6 +134,23 @@ check('lift kit over sport springs: both count', params.suspensionTravelFront ==
 parts.fit('springsOEM', null, 'springsFront'); parts.fit('springsOEM', null, 'springsRear'); parts.fit('liftNone')
 check('back to stock restores the factory geometry', ['RestLength', 'Travel', 'BodyOffset'].every(k =>
   ['Front', 'Rear'].every(ax => params['suspension' + k + ax] === RANGER_PARAMS['suspension' + k + ax])))
+
+// ── 5. FEAT-207: the axle ratio reaches the drivetrain through `finalDrive`, wheel torque scales with it ─────
+{
+  const torque = () => {   // wheel speed ∝ 1/ratio keeps engine rpm (so engine torque) identical across ratios
+    const w = 40 * 3.73 / params.finalDrive
+    const vs = { throttle: 1, brake: 0, wheelOmega: [w, w, w, w], drivetrain: { engineRPM: 4000, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 1 } }
+    stepDrivetrain(vs, params, 1 / 60, w * params.wheelRadius)
+    return params._driveTorque[2] + params._driveTorque[3]
+  }
+  check('axle: the stock ratio is the factory 3.73', params.finalDrive === RANGER_PARAMS.finalDrive && params.finalDrive === 3.73)
+  const t0 = torque()
+  parts.fit('axle410', null, 'axle')
+  check('axle: 4.10 sets finalDrive and saves with the truck', params.finalDrive === 4.10 && runParts.fitted.axle === 'axle410')
+  check('axle: wheel torque scales by 4.10 / 3.73', Math.abs(torque() / t0 - 4.10 / 3.73) < 1e-3, `${torque() / t0}`)
+  parts.fit('axle373', null, 'axle')
+  check('axle: back to stock restores 3.73', params.finalDrive === 3.73)
+}
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed')
 process.exit(fails ? 1 : 0)
