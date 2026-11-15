@@ -12,7 +12,7 @@ lane: B
 # FEAT-203: Tire iron and floor jack — the spare change is 2 h bare, 30 min with both
 
 ## Next steps
-Built on the defaults (land/feat-203). Owner: confirm the icon (placeholder = quick-jack's), price $30, the split, and the split and the compressor's part afterwards.
+Built (land/feat-203, on main); the owner's split is in (DEC-248, land/shopui-1115). Owner: confirm the icon (placeholder = quick-jack's) and price $30.
 
 ## Summary
 Bring the tire iron back as an item and set the spare-change time from the two tools: 2 h with neither, 30 min with both. Both tools are rare. The floor jack never shortens a plug repair.
@@ -37,6 +37,7 @@ Bring the tire iron back as an item and set the spare-change time from the two t
 
 ## Decisions
 - 2026-11-13, owner: spare change 2 h without the tools, 30 min with them; both rare; the floor jack does not help a plug repair.
+- 2026-11-15, owner (card feat203-try, "change something"): spare change 2 h, 1 h 30 with the tire iron, 1 h with the quick-jack, 30 min with both; plug 2 h, 30 min with the compressor (DEC-248).
 
 ## Open questions
 - One tool alone: 1 h 15 min each (the default), or does one of them matter more?
@@ -50,3 +51,4 @@ Bring the tire iron back as an item and set the spare-change time from the two t
 ## Log
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
 - 2026-11-14: built on defaults: tireIron (2 kg, $30, weight 1, offers A/S recovery, thumb placeholder = quickJack); spareFitHours = 2 - 0.75 each tool, compressor no longer shortens the spare; gate test/recovery.mjs pins neither/iron/jack/both + plug ignores jack. 39 affected gates green (dist-assets after thumb fix). Smoke run separately.
+- 2026-11-15 (lane u, land/shopui-1115): spareFitHours 2 - 0.5 iron - 1 jack; test/recovery.mjs pins the four combinations (1 h jack alone, 1 h 30 iron alone).

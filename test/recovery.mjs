@@ -151,12 +151,12 @@ check('the spare takes 2 h with the factory jack', spareFitHours(tools) === 2)
 tools.grant('compressor')
 check('…and a compressor changes nothing (FEAT-203)', spareFitHours(tools) === 2)
 tools.grant('quickJack')
-check('…1 h 15 with the floor jack alone', spareFitHours(tools) === 1.25)
+check('…1 h with the floor jack alone', spareFitHours(tools) === 1)
 tools.grant('tireIron')
 check('…30 min with both', spareFitHours(tools) === 0.5)
 const swapBoth = swapCornerHours(tools)   // before a fresh inventory resets the one run inventory
 const ironOnly = new InventorySystem({ slotCap: () => 8 }); ironOnly.start(); ironOnly.grant('tireIron')   // start() resets the one run inventory: last
-check('…1 h 15 with the tire iron alone', spareFitHours(ironOnly) === 1.25)
+check('…1 h 30 with the tire iron alone', spareFitHours(ironOnly) === 1.5)
 
 // ── 4b. The corner swap (FEAT-177): two corners trade wheels, no spare, twice a tire change ────────────────────
 const sw = new PartsSystem({ params, damage })

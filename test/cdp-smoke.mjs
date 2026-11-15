@@ -386,8 +386,10 @@ const STEPS = [
     await tap('Enter'); await sleep(150)
     check(await shown() === await all(), 'the first press did not fill the card')
     // FEAT-103: the uncle names the camp's true compass direction — filled in, never the raw token.
+    // DEC-236 (owner's four cards, 2026-11-15): the direction is on card 2 — turn card 1, fill card 2, then read.
+    await tap('Enter'); await sleep(250); await tap('Enter'); await sleep(150)
     const intro = await dlgText()
-    check(/expedition camped up at the (north|south)?(east|west)? road/.test(intro) && !intro.includes('{dir}'),
+    check(/expedition camp up at the old (north|south)?(east|west)? road/.test(intro) && !intro.includes('{dir}') && !intro.includes('[DIRECTION]'),
       `the intro does not name the camp's direction (or the fill turned the card): "${intro.slice(0, 120)}"`)
     for (let i = 0; i < 16 && await dlg(); i++) { await tap('Enter'); await sleep(250) }   // two presses a card: fill, turn
     check(!await dlg(), 'the intro cards did not close after 16 presses')
@@ -1405,11 +1407,14 @@ const STEPS = [
     const evening = () => js('window.__tutorial().phase === "evening"')
     check(await evening(), `the evening ended before the map taps: ${await evePeek()}`)
     // Stage 2: M is the skip's hold now, but a TAP still opens the map (on the release) and closes it.
-    await tap('m')
+    // M is heard on its key events, not polled per step, so tap it as a player does (~100 ms of wall time): tap()'s two
+    // RENDERED frames ran past the 1 s hold behind the map's first build, and the second tap armed the skip instead.
+    const tapM = async () => { await key('m', true); await sleep(100); await key('m', false) }
+    await tapM()
     check(await until(() => js('window.__map2d().isOpen()'), 2000), `a tap of M in the evening did not open the map: ${await evePeek()}`)
     check(await evening(), `the first tap of M skipped the evening: ${await evePeek()}`)
-    await tap('m')
-    check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'a tap of M in the evening did not close the map')
+    await tapM()
+    check(await until(() => js('!window.__map2d().isOpen()'), 2000), `a tap of M in the evening did not close the map: ${await evePeek()}`)
     check(await evening(), `a tap of M skipped the evening: ${await js('JSON.stringify({ tut: window.__tutorial().phase, wd: window.__worstDay(), h: window.__day().clockH(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), map: window.__map2d().isOpen() })')}`)
     // Stage 3, the safe drive: the clock holds on the way home, and off the road R puts the truck back on it.
     const h0 = await js('window.__day().clockH()'); await simFor(2)
@@ -1439,17 +1444,26 @@ const STEPS = [
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
     await strayCheck('in the evening')
     // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
-    const sh = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
-      const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
-      for (const along of [0, 100, -100, 160, -160]) for (const d of [9, -9]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
-        if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
-        const q = window.__roadSys().queryNearest(x, z, 100); if (q?.point && Math.hypot(q.point.x - x, q.point.z - z) > 6.5) return { x, z } }
-      return null })()`)
+    // BUG-173 (DEC-230): the spot is the flattest point within 300 m that is on the shoulder (11–14 m from the centreline:
+    // all four wheels past the road mesh and its 2.5 m shoulder, inside DEC-219's 15 m), graded under 1.5 % (under the
+    // rolling resistance, so a truck with the brake off stays put), clear of hard props within 6 m, and 90 m from every
+    // place. The old pick (the first ±9 m point beside the joint) sat on a 13–35 % cross-slope 2.3 m from a trunk: the
+    // truck perched or rolled, by frame timing. Seed 822480141 has no such point within 250 m along the joint's road.
+    // The check below is unchanged.
+    const sh = await js(`(() => { const v = window.__vs.position, H = window.terrain; let best = null
+      for (let dx = -300; dx <= 300; dx += 4) for (let dz = -300; dz <= 300; dz += 4) { const x = v.x + dx, z = v.z + dz
+        const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
+        if (g >= 0.015 || (best && g >= best.g)) continue
+        const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
+        if (lt < 11 || lt > 14 || window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
+        if (!window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) best = { x, z, g } }
+      return best })()`)
     check(sh, 'FEAT-217: no shoulder spot found')
     await seat(sh.x, sh.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
     await sleep(9000)   // > the 4 s of play it takes off the road
-    { const v = await car(); check(await js(lat(v.x, v.z)) > 5.5 && await js('document.getElementById("reset-countdown").style.opacity !== "1"'), 'FEAT-217: the truck was reset (or counted down) on the shoulder') }
+    { const v = await car(), d = await js(lat(v.x, v.z)), cd = await js('document.getElementById("reset-countdown").style.opacity')
+      check(d > 5.5 && cd !== "1", `FEAT-217: the truck was reset (or counted down) on the shoulder: ${d.toFixed(1)} m off the road, ${Math.hypot(v.x - sh.x, v.z - sh.z).toFixed(1)} m from its seat, countdown "${cd}", parked ${await js('window.__vs.parked')}`) }
     // FEAT-184 stage 6, THE WORST DAY: the station (when one is due), the flat halfway home, V, the spare that's flat too,
     // the recovery menu's free tow to the auto shop, a tire there, and the night's headlights — then mom's, as before.
     const wd = () => js('window.__worstDay()')
@@ -1496,7 +1510,9 @@ const STEPS = [
     await js('document.querySelector("#recovery-card button[data-act=towShop]").click()')
     // The shop opens on the parked edge after the tow's reseat, which awaits the seat like a teleport: seat()'s ceiling.
     check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 30000), `the tow did not land at an open shop: ${await js(`JSON.stringify({ parked: window.__vs.parked,
-      v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent })`)}`)
+      v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent,
+      shop: (() => { const p = window.__vs.position, q = window.__poi().list().filter(q => q.type === 'autoShop').sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0], s = q && window.__towSeat(q)
+        return s && { fromSeat: +Math.hypot(p.x - s.x, p.z - s.z).toFixed(1), fromMarker: +Math.hypot(p.x - q.x, p.z - q.z).toFixed(1) } })(), h: window.__day().clockH() })`)}`)
     check((await wd()).towed, 'the tow was not counted (the night beat)')
     console.log('  worst day: the shop')
     await readCards()   // the shop's cards
@@ -1536,14 +1552,33 @@ const STEPS = [
     check(Math.abs(await js('window.__day().clockH()') + 17) < 0.02, `the evening's night did not wake at 07:00 sharp on day 0 (clockH ${await js('window.__day().clockH()')})`)
     check(!await js('document.getElementById("midnight-card").classList.contains("on")'), "the tutorial's night dropped the midnight overlay")
     const e1 = await eve()
-    check(e1.tut === 'morning' && /last check/.test(e1.hud) && e1.gps, `waking did not end the evening and point the morning at the joint: ${JSON.stringify(e1)}`)
-    // Stage 4, the morning: breakfast, then her word about the paycheck (DEC-153). FEAT-184 stage 5: breakfast is the
+    check(e1.tut === 'morning' && /pack/.test(e1.hud), `waking did not end the evening and send the morning for Larry's pack: ${JSON.stringify(e1)}`)
+    // Stage 4, the morning: breakfast, then her errand (DEC-238). FEAT-184 stage 5: breakfast is the
     // player's to eat now (her card asks for a packed lunch); the evening held the clock and the night holds the hunger
     // clock, so you wake fed either way.
     const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
-    check(await readCards() >= 2, 'no breakfast and no word about the paycheck in the morning')
+    check(await readCards() >= 2, 'no breakfast and no errand in the morning')
     check(!/hungry/.test(await stage()), `the tutorial's morning woke the driver hungry ("${await stage()}")`)
     if (await panel()) await tap('Escape')   // her sleep card, if it is still up over the morning
+    // DEC-238, the errand: the pack lands by her steps; parked beside it, G loads it; parked at Larry's, he gives it you.
+    check(await until(async () => !!(await tut()).pack, 3000), `mom's toss put no pack on the ground: ${JSON.stringify(await tut())}`)
+    await readCards()   // the pick-up lesson
+    const pk = (await tut()).pack, mq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'momsHouse'); return { x: q.roadX, z: q.roadZ } })()`)
+    const toRoad = Math.atan2(mq.x - pk.x, mq.z - pk.z)   // the truck 3 m out from the pack, nose to the road
+    await js(`window.__seated = false; window.__teleport(${pk.x + 3 * Math.sin(toRoad)}, ${pk.z + 3 * Math.cos(toRoad)}, ${toRoad + Math.PI}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the pack never seated')
+    await simFor(2); await park(true); await tap('g')
+    check(await until(async () => (await tut()).stop === 'larry', 3000), `G beside the pack did not load it: ${JSON.stringify(await tut())}`)
+    check(await until(async () => (await eve()).gps, 3000), `the pack loaded, no GPS to Larry's: ${JSON.stringify(await eve())}`)
+    const lq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'larrysHouse'); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
+    await js(`window.__seated = false; window.__teleport(${lq.x}, ${lq.z}, ${lq.h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), "the teleport to Larry's never seated")
+    // The truck seats latched, which counts as parked: his hand-over may open a beat after the seat (as the joint's paycheck).
+    await readCards(800, 'Uncle Larry')
+    if (await speaker() !== 'Uncle Larry') { await simFor(1); await park(true) }
+    check(await until(async () => await speaker() === 'Uncle Larry', 5000), `parked at Larry's with his pack, no hand-over (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
+    await readCards()
+    check((await tut()).stop === 'joint' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the morning to the joint: ${JSON.stringify(await tut())}`)
     // The morning's GPS follows a stray truck (BUG-118).
     await strayCheck('on the way to the paycheck')
     await readCards()

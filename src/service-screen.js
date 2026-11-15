@@ -133,7 +133,11 @@ body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen .sv-chip { width: 28px; height: 28px; border-radius: 3px; flex: none; background-size: contain;
   background-repeat: no-repeat; background-position: center; }
 #svc-screen .sv-i { color: var(--accent-story); }   /* FEAT-213 */
-#svc-screen .sv-info { font-size: 12px; line-height: 1.45; color: var(--text-body); padding: 4px 8px 6px; }
+/* Owner, 2026-11-15: the part's info is an (i) icon's hover. The pad's highlight (.nav-focus) is that hover — the icon is a
+   button, so D-pad / stick reach it, and the text shows while it is highlighted; no click, no hidden gesture. */
+#svc-screen .sv-ibtn { width: auto; min-height: 0; margin: 0; padding: 2px 6px; }
+#svc-screen .sv-info { display: none; font-size: 12px; line-height: 1.45; color: var(--text-body); padding: 4px 8px 6px; }
+#svc-screen .sv-ibtn:hover + .sv-info, #svc-screen .sv-ibtn.nav-focus + .sv-info { display: block; }
 #svc-screen .sv-kids { margin-left: 6px; padding-left: 6px; border-left: 2px solid var(--accent-story); }   /* FEAT-212: one level in */
 #svc-screen .sv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; padding: 4px 0; font-size: 14px; }
 #svc-screen .sv-empty { font-size: 14px; color: var(--text-faint); padding: 4px 0; }
@@ -215,7 +219,8 @@ export class ServiceScreen {
     this.screen.navStep = (el, dx, dy) => {
       if (!dy) return null
       const items = [...this.card.querySelectorAll('button:not(.sv-tab)')].filter(b => b.offsetParent !== null)
-      return items[items.indexOf(el) + dy] ?? null
+      const i = items.indexOf(el)
+      return items[i + dy] ?? (i < 0 ? null : el)   // the ends hold (owner, 2026-11-15): ↑ at the top never wraps to the bottom
     }
     // isTrusted: menu-nav's highlight sends the item a synthetic mousemove (BUG-109) — that is the pad, not the pointer.
     this.screen.addEventListener('mousemove', (e) => { if (e.isTrusted) this._mouse = true })
@@ -315,7 +320,6 @@ export class ServiceScreen {
       case 'tab': this.tab = b.dataset.tab; break
       case 'node': { const d = +b.dataset.d; this.path = this.path[d] === b.dataset.id ? this.path.slice(0, d) : [...this.path.slice(0, d), b.dataset.id]; break }
       case 'diag': this.openDiagnostics(); return
-      case 'info': this.info = this.info === b.dataset.k ? null : b.dataset.k; break
       case 'align': q('align', [], 'Align all'); break
       case 'oil': q('changeOil', [], 'Oil change'); break
       case 'step': {
@@ -463,10 +467,9 @@ export class ServiceScreen {
     }).join('')
   }
 
-  /** FEAT-213: the (i) button of an open part (a pad stop), and its text under it while toggled on. */
+  /** FEAT-213: the (i) button of an open part (a pad stop), and its text under it while it is hovered or highlighted. */
   _infoRow (k) {
-    return `<button class="sv-line" data-act="info" data-k="${k}"><span class="sv-name"><span class="sv-i">(i)</span> About</span></button>`
-      + (this.info === k ? `<div class="sv-info">${infoHtml(k, DAMAGE_PARAMS)}</div>` : '')
+    return `<button class="sv-line sv-ibtn" aria-label="About"><span class="sv-i">(i)</span></button><div class="sv-info">${infoHtml(k, DAMAGE_PARAMS)}</div>`
   }
 
   /** An action row: what it does, its price and hours, its one button. */
@@ -571,7 +574,7 @@ export class ServiceScreen {
   _buyOpts (e, i) {
     const s = this.service, sockets = socketsFor(e.id)
     const fitQ = sockets.length && s.buyQuote(i, sockets[0]), carry = s.buyQuote(i)
-    return `<div data-slot="${i}"><div class="sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</div>`
+    return `<div data-slot="${i}"><div class="sv-row"><span class="sv-name sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</span></div>`   // the row's padding: as My items' first line
       + (sockets.length ? this._act('Fit on the truck', fitQ, sockets.length > 1   // a tire or wheel names its corner
         ? sockets.map(sk => btn('buy', where(sk), true, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
         : btn('buy', 'add to cart', true, `data-slot="${i}" data-socket="${sockets[0]}"`, ' ok')) : '')
