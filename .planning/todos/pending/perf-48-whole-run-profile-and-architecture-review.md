@@ -12,7 +12,7 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Owner answered the lever 6 card 2026-11-14 (DEC-207): not the all-baked version. Perf lane builds a hybrid: the bake for ground 70 m and farther from the truck, the live shader nearby, and reports how much of the 10-21 % GPU saving survives (the earlier "hybrid" test kept steep ground live, saving ~5 %: this one splits by distance).
+Lever 6 hybrid (DEC-207) is built on feature/perf and measured: owner look card perf48-hybrid-look (ship / drop / changes). Ground 70 m and farther from the truck is baked, 55–70 m cross-fades, nearer stays live. It keeps about 60 % of the all-baked saving (median −12.8 % vs −20.6 % GPU active cycles); the chase view keeps least (median −7.5 %).
 
 ## Summary
 The owner wants the game to be a truly lightweight app. Earlier perf work chased single suspects (tire lookups, the
@@ -53,7 +53,7 @@ until `afplay -v 0 /System/Library/Sounds/Tink.aiff` returns in under a second, 
 - [x] The architecture review: each large cost against professional practice, with sources
 - [x] A ranked lever list (cost today, expected gain, risk, effort), each lever a ticket or a line in an existing one
 - [ ] The owner picks levers (a deep dive if the list needs a table)
-- [ ] Lever 6 hybrid: baked look at 70 m+ from the truck, live shader nearby; before/after screenshots; the GPU saving that remains is MEASURED and reported to the owner (DEC-207)
+- [x] Lever 6 hybrid: baked look at 70 m+ from the truck, live shader nearby; before/after screenshots; the GPU saving that remains is MEASURED and reported to the owner (DEC-207)
 
 ## Decisions
 - 2026-11-14, owner (lever 1, the energy/hunger strips stepping one device pixel at a time): "keep the pixel steps".
@@ -109,3 +109,8 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
   −10 to −21 % active cycles on a busy machine (absolute −40 to −190 Mcyc/s), −22 to −24 % on the one quiet run. Keeping
   steep pixels live (uBakeSteep 0.7) ate most of it (+2 to −16 %, median −5 %). Shots: perf worktree wip/perf-48/shots2/. Not gated.
 - 2026-11-14: scribe recorded the owner's answer to the terrain-bake card.
+- 2026-11-14 (Perf lane): lever 6 hybrid (DEC-207), branch feature/perf: bake at ≥ 70 m (BAKE_FAR_M) from the truck,
+  per-pixel smoothstep cross-fade of albedo + normal over 55–70 m, live nearer; per chunk the cheapest exact material.
+  Paired A/B (wip/perf-48/hybrid-ab.mjs), 3 seeds × noon/dusk × near/mid/far, 12 × 2 s cycles: hybrid median −12.8 %
+  (cells +0.4 to −23.8 %), all-baked −20.6 % same session; near (chase) −7.5 % vs −20.6 %. Fog untouched (no saving there).
+  Sheets wip/perf-48/hyb/sheet-*.jpg. Not gated beyond the affected list (cdp-smoke held for main).
