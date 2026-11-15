@@ -1,15 +1,14 @@
 /**
- * src/moon.js — night moon disc for the QUAL-02 day/night cycle.
+ * src/moon.js — the moon disc.
  *
- * A single camera-locked billboard (2 tris) drawn at a fixed distance along the KEY-LIGHT direction,
- * so the moon you see and the light casting your shadows are the same object. SkySystem owns the
- * direction (SKY_PARAMS.lightEl/lightAz — see sky.js's SKY-SUN vs KEY-LIGHT note); this module only
- * places and shades it.
+ * A single camera-locked billboard (2 tris) drawn at a fixed distance along the moon's direction.
+ * SkySystem owns it: it computes where the moon is for its phase (it rises and sets, and is up by day
+ * at the right phases), how bright it reads through the air and the eye, and its colour low down; this
+ * module only places and shades it. When the moon is the night's key light, the disc you see and the
+ * light casting your shadows are the same object.
  *
- * WHY A LIVE MESH, NOT BAKED INTO THE SKY CUBEMAP: the baked sky is 512 px per cube face, so a
- * moon-sized disc would span ~30 texels and read as a mush. Drawn live it is pixel-crisp at any
- * angular size for one extra draw call. (sky.js's below-horizon fog fill stays baked — it is a smooth
- * gradient, so resolution buys it nothing.)
+ * WHY A MESH, NOT PART OF THE SKY SHADER: the sky's light is a 64 × 32 look-up texture, which would
+ * smear a disc; drawn as its own quad it is pixel-crisp at any angular size for one extra draw call.
  *
  * DEPTH / FOG: the mesh sits at MOON_DIST metres from the camera with depthWrite off but depthTest
  * ON, so real terrain in front of it occludes it for free (the terrain ring is ~320 m, well inside
@@ -22,9 +21,9 @@
  * near white after ACES at the night exposure (~0.36).
  *
  * PHASE: the surface is generated as a FULL moon (procedural maria + craters over the whole disc)
- * and a separate terminator mask reveals only part of it. `phase` is 0 = new, 0.5 = half (the
- * shipped default), 1 = full — so wiring a lunar cycle later is just animating that one number; the
- * albedo never changes. The unlit limb is drawn additively at zero, so it is genuinely absent
+ * and a separate terminator mask reveals only part of it. `phase` is 0 = new, 0.5 = half, 1 = full
+ * (SkySystem.setMoonCycle sets it); the albedo never changes. The billboard is turned about the view
+ * axis so the lit limb faces the sun. The unlit limb is drawn additively at zero, so it is genuinely absent
  * from the sky rather than a dark disc — `earthshine` can lift it if an ashen look is wanted.
  */
 import * as THREE from 'three'
@@ -32,6 +31,8 @@ import * as THREE from 'three'
 // Metres from the camera. Must be < camera.far (1000) and > the terrain ring (~320 m) so the world
 // occludes the moon but the moon never clips the far plane.
 const MOON_DIST = 800
+const _right = new THREE.Vector3(), _up = new THREE.Vector3(), _toSun = new THREE.Vector3(), _z = new THREE.Vector3(0, 0, 1)
+const _roll = new THREE.Quaternion()
 // The billboard quad is this many times the disc DIAMETER, leaving room for the halo to fall off
 // outside the limb. The shader rescales by it (see FRAG) so `angularSize` always means the DISC.
 const QUAD_PAD = 1.9
@@ -40,9 +41,8 @@ export const MOON_PARAMS = {
   enabled: true,
   angularSize: 5.5,     // apparent DIAMETER in degrees. The real moon is 0.52°, which is far too
                         // small to read in-game; this is the size the look was signed off at.
-  phase: 0.42,          // 0 = new, 0.5 = geometric half, 1 = full. Animate this for a lunar cycle.
-                        // Slightly under half by default: a lit disc on a black sky reads as
-                        // larger than it is, so an exact half looks over-lit. Slider: Moon > phase.
+  phase: 0.42,          // 0 = new, 0.5 = geometric half, 1 = full — owned by SkySystem.setMoonCycle. This
+                        // default is free roam's moon (a waxing crescent past its first week).
   brightness: 3.0,      // PRE-tone-mapping luminance of the lit limb (see header). Pushed much past
                         // ~4 and ACES saturates the whole disc to flat white, taking the maria with it.
   earthshine: 0.0,      // unlit-limb brightness as a fraction of `brightness`. 0 by DEFAULT: any
@@ -65,7 +65,7 @@ const VERT = /* glsl */`
 const FRAG = /* glsl */`
   #define QUAD_PAD ${QUAD_PAD.toFixed(3)}
   uniform float uPhase, uBrightness, uEarthshine, uTermSoft, uHalo, uSeed, uOpacity;
-  uniform vec3  uTint;
+  uniform vec3  uTint, uAir;
   varying vec2 vUv;
 
   // Cheap value noise — enough for maria blotches and crater speckle at this angular size.
@@ -129,7 +129,7 @@ const FRAG = /* glsl */`
     // ADDITIVE output (see the material): the moon is a light source against the sky, so the
     // unlit limb must contribute NOTHING. With normal blending it instead painted the disc's dark
     // half as opaque black — a visible mask sitting over a full circle rather than a phase.
-    vec3 col = uTint * uBrightness * (albedo * level * disc + glow);
+    vec3 col = uTint * uAir * uBrightness * (albedo * level * disc + glow);
     gl_FragColor = vec4(col, uOpacity);
 
     #include <tonemapping_fragment>
@@ -150,8 +150,9 @@ export class MoonSystem {
         uTermSoft:   { value: p.terminatorSoft },
         uHalo:       { value: p.halo },
         uSeed:       { value: p.seed },
-        uOpacity:    { value: 0 },              // driven from nightFactor each frame
+        uOpacity:    { value: 0 },              // SkySystem: the disc's brightness against the sky
         uTint:       { value: new THREE.Color(p.tint) },
+        uAir:        { value: new THREE.Color(1, 1, 1) },   // the air's colour on the moonlight (SkySystem)
       },
       vertexShader: VERT,
       fragmentShader: FRAG,
@@ -160,7 +161,7 @@ export class MoonSystem {
       depthTest: true,       // ...but let the world occlude IT (see header)
       fog: false,            // REQUIRED at MOON_DIST — see header
       // Additive, so the unlit limb and the halo tail add zero instead of compositing black over
-      // the sky. AdditiveBlending is (SRC_ALPHA, ONE), so uOpacity still drives the nightFactor fade.
+      // the sky. AdditiveBlending is (SRC_ALPHA, ONE), so uOpacity scales what it adds.
       blending: THREE.AdditiveBlending,
     })
     // The glow extends past the disc, so the quad is oversized and the shader masks it.
@@ -184,22 +185,31 @@ export class MoonSystem {
   }
 
   /**
-   * Per-frame placement. Called from the render loop after the camera has been updated.
+   * Per-frame placement. Called from SkySystem.update after the camera has been posed.
    * @param {THREE.Camera} camera
-   * @param {THREE.Vector3} keyDir — SkySystem.sunDirection (unit, scene origin → key light)
-   * @param {number} nightFactor  — SkySystem.nightFactor() (0 day, 1 night); fades the moon in
+   * @param {THREE.Vector3} moonDir — unit, toward the moon
+   * @param {THREE.Vector3} sunDir  — unit, toward the sun (the lit limb turns to face it)
+   * @param {number} opacity        — how bright the disc reads against the sky (0 below the horizon)
+   * @param {THREE.Color} air       — the air's colour on the moonlight (orange near the horizon)
    */
-  update (camera, keyDir, nightFactor) {
-    const vis = MOON_PARAMS.enabled && nightFactor > 0.01 && keyDir.y > -0.05
+  update (camera, moonDir, sunDir, opacity, air) {
+    const vis = MOON_PARAMS.enabled && opacity > 0.003
     this.mesh.visible = vis
     if (!vis) return
-    this.mesh.position.copy(camera.position).addScaledVector(keyDir, MOON_DIST)
+    this.mesh.position.copy(camera.position).addScaledVector(moonDir, MOON_DIST)
     this.mesh.quaternion.copy(camera.quaternion)   // billboard
+    // Turn the quad about the view axis so its +x (the lit side, see FRAG) points at the sun as seen
+    // round the moon: the sun's direction less its component along the moon's.
+    _right.set(1, 0, 0).applyQuaternion(camera.quaternion)
+    _up.set(0, 1, 0).applyQuaternion(camera.quaternion)
+    _toSun.copy(sunDir).addScaledVector(moonDir, -sunDir.dot(moonDir))
+    this.mesh.quaternion.multiply(_roll.setFromAxisAngle(_z, Math.atan2(_toSun.dot(_up), _toSun.dot(_right))))
     // Quad spans the halo as well as the disc, hence QUAD_PAD; the shader rescales to match, so
     // `angularSize` is the DISC's apparent diameter, not the quad's.
     const halfAngle = THREE.MathUtils.degToRad(MOON_PARAMS.angularSize) * 0.5
     this.mesh.scale.setScalar(2 * MOON_DIST * Math.tan(halfAngle) * QUAD_PAD)
-    this._mat.uniforms.uOpacity.value = Math.min(1, nightFactor)
+    this._mat.uniforms.uOpacity.value = Math.min(1, opacity)
+    this._mat.uniforms.uAir.value.copy(air)
   }
 
   /** lil-gui folder (attaches to the Sky folder — same convention as sky.js/prop-debug.js). */
@@ -208,7 +218,6 @@ export class MoonSystem {
     f.close()
     const re = () => this.apply()
     f.add(MOON_PARAMS, 'enabled').name('enabled')
-    f.add(MOON_PARAMS, 'phase', 0, 1, 0.01).name('phase (0 new .5 half 1 full)').onChange(re)
     f.add(MOON_PARAMS, 'angularSize', 0.3, 8, 0.1).name('angular size (deg)')
     f.add(MOON_PARAMS, 'brightness', 0, 12, 0.1).name('brightness (pre-ACES)').onChange(re)
     f.add(MOON_PARAMS, 'earthshine', 0, 0.3, 0.005).name('earthshine').onChange(re)
