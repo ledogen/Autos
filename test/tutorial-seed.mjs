@@ -9,7 +9,7 @@
 //   2. the evening: joint → the station nearest by road → mom's, the station's detour ≤ 2 km (the census's bar; main.js
 //      TUT_PARAMS.pumpDetourM is the game's 4 km), and the flat's tow (halfway home) to an auto shop ≤ 2.5 km by crow,
 //      which plans back to mom's;
-//   3. the morning (DEC-153): mom's → the joint plans, for the last paycheck.
+//   3. the morning (DEC-153, DEC-238): the pack lands by mom's steps in reach of her road; mom's → Larry's → the joint plan.
 // Each leg's length is also held to the census's within 10 %, so a re-routed leg shows before a player finds it.
 // A failure means re-pick the seed (the census tools: wip/feat184/), never loosen this.
 //
@@ -19,11 +19,11 @@ import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { WaterSystem } from '../src/water.js'
-import { PoiSystem } from '../src/poi.js'
+import { PoiSystem, dropZoneWorld } from '../src/poi.js'
 import { validateArea, discArea } from '../src/world-validate.js'
 import { MissionSystem, REGION_MARGIN } from '../src/mission.js'
 import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
-import { TUTORIAL } from '../data/tutorial.js'
+import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
@@ -78,9 +78,13 @@ const shopHome = to(shop?.q, [mom])
 check('the shop → mom\'s plans', !!shopHome)
 near('the shop → mom\'s', shopHome, KM.shopHome)
 
-// 3.
-const morning = to(mom, [joint])
-check(`the morning's mom's → the joint plans (${morning ? km(morning).toFixed(2) + ' km' : '—'})`, !!morning && morning.endPoiId === joint?.id)
+// 3. The morning (DEC-238): the pack lands by mom's steps, on her road side and in reach of it; mom's → Larry's → the joint.
+const toss = dropZoneWorld(mom, PACK_TOSS), off = (p) => Math.hypot(...(({ point: r }) => [r.x - p.x, r.z - p.z])(road.queryNearest(p.x, p.z, 500)))
+const tossOff = off(toss), homeOff = off({ x: mom.modelX ?? mom.x, z: mom.modelZ ?? mom.z })
+check(`the pack lands on her road side, ${tossOff.toFixed(1)} m off the road (her trailer's middle ${homeOff.toFixed(1)} m) ≤ 15 m`, tossOff < homeOff && tossOff <= 15)
+const toLarry = to(mom, [larry]), morning = to(larry, [joint])
+check(`the errand's mom's → Larry's plans (${toLarry ? km(toLarry).toFixed(2) + ' km' : '—'})`, !!toLarry && toLarry.endPoiId === larry?.id)
+check(`the morning's Larry's → the joint plans (${morning ? km(morning).toFixed(2) + ' km' : '—'})`, !!morning && morning.endPoiId === joint?.id)
 
 console.log(fails ? `\n${fails} TUTORIAL-SEED CHECK(S) FAILED` : '\nALL TUTORIAL-SEED CHECKS PASSED')
 process.exit(fails ? 1 : 0)

@@ -87,7 +87,7 @@ import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: th
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR, clockHeld } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
-import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
+import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
 import { ITEMS } from '../data/items.js'
 import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
@@ -104,8 +104,8 @@ import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, PAYCHECK, LARRY_CALL, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
-import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
+import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
+import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -2599,6 +2599,8 @@ if (_PROF) {
 // Phase 7 (SEED-04 / D-09): rebuildTerrainFull = Path B debounced rebuild (Worker reinit + re-seat);
 //   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
+  parts: partsSystem,   // FEAT-222: the debug part selector fits through the shop's own path
+  saveTruck: () => putTruck({ parts: partsSystem.snapshot(), gearbox: _runGearbox }),   // FEAT-205: the debug "save as winning truck" button — the record a win writes
   // The ramp is a LAB rig: the mesh shows only there, and the chassis's engine prism follows the
   // toggle too (the wheels' RAMP_TRIS already did) — no invisible ramp, no ramp in free roam.
   setRampVisible:      (v) => {
@@ -2964,7 +2966,7 @@ function _fragileBlink (dt) {
 // Road ribbon/pad/bore trimesh colliders — attached to roadMeshSystem at its creation sites
 // below (boot + seed rebuild). The terrain heightfields mirror the CARVED mesh, which sits
 // roadClearanceMargin BELOW the asphalt; without this mirror debris fell through the road.
-const roadPhysics = new RoadPhysics(physicsEngine)
+const roadPhysics = new RoadPhysics(physicsEngine, CHUNK_SIZE)
 // POI marker solids for the chassis — rebuilt with the markers (_rebuildPoiMarkers).
 const poiPhysics = new PoiPhysics(physicsEngine)
 // Prop hard colliders (tree trunks, logs, rocks, boulders) as engine statics — the chassis'
@@ -4475,11 +4477,13 @@ missionSystem = new MissionSystem({
   getClockH: () => daySystem.clockH(),
 })
 
-/** FEAT-103: the run's opening cards with the camp's true compass direction from the spawn filled in. */
+/** FEAT-103: the run's opening cards (Larry's call, DEC-236) with the camp's true compass direction from the spawn and its
+ *  deed gate filled in. */
 function _runIntro () {
   const c = poiSystem.list().find(q => q.type === 'expeditionCamp'), r = storySystem.region()
   const deg = c && r ? (Math.atan2(c.x - r.x, -(c.z - r.z)) * 180 / Math.PI + 360) % 360 : 0
-  return RUN_INTRO.map(card => ({ ...card, text: card.text.replace('{dir}', COMPASS[Math.round(deg / 45) % 8]) }))
+  return RUN_INTRO.map(card => ({ ...card, text: card.text.replace('{dir}', COMPASS[Math.round(deg / 45) % 8])
+    .replace('{deeds}', String(ECONOMY_PARAMS.campDeeds)) }))
 }
 
 // ── FEAT-147/170: the opening — the firing, the evening at mom's, the first job, Larry's welcome ──
@@ -4538,9 +4542,11 @@ let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: sta
 const _momOwes = { part: true, labour: true, patch: true }   // patch: FEAT-217, the first flat patched at the shop
 let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
 // dev handle — test/cdp-smoke.mjs and run-soak read where the tutorial stands (FEAT-184): 'intro' (the firing) · 'card' ·
-// 'evening' · 'morning' · 'free' (the paycheck heard, or skipped), and the run's own world while it plays on the tutorial seed
+// 'evening' · 'morning' · 'free' (the paycheck heard, or skipped), the run's own world while it plays on the tutorial seed,
+// and the morning errand's stop and where its pack lies (DEC-238)
 window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _eveningLeg() ? (dialogueSystem.has(DLG.played) ? 'evening' : 'intro')
-  : _morningLeg() ? 'morning' : 'free', returnSeed: _returnSeed, seed: _seedString })
+  : _morningLeg() ? 'morning' : 'free', returnSeed: _returnSeed, seed: _seedString,
+  stop: _morningLeg() ? _errandStop() : null, pack: (({ x, z } = {}) => x == null ? null : { x, z })(_packOnGround() ?? undefined) })   // DEC-238
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
 window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
@@ -4571,17 +4577,44 @@ const _morningLeg = () => !!offerBoard && dialogueSystem.has(DLG.morning) && !di
 /** Either leg: the tutorial's traps (no fuel burn, off the road puts you back, the tow on mom, no givers) and its line. */
 const _tutDrive = () => _eveningLeg() || _morningLeg()
 
-/** The tutorial's GPS: the joint (or the station) to mom's door; in the morning, hers to the joint. Planned once per leg. */
+/** The tutorial's GPS: the joint (or the station) to mom's door; in the morning, hers to Larry's, his to the joint.
+ *  Planned once per stop. */
+let _eveGuideTo = null   // the stop _eveningGuide was planned to
 function _homeGuide () {
-  if (_eveningGuide === undefined) {
-    const mom = _mom(), from = _morningLeg() ? mom : _evePump?.done ? _evePump.q : _joint(), to = _eveTarget()
+  const to = _eveTarget()
+  if (_eveningGuide === undefined || _eveGuideTo !== to) {
+    _eveGuideTo = to
+    const mom = _mom(), from = _morningLeg() ? (to === _joint() ? _larry() ?? mom : mom) : _evePump?.done ? _evePump.q : _joint()
     _eveningGuide = from && to ? missionSystem.planOffer(from, { rng: offerBoard.routeRng({ poiId: mom.id, slot: 'eve', k: 0 }),
       dest: { kind: 'poi', pois: [to], strict: true, anyLeg: true, nearest: true } }) : null
   }
   return _eveningGuide
 }
-/** FEAT-184: where the tutorial's line goes now — the station while a fill-up is due, else mom's; the joint in the morning. */
-const _eveTarget = () => (_morningLeg() ? _joint() : _evePump && !_evePump.done ? _evePump.q : _mom())
+/** FEAT-184: where the tutorial's line goes now — the station while a fill-up is due, else mom's; in the morning the
+ *  errand's stop (DEC-238): mom's steps till the pack is loaded, Larry's till he has given it, then the joint. */
+const _eveTarget = () => (_morningLeg() ? { pack: _mom(), larry: _larry(), joint: _joint() }[_errandStop()] ?? _joint()
+  : _evePump && !_evePump.done ? _evePump.q : _mom())
+
+// ── FEAT-184 (DEC-238, owner 2026-11-15): the morning's errand — Larry's old pack ──
+// Mom tosses his old pack out her front door; it lands by her steps (a world item, FEAT-143), and the pick-up lesson
+// follows (D-pad ↓ / G, _pickUpNear). Parked at Larry's with it on board, he gives it to you: it IS the starting kit's
+// pack, bedroll and all (inventory.js startingPack), which a played tutorial takes off the truck at "play". Stateless
+// across a resume like the legs: the stop is read off the seen keys, the truck and the ground (the save carries all three).
+/** The pack on the truck — in the run's entries, anywhere. */
+const _packOnBoard = () => inventorySystem.list().some(r => r.id === 'pack')
+/** The pack lying on the ground, or null. */
+const _packOnGround = () => runWorldItems.items.find(it => it.entry.id === 'pack') ?? null
+/** The errand's stop: 'pack' (load it at mom's), 'larry' (take it to his), 'joint' (given — on to the paycheck). */
+const _errandStop = () => dialogueSystem.has(DLG.larryPack) ? 'joint' : _packOnBoard() ? 'larry' : 'pack'
+/** Mom's toss: the starting pack on the ground by her steps, falling. Idempotent: only when it is neither on board nor down. */
+function _tossPack () {
+  const q = _mom()
+  if (!q || _packOnBoard() || _packOnGround()) return
+  const { x, z, yaw } = dropZoneWorld(q, PACK_TOSS)
+  const i = place(startingPack(), { x, y: terrainSystem.analyticHeight(x, z) + PACK_TOSS.y, z, q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] })
+  _groundHandle(runWorldItems.items[i]).fresh = true
+  _updateWorldItems()
+}
 
 /** FEAT-184 stage 4: the worst day's spare is flat — the jalopy's own, or one granted for the evening. Made so when the
  *  flat happens, so a skip before it never touches the spare. Remembers which, for _undoWorstDay. */
@@ -4600,6 +4633,10 @@ function _undoWorstDay () {
   const i = _eveSpare ? inventorySystem.list().findIndex(r => r.id === 'spareTire' && r.flat) : -1
   if (i >= 0) { if (_eveSpare.granted) inventorySystem.take(i); else inventorySystem.amend(i, { flat: false }) }
   _evePump = null; _eveFlat = false; _eveTowed = false; _eveSpare = null
+  // DEC-238: the errand's pack back on the truck, from the ground or (still at mom's) anew.
+  const g = _packOnGround()
+  if (g) { _dropGroundHandle(g); takeWorldItem(runWorldItems.items.indexOf(g)) }
+  if (!_packOnBoard()) inventorySystem.restoreEntry(startingPack())
 }
 
 /** FEAT-184 stage 3: at a played opening's start, the evening's station and the near-empty tank — when the nearest
@@ -4719,8 +4756,17 @@ function _eveningBeats () {
   const q = _mom(), j = _joint()
   if (!_tutDrive()) { _showResetCountdown(0); return }
   if (_morningLeg()) {
-    _tut('tut-morning')   // after breakfast, which the sleep queued
-    if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
+    // DEC-238: after breakfast (which the sleep queued) mom's errand, then the pack by her steps and the pick-up lesson;
+    // parked at Larry's with it, his hand-over; then mom's card for the joint, and parked there the paycheck.
+    _tut('tut-errand')
+    if (dialogueSystem.has('tut-errand')) _tossPack()
+    if (_packOnGround()) _tut('tut-pickup')
+    const L = _larry(), stop = _errandStop()
+    if (stop === 'larry' && L && vehicleState.parked && _inPoiSpot(L)) _tut(DLG.larryPack, LARRY_PACK, null, true)
+    if (stop === 'joint') {
+      _tut('tut-morning')
+      if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
+    }
   } else if (q) _eveningLessons(q, vehicleState.position)
   // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
   // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
@@ -4924,6 +4970,9 @@ function _playTutorial () {
     return
   }
   dialogueSystem.restoreSeen([DLG.played])
+  // DEC-238: the starting pack is Larry's old one, at mom's until the morning's errand.
+  const pi = inventorySystem.list().findIndex(r => r.id === 'pack')
+  if (pi >= 0) inventorySystem.remove(pi)
   _syncTutCard()
   if (TUT_SEED_RETURNS && !_returnSeed) _returnSeed = _resolveSeed('')
   _cardHold = true
@@ -4987,7 +5036,7 @@ function _checkOpeningEnd () {
   economySystem.payPaycheck()
   if (_returnSeed) { _returnToRunWorld(); return }
   if (skipped && !dialogueSystem.has(DLG.bossCheck)) { _tut(DLG.bossCheck, BOSS_CHECK, null, true); return }
-  _tut(DLG.runIntro, [...LARRY_CALL, ..._runIntro()], null, true)
+  _tut(DLG.runIntro, _runIntro(), null, true)   // Larry's call (DEC-236)
   _markPlayed()   // FEAT-184: the tutorial is over
 }
 
@@ -5040,14 +5089,18 @@ const paperRouteSystem = new PaperRouteSystem({
  * and his line reminds the player. PLACEHOLDER words (the owner writes character text, FEAT-148).
  */
 function _larryHandsOver () {
-  const kept = [], gave = []
+  const kept = [], gave = [], noRoom = []
   for (const h of runPaper.held) {
-    if (inventorySystem.fits(h.rewardId) && economySystem.spend(h.cost)) { inventorySystem.grant(h.rewardId); gave.push(h.name) } else kept.push(h)
+    // DEC-252: collecting costs HALF the item's price (owner 2026-11-15), to the cent.
+    if (!inventorySystem.fits(h.rewardId)) { kept.push(h); noRoom.push(h.name) }
+    else if (economySystem.spend(Math.round(h.cost * 50) / 100)) { inventorySystem.grant(h.rewardId); gave.push(h.name) } else kept.push(h)
   }
   runPaper.held = kept
   const say = (text) => { dialogueSystem.play(null, [{ speaker: 'Uncle Larry', text }]); _renderDialogue() }
-  if (gave.length) say(`[placeholder] Here's your ${gave.join(' and ')}. Told you I'd hold it.`)
-  else if (kept.length) say(`[placeholder] Still holding your ${kept.map(h => h.name).join(' and ')} for you. Make room in the truck and bring some cash, then it's yours.`)
+  // DEC-253: the owner's own words (QUAL-36 answers 1 and 2).
+  if (gave.length) say(`Did ya come back to grab your ${gave.join(' and ')}? I been keepin' it safe for ya.`)
+  else if (noRoom.length) say("Well that's too bad. Looks like ya dont have room for it right now. Go drop something and check back with me.")
+  else if (kept.length) say(`[placeholder] Not enough cash for your ${kept.map(h => h.name).join(' and ')} yet. Come back with some money.`)   // OWED: the owner's "not enough cash" line (QUAL-36)
 }
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
 const _recalcEl = document.getElementById('gps-recalc')
@@ -6414,7 +6467,9 @@ function _updateBarricades () {
   const p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
   for (const row of _barricadeRows) {
     const d = Math.hypot(p.x - row.x, p.z - row.z)
-    if (!row.bodies && d < BARRICADE_ON_M) {
+    // BUG-172: and only once the deck and the ground under every pose are colliders — near the truck
+    // is not enough (a resume, a reset or a slow machine reaches a row before its ground streams).
+    if (!row.bodies && d < BARRICADE_ON_M && row.poses.every(({ pos }) => terrainPhysics.hasChunkAt(pos.x, pos.z) && roadPhysics.hasTileAt(pos.x, pos.z))) {
       // The body sits at the model's bbox centre: half its height up the normal, a centimetre clear.
       row.bodies = row.poses.map(({ pos, up, q }) => debrisSystem.spawn('roadBarrier', pos.clone().addScaledVector(up, half.y + 0.01), still,
         { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })).filter(Boolean)
@@ -6443,7 +6498,7 @@ function _updateOrnaments () {
     // The body sits at the model's bbox centre: half its height above a base-origin model, at the
     // origin of a centred one (the beach ball, lifted by its radius).
     _ornUp.set(0, half.y - o.lift + 0.01, 0).applyQuaternion(o.mesh.quaternion)
-    if (o.body == null && d < ORNAMENT_ON_M) {
+    if (o.body == null && d < ORNAMENT_ON_M && terrainPhysics.hasChunkAt(o.mesh.position.x, o.mesh.position.z)) {   // BUG-172
       const q = o.mesh.quaternion
       o.body = debrisSystem.spawn(o.kind, _ornP.copy(o.mesh.position).add(_ornUp), still,
         { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })
@@ -6516,7 +6571,7 @@ function _updateWorldItems () {
       scene.add(h.mesh)
     }
     const d = Math.hypot(p.x - it.x, p.z - it.z)
-    if (h.body == null && d < ITEM_ON_M) {
+    if (h.body == null && d < ITEM_ON_M && terrainPhysics.hasChunkAt(it.x, it.z)) {   // BUG-172
       _giQ.set(...it.q)
       if (h.fresh) {   // off the tailgate: back by its bounding circle, up by its half height
         _giP.set(0, half.y, Math.hypot(half.x, half.z) + ITEM_GAP_M).applyQuaternion(_giQ)
@@ -6635,7 +6690,7 @@ function _updateSite () {
       physicsEngine.getTransform(t.body, _siteP, _siteQ)
       if (live && !t.smashed && (_siteP.distanceTo(t.p0) > D.smashMoveM || _siteQ.angleTo(t.q) > D.smashTiltRad)) t.smashed = true
       if (d > D.offM) { debrisSystem.remove([t.body]); t.body = null; t.mesh.visible = !t.smashed }
-    } else if (live && !t.smashed && d < D.onM) {
+    } else if (live && !t.smashed && d < D.onM && terrainPhysics.hasChunkAt(t.pos.x, t.pos.z)) {   // BUG-172
       const half = debrisSystem.halfExtents(t.kind)
       if (!half) continue   // its collider is still loading
       // The body (bbox-centred) half its height above the stand-in's base, a centimetre clear.
@@ -7379,7 +7434,7 @@ function _renderMissionUI () {
       unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
       if (_tutDrive()) {   // FEAT-170: no job, only the way home (FEAT-184: the morning's, to the paycheck)
-        const q = _eveTarget(), vp = vehicleState.position, what = _morningLeg() ? 'park there for your last check' : q !== _mom() ? 'fill up at a pump' : 'park there to sleep'
+        const q = _eveTarget(), vp = vehicleState.position, what = _morningLeg() ? { pack: "load the pack by mom's steps", larry: 'park there with his pack', joint: 'park there for your last check' }[_errandStop()] : q !== _mom() ? 'fill up at a pump' : 'park there to sleep'
         if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
         // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.

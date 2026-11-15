@@ -34,6 +34,15 @@ export class TerrainPhysics {
     this._eng = engine
     this._chunks = new Map()   // chunk key → engine body handle
     this._getRoad = getRoad    // () => RoadSystem | null — bore-slot cut below needs the spans
+    this._S = 0                // chunk side (m), recorded on the first sync — keys are `${cx},${cz}` on that grid
+  }
+
+  /**
+   * BUG-172: is the heightfield under world (x, z) built? A body posed on the ground must not spawn
+   * before it: it falls, and the collider arriving later throws it out sideways.
+   */
+  hasChunkAt (x, z) {
+    return this._S > 0 && this._chunks.has(`${Math.floor(x / this._S)},${Math.floor(z / this._S)}`)
   }
 
   /**
@@ -64,6 +73,7 @@ export class TerrainPhysics {
 
   /** TerrainSystem hook: (re)build the collider for a chunk from its mesh Y values. */
   syncChunk (key, cx, cz, posAttr, N, S) {
+    this._S = S
     const heights = new Float32Array(N * N)          // engine copies into WASM; this is transient
     for (let i = 0; i < N * N; i++) heights[i] = posAttr.getY(i)
     // ── FEAT-40 gap (owner-reported 2026-08-18, pre-dates router v2): cut the bore SLOT. ────────
@@ -201,9 +211,15 @@ const ROAD_FRICTION = 0.9
  * clear on full rebuild. Adapter-only — no engine types.
  */
 export class RoadPhysics {
-  constructor (engine) {
+  constructor (engine, tileM) {
     this._eng = engine
-    this._tiles = new Map()    // road tile key → engine body handle
+    this._tileM = tileM        // tile side (m): the terrain chunk grid, keys `${tx},${tz}` (RoadMeshSystem)
+    this._tiles = new Map()    // road tile key → engine body handle (only tiles with deck shapes)
+  }
+
+  /** BUG-172: is a road deck collider built in the tile under world (x, z)? See TerrainPhysics.hasChunkAt. */
+  hasTileAt (x, z) {
+    return this._tiles.has(`${Math.floor(x / this._tileM)},${Math.floor(z / this._tileM)}`)
   }
 
   /** RoadMeshSystem hook: a tile committed — (re)build its collider from its geometries. */

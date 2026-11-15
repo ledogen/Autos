@@ -1,7 +1,7 @@
 ---
-id: BUG-158
+id: BUG-173
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-09
 source: Lane B, BUG-156's gore census (land/bug-156)
@@ -9,12 +9,11 @@ relates: BUG-156 (the limb-birth step, fixed in the ruled blend), BUG-130 / FEAT
 ---
 lane: C
 
-# BUG-158: hard steps in junction dirt that do not come from the ruled blend
+# BUG-173: hard steps in junction dirt that do not come from the ruled blend
 
 ## Next steps
-Lane C, a fresh agent with the full budget (2026-11-14: not started; it was queued behind BUG-159). First rebuild the
-5 cm line walk and the census: `wip/bug-156/` is gone (the land-156 worktree was removed without copying it). Five
-separate resolver classes below; land them one class per commit.
+Orchestrator: land land/bug-158b (three fixes: winner deck, end frame, connector toe; plus the smoke's shoulder spot,
+DEC-230). The limb / rivalSet class left over is BUG-171, waiting on the owner's pick of redesign.
 
 ## Summary
 BUG-156's gore census found physics-ground steps of 0.15–2.9 m in junction dirt that the ruled blend does not cause.
@@ -44,5 +43,16 @@ The seed-11 one is in fingerprint-world's `seed11 origin story` window. BUG-156 
 which smooths the steps around it but leaves this one at 2.9 m.
 
 ## Tracker
-- [ ] Each site above: no step over 5 cm inside one 5 cm move, measured with the same walk.
-- [ ] Re-run BUG-156's census (`wip/bug-156/census.mjs` + `cmp.mjs`) on its 8 seeds: no gore line worse than before.
+- [x] Winner / rivalFrame / connector classes (census, 9 seeds): winner 97 → 52 sites (> 0.15 m 61 → 15, worst 7.16 → 0.66 m), rivalFrame 37 → 8 (16 → 1, 0.67 → 0.22 m), connector 13 → 0.
+- [ ] limb (602) and rivalSet (16): moved to BUG-171.
+- [x] The smoke's FEAT-217 shoulder step picks a flat, prop-clear spot (DEC-230); `SMOKE_STEPS=boot,opening` 3/3 green.
+- [x] No other class worse (test/junction-dirt-census.mjs replaces the lost wip/bug-156 census): other 247 → 246, ramp 1254 → 1255 sites, worst ramp unchanged 1.37 m per 5 cm.
+
+## Log
+- 2026-11-14: d15bacd8 · ade618fa · ca1148af; census tool test/junction-dirt-census.mjs (dde29401, 23f9674d). No class worse (one more ramp site, same worst).
+- 2026-11-14: head f27897d7 (main merged 5d495608): affected gates 75/75 green (wip/c158-gates.log). fingerprint-world vs main: surface/carve (+ seed6 fork props, groundAt includes the carve) only. Smoke not run (orchestrator).
+- 2026-11-15 (orchestrator): renumbered BUG-158 → BUG-173. The id was minted twice: this ticket by Lane B on 11-09, and the owner's "wheels fail from kerbs and airtime" on 11-11 (closed, keeps BUG-158). Commits and the branch land/bug-158b made before today say 158 and mean this ticket.
+- 2026-11-15 (Lane C): main merged (96ec32c0). Smoke shoulder pick per DEC-230 (owner allowed it, card bug158-smoke-spot): the road-following ±9 m search has nothing under 6.4 % on seed 822480141, so it scans 300 m around the truck, 11–14 m out (5d58bd17). `SMOKE_STEPS=boot,opening` 3/3 green (logs/c173-smoke3.log); affected gates 75/75 green (logs/c173-gates.log). fingerprint-world not re-run: road.js unchanged since the 11-14 compare.
+- 2026-11-15 (Lane C): main merged again (52c44148, current with b0d5db14). Partial smoke 3× on it: shoulder step passes each time; the step then fails after "worst day: the shop" (sim stopped stepping ×2, tow did not land ×1), which is main's own red at fbc98de7 (Lane A). Gates 75/75 were on the tree before this merge (main's 18 commits touch no road.js).
+
+**Resolution (2026-11-15):** merged into main 41e5d82f, road gates 75/75 on the branch, main smoke 26/26 (wip/orch/smoke-1115c.log). The gore-dirt class continues as BUG-171.

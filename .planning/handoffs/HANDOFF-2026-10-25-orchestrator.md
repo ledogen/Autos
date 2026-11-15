@@ -141,48 +141,45 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-13, after the INFRA-11 cutover; rewrite, don't append)
+## Current state (2026-11-15, after the morning intake; rewrite, don't append)
 
-**Decision records (INFRA-10, on main 14aaa9da):** `.planning/decisions/dec-NNN-*.md` are the ground truth and beat
-DESIGN.md, tickets and memory (owner 11-13, per the ledorepo session). A new owner ruling (chat, owed card, a taken dive)
-becomes a DEC in the same change that acts on it; a standing record is frozen, a change of mind is a new DEC with
-`supersedes`. Check: `node tools/dashboard/decisions.check.mjs`.
+Older state paragraphs were cut here on 11-15: `git show 5756b528:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
 
-**TOKEN CAP (owner, 11-14 ~03:25): hold lifted ("start the lanes", plus the ledorepo agent for INFRA-14, "dont back up
-wip"), then: "try to keep it token lean stop at 40% weekly usage (weve used 30% since the reset 15hrs ago)".** The
-orchestrator cannot read the usage meter. So: the five agents below are the whole batch; spawn NO follow-up agent
-without asking the owner where the meter stands. Land what they report, yourself.
+**Main:** clean, last full smoke 26/26 (BUG-172 merge); docs-only commits since. Nothing pushed since 736266b5.
+**Intake done 11-15:** 16 answers read, 11 inbox items replied. Minted BUG-174 (POI lights only on when parked),
+BUG-175 (first light-switch stutter), BUG-176 (sidewall launches rocks), FEAT-223 (shadows on the truck), FEAT-224
+(ambient occlusion), FEAT-225 (slow motion, post-alpha). DEC-225 (map defaults), DEC-226 (reward fallback). FEAT-211
+closed. 378 stale autos-cdp-* profiles deleted on the owner's word. New owner card: top-items-path.
 
-**Agents (pace: two at a time, DEC-193 for model/effort):**
-- RUNNING Spare (CarGame-land-211d, Opus): the map bundle (FEAT-211/210, BUG-163 line, FEAT-199 pricing). DEC 175–184.
-- RUNNING B (new CarGame-land-phys, land/phys-1114, Opus): BUG-168 speeds, BUG-166, BUG-160 wheel damage, BUG-167,
-  one commit each. DEC 167–172. Their four cards are already in answered/.
-- DONE A: FEAT-184 landing 2 SLICE 1 on feature/run-shape @ 5b3301eb (gates 9/9; NOT landing-ready, do not merge).
-  DEC-153, 155–160. Dives marked taken. Next agent = slice 2 (list in lanes/a.handoff.md and the ticket's Next steps);
-  start it when Spare reports. Owner card: tutorial-slice2 (Larry's words, DEC-158 reading, the 24 h filler).
-- DONE Perf: frame cap + PERF-49 merged. Next: the terrain bake prototype (Opus). Owner card: perf49-physics-budget.
-- DONE B (first task): cart + My Items tree + spacing merged; owner card feat212-cart-look. CarGame-land-212c/212d
-  hold the look pictures in wip/: remove the worktrees only after the owner has looked.
-- DONE ledorepo: INFRA-14 closed. INFRA-13 waits on the owner (Time Machine).
-Orchestrator DECs used: 190–193; next free for it: 194.
+**RUNNING (six agents, spawned 11-15; DEC ranges are theirs alone):**
+- c · CarGame-content · land/bug-158b · Opus: BUG-173 smoke spot pick (owner allowed it) + landing prep. DEC 230–231.
+- b · CarGame-land-211d · land/perf-49-spikes · Opus: PERF-49 as one branch, lever 2 removed. DEC 232–233.
+- p · CarGame-perf · feature/perf · Opus: terrain bake hybrid on by default. DEC 234–235.
+- a · CarGame-run-shape · feature/run-shape · Opus: FEAT-184 tutorial slice 2 (Larry's four cards, mom's errand). DEC 236–243.
+- u · CarGame-land-shopui · land/shopui-1115 · Sonnet: cart notes, (i) hover, FEAT-203 times, jalopy oil, FEAT-205 debug button. DEC 244–251.
+- s · CarGame-land-small · land/small-1115 · Sonnet: QUAL-36 words + half price, card wording, lighting numbers, camera follow, parking brake. DEC 252–259.
+Next free DEC for the orchestrator: 227–229, then 260.
 
-**Session of 11-14 17:35 (after a /clear; newest, read first; where it disagrees with the older text below, this wins):** owner away until ~22:00, said "keep moving". MERGED INTO MAIN this session, in order: FEAT-217 (7be95e28), PERF-44 pebbles off + DEC-223 (60131770), FEAT-180 lighting rebuild (0a515b0a), FEAT-215/218 GPS (19bdb1d5), service center BUG-170/FEAT-219/FEAT-220 (1b54fdeb), BUG-169 frame cap 90/120 + DEC-224 (7245557d), FEAT-199 price window (land/feat-199w, merged after; owner card feat199-never owed; no code cause found for 60 fps on the 144 Hz display, card bug169-try). VERIFYING the whole batch on main, detached: `wip/orch/verify.sh b873d928 1114d` -> wip/orch/land-1114d.log (BUILD / GATES EXIT / SMOKE EXIT lines) and wip/orch/smoke-1114d.log. NO merge into main until "SMOKE EXIT" is in that log; if it is missing and no cdp-smoke process is alive, rerun the script. After a green smoke: fast-forward lanes, close tickets FEAT-217, BUG-170, FEAT-219, FEAT-220 (FEAT-215/218/180 wait on owner look cards), remove the lighting worktree and stop :3887/:3890/:3207. Cards filed/updated: feat217-try, feat218-look, service-center-look (all say ON MAIN), bug169-try. RUNNING agents: Perf = GPU A/B of the lighting rebuild, 60131770 vs main (Opus, CarGame-perf, measurement only); Lane B = FEAT-222 debug part selector (Sonnet, CarGame-land-phys, land/feat-222); Lane C = BUG-158 verify (Opus, CarGame-content); Spare = FEAT-199 price window (Sonnet, CarGame-land-211d, land/feat-199w). Lane A is free. HELD: terrain bake hybrid 70 m (Opus, CarGame-perf after the A/B, DEC-207), PERF-49 levers, PERF-50, FEAT-221 live exposure prototype (lighting has landed). Next free DEC: 225.
+**QUEUE (answers still in owed/ = not yet taken; one agent per worktree, start as lanes free up):**
+- c next: BUG-171 option 2, "build 2 and show me pictures in a deep dive" (card bug171-limb).
+- p next: FEAT-180 fog cost: confirm the suspect, then cheaper with the same look (card feat180-gpu-cost).
+- b next: BUG-176 (Opus). Then FEAT-34 round 5 on feature/machine (Sonnet): "move the key back to the bottom right
+  corner. then grow the speedo and tach gauges so they fill the rectangular frame nicely ... bump their size 10%"
+  (card feat34-r4-look), then a new look card.
+- Spare lighting (CarGame-spare, proto/feat-221-exposure, Opus): land FEAT-221 exposure on by default with
+  "localhost:3885/?ae=centre&aeBand=0.3 wins / can i have triple the darkness adjustment period (3x slower stopping
+  up) but keep the ~1s stop down" (card feat221-look; night stays stop-down only), plus BUG-174 + BUG-175. Then
+  FEAT-223, FEAT-224 (cost first).
+- When u lands: remove CarGame-land-212c / 212d (the owner has looked).
+**HELD:** PERF-50 (needs the Windows machine), QUAL-33 (ask before changing T promotion), a PERF-40 bench window.
+**Unanswered cards:** bug159-look, bug169-try, bug92-usb, feat120-clips, feat120-straps, feat167-descs, feat180-r5-look,
+feat213-look, feat214-look, feat216-look, feat217-try, feat218-look, givers-lines, glyph-backpack-look, pad-test,
+run-review, service-center-look, top-items-path.
+**Dev servers up:** :8000 main · :3731 Lane A · :3282 PERF-49 levers · :3885 FEAT-221 exposure · :8010 dashboard.
+**Smoke notes:** flaky above load ~13; until BUG-173 lands, an "opening ... on the shoulder" failure is the known coin
+toss (rerun `SMOKE_STEPS=boot,opening`). Never merge while a smoke runs.
 
-**Main (2026-11-15):** smoked 26/26 with FEAT-207 final drive (wip/orch/smoke-207.log); since then only a dashboard one-liner (42a9f042, esc coerces to text) and another session's docs commit 3f653918 (DEC-209). NOT pushed since 736266b5: glyph + backpack text, FEAT-205, FEAT-213, FEAT-203, QUAL-36, FEAT-214, BUG-159, FEAT-207. Owner lifted the token cap (full speed). Disk: 154 GiB free again; 374 stale `autos-cdp-*` Chrome profiles remain in the system temp dir (the smoke leaks them; no leave to delete yet; fix with INFRA-15). The smoke is flaky above load ~13 (a different step fails each run): keep to ~4 agents, each one heavy process. **Agents in flight when this was written (each is a subagent of the session that wrote this; after a /clear their reports may not arrive, so on wake read each lane handoff + branch log instead):** Lane A FEAT-217 tutorial fixes (feature/run-shape in CarGame-run-shape; DEC-219..222; card feat217-try already filed); Spare FEAT-218 + FEAT-215 U-turn ribbon redesign (feature/spare; DEC-213..215); Lane B service center BUG-170 / FEAT-220 / FEAT-219 (land/service-center in CarGame-land-phys; DEC-216..218); lighting finisher, verification only (proto/lighting-redesign in .claude/worktrees/agent-a963acdc35996c65b: merge main, gates, build, full smoke, GPU A/B; then the orchestrator lands it — the owner said "put this on main"). Landing rule: merge, then full smoke on main, never merge while a smoke runs; check `git merge` exit status before starting the smoke. **Parked, committed:** BUG-158 land/bug-158 @ ca1148af in CarGame-content (needs 76 road gates, fingerprint, smoke; the limb/rivalSet class needs its own ticket + owner call — NOT yet filed); PERF-44 land/perf-44 (card perf44-budget); FEAT-34 r4 feature/machine (card feat34-r4-look). **Queue, not started:** terrain bake hybrid 70 m (DEC-207, Opus, feature/perf); PERF-49 levers (DEC-208, Opus; owner drives kerbs before landing; 'all three' reading unconfirmed); BUG-169 144 Hz frame cap + 90/120 options, PERF-50 Windows stutter; FEAT-199 price window (DEC-204; report never-offered items); FEAT-222 debug part selector; FEAT-221 live exposure prototype (after lighting lands); QUAL-33 (ask before changing T promotion). Owner confirmations pending: PERF-49 'all three', 75 m tutorial no-reset radius, right-stick click, feat202-look empty answer, rimInflatedMult 2 vs 4, FEAT-204 '4x' slots. Cards carry `order` + `blocks` (DEC-194): re-rank when filing; `blocks` must be TEXT or absent. FEAT-207 preview server :3207 (CarGame-land-211d) and lighting :3890 can be stopped once landed. Next free DEC: 223.
-(check it passed 26/26). Not pushed. Closed 11-14 on card answers: BUG-140, FEAT-193, BUG-154, FEAT-209. Tickets
-minted: FEAT-215 (GPS U-turn arrow, Spare), FEAT-216 (damage alerts, B). Inbox fully replied; 2gdr (FEAT-204, "4x more
-slots": 4 more or 4 times?) still waits on the owner. DEC-136, the :8001 Windows server and the Tailscale-only
-dashboard are as before (see git log e3b0584a for detail).
-
-**Answered cards still in owed/ = the queue (answers inside; move each to answered/ when an agent takes it):**
-- B: bug166-shock (yes, a crash breaks it), bug167-creep (fix it), bug168-speeds (40 / 65), bug160-numbers (wheel
-  damage at 50 % above the spring-damage energy; "24 and 4 are fine": check the slider), feat34-r3-look (wider, bigger
-  gauges, convex top), FEAT-216, the diagnostics engine glyph (inbox oc8a: squatter V6), FEAT-213, 203, 207.
-- Spare: feat180-pick (the rebuild wins; long tuning note; worktree .claude/worktrees/agent-a963…, servers :3887/:3890
-  can stop), QUAL-36 dive (submitted, NOT taken), FEAT-215, feat131-listen (remove the music bed, DEC-192), FEAT-214.
-- Perf: perf48-terrain-bake (build the prototype).
-- C: feat182-try (backpack flavour text should hint at the daypack's function).
-- feat202-look came back empty (no choice, no note): asked the owner to confirm "no change".
-- A after this task: INFRA-15 (parked, repro in git show fac4aebe), FEAT-205.
-Unanswered cards: bug92-usb, feat120-clips, feat120-straps, feat167-descs, givers-lines, pad-test, run-review.
-Lesson kept: a census with worker pools blew the 2-heavy cap (load 54) and failed main's smokes.
+**11-15 landings (main @ 41e5d82f+, smoke 26/26 wip/orch/smoke-1115c.log, NOT pushed):** small-1115 (QUAL-36 words, half price, card text, lighting defaults, camera trail, auto park brake; DEC-252..257), run-shape (FEAT-184 Larry's cards + mom's errand, DEC-236..239, and the smoke's tutorial fixes), shopui-1115 (DEC-244..250), BUG-173 (closed; DEC-230; smoke spot finder = Lane C's). Lanes a, s, u are FREE. New owner cards: qual36-cash-line, tutorial-errand, top-items-path.
+**PERF-49:** land/perf-49-spikes, gates 102/102 at af450f09, but main has since changed road.js (BUG-173): main is merged into the branch in CarGame-land-211d and the gates re-run there -> wip/perf-49/runs/gates-land2.log. Merge + own smoke when RUN-ALL is green.
+**RUNNING:** c = BUG-171 option 2 + deep dive (land/bug-171 in CarGame-content, DEC 231/260/261); p = terrain bake default on (feature/perf).
+**Known unexplained:** smoke "the tow did not land at an open shop" failed 1 run in ~20 on 11-15; its message now prints distance + clock.

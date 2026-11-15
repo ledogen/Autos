@@ -12,7 +12,7 @@ lane: B
 # FEAT-202: Oil changes — an oil track that wears with load and rpm and scales engine wear
 
 ## Next steps
-Built on `feature/machine` (Lane B), landing pending. Owner: tune the four `[DEFAULT]` numbers below (oil life, knee, multiplier, price) and look at the glyph screenshots named in the Log.
+Built on `feature/machine`, landing pending. Owner: tune the remaining `[DEFAULT]` numbers (knee, multiplier, price). The look is accepted; oil life starts 60 to 80 % (DEC-249).
 
 ## Summary
 A new condition track, engine oil, built the way the air filter is. It wears with engine load and rpm, and old oil makes the engine wear faster. The only fix is an oil change at an auto shop, which every auto shop always offers.
@@ -54,6 +54,7 @@ Old oil and a clogged filter multiply: both neglected is both costs at once (× 
 
 ## Decisions
 - 2026-11-13, owner: auto shop only, always available; same component shape as the air filter; two new glyphs (front-on V engine, oil pan aligned under it).
+- 2026-11-15, owner (card feat202-look): "jalopy starts with 60-80% oil otherwise good"; the look is accepted (DEC-249).
 
 ## Open questions
 - The four `[DEFAULT]` numbers in the table (oil life 60 min hard, knee 50 %, × 20 at empty, $8 / 30 min), and the jalopy's 40–80 % starting oil.
@@ -68,3 +69,4 @@ Old oil and a clogged filter multiply: both neglected is both costs at once (× 
 
 ## Owner, 2026-11-14
 Owner opened card feat202-look after the DEC-136 numbers and submitted it with no choice and no note. Read as no change asked; the orchestrator asked the owner to confirm.
+- 2026-11-15 (lane u, land/shopui-1115): JALOPY_COND.oil 0.4-0.8 -> 0.6-0.8 (land/shopui-1115).

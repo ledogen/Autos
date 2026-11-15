@@ -11,9 +11,9 @@
 // on every recovery — the owner's "the camera drops behind the truck when the game lags". Printed for contrast.
 //
 // Pure node: three + a one-line `document` stub (camera.js registers its input listeners at load).
-globalThis.document ??= { addEventListener () {} }
+globalThis.document ??= { addEventListener () {}, querySelector: () => null, exitPointerLock () {} }
 const THREE = await import('three')
-const { updateCamera, snapCamera } = await import('../src/camera.js')
+const { updateCamera, snapCamera, setAimMode } = await import('../src/camera.js')
 
 let fails = 0
 const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fails++ }
@@ -62,6 +62,22 @@ for (const [name, sched] of Object.entries(SCHED).slice(1)) {
   ok(band(n) && !now.still.length, `${name}: ${n.lo.toFixed(2)}–${n.hi.toFixed(2)} m, never still while the truck moves`
     + ` (the wall-clock follow: ${o.lo.toFixed(2)}–${o.hi.toFixed(2)} m)`)
   ok(!band(o), `…the wall-clock follow leaves the band there, as the owner saw`)   // the gate has teeth
+}
+
+// DEC-256 (owner, 2026-11-15): the speed-based trail keeps tracking while the player ORBITS (aim mode = the drag orbit's
+// state), so recentring after a speed change does not jump. 10 m/s → orbit → 25 m/s for 4 s → release: the orbit radius
+// must have grown to the follow trail, and the first follow frames move the camera by under 0.5 m beyond the truck's own step.
+{
+  const cam = new THREE.PerspectiveCamera()
+  const vs = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), velocity: new THREE.Vector3(0, 0, -10),
+    angularVelocity: new THREE.Vector3(), throttle: 0.5, brake: 0 }
+  const go = (v, secs) => { vs.velocity.z = -v; for (let i = 0; i < secs * 60; i++) { vs.position.z -= v * STEP; updateCamera(cam, vs, STEP, STEP) } }
+  const dist = () => cam.position.distanceTo(vs.position)
+  snapCamera(); updateCamera(cam, vs, STEP, STEP); go(10, 4)
+  const slow = dist(); setAimMode(true, 0, 0); go(10, 0.5); go(25, 4)
+  const orbiting = dist(); setAimMode(false); const before = cam.position.clone(); vs.position.z -= 25 * STEP; updateCamera(cam, vs, STEP, STEP)
+  const jump = cam.position.distanceTo(before) - 25 * STEP
+  ok(orbiting > slow + 1 && Math.abs(jump) < 0.5, `orbit tracks speed: ${slow.toFixed(2)} m at 10 m/s → ${orbiting.toFixed(2)} m at 25 m/s while orbiting, recentre step off by ${jump.toFixed(2)} m`)
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\ncamera-follow-clock: ALL OK')

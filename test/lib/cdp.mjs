@@ -41,7 +41,9 @@ export function launchChrome (url, { port = 9222, headed = false, audio = false,
     url,
   ]
   const chrome = spawn(CHROME, args, { stdio: 'ignore' })
-  const cleanup = () => { try { chrome.kill() } catch {} try { rmSync(userDir, { recursive: true, force: true }) } catch {} }
+  // INFRA-15: chrome.kill() returns at once and Chrome (plus its helper processes) is still writing into the profile, so a bare
+  // rmSync lost the race and left the directory behind (374 piled up). SIGKILL, then retry the removal while it drains.
+  const cleanup = () => { try { chrome.kill('SIGKILL') } catch {} try { rmSync(userDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }) } catch {} }
   process.on('exit', cleanup)
   // SIGTERM (pkill's default, TaskStop) and SIGHUP (a closed terminal) too: unhandled, node dies without its 'exit'
   // handlers and the headless Chrome lives on, orphaned, rendering on the shared GPU for hours (2026-11-05: two of
