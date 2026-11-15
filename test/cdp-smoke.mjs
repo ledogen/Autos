@@ -1444,16 +1444,20 @@ const STEPS = [
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
     await strayCheck('in the evening')
     // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
-    const sh = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
-      const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
-      for (const along of [0, 100, -100, 160, -160, 40, -40, 220, -220]) for (const d of [9, -9]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
-        if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
-        // Flat ground (≤ 0.4 m over the truck's ±4 m): released on a bank's lip the truck rolls off the shoulder, honestly.
-        const g = [[0, 0], [4, 0], [-4, 0], [0, 4], [0, -4]].map(([a, b]) => window.terrain(x + a, z + b))
-        if (Math.max(...g) - Math.min(...g) > 0.4) continue
-        const q = window.__roadSys().queryNearest(x, z, 100); if (q?.point && Math.hypot(q.point.x - x, q.point.z - z) > 6.5) return { x, z } }
-      return null })()`)
-    check(sh, 'FEAT-217: no shoulder spot found')
+    // On flat ground (≤ 0.8 m over the truck's ±8 m), off every network point within 600 m, 9 m out: released on a bank's lip
+    // the truck honestly rolls off the shoulder (2026-11-15: 50 m down the slope beside the joint, the check failing by luck).
+    const sh = await js(`(() => { const v = window.__vs.position, R = window.__roadSys(); let best = null
+      for (const e of R._network.values()) for (let i = 1; i < e.points.length; i++) {
+        const a = e.points[i - 1], b = e.points[i], dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz)
+        if (!l || Math.hypot(b.x - v.x, b.z - v.z) > 600) continue
+        for (const d of [9, -9]) { const x = b.x + dz / l * d, z = b.z - dx / l * d
+          if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
+          const q = R.queryNearest(x, z, 100); if (!q?.point || Math.hypot(q.point.x - x, q.point.z - z) < 6.5) continue
+          let lo = Infinity, hi = -Infinity
+          for (let s = -8; s <= 8; s += 4) for (let t = -8; t <= 8; t += 4) { const h = window.terrain(x + s, z + t); lo = Math.min(lo, h); hi = Math.max(hi, h) }
+          if (!best || hi - lo < best.r) best = { x, z, r: hi - lo } } }
+      return best })()`)
+    check(sh?.r < 0.8, `FEAT-217: no flat shoulder spot found (flattest ${sh?.r?.toFixed(2)} m over ±8 m)`)
     await seat(sh.x, sh.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
     await sleep(9000)   // > the 4 s of play it takes off the road
