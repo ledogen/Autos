@@ -17,16 +17,18 @@
  *
  * ADAPTATION, in stops (log2 k): d = log2 openGrey + cal − (log2 metered − log2 k), the metered key as it would be at
  * k = 1 against open ground's. Within ±band of it nothing moves (what an open view meters swings ~±1 stop with the
- * hour and the scene, and the eye already owns the open view); past it, target = strength × the excess, clamped to [−lo, +hi];
- * k eases toward it with time constant `dark` when opening up (into shade) and `bright` when stopping down (out
- * into the light: the overexposed moment). Every knob is a URL parameter, defaults below.
+ * hour and the scene, and the eye already owns the open view); past it, target = strength × the excess, clamped to
+ * [−lo, +hi], +hi fading to 0 at night. k eases toward it with time constant `dark` when opening up (into shade) and
+ * `bright` when stopping down (out into the light: the overexposed moment). Every knob is a URL parameter:
+ *   ?ae=centre&aeS=0.75&aeBand=1&aeLo=2&aeHi=2.5&aeDark=2&aeBright=0.6   (the defaults; mode avg | centre | low)
  */
 import * as THREE from 'three'
 
 const METER_W = 64, METER_H = 36, EVERY = 2   // meter cells; meter every EVERY-th frame
-// Each mode's log2 offset between the metered key and openGrey on an open noon road (measured on the prototype,
-// seeds 3583777560 / 1172941705, chase view): what k = 1 means for that mode.
-const CAL = { avg: 0, centre: 0, low: 0 }
+// Each mode's log2 offset between the metered key and openGrey in an open daylight view: the mean of 8 views (noon,
+// 15:30, 20:00, tunnel approach and exit; seeds 3583777560 and 1172941705, chase and road-level cameras), spread
+// ±0.4 stop. What k = 1 means for that mode.
+const CAL = { avg: -1.25, centre: -1.35, low: -1.45 }
 
 const DOWN_FRAG = /* glsl */`
 uniform sampler2D src;
@@ -49,7 +51,7 @@ export class LiveExposure {
   constructor (renderer, sky, params) {
     const num = (k, d) => { const v = parseFloat(params.get(k)); return Number.isFinite(v) ? v : d }
     this.mode = CAL[params.get('ae')] !== undefined ? params.get('ae') : 'centre'
-    this.strength = num('aeS', 0.75); this.lo = num('aeLo', 2); this.hi = num('aeHi', 1.5)
+    this.strength = num('aeS', 0.75); this.lo = num('aeLo', 2); this.hi = num('aeHi', 2.5)
     this.band = num('aeBand', 1); this.dark = num('aeDark', 2.0); this.bright = num('aeBright', 0.6)
     this.renderer = renderer; this.sky = sky
     this.ev = 0                       // current log2 k
@@ -114,7 +116,9 @@ export class LiveExposure {
       // toe/shoulder), so the effective strength drifts a little off `strength`; invert ACES if that ever matters.
       this.metered = this.keys[this.mode]
       const d = ref - this.metered, e = Math.sign(d) * Math.max(0, Math.abs(d) - this.band)
-      this._target = Math.min(this.hi, Math.max(-this.lo, this.strength * e))
+      // Opening up fades out with the night (the lamps' clock): the night's darkness is the eye's (DEC-199), so after
+      // dark the camera only stops down, for a lit patch or a lit interior.
+      this._target = Math.min(this.hi * (1 - this.sky.nightFactor()), Math.max(-this.lo, this.strength * e))
     }).finally(() => { this._busy = false })
   }
 }
