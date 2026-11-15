@@ -2961,7 +2961,7 @@ function _fragileBlink (dt) {
 // Road ribbon/pad/bore trimesh colliders — attached to roadMeshSystem at its creation sites
 // below (boot + seed rebuild). The terrain heightfields mirror the CARVED mesh, which sits
 // roadClearanceMargin BELOW the asphalt; without this mirror debris fell through the road.
-const roadPhysics = new RoadPhysics(physicsEngine)
+const roadPhysics = new RoadPhysics(physicsEngine, CHUNK_SIZE)
 // POI marker solids for the chassis — rebuilt with the markers (_rebuildPoiMarkers).
 const poiPhysics = new PoiPhysics(physicsEngine)
 // Prop hard colliders (tree trunks, logs, rocks, boulders) as engine statics — the chassis'
@@ -6411,7 +6411,9 @@ function _updateBarricades () {
   const p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
   for (const row of _barricadeRows) {
     const d = Math.hypot(p.x - row.x, p.z - row.z)
-    if (!row.bodies && d < BARRICADE_ON_M) {
+    // BUG-172: and only once the deck and the ground under every pose are colliders — near the truck
+    // is not enough (a resume, a reset or a slow machine reaches a row before its ground streams).
+    if (!row.bodies && d < BARRICADE_ON_M && row.poses.every(({ pos }) => terrainPhysics.hasChunkAt(pos.x, pos.z) && roadPhysics.hasTileAt(pos.x, pos.z))) {
       // The body sits at the model's bbox centre: half its height up the normal, a centimetre clear.
       row.bodies = row.poses.map(({ pos, up, q }) => debrisSystem.spawn('roadBarrier', pos.clone().addScaledVector(up, half.y + 0.01), still,
         { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })).filter(Boolean)
@@ -6440,7 +6442,7 @@ function _updateOrnaments () {
     // The body sits at the model's bbox centre: half its height above a base-origin model, at the
     // origin of a centred one (the beach ball, lifted by its radius).
     _ornUp.set(0, half.y - o.lift + 0.01, 0).applyQuaternion(o.mesh.quaternion)
-    if (o.body == null && d < ORNAMENT_ON_M) {
+    if (o.body == null && d < ORNAMENT_ON_M && terrainPhysics.hasChunkAt(o.mesh.position.x, o.mesh.position.z)) {   // BUG-172
       const q = o.mesh.quaternion
       o.body = debrisSystem.spawn(o.kind, _ornP.copy(o.mesh.position).add(_ornUp), still,
         { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })
@@ -6513,7 +6515,7 @@ function _updateWorldItems () {
       scene.add(h.mesh)
     }
     const d = Math.hypot(p.x - it.x, p.z - it.z)
-    if (h.body == null && d < ITEM_ON_M) {
+    if (h.body == null && d < ITEM_ON_M && terrainPhysics.hasChunkAt(it.x, it.z)) {   // BUG-172
       _giQ.set(...it.q)
       if (h.fresh) {   // off the tailgate: back by its bounding circle, up by its half height
         _giP.set(0, half.y, Math.hypot(half.x, half.z) + ITEM_GAP_M).applyQuaternion(_giQ)
@@ -6632,7 +6634,7 @@ function _updateSite () {
       physicsEngine.getTransform(t.body, _siteP, _siteQ)
       if (live && !t.smashed && (_siteP.distanceTo(t.p0) > D.smashMoveM || _siteQ.angleTo(t.q) > D.smashTiltRad)) t.smashed = true
       if (d > D.offM) { debrisSystem.remove([t.body]); t.body = null; t.mesh.visible = !t.smashed }
-    } else if (live && !t.smashed && d < D.onM) {
+    } else if (live && !t.smashed && d < D.onM && terrainPhysics.hasChunkAt(t.pos.x, t.pos.z)) {   // BUG-172
       const half = debrisSystem.halfExtents(t.kind)
       if (!half) continue   // its collider is still loading
       // The body (bbox-centred) half its height above the stand-in's base, a centimetre clear.
