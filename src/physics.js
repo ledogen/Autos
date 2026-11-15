@@ -778,17 +778,17 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // load on the deck that spans the arch (up to 12 cm deep at the bump stop), and 2 cm into the
     // marble statue over a dip. Only the world-frame n.y filter below kept the tire off it, and a
     // compressed wheel on the HIGH side of a 15–25° roll tips that normal past −0.1.
-    // BUG-165: and the sphere is CUT to the tire's width — the slab |(x − hub)·axle| ≤ w/2, grown by
-    // this step's hub travel ALONG the axle (the look-ahead's share that way), so a loose load
-    // between the wheelhouses, wholly inboard of the tread, is no contact at any roll. Exact for
-    // that (the axle separates them). Left as it was: a body that crosses the tread's edge plane
-    // keeps the sphere's contact, whose deepest point may lie beside the tire (the cylinder's
-    // tread-edge corner is not modelled either way).
+    // BUG-165: and the sphere is CUT to the tire's width — the slab |(x − hub)·axle| ≤ w/2, so a
+    // loose load between the wheelhouses, wholly inboard of the tread, is no contact at any roll.
+    // Exact for that (the axle separates them). BUG-176: a body that crosses the slab's face plane
+    // is pressing on the SIDEWALL, and the engine query now measures that axis too (the shallower
+    // of sphere and face wins) — no longer the sphere's depth, up to 25 cm for a rock 1 mm over the
+    // plane. The slab is grown by the same look-ahead as the sphere, so the `− ahead` below turns
+    // either axis back into this substep's true gap.
     let slab = null
     if (corner !== undefined) {
-      const A = _axle[corner]
-      _slab.axis = A
-      _slab.halfWidth = (params.wheelWidth || 0.25) / 2 + Math.abs(hvx * A.x + hvy * A.y + hvz * A.z) * dt
+      _slab.axis = _axle[corner]
+      _slab.halfWidth = (params.wheelWidth || 0.25) / 2 + ahead
       slab = _slab
     }
     const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r + ahead, { collidesWith: GROUP_DEBRIS, dynamicOnly: true, skipWeldedTo: chassis, slab })
