@@ -12,8 +12,8 @@ lane: Spare
 # FEAT-180: a lighting review and interview, then a sun that lasts until about 8 pm
 
 ## Next steps
-Owner: look at the rebuild's round 4 (card `feat180-r2-look`, :3890 or the sheets in `wip/feat-180/r4/` of the
-rebuild worktree) and answer its questions. Then Spare: the moonlit-night brightening at ~21:15 (below) if the owner wants it.
+Orchestrator: land `proto/lighting-redesign` (owner 11-14: "put this on main. its way better than what we have"); see
+round 5 below for gates, smoke, build and the GPU number. Owner: the far-side fog look (card `feat180-r5-look`).
 
 Owner, verbatim: "I think we could do a bit better on the lighting system And Skybox. Go ahead and create an artifact
 with screenshots of the car on a road with a landscape in the background at different times of day. And then design
@@ -45,6 +45,8 @@ The low light starts really being limiting"
 - [x] The artifact, in front of the owner.
 - [x] The owner's answers → a scoped build list (below).
 - [ ] Pieces 1–7 landed, each proved; the combined shot sheet in front of the owner (the dusk interview).
+- [x] Round 5: the far-side twilight fog desaturated (`duskAway`); the rebuild made landable (main merged, ladder re-pinned).
+- [ ] Landed on main (orchestrator).
 
 ## The review page (Spare, 2026-11-07)
 
@@ -367,3 +369,34 @@ Owner's pick (card `feat180-pick`, 11-14, now DEC-196): the rebuild is carried f
 
 Log: 972b1ab4 (+ the sheet commit). sky-ephemeris: the new check passes; its 4 brightness-ladder FAILs are the
 round-3 ones (single eye curve, re-pin before landing). Smoke boot,drive: see the card.
+
+## Round 5 (Spare, 2026-11-14): the far-side fog, and landable — `src/sky.js`, `test/sky-ephemeris.mjs`
+
+Owner (card `feat180-r2-look`, verbatim): "1. keep / 3. without contrast it would be boring so no. / time: 5.71hrs. the
+yellow green fog is sweet when looking into the sun but jarring when looking away (looks like toxic gas). any way we
+could desaturate fog on the far side of the sun around twilight? the same change would go well for sunset. / 4. i
+honestly cant perceive this so keep / put this on main. its way better than what we have". Items 1, 3, 4 → DEC-197..199.
+
+- **Why the far side went yellow-green.** The horizon band (under 3°) is deliberately left out of the teal split tone,
+  so all round it carries the scatter of the reddened low sun. Opposite the sun at 05:43 that is a dim khaki as
+  simulated (sRGB 90,69,41 in the LUT). The twilight saturation (skySat 1 + duskSat 0.5 = ×1.5) drives its blue to 0:
+  98,67,0, a dark yellow, which reads olive / yellow-green. Toward the sun the same band is bright (157,89,0), so the
+  same boost reads orange. The fog is that band (the land below the horizon fogs to the 2° row), so it shows most there.
+- **Fix: `duskAway` 0.7** ("twilight: desaturate away from sun", Atmosphere). In the LUT bake, the twilight saturation
+  is multiplied by 1 − duskAway·(1 − cos γ)/2·tw, γ the angle from the sun, tw the existing twilight window (in from 14°
+  up, out at the end of twilight). It fades out above the band as the teal comes in (3° → 15°). The LUT is what both the
+  sky and the fog read, so fog == sky still holds, and it costs no GPU work (the bake is CPU, once per clock push).
+  Anti-sun horizon at 05:43: 98,67,0 → 81,71,60 (0.5: 86,70,51; 0.85: 77,72,67); sunset mirror 20:08 likewise; noon
+  unchanged. Picked from `wip/feat-180/r5/` (seeds 1172941705, 3583777560; `a0` = before, `a0.7` = after).
+- **Legacy deletion:** nothing left to delete. This branch already replaced main's sky (the Preetham Sky + SKY_PRESETS
+  looks, the separate MoonSystem in main.js, the ring-light divide) outright in rounds 1–3; there is no legacy path,
+  switch or dead slider in `src/` (every SKY_PARAMS / MOON_PARAMS key is read; `multiScatter` has no slider but is read).
+- **sky-ephemeris re-pinned** (failing since round 3: the land got its own eye and landGain in round 2):
+  noon white surface ~1 ±0.25 → **~1.7 ±0.25** (landGain 2.0 into ACES at exposure 0.5); sunset 25–70 % → **8–20 %**
+  of noon (12.4 %, the steep golden hour); moonless night < 1 % → **1.5–5 %** (3.0 %, the eye levels out so the moon
+  shows); full moon 1–5 % → **6–16 %** and > 2× new (10.9 %, 3.6×). New check: at 05:43 and 20:08 the anti-sun horizon's
+  chroma is < 0.5 (1.00 → 0.44) and the sun side within 2 % of duskAway 0.
+- **FEAT-214 night lights** under this exposure: unchanged mechanism (emissive × ACES at the land's 0.36 night
+  exposure, the same value main used). Shots `wip/feat-180/r5/poi/` (seed 17): shop sign and home curtains read
+  clearly at 21:30; at 19:15 the shop's lamps are on with the sun still ~7° up (sunset is 20:18 here) — FEAT-214's open
+  dusk-vs-clock question, not changed.
