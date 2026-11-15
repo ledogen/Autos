@@ -25,6 +25,7 @@
  * Uses lil-gui (bundled in three/addons — zero additional dependency).
  */
 
+import { SLOTS, PARTS, partChoices, stockPart } from '../data/parts.js'   // FEAT-222: part selector
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
 import { gripLoad } from './tire.js'
 import { VEHICLES } from '../data/vehicles.js'
@@ -129,6 +130,35 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // controllersRecursive (which walks subfolders).
   const vehicleFolder = gui.addFolder('Vehicle')
   const vehicleState = { vehicle: 'Ranger' }
+
+  // ── Part selector (FEAT-222, DEC-206) ──────────────────────────────────────────
+  // Fits a part exactly as the auto shop does (callbacks.parts.fit — the same PartsSystem path, new
+  // condition), then refreshes every slider so the fitted part's values are the baseline to tune from.
+  if (callbacks.parts) {
+    const selector = vehicleFolder.addFolder('Part selector')
+    const GROUPS = {
+      'Final drive & differential': ['axle', 'diff'],
+      'Engine & intake': ['engine', 'radiator', 'airFilter'],
+      'Tires': ['tireFL', 'tireFR', 'tireRL', 'tireRR'],
+      'Wheels': ['wheelFL', 'wheelFR', 'wheelRL', 'wheelRR'],
+      'Springs & shocks': ['springsFront', 'springsRear', 'dampersFront', 'dampersRear', 'arbFront', 'arbRear', 'lift'],
+      'Brakes': ['brakesFront', 'brakesRear'],
+      'Lights': ['headlightL', 'headlightR'],
+    }
+    for (const [group, sockets] of Object.entries(GROUPS)) {
+      const f = selector.addFolder(group)
+      for (const socket of sockets) {
+        const opts = Object.fromEntries(partChoices(socket).map(id => [PARTS[id].name, id]))
+        const state = { part: callbacks.parts.fitted(socket) ?? stockPart(socket) }
+        f.add(state, 'part', opts).name(SLOTS[socket].name).onChange(id => {
+          callbacks.parts.fit(id, 1, socket)
+          gui.controllersRecursive().forEach(c => c.updateDisplay())
+        })
+      }
+      f.close()
+    }
+    selector.close()
+  }
   vehicleFolder.add(vehicleState, 'vehicle', Object.keys(VEHICLES)).name('Vehicle (WIP)').onChange(name => {
     const preset = VEHICLES[name]
     for (const key of Object.keys(preset)) {

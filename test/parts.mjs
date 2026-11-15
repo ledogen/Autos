@@ -20,7 +20,7 @@
 //
 // Pure node: no THREE, no DOM.
 import { stepDrivetrain } from '../src/drivetrain.js'
-import { PARTS, SLOTS, FAMILY_DURABILITY, RARITY_COLOR, takes, socketsFor } from '../data/parts.js'
+import { PARTS, SLOTS, FAMILY_DURABILITY, RARITY_COLOR, takes, socketsFor, partChoices } from '../data/parts.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { PartsSystem, runParts } from '../src/parts.js'
@@ -150,6 +150,22 @@ check('back to stock restores the factory geometry', ['RestLength', 'Travel', 'B
   check('axle: wheel torque scales by 4.10 / 3.73', Math.abs(torque() / t0 - 4.10 / 3.73) < 1e-3, `${torque() / t0}`)
   parts.fit('axle373', null, 'axle')
   check('axle: back to stock restores 3.73', params.finalDrive === 3.73)
+}
+
+// ── 7. FEAT-222: the debug part selector fits through the same fit() — every choice is accepted ─────
+{
+  parts.start()
+  let bad = ''
+  for (const socket of Object.keys(SLOTS)) for (const id of partChoices(socket)) {
+    const off = parts.fit(id, 1, socket)   // exactly the call debug.js makes
+    const patched = Object.entries(PARTS[id].patch).every(([k, v]) => params[k] === v || /(Front|Rear)$/.test(k))
+    if (!off || runParts.fitted[socket] !== id || !patched) bad += ` ${socket}:${id}`
+  }
+  check('debug selector: every offered part fits its socket like the shop', !bad, bad)
+  const offered = new Set(Object.keys(SLOTS).flatMap(partChoices))
+  const missing = Object.keys(PARTS).filter(id => !PARTS[id].mounted && !offered.has(id))
+  check('debug selector: every fittable part is offered', !missing.length, missing.join())
+  parts.start()
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed')
