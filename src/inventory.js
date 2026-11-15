@@ -38,6 +38,9 @@ const _isPack = (e) => ITEMS[e?.id]?.kind === 'pack'
 const _bed = (id) => ITEMS[id]?.bed ?? null   // FEAT-171: 'ground' | 'bedding' | 'blanket'
 const _isBedding = (id) => _bed(id) === 'bedding'
 // A can (`capGal`) comes full; its entry carries the gallons in it as `gal`.
+/** The starting kit's one entry: the equipped Pack with the bedroll in it (a fresh copy each call — entries are mutated).
+ *  FEAT-184 (DEC-238): in a played tutorial it is Larry's old pack, which mom sends back to him and he gives you. */
+export const startingPack = () => ({ id: 'pack', n: 1, equipped: true, contents: ['bedroll'] })
 const _newEntry = (id) => ITEMS[id].kind === 'pack' ? { id, n: 1, equipped: false, contents: [] }
     : ITEMS[id].capGal ? { id, n: 1, gal: ITEMS[id].capGal } : { id, n: 1 }
 
@@ -64,7 +67,7 @@ export class InventorySystem {
 
     /** Begin a story run with the starting kit. Called from onRegionLive beside economySystem.start(). */
     start () {
-        runInventory.entries = [{ id: 'pack', n: 1, equipped: true, contents: ['bedroll'] }]
+        runInventory.entries = [startingPack()]
         runInventory.pending = null
         runInventory.quick.fill(null)
         this._changed()
@@ -146,6 +149,13 @@ export class InventorySystem {
         runInventory.entries.splice(index, 1)
         this._changed()
         return e
+    }
+
+    /** FEAT-184 (DEC-238): take the entry at `index` out of the run whatever its kind (the tutorial's pack, back to mom's). */
+    remove (index) {
+        const [e] = runInventory.entries.splice(index, 1)
+        if (e) this._changed()
+        return e ?? null
     }
 
     /** Change fields on the entry at `index` in place — a repaired part's `cond`, a plugged tire's `flat`. */
