@@ -4730,7 +4730,7 @@ function _eveningLessons (q, v) {
   if (damageScreen.isOpen && damageModel.flat.some(Boolean)) _tut('tut-damage')
   // Stage 5: towed and back on the road, it's night — the headlights.
   if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
-  if (Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
+  if (!_flatOwed() && Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
 }
 
 /** The evening is over (a sleep, or 07:00 awake): the morning leg, back to the joint for the paycheck (DEC-153). */
@@ -6051,7 +6051,11 @@ window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() =
 document.getElementById('recovery-icon')?.addEventListener('click', _toggleRecovery)
 
 /** Can the truck knock on mom's door from here? (Same gates, minus the zone and the grading.) */
+/** FEAT-217 (8l9k): the evening's flat is still on the truck (tow, plug or shop not done yet). Mom's card and her door
+ *  wait for it, so limping home on the flat cannot skip the tow and the shop. */
+const _flatOwed = () => _eveningLeg() && _eveFlat && damageModel.flat.some(Boolean)
 function _atMomsHouse () {
+  if (_flatOwed()) return false
   if (!storySystem.isActive() || storySystem.isEntering()) return false
   if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return false   // FEAT-113: as _campPromptState
   if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return false
