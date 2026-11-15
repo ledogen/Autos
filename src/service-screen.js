@@ -438,6 +438,7 @@ export class ServiceScreen {
         ...(d.manualBox ? [this._part('trans', 'Transmission', { track: 'transmission', acts: ['repair'] })] : []),
         this._part('diff', 'Rear differential', { socket: 'diff', track: d.clutchDiff ? 'diff' : null, acts: sw,
           pre: d.clutchDiff ? [this._act('Change clutches', clutch, btn('repair', 'change', s.targets('diff').length > 0, 'data-key="v:diff"', ' ok'))] : [] }),
+        this._part('axle', 'Final drive', { socket: 'axle', acts: sw }),
       ]),
       node('body', 'Headlights and Body Panels', [
         node('lights', 'Headlights', [['L', 'Left'], ['R', 'Right']].map(([k, l]) => this._part(k, l, { socket: 'headlight' + k, track: 'headlight' + k, acts: sw }))),

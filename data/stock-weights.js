@@ -60,6 +60,10 @@ export const STOCK_WEIGHT = {
     diffClutchLSD:    1,      // FEAT-166 (owner took the default, 2026-11-06): the middle rung — commoner than the helical
     diffLSD:          0.25,
     diffWelded:       4,
+    axle373:          4,      // FEAT-207: shorter ratio = rarer
+    axle355:          2,
+    axle345:          2,
+    axle410:          0.5,
     engineStock:      0.25,
 
     // Field repairs (owner, 2026-10-23): zip ties and stop-leak are sold at the auto shop too
