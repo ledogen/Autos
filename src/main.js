@@ -4823,6 +4823,18 @@ function _skipOpening () {
   _renderMissionUI()   // the HUD line goes
 }
 
+/** FEAT-217 (owner 2026-11-14: give-up leaves the pump open and the tutorial half done; free cam survives into a new game):
+ *  the ONE reset of what a run keeps outside the systems' own start(). Called from region exit AND run entry, so
+ *  a state added here can never leak either way. */
+function _resetRunLocals () {
+  fuelStop.reset(); _pumpReceiptT = 0
+  _waypoint = null
+  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
+  _momOwes.part = _momOwes.labour = true; _skipArmedUntil = 0
+  exitFreecam()
+  serviceScreen.close?.(); damageScreen.close?.(); inventoryScreen.close?.()
+}
+
 /**
  * Go-live: true when the opening owns the moment (so RUN_INTRO waits for Larry). Plays the firing on
  * a fresh opening run; on a resumed one it only holds RUN_INTRO back until the welcome.
@@ -4831,8 +4843,6 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the opening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && dialogueSystem.has(DLG.firing)
   _openingRun = false
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
-  _momOwes.part = _momOwes.labour = true; _skipArmedUntil = 0
   economySystem.withholdPaycheck(TUT_PARAMS.pocketCash)   // FEAT-184 (DEC-150): pocket change until the paycheck
   _planEvePump()   // FEAT-184 stage 3
   // DEC-157: the card's second load — the intro played on the run's own world, so straight to mom's call.
@@ -9207,6 +9217,7 @@ const storySystem = new StorySystem({
     damageModel.publish(RANGER_PARAMS)
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
+    _resetRunLocals()                // FEAT-217: nothing of the last run's tutorial, pump or camera
     resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)
     paperRouteSystem.abort()
     _renderDialogue()
@@ -9281,6 +9292,7 @@ const storySystem = new StorySystem({
     offerBoard = null                   // …and the board belongs to the run that just ended
     _dropLarryTour()
     _setRunHudVisible(false)
+    _resetRunLocals()                   // FEAT-217: giving up (or any exit) resets the tutorial, the pump and the camera
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
     if (_firingCam) setCameraFocus(null)   // FEAT-147: a run left mid-firing hands the camera back…
