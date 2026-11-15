@@ -1439,23 +1439,22 @@ const STEPS = [
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
     await strayCheck('in the evening')
     // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
-    const sh = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
-      const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
-      // BUG-173 (DEC-230): the spot is clear of hard props within 6 m, graded under 10 %, and the truck faces along the
-      // contour, so the grade along its wheels is ~0 (under the 1.5 % rolling resistance) and the tires hold the cross-slope.
-      // The old pick (first ±9 m point, heading 0) sat on a 13–35 % cross-slope 2.3 m from a trunk: it perched or rolled,
-      // by frame timing. No point near seed 822480141's joint is under 1.5 % in every direction (flattest 6.4 %). The
-      // check below is unchanged.
-      const H = window.terrain
-      for (let along = -250; along <= 250; along += 10) for (const d of [7, -7, 8, -8, 9, -9, 10, -10, 11, -11, 12, -12]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
-        if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
+    // BUG-173 (DEC-230): the spot is the flattest point within 300 m that is on the shoulder (11–14 m from the centreline:
+    // all four wheels past the road mesh and its 2.5 m shoulder, inside DEC-219's 15 m), graded under 1.5 % (under the
+    // rolling resistance, so a truck with the brake off stays put), clear of hard props within 6 m, and 90 m from every
+    // place. The old pick (the first ±9 m point beside the joint) sat on a 13–35 % cross-slope 2.3 m from a trunk: the
+    // truck perched or rolled, by frame timing. Seed 822480141 has no such point within 250 m along the joint's road.
+    // The check below is unchanged.
+    const sh = await js(`(() => { const v = window.__vs.position, H = window.terrain; let best = null
+      for (let dx = -300; dx <= 300; dx += 4) for (let dz = -300; dz <= 300; dz += 4) { const x = v.x + dx, z = v.z + dz
+        const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
+        if (g >= 0.015 || (best && g >= best.g)) continue
         const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
-        const gx = (H(x + 1, z) - H(x - 1, z)) / 2, gz = (H(x, z + 1) - H(x, z - 1)) / 2
-        if (lt > 6.5 && lt < 14 && Math.hypot(gx, gz) < 0.10 && !window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length)
-          return { x, z, h: Math.atan2(gz, -gx) } }   // forward (−gz, gx) ⟂ the fall line; heading = atan2(−fwd.x, −fwd.z)
-      return null })()`)
+        if (lt < 11 || lt > 14 || window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
+        if (!window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) best = { x, z, g } }
+      return best })()`)
     check(sh, 'FEAT-217: no shoulder spot found')
-    await seat(sh.x, sh.z, sh.h); await readCards(300)
+    await seat(sh.x, sh.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
     await sleep(9000)   // > the 4 s of play it takes off the road
     { const v = await car(); check(await js(lat(v.x, v.z)) > 5.5 && await js('document.getElementById("reset-countdown").style.opacity !== "1"'), 'FEAT-217: the truck was reset (or counted down) on the shoulder') }
