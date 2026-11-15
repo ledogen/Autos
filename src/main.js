@@ -3734,7 +3734,7 @@ const serviceCenter = new ServiceCenter({
   freeRepairs: () => runEconomy.freeRepairs ?? 0, useFreeRepair: () => { runEconomy.freeRepairs-- },   // expedition-rewards
   // FEAT-184 (DEC-151): on the evening, one tire is on mom — a mounted one or a bare one (the shelf's old tire is always
   // there), the part once and its fitting once.
-  onMom: (id, k) => _eveningLeg() && _momOwes[k] && (id === 'spareTire' || PARTS[id]?.slot === 'tire'), useMom: (id, k) => { _momOwes[k] = false },
+  onMom: (id, k) => _eveningLeg() && _momOwes[k] && (k === 'patch' ? id === 'patch' : id === 'spareTire' || PARTS[id]?.slot === 'tire'), useMom: (id, k) => { _momOwes[k] = false },
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
@@ -4510,7 +4510,7 @@ let _evePump = null   // { q, done }: the evening's station while a fill-up is d
 let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
 // FEAT-184 (DEC-151): the evening's tire is on mom — the part once and its fitting once (ServiceCenter onMom). Not saved:
 // a resume mid-evening owes it again.
-const _momOwes = { part: true, labour: true }
+const _momOwes = { part: true, labour: true, patch: true }   // patch: FEAT-217, the first flat patched at the shop
 let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
 // dev handle — test/cdp-smoke.mjs and run-soak read where the tutorial stands (FEAT-184): 'intro' (the firing) · 'card' ·
 // 'evening' · 'morning' · 'free' (the paycheck heard, or skipped), and the run's own world while it plays on the tutorial seed
@@ -4842,7 +4842,7 @@ function _resetRunLocals () {
   fuelStop.reset(); _pumpReceiptT = 0; _showResetCountdown(0)
   _waypoint = null
   _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
-  _momOwes.part = _momOwes.labour = true; _skipArmedUntil = 0
+  _momOwes.part = _momOwes.labour = _momOwes.patch = true; _skipArmedUntil = 0
   exitFreecam()
   serviceScreen.close?.(); damageScreen.close?.(); inventoryScreen.close?.()
 }
