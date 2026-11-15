@@ -49,3 +49,4 @@ which smooths the steps around it but leaves this one at 2.9 m.
 
 ## Log
 - 2026-11-14: d15bacd8 · ade618fa · ca1148af; census tool test/junction-dirt-census.mjs (dde29401, 23f9674d). No class worse (one more ramp site, same worst).
+- 2026-11-14: head f27897d7 (main merged 5d495608): affected gates 75/75 green (wip/c158-gates.log). fingerprint-world vs main: surface/carve (+ seed6 fork props, groundAt includes the carve) only. Smoke not run (orchestrator).
