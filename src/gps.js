@@ -45,10 +45,10 @@ const UT_ON        = -0.5
 const UT_OFF       = -0.2
 const UT_AHEAD     = 20     // m: how far up the road (against the route) the ribbon stands
 const UT_W         = 1.2    // m: ribbon width; the head is 2.5x
-const UT_RAD       = 2.0    // m: radius of the upward half-loop (so it is 4 m tall; the whole glyph fits a 5 m cube)
+const UT_RAD       = 1.7    // m: radius of the upward loop (3.4 m tall; the whole glyph fits a 5 m cube)
 const UT_HOVER     = 0.2    // m above the road surface
 // FEAT-218: an objective further than this from the route's last road point is OFF the road: it gets the turn arrow, not the ring.
-const OFFROAD_M    = 8
+const OFFROAD_M    = 3      // a demolition target stands ~5 m off the centreline; a courier's end is on it
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
 // FEAT-61 self-overlap (a paper route drives some streets out and back). A vertex counts as a
@@ -329,19 +329,20 @@ function _arrowGeometry () {
 /**
  * FEAT-215 (redesigned 2026-11-14): a ribbon that leaves along local +Z (away from the player), loops UPWARD through
  * 180 degrees in the vertical plane and ends heading back along -Z at the top, with an arrowhead that faces the player.
- * Origin on the ground; spans z -1.9..2.5, y 0..4, x +-1.5 (inside a 5 m cube). Double-sided material, so no mirror variant.
+ * Origin on the ground; spans z about -1.7..2.2, y 0..3.4, x +-1.5 (inside a 5 m cube). Double-sided material, so no mirror variant.
  */
 function _uturnGeometry () {
-  const R = UT_RAD, hw = UT_W / 2, N = 20, path = [[0, -1.5], [0, 0.5]]   // [y, z] along the ribbon
-  for (let i = 1; i <= N; i++) { const a = -Math.PI / 2 + Math.PI * i / N; path.push([R + R * Math.sin(a), 0.5 + R * Math.cos(a)]) }
-  path.push([2 * R, -0.1])
+  const R = UT_RAD, hw = UT_W / 2, N = 24, A1 = 215 * Math.PI / 180   // loop past 180 degrees so the head tips down toward the camera
+  const path = [[0, -1.5], [0, 0.5]]   // [y, z] along the ribbon
+  for (let i = 1; i <= N; i++) { const a = -Math.PI / 2 + A1 * i / N; path.push([R + R * Math.sin(a), 0.5 + R * Math.cos(a)]) }
   const pos = []
   for (let i = 0; i < path.length - 1; i++) {
     const [y0, z0] = path[i], [y1, z1] = path[i + 1]
     const q = [[-hw, y0, z0], [hw, y0, z0], [hw, y1, z1], [-hw, y1, z1]]
     for (const k of [0, 1, 2, 0, 2, 3]) pos.push(...q[k])
   }
-  pos.push(-UT_W * 1.25, 2 * R, -0.1, UT_W * 1.25, 2 * R, -0.1, 0, 2 * R, -1.9)   // the head, tip toward the player
+  const [ey, ez] = path[path.length - 1], aEnd = -Math.PI / 2 + A1, dy = Math.cos(aEnd), dz = -Math.sin(aEnd)   // end point and heading
+  pos.push(-UT_W * 1.25, ey, ez, UT_W * 1.25, ey, ez, 0, ey + 1.9 * dy, ez + 1.9 * dz)   // the head, tip toward the player
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
   return g
