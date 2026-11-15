@@ -2,7 +2,7 @@
 id: DEC-274
 status: standing
 decided: 2026-11-15
-area: gps
+area: ui
 governs: FEAT-215, FEAT-218, src/gps.js _placeUturn
 supersedes: 
 ---
