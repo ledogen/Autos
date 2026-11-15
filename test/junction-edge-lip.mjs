@@ -22,7 +22,7 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 const WALL_MAX = 0.05
 let worstWall = 0, worstWallAt = ''
 
-const SEEDS = ['1353361482', '369055107', '917338424', '749163472']   // random seeds (BUG-122's census; BUG-137's causeway T; BUG-148's portal inside a T's pad)
+const SEEDS = ['1353361482', '369055107', '917338424', '749163472', '169372896']   // random seeds (BUG-122's census; BUG-137's causeway T; BUG-148's portal inside a T's pad; 169372896 = BUG-151's steep-rim pad)
 const R = 1000, LIP_MAX = 0.25, G = 0.25, REFINE = 0.08, TEAR_MAX = 0.08, hw = P.roadHalfWidth ?? 5
 let fails = 0, edges = 0, worstLip = 0, worstLipAt = '', rimPts = 0, margin = Infinity, padPts = 0, worstSlope = 0, worstTear = 0, worstTearAt = '', rimEdge = 0, rimFails = 0, worstRim = 0, worstRimAt = ''
 for (const S of SEEDS) {
