@@ -27,7 +27,7 @@ the turn indicator arrows; the owner suggests a 3D ribbon arrow that makes a 180
 - [x] Wrong way: the player is caught between the U-turn arrow on one side and the GPS chevrons on the other; hidden when heading the correct way
 
 ## Log
-- 2026-11-14 Spare: redesigned (src/gps.js _uturnGeometry/_placeUturn): vertical half-loop ribbon, 4 m tall x 4.4 m long x 3 m wide, standing on the road 20 m up it from the truck (route s-20; truck line when <20 m of route behind), arrowhead back at the player. Shown under the same cos hysteresis. Shots in wip/feat-218/. Owner's look: card feat218-look.
+- 2026-11-14 Spare: redesigned (src/gps.js _uturnGeometry/_placeUturn): vertical 215-degree loop ribbon (R 1.7 m), 3.4 m tall, about 4 m long, 1.6 m wide with a 4 m head, standing on the road 20 m up it from the truck (route s-20; truck line when <20 m of route behind), arrowhead back at the player. Shown under the same cos hysteresis. Shots in wip/feat-218/. Owner look: card feat218-look.
 - 2026-11-14 Spare: flat 180° ribbon + head, 7 m ahead of the truck at 2.5 m, bends toward the route's side; on at >120° off the route direction, off inside ~100°. gps-route gate + smoke boot,story green. Not seen in-game; flat (not tilted) so a low chase cam may want a tilt.
 - 2026-11-14: scribe recorded the owner's redesign.
 
