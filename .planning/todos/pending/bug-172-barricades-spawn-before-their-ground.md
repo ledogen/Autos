@@ -3,12 +3,13 @@ id: BUG-172
 type: bug
 status: open
 severity: major
+opened: 2026-11-14
+source: orchestrator, 2026-11-14 — found by INFRA-15 (the browser smoke's edge step at 4× CPU throttle)
+lane: A
 ---
 
 # BUG-172: Barricade bodies spawn before the ground under them exists
 
-source: orchestrator, 2026-11-14 — found by INFRA-15 (the browser smoke's edge step at 4× CPU throttle)
-lane: A
 
 ## Next steps
 Lane A: a row swaps to loose bodies only once the ground collider under it exists. Gate it headless.
