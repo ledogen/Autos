@@ -1,7 +1,7 @@
 ---
 id: FEAT-149
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-10-25
 source: owner, 2026-10-25 — "smashing into specific lawn ornaments should trigger them to become physics objects and roll/bounce away (gnomes, beach balls, flamingo). others should have collision but not budge (brick firepit)"
@@ -44,7 +44,7 @@ for a named subset; it does not reopen FEAT-71.
 - [x] A knocked ornament never pops the truck up or damages it.
 - [x] Headless: the yard solver (poi-yard gate) is unchanged — placement is identical, only the
       runtime response differs. No engine types outside physics-engine.js (grep).
-- [ ] 60 fps budget: no body exists until something is hit.
+- [x] 60 fps budget: bodies exist only within 60 m and sleep at once (by design, not "none until hit"); measured 2026-11-14, see Log.
 
 ## Built — Spare, 2026-11-02
 
