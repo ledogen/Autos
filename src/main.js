@@ -3734,7 +3734,7 @@ const serviceCenter = new ServiceCenter({
   freeRepairs: () => runEconomy.freeRepairs ?? 0, useFreeRepair: () => { runEconomy.freeRepairs-- },   // expedition-rewards
   // FEAT-184 (DEC-151): on the evening, one tire is on mom — a mounted one or a bare one (the shelf's old tire is always
   // there), the part once and its fitting once.
-  onMom: (id, k) => _eveningLeg() && _momOwes[k] && (id === 'spareTire' || PARTS[id]?.slot === 'tire'), useMom: (id, k) => { _momOwes[k] = false },
+  onMom: (id, k) => _eveningLeg() && _momOwes[k] && (k === 'patch' ? id === 'patch' : id === 'spareTire' || PARTS[id]?.slot === 'tire'), useMom: (id, k) => { _momOwes[k] = false },
   onChange: () => serviceScreen.render(),
 })
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
@@ -4500,7 +4500,9 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // FEAT-184 (DEC-150/151, owner 2026-11-14): the pocket change a played tutorial runs on until the paycheck ($ — at the
 // day-1 $0.50/gal it buys ~6 gal, so a fill from an eighth stops near half: "will run out of cash half tank"), and the
 // seconds off the road before the evening puts the truck back on it ("you drive off the road > reset"). Both [DEFAULT].
-const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4 }
+const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4,
+  offRoadM: 10,    // FEAT-217 (of3s, DEC-219): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
+  safeNearPoiM: 75 }   // FEAT-217 (bfs1, owner said 50 or 100) [DEFAULT]: no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 // FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
@@ -4508,7 +4510,7 @@ let _evePump = null   // { q, done }: the evening's station while a fill-up is d
 let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
 // FEAT-184 (DEC-151): the evening's tire is on mom — the part once and its fitting once (ServiceCenter onMom). Not saved:
 // a resume mid-evening owes it again.
-const _momOwes = { part: true, labour: true }
+const _momOwes = { part: true, labour: true, patch: true }   // patch: FEAT-217, the first flat patched at the shop
 let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
 // dev handle — test/cdp-smoke.mjs and run-soak read where the tutorial stands (FEAT-184): 'intro' (the firing) · 'card' ·
 // 'evening' · 'morning' · 'free' (the paycheck heard, or skipped), and the run's own world while it plays on the tutorial seed
@@ -4690,7 +4692,7 @@ function _resetToRoad () {
  *  FEAT-184 (DEC-153): the morning's one beat — parked at the joint, the last paycheck. */
 function _eveningBeats () {
   const q = _mom(), j = _joint()
-  if (!_tutDrive()) return
+  if (!_tutDrive()) { _showResetCountdown(0); return }
   if (_morningLeg()) {
     _tut('tut-morning')   // after breakfast, which the sleep queued
     if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
@@ -4698,9 +4700,19 @@ function _eveningBeats () {
   // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
   // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
   // (_playedS), so a pause or a card never counts.
-  const off = !vehicleState.parked && !_inPoiRing() && !_truckOnRibbon()
+  const vp = vehicleState.position
+  const off = !vehicleState.parked && !_inPoiRing() && !poiSystem.nearest(vp.x, vp.z, TUT_PARAMS.safeNearPoiM)
+    && campSystem.nearRoadInfo(vp.x, vp.z).lateral > (RANGER_PARAMS.roadHalfWidth ?? 5) + TUT_PARAMS.offRoadM
   _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
-  if (off && _playedS - _eveOffAt > TUT_PARAMS.offRoadS) { _eveOffAt = null; _resetToRoad() }
+  const left = off ? TUT_PARAMS.offRoadS - (_playedS - _eveOffAt) : 0
+  _showResetCountdown(left > 0 ? Math.ceil(left) : 0)   // FEAT-217: styled like the start-the-truck hint, same size and place
+  if (off && left <= 0) { _eveOffAt = null; _resetToRoad() }
+}
+function _showResetCountdown (n) {
+  const el = document.getElementById('reset-countdown')
+  if (!el) return
+  if (n) el.textContent = `off the road · back on it in ${n}`
+  el.style.opacity = n ? '1' : '0'
 }
 function _eveningLessons (q, v) {
   // FEAT-184 stage 3: the pedals once the key has caught, then (a fill-up due) the gauge.
@@ -4718,7 +4730,7 @@ function _eveningLessons (q, v) {
   if (damageScreen.isOpen && damageModel.flat.some(Boolean)) _tut('tut-damage')
   // Stage 5: towed and back on the road, it's night — the headlights.
   if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
-  if (Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
+  if (!_flatOwed() && Math.hypot(q.x - v.x, q.z - v.z) < EVENING_PARK_M) _tut('tut-park')
 }
 
 /** The evening is over (a sleep, or 07:00 awake): the morning leg, back to the joint for the paycheck (DEC-153). */
@@ -4823,6 +4835,18 @@ function _skipOpening () {
   _renderMissionUI()   // the HUD line goes
 }
 
+/** FEAT-217 (owner 2026-11-14: give-up leaves the pump open and the tutorial half done; free cam survives into a new game):
+ *  the ONE reset of what a run keeps outside the systems' own start(). Called from region exit AND run entry, so
+ *  a state added here can never leak either way. */
+function _resetRunLocals () {
+  fuelStop.reset(); _pumpReceiptT = 0; _showResetCountdown(0)
+  _waypoint = null
+  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
+  _momOwes.part = _momOwes.labour = _momOwes.patch = true; _skipArmedUntil = 0
+  exitFreecam()
+  serviceScreen.close?.(); damageScreen.close?.(); inventoryScreen.close?.()
+}
+
 /**
  * Go-live: true when the opening owns the moment (so RUN_INTRO waits for Larry). Plays the firing on
  * a fresh opening run; on a resumed one it only holds RUN_INTRO back until the welcome.
@@ -4831,8 +4855,6 @@ function _playOpening () {
   // A resume: RUN_INTRO waits for Larry while the opening is on.
   if (!_openingRun) return !dialogueSystem.has(DLG.runIntro) && dialogueSystem.has(DLG.firing)
   _openingRun = false
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
-  _momOwes.part = _momOwes.labour = true; _skipArmedUntil = 0
   economySystem.withholdPaycheck(TUT_PARAMS.pocketCash)   // FEAT-184 (DEC-150): pocket change until the paycheck
   _planEvePump()   // FEAT-184 stage 3
   // DEC-157: the card's second load — the intro played on the run's own world, so straight to mom's call.
@@ -5821,15 +5843,16 @@ const _afterRoadsideWork = (h) => { damageModel.publish(RANGER_PARAMS); daySyste
 /** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, spareFitHours() on the clock. */
 function _pickSpare (e) {
   inventoryScreen.close()
-  if (e.flat && _eveningLeg()) _tut('tut-spareflat')   // FEAT-184 stage 4: the worst day's spare
+  const trap = e.flat && _eveningLeg()   // FEAT-184 stage 4 / FEAT-217 (xbnc): the worst day's flat spare is found out AFTER the player tries it on a corner
   damageScreen.pick({
     title: 'Fit the mounted tire',
-    corner: () => !e.flat,
+    corner: () => trap || !e.flat,
     note: _tireNote,
     about: `The mounted tire: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
     actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(spareFitHours(inventorySystem))}`, run: () => {
       const h = spareFitHours(inventorySystem)
       if (fitSpare(partsSystem, damageModel, inventorySystem, inventorySystem.indexOf(e), corner) >= 0) _afterRoadsideWork(h)
+      else if (trap) { _tut('tut-spareflat') }
     } }],
     onClose: _backToInventory,
   })
@@ -6028,7 +6051,11 @@ window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() =
 document.getElementById('recovery-icon')?.addEventListener('click', _toggleRecovery)
 
 /** Can the truck knock on mom's door from here? (Same gates, minus the zone and the grading.) */
+/** FEAT-217 (8l9k): the evening's flat is still on the truck (tow, plug or shop not done yet). Mom's card and her door
+ *  wait for it, so limping home on the flat cannot skip the tow and the shop. */
+const _flatOwed = () => _eveningLeg() && _eveFlat && damageModel.flat.some(Boolean)
 function _atMomsHouse () {
+  if (_flatOwed()) return false
   if (!storySystem.isActive() || storySystem.isEntering()) return false
   if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return false   // FEAT-113: as _campPromptState
   if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return false
@@ -9207,6 +9234,7 @@ const storySystem = new StorySystem({
     damageModel.publish(RANGER_PARAMS)
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
+    _resetRunLocals()                // FEAT-217: nothing of the last run's tutorial, pump or camera
     resetPaperRun()                  // …and starts back on Larry's four-house route (SM-INV-12)
     paperRouteSystem.abort()
     _renderDialogue()
@@ -9281,6 +9309,7 @@ const storySystem = new StorySystem({
     offerBoard = null                   // …and the board belongs to the run that just ended
     _dropLarryTour()
     _setRunHudVisible(false)
+    _resetRunLocals()                   // FEAT-217: giving up (or any exit) resets the tutorial, the pump and the camera
     dialogueSystem.abort()              // FEAT-61: abort, not advance — leaving is not "read it"
     _renderDialogue()
     if (_firingCam) setCameraFocus(null)   // FEAT-147: a run left mid-firing hands the camera back…
