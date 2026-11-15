@@ -3737,6 +3737,20 @@ const serviceCenter = new ServiceCenter({
   onMom: (id, k) => _eveningLeg() && _momOwes[k] && (id === 'spareTire' || PARTS[id]?.slot === 'tire'), useMom: (id, k) => { _momOwes[k] = false },
   onChange: () => serviceScreen.render(),
 })
+// FEAT-219 (owner, 2026-11-14: "it's just dark in there"): the bay's walls and roof shut the sun and sky out. The ceiling strips
+// are emissive already (the model's ShopLight); this ONE point light, no shadows, exists only while the screen is open in the bay
+// (created on entry, removed on exit: a light that is not in the scene costs every lit material nothing). Retune after FEAT-180
+// changes the exposure: SERVICE_LIGHT.intensity (cd) is the one knob; `at` is the model frame, over the lift (park box centre).
+const SERVICE_LIGHT = { color: 0xfff0d8, intensity: 60, distance: 12, decay: 2, at: [-3.95, 2.9, -0.2] }
+let _bayLight = null
+function _setBayLight (on, poi) {
+  if (_bayLight) { scene.remove(_bayLight); _bayLight = null }
+  if (!on) return
+  const L = SERVICE_LIGHT, w = dropZoneWorld(poi, { x: L.at[0], z: L.at[2] })
+  _bayLight = new THREE.PointLight(L.color, L.intensity, L.distance, L.decay)
+  _bayLight.position.set(w.x, poi.baseY + L.at[1], w.z)
+  scene.add(_bayLight)
+}
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
   // The shop still posts work (FEAT-167: its Jobs tab). FEAT-197 (owner, 2026-11-11): the tab's one button,
   // "go to jobs", hands the brake to the offers — the offer card over the map, as parking does elsewhere —
@@ -3760,7 +3774,7 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
   // the service station's lift, the view is the model's own `camera` — its eye and look, as the same orbit's bearing,
   // pitch and radius about the look point, so a drag still orbits from there.
   onView: (on) => {
-    if (!on) { setCameraFocus(null); return }
+    if (!on) { setCameraFocus(null); _setBayLight(false); return }
     const c = _servicePoi?.camera   // the screen opens only parked in the box (_serviceInReach)
     if (c) {
       const at = ([x, y, z]) => ({ ...dropZoneWorld(_servicePoi, { x, z }), y: _servicePoi.baseY + y })
@@ -3768,6 +3782,7 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
       const view = (e, l) => { const dx = e.x - l.x, dy = e.y - l.y, dz = e.z - l.z, r = Math.hypot(dx, dy, dz)
         return { p: l, theta: Math.atan2(dx, dz), phi: Math.asin(dy / r), radius: r } }
       // FEAT-220: the camera is locked to these (the wall hides the truck from a free orbit); C / right-stick click cycles.
+      _setBayLight(true, _servicePoi)
       setCameraViews([view(e, l), ...(_servicePoi.cameraViews ?? []).map(v => view(at(v.eye), at(v.look)))])
       return   // each viewpoint is a cut (camera.js), no glide in from the chase position, through the bay's wall
     }
