@@ -12,7 +12,7 @@ lane: Perf
 # PERF-48: Whole-run profile and architecture review
 
 ## Next steps
-Lever 6 hybrid (DEC-207) is built on feature/perf and measured: owner look card perf48-hybrid-look (ship / drop / changes). Ground 70 m and farther from the truck is baked, 55–70 m cross-fades, nearer stays live. It keeps about 60 % of the all-baked saving (median −12.8 % vs −20.6 % GPU active cycles); the chase view keeps least (median −7.5 %).
+Lever 6 hybrid ships on by default (DEC-234); landing request from feature/perf. Off on the Low tier, and `?terrainBake=0` is the A/B switch. Remaining: the owner picks further levers.
 
 ## Summary
 The owner wants the game to be a truly lightweight app. Earlier perf work chased single suspects (tire lookups, the
@@ -54,6 +54,7 @@ until `afplay -v 0 /System/Library/Sounds/Tink.aiff` returns in under a second, 
 - [x] A ranked lever list (cost today, expected gain, risk, effort), each lever a ticket or a line in an existing one
 - [ ] The owner picks levers (a deep dive if the list needs a table)
 - [x] Lever 6 hybrid: baked look at 70 m+ from the truck, live shader nearby; before/after screenshots; the GPU saving that remains is MEASURED and reported to the owner (DEC-207)
+- [x] Lever 6 hybrid on by default, all-baked prototype path deleted, A/B off switch `?terrainBake=0`, re-measured on the merged code (DEC-234)
 
 ## Decisions
 - 2026-11-14, owner (lever 1, the energy/hunger strips stepping one device pixel at a time): "keep the pixel steps".
@@ -61,12 +62,13 @@ until `afplay -v 0 /System/Library/Sounds/Tink.aiff` returns in under a second, 
 - 2026-11-14, owner (lever 6): "build the prototype".
 - 2026-11-14, owner (lever 7, 30 fps while parked): "no, keep 60" (DEC-186).
 - 2026-11-14, owner (lever 6 card perf48-bake-look): "i dont like the loss of detail nearby. can we build it so it uses the bake for things 70m+ from the truck and uses live for the things nearby? how much of our savings would we lose?" (DEC-207).
+- 2026-11-15, owner (card perf48-hybrid-look): "ship it (hybrid on by default)" (DEC-234).
 
 ## Open questions
 - What "snappy" means in numbers: the owner's targets for frame time, load time and battery draw.
 - ~~Lever 5~~ answered: a 60 / 30 / display setting, default 60 (DEC-185).
 - ~~Lever 6~~ answered: build the prototype.
-- Lever 6 prototype: ship as is, drop, or change (owed card perf48-bake-look)?
+- ~~Lever 6 hybrid~~ answered: ship it, on by default (DEC-234).
 - ~~Lever 7~~ answered: no, keep 60 (DEC-186).
 
 ## Links
@@ -114,3 +116,7 @@ Windows) are open single-suspect tickets; this ticket ranks them against everyth
   Paired A/B (wip/perf-48/hybrid-ab.mjs), 3 seeds × noon/dusk × near/mid/far, 12 × 2 s cycles: hybrid median −12.8 %
   (cells +0.4 to −23.8 %), all-baked −20.6 % same session; near (chase) −7.5 % vs −20.6 %. Fog untouched (no saving there).
   Sheets wip/perf-48/hyb/sheet-*.jpg. Not gated beyond the affected list (cdp-smoke held for main).
+- 2026-11-15 (Perf lane): hybrid on by default (DEC-234); `?terrainBake=<px>` opt-in, the runtime toggle and the harness
+  hook deleted; `?terrainBake=0` = off; tier field `terrainBake` (Low off, re-bake on every tier change). Confirm A/B on
+  merged code (wip/perf-48/confirm-ab.mjs, off vs default, spawn driver's view, 3 seeds × noon/dusk, 12 × 2 s, gate run
+  alongside): median −8.8 % active cycles (cells 0 to −17 %; seed 58301 0 %, a crest with no ground past 70 m).
