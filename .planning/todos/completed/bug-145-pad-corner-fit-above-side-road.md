@@ -1,7 +1,7 @@
 ---
 id: BUG-145
 type: bug
-status: open
+status: completed
 severity: minor
 opened: 2026-11-08
 source: Lane B, BUG-137's scans
@@ -37,3 +37,6 @@ The corner fit itself is right: it bridges a trunk climbing at 15 % and a side r
   the fix passes on all three seeds (218 rim points, worst 0.158 m).
 - `shoulder-lateral-continuity` (the 0.70 m plaza tolerance the old cap guarded) passes, worst 0.064 m;
   `road-smoothness` and `bank-steps` pass.
+
+## Resolution (2026-11-14, tracker audit)
+merged 82ecb463 (8dce9951, one PAD_DUCK_CAP).

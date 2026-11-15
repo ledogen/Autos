@@ -1,7 +1,7 @@
 ---
 id: BUG-139
 type: bug
-status: open
+status: completed
 severity: major
 opened: 2026-11-07
 source: owner, 2026-11-07 tracker inbox
@@ -47,3 +47,6 @@ both.) A wheel deeper in a rock than that is the wheel's hard core's job: the en
   independent three-ray inside test — main 269 of 18,028 outside points read inside, deepest 12.4 m; fixed 0, deepest
   0.699 m (< 2r) — and the drive/tumble scenarios above: main 16 failsafe steps, fixed 0 (deepest wheel contact 0.12 m).
 - Probes: `CarGame-machine/wip/bug-139/inside.mjs [seed] [n]` (the census on a world's rocks), `closed.mjs`.
+
+## Resolution (2026-11-14, tracker audit)
+merged 2beb6da6 (rock contact decides inside by ray parity).

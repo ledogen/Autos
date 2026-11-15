@@ -1,7 +1,7 @@
 ---
 id: FEAT-187
 type: feature
-status: open
+status: open — built and on main (670220c0); the owner's look is outstanding (no card)
 severity: minor
 opened: 2026-11-07
 source: owner, 2026-11-07 tracker inbox

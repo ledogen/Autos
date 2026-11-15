@@ -1,7 +1,7 @@
 ---
 id: FEAT-211
 type: feature
-status: in-progress
+status: open — landings 1-4 on main (a1520e8e); waiting on the owner's map look (owed card feat211-map-look)
 severity: major
 opened: 2026-11-13
 source: owner, 2026-11-13 — the map spec pasted in chat, part 2 ("Layout / UI / POIs / Missions … The map should not take up the entire screen edge to edge … a list of destinations and their details on the right side")

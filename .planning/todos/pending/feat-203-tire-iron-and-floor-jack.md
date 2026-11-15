@@ -1,7 +1,7 @@
 ---
 id: FEAT-203
 type: feature
-status: open
+status: open — built and on main (3b719688); waiting on the owner: owed card feat203-try (thumbnail art)
 severity: major
 opened: 2026-11-13
 source: owner, 2026-11-13 (inbox) — "whatever happened to the tire iron and floor jack items? changing your tire for the spare should be like 2hrs without them and 30m with them. both rare rarity. i dont think the floor jack should help with patching the tire ngl you dont usually have to lift the vehicle."

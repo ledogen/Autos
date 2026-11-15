@@ -1,7 +1,7 @@
 ---
 id: PERF-33
 type: perf
-status: open
+status: completed
 severity: major
 opened: 2026-09-24
 source: owner report (2026-09-24) — long-standing driving microstutter (can't reproduce idle;
@@ -153,3 +153,6 @@ hitch frame, no streaming events — the truck in a contact-heavy wedge), not st
 **Teleport fill** (`node test/teleport-fill.mjs --cpu=4`, 2 km free-cam jumps, median of 4):
 props 3×3 5.0 s → 1.6 s, 5×5 13.9 s → 3.8 s; ground 3×3 0.41 s → 0.22 s, 5×5 0.73 s → 0.32 s
 (terrain first under the shared budget).
+
+## Resolution (2026-11-14, tracker audit)
+steps 1-5 landed on main (shared stream budget, freeze guard, near-then-ahead ordering; props 3x3 5.0 -> 1.6 s); step 6 measured and rejected.

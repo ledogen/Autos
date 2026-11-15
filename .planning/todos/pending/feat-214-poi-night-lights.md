@@ -1,7 +1,7 @@
 ---
 id: FEAT-214
 type: feature
-status: open
+status: open — built and on main (78e83b7f); waiting on the owner's look (owed card feat214-look)
 severity: major
 opened: 2026-11-13
 source: owner, 2026-11-13 (inbox) — "add light sources to main POIs. mainly the shops and gas pumps since they're open 24hr should have point sources hidden in believeable places i.e. the auto shop has overhead lights. they should switch on after ~7pm. if residences have a good place to hide the light we can install them there too but they should switch off again around 11pm unless they offer a mission or you're delivering there."

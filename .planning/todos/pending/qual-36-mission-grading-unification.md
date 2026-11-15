@@ -1,7 +1,7 @@
 ---
 id: QUAL-36
 type: quality
-status: open
+status: open — built and on main (fd3f76e6); waiting on the owner's words (owed card qual36-words)
 severity: major
 opened: 2026-11-13
 source: owner, 2026-11-13 — "i think it would be wise to attempt to unify the way these missions are presented and graded … I like the shot clock effect of the rank timer, but it's only present in like one or two mission types now … with just a couple levers here we can really clean up this mess of a grading system"

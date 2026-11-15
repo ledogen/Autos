@@ -1,7 +1,7 @@
 ---
 id: FEAT-213
 type: feature
-status: open
+status: open — built and on main (0e5824bb); waiting on the owner's look (owed card feat213-look)
 severity: minor
 opened: 2026-11-13
 source: owner, 2026-11-13 — the Google Doc "Cargame menus", its “Info text” section, copied below verbatim

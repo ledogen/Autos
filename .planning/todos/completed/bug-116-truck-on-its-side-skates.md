@@ -1,7 +1,7 @@
 ---
 id: BUG-116
 type: bug
-status: open — built and landed; waiting only on the owner's drive (folded into bug115-look)
+status: completed
 severity: minor
 opened: 2026-11-06
 source: owner, 2026-11-06 playtest — after the side-landing launch hotfix (bb585d65)
@@ -105,3 +105,6 @@ body on the road (debris, cargo, rocks), or a vendor-binding rebuild to expose B
 (per-material-pair μ). Either is its own ticket after the owner's drive.
 
 **2026-11-08, owner (owed side-slide-lever):** "can i have body grip on all offroad surfaces bumped to 1.0 mu. onroad leave 0.5 mu. simplified dig in" → FEAT-193.
+
+## Resolution (2026-11-14, tracker audit)
+merged 80ef7bfe; the owner's 2026-11-07 side-friction note became FEAT-193, closed 2026-11-14 (83460e7d).

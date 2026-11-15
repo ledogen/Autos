@@ -1,7 +1,7 @@
 ---
 id: BUG-115
 type: bug
-status: open — waiting only on the owner's look in game
+status: completed
 severity: minor
 opened: 2026-11-06
 source: Lane B, measuring FEAT-138's hi-lift on cross-slopes (2026-11-06) — the same complaint as BUG-89 ("slides too far when truck is on side add friction so you self right or roll more often", owner 2026-10-19), on the roof this time
@@ -102,3 +102,6 @@ per-surface body/cab friction would serve both. Waits on the owner's in-game loo
 Built and landed (5028b1d9); every box but the last is ticked. Open ONLY for the owner's look in game (they asked to be
 asked: "Make sure you ask me to take a look at this in game"). It is on the tracker page's owed list. Close it on their
 word; the per-surface cab-friction idea in this ticket is recorded, not built.
+
+## Resolution (2026-11-14, tracker audit)
+merged 5028b1d9; the owner's 2026-11-07 look said the roof is okay, and the side-friction note became FEAT-193, closed 2026-11-14 (83460e7d).

@@ -1,7 +1,7 @@
 ---
 id: PERF-31
 type: perf
-status: pending
+status: completed
 severity: medium
 ---
 
@@ -201,3 +201,6 @@ Story entry sits far under the owner's 30 s bar. The ≤ 8 s three-window bench 
 met by W3; the thread is now 4.8 s of it. Gates: the affected set (`--changed=src/road.js,test/gates.mjs,
 test/nearest-within.mjs` — a clean tree selects 0) 58/58 green, including network-worker-parity,
 road-worker-parity, world-determinism, restream-invariance and the new nearest-within.
+
+## Resolution (2026-11-14, tracker audit)
+W1-W4 shipped; merge 48a80e92: 3x1400 m network build 8.00 -> 4.82 s (under the 8 s bar), fingerprint-world identical.

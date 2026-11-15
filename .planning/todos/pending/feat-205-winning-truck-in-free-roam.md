@@ -1,7 +1,7 @@
 ---
 id: FEAT-205
 type: feature
-status: open
+status: open — built and on main (9bed46d7); waiting on the owner's try (owed card feat205-try)
 severity: minor
 opened: 2026-11-13
 source: owner, 2026-11-13 (inbox) — "dont remember if i wrote this down yet but alpha feature is if you beat the game we save your vehicle configuration to the save file so you can load up your winning truck in freeroam. not urgent."

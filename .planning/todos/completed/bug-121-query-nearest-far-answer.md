@@ -1,7 +1,7 @@
 ---
 id: BUG-121
 type: bug
-status: open — fixed on land/bug-121 (f27962c8); the owner said land it (bug121-spawn (a), 2026-11-07) — landing pending
+status: completed
 opened: 2026-11-07
 severity: major
 source: Lane A, found building BUG-118 (the tutorial GPS re-plan), reported to the orchestrator 2026-11-07
@@ -119,3 +119,6 @@ They are the same before and after this fix. The likely cause: `queryNearest` an
 different run key than the edge's `ownKey` (a parallel `~p`, a split run, or a different spelling), so
 `hit.runKey === ownKey` fails and the site's own road counts as "another road". The cost is about 90 good POI
 sites thrown away per 4 regions. Check the key spelling before trusting the keep-out.
+
+## Resolution (2026-11-14, tracker audit)
+merged 7abf03c6 (fix f27962c8); owner said land it (bug121-spawn (a), 2026-11-07).

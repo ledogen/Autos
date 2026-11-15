@@ -1,7 +1,7 @@
 ---
 id: BUG-112
 type: bug
-status: open — the owner answered bug112-look (2026-11-06): A1, keep the light; blend only the portal's shoulder seam (gravel outside → flat dirt inside) — to build
+status: completed
 severity: minor
 opened: 2026-11-05
 source: owner, 2026-11-05, driving BUG-81's shoulder fix on Spare's branch (:3885) — "the tunnel shoulder drive felt was smooth as butter - close. but the lighting was off - too bright in the tunnel. and texture blending nonexistant"
@@ -67,3 +67,6 @@ Queued by the orchestrator as an owed call. The build waits on the answer.
 
 So the lighting stands, and the build left is one seam: the shoulder's gravel texture outside the portal against the
 flat dirt colour inside. (Folded in by the alpha audit, Lane A, 2026-11-07.)
+
+## Resolution (2026-11-14, tracker audit)
+merged 6a3636b6 (the bore's floor wears the terrain material); owner said land it (bug112-seam, 2026-11-07).
