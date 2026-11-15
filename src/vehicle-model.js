@@ -1110,20 +1110,33 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   async function prewarmLightPrograms (renderer, scene, camera, points = []) {
     for (let i = 0; i < LIGHT_STATE_COUNT; i++) {
       const restore = _lightState(i, points)
-      try { await renderer.compileAsync(scene, camera) } catch (_) { /* prewarm is best-effort */ }
+      try { await renderer.compileAsync(scene, camera); _drawWarm(renderer, scene, camera) } catch (_) { /* prewarm is best-effort */ }
       restore()
     }
+  }
+
+  /**
+   * BUG-175: compiling a variant is not enough. Its FIRST DRAW still made the GPU driver build the draw's pipeline
+   * on the spot: the first headlights of a session hitched 150 ms with +0 programs (headless Metal, cold driver
+   * cache). So every warm-up also DRAWS the state, into one scissored pixel of the canvas (the same framebuffer,
+   * so the same pipelines), which the next frame's render overwrites.
+   */
+  function _drawWarm (renderer, scene, camera) {
+    renderer.setScissorTest(true); renderer.setScissor(0, 0, 1, 1)
+    renderer.render(scene, camera)
+    renderer.setScissorTest(false)
   }
 
   /**
    * The same, for ONE state, synchronously — for materials that arrive after boot (streamed terrain,
    * road tiles, props, the truck's own .glb), which the boot prewarm never saw and which would
    * otherwise compile the first time each lamp state appears (the "first headlights lag").
-   * Synchronous so no rendered frame ever sees the borrowed light state. ~1.2 ms on a warm scene.
+   * Synchronous so no rendered frame ever sees the borrowed light state. It draws (BUG-175, _drawWarm), which
+   * compiles too.
    */
   function compileLightState (i, renderer, scene, camera, points = []) {
     const restore = _lightState(i, points)
-    renderer.compile(scene, camera)
+    _drawWarm(renderer, scene, camera)
     restore()
   }
 

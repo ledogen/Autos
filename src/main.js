@@ -17,6 +17,7 @@
  */
 
 import * as THREE from 'three'
+import { LiveExposure } from './exposure.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, syncChassisMass, rollBalance } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
@@ -1929,6 +1930,8 @@ function applyShadowResolution (mapSize, extent) {
 // The sky, the sun and moon on their real paths, and every natural light (key, hemisphere fill, the sky fog's
 // colour) from one simulated atmosphere — see sky.js. It owns the moon disc and the background mesh.
 const skySystem = new SkySystem({ scene, renderer, sun, sunFar, farSplit: SHADOW_FAR_SPLIT, ambient })
+// FEAT-221 (DEC-262): live exposure, the camera metering its own frame (src/exposure.js). `?ae=0` = off (A/B).
+const liveExposure = _urlParams.get('ae') === '0' ? null : new LiveExposure(renderer, skySystem)
 window.sky = skySystem   // debug handle (mirrors window.terrain) — drive presets/time-of-day from console
 // NB `window.terrain` is the ground-height FUNCTION (returns metres), not the streaming system. This is the system
 // itself — needed to reach _terrainUniforms (e.g. A/B-ing uShadowStrength from a CDP probe, or zeroing
@@ -3381,6 +3384,7 @@ function _wirePoiLamps (q, inst) {
   }
 }
 function _updatePoiNightLights () {
+  _placeBayLight()
   const h = SKY_CYCLE.hour   // the sky's hour: the day clock pushes it in a run, free roam cycles it
   const on = lampsOn('shop', h)
   if (on !== _shopLampsOn) { _shopLampsOn = on; setGlow(_shopLampMats, on) }
@@ -3744,18 +3748,23 @@ const serviceCenter = new ServiceCenter({
   onChange: () => serviceScreen.render(),
 })
 // FEAT-219 (owner, 2026-11-14: "it's just dark in there"): the bay's walls and roof shut the sun and sky out. The ceiling strips
-// are emissive already (the model's ShopLight); this ONE point light, no shadows, exists only while the screen is open in the bay
-// (created on entry, removed on exit: a light that is not in the scene costs every lit material nothing). Retune after FEAT-180
-// changes the exposure: SERVICE_LIGHT.intensity (cd) is the one knob; `at` is the model frame, over the lift (park box centre).
+// are emissive already (the model's ShopLight); this ONE point light, no shadows, lights the bay. BUG-174 (owner, 2026-11-15:
+// "service station and poi lights should always be on whether or not you're using the poi"): it is ALWAYS in the scene, day
+// and night, and sits in the bay of the service station nearest the truck (_placeBayLight, on the POI poll). Never added or
+// removed after boot: a change in the point-light count recompiles every lit material (BUG-175), so it is in the scene
+// before the PERF-21 prewarm and only ever moves. Parked far below the world when no station is built.
+// SERVICE_LIGHT.intensity (cd) is the one knob; `at` is the model frame, over the lift (park box centre).
 const SERVICE_LIGHT = { color: 0xfff0d8, intensity: 60, distance: 12, decay: 2, at: [-3.95, 2.9, -0.2] }
-let _bayLight = null
-function _setBayLight (on, poi) {
-  if (_bayLight) { scene.remove(_bayLight); _bayLight = null }
-  if (!on) return
-  const L = SERVICE_LIGHT, w = dropZoneWorld(poi, { x: L.at[0], z: L.at[2] })
-  _bayLight = new THREE.PointLight(L.color, L.intensity, L.distance, L.decay)
-  _bayLight.position.set(w.x, poi.baseY + L.at[1], w.z)
-  scene.add(_bayLight)
+const _bayLight = new THREE.PointLight(SERVICE_LIGHT.color, SERVICE_LIGHT.intensity, SERVICE_LIGHT.distance, SERVICE_LIGHT.decay)
+_bayLight.position.set(0, -1e5, 0)
+scene.add(_bayLight)
+function _placeBayLight () {
+  const vp = vehicleState.position
+  let best = null, bd = Infinity
+  for (const q of poiSystem.list()) if (q.camera) { const d = (q.x - vp.x) ** 2 + (q.z - vp.z) ** 2; if (d < bd) { bd = d; best = q } }
+  if (!best) { _bayLight.position.set(0, -1e5, 0); return }
+  const L = SERVICE_LIGHT, w = dropZoneWorld(best, { x: L.at[0], z: L.at[2] })
+  _bayLight.position.set(w.x, best.baseY + L.at[1], w.z)
 }
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
   // The shop still posts work (FEAT-167: its Jobs tab). FEAT-197 (owner, 2026-11-11): the tab's one button,
@@ -3780,7 +3789,7 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
   // the service station's lift, the view is the model's own `camera` — its eye and look, as the same orbit's bearing,
   // pitch and radius about the look point, so a drag still orbits from there.
   onView: (on) => {
-    if (!on) { setCameraFocus(null); _setBayLight(false); return }
+    if (!on) { setCameraFocus(null); return }
     const c = _servicePoi?.camera   // the screen opens only parked in the box (_serviceInReach)
     if (c) {
       const at = ([x, y, z]) => ({ ...dropZoneWorld(_servicePoi, { x, z }), y: _servicePoi.baseY + y })
@@ -3788,7 +3797,6 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
       const view = (e, l) => { const dx = e.x - l.x, dy = e.y - l.y, dz = e.z - l.z, r = Math.hypot(dx, dy, dz)
         return { p: l, theta: Math.atan2(dx, dz), phi: Math.asin(dy / r), radius: r } }
       // FEAT-220: the camera is locked to these (the wall hides the truck from a free orbit); C / right-stick click cycles.
-      _setBayLight(true, _servicePoi)
       setCameraViews([view(e, l), ...(_servicePoi.cameraViews ?? []).map(v => view(at(v.eye), at(v.look)))])
       return   // each viewpoint is a cut (camera.js), no glide in from the chase position, through the bay's wall
     }
@@ -11219,8 +11227,12 @@ function loop (t) {
   // not just tidiness — it hands the GPU to the build that is running underneath.
   // FEAT-211 (owner, 2026-11-14: "make the background live"): the world renders behind the map window at full rate,
   // reversing PERF-38's skip (the frozen frame); the window covers 81 % of it, which the GPU still draws.
-  if (menuStage.isActive()) { menuStage.update(frameTime); menuStage.render(renderer) }
-  else renderer.render(scene, camera)
+  if (menuStage.isActive()) { skySystem.setLiveExposure(1); menuStage.update(frameTime); menuStage.render(renderer) }
+  else {
+    liveExposure?.update(frameTime)
+    renderer.render(scene, camera)
+    liveExposure?.meter()
+  }
   perfAdd('frame.render', performance.now() - _ptR)  // D-arc: render submit (the ~8.5 s load-cost suspect)
   // PERF-26: stamp the frame's CPU span + the program count, so a shader compile shows up as a
   // +N on the hitch record rather than as unexplained time outside every bucket.
@@ -11250,7 +11262,7 @@ function loop (t) {
 // that EXISTED at boot. Streamed terrain, road tiles, props and the truck's .glb arrive later, and
 // each would otherwise compile one variant per lamp state the first time that state appears — the
 // "first headlights lag". So: if a render compiled anything new (the program count moved since our
-// own last compile), sweep every light state again, ONE per frame (~1.2 ms each on a warm scene).
+// own last compile), sweep every light state again, ONE per frame, each a 1-pixel draw (BUG-175).
 // A render that compiles something mid-sweep restarts it, so nothing that arrived during it is missed.
 let _lampSweepI = -1, _lampSweepProgs = -1
 function _lampSweepStep () {
