@@ -43,12 +43,12 @@ import { TIRE_IDS, WHEEL_IDS } from './damage.js'
 
 /**
  * Hours to change a tire for the spare (FEAT-203, DEC-105): 2 h with the factory jack and wrench; the
- * tire iron and the floor jack (quickJack) each take 45 min off [DEFAULT] — 30 min with both. Neither
+ * tire iron takes 30 min off and the floor jack (quickJack) 1 h (owner, 2026-11-15) — 30 min with both. Neither
  * the jack nor the compressor shortens a plug: "you don't need to jack to plug" (owner).
  */
 export const spareFitHours = (inventory) => {
   const has = (id) => inventory.list().some(r => r.id === id)
-  return 2 - (has('tireIron') ? 0.75 : 0) - (has('quickJack') ? 0.75 : 0)
+  return 2 - (has('tireIron') ? 0.5 : 0) - (has('quickJack') ? 1 : 0)
 }
 export const PLUG_H = { pump: 2, compressor: 0.5 }          // the whole stop, by how the tire is aired up
 

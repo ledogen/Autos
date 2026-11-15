@@ -2596,6 +2596,7 @@ if (_PROF) {
 //   changeSeed = update worldSeed then fire Path B.
 const _gui = initDebug(RANGER_PARAMS, {
   parts: partsSystem,   // FEAT-222: the debug part selector fits through the shop's own path
+  saveTruck: () => putTruck({ parts: partsSystem.snapshot(), gearbox: _runGearbox }),   // FEAT-205: the debug "save as winning truck" button — the record a win writes
   // The ramp is a LAB rig: the mesh shows only there, and the chassis's engine prism follows the
   // toggle too (the wheels' RAMP_TRIS already did) — no invisible ramp, no ramp in free roam.
   setRampVisible:      (v) => {

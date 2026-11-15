@@ -157,6 +157,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
       }
       f.close()
     }
+    selector.add({ save: () => callbacks.saveTruck() }, 'save').name('Save as winning truck')   // FEAT-205 (owner, 2026-11-15): what a win writes, free roam fits it
     selector.close()
   }
   vehicleFolder.add(vehicleState, 'vehicle', Object.keys(VEHICLES)).name('Vehicle (WIP)').onChange(name => {
