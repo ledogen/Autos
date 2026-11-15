@@ -68,6 +68,7 @@ import { MoonSystem, MOON_PARAMS } from './moon.js'                      // QUAL
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
+import { createFrameCap } from './frame-cap.js'   // PERF-48 / BUG-169: the render cap skip decision (pure, gated)
 import { putRun, putTruck, loadTruck, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
@@ -1510,7 +1511,7 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
-  frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
+  frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [90, '90 fps'], [120, '120 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
 window.__settings = _settings   // dev handle — test/cdp-smoke.mjs marks the browser as played before (FEAT-184 playedBefore)
 let _setupTruck = 'stock'   // FEAT-205
@@ -10302,16 +10303,10 @@ let _ignEdge = null   // S-61: the ignition catch edge, latched per step, played
 // rate that is no multiple of the cap (144 Hz) still averages the cap; a stall over one interval
 // resyncs instead of bursting. A frame is drawn when it is nearer its due time than the next refresh
 // would be (half the last refresh gap early), which absorbs vsync timestamp jitter at any display rate.
-let _frameDue = 0, _rafLast = 0
+const _frameDue = createFrameCap()   // src/frame-cap.js
 function loop (t) {
   requestAnimationFrame(loop)
-  const cap = _settings.frameCap
-  if (cap > 0 && t !== undefined) {
-    const interval = 1000 / cap, refresh = Math.min(t - _rafLast, interval)
-    _rafLast = t
-    if (t < _frameDue - refresh * 0.5) return
-    _frameDue = t - _frameDue > interval ? t + interval : _frameDue + interval
-  }
+  if (!_frameDue(t, _settings.frameCap)) return
   perfFrameBegin()   // PERF-26: closes out the previous frame's attribution, arms this one (no-op unless ?hitch)
   if (!_firstFrameMarked) {
     _firstFrameMarked = true

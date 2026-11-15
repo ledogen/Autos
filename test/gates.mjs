@@ -24,6 +24,8 @@
 // Adding a gate: add an entry here AND write test/<file>. Keep this list in run order.
 
 export const GATES = [
+  { file: 'frame-cap.mjs', subsystem: 'perf', cost: 'fast', extraDeps: [],
+    desc: 'BUG-169/PERF-48: the render frame cap draws cap fps (display rate when 0) fed synthetic rAF timestamps at 60/90/120/144/240 Hz, for caps 30/60/90/120/display' },
   { file: 'road-minradius.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-12: DENSE realized centerline min-radius the ribbon sweeps, every run of the headless graph network over several stream centres — the fold metric' },
   { file: 'centerline-curvature.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
