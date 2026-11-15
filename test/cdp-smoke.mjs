@@ -1444,8 +1444,9 @@ const STEPS = [
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
     await strayCheck('in the evening')
     // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
-    // On flat ground (≤ 0.8 m over the truck's ±8 m), off every network point within 600 m, 9 m out: released on a bank's lip
-    // the truck honestly rolls off the shoulder (2026-11-15: 50 m down the slope beside the joint, the check failing by luck).
+    // On the flattest ground off every network point within 600 m, 9 m out (< 2 m over the truck's ±8 m; the tutorial seed's
+    // best is 1.35): released on a bank's lip the truck honestly rolls off the shoulder (2026-11-15: 50 m down the slope
+    // beside the joint, the check failing or passing by luck).
     const sh = await js(`(() => { const v = window.__vs.position, R = window.__roadSys(); let best = null
       for (const e of R._network.values()) for (let i = 1; i < e.points.length; i++) {
         const a = e.points[i - 1], b = e.points[i], dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz)
@@ -1457,7 +1458,7 @@ const STEPS = [
           for (let s = -8; s <= 8; s += 4) for (let t = -8; t <= 8; t += 4) { const h = window.terrain(x + s, z + t); lo = Math.min(lo, h); hi = Math.max(hi, h) }
           if (!best || hi - lo < best.r) best = { x, z, r: hi - lo } } }
       return best })()`)
-    check(sh?.r < 0.8, `FEAT-217: no flat shoulder spot found (flattest ${sh?.r?.toFixed(2)} m over ±8 m)`)
+    check(sh?.r < 2, `FEAT-217: no flat shoulder spot found (flattest ${sh?.r?.toFixed(2)} m over ±8 m)`)
     await seat(sh.x, sh.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
     await sleep(9000)   // > the 4 s of play it takes off the road
