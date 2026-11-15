@@ -1427,7 +1427,7 @@ const STEPS = [
     // time, so a loaded box under 4 fps accrues it slower than the clock: poll long (a pass costs nothing extra).
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
     await strayCheck('in the evening')
-    // FEAT-217 (of3s, DEC-209): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
+    // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
     const sh = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
       const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
       for (const along of [0, 100, -100, 160, -160]) for (const d of [9, -9]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
