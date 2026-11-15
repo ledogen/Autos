@@ -86,7 +86,7 @@ import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: th
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR, clockHeld } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
-import { InventorySystem, runInventory, entryKg } from './inventory.js'   // FEAT-122: what the player owns this run
+import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
 import { ITEMS } from '../data/items.js'
 import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
@@ -103,8 +103,8 @@ import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, PAYCHECK, LARRY_CALL, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
-import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
+import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
+import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -4472,11 +4472,13 @@ missionSystem = new MissionSystem({
   getClockH: () => daySystem.clockH(),
 })
 
-/** FEAT-103: the run's opening cards with the camp's true compass direction from the spawn filled in. */
+/** FEAT-103: the run's opening cards (Larry's call, DEC-236) with the camp's true compass direction from the spawn and its
+ *  deed gate filled in. */
 function _runIntro () {
   const c = poiSystem.list().find(q => q.type === 'expeditionCamp'), r = storySystem.region()
   const deg = c && r ? (Math.atan2(c.x - r.x, -(c.z - r.z)) * 180 / Math.PI + 360) % 360 : 0
-  return RUN_INTRO.map(card => ({ ...card, text: card.text.replace('{dir}', COMPASS[Math.round(deg / 45) % 8]) }))
+  return RUN_INTRO.map(card => ({ ...card, text: card.text.replace('{dir}', COMPASS[Math.round(deg / 45) % 8])
+    .replace('{deeds}', String(ECONOMY_PARAMS.campDeeds)) }))
 }
 
 // ── FEAT-147/170: the opening — the firing, the evening at mom's, the first job, Larry's welcome ──
@@ -4535,9 +4537,11 @@ let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: sta
 const _momOwes = { part: true, labour: true, patch: true }   // patch: FEAT-217, the first flat patched at the shop
 let _eveOffAt = null   // _playedS when the truck left the road on the evening, or null on it (the off-road reset)
 // dev handle — test/cdp-smoke.mjs and run-soak read where the tutorial stands (FEAT-184): 'intro' (the firing) · 'card' ·
-// 'evening' · 'morning' · 'free' (the paycheck heard, or skipped), and the run's own world while it plays on the tutorial seed
+// 'evening' · 'morning' · 'free' (the paycheck heard, or skipped), the run's own world while it plays on the tutorial seed,
+// and the morning errand's stop and where its pack lies (DEC-238)
 window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _eveningLeg() ? (dialogueSystem.has(DLG.played) ? 'evening' : 'intro')
-  : _morningLeg() ? 'morning' : 'free', returnSeed: _returnSeed, seed: _seedString })
+  : _morningLeg() ? 'morning' : 'free', returnSeed: _returnSeed, seed: _seedString,
+  stop: _morningLeg() ? _errandStop() : null, pack: (({ x, z } = {}) => x == null ? null : { x, z })(_packOnGround() ?? undefined) })   // DEC-238
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
 window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
@@ -4568,17 +4572,44 @@ const _morningLeg = () => !!offerBoard && dialogueSystem.has(DLG.morning) && !di
 /** Either leg: the tutorial's traps (no fuel burn, off the road puts you back, the tow on mom, no givers) and its line. */
 const _tutDrive = () => _eveningLeg() || _morningLeg()
 
-/** The tutorial's GPS: the joint (or the station) to mom's door; in the morning, hers to the joint. Planned once per leg. */
+/** The tutorial's GPS: the joint (or the station) to mom's door; in the morning, hers to Larry's, his to the joint.
+ *  Planned once per stop. */
+let _eveGuideTo = null   // the stop _eveningGuide was planned to
 function _homeGuide () {
-  if (_eveningGuide === undefined) {
-    const mom = _mom(), from = _morningLeg() ? mom : _evePump?.done ? _evePump.q : _joint(), to = _eveTarget()
+  const to = _eveTarget()
+  if (_eveningGuide === undefined || _eveGuideTo !== to) {
+    _eveGuideTo = to
+    const mom = _mom(), from = _morningLeg() ? (to === _joint() ? _larry() ?? mom : mom) : _evePump?.done ? _evePump.q : _joint()
     _eveningGuide = from && to ? missionSystem.planOffer(from, { rng: offerBoard.routeRng({ poiId: mom.id, slot: 'eve', k: 0 }),
       dest: { kind: 'poi', pois: [to], strict: true, anyLeg: true, nearest: true } }) : null
   }
   return _eveningGuide
 }
-/** FEAT-184: where the tutorial's line goes now — the station while a fill-up is due, else mom's; the joint in the morning. */
-const _eveTarget = () => (_morningLeg() ? _joint() : _evePump && !_evePump.done ? _evePump.q : _mom())
+/** FEAT-184: where the tutorial's line goes now — the station while a fill-up is due, else mom's; in the morning the
+ *  errand's stop (DEC-238): mom's steps till the pack is loaded, Larry's till he has given it, then the joint. */
+const _eveTarget = () => (_morningLeg() ? { pack: _mom(), larry: _larry(), joint: _joint() }[_errandStop()] ?? _joint()
+  : _evePump && !_evePump.done ? _evePump.q : _mom())
+
+// ── FEAT-184 (DEC-238, owner 2026-11-15): the morning's errand — Larry's old pack ──
+// Mom tosses his old pack out her front door; it lands by her steps (a world item, FEAT-143), and the pick-up lesson
+// follows (D-pad ↓ / G, _pickUpNear). Parked at Larry's with it on board, he gives it to you: it IS the starting kit's
+// pack, bedroll and all (inventory.js startingPack), which a played tutorial takes off the truck at "play". Stateless
+// across a resume like the legs: the stop is read off the seen keys, the truck and the ground (the save carries all three).
+/** The pack on the truck — in the run's entries, anywhere. */
+const _packOnBoard = () => inventorySystem.list().some(r => r.id === 'pack')
+/** The pack lying on the ground, or null. */
+const _packOnGround = () => runWorldItems.items.find(it => it.entry.id === 'pack') ?? null
+/** The errand's stop: 'pack' (load it at mom's), 'larry' (take it to his), 'joint' (given — on to the paycheck). */
+const _errandStop = () => dialogueSystem.has(DLG.larryPack) ? 'joint' : _packOnBoard() ? 'larry' : 'pack'
+/** Mom's toss: the starting pack on the ground by her steps, falling. Idempotent: only when it is neither on board nor down. */
+function _tossPack () {
+  const q = _mom()
+  if (!q || _packOnBoard() || _packOnGround()) return
+  const { x, z, yaw } = dropZoneWorld(q, PACK_TOSS)
+  const i = place(startingPack(), { x, y: terrainSystem.analyticHeight(x, z) + PACK_TOSS.y, z, q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] })
+  _groundHandle(runWorldItems.items[i]).fresh = true
+  _updateWorldItems()
+}
 
 /** FEAT-184 stage 4: the worst day's spare is flat — the jalopy's own, or one granted for the evening. Made so when the
  *  flat happens, so a skip before it never touches the spare. Remembers which, for _undoWorstDay. */
@@ -4597,6 +4628,10 @@ function _undoWorstDay () {
   const i = _eveSpare ? inventorySystem.list().findIndex(r => r.id === 'spareTire' && r.flat) : -1
   if (i >= 0) { if (_eveSpare.granted) inventorySystem.take(i); else inventorySystem.amend(i, { flat: false }) }
   _evePump = null; _eveFlat = false; _eveTowed = false; _eveSpare = null
+  // DEC-238: the errand's pack back on the truck, from the ground or (still at mom's) anew.
+  const g = _packOnGround()
+  if (g) { _dropGroundHandle(g); takeWorldItem(runWorldItems.items.indexOf(g)) }
+  if (!_packOnBoard()) inventorySystem.restoreEntry(startingPack())
 }
 
 /** FEAT-184 stage 3: at a played opening's start, the evening's station and the near-empty tank — when the nearest
@@ -4716,8 +4751,17 @@ function _eveningBeats () {
   const q = _mom(), j = _joint()
   if (!_tutDrive()) { _showResetCountdown(0); return }
   if (_morningLeg()) {
-    _tut('tut-morning')   // after breakfast, which the sleep queued
-    if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
+    // DEC-238: after breakfast (which the sleep queued) mom's errand, then the pack by her steps and the pick-up lesson;
+    // parked at Larry's with it, his hand-over; then mom's card for the joint, and parked there the paycheck.
+    _tut('tut-errand')
+    if (dialogueSystem.has('tut-errand')) _tossPack()
+    if (_packOnGround()) _tut('tut-pickup')
+    const L = _larry(), stop = _errandStop()
+    if (stop === 'larry' && L && vehicleState.parked && _inPoiSpot(L)) _tut(DLG.larryPack, LARRY_PACK, null, true)
+    if (stop === 'joint') {
+      _tut('tut-morning')
+      if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
+    }
   } else if (q) _eveningLessons(q, vehicleState.position)
   // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
   // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
@@ -4921,6 +4965,9 @@ function _playTutorial () {
     return
   }
   dialogueSystem.restoreSeen([DLG.played])
+  // DEC-238: the starting pack is Larry's old one, at mom's until the morning's errand.
+  const pi = inventorySystem.list().findIndex(r => r.id === 'pack')
+  if (pi >= 0) inventorySystem.remove(pi)
   _syncTutCard()
   if (TUT_SEED_RETURNS && !_returnSeed) _returnSeed = _resolveSeed('')
   _cardHold = true
@@ -4984,7 +5031,7 @@ function _checkOpeningEnd () {
   economySystem.payPaycheck()
   if (_returnSeed) { _returnToRunWorld(); return }
   if (skipped && !dialogueSystem.has(DLG.bossCheck)) { _tut(DLG.bossCheck, BOSS_CHECK, null, true); return }
-  _tut(DLG.runIntro, [...LARRY_CALL, ..._runIntro()], null, true)
+  _tut(DLG.runIntro, _runIntro(), null, true)   // Larry's call (DEC-236)
   _markPlayed()   // FEAT-184: the tutorial is over
 }
 
@@ -7382,7 +7429,7 @@ function _renderMissionUI () {
       unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
       if (_tutDrive()) {   // FEAT-170: no job, only the way home (FEAT-184: the morning's, to the paycheck)
-        const q = _eveTarget(), vp = vehicleState.position, what = _morningLeg() ? 'park there for your last check' : q !== _mom() ? 'fill up at a pump' : 'park there to sleep'
+        const q = _eveTarget(), vp = vehicleState.position, what = _morningLeg() ? { pack: "load the pack by mom's steps", larry: 'park there with his pack', joint: 'park there for your last check' }[_errandStop()] : q !== _mom() ? 'fill up at a pump' : 'park there to sleep'
         if (q) hudText.textContent = `${km(Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
         // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
