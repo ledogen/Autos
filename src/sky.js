@@ -126,6 +126,8 @@ export const SKY_PARAMS = {
   skyCast: 0.5,       // how much of the light's colour cast the sky keeps that the white balance takes out (0–1)
   duskSat: 0.5,       // the twilight grade: extra sky saturation from the sun 14° up to the end of twilight… (owner 11-14: 0.5)
   dusk: 0.3,          // …and the strength of its teal split tone on the sky that is not the warm glow (0 = as simulated; owner 11-14: 0.3)
+  duskAway: 0.7,      // …and how far the horizon band (and so the fog) facing AWAY from the sun is desaturated (0 = as
+                      // simulated, 1 = grey opposite the sun; owner 11-14: "desaturate fog on the far side of the sun")
   beyondRise: 2.2,    // twilight: the fog below the horizon (the land past the draw distance) is no brighter than this ×
   beyondSet: 1.5,     // flat ground, morning and evening (owner 11-14: "sunrise i like it around 2.2 sunset i like it around 1.5")
   even: 0.5,          // twilight: how far the sky's brightness is evened toward its own mean, 0 = as simulated, 1 = one
@@ -785,6 +787,14 @@ export class SkySystem {
     // It fades out again with the last of the twilight: the moonlit sky is the rods' blue (nightBlue), as the land's is.
     const tw = (1 - smooth(4 * D2R, 14 * D2R, st.sun.el)) * smooth(DARK_EL, DARK_EL + 6 * D2R, st.sun.el)
     const ss = p.skySat + p.duskSat * tw, split = p.dusk * tw
+    // THE FAR SIDE (owner 11-14: "the yellow green fog is sweet when looking into the sun but jarring when looking away
+    // (looks like toxic gas)"). The horizon band is left out of the teal, so it carries the long-path scatter of the
+    // reddened low sun all round: khaki as simulated (90,69,41 opposite the sun at 05:43), and ss's twilight boost
+    // takes its blue to 0, a dim yellow that reads olive. Toward the sun the same band is bright, so it reads orange.
+    // So over the twilight the band's saturation falls with the angle from the sun, (1 − cos) / 2: none toward it,
+    // duskAway of it opposite, faded out above the band as the teal comes in (TEAL_EL0 → TEAL_EL1). It is the LUT, so
+    // the fog and the sky behind it stay one function.
+    const away = p.duskAway * tw, sd = st.sunDir, saz = Math.atan2(sd.x, -sd.z), sh = Math.hypot(sd.x, sd.z)
     const treat = (r, g, b, out, night, sat = ss * (1 - night) + p.nightBlue * night, w = wb) => {
       r *= w[0]; g *= w[1]; b *= w[2]
       const l = lum(r, g, b)
@@ -874,7 +884,13 @@ export class SkySystem {
       const k = i * 3, ls = lum(L[k], L[k + 1], L[k + 2]), fe = ev > 0 && ls > 0 ? g0 * en * Math.pow(lm / ls, ev) : g0
       const r = L[k] * fe + N[k] * gN, g = L[k + 1] * fe + N[k + 1] * gN, b = L[k + 2] * fe + N[k + 2] * gN
       // rods() goes by the light's real brightness, not the level the night is drawn at
-      treat(r * X, g * X, b * X, t3, rods(Math.PI * g0 * lum(L[k] + N[k], L[k + 1] + N[k + 1], L[k + 2] + N[k + 2])))
+      const nt = rods(Math.PI * g0 * lum(L[k] + N[k], L[k + 1] + N[k + 1], L[k + 2] + N[k + 2]))
+      let st3 = ss
+      if (away > 0) {
+        const R = ROWS[(i / LUT_W) | 0], mu = R.ce * sh * Math.cos(2 * Math.PI * (i % LUT_W + 0.5) / LUT_W - saz) + R.y * sd.y
+        st3 *= 1 - away * (1 - mu) / 2 * (1 - smooth(TEAL_EL0, TEAL_EL1, R.y))
+      }
+      treat(r * X, g * X, b * X, t3, nt, st3 * (1 - nt) + p.nightBlue * nt)
       if (tw > 0 && t3[0] > 0) {
         const up = smooth(TEAL_EL0, TEAL_EL1, ROWS[(i / LUT_W) | 0].y)
         const l = lum(t3[0], t3[1], t3[2]), kt = split * up * (1 - smooth(WARM_LO, WARM_HI, (t3[0] - t3[2]) / t3[0]))
@@ -983,6 +999,7 @@ export class SkySystem {
     a.add(SKY_PARAMS, 'skyCast', 0, 1, 0.05).name('sky keeps light cast').onChange(re)
     a.add(SKY_PARAMS, 'duskSat', 0, 2, 0.05).name('twilight: + saturation').onChange(re)
     a.add(SKY_PARAMS, 'dusk', 0, 1.5, 0.05).name('twilight: teal').onChange(re)
+    a.add(SKY_PARAMS, 'duskAway', 0, 1, 0.05).name('twilight: desaturate away from sun').onChange(re)
     a.add(SKY_PARAMS, 'beyondRise', 0, 3, 0.05).name('twilight: land beyond ÷ flat, sunrise').onChange(re)
     a.add(SKY_PARAMS, 'beyondSet', 0, 3, 0.05).name('twilight: land beyond ÷ flat, sunset').onChange(re)
     a.add(SKY_PARAMS, 'even', 0, 1, 0.05).name('twilight: sky evenness').onChange(re)
