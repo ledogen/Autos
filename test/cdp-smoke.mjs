@@ -1499,6 +1499,11 @@ const STEPS = [
     check(await until(async () => (await wd()).flat && await js('window.__damage.flat[0]'), 3000), `halfway home, no flat: ${JSON.stringify(await wd())}`)
     console.log('  worst day: the flat')
     await park(true)
+    // FEAT-217 (DEC-271/272): the line says pull over, and the accelerator is cut — W neither drives nor lets the brake go.
+    await readCards()   // the flat's card holds the sim
+    check(/pull over and check your tire/.test((await eve()).hud), `after the flat the HUD does not say pull over ("${(await eve()).hud}")`)
+    await hold('w', 1)
+    check(await js('window.__vs.parked && window.__vs.throttle === 0'), `after the flat W still drove: parked ${await js('window.__vs.parked')}, throttle ${await js('window.__vs.throttle')}`)
     await tap('v'); await readCards()   // the damage screen's card
     await tap('Escape')
     await js('window.__inv.use("spareTire")'); await readCards()   // the spare: flat too

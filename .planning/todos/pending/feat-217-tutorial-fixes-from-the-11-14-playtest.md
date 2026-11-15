@@ -12,7 +12,7 @@ lane: A (tutorial)
 # FEAT-217: Tutorial fixes from the 11-14 playtest
 
 ## Next steps
-All nine boxes built on feature/run-shape (one commit each). Waiting on the owner's try (owed card feat217-try) and the landing.
+Card feat217-try answered 11-15: B and C built (DEC-270..272); A measured, no bug — the owner's call whether the 4 s countdown or the line moves (see Log). Then land feature/run-shape.
 
 ## Summary
 Eight problems found in one tutorial playtest: the automatic reset is too eager and silent, giving up leaves stale state, the flat tyre can be driven on forever, the dialogue order is off, the cart can leave the player $5 short, pad focus is invisible on the opening buttons, and free cam survives into a new game.
@@ -52,6 +52,9 @@ Inbox wggu:
 - [x] xbnc: dialogue order: mom says the spare is flat too only AFTER the player has used the spare on the flat corner ("okay, then let's call it toe")
 - [x] 526f (first half): when mom says to patch the tire, the player can always afford it ($5 short at checkout soft-locked the tutorial); DEC-151 says a soft lock is "on mom"
 - [x] y2x7: pad focus highlights "Play the tutorial" and "Skip"
+- [x] feat217-try B: every tutorial leg's top distance reads along the GPS line, as a job does (DEC-270)
+- [x] feat217-try C: after the flat the line reads "pull over and check your tire" and the accelerator is cut until the tire is fixed, tutorial only (DEC-271, DEC-272)
+- [ ] feat217-try A: the reset line "a lot bigger than 10 m" — measured exactly 10 m past the paved side; waiting on the owner (the 4 s at speed carries the truck ~40 m past it)
 - [x] wggu: free cam (and similar state: camera, UI, modes) is reset on every entry and exit, so a new game never starts in the last run's free cam
 
 ## Open questions
@@ -63,5 +66,6 @@ Inbox wggu:
 `src/main.js` · `src/tutorial.js` · `src/service.js` · `src/hud.js`
 
 ## Log
+- 2026-11-15 (lane A, card feat217-try): A measured in the running game, seed 822480141 evening: the countdown starts at 15.0–15.5 m from the centreline (10 m past the paved side) on a straight, a bend and a junction leg, both sides. Driven off at 10.8 m/s it starts at 15.7 m, and in its 4 s the truck reaches ~52 m before the reset — that is the "much bigger". Unchanged. B: `routeLeftM` (mission.js) on the tutorial line. C: `setThrottleCut(_flatOwed())` (vehicle.js); park-brake gate §7, smoke checks after the flat.
 - 2026-11-14 (lane A): built. Teardown: ONE `_resetRunLocals` (main.js) called from onRegionExit and run entry (pump, tutorial vars, waypoint, free cam, screens). Reset: 10 m past the road + 75 m from any POI + countdown (DEC-219). Spare flat is found out after the corner try. Flat gate: mom's card and door wait while the evening's flat is on (`_flatOwed`). $5: the first patch is on mom (`_momOwes.patch`). Pad focus CSS for #tut-card. Horizontal scroll in shop/maintenance tabs (526f second half) NOT done, not in the tracker. Smoke extended (countdown, shoulder, give-up cam/pump).
 - 2026-11-14: minted from the owner's inbox by the scribe. Nothing built.
