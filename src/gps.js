@@ -43,7 +43,7 @@ const RING_HOVER   = 1.4
 // clears once it is within ~100° (cos > UT_OFF) — the gap is the hysteresis so it does not flicker at 90–120°.
 const UT_ON        = -0.5
 const UT_OFF       = -0.2
-// DEC-274: it floats over the road's centreline, UT_GUI.ahead m ahead of the truck ALONG the road, UT_GUI.hover m up,
+// DEC-275: it floats over the road's centreline, UT_GUI.ahead m ahead of the truck ALONG the road, UT_GUI.hover m up,
 // aimed by the road alone. Tunables (GPS folder of the debug menu).
 const UT_GUI       = { ahead: 20, hover: 1.5 }
 const UT_W         = 1.6    // m: ribbon width; the head is 2.5x (4 m)
@@ -604,7 +604,7 @@ export class GpsSystem {
     this._uturn = c < UT_ON || (this._uturn && c < UT_OFF)
     this._uturnMesh.visible = this._uturn
     if (!this._uturn) return
-    // DEC-274: the U-turn only shows when the truck faces against the route, so "ahead" = back down the route
+    // DEC-275: the U-turn only shows when the truck faces against the route, so "ahead" = back down the route
     // (s - ahead). Less than that behind the truck, it clamps to the route's start: still the road, just nearer.
     // No truck heading enters the position or the yaw; no bob (fixed height).
     const p = sampleRoute(route, Math.max(0, s - UT_GUI.ahead))
