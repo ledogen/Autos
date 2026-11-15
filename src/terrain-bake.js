@@ -1,7 +1,8 @@
 /**
- * src/terrain-bake.js — PERF-48 lever 6 PROTOTYPE: the terrain material baked into a world atlas.
+ * src/terrain-bake.js — PERF-48 lever 6: the far terrain material baked into a world atlas.
  *
- * Off unless the URL carries `?terrainBake=<px per chunk>` (main.js); main's look is untouched by default.
+ * On by default (DEC-234, the owner shipped the hybrid 2026-11-15). Off on the Low tier (setEnabled from
+ * main.js applyQuality) and with `?terrainBake=0` in the URL (the A/B switch: main.js never constructs it).
  *
  * The live terrain shader (terrain.js onBeforeCompile) evaluates the noise mottle, the six FEAT-84 surface
  * taps, the height contest and the rock bump for every pixel every frame. Here that work is done ONCE per
@@ -24,8 +25,9 @@
  * NOT mirrored (a mirrored camera flips the winding and with it gl_FrontFacing, which flips the baked normal).
  *
  * Measured (wip/perf-48/bake-ab.mjs, paired A/B, 2 random seeds): baking every pixel saves 10–24 % of GPU active
- * cycles. Known ceilings (prototype): the top-down bake streaks steep cut faces past BAKE_FAR_M (keeping steep
- * pixels live was tried and ate most of the saving); palette slider edits do not re-bake (reload).
+ * cycles; the hybrid keeps ~60 % of that (median −12.8 %, chase view −7.5 %). Known ceilings: the top-down bake
+ * streaks steep cut faces past BAKE_FAR_M (keeping steep pixels live was tried and ate most of the saving); debug
+ * palette / detail slider edits do not re-bake (a quality change does, via setEnabled).
  */
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain-height.js'
@@ -34,6 +36,7 @@ const BAKE_N = 12            // tiles per side — exceeds the live ring diamete
 const BAKES_PER_FRAME = 4    // chunks baked per frame while streaming; the full ring fills in ~30 frames
 const BAKE_FAR_M = 70        // DEC-207: ground this far (m, horizontal) from the truck and farther is fully baked
 const BAKE_BLEND_M = 15      // cross-fade band just inside BAKE_FAR_M: live at 55 m, baked at 70 m
+const TILE_PX = 256          // atlas texels per chunk side → 0.25 m/texel, atlas 3072² (the look the owner shipped)
 
 const pmod = (a, n) => ((a % n) + n) % n
 
@@ -44,17 +47,16 @@ function mark(src, m, text) {
 }
 
 export class TerrainBake {
-    /**
-     * @param {THREE.WebGLRenderer} renderer
-     * @param {number} tilePx  atlas texels per chunk side (256 → 0.25 m/texel, atlas 3072²)
-     */
-    constructor(renderer, tilePx = 256) {
-        this.enabled = true          // runtime A/B toggle (window.__terrainBake in ?prof=1)
+    /** @param {THREE.WebGLRenderer} renderer */
+    constructor(renderer) {
+        // false → every chunk live, nothing baked (Low tier, see setEnabled). ponytail: the two atlases (~100 MB of
+        // VRAM with mips) stay allocated while disabled; free them in setEnabled(false) if Low-tier VRAM matters.
+        this.enabled = true
         this._truck = { value: new THREE.Vector2() }                                       // uBakeTruck (x, z)
         this._band = { value: new THREE.Vector2(BAKE_FAR_M - BAKE_BLEND_M, BAKE_FAR_M) }   // uBakeBand
         this._r = renderer
-        this._tp = tilePx
-        const size = BAKE_N * tilePx
+        this._tp = TILE_PX
+        const size = BAKE_N * TILE_PX
         const opts = (colorSpace) => ({
             colorSpace, depthBuffer: false, generateMipmaps: true,
             minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
@@ -74,7 +76,12 @@ export class TerrainBake {
         this._scene.add(this._mesh)
         this._live = null            // the TerrainSystem material the clones below were made from
         this._state = new Map()      // chunk key → { mesh, v } of the last bake
-        this.baked = 0               // tiles baked so far (diagnostic for the harness)
+    }
+
+    /** Quality tier change: on/off, and every tile re-bakes (the tier may have changed the shader's look). */
+    setEnabled(on) {
+        this.enabled = on
+        this._state.clear()
     }
 
     _makeMaterials(live) {
@@ -126,15 +133,16 @@ if (bkW < 1.0) {\n`)
     /**
      * Per frame: queue chunks whose mesh or vertex data changed since their bake, bake a few, and give every
      * chunk its material by its distance from the truck (live / blend / baked, see the header; live before its bake
-     * or with the toggle off).
+     * or while disabled).
      * @param {THREE.Material} liveMat  terrainSystem's shared material (a new TerrainSystem → new clones)
      * @param {Map} chunkMap  terrainSystem's chunk records ({ cx, cz, mesh })
      * @param {THREE.Vector3} truck  the vehicle position
      */
     update(liveMat, chunkMap, truck) {
+        if (!this.enabled) { for (const c of chunkMap.values()) c.mesh.material = liveMat; return }
         if (liveMat !== this._live) this._makeMaterials(liveMat)
         this._truck.value.set(truck.x, truck.z)
-        const h = CHUNK_SIZE / 2, { x: r0, y: r1 } = this._band.value   // the harness may move the band (e.g. bake all)
+        const h = CHUNK_SIZE / 2, { x: r0, y: r1 } = this._band.value
         const todo = []
         for (const [key, c] of chunkMap) {
             const g = c.mesh.geometry
@@ -146,7 +154,7 @@ if (bkW < 1.0) {\n`)
             // nearest and farthest point of the chunk square from the truck (horizontal)
             const ax = Math.abs(truck.x - c.mesh.position.x), az = Math.abs(truck.z - c.mesh.position.z)
             const nx = Math.max(ax - h, 0), nz = Math.max(az - h, 0), fx = ax + h, fz = az + h
-            const m = !(this.enabled && fresh) || Math.hypot(fx, fz) <= r0 ? this._live
+            const m = !fresh || Math.hypot(fx, fz) <= r0 ? this._live
                 : Math.hypot(nx, nz) >= r1 ? this._baked : this._blend
             c.mesh.material = m
         }
@@ -178,6 +186,5 @@ if (bkW < 1.0) {\n`)
         }
         r.setRenderTarget(prevTarget)
         for (const [key, c, v] of todo) this._state.set(key, { mesh: c.mesh, v })
-        this.baked += todo.length
     }
 }

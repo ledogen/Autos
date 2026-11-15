@@ -132,7 +132,7 @@ import { StreamMotion } from './stream-priority.js'         // PERF-33: travel d
 import { StreamBudget } from './stream-budget.js'           // PERF-33: one shared per-frame streaming budget
 import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
-import { TerrainBake } from './terrain-bake.js'   // PERF-48 lever 6 prototype (?terrainBake=)
+import { TerrainBake } from './terrain-bake.js'   // PERF-48 lever 6: far terrain baked into an atlas (DEC-234)
 import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { lampsOn, homeLamps, shopLamps, setGlow } from './poi-night.js'   // FEAT-214: POI night lights
@@ -155,9 +155,9 @@ const _urlSeed = _urlParams.get('seed')
 // renderer construction (AA can't toggle live — context creation flag). Zero cost when absent.
 const _PROF = _urlParams.get('prof') === '1'
 const _NOAA = _urlParams.get('noaa') === '1'
-// PERF-48 lever 6 PROTOTYPE: ?terrainBake=<px per chunk, e.g. 256> bakes the terrain material into an
-// atlas (src/terrain-bake.js). Absent = the live shader, main's look unchanged.
-const _terrainBakePx = parseInt(_urlParams.get('terrainBake') ?? '', 10) || 0
+// PERF-48 lever 6 (DEC-234): the far-ground terrain bake is on by default; ?terrainBake=0 is the A/B off switch
+// (never constructed → the live shader everywhere, the pre-bake look and cost).
+const _terrainBakeOff = _urlParams.get('terrainBake') === '0'
 if (_PROF) perfEnableUserTiming()
 // PERF-26: ?hitch=<ms> turns on per-frame hitch attribution at that frame-period threshold (?hitch=1
 // takes the default 24 ms). Independent of ?prof so it can be left on during ordinary play — the only
@@ -2364,16 +2364,21 @@ const _hudHtml = (el, s) => { if (!el || (el._html === s && el.innerHTML === el.
 //   quality slider; rocks do NOT — they are what ties the props to the ground texture). The far
 //   prop ring stands 3–4-tri stand-ins (COVER_FAR_CAT), so the vertex cost of the extra density
 //   lands mostly inside lodRing.
+// terrainBake (PERF-48 lever 6, DEC-234): far ground (≥ 70 m from the truck) drawn from a baked atlas. Off on Low:
+//   its 1-chunk ring lies mostly inside the 55–70 m cross-fade (blend shader: live work + two atlas taps) and its
+//   detail shader is already off (detailScale 0), so the bake would buy little there (not measured).
 const QUALITY_PRESETS = {
-  Low:    { ring: 1, warm: 1, fogDensity: 0.008, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0   },
-  Normal: { ring: 2, warm: 1, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 3072, shadowExtent: 40, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0 },
-  High:   { ring: 3, warm: 3, fogDensity: 0.0027, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6 },
-  Ultra:  { ring: 4, warm: 4, fogDensity: 0.002, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2 },
+  Low:    { ring: 1, warm: 1, fogDensity: 0.008, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0,   terrainBake: false },
+  Normal: { ring: 2, warm: 1, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 3072, shadowExtent: 40, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0, terrainBake: true  },
+  High:   { ring: 3, warm: 3, fogDensity: 0.0027, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6, terrainBake: true  },
+  Ultra:  { ring: 4, warm: 4, fogDensity: 0.002, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2, terrainBake: true  },
 }
 
 // PERF-07: set once the bake system exists (browser only — headless never constructs it), so
 // applyQuality can push a tier's shadowTilePx without referencing the not-yet-initialised const.
 let _syncBakedShadows = null
+// PERF-48: the terrain bake (src/terrain-bake.js), built with the renderer below; null with ?terrainBake=0.
+let terrainBake = null
 // Wall-clock (s) of the last day/night shadow re-bake roll — see the sun-generation block in loop().
 let _lastSunBakeSec = -1e9
 // PERF-21: same pattern for the prop billboard impostors (activation + tier lodRing push).
@@ -2463,6 +2468,7 @@ function applyQuality (name) {
     FLORA_PARAMS.shadows.tilePx = p.shadowTilePx
     if (_syncBakedShadows) _syncBakedShadows()
   }
+  if (terrainBake) terrainBake.setEnabled(p.terrainBake)   // PERF-48: on/off per tier, re-bake on every change
   // PERF-06 render resolution: stash the tier's cap, then apply (also re-applied on window resize).
   _qualityResHeight = p.resHeight
   applyRenderResolution()
@@ -8332,8 +8338,7 @@ propSystem.setPhysicsHook(propPhysics)   // FEAT-48: trees/rocks/boulders are ri
 // browser-only). Wires the atlas texture into the terrain sampler, the bake triggers into the prop
 // system, and the static sun direction into the projection shear. In realtime-cast mode the terrain
 // strength is 0 (props keep casting into the sun's shadow map instead).
-const terrainBake = _terrainBakePx ? new TerrainBake(renderer, _terrainBakePx) : null
-if (terrainBake && _PROF) window.__terrainBake = terrainBake   // harness A/B: __terrainBake.enabled = false → live shader
+if (!_terrainBakeOff) { terrainBake = new TerrainBake(renderer); terrainBake.setEnabled(QUALITY_PRESETS[_qualityName].terrainBake) }
 const shadowBake = new ShadowBakeSystem(renderer, FLORA_PARAMS.shadows?.tilePx ?? TILE_PX)
 shadowBake.setSun(skySystem.sunDirection)
 // Baked strength is 0 whenever the bake can't stand in: realtime-cast mode, or tilePx 0 (Low tier
