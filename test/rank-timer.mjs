@@ -19,7 +19,7 @@
 //   7. rank-timer.js imports nothing (pure; headless by construction).
 //
 // Pure node: no THREE, no worldgen, no DOM.
-import { RANK_ORDER, RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame, RANK_UI, MINI_OPEN_S, MINI_OPEN_M, DEED_KEEP, rewardTone } from '../src/rank-timer.js'
+import { RANK_ORDER, RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame, DEED_KEEP, rewardTone } from '../src/rank-timer.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'
 import { bonusEarned } from '../src/economy.js'
 import { readFileSync } from 'node:fs'
@@ -177,7 +177,7 @@ const PAR = 180   // the measured day-1 average (economy.js)
   const block = main.slice(start, end)
   // FEAT-139 (§2b): freight's letter is the kg, so it gets no bar — like fragile and haul (FEAT-97).
   // QUAL-36 (DEC-178/181): calm jobs have no bar unless the giver is Impatient (then tip-only); demolition never.
-  check('no bar on a calm job unless Impatient; none on demolition', /m\.mission\.targets\s*\|\|\s*!m\.mission\.traits\?\.includes\('impatient'\)\)\) return null/.test(block) && /tipOnly: calm/.test(block))
+  check('no bar on a calm job unless Impatient; none on demolition', /m\.mission\.targets\s*\|\|\s*!m\.mission\.traits\?\.includes\('impatient'\)\)\) return null/.test(block) && /gate: calm \? null/.test(block))
   check('the driver never calls formatTime (no m:ss on the bar)', !/formatTime\s*\(/.test(block))
   check('the driver never renders seconds as text (no toFixed/Math.round/`remaining` into textContent/innerHTML)',
     !/(textContent|innerHTML)\s*=\s*[^\n]*(toFixed|Math\.round|Math\.floor|remaining|elapsed|\bpar\b)/.test(block))
@@ -204,13 +204,12 @@ const PAR = 180   // the measured day-1 average (economy.js)
   check('the oscillator tops out at 140 bpm, a heartbeat not a buzz', near(P.pulseHzMax * 60, 140, 1e-9) && P.pulseHzMin < P.pulseHzMax)
 }
 
-// QUAL-36 (DEC-292): the reward colour rule. The owner's example: deed 1 (kept at S/A/B) is green at S, yellow at A, red at B.
+// QUAL-36 (DEC-298): the reward colour rule. The owner's example: deed 1 (kept at S/A/B) is green at S, yellow at A, red at B.
 const tone = (keepOf) => RANK_ORDER.map(l => rewardTone(keepOf, l)).join(' ')
 check('QUAL-36: deed tone S..D = good warn bad bad gone (owner: green, yellow, red, then it drops to half / none)',
   tone(l => DEED_KEEP[l]) === 'good warn bad bad gone', tone(l => DEED_KEEP[l]))
 check('QUAL-36: item with gate B = good warn bad gone gone; gate S = bad gone gone gone gone',
   tone(l => RANK_ORDER.indexOf(l) <= 2 ? 'item' : 'none') === 'good warn bad gone gone' && tone(l => l === 'S' ? 'item' : 'none') === 'bad gone gone gone gone')
-check('QUAL-36: variant A constants are 15 s and 500 m', MINI_OPEN_S === 15 && MINI_OPEN_M === 500 && RANK_UI.variant === 'b')
 
 console.log(fails === 0 ? '\nrank-timer gate: ALL OK' : `\nrank-timer gate: ${fails} FAILURE(S)`)
 process.exit(fails === 0 ? 0 : 1)
