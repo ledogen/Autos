@@ -55,7 +55,14 @@ const DEG = Math.PI / 180
 // (scales and needles follow), POD_E 39 → 46 so the pod's corners still share the speedo's crest line, H 224 → 240,
 // and the key sits in the housing's bottom-right corner (KEY_CORNER) instead of on the axis. Because the key left
 // the axis the right end is stated by END_X, not derived from the key, and W 418 → 466.
-const W = 466
+// FEAT-34 round 6 (owner, 2026-11-15, DEC-283): sizes untouched; every position here is a named number. The tach
+// moves right TACH_SHIFT 5, the speedo right SPEEDO_SHIFT 10 (more than the tach), and the key moves away from the
+// speedo by KEY_AWAY 10: END_X grows by SPEEDO_SHIFT + KEY_AWAY (the right end follows the speedo, then the key's
+// extra), so W grows by the same 20. The speed labels: km/h now stands above MPH, both on the hub's vertical,
+// MPH 34 → 47 and km/h 46 (off to the right) → 38, i.e. the pair's centre down 4.5 with km/h over MPH.
+const TACH_SHIFT = 5, SPEEDO_SHIFT = 10, KEY_AWAY = 10
+const KMH_DY = 38, MPH_DY = 47
+const W = 466 + SPEEDO_SHIFT + KEY_AWAY
 const H = 240
 const AXIS = H / 2   // the dial axis: tach and speedo hubs, the pod's centre, the key
 // The pod's gauges sit POD_E above and below the axis: 39 puts the pod's indent top level with the speedo's
@@ -63,8 +70,8 @@ const AXIS = H / 2   // the dial axis: tach and speedo hubs, the pod's centre, t
 const POD_E = 46
 const TEMP  = { cx: 56,  cy: AXIS - POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
 const FUEL  = { cx: 56,  cy: AXIS + POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const TACH  = { cx: 181, cy: AXIS, well: 75, scaleR: 65, start: 160, sweep: 130 }    // dial top: _tachMax (setRedline)
-const SPEEDO= { cx: 293, cy: AXIS, well: 84, scaleR: 75, start: 135, sweep: 270, max: 120 }  // MPH
+const TACH  = { cx: 181 + TACH_SHIFT, cy: AXIS, well: 75, scaleR: 65, start: 160, sweep: 130 }    // dial top: _tachMax (setRedline)
+const SPEEDO= { cx: 293 + SPEEDO_SHIFT, cy: AXIS, well: 84, scaleR: 75, start: 135, sweep: 270, max: 120 }  // MPH
 // The odometer drum's window, from the speedo hub. Low enough that the 40 and 80 clear its top corners (round 3).
 const ODO = { x: -29, y: -23, w: 58, h: 14 }
 // One factor on the canvas transform (round 3), so every distance the layout balances (the key's three below, the
@@ -82,7 +89,7 @@ const SCALE = 1.15
 // Round 5: the key's indent stands MARGIN inside the bottom-right corner circle (centre END_X, AXIS + POD_E),
 // i.e. KEY_CORNER = POD_R + MARGIN − (KEY.well + KEY.pad) − MARGIN from that centre, along the diagonal. END_X puts the
 // key 103 from the speedo hub, > SPEEDO.well + KEY.well (101) so the key face does not eat the speedo face.
-const END_X = 404
+const END_X = 404 + SPEEDO_SHIFT + KEY_AWAY
 const KEY_CORNER = 19 / Math.SQRT2
 const KEY   = { cx: END_X - KEY_CORNER, cy: AXIS + POD_E - KEY_CORNER, well: 17, pad: 3 }
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
@@ -541,10 +548,10 @@ export class GaugeCluster {
     }
     ctx.fillStyle = WHITE
     ctx.font = 'bold 9px Arial, sans-serif'
-    ctx.fillText('MPH', g.cx, g.cy + 34)
+    ctx.fillText('MPH', g.cx, g.cy + MPH_DY)
     ctx.fillStyle = DIM
     ctx.font = '7px Arial, sans-serif'
-    ctx.fillText('km/h', g.cx + 40, g.cy + 46)
+    ctx.fillText('km/h', g.cx, g.cy + KMH_DY)
     // Odometer bezel (digits are live — see _drawOdometer). Sits in the trip-drum slot
     // of the reference, top-center inside the speedo face.
     ctx.fillStyle = '#060606'

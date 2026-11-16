@@ -291,3 +291,9 @@ that covers `cluster.js` is cdp-smoke (the orchestrator's).
 Owner on card feat34-r4-look: "move the key back to the bottom right corner. then grow the speedo and tach gauges so they fill the rectangular frame nicely. it looks like we could bump their size 10%..." (DEC-267, DEC-268).
 Key now in the bottom-right corner (`END_X`, `KEY_CORNER`); tach well 68 → 75, speedo 76 → 84, POD_E 39 → 46, W 466, H 240; needles, odometer and lamp offsets follow. Frame grew to fit (the key cannot sit nearer the corner than 103 from the speedo hub, so the right end is wider than round 4's).
 Shots: `wip/feat-34/shots/r5/{before,after,after-lamps}.png` (before = round 4 at 55 mph). Not run: gates (cluster.js is not in a gate's closure; node import ok).
+
+## Round 6 (Lane B, 2026-11-15) — built, awaits the owner's look
+
+Owner on the round-5 look card (DEC-283): "keep all sizes. move the key away from the speedo near the corner of the rectangular frame, then move the tach right a smidge. the speedo right a little bit more so ther Put KPH above MPH and move them both down a bit" (cut off at "so ther"; not acted on).
+Layout units (canvas px before SCALE 1.15): `TACH_SHIFT` 5, `SPEEDO_SHIFT` 10, `KEY_AWAY` 10 (key 103 → 113 from the speedo hub, still in the corner; END_X and W grow 20, W 486), `KMH_DY` 38 / `MPH_DY` 47 (km/h centred above MPH; MPH was +34, km/h +46 at the right). Sizes untouched.
+Shots: `wip/feat-34/shots/r6/` (after, after-lamps, sheet-r5-r6). Gates: `npm test` selects only the app gate; cdp-smoke is the orchestrator's.
