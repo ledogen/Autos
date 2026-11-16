@@ -12,6 +12,9 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
+The owner's dialogue pass (2026-11-16, DEC-320..326) is built on `land/tut-dialogue`: owner reviews the lines (the
+lane report's numbered list). Open owner call: whether story mode's R / pad reset goes for the alpha (DEC-321 kept it).
+Before that pass:
 Lane A built the owner's option 1 on `land/feat-229` (DEC-304..308). Owner: a look at the contact sheet
 (`wip/feat-229/`), the placeholder lines (tutorial sign-off card) and the defaults below. Then the seed re-check against
 the new order (the tutorial-seed gate still measures the old legs). The orchestrator smokes main after the merge (the
@@ -48,6 +51,10 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - [x] New decision records for the answers: DEC-304..308 (DEC-238, 239, 276, 282 superseded)
 - [x] The chosen order built (`src/main.js` tutorial stages, `data/dialogue.js` placeholder lines)
 - [x] The `opening` step of `test/cdp-smoke.mjs` walks the new order (green alone); `skipMenus` kept
+- [x] The owner's dialogue pass built: Katie (DEC-320), mom's call and no taught reset (DEC-321), Larry's first meeting
+  (DEC-322), the snack from a shopping spot (DEC-323), Katie's 17:00 call (DEC-324), the night (DEC-325), the morning and
+  Larry's two cards (DEC-326); smoke `opening` updated
+- [ ] Owner: the new lines reviewed; story mode's R / pad reset for the alpha
 - [ ] Owner: placeholder lines and the defaults (clock held + stamps, $6, tired at night, the skipper's line)
 - [ ] Tutorial seed re-checked against the new order (after the beats are settled)
 
@@ -60,6 +67,12 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   gates for the whole firing day (supersedes DEC-282).
 - Defaults the owner left blank: clock held while driving, stamps 08/09/10/17/21:30 (`TUT_STAMPS`); firing 07:00;
   energy pays the stamped hours (tired on the night drive); mom asks at her door that night.
+
+- DEC-320..326 (owner's dialogue pass, 2026-11-16): Katie the best friend opens the firing on the phone (supersedes
+  DEC-146's camp-first-from-mom); mom's call reacts, no reset taught; Larry met at his house offers the route and the
+  pack (supersedes DEC-155's route-on-the-call); pumps shut and hidden until the peanuts; Katie's 17:00 call carries the
+  camp and the paycheck (supersedes DEC-307); night: slow down, home safe (supersedes DEC-315); morning: Katie reminds,
+  Larry's two cards, a skip keeps DEC-236's four (supersedes DEC-236).
 
 ## Open questions
 - Everything in the dive's form.
