@@ -1992,6 +1992,16 @@ let missionSystem = null
 // exit. Null outside story mode. Declared up here because the water/seed paths above clear its
 // memoised routes.
 let offerBoard = null
+// DEC-289: offer id → parked hours of deadline the board has not been told yet. The job and the round move their own
+// deadlines every parked step; the board hears it once per stop (a logged mutator: per step would bloat the save).
+const _parkSpend = new Map()
+function _spendParked (dH) {
+  if (missionSystem?.spendParked(dH) && missionSystem.mission.offerId) _addParkSpend(missionSystem.mission.offerId, dH)
+  if (paperRouteSystem.spendParked(dH) && paperRouteSystem.offer?.id) _addParkSpend(paperRouteSystem.offer.id, dH)
+}
+const _addParkSpend = (id, dH) => _parkSpend.set(id, (_parkSpend.get(id) ?? 0) + dH)
+function _flushParkSpend () { for (const [id, dH] of _parkSpend) offerBoard?.spend(id, dH); _parkSpend.clear() }
+
 // FEAT-67: Larry's hover card needs his tour, which is the paper route's planner — Held-Karp, up to
 // ~14 ms at fifteen stops. It runs as a RESUMABLE job pumped a couple of ms per frame while the map
 // is open (planRoundJob, the same generator the route itself uses), never blocking a hover.
@@ -4511,7 +4521,8 @@ missionSystem = new MissionSystem({
   },
   onChange: () => _renderMissionUI(),
   // FEAT-113: the mission clock is world time — a sleep or a time skip spends the tip, the camp
-  // pause holds it — and a board job's deadline is read on the same clock.
+  // pause holds it — and a board job's deadline is read on the same clock. DEC-289: parked under the
+  // brake the clock stands still but the job does not (spendParked, from the fixed step).
   getClockH: () => daySystem.clockH(),
 })
 
@@ -6201,8 +6212,13 @@ function _updateRecovery () {
 function _toggleRecovery () {
   if (document.getElementById('recovery-row')?.style.display !== 'flex') return
   if (!vehicleState.parked || damageScreen.blocked) { hintPark(); return }
+  // FEAT-184 stage 4 / BUG-181: the tow's card is read BEFORE its menu opens, and the menu opens when it ends. Queued from
+  // the first X it sits behind any card still up (the spare's), so opening the menu at once let the tow be taken first.
+  if (!_recoveryOpen && _eveningLeg() && !dialogueSystem.has('tut-tow')) {
+    _tut('tut-tow', TUT['tut-tow'], () => { if (!_recoveryOpen) _toggleRecovery() })
+    if (_tutQueue.some(t => t.key === 'tut-tow')) return
+  }
   _recoveryOpen = !_recoveryOpen
-  if (_recoveryOpen && _eveningLeg()) _tut('tut-tow')   // FEAT-184 stage 4
   _updateRecovery()
 }
 window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'x') _toggleRecovery() })
@@ -7523,7 +7539,8 @@ function _renderMissionUI () {
         // FEAT-217 (DEC-270): the distance is along the line the GPS shows (its re-plan, when the truck strayed), as a job's
         // "to go" is; crow-flies only when there is no line. DEC-271: from the flat until the tire is fixed, the one order.
         const line = q && _tutLine(_homeGuide())
-        if (_flatOwed()) hudText.textContent = 'pull over and check your tire'
+        // DEC-290 (owner, 2026-11-15): "…check your tire with (mapped control)": the damage screen's key, V or the pad's B.
+        if (_flatOwed()) hudText.innerHTML = `pull over and check your tire with ${keycap('V')}`
         else if (q) hudText.textContent = `${km(line?.poly?.length ? routeLeftM(line, vp.x, vp.z) : Math.hypot(q.x - vp.x, q.z - vp.z))} to ${q.label ?? offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
         // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
@@ -10115,6 +10132,7 @@ window.__towSeat = towSeat         // dev handle — cdp-smoke parks in a POI's 
 
 /** The run as plain data. putRun stringifies it at once, so live objects are read, never held. */
 function _runSnapshot () {
+  _flushParkSpend()   // DEC-289: a save is always parked — the board's log must carry this stop's spend
   const vs = vehicleState, p = vs.position, q = vs.quaternion
   return {
     seed: _seedString, world: activeWorld(), gearbox: _runGearbox,
@@ -10603,7 +10621,11 @@ function loop (t) {
     // SM-3: browsing the service center is free — its work adds its own hours (owner, 2026-10-20).
     // FEAT-170: the opening's evening is a safe drive — the clock, energy and hunger hold until mom's.
     // FEAT-194 part 3: the parking brake's latch holds it too (no time passes while parked). One rule: day.js clockHeld.
+    // DEC-289 (owner, 2026-11-15): the latch holds the WORLD clock, not the job in hand — a parked step spends the job's
+    // time at the driving rate (its elapsed, rank and deadline), whichever hold also applies (a parked menu included).
     if (!clockHeld(!!_campUi && _campUi.mode !== 'confirm', serviceScreen.isOpen, _eveningLeg(), vehicleState.parked)) daySystem.update(PHYSICS_DT)
+    else if (vehicleState.parked) _spendParked(PHYSICS_DT / secPerGameH())
+    if (!vehicleState.parked && _parkSpend.size) _flushParkSpend()
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }

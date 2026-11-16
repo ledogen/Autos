@@ -596,6 +596,18 @@ export class OfferBoard {
         return s && s.state === 'taken' && s.offer.id === offerId ? s : null
     }
 
+    /**
+     * DEC-289: parked time spent a taken job's deadline while the world clock stood still — its due line moves `dH`
+     * game hours earlier, so the slot locks where the job expired. main.js sends one per stop (not per step) and
+     * before a save; a mutator, so the save log replays it.
+     */
+    spend (offerId, dH) {
+        const s = this._takenSlot(offerId)
+        if (!s || !(dH > 0) || !Number.isFinite(s.offer.dueH)) return false
+        s.offer.dueH -= dH
+        return true
+    }
+
     /** FEAT-42: the offer the player has in hand under this id, or null — a resume's way back to it. */
     taken (offerId) { return this._takenSlot(offerId)?.offer ?? null }
 
