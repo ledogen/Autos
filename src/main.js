@@ -110,7 +110,7 @@ import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './th
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
-import { AlertCycle, wordAction, stepOf, wearLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
+import { AlertCycle, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -1282,7 +1282,7 @@ function showSpawnToast () {
 const _CORNER_NAME = ['front-left', 'front-right', 'rear-left', 'rear-right']
 const _MACHINE_WORD = [
   [null, 'the engine is knocking', 'the engine seized'],
-  ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is cracking`, `the ${c} wheel gave out`])),
+  ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is damaged`, `the ${c} wheel gave out`])),
   // FEAT-216 damage alerts (words are the owner's to approve): a wheel bent 10 %, a tire flat / failed,
   // the air filter and the oil at their wear thresholds. Spring and body-panel damage stay sound-only.
   ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is bent`])),
@@ -1292,7 +1292,7 @@ const _MACHINE_WORD = [
 ]
 // FEAT-216 / DEC-327: critical failures stay up while true (a failed wheel, a flat or failed tire); the other words
 // re-report at each further 10 % lost. Slots: 0 engine · 1-4 wheel · 5-8 bent · 9-12 tire · 13 filter · 14 oil.
-const _isCrit = (i, l) => (i >= 1 && i <= 4 && l === 2) || (i >= 9 && i <= 12 && l > 0)
+const _isCrit = (i, l) => (i === 0 && l > 0) || (i >= 1 && i <= 4 && l === 2) || (i >= 9 && i <= 12 && l > 0)
 // DEC-287: #machine-word is the general alerts area. Every alert opens into `_alerts`, which shows ONE at a time, 2 s
 // each, round-robin. A machine word stays open ALERT_WORD_S (its old 4 s fade) or until its level falls back; "Wrong way.
 // Turn around" is open while the GPS says the truck points against the route.
@@ -1310,7 +1310,7 @@ function _machineWords () {
   const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
   const cond = [damageModel.get('engine'), ...WHEEL_IDS.map(id => damageModel.get(id)), ...WHEEL_IDS.map(id => damageModel.get(id)),
     ...TIRE_IDS.map(id => damageModel.get(id)), damageModel.get('airFilter'), damageModel.get('oil')]
-  const now = [lv(cond[0]), ...WHEEL_IDS.map((id, i) => lv(cond[1 + i])),
+  const now = [engineLevel(cond[0], KNOCK_FROM), ...WHEEL_IDS.map((id, i) => lv(cond[1 + i])),
     ...WHEEL_IDS.map((id, i) => cond[5 + i] <= 0.9 ? 1 : 0),
     ...TIRE_IDS.map((id, i) => cond[9 + i] <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
     wearLevel(cond[13]), wearLevel(cond[14])]

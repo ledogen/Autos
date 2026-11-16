@@ -41,3 +41,5 @@ export function wordAction (prev, l, step, prevStep, crit) {
 }
 /** Oil and air filter: "dirty" from 50 % (again at 40 %), "very dirty" from 30 % (and every 10 % below). */
 export const wearLevel = (c) => c <= 0.3 ? 2 : c <= 0.5 ? 1 : 0
+/** Engine word level: knocking from `knockFrom` (inclusive, DEC-330) down, seized at 0. Both are critical (persistent). */
+export const engineLevel = (c, knockFrom) => c <= 0 ? 2 : c <= knockFrom ? 1 : 0
