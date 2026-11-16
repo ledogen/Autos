@@ -12,6 +12,10 @@
  *              release" — the take's symmetric swells did not). The blades' broad ~3 kHz white-noise band
  *              is gone: it was the "high freq hiss thats super loud offroad" (owner, 2026-11-07), ~4× the
  *              stems' level where the ear is most sensitive. A recorded gravel/brush take is owed.
+ *   wet      — wet ground (FEAT-120, stands in for wading): spatter, lowpassed ~1.5 kHz noise bursts at
+ *              2.5 a second per m/s of wheel speed fusing into a spray hiss, plus playSquelch(k) on a
+ *              load spike. Driven by updateAmbientAudio's `wet` (0..1); nothing in the game reports a
+ *              wet surface yet, so it is NOT wired (default 0 = silent). Not owner-heard yet.
  */
 
 import { getAudioContext, getWorldBus, whiteNoiseBuffer, loopNoise, audioClockLive } from './engine-audio.js'
@@ -21,6 +25,7 @@ let started = false
 let enabled = true
 let cricketVol = 0.5
 let grassVol = 0.5
+let wetVol = 0.5
 
 const CRICKET_MAX_MS = 5 * 0.44704   // 5 mph
 const CRICKET_IN_S = 10             // s — the fade in, parked [DEFAULT] (owner, 2026-11-02: "~10 s")
@@ -35,14 +40,17 @@ let crOut = null
 let crFade = 0         // 0..1, linear in time; the gain is its square, so the swell is even in dB
 const voices = []      // { g, rate, next }
 let loG = null
+let wetOut = null, wetHissG = null, wetHissLp = null
+const SPATTER_PER_MS = 2.5   // spatter bursts per second per m/s
 
 const clamp01 = x => Math.max(0, Math.min(1, x))
 
 /** Debug-menu controls, read every frame by main.js. */
-export function setAmbientAudio (on, crickets, grass) {
+export function setAmbientAudio (on, crickets, grass, wet = 0.5) {
   enabled = !!on
   cricketVol = crickets
   grassVol = grass
+  wetVol = wet
 }
 
 /** Build the graph once (idempotent); call from a user gesture like the other ensure* calls. */
@@ -67,14 +75,37 @@ export function ensureAmbientAudio () {
   const out = gain(GRASS_LEVEL, bus)
   loG = gain(0, out)
   loopNoise(ctx, noise).connect(filt('bandpass', 900, 1.2, loG))
+
+  wetOut = gain(0.35, bus)
+  wetHissG = gain(0, wetOut)
+  wetHissLp = filt('lowpass', 1500, 0.7, wetHissG)
+  loopNoise(ctx, noise).connect(wetHissLp)
+  noiseBuf = noise
   started = true
+}
+
+let noiseBuf = null
+function wetBurst (t, dur, f0, g, f1 = null) {
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf
+  const f = ctx.createBiquadFilter(); f.type = f1 ? 'bandpass' : 'lowpass'; f.frequency.value = f0; f.Q.value = f1 ? 3 : 0.7
+  if (f1) f.frequency.exponentialRampToValueAtTime(f1, t + dur)
+  const e = ctx.createGain()
+  e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(g, t + 0.004)
+  e.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  s.connect(f); f.connect(e); e.connect(wetOut); s.start(t, Math.random() * 2.5); s.stop(t + dur + 0.01)
+}
+
+/** A wheel load spike pressing into mud: a noise band sliding 450 → 140 Hz over 0.16 s. `k` 0..1. */
+export function playSquelch (k = 0.7) {
+  if (!started || !audioClockLive()) return
+  wetBurst(ctx.currentTime, 0.16, 450, (0.4 + 0.6 * k) * wetVol, 140)
 }
 
 /**
  * Per frame. `speed` [m/s]; `night` 0..1 (sky.js nightWeight); `green` 0..1, the vegetation under the
  * truck off the road (0 on it); `dt` the frame's real seconds.
  */
-export function updateAmbientAudio (speed, night, green, dt) {
+export function updateAmbientAudio (speed, night, green, dt, wet = 0) {
   if (!started || !audioClockLive()) return
   const now = ctx.currentTime
 
@@ -110,4 +141,11 @@ export function updateAmbientAudio (speed, night, green, dt) {
     loG.gain.setTargetAtTime(peak * 0.45, t, 0.004)
     loG.gain.setTargetAtTime(lvl * GRASS_BED * 0.45, t + 0.015, rel)
   }
+
+  // Wet ground: a spray hiss that grows as speed^1.5 and brightens, with spatter bursts over it.
+  const w = enabled ? wetVol * wet : 0, ws = clamp01(speed / 15)
+  wetHissG.gain.setTargetAtTime(w * 0.5 * ws ** 1.5, now, 0.15)
+  wetHissLp.frequency.setTargetAtTime(900 + 1200 * ws, now, 0.15)
+  for (let p = SPATTER_PER_MS * speed * w * dt; p > 0; p -= 1)
+    if (Math.random() < Math.min(1, p)) wetBurst(now + Math.random() * dt, 0.015 + Math.random() * 0.03, 1500, 0.1 + 0.35 * Math.random())
 }

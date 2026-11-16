@@ -133,9 +133,10 @@ FEAT-162 P3: the running engine seizes at 0 % — a lowpassed noise hit (250 ms)
 then the existing shutoff silence.
 
 ### Paper throw whoosh and impact
-status: todo · group: story
+status: wip · group: story · play: result-audio.js playPaperThrow
 Tracked in FEAT-64. Whoosh = bandpassed noise with a fast pitch sweep; impact = short thump + paper
 slap (noise burst, highpassed).
+- **Offline check 2026-11-16 (Lane B, no human has listened):** `result-audio.js` `playPaperThrow` (bandpassed noise 2.2 kHz → 700 Hz over 0.3 s) and `playPaperSlap` (140 → 80 Hz thump + highpassed slap), world bus. Hooked in main.js at the paper throw (whoosh now, slap at the solver's landing time). Offline: whoosh 0.2 s audible, peak −22.6 dBFS, rms −45.5, top band 1.1–1.9 kHz; slap 0.04 s, peak −15.8, rms −37.6, top 100–140 Hz. Owner's ear owed.
 
 ### Bump-stop clunk
 status: shipped · group: contacts · play: contact-audio.js playBumpStop
@@ -162,6 +163,7 @@ brighter; dirt: lowpassed and quieter.
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/underbody-and-bumper-scrape/`. Not in `src/` or wired yet. The take is the bumper on rock (bright ring, re-rolled every frame for grit) sliding up to 5 m/s and back, then the belly on dirt (muffled ring, the low drag leads). The ring is two bands, the panel's first mode and one at 2.3× it. Trigger: hull sliding contact (speed + force) out of the adapter; the material read is the impact seam's open question.
 - **Owner's ear, 2026-11-02:** REDO — "wildly bad". Consider a contact-mic recording or a CC0 library take of steel dragging on rock/asphalt instead.
 - **Not redone by synthesis (2026-11-02):** the owner's note points at a recording — a contact-mic take or a CC0 library take of steel dragging on rock / asphalt. Owed: that take (dropped on this card), then the voice plays it, speed and load driving rate and level.
+- **Skipped 2026-11-16 (Lane B):** the owner's note says this waits on a recording or reference clip; no synthesized redo was attempted.
 
 ### Gravel ping
 status: wip · group: world
@@ -171,6 +173,7 @@ Stones flicking the wheel wells on dirt/gravel. Reuse the tinkle grains from `gl
 - **Owner's ear, 2026-11-02:** REDO — "sounds more like a xylophone than gravel strikes". Pitched sine pings read as notes. Reference (ear and spectrum only, never shipped — copyright): https://www.youtube.com/watch?v=s0pqv_p1UvU. Gravel strikes are unpitched broadband ticks on sheet metal over a continuous tire crunch.
 - **Redo prototype 2026-11-02 (Spare), `tools/audio-proto/proto-b3.js` (not wired):** unpitched — every strike is a 1–4 ms broadband click ringing ONE fixed, inharmonic wheel-well panel (1.15 / 2.73 / 4.38 / 6.9 kHz), so a stone changes loudness and brightness, never a note; under it a granular tread crunch. Built from the ticket's description: the reference download was refused (HTTP 403, and a retry was blocked as bot-check circumvention). Take: `wip/audio/gravel-ping/redo-2026-11-02.wav` — owner's ear owed; a clip of the reference dropped on this card would let the next pass match it.
 - **Owner's ear, 2026-11-07 (feat120-listen):** "i owe a good gravel sound". The owner will supply a recorded take, and the synthesized redo waits on it.
+- **Skipped 2026-11-16 (Lane B):** the owner's note says this waits on a recording or reference clip; no synthesized redo was attempted.
 
 ### Reverse gear and diff whine
 status: wip · group: truck
@@ -180,6 +183,7 @@ overrun (coasting off-throttle with the engine braking).
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/reverse-gear-and-diff-whine/`. Not in `src/` or wired yet. Two takes. Reverse: ~17 mesh events per engine rev (countershaft ≈ 0.68 × input × 25 teeth), so 800 rpm ≈ 230 Hz and 2800 rpm ≈ 790 Hz; louder under throttle, with a once-per-countershaft-rev wobble. Manual box only: an automatic's reverse is a helical planetary and barely whines. Diff: the Ranger's 3.73 final drive is 41:11, so the mesh rate is 41 × AXLE speed (= 11 × driveshaft speed; the line above had it as 41 × driveshaft, which is 3.7× too high). 30 m/s ≈ 530 Hz; the take coasts 30 → 9 m/s on overrun, then back on the throttle, where it drops to a quarter.
 - **Owner's ear, 2026-11-02:** REDO the reverse whine to the reference: https://www.youtube.com/watch?v=-bBiqmdEjbM at 1:50–1:53 (ear and spectrum only, never shipped). The diff whine was not judged separately.
 - **Not redone yet (2026-11-02):** the redo is defined by the reference clip, and its download was refused (HTTP 403). Owed: the clip (1:50–1:53) dropped on this card, then the whine is matched to its spectrum.
+- **Skipped 2026-11-16 (Lane B):** the owner's note says this waits on a recording or reference clip; no synthesized redo was attempted.
 
 ### Brake squeal
 status: cut · group: truck
@@ -195,6 +199,7 @@ status: wip · group: world
 Stands in for wading for now. Spatter layer on wet surfaces: noise bursts (lowpassed ~1.5 kHz) at a
 rate ∝ wheel speed, plus a soft squelch on wheel load spikes.
 - **Prototype 2026-11-02, waiting for the owner's ear:** synthesized in `tools/audio-proto/proto-b2.js`, rendered as a take in `wip/audio/wet-ground/`. Not in `src/` or wired yet. The take ramps 0.5 → 12 m/s and back with four squelches. Spatter: 2.5 bursts/s per m/s, fusing at speed into a continuous spray hiss whose level goes as speed^1.5. Squelch: a noise band sliding 450 → 140 Hz over 0.16 s.
+- **Offline check 2026-11-16 (Lane B, no human has listened):** ported into `ambient-audio.js`: `updateAmbientAudio(..., wet)` (default 0, so silent) and `playSquelch(k)`; setAmbientAudio gained an optional wet volume. NOT wired: nothing in the game reports a wet surface or load spike yet. Offline demo (0.5 → 12 → 2 m/s, four squelches): 6.6 s, peak −22.9 dBFS, rms −41.3, top bands 240 / 1360 / 280 Hz. Owner's ear owed.
 
 ### Grass and brush swish
 status: shipped · group: world
@@ -236,6 +241,7 @@ One short square/triangle blip per few characters, pitch per speaker.
   Pitches [DEFAULT]: Mom 740 Hz, Uncle Larry 494, the manager 392, anyone else 587 (what ▶ plays). It plays
   once, when a card has filled. The card streams in a word every 80 ms [DEFAULT] (main.js `_renderDialogue`);
   the first press fills it, the next turns it. Not owner-heard yet.
+- **Offline check 2026-11-16 (Lane B, no human has listened):** `playBlip('Mom')`: 0.04 s audible, peak −21.5 dBFS, rms −45.4, top band ~680–800 Hz (the 740 Hz tone). No clip, not silent.
 
 ### Payout coin and grade stingers
 status: shipped · group: story · play: result-audio.js playCoin
@@ -252,12 +258,14 @@ FEAT-131 P1, `src/result-audio.js`. The speed tip counting up on the result card
 (6 ms of noise bandpassed at ~3.2 kHz) at ~12 a second for the count-up's 0.7 s, loud to soft as the
 ease-out settles.
 - **In game 2026-11-05 (Spare), synthesized, not owner-heard:** starts as the tip row lands, under its coin.
+- **Offline check 2026-11-16 (Lane B, no human has listened):** `playTickTrain(0.7)`: 0.67 s, peak −27.2 dBFS, rms −61.3, top band 2.3 kHz (3.2 kHz bandpass, 6 ms ticks). Quiet: soft against the coin (−20s). No clip.
 
 ### Deed tally clack
 status: wip · group: story · play: result-audio.js playClack
 FEAT-131 P1, `src/result-audio.js`. The deed tally flipping old → new: a wood block — sines at ~980 Hz
 (60 ms) and ~2.65 kHz (30 ms) on a 4 ms click. Silent when the tally does not move ("no deed").
 - **In game 2026-11-05 (Spare), synthesized, not owner-heard.**
+- **Offline check 2026-11-16 (Lane B, no human has listened):** `playClack`: 0.03 s, peak −20.4 dBFS, rms −43.3, top 0.8–1.1 kHz. No clip.
 
 ### Rank timer music bed
 status: dropped (DEC-192, 2026-11-14) — `src/rank-music.js` deleted; the owner heard it and said "drop it".
@@ -268,6 +276,7 @@ FEAT-131 P1, `src/result-audio.js`. A miss landing on the result card ("no deed"
 that never arrived — never a cost like stock bought): a dull knock, sine 110 → 50 Hz over 0.22 s, under
 50 ms of noise lowpassed at 320 Hz.
 - **In game 2026-11-05 (Spare), synthesized, not owner-heard.**
+- **Offline check 2026-11-16 (Lane B, no human has listened):** `playThud`: 0.13 s, peak −16.5 dBFS, rms −35.0, top 100–140 Hz. No clip.
 
 ### Pump nozzle
 status: shipped · group: story · play: pump-audio.js playNozzle
@@ -309,6 +318,7 @@ point and the handbrake-down trigger.
   `wip/audio/pump-register-sale-final/synth-cha-ching.wav`.
 - **Owner's ear, 2026-11-02:** REDO — the 10-31 build is not cha-ching enough: "aim for more of a cha-ching". Reference: https://www.youtube.com/watch?v=4kVTqUxJYBA (ear and spectrum only, never shipped). Do not land 6b67588d's register as is.
 - **Redone 2026-11-02 (Spare) to the reference, read off its spectrum:** ~0.2 s of key/gear clatter (cha); a bell on the reference's inharmonic partials 2.1 / 4.8 / 7.4 / 7.75 / 10.9 kHz, the 2.1 kHz ringing ~1 s (ching); the drawer released, rolled and slammed, coins settling. Replaces 6b67588d's take. Take: `wip/audio/pump-register-sale-final/redo-2026-11-02.wav` — owner's ear owed.
+- **Offline check 2026-11-16 (Lane B, no human has listened):** `playRegister` (the 2026-11-02 redo, in src): 1.4 s audible, peak −8.6 dBFS (loudest of the set, no clip), rms −32.8, energy mostly 100–140 Hz drawer/thunk under the bell.
 
 ### Low-fuel sputter
 status: shipped · group: truck · play: engine-audio.js playSputterPop
@@ -488,3 +498,7 @@ owner's cadence pass) cranks slower, which `playbackRate = rpm / recordedRpm` ab
 - No per-frame node creation for sustained voices: always-running generators with modulated gains, as
   `tire-audio.js` does. One-shots may create nodes per event.
 - Sample assets load and play on the GitHub Pages build, not just `npm run dev`.
+
+## Log
+
+- 2026-11-16 (Lane B, `land/feat-120-synth`): the synthesize rows that were wip/todo, finished as far as a numeric check goes. Built paper throw + wet ground (e1d71387); the five in-game wip voices and the register were measured offline (numbers on each row). Offline renders: `node tools/audio-proto/offline.mjs` through a `getAudioContext()` wrapper (the tool alone is silent: `live()` is null until a context exists). Underbody scrape, gravel ping, reverse/diff whine skipped: they wait on the owner's recording or reference clip. No human has listened to any of them.
