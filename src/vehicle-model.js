@@ -1191,11 +1191,13 @@ float rsBakedShade () {
    * road tiles, props, the truck's own .glb), which the boot prewarm never saw and which would
    * otherwise compile the first time each lamp state appears (the "first headlights lag").
    * Synchronous so no rendered frame ever sees the borrowed light state. It draws (BUG-175, _drawWarm), which
-   * compiles too.
+   * compiles too. draw = false only issues the compile (renderer.compile never waits on the driver), so a caller
+   * can draw once the programs are ready (BUG-186, main.js _lampSweepStep).
    */
-  function compileLightState (i, renderer, scene, camera, points = []) {
+  function compileLightState (i, renderer, scene, camera, points = [], draw = true) {
     const restore = _lightState(i, points)
-    _drawWarm(renderer, scene, camera)
+    if (draw) _drawWarm(renderer, scene, camera)
+    else renderer.compile(scene, camera)
     restore()
   }
 
