@@ -1,7 +1,7 @@
 ---
 id: FEAT-237
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-16
 source: owner, 2026-11-16, inbox — "Fragile G Meter: Let's make this a logarithmic plot so we have more resolution in the bottom end. I'd love to see another tick mark for 10% damage. That should be around halfway up the meter. make it grey with a grey label"
@@ -31,3 +31,4 @@ Rest and paved driving (< 0.8 g) now draw nothing; the floor (1.2 g) sits at 17 
 ## Log
 - 2026-11-16: filed from the owner's inbox note.
 - 2026-11-16 land/ui-batch: built (fragile.js, main.js _updateFragileG, index.html `.jg-ten`, grey --text-dim tick + label). Gate: test/fragile-cargo.mjs extended (10 % tick within 4 points of halfway on all tiers).
+- 2026-11-16: landed on main, smoke green. Closed; look card ui-batch-look.
