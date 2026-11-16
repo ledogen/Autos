@@ -2004,8 +2004,13 @@ const STEPS = [
     const mapFirst = (held = true) => js(`(() => { const m = window.__map2d(), step = m._stepBackground; let budget = Infinity
       m._stepBackground = b => { budget = b; return step.call(m, b) }
       if (${held}) m._sizeStale = () => false
-      try { m.show(); m.render() } finally { delete m._stepBackground; delete m._sizeStale; m.hide() }
-      return budget === Infinity })()`)
+      try { m.show(); m.render() } finally { m._stepBackground = step; delete m._sizeStale; m.hide() }
+      return budget === Infinity || m.__fresh === true })()`)
+    // PERF-52: the loading screen's preload() may already have built the new world's sheet whole, so the first open
+    // then blits it in slices. "Its own" = a whole build has run since the last _buildRoad (the world change).
+    await js(`(() => { const m = window.__map2d(), build = m._buildRoad, step = m._stepBackground
+      m._buildRoad = function () { m.__fresh = false; return build.apply(m, arguments) }
+      m._stepBackground = function (b) { const r = step.apply(m, arguments); if (b === Infinity) m.__fresh = true; return r } })()`)
     const toMenu = async () => {
       for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
       await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
