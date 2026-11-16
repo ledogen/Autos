@@ -3791,7 +3791,7 @@ const serviceCenter = new ServiceCenter({
 // and night, and sits in the bay of the service station nearest the truck (_placePoiLight, on the POI poll). Never added or
 // removed after boot: a change in the point-light count recompiles every lit material (BUG-175), so it is in the scene
 // before the PERF-21 prewarm and only ever moves. Parked far below the world when no station is built.
-// POI_LIGHT.serviceStation.intensity (cd) is the one knob; `at` is the model frame.
+// POI_LIGHT.serviceStation.intensity (cd) is the bay's one knob; `at` is the model frame.
 // DEC-228 (owner, 2026-11-15: "its obvious by the cast on the ceiling that the only source is Directly above the truck"):
 // the light stands in the middle of the bay block (between the two bays, over the centre pier's line) at 2.0 m, not 1.1 m
 // under the ceiling over lift A. There the ceiling straight above it was lit 25× brighter than 3 m away, a hot spot over
@@ -3810,7 +3810,9 @@ const serviceCenter = new ServiceCenter({
 // just under a ceiling paints a hot spot on it); on a lone island it sits over the pumps just under the sign box (3.5 m).
 // Warm white as the soffit lenses (StationLamp). Keyed by q.modelKey; `at` in the model frame.
 const POI_LIGHT = {
-  serviceStation: { color: 0xfff0d8, intensity: 40, distance: 9, at: [-1.8, 2.0, 0] },
+  // DEC-296 (owner, 2026-11-15: "still pretty dark and dingy in the service center at night. So make the light 20%
+  // brighter. It's okay that it spills out of the walls for now"): 40 → 48 cd, same place and range.
+  serviceStation: { color: 0xfff0d8, intensity: 48, distance: 9, at: [-1.8, 2.0, 0] },
   gasStation: { color: 0xfffaee, intensity: 120, distance: 10, at: [0, 3.4, -3.0] },
   gasPump: { color: 0xfffaee, intensity: 120, distance: 10, at: [0.28, 3.3, 0] },
 }
