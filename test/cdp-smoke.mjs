@@ -1694,6 +1694,8 @@ const STEPS = [
       dmg: document.getElementById("dmg-screen").classList.contains("open"), rc: document.getElementById("recovery-card").checkVisibility(),
       map: window.__map2d().isOpen(), camp: document.getElementById("camp-panel").style.display === "block" })`)
     // Each case opens its menu and returns true when the skip may honestly cost money (a pump that is not the worst day's).
+    // Mom's sleep card is not a case: while the evening's fill-up is owed her door offers nothing (DEC-282), and the skip
+    // closed her card before BUG-183 too; the menu list closes it now like the rest.
     const CASES = {
       clean: null,
       pump: async () => {
@@ -1710,6 +1712,11 @@ const STEPS = [
         await seatAt(nearest('autoShop'))
         check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 3000), 'parking at the auto shop opened no service screen')
         await readCards()
+        // something in the cart, so the skip's close takes the discard path (FEAT-212): the wallet below proves no charge
+        await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+        await js(`(() => { const lines = () => [...document.querySelectorAll("#svc-screen button[data-act=node][data-slot]")], buy = () => document.querySelector("#svc-screen button[data-act=buy]:not([disabled])")
+          for (let i = 0; i < lines().length && !buy(); i++) lines()[i].click(); buy()?.click() })()`)
+        console.log(`  skipMenus shop: cart ${await js('document.querySelector("#svc-screen [data-act=checkout]") ? "filled" : "empty"')}`)
       },
       damage: async () => {
         await tap('v')
@@ -1735,13 +1742,6 @@ const STEPS = [
         await tp(r.x, r.z, r.h); await park(true); await readCards()
         await tap('x'); await readCards()   // BUG-181: in the tutorial the tow's card goes first
         check(await until(() => js('document.getElementById("recovery-card").checkVisibility()'), 3000), 'X opened no recovery menu')
-      },
-      camp: async () => {
-        const m = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse'); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
-        await tp(m.x, m.z, m.h)
-        if (await js('document.getElementById("camp-panel").style.display !== "block"')) await park(true)
-        await readCards()
-        check(await until(() => js('document.getElementById("camp-panel").style.display === "block"'), 3000), "parking at mom's opened no sleep card")
       },
     }
     let clean = null
