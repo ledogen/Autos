@@ -363,10 +363,10 @@ export const REWARDS = [
     // The refillable 5 gal jerry can (items.md §1): the top-tier answer to running dry, so A–S only.
     { id: 'jerryCan',   name: 'Jerry can',   kind: 'tool',       gates: ['A', 'S'], cat: 'fuel' },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'], cat: 'tires' },
-    // The haul yard's rewards (owner, 2026-10-22; items.md §7): the mat is the lesser grip; its
-    // friction effect isn't built yet — the item is granted. The bedliner (A–S here) joins the
-    // day its thumbnail exists (test/dist-assets.mjs needs assets/items/bedliner.png).
+    // The haul yard's rewards (owner, 2026-10-22; items.md §7): the mat is the lesser grip, the bedliner the
+    // better (FEAT-231, data/items.js bedMu).
     { id: 'rubberBedMat', name: 'Rubber bed mat', kind: 'tool', gates: ['B', 'A'], cat: 'bed' },
+    { id: 'bedliner',   name: 'Bedliner',    kind: 'tool',       gates: ['A', 'S'], cat: 'bed' },
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'], cat: 'tires' },
@@ -737,7 +737,7 @@ export const REWARD_WINDOW_HI = 1.3
  */
 export const REWARD_VALUE = {
     dinnerMeal: 5, packedLunch: 6,   // packedLunch: items.md §1d, "worth $6" (never sold)
-    zipTies: 8, stopLeak: 8, rubberBedMat: 8,
+    zipTies: 8, stopLeak: 8,
     // FEAT-168 [DEFAULT]: the school lunch and the camp gear the shelf doesn't price
     schoolLunch: 5, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,
 }

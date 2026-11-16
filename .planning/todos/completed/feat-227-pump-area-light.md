@@ -1,7 +1,7 @@
 ---
 id: FEAT-227
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-15
 source: owner, 2026-11-15 — "we should add a point source light or two to the gas station fueling area"
@@ -90,3 +90,4 @@ max 2.1–2.5 ms before and after. Boot prewarm (15 states, was 10): cold cache 
 - 2026-11-15: main merged (c37e3765), bay 48 cd (DEC-296, 32380bfb). Affected gates 10/10 green (cdp-smoke left to main).
 - 2026-11-16: light cull, ec6d28e7 (land/light-cull). Far −3.1–4.1 % GPU; a dedicated 2nd light near a station +2.8–4.0 %;
   switch hitch 483 ms → none; boot prewarm +0.2–0.4 s. Affected gates 10/10 green (cdp-smoke left to main). Not looked at: the pool popping at 200 m.
+- 2026-11-16: owner on card light-cull-look: "good: keep the shared light, 200 m is fine" (DEC-229, DEC-300). Closed.

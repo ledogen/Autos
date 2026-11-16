@@ -42,6 +42,8 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     // card still reads the same price. Duct tape and emergency gas are "$5–10": $8 is the reading the
     // reward card already used [DEFAULT].
     coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8,
+    // FEAT-231 [DEFAULT]: inside the owner's ranges, the mat $5–10 (the $8 its reward card read), the bedliner $10–30
+    rubberBedMat: 8, bedliner: 20,
     potato: 2,                  // FEAT-230 [DEFAULT]: items.md rules the potato "under $5"; the owner sets the number
     gummyWorms: 2, spicyChips: 3, candyBar: 2,   // FEAT-232 [DEFAULT]: "under $5" each; the owner sets the numbers
     burger: 5,                  // items.md §1d: the food vendor's burger, $5

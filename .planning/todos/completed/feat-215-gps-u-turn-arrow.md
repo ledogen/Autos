@@ -1,7 +1,7 @@
 ---
 id: FEAT-215
 type: feature
-status: open — built and on main (abf84352); owner looked 2026-11-14 and asked for a redesign (inbox 2e5a)
+status: closed
 severity: minor
 opened: 2026-11-14
 source: owner, 2026-11-14 — "gps u turn arrow: same style as the turn indicator arrows but pointing you to turn around. a 3d ribbon arrow making a 180 would be a nice way to draw this i think."
@@ -49,3 +49,4 @@ the turn indicator arrows; the owner suggests a 3D ribbon arrow that makes a 180
 ## Decisions
 - 2026-11-16, owner (card feat215-start-arrow-2): "lay it flat over the road, like a painted arrow (recommended)". DEC-303.
 - 2026-11-14, owner (inbox 2e5a, answering card feat215-look): the flat arrow is "virtually impossible to see from third person"; redesign as above.
+- 2026-11-16: owner on card feat215-flat-look: "good, close FEAT-215" (flat arrow, DEC-303). Closed.

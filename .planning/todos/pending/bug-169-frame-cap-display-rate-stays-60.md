@@ -33,3 +33,4 @@ DEC-185 rules "60 / 30 / display rate, default 60". Adding 90 and 120 extends it
 
 ## Log
 - 2026-11-14: minted from the owner's inbox by the scribe. Nothing built.
+- 2026-11-16, owner (card bug169-try, Windows, 165 Hz monitor): in F11 fullscreen the cap misbehaves (60 holds 60; 90 gives about 80; 120 or display rate gives about 70; unfocused but visible it locks 165, then falls back about 5 s after refocus). In a maximized window it is fine and holds 165 while driving. In a window the cap is obeyed but the debug counter reads about 5 % above the setting. Open: the F11 fullscreen behaviour, and the 5 % counter offset. Needs the Windows machine.

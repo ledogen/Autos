@@ -71,9 +71,15 @@ export const ITEMS = {
     // One plug per kit; the effect ('plug') is the parts session's (owner hand-off 2026-10-21).
     tirePlugKit:  { name: 'Tire plug kit', kind: 'consumable', massKg: 0.3, use: 'plug',
                     desc: "I hope I don't have to use this." },   // the owner's flavor line (setup page, 10-22)
-    // A haul reward (owner, 2026-10-22): a 3/8" rubber mat cut for a compact bed, ~15 kg. Effect unbuilt.
-    rubberBedMat: { name: 'Rubber bed mat', kind: 'tool',      massKg: 15,
+    // A haul reward (owner, 2026-10-22): a 3/8" rubber mat cut for a compact bed, ~15 kg.
+    // FEAT-231 `bedMu`: owned = lying on the bed floor; the pair μ a firewood bundle sees on it (src/physics.js
+    // setBedGrip; the bare bed is 0.15). The best one owned wins. Owner, 2026-10-22: the mat 0.30 ("stops sliding,
+    // not bouncing"), the bedliner 0.60 ("the mat's friction, done properly"). Neither wears: nothing in the bed does.
+    rubberBedMat: { name: 'Rubber bed mat', kind: 'tool',      massKg: 15, bedMu: 0.30,
                     desc: 'A heavy rubber mat for the bed floor. Loose cargo stops sliding around.' },
+    // ~10 kg [DEFAULT]: a compact bed's spray-in coat. The mat's thumbnail until it has its own (no art yet).
+    bedliner:     { name: 'Bedliner',      kind: 'tool',       massKg: 10, bedMu: 0.60, thumb: 'rubberBedMat',
+                    desc: 'A tough coat for the bed floor. Cargo stays where you put it, and it never wears out.' },
     // A 12 V portable inflator: a plug repair is 30 min in all with it, 2 h by hand (items.md §7).
     compressor:   { name: 'Compressor',    kind: 'tool',       massKg: 4,
                     desc: 'A little pump that runs off the lighter socket. Airs a tire up while you wait.' },

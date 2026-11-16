@@ -325,7 +325,7 @@ Basic, Advanced and Professional.
 
 ### Rubber bed mat
 status: wip · design: ratified · build: param, model · where: autoShop, reward
-Audit 2026-11-16: in ITEMS and REWARDS (bed, B–A). Missing: the μ 0.30 friction effect, the auto-shop shelf ($5–10), the in-game visual.
+Audit 2026-11-16: in ITEMS and REWARDS (bed, B–A). FEAT-231 (2026-11-16): μ 0.30 built (owned = on the bed floor; data/items.js bedMu), auto shelf $8 [DEFAULT] at Sometimes [DEFAULT]. Missing: the in-game visual.
 Raises cargo-to-floor friction in the bed: stops sliding, not bouncing. The lesser bedliner: it grips
 less, μ 0.30 (owner, 2026-10-22). $5–10 at the auto shop; a B–A reward from the firewood yard; never
 found. Still needs an in-game visual.
@@ -593,8 +593,8 @@ Killed as items (owner, 2026-10-22): "these are assists available in the setting
 FEAT-57 still frames them as parts.
 
 ### Bedliner
-status: todo · design: ratified · build: param, model · where: autoShop, reward
-Audit 2026-11-16: not in parts or ITEMS; no `bedliner.png` thumbnail.
+status: wip · design: ratified · build: param, model · where: autoShop, reward
+Audit 2026-11-16: not in parts or ITEMS; no `bedliner.png` thumbnail. FEAT-231 (2026-11-16): an ITEMS tool like the mat, μ 0.60 (wins over the mat), auto shelf $20 [DEFAULT] at Hardly ever, REWARDS A–S (bed); the mat's thumbnail. Missing: its own thumbnail, the in-game visual.
 The mat's friction, done properly; never wears out. μ 0.60 (owner, 2026-10-22). $10–30 at the auto
 shop, very rarely; an A–S reward from the firewood yard (haul jobs); never found. Still needs an
 in-game visual.
@@ -746,8 +746,8 @@ Shovel row says `campGateUnevenM` 1.2 m but the code value is 1.5 m.
 | Packed lunch | B–A reward row (residence, farm, vendor); 24 h freshness | spoilage (clause only) | yes, reward row |
 | Bag of peanuts | C–B reward row; stack cap 3; find | stack caps; find | yes |
 | Gummy worms, Spicy chips, Candy bar | whole item, gas-station shelf, C–B reward, stack caps; thumbnails exist | none | needs price + mass numbers |
-| Rubber bed mat | μ 0.30 friction effect; auto-shop shelf; visual | none (physics.js BED_SHAPE_MU) | needs price ($5–10 is a range) |
-| Bedliner | whole item/part, μ 0.60, shelf, A–S reward, thumbnail, visual | none | needs price ($10–30 is a range), shelf weight ("very rarely") |
+| Rubber bed mat | visual (μ 0.30 and the shelf built, FEAT-231) | none | built at $8 [DEFAULT] |
+| Bedliner | thumbnail, visual (item, μ 0.60, shelf, A–S reward built, FEAT-231) | none | built at $20 [DEFAULT], Hardly ever |
 | Air mattress, Sleeping pad, Deluxe sleeping pad, Blanket, Sleeping bag | general-store shelf (all else ships) | none | yes; price = REWARD_VALUE [DEFAULT] unless owner rules |
 | Rucksack (+ Daypack, Duffel, Frame pack, not ratified) | every source: shelf and reward | none | needs slots, reach, mass, price, gates |
 | GPS unit | whole item; minimap (new UI); story gate that boots the overlay off | none | needs price ($10–30 is a range) |

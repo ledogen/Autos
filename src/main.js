@@ -19,7 +19,7 @@
 import * as THREE from 'three'
 import { LiveExposure } from './exposure.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, syncChassisMass, rollBalance } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
@@ -3760,7 +3760,8 @@ function _pourStopLeak () {
 const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
-  onChange: () => { inventoryScreen.render(); campGear.refresh(inventorySystem.packed()); _syncItemChoice() },   // packing at camp re-dresses it; FEAT-199: room made
+  onChange: () => { inventoryScreen.render(); campGear.refresh(inventorySystem.packed()); _syncItemChoice()
+    setBedGrip(physicsEngine, vehicleChassis, inventorySystem.bedMu()) },   // FEAT-231: a mat / liner owned lies on the bed floor   // packing at camp re-dresses it; FEAT-199: room made
   onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
