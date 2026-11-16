@@ -74,7 +74,7 @@ height) · `terrain-height.js` (THE height function + seeded noise + chunk grid 
 height-param list — imported by main thread, worker, road.js, data/flora.js and the headless gates) · `terrain-worker.js` (chunk heightmap Worker, module entry) · `terrain-detail.js` (shared surface-detail GLSL) · `biome.js` (forest/meadow/
 rock classification) · `map-cover.js` (map-resolution forest cover) · `water.js` (ponds/streams
 generation) · `water-render.js` · `stone-texture.js` (procedural riverbed texture) ·
-`terrain-texture.js` (FEAT-84: procedural grass/dirt/rock surface maps, DataTexture, headless-safe).
+`terrain-texture.js` (FEAT-84: procedural grass/dirt/rock surface maps, DataTexture, headless-safe) · `terrain-bake.js` (PERF-48 lever 6, on by default except the Low tier, `?terrainBake=0` = off: the terrain material baked into a toroidal atlas, used for ground ≥ 70 m from the truck, DEC-207/DEC-234).
 `stream-priority.js` (PERF-33 near-then-ahead queue order + stream-centre motion/jump detection,
 zero-dep) · `stream-budget.js` (PERF-33 the one shared per-frame streaming budget, zero-dep).
 

@@ -296,6 +296,7 @@ export class TerrainSystem {
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <color_fragment>',
                 `#include <color_fragment>
+                // @bake-a
                 // Rock colouring (owner 2026-09-25: "brown dirt turning into brown rocks turning
                 // into grey rocks"): the vertex colour carries NO rock share any more — dirt/grass
                 // only — and rock is painted here by the share rock WINS: the vertex share when the
@@ -448,6 +449,7 @@ export class TerrainSystem {
                 // terrain has already occluded from the sun — the exact artefact this fixes. The
                 // far cascade is the light that models terrain-scale sun occlusion, and baked prop
                 // shadows are terrain-scale sun occlusion, so they belong to the same light.
+                // @bake-b
                 rsBakedShade = 1.0;
                 // QUAL-18: the baked shadow fades out with view distance (LOD dissolve). PERF-41: the fade is taken
                 // FIRST and the taps skipped past its end (beyond ~240 m, much of a vista) — they would be ×0 there.
@@ -503,6 +505,7 @@ export class TerrainSystem {
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <normal_fragment_begin>',
                 `#include <normal_fragment_begin>
+                // @bake-c
                 if (uDetailScale > 0.0) {
                     float td_slp = 1.0 - clamp(vWorldNrm.y, 0.0, 1.0);
                     float td_rock = max(smoothstep(uCliffLo, uCliffHi, td_slp),
@@ -512,7 +515,8 @@ export class TerrainSystem {
                     // FEAT-84: the blended surface normal map, planar in world XZ (same encoding as
                     // td_wb: x→−∂h/∂x, y→−∂h/∂z), rotated into view space like the fbm bump above.
                     normal = normalize(normal + mat3(viewMatrix) * (vec3(tsNrm.x, 0.0, tsNrm.y) + tsNrmSide));
-                }`
+                }
+                // @bake-d`
             )
         }
         this._material.customProgramCacheKey = () => 'feat05-alpine-terrain'
