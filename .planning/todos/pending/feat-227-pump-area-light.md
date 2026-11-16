@@ -68,3 +68,4 @@ pump was in sight. Harness: wip/lights-1116/ab.mjs + run-ab.sh, logs ab-run1/2.l
 ## Log
 - 2026-11-15: ec9d5d91 a second light (+3.4 % GPU), then 946c1cc0 the shared light. Pictures
   wip/lights-1116/{gasStation,gasPump}-{atpump,approach}-{before,after}.png, sheets feat227-*-sheet.png.
+- 2026-11-15: main merged (c37e3765), bay 48 cd (DEC-296, 32380bfb). Affected gates 10/10 green (cdp-smoke left to main).

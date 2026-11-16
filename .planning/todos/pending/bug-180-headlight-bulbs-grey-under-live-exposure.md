@@ -49,3 +49,4 @@ greying) `lensReverse 2.5 → 20`. Damage dim and flicker still multiply the len
 
 ## Log
 - 2026-11-15: 2d23a05b on land/lights-1116. Before/after: wip/lights-1116/before-*.png, after-*.png, bug180-sheet.png.
+- 2026-11-15: affected gates 10/10 green on land/lights-1116 (cdp-smoke left to main).
