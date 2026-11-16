@@ -1908,10 +1908,12 @@ const STEPS = [
       flat: window.__damage.flat[3], collapsed: window.__damage.collapsed(3), rim: !!window.__vs.rimOnRoad?.[3] })`)
     const whole = s => { const t = JSON.parse(s); return !t.flat && !t.collapsed && !t.rim && t.wheel > 0 && t.tire > 0 }
     // The map's first frame on open: show() then one render(). A sheet rebuilt in slices (a budget, not Infinity) blits
-    // the bitmap it already holds until it is done, which after a world change is the last world's.
-    const mapFirst = () => js(`(() => { const m = window.__map2d(), step = m._stepBackground; let budget = Infinity
+    // the bitmap it already holds until it is done, which after a world change is the last world's. The window's size is
+    // held (_sizeStale), as a player's is: a resize wipes the bitmap, and headless the map's width moves between opens.
+    const mapFirst = (held = true) => js(`(() => { const m = window.__map2d(), step = m._stepBackground; let budget = Infinity
       m._stepBackground = b => { budget = b; return step.call(m, b) }
-      try { m.show(); m.render() } finally { delete m._stepBackground; m.hide() }
+      if (${held}) m._sizeStale = () => false
+      try { m.show(); m.render() } finally { delete m._stepBackground; delete m._sizeStale; m.hide() }
       return budget === Infinity })()`)
     const toMenu = async () => {
       for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
@@ -1930,7 +1932,7 @@ const STEPS = [
       await js(`window.__damage.set('tireRR', 0); window.__damage.set('wheelRR', 0); window.__damage.flat[3] = true`)
       await simFor(0.5)
       check(await js('!!window.__vs.rimOnRoad?.[3]'), `the wreck is not on its rim: ${await truck()}`)
-      await mapFirst()   // the map's sheet now holds this world
+      await mapFirst(false)   // the map's sheet now holds this world
       await toMenu()
     }
     const newGame = async (seed) => {
@@ -1944,6 +1946,7 @@ const STEPS = [
         for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
         await js('document.getElementById("tc-play").click()')   // the tutorial seed loads (DEC-157)
         check(await until(async () => await js(live) && await js('document.getElementById("dlg-speaker").textContent') === 'Mom', 45000, 250), 'played: no mom\'s call on the tutorial seed')
+        for (let i = 0; i < 40 && await js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"'); i++) { await tap('Enter'); await sleep(250) }
       },
       skipped: async () => { await newGame(7); check(await until(() => js(live), 45000, 250), 'skipped: the run never went live'); await skipAndReadLarry() },
       freeRoam: async () => {
@@ -1956,7 +1959,7 @@ const STEPS = [
     for (const [name, start] of Object.entries(starts)) {
       await wreck()
       await start()
-      await frames(10, 500)   // wall time: mom's call holds the sim — a stale signal is stale either way
+      await simFor(0.5)   // a step of the new run's own: a held step (the tutorial) publishes too
       const t = await truck(), map = await mapFirst()
       console.log(`  newRun ${name}: truck ${t} · map's first frame its own: ${map}`)
       check(whole(t), `${name}: the last run's wreck came along: ${t}`)
