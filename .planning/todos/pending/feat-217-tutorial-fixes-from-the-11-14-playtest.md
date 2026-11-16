@@ -12,7 +12,7 @@ lane: A (tutorial)
 # FEAT-217: Tutorial fixes from the 11-14 playtest
 
 ## Next steps
-Card feat217-try answered 11-15: B and C built (DEC-270..272); A measured, no bug — the owner's call whether the 4 s countdown or the line moves (see Log). Then land feature/run-shape.
+Card tutorial-gates answered 11-16 and built on land/tutorial-1116 (lane S): the grace around places is 20 m (DEC-281, supersedes DEC-219), the reset otherwise as it was; both anti-dodge gates (DEC-282). Left: land it; the owner's playtest (FEAT-184's test-drives card).
 
 ## Summary
 Eight problems found in one tutorial playtest: the automatic reset is too eager and silent, giving up leaves stale state, the flat tyre can be driven on forever, the dialogue order is off, the cart can leave the player $5 short, pad focus is invisible on the opening buttons, and free cam survives into a new game.
@@ -54,18 +54,19 @@ Inbox wggu:
 - [x] y2x7: pad focus highlights "Play the tutorial" and "Skip"
 - [x] feat217-try B: every tutorial leg's top distance reads along the GPS line, as a job does (DEC-270)
 - [x] feat217-try C: after the flat the line reads "pull over and check your tire" and the accelerator is cut until the tire is fixed, tutorial only (DEC-271, DEC-272)
-- [ ] feat217-try A: the reset line "a lot bigger than 10 m" — measured exactly 10 m past the paved side; waiting on the owner (the 4 s at speed carries the truck ~40 m past it)
+- [x] feat217-try A: the reset line "a lot bigger than 10 m" — measured exactly 10 m past the paved side; the owner's answer (tutorial-gates): the 75 m grace around places was what read as broken, now 20 m (DEC-281); the 4 s stays
+- [x] tutorial-gates 2: mom's door stays shut while the evening's pump is due; in the evening only mom's offers sleep (DEC-282)
 - [x] wggu: free cam (and similar state: camera, UI, modes) is reset on every entry and exit, so a new game never starts in the last run's free cam
 
 ## Open questions
-- ANSWERED by defaults (owner may change): 75 m built (TUT_PARAMS.safeNearPoiM); DEC-219 records the narrowing of DEC-151.
-- of3s says 10 m off the sides of the road; bfs1 says 50 or 100 m of destinations. Which of 50 / 100? Default 75 until told.
+- ANSWERED (owner, tutorial-gates 2026-11-16): 20 m around places (DEC-281, superseding DEC-219's 75 m default).
 - DEC-151 ("drive off the road > reset") stands; of3s narrows where it engages. Treated as an amendment, not a conflict; confirm if wanted.
 
 ## Files
 `src/main.js` · `src/tutorial.js` · `src/service.js` · `src/hud.js`
 
 ## Log
+- 2026-11-16 (lane S, land/tutorial-1116): `TUT_PARAMS.safeNearPoiM` 75 → 20; `_atMomsHouse` false while `_evePump` is due; `_campPromptState` null on the evening leg. Smoke comment only (its spot pick keeps 90 m from places, still valid). Gates: see FEAT-184's log.
 - 2026-11-15 (lane A, card feat217-try): A measured in the running game, seed 822480141 evening: the countdown starts at 15.0–15.5 m from the centreline (10 m past the paved side) on a straight, a bend and a junction leg, both sides. Driven off at 10.8 m/s it starts at 15.7 m, and in its 4 s the truck reaches ~52 m before the reset — that is the "much bigger". Unchanged. B: `routeLeftM` (mission.js) on the tutorial line. C: `setThrottleCut(_flatOwed())` (vehicle.js); park-brake gate §7, smoke checks after the flat.
 - 2026-11-14 (lane A): built. Teardown: ONE `_resetRunLocals` (main.js) called from onRegionExit and run entry (pump, tutorial vars, waypoint, free cam, screens). Reset: 10 m past the road + 75 m from any POI + countdown (DEC-219). Spare flat is found out after the corner try. Flat gate: mom's card and door wait while the evening's flat is on (`_flatOwed`). $5: the first patch is on mom (`_momOwes.patch`). Pad focus CSS for #tut-card. Horizontal scroll in shop/maintenance tabs (526f second half) NOT done, not in the tracker. Smoke extended (countdown, shoulder, give-up cam/pump).
 - 2026-11-14: minted from the owner's inbox by the scribe. Nothing built.
