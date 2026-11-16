@@ -106,7 +106,8 @@ store and farms (a farm sells for the first time); a farm and general-store rewa
 Flavor: "Fresh and goes together easy" (owner, 2026-10-22).
 
 ### Potato
-status: todo · design: ratified · build: effect · needs: hunger · where: generalStore, reward
+status: wip · design: ratified · build: effect · needs: spoilage (cooked 24 h) · where: generalStore, reward
+**In the game 2026-11-16 (FEAT-230 slice 1):** `potato` (raw, no `use`, its desc says why) and `potatoCooked` (`use: 'eat'`, hold 4 h), 5 to a slot (`stack`); the camp card's "cook a potato · 30 min" button turns one raw into one cooked; general-store line at a $2 [DEFAULT]; a farm reward at C–B (category `produce`). The cooked one does not spoil yet (slice 2's fresh clock). The kit's bonus applies (DEC-310, +20 %).
 New (owner, 2026-10-21). Inedible raw; cooked on the campfire — the only food you buy that needs no
 cooking kit — it is a decent meal. Sold at the general store; a farm reward. **Ruled 2026-10-22:**
 holds hunger 4 h; +30 min to cook; raw never spoils, cooked keeps 24 h; the cooking kit's food bonus
@@ -444,7 +445,8 @@ Raises it to ~2.2 m (≈20°). Both shovels can be carried, no extra effect (202
 general store; an A–S reward from farms, work sites and the general store; never found.
 
 ### Cooking kit
-status: todo · design: idea · build: effect · needs: camp render, hunger · where: generalStore
+status: wip · design: ratified · build: effect · needs: groceries · where: generalStore, reward
+**DEC-310 / FEAT-230 (2026-11-16):** deployed at camp it makes any food hold hunger 20 % longer (`COOKING_KIT_FOOD_MULT`); groceries are cooked with it, without the 20 % on top (slice 3).
 ≈23 kg always carried; flat bonus to food effects; the only way to cook groceries (2026-10-20). Model is ASSET-25 (A-frame + Dutch oven).
 
 ## Backpacks

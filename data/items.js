@@ -14,6 +14,7 @@
 //            a free quick slot (keys 1–4, items.md §1c).
 //   uses     uses per unit (a pack, a roll), when more than one: the stack tracks the open one's `left`
 //   capGal   a can's fill, gallons: the entry carries `gal`, and its mass is `kgPerGal` × gal on top
+//   stack    units to a slot, for a stacking kind (FEAT-230: the potato's 5); unset = one slot holds any number
 //   hold     food: game hours the meal holds hunger off (items.md §1d; src/day.js eat)
 
 import { PARTS, partIcon } from './parts.js'
@@ -36,6 +37,13 @@ export const ITEMS = {
     // FEAT-184 (DEC-276): the tutorial morning's snack, bought with mom's few dollars. Mass ~0.1 kg [DEFAULT].
     bagOfPeanuts: { name: 'Bag of peanuts', kind: 'food',      massKg: 0.1, use: 'eat', hold: 3,
                     desc: 'Mmm, salty.' },
+    // FEAT-230 slice 1 (items.md §1, owner 2026-10-21/22): the campfire meal. Raw it has no `use`, so it cannot be
+    // eaten and the line below says why; cooked at a camp fire (main.js _cookPotato, 30 min) it holds 4 h. Both 5 to a slot.
+    // Mass ~0.2 kg [DEFAULT]. The cooked potato does not spoil yet: its 24 h fresh clock is FEAT-230 slice 2.
+    potato:       { name: 'Potato',        kind: 'food',       massKg: 0.2, stack: 5,
+                    desc: 'Potato. Raw, it is no good to eat. Cook it over a campfire.' },
+    potatoCooked: { name: 'Cooked potato', kind: 'food',       massKg: 0.2, stack: 5, use: 'eat', hold: 4, thumb: 'potato',
+                    desc: 'Potato. Hot and plain.' },
     // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
     // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.
     spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: PARTS.spareTire.massKg, use: 'spare',
@@ -141,9 +149,10 @@ export const ITEMS = {
                     desc: 'A striped canopy on four poles. Shade wherever you pitch it.' },
     shadeTarp:    { name: 'Shade tarp',    kind: 'camp',       massKg: 2,   fills: 'shade', campSlot: 'shade', model: 'shadeTarp',
                     desc: 'A tarp, a pole and some line. Shade where there are no trees.' },
-    // About fifty pounds of iron (items.md §2b). Its effect waits on groceries, which are not built.
+    // About fifty pounds of iron (items.md §2b). FEAT-230 / DEC-310: standing over the fire at camp it makes any food
+    // eaten there hold hunger COOKING_KIT_FOOD_MULT longer (foodHoldH). Groceries (slice 3) will NOT get it on top.
     cookingKit:   { name: 'Cooking kit',   kind: 'camp',       massKg: 23,  campSlot: 'overFire', model: 'cookingKit',
-                    desc: 'An iron A-frame and a Dutch oven to hang over the fire. Heavy.' },
+                    desc: 'An iron A-frame and a Dutch oven to hang over the fire. Whatever you eat at camp with it holds you a little longer. Heavy.' },
 
     // ── Vehicle parts (data/parts.js), owned UNFITTED: a slot each, and the entry carries the part's
     //    wear as `cond`. A massless part ('No lift') is an absence, not a thing you can carry. The
@@ -151,6 +160,11 @@ export const ITEMS = {
     ...Object.fromEntries(Object.entries(PARTS).filter(([id, p]) => p.massKg > 0 && id !== 'spareTire')
         .map(([id, p]) => [id, { name: p.name, kind: 'part', massKg: p.massKg, desc: p.desc, thumb: partIcon(id), rarity: p.rarity }])),
 }
+
+/** DEC-310: the cooking kit, deployed at the player's camp, makes food hold hunger this much longer (+20 %). */
+export const COOKING_KIT_FOOD_MULT = 1.2
+/** Hours a food holds hunger when eaten: its `hold`, times the kit's bonus when `kitAtCamp` (main.js _kitAtCamp). */
+export const foodHoldH = (id, kitAtCamp) => ITEMS[id].hold * (kitAtCamp ? COOKING_KIT_FOOD_MULT : 1)
 
 /** Kinds that stack into one slot per item kind. */
 export const STACKING_KINDS = new Set(['consumable', 'food'])
