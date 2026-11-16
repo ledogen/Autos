@@ -141,21 +141,21 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-16 06:14; rewrite, don't append)
+## Current state (2026-11-16 09:11; rewrite, don't append)
 
 Older state paragraphs: `git show b9d0377d:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
 The owner's night handoff, with the full landed list and card pile: `.planning/handoffs/HANDOFF-2026-11-16-night.md`.
 Night log (git-invisible): `wip/orch/night-1116.md`.
 
-**Main:** b9d0377d, 545 ahead of origin, NOT pushed. Last full smoke PASS 33 steps on e3291a66 + e45af4fb
+**Main:** 59f4d53e, 551 ahead of origin, NOT pushed. Last full smoke PASS 33 steps on e3291a66 + e45af4fb
 (wip/orch/smoke-1116-fresh2.log); only docs since.
 **Landed 11-16 (all local):** tutorial rebuild FEAT-229, feat-232, bug-184, feat-223, feat-233, tut-dialogue
 (DEC-320..326), map-batch (FEAT-234, BUG-187, PERF-52), bug-185 (DEC-328), bug-186, visual-batch (FEAT-236/238, DEC-329),
 ui-batch (FEAT-216/237, BUG-188, DEC-327/330), alpha-audit (ALPHA-GAP-2026-11-16.md), tut-seed-gate, bug-161 gate,
 groceries + camp-gear shelf, feat-69 dive, FEAT-240 ticket, feat-120-synth, feat-239 (DEC-337), fresh clock (DEC-338),
 tutorial hold for the fresh clock (DEC-339 DRAFT, awaits the owner on fresh-clock-look), bookkeeping-1116.
-**RUNNING:** spare · land/soak-1116 · Sonnet: soak of main (smoke on 3 random seeds, pad-e2e, story/ui gates); classify only.
-**FREE:** A, B, C, U, perf. No owner-free build work left: item rows need rulings / models / a find system; FEAT-120
+**RUNNING:** nothing. Soak of main clean (run-soak on 3 random seeds won; 53 gates); pad-e2e repaired, 98 green.
+**FREE:** all six lanes. No owner-free build work left: item rows need rulings / models / a find system; FEAT-120
 library pulls wait for the owner's go on downloads; BUG-169 needs Windows.
 **BUILT, HELD for the owner:** land/feat-235 @ 70f9ee99 (CarGame-run-shape; DEC-331 on branch; card feat235-cluster-look) ·
 land/bug-179 (CarGame-spare; card bug179-fork-chain, options 1-3) · land/bug-171 @ 84819898 (CarGame-content; card
@@ -165,7 +165,7 @@ bug171-option3-look; on the answer record DEC-261, land, smoke) · four FEAT-204
 **Close after the owner looks:** FEAT-216, 223, 233, 236, 238, 229, 217, 230, 231, BUG-161; FEAT-205 (no card).
 **Still owed by the orchestrator:** lane-table rows in MILESTONES.md for FEAT-230, 231, 233, 236, 238, 223, 239.
 **Next free DEC:** 340 (332-336 unused).
-**Night timers (session crons):** 09:11 check: Note 4 in the night log, update the night handoff, commit.
+**Night timers:** all three fired; none left.
 **Dev servers up:** :8000 main (loopback) · :8001 main on Tailscale · :3885 Spare · :8010 dashboard.
 **Gotchas:** (1) agents can stall on a background wait: read their logs, SendMessage the log path. (2) Owed and dive
 answers save as the owner types: act only when `at` is ~3 min old. (3) Dive answers land in ledorepo

@@ -1,12 +1,19 @@
 # Night handoff, 2026-11-16 (orchestrator, for the owner)
 
-Written 06:14; you went to sleep about 03:10. Updated again at the 09:11 check (see the end).
-Nothing was pushed. Main is `b9d0377d`, 545 commits ahead of the remote. Worktree: `CarGame` (main, :8000 / :8001).
+Written 06:14, updated 09:11; you went to sleep about 03:10.
+Nothing was pushed. Main is `59f4d53e`, 551 commits ahead of the remote. Worktree: `CarGame` (main, :8000 / :8001).
 
 ## 1. Is main good?
 
 Yes. The last full smoke passed: 33 steps, zero console errors (`wip/orch/smoke-1116-fresh2.log`).
-Only documents have merged since that run. Nothing on main is unverified by a smoke.
+Only documents and one test script have merged since that run. Nothing on main is unverified by a smoke.
+
+A soak ran on top of that (06:15 to 07:30), and it was clean:
+- The run soak played three random seeds (40508170, 572416921, 963950) to the win. No soft-locks, no console errors.
+- 53 story, menu and damage gates are green.
+- The gamepad script (`test/pad-e2e.mjs`) passes all 98 checks, after a repair described in § 4.
+
+One limit: the smoke has no seed override. It only ever runs the test seed and the tutorial seed.
 What a smoke does not cover: how things look, sound and feel. That is the card pile in § 3.
 
 ## 2. What landed while you slept (all local)
@@ -59,13 +66,17 @@ Built but NOT in the game: the four visual mods (light bar, bed toolbox, roof ra
    DEC-339, until you approve it on `fresh-clock-look`. The alternatives are listed there.
 2. Two smoke failures were leftovers in the test itself (a card left open, a map built early). Both fixed.
 3. One smoke timed out while three agents were running. It passed when run alone.
-4. One of my commands (a broad process kill for stale Chrome) was refused by the permission system. I did not retry it.
+4. **The gamepad script had drifted.** It is hand-run, not a gate, so nothing ran it while four pad and map changes
+   landed. It had 25 failing checks. Every one was the script lagging your rulings (Y is the only waypoint button;
+   the left trigger releases the parking brake on the automatic; the tutorial menu button is retired). No game fault
+   was found. It is repaired and merged. Suggestion: add it to the smoke's browser run so it cannot drift again.
+5. One of my commands (a broad process kill for stale Chrome) was refused by the permission system. I did not retry it.
 
 ## 5. What agents are doing now
 
-- **Spare lane:** a soak of main. The full smoke on three random seeds, the pad test that has never been run, and the
-  story and menu gates. It classifies failures and fixes nothing.
-- **All other lanes are idle.** There is no build work left that needs no input from you:
+Nothing is running. The soak and the script repair finished.
+
+- **All six lanes are idle.** There is no build work left that needs no input from you:
   - Items: every ratified and unblocked row is on main. The rest needs your rulings (GPS unit, chain, chainsaw, cargo
     net, beacon, packs, tent, cot), models (cooler, Ice King, cooking kit, bed mat), or a system that does not exist
     (roadside finds, cargo protection, bed parts, power mods).
