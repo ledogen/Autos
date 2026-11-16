@@ -76,9 +76,9 @@ export const MOM_CALL = [
 ]
 
 /** FEAT-184 (DEC-153): the played tutorial's last act — parked at the burger joint the morning after, the last paycheck.
- *  Its clock goes to 19:30, 24 h after the firing (DEC-159). PLACEHOLDER: the owner writes these words (FEAT-148). */
+ *  Its clock goes to 19:30, 24 h after the firing (DEC-159). The owner's words, character for character (DEC-277). */
 export const PAYCHECK = [
-    { speaker: 'The manager', text: `[placeholder] Your last check. Don't spend it all in one place.` },
+    { speaker: 'The manager', text: `Don't come back asking to run the grill again. If someone want's their food delivered you can have a cut, but I dont want you running the kitchen no more.` },
 ]
 
 /** FEAT-184 (DEC-152, DEC-150): a skip lands outside the burger joint, and the manager hands over the last check. The

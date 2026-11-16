@@ -4545,7 +4545,7 @@ const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // seconds off the road before the evening puts the truck back on it ("you drive off the road > reset"). Both [DEFAULT].
 const TUT_PARAMS = { lowTankFrac: 0.125, pumpDetourM: 4000, pocketCash: 3, offRoadS: 4,
   offRoadM: 10,    // FEAT-217 (of3s, DEC-219): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
-  safeNearPoiM: 75 }   // FEAT-217 (bfs1, owner said 50 or 100) [DEFAULT]: no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
+  safeNearPoiM: 20 }   // FEAT-217 (DEC-281, owner 2026-11-16; was 75 m): no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the evening's station while a fill-up is due, or null (not saved: a resume goes straight home)
 // FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
@@ -5727,6 +5727,7 @@ function _inPoiRing () {
 
 function _campPromptState () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
+  if (_eveningLeg()) return null   // DEC-282: in the tutorial's evening only mom's offers sleep — no camp, no truck
   // FEAT-113 (owner, 2026-10-15): a job IN HAND may camp — the night spends world time against its
   // tip and deadline. Only the panels (an offer up, a result card) still refuse. The truck stays
   // parked where it is; nothing about camping moves it or its bed.
@@ -6148,6 +6149,7 @@ document.getElementById('recovery-icon')?.addEventListener('click', _toggleRecov
 const _flatOwed = () => _eveningLeg() && _eveFlat && damageModel.flat.some(Boolean)
 function _atMomsHouse () {
   if (_flatOwed()) return false
+  if (_evePump && !_evePump.done) return false   // DEC-282: her door stays shut while the evening's fill-up is due
   if (!storySystem.isActive() || storySystem.isEntering()) return false
   if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return false   // FEAT-113: as _campPromptState
   if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return false
