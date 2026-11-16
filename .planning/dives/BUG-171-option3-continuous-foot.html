@@ -1,0 +1,102 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BUG-171: the leg foot built continuous (option 3 replaced)</title>
+<style>
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px }
+  .pair img { width: 100%; display: block; image-rendering: pixelated }
+  table { border-collapse: collapse } td, th { padding: 2px 10px; text-align: right } td:first-child, th:first-child { text-align: left }
+</style>
+<h1>BUG-171: the leg foot is now continuous by construction</h1>
+<p>You picked "keep option 2 and build option 3 next", and wrote that a noisy broken baseline should not be averaged
+away but fixed by construction (recorded as DEC-260). Option 2 stays. Option 3 was <b>not</b> built. Something smaller
+replaced it, and it removes 90 % of the junction-dirt steps. It is on branch <code>land/bug-171</code>, not landed.</p>
+
+<h2>1. Why option 3 was not built</h2>
+<p>Option 3 weighted every point of a leg by how near it is, then blended the leg's height over those weights. On a
+leg 10 m away, that weighting is a bell curve about 2 m wide along the leg. So the ground in the gore would take the
+leg's height <i>averaged</i> over about 2 m of road. That is a smoother laid over the broken part, which is what your
+note rules out.</p>
+<p>The broken part is one specific thing. The code found the leg's nearest point on the polyline, the chain of straight
+3.5 m pieces the road centreline is stored as. Each straight piece has its own nearest point, so the "nearest point"
+jumped a whole piece at every corner of the chain.</p>
+
+<h2>2. What was built instead</h2>
+<p>The leg's direction is now defined continuously along it. At each corner of the chain, the direction is halfway
+between the two pieces that meet there. Along a piece it turns smoothly from one corner's direction to the next. The
+foot is the point where the query stands square to that direction. That is a quadratic in the position along the
+piece, solved exactly. Because the direction never jumps, the foot never jumps either: it slides.</p>
+<p>The leg's height still comes from the same points the road is built on. Nothing about the network or any road's
+shape changed: the world fingerprint shows the network, profiles, junctions and places identical to main.</p>
+
+<h2>3. The numbers</h2>
+<p>Same 9 random seeds and same census as before. A step is a jump of 2 cm or more inside a 0.5 mm move. A ramp is a
+continuous rise of more than 8 cm in a 5 cm move.</p>
+<table>
+  <tr><th></th><th>option 2</th><th>+ continuous foot</th></tr>
+  <tr><td>step sites ≥ 2 cm</td><td>909</td><td>88</td></tr>
+  <tr><td>≥ 5 cm</td><td>622</td><td>75</td></tr>
+  <tr><td>≥ 15 cm</td><td>205</td><td>27</td></tr>
+  <tr><td>≥ 30 cm</td><td>63</td><td>7</td></tr>
+  <tr><td>≥ 60 cm</td><td>9</td><td>6</td></tr>
+  <tr><td>leg foot hops (limb class)</td><td>593</td><td>8</td></tr>
+  <tr><td>ramp sites ≥ 15 cm per 5 cm</td><td>109</td><td>113</td></tr>
+  <tr><td>worst ramp per 5 cm</td><td>1.37 m</td><td>1.65 m</td></tr>
+</table>
+<p><b>How big is what is left, next to a wheel?</b> The Ranger's tyre has a 0.368 m rolling radius. A 2–5 cm step is a
+road seam: felt as a tick, harmless. 15 cm is a kerb, a real jolt. 30 cm is most of the way to the wheel's axle and
+stops a slow wheel. Of the 27 steps of 15 cm or more left in 9 worlds, 16 are a different root (the seam where the
+resolver hands the road surface from one road to another), 5 are a junction-to-junction handover on a short road, and
+the rest are single sites. None is the foot hop.</p>
+<p>The ramps did not improve. At the very centre of a bend, every point of the curve is equally near, so the foot swings
+round quickly and the ground rises steeply over a few centimetres. Those show as thin rays at the bend centre in
+picture D. The worst ramp (1.65 m per 5 cm) is a separate place: there the ground stands 5.5 m above the natural ground
+and above every leg's height, so the leg blend is not what lifts it.</p>
+<dive-q id="land" options="land the continuous foot (recommended) | hold it, I want to drive it first | drop it"></dive-q>
+
+<h2>4. The sites</h2>
+<p>The same five sites as the last dive. The physics ground, a 16 m square around each site, north up, one pixel per
+5 cm, lit from the north-west. Left is option 2, right is option 2 plus the continuous foot.
+<b style="color:#ff2828">Red</b>: a jump over 0.15 m between neighbouring pixels. <b style="color:#ffaa28">Amber</b>:
+over 0.05 m. <b style="color:#3c8cff">Blue</b> on the right: ground that moved by more than 2 cm. The long thin red line
+at the edge of some pictures is the designed asphalt edge.</p>
+
+<h3>A. Seed 407711925 (node −898, −47), the worst foot hop (1.46 m)</h3>
+<p>The red fan is gone. The red patch at its tip remains: a steep ramp at the bend centre and the 1.55 m rival step
+next to it (a different root).</p>
+<div class="pair"><img src="BUG-171-a-407711925-ground-opt2.png" alt="Before: a red fan of steps from one point"><img src="BUG-171-a-407711925-ground-foot.png" alt="After: no fan, a red patch at its tip"></div>
+
+<h3>B. Seed 565500664 (node −142, 98)</h3>
+<p>The remaining red line through the middle is the short road whose two ends are both junctions, swapping from one
+junction's blend to the other's. A different root.</p>
+<div class="pair"><img src="BUG-171-b-565500664-ground-opt2.png" alt="Before"><img src="BUG-171-b-565500664-ground-foot.png" alt="After: one red line remains"></div>
+
+<h3>C. Seed 917338424 (node −204, −536)</h3>
+<div class="pair"><img src="BUG-171-c-917338424-ground-opt2.png" alt="Before"><img src="BUG-171-c-917338424-ground-foot.png" alt="After"></div>
+
+<h3>D. Seed 1074499174 (node 746, 432), a bend centre</h3>
+<p>All 13 foot hops here are gone. The thin star at the bend centre is now ramps (worst 0.67 m per 5 cm), not steps:
+the foot swinging round the centre.</p>
+<div class="pair"><img src="BUG-171-d-1074499174-ground-opt2.png" alt="Before: a star of red rays"><img src="BUG-171-d-1074499174-ground-foot.png" alt="After: a thinner star of ramps"></div>
+
+<h3>E. Seed 3561904408 (node 10, 554), a typical site</h3>
+<p>The parallel red lines are gone. This is what most of the 593 sites looked like.</p>
+<div class="pair"><img src="BUG-171-e-3561904408-ground-opt2.png" alt="Before: parallel red lines"><img src="BUG-171-e-3561904408-ground-foot.png" alt="After: smooth, the moved ground in blue"></div>
+
+<h2>5. BUG-179 (your capture on seed 1684703087)</h2>
+<p>Not the same root, and this branch does not change it. Two roads leave one junction side by side, 6.3 m apart
+centre to centre, so their decks overlap, and they are 3.1 m apart in height 40 m from the junction. The surface
+switches from one road to the other where they are equally near: a 3.3 m step. That is a network-shape problem (two
+legs that close should not diverge that fast) and stays its own ticket.</p>
+
+<h2>6. What next</h2>
+<p>The steps that remain are mostly the road-to-road seam (16 of the 27 over 15 cm). The bend-centre ramps are the
+limit of measuring "nearest point of the leg". At the centre that point is genuinely undefined, so fixing them means
+choosing a different construction for the gore, not repairing this one. I recommend the seam next: it is the biggest
+class left, and BUG-179's 3.3 m step is the same switch (the surface handing over from one road to another), so one
+look at it serves both tickets.</p>
+<dive-q id="next" options="chase the road-to-road seam next (recommended) | stop here for the alpha | chase the bend-centre ramps next"></dive-q>
+
+<h2>7. Anything this misses</h2>
+<dive-q id="notes"></dive-q>
+
+<script src="/dive.js"></script>
