@@ -1,10 +1,13 @@
 // test/gpu-reset.mjs — BUG-182 rainy-day check, NOT a gate (needs Chrome + a dev server).
 // Forces a GPU reset in the running game and fails if a baked picture stays blank afterwards.
-//   node test/gpu-reset.mjs [port=3885] [--mode=webgl|crash]   (run it through tools/chrome-slot.sh)
+//   node test/gpu-reset.mjs [port=3885] [--mode=webgl|crash|none] [--canvases]   (run it through tools/chrome-slot.sh)
 // webgl: WEBGL_lose_context on the renderer (loseContext, then restoreContext), the cheap repeatable case.
 // crash: CDP Browser.crashGpuProcess, the real GPU-process reset the owner hit (2D canvases lose theirs too).
-// Measures, before and after: a freecam shot of ground 300 m+ from the truck (all of it drawn from the terrain bake),
-// the gauge cluster's canvas and the open map's canvas. Blank = the share of near-black / transparent pixels jumps.
+// none:  no reset, the control (the day clock moves between the two measures; its drift is the noise floor).
+// Measures, before and after: a freecam shot down at ground 420 m from the truck (all of it drawn from the terrain
+// bake), one level at the fogged horizon (the fog cube), the gauge cluster's canvas, the open map's canvas and the
+// far-prop impostor atlas. Blank = the share of near-black / transparent pixels jumps, or luminance falls > 35 %.
+// Any page error fails it too. --canvases lists every 2D canvas with its blank share before → after.
 import { launchChrome, connect, sleep } from './lib/cdp.mjs'
 const PORT = +(process.argv.find(a => /^\d+$/.test(a)) ?? 3885)
 const MODE = (process.argv.find(a => a.startsWith('--mode=')) ?? '--mode=webgl').slice(7)
@@ -44,19 +47,26 @@ const shotStats = async () => {
     c.getContext('2d').drawImage(im, 0, 0); res((${STATS})(c)) }; im.src = 'data:image/png;base64,${s.result.data}' })`)
 }
 const measure = async () => {
-  await js(`window.__map2d().hide(), window.__view(${300}, 260, ${300}, 0.8, -0.9), true`)
+  // Straight down from 60 m over ground 420 m from the truck: all of it drawn from the terrain bake, too near to fog.
+  await js('window.__map2d().hide(), window.__view(300, window.__terrain().analyticHeight(300, 300) + 60, 300, 0.8, -1.4), true')
   await sleep(3000)
   const ground = await shotStats()
+  // Level at the horizon: far terrain under fog, whose colour is read from the fog cube.
+  await js('window.__view(300, window.__terrain().analyticHeight(300, 300) + 25, 300, 0.8, -0.02), true')
+  await sleep(2000)
+  const fog = await shotStats()
   const cluster = await js(`(${STATS})(document.getElementById('cluster'))`)
+  // The far-prop billboard atlas, read back by its own dev handle: tiles holding no prop.
+  const impEmpty = await js(`(() => { const s = window.__impAtlasStats?.(); return s ? Object.values(s.tiles).filter(t => t === 'EMPTY').length : null })()`)
   await js('window.__map2d().show(), true')
   await sleep(4000)
   const map = await js(`(${STATS})(window.__map2d()._canvas ?? document.querySelector('#map2d canvas, canvas#map2d'))`)
-  return { ground, cluster, map }
+  return { ground, fog, cluster, map, impEmpty }
 }
 
 let fail = 0
 try {
-  await client.cmd('Page.navigate', { url: `http://localhost:${PORT}/?nomenu=1&seed=6&nofog=1` })
+  await client.cmd('Page.navigate', { url: `http://localhost:${PORT}/?nomenu=1&seed=6` })
   if (!await until(() => js('window.__rsReady === true && typeof window.__view === "function"'), 120000)) throw new Error('game never became ready')
   await sleep(15000)   // the terrain bake fills a few tiles a frame
   const before = await measure()
@@ -67,7 +77,7 @@ try {
     const bws = new WebSocket(ver.webSocketDebuggerUrl); await new Promise(r => bws.onopen = r)
     bws.send(JSON.stringify({ id: 1, method: 'Browser.crashGpuProcess' }))
     await sleep(500); bws.close()
-  } else {
+  } else if (MODE === 'webgl') {
     await js('window.__renderer().forceContextLoss(), true')
     await sleep(1000)
     await js('window.__renderer().forceContextRestore(), true')
@@ -77,12 +87,16 @@ try {
   console.log('after  ', JSON.stringify(after))
   console.log('events ', JSON.stringify(await js('window.__ctxEv')))
   if (process.argv.includes('--canvases')) console.log('canvases', JSON.stringify(await js(`window.__cvs.filter(c => !c.getContext('webgl2') && c.width).map(c => [c.width + 'x' + c.height + (c.id ? ' #' + c.id : ''), c.__stack, c.__pre, (${STATS})(c).blank])`), null, 1))
-  for (const k of ['ground', 'cluster', 'map']) {
+  for (const k of ['ground', 'fog', 'cluster', 'map']) {
     const jump = after[k].blank - before[k].blank, dl = after[k].lum - before[k].lum
     const bad = jump > 0.15 || dl < -0.35 * before[k].lum
     if (bad) fail++
     console.log(`${bad ? 'FAIL' : 'ok  '} ${k}: blank ${before[k].blank} → ${after[k].blank}, luminance ${before[k].lum} → ${after[k].lum}`)
   }
+  const impBad = after.impEmpty === null || after.impEmpty > before.impEmpty
+  if (impBad) fail++
+  console.log(`${impBad ? 'FAIL' : 'ok  '} impostor atlas: empty tiles ${before.impEmpty} → ${after.impEmpty}`)
+  if (errors.length) fail++
   if (errors.length) console.log('page errors:', errors.slice(0, 8))
 } finally { cleanup(); client.close() }
 console.log(fail ? `FAIL (${MODE}): ${fail} picture(s) stayed blank after the reset` : `PASS (${MODE})`)
