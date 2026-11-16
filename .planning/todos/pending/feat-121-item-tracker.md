@@ -732,8 +732,7 @@ is `found` stays `shipped`; every other ruled channel (effect, shelf, reward, mo
 anywhere (`inventory.js` stacks without limit), so every ruled "stacks N" is unbuilt. Rows I did not touch: Potato,
 Groceries, Cooking kit (FEAT-230 / DEC-310, another agent).
 
-Items in the game with no row here: School lunch, Quilt, Awning, Tire iron (placeholder thumbnail), Mounted tire's siblings
-are fine. Add rows when next touched. Row-vs-code drift worth an owner glance: Tent's design is still `idea` though it ships;
+Items in the game with no row here: School lunch, Quilt, Awning, Tire iron (placeholder thumbnail). Add rows when next touched. Row-vs-code drift worth an owner glance: Tent's design is still `idea` though it ships;
 Shovel row says `campGateUnevenM` 1.2 m but the code value is 1.5 m.
 
 ### Ratified and not fully shipped
