@@ -42,6 +42,7 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     // card still reads the same price. Duct tape and emergency gas are "$5–10": $8 is the reading the
     // reward card already used [DEFAULT].
     coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8,
+    potato: 2,                  // FEAT-230 [DEFAULT]: items.md rules the potato "under $5"; the owner sets the number
     bagOfPeanuts: 3,            // FEAT-184 (DEC-276) [DEFAULT]: items.md rules the gas-station snacks "under $5"; the owner sets the number
     jerryCan: 30 }              // owner, 2026-10-22: "sold at the gas station, rarely, $30" — sold full
 
@@ -56,7 +57,7 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
  * is the rows above (ALWAYS, data/stock-weights.js).
  */
 export const STOREFRONT = {
-    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape'] },
+    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato'] },
     gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
     foodVendor:   { always: ['coffee', 'chiliDog'] },
 }

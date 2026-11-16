@@ -348,6 +348,7 @@ export const THINGS = [
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'], cat: 'food' },
     { id: 'coffee',     name: 'Coffee',      kind: 'consumable', gates: ['C', 'B'], cat: 'drink' },
+    { id: 'potato',     name: 'Potato',      kind: 'food',       gates: ['C', 'B'], cat: 'produce' },   // FEAT-230: a farm reward only (items.md §1); raw, cooked at camp
     { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
     { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['B', 'A'], cat: 'fuel' },   // mid tier (owner, 2026-10-21)
@@ -424,12 +425,12 @@ export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['
  *          and the office's are [DEFAULT]; the school's is its lunch.
  * Larry's paper route rolls from every category (owner, 2026-10-31: "give him every item").
  */
-const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch']
+const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce']
 export const REWARD_CATS = {
     autoShop:         { cats: ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery'] },
     gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires'] },
     strandedMotorist: { cats: ['tires', 'recovery', 'fuel', 'engine'] },
-    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp'] },
+    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp', 'produce'] },
     workSite:         { cats: ['tires', 'suspension', 'recovery', 'bed'] },
     firewoodYard:     { cats: ['bed', 'recovery', 'camp'] },
     residence:        { cats: ['food', 'camp', 'brakes', 'drivetrain'], rare: ['tires', 'suspension', 'engine'] },

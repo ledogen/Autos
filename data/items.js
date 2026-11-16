@@ -14,6 +14,7 @@
 //            a free quick slot (keys 1–4, items.md §1c).
 //   uses     uses per unit (a pack, a roll), when more than one: the stack tracks the open one's `left`
 //   capGal   a can's fill, gallons: the entry carries `gal`, and its mass is `kgPerGal` × gal on top
+//   stack    units to a slot, for a stacking kind (FEAT-230: the potato's 5); unset = one slot holds any number
 //   hold     food: game hours the meal holds hunger off (items.md §1d; src/day.js eat)
 
 import { PARTS, partIcon } from './parts.js'
@@ -36,6 +37,13 @@ export const ITEMS = {
     // FEAT-184 (DEC-276): the tutorial morning's snack, bought with mom's few dollars. Mass ~0.1 kg [DEFAULT].
     bagOfPeanuts: { name: 'Bag of peanuts', kind: 'food',      massKg: 0.1, use: 'eat', hold: 3,
                     desc: 'Mmm, salty.' },
+    // FEAT-230 slice 1 (items.md §1, owner 2026-10-21/22): the campfire meal. Raw it has no `use`, so it cannot be
+    // eaten and the line below says why; cooked at a camp fire (main.js _cookPotato, 30 min) it holds 4 h. Both 5 to a slot.
+    // Mass ~0.2 kg [DEFAULT]. The cooked potato does not spoil yet: its 24 h fresh clock is FEAT-230 slice 2.
+    potato:       { name: 'Potato',        kind: 'food',       massKg: 0.2, stack: 5,
+                    desc: 'Potato. Raw, it is no good to eat. Cook it over a campfire.' },
+    potatoCooked: { name: 'Cooked potato', kind: 'food',       massKg: 0.2, stack: 5, use: 'eat', hold: 4, thumb: 'potato',
+                    desc: 'Potato. Hot and plain.' },
     // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
     // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.
     spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: PARTS.spareTire.massKg, use: 'spare',

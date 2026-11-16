@@ -7077,6 +7077,7 @@ function _renderCampUI () {
   show('cp-sleep',  isHome)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   st.mode === 'camp' || st.mode === 'truck')
+  show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit all camp
   show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
@@ -7190,6 +7191,12 @@ document.getElementById('cp-truck')?.addEventListener('click', () => {
   _renderCampUI()
 })
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
+// FEAT-230 slice 1: one raw potato on the camp fire, 30 min behind the fade like the make-camp chore.
+document.getElementById('cp-cook')?.addEventListener('click', (e) => {
+  e.currentTarget.blur()
+  if (!_campUi || _campBusy || _campUi.mode !== 'camp') return
+  _campFade(() => { if (inventorySystem.convert('potato', 'potatoCooked')) daySystem.advanceMinutes(30); _renderCampUI() })
+})
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
 document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
@@ -8378,6 +8385,7 @@ function _acceptOffer () {
  * made). A full truck still takes the cash.
  */
 function _syncItemChoice () {
+  if (_campUi?.mode === 'camp') _renderCampUI()   // FEAT-230: the cook button follows the raw potatoes aboard
   for (const [id, sys] of [['mp-item', missionSystem], ['pp-item', paperRouteSystem]]) {
     const b = document.getElementById(id), r = sys?.state === 'done' ? sys.result : null
     const aw = r?.award
