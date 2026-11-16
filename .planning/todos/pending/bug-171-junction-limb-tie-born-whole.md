@@ -12,10 +12,9 @@ lane: C
 # BUG-171: junction dirt steps where a limb or self pass is born inside the tie distance
 
 ## Next steps
-Owner: answer the follow-on dive `.planning/dives/BUG-171-option3-continuous-foot.html` (land the foot fix? stop or
-chase the next root?). land/bug-171 now holds option 2 + the continuous-frame limb foot (853bc4e0), not landed. Option 3
-(the soft-min kernel) was NOT built: it averages the leg's height over arc, which DEC-260 rules out; the foot fix is its
-by-construction replacement. Junction-dirt steps 909 → 88 sites; what is left is other roots (see Description).
+Orchestrator: land `land/bug-171` (main merged at 9d289a2b, cost fix d2976022) and run the full smoke. The owner's
+condition (DEC-261, no significant cost) is met: with the per-leg frame cache the foot costs no more than main's. Next
+root after landing: the road-to-road seam (winner class, with BUG-179).
 
 ## Summary
 Off the deck in junction dirt, the physics ground still jumps 0.15–2.0 m inside one 5 cm move at 618 census sites.
@@ -61,7 +60,10 @@ pure depth weight (tie 0) turns those wraps into steep ramps (up to 1.08 m per 5
       fix → replaced by the continuous-frame foot (853bc4e0).
 - [x] Census: steps 909 → 88 sites (≥ 15 cm 205 → 27; limb 593 → 8, other 250 → 8); ramps ≥ 15 cm/5 cm 109 → 113.
 - [x] Affected gates 75/75 green (logs/c171-gates3.log); fingerprint-world: network/profiles/junctions/poi identical, carve-downstream differ.
-- [ ] Owner answers the follow-on dive (land? next root?).
+- [x] Owner answers the follow-on dive: land after a cost check, seam next (DEC-261).
+- [x] Main merged (9d289a2b); census identical to before the merge (steps 88, >= 30 cm 7).
+- [x] Cost check (DEC-261): foot frame cached per leg (d2976022), at or below main's cost; output identical.
+- [ ] Orchestrator lands it + full smoke.
 
 ### The foot fix (built 2026-11-15, 853bc4e0)
 `_projectLegNearNode` now finds limb feet on a continuous frame: each vertex's tangent is the unit bisector of its two
@@ -86,7 +88,8 @@ centre through each polyline vertex (visible as red fans in the dive's hillshade
 0.05 m changes nothing) and not the tie term.
 
 ## Decisions
-DEC-231 (option 2 first, pictures) · DEC-260 (keep option 2; the rest by construction, never averaged away).
+DEC-231 (option 2 first, pictures) · DEC-260 (keep option 2; the rest by construction, never averaged away) · DEC-261
+(land after a cost check; the road-to-road seam next).
 
 ## Open questions
 - Which option, or is gore dirt off the deck acceptable as is for the alpha? (Lane C recommends option 2 first: a
@@ -96,6 +99,11 @@ DEC-231 (option 2 first, pictures) · DEC-260 (keep option 2; the rest by constr
 `src/road.js` (`_limbWeight`, the self-pass loop under "BUG-130: EVERY other pass") · `test/junction-dirt-census.mjs`
 
 ## Log
+- 2026-11-16: merged main (9d289a2b); census identical (logs/c171-merged.*). Cost (DEC-261, wip/bug171-cost/, seeds
+  432747997, 3874494043, 4260169642, cold net + 2 × 81-chunk windows, A-B-A-B ×3): 42–82 k foot calls per run, all on the
+  per-vertex carve path (0 in the network build). As built: 0.2 → 0.7 µs/call, +3–5 % of terrain window build. Frame
+  cached per leg (d2976022): 0.17 µs/call vs main 0.19–0.24, −0.3 % of window; whole-run wall/instr spread ±5–10 %, so
+  no difference is visible there. Fingerprint: cached == uncached; vs main only surface/carve/tiles/water/props differ.
 - 2026-11-15: merged main (f68d17ee); option-2 census unchanged (logs/c171-opt2m.*). DEC-260. Option 3 replaced by the
   continuous-frame foot (853bc4e0): census logs/c171-foot.* steps 909 → 88. BUG-179 checked: different root.
 - 2026-11-15: option 2 built (3f09bb72). Census logs/c171-base.* vs logs/c171-opt2.*: rivalSet 16/8/2.00 → 3/2/1.55,
