@@ -1,7 +1,7 @@
 ---
 id: FEAT-239
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-16
 source: owner, 2026-11-16, inbox — "It bothers me slightly that switching between mission cards in the map view is done with the Left and right D-pad buttons but switching between mission cards at a POI is done with shoulder buttons. I think it should be kept consistent which ultimately means moving to shoulder buttons on the map view that displaces switching between shopping mode and mission mode. If we were to use dpad for the shopping versus mission mode in map view could we guarantee that we don't need the dpad to navigate a card that appears inside the map? what else can we do?"
@@ -73,3 +73,4 @@ Option 2. It is the only one that moves a single control (the tab switch) onto a
 - 2026-11-16 (lane C): built. gamepad.js MAP_KEYS (LB/RB send the arrows, X sends Q), poll's NAV skips D-pad ← / → on the map-only layout, map card keycaps read LB / RB on the pad, legend gains `LB RB cards` and `X tab` right of the seed readout; smoke `pad` step + pad-e2e updated. Smoke boot,map,story,offer,pad PASS; affected gates 5/5. Picture: wip/feat-239/map-pad-legend.png. Not tried on a physical pad.
 - 2026-11-16 (lane C map batch): facts table and five options written from src/gamepad.js (BINDINGS, MAP_KEYS, CARD_MAP_KEYS, poll priority) and src/menu-nav.js. No code changed. Read from the source, not played on a pad.
 - 2026-11-16: filed from the owner's inbox note.
+- 2026-11-16: landed on main, smoke green. Closed; look card feat239-look.
