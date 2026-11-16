@@ -49,5 +49,10 @@ Capture: `Logs/autos-capture-1794791342440.json`. Possibly related: BUG-171 (dee
 `src/road.js` · `src/road-mesh.js` · `test/replay.mjs`
 
 ## Log
+- 2026-11-15 (Lane C, read-only, land/bug-171): NOT BUG-171's root. Two legs of one node, `g:-433663,326333,-1:-1,0,0`
+  (arc ~230) and the mark's `g:-1,-1,0:-1,0,0` (arc ~1400), run side by side 6.3 m apart (3.17 m each side of the
+  seam, decks overlapping) with grades 3.1 m apart (190.48 vs 187.38) ~40 m from the node. The resolver winner flips
+  at their equidistance line: a 3.31 m step at (−273.7, 161.9) in one 5 mm move; also 0.56 / 0.29 m steps inside the
+  pad with no winner or rival change. All three identical on main, option 2 and the BUG-171 foot fix (±8 m lines in 4 directions).
 - 2026-11-15: minted from the owner's capture. Replay reproduces the road at the mark and shows the surface is
   window-invariant there. No investigation beyond that.
