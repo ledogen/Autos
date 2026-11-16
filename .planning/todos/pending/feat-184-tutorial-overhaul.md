@@ -577,3 +577,6 @@ Each has a recommendation there.
   `_atMomsHouse` / `_campPromptState`; stops pack → Larry's → snack → camp → joint (`_errandStop`; `tut-morning` marks the
   snack done), mom's cash a wallet top-up to the bag's price until bought; `bagOfPeanuts` in data/items.js and the gas
   station's shelf. cdp-smoke's morning buys and eats the snack. Gates 30/30 (wip/tut-1116/gates.log); cdp-smoke boot,opening PASS (wip/tut-1116/smoke6.log).
+- 2026-11-15: (lane U, land/clock-1116, 31389939) DEC-290: the flat's HUD line reads "pull over and check your tire with" +
+  the damage screen's keycap (V / pad B, park-badge.js keycap). BUG-181 (f26b0d77): X in the evening plays tut-tow first and
+  the recovery menu opens as it ends. cdp-smoke boot,opening PASS with the new tow-card assertion.
