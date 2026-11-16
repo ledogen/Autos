@@ -886,6 +886,7 @@ const STEPS = [
     console.log(`  farm: shop, jobs button, offer card, accepted → mission ${await js('window.__mission().state')}`)
     await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')   // abandon: two clicks (the confirm)
     check(await until(async () => !await js('window.__mission().isOnJob()'), 3000), 'abandoning the farm job did not end it')
+    await js('window.__mission().exit()')   // the abandoned job's result card hides every POI prompt: close it for the steps that follow
   }],
   ['vendor', async () => {
     // FEAT-232: the food vendor's shop — the burger on its shelf and the dinner meal's "Eat here" line (paid, 30 min, holds
