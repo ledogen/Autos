@@ -799,6 +799,27 @@ const STEPS = [
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
   }],
+  ['farm', async () => {
+    // FEAT-230 slice 3: a farm sells for the first time (groceries, $5). Parking at one opens the same buy screen as the
+    // general store, its jobs a button inside it. Picture: wip/groceries/farm-shop.png.
+    const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
+    if (!p) { console.log('  farm: no farm in this region — step skipped'); return }
+    await seat(p.x, p.z, p.h)
+    await park(true)
+    const open = () => js('document.getElementById("svc-screen").checkVisibility()')
+    check(await until(open, 2000), `parking at the farm opened no shop (prompt "${await js('document.getElementById("poi-prompt")?.textContent.trim()')}")`)
+    const txt = await js('document.querySelector("#svc-screen").textContent')
+    check(/Groceries/.test(txt) && !/My Vehicle|Parts Shop/.test(txt), `the farm's shop reads: "${txt.slice(0, 200)}"`)
+    await sleep(600)
+    const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
+    mkdirSync('wip/groceries', { recursive: true }); writeFileSync('wip/groceries/farm-shop.png', Buffer.from(shot.result.data, 'base64'))
+    console.log(`  farm: shop text "${txt.slice(0, 160).replace(/\s+/g, ' ')}"`)
+    await tap('Escape')
+    check(await until(async () => !await open(), 1000), 'Esc left the farm shop open')
+    await tap(' ')
+    await sleep(300)
+  }],
   ['vendor', async () => {
     // FEAT-232: the food vendor's shop — the burger on its shelf and the dinner meal's "Eat here" line (paid, 30 min, holds
     // hunger 8 h, never stowed; a discarded cart eats and charges nothing), then a burger (8 h) and gummy worms (2 h) eaten
