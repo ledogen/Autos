@@ -60,7 +60,7 @@ pure depth weight (tie 0) turns those wraps into steep ramps (up to 1.08 m per 5
 - [x] Option 3 judged against DEC-260: it is a kernel average of the leg's height over ~2 m of arc, not a construction
       fix → replaced by the continuous-frame foot (853bc4e0).
 - [x] Census: steps 909 → 88 sites (≥ 15 cm 205 → 27; limb 593 → 8, other 250 → 8); ramps ≥ 15 cm/5 cm 109 → 113.
-- [ ] Affected gates green; fingerprint-world: network/profiles/junctions/poi identical, carve-downstream differ.
+- [x] Affected gates 75/75 green (logs/c171-gates3.log); fingerprint-world: network/profiles/junctions/poi identical, carve-downstream differ.
 - [ ] Owner answers the follow-on dive (land? next root?).
 
 ### The foot fix (built 2026-11-15, 853bc4e0)
