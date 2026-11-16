@@ -1991,7 +1991,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
 const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, getHeadlightMode, prewarmLightPrograms,
-  compileLightState, LIGHT_STATE_COUNT, setBoreShade, headlightSpots } = createVehicleModel(scene, RANGER_PARAMS)
+  compileLightState, LIGHT_STATE_COUNT, setBoreShade, setBakedShade, headlightSpots } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -10858,6 +10858,9 @@ function loop (t) {
   // and the truck darkens with the road and lining around it (one ramp, RoadSystem.boreShade).
   const truckBore = _labActive || !roadSystem ? 1 : roadSystem.boreShadeAt(_renderPos.x, _renderPos.y, _renderPos.z)
   setBoreShade(truckBore)
+  // FEAT-223: the truck reads the baked tree shade the ground under it reads (terrain.js: strength × 1/SHADOW_FAR_SPLIT).
+  setBakedShade(shadowBake.atlasTexture, ATLAS_N, shadowBake.tilePx, _labActive ? 0 : propShadowStrength() / SHADOW_FAR_SPLIT,
+    shadowBake._shear, _renderPos.y - RANGER_PARAMS.cgHeight)
   setNightFactor(Math.max(skySystem.nightFactor(), (1 - truckBore) / (1 - BORE_SHADE_DEEP)))
   syncMeshesToState(vehicleState)
   campfire.update(frameTime, skySystem.nightFactor())   // no-op unless a camp is up
