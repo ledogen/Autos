@@ -3509,7 +3509,7 @@ export class Map2D {
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
         ctx.fillText(`Contour interval ${CONTOUR_IV} m`, s.x0, by)
         const ivR = s.x0 + ctx.measureText(`Contour interval ${CONTOUR_IV} m`).width
-        this._drawControls(ctx, s, by, ivR + 24, s.cx - 65)   // up to the cursor's coordinate readout, which sits at the sheet's centre
+        this._drawControls(ctx, s, by, ivR + 24, this._hoverX === undefined ? bx - 70 : s.cx - 65)   // short of the scale label, or of the cursor's readout at the centre
     }
 
     // FEAT-234 (owner, 2026-11-16): the map's controls — pan, zoom, set waypoint — printed in the bottom margin after the
