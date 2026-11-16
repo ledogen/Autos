@@ -17,13 +17,16 @@
 //   eatIn    FEAT-232: a shop meal eaten where it is bought (`eatH` hours at the table); never stowed
 //   stack    units to a slot, for a stacking kind (FEAT-230: the potato's 5); unset = one slot holds any number
 //   hold     food: game hours the meal holds hunger off (items.md §1d; src/day.js eat)
+//   freshH   FEAT-230 slice 2 (items.md §1b, DEC-338): game hours each unit keeps; past that the unit is gone, never
+//            the stack. Unset = never spoils. Every FOOD with a freshH chills in an iced cooler (DEC-338)
+//   coolRate a cooler: the fresh-clock rate on the food it chills; `iceLastsH` a full bag of ice in it; `holds` units it chills
 
 import { PARTS, partIcon } from './parts.js'
 
 export const ITEMS = {
     coffee:       { name: 'Coffee',        kind: 'consumable', massKg: 0.5, use: 'coffee',
                     desc: 'Wakes you up now. You will feel it in the morning.' },
-    chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3, use: 'eat', hold: 10,
+    chiliDog:     { name: 'Chili dog',     kind: 'food',       massKg: 0.3, use: 'eat', hold: 10, freshH: 16,
                     desc: 'Kinda gross.' },   // the owner's flavor line (setup page, 10-22)
     // FEAT-168: the school's rare reward (owner, 2026-11-05: "school lunch?"). NEW: the words are a
     // placeholder for the owner's; the hold is the packed lunch's 8 h and the icon its bag [DEFAULT].
@@ -32,7 +35,7 @@ export const ITEMS = {
     // FEAT-173 (owner, 2026-11-06: "three middle to weak food items… maybe a snack that mom provides"): every run
     // starts with three (main.js, the run's start). items.md §1d's packed lunch — a standard meal's 8 h, never
     // sold. PLACEHOLDER words for the owner's.
-    packedLunch:  { name: 'Packed lunch',  kind: 'food',       massKg: 0.5, use: 'eat', hold: 8,
+    packedLunch:  { name: 'Packed lunch',  kind: 'food',       massKg: 0.5, use: 'eat', hold: 8, freshH: 24,
                     desc: 'Mom packed it for the road.' },
     // A gas-station snack (items.md §1d, owner 2026-10-21): holds 3 h; the flavor line is the owner's (2026-10-22).
     // FEAT-184 (DEC-276): the tutorial morning's snack, bought with mom's few dollars. Mass ~0.1 kg [DEFAULT].
@@ -47,8 +50,8 @@ export const ITEMS = {
     candyBar:     { name: 'Candy bar',     kind: 'food',       massKg: 0.1, stack: 4, use: 'eat', hold: 3,
                     desc: 'A bit melty.' },
     // FEAT-232: the food vendor's standard meal (items.md §1d, owner 2026-10-21/22): holds 8 h, $5, never found. Mass
-    // 0.3 kg [DEFAULT]. It spoils in 16 h: that clause is FEAT-230 slice 2 (spoilage), not built here.
-    burger:       { name: 'Burger',        kind: 'food',       massKg: 0.3, use: 'eat', hold: 8,
+    // 0.3 kg [DEFAULT]. It spoils in 16 h (items.md §1d; FEAT-230 slice 2).
+    burger:       { name: 'Burger',        kind: 'food',       massKg: 0.3, use: 'eat', hold: 8, freshH: 16,
                     desc: 'The classic.' },
     // FEAT-232: the vendor's sit-down meal (items.md §1d, owner 2026-10-21/22). `eatIn`: bought and eaten on the spot (the
     // service screen's "eat here", 30 min), never stowed, so it has no `use`. Reuses the burger's thumbnail (no art of its own); mass 0.5 kg [DEFAULT], never carried (the gate wants a positive one).
@@ -56,10 +59,10 @@ export const ITEMS = {
                     desc: 'A hearty meal. Dine in only.' },
     // FEAT-230 slice 1 (items.md §1, owner 2026-10-21/22): the campfire meal. Raw it has no `use`, so it cannot be
     // eaten and the line below says why; cooked at a camp fire (main.js _cookPotato, 30 min) it holds 4 h. Both 5 to a slot.
-    // Mass ~0.2 kg [DEFAULT]. The cooked potato does not spoil yet: its 24 h fresh clock is FEAT-230 slice 2.
+    // Mass ~0.2 kg [DEFAULT]. Raw never spoils; cooked keeps 24 h (items.md §1b).
     potato:       { name: 'Potato',        kind: 'food',       massKg: 0.2, stack: 5,
                     desc: 'Potato. Raw, it is no good to eat. Cook it over a campfire.' },
-    potatoCooked: { name: 'Cooked potato', kind: 'food',       massKg: 0.2, stack: 5, use: 'eat', hold: 4, thumb: 'potato',
+    potatoCooked: { name: 'Cooked potato', kind: 'food',       massKg: 0.2, stack: 5, use: 'eat', hold: 4, freshH: 24, thumb: 'potato',
                     desc: 'Potato. Hot and plain.' },
     // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
     // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.
@@ -114,6 +117,17 @@ export const ITEMS = {
     // (src/hilift.js) — from the inventory menu, left or right (owner, 2026-10-22 / 10-31).
     hiLiftJack:   { name: 'Hi-lift jack',  kind: 'tool',       massKg: 13,
                     desc: 'A tall farm jack. Heaves a rolled truck back over, if the ground lets it.' },
+    // FEAT-230 slice 2 (items.md §1 / §1b / §2, owner 2026-10-21/22 and 11-16, DEC-338): the coolers slow the fresh clock
+    // of food, ×1/6 and ×1/8, while they have ice. A bag of ice melts in a day in the inventory (owner 11-16); used
+    // ('ice': into the owned cooler with the least left) it lasts 72 h in the cooler, 5 days in the Ice King, scaled by
+    // what the bag had left. Each chills `holds` units: the cooler's 4 is ruled (4 fish), the Ice King's 4 approved
+    // (owner 11-16). Masses [DEFAULT]: an 8 lb bag; the cooler is "deliberately trivial".
+    ice:          { name: 'Ice',           kind: 'consumable', massKg: 3.6, use: 'ice', freshH: 24,
+                    desc: 'Cold and wet.' },   // the owner's flavor line (setup page, 10-22)
+    cooler:       { name: 'Cooler',        kind: 'tool',       massKg: 3, coolRate: 1 / 6, iceLastsH: 72, holds: 4,
+                    desc: 'Keeps stuff cold.' },   // the owner's flavor line (setup page, 10-22)
+    iceKing:      { name: 'Ice King',      kind: 'tool',       massKg: 8, coolRate: 1 / 8, iceLastsH: 120, holds: 4,
+                    desc: 'A thick-walled cooler. Holds its ice for days.' },   // PLACEHOLDER words for the owner's
 
     // ── Backpacks (items.md §2c) — `packSlots` camp items ride inside; `reachM` is how far past the
     //    road edge camp may be: the equipped pack's sets the night's tether (src/camp.js reachM, capped
@@ -173,8 +187,9 @@ export const ITEMS = {
 
     // FEAT-230 slice 3: a bag of groceries, one meal. Raw it is no meal; cooked at camp ONLY with the cooking kit deployed
     // (main.js _cookGroceries, +30 min) it holds 10 h. `noKit`: the kit's +20 % is the cooking, not a bonus on top
-    // (DEC-310). One bag a slot, mass 2 kg [DEFAULT]. Fresh 24 h / cooler: slice 2.
-    groceries:    { name: 'Groceries',     kind: 'food',       massKg: 2,   stack: 1,
+    // (DEC-310). One bag a slot, mass 2 kg [DEFAULT]. The bag keeps 24 h, chilled like fish (items.md §1b); the cooked
+    // meal has no fresh time ruled, so it keeps (DEC-338's reading).
+    groceries:    { name: 'Groceries',     kind: 'food',       massKg: 2,   stack: 1, freshH: 24,
                     desc: 'A bag of groceries. Not a meal until it is cooked over a campfire with a cooking kit.' },
     groceriesCooked: { name: 'Groceries, cooked', kind: 'food', massKg: 2,  stack: 1, use: 'eat', hold: 10, noKit: true, thumb: 'groceries',
                     desc: 'Fresh and goes together easy.' },
