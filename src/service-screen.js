@@ -346,6 +346,7 @@ export class ServiceScreen {
       case 'split': q('split', [+b.dataset.index], `Split ${inv(b.dataset.index)}`); this.path = []; break
       case 'combine': q('combine', [+b.dataset.index, +b.dataset.with], `Mount ${inv(b.dataset.index)} + ${inv(b.dataset.with)}`); this.path = []; break
       case 'buy': q('buyAndFit', [+b.dataset.slot, b.dataset.socket], `Buy ${shelfItem()} · fit ${SLOTS[b.dataset.socket].name.toLowerCase()}`); this.path = []; break
+      case 'eat': q('buyAndEat', [+b.dataset.slot], `Eat ${shelfItem()} here`); this.path = []; break
       case 'stow': q('buyToInventory', [+b.dataset.slot], `Buy ${shelfItem()}`); this.path = []; break
     }
     this.render()
@@ -578,7 +579,8 @@ export class ServiceScreen {
       + (sockets.length ? this._act('Fit on the truck', fitQ, sockets.length > 1   // a tire or wheel names its corner
         ? sockets.map(sk => btn('buy', where(sk), true, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
         : btn('buy', 'add to cart', true, `data-slot="${i}" data-socket="${sockets[0]}"`, ' ok')) : '')
-      + this._act('Into the inventory', carry, btn('stow', 'add to cart', true, `data-slot="${i}"`, sockets.length ? '' : ' ok')) + `</div>`
+      + (ITEMS[e.id]?.eatIn ? this._act('Eat here', carry, btn('eat', 'add to cart', true, `data-slot="${i}"`, ' ok'))
+        : this._act('Into the inventory', carry, btn('stow', 'add to cart', true, `data-slot="${i}"`, sockets.length ? '' : ' ok'))) + `</div>`
   }
 
   // ── Jobs ────────────────────────────────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@
 //            a free quick slot (keys 1–4, items.md §1c).
 //   uses     uses per unit (a pack, a roll), when more than one: the stack tracks the open one's `left`
 //   capGal   a can's fill, gallons: the entry carries `gal`, and its mass is `kgPerGal` × gal on top
+//   eatIn    FEAT-232: a shop meal eaten where it is bought (`eatH` hours at the table); never stowed
 //   stack    units to a slot, for a stacking kind (FEAT-230: the potato's 5); unset = one slot holds any number
 //   hold     food: game hours the meal holds hunger off (items.md §1d; src/day.js eat)
 
@@ -35,8 +36,24 @@ export const ITEMS = {
                     desc: 'Mom packed it for the road.' },
     // A gas-station snack (items.md §1d, owner 2026-10-21): holds 3 h; the flavor line is the owner's (2026-10-22).
     // FEAT-184 (DEC-276): the tutorial morning's snack, bought with mom's few dollars. Mass ~0.1 kg [DEFAULT].
-    bagOfPeanuts: { name: 'Bag of peanuts', kind: 'food',      massKg: 0.1, use: 'eat', hold: 3,
+    // FEAT-232: the other gas-station snacks (items.md §1d, the owner's flavor lines 2026-10-22) and the peanuts' stack cap.
+    // Masses ~0.1 kg [DEFAULT] (the owner has not ruled them). The ruled "fresh" clauses wait for FEAT-230 slice 2 (spoilage).
+    bagOfPeanuts: { name: 'Bag of peanuts', kind: 'food',      massKg: 0.1, stack: 3, use: 'eat', hold: 3,
                     desc: 'Mmm, salty.' },
+    gummyWorms:   { name: 'Gummy worms',   kind: 'food',       massKg: 0.1, stack: 5, use: 'eat', hold: 2,
+                    desc: 'Only a couple blue ones.' },
+    spicyChips:   { name: 'Spicy chips',   kind: 'food',       massKg: 0.1, stack: 3, use: 'eat', hold: 3,
+                    desc: 'Almost too hot.' },
+    candyBar:     { name: 'Candy bar',     kind: 'food',       massKg: 0.1, stack: 4, use: 'eat', hold: 3,
+                    desc: 'A bit melty.' },
+    // FEAT-232: the food vendor's standard meal (items.md §1d, owner 2026-10-21/22): holds 8 h, $5, never found. Mass
+    // 0.3 kg [DEFAULT]. It spoils in 16 h: that clause is FEAT-230 slice 2 (spoilage), not built here.
+    burger:       { name: 'Burger',        kind: 'food',       massKg: 0.3, use: 'eat', hold: 8,
+                    desc: 'The classic.' },
+    // FEAT-232: the vendor's sit-down meal (items.md §1d, owner 2026-10-21/22). `eatIn`: bought and eaten on the spot (the
+    // service screen's "eat here", 30 min), never stowed, so it has no `use`. Reuses the burger's thumbnail (no art of its own); mass 0.5 kg [DEFAULT], never carried (the gate wants a positive one).
+    dinnerMeal:   { name: 'Dinner meal',   kind: 'food',       massKg: 0.5, eatIn: true, eatH: 0.5, hold: 8, thumb: 'burger',
+                    desc: 'A hearty meal. Dine in only.' },
     // FEAT-230 slice 1 (items.md §1, owner 2026-10-21/22): the campfire meal. Raw it has no `use`, so it cannot be
     // eaten and the line below says why; cooked at a camp fire (main.js _cookPotato, 30 min) it holds 4 h. Both 5 to a slot.
     // Mass ~0.2 kg [DEFAULT]. The cooked potato does not spoil yet: its 24 h fresh clock is FEAT-230 slice 2.

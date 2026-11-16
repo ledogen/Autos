@@ -88,6 +88,12 @@ export const STOCK_WEIGHT = {
     potato:           4,     // FEAT-230 [DEFAULT]: a chili dog's weight; sold at the general store, a farm reward (C–B)
     ductTape:         4,     // sold at the general store (FEAT-104, data/shop-stock.js STOREFRONT), not the auto shop
     energyDrink:      10,
+    bagOfPeanuts:     4,     // FEAT-232 [DEFAULT]: a chili dog's weight, for the snacks, the burger and the packed lunch
+    gummyWorms:       4,
+    spicyChips:       4,
+    candyBar:         4,
+    burger:           4,
+    packedLunch:      4,
     dinnerMeal:       4,     // eaten on the spot, never stowed
     blanket:          4,     // FEAT-168 camp rewards [DEFAULT]: the bottom rungs Sometimes, the top Hardly ever
     airMattress:      4,
@@ -100,4 +106,5 @@ export const STOCK_WEIGHT = {
 /** Weighted for mission rewards but never stocked on an AUTO SHOP's shelf (the owner's reward-only rows). Some
  *  are storefront lines: data/shop-stock.js STOREFRONT, which these weights don't touch. */
 export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'potato', 'ductTape', 'energyDrink', 'dinnerMeal',
+    'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'burger', 'packedLunch',
     'blanket', 'airMattress', 'sleepingPad', 'quilt', 'sleepingBag', 'deluxeSleepingPad'])
