@@ -1,0 +1,220 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>FEAT-69: the one-region budget, recounted</title>
+<!-- FEAT-69 proposal (Lane U, 2026-11-16). Every number below comes from `node test/budget-recount.mjs` on main
+     d4189fbb (pure node, about 1 s). No game number was changed. -->
+<h1>FEAT-69: what a region-1 run earns, spends and takes, recounted</h1>
+<p>FEAT-69 still owes the alpha a recount of the point budget for one region. This page is that recount, as a
+proposal. <b>Nothing in the game was changed.</b> The numbers are yours to set. Each section ends with one
+question.</p>
+<p>Method, in one paragraph. Every recorded drive in the repo was re-graded against today's par, using the
+game's own par code. Jobs were drawn from the real offer board, 4954 offers over 300 seeded boards: their type,
+load, traits and pay multipliers. Each job got a drive pace from the corpus and a route length from the corpus,
+scaled so the average par is the measured 234 s. Pay and good deeds use <code>src/economy.js</code>'s own
+functions. Costs use the shop prices and wear rates in <code>data/</code> and <code>src/damage.js</code>. Where
+the game has no number (how hard you drive between jobs, say) the script states an assumption in one block
+(<code>ASSUME</code>). Those assumptions are the weak spots, and section 6 lists them. A Monte Carlo run is a
+simulation repeated many times with random draws: here 20,000 jobs per row and 5,000 runs per row. Results are
+given as p10 / p50 / p90, meaning the 10th, 50th and 90th percentile: one run in ten is worse than p10.</p>
+
+<h2>1. The corpus, re-graded under today's par</h2>
+<p>The ticket's "24-run corpus" is <code>runs/</code>: 24 drives exported at the old par (mu 0.62), from the v1
+roads, plus a few re-exports (25 drives once duplicates are dropped). There are two more sets. <code>runs-v2/pre-feat80-grip/</code> holds 18 drives on v2 roads with the old
+tire. <code>runs-v2/</code> holds 8 drives on today's roads and today's tire. Deduplicated, that is 51 drives.
+Each was re-priced from its exported road profile at today's par (mu 0.72, slack 1.495). The rebuild matches the
+recorded par to within −11 % / +6.5 %, with a median error of 0.2 %.</p>
+<table>
+  <tr><th>Set</th><th>Drives</th><th>S · A · B · C · D</th><th>Deeds per job</th><th>Pay, share of max</th><th>Ratio p10 / p50 / p90</th></tr>
+  <tr><td>v1 roads (the "24-run" set)</td><td>25</td><td>21 · 1 · 2 · 0 · 1</td><td>0.96</td><td>98 %</td><td>0.52 / 0.59 / 0.76</td></tr>
+  <tr><td>v2 roads, old tire</td><td>18</td><td>14 · 2 · 2 · 0 · 0</td><td>1.00</td><td>99 %</td><td>0.56 / 0.62 / 0.71</td></tr>
+  <tr><td>v2 roads, today's tire</td><td>8</td><td>6 · 0 · 1 · 1 · 0</td><td>0.94</td><td>96 %</td><td>0.56 / 0.62 / 0.91</td></tr>
+  <tr><td><b>All</b></td><td><b>51</b></td><td><b>41 · 3 · 5 · 1 · 1</b></td><td>0.97</td><td>98 %</td><td>median 0.61</td></tr>
+</table>
+<p>The S line is at ratio 0.652. The recorded median is 0.61, so <b>80 % of recorded drives now grade S</b> and
+earn the whole tip. Every drive below S is one you labelled par, slow or very slow.</p>
+<p>One correction to the ticket. The 2026-11-06 re-grade scaled ratios by the slack alone. It missed that mu moved
+0.80 → 0.72 on 2026-09-08, which makes par about 2 % longer. So drive 0021 grades B (0.788), not C (0.801).
+On today's tire the deeds per job are 0.94, not 0.88.</p>
+<p><b>Is the corpus stale?</b> Not on par: every drive is re-priced exactly, so its grade is today's grade. It is
+stale in three other ways:</p>
+<ul>
+  <li>It is <b>one driver</b>. 15 of the files are tagged with your name. The rest are untagged, and nobody else
+  has recorded a drive.</li>
+  <li>Every drive is a <b>timed point-to-point drive</b>. None is a freight, fragile, haul or demolition job. None is
+  driven at night, in the wet, loaded, tired, or in a damaged truck.</li>
+  <li>The drives carry <b>no costs</b>. The only multi-day evidence is your 2026-11-05 run (6 deeds by day 7). That run
+  predates hunger being on (11-07), oil changes (11-13), the oil and filter lifetimes (11-14) and the food and
+  camp-gear prices (11-16). Its money is stale.</li>
+</ul>
+<p>Because it is one driver, the script also scales every ratio by a <b>pace factor</b>. Pace ×1.3 means a player
+who takes 30 % longer than you on the same road.</p>
+<table>
+  <tr><th>Pace</th><th>S · A · B · C · D, all job types</th><th>Deeds per job</th><th>Net pay per job, mean</th><th>Game hours per job</th></tr>
+  <tr><td>×1 (you)</td><td>46 · 5 · 23 · 24 · 2 %</td><td>0.83</td><td>$10.31</td><td>4.5</td></tr>
+  <tr><td>×1.15</td><td>16 · 20 · 32 · 29 · 3 %</td><td>0.79</td><td>$9.97</td><td>4.9</td></tr>
+  <tr><td>×1.3</td><td>5 · 8 · 40 · 43 · 5 %</td><td>0.72</td><td>$9.30</td><td>5.2</td></tr>
+  <tr><td>×1.5</td><td>4 · 1 · 23 · 60 · 12 %</td><td>0.57</td><td>$8.52</td><td>5.8</td></tr>
+</table>
+<p>Game hours per job include about 2 h of driving to the next giver (an assumption). One real second is one game
+minute.</p>
+<p>DEC-017 says the stock truck should top out around B or A in a region, and upgrades should reach S. At your pace
+the stock truck grades S on most timed drives. At pace ×1.3 it lands mostly on B and C, with S at 5 %. That
+matches DEC-017, but only if the player the region is tuned for is about 30 % slower than you.</p>
+<dive-q id="s-line" options="keep the lines: tune for a player about 30 % slower than me | tighten S back toward 0.59 so my own drives land on A | keep for now and get a second driver's drives first"></dive-q>
+<p><i>Recommendation: keep the lines and get a second driver.</i> The 2026-11-06 spread was your call from feel.
+The corpus can't tell your skill apart from the lines. The lines also set the tip, so tightening S would cut pay too.</p>
+
+<h2>2. What a job pays, by type</h2>
+<p>Net pay at day-1 prices and your pace. Haul is net of the bundles you buy. Every type rides the same tip
+clock. The deed comes from each type's own letter.</p>
+<table>
+  <tr><th>Type</th><th>Share of offers</th><th>Net pay p10 / p50 / p90</th><th>Deeds per job</th><th>Letter from</th></tr>
+  <tr><td>Courier, multi-drop, fetch</td><td>48 %</td><td>$5.69 / $8.84 / $16.03</td><td>0.92</td><td>time (corpus)</td></tr>
+  <tr><td>Freight</td><td>20 %</td><td>$4.68 / $7.55 / $14.43</td><td><b>0.54</b></td><td>posted kg (exact)</td></tr>
+  <tr><td>Fragile</td><td>15 %</td><td>$6.55 / $10.33 / $18.62</td><td>0.81</td><td>health: <b>assumed</b> 70 % B+, 25 % C, 5 % D</td></tr>
+  <tr><td>Haul (25 bundles, $5.82 of stock)</td><td>6 %</td><td>$9.38 / $15.08 / $26.45</td><td>0.98</td><td>bundles (all delivered)</td></tr>
+  <tr><td>Papers</td><td>6 %</td><td>$5.69 / $8.84 / $14.36</td><td>0.96</td><td>time</td></tr>
+  <tr><td>Demolition</td><td>5 %</td><td>$5.69 / $8.73 / $13.86</td><td>0.82</td><td>share smashed: <b>assumed</b>, as fragile</td></tr>
+  <tr><td><b>All</b></td><td>100 %</td><td><b>$5.54 / $8.98 / $16.77</b>, mean $10.31</td><td><b>0.83</b></td><td></td></tr>
+</table>
+<p>Two of those numbers do not depend on driving at all.</p>
+<p><b>Freight is ½ a deed 90 % of the time.</b> Freight's B line is 285 kg posted. The median freight load is
+43 kg (p75 175 kg, p90 240 kg). Only 10 % of freight posts reach 285 kg, and 2 % reach A (570 kg). Freight also has
+the lowest net pay, because its tip is halved. So a light freight job is the worst job on the board on both
+counts. Freight's lines are still marked PROVISIONAL in <code>economy.js</code>. They also gate freight's item
+reward: under 285 kg there is none.</p>
+<dive-q id="freight-deed" options="keep 285 kg: freight is the steady earner, not a deed source | lower B to 100 kg (43 % of freight earns a full deed) | lower B to 40 kg (nearly every freight job earns a full deed) | something else (the note box)"></dive-q>
+<p><i>Recommendation: lower B to 100 kg</i> and leave S and A where they are. Then a heavier load earns the deed and
+the item, and freight is no longer the worst choice on the board. Freight's deeds per job would go from 0.54 to
+about 0.7.</p>
+
+<h2>3. What a day costs</h2>
+<p>A day's costs were authored against an anchor of <b>$7.50 on day 1</b>: 1.5 × the average job's base pay
+(<code>economy.js</code> header). That anchor was set before food, oil changes and the filter's new lifetime
+existed. Today's running cost of a day, at day-1 prices:</p>
+<table>
+  <tr><th>Line</th><th>1 job a day</th><th>2 jobs</th><th>3 jobs</th><th>Where it comes from</th></tr>
+  <tr><td>Food</td><td>$8.00</td><td>$8.00</td><td>$8.00</td><td>16 awake hours × $0.50 per hour of hold. That is the cheapest food: chili dog $5 / 10 h, groceries $5 / 10 h, potato $2 / 4 h. Sleep stops the hunger clock, so it is 16 h a day, whatever you drive.</td></tr>
+  <tr><td>Fuel</td><td>$0.68</td><td>$1.37</td><td>$2.05</td><td>$0.50/gal × 0.29 gal/km (15 mpg honest × the 7× burn scale). About 4.5 km a job, the route plus the drive to the next giver.</td></tr>
+  <tr><td>Oil change</td><td>$1.33</td><td>$2.66</td><td>$3.99</td><td>$8 each time the oil reaches its 50 % knee: 450 load-seconds. <b>Assumed</b> load: 0.35 on a job, 0.2 between jobs.</td></tr>
+  <tr><td>Air filter</td><td>$0.36</td><td>$0.73</td><td>$1.09</td><td>$7 each time it reaches its 20 % knee: 1440 load-seconds.</td></tr>
+  <tr><td><b>Total</b></td><td><b>$10.43</b></td><td><b>$12.85</b></td><td><b>$15.27</b></td><td>The script's run averages. The anchor is $7.50.</td></tr>
+</table>
+<p>Everything above is multiplied by the day tier, 1.065<sup>day − 1</sup>: × 1.46 on day 7 and × 2.0 on day 12.
+Tires, brakes and engine wear add almost nothing in a run. A standard tire lasts about 5 real hours of hard
+driving, and a run is about 1 real hour of driving in total. Crashes are not in these totals. Section 6 covers
+them.</p>
+<p>So a day costs 1.4 to 2.0 × its anchor. <b>Food alone, $8, is more than the whole anchor.</b> Food is a fixed
+cost per day: it does not care how many jobs you drove. That makes it the line that punishes a slow day.</p>
+
+<h2>4. Earning against spending, day by day</h2>
+<p>Pay does not grow with the day (FEAT-168). Costs grow 6.5 % a day. So for each pace of play there is a day where
+costs overtake what a day earns. Your pace, no crashes:</p>
+<figure>
+  <svg viewBox="0 0 520 230" role="img" aria-label="Daily income is flat; daily costs rise 6.5 % a day and cross income on day 1, 8 and 11 for one, two and three jobs a day">
+    <g font-family="ui-monospace,Menlo,monospace" font-size="12" fill="#8b94a3">
+      <line x1="40" y1="200" x2="490" y2="200" stroke="#646c7a"/>
+      <text x="36" y="216">1</text><text x="200" y="216">6</text><text x="370" y="216">11</text><text x="470" y="216">day 14</text>
+      <text x="0" y="204">$0</text><text x="0" y="114">$20</text><text x="0" y="24">$40</text>
+      <line x1="40" y1="110" x2="490" y2="110" stroke="#646c7a" stroke-dasharray="2 4"/>
+      <polyline fill="none" stroke="#6fb3ff" stroke-width="2" points="40,78.2 482,78.2"/>
+      <polyline fill="none" stroke="#6fb3ff" stroke-width="2" stroke-dasharray="6 3" points="40,131.3 74,126.5 108,122.4 142,116.9 176,111.4 210,105.9 244,99.7 278,93.5 312,86.6 346,79.1 380,70.8 414,62.6 448,53.6 482,44.0"/>
+      <polyline fill="none" stroke="#ffc25c" stroke-width="2" points="40,112.7 482,112.7"/>
+      <polyline fill="none" stroke="#ffc25c" stroke-width="2" stroke-dasharray="6 3" points="40,142.2 74,138.1 108,134.7 142,130.0 176,125.4 210,120.8 244,115.6 278,110.4 312,104.6 346,98.2 380,91.3 414,84.4 448,76.8 482,68.7"/>
+      <polyline fill="none" stroke="#ff5a4e" stroke-width="2" points="40,153.3 482,153.3"/>
+      <polyline fill="none" stroke="#ff5a4e" stroke-width="2" stroke-dasharray="6 3" points="40,153.1 74,149.8 108,147.0 142,143.2 176,139.5 210,135.7 244,131.5 278,127.3 312,122.6 346,117.4 380,111.8 414,106.1 448,100.0 482,93.5"/>
+      <text x="400" y="74" fill="#6fb3ff">3 jobs</text><text x="400" y="128" fill="#ffc25c">2 jobs</text><text x="400" y="168" fill="#ff5a4e">1 job</text>
+    </g>
+  </svg>
+  <figcaption>Solid: what a day earns. Dashed: what it costs. Each colour is one pace of play. Where the dashed line
+  crosses the solid one, every further day loses money.</figcaption>
+</figure>
+<table>
+  <tr><th>Jobs a day</th><th>A day earns</th><th>Costs, day 1</th><th>Costs overtake on</th><th>Camp opens (6 deeds), p10 / p50 / p90</th><th>Runs that finish the 5 lines by day 30</th><th>Finished on day, p10 / p50 / p90</th></tr>
+  <tr><td>Every awake hour (about 2.4)</td><td>$24.65</td><td>$14.50</td><td>day 10</td><td>2 / 3 / 4</td><td>100 %</td><td>4 / 5 / 6</td></tr>
+  <tr><td>3</td><td>$27.06</td><td>$15.27</td><td>day 11</td><td>2 / 3 / 3</td><td>100 %</td><td>4 / 4 / 5</td></tr>
+  <tr><td>2</td><td>$19.41</td><td>$12.85</td><td>day 8</td><td>3 / 4 / 5</td><td>35 %</td><td>6 / 7 / 10</td></tr>
+  <tr><td>1.5</td><td>$15.11</td><td>$11.64</td><td>day 6</td><td>4 / 5 / 7</td><td>2 %</td><td>7 / 8 / 10</td></tr>
+  <tr><td>1</td><td>$10.38</td><td>$10.43</td><td>day 1</td><td>6 / 7 / 9</td><td>0 %</td><td>never</td></tr>
+</table>
+<p>The five requisition lines pay nothing. In the model a line takes a job slot. The player takes a paid job
+instead whenever the wallet is short of two days of food. A run that "never finishes" is one stuck on that
+treadmill: every slot goes to a paid job just to eat. At pace ×1.3, 3 jobs a day finishes 98 % of runs, but
+2 jobs a day finishes only 6 %.</p>
+<p>How many jobs a day a real player drives is <b>the one number the model can't supply</b>. The clock allows about
+2.4 jobs at your pace. Your 11-05 run made 6 deeds in 7 days, which is about 1 to 1.5 jobs a day. That run is one
+sample (DEC-090) and predates food, but it is the only marker there is. The economy has to work at whatever pace
+you intend players to play.</p>
+<dive-q id="pace-target" options="about 3 jobs a day: the economy is for players who work every hour | about 2 jobs a day | about 1 to 1.5 jobs a day, like my 11-05 run | decide after the recorded multi-day run"></dive-q>
+<p><i>Recommendation: balance for 2 jobs a day</i>, and let the recorded multi-day run confirm it. 2 is between the
+clock's limit (2.4) and your 11-05 run. It leaves time for the world's other content.</p>
+
+<h2>5. Bringing costs back to the anchor</h2>
+<p>At 2 jobs a day, costs overtake income on day 8. FEAT-117's ruled shape is that a region "pays for itself for
+about its planned length, then gets tight". The planned length is 12 days. For costs to overtake on day 12,
+a 2-job day has to cost about <b>$9.70</b> at day-1 prices, not $12.85. Each lever below was moved alone, at
+your pace:</p>
+<table>
+  <tr><th>Lever (one at a time)</th><th>Status today</th><th>2-job day costs</th><th>Costs overtake (2 jobs / every hour)</th><th>2-job runs finished by day 30</th></tr>
+  <tr><td>as built</td><td></td><td>$12.86</td><td>day 8 / day 10</td><td>35 %</td></tr>
+  <tr><td>food $0.40 per hour (−20 %)</td><td>owner prices, mostly</td><td>$11.26</td><td>10 / 12</td><td>86 %</td></tr>
+  <tr><td>food $0.30 per hour (−40 %)</td><td></td><td>$9.65</td><td>13 / 14</td><td>100 %</td></tr>
+  <tr><td>food $0.625 per hour (burgers only)</td><td>a player who never cooks</td><td>$14.85</td><td>6 / 8</td><td>4 %</td></tr>
+  <tr><td>oil and filter wear × 0.5</td><td>my load assumption, unmeasured</td><td>$11.11</td><td>10 / 13</td><td>75 %</td></tr>
+  <tr><td><b>food $0.35/h + oil change $6</b></td><td>oil change $8 is [DEFAULT]</td><td><b>$9.77</b></td><td><b>12 / 14</b></td><td><b>99 %</b></td></tr>
+  <tr><td>pay + 30 % (k)</td><td>k is your $5 / $10 anchor</td><td>$12.85 (earns $25.22)</td><td>12 / 14</td><td>98 %</td></tr>
+  <tr><td>day tier 1.035 a day, not 1.065</td><td>1.065 is [DEFAULT]</td><td>$12.86</td><td>14 / 17</td><td>90 %</td></tr>
+  <tr><td>no day tier at all</td><td></td><td>$12.86</td><td>never</td><td>100 %</td></tr>
+  <tr><td>fuel at 20 mpg, not 15</td><td>my assumption</td><td>$12.50</td><td>9 / 10</td><td>43 %</td></tr>
+  <tr><td>start cash $30, not $10</td><td>owner (DEC-150)</td><td>$12.85</td><td>8 / 10</td><td>86 %</td></tr>
+  <tr><td>crashes $5 a day</td><td>my assumption</td><td>$17.84</td><td>4 / 5</td><td>0 %</td></tr>
+  <tr><td>3 h to the next giver, not 2</td><td>my assumption</td><td>$13.67</td><td>7 / 7</td><td>22 %</td></tr>
+</table>
+<p>The cheapest food is set mostly by your own prices: the $5 chili dog, $5 groceries and $5 burger. The $2
+potato and $5 dinner are [DEFAULT]. So "food $0.35 per hour" has to come from your numbers. One way: cooked
+groceries hold 14 h instead of 10 ($0.36 per hour). Another: chili dog and groceries at $3.50. The [DEFAULT] oil
+change, $8, is the other line worth moving, and so is its 50 % knee (also [DEFAULT]). Camp gear is not in the daily
+totals: it is a one-off. The whole shelf (blanket $4 through Rucksack $25) is about $124 on day 1. At 2 jobs a
+day the surplus is about $6.50 a day, so the full kit is out of reach in a 12-day run.</p>
+<dive-q id="cost-level" options="cut costs: food to about $0.35 per hour of hold, and the oil change $8 → $6 | raise pay instead: k up 30 % ($6.50 base, $13 max on the average job) | soften the day tier to 1.035 a day | keep as is: the squeeze is the point"></dive-q>
+<p><i>Recommendation: cut costs</i> (the bold row). It keeps your $5 / $10 pay anchor and the 6.5 % push. It puts
+the day where costs overtake on day 12, the planned length. Which food numbers move is yours. Pay + 30 % does the
+same for the run, but every card on the board changes. A softer tier only moves the problem later.</p>
+
+<h2>6. How long a run takes, and the 12-day aim</h2>
+<p>You ruled that 12 days includes the expedition camp's lines (2026-11-06), and the camp opens at 6 deeds
+(DEC-120). At 0.83 deeds a job, 6 deeds is about 7 jobs at your pace (8 at ×1.3, 10–11 at ×1.5). Then come the
+5 unpaid lines. So a run is about 12 to 16 job slots.</p>
+<ul>
+  <li>Every awake hour worked: the camp opens on day 3 and the run ends on day 5 (p90 day 6).</li>
+  <li>2 jobs a day: the camp opens on day 4 and the run ends on day 7. That is with costs cut, so it does not stall.</li>
+  <li>To reach about 12 days at 2 jobs a day, the gate needs about 12 deeds: the camp opens on day 8 and the run
+  ends on day 10 or 11. With 10 deeds the camp opens on day 6 and the run ends on day 9. These are at today's
+  costs, so most of those runs stall. With costs cut they finish.</li>
+</ul>
+<p>A player who grinds finishes region 1 in about 5 days. The 12-day run happens only if the player does about one
+job a day, and today's prices break that player on day 1.</p>
+<dive-q id="run-length" options="keep 6 deeds; a 7-day run at 2 jobs a day is fine | raise the camp gate to about 12 deeds | keep 6 for now and decide after the recorded run | something else (the note box)"></dive-q>
+<p><i>Recommendation: keep 6 until the recorded run</i>, because n = 1 cuts both ways. Fix the costs (section 5)
+first. If the recorded run shows 2 or more jobs a day, raise the gate toward 10–12. <code>EXPEDITION.days</code>
+(12, the grade's par day) should follow whatever the run length becomes.</p>
+
+<h2>7. What the model does not know, and what the recorded run should measure</h2>
+<p>These are the <code>ASSUME</code> block's estimates. A recorded multi-day run (FEAT-69's other owed item) can
+replace each one with a measurement:</p>
+<ul>
+  <li><b>Jobs a day</b>, and the hours between jobs (assumed 2 h to the next giver, 1.5 h a day for camp and meals).
+  This is the biggest unknown.</li>
+  <li><b>Engine load</b>, which sets the oil and filter cost (assumed 0.35 on a job, 0.2 between). The damage tracks
+  already record oil and filter %: their % per day answers it.</li>
+  <li><b>Fuel per km</b> (assumed 0.29 gal/km). The pump spend per day answers it.</li>
+  <li><b>Crashes</b>: plugs, bent wheels, tows. They are not in the totals. $5 a day of them moves the crossover from
+  day 8 to day 4.</li>
+  <li><b>Letters on fragile and demolition jobs</b> (assumed 70 % B or better). No drive records them.</li>
+  <li><b>What food a player actually buys.</b> A player who never cooks pays $0.625 an hour, not $0.50.</li>
+</ul>
+<p>To re-run after any answer: <code>node test/budget-recount.mjs</code>. It takes about one second and is not a
+gate. The levers are its <code>LEVERS</code> list.</p>
+<dive-q id="misses"></dive-q>
+
+<script src="/dive.js"></script>
