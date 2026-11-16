@@ -12,8 +12,9 @@ lane: Spare
 # FEAT-226: The service station's bay light is contained by its walls
 
 ## Next steps
-Ticketed only (owner, 2026-11-15); nobody is on it. When a lane takes it: pick a containment that needs no
-real-time shadow (DEC-227), measure its GPU cost with the paired active-cycles test, then show the owner.
+Owner: look at `wip/bay-light-2/sheet-final.png` (before left, after right: ceiling, door, side wall) on branch
+`land/bay-light-2`, or drive into a station at night. The bay light no longer sits over the truck (DEC-228); spill is
+lower but not contained, so the containment boxes stay open (still no shadow, DEC-227).
 
 ## Summary
 The service bay's light (`_bayLight` in `src/main.js`, a point light with a 12 m range) shines through the station's
@@ -39,10 +40,18 @@ Orchestrator's estimate given to the owner the same day (from reading the code, 
 - [ ] Containment chosen with no real-time shadow, GPU cost measured (active cycles, paired windows)
 - [ ] From outside the station at night, the walls and ground beyond them are no longer lit by the bay light
 - [ ] No first-use stutter (prewarmed like BUG-175)
+- [x] The ceiling no longer gives away one source over the truck: the light moved to mid-shop, 2.0 m (DEC-228)
 - [ ] Owner looks
 
 ## Decisions
 - 2026-11-15, owner: "just ticket the bay light. kill realtime shadows for now" (DEC-227).
+- 2026-11-15, owner delegated the second-ceiling-light call; agent kept one light and moved it (DEC-228).
 
 ## Files
 `src/main.js` (`SERVICE_LIGHT`, `_bayLight`, `_placeBayLight`) · `src/poi-night.js`
+
+## Log
+- 2026-11-15 (Spare, land/bay-light-2): `_bayLight` moved from lift A at 2.9 m (60 cd, 12 m) to mid-shop [-1.8, 2.0, 0],
+  40 cd, 9 m. Spot at the strips tried, rejected (black ceiling). GPU, paired active cycles, seeds 49846 / 44857, noon
+  and 23:00: B/A 1.009 / 1.016 / 1.008 / 1.001, every IQR spans 1.0 (no shader change). Prewarm probe: identical to
+  main (0 new programs on headlight switches). Affected gates 9/9 green.
