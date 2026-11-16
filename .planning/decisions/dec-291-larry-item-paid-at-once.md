@@ -4,7 +4,7 @@ status: standing
 decided: 2026-11-15
 area: economy
 governs: QUAL-36, FEAT-199, src/main.js, src/paper-route.js
-supersedes: DEC-182, DEC-252, DEC-253
+supersedes: DEC-182
 ---
 # DEC-291: Larry's item is paid at once, like any other mission's
 
@@ -12,6 +12,6 @@ supersedes: DEC-182, DEC-252, DEC-253
 
 **Why.** The held item needed a return trip, a half-price rule and three dialogue lines for a reward every other job pays on its card.
 
-**Replaces.** DEC-182 (Larry holds the item), DEC-252 (half price on collection), DEC-253 (his hand-over and no-room lines; the owner's two lines are removed from the game, kept in git history).
+**Replaces.** DEC-182 (Larry holds the item). It also voids DEC-252 (half price on collection) and DEC-253 (his hand-over and no-room lines; the owner's two lines are removed from the game, kept in git history), which stay `standing` only because the checker allows one `supersedes` per record: they need their own superseding records (owed to the orchestrator).
 
 **Source.** Owner, owed card qual36-cash-line, 2026-11-15, note 1. Owner's words.

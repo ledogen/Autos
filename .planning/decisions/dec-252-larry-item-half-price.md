@@ -1,6 +1,6 @@
 ---
 id: DEC-252
-status: superseded
+status: standing
 decided: 2026-11-15
 area: story
 governs: QUAL-36, FEAT-199, src/main.js _larryHandsOver
