@@ -779,6 +779,69 @@ const STEPS = [
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
   }],
+  ['vendor', async () => {
+    // FEAT-232: the food vendor's shop — the burger on its shelf and the dinner meal's "Eat here" line (paid, 30 min, holds
+    // hunger 8 h, never stowed; a discarded cart eats and charges nothing), then a burger (8 h) and gummy worms (2 h) eaten
+    // from the inventory. Runs after story: SMOKE_STEPS=boot,story,vendor. Picture: wip/feat-232/vendor-shop.png.
+    const park1 = async (type) => {
+      const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === '${type}' && !q.hidden)
+        return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
+      if (!p) return false
+      await seat(p.x, p.z, p.h); await park(true)
+      return await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 2000)
+    }
+    const leave = async () => { await tap('Escape'); await sleep(300); await tap(' '); await sleep(300) }
+    const row = (re) => `Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => /${re}/.test(r.textContent))`
+    const day = (e) => js(`window.__day().${e}`)
+    const held = async () => (await day('_fedUntilH')) - (await day('clockH()'))
+    const n = (id) => js(`window.__inv.list().filter(r => r.id === "${id}").reduce((a, r) => a + r.n, 0)`)
+    const money = () => js('window.__econ.money')
+    const click = (sel) => js(`document.querySelector('${sel}').click()`)
+    if (!await park1('foodVendor')) { console.log('  vendor: no food vendor in this region — step skipped'); return }
+    await js('window.__econ.money = 50')
+    await click('#svc-screen [data-tab=shop]')
+    const txt = await js('document.querySelector("#svc-screen").textContent')
+    check(/Burger/.test(txt) && /Dinner meal/.test(txt), 'the food vendor lists no burger and dinner meal')
+    await js(`${row('Dinner meal')}.click()`)
+    await sleep(300)
+    const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
+    mkdirSync('wip/feat-232', { recursive: true }); writeFileSync('wip/feat-232/vendor-shop.png', Buffer.from(shot.result.data, 'base64'))
+    const [m0, i0, h0] = [await money(), await js('window.__inv.list().length'), await day('clockH()')]
+    const fed0 = await day('_fedUntilH')
+    await click('#svc-screen .sv-kids [data-act=eat]')
+    check(await money() === m0 && await day('_fedUntilH') === fed0, 'a dinner meal in the cart was paid or eaten before checkout')
+    await click('#svc-screen [data-act=discard]')
+    check(await money() === m0 && await day('_fedUntilH') === fed0 && await day('clockH()') === h0, 'a discarded dinner meal charged, ate or ran the clock')
+    await js('window.__day()._fedUntilH = window.__day().clockH() - 1')
+    await js(`${row('Dinner meal')}.click()`); await sleep(200)
+    await click('#svc-screen .sv-kids [data-act=eat]')
+    await click('#svc-screen [data-act=checkout]')
+    await sleep(300)
+    const dh = (await day('clockH()')) - h0
+    check(Math.abs(m0 - await money() - 5) < 0.005, `the dinner meal took $${(m0 - await money()).toFixed(2)}, not $5`)
+    check(Math.abs(dh - 0.5) < 0.02, `the dinner meal ran ${(dh * 60).toFixed(1)} min, not 30`)
+    check(Math.abs(await held() - 8) < 0.02, `the dinner meal holds hunger ${(await held()).toFixed(2)} h, not 8`)
+    check(await js('window.__inv.list().length') === i0, 'the dinner meal was stowed in the inventory')
+    await js('window.__econ.money = 50')
+    await click('#svc-screen [data-tab=shop]')
+    await js(`${row('Burger')}.click()`); await sleep(200)
+    await click('#svc-screen .sv-kids [data-act=stow]')
+    await click('#svc-screen [data-act=checkout]')
+    check(await n('burger') === 1, 'the burger bought at the vendor is not in the inventory')
+    await leave()
+    await js('window.__day()._fedUntilH = window.__day().clockH() - 1')
+    check(await js('window.__inv.use("burger")') && Math.abs(await held() - 8) < 0.02, `the burger holds ${(await held()).toFixed(2)} h, not 8`)
+    if (!await park1('gasStation')) { console.log('  vendor: no gas station storefront — snack half skipped'); return }
+    await js('window.__econ.money = 50')
+    await click('#svc-screen [data-tab=shop]')
+    await js(`${row('Gummy worms')}.click()`); await sleep(200)
+    await click('#svc-screen .sv-kids [data-act=stow]')
+    await click('#svc-screen [data-act=checkout]')
+    check(await n('gummyWorms') === 1, 'the gummy worms bought at the gas station are not in the inventory')
+    await leave()
+    await js('window.__day()._fedUntilH = window.__day().clockH() - 1')
+    check(await js('window.__inv.use("gummyWorms")') && Math.abs(await held() - 2) < 0.02, `the gummy worms hold ${(await held()).toFixed(2)} h, not 2`)
+  }],
   ['expedition', async () => {
     // FEAT-103: the camp's gate prompt, the requisition opening at campDeeds, the five lines at the
     // camp, and a line taken THERE waiting, untimed, until the truck parks at its source. FEAT-157: the
