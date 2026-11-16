@@ -437,6 +437,9 @@ export class Map2D {
     constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked, getWaypoint, onWaypoint }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
+        // BUG-182: a GPU reset blanks every 2D canvas (contextrestored fires on each): the cached tiles and background
+        // rebuild through the path new water takes (setWaterNoGo), and the legend repaints.
+        canvas.addEventListener('contextrestored', () => { this._tileMemo.clear(); this._bgJob = null; this._bgDirty = true; this._paintLegend() })
         // FEAT-211: the window the canvas sits in, and its list column (index.html #map-window).
         this._win       = document.getElementById('map-window')
         this._list      = document.getElementById('map-list')
