@@ -1,7 +1,7 @@
 ---
 id: BUG-178
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-15
 source: orchestrator, 2026-11-15 — the browser smoke, three times in one day
@@ -26,3 +26,4 @@ In about 1 run in 10 on 2026-11-15 the smoke's tutorial step fails with "the tow
 - 2026-11-15 lane A: 1 failure in 54 `boot,opening` runs (wip/bug178/a/r19.log). Truck on the lift, parked, and from 168 ms the shop branch of `_updateParkTriggers` shows "PARK Space for service" — `_serviceInReach` finds the shop, but the rising edge was already used up, so the screen never opens (30 s). Not the smoke reading early: passes open within 12–122 ms. A player sees the prompt; the Space tap only lets the brake go, a second tap opens it. The `__ptLog` instrumentation (35 runs) never caught a failure, so it was removed from src/. The smoke now prints the trace on failure (d9b3beae+).
 - 2026-11-15 lane A (2): cause confirmed. `_towTo` cleared the edge detector; the first `_updateParkTriggers` poll spends the edge whatever it finds. Forced repro: hold `missionSystem.state = 'generating'` for 400 ms after the tow click (shop reach null for those polls): FAIL with the field signature (truck on the lift, "for service" prompt, no screen), PASS after the fix. 30 back-to-back re-tows and 3 instrumented first tows never showed a natural null-reach poll, so that transient is unnamed. Fix 5e4c7977: `_towOwed`, answered only by the pump / shop branches, dropped when the brake comes off (+12/-5 lines). Patch of the throwaway instrumentation: wip/bug178/c/instrumented-with-fix.patch.
 - 2026-11-15 lane A (3): `boot,opening` 10/10 PASS on 5e4c7977 (wip/bug178/c/v*.log). Close on landing + main's smoke.
+- 2026-11-15: CLOSED. Fix 5e4c7977 merged to main (the tow's park edge stays owed until the pump or shop answers it; `_towOwed`). Forced repro fails before, passes after; `boot,opening` 10/10; main's full smoke 26/26 (wip/orch/smoke-1115k.log). Not found: what made the shop unreachable for one poll in the field. The pump path shares the fix and was not tested directly.
