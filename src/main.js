@@ -1023,6 +1023,7 @@ function debouncedRoadRebuild () {
 // state — the R lands right after the current one finishes, on the fully-loaded road.
 let _reseatChain = Promise.resolve()
 function _reseatTruckAtSpawn () {
+  _closeMenus()   // BUG-183: a seat leaves the place every open menu belongs to (the pump, the shop, the tow's owed answer)
   // BUG-71: a seat is ALWAYS a world arriving at once — cold load, R-reset, or a Path-B reseed —
   // and the band the props scattered against is still filling in behind it. Owe a whole-ring pass
   // here rather than at each of those three call sites, so no future spawn path can forget.
@@ -1244,6 +1245,19 @@ function _heldPause () { return _resumeHold || _runEndOpen || _tutCardOpen || (_
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
+// BUG-183 (owner, 2026-11-16: a tutorial skip mid-pump landed at the burger joint with the pump still open): THE MENU LIST.
+// Every menu that belongs to where the truck stands registers here, beside its own definition: its name, whether it is
+// up, and its OWN close path. _closeMenus walks the list, and every transition calls it: a seat (_reseatTruckAtSpawn —
+// the skip, a tow, R, the off-road reset, a resume), a region's exit and entry (_resetRunLocals), the run's end card.
+// A menu added later is closed by every transition the day it is registered. The entering stage then opens what it needs.
+const _menus = []
+const _menu = (name, isOpen, close) => _menus.push({ name, isOpen, close })
+function _closeMenus () {
+  for (const m of _menus) if (m.isOpen()) m.close()
+  _towOwed = false   // BUG-178's owed answer belongs to the seat it was owed at
+}
+window.__openMenus = () => _menus.filter(m => m.isOpen()).map(m => m.name)   // dev handle — test/cdp-smoke.mjs skipMenus
+
 // ── "spawn point set" toast (feature/teleport) ────────────────────────────────────────────
 // Full-opacity immediately, then fades out starting 3 s later (CSS 1 s opacity transition).
 // Shown on ANY spawn-point change (teleport or Shift+R).
@@ -1418,6 +1432,7 @@ window.__damageHUD = damageHUD   // the debug panel's "Diagnostic Readout" check
 // callback runs per frame, long after menuStage is initialised below.
 const damageScreen = new DamageScreen(damageModel, vehicleState, () => menuStage.isActive())
 damageScreen.partName = (track) => PARTS[partsSystem.fitted(track)]?.name   // FEAT-165: which tire is on
+_menu('damage', () => damageScreen.isOpen, () => damageScreen.close())
 
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -2115,6 +2130,7 @@ const map2d = new Map2D({
     map2d.hide()   // close the map so the teleport is immediately visible
   }
 })
+_menu('map', () => map2d.isOpen(), () => map2d.hide())
 // Dev handles for the FEAT-68 checkpoint tooling (CDP probes: map renders, drive-through tests).
 // Same always-on precedent as window.__view.
 window.__map2d = () => map2d
@@ -3761,6 +3777,7 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   actions: _partActions,
   ground: { list: _groundNearby, pick: _pickUpGround },   // FEAT-143: "Nearby on the ground"
 })
+_menu('inventory', () => inventoryScreen.isOpen, () => inventoryScreen.close())
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
 window.__econ = runEconomy      // dev handle — set the wallet for a play-test (`__econ.money = 200`)
 window.__day = () => daySystem   // dev handle — test/cdp-smoke.mjs reads the run clock across a save
@@ -3873,6 +3890,7 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
     setCameraFocus({ x: p.x, y: p.y, z: p.z }, { theta: Math.atan2(f.x, f.z) + 0.7, radius: 7.5 })
   },
 })
+_menu('service', () => serviceScreen.isOpen, () => serviceScreen.close())   // a full cart is discarded: no silent charge (FEAT-212)
 
 /** The auto shop the truck is parked by, or null. Not while an offer is up (that owns the brake). */
 function _serviceInReach () {
@@ -4735,7 +4753,11 @@ function _flatSpare () {
 /** FEAT-184 (owner: "Skipping the tutorial should completely clear it"): a skip mid-evening puts back what the worst day
  *  did — the near-empty tank, the scripted flat, the flat spare (re-inflated, or taken back when it was granted). */
 function _undoWorstDay () {
-  if (_evePump && !_evePump.done) vehicleState.fuel.gal = Math.max(vehicleState.fuel.gal, RANGER_PARAMS.fuelTankGal * RANGER_PARAMS.fuelStartFrac)
+  // BUG-183: the station's visit too, mid-fill — undone, not paid: the tank and wallet a skip before it would have.
+  if (_evePump && !_evePump.done) {
+    if (fuelStop.isOpen && fuelStop.poiId === _evePump.q.id) { fuelStop.reset(); setPumpFlow(false) }
+    vehicleState.fuel.gal = RANGER_PARAMS.fuelTankGal * RANGER_PARAMS.fuelStartFrac
+  }
   if (_eveFlat) damageModel.flat[0] = false
   const i = _eveSpare ? inventorySystem.list().findIndex(r => r.id === 'spareTire' && r.flat) : -1
   if (i >= 0) { if (_eveSpare.granted) inventorySystem.take(i); else inventorySystem.amend(i, { flat: false }) }
@@ -5008,7 +5030,7 @@ function _skipOpening () {
   dialogueSystem.abort()   // the firing's or mom's card, if one is up
   _cardHold = false
   if (_firingCam) { _firingCam = null; setCameraFocus(null) }
-  if (_campUi) _closeCampUi()   // her sleep card
+  _closeMenus()   // BUG-183: her sleep card, the pump, the shop, every menu (after _undoWorstDay: its own pump is undone, not paid)
   _tutQueue.length = 0
   dialogueSystem.restoreSeen([DLG.skipped])   // no first-use cards this run (_tut)
   _eveningGuide = undefined
@@ -5022,12 +5044,12 @@ function _skipOpening () {
  *  the ONE reset of what a run keeps outside the systems' own start(). Called from region exit AND run entry, so
  *  a state added here can never leak either way. */
 function _resetRunLocals () {
+  _closeMenus()   // BUG-183: every registered menu, through its own close
   fuelStop.reset(); _pumpReceiptT = 0; _showResetCountdown(0)
   _waypoint = null
   _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
   _momOwes.part = _momOwes.labour = _momOwes.patch = true; _skipArmedUntil = 0
   exitFreecam()
-  serviceScreen.close?.(); damageScreen.close?.(); inventoryScreen.close?.()
 }
 
 /**
@@ -5785,6 +5807,7 @@ function _exitCampScene () {
 //         day.js's flat truckSleepRateH. Same shape as mom's: no pad, no fire, no fish.
 let _campUi = null
 let _campBusy = false   // a fade is in flight: no second trigger, no double-dug pad
+_menu('camp', () => !!_campUi, () => _closeCampUi())
 
 /**
  * What the tent and its card show, or null when neither should: story mode, mission idle,
@@ -5866,19 +5889,21 @@ function _momMakesYouFill () {
   const room = RANGER_PARAMS.fuelTankGal - vehicleState.fuel.gal > 0.05
   return room && economySystem.money() - fuelStop.sale >= fuelStop.price * 0.05   // a twentieth of a gallon's worth left
 }
+/** The pump's close: the sale on the counter is final — paid, the cans topped up, the receipt held a beat. */
+function _settlePump () {
+  const { sale } = fuelStop.settle()
+  if (fuelStop.cans.length) inventorySystem.refill(fuelStop.cans)
+  setPumpFlow(false)
+  if (sale > 0) { economySystem.spend(sale); playRegister() } else playNozzle()
+  if (sale > 0 && _evePump && !_evePump.done) { _evePump.done = true; _eveningGuide = undefined; _renderMissionUI() }   // FEAT-184
+  _pumpReceiptT = sale > 0 ? 2.5 : 0
+}
+_menu('pump', () => fuelStop.isOpen, _settlePump)
 /** One physics step of an open pump. Handbrake down (or leaving story mode) settles the sale. */
 function _stepFuelStop (dt) {
   if (!fuelStop.isOpen) return
   if (!vehicleState.parked && storySystem.isActive() && _momMakesYouFill()) { vehicleState.parked = true; _tut('tut-fillup') }
-  if (!vehicleState.parked || !storySystem.isActive()) {
-    const { sale } = fuelStop.settle()
-    if (fuelStop.cans.length) inventorySystem.refill(fuelStop.cans)
-    setPumpFlow(false)
-    if (sale > 0) { economySystem.spend(sale); playRegister() } else playNozzle()
-    if (sale > 0 && _evePump && !_evePump.done) { _evePump.done = true; _eveningGuide = undefined; _renderMissionUI() }   // FEAT-184
-    _pumpReceiptT = sale > 0 ? 2.5 : 0
-    return
-  }
+  if (!vehicleState.parked || !storySystem.isActive()) { _settlePump(); return }
   fuelStop.step(dt, _fHeld, vehicleState.fuel, RANGER_PARAMS, economySystem.money())
   switch (fuelStop.event) {
     case 'start':  setPumpFlow(true); break
@@ -5955,6 +5980,7 @@ function _renderPumpDisplay (dt) {
 // service center (any time), and the mobile tire service (FEAT-162). Can't continue and can't afford
 // anything that cures it: the run ends by itself ("You broke down.", SM-INV-1, _checkStranded).
 let _recoveryOpen = false
+_menu('recovery', () => _recoveryOpen, () => { _recoveryOpen = false; _updateRecovery() })
 
 /** The nearest POI passing `test`, with its distance in km. */
 function _nearestPoi (test) {
@@ -9879,6 +9905,8 @@ function _saveBlock () {
   if (paperRouteSystem.isCarrying() && !paperRouteSystem.snapshot()) return 'finish or cancel the job to save'
   // FEAT-212: the cart's work (or a shelf item fitted for a look) is on the truck unpaid — the save from before it stands.
   if (serviceCenter.pending()) return 'check out or discard the cart to save'
+  // BUG-183: the counter's fuel is in the tank unpaid — a save now, resumed, kept it free (the visit is not saved).
+  if (fuelStop.isOpen && fuelStop.gal > 0) return 'pay at the pump to save'   // [DEFAULT] words
   return null
 }
 /** The pause menu's save & exit: everything _saveBlock blocks, plus the truck must be parked (owner,
@@ -10044,6 +10072,7 @@ function _endRun (kind) {
   setTimeout(() => {
     if (!_runEnded || !storySystem.isActive()) return   // left for the menu during the crash's beat
     _hidePauseMenu()
+    _closeMenus()   // BUG-183: the card owns the screen
     document.getElementById('re-title').textContent = title
     document.getElementById('re-body').innerHTML = body
     document.getElementById('run-end').style.display = 'block'

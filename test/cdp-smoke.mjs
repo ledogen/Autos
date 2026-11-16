@@ -1663,6 +1663,117 @@ const STEPS = [
       check(await until(async () => !/hungry/.test(await stage()), 1000), `a chili dog did not feed the driver ("${await stage()}")`)
     }
   }],
+  ['skipMenus', async () => {
+    // BUG-183 (owner, 2026-11-16: skipped mid-pump, "the fuel dialogue was still open and I was able to continue pumping"):
+    // a played tutorial on the tutorial seed, skipped from inside each menu that can be up in it. Nothing may be left
+    // open (main.js's menu list, __openMenus, and each menu's own DOM), the pump may not pump on, and the wallet and the
+    // tank are a clean skip's. One new run per case. Runs alone: SMOKE_STEPS=boot,skipMenus.
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
+    const readCards = async (beatMs = 800) => {
+      for (let i = 0; i < 40; i++) {
+        if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return }
+        await tap('Enter'); await sleep(200)
+      }
+      throw new Error('cards never stopped coming')
+    }
+    const tp = async (x, z, h) => {
+      await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
+      check(await until(() => js('window.__seated'), 30000, 250), `the teleport to (${x.toFixed(0)}, ${z.toFixed(0)}) never seated`)
+      await readCards(); await simFor(1)
+    }
+    const seatAt = async (pick) => {   // a tow's seat at the POI `pick` (an in-page expression) names
+      const s = await js(`(() => { const q = ${pick}; return q ? window.__towSeat(q) : null })()`)
+      check(s, `no POI for ${pick}`)
+      await tp(s.x, s.z, s.heading); await park(true); await readCards()
+    }
+    const nearest = type => `window.__poi().list().filter(q => q.type === '${type}').sort((a, b) => { const v = window.__vs.position
+      return Math.hypot(a.x - v.x, a.z - v.z) - Math.hypot(b.x - v.x, b.z - v.z) })[0]`
+    const opened = () => js(`JSON.stringify({ list: window.__openMenus?.() ?? [], pump: document.getElementById("pump-display").classList.contains("on"),
+      svc: document.getElementById("svc-screen").checkVisibility(), inv: document.getElementById("inv-screen").classList.contains("open"),
+      dmg: document.getElementById("dmg-screen").classList.contains("open"), rc: document.getElementById("recovery-card").checkVisibility(),
+      map: window.__map2d().isOpen(), camp: document.getElementById("camp-panel").style.display === "block" })`)
+    // Each case opens its menu and returns true when the skip may honestly cost money (a pump that is not the worst day's).
+    // Mom's sleep card is not a case: while the evening's fill-up is owed her door offers nothing (DEC-282), and the skip
+    // closed her card before BUG-183 too; the menu list closes it now like the rest.
+    const CASES = {
+      clean: null,
+      pump: async () => {
+        const due = await js('window.__worstDay().pump?.id ?? null')   // the worst day's station, when one is due
+        await seatAt(due ? `window.__poi().list().find(q => q.id === ${JSON.stringify(due)})` : nearest('gasStation'))
+        check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), 'parking at a pump opened no pump')
+        await readCards()
+        const g0 = await js('window.__vs.fuel.gal'); await hold('f', 1)
+        check(await js(`window.__vs.fuel.gal > ${g0} + 0.1`), 'F at the pump pumped nothing')
+        if (!due) console.log('  skipMenus: no station due on the worst day — the pump case pays its counter, wallet not compared')
+        return !due
+      },
+      shop: async () => {
+        await seatAt(nearest('autoShop'))
+        check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 3000), 'parking at the auto shop opened no service screen')
+        await readCards()
+        // something in the cart, so the skip's close takes the discard path (FEAT-212): the wallet below proves no charge
+        await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+        await js(`(() => { const lines = () => [...document.querySelectorAll("#svc-screen button[data-act=node][data-slot]")], buy = () => document.querySelector("#svc-screen button[data-act=buy]:not([disabled])")
+          for (let i = 0; i < lines().length && !buy(); i++) lines()[i].click(); buy()?.click() })()`)
+        console.log(`  skipMenus shop: cart ${await js('document.querySelector("#svc-screen [data-act=checkout]") ? "filled" : "empty"')}`)
+      },
+      damage: async () => {
+        await tap('v')
+        check(await until(() => js('document.getElementById("dmg-screen").classList.contains("open")'), 2000), 'V opened no damage screen')
+        await readCards()
+      },
+      inventory: async () => {
+        await tap('Tab')
+        check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 2000), 'Tab opened no inventory')
+      },
+      map: async () => {
+        await key('m', true); await sleep(100); await key('m', false)
+        check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a tap of M opened no map')
+      },
+      recovery: async () => {
+        // the chip hides in a place's ring: a road point well clear of every POI
+        const r = await js(`(() => { const v = window.__vs.position, P = window.__poi().list()
+          for (let d = 150; d <= 600; d += 50) for (let a = 0; a < 6.28; a += 0.4) {
+            const nr = window.__roadSys().queryNearest(v.x + d * Math.cos(a), v.z + d * Math.sin(a), 100)
+            if (nr?.point && !P.some(q => Math.hypot(q.x - nr.point.x, q.z - nr.point.z) < 80)) return { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } }
+          return null })()`)
+        check(r, 'no road clear of every POI near the joint')
+        await tp(r.x, r.z, r.h); await park(true); await readCards()
+        await tap('x'); await readCards()   // BUG-181: in the tutorial the tow's card goes first
+        check(await until(() => js('document.getElementById("recovery-card").checkVisibility()'), 3000), 'X opened no recovery menu')
+      },
+    }
+    let clean = null
+    for (const [name, open] of Object.entries(CASES)) {
+      await js('document.getElementById("pm-menu").click()')   // out of the last run (or free roam) to the main menu
+      await js('document.getElementById("mm-new").click()')
+      await js('document.getElementById("su-seed").value = "822480141"; document.getElementById("su-start").click()')   // data/tutorial.js
+      check(await until(() => js(live), 45000, 250), `${name}: the tutorial run never went live`)
+      for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
+      check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `${name}: the firing did not end on the tutorial card`)
+      await js('document.getElementById("tc-play").click()')
+      check(await until(async () => await speaker() === 'Mom', 5000), `${name}: "play" did not open on mom's call`)
+      await readCards()
+      const pays = open ? await open() : false
+      const before = await opened()
+      // a played tutorial asks once more (DEC-148): two holds
+      for (let i = 0; i < 2 && await js('window.__tutorial().phase !== "free"'); i++) { await key('m', true); await sleep(1300); await key('m', false); await sleep(300) }
+      check(await until(() => js('/last check/.test(document.getElementById("dialogue-panel").textContent)'), 8000), `${name}: the skip did not reach the manager's check: ${JSON.stringify(await js('window.__tutorial()'))}`)
+      const got = { money: await js('window.__econ.money'), gal: +(await js('window.__vs.fuel.gal')).toFixed(3) }
+      await readCards()
+      await sleep(3000)   // past a settled pump's 2.5 s receipt
+      const after = await opened(), a = JSON.parse(after)
+      console.log(`  skipMenus ${name}: open ${before} → ${after} · $${got.money} · ${got.gal} gal`)
+      check(!a.list.length && !Object.entries(a).some(([k, v]) => k !== 'list' && v), `${name}: the skip left a menu open: ${after}`)
+      if (await js('window.__vs.parked')) {
+        const g0 = await js('window.__vs.fuel.gal'); await hold('f', 1)
+        check(await js(`window.__vs.fuel.gal <= ${g0} + 1e-6`), `${name}: F still pumps after the skip`)
+      }
+      if (!clean) clean = got
+      else if (!pays) check(got.money === clean.money && Math.abs(got.gal - clean.gal) < 0.01, `${name}: the skip's wallet and tank differ from a clean skip's: ${JSON.stringify(got)} vs ${JSON.stringify(clean)}`)
+    }
+  }],
   ['pad', async () => {
     // FEAT-125 pad audit (2026-11-06): a run end to end on the pad alone — every screen the other steps drive with
     // clicks and keys, here by buttons only (Spare's BUG-109 steps already drive the damage screen, the shop's tabs,
