@@ -13,7 +13,7 @@ lane: B
 
 ## Next steps
 Roof rack, bull bar and light bar wired on `land/feat-204-wire` (awaiting landing). Owner: the [DEFAULT] numbers in DEC-342
-(draft), three thumbnails owed (`assets/items/{roofRack,bullBar,lightBar}.png`; the inventory shows the name meanwhile). The bed
+(draft), three thumbnails owed (rack and bull bar borrow the lift kit's icon, the light bar the headlight's, data/parts.js `icon`). The bed
 toolbox waits on card feat204-toolbox-freight; wiring it is data only (see the comment above `roofRack` in data/parts.js SLOTS).
 
 ## Summary
