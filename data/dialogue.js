@@ -61,22 +61,22 @@ export const RUN_INTRO = [
 // EVERY WORD BELOW IS A PLACEHOLDER (Lane A's draft, 2026-11-05) — the owner writes character text
 // (FEAT-148). The beats are ruled; the lines are not.
 
-/** The firing: played over the camera's slow move round the burger joint (owner, 2026-11-05). */
+/** The firing: played over the camera's slow move round the burger joint (owner, 2026-11-05), at 07:00 (DEC-299). DEC-307:
+ *  a boss who overreacts, and not a word about the paycheck. PLACEHOLDER words. */
 export const FIRING = [
-    { speaker: 'The manager', text: `Jay. The grill's been cold twenty minutes and there's a line out the door.` },
-    { speaker: 'The manager', text: `I'm letting you go. Leave the hat. And don't come back asking for shifts &mdash; there won't be any.` },
+    { speaker: 'The manager', text: `[placeholder] Jay! You're late! The grill's been cold twenty minutes and there's a line out the door!` },
+    { speaker: 'The manager', text: `[placeholder] That's it. You're fired! Leave the hat and get out of my sight!` },
 ]
 
-/** Mom's call, once the player chose the tutorial at the intro's card (FEAT-184): she sends you home for the night
- *  (FEAT-170). The morning goes back to the burger joint for the last paycheck (DEC-153). */
+/** Mom's call, once the player chose the tutorial at the intro's card (FEAT-184): come by the house (DEC-304). Not a word
+ *  about the paycheck on the firing day (DEC-307). PLACEHOLDER words. */
 export const MOM_CALL = [
-    { speaker: 'Mom', text: `Heard about the job, honey. Come home tonight &mdash; your old bed's made up.` },
-    { speaker: 'Mom', text: `You can pick up your last check in the morning. `
-        + `Press <span class="dlg-key">M</span> for the map if you forgot the way home.` },
+    { speaker: 'Mom', text: `[placeholder] Heard about the job, honey. Come on by the house, I've got something for you.` },
+    { speaker: 'Mom', text: `Press <span class="dlg-key">M</span> for the map if you forgot the way.` },
 ]
 
-/** FEAT-184 (DEC-153): the played tutorial's last act — parked at the burger joint the morning after, the last paycheck.
- *  Its clock goes to 19:30, 24 h after the firing (DEC-159). The owner's words, character for character (DEC-277). */
+/** FEAT-184 (DEC-153): the played tutorial's last act — parked at the burger joint the morning after, the last paycheck,
+ *  at 07:00 on day 0, 24 h after the firing (DEC-159, DEC-299). The owner's words, character for character (DEC-277). */
 export const PAYCHECK = [
     { speaker: 'The manager', text: `Don't come back asking to run the grill again. If someone want's their food delivered you can have a cut, but I dont want you running the kitchen no more.` },
 ]
@@ -87,7 +87,7 @@ export const BOSS_CHECK = [
     { speaker: 'The manager', text: `And just so you have no excuse to come back, here's your last check.` },
 ]
 
-/** FEAT-184 (DEC-238): parked at Larry's with his old pack, he gives it to you — his old camping pack, bedroll and all.
+/** FEAT-184 (DEC-238, DEC-305): parked at Larry's with his old pack, he gives it to you — his old camping pack, bedroll and all.
  *  PLACEHOLDER: the owner writes these words (FEAT-148). */
 export const LARRY_PACK = [
     { speaker: 'Uncle Larry', text: `[placeholder] My old pack! You know what, keep it &mdash; bedroll's still in it. You'll want it out there.` },
@@ -114,12 +114,14 @@ export const TUT = {
     // FEAT-170 stage 4: the opening's lessons, in mom's voice, in the order they come. PLACEHOLDER words
     // (Lane A's draft, 2026-11-06; the owner writes them — FEAT-148).
     // FEAT-184 (the worst day, stage 3): the key first — the truck sits dead after her call — then the pedals.
+    // FEAT-229 (DEC-304): the order is the firing day's — to hers, Larry's, the station, a camping area, the trouble on the
+    // way home, her bed — then the morning's drive to the paycheck.
     'tut-key': [{ speaker: 'Mom', text: `And honey &mdash; the truck won't start itself. `
         + `<span class="kc-kb">Hold <span class="dlg-key">I</span></span><span class="kc-pad">Hold <span class="dlg-key">Y</span></span> to turn the key.` }],
-    // …and the gauge, when the tank starts near empty and the line runs by the nearest station (main.js _evePump).
-    'tut-gas': [{ speaker: 'Mom', text: `Is that gauge on empty? Of course it is. The line takes you by the gas station first: `
+    // …and the gauge, at the snack's station once the peanuts are bought (main.js _evePump, DEC-306).
+    'tut-gas': [{ speaker: 'Mom', text: `Is that gauge on empty? Of course it is. While you're there, `
         + `pull up at a pump and fill her up.` }],
-    // FEAT-184 (DEC-151): the handbrake held at the evening's pump while pocket change is left. PLACEHOLDER words.
+    // FEAT-184 (DEC-151): the handbrake held at the station's pump while money is left. PLACEHOLDER words.
     'tut-fillup': [{ speaker: 'Mom', text: `Not yet, honey &mdash; fill it right up. Every last dollar: you won't get far on fumes.` }],
     // FEAT-184 stage 4, the worst day: the flat halfway home, the screen it shows on, the spare that's flat too, the tow,
     // and the shop it lands at (main.js _eveningBeats, _pickSpare, _toggleRecovery, _updateParkTriggers).
@@ -142,7 +144,9 @@ export const TUT = {
         + `<span class="kc-pad">the <span class="dlg-key">left stick</span></span>. Follow the line home.` }],   // FEAT-174: kc-kb / kc-pad, one per input
     'tut-park': [{ speaker: 'Mom', text: `Pull in at mine and stop. A tap of <span class="dlg-key">Space</span> sets the handbrake &mdash; `
         + `that's parking, and parking is how you get anything done around here.` }],
-    // At hers in the evening, when her sleep card opens.
+    // At hers that night, when her sleep card opens: first her question about last week's pay (DEC-307), then her bed.
+    'tut-lastweek': [{ speaker: 'Mom', text: `[placeholder] Did they at least pay you for last week? &hellip; They didn't, did they. `
+        + `Well, you go and get that check in the morning.` }],
     'tut-moms': [
         { speaker: 'Mom', text: `You can always rest here. It's better than sleeping in the truck.` },
         { speaker: 'Mom', text: `When you're out late, find flat ground off the road and make camp. A nice spot rests you better than a bad one.` },
@@ -152,19 +156,23 @@ export const TUT = {
     // FEAT-184 stage 5: breakfast is yours to eat — one of her packed lunches, from the inventory.
     'tut-breakfast': [{ speaker: 'Mom', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach. `
         + `<span class="dlg-key">Tab</span>, and pick one of the lunches I packed you.` }],
-    // FEAT-184 (DEC-153): woken, the morning goes back to the joint for the last paycheck. PLACEHOLDER words.
-    'tut-morning': [{ speaker: 'Mom', text: `Your last check's waiting at that burger place. Follow the line, and park out front.` }],
-    // FEAT-184 (DEC-238): the morning's errand — mom tosses Larry's old pack out her front door, and the pick-up lesson.
-    // PLACEHOLDER words, both (the owner writes character text, FEAT-148); the lesson's keys are the game's (D-pad ↓ / G).
-    'tut-errand': [{ speaker: 'Mom', text: `[placeholder] Before your check &mdash; take your uncle's old pack back to him. Here, catch!` }],
+    // FEAT-184 (DEC-153, DEC-307): woken, her reminder — the last drive on rails, back to the joint for the check.
+    // PLACEHOLDER words.
+    'tut-morning': [{ speaker: 'Mom', text: `[placeholder] Don't forget, honey &mdash; go pick up that check. Follow the line, and park out front.` }],
+    // FEAT-229 (DEC-305): parked at her door on the firing day, her hand-over — she tosses Larry's old pack out her front
+    // door — then the pick-up lesson. The hand-over is the owner's words (tidied only in capitals and punctuation); "a
+    // couple bucks" is the peanuts' price plus the gas money she does not mention (DEC-306). The pick-up lesson is a
+    // PLACEHOLDER; its keys are the game's (D-pad ↓ / G).
+    'tut-handover': [{ speaker: 'Mom', text: `Take this pack over to your uncle. He left it behind. Also, here's a couple bucks for food.` }],
     'tut-pickup': [{ speaker: 'Mom', text: `[placeholder] Park next to it and `
         + `<span class="kc-kb">press <span class="dlg-key">G</span></span><span class="kc-pad">press <span class="dlg-key">D-pad ↓</span></span> `
         + `to load anything loose nearby. Then run it over to Larry's.` }],
-    // FEAT-184 (DEC-239, DEC-276): the snack on the way to the paycheck — mom's few dollars, then (bought at the gas station)
-    // the camping area to eat it in. PLACEHOLDER words, both (the owner writes character text, FEAT-148).
-    'tut-snack': [{ speaker: 'Mom', text: `[placeholder] And here's a few dollars &mdash; get yourself a snack at the gas station on the way.` }],
-    'tut-snackcamp': [{ speaker: 'Mom', text: `[placeholder] Now find a camping area &mdash; they're the yellow roads on the map. `
-        + `Pull over in one, park, and eat your snack: <span class="dlg-key">Tab</span>.` }],
+    // FEAT-229 (DEC-304): the snack bought (and the tank filled), the camping area — the camp's buttons and its card;
+    // then, the snack eaten in camp, her supper call (main.js stamps 17:00 under it). PLACEHOLDER words, both.
+    'tut-snackcamp': [{ speaker: 'Mom', text: `[placeholder] Now drive to a camping area &mdash; they're the yellow roads on the map. `
+        + `In one, <span class="kc-kb">press <span class="dlg-key">Z</span></span><span class="kc-pad">hold <span class="dlg-key">B</span> for the camp</span> `
+        + `to look for a campsite, pull up on a flat spot and park. Make camp, then eat your snack from the inventory.` }],
+    'tut-supper': [{ speaker: 'Mom', text: `[placeholder] Honey, it's getting on for five. Break camp and come home for supper.` }],
 }
 
 /** FEAT-148 (owner, 2026-10-31): the midnight overlay's words — the pressure is rising. The owner's lines. */
@@ -182,7 +190,7 @@ export const DLG = {
     skipped: 'opening-skipped',   // FEAT-170: the opening was held-to-skip — no first-use cards this run
     bossCheck: 'boss-check',   // FEAT-184: the skip's last check
     played: 'tutorial-played',   // FEAT-184: "play the tutorial" chosen at the intro's card
-    morning: 'morning',          // FEAT-184 (DEC-153): the evening is over; the morning goes to the joint (mom says so: TUT 'tut-morning')
+    morning: 'morning',          // FEAT-184 (DEC-153): the firing day is over; the morning goes to the joint (mom says so: TUT 'tut-morning')
     paycheck: 'paycheck',        // FEAT-184: the tutorial's last act heard — free will from here
-    larryPack: 'larry-pack',     // FEAT-184 (DEC-238): the errand's end — Larry gave you his old pack; the morning goes on to the joint
+    larryPack: 'larry-pack',     // FEAT-184 (DEC-305): the errand's end — Larry gave you his old pack; the day goes on to the station
 }
