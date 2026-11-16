@@ -160,6 +160,11 @@ export const TUT = {
     'tut-pickup': [{ speaker: 'Mom', text: `[placeholder] Park next to it and `
         + `<span class="kc-kb">press <span class="dlg-key">G</span></span><span class="kc-pad">press <span class="dlg-key">D-pad ↓</span></span> `
         + `to load anything loose nearby. Then run it over to Larry's.` }],
+    // FEAT-184 (DEC-239, DEC-276): the snack on the way to the paycheck — mom's few dollars, then (bought at the gas station)
+    // the camping area to eat it in. PLACEHOLDER words, both (the owner writes character text, FEAT-148).
+    'tut-snack': [{ speaker: 'Mom', text: `[placeholder] And here's a few dollars &mdash; get yourself a snack at the gas station on the way.` }],
+    'tut-snackcamp': [{ speaker: 'Mom', text: `[placeholder] Now find a camping area &mdash; they're the yellow roads on the map. `
+        + `Pull over in one, park, and eat your snack: <span class="dlg-key">Tab</span>.` }],
 }
 
 /** FEAT-148 (owner, 2026-10-31): the midnight overlay's words — the pressure is rising. The owner's lines. */

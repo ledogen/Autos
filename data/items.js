@@ -32,6 +32,10 @@ export const ITEMS = {
     // sold. PLACEHOLDER words for the owner's.
     packedLunch:  { name: 'Packed lunch',  kind: 'food',       massKg: 0.5, use: 'eat', hold: 8,
                     desc: 'Mom packed it for the road.' },
+    // A gas-station snack (items.md §1d, owner 2026-10-21): holds 3 h; the flavor line is the owner's (2026-10-22).
+    // FEAT-184 (DEC-276): the tutorial morning's snack, bought with mom's few dollars. Mass ~0.1 kg [DEFAULT].
+    bagOfPeanuts: { name: 'Bag of peanuts', kind: 'food',      massKg: 0.1, use: 'eat', hold: 3,
+                    desc: 'Mmm, salty.' },
     // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
     // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.
     spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: PARTS.spareTire.massKg, use: 'spare',

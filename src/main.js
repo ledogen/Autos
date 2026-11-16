@@ -4560,7 +4560,8 @@ let _eveOffAt = null   // _playedS when the truck left the road on the evening, 
 // and the morning errand's stop and where its pack lies (DEC-238)
 window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _eveningLeg() ? (dialogueSystem.has(DLG.played) ? 'evening' : 'intro')
   : _morningLeg() ? 'morning' : 'free', returnSeed: _returnSeed, seed: _seedString,
-  stop: _morningLeg() ? _errandStop() : null, pack: (({ x, z } = {}) => x == null ? null : { x, z })(_packOnGround() ?? undefined) })   // DEC-238
+  stop: _morningLeg() ? _errandStop() : null, pack: (({ x, z } = {}) => x == null ? null : { x, z })(_packOnGround() ?? undefined),   // DEC-238
+  camp: _morningLeg() && _campDoor() ? { x: _campDoor().x, z: _campDoor().z } : null })   // DEC-239: the snack's camping area
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
 window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
@@ -4591,14 +4592,16 @@ const _morningLeg = () => !!offerBoard && dialogueSystem.has(DLG.morning) && !di
 /** Either leg: the tutorial's traps (no fuel burn, off the road puts you back, the tow on mom, no givers) and its line. */
 const _tutDrive = () => _eveningLeg() || _morningLeg()
 
-/** The tutorial's GPS: the joint (or the station) to mom's door; in the morning, hers to Larry's, his to the joint.
- *  Planned once per stop. */
+/** The tutorial's GPS: the joint (or the station) to mom's door; in the morning, hers to Larry's, his to the snack's
+ *  station, it to the camping area, that to the joint (DEC-239). Planned once per stop. */
 let _eveGuideTo = null   // the stop _eveningGuide was planned to
 function _homeGuide () {
   const to = _eveTarget()
   if (_eveningGuide === undefined || _eveGuideTo !== to) {
     _eveGuideTo = to
-    const mom = _mom(), from = _morningLeg() ? (to === _joint() ? _larry() ?? mom : mom) : _evePump?.done ? _evePump.q : _joint()
+    const mom = _mom(), shop = _snackShop()
+    const from = _morningLeg() ? { snack: _larry(), camp: shop, joint: shop ? _campDoor() ?? shop : _larry() }[_errandStop()] ?? mom
+      : _evePump?.done ? _evePump.q : _joint()
     _eveningGuide = from && to ? missionSystem.planOffer(from, { rng: offerBoard.routeRng({ poiId: mom.id, slot: 'eve', k: 0 }),
       dest: { kind: 'poi', pois: [to], strict: true, anyLeg: true, nearest: true } }) : null
   }
@@ -4606,7 +4609,7 @@ function _homeGuide () {
 }
 /** FEAT-184: where the tutorial's line goes now — the station while a fill-up is due, else mom's; in the morning the
  *  errand's stop (DEC-238): mom's steps till the pack is loaded, Larry's till he has given it, then the joint. */
-const _eveTarget = () => (_morningLeg() ? { pack: _mom(), larry: _larry(), joint: _joint() }[_errandStop()] ?? _joint()
+const _eveTarget = () => (_morningLeg() ? { pack: _mom(), larry: _larry(), snack: _snackShop(), camp: _campDoor(), joint: _joint() }[_errandStop()] ?? _joint()
   : _evePump && !_evePump.done ? _evePump.q : _mom())
 
 // ── FEAT-184 (DEC-238, owner 2026-11-15): the morning's errand — Larry's old pack ──
@@ -4618,8 +4621,37 @@ const _eveTarget = () => (_morningLeg() ? { pack: _mom(), larry: _larry(), joint
 const _packOnBoard = () => inventorySystem.list().some(r => r.id === 'pack')
 /** The pack lying on the ground, or null. */
 const _packOnGround = () => runWorldItems.items.find(it => it.entry.id === 'pack') ?? null
-/** The errand's stop: 'pack' (load it at mom's), 'larry' (take it to his), 'joint' (given — on to the paycheck). */
-const _errandStop = () => dialogueSystem.has(DLG.larryPack) ? 'joint' : _packOnBoard() ? 'larry' : 'pack'
+/** The errand's stop: 'pack' (load it at mom's), 'larry' (take it to his), 'snack' (buy it), 'camp' (eat it parked in the
+ *  camping area), 'joint' (on to the paycheck: mom's card for it, tut-morning, is the mark that the snack is done). */
+const _errandStop = () => !dialogueSystem.has(DLG.larryPack) ? (_packOnBoard() ? 'larry' : 'pack')
+  : dialogueSystem.has('tut-morning') || !_snackShop() ? 'joint' : !_snackBought() ? 'snack' : _campDoor() ? 'camp' : 'joint'
+
+// ── FEAT-184 (DEC-239, DEC-276): on the way to the paycheck, the snack — mom's few dollars, a bag of peanuts bought at the
+// gas station nearest Larry's, eaten parked in the camping area (a camp zone, camp.js) nearest that station. Stateless
+// across a resume like the errand: her card (tut-snack), the bag on board, its card (tut-snackcamp), tut-morning.
+const TUT_SNACK = 'bagOfPeanuts'
+const _snackOnBoard = () => inventorySystem.list().some(r => r.id === TUT_SNACK)
+const _snackBought = () => dialogueSystem.has('tut-snackcamp') || _snackOnBoard()
+const _snackShop = () => {
+  const L = _larry(), d = q => Math.hypot(q.x - L.x, q.z - L.z)
+  return L ? poiSystem.list().filter(q => q.type === 'gasStation').sort((a, b) => d(a) - d(b))[0] ?? null : null
+}
+/** Mom's few dollars: the bag's shelf price today, in whole dollars — the wallet is topped up to it while she has
+ *  spoken and the bag is not bought, so spending her money on something else cannot strand the errand. */
+const _snackCash = () => Math.ceil(shelfPrice({ id: TUT_SNACK }) * economySystem.tierNow())
+/** The camping area's door: the road point nearest the centre of the camp zone nearest the station (inside its disc), as
+ *  the waypoint's door is (`_setWaypoint`). Looked for until found, then kept for the region (onRegionLive clears it). */
+let _snackCampDoor = null
+function _campDoor () {
+  const shop = _snackShop()
+  if (_snackCampDoor || !shop || !roadSystem) return _snackCampDoor
+  let best = null, bd = Infinity
+  for (const zn of campSystem.zones()) {
+    const o = roadOrigin(roadSystem, zn, zn.r), d = o ? Math.hypot(o.x - shop.x, o.z - shop.z) : Infinity
+    if (d < bd) { bd = d; best = o }
+  }
+  return (_snackCampDoor = best && { ...best, id: 'camp', label: 'the camping area' })
+}
 /** Mom's toss: the starting pack on the ground by her steps, falling. Idempotent: only when it is neither on board nor down. */
 function _tossPack () {
   const q = _mom()
@@ -4775,8 +4807,13 @@ function _eveningBeats () {
     _tut('tut-errand')
     if (dialogueSystem.has('tut-errand')) _tossPack()
     if (_packOnGround()) _tut('tut-pickup')
-    const L = _larry(), stop = _errandStop()
+    if (_snackShop()) _tut('tut-snack')   // DEC-276: mom's few dollars for the snack
+    const L = _larry(), stop = _errandStop(), vp = vehicleState.position
     if (stop === 'larry' && L && vehicleState.parked && _inPoiSpot(L)) _tut(DLG.larryPack, LARRY_PACK, null, true)
+    if (dialogueSystem.has('tut-snack') && !_snackBought() && economySystem.money() < _snackCash()) economySystem.addSpot(_snackCash() - economySystem.money())
+    if (stop === 'camp') _tut('tut-snackcamp')
+    // Eaten (not on board any more) with the truck parked in the camping area: mom's card for the joint.
+    if (stop === 'camp' && vehicleState.parked && !_snackOnBoard() && campSystem.zoneAt(vp.x, vp.z)) _tut('tut-morning')
     if (stop === 'joint') {
       _tut('tut-morning')
       if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
@@ -7450,12 +7487,13 @@ function _renderMissionUI () {
       unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
       if (_tutDrive()) {   // FEAT-170: no job, only the way home (FEAT-184: the morning's, to the paycheck)
-        const q = _eveTarget(), vp = vehicleState.position, what = _morningLeg() ? { pack: "load the pack by mom's steps", larry: 'park there with his pack', joint: 'park there for your last check' }[_errandStop()] : q !== _mom() ? 'fill up at a pump' : 'park there to sleep'
+        const q = _eveTarget(), vp = vehicleState.position, what = _morningLeg() ? { pack: "load the pack by mom's steps", larry: 'park there with his pack',
+          snack: 'park at the store and buy a snack', camp: 'park in it and eat your snack', joint: 'park there for your last check' }[_errandStop()] : q !== _mom() ? 'fill up at a pump' : 'park there to sleep'
         // FEAT-217 (DEC-270): the distance is along the line the GPS shows (its re-plan, when the truck strayed), as a job's
         // "to go" is; crow-flies only when there is no line. DEC-271: from the flat until the tire is fixed, the one order.
         const line = q && _tutLine(_homeGuide())
         if (_flatOwed()) hudText.textContent = 'pull over and check your tire'
-        else if (q) hudText.textContent = `${km(line?.poly?.length ? routeLeftM(line, vp.x, vp.z) : Math.hypot(q.x - vp.x, q.z - vp.z))} to ${offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
+        else if (q) hudText.textContent = `${km(line?.poly?.length ? routeLeftM(line, vp.x, vp.z) : Math.hypot(q.x - vp.x, q.z - vp.z))} to ${q.label ?? offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
         // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
         // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
         if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · <span class="kc-pad">hold </span>${keycap('R', 'D-pad →')} puts you back on it`)
@@ -9318,6 +9356,7 @@ const storySystem = new StorySystem({
     if (_paperScenario) daySystem.start(1, DAY_PARAMS.dayStartHour)   // FEAT-62: a working morning, no opening
     else daySystem.start(OPENING_START.day, OPENING_START.hour)
     _eveningGuide = undefined
+    _snackCampDoor = null   // FEAT-184: the morning snack's camping area is the region's
     _waypoint = null   // FEAT-211: a waypoint is the run's (a resume puts its own back in _restoreRun)
     _midnightDay = 0    // FEAT-148: a new run's day 1 is no midnight
     daySystem.setBlinksEnabled(true)   // SM-INV-12: blinks/dozes exist only inside a live story region
