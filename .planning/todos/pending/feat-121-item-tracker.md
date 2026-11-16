@@ -74,8 +74,7 @@ Already a REWARDS id (`chiliDog`, kind food). A meal: resets the hunger clock.
 Spoils in 16 h (2026-10-21). Flavor: "Kinda gross" (owner, 2026-10-22) — the in-game desc since 2026-10-24.
 
 ### Dinner meal
-status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
-Audit 2026-11-16: FEAT-232 built the food vendor's eat-in line ($5 [DEFAULT] of $5–10, 30 min, holds 8 h). Missing: nothing but the owner's price; the invitation reward ships.
+status: shipped · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
 Renamed from diner meal (owner, 2026-10-21). One generic sit-down meal, a menu item at the food
 vendor: holds hunger 8 h, 30 min to eat, $5–10, eat-in only, never found. Flavor: "A hearty meal.
 Dine in only" (owner, 2026-10-22). **As a reward it is a dinner invitation** (owner, 2026-10-22): a C–B
