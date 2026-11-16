@@ -1,7 +1,7 @@
 ---
 id: BUG-180
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-15
 source: owner, 2026-11-15 — "One side effect of the exposure adjustment fix is The actual headlight bulbs themselves only get to a medium gray and never get bright white. Interestingly, the taillights still glow a bright red though."
@@ -50,3 +50,4 @@ greying) `lensReverse 2.5 → 20`. Damage dim and flicker still multiply the len
 ## Log
 - 2026-11-15: 2d23a05b on land/lights-1116. Before/after: wip/lights-1116/before-*.png, after-*.png, bug180-sheet.png.
 - 2026-11-15: affected gates 10/10 green on land/lights-1116 (cdp-smoke left to main).
+- 2026-11-16: owner on card light-cull-look: "good: keep the shared light, 200 m is fine"; no objection to the lens fix. Closed.
