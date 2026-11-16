@@ -1638,16 +1638,19 @@ const STEPS = [
     const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
     // FEAT-170 stage 4: mom's lessons queue up and hold the sim (and every key) while they are up — read off
     // whatever comes, waiting a beat for a queued one to appear. Returns the speakers' card count.
+    const said = []   // every card readCards read, as "speaker: text" (DEC-345: the calls are checked by their words)
+    const saidAny = re => said.some(t => re.test(t))
     const readCards = async (beatMs = 800, stopAt = null) => {   // stopAt: leave that speaker's card up, unread
       let n = 0
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return n }
         if (stopAt && await speaker() === stopAt) return n
+        said.push(`${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`)
         n++; await tap('Enter'); await sleep(200)
       }
       throw new Error('cards never stopped coming')
     }
-    // DEC-320: the firing opens on Katie's call, wrapping up as Jay arrives; then the manager.
+    // DEC-320: the firing opens on Katie's call, wrapping up as Billy arrives; then the manager.
     check(await until(async () => await speaker() === 'Katie', 3000), `the run did not open on the firing's call (speaker "${await speaker()}")`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
       return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
@@ -1807,6 +1810,9 @@ const STEPS = [
     check(await until(async () => await speaker() === 'Uncle Larry', 5000), `parked at Larry's with his pack, no hand-over (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
     await readCards()
     check((await tut()).stop === 'snack' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the day for the snack: ${JSON.stringify(await tut())}`)
+    // DEC-345: his cards over, Katie calls — the picnic at the old McGill ranch, a snack from the station on the way.
+    check(saidAny(/^Katie: .*picnic out at the old McGill ranch/) && saidAny(/^Katie: You know where to go, I'll see you there!/),
+      `at Larry's, no picnic call from Katie in the owner's words: ${JSON.stringify(said.slice(-4))}`)
     await stamped(9, "Larry's")
     // The station nearest Larry's: a bag of peanuts at its store, then (mom's card) its pump, filled until broke.
     const gs = await js(`(() => { const L = window.__poi().list().find(q => q.type === 'larrysHouse'), d = q => Math.hypot(q.x - L.x, q.z - L.z)
@@ -1833,8 +1839,9 @@ const STEPS = [
     // DEC-323: pulling away from the store, mom sends you to a pump.
     check(!await js('/pump/.test(document.getElementById("dlg-text")?.textContent ?? "") && document.getElementById("dialogue-panel").checkVisibility()'), "mom's pump card came before pulling away")
     if (await js('window.__vs.parked')) await tap(' ')
-    check(await until(() => js('/pull up at a pump/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 3000), "pulling away from the store, no pump card from mom")
+    check(await until(() => js('/plumb outta gas/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 3000), "pulling away from the store, no call from mom about the gas (DEC-345)")
     await readCards()
+    check(saidAny(/^Mom: .*pull up at a pump/), `mom's call did not go on to the gas lesson: ${JSON.stringify(said.slice(-3))}`)
     check(await js('window.__econ.money') === 3, `the peanuts did not leave mom's $3 of gas money: $${await js('window.__econ.money')}`)
     const pz = await js(`(() => { const q = window.__poi().list().find(q => q.id === window.__worstDay().pump.id); return window.__towSeat(q) })()`)
     await tp(pz.x, pz.z, pz.heading); await park(true)
@@ -1849,9 +1856,24 @@ const STEPS = [
     check(await js('window.__econ.money < 0.05'), `the fill-up left money in the wallet: $${await js('window.__econ.money')}`)
     check(await until(async () => (await tut()).stop === 'camp', 3000), `the fill-up did not send the day to the camping area: ${JSON.stringify(await tut())}`)
     await stamped(10, 'the station')
-    // DEC-304: the camping area — Z looks for a site, a re-park asks, "make camp" makes it (no sleep on offer, DEC-308),
-    // the peanuts eaten in camp bring Katie's call (DEC-324) and the 17:00 stamp; then break camp.
-    await readCards()   // the camping area's card
+    // DEC-346: the camping area, the old McGill ranch — mom's send-off, the waypoint already on its door and the HUD's
+    // guiding text; at the waypoint Katie calls (DEC-345) and walks you through it: Z looks for a site (the vibe bar's card),
+    // a re-park asks, "make camp" makes it (no sleep on offer, DEC-308; the snack's card), the peanuts eaten in camp bring
+    // her talk (DEC-347) and the 17:00 stamp; then break camp.
+    await readCards()   // mom's send-off
+    const ranch = await js('({ w: window.__map2d()._getWaypoint(), d: window.__tutorial().camp })')
+    check(ranch.w && ranch.d && Math.hypot(ranch.w.x - ranch.d.x, ranch.w.z - ranch.d.z) < 1, `the tank filled, no waypoint on the camping area: ${JSON.stringify(ranch)}`)
+    check(/^drive out to the old McGill ranch · /.test((await eve()).hud), `the drive to the camping area does not read "drive out to the old McGill ranch" ("${(await eve()).hud}")`)
+    const door = await js(`(() => { const d = window.__tutorial().camp, nr = window.__roadSys().queryNearest(d.x, d.z, 30)
+      return { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } })()`)
+    await js(`window.__seated = false; window.__teleport(${door.x}, ${door.z}, ${door.h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the waypoint never seated')
+    check(await until(() => js('/already there/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), `at the waypoint, no call from Katie: ${JSON.stringify(await tut())}`)
+    await readCards()
+    check(saidAny(/^Katie: Oh, you're already there\? I'm just a couple minutes out\. Go ahead and find a good spot\. I'll just pull over where I see your truck\./),
+      `Katie's arrival call is not the owner's words: ${JSON.stringify(said.slice(-3))}`)
+    check(!await js('window.__map2d()._getWaypoint()'), 'arrived, the waypoint stayed on the map')
+    await simFor(0.5)
     // Graded from the road, as the prompt grades (camp.js evaluate). A pick graded before its chunk streamed in can read
     // otherwise once the truck is there, so each is re-graded from the seat and the next taken if it no longer holds.
     const sites = await js(`(() => { const C = window.__campSys(), R = window.__roadSys(), d = window.__tutorial().camp, out = []
@@ -1869,7 +1891,9 @@ const STEPS = [
     const campPanel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     const shown = id => js(`getComputedStyle(document.getElementById("${id}")).display !== "none"`)
     check(await until(() => js('document.getElementById("camp-row")?.style.display === "flex"'), 3000), 'no tent at the camping area')
-    await tap('z'); await simFor(0.5)
+    await tap('z')
+    check(await until(() => js('/That.s the vibe/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), 'looking for a campsite, Katie did not explain the vibe bar')
+    await readCards()
     const makeUp = async () => await campPanel() && await shown('cp-make')
     for (let i = 0; i < 4 && !await makeUp(); i++) { await park(true); await until(makeUp, 1500) }   // the re-park the hunt asks for
     if (!await makeUp()) console.log('  camp: ' + await js(`JSON.stringify((() => { const v = window.__vs.position, g = window.__campSys().evaluate(v.x, v.z)
@@ -1879,6 +1903,8 @@ const STEPS = [
     check(!await shown('cp-truck'), 'the camping area offers the truck as a bed (DEC-308)')
     await js('document.getElementById("cp-make").click()')
     check(await until(() => shown('cp-break'), 6000), 'making camp did not make it')
+    check(await until(() => js('/break out that snack/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), 'camp made, Katie did not send you to the snack')
+    await readCards()
     check(!await shown('cp-sleep'), 'the camp offers sleep on the firing day (DEC-308)')
     check(await js("window.__inv.use('bagOfPeanuts')"), 'the peanuts could not be eaten')
     check(await until(() => js('/now that you don.t have a job/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), `eating in camp brought no call from Katie: ${JSON.stringify(await tut())}`)
