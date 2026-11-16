@@ -4683,9 +4683,9 @@ const _tutDrive = () => _firingDay() || _morningLeg()
  *  the truck and the ground (the save carries all three), so a resume lands on the same stop — except the pump, not
  *  saved, which a resume skips. */
 const _dayStop = () => _morningLeg() ? 'joint'
-  : !dialogueSystem.has(DLG.handover) ? 'mom'
+  : !dialogueSystem.has('tut-handover') ? 'mom'
   : !dialogueSystem.has(DLG.larryPack) ? (_packOnBoard() ? 'larry' : 'pack')
-  : dialogueSystem.has(DLG.supper) ? 'home'
+  : dialogueSystem.has('tut-supper') ? 'home'
   : _snackShop() && !_snackBought() ? 'snack'
   : _evePump && !_evePump.done ? 'pump' : 'camp'
 

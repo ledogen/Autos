@@ -1486,7 +1486,7 @@ const STEPS = [
     const handover = () => js('/Take this pack over to your uncle/.test(document.getElementById("dlg-text")?.textContent ?? "")')
     for (let i = 0; i < 40 && !await handover(); i++) {
       if (await speaker()) { await tap('Enter'); await sleep(200) }
-      else if ((await tut()).stop === 'mom') { await simFor(1); await park(true); await sleep(800) }
+      else if ((await tut()).stop === 'mom') { await sleep(800); await park(true); await sleep(800) }
       else break
     }
     check(await handover(), `parked at mom's door, no hand-over: ${JSON.stringify(await tut())}`)
