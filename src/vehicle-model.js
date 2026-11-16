@@ -529,13 +529,16 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     // Beam shape per mode (intensity handled per-frame in syncMeshesToState). Low beam swaps in the
     // half-cone cutoff cookie; high beam the full-cone (uniform) one. Both are always non-null so the
     // swap never changes numSpotLightMaps (no shader recompile).
+    // FEAT-204: a fitted light bar (headlightGain > 1) is a driving lamp with no cutoff, so the low beam takes the
+    // high beam's full pattern while it burns (setMods re-runs this on every fit).
+    const full = high || (params.headlightGain ?? 1) > 1
     for (const s of headlightSpots) {
       const sx = Math.sign(s.position.x) || 1
       s.color.setHex(lensHex)
-      s.map       = high ? highCookie.tex : lowCookie.tex
-      s.angle     = high ? HEAD_TUNE.highAngle    : HEAD_TUNE.lowAngle
-      s.penumbra  = high ? HEAD_TUNE.highPenumbra : HEAD_TUNE.lowPenumbra
-      s.target.position.set(sx * 0.60, high ? HEAD_TUNE.highAimY : HEAD_TUNE.lowAimY, high ? HEAD_TUNE.highAimZ : HEAD_TUNE.lowAimZ)
+      s.map       = full ? highCookie.tex : lowCookie.tex
+      s.angle     = full ? HEAD_TUNE.highAngle    : HEAD_TUNE.lowAngle
+      s.penumbra  = full ? HEAD_TUNE.highPenumbra : HEAD_TUNE.lowPenumbra
+      s.target.position.set(sx * 0.60, full ? HEAD_TUNE.highAimY : HEAD_TUNE.lowAimY, full ? HEAD_TUNE.highAimZ : HEAD_TUNE.lowAimZ)
     }
   }
   applyHeadlights()
@@ -1166,11 +1169,11 @@ float rsBakedShade () {
         shadeInBore(g.scene)   // BUG-112: as the body's materials
         modBody.add(g.scene)
         mods.set(stem, g.scene)
-        applyHeadlights()      // a reflector that arrives with the lamps on lights at once
-        setMods(modWant)
+        setMods(modWant)       // shows it, and lights a reflector that arrives with the lamps on
       }, undefined, (err) => console.warn(`[vehicle-model] ${stem}.glb failed to load:`, err))
     }
     for (const [stem, o] of mods) if (o) o.visible = modWant.includes(stem)
+    applyHeadlights()   // the light bar's beam shape follows the fit
   }
 
   // PERF-21: every light-COUNT state the lamps can put the scene in. A lit material's program is

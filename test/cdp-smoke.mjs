@@ -528,7 +528,7 @@ const STEPS = [
       await look(4.5, 5.5, 2.6); await snap('day-rear.png')
       await toHour(23)
       for (let i = 0; i < 3 && !await lit(); i++) { await tap('l'); await frames(3, 100) }
-      await look(3, 7, 3.5); await snap('night-bar.png')
+      await look(0, 9, 6); await snap('night-bar.png')
       await fit('lightBarNone'); await snap('night-nobar.png'); await fit('lightBar')
     }
     for (let i = 0; i < 3 && await lit(); i++) { await tap('l'); await frames(3, 100) }
