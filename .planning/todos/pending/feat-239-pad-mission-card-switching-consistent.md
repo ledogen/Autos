@@ -12,7 +12,7 @@ lane: Map batch (answer the question first)
 # FEAT-239: Pad: switching mission cards is the same control on the map and at a POI
 
 ## Next steps
-Orchestrator: turn the Description's options into an owed card (recommendation: option 2). Owner picks; then build.
+Built on `land/feat-239` (owner picked option 2). Ready to land. Owner look: a real pad on the map (not testable headless).
 
 ## Summary
 Mission cards switch with D-pad left/right on the map but with the shoulder buttons at a POI. The owner wants one control, which points to shoulders on the map, displacing the shopping/missions switch there. Their question: if the D-pad took the shopping/missions switch on the map, can we guarantee no card inside the map ever needs the D-pad? What else can be done?
@@ -62,9 +62,14 @@ Option 2. It is the only one that moves a single control (the tab switch) onto a
 
 ## Tracker
 - [x] Facts: every control used on the map and inside each card that can open in it (Description)
-- [ ] Options card for the owner (the orchestrator turns the options below into the card)
-- [ ] Built to the pick
+- [x] Options card for the owner (answered 2026-11-16)
+- [x] Built to the pick (LB / RB flip, X tabs, D-pad ← / → spare; legend + card keycaps; smoke pad step; DEC-337)
+- [ ] Owner plays it on a physical pad
+
+## Decisions
+- 2026-11-16, owner, card feat239-card-switching: "2: shoulders flip cards everywhere, X switches tabs (recommended)". DEC-337 (supersedes DEC-175's pad half; keyboard unchanged: Q / E tabs, arrows flip).
 
 ## Log
+- 2026-11-16 (lane C): built. gamepad.js MAP_KEYS (LB/RB send the arrows, X sends Q), poll's NAV skips D-pad ← / → on the map-only layout, map card keycaps read LB / RB on the pad, legend gains `LB RB cards` and `X tab` right of the seed readout; smoke `pad` step + pad-e2e updated. Smoke boot,map,story,offer,pad PASS; affected gates 5/5. Picture: wip/feat-239/map-pad-legend.png. Not tried on a physical pad.
 - 2026-11-16 (lane C map batch): facts table and five options written from src/gamepad.js (BINDINGS, MAP_KEYS, CARD_MAP_KEYS, poll priority) and src/menu-nav.js. No code changed. Read from the source, not played on a pad.
 - 2026-11-16: filed from the owner's inbox note.

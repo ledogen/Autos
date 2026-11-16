@@ -3512,15 +3512,17 @@ export class Map2D {
         ctx.fillText(`Contour interval ${CONTOUR_IV} m`, s.x0, by)
         const ivR = s.x0 + ctx.measureText(`Contour interval ${CONTOUR_IV} m`).width
         this._drawControls(ctx, s, by, ivR + 24, this._hoverX === undefined ? bx - 70 : s.cx - 65)   // short of the scale label, or of the cursor's readout at the centre
+        // FEAT-239: the pad's card flip and tab switch, right of the seed / cursor readout at the centre (the left run has no room for them)
+        if (pad.active) this._drawControls(ctx, s, by, s.cx + 90, bx - 70, [['cards', ['LB', 'RB']], ['tab', ['X']]])
     }
 
     // FEAT-234 (owner, 2026-11-16): the map's controls — pan, zoom, set waypoint — printed in the bottom margin after the
     // contour note, clear of the cursor's coordinate readout at the centre. Keycaps as the HUD's (park-badge.js keycap): the key's cap on the keyboard, the pad's
     // button when the pad last drove (pad.active); the pad's face buttons and sticks are round. Skipped when they do not fit.
-    _drawControls(ctx, s, by, xMin, xMax) {
+    _drawControls(ctx, s, by, xMin, xMax, padGroups) {
         const usePad = pad.active
         const groups = usePad
-            ? [['pan', ['L']], ['zoom', ['R']], ['waypoint', ['Y']], ['cards', ['LB', 'RB']], ['tab', ['X']]]   // FEAT-239
+            ? padGroups ?? [['pan', ['L']], ['zoom', ['R']], ['waypoint', ['Y']]]
             : [['pan', ['WASD']], ['zoom', ['wheel']], ['waypoint', ['N', 'click']]]
         const CAP = 15, GAP = 4, SEP = 16
         ctx.font = `11px ${MAP_LABEL_FONT}`
