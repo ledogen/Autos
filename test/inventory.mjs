@@ -234,5 +234,22 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
     && STOREFRONT.foodVendor.always.includes('dinnerMeal') && ITEM_PRICE.dinnerMeal >= 5 && ITEM_PRICE.dinnerMeal <= 10)
 }
 
+// ── 10. FEAT-230 slice 3: groceries ───────────────────────────────────────────────────────────
+{
+  const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
+  const givers = (gate) => Object.entries(REWARD_CATS).filter(([k, v]) => k !== 'larrysHouse' && pool(v.cats, gate).includes('groceries')).map(([k]) => k).sort().join()
+  check('groceries: raw is no meal, cooked holds 10 h', !ITEMS.groceries.use && ITEMS.groceriesCooked.use === 'eat' && ITEMS.groceriesCooked.hold === 10)
+  check('groceries: the kit\'s +20 % does NOT apply on top (10 h with or without), the potato still gets it',
+    foodHoldH('groceriesCooked', true) === 10 && foodHoldH('groceriesCooked', false) === 10 && Math.abs(foodHoldH('potatoCooked', true) - 4.8) < 1e-9)
+  check('groceries: $5 at the general store and the farm', ITEM_PRICE.groceries === 5 && STOREFRONT.generalStore.always.includes('groceries') && STOREFRONT.farm.always.includes('groceries'))
+  check('groceries: a B-A reward from the farm and the general store only', REWARD_LIST.find(r => r.id === 'groceries')?.gates.join('') === 'BA'
+    && givers('B') === 'farm,generalStore' && givers('A') === 'farm,generalStore')
+  check('groceries: never a find, no other shelf', Object.entries(STOREFRONT).every(([k, s]) => ['generalStore', 'farm'].includes(k) || !s.always.includes('groceries'))
+    && !REWARD_LIST.some(r => r.id === 'groceriesCooked'))
+  const f = new InventorySystem({ slotCap: () => 8 }); f.start(); f.grant('groceries', 2)
+  check('groceries: a bag a slot', f.list().filter(r => r.id === 'groceries').length === 2)
+  check('groceries: cooking turns one raw bag into one cooked meal', f.convert('groceries', 'groceriesCooked') && f.list().filter(r => r.id === 'groceries').length === 1 && f.list().some(r => r.id === 'groceriesCooked'))
+}
+
 console.log(fails === 0 ? '\ninventory gate: ALL OK' : `\ninventory gate: ${fails} FAILURE(S)`)
 process.exit(fails === 0 ? 0 : 1)

@@ -167,9 +167,17 @@ export const ITEMS = {
     shadeTarp:    { name: 'Shade tarp',    kind: 'camp',       massKg: 2,   fills: 'shade', campSlot: 'shade', model: 'shadeTarp',
                     desc: 'A tarp, a pole and some line. Shade where there are no trees.' },
     // About fifty pounds of iron (items.md §2b). FEAT-230 / DEC-310: standing over the fire at camp it makes any food
-    // eaten there hold hunger COOKING_KIT_FOOD_MULT longer (foodHoldH). Groceries (slice 3) will NOT get it on top.
+    // eaten there hold hunger COOKING_KIT_FOOD_MULT longer (foodHoldH). Cooked groceries do NOT get it on top (`noKit`).
     cookingKit:   { name: 'Cooking kit',   kind: 'camp',       massKg: 23,  campSlot: 'overFire', model: 'cookingKit',
                     desc: 'An iron A-frame and a Dutch oven to hang over the fire. Whatever you eat at camp with it holds you a little longer. Heavy.' },
+
+    // FEAT-230 slice 3: a bag of groceries, one meal. Raw it is no meal; cooked at camp ONLY with the cooking kit deployed
+    // (main.js _cookGroceries, +30 min) it holds 10 h. `noKit`: the kit's +20 % is the cooking, not a bonus on top
+    // (DEC-310). One bag a slot, mass 2 kg [DEFAULT]. Fresh 24 h / cooler: slice 2.
+    groceries:    { name: 'Groceries',     kind: 'food',       massKg: 2,   stack: 1,
+                    desc: 'A bag of groceries. Not a meal until it is cooked over a campfire with a cooking kit.' },
+    groceriesCooked: { name: 'Groceries, cooked', kind: 'food', massKg: 2,  stack: 1, use: 'eat', hold: 10, noKit: true, thumb: 'groceries',
+                    desc: 'Fresh and goes together easy.' },
 
     // ── Vehicle parts (data/parts.js), owned UNFITTED: a slot each, and the entry carries the part's
     //    wear as `cond`. A massless part ('No lift') is an absence, not a thing you can carry. The
@@ -181,7 +189,7 @@ export const ITEMS = {
 /** DEC-310: the cooking kit, deployed at the player's camp, makes food hold hunger this much longer (+20 %). */
 export const COOKING_KIT_FOOD_MULT = 1.2
 /** Hours a food holds hunger when eaten: its `hold`, times the kit's bonus when `kitAtCamp` (main.js _kitAtCamp). */
-export const foodHoldH = (id, kitAtCamp) => ITEMS[id].hold * (kitAtCamp ? COOKING_KIT_FOOD_MULT : 1)
+export const foodHoldH = (id, kitAtCamp) => ITEMS[id].hold * (kitAtCamp && !ITEMS[id].noKit ? COOKING_KIT_FOOD_MULT : 1)
 
 /** Kinds that stack into one slot per item kind. */
 export const STACKING_KINDS = new Set(['consumable', 'food'])

@@ -7105,6 +7105,7 @@ function _renderCampUI () {
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   st.mode === 'camp' || st.mode === 'truck')
   show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit all camp
+  show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
   show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
@@ -7218,12 +7219,15 @@ document.getElementById('cp-truck')?.addEventListener('click', () => {
   _renderCampUI()
 })
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
-// FEAT-230 slice 1: one raw potato on the camp fire, 30 min behind the fade like the make-camp chore.
-document.getElementById('cp-cook')?.addEventListener('click', (e) => {
-  e.currentTarget.blur()
-  if (!_campUi || _campBusy || _campUi.mode !== 'camp') return
-  _campFade(() => { if (inventorySystem.convert('potato', 'potatoCooked')) daySystem.advanceMinutes(30); _renderCampUI() })
-})
+// FEAT-230: one raw potato (slice 1) or one bag of groceries (slice 3, kit deployed) on the camp fire, 30 min behind the
+// fade like the make-camp chore.
+for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked', false], ['cp-cook-groceries', 'groceries', 'groceriesCooked', true]]) {
+  document.getElementById(btn)?.addEventListener('click', (e) => {
+    e.currentTarget.blur()
+    if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
+    _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
+  })
+}
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
 document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
