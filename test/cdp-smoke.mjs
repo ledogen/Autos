@@ -1486,7 +1486,8 @@ const STEPS = [
       }
       throw new Error('cards never stopped coming')
     }
-    check(await until(async () => await speaker() === 'The manager', 3000), `the run did not open on the firing (speaker "${await speaker()}")`)
+    // DEC-320: the firing opens on Katie's call, wrapping up as Jay arrives; then the manager.
+    check(await until(async () => await speaker() === 'Katie', 3000), `the run did not open on the firing's call (speaker "${await speaker()}")`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
       return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
     const a = await at(); await sleep(1000); const b = await at()
@@ -1498,7 +1499,9 @@ const STEPS = [
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
     check(await until(async () => await hudClock() === 'Day -1, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day -1, 7 am" (BUG-136)`)
-    for (let i = 0; i < 8 && await speaker() === 'The manager'; i++) { await tap('Enter'); await sleep(250) }
+    let boss = false
+    for (let i = 0; i < 8 && ['Katie', 'The manager'].includes(await speaker()); i++) { boss ||= await speaker() === 'The manager'; await tap('Enter'); await sleep(250) }
+    check(boss, 'the firing had no card from the manager')
     // The card: up, the sim held under it; "play" on seed 6 loads the tutorial seed with seed 6 to come back to.
     check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `the firing did not end on the tutorial card: ${JSON.stringify(await tut())}`)
     check((await tut()).phase === 'card', `the card is up but the tutorial reads ${JSON.stringify(await tut())}`)
@@ -1558,7 +1561,9 @@ const STEPS = [
       return null })()`)
     check(off, 'no off-road spot beside the joint')
     await seat(off.x, off.z, 0)
-    check(await until(async () => /off the road/.test((await eve()).hud), 2000), `off the road, the evening's HUD offers no way back ("${(await eve()).hud}")`)
+    // DEC-321: no reset is taught — off the road the HUD names no key; R still works, untaught.
+    await simFor(0.5)
+    check(!/puts you back/.test((await eve()).hud), `off the road, the tutorial's HUD still teaches a reset ("${(await eve()).hud}")`)
     await readCards(300)   // a lesson landing here would take the R
     await tap('r')
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 8000), 'R in the evening did not put the truck back on the road')
@@ -1593,8 +1598,8 @@ const STEPS = [
     { const v = await car(), d = await js(lat(v.x, v.z)), cd = await js('document.getElementById("reset-countdown").style.opacity')
       check(d > 5.5 && cd !== "1", `FEAT-217: the truck was reset (or counted down) on the shoulder: ${d.toFixed(1)} m off the road, ${Math.hypot(v.x - sh.x, v.z - sh.z).toFixed(1)} m from its seat, countdown "${cd}", parked ${await js('window.__vs.parked')}`) }
     // FEAT-229 (DEC-304), THE FIRING DAY's stops in turn: mom's door (her hand-over, DEC-305), the pack, Larry's, the
-    // station nearest his (the peanuts, then the pump, DEC-306), a camp made in the camping area (DEC-304/308), her supper
-    // call at 17:00, then the worst day on the way home — the flat halfway, V, the spare that's flat too, the recovery
+    // station nearest his (the peanuts from a shopping spot, the pumps shut till then, DEC-323; then the pump, DEC-306), a
+    // camp made in the camping area (DEC-304/308), Katie's call at 17:00 (DEC-324), then the worst day on the way home — the flat halfway, V, the spare that's flat too, the recovery
     // menu's free tow to the auto shop, a tire there, the night's headlights — and her bed. Each stop stamps the clock.
     const wd = () => js('window.__worstDay()')
     const tp = async (x, z, h) => {   // not seat(): its settle waits on the sim, and a lesson landing holds it
@@ -1650,6 +1655,7 @@ const STEPS = [
     await js(`window.__seated = false; window.__teleport(${gs.x}, ${gs.z}, ${gs.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the gas station never seated')
     await readCards()
+    check(await js('window.__worstDay().pumpsShut'), `the snack stop left the pumps open (DEC-323): ${JSON.stringify(await wd())}`)
     const shopUp = () => js('document.getElementById("svc-screen").checkVisibility()')
     if (!await shopUp()) { await simFor(1); await park(true) }
     check(await until(shopUp, 3000), `parked at the gas station for the snack, no shop: ${JSON.stringify(await tut())}`)
@@ -1660,9 +1666,14 @@ const STEPS = [
     await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]").click()')
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
     check(await until(async () => (await tut()).stop === 'pump', 3000), `buying the peanuts did not send the day to the pump: ${JSON.stringify(await tut())}`)
-    await readCards()   // the gauge's card, which may open over the shop
+    check(!await js('window.__worstDay().pumpsShut'), 'the peanuts bought, the pumps stayed shut (DEC-323)')
     if (await shopUp()) await tap('Escape')
     check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
+    // DEC-323: pulling away from the store, mom sends you to a pump.
+    check(!await js('/pump/.test(document.getElementById("dlg-text")?.textContent ?? "") && document.getElementById("dialogue-panel").checkVisibility()'), "mom's pump card came before pulling away")
+    if (await js('window.__vs.parked')) await tap(' ')
+    check(await until(() => js('/pull up at a pump/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 3000), "pulling away from the store, no pump card from mom")
+    await readCards()
     check(await js('window.__econ.money') === 3, `the peanuts did not leave mom's $3 of gas money: $${await js('window.__econ.money')}`)
     const pz = await js(`(() => { const q = window.__poi().list().find(q => q.id === window.__worstDay().pump.id); return window.__towSeat(q) })()`)
     await tp(pz.x, pz.z, pz.heading); await park(true)
@@ -1678,7 +1689,7 @@ const STEPS = [
     check(await until(async () => (await tut()).stop === 'camp', 3000), `the fill-up did not send the day to the camping area: ${JSON.stringify(await tut())}`)
     await stamped(10, 'the station')
     // DEC-304: the camping area — Z looks for a site, a re-park asks, "make camp" makes it (no sleep on offer, DEC-308),
-    // the peanuts eaten in camp bring her supper call and the 17:00 stamp; then break camp.
+    // the peanuts eaten in camp bring Katie's call (DEC-324) and the 17:00 stamp; then break camp.
     await readCards()   // the camping area's card
     // Graded from the road, as the prompt grades (camp.js evaluate). A pick graded before its chunk streamed in can read
     // otherwise once the truck is there, so each is re-graded from the seat and the next taken if it no longer holds.
@@ -1709,13 +1720,14 @@ const STEPS = [
     check(await until(() => shown('cp-break'), 6000), 'making camp did not make it')
     check(!await shown('cp-sleep'), 'the camp offers sleep on the firing day (DEC-308)')
     check(await js("window.__inv.use('bagOfPeanuts')"), 'the peanuts could not be eaten')
-    check(await until(() => js('/supper/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), `eating in camp brought no supper call: ${JSON.stringify(await tut())}`)
-    await stamped(17, 'her supper call')
-    await readCards()
+    check(await until(() => js('/now that you don.t have a job/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), `eating in camp brought no call from Katie: ${JSON.stringify(await tut())}`)
+    await stamped(17, "Katie's call")
+    check(await js('!/\\{dir\\}|\\{deeds\\}/.test(document.getElementById("dialogue-panel").textContent)'), "Katie's call left a fill unfilled")
+    check(await readCards() >= 6, "Katie's call is not her six cards")
     if (await js('document.getElementById("inv-screen").classList.contains("open")')) await tap('Escape')
     await js('document.getElementById("cp-break").click()')
     check(await until(async () => !await campPanel(), 3000), 'break camp did not close the camp')
-    check((await tut()).stop === 'home', `her supper call did not send the day home: ${JSON.stringify(await tut())}`)
+    check((await tut()).stop === 'home', `Katie's call did not send the day home: ${JSON.stringify(await tut())}`)
     await crank(); await readCards()   // making camp turned the key off
     console.log('  worst day: halfway')
     // Halfway home: a road point at 40 % of the crow distance from mom's, once the home leg is measured.
@@ -1773,7 +1785,7 @@ const STEPS = [
     await tap('Escape'); await tap(' ')   // off the brake: the night drive, whose card holds the sim
     check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')
     await readCards()
-    // Parked at hers: her question about last week's pay (DEC-307), her sleep card, the timer preset to wake at 07:00 on
+    // Parked at hers: home safe (DEC-325), her hunger line, her sleep card, the timer preset to wake at 07:00 on
     // day 0 — and sleeping ends the firing day.
     // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
     await js(`window.__seated = false; window.__teleport(${mom.x}, ${mom.z}, ${mom.h}).then(() => { window.__seated = true })`)
@@ -1785,7 +1797,7 @@ const STEPS = [
     if (!await panel()) { await simFor(1); await park(true) }   // the 0.5 m drop lands, then a fresh pull
     check(await until(panel, 3000), "parking at mom's that night opened no sleep card")
     lessons += await readCards()
-    check(lessons >= 5, `no hunger, question and sleep lessons at hers (${lessons} read, want her hunger card, her question and her three sleep cards)`)
+    check(lessons >= 5, `no welcome, hunger and sleep lessons at hers (${lessons} read, want her welcome, her hunger card and her three sleep cards)`)
     check(await clock() >= -26.51, `her door that night did not stamp 21:30 (clockH ${await clock()})`)
     await js('document.getElementById("cp-sleep").click()')
     const want = await js('Math.round(-17 - window.__day().clockH())')   // 07:00 on day 0 is clockH −17
@@ -1796,7 +1808,7 @@ const STEPS = [
     check(!await js('document.getElementById("midnight-card").classList.contains("on")'), "the tutorial's night dropped the midnight overlay")
     const e1 = await eve()
     check(e1.tut === 'morning' && /last check/.test(e1.hud), `waking did not end the firing day and send the morning for the check: ${JSON.stringify(e1)}`)
-    // The morning: breakfast, then her reminder (DEC-307), the last drive on rails. FEAT-184 stage 5: breakfast is the
+    // The morning: breakfast, then Katie's reminder (DEC-326), the last drive on rails. FEAT-184 stage 5: breakfast is the
     // player's to eat now (her card asks for a packed lunch). FEAT-229: the day's stamps are lived hours (energy and hunger
     // pay for them), so the driver may wake hungry; the lunch she asks for feeds him.
     const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
@@ -1826,6 +1838,7 @@ const STEPS = [
       `seed 6 is not back outside its joint at 07:00 on day 0 in free will: ${JSON.stringify(back)}`)
     check(back.money > cash0, `the last paycheck did not land: $${cash0} → $${back.money}`)
     check(await until(async () => await speaker() === 'Uncle Larry', 5000), `no Larry's call after the paycheck (speaker "${await speaker()}")`)
+    check(/find yourself some work/.test(await js('document.getElementById("dlg-text").textContent')), "Larry's call after a played tutorial is not DEC-326's")
     await readCards()
     // FEAT-148: midnight drops its overlay over the road, then clears it (every clock path counts). Day 0 → 1 is the run's
     // first midnight, adopted silently; day 1 → 2 is the first the overlay marks.

@@ -1,6 +1,6 @@
 ---
 id: DEC-315
-status: standing
+status: superseded
 decided: 2026-11-16
 area: story
 governs: FEAT-229, data/dialogue.js, src/main.js, the tutorial night, mom, hunger, energy

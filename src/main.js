@@ -104,7 +104,7 @@ import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
-import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
+import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT } from '../data/dialogue.js'
 import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
 import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
@@ -3514,8 +3514,9 @@ function _updateMissionRings () {
   }
   // FEAT-50: pump zones show on a job too — running low mid-route is exactly when you need them —
   // and drop away while the pump is open (you are already in one).
+  const pumpsShut = _pumpsShut()   // DEC-323: the tutorial's snack stop
   for (const m of _pumpZoneMarks)
-    m.visible = !fuelStop.isOpen && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= showR
+    m.visible = !fuelStop.isOpen && !pumpsShut && Math.hypot(m.position.x - vp.x, m.position.z - vp.z) <= showR
   // BUG-164: a building draws exactly when the terrain chunk under it is built (owner, 2026-11-13: "push the poi
   // pop in a bit further so it matches the terrain"; a 192 m circle fell short of the square ring and its warm margin).
   // Hidden = not drawn, not in the shadow pass. The colliders stay (poiPhysics): one that far away cannot be touched.
@@ -4572,14 +4573,15 @@ missionSystem = new MissionSystem({
   getClockH: () => daySystem.clockH(),
 })
 
-/** FEAT-103: the run's opening cards (Larry's call, DEC-236) with the camp's true compass direction from the spawn and its
- *  deed gate filled in. */
-function _runIntro () {
+/** FEAT-103: cards that tell the expedition camp (Larry's call, DEC-236; Katie's, DEC-324) with the camp's true compass
+ *  direction from the spawn and its deed gate filled in. */
+function _fillCamp (cards) {
   const c = poiSystem.list().find(q => q.type === 'expeditionCamp'), r = storySystem.region()
   const deg = c && r ? (Math.atan2(c.x - r.x, -(c.z - r.z)) * 180 / Math.PI + 360) % 360 : 0
-  return RUN_INTRO.map(card => ({ ...card, text: card.text.replace('{dir}', COMPASS[Math.round(deg / 45) % 8])
+  return cards.map(card => ({ ...card, text: card.text.replace('{dir}', COMPASS[Math.round(deg / 45) % 8])
     .replace('{deeds}', String(ECONOMY_PARAMS.campDeeds)) }))
 }
+const _runIntro = () => _fillCamp(RUN_INTRO)
 
 // ── FEAT-147/170: the opening — the firing, the tutorial's day, the morning's paycheck, Larry's call ──
 // EVERY new story run (the setup page's toggle retired, FEAT-170). The firing is an in-world camera move round the
@@ -4588,11 +4590,11 @@ function _runIntro () {
 // tutorial's 24 h are the day before free will's day 0). FEAT-184 (DEC-147): the intro ends on a card, play the
 // tutorial or skip it (#tut-card). FEAT-229 (DEC-304, errands first): played, mom's call sends you to her house — the
 // FIRING DAY: no job, the GPS and the HUD line to each stop in turn (_dayStop), every other giver quiet: her hand-over
-// and Larry's old pack (DEC-305), Larry's, the station nearest his (the peanuts, then the pump), a camping area (make
-// camp, eat), her supper call (the clock to 17:00), the flat halfway home, the tow, the shop, home in the dark, her
-// question about last week's pay (DEC-307) and her bed. Any sleep ends it (only hers is offered, DEC-308), as does
+// and Larry's old pack (DEC-305), Larry's (DEC-322), the station nearest his (the peanuts from a shopping spot, then the
+// pump, DEC-323), a camping area (make camp, eat), Katie's call (the clock to 17:00, DEC-324), the flat halfway home, the
+// tow, the shop, home in the dark, her welcome home (DEC-325) and her bed. Any sleep ends it (only hers is offered, DEC-308), as does
 // 07:00 reached awake; then the MORNING LEG: breakfast, her reminder, back to the joint, and parked there the last
-// paycheck (DEC-153) at 07:00 on day 0, 24 h after the firing. The clock is held while driving (clockHeld); each stop
+// paycheck (DEC-153) at 07:00 on day 0, 24 h after the firing; then Larry's two cards (LARRY_CALL, DEC-326). The clock is held while driving (clockHeld); each stop
 // stamps its time (TUT_STAMPS). Holding M (the pad's View) skips it all at any point before then; a skip lands outside
 // the joint at 07:00 on day 0 (or later) with the manager's check. Either way, Larry's call and RUN_INTRO (DEC-155),
 // and the opening is done.
@@ -4628,7 +4630,7 @@ const TUT_PARAMS = { lowTankFrac: 0.125, gasCash: 3, offRoadS: 4,
   offRoadM: 10,    // FEAT-217 (of3s, DEC-219): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
   safeNearPoiM: 20 }   // FEAT-217 (DEC-281, owner 2026-11-16; was 75 m): no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
 // FEAT-229 (DEC-304, the dive's "held, with stamps" [DEFAULT]): the clock holds while the tutorial drives; each stop, once
-// reached, lifts it to at least its hour on the firing day. home: her supper call at the camping area (the one long jump);
+// reached, lifts it to at least its hour on the firing day. home: Katie's call at the camping area (the one long jump);
 // bed: at her door that night. The tow's own hours (towHours) land between them.
 const TUT_STAMPS = { pack: 8, larry: 8, snack: 9, pump: 10, camp: 10, home: 17, bed: 21.5 }
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
@@ -4648,7 +4650,7 @@ window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _firingDay() ? (dial
   stop: _tutDrive() && dialogueSystem.has(DLG.played) ? _dayStop() : null, pack: (({ x, z } = {}) => x == null ? null : { x, z })(_packOnGround() ?? undefined),
   camp: _firingDay() && _campDoor() ? { x: _campDoor().x, z: _campDoor().z } : null })   // DEC-304: the snack's camping area
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
-window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
+window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4681,14 +4683,14 @@ const _tutDrive = () => _firingDay() || _morningLeg()
 
 /** FEAT-229 (DEC-304): the tutorial's stop — on the firing day 'mom' (park at her door: her hand-over, DEC-305), 'pack'
  *  (load it by her steps), 'larry' (take it to his), 'snack' (buy the peanuts at the station nearest his), 'pump' (fill
- *  until broke there, DEC-306), 'camp' (make camp in the camping area nearest it and eat; her supper call ends it),
+ *  until broke there, DEC-306), 'camp' (make camp in the camping area nearest it and eat; Katie's call ends it),
  *  'home' (the flat, the tow, the shop, her bed); in the morning, 'joint' (the last paycheck). Read off the seen keys,
  *  the truck and the ground (the save carries all three), so a resume lands on the same stop — except the pump, not
  *  saved, which a resume skips. */
 const _dayStop = () => _morningLeg() ? 'joint'
   : !dialogueSystem.has('tut-handover') ? 'mom'
   : !dialogueSystem.has(DLG.larryPack) ? (_packOnBoard() ? 'larry' : 'pack')
-  : dialogueSystem.has('tut-supper') ? 'home'
+  : dialogueSystem.has('tut-katie') ? 'home'
   : _snackShop() && !_snackBought() ? 'snack'
   : _evePump && !_evePump.done ? 'pump' : 'camp'
 
@@ -4725,7 +4727,7 @@ const _packOnGround = () => runWorldItems.items.find(it => it.entry.id === 'pack
 // ── FEAT-229 (DEC-304, DEC-306): after Larry's, the snack — a bag of peanuts bought with mom's money at the gas station
 // nearest Larry's, the rest of her money in its tank, then eaten in a camp made in the camping area (a camp zone, camp.js)
 // nearest that station. Stateless across a resume like the errand: her hand-over, the bag on board, the camp's card
-// (tut-snackcamp), her supper call.
+// (tut-snackcamp), Katie's call (tut-katie).
 const TUT_SNACK = 'bagOfPeanuts'
 const _snackOnBoard = () => inventorySystem.list().some(r => r.id === TUT_SNACK)
 const _snackBought = () => dialogueSystem.has('tut-snackcamp') || _snackOnBoard()
@@ -4883,7 +4885,7 @@ const _eveningSleepH = () => _eveWakeH() - daySystem.clockH()
 /**
  * FEAT-170 stage 3, THE SAFE DRIVE: while the evening leg is on, the clock, energy and hunger hold (the fixed
  * step skips daySystem.update), the truck takes no damage and no wear (it skips damageModel.step), and R puts
- * it back on the nearest road — not at the spawn — with the HUD line saying so whenever it is off one.
+ * it back on the nearest road — not at the spawn. DEC-321: R is not taught; the off-road countdown is the reset shown.
  */
 function _resetToRoad () {
   const v = vehicleState.position, nr = roadSystem?.queryNearest(v.x, v.z, 2000)
@@ -4898,7 +4900,7 @@ function _eveningBeats () {
   if (!_tutDrive()) { _showResetCountdown(0); return }
   const stop = _dayStop(), vp = vehicleState.position
   if (_morningLeg()) {
-    // DEC-307: after breakfast (which the sleep queued), her reminder; parked at the joint, the paycheck.
+    // DEC-326: after breakfast (which the sleep queued), Katie's reminder; parked at the joint, the paycheck.
     _tut('tut-morning')
     if (j && vehicleState.parked && _inPoiSpot(j)) _tut(DLG.paycheck, PAYCHECK, null, true)   // the end: _checkOpeningEnd
   } else if (q && dialogueSystem.has(DLG.played)) {
@@ -4910,12 +4912,13 @@ function _eveningBeats () {
     const L = _larry()
     if (stop === 'larry' && L && vehicleState.parked && _inPoiSpot(L)) _tut(DLG.larryPack, LARRY_PACK, null, true)
     if (dialogueSystem.has('tut-handover') && !_snackBought() && economySystem.money() < _momCash()) economySystem.addSpot(_momCash() - economySystem.money())
-    if (stop === 'pump') _tut('tut-gas')
-    // DEC-304: the camping area — a camp made there with the peanuts eaten (before or in it); then her supper call, which
-    // stamps 17:00. No camping area on this world: the call comes at once.
+    // DEC-323: the peanuts bought at the store, mom sends you to a pump as you pull away.
+    if (stop === 'pump' && !vehicleState.parked && !serviceScreen.isOpen) _tut('tut-gas')
+    // DEC-304: the camping area — a camp made there with the peanuts eaten (before or in it); then Katie's call (DEC-324),
+    // which stamps 17:00. No camping area on this world: the call comes at once.
     if (stop === 'camp') {
       _tut('tut-snackcamp')
-      if (!_campDoor() || (_campUi?.mode === 'camp' && !_snackOnBoard())) _tut('tut-supper')
+      if (!_campDoor() || (_campUi?.mode === 'camp' && !_snackOnBoard())) _tut('tut-katie', _fillCamp(TUT['tut-katie']))
     }
     _eveningLessons(q, vp, stop)
   }
@@ -4955,9 +4958,9 @@ function _eveningLessons (q, v, stop) {
 }
 
 /** FEAT-229 (DEC-304): the stop's stamp — the clock lifted to at least its hour on the firing day (TUT_STAMPS; her
- *  question at the door that night stamps bed). Energy pays for the hours as awake (advanceMinutes): tired by night. */
+ *  welcome at the door that night stamps bed). Energy pays for the hours as awake (advanceMinutes): tired by night. */
 function _stampClock (stop) {
-  const h = dialogueSystem.has('tut-lastweek') ? TUT_STAMPS.bed : TUT_STAMPS[stop]
+  const h = dialogueSystem.has('tut-home') ? TUT_STAMPS.bed : TUT_STAMPS[stop]
   const at = h == null ? -Infinity : (OPENING_START.day - 1) * 24 + h
   if (daySystem.clockH() < at) daySystem.advanceMinutes((at - daySystem.clockH()) * 60)
 }
@@ -5194,7 +5197,7 @@ function _checkOpeningEnd () {
   economySystem.payPaycheck()
   if (_returnSeed) { _returnToRunWorld(); return }
   if (skipped && !dialogueSystem.has(DLG.bossCheck)) { _tut(DLG.bossCheck, BOSS_CHECK, null, true); return }
-  _tut(DLG.runIntro, _runIntro(), null, true)   // Larry's call (DEC-236)
+  _tut(DLG.runIntro, skipped ? _runIntro() : LARRY_CALL, null, true)   // Larry's call: DEC-326's two cards, or DEC-236's four on a skip
   _markPlayed()   // FEAT-184: the tutorial is over
 }
 
@@ -5896,9 +5899,12 @@ function _pumpPrice (q) {
 }
 
 /** The pump island whose zone the truck is in (story mode, no dialogue up), or null. */
+/** DEC-323: on the firing day's snack stop the pumps are shut and their halos hidden — the peanuts are bought from a
+ *  shopping spot; once they are, mom sends you to a pump as you pull away. */
+function _pumpsShut () { return _firingDay() && dialogueSystem.has(DLG.played) && _dayStop() === 'snack' }
 function _pumpInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
-  if (_campUi || _campBusy) return null
+  if (_campUi || _campBusy || _pumpsShut()) return null
   const vp = vehicleState.position
   for (const q of poiSystem.list()) {
     if (!q.pumpZones || q.hidden || Math.hypot(q.x - vp.x, q.z - vp.z) > 20) continue
@@ -6414,7 +6420,7 @@ function _updateParkTriggers (zParked = false) {
     } else if (moms) {
       _campUi = { mode: 'moms', site: null, moms: true }
       _renderCampUI()
-      if (_firingDay()) { _tut('tut-hungry'); _tut('tut-lastweek'); _tut('tut-moms') }   // DEC-315 hunger and energy; DEC-307 last week's pay; FEAT-170 stage 4
+      if (_firingDay()) { _tut('tut-home'); _tut('tut-hungry'); _tut('tut-moms') }   // DEC-325 home safe; DEC-315 hunger and energy; FEAT-170 stage 4
     } else if (seeking && !camp.fast && !onRoad && !_firingDay()) {   // DEC-308: the truck is no bed on the firing day
       _campUi = { mode: 'truck', site: null, moms: false, truck: true }
       _renderCampUI()
@@ -7595,9 +7601,7 @@ function _renderMissionUI () {
         // DEC-290 (owner, 2026-11-15): "…check your tire with (mapped control)": the damage screen's key, V or the pad's B.
         if (_flatOwed()) hudText.innerHTML = `pull over and check your tire with ${keycap('V')}`
         else if (q) hudText.textContent = `${km(line?.poly?.length ? routeLeftM(line, vp.x, vp.z) : Math.hypot(q.x - vp.x, q.z - vp.z))} to ${q.label ?? offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
-        // Stage 3: off the road, the free way back (PLACEHOLDER words). Static markup — only the key's glyph.
-        // The pad's D-pad → is a 1 s hold (gamepad.js VIEW_HOLD_MS), so its half says hold: a tap does nothing.
-        if (!_truckOnRibbon()) hudText.insertAdjacentHTML('beforeend', `<br>off the road · <span class="kc-pad">hold </span>${keycap('R', 'D-pad →')} puts you back on it`)
+        // DEC-321: no reset is taught; off the road, the tutorial's own countdown (#reset-countdown) puts the truck back.
       } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint, crow-flies like the evening's [DEFAULT] words
         const vp = vehicleState.position
         hudText.textContent = `${km(Math.hypot(_waypoint.x - vp.x, _waypoint.z - vp.z))} to the waypoint`

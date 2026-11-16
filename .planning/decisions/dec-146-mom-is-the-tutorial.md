@@ -1,6 +1,6 @@
 ---
 id: DEC-146
-status: standing
+status: superseded
 decided: 2026-11-14
 area: story
 governs: FEAT-184, FEAT-147, opening.md, data/dialogue.js, tutorial, mom, the uncle
