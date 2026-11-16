@@ -623,6 +623,9 @@ export class DamageScreen {
   clearAlert () {
     this.alerting = false
     this.iconEl.classList.remove('on')
+    // BUG-184: …and the drop detector's baseline is this truck: against the last one's, a new run's jalopy roll read as a hit
+    this._prev = { ...this.model.condition }
+    this._prevFlat = this.model.flat.slice()
   }
 
   /** A damage event: flash the icon and hold the alert until the screen is opened. */

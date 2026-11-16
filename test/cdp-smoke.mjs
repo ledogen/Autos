@@ -1960,6 +1960,77 @@ const STEPS = [
       else if (!pays) check(got.money === clean.money && Math.abs(got.gal - clean.gal) < 0.01, `${name}: the skip's wallet and tank differ from a clean skip's: ${JSON.stringify(got)} vs ${JSON.stringify(clean)}`)
     }
   }],
+  ['newRun', async () => {
+    // BUG-184 (owner, 2026-11-16: gave up with a destroyed wheel, a new game with the tutorial played — sparks and the
+    // rim's grind on a healthy tire, and the map flashed the last world): a run wrecks the rear-right wheel down to its
+    // rim and opens its map, gives up, and each next start — the tutorial played, skipped, free roam — must hand over a
+    // whole truck (the damage model AND the rim signal the sparks and the grind read) and a map whose first frame is its
+    // own world. Runs alone: SMOKE_STEPS=boot,newRun.
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    const truck = () => js(`JSON.stringify({ wheel: +window.__damage.get('wheelRR').toFixed(2), tire: +window.__damage.get('tireRR').toFixed(2),
+      flat: window.__damage.flat[3], collapsed: window.__damage.collapsed(3), rim: !!window.__vs.rimOnRoad?.[3],
+      alert: document.getElementById('dmg-icon')?.classList.contains('on') ?? null })`)
+    const whole = s => { const t = JSON.parse(s); return !t.flat && !t.collapsed && !t.rim && !t.alert && t.wheel > 0 && t.tire > 0 }
+    // The map's first frame on open: show() then one render(). A sheet rebuilt in slices (a budget, not Infinity) blits
+    // the bitmap it already holds until it is done, which after a world change is the last world's. The window's size is
+    // held (_sizeStale), as a player's is: a resize wipes the bitmap, and headless the map's width moves between opens.
+    const mapFirst = (held = true) => js(`(() => { const m = window.__map2d(), step = m._stepBackground; let budget = Infinity
+      m._stepBackground = b => { budget = b; return step.call(m, b) }
+      if (${held}) m._sizeStale = () => false
+      try { m.show(); m.render() } finally { delete m._stepBackground; delete m._sizeStale; m.hide() }
+      return budget === Infinity })()`)
+    const toMenu = async () => {
+      for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
+      await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+      check(await until(() => js('document.getElementById("run-end").style.display === "block"'), 5000), 'the give-up ended nothing')
+      await js('document.getElementById("re-menu").click()')
+      check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), 'no main menu after the give-up')
+    }
+    const wreck = async () => {
+      await js('window.__settings.playedBefore = true')   // one hold skips (the confirmation is the story step's)
+      await js('document.getElementById("pm-menu").click()')
+      await js('document.getElementById("mm-new").click()')
+      await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
+      check(await until(() => js(live), 45000, 250), 'the wrecked run never went live')
+      await skipAndReadLarry()
+      await js(`window.__damage.set('tireRR', 0); window.__damage.set('wheelRR', 0); window.__damage.flat[3] = true
+        document.getElementById('dmg-icon').classList.add('on')`)   // the damage alert, unread
+      await simFor(0.5)
+      check(await js('!!window.__vs.rimOnRoad?.[3]'), `the wreck is not on its rim: ${await truck()}`)
+      await mapFirst(false)   // the map's sheet now holds this world
+      await toMenu()
+    }
+    const newGame = async (seed) => {
+      await js('document.getElementById("mm-new").click()')
+      await js(`document.getElementById("su-seed").value = "${seed}"; document.getElementById("su-start").click()`)
+    }
+    const starts = {
+      played: async () => {
+        await newGame(7)
+        check(await until(() => js(live), 45000, 250), 'played: the run never went live')
+        for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
+        await js('document.getElementById("tc-play").click()')   // the tutorial seed loads (DEC-157)
+        check(await until(async () => await js(live) && await js('document.getElementById("dlg-speaker").textContent') === 'Mom', 45000, 250), 'played: no mom\'s call on the tutorial seed')
+        for (let i = 0; i < 40 && await js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"'); i++) { await tap('Enter'); await sleep(250) }
+      },
+      skipped: async () => { await newGame(7); check(await until(() => js(live), 45000, 250), 'skipped: the run never went live'); await skipAndReadLarry() },
+      freeRoam: async () => {
+        await js('document.getElementById("mm-new").click()')
+        for (let i = 0; i < 4 && !/free roam/.test(await js('document.querySelector("[data-key=gameMode] .sel-val").textContent')); i++) await js('document.querySelector("[data-key=gameMode] .sel-next").click()')
+        await js('document.getElementById("su-seed").value = "7"; document.getElementById("su-start").click()')
+        check(await until(() => js('getComputedStyle(document.getElementById("main-menu")).display === "none" && !document.body.classList.contains("stage-on")'), 45000, 250), 'free roam never went live')
+      },
+    }
+    for (const [name, start] of Object.entries(starts)) {
+      await wreck()
+      await start()
+      await simFor(0.5)   // a step of the new run's own: a held step (the tutorial) publishes too
+      const t = await truck(), map = await mapFirst()
+      console.log(`  newRun ${name}: truck ${t} · map's first frame its own: ${map}`)
+      check(whole(t), `${name}: the last run's wreck came along: ${t}`)
+      check(map, `${name}: the map's first frame is the last world's sheet`)
+    }
+  }],
   ['pad', async () => {
     // FEAT-125 pad audit (2026-11-06): a run end to end on the pad alone — every screen the other steps drive with
     // clicks and keys, here by buttons only (Spare's BUG-109 steps already drive the damage screen, the shop's tabs,
