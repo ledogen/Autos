@@ -12,7 +12,9 @@ lane: C
 # BUG-171: junction dirt steps where a limb or self pass is born inside the tie distance
 
 ## Next steps
-Owner: pick the redesign (see Open questions). Then a fresh Lane C agent builds it and re-runs the census.
+Owner: answer the dive `.planning/dives/BUG-171-option2-gore-steps.html` (keep option 2 / option 3 next / other).
+Option 2 is built on land/bug-171 (not landed). It fixed the born-at-a-fold classes; the remaining 582 limb sites are a
+different root (the polyline foot hop, see Description), which only option 3 or a smooth-curve foot can fix.
 
 ## Summary
 Off the deck in junction dirt, the physics ground still jumps 0.15–2.0 m inside one 5 cm move at 618 census sites.
@@ -47,9 +49,19 @@ pure depth weight (tie 0) turns those wraps into steep ramps (up to 1.08 m per 5
    self-pass rivals.
 
 ## Tracker
-- [ ] Owner picks an option (or accepts the class for the alpha: gore dirt, off the deck).
-- [ ] Census: limb and rivalSet sites > 0.15 m down from 183 / 8, no ramp site worse than 1.37 m per 5 cm.
-- [ ] Affected road gates green; fingerprint-world changes only surface / carve.
+- [x] Owner picks an option: option 2 first, pictures in a deep dive (DEC-231).
+- [x] Option 2 built (land/bug-171, TIE_PROM_M 0.1 m on both tie terms).
+- [x] Census: limb and rivalSet sites > 0.15 m 183 / 8 → 175 / 2; ramp worst stays 1.37 m (ramps > 0.15 m 101 → 109).
+- [x] Affected gates 75/75 green (logs/c171-gates.log); fingerprint-world: only surface / carve differ.
+- [ ] Owner answers the option-2 dive (keep 2 / option 3 next / other).
+
+### The remaining class: the polyline foot hop (found 2026-11-15)
+579 of 602 base limb sites (168 of 183 > 0.15 m) keep the same limb count: one limb's foot hops 1–4 m along its leg.
+Worst (seed 407711925, 1.46 m): foot 949.29 → 945.75 m at distances 14.511 / 14.512 m, segments 237 → 236. Inside a
+bend near its centre of curvature, every polyline segment holds its own nearest point and `_projectLegNearNode` keeps the
+lowest of a run of segments, so the foot jumps about one segment length where two are equidistant: rays from the bend
+centre through each polyline vertex (visible as red fans in the dive's hillshades). Not the 4 m dedupe (setting it to
+0.05 m changes nothing) and not the tie term.
 
 ## Open questions
 - Which option, or is gore dirt off the deck acceptable as is for the alpha? (Lane C recommends option 2 first: a
@@ -59,4 +71,7 @@ pure depth weight (tie 0) turns those wraps into steep ramps (up to 1.08 m per 5
 `src/road.js` (`_limbWeight`, the self-pass loop under "BUG-130: EVERY other pass") · `test/junction-dirt-census.mjs`
 
 ## Log
+- 2026-11-15: option 2 built (3f09bb72). Census logs/c171-base.* vs logs/c171-opt2.*: rivalSet 16/8/2.00 → 3/2/1.55,
+  limb births 14 → 2, limb hops 579 → 582 unchanged; steps → ramps of 0.86 and 0.76 m per 5 cm at two sites. Dive
+  BUG-171-option2-gore-steps.html (5 sites on 5 random seeds, game + physics-ground pairs). Gates 75/75 green.
 - 2026-11-14: filed from BUG-158's census (logs/c158-A.log base, logs/c158-head.log head, in the content worktree).

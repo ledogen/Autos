@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BUG-171: option 2 built, what it fixed and what it did not</title>
+<style>
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px }
+  .pair img { width: 100%; display: block }
+  .pair.ground img { image-rendering: pixelated }
+  table { border-collapse: collapse } td, th { padding: 2px 10px; text-align: right } td:first-child, th:first-child { text-align: left }
+</style>
+<h1>BUG-171: option 2 built — what it fixed, and what it did not</h1>
+<p>You picked option 2: the tie term counts only for a pass that already stands out by more than 0.1 m. A pass that has
+just appeared at a fold now starts at weight 0 instead of arriving whole as a step. It is built on branch
+<code>land/bug-171</code> (three lines in <code>src/road.js</code>). I measured it with the junction-dirt census on the
+same 9 random seeds, within 1000 m of the origin, 5 cm moves.</p>
+
+<h2>1. The numbers</h2>
+<p>A site is a place where the physics ground jumps by 2 cm or more inside a 0.5 mm move. A ramp is not a jump: it is a
+5 cm move that rises more than 8 cm.</p>
+<table>
+  <tr><th>class</th><th>sites before</th><th>sites after</th><th>&gt; 0.15 m before</th><th>&gt; 0.15 m after</th><th>worst before</th><th>worst after</th></tr>
+  <tr><td>rival pass appears (rivalSet)</td><td>16</td><td>3</td><td>8</td><td>2</td><td>2.00 m</td><td>1.55 m</td></tr>
+  <tr><td>leg limb born or dies</td><td>14</td><td>2</td><td>12</td><td>2</td><td>—</td><td>—</td></tr>
+  <tr><td>leg limb hops along its leg</td><td>579</td><td>582</td><td>168</td><td>170</td><td>1.46 m</td><td>1.46 m</td></tr>
+  <tr><td>all step classes</td><td>926</td><td>909</td><td>218</td><td>205</td><td>2.00 m</td><td>1.55 m</td></tr>
+  <tr><td>ramps (per 5 cm)</td><td>1255</td><td>1260</td><td>101</td><td>109</td><td>1.37 m</td><td>1.37 m</td></tr>
+</table>
+<p>Option 2 did what it promised. The two classes it targets, a rival pass or a limb being born at a fold, went from 30
+sites to 5. But those were never most of the problem.</p>
+<p>Some steps became ramps, and the ramps are steep. Four new ramp sites appeared where a step used to be. The worst two
+rise 0.86 m and 0.76 m in a 5 cm move: slopes of about 17:1 and 15:1. They replaced steps of 1.82 m and 0.82 m. To a
+tyre that is still a wall.</p>
+
+<h2>2. Why most steps remain: the leg's polyline, not the tie</h2>
+<p>582 of the remaining sites are one leg limb whose foot hops 1–4 m along its own leg, with no limb born or lost.
+I probed the worst one (seed 407711925, 1.46 m). The foot jumps from 949.3 m to 945.8 m along the leg. The distances on
+the two sides are 14.511 m and 14.512 m: one millimetre apart.</p>
+<p>The cause is geometry. A road centreline is stored as a polyline, a chain of straight segments about 3.5 m long.
+When the query point sits on the inside of a bend, near its centre of curvature, the leg is almost the same distance
+away all round it. Each straight segment then has its own nearest point, and the code keeps only the nearest of them.
+As the query crosses the line where two neighbouring segments are equally near, the chosen foot jumps by about a
+segment length. The carve takes its height from the foot, so the ground steps by the leg's climb over that jump.</p>
+<p>Those lines are rays from the bend's centre through each polyline corner. You can see them in the pictures below as
+a red fan (sites A and D) or, where the bend's centre is off the picture, as parallel red lines (site E). The tie term
+never touches this, so option 2 cannot fix it.</p>
+
+<h2>3. The sites</h2>
+<p>Each site has two pairs, before on the left, after on the right. The top pair is the game, same camera both times.
+The bottom pair is the physics ground itself: a 16 m square around the site, north up, one pixel per 5 cm, lit from the
+north-west. <b style="color:#ff2828">Red</b> marks a jump over 0.15 m between neighbouring pixels.
+<b style="color:#ffaa28">Amber</b> marks one over 0.05 m (steeper than 1:1). <b style="color:#3c8cff">Blue</b> on the
+after picture marks ground that moved by more than 2 cm.</p>
+<p>The game pictures barely change, and they cannot show these steps. The visible terrain mesh has vertices about a
+metre apart, so a step inside 5 cm draws as a smooth slope or a crease. The wheel samples the physics ground directly,
+so it feels the step. The ground pictures are the honest view.</p>
+
+<h3>A. Seed 407711925, the worst site (node −898, −47)</h3>
+<p>Before: a 2.00 m rival-pass step and a 1.46 m limb hop, a few metres apart. After: the 2.00 m step is gone; the
+limb hops (the red fan) are unchanged.</p>
+<div class="pair"><img src="BUG-171-a-407711925-game-before.jpg" alt="Seed 407711925 gore, game view, before"><img src="BUG-171-a-407711925-game-after.jpg" alt="Same view, after option 2"></div>
+<div class="pair ground"><img src="BUG-171-a-407711925-ground-before.png" alt="Physics ground hillshade before: a red fan of steps radiating from one point"><img src="BUG-171-a-407711925-ground-after.png" alt="Physics ground hillshade after: the same fan"></div>
+
+<h3>B. Seed 565500664, the second worst (node −142, 98)</h3>
+<p>Before: a 1.82 m rival-pass step. After: it is a ramp of 0.86 m per 5 cm, still a wall to a tyre. The 1.15 m limb
+hop beside it is unchanged.</p>
+<div class="pair"><img src="BUG-171-b-565500664-game-before.jpg" alt="Seed 565500664 gore, game view, before"><img src="BUG-171-b-565500664-game-after.jpg" alt="Same view, after"></div>
+<div class="pair ground"><img src="BUG-171-b-565500664-ground-before.png" alt="Physics ground before"><img src="BUG-171-b-565500664-ground-after.png" alt="Physics ground after"></div>
+
+<h3>C. Seed 917338424, a born limb (node −204, −536)</h3>
+<p>Before: a 0.82 m step where a limb was born. After: a ramp of 0.76 m per 5 cm in the same place. The step became a
+ramp, but barely less steep.</p>
+<div class="pair"><img src="BUG-171-c-917338424-game-before.jpg" alt="Seed 917338424 gore, game view, before"><img src="BUG-171-c-917338424-game-after.jpg" alt="Same view, after"></div>
+<div class="pair ground"><img src="BUG-171-c-917338424-ground-before.png" alt="Physics ground before"><img src="BUG-171-c-917338424-ground-after.png" alt="Physics ground after"></div>
+
+<h3>D. Seed 1074499174, where option 2 helps most (node 746, 432)</h3>
+<p>Before: born-limb steps of 0.75 m and 0.60 m. After: a ramp of 0.23 m per 5 cm. The star of red rays around the
+bend's centre is the hop class and stays.</p>
+<div class="pair"><img src="BUG-171-d-1074499174-game-before.jpg" alt="Seed 1074499174 gore, game view, before"><img src="BUG-171-d-1074499174-game-after.jpg" alt="Same view, after"></div>
+<div class="pair ground"><img src="BUG-171-d-1074499174-ground-before.png" alt="Physics ground before: a star of red rays"><img src="BUG-171-d-1074499174-ground-after.png" alt="Physics ground after: the star, slightly thinner"></div>
+
+<h3>E. Seed 3561904408, a typical site (node 10, 554)</h3>
+<p>A 0.25 m limb hop: the median of the sites over 0.15 m. Unchanged. The parallel red lines are the same rays, from a
+bend whose centre is off the picture.</p>
+<div class="pair"><img src="BUG-171-e-3561904408-game-before.jpg" alt="Seed 3561904408 gore, game view, before"><img src="BUG-171-e-3561904408-game-after.jpg" alt="Same view, after"></div>
+<div class="pair ground"><img src="BUG-171-e-3561904408-ground-before.png" alt="Physics ground before: parallel red lines"><img src="BUG-171-e-3561904408-ground-after.png" alt="Physics ground after: the same lines"></div>
+
+<h2>4. What next</h2>
+<p>Option 3, the smooth minimum, fixes the hop class by construction. It stops picking one nearest point and instead
+blends every point of the leg by how near it is, so a foot cannot jump. Near a bend's centre it averages the leg's
+height all round the bend, which is the honest answer there. It also replaces the tie term and the prominence gate,
+so option 2 would be removed by it. Cost: more distance samples per ground query near junctions, measured with the
+power bench before landing.</p>
+<p>A narrower alternative exists. Each limb's foot could be projected onto the smooth centreline curve instead of the
+polyline (the road resolver already does this for the main road it stands on). The rays would go away. One point would
+stay: the bend's exact centre, where every point of the curve is equally near, and the foot would swing round fast
+there, a steep ramp over a few centimetres.</p>
+<p>My recommendation: keep option 2 for now (it removes the 2.00 m and 1.82 m steps, adds no new step, and costs
+nothing), and build option 3 next.</p>
+<dive-q id="next" options="keep option 2 and build option 3 next (recommended) | keep option 2, try the smooth-curve foot first | keep option 2 and stop: gore dirt is fine for the alpha | drop option 2"></dive-q>
+
+<h2>5. Anything this misses</h2>
+<dive-q id="notes"></dive-q>
+
+<script src="/dive.js"></script>
