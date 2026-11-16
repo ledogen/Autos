@@ -801,24 +801,38 @@ const STEPS = [
   }],
   ['farm', async () => {
     // FEAT-230 slice 3: a farm sells for the first time (groceries, $5). Parking at one opens the same buy screen as the
-    // general store, its jobs a button inside it. Picture: wip/groceries/farm-shop.png.
-    const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden)
-      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
-    if (!p) { console.log('  farm: no farm in this region — step skipped'); return }
-    await seat(p.x, p.z, p.h)
-    await park(true)
-    const open = () => js('document.getElementById("svc-screen").checkVisibility()')
-    check(await until(open, 2000), `parking at the farm opened no shop (prompt "${await js('document.getElementById("poi-prompt")?.textContent.trim()')}")`)
-    const txt = await js('document.querySelector("#svc-screen").textContent')
-    check(/Groceries/.test(txt) && !/My Vehicle|Parts Shop/.test(txt), `the farm's shop reads: "${txt.slice(0, 200)}"`)
-    await sleep(600)
-    const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
-    mkdirSync('wip/groceries', { recursive: true }); writeFileSync('wip/groceries/farm-shop.png', Buffer.from(shot.result.data, 'base64'))
-    console.log(`  farm: shop text "${txt.slice(0, 160).replace(/\s+/g, ' ')}"`)
-    await tap('Escape')
-    check(await until(async () => !await open(), 1000), 'Esc left the farm shop open')
-    await tap(' ')
-    await sleep(300)
+    // general store, its jobs a button inside it ("go to jobs", FEAT-197) that appears only while the farm has an offer up.
+    // A farm with NO offer: the shop, no jobs button. A farm WITH one: the button, the farm's own offer card, accept, a mission.
+    // Pictures: wip/groceries/farm-shop.png (no offer), farm-shop-jobs.png (the jobs button).
+    const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    const find = (want) => js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
+      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !q.park && ((b.view(q.id, 0)?.count > 0) === ${want}))
+      return q ? { h: Math.atan2(-q.tx, -q.tz), id: q.id, ...${PAD_SEAT}(q) } : null })()`)
+    const shot = async (f) => { await sleep(600); const r = await client.cmd('Page.captureScreenshot', { format: 'png' }); mkdirSync('wip/groceries', { recursive: true }); writeFileSync(`wip/groceries/${f}`, Buffer.from(r.result.data, 'base64')) }
+    const leave = async () => { await tap('Escape'); await until(async () => !await vis('svc-screen'), 1500); await tap(' '); await sleep(300) }
+    const bare = await find(false)
+    if (bare) {
+      await seat(bare.x, bare.z, bare.h); await park(true)
+      check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with no offer opened no shop')
+      const txt = await js('document.querySelector("#svc-screen").textContent')
+      check(/Groceries/.test(txt) && !/My Vehicle|Parts Shop/.test(txt), `the farm's shop reads: "${txt.slice(0, 200)}"`)
+      check(await js('!document.querySelector("#svc-screen [data-act=jobs]")'), 'a farm with no offer shows a dead jobs button')
+      await shot('farm-shop.png')
+      await leave()
+    } else console.log('  farm: no farm without an offer — the no-offer half skipped')
+    const live = await find(true)
+    if (!live) { console.log('  farm: no farm with an offer up — the jobs half skipped'); return }
+    await seat(live.x, live.z, live.h); await park(true)
+    check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with an offer opened no shop')
+    check(await js('!!document.querySelector("#svc-screen [data-act=jobs]")'), 'the farm shop has no jobs button although an offer is up')
+    await shot('farm-shop-jobs.png')
+    await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+    check(await until(() => vis('mp-accept'), 2000), "the farm's jobs button did not bring up the farm's own offer card")
+    await js('document.getElementById("mp-accept").click()')
+    check(await until(async () => await vis('mission-hud') && await js('document.querySelector("#mission-hud .hud-text").textContent.trim()'), 5000), 'accepting the farm offer started no mission')
+    console.log(`  farm: shop, jobs button, offer card, accepted → mission ${await js('window.__mission().state')}`)
+    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')   // abandon: two clicks (the confirm)
+    check(await until(async () => !await js('window.__mission().isOnJob()'), 3000), 'abandoning the farm job did not end it')
   }],
   ['vendor', async () => {
     // FEAT-232: the food vendor's shop — the burger on its shelf and the dinner meal's "Eat here" line (paid, 30 min, holds
