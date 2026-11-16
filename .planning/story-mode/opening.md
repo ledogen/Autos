@@ -31,7 +31,7 @@ chooses to leave, and not one he can go back to: he can **never work there again
 a cent from it**. The drudgery is established and then taken away in the same beat — Billy is
 not escaping the grill, he is out on the street without it.
 
-> The tutorial's order and clock (fired 07:00, errands first, the paycheck the next morning) are the records: DEC-299, DEC-304..308.
+> The tutorial's order and clock (fired 07:00, errands first, the paycheck the next morning) are the records: DEC-299, DEC-305..308 and DEC-346 (which replaced DEC-304); its middle, Katie's picnic at the old McGill ranch, is DEC-345.
 
 This is what makes the uncle's stack of papers land. The paper route isn't a more exciting option
 alongside a safe one; it is the only thing there is.

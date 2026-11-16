@@ -1,6 +1,6 @@
 ---
 id: DEC-324
-status: standing
+status: superseded
 decided: 2026-11-16
 area: story
 governs: FEAT-229, DEC-307, data/dialogue.js, src/main.js, Katie, tut-katie, the camping area, the expedition camp, good deeds, the paycheck, TUT_STAMPS
