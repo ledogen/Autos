@@ -6423,7 +6423,7 @@ function _updateParkTriggers (zParked = false) {
     } else if (moms) {
       _campUi = { mode: 'moms', site: null, moms: true }
       _renderCampUI()
-      if (_firingDay()) { _tut('tut-lastweek'); _tut('tut-moms') }   // DEC-307: her question about last week's pay; FEAT-170 stage 4
+      if (_firingDay()) { _tut('tut-hungry'); _tut('tut-lastweek'); _tut('tut-moms') }   // DEC-315 hunger and energy; DEC-307 last week's pay; FEAT-170 stage 4
     } else if (seeking && !camp.fast && !onRoad && !_firingDay()) {   // DEC-308: the truck is no bed on the firing day
       _campUi = { mode: 'truck', site: null, moms: false, truck: true }
       _renderCampUI()

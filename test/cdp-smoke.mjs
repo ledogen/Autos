@@ -1657,7 +1657,7 @@ const STEPS = [
     if (!await panel()) { await simFor(1); await park(true) }   // the 0.5 m drop lands, then a fresh pull
     check(await until(panel, 3000), "parking at mom's that night opened no sleep card")
     lessons += await readCards()
-    check(lessons >= 4, `no question and sleep lessons at hers (${lessons} read, want her question and her three sleep cards)`)
+    check(lessons >= 5, `no hunger, question and sleep lessons at hers (${lessons} read, want her hunger card, her question and her three sleep cards)`)
     check(await clock() >= -26.51, `her door that night did not stamp 21:30 (clockH ${await clock()})`)
     await js('document.getElementById("cp-sleep").click()')
     const want = await js('Math.round(-17 - window.__day().clockH())')   // 07:00 on day 0 is clockH −17

@@ -144,7 +144,11 @@ export const TUT = {
         + `<span class="kc-pad">the <span class="dlg-key">left stick</span></span>. Follow the line home.` }],   // FEAT-174: kc-kb / kc-pad, one per input
     'tut-park': [{ speaker: 'Mom', text: `Pull in at mine and stop. A tap of <span class="dlg-key">Space</span> sets the handbrake &mdash; `
         + `that's parking, and parking is how you get anything done around here.` }],
-    // At hers that night, when her sleep card opens: first her question about last week's pay (DEC-307), then her bed.
+    // At hers that night, when her sleep card opens: first hunger and energy (DEC-315: the owner's words; true of day.js —
+    // past the last meal's hold energy drains faster than an hour per hour, and low energy is sleepy, tired, exhausted),
+    // then her question about last week's pay (DEC-307), then her bed.
+    'tut-hungry': [{ speaker: 'Mom', text: `Oh my, you must be hungry by now. Just be careful: when you get hungry you run out of energy `
+        + `really quickly, and then you get tired.` }],
     'tut-lastweek': [{ speaker: 'Mom', text: `[placeholder] Did they at least pay you for last week? &hellip; They didn't, did they. `
         + `Well, you go and get that check in the morning.` }],
     'tut-moms': [
