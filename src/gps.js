@@ -34,6 +34,7 @@ const CHEV_SPACING = 15     // m between chevrons — also the world lattice the
 const CHEV_HOVER   = 0.35   // m above the routed road surface
 const CHEV_FADE    = 3      // chevrons over which the far end ramps in
 const CHEV_NEAR    = 20     // m: a chevron fades out over the last stretch as you drive into it
+const START_HOVER  = 0.3    // m: the flat start arrow floats this far above the road (DEC-303: well clear of z-fighting, still reads as painted)
 const ARROW_HOVER  = 2.0    // m: the board's bottom edge clears the road by this much (owner-set)
 const ARROW_IN     = 140    // m: arrow starts fading in
 const ARROW_FULL   = 110    // m: fully opaque
@@ -44,7 +45,7 @@ const RING_HOVER   = 1.4
 const UT_ON        = -0.5
 const UT_OFF       = -0.2
 // DEC-287: the wrong-way flag feeds the HUD alert (main.js); the 3D U-turn arrow is gone.
-// Mission start (DEC-287, DEC-297): ONE fixed junction board STAND_BEHIND m BEHIND the truck's route progress, along the road
+// Mission start (DEC-287, DEC-297): ONE fixed arrow (DEC-303: laid flat on the road like a painted one, so it reads from any side) STAND_BEHIND m BEHIND the truck's route progress, along the road
 // the other way from the route, pointing down the route: a player facing the wrong way sees it ahead. Gone START_GONE_M away.
 const STAND_BEHIND = 10     // m back along the road, opposite the route, from where the truck stood at accept
 export const START_GONE_M = 20   // m the truck travels (either way) from where it accepted before the start board goes
@@ -70,6 +71,10 @@ const FWD_V        = 15
 const BACK_V       = 8
 // The overlay's one colour — chevrons, junction arrow and destination ring share the material.
 export const GPS_COLOR = 0x66e0ff
+// FEAT-238 / DEC-329: at night the overlay's OWN glow drops to this fraction of its day value (a faint
+// trace so the far chevrons stay findable) and the headlights light the glyphs instead.
+export const GPS_NIGHT_FLOOR = 0.12
+const GPS_LIT_GAIN = 2.5     // night diffuse gain: the grazing headlight on a flat glyph is weak, so lift it
 
 // ── pure route math (THREE-free — gated by test/gps-route.mjs) ──────────────────────────────
 
@@ -126,6 +131,7 @@ export function bakeRoute (segments, elevAt = null) {
     cum[i] = cum[i - 1] + Math.hypot(px[i] - px[i - 1], py[i] - py[i - 1], pz[i] - pz[i - 1])
   }
   const route = { px, py, pz, cum, n, length: cum[n - 1], partial, junctions: [] }
+  route.segs = segments; route.joinIdx = joinIdx   // DEC-303: which segment owns a vertex (the flat start arrow's bank)
   route.back = { seg: segments[0], dir: Math.sign(segments[0].s1 - segments[0].s0) || 1 }   // DEC-297: the road behind the start
   route.firstArc = markCoverage(route)
 
@@ -365,10 +371,22 @@ export class GpsSystem {
 
     // Additive so the distance fade is honest (a brightness ramp on an opaque glyph just reads as
     // a different colour) and so the overlay never hides the road under it.
-    const mat = () => new THREE.MeshBasicMaterial({
-      color: GPS_COLOR, transparent: true, depthWrite: false, toneMapped: false,
-      side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-    })
+    // FEAT-238: Lambert, not Basic, so the headlight spots can reach it. By day the diffuse term is 0 and
+    // the emissive term is the whole look (identical to the old Basic); setNight() trades them.
+    this._mats = []
+    const mat = () => {
+      const m = new THREE.MeshLambertMaterial({
+        color: 0x000000, emissive: GPS_COLOR, transparent: true, depthWrite: false, toneMapped: false,
+        side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+      })
+      // Instance colour (the chevrons' distance fade) multiplies the diffuse term only; make it scale the glow too.
+      m.onBeforeCompile = (sh) => {
+        sh.fragmentShader = sh.fragmentShader.replace('vec3 totalEmissiveRadiance = emissive;',
+          '#ifdef USE_COLOR\nvec3 totalEmissiveRadiance = emissive * vColor.rgb;\n#else\nvec3 totalEmissiveRadiance = emissive;\n#endif')
+      }
+      this._mats.push(m)
+      return m
+    }
 
     this._chevGeo = _chevronGeometry()
     this._chevMat = mat()
@@ -396,7 +414,9 @@ export class GpsSystem {
     this.group.add(this._objArrow)
 
     this._startMat = mat()
-    this._startArrow = new THREE.Mesh(this._arrowGeo, this._startMat)   // DEC-287: the same board, fixed at the mission's start
+    // DEC-287/DEC-303: the same arrow, fixed at the mission's start, laid FLAT (a copy of the geometry: xy -> xz, centred)
+    this._startArrow = new THREE.Mesh(this._arrowGeo.clone().translate(0, -1.6, 0).rotateX(-Math.PI / 2), this._startMat)
+    this._startArrow.rotation.order = 'YZX'   // yaw, then pitch with the grade, then roll with the bank
     this._startArrow.frustumCulled = false
     this._startArrow.renderOrder = 3
     this._startArrow.visible = false
@@ -420,6 +440,15 @@ export class GpsSystem {
   setEnabled (v) {
     this.enabled = !!v
     if (!this.enabled) this._hideAll()
+  }
+
+  /** FEAT-238: n = night factor 0..1 (1 = dark). Own glow falls to GPS_NIGHT_FLOOR, lit term (headlights) rises. */
+  setNight (n) {
+    const glow = 1 - n * (1 - GPS_NIGHT_FLOOR)
+    for (const m of this._mats) {
+      m.emissiveIntensity = glow
+      m.color.set(GPS_COLOR).multiplyScalar(n * GPS_LIT_GAIN)
+    }
   }
 
   /** Drop the baked route (seed change / world teardown). Re-bakes on the next update. */
@@ -603,21 +632,39 @@ export class GpsSystem {
    */
   _behind (route, s) {
     const want = STAND_BEHIND - s
-    if (want <= 0) return sampleRoute(route, s - STAND_BEHIND)
     const p0 = sampleRoute(route, 0), { seg, dir } = route.back
+    if (want <= 0) {
+      const p = sampleRoute(route, s - STAND_BEHIND)
+      const { segs, joinIdx: J } = route
+      let k = 0
+      while (k < J.length && J[k] < p.idx + 1) k++   // the segment whose vertex run holds this span
+      const a = k ? J[k - 1] : 0, b = k < J.length ? J[k] : route.n - 1, sg = segs[k]
+      const f = Math.min(1, Math.max(0, (s - STAND_BEHIND - route.cum[a]) / ((route.cum[b] - route.cum[a]) || 1)))
+      return { ...p, bank: this._bank(sg, sg.s0 + (sg.s1 - sg.s0) * f, Math.sign(sg.s1 - sg.s0) || 1) }
+    }
     const room = dir > 0 ? seg.s0 : seg.centerline.length - seg.s0   // road left behind the first point
     const d = Math.min(want, Math.max(room, 0))
     if (d < 1) return { ...p0, x: p0.x - p0.dx * want, z: p0.z - p0.dz * want }
     const sa = seg.s0 - dir * d, q = seg.centerline.pointAt(sa)
-    return { ...p0, x: q.x, z: q.z, y: this._profileY(seg, sa) ?? seg.gradeAt(sa) }
+    return { ...p0, x: q.x, z: q.z, y: this._profileY(seg, sa) ?? seg.gradeAt(sa), bank: this._bank(seg, sa, dir) }
+  }
+
+  /** sin(camber) of the road at segment arc `s`, signed to rise on the RIGHT of the route's direction (`dir` = the run's); 0 when unstreamed. */
+  _bank (seg, s, dir) {
+    const road = this._getRoad?.()
+    if (s < Math.min(seg.s0, seg.s1) || s > Math.max(seg.s0, seg.s1)) return 0
+    if (!road || !seg.runKey || !road._network?.has(seg.runKey)) return 0
+    const c = road.camberProfile(s, seg.runKey)
+    return Number.isFinite(c) ? Math.sin(c) * dir : 0
   }
 
   _placeStart (route, s, car) {
     if (this._startPending) {
       this._startPending = false
       const p = this._behind(route, s)
-      this._startArrow.position.set(p.x, p.y + ARROW_HOVER, p.z)
-      this._startArrow.rotation.set(0, Math.atan2(-p.dz, p.dx), 0)   // as the junction board: tip on the direction of travel
+      this._startArrow.position.set(p.x, p.y + START_HOVER, p.z)
+      // DEC-303: lies on the road like a painted arrow: yaw tip on the direction of travel, pitch with the grade, roll with the bank
+      this._startArrow.rotation.set(-Math.asin(p.bank ?? 0), Math.atan2(-p.dz, p.dx), Math.atan(p.grade))
       this._startAt = { x: car.x, z: car.z }
     }
     if (this._startAt && startBoardGone(this._startAt, car)) this._startAt = null

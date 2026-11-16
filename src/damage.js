@@ -1440,13 +1440,16 @@ export class DamageModel {
   step (vehicleState, params, dt) {
     const P = DAMAGE_PARAMS
     this._stepTemp(vehicleState, params, dt)
-    if (this.held) { this.publish(params); return }   // FEAT-184 (DEC-151): the tutorial wears nothing
+    // BUG-184: the held and the locked steps still publish the signals other modules read off vehicleState. Held, they
+    // kept the last run's values: a wheel left on its rim at a give-up threw sparks and ground its rim through the next
+    // run's tutorial (dirt-spray.js, tire-audio.js), on a truck the new run had made whole.
+    if (this.held) { this._signals(vehicleState); this.publish(params); return }   // FEAT-184 (DEC-151): the tutorial wears nothing
 
     // Damage disabled: hold everything at the nominal used-truck condition. Deliberately NOT a
     // freeze — a debug session should always start from the same known state (owner, 2026-08-19).
     if (!P.enabled) {
       this.setAll(P.nominalCondition)
-      vehicleState.engineHealth = this.get('engine')   // the FEAT-33 crank-time seam follows the lock
+      this._signals(vehicleState)   // the FEAT-33 crank-time seam follows the lock
       this.publish(params)
       return
     }
@@ -1477,9 +1480,9 @@ export class DamageModel {
     // rimOnRoad is the published state ("this corner is down to the rim"): tire-audio.js grinds on it.
     const vel = vehicleState.velocity
     const v2 = vel ? vel.x * vel.x + vel.y * vel.y + vel.z * vel.z : 0
-    const onRim = vehicleState.rimOnRoad || (vehicleState.rimOnRoad = [false, false, false, false])
+    this._signals(vehicleState)
+    const onRim = vehicleState.rimOnRoad
     for (let i = 0; i < 4; i++) {
-      onRim[i] = this.flat[i] && this.get(TIRE_IDS[i]) <= 0
       if (!this.flat[i] || v2 <= 0) continue
       if (!onRim[i]) { this.wear(TIRE_IDS[i], v2 * dt, P.durFlatTire); continue }
       this.wear(WHEEL_IDS[i], v2 * dt, P.durFlatRim)
@@ -1634,5 +1637,13 @@ export class DamageModel {
     vehicleState.engineHealth = this.get('engine')
 
     this.publish(params)
+  }
+
+  /** The state-derived signals step() publishes on vehicleState every step, wearing or not: the corners down to their
+   *  rims (rimOnRoad — the sparks and the grind) and the engine track as the FEAT-33 crank-time seam. */
+  _signals (vehicleState) {
+    const onRim = vehicleState.rimOnRoad || (vehicleState.rimOnRoad = [false, false, false, false])
+    for (let i = 0; i < 4; i++) onRim[i] = this.flat[i] && this.get(TIRE_IDS[i]) <= 0
+    vehicleState.engineHealth = this.get('engine')
   }
 }

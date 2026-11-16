@@ -12,7 +12,8 @@ lane: A (tutorial)
 # FEAT-217: Tutorial fixes from the 11-14 playtest
 
 ## Next steps
-Card tutorial-gates answered 11-16 and built on land/tutorial-1116 (lane S): the grace around places is 20 m (DEC-281, supersedes DEC-219), the reset otherwise as it was; both anti-dodge gates (DEC-282). Left: land it; the owner's playtest (FEAT-184's test-drives card).
+All built and landed (5efe7acb, land/tutorial-1116; the rebuilt order is FEAT-229). Every box below is ticked. Owner: sign off the
+whole tutorial on the `tutorial-test-drives` card (FEAT-184); then close.
 
 ## Summary
 Eight problems found in one tutorial playtest: the automatic reset is too eager and silent, giving up leaves stale state, the flat tyre can be driven on forever, the dialogue order is off, the cart can leave the player $5 short, pad focus is invisible on the opening buttons, and free cam survives into a new game.
@@ -70,3 +71,4 @@ Inbox wggu:
 - 2026-11-15 (lane A, card feat217-try): A measured in the running game, seed 822480141 evening: the countdown starts at 15.0–15.5 m from the centreline (10 m past the paved side) on a straight, a bend and a junction leg, both sides. Driven off at 10.8 m/s it starts at 15.7 m, and in its 4 s the truck reaches ~52 m before the reset — that is the "much bigger". Unchanged. B: `routeLeftM` (mission.js) on the tutorial line. C: `setThrottleCut(_flatOwed())` (vehicle.js); park-brake gate §7, smoke checks after the flat.
 - 2026-11-14 (lane A): built. Teardown: ONE `_resetRunLocals` (main.js) called from onRegionExit and run entry (pump, tutorial vars, waypoint, free cam, screens). Reset: 10 m past the road + 75 m from any POI + countdown (DEC-219). Spare flat is found out after the corner try. Flat gate: mom's card and door wait while the evening's flat is on (`_flatOwed`). $5: the first patch is on mom (`_momOwes.patch`). Pad focus CSS for #tut-card. Horizontal scroll in shop/maintenance tabs (526f second half) NOT done, not in the tracker. Smoke extended (countdown, shoulder, give-up cam/pump).
 - 2026-11-14: minted from the owner's inbox by the scribe. Nothing built.
+2026-11-16 (bookkeeping sweep): landed on main 5efe7acb; no unticked box. Waits only on the owner playtest (card tutorial-test-drives) - ready to close on sign-off.

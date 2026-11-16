@@ -70,3 +70,4 @@ Old oil and a clogged filter multiply: both neglected is both costs at once (× 
 ## Owner, 2026-11-14
 Owner opened card feat202-look after the DEC-136 numbers and submitted it with no choice and no note. Read as no change asked; the orchestrator asked the owner to confirm.
 - 2026-11-15 (lane u, land/shopui-1115): JALOPY_COND.oil 0.4-0.8 -> 0.6-0.8 (land/shopui-1115).
+- 2026-11-16 land/ui-batch: pack flavour per the owner's card note: Duffel "Takes it all, but…", Rucksack drops ", a fair way in". Frame pack NOT changed: the owner's new line ("a serious solution for campers who want to trek") is cut off mid-sentence; waiting for the full line.

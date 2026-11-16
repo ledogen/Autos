@@ -14,11 +14,14 @@
  *   clack   — the deed tally flipping: a wood block, two inharmonic partials (~1 / 2.65 kHz) on a click.
  *   thud    — a miss ("no deed", an item missed, a load that never arrived): a dull low knock falling
  *             110 → 50 Hz under a lowpassed scuff. Not owner-heard yet.
+ *   paper   — FEAT-64: the thrown roll. playPaperThrow = a bandpassed-noise whoosh sweeping 2.2 kHz → 700 Hz
+ *             over 0.3 s, on the world bus (it leaves the cab); playPaperSlap = a soft thump under a
+ *             highpassed paper-on-ground slap. Not owner-heard yet.
  *   blip    — a dialogue card filled (owner, 2026-11-06, feat120-blip: "one per card … blip at the end"):
  *             a 70 ms triangle at the speaker's pitch with a faint square an octave up. Not owner-heard yet.
  */
 
-import { getAudioContext, getMasterBus, whiteNoiseBuffer } from './engine-audio.js'
+import { getAudioContext, getMasterBus, getWorldBus, whiteNoiseBuffer } from './engine-audio.js'
 
 let enabled = true
 let volume = 0.6
@@ -122,4 +125,28 @@ export function playBlip (speaker) {
   const t = ctx.currentTime, o = out(ctx, 0.22 * volume), f = BLIP_HZ[speaker] ?? 587
   tone(ctx, o, t, f, 0.6, 0.07, f, 'triangle')
   tone(ctx, o, t, 2 * f, 0.08, 0.04, 2 * f, 'square')
+}
+
+/** A paper roll leaving the hand: a whoosh, bandpassed noise sweeping down as it slows. */
+export function playPaperThrow () {
+  const ctx = live(); if (!ctx) return
+  const t = ctx.currentTime, o = ctx.createGain(), p = jit(0.08)
+  o.gain.value = 0.35 * volume * jit(0.15); o.connect(getWorldBus())
+  const s = ctx.createBufferSource(); s.buffer = (noise ??= whiteNoiseBuffer(ctx, 1))
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.5
+  f.frequency.setValueAtTime(2200 * p, t); f.frequency.exponentialRampToValueAtTime(700 * p, t + 0.3)
+  const e = ctx.createGain()
+  e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(1, t + 0.09)
+  e.gain.exponentialRampToValueAtTime(0.0001, t + 0.32)
+  s.connect(f); f.connect(e); e.connect(o)
+  s.start(t, Math.random() * 0.6); s.stop(t + 0.34)
+}
+
+/** The roll landing: a short low thump and a highpassed noise slap, the paper on the ground. */
+export function playPaperSlap () {
+  const ctx = live(); if (!ctx) return
+  const t = ctx.currentTime, o = ctx.createGain(), p = jit(0.06)
+  o.gain.value = 0.4 * volume * jit(0.15); o.connect(getWorldBus())
+  tone(ctx, o, t, 140 * p, 0.7, 0.07, 80 * p)
+  hit(ctx, o, t, 'highpass', 2500, 0.5, 0.03)
 }

@@ -85,6 +85,7 @@ it"), and the inbox "the reward item price can be like 30% over the mission pay 
 
 ## Decisions
 - 2026-11-14, owner (card feat199-window, answer "top figure, 0.7× to 1.3×"): "lemme know which items will never be offered as a reward due to this rule. my guess is the engines, lsds and other top items will likely never be offered as a reward" (DEC-204).
+- 2026-11-16, owner: top parts (engines, turbo, supercharger) — "1 and 2 are good for now": region-gated plus sold by auto shops (DEC-302).
 
 ## Log
 - 2026-11-14: scribe recorded the owner's answer (card feat199-window).
@@ -93,3 +94,4 @@ it"), and the inbox "the reward item price can be like 30% over the mission pay 
   Owner's guess (engines, LSDs, top items) holds for the alpha: the only two are the stock engine and the helical LSD; there is no other engine or LSD row.
 
 - 2026-11-15, owner (card feat199-never): "fine as built (cheapest of the pool as last resort)"; a stock engine on a 10 km job is fine (DEC-226). Open: how players get items far above the window (card top-items-path).
+- 2026-11-16: DEC-302 recorded. Nothing to build yet: the top parts are not in data/parts.js and have no prices; when they are added they go in shop stock and stay inside the reward window.

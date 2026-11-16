@@ -190,6 +190,13 @@ export class ShadowBakeSystem {
     this._prevClear = new THREE.Color()     // scratch for save/restore of the renderer clear colour
 
     this.setTilePx(tilePx)        // allocates + clears the atlas (no-op when tilePx = 0)
+    // BUG-182: a GPU reset (webglcontextrestored) comes back with the atlas zeroed (= no shadow): re-queue every
+    // tile that held a chunk's shadows.
+    renderer.domElement.addEventListener('webglcontextrestored', () => {
+      const keys = this._owner.filter(Boolean)
+      this._owner.fill(null)
+      this.markAll(keys)
+    })
   }
 
   get atlasTexture() { return this._rt ? this._rt.texture : null }

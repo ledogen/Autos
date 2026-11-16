@@ -15,6 +15,12 @@
 //     `packSlots`; camp gear packed inside frees its truck slot (it is still truck mass). Several
 //     packs may be owned, never fewer than one; exactly one is EQUIPPED, and it always holds a
 //     sleeping item — swapped for another bed, never removed for nothing. Only camp gear packs.
+//   • THE FRESH CLOCK (FEAT-230 slice 2, items.md §1b, DEC-338): an item with `freshH` carries `ages` on its entry,
+//     one per unit, game hours of fresh life spent; a unit at freshH is gone, the rest of the stack stays. It runs on
+//     the ONE world clock (tick, fed daySystem.clockH()), so it runs asleep and holds wherever that clock holds (the
+//     brake's latch, DEC-289; an idle camp; the opening's evening). An iced cooler runs `holds` units of food at its
+//     coolRate. Ice is on the clock too (it melts); a bag used into a cooler becomes the cooler's `iceH`. A save
+//     without `ages` loads fresh.
 //   • Items die with the run (SM-INV-8/9): start() resets to the starting kit — the equipped Pack
 //     with the bedroll in it. The run save (FEAT-42, SM-4) will carry `runInventory`; until then
 //     it lives in memory.
@@ -34,6 +40,8 @@ export const runInventory = {
 }
 
 const _stacks = (id) => STACKING_KINDS.has(ITEMS[id].kind)
+/** FEAT-230: units to a slot — ITEMS[id].stack (the potato's 5, items.md §1); unset = one slot holds any number. */
+const _cap = (id) => ITEMS[id].stack ?? Infinity
 const _isPack = (e) => ITEMS[e?.id]?.kind === 'pack'
 const _bed = (id) => ITEMS[id]?.bed ?? null   // FEAT-171: 'ground' | 'bedding' | 'blanket'
 const _isBedding = (id) => _bed(id) === 'bedding'
@@ -41,6 +49,14 @@ const _isBedding = (id) => _bed(id) === 'bedding'
 /** The starting kit's one entry: the equipped Pack with the bedroll in it (a fresh copy each call — entries are mutated).
  *  FEAT-184 (DEC-238): in a played tutorial it is Larry's old pack, which mom sends back to him and he gives you. */
 export const startingPack = () => ({ id: 'pack', n: 1, equipped: true, contents: ['bedroll'] })
+/** FEAT-230 (DEC-338): a fresh-clock entry's per-unit ages, youngest first, synced to its count: a new unit comes in
+ *  fresh, a spent one is the oldest (the oldest is eaten first). Call it before changing `n` by hand. */
+const _ages = (e) => {
+    const a = (e.ages ??= [])
+    while (a.length < e.n) a.unshift(0)
+    a.length = e.n
+    return a
+}
 const _newEntry = (id) => ITEMS[id].kind === 'pack' ? { id, n: 1, equipped: false, contents: [] }
     : ITEMS[id].capGal ? { id, n: 1, gal: ITEMS[id].capGal } : { id, n: 1 }
 
@@ -67,6 +83,7 @@ export class InventorySystem {
 
     /** Begin a story run with the starting kit. Called from onRegionLive beside economySystem.start(). */
     start () {
+        this._lastH = null   // the fresh clock re-seats on the next tick
         runInventory.entries = [startingPack()]
         runInventory.pending = null
         runInventory.quick.fill(null)
@@ -75,6 +92,7 @@ export class InventorySystem {
 
     /** FEAT-42: put a saved runInventory back (the run save) and push its mass onto the chassis. */
     restore (s) {
+        this._lastH = null
         runInventory.entries = s.entries
         runInventory.pending = s.pending
         runInventory.quick.splice(0, QUICK_SLOTS, ...s.quick)
@@ -98,6 +116,15 @@ export class InventorySystem {
     restBonus () { return this.packed().reduce((s, id) => s + (ITEMS[id].rest ?? 0), 0) }
     /** The vibe segments packed gear fills on the chosen site (camp.js vibeAssist). */
     fills () { return new Set(this.packed().map(id => ITEMS[id].fills).filter(Boolean)) }
+    /** FEAT-231: the bed floor's grip — the best `bedMu` owned (the bedliner over the mat), null = the bare bed. */
+    bedMu () {
+        let mu = null
+        for (const e of runInventory.entries) {
+            const m = ITEMS[e.id]?.bedMu
+            if (m != null && (mu == null || m > mu)) mu = m
+        }
+        return mu
+    }
     pending () { return runInventory.pending }
     nameOf (id) { return ITEMS[id]?.name ?? id }
     usable (id) { const h = ITEMS[id]?.use; return !!(h && this._effects[h]) }
@@ -105,7 +132,8 @@ export class InventorySystem {
     /** Slots a grant of `n` × `id` would need right now. */
     _need (id, n) {
         if (!_stacks(id)) return n
-        return runInventory.entries.some(e => e.id === id) ? 0 : 1
+        const have = runInventory.entries.filter(e => e.id === id)
+        return Math.ceil((have.reduce((k, e) => k + e.n, 0) + n) / _cap(id)) - have.length
     }
     fits (id, n = 1) { return this.slotsUsed() + this._need(id, n) <= this.slotCap() }
 
@@ -121,9 +149,15 @@ export class InventorySystem {
             this._changed()
             return 'pending'
         }
-        const e = _stacks(id) && runInventory.entries.find(e => e.id === id)
-        if (e) e.n += n
-        else if (_stacks(id)) runInventory.entries.push({ id, n })
+        if (_stacks(id)) {   // fill the open stacks first, then start new ones (a capped kind spans slots)
+            for (let left = n; left > 0;) {
+                const e = runInventory.entries.find(e => e.id === id && e.n < _cap(id))
+                const put = Math.min(left, _cap(id) - (e?.n ?? 0))
+                if (e) e.n += put
+                else runInventory.entries.push({ id, n: put })
+                left -= put
+            }
+        }
         else for (let i = 0; i < n; i++) runInventory.entries.push({ ..._newEntry(id), ...extra })
         this._changed()
         return 'taken'
@@ -176,10 +210,20 @@ export class InventorySystem {
         const i = runInventory.entries.findIndex(e => e.id === id)
         if (i < 0) return false
         const e = runInventory.entries[i], uses = ITEMS[id].uses ?? 1
+        if (ITEMS[id].freshH) _ages(e)
         e.left = (e.left ?? uses) - 1
         if (e.left <= 0) { delete e.left; if (--e.n <= 0) runInventory.entries.splice(i, 1) }
         this._changed()
         return true
+    }
+
+    /** FEAT-230: turn one unit of `from` into one of `to` (a raw potato cooked). False, nothing changed, if
+     *  none is owned or the result has no room (a lone raw frees its slot, so cooking the last one always fits). */
+    convert (from, to) {
+        if (!this.consume(from)) return false
+        if (this.fits(to)) return this.grant(to) === 'taken'
+        this.grant(from)
+        return false
     }
 
     /** Drop the entry at `index` (the whole stack, for a stacking kind). Never the equipped pack or a
@@ -188,6 +232,8 @@ export class InventorySystem {
         const e = runInventory.entries[index]
         if (!e || (_isPack(e) && (e.equipped || e.contents.length))) return false
         runInventory.entries.splice(index, 1)
+        if (ITEMS[e.id].freshH) _ages(e)
+        if (this._lastH != null) e.droppedH = this._lastH   // its fresh clock runs on the ground (restoreEntry)
         this._onDrop(e)   // FEAT-143: it goes on the ground, not out of the game
         this._changed()
         return true
@@ -201,11 +247,21 @@ export class InventorySystem {
     restoreEntry (entry) {
         const it = ITEMS[entry?.id]
         if (!it || !this.fits(entry.id, entry.n)) return false
-        const s = _stacks(entry.id) && runInventory.entries.find(e => e.id === entry.id)
+        const s = _stacks(entry.id) && runInventory.entries.find(e => e.id === entry.id && e.n + entry.n <= _cap(entry.id))
         // ponytail: one open roll per stack — merging two keeps the emptier one's uses, so a merge can
         // lose a few but never mints any; track open rolls per unit if that ever matters.
-        if (s) { s.n += entry.n; if (entry.left != null) s.left = Math.min(s.left ?? it.uses, entry.left) }
-        else runInventory.entries.push({ ...entry })
+        // The fresh clock ran on the ground too, uncooled, and a cooler's ice melted (drop stamped `droppedH`); a merged
+        // stack keeps every unit's own age.
+        const e = { ...entry }
+        if (e.droppedH != null) {
+            const g = Math.max(0, (this._lastH ?? e.droppedH) - e.droppedH)
+            if (it.freshH) e.ages = _ages(e).map(a => a + g)
+            if (e.iceH) e.iceH = Math.max(0, e.iceH - g)
+            delete e.droppedH
+        }
+        if (s && it.freshH) s.ages = [..._ages(s), ..._ages(e)].sort((x, y) => x - y)
+        if (s) { s.n += e.n; if (e.left != null) s.left = Math.min(s.left ?? it.uses, e.left) }
+        else runInventory.entries.push(e)
         this._changed()
         return true
     }
@@ -272,6 +328,7 @@ export class InventorySystem {
     use (id, i = runInventory.entries.findIndex(e => e.id === id)) {
         const e = runInventory.entries[i]
         if (e?.id !== id || !this.usable(id)) return false
+        if (ITEMS[id].freshH) _ages(e)   // the unit spent is the oldest: its age is still the last one (iceCooler reads it)
         if (--e.n <= 0) runInventory.entries.splice(i, 1)
         if (this._effects[ITEMS[id].use](e) === false) {
             if (e.n++ <= 0) runInventory.entries.splice(i, 0, e)
@@ -288,6 +345,58 @@ export class InventorySystem {
     refill (cans) {
         for (const c of cans) { const i = this.indexOf(c.entry); if (i >= 0) runInventory.entries[i].gal = c.gal }
         this._changed()
+    }
+
+    /**
+     * FEAT-230 slice 2 (DEC-338): advance the fresh clock to world time `nowH` (daySystem.clockH(), every fixed step; a
+     * sleep's jump lands on the next step). Every unit ages on its own and goes alone at freshH. The iced coolers, best
+     * rate first, each chill `holds` units of food (youngest first, so a stack bigger than the room keeps its oldest
+     * out and that one goes first); a unit's cold hours stop when its cooler's ice does, mid-jump included.
+     */
+    tick (nowH, held = false) {
+        const dH = nowH - (this._lastH ?? nowH)
+        this._lastH = nowH
+        if (held || !(dH > 0)) return   // held: the hours pass unaged (the tutorial, DEC-339)
+        const E = runInventory.entries
+        const coolers = E.filter(e => ITEMS[e.id].coolRate && e.iceH > 0)
+            .sort((a, b) => ITEMS[a.id].coolRate - ITEMS[b.id].coolRate).map(c => ({ c, room: ITEMS[c.id].holds }))
+        let gone = false
+        for (const e of E) {
+            const it = ITEMS[e.id]
+            if (!it.freshH) continue
+            const a = _ages(e)
+            for (let u = 0; u < a.length; u++) {
+                const k = it.kind === 'food' && coolers.find(k => k.room > 0)
+                if (k) k.room--
+                const cold = k ? Math.min(dH, k.c.iceH) : 0
+                a[u] += cold * (k ? ITEMS[k.c.id].coolRate : 1) + dH - cold
+            }
+            a.sort((x, y) => x - y)
+            while (e.n && a[e.n - 1] >= it.freshH) { a.pop(); e.n--; gone = true }
+        }
+        for (const { c } of coolers) c.iceH = Math.max(0, c.iceH - dH)
+        if (!gone) return
+        for (let i = E.length; i--;) if (E[i].n <= 0) E.splice(i, 1)
+        this._changed()
+    }
+
+    /** The Ice effect: the bag goes into the owned cooler with the least ice left, which then holds what the bag had
+     *  left of its own day, stretched to the cooler's `iceLastsH`. False (keep the bag) with no cooler aboard. */
+    iceCooler (bag) {
+        const c = runInventory.entries.filter(e => ITEMS[e.id].coolRate).sort((a, b) => (a.iceH ?? 0) - (b.iceH ?? 0))[0]
+        if (!c) return false
+        const age = bag?.ages?.length > bag.n ? bag.ages[bag.ages.length - 1] : 0   // use() took the oldest off `n`
+        c.iceH = Math.max(c.iceH ?? 0, ITEMS[c.id].iceLastsH * Math.max(0, 1 - age / ITEMS.ice.freshH))
+        return true
+    }
+
+    /** The freshness bar (inventory-screen.js), 0–1, or null for no bar: a stack shows its oldest unit (the next to
+     *  go), a cooler its ice while it has any. On the ground the clock ran since `droppedH`. */
+    freshLeft (e) {
+        const it = ITEMS[e.id], g = e.droppedH != null && this._lastH != null ? Math.max(0, this._lastH - e.droppedH) : 0
+        if (it.iceLastsH) return e.iceH > 0 ? Math.max(0, e.iceH - g) / it.iceLastsH : null
+        if (!it.freshH || !e.n) return null
+        return Math.max(0, 1 - (_ages(e)[e.n - 1] + g) / it.freshH)
     }
 
     /** Where an entry an effect was handed (use → effect) sits now: a choice it opens acts on it later. */
@@ -311,7 +420,7 @@ export class InventorySystem {
     rowOf (e) {
         return { id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id),
                  equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat,
-                 tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
+                 tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, fresh: this.freshLeft(e), contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
     }
 
     _changed () {

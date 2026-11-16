@@ -1015,11 +1015,13 @@
       text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
     }
     #job-g .jg-floor span { color: var(--warn); }
+    #job-g .jg-ten span { color: var(--text-dim); }
     #job-g .jg-break span { color: var(--bad-text); }
     #job-g .jg-bar { position: relative; width: 12px; height: 90px; background: var(--hud-bg); border: 1px solid var(--line-control); }
     #job-g .jg-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: var(--text); transform-origin: bottom; transform: scaleY(0); }
     #job-g .jg-mark { position: absolute; left: -4px; right: -4px; height: 2px; }
     #job-g .jg-floor { background: var(--warn); }
+    #job-g .jg-ten { background: var(--text-dim); }
     #job-g .jg-break { background: var(--bad); }
     #rank-timer .rt-card {
       background: linear-gradient(180deg, rgba(14, 18, 24, 0.82), rgba(0, 0, 0, 0.7));
@@ -1028,13 +1030,6 @@
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
       padding: 6px;
     }
-    /* QUAL-36 variant A: minimised = one line in the job-promise box style; open = the card + tile. */
-    #rt-mini { display: none; padding: 4px 12px; background: var(--hud-bg); border: 1px solid var(--line);
-      font-size: 13px; line-height: 22px; color: var(--text); white-space: nowrap; }
-    #rank-timer.rt-mini #rt-mini { display: block; }
-    #rank-timer.rt-mini .rt-card, #rank-timer.rt-mini .rt-title { display: none; }
-    #rank-timer.rt-a .rt-gate::after { content: 'item'; position: absolute; right: 4px; top: 2px; line-height: 16px;
-      font-size: 12px; font-weight: bold; color: rgba(0, 0, 0, 0.75); }
     #rank-timer.rt-in { animation: rt-pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1); }
     /* closeAfterDS into D: the strip has nothing ahead to show and closes; the tile stays. */
     #rank-timer.rt-closed .rt-card { display: none; }
@@ -1063,8 +1058,9 @@
        every heartbeat kick — the thump. Overflow stays visible so the shards can fall out of it. */
     #rank-timer .rt-letter-box {
       position: relative; display: inline-block;
-      min-width: 46px; height: 46px; line-height: 46px; padding: 0 5px; text-align: center;   /* QUAL-36: words, so it grows */
-      font-size: 30px; font-weight: bold;
+      width: 46px; height: 46px;   /* QUAL-36 (DEC-298): a square tile again, the letter centred by flex */
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 34px; line-height: 1; font-weight: bold;
       color: rgba(0, 0, 0, 0.78);
       background: #e6ecf2;
       background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0, rgba(255, 255, 255, 0) 50%,
@@ -1075,7 +1071,7 @@
       box-sizing: border-box;
     }
     #rank-timer #rt-letter {
-      display: inline-block; font-size: 12px; letter-spacing: 0;   /* QUAL-36: the tile names what the band earns (words, not a letter) */
+      display: inline-block;
       /* the slam animation owns this element's scale while it runs; the thump scales the tile */
     }
     /* The slam: the new letter lands from large with a squash on impact, plus a white flash. */
@@ -1526,7 +1522,7 @@
     #map-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; background: var(--card-bg);
                 border-left: 1px solid var(--line-card); font-family: var(--font); font-size: 14px; color: var(--text-body); }
     #map-list-head { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px 8px; font-size: 12px; }
-    /* The list's two tabs (the bumpers swap them, a click too): the one showing carries the story accent. */
+    /* The list's two tabs (pad X or Q swap them, a click too): the one showing carries the story accent. */
     #map-list-head .ml-tab { color: var(--text-faint); letter-spacing: 1px; text-transform: uppercase; cursor: pointer; margin-right: 10px;
                              transition: color 0.1s; }
     #map-list-head .ml-tab:hover { color: var(--text-bright); }
@@ -1929,7 +1925,6 @@
       </div>
     </div>
     <div class="rt-title"><span class="rt-label" id="rt-label">Rank:</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">S</span></span></div>
-    <div id="rt-mini"></div>   <!-- QUAL-36 variant A: the minimised timer, "S rank x:xx" (main.js _updateRankTimer) -->
   </div>
   <!-- R-17/R-28: the promise lines — the load aboard, the job's reward and its deed, restated live in one
        format on every type, written by _updateJobPromise in main.js (each value coloured by its margin).
@@ -1939,7 +1934,7 @@
        the felt g, marked where one hit costs 1 % of health (amber) and 100 % (red, the break). HEALTH
        is the condition, full green → empty red, its percent under it. -->
   <div id="job-g">
-    <div class="jg-col"><div class="jg-bar"><div class="jg-fill"></div><div class="jg-mark jg-floor"><span>1%</span></div><div class="jg-mark jg-break"><span>100%</span></div></div><span class="rt-label">Damage</span></div>
+    <div class="jg-col"><div class="jg-bar"><div class="jg-fill"></div><div class="jg-mark jg-floor"><span>1%</span></div><div class="jg-mark jg-ten"><span>10%</span></div><div class="jg-mark jg-break"><span>100%</span></div></div><span class="rt-label">Damage</span></div>
     <div class="jg-col"><div class="jg-bar"><div class="jg-fill jg-health"></div></div><span class="rt-label">Health</span><span class="jg-val"></span></div>
   </div>
   </div>
@@ -2039,6 +2034,8 @@
       <button id="cp-break">break camp</button>
       <button id="cp-sleep">sleep</button>
       <button id="cp-fish" disabled title="not implemented yet">fish (wip)</button>
+      <button id="cp-cook">cook a potato &middot; 30 min</button>
+      <button id="cp-cook-groceries">cook groceries &middot; 30 min</button>
       <button id="cp-item">inventory</button>
       <button id="cp-map">open map</button>
       <button id="cp-spirits" disabled title="not implemented yet">talk to the spirits (wip)</button>

@@ -1,6 +1,6 @@
 ---
 id: DEC-239
-status: standing
+status: superseded
 decided: 2026-11-15
 area: story
 governs: FEAT-184, DEC-152, src/main.js, tutorial, the morning leg, gas station, store, camp

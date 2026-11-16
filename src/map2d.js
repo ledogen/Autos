@@ -437,6 +437,9 @@ export class Map2D {
     constructor({ canvas, getSeed, getParams, getCar, onTeleport, canTeleport, getMission, getRegion, getPois, getCustomers, getCampZones, getWater, getRouteState, getBoard, onCycle, hoverLocked, getWaypoint, onWaypoint }) {
         this._canvas    = canvas
         this._ctx       = canvas.getContext('2d')
+        // BUG-182: a GPU reset blanks every 2D canvas (contextrestored fires on each): the cached tiles and background
+        // rebuild through the path new water takes (setWaterNoGo), and the legend repaints.
+        canvas.addEventListener('contextrestored', () => { this._tileMemo.clear(); this._bgJob = null; this._bgDirty = true; this._paintLegend() })
         // FEAT-211: the window the canvas sits in, and its list column (index.html #map-window).
         this._win       = document.getElementById('map-window')
         this._list      = document.getElementById('map-list')
@@ -503,7 +506,7 @@ export class Map2D {
         this._tracking   = false
         this._listId     = null          // the row the list has highlighted (a POI id; a shop's item is 'id#n'), or null
         this._rows       = []            // the list's rows as last built: { id, x, z, poi, shop }, nearest first
-        this._tab        = 'missions'    // FEAT-211: the list's mode, 'missions' | 'shopping' (the bumpers swap it)
+        this._tab        = 'missions'    // FEAT-211: the list's mode, 'missions' | 'shopping' (pad X, Q on the keyboard)
         this._openShop   = null          // the POI id of the shop the Shopping list has open, or null
         this._listHtml   = ''            // what #map-list holds, so it is written only on a change
         this._listT      = 0             // performance.now() the rows were last rebuilt
@@ -574,7 +577,7 @@ export class Map2D {
             if (id && id !== this._listId) this._pickRow(id)
         })
         // FEAT-211: a click on a Shopping row opens or closes its shop (A / Enter on the pad and keyboard); a click on a
-        // tab in the head swaps the list (the bumpers).
+        // tab in the head swaps the list (pad X).
         this._list?.addEventListener('click', (e) => {
             const id = e.target.closest?.('[data-key]')?.dataset.key
             if (id && !(pad.cardActive() || pad.menuActive())) { this._pickRow(id); this._toggleShop() }
@@ -815,6 +818,34 @@ export class Map2D {
     }
 
     /**
+     * PERF-52 (owner, 2026-11-16: the first open hangs 0.5–1 s): do the first open's work behind the loading screen.
+     * That work is the first background build — the ground's cover raster, the water warm-up, the contours (a 2 s
+     * long task on a loaded box, all of it noise2D / coarseHeight in the tiles) — and every tile and cover chunk of it
+     * is memoised, so the first real open then rebuilds from memos in a frame or two. Runs the same world path show()
+     * does (_paramSig → _buildRoad, which drops the memos with the old world), on the window laid out but not painted,
+     * and starts no network stream: show() does that, as ever. The caller has the body OUT of stage-on (the stage hides
+     * #map-window, and a hidden window has no size to build for). Synchronous: it is the loading screen's last step.
+     */
+    preload() {
+        if (this._open) return
+        const w = this._win
+        w.style.visibility = 'hidden'; w.style.display = 'flex'
+        try {
+            this._measure()
+            if (this._sizeStale()) this._resize()
+            const sig = this._paramSig()
+            if (!this._road || sig !== this._sig) { this._buildRoad(); this._sig = sig }
+            const car = this._getCar()
+            this._panX = car.x; this._panZ = car.z
+            this._syncRegionWindow()
+            this._startBackground(); this._bgDirty = false
+            this._stepBackground(Infinity)
+        } finally {
+            w.style.display = 'none'; w.style.visibility = ''
+        }
+    }
+
+    /**
      * Center + zoom so a world-XZ box fits on screen (story-mode mission framing: the whole
      * route should be readable the moment the offer appears, not somewhere off the edge).
      * Call AFTER show() — it needs the resized canvas. Sets _zoomInit so the first background
@@ -890,12 +921,12 @@ export class Map2D {
      * main.js, which steps the parked offer panel the map is open behind. FEAT-211 (owner, 2026-11-13, the approved
      * scheme), only while no card or menu is up over the map (menu-nav.js owns the arrows, Enter and Esc then, and
      * WASD is the truck's):
-     *   Q / E (LB / RB)  swap the list between Missions and Shopping
+     *   Q / E (pad X)    swap the list between Missions and Shopping (FEAT-239: the pad's LB / RB send ← / →)
      *   WASD             pan the map (the keyboard's stick)
      *   ↑ / ↓            walk the list; the map snaps to the row's place
-     *   ← / →            flip the offers at the highlighted (or hovered) POI
-     *   Enter (pad A)    Shopping: open or close the highlighted shop (a pump has nothing to open); with nothing
-     *                    highlighted, drop / clear the waypoint (as N)
+     *   ← / → (pad LB / RB) flip the offers at the highlighted (or hovered) POI; the pad's D-pad ← / → send nothing here
+     *   Enter (pad A)    Shopping: open or close the highlighted shop (a pump has nothing to open). FEAT-234: it no
+     *                    longer drops the waypoint — that is N / Y / a click alone
      *   N (pad Y)        drop the waypoint under the cursor (the pad's is the sheet centre, so a highlighted row's
      *                    place), or clear it when the cursor is on it (_waypointAt). A click on the sheet does the same.
      *   Esc (pad B)      close the open shop; else leave the list — the highlight clears and the map stays put; with
@@ -928,8 +959,7 @@ export class Map2D {
         if (k === 'ArrowLeft' || k === 'ArrowRight') { take(); if (this._hoverPoi) this._flip(k === 'ArrowLeft' ? -1 : 1); return }
         // Taken only when it opened or closed a shop: a dialogue card over the map (menu-nav does not count it as a card)
         // advances on Enter, and a map that ate every Enter held the tutorial's cards for ever (cdp-smoke, "opening").
-        // The waypoint's Enter (nothing highlighted) is refused the same way: main.js says no while a dialogue is up.
-        if (k === 'Enter' && (this._toggleShop() || (!this._listId && !e.repeat && this._waypointAt()))) { take(); return }
+        if (k === 'Enter' && this._toggleShop()) { take(); return }
         if (k === 'Escape' && this._openShop) { take(); this._listId = this._openShop; this._openShop = null; this._listT = 0; return }
         if (k === 'Escape' && this._listId) { take(); this._leaveList() }
     }
@@ -1154,6 +1184,8 @@ export class Map2D {
         this._regionFrozen = null   // BUG-68: a new seed / road params is a new world to freeze
         this._bgDirty = true        // the cached sheet shows the old world — see show()
         this._bgJob = null          // …and so would a half-built one
+        this._bgZoom = 0            // BUG-184: …so nothing is valid to blit: the first frame builds the new sheet whole,
+                                    // as a first open does, rather than show the last world under a sliced rebuild
         // FEAT-17: re-apply the water no-go so the fresh instance routes around ponds like play does.
         if (this._waterNoGoFns) this._road.setWaterNoGo(this._waterNoGoFns[0], this._waterNoGoFns[1])
         // PERF-30: register with the network-Worker client (whole builds off-thread — see _pump).
@@ -3095,7 +3127,7 @@ export class Map2D {
             const ins = 4 * k + 3 * k                        // inner rule inset + breathing room
             const ktop = y + ins
             // FEAT-211 (owner, 2026-11-14): the arrows (keys and D-pad) flip the map's cards; Q / E are the list's tabs.
-            const keys = ['→', '←']
+            const keys = pad.active ? ['RB', 'LB'] : ['→', '←']   // FEAT-239: the pad's shoulders flip, as at a POI
             const capW = Math.max(cap, ctx.measureText(keys[0]).width + 6 * k)
             let kx = x + W - ins - capW
             for (const key of keys) {
@@ -3478,5 +3510,40 @@ export class Map2D {
 
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
         ctx.fillText(`Contour interval ${CONTOUR_IV} m`, s.x0, by)
+        const ivR = s.x0 + ctx.measureText(`Contour interval ${CONTOUR_IV} m`).width
+        this._drawControls(ctx, s, by, ivR + 24, this._hoverX === undefined ? bx - 70 : s.cx - 65)   // short of the scale label, or of the cursor's readout at the centre
+        // FEAT-239: the pad's card flip and tab switch, right of the seed / cursor readout at the centre (the left run has no room for them)
+        if (pad.active) this._drawControls(ctx, s, by, s.cx + 90, bx - 70, [['cards', ['LB', 'RB']], ['tab', ['X']]])
+    }
+
+    // FEAT-234 (owner, 2026-11-16): the map's controls — pan, zoom, set waypoint — printed in the bottom margin after the
+    // contour note, clear of the cursor's coordinate readout at the centre. Keycaps as the HUD's (park-badge.js keycap): the key's cap on the keyboard, the pad's
+    // button when the pad last drove (pad.active); the pad's face buttons and sticks are round. Skipped when they do not fit.
+    _drawControls(ctx, s, by, xMin, xMax, padGroups) {
+        const usePad = pad.active
+        const groups = usePad
+            ? padGroups ?? [['pan', ['L']], ['zoom', ['R']], ['waypoint', ['Y']]]
+            : [['pan', ['WASD']], ['zoom', ['wheel']], ['waypoint', ['N', 'click']]]
+        const CAP = 15, GAP = 4, SEP = 16
+        ctx.font = `11px ${MAP_LABEL_FONT}`
+        const capW = c => (usePad && c.length === 1) ? CAP : Math.max(CAP, ctx.measureText(c).width + 8)
+        const w = groups.map(([label, caps]) => caps.reduce((a, c) => a + capW(c) + GAP, 0) + 2 + ctx.measureText(label).width)
+        const total = w.reduce((a, b) => a + b, 0) + SEP * (groups.length - 1)
+        let x = xMin
+        if (x + total > xMax) return
+        ctx.textBaseline = 'middle'; ctx.lineWidth = 1
+        for (const [label, caps] of groups) {
+            for (const c of caps) {
+                const cw = capW(c)
+                ctx.strokeStyle = '#6a6458'; ctx.fillStyle = '#4a453c'; ctx.textAlign = 'center'
+                if (usePad && c.length === 1) { ctx.beginPath(); ctx.arc(x + cw / 2, by, CAP / 2, 0, Math.PI * 2); ctx.stroke() }
+                else ctx.strokeRect(x + 0.5, by - CAP / 2 + 0.5, cw - 1, CAP - 1)
+                ctx.fillText(c, x + cw / 2, by + 0.5)
+                x += cw + GAP
+            }
+            ctx.fillStyle = MAP_TEXT; ctx.textAlign = 'left'
+            ctx.fillText(label, x + 2, by)
+            x += 2 + ctx.measureText(label).width + SEP
+        }
     }
 }

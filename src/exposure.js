@@ -104,6 +104,6 @@ export class LiveExposure {
       // toe/shoulder), so the effective strength drifts a little off STRENGTH; invert ACES if that ever matters.
       const d = ref - (s / this._wSum - evAt), e = Math.sign(d) * Math.max(0, Math.abs(d) - BAND)
       this._target = Math.min(HI * (1 - this.sky.nightFactor()), Math.max(-LO, STRENGTH * e))
-    }).finally(() => { this._busy = false })
+    }).catch(() => {}).finally(() => { this._busy = false })   // BUG-182: a lost context fails the read; skip it
   }
 }

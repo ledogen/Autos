@@ -38,6 +38,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
+import { CHUNK_SIZE } from './terrain-height.js'   // FEAT-223: the prop-shadow atlas tiles one chunk each
 import { camberLean, toeOffset } from './alignment.js'
 import { carcassRadialOffset, wheelRunoutOf, runoutAtContact } from './suspension.js'
 import { REV_THRESHOLD } from './drivetrain.js'
@@ -159,11 +160,13 @@ function splitRearGroup (mesh, rearZ) {
 // static tip deflection wL^4/8EI over w1^2 = 12.36 EI/(m'L^4) gives d_static = 1.545 f / w^2, so
 // hz and zeta are the only knobs. f comes from the mount's WORLD position differenced twice, so body
 // roll/pitch about the CG drives it too, not just CG acceleration. At 1.8 Hz a 1 g corner leans the
-// tip ~0.12 m (8°). The bend follows the uniform-load deflection curve (6ξ² − 4ξ³ + ξ⁴)/3.
+// tip ~0.12 m (8°). FEAT-236: air drag is one more specific-force term (dragK·|v|·v on the mount's own
+// velocity, so reversing and sideways slip bend it the other way for free). The bend follows the uniform-load deflection curve (6ξ² − 4ξ³ + ξ⁴)/3.
 // Visual only — never reaches physics or a replay.
 const ANTENNA_TUNE = {
   hz: 1.8, zeta: 0.06,
   segments: 6, tipRadius: 0.45,   // ring count along the mast; tip radius as a fraction of the base's
+  dragK: 0.025,                   // 1/m: air drag on the whip, a = dragK·|v|·v (FEAT-236); tip lean ≈ 3.8° / 15° / 31° at 30 / 60 / 90 mph
   maxAccel: 60,                   // m/s², clamps a teleport's (reset, story entry) one-frame spike
 }
 
@@ -214,6 +217,7 @@ function createAntenna (a, material) {
     f.subVectors(v, vPrev).divideScalar(dt).clampLength(0, ANTENNA_TUNE.maxAccel)
     vPrev.copy(v)
     f.y += 9.81
+    f.addScaledVector(v, ANTENNA_TUNE.dragK * v.length())   // drag decelerates the mast along -v, so its specific force gains +dragK|v|v; the spring does the rest
     f.applyQuaternion(qInv.copy(state.quaternion).multiply(mesh.quaternion).invert())   // into the mast frame
     const w = 2 * Math.PI * ANTENNA_TUNE.hz
     // Semi-implicit Euler: stable while w·dt < 2 (0.57 at the 50 ms dt cap).
@@ -390,7 +394,9 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     drawCookie(ctx, S, kind)
     const tex = new THREE.CanvasTexture(cv)
     tex.colorSpace = THREE.SRGBColorSpace
-    return { tex, redraw: () => { drawCookie(ctx, S, kind); tex.needsUpdate = true } }
+    const redraw = () => { drawCookie(ctx, S, kind); tex.needsUpdate = true }
+    cv.addEventListener('contextrestored', redraw)   // BUG-182: a GPU reset blanks the canvas; three re-uploads from it
+    return { tex, redraw }
   }
   const lowCookie = makeCookie('low')
   const highCookie = makeCookie('high')
@@ -980,10 +986,39 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // colour × one shared uniform, set each frame from main.js (setBoreShade). Emissive — the lamps — is untouched,
   // and unlit (Basic) materials are skipped. Patched when the parts are built and when the GLB lands, never on
   // the first tunnel entry: that would compile shaders at the portal.
+  //
+  // FEAT-223: the truck also RECEIVES the sun's shadow (it always cast it). The realtime maps then shade it
+  // under cut banks, POIs and hills (near map + far cascade) and, in a bore, under the tube and the hill over
+  // it, so inside it is lit only by the fill, like the lining (the bore ramp above still applies on top).
+  // Trees cast nothing realtime (PERF-07 bakes them into a ground atlas), so the truck reads that atlas
+  // itself: a body point h above the ground is shaded when the ground point its sun ray leaves from,
+  // p.xz + h·shear, is (the bake's own projection, prop-shadow-bake.js shearFromSun). Same 5-tap blur and
+  // the same light as the ground (the far cascade, terrain.js), so the truck and the ground under a tree
+  // match. Gated on three's `receiveShadow` uniform, so a mesh that does not receive gets no baked shade.
   const boreShadeU = { value: 1 }
+  const bakedU = { uRsAtlas: { value: null }, uRsAtlasN: { value: 12 }, uRsTilePx: { value: 256 },
+    uRsShadeK: { value: 0 }, uRsShear: { value: new THREE.Vector2() }, uRsGroundY: { value: 0 } }
+  const LFB_HOOK = 'getDirectionalLightInfo( directionalLight, directLight );'
+  // Self-shadow acne (the body speckling and streaking in its own shadow-map depth): the near map's texel is
+  // 2–2.6 cm (main.js tiers) and the light has no bias, which the ground never needed. A truck-only normal offset,
+  // ~2 texels, so the ground and the truck's shadow on it are untouched. FEAT-223 pictures: 0 still streaked the bed.
+  const TRUCK_SHADOW_NORMAL_BIAS = 0.05   // m
+  const NB_HOOK = 'directionalLightShadows[ i ].shadowNormalBias'
+  const BAKED_FN = `
+uniform sampler2D uRsAtlas; uniform float uRsAtlasN, uRsTilePx, uRsShadeK, uRsGroundY; uniform vec2 uRsShear; varying vec3 vRsWorld;
+float rsBakedShade () {
+  if (!receiveShadow || uRsShadeK <= 0.0) return 1.0;
+  vec2 cf = (vRsWorld.xz + max(vRsWorld.y - uRsGroundY, 0.0) * uRsShear) / ${CHUNK_SIZE.toFixed(1)};
+  vec2 tile = mod(floor(cf), uRsAtlasN), inT = fract(cf);
+  float htx = 0.5 / uRsTilePx, stp = 1.0 / uRsTilePx, a = 0.0;
+  vec2 off[5]; off[0] = vec2(0.0); off[1] = vec2(stp, 0.0); off[2] = vec2(-stp, 0.0); off[3] = vec2(0.0, stp); off[4] = vec2(0.0, -stp);
+  for (int i = 0; i < 5; i++) a += texture2D(uRsAtlas, (tile + clamp(inT + off[i], htx, 1.0 - htx)) / uRsAtlasN).r;
+  return 1.0 - min(1.0, 0.2 * a * uRsShadeK);
+}`
   function shadeInBore (root) {
     root.traverse((o) => {
       if (!o.isMesh) return
+      o.receiveShadow = true   // FEAT-223
       for (const m of [o.material].flat()) {
         if (!m || m.isMeshBasicMaterial || m.userData.boreShade) continue
         m.userData.boreShade = true
@@ -992,6 +1027,18 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
           prev.call(m, sh, r)
           sh.uniforms.uBoreShade = boreShadeU
           sh.fragmentShader = 'uniform float uBoreShade;\n' + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.rgb *= uBoreShade;')
+          // FEAT-223: the baked tree shade, on the far cascade only (index 1 = sunFar, as terrain.js).
+          const LFB = THREE.ShaderChunk.lights_fragment_begin
+          if (!LFB.includes(LFB_HOOK)) { console.warn('[vehicle-model] lights_fragment_begin shape changed — no baked tree shade on the truck'); return }
+          Object.assign(sh.uniforms, bakedU)
+          sh.vertexShader = 'varying vec3 vRsWorld;\n' + sh.vertexShader.replace('#include <worldpos_vertex>',
+            '#include <worldpos_vertex>\n\tvRsWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;')
+            .replace('#include <shadowmap_vertex>', THREE.ShaderChunk.shadowmap_vertex.replace(NB_HOOK,
+              '( ' + NB_HOOK + ' + ' + TRUCK_SHADOW_NORMAL_BIAS.toFixed(3) + ' )'))
+          sh.fragmentShader = sh.fragmentShader
+            .replace('#include <lights_pars_begin>', '#include <lights_pars_begin>\n' + BAKED_FN)
+            .replace('#include <lights_fragment_begin>', 'float rsBaked = rsBakedShade();\n' + LFB.replace(LFB_HOOK,
+              LFB_HOOK + '\n\t\t#if UNROLLED_LOOP_INDEX == 1\n\t\tdirectLight.color *= rsBaked;\n\t\t#endif'))
         }
         m.customProgramCacheKey = () => key0 + '|bore'
         m.needsUpdate = true
@@ -999,6 +1046,12 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     })
   }
   function setBoreShade (v) { boreShadeU.value = v }
+  // FEAT-223: the baked prop-shadow atlas as the ground samples it. k = strength × far-light gain (0 = off);
+  // shear = the bake's COMMITTED shear (its tiles use it, not the live sun); groundY = the plane h is measured from.
+  function setBakedShade (atlas, atlasN, tilePx, k, shear, groundY) {
+    bakedU.uRsAtlas.value = atlas; bakedU.uRsAtlasN.value = atlasN; bakedU.uRsTilePx.value = tilePx
+    bakedU.uRsShadeK.value = atlas ? k : 0; bakedU.uRsShear.value.copy(shear); bakedU.uRsGroundY.value = groundY
+  }
 
   // Recolor the body paint. Safe to call before the model finishes loading — the
   // color is remembered and applied to the paint materials on load.
@@ -1086,8 +1139,8 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // keyed on counts (spots, spots carrying a cookie map — the headlights — and point lights), not on
   // which lamp is which, so this list is by count: reverse alone = tails alone, for instance.
   // Tails + reverse (braking while reversing by day: 4 spots, no maps) was missing until 2026-10-29
-  // and compiled mid-drive. × the point light off / on (the campfire — lit only at camp, where the
-  // lamps may still be in any of these states).
+  // and compiled mid-drive. × 0, 1 or 2 point lights (the campfire, lit only at camp, where the lamps may
+  // still be in any of these states; the POI light, in the scene only near a station: FEAT-227 light cull).
   const LAMP_STATES = [
     [],                                                       // everything off (daytime coasting)
     tailSpots,                                                // braking, lamps off (daytime brake)
@@ -1096,14 +1149,16 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     [...headlightSpots, ...tailSpots, ...reverseSpots],       // lamps on + reversing
   ]
   const LAMPS = [...headlightSpots, ...tailSpots, ...reverseSpots]
-  const LIGHT_STATE_COUNT = LAMP_STATES.length * 2
+  const MAX_POINTS = 2   // the campfire + the POI light; a program is keyed on the count, not on which
+  const LIGHT_STATE_COUNT = LAMP_STATES.length * (MAX_POINTS + 1)
 
   /** Put the lights in state i (see LAMP_STATES), returning a function that puts them back. */
   function _lightState (i, points) {
     const saved = [...LAMPS, ...points].map(l => l.visible)
     const on = LAMP_STATES[i % LAMP_STATES.length]
     for (const s of LAMPS) s.visible = on.includes(s)
-    points.forEach((p, k) => { p.visible = i >= LAMP_STATES.length && k === 0 })
+    const n = Math.floor(i / LAMP_STATES.length)
+    points.forEach((p, k) => { p.visible = k < n })
     return () => [...LAMPS, ...points].forEach((l, k) => { l.visible = saved[k] })
   }
 
@@ -1139,15 +1194,17 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
    * road tiles, props, the truck's own .glb), which the boot prewarm never saw and which would
    * otherwise compile the first time each lamp state appears (the "first headlights lag").
    * Synchronous so no rendered frame ever sees the borrowed light state. It draws (BUG-175, _drawWarm), which
-   * compiles too.
+   * compiles too. draw = false only issues the compile (renderer.compile never waits on the driver), so a caller
+   * can draw once the programs are ready (BUG-186, main.js _lampSweepStep).
    */
-  function compileLightState (i, renderer, scene, camera, points = []) {
+  function compileLightState (i, renderer, scene, camera, points = [], draw = true) {
     const restore = _lightState(i, points)
-    _drawWarm(renderer, scene, camera)
+    if (draw) _drawWarm(renderer, scene, camera)
+    else renderer.compile(scene, camera)
     restore()
   }
 
   shadeInBore(carGroup)   // BUG-112: the procedural parts (wheels, the primitive shell)
   return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, getHeadlightMode,
-    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade, headlightSpots }   // BUG-133: the billboards read the head spots
+    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade, setBakedShade, headlightSpots }   // BUG-133: the billboards read the head spots
 }

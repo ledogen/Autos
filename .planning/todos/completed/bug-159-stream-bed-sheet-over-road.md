@@ -1,7 +1,7 @@
 ---
 id: BUG-159
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-12
 source: owner capture (story mode, freecam)
@@ -71,3 +71,4 @@ Capture: `logs/autos-capture-1794548910307.json` + `.png` (main checkout's `logs
 - 2026-11-14, Lane C: fixed on `land/bug-159`. Gates: stream-bed-drape 11/11 (OFF-THE-DECK 0 on all 5 cases), affected run-all 1/1,
   cdp-smoke boot/drive/story PASS. fingerprint-world vs main: only `water` differs (5 of 6 windows; bed index buffers
   lose the road-core quads, every other section PASS). Not verified: the owner's in-game look.
+- 2026-11-16: owner on card bug159-look: "Fixed". Closed.

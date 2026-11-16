@@ -281,7 +281,7 @@ export class LabSystem {
         g.fillStyle = '#e8e8e0'; g.font = 'bold 52px monospace'
         g.textAlign = 'center'; g.textBaseline = 'middle'
         g.fillText(text, 256, 50)
-        const tex = new THREE.CanvasTexture(c)
+        const tex = new THREE.CanvasTexture(g.getImageData(0, 0, 512, 96))   // BUG-182: the pixels, not the canvas: a GPU reset blanks 2D canvases, and three re-uploads from texture.image
         tex.anisotropy = 4
         const m = new THREE.Mesh(
             new THREE.PlaneGeometry(11, 2.06),

@@ -12,10 +12,10 @@ lane: unplaced
 # QUAL-36: Unify how mission types are graded, presented and rewarded
 
 ## Next steps
-Branch land/rankui-1116 (DEC-291, DEC-292): Larry's item is paid on the result card like any job's (no hold); the bar's
-strip is gone and the rank UI is built two ways for the owner's A/B (`?rankui=a|b`, debug menu "Rank UI", default b).
-Owner: try both, pick one; the loser is then deleted. Left: DEC-252/253 need their own superseding records (checker:
-one `supersedes` id per record), the FEAT-140 "Freight is units" line in missions.md:475. Then close.
+Branch land/rankui-b (DEC-298): the owner picked B, all as text; variant A, the switch, the dropdown and `?rankui=` are
+deleted, and the rank letter is 34 px centred in its 46 px tile. Awaiting the orchestrator's landing. Left: DEC-252/253
+need their own superseding records (checker: one `supersedes` id per record), the FEAT-140 "Freight is units" line in
+missions.md:475. Then close.
 
 ## Summary
 Every type tips on the same time line (whole tip at ratio 0.652, half at par, none at 1.348), but only courier and
@@ -42,6 +42,9 @@ code-side defects found, independent of the direction chosen:
 - [x] The chosen direction built, gates updated (`economy`, `rank-timer`, `offer-board`)
 - [ ] missions.md / DESIGN.md type table updated (demolition row; drop the stale FEAT-140 "freight is units" line)
 
+## Decisions
+- DEC-298 (2026-11-16): rank UI is B, all as text; letter bigger and centred. Supersedes DEC-292.
+
 ## Open questions
 - The eight `<dive-q>` questions on the dive page.
 
@@ -53,6 +56,7 @@ Deep dive: `.planning/dives/QUAL-36-mission-grading.html`
 `data/offers.js` · `test/economy.mjs` · `test/rank-timer.mjs` · `test/offer-board.mjs` · `test/paper-route.mjs`
 
 ## Log
+- 2026-11-16: land/rankui-b: DEC-298, variant A deleted, letter tile fixed (before/after in wip/rankui-b/). Gates: rank-timer + affected. Unverified: in-game look (pictures are the real CSS in a static page).
 - 2026-11-15: DEC-291/292 on land/rankui-1116: held item removed (_larryHandsOver, runPaper.held, the holding line), pp-item button on the paper card; strip words gone, variants A/B built; gates rank-timer + story gates, pictures wip/rankui-1116/. Unverified: B item row at a non-S gate by picture (unit-tested only).
 - 2026-11-15: words in (DEC-252 half price on collect, DEC-253 Larry's lines, DEC-254 card text plain); no-room vs no-cash split, cash line still [placeholder]. Gates: offer-board, sky-ephemeris.
 - 2026-11-14: built per the answers, DEC-178..183; Larry holds the item (runPaper.held, handed over parking at his house). Gates rank-timer/offer-board updated.

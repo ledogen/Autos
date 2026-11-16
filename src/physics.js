@@ -32,7 +32,7 @@
  *     — engineCtx = { engine: PhysicsEngine, chassis: bodyHandle } (required)
  *   createVehicleChassis(engine, vehicleState, params, {bed}) — build the chassis body
  *   readRimStrikes / classifyImpactRegion — the damage model's contact readout
- *   setBodyRestitution / setBodyGrip / syncChassisMass — debug-panel edits that must reach the engine body
+ *   setBodyRestitution / setBodyGrip / setBedGrip / syncChassisMass — debug-panel edits that must reach the engine body
  *   getDriveTorque(wheelIndex, vehicleState, params)
  *
  * Conventions: see docs/GLOSSARY.md
@@ -181,7 +181,8 @@ const FLANK_IN          = 0.70           // the flank hull's inner face, |x| [m]
 // not bouncy: wood and steel do not rebound off a bed wall.
 const BED_CARGO_MU      = 0.15           // the pair friction a bundle sees on the bed (owner)
 const CARGO_FRICTION_REF = 0.8           // must match src/debris.js bundle friction
-const BED_SHAPE_MU      = BED_CARGO_MU * BED_CARGO_MU / CARGO_FRICTION_REF        // ≈ 0.028
+const bedShapeMu = (pairMu) => pairMu * pairMu / CARGO_FRICTION_REF
+const BED_SHAPE_MU      = bedShapeMu(BED_CARGO_MU)                                  // ≈ 0.028
 
 // ── QUAL-25: chassis collider profile — measured off the ACTUAL vehicle model ──────────────
 // Body-frame breakpoints (origin = CG, forward = −Z) of ranger.glb, the default truck, pushed
@@ -478,6 +479,7 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
   for (let i = bounceFrom; i < engine.shapeCount(chassis); i++) {
     if (i < bedShapes[0] || i >= bedShapes[1]) rims.bounceShapes.push(i)
   }
+  if (bed) rims.bedFloor = bedShapes[0]   // the floor pan, the first bed slab: FEAT-231's mat / liner grip
   // 6. Flank hulls (BUG-116): the slab's own flank face — hip down to FLANK_LIFT above the undercarriage plane, which
   // stays the slab's alone — plastic like the slab. Between the chamfers only: a bumper corner still glances (BUG-27b).
   // Each one twice (FEAT-193): an off-road copy and a road copy, by collision group (see FLANK_OFFROAD_SEES).
@@ -551,6 +553,17 @@ export function setBodyGrip (engine, chassis, params) {
   if (!rims) return
   engine.setMaterial(chassis, { friction: flankShapeMu(params.bodyGripOffroad, TERRAIN_FRICTION_REF) }, rims.flankOffroad)
   engine.setMaterial(chassis, { friction: flankShapeMu(params.bodyGripRoad, ROAD_FRICTION_REF) }, rims.flankRoad)
+}
+
+/**
+ * FEAT-231: the bed floor's grip — the pair μ a firewood bundle (CARGO_FRICTION_REF) sees on the floor pan, by the
+ * same geometric-mean inversion as BED_SHAPE_MU. `pairMu` null = the bare bed's BED_CARGO_MU. The walls and the
+ * wheelhouses keep the bare value: a mat or a liner is what lies on the floor (data/items.js bedMu).
+ */
+export function setBedGrip (engine, chassis, pairMu) {
+  const floor = _rimsFor(engine).get(chassis)?.bedFloor
+  if (floor === undefined) return
+  engine.setMaterial(chassis, { friction: bedShapeMu(pairMu ?? BED_CARGO_MU) }, [floor])
 }
 
 // engine → (chassis handle → rim tracking metadata). Module-scoped: gates create their own chassis.

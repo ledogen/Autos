@@ -348,16 +348,26 @@ export const THINGS = [
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'], cat: 'food' },
     { id: 'coffee',     name: 'Coffee',      kind: 'consumable', gates: ['C', 'B'], cat: 'drink' },
+    // FEAT-232 (items.md §1d, owner 2026-10-21): the gas-station snacks and the food vendor's meals, each its own category so
+    // only the ruled givers hand them out (a snack: gas station + general store; chips and candy: the station alone).
+    { id: 'bagOfPeanuts', name: 'Bag of peanuts', kind: 'food',    gates: ['C', 'B'], cat: 'snack' },
+    { id: 'gummyWorms', name: 'Gummy worms', kind: 'food',       gates: ['C', 'B'], cat: 'snack' },
+    { id: 'spicyChips', name: 'Spicy chips', kind: 'food',       gates: ['C', 'B'], cat: 'gasSnack' },
+    { id: 'candyBar',   name: 'Candy bar',   kind: 'food',       gates: ['C', 'B'], cat: 'gasSnack' },
+    { id: 'burger',     name: 'Burger',      kind: 'food',       gates: ['C', 'B'], cat: 'grill' },
+    { id: 'packedLunch', name: 'Packed lunch', kind: 'food',     gates: ['B', 'A'], cat: 'homemade' },   // residences, farms, the food vendor
+    { id: 'groceries', name: 'Groceries',   kind: 'food',       gates: ['B', 'A'], cat: 'groceries' },   // FEAT-230 slice 3: farm + general store (items.md)
+    { id: 'potato',     name: 'Potato',      kind: 'food',       gates: ['C', 'B'], cat: 'produce' },   // FEAT-230: a farm reward only (items.md §1); raw, cooked at camp
     { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
     { id: 'emergencyGas', name: 'Emergency gas', kind: 'consumable', gates: ['B', 'A'], cat: 'fuel' },   // mid tier (owner, 2026-10-21)
     // The refillable 5 gal jerry can (items.md §1): the top-tier answer to running dry, so A–S only.
     { id: 'jerryCan',   name: 'Jerry can',   kind: 'tool',       gates: ['A', 'S'], cat: 'fuel' },
     { id: 'tirePlugKit', name: 'Tire plug kit', kind: 'consumable', gates: ['B', 'A'], cat: 'tires' },
-    // The haul yard's rewards (owner, 2026-10-22; items.md §7): the mat is the lesser grip; its
-    // friction effect isn't built yet — the item is granted. The bedliner (A–S here) joins the
-    // day its thumbnail exists (test/dist-assets.mjs needs assets/items/bedliner.png).
+    // The haul yard's rewards (owner, 2026-10-22; items.md §7): the mat is the lesser grip, the bedliner the
+    // better (FEAT-231, data/items.js bedMu).
     { id: 'rubberBedMat', name: 'Rubber bed mat', kind: 'tool', gates: ['B', 'A'], cat: 'bed' },
+    { id: 'bedliner',   name: 'Bedliner',    kind: 'tool',       gates: ['A', 'S'], cat: 'bed' },
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'], cat: 'tires' },
@@ -403,6 +413,9 @@ export const REWARDS = [
     { id: 'awning',      name: 'Awning',       kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
     { id: 'cookingKit',  name: 'Cooking kit',  kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
     { id: 'deluxeSleepingPad', name: 'Deluxe sleeping pad', kind: 'camp', gates: ['S'], cat: 'camp' },
+    // FEAT-230 (items.md §2): the cooler from the tackle shop (A–S); the Ice King from it and residences (S). Ice is never one.
+    { id: 'cooler',      name: 'Cooler',       kind: 'tool', gates: ['A', 'S'], cat: 'cooler' },
+    { id: 'iceKing',     name: 'Ice King',     kind: 'tool', gates: ['S'], cat: 'iceKing' },
 ]
 
 /** FEAT-168: the reward category of a vehicle part with no REWARDS row, by its slot (data/parts.js). */
@@ -424,19 +437,19 @@ export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['
  *          and the office's are [DEFAULT]; the school's is its lunch.
  * Larry's paper route rolls from every category (owner, 2026-10-31: "give him every item").
  */
-const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch']
+const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'groceries', 'snack', 'gasSnack', 'grill', 'homemade', 'cooler', 'iceKing']
 export const REWARD_CATS = {
     autoShop:         { cats: ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery'] },
-    gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires'] },
+    gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires', 'snack', 'gasSnack'] },
     strandedMotorist: { cats: ['tires', 'recovery', 'fuel', 'engine'] },
-    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp'] },
+    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'groceries', 'homemade'] },
     workSite:         { cats: ['tires', 'suspension', 'recovery', 'bed'] },
     firewoodYard:     { cats: ['bed', 'recovery', 'camp'] },
-    residence:        { cats: ['food', 'camp', 'brakes', 'drivetrain'], rare: ['tires', 'suspension', 'engine'] },
-    foodVendor:       { cats: ['food', 'drink'] },
-    generalStore:     { cats: ['food', 'drink', 'camp', 'recovery', 'fuel'] },
+    residence:        { cats: ['food', 'homemade', 'camp', 'brakes', 'drivetrain', 'iceKing'], rare: ['tires', 'suspension', 'engine'] },
+    foodVendor:       { cats: ['food', 'drink', 'grill', 'homemade'] },
+    generalStore:     { cats: ['food', 'drink', 'snack', 'groceries', 'camp', 'recovery', 'fuel'] },
     doctor:           { cats: ['drink', 'food'] },
-    tackleShop:       { cats: ['camp', 'food'], rare: ['recovery', 'fuel'] },
+    tackleShop:       { cats: ['camp', 'food', 'cooler', 'iceKing'], rare: ['recovery', 'fuel'] },
     office:           { cats: ['drink', 'food', 'engine'], rare: ['camp'] },
     school:           { cats: ['food', 'drink'], rare: ['lunch'] },
     larrysHouse:      { cats: ALL_CATS },
@@ -727,8 +740,8 @@ export const REWARD_WINDOW_HI = 1.3
  * coffee, meals and field repairs too, FEAT-104); these are the rest. A price, never a stat (SM-INV-10).
  */
 export const REWARD_VALUE = {
-    dinnerMeal: 5,
-    zipTies: 8, stopLeak: 8, rubberBedMat: 8,
+    dinnerMeal: 5, packedLunch: 6,   // packedLunch: items.md §1d, "worth $6" (never sold)
+    zipTies: 8, stopLeak: 8,
     // FEAT-168 [DEFAULT]: the school lunch and the camp gear the shelf doesn't price
     schoolLunch: 5, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,
 }

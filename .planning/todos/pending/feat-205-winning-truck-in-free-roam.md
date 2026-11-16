@@ -12,7 +12,8 @@ lane: A
 # FEAT-205: Beating the game saves your truck — load the winning truck in free roam
 
 ## Next steps
-Built; the debug "Save as winning truck" button is in (DEC-250, land/shopui-1115). Owner: try it (owed card feat205-try): tune a truck in the debug part selector, press the button, start free roam.
+Built and landed (land/shopui-1115, DEC-250); every box ticked. The debug "Save as winning truck" button has not been clicked in
+a live game (card feat205-try answered with the button request). Close after one live click, or close as is.
 
 ## Summary
 When a run is won, the truck's configuration is written to the save file. Free roam can then load that truck.
@@ -42,3 +43,4 @@ When a run is won, the truck's configuration is written to the save file. Free r
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
 - 2026-11-14: built. `putTruck`/`loadTruck` in src/save.js (own key `autos-truck/1`, survives the run's end); `_endRun('win')` writes parts snapshot + gearbox; free-roam setup page gets a `truck` row (stock / winning truck, shown only when one is saved). Free roam now always starts on stock parts (`partsSystem.start()`) unless the winner is picked. Gate: run-save.mjs extended. No DEC conflicts (DEC-008 allows exactly this).
 - 2026-11-15 (lane u, land/shopui-1115): button in debug.js Part selector folder, calls main.js saveTruck -> putTruck({ parts: snapshot(), gearbox }). Not clicked in a live game.
+2026-11-16 (bookkeeping sweep): all Tracker boxes ticked; no open owner card. Ready to close (one live click of the debug button is the only unverified piece).

@@ -12,7 +12,9 @@ lane: Perf
 # BUG-169: Frame cap "display rate" still runs 60 fps on a 144 Hz monitor; add 90 and 120
 
 ## Next steps
-Perf lane reproduces on a 144 Hz display (Windows) and fixes, then adds the 90 and 120 options (extends DEC-185: new record when built).
+Owner's Windows findings are in the Log (card bug169-try answered 11-16: F11 fullscreen misbehaves, maximized differs). Perf lane
+reproduces on a 144-165 Hz display (Windows only; not reproducible on the Mac) and fixes, then adds the 90 and 120 options
+(extends DEC-185: new record when built).
 
 ## Summary
 On the owner's Windows machine, 144 Hz G-Sync, the frame-rate setting "display rate" still runs 60 fps by the debug readout. The owner also wants 90 and 120 fps options.
@@ -33,3 +35,4 @@ DEC-185 rules "60 / 30 / display rate, default 60". Adding 90 and 120 extends it
 
 ## Log
 - 2026-11-14: minted from the owner's inbox by the scribe. Nothing built.
+- 2026-11-16, owner (card bug169-try, Windows, 165 Hz monitor): in F11 fullscreen the cap misbehaves (60 holds 60; 90 gives about 80; 120 or display rate gives about 70; unfocused but visible it locks 165, then falls back about 5 s after refocus). In a maximized window it is fine and holds 165 while driving. In a window the cap is obeyed but the debug counter reads about 5 % above the setting. Open: the F11 fullscreen behaviour, and the 5 % counter offset. Needs the Windows machine.

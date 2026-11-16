@@ -92,12 +92,12 @@ export const BINDINGS = [
   { action: 'pause',                 key: 'Escape',    pad: 'Start', button: 9 },
   { action: 'back (menus, cards, map)', key: 'Esc',     pad: 'B' },
   { action: 'map',                   key: 'm',         pad: 'View (tap)' },
-  { action: 'map: prev / next offer', key: '← / →',     pad: 'D-pad ← / → (map open)' },
-  { action: 'map: Missions / Shopping', key: 'Q / E (mouse: click the tab)', pad: 'LB / RB (map open)' },
+  { action: 'map: prev / next offer', key: '← / →',     pad: 'LB / RB (map open)' },
+  { action: 'map: Missions / Shopping', key: 'Q / E (mouse: click the tab)', pad: 'X (map open)' },
   { action: 'map: walk the list',    key: '↑ / ↓ (mouse: hover)', pad: 'D-pad ↑ / ↓ (map open)' },
   { action: 'map: open / close a shop', key: 'Enter (mouse: click)', pad: 'A (map open)' },
   { action: 'map: back on the truck', key: 'c',        pad: 'left stick click (map open)' },
-  { action: 'map: drop / clear the waypoint', key: 'N / Enter (mouse: click)', pad: 'Y (map open)' },
+  { action: 'map: drop / clear the waypoint', key: 'N (mouse: click)', pad: 'Y (map open)' },
   { action: 'tabs (service shop)',   key: 'Q / E',    pad: 'LB / RB (shop open)' },
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'right stick ↑ / ↓ (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
@@ -128,8 +128,11 @@ const MENU_KEYS = { 0: 'Enter', 1: 'Escape', 9: 'Escape' }
 // (pad.panX/Y), the right's vertical zooms (pad.zoom) — and the triggers stay the truck's pedals, always.
 // View, which opens the map, sits under the left thumb, so that thumb is off the stick by then: there is
 // no steering to hand over. B is Escape there, the general back (owner, 2026-10-20): it closes the map.
-const MAP_KEYS = { ...BUTTON_KEYS, 0: 'Enter', 1: 'Escape', 3: 'n', 4: 'q', 5: 'e', 10: 'c' }
-for (const i of [2, 13, 14]) delete MAP_KEYS[i]
+// FEAT-239 (owner, 2026-11-16, DEC-337): the shoulders flip the map's cards, as at a POI (they send the arrows the
+// keyboard flips with), X is the Missions / Shopping tab (it sends Q, the keyboard's tab), and the D-pad's ← / →
+// bind nothing here (poll's NAV skips them) — only ↑ / ↓ walk the list.
+const MAP_KEYS = { ...BUTTON_KEYS, 0: 'Enter', 1: 'Escape', 2: 'q', 3: 'n', 4: 'ArrowLeft', 5: 'ArrowRight', 10: 'c' }
+for (const i of [13, 14]) delete MAP_KEYS[i]
 // FEAT-133: while an in-game card is up (offer, result, camp, inventory… — menu-nav.js cardContainer)
 // the D-pad moves its highlight, A presses it and B is Escape (back: closes the inventory and damage
 // screens). X goes silent with A. Unlike a menu the truck still drives — triggers, stick, RB, LB.
@@ -241,7 +244,8 @@ function poll () {
     if (gp.buttons[UP]?.pressed) dpad |= 1
     if (gp.buttons[DOWN]?.pressed) dpad |= 2
     if (gp.buttons[RIGHT]?.pressed) rightDown = true
-    if (menu || card || map) for (const [k, b] of NAV) if (gp.buttons[b]?.pressed) nav.add(k)
+    const mapOnly = map && !card   // FEAT-239: the map's own layout leaves D-pad ← / → spare (the shoulders flip)
+    if (menu || card || map) for (const [k, b] of NAV) if (!(mapOnly && (b === 14 || b === 15)) && gp.buttons[b]?.pressed) nav.add(k)
     if (menu) {   // the left stick navigates a menu; on a card it is still steering
       const ax = gp.axes[0], ay = gp.axes[1]
       if (ay < -NAV_STICK) nav.add('ArrowUp'); if (ay > NAV_STICK) nav.add('ArrowDown')

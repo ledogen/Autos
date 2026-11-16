@@ -12,9 +12,10 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
-Owner: answer the deep dive `.planning/dives/FEAT-229-tutorial-morning-start.html` (pick a beat order, the firing's time
-and cause, the tutorial's clock, where a skip lands). Then lane A writes the new decision records and builds the order.
-Seeds come after the beats are settled (owner's order).
+Landed: the morning-start order (122a606f, DEC-304..308), the owner's dialogue pass (1bf41b62, DEC-320..326) and the seed
+gate (f8ffe439). Owner: look cards `tut-dialogue-look` (review the lines; whether story mode's R / pad reset stays for the alpha;
+the two agent lines), `tutorial-test-drives` (playtest), `feat229-same-landing` (open; DEC-299/304 may already answer it),
+and the defaults (clock held + stamps, $6, tired at night, the skipper's line).
 
 ## Summary
 Today the firing is at 19:30 and the tutorial lasts exactly 24 in-game hours, so free will opens at 19:30: a new player
@@ -42,17 +43,41 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 
 ## Tracker
 - [x] Deep dive: today's flow and its lessons, four morning-start orders, the clock question, a recommendation, the form
-- [ ] Owner answers the dive
-- [ ] New decision records for the answers (and the superseded ones flipped)
-- [ ] The chosen order built (`src/main.js` tutorial stages, `data/dialogue.js` placeholder lines)
-- [ ] The `opening` step of `test/cdp-smoke.mjs` walks the new order
-- [ ] Tutorial seed re-checked against the new order (after the beats are settled)
+- [x] Revision 2 of the dive: played and skipped land at the same time, place and day (DEC-299); four options as beat lists
+- [x] Owner answers the dive (revision 2): option 1, errands first, with a note (2026-11-16 08:21 UTC)
+- [x] New decision records for the answers: DEC-304..308 (DEC-238, 239, 276, 282 superseded)
+- [x] The chosen order built (`src/main.js` tutorial stages, `data/dialogue.js` placeholder lines)
+- [x] The `opening` step of `test/cdp-smoke.mjs` walks the new order (green alone); `skipMenus` kept
+- [x] The owner's dialogue pass built: Katie (DEC-320), mom's call and no taught reset (DEC-321), Larry's first meeting
+  (DEC-322), the snack from a shopping spot (DEC-323), Katie's 17:00 call (DEC-324), the night (DEC-325), the morning and
+  Larry's two cards (DEC-326); smoke `opening` updated
+- [ ] Owner: the new lines reviewed; story mode's R / pad reset for the alpha
+- [ ] Owner: placeholder lines and the defaults (clock held + stamps, $6, tired at night, the skipper's line)
+- [x] Tutorial seed re-checked against the new order (`test/tutorial-seed.mjs`, DEC-304's legs)
+
+## Decisions
+- DEC-299 (owner, 2026-11-15/16): the tutorial is 24 in-game hours, fired about 07:00, free will about 07:00 the next
+  morning; played and skipped runs enter free will at the same time of day and the same place (and, DEC-159, day).
+- DEC-304: option 1, errands first (supersedes DEC-239). DEC-305: mom's errand on the firing day, her hand-over line
+  (supersedes DEC-238). DEC-306: mom's money covers food and, unspoken, gas; $6 [DEFAULT] (supersedes DEC-276).
+  DEC-307: the firing never mentions the paycheck; mom asks that night, reminds you next morning. DEC-308: DEC-282's
+  gates for the whole firing day (supersedes DEC-282).
+- Defaults the owner left blank: clock held while driving, stamps 08/09/10/17/21:30 (`TUT_STAMPS`); firing 07:00;
+  energy pays the stamped hours (tired on the night drive); mom asks at her door that night.
+
+- DEC-320..326 (owner's dialogue pass, 2026-11-16): Katie the best friend opens the firing on the phone (supersedes
+  DEC-146's camp-first-from-mom); mom's call reacts, no reset taught; Larry met at his house offers the route and the
+  pack (supersedes DEC-155's route-on-the-call); pumps shut and hidden until the peanuts; Katie's 17:00 call carries the
+  camp and the paycheck (supersedes DEC-307); night: slow down, home safe (supersedes DEC-315); morning: Katie reminds,
+  Larry's two cards, a skip keeps DEC-236's four (supersedes DEC-236).
 
 ## Open questions
 - Everything in the dive's form.
 
 ## Links
-- Deep dive: `.planning/dives/FEAT-229-tutorial-morning-start.html`
+- Deep dive, revision 2: `.planning/dives/FEAT-229-tutorial-same-landing.html`
+- Revision 1 (replaced): `.planning/dives/FEAT-229-tutorial-morning-start.html`
+- DEC-299
 - The tutorial as built: FEAT-184, FEAT-217.
 
 ## Files
@@ -60,3 +85,11 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 
 ## Log
 - 2026-11-15: ticket minted, dive written (lane A). Docs only.
+- 2026-11-16: owner rejected revision 1 (missed same time of day and same place for played and skipped). DEC-299
+  written; revision 2 of the dive: four options (joint errands-first, joint trouble-first, mom's, Larry's). Docs only.
+- 2026-11-16: built option 1 on `land/feat-229` (records DEC-304..308). Smoke `opening` and `skipMenus` green alone;
+  59 affected node gates green. Also fixed `_jointQuiet` (read "07:00 day 1" since DEC-159; now free will's 07:00).
+  Unverified: the full smoke (every step after `story` now runs a morning), the seed's legs in the new order.
+- 2026-11-16: box 3 on `land/tut-seed-gate`: `test/tutorial-seed.mjs` walks DEC-304's order with main.js's picks; legs 2.00 /
+  0.70 / 2.72 / 2.11 / 3.86 (flat at 2.06, tow 0.53 crow) / 0.94 / 2.00 km, 12.5 km, 15 min wheel; TUT_STAMPS read from
+  main.js. Gate green. Unguarded: a leg driven (the gate plans, never drives), a beat's trigger in main.js.

@@ -1,6 +1,6 @@
 ---
 id: DEC-292
-status: standing
+status: superseded
 decided: 2026-11-15
 area: ui
 governs: QUAL-36, FEAT-87, src/rank-timer.js, src/main.js _updateRankTimer _promiseRows, index.html #rank-timer

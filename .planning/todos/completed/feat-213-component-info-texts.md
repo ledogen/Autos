@@ -1,7 +1,7 @@
 ---
 id: FEAT-213
 type: feature
-status: open — built and on main (0e5824bb); waiting on the owner's look (owed card feat213-look)
+status: closed
 severity: minor
 opened: 2026-11-13
 source: owner, 2026-11-13 — the Google Doc "Cargame menus", its “Info text” section, copied below verbatim
@@ -56,3 +56,4 @@ Eleven short explanations, one per component, written by the owner. They sit beh
 ## Log
 - 2026-11-13: minted from the owner's spec by the orchestrator. Nothing built.
 - 2026-11-14: built on land/feat-213, smoke 26/26 incl. a new (i) check; screenshot wip/feat-213/info-brakes.png. Diagnostics screen shows text on hover tip only.
+- 2026-11-16: owner on card feat213-look: "Looks right". Closed.

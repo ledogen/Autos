@@ -12,7 +12,8 @@ lane: B
 # FEAT-204: Visual mods for the alpha — light bar, bed toolbox, roof rack, bull bar
 
 ## Next steps
-Slots are answered (+4 each). The content lane models the four parts and Lane B wires them.
+Four models built in wip/ of CarGame-run-shape, nothing promoted to assets/ (ticket log merged e3291a66). Owner: look card
+`feat204-models-look`. After approval: promote the four .glb files, then Lane B wires them (Tracker boxes all open).
 
 ## Summary
 Four bolt-on parts the player can see on the truck, wanted before the alpha: a light bar, an in-bed toolbox, a roof rack and a bull bar. Each one does something. It does not have to be a large set.
@@ -47,3 +48,7 @@ Four bolt-on parts the player can see on the truck, wanted before the alpha: a l
 
 ## Log
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
+- 2026-11-16: content lane modelled all four in `wip/` of CarGame-run-shape (git-invisible, owner review before promotion): light-bar 2808 tris · bed-toolbox 1484 · roof-rack 1628 (plain utility basket; role open, FEAT-240) · bull-bar 1028. All in ranger.glb's frame (child of the ranger root, identity transform), 0 inverted faces, no overlap when all four are fitted. Renders in `wip/<part>/renders/`, refs in `wip/feat-204-refs/refs.md`. Not promoted, not wired; ASSET tickets not minted.
+- 2026-11-16: owner looked at round 1 ("good first attempt"). Round 2 per DEC-340: bent one-tube bull bar with one welded crossbar; roof rack to the cab roof footprint (first); lights mount to the rack when both are fitted, own bridge member when alone. Toolbox stands.
+- 2026-11-16: round 2 built in `wip/` (round 1 kept in `wip/<part>/r1/` + its renders): roof-rack 1588 tris, 1.15 x 0.56 m basket centred on the 1.32 x 0.58 m roof panel, 15 mm inside the cab back · bull-bar 1360 (one 68 mm tube, 10 deg forward lean, 60 mm welded crossbar; top = headlamp centre) + bull-bar-skid 1492 variant · light-bar-rack 2940 (tabs on the rack's front rail) and light-bar-solo 2808 (round-1 bridge bar), same pods + material names. 0 part-vs-part overlap in all three fitted sets; sheets `wip/feat-204-common/renders/r2-*.png`. Not promoted.
+- 2026-11-16: owner on round 2 (DEC-341): plain bull bar, keep the lean, pods in FRONT of the rack rail, lower bend fine, roof clamp hardware black. Round 3 then promote and wire.

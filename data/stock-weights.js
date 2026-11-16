@@ -69,6 +69,10 @@ export const STOCK_WEIGHT = {
     // Field repairs (owner, 2026-10-23): zip ties and stop-leak are sold at the auto shop too
     zipTies:          4,
     stopLeak:         4,
+    // The bed floor (FEAT-231): the mat [DEFAULT] Sometimes (no frequency ruled); the bedliner "very rarely" (owner,
+    // 2026-10-22) = Hardly ever, the lowest tier
+    rubberBedMat:     4,
+    bedliner:         0.25,
 
     // Camp gear (FEAT-168 camp-gear-source, owner 2026-11-06: "camp + shelf") [DEFAULT]: the four the owner
     // named are shelf stock as well as rewards; the bed layers below them are rewards only.
@@ -81,8 +85,16 @@ export const STOCK_WEIGHT = {
     emergencyGas:     4,
     coffee:           10,
     chiliDog:         4,
+    groceries:        4,     // FEAT-230 [DEFAULT]: a chili dog's weight; a farm / general-store reward (B–A) and sold there
+    potato:           4,     // FEAT-230 [DEFAULT]: a chili dog's weight; sold at the general store, a farm reward (C–B)
     ductTape:         4,     // sold at the general store (FEAT-104, data/shop-stock.js STOREFRONT), not the auto shop
     energyDrink:      10,
+    bagOfPeanuts:     4,     // FEAT-232 [DEFAULT]: a chili dog's weight, for the snacks, the burger and the packed lunch
+    gummyWorms:       4,
+    spicyChips:       4,
+    candyBar:         4,
+    burger:           4,
+    packedLunch:      4,
     dinnerMeal:       4,     // eaten on the spot, never stowed
     blanket:          4,     // FEAT-168 camp rewards [DEFAULT]: the bottom rungs Sometimes, the top Hardly ever
     airMattress:      4,
@@ -94,5 +106,6 @@ export const STOCK_WEIGHT = {
 
 /** Weighted for mission rewards but never stocked on an AUTO SHOP's shelf (the owner's reward-only rows). Some
  *  are storefront lines: data/shop-stock.js STOREFRONT, which these weights don't touch. */
-export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'ductTape', 'energyDrink', 'dinnerMeal',
+export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'potato', 'groceries', 'ductTape', 'energyDrink', 'dinnerMeal',
+    'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'burger', 'packedLunch',
     'blanket', 'airMattress', 'sleepingPad', 'quilt', 'sleepingBag', 'deluxeSleepingPad'])

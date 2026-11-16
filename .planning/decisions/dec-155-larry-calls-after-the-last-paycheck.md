@@ -1,6 +1,6 @@
 ---
 id: DEC-155
-status: standing
+status: superseded
 decided: 2026-11-14
 area: story
 governs: FEAT-184, FEAT-148, data/dialogue.js, src/main.js, Larry, the run intro, tutorial skip

@@ -109,9 +109,11 @@ example a bug that won't block the alpha.
 
 | Ticket | Why later |
 |---|---|
+| FEAT-240 | cargo of different sizes — what fits which cargo area; absorbs the roof rack's storage-versus-long-cargo conflict (owner, 2026-11-16: "a post-alpha feature") |
 | BUG-64 | walls between close roads: the class-A part left would move routes; owner, 2026-11-07: "dont take the bug64 fix. its not bothering me" |
 | FEAT-206 | brake heating: fade and runaway on a long descent with an overweight load (owner, 2026-11-13: "post alpha") |
 | FEAT-208 | phone calls: pay time or battery to learn what a place has (owner, 2026-11-13: "post alpha idea") |
+| PERF-51 | clustered or deferred lighting, so a light costs only where it reaches (owner, 2026-11-16: "post alpha") |
 
 Tickets get minted into `.planning/todos/pending/` **at milestone entry, not all up front** — the
 design has open questions (DESIGN.md §Open questions) and minting everything now would freeze answers
@@ -122,6 +124,16 @@ we haven't earned.
 ## Where we are — build state 2026-08-03
 
 Keep this honest; it is the thing that makes the rule checkable.
+
+**Update 2026-11-16 (bookkeeping sweep after the 11-15/16 landings).** On main since 11-15: the tutorial rebuilt to the
+morning-start order (FEAT-229, DEC-304..308; dialogue pass DEC-320..326; FEAT-184 / FEAT-217 built, waiting on the owner's
+playtest), the economy's food spine (FEAT-230 potato, kit, groceries, the fresh clock with coolers and ice; FEAT-232 snacks;
+the camp-gear shelf and bedliner, FEAT-231), damage alerts that persist (FEAT-216, DEC-327/330), the live pump face (FEAT-233),
+the shadows on the truck (FEAT-223), antenna drag and night GPS chevrons (FEAT-236, FEAT-238), the map's legend and waypoint keys
+(FEAT-234) and the pad's card switching (FEAT-239). Closed: BUG-184..188, FEAT-232, FEAT-234, FEAT-237, FEAT-239, PERF-52.
+Held for the owner's look, not landed: `land/feat-235` (cluster redesign, FEAT-235), `land/bug-171`, `land/bug-179`. Open and
+not on main: FEAT-204's four models (in `wip/`), FEAT-69 (the budget dive), BUG-161 (not reproducible; owner drive), BUG-169
+(Windows). Every owed look is a card in the owner's `owed/` folder; the tickets' Next steps name each one.
 
 **Update 2026-10-14: the next build is listed in SM-3 § "Next up".** The 2026-10-14 planning pass
 (design-amendments-2026-10-14.md) minted FEAT-112..118 and put them in build order there.
@@ -639,6 +651,8 @@ player damage screen (FEAT-90). Open:
 | FEAT-106 | road damage — potholes and cracks |
 | FEAT-50 / FEAT-51 | fuel; coolant temp (the radiator track) |
 | FEAT-34 | instrument cluster — the player-facing diagnostic screen |
+| FEAT-235 | the cluster redesigned to the 2002 Ranger reference — round 1 built on `land/feat-235`, held for the owner's look (owner, 2026-11-16) |
+| FEAT-216 | damage alerts — persistent criticals, re-report each 10 % (DEC-327, DEC-330); built, owner's look pending |
 | FEAT-57 | ABS + traction control as parts |
 | FEAT-83 | world-placed debris that `causesDamage` — a damage source |
 | FEAT-202 | oil changes — an oil track that wears with load and rpm and scales engine wear; auto shop only (owner, 2026-11-13) |
