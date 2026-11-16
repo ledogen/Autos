@@ -214,7 +214,7 @@ await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0'); await 
 check(!(await vs()).parked, 'DEC-255: an LT tap while parked on the automatic releases the parking brake (reverse pedal)')
 await js('__fp.b[6] = 0.6'); await sleep(1500); await js('__fp.b[6] = 0'); await sleep(100)
 check(!(await vs()).parked, 'DEC-255: LT held 1.5 s on the automatic keeps it released (backing out)')
-await sleep(2000); const o4 = await off(); check(Math.abs(o4) < 10, `a brake tap from a stop swings it back behind (${o4.toFixed(0)} deg)`)
+await sleep(2000); const o4 = await off(); check(Math.abs(Math.abs(o4) - 180) < 15, `a brake pull from a stop (automatic: reverse, DEC-255) swings the view round to the front, camera.js reverseView (${o4.toFixed(0)} deg)`)
 await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)   // View hold: parked at rest again
 s = await vs(); check(s.parked && s.v < 0.2, `View hold re-parks the truck at rest after the reverse (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // B no longer aims (owner, 2026-10-21): held in the drive layout it is the icon menu. Off a route the
@@ -339,9 +339,10 @@ await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html` })
 for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await sleep(250)
 await sleep(500)
 await js(fakePad)
-// FEAT-156: the menu is new game / tutorial (FEAT-184) / settings, and it opens with new game highlighted.
+// FEAT-156 + DEC-160: the menu is new game / settings (the tutorial button retired), and it opens with new game highlighted.
 await press(DOWN)
-check(await navText() === 'tutorial', `the menu opens on new game: D-pad down reaches tutorial (${await navText()})`)
+// DEC-160: the menu's tutorial button retired with the intro card, so the list is new game / settings.
+check(await navText() === 'settings', `the menu opens on new game: D-pad down reaches settings (${await navText()})`)
 await press(UP)
 check(await navText() === 'new game', `up returns to new game (${await navText()})`)
 await press(A)
