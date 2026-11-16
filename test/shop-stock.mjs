@@ -149,8 +149,8 @@ check('buying one leaves it on the shelf', shelf('autoShop:a', 50)[at]?.id === A
 const lines = Object.values(STOREFRONT).flatMap(s => [...s.always, ...Object.keys(s.weights ?? {})])
 const unpriced = lines.filter(id => !ITEMS[id] || PARTS[id] || !(ITEM_PRICE[id] > 0))
 check('every storefront line is an item with a price, never a part', unpriced.length === 0, unpriced.join())
-check('the storefronts are the general store, gas station and food vendor (the tackle shop has nothing to sell yet)',
-  Object.keys(STOREFRONT).join() === 'generalStore,gasStation,foodVendor')
+check('the storefronts are the general store, gas station, food vendor and farm (the tackle shop has nothing to sell yet)',
+  Object.keys(STOREFRONT).join() === 'generalStore,farm,gasStation,foodVendor')
 let stores = true
 for (const seed of [1, 2, 3]) {
   startShelves(seed)

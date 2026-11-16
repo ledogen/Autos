@@ -44,6 +44,7 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8,
     // FEAT-231 [DEFAULT]: inside the owner's ranges, the mat $5–10 (the $8 its reward card read), the bedliner $10–30
     rubberBedMat: 8, bedliner: 20,
+    groceries: 5,               // owner, 2026-10-21: $5 at the general store and farms
     potato: 2,                  // FEAT-230 [DEFAULT]: items.md rules the potato "under $5"; the owner sets the number
     gummyWorms: 2, spicyChips: 3, candyBar: 2,   // FEAT-232 [DEFAULT]: "under $5" each; the owner sets the numbers
     burger: 5,                  // items.md §1d: the food vendor's burger, $5
@@ -62,7 +63,8 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
  * is the rows above (ALWAYS, data/stock-weights.js).
  */
 export const STOREFRONT = {
-    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato'] },
+    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'groceries'] },
+    farm:         { always: ['groceries'] },   // FEAT-230 slice 3: a farm sells for the first time (items.md, Groceries)
     gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
     foodVendor:   { always: ['coffee', 'chiliDog', 'burger', 'dinnerMeal'] },
 }

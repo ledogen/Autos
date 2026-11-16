@@ -356,6 +356,7 @@ export const REWARDS = [
     { id: 'candyBar',   name: 'Candy bar',   kind: 'food',       gates: ['C', 'B'], cat: 'gasSnack' },
     { id: 'burger',     name: 'Burger',      kind: 'food',       gates: ['C', 'B'], cat: 'grill' },
     { id: 'packedLunch', name: 'Packed lunch', kind: 'food',     gates: ['B', 'A'], cat: 'homemade' },   // residences, farms, the food vendor
+    { id: 'groceries', name: 'Groceries',   kind: 'food',       gates: ['B', 'A'], cat: 'groceries' },   // FEAT-230 slice 3: farm + general store (items.md)
     { id: 'potato',     name: 'Potato',      kind: 'food',       gates: ['C', 'B'], cat: 'produce' },   // FEAT-230: a farm reward only (items.md §1); raw, cooked at camp
     { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
@@ -433,17 +434,17 @@ export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['
  *          and the office's are [DEFAULT]; the school's is its lunch.
  * Larry's paper route rolls from every category (owner, 2026-10-31: "give him every item").
  */
-const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'snack', 'gasSnack', 'grill', 'homemade']
+const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'groceries', 'snack', 'gasSnack', 'grill', 'homemade']
 export const REWARD_CATS = {
     autoShop:         { cats: ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery'] },
     gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires', 'snack', 'gasSnack'] },
     strandedMotorist: { cats: ['tires', 'recovery', 'fuel', 'engine'] },
-    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'homemade'] },
+    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'groceries', 'homemade'] },
     workSite:         { cats: ['tires', 'suspension', 'recovery', 'bed'] },
     firewoodYard:     { cats: ['bed', 'recovery', 'camp'] },
     residence:        { cats: ['food', 'homemade', 'camp', 'brakes', 'drivetrain'], rare: ['tires', 'suspension', 'engine'] },
     foodVendor:       { cats: ['food', 'drink', 'grill', 'homemade'] },
-    generalStore:     { cats: ['food', 'drink', 'snack', 'camp', 'recovery', 'fuel'] },
+    generalStore:     { cats: ['food', 'drink', 'snack', 'groceries', 'camp', 'recovery', 'fuel'] },
     doctor:           { cats: ['drink', 'food'] },
     tackleShop:       { cats: ['camp', 'food'], rare: ['recovery', 'fuel'] },
     office:           { cats: ['drink', 'food', 'engine'], rare: ['camp'] },

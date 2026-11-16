@@ -562,12 +562,32 @@ const STEPS = [
     check(await js('window.__inv.use("potatoCooked")'), 'the cooked potato could not be eaten')
     const withKit = await fedLeft()
     check(Math.abs(withKit - 4.8) < 0.01, `kit at camp: held ${withKit.toFixed(3)} h, not 4.8`)
+    // FEAT-230 slice 3: groceries, cooked with the kit deployed (the kit is packed and the camp card is up). 10 h, no +20 % on top.
+    await js(`window.__inv.grant('groceries', 2)`)
+    const gcook = () => js('(b => b && b.style.display !== "none" && b.textContent)(document.getElementById("cp-cook-groceries"))')
+    check(await until(async () => /cook groceries/.test(await gcook() || ''), 2000), 'no groceries line on the camp card with the kit deployed')
+    await sleep(400)
+    const gshot = await client.cmd('Page.captureScreenshot', { format: 'png' })
+    mkdirSync('wip/groceries', { recursive: true }); writeFileSync('wip/groceries/camp-card.png', Buffer.from(gshot.result.data, 'base64'))
+    const g0 = await day('clockH()')
+    await js('document.getElementById("cp-cook-groceries").click()')
+    check(await until(async () => await n('groceriesCooked') === 1, 5000), 'cooking made no cooked groceries')
+    await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on")')), 5000)
+    check(Math.abs(((await day('clockH()')) - g0) * 60 - 30) < 0.5, 'cooking groceries did not take 30 game min')
+    check(await n('groceries') === 1, `raw groceries after one cook: ${await n('groceries')}`)
+    await js('window.__day()._fedUntilH = window.__day().clockH() - 1')
+    check(await js('window.__inv.use("groceriesCooked")'), 'the cooked groceries could not be eaten')
+    const gHeld = await fedLeft()
+    check(Math.abs(gHeld - 10) < 0.01, `cooked groceries at camp with the kit: held ${gHeld.toFixed(3)} h, not 10 (no x1.2)`)
     // The same meal without the kit packed.
     await js(`(() => { const i = window.__inv; i.unpackItem(i.equippedIndex(), i.packed().indexOf('cookingKit')); i.consume('cookingKit')
       i.grant('potatoCooked'); window.__day()._fedUntilH = window.__day().clockH() - 1 })()`)
     check(await js('window.__inv.use("potatoCooked")'), 'the second cooked potato could not be eaten')
     const noKit = await fedLeft()
     check(Math.abs(noKit - 4) < 0.01, `no kit: held ${noKit.toFixed(3)} h, not 4`)
+    // No kit deployed: the camp card offers no groceries line (one bag is still aboard).
+    check(await until(async () => !(await gcook()), 2000), 'the camp card offers a groceries line without the cooking kit')
+    await js(`window.__inv.consume('groceries')`)   // consumed, not dropped: a dropped bag would sit under "Nearby on the ground" for the tires step
     // And away from camp, with the kit packed again: no bonus.
     await js('document.getElementById("cp-break")?.click()')
     check(await until(async () => !await camp(), 3000), 'break camp left the card up')
@@ -825,6 +845,43 @@ const STEPS = [
     check(await until(async () => !await open(), 1000), 'Esc left the shop open')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
+  }],
+  ['farm', async () => {
+    // FEAT-230 slice 3: a farm sells for the first time (groceries, $5). Parking at one opens the same buy screen as the
+    // general store, its jobs a button inside it ("go to jobs", FEAT-197) that appears only while the farm has an offer up.
+    // A farm with NO offer: the shop, no jobs button. A farm WITH one: the button, the farm's own offer card, accept, a mission.
+    // Pictures: wip/groceries/farm-shop.png (no offer), farm-shop-jobs.png (the jobs button).
+    const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    const find = (want) => js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
+      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !q.park && ((b.view(q.id, 0)?.count > 0) === ${want}))
+      return q ? { h: Math.atan2(-q.tx, -q.tz), id: q.id, ...${PAD_SEAT}(q) } : null })()`)
+    const shot = async (f) => { await sleep(600); const r = await client.cmd('Page.captureScreenshot', { format: 'png' }); mkdirSync('wip/groceries', { recursive: true }); writeFileSync(`wip/groceries/${f}`, Buffer.from(r.result.data, 'base64')) }
+    const leave = async () => { await tap('Escape'); await until(async () => !await vis('svc-screen'), 1500); await tap(' '); await sleep(300) }
+    const bare = await find(false)
+    if (bare) {
+      await seat(bare.x, bare.z, bare.h); await park(true)
+      check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with no offer opened no shop')
+      const txt = await js('document.querySelector("#svc-screen").textContent')
+      check(/Groceries/.test(txt) && !/My Vehicle|Parts Shop/.test(txt), `the farm's shop reads: "${txt.slice(0, 200)}"`)
+      check(await js('!document.querySelector("#svc-screen [data-tab=jobs]")'), 'a farm with no offer shows a dead Jobs tab')
+      await shot('farm-shop.png')
+      await leave()
+    } else console.log('  farm: no farm without an offer — the no-offer half skipped')
+    const live = await find(true)
+    if (!live) { console.log('  farm: no farm with an offer up — the jobs half skipped'); return }
+    await seat(live.x, live.z, live.h); await park(true)
+    check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with an offer opened no shop')
+    check(await js('!!document.querySelector("#svc-screen [data-tab=jobs]")'), 'the farm shop has no Jobs tab although an offer is up')   // the tab holds the "go to jobs" button
+    await js('document.querySelector("#svc-screen [data-tab=jobs]").click()')
+    check(await js('!!document.querySelector("#svc-screen [data-act=jobs]")'), 'the farm\'s Jobs tab has no "go to jobs" button')
+    await shot('farm-shop-jobs.png')
+    await js('document.querySelector("#svc-screen [data-act=jobs]").click()')
+    check(await until(() => vis('mp-accept'), 2000), "the farm's jobs button did not bring up the farm's own offer card")
+    await js('document.getElementById("mp-accept").click()')
+    check(await until(async () => await vis('mission-hud') && await js('document.querySelector("#mission-hud .hud-text").textContent.trim()'), 5000), 'accepting the farm offer started no mission')
+    console.log(`  farm: shop, jobs button, offer card, accepted → mission ${await js('window.__mission().state')}`)
+    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')   // abandon: two clicks (the confirm)
+    check(await until(async () => !await js('window.__mission().isOnJob()'), 3000), 'abandoning the farm job did not end it')
   }],
   ['vendor', async () => {
     // FEAT-232: the food vendor's shop — the burger on its shelf and the dinner meal's "Eat here" line (paid, 30 min, holds
