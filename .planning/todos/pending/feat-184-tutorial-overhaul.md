@@ -249,7 +249,7 @@ Relayed by the orchestrator (cargame-c8). Verbatim:
 > "My biggest immediate pain for me right now is having to skip the tutorial to go and assess other meaningful feature
 > tweaks and updates I think what's in our best interest is to split the tutorial into its own menu option and leave it
 > simply as an option for now so I can go and voluntarily test it Then build an intro that plays every single game that
-> is easily skippable. Pretty much the intro cinematic plays where Jay gets fired then you drive to moms and sleep. once
+> is easily skippable. Pretty much the intro cinematic plays where Billy gets fired then you drive to moms and sleep. once
 > you wake up the player is in the game with free will. For alpha, we'll We have the tutorial play first thing And then
 > it will appear as a main menu option thereafter We should enforce the player to play through the basic tutorial To
 > clear the tutorial flag This will include all the main functions We should have a map, inventory, recovery screen
@@ -325,7 +325,7 @@ Relayed by the orchestrator (cargame-c8). Verbatim:
 9. **The worst-day story** (2026-11-07: fired → flat → the spare is flat too → tow → the shop → the night drive). It was
    the career opening's. Does it become the mandatory tutorial's story? Read as yes: the lessons it carries (spare,
    recovery, shop) are on the note's list.
-- Not conflicts, recorded: the player character is named **Jay** (new; for FEAT-148's words). "recovery screen
+- Not conflicts, recorded: the player character is named **Billy** (was "Jay" in the first record; renamed by DEC-343; for FEAT-148's words). "recovery screen
   campaign" is read as "the recovery screen, camping". "She feeds you" matches items.md ("the tutorial's night end fed,
   played or skipped, … three packed lunches (mom's)").
 
@@ -518,6 +518,7 @@ Each has a recommendation there.
 `src/economy.js` · `data/dialogue.js` · `test/cdp-smoke.mjs` (the story / opening steps) · `test/run-soak.mjs`
 
 ## Log
+- 2026-11-16: DEC-343 names the main character Billy; the earlier working name "Jay" in this ticket is replaced. Docs only.
 - 2026-11-07 / 11-08: the plan, the beat sheet, the census, stages 1–5 and the menu split (see the history above;
   hashes there).
 - 2026-11-14: landing 1 built on feature/run-shape (Lane A): 115cf26b (ServiceCenter onMom / useMom: one tire on mom,

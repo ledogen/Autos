@@ -4,6 +4,8 @@ Companion to [DESIGN.md](DESIGN.md) (intent + invariants — read it first). Thi
 onto buildable milestones so tickets can be minted and burned down. Each milestone is a **playable
 slice** — the game is better at the end of each one even if story mode never finishes.
 
+**The main character is Billy (DEC-343).** "The player" means the person at the controls; "Billy" the character in the story.
+
 **Rebuilt 2026-07-29** around *prerequisites* rather than list order, so the ordering is checkable
 instead of remembered. What changed: a **Where we are** section that records real build state, an
 explicit **free lane** of order-independent work, and a `Requires:` line on every milestone.

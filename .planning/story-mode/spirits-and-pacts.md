@@ -4,6 +4,8 @@
 the bible disagree, the bible wins. Companions: `opening.md`, `missions.md`, `run-shape.md`,
 `IDEAS.md`.*
 
+**The main character is Billy (DEC-343).** "The player" means the person at the controls; "Billy" the character in the story.
+
 > **Beta (owner, 2026-10-23).** Spirits are not in the alpha. Kept word for word for the beta — see
 > MILESTONES.md § Release cuts.
 

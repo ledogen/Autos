@@ -84,6 +84,7 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 `src/main.js` (the opening, `OPENING_START`, `FREE_WILL`, `_eveningBeats`) · `data/dialogue.js` · `test/cdp-smoke.mjs`
 
 ## Log
+- 2026-11-16: DEC-343: the main character is Billy; the fired-at-7:30 beat is Billy's. Docs only.
 - 2026-11-15: ticket minted, dive written (lane A). Docs only.
 - 2026-11-16: owner rejected revision 1 (missed same time of day and same place for played and skipped). DEC-299
   written; revision 2 of the dive: four options (joint errands-first, joint trouble-first, mom's, Larry's). Docs only.
