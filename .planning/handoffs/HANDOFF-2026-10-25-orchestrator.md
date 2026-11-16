@@ -170,7 +170,7 @@ CarGame-content), top-items-path, plus the older ones in owed/.
 FEAT-226 (bay light contained by walls, no real-time shadows per DEC-227), FEAT-223, FEAT-224 (cost first), the other
 ~5.5 % of FEAT-180's +9 % GPU (next suspect the sky's 5-layer noise; not routed).
 **HELD:** PERF-50 (Windows machine), QUAL-33 (ask before changing T promotion), a PERF-40 bench window.
-**Next free orchestrator DEC:** 296. (260 is reserved for the BUG-171 answer.)
+**Next free orchestrator DEC:** 298. (296 = bay light +20 %, with the Spare agent; 297 = start board behind the start + tutorial legs, Lane U on land/gps-1116b.) (260 is reserved for the BUG-171 answer.)
 **Dev servers up:** :8000 main (loopback) · :8001 main on Tailscale (Windows: http://m4air:8001) · :3731 Lane A ·
 :3885 Spare · :8010 dashboard.
 **Gotchas learned 11-15:** (1) agents can stall for hours on a background wait that never wakes them: if a lane is
