@@ -49,3 +49,4 @@ Four bolt-on parts the player can see on the truck, wanted before the alpha: a l
 ## Log
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
 - 2026-11-16: content lane modelled all four in `wip/` of CarGame-run-shape (git-invisible, owner review before promotion): light-bar 2808 tris · bed-toolbox 1484 · roof-rack 1628 (plain utility basket; role open, FEAT-240) · bull-bar 1028. All in ranger.glb's frame (child of the ranger root, identity transform), 0 inverted faces, no overlap when all four are fitted. Renders in `wip/<part>/renders/`, refs in `wip/feat-204-refs/refs.md`. Not promoted, not wired; ASSET tickets not minted.
+- 2026-11-16: owner looked at round 1 ("good first attempt"). Round 2 per DEC-340: bent one-tube bull bar with one welded crossbar; roof rack to the cab roof footprint (first); lights mount to the rack when both are fitted, own bridge member when alone. Toolbox stands.
