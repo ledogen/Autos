@@ -824,10 +824,12 @@ const STEPS = [
     check(await js('window.__inv.list().length') === i0, 'the dinner meal was stowed in the inventory')
     await js('window.__econ.money = 50')
     await click('#svc-screen [data-tab=shop]')
+    // After the full run's earlier steps every slot is taken (a bought item would wait on the swap prompt): free the potatoes' slots.
+    for (const id of ['potatoCooked', 'potato']) await js(`(() => { const i = window.__inv.list().findIndex(r => r.id === '${id}'); if (i >= 0) window.__inv.drop(i) })()`)
     await js(`${row('Burger')}.click()`); await sleep(200)
     await click('#svc-screen .sv-kids [data-act=stow]')
     await click('#svc-screen [data-act=checkout]')
-    check(await n('burger') === 1, 'the burger bought at the vendor is not in the inventory')
+    check(await n('burger') === 1, `the burger bought at the vendor is not in the inventory (${await js('JSON.stringify([window.__inv.list().map(r => r.id + "x" + r.n), window.__inv.pending])')})`)
     await leave()
     await js('window.__day()._fedUntilH = window.__day().clockH() - 1')
     check(await js('window.__inv.use("burger")') && Math.abs(await held() - 8) < 0.02, `the burger holds ${(await held()).toFixed(2)} h, not 8`)
