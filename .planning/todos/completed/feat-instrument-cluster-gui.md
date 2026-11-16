@@ -1,7 +1,7 @@
 ---
 id: FEAT-34
 type: feature
-status: open
+status: closed
 opened: 2026-07-16
 updated: 2026-08-15
 severity: minor
@@ -308,3 +308,6 @@ Shots: `wip/feat-34/shots/r7/` (after, after-lamps, sheet-r6-r7).
 ## Round 8 (Lane B, 2026-11-15) — built, awaits the owner's look
 
 Owner: the round-7 note, verbatim in DEC-285 (area ui; refines DEC-284). Constants atop `src/cluster.js`: `KMH_PX` 8.4 / `MPH_PX` 10.8 (×1.2), `FRAME_IN` 17 (right edge 54 from the arc centre; key indent edge 20 from its centre; 34 apart, half = 17; W 511 → 494; key stays, now 17 right of the arc centre), `REDLINE_R` 4.5 (arc radius 67.5 → 69.5, clearance to ticks 1 → 3), `LAMP_K` brake 1.10 / tire 0.88 / engine 1.42 / head 1.28 (boxes about 15.6×10.8, 13.9×12.2, 16.6×10.1, 13.2×12.7), `NUM_IN` 1.5, `ICON_DY` 16 (was 13). Shots `wip/feat-34/shots/r8/`. No gate covers `src/cluster.js`.
+
+## Log
+- 2026-11-15: CLOSED. Owner approved round 8 (card feat34-r8-look, "approve, land it"). Rounds 5-8 merged to main 8b130e2f; full smoke 26/26 (wip/orch/smoke-1115l.log).

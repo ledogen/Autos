@@ -1,7 +1,7 @@
 ---
 id: FEAT-221
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-14
 source: owner, 2026-11-14 inbox — "I'd like to open a discussion about using the automatic exposure compensation model from the new lighting system that I don't think we've pu…"
@@ -54,3 +54,4 @@ FEAT-180 (rounds 4–5: the eye, `moonAdapt`), FEAT-219 (the bay light), FEAT-21
   Cost ≤ 0.16 ms GPU per pass (headless Metal, 1600×813; noisy, 0.003–0.37), every 2nd frame. Defaults centre-weighted,
   strength 0.75, deadband ±1 stop, −2…+2.5 stops, 2 s opening / 0.6 s closing. sky-ephemeris green. Shots `wip/feat-221/`.
 - 2026-11-15 (Spare): 16d40a44 landing-ready per DEC-262. `?ae=0` = off. No gate covers it (no headless render); owner look owed.
+- 2026-11-15: CLOSED. On main since 3393c6ad. The owner's answer on card lighting-bundle-look raised only the bay light (now FEAT-226); orchestrator read that as no objection here.

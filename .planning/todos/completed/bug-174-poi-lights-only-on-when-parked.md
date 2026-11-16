@@ -1,7 +1,7 @@
 ---
 id: BUG-174
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-15
 source: owner, 2026-11-15 — "service station and poi lights should always be on whether or not you're using the poi. i noticed the service station only turns its lights on when i park in there."
@@ -38,3 +38,4 @@ FEAT-219 (the bay light), FEAT-214 (POI night lamps), BUG-175.
 
 ## Log
 - 2026-11-15 (Spare): 403d615d. One light, never added or removed after boot, moved to the station nearest the truck. No gate covers it; needs the owner's look.
+- 2026-11-15: CLOSED. On main since 3393c6ad (bay light always in the scene). The owner's follow-up (a second ceiling light, containment) is FEAT-226.
