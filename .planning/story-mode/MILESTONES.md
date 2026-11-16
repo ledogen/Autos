@@ -47,6 +47,7 @@ How the cut works:
 | FEAT-147 | tutorial + opening: the firing, the uncle, the first day |
 | FEAT-184 | the tutorial overhaul: the lessons a run needs (a flat and the spare, eating, refuelling, wear and damage), on a world that fits them (owner, 2026-11-07: "mark it to do before alpha") |
 | FEAT-217 | tutorial fixes from the 11-14 playtest: reset countdown and shoulder rules, give-up reset, the flat, dialogue order, soft locks, pad focus (owner, 2026-11-14) |
+| FEAT-229 | the tutorial starts the run in the morning: the story beats re-ordered so free will opens on a fresh day, every lesson kept (owner, 2026-11-15) |
 | FEAT-103 | the expedition camp is the win. No unlock and no FEAT-28: the camp sits on the story circle's edge, at the end of an existing road cut at the wall. The road leading to it stays ordinary for the alpha; its perilous upfit comes after (owner, 2026-10-26) |
 | FEAT-43 | story region — only the slices one region needs; "confinement becomes the unlocked set" is beta |
 | FEAT-114 | haul quantity — built on `feature/mission-recut`, merge it |

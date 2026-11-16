@@ -136,12 +136,10 @@ export const PAPER_PARAMS = {
  */
 export const runPaper = {
     tier: 0,
-    held: [],   // QUAL-36 (DEC-182): items Larry holds for the player — [{ rewardId, name, cost }], kept until collected at his house
 }
 
 export function resetPaperRun () {
     runPaper.tier = 0
-    runPaper.held = []
 }
 
 /** How many customers this tier's route visits. */
@@ -1162,6 +1160,16 @@ export class PaperRouteSystem {
         this._onChange()
     }
 
+    /** DEC-289: a parked step spends the round's time though the world clock stands still (MissionSystem.spendParked). */
+    spendParked (dH) {
+        const run = this.run
+        if (!this.isCarrying() || !run || run.expired || !(dH > 0)) return false
+        if (this.state === 'running') run.t0H -= dH
+        if (!Number.isFinite(run.dueH)) return false
+        run.dueH -= dH
+        return true
+    }
+
     /** Clocked off the fixed step. Two comparisons and a counter — nothing else happens per frame. */
     update (dt) {
         this._clock += dt
@@ -1480,7 +1488,7 @@ export class PaperRouteSystem {
             base:      r.base,          // to the cent, base + tip === payout (splitPayout)
             tip:       r.tip,
             points:    settled.points ?? 0,
-            award:     settled.award ?? null,   // QUAL-36: the item Larry now holds, if the round earned it
+            award:     settled.award ?? null,   // DEC-291: the item the round earned, if any — the result card offers it (cost already set by onSettle)
             advanced,
             nextTier:  advanced ? customersForTier() : null,
         }

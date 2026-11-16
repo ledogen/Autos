@@ -1,6 +1,6 @@
 ---
 id: DEC-253
-status: standing
+status: superseded
 decided: 2026-11-15
 area: story
 governs: QUAL-36, src/main.js _larryHandsOver

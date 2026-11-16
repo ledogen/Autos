@@ -1,6 +1,6 @@
 ---
 id: DEC-182
-status: standing
+status: superseded
 decided: 2026-11-14
 area: story
 governs: QUAL-36, FEAT-61, FEAT-141, FEAT-199, src/paper-route.js, src/main.js

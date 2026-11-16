@@ -27,6 +27,7 @@
 
 import { SLOTS, PARTS, partChoices, stockPart } from '../data/parts.js'   // FEAT-222: part selector
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
+import { RANK_UI, RANK_UI_VARIANTS } from './rank-timer.js'   // QUAL-36 (DEC-292): the rank-UI A/B
 import { gripLoad } from './tire.js'
 import { VEHICLES } from '../data/vehicles.js'
 import { resolveBuild } from './version.js'
@@ -115,6 +116,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // current shipped behaviour, so this only changes anything when the user picks another tier. Low strips
   // every non-gameplay GPU cost (shadows off, props thinned, fbm off, 720p) for weak machines.
   const _qualityState = { quality: 'Normal' }
+  gui.add(RANK_UI, 'variant', RANK_UI_VARIANTS).name('Rank UI (a: scroller, b: text)')
   gui.add(_qualityState, 'quality', ['Low', 'Normal', 'High', 'Ultra']).name('Quality').onChange(v => {
     if (typeof callbacks.applyQuality === 'function') callbacks.applyQuality(v)
     // The tier also sets params.terrainDetailScale (Low = 0 kill-switch), so refresh controllers to

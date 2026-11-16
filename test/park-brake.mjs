@@ -8,10 +8,12 @@
 //   4. Manual: a shift that lands in a gear releases it; sitting latched in a gear does not.
 //   5. Park lock (a parked menu is up): handbrake on even unlatched; W / RT / a gear cannot release the
 //      latch; Space still can. Lock off, W releases as usual.
-//   6. Part 3 — no time passes while the latch is set (day.js clockHeld, the pause path main.js steps the
-//      clock through). Latched at rest: the day clock, energy, hunger, a job's elapsed time and its due
-//      time, and an offer's expiry all stand still while idle fuel still burns. Released, all run again.
-//      The job's elapsed is the driven time only; its par never moves. A handbrake slide holds nothing.
+//   6. Part 3 — no WORLD time passes while the latch is set (day.js clockHeld, the pause path main.js steps the
+//      clock through). Latched at rest: the day clock, energy, hunger and an offer's expiry stand still while idle
+//      fuel still burns. DEC-289 (owner, 2026-11-15): the job in hand does not — its elapsed, its rank and its
+//      deadline run on at the driving rate (spendParked), and the board's slot locks on the moved line, also
+//      after a save replay. Released, the clock runs again; the job's elapsed is driven + parked time, par
+//      never moves. A handbrake slide holds nothing.
 //   7. FEAT-217 (DEC-272): the throttle cut (the tutorial's flat) — W / RT give no throttle and W cannot release the latch;
 //      the brake and steering still work; off, W drives as before. (DEC-270) routeLeftM reads the arc left, not the crow.
 //
@@ -114,47 +116,63 @@ const MANUAL = { ...RANGER_PARAMS, transmissionType: 'manual' }
 }
 
 // 6. Each step is main.js's order: updateVehicle (the latch), stepFuel (inside stepPhysics), the clock through
-//    clockHeld (the camp / service / evening holds off), then the mission's update.
+//    clockHeld (the camp / service / evening holds off) or, parked, the job's spendParked, then the mission's update.
 {
   const { DaySystem, clockHeld } = await import('../src/day.js')
   const { stepFuel } = await import('../src/fuel.js')
-  const { MissionSystem } = await import('../src/mission.js')
+  const { MissionSystem, secPerGameH } = await import('../src/mission.js')
   const { OfferBoard } = await import('../src/offer-board.js')
+  const { gradeRun } = await import('../src/par.js')
+  const { logBoard } = await import('../src/save.js')
   const day = new DaySystem({ setTimeOfDay () {} }); day.start()
-  const board = new OfferBoard({ seed: 194, pois: [{ id: 'poi:1|2', type: 'foodVendor' }], nowH: day.clockH() })
-  const job = (dueInH) => {
+  const POIS = [{ id: 'poi:1|2', type: 'foodVendor' }]
+  const board = new OfferBoard({ seed: 194, pois: POIS, nowH: day.clockH() })
+  const log = logBoard(board, day.clockH())
+  const [held, offer] = board.offers('poi:1|2', day.clockH())
+  const job = (dueH, offerId) => {
     const ms = new MissionSystem({ getRoad: () => null, getCar: () => ({ x: 0, z: 0 }), teleport () {}, setMapOpen () {},
       getClockH: () => day.clockH() })
     ms.state = 'running'; ms._t0H = day.clockH()
-    ms.mission = { par: 300, targets: [], cleared: false, dueH: day.clockH() + dueInH }   // a demolition site: done only when cleared
+    ms.mission = { par: 300, targets: [], cleared: false, dueH, offerId }   // a demolition site: done only when cleared
     return ms
   }
   const vs = fresh(); vs.fuel.floorGal = 0
-  const timed = job(Infinity), due = job(1)   // due in one game hour = 60 s of clock
+  const timed = job(Infinity), due = job(board.take(held.id, day.clockH(), 300).dueH, held.id)   // due 6.5 game h = 390 s on
+  let owed = 0   // main.js _parkSpend: the board hears the parked hours once per stop
   const run = (sec) => { for (let i = 0, n = Math.round(sec / DT); i < n; i++) {
     updateVehicle(vs, RANGER_PARAMS, DT); stepFuel(vs, RANGER_PARAMS, DT)
     if (!clockHeld(false, false, false, vs.parked)) day.update(DT)
+    else if (vs.parked) { const dH = DT / secPerGameH(); timed.spendParked(dH); if (due.spendParked(dH)) owed += dH }
+    if (!vs.parked && owed) { board.spend(held.id, owed); owed = 0 }
     timed.update(DT); due.update(DT)
   } }
   const snap = () => ({ h: day.clockH(), e: day.energyH(), fed: day.fedLeftH(), el: timed.elapsed, gal: vs.fuel.gal })
   run(30)                                                          // 30 s driving (unlatched, at rest is enough)
-  const offer = board.offers('poi:1|2', day.clockH()).reduce((a, o) => o.expiresH > a.expiresH ? o : a)
   tap(vs, ' ')
   const a = snap(); run(400); const b = snap()                     // 400 s parked: ~6.7 game hours if the clock ran
-  check('6. latched at rest: the clock, energy, hunger and the job\'s elapsed stand still over 400 s',
-    vs.parked && b.h === a.h && b.e === a.e && b.fed === a.fed && b.el === a.el,
-    `parked ${vs.parked}, clock ${a.h}→${b.h}, energy ${a.e}→${b.e}, fed ${a.fed}→${b.fed}, elapsed ${a.el}→${b.el}`)
-  check('   …the job is not overdue and the offer has not expired', !due.mission.expired && board.isLive(offer.id, day.clockH()),
-    `overdue ${due.mission.expired}, live ${board.isLive(offer.id, day.clockH())}`)
+  check('6. latched at rest: the world clock, energy and hunger stand still over 400 s',
+    vs.parked && b.h === a.h && b.e === a.e && b.fed === a.fed,
+    `parked ${vs.parked}, clock ${a.h}→${b.h}, energy ${a.e}→${b.e}, fed ${a.fed}→${b.fed}`)
+  check('   …the offer on the board has not expired', board.isLive(offer.id, day.clockH()), `live ${board.isLive(offer.id, day.clockH())}`)
   check('   …while idle fuel still burns', b.gal < a.gal, `${a.gal} → ${b.gal} gal`)
+  const ga = gradeRun(a.el, 300), gb = gradeRun(b.el, 300)
+  check('   DEC-289: the job\'s elapsed runs on by the 400 parked s, and its rank with it',
+    Math.abs(b.el - a.el - 400) < 0.05 && Math.abs(gb.ratio - ga.ratio - 400 / 300) < 1e-3 && gb.letter !== ga.letter,
+    `elapsed ${a.el.toFixed(2)}→${b.el.toFixed(2)}, ratio ${ga.ratio.toFixed(3)}→${gb.ratio.toFixed(3)}, ${ga.letter}→${gb.letter}`)
+  check('   …and its 390 s deadline passes while parked', due.mission.expired, `dueH ${due.mission.dueH}, clock ${day.clockH()}`)
   tap(vs, 'w')
   const left = (offer.expiresH - day.clockH()) * 60 + 5            // real s until the offer's expiry, + 5
   const c0 = snap(); run(left); const c = snap()
   check('   released: the clock, energy and hunger run again', !vs.parked && c.h > c0.h && c.e < c0.e && c.fed < c0.fed,
     `clock ${c0.h}→${c.h}, energy ${c0.e}→${c.e}, fed ${c0.fed}→${c.fed}`)
-  check('   …the job goes overdue and the offer expires', due.mission.expired && !board.isLive(offer.id, day.clockH()))
-  check('   …the job\'s elapsed is the driven time only (30 s + the release), and its par is untouched',
-    Math.abs(c.el - (30 + left)) < 0.05 && timed.mission.par === 300, `elapsed ${c.el.toFixed(2)} vs ${(30 + left).toFixed(2)}, par ${timed.mission.par}`)
+  check('   …the offer expires', !board.isLive(offer.id, day.clockH()))
+  check('   …the job\'s elapsed is driven + parked time (30 + 400 s + the release), and its par is untouched',
+    Math.abs(c.el - (430 + left)) < 0.05 && timed.mission.par === 300, `elapsed ${c.el.toFixed(2)} vs ${(430 + left).toFixed(2)}, par ${timed.mission.par}`)
+  const st = board.slotStates('poi:1|2', day.clockH())[0].state
+  const replay = new OfferBoard({ seed: 194, pois: POIS, nowH: log.t0H }); logBoard(replay, log.t0H, log.events)
+  check('   …the board\'s slot locked on the moved deadline, and a save replay lands on the same line',
+    st === 'locked' && log.events.some(e => e[0] === 'spend') && replay.slotStates('poi:1|2', day.clockH())[0].state === 'locked',
+    `slot ${st}, events ${log.events.map(e => e[0])}`)
   const slide = fresh(); slide.velocity.x = 15; key(' ', true); step(slide, RANGER_PARAMS, 50); key(' ', false); step(slide)
   check('   a handbrake slide at 15 m/s never latches, so it never holds the clock',
     !slide.parked && !clockHeld(false, false, false, slide.parked))

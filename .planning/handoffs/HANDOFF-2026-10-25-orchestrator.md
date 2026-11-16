@@ -141,37 +141,41 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-15 evening; rewrite, don't append)
+## Current state (2026-11-15 night; rewrite, don't append)
 
-Older state paragraphs: `git show dd6d07f1:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
+Older state paragraphs: `git show f81ae69d:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
 
-**Main:** bd08d4e1 + docs (FEAT-180 fog cube landed, DEC-286; ~5.5 % of the rebuild's +9 % GPU still unexplained, next suspect the sky noise, not routed), last full smoke: see wip/orch/smoke-1115m.log. Perf lane free. NOT pushed (nothing since 736266b5).
-**Landed 11-15 (all local):** small-1115, run-shape x4 (FEAT-184 errand, smoke fixes, FEAT-217 notes, BUG-178 smoke trace),
-shopui-1115, BUG-173 (closed), gps-1115 (DEC-275), FEAT-221 exposure + BUG-174/175/177, PERF-49 (closed), BUG-176
-(open until the owner rubs a rock), PERF-48 terrain bake hybrid on by default (DEC-234; off on Low, `?terrainBake=0`),
-land/tutorial-1116 (snack errand: mom's $3, peanuts, eat at a camping area; manager's line; reset grace 20 m; both
-anti-dodge gates; DEC-276, 277, 281, 282).
+**Main:** c430f765 + docs, last full smoke 26/26 (wip/orch/smoke-1115q.log). NOT pushed (nothing since 736266b5).
+**Landed 11-15 (all local), in order:** small-1115, run-shape (FEAT-184 errand, smoke fixes, FEAT-217 notes), shopui-1115,
+BUG-173, gps-1115, FEAT-221 exposure + BUG-174/175/177, PERF-49, BUG-176, PERF-48 terrain bake on by default,
+tutorial-1116 (snack errand, manager's line, reset grace 20 m, anti-dodge gates), BUG-178 (`_towOwed`), FEAT-34 gauge
+rounds 5-8, FEAT-180 fog cube (DEC-286), bay light centred (DEC-228), gps-1116 (U-turn arrow removed; start board,
+wrong-way alert, alert cycling; DEC-287), clock-1116 (job time runs under the brake, DEC-289; tire-check keycap DEC-290;
+BUG-181), rankui-1116 (Larry's item paid at once DEC-291/294/295; rank UI A and B behind `?rankui`, DEC-292), FEAT-229
+dive (docs).
+**Closed 11-15:** PERF-49, BUG-173, BUG-176, BUG-178, FEAT-34, FEAT-221, BUG-174, BUG-175, BUG-177.
 
-**RUNNING (spawned 11-15 ~16:45-17:30; one task each):**
-- Lane a is free: BUG-178 fixed and CLOSED (5e4c7977, `_towOwed`).
-**Lanes b, c, u free.** FEAT-34 gauge rounds 5-8 LANDED and closed (owner approved). FEAT-221, BUG-174, BUG-175, BUG-177 closed.
-- s · CarGame-spare · land/bay-light-2 · Opus: the owner's lighting note (bay must not read as one bulb above the truck;
-  call delegated; no shadows, DEC-227; GPU cost measured away from stations). DEC-228. Extends FEAT-226. Tutorial cards filed: tutorial-test-drives (stays OPEN until
-the owner signs off; act on each note), tutorial-lines (five placeholder lines + the $3 peanuts price).
-BUG-179 minted (owner capture Logs/autos-capture-1794791342440.json, seed 1684703087: two legs diverge in height, tear
-at the interface; replay reproduces; unplaced, a candidate for Lane C while BUG-171 waits).
-Owner asked for a cost estimate of light shadows (bay light contained by walls; headlight shadows as a High+ option):
-estimate given; owner: "just ticket the bay light. kill realtime shadows for now" = FEAT-226 + DEC-227 (FEAT-223 left open).
-**Built, waiting on the owner:** BUG-171 option 2 on land/bug-171 (CarGame-content, src/road.js +8/-4, stacked on
-land/bug-158b which is already on main). Dive BUG-171-option2-gore-steps + pictures are on main as docs; card
-bug171-option2-look. The answer becomes DEC-260, then build the pick on land/bug-171.
-**Queue:** FEAT-223, FEAT-224 (cost first). Lanes c, u free. Next free orchestrator DEC: 228-229, then 286.
+**RUNNING:**
+- s · CarGame-spare · land/lights-1116 · Opus: BUG-180 (headlight bulbs gray under live exposure) + FEAT-227 (ONE real
+  light at the nearest station's pump area, cost measured). DEC-229.
+**Lanes a, b, c, p, u free.**
+
+**Waiting on the owner (cards; `order` in each):** feat229-morning-start (dive: tutorial beats for a morning start; the
+answer opens the rebuild, then the seed re-check), tutorial-test-drives (stays OPEN until sign-off; carries the ONE
+line about checking tutorial dialogue; never card placeholder lines again, see memory), rankui-ab (pick A or B, delete
+the loser, then close QUAL-36), feat228-brake-clock (menus cost job time? + wording to restate DEC-023),
+feat215-start-arrow-look, bay-light-look, bug171-option2-look (answer becomes DEC-260, then build on land/bug-171 in
+CarGame-content), top-items-path, plus the older ones in owed/.
+**Unplaced, nobody on it:** BUG-179 (road legs diverge, tear; capture in Logs/, replay reproduces; candidate for Lane C),
+FEAT-226 (bay light contained by walls, no real-time shadows per DEC-227), FEAT-223, FEAT-224 (cost first), the other
+~5.5 % of FEAT-180's +9 % GPU (next suspect the sky's 5-layer noise; not routed).
 **HELD:** PERF-50 (Windows machine), QUAL-33 (ask before changing T promotion), a PERF-40 bench window.
-**Owed cards open:** bug171-option2-look, top-items-path, qual36-cash-line, feat215-arrow-look, lighting-bundle-look
-(then close FEAT-221, BUG-174, BUG-175, BUG-177), bug176-rub, plus the older ones in owed/.
+**Next free orchestrator DEC:** 298. (296 = bay light +20 %, with the Spare agent; 297 = start board behind the start + tutorial legs, Lane U on land/gps-1116b.) (260 is reserved for the BUG-171 answer.)
 **Dev servers up:** :8000 main (loopback) · :8001 main on Tailscale (Windows: http://m4air:8001) · :3731 Lane A ·
 :3885 Spare · :8010 dashboard.
-**Gotcha learned 11-15:** agents can stall for hours on a background wait that never wakes them. If a lane is silent
-past its expected time, read its log files; if the job is done, SendMessage it the log path and tell it to report.
-**Worktrees:** CarGame-land-gps holds pictures for feat215-arrow-look (keep until answered); CarGame-land-176 can go
-once bug176-rub is answered.
+**Gotchas learned 11-15:** (1) agents can stall for hours on a background wait that never wakes them: if a lane is
+silent past its expected time, read its log files, and if the job is done SendMessage it the log path. (2) Owed and dive
+answers SAVE AS THE OWNER TYPES: check the answer's `at` is ~3 min old before acting. (3) Two lanes minted the same
+DEC number once (284): give each agent explicit ids, never "the next free one".
+**Worktrees:** CarGame-land-gps (Lane U's), CarGame-machine (Lane B's; A/B pictures in wip/rankui-1116/),
+CarGame-content (land/bug-171 waits there).

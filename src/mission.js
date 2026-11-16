@@ -25,7 +25,8 @@
  *     callback that turns one into a priced mission (planOffer below), and owns take/complete/
  *     cancel on the board around accept, settle and cancel().
  *   - FEAT-113 — `elapsed` is WORLD time since the start line (getClockH), so a sleep or a time skip
- *     spends the tip and a pause (the camp) holds it. A board job also carries a deadline (`dueH`,
+ *     spends the tip and a pause (the camp) holds it. DEC-289: the parking brake holds the world clock
+ *     but not the job — spendParked() moves the start line and the deadline earlier by the parked time. A board job also carries a deadline (`dueH`,
  *     stamped by the board at take): past it the job is `expired` — it can no longer arrive, and
  *     main.js's "mission expired" button (parked only) signs it off through expire(). No pop-up
  *     while driving, and no countdown (SM-INV-3).
@@ -754,6 +755,21 @@ export class MissionSystem {
             this.state = 'done'
             this._onChange()
         }
+    }
+
+    /**
+     * DEC-289 (owner, 2026-11-15): parked under the brake the world clock stands still, the job in hand does not.
+     * main.js calls this on each parked step with the game hours the clock would have moved: the start line and
+     * the deadline move that much earlier, so elapsed (and the rank bar on it) and "due in" run at the driving
+     * rate. True when the deadline moved (main.js then tells the board, which locks the slot on the same line).
+     */
+    spendParked(dH) {
+        const m = this.mission
+        if (!this.isOnJob() || !m || m.expired || !(dH > 0)) return false
+        if (this.state === 'running') this._t0H -= dH
+        if (!Number.isFinite(m.dueH)) return false
+        m.dueH -= dH
+        return true
     }
 
     _startRun() {
