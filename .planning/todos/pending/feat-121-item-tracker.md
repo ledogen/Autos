@@ -75,7 +75,7 @@ Spoils in 16 h (2026-10-21). Flavor: "Kinda gross" (owner, 2026-10-22) — the i
 
 ### Dinner meal
 status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
-Audit 2026-11-16: the dinner invitation reward ships. Missing: the food vendor's own eat-in menu item ($5–10; foodVendor sells only coffee and chili dog).
+Audit 2026-11-16: FEAT-232 built the food vendor's eat-in line ($5 [DEFAULT] of $5–10, 30 min, holds 8 h). Missing: nothing but the owner's price; the invitation reward ships.
 Renamed from diner meal (owner, 2026-10-21). One generic sit-down meal, a menu item at the food
 vendor: holds hunger 8 h, 30 min to eat, $5–10, eat-in only, never found. Flavor: "A hearty meal.
 Dine in only" (owner, 2026-10-22). **As a reward it is a dinner invitation** (owner, 2026-10-22): a C–B
@@ -85,15 +85,15 @@ job those givers post, as with every reward (owner); the result card asks "stay 
 "decline" (owner, 2026-10-23). Being fed waits on hunger.
 
 ### Burger
-status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
-Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `burger.png` exists.
+status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
+Audit 2026-11-16: FEAT-232 built the item, $5 vendor shelf and C–B reward. Missing: the 16 h spoilage (FEAT-230 slice 2). The row says C–B; the proposal list said B–A, the row built.
 The standard meal, its own item (owner, 2026-10-21): holds hunger ~8 h, so two cover a waking day.
 Spoils in 16 h; $5; a C–B reward from the food vendor; never found (2026-10-21). Flavor: "The
 classic" (owner, 2026-10-22).
 
 ### Packed lunch
 status: wip · design: ratified · build: effect · needs: hunger, spoilage · where: reward
-Audit 2026-11-16: in ITEMS and the run's starting three. Missing: the B–A reward row (residence, farm, vendor) and the 24 h freshness (spoilage).
+Audit 2026-11-16: FEAT-232 built the B–A reward row (residence, farm, vendor, worth $6). Missing: the 24 h freshness (spoilage, FEAT-230 slice 2).
 Never sold (owner, 2026-10-21): a bonus item from residences, farms and the food vendor (B–A), worth
 $6. Holds hunger 8 h; fresh 24 h. Never found. Flavor: "Homemade!" (owner, 2026-10-22).
 
@@ -115,28 +115,28 @@ applies; stacks 5. Under $5; C–B; never found. Fish cooks on the campfire too.
 
 ### Bag of peanuts
 status: wip · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
-Audit 2026-11-16: item, eat and gas-station shelf ($3 [DEFAULT]) ship. Missing: the C–B reward row, the roadside find, the stack cap of 3 (no stack caps exist).
+Audit 2026-11-16: FEAT-232 built the item, shelf, C–B reward and stack cap. Missing: the roadside find (the find system does not exist).
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 3. Under $5;
 a C–B reward from the gas station and general store; less rare as a find than the others; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "Mmm, salty" (owner, 2026-10-22).
 
 ### Gummy worms
-status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
-Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `gummyWorms.png` exists.
+status: wip · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: FEAT-232 built the item, shelf, C–B reward and stack cap. Missing: the roadside find (the find system does not exist).
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2 h, stacks 5. Under $5;
 a C–B reward from the gas station and general store; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "Only a couple blue ones" (owner, 2026-10-22).
 
 ### Spicy chips
-status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
-Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `spicyChips.png` exists.
+status: wip · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: FEAT-232 built the item, shelf, C–B reward and stack cap. Missing: the roadside find (the find system does not exist).
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 3. Under $5;
 a C–B reward from the gas station; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "Almost too hot" (owner, 2026-10-22).
 
 ### Candy bar
-status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
-Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `candyBar.png` exists.
+status: wip · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: FEAT-232 built the item, shelf, C–B reward and stack cap. Missing: the roadside find (the find system does not exist).
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 4. Under $5;
 a C–B reward from the gas station; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "A bit melty" (owner, 2026-10-22).
