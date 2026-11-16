@@ -145,10 +145,12 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
 
 Older state paragraphs: `git show dd6d07f1:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
 
-**Main:** f6f32653 + docs, last full smoke 26/26 (wip/orch/smoke-1115i.log). NOT pushed (nothing since 736266b5).
+**Main:** 5efe7acb + docs, last full smoke 26/26 (wip/orch/smoke-1115j.log). NOT pushed (nothing since 736266b5).
 **Landed 11-15 (all local):** small-1115, run-shape x4 (FEAT-184 errand, smoke fixes, FEAT-217 notes, BUG-178 smoke trace),
 shopui-1115, BUG-173 (closed), gps-1115 (DEC-275), FEAT-221 exposure + BUG-174/175/177, PERF-49 (closed), BUG-176
-(open until the owner rubs a rock), PERF-48 terrain bake hybrid on by default (DEC-234; off on Low, `?terrainBake=0`).
+(open until the owner rubs a rock), PERF-48 terrain bake hybrid on by default (DEC-234; off on Low, `?terrainBake=0`),
+land/tutorial-1116 (snack errand: mom's $3, peanuts, eat at a camping area; manager's line; reset grace 20 m; both
+anti-dodge gates; DEC-276, 277, 281, 282).
 
 **RUNNING (spawned 11-15 ~16:45-17:30; one task each):**
 - a · CarGame-run-shape · feature/run-shape · Opus: BUG-178 root fix. Cause is the game: the tow's faked park edge is
@@ -156,16 +158,17 @@ shopui-1115, BUG-173 (closed), gps-1115 (DEC-275), FEAT-221 exposure + BUG-174/1
   1 failure in 54 runs, so proof must be a forced repro, not a green streak.
 - p · CarGame-perf · feature/perf · Opus: FEAT-180 fog cost ("confirm the suspect, then make it cheaper with the same
   look"). Its DEC: next unused >= 280.
-- s · CarGame-spare · land/tutorial-1116 · Opus: owner answers tutorial-errand (mom hands a few dollars, you buy the
-  snack; manager's line verbatim) + tutorial-gates (off-road reset grace area around POIs 20 m, reset otherwise kept;
-  both anti-dodge gates). DEC 276, 277, 281, 282. WHEN IT LANDS: file a "test drives" card for the tutorial from the
-  agent's list, and keep it open until the owner signs off (owner's words on the errand card).
-- b · CarGame-machine · feature/machine · Sonnet: FEAT-34 gauge round 6 from the owner's r5 note (cut off mid-sentence;
-  build only what is stated). DEC-283. Cherry-pick to main only on the owner's approval; then a new look card.
+**Lanes s, b, c, u free.** FEAT-34 gauge round 7 is built on feature/machine (e53ae2ad + 73a2165b, DEC-284; rounds 5-7
+land together on the owner's approval, card feat34-r7-look). Tutorial cards filed: tutorial-test-drives (stays OPEN until
+the owner signs off; act on each note), tutorial-lines (five placeholder lines + the $3 peanuts price).
+BUG-179 minted (owner capture Logs/autos-capture-1794791342440.json, seed 1684703087: two legs diverge in height, tear
+at the interface; replay reproduces; unplaced, a candidate for Lane C while BUG-171 waits).
+Owner asked for a cost estimate of light shadows (bay light contained by walls; headlight shadows as a High+ option):
+estimate given in chat, nothing built; fits the Spare queue with FEAT-223.
 **Built, waiting on the owner:** BUG-171 option 2 on land/bug-171 (CarGame-content, src/road.js +8/-4, stacked on
 land/bug-158b which is already on main). Dive BUG-171-option2-gore-steps + pictures are on main as docs; card
 bug171-option2-look. The answer becomes DEC-260, then build the pick on land/bug-171.
-**Queue:** FEAT-223, FEAT-224 (cost first). Lanes c, u free. Next free orchestrator DEC: 227-229, then 284.
+**Queue:** FEAT-223, FEAT-224 (cost first). Lanes c, u free. Next free orchestrator DEC: 227-229, then 285.
 **HELD:** PERF-50 (Windows machine), QUAL-33 (ask before changing T promotion), a PERF-40 bench window.
 **Owed cards open:** bug171-option2-look, top-items-path, qual36-cash-line, feat215-arrow-look, lighting-bundle-look
 (then close FEAT-221, BUG-174, BUG-175, BUG-177), bug176-rub, plus the older ones in owed/.
