@@ -1424,7 +1424,7 @@ const STEPS = [
     const off = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
       const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
       for (const along of [0, 100, -100, 160, -160]) for (const d of [25, -25, 35, -35, 45, -45]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
-        // FEAT-217: past the 75 m no-reset radius of every place (TUT_PARAMS.safeNearPoiM), and 15+ m from the road (10 m past its side)
+        // FEAT-217: past the 20 m no-reset radius of every place (TUT_PARAMS.safeNearPoiM, DEC-281), and 15+ m from the road (10 m past its side)
         if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
         const q = window.__roadSys().queryNearest(x, z, 100); if (!q?.point || Math.hypot(q.point.x - x, q.point.z - z) > 15) return { x, z } }
       return null })()`)
@@ -1588,7 +1588,38 @@ const STEPS = [
     if (await speaker() !== 'Uncle Larry') { await simFor(1); await park(true) }
     check(await until(async () => await speaker() === 'Uncle Larry', 5000), `parked at Larry's with his pack, no hand-over (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
     await readCards()
-    check((await tut()).stop === 'joint' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the morning to the joint: ${JSON.stringify(await tut())}`)
+    check((await tut()).stop === 'snack' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the morning for the snack: ${JSON.stringify(await tut())}`)
+    // DEC-239/276, the snack: mom's few dollars buy a bag of peanuts at the station nearest Larry's; eaten parked in the
+    // camping area nearest that station, it sends the morning to the joint.
+    check(await js('window.__econ.money') >= 3, `mom's few dollars are not in the wallet ($${await js('window.__econ.money')})`)
+    const gs = await js(`(() => { const L = window.__poi().list().find(q => q.type === 'larrysHouse'), d = q => Math.hypot(q.x - L.x, q.z - L.z)
+      const q = window.__poi().list().filter(q => q.type === 'gasStation').sort((a, b) => d(a) - d(b))[0]
+      const s = window.__towSeat({ ...q, pumpZones: null })   // its storefront bays, not the pump a tow would seat at
+      return { x: s.x, z: s.z, h: s.heading } })()`)
+    await js(`window.__seated = false; window.__teleport(${gs.x}, ${gs.z}, ${gs.h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the gas station never seated')
+    await readCards()
+    const shopUp = () => js('document.getElementById("svc-screen").checkVisibility()')
+    if (!await shopUp()) { await simFor(1); await park(true) }
+    check(await until(shopUp, 3000), `parked at the gas station for the snack, no shop: ${JSON.stringify(await tut())}`)
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+    const nut = 'Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => /Bag of peanuts/.test(r.textContent))'
+    check(await js(`!!${nut}`), `the gas station sells no peanuts: "${(await js('document.querySelector("#svc-screen").textContent')).slice(0, 200)}"`)
+    await js(`${nut}.click()`)
+    await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]").click()')
+    await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
+    check(await until(async () => (await tut()).stop === 'camp', 3000), `buying the peanuts did not send the morning to a camping area: ${JSON.stringify(await tut())}`)
+    await readCards()   // the camping-area card, which may open over the shop
+    if (await shopUp()) await tap('Escape')
+    check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
+    const cd = (await tut()).camp
+    check(cd, `no camping area for the snack: ${JSON.stringify(await tut())}`)
+    await js(`window.__seated = false; window.__teleport(${cd.x}, ${cd.z}, 0).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the camping area never seated')
+    await simFor(1); await park(true)
+    check(await js("window.__inv.use('bagOfPeanuts')"), 'the peanuts could not be eaten')
+    check(await until(async () => (await tut()).stop === 'joint', 5000), `eating the snack parked in the camping area did not send the morning to the joint: ${JSON.stringify(await tut())}`)
+    await readCards()   // mom's card for the joint (tut-morning), which holds the sim
     // The morning's GPS follows a stray truck (BUG-118).
     await strayCheck('on the way to the paycheck')
     await readCards()
