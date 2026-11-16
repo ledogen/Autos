@@ -12,10 +12,10 @@ lane: C
 # BUG-171: junction dirt steps where a limb or self pass is born inside the tie distance
 
 ## Next steps
-Owner: answer the follow-on dive `.planning/dives/BUG-171-option3-continuous-foot.html` (land the foot fix? stop or
-chase the next root?). land/bug-171 now holds option 2 + the continuous-frame limb foot (853bc4e0), not landed. Option 3
-(the soft-min kernel) was NOT built: it averages the leg's height over arc, which DEC-260 rules out; the foot fix is its
-by-construction replacement. Junction-dirt steps 909 → 88 sites; what is left is other roots (see Description).
+Owner: card `bug171-option3-look` (the follow-on dive BUG-171-option3-continuous-foot.html: land the foot fix? stop or chase the next
+root?). `land/bug-171` holds option 2 + the continuous-frame limb foot (853bc4e0), HELD, not landed. Option 3 (soft-min kernel) was
+NOT built: it averages the leg's height over arc, which DEC-260 rules out; the foot fix replaces it. Junction-dirt steps 909 -> 88
+sites; what is left is other roots (see Description).
 
 ## Summary
 Off the deck in junction dirt, the physics ground still jumps 0.15–2.0 m inside one 5 cm move at 618 census sites.

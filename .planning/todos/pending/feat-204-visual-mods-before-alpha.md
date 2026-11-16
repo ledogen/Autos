@@ -12,7 +12,8 @@ lane: B
 # FEAT-204: Visual mods for the alpha — light bar, bed toolbox, roof rack, bull bar
 
 ## Next steps
-Slots are answered (+4 each). The content lane models the four parts and Lane B wires them.
+Four models built in wip/ of CarGame-run-shape, nothing promoted to assets/ (ticket log merged e3291a66). Owner: look card
+`feat204-models-look`. After approval: promote the four .glb files, then Lane B wires them (Tracker boxes all open).
 
 ## Summary
 Four bolt-on parts the player can see on the truck, wanted before the alpha: a light bar, an in-bed toolbox, a roof rack and a bull bar. Each one does something. It does not have to be a large set.

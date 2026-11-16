@@ -11,8 +11,8 @@ lane: Spare
 # FEAT-223: Shadows on the truck itself (shade, tunnels)
 
 ## Next steps
-Built on `land/feat-223` (worktree CarGame-land-gps), affected gates green. Owner look: the before/after pictures in
-that worktree's `wip/feat-223/` (A = as on main, B = built), then a drive through a tunnel and under trees. Land on a yes.
+Landed (2b12914e, land/feat-223). Owner: look card `feat223-look` (before/after pictures, then a drive through a tunnel and under
+trees). Ticks the last box.
 
 ## Summary
 The truck should receive shadow: under trees, behind hills, and inside tunnels, where it is plainly still sunlit today.

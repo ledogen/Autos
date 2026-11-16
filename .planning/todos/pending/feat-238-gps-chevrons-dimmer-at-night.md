@@ -12,7 +12,8 @@ lane: unplaced (small)
 # FEAT-238: GPS chevrons dimmer at night
 
 ## Next steps
-Built on `land/visual-batch`; owner looks at night with low beams, then lands. Owner call: the start arrow, junction board, objective marker and ring follow the same rule (one material set); say if any should stay bright.
+Landed (de033289, land/visual-batch). Owner: look card `visual-batch-look`: night with low beams; say if the start arrow, junction board,
+objective marker or ring should stay bright (one material set at the moment).
 
 ## Summary
 At night the chevrons reveal where the road goes and take the challenge out of a dark road. Dim them: a tiny glow so distant ones can be seen, mostly lit by the truck's headlights.

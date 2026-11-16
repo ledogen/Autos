@@ -13,12 +13,11 @@ lane: A
 # FEAT-184: the tutorial overhaul — alpha
 
 ## Next steps
-Slice 4 (the tutorial-errand and tutorial-gates cards, 2026-11-15/16) is built on land/tutorial-1116 (lane S): the morning
-snack on mom's few dollars (DEC-276), the manager's paycheck line (DEC-277), the reset's 20 m grace (DEC-281), the two
-evening gates (DEC-282). Left: land it; the owner's playtest, held open on a "test drives" card until the owner signs off;
-the intro expanded to 15 s – 1 min. Owner's words still owed (PLACEHOLDER in data/dialogue.js): `tut-errand`, `tut-pickup`,
-`LARRY_PACK`, and the snack's two new lines `tut-snack`, `tut-snackcamp`; the peanuts' price ($3 [DEFAULT], items.md says
-"under $5").
+Slice 4 landed (5efe7acb, land/tutorial-1116); the tutorial was then rebuilt to the morning-start order under FEAT-229
+(122a606f, DEC-304..308) and the owner's dialogue pass (1bf41b62, DEC-320..326). The tutorial's open items now live in
+FEAT-229. Owner: look cards `tut-dialogue-look` (the lines) and `tutorial-test-drives` (the whole-tutorial playtest, open
+until you sign off). Still owed: the intro expanded to 15 s - 1 min; words for `tut-snack`, `tut-snackcamp` and the
+peanuts' price ($3 [DEFAULT]).
 
 ## Summary
 The tutorial becomes the first part of every run: intro (the firing) → a card asking whether to play the tutorial →
@@ -410,7 +409,7 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
     in the evening (DEC-282)
   - [ ] The owner's playtest of the whole tutorial (the "test drives" card, open until the owner signs off)
   - [ ] The owner's words for `tut-snack`, `tut-snackcamp`, and the peanuts' price
-- [ ] The smoke's opening step plays the whole sequence
+- [x] The smoke's opening step plays the whole sequence
 
 ## Decisions
 - 2026-11-15, owner (card tutorial-slice2, "changes"): Larry's four cards (DEC-236); "2. correct" (DEC-237); "3. lets have
@@ -580,3 +579,4 @@ Each has a recommendation there.
 - 2026-11-15: (lane U, land/clock-1116, 31389939) DEC-290: the flat's HUD line reads "pull over and check your tire with" +
   the damage screen's keycap (V / pad B, park-badge.js keycap). BUG-181 (f26b0d77): X in the evening plays tut-tow first and
   the recovery menu opens as it ends. cdp-smoke boot,opening PASS with the new tow-card assertion.
+2026-11-16 (bookkeeping sweep): box "smoke opening step plays the whole sequence" ticked: 03fe4c37 / 122a606f walk the rebuilt order; full smoke PASS 33 steps incl. `opening` (wip/orch/smoke-1116-fresh2.log). Slice 4 merged 5efe7acb.

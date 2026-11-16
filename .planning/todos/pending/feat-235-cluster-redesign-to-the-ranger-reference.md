@@ -12,15 +12,17 @@ lane: B (after FEAT-233)
 # FEAT-235: Gauge cluster reshaped to the Ranger reference: pods, cluster outline, light backing
 
 ## Next steps
-Lane B after FEAT-233: read the reference artifact, then rounds with pictures as in FEAT-34.
+Round 1 built on `land/feat-235` @ 70f9ee99 (not on main; DEC-331): HELD for the owner's look, card `feat235-cluster-look`
+(sheet CarGame-run-shape/wip/feat-235/sheet.jpg). Land on a yes; further rounds as in FEAT-34.
 
 ## Summary
 The owner reopens the cluster design against the Ranger owner-manual reference (artifact https://claude.ai/artifact/XJrmfoRMYu4Rd77onpbAmF). Wanted: the pods that frame the gauges; tach and speedo roughly as now; coolant and fuel separated slightly left and right and closer together vertically; the dark rectangle reshaped to the cluster outline (broad curve on top, flat bottom, the small inset at the bottom); a roughly triangular, automotive-curved dark backing for the two small gauges; a lighter cluster-shaped backing behind everything; the key stays bottom right; no oil pressure or battery gauge; warning lights and shift indicator stay where they are.
 
 ## Tracker
-- [ ] Reference read and its named features listed
-- [ ] Round 1 pictures against the reference
+- [x] Reference read and its named features listed
+- [x] Round 1 pictures against the reference
 - [ ] Owner approves a round
 
 ## Log
 - 2026-11-16: filed from the owner's inbox note.
+2026-11-16 (bookkeeping sweep): round 1 built 059259a8 (branch land/feat-235 @ 70f9ee99, DEC-331); boxes 1-2 ticked per the night log (wip/orch/night-1116.md). Not landed.
