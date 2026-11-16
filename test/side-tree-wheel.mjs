@@ -16,7 +16,7 @@ import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { stepPhysics, readRimStrikes, classifyImpactRegion } from '../src/physics.js'
-import { computeStaticEquilibrium } from '../src/suspension.js'
+import { computeStaticEquilibrium, getWheelPosition } from '../src/suspension.js'
 import { makeVehicleState } from '../src/vehicle-state.js'
 import { RUNNING } from '../src/ignition.js'
 import { DamageModel, MPH, WHEEL_IDS, TIRE_IDS } from '../src/damage.js'
@@ -28,7 +28,7 @@ const DT = 1 / 60
 const TRUNK_R = 0.35, GAP = 0.25
 const RL = 2   // the rear-left corner (GLOSSARY.md §Wheel Index)
 
-export async function sideHit (mph, { seconds = 1.5 } = {}) {
+export async function sideHit (mph, { seconds = 1.5, armor = 1 } = {}) {
   const P = structuredClone(RANGER_PARAMS)
   P._tireFz = [0, 0, 0, 0]; P._suspForceAccum = [0, 0, 0, 0]
   P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
@@ -42,7 +42,6 @@ export async function sideHit (mph, { seconds = 1.5 } = {}) {
   const ax = -(0.85 + GAP + TRUNK_R), az = P.wheelbase * P.weightFront
   ctx.engine.addCapsule(ctx.engine.createBody({ type: 'static' }), { x: ax, y: 0, z: az }, { x: ax, y: 8, z: az }, TRUNK_R,
     { friction: 0.8, restitution: 0 })
-  let rlTouch = false
   const props = { queryProps (cx, cy, cz, r, out) {
     const h = sphereVsCapsule(cx, cy, cz, r, ax, 0, az, ax, 8, az, TRUNK_R)
     if (h) {
@@ -52,21 +51,30 @@ export async function sideHit (mph, { seconds = 1.5 } = {}) {
     }
     return out
   } }
-  const queryContacts = makeQueryContacts({ params: P, groundH: () => 0, groundN: () => ({ x: 0, y: 1, z: 0 }), props: () => props })
+  const qc = makeQueryContacts({ params: P, groundH: () => 0, groundN: () => ({ x: 0, y: 1, z: 0 }), props: () => props })
+  let tireFeels = false   // a wheel's contact query handed the tire model the trunk (a sideways normal) this step
+  const queryContacts = (...a) => { const hs = qc(...a); for (const h of hs) if (Math.abs(h.normal.x) > 0.5) tireFeels = true; return hs }
   const dm = new DamageModel({ params: P })
   dm.setAll(1)
+  dm.condition.armorLeft = armor
   const first = { wheel: null, body: null }
-  let peakJ = 0, peakRimRoad = 0, peakRim = 0, peakBump = 0, vAt = null
+  let peakJ = 0, peakRimRoad = 0, peakRim = 0, peakBump = 0, vAt = null, peakSquash = 0
   const landed = []
   for (let s = 0; s < seconds / DT; s++) {
     const vx = vs.velocity.x
+    tireFeels = false
     stepPhysics(vs, P, DT, queryContacts, ctx)
     const hit = readRimStrikes(ctx.engine, ctx.chassis, vs.rimForce, DT, vs.rimHazard)
     peakRimRoad = Math.max(peakRimRoad, vs.rimForceRoad?.[RL] ?? 0)
     peakRim = Math.max(peakRim, vs.rimForce[RL])
     peakBump = Math.max(peakBump, vs.bumpForce?.[RL] ?? 0)
-    // First touch, each: the wheel's analytic query sees the trunk / the engine reports a body contact.
-    const wheelSees = props.queryProps(vs.position.x - 0.715, vs.position.y - 0.18, vs.position.z + az, P.wheelRadius, []).length > 0
+    // First touch, each: the tire model is handed the trunk / the engine reports a body contact. And how far the trunk
+    // stood inside the RL tire's outboard sidewall plane (the real tire's squash).
+    // Only while the trunk is square beside the hub: once the truck pivots off it the plane test means nothing.
+    const hub = getWheelPosition(RL, vs, P)
+    const squash = Math.abs(hub.z - az) < 0.15 ? ax + TRUNK_R - (hub.x - P.wheelWidth / 2) : 0
+    peakSquash = Math.max(peakSquash, squash)
+    const wheelSees = tireFeels
     if (wheelSees && first.wheel == null) { first.wheel = s; vAt ??= -vx / MPH }
     if (hit.impulse > 0 && first.body == null) { first.body = s; vAt ??= -vx / MPH }
     peakJ = Math.max(peakJ, hit.impulse)
@@ -75,12 +83,11 @@ export async function sideHit (mph, { seconds = 1.5 } = {}) {
     if (r) landed.push(`${(r.v / MPH).toFixed(1)}${r.region[0]}`)
   }
   ctx.dispose()
-  void rlTouch
   return {
     mph, vAt, firstTouch: first.wheel == null && first.body == null ? 'none'
       : first.body == null || (first.wheel != null && first.wheel < first.body) ? `wheel (${first.body == null ? 'no body' : `body +${first.body - first.wheel} st`})`
       : first.wheel === first.body ? 'both' : `body (wheel ${first.wheel == null ? 'never' : `+${first.wheel - first.body} st`})`,
-    peakJ, peakRimRoad, peakRim, peakBump, landed,
+    peakJ, peakSquash, peakRimRoad, peakRim, peakBump, landed,
     wheel: dm.get(WHEEL_IDS[RL]), tire: dm.get(TIRE_IDS[RL]), flat: dm.flat[RL], collapsed: dm.collapsed(RL),
     armor: dm.get('armorLeft'),
   }
@@ -89,9 +96,12 @@ export async function sideHit (mph, { seconds = 1.5 } = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const a = process.argv.find(s => s.startsWith('--mph='))
   const speeds = (a ? a.slice(6) : '5,10,15,20,30,40').split(',').map(Number)
-  console.log('mph | v@touch | first touch          | body J N·s | rim road kN | rim core kN | bump kN | impacts     | wheel RL | tire RL     | armor L')
+  const b = process.argv.find(s => s.startsWith('--armor='))
+  const armor = b ? Number(b.slice(8)) : 1
+  console.log(`armor ${armor}`)
+  console.log('mph | v@touch | first touch          | body J N·s | sidewall cm | rim road kN | rim core kN | bump kN | impacts     | wheel RL | tire RL     | armor L')
   for (const mph of speeds) {
-    const r = await sideHit(mph)
-    console.log(`${String(mph).padStart(3)} | ${(r.vAt ?? 0).toFixed(1).padStart(7)} | ${r.firstTouch.padEnd(20)} | ${r.peakJ.toFixed(0).padStart(10)} | ${(r.peakRimRoad / 1e3).toFixed(1).padStart(11)} | ${(r.peakRim / 1e3).toFixed(1).padStart(11)} | ${(r.peakBump / 1e3).toFixed(1).padStart(7)} | ${r.landed.join(' ').padEnd(11)} | ${(r.wheel * 100).toFixed(0).padStart(5)} %${r.collapsed ? ' C' : '  '} | ${(r.tire * 100).toFixed(0).padStart(4)} %${r.flat ? ' flat' : '     '} | ${(r.armor * 100).toFixed(0).padStart(5)} %`)
+    const r = await sideHit(mph, { armor })
+    console.log(`${String(mph).padStart(3)} | ${(r.vAt ?? 0).toFixed(1).padStart(7)} | ${r.firstTouch.padEnd(20)} | ${r.peakJ.toFixed(0).padStart(10)} | ${(r.peakSquash * 100).toFixed(1).padStart(11)} | ${(r.peakRimRoad / 1e3).toFixed(1).padStart(11)} | ${(r.peakRim / 1e3).toFixed(1).padStart(11)} | ${(r.peakBump / 1e3).toFixed(1).padStart(7)} | ${r.landed.join(' ').padEnd(11)} | ${(r.wheel * 100).toFixed(0).padStart(5)} %${r.collapsed ? ' C' : '  '} | ${(r.tire * 100).toFixed(0).padStart(4)} %${r.flat ? ' flat' : '     '} | ${(r.armor * 100).toFixed(0).padStart(5)} %`)
   }
 }
