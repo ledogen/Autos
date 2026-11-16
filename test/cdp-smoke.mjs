@@ -1907,9 +1907,12 @@ const STEPS = [
     const truck = () => js(`JSON.stringify({ wheel: +window.__damage.get('wheelRR').toFixed(2), tire: +window.__damage.get('tireRR').toFixed(2),
       flat: window.__damage.flat[3], collapsed: window.__damage.collapsed(3), rim: !!window.__vs.rimOnRoad?.[3] })`)
     const whole = s => { const t = JSON.parse(s); return !t.flat && !t.collapsed && !t.rim && t.wheel > 0 && t.tire > 0 }
-    // The map's first frame on open: show() then one render(), synchronously — the sheet it blits must be done, not the
-    // last world's bitmap held while the new one builds in slices.
-    const mapFirst = () => js(`(() => { const m = window.__map2d(); m.show(); m.render(); const own = !m._bgJob; m.hide(); return own })()`)
+    // The map's first frame on open: show() then one render(). A sheet rebuilt in slices (a budget, not Infinity) blits
+    // the bitmap it already holds until it is done, which after a world change is the last world's.
+    const mapFirst = () => js(`(() => { const m = window.__map2d(), step = m._stepBackground; let budget = Infinity
+      m._stepBackground = b => { budget = b; return step.call(m, b) }
+      try { m.show(); m.render() } finally { delete m._stepBackground; m.hide() }
+      return budget === Infinity })()`)
     const toMenu = async () => {
       for (let i = 0; i < 4 && await js('document.getElementById("pause-menu").style.display !== "flex"'); i++) { await tap('Escape'); await sleep(300) }
       await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
