@@ -157,6 +157,7 @@ BUG-181), rankui-1116 (Larry's item paid at once DEC-291/294/295; rank UI A and 
 dive (docs).
 **Closed 11-15:** PERF-49, BUG-173, BUG-176, BUG-178, FEAT-34, FEAT-221, BUG-174, BUG-175, BUG-177.
 
+**Landed 11-16:** BUG-182 (baked pictures redraw after a GPU reset; test/gpu-reset.mjs; closed), land/rankui-b (rank UI variant B only, letter 34 px centred; DEC-298 supersedes DEC-292; QUAL-36 stays open for its DEC-252/253 and missions.md leftovers), FEAT-229 dive revision 2 + DEC-299 (24 h, 07:00, same time/place/day played or skipped). Smoke green after each.
 **RUNNING:** nothing.
 **BUILT, HELD for the owner:** land/bug-171 @ 84819898 (CarGame-content): option 2 plus a continuous leg foot in
   `_projectLegNearNode` (src/road.js +88/−48; fixes BY CONSTRUCTION, no averaging, DEC-260). Nine-seed census: step
@@ -164,16 +165,15 @@ dive (docs).
   full smoke, then chase the road-to-road winner seam (16 sites left; same root as BUG-179, 3.31 m step).
 **All lanes free.**
 
-**Waiting on the owner (cards; `order` in each):** bug171-option3-look (dive), feat229-morning-start (dive: tutorial beats for a morning start; the
+**Waiting on the owner (cards; `order` in each):** bug171-option3-look (dive), feat229-same-landing (dive revision 2: four beat lists, owner prefers ending at the joint; the
 answer opens the rebuild, then the seed re-check), tutorial-test-drives (stays OPEN until sign-off; carries the ONE
-line about checking tutorial dialogue; never card placeholder lines again, see memory), rankui-ab (pick A or B, delete
-the loser, then close QUAL-36), feat228-brake-clock (menus cost job time? + wording to restate DEC-023),
+line about checking tutorial dialogue; never card placeholder lines again, see memory), rankui-letter-look, feat228-brake-clock (menus cost job time? + wording to restate DEC-023),
 feat215-start-arrow-2 (board is edge-on from the road: flat / offset / face viewer), lights-1116-look, top-items-path, plus the older ones in owed/.
 **Unplaced, nobody on it:** BUG-179 (road legs diverge, tear; capture in Logs/, replay reproduces; candidate for Lane C),
 FEAT-226 (bay light contained by walls, no real-time shadows per DEC-227), FEAT-223, FEAT-224 (cost first), the other
 ~5.5 % of FEAT-180's +9 % GPU (next suspect the sky's 5-layer noise; not routed).
 **HELD:** PERF-50 (Windows machine), QUAL-33 (ask before changing T promotion), a PERF-40 bench window.
-**Next free orchestrator DEC:** 298. (296 = bay light +20 %, with the Spare agent; 297 = start board behind the start + tutorial legs, Lane U on land/gps-1116b.) (260 used; 261 is reserved for the BUG-171 option-3 answer.)
+**Next free orchestrator DEC:** 300. (296 = bay light +20 %, with the Spare agent; 297 = start board behind the start + tutorial legs, Lane U on land/gps-1116b.) (260 used; 261 is reserved for the BUG-171 option-3 answer.)
 **Dev servers up:** :8000 main (loopback) · :8001 main on Tailscale (Windows: http://m4air:8001) · :3731 Lane A ·
 :3885 Spare · :8010 dashboard.
 **Gotchas learned 11-15:** (1) agents can stall for hours on a background wait that never wakes them: if a lane is
