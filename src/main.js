@@ -10889,7 +10889,9 @@ function loop (t) {
   // FEAT-223: the truck reads the baked tree shade the ground under it reads (terrain.js: strength × 1/SHADOW_FAR_SPLIT).
   setBakedShade(shadowBake.atlasTexture, ATLAS_N, shadowBake.tilePx, _labActive ? 0 : propShadowStrength() / SHADOW_FAR_SPLIT,
     shadowBake._shear, _renderPos.y - RANGER_PARAMS.cgHeight)
-  setNightFactor(Math.max(skySystem.nightFactor(), (1 - truckBore) / (1 - BORE_SHADE_DEEP)))
+  const _nightF = Math.max(skySystem.nightFactor(), (1 - truckBore) / (1 - BORE_SHADE_DEEP))
+  setNightFactor(_nightF)
+  gpsSystem?.setNight(_nightF)   // FEAT-238
   syncMeshesToState(vehicleState)
   campfire.update(frameTime, skySystem.nightFactor())   // no-op unless a camp is up
 

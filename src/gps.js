@@ -71,6 +71,10 @@ const FWD_V        = 15
 const BACK_V       = 8
 // The overlay's one colour — chevrons, junction arrow and destination ring share the material.
 export const GPS_COLOR = 0x66e0ff
+// FEAT-238 / DEC-329: at night the overlay's OWN glow drops to this fraction of its day value (a faint
+// trace so the far chevrons stay findable) and the headlights light the glyphs instead.
+export const GPS_NIGHT_FLOOR = 0.12
+const GPS_LIT_GAIN = 2.5     // night diffuse gain: the grazing headlight on a flat glyph is weak, so lift it
 
 // ── pure route math (THREE-free — gated by test/gps-route.mjs) ──────────────────────────────
 
@@ -367,10 +371,22 @@ export class GpsSystem {
 
     // Additive so the distance fade is honest (a brightness ramp on an opaque glyph just reads as
     // a different colour) and so the overlay never hides the road under it.
-    const mat = () => new THREE.MeshBasicMaterial({
-      color: GPS_COLOR, transparent: true, depthWrite: false, toneMapped: false,
-      side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-    })
+    // FEAT-238: Lambert, not Basic, so the headlight spots can reach it. By day the diffuse term is 0 and
+    // the emissive term is the whole look (identical to the old Basic); setNight() trades them.
+    this._mats = []
+    const mat = () => {
+      const m = new THREE.MeshLambertMaterial({
+        color: 0x000000, emissive: GPS_COLOR, transparent: true, depthWrite: false, toneMapped: false,
+        side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+      })
+      // Instance colour (the chevrons' distance fade) multiplies the diffuse term only; make it scale the glow too.
+      m.onBeforeCompile = (sh) => {
+        sh.fragmentShader = sh.fragmentShader.replace('vec3 totalEmissiveRadiance = emissive;',
+          '#ifdef USE_COLOR\nvec3 totalEmissiveRadiance = emissive * vColor.rgb;\n#else\nvec3 totalEmissiveRadiance = emissive;\n#endif')
+      }
+      this._mats.push(m)
+      return m
+    }
 
     this._chevGeo = _chevronGeometry()
     this._chevMat = mat()
@@ -424,6 +440,15 @@ export class GpsSystem {
   setEnabled (v) {
     this.enabled = !!v
     if (!this.enabled) this._hideAll()
+  }
+
+  /** FEAT-238: n = night factor 0..1 (1 = dark). Own glow falls to GPS_NIGHT_FLOOR, lit term (headlights) rises. */
+  setNight (n) {
+    const glow = 1 - n * (1 - GPS_NIGHT_FLOOR)
+    for (const m of this._mats) {
+      m.emissiveIntensity = glow
+      m.color.set(GPS_COLOR).multiplyScalar(n * GPS_LIT_GAIN)
+    }
   }
 
   /** Drop the baked route (seed change / world teardown). Re-bakes on the next update. */
