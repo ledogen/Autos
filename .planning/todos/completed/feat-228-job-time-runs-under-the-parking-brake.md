@@ -1,7 +1,7 @@
 ---
 id: FEAT-228
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-15
 source: owner, 2026-11-15 — "I don't like the way pulling the handbrake during a mission pauses the mission timer. I think mission and rank calculation and deadline should all continue to scroll But world clock should be stopped when the truck is Parked with the Handbrake."
@@ -12,7 +12,7 @@ lane: unplaced
 # FEAT-228: The job's time runs under the parking brake; the world clock does not
 
 ## Next steps
-Orchestrator: land `land/clock-1116`. Owner: the open questions below (screens it now covers, DEC-023's wording).
+Closed 2026-11-16: landed, and the owner answered both questions (DEC-301).
 
 ## Summary
 The parking brake froze the world clock (DEC-024), and a job's elapsed time, rank bar and deadline all read that clock,
@@ -45,18 +45,15 @@ in the job and round snapshots, so a mid-job save keeps the shifted values.
 - [x] Job elapsed, rank and deadline run under the latch at the driving rate; world clock, energy, hunger, offers frozen
 - [x] Board slot lock follows the moved deadline; save log replays it
 - [x] Gate: park-brake.mjs § 6 rewritten (it pinned the old pause)
-- [ ] Owner: the open questions
+- [x] Owner: the open questions
 
 ## Decisions
 - 2026-11-15, owner: the source sentence (DEC-289, supersedes DEC-024).
-
-## Open questions
-- DEC-023 says a deadline is "measured on world time"; under DEC-289 it is world time plus parked time. Recommend a
-  superseding record restating DEC-023 that way (camping allowed, expiry pays nothing, unchanged).
-- Should parked time spend the job inside the shop / pump / camp too (as built), or only on a bare handbrake stop?
+- 2026-11-16, owner: "keep menus costing time. the wording is correct." (DEC-301, supersedes DEC-023).
 
 ## Files
 `src/main.js` · `src/mission.js` · `src/paper-route.js` · `src/offer-board.js` · `src/save.js` · `src/day.js` · `test/park-brake.mjs`
 
 ## Log
 - 2026-11-15: built on land/clock-1116 (d6195d14). park-brake gate green. Not driven in the browser.
+- 2026-11-16: owner answered card feat228-brake-clock; DEC-301 written; closed.
