@@ -759,7 +759,7 @@ function _interpolateCamber(arcPos, camberRad, s) {
  * @param {object}   out       — { gradeY, tx, tz } object to write into
  * @returns {object} out — mutated with interpolated values
  */
-function _interpolateRunProfile(arcPos, gradeY, gradeM, tx, tz, s, out) {
+function _interpolateRunProfile(arcPos, gradeY, gradeM, tx, tz, s, out, hint) {
     const N = arcPos.length
     if (N === 0) {
         out.gradeY = 0; out.tx = 1; out.tz = 0
@@ -773,11 +773,17 @@ function _interpolateRunProfile(arcPos, gradeY, gradeM, tx, tz, s, out) {
         out.gradeY = gradeY[N-1]; out.tx = tx[N-1]; out.tz = tz[N-1]
         return out
     }
-    // Binary search for interval [lo, hi] containing s.
-    let lo = 0, hi = N - 1
-    while (lo < hi - 1) {
-        const mid = (lo + hi) >> 1
-        if (arcPos[mid] <= s) lo = mid; else hi = mid
+    // Binary search for interval [lo, hi] containing s. PERF-49 lever 1: first try the previous call's interval
+    // (`hint.lo`); the search's answer is the unique lo with arcPos[lo] ≤ s < arcPos[lo + 1], so a hint that brackets
+    // s IS that answer and the result is bit-identical.
+    let lo = hint ? hint.lo : 0, hi = lo + 1
+    if (!(hi < N && arcPos[lo] <= s && arcPos[hi] > s)) {
+        lo = 0; hi = N - 1
+        while (lo < hi - 1) {
+            const mid = (lo + hi) >> 1
+            if (arcPos[mid] <= s) lo = mid; else hi = mid
+        }
+        if (hint) hint.lo = lo
     }
     const span = arcPos[hi] - arcPos[lo]
     if (span < 1e-9) {
@@ -821,13 +827,23 @@ function _profileTangents(arcPos, gradeY) {
 
 // Interpolate a monotonic table key[]→val[] (both ascending Float64Array, same length) at `k`.
 // Used to map a run's polyline cumulative-XZ arc → centerline arc (Phase B slice mapping).
-function _interpArcTable(key, val, k) {
+// PERF-49 lever 1: a search hint ({ lo }) hung on a network entry NON-enumerable, so no JSON / spread / structured clone
+// of the entry (fingerprint-world's network hash, the worker hand-off) ever sees it.
+function _hintOn(o, k) { const h = { lo: 0 }; Object.defineProperty(o, k, { value: h }); return h }
+
+// PERF-49 lever 1: `hint` ({ lo }) carries the previous call's interval; one that brackets k is the search's own
+// unique answer (key[lo] ≤ k < key[lo + 1]), so the result is bit-identical.
+function _interpArcTable(key, val, k, hint) {
     const n = key.length
     if (n === 0) return 0
     if (k <= key[0]) return val[0]
     if (k >= key[n - 1]) return val[n - 1]
-    let lo = 0, hi = n - 1
-    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (key[m] <= k) lo = m; else hi = m }
+    let lo = hint ? hint.lo : 0, hi = lo + 1
+    if (!(hi < n && key[lo] <= k && key[hi] > k)) {
+        lo = 0; hi = n - 1
+        while (hi - lo > 1) { const m = (lo + hi) >> 1; if (key[m] <= k) lo = m; else hi = m }
+        if (hint) hint.lo = lo
+    }
     const span = key[hi] - key[lo] || 1
     const t = (k - key[lo]) / span
     return val[lo] + t * (val[hi] - val[lo])
@@ -8149,6 +8165,31 @@ export class RoadSystem {
     // point's polyline foot is refined straight from there (_refineFoot's exact line / arc step, one or two poses) instead
     // of the ±6 m grid search — the same foot wherever it is the window's only one, which is everywhere off a bend's inner
     // half. A foot found by the search is added to the patch for the samples after it.
+    // BUG-158: near a run end, decide END (polar cap) or INTERIOR by the frame the carve is priced in, not the polyline.
+    // The interior frame is the analytic centreline (_refineFrame), whose end ray (the normal at s = 0 or s = length) is
+    // not the polyline's: on a run that starts in a 12 m bend the two part by ~3°, and a point between them read the
+    // polyline's end cap on one side and the analytic foot 1.4 m in on the other (0.67 m in the gore 25 m off seed
+    // 1074499174's node (746, 432)). Decided by the analytic foot, the switch lies on the analytic end ray, where both
+    // agree: the foot IS the terminus, arc = the end, |lat| = the radius to the terminus (the cap's lat'). An end's frame
+    // takes the analytic end tangent for the same reason (its arc past the end, (p − terminus)·t, is 0 on that ray).
+    // Returns pr itself (with the interior frame cached as pr.rf) or a replacement record; no centreline → pr unchanged.
+    _reframeEnd(e, pr, wx, wz) {
+        if (!e?.centerline || !e.polyCum || !e.points) return pr
+        const ao = e.arcOrigin ?? 0, L = e.polyCum[e.polyCum.length - 1], cum = pr.arcS + ao
+        if (cum > ANALYTIC_REFINE_WINDOW && cum < L - ANALYTIC_REFINE_WINDOW) return pr
+        const f = this._refineFrame(e, pr.offEnd ? { arcS: pr.arcS, sCL: pr.sCL, offEnd: false } : pr, wx, wz)
+        if (!f) { if (!pr.offEnd) pr.rf = null; return pr }
+        const fc = f.arcS + ao, atStart = fc <= 1e-9, atEnd = fc >= L - 1e-9
+        const lat = (wx - f.fx) * f.tz - (wz - f.fz) * f.tx
+        if (!atStart && !atEnd) {
+            if (!pr.offEnd) { pr.rf = f; return pr }
+            return { fx: f.fx, fz: f.fz, tx: f.tx, tz: f.tz, arcS: f.arcS, signedLat: lat, d2: (wx - f.fx) ** 2 + (wz - f.fz) ** 2, offEnd: false, sCL: pr.sCL, rf: f }
+        }
+        const t = { x: f.fx, z: f.fz }   // the centreline's own end (the polyline's terminus vertex, to rounding)
+        return { fx: t.x, fz: t.z, tx: f.tx, tz: f.tz, arcS: (atStart ? 0 : L) - ao, signedLat: (wx - t.x) * f.tz - (wz - t.z) * f.tx,
+                 d2: (wx - t.x) ** 2 + (wz - t.z) ** 2, offEnd: true, sCL: pr.sCL }
+    }
+
     _refineFrame(e, pr, wx, wz) {
         if (!e || pr.offEnd || !e.centerline || !(e.centerline.length > 1e-6) || !e.clArc || !e.polyCum) return null
         const arcOrigin = e.arcOrigin ?? 0
@@ -8220,7 +8261,18 @@ export class RoadSystem {
             while (b < n - 1 && !onCL[b]) b++
             return [pc[a], pc[b]]
         })
-        const info = { onCL, spans }
+        // PERF-49: each vertex's band tangent, worked out once per run (re-deriving them per call was ~10 % of an airborne step
+        // beside a junction: every tread sample's resolve re-derived the same five chords' ten tangents).
+        const tx = new Float64Array(n), tz = new Float64Array(n)
+        for (let k = 0; k < n; k++) {
+            if (onCL[k]) { const t = e.centerline.tangentAt(e.clArc[k]); tx[k] = t.x; tz[k] = t.z; continue }
+            let x = 0, z = 0
+            if (k > 0) { const dx = pts[k].x - pts[k - 1].x, dz = pts[k].z - pts[k - 1].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+            if (k < n - 1) { const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+            const l = Math.hypot(x, z) || 1
+            tx[k] = x / l; tz[k] = z / l
+        }
+        const info = { onCL, spans, tx, tz }
         this._bandInfoCache.set(e, info)
         return info
     }
@@ -8229,17 +8281,6 @@ export class RoadSystem {
         if (!e.offCurveSpans || !e.centerline || !e.clArc || !e.polyCum) return false
         for (const [a, b] of this._bandInfo(e).spans) if (cum >= a && cum <= b) return true
         return false
-    }
-
-    _bandTangent(e, k, out) {
-        const pts = e.points
-        if (this._bandInfo(e).onCL[k]) { const t = e.centerline.tangentAt(e.clArc[k]); out.x = t.x; out.z = t.z; return out }
-        let x = 0, z = 0
-        if (k > 0) { const dx = pts[k].x - pts[k - 1].x, dz = pts[k].z - pts[k - 1].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
-        if (k < pts.length - 1) { const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
-        const l = Math.hypot(x, z) || 1
-        out.x = x / l; out.z = z / l
-        return out
     }
 
     _bandSeg(pc, cum) {
@@ -8251,8 +8292,8 @@ export class RoadSystem {
     _bandFrameAt(e, cum, out) {
         const pts = e.points, pc = e.polyCum, i = this._bandSeg(pc, cum)
         const u = Math.min(1, Math.max(0, (cum - pc[i]) / ((pc[i + 1] - pc[i]) || 1e-9)))
-        const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
-        const tx = A.x + (B.x - A.x) * u, tz = A.z + (B.z - A.z) * u, l = Math.hypot(tx, tz) || 1
+        const T = this._bandInfo(e), Ax = T.tx[i], Az = T.tz[i]
+        const tx = Ax + (T.tx[i + 1] - Ax) * u, tz = Az + (T.tz[i + 1] - Az) * u, l = Math.hypot(tx, tz) || 1
         out.x = pts[i].x + (pts[i + 1].x - pts[i].x) * u; out.z = pts[i].z + (pts[i + 1].z - pts[i].z) * u
         out.tx = tx / l; out.tz = tz / l
         return out
@@ -8261,20 +8302,20 @@ export class RoadSystem {
     _bandRefine(e, cum, wx, wz) {
         const pts = e.points, pc = e.polyCum, i0 = this._bandSeg(pc, cum)
         let best = null, bestD2 = Infinity
+        const T = this._bandInfo(e), TX = T.tx, TZ = T.tz   // PERF-49: the run's cached vertex tangents
+        const root = (i, Dx, Dz, u) => {
+            if (!(u >= -1e-9 && u <= 1 + 1e-9)) return
+            const fx = pts[i].x + Dx * u, fz = pts[i].z + Dz * u, d2 = (wx - fx) ** 2 + (wz - fz) ** 2
+            if (d2 < bestD2) { bestD2 = d2; best = { i, u: Math.min(1, Math.max(0, u)) } }
+        }
         for (let i = Math.max(0, i0 - 2); i <= Math.min(pts.length - 2, i0 + 2); i++) {
-            const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
+            const Ax = TX[i], Az = TZ[i]
             const qx = wx - pts[i].x, qz = wz - pts[i].z, Dx = pts[i + 1].x - pts[i].x, Dz = pts[i + 1].z - pts[i].z
-            const Bx = B.x - A.x, Bz = B.z - A.z
+            const Bx = TX[i + 1] - Ax, Bz = TZ[i + 1] - Az
             // (q − u·D) · (A + u·B) = 0  ⇔  a·u² + b·u + c = 0
-            const a = -(Dx * Bx + Dz * Bz), b = qx * Bx + qz * Bz - (Dx * A.x + Dz * A.z), c = qx * A.x + qz * A.z
-            const roots = []
-            if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-12) roots.push(-c / b) }
-            else { const disc = b * b - 4 * a * c; if (disc >= 0) { const r = Math.sqrt(disc); roots.push((-b - r) / (2 * a), (-b + r) / (2 * a)) } }
-            for (const u of roots) {
-                if (!(u >= -1e-9 && u <= 1 + 1e-9)) continue
-                const fx = pts[i].x + Dx * u, fz = pts[i].z + Dz * u, d2 = (wx - fx) ** 2 + (wz - fz) ** 2
-                if (d2 < bestD2) { bestD2 = d2; best = { i, u: Math.min(1, Math.max(0, u)) } }
-            }
+            const a = -(Dx * Bx + Dz * Bz), b = qx * Bx + qz * Bz - (Dx * Ax + Dz * Az), c = qx * Ax + qz * Az
+            if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-12) root(i, Dx, Dz, -c / b) }
+            else { const disc = b * b - 4 * a * c; if (disc >= 0) { const r = Math.sqrt(disc); root(i, Dx, Dz, (-b - r) / (2 * a)); root(i, Dx, Dz, (-b + r) / (2 * a)) } }
         }
         if (!best) return null
         const f = this._bandFrameAt(e, pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u, this._bandOut ??= {})
@@ -8333,6 +8374,7 @@ export class RoadSystem {
         const nearR = footHW / Math.cos(29 * Math.PI / 180) + HINT_REACH_M
         let nearOut = false
         const consider = (runKey, pr) => {
+            pr = this._reframeEnd(this._network.get(runKey), pr, wx, wz)   // BUG-158: end or interior by the analytic frame
             // QUAL-30: the ceded-ownership exclusion is gone with cededSpans. A wye's loser had
             // the winner's course verbatim over its ceded stretch, so both runs' points competed
             // for surface ownership on the same ground and the loser had to stand down. A promoted
@@ -8414,7 +8456,7 @@ export class RoadSystem {
         // Analytic frame refinement (_refineFrame). Both carve consumers (terrain _buildCarveTable,
         // physics _sampleCarveWorld) rebuild signedLat/arcSEff from point+tangent, so they inherit it.
         const ce = this._network.get(bestRunKey)
-        const hit = this._refineFrame(ce, bestPr, wx, wz)
+        const hit = bestPr.rf !== undefined ? bestPr.rf : this._refineFrame(ce, bestPr, wx, wz)
         if (hit) ({ fx, fz, tx, tz, arcS, k = 0, lo = -Infinity, hi = Infinity } = hit)   // k, lo, hi: for a reused hint (_hintHolds)
 
         // FEAT-40 rival passes: every DISTINCT competing carve field — the winning run's own other passes
@@ -8429,7 +8471,7 @@ export class RoadSystem {
         const rivalOf = (runKey, q, end) => {
             // Same analytic frame the winner gets, or the flip between them is a step (0.45 m at 27 m
             // out on a seed-7 bend, chord vs centreline).
-            const f = end ? null : this._refineFrame(this._network.get(runKey), q, wx, wz)
+            const f = end ? null : q.rf !== undefined ? q.rf : this._refineFrame(this._network.get(runKey), q, wx, wz)
             return f
                 ? { runKey, arcS: f.arcS, lat: (wx - f.fx) * f.tz - (wz - f.fz) * f.tx, x0: wx, z0: wz, tx: f.tx, tz: f.tz, k: f.k ?? 0, end: null }
                 : { runKey, arcS: q.arcS, lat: q.signedLat, x0: wx, z0: wz, tx: q.tx, tz: q.tz, end: end ? { x: q.fx, z: q.fz } : null }
@@ -11024,10 +11066,16 @@ export class RoadSystem {
         // _carveCrossSection uses (QUAL-06/07) — ramp = max(shoulderWidth, toeExt−carveHalfWidth), C1 at
         // both ends. So the connector flanks get an ordinary graded road cut/fill bench (no wall/sawtooth
         // at the asphalt edge), identical in shape to a run's embankment.
-        const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)
+        // BUG-158: the ramp ENDS at the toe. The toe is anchored at halfWidth + shoulder (not carveHalfWidth, as a run's
+        // is), so on a shallow bank it falls inside carveHalfWidth + shoulderWidth, and a ramp of max(shoulderWidth, ·)
+        // from carveHalfWidth still stood blendW > 0 there: the connector vanished at the toe with up to a third of its
+        // weight (seed 11's hairpin (−1396.7, −740.3)). The core gives way instead — never below halfWidth, because
+        // toeExt ≥ halfWidth + shoulderWidth — and the toe (the earthwork footprint) stays where it was.
+        const coreW = Math.min(carveHalfWidth, toeExt - shoulderWidth)
+        const ramp = toeExt - coreW
         let blendW
-        if (bestLat < carveHalfWidth) blendW = 1.0
-        else { const u = Math.min(1, (bestLat - carveHalfWidth) / ramp); blendW = 1.0 - u * u * (3.0 - 2.0 * u) }
+        if (bestLat < coreW) blendW = 1.0
+        else { const u = Math.min(1, (bestLat - coreW) / ramp); blendW = 1.0 - u * u * (3.0 - 2.0 * u) }
         // Longitudinal end-feather `dom`: the connector rides ONTO each leg over its ribbon-ride ends, so
         // near arc-length 0 / totalLen the connector grade should hand back to the RUN grade rather than
         // hard-cut to null at the anchor (where a run grazing the connector's end saw a step, co(flat) vs
@@ -11062,8 +11110,15 @@ export class RoadSystem {
         if (!pts || pts.length < 2 || !cum) return null
         const n = pts.length
         const s = Math.max(0, Math.min(cum[n - 1], arcS))
-        let lo = 0, hi = n - 1
-        while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid }
+        // PERF-49 lever 1: the previous call's segment first. The search returns the last lo ≤ n − 2 with
+        // cum[lo] ≤ s, so a hint meeting exactly that is its answer (bit-identical).
+        const h = e._ptHint ?? _hintOn(e, '_ptHint')
+        let lo = h.lo
+        if (!(lo <= n - 2 && cum[lo] <= s && (lo === n - 2 || cum[lo + 1] > s))) {
+            lo = 0; let hi = n - 1
+            while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid }
+            h.lo = lo
+        }
         const span = cum[lo + 1] - cum[lo] || 1
         const t = (s - cum[lo]) / span
         const a = pts[lo], b = pts[lo + 1]
@@ -11354,7 +11409,11 @@ export class RoadSystem {
         const p = this._params
         const halfWidth = p.roadHalfWidth ?? 5
         // The winner's deck is never blended — a wheel on the ribbon rides exactly its run's surface.
-        const latDist = Math.abs(signedLat)
+        // BUG-158: measured on the lateral the winner's cross-section is priced at (latEff). A run-END winner's deck is
+        // the disc round its terminus, not the strip straight off its end: the perpendicular lat dropped every rival
+        // out to footHW along that axis, so where an end and an interior leg tie the surface jumped from the cap's
+        // toe to the leg's full bank (1.08 m at 13 m from seed 1074499174's node (−35, 200), 7.16 m on 3561904408).
+        const latDist = Math.abs(latEff)
         if (latDist <= halfWidth) return cs
         // BUG-64: the passes compose as EARTHWORK, not as a nearness cross-fade. Each pass's offset
         // from raw (its blendW folded in) is unioned: the fills by max (the higher bank stands), the
@@ -12478,7 +12537,7 @@ export class RoadSystem {
             const f = this._bandFrameAt(e, a, this._bandOut ??= {})   // BUG-154: the band's continuous frame, physics' own
             bx = f.tx; bz = f.tz
         } else {
-            const t = e.centerline.tangentAt(_interpArcTable(e.polyCum, e.clArc, a))
+            const t = e.centerline.tangentAt(_interpArcTable(e.polyCum, e.clArc, a, e._clHint ?? _hintOn(e, '_clHint')))
             bx = t.x; bz = t.z
         }
         const w = this._runProfileCache.get(runKey)?.weld
@@ -12568,7 +12627,7 @@ export class RoadSystem {
             // Fast path: ONE binary search, interpolate the arrays.
             return _interpolateRunProfile(
                 cached.arcPos, cached.gradeY, cached.gradeM, cached.tx, cached.tz,
-                arcS, result
+                arcS, result, cached.hint
             )
         }
 
@@ -12585,7 +12644,7 @@ export class RoadSystem {
             return result
         }
 
-        this._runProfileCache.set(runKey, { rev: currentRev, ...profile })
+        this._runProfileCache.set(runKey, { rev: currentRev, ...profile, hint: { lo: 0 } })
         return _interpolateRunProfile(
             profile.arcPos, profile.gradeY, profile.gradeM, profile.tx, profile.tz,
             arcS, result

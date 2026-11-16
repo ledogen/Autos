@@ -84,7 +84,8 @@ export default defineConfig({
       'three/addons/': 'three/examples/jsm/',
     },
   },
-  server: { port: 8000 },           // keep harness --port default + query-string passthrough
+  // allowedHosts: Vite refuses a Host header it does not know; 'm4air' is this Mac's Tailscale name (the Windows machine).
+  server: { port: 8000, allowedHosts: ['m4air'] },  // keep harness --port default + query-string passthrough
   // The dependency pre-bundle cache lives in THIS checkout, not node_modules/.vite. Every lane worktree's
   // node_modules is a symlink to main's, so the default put all of them on one cache: a server in another
   // worktree (a different root, so a different config hash) re-bundled it under the running ones, which

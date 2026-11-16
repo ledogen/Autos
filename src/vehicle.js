@@ -17,6 +17,7 @@ import { getCameraMode } from './camera.js'
 import { stepIgnition } from './ignition.js'
 import { pad, PAD_PARAMS, padKick } from './gamepad.js'
 import { makeClutchAssist, stepClutchAssist } from './clutch-assist.js'
+import { REV_THRESHOLD } from './drivetrain.js'
 import { stepParkBrake } from './park-brake.js'
 
 // ── Keyboard input state (module-private) ────────────────────────────────────
@@ -56,6 +57,12 @@ export function setLaunchHold (on) { _launchHold = on }
 // main.js sets it before each step, like the launch hold.
 let _parkLock = false
 export function setParkLock (on) { _parkLock = on }
+
+// ── Throttle cut (FEAT-217, DEC-272) ─────────────────────────────────────────
+// While set, the accelerator (W / RT) gives nothing: the brake, the steering and S's reverse crawl stay. main.js sets it
+// only for the tutorial's flat, until the tire is fixed — regular play never cuts the throttle. Default off ⇒ inert.
+let _throttleCut = false
+export function setThrottleCut (on) { _throttleCut = on }
 
 // ── Control attenuation (FEAT-47 story-mode doze) ────────────────────────────
 // Scales the DRIVER'S inputs — throttle, brake, and the steer-key integration — by a factor in
@@ -107,7 +114,7 @@ export function updateVehicle (vehicleState, params, dt) {
   // _controlAtten is 1 except during a story-mode doze, when it is 0 (see setControlAttenuation).
   // FEAT-125: while the pad drives (gamepad.js, last-moved wins) the triggers ARE the pedals.
   const padDrives   = !freecamActive && pad.active
-  const rawThrottle = (padDrives ? pad.throttle : (!freecamActive && keys.w) ? 1 : 0) * _controlAtten
+  const rawThrottle = _throttleCut ? 0 : (padDrives ? pad.throttle : (!freecamActive && keys.w) ? 1 : 0) * _controlAtten
   const rawBrake    = (padDrives ? pad.brake    : (!freecamActive && keys.s) ? 1 : 0) * _controlAtten
   // FEAT-33: asking for throttle on a dead engine raises a one-shot the HUD turns into "hold I to
   // start the truck" (story mode seats you in a dead truck; free roam hands you a running one, so
@@ -161,9 +168,14 @@ export function updateVehicle (vehicleState, params, dt) {
   const shifting = !!vehicleState.drivetrain?.shifting
   const gearIn = params.transmissionType === 'manual' && _prevShifting && !shifting && (vehicleState.drivetrain?.mGear ?? 0) !== 0
   _prevShifting = shifting
+  // DEC-255: on the AUTOMATIC, S / LT at rest IS the reverse pedal (drivetrain.js autoReverse), so it is gas, not brake, and
+  // releases the latch. On the manual it is only a brake and never does. ponytail: speed magnitude stands in for forward
+  // speed — the latch only holds near rest, so the two agree where it matters.
+  const autoReverse = params.transmissionType !== 'manual' && rawBrake > 0 && rawThrottle <= 0
+    && Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) <= REV_THRESHOLD
   vehicleState.parked = stepParkBrake(!!vehicleState.parked, {
     tap: handKey && !_prevHandKey,                                // rising edge (press this frame)
-    throttle: (!freecamActive && keys.w) || rawThrottle > 0,
+    throttle: (!freecamActive && !_throttleCut && keys.w) || rawThrottle > 0 || autoReverse,
     gearIn,
     speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
     lock: _parkLock,

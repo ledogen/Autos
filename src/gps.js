@@ -43,10 +43,11 @@ const RING_HOVER   = 1.4
 // clears once it is within ~100° (cos > UT_OFF) — the gap is the hysteresis so it does not flicker at 90–120°.
 const UT_ON        = -0.5
 const UT_OFF       = -0.2
-const UT_AHEAD     = 20     // m: how far up the road (against the route) the ribbon stands
+// DEC-275: it floats over the road's centreline, UT_GUI.ahead m ahead of the truck ALONG the road, UT_GUI.hover m up,
+// aimed by the road alone. Tunables (GPS folder of the debug menu).
+const UT_GUI       = { ahead: 20, hover: 1.5 }
 const UT_W         = 1.6    // m: ribbon width; the head is 2.5x (4 m)
 const UT_RAD       = 1.7    // m: radius of the upward loop (3.4 m tall; the whole glyph fits a 5 m cube)
-const UT_HOVER     = 0.2    // m above the road surface
 // FEAT-218: an objective further than this from the route's last road point is OFF the road: it gets the turn arrow, not the ring.
 const OFFROAD_M    = 3      // a demolition target stands ~5 m off the centreline; a courier's end is on it
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
@@ -499,7 +500,7 @@ export class GpsSystem {
 
     this._placeChevrons(route, prog.s)
     this._placeArrow(route, prog.s)
-    this._placeUturn(route, prog.s, car)
+    this._placeUturn(route, prog.s)
     // FEAT-187: a route flagged noRing (a demolition job's) has no destination circle — its targets wear halos.
     this._placeRing(route, prog.s)
   }
@@ -595,7 +596,7 @@ export class GpsSystem {
     this._arrow.visible = this._arrowMat.opacity > 0.02
   }
 
-  _placeUturn (route, s, car) {
+  _placeUturn (route, s) {
     const f = this._getFwd?.()
     if (!f || route.length - s < 30) { this._uturnMesh.visible = this._uturn = false; return }
     const t = sampleRoute(route, s + 8)
@@ -603,17 +604,12 @@ export class GpsSystem {
     this._uturn = c < UT_ON || (this._uturn && c < UT_OFF)
     this._uturnMesh.visible = this._uturn
     if (!this._uturn) return
-    // On the road UT_AHEAD m ahead of the truck: wrong way means ahead = back down the route. With less than that
-    // behind the truck there is no route there, so it stands on the line the truck points along instead.
-    const bob = Math.sin(this._t * 1.6) * 0.12
-    if (s >= UT_AHEAD) {
-      const p = sampleRoute(route, s - UT_AHEAD)
-      this._uturnMesh.position.set(p.x, p.y + UT_HOVER + bob, p.z)
-      this._uturnMesh.rotation.y = Math.atan2(-p.dx, -p.dz)
-    } else {
-      this._uturnMesh.position.set(car.x + f.x * UT_AHEAD, car.y - 0.6 + bob, car.z + f.z * UT_AHEAD)
-      this._uturnMesh.rotation.y = Math.atan2(f.x, f.z)
-    }
+    // DEC-275: the U-turn only shows when the truck faces against the route, so "ahead" = back down the route
+    // (s - ahead). Less than that behind the truck, it clamps to the route's start: still the road, just nearer.
+    // No truck heading enters the position or the yaw; no bob (fixed height).
+    const p = sampleRoute(route, Math.max(0, s - UT_GUI.ahead))
+    this._uturnMesh.position.set(p.x, p.y + UT_GUI.hover, p.z)
+    this._uturnMesh.rotation.y = Math.atan2(-p.dx, -p.dz)
   }
 
   /**
@@ -654,5 +650,7 @@ export function addGpsGui (gui, gps) {
   f.close()
   const state = { enabled: true }
   f.add(state, 'enabled').name('Navigation arrows').onChange(v => gps.setEnabled(v))
+  f.add(UT_GUI, 'ahead', 8, 40, 1).name('U-turn arrow: m ahead along road')
+  f.add(UT_GUI, 'hover', 0, 4, 0.1).name('U-turn arrow: height above road (m)')
   return f
 }

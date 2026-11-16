@@ -13,14 +13,13 @@ lane: A
 # FEAT-184: the tutorial overhaul — alpha
 
 ## Next steps
-Landing 2 is built (slices 1 + 2) and up for landing: the intro's card, the played tutorial on day −1 to the morning paycheck
-at the joint (19:30 day 0), a later run's second load and its world back, the menu button and the no-save rule retired, the
-casserole slot deleted, the joint quiet on the map, and the gate `tutorial-seed`. Unverified in a browser: the smoke's
-story / opening / pad steps were rewritten for it but not run on the branch (the orchestrator smokes main).
-Left: the intro expanded to 15 s – 1 min (the owner's words) and the smoke playing the whole sequence once it is green.
-Owner: Larry's call and the paycheck card's words (FEAT-148; PLACEHOLDER in data/dialogue.js); whether to fill the
-tutorial's day with more lessons (exact-24h, no ruling yet); confirm DEC-158 is later runs only (the switch:
-`TUT_SEED_RETURNS` in src/main.js).
+Landing 2 is on main. Slice 3 (the owner's tutorial-slice2 answer, 2026-11-15) is built on feature/run-shape: Larry's call is
+the owner's four cards (DEC-236), and the morning runs mom's errand (DEC-238): the pack lands by her steps, the pick-up
+lesson, Larry gives it you, then the joint. Unverified in a browser: the smoke's morning steps were rewritten, not run on the
+branch. Left: the snack bought at the gas station or store and eaten at a camping area (DEC-239, not built: the pump leaves
+the player broke, so who pays is the owner's call); the intro expanded to 15 s – 1 min (the owner's words). Owner: mom's
+errand lines and Larry's hand-over line (PLACEHOLDER in data/dialogue.js: `tut-errand`, `tut-pickup`, `LARRY_PACK`), the
+paycheck card's words (`PAYCHECK`).
 
 ## Summary
 The tutorial becomes the first part of every run: intro (the firing) → a card asking whether to play the tutorial →
@@ -396,9 +395,20 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   - [x] A gate pinning its beats (`test/tutorial-seed.mjs`)
   - [x] The first playthrough ever on it, intro included (a blank seed while `playedBefore` is unset)
   - [ ] The intro expanded to 15 s – 1 min (the owner's words)
+- Slice 3 (the tutorial-slice2 card, 2026-11-15):
+  - [x] Decision records DEC-236..239
+  - [x] Larry's call: the owner's four cards, {dir} and {deeds} from the game (DEC-236); LARRY_CALL deleted
+  - [x] Mom's errand: the pack by her steps (`data/tutorial.js` PACK_TOSS), the pick-up lesson, Larry's hand-over (DEC-238);
+    a skip puts the pack back; gate `tutorial-seed` holds the toss in reach of her road and mom's → Larry's → the joint
+  - [ ] The snack at the gas station or store, eaten at a camping area (DEC-239) — waits on who pays (the player is broke)
+  - [ ] The owner's words for mom's errand, Larry's hand-over and the paycheck
 - [ ] The smoke's opening step plays the whole sequence
 
 ## Decisions
+- 2026-11-15, owner (card tutorial-slice2, "changes"): Larry's four cards (DEC-236); "2. correct" (DEC-237); "3. lets have
+  mom send you on a an errand to larry's - return his old pack. ... on the way to get their paycheck maybe the player needs
+  to stop by the gas station or store to buy a snack and stops at a camping area to eat it. seems like enough." (DEC-238,
+  DEC-239). Full words in the records.
 - 2026-11-07 / 2026-11-08, owner: the earlier rulings are quoted verbatim in the history above (the worst day, skip
   clears everything, the skip lands at Larry's, the tutorial split off as a menu option). Where they disagree with the
   2026-11-14 answers below, the later answers win.
@@ -453,6 +463,9 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   be "on mom"" (DEC-151, DEC-152, DEC-150)
 
 ## Open questions
+- **The snack (DEC-239):** the evening's pump takes every last dollar (DEC-151), so the morning has no money for a snack.
+  Rec: the snack is "on mom" like the tire (the shop's food line free on the morning leg), then the camp lesson: make camp at
+  the nearest camping area and eat it there.
 - **exact-24h** (no ruling): the owner allows "paycheck can set the clock if need be" and would like more lessons to fill
   the day ("an actual camping lesson … talk about upgrades and assist items, load some cargo"). Built default: the paycheck
   sets 19:30 (slice 2). A lesson proposal is on the orchestrator's owed line; nothing built.
@@ -546,3 +559,6 @@ Each has a recommendation there.
   floors there too); a non-tutorial seed's "play" loads 822480141 and its end loads the run's world back (`returnSeed` in the
   save); #mm-tutorial / `_tutorialRun` / LARRY_WELCOME / the board's f0 slot deleted; `_jointQuiet` on every board reader.
   Gate `tutorial-seed` added. Gates: wip/feat184/gates-l2s2.log. cdp-smoke steps rewritten, not run on the branch.
+- 2026-11-15: slice 3 (Lane A, 749a5a3f..): RUN_INTRO is Larry's four cards (DEC-236), LARRY_CALL gone; the starting pack
+  leaves the truck at "play" and mom's toss puts it by her steps (`_tossPack`, idempotent on the poll); stops pack → Larry's
+  → joint (`_errandStop`); a skip restores the pack. Gates in the landing request; cdp-smoke's morning rewritten, not run.

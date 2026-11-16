@@ -1,7 +1,7 @@
 ---
 id: FEAT-211
 type: feature
-status: open — landings 1-4 on main (a1520e8e); waiting on the owner's map look (owed card feat211-map-look)
+status: closed
 severity: major
 opened: 2026-11-13
 source: owner, 2026-11-13 — the map spec pasted in chat, part 2 ("Layout / UI / POIs / Missions … The map should not take up the entire screen edge to edge … a list of destinations and their details on the right side")
@@ -170,3 +170,5 @@ Screenshots: `wip/feat-211/` in the Spare worktree (`shots.mjs` makes them).
 - 2026-11-13: landing 2 built by the Spare lane (the Shopping list, the tabs, A opens a shop in line).
 - 2026-11-13: landing 3 built by the Spare lane (the custom waypoint).
 - 2026-11-14: landing 4 built by the Spare lane (90 %, live world, card size, arrows on the cards).
+
+**Resolution (2026-11-15):** owner looked at main and answered "all good as built" (card feat211-map-look); the five waypoint defaults are DEC-225.
