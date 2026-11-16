@@ -1048,6 +1048,18 @@ const STEPS = [
       await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
     }
     check(await until(() => vis('mp-accept'), 2000), `parking at the ${p.type} pad opened no offer`)
+    // BUG-187: the player's own map (M) shuts the parked card; the card comes back on the next brake pull.
+    await js('window.__map2d().hide()')   // the offer opened the map as its backdrop; M below is then an OPEN
+    await tap('m')
+    check(await until(async () => !await vis('mp-accept') && await js('window.__map2d().isOpen()'), 2000), 'M at the POI left the offer card up over the map')
+    if (process.env.SMOKE_SHOT) writeFileSync(process.env.SMOKE_SHOT, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+    await tap('m')
+    await tap(' '); await sleep(1500); await park()   // the 10 Hz poll sees the unparked frame, then the new pull
+    if (SHOP_TYPES.has(p.type)) {
+      check(await until(() => vis('svc-screen'), 3000), `parking again at the ${p.type} opened no shop screen`)
+      await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+    }
+    check(await until(() => vis('mp-accept'), 2000), `the offer card did not come back on the next brake pull after the map (mission ${await js('window.__mission().state')}, parked ${await js('window.__vs.parked')}, map ${await js('window.__map2d().isOpen()')})`)
     await js('document.getElementById("mp-accept").click()')
     const hudText = () => js('document.querySelector("#mission-hud .hud-text").textContent.trim()')
     check(await until(async () => await vis('mission-hud') && await hudText(), 5000), `no mission HUD after accept: ${JSON.stringify(await js('[document.getElementById("mission-hud").style.display, document.getElementById("mission-hud").textContent.trim(), document.getElementById("mission-panel")?.style.display, document.getElementById("mission-panel")?.textContent.trim().slice(0, 200)]'))}`)
