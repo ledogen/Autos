@@ -996,6 +996,11 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   const bakedU = { uRsAtlas: { value: null }, uRsAtlasN: { value: 12 }, uRsTilePx: { value: 256 },
     uRsShadeK: { value: 0 }, uRsShear: { value: new THREE.Vector2() }, uRsGroundY: { value: 0 } }
   const LFB_HOOK = 'getDirectionalLightInfo( directionalLight, directLight );'
+  // Self-shadow acne (the body speckling and streaking in its own shadow-map depth): the near map's texel is
+  // 2–2.6 cm (main.js tiers) and the light has no bias, which the ground never needed. A truck-only normal offset,
+  // ~2 texels, so the ground and the truck's shadow on it are untouched. FEAT-223 pictures: 0 still streaked the bed.
+  const TRUCK_SHADOW_NORMAL_BIAS = 0.05   // m
+  const NB_HOOK = 'directionalLightShadows[ i ].shadowNormalBias'
   const BAKED_FN = `
 uniform sampler2D uRsAtlas; uniform float uRsAtlasN, uRsTilePx, uRsShadeK, uRsGroundY; uniform vec2 uRsShear; varying vec3 vRsWorld;
 float rsBakedShade () {
@@ -1025,6 +1030,8 @@ float rsBakedShade () {
           Object.assign(sh.uniforms, bakedU)
           sh.vertexShader = 'varying vec3 vRsWorld;\n' + sh.vertexShader.replace('#include <worldpos_vertex>',
             '#include <worldpos_vertex>\n\tvRsWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;')
+            .replace('#include <shadowmap_vertex>', THREE.ShaderChunk.shadowmap_vertex.replace(NB_HOOK,
+              '( ' + NB_HOOK + ' + ' + TRUCK_SHADOW_NORMAL_BIAS.toFixed(3) + ' )'))
           sh.fragmentShader = sh.fragmentShader
             .replace('#include <lights_pars_begin>', '#include <lights_pars_begin>\n' + BAKED_FN)
             .replace('#include <lights_fragment_begin>', 'float rsBaked = rsBakedShade();\n' + LFB.replace(LFB_HOOK,
