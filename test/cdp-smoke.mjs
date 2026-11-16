@@ -1369,7 +1369,7 @@ const STEPS = [
     check(Math.abs(a.h + 41) < 0.1, `the firing is not at 07:00 on day -1 (clockH ${a.h})`)
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
-    check(await until(async () => await hudClock() === 'Day -1, 7:00 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day -1, 7:00 am" (BUG-136)`)
+    check(await until(async () => await hudClock() === 'Day -1, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day -1, 7 am" (BUG-136)`)
     for (let i = 0; i < 8 && await speaker() === 'The manager'; i++) { await tap('Enter'); await sleep(250) }
     // The card: up, the sim held under it; "play" on seed 6 loads the tutorial seed with seed 6 to come back to.
     check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `the firing did not end on the tutorial card: ${JSON.stringify(await tut())}`)
