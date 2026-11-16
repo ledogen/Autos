@@ -41,7 +41,9 @@ under 4. A = the branch before any pump light.
 |---|---|---|---|
 | second point light (ec9d5d91) | 71203 | 1.037 (1.033–1.042) | 1.034 (1.033–1.036) |
 | second point light (ec9d5d91) | 28519 | 1.035 (1.015–1.058) | 1.044 (1.029–1.213) |
-SHARED_ROWS
+| shared light (946c1cc0, shipped) | 71203 | 0.982 (0.91–1.02) | 0.987 (0.95–1.025) |
+| shared light (946c1cc0, shipped) | 28519 | 0.998 (0.988–1.022) | 0.992 (0.983–1.016) |
+
 Every lit pixel in the world pays for every point light, wherever it stands, so the second light cost ~3.5 % whether or not a
 pump was in sight. Harness: wip/lights-1116/ab.mjs + run-ab.sh, logs ab-run1/2.log, ab.log.
 
