@@ -12,8 +12,9 @@ lane: B
 # FEAT-204: Visual mods for the alpha — light bar, bed toolbox, roof rack, bull bar
 
 ## Next steps
-Five models promoted to `assets/models/mod-*.glb` (ASSET-85..89, round 3, land/feat-204-models). Next: an agent wires them
-(child of the loaded ranger body, identity transform, after it loads; `mod-light-bar-rack` when the rack is fitted too, else `-solo`).
+Roof rack, bull bar and light bar wired on `land/feat-204-wire` (awaiting landing). Owner: the [DEFAULT] numbers in DEC-342
+(draft), three thumbnails owed (`assets/items/{roofRack,bullBar,lightBar}.png`; the inventory shows the name meanwhile). The bed
+toolbox waits on card feat204-toolbox-freight; wiring it is data only (see the comment above `roofRack` in data/parts.js SLOTS).
 
 ## Summary
 Four bolt-on parts the player can see on the truck, wanted before the alpha: a light bar, an in-bed toolbox, a roof rack and a bull bar. Each one does something. It does not have to be a large set.
@@ -31,12 +32,14 @@ Four bolt-on parts the player can see on the truck, wanted before the alpha: a l
 - The toolbox takes bed floor: check it against cargo placement and the bed colliders (FEAT-88).
 
 ## Tracker
-- [ ] Four models on the truck, each shown only when the part is fitted
-- [ ] Light bar adds light; toolbox and roof rack raise the slot cap; bull bar hardens the front end
-- [ ] The parts are found or bought in a run and are lost on death
+- [ ] Four models on the truck, each shown only when the part is fitted (three of four: the toolbox is held)
+- [ ] Light bar adds light; toolbox and roof rack raise the slot cap; bull bar hardens the front end (all but the toolbox)
+- [x] The parts are found or bought in a run and are lost on death (auto-shop shelf; not rewards yet)
 - [ ] The toolbox and bed cargo do not overlap
 
 ## Decisions
+- 2026-11-16, agent (DEC-342, draft): rack $40 +4 slots, bull bar $35 armorFront ×1.5 durability, light bar $25 head beams ×2
+  intensity ×1.47 reach and the no-cutoff pattern, all three "Rarely" on the auto-shop shelf. No new real-time light (DEC-229).
 - 2026-11-13, owner: "4x more inventory slots means +4 slots" — the toolbox and the roof rack each add 4 slots.
 - 2026-11-13, owner: before alpha; light bar is the older 4-reflector incandescent style; toolbox sits right behind the cab.
 
@@ -54,3 +57,7 @@ Four bolt-on parts the player can see on the truck, wanted before the alpha: a l
 - 2026-11-16: owner on round 2 (DEC-341): plain bull bar, keep the lean, pods in FRONT of the rack rail, lower bend fine, roof clamp hardware black. Round 3 then promote and wire.
 - 2026-11-16: owner raised the toolbox vs freight conflict (pallets slide back, CG; lumber may not fit; wants a way to bail). Numbers: bed 1.84 x 1.40 x 0.41 m; box takes 0.51 m, 0.115 m slot under it; 1.32 m floor left. Pallets and the job box fit; lumber bundle (0.38 tall), plywood, ties, drum stack do not. Card feat204-toolbox-freight. Toolbox wiring waits on it.
 - 2026-11-16: round 3 + promotion (08eae7d8): pods hung in front of the rack rail on welded L-brackets (lamp centre z 1.752, rail 1.740), roof clamps black, plain bull bar only. `assets/models/mod-{roof-rack 1588, bull-bar 1360, bed-toolbox 1484, light-bar-rack 2780, light-bar-solo 2808}.glb`, generators `assets/models/src/mod-*.py`. 0 overlap in both fitted sets; sheets `wip/feat-204-common/renders/r3-*.png`. ASSET-85..89 closed. Not wired.
+- 2026-11-16: wired (land/feat-204-wire): three bolt-on sockets + parts in data/parts.js, `modModels` / `extraSlots` / `guards` in
+  src/parts.js, `setMods` in src/vehicle-model.js, Bolt-ons node in the service screen. Gate `bolt-ons.mjs`; smoke step `boltons`
+  + newRun clears them. Pictures `wip/feat-204-wire/{day-front,day-rear,night-bar,night-nobar}.png`. Stage truck shows stock (it
+  always did). A fitted part's mass is still not modelled (parts.js header).
