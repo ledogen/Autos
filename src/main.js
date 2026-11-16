@@ -3766,6 +3766,7 @@ const inventorySystem = new InventorySystem({
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
   effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(foodHoldH(e.id, _kitAtCamp())), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
+    ice: () => inventorySystem.iceCooler(),   // FEAT-230 slice 2: a bag into the cooler; none aboard keeps it
     spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
     fieldRepair: (e) => { queueMicrotask(() => _pickFieldRepair(e.id)); return false },
     jerry: (e) => { queueMicrotask(() => _pourJerry(e)); return false },
@@ -10688,6 +10689,7 @@ function loop (t) {
     // time at the driving rate (its elapsed, rank and deadline), whichever hold also applies (a parked menu included).
     if (!clockHeld(!!_campUi && _campUi.mode !== 'confirm', serviceScreen.isOpen, _eveningLeg(), vehicleState.parked)) daySystem.update(PHYSICS_DT)
     else if (vehicleState.parked) _spendParked(PHYSICS_DT / secPerGameH())
+    inventorySystem.tick(daySystem.clockH())   // FEAT-230 slice 2: the fresh clock follows the world clock, sleeps and skips too
     if (!vehicleState.parked && _parkSpend.size) _flushParkSpend()
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)

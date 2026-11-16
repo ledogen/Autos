@@ -15,6 +15,11 @@
 //     `packSlots`; camp gear packed inside frees its truck slot (it is still truck mass). Several
 //     packs may be owned, never fewer than one; exactly one is EQUIPPED, and it always holds a
 //     sleeping item — swapped for another bed, never removed for nothing. Only camp gear packs.
+//   • THE FRESH CLOCK (FEAT-230 slice 2, items.md §1b): a food with `freshH` carries `age` on its entry, game
+//     hours of fresh life spent; at freshH the whole entry is gone. It runs on the ONE world clock (tick, fed
+//     daySystem.clockH()), so it runs asleep and holds wherever that clock holds (the brake's latch, DEC-289; an
+//     idle camp; the opening's evening). An iced cooler runs `chill` food at its coolRate. A save without `age`
+//     loads fresh.
 //   • Items die with the run (SM-INV-8/9): start() resets to the starting kit — the equipped Pack
 //     with the bedroll in it. The run save (FEAT-42, SM-4) will carry `runInventory`; until then
 //     it lives in memory.
@@ -69,6 +74,7 @@ export class InventorySystem {
 
     /** Begin a story run with the starting kit. Called from onRegionLive beside economySystem.start(). */
     start () {
+        this._lastH = null   // the fresh clock re-seats on the next tick
         runInventory.entries = [startingPack()]
         runInventory.pending = null
         runInventory.quick.fill(null)
@@ -77,6 +83,7 @@ export class InventorySystem {
 
     /** FEAT-42: put a saved runInventory back (the run save) and push its mass onto the chassis. */
     restore (s) {
+        this._lastH = null
         runInventory.entries = s.entries
         runInventory.pending = s.pending
         runInventory.quick.splice(0, QUICK_SLOTS, ...s.quick)
@@ -215,6 +222,7 @@ export class InventorySystem {
         const e = runInventory.entries[index]
         if (!e || (_isPack(e) && (e.equipped || e.contents.length))) return false
         runInventory.entries.splice(index, 1)
+        if (this._lastH != null) e.droppedH = this._lastH   // its fresh clock runs on the ground (restoreEntry)
         this._onDrop(e)   // FEAT-143: it goes on the ground, not out of the game
         this._changed()
         return true
@@ -231,8 +239,11 @@ export class InventorySystem {
         const s = _stacks(entry.id) && runInventory.entries.find(e => e.id === entry.id && e.n + entry.n <= _cap(entry.id))
         // ponytail: one open roll per stack — merging two keeps the emptier one's uses, so a merge can
         // lose a few but never mints any; track open rolls per unit if that ever matters.
-        if (s) { s.n += entry.n; if (entry.left != null) s.left = Math.min(s.left ?? it.uses, entry.left) }
-        else runInventory.entries.push({ ...entry })
+        // The fresh clock ran on the ground too, uncooled (drop stamped `droppedH`); a merged stack keeps the older age.
+        const e = { ...entry }
+        if (e.droppedH != null) { if (it.freshH) e.age = (e.age ?? 0) + Math.max(0, (this._lastH ?? e.droppedH) - e.droppedH); delete e.droppedH }
+        if (s) { s.n += e.n; if (e.left != null) s.left = Math.min(s.left ?? it.uses, e.left); if (e.age != null) s.age = Math.max(s.age ?? 0, e.age) }
+        else runInventory.entries.push(e)
         this._changed()
         return true
     }
@@ -315,6 +326,44 @@ export class InventorySystem {
     refill (cans) {
         for (const c of cans) { const i = this.indexOf(c.entry); if (i >= 0) runInventory.entries[i].gal = c.gal }
         this._changed()
+    }
+
+    /**
+     * FEAT-230 slice 2: advance the fresh clock to world time `nowH` (daySystem.clockH(), every fixed step; a
+     * sleep's jump lands on the next step). Coolers with ice chill `chill` food, best rate first, whole stacks while
+     * they fit in `holds`; the ice runs out on the same clock, mid-jump included. A stack carries its oldest
+     * unit's age (new units join an open stack at its age).
+     * ponytail: one age per stack and whole-stack chilling — fresher units go with the oldest, and a stack bigger
+     * than a cooler's room stays warm; track age per unit if a stack of chilled food ever outgrows a cooler.
+     */
+    tick (nowH) {
+        const dH = nowH - (this._lastH ?? nowH)
+        this._lastH = nowH
+        if (!(dH > 0)) return
+        const E = runInventory.entries
+        const coolers = E.filter(e => ITEMS[e.id].coolRate && e.iceH > 0)
+            .sort((a, b) => ITEMS[a.id].coolRate - ITEMS[b.id].coolRate).map(c => ({ c, room: ITEMS[c.id].holds }))
+        let gone = false
+        for (let i = E.length - 1; i >= 0; i--) {
+            const e = E[i], it = ITEMS[e.id]
+            if (!it.freshH) continue
+            const k = it.chill && coolers.find(k => k.room >= e.n)
+            if (k) k.room -= e.n
+            const cold = k ? Math.min(dH, k.c.iceH) : 0
+            e.age = (e.age ?? 0) + cold * (k ? ITEMS[k.c.id].coolRate : 1) + (dH - cold)
+            if (e.age >= it.freshH) { E.splice(i, 1); gone = true }
+        }
+        for (const { c } of coolers) c.iceH = Math.max(0, c.iceH - dH)
+        if (gone) this._changed()
+    }
+
+    /** The Ice effect: a bag fills the owned cooler with the least ice left to its `iceLastsH`. False (keep the
+     *  bag) with no cooler aboard. */
+    iceCooler () {
+        const c = runInventory.entries.filter(e => ITEMS[e.id].coolRate).sort((a, b) => (a.iceH ?? 0) - (b.iceH ?? 0))[0]
+        if (!c) return false
+        c.iceH = ITEMS[c.id].iceLastsH
+        return true
     }
 
     /** Where an entry an effect was handed (use → effect) sits now: a choice it opens acts on it later. */
