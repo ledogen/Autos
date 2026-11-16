@@ -98,3 +98,7 @@ clearAlert` re-takes its drop baseline and story entry calls it after the jalopy
 
 ## Log
 - 2026-11-16: filed from the owner's inbox note.
+- 2026-11-16 (Lane A, `land/bug-184`): repro FAIL on main (rim signal live after a played tutorial; map blits the last
+  sheet at a held window size). Fix: damage.js `_signals`, map2d.js `_bgZoom = 0`, damage-screen.js baseline, main.js
+  one line. `SMOKE_STEPS=boot,story,opening,skipMenus,newRun` PASS (`wip/bug-184/smoke-set.log`); affected gates 31/31
+  (`wip/bug-184/gates.log`). Unverified: fingerprint-physics (wearing path unchanged by reading), Continue of an old save.
