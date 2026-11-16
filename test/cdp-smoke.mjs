@@ -1609,13 +1609,17 @@ const STEPS = [
     await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]").click()')
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
     check(await until(async () => (await tut()).stop === 'camp', 3000), `buying the peanuts did not send the morning to a camping area: ${JSON.stringify(await tut())}`)
-    await tap('Escape')
-    await readCards()   // the camping-area card
+    await readCards()   // the camping-area card, which may open over the shop
+    if (await shopUp()) await tap('Escape')
+    check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
     const cd = (await tut()).camp
     check(cd, `no camping area for the snack: ${JSON.stringify(await tut())}`)
-    await seat(cd.x, cd.z, 0); await park(true)
+    await js(`window.__seated = false; window.__teleport(${cd.x}, ${cd.z}, 0).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the camping area never seated')
+    await simFor(1); await park(true)
     check(await js("window.__inv.use('bagOfPeanuts')"), 'the peanuts could not be eaten')
     check(await until(async () => (await tut()).stop === 'joint', 5000), `eating the snack parked in the camping area did not send the morning to the joint: ${JSON.stringify(await tut())}`)
+    await readCards()   // mom's card for the joint (tut-morning), which holds the sim
     // The morning's GPS follows a stray truck (BUG-118).
     await strayCheck('on the way to the paycheck')
     await readCards()
