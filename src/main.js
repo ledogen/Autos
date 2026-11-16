@@ -11436,13 +11436,26 @@ function loop (t) {
 // "first headlights lag". So: if a render compiled anything new (the program count moved since our
 // own last compile), sweep every light state again, ONE per frame, each a 1-pixel draw (BUG-175).
 // A render that compiles something mid-sweep restarts it, so nothing that arrived during it is missed.
-let _lampSweepI = -1, _lampSweepProgs = -1
+// BUG-186: each state is COMPILED first (renderer.compile: issued, never waited on) and DRAWN only once its new
+// programs report ready (KHR_parallel_shader_compile, a poll that never blocks). Drawing a just-issued program
+// waits on the driver's compile on the main thread: one late material is ~14 variants, and where a compile is slow
+// (D3D's shader compiler on Windows) that wait landed in 14 consecutive frames — the owner's ~5 fps burst.
+// Ready is checked over EVERY program, not just this step's: a restart abandons a step's compile mid-flight, and the
+// restarted sweep's compile then finds those programs already issued (none new) while they may still be compiling.
+// isReady() latches true, so the loop is a cheap read after the first pass.
+let _lampSweepI = -1, _lampSweepProgs = -1, _lampSweepIssued = false
 function _lampSweepStep () {
-  if (renderer.info.programs.length !== _lampSweepProgs) _lampSweepI = 0
+  const progs = renderer.info.programs
+  if (progs.length !== _lampSweepProgs) { _lampSweepI = 0; _lampSweepIssued = false }
   if (_lampSweepI < 0) return
-  compileLightState(_lampSweepI, renderer, scene, camera, [campfire.light, _poiLight])
-  _lampSweepI = _lampSweepI + 1 < LIGHT_STATE_COUNT ? _lampSweepI + 1 : -1
-  _lampSweepProgs = renderer.info.programs.length
+  const pts = [campfire.light, _poiLight]
+  if (!_lampSweepIssued) { compileLightState(_lampSweepI, renderer, scene, camera, pts, false); _lampSweepIssued = true }
+  if (progs.every(p => p.isReady())) {
+    compileLightState(_lampSweepI, renderer, scene, camera, pts)
+    _lampSweepIssued = false
+    _lampSweepI = _lampSweepI + 1 < LIGHT_STATE_COUNT ? _lampSweepI + 1 : -1
+  }
+  _lampSweepProgs = progs.length
 }
 
 perfMark('init: synchronous bootstrap done, requesting first frame')  // D-arc
