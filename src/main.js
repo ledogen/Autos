@@ -3764,9 +3764,16 @@ const serviceCenter = new ServiceCenter({
 // removed after boot: a change in the point-light count recompiles every lit material (BUG-175), so it is in the scene
 // before the PERF-21 prewarm and only ever moves. Parked far below the world when no station is built.
 // SERVICE_LIGHT.intensity (cd) is the one knob; `at` is the model frame, over the lift (park box centre).
-const SERVICE_LIGHT = { color: 0xfff0d8, intensity: 60, distance: 12, decay: 2, at: [-3.95, 2.9, -0.2] }
-const _bayLight = new THREE.PointLight(SERVICE_LIGHT.color, SERVICE_LIGHT.intensity, SERVICE_LIGHT.distance, SERVICE_LIGHT.decay)
+// DEC-228 (owner, 2026-11-15: the ceiling's cast gave the one source away): a DOWNWARD spotlight at the fluorescent
+// strips' height (their faces are at 3.92 m), not a point light 1.1 m under the ceiling. The point light lit the ceiling
+// straight above it 25× brighter than 3 m away; a spot lights nothing above its own plane, so the ceiling shows only
+// the strips' emission, as under real down-facing fixtures. Still ONE light (a second one would cost every lit pixel
+// in the world), so the light count and the PERF-21 / BUG-175 prewarm are unchanged. The 75° cone, 0.5 penumbra and
+// 8 m range keep the ground outside the walls and the door at or below the old point light's spill.
+const SERVICE_LIGHT = { color: 0xfff0d8, intensity: 80, distance: 8, decay: 2, angle: 75 * Math.PI / 180, penumbra: 0.5, at: [-3.95, 3.8, -0.2] }
+const _bayLight = new THREE.SpotLight(SERVICE_LIGHT.color, SERVICE_LIGHT.intensity, SERVICE_LIGHT.distance, SERVICE_LIGHT.angle, SERVICE_LIGHT.penumbra, SERVICE_LIGHT.decay)
 _bayLight.position.set(0, -1e5, 0)
+_bayLight.add(_bayLight.target); _bayLight.target.position.set(0, -1, 0)   // aims straight down wherever it moves
 scene.add(_bayLight)
 function _placeBayLight () {
   const vp = vehicleState.position
