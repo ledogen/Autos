@@ -74,8 +74,7 @@ Already a REWARDS id (`chiliDog`, kind food). A meal: resets the hunger clock.
 Spoils in 16 h (2026-10-21). Flavor: "Kinda gross" (owner, 2026-10-22) — the in-game desc since 2026-10-24.
 
 ### Dinner meal
-status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
-Audit 2026-11-16: the dinner invitation reward ships. Missing: the food vendor's own eat-in menu item ($5–10; foodVendor sells only coffee and chili dog).
+status: shipped · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
 Renamed from diner meal (owner, 2026-10-21). One generic sit-down meal, a menu item at the food
 vendor: holds hunger 8 h, 30 min to eat, $5–10, eat-in only, never found. Flavor: "A hearty meal.
 Dine in only" (owner, 2026-10-22). **As a reward it is a dinner invitation** (owner, 2026-10-22): a C–B
@@ -85,20 +84,21 @@ job those givers post, as with every reward (owner); the result card asks "stay 
 "decline" (owner, 2026-10-23). Being fed waits on hunger.
 
 ### Burger
-status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
-Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `burger.png` exists.
+status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
+Audit 2026-11-16: FEAT-232 built the item, $5 vendor shelf and C–B reward. **Spoils in 16 h and chills in a cooler (FEAT-230 slice 2, DEC-338).** The row says C–B; the proposal list said B–A, the row built.
 The standard meal, its own item (owner, 2026-10-21): holds hunger ~8 h, so two cover a waking day.
 Spoils in 16 h; $5; a C–B reward from the food vendor; never found (2026-10-21). Flavor: "The
 classic" (owner, 2026-10-22).
 
 ### Packed lunch
 status: wip · design: ratified · build: effect · needs: hunger · where: reward
-Audit 2026-11-16: in ITEMS and the run's starting three. Missing: the B–A reward row (residence, farm, vendor). **Fresh 24 h built (FEAT-230 slice 2).**
+Audit 2026-11-16: FEAT-232 built the B–A reward row (residence, farm, vendor, worth $6). **Fresh 24 h built and chilled in a cooler (FEAT-230 slice 2, DEC-338).**
 Never sold (owner, 2026-10-21): a bonus item from residences, farms and the food vendor (B–A), worth
 $6. Holds hunger 8 h; fresh 24 h. Never found. Flavor: "Homemade!" (owner, 2026-10-22).
 
 ### Groceries
-status: todo · design: ratified · build: effect · needs: hunger, spoilage, camp render · where: generalStore, farm, reward
+status: wip · design: ratified · build: effect · needs: camp render · where: generalStore, farm, reward
+**In the game 2026-11-16 (FEAT-230 slice 3, `land/feat-230-groceries`):** `groceries` + `groceriesCooked` (hold 10 h, no kit +20 %); the camp card's "cook groceries · 30 min" shows only with the cooking kit deployed; $5 at the general store and the farm; a B–A reward from both. [DEFAULT] mass 2 kg, one bag a slot, reward weight 4. The bag keeps 24 h and chills ×1/6 (slice 2, DEC-338); the cooked meal has no fresh time ruled, so it keeps (DEC-338's reading). Not built: "evening or morning".
 A delayed meal (owner, 2026-10-20): bought, carried, cooked into a meal at camp — only with the
 cooking kit. Still on the spoilage clock. Ruled 2026-10-21: one meal a bag, holds 10 h, +30 min to cook,
 evening or morning; fresh 24 h, and the cooler slows them (×1/6); no kit bonus on top. $5 at the general
@@ -107,7 +107,7 @@ Flavor: "Fresh and goes together easy" (owner, 2026-10-22).
 
 ### Potato
 status: shipped · design: ratified · build: effect · needs: none · where: generalStore, reward
-**In the game 2026-11-16 (FEAT-230 slice 1):** `potato` (raw, no `use`, its desc says why) and `potatoCooked` (`use: 'eat'`, hold 4 h), 5 to a slot (`stack`); the camp card's "cook a potato · 30 min" button turns one raw into one cooked; general-store line at a $2 [DEFAULT]; a farm reward at C–B (category `produce`). The cooked one keeps 24 h (slice 2, `freshH`); raw never spoils. The kit's bonus applies (DEC-310, +20 %).
+**In the game 2026-11-16 (FEAT-230 slice 1):** `potato` (raw, no `use`, its desc says why) and `potatoCooked` (`use: 'eat'`, hold 4 h), 5 to a slot (`stack`); the camp card's "cook a potato · 30 min" button turns one raw into one cooked; general-store line at a $2 [DEFAULT]; a farm reward at C–B (category `produce`). The cooked one keeps 24 h (slice 2, `freshH`) and chills in a cooler like every food with a fresh time (DEC-338's reading); raw never spoils. The kit's bonus applies (DEC-310, +20 %).
 New (owner, 2026-10-21). Inedible raw; cooked on the campfire — the only food you buy that needs no
 cooking kit — it is a decent meal. Sold at the general store; a farm reward. **Ruled 2026-10-22:**
 holds hunger 4 h; +30 min to cook; raw never spoils, cooked keeps 24 h; the cooking kit's food bonus
@@ -115,28 +115,28 @@ applies; stacks 5. Under $5; C–B; never found. Fish cooks on the campfire too.
 
 ### Bag of peanuts
 status: wip · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
-Audit 2026-11-16: item, eat and gas-station shelf ($3 [DEFAULT]) ship. Missing: the C–B reward row, the roadside find, the stack cap of 3 (no stack caps exist).
+Audit 2026-11-16: FEAT-232 built the item, shelf, C–B reward and stack cap. Missing: the roadside find (the find system does not exist).
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 3. Under $5;
 a C–B reward from the gas station and general store; less rare as a find than the others; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "Mmm, salty" (owner, 2026-10-22).
 
 ### Gummy worms
-status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
-Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `gummyWorms.png` exists.
+status: wip · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: FEAT-232 built the item, shelf, C–B reward and stack cap. Missing: the roadside find (the find system does not exist).
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2 h, stacks 5. Under $5;
 a C–B reward from the gas station and general store; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "Only a couple blue ones" (owner, 2026-10-22).
 
 ### Spicy chips
-status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
-Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `spicyChips.png` exists.
+status: wip · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: FEAT-232 built the item, shelf, C–B reward and stack cap. Missing: the roadside find (the find system does not exist).
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 3. Under $5;
 a C–B reward from the gas station; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "Almost too hot" (owner, 2026-10-22).
 
 ### Candy bar
-status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
-Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `candyBar.png` exists.
+status: wip · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: FEAT-232 built the item, shelf, C–B reward and stack cap. Missing: the roadside find (the find system does not exist).
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 4. Under $5;
 a C–B reward from the gas station; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "A bit melty" (owner, 2026-10-22).
@@ -263,7 +263,7 @@ store, and freight jobs (rare); worth $10–30; never found. Flavor: "Not very p
 
 ### Ice
 status: shipped · design: ratified · build: effect · needs: none · where: gasStation, generalStore
-**In the game (FEAT-230 slice 2):** `ice`, 3.6 kg [DEFAULT], `use: 'ice'` fills the owned cooler with the least ice left; kept if no cooler. $5 at both shelves.
+**In the game (FEAT-230 slice 2):** `ice`, 3.6 kg [DEFAULT], on the fresh clock: melts in 24 h in the inventory (owner 11-16, DEC-338); `use: 'ice'` puts it in the owned cooler with the least ice left, which then holds 72 h (Ice King 120 h) scaled by what the bag had left; kept if no cooler. $5 at both shelves.
 The cooler's running cost (owner, 2026-10-21): a bag lasts 72 h, so the cooler is refilled every 3 days
 (the Ice King's ice lasts 5 days). $5 at the gas station and the general store; never a reward; never
 found (2026-10-22). Flavor: "Cold and wet".
@@ -310,14 +310,14 @@ Cut by the owner (2026-10-22, the item setup page). Struck in items.md §2.
 
 ### Cooler
 status: wip · design: ratified · build: model · needs: a find system · where: tackleShop, generalStore, reward, found
-**In the game (FEAT-230 slice 2):** `cooler`, 3 kg [DEFAULT], ×1/6 on `chill` food while iced (72 h a bag), 4 units; $20 [DEFAULT] at the general store and tackle shop (now a storefront); A–S tackle-shop reward (cat `cooler`). Not built: the find, the model.
+**In the game (FEAT-230 slice 2):** `cooler`, 3 kg [DEFAULT], ×1/6 on every food with a fresh time while iced (72 h a bag), 4 units, each unit on its own clock (DEC-338); its thumbnail shows the ice left; $20 [DEFAULT] at the general store and tackle shop (now a storefront); A–S tackle-shop reward (cat `cooler`). Not built: the find, the model.
 ×1/6 spoilage rate: fish keeps ~36 h instead of ~6 h; holds 4 fish (owner, 2026-10-21). **Runs on ice,
 refilled every 3 days** (Ice row). General store + tackle shop, $10–30; tackle-shop reward A–S; a
 roadside find rarer than the common ones. Flavor: "Keeps stuff cold" (owner, 2026-10-22).
 
 ### Ice King
 status: wip · design: ratified · build: model · needs: none · where: tackleShop, generalStore, reward
-**In the game (FEAT-230 slice 2):** `iceKing`, 8 kg [DEFAULT], ×1/8, ice 120 h, 4 units [DEFAULT]; $65 [DEFAULT], shelf weight 0.25 at the general store and tackle shop [DEFAULT]; S reward from the tackle shop and residences (cat `iceKing`). PLACEHOLDER desc. Not built: the model.
+**In the game (FEAT-230 slice 2):** `iceKing`, 8 kg [DEFAULT], ×1/8, ice 120 h, 4 units (owner approved 11-16, DEC-338); $65 [DEFAULT], shelf weight 0.25 at the general store and tackle shop [DEFAULT]; S reward from the tackle shop and residences (cat `iceKing`). PLACEHOLDER desc. Not built: the model.
 Renamed from better cooler (owner, 2026-10-22). ×1/8 spoilage rate: fish keeps ~48 h; its ice lasts 5
 days. Both coolers can be carried. $30–100; sold at the tackle shop and general store, very rarely; an
 S-only reward from the tackle shop and residences; never found. Open: how many fish it holds.
@@ -382,32 +382,37 @@ In the inventory, packed in the starter Pack, with its thumbnail (FEAT-122). The
 The baseline sleeping item, no bonus. Fills one of the starter Pack's 2 slots.
 
 ### Air mattress
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf (STOREFRONT.generalStore has no camp lines).
+Audit 2026-11-17: on the general-store shelf, always stocked, $5 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Sleeping item: +5% recovery rate. Swaps for the bedroll in its slot and in the render.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping pad
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf.
+Audit 2026-11-17: on the general-store shelf, always stocked, $8 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Sleeping item: +10% recovery rate. Swaps for the bedroll.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Deluxe sleeping pad
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward (S) ship. Missing: the general-store shelf.
+Audit 2026-11-17: on the general-store shelf, rolled (Hardly ever), $15 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Sleeping item: +15% recovery rate, the best bed. Swaps for the bedroll.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Blanket
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf.
+Audit 2026-11-17: on the general-store shelf, always stocked, $4 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed and the sleeping bag.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping bag
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf.
+Audit 2026-11-17: on the general-store shelf, always stocked, $10 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
 Renders with the bed, not in place of it.
 Camp render (owner, 2026-10-20): shown unrolled, corner unzipped and turned back; layered variants
@@ -449,6 +454,7 @@ general store; an A–S reward from farms, work sites and the general store; nev
 
 ### Cooking kit
 status: wip · design: ratified · build: effect · needs: groceries · where: generalStore, reward
+**Audit 2026-11-16:** the groceries half is built (FEAT-230 slice 3): the card offers "cook groceries" only with the kit deployed, and groceries skip the +20 %.
 **DEC-310 / FEAT-230 (2026-11-16):** deployed at camp it makes any food hold hunger 20 % longer (`COOKING_KIT_FOOD_MULT`); groceries are cooked with it, without the 20 % on top (slice 3).
 ≈23 kg always carried; flat bonus to food effects; the only way to cook groceries (2026-10-20). Model is ASSET-25 (A-frame + Dutch oven).
 
@@ -474,6 +480,7 @@ Many slots, barely past the shoulder. More kit on near ground.
 ### Rucksack
 status: wip · design: ratified · build: effect · needs: camp render · where: generalStore
 Audit 2026-11-16: in ITEMS (FEAT-182, [DEFAULT] numbers). Missing: every source (no shelf, no reward).
+Audit 2026-11-17: on the general-store shelf, rolled (weight 1), $25 [DEFAULT] ("mid-priced"); still no reward row, land/camp-gear-shelf.
 Between the Duffel and the Frame pack: fewer slots than the Duffel, less reach than the Frame pack.
 
 ### Frame pack
@@ -746,7 +753,7 @@ Shovel row says `campGateUnevenM` 1.2 m but the code value is 1.5 m.
 |---|---|---|---|
 | Chili dog | — (16 h built, FEAT-230 slice 2) | none | done |
 | Dinner meal | the food vendor's eat-in menu item ($5–10; invitation reward ships) | a menu UI at the vendor; price number | no: price is a range |
-| Burger | whole item: ITEMS, $5 vendor shelf, B–A reward, 16 h spoil | none: `freshH: 16` is one field (FEAT-230 slice 2) | yes |
+| Burger | — (16 h spoil built, FEAT-230 slice 2) | none | done |
 | Packed lunch | B–A reward row (residence, farm, vendor) (24 h fresh built) | none | yes, reward row |
 | Bag of peanuts | C–B reward row; stack cap 3; find | stack caps; find | yes |
 | Gummy worms, Spicy chips, Candy bar | whole item, gas-station shelf, C–B reward, stack caps; thumbnails exist | none | needs price + mass numbers |

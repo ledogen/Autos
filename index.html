@@ -1015,11 +1015,13 @@
       text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
     }
     #job-g .jg-floor span { color: var(--warn); }
+    #job-g .jg-ten span { color: var(--text-dim); }
     #job-g .jg-break span { color: var(--bad-text); }
     #job-g .jg-bar { position: relative; width: 12px; height: 90px; background: var(--hud-bg); border: 1px solid var(--line-control); }
     #job-g .jg-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: var(--text); transform-origin: bottom; transform: scaleY(0); }
     #job-g .jg-mark { position: absolute; left: -4px; right: -4px; height: 2px; }
     #job-g .jg-floor { background: var(--warn); }
+    #job-g .jg-ten { background: var(--text-dim); }
     #job-g .jg-break { background: var(--bad); }
     #rank-timer .rt-card {
       background: linear-gradient(180deg, rgba(14, 18, 24, 0.82), rgba(0, 0, 0, 0.7));
@@ -1932,7 +1934,7 @@
        the felt g, marked where one hit costs 1 % of health (amber) and 100 % (red, the break). HEALTH
        is the condition, full green → empty red, its percent under it. -->
   <div id="job-g">
-    <div class="jg-col"><div class="jg-bar"><div class="jg-fill"></div><div class="jg-mark jg-floor"><span>1%</span></div><div class="jg-mark jg-break"><span>100%</span></div></div><span class="rt-label">Damage</span></div>
+    <div class="jg-col"><div class="jg-bar"><div class="jg-fill"></div><div class="jg-mark jg-floor"><span>1%</span></div><div class="jg-mark jg-ten"><span>10%</span></div><div class="jg-mark jg-break"><span>100%</span></div></div><span class="rt-label">Damage</span></div>
     <div class="jg-col"><div class="jg-bar"><div class="jg-fill jg-health"></div></div><span class="rt-label">Health</span><span class="jg-val"></span></div>
   </div>
   </div>
@@ -2033,6 +2035,7 @@
       <button id="cp-sleep">sleep</button>
       <button id="cp-fish" disabled title="not implemented yet">fish (wip)</button>
       <button id="cp-cook">cook a potato &middot; 30 min</button>
+      <button id="cp-cook-groceries">cook groceries &middot; 30 min</button>
       <button id="cp-item">inventory</button>
       <button id="cp-map">open map</button>
       <button id="cp-spirits" disabled title="not implemented yet">talk to the spirits (wip)</button>

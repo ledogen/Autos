@@ -430,3 +430,4 @@ honestly cant perceive this so keep / put this on main. its way better than what
   (2 seeds × 06/12/19:30 × drive, vista to/away from sun): max diff ≤ 3 levels/channel, mean ≤ 0.14, pixels > 2 levels
   ≤ 0.0001 %; pictures wip/feat-180/look/ (perf worktree). Re-bakes: ~17–51 after a clock push, 0 steady. sky-ephemeris
   green, build ok; no smoke on the branch. Harness wip/feat-180/fog-ab.mjs, fog-look.mjs, summ.mjs.
+- 2026-11-16, owner (card feat180-r5-look): "looks right, keep 0.7" (the far-side twilight fog desaturation).

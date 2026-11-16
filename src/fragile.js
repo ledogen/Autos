@@ -42,6 +42,17 @@ export function feltG (v0, v1, dt) {
 /** Where one hit costs 1 % of health, in g. */
 export const onePctG = (row) => row.onePctG ?? row.shockFloorG + 0.1 * (row.breakG - row.shockFloorG)
 
+/** Where one hit costs 10 % of health, in g (the inverse of shockCost's curve; FEAT-237's grey tick). */
+export const tenPctG = (row) => {
+  const floor = row.shockFloorG, span = row.breakG - floor
+  return floor + span * 0.1 ** (Math.log((onePctG(row) - floor) / span) / Math.log(0.01))
+}
+
+/** FEAT-237: the felt-g meter is logarithmic from JG_G0 g (the bottom) to `top` g: height 0..1 for a felt g. With
+ *  JG_G0 = 0.8 and top = 1.2 x break, the 10 % tick lands at 49-53 % of the height on all three tiers. */
+export const JG_G0 = 0.8
+export const meterPos = (g, top) => g <= JG_G0 ? 0 : Math.min(1, Math.log(g / JG_G0) / Math.log(top / JG_G0))
+
 /** Health cost of one event that peaked at `peakG`, on a row's { shockFloorG, onePctG?, breakG }. */
 export function shockCost (peakG, row) {
   const floor = row.shockFloorG, span = row.breakG - floor

@@ -27,3 +27,19 @@ export class AlertCycle {
     return this._list[this._i]
   }
 }
+
+// FEAT-216 (owner, 2026-11-16, DEC-327): what a machine-word slot does this poll. `l` is its level now, `prev` its level
+// last poll, `step` / `prevStep` the condition in 10 % steps (stepOf), `crit` whether level `l` is a CRITICAL failure
+// (a flat or failed tire, a failed wheel): those stay open as long as they are true; everything else shows for a while
+// and re-reports at every further 10 % of condition lost. -> 'close' | 'show' (close + open anew) | 'none'.
+export const stepOf = (c) => Math.ceil(c * 10 - 1e-9)
+export function wordAction (prev, l, step, prevStep, crit) {
+  if (l === 0) return 'close'
+  if (l > prev) return 'show'
+  if (l < prev) return crit ? 'show' : 'close'
+  return !crit && step < prevStep ? 'show' : 'none'
+}
+/** Oil and air filter: "dirty" from 50 % (again at 40 %), "very dirty" from 30 % (and every 10 % below). */
+export const wearLevel = (c) => c <= 0.3 ? 2 : c <= 0.5 ? 1 : 0
+/** Engine word level: knocking from `knockFrom` (inclusive, DEC-330) down, seized at 0. Both are critical (persistent). */
+export const engineLevel = (c, knockFrom) => c <= 0 ? 2 : c <= knockFrom ? 1 : 0

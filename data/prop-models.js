@@ -662,6 +662,20 @@ export const PROP_MODELS = {
       { x: 0.28, z: -1.95, halfX: 2.6, halfZ: 1.0 },   // road side — the first pump's face (-Z)
       { x: 0.28, z:  1.95, halfX: 2.6, halfZ: 1.0 },   // far side — the back-to-back pump
     ],
+    // FEAT-233 THE LIVE FACE (src/pump-face.js; the shape of the record is in its header). Measured off the .glb:
+    // each gauge plate is the PumpGraphic quad whose UVs span the atlas's gauge region; the windows are the
+    // three outlined boxes of the bake, inside their 2 px rule. Rest = what the bake prints.
+    pumpFace: {
+      material: 'PumpGraphic', region: [0, 224, 512, 288], scale: 1,
+      plates: [{ x: 0.28, y: 1.1949, z: -0.523, n: -1 }, { x: 0.28, y: 1.1949, z: 0.523, n: 1 }], w: 0.668, h: 0.3758,
+      bg: '#434140', wheel: '#e4e3df', ink: '#1d1d1e', dot: '#e4e3df',
+      windows: [
+        { r: [198, 26, 116, 37], show: 'sale', n: 5, dp: 2 },    // TOTAL SALE
+        { r: [208, 89, 96, 37], show: 'gal', n: 4, dp: 2 },      // GALLONS
+        { r: [227, 151, 59, 30], show: 'price', n: 3, dp: 2 },   // PRICE PER GALLON
+      ],
+      rest: { sale: 0, gal: 0, price: 1.49 },
+    },
   },
 
   // ASSET-66 — the farm BARN, 708 tris, 4 materials, 0 images. Gambrel roof, closed sliding
@@ -956,6 +970,18 @@ export const PROP_MODELS = {
       { x: 0, z: -4.85, halfX: 2.6, halfZ: 1.0 },   // road-side lane
       { x: 0, z: -1.15, halfX: 2.6, halfZ: 1.0 },   // store-side lane, in front of the doors
     ],
+    // FEAT-233 THE LIVE FACE (src/pump-face.js). Measured off the .glb: the two StationSign plates whose UVs span
+    // the atlas's "gauge" region (gas-station.py REG); the windows are the bake's two glass rects. Rest = the bake.
+    pumpFace: {
+      material: 'StationSign', region: [0, 368, 192, 144], scale: 2,
+      plates: [{ x: 0, y: 1.17, z: -3.258, n: -1 }, { x: 0, y: 1.17, z: -2.742, n: 1 }], w: 0.80, h: 0.60,
+      bg: '#383c38', wheel: '#1e1f1e', ink: '#ece8da', dot: '#ece8da',
+      windows: [
+        { r: [34, 16, 124, 32], show: 'sale', n: 4, dp: 2 },
+        { r: [34, 56, 124, 32], show: 'gal', n: 5, dp: 3 },
+      ],
+      rest: { sale: 12.47, gal: 3.899 },
+    },
     // FEAT-123 STOREFRONT — the two bays, line to line (2.55 x 6.0 m each). 2.3 m along the road from
     // both pump zones, so parking for the shop never trips the pump; entered from the store-side lane.
     park: { x: 7.45, z: 2.8, halfX: 2.55, halfZ: 3.0 },

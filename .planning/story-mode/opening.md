@@ -28,6 +28,8 @@ choose to leave, and not one they can go back to: they can **never work there ag
 a cent from it**. The drudgery is established and then taken away in the same beat — the player is
 not escaping the grill, they are out on the street without it.
 
+> The tutorial's order and clock (fired 07:00, errands first, the paycheck the next morning) are the records: DEC-299, DEC-304..308.
+
 This is what makes the uncle's stack of papers land. The paper route isn't a more exciting option
 alongside a safe one; it is the only thing there is.
 
@@ -53,6 +55,8 @@ day.
 **Proposed flavour, not yet ratified:** the final paycheck from the burger joint lands a couple of
 days into the game — a small one-off sum arriving after the player has already started driving. It
 is a closing door, not a floor: money from a life that has ended, and the last of it.
+
+> Superseded in timing by DEC-150 / DEC-307: the last paycheck is the tutorial's last beat, the morning after the firing.
 
 Design value: it puts a tiny windfall in the early economy at the exact moment the player is learning
 that the route pays badly, and it dates the firing rather than leaving it as backstory.

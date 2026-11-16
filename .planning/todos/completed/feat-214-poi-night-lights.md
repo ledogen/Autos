@@ -1,7 +1,7 @@
 ---
 id: FEAT-214
 type: feature
-status: open — built and on main (78e83b7f); waiting on the owner's look (owed card feat214-look)
+status: closed
 severity: major
 opened: 2026-11-13
 source: owner, 2026-11-13 (inbox) — "add light sources to main POIs. mainly the shops and gas pumps since they're open 24hr should have point sources hidden in believeable places i.e. the auto shop has overhead lights. they should switch on after ~7pm. if residences have a good place to hide the light we can install them there too but they should switch off again around 11pm unless they offer a mission or you're delivering there."
@@ -36,3 +36,4 @@ Places light up at night. Shops and gas pumps are open 24 hours, so their lights
 ## Log
 - 2026-11-14 (Spare): e33f7774+. src/poi-night.js (rules + material table), main.js `_updatePoiNightLights` (polled with presence), model-service `onReady`. Lamp materials: ShopLight/ShopSign, StationLamp/StationSign, BurgerLight, StoreSign, TackleSign, PumpGraphic (shared, one flip) and Curtain on homes (per-POI clone, offer/delivery aware). Clock = the sky's hour, 19:00 on, homes off 23:00, day opens 7:00. Gate poi-night; 20/20 affected gates; smoke boot,story,camp PASS. Unverified: office/school/doctor/barn/produce stall have no lamp material (not lit).
 - 2026-11-13: minted from the owner's inbox by the orchestrator. Nothing built.
+- 2026-11-16: owner on card feat214-look: "Looks right, land it" (already on main). Closed.

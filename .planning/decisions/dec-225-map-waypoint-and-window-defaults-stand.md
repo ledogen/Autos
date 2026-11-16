@@ -1,6 +1,6 @@
 ---
 id: DEC-225
-status: standing
+status: superseded
 decided: 2026-11-15
 area: ui
 governs: FEAT-211, FEAT-210, BUG-163, src/map.js, map, waypoint, legend

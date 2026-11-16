@@ -1,7 +1,7 @@
 ---
 id: FEAT-218
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-14
 source: owner, 2026-11-14 inbox — "This one has been bothering me for a long time and I just realized how to fix it For a lot of missions we use a cyan toroid to mark destinat…"
@@ -32,3 +32,4 @@ Inbox 509w:
 ## Log
 - 2026-11-14 Spare: gps.js reads `objective ?? customers.at(-1)` off the live route (mission.js sets `objective` = the destination POI, per leg too); further than OFFROAD_M = 3 m from the route's last road point -> the turn board (same geometry/hover/colour) at that point aimed at it, no ring; else the ring. Demolition guide carries `objective` (main.js). Covers paper stops, demolition, POI/tutorial stops (mission.end is the POI). Not seen by the owner yet.
 - 2026-11-14: minted from the owner's inbox by the scribe. Nothing built.
+- 2026-11-16: owner on card feat218-look: "Both read well". Closed.

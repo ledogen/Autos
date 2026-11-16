@@ -32,6 +32,7 @@
 import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP, SEIZED_REPAIR_X, REPAIR_CAP, REPAIR_STEP, PATCH, OIL_CHANGE, BEAD, HUB, SELL_FRACTION, socketsFor, takes } from '../data/parts.js'
 import { TRACKS, TIRE_IDS, WHEEL_IDS } from './damage.js'
 import { shelfPrice } from './shop-stock.js'
+import { ITEMS } from '../data/items.js'   // FEAT-232: a shelf meal's eatIn / eatH / hold
 import { swapCorners } from './recovery.js'
 
 const cents = (x) => Math.round(x * 100) / 100
@@ -51,7 +52,7 @@ const classOf = (id) => {
 const READS = {
     repair: { track: [0] }, repairOwned: { inv: [0] }, patchOwned: { inv: [0] }, sellOwned: { inv: [0] }, split: { inv: [0] },
     combine: { inv: [0, 1] }, exchange: { inv: [0] }, fitFromInventory: { inv: [0] }, swapPair: { inv: [0] },
-    buyAndFit: { shelf: [0] }, buyToInventory: { shelf: [0] },
+    buyAndFit: { shelf: [0] }, buyToInventory: { shelf: [0] }, buyAndEat: { shelf: [0] },
 }
 /** An inventory row as what it is, not where it is. */
 const rowKey = (r) => { if (!r) return null; const { index, key, ...rest } = r; return JSON.stringify(rest) }
@@ -83,6 +84,7 @@ export class ServiceCenter {
      *   money() / spend($) / earn($)   the wallet (economySystem.money / spend / addSpot)
      *   tier()                     the price multiplier now (economySystem.tierNow)
      *   advanceHours(h)            labour on the clock (daySystem.advanceMinutes)
+     *   eat(h)                     FEAT-232: a meal eaten here holds hunger `h` hours (daySystem.eat); optional
      *   stock() / unstock(i)       this shop's shelf now (src/shop-stock.js shelf / take)
      *   freeRepairs() / useFreeRepair()   repairs owed for nothing (expedition-rewards); optional
      *   onMom(id, k) / useMom(id, k)   on mom (FEAT-184): part `id`'s k = 'part' or 'labour' is free, once; optional
@@ -109,6 +111,7 @@ export class ServiceCenter {
         this.onMom = d.onMom && ((id, k) => !lines().some(l => l.mom.some(m => m[1] === k)) && d.onMom(id, k))
         this.freeRepairs = d.freeRepairs && (() => d.freeRepairs() - lines().reduce((n, l) => n + l.free, 0))
         this.useFreeRepair = () => this._line ? void this._line.free++ : d.useFreeRepair()
+        this.eat = (h) => this._line ? void (this._line.eat += h) : d.eat?.(h)   // a cart line's meal is eaten at checkout
     }
 
     // ── The cart (FEAT-212) ──────────────────────────────────────────────────────────────────────
@@ -154,7 +157,7 @@ export class ServiceCenter {
     queue (m, args, label) {
         this.unpreview()
         this._snap ??= this._capture()
-        const line = { m, args, label, price: 0, earn: 0, hours: 0, taken: [], mom: [], free: 0, reads: this._reads(m, args) }
+        const line = { m, args, label, price: 0, earn: 0, hours: 0, taken: [], mom: [], free: 0, eat: 0, reads: this._reads(m, args) }
         this._line = line
         let ok = false
         try { ok = this[m](...args) } finally { this._line = null }
@@ -190,6 +193,7 @@ export class ServiceCenter {
         if (t.earn > 0) d.earn(t.earn)   // what it sells first: it may pay for the rest
         if (t.spend > 0) d.spend(t.spend)
         if (t.hours > 0) d.advanceHours(t.hours)
+        for (const l of this.cart) if (l.eat > 0) d.eat?.(l.eat)   // after the table time, so the hold runs from the last bite
         this.cart = []; this._snap = null
         this.onChange()
         return true
@@ -402,7 +406,7 @@ export class ServiceCenter {
     buyQuote (i, socket = null) {
         const e = this.stock()[i]
         if (!e) return null
-        const f = socket ? this.fitLabour(e.id, socket) : { price: 0, hours: 0 }
+        const f = socket ? this.fitLabour(e.id, socket) : { price: 0, hours: ITEMS[e.id]?.eatH ?? 0 }   // FEAT-232: a meal's table time
         return { price: cents(this.shelfPrice(i) + f.price), hours: f.hours }
     }
 
@@ -419,9 +423,20 @@ export class ServiceCenter {
         return true
     }
 
+    /** FEAT-232: buy an `eatIn` shelf meal and eat it here: paid, `eatH` on the clock, hunger held `hold` hours. Never stowed. */
+    buyAndEat (i) {
+        const e = this.stock()[i], it = ITEMS[e?.id]
+        if (!it?.eatIn || !this.spend(this.buyQuote(i).price)) return false
+        this.advanceHours(it.eatH)
+        this.eat(it.hold)
+        this.onChange()
+        return true
+    }
+
     /** Buy shelf slot `i` to carry. Full inventory → the swap prompt. */
     buyToInventory (i) {
         const e = this.stock()[i]
+        if (ITEMS[e?.id]?.eatIn) return false   // a dine-in meal is eaten at the counter (buyAndEat)
         const part = !!e && this._mom(e.id, 'part')
         if (!e || !this.spend(this.buyQuote(i).price)) return false
         this._usedMom(e.id, 'part', part)

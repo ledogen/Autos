@@ -12,8 +12,9 @@
 //      equipping a spare moves the bed across; the equipped pack and a loaded pack can't be dropped.
 //      6c. The bigger packs (FEAT-182): each has slots and a reach; the Frame pack takes a whole camp and refuses
 //      one more; camp's tether follows the equipped pack, capped at 120 m (src/camp.js reachM).
-//   9. FEAT-230 slice 2: the fresh clock (spoil at freshH, raw potato never, ×1/6 in an iced cooler, the ice's own
-//      clock, save → load, an old save loads fresh, the ground keeps spoiling) and the coolers' and ice's sources.
+//  11. FEAT-230 slice 2 (DEC-338): the fresh clock per unit (one old unit never spoils the stack, the oldest eaten first),
+//      every food chilled ×1/6 / ×1/8 up to 4 units a cooler (a stack of 5: the oldest stays out), ice melting in 24 h
+//      and lasting 72 h / 120 h in a cooler, the bar's fraction, save → load, an old save fresh, the ground; the sources.
 //   7. Catalog: every REWARDS id but a dineIn meal is an ITEMS id (the grant path can't miss), and no desc carries a
 //      digit (SM-INV-10 — described, never scored).
 //
@@ -212,66 +213,91 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
     && ITEM_PRICE.potato > 0 && ITEM_PRICE.potato < 5)
 }
 
-// ── 9. FEAT-230 slice 2: the fresh clock, the coolers and ice (items.md §1 / §1b / §2) ───────────────
+// ── 11. FEAT-230 slice 2: the fresh clock, the coolers and ice (items.md §1 / §1b / §2) ───────────────
 {
-  check('the ruled fresh clocks: chili dog 16 h, packed lunch 24 h, cooked potato 24 h; a raw potato none',
-    ITEMS.chiliDog.freshH === 16 && ITEMS.packedLunch.freshH === 24 && ITEMS.potatoCooked.freshH === 24 && ITEMS.potato.freshH === undefined)
-  check('the coolers: ×1/6 with 72 h ice holding 4; the Ice King ×1/8 with 5 days of ice',
+  const near = (a, b) => Math.abs(a - b) < 1e-9
+  check('the ruled fresh clocks: chili dog and burger 16 h, packed lunch, cooked potato, groceries and ice 24 h; raw potato and cooked groceries none',
+    ITEMS.chiliDog.freshH === 16 && ITEMS.burger.freshH === 16 && ITEMS.packedLunch.freshH === 24 && ITEMS.potatoCooked.freshH === 24
+    && ITEMS.groceries.freshH === 24 && ITEMS.ice.freshH === 24 && ITEMS.potato.freshH === undefined && ITEMS.groceriesCooked.freshH === undefined)
+  check('the coolers: ×1/6 with 72 h ice holding 4; the Ice King ×1/8 with 5 days of ice holding 4 (DEC-338)',
     ITEMS.cooler.coolRate === 1 / 6 && ITEMS.cooler.iceLastsH === 72 && ITEMS.cooler.holds === 4
-    && ITEMS.iceKing.coolRate === 1 / 8 && ITEMS.iceKing.iceLastsH === 120)
-  const f = new InventorySystem({ slotCap: () => 12, effects: { ice: () => f.iceCooler() } })
+    && ITEMS.iceKing.coolRate === 1 / 8 && ITEMS.iceKing.iceLastsH === 120 && ITEMS.iceKing.holds === 4)
+  const mk = () => { const s = new InventorySystem({ slotCap: () => 20, effects: { ice: (e) => s.iceCooler(e), eat: () => {} } }); s.start(); return s }
+  const ent = (id) => runInventory.entries.find(e => e.id === id)
+  let f = mk()
   const n = (id) => f.list().filter(r => r.id === id).reduce((k, r) => k + r.n, 0)
-  f.start(); f.tick(100)
-  f.grant('chiliDog', 2); f.grant('potato', 3); f.grant('potatoCooked')
+  f.tick(100); f.grant('chiliDog', 2); f.grant('potato', 3); f.grant('potatoCooked')
   f.tick(115.9)
   check('fresh at 15.9 h: the chili dogs and the cooked potato are still aboard', n('chiliDog') === 2 && n('potatoCooked') === 1)
   f.tick(116)
-  check('at 16 h the chili dogs are gone, the whole stack', n('chiliDog') === 0 && n('potatoCooked') === 1)
-  f.tick(124)
-  check('at 24 h the cooked potato is gone; a raw potato never spoils', n('potatoCooked') === 0 && n('potato') === 3)
-  f.tick(1000)
-  check('a raw potato after 900 h is still there', n('potato') === 3)
+  check('at 16 h both chili dogs (the same age) are gone', n('chiliDog') === 0 && n('potatoCooked') === 1)
+  f.tick(124); f.tick(1000)
+  check('at 24 h the cooked potato is gone; a raw potato after 900 h is still there', n('potatoCooked') === 0 && n('potato') === 3)
   f.grant('potatoCooked'); f.tick(1010); f.grant('potatoCooked')
-  check('a stack carries its oldest unit\'s time: a new unit joins at the old age', f.list().find(r => r.id === 'potatoCooked').n === 2
-    && Math.abs(runInventory.entries.find(e => e.id === 'potatoCooked').age - 10) < 1e-9)
+  check('every unit keeps its own age: a new one joins a stack fresh', n('potatoCooked') === 2 && ent('potatoCooked').ages.join() === '0,10')
   f.tick(1024)
-  check('… and goes with it', n('potatoCooked') === 0)
-  // A chill food, standing in for groceries (slice 3) and fish (FEAT-37).
-  ITEMS.__groc = { name: 'Test groceries', kind: 'food', massKg: 1, freshH: 24, chill: true }
+  check('one old unit spoils alone, never the stack (owner, 11-16)', n('potatoCooked') === 1 && near(ent('potatoCooked').ages[0], 14))
+  f.tick(1034)
+  check('… and the younger one goes at its own 24 h', n('potatoCooked') === 0)
+  f.grant('chiliDog'); f.tick(1042); f.grant('chiliDog')
+  check('the bar shows the next to go: 8 h into 16 is half', near(f.list().find(r => r.id === 'chiliDog').fresh, 0.5)
+    && f.list().find(r => r.id === 'potato').fresh === null)
+  f.use('chiliDog')
+  check('eating takes the oldest first: the fresh one is left, its bar full', n('chiliDog') === 1 && f.list().find(r => r.id === 'chiliDog').fresh === 1)
+  f.remove(f.list().findIndex(r => r.id === 'chiliDog'))
+
+  // Ice: on the fresh clock, melting in a day in the inventory (owner 11-16); used into a cooler, 72 h / 120 h.
+  f.grant('ice'); f.tick(1065.9)
+  check('a bag of ice in the inventory keeps 23.9 h', n('ice') === 1)
+  f.tick(1066)
+  check('… and melts at 24 h (owner, 11-16)', n('ice') === 0)
   check('ice with no cooler aboard is kept', f.grant('ice', 2) === 'taken' && f.use('ice') === false && n('ice') === 2)
-  f.grant('cooler'); f.grant('__groc', 2)
-  check('a bag of ice fills the cooler to 72 h', f.use('ice') && n('ice') === 1 && runInventory.entries.find(e => e.id === 'cooler').iceH === 72)
-  f.tick(1024 + 72)
-  check('in an iced cooler a chill food runs ×1/6: 72 h costs it 12', Math.abs(runInventory.entries.find(e => e.id === '__groc').age - 12) < 1e-9
-    && runInventory.entries.find(e => e.id === 'cooler').iceH === 0)
-  f.tick(1024 + 72 + 11.9)
-  check('the ice ran out: warm again, ×1', n('__groc') === 2)
-  f.tick(1024 + 72 + 12)
-  check('… gone at 24 h of fresh life', n('__groc') === 0)
-  f.grant('__groc'); f.use('ice'); f.tick(1188)
-  check('the ice running out mid-jump splits the hours: 72 cold (12) + 8 warm = 20, still good',
-    n('__groc') === 1 && Math.abs(runInventory.entries.find(e => e.id === '__groc').age - 20) < 1e-9)
-  f.remove(f.list().findIndex(r => r.id === '__groc'))
-  f.grant('__groc', 5); f.grant('chiliDog'); f.grant('ice'); f.use('ice'); f.tick(1194)
-  check('the cooler chills only what fits whole (4): a stack of 5 stays warm; a chili dog is not a chill food',
-    Math.abs(runInventory.entries.find(e => e.id === '__groc').age - 6) < 1e-9 && Math.abs(runInventory.entries.find(e => e.id === 'chiliDog').age - 6) < 1e-9)
-  f.grant('iceKing'); f.grant('ice'); f.use('ice')
-  check('a bag goes to the cooler with the least ice: the empty Ice King, 120 h', runInventory.entries.find(e => e.id === 'iceKing').iceH === 120)
+  f.grant('cooler')
+  check('an empty cooler shows no bar', f.list().find(r => r.id === 'cooler').fresh === null)
+  check('a fresh bag of ice fills the cooler to 72 h; its bar is full', f.use('ice') && n('ice') === 1 && ent('cooler').iceH === 72
+    && f.list().find(r => r.id === 'cooler').fresh === 1)
+  f.grant('burger'); f.grant('chiliDog'); f.grant('packedLunch'); f.grant('groceries')
+  f.tick(1066 + 24)
+  check('the bag left beside the iced cooler still melts in its day (ice is not food: the cooler chills food)', n('ice') === 0)
+  f.tick(1066 + 72)
+  check('burger, chili dog, packed lunch and groceries chill ×1/6: 72 h in the iced cooler cost each 12 (owner, 11-16)',
+    ['burger', 'chiliDog', 'packedLunch', 'groceries'].every(id => near(ent(id).ages[0], 12)) && ent('cooler').iceH === 0)
+  f.tick(1066 + 72 + 3.9)
+  check('the ice ran out: warm again, ×1, the chili dog goes at 16', n('chiliDog') === 1 && (f.tick(1066 + 76), n('chiliDog') === 0) && n('burger') === 0)
+
+  // A stack of 5 in a 4-unit cooler: 4 chill, the oldest stays out and goes alone; then the 4 go on their own clock.
+  f = mk(); f.tick(0); f.grant('cooler'); f.grant('ice'); f.use('ice'); f.grant('chiliDog', 5)
+  f.tick(15.9); f.tick(16)
+  check('5 chili dogs in the cooler: the one with no room goes at 16 h, alone', n('chiliDog') === 4 && near(ent('chiliDog').ages[3], 16 / 6))
+  f.tick(72); f.tick(75.9)
+  check('the four chilled to 12 h by the ice\'s 72 h, then warm: still good at 75.9', n('chiliDog') === 4)
+  f.tick(76 + 1e-9)
+  check('… gone at 16 h of fresh life, 76 h in', n('chiliDog') === 0)
+  f.grant('ice'); f.tick(88); f.use('ice')
+  check('a bag 12 h into its day gives the empty cooler half its 72 h: 36', Math.abs(ent('cooler').iceH - 36) < 1e-6)
+  f.grant('iceKing'); f.grant('ice'); f.use('ice'); f.grant('ice'); f.use('ice')
+  check('a fresh bag goes to the cooler with the least ice: the empty Ice King to 120, then the cooler to 72',
+    ent('cooler').iceH === 72 && ent('iceKing').iceH === 120)
+  f.grant('groceries', 5); f.tick(96)
+  check('the Ice King (×1/8) chills first, then the cooler (×1/6): four bags at 1, one at 8/6',
+    runInventory.entries.filter(e => e.id === 'groceries').map(e => e.ages[0]).every((a, k) => near(a, k < 4 ? 1 : 8 / 6)))
+
   // Save → load: the run save is JSON of runInventory (main.js _runSnapshot).
   const saved = JSON.parse(JSON.stringify(f.snapshot()))
-  const g = new InventorySystem({ slotCap: () => 12 })
-  g.restore(saved); g.tick(1194); g.tick(1194 + 4)
-  check('save → load keeps freshness and ice', Math.abs(runInventory.entries.find(e => e.id === 'chiliDog').age - 10) < 1e-9
-    && runInventory.entries.find(e => e.id === 'iceKing').iceH === 116)
+  const g = new InventorySystem({ slotCap: () => 20 })
+  g.restore(saved); g.tick(96); g.tick(100)
+  check('save → load keeps every unit\'s age and the ice', near(runInventory.entries.find(e => e.id === 'groceries').ages[0], 1.5)
+    && runInventory.entries.find(e => e.id === 'iceKing').iceH === 108)
   g.restore({ entries: [{ id: 'pack', n: 1, equipped: true, contents: ['bedroll'] }, { id: 'chiliDog', n: 2 }, { id: 'cooler', n: 1 }], pending: null, quick: [null, null, null, null] })
   g.tick(2000); g.tick(2015)
-  check('an old save (no age, no ice) loads fresh: a chili dog lives its full 16 h from the load', n('chiliDog') === 2
-    && (g.tick(2016), n('chiliDog') === 0))
-  g.grant('chiliDog'); g.drop(g.list().findIndex(r => r.id === 'chiliDog')); g.tick(2026)
-  const ground = { id: 'chiliDog', n: 1, droppedH: 2016 }
-  check('food on the ground keeps spoiling: picked up 10 h later it has 6 left', g.restoreEntry(ground)
-    && Math.abs(runInventory.entries.find(e => e.id === 'chiliDog').age - 10) < 1e-9 && runInventory.entries.every(e => e.droppedH == null))
-  delete ITEMS.__groc
+  check('an old save (no ages, no ice) loads fresh: a chili dog lives its full 16 h from the load',
+    runInventory.entries.find(e => e.id === 'chiliDog')?.n === 2 && (g.tick(2016), !runInventory.entries.some(e => e.id === 'chiliDog')))
+  g.grant('chiliDog'); g.tick(2020); g.grant('chiliDog')
+  const i = runInventory.entries.findIndex(e => e.id === 'chiliDog'), down = runInventory.entries[i]
+  g.drop(i); g.tick(2026)
+  check('on the ground the bar keeps falling: the older dog 10 h of 16', near(g.rowOf(down).fresh, 6 / 16))
+  check('picked up 6 h later every unit has spoiled on: 10 h and 6 h', g.restoreEntry(down)
+    && runInventory.entries.find(e => e.id === 'chiliDog').ages.join() === '6,10' && runInventory.entries.every(e => e.droppedH == null))
   const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
   check('the cooler is a tackle-shop reward at A–S and nobody else\'s but Larry\'s', pool(REWARD_CATS.tackleShop.cats, 'A').includes('cooler')
     && !pool(REWARD_CATS.tackleShop.cats, 'B').includes('cooler')
@@ -284,6 +310,47 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
     STOREFRONT.generalStore.always.includes('cooler') && STOREFRONT.tackleShop.always.includes('cooler')
     && ITEM_PRICE.cooler >= 10 && ITEM_PRICE.cooler <= 30 && STOREFRONT.generalStore.weights.iceKing > 0
     && STOREFRONT.tackleShop.weights.iceKing > 0 && ITEM_PRICE.iceKing >= 30 && ITEM_PRICE.iceKing <= 100)
+}
+
+// ── 9. FEAT-232: the snacks, the burger, the packed-lunch reward, the dinner meal ─────────────
+{
+  const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
+  const givers = (id, gate) => Object.entries(REWARD_CATS).filter(([k, v]) => k !== 'larrysHouse' && pool(v.cats, gate).includes(id)).map(([k]) => k).sort().join()
+  const gates = (id) => REWARD_LIST.find(r => r.id === id)?.gates.join('')
+  // id: hold h, stack, gate pair, ruled givers (Larry aside), shelf
+  const rows = { gummyWorms: [2, 5, 'CB', 'gasStation,generalStore', 'gasStation'], spicyChips: [3, 3, 'CB', 'gasStation', 'gasStation'],
+    candyBar: [3, 4, 'CB', 'gasStation', 'gasStation'], bagOfPeanuts: [3, 3, 'CB', 'gasStation,generalStore', 'gasStation'],
+    burger: [8, undefined, 'CB', 'foodVendor', 'foodVendor'] }
+  for (const [id, [hold, stack, g, who, shop]] of Object.entries(rows)) {
+    check(`${id}: edible, holds ${hold} h, stack ${stack ?? 'uncapped'}`, ITEMS[id].use === 'eat' && ITEMS[id].hold === hold && ITEMS[id].stack === stack)
+    check(`${id}: sold at the ${shop} under $5 (burger $5)`, STOREFRONT[shop].always.includes(id) && ITEM_PRICE[id] > 0 && (id === 'burger' ? ITEM_PRICE[id] === 5 : ITEM_PRICE[id] < 5))
+    check(`${id}: a ${g} reward from ${who} only`, gates(id) === g && givers(id, g[0]) === who)
+    check(`${id}: not found (no find channel, no other shelf)`, Object.entries(STOREFRONT).every(([k, s]) => k === shop || !s.always.includes(id)))
+  }
+  const f = new InventorySystem({ slotCap: () => 8 }); f.start(); const s0 = f.slotsUsed(); f.grant('candyBar', 5); f.grant('gummyWorms', 6)
+  check('a capped snack spans slots (candy 4+1, gummy 5+1)', f.slotsUsed() === s0 + 4)
+  check('the packed lunch is a B-A reward from residences, farms and the food vendor, never sold',
+    gates('packedLunch') === 'BA' && givers('packedLunch', 'B') === 'farm,foodVendor,residence' && !Object.values(STOREFRONT).some(s => s.always.includes('packedLunch')))
+  check('the dinner meal: eat-in only, 8 h, 30 min, $5-10, on the food vendor\'s shelf, never stowed',
+    ITEMS.dinnerMeal.eatIn && !ITEMS.dinnerMeal.use && ITEMS.dinnerMeal.hold === 8 && ITEMS.dinnerMeal.eatH === 0.5
+    && STOREFRONT.foodVendor.always.includes('dinnerMeal') && ITEM_PRICE.dinnerMeal >= 5 && ITEM_PRICE.dinnerMeal <= 10)
+}
+
+// ── 10. FEAT-230 slice 3: groceries ───────────────────────────────────────────────────────────
+{
+  const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
+  const givers = (gate) => Object.entries(REWARD_CATS).filter(([k, v]) => k !== 'larrysHouse' && pool(v.cats, gate).includes('groceries')).map(([k]) => k).sort().join()
+  check('groceries: raw is no meal, cooked holds 10 h', !ITEMS.groceries.use && ITEMS.groceriesCooked.use === 'eat' && ITEMS.groceriesCooked.hold === 10)
+  check('groceries: the kit\'s +20 % does NOT apply on top (10 h with or without), the potato still gets it',
+    foodHoldH('groceriesCooked', true) === 10 && foodHoldH('groceriesCooked', false) === 10 && Math.abs(foodHoldH('potatoCooked', true) - 4.8) < 1e-9)
+  check('groceries: $5 at the general store and the farm', ITEM_PRICE.groceries === 5 && STOREFRONT.generalStore.always.includes('groceries') && STOREFRONT.farm.always.includes('groceries'))
+  check('groceries: a B-A reward from the farm and the general store only', REWARD_LIST.find(r => r.id === 'groceries')?.gates.join('') === 'BA'
+    && givers('B') === 'farm,generalStore' && givers('A') === 'farm,generalStore')
+  check('groceries: never a find, no other shelf', Object.entries(STOREFRONT).every(([k, s]) => ['generalStore', 'farm'].includes(k) || !s.always.includes('groceries'))
+    && !REWARD_LIST.some(r => r.id === 'groceriesCooked'))
+  const f = new InventorySystem({ slotCap: () => 8 }); f.start(); f.grant('groceries', 2)
+  check('groceries: a bag a slot', f.list().filter(r => r.id === 'groceries').length === 2)
+  check('groceries: cooking turns one raw bag into one cooked meal', f.convert('groceries', 'groceriesCooked') && f.list().filter(r => r.id === 'groceries').length === 1 && f.list().some(r => r.id === 'groceriesCooked'))
 }
 
 console.log(fails === 0 ? '\ninventory gate: ALL OK' : `\ninventory gate: ${fails} FAILURE(S)`)

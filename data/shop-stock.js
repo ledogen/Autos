@@ -44,10 +44,17 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8,
     // FEAT-231 [DEFAULT]: inside the owner's ranges, the mat $5–10 (the $8 its reward card read), the bedliner $10–30
     rubberBedMat: 8, bedliner: 20,
+    groceries: 5,               // owner, 2026-10-21: $5 at the general store and farms
     potato: 2,                  // FEAT-230 [DEFAULT]: items.md rules the potato "under $5"; the owner sets the number
+    gummyWorms: 2, spicyChips: 3, candyBar: 2,   // FEAT-232 [DEFAULT]: "under $5" each; the owner sets the numbers
+    burger: 5,                  // items.md §1d: the food vendor's burger, $5
+    dinnerMeal: 5,              // FEAT-232 [DEFAULT]: items.md rules "$5–10"; the low end, which is what the dinner-invitation reward already read
     bagOfPeanuts: 3,            // FEAT-184 (DEC-276) [DEFAULT]: items.md rules the gas-station snacks "under $5"; the owner sets the number
     ice: 5,                     // owner, 2026-10-22
     cooler: 20, iceKing: 65,    // FEAT-230 [DEFAULT]: the middles of the owner's $10–30 and $30–100; the owner sets them
+    // FEAT-121 camp gear on the general-store shelf [DEFAULT]: the reward worths (data/offers.js REWARD_VALUE) as the
+    // price, the owner sets the numbers; the Rucksack is "mid-priced" (items.md), $25 [DEFAULT]
+    blanket: 4, airMattress: 5, sleepingPad: 8, sleepingBag: 10, deluxeSleepingPad: 15, rucksack: 25,
     jerryCan: 30 }              // owner, 2026-10-22: "sold at the gas station, rarely, $30" — sold full
 
 /**
@@ -61,9 +68,14 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
  * is the rows above (ALWAYS, data/stock-weights.js).
  */
 export const STOREFRONT = {
-    // FEAT-230: ice and the cooler (items.md §1/§2); the Ice King "very rarely", a quarter of the jerry can's rarely [DEFAULT]
-    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'ice', 'cooler'], weights: { iceKing: 0.25 } },
-    gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'ice'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
-    foodVendor:   { always: ['coffee', 'chiliDog'] },
+    // FEAT-121 [DEFAULT]: the four bed rungs below the top are always there; the deluxe pad and the Rucksack roll
+    // (Hardly ever / Sometimes, the reward weights of data/stock-weights.js). FEAT-230: ice and the cooler always (items.md §1/§2);
+    // the Ice King "very rarely", a quarter of the jerry can's rarely [DEFAULT]
+    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'groceries', 'blanket', 'airMattress', 'sleepingPad', 'sleepingBag',
+                             'ice', 'cooler'],
+                    weights: { deluxeSleepingPad: 0.25, rucksack: 1, iceKing: 0.25 } },
+    farm:         { always: ['groceries'] },   // FEAT-230 slice 3: a farm sells for the first time (items.md, Groceries)
+    gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'ice'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
+    foodVendor:   { always: ['coffee', 'chiliDog', 'burger', 'dinnerMeal'] },
     tackleShop:   { always: ['cooler'], weights: { iceKing: 0.25 } },   // FEAT-230 (items.md §2)
 }

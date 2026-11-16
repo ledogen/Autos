@@ -149,8 +149,8 @@ check('buying one leaves it on the shelf', shelf('autoShop:a', 50)[at]?.id === A
 const lines = Object.values(STOREFRONT).flatMap(s => [...s.always, ...Object.keys(s.weights ?? {})])
 const unpriced = lines.filter(id => !ITEMS[id] || PARTS[id] || !(ITEM_PRICE[id] > 0))
 check('every storefront line is an item with a price, never a part', unpriced.length === 0, unpriced.join())
-check('the storefronts are the general store, gas station, food vendor and tackle shop (FEAT-230: the coolers)',
-  Object.keys(STOREFRONT).join() === 'generalStore,gasStation,foodVendor,tackleShop')
+check('the storefronts are the general store, farm, gas station, food vendor and tackle shop (FEAT-230: the coolers)',
+  Object.keys(STOREFRONT).join() === 'generalStore,farm,gasStation,foodVendor,tackleShop')
 let stores = true
 for (const seed of [1, 2, 3]) {
   startShelves(seed)
@@ -164,6 +164,21 @@ startShelves(3)
 take('foodVendor:a', 0)
 check('buying from a store leaves the line', shelf('foodVendor:a', 50, 'foodVendor')[0]?.id === STOREFRONT.foodVendor.always[0]
   && runShelves.shops['foodVendor:a'].slots.length === 0)
+// FEAT-121: the general store rolls the deluxe pad and the Rucksack, and has the four bed rungs below the top always
+const gsw = STOREFRONT.generalStore
+check('the general store always has the blanket, air mattress, sleeping pad and sleeping bag',
+  ['blanket', 'airMattress', 'sleepingPad', 'sleepingBag'].every(id => gsw.always.includes(id)))
+check('the general store rolls only the deluxe pad, the Rucksack and the Ice King', Object.keys(gsw.weights).join() === 'deluxeSleepingPad,rucksack,iceKing')
+let gen = true, seen = new Set()
+for (const seed of [1, 2, 3]) {
+  startShelves(seed)
+  for (let h = 0; h < 24 * 12; h += 0.5) {
+    const s = shelf('generalStore:a', h, 'generalStore')
+    s.slice(0, SHELF_SLOTS).forEach(e => { if (e) seen.add(e.id); if (e && !(e.id in gsw.weights)) gen = false })
+    if (s.length !== SHELF_SLOTS + gsw.always.length || s.slice(SHELF_SLOTS).some((e, k) => e.id !== gsw.always[k] || e.cond !== null)) gen = false
+  }
+}
+check('a general store lists its slots (only its rolled lines) then its always rows; the pad and the Rucksack turn up in 12 days × 3 seeds', gen && seen.has('deluxeSleepingPad') && seen.has('rucksack'), [...seen].join())
 startShelves(12345)
 let gsRolls = 0, cans = 0, other = 0
 for (let shop = 0; shop < 40; shop++) for (let h = 0; h < 20000; h++) {
@@ -177,12 +192,13 @@ const gs = shelf('gasStation:a', 500, 'gasStation')
 check('a gas station has its slots, then its always rows', gs.length === SHELF_SLOTS + STOREFRONT.gasStation.always.length
   && gs.slice(SHELF_SLOTS).every((e, k) => e.id === STOREFRONT.gasStation.always[k]))
 let kings = 0, junk = 0
-for (const type of ['generalStore', 'tackleShop']) for (let h = 0; h < 20000; h++) {
+for (const type of ['tackleShop']) for (let h = 0; h < 20000; h++) {
   const e = rollSlot(`${type}:k`, h, h % SHELF_SLOTS, type)
   if (e?.id === 'iceKing') kings++; else if (e) junk++
 }
-check('FEAT-230: the general store and tackle shop roll nothing but the Ice King, a quarter as often as the jerry can',
-  junk === 0 && kings > 0 && STOREFRONT.generalStore.weights.iceKing === STOREFRONT.gasStation.weights.jerryCan / 4)
+check('FEAT-230: the tackle shop rolls nothing but the Ice King; it and the general store a quarter as often as the jerry can',
+  junk === 0 && kings > 0 && STOREFRONT.tackleShop.weights.iceKing === STOREFRONT.gasStation.weights.jerryCan / 4
+  && STOREFRONT.generalStore.weights.iceKing === STOREFRONT.gasStation.weights.jerryCan / 4)
 const before = { coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8 }   // data/offers.js REWARD_VALUE before FEAT-104
 check('a reward card reads the same price as before FEAT-104', Object.entries(before).every(([id, v]) => rewardValue(id) === v),
   JSON.stringify(Object.keys(before).map(id => [id, rewardValue(id)])))

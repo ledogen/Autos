@@ -458,6 +458,7 @@ export class DebrisSystem {
       // FEAT-97: a load that blinks gets its OWN materials — the clone shares the template's, and
       // tinting those would tint every copy. Disposed in _reclaim.
       if (opts.ownMaterials) m.traverse(o => { if (o.isMesh) o.material = o.material.clone() })
+      m.traverse(o => { if (o.isMesh) o.receiveShadow = true })   // FEAT-223: bed cargo shades with the truck it rides in
       m.position.set(-proto.center.x, -proto.center.y, -proto.center.z)
       spawned.add(m)
     })

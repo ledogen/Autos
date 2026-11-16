@@ -109,6 +109,7 @@ example a bug that won't block the alpha.
 
 | Ticket | Why later |
 |---|---|
+| FEAT-240 | cargo of different sizes — what fits which cargo area; absorbs the roof rack's storage-versus-long-cargo conflict (owner, 2026-11-16: "a post-alpha feature") |
 | BUG-64 | walls between close roads: the class-A part left would move routes; owner, 2026-11-07: "dont take the bug64 fix. its not bothering me" |
 | FEAT-206 | brake heating: fade and runaway on a long descent with an overweight load (owner, 2026-11-13: "post alpha") |
 | FEAT-208 | phone calls: pay time or battery to learn what a place has (owner, 2026-11-13: "post alpha idea") |
