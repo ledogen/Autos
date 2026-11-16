@@ -5133,9 +5133,8 @@ const paperRouteSystem = new PaperRouteSystem({
   // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
   onSettle:  (payout, letter) => {
     const s = economySystem.settleFlat(payout, letter, offerBoard?.spec(paperRouteSystem.offer)?.bonus)
-    // QUAL-36 (DEC-182): Larry's item is not stowed on the result card — he HOLDS it, indefinitely, until the
-    // player parks at his house and takes it (cost off the cash, as on any job; _larryHandsOver).
-    if (s.award) runPaper.held.push({ rewardId: s.award.rewardId, name: s.award.name, cost: itemCost(s.award.rewardId, s.payout) })
+    // DEC-291: Larry's item is the same choice as any job's — priced here, taken or not on the result card (_syncItemChoice).
+    if (s.award) { s.award.cost = itemCost(s.award.rewardId, s.payout); s.award.stowed = null }
     const id = paperRouteSystem.offer?.id
     if (id) offerBoard?.complete(id, daySystem.clockH())   // FEAT-67: Larry's slot then empties
     return s
@@ -5158,25 +5157,6 @@ const paperRouteSystem = new PaperRouteSystem({
   getClockH: () => daySystem.clockH(),   // FEAT-113: world-time elapsed + Larry's deadline
   onChange:  () => _renderPaperUI(),
 })
-/**
- * QUAL-36 (DEC-182, owner 2026-11-14): parking at Larry's hands over the items he holds — each one that fits the truck
- * and that the wallet covers (its cost comes off the cash, as on any job). What cannot be taken stays held,
- * and his line reminds the player. PLACEHOLDER words (the owner writes character text, FEAT-148).
- */
-function _larryHandsOver () {
-  const kept = [], gave = [], noRoom = []
-  for (const h of runPaper.held) {
-    // DEC-252: collecting costs HALF the item's price (owner 2026-11-15), to the cent.
-    if (!inventorySystem.fits(h.rewardId)) { kept.push(h); noRoom.push(h.name) }
-    else if (economySystem.spend(Math.round(h.cost * 50) / 100)) { inventorySystem.grant(h.rewardId); gave.push(h.name) } else kept.push(h)
-  }
-  runPaper.held = kept
-  const say = (text) => { dialogueSystem.play(null, [{ speaker: 'Uncle Larry', text }]); _renderDialogue() }
-  // DEC-253: the owner's own words (QUAL-36 answers 1 and 2).
-  if (gave.length) say(`Did ya come back to grab your ${gave.join(' and ')}? I been keepin' it safe for ya.`)
-  else if (noRoom.length) say("Well that's too bad. Looks like ya dont have room for it right now. Go drop something and check back with me.")
-  else if (kept.length) say(`[placeholder] Not enough cash for your ${kept.map(h => h.name).join(' and ')} yet. Come back with some money.`)   // OWED: the owner's "not enough cash" line (QUAL-36)
-}
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
 const _recalcEl = document.getElementById('gps-recalc')
 let _recalcOn = false
@@ -6326,7 +6306,6 @@ function _updateParkTriggers (zParked = false) {
     // siblings — each leaves 'idle' and each other's reach test then returns null.
     // FEAT-67: what is on offer is the BOARD's — live offers only. With nothing live the brake opens
     // nothing and the prompt says when the next offer turns up (the prompt shows it; see below).
-    if (poi.type === 'larrysHouse' && runPaper.held.length) _larryHandsOver()
     const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
@@ -7652,8 +7631,7 @@ function _renderPaperUI () {
         + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
         // The same rows the POI result card shows (_payRows), plus the accuracy bonus — a third
         // payment, banked as the papers landed. Showing only the settlement would look like a pay cut.
-        + _payRows({ base: r.base, tip: r.tip, spot: r.spot, points: r.points })
-        + (r.award ? `<br><span style="color:var(--money)">Larry&rsquo;s holding your ${r.award.name} &mdash; come by his house to pick it up</span>` : '')
+        + _payRows({ base: r.base, tip: r.tip, spot: r.spot, points: r.points, bonus: r.award ? { name: r.award.name } : null, award: r.award })
         + (r.advanced
           ? `<br><span style="color:var(--money)">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
@@ -7684,7 +7662,10 @@ function _renderPaperUI () {
   // is the only forward action and the right one has nothing to say.
   const acc = document.getElementById('pp-accept')
   const dec = document.getElementById('pp-decline')
-  if (acc) acc.textContent = p.state === 'done' ? 'continue' : 'start the route'
+  const earned = p.state === 'done' && p.result?.award && !p.result.award.stowed   // DEC-291: Larry's item, taken or not on this card
+  if (acc) acc.textContent = earned ? `take $${formatMoney(p.result.payout)}` : p.state === 'done' ? 'continue' : 'start the route'
+  const pi = document.getElementById('pp-item')
+  if (pi) { pi.style.display = earned ? '' : 'none'; _syncItemChoice() }
   if (dec) dec.style.display = p.state === 'offer' && !_paperScenario ? '' : 'none'   // FEAT-62: the scenario IS the round
 }
 
@@ -8317,19 +8298,24 @@ function _acceptOffer () {
  * made). A full truck still takes the cash.
  */
 function _syncItemChoice () {
-  const b = document.getElementById('mp-item'), r = missionSystem?.state === 'done' ? missionSystem.result : null
-  const aw = r?.award
-  if (!b || !aw || aw.stowed) return
-  const room = inventorySystem.fits(aw.rewardId)
-  b.textContent = room ? `take ${aw.name} + $${formatMoney(Math.round((r.payout - aw.cost) * 100) / 100)}` : `no room for the ${aw.name} (Tab)`
-  b.disabled = !room
+  for (const [id, sys] of [['mp-item', missionSystem], ['pp-item', paperRouteSystem]]) {
+    const b = document.getElementById(id), r = sys?.state === 'done' ? sys.result : null
+    const aw = r?.award
+    if (!b || !aw || aw.stowed) continue
+    const room = inventorySystem.fits(aw.rewardId)
+    b.textContent = room ? `take ${aw.name} + $${formatMoney(Math.round((r.payout - aw.cost) * 100) / 100)}` : `no room for the ${aw.name} (Tab)`
+    b.disabled = !room
+  }
 }
-document.getElementById('mp-item')?.addEventListener('click', () => {
-  const aw = missionSystem.state === 'done' ? missionSystem.result?.award : null
+/** DEC-291: the item option on a result card — charged at once and in full (the cost, capped at the pay), exactly as on any job. */
+function _takeItem (sys, done) {
+  const aw = sys.state === 'done' ? sys.result?.award : null
   if (!aw || aw.stowed || !inventorySystem.fits(aw.rewardId) || !economySystem.spend(aw.cost)) return
   aw.stowed = inventorySystem.grant(aw.rewardId)
-  missionSystem.exit()
-})
+  done()
+}
+document.getElementById('mp-item')?.addEventListener('click', () => _takeItem(missionSystem, () => missionSystem.exit()))
+document.getElementById('pp-item')?.addEventListener('click', () => _takeItem(paperRouteSystem, () => paperRouteSystem.dismiss()))
 document.getElementById('mp-prev')?.addEventListener('click', () => missionSystem.cycle(-1))
 document.getElementById('mp-next')?.addEventListener('click', () => missionSystem.cycle(+1))
 
@@ -10128,7 +10114,7 @@ function _runSnapshot () {
     motion: { v: vs.velocity.toArray(), w: vs.angularVelocity.toArray(), wheelOmega: vs.wheelOmega,
               strutComp: vs.strutComp, strutCompVel: vs.strutCompVel, steerAngle: vs.steerAngle,
               drivetrain: vs.drivetrain, ignition: vs.ignition, handbrake: vs.handbrake, parked: vs.parked },
-    shelves: runShelves, paperTier: runPaper.tier, paperHeld: runPaper.held,
+    shelves: runShelves, paperTier: runPaper.tier,
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
     job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
     playedS: _playedS,   // FEAT-146: the summary's playtime
@@ -10158,7 +10144,6 @@ function _restoreRun (s) {
   gaugeCluster.seedOdometer(s.odometer)
   Object.assign(runShelves, s.shelves)
   runPaper.tier = s.paperTier
-  runPaper.held = s.paperHeld ?? []
   _renderPaperUI()
   dialogueSystem.restoreSeen(s.dialogueSeen)   // before the handoff, or the run intro plays again
   for (const pad of s.campPads) { roadSystem?.setCampPads(campSystem.makeCampAt(pad)); _refreshGroundAround(pad) }
