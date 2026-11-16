@@ -49,6 +49,9 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     burger: 5,                  // items.md §1d: the food vendor's burger, $5
     dinnerMeal: 5,              // FEAT-232 [DEFAULT]: items.md rules "$5–10"; the low end, which is what the dinner-invitation reward already read
     bagOfPeanuts: 3,            // FEAT-184 (DEC-276) [DEFAULT]: items.md rules the gas-station snacks "under $5"; the owner sets the number
+    // FEAT-121 camp gear on the general-store shelf [DEFAULT]: the reward worths (data/offers.js REWARD_VALUE) as the
+    // price, the owner sets the numbers; the Rucksack is "mid-priced" (items.md), $25 [DEFAULT]
+    blanket: 4, airMattress: 5, sleepingPad: 8, sleepingBag: 10, deluxeSleepingPad: 15, rucksack: 25,
     jerryCan: 30 }              // owner, 2026-10-22: "sold at the gas station, rarely, $30" — sold full
 
 /**
@@ -62,7 +65,10 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
  * is the rows above (ALWAYS, data/stock-weights.js).
  */
 export const STOREFRONT = {
-    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato'] },
+    // FEAT-121 [DEFAULT]: the four bed rungs below the top are always there; the deluxe pad and the Rucksack roll
+    // (Hardly ever / Sometimes, the reward weights of data/stock-weights.js)
+    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'blanket', 'airMattress', 'sleepingPad', 'sleepingBag'],
+                    weights: { deluxeSleepingPad: 0.25, rucksack: 1 } },
     gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
     foodVendor:   { always: ['coffee', 'chiliDog', 'burger', 'dinnerMeal'] },
 }
