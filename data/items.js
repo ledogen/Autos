@@ -143,9 +143,10 @@ export const ITEMS = {
                     desc: 'A striped canopy on four poles. Shade wherever you pitch it.' },
     shadeTarp:    { name: 'Shade tarp',    kind: 'camp',       massKg: 2,   fills: 'shade', campSlot: 'shade', model: 'shadeTarp',
                     desc: 'A tarp, a pole and some line. Shade where there are no trees.' },
-    // About fifty pounds of iron (items.md §2b). Its effect waits on groceries, which are not built.
+    // About fifty pounds of iron (items.md §2b). FEAT-230 / DEC-310: standing over the fire at camp it makes any food
+    // eaten there hold hunger COOKING_KIT_FOOD_MULT longer (foodHoldH). Groceries (slice 3) will NOT get it on top.
     cookingKit:   { name: 'Cooking kit',   kind: 'camp',       massKg: 23,  campSlot: 'overFire', model: 'cookingKit',
-                    desc: 'An iron A-frame and a Dutch oven to hang over the fire. Heavy.' },
+                    desc: 'An iron A-frame and a Dutch oven to hang over the fire. Whatever you eat at camp with it holds you a little longer. Heavy.' },
 
     // ── Vehicle parts (data/parts.js), owned UNFITTED: a slot each, and the entry carries the part's
     //    wear as `cond`. A massless part ('No lift') is an absence, not a thing you can carry. The
@@ -153,6 +154,11 @@ export const ITEMS = {
     ...Object.fromEntries(Object.entries(PARTS).filter(([id, p]) => p.massKg > 0 && id !== 'spareTire')
         .map(([id, p]) => [id, { name: p.name, kind: 'part', massKg: p.massKg, desc: p.desc, thumb: partIcon(id), rarity: p.rarity }])),
 }
+
+/** DEC-310: the cooking kit, deployed at the player's camp, makes food hold hunger this much longer (+20 %). */
+export const COOKING_KIT_FOOD_MULT = 1.2
+/** Hours a food holds hunger when eaten: its `hold`, times the kit's bonus when `kitAtCamp` (main.js _kitAtCamp). */
+export const foodHoldH = (id, kitAtCamp) => ITEMS[id].hold * (kitAtCamp ? COOKING_KIT_FOOD_MULT : 1)
 
 /** Kinds that stack into one slot per item kind. */
 export const STACKING_KINDS = new Set(['consumable', 'food'])

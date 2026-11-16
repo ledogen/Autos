@@ -3764,7 +3764,7 @@ const inventorySystem = new InventorySystem({
   onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
-  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(ITEMS[e.id].hold), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
+  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(foodHoldH(e.id, _kitAtCamp())), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
     spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
     fieldRepair: (e) => { queueMicrotask(() => _pickFieldRepair(e.id)); return false },
     jerry: (e) => { queueMicrotask(() => _pourJerry(e)); return false },
@@ -8384,6 +8384,9 @@ function _acceptOffer () {
  * item. Disabled while the truck has no room (it says so; the inventory's onChange re-syncs it once room is
  * made). A full truck still takes the cash.
  */
+/** DEC-310: the cooking kit stands over the fire — camp is made and the equipped pack holds it (what campGear renders). */
+const _kitAtCamp = () => _campUi?.mode === 'camp' && inventorySystem.packed().includes('cookingKit')
+
 function _syncItemChoice () {
   if (_campUi?.mode === 'camp') _renderCampUI()   // FEAT-230: the cook button follows the raw potatoes aboard
   for (const [id, sys] of [['mp-item', missionSystem], ['pp-item', paperRouteSystem]]) {
