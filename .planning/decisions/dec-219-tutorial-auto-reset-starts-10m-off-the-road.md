@@ -1,6 +1,6 @@
 ---
 id: DEC-219
-status: standing
+status: superseded
 decided: 2026-11-14
 area: story
 governs: FEAT-217, FEAT-184, src/main.js, tutorial

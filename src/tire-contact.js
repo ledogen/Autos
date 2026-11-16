@@ -54,9 +54,15 @@
 // under the hub. refine: golden-section steps per bracket, each shrinking it to 0.618 (18 cm → ≈1.5 mm at 10). PERF-39
 // measured the floor: 9 refine steps is the fewest that holds test/tire-contact.mjs's 2 mm (1.8 mm on a 30 cm step), so
 // the 3 samples it would save are not worth sitting on the gate's edge.
-export const TIRE_CONTACT = { coarse: 9, refine: 10 }
+// smooth (m), PERF-49 lever C (owner, 2026-11-14, DEC-208): when every second difference of a line's coarse heights is
+// within it and the row has ONE interior minimum, the golden-section refine is replaced by one sample at the vertex of the
+// parabola through the minimum and its two neighbours. The squared distance to the axle is exactly quadratic along the
+// line on any PLANE, so flat and evenly sloped ground stays exact; on gently curved ground the vertex sample is a true
+// surface point a hair off the closest one (depth can only read low, never high). An edge, a kerb lip or a pothole breaks
+// the bound and keeps the full refine at any speed. APPROXIMATION, flagged: the error is in the ticket. 0 = always refine.
+export const TIRE_CONTACT = { coarse: 9, refine: 10, smooth: 0.001 }
 const GOLD = (3 - Math.sqrt(5)) / 2       // 0.382 — the golden section of the larger side
-const _v = new Float64Array(33)
+const _v = new Float64Array(33), _y = new Float64Array(33)
 const TILT_LO = Math.sin(15 * Math.PI / 180)   // |n·A| where the plane solve starts to blend in
 export const TILT_HI = Math.sin(35 * Math.PI / 180)   //   …and where it has taken over
 const _line = {}
@@ -101,7 +107,7 @@ export function tireContact (heightAt, normalAt, cx, cy, cz, r, w, A, out) {
 
 /** The three-line tread solve (the docblock above) — the tire near upright. */
 function treadContact (heightAt, normalAt, h0, cx, cy, cz, r, w, A, out) {
-  const COARSE = TIRE_CONTACT.coarse, REFINE = TIRE_CONTACT.refine
+  const COARSE = TIRE_CONTACT.coarse, REFINE = TIRE_CONTACT.refine, SMOOTH = TIRE_CONTACT.smooth
   // Rolling direction on the ground: horizontal, perpendicular to the axle's horizontal part.
   const ah = Math.hypot(A.x, A.z) || 1
   const fx = -A.z / ah, fz = A.x / ah
@@ -109,20 +115,31 @@ function treadContact (heightAt, normalAt, h0, cx, cy, cz, r, w, A, out) {
   let sw = 0, sx = 0, sy = 0, sz = 0   // the lines' closest points, weighted by their depth
   for (let line = -1; line <= 1; line++) {
     const o = line * w / 2, ox = cx + o * A.x, oz = cz + o * A.z
-    let lb = Infinity, lx = 0, ly = 0, lz = 0
+    let lb = Infinity, lx = 0, ly = 0, lz = 0, yk = 0
     // Squared distance from the surface point at s along this line to the axle line through the hub.
     const rho2 = (s) => {
-      const x = ox + s * fx, z = oz + s * fz, y = s === 0 && line === 0 ? h0 : heightAt(x, z)
+      const x = ox + s * fx, z = oz + s * fz, y = yk = s === 0 && line === 0 ? h0 : heightAt(x, z)
       const dx = x - cx, dy = y - cy, dz = z - cz, da = dx * A.x + dy * A.y + dz * A.z
       const d2 = dx * dx + dy * dy + dz * dz - da * da
       if (d2 < lb) { lb = d2; lx = x; ly = y; lz = z }
       return d2
     }
-    for (let k = 0; k < COARSE; k++) _v[k] = rho2(-r + 2 * r * k / (COARSE - 1))
-    // Refine EVERY coarse local minimum, not just the best: an edge's basin can be narrower than the
+    for (let k = 0; k < COARSE; k++) { _v[k] = rho2(-r + 2 * r * k / (COARSE - 1)); _y[k] = yk }
+    // Lever C (the TIRE_CONTACT note): a smooth row with one interior minimum takes the parabola's vertex.
+    let km = -1
+    if (SMOOTH > 0) {
+      for (let k = 1; k < COARSE - 1; k++) {
+        if (Math.abs(_y[k - 1] - 2 * _y[k] + _y[k + 1]) > SMOOTH) { km = -2; break }
+        if (_v[k - 1] >= _v[k] && _v[k + 1] >= _v[k]) km = km === -1 ? k : -2
+      }
+      if (km > 0 && !(_v[0] > _v[1] && _v[COARSE - 1] > _v[COARSE - 2])) km = -2   // an end sample is a minimum too
+    }
+    const hs = 2 * r / (COARSE - 1), den = km > 0 ? _v[km - 1] - 2 * _v[km] + _v[km + 1] : 0
+    if (den > 0) rho2(-r + hs * km + hs * Math.max(-1, Math.min(1, (_v[km - 1] - _v[km + 1]) / (2 * den))))
+    // Otherwise refine EVERY coarse local minimum, not just the best: an edge's basin can be narrower than the
     // 6 cm spacing, so its one sample can lose to the ground under the hub while the edge itself is
     // closer (a kerb 28 cm ahead read 20 mm low that way).
-    for (let k = 0; k < COARSE; k++) {
+    else for (let k = 0; k < COARSE; k++) {
       if ((k > 0 && _v[k - 1] < _v[k]) || (k < COARSE - 1 && _v[k + 1] < _v[k])) continue
       // Golden-section search on a BRACKETING TRIPLE a ≤ b ≤ c, f(b) ≤ f(a), f(c): b is the best point
       // so far and every probe shrinks the bracket round it. Not the two-interior-point form — with a

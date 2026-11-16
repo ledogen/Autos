@@ -164,6 +164,7 @@ export class Centerline {
     constructor(primitives) {
         this.primitives = primitives || []
         this.starts = new Float64Array(this.primitives.length + 1)   // cumulative arc-length per primitive
+        Object.defineProperty(this, '_hint', { value: 0, writable: true })   // PERF-49 lever 1: _startIdx's last answer, non-enumerable (no hash / clone sees it)
         let acc = 0
         for (let i = 0; i < this.primitives.length; i++) {
             this.starts[i] = acc
@@ -179,13 +180,23 @@ export class Centerline {
         if (n === 0) return { i: -1, ls: 0 }
         if (s <= 0) return { i: 0, ls: 0 }
         if (s >= this.length) return { i: n - 1, ls: this.primitives[n - 1].length }
-        // Binary search the cumulative-start array.
-        let lo = 0, hi = n - 1
+        const lo = this._startIdx(s)
+        return { i: lo, ls: s - this.starts[lo] }
+    }
+
+    // The primitive holding s, 0 < s < length: the last i with starts[i] ≤ s. PERF-49 lever 1: the previous call's
+    // index first — that answer is unique (starts[i] ≤ s < starts[i + 1], starts[n] = length), so a hint meeting it is
+    // what the binary search returns (bit-identical).
+    _startIdx(s) {
+        const st = this.starts, n = this.primitives.length
+        let lo = this._hint | 0
+        if (lo < n && st[lo] <= s && st[lo + 1] > s) return lo
+        lo = 0; let hi = n - 1
         while (lo < hi) {
             const mid = (lo + hi + 1) >> 1
-            if (this.starts[mid] <= s) lo = mid; else hi = mid - 1
+            if (st[mid] <= s) lo = mid; else hi = mid - 1
         }
-        return { i: lo, ls: s - this.starts[lo] }
+        return (this._hint = lo)
     }
 
     pointAt(s) {
@@ -229,12 +240,7 @@ export class Centerline {
         if (s <= 0) { i = 0; ls = 0 }
         else if (s >= this.length) { i = n - 1; ls = this.primitives[n - 1].length }
         else {
-            let lo = 0, hi = n - 1
-            while (lo < hi) {
-                const mid = (lo + hi + 1) >> 1
-                if (this.starts[mid] <= s) lo = mid; else hi = mid - 1
-            }
-            i = lo; ls = s - this.starts[lo]
+            i = this._startIdx(s); ls = s - this.starts[i]
         }
         const p = this.primitives[i]
         const L = p.length

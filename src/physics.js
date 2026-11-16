@@ -694,7 +694,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   // only penetrating contacts — so a touchdown inside the step could not appear until the next
   // one (up to a step of extra sink, ~50 mm at a 3 m/s landing). Such a corner keeps asking the
   // real query every substep, so a landing is caught at the substep it happens, as before. Costs
-  // nothing while the wheels are on the ground.
+  // nothing while the wheels are on the ground. PERF-49: except the ask at Step 1's very hub (substep 0
+  // before the body has moved): the same question, so Step 1's empty answer is the answer — an airborne
+  // truck asked it twice (4 of its 20 queries a step, every one a full tread solve).
   const base = [null, null, null, null]   // per corner: { x, y, z, r, list } — Step 1's analytic answer
 
   // BUG-99 WITHIN-STEP DEBRIS COUPLING — Newton's third law, at the suspension's own cadence.
@@ -753,7 +755,7 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   const qcPlus = (cx, cy, cz, r, footprint, corner) => {
     let list = null
     const b = corner !== undefined ? base[corner] : null
-    if (b && footprint && b.list.length) {
+    if (b && footprint && (b.list.length || (cx === b.x && cy === b.y && cz === b.z && r === b.r))) {
       const dx = cx - b.x, dy = cy - b.y, dz = cz - b.z, dr = r - b.r
       list = []
       for (const c of b.list) {
@@ -776,17 +778,17 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
     // load on the deck that spans the arch (up to 12 cm deep at the bump stop), and 2 cm into the
     // marble statue over a dip. Only the world-frame n.y filter below kept the tire off it, and a
     // compressed wheel on the HIGH side of a 15–25° roll tips that normal past −0.1.
-    // BUG-165: and the sphere is CUT to the tire's width — the slab |(x − hub)·axle| ≤ w/2, grown by
-    // this step's hub travel ALONG the axle (the look-ahead's share that way), so a loose load
-    // between the wheelhouses, wholly inboard of the tread, is no contact at any roll. Exact for
-    // that (the axle separates them). Left as it was: a body that crosses the tread's edge plane
-    // keeps the sphere's contact, whose deepest point may lie beside the tire (the cylinder's
-    // tread-edge corner is not modelled either way).
+    // BUG-165: and the sphere is CUT to the tire's width — the slab |(x − hub)·axle| ≤ w/2, so a
+    // loose load between the wheelhouses, wholly inboard of the tread, is no contact at any roll.
+    // Exact for that (the axle separates them). BUG-176: a body that crosses the slab's face plane
+    // is pressing on the SIDEWALL, and the engine query now measures that axis too (the shallower
+    // of sphere and face wins) — no longer the sphere's depth, up to 25 cm for a rock 1 mm over the
+    // plane. The slab is grown by the same look-ahead as the sphere, so the `− ahead` below turns
+    // either axis back into this substep's true gap.
     let slab = null
     if (corner !== undefined) {
-      const A = _axle[corner]
-      _slab.axis = A
-      _slab.halfWidth = (params.wheelWidth || 0.25) / 2 + Math.abs(hvx * A.x + hvy * A.y + hvz * A.z) * dt
+      _slab.axis = _axle[corner]
+      _slab.halfWidth = (params.wheelWidth || 0.25) / 2 + ahead
       slab = _slab
     }
     const dyn = engine.contactSphere({ x: cx, y: cy, z: cz }, r + ahead, { collidesWith: GROUP_DEBRIS, dynamicOnly: true, skipWeldedTo: chassis, slab })

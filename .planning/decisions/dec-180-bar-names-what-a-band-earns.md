@@ -1,6 +1,6 @@
 ---
 id: DEC-180
-status: standing
+status: superseded
 decided: 2026-11-14
 area: ui
 governs: QUAL-36, FEAT-87, src/rank-timer.js, index.html #rank-timer

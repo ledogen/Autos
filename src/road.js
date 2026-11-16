@@ -759,7 +759,7 @@ function _interpolateCamber(arcPos, camberRad, s) {
  * @param {object}   out       — { gradeY, tx, tz } object to write into
  * @returns {object} out — mutated with interpolated values
  */
-function _interpolateRunProfile(arcPos, gradeY, gradeM, tx, tz, s, out) {
+function _interpolateRunProfile(arcPos, gradeY, gradeM, tx, tz, s, out, hint) {
     const N = arcPos.length
     if (N === 0) {
         out.gradeY = 0; out.tx = 1; out.tz = 0
@@ -773,11 +773,17 @@ function _interpolateRunProfile(arcPos, gradeY, gradeM, tx, tz, s, out) {
         out.gradeY = gradeY[N-1]; out.tx = tx[N-1]; out.tz = tz[N-1]
         return out
     }
-    // Binary search for interval [lo, hi] containing s.
-    let lo = 0, hi = N - 1
-    while (lo < hi - 1) {
-        const mid = (lo + hi) >> 1
-        if (arcPos[mid] <= s) lo = mid; else hi = mid
+    // Binary search for interval [lo, hi] containing s. PERF-49 lever 1: first try the previous call's interval
+    // (`hint.lo`); the search's answer is the unique lo with arcPos[lo] ≤ s < arcPos[lo + 1], so a hint that brackets
+    // s IS that answer and the result is bit-identical.
+    let lo = hint ? hint.lo : 0, hi = lo + 1
+    if (!(hi < N && arcPos[lo] <= s && arcPos[hi] > s)) {
+        lo = 0; hi = N - 1
+        while (lo < hi - 1) {
+            const mid = (lo + hi) >> 1
+            if (arcPos[mid] <= s) lo = mid; else hi = mid
+        }
+        if (hint) hint.lo = lo
     }
     const span = arcPos[hi] - arcPos[lo]
     if (span < 1e-9) {
@@ -821,13 +827,23 @@ function _profileTangents(arcPos, gradeY) {
 
 // Interpolate a monotonic table key[]→val[] (both ascending Float64Array, same length) at `k`.
 // Used to map a run's polyline cumulative-XZ arc → centerline arc (Phase B slice mapping).
-function _interpArcTable(key, val, k) {
+// PERF-49 lever 1: a search hint ({ lo }) hung on a network entry NON-enumerable, so no JSON / spread / structured clone
+// of the entry (fingerprint-world's network hash, the worker hand-off) ever sees it.
+function _hintOn(o, k) { const h = { lo: 0 }; Object.defineProperty(o, k, { value: h }); return h }
+
+// PERF-49 lever 1: `hint` ({ lo }) carries the previous call's interval; one that brackets k is the search's own
+// unique answer (key[lo] ≤ k < key[lo + 1]), so the result is bit-identical.
+function _interpArcTable(key, val, k, hint) {
     const n = key.length
     if (n === 0) return 0
     if (k <= key[0]) return val[0]
     if (k >= key[n - 1]) return val[n - 1]
-    let lo = 0, hi = n - 1
-    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (key[m] <= k) lo = m; else hi = m }
+    let lo = hint ? hint.lo : 0, hi = lo + 1
+    if (!(hi < n && key[lo] <= k && key[hi] > k)) {
+        lo = 0; hi = n - 1
+        while (hi - lo > 1) { const m = (lo + hi) >> 1; if (key[m] <= k) lo = m; else hi = m }
+        if (hint) hint.lo = lo
+    }
     const span = key[hi] - key[lo] || 1
     const t = (k - key[lo]) / span
     return val[lo] + t * (val[hi] - val[lo])
@@ -8249,7 +8265,18 @@ export class RoadSystem {
             while (b < n - 1 && !onCL[b]) b++
             return [pc[a], pc[b]]
         })
-        const info = { onCL, spans }
+        // PERF-49: each vertex's band tangent, worked out once per run (re-deriving them per call was ~10 % of an airborne step
+        // beside a junction: every tread sample's resolve re-derived the same five chords' ten tangents).
+        const tx = new Float64Array(n), tz = new Float64Array(n)
+        for (let k = 0; k < n; k++) {
+            if (onCL[k]) { const t = e.centerline.tangentAt(e.clArc[k]); tx[k] = t.x; tz[k] = t.z; continue }
+            let x = 0, z = 0
+            if (k > 0) { const dx = pts[k].x - pts[k - 1].x, dz = pts[k].z - pts[k - 1].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+            if (k < n - 1) { const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
+            const l = Math.hypot(x, z) || 1
+            tx[k] = x / l; tz[k] = z / l
+        }
+        const info = { onCL, spans, tx, tz }
         this._bandInfoCache.set(e, info)
         return info
     }
@@ -8258,17 +8285,6 @@ export class RoadSystem {
         if (!e.offCurveSpans || !e.centerline || !e.clArc || !e.polyCum) return false
         for (const [a, b] of this._bandInfo(e).spans) if (cum >= a && cum <= b) return true
         return false
-    }
-
-    _bandTangent(e, k, out) {
-        const pts = e.points
-        if (this._bandInfo(e).onCL[k]) { const t = e.centerline.tangentAt(e.clArc[k]); out.x = t.x; out.z = t.z; return out }
-        let x = 0, z = 0
-        if (k > 0) { const dx = pts[k].x - pts[k - 1].x, dz = pts[k].z - pts[k - 1].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
-        if (k < pts.length - 1) { const dx = pts[k + 1].x - pts[k].x, dz = pts[k + 1].z - pts[k].z, l = Math.hypot(dx, dz) || 1; x += dx / l; z += dz / l }
-        const l = Math.hypot(x, z) || 1
-        out.x = x / l; out.z = z / l
-        return out
     }
 
     _bandSeg(pc, cum) {
@@ -8280,8 +8296,8 @@ export class RoadSystem {
     _bandFrameAt(e, cum, out) {
         const pts = e.points, pc = e.polyCum, i = this._bandSeg(pc, cum)
         const u = Math.min(1, Math.max(0, (cum - pc[i]) / ((pc[i + 1] - pc[i]) || 1e-9)))
-        const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
-        const tx = A.x + (B.x - A.x) * u, tz = A.z + (B.z - A.z) * u, l = Math.hypot(tx, tz) || 1
+        const T = this._bandInfo(e), Ax = T.tx[i], Az = T.tz[i]
+        const tx = Ax + (T.tx[i + 1] - Ax) * u, tz = Az + (T.tz[i + 1] - Az) * u, l = Math.hypot(tx, tz) || 1
         out.x = pts[i].x + (pts[i + 1].x - pts[i].x) * u; out.z = pts[i].z + (pts[i + 1].z - pts[i].z) * u
         out.tx = tx / l; out.tz = tz / l
         return out
@@ -8290,20 +8306,20 @@ export class RoadSystem {
     _bandRefine(e, cum, wx, wz) {
         const pts = e.points, pc = e.polyCum, i0 = this._bandSeg(pc, cum)
         let best = null, bestD2 = Infinity
+        const T = this._bandInfo(e), TX = T.tx, TZ = T.tz   // PERF-49: the run's cached vertex tangents
+        const root = (i, Dx, Dz, u) => {
+            if (!(u >= -1e-9 && u <= 1 + 1e-9)) return
+            const fx = pts[i].x + Dx * u, fz = pts[i].z + Dz * u, d2 = (wx - fx) ** 2 + (wz - fz) ** 2
+            if (d2 < bestD2) { bestD2 = d2; best = { i, u: Math.min(1, Math.max(0, u)) } }
+        }
         for (let i = Math.max(0, i0 - 2); i <= Math.min(pts.length - 2, i0 + 2); i++) {
-            const A = this._bandTangent(e, i, this._bandTA ??= {}), B = this._bandTangent(e, i + 1, this._bandTB ??= {})
+            const Ax = TX[i], Az = TZ[i]
             const qx = wx - pts[i].x, qz = wz - pts[i].z, Dx = pts[i + 1].x - pts[i].x, Dz = pts[i + 1].z - pts[i].z
-            const Bx = B.x - A.x, Bz = B.z - A.z
+            const Bx = TX[i + 1] - Ax, Bz = TZ[i + 1] - Az
             // (q − u·D) · (A + u·B) = 0  ⇔  a·u² + b·u + c = 0
-            const a = -(Dx * Bx + Dz * Bz), b = qx * Bx + qz * Bz - (Dx * A.x + Dz * A.z), c = qx * A.x + qz * A.z
-            const roots = []
-            if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-12) roots.push(-c / b) }
-            else { const disc = b * b - 4 * a * c; if (disc >= 0) { const r = Math.sqrt(disc); roots.push((-b - r) / (2 * a), (-b + r) / (2 * a)) } }
-            for (const u of roots) {
-                if (!(u >= -1e-9 && u <= 1 + 1e-9)) continue
-                const fx = pts[i].x + Dx * u, fz = pts[i].z + Dz * u, d2 = (wx - fx) ** 2 + (wz - fz) ** 2
-                if (d2 < bestD2) { bestD2 = d2; best = { i, u: Math.min(1, Math.max(0, u)) } }
-            }
+            const a = -(Dx * Bx + Dz * Bz), b = qx * Bx + qz * Bz - (Dx * Ax + Dz * Az), c = qx * Ax + qz * Az
+            if (Math.abs(a) < 1e-9) { if (Math.abs(b) > 1e-12) root(i, Dx, Dz, -c / b) }
+            else { const disc = b * b - 4 * a * c; if (disc >= 0) { const r = Math.sqrt(disc); root(i, Dx, Dz, (-b - r) / (2 * a)); root(i, Dx, Dz, (-b + r) / (2 * a)) } }
         }
         if (!best) return null
         const f = this._bandFrameAt(e, pc[best.i] + (pc[best.i + 1] - pc[best.i]) * best.u, this._bandOut ??= {})
@@ -11098,8 +11114,15 @@ export class RoadSystem {
         if (!pts || pts.length < 2 || !cum) return null
         const n = pts.length
         const s = Math.max(0, Math.min(cum[n - 1], arcS))
-        let lo = 0, hi = n - 1
-        while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid }
+        // PERF-49 lever 1: the previous call's segment first. The search returns the last lo ≤ n − 2 with
+        // cum[lo] ≤ s, so a hint meeting exactly that is its answer (bit-identical).
+        const h = e._ptHint ?? _hintOn(e, '_ptHint')
+        let lo = h.lo
+        if (!(lo <= n - 2 && cum[lo] <= s && (lo === n - 2 || cum[lo + 1] > s))) {
+            lo = 0; let hi = n - 1
+            while (lo + 1 < hi) { const mid = (lo + hi) >> 1; if (cum[mid] <= s) lo = mid; else hi = mid }
+            h.lo = lo
+        }
         const span = cum[lo + 1] - cum[lo] || 1
         const t = (s - cum[lo]) / span
         const a = pts[lo], b = pts[lo + 1]
@@ -12518,7 +12541,7 @@ export class RoadSystem {
             const f = this._bandFrameAt(e, a, this._bandOut ??= {})   // BUG-154: the band's continuous frame, physics' own
             bx = f.tx; bz = f.tz
         } else {
-            const t = e.centerline.tangentAt(_interpArcTable(e.polyCum, e.clArc, a))
+            const t = e.centerline.tangentAt(_interpArcTable(e.polyCum, e.clArc, a, e._clHint ?? _hintOn(e, '_clHint')))
             bx = t.x; bz = t.z
         }
         const w = this._runProfileCache.get(runKey)?.weld
@@ -12608,7 +12631,7 @@ export class RoadSystem {
             // Fast path: ONE binary search, interpolate the arrays.
             return _interpolateRunProfile(
                 cached.arcPos, cached.gradeY, cached.gradeM, cached.tx, cached.tz,
-                arcS, result
+                arcS, result, cached.hint
             )
         }
 
@@ -12625,7 +12648,7 @@ export class RoadSystem {
             return result
         }
 
-        this._runProfileCache.set(runKey, { rev: currentRev, ...profile })
+        this._runProfileCache.set(runKey, { rev: currentRev, ...profile, hint: { lo: 0 } })
         return _interpolateRunProfile(
             profile.arcPos, profile.gradeY, profile.gradeM, profile.tx, profile.tz,
             arcS, result

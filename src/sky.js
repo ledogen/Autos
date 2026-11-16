@@ -14,7 +14,7 @@
  *      curve decides how bright all of it reads on screen.
  *
  * FOG IS THE SKY. The background shader and the fog are the SAME GLSL function (skyHaze) reading the same
- * texture: a fogged fragment fades to the sky radiance in the direction you look through it, and below the
+ * texture (the fog through THE FOG CUBE, baked from it): a fogged fragment fades to the sky radiance in the direction you look through it, and below the
  * horizon the sky is its own lowest row (2° up, see HORIZON_Y) continued down — at twilight darkening over the first 10°
  * toward the land's own level (THE LAND BEYOND, in skyHaze). So the fog cannot be brighter than the sky at
  * dawn, and there is no colour step at the horizon, by construction rather than by tuning — there is no
@@ -464,7 +464,9 @@ const GROUND_ALBEDO = [0.20, 0.18, 0.15]
 const GRADE_GLSL = /* glsl */`
 #ifndef SKY_GRADE
 #define SKY_GRADE
+uniform vec2 skyAE;   // x: the live exposure k (FEAT-221, src/exposure.js); 1 with ?ae=0
 vec3 skyGrade (vec3 c) {
+  c *= skyAE.x;
   float peak = max(c.r, max(c.g, c.b));
   if (peak <= 0.76) return c;
   float np = 1.0 - 0.0576 / (peak - 0.52);
@@ -517,11 +519,22 @@ const LUT_TEX = new THREE.DataTexture(LUT_DATA, LUT_W, LUT_H, THREE.RGBAFormat, 
 LUT_TEX.wrapS = THREE.RepeatWrapping                     // azimuth wraps; elevation clamps (row 0 = horizon)
 LUT_TEX.magFilter = LUT_TEX.minFilter = THREE.LinearFilter
 LUT_TEX.generateMipmaps = false
+// THE FOG CUBE (FEAT-180 cost, DEC-286). The fog colour is a function of the view direction alone (skyGrade of skyHaze,
+// every other input a uniform), so SkySystem.update bakes it into this small cube whenever an input moves, and every
+// fogged fragment reads it with ONE hardware-mapped fetch instead of running the atan / acos / glare / grade chain
+// itself (that chain was ~9 % of the GPU's work, measured). 128² a face: 0.7° a texel against the glare's ~6° core.
+// Linear (graded, not yet encoded) half floats; the fragment still encodes for its own target (linearToOutputTexel).
+// isRenderTargetTexture is cleared so three's cloneUniforms shares it (shared()) instead of nulling it with a warning;
+// in WebGLTextures the flag only gates CPU uploads, and this texture never has one (its version stays 0).
+const FOG_CUBE = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType, generateMipmaps: false, depthBuffer: false })
+FOG_CUBE.texture.isRenderTargetTexture = false
 const U = {
   skyLut: { value: shared(LUT_TEX) },
   skySun: { value: shared(new THREE.Vector4(0, 1, 0, 0.93)) },
   skyGlare: { value: shared(new THREE.Vector4(0, 0, 0, 0)) },   // w starts OFF (Vector4 defaults w to 1)
   skyFog: { value: shared(new THREE.Vector4(1e8, 1e9, 1, 0)) },
+  skyAE: { value: shared(new THREE.Vector2(1, 0)) },            // see GRADE_GLSL; a Vector so it stays shared
+  skyFogCube: { value: shared(FOG_CUBE.texture) },
 }
 for (const lib of Object.values(THREE.ShaderLib)) if (lib.uniforms.fogDensity) Object.assign(lib.uniforms, U)
 Object.assign(THREE.UniformsLib.fog, U)
@@ -537,11 +550,13 @@ uniform float fogDensity;
 uniform float fogNear;
 uniform float fogFar;
 #endif
-${HAZE_GLSL}${GRADE_GLSL}
+uniform vec4 skyGlare;           // w: 1 while the world scene renders
+uniform vec4 skyFog;             // x, y: the world-edge fog's start and full radius (m, horizontal)
+uniform samplerCube skyFogCube;  // skyGrade(skyHaze(d)) by world direction d (THE FOG CUBE)
 #endif
 `
 // World scene: haze (exp² on true distance, not view depth, so it does not swing as the camera yaws)
-// joined by the edge term, then mixed toward the graded sky in this fragment's direction. Other scenes:
+// joined by the edge term, then mixed toward the graded sky in this fragment's direction (THE FOG CUBE). Other scenes:
 // three's own flat-colour fog, unchanged.
 THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 #ifdef FOG_EXP2
@@ -555,7 +570,7 @@ if (skyGlare.w > 0.5) {
   fogFactor = fogDensity > 0.0 ? max(fogFactor, smoothstep(skyFog.x, skyFog.y, length(fogW.xz))) : 0.0;
   #endif
   // Under one 8-bit step of fog (the near field: < ~20 m on Normal) skips the sky lookup — most of the screen.
-  if (fogFactor > 0.004) gl_FragColor.rgb = mix(gl_FragColor.rgb, linearToOutputTexel(vec4(skyGrade(skyHaze(normalize(fogW))), 1.0)).rgb, fogFactor);
+  if (fogFactor > 0.004) gl_FragColor.rgb = mix(gl_FragColor.rgb, linearToOutputTexel(vec4(textureCube(skyFogCube, fogW).rgb, 1.0)).rgb, fogFactor);
 } else {
   #ifdef FOG_EXP2
   fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogView.z * vFogView.z);
@@ -564,6 +579,11 @@ if (skyGlare.w > 0.5) {
 }
 #endif
 `
+// THE FOG CUBE's face shader: what the fog fades to in this direction, graded, not yet encoded.
+const FOG_BAKE_FRAG = /* glsl */`
+${HAZE_GLSL}${GRADE_GLSL}
+varying vec3 vDir;
+void main () { gl_FragColor = vec4(skyGrade(skyHaze(normalize(vDir))), 1.0); }`
 // The background: a camera-centred box pinned to the far plane, shading only the pixels nothing else covers.
 const SKY_VERT = /* glsl */`
 varying vec3 vDir;
@@ -718,6 +738,15 @@ export class SkySystem {
     scene.add(this.skyMesh)
     scene.background = null
 
+    // THE FOG CUBE's bake: the same box, shaded with the fog's colour, seen from its centre six ways.
+    this._fogScene = new THREE.Scene()
+    this._fogScene.add(new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.ShaderMaterial({
+      uniforms: U, vertexShader: SKY_VERT, fragmentShader: FOG_BAKE_FRAG,
+      side: THREE.BackSide, depthTest: false, depthWrite: false, toneMapped: false,
+    })))
+    this._fogCam = new THREE.CubeCamera(0.1, 10, FOG_CUBE)
+    this._fogK = NaN                                 // the live exposure the cube was baked at (NaN: bake next frame)
+
     this.moon = new MoonSystem(scene)
     this.setTimeOfDay(SKY_CYCLE.hour)
   }
@@ -831,7 +860,7 @@ export class SkySystem {
     this.ambient.groundColor.setRGB(gnd[0], gnd[1], gnd[2], THREE.LinearSRGBColorSpace)
     this.ambient.intensity = 1
     // The land's camera: the legacy's exposure, 0.5 by day to 0.36 at night, on the lamps' own clock (nightFactor).
-    this.renderer.toneMappingExposure = LAND_EXPOSURE_DAY + (LAND_EXPOSURE_NIGHT - LAND_EXPOSURE_DAY) * this.nightFactor()
+    this.renderer.toneMappingExposure = this.landExposure = LAND_EXPOSURE_DAY + (LAND_EXPOSURE_NIGHT - LAND_EXPOSURE_DAY) * this.nightFactor()
     // THE NIGHT SKY'S LEVEL (round 2's night fog cap, owner 11-08: "rebuild nighttime still isnt dark enough … i think
     // its the fog being brighter than the terrain"). At night the land sits in ACES's toe while the airglow horizon, which
     // the fog is, does not: fogged land read 4.5× (new moon) to 8× (full moon) brighter than the unfogged land beside it,
@@ -854,7 +883,9 @@ export class SkySystem {
     // horizon row continued down: half the sunset glow hung under the horizon as an orange ball, and a khaki fog filled
     // the lower half of the view. Past the draw distance is more land; at twilight it is darker than the sky. So below
     // the horizon the fog is held to beyond × flat ground (same units as the LUT: displayed linear), over the twilight.
-    U.skyFog.value.z = (SKY_CYCLE.hour < SOLAR_NOON_H ? p.beyondRise : p.beyondSet) * acesGrey(flat * this.renderer.toneMappingExposure / 0.6)
+    // openGrey: flat open ground (albedo 0.4) as displayed, linear — the live exposure's reference (src/exposure.js).
+    this.openGrey = acesGrey(flat * this.renderer.toneMappingExposure / 0.6)
+    U.skyFog.value.z = (SKY_CYCLE.hour < SOLAR_NOON_H ? p.beyondRise : p.beyondSet) * this.openGrey
     U.skyFog.value.w = tw
 
     // THE TWILIGHT EVENNESS (owner 11-14: "at twilight its almost like the hemisphere of the sky on the sun side is light
@@ -905,6 +936,7 @@ export class SkySystem {
       if (i < LUT_W) { hr += t3[0]; hg += t3[1]; hb += t3[2] }
     }
     LUT_TEX.needsUpdate = true
+    this._fogK = NaN                                 // every fog input moves here: re-bake the cube
     // Fallback flat fog colour for any material without the sky uniforms: the mean horizon, crudely mapped.
     if (this.scene.fog) this.scene.fog.color.setRGB(Math.min(1, hr / LUT_W), Math.min(1, hg / LUT_W), Math.min(1, hb / LUT_W), THREE.LinearSRGBColorSpace)
 
@@ -942,6 +974,10 @@ export class SkySystem {
   /** Per frame: the sky box and the moon follow the camera; a playing debug cycle advances. */
   update (camera) {
     this.skyMesh.position.copy(camera.position)
+    // Re-bake the fog cube when _apply ran or the live exposure (eased every frame) moved by 0.1 %: about a third of
+    // an 8-bit step, and the easing settles under it within a few seconds. 6 × 128² fragments, about 3 % of a frame's fog.
+    const k = U.skyAE.value.x
+    if (!(Math.abs(k - this._fogK) <= 1e-3 * k)) { this._fogK = k; this._fogCam.update(this.renderer, this._fogScene) }
     const now = (typeof performance !== 'undefined') ? performance.now() : this._lastTime
     const dtSec = Math.min(0.1, (now - this._lastTime) / 1000)
     this._lastTime = now
@@ -951,6 +987,9 @@ export class SkySystem {
     } else this._playH = null
     this.moon.update(camera, this.moonDir, this.sunDir, this._moonOpacity, this._moonTint)
   }
+
+  /** FEAT-221: the live exposure k on top of the eye (land into ACES and sky + fog into their grade alike). */
+  setLiveExposure (k) { U.skyAE.value.x = k; this.renderer.toneMappingExposure = this.landExposure * k }
 
   /** 0 = daylight … 1 = night, for the lamps (headlight pools, campfire): sun from 4° above to 6° below. */
   nightFactor () { return clamp01((4 * D2R - Math.asin(this.sunDir.y)) / (10 * D2R)) }

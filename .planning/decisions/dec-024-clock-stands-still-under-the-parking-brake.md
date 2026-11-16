@@ -1,6 +1,6 @@
 ---
 id: DEC-024
-status: standing
+status: superseded
 decided: 2026-11-13
 area: story
 governs: FEAT-194, src/main.js, day clock, parking brake

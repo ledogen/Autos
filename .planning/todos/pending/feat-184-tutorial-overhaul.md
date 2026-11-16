@@ -13,13 +13,12 @@ lane: A
 # FEAT-184: the tutorial overhaul — alpha
 
 ## Next steps
-Landing 2 is on main. Slice 3 (the owner's tutorial-slice2 answer, 2026-11-15) is built on feature/run-shape: Larry's call is
-the owner's four cards (DEC-236), and the morning runs mom's errand (DEC-238): the pack lands by her steps, the pick-up
-lesson, Larry gives it you, then the joint. Unverified in a browser: the smoke's morning steps were rewritten, not run on the
-branch. Left: the snack bought at the gas station or store and eaten at a camping area (DEC-239, not built: the pump leaves
-the player broke, so who pays is the owner's call); the intro expanded to 15 s – 1 min (the owner's words). Owner: mom's
-errand lines and Larry's hand-over line (PLACEHOLDER in data/dialogue.js: `tut-errand`, `tut-pickup`, `LARRY_PACK`), the
-paycheck card's words (`PAYCHECK`).
+Slice 4 (the tutorial-errand and tutorial-gates cards, 2026-11-15/16) is built on land/tutorial-1116 (lane S): the morning
+snack on mom's few dollars (DEC-276), the manager's paycheck line (DEC-277), the reset's 20 m grace (DEC-281), the two
+evening gates (DEC-282). Left: land it; the owner's playtest, held open on a "test drives" card until the owner signs off;
+the intro expanded to 15 s – 1 min. Owner's words still owed (PLACEHOLDER in data/dialogue.js): `tut-errand`, `tut-pickup`,
+`LARRY_PACK`, and the snack's two new lines `tut-snack`, `tut-snackcamp`; the peanuts' price ($3 [DEFAULT], items.md says
+"under $5").
 
 ## Summary
 The tutorial becomes the first part of every run: intro (the firing) → a card asking whether to play the tutorial →
@@ -400,8 +399,17 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   - [x] Larry's call: the owner's four cards, {dir} and {deeds} from the game (DEC-236); LARRY_CALL deleted
   - [x] Mom's errand: the pack by her steps (`data/tutorial.js` PACK_TOSS), the pick-up lesson, Larry's hand-over (DEC-238);
     a skip puts the pack back; gate `tutorial-seed` holds the toss in reach of her road and mom's → Larry's → the joint
-  - [ ] The snack at the gas station or store, eaten at a camping area (DEC-239) — waits on who pays (the player is broke)
-  - [ ] The owner's words for mom's errand, Larry's hand-over and the paycheck
+  - [x] The snack at the gas station, eaten at a camping area (DEC-239): mom's few dollars pay (DEC-276), slice 4
+  - [ ] The owner's words for mom's errand and Larry's hand-over (the paycheck's are in: DEC-277)
+- Slice 4 (the tutorial-errand and tutorial-gates cards, 2026-11-15/16):
+  - [x] Decision records DEC-276, DEC-277, DEC-281 (supersedes DEC-219), DEC-282
+  - [x] The paycheck card is the manager's line, character for character (DEC-277)
+  - [x] Mom's few dollars; peanuts at the station nearest Larry's (now on every gas station's shelf, $3 [DEFAULT]); eaten
+    parked in the camping area nearest that station; then the joint (DEC-276)
+  - [x] The reset's grace around places 20 m (DEC-281); mom's door shut while the pump is due, and no camp or truck sleep
+    in the evening (DEC-282)
+  - [ ] The owner's playtest of the whole tutorial (the "test drives" card, open until the owner signs off)
+  - [ ] The owner's words for `tut-snack`, `tut-snackcamp`, and the peanuts' price
 - [ ] The smoke's opening step plays the whole sequence
 
 ## Decisions
@@ -461,6 +469,9 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   reset. damage disabled so you cant break the truck. fuel disabled. fueling up you cant leave the pump until you spend
   every last dollar, etc. i got soft locked at the service station bc i had no money to buy a spare. that should also
   be "on mom"" (DEC-151, DEC-152, DEC-150)
+- 2026-11-15/16, owner (cards tutorial-errand, tutorial-gates): "mom hands you a few dollars and you buy it" (DEC-276);
+  the manager's line (DEC-277); "shrink the offroad reset grace area around POIs to 20m … otherwise keep it" (DEC-281);
+  "both" gates (DEC-282).
 
 ## Open questions
 - **The snack (DEC-239):** the evening's pump takes every last dollar (DEC-151), so the morning has no money for a snack.
@@ -562,3 +573,10 @@ Each has a recommendation there.
 - 2026-11-15: slice 3 (Lane A, 749a5a3f..): RUN_INTRO is Larry's four cards (DEC-236), LARRY_CALL gone; the starting pack
   leaves the truck at "play" and mom's toss puts it by her steps (`_tossPack`, idempotent on the poll); stops pack → Larry's
   → joint (`_errandStop`); a skip restores the pack. Gates in the landing request; cdp-smoke's morning rewritten, not run.
+- 2026-11-16: slice 4 (lane S, land/tutorial-1116, 532cd33b..): PAYCHECK = the owner's line; `safeNearPoiM` 20; the gates in
+  `_atMomsHouse` / `_campPromptState`; stops pack → Larry's → snack → camp → joint (`_errandStop`; `tut-morning` marks the
+  snack done), mom's cash a wallet top-up to the bag's price until bought; `bagOfPeanuts` in data/items.js and the gas
+  station's shelf. cdp-smoke's morning buys and eats the snack. Gates 30/30 (wip/tut-1116/gates.log); cdp-smoke boot,opening PASS (wip/tut-1116/smoke6.log).
+- 2026-11-15: (lane U, land/clock-1116, 31389939) DEC-290: the flat's HUD line reads "pull over and check your tire with" +
+  the damage screen's keycap (V / pad B, park-badge.js keycap). BUG-181 (f26b0d77): X in the evening plays tut-tow first and
+  the recovery menu opens as it ends. cdp-smoke boot,opening PASS with the new tow-card assertion.

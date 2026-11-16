@@ -1,7 +1,7 @@
 ---
 id: BUG-173
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-09
 source: Lane B, BUG-156's gore census (land/bug-156)
@@ -54,3 +54,5 @@ which smooths the steps around it but leaves this one at 2.9 m.
 - 2026-11-15 (orchestrator): renumbered BUG-158 → BUG-173. The id was minted twice: this ticket by Lane B on 11-09, and the owner's "wheels fail from kerbs and airtime" on 11-11 (closed, keeps BUG-158). Commits and the branch land/bug-158b made before today say 158 and mean this ticket.
 - 2026-11-15 (Lane C): main merged (96ec32c0). Smoke shoulder pick per DEC-230 (owner allowed it, card bug158-smoke-spot): the road-following ±9 m search has nothing under 6.4 % on seed 822480141, so it scans 300 m around the truck, 11–14 m out (5d58bd17). `SMOKE_STEPS=boot,opening` 3/3 green (logs/c173-smoke3.log); affected gates 75/75 green (logs/c173-gates.log). fingerprint-world not re-run: road.js unchanged since the 11-14 compare.
 - 2026-11-15 (Lane C): main merged again (52c44148, current with b0d5db14). Partial smoke 3× on it: shoulder step passes each time; the step then fails after "worst day: the shop" (sim stopped stepping ×2, tow did not land ×1), which is main's own red at fbc98de7 (Lane A). Gates 75/75 were on the tree before this merge (main's 18 commits touch no road.js).
+
+**Resolution (2026-11-15):** merged into main 41e5d82f, road gates 75/75 on the branch, main smoke 26/26 (wip/orch/smoke-1115c.log). The gore-dirt class continues as BUG-171.

@@ -76,31 +76,43 @@ function _specReach (spec) {
 }
 
 /** A collider's extent along the BODY-LOCAL unit direction l, about the body origin, into _span
- *  ([min, max]) — contactSphere's slab test (BUG-165). Only the shapes that query has a pair test
- *  for; a cylinder is bounded by its round section (its polygon never reaches past it). */
-const _span = [0, 0]
+ *  ([min, max]) — contactSphere's slab test (BUG-165) — and the body-local points that reach each
+ *  end into _spanLo / _spanHi, where a sidewall contact lands (BUG-176). Only the shapes that query
+ *  has a pair test for; a cylinder is bounded by its round section (its polygon never reaches past
+ *  it, so its extreme point is the circle's, at most 3.5 % outside a 12-gon's). */
+const _span = [0, 0], _spanLo = { x: 0, y: 0, z: 0 }, _spanHi = { x: 0, y: 0, z: 0 }
 function _specSpan (spec, l) {
   switch (spec.shape) {
     case 'sphere': {
-      const c = spec.offset.x * l.x + spec.offset.y * l.y + spec.offset.z * l.z
-      _span[0] = c - spec.radius; _span[1] = c + spec.radius
+      const o = spec.offset, r = spec.radius
+      const c = o.x * l.x + o.y * l.y + o.z * l.z
+      _span[0] = c - r; _span[1] = c + r
+      _spanLo.x = o.x - r * l.x; _spanLo.y = o.y - r * l.y; _spanLo.z = o.z - r * l.z
+      _spanHi.x = o.x + r * l.x; _spanHi.y = o.y + r * l.y; _spanHi.z = o.z + r * l.z
       return _span
     }
-    case 'cylinder': {
+    case 'cylinder': {   // axis = local y, from yOffset to yOffset + height
       const c = (spec.yOffset + spec.height / 2) * l.y
-      const e = spec.height / 2 * Math.abs(l.y) + spec.radius * Math.sqrt(Math.max(0, 1 - l.y * l.y))
+      const sxz = Math.sqrt(Math.max(0, 1 - l.y * l.y))
+      const e = spec.height / 2 * Math.abs(l.y) + spec.radius * sxz
       _span[0] = c - e; _span[1] = c + e
+      const kx = sxz > 1e-9 ? spec.radius * l.x / sxz : 0, kz = sxz > 1e-9 ? spec.radius * l.z / sxz : 0
+      const yTop = spec.yOffset + spec.height, yBot = spec.yOffset
+      _spanHi.x = kx; _spanHi.y = l.y >= 0 ? yTop : yBot; _spanHi.z = kz
+      _spanLo.x = -kx; _spanLo.y = l.y >= 0 ? yBot : yTop; _spanLo.z = -kz
       return _span
     }
     case 'hull': {   // the points it was built from span what their hull spans
       const p = spec.positions
-      let lo = Infinity, hi = -Infinity
+      let lo = Infinity, hi = -Infinity, iLo = 0, iHi = 0
       for (let i = 0; i < p.length; i += 3) {
         const d = p[i] * l.x + p[i + 1] * l.y + p[i + 2] * l.z
-        if (d < lo) lo = d
-        if (d > hi) hi = d
+        if (d < lo) { lo = d; iLo = i }
+        if (d > hi) { hi = d; iHi = i }
       }
       _span[0] = lo; _span[1] = hi
+      _spanLo.x = p[iLo]; _spanLo.y = p[iLo + 1]; _spanLo.z = p[iLo + 2]
+      _spanHi.x = p[iHi]; _spanHi.y = p[iHi + 1]; _spanHi.z = p[iHi + 2]
       return _span
     }
     default:   // no pair test either — contactSphere skips it after this
@@ -651,8 +663,18 @@ export class PhysicsEngine {
    *
    * slab (BUG-165): `{ axis, halfWidth }` makes the query the sphere CUT to the slab
    * |(x − center)·axis| ≤ halfWidth — the wheel's, a tire as wide as its tread. A shape whose
-   * extent along the axis misses the slab is no contact: the axis separates them, exactly. A shape
-   * that crosses the slab keeps the sphere's manifold unchanged.
+   * extent along the axis misses the slab is no contact: the axis separates them, exactly.
+   * BUG-176: a shape that crosses the slab is tested on TWO axes, as any separating-axis
+   * narrow phase does, and the shallower wins: the sphere's own manifold (the tread, radial), and
+   * the slab's face (the SIDEWALL) — overlap = how far the shape reaches past the face plane, along
+   * ±axis, landing at the shape's point deepest past it. Until then a crossing shape kept the
+   * sphere's manifold alone, and beside the tire that is the depth to a 0.37 m ball where the tire
+   * is 0.12 m half-wide: a rock 1 mm over the sidewall plane read up to 25 cm deep at once, and the
+   * tire spring fired it, v ≈ d·√(k/m) (7.4 m/s off a 4 mph rub, measured). The face depth grows
+   * from 0 at the plane, so the contact is continuous. Approximations (flagged): the sphere stands
+   * in for the cylinder's radial side (it falls ≤ 2 cm short at the tread edges, BUG-165), and a
+   * shape that touches the sphere only beyond the slab yet crosses the face plane outside the
+   * tire's disk still reads the face overlap.
    */
   contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false, skipWeldedTo = null, slab = null } = {}) {
     const hits = []
@@ -672,6 +694,7 @@ export class PhysicsEngine {
       const d2 = dx * dx + dy * dy + dz * dz
       // The slab's axis in the body's frame, and the query centre's place along it from the body origin.
       let la = null, s0 = 0
+      let fPlus = Infinity, fMinus = Infinity, fx = 0, fy = 0, fz = 0   // this shape's face overlaps + deepest point (body-local)
       for (let si = 0; si < rec.shapes.length; si++) {
         if ((rec.groups[si] & mask) === 0) continue
         const span = radius + rec.reach[si]
@@ -683,6 +706,11 @@ export class PhysicsEngine {
           }
           const sp = _specSpan(rec.specs[si], la)
           if (sp[0] > s0 + slab.halfWidth || sp[1] < s0 - slab.halfWidth) continue
+          // The face axis (BUG-176): overlap if the shape is pushed out along +axis (it sits on the
+          // + side, the wheel goes −axis) or along −axis. Kept for the test after the manifold.
+          fPlus = s0 + slab.halfWidth - sp[0]; fMinus = sp[1] - (s0 - slab.halfWidth)
+          const lo = fPlus <= fMinus ? _spanLo : _spanHi
+          fx = lo.x; fy = lo.y; fz = lo.z
         }
         // What kind of shape this slot holds is known from how it was registered: a sphere spec is
         // an engine sphere, and a slot that owns hull data (addHull / addCylinder / replaceHullLocal)
@@ -714,7 +742,16 @@ export class PhysicsEngine {
         if (deep.separation >= 0) continue
         let n  = { x: manifold.normal[0], y: manifold.normal[1], z: manifold.normal[2] }
         let cp = { x: deep.point[0], y: deep.point[1], z: deep.point[2] }
-        if (hullLocal) {
+        let depth = -deep.separation
+        const face = slab !== null ? Math.min(fPlus, fMinus) : Infinity
+        if (face < depth) {
+          // The sidewall is the shallower axis: push along the axle, at the shape's point deepest past the face.
+          depth = face
+          const sg = fPlus <= fMinus ? -1 : 1
+          n = { x: sg * slab.axis.x, y: sg * slab.axis.y, z: sg * slab.axis.z }
+          cp = _rotateByQuat({ x: fx, y: fy, z: fz }, bq)
+          cp.x += bp[0]; cp.y += bp[1]; cp.z += bp[2]
+        } else if (hullLocal) {
           n  = _rotateByQuat(n, bq)
           cp = _rotateByQuat(cp, bq)
           cp.x += bp[0]; cp.y += bp[1]; cp.z += bp[2]
@@ -722,7 +759,7 @@ export class PhysicsEngine {
         hits.push({
           body: handle,
           normal: n,
-          depth: -deep.separation,
+          depth,
           contactPoint: cp,
           sizeR: rec.sizeR[si] ?? 0.3,   // obstacle size for tire enveloping
         })

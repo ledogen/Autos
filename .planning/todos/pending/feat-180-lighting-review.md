@@ -12,8 +12,9 @@ lane: Spare
 # FEAT-180: a lighting review and interview, then a sun that lasts until about 8 pm
 
 ## Next steps
-Orchestrator: land `proto/lighting-redesign` (owner 11-14: "put this on main. its way better than what we have"); see
-round 5 below for gates, smoke, build and the GPU number. Owner: the far-side fog look (card `feat180-r5-look`).
+Orchestrator: land feature/perf's fog cube (07123700, DEC-286; `src/sky.js` only, smoke on main). The fog was ~3.5 of the
+rebuild's +9 % GPU; the rest is elsewhere in the rebuild (next suspect, unmeasured: the sky's 5-octave texture noise
+per sky pixel, SKY_PARAMS.texture). Owner: the far-side fog look (card `feat180-r5-look`).
 
 Owner, verbatim: "I think we could do a bit better on the lighting system And Skybox. Go ahead and create an artifact
 with screenshots of the car on a road with a landscape in the background at different times of day. And then design
@@ -400,3 +401,32 @@ honestly cant perceive this so keep / put this on main. its way better than what
   exposure, the same value main used). Shots `wip/feat-180/r5/poi/` (seed 17): shop sign and home curtains read
   clearly at 21:30; at 19:15 the shop's lamps are on with the sun still ~7° up (sunset is 20:18 here) — FEAT-214's open
   dusk-vs-clock question, not changed.
+
+## Log
+- 2026-11-14 (Perf lane): GPU cost of the merged rebuild, A = 60131770 (main before 0a515b0a) vs B = main 6bc60be3.
+  B costs **+9.0 % GPU active cycles (median of 9 cells, range +7.2 to +15.1 %), +28 to +50 Mcyc/s**, the same at
+  every hour; both hold 60 fps; main-thread retired instructions are flat (B −1 to −2 %). Method: one headless Chrome,
+  two tabs (A :3892, B :3891), only one drawing at a time, alternated every 2 s ABBA × 12 cycles, ioreport busy × MHz,
+  median paired ratio. Freecam 3 m over the parked truck, chase heading; shadow pass every frame; DPR 2, 1045×700.
+  Load 6–7.5 (3–4 lanes busy); within-cell IQR ±1–2 %, widest 9917 dusk (1.061–1.115). Harness `wip/feat-180/ab.mjs`
+  (perf worktree, git-invisible), raw `wip/feat-180/out/`. B also carries non-lighting src since A (frame cap, gps, camera).
+
+  | Seed | Hour | A Mcyc/s | B Mcyc/s | B/A |
+  |---|---|---|---|---|
+  | 4127 | 12:00 | 476 | 518 | 1.095 |
+  | 4127 | 19:30 | 481 | 521 | 1.084 |
+  | 4127 | 23:00 | 467 | 512 | 1.098 |
+  | 58301 | 12:00 | 339 | 369 | 1.090 |
+  | 58301 | 19:30 | 345 | 373 | 1.072 |
+  | 58301 | 23:00 | 342 | 376 | 1.105 |
+  | 9917 | 12:00 | 348 | 379 | 1.075 |
+  | 9917 | 19:30 | 476 | 526 | 1.088 |
+  | 9917 | 23:00 | 353 | 402 | 1.151 |
+- 2026-11-15 (Perf lane, DEC-286): fog cost. Confirm, flat fog (A) vs shipped sky fog (B), same server, 3 seeds × 12:00 /
+  19:30, 12 ABBA cycles: B/A median **1.035** (cells 0.997–1.046, pooled window IQR 0.974–1.075): the fog is ~3.5 % of
+  the +9 %, not all of it. Fix 07123700: the fog colour (skyGrade of skyHaze, direction only) is baked into a 128² half-float
+  cube when `_apply` runs or live exposure moves 0.1 %; each fogged fragment does one textureCube. Cube vs per-pixel
+  **0.972** (0.917–1.039); cube vs flat **0.995** (0.985–1.014): the fog's cost is gone. Same frame drawn both ways, 18 views
+  (2 seeds × 06/12/19:30 × drive, vista to/away from sun): max diff ≤ 3 levels/channel, mean ≤ 0.14, pixels > 2 levels
+  ≤ 0.0001 %; pictures wip/feat-180/look/ (perf worktree). Re-bakes: ~17–51 after a clock push, 0 steady. sky-ephemeris
+  green, build ok; no smoke on the branch. Harness wip/feat-180/fog-ab.mjs, fog-look.mjs, summ.mjs.
