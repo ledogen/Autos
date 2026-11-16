@@ -5899,7 +5899,9 @@ function _towTo (t, seat) {
   _spawnOverride = { align: true, drop: 0.3, ...seat }
   storySystem?.notifyTeleport()
   daySystem.advanceMinutes(t.hours * 60)
+  ;(window.__ptLog ??= []).push(['tow', performance.now() | 0, +vehicleState.position.x.toFixed(1), +vehicleState.position.z.toFixed(1)])
   void _reseatTruckAtSpawn().then(() => {
+    ;(window.__ptLog ??= []).push(['towThen', performance.now() | 0, +vehicleState.position.x.toFixed(1), +vehicleState.position.z.toFixed(1), !!vehicleState.parked])
     _spawnOverride = prev
     _prevParkedForPoi = false
   })
@@ -6186,6 +6188,7 @@ function _updateParkTriggers (zParked = false) {
     || ['planning', 'offer'].includes(paperRouteSystem.state)
   const parked = !!vehicleState.parked
   const pulled = parked && !_prevParkedForPoi
+  { const vp = vehicleState.position; (window.__ptLog ??= []).push(['pt', performance.now() | 0, parked, _prevParkedForPoi, pulled, +vp.x.toFixed(1), +vp.z.toFixed(1), storySystem.isActive(), storySystem.isEntering(), missionSystem?.state, poiSystem.nearest(vp.x, vp.z)?.type, _serviceInReach()?.type, fuelStop.isOpen, !!_pumpInReach(), (new Error().stack.split('\n')[2] || '').trim().slice(0, 60)]); if (window.__ptLog.length > 60) window.__ptLog.shift() }
   _prevParkedForPoi = parked
 
   // FEAT-102: a FETCH's pickup outranks everything below — while one is out, parking at the pickup
