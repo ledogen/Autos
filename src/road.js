@@ -983,7 +983,7 @@ const RIVAL_TIE_M      = 2.5     // m
 const TIE_PROM_M       = 0.1     // m
 const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
 let _passD = new Float64Array(256), _passT = new Float64Array(256)   // _runPassMinima scratch (grown as needed)
-let _legSeq = new Float64Array(256)   // _projectLegNearNode scratch: the window's per-segment distances² (grown as needed)
+let _legSeq = new Float64Array(256)   // _projectLegNearNode scratch: the window's stationary distances² (grown as needed)
 // BUG-156: one side's weight for a near-node leg limb (the foot at index q of the window's distance² sequence, d2 its own).
 // Walk outward to the KEY SADDLE b, the highest distance before it first drops below this foot's (topographic
 // prominence: a higher foot met on the way does not stop the walk), then on through the lower basin past it to its
@@ -7985,7 +7985,7 @@ export class RoadSystem {
      * that picks ONE of them flips discontinuously as the query crosses the equidistance locus — a
      * >1 m lateral step in the blended gore (the MAX_LEG_SLOPE guard is too loose to catch a
      * plausibly-graded second limb). So this returns EVERY distance-local-minimum foot in the window
-     * (deduped within 4 m of arc), and the caller blends each as its own pseudo-leg: with all limbs
+     * (on the continuous frame below, BUG-171), and the caller blends each as its own pseudo-leg: with all limbs
      * contributing simultaneously there is no switch — each foot, gap, and grade varies continuously
      * with the query. Returns an array of { d2, arcS } (ordered along the leg) | null.
      */
@@ -8003,51 +8003,87 @@ export class RoadSystem {
             if (legWin.i0 > legWin.i1) return null
             i0 = legWin.i0; iEnd = legWin.i1; cum = legWin.cum0
         }
-        const lo = nodeArc - win, hi = nodeArc + win
-        // March the window's segments in order, tracking each segment's nearest foot; a foot is kept
-        // when it is a local minimum of the per-segment distance sequence (plateau-tolerant ≤). The
-        // final in-window foot is kept when the sequence was still descending (window-edge minimum —
-        // the limb continues beyond, but its nearest in-window point is a legitimate candidate whose
-        // position and grade vary continuously with the query).
-        let out = null
-        let prevD2 = Infinity, prevPrevD2 = Infinity, prevCum = 0, prevI = 0, prevT = 0
-        // Each kept foot also records its segment index + clamped fraction (i, t) so callers that
-        // need the foot POSITION/tangent (the pad's _nodeSurfaceTop base pick) can reconstruct them
-        // exactly without re-projecting. Existing consumers read only { d2, arcS }.
-        // BUG-156: each foot also carries a limb weight `wt` (0–1, _limbWeight) that _carveDirtY multiplies into its
-        // taper. A local minimum is BORN at a fold, where a curving leg's distance grows a dip (the query crossing the
-        // leg's evolute), and at birth it has no depth. Weighted whole from that instant it popped in with its full
-        // taper: seed 1074499174's steep T took a 16 m-off limb 22 m up a curving leg, 3.6 m above the node, as a
-        // 0.72 m cliff in 5 cm of gore.
-        const seq = _legSeq.length >= iEnd - i0 + 1 ? _legSeq : (_legSeq = new Float64Array(2 * (iEnd - i0 + 1)))
-        let ns = 0, prevQ = -1
-        const keep = (d2, cumT, ki, kt, q) => {
-            if (!out) out = []
-            const last = out[out.length - 1]
-            if (last && cumT - (last.arcS + arcOrigin) < 4) {
-                if (d2 < last.d2) { last.d2 = d2; last.arcS = cumT - arcOrigin; last.i = ki; last.t = kt; last.q = q }
+        if (!(legWin && legWin.pts === pts)) {   // no cached window: find the segments overlapping [nodeArc ± win]
+            const lo = nodeArc - win, hi = nodeArc + win
+            let c = 0, a = -1, b = -2
+            for (let i = 0; i < N - 1; i++) {
+                const l = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z) || 1e-8
+                if (c + l >= lo && c <= hi) { if (a < 0) { a = i; cum = c } b = i } else if (a >= 0) break
+                c += l
             }
-            else out.push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt, q, wt: 1 })
+            if (a < 0) return null
+            i0 = a; iEnd = b
         }
+        // BUG-171 (DEC-260): the leg's distance profile is built on a CONTINUOUS frame, so its minima move continuously
+        // with the query by construction. The polyline's own nearest point does not: inside a bend each chord holds its
+        // own nearest point, the distance along the leg has a kink at every vertex, and the kept foot hopped a chord
+        // length (3.5 m) across each vertex's bisector ray (582 census sites, up to 1.46 m). Here the frame's tangent
+        // at each vertex is the bisector of its two chords (the chord itself at a run end), interpolated linearly along
+        // each chord; positions stay ON the chords (the points runProfile integrates). A foot is where the query is
+        // abeam the frame, g(t) = (q − P(t))·T(t) = 0, a quadratic in the chord fraction solved exactly; g is
+        // continuous across vertices, so each root is too. g falling through 0 is a minimum (a limb's foot), rising a
+        // maximum (the saddle between two limbs); a window end is a foot where g says the distance rises inward.
+        // The profile _limbWeight walks is the frame's own distance², D(s) = |q − P(start)|² − 2∫ g ds (a curve with
+        // tangent T has d|q − C|²/ds = −2 (q − C)·T), integrated in closed form chord by chord: its stationary points
+        // ARE g's roots, so a saddle always stands above the floors beside it. (The chord distance at a root does not:
+        // a max root read lower than its min, and the walk flipped a limb's weight 0 → 1 in 0.4 mm.) The sequence of
+        // D at the stationary points and the ends is the walk's profile. A pair of roots is born or dies together at
+        // a fold with zero prominence, where _limbWeight is 0, so no foot is gained or lost as a step. Each kept foot
+        // carries { d2 (its true distance²), arcS, i, t (its chord + fraction, for callers that rebuild its position),
+        // q (its index in the sequence), wt }.
+        let out = null, ns = 0
+        const need = 2 * (iEnd - i0 + 1) + 2
+        const seq = _legSeq.length >= need ? _legSeq : (_legSeq = new Float64Array(2 * need))
+        const keep = (d2, cumT, ki, kt) => (out ??= []).push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt, q: ns, wt: 1 })
+        // the frame tangent at vertex i0 (the unit bisector of chords i0−1 and i0)
+        let ux = pts[i0 + 1].x - pts[i0].x, uz = pts[i0 + 1].z - pts[i0].z, l = Math.hypot(ux, uz) || 1e-8
+        ux /= l; uz /= l
+        let t0x = ux, t0z = uz
+        if (i0 > 0) {
+            const px = pts[i0].x - pts[i0 - 1].x, pz = pts[i0].z - pts[i0 - 1].z, pl = Math.hypot(px, pz) || 1e-8
+            t0x += px / pl; t0z += pz / pl; l = Math.hypot(t0x, t0z) || 1e-8; t0x /= l; t0z /= l
+        }
+        let D0 = 0   // D at this chord's start vertex
         for (let i = i0; i <= iEnd; i++) {
-            const ax = pts[i].x, az = pts[i].z
-            const ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
-            const segLen2 = ex * ex + ez * ez
-            const segLen = Math.sqrt(segLen2) || 1e-8
-            if (cum + segLen >= lo && cum <= hi) {           // segment overlaps the node-arc window
-                let t = segLen2 > 1e-12 ? ((wx - ax) * ex + (wz - az) * ez) / segLen2 : 0
-                if (t < 0) t = 0; else if (t > 1) t = 1
-                const fx = ax + t * ex, fz = az + t * ez
-                const ddx = wx - fx, ddz = wz - fz
-                const d2 = ddx * ddx + ddz * ddz
-                if (prevD2 !== Infinity && prevD2 <= prevPrevD2 && prevD2 <= d2) keep(prevD2, prevCum, prevI, prevT, prevQ)
-                prevPrevD2 = prevD2; prevD2 = d2; prevCum = cum + t * segLen; prevI = i; prevT = t
-                seq[ns] = d2; prevQ = ns++
+            const ax = pts[i].x, az = pts[i].z, ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
+            const segLen = Math.hypot(ex, ez) || 1e-8
+            // the frame tangent at vertex i + 1 (the unit bisector of this chord and the next; this chord at the run end)
+            let t1x = ux, t1z = uz, nx = ux, nz = uz
+            if (i + 2 < N) {
+                nx = pts[i + 2].x - pts[i + 1].x; nz = pts[i + 2].z - pts[i + 1].z
+                l = Math.hypot(nx, nz) || 1e-8; nx /= l; nz /= l
+                t1x += nx; t1z += nz; l = Math.hypot(t1x, t1z) || 1e-8; t1x /= l; t1z /= l
             }
-            cum += segLen
+            const wx0 = wx - ax, wz0 = wz - az, dtx = t1x - t0x, dtz = t1z - t0z
+            // g(t) = (w − t e)·(T0 + t (T1 − T0)) = c + b t + a t²;  D(t) = D0 − 2 L (c t + b t²/2 + a t³/3)
+            const c = wx0 * t0x + wz0 * t0z, b = wx0 * dtx + wz0 * dtz - (ex * t0x + ez * t0z), a = -(ex * dtx + ez * dtz)
+            if (i === i0) { D0 = wx0 * wx0 + wz0 * wz0; seq[ns] = D0; if (c < 0) keep(D0, cum, i, 0); ns++ }
+            let r0 = NaN, r1 = NaN
+            if (Math.abs(a) < 1e-12 * segLen) { if (b !== 0) r0 = -c / b }
+            else {
+                const disc = b * b - 4 * a * c
+                if (disc >= 0) {
+                    const qq = -0.5 * (b + (b < 0 ? -1 : 1) * Math.sqrt(disc))   // the stable pair: qq / a and c / qq
+                    r0 = qq / a; r1 = qq !== 0 ? c / qq : NaN
+                    if (r1 < r0) { const s = r0; r0 = r1; r1 = s }
+                }
+            }
+            for (let k = 0; k < 2; k++) {
+                const t = k ? r1 : r0
+                if (!(t >= 0 && t < 1)) continue
+                seq[ns] = D0 - 2 * segLen * t * (c + t * (b / 2 + t * a / 3))
+                if (2 * a * t + b < 0) { const dx = wx0 - t * ex, dz = wz0 - t * ez; keep(dx * dx + dz * dz, cum + t * segLen, i, t) }
+                ns++
+            }
+            D0 -= 2 * segLen * (c + b / 2 + a / 3)
+            if (i === iEnd) {
+                seq[ns] = D0
+                if (a + b + c > 0) { const dx = wx0 - ex, dz = wz0 - ez; keep(dx * dx + dz * dz, cum + segLen, i, 1) }
+                ns++
+            }
+            cum += segLen; ux = nx; uz = nz; t0x = t1x; t0z = t1z
         }
-        if (prevD2 !== Infinity && prevD2 <= prevPrevD2) keep(prevD2, prevCum, prevI, prevT, prevQ)
-        if (out && out.length > 1) for (const f of out) f.wt = Math.min(_limbWeight(seq, ns, f.q, f.d2, -1), _limbWeight(seq, ns, f.q, f.d2, 1))
+        if (out && out.length > 1) for (const f of out) f.wt = Math.min(_limbWeight(seq, ns, f.q, seq[f.q], -1), _limbWeight(seq, ns, f.q, seq[f.q], 1))
         return out
     }
 
