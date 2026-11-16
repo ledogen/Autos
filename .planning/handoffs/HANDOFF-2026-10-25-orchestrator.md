@@ -141,48 +141,37 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-15, after the morning intake; rewrite, don't append)
+## Current state (2026-11-15 evening; rewrite, don't append)
 
-Older state paragraphs were cut here on 11-15: `git show 5756b528:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
+Older state paragraphs: `git show dd6d07f1:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
 
-**Main:** clean, last full smoke 26/26 (BUG-172 merge); docs-only commits since. Nothing pushed since 736266b5.
-**Intake done 11-15:** 16 answers read, 11 inbox items replied. Minted BUG-174 (POI lights only on when parked),
-BUG-175 (first light-switch stutter), BUG-176 (sidewall launches rocks), FEAT-223 (shadows on the truck), FEAT-224
-(ambient occlusion), FEAT-225 (slow motion, post-alpha). DEC-225 (map defaults), DEC-226 (reward fallback). FEAT-211
-closed. 378 stale autos-cdp-* profiles deleted on the owner's word. New owner card: top-items-path.
+**Main:** f6f32653 + docs, last full smoke 26/26 (wip/orch/smoke-1115i.log). NOT pushed (nothing since 736266b5).
+**Landed 11-15 (all local):** small-1115, run-shape x4 (FEAT-184 errand, smoke fixes, FEAT-217 notes, BUG-178 smoke trace),
+shopui-1115, BUG-173 (closed), gps-1115 (DEC-275), FEAT-221 exposure + BUG-174/175/177, PERF-49 (closed), BUG-176
+(open until the owner rubs a rock), PERF-48 terrain bake hybrid on by default (DEC-234; off on Low, `?terrainBake=0`).
 
-**RUNNING (six agents, spawned 11-15; DEC ranges are theirs alone):**
-- c · CarGame-content · land/bug-158b · Opus: BUG-173 smoke spot pick (owner allowed it) + landing prep. DEC 230–231.
-- b · CarGame-land-211d · land/perf-49-spikes · Opus: PERF-49 as one branch, lever 2 removed. DEC 232–233.
-- p · CarGame-perf · feature/perf · Opus: terrain bake hybrid on by default. DEC 234–235.
-- a · CarGame-run-shape · feature/run-shape · Opus: FEAT-184 tutorial slice 2 (Larry's four cards, mom's errand). DEC 236–243.
-- u · CarGame-land-shopui · land/shopui-1115 · Sonnet: cart notes, (i) hover, FEAT-203 times, jalopy oil, FEAT-205 debug button. DEC 244–251.
-- s · CarGame-land-small · land/small-1115 · Sonnet: QUAL-36 words + half price, card wording, lighting numbers, camera follow, parking brake. DEC 252–259.
-Next free DEC for the orchestrator: 227–229, then 260.
-
-**QUEUE (answers still in owed/ = not yet taken; one agent per worktree, start as lanes free up):**
-- c next: BUG-171 option 2, "build 2 and show me pictures in a deep dive" (card bug171-limb).
-- p next: FEAT-180 fog cost: confirm the suspect, then cheaper with the same look (card feat180-gpu-cost).
-- b next: BUG-176 (Opus). Then FEAT-34 round 5 on feature/machine (Sonnet): "move the key back to the bottom right
-  corner. then grow the speedo and tach gauges so they fill the rectangular frame nicely ... bump their size 10%"
-  (card feat34-r4-look), then a new look card.
-- Spare lighting (CarGame-spare, proto/feat-221-exposure, Opus): land FEAT-221 exposure on by default with
-  "localhost:3885/?ae=centre&aeBand=0.3 wins / can i have triple the darkness adjustment period (3x slower stopping
-  up) but keep the ~1s stop down" (card feat221-look; night stays stop-down only), plus BUG-174 + BUG-175. Then
-  FEAT-223, FEAT-224 (cost first).
-- When u lands: remove CarGame-land-212c / 212d (the owner has looked).
-**HELD:** PERF-50 (needs the Windows machine), QUAL-33 (ask before changing T promotion), a PERF-40 bench window.
-**Unanswered cards:** bug159-look, bug169-try, bug92-usb, feat120-clips, feat120-straps, feat167-descs, feat180-r5-look,
-feat213-look, feat214-look, feat216-look, feat217-try, feat218-look, givers-lines, glyph-backpack-look, pad-test,
-run-review, service-center-look, top-items-path.
-**Dev servers up:** :8000 main · :3731 Lane A · :3282 PERF-49 levers · :3885 FEAT-221 exposure · :8010 dashboard.
-**Smoke notes:** flaky above load ~13; until BUG-173 lands, an "opening ... on the shoulder" failure is the known coin
-toss (rerun `SMOKE_STEPS=boot,opening`). Never merge while a smoke runs.
-
-**11-15 landings, all on main @ e614e2d1+, last smoke 26/26 (wip/orch/smoke-1115f.log), NOT pushed:** small-1115 (DEC-252..257), run-shape x3 (FEAT-184 errand DEC-236..239; smoke tutorial fixes; FEAT-217 notes DEC-270..272), shopui-1115 (DEC-244..250), BUG-173 (closed, DEC-230), gps-1115 (U-turn arrow DEC-275 — DEC-274 was malformed and removed; BUG-177 pump face), proto/feat-221-exposure (FEAT-221 DEC-262, BUG-174, BUG-175), PERF-49 (closed, DEC-232).
-**Later 11-15:** BUG-176 merged (59b989ff, sidewall face contact; card bug176-rub; ticket open until the owner rubs a rock), main smoke 26/26 on the second run (wip/orch/smoke-1115h.log; the first hit BUG-178). BUG-178 minted: the tutorial tow lands with no shop card, 3 times on 11-15; a = Lane A on it (Opus, feature/run-shape, DEC 269/273). Lane b is free.
-**RUNNING:** c = BUG-171 option 2 + deep dive (land/bug-171 in CarGame-content, Opus, DEC 231/260/261); p = terrain bake default on (feature/perf, Opus, DEC 234-235); b = BUG-176 sidewall launches rocks (CarGame-land-176, land/bug-176, Opus, DEC 278-279).
-**Waiting on the owner (cards):** qual36-cash-line, tutorial-errand (snack + 4 lines), tutorial-gates (reset timing + dodge gates), top-items-path, feat34-r5-look (cherry-pick ea530d0e from feature/machine on approval), feat215-arrow-look, lighting-bundle-look (then close FEAT-221, BUG-174, BUG-175, BUG-177), plus the older unanswered ones in owed/.
-**Queue:** FEAT-180 fog cost (p next; card feat180-gpu-cost answered, still in owed/); FEAT-223, FEAT-224 (Spare, cost first). Lanes a, s, u are free. Next free orchestrator DEC: 227-229, 276-277, then 280.
-**Known unexplained:** smoke "the tow did not land at an open shop" failed 1 run in ~20 on 11-15; its message now prints distance + clock.
-**Worktrees:** CarGame-land-gps holds the look pictures for card feat215-arrow-look (keep until answered). Removed 11-15: land-phys, land-212c, land-212d, land-shopui, land-small.
+**RUNNING (spawned 11-15 ~16:45-17:30; one task each):**
+- a · CarGame-run-shape · feature/run-shape · Opus: BUG-178 root fix. Cause is the game: the tow's faked park edge is
+  spent by the first `_updateParkTriggers` poll before the shop is in reach (orchestrator's reading, to be verified);
+  1 failure in 54 runs, so proof must be a forced repro, not a green streak.
+- p · CarGame-perf · feature/perf · Opus: FEAT-180 fog cost ("confirm the suspect, then make it cheaper with the same
+  look"). Its DEC: next unused >= 280.
+- s · CarGame-spare · land/tutorial-1116 · Opus: owner answers tutorial-errand (mom hands a few dollars, you buy the
+  snack; manager's line verbatim) + tutorial-gates (off-road reset grace area around POIs 20 m, reset otherwise kept;
+  both anti-dodge gates). DEC 276, 277, 281, 282. WHEN IT LANDS: file a "test drives" card for the tutorial from the
+  agent's list, and keep it open until the owner signs off (owner's words on the errand card).
+- b · CarGame-machine · feature/machine · Sonnet: FEAT-34 gauge round 6 from the owner's r5 note (cut off mid-sentence;
+  build only what is stated). DEC-283. Cherry-pick to main only on the owner's approval; then a new look card.
+**Built, waiting on the owner:** BUG-171 option 2 on land/bug-171 (CarGame-content, src/road.js +8/-4, stacked on
+land/bug-158b which is already on main). Dive BUG-171-option2-gore-steps + pictures are on main as docs; card
+bug171-option2-look. The answer becomes DEC-260, then build the pick on land/bug-171.
+**Queue:** FEAT-223, FEAT-224 (cost first). Lanes c, u free. Next free orchestrator DEC: 227-229, then 284.
+**HELD:** PERF-50 (Windows machine), QUAL-33 (ask before changing T promotion), a PERF-40 bench window.
+**Owed cards open:** bug171-option2-look, top-items-path, qual36-cash-line, feat215-arrow-look, lighting-bundle-look
+(then close FEAT-221, BUG-174, BUG-175, BUG-177), bug176-rub, plus the older ones in owed/.
+**Dev servers up:** :8000 main (loopback) · :8001 main on Tailscale (Windows: http://m4air:8001) · :3731 Lane A ·
+:3885 Spare · :8010 dashboard.
+**Gotcha learned 11-15:** agents can stall for hours on a background wait that never wakes them. If a lane is silent
+past its expected time, read its log files; if the job is done, SendMessage it the log path and tell it to report.
+**Worktrees:** CarGame-land-gps holds pictures for feat215-arrow-look (keep until answered); CarGame-land-176 can go
+once bug176-rub is answered.
