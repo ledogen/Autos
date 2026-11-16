@@ -424,6 +424,9 @@ export const PART_REWARD_CAT = {
     springs: 'suspension', dampers: 'suspension',
     arbFront: 'suspension', arbRear: 'suspension', lift: 'suspension',
     engine: 'engine', radiator: 'engine', airFilter: 'engine', headlight: 'engine', diff: 'drivetrain', axle: 'drivetrain',
+    // FEAT-204 bolt-ons [DEFAULT] (DEC-342 draft): the rack with the bed upgrades, the bull bar with the lift (the off-road
+    // front end), the light bar with the headlights
+    roofRack: 'bed', bullBar: 'suspension', lightBar: 'engine',
 }
 /** FEAT-168: a part's gates from its rarity, unless a REWARDS row overrides them. */
 export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['S'], legendary: ['S'] }
