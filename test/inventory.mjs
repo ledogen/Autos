@@ -18,7 +18,9 @@
 // Pure node: no THREE, no DOM.
 import { InventorySystem, runInventory } from '../src/inventory.js'
 import { ITEMS } from '../data/items.js'
-import { REWARD_LIST } from '../src/offer-board.js'
+import { REWARD_CATS } from '../data/offers.js'
+import { STOREFRONT, ITEM_PRICE } from '../data/shop-stock.js'
+import { REWARD_LIST, rewardsIn } from '../src/offer-board.js'
 import { CampSystem, CAMP_PARAMS } from '../src/camp.js'
 
 let fails = 0
@@ -174,6 +176,36 @@ const bad = Object.entries(ITEMS).filter(([, it]) => !(it.massKg > 0) || !it.nam
 check('every item has a name and a positive mass', bad.length === 0, bad.join(', '))
 check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind === 'pack' && ITEMS.pack.packSlots >= 2
   && ITEMS.bedroll.kind === 'camp' && ITEMS.bedroll.bed === 'bedding')
+
+// ── 8. FEAT-230 slice 1: the potato ───────────────────────────────────────────────────────────
+{
+  let held = null
+  const f = new InventorySystem({ slotCap: () => 8, effects: { eat: (e) => { held = ITEMS[e.id].hold } } })
+  f.start()
+  const slots0 = f.slotsUsed()
+  f.grant('potato', 7)
+  check('potatoes stack 5 to a slot: 7 take two', f.slotsUsed() === slots0 + 2 && f.list().filter(r => r.id === 'potato').map(r => r.n).join() === '5,2')
+  check('a raw potato cannot be eaten', f.usable('potato') === false && f.use('potato') === false && held === null)
+  check('the raw potato says why', /raw/i.test(ITEMS.potato.desc) && /campfire/i.test(ITEMS.potato.desc))
+  check('cooking converts exactly one raw into one cooked',
+    f.convert('potato', 'potatoCooked') && f.list().filter(r => r.id === 'potato').reduce((k, r) => k + r.n, 0) === 6
+    && f.list().find(r => r.id === 'potatoCooked').n === 1)
+  check('the cooked potato holds hunger 4 h through the eat hook', f.use('potatoCooked') && held === 4)
+  check('convert with none aboard is a no-op', !f.convert('coffee', 'potatoCooked'))
+  const full = new InventorySystem({ slotCap: () => 3 })
+  full.start(); full.grant('potatoCooked', 5); full.grant('potato', 2)   // pack + a full cooked stack + raw: no slot left
+  check('convert refuses, changing nothing, when the cooked has no room',
+    !full.convert('potato', 'potatoCooked') && full.list().find(r => r.id === 'potato').n === 2 && full.slotsUsed() === 3)
+  const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
+  check('the potato is a farm reward at C and B, not A', pool(REWARD_CATS.farm.cats, 'C').includes('potato')
+    && pool(REWARD_CATS.farm.cats, 'B').includes('potato') && !pool(REWARD_CATS.farm.cats, 'A').includes('potato'))
+  check('no other giver but Larry hands out a potato', Object.entries(REWARD_CATS).every(([k, v]) =>
+    ['farm', 'larrysHouse'].includes(k) || !pool(v.cats, 'C').includes('potato')))
+  check('the cooked potato is never a reward, sold or found', !REWARD_LIST.some(r => r.id === 'potatoCooked')
+    && !Object.values(STOREFRONT).some(s => s.always.includes('potatoCooked')))
+  check('the general store sells the potato at a price under $5', STOREFRONT.generalStore.always.includes('potato')
+    && ITEM_PRICE.potato > 0 && ITEM_PRICE.potato < 5)
+}
 
 console.log(fails === 0 ? '\ninventory gate: ALL OK' : `\ninventory gate: ${fails} FAILURE(S)`)
 process.exit(fails === 0 ? 0 : 1)
