@@ -150,7 +150,7 @@ await btnS(1); sh = await ss(); check(sh.id === null && sh.open2, `the next B le
 await btnS(2); sh = await ss(); check(sh.tab === 'missions', `X swaps back to Missions (${sh.tab})`)
 // FEAT-211 landing 3: the waypoint on the pad. Free roam has no run, so main.js's side is stubbed (it records the drop and
 // says yes). Y sends n and drops it at the pad cursor (the sheet centre) without touching the ignition; Y again, on the pin,
-// clears it; A with nothing highlighted drops it as well (Enter), and A on a highlighted shop still opens the shop instead.
+// clears it. DEC-319 / FEAT-234: A (and Enter) no longer drop it; A on a highlighted shop still opens the shop.
 await js(`(() => { const m = __map2d(); window.__wpStub = [m._getWaypoint, m._onWaypoint]; window.__wp = { at: null, calls: 0 }
   m._getWaypoint = () => __wp.at && { ...__wp.at, poly: null }
   m._onWaypoint = (p) => { __wp.calls++; __wp.at = p; return true } })()`)
@@ -162,9 +162,9 @@ let wq = await wp()
 check(wq.win === 'n' && wq.calls === 1 && Math.abs(wq.at?.x - wq.px) < 0.5 && Math.abs(wq.at?.z - wq.pz) < 0.5 && wq.ign === ign0,
   `Y sends n: a waypoint at the sheet centre (${wq.at?.x.toFixed(0)},${wq.at?.z.toFixed(0)} vs ${wq.px.toFixed(0)},${wq.pz.toFixed(0)}), ignition untouched (${ign0} → ${wq.ign}; window saw "${wq.win}")`)
 await btnS(3); wq = await wp(); check(wq.calls === 2 && wq.at === null, `Y on the pin clears it (calls ${wq.calls}, at ${JSON.stringify(wq.at)})`)
-await btnS(0); wq = await wp(); check(wq.calls === 3 && wq.at !== null, `A with nothing highlighted drops it too (calls ${wq.calls})`)
+await btnS(0); wq = await wp(); check(wq.calls === 2 && wq.at === null, `DEC-319: A with nothing highlighted drops nothing (calls ${wq.calls})`)
 await btnS(2); await btnS(13); await btnS(13); await btnS(0); sh = await ss(); wq = await wp()
-check(sh.open === 'far' && wq.calls === 3, `A on a highlighted shop opens the shop and drops nothing (open ${sh.open}, calls ${wq.calls})`)
+check(sh.open === 'far' && wq.calls === 2, `A on a highlighted shop opens the shop and drops nothing (open ${sh.open}, calls ${wq.calls})`)
 await btnS(1); await btnS(1); await btnS(2)
 await js('(() => { const m = __map2d(); [m._getWaypoint, m._onWaypoint] = __wpStub })()')
 await js('(() => { const m = __map2d(); [m._getPois, m._getBoard] = __mapStub; m._listT = 0 })()')
