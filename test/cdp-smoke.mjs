@@ -475,6 +475,67 @@ const STEPS = [
     check(await until(async () => !await panel(), 2000), '"leave" did not close the truck face')
     check(!await lit(), 'breaking camp left the hunt on (BUG-142)')
   }],
+  ['boltons', async () => {
+    // FEAT-204: the roof rack, bull bar and light bar fitted straight onto the truck (window.__parts, no shop, no
+    // inventory row): each model in the scene and shown, the light bar's rack-mount model only with the rack (DEC-340,
+    // swapped live both ways), the rack's +4 slots, the light bar's longer head beams with the lamps on. Back to stock at
+    // the end, lamps as found. The newRun step fits them too and checks a new run clears them. Runs after story:
+    // SMOKE_STEPS=boot,story,boltons. FEAT204_SHOTS=1 also takes the day / night pictures into wip/feat-204-wire/
+    // (it moves the run clock: run it on its own).
+    const fit = (id) => js(`(window.__parts.fit('${id}'), true)`)
+    const shown = (stem) => js(`(() => { let o = window.sky.scene.getObjectByName('mod:${stem}'); if (!o) return false
+      for (; o; o = o.parent) if (!o.visible) return false; return true })()`)
+    const models = ['mod-roof-rack', 'mod-bull-bar', 'mod-light-bar-rack', 'mod-light-bar-solo']
+    const state = async () => { const r = {}; for (const m of models) r[m] = await shown(m); return JSON.stringify(r) }
+    const want = async (on) => until(async () => { for (const m of models) if (await shown(m) !== on.includes(m)) return false; return true }, 8000)
+    check(await js('window.__inv.slotCap()') === 8, 'the stock truck does not have 8 slots')
+    await fit('lightBar')
+    check(await want(['mod-light-bar-solo']), `the light bar alone does not show the solo bar: ${await state()}`)
+    await fit('roofRack')
+    check(await want(['mod-roof-rack', 'mod-light-bar-rack']), `rack + light bar do not show the rack-mount bar: ${await state()}`)
+    await fit('bullBar')
+    const all = ['mod-roof-rack', 'mod-light-bar-rack', 'mod-bull-bar']
+    check(await want(all), `the three bolt-ons are not all shown: ${await state()}`)
+    check(await js('window.__inv.slotCap()') === 12, `the roof rack did not raise the slot cap to 12 (${await js('window.__inv.slotCap()')})`)
+    await fit('roofRackNone')
+    check(await want(['mod-light-bar-solo', 'mod-bull-bar']), `the rack off did not swap back to the solo bar: ${await state()}`)
+    check(await js('window.__inv.slotCap()') === 8, 'the rack off did not take its slots away')
+    await fit('roofRack')
+    check(await want(all), `the rack back on did not swap to the rack-mount bar: ${await state()}`)
+    // The head spots (the two with a cookie map) reach headlightReach × their base range with the bar on.
+    const heads = () => js(`JSON.stringify((() => { const r = []; window.sky.scene.traverse(o => { if (o.isSpotLight && o.map) r.push({ d: +o.distance.toFixed(1), on: o.visible }) }); return r })())`)
+    const lit = async () => JSON.parse(await heads()).every(h => h.on)
+    for (let i = 0; i < 3 && !await lit(); i++) { await tap('l'); await frames(3, 100) }
+    const barred = JSON.parse(await heads())
+    await fit('lightBarNone'); await frames(3, 100)
+    const bare = JSON.parse(await heads())
+    await fit('lightBar'); await frames(3, 100)
+    console.log(`  boltons: head spots with the bar ${JSON.stringify(barred)} · without ${JSON.stringify(bare)}`)
+    check(barred.length === 2 && barred.every((h, i) => h.on && Math.abs(h.d / bare[i].d - 1.47) < 0.01), `the light bar did not lengthen the head beams: ${JSON.stringify({ barred, bare })}`)
+    check(await js(`(() => { let n = 0; window.sky.scene.getObjectByName('mod:mod-light-bar-rack').traverse(o => { if (o.isMesh && /LightBarReflector/.test(o.material.name) && o.material.emissiveIntensity > 0) n++ }); return n > 0 })()`),
+      'the light bar\'s reflectors are dark with the lamps on')
+    if (process.env.FEAT204_SHOTS) {
+      mkdirSync('wip/feat-204-wire', { recursive: true })
+      const snap = async (f) => { await frames(20, 1500); writeFileSync(`wip/feat-204-wire/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+      const toHour = (h) => js(`window.__day().advanceMinutes(Math.round((((${h} - window.__day().clockH()) % 24 + 24) % 24) * 60))`)
+      // Front-left three-quarter view, 7 m out, eye 2.2 m up, aimed at the cab.
+      const look = (side, back, up) => js(`(() => { const p = window.__vs.position, q = window.__vs.quaternion
+        const r = (x, z) => { const c = 1 - 2 * (q.y * q.y + q.z * q.z), s = 2 * (q.x * q.z + q.w * q.y), c2 = 2 * (q.x * q.z - q.w * q.y), c3 = 1 - 2 * (q.x * q.x + q.y * q.y); return [x * c + z * s, x * c2 + z * c3] }
+        const [ox, oz] = r(${side}, ${back}), cx = p.x + ox, cy = p.y + ${up}, cz = p.z + oz, dx = p.x - cx, dy = p.y + 0.4 - cy, dz = p.z - cz
+        window.__view(cx, cy, cz, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))) })()`)
+      for (let i = 0; i < 3 && await lit(); i++) { await tap('l'); await frames(3, 100) }
+      await toHour(12); await look(4.5, -6, 2.4); await snap('day-front.png')
+      await look(4.5, 5.5, 2.6); await snap('day-rear.png')
+      await toHour(23)
+      for (let i = 0; i < 3 && !await lit(); i++) { await tap('l'); await frames(3, 100) }
+      await look(0, 9, 6); await snap('night-bar.png')
+      await fit('lightBarNone'); await snap('night-nobar.png'); await fit('lightBar')
+    }
+    for (let i = 0; i < 3 && await lit(); i++) { await tap('l'); await frames(3, 100) }
+    for (const id of ['roofRackNone', 'bullBarNone', 'lightBarNone']) await fit(id)
+    check(await want([]), `stock again, yet a bolt-on still shows: ${await state()}`)
+    check(await js('window.__inv.slotCap()') === 8 && await js('window.__openMenus().length') === 0, 'the step left the slot cap raised or a menu open')
+  }],
   ['inventory', async () => {
     // FEAT-122: parked only (like V) — Tab driving pulses the park sign and opens nothing; parked,
     // Tab toggles the screen and Esc closes it. The grid draws every slot, and the run starts with
@@ -2174,8 +2235,9 @@ const STEPS = [
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     const truck = () => js(`JSON.stringify({ wheel: +window.__damage.get('wheelRR').toFixed(2), tire: +window.__damage.get('tireRR').toFixed(2),
       flat: window.__damage.flat[3], collapsed: window.__damage.collapsed(3), rim: !!window.__vs.rimOnRoad?.[3],
-      alert: document.getElementById('dmg-icon')?.classList.contains('on') ?? null })`)
-    const whole = s => { const t = JSON.parse(s); return !t.flat && !t.collapsed && !t.rim && !t.alert && t.wheel > 0 && t.tire > 0 }
+      alert: document.getElementById('dmg-icon')?.classList.contains('on') ?? null,
+      boltons: ['roofRack', 'bullBar', 'lightBar'].filter(k => !window.__parts.fitted(k).endsWith('None')).length, slots: window.__inv.slotCap() })`)
+    const whole = s => { const t = JSON.parse(s); return !t.flat && !t.collapsed && !t.rim && !t.alert && t.wheel > 0 && t.tire > 0 && t.boltons === 0 && t.slots === 8 }
     // The map's first frame on open: show() then one render(). A sheet rebuilt in slices (a budget, not Infinity) blits
     // the bitmap it already holds until it is done, which after a world change is the last world's. The window's size is
     // held (_sizeStale), as a player's is: a resize wipes the bitmap, and headless the map's width moves between opens.
@@ -2203,6 +2265,7 @@ const STEPS = [
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
       check(await until(() => js(live), 45000, 250), 'the wrecked run never went live')
       await skipAndReadLarry()
+      await js("['roofRack', 'bullBar', 'lightBar'].forEach(id => window.__parts.fit(id))")   // FEAT-204: bolt-ons die with the run
       await js(`window.__damage.set('tireRR', 0); window.__damage.set('wheelRR', 0); window.__damage.flat[3] = true
         document.getElementById('dmg-icon').classList.add('on')`)   // the damage alert, unread
       await simFor(0.5)
