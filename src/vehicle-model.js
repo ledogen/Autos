@@ -1088,8 +1088,8 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // keyed on counts (spots, spots carrying a cookie map — the headlights — and point lights), not on
   // which lamp is which, so this list is by count: reverse alone = tails alone, for instance.
   // Tails + reverse (braking while reversing by day: 4 spots, no maps) was missing until 2026-10-29
-  // and compiled mid-drive. × the point light off / on (the campfire — lit only at camp, where the
-  // lamps may still be in any of these states).
+  // and compiled mid-drive. × 0, 1 or 2 point lights (the campfire, lit only at camp, where the lamps may
+  // still be in any of these states; the POI light, in the scene only near a station: FEAT-227 light cull).
   const LAMP_STATES = [
     [],                                                       // everything off (daytime coasting)
     tailSpots,                                                // braking, lamps off (daytime brake)
@@ -1098,14 +1098,16 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     [...headlightSpots, ...tailSpots, ...reverseSpots],       // lamps on + reversing
   ]
   const LAMPS = [...headlightSpots, ...tailSpots, ...reverseSpots]
-  const LIGHT_STATE_COUNT = LAMP_STATES.length * 2
+  const MAX_POINTS = 2   // the campfire + the POI light; a program is keyed on the count, not on which
+  const LIGHT_STATE_COUNT = LAMP_STATES.length * (MAX_POINTS + 1)
 
   /** Put the lights in state i (see LAMP_STATES), returning a function that puts them back. */
   function _lightState (i, points) {
     const saved = [...LAMPS, ...points].map(l => l.visible)
     const on = LAMP_STATES[i % LAMP_STATES.length]
     for (const s of LAMPS) s.visible = on.includes(s)
-    points.forEach((p, k) => { p.visible = i >= LAMP_STATES.length && k === 0 })
+    const n = Math.floor(i / LAMP_STATES.length)
+    points.forEach((p, k) => { p.visible = k < n })
     return () => [...LAMPS, ...points].forEach((l, k) => { l.visible = saved[k] })
   }
 
