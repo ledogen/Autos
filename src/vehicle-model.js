@@ -73,7 +73,12 @@ const HEAD_TUNE = {
   // lowAngle/highAngle are the outer envelope that holds the pattern, not the beam width.
   lowIntensity: 4000, lowDistance: 120, lowAngle: 0.80, lowPenumbra: 0.25, lowAimY: 0.10, lowAimZ: -28,
   highIntensity: 1900, highDistance: 200, highAngle: 1.00, highPenumbra: 0.30, highAimY: 0.10, highAimZ: -65,
-  lensLow: 1.4, lensHigh: 2.2,   // emissiveIntensity of the headlight LENS (the visible glow), low vs high
+  // emissiveIntensity of the headlight LENS (the visible glow), low vs high. BUG-180: a lit lamp is the brightest
+  // thing in its frame, so its radiance sits high on the ACES shoulder and reads white (warm) at ANY exposure the
+  // live meter picks, down to its 2-stop floor at night (k = 0.25: 248,236,213 low, 251,243,228 high). At the old
+  // 1.4 / 2.2 it sat mid-curve, read tan at k = 1 (199,157,103) and medium grey-brown when the meter stopped down
+  // (98,63,32). The damage dim and flicker still scale it linearly, so a weak lamp reads yellower, a dead one dark.
+  lensLow: 30, lensHigh: 45,
   // SM-3 damage flicker, cued by the jolt the front of the body feels (see stepLampFlicker). Jolt
   // is in g at the front axle, as the deviation of its suspension load from rest: below flickerDeadG a
   // damaged lamp burns steady, at flickerFullG it is fully agitated, and a spike is held with a
@@ -100,7 +105,9 @@ const HEAD_TUNE = {
 const REAR_TUNE = {
   tailRunIntensity: 18, tailBrakeIntensity: 120, tailDistance: 16, tailAngle: 0.95, tailPenumbra: 1.0,
   reverseIntensity: 90, reverseDistance: 22, reverseAngle: 1.0, reversePenumbra: 1.0,
-  lensRun: 1.4, lensBrake: 3.0, lensReverse: 2.5,   // emissiveIntensity of the rear LENS panels per state
+  // emissiveIntensity of the rear LENS panels per state. The reverse lens is a white lamp: on the shoulder like the
+  // headlight lens (BUG-180), else it greys when the meter stops down. Tail red is saturated and reads at any k.
+  lensRun: 1.4, lensBrake: 3.0, lensReverse: 20,
   decay: 2, aimY: -2.0, aimZ: 14,
 }
 const TAIL_RED = 0xff1a1a
@@ -918,8 +925,8 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     f.add(LIGHT_ENV, 'dayScale', 0, 1, 0.01).name('day cast scale')
 
     const h = f.addFolder('Headlights'); h.close()
-    h.add(HEAD_TUNE, 'lensLow', 0, 4, 0.1).name('lens low').onChange(reapply)
-    h.add(HEAD_TUNE, 'lensHigh', 0, 4, 0.1).name('lens high').onChange(reapply)
+    h.add(HEAD_TUNE, 'lensLow', 0, 80, 1).name('lens low').onChange(reapply)
+    h.add(HEAD_TUNE, 'lensHigh', 0, 80, 1).name('lens high').onChange(reapply)
     h.add(HEAD_TUNE, 'lowIntensity', 0, 2000, 10).onChange(reapply)
     h.add(HEAD_TUNE, 'highIntensity', 0, 3000, 10).onChange(reapply)
     h.addColor(HEAD_TUNE, 'color').name('colour (halogen ≈3300 K)').onChange(reapply)
@@ -950,7 +957,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     const r = f.addFolder('Rear lamps'); r.close()
     r.add(REAR_TUNE, 'lensRun', 0, 5, 0.1).name('lens run')
     r.add(REAR_TUNE, 'lensBrake', 0, 6, 0.1).name('lens brake')
-    r.add(REAR_TUNE, 'lensReverse', 0, 6, 0.1).name('lens reverse')
+    r.add(REAR_TUNE, 'lensReverse', 0, 60, 1).name('lens reverse')
     r.add(REAR_TUNE, 'tailRunIntensity', 0, 300, 1)
     r.add(REAR_TUNE, 'tailBrakeIntensity', 0, 500, 1)
     r.add(REAR_TUNE, 'reverseIntensity', 0, 400, 1)
