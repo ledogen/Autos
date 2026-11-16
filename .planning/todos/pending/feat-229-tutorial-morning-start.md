@@ -56,7 +56,7 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   Larry's two cards (DEC-326); smoke `opening` updated
 - [ ] Owner: the new lines reviewed; story mode's R / pad reset for the alpha
 - [ ] Owner: placeholder lines and the defaults (clock held + stamps, $6, tired at night, the skipper's line)
-- [ ] Tutorial seed re-checked against the new order (after the beats are settled)
+- [x] Tutorial seed re-checked against the new order (`test/tutorial-seed.mjs`, DEC-304's legs)
 
 ## Decisions
 - DEC-299 (owner, 2026-11-15/16): the tutorial is 24 in-game hours, fired about 07:00, free will about 07:00 the next
@@ -93,3 +93,6 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-16: built option 1 on `land/feat-229` (records DEC-304..308). Smoke `opening` and `skipMenus` green alone;
   59 affected node gates green. Also fixed `_jointQuiet` (read "07:00 day 1" since DEC-159; now free will's 07:00).
   Unverified: the full smoke (every step after `story` now runs a morning), the seed's legs in the new order.
+- 2026-11-16: box 3 on `land/tut-seed-gate`: `test/tutorial-seed.mjs` walks DEC-304's order with main.js's picks; legs 2.00 /
+  0.70 / 2.72 / 2.11 / 3.86 (flat at 2.06, tow 0.53 crow) / 0.94 / 2.00 km, 12.5 km, 15 min wheel; TUT_STAMPS read from
+  main.js. Gate green. Unguarded: a leg driven (the gate plans, never drives), a beat's trigger in main.js.
