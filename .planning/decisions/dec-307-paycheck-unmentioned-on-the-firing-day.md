@@ -1,6 +1,6 @@
 ---
 id: DEC-307
-status: standing
+status: superseded
 decided: 2026-11-16
 area: story
 governs: FEAT-229, FEAT-184, FEAT-148, DEC-150, DEC-153, data/dialogue.js, src/main.js, FIRING, MOM_CALL, the firing, the morning leg, mom, the manager
