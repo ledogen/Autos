@@ -50,6 +50,7 @@ cooking kit modifies it).
 
 ### Coffee
 status: shipped · design: ratified · build: effect · needs: quick slots · where: foodVendor, generalStore, gasStation, reward
+Audit 2026-11-16: sold at the food vendor, general store and gas station (data/shop-stock.js); the "sold nowhere" line above is stale.
 In the inventory with its thumbnail; auto-binds to a quick key and drinks on the press (FEAT-122). Sold nowhere yet: reward only until FEAT-104.
 Energy now, sleepy earlier tomorrow — a loan against tomorrow. The energy clock ships (`src/day.js`),
 so the effect is a debt term on it. Already a REWARDS id (`coffee`), grant stubbed.
@@ -57,7 +58,8 @@ so the effect is a debt term on it. Already a REWARDS id (`coffee`), grant stubb
 station (C–B), never found.
 
 ### Energy drink
-status: wip · design: ratified · build: effect · needs: quick slots · where: gasStation, generalStore, reward
+status: shipped · design: ratified · build: effect · needs: quick slots · where: gasStation, generalStore, reward
+Audit 2026-11-16: on the general store and gas station shelves (data/shop-stock.js); the "no shelf" line above is stale.
 **Ruled 2026-10-20:** +5 h now, a crash of −2.5 h four hours later. $4. Reward from the gas station
 and general store (C–B), never found.
 Coffee's short, steep twin: a bigger hit and the crash comes the same day. Must carry a debt or it is
@@ -65,13 +67,15 @@ free alertness (fish's job).
 **In the game 2026-10-23** (`energyDrink`, 0.5 kg, `use: 'energy'`): +5 h now, the −2.5 h crash lands 4 h later (day.js `drinkEnergy`; a sleep first sleeps it off [DEFAULT]); a C–B reward from the gas station and general store. Not sold yet (no general-store shelf).
 
 ### Chili dog
-status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
+status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
+Audit 2026-11-16: item, eat, $5 vendor shelf and B–A reward ship. Missing: the 16 h spoilage (no spoilage system).
 Already a REWARDS id (`chiliDog`, kind food). A meal: resets the hunger clock.
 **Ruled 2026-10-20:** a plain meal that holds hunger 10 h. $5. Food vendor only (B–A), never found.
 Spoils in 16 h (2026-10-21). Flavor: "Kinda gross" (owner, 2026-10-22) — the in-game desc since 2026-10-24.
 
 ### Dinner meal
 status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
+Audit 2026-11-16: the dinner invitation reward ships. Missing: the food vendor's own eat-in menu item ($5–10; foodVendor sells only coffee and chili dog).
 Renamed from diner meal (owner, 2026-10-21). One generic sit-down meal, a menu item at the food
 vendor: holds hunger 8 h, 30 min to eat, $5–10, eat-in only, never found. Flavor: "A hearty meal.
 Dine in only" (owner, 2026-10-22). **As a reward it is a dinner invitation** (owner, 2026-10-22): a C–B
@@ -82,12 +86,14 @@ job those givers post, as with every reward (owner); the result card asks "stay 
 
 ### Burger
 status: todo · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
+Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `burger.png` exists.
 The standard meal, its own item (owner, 2026-10-21): holds hunger ~8 h, so two cover a waking day.
 Spoils in 16 h; $5; a C–B reward from the food vendor; never found (2026-10-21). Flavor: "The
 classic" (owner, 2026-10-22).
 
 ### Packed lunch
-status: todo · design: ratified · build: effect · needs: hunger, spoilage · where: reward
+status: wip · design: ratified · build: effect · needs: hunger, spoilage · where: reward
+Audit 2026-11-16: in ITEMS and the run's starting three. Missing: the B–A reward row (residence, farm, vendor) and the 24 h freshness (spoilage).
 Never sold (owner, 2026-10-21): a bonus item from residences, farms and the food vendor (B–A), worth
 $6. Holds hunger 8 h; fresh 24 h. Never found. Flavor: "Homemade!" (owner, 2026-10-22).
 
@@ -100,32 +106,37 @@ store and farms (a farm sells for the first time); a farm and general-store rewa
 Flavor: "Fresh and goes together easy" (owner, 2026-10-22).
 
 ### Potato
-status: todo · design: ratified · build: effect · needs: hunger · where: generalStore, reward
+status: wip · design: ratified · build: effect · needs: spoilage (cooked 24 h) · where: generalStore, reward
+**In the game 2026-11-16 (FEAT-230 slice 1):** `potato` (raw, no `use`, its desc says why) and `potatoCooked` (`use: 'eat'`, hold 4 h), 5 to a slot (`stack`); the camp card's "cook a potato · 30 min" button turns one raw into one cooked; general-store line at a $2 [DEFAULT]; a farm reward at C–B (category `produce`). The cooked one does not spoil yet (slice 2's fresh clock). The kit's bonus applies (DEC-310, +20 %).
 New (owner, 2026-10-21). Inedible raw; cooked on the campfire — the only food you buy that needs no
 cooking kit — it is a decent meal. Sold at the general store; a farm reward. **Ruled 2026-10-22:**
 holds hunger 4 h; +30 min to cook; raw never spoils, cooked keeps 24 h; the cooking kit's food bonus
 applies; stacks 5. Under $5; C–B; never found. Fish cooks on the campfire too. Flavor: "Potato".
 
 ### Bag of peanuts
-status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+status: wip · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: item, eat and gas-station shelf ($3 [DEFAULT]) ship. Missing: the C–B reward row, the roadside find, the stack cap of 3 (no stack caps exist).
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 3. Under $5;
 a C–B reward from the gas station and general store; less rare as a find than the others; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "Mmm, salty" (owner, 2026-10-22).
 
 ### Gummy worms
 status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `gummyWorms.png` exists.
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 2 h, stacks 5. Under $5;
 a C–B reward from the gas station and general store; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "Only a couple blue ones" (owner, 2026-10-22).
 
 ### Spicy chips
 status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `spicyChips.png` exists.
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 3. Under $5;
 a C–B reward from the gas station; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "Almost too hot" (owner, 2026-10-22).
 
 ### Candy bar
 status: todo · design: ratified · build: effect · needs: hunger · where: gasStation, reward, found
+Audit 2026-11-16: not in ITEMS, shelf or REWARDS; thumbnail `candyBar.png` exists.
 A gas-station snack (split from one row, owner 2026-10-21). Holds hunger 3 h, stacks 4. Under $5;
 a C–B reward from the gas station; found roadside near gas stations, rarely. All food can be
 eaten while driving. Flavor: "A bit melty" (owner, 2026-10-22).
@@ -153,7 +164,7 @@ uncooled, ~36 h in the cooler. Species carry different effects — which, is ope
 ## Consumables
 
 ### Mounted tire
-status: wip · design: ratified · build: effect · where: autoShop, reward, found
+status: shipped · design: ratified · build: effect · where: autoShop, reward, found
 Renamed from *Spare tire* (owner, 2026-10-23); the id stays `spareTire`.
 Fitting it is a 2 h timeskip that clears the flat (owner, 2026-10-22 — supersedes 90 min, 2026-10-20);
 the compressor takes 30 min off and the quick-jack 1 h, and they stack. Real mass all the time: **21 kg**, the 12 kg tire + 9 kg wheel (owner, 2026-10-23, reversing 10-22's 18 kg). Already a REWARDS id
@@ -170,7 +181,7 @@ corner (a bead job $2/15 min, a hub swap $1/10 min — items.md §3g). Jalopies 
 proximity inventory, in progress on feature/stranded-spare).
 
 ### Tire plug kit
-status: wip · design: ratified · build: effect · where: autoShop, reward, found
+status: shipped · design: ratified · build: effect · where: autoShop, reward, found
 Renamed from tire patches (owner, 2026-10-21). In ITEMS as `tirePlugKit` (`use: 'plug'`) with its
 thumbnail and a REWARDS row (auto shop, gas station, work site; B–A). One plug per kit, $5–10, rare
 roadside find. It fixes the hole and restores no condition. The whole repair, plugging and
@@ -178,7 +189,7 @@ inflating, is 2 h by hand (bike pump) or 30 min with the compressor (owner, 2026
 Flavor: "I hope I don't have to use this" (owner, 2026-10-22) — the in-game desc since 2026-10-24.
 
 ### Spare air filter
-status: wip · design: ratified · build: effect · where: autoShop, reward, found
+status: shipped · design: ratified · build: effect · where: autoShop, reward, found
 Sets the `airFilter` track in `src/damage.js` to the spare's own condition at the roadside, in 15 min.
 Each spare carries a condition like the mounted tire: new from the auto shop ($10), never great as a
 roadside find. A reward from the auto shop and gas station (B–A). Ruled 2026-10-21. It is the
@@ -187,14 +198,16 @@ air filter part, `airFilterStock`, built to this row on feature/parts (f5fa9cf9,
 REWARDS row (auto shop, gas station; B–A). Icon `airFilter.png`.
 
 ### Zip ties
-status: wip · design: ratified · build: effect · where: generalStore, autoShop, reward, found
+status: shipped · design: ratified · build: effect · where: generalStore, autoShop, reward, found
+Audit 2026-11-16: effect, general-store and auto-shop shelves and B–A reward all ship; only the roadside find is missing.
 Field repair, 10% on the `armor*` / `headlight*` tracks and the radiator. 5 per pack. 15 min per use;
 holds for the run (2026-10-20). $5–10; an auto-shop reward (B–A); a rare roadside find (2026-10-21).
 Flavor: "A mechanic's best friend" (owner, 2026-10-22).
 **In the game 2026-10-23** (`zipTies`, 0.2 kg): a live B–A auto-shop reward. **The repair is built on feature/parts** (`use: 'fieldRepair'`, 5 uses): picked on the damage screen, 15 min a use, capped at 80% [DEFAULT]. Shelf: Sometimes, **$10** (owner, 2026-10-24).
 
 ### Duct tape
-status: wip · design: ratified · build: effect · where: generalStore, reward, found
+status: shipped · design: ratified · build: effect · where: generalStore, reward, found
+Audit 2026-11-16: effect, general-store shelf and reward ship; only the roadside find is missing.
 Field repair, 20% on body panels. 3 uses per roll. 15 min per use; holds for the run (2026-10-20). $5–10;
 a reward from the auto shop, gas station and general store (B–A); a rare roadside find (2026-10-21).
 **In the game 2026-10-23** (`ductTape`, 0.35 kg): the reward is live on main. **The repair is built on feature/parts** (`use: 'fieldRepair'`, 3 uses): picked on the damage screen, 15 min a use, capped at 80% [DEFAULT].
@@ -205,7 +218,7 @@ Struck in items.md (owner, 2026-10-16): FEAT-51 has no coolant to top up — rad
 cooling capacity. Replaced by stop-leak.
 
 ### Stop-leak
-status: wip · design: ratified · build: effect · where: autoShop, gasStation, reward
+status: shipped · design: ratified · build: effect · where: autoShop, gasStation, reward
 Field repair: restores 15% radiator condition (owner, 2026-10-16), never past 50%. Under FEAT-51 that
 is cooling capacity directly — aimed at the overheat → power loss → engine wear chain. One use per
 bottle; 15 min; holds for the run (2026-10-20). $5–10; a reward from both (B–A); never found (2026-10-21).
@@ -213,13 +226,14 @@ Flavor: "Maybe this will keep 'er going" (owner, 2026-10-22).
 **In the game 2026-10-23** (`stopLeak`, 0.5 kg, `use: 'stopLeak'`): parked, +15% radiator up to 50%, a 15 min stop (main.js `_pourStopLeak`); a B–A reward from the auto shop and gas station. Shelf (feature/parts): Sometimes, **$10** (owner, 2026-10-24).
 
 ### Emergency gas
-status: wip · design: ratified · build: effect, model · where: gasStation, reward
+status: shipped · design: ratified · build: effect, model · where: gasStation, reward
 A 2 gal RotoPax, single-use — the mid-tier fuel reward (B–A). REWARDS id `emergencyGas` exists; granted into the inventory with its thumbnail (FEAT-122). Fuel shipped (FEAT-50, 2026-10-17); the pour itself is still unbuilt. Ruled 2026-10-21: parked only, a 10 min timeskip; $5–10; a gas-station and stranded-motorist reward (B–A); never found.
 The pour sounds like a glug glug glug, same as the jerry can (owner, 2026-10-22; FEAT-120).
 **The pour is now parked only and a 10 min stop** (2026-10-23, as ruled 10-21).
 
 ### Jerry can
-status: todo · design: ratified · build: effect · where: gasStation, reward, found
+status: shipped · design: ratified · build: effect · where: gasStation, reward, found
+Audit 2026-11-16: built, gas-station shelf (rarely, $30) and A–S reward ship; only the roadside find is missing.
 New (owner, 2026-10-21): a refillable 5 gal can — pour it, refill it at any pump. A top-tier reward.
 Shares the emergency-gas pour. **Ruled 2026-10-22:** parked, a 10 min pour; **16 kg full (14 kg of gas +
 a 2 kg plastic can** — owner, 2026-10-24, matching the reference photo; was a 4 kg steel can, 18 kg); an A–S reward from the gas station; sold at the gas station, rarely, $30; a very
@@ -260,12 +274,13 @@ Clears one hazard on one cut, once.
 ## Tools
 
 ### Bike pump
-status: todo · design: ratified · build: effect · where: kit
+status: shipped · design: ratified · build: effect · where: kit
+Audit 2026-11-16: the repair card's "Pump it up by hand" ships (main.js).
 Always in the truck, not bought, not in the inventory. Plug + pump is 2 h in all. The repair card's
 *Pump the tire by hand* button carries its pictogram, `assets/items/bikePump.png` (2026-10-21).
 
 ### Compressor
-status: wip · design: ratified · build: effect · where: autoShop, reward
+status: shipped · design: ratified · build: effect · where: autoShop, reward
 Makes a plug repair 30 min in all instead of 2 h. In ITEMS as `compressor` (tool, 4 kg) with its
 thumbnail (2026-10-21); owning it adds the *Inflate tire* button. **Ruled 2026-10-22:** it also takes
 30 min off the 2 h spare change, stacking with the quick-jack. No engine needed; 4 kg. $20 (replaces
@@ -273,14 +288,15 @@ the shop session's $15 stand-in); sold at the auto shop, rarely; an A–S reward
 work sites (rare); never found.
 
 ### Quick-jack
-status: wip · design: ratified · build: effect · where: autoShop, reward
+status: shipped · design: ratified · build: effect · where: autoShop, reward
 In ITEMS as `quickJack` (tool, 15 kg stand-in; cf60e9a4) with its thumbnail; the reward row, $30 shelf price and time saving are built on feature/parts.
 Roadside lift. **Ruled 2026-10-22:** takes 1 h off changing a whole tire (the spare's 2 h fit), and
 stacks with the compressor's 30 min. The spare does not need it — the factory jack is always in the
 truck. It does not shorten a plug repair: "you don't need to jack to plug" (owner, 2026-10-22). $30; sold at the auto shop; an A–S reward from the auto shop and stranded motorists; never found.
 
 ### Hi-lift jack
-status: todo · design: proposed · build: effect, model · where: autoShop, reward
+status: shipped · design: proposed · build: effect, model · where: autoShop, reward
+Audit 2026-11-16: src/hilift.js, auto-shop shelf and A–S reward ship.
 Rights a rolled truck where it lies; the mechanic is **FEAT-138** (the parts session's). Icon `hiLiftJack.png`. **Ruled 2026-10-22:** usable on any roll the death check did not
 end (the SM-INV-1 answer). It applies a roll torque for a set time (2–5 s) to a truck that is not on
 its wheels, in the direction the player picks; live in the physics, not a timeskip; a cooldown stops
@@ -309,7 +325,8 @@ Required for the fishing minigame (FEAT-37). Proposed by the owner (2026-10-22, 
 Basic, Advanced and Professional.
 
 ### Rubber bed mat
-status: todo · design: ratified · build: param, model · where: autoShop, reward
+status: wip · design: ratified · build: param, model · where: autoShop, reward
+Audit 2026-11-16: in ITEMS and REWARDS (bed, B–A). FEAT-231 (2026-11-16): μ 0.30 built (owned = on the bed floor; data/items.js bedMu), auto shelf $8 [DEFAULT] at Sometimes [DEFAULT]. Missing: the in-game visual.
 Raises cargo-to-floor friction in the bed: stops sliding, not bouncing. The lesser bedliner: it grips
 less, μ 0.30 (owner, 2026-10-22). $5–10 at the auto shop; a B–A reward from the firewood yard; never
 found. Still needs an in-game visual.
@@ -334,6 +351,7 @@ FEAT-16 (`M`). Listed so the navigation ladder reads whole.
 
 ### GPS unit
 status: todo · design: ratified · build: gate, effect · where: autoShop, reward, found
+Audit 2026-11-16: not in ITEMS; src/gps.js overlay is always on, no minimap, no gate.
 FEAT-39's route overlay already ships; story mode boots with it off until the item is owned. Never
 an ETA. **Owner, 2026-10-22: "it's a minimap."** No minimap exists in `src/`, hence `effect`. It shows
 **alongside** the in-world chevrons, not instead of them (owner, 2026-10-22). Strictly per run; uncommon; $10–30; sold at
@@ -355,32 +373,38 @@ Hazard reports on the Highway's roads (FEAT-119).
 ## Camp gear
 
 ### Bedroll
-status: wip · design: kit · build: model · needs: camp render · where: kit
+status: shipped · design: kit · build: model · needs: camp render · where: kit
+Audit 2026-11-16: model and camp render ship (src/camp-gear.js).
 In the inventory, packed in the starter Pack, with its thumbnail (FEAT-122). The camp-render model is still owed.
 The baseline sleeping item, no bonus. Fills one of the starter Pack's 2 slots.
 
 ### Air mattress
 status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf (STOREFRONT.generalStore has no camp lines).
 Sleeping item: +5% recovery rate. Swaps for the bedroll in its slot and in the render.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping pad
 status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf.
 Sleeping item: +10% recovery rate. Swaps for the bedroll.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Deluxe sleeping pad
 status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Audit 2026-11-16: item, rest bonus, model and reward (S) ship. Missing: the general-store shelf.
 Sleeping item: +15% recovery rate, the best bed. Swaps for the bedroll.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Blanket
 status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf.
 Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed and the sleeping bag.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping bag
 status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf.
 Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
 Renders with the bed, not in place of it.
 Camp render (owner, 2026-10-20): shown unrolled, corner unzipped and turned back; layered variants
@@ -390,6 +414,7 @@ unrolled, which is why their thumbnails are unrolled inflatables.
 
 ### Tent
 status: todo · design: idea · build: effect · needs: camp render · where: generalStore
+Audit 2026-11-16: item, rest bonus, model, $15 auto-shop shelf and A–S reward ship. Missing: the general-store shelf; design still `idea`.
 A multiplier on the night (open: flat like the bag and blanket?). Model done (ASSET-23); placement is FEAT-66.
 
 ### Cot
@@ -420,37 +445,43 @@ Raises it to ~2.2 m (≈20°). Both shovels can be carried, no extra effect (202
 general store; an A–S reward from farms, work sites and the general store; never found.
 
 ### Cooking kit
-status: todo · design: idea · build: effect · needs: camp render, hunger · where: generalStore
+status: wip · design: ratified · build: effect · needs: groceries · where: generalStore, reward
+**DEC-310 / FEAT-230 (2026-11-16):** deployed at camp it makes any food hold hunger 20 % longer (`COOKING_KIT_FOOD_MULT`); groceries are cooked with it, without the 20 % on top (slice 3).
 ≈23 kg always carried; flat bonus to food effects; the only way to cook groceries (2026-10-20). Model is ASSET-25 (A-frame + Dutch oven).
 
 ## Backpacks
 
 ### Pack
-status: wip · design: ratified · build: effect · needs: camp render · where: kit
+status: shipped · design: ratified · build: effect · needs: camp render · where: kit
+Audit 2026-11-16: reach is wired (camp.js reachM).
 In the inventory (FEAT-122): equipped at run start with the bedroll, pack/unpack/equip in the Tab screen, thumbnail. Reach is not wired to `campRoadEdgeM` yet — the starter's 40 m is today's tether, so it waits on a second pack.
 The starter pack: 2 slots, the bedroll in one, one open. Reach 40 m (today's tether). The equipped pack must always hold a sleeping item.
 
 ### Daypack
-status: todo · design: idea · build: effect · needs: camp render · where: generalStore
+status: wip · design: idea · build: effect · needs: camp render · where: generalStore
+Audit 2026-11-16: in ITEMS (FEAT-182, [DEFAULT] slots/reach/mass). Missing: every source (no shelf, no reward; debug grant only).
 Few slots, far reach (cap 120 m). Holds the camp gear you bring, one item per slot, shovels included; sets `campRoadEdgeM` for the
 night (items.md §2c). The walk is inside the 30 min make-camp chore.
 
 ### Duffel
-status: todo · design: idea · build: effect · needs: camp render · where: generalStore
+status: wip · design: idea · build: effect · needs: camp render · where: generalStore
+Audit 2026-11-16: in ITEMS (FEAT-182, [DEFAULT] numbers). Missing: every source (no shelf, no reward).
 Many slots, barely past the shoulder. More kit on near ground.
 
 ### Rucksack
-status: todo · design: ratified · build: effect · needs: camp render · where: generalStore
+status: wip · design: ratified · build: effect · needs: camp render · where: generalStore
+Audit 2026-11-16: in ITEMS (FEAT-182, [DEFAULT] numbers). Missing: every source (no shelf, no reward).
 Between the Duffel and the Frame pack: fewer slots than the Duffel, less reach than the Frame pack.
 
 ### Frame pack
-status: todo · design: idea · build: effect · needs: camp render · where: generalStore
+status: wip · design: idea · build: effect · needs: camp render · where: generalStore
+Audit 2026-11-16: in ITEMS (FEAT-182, [DEFAULT] numbers). Missing: every source (no shelf, no reward).
 Many slots and far reach — the "good at both" pack, priced to match.
 
 ## Vehicle upgrades
 
 ### Welded differential
-status: wip · design: ratified · build: param · where: autoShop
+status: shipped · design: ratified · build: param · where: autoShop
 Replaces the locker (owner, 2026-10-22): "You never go slow enough in my game to need a locker for
 offroad purposes but I do want a silly locked diff option to show up occasionally and we already built
 the part." The spider gears welded, both rear wheels always together. The locked-diff part on
@@ -458,13 +489,15 @@ feature/parts (`diffLocked`) is renamed; cheaper than the locker's $35. Shelf li
 Price, sources and rank gate open on the setup page. Icon `diff.png`.
 
 ### Limited-slip differential
-status: todo · design: ratified · build: param · where: autoShop, reward, found
+status: shipped · design: ratified · build: param · where: autoShop, reward, found
+Audit 2026-11-16: `diffClutchLSD` and `diffLSD` ship on the shelf and as rewards; only the barn-find event is missing.
 `rearDiffMode: 'lsd'` already exists in `data/ranger.js` (debug panel). The barn find. **Ruled
 2026-10-22:** use the LSD already built — nothing new. A barn-find event; $30–100; sold at the auto
 shop; an S-only reward from the auto shop, stranded motorists and residences, very rare.
 
 ### Power mods
 status: todo · design: ratified · build: effect · where: autoShop, reward, found
+Audit 2026-11-16: none of the ten exist; no modifier layer in data/engines.js. Ticket: FEAT-189 (open).
 A worse car without the literacy — the cursed item nobody had to author. Ten pieces, each its own item,
 with the owner's figures from the setup page (2026-11-08). **FEAT-189 builds them** (lane B): the first
 modifier layer on `data/engines.js`.
@@ -494,18 +527,21 @@ start" (FEAT-69).
 
 ### V6 engine swap
 status: todo · design: proposed · build: effect · where: autoShop, reward
+Audit 2026-11-16: not built. Ticket: FEAT-190 (open).
 FEAT-190 (owner, 2026-11-08): the I4 is the default engine now and the V6 is a mod. **A–S, epic.** The swap
 carries the engine's own mass. Open on the setup page: which V6 — the 3.0 Vulcan (145 hp, today's
 `vulcan30`) or the 4.0 SOHC (207 hp) — and its price and sources.
 
 ### V8 engine swap
 status: todo · design: proposed · build: effect · where: autoShop, reward
+Audit 2026-11-16: not built. Ticket: FEAT-190 (open).
 FEAT-190 (owner, 2026-11-08): **S only, legendary.** The Ford 5.0 L V8 from the 1996–2001 Explorer: 215 hp at
 4200 rpm, 288 lb·ft at 3300. A new `ENGINES` entry with its own fuel map. Open on the setup page: its mass and
 price and sources.
 
 ### Bigger fuel tank
 status: todo · design: proposed · build: param · where: autoShop
+Audit 2026-11-16: not built. Ticket: FEAT-190 (open).
 FEAT-190 (owner, 2026-11-08): a mod. Stock is 16.5 gal (`fuelTankGal`). Capacity, mass, price, rarity, rank
 and sources are open on the setup page (proposed 19.5 / 23 / 30 gal).
 
@@ -514,36 +550,41 @@ status: cut · design: proposed · build: param · where: autoShop
 Replaced by the named tire types (Old / Standard / Sport / Off-road / LT), items.md §3g.
 
 ### Brake pads (per axle)
-status: todo · design: proposed · build: param · where: autoShop
+status: shipped · design: proposed · build: param · where: autoShop
+Audit 2026-11-16: standard/sport/race pads and shoes ship in data/parts.js.
 Pad grade per axle sets bias. **Pads are front-only; the rear axle has drum shoes** (owner, 2026-10-21) —
 feature/parts already names its rear slot "Rear brake shoes". Icons: `pads.png` (front), `shoes.png` (rear).
 
 ### Sport anti-roll bars
-status: todo · design: ratified · build: param · where: autoShop
+status: shipped · design: ratified · build: param · where: autoShop
+Audit 2026-11-16: `arbFrontSport` 9500 and `arbRearSport` 6500 ship, shelf and reward.
 `arbStiffness{Front,Rear}` 9500 / 6500 vs stock 5000 / none.
 
 ### Heavy-duty springs
-status: todo · design: ratified · build: param · needs: load verdicts · where: autoShop
+status: shipped · design: ratified · build: param · needs: load verdicts · where: autoShop
+Audit 2026-11-16: `springsHD` with its load rating ships (src/load-verdict.js).
 Raises the spring rating (FEAT-112). Harsher empty, less squat loaded.
 
 ### Heavy-duty dampers
-status: todo · design: ratified · build: param · needs: load verdicts · where: autoShop
+status: shipped · design: ratified · build: param · needs: load verdicts · where: autoShop
+Audit 2026-11-16: `dampersHD` ships.
 Raises the damper rating (FEAT-112).
 
 ### Sport springs
-status: todo · design: proposed · build: param · where: autoShop
+status: shipped · design: proposed · build: param · where: autoShop
 A sport suspension tier (owner, 2026-10-22), front and rear, §3d Sport character (wears faster).
 Rate, ride height and load ratings open on the setup page. **$15 per part (owner, 2026-10-24; folded
 2026-11-08 — the game already charges it).** Icon `springs.png`.
 
 ### Sport shocks
-status: todo · design: proposed · build: param · where: autoShop
+status: shipped · design: proposed · build: param · where: autoShop
 The sport tier's shocks (owner, 2026-10-22), front and rear. Damping and load ratings open on the
 setup page. **$15 per part (owner, 2026-10-24; folded 2026-11-08 — the game already charges it).** Icon
 `dampers.png`.
 
 ### LT load-range-E tires
-status: todo · design: ratified · build: param, effect · needs: load verdicts · where: autoShop
+status: shipped · design: ratified · build: param, effect · needs: load verdicts · where: autoShop
+Audit 2026-11-16: `tireLT` with load rating (pop 850 kg) ships.
 Raises the tire rating; overloaded, they shift down the puncture curve (the effect half).
 Desc: "Stiff sidewalls built to carry a load. A little less grip." (owner, 2026-10-23).
 
@@ -553,33 +594,39 @@ Killed as items (owner, 2026-10-22): "these are assists available in the setting
 FEAT-57 still frames them as parts.
 
 ### Bedliner
-status: todo · design: ratified · build: param, model · where: autoShop, reward
+status: wip · design: ratified · build: param, model · where: autoShop, reward
+Audit 2026-11-16: not in parts or ITEMS; no `bedliner.png` thumbnail. FEAT-231 (2026-11-16): an ITEMS tool like the mat, μ 0.60 (wins over the mat), auto shelf $20 [DEFAULT] at Hardly ever, REWARDS A–S (bed); the mat's thumbnail. Missing: its own thumbnail, the in-game visual.
 The mat's friction, done properly; never wears out. μ 0.60 (owner, 2026-10-22). $10–30 at the auto
 shop, very rarely; an A–S reward from the firewood yard (haul jobs); never found. Still needs an
 in-game visual.
 
 ### Extended bed
 status: todo · design: ratified · build: effect, model · needs: bed parts · where: autoShop, reward
+Audit 2026-11-16: not built. Ticket: FEAT-115 (open).
 Long loads fit (FEAT-115).
 
 ### Flatbed
 status: todo · design: ratified · build: effect, model · needs: bed parts · where: autoShop, reward
+Audit 2026-11-16: not built. Ticket: FEAT-115 (open).
 Wider deck, no sides — loose haul spills (FEAT-115).
 
 ### Stake bed
 status: todo · design: ratified · build: effect, model · needs: bed parts · where: autoShop, reward
+Audit 2026-11-16: not built. Ticket: FEAT-115 (open).
 Bigger deck, stakes keep most of a loose load in (FEAT-115).
 
 ### Roof rack
 status: todo · design: ratified · build: effect, model · needs: bed parts · where: autoShop, reward
+Audit 2026-11-16: not built. Ticket: FEAT-115 (open).
 A second space for long, light loads (FEAT-115).
 
 ### Light bar
 status: todo · design: proposed · build: effect, model · where: autoShop, reward
+Audit 2026-11-16: not built. Ticket: FEAT-115 (open).
 See further at night (FEAT-115).
 
 ### Steel wheel
-status: wip · design: ratified · build: param, model · where: autoShop, reward, found
+status: shipped · design: ratified · build: param, model · where: autoShop, reward, found
 Its own part (owner, 2026-10-21): wheels and tires are separate (items.md §3g). The stock wheel,
 `wheelSteel` on feature/parts: one socket per corner (30 min), $8, 9 kg; a bent rim is its damage.
 **Set 2026-10-22:** $5–10; a B–A reward from the auto shop, farms and residences; a rare roadside find.
@@ -593,6 +640,7 @@ status: todo · design: idea · build: effect, model · needs: hazards · where:
 
 ### Stock engine
 status: wip · design: proposed · build: param · where: autoShop
+Audit 2026-11-16: part ships, but is still 180 kg and described "the factory six"; the I4's own mass is not in data/engines.js.
 New part on feature/parts-shop (2026-10-22), `engineStock`: the engine bay had damage tracks and no part,
 so exchange and the shelf had nothing to sell. 8 h to swap, $60 (owner, 2026-10-22). **The stock engine
 is the 2.3 I4 from 2026-11-08** (FEAT-190: `duratec23`, 143 hp, 209 N·m); the part was a 180 kg V6 crate and
@@ -601,12 +649,12 @@ Icon `engine.png`. Owner, 2026-10-22: "This would make for a sweet freight deliv
 candidate row in cargo.md (Freight).
 
 ### Stock radiator
-status: wip · design: proposed · build: param · where: autoShop
+status: shipped · design: proposed · build: param · where: autoShop
 New part on feature/parts-shop (2026-10-22), `radiatorStock`: 7 kg, 1.5 h to swap, $22 stand-in. Icon
 `radiator.png`, shared with the heavy-gauge radiator below.
 
 ### Headlight
-status: wip · design: proposed · build: param · where: autoShop
+status: shipped · design: proposed · build: param · where: autoShop
 New part on feature/parts-shop (2026-10-22), `headlightStock`: one unit, either side, 1.5 kg, 30 min to
 swap, $4 stand-in. Icon `headlight.png`.
 
@@ -615,7 +663,7 @@ status: todo · design: idea · build: param · where: autoShop
 §3c's "space for more" — survives the front hit. (FEAT-51 shipped: radiator condition is the cooling capacity.)
 
 ### Old tires
-status: todo · design: ratified · build: param · where: autoShop, reward, found
+status: shipped · design: ratified · build: param · where: autoShop, reward, found
 items.md §3g. The bottom rung: −10% grip on pavement and dirt (owner, 2026-10-22). They show up found
 or in a junkyard (a rare roadside find), and the auto shop sells them, $5–10; a C–B reward from the
 auto shop and farms. Desc: "Cracked and dry rotted rubber. Slippery and fragile." (owner, 2026-10-23).
@@ -629,20 +677,23 @@ Fine everywhere, great nowhere." (owner, 2026-10-23; each tire now has its own, 
 grip against today's single value (FEAT-38).
 
 ### Sport tires
-status: todo · design: proposed · build: param · where: autoShop, reward
+status: wip · design: proposed · build: param · where: autoShop, reward
+Audit 2026-11-16: +10 % grip, wear ship. Missing: the −10 % dirt half (no per-family surface μ).
 items.md §3g. Better than standard on pavement, worse on dirt, wears out faster (§3d Sport): +10% /
 −10%, wear ×1.25 (owner, 2026-10-22). $10–30 at the auto shop; an A–S reward from the auto shop and
 stranded motorists. Roadside find: open. Desc: "Sticky. Great grip on pavement, not so good on dirt. Wears fast."
 
 ### Off-road tires
-status: todo · design: proposed · build: param · needs: surfaces · where: autoShop, reward
+status: wip · design: proposed · build: param · needs: surfaces · where: autoShop, reward
+Audit 2026-11-16: part ships at standard grip. Missing: +15 % dirt grip and the taller radius/gearing (no per-family surface μ).
 items.md §3g. Same pavement grip as standard, +15% on dirt (owner, 2026-10-22). Taller, wider,
 heavier: clearance and taller gearing; fits without the lift. The dirt half waits on per-surface grip
 (FEAT-38, `muScale` in `src/tire.js`). $10–30 at the auto shop; an A–S reward from farms, the auto
 shop and work sites. Roadside find: open. Desc: "Chunky tread. At home on dirt, no worse on pavement. Heavy."
 
 ### Off-road suspension
-status: todo · design: ratified · build: param · where: autoShop, reward
+status: shipped · design: ratified · build: param · where: autoShop, reward
+Audit 2026-11-16: `liftKit` (5 cm, +travel) ships on the shelf and as a B–A reward.
 items.md §3g — the lift kit, 2 in (owner, 2026-10-22). $10–30 at the auto shop; a B–A reward from
 work sites, the auto shop and farms; never found. Ride height + travel (`suspensionBodyOffset*`, `suspensionTravel*`,
 `suspensionRestLength*`). Cost is emergent: higher CG, more roll, earlier rollover.
@@ -672,3 +723,70 @@ No stat (owner, 2026-10-15). Story content only, if they survive.
 
 - Every live row in items.md has a row here; struck items are `cut`.
 - The dashboard's Items tab shows them all with no parser warnings.
+
+## Audit 2026-11-16
+
+Every row checked against `data/items.js`, `data/parts.js`, `data/engines.js`, `data/shop-stock.js`, `data/stock-weights.js`,
+`data/offers.js` (REWARDS, REWARD_VALUE), `src/inventory.js`, the `effects:` map in `src/main.js`, and `assets/items/`.
+Counts after the audit: **33 shipped · 17 wip (partly built) · 47 todo (not built) · 4 cut** (101 rows).
+Convention: the roadside **find** channel does not exist (world spawns, phase 3, are not built), so a row whose only gap
+is `found` stays `shipped`; every other ruled channel (effect, shelf, reward, model, number) counts. No stack caps exist
+anywhere (`inventory.js` stacks without limit), so every ruled "stacks N" is unbuilt. Rows I did not touch: Potato,
+Groceries, Cooking kit (FEAT-230 / DEC-310, another agent).
+
+Items in the game with no row here: School lunch, Quilt, Awning, Tire iron (placeholder thumbnail). Add rows when next touched. Row-vs-code drift worth an owner glance: Tent's design is still `idea` though it ships;
+Shovel row says `campGateUnevenM` 1.2 m but the code value is 1.5 m.
+
+### Ratified and not fully shipped
+
+| Row | What is missing | Depends on | Buildable now? |
+|---|---|---|---|
+| Chili dog | 16 h spoilage | spoilage | item itself done; spoil clause blocked |
+| Dinner meal | the food vendor's eat-in menu item ($5–10; invitation reward ships) | a menu UI at the vendor; price number | no: price is a range |
+| Burger | whole item: ITEMS, $5 vendor shelf, B–A reward, 16 h spoil | spoilage (clause only) | yes, minus spoilage |
+| Packed lunch | B–A reward row (residence, farm, vendor); 24 h freshness | spoilage (clause only) | yes, reward row |
+| Bag of peanuts | C–B reward row; stack cap 3; find | stack caps; find | yes |
+| Gummy worms, Spicy chips, Candy bar | whole item, gas-station shelf, C–B reward, stack caps; thumbnails exist | none | needs price + mass numbers |
+| Rubber bed mat | visual (μ 0.30 and the shelf built, FEAT-231) | none | built at $8 [DEFAULT] |
+| Bedliner | thumbnail, visual (item, μ 0.60, shelf, A–S reward built, FEAT-231) | none | built at $20 [DEFAULT], Hardly ever |
+| Air mattress, Sleeping pad, Deluxe sleeping pad, Blanket, Sleeping bag | general-store shelf (all else ships) | none | yes; price = REWARD_VALUE [DEFAULT] unless owner rules |
+| Rucksack (+ Daypack, Duffel, Frame pack, not ratified) | every source: shelf and reward | none | needs slots, reach, mass, price, gates |
+| GPS unit | whole item; minimap (new UI); story gate that boots the overlay off | none | needs price ($10–30 is a range) |
+| Bubble wrap, Furniture pad, Heavy-duty pad | whole items, spent at job take | cargo protection (FEAT-116, open) | no |
+| Ice, Cooler, Ice King | whole items, 72 h / 5 d ice clock, ×1/6 and ×1/8 rates | spoilage (no ticket) | no |
+| Chain | the log-drag constraint item | owner question: carried or mission-supplied | no |
+| Shortcut GPS | whole item | cuts, spirits | no |
+| Power mods (10) | modifier layer on `engines.js`, all ten | FEAT-189 (open) | ticket exists |
+| Extended bed, Flatbed, Stake bed, Roof rack | whole parts | bed parts (FEAT-115, open) | ticket exists |
+| Potato, Groceries, Cooking kit | effects | FEAT-230 | in progress elsewhere |
+
+Partly-built rows that are not `ratified` (still in the list as wip): Stock engine (180 kg and "the factory six"; the I4's mass is
+not in `data/engines.js`: a number to confirm), Sport tires (−10 % dirt half), Off-road tires (+15 % dirt, taller radius and gearing).
+These two need a per-tire-family dirt multiplier; `physics.js` has a per-wheel `_tireMuScale`, but I found no FEAT-38 ticket
+to say a surface-μ table ships, so check before building.
+
+### Proposed tickets from the BUILDABLE NOW rows (not created)
+
+1. **Gas-station snacks** — Gummy worms, Spicy chips, Candy bar, Peanuts' reward row, stack caps (3/5/4/5 and the others ruled).
+   Files: `data/items.js`, `data/shop-stock.js` (ITEM_PRICE, STOREFRONT.gasStation), `data/offers.js` (REWARDS, REWARD_VALUE),
+   `data/stock-weights.js`, `src/inventory.js` (stack cap), inventory gates. Sonnet. Missing numbers: price of each (only "under $5"), mass of each. Overlaps FEAT-123.
+2. **Food vendor: burger, packed-lunch reward, dinner-meal menu** — Burger item + $5 shelf + B–A reward; Packed lunch REWARDS row; the vendor's eat-in dinner meal. Files: `data/items.js`, `data/shop-stock.js`, `data/offers.js`, `src/main.js` (eat-in action). Sonnet. Missing number: dinner meal price ($5–10). Spoilage clauses deferred.
+3. **Camp gear and packs at the general store** — five bed items + Tent on `STOREFRONT.generalStore`; the four packs' sources. Files: `data/shop-stock.js`, `data/offers.js`. Sonnet. Missing numbers: pack slots, reach, mass, price, gates (all [DEFAULT] now); shelf prices for the bed items (REWARD_VALUE as default).
+4. **Bed friction: rubber mat and bedliner** — the cargo-to-floor μ 0.30 / 0.60, the bedliner part, shelf and rewards, an in-game visual, `bedliner.png`. Files: `src/physics.js` (BED_SHAPE_MU), `data/parts.js` or `data/items.js`, `data/shop-stock.js`, `data/stock-weights.js`, `data/offers.js`, `assets/`. Opus (physics). Missing numbers: mat price, bedliner price, bedliner shelf weight.
+5. **GPS unit** — item, minimap, story-mode gate on the route overlay. Files: `data/items.js`, `src/gps.js`, a new minimap in `src/main.js`/`src/map2d.js`, `data/shop-stock.js`, `data/offers.js`. Sonnet (UI) with the UI-STYLE read first. Missing number: price.
+6. **Tire dirt grip** (not ratified, partly built) — Sport −10 %, Off-road +15 % on dirt, off-road radius/gearing. Files: `data/parts.js`, `src/physics.js`/`src/tire.js`. Opus. Missing numbers: off-road radius or gearing change; confirm the surface-μ source.
+7. **Stock engine mass** — data only: `data/parts.js`, `data/engines.js`. Sonnet. Missing number: the I4's mass (real-world ~130 kg, owner to confirm).
+
+### Missing systems, by rows blocked
+
+1. **Spoilage** (items.md §1b, no ticket) — Ice, Cooler, Ice King, 4 fish, plus the spoil clause of Chili dog, Burger, Packed lunch, Groceries: 7 rows fully blocked, 4 partly.
+2. **Find system** (world spawns, phase 3) — every `found` channel: about 20 rows lose only that channel.
+3. **Bed parts** (FEAT-115) — 5 rows (Extended bed, Flatbed, Stake bed, Roof rack, Light bar).
+4. **Cargo protection** (FEAT-116) — 3 rows (Bubble wrap, Furniture pad, Heavy-duty pad).
+5. **Spirits** — 4 rows (Shortcut GPS, 3 spirit gifts), with cuts/hazards (FEAT-26/27/52) blocking Dynamite, CB radio, Skid plates, Shortcut GPS.
+6. **Fishing** (FEAT-37) — 4 fish, Fishing gear, Confluence lure.
+7. **Stack caps** (small, no ticket) — every ruled stack size; fold into proposal 1.
+
+## Log
+
+- 2026-11-16 — item audit (lane B, `land/items-audit`): every row's status set from the game; per-row "Audit" lines added; the Audit section above lists what is ratified and unbuilt, the buildable groups and the blocking systems. Docs only.

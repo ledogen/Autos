@@ -19,7 +19,7 @@
 import * as THREE from 'three'
 import { LiveExposure } from './exposure.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, syncChassisMass, rollBalance } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine } from './physics-engine.js'
@@ -89,7 +89,7 @@ import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR, clockHeld } from './d
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
-import { ITEMS } from '../data/items.js'
+import { ITEMS, foodHoldH } from '../data/items.js'
 import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
@@ -3760,11 +3760,12 @@ function _pourStopLeak () {
 const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots,
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
-  onChange: () => { inventoryScreen.render(); campGear.refresh(inventorySystem.packed()); _syncItemChoice() },   // packing at camp re-dresses it; FEAT-199: room made
+  onChange: () => { inventoryScreen.render(); campGear.refresh(inventorySystem.packed()); _syncItemChoice()
+    setBedGrip(physicsEngine, vehicleChassis, inventorySystem.bedMu()) },   // FEAT-231: a mat / liner owned lies on the bed floor   // packing at camp re-dresses it; FEAT-199: room made
   onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
-  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(ITEMS[e.id].hold), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
+  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(foodHoldH(e.id, _kitAtCamp())), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
     spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
     fieldRepair: (e) => { queueMicrotask(() => _pickFieldRepair(e.id)); return false },
     jerry: (e) => { queueMicrotask(() => _pourJerry(e)); return false },
@@ -7100,6 +7101,7 @@ function _renderCampUI () {
   show('cp-sleep',  isHome && !noBed)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   st.mode === 'camp' || st.mode === 'truck')
+  show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit all camp
   show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
@@ -7213,6 +7215,12 @@ document.getElementById('cp-truck')?.addEventListener('click', () => {
   _renderCampUI()
 })
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
+// FEAT-230 slice 1: one raw potato on the camp fire, 30 min behind the fade like the make-camp chore.
+document.getElementById('cp-cook')?.addEventListener('click', (e) => {
+  e.currentTarget.blur()
+  if (!_campUi || _campBusy || _campUi.mode !== 'camp') return
+  _campFade(() => { if (inventorySystem.convert('potato', 'potatoCooked')) daySystem.advanceMinutes(30); _renderCampUI() })
+})
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
 document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
@@ -8401,7 +8409,11 @@ function _acceptOffer () {
  * item. Disabled while the truck has no room (it says so; the inventory's onChange re-syncs it once room is
  * made). A full truck still takes the cash.
  */
+/** DEC-310: the cooking kit stands over the fire — camp is made and the equipped pack holds it (what campGear renders). */
+const _kitAtCamp = () => _campUi?.mode === 'camp' && inventorySystem.packed().includes('cookingKit')
+
 function _syncItemChoice () {
+  if (_campUi?.mode === 'camp') _renderCampUI()   // FEAT-230: the cook button follows the raw potatoes aboard
   for (const [id, sys] of [['mp-item', missionSystem], ['pp-item', paperRouteSystem]]) {
     const b = document.getElementById(id), r = sys?.state === 'done' ? sys.result : null
     const aw = r?.award

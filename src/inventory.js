@@ -34,6 +34,8 @@ export const runInventory = {
 }
 
 const _stacks = (id) => STACKING_KINDS.has(ITEMS[id].kind)
+/** FEAT-230: units to a slot — ITEMS[id].stack (the potato's 5, items.md §1); unset = one slot holds any number. */
+const _cap = (id) => ITEMS[id].stack ?? Infinity
 const _isPack = (e) => ITEMS[e?.id]?.kind === 'pack'
 const _bed = (id) => ITEMS[id]?.bed ?? null   // FEAT-171: 'ground' | 'bedding' | 'blanket'
 const _isBedding = (id) => _bed(id) === 'bedding'
@@ -98,6 +100,15 @@ export class InventorySystem {
     restBonus () { return this.packed().reduce((s, id) => s + (ITEMS[id].rest ?? 0), 0) }
     /** The vibe segments packed gear fills on the chosen site (camp.js vibeAssist). */
     fills () { return new Set(this.packed().map(id => ITEMS[id].fills).filter(Boolean)) }
+    /** FEAT-231: the bed floor's grip — the best `bedMu` owned (the bedliner over the mat), null = the bare bed. */
+    bedMu () {
+        let mu = null
+        for (const e of runInventory.entries) {
+            const m = ITEMS[e.id]?.bedMu
+            if (m != null && (mu == null || m > mu)) mu = m
+        }
+        return mu
+    }
     pending () { return runInventory.pending }
     nameOf (id) { return ITEMS[id]?.name ?? id }
     usable (id) { const h = ITEMS[id]?.use; return !!(h && this._effects[h]) }
@@ -105,7 +116,8 @@ export class InventorySystem {
     /** Slots a grant of `n` × `id` would need right now. */
     _need (id, n) {
         if (!_stacks(id)) return n
-        return runInventory.entries.some(e => e.id === id) ? 0 : 1
+        const have = runInventory.entries.filter(e => e.id === id)
+        return Math.ceil((have.reduce((k, e) => k + e.n, 0) + n) / _cap(id)) - have.length
     }
     fits (id, n = 1) { return this.slotsUsed() + this._need(id, n) <= this.slotCap() }
 
@@ -121,9 +133,15 @@ export class InventorySystem {
             this._changed()
             return 'pending'
         }
-        const e = _stacks(id) && runInventory.entries.find(e => e.id === id)
-        if (e) e.n += n
-        else if (_stacks(id)) runInventory.entries.push({ id, n })
+        if (_stacks(id)) {   // fill the open stacks first, then start new ones (a capped kind spans slots)
+            for (let left = n; left > 0;) {
+                const e = runInventory.entries.find(e => e.id === id && e.n < _cap(id))
+                const put = Math.min(left, _cap(id) - (e?.n ?? 0))
+                if (e) e.n += put
+                else runInventory.entries.push({ id, n: put })
+                left -= put
+            }
+        }
         else for (let i = 0; i < n; i++) runInventory.entries.push({ ..._newEntry(id), ...extra })
         this._changed()
         return 'taken'
@@ -182,6 +200,15 @@ export class InventorySystem {
         return true
     }
 
+    /** FEAT-230: turn one unit of `from` into one of `to` (a raw potato cooked). False, nothing changed, if
+     *  none is owned or the result has no room (a lone raw frees its slot, so cooking the last one always fits). */
+    convert (from, to) {
+        if (!this.consume(from)) return false
+        if (this.fits(to)) return this.grant(to) === 'taken'
+        this.grant(from)
+        return false
+    }
+
     /** Drop the entry at `index` (the whole stack, for a stacking kind). Never the equipped pack or a
      *  pack with anything in it. */
     drop (index) {
@@ -201,7 +228,7 @@ export class InventorySystem {
     restoreEntry (entry) {
         const it = ITEMS[entry?.id]
         if (!it || !this.fits(entry.id, entry.n)) return false
-        const s = _stacks(entry.id) && runInventory.entries.find(e => e.id === entry.id)
+        const s = _stacks(entry.id) && runInventory.entries.find(e => e.id === entry.id && e.n + entry.n <= _cap(entry.id))
         // ponytail: one open roll per stack — merging two keeps the emptier one's uses, so a merge can
         // lose a few but never mints any; track open rolls per unit if that ever matters.
         if (s) { s.n += entry.n; if (entry.left != null) s.left = Math.min(s.left ?? it.uses, entry.left) }
