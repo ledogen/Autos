@@ -9726,6 +9726,7 @@ function _exitStageLoad () {
   menuStage.setActive(false)
   _simHeld = false
   document.body.classList.remove('stage-on')
+  map2d.preload()   // PERF-52: the map's first-open work, in the same task as the loading screen's last frame
   // The chase camera is a spring and it has been sitting wherever the last mode left it. Without
   // this it slides onto the truck over about a second the moment the world appears, which reads as
   // the camera "arriving" rather than the world simply being there (owner, 2026-09-06).
@@ -11480,6 +11481,7 @@ function _lampSweepStep () {
 perfMark('init: synchronous bootstrap done, requesting first frame')  // D-arc
 // Dev handle (like __view above): init — including the QUAL-14 async spawn warm — is complete and
 // the render loop is starting. Read by the headless boot-timing probes.
+if (_noMenu) map2d.preload()   // PERF-52: ?nomenu boots straight into the world; a menu boot preloads at its own load's end (_exitStageLoad)
 window.__rsReady = true
 requestAnimationFrame(loop)
 // PERF-21: precompile the light-count shader variants (lamps off/brake/night/reverse) off the

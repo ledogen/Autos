@@ -818,6 +818,34 @@ export class Map2D {
     }
 
     /**
+     * PERF-52 (owner, 2026-11-16: the first open hangs 0.5–1 s): do the first open's work behind the loading screen.
+     * That work is the first background build — the ground's cover raster, the water warm-up, the contours (a 2 s
+     * long task on a loaded box, all of it noise2D / coarseHeight in the tiles) — and every tile and cover chunk of it
+     * is memoised, so the first real open then rebuilds from memos in a frame or two. Runs the same world path show()
+     * does (_paramSig → _buildRoad, which drops the memos with the old world), on the window laid out but not painted,
+     * and starts no network stream: show() does that, as ever. The caller has the body OUT of stage-on (the stage hides
+     * #map-window, and a hidden window has no size to build for). Synchronous: it is the loading screen's last step.
+     */
+    preload() {
+        if (this._open) return
+        const w = this._win
+        w.style.visibility = 'hidden'; w.style.display = 'flex'
+        try {
+            this._measure()
+            if (this._sizeStale()) this._resize()
+            const sig = this._paramSig()
+            if (!this._road || sig !== this._sig) { this._buildRoad(); this._sig = sig }
+            const car = this._getCar()
+            this._panX = car.x; this._panZ = car.z
+            this._syncRegionWindow()
+            this._startBackground(); this._bgDirty = false
+            this._stepBackground(Infinity)
+        } finally {
+            w.style.display = 'none'; w.style.visibility = ''
+        }
+    }
+
+    /**
      * Center + zoom so a world-XZ box fits on screen (story-mode mission framing: the whole
      * route should be readable the moment the offer appears, not somewhere off the edge).
      * Call AFTER show() — it needs the resized canvas. Sets _zoomInit so the first background
@@ -3481,11 +3509,11 @@ export class Map2D {
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
         ctx.fillText(`Contour interval ${CONTOUR_IV} m`, s.x0, by)
         const ivR = s.x0 + ctx.measureText(`Contour interval ${CONTOUR_IV} m`).width
-        this._drawControls(ctx, s, by, ivR + 24, bx - 70)
+        this._drawControls(ctx, s, by, ivR + 24, s.cx - 65)   // up to the cursor's coordinate readout, which sits at the sheet's centre
     }
 
-    // FEAT-234 (owner, 2026-11-16): the map's controls — pan, zoom, set waypoint — printed in the bottom margin between the
-    // contour note and the scale bar. Keycaps as the HUD's (park-badge.js keycap): the key's cap on the keyboard, the pad's
+    // FEAT-234 (owner, 2026-11-16): the map's controls — pan, zoom, set waypoint — printed in the bottom margin after the
+    // contour note, clear of the cursor's coordinate readout at the centre. Keycaps as the HUD's (park-badge.js keycap): the key's cap on the keyboard, the pad's
     // button when the pad last drove (pad.active); the pad's face buttons and sticks are round. Skipped when they do not fit.
     _drawControls(ctx, s, by, xMin, xMax) {
         const usePad = pad.active
@@ -3497,8 +3525,8 @@ export class Map2D {
         const capW = c => (usePad && c.length === 1) ? CAP : Math.max(CAP, ctx.measureText(c).width + 8)
         const w = groups.map(([label, caps]) => caps.reduce((a, c) => a + capW(c) + GAP, 0) + 2 + ctx.measureText(label).width)
         const total = w.reduce((a, b) => a + b, 0) + SEP * (groups.length - 1)
-        let x = (xMin + xMax) / 2 - total / 2
-        if (x < xMin) return
+        let x = xMin
+        if (x + total > xMax) return
         ctx.textBaseline = 'middle'; ctx.lineWidth = 1
         for (const [label, caps] of groups) {
             for (const c of caps) {
