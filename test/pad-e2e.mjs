@@ -134,8 +134,8 @@ l = await ls(); check(l.tr && Math.hypot(l.dx, l.dz) < 1, `the left stick click 
 // B again leaves the list, LB swaps back to Missions.
 const btnS = async (b) => { await js(`__fp.b[${b}] = 1`); await sleep(150); await js(`__fp.b[${b}] = 0`); await sleep(350) }
 const ss = () => js('(() => { const m = __map2d(); return { tab: m._tab, id: m._listId, open: m._openShop, open2: m.isOpen(), rows: m._rows.map(r => r.id).join(), html: document.getElementById("map-list").textContent } })()')
-await btnS(5); let sh = await ss()
-check(sh.tab === 'shopping' && /3\.00\/gal/.test(sh.html) && /new stock in 2 h/.test(sh.html), `RB swaps to the Shopping list: the pump's price, the shop's stock timer (${sh.tab}: "${sh.html}")`)
+await btnS(2); let sh = await ss()
+check(sh.tab === 'shopping' && /3\.00\/gal/.test(sh.html) && /new stock in 2 h/.test(sh.html), `X swaps to the Shopping list: the pump's price, the shop's stock timer (${sh.tab}: "${sh.html}")`)
 await btnS(13); await btnS(0); sh = await ss()
 check(sh.id === 'near' && sh.open === null && sh.rows === 'near,far', `A on a pump opens nothing (${sh.id}, open ${sh.open}, rows ${sh.rows})`)
 await btnS(13); await btnS(0); sh = await ss()
@@ -147,7 +147,7 @@ check(sh.open === null && sh.id === 'far' && sh.rows === 'near,far' && sh.open2,
 await btnS(13); await btnS(13); await btnS(0); await btnS(0); sh = await ss()
 check(sh.id === 'far' && sh.open === null, `A on the open shop's header again closes it (${sh.id}, open ${sh.open})`)
 await btnS(1); sh = await ss(); check(sh.id === null && sh.open2, `the next B leaves the list, the map still open (${sh.id})`)
-await btnS(4); sh = await ss(); check(sh.tab === 'missions', `LB swaps back to Missions (${sh.tab})`)
+await btnS(2); sh = await ss(); check(sh.tab === 'missions', `X swaps back to Missions (${sh.tab})`)
 // FEAT-211 landing 3: the waypoint on the pad. Free roam has no run, so main.js's side is stubbed (it records the drop and
 // says yes). Y sends n and drops it at the pad cursor (the sheet centre) without touching the ignition; Y again, on the pin,
 // clears it; A with nothing highlighted drops it as well (Enter), and A on a highlighted shop still opens the shop instead.
@@ -163,9 +163,9 @@ check(wq.win === 'n' && wq.calls === 1 && Math.abs(wq.at?.x - wq.px) < 0.5 && Ma
   `Y sends n: a waypoint at the sheet centre (${wq.at?.x.toFixed(0)},${wq.at?.z.toFixed(0)} vs ${wq.px.toFixed(0)},${wq.pz.toFixed(0)}), ignition untouched (${ign0} → ${wq.ign}; window saw "${wq.win}")`)
 await btnS(3); wq = await wp(); check(wq.calls === 2 && wq.at === null, `Y on the pin clears it (calls ${wq.calls}, at ${JSON.stringify(wq.at)})`)
 await btnS(0); wq = await wp(); check(wq.calls === 3 && wq.at !== null, `A with nothing highlighted drops it too (calls ${wq.calls})`)
-await btnS(5); await btnS(13); await btnS(13); await btnS(0); sh = await ss(); wq = await wp()
+await btnS(2); await btnS(13); await btnS(13); await btnS(0); sh = await ss(); wq = await wp()
 check(sh.open === 'far' && wq.calls === 3, `A on a highlighted shop opens the shop and drops nothing (open ${sh.open}, calls ${wq.calls})`)
-await btnS(1); await btnS(1); await btnS(4)
+await btnS(1); await btnS(1); await btnS(2)
 await js('(() => { const m = __map2d(); [m._getWaypoint, m._onWaypoint] = __wpStub })()')
 await js('(() => { const m = __map2d(); [m._getPois, m._getBoard] = __mapStub; m._listT = 0 })()')
 // FEAT-175: the right stick's vertical zooms about the cursor (up in, down out); the triggers stay the pedals and
