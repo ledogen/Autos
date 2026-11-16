@@ -12,7 +12,10 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
-Landed: the morning-start order (122a606f, DEC-304..308), the owner's dialogue pass (1bf41b62, DEC-320..326) and the seed
+On `land/tut-picnic`: the owner's picnic middle (DEC-345) built — Katie's call at Larry's, mom's gas call, the ranch on a
+waypoint, Katie's camp walk-through (DEC-346..348); Billy (DEC-343, DEC-349) in the dialogue. Owner: the placeholder lines
+(Katie's snack ask, mom's gas lesson and send-off, Katie's three camp cards) and whether her 17:00 talk keeps its words.
+Landed before: the morning-start order (122a606f, DEC-304..308), the owner's dialogue pass (1bf41b62, DEC-320..326) and the seed
 gate (f8ffe439). Owner: look cards `tut-dialogue-look` (review the lines; whether story mode's R / pad reset stays for the alpha;
 the two agent lines), `tutorial-test-drives` (playtest), `feat229-same-landing` (open; DEC-299/304 may already answer it),
 and the defaults (clock held + stamps, $6, tired at night, the skipper's line).
@@ -53,6 +56,8 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   Larry's two cards (DEC-326); smoke `opening` updated
 - [ ] Owner: the new lines reviewed; story mode's R / pad reset for the alpha
 - [ ] Owner: placeholder lines and the defaults (clock held + stamps, $6, tired at night, the skipper's line)
+- [x] DEC-345 built: Katie's picnic call at Larry's, mom's gas call, the ranch on a waypoint, Katie teaches the camp (DEC-346..348)
+- [ ] Owner: DEC-345's placeholder lines, and Katie's 17:00 talk now in person (DEC-347)
 - [x] Tutorial seed re-checked against the new order (`test/tutorial-seed.mjs`, DEC-304's legs)
 
 ## Decisions
@@ -71,7 +76,13 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   camp and the paycheck (supersedes DEC-307); night: slow down, home safe (supersedes DEC-315); morning: Katie reminds,
   Larry's two cards, a skip keeps DEC-236's four (supersedes DEC-236).
 
+- DEC-345 (owner, 2026-11-16): Katie's picnic at the old McGill ranch is the reason for the snack and the camp. DEC-346
+  (supersedes DEC-304): the order stands; the drive to the camping area is on a waypoint with "drive out to the old McGill
+  ranch", and Katie teaches the camp there. DEC-347 (supersedes DEC-324): her 17:00 talk is in person, same six cards and
+  stamp. DEC-348 (supersedes DEC-320): Katie has no model; on the phone except at the camp. DEC-343/349: Billy.
+
 ## Open questions
+- DEC-347: what Katie's 17:00 talk becomes now she is there in person (its "Hey, it's me." opener reads as a call).
 - Everything in the dive's form.
 
 ## Links

@@ -70,7 +70,7 @@ const KATIE = 'Katie'
  *  word about the paycheck. */
 export const FIRING = [
     { speaker: KATIE, text: `Alright, you made it. I'll let you go. Good luck with your boss &mdash; I bet he's real upset with you.` },
-    { speaker: 'The manager', text: `I've had it! This is the last time you'll be coming to work late, because you're fired. I don't want to see you in my kitchen anymore.` },
+    { speaker: 'The manager', text: `Billy, I've had it! This is the last time you'll be coming to work late, because you're fired. I don't want to see you in my kitchen anymore.` },
 ]
 
 /** Mom's call, once the player chose the tutorial at the intro's card (FEAT-184): her reaction to the firing (DEC-321),
@@ -192,7 +192,7 @@ export const TUT = {
     'tut-breakfast': [{ speaker: 'Mom', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach. `
         + `<span class="dlg-key">Tab</span>, and pick one of the lunches I packed you.` }],
     // FEAT-184 (DEC-153, DEC-326): after breakfast, Katie's reminder — the last drive on rails, back to the joint for the check.
-    'tut-morning': [{ speaker: KATIE, text: `Morning! Don't forget, today's the day you go get your last paycheck.` }],
+    'tut-morning': [{ speaker: KATIE, text: `Morning, Billy! Don't forget, today's the day you go get your last paycheck.` }],
     // FEAT-229 (DEC-305): parked at her door on the firing day, her hand-over — she tosses Larry's old pack out her front
     // door — then the pick-up lesson. The hand-over is the owner's words (tidied only in capitals and punctuation); "a
     // couple bucks" is the peanuts' price plus the gas money she does not mention (DEC-306). The pick-up lesson is a
