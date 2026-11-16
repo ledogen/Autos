@@ -34,6 +34,7 @@ const CHEV_SPACING = 15     // m between chevrons — also the world lattice the
 const CHEV_HOVER   = 0.35   // m above the routed road surface
 const CHEV_FADE    = 3      // chevrons over which the far end ramps in
 const CHEV_NEAR    = 20     // m: a chevron fades out over the last stretch as you drive into it
+const START_HOVER  = 0.3    // m: the flat start arrow floats this far above the road (DEC-303: well clear of z-fighting, still reads as painted)
 const ARROW_HOVER  = 2.0    // m: the board's bottom edge clears the road by this much (owner-set)
 const ARROW_IN     = 140    // m: arrow starts fading in
 const ARROW_FULL   = 110    // m: fully opaque
@@ -44,7 +45,7 @@ const RING_HOVER   = 1.4
 const UT_ON        = -0.5
 const UT_OFF       = -0.2
 // DEC-287: the wrong-way flag feeds the HUD alert (main.js); the 3D U-turn arrow is gone.
-// Mission start (DEC-287, DEC-297): ONE fixed junction board STAND_BEHIND m BEHIND the truck's route progress, along the road
+// Mission start (DEC-287, DEC-297): ONE fixed arrow (DEC-303: laid flat on the road like a painted one, so it reads from any side) STAND_BEHIND m BEHIND the truck's route progress, along the road
 // the other way from the route, pointing down the route: a player facing the wrong way sees it ahead. Gone START_GONE_M away.
 const STAND_BEHIND = 10     // m back along the road, opposite the route, from where the truck stood at accept
 export const START_GONE_M = 20   // m the truck travels (either way) from where it accepted before the start board goes
@@ -396,7 +397,9 @@ export class GpsSystem {
     this.group.add(this._objArrow)
 
     this._startMat = mat()
-    this._startArrow = new THREE.Mesh(this._arrowGeo, this._startMat)   // DEC-287: the same board, fixed at the mission's start
+    // DEC-287/DEC-303: the same arrow, fixed at the mission's start, laid FLAT (a copy of the geometry: xy -> xz, centred)
+    this._startArrow = new THREE.Mesh(this._arrowGeo.clone().translate(0, -1.6, 0).rotateX(-Math.PI / 2), this._startMat)
+    this._startArrow.rotation.order = 'YZX'   // yaw, then pitch with the grade, then roll with the bank
     this._startArrow.frustumCulled = false
     this._startArrow.renderOrder = 3
     this._startArrow.visible = false
@@ -603,21 +606,34 @@ export class GpsSystem {
    */
   _behind (route, s) {
     const want = STAND_BEHIND - s
-    if (want <= 0) return sampleRoute(route, s - STAND_BEHIND)
     const p0 = sampleRoute(route, 0), { seg, dir } = route.back
+    if (want <= 0) {
+      const p = sampleRoute(route, s - STAND_BEHIND)
+      return { ...p, bank: this._bank(seg, seg.s0 + dir * (s - STAND_BEHIND), dir) }   // ponytail: assumes the first segment spans the 10 m
+    }
     const room = dir > 0 ? seg.s0 : seg.centerline.length - seg.s0   // road left behind the first point
     const d = Math.min(want, Math.max(room, 0))
     if (d < 1) return { ...p0, x: p0.x - p0.dx * want, z: p0.z - p0.dz * want }
     const sa = seg.s0 - dir * d, q = seg.centerline.pointAt(sa)
-    return { ...p0, x: q.x, z: q.z, y: this._profileY(seg, sa) ?? seg.gradeAt(sa) }
+    return { ...p0, x: q.x, z: q.z, y: this._profileY(seg, sa) ?? seg.gradeAt(sa), bank: this._bank(seg, sa, dir) }
+  }
+
+  /** sin(camber) of the road at segment arc `s`, signed to rise on the RIGHT of the route's direction (`dir` = the run's); 0 when unstreamed. */
+  _bank (seg, s, dir) {
+    const road = this._getRoad?.()
+    if (s < Math.min(seg.s0, seg.s1) || s > Math.max(seg.s0, seg.s1)) return 0
+    if (!road || !seg.runKey || !road._network?.has(seg.runKey)) return 0
+    const c = road.camberProfile(s, seg.runKey)
+    return Number.isFinite(c) ? Math.sin(c) * dir : 0
   }
 
   _placeStart (route, s, car) {
     if (this._startPending) {
       this._startPending = false
       const p = this._behind(route, s)
-      this._startArrow.position.set(p.x, p.y + ARROW_HOVER, p.z)
-      this._startArrow.rotation.set(0, Math.atan2(-p.dz, p.dx), 0)   // as the junction board: tip on the direction of travel
+      this._startArrow.position.set(p.x, p.y + START_HOVER, p.z)
+      // DEC-303: lies on the road like a painted arrow: yaw tip on the direction of travel, pitch with the grade, roll with the bank
+      this._startArrow.rotation.set(-Math.asin(p.bank ?? 0), Math.atan2(-p.dz, p.dx), Math.atan(p.grade))
       this._startAt = { x: car.x, z: car.z }
     }
     if (this._startAt && startBoardGone(this._startAt, car)) this._startAt = null
