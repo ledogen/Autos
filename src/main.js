@@ -127,7 +127,7 @@ import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
 import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
-import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
+import { makeFragile, feltG, onePctG, tenPctG, meterPos } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -2970,7 +2970,7 @@ function _fragileStep () {
   if (f.health.health <= 0 && f.mission) { f.mission.failed = true; _disarmJobCancel() }
 }
 /**
- * FEAT-139: the fragile load's two bars, per frame (owner, 2026-10-23). DAMAGE is the felt g: it
+ * FEAT-139: the fragile load's two bars, per frame (owner, 2026-10-23). DAMAGE is the felt g (logarithmic, FEAT-237): it
  * holds the step peak and falls back with JG_FALL_S, so a one-step landing spike stays readable. Its
  * scale runs to JG_TOP × the load's break g. The marks are where ONE hit costs 1 % of health and
  * 100 % (the break): fragile.js shockCost is ((g − floor)/(break − floor))², so 1 % sits a tenth of
@@ -2988,7 +2988,7 @@ function _updateFragileG (dt) {
   if (!_jgEls) {
     const root = document.getElementById('job-g')
     if (!root) return
-    _jgEls = { root, fill: root.querySelector('.jg-fill'), floor: root.querySelector('.jg-floor'), brk: root.querySelector('.jg-break'),
+    _jgEls = { root, fill: root.querySelector('.jg-fill'), floor: root.querySelector('.jg-floor'), ten: root.querySelector('.jg-ten'), brk: root.querySelector('.jg-break'),
                health: root.querySelector('.jg-health'), val: root.querySelector('.jg-val') }
   }
   const f = _freight, m = missionSystem
@@ -3004,8 +3004,10 @@ function _updateFragileG (dt) {
     _jgKey = f.mission
     _jgEls.root.style.display = 'flex'
     _jgFloor = onePctG(fr)   // the tier's 1 % mark (fragile.js)
-    _jgEls.floor.style.bottom = `calc(${100 * _jgFloor / top}% - 1px)`
-    _jgEls.brk.style.bottom = `calc(${100 * fr.breakG / top}% - 1px)`
+    // FEAT-237: a logarithmic meter (fragile.js meterPos) — ticks at 1 % / 10 % / 100 % damage
+    _jgEls.floor.style.bottom = `calc(${100 * meterPos(_jgFloor, top)}% - 1px)`
+    _jgEls.ten.style.bottom = `calc(${100 * meterPos(tenPctG(fr), top)}% - 1px)`
+    _jgEls.brk.style.bottom = `calc(${100 * meterPos(fr.breakG, top)}% - 1px)`
     // The posted reward moved to the promise lines (R-17): it floated bare here and was unreadable
     // against the sky (owner, 2026-10-24).
   }
@@ -3013,7 +3015,7 @@ function _updateFragileG (dt) {
   f.gPeak = 0
   if (peak >= _jgShown) { _jgShown = peak; if (peak > _jgFloor) _jgHoldUntil = now + JG_HOLD_S }
   else if (now >= _jgHoldUntil) _jgShown *= Math.exp(-dt / JG_FALL_S)
-  _jgEls.fill.style.transform = `scaleY(${Math.min(1, _jgShown / top)})`
+  _jgEls.fill.style.transform = `scaleY(${meterPos(_jgShown, top)})`
   const band = _jgShown >= fr.breakG ? 'var(--bad)' : _jgShown > fr.shockFloorG ? 'var(--warn)' : 'var(--text)'
   if (band !== _jgBand) { _jgBand = band; _jgEls.fill.style.background = band }
   const h = f.health.health
