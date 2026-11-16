@@ -1292,7 +1292,7 @@ const _MACHINE_WORD = [
 ]
 // FEAT-216 / DEC-327: critical failures stay up while true (a failed wheel, a flat or failed tire); the other words
 // re-report at each further 10 % lost. Slots: 0 engine · 1-4 wheel · 5-8 bent · 9-12 tire · 13 filter · 14 oil.
-const _isCrit = (i, l) => (i >= 1 && i <= 4 && l === 2) || (i >= 9 && i <= 12)
+const _isCrit = (i, l) => (i >= 1 && i <= 4 && l === 2) || (i >= 9 && i <= 12 && l > 0)
 // DEC-287: #machine-word is the general alerts area. Every alert opens into `_alerts`, which shows ONE at a time, 2 s
 // each, round-robin. A machine word stays open ALERT_WORD_S (its old 4 s fade) or until its level falls back; "Wrong way.
 // Turn around" is open while the GPS says the truck points against the route.

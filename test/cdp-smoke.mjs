@@ -672,6 +672,53 @@ const STEPS = [
     check(h1 !== h0 && w1 !== w0, `backtick flipped panel ${h0}→${h1}, wireframes ${w0}→${w1} (must flip both)`)
     check(h2 === h0 && w2 === w0, 'second backtick did not restore the panel and wireframes')
   }],
+  ['uibatch', async () => {
+    // FEAT-216 / FEAT-237 / BUG-188 pictures + checks. Runs after story: SMOKE_STEPS=boot,story,uibatch. Pictures: wip/ui-batch/.
+    mkdirSync('wip/ui-batch', { recursive: true })
+    const snap = async (name) => { const sh = await client.cmd('Page.captureScreenshot', { format: 'png' }); writeFileSync(`wip/ui-batch/${name}.png`, Buffer.from(sh.result.data, 'base64')) }
+    const word = () => js('document.getElementById("machine-word").textContent')
+    // two criticals: a failed front-left tire and a flat rear-right one stay up and cycle (DEC-327)
+    await js('window.__damage.set("tireFL", 0); window.__damage.flat[3] = true')
+    await frames(10, 60)
+    const w1 = await word(); await snap('alert-1'); await sleep(2200); const w2 = await word(); await snap('alert-2')
+    check(w1 !== w2 && /tire/.test(w1 + w2), `two critical alerts did not cycle: "${w1}" / "${w2}"`)
+    await sleep(6000)   // past the old 4 s fade: they are still true, so still up
+    check(/tire/.test(await word()) && await js('document.getElementById("machine-word").style.opacity') === '1', `a critical alert faded while still true: ${await js('JSON.stringify({ w: document.getElementById("machine-word").textContent, o: document.getElementById("machine-word").style.opacity, t: window.__damage.get("tireFL"), f: window.__damage.flat })')}`)
+    await js('window.__damage.setAll(1); window.__damage.flat.fill(false)')
+    await frames(10, 60)
+    // the fragile G meter: the real markup, the old linear mapping beside the new logarithmic one
+    await js(`(async () => {
+      const { meterPos, tenPctG, onePctG } = await import('/src/fragile.js')
+      const row = { shockFloorG: 1.2, breakG: 7.1, onePctG: 1.555 }, top = row.breakG * 1.2, root = document.getElementById('job-g')
+      const clone = root.cloneNode(true); root.after(clone)
+      for (const [r, f, label] of [[root, g => 100 * meterPos(g, top), 'log'], [clone, g => 100 * g / top, 'linear (before)']]) {
+        r.style.display = 'flex'; r.style.position = 'fixed'; r.style.left = label === 'log' ? '40px' : '200px'; r.style.top = '120px'; r.style.zIndex = 9999
+        r.querySelector('.jg-floor').style.bottom = f(onePctG(row)) + '%'; r.querySelector('.jg-break').style.bottom = f(row.breakG) + '%'
+        r.querySelector('.jg-ten').style.bottom = f(tenPctG(row)) + '%'
+        r.querySelector('.jg-fill:not(.jg-health)').style.transform = 'scaleY(' + f(3) / 100 + ')'; r.querySelector('.jg-health').style.transform = 'scaleY(0.8)'
+        r.querySelector('.rt-label').textContent = label
+        if (label !== 'log') r.querySelector('.jg-ten').style.display = 'none'
+      }
+    })()`)
+    await frames(5, 60); await snap('g-meter-before-after')
+    // BUG-188: at the auto shop with a cart, B shows the message, it hides itself, and a press never hides it early
+    const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
+    if (!p) { console.log('  uibatch: no auto shop in this region — cart half skipped'); return }
+    await seat(p.x, p.z, p.h); await park(true)
+    check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 2000), 'no service screen at the shop')
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+    await js('document.querySelector("#svc-screen [data-act=node][data-slot]")?.click()')
+    await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]")?.click()')
+    const msg = () => js('/before you leave/.test(document.querySelector("#svc-screen")?.textContent ?? "")')
+    check(!await msg(), 'the cart message showed before any B press')
+    await tap('Escape'); check(await msg(), 'B with a full cart did not show the message')
+    await snap('cart-message')
+    await sleep(500); await tap('Escape'); check(await msg(), 'a second B press hid the message')
+    await sleep(700); check(await msg(), 'the message hid before 1 s after the last press')
+    await sleep(700); check(!await msg(), 'the message did not hide itself')
+    await js('document.querySelector("#svc-screen [data-act=discard]")?.click()')
+  }],
   ['service', async () => {
     // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
