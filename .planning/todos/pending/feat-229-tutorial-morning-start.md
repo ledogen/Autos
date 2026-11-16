@@ -12,9 +12,9 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
-Owner: answer the deep dive `.planning/dives/FEAT-229-tutorial-morning-start.html` (pick a beat order, the firing's time
-and cause, the tutorial's clock, where a skip lands). Then lane A writes the new decision records and builds the order.
-Seeds come after the beats are settled (owner's order).
+Owner: answer revision 2 of the deep dive, `.planning/dives/FEAT-229-tutorial-same-landing.html` (pick one of four
+beat orders: two ending at the burger joint, one at mom's, one at Larry's; the clock; energy; the firing's time and cause).
+Revision 1 is replaced. Then lane A writes the records for the answers and builds the order. Seeds come after the beats.
 
 ## Summary
 Today the firing is at 19:30 and the tutorial lasts exactly 24 in-game hours, so free will opens at 19:30: a new player
@@ -42,17 +42,25 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 
 ## Tracker
 - [x] Deep dive: today's flow and its lessons, four morning-start orders, the clock question, a recommendation, the form
-- [ ] Owner answers the dive
+- [x] Revision 2 of the dive: played and skipped land at the same time, place and day (DEC-299); four options as beat lists
+- [ ] Owner answers the dive (revision 2)
 - [ ] New decision records for the answers (and the superseded ones flipped)
 - [ ] The chosen order built (`src/main.js` tutorial stages, `data/dialogue.js` placeholder lines)
 - [ ] The `opening` step of `test/cdp-smoke.mjs` walks the new order
 - [ ] Tutorial seed re-checked against the new order (after the beats are settled)
 
+## Decisions
+- DEC-299 (owner, 2026-11-15/16): the tutorial is 24 in-game hours, fired about 07:00, free will about 07:00 the next
+  morning; played and skipped runs enter free will at the same time of day and the same place (and, DEC-159, day).
+  Preference (not final): the burger joint. Replaces FEAT-180's unrecorded "Keep dusk opening".
+
 ## Open questions
 - Everything in the dive's form.
 
 ## Links
-- Deep dive: `.planning/dives/FEAT-229-tutorial-morning-start.html`
+- Deep dive, revision 2: `.planning/dives/FEAT-229-tutorial-same-landing.html`
+- Revision 1 (replaced): `.planning/dives/FEAT-229-tutorial-morning-start.html`
+- DEC-299
 - The tutorial as built: FEAT-184, FEAT-217.
 
 ## Files
@@ -60,3 +68,5 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 
 ## Log
 - 2026-11-15: ticket minted, dive written (lane A). Docs only.
+- 2026-11-16: owner rejected revision 1 (missed same time of day and same place for played and skipped). DEC-299
+  written; revision 2 of the dive: four options (joint errands-first, joint trouble-first, mom's, Larry's). Docs only.
