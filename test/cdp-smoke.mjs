@@ -1510,7 +1510,11 @@ const STEPS = [
     await tap('Escape')   // the spare's picker; closing it reopens the inventory (parked)
     if (await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000)) await tap('Escape')
     console.log('  worst day: the tow')
-    await tap('x'); await readCards()   // the recovery menu's card
+    await tap('x')
+    // BUG-181: the tow's card is up — and the menu with the tow is not — before the tow can be taken; the menu opens as it ends.
+    check(await until(() => js('/nearest auto shop/.test(document.getElementById("dlg-text").textContent) && !document.getElementById("recovery-card").checkVisibility()'), 3000),
+      `X did not put the tow card up ahead of the recovery menu: ${await js('JSON.stringify({ card: document.getElementById("dlg-text").textContent, menu: document.getElementById("recovery-card").checkVisibility() })')}`)
+    await readCards()   // the recovery menu's card
     check(await until(() => js('!!document.querySelector("#recovery-card button[data-act=towShop]:not([disabled])")'), 2000), 'the recovery menu offers no tow to a shop')
     // BUG-178: a 4 s state trace (20 Hz) from the click, printed only if the shop never opens.
     await js(`window.__towTrace = []; (() => { const t0 = performance.now(), id = setInterval(() => { const p = window.__vs.position, q = window.__poi().nearest(p.x, p.z), pe = document.getElementById("poi-prompt")

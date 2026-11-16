@@ -6212,8 +6212,13 @@ function _updateRecovery () {
 function _toggleRecovery () {
   if (document.getElementById('recovery-row')?.style.display !== 'flex') return
   if (!vehicleState.parked || damageScreen.blocked) { hintPark(); return }
+  // FEAT-184 stage 4 / BUG-181: the tow's card is read BEFORE its menu opens, and the menu opens when it ends. Queued from
+  // the first X it sits behind any card still up (the spare's), so opening the menu at once let the tow be taken first.
+  if (!_recoveryOpen && _eveningLeg() && !dialogueSystem.has('tut-tow')) {
+    _tut('tut-tow', TUT['tut-tow'], () => { if (!_recoveryOpen) _toggleRecovery() })
+    if (_tutQueue.some(t => t.key === 'tut-tow')) return
+  }
   _recoveryOpen = !_recoveryOpen
-  if (_recoveryOpen && _eveningLeg()) _tut('tut-tow')   // FEAT-184 stage 4
   _updateRecovery()
 }
 window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'x') _toggleRecovery() })
