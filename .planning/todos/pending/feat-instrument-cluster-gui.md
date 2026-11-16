@@ -246,3 +246,65 @@ overlap instead of being fully separate"
   replaces `setHighBeam`.
 - The 2002's text CHECK GAGE lens is not built (the owner chose the dot).
 - Render harness: `wip/feat-34/cluster-shot.{html,mjs}` (git-invisible), which knows `checkEngine` and `overheat`.
+
+## Owner, 2026-11-08 (feat34-r2-look) — round 3, built (Lane B, feature/machine)
+
+Choice "changes". Verbatim: "headlight light should be on if either headlight is dead. the outline and overall
+cluster shape is a little awkwardly slanted from older opus struggling with svgs can you straighten it out and make it
+a little more symmetric. blow up all the gauges like 15% the numbers are getting a little small. maybe skip every other
+10 mph too. so 0-20-40-60 and so on. its getting there though. lights are nice. get rid of unleaded fuel only. shifts
+are good. hi lift good"
+
+Kept as they are: the lamps, the shifts (FEAT-185), the hi-lift (FEAT-138).
+
+- **Headlamp lamp:** red when the lights are switched on and EITHER headlamp is at 0 % (was: both). The sender in
+  `main.js` is now `headlightL <= 0 || headlightR <= 0`. It is still dark with the switch off, per the 11-08 ruling
+  ("… and you try to turn them on").
+- **Straight and symmetric.** The layout is now mirror-symmetric about the dial axis (`AXIS`, the hubs' line):
+  - The temp/fuel pod stands upright, centred on the axis. It used to lean 20° off vertical, temp high and inboard.
+  - The key sits on the axis at the speedo's 3 o'clock. It used to hang off the bottom-right corner, which pulled
+    the bottom edge into a slope. Its three distances to the speedo are unchanged (93.3 px).
+  - The housing's two ends have one shape: the pod's corner circles, mirrored on the right around the key.
+  - The top and bottom edges are one arch each (a quadratic leaving both corners along their tangents), and the
+    bottom arch is the top one's mirror.
+  - The old construction (a hull with tangent lines and a 22 px visor lift) is gone, along with its two helpers.
+- **15 % bigger:** a single `SCALE = 1.15` on the canvas transform, so every balanced distance scales with it. The
+  canvas goes from 378 × 204 to 453 × 235 CSS px; the layout grew 16 units wider for the right end. The Quick Job
+  button rides 31 px higher to stay clear of it (`bottom: 257px`).
+- **Speedo numerals every 20 mph, from 0:** 0 · 20 · … · 120. The ticks stay major every 10, minor every 5. The 0 sits
+  where the UNLEADED legend was.
+- **UNLEADED / FUEL ONLY removed.**
+
+**Polish (Lane B, 2026-11-09), seen in real Chrome:** the dial numerals are placed by their own extent along the
+radius (`_numeralAt`), so the wide ones at 3 and 9 o'clock ("100", "20") no longer run into their ticks; the km/h ring
+moved inside the mph numerals (160 read as "160100"); the odometer window (`ODO`) sits lower and narrower so the 40
+and 80 clear its corners.
+
+Shots: real headless Chrome at 2×, round 2 beside round 3 and eight round-3 states (idle, cruise, 92 mph on high
+beams, every lamp lit, low beams, one lamp dead, START, key off) plus one in-game frame:
+`wip/feat-34/r3-chrome/sheet.png` (machine worktree, git-invisible). Harness `wip/feat-34/cluster-shots.mjs` +
+`cluster-shot.html` (the real `GaugeCluster` in a state from the query string) and `ingame-shot.mjs`. The only gate
+that covers `cluster.js` is cdp-smoke (the orchestrator's).
+
+## Round 5 (Lane B, 2026-11-15) — built, awaits the owner's look
+
+Owner on card feat34-r4-look: "move the key back to the bottom right corner. then grow the speedo and tach gauges so they fill the rectangular frame nicely. it looks like we could bump their size 10%..." (DEC-267, DEC-268).
+Key now in the bottom-right corner (`END_X`, `KEY_CORNER`); tach well 68 → 75, speedo 76 → 84, POD_E 39 → 46, W 466, H 240; needles, odometer and lamp offsets follow. Frame grew to fit (the key cannot sit nearer the corner than 103 from the speedo hub, so the right end is wider than round 4's).
+Shots: `wip/feat-34/shots/r5/{before,after,after-lamps}.png` (before = round 4 at 55 mph). Not run: gates (cluster.js is not in a gate's closure; node import ok).
+
+## Round 6 (Lane B, 2026-11-15) — built, awaits the owner's look
+
+Owner on the round-5 look card (DEC-283): "keep all sizes. move the key away from the speedo near the corner of the rectangular frame, then move the tach right a smidge. the speedo right a little bit more so ther Put KPH above MPH and move them both down a bit" (cut off at "so ther"; not acted on).
+Layout units (canvas px before SCALE 1.15): `TACH_SHIFT` 5, `SPEEDO_SHIFT` 10, `KEY_AWAY` 10 (key 103 → 113 from the speedo hub, still in the corner; END_X and W grow 20, W 486), `KMH_DY` 38 / `MPH_DY` 47 (km/h centred above MPH; MPH was +34, km/h +46 at the right). Sizes untouched.
+Shots: `wip/feat-34/shots/r6/` (after, after-lamps, sheet-r5-r6). Gates: `npm test` selects only the app gate; cdp-smoke is the orchestrator's.
+
+## Round 7 (Lane B, 2026-11-15) — built, awaits the owner's look
+
+Owner: the FULL round-5 note plus the round-6 reply (DEC-284, supersedes DEC-283; refines DEC-267). Positions are now DERIVED, not typed: `GAP` 12 (housing between pod indent and tach indent, and between speedo indent and key indent: equal) and `TACH_SPEEDO` 135 (hub to hub; round 6 was 117, +18 so the tach's last numeral clears the speedo's 20/40).
+Result (layout px): tach hub 190 (was 186), speedo hub 325 (was 303), key centre (END_X 449, AXIS+POD_E 166) = the corner arc's centre (was 410.6), W 511 (was 486). Sizes unchanged. Tach sweep 130 → 170: scale end 290° (about 12:40) → 330° (2 o'clock), start 160° as before.
+Lamps: brake, tire pressure, check engine, headlamp in one row at tach hub y +47, pitch 24, centred on the tach hub, glyphs scaled to about 6.6 half-size (`LAMP_DY`, `LAMP_PITCH`, `_lampAt`). Low fuel and overheat stay as dots under E and H. The word BRAKE under its lamp is dropped (it broke the row). The reading "all 4" = the four symbol lamps is a guess; there are six lamps.
+Shots: `wip/feat-34/shots/r7/` (after, after-lamps, sheet-r6-r7).
+
+## Round 8 (Lane B, 2026-11-15) — built, awaits the owner's look
+
+Owner: the round-7 note, verbatim in DEC-285 (area ui; refines DEC-284). Constants atop `src/cluster.js`: `KMH_PX` 8.4 / `MPH_PX` 10.8 (×1.2), `FRAME_IN` 17 (right edge 54 from the arc centre; key indent edge 20 from its centre; 34 apart, half = 17; W 511 → 494; key stays, now 17 right of the arc centre), `REDLINE_R` 4.5 (arc radius 67.5 → 69.5, clearance to ticks 1 → 3), `LAMP_K` brake 1.10 / tire 0.88 / engine 1.42 / head 1.28 (boxes about 15.6×10.8, 13.9×12.2, 16.6×10.1, 13.2×12.7), `NUM_IN` 1.5, `ICON_DY` 16 (was 13). Shots `wip/feat-34/shots/r8/`. No gate covers `src/cluster.js`.
