@@ -1,7 +1,7 @@
 ---
 id: BUG-171
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-14
 source: Lane C, BUG-158's junction-dirt census (land/bug-158)
@@ -53,7 +53,7 @@ pure depth weight (tie 0) turns those wraps into steep ramps (up to 1.08 m per 5
 - [x] Option 2 built (land/bug-171, TIE_PROM_M 0.1 m on both tie terms).
 - [x] Census: limb and rivalSet sites > 0.15 m 183 / 8 → 175 / 2; ramp worst stays 1.37 m (ramps > 0.15 m 101 → 109).
 - [x] Affected gates 75/75 green (logs/c171-gates.log); fingerprint-world: only surface / carve differ.
-- [ ] Owner answers the option-2 dive (keep 2 / option 3 next / other).
+- [x] Owner answers the option-2 dive (keep 2 / option 3 next / other).
 
 - [x] Owner answered: keep option 2, fix the rest by construction (DEC-260).
 - [x] Option 3 judged against DEC-260: it is a kernel average of the leg's height over ~2 m of arc, not a construction
@@ -64,7 +64,7 @@ pure depth weight (tie 0) turns those wraps into steep ramps (up to 1.08 m per 5
 - [x] Main merged (9d289a2b); census identical to before the merge (steps 88, >= 30 cm 7).
 - [x] Cost check (DEC-261): foot frame cached per leg (d2976022), at or below main's cost; output identical.
 - [x] Affected gates 75/75 green after merge + cache (logs/c171-gates4.log); census identical (logs/c171-cache.*).
-- [ ] Orchestrator lands it + full smoke.
+- [x] Orchestrator lands it + full smoke.
 
 ### The foot fix (built 2026-11-15, 853bc4e0)
 `_projectLegNearNode` now finds limb feet on a continuous frame: each vertex's tangent is the unit bisector of its two
@@ -111,3 +111,4 @@ DEC-231 (option 2 first, pictures) · DEC-260 (keep option 2; the rest by constr
   limb births 14 → 2, limb hops 579 → 582 unchanged; steps → ramps of 0.86 and 0.76 m per 5 cm at two sites. Dive
   BUG-171-option2-gore-steps.html (5 sites on 5 random seeds, game + physics-ground pairs). Gates 75/75 green.
 - 2026-11-14: filed from BUG-158's census (logs/c158-A.log base, logs/c158-head.log head, in the content worktree).
+- 2026-11-16: landed on main (81fe5762) after the owner's cost check (DEC-261: per-leg cache, no dearer than main); full smoke 33 steps PASS. Closed. The 16 road-to-road seam sites left carry on under BUG-179.
