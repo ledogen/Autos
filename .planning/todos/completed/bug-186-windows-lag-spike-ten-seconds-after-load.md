@@ -1,7 +1,7 @@
 ---
 id: BUG-186
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-16
 source: owner, 2026-11-16, inbox — "This is gonna be a really tricky bug to track down I think If I load up a world on the Windows machine and start driving about 9 or 10 seconds in, I get hit with a huge lag spike in frame drop Probably down to an average of 5 frames per second Very sporadic, not an even 5 fps It feels like the world catching up Also, sometimes when I drive for a very long time, it'll hit me again for like 5 or 10 minutes of driving It's the absolute worst if you spawn in and just immediately take off Especially if you're loading a save where the vehicle is already in motion. I haven't observed it on the Mac yet, but if it's from a newer build I haven't been testing on the Mac and it's very heavily loaded so I can't easily test on it without stopping everything. Or it could just be that the Mac is faster."
@@ -81,3 +81,4 @@ src/main.js (`_lampSweepStep`), src/vehicle-model.js (`compileLightState`)
 - 2026-11-16: filed from the owner's inbox note.
 - 2026-11-16 (Perf lane): cause counted at cpu×4 (late lamp sweep's blocking draws, 86 → 3 in 3–9 s); fix 669b13eb on land/bug-186.
   Affected gates 10/10 green, cdp-smoke left for main. Unverified: Windows/D3D itself, story mode.
+- 2026-11-16: landed on main (local). Closed.

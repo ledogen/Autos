@@ -1,7 +1,7 @@
 ---
 id: PERF-52
 type: perf
-status: open
+status: closed
 severity: minor
 opened: 2026-11-16
 source: owner, 2026-11-16, inbox — "The very first time I open the map it usually hangs for about half a second to a second Not the end of the world that the hang is there but I'd much rather it be behind the loading screen So can we force load the map during world load so that we don't have to look at the Freeze the first time the player hits the button"
@@ -42,3 +42,4 @@ Another agent (land/bug-184) fixes the map showing the previous world's tiles. T
 ## Log
 - 2026-11-16: filed from the owner's inbox note.
 - 2026-11-16 (lane C): built and measured (Description). Not measured: a story-mode load (the preload also runs from `_exitStageLoad` there, and the smoke's story step went live and passed), a slow disk, a real display (headless compositing).
+- 2026-11-16: landed on main (local). Closed.

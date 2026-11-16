@@ -1,7 +1,7 @@
 ---
 id: BUG-185
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-16
 source: owner, 2026-11-16, inbox — "I smacked the rear wheel into a tree and it gave out. I would like it to be a little bit more resistant to getting destroyed. That was maybe a 10 mile an hour side impact maybe 20. I'm just wanting a little bit more forgiveness there. Maybe take a look at where the bedside collision is versus the wheel. If the bedside is flush with the wheel, maybe pop it out A dozen centimeters or so and that could help alleviate the issue."
@@ -122,3 +122,4 @@ the tree.
   (rock-contact, drop-rebound, side-slide, side-tree-wheel). The gate fails 5 checks on main's contact.
   `fingerprint-physics` is ALL IDENTICAL to main: its bumpy ground has no props. Unverified: in-game feel, the POI-cube and
   pump-bay clearance (the wheel's reach only got narrower, so clearance cannot be worse), and rock and boulder props beside a tire.
+- 2026-11-16: landed on main (local). Closed.

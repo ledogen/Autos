@@ -1,7 +1,7 @@
 ---
 id: BUG-184
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-16
 source: owner, 2026-11-16, inbox — "I failed out of it run with a damaged wheel and I used the give up menu button. Then I I started a new game and accepted the tutorial. Once I got in game, I noticed that the wheel with functional tire is behaving as if it is popped and the wheel is destroyed. I can see sparks, I can hear the sound effect playing of a wheel metal on pavement. Additionally, when I opened the map I saw the map of my previous world for a brief second. I think we should focus on doing better resets between matches and game modes"
@@ -102,3 +102,4 @@ clearAlert` re-takes its drop baseline and story entry calls it after the jalopy
   sheet at a held window size). Fix: damage.js `_signals`, map2d.js `_bgZoom = 0`, damage-screen.js baseline, main.js
   one line. `SMOKE_STEPS=boot,story,opening,skipMenus,newRun` PASS (`wip/bug-184/smoke-set.log`); affected gates 31/31
   (`wip/bug-184/gates.log`). Unverified: fingerprint-physics (wearing path unchanged by reading), Continue of an old save.
+- 2026-11-16: landed on main (local). Closed.
