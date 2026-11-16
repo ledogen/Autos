@@ -13,7 +13,7 @@
 //
 // USAGE: node test/cdp-smoke.mjs [--headed]
 
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { cpus, loadavg } from 'node:os'
@@ -529,6 +529,71 @@ const STEPS = [
     else console.log('  campGear: no pad at the truck for the camp shortcut — FEAT-155 check skipped')
     await js('document.getElementById("cp-break")?.click()')
     if (up) check(await until(async () => await cluster() !== 'none', 2000), 'breaking camp did not bring the gauge cluster back')
+  }],
+  ['cook', async () => {
+    // FEAT-230 slice 1 + DEC-310: the camp card's cook button, the kit's +20 % on a meal eaten at camp, and a save
+    // with potatoes aboard. Runs after the story step: SMOKE_STEPS=boot,story,cook. Leaves camp broken.
+    const day = (e) => js(`window.__day().${e}`)
+    const n = (id) => js(`(window.__inv.list().find(r => r.id === '${id}')?.n ?? 0)`)
+    const fedLeft = () => js('window.__day().snapshot().fedUntilH - window.__day().clockH()')
+    const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
+    const openCamp = async () => {
+      await js(`[...document.querySelectorAll('.lil-gui .controller')].find(c => c.textContent.trim() === 'skip to camp dialogue')?.querySelector('button')?.click()`)
+      check(await js('document.body.classList.contains("camp-on")'), 'no camp pad at the truck for the camp shortcut')
+    }
+    await js(`(() => { const i = window.__inv; i.grant('potato', 2); i.grant('cookingKit'); i.packItem(i.list().findIndex(r => r.id === 'cookingKit')) })()`)
+    check(await n('potato') === 2 && await n('potatoCooked') === 0, 'the grant did not leave 2 raw, 0 cooked')
+    check(await js('window.__inv.use("potato")') === false, 'a raw potato was eaten')
+    await openCamp()
+    const cook = () => js('(b => b && b.style.display !== "none" && b.textContent)(document.getElementById("cp-cook"))')
+    check(await until(async () => /cook a potato/.test(await cook() || ''), 2000), 'no cook button at camp with a raw potato aboard')
+    await sleep(600)   // the camp scene's fade-in; the card is up
+    const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
+    mkdirSync('wip/feat-230', { recursive: true }); writeFileSync('wip/feat-230/camp-card.png', Buffer.from(shot.result.data, 'base64'))
+    const h0 = await day('clockH()')
+    await js('document.getElementById("cp-cook").click()')
+    check(await until(async () => await n('potatoCooked') === 1, 5000), 'cooking made no cooked potato')
+    await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on")')), 5000)
+    const dh = (await day('clockH()')) - h0
+    check(await n('potato') === 1 && await n('potatoCooked') === 1, `raw/cooked after one cook: ${await n('potato')}/${await n('potatoCooked')}`)
+    check(Math.abs(dh * 60 - 30) < 0.5, `cooking took ${(dh * 60).toFixed(2)} game min, not 30`)
+    // Eating at camp with the kit packed: 4 h × 1.2. The day's standing meal is cleared first (a hold never shortens).
+    await js('window.__day()._fedUntilH = window.__day().clockH() - 1')
+    check(await js('window.__inv.use("potatoCooked")'), 'the cooked potato could not be eaten')
+    const withKit = await fedLeft()
+    check(Math.abs(withKit - 4.8) < 0.01, `kit at camp: held ${withKit.toFixed(3)} h, not 4.8`)
+    // The same meal without the kit packed.
+    await js(`(() => { const i = window.__inv; i.unpackItem(i.equippedIndex(), i.packed().indexOf('cookingKit')); i.consume('cookingKit')
+      i.grant('potatoCooked'); window.__day()._fedUntilH = window.__day().clockH() - 1 })()`)
+    check(await js('window.__inv.use("potatoCooked")'), 'the second cooked potato could not be eaten')
+    const noKit = await fedLeft()
+    check(Math.abs(noKit - 4) < 0.01, `no kit: held ${noKit.toFixed(3)} h, not 4`)
+    // And away from camp, with the kit packed again: no bonus.
+    await js('document.getElementById("cp-break")?.click()')
+    check(await until(async () => !await camp(), 3000), 'break camp left the card up')
+    await js(`(() => { const i = window.__inv; i.grant('cookingKit'); i.packItem(i.list().findIndex(r => r.id === 'cookingKit'))
+      i.grant('potatoCooked'); window.__day()._fedUntilH = window.__day().clockH() - 1 })()`)
+    check(await js('window.__inv.use("potatoCooked")'), 'the third cooked potato could not be eaten')
+    const away = await fedLeft()
+    check(Math.abs(away - 4) < 0.01, `kit packed but away from camp: held ${away.toFixed(3)} h, not 4`)
+    // A save with potatoes aboard: 3 raw, 2 cooked → save & exit → reload → Continue → same counts.
+    await js(`window.__inv.grant('potato', 2); window.__inv.grant('potatoCooked', 2)`)
+    const have = `${await n('potato')}/${await n('potatoCooked')}`
+    check(have === '3/2', `expected 3 raw / 2 cooked before the save, got ${have}`)
+    await park()   // save & exit is offered parked only
+    check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000), 'the truck never came to rest')
+    for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
+    check(await js('!document.getElementById("pm-save").disabled'), `save & exit not offered: "${await js('document.getElementById("pm-save-why").textContent')}"`)
+    await js('document.getElementById("pm-save").click()')
+    check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
+    await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?seed=6` })
+    check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250), 'no continue button after the reload')
+    await js('document.getElementById("mm-continue").click()')
+    const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
+    check(await until(() => js(live), 45000, 250), 'the resumed run never went live')
+    const back = `${await n('potato')}/${await n('potatoCooked')}`
+    check(back === have, `potatoes across save → reload → Continue: ${have} → ${back}`)
+    console.log(`  cook: 2→1 raw, 0→1 cooked, +${(dh * 60).toFixed(1)} min; hold kit ${withKit.toFixed(2)} h / none ${noKit.toFixed(2)} h / away ${away.toFixed(2)} h; save ${have} → ${back}`)
   }],
   ['tires', async () => {
     // SM-3 roadside tire work (owner, 2026-10-22): using the spare or the plug kit opens the damage

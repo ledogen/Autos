@@ -12,8 +12,8 @@ lane: C
 # FEAT-230: Cooking at camp — the potato, groceries, and the cooking kit's job
 
 ## Next steps
-Lane C: slice 1 (potato + cooking on the campfire). Then slice 2 (the fresh clock, cooler and ice), then slice 3
-(groceries and the kit).
+Slice 1 and 1b are built on `land/feat-230` (not merged). Next: slice 2 (the fresh clock, cooler and ice; the cooked
+potato's 24 h), then slice 3 (groceries cooked with the kit, no +20 % on top). Owner: set the potato's price (placeholder $2).
 
 ## Summary
 The cooking kit is sold and rewarded but does nothing: its effect waits on groceries, and neither groceries nor the
@@ -34,15 +34,19 @@ Ice, Ice King, Packed lunch). In short:
   bonus to the effect of food items" applies to other food and has no number ruled yet.
 
 ## Tracker
-- [ ] Slice 1: potato item, sold and rewarded, cooked on the campfire, eaten
+- [x] Slice 1: potato item, sold and rewarded, cooked on the campfire, eaten
+- [x] Slice 1b (DEC-310): cooking kit deployed at camp = food holds 20 % longer
 - [ ] Slice 2: fresh clock, cooler, ice
 - [ ] Slice 1b: the cooking kit deployed at camp gives food eaten there +20 % hold (DEC-310)
 - [ ] Slice 3: groceries cooked with the kit (no 20 % on top); groceries as a farm reward
 - [ ] FEAT-121's rows for these items brought up to date
 
 ## Open questions
-- The potato's exact price ("under $5").
+- The potato's exact price ("under $5"): $2 is a placeholder (data/shop-stock.js ITEM_PRICE).
 
 ## Log
 - 2026-11-16: minted from FEAT-121's rows at the owner's question.
 - 2026-11-16: owner gave the kit's number, +20 % (DEC-310); added to slice 1.
+- 2026-11-16 slice 1 + 1b on `land/feat-230`: potato/potatoCooked, `stack` cap in the inventory, camp button `cp-cook`
+  (`_campFade` + `convert`), general store + farm `produce` reward, `foodHoldH` (DEC-310). Gates: inventory. Unverified: the
+  30 min and the button in a live browser (main.js has no headless gate).
