@@ -12,9 +12,8 @@ lane: Spare
 # FEAT-226: The service station's bay light is contained by its walls
 
 ## Next steps
-Owner: look at `wip/bay-light-2/sheet-final.png` (before left, after right: ceiling, door, side wall) on branch
-`land/bay-light-2`, or drive into a station at night. The bay light no longer sits over the truck (DEC-228); spill is
-lower but not contained, so the containment boxes stay open (still no shadow, DEC-227).
+Placement approved and the light raised to 48 cd (DEC-296, on land/lights-1116). Containment waits on shadows for this
+light, which the owner plans but has not ruled in (DEC-227 stands); the spill is accepted until then.
 
 ## Summary
 The service bay's light (`_bayLight` in `src/main.js`, a point light with a 12 m range) shines through the station's
@@ -55,3 +54,5 @@ Orchestrator's estimate given to the owner the same day (from reading the code, 
   40 cd, 9 m. Spot at the strips tried, rejected (black ceiling). GPU, paired active cycles, seeds 49846 / 44857, noon
   and 23:00: B/A 1.009 / 1.016 / 1.008 / 1.001, every IQR spans 1.0 (no shader change). Prewarm probe: identical to
   main (0 new programs on headlight switches). Affected gates 9/9 green.
+- 2026-11-15 (Spare, land/lights-1116): DEC-296, the bay light 40 → 48 cd (owner: "20% brighter"), place and 9 m range
+  unchanged; the spill is accepted for now, shadows not yet ruled in (DEC-227 stands). Night picture: wip/lights-1116/bay-48cd.png.
