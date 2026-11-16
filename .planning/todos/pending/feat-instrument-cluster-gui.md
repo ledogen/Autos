@@ -304,3 +304,7 @@ Owner: the FULL round-5 note plus the round-6 reply (DEC-284, supersedes DEC-283
 Result (layout px): tach hub 190 (was 186), speedo hub 325 (was 303), key centre (END_X 449, AXIS+POD_E 166) = the corner arc's centre (was 410.6), W 511 (was 486). Sizes unchanged. Tach sweep 130 → 170: scale end 290° (about 12:40) → 330° (2 o'clock), start 160° as before.
 Lamps: brake, tire pressure, check engine, headlamp in one row at tach hub y +47, pitch 24, centred on the tach hub, glyphs scaled to about 6.6 half-size (`LAMP_DY`, `LAMP_PITCH`, `_lampAt`). Low fuel and overheat stay as dots under E and H. The word BRAKE under its lamp is dropped (it broke the row). The reading "all 4" = the four symbol lamps is a guess; there are six lamps.
 Shots: `wip/feat-34/shots/r7/` (after, after-lamps, sheet-r6-r7).
+
+## Round 8 (Lane B, 2026-11-15) — built, awaits the owner's look
+
+Owner: the round-7 note, verbatim in DEC-285 (area ui; refines DEC-284). Constants atop `src/cluster.js`: `KMH_PX` 8.4 / `MPH_PX` 10.8 (×1.2), `FRAME_IN` 17 (right edge 54 from the arc centre; key indent edge 20 from its centre; 34 apart, half = 17; W 511 → 494; key stays, now 17 right of the arc centre), `REDLINE_R` 4.5 (arc radius 67.5 → 69.5, clearance to ticks 1 → 3), `LAMP_K` brake 1.10 / tire 0.88 / engine 1.42 / head 1.28 (boxes about 15.6×10.8, 13.9×12.2, 16.6×10.1, 13.2×12.7), `NUM_IN` 1.5, `ICON_DY` 16 (was 13). Shots `wip/feat-34/shots/r8/`. No gate covers `src/cluster.js`.

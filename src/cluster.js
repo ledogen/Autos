@@ -69,7 +69,18 @@ const DEG = Math.PI / 180
 // (brake, tire, check engine, headlamp) share one row along its bottom (LAMP_*).
 const GAP = 12, TACH_SPEEDO = 135
 const KMH_DY = 38, MPH_DY = 47
-const LAMP_DY = 47, LAMP_PITCH = 24   // the row's drop below the tach hub, and the spacing; glyphs are scaled to about 6.6 half-size
+const LAMP_DY = 47, LAMP_PITCH = 24   // the row's drop below the tach hub, and the spacing
+// FEAT-34 round 8 (owner, 2026-11-15, DEC-285): km/h and MPH labels ×1.2 (7 → 8.4, 9 → 10.8 px); the frame's right edge
+// moves halfway to the key (FRAME_IN; the key stays put, so it is 17 right of the corner arcs' centre); the tach's redline
+// arc sits REDLINE_R beyond the scale (was 2.5) so it clears the tick ends; the lamps are re-scaled so their visual
+// bounding boxes match (LAMP_K, glyph scale per slot: brake, tire, check engine, headlamp); dial numerals and pod letters
+// move NUM_IN inward off the ticks; the fuel and temp symbols drop ICON_DY (13 → 16) clear of the needles' heels.
+const KMH_PX = 7 * 1.2, MPH_PX = 9 * 1.2
+const FRAME_IN = 17
+const REDLINE_R = 4.5
+const LAMP_K = { brake: 1.10, flat: 0.88, engine: 1.42, head: 1.28 }
+const NUM_IN = 1.5
+const ICON_DY = 16
 const H = 240
 const POD_X = 56, POD_RIGHT = POD_X + 39   // the temp/fuel pod's centre x and its indent's right edge (POD_R)
 const AXIS = H / 2   // the dial axis: tach and speedo hubs, the pod's centre, the key
@@ -98,7 +109,7 @@ const SCALE = 1.15
 // i.e. KEY_CORNER = POD_R + MARGIN − (KEY.well + KEY.pad) − MARGIN from that centre, along the diagonal. END_X puts the
 // key 103 from the speedo hub, > SPEEDO.well + KEY.well (101) so the key face does not eat the speedo face.
 const END_X = SPEEDO.cx + 84 + 8 + GAP + 17 + 3   // the speedo's indent edge + GAP + the key's indent (well + pad)
-const W = END_X + 62
+const W = END_X + 62 - FRAME_IN   // the housing's right edge (END_X − FRAME_IN + 54) plus the 8 px canvas margin
 // Round 7: the key sits at the centre of the bottom-right corner arc (END_X, AXIS + POD_E).
 const KEY   = { cx: END_X, cy: AXIS + POD_E, well: 17, pad: 3 }
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
@@ -332,8 +343,8 @@ export class GaugeCluster {
 
     this._paintSmallGauge(ctx, TEMP, 'C', 'H', 1)   // red mark at the H end
     this._paintSmallGauge(ctx, FUEL, 'E', 'F', 0)   // red mark at the E end
-    this._paintTempIcon(ctx, TEMP.cx, TEMP.cy + 13)
-    this._paintFuelIcon(ctx, FUEL.cx, FUEL.cy + 13)
+    this._paintTempIcon(ctx, TEMP.cx, TEMP.cy + ICON_DY)
+    this._paintFuelIcon(ctx, FUEL.cx, FUEL.cy + ICON_DY)
     this._paintTach(ctx)
     this._paintSpeedo(ctx)
     this._paintKeyFace(ctx)
@@ -383,7 +394,7 @@ export class GaugeCluster {
   // mirror about AXIS. Every indent stays inside: the tach and speedo crest on the corners' line (POD_E), under the
   // arch; the key sits in the right end.
   _fillDilated (ctx, pad, style) {
-    const r = POD_R + pad, ex = END_X   // the right end's corner circles' x
+    const r = POD_R + pad, ex = END_X - FRAME_IN   // the right end's corner circles' x (the key stays at END_X: round 8)
     const mx = (TEMP.cx + ex) / 2
     // The point on a corner circle (cx, cy) where the tangent from the arch's control point (mx, ty) touches,
     // on the side away from the axis: φ ± acos(r / d), the sign picking the outer of the two tangents.
@@ -497,8 +508,8 @@ export class GaugeCluster {
     ctx.font = 'bold 9px Arial, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    this._labelAt(ctx, g, 0, g.scaleR - 9, loLabel)
-    this._labelAt(ctx, g, 1, g.scaleR - 9, hiLabel)
+    this._labelAt(ctx, g, 0, g.scaleR - 9 - NUM_IN, loLabel)
+    this._labelAt(ctx, g, 1, g.scaleR - 9 - NUM_IN, hiLabel)
   }
 
   _paintTach (ctx) {
@@ -512,7 +523,7 @@ export class GaugeCluster {
     ctx.strokeStyle = RED
     ctx.lineWidth = 3
     ctx.beginPath()
-    ctx.arc(g.cx, g.cy, g.scaleR + 2.5, gaugeAngle(g, red / max), gaugeAngle(g, 1))
+    ctx.arc(g.cx, g.cy, g.scaleR + REDLINE_R, gaugeAngle(g, red / max), gaugeAngle(g, 1))
     ctx.stroke()
     // Numerals 0–max, the ones past the redline in red.
     ctx.font = 'bold 12px Arial, sans-serif'
@@ -556,10 +567,10 @@ export class GaugeCluster {
       ctx.fillText(String(kmh), lx, ly)
     }
     ctx.fillStyle = WHITE
-    ctx.font = 'bold 9px Arial, sans-serif'
+    ctx.font = `bold ${MPH_PX}px Arial, sans-serif`
     ctx.fillText('MPH', g.cx, g.cy + MPH_DY)
     ctx.fillStyle = DIM
-    ctx.font = '7px Arial, sans-serif'
+    ctx.font = `${KMH_PX}px Arial, sans-serif`
     ctx.fillText('km/h', g.cx, g.cy + KMH_DY)
     // Odometer bezel (digits are live — see _drawOdometer). Sits in the trip-drum slot
     // of the reference, top-center inside the speedo face.
@@ -591,7 +602,7 @@ export class GaugeCluster {
   // ("100", "20") clears its tick as a narrow one at 12 does. capH = the font's digit height (0.72 × its px size).
   _numeralAt (ctx, g, frac, text, capH) {
     const a = gaugeAngle(g, frac), c = Math.cos(a), s = Math.sin(a)
-    const r = g.scaleR - 9.5 - (Math.abs(c) * ctx.measureText(text).width + Math.abs(s) * capH) / 2
+    const r = g.scaleR - 9.5 - NUM_IN - (Math.abs(c) * ctx.measureText(text).width + Math.abs(s) * capH) / 2
     ctx.fillText(text, g.cx + c * r, g.cy + s * r)
   }
 
@@ -668,7 +679,7 @@ export class GaugeCluster {
     const x = 0, y = 0, r = 7
     const lit = this._flatLit()
     ctx.save()
-    this._lampAt(ctx, 1, 1)
+    this._lampAt(ctx, 1, LAMP_K.flat)
     if (lit) { ctx.shadowColor = 'rgba(255,150,30,0.9)'; ctx.shadowBlur = 7 }
     ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_ORANGE : LAMP_UNLIT_AMBER
     ctx.lineWidth = 1.8
@@ -690,7 +701,7 @@ export class GaugeCluster {
   // and, as the guide says, "momentarily at start up to ensure the circuit is functional" (the key at START).
   _brakeLit () { return this._keyPos === 'start' || (this._parkBrake && this._keyPos !== 'off') }
   // Round 7: the row's slot i (0..3, left to right, centred on the tach hub) as the origin, the glyph scaled by k so
-  // every lamp's half-size is about 6.6. Call after ctx.save(); the caller's restore undoes it.
+  // every lamp's visual bounding box has about the same size (LAMP_K, round 8). Call after ctx.save(); the caller's restore undoes it.
   _lampAt (ctx, i, k) {
     ctx.translate(TACH.cx + (i - 1.5) * LAMP_PITCH, TACH.cy + LAMP_DY)
     ctx.scale(k, k)
@@ -699,7 +710,7 @@ export class GaugeCluster {
     const x = 0, y = 0
     const lit = this._brakeLit()
     ctx.save()
-    this._lampAt(ctx, 0, 1)
+    this._lampAt(ctx, 0, LAMP_K.brake)
     if (lit) { ctx.shadowColor = 'rgba(255,50,30,0.9)'; ctx.shadowBlur = 7 }
     ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_RED : LAMP_UNLIT_RED
     ctx.lineWidth = 1.4
@@ -728,7 +739,7 @@ export class GaugeCluster {
       high: [LAMP_BLUE, 'rgba(70,130,255,0.9)'], dead: [LAMP_RED, 'rgba(255,50,30,0.9)'] }[st]
     const drop = this._lights === 2 ? 0 : 1.6      // beam droop: level at high, angled down at low (and off)
     ctx.save()
-    this._lampAt(ctx, 3, 1.4)
+    this._lampAt(ctx, 3, LAMP_K.head)
     if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 7 }
     ctx.strokeStyle = col
     ctx.lineWidth = 1.3
@@ -749,7 +760,7 @@ export class GaugeCluster {
     const x = 0.3, y = -0.25   // the glyph's own centre is (−0.3, +0.25) from its drawing origin; this recentres it
     const lit = this._checkEngineLit()
     ctx.save()
-    this._lampAt(ctx, 2, 1.25)
+    this._lampAt(ctx, 2, LAMP_K.engine)
     if (lit) { ctx.shadowColor = 'rgba(255,150,30,0.9)'; ctx.shadowBlur = 7 }
     ctx.strokeStyle = lit ? LAMP_ORANGE : LAMP_UNLIT_AMBER
     ctx.lineWidth = 1.1
