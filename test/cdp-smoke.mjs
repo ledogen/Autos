@@ -517,18 +517,18 @@ const STEPS = [
     if (process.env.FEAT204_SHOTS) {
       mkdirSync('wip/feat-204-wire', { recursive: true })
       const snap = async (f) => { await frames(20, 1500); writeFileSync(`wip/feat-204-wire/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
-      const toHour = (h) => js(`window.__day().advanceMinutes(Math.round(((${h} - window.sky._playH + 24) % 24) * 60))`)
+      const toHour = (h) => js(`window.__day().advanceMinutes(Math.round((((${h} - window.__day().clockH()) % 24 + 24) % 24) * 60))`)
       // Front-left three-quarter view, 7 m out, eye 2.2 m up, aimed at the cab.
       const look = (side, back, up) => js(`(() => { const p = window.__vs.position, q = window.__vs.quaternion
         const r = (x, z) => { const c = 1 - 2 * (q.y * q.y + q.z * q.z), s = 2 * (q.x * q.z + q.w * q.y), c2 = 2 * (q.x * q.z - q.w * q.y), c3 = 1 - 2 * (q.x * q.x + q.y * q.y); return [x * c + z * s, x * c2 + z * c3] }
         const [ox, oz] = r(${side}, ${back}), cx = p.x + ox, cy = p.y + ${up}, cz = p.z + oz, dx = p.x - cx, dy = p.y + 0.4 - cy, dz = p.z - cz
         window.__view(cx, cy, cz, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))) })()`)
       for (let i = 0; i < 3 && await lit(); i++) { await tap('l'); await frames(3, 100) }
-      await toHour(12); await look(-4.5, -5.5, 2.2); await snap('day-front.png')
+      await toHour(12); await look(4.5, -6, 2.4); await snap('day-front.png')
       await look(4.5, 5.5, 2.6); await snap('day-rear.png')
       await toHour(23)
       for (let i = 0; i < 3 && !await lit(); i++) { await tap('l'); await frames(3, 100) }
-      await look(-3, 6, 3.5); await snap('night-bar.png')
+      await look(3, 7, 3.5); await snap('night-bar.png')
       await fit('lightBarNone'); await snap('night-nobar.png'); await fit('lightBar')
     }
     for (let i = 0; i < 3 && await lit(); i++) { await tap('l'); await frames(3, 100) }
