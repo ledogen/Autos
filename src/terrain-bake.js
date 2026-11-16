@@ -68,6 +68,11 @@ export class TerrainBake {
         // Allocate now, while generateMipmaps is true, so the storage has its mip chain (the bake later turns
         // the flag off for all but a frame's last tile).
         renderer.initRenderTarget(this._alb); renderer.initRenderTarget(this._nrm)
+        // BUG-182: a GPU reset (webglcontextrestored; three re-inits first, it listened first) leaves both atlases
+        // empty. Re-allocate them with their mip chains and let update() re-bake every tile.
+        renderer.domElement.addEventListener('webglcontextrestored', () => {
+            renderer.initRenderTarget(this._alb); renderer.initRenderTarget(this._nrm); this._state.clear()
+        })
         this._cam = new THREE.OrthographicCamera(-CHUNK_SIZE / 2, CHUNK_SIZE / 2, CHUNK_SIZE / 2, -CHUNK_SIZE / 2, 1, 4000)
         this._cam.up.set(0, 0, 1)    // screen up = +Z, screen right = −X (hence the −x in the atlas uv)
         this._scene = new THREE.Scene()

@@ -706,6 +706,8 @@ export class SkySystem {
     renderer.toneMapping = THREE.ACESFilmicToneMapping   // the land's curve (TWO CURVES); the sky grades itself
     this.scene = scene
     this.renderer = renderer
+    // BUG-182: a GPU reset (webglcontextrestored) empties the fog cube: bake it next frame. (?. — the node gates' stub.)
+    renderer.domElement?.addEventListener('webglcontextrestored', () => { this._fogK = NaN })
     this.sun = sun
     this.sunFar = sunFar ?? null
     this.farSplit = this.sunFar ? farSplit : 0
