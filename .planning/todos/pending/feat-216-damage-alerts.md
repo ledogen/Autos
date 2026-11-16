@@ -33,3 +33,4 @@ on-screen alert. Spring (bump stop) and body-panel damage stay sound-only; their
 
 ## Log
 - 2026-11-14 land/feat-216: five alerts added to the machine-word toast (bent wheel <=90 %, flat, failed tire, air filter < filterKnee, oil < oilKnee). boot+drive smoke clean; no gate covers main.js's toast; demolition step needs earlier steps, not run.
+- 2026-11-16, owner (card feat216-look): "Words and look are fine". Change asked: "They shouldn't fire only once I think some things categorized as critical failures Like a flat tire and a failed wheel Should always be present and if multiple are they can scroll between them Things like the oil and the air filter should say the oil is dirty at 50% The same thing at 40% and then say the oil is very dirty at 30% Same with the air filter Everything else can also re-report every 10%"
