@@ -110,6 +110,7 @@ import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './th
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
+import { AlertCycle } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -1273,7 +1274,13 @@ const _MACHINE_WORD = [
   [null, 'the air filter is clogging'],
   [null, 'the oil is worn'],
 ]
-let _wordLevels = null, _wordTimer = null
+// DEC-287: #machine-word is the general alerts area. Every alert opens into `_alerts`, which shows ONE at a time, 2 s
+// each, round-robin. A machine word stays open ALERT_WORD_S (its old 4 s fade) or until its level falls back; "Wrong way.
+// Turn around" is open while the GPS says the truck points against the route.
+const _alerts = new AlertCycle()
+const ALERT_WORD_S = 4
+let _wordLevels = null
+const _wordExpiry = new Map()   // alert id -> performance.now() ms it closes
 function _machineWords () {
   if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) { _wordLevels = null; return }
   const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
@@ -1282,19 +1289,28 @@ function _machineWords () {
     ...TIRE_IDS.map((id, i) => damageModel.get(id) <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
     damageModel.get('airFilter') < DAMAGE_PARAMS.filterKnee ? 1 : 0,
     damageModel.get('oil') < DAMAGE_PARAMS.oilKnee ? 1 : 0]
-  const rose = _wordLevels ? now.findIndex((l, i) => l > _wordLevels[i]) : -1
+  now.forEach((l, i) => {
+    const prev = _wordLevels?.[i] ?? l
+    if (l < prev || l === 0) { _alerts.close('w' + i); _wordExpiry.delete('w' + i) }   // fixed: the word goes
+    if (l > prev) {
+      _alerts.close('w' + i)   // a worse level replaces the milder word
+      _alerts.open('w' + i, _MACHINE_WORD[i][l], l === 2)
+      _wordExpiry.set('w' + i, performance.now() + ALERT_WORD_S * 1000)
+    }
+  })
   _wordLevels = now
-  if (rose < 0) return
+}
+/** Per frame: expire old words, mirror the GPS wrong-way flag, and paint the alert the cycle shows. */
+function _paintAlerts (dt) {
+  const t = performance.now()
+  for (const [id, at] of _wordExpiry) if (t >= at) { _alerts.close(id); _wordExpiry.delete(id) }
+  if (gpsSystem?.wrongWay) _alerts.open('wrongWay', 'Wrong way. Turn around')
+  else _alerts.close('wrongWay')
+  const a = _alerts.tick(dt)
   const el = document.getElementById('machine-word')
   if (!el) return
-  el.textContent = _MACHINE_WORD[rose][now[rose]]
-  el.classList.toggle('bad', now[rose] === 2)
-  clearTimeout(_wordTimer)
-  el.style.transition = 'none'
-  el.style.opacity = '1'
-  void el.offsetWidth      // reflow so the fade re-arms (same trick as showSpawnToast)
-  el.style.transition = 'opacity 1s ease'
-  _wordTimer = setTimeout(() => { el.style.opacity = '0' }, 4000)
+  if (a && el.textContent !== a.text) { el.textContent = a.text; el.classList.toggle('bad', !!a.bad) }
+  el.style.opacity = a ? '1' : '0'
 }
 
 // ── FEAT-33 "hold I to start the truck" hint ──────────────────────────────────────────────
@@ -7681,6 +7697,7 @@ document.getElementById('pp-accept')?.addEventListener('click', () => {
     return
   }
   paperRouteSystem.accept()
+  gpsSystem?.markStart()   // DEC-287
 })
 document.getElementById('pp-decline')?.addEventListener('click', () => paperRouteSystem.decline())
 document.getElementById('pp-sizes')?.addEventListener('click', (e) => {   // FEAT-141: drive another unlocked size
@@ -8284,6 +8301,7 @@ function _acceptOffer () {
   if (missionSystem.mission?.line && missionSystem.startZoneExitDist() <= 0) missionSystem.mission.approach = true
   _jobsShop = null   // FEAT-197: taken — nothing to go back to
   missionSystem.accept()
+  if (missionSystem.isOnJob()) gpsSystem?.markStart()   // DEC-287: the board outside the POI, pointing the way the GPS leaves
   // §5b: the stock is bought at accept and never refunded — an expired or abandoned haul keeps it.
   if (pick && missionSystem.isOnJob()) economySystem.spend(pick.cost)
   // FEAT-96: a freight job's load is handed over at accept, already strapped — no drop, no loading beat.
@@ -11233,6 +11251,7 @@ function loop (t) {
   if (gpsSystem && !_labActive) {
     const _ptG = performance.now()
     gpsSystem.update(frameTime)
+    _paintAlerts(frameTime)   // DEC-287
     // PERF-26 INSTRUMENT: renamed off the `frame.` prefix — it is now NESTED inside frame.postStream,
     // and perf.js sums every frame.* label to compute `unattr`, so leaving it would double-count.
     perfAdd('post.gps.update', performance.now() - _ptG)

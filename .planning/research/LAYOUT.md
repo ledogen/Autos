@@ -119,7 +119,7 @@ replace-only classes, the flat patch, the same for inventory parts, exchange fro
 screen, opened by the brake at an auto shop) · `shop-stock.js` (FEAT-137 each auto shop's rotating four-slot shelf — hourly seeded rolls, lazy catch-up, run-layer state; pure) · `hilift.js` (FEAT-138 the hi-lift jack — roll basins, the heave torque into `vehicleState.jackTorque`, the cooldown; pure) · `recovery.js` (SM-3 Recovery card — stuck test, the tows that fit;
 fitSpare and plugTire, the roadside tire work the inventory screen offers; pure, the DOM is in main.js) · `jalopy.js` (SM-3 the run's starting truck — a seeded roll of wear, tires, front bar and the under-bed spare over stock parts; pure) · `camp.js` (dispersed
 camping, FEAT-45) · `dialogue.js` (character channel) · `paper-route.js` + `throw.js` (FEAT-61) ·
-`gps.js` (FEAT-39 nav overlay) · `cluster.js` (FEAT-49 gauge cluster — instrument panel, not
+`gps.js` (FEAT-39 nav overlay) · `alerts.js` (DEC-287 HUD alert cycle) · `cluster.js` (FEAT-49 gauge cluster — instrument panel, not
 clustering) · `rank-timer.js` (FEAT-87 live rank timer — band line-up, escalation, beats; pure, the
 DOM ticker is in main.js) · `damage-screen.js` (FEAT-90 player damage pictogram + left-edge alert
 icon, V, parked only) · `park-badge.js` (FEAT-90 orange P-in-a-circle "park first" badge + keycap

@@ -22,7 +22,8 @@
 // THREE is imported only for the placement section — its scene graph is renderer-free, so the
 // real GpsSystem runs headlessly and the arrow/chevron transforms can be asserted, not eyeballed.
 import * as THREE from 'three'
-import { GpsSystem, bakeRoute, advanceProgress, sampleRoute, markCoverage } from '../src/gps.js'
+import { GpsSystem, bakeRoute, advanceProgress, sampleRoute, markCoverage, startBoardGone, START_GONE_M } from '../src/gps.js'
+import { AlertCycle, ALERT_CYCLE_S } from '../src/alerts.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -391,6 +392,34 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
   const far = advanceProgress(r, 0, 390, 0)
   check('a truck picked up far along the route still re-acquires', far.lat < 5,
     `lat ${far.lat.toFixed(1)} m`)
+}
+
+// ── DEC-287: the mission-start board and the alert cycle ──────────────────────────────────────
+{
+  const mission = { segments: [seg(straight(300, 0, 0, 1, 0), 0, 300)] }
+  const car = { x: 0, y: 0, z: 0 }
+  const gps = new GpsSystem(new THREE.Scene(), { getRoute: () => mission, getCar: () => car })
+  gps.update(1 / 60)
+  check('no start board until a mission is accepted', !gps._startArrow.visible)
+  gps.markStart(); gps.update(1 / 60)
+  check('markStart stands one board on the road ahead, pointing down the route',
+    gps._startArrow.visible && Math.abs(gps._startArrow.position.x - 10) < 0.1 && Math.abs(gps._startArrow.rotation.y) < 1e-6)
+  car.x = START_GONE_M - 1; gps.update(1 / 60)
+  check('the board holds still while the truck is inside 20 m', gps._startArrow.visible && Math.abs(gps._startArrow.position.x - 10) < 0.1)
+  car.x = START_GONE_M + 1; gps.update(1 / 60)
+  check('...and goes once the truck is 20 m away', !gps._startArrow.visible)
+  check('either direction counts', startBoardGone({ x: 0, z: 0 }, { x: -21, z: 0 }) && !startBoardGone({ x: 0, z: 0 }, { x: 0, z: 19 }))
+
+  const a = new AlertCycle()
+  check('no alerts: nothing shows', a.tick(1) === null)
+  a.open('a', 'A'); check('one alert just shows, however long', a.tick(10)?.text === 'A')
+  a.open('b', 'B'); a.open('c', 'C')
+  const seen = []; for (let i = 0; i < 6; i++) { seen.push(a.tick(0)?.text); a.tick(ALERT_CYCLE_S) }
+  check('open alerts cycle in order, one per ALERT_CYCLE_S', seen.join('') === 'ABCABC', seen.join(''))
+  const b = new AlertCycle(); b.open('a', 'A'); b.open('b', 'B'); b.open('c', 'C'); b.tick(ALERT_CYCLE_S)   // B showing
+  b.close('b')
+  check('a closed alert drops out at once; the next one shows', b.tick(0)?.text === 'C')
+  b.close('a'); b.close('c'); check('all closed: nothing shows', b.tick(1) === null)
 }
 
 console.log(fails === 0 ? '\nPASS gps-route' : `\nFAIL gps-route (${fails})`)

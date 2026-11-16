@@ -39,15 +39,14 @@ const ARROW_IN     = 140    // m: arrow starts fading in
 const ARROW_FULL   = 110    // m: fully opaque
 const ARROW_PAST   = 12     // m past the node before it is dropped
 const RING_HOVER   = 1.4
-// FEAT-215: the U-turn ribbon. Shows while the truck points >120° off the route's direction (cos < UT_ON),
+// FEAT-215: wrong way. True while the truck points >120° off the route's direction (cos < UT_ON),
 // clears once it is within ~100° (cos > UT_OFF) — the gap is the hysteresis so it does not flicker at 90–120°.
 const UT_ON        = -0.5
 const UT_OFF       = -0.2
-// DEC-275: it floats over the road's centreline, UT_GUI.ahead m ahead of the truck ALONG the road, UT_GUI.hover m up,
-// aimed by the road alone. Tunables (GPS folder of the debug menu).
-const UT_GUI       = { ahead: 20, hover: 1.5 }
-const UT_W         = 1.6    // m: ribbon width; the head is 2.5x (4 m)
-const UT_RAD       = 1.7    // m: radius of the upward loop (3.4 m tall; the whole glyph fits a 5 m cube)
+// DEC-287: the wrong-way flag feeds the HUD alert (main.js); the 3D U-turn arrow is gone.
+// Mission start: ONE fixed junction board on the road START_AHEAD m up the route from the truck, until the truck is START_GONE_M away.
+const START_AHEAD  = 10     // m of route ahead of the truck's progress at accept: "right outside the POI"
+export const START_GONE_M = 20   // m the truck travels (either way) from where it accepted before the start board goes
 // FEAT-218: an objective further than this from the route's last road point is OFF the road: it gets the turn arrow, not the ring.
 const OFFROAD_M    = 3      // a demolition target stands ~5 m off the centreline; a courier's end is on it
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
@@ -327,27 +326,8 @@ function _arrowGeometry () {
   return g
 }
 
-/**
- * FEAT-215 (redesigned 2026-11-14): a ribbon that leaves along local +Z (away from the player), loops UPWARD through
- * 180 degrees in the vertical plane and ends heading back along -Z at the top, with an arrowhead that faces the player.
- * Origin on the ground; spans z about -1.7..2.2, y 0..3.4, x +-2 (inside a 5 m cube). Double-sided material, so no mirror variant.
- */
-function _uturnGeometry () {
-  const R = UT_RAD, hw = UT_W / 2, N = 24, A1 = 215 * Math.PI / 180   // loop past 180 degrees so the head tips down toward the camera
-  const path = [[0, -1.5], [0, 0.5]]   // [y, z] along the ribbon
-  for (let i = 1; i <= N; i++) { const a = -Math.PI / 2 + A1 * i / N; path.push([R + R * Math.sin(a), 0.5 + R * Math.cos(a)]) }
-  const pos = []
-  for (let i = 0; i < path.length - 1; i++) {
-    const [y0, z0] = path[i], [y1, z1] = path[i + 1]
-    const q = [[-hw, y0, z0], [hw, y0, z0], [hw, y1, z1], [-hw, y1, z1]]
-    for (const k of [0, 1, 2, 0, 2, 3]) pos.push(...q[k])
-  }
-  const [ey, ez] = path[path.length - 1], aEnd = -Math.PI / 2 + A1, dy = Math.cos(aEnd), dz = -Math.sin(aEnd)   // end point and heading
-  pos.push(-UT_W * 1.25, ey, ez, UT_W * 1.25, ey, ez, 0, ey + 1.9 * dy, ez + 1.9 * dz)   // the head, tip toward the player
-  const g = new THREE.BufferGeometry()
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-  return g
-}
+/** DEC-287: the start board goes once the truck is START_GONE_M from where it accepted, either way. */
+export const startBoardGone = (at, car) => Math.hypot(car.x - at.x, car.z - at.z) > START_GONE_M
 
 // ── the system ──────────────────────────────────────────────────────────────────────────────
 
@@ -366,7 +346,9 @@ export class GpsSystem {
     this._getRoute = getRoute
     this._getCar = getCar
     this._getFwd = getFwd     // FEAT-215: the truck's forward {x, z}, unit, horizontal
-    this._uturn = false
+    this._uturn = false       // DEC-287: wrong way (read by main.js for the HUD alert)
+    this._startPending = false   // markStart() armed, waiting for a baked route
+    this._startAt = null      // {x, z}: where the truck was when the start board was placed
     this._getRoad = getRoad
     this._route = null
     this._src = null          // the mission object the current bake came from (identity compare)
@@ -411,12 +393,12 @@ export class GpsSystem {
     this._objArrow.visible = false
     this.group.add(this._objArrow)
 
-    this._uturnMat = mat()
-    this._uturnMesh = new THREE.Mesh(_uturnGeometry(), this._uturnMat)
-    this._uturnMesh.frustumCulled = false
-    this._uturnMesh.renderOrder = 3
-    this._uturnMesh.visible = false
-    this.group.add(this._uturnMesh)
+    this._startMat = mat()
+    this._startArrow = new THREE.Mesh(this._arrowGeo, this._startMat)   // DEC-287: the same board, fixed at the mission's start
+    this._startArrow.frustumCulled = false
+    this._startArrow.renderOrder = 3
+    this._startArrow.visible = false
+    this.group.add(this._startArrow)
 
     this._ringGeo = new THREE.TorusGeometry(6, 0.35, 8, 40)
     this._ringGeo.rotateX(Math.PI / 2)
@@ -462,7 +444,7 @@ export class GpsSystem {
     return Number.isFinite(p?.gradeY) ? p.gradeY : null
   }
 
-  _hideAll () { this._chev.visible = false; this._arrow.visible = false; this._ring.visible = false; this._objArrow.visible = false; this._uturnMesh.visible = false; this._uturn = false }
+  _hideAll () { this._chev.visible = false; this._arrow.visible = false; this._ring.visible = false; this._objArrow.visible = false; this._startArrow.visible = false; this._startPending = false; this._uturn = false }
 
   update (dt) {
     if (!this.enabled) return
@@ -500,7 +482,8 @@ export class GpsSystem {
 
     this._placeChevrons(route, prog.s)
     this._placeArrow(route, prog.s)
-    this._placeUturn(route, prog.s)
+    this._updateWrongWay(route, prog.s)
+    this._placeStart(route, prog.s, car)
     // FEAT-187: a route flagged noRing (a demolition job's) has no destination circle — its targets wear halos.
     this._placeRing(route, prog.s)
   }
@@ -596,20 +579,30 @@ export class GpsSystem {
     this._arrow.visible = this._arrowMat.opacity > 0.02
   }
 
-  _placeUturn (route, s) {
+  _updateWrongWay (route, s) {
     const f = this._getFwd?.()
-    if (!f || route.length - s < 30) { this._uturnMesh.visible = this._uturn = false; return }
+    if (!f || route.length - s < 30) { this._uturn = false; return }
     const t = sampleRoute(route, s + 8)
     const c = f.x * t.dx + f.z * t.dz
     this._uturn = c < UT_ON || (this._uturn && c < UT_OFF)
-    this._uturnMesh.visible = this._uturn
-    if (!this._uturn) return
-    // DEC-275: the U-turn only shows when the truck faces against the route, so "ahead" = back down the route
-    // (s - ahead). Less than that behind the truck, it clamps to the route's start: still the road, just nearer.
-    // No truck heading enters the position or the yaw; no bob (fixed height).
-    const p = sampleRoute(route, Math.max(0, s - UT_GUI.ahead))
-    this._uturnMesh.position.set(p.x, p.y + UT_GUI.hover, p.z)
-    this._uturnMesh.rotation.y = Math.atan2(-p.dx, -p.dz)
+  }
+
+  /** True while the truck points against the route (hysteresis UT_ON / UT_OFF). */
+  get wrongWay () { return this._uturn }
+
+  /** DEC-287: a mission was accepted: the next baked frame stands the start board on the road ahead, fixed. */
+  markStart () { this._startPending = true; this._startArrow.visible = false; this._startAt = null }
+
+  _placeStart (route, s, car) {
+    if (this._startPending) {
+      this._startPending = false
+      const p = sampleRoute(route, Math.min(s + START_AHEAD, route.length))
+      this._startArrow.position.set(p.x, p.y + ARROW_HOVER, p.z)
+      this._startArrow.rotation.set(0, Math.atan2(-p.dz, p.dx), 0)   // as the junction board: tip on the direction of travel
+      this._startAt = { x: car.x, z: car.z }
+    }
+    if (this._startAt && startBoardGone(this._startAt, car)) this._startAt = null
+    this._startArrow.visible = !!this._startAt
   }
 
   /**
@@ -650,7 +643,5 @@ export function addGpsGui (gui, gps) {
   f.close()
   const state = { enabled: true }
   f.add(state, 'enabled').name('Navigation arrows').onChange(v => gps.setEnabled(v))
-  f.add(UT_GUI, 'ahead', 8, 40, 1).name('U-turn arrow: m ahead along road')
-  f.add(UT_GUI, 'hover', 0, 4, 0.1).name('U-turn arrow: height above road (m)')
   return f
 }
