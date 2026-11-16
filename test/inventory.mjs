@@ -17,7 +17,7 @@
 //
 // Pure node: no THREE, no DOM.
 import { InventorySystem, runInventory } from '../src/inventory.js'
-import { ITEMS } from '../data/items.js'
+import { ITEMS, foodHoldH, COOKING_KIT_FOOD_MULT } from '../data/items.js'
 import { REWARD_CATS } from '../data/offers.js'
 import { STOREFRONT, ITEM_PRICE } from '../data/shop-stock.js'
 import { REWARD_LIST, rewardsIn } from '../src/offer-board.js'
@@ -196,6 +196,9 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   full.start(); full.grant('potatoCooked', 5); full.grant('potato', 2)   // pack + a full cooked stack + raw: no slot left
   check('convert refuses, changing nothing, when the cooked has no room',
     !full.convert('potato', 'potatoCooked') && full.list().find(r => r.id === 'potato').n === 2 && full.slotsUsed() === 3)
+  check('DEC-310: the kit at camp holds food 1.2x as long, the same food away from camp does not',
+    COOKING_KIT_FOOD_MULT === 1.2 && Math.abs(foodHoldH('potatoCooked', true) - 4.8) < 1e-9 && foodHoldH('potatoCooked', false) === 4
+    && Math.abs(foodHoldH('chiliDog', true) - 12) < 1e-9 && foodHoldH('chiliDog', false) === 10)
   const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
   check('the potato is a farm reward at C and B, not A', pool(REWARD_CATS.farm.cats, 'C').includes('potato')
     && pool(REWARD_CATS.farm.cats, 'B').includes('potato') && !pool(REWARD_CATS.farm.cats, 'A').includes('potato'))
