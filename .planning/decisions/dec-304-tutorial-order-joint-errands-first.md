@@ -14,8 +14,7 @@ station for a snack and the fill-up; a camping area to eat it; the flat, the tow
 mom's; next morning back to the joint for the last paycheck; free will there). "I want the player to drive from the gas
 station to the camping area themselves So we can teach them what buttons to press and they can see the flow of opening
 the camping cart and stuff." The drive back to the joint for the check is "the last portion on rails before you have
-free will". As built: at the camping area's stop the camp prompt works (DEC-308 keeps its sleep shut), and the
-off-road reset (DEC-281) stands down inside the camping area, since a campsite is off the road.
+free will".
 
 **Why.** It opens the run on a fresh morning at the joint (DEC-299) and keeps every lesson; the camping area becomes a
 real lesson in making camp rather than a stop to eat.

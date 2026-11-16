@@ -4918,10 +4918,8 @@ function _eveningBeats () {
   }
   // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
   // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
-  // (_playedS), so a pause or a card never counts. FEAT-229 (DEC-304): nor is the camping area at its stop — a campsite
-  // is off the road.
+  // (_playedS), so a pause or a card never counts.
   const off = !vehicleState.parked && !_inPoiRing() && !poiSystem.nearest(vp.x, vp.z, TUT_PARAMS.safeNearPoiM)
-    && !(stop === 'camp' && campSystem.zoneAt(vp.x, vp.z))
     && campSystem.nearRoadInfo(vp.x, vp.z).lateral > (RANGER_PARAMS.roadHalfWidth ?? 5) + TUT_PARAMS.offRoadM
   _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
   const left = off ? TUT_PARAMS.offRoadS - (_playedS - _eveOffAt) : 0
@@ -5771,6 +5769,7 @@ scene.add(_campGroup)
 const campfire = new CampfireFx(_campGroup)
 const campGear = new CampGear(_campGroup)
 window.__campGear = campGear   // dev handle — test/cdp-smoke.mjs dresses a pad and repacks it
+window.__campSys = () => campSystem   // dev handle — test/cdp-smoke.mjs grades the tutorial's camping area for a site
 // Unit ring (inner 0.86 / outer 1.0), laid flat and scaled to the live pad half-extent, so the
 // campPadHalfM slider moves it without rebuilding geometry. No depth write: it is a read-out, and
 // it must not z-fight the ground it is describing.
