@@ -207,13 +207,16 @@ await js('__fp.axes[2] = 1'); await sleep(600); await js('__fp.axes[2] = 0')
 const o1 = await off(); check(Math.abs(o1) > 45, `0.6 s full right stick orbits the view (${o1.toFixed(0)} deg off behind)`)
 await sleep(1500); const o2 = await off(); check(Math.abs(o2 - o1) < 3, `1.5 s after release it HOLDS (${o2.toFixed(0)} deg)`)
 await sleep(2500); const o3 = await off(); check(Math.abs(o3 - o1) < 3, `stopped, ~4 s after release it still lingers (${o3.toFixed(0)} deg)`)
-// FEAT-194 part 1: the LT tap leaves the park latch set (only RT, RB or a gear let it go), so the checks
-// below start parked.
-await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0')
-check((await vs()).parked, 'FEAT-194: an LT tap while parked leaves the parking brake set')
+// FEAT-194 part 1 + DEC-255: on the AUTOMATIC (this truck) LT at rest is the reverse pedal and releases the park
+// latch like gas (the manual keeps it a pure brake: test/park-brake.mjs). The LT hold backs the truck out, so the
+// View hold below puts it back parked at rest for the checks after.
+await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0'); await sleep(100)
+check(!(await vs()).parked, 'DEC-255: an LT tap while parked on the automatic releases the parking brake (reverse pedal)')
 await js('__fp.b[6] = 0.6'); await sleep(1500); await js('__fp.b[6] = 0'); await sleep(100)
-check((await vs()).parked, 'FEAT-194: LT held 1.5 s while parked leaves it set')
+check(!(await vs()).parked, 'DEC-255: LT held 1.5 s on the automatic keeps it released (backing out)')
 await sleep(2000); const o4 = await off(); check(Math.abs(o4) < 10, `a brake tap from a stop swings it back behind (${o4.toFixed(0)} deg)`)
+await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)   // View hold: parked at rest again
+s = await vs(); check(s.parked && s.v < 0.2, `View hold re-parks the truck at rest after the reverse (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // B no longer aims (owner, 2026-10-21): held in the drive layout it is the icon menu. Off a route the
 // pad has no practice throw now; on one, the right stick aims and RB taps (checked below).
 const reticle = () => js('getComputedStyle(document.getElementById("aim-reticle")).display !== "none"')
