@@ -12,8 +12,8 @@ lane: Spare
 # FEAT-231: Bed friction — the rubber mat (μ 0.30) and the bedliner (μ 0.60)
 
 ## Next steps
-Built on `land/feat-231` (Spare lane), awaiting landing. Owner: the placeholders under Open questions, and whether
-the two stay inventory tools (owned = on the floor) or become a bed-floor part slot (DEC-028). Visual: not this ticket.
+Landed (c7231fb2, land/feat-231). Owner: look card `feat231-bed-grip-look` (the two placeholder prices, and whether mat and bedliner
+stay inventory tools or become a bed-floor part slot, DEC-028). Every box ticked.
 
 ## Summary
 Both are ratified (owner, 2026-10-22) and neither does anything. The rubber mat is an item and a reward with no

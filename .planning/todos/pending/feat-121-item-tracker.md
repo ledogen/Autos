@@ -800,3 +800,4 @@ to say a surface-μ table ships, so check before building.
 ## Log
 
 - 2026-11-16 — item audit (lane B, `land/items-audit`): every row's status set from the game; per-row "Audit" lines added; the Audit section above lists what is ratified and unbuilt, the buildable groups and the blocking systems. Docs only.
+2026-11-16 (bookkeeping sweep): landed since the audit: camp gear + Rucksack on the general-store shelf (9b81847c, merge d4189fbb, prices [DEFAULT]; Rucksack $25 invented), bedliner/mat (c7231fb2, FEAT-231), groceries (56a949e8), fresh clock rows (e22a2d35). Look card `groceries-campgear-look`.

@@ -12,13 +12,10 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
-The owner's dialogue pass (2026-11-16, DEC-320..326) is built on `land/tut-dialogue`: owner reviews the lines (the
-lane report's numbered list). Open owner call: whether story mode's R / pad reset goes for the alpha (DEC-321 kept it).
-Before that pass:
-Lane A built the owner's option 1 on `land/feat-229` (DEC-304..308). Owner: a look at the contact sheet
-(`wip/feat-229/`), the placeholder lines (tutorial sign-off card) and the defaults below. Then the seed re-check against
-the new order (the tutorial-seed gate still measures the old legs). The orchestrator smokes main after the merge (the
-skip now lands at 07:00, so every step after `story` runs a morning free will).
+Landed: the morning-start order (122a606f, DEC-304..308), the owner's dialogue pass (1bf41b62, DEC-320..326) and the seed
+gate (f8ffe439). Owner: look cards `tut-dialogue-look` (review the lines; whether story mode's R / pad reset stays for the alpha;
+the two agent lines), `tutorial-test-drives` (playtest), `feat229-same-landing` (open; DEC-299/304 may already answer it),
+and the defaults (clock held + stamps, $6, tired at night, the skipper's line).
 
 ## Summary
 Today the firing is at 19:30 and the tutorial lasts exactly 24 in-game hours, so free will opens at 19:30: a new player

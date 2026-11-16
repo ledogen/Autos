@@ -12,7 +12,9 @@ lane: Perf
 # BUG-169: Frame cap "display rate" still runs 60 fps on a 144 Hz monitor; add 90 and 120
 
 ## Next steps
-Perf lane reproduces on a 144 Hz display (Windows) and fixes, then adds the 90 and 120 options (extends DEC-185: new record when built).
+Owner's Windows findings are in the Log (card bug169-try answered 11-16: F11 fullscreen misbehaves, maximized differs). Perf lane
+reproduces on a 144-165 Hz display (Windows only; not reproducible on the Mac) and fixes, then adds the 90 and 120 options
+(extends DEC-185: new record when built).
 
 ## Summary
 On the owner's Windows machine, 144 Hz G-Sync, the frame-rate setting "display rate" still runs 60 fps by the debug readout. The owner also wants 90 and 120 fps options.

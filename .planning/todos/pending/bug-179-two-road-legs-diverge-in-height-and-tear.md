@@ -12,8 +12,8 @@ lane: unplaced
 # BUG-179: Two road legs diverge in height quickly and the surface tears where they meet
 
 ## Next steps
-A world-gen lane (Opus) reproduces it from the capture, finds which two legs disagree and why, and says whether it
-shares a root with BUG-171 (junction limb ground steps). No fix chosen yet.
+Root found (29a330e7 on `land/bug-179`, worktree CarGame-spare, not landed): the merge plan drops a fork chain at one node. STOPPED for
+the owner: card `bug179-fork-chain` (options listed in the branch's ticket log). Say whether it shares a root with BUG-171.
 
 ## Summary
 At one place on seed 1684703087 two road legs leave each other with rapidly different elevations, and there is a

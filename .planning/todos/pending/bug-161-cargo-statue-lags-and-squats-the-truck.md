@@ -12,8 +12,8 @@ lane: B
 # BUG-161: Fragile cargo (marble statue) lags behind the truck, squats the rear and slows it
 
 ## Next steps
-Owner: drive a marble-statue job on the current build (both mechanisms found are fixed since your 11-12 drive). If the
-lag shows, press the capture key there; the capture replays headless. No sighting on a few jobs → close.
+Gate landed (ef5b7249, test only; no src change). Owner: drive a marble-statue job on the current build, card `bug161-statue-drive`.
+If the lag shows, press the capture key; no sighting on a few jobs -> close.
 
 ## Summary
 The owner saw the statue lag, the rear squat and the truck slow, 2–3 s at a time. Headless, on main, the statue is

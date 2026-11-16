@@ -502,3 +502,4 @@ owner's cadence pass) cranks slower, which `playbackRate = rpm / recordedRpm` ab
 ## Log
 
 - 2026-11-16 (Lane B, `land/feat-120-synth`): the synthesize rows that were wip/todo, finished as far as a numeric check goes. Built paper throw + wet ground (e1d71387); the five in-game wip voices and the register were measured offline (numbers on each row). Offline renders: `node tools/audio-proto/offline.mjs` through a `getAudioContext()` wrapper (the tool alone is silent: `live()` is null until a context exists). Underbody scrape, gravel ping, reverse/diff whine skipped: they wait on the owner's recording or reference clip. No human has listened to any of them.
+2026-11-16 (bookkeeping sweep): owner listen / recording cards: `feat120-synth-listen`, `feat120-clips`, `feat120-straps`. Synth rows landed 0123278b (land/feat-120-synth); no human has listened yet.

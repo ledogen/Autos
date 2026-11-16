@@ -12,9 +12,10 @@ lane: C
 # FEAT-230: Cooking at camp — the potato, groceries, and the cooking kit's job
 
 ## Next steps
-Slices 1, 1b and 3 are on main; slice 2 (the fresh clock, coolers, ice) is finished to the owner's answers (DEC-338) on
-`land/feat-230-fresh`, landable. Owner: a look at the freshness bar (picture `wip/fresh/`); the potato's price ($2), the
-coolers' prices ($20, $65).
+Slices 1, 1b, 3 and 2 are all on main (slice 2 the fresh clock e22a2d35, groceries 56a949e8, tutorial hold e45af4fb DEC-339 draft).
+Owner: look cards `fresh-clock-look` (the bar at 6 o'clock, ice 72/120 h, cooler capacity; also approve or change DEC-339) and
+`groceries-campgear-look` (prices all [DEFAULT]; a farm now opens its shop first, jobs behind a button). Not built: "evening or
+morning" (no ruled mechanic). Every Tracker box is ticked: close after the looks.
 
 ## Summary
 The cooking kit is sold and rewarded but does nothing: its effect waits on groceries, and neither groceries nor the
@@ -68,3 +69,4 @@ Ice, Ice King, Packed lunch). In short:
   food with `freshH` chills (`chill` field gone), burger 16 h + groceries 24 h, ice melts in 24 h and gives a cooler its share
   of 72 / 120 h, `freshLeft` → the `.sl-fresh` bar in inventory-screen.js. Main merged in. Gates: inventory, shop-stock + the
   affected set; smoke step `freshBar` (wip/fresh/). Unverified: the bar's look by the owner.
+2026-11-16 (bookkeeping sweep): next steps rewritten (slice 2 merged e22a2d35, groceries 56a949e8, DEC-339 tutorial hold e45af4fb). Ready to close after the two look cards.
