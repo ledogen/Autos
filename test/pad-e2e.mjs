@@ -82,7 +82,7 @@ await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sl
 check(!mapBefore && await mapShown(), `View tap opens the map (${mapBefore} -> ${await mapShown()})`)
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 check(!await mapShown(), 'a second View tap closes it')
-// FEAT-133: on the map the cursor stays at the centre, the left stick pans (FEAT-175), and LB / RB page offers as Q / E.
+// FEAT-133: on the map the cursor stays at the centre, the left stick pans (FEAT-175), and LB / RB flip offers as the arrows, X is the tab (Q) — FEAT-239.
 // The window spy registers before the map opens, so it sees keys ahead of the map's capture handler;
 // the document spy sits where vehicle.js listens, so a stopped Q / E never reaches the gearbox.
 await js(`window.__win = []; window.__doc = []
@@ -99,11 +99,15 @@ check(m2.x === m2.cx && m2.y === m2.cy && m2.px > m.px && Math.abs(steerOnMap) <
 await js('__win.length = 0; __doc.length = 0')   // drop the View tap's m
 await js('__fp.b[4] = 1'); await sleep(150); await js('__fp.b[4] = 0'); await sleep(150)
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(150)
+await js('__fp.b[2] = 1'); await sleep(150); await js('__fp.b[2] = 0'); await sleep(150)
+await js('__fp.b[14] = 1'); await sleep(150); await js('__fp.b[14] = 0'); await sleep(150)
 await js('__fp.b[0] = 1'); await sleep(150); await js('__fp.b[0] = 0'); await sleep(150)
 const wk = await js('__win.join()'), dk = await js('__doc.join()')
-check(wk === 'q,e,Enter', `LB / RB send Q / E on the map and A sends Enter (window saw "${wk}")`)
+check(wk === 'ArrowLeft,ArrowRight,q,Enter', `LB / RB send the arrows, X sends Q, D-pad ← sends nothing and A sends Enter on the map (window saw "${wk}")`)
 check(!/\b[qe]\b/.test(dk), `Q / E stop at the map, never reaching the gearbox (document saw "${dk}")`)
-check(await js('__map2d()._tab') === 'missions', 'LB then RB swap the list to Shopping and back to Missions')
+check(await js('__map2d()._tab') === 'shopping', 'X swaps the list to Shopping; LB / RB leave the tab alone')
+await js('__fp.b[2] = 1'); await sleep(150); await js('__fp.b[2] = 0'); await sleep(150)   // back to Missions for the steps below
+check(await js('__map2d()._tab') === 'missions', 'X again swaps back to Missions')
 // FEAT-211: the Missions list on the pad. Free roam has no board, so two places with work are stubbed onto the map:
 // D-pad ↓ lands on the nearest and the map snaps there (tracking let go), ↓ again walks to the next, B leaves the list
 // with the map still open and where it was, the left stick's click puts it back on the truck, tracking.
