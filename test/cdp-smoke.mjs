@@ -1790,8 +1790,8 @@ const STEPS = [
       if (await speaker()) { heard ||= await handover(); await tap('Enter'); await sleep(200) }
       else { await sleep(800); if (!await speaker() && (await tut()).stop === 'mom') { await park(true); await sleep(800) } }
     }
-    await readCards()
-    check(heard && (await tut()).stop === 'pack', `parked at mom's door, no hand-over in the owner's words: ${JSON.stringify(await tut())}`)
+    await readCards()   // the stop can flip to 'pack' a beat before her card shows: then it is read here
+    check((heard || saidAny(/^Mom: Take this pack over to your uncle/)) && (await tut()).stop === 'pack', `parked at mom's door, no hand-over in the owner's words: ${JSON.stringify(await tut())}`)
     check(await js('window.__econ.money') === 6, `mom's hand-over did not put $6 in the wallet: $${await js('window.__econ.money')}`)
     check(!await js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"'), "her door offered her bed in the morning (DEC-308)")
     await stamped(8, "mom's hand-over")
