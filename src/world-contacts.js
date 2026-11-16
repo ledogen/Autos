@@ -56,6 +56,7 @@ export function makeQueryContacts (w) {
     }
 
     w.extra?.(cx, cy, cz, r, hits)
+    const solidFrom = hits.length
 
     // FEAT-06b: prop hard contacts (trunks = capsule, rocks/boulders = their mesh) from the per-chunk collidable grid
     // — bushes are not here (soft drag, once per step). Same {normal, depth, contactPoint} shape.
@@ -70,6 +71,27 @@ export function makeQueryContacts (w) {
         depth: poiHit.depth,
         contactPoint: new THREE.Vector3(cx - poiHit.nx * t, cy - poiHit.ny * t, cz - poiHit.nz * t),
       })
+    }
+
+    // BUG-185: the props and the POI cube answer a SPHERE of the wheel's radius, which stands 0.37 m out from the hub
+    // where the tire's sidewall stands 0.12 m. A trunk beside the rear wheel was felt 25 cm outboard of the tire, 23 cm
+    // outboard of the body's flank (0.85 m), and "past the soft band" (on the rim) while still 10 cm clear of the
+    // sidewall: a 15 mph side hit pinch-flatted the tire before the body ever touched the tree. A wheel query re-measures
+    // each of these hits as the tire CYLINDER along the same normal n: the cylinder reaches r·√(1 − (n·A)²) + (w/2)·|n·A|
+    // from the hub where the sphere reaches r, so the overlap along n is the sphere's less the difference. A hit on the
+    // tread (n ⟂ A) is unchanged. The bore wall below keeps the sphere: it has no engine mirror for the body to meet.
+    // ponytail: one axis (the sphere's normal), not the cylinder's full contact — exact for a trunk square beside or
+    // square ahead of the tire, never drops a real contact (no overlap on one axis is a separation), at worst a few mm of
+    // phantom at the tread's corner.
+    if (footprint && axle && r > 0) {
+      const hw = (w.params.wheelWidth || 0.25) / 2
+      let k = solidFrom
+      for (let i = solidFrom; i < hits.length; i++) {
+        const h = hits[i], c = Math.abs(h.normal.x * axle.x + h.normal.y * axle.y + h.normal.z * axle.z)
+        h.depth -= r - r * Math.sqrt(Math.max(0, 1 - c * c)) - hw * c
+        if (h.depth > 0) hits[k++] = h
+      }
+      hits.length = k
     }
 
     // BUG-37: a bore's curved WALL — the ground above resolves only its floor.

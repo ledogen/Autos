@@ -251,6 +251,7 @@ export class ServiceScreen {
     this.isOpen = false
     this._pv = null
     this.leaving = null
+    this.msg = false; clearTimeout(this._msgTimer)
     this.service.close()   // a cart still full here (the truck towed off) is discarded
     this.screen.classList.remove('open')
     if (!this.store) this.onView(false)
@@ -358,14 +359,15 @@ export class ServiceScreen {
     if (!this.isOpen) return
     if (!this.service.cart.length) { this.close(); then(); return }
     this.leaving = then
+    // BUG-188: the line is a message, not a toggle — every press (re)shows it and it hides itself ~1 s later
+    this.msg = true
+    clearTimeout(this._msgTimer)
+    this._msgTimer = setTimeout(() => { this.msg = false; this.render() }, 1000)
     this.render()
   }
 
-  /** Esc / pad B: steps back out of the ask, else leaves. */
-  back () {
-    if (this.leaving) { this.leaving = null; this.render(); return }
-    this.leave()
-  }
+  /** Esc / pad B: leaves, or with work in the cart re-shows the ask (never hides it early). */
+  back () { this.leave() }
 
   /** The cart was checked out or discarded: an ask in progress finishes leaving. */
   _left () {
@@ -409,7 +411,7 @@ export class ServiceScreen {
       + (this.note ? dim(`${this.note} more came out with it: ${this.note > 1 ? 'they' : 'it'} needed it.`) : '') + `</div>`,
       `<div class="sv-foot"><div class="sv-row"><span class="sv-name">Subtotal</span><span class="sv-cost sv-total">${cost(t.price, t.hours)}</span></div>`
       + (short > 0 ? `<div class="sv-flat">$${formatMoney(short)} short</div>` : '')
-      + (this.leaving ? `<div class="sv-desc">Check out or discard before you leave.</div>` : '')
+      + (this.leaving && this.msg ? `<div class="sv-desc">Check out or discard before you leave.</div>` : '')
       + `<div class="sv-row"><span class="sv-acts">${btn('discard', 'discard', true, '', ' bad')}${btn('checkout', 'check out', short <= 0, '', ' ok')}</span></div></div>`]
   }
 

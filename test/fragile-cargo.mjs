@@ -30,7 +30,7 @@ import { splitFragilePayout, splitPayout, pointsFor, EconomySystem, rankTable, f
 import { amountGrade } from '../src/par.js'
 import { gateLine } from '../src/offer-board.js'
 const fragileGrade = (h) => amountGrade(h, rankTable('fragile', 1, 'fragile'))
-import { makeFragile, feltG, shockCost, onePctG } from '../src/fragile.js'
+import { makeFragile, feltG, shockCost, onePctG, tenPctG, meterPos } from '../src/fragile.js'
 
 const DT = 1 / 60
 const BED = DEFAULT_VEHICLE_MODEL.bed
@@ -196,6 +196,8 @@ ok(res.sturdy.crest.health > 0.5 && res.sturdy.crest.health < 0.85, `a 1 m crest
 // only) read a sturdy piano at 0.53 g in this 22 mph wall hit; its own Δv / dt reads ~55 g.
 ok(all.every(r => r.strike.peak >= 40 && r.strike.health === 0),
   `a 22 mph head-on into a wall is felt (≥ 40 g: ${all.map(r => r.strike.peak.toFixed(0)).join(' / ')} g) and breaks every tier`)
+ok(['veryFragile', 'fragile', 'sturdy'].every(t => Math.abs(shockCost(tenPctG(TIERS[t]), TIERS[t]) - 0.1) < 1e-9 && Math.abs(meterPos(tenPctG(TIERS[t]), TIERS[t].breakG * 1.2) - 0.5) < 0.04),
+  'FEAT-237: tenPctG costs 10 %, and the log meter puts every tier\'s 10 % tick within 4 points of halfway up')
 ok(['veryFragile', 'fragile', 'sturdy'].every(t => Math.abs(shockCost(onePctG(TIERS[t]), TIERS[t]) - 0.01) < 1e-12),
   'one hit at a tier\'s 1 % g costs exactly 1 %')
 ok(all.every(r => r.rollover.health === 0), 'a rollover destroys every tier')

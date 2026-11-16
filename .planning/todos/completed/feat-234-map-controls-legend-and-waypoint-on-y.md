@@ -1,7 +1,7 @@
 ---
 id: FEAT-234
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-16
 source: owner, 2026-11-16, inbox — "It's weird that A and Y both set the waypoint on the map view. Let's just commit to making it Y. Let's also show the waypoint control on the bottom of the map next to the distance legend. actually show all the map controls there Pan, zoom, and set waypoint"
@@ -31,3 +31,4 @@ A and Y both set the map waypoint; commit to Y. Show all map controls (pan, zoom
 ## Log
 - 2026-11-16: filed from the owner's inbox note.
 - 2026-11-16 (lane C, land/map-batch): built. Row sits after the contour note; it stops short of the scale label, or of the cursor's coordinate readout while that shows (pad cursor at the sheet centre). Screenshots in wip/map-batch/ (map-kb2.png keyboard, map-pad.png pad). Not run on a physical pad: pad mode was forced with pad.active.
+- 2026-11-16: landed on main (local). Closed.

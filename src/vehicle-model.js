@@ -160,11 +160,13 @@ function splitRearGroup (mesh, rearZ) {
 // static tip deflection wL^4/8EI over w1^2 = 12.36 EI/(m'L^4) gives d_static = 1.545 f / w^2, so
 // hz and zeta are the only knobs. f comes from the mount's WORLD position differenced twice, so body
 // roll/pitch about the CG drives it too, not just CG acceleration. At 1.8 Hz a 1 g corner leans the
-// tip ~0.12 m (8°). The bend follows the uniform-load deflection curve (6ξ² − 4ξ³ + ξ⁴)/3.
+// tip ~0.12 m (8°). FEAT-236: air drag is one more specific-force term (dragK·|v|·v on the mount's own
+// velocity, so reversing and sideways slip bend it the other way for free). The bend follows the uniform-load deflection curve (6ξ² − 4ξ³ + ξ⁴)/3.
 // Visual only — never reaches physics or a replay.
 const ANTENNA_TUNE = {
   hz: 1.8, zeta: 0.06,
   segments: 6, tipRadius: 0.45,   // ring count along the mast; tip radius as a fraction of the base's
+  dragK: 0.025,                   // 1/m: air drag on the whip, a = dragK·|v|·v (FEAT-236); tip lean ≈ 3.8° / 15° / 31° at 30 / 60 / 90 mph
   maxAccel: 60,                   // m/s², clamps a teleport's (reset, story entry) one-frame spike
 }
 
@@ -215,6 +217,7 @@ function createAntenna (a, material) {
     f.subVectors(v, vPrev).divideScalar(dt).clampLength(0, ANTENNA_TUNE.maxAccel)
     vPrev.copy(v)
     f.y += 9.81
+    f.addScaledVector(v, ANTENNA_TUNE.dragK * v.length())   // drag decelerates the mast along -v, so its specific force gains +dragK|v|v; the spring does the rest
     f.applyQuaternion(qInv.copy(state.quaternion).multiply(mesh.quaternion).invert())   // into the mast frame
     const w = 2 * Math.PI * ANTENNA_TUNE.hz
     // Semi-implicit Euler: stable while w·dt < 2 (0.57 at the 50 ms dt cap).
@@ -1191,11 +1194,13 @@ float rsBakedShade () {
    * road tiles, props, the truck's own .glb), which the boot prewarm never saw and which would
    * otherwise compile the first time each lamp state appears (the "first headlights lag").
    * Synchronous so no rendered frame ever sees the borrowed light state. It draws (BUG-175, _drawWarm), which
-   * compiles too.
+   * compiles too. draw = false only issues the compile (renderer.compile never waits on the driver), so a caller
+   * can draw once the programs are ready (BUG-186, main.js _lampSweepStep).
    */
-  function compileLightState (i, renderer, scene, camera, points = []) {
+  function compileLightState (i, renderer, scene, camera, points = [], draw = true) {
     const restore = _lightState(i, points)
-    _drawWarm(renderer, scene, camera)
+    if (draw) _drawWarm(renderer, scene, camera)
+    else renderer.compile(scene, camera)
     restore()
   }
 

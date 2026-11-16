@@ -110,7 +110,7 @@ import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './th
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
-import { AlertCycle } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
+import { AlertCycle, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -127,7 +127,7 @@ import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
 import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
-import { makeFragile, feltG, onePctG } from './fragile.js'   // FEAT-97: a fragile load's condition
+import { makeFragile, feltG, onePctG, tenPctG, meterPos } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
 import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-network build Worker (routing + plan layer off-thread)
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
@@ -1283,39 +1283,50 @@ function showSpawnToast () {
 const _CORNER_NAME = ['front-left', 'front-right', 'rear-left', 'rear-right']
 const _MACHINE_WORD = [
   [null, 'the engine is knocking', 'the engine seized'],
-  ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is cracking`, `the ${c} wheel gave out`])),
+  ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is damaged`, `the ${c} wheel gave out`])),
   // FEAT-216 damage alerts (words are the owner's to approve): a wheel bent 10 %, a tire flat / failed,
   // the air filter and the oil at their wear thresholds. Spring and body-panel damage stay sound-only.
   ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is bent`])),
   ...(_CORNER_NAME.map(c => [null, `the ${c} tire is flat`, `the ${c} tire failed`])),
-  [null, 'the air filter is clogging'],
-  [null, 'the oil is worn'],
+  [null, 'the air filter is dirty', 'the air filter is very dirty'],
+  [null, 'the oil is dirty', 'the oil is very dirty'],
 ]
+// FEAT-216 / DEC-327: critical failures stay up while true (a failed wheel, a flat or failed tire); the other words
+// re-report at each further 10 % lost. Slots: 0 engine · 1-4 wheel · 5-8 bent · 9-12 tire · 13 filter · 14 oil.
+const _isCrit = (i, l) => (i === 0 && l > 0) || (i >= 1 && i <= 4 && l === 2) || (i >= 9 && i <= 12 && l > 0)
 // DEC-287: #machine-word is the general alerts area. Every alert opens into `_alerts`, which shows ONE at a time, 2 s
 // each, round-robin. A machine word stays open ALERT_WORD_S (its old 4 s fade) or until its level falls back; "Wrong way.
 // Turn around" is open while the GPS says the truck points against the route.
 const _alerts = new AlertCycle()
 const ALERT_WORD_S = 4
 let _wordLevels = null
+let _wordSteps = null
 const _wordExpiry = new Map()   // alert id -> performance.now() ms it closes
 function _machineWords () {
-  if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) { _wordLevels = null; return }
+  if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) {
+    // a new run / the menu: no word of the last truck survives (BUG-184 resets the damage baselines the same way)
+    for (let i = 0; i < _MACHINE_WORD.length; i++) { _alerts.close('w' + i); _wordExpiry.delete('w' + i) }
+    _wordLevels = null; return
+  }
   const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
-  const now = [lv(damageModel.get('engine')), ...WHEEL_IDS.map(id => lv(damageModel.get(id))),
-    ...WHEEL_IDS.map(id => damageModel.get(id) <= 0.9 ? 1 : 0),
-    ...TIRE_IDS.map((id, i) => damageModel.get(id) <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
-    damageModel.get('airFilter') < DAMAGE_PARAMS.filterKnee ? 1 : 0,
-    damageModel.get('oil') < DAMAGE_PARAMS.oilKnee ? 1 : 0]
+  const cond = [damageModel.get('engine'), ...WHEEL_IDS.map(id => damageModel.get(id)), ...WHEEL_IDS.map(id => damageModel.get(id)),
+    ...TIRE_IDS.map(id => damageModel.get(id)), damageModel.get('airFilter'), damageModel.get('oil')]
+  const now = [engineLevel(cond[0], KNOCK_FROM), ...WHEEL_IDS.map((id, i) => lv(cond[1 + i])),
+    ...WHEEL_IDS.map((id, i) => cond[5 + i] <= 0.9 ? 1 : 0),
+    ...TIRE_IDS.map((id, i) => cond[9 + i] <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
+    wearLevel(cond[13]), wearLevel(cond[14])]
+  const steps = cond.map(stepOf)
   now.forEach((l, i) => {
-    const prev = _wordLevels?.[i] ?? l
-    if (l < prev || l === 0) { _alerts.close('w' + i); _wordExpiry.delete('w' + i) }   // fixed: the word goes
-    if (l > prev) {
-      _alerts.close('w' + i)   // a worse level replaces the milder word
-      _alerts.open('w' + i, _MACHINE_WORD[i][l], l === 2)
-      _wordExpiry.set('w' + i, performance.now() + ALERT_WORD_S * 1000)
+    const prev = _wordLevels?.[i] ?? l, crit = _isCrit(i, l), id = 'w' + i
+    const act = wordAction(prev, l, steps[i], _wordSteps?.[i] ?? steps[i], crit)
+    if (act !== 'none') { _alerts.close(id); _wordExpiry.delete(id) }
+    if (act === 'show') {
+      _alerts.open(id, _MACHINE_WORD[i][l], l === 2)
+      if (!crit) _wordExpiry.set(id, performance.now() + ALERT_WORD_S * 1000)
     }
+    if (crit) _alerts.open(id, _MACHINE_WORD[i][l], l === 2)   // a no-op while open; raises it on a loaded run too
   })
-  _wordLevels = now
+  _wordLevels = now; _wordSteps = steps
 }
 /** Per frame: expire old words, mirror the GPS wrong-way flag, and paint the alert the cycle shows. */
 function _paintAlerts (dt) {
@@ -2960,7 +2971,7 @@ function _fragileStep () {
   if (f.health.health <= 0 && f.mission) { f.mission.failed = true; _disarmJobCancel() }
 }
 /**
- * FEAT-139: the fragile load's two bars, per frame (owner, 2026-10-23). DAMAGE is the felt g: it
+ * FEAT-139: the fragile load's two bars, per frame (owner, 2026-10-23). DAMAGE is the felt g (logarithmic, FEAT-237): it
  * holds the step peak and falls back with JG_FALL_S, so a one-step landing spike stays readable. Its
  * scale runs to JG_TOP × the load's break g. The marks are where ONE hit costs 1 % of health and
  * 100 % (the break): fragile.js shockCost is ((g − floor)/(break − floor))², so 1 % sits a tenth of
@@ -2978,7 +2989,7 @@ function _updateFragileG (dt) {
   if (!_jgEls) {
     const root = document.getElementById('job-g')
     if (!root) return
-    _jgEls = { root, fill: root.querySelector('.jg-fill'), floor: root.querySelector('.jg-floor'), brk: root.querySelector('.jg-break'),
+    _jgEls = { root, fill: root.querySelector('.jg-fill'), floor: root.querySelector('.jg-floor'), ten: root.querySelector('.jg-ten'), brk: root.querySelector('.jg-break'),
                health: root.querySelector('.jg-health'), val: root.querySelector('.jg-val') }
   }
   const f = _freight, m = missionSystem
@@ -2994,8 +3005,10 @@ function _updateFragileG (dt) {
     _jgKey = f.mission
     _jgEls.root.style.display = 'flex'
     _jgFloor = onePctG(fr)   // the tier's 1 % mark (fragile.js)
-    _jgEls.floor.style.bottom = `calc(${100 * _jgFloor / top}% - 1px)`
-    _jgEls.brk.style.bottom = `calc(${100 * fr.breakG / top}% - 1px)`
+    // FEAT-237: a logarithmic meter (fragile.js meterPos) — ticks at 1 % / 10 % / 100 % damage
+    _jgEls.floor.style.bottom = `calc(${100 * meterPos(_jgFloor, top)}% - 1px)`
+    _jgEls.ten.style.bottom = `calc(${100 * meterPos(tenPctG(fr), top)}% - 1px)`
+    _jgEls.brk.style.bottom = `calc(${100 * meterPos(fr.breakG, top)}% - 1px)`
     // The posted reward moved to the promise lines (R-17): it floated bare here and was unreadable
     // against the sky (owner, 2026-10-24).
   }
@@ -3003,7 +3016,7 @@ function _updateFragileG (dt) {
   f.gPeak = 0
   if (peak >= _jgShown) { _jgShown = peak; if (peak > _jgFloor) _jgHoldUntil = now + JG_HOLD_S }
   else if (now >= _jgHoldUntil) _jgShown *= Math.exp(-dt / JG_FALL_S)
-  _jgEls.fill.style.transform = `scaleY(${Math.min(1, _jgShown / top)})`
+  _jgEls.fill.style.transform = `scaleY(${meterPos(_jgShown, top)})`
   const band = _jgShown >= fr.breakG ? 'var(--bad)' : _jgShown > fr.shockFloorG ? 'var(--warn)' : 'var(--text)'
   if (band !== _jgBand) { _jgBand = band; _jgEls.fill.style.background = band }
   const h = f.health.health
@@ -10889,7 +10902,9 @@ function loop (t) {
   // FEAT-223: the truck reads the baked tree shade the ground under it reads (terrain.js: strength × 1/SHADOW_FAR_SPLIT).
   setBakedShade(shadowBake.atlasTexture, ATLAS_N, shadowBake.tilePx, _labActive ? 0 : propShadowStrength() / SHADOW_FAR_SPLIT,
     shadowBake._shear, _renderPos.y - RANGER_PARAMS.cgHeight)
-  setNightFactor(Math.max(skySystem.nightFactor(), (1 - truckBore) / (1 - BORE_SHADE_DEEP)))
+  const _nightF = Math.max(skySystem.nightFactor(), (1 - truckBore) / (1 - BORE_SHADE_DEEP))
+  setNightFactor(_nightF)
+  gpsSystem?.setNight(_nightF)   // FEAT-238
   syncMeshesToState(vehicleState)
   campfire.update(frameTime, skySystem.nightFactor())   // no-op unless a camp is up
 
@@ -11467,13 +11482,26 @@ function loop (t) {
 // "first headlights lag". So: if a render compiled anything new (the program count moved since our
 // own last compile), sweep every light state again, ONE per frame, each a 1-pixel draw (BUG-175).
 // A render that compiles something mid-sweep restarts it, so nothing that arrived during it is missed.
-let _lampSweepI = -1, _lampSweepProgs = -1
+// BUG-186: each state is COMPILED first (renderer.compile: issued, never waited on) and DRAWN only once its new
+// programs report ready (KHR_parallel_shader_compile, a poll that never blocks). Drawing a just-issued program
+// waits on the driver's compile on the main thread: one late material is ~14 variants, and where a compile is slow
+// (D3D's shader compiler on Windows) that wait landed in 14 consecutive frames — the owner's ~5 fps burst.
+// Ready is checked over EVERY program, not just this step's: a restart abandons a step's compile mid-flight, and the
+// restarted sweep's compile then finds those programs already issued (none new) while they may still be compiling.
+// isReady() latches true, so the loop is a cheap read after the first pass.
+let _lampSweepI = -1, _lampSweepProgs = -1, _lampSweepIssued = false
 function _lampSweepStep () {
-  if (renderer.info.programs.length !== _lampSweepProgs) _lampSweepI = 0
+  const progs = renderer.info.programs
+  if (progs.length !== _lampSweepProgs) { _lampSweepI = 0; _lampSweepIssued = false }
   if (_lampSweepI < 0) return
-  compileLightState(_lampSweepI, renderer, scene, camera, [campfire.light, _poiLight])
-  _lampSweepI = _lampSweepI + 1 < LIGHT_STATE_COUNT ? _lampSweepI + 1 : -1
-  _lampSweepProgs = renderer.info.programs.length
+  const pts = [campfire.light, _poiLight]
+  if (!_lampSweepIssued) { compileLightState(_lampSweepI, renderer, scene, camera, pts, false); _lampSweepIssued = true }
+  if (progs.every(p => p.isReady())) {
+    compileLightState(_lampSweepI, renderer, scene, camera, pts)
+    _lampSweepIssued = false
+    _lampSweepI = _lampSweepI + 1 < LIGHT_STATE_COUNT ? _lampSweepI + 1 : -1
+  }
+  _lampSweepProgs = progs.length
 }
 
 perfMark('init: synchronous bootstrap done, requesting first frame')  // D-arc
