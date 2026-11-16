@@ -516,7 +516,7 @@ const STEPS = [
       const s = document.querySelector('#inv-screen .inv-slot[data-slot="' + i + '"]'), b = s?.querySelector('.sl-fresh'), f = b?.firstChild
       if (!f) return null
       const S = s.getBoundingClientRect(), B = b.getBoundingClientRect()
-      return { w: f.getBoundingClientRect().width / B.width, dx: (B.left + B.right) / 2 - (S.left + S.right) / 2, dy: S.bottom - B.bottom } })()`)
+      return { w: f.getBoundingClientRect().width / b.clientWidth, dx: (B.left + B.right) / 2 - (S.left + S.right) / 2, dy: S.bottom - B.bottom } })()`)
     await tap('Tab'); check(await until(open, 1000), 'Tab opened no inventory screen while parked')
     const b0 = await bar()
     check(b0 && b0.w > 0.99, `no full freshness bar on a new chili dog: ${JSON.stringify(b0)}`)
