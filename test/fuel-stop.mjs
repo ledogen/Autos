@@ -15,7 +15,7 @@
 //
 // Run: node test/fuel-stop.mjs
 
-import { FuelStop, towPrice, towHours, stationPriceFactor } from '../src/fuel-stop.js'
+import { FuelStop, towPrice, towHours, stationPriceFactor, drumPositions } from '../src/fuel-stop.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { POI_PARAMS } from '../src/poi.js'
@@ -137,6 +137,17 @@ console.log('\n9. FEAT-209: every station its own price, within ±5 %')
   check(hi - lo > 0.08, 'and they spread across the band')
   check(stationPriceFactor(6, 'poi:3', 2) === stationPriceFactor(6, 'poi:3', 2), 'same seed + station + day: same factor')
   check(stationPriceFactor(6, 'poi:3', 2) !== stationPriceFactor(6, 'poi:3', 3), 'a new day re-draws it [DEFAULT]')
+}
+
+// The drums (FEAT-50 display, FEAT-233 pump face): odometer carry, the lowest drum continuous.
+{
+  const near = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-6)
+  check(near(drumPositions(12.47, 4, 2), [1, 2, 4, 7]), '12.47 on four drums, 2 dp: 1 2 4 7')
+  check(near(drumPositions(3.899, 5, 3), [0, 3, 8, 9, 9]), '3.899 on five drums, 3 dp: 0 3 8 9 9')
+  check(near(drumPositions(4.995, 3, 2), [4.5, 9.5, 9.5]), '4.995: halfway through the carry, both upper drums half-rolled')
+  check(near(drumPositions(5, 3, 2), [5, 0, 0]), '5.00 lands on 5 0 0')
+  check(near(drumPositions(4.95, 3, 2), [4, 9, 5]), '4.95: no carry yet (the drum below is not past 9)')
+  check(near(drumPositions(-1, 3, 2), [0, 0, 0]), 'a negative counter reads zero')
 }
 
 console.log(`\n${'═'.repeat(64)}`)

@@ -112,7 +112,7 @@ slots, expiry timers, seeded offers, names, card view-model; pure) · `demolitio
 demolition job's targets stand on the shoulder of the route's last km, seeded; TARGET_TYPES; pure) · `load-verdict.js` (FEAT-112 fits / warning / overload
 for the truck as configured + the overloaded-tire cap; pure, no imports) · `mission.js` (mission generator
 + run state machine) · `par.js` (FEAT-29 par oracle) · `poi.js` (lay-by POIs, FEAT-46) · `fuel-stop.js` (FEAT-50 the pump
-visit state machine — hold F, handbrake to pay — + the tow price; pure, the DOM is in main.js) · `parts.js` (SM-3 fitted
+visit state machine — hold F, handbrake to pay — + the tow price + `drumPositions`, the drum carry; pure, the DOM is in main.js) · `pump-face.js` (FEAT-233 the pump in use shows the sale on its own 3D face in rolling drums; a canvas of the model's own gauge artwork on a quad per plate, driven by `pumpFace` in data/prop-models.js) · `parts.js` (SM-3 fitted
 parts — fit lays a part's patch over params (a tire's grip per wheel as `_tireGrip`), sets its track's condition + family
 durability, returns the outgoing part with its wear and puncture; snapshot / restore for the shop's preview; load ratings for truckConfig; pure) · `service.js` (SM-3 service center rules — repair targets to the cap in steps,
 replace-only classes, the flat patch, the same for inventory parts, exchange from inventory, buy & fit / buy to carry off the shelf, the live preview, sell / keep the benched part, sell an owned part; pure) · `service-screen.js` (its My Vehicle / Parts Shop

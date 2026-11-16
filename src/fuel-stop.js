@@ -103,6 +103,24 @@ export class FuelStop {
 }
 
 /**
+ * The pump's counters are MECHANICAL DRUMS, odometer-style: where each of `n` drums (most significant first) stands
+ * showing `value` with `dp` decimals, as a position 0..10 (10 = the wrap back to 0). The lowest drum turns continuously
+ * with the counter; every drum above it holds its digit and only rolls over during the last tenth of the drum below
+ * it — the carry a real register makes. So 4.99 → 5.00 is three drums turning together, not a jump. The 2D pump
+ * display (main.js) and the 3D pump face (FEAT-233, pump-face.js) both read it.
+ */
+export function drumPositions (value, n, dp) {
+    const x = Math.max(0, value) * 10 ** dp   // in units of the lowest drum
+    const out = new Array(n)
+    let below = x % 10                         // the lowest drum's continuous position
+    out[n - 1] = below
+    for (let i = n - 2; i >= 0; i--) {
+        below = out[i] = Math.floor(x / 10 ** (n - 1 - i)) % 10 + Math.max(0, below - 9)   // roll only while the drum below goes 9 → 0
+    }
+    return out
+}
+
+/**
  * FEAT-50: what a tow to fuel costs (owner, 2026-10-16): a flat call-out fee plus a per-kilometre
  * fee, both scaled by the day tier the rest of the run's prices ride on.
  */
