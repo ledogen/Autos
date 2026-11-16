@@ -63,6 +63,7 @@ pure depth weight (tie 0) turns those wraps into steep ramps (up to 1.08 m per 5
 - [x] Owner answers the follow-on dive: land after a cost check, seam next (DEC-261).
 - [x] Main merged (9d289a2b); census identical to before the merge (steps 88, >= 30 cm 7).
 - [x] Cost check (DEC-261): foot frame cached per leg (d2976022), at or below main's cost; output identical.
+- [x] Affected gates 75/75 green after merge + cache (logs/c171-gates4.log); census identical (logs/c171-cache.*).
 - [ ] Orchestrator lands it + full smoke.
 
 ### The foot fix (built 2026-11-15, 853bc4e0)
@@ -103,7 +104,7 @@ DEC-231 (option 2 first, pictures) · DEC-260 (keep option 2; the rest by constr
   432747997, 3874494043, 4260169642, cold net + 2 × 81-chunk windows, A-B-A-B ×3): 42–82 k foot calls per run, all on the
   per-vertex carve path (0 in the network build). As built: 0.2 → 0.7 µs/call, +3–5 % of terrain window build. Frame
   cached per leg (d2976022): 0.17 µs/call vs main 0.19–0.24, −0.3 % of window; whole-run wall/instr spread ±5–10 %, so
-  no difference is visible there. Fingerprint: cached == uncached; vs main only surface/carve/tiles/water/props differ.
+  no difference is visible there. Gates 75/75 (c171-gates4.log). Fingerprint: cached == uncached; vs main only surface/carve/tiles/water/props differ.
 - 2026-11-15: merged main (f68d17ee); option-2 census unchanged (logs/c171-opt2m.*). DEC-260. Option 3 replaced by the
   continuous-frame foot (853bc4e0): census logs/c171-foot.* steps 909 → 88. BUG-179 checked: different root.
 - 2026-11-15: option 2 built (3f09bb72). Census logs/c171-base.* vs logs/c171-opt2.*: rivalSet 16/8/2.00 → 3/2/1.55,
