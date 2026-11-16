@@ -1,7 +1,7 @@
 ---
 id: BUG-176
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-15
 source: owner, 2026-11-15 — "at low speed, below 5 miles per hour, if I rub the sidewall of the truck's tire up against a box 3D small rock ... it launches the rock off the tire at pretty high speed and in some cases even pops the tire. My best guess is this has to do with the spherical box 3d collision solver we use for modeling tire collisions with rigid bodies. I imagine there are also adverse side effects of this at high speeds."
@@ -54,3 +54,4 @@ src/physics-engine.js (contactSphere, _specSpan) · src/physics.js (qcPlus slab)
 - 2026-11-15 lane B: fixed on land/bug-176. 33/33 affected physics gates green (serial); fingerprint-physics ALL
   IDENTICAL (its scene has no debris). Flagged approximations: the sphere still stands in for the cylinder's radial
   side; the face contact lands at the rock's deepest vertex. Menu stage static rock (stage.js) still sphere-only.
+- 2026-11-15: CLOSED. Owner on card bug176-rub: "fixed, keep it as it is" (the fewer high-speed pinches stand). On main since 59b989ff.
