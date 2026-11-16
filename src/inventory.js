@@ -98,6 +98,15 @@ export class InventorySystem {
     restBonus () { return this.packed().reduce((s, id) => s + (ITEMS[id].rest ?? 0), 0) }
     /** The vibe segments packed gear fills on the chosen site (camp.js vibeAssist). */
     fills () { return new Set(this.packed().map(id => ITEMS[id].fills).filter(Boolean)) }
+    /** FEAT-231: the bed floor's grip — the best `bedMu` owned (the bedliner over the mat), null = the bare bed. */
+    bedMu () {
+        let mu = null
+        for (const e of runInventory.entries) {
+            const m = ITEMS[e.id]?.bedMu
+            if (m != null && (mu == null || m > mu)) mu = m
+        }
+        return mu
+    }
     pending () { return runInventory.pending }
     nameOf (id) { return ITEMS[id]?.name ?? id }
     usable (id) { const h = ITEMS[id]?.use; return !!(h && this._effects[h]) }

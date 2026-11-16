@@ -69,6 +69,10 @@ export const STOCK_WEIGHT = {
     // Field repairs (owner, 2026-10-23): zip ties and stop-leak are sold at the auto shop too
     zipTies:          4,
     stopLeak:         4,
+    // The bed floor (FEAT-231): the mat [DEFAULT] Sometimes (no frequency ruled); the bedliner "very rarely" (owner,
+    // 2026-10-22) = Hardly ever, the lowest tier
+    rubberBedMat:     4,
+    bedliner:         0.25,
 
     // Camp gear (FEAT-168 camp-gear-source, owner 2026-11-06: "camp + shelf") [DEFAULT]: the four the owner
     // named are shelf stock as well as rewards; the bed layers below them are rewards only.
