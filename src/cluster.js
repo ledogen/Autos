@@ -60,18 +60,26 @@ const DEG = Math.PI / 180
 // speedo by KEY_AWAY 10: END_X grows by SPEEDO_SHIFT + KEY_AWAY (the right end follows the speedo, then the key's
 // extra), so W grows by the same 20. The speed labels: km/h now stands above MPH, both on the hub's vertical,
 // MPH 34 → 47 and km/h 46 (off to the right) → 38, i.e. the pair's centre down 4.5 with km/h over MPH.
-const TACH_SHIFT = 5, SPEEDO_SHIFT = 10, KEY_AWAY = 10
+//
+// FEAT-34 round 7 (owner, 2026-11-15, DEC-284): the key's centre is the centre of the frame's bottom-right corner
+// arc, and the tach+speedo pair is centred between the left pod and the key: GAP of plain housing on each side,
+// measured indent edge to indent edge (pod capsule right edge → tach indent; speedo indent → key indent). So
+// TACH.cx, SPEEDO.cx and END_X are DERIVED from GAP and TACH_SPEEDO (the hub-to-hub distance: 117 in round 6, +18 so the
+// tach's last numeral clears the speedo's 20 and 40), not typed. The tach's scale now ends at 2 o'clock (TACH.sweep 130 → 170) and its four lamps
+// (brake, tire, check engine, headlamp) share one row along its bottom (LAMP_*).
+const GAP = 12, TACH_SPEEDO = 135
 const KMH_DY = 38, MPH_DY = 47
-const W = 466 + SPEEDO_SHIFT + KEY_AWAY
+const LAMP_DY = 47, LAMP_PITCH = 24   // the row's drop below the tach hub, and the spacing; glyphs are scaled to about 6.6 half-size
 const H = 240
+const POD_X = 56, POD_RIGHT = POD_X + 39   // the temp/fuel pod's centre x and its indent's right edge (POD_R)
 const AXIS = H / 2   // the dial axis: tach and speedo hubs, the pod's centre, the key
 // The pod's gauges sit POD_E above and below the axis: 39 puts the pod's indent top level with the speedo's
 // (AXIS − 2·39 = AXIS − (SPEEDO.well + DIAL_PAD)), so the housing's corners and the speedo's crest share one line.
 const POD_E = 46
-const TEMP  = { cx: 56,  cy: AXIS - POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const FUEL  = { cx: 56,  cy: AXIS + POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const TACH  = { cx: 181 + TACH_SHIFT, cy: AXIS, well: 75, scaleR: 65, start: 160, sweep: 130 }    // dial top: _tachMax (setRedline)
-const SPEEDO= { cx: 293 + SPEEDO_SHIFT, cy: AXIS, well: 84, scaleR: 75, start: 135, sweep: 270, max: 120 }  // MPH
+const TEMP  = { cx: POD_X,  cy: AXIS - POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
+const FUEL  = { cx: POD_X,  cy: AXIS + POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
+const TACH  = { cx: POD_RIGHT + GAP + 75 + 8, cy: AXIS, well: 75, scaleR: 65, start: 160, sweep: 170 }    // dial top: _tachMax (setRedline)
+const SPEEDO= { cx: POD_RIGHT + GAP + 75 + 8 + TACH_SPEEDO, cy: AXIS, well: 84, scaleR: 75, start: 135, sweep: 270, max: 120 }  // MPH
 // The odometer drum's window, from the speedo hub. Low enough that the 40 and 80 clear its top corners (round 3).
 const ODO = { x: -29, y: -23, w: 58, h: 14 }
 // One factor on the canvas transform (round 3), so every distance the layout balances (the key's three below, the
@@ -89,9 +97,10 @@ const SCALE = 1.15
 // Round 5: the key's indent stands MARGIN inside the bottom-right corner circle (centre END_X, AXIS + POD_E),
 // i.e. KEY_CORNER = POD_R + MARGIN − (KEY.well + KEY.pad) − MARGIN from that centre, along the diagonal. END_X puts the
 // key 103 from the speedo hub, > SPEEDO.well + KEY.well (101) so the key face does not eat the speedo face.
-const END_X = 404 + SPEEDO_SHIFT + KEY_AWAY
-const KEY_CORNER = 19 / Math.SQRT2
-const KEY   = { cx: END_X - KEY_CORNER, cy: AXIS + POD_E - KEY_CORNER, well: 17, pad: 3 }
+const END_X = SPEEDO.cx + 84 + 8 + GAP + 17 + 3   // the speedo's indent edge + GAP + the key's indent (well + pad)
+const W = END_X + 62
+// Round 7: the key sits at the centre of the bottom-right corner arc (END_X, AXIS + POD_E).
+const KEY   = { cx: END_X, cy: AXIS + POD_E, well: 17, pad: 3 }
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
 const KEY_ANGLE = { off: 210 * DEG, on: 270 * DEG, start: 330 * DEG }
 const KEY_TICK_R = 16.5   // detent ticks run inward from here to r=14.5 — OUTSIDE the fascia, framing it
@@ -656,9 +665,10 @@ export class GaugeCluster {
   // already say which. Under the needle, which is drawn after it.
   _flatLit () { return this._flat && this._keyPos !== 'off' }
   _drawFlatLamp (ctx) {
-    const x = SPEEDO.cx, y = SPEEDO.cy + 22, r = 7
+    const x = 0, y = 0, r = 7
     const lit = this._flatLit()
     ctx.save()
+    this._lampAt(ctx, 1, 1)
     if (lit) { ctx.shadowColor = 'rgba(255,150,30,0.9)'; ctx.shadowBlur = 7 }
     ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_ORANGE : LAMP_UNLIT_AMBER
     ctx.lineWidth = 1.8
@@ -679,10 +689,17 @@ export class GaugeCluster {
   // lower right is the speedo's since the faces joined). Lit while the parking brake is applied
   // and, as the guide says, "momentarily at start up to ensure the circuit is functional" (the key at START).
   _brakeLit () { return this._keyPos === 'start' || (this._parkBrake && this._keyPos !== 'off') }
+  // Round 7: the row's slot i (0..3, left to right, centred on the tach hub) as the origin, the glyph scaled by k so
+  // every lamp's half-size is about 6.6. Call after ctx.save(); the caller's restore undoes it.
+  _lampAt (ctx, i, k) {
+    ctx.translate(TACH.cx + (i - 1.5) * LAMP_PITCH, TACH.cy + LAMP_DY)
+    ctx.scale(k, k)
+  }
   _drawBrakeLamp (ctx) {
-    const x = TACH.cx - 30, y = TACH.cy + 30
+    const x = 0, y = 0
     const lit = this._brakeLit()
     ctx.save()
+    this._lampAt(ctx, 0, 1)
     if (lit) { ctx.shadowColor = 'rgba(255,50,30,0.9)'; ctx.shadowBlur = 7 }
     ctx.strokeStyle = ctx.fillStyle = lit ? LAMP_RED : LAMP_UNLIT_RED
     ctx.lineWidth = 1.4
@@ -694,9 +711,6 @@ export class GaugeCluster {
     ctx.moveTo(x, y - 2.3); ctx.lineTo(x, y + 0.6)
     ctx.stroke()
     ctx.beginPath(); ctx.arc(x, y + 2.2, 0.75, 0, Math.PI * 2); ctx.fill()
-    ctx.font = 'bold 5.5px Arial, sans-serif'
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.fillText('BRAKE', x, y + 11)
     ctx.restore()
   }
 
@@ -708,12 +722,13 @@ export class GaugeCluster {
   // it lights with the key off too.
   _headlampState () { return !this._lights ? 'off' : this._lightsDead ? 'dead' : this._lights === 2 ? 'high' : 'low' }
   _drawHeadlampLamp (ctx) {
-    const x = FUEL.cx + 15, y = FUEL.cy + 9
+    const x = 1.5, y = 0   // the glyph's centre is 1.5 left of its origin
     const st = this._headlampState()
     const [col, glow] = { off: ['#10241a', null], low: [LAMP_GREEN, 'rgba(60,210,90,0.9)'],
       high: [LAMP_BLUE, 'rgba(70,130,255,0.9)'], dead: [LAMP_RED, 'rgba(255,50,30,0.9)'] }[st]
     const drop = this._lights === 2 ? 0 : 1.6      // beam droop: level at high, angled down at low (and off)
     ctx.save()
+    this._lampAt(ctx, 3, 1.4)
     if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 7 }
     ctx.strokeStyle = col
     ctx.lineWidth = 1.3
@@ -731,9 +746,10 @@ export class GaugeCluster {
   // loss steepens; and at START, the bulb check the 2002 guide describes for this lamp, like BRAKE.
   _checkEngineLit () { return this._keyPos === 'start' || (this._checkEngine && this._keyPos !== 'off') }
   _drawCheckEngineLamp (ctx) {
-    const x = TEMP.cx - 16, y = TEMP.cy + 9
+    const x = 0.3, y = -0.25   // the glyph's own centre is (−0.3, +0.25) from its drawing origin; this recentres it
     const lit = this._checkEngineLit()
     ctx.save()
+    this._lampAt(ctx, 2, 1.25)
     if (lit) { ctx.shadowColor = 'rgba(255,150,30,0.9)'; ctx.shadowBlur = 7 }
     ctx.strokeStyle = lit ? LAMP_ORANGE : LAMP_UNLIT_AMBER
     ctx.lineWidth = 1.1

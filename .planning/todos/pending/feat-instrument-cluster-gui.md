@@ -297,3 +297,10 @@ Shots: `wip/feat-34/shots/r5/{before,after,after-lamps}.png` (before = round 4 a
 Owner on the round-5 look card (DEC-283): "keep all sizes. move the key away from the speedo near the corner of the rectangular frame, then move the tach right a smidge. the speedo right a little bit more so ther Put KPH above MPH and move them both down a bit" (cut off at "so ther"; not acted on).
 Layout units (canvas px before SCALE 1.15): `TACH_SHIFT` 5, `SPEEDO_SHIFT` 10, `KEY_AWAY` 10 (key 103 → 113 from the speedo hub, still in the corner; END_X and W grow 20, W 486), `KMH_DY` 38 / `MPH_DY` 47 (km/h centred above MPH; MPH was +34, km/h +46 at the right). Sizes untouched.
 Shots: `wip/feat-34/shots/r6/` (after, after-lamps, sheet-r5-r6). Gates: `npm test` selects only the app gate; cdp-smoke is the orchestrator's.
+
+## Round 7 (Lane B, 2026-11-15) — built, awaits the owner's look
+
+Owner: the FULL round-5 note plus the round-6 reply (DEC-284, supersedes DEC-283; refines DEC-267). Positions are now DERIVED, not typed: `GAP` 12 (housing between pod indent and tach indent, and between speedo indent and key indent: equal) and `TACH_SPEEDO` 135 (hub to hub; round 6 was 117, +18 so the tach's last numeral clears the speedo's 20/40).
+Result (layout px): tach hub 190 (was 186), speedo hub 325 (was 303), key centre (END_X 449, AXIS+POD_E 166) = the corner arc's centre (was 410.6), W 511 (was 486). Sizes unchanged. Tach sweep 130 → 170: scale end 290° (about 12:40) → 330° (2 o'clock), start 160° as before.
+Lamps: brake, tire pressure, check engine, headlamp in one row at tach hub y +47, pitch 24, centred on the tach hub, glyphs scaled to about 6.6 half-size (`LAMP_DY`, `LAMP_PITCH`, `_lampAt`). Low fuel and overheat stay as dots under E and H. The word BRAKE under its lamp is dropped (it broke the row). The reading "all 4" = the four symbol lamps is a guess; there are six lamps.
+Shots: `wip/feat-34/shots/r7/` (after, after-lamps, sheet-r6-r7).

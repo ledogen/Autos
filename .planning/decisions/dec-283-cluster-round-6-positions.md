@@ -1,6 +1,6 @@
 ---
 id: DEC-283
-status: standing
+status: superseded
 decided: 2026-11-15
 area: ui
 governs: FEAT-34, FEAT-49, src/cluster.js
