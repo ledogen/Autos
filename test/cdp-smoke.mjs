@@ -1594,7 +1594,8 @@ const STEPS = [
     check(await js('window.__econ.money') >= 3, `mom's few dollars are not in the wallet ($${await js('window.__econ.money')})`)
     const gs = await js(`(() => { const L = window.__poi().list().find(q => q.type === 'larrysHouse'), d = q => Math.hypot(q.x - L.x, q.z - L.z)
       const q = window.__poi().list().filter(q => q.type === 'gasStation').sort((a, b) => d(a) - d(b))[0]
-      return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
+      const s = window.__towSeat({ ...q, pumpZones: null })   // its storefront bays, not the pump a tow would seat at
+      return { x: s.x, z: s.z, h: s.heading } })()`)
     await js(`window.__seated = false; window.__teleport(${gs.x}, ${gs.z}, ${gs.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the gas station never seated')
     await readCards()
