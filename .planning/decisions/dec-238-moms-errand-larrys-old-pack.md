@@ -1,6 +1,6 @@
 ---
 id: DEC-238
-status: standing
+status: superseded
 decided: 2026-11-15
 area: story
 governs: FEAT-184, DEC-152, DEC-153, src/main.js, data/dialogue.js, data/tutorial.js, src/inventory.js, tutorial, the morning leg, world items, the pick-up
