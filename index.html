@@ -1028,13 +1028,6 @@
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
       padding: 6px;
     }
-    /* QUAL-36 variant A: minimised = one line in the job-promise box style; open = the card + tile. */
-    #rt-mini { display: none; padding: 4px 12px; background: var(--hud-bg); border: 1px solid var(--line);
-      font-size: 13px; line-height: 22px; color: var(--text); white-space: nowrap; }
-    #rank-timer.rt-mini #rt-mini { display: block; }
-    #rank-timer.rt-mini .rt-card, #rank-timer.rt-mini .rt-title { display: none; }
-    #rank-timer.rt-a .rt-gate::after { content: 'item'; position: absolute; right: 4px; top: 2px; line-height: 16px;
-      font-size: 12px; font-weight: bold; color: rgba(0, 0, 0, 0.75); }
     #rank-timer.rt-in { animation: rt-pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1); }
     /* closeAfterDS into D: the strip has nothing ahead to show and closes; the tile stays. */
     #rank-timer.rt-closed .rt-card { display: none; }
@@ -1063,8 +1056,9 @@
        every heartbeat kick — the thump. Overflow stays visible so the shards can fall out of it. */
     #rank-timer .rt-letter-box {
       position: relative; display: inline-block;
-      min-width: 46px; height: 46px; line-height: 46px; padding: 0 5px; text-align: center;   /* QUAL-36: words, so it grows */
-      font-size: 30px; font-weight: bold;
+      width: 46px; height: 46px;   /* QUAL-36 (DEC-298): a square tile again, the letter centred by flex */
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 34px; line-height: 1; font-weight: bold;
       color: rgba(0, 0, 0, 0.78);
       background: #e6ecf2;
       background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0, rgba(255, 255, 255, 0) 50%,
@@ -1075,7 +1069,7 @@
       box-sizing: border-box;
     }
     #rank-timer #rt-letter {
-      display: inline-block; font-size: 12px; letter-spacing: 0;   /* QUAL-36: the tile names what the band earns (words, not a letter) */
+      display: inline-block;
       /* the slam animation owns this element's scale while it runs; the thump scales the tile */
     }
     /* The slam: the new letter lands from large with a squash on impact, plus a white flash. */
@@ -1929,7 +1923,6 @@
       </div>
     </div>
     <div class="rt-title"><span class="rt-label" id="rt-label">Rank:</span><span class="rt-letter-box" id="rt-letter-box"><span id="rt-letter">S</span></span></div>
-    <div id="rt-mini"></div>   <!-- QUAL-36 variant A: the minimised timer, "S rank x:xx" (main.js _updateRankTimer) -->
   </div>
   <!-- R-17/R-28: the promise lines — the load aboard, the job's reward and its deed, restated live in one
        format on every type, written by _updateJobPromise in main.js (each value coloured by its margin).
