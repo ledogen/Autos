@@ -46,6 +46,8 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     rubberBedMat: 8, bedliner: 20,
     potato: 2,                  // FEAT-230 [DEFAULT]: items.md rules the potato "under $5"; the owner sets the number
     bagOfPeanuts: 3,            // FEAT-184 (DEC-276) [DEFAULT]: items.md rules the gas-station snacks "under $5"; the owner sets the number
+    ice: 5,                     // owner, 2026-10-22
+    cooler: 20, iceKing: 65,    // FEAT-230 [DEFAULT]: the middles of the owner's $10–30 and $30–100; the owner sets them
     jerryCan: 30 }              // owner, 2026-10-22: "sold at the gas station, rarely, $30" — sold full
 
 /**
@@ -55,11 +57,13 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
  *   weights  the few lines items.md sells "rarely". They roll on the auto shop's slots and on its scale:
  *            a fill lands on one of these lines as often as it would on an auto-shop part of the same
  *            weight, and the rest of the scale turns up nothing (src/shop-stock.js).
- * The tackle shop sells nothing yet: its lines (the coolers, ice, fishing gear) aren't items. The auto shop
+ * The tackle shop sells the coolers (FEAT-230); its fishing gear isn't an item yet. The auto shop
  * is the rows above (ALWAYS, data/stock-weights.js).
  */
 export const STOREFRONT = {
-    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato'] },
-    gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
+    // FEAT-230: ice and the cooler (items.md §1/§2); the Ice King "very rarely", a quarter of the jerry can's rarely [DEFAULT]
+    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'ice', 'cooler'], weights: { iceKing: 0.25 } },
+    gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'ice'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
     foodVendor:   { always: ['coffee', 'chiliDog'] },
+    tackleShop:   { always: ['cooler'], weights: { iceKing: 0.25 } },   // FEAT-230 (items.md §2)
 }
