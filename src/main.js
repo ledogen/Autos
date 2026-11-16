@@ -3763,17 +3763,18 @@ const serviceCenter = new ServiceCenter({
 // and night, and sits in the bay of the service station nearest the truck (_placeBayLight, on the POI poll). Never added or
 // removed after boot: a change in the point-light count recompiles every lit material (BUG-175), so it is in the scene
 // before the PERF-21 prewarm and only ever moves. Parked far below the world when no station is built.
-// SERVICE_LIGHT.intensity (cd) is the one knob; `at` is the model frame, over the lift (park box centre).
-// DEC-228 (owner, 2026-11-15: the ceiling's cast gave the one source away): a DOWNWARD spotlight at the fluorescent
-// strips' height (their faces are at 3.92 m), not a point light 1.1 m under the ceiling. The point light lit the ceiling
-// straight above it 25× brighter than 3 m away; a spot lights nothing above its own plane, so the ceiling shows only
-// the strips' emission, as under real down-facing fixtures. Still ONE light (a second one would cost every lit pixel
-// in the world), so the light count and the PERF-21 / BUG-175 prewarm are unchanged. The 75° cone, 0.5 penumbra and
-// 8 m range keep the ground outside the walls and the door at or below the old point light's spill.
-const SERVICE_LIGHT = { color: 0xfff0d8, intensity: 80, distance: 8, decay: 2, angle: 75 * Math.PI / 180, penumbra: 0.5, at: [-3.95, 3.8, -0.2] }
-const _bayLight = new THREE.SpotLight(SERVICE_LIGHT.color, SERVICE_LIGHT.intensity, SERVICE_LIGHT.distance, SERVICE_LIGHT.angle, SERVICE_LIGHT.penumbra, SERVICE_LIGHT.decay)
+// SERVICE_LIGHT.intensity (cd) is the one knob; `at` is the model frame.
+// DEC-228 (owner, 2026-11-15: "its obvious by the cast on the ceiling that the only source is Directly above the truck"):
+// the light stands in the middle of the bay block (between the two bays, over the centre pier's line) at 2.0 m, not 1.1 m
+// under the ceiling over lift A. There the ceiling straight above it was lit 25× brighter than 3 m away, a hot spot over
+// the truck; 2 m down that ratio is about 6 and the glow centres on the room, so it reads as the whole shop lit. It also
+// lights the truck's driver side (the service camera's view) and, with the shorter range, puts about a fifth of the old
+// light on the ground outside the -X wall and less out of the doors. Still ONE point light, so no shader changes (a
+// second light would add work to every lit pixel in the world) and the PERF-21 / BUG-175 prewarm is untouched. A
+// downward spot at the strips was tried and rejected: the ceiling went black.
+const SERVICE_LIGHT = { color: 0xfff0d8, intensity: 40, distance: 9, decay: 2, at: [-1.8, 2.0, 0] }
+const _bayLight = new THREE.PointLight(SERVICE_LIGHT.color, SERVICE_LIGHT.intensity, SERVICE_LIGHT.distance, SERVICE_LIGHT.decay)
 _bayLight.position.set(0, -1e5, 0)
-_bayLight.add(_bayLight.target); _bayLight.target.position.set(0, -1, 0)   // aims straight down wherever it moves
 scene.add(_bayLight)
 function _placeBayLight () {
   const vp = vehicleState.position
