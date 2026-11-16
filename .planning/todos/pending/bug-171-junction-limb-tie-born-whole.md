@@ -52,7 +52,7 @@ pure depth weight (tie 0) turns those wraps into steep ramps (up to 1.08 m per 5
 - [x] Owner picks an option: option 2 first, pictures in a deep dive (DEC-231).
 - [x] Option 2 built (land/bug-171, TIE_PROM_M 0.1 m on both tie terms).
 - [x] Census: limb and rivalSet sites > 0.15 m 183 / 8 → 175 / 2; ramp worst stays 1.37 m (ramps > 0.15 m 101 → 109).
-- [ ] Affected road gates green; fingerprint-world changes only surface / carve (fingerprint: only surface / carve differ).
+- [x] Affected gates 75/75 green (logs/c171-gates.log); fingerprint-world: only surface / carve differ.
 - [ ] Owner answers the option-2 dive (keep 2 / option 3 next / other).
 
 ### The remaining class: the polyline foot hop (found 2026-11-15)
@@ -73,5 +73,5 @@ centre through each polyline vertex (visible as red fans in the dive's hillshade
 ## Log
 - 2026-11-15: option 2 built (3f09bb72). Census logs/c171-base.* vs logs/c171-opt2.*: rivalSet 16/8/2.00 → 3/2/1.55,
   limb births 14 → 2, limb hops 579 → 582 unchanged; steps → ramps of 0.86 and 0.76 m per 5 cm at two sites. Dive
-  BUG-171-option2-gore-steps.html (5 sites on 5 random seeds, game + physics-ground pairs). Gates: logs/c171-gates.log.
+  BUG-171-option2-gore-steps.html (5 sites on 5 random seeds, game + physics-ground pairs). Gates 75/75 green.
 - 2026-11-14: filed from BUG-158's census (logs/c158-A.log base, logs/c158-head.log head, in the content worktree).
