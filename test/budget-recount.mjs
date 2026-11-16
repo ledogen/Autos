@@ -103,6 +103,7 @@ export const ASSUME = {
     demolition: [0.7, 0.25, 0.05],
     haulLoad: 25,          // [A] bundles loaded (≤ the yard's stock), all delivered
     paceX: 1,              // the corpus ratio × this (1 = the recorded driver, the owner)
+    payX: 1, oilPrice: OIL_CHANGE.price,   // lever hooks: pay × this (k), the oil change price
 }
 
 let _n = 0
@@ -144,6 +145,7 @@ function job (A) {
     const deeds = sp.deeds === 'none' ? 0 : pointsFor(letter) + (sp.deeds === 'extraHalf' && pointsFor(letter) > 0 ? 0.5 : 0)
     const kind = sp.stock ? 'haul' : sp.load && !sp.fragile ? 'freight' : sp.fragile ? 'fragile' : sp.family
     const driveS = ratio * par, travelS = A.travelH * 60
+    pay *= A.payX; cost *= A.payX
     return { kind, pay, cost, deeds, letter, jobH: (driveS + travelS) / 60, km: (par * KM_PER_PAR_S + travelS * A.travelMS / 1000), insult: driveS * A.insultMission + travelS * A.insultTravel }
 }
 
@@ -151,7 +153,7 @@ function job (A) {
 function dayCost (A, km, insult) {
     const food = (A.awakeH) * A.foodPerH
     const fuel = km * A.galPerKm * RP.fuelPricePerGal
-    const oil = OIL_CHANGE.price * insult / (DMG.durOil * (1 - DMG.oilKnee))                  // changed at the knee
+    const oil = A.oilPrice * insult / (DMG.durOil * (1 - DMG.oilKnee))                  // changed at the knee
     const filter = PARTS.airFilterStock.price * insult / (DMG.durFilter * (1 - DMG.filterKnee))
     return { food, fuel, oil, filter, incident: A.incidentPerDay, total: food + fuel + oil + filter + A.incidentPerDay }
 }
@@ -231,12 +233,20 @@ const LEVERS = [
     ['start cash $30', { startCash: 30 }],
     ['no day tier (flat)', { flat: true }],
     ['travel 3 h a job', { travelH: 3 }],
+    ['food $0.30/h', { foodPerH: 0.3 }],
+    ['food $0.35/h + oil change $6', { foodPerH: 0.35, oilPrice: 6 }],
+    ['pay +30 % (k)', { payX: 1.3 }],
+    ['day tier 1.035/day', { tier: 1.035 }],
+    ['camp at 10 deeds', { deeds: 10 }],
+    ['camp at 12 deeds', { deeds: 12 }],
 ]
 console.log('\n── levers (owner pace), one at a time ──')
 for (const [label, o] of LEVERS) {
     const sc = E.startCash, tt = E.dayTierTable
     if (o.startCash) E.startCash = o.startCash
     if (o.flat) E.dayTierTable = tt.map(() => 1)
+    if (o.tier) E.dayTierTable = tt.map((_, i) => Math.round(o.tier ** i * 100) / 100)
+    const cd = E.campDeeds; if (o.deeds) E.campDeeds = o.deeds
     for (const rate of [2, 'clock']) summarise({ ...ASSUME, ...o }, rate, `${label}, ${rate === 'clock' ? 'clock' : rate + '/day'}`)
-    E.startCash = sc; E.dayTierTable = tt
+    E.startCash = sc; E.dayTierTable = tt; E.campDeeds = cd
 }
