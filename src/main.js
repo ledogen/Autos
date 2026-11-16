@@ -3786,10 +3786,10 @@ const serviceCenter = new ServiceCenter({
 })
 // FEAT-219 (owner, 2026-11-14: "it's just dark in there"): the bay's walls and roof shut the sun and sky out. The ceiling strips
 // are emissive already (the model's ShopLight); this ONE point light, no shadows, lights the bay. BUG-174 (owner, 2026-11-15:
-// "service station and poi lights should always be on whether or not you're using the poi"): it is ALWAYS in the scene, day
-// and night, and sits in the bay of the service station nearest the truck (_placePoiLight, on the POI poll). Never added or
-// removed after boot: a change in the point-light count recompiles every lit material (BUG-175), so it is in the scene
-// before the PERF-21 prewarm and only ever moves. Parked far below the world when no station is built.
+// "service station and poi lights should always be on whether or not you're using the poi"): it is on day and night, used
+// or not, and sits in the bay of the service station nearest the truck (_placePoiLight, on the POI poll). It leaves the scene's
+// light loop only beyond POI_LIGHT_CUTOFF_M (the light cull below); a change in the point-light count is a shader variant
+// (BUG-175), so the PERF-21 prewarm covers both counts.
 // POI_LIGHT.serviceStation.intensity (cd) is the bay's one knob; `at` is the model frame.
 // DEC-228 (owner, 2026-11-15: "its obvious by the cast on the ceiling that the only source is Directly above the truck"):
 // the light stands in the middle of the bay block (between the two bays, over the centre pier's line) at 2.0 m, not 1.1 m
@@ -3815,14 +3815,22 @@ const POI_LIGHT = {
   gasStation: { color: 0xfffaee, intensity: 120, distance: 10, at: [0, 3.4, -3.0] },
   gasPump: { color: 0xfffaee, intensity: 120, distance: 10, at: [0.28, 3.3, 0] },
 }
+// FEAT-227 light cull (owner, 2026-11-16: "can we not just cut off the light beyond a certain distance? say 200m away"):
+// the light leaves the light loop (visible=false) while no lit place is within POI_LIGHT_CUTOFF_M of the truck. three.js
+// compiles the point-light COUNT into every lit material's shader, so with it out the world runs the zero-point-light
+// programs: measured -3.1 to -4.1 % GPU active cycles away from any station. Each switch changes that count, which is a
+// shader variant (BUG-175): prewarmLightPrograms / the late sweep compile and draw 0, 1 and 2 point lights (this light
+// and the campfire's) for every lamp state, so a switch never compiles mid-drive.
+const POI_LIGHT_CUTOFF_M = 200
 const _poiLight = new THREE.PointLight(0xffffff, 0, 1, 2)
-_poiLight.position.set(0, -1e5, 0)
+_poiLight.visible = false
 scene.add(_poiLight)
 function _placePoiLight () {
   const vp = vehicleState.position
-  let best = null, bd = Infinity
+  let best = null, bd = POI_LIGHT_CUTOFF_M ** 2
   for (const q of poiSystem.list()) if (POI_LIGHT[q.modelKey]) { const d = (q.x - vp.x) ** 2 + (q.z - vp.z) ** 2; if (d < bd) { bd = d; best = q } }
-  if (!best) { _poiLight.position.set(0, -1e5, 0); return }
+  _poiLight.visible = !!best
+  if (!best) return
   const L = POI_LIGHT[best.modelKey], w = dropZoneWorld(best, { x: L.at[0], z: L.at[2] })
   _poiLight.position.set(w.x, best.baseY + L.at[1], w.z)
   _poiLight.color.setHex(L.color); _poiLight.intensity = L.intensity; _poiLight.distance = L.distance
@@ -11391,7 +11399,7 @@ let _lampSweepI = -1, _lampSweepProgs = -1
 function _lampSweepStep () {
   if (renderer.info.programs.length !== _lampSweepProgs) _lampSweepI = 0
   if (_lampSweepI < 0) return
-  compileLightState(_lampSweepI, renderer, scene, camera, [campfire.light])
+  compileLightState(_lampSweepI, renderer, scene, camera, [campfire.light, _poiLight])
   _lampSweepI = _lampSweepI + 1 < LIGHT_STATE_COUNT ? _lampSweepI + 1 : -1
   _lampSweepProgs = renderer.info.programs.length
 }
@@ -11411,7 +11419,7 @@ requestAnimationFrame(loop)
 // .finally, not .then — a failed prewarm is a best-effort miss, never a reason to strand the menu.
 // The campfire's point-light variant rides the same chain (see campfire.js header) — compiled with the
 // lamps in their final all-off prewarm state, which is how the truck sits at camp.
-prewarmLightPrograms(renderer, scene, camera, [campfire.light])
+prewarmLightPrograms(renderer, scene, camera, [campfire.light, _poiLight])
   .then(() => campfire.prewarm(renderer, scene, camera))
   .finally(() => {
     _worldInit = true
