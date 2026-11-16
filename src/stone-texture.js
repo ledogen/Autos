@@ -12,7 +12,7 @@
  *   3. NORMAL MAP — central-difference slope of the (wrapped) heightfield, standard tangent-space
  *      encoding (x→R, y→G, up→B). Strength tuned so cobbles catch the game's directional sun.
  *
- * Browser-only (uses a 2D canvas → THREE.CanvasTexture). Not imported by any headless gate; the
+ * Browser-only (ImageData → THREE.CanvasTexture). Not imported by any headless gate; the
  * bed MESH builder in water-render.js takes the material as an argument so it stays THREE-testable.
  */
 
@@ -74,10 +74,7 @@ export function makeCobbleTextures(seed = 1234, size = 256) {
   }
 
   // ── 2. Color map ────────────────────────────────────────────────────────────────────────
-  const cCanvas = document.createElement('canvas')
-  cCanvas.width = cCanvas.height = size
-  const cCtx = cCanvas.getContext('2d')
-  const cImg = cCtx.createImageData(size, size)
+  const cImg = new ImageData(size, size)   // BUG-182: uploaded as is; a 2D canvas would blank on a GPU reset
   const cData = cImg.data
   for (let i = 0; i < N; i++) {
     const o = owner[i]
@@ -97,10 +94,9 @@ export function makeCobbleTextures(seed = 1234, size = 256) {
     cData[j + 2] = clamp01(b * n / 255) * 255
     cData[j + 3] = 255
   }
-  cCtx.putImageData(cImg, 0, 0)
 
   // ── 3. Normal map: central difference over the WRAPPED heightfield ────────────────────────
-  const map = new THREE.CanvasTexture(cCanvas)
+  const map = new THREE.CanvasTexture(cImg)
   map.colorSpace = THREE.SRGBColorSpace
   map.wrapS = map.wrapT = THREE.RepeatWrapping
   return { map, normalMap: _normalMapTexture(H, size, 3.0) }   // slope gain tuned so cobbles catch the sun
@@ -113,10 +109,7 @@ export function makeCobbleTextures(seed = 1234, size = 256) {
  * truncates, where ImageData rounds — the bytes differ.)
  */
 function _normalMapTexture(H, size, strength) {
-  const nCanvas = document.createElement('canvas')
-  nCanvas.width = nCanvas.height = size
-  const nCtx = nCanvas.getContext('2d')
-  const nImg = nCtx.createImageData(size, size)
+  const nImg = new ImageData(size, size)   // BUG-182: uploaded as is; a 2D canvas would blank on a GPU reset
   const nData = nImg.data
   const at = (x, z) => H[(((z % size) + size) % size) * size + (((x % size) + size) % size)]
   for (let z = 0; z < size; z++) {
@@ -131,8 +124,7 @@ function _normalMapTexture(H, size, strength) {
       nData[j + 3] = 255
     }
   }
-  nCtx.putImageData(nImg, 0, 0)
-  const normalMap = new THREE.CanvasTexture(nCanvas)
+  const normalMap = new THREE.CanvasTexture(nImg)
   normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping
   return normalMap
 }
@@ -146,7 +138,7 @@ function _normalMapTexture(H, size, strength) {
  * the shared palette, mortar dark; (3) normal map — central difference over the wrapped field.
  * Toroidal by construction (block grid divides the texture size) → tiles seamlessly.
  *
- * Browser-only (2D canvas → THREE.CanvasTexture); never imported by headless gates at call time.
+ * Browser-only (ImageData → THREE.CanvasTexture); never imported by headless gates at call time.
  *
  * @returns {{ map: THREE.CanvasTexture, normalMap: THREE.CanvasTexture }}
  */
@@ -174,10 +166,7 @@ export function makeMasonryTextures(seed = 7130, size = 256) {
   }
 
   const H = new Float32Array(size * size)
-  const cCanvas = document.createElement('canvas')
-  cCanvas.width = cCanvas.height = size
-  const cCtx = cCanvas.getContext('2d')
-  const cImg = cCtx.createImageData(size, size)
+  const cImg = new ImageData(size, size)   // BUG-182: uploaded as is; a 2D canvas would blank on a GPU reset
   const cData = cImg.data
   for (let z = 0; z < size; z++) {
     const course = Math.floor(z / COURSE_H)
@@ -206,9 +195,8 @@ export function makeMasonryTextures(seed = 7130, size = 256) {
       cData[j + 3] = 255
     }
   }
-  cCtx.putImageData(cImg, 0, 0)
 
-  const map = new THREE.CanvasTexture(cCanvas)
+  const map = new THREE.CanvasTexture(cImg)
   map.colorSpace = THREE.SRGBColorSpace
   map.wrapS = map.wrapT = THREE.RepeatWrapping
   return { map, normalMap: _normalMapTexture(H, size, 2.2) }   // same encoder as the cobble field

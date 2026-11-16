@@ -64,6 +64,8 @@ export class PropImpostors {
     this._cols = 0
     this._rows = 0
     this._litGain = LIT_GAIN
+    // BUG-182: a GPU reset (webglcontextrestored, after three's own re-init) leaves both atlases empty: bake again.
+    renderer.domElement.addEventListener('webglcontextrestored', () => { if (this._rt) this._bake() })
     // BUG-133: the truck's two head spots, as uniform objects SHARED by every billboard material (one write per frame).
     // uHeadMat holds the spots' own shadow.matrix objects — three refreshes those in place at the start of each render
     // (WebGLLights.setup, for a spot with a map), so the cookie projection is never a frame late.

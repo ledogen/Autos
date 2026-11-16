@@ -390,7 +390,9 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     drawCookie(ctx, S, kind)
     const tex = new THREE.CanvasTexture(cv)
     tex.colorSpace = THREE.SRGBColorSpace
-    return { tex, redraw: () => { drawCookie(ctx, S, kind); tex.needsUpdate = true } }
+    const redraw = () => { drawCookie(ctx, S, kind); tex.needsUpdate = true }
+    cv.addEventListener('contextrestored', redraw)   // BUG-182: a GPU reset blanks the canvas; three re-uploads from it
+    return { tex, redraw }
   }
   const lowCookie = makeCookie('low')
   const highCookie = makeCookie('high')

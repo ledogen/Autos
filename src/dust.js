@@ -122,7 +122,7 @@ function puffTexture () {
   g.addColorStop(1.0, 'rgba(255,255,255,0.0)')
   ctx.fillStyle = g
   ctx.fillRect(0, 0, S, S)
-  _puffTex = new THREE.CanvasTexture(canvas)
+  _puffTex = new THREE.CanvasTexture(ctx.getImageData(0, 0, S, S))   // BUG-182: the pixels, not the canvas: a GPU reset blanks 2D canvases, and three re-uploads from texture.image
   _puffTex.colorSpace = THREE.SRGBColorSpace
   return _puffTex
 }

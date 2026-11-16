@@ -3631,7 +3631,7 @@ function _dropMarkTexture (lx, lz) {          // lx, lz: outline size in metres 
   g.moveTo(ax0, cy); g.lineTo(ax0 + head, cy - half); g.lineTo(ax0 + head, cy - shaft)
   g.lineTo(ax1, cy - shaft); g.lineTo(ax1, cy + shaft); g.lineTo(ax0 + head, cy + shaft)
   g.lineTo(ax0 + head, cy + half); g.closePath(); g.fill()
-  const tex = new THREE.CanvasTexture(cv)
+  const tex = new THREE.CanvasTexture(g.getImageData(0, 0, W, H))   // BUG-182: the pixels, not the canvas: a GPU reset blanks 2D canvases, and three re-uploads from texture.image
   tex.colorSpace = THREE.SRGBColorSpace
   tex.anisotropy = 4
   return tex

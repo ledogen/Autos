@@ -199,6 +199,10 @@ export class GaugeCluster {
     this._bg.width = Math.ceil(W * this._dpr)
     this._bg.height = Math.ceil(H * this._dpr)
     this._paintFace()
+    // BUG-182: a GPU reset blanks every 2D canvas and resets its state (contextrestored, on each canvas): repaint the
+    // face, re-apply the scale, and let update() redraw the dial.
+    this._bg.addEventListener('contextrestored', () => { this._paintFace(); this._drawn = {} })
+    canvas.addEventListener('contextrestored', () => { this._ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0); this._drawn = {} })
   }
 
   /** The fitted engine's redline (rpm). Dial top = next 1000 above redline + 250: V6 5500 → 6, I4 6250 → 7. */
