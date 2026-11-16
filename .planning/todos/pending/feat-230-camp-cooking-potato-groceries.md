@@ -12,8 +12,7 @@ lane: C
 # FEAT-230: Cooking at camp — the potato, groceries, and the cooking kit's job
 
 ## Next steps
-Slice 1 and 1b are built on `land/feat-230` (not merged). Next: slice 2 (the fresh clock, cooler and ice; the cooked
-potato's 24 h), then slice 3 (groceries cooked with the kit, no +20 % on top). Owner: set the potato's price (placeholder $2).
+Slices 1, 1b (on main) and 3 (`land/feat-230-groceries`, not merged) are built. Next: slice 2 (the fresh clock, cooler and ice; the 24 h on potato and groceries; held on `land/feat-230-fresh`). Owner: set the potato's price (placeholder $2).
 
 ## Summary
 The cooking kit is sold and rewarded but does nothing: its effect waits on groceries, and neither groceries nor the
@@ -38,13 +37,14 @@ Ice, Ice King, Packed lunch). In short:
 - [x] Slice 1b (DEC-310): cooking kit deployed at camp = food holds 20 % longer
 - [ ] Slice 2: fresh clock, cooler, ice
 - [ ] Slice 1b: the cooking kit deployed at camp gives food eaten there +20 % hold (DEC-310)
-- [ ] Slice 3: groceries cooked with the kit (no 20 % on top); groceries as a farm reward
+- [x] Slice 3: groceries cooked with the kit (no 20 % on top); groceries as a farm reward (`land/feat-230-groceries`, not merged)
 - [ ] FEAT-121's rows for these items brought up to date
 
 ## Open questions
 - The potato's exact price ("under $5"): $2 is a placeholder (data/shop-stock.js ITEM_PRICE).
 
 ## Log
+- 2026-11-16 slice 3 on `land/feat-230-groceries`: `groceries` (raw, no use) and `groceriesCooked` (`use: 'eat'`, hold 10 h, `noKit` so `foodHoldH` skips DEC-310's +20 %), camp button `cp-cook-groceries` shown ONLY with the kit deployed (same `_campFade` + `convert` path as the potato, 30 min), $5 at the general store AND the farm (`STOREFRONT.farm`: a farm sells for the first time), reward cat `groceries` B-A from farm + general store. Owner's two sentences are already in DEC-310, no DEC-332. [DEFAULT]: mass 2 kg, one bag a slot (`stack: 1`), reward weight 4 (a chili dog's). Ruled but NOT built: "evening or morning" (no ruled mechanic found), fresh 24 h / cooler (slice 2). Gates: inventory + the affected set; smoke `cook` step extended (picture wip/groceries/camp-card.png).
 - 2026-11-16: minted from FEAT-121's rows at the owner's question.
 - 2026-11-16: owner gave the kit's number, +20 % (DEC-310); added to slice 1.
 - 2026-11-16 slice 1 + 1b on `land/feat-230`: potato/potatoCooked, `stack` cap in the inventory, camp button `cp-cook`

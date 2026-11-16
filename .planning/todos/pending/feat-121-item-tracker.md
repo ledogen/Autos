@@ -97,7 +97,8 @@ Never sold (owner, 2026-10-21): a bonus item from residences, farms and the food
 $6. Holds hunger 8 h; fresh 24 h. Never found. Flavor: "Homemade!" (owner, 2026-10-22).
 
 ### Groceries
-status: todo · design: ratified · build: effect · needs: hunger, spoilage, camp render · where: generalStore, farm, reward
+status: wip · design: ratified · build: effect · needs: spoilage (24 h fresh, cooler), camp render · where: generalStore, farm, reward
+**In the game 2026-11-16 (FEAT-230 slice 3, `land/feat-230-groceries`):** `groceries` + `groceriesCooked` (hold 10 h, no kit +20 %); the camp card's "cook groceries · 30 min" shows only with the cooking kit deployed; $5 at the general store and the farm; a B–A reward from both. [DEFAULT] mass 2 kg, one bag a slot, reward weight 4. Not built: fresh clock / cooler (slice 2), "evening or morning". Audit 2026-11-16: matches the row except those two.
 A delayed meal (owner, 2026-10-20): bought, carried, cooked into a meal at camp — only with the
 cooking kit. Still on the spoilage clock. Ruled 2026-10-21: one meal a bag, holds 10 h, +30 min to cook,
 evening or morning; fresh 24 h, and the cooler slows them (×1/6); no kit bonus on top. $5 at the general
@@ -445,6 +446,7 @@ general store; an A–S reward from farms, work sites and the general store; nev
 
 ### Cooking kit
 status: wip · design: ratified · build: effect · needs: groceries · where: generalStore, reward
+**Audit 2026-11-16:** the groceries half is built (FEAT-230 slice 3): the card offers "cook groceries" only with the kit deployed, and groceries skip the +20 %.
 **DEC-310 / FEAT-230 (2026-11-16):** deployed at camp it makes any food hold hunger 20 % longer (`COOKING_KIT_FOOD_MULT`); groceries are cooked with it, without the 20 % on top (slice 3).
 ≈23 kg always carried; flat bonus to food effects; the only way to cook groceries (2026-10-20). Model is ASSET-25 (A-frame + Dutch oven).
 
