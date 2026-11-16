@@ -12,15 +12,16 @@ lane: unplaced (UI, Sonnet)
 # BUG-188: "Checkout or discard before you leave" toggles on each B press
 
 ## Next steps
-A UI lane.
+Built on land/ui-batch; waits for the owner's look.
 
 ## Summary
 At the auto shop with a full cart, each B press shows then hides the message, so it reads as a toggle. The owner wants an alert: the first press shows it, and it hides itself after about a second.
 
 ## Tracker
-- [ ] First B press shows the message; it hides itself after about 1 s
-- [ ] Further presses re-show it and never hide it early
-- [ ] Uses the existing alert style (src/alerts.js) if it fits
+- [x] First B press shows the message; it hides itself after about 1 s
+- [x] Further presses re-show it and never hide it early
+- [x] Uses the existing alert style (src/alerts.js) if it fits
 
 ## Log
 - 2026-11-16: filed from the owner's inbox note.
+- 2026-11-16 land/ui-batch: service-screen.js `leave()` sets msg + 1 s timer; `back()` = `leave()` (never hides). Kept the shop's own `sv-desc` line (src/alerts.js is the HUD strip, not in the shop panel). Not gated (DOM); screenshot only.
