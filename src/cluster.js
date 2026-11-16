@@ -76,21 +76,42 @@ const LAMP_DY = 47, LAMP_PITCH = 24   // the row's drop below the tach hub, and 
 // bounding boxes match (LAMP_K, glyph scale per slot: brake, tire, check engine, headlamp); dial numerals and pod letters
 // move NUM_IN inward off the ticks; the fuel and temp symbols drop ICON_DY (13 → 16) clear of the needles' heels.
 const KMH_PX = 7 * 1.2, MPH_PX = 9 * 1.2
-const FRAME_IN = 17
 const REDLINE_R = 4.5
 const LAMP_K = { brake: 1.10, flat: 0.88, engine: 1.42, head: 1.28 }
 const NUM_IN = 1.5
 const ICON_DY = 16
 const H = 240
-const POD_X = 56, POD_RIGHT = POD_X + 39   // the temp/fuel pod's centre x and its indent's right edge (POD_R)
-const AXIS = H / 2   // the dial axis: tach and speedo hubs, the pod's centre, the key
-// The pod's gauges sit POD_E above and below the axis: 39 puts the pod's indent top level with the speedo's
-// (AXIS − 2·39 = AXIS − (SPEEDO.well + DIAL_PAD)), so the housing's corners and the speedo's crest share one line.
-const POD_E = 46
-const TEMP  = { cx: POD_X,  cy: AXIS - POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const FUEL  = { cx: POD_X,  cy: AXIS + POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const TACH  = { cx: POD_RIGHT + GAP + 75 + 8, cy: AXIS, well: 75, scaleR: 65, start: 160, sweep: 170 }    // dial top: _tachMax (setRedline)
-const SPEEDO= { cx: POD_RIGHT + GAP + 75 + 8 + TACH_SPEEDO, cy: AXIS, well: 84, scaleR: 75, start: 135, sweep: 270, max: 120 }  // MPH
+const AXIS = H / 2   // the dial axis: tach and speedo hubs
+// FEAT-235 (owner, 2026-11-16, against the 2002 owner guide's cluster drawing): three layers, as on the real one.
+//   The housing (_outlinePath): a broad arch on top, a flat bottom with a raised inset under the dials. Two end circles
+//     (OUT_L, OUT_R) joined by one big arc internally tangent to both (ARCH), and the bottom line tangent to both.
+//   A lighter face inside it (FACE_LIGHT), the reference's appliqué, BEZEL inside the outline.
+//   Dark pods on that face: the dials' pod (tach ∪ speedo ∪ key as before, now with a flat bottom: the tach's indent
+//     reaches TACH_DROP further down so its bottom meets the speedo's), and a rounded triangle for temp + fuel
+//     (_leftPodPath) whose right side runs concentric with the tach's indent, GAP out — a light band of constant width.
+// Temp and fuel stagger like the reference — temp up and right, fuel down and left (POD_DX) — and stand closer together
+// vertically (POD_E 46 → 38). The tach is placed so temp's backing stands exactly GAP from the tach's indent (DEC-284's
+// GAP, now measured to the nearest pod); speedo, key and the right edge follow as in rounds 7–8.
+const POD_R = 39    // a small gauge's dark backing circle (well 33 + 6)
+const POD_E = 38    // temp above, fuel below the axis
+const POD_DX = 12   // temp right of, fuel left of the pod's centre line
+const POD_DY = 15   // the pod's centre below the axis: the reference's temp sits near the axis, fuel low (round 8: 0)
+const FUEL_X = 56
+const POD_CORNER = 14   // the left pod's bottom-right corner radius
+const DIAL_PAD = 8      // indent ring visible around the tach/speedo wells
+const TACH_DROP = 84 - 75   // SPEEDO.well − TACH.well: the tach's indent bottom level with the speedo's
+const POD_GAP_R = 75 + DIAL_PAD + GAP   // the left pod's concave right side: the tach's indent radius + GAP
+const TEMP  = { cx: FUEL_X + 2 * POD_DX, cy: AXIS + POD_DY - POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
+const FUEL  = { cx: FUEL_X, cy: AXIS + POD_DY + POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
+const TACH_X = TEMP.cx + Math.sqrt((POD_GAP_R + POD_R) ** 2 - (AXIS - TEMP.cy) ** 2)
+const TACH  = { cx: TACH_X, cy: AXIS, well: 75, scaleR: 65, start: 160, sweep: 170 }    // dial top: _tachMax (setRedline)
+const SPEEDO= { cx: TACH_X + TACH_SPEEDO, cy: AXIS, well: 84, scaleR: 75, start: 135, sweep: 270, max: 120 }  // MPH
+// The left pod's bottom-right corner circle: tangent to the bottom line and to the concave side (centre POD_GAP_R +
+// POD_CORNER from the dropped tach centre).
+const POD_BR = (() => {
+  const y = FUEL.cy + POD_R - POD_CORNER, dy = y - (AXIS + TACH_DROP)
+  return { x: TACH_X - Math.sqrt((POD_GAP_R + POD_CORNER) ** 2 - dy * dy), y }
+})()
 // The odometer drum's window, from the speedo hub. Low enough that the 40 and 80 clear its top corners (round 3).
 const ODO = { x: -29, y: -23, w: 58, h: 14 }
 // One factor on the canvas transform (round 3), so every distance the layout balances (the key's three below, the
@@ -109,9 +130,11 @@ const SCALE = 1.15
 // i.e. KEY_CORNER = POD_R + MARGIN − (KEY.well + KEY.pad) − MARGIN from that centre, along the diagonal. END_X puts the
 // key 103 from the speedo hub, > SPEEDO.well + KEY.well (101) so the key face does not eat the speedo face.
 const END_X = SPEEDO.cx + 84 + 8 + GAP + 17 + 3   // the speedo's indent edge + GAP + the key's indent (well + pad)
-const W = END_X + 62 - FRAME_IN   // the housing's right edge (END_X − FRAME_IN + 54) plus the 8 px canvas margin
-// Round 7: the key sits at the centre of the bottom-right corner arc (END_X, AXIS + POD_E).
-const KEY   = { cx: END_X, cy: AXIS + POD_E, well: 17, pad: 3 }
+// Round 8 (DEC-285): the housing's right edge (its dark rim's outside) stands KEY_EDGE right of the key's centre.
+// FEAT-235 keeps that edge and the key's height (46 below the axis), now inside the outline's right end.
+const KEY_EDGE = 37
+const W = END_X + KEY_EDGE + 8   // plus the 8 px canvas margin
+const KEY   = { cx: END_X, cy: AXIS + 46, well: 17, pad: 3 }
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
 const KEY_ANGLE = { off: 210 * DEG, on: 270 * DEG, start: 330 * DEG }
 const KEY_TICK_R = 16.5   // detent ticks run inward from here to r=14.5 — OUTSIDE the fascia, framing it
@@ -136,20 +159,52 @@ const KEY_PLASTIC = '#242428'   // moulded plastic key body
 const KEY_BODY_L = 8.0
 const KEY_BODY_W = 5.2
 
-// Indent geometry (the recessed regions the dials sit in) and the housing margin around them.
-// The housing outline is built from the pod's corner circles dilated by MARGIN (_fillDilated), so
-// both ends frame their indents with the same constant offset.
-const POD_R    = 39   // radius of the temp/fuel capsule indent
-const DIAL_PAD = 8    // indent ring visible around the tach/speedo wells
-const ARCH_TOP    = 26   // the top arch's control point, beyond the corners' crest line (round 4: the brow)
-const ARCH_BOTTOM = 7    // the bottom's — flatter than the top
-const MARGIN   = 13   // constant housing frame around the indents
+// The housing outline (FEAT-235). Its offsets: the dark rim's outside at +2, the housing band to −BEZEL, the light
+// face inside that. FACE_M is the least light face shown around any pod; the ends are placed from it.
+const BEZEL = 5
+const FACE_M = 8
+const INSET_Y = AXIS + 84 + DIAL_PAD + FACE_M + BEZEL   // the inset's top: FACE_M of light face under the dials' pod
+const INSET_H = 7        // how far the inset stands up from the bottom line
+const INSET_RUN = 9      // its sloped sides' horizontal run
+const INSET_HALF = 120   // half its width at the top, centred on the cluster
+const BOTTOM_Y = INSET_Y + INSET_H
+const ROOM = FACE_M + BEZEL   // a pod's circle grown by this is where the outline may come
+const CORNER = 16             // the bottom corners' radius
+const ARCH_PEAK = 7           // the arch's top, from the canvas top
+const KEY_END = KEY_EDGE - 2  // the right end's circle round the key: its outside is the round-8 edge
+// The outline is the hull of these circles, clockwise from the arch (_outlinePath): the arch, internally tangent to the
+// grown temp and speedo circles; the grown speedo; the key's end; the bottom corners; the grown fuel and temp circles.
+const OUTLINE = (() => {
+  const temp = { x: TEMP.cx, y: TEMP.cy, r: POD_R + ROOM }, fuel = { x: FUEL.cx, y: FUEL.cy, r: POD_R + ROOM }
+  const speedo = { x: SPEEDO.cx, y: SPEEDO.cy, r: SPEEDO.well + DIAL_PAD + ROOM }
+  const key = { x: KEY.cx, y: KEY.cy, r: KEY_END }
+  const br = { x: KEY.cx + KEY_END - CORNER, y: BOTTOM_Y - CORNER, r: CORNER }
+  const bl = { x: fuel.x - fuel.r + CORNER, y: BOTTOM_Y - CORNER, r: CORNER }
+  return [archThrough(temp, speedo, ARCH_PEAK), speedo, key, br, bl, fuel, temp]
+})()
+const INSET_X = (OUTLINE[4].x - CORNER + OUTLINE[3].x + CORNER) / 2
+const FACE_LIGHT = '#575049'   // the light face (the owner guide's white appliqué, as a lighter plastic)
 
 const FACE   = '#171412'   // gauge face / panel
 const WHITE  = '#e8e6e0'
 const DIM    = '#9a958f'   // inner km/h ring
 const RED    = '#d8402c'
 const NEEDLE = '#f2f0ea'
+
+// The circle internally tangent to both circles l and r ({x, y, r}) whose top is at peakY: bisect its radius, where the
+// centre's x found from l's tangency meets the one found from r's.
+function archThrough (l, r, peakY) {
+  const cx = (R, c, s) => c.x + s * Math.sqrt((R - c.r) ** 2 - (peakY + R - c.y) ** 2)
+  let lo = Math.max(l.r + l.y - peakY, r.r + r.y - peakY) / 2, hi = 1e5
+  for (let i = 0; i < 80; i++) { const R = (lo + hi) / 2; if (cx(R, l, 1) < cx(R, r, -1)) lo = R; else hi = R }
+  return { x: cx(lo, l, 1), y: peakY + lo, r: lo }
+}
+
+// The outward normal angle of the outer tangent from circle a to circle b, walking clockwise on screen.
+function tangentAngle (a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y
+  return Math.atan2(dy, dx) - Math.acos(Math.max(-1, Math.min(1, (a.r - b.r) / Math.hypot(dx, dy))))
+}
 
 function gaugeAngle (g, frac) {
   const f = Math.max(0, Math.min(1, frac))
@@ -334,12 +389,10 @@ export class GaugeCluster {
     ctx.clearRect(0, 0, this._bg.width, this._bg.height)
     ctx.scale(this._dpr, this._dpr)
 
-    // Housing: successive dilations of the indent geometry. Each layer fully covers the next
-    // larger one except for its outer band, so the visible result is a 2px dark rim, a 1.5px
-    // edge highlight, then the housing face — all as true constant-offset curves of the indents.
-    this._fillDilated(ctx, MARGIN + 2, 'rgba(10,8,7,0.9)')   // outer dark rim
-    this._fillDilated(ctx, MARGIN, '#3a332e')                 // edge highlight band
-    this._fillDilated(ctx, MARGIN - 1.5, '#282320')           // housing face
+    // Housing: successive offsets of one outline, each covering the next larger but for its outer band — a 2 px dark
+    // rim, a 1.5 px edge highlight, the housing band, a dark lip, then the light face (FEAT-235).
+    const layers = [[2, 'rgba(10,8,7,0.9)'], [0, '#3a332e'], [-1.5, '#282320'], [-BEZEL, '#100d0b'], [-BEZEL - 1, FACE_LIGHT]]
+    for (const [pad, style] of layers) { this._outlinePath(ctx, pad); ctx.fillStyle = style; ctx.fill() }
 
     this._paintIndents(ctx)
     for (const g of [TEMP, FUEL, TACH, KEY]) this._paintWell(ctx, g)
@@ -390,72 +443,68 @@ export class GaugeCluster {
     // plus a key shape already say what it is.
   }
 
-  // Fill the housing silhouette at dilation `pad` (round 3): a symmetric frame. Two ends with one shape — the pod's
-  // corner circles on the left, the same circles mirrored on the right (the key's end, placed so the key's indent
-  // stands MARGIN inside the edge, as the pod's does) — joined top and bottom by one arch each: a quadratic whose
-  // control point sits midway between the ends, ARCH px beyond their corners' crest line, with each end of it on the
-  // corner circle's tangent from that point, so the arch leaves both corners smoothly. The bottom arch is the top's
-  // mirror about AXIS. Every indent stays inside: the tach and speedo crest on the corners' line (POD_E), under the
-  // arch; the key sits in the right end.
-  _fillDilated (ctx, pad, style) {
-    const r = POD_R + pad, ex = END_X - FRAME_IN   // the right end's corner circles' x (the key stays at END_X: round 8)
-    const mx = (TEMP.cx + ex) / 2
-    // The point on a corner circle (cx, cy) where the tangent from the arch's control point (mx, ty) touches,
-    // on the side away from the axis: φ ± acos(r / d), the sign picking the outer of the two tangents.
-    const touch = (cx, cy, ty, s) => {
-      const dx = mx - cx, dy = ty - cy, a = Math.atan2(dy, dx) + s * Math.acos(r / Math.hypot(dx, dy))
-      return { a, x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }
-    }
-    const yT = AXIS - POD_E - r - ARCH_TOP, yB = AXIS + POD_E + r + ARCH_BOTTOM   // the arches' control points
-    const tl = touch(TEMP.cx, AXIS - POD_E, yT, -1), tr = touch(ex, AXIS - POD_E, yT, 1)
-    const br = touch(ex, AXIS + POD_E, yB, -1), bl = touch(FUEL.cx, AXIS + POD_E, yB, 1)
-    ctx.fillStyle = style
+  // The housing outline offset by p (FEAT-235): the hull of OUTLINE's circles, each grown by p — an exact offset, since
+  // the tangents' angles depend only on radius differences. The bottom run (br → bl) takes the inset, cornered by arcTo.
+  _outlinePath (ctx, p) {
+    const c = OUTLINE, n = c.length
+    const out = c.map((a, i) => tangentAngle(a, c[(i + 1) % n]))   // leaving circle i
+    const x1 = INSET_X - INSET_HALF, x2 = INSET_X + INSET_HALF, yB = BOTTOM_Y + p, yI = INSET_Y + p, f = 4
     ctx.beginPath()
-    ctx.arc(TEMP.cx, AXIS - POD_E, r, Math.PI, tl.a)        // top-left corner
-    ctx.quadraticCurveTo(mx, yT, tr.x, tr.y)                 // top arch
-    ctx.arc(ex, AXIS - POD_E, r, tr.a, 0)                    // top-right corner
-    ctx.arc(ex, AXIS + POD_E, r, 0, br.a)                    // the right side, bottom-right corner
-    ctx.quadraticCurveTo(mx, yB, bl.x, bl.y)                 // bottom arch
-    ctx.arc(FUEL.cx, AXIS + POD_E, r, bl.a, Math.PI)         // bottom-left corner
-    ctx.closePath()                                          // the left side
-    ctx.fill()
+    for (let i = 0; i < n; i++) {
+      const a = c[i], a0 = out[(i + n - 1) % n]
+      let a1 = out[i]
+      while (a1 < a0) a1 += 2 * Math.PI
+      ctx.arc(a.x, a.y, a.r + p, a0, a1)
+      if (i === 3) {   // the bottom corner on the right: the bottom line to the left, through the inset
+        ctx.arcTo(x2 + INSET_RUN, yB, x2, yI, f)
+        ctx.arcTo(x2, yI, x1, yI, f)
+        ctx.arcTo(x1, yI, x1 - INSET_RUN, yB, f)
+        ctx.arcTo(x1 - INSET_RUN, yB, c[4].x, yB, f)
+      }
+    }
+    ctx.closePath()
   }
 
-  // Recessed regions the dial faces sit in (the "indents" on the real cluster): a capsule around
-  // the staggered temp/fuel pod, and the UNION of two discs around tach + speedo — the union
-  // outline pinches between the dials exactly like the raised face edge on the reference.
+  // The temp/fuel pod offset by p (FEAT-235): a rounded triangle. Clockwise: over temp's backing circle, down the
+  // concave side (around the tach's indent at POD_GAP_R, its TACH_DROP straight, around the dropped centre), round the
+  // bottom-right corner, along the flat bottom, round fuel's backing circle, and up the straight tangent back to temp.
+  // Every joint is a tangency, so the outline is smooth.
+  _leftPodPath (ctx, p) {
+    const r = POD_R + p, ty = AXIS + TACH_DROP
+    const dx = TEMP.cx - FUEL.cx, dy = TEMP.cy - FUEL.cy, n = Math.hypot(dx, dy)
+    const aN = Math.atan2(-dx / n, dy / n)    // the outward normal of the left tangent line
+    const aT = Math.atan2(TEMP.cy - AXIS, TEMP.cx - TACH.cx), aB = Math.atan2(POD_BR.y - ty, POD_BR.x - TACH.cx)
+    ctx.beginPath()
+    ctx.arc(TEMP.cx, TEMP.cy, r, aN, aT + Math.PI)
+    ctx.arc(TACH.cx, AXIS, POD_GAP_R - p, aT, Math.PI, true)
+    ctx.arc(TACH.cx, ty, POD_GAP_R - p, Math.PI, aB, true)
+    ctx.arc(POD_BR.x, POD_BR.y, POD_CORNER + p, aB + Math.PI, Math.PI / 2)
+    ctx.arc(FUEL.cx, FUEL.cy, r, Math.PI / 2, aN + 2 * Math.PI)
+    ctx.closePath()
+  }
+
+  // Recessed regions the dial faces sit in (the "indents" on the real cluster): the temp/fuel pod, and the UNION of
+  // the tach (dropped TACH_DROP at the bottom), speedo and key discs with a flat bottom between the tach and speedo.
   _paintIndents (ctx) {
     const FILL = '#1a1613'
     const RIM  = 'rgba(0,0,0,0.55)'
-    // Pod capsule: stroking it 3px wider in the rim color first leaves a 1.5px border ring.
-    ctx.lineCap = 'round'
-    for (const [style, w] of [[RIM, POD_R * 2 + 3], [FILL, POD_R * 2]]) {
-      ctx.strokeStyle = style
-      ctx.lineWidth = w
-      ctx.beginPath()
-      ctx.moveTo(TEMP.cx, TEMP.cy)
-      ctx.lineTo(FUEL.cx, FUEL.cy)
-      ctx.stroke()
-    }
-    // Dial indents: tach ∪ speedo ∪ ignition switch, as one merged region. Drawn stroke-UNDER-fill
-    // (the same trick as the pod capsule above): every circle is stroked 3 px wide in the rim colour
-    // FIRST, then all three are filled, so each fill covers the stroke halves that fall inside its
-    // neighbours and only the outer 1.5 px of rim survives. That gives a true union outline —
-    // including the concave pinches where the circles meet — without computing the outline path.
-    const dials = [[TACH, TACH.well + DIAL_PAD], [SPEEDO, SPEEDO.well + DIAL_PAD], [KEY, KEY.well + KEY.pad]]
+    this._leftPodPath(ctx, 1.5); ctx.fillStyle = RIM; ctx.fill()
+    this._leftPodPath(ctx, 0); ctx.fillStyle = FILL; ctx.fill()
+    // Dial indents, as one merged region. Drawn stroke-UNDER-fill: every shape is stroked 3 px wide in the rim colour
+    // FIRST, then all are filled, so each fill covers the stroke halves that fall inside its neighbours and only the
+    // outer 1.5 px of rim survives — a true union outline, cusp included, without computing the outline path.
+    const tr = TACH.well + DIAL_PAD, bottom = AXIS + TACH_DROP + tr
+    const shapes = [
+      () => { ctx.arc(TACH.cx, AXIS, tr, Math.PI, 0); ctx.arc(TACH.cx, AXIS + TACH_DROP, tr, 0, Math.PI); ctx.closePath() },
+      () => ctx.arc(SPEEDO.cx, SPEEDO.cy, SPEEDO.well + DIAL_PAD, 0, Math.PI * 2),
+      () => ctx.arc(KEY.cx, KEY.cy, KEY.well + KEY.pad, 0, Math.PI * 2),
+      () => ctx.rect(TACH.cx, AXIS, SPEEDO.cx - TACH.cx, bottom - AXIS),
+    ]
     ctx.strokeStyle = RIM
     ctx.lineWidth = 3
-    for (const [g, r] of dials) {
-      ctx.beginPath()
-      ctx.arc(g.cx, g.cy, r, 0, Math.PI * 2)
-      ctx.stroke()
-    }
+    for (const s of shapes) { ctx.beginPath(); s(); ctx.stroke() }
     ctx.fillStyle = FILL
-    for (const [g, r] of dials) {
-      ctx.beginPath()
-      ctx.arc(g.cx, g.cy, r, 0, Math.PI * 2)
-      ctx.fill()
-    }
+    for (const s of shapes) { ctx.beginPath(); s(); ctx.fill() }
   }
 
   // Circular recess each gauge sits in — face disc with a soft inner shadow at the rim.
