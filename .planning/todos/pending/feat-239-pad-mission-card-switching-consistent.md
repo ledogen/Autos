@@ -29,7 +29,7 @@ Blank = silent there. "card" = menu-nav.js highlight walk: D-pad moves the highl
 |---|---|---|---|---|---|---|
 | D-pad ← / → | flip the offers of the hovered or highlighted POI | (same) | card: cycles a selector (haul size, Larry's route size) or steps a slider; else moves the highlight | card walk | card walk | map's (flip) |
 | D-pad ↑ / ↓ | walk the list (nearest first), the sheet snaps to the row | walk the list | card highlight up / down | card walk | card walk | map's list walk |
-| D-pad ↓ / ← / → hold (drive meanings: pick-up, set spawn, reset) | not available (DEC of 11-03 actions are deleted from the map layout) | not available | not available (card layout deletes 12-15 as actions) | not available | not available | not available |
+| D-pad ↓ / ← / → as the owner's 11-03 actions (pick up, set spawn, reset) | dormant: MAP_KEYS deletes buttons 13, 14 (and 15 is only the drive layout's held reset) | dormant | dormant (CARD_KEYS deletes 12-15) | dormant | dormant | dormant |
 | LB (4) | Missions / Shopping tab (= Q) | the tab switch | previous offer (= Q, `onCycle`) | previous tab (= Q) | previous tab where the card has tabs | silent |
 | RB (5) | Missions / Shopping tab (= E) | the tab switch | next offer (= E) | next tab | next tab where the card has tabs | silent (tap = brake otherwise) |
 | LT / RT | the truck's pedals, always | pedals | pedals | pedals | pedals | pedals |
@@ -44,6 +44,8 @@ Blank = silent there. "card" = menu-nav.js highlight walk: D-pad moves the highl
 | Start | pause | pause | pause | pause | pause | pause |
 | View | tap closes the map; hold 1 s resets the truck | same | tap = map; hold = reset | same | same | same |
 
+Squaring with the owner's 2026-11-03 D-pad actions (↓ pick up, → reset, ← set spawn): they are the drive layout's only; the map and card layouts delete them, so no conflict exists today and none is created by any option.
+
 Facts that cut across the table: (1) the only controls on the map that touch the D-pad are ← / → (flip offers) and ↑ / ↓ (walk the list); (2) the only controls on LB / RB are the tab switch on the map and the offer / tab step in a card, which is already the same keys (Q / E) in code: the map's own `_onKeyDown` sends Q / E to `onCycle` when a card is up and to `_swapTab` otherwise; (3) X is the only face button silent on the map; (4) L3 and R3 both recentre on the map (R3 through the camera's `c`), so neither is free.
 
 ### Can the D-pad be guaranteed free of cards inside the map?
@@ -51,10 +53,9 @@ No. Cards that can be up over the map and that use ← / → : the haul offer's 
 
 ### Options
 1. **Shoulders flip cards everywhere; D-pad ← / → become the tab switch (the owner's proposal).** Displaces: ← / → flipping on the map (moves to LB / RB, same as the POI card). D-pad free of cards? No, but the priority rule makes it unambiguous. Cost: the tab switch is dead while a card is up; two pairs of keys move (LB / RB from tabs to flips, ← / → from flips to tabs). Keyboard: Q / E flip, ← / → tabs, which breaks DEC-175's "arrows flip cards, Q / E the tabs" (a new ruling would replace it).
-2. **Shoulders flip cards everywhere; the tab switch goes on X.** Displaces: nothing (X is silent on the map). The D-pad then keeps only ↑ / ↓ (list walk) and ← / → become spare. D-pad free of cards: still no guarantee, but the map no longer needs ← / → at all. Cost: all four face buttons used on the map (A shop, B back, X tab, Y waypoint); X is the manual gearbox's downshift on the drive layout, so the key is Q only by accident of the keyboard map. Keyboard: Q / E flip, Tab key is taken (inventory), so `T` or `Z`.
-3. **Shoulders flip cards everywhere; the tab switch is one press of D-pad ← / → only while the sheet shows no card, and the list's arrow walk is unchanged.** Same as option 1 but stated as a rule: the card layout wins, the tabs sit on ← / → exactly when no card is up. (This is what option 1 does anyway; listed because it is what to say to the owner's "guarantee" question.)
-4. **Remove the tabs: one list, nearest first, Missions and Shopping merged with a filter chip.** Displaces: the tab control entirely; LB / RB flip and ← / → become spare. Design change (the list is the owner's DEC-175 / FEAT-211 shape), not a control swap.
-5. **Leave it and make the POI card match the map: D-pad ← / → flips offers on the card too.** Displaces: the card's selectors (haul size ◂ ▸, Larry's sizes), which then need another control. Not recommended: the card's D-pad is its highlight walk, and a ◂ ▸ selector cannot share ← / → with an offer flip.
+2. **Shoulders flip cards everywhere; the tab switch goes on X.** Displaces: nothing (X is silent on the map). The D-pad then keeps only ↑ / ↓ (list walk) and ← / → become spare. D-pad free of cards: still no guarantee, but the map no longer needs ← / → at all. Cost: all four face buttons used on the map (A shop, B back, X tab, Y waypoint); X is the manual gearbox's downshift on the drive layout, so the key is Q only by accident of the keyboard map. Keyboard: Q / E flip, and the tab needs a letter that is not taken (Tab, Z, X, V, C, M, N are).
+3. **Remove the tabs: one list, nearest first, Missions and Shopping merged with a filter chip.** Displaces: the tab control entirely; LB / RB flip and ← / → become spare. Design change (the list is the owner's DEC-175 / FEAT-211 shape), not a control swap.
+4. **Leave it and make the POI card match the map: D-pad ← / → flips offers on the card too.** Displaces: the card's selectors (haul size ◂ ▸, Larry's sizes), which then need another control. Not recommended: the card's D-pad is its highlight walk, and a ◂ ▸ selector cannot share ← / → with an offer flip.
 
 ### Recommendation
 Option 2. It is the only one that moves a single control (the tab switch) onto a button that is silent today, keeps LB / RB as "page the cards" in both places, and leaves the whole D-pad to the list walk and to cards, so the "can the D-pad be guaranteed free" question stops mattering. Option 1 is the owner's own proposal and also works, because the card layout always outranks the map's; its price is moving two pairs of controls and a new ruling on the keyboard. Either way, the keyboard needs a decision (Q / E for the flip, and a key for the tab), and a DEC supersedes DEC-175.
