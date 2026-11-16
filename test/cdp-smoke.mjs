@@ -1646,6 +1646,10 @@ const STEPS = [
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return n }
         if (stopAt && await speaker() === stopAt) return n
         said.push(`${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`)
+        // CARD_SHOTS=<dir>: a screenshot of every card read, for a look at new lines' layout (UI-STYLE)
+        if (process.env.CARD_SHOTS) { mkdirSync(process.env.CARD_SHOTS, { recursive: true })
+          writeFileSync(join(process.env.CARD_SHOTS, `${String(said.length).padStart(2, '0')}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+          writeFileSync(join(process.env.CARD_SHOTS, 'said.json'), JSON.stringify(said, null, 1)) }
         n++; await tap('Enter'); await sleep(200)
       }
       throw new Error('cards never stopped coming')
