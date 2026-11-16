@@ -20,7 +20,7 @@ before the tow is taken. It could arrive after it.
 
 ## Description
 `_toggleRecovery` opened the recovery menu at once and only QUEUED `tut-tow` (`_tut`). The queue plays one card at a
-time (`_pumpTut`: nothing while another card is up), and the spare's card (`tut-spareflat`, "Call a tow: X") is usually
+time (`_pumpTut`: nothing while another card is up), and (the likely path, not reproduced) the spare's card (`tut-spareflat`, "Call a tow: X") is usually
 still up when the player presses X, so the tow card waited behind it while the menu's tow button was already live: a
 click towed the truck and the card played after, at the shop. Fix: in the evening, while `tut-tow` is unseen, X queues
 the card with a `done` that opens the menu; the menu cannot open before the card ends. Seen once (dialogue seen-gate),
