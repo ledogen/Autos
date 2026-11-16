@@ -145,7 +145,7 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
 
 Older state paragraphs: `git show dd6d07f1:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
 
-**Main:** 8b130e2f + docs, last full smoke 26/26 (wip/orch/smoke-1115l.log). NOT pushed (nothing since 736266b5).
+**Main:** bd08d4e1 + docs (FEAT-180 fog cube landed, DEC-286; ~5.5 % of the rebuild's +9 % GPU still unexplained, next suspect the sky noise, not routed), last full smoke: see wip/orch/smoke-1115m.log. Perf lane free. NOT pushed (nothing since 736266b5).
 **Landed 11-15 (all local):** small-1115, run-shape x4 (FEAT-184 errand, smoke fixes, FEAT-217 notes, BUG-178 smoke trace),
 shopui-1115, BUG-173 (closed), gps-1115 (DEC-275), FEAT-221 exposure + BUG-174/175/177, PERF-49 (closed), BUG-176
 (open until the owner rubs a rock), PERF-48 terrain bake hybrid on by default (DEC-234; off on Low, `?terrainBake=0`),
@@ -154,8 +154,6 @@ anti-dodge gates; DEC-276, 277, 281, 282).
 
 **RUNNING (spawned 11-15 ~16:45-17:30; one task each):**
 - Lane a is free: BUG-178 fixed and CLOSED (5e4c7977, `_towOwed`).
-- p · CarGame-perf · feature/perf · Opus: FEAT-180 fog cost ("confirm the suspect, then make it cheaper with the same
-  look"). Its DEC: next unused >= 280.
 **Lanes b, c, u free.** FEAT-34 gauge rounds 5-8 LANDED and closed (owner approved). FEAT-221, BUG-174, BUG-175, BUG-177 closed.
 - s · CarGame-spare · land/bay-light-2 · Opus: the owner's lighting note (bay must not read as one bulb above the truck;
   call delegated; no shadows, DEC-227; GPU cost measured away from stations). DEC-228. Extends FEAT-226. Tutorial cards filed: tutorial-test-drives (stays OPEN until
