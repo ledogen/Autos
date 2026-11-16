@@ -150,7 +150,7 @@ await btnS(1); sh = await ss(); check(sh.id === null && sh.open2, `the next B le
 await btnS(2); sh = await ss(); check(sh.tab === 'missions', `X swaps back to Missions (${sh.tab})`)
 // FEAT-211 landing 3: the waypoint on the pad. Free roam has no run, so main.js's side is stubbed (it records the drop and
 // says yes). Y sends n and drops it at the pad cursor (the sheet centre) without touching the ignition; Y again, on the pin,
-// clears it; A with nothing highlighted drops it as well (Enter), and A on a highlighted shop still opens the shop instead.
+// clears it. DEC-319 / FEAT-234: A (and Enter) no longer drop it; A on a highlighted shop still opens the shop.
 await js(`(() => { const m = __map2d(); window.__wpStub = [m._getWaypoint, m._onWaypoint]; window.__wp = { at: null, calls: 0 }
   m._getWaypoint = () => __wp.at && { ...__wp.at, poly: null }
   m._onWaypoint = (p) => { __wp.calls++; __wp.at = p; return true } })()`)
@@ -162,9 +162,9 @@ let wq = await wp()
 check(wq.win === 'n' && wq.calls === 1 && Math.abs(wq.at?.x - wq.px) < 0.5 && Math.abs(wq.at?.z - wq.pz) < 0.5 && wq.ign === ign0,
   `Y sends n: a waypoint at the sheet centre (${wq.at?.x.toFixed(0)},${wq.at?.z.toFixed(0)} vs ${wq.px.toFixed(0)},${wq.pz.toFixed(0)}), ignition untouched (${ign0} → ${wq.ign}; window saw "${wq.win}")`)
 await btnS(3); wq = await wp(); check(wq.calls === 2 && wq.at === null, `Y on the pin clears it (calls ${wq.calls}, at ${JSON.stringify(wq.at)})`)
-await btnS(0); wq = await wp(); check(wq.calls === 3 && wq.at !== null, `A with nothing highlighted drops it too (calls ${wq.calls})`)
+await btnS(0); wq = await wp(); check(wq.calls === 2 && wq.at === null, `DEC-319: A with nothing highlighted drops nothing (calls ${wq.calls})`)
 await btnS(2); await btnS(13); await btnS(13); await btnS(0); sh = await ss(); wq = await wp()
-check(sh.open === 'far' && wq.calls === 3, `A on a highlighted shop opens the shop and drops nothing (open ${sh.open}, calls ${wq.calls})`)
+check(sh.open === 'far' && wq.calls === 2, `A on a highlighted shop opens the shop and drops nothing (open ${sh.open}, calls ${wq.calls})`)
 await btnS(1); await btnS(1); await btnS(2)
 await js('(() => { const m = __map2d(); [m._getWaypoint, m._onWaypoint] = __wpStub })()')
 await js('(() => { const m = __map2d(); [m._getPois, m._getBoard] = __mapStub; m._listT = 0 })()')
@@ -207,13 +207,16 @@ await js('__fp.axes[2] = 1'); await sleep(600); await js('__fp.axes[2] = 0')
 const o1 = await off(); check(Math.abs(o1) > 45, `0.6 s full right stick orbits the view (${o1.toFixed(0)} deg off behind)`)
 await sleep(1500); const o2 = await off(); check(Math.abs(o2 - o1) < 3, `1.5 s after release it HOLDS (${o2.toFixed(0)} deg)`)
 await sleep(2500); const o3 = await off(); check(Math.abs(o3 - o1) < 3, `stopped, ~4 s after release it still lingers (${o3.toFixed(0)} deg)`)
-// FEAT-194 part 1: the LT tap leaves the park latch set (only RT, RB or a gear let it go), so the checks
-// below start parked.
-await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0')
-check((await vs()).parked, 'FEAT-194: an LT tap while parked leaves the parking brake set')
+// FEAT-194 part 1 + DEC-255: on the AUTOMATIC (this truck) LT at rest is the reverse pedal and releases the park
+// latch like gas (the manual keeps it a pure brake: test/park-brake.mjs). The LT hold backs the truck out, so the
+// View hold below puts it back parked at rest for the checks after.
+await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0'); await sleep(100)
+check(!(await vs()).parked, 'DEC-255: an LT tap while parked on the automatic releases the parking brake (reverse pedal)')
 await js('__fp.b[6] = 0.6'); await sleep(1500); await js('__fp.b[6] = 0'); await sleep(100)
-check((await vs()).parked, 'FEAT-194: LT held 1.5 s while parked leaves it set')
-await sleep(2000); const o4 = await off(); check(Math.abs(o4) < 10, `a brake tap from a stop swings it back behind (${o4.toFixed(0)} deg)`)
+check(!(await vs()).parked, 'DEC-255: LT held 1.5 s on the automatic keeps it released (backing out)')
+await sleep(2000); const o4 = await off(); check(Math.abs(Math.abs(o4) - 180) < 15, `a brake pull from a stop (automatic: reverse, DEC-255) swings the view round to the front, camera.js reverseView (${o4.toFixed(0)} deg)`)
+await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)   // View hold: parked at rest again
+s = await vs(); check(s.parked && s.v < 0.2, `View hold re-parks the truck at rest after the reverse (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // B no longer aims (owner, 2026-10-21): held in the drive layout it is the icon menu. Off a route the
 // pad has no practice throw now; on one, the right stick aims and RB taps (checked below).
 const reticle = () => js('getComputedStyle(document.getElementById("aim-reticle")).display !== "none"')
@@ -336,9 +339,10 @@ await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html` })
 for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await sleep(250)
 await sleep(500)
 await js(fakePad)
-// FEAT-156: the menu is new game / tutorial (FEAT-184) / settings, and it opens with new game highlighted.
+// FEAT-156 + DEC-160: the menu is new game / settings (the tutorial button retired), and it opens with new game highlighted.
 await press(DOWN)
-check(await navText() === 'tutorial', `the menu opens on new game: D-pad down reaches tutorial (${await navText()})`)
+// DEC-160: the menu's tutorial button retired with the intro card, so the list is new game / settings.
+check(await navText() === 'settings', `the menu opens on new game: D-pad down reaches settings (${await navText()})`)
 await press(UP)
 check(await navText() === 'new game', `up returns to new game (${await navText()})`)
 await press(A)
