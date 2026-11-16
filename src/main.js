@@ -9503,6 +9503,7 @@ const storySystem = new StorySystem({
     // free-roam damage wipe (_reseatTruckAtSpawnInner) is skipped and a truck broken in free roam
     // drove straight into the new run. Per-run state (SM-INV-8): the run starts here, so does the truck.
     damageModel.setAll(1)
+    damageScreen.clearAlert()        // BUG-184: the last truck's unread damage alert is not this one's
     partsSystem.start()              // SM-3: stock parts, new…
     rollJalopy({ parts: partsSystem, damage: damageModel, inventory: inventorySystem }, (Math.random() * 2 ** 32) >>> 0)   // …then this run's jalopy (SM-INV-7)
     inventorySystem.grant('packedLunch', 3)   // FEAT-173: mom's snack — every run starts with three packed lunches

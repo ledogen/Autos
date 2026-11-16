@@ -1905,8 +1905,9 @@ const STEPS = [
     // own world. Runs alone: SMOKE_STEPS=boot,newRun.
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     const truck = () => js(`JSON.stringify({ wheel: +window.__damage.get('wheelRR').toFixed(2), tire: +window.__damage.get('tireRR').toFixed(2),
-      flat: window.__damage.flat[3], collapsed: window.__damage.collapsed(3), rim: !!window.__vs.rimOnRoad?.[3] })`)
-    const whole = s => { const t = JSON.parse(s); return !t.flat && !t.collapsed && !t.rim && t.wheel > 0 && t.tire > 0 }
+      flat: window.__damage.flat[3], collapsed: window.__damage.collapsed(3), rim: !!window.__vs.rimOnRoad?.[3],
+      alert: document.getElementById('dmg-icon')?.classList.contains('on') ?? null })`)
+    const whole = s => { const t = JSON.parse(s); return !t.flat && !t.collapsed && !t.rim && !t.alert && t.wheel > 0 && t.tire > 0 }
     // The map's first frame on open: show() then one render(). A sheet rebuilt in slices (a budget, not Infinity) blits
     // the bitmap it already holds until it is done, which after a world change is the last world's. The window's size is
     // held (_sizeStale), as a player's is: a resize wipes the bitmap, and headless the map's width moves between opens.
@@ -1929,7 +1930,8 @@ const STEPS = [
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
       check(await until(() => js(live), 45000, 250), 'the wrecked run never went live')
       await skipAndReadLarry()
-      await js(`window.__damage.set('tireRR', 0); window.__damage.set('wheelRR', 0); window.__damage.flat[3] = true`)
+      await js(`window.__damage.set('tireRR', 0); window.__damage.set('wheelRR', 0); window.__damage.flat[3] = true
+        document.getElementById('dmg-icon').classList.add('on')`)   // the damage alert, unread
       await simFor(0.5)
       check(await js('!!window.__vs.rimOnRoad?.[3]'), `the wreck is not on its rim: ${await truck()}`)
       await mapFirst(false)   // the map's sheet now holds this world

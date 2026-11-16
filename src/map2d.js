@@ -1157,6 +1157,8 @@ export class Map2D {
         this._regionFrozen = null   // BUG-68: a new seed / road params is a new world to freeze
         this._bgDirty = true        // the cached sheet shows the old world — see show()
         this._bgJob = null          // …and so would a half-built one
+        this._bgZoom = 0            // BUG-184: …so nothing is valid to blit: the first frame builds the new sheet whole,
+                                    // as a first open does, rather than show the last world under a sliced rebuild
         // FEAT-17: re-apply the water no-go so the fresh instance routes around ponds like play does.
         if (this._waterNoGoFns) this._road.setWaterNoGo(this._waterNoGoFns[0], this._waterNoGoFns[1])
         // PERF-30: register with the network-Worker client (whole builds off-thread — see _pump).
