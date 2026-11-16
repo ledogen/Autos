@@ -158,7 +158,9 @@ dive (docs).
 **Closed 11-15:** PERF-49, BUG-173, BUG-176, BUG-178, FEAT-34, FEAT-221, BUG-174, BUG-175, BUG-177.
 
 **Landed 11-16:** BUG-182 (baked pictures redraw after a GPU reset; test/gpu-reset.mjs; closed), land/rankui-b (rank UI variant B only, letter 34 px centred; DEC-298 supersedes DEC-292; QUAL-36 stays open for its DEC-252/253 and missions.md leftovers), FEAT-229 dive revision 2 + DEC-299 (24 h, 07:00, same time/place/day played or skipped). Smoke green after each.
-**RUNNING:** nothing.
+**Also landed 11-16 (smoke green each):** land/gps-flat (start arrow flat on the road, DEC-303), land/light-cull (station light out of the scene beyond 200 m, DEC-300), BUG-183 (`_menus` + `_closeMenus()` on every teleport/mode change; closed), items audit of FEAT-121, FEAT-230 slice 1 (potato, cooking kit +20 %, DEC-310). Docs: DEC-301 (deadline on the job's own time; FEAT-228 closed), DEC-302 (top parts by region and shop), PERF-51 ticket (clustered/deferred lighting, post alpha).
+**RUNNING (11-16):** a · land/feat-229 · Opus: tutorial rebuild, option 1 (joint, errands first) with the owner's dive note; DEC-304..308 are its ids; expect one list of placeholder lines for the tutorial-test-drives card. s · land/feat-231 · Opus: bed friction (mat 0.30, bedliner 0.60). c · land/feat-232 · Sonnet: snacks, burger, dinner meal. NEXT on c: FEAT-230 slice 2 (fresh clock, cooler, ice), then slice 3 (groceries; farm reward).
+**RULE (owner 11-16):** never leave lanes idle: with nothing owner-answered waiting, mint tickets from the ratified backlog (FEAT-121 § Audit 2026-11-16 lists what is buildable) and build.
 **BUILT, HELD for the owner:** land/bug-171 @ 84819898 (CarGame-content): option 2 plus a continuous leg foot in
   `_projectLegNearNode` (src/road.js +88/−48; fixes BY CONSTRUCTION, no averaging, DEC-260). Nine-seed census: step
   sites 909 → 88, ≥ 30 cm 63 → 7. Gates 75/75. Card bug171-option3-look (dive). On the answer: record DEC-261, land,
@@ -173,7 +175,7 @@ feat215-start-arrow-2 (board is edge-on from the road: flat / offset / face view
 FEAT-226 (bay light contained by walls, no real-time shadows per DEC-227), FEAT-223, FEAT-224 (cost first), the other
 ~5.5 % of FEAT-180's +9 % GPU (next suspect the sky's 5-layer noise; not routed).
 **HELD:** PERF-50 (Windows machine), QUAL-33 (ask before changing T promotion), a PERF-40 bench window.
-**Next free orchestrator DEC:** 300. (296 = bay light +20 %, with the Spare agent; 297 = start board behind the start + tutorial legs, Lane U on land/gps-1116b.) (260 used; 261 is reserved for the BUG-171 option-3 answer.)
+**Next free orchestrator DEC:** 313 (304–308 Lane A, 311 Spare, 312 Lane C). (296 = bay light +20 %, with the Spare agent; 297 = start board behind the start + tutorial legs, Lane U on land/gps-1116b.) (260 used; 261 is reserved for the BUG-171 option-3 answer.)
 **Dev servers up:** :8000 main (loopback) · :8001 main on Tailscale (Windows: http://m4air:8001) · :3731 Lane A ·
 :3885 Spare · :8010 dashboard.
 **Gotchas learned 11-15:** (1) agents can stall for hours on a background wait that never wakes them: if a lane is
