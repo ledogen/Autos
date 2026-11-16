@@ -5555,6 +5555,11 @@ function _campGateText () {
 // from a latch the player did not pull. The latch is sticky (a tap sets it and it stays), so polling
 // at the prompt's ~10 Hz cadence cannot miss a real pull.
 let _prevParkedForPoi = true
+// BUG-178: a tow lands parked and owes its destination's answer (the pump, the service screen). The edge above is
+// spent by the first poll whatever it finds, and a poll that ran while reach was still null left the truck on the
+// lift with the prompt up and no screen. So the tow's answer is owed until the pump or the shop takes it, or the
+// brake comes off. It answers only those two: an ordinary pull anywhere else is untouched.
+let _towOwed = false
 
 // FEAT-102: the fetch prompts. "park to acquire mission item" in reach of the pickup; after the
 // latch, "get back to …!" for FETCH_HOME_MSG_S. Returns true when it owns the prompt this poll.
@@ -5888,8 +5893,7 @@ const _SERVICE_CENTER = q => q.type === 'autoShop'
 /**
  * Pay for a tow and land at `seat`. The seat is teleportToGround's minus its side effects: no "spawn
  * point set" toast, and the R spawn is put back afterwards — a tow is a trip, not a new home. The
- * truck lands parked; clearing the edge detector lets the next poll answer the brake at once (the
- * pump opens, the service screen opens).
+ * truck lands parked and owes the destination its answer (_towOwed): the pump opens, the service screen opens.
  */
 function _towTo (t, seat) {
   if (!t || !economySystem.spend(t.price)) return
@@ -5901,7 +5905,7 @@ function _towTo (t, seat) {
   daySystem.advanceMinutes(t.hours * 60)
   void _reseatTruckAtSpawn().then(() => {
     _spawnOverride = prev
-    _prevParkedForPoi = false
+    _towOwed = true
   })
 }
 // BUG-114: the seat is poi.js towSeat — a pump zone, a park box (FEAT-178: the shop's lift), or a keyless pad's
@@ -6187,6 +6191,7 @@ function _updateParkTriggers (zParked = false) {
   const parked = !!vehicleState.parked
   const pulled = parked && !_prevParkedForPoi
   _prevParkedForPoi = parked
+  _towOwed &&= parked
 
   // FEAT-102: a FETCH's pickup outranks everything below — while one is out, parking at the pickup
   // is the only thing the brake means there. The item is acquired the instant the brake latches
@@ -6207,7 +6212,8 @@ function _updateParkTriggers (zParked = false) {
   const pump = fuelStop.isOpen ? null : _pumpInReach()
   if (fuelStop.isOpen || pump) {
     damageScreen.blocked = true
-    if (pump && pulled) {
+    if (pump && (pulled || _towOwed)) {
+      _towOwed = false
       fuelStop.open(pump.id, _pumpPrice(pump), inventorySystem.cans())   // the cans fill on the same counter
       playNozzle()
       _tut('tut-fuel')   // FEAT-147
@@ -6227,7 +6233,8 @@ function _updateParkTriggers (zParked = false) {
   if (serviceScreen.isOpen || shop) {
     // FEAT-212: an open service screen hands the damage screen over (its Vehicle Diagnostics); a storefront's never.
     damageScreen.blocked = !serviceScreen.isOpen || serviceScreen.store
-    if (shop && pulled) {
+    if (shop && (pulled || _towOwed)) {
+      _towOwed = false
       const store = _openShop(shop)
       if (!store) _tut('tut-service')   // FEAT-147
       if (!store && _eveningLeg() && damageModel.flat.some(Boolean)) _tut('tut-shopfix')   // FEAT-184 stage 4: towed here
