@@ -1,5 +1,7 @@
 # Autos — Cargo master list
 
+**The main character is Billy (DEC-343).** "The player" means the person at the controls; "Billy" the character in the story.
+
 **Downstream of DESIGN.md, `missions.md` §3 and `items.md` §4.** Where they disagree, those win.
 This file is the burn-down list. It names every thing a delivery can carry, grouped by delivery
 type, and within each type tiered **early → late game** by how valuable or demanding the job is.

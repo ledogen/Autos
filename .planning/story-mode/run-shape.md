@@ -3,6 +3,8 @@
 *Working design notes, 2026-07-29. Downstream of `DESIGN.md`. Candidate for promotion into a
 DESIGN.md mechanics-reference section once the save model is settled.*
 
+**The main character is Billy (DEC-343).** "The player" means the person at the controls; "Billy" the character in the story.
+
 ---
 
 ## The target [RATIFIED 2026-08-02 — supersedes the 2026-07-29 and 2026-08-01 figures]
