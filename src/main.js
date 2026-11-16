@@ -10735,7 +10735,10 @@ function loop (t) {
     // time at the driving rate (its elapsed, rank and deadline), whichever hold also applies (a parked menu included).
     if (!clockHeld(!!_campUi && _campUi.mode !== 'confirm', serviceScreen.isOpen, _tutDrive(), vehicleState.parked)) daySystem.update(PHYSICS_DT)
     else if (vehicleState.parked) _spendParked(PHYSICS_DT / secPerGameH())
-    inventorySystem.tick(daySystem.clockH())   // FEAT-230 slice 2: the fresh clock follows the world clock, sleeps and skips too
+    // FEAT-230 slice 2: the fresh clock follows the world clock, sleeps and skips too. DEC-339 (draft): it holds for the
+    // whole tutorial, as wear does (DEC-151) — mom's packed lunches (fresh 24 h) must still be there at the next
+    // morning's breakfast, 24 h after the firing.
+    inventorySystem.tick(daySystem.clockH(), _inTutorial())
     if (!vehicleState.parked && _parkSpend.size) _flushParkSpend()
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)

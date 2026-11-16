@@ -353,10 +353,10 @@ export class InventorySystem {
      * rate first, each chill `holds` units of food (youngest first, so a stack bigger than the room keeps its oldest
      * out and that one goes first); a unit's cold hours stop when its cooler's ice does, mid-jump included.
      */
-    tick (nowH) {
+    tick (nowH, held = false) {
         const dH = nowH - (this._lastH ?? nowH)
         this._lastH = nowH
-        if (!(dH > 0)) return
+        if (held || !(dH > 0)) return   // held: the hours pass unaged (the tutorial, DEC-339)
         const E = runInventory.entries
         const coolers = E.filter(e => ITEMS[e.id].coolRate && e.iceH > 0)
             .sort((a, b) => ITEMS[a.id].coolRate - ITEMS[b.id].coolRate).map(c => ({ c, room: ITEMS[c.id].holds }))
