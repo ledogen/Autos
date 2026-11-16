@@ -126,9 +126,9 @@ export const ITEMS = {
     daypack:      { name: 'Daypack',       kind: 'pack',       massKg: 0.8, packSlots: 2, reachM: 100,
                     desc: 'A light nylon daypack. Not much room, but it lets you camp a long way off the road.' },
     duffel:       { name: 'Duffel',        kind: 'pack',       massKg: 3,   packSlots: 6, reachM: 15,
-                    desc: 'A big canvas duffel. Takes the lot, but you won\'t haul it far from the road.' },
+                    desc: 'A big canvas duffel. Takes it all, but you won\'t haul it far from the road.' },
     rucksack:     { name: 'Rucksack',      kind: 'pack',       massKg: 2,   packSlots: 4, reachM: 60,
-                    desc: 'An old canvas rucksack with a top flap. Room for a proper camp, a fair way in.' },
+                    desc: 'An old canvas rucksack with a top flap. Room for a proper camp.' },
     framePack:    { name: 'Frame pack',    kind: 'pack',       massKg: 3.5, packSlots: 6, reachM: 120,
                     desc: 'A big bag on an aluminium frame. Carries everything, farther than the daypack even.' },
 
