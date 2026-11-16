@@ -90,7 +90,7 @@ import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, ba
 import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
 import { ITEMS, foodHoldH } from '../data/items.js'
-import { PartsSystem, runParts } from './parts.js'       // SM-3: what is bolted onto the truck this run
+import { PartsSystem, runParts, modModels } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
 import { startShelves, shelf, shelfPrice, take as takeShelf, shelfName, nextStockH, runShelves, SHOP_TYPES } from './shop-stock.js'   // FEAT-137: each shop's rotating shelf; R-24 the new-stock clock; FEAT-104 the storefronts
@@ -1435,7 +1435,10 @@ window.__damage = damageModel   // debug panel + the damage GUI read this
 const partsSystem = new PartsSystem({ params: RANGER_PARAMS, damage: damageModel, onChange: () => {
   TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL, partsSystem.loadUpgrades())
   damageModel.publish(RANGER_PARAMS)
+  setMods(modModels(runParts.fitted))   // FEAT-204: the bolt-ons on the truck (setMods: createVehicleModel, below; never called before it)
+  inventoryScreen.render()              // …and the slots a roof rack adds or takes away
 } })
+window.__parts = partsSystem   // dev handle — test/cdp-smoke.mjs fits the FEAT-204 bolt-ons
 // The diagnostic readout, toggled from the debug panel's Damage folder. Hidden by default and free
 // while hidden; it is how a drive's wear is evaluated, since wear rates and a tenth-of-a-second
 // impact are otherwise invisible from behind the wheel.
@@ -2004,7 +2007,7 @@ const dirtSpraySystem = new DirtSpraySystem(scene, RANGER_PARAMS)
 // Vehicle visual model (body, wheels, lights) + per-frame mesh sync now live in
 // src/vehicle-model.js. syncMeshesToState(state) is called once per render frame below.
 const { carGroup, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, getHeadlightMode, prewarmLightPrograms,
-  compileLightState, LIGHT_STATE_COUNT, setBoreShade, setBakedShade, headlightSpots } = createVehicleModel(scene, RANGER_PARAMS)
+  compileLightState, LIGHT_STATE_COUNT, setBoreShade, setBakedShade, headlightSpots, setMods } = createVehicleModel(scene, RANGER_PARAMS)
 FAR_SHADOW_HIDE.push(carGroup)   // BUG-78: the truck never casts into the far shadow cascade
 
 // ── FEAT-16: 2D top-down map (dev/validation overlay, toggle M) ──────────────────
@@ -3775,7 +3778,7 @@ function _pourStopLeak () {
 // One grant path (rewards now; the shop and finds later). Stowed kit is real load: every change
 // pushes its mass onto the chassis. start() empties it when the region goes live (story deps).
 const inventorySystem = new InventorySystem({
-  slotCap: () => RANGER_PARAMS.inventorySlots,
+  slotCap: () => RANGER_PARAMS.inventorySlots + partsSystem.extraSlots(),   // FEAT-204: the roof rack's +4
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
   onChange: () => { inventoryScreen.render(); campGear.refresh(inventorySystem.packed()); _syncItemChoice()
     setBedGrip(physicsEngine, vehicleChassis, inventorySystem.bedMu()) },   // FEAT-231: a mat / liner owned lies on the bed floor   // packing at camp re-dresses it; FEAT-199: room made

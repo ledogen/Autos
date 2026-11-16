@@ -445,6 +445,8 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // GLB headlight lens materials (front split of the shared white-lens material); populated on load.
   // Declared here so applyHeadlights() (called just below) can reference it without a TDZ error.
   const modelHeadMats = []
+  // FEAT-204: the bolt-on light bar's `LightBarReflector` materials, lit with the headlights (setMods loads them).
+  const modReflectorMats = []
 
   // Day/night factor for the CAST beams: 0 = full day (pools dimmed toward LIGHT_ENV.dayScale),
   // 1 = night (full strength). Fed from the sky system each frame via setNightFactor().
@@ -520,7 +522,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
       m.color.setHex(on ? lensHex : 0x555555)
     }
     // Imported-model headlight lens (front split of the shared white-lens material).
-    for (const m of modelHeadMats) {
+    for (const m of [...modelHeadMats, ...modReflectorMats]) {
       m.emissive.setHex(on ? lensHex : 0x000000)
       m.emissiveIntensity = lensIntensity
     }
@@ -531,7 +533,6 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
       const sx = Math.sign(s.position.x) || 1
       s.color.setHex(lensHex)
       s.map       = high ? highCookie.tex : lowCookie.tex
-      s.distance  = high ? HEAD_TUNE.highDistance : HEAD_TUNE.lowDistance
       s.angle     = high ? HEAD_TUNE.highAngle    : HEAD_TUNE.lowAngle
       s.penumbra  = high ? HEAD_TUNE.highPenumbra : HEAD_TUNE.lowPenumbra
       s.target.position.set(sx * 0.60, high ? HEAD_TUNE.highAimY : HEAD_TUNE.lowAimY, high ? HEAD_TUNE.highAimZ : HEAD_TUNE.lowAimZ)
@@ -866,7 +867,13 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     // Per-lamp output = flicker level × the wear dimming damage.js publishes (absent = a stock lamp).
     const dim = params._headlightBrightness
     const lampGain = (i) => lampLevel[i] * (dim?.[i] ?? 1)
-    for (let i = 0; i < 2; i++) headlightSpots[i].intensity = headCast * castScale * lampGain(i)
+    // FEAT-204: a fitted light bar burns with the headlights through these two spots (no lamp of its own, DEC-229):
+    // intensity × headlightGain, range × headlightReach (data/parts.js lightBar; 1 / 1 without one).
+    const reach = (headlightMode === 2 ? HEAD_TUNE.highDistance : HEAD_TUNE.lowDistance) * (params.headlightReach ?? 1)
+    for (let i = 0; i < 2; i++) {
+      headlightSpots[i].intensity = headCast * castScale * lampGain(i) * (params.headlightGain ?? 1)
+      headlightSpots[i].distance = reach
+    }
     // The lens glow follows its lamp's flicker (applyHeadlights sets colour; intensity is per frame).
     const lensBase = headlightMode === 0 ? 0 : (headlightMode === 2 ? HEAD_TUNE.lensHigh : HEAD_TUNE.lensLow)
     for (const m of modelActive ? modelHeadMats : headlightMats) m.emissiveIntensity = lensBase * lampGain(m.userData.lamp)
@@ -1133,7 +1140,38 @@ float rsBakedShade () {
     }
     for (const w of wheelMeshes) w.visible = stripped > 0   // show procedural wheels only if we removed the model's
     modelActive = true
+    modBody = root   // FEAT-204: AFTER the strip above, which would hide a small root child
+    setMods(modWant)
   }, undefined, (err) => console.warn('[vehicle-model] GLB load failed; keeping primitive truck:', err))
+
+  // ── FEAT-204: bolt-on models (data/parts.js `model`; src/parts.js modModels picks the stems) ─────────
+  // Each .glb is authored in ranger.glb's frame (ASSET-85..89), so it is a child of the loaded body at identity.
+  // Loaded once, on the first fit, then only shown or hidden. Nothing before the body loads (and nothing on the
+  // primitive fallback truck).
+  const mods = new Map()   // stem → its scene, or null while it loads
+  let modBody = null, modWant = []
+  function setMods (stems) {
+    modWant = stems
+    if (!modBody) return
+    for (const stem of stems) {
+      if (mods.has(stem)) continue
+      mods.set(stem, null)
+      new GLTFLoader().load(`assets/models/${stem}.glb`, (g) => {
+        g.scene.name = 'mod:' + stem
+        g.scene.traverse((o) => {
+          if (!o.isMesh) return
+          o.castShadow = true
+          for (const m of [o.material].flat()) if (m?.name?.includes('LightBarReflector')) modReflectorMats.push(m)
+        })
+        shadeInBore(g.scene)   // BUG-112: as the body's materials
+        modBody.add(g.scene)
+        mods.set(stem, g.scene)
+        applyHeadlights()      // a reflector that arrives with the lamps on lights at once
+        setMods(modWant)
+      }, undefined, (err) => console.warn(`[vehicle-model] ${stem}.glb failed to load:`, err))
+    }
+    for (const [stem, o] of mods) if (o) o.visible = modWant.includes(stem)
+  }
 
   // PERF-21: every light-COUNT state the lamps can put the scene in. A lit material's program is
   // keyed on counts (spots, spots carrying a cookie map — the headlights — and point lights), not on
@@ -1206,5 +1244,5 @@ float rsBakedShade () {
 
   shadeInBore(carGroup)   // BUG-112: the procedural parts (wheels, the primitive shell)
   return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, getHeadlightMode,
-    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade, setBakedShade, headlightSpots }   // BUG-133: the billboards read the head spots
+    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade, setBakedShade, headlightSpots, setMods }   // BUG-133: the billboards read the head spots
 }

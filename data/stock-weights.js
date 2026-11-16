@@ -73,6 +73,10 @@ export const STOCK_WEIGHT = {
     // 2026-10-22) = Hardly ever, the lowest tier
     rubberBedMat:     4,
     bedliner:         0.25,
+    // FEAT-204 bolt-ons [DEFAULT] Rarely, the lift kit's tier (the other visible off-road part; DEC-342 draft)
+    roofRack:         1,
+    bullBar:          1,
+    lightBar:         1,
 
     // Camp gear (FEAT-168 camp-gear-source, owner 2026-11-06: "camp + shelf") [DEFAULT]: the four the owner
     // named are shelf stock as well as rewards; the bed layers below them are rewards only.

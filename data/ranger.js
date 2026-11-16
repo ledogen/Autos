@@ -65,6 +65,10 @@ export const RANGER_PARAMS = {
   // FEAT-122: inventory slots on the stock truck (owner, 2026-10-16). Bed parts (FEAT-115) raise it.
   // (The stowed kit's mass rides as `stowedKg`, set at runtime by main.js — see syncChassisMass.)
   inventorySlots: 8,
+  // FEAT-204: the light bar's boost on the two head spots (src/vehicle-model.js): intensity × gain, range × reach.
+  // 1 / 1 = no light bar (data/parts.js lightBarNone).
+  headlightGain:  1,
+  headlightReach: 1,
 
   // ── Drivetrain (FEAT-23 Phase 1: engine → torque converter → automatic gearbox → final drive) ──
   // Replaces the old flat maxDriveTorque/maxReverseTorque stub. The chain lives in src/drivetrain.js,
