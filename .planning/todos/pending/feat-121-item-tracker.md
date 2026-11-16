@@ -744,10 +744,10 @@ Shovel row says `campGateUnevenM` 1.2 m but the code value is 1.5 m.
 
 | Row | What is missing | Depends on | Buildable now? |
 |---|---|---|---|
-| Chili dog | 16 h spoilage | spoilage | item itself done; spoil clause blocked |
+| Chili dog | — (16 h built, FEAT-230 slice 2) | none | done |
 | Dinner meal | the food vendor's eat-in menu item ($5–10; invitation reward ships) | a menu UI at the vendor; price number | no: price is a range |
-| Burger | whole item: ITEMS, $5 vendor shelf, B–A reward, 16 h spoil | spoilage (clause only) | yes, minus spoilage |
-| Packed lunch | B–A reward row (residence, farm, vendor); 24 h freshness | spoilage (clause only) | yes, reward row |
+| Burger | whole item: ITEMS, $5 vendor shelf, B–A reward, 16 h spoil | none: `freshH: 16` is one field (FEAT-230 slice 2) | yes |
+| Packed lunch | B–A reward row (residence, farm, vendor) (24 h fresh built) | none | yes, reward row |
 | Bag of peanuts | C–B reward row; stack cap 3; find | stack caps; find | yes |
 | Gummy worms, Spicy chips, Candy bar | whole item, gas-station shelf, C–B reward, stack caps; thumbnails exist | none | needs price + mass numbers |
 | Rubber bed mat | visual (μ 0.30 and the shelf built, FEAT-231) | none | built at $8 [DEFAULT] |
@@ -756,7 +756,7 @@ Shovel row says `campGateUnevenM` 1.2 m but the code value is 1.5 m.
 | Rucksack (+ Daypack, Duffel, Frame pack, not ratified) | every source: shelf and reward | none | needs slots, reach, mass, price, gates |
 | GPS unit | whole item; minimap (new UI); story gate that boots the overlay off | none | needs price ($10–30 is a range) |
 | Bubble wrap, Furniture pad, Heavy-duty pad | whole items, spent at job take | cargo protection (FEAT-116, open) | no |
-| Ice, Cooler, Ice King | whole items, 72 h / 5 d ice clock, ×1/6 and ×1/8 rates | spoilage (no ticket) | no |
+| Ice, Cooler, Ice King | built (FEAT-230 slice 2); left: the cooler find, models | find system | — |
 | Chain | the log-drag constraint item | owner question: carried or mission-supplied | no |
 | Shortcut GPS | whole item | cuts, spirits | no |
 | Power mods (10) | modifier layer on `engines.js`, all ten | FEAT-189 (open) | ticket exists |
@@ -782,7 +782,7 @@ to say a surface-μ table ships, so check before building.
 
 ### Missing systems, by rows blocked
 
-1. **Spoilage** (items.md §1b, no ticket) — Ice, Cooler, Ice King, 4 fish, plus the spoil clause of Chili dog, Burger, Packed lunch, Groceries: 7 rows fully blocked, 4 partly.
+1. **Spoilage** (items.md §1b, no ticket) — Ice, Cooler, Ice King, 4 fish, plus the spoil clause of Chili dog, Burger, Packed lunch, Groceries: 7 rows fully blocked, 4 partly. **Built 2026-11-16 (FEAT-230 slice 2)**; fish wait on FEAT-37.
 2. **Find system** (world spawns, phase 3) — every `found` channel: about 20 rows lose only that channel.
 3. **Bed parts** (FEAT-115) — 5 rows (Extended bed, Flatbed, Stake bed, Roof rack, Light bar).
 4. **Cargo protection** (FEAT-116) — 3 rows (Bubble wrap, Furniture pad, Heavy-duty pad).
