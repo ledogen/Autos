@@ -1,7 +1,7 @@
 ---
 id: BUG-183
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-16
 source: owner, 2026-11-16, inbox — "I started a new game chose to go into the tour tutorial Drove until I got to the gas station and was filling up then I decided I don't want to play the tutorial and skipped it It skipped to the burger joint with more money in my pocket and the fuel dialogue was still open and I was able to continue pumping I Feel like we're lacking some sort of Event or state or checkpoint system to ensure that every variable is set properly when We leave story mode and come back into it or when we go to different parts of the tutorial and then skip it, etc. Definitely don't want a bunch of exploits to be possible because of silly oversights. If there's a way that other games handle this, maybe we should adopt something similar Otherwise I guess just paper over all the holes"
@@ -83,3 +83,4 @@ the counter is above zero, as it does for a full cart. `window.__openMenus()` is
   `_closeMenus` (main.js +38/−11). `SMOKE_STEPS=boot,skipMenus` PASS: clean · pump · shop (cart filled) · damage ·
   inventory · map · recovery, all closed, $13 and 10.23 gal on every one. Affected gates: 0 (main.js is smoke-only).
   Unverified: the full smoke on the branch (orchestrator smokes main after the merge).
+- 2026-11-16: landed on main ab82e43f, full smoke green incl. skipMenus (wip/orch/smoke-1116-183.log). Closed. Left open, none an exploit: pause menu and offer cards not in the list; a skip in the one frame a tow lands can leave _towOwed set.
