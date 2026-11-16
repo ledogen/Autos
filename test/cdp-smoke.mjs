@@ -587,7 +587,7 @@ const STEPS = [
     check(Math.abs(noKit - 4) < 0.01, `no kit: held ${noKit.toFixed(3)} h, not 4`)
     // No kit deployed: the camp card offers no groceries line (one bag is still aboard).
     check(await until(async () => !(await gcook()), 2000), 'the camp card offers a groceries line without the cooking kit')
-    await js(`(() => { const i = window.__inv; for (let k = i.list().length - 1; k >= 0; k--) if (i.list()[k].id === 'groceries') i.drop(k) })()`)
+    await js(`window.__inv.consume('groceries')`)   // consumed, not dropped: a dropped bag would sit under "Nearby on the ground" for the tires step
     // And away from camp, with the kit packed again: no bonus.
     await js('document.getElementById("cp-break")?.click()')
     check(await until(async () => !await camp(), 3000), 'break camp left the card up')
