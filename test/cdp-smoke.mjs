@@ -503,6 +503,44 @@ const STEPS = [
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
   }],
+  ['freshBar', async () => {
+    // FEAT-230 slice 2 (DEC-338): a chili dog's freshness bar sits at 6 o'clock over its thumbnail and shortens as the clock
+    // runs (2 h of its 16: 100 % → 87.5 %). Runs after inventory: SMOKE_STEPS=boot,story,inventory,freshBar. Picture:
+    // wip/fresh/bar.png. Leaves no row, no screen open, and the energy as it found it.
+    const open = () => js('document.getElementById("inv-screen").classList.contains("open")')
+    const wasParked = await js('window.__vs.parked')
+    if (!wasParked) { await tap(' '); check(await until(() => js('window.__vs.parked'), 1000), 'Space did not park') }
+    await js(`window.__inv.grant('chiliDog')`)
+    await sleep(100)   // a fixed step: the fresh clock seats the new unit
+    const bar = () => js(`(() => { const i = window.__inv.list().findIndex(r => r.id === 'chiliDog')
+      const s = document.querySelector('#inv-screen .inv-slot[data-slot="' + i + '"]'), b = s?.querySelector('.sl-fresh'), f = b?.firstChild
+      if (!f) return null
+      const S = s.getBoundingClientRect(), B = b.getBoundingClientRect()
+      return { w: f.getBoundingClientRect().width / B.width, dx: (B.left + B.right) / 2 - (S.left + S.right) / 2, dy: S.bottom - B.bottom } })()`)
+    await tap('Tab'); check(await until(open, 1000), 'Tab opened no inventory screen while parked')
+    const b0 = await bar()
+    check(b0 && b0.w > 0.99, `no full freshness bar on a new chili dog: ${JSON.stringify(b0)}`)
+    check(b0 && Math.abs(b0.dx) < 1.5 && b0.dy >= 0 && b0.dy < 8, `the bar is not at 6 o'clock over the thumbnail: ${JSON.stringify(b0)}`)
+    check(await js(`document.querySelector('#inv-screen .inv-slot[data-slot="0"] .sl-fresh') === null`), 'the Pack (no fresh time) shows a bar')
+    await tap('Escape'); await until(async () => !await open(), 1000)
+    const e0 = await js('window.__day().energyH()')
+    await js('window.__day().advanceMinutes(120)')
+    await sleep(100)
+    await tap('Tab'); await until(open, 1000)
+    const b1 = await bar()
+    check(b1 && Math.abs(b1.w - 0.875) < 0.02, `after 2 h the bar is ${b1 && (b1.w * 100).toFixed(1)} %, not 87.5 %`)
+    await sleep(200)
+    const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
+    mkdirSync('wip/fresh', { recursive: true }); writeFileSync('wip/fresh/bar.png', Buffer.from(shot.result.data, 'base64'))
+    await tap('Escape')
+    check(await until(async () => !await open(), 1000), 'Esc left the inventory open')
+    await js(`(() => { window.__inv.consume('chiliDog'); window.__day().setEnergy(${e0}) })()`)
+    check(!await js(`window.__inv.list().some(r => r.id === 'chiliDog')`), 'the chili dog row is left behind')
+    if (!wasParked) await tap(' ')
+    const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
+    if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
+    console.log(`  freshBar: ${(b0.w * 100).toFixed(1)} % → ${(b1.w * 100).toFixed(1)} % after 2 h; centred ${b0.dx.toFixed(1)} px, ${b0.dy.toFixed(1)} px off the bottom`)
+  }],
   ['campGear', async () => {
     // FEAT-66: what is packed is what stands at camp. A pad at the truck, a packed tent → the tent
     // loads at its slot, beside the starter bedroll (ASSET-78); repacking while the camp is up re-dresses it (tent out, awning in); hiding
