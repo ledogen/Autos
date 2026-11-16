@@ -125,7 +125,7 @@ import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift
 import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
-import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
+import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, playPaperThrow, playPaperSlap, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG, tenPctG, meterPos } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -4347,6 +4347,7 @@ document.addEventListener('keyup', e => {
     return
   }
   const hit = _throwRoll()
+  if (hit && throwingPaper) { playPaperThrow(); setTimeout(playPaperSlap, hit.t * 1000) }   // FEAT-64: whoosh now, slap at the landing
   // No landing (off a cliff, or aimed at the sky) means the solver never produced a throw at all —
   // nothing was drawn and nothing will ever score, so the paper goes back in the truck. Otherwise
   // an aim at the horizon would silently eat inventory AND leave the route unable to end on it.
