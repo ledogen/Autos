@@ -15,9 +15,8 @@ sockets, sold on the auto shop's rotating shelf and fitted at the service center
 - Bull bar: $35, 22 kg stowed; while fitted the front panel (`armorFront`) wears 1.5× slower under the same hit.
 - Light bar: $25, 8 kg stowed; burns with the headlights (L): the two head beams × 2 intensity and × 1.47 reach.
 - Shelf odds: each "Rarely" (weight 1), the lift kit's tier. Fitting labour: rack 1 h, bull bar 1.5 h, light bar 1 h.
-- Rewards (FEAT-168's rule: every part is one, under its slot's category, at A–S for an uncommon part): the rack in
-  `bed` (work site, firewood yard), the bull bar in `suspension` (with the lift kit), the light bar in `engine` (with the
-  headlights).
+- Rewards (FEAT-168's rule: every part is one, under its slot's category, at A–S for an uncommon part): all three in
+  `bed`, the bed upgrades' category (FEAT-115), so the work site and the firewood yard hand them out.
 - Thumbnails: the rack and bull bar borrow the lift kit's icon, the light bar the headlight's, until their own exist.
 
 **Why.** The owner gave the slots, not the rest. Prices sit by their neighbours: the lift kit $30, the helical LSD
