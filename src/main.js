@@ -110,7 +110,7 @@ import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './th
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
-import { AlertCycle } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
+import { AlertCycle, wordAction, stepOf, wearLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -1287,34 +1287,45 @@ const _MACHINE_WORD = [
   // the air filter and the oil at their wear thresholds. Spring and body-panel damage stay sound-only.
   ...(_CORNER_NAME.map(c => [null, `the ${c} wheel is bent`])),
   ...(_CORNER_NAME.map(c => [null, `the ${c} tire is flat`, `the ${c} tire failed`])),
-  [null, 'the air filter is clogging'],
-  [null, 'the oil is worn'],
+  [null, 'the air filter is dirty', 'the air filter is very dirty'],
+  [null, 'the oil is dirty', 'the oil is very dirty'],
 ]
+// FEAT-216 / DEC-327: critical failures stay up while true (a failed wheel, a flat or failed tire); the other words
+// re-report at each further 10 % lost. Slots: 0 engine · 1-4 wheel · 5-8 bent · 9-12 tire · 13 filter · 14 oil.
+const _isCrit = (i, l) => (i >= 1 && i <= 4 && l === 2) || (i >= 9 && i <= 12)
 // DEC-287: #machine-word is the general alerts area. Every alert opens into `_alerts`, which shows ONE at a time, 2 s
 // each, round-robin. A machine word stays open ALERT_WORD_S (its old 4 s fade) or until its level falls back; "Wrong way.
 // Turn around" is open while the GPS says the truck points against the route.
 const _alerts = new AlertCycle()
 const ALERT_WORD_S = 4
 let _wordLevels = null
+let _wordSteps = null
 const _wordExpiry = new Map()   // alert id -> performance.now() ms it closes
 function _machineWords () {
-  if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) { _wordLevels = null; return }
+  if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) {
+    // a new run / the menu: no word of the last truck survives (BUG-184 resets the damage baselines the same way)
+    for (let i = 0; i < _MACHINE_WORD.length; i++) { _alerts.close('w' + i); _wordExpiry.delete('w' + i) }
+    _wordLevels = null; return
+  }
   const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
-  const now = [lv(damageModel.get('engine')), ...WHEEL_IDS.map(id => lv(damageModel.get(id))),
-    ...WHEEL_IDS.map(id => damageModel.get(id) <= 0.9 ? 1 : 0),
-    ...TIRE_IDS.map((id, i) => damageModel.get(id) <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
-    damageModel.get('airFilter') < DAMAGE_PARAMS.filterKnee ? 1 : 0,
-    damageModel.get('oil') < DAMAGE_PARAMS.oilKnee ? 1 : 0]
+  const cond = [damageModel.get('engine'), ...WHEEL_IDS.map(id => damageModel.get(id)), ...WHEEL_IDS.map(id => damageModel.get(id)),
+    ...TIRE_IDS.map(id => damageModel.get(id)), damageModel.get('airFilter'), damageModel.get('oil')]
+  const now = [lv(cond[0]), ...WHEEL_IDS.map((id, i) => lv(cond[1 + i])),
+    ...WHEEL_IDS.map((id, i) => cond[5 + i] <= 0.9 ? 1 : 0),
+    ...TIRE_IDS.map((id, i) => cond[9 + i] <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
+    wearLevel(cond[13]), wearLevel(cond[14])]
+  const steps = cond.map(stepOf)
   now.forEach((l, i) => {
-    const prev = _wordLevels?.[i] ?? l
-    if (l < prev || l === 0) { _alerts.close('w' + i); _wordExpiry.delete('w' + i) }   // fixed: the word goes
-    if (l > prev) {
-      _alerts.close('w' + i)   // a worse level replaces the milder word
-      _alerts.open('w' + i, _MACHINE_WORD[i][l], l === 2)
-      _wordExpiry.set('w' + i, performance.now() + ALERT_WORD_S * 1000)
+    const prev = _wordLevels?.[i] ?? l, crit = _isCrit(i, l), id = 'w' + i
+    const act = wordAction(prev, l, steps[i], _wordSteps?.[i] ?? steps[i], crit)
+    if (act !== 'none') { _alerts.close(id); _wordExpiry.delete(id) }
+    if (act === 'show') {
+      _alerts.open(id, _MACHINE_WORD[i][l], l === 2)
+      if (!crit) _wordExpiry.set(id, performance.now() + ALERT_WORD_S * 1000)
     }
+    if (crit) _alerts.open(id, _MACHINE_WORD[i][l], l === 2)   // a no-op while open; raises it on a loaded run too
   })
-  _wordLevels = now
+  _wordLevels = now; _wordSteps = steps
 }
 /** Per frame: expire old words, mirror the GPS wrong-way flag, and paint the alert the cycle shows. */
 function _paintAlerts (dt) {
