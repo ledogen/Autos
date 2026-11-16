@@ -112,6 +112,7 @@ example a bug that won't block the alpha.
 | BUG-64 | walls between close roads: the class-A part left would move routes; owner, 2026-11-07: "dont take the bug64 fix. its not bothering me" |
 | FEAT-206 | brake heating: fade and runaway on a long descent with an overweight load (owner, 2026-11-13: "post alpha") |
 | FEAT-208 | phone calls: pay time or battery to learn what a place has (owner, 2026-11-13: "post alpha idea") |
+| PERF-51 | clustered or deferred lighting, so a light costs only where it reaches (owner, 2026-11-16: "post alpha") |
 
 Tickets get minted into `.planning/todos/pending/` **at milestone entry, not all up front** — the
 design has open questions (DESIGN.md §Open questions) and minting everything now would freeze answers
