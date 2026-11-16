@@ -9,8 +9,9 @@
 // trunk (r 0.35 m: a 0.30 m trunk × trunkRadiusScale 1.15) stands with its axis on the rear axle line, its surface
 // GAP m outboard of the body's widest point, so the lateral speed at contact is close to the launch speed.
 //
-//   node test/side-tree-wheel.mjs [--mph=5,10,15,20,30,40]   prints the table
-//   As a gate (test/gates.mjs): 10 and 15 mph leave the struck wheel usable (≥ 50 %, not collapsed); 40 mph does not.
+//   node test/side-tree-wheel.mjs --mph=5,10,15,20,30,40 [--armor=1]   prints the table (no gate)
+//   node test/side-tree-wheel.mjs   the gate (test/gates.mjs): the tire meets a trunk at its real width; a 10 and a 15 mph
+//   side hit meet the body first and leave the wheel and tire usable; a 40 mph one still lands on the left armor.
 
 import * as THREE from 'three'
 import { RANGER_PARAMS } from '../data/ranger.js'
@@ -93,15 +94,46 @@ export async function sideHit (mph, { seconds = 1.5, armor = 1 } = {}) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const a = process.argv.find(s => s.startsWith('--mph='))
-  const speeds = (a ? a.slice(6) : '5,10,15,20,30,40').split(',').map(Number)
-  const b = process.argv.find(s => s.startsWith('--armor='))
-  const armor = b ? Number(b.slice(8)) : 1
+async function table (speeds, armor) {
   console.log(`armor ${armor}`)
   console.log('mph | v@touch | first touch          | body J N·s | sidewall cm | rim road kN | rim core kN | bump kN | impacts     | wheel RL | tire RL     | armor L')
   for (const mph of speeds) {
     const r = await sideHit(mph, { armor })
     console.log(`${String(mph).padStart(3)} | ${(r.vAt ?? 0).toFixed(1).padStart(7)} | ${r.firstTouch.padEnd(20)} | ${r.peakJ.toFixed(0).padStart(10)} | ${(r.peakSquash * 100).toFixed(1).padStart(11)} | ${(r.peakRimRoad / 1e3).toFixed(1).padStart(11)} | ${(r.peakRim / 1e3).toFixed(1).padStart(11)} | ${(r.peakBump / 1e3).toFixed(1).padStart(7)} | ${r.landed.join(' ').padEnd(11)} | ${(r.wheel * 100).toFixed(0).padStart(5)} %${r.collapsed ? ' C' : '  '} | ${(r.tire * 100).toFixed(0).padStart(4)} %${r.flat ? ' flat' : '     '} | ${(r.armor * 100).toFixed(0).padStart(5)} %`)
   }
+}
+
+const argv = (k) => { const a = process.argv.find(s => s.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : null }
+if (argv('mph')) {
+  await table(argv('mph').split(',').map(Number), Number(argv('armor') ?? 1))
+} else {
+  let fail = 0
+  const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fail = 1 }
+  console.log('§1 a wheel meets a trunk as the tire cylinder (world-contacts.js), not as a sphere of its radius')
+  {
+    const P = RANGER_PARAMS, R = P.wheelRadius, hw = P.wheelWidth / 2, A = { x: 1, y: 0, z: 0 }
+    const at = (x, z) => makeQueryContacts({ params: P, groundH: () => -10, groundN: () => ({ x: 0, y: 1, z: 0 }), props: () => ({
+      queryProps (cx, cy, cz, r, out) {
+        const h = sphereVsCapsule(cx, cy, cz, r, x, -5, z, x, 5, z, TRUNK_R)
+        if (h) out.push({ normal: new THREE.Vector3(h.nx, h.ny, h.nz), depth: h.depth, contactPoint: new THREE.Vector3() })
+        return out
+      } }) })(0, 0, 0, R, true, A)
+    const beside = at(hw - 0.01 + TRUNK_R, 0), clear = at(hw + 0.01 + TRUNK_R, 0), ahead = at(0, -(R - 0.05 + TRUNK_R))
+    ok(beside.length === 1 && Math.abs(beside[0].depth - 0.01) < 1e-6, `a trunk 1 cm inside the sidewall plane: 1 cm deep (${beside[0]?.depth.toFixed(4)} m; the sphere read ${(R - hw + 0.01).toFixed(3)})`)
+    ok(clear.length === 0, 'a trunk 1 cm outboard of the sidewall: no contact (the sphere felt it 24 cm deep)')
+    ok(ahead.length === 1 && Math.abs(ahead[0].depth - 0.05) < 1e-6, `a trunk on the tread: the sphere's depth, unchanged (${ahead[0]?.depth.toFixed(4)} m) — a tread strike still reaches the rim`)
+  }
+  console.log('§2 a 10 and a 15 mph side hit at the rear wheel: the body takes it, the wheel and tire stay usable')
+  for (const mph of [10, 15]) {
+    const r = await sideHit(mph)
+    ok(r.firstTouch.startsWith('body'), `${mph} mph: first touch ${r.firstTouch} (was the wheel, 23 cm before the body could)`)
+    ok(!r.flat && r.wheel >= 0.5 && !r.collapsed, `${mph} mph: wheel RL ${(r.wheel * 100).toFixed(0)} %, tire ${r.flat ? 'FLAT' : 'holding air'} (was pinch-flatted at 15)`)
+  }
+  console.log('§3 a 40 mph one still lands: priced on the left armor')
+  {
+    const r = await sideHit(40)
+    ok(r.landed.length > 0 && r.armor < 1, `40 mph: impacts ${r.landed.join(' ')} mph, left armor ${(r.armor * 100).toFixed(0)} %`)
+  }
+  console.log(fail ? '\nFAIL — a side hit reaches the wheel before the body' : '\nPASS — a side hit on a tree meets the body; the tire is its real width')
+  process.exit(fail)
 }
