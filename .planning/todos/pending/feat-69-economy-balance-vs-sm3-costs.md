@@ -13,6 +13,19 @@ relates_to: >
 
 # FEAT-69: Balance the payout ramp against SM-3's real costs, and recount the run
 
+## Next steps
+Owner: answer the deep dive `.planning/dives/FEAT-69-one-region-budget.html` (5 questions: pace target, cost level,
+run length, freight's deed line, the S line). Then a lane builds the answers, and the owner records one multi-day run.
+
+## Summary
+The one-region point and money budget, recounted (2026-11-16, Lane U): today a day costs 1.4–2.0 × its $7.50 anchor
+(food alone is $8), so at 2 jobs a day costs overtake income on day 8, and a grinder reaches the camp on day 3. The
+numbers are the owner's; the proposal is the dive. Still owed: one recorded multi-day run.
+
+## Description
+
+### Origin
+
 FEAT-53's Phase D item 2 asked for `dayTierTable` + `rankDayLate` to be balanced **against real
 multi-day runs**. `rankDayLate` was balanced (softened 7% → 3%, fitted to recorded drives) but
 `dayTierTable` was deliberately **not touched**, because the thing it has to balance against —
@@ -22,7 +35,7 @@ otherwise have buried this.
 run-shape.md's own rule: *tier, rank ramp and cost escalation are ONE problem.* Two of the three
 now have real numbers behind them. The third does not.
 
-## What this owes
+### What this owes
 
 1. **`dayTierTable` against SM-3 costs.** The current curve (~×1.15/day to a ~5× asymptote) was
    authored before any repair bill existed. Whether it is right is unanswerable until they do.
@@ -34,7 +47,7 @@ now have real numbers behind them. The third does not.
 3. **Multi-day run data.** Nobody has recorded a full 20-day run. Any ramp balance without one is
    modelling.
 
-## Not blocked on, but worth folding in
+### Not blocked on, but worth folding in
 
 - The **region multiplier** (FEAT-53) is inert until FEAT-28/SM-4 supplies a real region index —
   `EconomySystem`'s `getRegion` dep returns 1 today. Its curve (1 → 12) was solved against the
@@ -43,21 +56,14 @@ now have real numbers behind them. The third does not.
   par pricing two routes differently for the same felt pace. Recorded in `src/par.js`; needs more
   labelled runs before it is chaseable, and it is a par question rather than an economy one.
 
-## Acceptance
+### Moved in from FEAT-54 (2026-10-12)
 
-- `dayTierTable` justified against actual SM-3 costs rather than an authored guess.
-- The per-region point schedule recounted under the re-anchored letters, and `run-shape.md`'s
-  provisional warning removed or replaced with the new number.
-- At least one recorded multi-day run backing the ramp.
-
-## Moved in from FEAT-54 (2026-10-12)
-
-- [x] **Repairs need a time cost alongside the money cost**, applied as a clock skip (the
+- **Repairs need a time cost alongside the money cost**, applied as a clock skip (the
       shops/service/camp pause ruling, run-shape.md). Price the time with the money.
       *Built with SM-3's service:* every repair quote carries `hours` beside `price` (`src/service.js:89`,
       the shop's minimum `REPAIR_SETUP = { price: 5, hours: 0.5 }` in `data/parts.js:278`). (alpha audit, Lane A, 2026-11-07)
 
-## Amended 2026-10-14 (owner) — what this now balances
+### Amended 2026-10-14 (owner) — what this now balances
 
 design-amendments-2026-10-14.md §12–15 change the problem:
 
@@ -74,7 +80,7 @@ design-amendments-2026-10-14.md §12–15 change the problem:
   scaled by the upgrade/item-cost knob.~~ **Retired 2026-10-21 (owner):** parts scale with the clock
   (`dayTier`) like every other cost, times the upgrade/item-cost knob. No region term.
 
-## Owner, 2026-11-05 (page inbox) — more spread between S and D
+### Owner, 2026-11-05 (page inbox) — more spread between S and D
 
 "relevant to rebalancing: i think we want more spread between S and D times S is about right maybe slightly too
 challenging, C should be accessible at a much more forgiving time (+10%-20%). just add it to the ticket for now"
@@ -196,7 +202,7 @@ The best-honest-drive pin is re-expressed (0.740 at slack 1.15 = 0.569 today), a
   its "B" round moved 0.8 → 0.75 of par (0.8 is now a C).
 - Both fixed gates pass. Total: 64/64 node gates green; cdp-smoke is the landing's.
 
-## The owner's answer to the knock-ons (2026-11-06, tracker item rank-spread-knock, verbatim)
+### The owner's answer to the knock-ons (2026-11-06, tracker item rank-spread-knock, verbatim)
 
 > "12 days includes the expedition camp missions. keep the spread you just built"
 
@@ -204,3 +210,30 @@ Read as: the camp opens at **6** good deeds (DEC-120, replaces the 2026-11-07 re
 and the spread stands as built, its par knock-ons included. Folded in by the alpha audit (Lane A, 2026-11-07).
 **What this ticket still owes for the alpha:** the point-budget recount for one region and one recorded multi-day
 run behind it.
+
+## Tracker
+- [x] Repairs carry a time cost beside the money (moved in from FEAT-54; built with SM-3's service).
+- [x] The one-region point budget recounted under today's letters, as a proposal (the dive, 2026-11-16).
+- [ ] `dayTierTable` justified against actual costs rather than an authored guess (the dive's `cost-level` answer).
+- [ ] The point schedule decided and `run-shape.md`'s provisional warning replaced with the new number.
+- [ ] At least one recorded multi-day run backing the ramp (owner drive, about 1–2 h).
+
+## Decisions
+- 2026-11-06, owner: "S 10% more forgiving. D 30% more forgiving. interpolate between." (built, above).
+- 2026-11-06, owner: "12 days includes the expedition camp missions. keep the spread you just built" (DEC-120: 6 deeds).
+
+## Open questions
+- The five questions in the dive: pace target, cost level, run length, freight's B line, the S line.
+
+## Links
+- Deep dive: `.planning/dives/FEAT-69-one-region-budget.html`
+- DEC-004, DEC-014, DEC-017, DEC-025, DEC-026, DEC-090, DEC-120
+
+## Files
+`src/economy.js` · `src/par.js` · `data/shop-stock.js` · `data/parts.js` · `data/offers.js` · `test/budget-recount.mjs`
+
+## Log
+- 2026-11-16 (Lane U, `land/feat-69-proposal`): `test/budget-recount.mjs` (rainy-day, not a gate, ~1 s) re-grades all
+  51 recorded drives under today's par (41 S) and models jobs, days and runs from the real offer board. The 11-06
+  re-grade missed mu 0.80 → 0.72 (0021 is B, not C). Dive written; no game number changed. Unverified: every
+  `ASSUME` value (jobs a day, engine load, fuel per km, crashes, fragile/demolition letters).
