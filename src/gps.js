@@ -127,6 +127,7 @@ export function bakeRoute (segments, elevAt = null) {
     cum[i] = cum[i - 1] + Math.hypot(px[i] - px[i - 1], py[i] - py[i - 1], pz[i] - pz[i - 1])
   }
   const route = { px, py, pz, cum, n, length: cum[n - 1], partial, junctions: [] }
+  route.segs = segments; route.joinIdx = joinIdx   // DEC-303: which segment owns a vertex (the flat start arrow's bank)
   route.back = { seg: segments[0], dir: Math.sign(segments[0].s1 - segments[0].s0) || 1 }   // DEC-297: the road behind the start
   route.firstArc = markCoverage(route)
 
@@ -609,7 +610,12 @@ export class GpsSystem {
     const p0 = sampleRoute(route, 0), { seg, dir } = route.back
     if (want <= 0) {
       const p = sampleRoute(route, s - STAND_BEHIND)
-      return { ...p, bank: this._bank(seg, seg.s0 + dir * (s - STAND_BEHIND), dir) }   // ponytail: assumes the first segment spans the 10 m
+      const { segs, joinIdx: J } = route
+      let k = 0
+      while (k < J.length && J[k] < p.idx + 1) k++   // the segment whose vertex run holds this span
+      const a = k ? J[k - 1] : 0, b = k < J.length ? J[k] : route.n - 1, sg = segs[k]
+      const f = Math.min(1, Math.max(0, (s - STAND_BEHIND - route.cum[a]) / ((route.cum[b] - route.cum[a]) || 1)))
+      return { ...p, bank: this._bank(sg, sg.s0 + (sg.s1 - sg.s0) * f, Math.sign(sg.s1 - sg.s0) || 1) }
     }
     const room = dir > 0 ? seg.s0 : seg.centerline.length - seg.s0   // road left behind the first point
     const d = Math.min(want, Math.max(room, 0))
