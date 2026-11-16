@@ -28,8 +28,18 @@ per pixel) loops over every light in the scene. The limit is Three.js's, not Web
   only evaluates its cell's list. Keeps today's materials and transparency.
 - **Deferred**: surfaces are drawn once into buffers (colour, normal, depth), then each light is drawn as a small
   volume that shades only the pixels it covers. Transparent things and anti-aliasing need separate handling.
-- **Three.js's WebGPU renderer**, which has a tiled-lighting add-on. A renderer change touches every custom shader
-  in the game (terrain, bake, sky, fog, impostors).
+- **Three.js's WebGPU renderer with clustered lighting** (owner, 2026-11-16: "Add the 3JS newer web GPU renderer to
+  the newly minted ticket with clustered lighting"). Three.js's newer renderer ships two lighting add-ons, checked
+  in the r184 source during FEAT-227:
+  - `TiledLighting`: the screen is cut into 32 px tiles and each pixel loops only over its tile's lights; up to 1024
+    lights. It uses compute shaders (general GPU programs that run outside the drawing pipeline), which WebGL2 lacks.
+  - `DynamicLighting`: lights live in fixed-size parameter lists, so adding or removing a light no longer recompiles
+    shaders (today each light count is its own shader, which is why FEAT-227 pre-compiles the variants at load).
+  - Cost to adopt: the whole renderer changes. The game's 21 custom-shader sites in 10 `src/` files (terrain, bake,
+    sky, fog, impostors, ...) must be rewritten in Three.js's node shader language (TSL). The FEAT-227 agent's guess
+    is several weeks; not measured.
+  - Not checked: whether `TiledLighting` runs on the WebGPU renderer's WebGL2 fallback, and how many players'
+    browsers lack WebGPU.
 
 The interim lever is the distance cut-off being trialled under FEAT-227 (the light leaves the scene when no lit
 place is near), which costs nothing far from a station but still pays full price near one.
@@ -38,8 +48,10 @@ Real-time shadows from lights stay off for now (DEC-227); this ticket does not r
 
 ## Tracker
 - [ ] Cost study: the three routes, each with a measured prototype number and a rebuild size
+- [ ] WebGPU route: which browsers lack it, and whether tiled lighting works on the WebGL2 fallback
 - [ ] Owner picks a route
 - [ ] Built; N lights near the camera measured against today's per-light cost
 
 ## Log
 - 2026-11-16: filed at the owner's word, post alpha.
+- 2026-11-16: WebGPU renderer route expanded with the FEAT-227 findings, at the owner's word.
