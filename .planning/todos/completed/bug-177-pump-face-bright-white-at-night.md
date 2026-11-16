@@ -1,7 +1,7 @@
 ---
 id: BUG-177
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-15
 source: owner, 2026-11-15 — "the texture for the gas pump face, which I was inspecting to see if the price is updated live. Seems busted. It's bright white, even in the darkness."
@@ -22,3 +22,4 @@ The pump's face should show its readout (the live price) and darken with the nig
 
 ## Log
 - 2026-11-15 Spare (land/gps-1115): root cause: FEAT-214's poi-night.js copied the white base colour into `emissive` (PumpGraphic is textured), a flat white panel. Fix: emissiveMap = map. Shots wip/gps-1115/pump-{old,fix}-{12,23}.png.
+- 2026-11-15: CLOSED. On main since cf77e986. The owner's answer on card lighting-bundle-look raised only the bay light; orchestrator read that as no objection here.

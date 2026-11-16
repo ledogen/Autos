@@ -1,7 +1,7 @@
 ---
 id: BUG-175
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-15
 source: owner, 2026-11-15 — "I think there's still a stutter whenever I switch on the truck lights for the first time And it also seems like it was triggered when the service station lights turned on when I parked. i dont think we have this issue with reverse or brake lights."
@@ -46,3 +46,4 @@ PERF-21, BUG-98 (the prewarm and sweep this extends), BUG-174, FEAT-219.
 
 ## Log
 - 2026-11-15 (Spare): c74264e5. Sweep step now a 1-pixel draw, 0.40 ms CPU. Logs in `wip/bug-175/` (git-invisible).
+- 2026-11-15: CLOSED. On main since 3393c6ad. The owner's answer on card lighting-bundle-look raised only the bay light; orchestrator read that as no objection here.
