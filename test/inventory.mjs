@@ -210,5 +210,29 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
     && ITEM_PRICE.potato > 0 && ITEM_PRICE.potato < 5)
 }
 
+// ── 9. FEAT-232: the snacks, the burger, the packed-lunch reward, the dinner meal ─────────────
+{
+  const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
+  const givers = (id, gate) => Object.entries(REWARD_CATS).filter(([k, v]) => k !== 'larrysHouse' && pool(v.cats, gate).includes(id)).map(([k]) => k).sort().join()
+  const gates = (id) => REWARD_LIST.find(r => r.id === id)?.gates.join('')
+  // id: hold h, stack, gate pair, ruled givers (Larry aside), shelf
+  const rows = { gummyWorms: [2, 5, 'CB', 'gasStation,generalStore', 'gasStation'], spicyChips: [3, 3, 'CB', 'gasStation', 'gasStation'],
+    candyBar: [3, 4, 'CB', 'gasStation', 'gasStation'], bagOfPeanuts: [3, 3, 'CB', 'gasStation,generalStore', 'gasStation'],
+    burger: [8, undefined, 'CB', 'foodVendor', 'foodVendor'] }
+  for (const [id, [hold, stack, g, who, shop]] of Object.entries(rows)) {
+    check(`${id}: edible, holds ${hold} h, stack ${stack ?? 'uncapped'}`, ITEMS[id].use === 'eat' && ITEMS[id].hold === hold && ITEMS[id].stack === stack)
+    check(`${id}: sold at the ${shop} under $5 (burger $5)`, STOREFRONT[shop].always.includes(id) && ITEM_PRICE[id] > 0 && (id === 'burger' ? ITEM_PRICE[id] === 5 : ITEM_PRICE[id] < 5))
+    check(`${id}: a ${g} reward from ${who} only`, gates(id) === g && givers(id, g[0]) === who)
+    check(`${id}: not found (no find channel, no other shelf)`, Object.entries(STOREFRONT).every(([k, s]) => k === shop || !s.always.includes(id)))
+  }
+  const f = new InventorySystem({ slotCap: () => 8 }); f.start(); const s0 = f.slotsUsed(); f.grant('candyBar', 5); f.grant('gummyWorms', 6)
+  check('a capped snack spans slots (candy 4+1, gummy 5+1)', f.slotsUsed() === s0 + 4)
+  check('the packed lunch is a B-A reward from residences, farms and the food vendor, never sold',
+    gates('packedLunch') === 'BA' && givers('packedLunch', 'B') === 'farm,foodVendor,residence' && !Object.values(STOREFRONT).some(s => s.always.includes('packedLunch')))
+  check('the dinner meal: eat-in only, 8 h, 30 min, $5-10, on the food vendor\'s shelf, never stowed',
+    ITEMS.dinnerMeal.eatIn && !ITEMS.dinnerMeal.use && ITEMS.dinnerMeal.hold === 8 && ITEMS.dinnerMeal.eatH === 0.5
+    && STOREFRONT.foodVendor.always.includes('dinnerMeal') && ITEM_PRICE.dinnerMeal >= 5 && ITEM_PRICE.dinnerMeal <= 10)
+}
+
 console.log(fails === 0 ? '\ninventory gate: ALL OK' : `\ninventory gate: ${fails} FAILURE(S)`)
 process.exit(fails === 0 ? 0 : 1)

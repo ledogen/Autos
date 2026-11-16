@@ -348,6 +348,14 @@ export const THINGS = [
 export const REWARDS = [
     { id: 'chiliDog',   name: 'Chili dog',   kind: 'food',       gates: ['B', 'A'], cat: 'food' },
     { id: 'coffee',     name: 'Coffee',      kind: 'consumable', gates: ['C', 'B'], cat: 'drink' },
+    // FEAT-232 (items.md §1d, owner 2026-10-21): the gas-station snacks and the food vendor's meals, each its own category so
+    // only the ruled givers hand them out (a snack: gas station + general store; chips and candy: the station alone).
+    { id: 'bagOfPeanuts', name: 'Bag of peanuts', kind: 'food',    gates: ['C', 'B'], cat: 'snack' },
+    { id: 'gummyWorms', name: 'Gummy worms', kind: 'food',       gates: ['C', 'B'], cat: 'snack' },
+    { id: 'spicyChips', name: 'Spicy chips', kind: 'food',       gates: ['C', 'B'], cat: 'gasSnack' },
+    { id: 'candyBar',   name: 'Candy bar',   kind: 'food',       gates: ['C', 'B'], cat: 'gasSnack' },
+    { id: 'burger',     name: 'Burger',      kind: 'food',       gates: ['C', 'B'], cat: 'grill' },
+    { id: 'packedLunch', name: 'Packed lunch', kind: 'food',     gates: ['B', 'A'], cat: 'homemade' },   // residences, farms, the food vendor
     { id: 'potato',     name: 'Potato',      kind: 'food',       gates: ['C', 'B'], cat: 'produce' },   // FEAT-230: a farm reward only (items.md §1); raw, cooked at camp
     { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
@@ -425,17 +433,17 @@ export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['
  *          and the office's are [DEFAULT]; the school's is its lunch.
  * Larry's paper route rolls from every category (owner, 2026-10-31: "give him every item").
  */
-const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce']
+const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'snack', 'gasSnack', 'grill', 'homemade']
 export const REWARD_CATS = {
     autoShop:         { cats: ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery'] },
-    gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires'] },
+    gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires', 'snack', 'gasSnack'] },
     strandedMotorist: { cats: ['tires', 'recovery', 'fuel', 'engine'] },
-    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp', 'produce'] },
+    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'homemade'] },
     workSite:         { cats: ['tires', 'suspension', 'recovery', 'bed'] },
     firewoodYard:     { cats: ['bed', 'recovery', 'camp'] },
-    residence:        { cats: ['food', 'camp', 'brakes', 'drivetrain'], rare: ['tires', 'suspension', 'engine'] },
-    foodVendor:       { cats: ['food', 'drink'] },
-    generalStore:     { cats: ['food', 'drink', 'camp', 'recovery', 'fuel'] },
+    residence:        { cats: ['food', 'homemade', 'camp', 'brakes', 'drivetrain'], rare: ['tires', 'suspension', 'engine'] },
+    foodVendor:       { cats: ['food', 'drink', 'grill', 'homemade'] },
+    generalStore:     { cats: ['food', 'drink', 'snack', 'camp', 'recovery', 'fuel'] },
     doctor:           { cats: ['drink', 'food'] },
     tackleShop:       { cats: ['camp', 'food'], rare: ['recovery', 'fuel'] },
     office:           { cats: ['drink', 'food', 'engine'], rare: ['camp'] },
@@ -728,7 +736,7 @@ export const REWARD_WINDOW_HI = 1.3
  * coffee, meals and field repairs too, FEAT-104); these are the rest. A price, never a stat (SM-INV-10).
  */
 export const REWARD_VALUE = {
-    dinnerMeal: 5,
+    dinnerMeal: 5, packedLunch: 6,   // packedLunch: items.md §1d, "worth $6" (never sold)
     zipTies: 8, stopLeak: 8, rubberBedMat: 8,
     // FEAT-168 [DEFAULT]: the school lunch and the camp gear the shelf doesn't price
     schoolLunch: 5, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,

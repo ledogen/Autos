@@ -3792,7 +3792,7 @@ const serviceCenter = new ServiceCenter({
   damage: damageModel, parts: partsSystem, inventory: inventorySystem,
   money: () => economySystem.money(), spend: ($) => economySystem.spend($), earn: ($) => economySystem.addSpot($),
   tier: () => economySystem.tierNow(),
-  advanceHours: (h) => daySystem.advanceMinutes(h * 60),
+  advanceHours: (h) => daySystem.advanceMinutes(h * 60), eat: (h) => daySystem.eat(h),   // FEAT-232: the food vendor's dinner meal
   stock: () => shelf(_servicePoi.id, daySystem.clockH(), _servicePoi.type), unstock: (i) => takeShelf(_servicePoi.id, i),
   nextStock: () => _shelfNext(_servicePoi.id, daySystem.clockH(), _servicePoi.type),   // R-24: "new stock in 3h 10m"
   freeRepairs: () => runEconomy.freeRepairs ?? 0, useFreeRepair: () => { runEconomy.freeRepairs-- },   // expedition-rewards

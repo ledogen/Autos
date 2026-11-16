@@ -43,6 +43,9 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     // reward card already used [DEFAULT].
     coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8,
     potato: 2,                  // FEAT-230 [DEFAULT]: items.md rules the potato "under $5"; the owner sets the number
+    gummyWorms: 2, spicyChips: 3, candyBar: 2,   // FEAT-232 [DEFAULT]: "under $5" each; the owner sets the numbers
+    burger: 5,                  // items.md §1d: the food vendor's burger, $5
+    dinnerMeal: 5,              // FEAT-232 [DEFAULT]: items.md rules "$5–10"; the low end, which is what the dinner-invitation reward already read
     bagOfPeanuts: 3,            // FEAT-184 (DEC-276) [DEFAULT]: items.md rules the gas-station snacks "under $5"; the owner sets the number
     jerryCan: 30 }              // owner, 2026-10-22: "sold at the gas station, rarely, $30" — sold full
 
@@ -58,6 +61,6 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
  */
 export const STOREFRONT = {
     generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato'] },
-    gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
-    foodVendor:   { always: ['coffee', 'chiliDog'] },
+    gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
+    foodVendor:   { always: ['coffee', 'chiliDog', 'burger', 'dinnerMeal'] },
 }
