@@ -83,8 +83,8 @@ const ICON_DY = 16
 const H = 240
 const AXIS = H / 2   // the dial axis: tach and speedo hubs
 // FEAT-235 (owner, 2026-11-16, against the 2002 owner guide's cluster drawing): three layers, as on the real one.
-//   The housing (_outlinePath): a broad arch on top, a flat bottom with a raised inset under the dials. Two end circles
-//     (OUT_L, OUT_R) joined by one big arc internally tangent to both (ARCH), and the bottom line tangent to both.
+//   The housing (_outlinePath): a broad arch on top, a flat bottom with a raised inset under the dials — the hull of
+//     the pods' circles grown by ROOM, the arch one big circle internally tangent to the grown temp and speedo (OUTLINE).
 //   A lighter face inside it (FACE_LIGHT), the reference's appliqué, BEZEL inside the outline.
 //   Dark pods on that face: the dials' pod (tach ∪ speedo ∪ key as before, now with a flat bottom: the tach's indent
 //     reaches TACH_DROP further down so its bottom meets the speedo's), and a rounded triangle for temp + fuel
