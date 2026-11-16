@@ -119,7 +119,7 @@ import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-6
 import { RANK_TIMER_PARAMS, RANK_ORDER, DEED_KEEP, rewardTone,
          rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87; QUAL-36 (DEC-298)
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
-import { FuelStop, towPrice, towHours, stationPriceFactor } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow; FEAT-209 each station's price
+import { FuelStop, towPrice, towHours, stationPriceFactor, drumPositions } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow; FEAT-209 each station's price
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
@@ -139,6 +139,7 @@ import { TerrainBake } from './terrain-bake.js'   // PERF-48 lever 6: far terrai
 import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.js'   // QUAL-18 edge fade · BUG-78 near/far coupling
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { lampsOn, homeLamps, shopLamps, setGlow } from './poi-night.js'   // FEAT-214: POI night lights
+import { PumpFaces } from './pump-face.js'   // FEAT-233: the pump in use shows the sale on its own face
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
@@ -3265,7 +3266,7 @@ function _rebuildPoiMarkers () {
       // receiveShadow too: a building is big enough to catch its neighbours' shadows and its own,
       // unlike the small thrown mission items FEAT-59's cast-only default was written for.
       const m = spawnModel(q.modelKey, { castShadow: true, receiveShadow: true, variant: q.modelVariant,
-        onReady: (inst) => _wirePoiLamps(q, inst) })
+        onReady: (inst) => { _wirePoiLamps(q, inst); pumpFaces.attach(q.modelKey, inst) } })   // lamps first: the face clones a lit material
       // pad records are base-seated, and so are the models. modelX/Z, not the pad centre: a model
       // may be `seat`ed toward the back of the pad to leave its yard on the road side (FEAT-71).
       m.position.set(q.modelX, q.baseY, q.modelZ)   // BUG-91: the carved ground, not the pad's design top
@@ -3427,6 +3428,7 @@ function _updateCustomerRings () {
 // flag drives them all; a residence owns its clone, driven by its own offer / delivery state.
 const _SHOP_TYPES = new Set(['gasPump', 'gasStation', 'autoShop', 'foodVendor', 'generalStore', 'tackleShop'])
 const _shopLampMats = new Set()
+const pumpFaces = new PumpFaces()   // FEAT-233
 const _homeLamps = new Map()   // poi id → { mats, on }
 let _shopLampsOn = null
 function _wirePoiLamps (q, inst) {
@@ -5914,10 +5916,8 @@ function _stepFuelStop (dt) {
   }
 }
 
-// The counters are MECHANICAL DRUMS, odometer-style: each drum is a 0–9 strip (plus a trailing 0
-// for the wrap) slid by translateY. The lowest drum turns continuously with the counter; every drum
-// above it holds its digit and only rolls over during the last tenth of the drum below it — the
-// carry a real register makes. So 4.99 → 5.00 is three drums turning together, not a jump.
+// The counters are MECHANICAL DRUMS, odometer-style (fuel-stop.js drumPositions has the carry): each drum is a 0–9
+// strip (plus a trailing 0 for the wrap) slid by translateY.
 const _pumpEl = {}
 function _pumpDrums (id, n, dp) {
   const el = document.getElementById(id)
@@ -5930,23 +5930,13 @@ function _pumpDrums (id, n, dp) {
 function _setDrums (id, value, dp) {
   const strips = document.getElementById(id)?.querySelectorAll('.pd-strip')
   if (!strips) return
-  const x = Math.max(0, value) * 10 ** dp           // in units of the lowest drum
-  const n = strips.length
-  let below = x % 10                                 // the lowest drum's continuous position
-  for (let i = n - 1; i >= 0; i--) {
-    const place = 10 ** (n - 1 - i)
-    let pos
-    if (i === n - 1) pos = below
-    else {
-      const whole = Math.floor(x / place) % 10
-      pos = whole + Math.max(0, below - 9)           // roll only while the drum below goes 9 → 0
-      below = pos
-    }
-    strips[i].style.transform = `translateY(${-pos * 1.15}em)`
-  }
+  const pos = drumPositions(value, strips.length, dp)
+  for (let i = 0; i < pos.length; i++) strips[i].style.transform = `translateY(${-pos[i] * 1.15}em)`
 }
 /** Per frame: the pump face, its hint line, and the receipt's hold + fade. */
 function _renderPumpDisplay (dt) {
+  pumpFaces.update(fuelStop.isOpen ? _poiMeshes.get(fuelStop.poiId) : null, vehicleState.position,   // FEAT-233: the same numbers, on the pump
+    { sale: fuelStop.sale, gal: fuelStop.gal, price: fuelStop.price }, fuelStop.state === 'pumping' ? RANGER_PARAMS.fuelFillGalPerS : 0)
   const el = _pumpEl.root ??= document.getElementById('pump-display')
   if (!el) return
   _pumpReceiptT = Math.max(0, _pumpReceiptT - dt)
