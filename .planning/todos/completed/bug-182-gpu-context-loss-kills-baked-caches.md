@@ -1,7 +1,7 @@
 ---
 id: BUG-182
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-15
 source: owner, 2026-11-15 — "there was a lag when i was switching my desktop back to chrome on mac with the gesture and now i think the baked ground texture is dead and just shows black ... also the cluster needles are floating also the map shadows are missing"
@@ -79,3 +79,4 @@ worktree.
   `node test/gpu-reset.mjs --mode=crash` and `--mode=webgl` PASS (after = the no-reset control, `--mode=none`, to the
   digit). Rainy-day check, not a gate (needs Chrome + a dev server). Not verified: prop shadows and the canvas textures
   by eye (no cheap readback; covered by the ground shot and by code), a headed real-GPU reset on the owner's Mac.
+- 2026-11-16: landed on main 692f7b93, full smoke green (wip/orch/smoke-1116-182.log). Closed. Not checked by eye: prop shadows, stone and dust textures; not tested on a headed real-GPU reset.
