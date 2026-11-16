@@ -1,0 +1,215 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tutorial same landing</title>
+<!-- FEAT-229 deep dive, revision 2 (lane A, 2026-11-16). Copied from TEMPLATE.html. Replaces
+     FEAT-229-tutorial-morning-start.html. Public repo: design questions only. -->
+<h1>FEAT-229 (revision 2): played or skipped, the run starts at the same time and place</h1>
+<p>Revision 1 missed your point: a player who plays the tutorial and one who skips it must start the game at the same
+time of day, for intro continuity. This page takes that as fixed. It offers four beat orders that all meet it, as you
+asked: two that end at the burger joint, one at mom's, one at Larry's. Each opens with a beat list so the four can be
+compared by scanning. <b>Seeds are out of scope</b>; they get picked to fit the beats afterwards.</p>
+
+<h2>0. Fixed, not asked</h2>
+<p>These are your rulings (DEC-299, with DEC-152 and DEC-159 behind them). Every option below meets all of them.</p>
+<ul>
+<li>The tutorial is <b>24 in-game hours</b>. You are fired at about <b>07:00</b> on day −1; free will opens at about
+<b>07:00 the next morning</b>, day 0.</li>
+<li>A played run and a skipped run enter free will at the <b>same time of day</b>, the <b>same place</b>, and the
+<b>same day number</b> (DEC-159).</li>
+<li>Your preference is <b>the burger joint</b>, where the intro already ends (chat, 2026-11-16). Options 1 and 2 build
+on it; 3 and 4 are there because you asked for them.</li>
+</ul>
+<p>Two facts the clock times lean on. One in-game hour is one real minute (the day is 24 real minutes). The sky: sunset
+20:18, full dark from 21:18, sunrise 05:33. Times in the beat lists assume the clock is <b>held</b> while you drive and
+<b>stamped</b> at stops (section 2). A stamp is a written time a stop sets when you arrive.</p>
+<p>The lessons, as numbered in revision 1: L1 the key · L2 driving · L3 GPS line and map · L4 the reset · L5 fuel and
+money (fill until broke) · L6 the flat and the damage screen · L7 the flat spare · L8 recovery and tow · L9 the shop ·
+L10 night and headlights · L11 parking · L12 sleep · L13 eating (breakfast) · L14 loose cargo (G loads Larry's old pack)
+· L15 the camping kit · L16 the store (the peanuts) · L17 camping areas (eat them there) · L18 the last paycheck · L19 the
+goal (Larry's four cards). <b>All four options keep all 19.</b> They differ in order and in where the day ends.</p>
+
+<h2>1. The four, side by side</h2>
+<p>Each cell is one beat: clock, place, lessons. Day 0 rows are in bold. "Jump" marks the one stop where the clock is
+moved forward a long way (section 2).</p>
+<table>
+<tr><th>#</th><th>1. Joint, errands first</th><th>2. Joint, trouble first</th><th>3. Mom's</th><th>4. Larry's</th></tr>
+<tr><td>1</td><td>07:00 joint, fired</td><td>07:00 joint, fired</td><td>07:00 joint, fired</td><td>07:00 joint, fired</td></tr>
+<tr><td>2</td><td>→ mom's L1–L4, L11</td><td>→ station L1–L5</td><td>→ station L1–L5</td><td>→ station L1–L5</td></tr>
+<tr><td>3</td><td>08:00 mom's L14</td><td>07:30 road, flat L6–L8</td><td>07:30 road, flat L6–L8</td><td>07:30 road, flat L6–L8</td></tr>
+<tr><td>4</td><td>09:00 Larry's L15</td><td>10:45 shop L9</td><td>10:45 shop L9</td><td>10:45 shop L9</td></tr>
+<tr><td>5</td><td>10:00 station L16, L5</td><td>11:15 mom's L11, L14</td><td>11:15 mom's L11, L14</td><td>11:15 mom's L11</td></tr>
+<tr><td>6</td><td>17:00 camp area L17 (jump)</td><td>12:15 Larry's L15</td><td>12:15 Larry's L15</td><td>12:00 station L16</td></tr>
+<tr><td>7</td><td>17:15 road, flat L6–L8</td><td>13:15 station L16</td><td>13:15 station L16</td><td>12:30 camp area L17</td></tr>
+<tr><td>8</td><td>20:30 shop L9</td><td>20:30 camp area L17 (jump)</td><td>13:45 camp area L17</td><td>20:00 joint L18 (jump)</td></tr>
+<tr><td>9</td><td>→ mom's in the dark L10</td><td>→ mom's in the dark L10</td><td>20:00 joint L18 (jump)</td><td>→ mom's in the dark L10</td></tr>
+<tr><td>10</td><td>21:30 mom's L12</td><td>21:30 mom's L12</td><td>→ mom's in the dark L10</td><td>21:30 mom's L12</td></tr>
+<tr><td>11</td><td><b>07:00 mom's L13</b></td><td><b>07:00 mom's L13</b></td><td>21:30 mom's L12</td><td><b>07:00 mom's L13, L14</b></td></tr>
+<tr><td>12</td><td><b>→ joint L18</b></td><td><b>→ joint L18</b></td><td><b>07:00 mom's L13, L19</b></td><td><b>→ Larry's L15</b></td></tr>
+<tr><td>13</td><td><b>07:00 joint L19, free</b></td><td><b>07:00 joint L19, free</b></td><td><b>free at mom's</b></td><td><b>07:00 Larry's L19, free</b></td></tr>
+</table>
+
+<h2>2. The clock inside the tutorial</h2>
+<p>The day from 07:00 to bedtime at about 21:30 is about 14.5 in-game hours. The tutorial is about 20 to 25 real minutes
+of play. So the hours have to be spent somehow, and that choice applies to every option.</p>
+<ul>
+<li><b>Held, with stamps</b> (as the beat lists assume): the clock does not move while you drive, as today's evening
+leg. Each stop sets a written time. The tow's 3.2 h wait (3 h + 0.5 h per km) already exists. One more long jump is
+needed, about 6 to 7 h, at one stop, under its card (the "jump" rows). Every player sees the same sky at the same beat.
+The cost is that jump.</li>
+<li><b>Running</b>, as in free will: the sky moves smoothly, but at one in-game hour per real minute the night lessons
+land wherever the driver's pace puts them. Revision 1 worked this through: at 35 km/h the player gets home near 03:00;
+at 70 km/h, home in sunlight with nothing for the headlights to teach.</li>
+<li><b>Running, with floors</b>: the clock runs, and a stop lifts it to at least its stamp if the player is early. It
+guarantees the dark lessons. A slow player still overshoots.</li>
+</ul>
+<p>The seam into day 0 is the same in all four: mom's sleep card already presets the wake to 07:00 day 0
+(<code>_eveWakeH</code> in <code>src/main.js</code>). In options 1, 2 and 4 the short day-0 drive is held at 07:00, so
+free will still opens at 07:00.</p>
+<dive-q id="clock" options="held, with stamps | running | running, with floors"></dive-q>
+<p>Energy follows the clock. Fired at 07:00 rested, the player is sleepy at 19:00 (steering ×0.75) and tired at 21:00,
+so every option's night drive home steers slower. It could be a free lesson in tiredness just before mom's bed. Or
+energy could be held full for the whole tutorial, as today's evening holds it.</p>
+<dive-q id="energy" options="let the tiredness show on the night drive | hold energy full in the tutorial"></dive-q>
+
+<h2>3. Option 1: the burger joint, errands first</h2>
+<ol>
+<li>07:00 day −1 · joint · Fired. The check is not ready until the morning (a new placeholder line). The card: play
+or skip.</li>
+<li>held · joint → mom's · Mom's call: come by the house (a new placeholder line). Key, pedals, GPS and map, reset,
+park. L1–L4, L11</li>
+<li>08:00 · mom's · She tosses Larry's old pack out; G loads it. A few dollars for a snack. L14</li>
+<li>09:00 · Larry's · He gives you the camping kit. L15</li>
+<li>10:00 · gas station · Buy the peanuts. Then mom: the tank is on fumes, fill until broke. L16, L5</li>
+<li>17:00 (jump) · camping area · Eat them. The clock moves to late afternoon here. L17</li>
+<li>17:15 · road home · The flat, V, the flat spare, X. L6–L8</li>
+<li>+3.2 h → 20:30 · auto shop · The tire, on mom. The sun is just down. L9</li>
+<li>→ dark · shop → mom's · L for the headlights. L10</li>
+<li>21:30 · mom's · Her sleep card; sleep. L12</li>
+<li>07:00 day 0 · mom's · Breakfast. L13</li>
+<li>held · mom's → joint · The last paycheck, the manager's line (DEC-277). L18</li>
+<li>07:00 · joint · Larry's call (DEC-236); free will. L19</li>
+</ol>
+<p>This is your inbox example (pack, snack, fuel, then the flat, the tow and sleep at mom's), with the paycheck moved
+after the night. The trouble is the last act of day −1, and the tow carries it into the dark, as it does today.</p>
+<p><b>The seam.</b> Played: wake, breakfast, a short drive back to the joint, the check, Larry's call. Skipped: the
+intro at 07:00 day −1, then the run at the joint at 07:00 day 0, the check, Larry's call. The joint opens its jobs at
+07:00 (DEC-156), so both start beside the first delivery giver, right after the manager's line about delivering.</p>
+<p><b>Rebuild: medium.</b> Today's morning block (pack, Larry's, snack, camping area) moves before today's evening block
+(pump to sleep). Breakfast and the paycheck stay after the sleep. The first leg goes to mom's instead of the station.
+The paycheck's jump to 19:30 is deleted. New: the 07:00 firing and three placeholder lines (the check waits, mom's first
+call, the tank call). The smoke's opening step is re-ordered.</p>
+<p><b>Records.</b> Keeps DEC-150, 152, 153, 155, 156, 159, 238, 239, 276, 277 as written. DEC-282 says "the evening";
+its two gates would cover the whole tutorial day (a re-wording, same intent). See the skipper's check question below.</p>
+
+<h2>4. Option 2: the burger joint, trouble first</h2>
+<ol>
+<li>07:00 day −1 · joint · Fired. The check is not ready until the morning (a new placeholder line). The card.</li>
+<li>held · joint → station · Mom's call: come home, the tank is on fumes. Key, pedals, GPS, reset; fill until broke.
+L1–L5</li>
+<li>07:30 · road · The flat, V, the flat spare, X. L6–L8</li>
+<li>+3.2 h → 10:45 · auto shop · The tire, on mom. L9</li>
+<li>11:15 · mom's · Park. She tosses the pack out; G. A few dollars for a snack. L11, L14</li>
+<li>12:15 · Larry's · The camping kit. L15</li>
+<li>13:15 · gas station · The peanuts. L16</li>
+<li>20:30 (jump) · camping area · Eat them at dusk. L17</li>
+<li>→ dark · camp → mom's · L for the headlights, cued by the dark. L10</li>
+<li>21:30 · mom's · Sleep. L12</li>
+<li>07:00 day 0 · mom's · Breakfast. L13</li>
+<li>held · mom's → joint · The last paycheck. L18</li>
+<li>07:00 · joint · Larry's call; free will. L19</li>
+</ol>
+<p>Today's two blocks in today's order, with the sleep moved from between them to after the errands. The breakdown
+comes in the first five minutes, while the player is broke (the situation DEC-151 was written for).</p>
+<p><b>The seam.</b> Same as option 1.</p>
+<p><b>Rebuild: medium-small</b>, the cheapest of the four. Both blocks keep their inside order. New: the night leg from
+the camping area to mom's, the headlights cue moved from "after the tow" to "it is dark", the 07:00 firing, one
+placeholder line (the check waits).</p>
+<p><b>Records.</b> As option 1.</p>
+
+<p><b>For options 1 and 2: what the skipper hears at the joint.</b> Today a skip lands at the joint and hears the
+manager's skip line from DEC-150 ("just so you have no excuse to come back, here's your last check"), then Larry. In
+options 1 and 2 the firing says the check waits for morning, so that line reads oddly to someone who came back for it.
+The skipper could get the played run's paycheck scene instead (DEC-277), so the last minute is identical for both.</p>
+<dive-q id="joint-skip-check" options="the same paycheck scene as a played run (DEC-277) | keep DEC-150's skip line | only matters if 1 or 2 wins"></dive-q>
+
+<h2>5. Option 3: mom's</h2>
+<ol>
+<li>07:00 day −1 · joint · Fired. Come back at close for the check (a new placeholder line). The card.</li>
+<li>held · joint → station · Mom's call. Key, pedals, GPS, reset; fill until broke. L1–L5</li>
+<li>07:30 · road · The flat, V, the flat spare, X. L6–L8</li>
+<li>+3.2 h → 10:45 · auto shop · The tire, on mom. L9</li>
+<li>11:15 · mom's · Park; the pack, G; a few dollars. L11, L14</li>
+<li>12:15 · Larry's · The camping kit. L15</li>
+<li>13:15 · gas station · The peanuts. L16</li>
+<li>13:45 · camping area · Eat them. L17</li>
+<li>20:00 (jump) · joint · The last paycheck at sunset. L18</li>
+<li>→ dark · joint → mom's · The headlights. L10</li>
+<li>21:30 · mom's · Sleep. L12</li>
+<li>07:00 day 0 · mom's · Breakfast; Larry's call; free will. L13, L19</li>
+</ol>
+<p>Revision 1's option C. <b>The seam.</b> Played: wake at mom's, breakfast, Larry's call. Skipped: the intro, the
+manager's skip line and check at the joint, then a "then you went home" card (your suggestion; a new placeholder
+card), and the run starts in mom's yard at 07:00 day 0 with Larry's call.</p>
+<p><b>Rebuild: medium.</b> The sleep moves to the end, the paycheck moves to sunset, free will opens on waking, plus the
+skipper's card.</p>
+<p><b>Records.</b> Supersedes DEC-152's "ends back at the burger shop". It meets your "the same place the intro ends" only
+if the went-home card counts as the end of the intro. DEC-153's "the tutorial's morning goes back to the burger joint"
+becomes the evening (the substance stands). DEC-155 depends on the question below. DEC-282 is re-worded as in option 1.</p>
+<dive-q id="larry-call" options="on waking at mom's (free will starts) | at the sunset paycheck | only matters if 3 wins"></dive-q>
+
+<h2>6. Option 4: Larry's</h2>
+<ol>
+<li>07:00 day −1 · joint · Fired. Come back at close for the check (a new placeholder line). The card.</li>
+<li>held · joint → station · Key, pedals, GPS, reset; fill until broke. L1–L5</li>
+<li>07:30 · road · The flat, V, the flat spare, X. L6–L8</li>
+<li>+3.2 h → 10:45 · auto shop · The tire, on mom. L9</li>
+<li>11:15 · mom's · Park; a few dollars for a snack. L11</li>
+<li>12:00 · gas station · The peanuts. L16</li>
+<li>12:30 · camping area · Eat them. L17</li>
+<li>20:00 (jump) · joint · The last paycheck at sunset. L18</li>
+<li>→ dark · joint → mom's · The headlights. L10</li>
+<li>21:30 · mom's · Sleep. L12</li>
+<li>07:00 day 0 · mom's · Breakfast; she tosses Larry's old pack out; G. L13, L14</li>
+<li>held · mom's → Larry's · He gives you his camping kit. L15</li>
+<li>07:00 · Larry's · Larry in person: his four cards (DEC-236); free will. L19</li>
+</ol>
+<p><b>The seam.</b> Played: the pack errand is the morning's job, and Larry speaks his cards at his door instead of on
+the phone. Skipped: the intro, the manager's skip line and check, then a card that says you went home, slept, and mom
+sent you to return Larry's pack (a new placeholder card), and the run starts in Larry's yard at 07:00 day 0, kit handed
+over, his four cards in person.</p>
+<p><b>The old objection.</b> DEC-152 retired a skip landing at Larry's as "a jarring teleport to larry's with no context
+how you got there". The card fixes the "no context" half: it says how you got there, and Larry greeting you in person
+explains the place. It does not fix the other half: the skipper starts at a yard the intro never showed, with an uncle
+they have never met. The joint does not have that problem.</p>
+<p><b>Rebuild: medium-large.</b> Everything in option 3, plus the pack errand and Larry's move to day 0, his call turns
+into an in-person scene, and mom's few dollars move to day −1.</p>
+<p><b>Records.</b> Supersedes DEC-152 (the burger-shop end, and it reverses what DEC-152 replaced); DEC-155 (the call
+becomes in person, played and skipped); DEC-238's order (the errand moves to the next morning; what happens in it
+stands). DEC-153 and DEC-282 as in option 3.</p>
+
+<h2>7. The firing</h2>
+<p>07:00 is an hour and a half after sunrise: low sun from the east, long shadows across the joint's lot. Whatever hour
+you pick here, free will opens at the same hour 24 h later. Your idea for the cause is that the player turns up 30
+minutes late. Today's line (the grill cold twenty minutes, a line out the door) already reads as someone who did not show
+up, so it nearly works as is. The firing also needs one new placeholder line in every option: when the check comes.</p>
+<dive-q id="firing-time" options="06:30 | 07:00 | 07:30"></dive-q>
+<dive-q id="firing-cause" options="30 minutes late (a new placeholder line) | keep today's cold-grill line | something else (say what)"></dive-q>
+
+<h2>8. Recommendation</h2>
+<p><b>Option 1: the burger joint, errands first, with the held-and-stamped clock.</b> It is your preference and your own
+inbox order, with one change: the check waits for the morning. That one change keeps every standing record as written.
+The tutorial still ends where the intro ends, with the last paycheck (DEC-150, 152, 153), Larry calls right after it
+(DEC-155), and both players start at 07:00 beside the joint just as its jobs open (DEC-156). The first five minutes are a
+calm drive and an errand; the trouble is the last act, and the tow carries it into the dark as today. I found no real
+problem with the joint.</p>
+<p><b>Its weak point</b> is the clock. To bring the flat into the evening, the camping area has to jump the clock about
+6.5 h under its card, which may feel like the old 19:30 jump moved to a new place. After the sleep, the drive back to
+the joint teaches nothing new. If build size matters more than pacing, option 2 is about the same with a smaller
+rebuild, but the breakdown arrives in the first five minutes.</p>
+<dive-q id="option" options="1: joint, errands first | 2: joint, trouble first | 3: mom's | 4: Larry's | a mix (name the beats in the box)"></dive-q>
+
+<h2>9. Anything this misses</h2>
+<p>Beats you want moved, merged or added, or a different reason to be back at the joint at 07:00.</p>
+<dive-q id="misses"></dive-q>
+
+<script src="/dive.js"></script>
