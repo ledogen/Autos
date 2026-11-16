@@ -378,32 +378,37 @@ In the inventory, packed in the starter Pack, with its thumbnail (FEAT-122). The
 The baseline sleeping item, no bonus. Fills one of the starter Pack's 2 slots.
 
 ### Air mattress
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf (STOREFRONT.generalStore has no camp lines).
+Audit 2026-11-17: on the general-store shelf, always stocked, $5 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Sleeping item: +5% recovery rate. Swaps for the bedroll in its slot and in the render.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping pad
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf.
+Audit 2026-11-17: on the general-store shelf, always stocked, $8 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Sleeping item: +10% recovery rate. Swaps for the bedroll.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Deluxe sleeping pad
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward (S) ship. Missing: the general-store shelf.
+Audit 2026-11-17: on the general-store shelf, rolled (Hardly ever), $15 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Sleeping item: +15% recovery rate, the best bed. Swaps for the bedroll.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Blanket
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf.
+Audit 2026-11-17: on the general-store shelf, always stocked, $4 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Add-on, own slot, not required to sleep: +5% recovery rate, adding to the bed and the sleeping bag.
 **In the game 2026-10-23**: the row and its `rest` bonus on camp sleep (day.js `recoveryRate` × (1 + the packed gear's rest), summed [DEFAULT]; not in the cab or at mom's). No way to get it yet: the general store has no shelf and no reward is ruled. Mass [DEFAULT]. The camp model is still owed.
 
 ### Sleeping bag
-status: wip · design: ratified · build: effect, model · needs: camp render · where: generalStore
+status: done · design: ratified · build: effect, model · needs: camp render · where: generalStore
 Audit 2026-11-16: item, rest bonus, model and reward ship. Missing: the general-store shelf.
+Audit 2026-11-17: on the general-store shelf, always stocked, $10 [DEFAULT] (= its reward worth), land/camp-gear-shelf.
 Add-on, own slot, not required to sleep: +10% recovery rate, adding to the bed and the blanket.
 Renders with the bed, not in place of it.
 Camp render (owner, 2026-10-20): shown unrolled, corner unzipped and turned back; layered variants
@@ -470,6 +475,7 @@ Many slots, barely past the shoulder. More kit on near ground.
 ### Rucksack
 status: wip · design: ratified · build: effect · needs: camp render · where: generalStore
 Audit 2026-11-16: in ITEMS (FEAT-182, [DEFAULT] numbers). Missing: every source (no shelf, no reward).
+Audit 2026-11-17: on the general-store shelf, rolled (weight 1), $25 [DEFAULT] ("mid-priced"); still no reward row, land/camp-gear-shelf.
 Between the Duffel and the Frame pack: fewer slots than the Duffel, less reach than the Frame pack.
 
 ### Frame pack
