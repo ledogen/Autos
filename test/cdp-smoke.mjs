@@ -1498,7 +1498,9 @@ const STEPS = [
       return null })()`)
     check(off, 'no off-road spot beside the joint')
     await seat(off.x, off.z, 0)
-    check(await until(async () => /off the road/.test((await eve()).hud), 2000), `off the road, the evening's HUD offers no way back ("${(await eve()).hud}")`)
+    // DEC-321: no reset is taught — off the road the HUD names no key; R still works, untaught.
+    await simFor(0.5)
+    check(!/puts you back/.test((await eve()).hud), `off the road, the tutorial's HUD still teaches a reset ("${(await eve()).hud}")`)
     await readCards(300)   // a lesson landing here would take the R
     await tap('r')
     check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 8000), 'R in the evening did not put the truck back on the road')
