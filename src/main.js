@@ -4641,6 +4641,7 @@ function _homeGuide () {
       : _evePump?.done ? _evePump.q : _joint()
     _eveningGuide = from && to ? missionSystem.planOffer(from, { rng: offerBoard.routeRng({ poiId: mom.id, slot: 'eve', k: 0 }),
       dest: { kind: 'poi', pois: [to], strict: true, anyLeg: true, nearest: true } }) : null
+    if (_eveningGuide) gpsSystem?.markStart()   // DEC-297: every tutorial leg (the evening's, each morning stop) opens with the start board
   }
   return _eveningGuide
 }

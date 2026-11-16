@@ -402,10 +402,15 @@ const seg = (centerline, s0, s1, gradeAt = level) => ({ centerline, gradeAt, s0,
   gps.update(1 / 60)
   check('no start board until a mission is accepted', !gps._startArrow.visible)
   gps.markStart(); gps.update(1 / 60)
-  check('markStart stands one board on the road ahead, pointing down the route',
-    gps._startArrow.visible && Math.abs(gps._startArrow.position.x - 10) < 0.1 && Math.abs(gps._startArrow.rotation.y) < 1e-6)
+  check('markStart stands one board 10 m BEHIND the start, on the road the other way, pointing down the route',
+    gps._startArrow.visible && Math.abs(gps._startArrow.position.x + 10) < 0.1 && Math.abs(gps._startArrow.rotation.y) < 1e-6)
+  gps._startPending = true; gps._route.back = { seg: seg(straight(350, -50, 0, 1, 0), 50, 350), dir: 1 }; gps.update(1 / 60)
+  check('road behind the start: the board stands on that road\'s centreline', Math.abs(gps._startArrow.position.x + 10) < 0.1)
+  gps._startPending = true; gps._route.back = { seg: seg(straight(300, -4, 0, 1, 0), 4, 300), dir: 1 }; gps.update(1 / 60)
+  check('only 4 m of road behind: clamped to what exists', Math.abs(gps._startArrow.position.x + 4) < 0.1)
+  gps._startPending = true; gps._route.back = { seg: seg(straight(300, 0, 0, 1, 0), 0, 300), dir: 1 }; gps.update(1 / 60)
   car.x = START_GONE_M - 1; gps.update(1 / 60)
-  check('the board holds still while the truck is inside 20 m', gps._startArrow.visible && Math.abs(gps._startArrow.position.x - 10) < 0.1)
+  check('the board holds still while the truck is inside 20 m', gps._startArrow.visible && Math.abs(gps._startArrow.position.x + 10) < 0.1)
   car.x = START_GONE_M + 1; gps.update(1 / 60)
   check('...and goes once the truck is 20 m away', !gps._startArrow.visible)
   check('either direction counts', startBoardGone({ x: 0, z: 0 }, { x: -21, z: 0 }) && !startBoardGone({ x: 0, z: 0 }, { x: 0, z: 19 }))

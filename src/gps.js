@@ -44,8 +44,9 @@ const RING_HOVER   = 1.4
 const UT_ON        = -0.5
 const UT_OFF       = -0.2
 // DEC-287: the wrong-way flag feeds the HUD alert (main.js); the 3D U-turn arrow is gone.
-// Mission start: ONE fixed junction board on the road START_AHEAD m up the route from the truck, until the truck is START_GONE_M away.
-const START_AHEAD  = 10     // m of route ahead of the truck's progress at accept: "right outside the POI"
+// Mission start (DEC-287, DEC-297): ONE fixed junction board STAND_BEHIND m BEHIND the truck's route progress, along the road
+// the other way from the route, pointing down the route: a player facing the wrong way sees it ahead. Gone START_GONE_M away.
+const STAND_BEHIND = 10     // m back along the road, opposite the route, from where the truck stood at accept
 export const START_GONE_M = 20   // m the truck travels (either way) from where it accepted before the start board goes
 // FEAT-218: an objective further than this from the route's last road point is OFF the road: it gets the turn arrow, not the ring.
 const OFFROAD_M    = 3      // a demolition target stands ~5 m off the centreline; a courier's end is on it
@@ -125,6 +126,7 @@ export function bakeRoute (segments, elevAt = null) {
     cum[i] = cum[i - 1] + Math.hypot(px[i] - px[i - 1], py[i] - py[i - 1], pz[i] - pz[i - 1])
   }
   const route = { px, py, pz, cum, n, length: cum[n - 1], partial, junctions: [] }
+  route.back = { seg: segments[0], dir: Math.sign(segments[0].s1 - segments[0].s0) || 1 }   // DEC-297: the road behind the start
   route.firstArc = markCoverage(route)
 
   // Only REAL intersections get an arrow. `endDeg` is the degree of the graph node the edge ends
@@ -593,10 +595,27 @@ export class GpsSystem {
   /** DEC-287: a mission was accepted: the next baked frame stands the start board on the road ahead, fixed. */
   markStart () { this._startPending = true; this._startArrow.visible = false; this._startAt = null }
 
+  /**
+   * DEC-297: the point STAND_BEHIND m back along the road from route arc `s`, with the route's direction there.
+   * Inside the route it is just arc s - 10. Before the route's start it walks the first edge's own centreline the
+   * other way (clamped at the edge's end, a junction or road end); with under 1 m of road there it extrapolates
+   * straight back along the first tangent at the route's start height.
+   */
+  _behind (route, s) {
+    const want = STAND_BEHIND - s
+    if (want <= 0) return sampleRoute(route, s - STAND_BEHIND)
+    const p0 = sampleRoute(route, 0), { seg, dir } = route.back
+    const room = dir > 0 ? seg.s0 : seg.centerline.length - seg.s0   // road left behind the first point
+    const d = Math.min(want, Math.max(room, 0))
+    if (d < 1) return { ...p0, x: p0.x - p0.dx * want, z: p0.z - p0.dz * want }
+    const sa = seg.s0 - dir * d, q = seg.centerline.pointAt(sa)
+    return { ...p0, x: q.x, z: q.z, y: this._profileY(seg, sa) ?? seg.gradeAt(sa) }
+  }
+
   _placeStart (route, s, car) {
     if (this._startPending) {
       this._startPending = false
-      const p = sampleRoute(route, Math.min(s + START_AHEAD, route.length))
+      const p = this._behind(route, s)
       this._startArrow.position.set(p.x, p.y + ARROW_HOVER, p.z)
       this._startArrow.rotation.set(0, Math.atan2(-p.dz, p.dx), 0)   // as the junction board: tip on the direction of travel
       this._startAt = { x: car.x, z: car.z }
