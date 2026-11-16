@@ -36,12 +36,13 @@ Ice, Ice King, Packed lunch). In short:
 ## Tracker
 - [ ] Slice 1: potato item, sold and rewarded, cooked on the campfire, eaten
 - [ ] Slice 2: fresh clock, cooler, ice
-- [ ] Slice 3: groceries cooked with the kit; the kit's flat food bonus (number from the owner)
+- [ ] Slice 1b: the cooking kit deployed at camp gives food eaten there +20 % hold (DEC-310)
+- [ ] Slice 3: groceries cooked with the kit (no 20 % on top); groceries as a farm reward
 - [ ] FEAT-121's rows for these items brought up to date
 
 ## Open questions
-- The cooking kit's flat bonus to other food: how much?
 - The potato's exact price ("under $5").
 
 ## Log
 - 2026-11-16: minted from FEAT-121's rows at the owner's question.
+- 2026-11-16: owner gave the kit's number, +20 % (DEC-310); added to slice 1.
