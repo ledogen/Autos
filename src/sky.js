@@ -14,7 +14,7 @@
  *      curve decides how bright all of it reads on screen.
  *
  * FOG IS THE SKY. The background shader and the fog are the SAME GLSL function (skyHaze) reading the same
- * texture: a fogged fragment fades to the sky radiance in the direction you look through it, and below the
+ * texture (the fog through THE FOG CUBE, baked from it): a fogged fragment fades to the sky radiance in the direction you look through it, and below the
  * horizon the sky is its own lowest row (2° up, see HORIZON_Y) continued down — at twilight darkening over the first 10°
  * toward the land's own level (THE LAND BEYOND, in skyHaze). So the fog cannot be brighter than the sky at
  * dawn, and there is no colour step at the horizon, by construction rather than by tuning — there is no
@@ -519,7 +519,7 @@ const LUT_TEX = new THREE.DataTexture(LUT_DATA, LUT_W, LUT_H, THREE.RGBAFormat, 
 LUT_TEX.wrapS = THREE.RepeatWrapping                     // azimuth wraps; elevation clamps (row 0 = horizon)
 LUT_TEX.magFilter = LUT_TEX.minFilter = THREE.LinearFilter
 LUT_TEX.generateMipmaps = false
-// THE FOG CUBE (FEAT-180 cost, DEC-280). The fog colour is a function of the view direction alone (skyGrade of skyHaze,
+// THE FOG CUBE (FEAT-180 cost, DEC-284). The fog colour is a function of the view direction alone (skyGrade of skyHaze,
 // every other input a uniform), so SkySystem.update bakes it into this small cube whenever an input moves, and every
 // fogged fragment reads it with ONE hardware-mapped fetch instead of running the atan / acos / glare / grade chain
 // itself (that chain was ~9 % of the GPU's work, measured). 128² a face: 0.7° a texel against the glare's ~6° core.
