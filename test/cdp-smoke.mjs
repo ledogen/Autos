@@ -816,7 +816,7 @@ const STEPS = [
       check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with no offer opened no shop')
       const txt = await js('document.querySelector("#svc-screen").textContent')
       check(/Groceries/.test(txt) && !/My Vehicle|Parts Shop/.test(txt), `the farm's shop reads: "${txt.slice(0, 200)}"`)
-      check(await js('!document.querySelector("#svc-screen [data-act=jobs]")'), 'a farm with no offer shows a dead jobs button')
+      check(await js('!document.querySelector("#svc-screen [data-tab=jobs]")'), 'a farm with no offer shows a dead Jobs tab')
       await shot('farm-shop.png')
       await leave()
     } else console.log('  farm: no farm without an offer — the no-offer half skipped')
@@ -824,9 +824,11 @@ const STEPS = [
     if (!live) { console.log('  farm: no farm with an offer up — the jobs half skipped'); return }
     await seat(live.x, live.z, live.h); await park(true)
     check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with an offer opened no shop')
-    check(await js('!!document.querySelector("#svc-screen [data-act=jobs]")'), 'the farm shop has no jobs button although an offer is up')
+    check(await js('!!document.querySelector("#svc-screen [data-tab=jobs]")'), 'the farm shop has no Jobs tab although an offer is up')   // the tab holds the "go to jobs" button
+    await js('document.querySelector("#svc-screen [data-tab=jobs]").click()')
+    check(await js('!!document.querySelector("#svc-screen [data-act=jobs]")'), 'the farm\'s Jobs tab has no "go to jobs" button')
     await shot('farm-shop-jobs.png')
-    await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+    await js('document.querySelector("#svc-screen [data-act=jobs]").click()')
     check(await until(() => vis('mp-accept'), 2000), "the farm's jobs button did not bring up the farm's own offer card")
     await js('document.getElementById("mp-accept").click()')
     check(await until(async () => await vis('mission-hud') && await js('document.querySelector("#mission-hud .hud-text").textContent.trim()'), 5000), 'accepting the farm offer started no mission')
