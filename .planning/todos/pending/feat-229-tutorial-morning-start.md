@@ -104,3 +104,6 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-16: box 3 on `land/tut-seed-gate`: `test/tutorial-seed.mjs` walks DEC-304's order with main.js's picks; legs 2.00 /
   0.70 / 2.72 / 2.11 / 3.86 (flat at 2.06, tow 0.53 crow) / 0.94 / 2.00 km, 12.5 km, 15 min wheel; TUT_STAMPS read from
   main.js. Gate green. Unguarded: a leg driven (the gate plans, never drives), a beat's trigger in main.js.
+- 2026-11-16: DEC-345 built on `land/tut-picnic` (DEC-346..348; Billy per DEC-343/349). Affected node gates 10/10 green;
+  smoke boot,story,opening,newRun PASS twice (one run in between failed at "make camp": the seated site re-graded "not
+  flat" under load, the risk the step's comment names). Card shots: `wip/tut-picnic/`. Unverified: a real drive to the ranch.
