@@ -12,8 +12,9 @@ lane: C
 # FEAT-230: Cooking at camp — the potato, groceries, and the cooking kit's job
 
 ## Next steps
-Slice 1 and 1b are built on `land/feat-230` (not merged). Next: slice 2 (the fresh clock, cooler and ice; the cooked
-potato's 24 h), then slice 3 (groceries cooked with the kit, no +20 % on top). Owner: set the potato's price (placeholder $2).
+Slices 1 and 1b are on main; slice 2 (the fresh clock, the coolers, ice) is built on `land/feat-230-fresh`. Next: slice 3,
+groceries cooked with the kit (no +20 % on top): give the item `freshH: 24, chill: true` and the clock and coolers already
+handle it. Owner: the potato's price ($2), the coolers' prices ($20, $65), and the open points under Open questions.
 
 ## Summary
 The cooking kit is sold and rewarded but does nothing: its effect waits on groceries, and neither groceries nor the
@@ -36,12 +37,17 @@ Ice, Ice King, Packed lunch). In short:
 ## Tracker
 - [x] Slice 1: potato item, sold and rewarded, cooked on the campfire, eaten
 - [x] Slice 1b (DEC-310): cooking kit deployed at camp = food holds 20 % longer
-- [ ] Slice 2: fresh clock, cooler, ice
+- [x] Slice 2: fresh clock, cooler, ice
 - [ ] Slice 1b: the cooking kit deployed at camp gives food eaten there +20 % hold (DEC-310)
 - [ ] Slice 3: groceries cooked with the kit (no 20 % on top); groceries as a farm reward
 - [ ] FEAT-121's rows for these items brought up to date
 
 ## Open questions
+- Slice 2 defaults, each one field to change: the cooler slows only `chill` food (groceries, fish: the ruled ones), not the
+  chili dog, packed lunch or cooked potato; it chills whole stacks up to 4 units, the Ice King 4 too (its count is open); a bag
+  of ice in the inventory never melts, and a new cooler comes empty; a stack carries its oldest unit's age; the player is
+  told nothing yet (SM-INV-10 wants words, which are the owner's); school lunch and peanuts have no fresh clock (not ruled).
+- Prices: the cooler $20 and the Ice King $65 are the middles of $10–30 and $30–100 (data/shop-stock.js ITEM_PRICE).
 - The potato's exact price ("under $5"): $2 is a placeholder (data/shop-stock.js ITEM_PRICE).
 
 ## Log
@@ -50,3 +56,7 @@ Ice, Ice King, Packed lunch). In short:
 - 2026-11-16 slice 1 + 1b on `land/feat-230`: potato/potatoCooked, `stack` cap in the inventory, camp button `cp-cook`
   (`_campFade` + `convert`), general store + farm `produce` reward, `foodHoldH` (DEC-310). Gates: inventory. Unverified: the
   30 min and the button in a live browser (main.js has no headless gate).
+- 2026-11-16 slice 2 on `land/feat-230-fresh`: `freshH` (chili dog 16, packed lunch 24, cooked potato 24) as `age` per entry,
+  advanced by `InventorySystem.tick(clockH)` each fixed step (runs asleep, holds under the brake per DEC-289); ice / cooler / Ice
+  King items, shelves (tackle shop now a storefront), A–S / S reward rows. Gates: inventory, shop-stock + affected. Unverified:
+  nothing visible in the browser (no freshness UI); the Ice King's 0.25 shelf weight.

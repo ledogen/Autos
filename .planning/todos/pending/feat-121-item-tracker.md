@@ -67,8 +67,8 @@ free alertness (fish's job).
 **In the game 2026-10-23** (`energyDrink`, 0.5 kg, `use: 'energy'`): +5 h now, the −2.5 h crash lands 4 h later (day.js `drinkEnergy`; a sleep first sleeps it off [DEFAULT]); a C–B reward from the gas station and general store. Not sold yet (no general-store shelf).
 
 ### Chili dog
-status: wip · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
-Audit 2026-11-16: item, eat, $5 vendor shelf and B–A reward ship. Missing: the 16 h spoilage (no spoilage system).
+status: shipped · design: ratified · build: effect · needs: hunger · where: foodVendor, reward
+Audit 2026-11-16: item, eat, $5 vendor shelf and B–A reward ship. **Spoils in 16 h (FEAT-230 slice 2, `freshH`).**
 Already a REWARDS id (`chiliDog`, kind food). A meal: resets the hunger clock.
 **Ruled 2026-10-20:** a plain meal that holds hunger 10 h. $5. Food vendor only (B–A), never found.
 Spoils in 16 h (2026-10-21). Flavor: "Kinda gross" (owner, 2026-10-22) — the in-game desc since 2026-10-24.
@@ -92,8 +92,8 @@ Spoils in 16 h; $5; a C–B reward from the food vendor; never found (2026-10-21
 classic" (owner, 2026-10-22).
 
 ### Packed lunch
-status: wip · design: ratified · build: effect · needs: hunger, spoilage · where: reward
-Audit 2026-11-16: in ITEMS and the run's starting three. Missing: the B–A reward row (residence, farm, vendor) and the 24 h freshness (spoilage).
+status: wip · design: ratified · build: effect · needs: hunger · where: reward
+Audit 2026-11-16: in ITEMS and the run's starting three. Missing: the B–A reward row (residence, farm, vendor). **Fresh 24 h built (FEAT-230 slice 2).**
 Never sold (owner, 2026-10-21): a bonus item from residences, farms and the food vendor (B–A), worth
 $6. Holds hunger 8 h; fresh 24 h. Never found. Flavor: "Homemade!" (owner, 2026-10-22).
 
@@ -106,8 +106,8 @@ store and farms (a farm sells for the first time); a farm and general-store rewa
 Flavor: "Fresh and goes together easy" (owner, 2026-10-22).
 
 ### Potato
-status: wip · design: ratified · build: effect · needs: spoilage (cooked 24 h) · where: generalStore, reward
-**In the game 2026-11-16 (FEAT-230 slice 1):** `potato` (raw, no `use`, its desc says why) and `potatoCooked` (`use: 'eat'`, hold 4 h), 5 to a slot (`stack`); the camp card's "cook a potato · 30 min" button turns one raw into one cooked; general-store line at a $2 [DEFAULT]; a farm reward at C–B (category `produce`). The cooked one does not spoil yet (slice 2's fresh clock). The kit's bonus applies (DEC-310, +20 %).
+status: shipped · design: ratified · build: effect · needs: none · where: generalStore, reward
+**In the game 2026-11-16 (FEAT-230 slice 1):** `potato` (raw, no `use`, its desc says why) and `potatoCooked` (`use: 'eat'`, hold 4 h), 5 to a slot (`stack`); the camp card's "cook a potato · 30 min" button turns one raw into one cooked; general-store line at a $2 [DEFAULT]; a farm reward at C–B (category `produce`). The cooked one keeps 24 h (slice 2, `freshH`); raw never spoils. The kit's bonus applies (DEC-310, +20 %).
 New (owner, 2026-10-21). Inedible raw; cooked on the campfire — the only food you buy that needs no
 cooking kit — it is a decent meal. Sold at the general store; a farm reward. **Ruled 2026-10-22:**
 holds hunger 4 h; +30 min to cook; raw never spoils, cooked keeps 24 h; the cooking kit's food bonus
@@ -262,7 +262,8 @@ the job. **Never sold:** an A–S reward from farms, work sites, gas stations, t
 store, and freight jobs (rare); worth $10–30; never found. Flavor: "Not very padded".
 
 ### Ice
-status: todo · design: ratified · build: effect · needs: spoilage · where: gasStation, generalStore
+status: shipped · design: ratified · build: effect · needs: none · where: gasStation, generalStore
+**In the game (FEAT-230 slice 2):** `ice`, 3.6 kg [DEFAULT], `use: 'ice'` fills the owned cooler with the least ice left; kept if no cooler. $5 at both shelves.
 The cooler's running cost (owner, 2026-10-21): a bag lasts 72 h, so the cooler is refilled every 3 days
 (the Ice King's ice lasts 5 days). $5 at the gas station and the general store; never a reward; never
 found (2026-10-22). Flavor: "Cold and wet".
@@ -308,13 +309,15 @@ status: cut · design: implied · build: effect · where: autoShop
 Cut by the owner (2026-10-22, the item setup page). Struck in items.md §2.
 
 ### Cooler
-status: todo · design: ratified · build: effect, model · needs: spoilage · where: tackleShop, generalStore, reward, found
+status: wip · design: ratified · build: model · needs: a find system · where: tackleShop, generalStore, reward, found
+**In the game (FEAT-230 slice 2):** `cooler`, 3 kg [DEFAULT], ×1/6 on `chill` food while iced (72 h a bag), 4 units; $20 [DEFAULT] at the general store and tackle shop (now a storefront); A–S tackle-shop reward (cat `cooler`). Not built: the find, the model.
 ×1/6 spoilage rate: fish keeps ~36 h instead of ~6 h; holds 4 fish (owner, 2026-10-21). **Runs on ice,
 refilled every 3 days** (Ice row). General store + tackle shop, $10–30; tackle-shop reward A–S; a
 roadside find rarer than the common ones. Flavor: "Keeps stuff cold" (owner, 2026-10-22).
 
 ### Ice King
-status: todo · design: ratified · build: effect, model · needs: spoilage · where: tackleShop, generalStore, reward
+status: wip · design: ratified · build: model · needs: none · where: tackleShop, generalStore, reward
+**In the game (FEAT-230 slice 2):** `iceKing`, 8 kg [DEFAULT], ×1/8, ice 120 h, 4 units [DEFAULT]; $65 [DEFAULT], shelf weight 0.25 at the general store and tackle shop [DEFAULT]; S reward from the tackle shop and residences (cat `iceKing`). PLACEHOLDER desc. Not built: the model.
 Renamed from better cooler (owner, 2026-10-22). ×1/8 spoilage rate: fish keeps ~48 h; its ice lasts 5
 days. Both coolers can be carried. $30–100; sold at the tackle shop and general store, very rarely; an
 S-only reward from the tackle shop and residences; never found. Open: how many fish it holds.
