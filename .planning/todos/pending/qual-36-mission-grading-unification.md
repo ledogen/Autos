@@ -12,10 +12,10 @@ lane: unplaced
 # QUAL-36: Unify how mission types are graded, presented and rewarded
 
 ## Next steps
-Built 2026-11-14 on feature/spare (DEC-178..183). Words answered 2026-11-15 (DEC-252..254, branch land/small-1115).
-Left: Larry's "not enough cash" line (marked placeholder in `_larryHandsOver`, owed), the FEAT-140 "Freight is units"
-line in missions.md:475, and the owner's look at the bar's tile words on a calm-impatient job (rank-timer.js WORDS: strip
-"full tip / deed 1 / deed ½", tile "TIP+DEED / DEED / ½ DEED"). Then close.
+Branch land/rankui-1116 (DEC-291, DEC-292): Larry's item is paid on the result card like any job's (no hold); the bar's
+strip is gone and the rank UI is built two ways for the owner's A/B (`?rankui=a|b`, debug menu "Rank UI", default b).
+Owner: try both, pick one; the loser is then deleted. Left: DEC-252/253 need their own superseding records (checker:
+one `supersedes` id per record), the FEAT-140 "Freight is units" line in missions.md:475. Then close.
 
 ## Summary
 Every type tips on the same time line (whole tip at ratio 0.652, half at par, none at 1.348), but only courier and
@@ -53,6 +53,7 @@ Deep dive: `.planning/dives/QUAL-36-mission-grading.html`
 `data/offers.js` · `test/economy.mjs` · `test/rank-timer.mjs` · `test/offer-board.mjs` · `test/paper-route.mjs`
 
 ## Log
+- 2026-11-15: DEC-291/292 on land/rankui-1116: held item removed (_larryHandsOver, runPaper.held, the holding line), pp-item button on the paper card; strip words gone, variants A/B built; gates rank-timer + story gates, pictures wip/rankui-1116/. Unverified: B item row at a non-S gate by picture (unit-tested only).
 - 2026-11-15: words in (DEC-252 half price on collect, DEC-253 Larry's lines, DEC-254 card text plain); no-room vs no-cash split, cash line still [placeholder]. Gates: offer-board, sky-ephemeris.
 - 2026-11-14: built per the answers, DEC-178..183; Larry holds the item (runPaper.held, handed over parking at his house). Gates rank-timer/offer-board updated.
 - 2026-11-13: dive written from the code at e26da3d2 (feature/content). Worked examples rolled and routed headlessly

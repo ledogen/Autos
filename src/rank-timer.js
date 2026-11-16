@@ -37,21 +37,38 @@
 export const RANK_ORDER = ['S', 'A', 'B', 'C', 'D']
 
 /**
- * QUAL-36 (DEC-180, owner 2026-11-14): the bar names what each band EARNS, never a letter. `strip` is
- * the band's own label (blank where the previous band's word still holds), `tile` the live tile's word.
- * `tipOnly` is a calm job under an Impatient giver (DEC-181): the clock decides the tip, the deed stays
- * on the type's own axis, so only the tip line is on the bar.
+ * QUAL-36 (DEC-292, owner 2026-11-15; supersedes DEC-180): the bar shows rank LETTERS again, and what a rank
+ * keeps is told one of two ways, switched by RANK_UI.variant (debug menu "Rank UI", or `?rankui=a|b`):
+ *   'b' (default, the smaller change) — the bar is as it was; the DEED / ITEM text rows above it are coloured
+ *       by how close the reward is to being lost (rewardTone).
+ *   'a' — the bar's own bands carry the deed (full / half / none) and a mark where the item lapses, and the
+ *       rank timer MINIMISES to one line, "S rank x:xx", opening MINI_OPEN_S before a rank switch or inside
+ *       MINI_OPEN_M of the objective. The text rows are then not drawn for a courier job.
+ * The owner has not chosen; both are built. Neither explains the tip.
  */
-const BAR_WORDS = {
-    S: { strip: 'full tip', tile: 'TIP+DEED' },
-    A: { strip: '',         tile: 'DEED' },
-    B: { strip: 'deed 1',   tile: 'DEED' },
-    C: { strip: 'deed ½',   tile: '½ DEED' },
-    D: { strip: '',         tile: '—' },
-}
-export function rankBarWords (letter, tipOnly = false) {
-    const w = BAR_WORDS[letter]
-    return tipOnly ? { strip: letter === 'S' ? w.strip : '', tile: letter === 'S' ? 'TIP' : '—' } : w
+export const RANK_UI = { variant: 'b' }
+export const RANK_UI_VARIANTS = ['a', 'b']
+export const MINI_OPEN_S = 15     // s — variant A: the scroller opens this long before the next rank switch…
+export const MINI_OPEN_M = 500    // m — …or when the truck is this close to the objective (distance left)
+export const MINI_HOLD_S = 3      // s — …and stays open this long after a switch, so the "bonus lost" beat is seen
+
+/** What each rank keeps of a courier job's deed (SM-INV-14: 1 at B or better, ½ at C, none at D). */
+export const DEED_KEEP = { S: 'full', A: 'full', B: 'full', C: 'half', D: 'none' }
+export const DEED_GLYPH = { full: '1', half: '\u00bd', none: '\u2013' }
+
+/**
+ * The colour state of a reward held on rank `letter`. `keepOf(l)` says what rank l keeps ('none' = nothing).
+ * n = how many ranks from this one down (this one included) keep the SAME thing:
+ *   3+ → 'good' (green), 2 → 'warn' (yellow: this rank and the next keep it, the one after does not),
+ *   1 → 'bad' (red: losing THIS rank loses or reduces it), nothing kept → 'gone' (struck through).
+ * Owner's example (deed 1 at S/A/B): S green, A yellow, B red. The item reads the same against its gate.
+ */
+export function rewardTone (keepOf, letter) {
+    const k = keepOf(letter)
+    if (k === 'none') return 'gone'
+    let n = 0
+    for (let i = RANK_ORDER.indexOf(letter); i < RANK_ORDER.length && keepOf(RANK_ORDER[i]) === k; i++) n++
+    return n >= 3 ? 'good' : n === 2 ? 'warn' : 'bad'
 }
 
 // GEOMETRY [owner, 2026-10-01]: the targets are A·B·C·D, so they get the bar. The pointer sits

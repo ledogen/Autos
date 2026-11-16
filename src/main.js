@@ -116,7 +116,8 @@ import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   //
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
 import { ScenarioSystem } from './scenario.js'             // FEAT-62: countdown / gates / finish rules
 import { Leaderboard, localStore } from './leaderboard.js'             // FEAT-62: best times (save-file hook in its header)
-import { RANK_TIMER_PARAMS, rankTimerLayout, rankTimerFrame, rankBarWords } from './rank-timer.js'   // FEAT-87
+import { RANK_TIMER_PARAMS, RANK_ORDER, RANK_UI, MINI_OPEN_S, MINI_OPEN_M, MINI_HOLD_S, DEED_KEEP, DEED_GLYPH, rewardTone,
+         rankTimerLayout, rankTimerFrame } from './rank-timer.js'   // FEAT-87; QUAL-36 (DEC-292) the rank-UI A/B
 import { playHeartbeat, HEARTBEAT_DUB_DELAY, HEARTBEAT_DUB_LEVEL } from './heartbeat-audio.js'   // FEAT-87: the bar's lub-dub
 import { FuelStop, towPrice, towHours, stationPriceFactor } from './fuel-stop.js'   // FEAT-50: the pump visit + the tow; FEAT-209 each station's price
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
@@ -151,6 +152,7 @@ import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond d
 // Plan 04: changed to `let` so debug panel seed field can mutate it (SEED-04).
 // Refreshing the same ?seed= URL reproduces the same terrain (SEED-01/03).
 const _urlParams = new URLSearchParams(window.location.search)
+if (['a', 'b'].includes(_urlParams.get('rankui'))) RANK_UI.variant = _urlParams.get('rankui')   // QUAL-36 (DEC-292): ?rankui=a|b, default b
 const _urlSeed = _urlParams.get('seed')
 // PERF-08 harness flags: ?prof=1 exposes the window.__q/__ri/__perfData/__lever dev handles +
 // mirrors perf buckets into performance.measure (trace user_timing). ?noaa=1 disables MSAA at
@@ -5144,9 +5146,8 @@ const paperRouteSystem = new PaperRouteSystem({
   // finished number; the wallet, the deeds and the mission count still accrue in economy.js.
   onSettle:  (payout, letter) => {
     const s = economySystem.settleFlat(payout, letter, offerBoard?.spec(paperRouteSystem.offer)?.bonus)
-    // QUAL-36 (DEC-182): Larry's item is not stowed on the result card — he HOLDS it, indefinitely, until the
-    // player parks at his house and takes it (cost off the cash, as on any job; _larryHandsOver).
-    if (s.award) runPaper.held.push({ rewardId: s.award.rewardId, name: s.award.name, cost: itemCost(s.award.rewardId, s.payout) })
+    // DEC-291: Larry's item is the same choice as any job's — priced here, taken or not on the result card (_syncItemChoice).
+    if (s.award) { s.award.cost = itemCost(s.award.rewardId, s.payout); s.award.stowed = null }
     const id = paperRouteSystem.offer?.id
     if (id) offerBoard?.complete(id, daySystem.clockH())   // FEAT-67: Larry's slot then empties
     return s
@@ -5169,25 +5170,6 @@ const paperRouteSystem = new PaperRouteSystem({
   getClockH: () => daySystem.clockH(),   // FEAT-113: world-time elapsed + Larry's deadline
   onChange:  () => _renderPaperUI(),
 })
-/**
- * QUAL-36 (DEC-182, owner 2026-11-14): parking at Larry's hands over the items he holds — each one that fits the truck
- * and that the wallet covers (its cost comes off the cash, as on any job). What cannot be taken stays held,
- * and his line reminds the player. PLACEHOLDER words (the owner writes character text, FEAT-148).
- */
-function _larryHandsOver () {
-  const kept = [], gave = [], noRoom = []
-  for (const h of runPaper.held) {
-    // DEC-252: collecting costs HALF the item's price (owner 2026-11-15), to the cent.
-    if (!inventorySystem.fits(h.rewardId)) { kept.push(h); noRoom.push(h.name) }
-    else if (economySystem.spend(Math.round(h.cost * 50) / 100)) { inventorySystem.grant(h.rewardId); gave.push(h.name) } else kept.push(h)
-  }
-  runPaper.held = kept
-  const say = (text) => { dialogueSystem.play(null, [{ speaker: 'Uncle Larry', text }]); _renderDialogue() }
-  // DEC-253: the owner's own words (QUAL-36 answers 1 and 2).
-  if (gave.length) say(`Did ya come back to grab your ${gave.join(' and ')}? I been keepin' it safe for ya.`)
-  else if (noRoom.length) say("Well that's too bad. Looks like ya dont have room for it right now. Go drop something and check back with me.")
-  else if (kept.length) say(`[placeholder] Not enough cash for your ${kept.map(h => h.name).join(' and ')} yet. Come back with some money.`)   // OWED: the owner's "not enough cash" line (QUAL-36)
-}
 // FEAT-63: cached so the 10 Hz poll is a style write and not a DOM lookup.
 const _recalcEl = document.getElementById('gps-recalc')
 let _recalcOn = false
@@ -6342,7 +6324,6 @@ function _updateParkTriggers (zParked = false) {
     // siblings — each leaves 'idle' and each other's reach test then returns null.
     // FEAT-67: what is on offer is the BOARD's — live offers only. With nothing live the brake opens
     // nothing and the prompt says when the next offer turns up (the prompt shows it; see below).
-    if (poi.type === 'larrysHouse' && runPaper.held.length) _larryHandsOver()
     const offers = _takeableOffers(poi.id, daySystem.clockH())
     if (!offers.length) return
     if (poi.type === 'larrysHouse') paperRouteSystem.open(poi, offers[0])
@@ -7669,8 +7650,7 @@ function _renderPaperUI () {
         + `${Math.round(r.meanAccuracy * 100)}% <span class="mp-dim">accuracy</span>`
         // The same rows the POI result card shows (_payRows), plus the accuracy bonus — a third
         // payment, banked as the papers landed. Showing only the settlement would look like a pay cut.
-        + _payRows({ base: r.base, tip: r.tip, spot: r.spot, points: r.points })
-        + (r.award ? `<br><span style="color:var(--money)">Larry&rsquo;s holding your ${r.award.name} &mdash; come by his house to pick it up</span>` : '')
+        + _payRows({ base: r.base, tip: r.tip, spot: r.spot, points: r.points, bonus: r.award ? { name: r.award.name } : null, award: r.award })
         + (r.advanced
           ? `<br><span style="color:var(--money)">Larry&rsquo;s giving you a bigger route &mdash; ${r.nextTier} houses next time</span>`
           : '')
@@ -7701,7 +7681,10 @@ function _renderPaperUI () {
   // is the only forward action and the right one has nothing to say.
   const acc = document.getElementById('pp-accept')
   const dec = document.getElementById('pp-decline')
-  if (acc) acc.textContent = p.state === 'done' ? 'continue' : 'start the route'
+  const earned = p.state === 'done' && p.result?.award && !p.result.award.stowed   // DEC-291: Larry's item, taken or not on this card
+  if (acc) acc.textContent = earned ? `take $${formatMoney(p.result.payout)}` : p.state === 'done' ? 'continue' : 'start the route'
+  const pi = document.getElementById('pp-item')
+  if (pi) { pi.style.display = earned ? '' : 'none'; _syncItemChoice() }
   if (dec) dec.style.display = p.state === 'offer' && !_paperScenario ? '' : 'none'   // FEAT-62: the scenario IS the round
 }
 
@@ -7962,6 +7945,7 @@ function _hmSeg (word, hours) {
 const RT = RANK_TIMER_PARAMS
 let _rtEls = null, _rtKey = null, _rtLayout = null, _rtPrev = -1, _rtLetter = '', _rtHot = false
 let _rtBeatT = 0, _rtShown = false, _rtPhase = 0, _rtLastNow = 0
+let _rtBuiltA = false, _rtOpenHold = 0   // QUAL-36 variant A: the layout was built for A; the open-hold deadline (performance.now()/1000)
 let _rtKickT = -1   // performance.now()/1000 of the last heartbeat (-1: none since calm) — drives the tile's thump
 let _rtNearKey = null, _rtNear = false   // R-22: the near-the-goal latch, per job
 let _rtLive = '', _rtLiveInt = 0   // R-28: the band the clock is in NOW + how close the next line is — the promise line's rung
@@ -7982,7 +7966,7 @@ function _rankTimerSource () {
     if (!_rtNear && m.state === 'running') _rtNear = m.routeRemaining() <= Math.max(RT.nearMinM, RT.nearFrac * (m.mission.distance ?? 0))
     return { key: m.mission, elapsed: m.elapsed, par: m.mission.par,
              thresholds: m.mission.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT,
-             gate: calm ? null : m.mission.bonus?.gate ?? null, near: _rtNear, tipOnly: calm }
+             gate: calm ? null : m.mission.bonus?.gate ?? null, near: _rtNear, tipOnly: calm, distLeftM: m.routeRemaining() }
   }
   const p = paperRouteSystem
   if (p && p.isCarrying() && p.run && p.route && !p.run.expired) {
@@ -8068,11 +8052,24 @@ function _promiseRows (m) {
     if (held.line == null) return { what: held.what, next: null, tone: 'var(--bad-text)', lost: true }
     return { what: held.what, next: below(held.line), tone: _promiseTone(marginTo(held.line)) }
   }
-  const rows = clock ? [clock] : []
+  const rows = clock && RANK_UI.variant === 'b' ? [clock] : []   // variant A: the minimised timer is that line
+  if (!kind && RANK_UI.variant === 'a') return rows.length ? rows : null   // A: deed + item live on the scroller
   if (j.bonus) rows.push({ label: 'Reward', icon: j.bonus.rewardId, ...rung([{ what: j.bonus.name, line: lineOf(j.bonus.gate) }, { what: j.bonus.name, line: null }]) })
   // The deed: 1 at the B line, 1/2 at C (SM-INV-14). Freight's C is 0 kg (R-18), so it never reads "0".
   // R-33: at the bottom it reads "no deed", struck through (owner: "i know i said numbers only").
   rows.push({ label: 'Deed', ...rung([{ what: '1', line: lineOf('B') }, { what: '1/2', line: lineOf('C') }, { what: 'no deed', line: null }]) })
+  // QUAL-36 (DEC-292) variant B: a courier job's deed and item are coloured by how close the reward is to
+  // being lost, off the rank under the clock right now (rewardTone): green / amber / red, struck through once gone.
+  if (!kind && _rtLive) {   // courier = no kind
+    const TONE = { good: 'var(--money)', warn: 'var(--warn)', bad: 'var(--bad-text)', gone: 'var(--bad-text)' }
+    for (const r of rows) {
+      if (r.label !== 'Deed' && r.label !== 'Reward') continue
+      const keepOf = r.label === 'Deed' ? (l) => DEED_KEEP[l]
+        : (l) => RANK_ORDER.indexOf(l) <= RANK_ORDER.indexOf(j.bonus.gate) ? 'item' : 'none'
+      const t = rewardTone(keepOf, _rtLive)
+      r.tone = TONE[t]; r.lost = t === 'gone'
+    }
+  }
   // R-29: the load's count lives here too (it was its own bare line, #job-cargo), so the overlay is one box.
   if (kind === 'haul') rows.unshift({ label: 'Cargo', what: `${value} bundle${value === 1 ? '' : 's'} aboard`, tone: 'var(--text)' })
   else if (kind === 'freight') rows.unshift({ label: 'Cargo', what: `${j.cargoKg} kg`, tone: 'var(--text)' })
@@ -8129,21 +8126,24 @@ function _updateRankTimer () {
     if (!root) return
     _rtEls = { root, strip: document.getElementById('rt-strip'), gate: document.getElementById('rt-gate'),
                letter: document.getElementById('rt-letter'), letterBox: document.getElementById('rt-letter-box'),
-               beat: document.getElementById('rt-beat'), card: document.getElementById('rt-card'), segs: [] }
+               beat: document.getElementById('rt-beat'), card: document.getElementById('rt-card'), segs: [],
+               label: document.getElementById('rt-label'), mini: document.getElementById('rt-mini') }
   }
   const src = (storySystem.isActive() && !storySystem.isEntering()) ? _rankTimerSource() : null
   if (!src) {
     if (_rtKey !== null) {       // the job ended or was put down: hide once, forget the layout
       _rtKey = null; _rtLayout = null; _rtHot = false; _rtShown = false; _rtLive = ''; _rtLiveInt = 0
       _rtEls.root.style.display = 'none'
-      _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in', 'rt-closed')
+      _rtEls.root.classList.remove('rt-lost', 'rt-slow', 'rt-in', 'rt-closed', 'rt-mini')
       _rtEls.card.style.boxShadow = ''; _rtEls.card.style.borderColor = ''
       _rtEls.letterBox.style.scale = ''; _rtEls.letterBox.style.filter = ''
     }
     return
   }
   const E = _rtEls
-  if (src.key !== _rtKey) {
+  const A = RANK_UI.variant === 'a'
+  if (src.key !== _rtKey || _rtBuiltA !== A) {   // a switch of variant mid-job rebuilds too
+    _rtBuiltA = A
     // A new job in hand: rebuild the strip from its contract. One DOM build per accept.
     _rtKey = src.key
     _rtLayout = rankTimerLayout(src.par, src.thresholds, src.gate)
@@ -8153,7 +8153,9 @@ function _updateRankTimer () {
     E.segs = []
     for (const sh of E.letterBox.querySelectorAll('.rt-shard')) sh.remove()
     E.letter.classList.remove('rt-slam')
-    E.root.classList.remove('rt-lost', 'rt-slow', 'rt-in', 'rt-closed')
+    E.root.classList.remove('rt-lost', 'rt-slow', 'rt-in', 'rt-closed', 'rt-mini')
+    E.root.classList.toggle('rt-a', A)
+    E.label.textContent = A ? 'Rank \u00b7 deed:' : 'Rank:'
     E.root.style.display = 'none'
     E.gate.classList.remove('lost')
     if (_rtLayout) {
@@ -8164,7 +8166,8 @@ function _updateRankTimer () {
         el.className = w > RT.viewW / 2 ? 'rt-seg wide' : 'rt-seg'   // wide: letter at the left edge
         el.style.width = `${w}px`
         el.style.background = RANK_COLOR[b.letter]
-        const word = rankBarWords(b.letter, src.tipOnly).strip
+        // B: the letter. A: the letter and what that rank keeps of the deed (a tip-only job has none on the bar).
+        const word = A && !src.tipOnly ? `${b.letter} ${DEED_GLYPH[DEED_KEEP[b.letter]]}` : b.letter
         el.textContent = w >= 8 * word.length ? word : ''   // a word half-clipped reads worse than none
         E.strip.insertBefore(el, E.gate)
         E.segs.push(el)
@@ -8182,12 +8185,25 @@ function _updateRankTimer () {
   _rtLive = f.letter; _rtLiveInt = f.intensity
   // The pop: a paper round pops appearS before the S/A line; a courier job pops when the goal is
   // near (R-22, `src.near`). Then on for the rest of the job (the rt-in class runs the entrance once).
-  const shown = src.near != null ? src.near : f.shown
+  const now = performance.now() / 1000
+  // QUAL-36 variant A: the timer is always up; it is OPEN (the scroller) 15 s before a rank switch, inside 0.5 km
+  // of the objective, and MINI_HOLD_S after a switch — otherwise one line, "S rank x:xx".
+  const open = !A || (f.next ? f.next.t - e <= MINI_OPEN_S : false) || (src.distLeftM != null && src.distLeftM <= MINI_OPEN_M) || now < _rtOpenHold
+  const shown = A ? open : src.near != null ? src.near : f.shown
   if (shown !== _rtShown) {
     _rtShown = shown
     if (shown) _tut('tut-rank')   // FEAT-147: the first time the bar appears
-    E.root.style.display = shown ? 'block' : 'none'
     E.root.classList.toggle('rt-in', shown)
+  }
+  E.root.style.display = shown || A ? 'block' : 'none'
+  E.root.classList.toggle('rt-mini', A && !open)
+  if (A && !open) {
+    const b = _rtLayout.bands.find(bd => e < bd.t1)
+    const left = b && isFinite(b.t1) ? Math.max(0, b.t1 - e) : null
+    const txt = `<span style="color:${RANK_COLOR[f.letter]}">${f.letter}</span> rank` + (left != null ? ` ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : '')
+    if (txt !== E.mini._h) { E.mini._h = txt; E.mini.innerHTML = txt }
+    if (_rtHot) { _rtHot = false; _rtPhase = 0; E.card.style.boxShadow = ''; E.card.style.borderColor = ''; E.letterBox.style.scale = ''; E.letterBox.style.filter = ''; _rtKickT = -1 }
+    return
   }
   if (!shown) return
   // Deep in D the strip closes (rank-timer.js closeAfterDS); the tile below it stays to the end.
@@ -8198,14 +8214,13 @@ function _updateRankTimer () {
   if (f.letter !== _rtLetter) {
     const old = _rtLetter
     _rtLetter = f.letter
-    if (old) _rtBreakLetter(old)   // a line went past: the old letter breaks and falls
-    E.letter.textContent = rankBarWords(f.letter, src.tipOnly).tile
+    if (old) { _rtBreakLetter(old); _rtOpenHold = performance.now() / 1000 + MINI_HOLD_S }   // a line went past: the old letter breaks and falls
+    E.letter.textContent = f.letter
     E.letterBox.style.background = RANK_COLOR[f.letter]   // the tile; the letter on it is dark (CSS)
     if (old) { E.letter.classList.remove('rt-slam'); void E.letter.offsetWidth; E.letter.classList.add('rt-slam') }
   }
   // The beats. A beat holds for RT.beatS (the CSS animation runs the flash; the class is removed
   // on the clock so a second beat can re-trigger it). Both fire once, on the crossing frame.
-  const now = performance.now() / 1000
   if (f.lost || f.slow) {
     E.root.classList.remove('rt-lost', 'rt-slow')
     void E.root.offsetWidth    // restart the CSS animation if a beat is already playing
@@ -8334,19 +8349,24 @@ function _acceptOffer () {
  * made). A full truck still takes the cash.
  */
 function _syncItemChoice () {
-  const b = document.getElementById('mp-item'), r = missionSystem?.state === 'done' ? missionSystem.result : null
-  const aw = r?.award
-  if (!b || !aw || aw.stowed) return
-  const room = inventorySystem.fits(aw.rewardId)
-  b.textContent = room ? `take ${aw.name} + $${formatMoney(Math.round((r.payout - aw.cost) * 100) / 100)}` : `no room for the ${aw.name} (Tab)`
-  b.disabled = !room
+  for (const [id, sys] of [['mp-item', missionSystem], ['pp-item', paperRouteSystem]]) {
+    const b = document.getElementById(id), r = sys?.state === 'done' ? sys.result : null
+    const aw = r?.award
+    if (!b || !aw || aw.stowed) continue
+    const room = inventorySystem.fits(aw.rewardId)
+    b.textContent = room ? `take ${aw.name} + $${formatMoney(Math.round((r.payout - aw.cost) * 100) / 100)}` : `no room for the ${aw.name} (Tab)`
+    b.disabled = !room
+  }
 }
-document.getElementById('mp-item')?.addEventListener('click', () => {
-  const aw = missionSystem.state === 'done' ? missionSystem.result?.award : null
+/** DEC-291: the item option on a result card — charged at once and in full (the cost, capped at the pay), exactly as on any job. */
+function _takeItem (sys, done) {
+  const aw = sys.state === 'done' ? sys.result?.award : null
   if (!aw || aw.stowed || !inventorySystem.fits(aw.rewardId) || !economySystem.spend(aw.cost)) return
   aw.stowed = inventorySystem.grant(aw.rewardId)
-  missionSystem.exit()
-})
+  done()
+}
+document.getElementById('mp-item')?.addEventListener('click', () => _takeItem(missionSystem, () => missionSystem.exit()))
+document.getElementById('pp-item')?.addEventListener('click', () => _takeItem(paperRouteSystem, () => paperRouteSystem.dismiss()))
 document.getElementById('mp-prev')?.addEventListener('click', () => missionSystem.cycle(-1))
 document.getElementById('mp-next')?.addEventListener('click', () => missionSystem.cycle(+1))
 
@@ -10146,7 +10166,7 @@ function _runSnapshot () {
     motion: { v: vs.velocity.toArray(), w: vs.angularVelocity.toArray(), wheelOmega: vs.wheelOmega,
               strutComp: vs.strutComp, strutCompVel: vs.strutCompVel, steerAngle: vs.steerAngle,
               drivetrain: vs.drivetrain, ignition: vs.ignition, handbrake: vs.handbrake, parked: vs.parked },
-    shelves: runShelves, paperTier: runPaper.tier, paperHeld: runPaper.held,
+    shelves: runShelves, paperTier: runPaper.tier,
     dialogueSeen: dialogueSystem.seen(), campPads: campSystem.camps(), board: _boardLog,
     job: _jobSnapshot(), paper: paperRouteSystem.snapshot(),   // FEAT-42 part 2: work in hand
     playedS: _playedS,   // FEAT-146: the summary's playtime
@@ -10176,7 +10196,6 @@ function _restoreRun (s) {
   gaugeCluster.seedOdometer(s.odometer)
   Object.assign(runShelves, s.shelves)
   runPaper.tier = s.paperTier
-  runPaper.held = s.paperHeld ?? []
   _renderPaperUI()
   dialogueSystem.restoreSeen(s.dialogueSeen)   // before the handoff, or the run intro plays again
   for (const pad of s.campPads) { roadSystem?.setCampPads(campSystem.makeCampAt(pad)); _refreshGroundAround(pad) }
