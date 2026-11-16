@@ -1162,6 +1162,16 @@ export class PaperRouteSystem {
         this._onChange()
     }
 
+    /** DEC-289: a parked step spends the round's time though the world clock stands still (MissionSystem.spendParked). */
+    spendParked (dH) {
+        const run = this.run
+        if (!this.isCarrying() || !run || run.expired || !(dH > 0)) return false
+        if (this.state === 'running') run.t0H -= dH
+        if (!Number.isFinite(run.dueH)) return false
+        run.dueH -= dH
+        return true
+    }
+
     /** Clocked off the fixed step. Two comparisons and a counter — nothing else happens per frame. */
     update (dt) {
         this._clock += dt
