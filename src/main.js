@@ -3410,8 +3410,7 @@ function _wirePoiLamps (q, inst) {
   }
 }
 function _updatePoiNightLights () {
-  _placeLightAtNearest(_bayLight, (q) => q.camera && SERVICE_LIGHT.at)
-  _placeLightAtNearest(_pumpLight, (q) => q.pumpZones && PUMP_LIGHT.at[q.modelKey])
+  _placePoiLight()
   const h = SKY_CYCLE.hour   // the sky's hour: the day clock pushes it in a run, free roam cycles it
   const on = lampsOn('shop', h)
   if (on !== _shopLampsOn) { _shopLampsOn = on; setGlow(_shopLampMats, on) }
@@ -3777,10 +3776,10 @@ const serviceCenter = new ServiceCenter({
 // FEAT-219 (owner, 2026-11-14: "it's just dark in there"): the bay's walls and roof shut the sun and sky out. The ceiling strips
 // are emissive already (the model's ShopLight); this ONE point light, no shadows, lights the bay. BUG-174 (owner, 2026-11-15:
 // "service station and poi lights should always be on whether or not you're using the poi"): it is ALWAYS in the scene, day
-// and night, and sits in the bay of the service station nearest the truck (_placeLightAtNearest, on the POI poll). Never added or
+// and night, and sits in the bay of the service station nearest the truck (_placePoiLight, on the POI poll). Never added or
 // removed after boot: a change in the point-light count recompiles every lit material (BUG-175), so it is in the scene
 // before the PERF-21 prewarm and only ever moves. Parked far below the world when no station is built.
-// SERVICE_LIGHT.intensity (cd) is the one knob; `at` is the model frame.
+// POI_LIGHT.serviceStation.intensity (cd) is the one knob; `at` is the model frame.
 // DEC-228 (owner, 2026-11-15: "its obvious by the cast on the ceiling that the only source is Directly above the truck"):
 // the light stands in the middle of the bay block (between the two bays, over the centre pier's line) at 2.0 m, not 1.1 m
 // under the ceiling over lift A. There the ceiling straight above it was lit 25× brighter than 3 m away, a hot spot over
@@ -3789,29 +3788,31 @@ const serviceCenter = new ServiceCenter({
 // light on the ground outside the -X wall and less out of the doors. Still ONE point light, so no shader changes (a
 // second light would add work to every lit pixel in the world) and the PERF-21 / BUG-175 prewarm is untouched. A
 // downward spot at the strips was tried and rejected: the ceiling went black.
-const SERVICE_LIGHT = { color: 0xfff0d8, intensity: 40, distance: 9, decay: 2, at: [-1.8, 2.0, 0] }
-const _bayLight = new THREE.PointLight(SERVICE_LIGHT.color, SERVICE_LIGHT.intensity, SERVICE_LIGHT.distance, SERVICE_LIGHT.decay)
-_bayLight.position.set(0, -1e5, 0)
-scene.add(_bayLight)
-// FEAT-227 (DEC-229, owner 2026-11-15: "we should add a point source light or two to the gas station fueling area"): ONE
-// more point light, built like the bay light (always in the scene from boot, so the PERF-21 / BUG-175 prewarm covers it,
-// and only ever moved), at the fuelling area nearest the truck: the gas station's island under its canopy, or a lone pump
-// island. `at` is per model (q.modelKey), model frame. Under the canopy it hangs 1.2 m below the 4.6 m soffit, over the
-// island (the DEC-228 lesson: a light just under a ceiling paints a hot spot on it); on a lone island it sits over the
-// pumps just under the sign box (3.5 m). Warm white as the soffit lenses (StationLamp). It and the bay light each go to
-// their own nearest place, so a pump beside a service station has both, lit independently.
-const PUMP_LIGHT = { color: 0xfffaee, intensity: 120, distance: 10, decay: 2, at: { gasStation: [0, 3.4, -3.0], gasPump: [0.28, 3.3, 0] } }
-const _pumpLight = new THREE.PointLight(PUMP_LIGHT.color, PUMP_LIGHT.intensity, PUMP_LIGHT.distance, PUMP_LIGHT.decay)
-_pumpLight.position.set(0, -1e5, 0)
-scene.add(_pumpLight)
-/** Move `light` to the POI nearest the truck that `atOf` gives a model-frame position for; parked far below without one. */
-function _placeLightAtNearest (light, atOf) {
+// FEAT-227 (DEC-229, owner 2026-11-15: "we should add a point source light or two to the gas station fueling area"): the
+// SAME light also serves the fuelling areas. It goes to whichever lit place is nearest the truck, the service bay, the
+// gas station's island or a lone pump island, and takes that place's settings. A second light was built and measured
+// (ec9d5d91): +3.4 % GPU active cycles everywhere in the world, day and night, for a light that matters at one place at a
+// time; sharing costs nothing (same light count, same shaders). The catch: at a pump right beside a service station
+// only the nearer of the two is lit, and the light hops when the truck crosses the halfway line.
+// Fuelling areas: under the canopy it hangs 1.2 m below the 4.6 m soffit, over the island (the DEC-228 lesson: a light
+// just under a ceiling paints a hot spot on it); on a lone island it sits over the pumps just under the sign box (3.5 m).
+// Warm white as the soffit lenses (StationLamp). Keyed by q.modelKey; `at` in the model frame.
+const POI_LIGHT = {
+  serviceStation: { color: 0xfff0d8, intensity: 40, distance: 9, at: [-1.8, 2.0, 0] },
+  gasStation: { color: 0xfffaee, intensity: 120, distance: 10, at: [0, 3.4, -3.0] },
+  gasPump: { color: 0xfffaee, intensity: 120, distance: 10, at: [0.28, 3.3, 0] },
+}
+const _poiLight = new THREE.PointLight(0xffffff, 0, 1, 2)
+_poiLight.position.set(0, -1e5, 0)
+scene.add(_poiLight)
+function _placePoiLight () {
   const vp = vehicleState.position
   let best = null, bd = Infinity
-  for (const q of poiSystem.list()) if (atOf(q)) { const d = (q.x - vp.x) ** 2 + (q.z - vp.z) ** 2; if (d < bd) { bd = d; best = q } }
-  if (!best) { light.position.set(0, -1e5, 0); return }
-  const at = atOf(best), w = dropZoneWorld(best, { x: at[0], z: at[2] })
-  light.position.set(w.x, best.baseY + at[1], w.z)
+  for (const q of poiSystem.list()) if (POI_LIGHT[q.modelKey]) { const d = (q.x - vp.x) ** 2 + (q.z - vp.z) ** 2; if (d < bd) { bd = d; best = q } }
+  if (!best) { _poiLight.position.set(0, -1e5, 0); return }
+  const L = POI_LIGHT[best.modelKey], w = dropZoneWorld(best, { x: L.at[0], z: L.at[2] })
+  _poiLight.position.set(w.x, best.baseY + L.at[1], w.z)
+  _poiLight.color.setHex(L.color); _poiLight.intensity = L.intensity; _poiLight.distance = L.distance
 }
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
   // The shop still posts work (FEAT-167: its Jobs tab). FEAT-197 (owner, 2026-11-11): the tab's one button,
