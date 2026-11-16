@@ -1,6 +1,6 @@
 ---
 id: DEC-175
-status: standing
+status: superseded
 decided: 2026-11-14
 area: ui
 governs: FEAT-211, src/map2d.js, index.html, map

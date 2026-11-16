@@ -506,7 +506,7 @@ export class Map2D {
         this._tracking   = false
         this._listId     = null          // the row the list has highlighted (a POI id; a shop's item is 'id#n'), or null
         this._rows       = []            // the list's rows as last built: { id, x, z, poi, shop }, nearest first
-        this._tab        = 'missions'    // FEAT-211: the list's mode, 'missions' | 'shopping' (the bumpers swap it)
+        this._tab        = 'missions'    // FEAT-211: the list's mode, 'missions' | 'shopping' (pad X, Q on the keyboard)
         this._openShop   = null          // the POI id of the shop the Shopping list has open, or null
         this._listHtml   = ''            // what #map-list holds, so it is written only on a change
         this._listT      = 0             // performance.now() the rows were last rebuilt
@@ -577,7 +577,7 @@ export class Map2D {
             if (id && id !== this._listId) this._pickRow(id)
         })
         // FEAT-211: a click on a Shopping row opens or closes its shop (A / Enter on the pad and keyboard); a click on a
-        // tab in the head swaps the list (the bumpers).
+        // tab in the head swaps the list (pad X).
         this._list?.addEventListener('click', (e) => {
             const id = e.target.closest?.('[data-key]')?.dataset.key
             if (id && !(pad.cardActive() || pad.menuActive())) { this._pickRow(id); this._toggleShop() }
@@ -921,10 +921,10 @@ export class Map2D {
      * main.js, which steps the parked offer panel the map is open behind. FEAT-211 (owner, 2026-11-13, the approved
      * scheme), only while no card or menu is up over the map (menu-nav.js owns the arrows, Enter and Esc then, and
      * WASD is the truck's):
-     *   Q / E (LB / RB)  swap the list between Missions and Shopping
+     *   Q / E (pad X)    swap the list between Missions and Shopping (FEAT-239: the pad's LB / RB send ← / →)
      *   WASD             pan the map (the keyboard's stick)
      *   ↑ / ↓            walk the list; the map snaps to the row's place
-     *   ← / →            flip the offers at the highlighted (or hovered) POI
+     *   ← / → (pad LB / RB) flip the offers at the highlighted (or hovered) POI; the pad's D-pad ← / → send nothing here
      *   Enter (pad A)    Shopping: open or close the highlighted shop (a pump has nothing to open). FEAT-234: it no
      *                    longer drops the waypoint — that is N / Y / a click alone
      *   N (pad Y)        drop the waypoint under the cursor (the pad's is the sheet centre, so a highlighted row's
@@ -3127,7 +3127,7 @@ export class Map2D {
             const ins = 4 * k + 3 * k                        // inner rule inset + breathing room
             const ktop = y + ins
             // FEAT-211 (owner, 2026-11-14): the arrows (keys and D-pad) flip the map's cards; Q / E are the list's tabs.
-            const keys = ['→', '←']
+            const keys = pad.active ? ['RB', 'LB'] : ['→', '←']   // FEAT-239: the pad's shoulders flip, as at a POI
             const capW = Math.max(cap, ctx.measureText(keys[0]).width + 6 * k)
             let kx = x + W - ins - capW
             for (const key of keys) {
@@ -3512,15 +3512,17 @@ export class Map2D {
         ctx.fillText(`Contour interval ${CONTOUR_IV} m`, s.x0, by)
         const ivR = s.x0 + ctx.measureText(`Contour interval ${CONTOUR_IV} m`).width
         this._drawControls(ctx, s, by, ivR + 24, this._hoverX === undefined ? bx - 70 : s.cx - 65)   // short of the scale label, or of the cursor's readout at the centre
+        // FEAT-239: the pad's card flip and tab switch, right of the seed / cursor readout at the centre (the left run has no room for them)
+        if (pad.active) this._drawControls(ctx, s, by, s.cx + 90, bx - 70, [['cards', ['LB', 'RB']], ['tab', ['X']]])
     }
 
     // FEAT-234 (owner, 2026-11-16): the map's controls — pan, zoom, set waypoint — printed in the bottom margin after the
     // contour note, clear of the cursor's coordinate readout at the centre. Keycaps as the HUD's (park-badge.js keycap): the key's cap on the keyboard, the pad's
     // button when the pad last drove (pad.active); the pad's face buttons and sticks are round. Skipped when they do not fit.
-    _drawControls(ctx, s, by, xMin, xMax) {
+    _drawControls(ctx, s, by, xMin, xMax, padGroups) {
         const usePad = pad.active
         const groups = usePad
-            ? [['pan', ['L']], ['zoom', ['R']], ['waypoint', ['Y']]]
+            ? padGroups ?? [['pan', ['L']], ['zoom', ['R']], ['waypoint', ['Y']]]
             : [['pan', ['WASD']], ['zoom', ['wheel']], ['waypoint', ['N', 'click']]]
         const CAP = 15, GAP = 4, SEP = 16
         ctx.font = `11px ${MAP_LABEL_FONT}`
