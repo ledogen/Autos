@@ -2126,7 +2126,8 @@ const map2d = new Map2D({
   getBoard: () => (offerBoard && storySystem?.isActive() ? _boardView : null),
   // FEAT-211: the player's waypoint — { x, z, poly } with poly the line the GPS guides along (null while a job has the
   // guide: the waypoint is then only a pin), or null; and the drop / clear (null) from the map's input, true if it acted.
-  getWaypoint: () => _waypoint && { x: _waypoint.x, z: _waypoint.z, poly: _waypointOn() ? _tutLine(_waypoint.route)?.poly ?? null : null },
+  getWaypoint: () => _waypoint ? { x: _waypoint.x, z: _waypoint.z, poly: _waypointOn() ? _tutLine(_waypoint.route)?.poly ?? null : null }
+    : (({ x, z } = {}) => x == null ? null : { x, z, poly: null })(_tutRanchPin() ?? undefined),   // DEC-346: the tutorial's own (its line is the GPS's)
   onWaypoint: (p) => !dialogueSystem.active && _setWaypoint(p),   // a dialogue over the map keeps its Enter
   // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
   onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
@@ -4612,8 +4613,10 @@ const _runIntro = () => _fillCamp(RUN_INTRO)
 // tutorial's 24 h are the day before free will's day 0). FEAT-184 (DEC-147): the intro ends on a card, play the
 // tutorial or skip it (#tut-card). FEAT-229 (DEC-304, errands first): played, mom's call sends you to her house — the
 // FIRING DAY: no job, the GPS and the HUD line to each stop in turn (_dayStop), every other giver quiet: her hand-over
-// and Larry's old pack (DEC-305), Larry's (DEC-322), the station nearest his (the peanuts from a shopping spot, then the
-// pump, DEC-323), a camping area (make camp, eat), Katie's call (the clock to 17:00, DEC-324), the flat halfway home, the
+// and Larry's old pack (DEC-305), Larry's (DEC-322) and Katie's call there (the picnic at the old McGill ranch, DEC-345),
+// the station nearest his (the peanuts from a shopping spot, then mom's call and the pump, DEC-323), the camping area
+// nearest it on a waypoint (Katie walks you through the camp, DEC-346; make camp, eat), Katie's talk there in person
+// (the clock to 17:00, DEC-347), the flat halfway home, the
 // tow, the shop, home in the dark, her welcome home (DEC-325) and her bed. Any sleep ends it (only hers is offered, DEC-308), as does
 // 07:00 reached awake; then the MORNING LEG: breakfast, her reminder, back to the joint, and parked there the last
 // paycheck (DEC-153) at 07:00 on day 0, 24 h after the firing; then Larry's two cards (LARRY_CALL, DEC-326). The clock is held while driving (clockHeld); each stop
@@ -4652,7 +4655,7 @@ const TUT_PARAMS = { lowTankFrac: 0.125, gasCash: 3, offRoadS: 4,
   offRoadM: 10,    // FEAT-217 (of3s, DEC-219): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
   safeNearPoiM: 20 }   // FEAT-217 (DEC-281, owner 2026-11-16; was 75 m): no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
 // FEAT-229 (DEC-304, the dive's "held, with stamps" [DEFAULT]): the clock holds while the tutorial drives; each stop, once
-// reached, lifts it to at least its hour on the firing day. home: Katie's call at the camping area (the one long jump);
+// reached, lifts it to at least its hour on the firing day. home: Katie's talk at the camping area (the one long jump);
 // bed: at her door that night. The tow's own hours (towHours) land between them.
 const TUT_STAMPS = { pack: 8, larry: 8, snack: 9, pump: 10, camp: 10, home: 17, bed: 21.5 }
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
@@ -4772,8 +4775,12 @@ function _campDoor () {
     const o = roadOrigin(roadSystem, zn, zn.r), d = o ? Math.hypot(o.x - shop.x, o.z - shop.z) : Infinity
     if (d < bd) { bd = d; best = o }
   }
-  return (_snackCampDoor = best && { ...best, id: 'camp', label: 'the camping area' })
+  return (_snackCampDoor = best && { ...best, id: 'camp', label: 'the old McGill ranch' })   // DEC-345: Katie's picnic spot
 }
+/** DEC-346: on the drive out to the ranch the map shows a waypoint on its door, set already (not the player's: never
+ *  saved, gone on arrival). The player's own pin, when one is set, is shown instead. */
+const _tutRanchPin = () => _tutDrive() && dialogueSystem.has(DLG.played) && _dayStop() === 'camp' && !dialogueSystem.has('tut-ranch')
+  ? _campDoor() : null
 /** Mom's toss: the starting pack on the ground by her steps, falling. Idempotent: only when it is neither on board nor down. */
 function _tossPack () {
   const q = _mom()
@@ -4933,14 +4940,21 @@ function _eveningBeats () {
     if (stop === 'pack') { _tossPack(); if (_packOnGround()) _tut('tut-pickup') }
     const L = _larry()
     if (stop === 'larry' && L && vehicleState.parked && _inPoiSpot(L)) _tut(DLG.larryPack, LARRY_PACK, null, true)
+    if (stop === 'snack') _tut('tut-picnic')   // DEC-345: his cards over, Katie calls — the picnic, and a snack on the way
     if (dialogueSystem.has('tut-handover') && !_snackBought() && economySystem.money() < _momCash()) economySystem.addSpot(_momCash() - economySystem.money())
-    // DEC-323: the peanuts bought at the store, mom sends you to a pump as you pull away.
+    // DEC-323: the peanuts bought at the store, mom calls as you take the brake off to leave (DEC-345) and sends you to a pump.
     if (stop === 'pump' && !vehicleState.parked && !serviceScreen.isOpen) _tut('tut-gas')
-    // DEC-304: the camping area — a camp made there with the peanuts eaten (before or in it); then Katie's call (DEC-324),
-    // which stamps 17:00. No camping area on this world: the call comes at once.
+    // DEC-346: the camping area, the old McGill ranch — mom's send-off, the line and the map's pin already on it
+    // (_tutRanchPin); arrived (its zone, or the waypoint's radius at its door) Katie calls and walks you through the camp:
+    // the hunt, the vibe bar once you look, the snack once camp is made. A camp made there with the peanuts eaten (before
+    // or in it), Katie's talk in person (DEC-347), which stamps 17:00. No camping area on this world: it comes at once.
     if (stop === 'camp') {
       _tut('tut-snackcamp')
-      if (!_campDoor() || (_campUi?.mode === 'camp' && !_snackOnBoard())) _tut('tut-katie', _fillCamp(TUT['tut-katie']))
+      const door = _campDoor()
+      if (door && (campSystem.zoneAt(vp.x, vp.z) || Math.hypot(door.x - vp.x, door.z - vp.z) < WAYPOINT_ARRIVE_M)) _tut('tut-ranch')
+      if (dialogueSystem.has('tut-ranch') && _campSeek) _tut('tut-vibe')
+      if (dialogueSystem.has('tut-ranch') && _campUi?.mode === 'camp' && _snackOnBoard()) _tut('tut-campmade')
+      if (!door || (_campUi?.mode === 'camp' && !_snackOnBoard())) _tut('tut-katie', _fillCamp(TUT['tut-katie']))
     }
     _eveningLessons(q, vp, stop)
   }
@@ -7620,13 +7634,17 @@ function _renderMissionUI () {
       if (_tutDrive()) {   // FEAT-170: no job, only the way home (FEAT-184: the morning's, to the paycheck)
         const q = _eveTarget(), vp = vehicleState.position, what = { mom: 'park at her door', pack: "load the pack by mom's steps",
           larry: 'park there with his pack', snack: 'park at the store and buy a snack', pump: 'fill up at a pump',
-          camp: 'make camp there and eat your snack', home: 'park there to sleep', joint: 'park there for your last check' }[_dayStop()]
+          camp: 'find a good spot and make camp', home: 'park there to sleep', joint: 'park there for your last check' }[_dayStop()]
         // FEAT-217 (DEC-270): the distance is along the line the GPS shows (its re-plan, when the truck strayed), as a job's
         // "to go" is; crow-flies only when there is no line. DEC-271: from the flat until the tire is fixed, the one order.
         const line = q && _tutLine(_homeGuide())
         // DEC-290 (owner, 2026-11-15): "…check your tire with (mapped control)": the damage screen's key, V or the pad's B.
         if (_flatOwed()) hudText.innerHTML = `pull over and check your tire with ${keycap('V')}`
-        else if (q) hudText.textContent = `${km(line?.poly?.length ? routeLeftM(line, vp.x, vp.z) : Math.hypot(q.x - vp.x, q.z - vp.z))} to ${q.label ?? offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
+        else if (q) {
+          const left = km(line?.poly?.length ? routeLeftM(line, vp.x, vp.z) : Math.hypot(q.x - vp.x, q.z - vp.z))
+          hudText.textContent = _tutRanchPin() ? `drive out to the old McGill ranch · ${left}`   // DEC-345's guiding text
+            : `${left} to ${q.label ?? offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
+        }
         // DEC-321: no reset is taught; off the road, the tutorial's own countdown (#reset-countdown) puts the truck back.
       } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint, crow-flies like the evening's [DEFAULT] words
         const vp = vehicleState.position
