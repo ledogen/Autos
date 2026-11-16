@@ -98,6 +98,7 @@ $6. Holds hunger 8 h; fresh 24 h. Never found. Flavor: "Homemade!" (owner, 2026-
 
 ### Groceries
 status: wip · design: ratified · build: effect · needs: camp render · where: generalStore, farm, reward
+Audit 2026-11-17: re-checked on main (items batch 2): landed; only "evening or morning" and the cooked-meal fresh time stay open (owner).
 **In the game 2026-11-16 (FEAT-230 slice 3, `land/feat-230-groceries`):** `groceries` + `groceriesCooked` (hold 10 h, no kit +20 %); the camp card's "cook groceries · 30 min" shows only with the cooking kit deployed; $5 at the general store and the farm; a B–A reward from both. [DEFAULT] mass 2 kg, one bag a slot, reward weight 4. The bag keeps 24 h and chills ×1/6 (slice 2, DEC-338); the cooked meal has no fresh time ruled, so it keeps (DEC-338's reading). Not built: "evening or morning".
 A delayed meal (owner, 2026-10-20): bought, carried, cooked into a meal at camp — only with the
 cooking kit. Still on the spoilage clock. Ruled 2026-10-21: one meal a bag, holds 10 h, +30 min to cook,
@@ -310,6 +311,7 @@ Cut by the owner (2026-10-22, the item setup page). Struck in items.md §2.
 
 ### Cooler
 status: wip · design: ratified · build: model · needs: a find system · where: tackleShop, generalStore, reward, found
+Audit 2026-11-17: re-checked on main (items batch 2): every data source ships (general store + tackle shop shelf, A–S reward). Left: the model and the roadside find (no find system). Nothing data-only remains.
 **In the game (FEAT-230 slice 2):** `cooler`, 3 kg [DEFAULT], ×1/6 on every food with a fresh time while iced (72 h a bag), 4 units, each unit on its own clock (DEC-338); its thumbnail shows the ice left; $20 [DEFAULT] at the general store and tackle shop (now a storefront); A–S tackle-shop reward (cat `cooler`). Not built: the find, the model.
 ×1/6 spoilage rate: fish keeps ~36 h instead of ~6 h; holds 4 fish (owner, 2026-10-21). **Runs on ice,
 refilled every 3 days** (Ice row). General store + tackle shop, $10–30; tackle-shop reward A–S; a
@@ -317,6 +319,7 @@ roadside find rarer than the common ones. Flavor: "Keeps stuff cold" (owner, 202
 
 ### Ice King
 status: wip · design: ratified · build: model · needs: none · where: tackleShop, generalStore, reward
+Audit 2026-11-17: re-checked on main (items batch 2): shelf and S reward ship. Left: the model, and the [DEFAULT] numbers await the owner. Nothing data-only remains.
 **In the game (FEAT-230 slice 2):** `iceKing`, 8 kg [DEFAULT], ×1/8, ice 120 h, 4 units (owner approved 11-16, DEC-338); $65 [DEFAULT], shelf weight 0.25 at the general store and tackle shop [DEFAULT]; S reward from the tackle shop and residences (cat `iceKing`). PLACEHOLDER desc. Not built: the model.
 Renamed from better cooler (owner, 2026-10-22). ×1/8 spoilage rate: fish keeps ~48 h; its ice lasts 5
 days. Both coolers can be carried. $30–100; sold at the tackle shop and general store, very rarely; an
@@ -453,7 +456,8 @@ Raises it to ~2.2 m (≈20°). Both shovels can be carried, no extra effect (202
 general store; an A–S reward from farms, work sites and the general store; never found.
 
 ### Cooking kit
-status: wip · design: ratified · build: effect · needs: groceries · where: generalStore, reward
+status: wip · design: ratified · build: effect · needs: none · where: generalStore, reward
+Audit 2026-11-17: re-checked on main (items batch 2): item, $15 general-store shelf, A–S reward (farm, firewood yard, general store, tackle shop), the 20 % food bonus and the groceries cook all ship. Left: the ASSET-25 model, and the farm-reward line reads as a camp-cat pull (no dedicated row). Nothing data-only remains.
 **Audit 2026-11-16:** the groceries half is built (FEAT-230 slice 3): the card offers "cook groceries" only with the kit deployed, and groceries skip the +20 %.
 **DEC-310 / FEAT-230 (2026-11-16):** deployed at camp it makes any food hold hunger 20 % longer (`COOKING_KIT_FOOD_MULT`); groceries are cooked with it, without the 20 % on top (slice 3).
 ≈23 kg always carried; flat bonus to food effects; the only way to cook groceries (2026-10-20). Model is ASSET-25 (A-frame + Dutch oven).
