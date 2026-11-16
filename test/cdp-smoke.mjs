@@ -1521,9 +1521,7 @@ const STEPS = [
     check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 30000), `the tow did not land at an open shop: ${await js(`JSON.stringify({ parked: window.__vs.parked,
       v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent,
       shop: (() => { const p = window.__vs.position, q = window.__poi().list().filter(q => q.type === 'autoShop').sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0], s = q && window.__towSeat(q)
-        return s && { fromSeat: +Math.hypot(p.x - s.x, p.z - s.z).toFixed(1), fromMarker: +Math.hypot(p.x - q.x, p.z - q.z).toFixed(1) } })(), h: window.__day().clockH(), trace: window.__towTrace, pt: window.__ptLog })`)}`)
-    console.log(`  tow trace: ${await js('JSON.stringify(window.__towTrace.slice(0, 40))')}`)
-    console.log(`  pt log: ${await js('JSON.stringify(window.__ptLog.slice(window.__ptLog.findLastIndex(e => e[0] === "tow") - 3))')}`)
+        return s && { fromSeat: +Math.hypot(p.x - s.x, p.z - s.z).toFixed(1), fromMarker: +Math.hypot(p.x - q.x, p.z - q.z).toFixed(1) } })(), h: window.__day().clockH(), trace: window.__towTrace })`)}`)
     check((await wd()).towed, 'the tow was not counted (the night beat)')
     console.log('  worst day: the shop')
     await readCards()   // the shop's cards
