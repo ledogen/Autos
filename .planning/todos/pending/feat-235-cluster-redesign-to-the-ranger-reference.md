@@ -14,15 +14,23 @@ lane: B (after FEAT-233)
 ## Next steps
 Round 1 built on `land/feat-235` @ 70f9ee99 (not on main; DEC-331): HELD for the owner's look, card `feat235-cluster-look`
 (sheet CarGame-run-shape/wip/feat-235/sheet.jpg). Land on a yes; further rounds as in FEAT-34.
+Round 1 is built on `land/feat-235` (lane A). The owner looks at `wip/feat-235/sheet.jpg` in the run-shape worktree (reference, before/after, in game at his canvas and a small window). His answer sets round 2: every shape is a named number atop `src/cluster.js` (POD_DX, POD_E, POD_DY, CORNER, ARCH_PEAK, INSET_*, FACE_LIGHT).
 
 ## Summary
 The owner reopens the cluster design against the Ranger owner-manual reference (artifact https://claude.ai/artifact/XJrmfoRMYu4Rd77onpbAmF). Wanted: the pods that frame the gauges; tach and speedo roughly as now; coolant and fuel separated slightly left and right and closer together vertically; the dark rectangle reshaped to the cluster outline (broad curve on top, flat bottom, the small inset at the bottom); a roughly triangular, automotive-curved dark backing for the two small gauges; a lighter cluster-shaped backing behind everything; the key stays bottom right; no oil pressure or battery gauge; warning lights and shift indicator stay where they are.
 
 ## Tracker
 - [x] Reference read and its named features listed
+- [x] Reference read and its named features listed (see Decisions)
 - [x] Round 1 pictures against the reference
 - [ ] Owner approves a round
+
+## Decisions
+- DEC-331 records the owner's note. Reference features built in round 1: the broad arch on top; the flat bottom with the raised inset under the dials; the lighter face inside a dark housing band (the drawing's double outline); a dark rounded-triangle pod for temp + fuel whose right side follows the tach's pod at a constant GAP; temp up-and-right, fuel down-and-left (24 apart across, 76 apart down, was 0 and 92); the dial pod kept (cusp between tach and speedo) with a flat bottom (the tach's indent reaches 9 lower, level with the speedo's); key, lamp row, gear readout, low-fuel and overheat dots where they were.
+- Not copied: the right-hand pod (oil, battery: the owner's "not adding"); the drawing's mirror-symmetric right end (ours is a shoulder round the key, which DEC-267/285 pin); the drawing's separate text telltales.
+- Judgment calls (agent, owner asleep): the left pod sits 15 below the dial axis (the drawing's temp is near the axis, fuel low), so both pods' bottoms are level; the face colour `#575049` (a lighter plastic, not the drawing's white; one constant); the canvas grows 494 → 516 layout units wide (568 → 593 CSS px) to fit the staggered pod at the old GAP.
 
 ## Log
 - 2026-11-16: filed from the owner's inbox note.
 2026-11-16 (bookkeeping sweep): round 1 built 059259a8 (branch land/feat-235 @ 70f9ee99, DEC-331); boxes 1-2 ticked per the night log (wip/orch/night-1116.md). Not landed.
+- 2026-11-16 (lane A, round 1): `land/feat-235`. src/cluster.js: the housing is the hull of the pods' grown circles with one arch tangent to temp and speedo (`OUTLINE`, `_outlinePath`), the light face inside, `_leftPodPath` for the triangle pod, the flat-bottomed dial pod. Least light face 7 around every pod (`wip/feat-235/check-geom.mjs`). Per-frame draw (update(), batches of 50, 3 × 400): median 0.018–0.020 ms before and after. gpu-reset --mode=crash PASS (cluster blank 0.221 → 0.221); SMOKE_STEPS=boot PASS. Pictures `wip/feat-235/` (sheet.jpg). Unverified: the owner's look.
