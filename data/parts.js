@@ -276,22 +276,23 @@ export const PARTS = {
     // ── FEAT-204 bolt-ons (DEC-028/129/340/341). Prices, masses, the armour factor and the light gain are [DEFAULT]
     //    (DEC-342, draft); the rack's +4 slots are the owner's (DEC-129). The light bar burns with the headlights (L):
     //    it raises the two head spots' intensity (headlightGain) and range (headlightReach), no lamp of its own (DEC-229).
+//    `icon`: placeholder thumbnails (the lift kit's, the headlight's) until their own are rendered (assets/models/src/items.py).
     //    Gain 2 ≈ four 55 W pods beside two sealed beams; reach 2^(1/1.8) = 1.47 is where gain 2 lights the ground as
     //    brightly as the bare beam did at its own range (decay 1.8, vehicle-model.js HEAD_TUNE).
     roofRackNone:  { name: 'No roof rack',         slot: 'roofRack', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
                      patch: {}, desc: 'A bare cab roof.' },
     roofRack:      { name: 'Roof rack',            slot: 'roofRack', family: 'offroad', rarity: 'uncommon', price: 40, massKg: 16,
-                     slots: 4, model: 'mod-roof-rack', patch: {},
+                     slots: 4, model: 'mod-roof-rack', icon: 'lift', patch: {},
                      desc: 'A steel basket clamped to the cab roof. More room for gear.' },
     bullBarNone:   { name: 'No bull bar',          slot: 'bullBar', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
                      patch: {}, desc: 'The factory bumper, on its own.' },
     bullBar:       { name: 'Bull bar',             slot: 'bullBar', family: 'offroad', rarity: 'uncommon', price: 35, massKg: 22,
-                     armor: 1.5, model: 'mod-bull-bar', patch: {},
+                     armor: 1.5, model: 'mod-bull-bar', icon: 'lift', patch: {},
                      desc: 'A bent steel tube bolted to the frame horns. The front end takes a knock and keeps its shape.' },
     lightBarNone:  { name: 'No light bar',         slot: 'lightBar', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
                      patch: { headlightGain: 1, headlightReach: 1 }, desc: 'Just the headlights.' },
     lightBar:      { name: 'Light bar',            slot: 'lightBar', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 8,
-                     model: 'mod-light-bar-solo', modelWith: { roofRack: 'mod-light-bar-rack' },
+                     model: 'mod-light-bar-solo', modelWith: { roofRack: 'mod-light-bar-rack' }, icon: 'headlight',
                      patch: { headlightGain: 2, headlightReach: 1.47 },
                      desc: 'Four round lamps on a bar, wired to the headlight switch. Night roads open up.' },
 }
