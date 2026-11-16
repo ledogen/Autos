@@ -826,6 +826,10 @@ const STEPS = [
     check(await until(open, 2000), `parking at the general store opened no shop (prompt "${await js('document.getElementById("poi-prompt")?.textContent.trim()')}")`)
     const txt = await js('document.querySelector("#svc-screen").textContent')
     check(/Coffee/.test(txt) && !/My Vehicle|My items|Parts Shop/.test(txt), `the store's shop reads: "${txt.slice(0, 200)}"`)
+    // FEAT-121: the camp-gear rows are on the shelf; picture in wip/camp-gear-shelf/
+    check(['Blanket', 'Air mattress', 'Sleeping pad', 'Sleeping bag'].every(n => txt.includes(n)), `the store's shelf lacks the camp gear: "${txt.slice(0, 300)}"`)
+    mkdirSync('wip/camp-gear-shelf', { recursive: true })
+    writeFileSync('wip/camp-gear-shelf/general-store-shelf.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
     await js('window.__econ.money = 50')
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')   // repaints with the new wallet
     const coffees = () => js('window.__inv.list().filter(r => r.id === "coffee").reduce((a, r) => a + r.n, 0) + (window.__inv.pending()?.id === "coffee" ? 1 : 0)')

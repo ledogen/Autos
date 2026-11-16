@@ -154,16 +154,31 @@ check('the storefronts are the general store, gas station, food vendor and farm 
 let stores = true
 for (const seed of [1, 2, 3]) {
   startShelves(seed)
-  for (const type of ['generalStore', 'foodVendor']) for (let h = 0; h < 24 * 12; h += 0.5) {
+  for (const type of ['foodVendor']) for (let h = 0; h < 24 * 12; h += 0.5) {
     const s = shelf(`${type}:a`, h, type)
     if (s.length !== STOREFRONT[type].always.length || s.some((e, k) => e.id !== STOREFRONT[type].always[k] || e.cond !== null || e.expiresAt !== Infinity)) stores = false
   }
 }
 check('a store that rolls nothing lists only its always rows, every half hour of 12 days × 3 seeds', stores)
 startShelves(3)
-take('generalStore:a', 0)
-check('buying from a store leaves the line', shelf('generalStore:a', 50, 'generalStore')[0]?.id === STOREFRONT.generalStore.always[0]
-  && runShelves.shops['generalStore:a'].slots.length === 0)
+take('foodVendor:a', 0)
+check('buying from a store leaves the line', shelf('foodVendor:a', 50, 'foodVendor')[0]?.id === STOREFRONT.foodVendor.always[0]
+  && runShelves.shops['foodVendor:a'].slots.length === 0)
+// FEAT-121: the general store rolls the deluxe pad and the Rucksack, and has the four bed rungs below the top always
+const gsw = STOREFRONT.generalStore
+check('the general store always has the blanket, air mattress, sleeping pad and sleeping bag',
+  ['blanket', 'airMattress', 'sleepingPad', 'sleepingBag'].every(id => gsw.always.includes(id)))
+check('the general store rolls only the deluxe pad and the Rucksack', Object.keys(gsw.weights).join() === 'deluxeSleepingPad,rucksack')
+let gen = true, seen = new Set()
+for (const seed of [1, 2, 3]) {
+  startShelves(seed)
+  for (let h = 0; h < 24 * 12; h += 0.5) {
+    const s = shelf('generalStore:a', h, 'generalStore')
+    s.slice(0, SHELF_SLOTS).forEach(e => { if (e) seen.add(e.id); if (e && !(e.id in gsw.weights)) gen = false })
+    if (s.length !== SHELF_SLOTS + gsw.always.length || s.slice(SHELF_SLOTS).some((e, k) => e.id !== gsw.always[k] || e.cond !== null)) gen = false
+  }
+}
+check('a general store lists its slots (only its two rolled lines) then its always rows; both lines turn up in 12 days × 3 seeds', gen && seen.size === 2, [...seen].join())
 startShelves(12345)
 let gsRolls = 0, cans = 0, other = 0
 for (let shop = 0; shop < 40; shop++) for (let h = 0; h < 20000; h++) {
