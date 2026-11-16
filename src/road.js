@@ -984,6 +984,32 @@ const TIE_PROM_M       = 0.1     // m
 const _rivalSmooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
 let _passD = new Float64Array(256), _passT = new Float64Array(256)   // _runPassMinima scratch (grown as needed)
 let _legSeq = new Float64Array(256)   // _projectLegNearNode scratch: the window's stationary distances² (grown as needed)
+// BUG-171's continuous frame for _projectLegNearNode, chords i0..iEnd: 9 numbers per chord — its start (ax, az), its
+// vector (ex, ez), its length, and the frame tangent at its two vertices (t0, t1): the unit bisector of the chords
+// meeting there, the chord itself at a run end. Query-independent, so cached per node leg (_legProjWin).
+function _legFrame(pts, i0, iEnd) {
+    const N = pts.length, F = new Float64Array(9 * (iEnd - i0 + 1))
+    let ux = pts[i0 + 1].x - pts[i0].x, uz = pts[i0 + 1].z - pts[i0].z, l = Math.hypot(ux, uz) || 1e-8
+    ux /= l; uz /= l
+    let t0x = ux, t0z = uz
+    if (i0 > 0) {
+        const px = pts[i0].x - pts[i0 - 1].x, pz = pts[i0].z - pts[i0 - 1].z, pl = Math.hypot(px, pz) || 1e-8
+        t0x += px / pl; t0z += pz / pl; l = Math.hypot(t0x, t0z) || 1e-8; t0x /= l; t0z /= l
+    }
+    for (let i = i0, o = 0; i <= iEnd; i++, o += 9) {
+        const ax = pts[i].x, az = pts[i].z, ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
+        let t1x = ux, t1z = uz, nx = ux, nz = uz
+        if (i + 2 < N) {
+            nx = pts[i + 2].x - pts[i + 1].x; nz = pts[i + 2].z - pts[i + 1].z
+            l = Math.hypot(nx, nz) || 1e-8; nx /= l; nz /= l
+            t1x += nx; t1z += nz; l = Math.hypot(t1x, t1z) || 1e-8; t1x /= l; t1z /= l
+        }
+        F[o] = ax; F[o + 1] = az; F[o + 2] = ex; F[o + 3] = ez; F[o + 4] = Math.hypot(ex, ez) || 1e-8
+        F[o + 5] = t0x; F[o + 6] = t0z; F[o + 7] = t1x; F[o + 8] = t1z
+        ux = nx; uz = nz; t0x = t1x; t0z = t1z
+    }
+    return F
+}
 // BUG-156: one side's weight for a near-node leg limb (the foot at index q of the window's distance² sequence, d2 its own).
 // Walk outward to the KEY SADDLE b, the highest distance before it first drops below this foot's (topographic
 // prominence: a higher foot met on the way does not stop the walk), then on through the lower basin past it to its
@@ -8035,25 +8061,13 @@ export class RoadSystem {
         const need = 2 * (iEnd - i0 + 1) + 2
         const seq = _legSeq.length >= need ? _legSeq : (_legSeq = new Float64Array(2 * need))
         const keep = (d2, cumT, ki, kt) => (out ??= []).push({ d2, arcS: cumT - arcOrigin, i: ki, t: kt, q: ns, wt: 1 })
-        // the frame tangent at vertex i0 (the unit bisector of chords i0−1 and i0)
-        let ux = pts[i0 + 1].x - pts[i0].x, uz = pts[i0 + 1].z - pts[i0].z, l = Math.hypot(ux, uz) || 1e-8
-        ux /= l; uz /= l
-        let t0x = ux, t0z = uz
-        if (i0 > 0) {
-            const px = pts[i0].x - pts[i0 - 1].x, pz = pts[i0].z - pts[i0 - 1].z, pl = Math.hypot(px, pz) || 1e-8
-            t0x += px / pl; t0z += pz / pl; l = Math.hypot(t0x, t0z) || 1e-8; t0x /= l; t0z /= l
-        }
+        // The frame depends only on the leg, never on the query: the caller's per-leg window carries it (DEC-261 cost
+        // check: built per call it tripled this function's cost, ~3–5 % of a terrain window's build).
+        const F = legWin && legWin.pts === pts ? (legWin.frame ??= _legFrame(pts, i0, iEnd)) : _legFrame(pts, i0, iEnd)
         let D0 = 0   // D at this chord's start vertex
-        for (let i = i0; i <= iEnd; i++) {
-            const ax = pts[i].x, az = pts[i].z, ex = pts[i + 1].x - ax, ez = pts[i + 1].z - az
-            const segLen = Math.hypot(ex, ez) || 1e-8
-            // the frame tangent at vertex i + 1 (the unit bisector of this chord and the next; this chord at the run end)
-            let t1x = ux, t1z = uz, nx = ux, nz = uz
-            if (i + 2 < N) {
-                nx = pts[i + 2].x - pts[i + 1].x; nz = pts[i + 2].z - pts[i + 1].z
-                l = Math.hypot(nx, nz) || 1e-8; nx /= l; nz /= l
-                t1x += nx; t1z += nz; l = Math.hypot(t1x, t1z) || 1e-8; t1x /= l; t1z /= l
-            }
+        for (let i = i0, o = 0; i <= iEnd; i++, o += 9) {
+            const ax = F[o], az = F[o + 1], ex = F[o + 2], ez = F[o + 3], segLen = F[o + 4]
+            const t0x = F[o + 5], t0z = F[o + 6], t1x = F[o + 7], t1z = F[o + 8]
             const wx0 = wx - ax, wz0 = wz - az, dtx = t1x - t0x, dtz = t1z - t0z
             // g(t) = (w − t e)·(T0 + t (T1 − T0)) = c + b t + a t²;  D(t) = D0 − 2 L (c t + b t²/2 + a t³/3)
             const c = wx0 * t0x + wz0 * t0z, b = wx0 * dtx + wz0 * dtz - (ex * t0x + ez * t0z), a = -(ex * dtx + ez * dtz)
@@ -8081,7 +8095,7 @@ export class RoadSystem {
                 if (a + b + c > 0) { const dx = wx0 - ex, dz = wz0 - ez; keep(dx * dx + dz * dz, cum + segLen, i, 1) }
                 ns++
             }
-            cum += segLen; ux = nx; uz = nz; t0x = t1x; t0z = t1z
+            cum += segLen
         }
         if (out && out.length > 1) for (const f of out) f.wt = Math.min(_limbWeight(seq, ns, f.q, seq[f.q], -1), _limbWeight(seq, ns, f.q, seq[f.q], 1))
         return out
@@ -8119,7 +8133,7 @@ export class RoadSystem {
             } else if (i0 >= 0) break   // window is one contiguous arc interval
             cum += segLen
         }
-        w = { pts, i0: i0 < 0 ? 1 : i0, i1, cum0 }
+        w = { pts, i0: i0 < 0 ? 1 : i0, i1, cum0, frame: null }   // frame: _legFrame, built on first use
         leg._plw = w
         return w
     }
