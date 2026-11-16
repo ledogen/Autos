@@ -1253,8 +1253,9 @@ window.__setGameMode = (m) => { _gameMode = m }
 // A menu added later is closed by every transition the day it is registered. The entering stage then opens what it needs.
 const _menus = []
 const _menu = (name, isOpen, close) => _menus.push({ name, isOpen, close })
-function _closeMenus () {
-  for (const m of _menus) if (m.isOpen()) m.close()
+function _closeMenus (except = null) {
+  for (const m of _menus) if (m.name !== except && m.isOpen()) m.close()
+  if (except) return   // BUG-187: the map opening shuts the cards but is no transition: a tow's owed answer stands
   _towOwed = false   // BUG-178's owed answer belongs to the seat it was owed at
 }
 window.__openMenus = () => _menus.filter(m => m.isOpen()).map(m => m.name)   // dev handle — test/cdp-smoke.mjs skipMenus
@@ -3931,6 +3932,12 @@ function _declineOffer () {
   serviceScreen.render()
 }
 
+// BUG-187: the parked offer cards (a giver's, Larry's route) are menus of the place the truck stands at, like the pump:
+// the map's open (M / View) shuts them, and so does every transition. They come back as ever, on the next brake pull.
+// The tutorial scenario's round IS its card, and a quick job's offer (no POI) rides on the map, so neither registers.
+_menu('offers', () => (missionSystem?.state === 'offer' && !!missionSystem.mission?.fromPoi) || (!_paperScenario && paperRouteSystem?.state === 'offer'),
+  () => { _jobsShop = null; if (missionSystem.state === 'offer') missionSystem.exit(); else paperRouteSystem.decline() })
+
 // FEAT-61: the character channel. No deps — it owns a queue and a once-per-run seen set, and this
 // file owns the DOM (the mission-panel pattern).
 const dialogueSystem = new DialogueSystem()
@@ -4842,7 +4849,7 @@ function _planFromTruck (door) {
 }
 
 // ── FEAT-211 landing 3: the custom waypoint ─────────────────────────────────────────────────────────
-// One pin the player drops on the map (pad Y, N, Enter with nothing highlighted, a click: map2d.js _waypointAt), and
+// One pin the player drops on the map (pad Y, N, a click (FEAT-234: never Enter / pad A): map2d.js _waypointAt), and
 // the same input on the pin takes it away. It is guided the way the evening is guided home, with nothing new: the same
 // planner (a one-stop line from the truck, _planFromTruck), the same in-world GPS (gpsSystem's getRoute, last in line),
 // the same re-plan when the truck strays (_tutDetourTick), the same HUD line (_renderMissionUI's default case).
@@ -5031,7 +5038,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => {
   if ((e.key !== 'm' && e.key !== 'M') || !_skipRelease()) return
   // A tap: the map, as M always is — unless a card owns the screen.
-  if (!dialogueSystem.active && !document.body.classList.contains('stage-on')) map2d.toggle()
+  if (!dialogueSystem.active && !document.body.classList.contains('stage-on')) { if (!map2d.isOpen()) _closeMenus('map'); map2d.toggle() }
 }, { capture: true })
 window.addEventListener('blur', _skipRelease)   // a key let go in another window never comes back up here
 pad.skipHold = () => _tutDrive()
@@ -8695,6 +8702,7 @@ document.addEventListener('keydown', e => {
     // of opening or re-targeting the map — mission framing is the live one — left the map's cap at
     // the free-roam 2000 m, short of a 2500 m region, so the region lock never engaged and panning
     // re-streamed around the cursor. The map now covers its own region whoever opened it.
+    if (!map2d.isOpen()) _closeMenus('map')   // BUG-187: a card at the POI would sit on the map's own
     map2d.toggle()
     // Freecam pointer-lock swallows the mouse for FPS look — release it so the map is
     // interactive. The canvas click handler in camera.js re-locks it on return to freecam.
@@ -9713,6 +9721,7 @@ function _exitStageLoad () {
   menuStage.setActive(false)
   _simHeld = false
   document.body.classList.remove('stage-on')
+  map2d.preload()   // PERF-52: the map's first-open work, in the same task as the loading screen's last frame
   // The chase camera is a spring and it has been sitting wherever the last mode left it. Without
   // this it slides onto the truck over about a second the moment the world appears, which reads as
   // the camera "arriving" rather than the world simply being there (owner, 2026-09-06).
@@ -11470,6 +11479,7 @@ function _lampSweepStep () {
 perfMark('init: synchronous bootstrap done, requesting first frame')  // D-arc
 // Dev handle (like __view above): init — including the QUAL-14 async spawn warm — is complete and
 // the render loop is starting. Read by the headless boot-timing probes.
+if (_noMenu) map2d.preload()   // PERF-52: ?nomenu boots straight into the world; a menu boot preloads at its own load's end (_exitStageLoad)
 window.__rsReady = true
 requestAnimationFrame(loop)
 // PERF-21: precompile the light-count shader variants (lamps off/brake/night/reverse) off the

@@ -818,6 +818,34 @@ export class Map2D {
     }
 
     /**
+     * PERF-52 (owner, 2026-11-16: the first open hangs 0.5–1 s): do the first open's work behind the loading screen.
+     * That work is the first background build — the ground's cover raster, the water warm-up, the contours (a 2 s
+     * long task on a loaded box, all of it noise2D / coarseHeight in the tiles) — and every tile and cover chunk of it
+     * is memoised, so the first real open then rebuilds from memos in a frame or two. Runs the same world path show()
+     * does (_paramSig → _buildRoad, which drops the memos with the old world), on the window laid out but not painted,
+     * and starts no network stream: show() does that, as ever. The caller has the body OUT of stage-on (the stage hides
+     * #map-window, and a hidden window has no size to build for). Synchronous: it is the loading screen's last step.
+     */
+    preload() {
+        if (this._open) return
+        const w = this._win
+        w.style.visibility = 'hidden'; w.style.display = 'flex'
+        try {
+            this._measure()
+            if (this._sizeStale()) this._resize()
+            const sig = this._paramSig()
+            if (!this._road || sig !== this._sig) { this._buildRoad(); this._sig = sig }
+            const car = this._getCar()
+            this._panX = car.x; this._panZ = car.z
+            this._syncRegionWindow()
+            this._startBackground(); this._bgDirty = false
+            this._stepBackground(Infinity)
+        } finally {
+            w.style.display = 'none'; w.style.visibility = ''
+        }
+    }
+
+    /**
      * Center + zoom so a world-XZ box fits on screen (story-mode mission framing: the whole
      * route should be readable the moment the offer appears, not somewhere off the edge).
      * Call AFTER show() — it needs the resized canvas. Sets _zoomInit so the first background
@@ -897,8 +925,8 @@ export class Map2D {
      *   WASD             pan the map (the keyboard's stick)
      *   ↑ / ↓            walk the list; the map snaps to the row's place
      *   ← / →            flip the offers at the highlighted (or hovered) POI
-     *   Enter (pad A)    Shopping: open or close the highlighted shop (a pump has nothing to open); with nothing
-     *                    highlighted, drop / clear the waypoint (as N)
+     *   Enter (pad A)    Shopping: open or close the highlighted shop (a pump has nothing to open). FEAT-234: it no
+     *                    longer drops the waypoint — that is N / Y / a click alone
      *   N (pad Y)        drop the waypoint under the cursor (the pad's is the sheet centre, so a highlighted row's
      *                    place), or clear it when the cursor is on it (_waypointAt). A click on the sheet does the same.
      *   Esc (pad B)      close the open shop; else leave the list — the highlight clears and the map stays put; with
@@ -931,8 +959,7 @@ export class Map2D {
         if (k === 'ArrowLeft' || k === 'ArrowRight') { take(); if (this._hoverPoi) this._flip(k === 'ArrowLeft' ? -1 : 1); return }
         // Taken only when it opened or closed a shop: a dialogue card over the map (menu-nav does not count it as a card)
         // advances on Enter, and a map that ate every Enter held the tutorial's cards for ever (cdp-smoke, "opening").
-        // The waypoint's Enter (nothing highlighted) is refused the same way: main.js says no while a dialogue is up.
-        if (k === 'Enter' && (this._toggleShop() || (!this._listId && !e.repeat && this._waypointAt()))) { take(); return }
+        if (k === 'Enter' && this._toggleShop()) { take(); return }
         if (k === 'Escape' && this._openShop) { take(); this._listId = this._openShop; this._openShop = null; this._listT = 0; return }
         if (k === 'Escape' && this._listId) { take(); this._leaveList() }
     }
@@ -3483,5 +3510,38 @@ export class Map2D {
 
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
         ctx.fillText(`Contour interval ${CONTOUR_IV} m`, s.x0, by)
+        const ivR = s.x0 + ctx.measureText(`Contour interval ${CONTOUR_IV} m`).width
+        this._drawControls(ctx, s, by, ivR + 24, this._hoverX === undefined ? bx - 70 : s.cx - 65)   // short of the scale label, or of the cursor's readout at the centre
+    }
+
+    // FEAT-234 (owner, 2026-11-16): the map's controls — pan, zoom, set waypoint — printed in the bottom margin after the
+    // contour note, clear of the cursor's coordinate readout at the centre. Keycaps as the HUD's (park-badge.js keycap): the key's cap on the keyboard, the pad's
+    // button when the pad last drove (pad.active); the pad's face buttons and sticks are round. Skipped when they do not fit.
+    _drawControls(ctx, s, by, xMin, xMax) {
+        const usePad = pad.active
+        const groups = usePad
+            ? [['pan', ['L']], ['zoom', ['R']], ['waypoint', ['Y']]]
+            : [['pan', ['WASD']], ['zoom', ['wheel']], ['waypoint', ['N', 'click']]]
+        const CAP = 15, GAP = 4, SEP = 16
+        ctx.font = `11px ${MAP_LABEL_FONT}`
+        const capW = c => (usePad && c.length === 1) ? CAP : Math.max(CAP, ctx.measureText(c).width + 8)
+        const w = groups.map(([label, caps]) => caps.reduce((a, c) => a + capW(c) + GAP, 0) + 2 + ctx.measureText(label).width)
+        const total = w.reduce((a, b) => a + b, 0) + SEP * (groups.length - 1)
+        let x = xMin
+        if (x + total > xMax) return
+        ctx.textBaseline = 'middle'; ctx.lineWidth = 1
+        for (const [label, caps] of groups) {
+            for (const c of caps) {
+                const cw = capW(c)
+                ctx.strokeStyle = '#6a6458'; ctx.fillStyle = '#4a453c'; ctx.textAlign = 'center'
+                if (usePad && c.length === 1) { ctx.beginPath(); ctx.arc(x + cw / 2, by, CAP / 2, 0, Math.PI * 2); ctx.stroke() }
+                else ctx.strokeRect(x + 0.5, by - CAP / 2 + 0.5, cw - 1, CAP - 1)
+                ctx.fillText(c, x + cw / 2, by + 0.5)
+                x += cw + GAP
+            }
+            ctx.fillStyle = MAP_TEXT; ctx.textAlign = 'left'
+            ctx.fillText(label, x + 2, by)
+            x += 2 + ctx.measureText(label).width + SEP
+        }
     }
 }

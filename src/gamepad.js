@@ -97,7 +97,7 @@ export const BINDINGS = [
   { action: 'map: walk the list',    key: '↑ / ↓ (mouse: hover)', pad: 'D-pad ↑ / ↓ (map open)' },
   { action: 'map: open / close a shop', key: 'Enter (mouse: click)', pad: 'A (map open)' },
   { action: 'map: back on the truck', key: 'c',        pad: 'left stick click (map open)' },
-  { action: 'map: drop / clear the waypoint', key: 'N / Enter (mouse: click)', pad: 'Y (map open)' },
+  { action: 'map: drop / clear the waypoint', key: 'N (mouse: click)', pad: 'Y (map open)' },
   { action: 'tabs (service shop)',   key: 'Q / E',    pad: 'LB / RB (shop open)' },
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'right stick ↑ / ↓ (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
