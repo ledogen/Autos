@@ -108,3 +108,6 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-16: DEC-345 built on `land/tut-picnic` (DEC-346..348; Billy per DEC-343/349). Affected node gates 10/10 green;
   smoke boot,story,opening,newRun PASS twice (one run in between failed at "make camp": the seated site re-graded "not
   flat" under load, the risk the step's comment names). Card shots: `wip/tut-picnic/`. Unverified: a real drive to the ranch.
+- 2026-11-16: DEC-344 seed search (lane U, study only, nothing changed): 320 random seeds, 290 valid; pick 3590618618
+  (route 112 m vs 144, roadside green 0.35 vs 0.18, joint sun clear; mom's wake sun blocked), runner-up 1273834102.
+  Sheets + table: wip/tut-seed-search/RESULTS.md (git-invisible, in CarGame-land-gps). Awaits the owner's pick.
